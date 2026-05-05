@@ -7,11 +7,13 @@ and decodes the control channels of P25, DMR, and NXDN trunked radio systems
 — with the engine pieces that follow voice grants, hold talkgroups by
 priority, and stream metadata + audio to a frontend layered on top.
 
-> **Status: under active development.** Phases 0 – 5 of the build plan have
+> **Status: under active development.** Phases 0 – 6 of the build plan have
 > landed (foundation, SDR hardware, DSP core, P25 Phase 1 control channel,
-> system-ID & CC hunter, DMR Tier III CSBK, NXDN frame structure). The full
-> phased roadmap lives in [`docs/phases.md`](docs/phases.md); the
-> architectural overview is in [`docs/architecture.md`](docs/architecture.md).
+> system-ID & CC hunter, DMR Tier III CSBK, NXDN frame structure, and the
+> trunking engine — talkgroup DB + priority preemption + voice-device
+> allocator + grant follower). The full phased roadmap lives in
+> [`docs/phases.md`](docs/phases.md); the architectural overview is in
+> [`docs/architecture.md`](docs/architecture.md).
 
 ## What's built so far
 
@@ -24,14 +26,19 @@ priority, and stream metadata + audio to a frontend layered on top.
 | DMR (Tier III)    | All 9 ETSI sync patterns, burst layout (132 dibits), Color Code + Data Type, CSBK with CRC, payload parsers for TalkGroup/Private Voice grants + Aloha + AdjacentSiteStatus + SystemInfoBroadcast, control-channel state machine |
 | NXDN              | 192-dibit frame layout (4800 BFSK / 9600 4-FSK), LICH parse with parity + 16-bit doubled-wire decoder, FSW correlator, CAC parser with CRC, RCCH opcode enum + payload parsers, control-channel state machine |
 | Orchestration     | In-process pub/sub event bus, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
+| Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
 | Daemon            | `cmd/gophertrunk` with `version`, `sdr list`, and `run` subcommands; YAML config; `log/slog`; signal-driven shutdown |
 
 ## What's intentionally deferred
 
 The build plan calls these out by phase; the most visible items still ahead:
 
-- Wiring the demod pipeline → control-channel state machine inside the
-  daemon process (Phase 6 — the trunking engine).
+- Wiring the demod pipeline (channelizer → demod → protocol decoder) and
+  the trunking engine into `cmd/gophertrunk run` so the daemon does
+  end-to-end CC hunt → grant follow → audio.
+- A composer that subscribes to `CallStart` events, spins up a per-call
+  demod chain on the bound Voice device, calls `Engine.Touch` on each
+  voice frame, and `Engine.EndCall` on a release announcement.
 - BCH(63,16,11) for full P25 NID validation; P25-specific trellis tables and
   the TSBK block interleaver (so the P25 Phase 1 control channel can decode
   live captures end-to-end).

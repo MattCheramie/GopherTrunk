@@ -12,7 +12,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 3.5   | System ID & control-channel hunting    | done        |
 | 4     | DMR trunking (Tier II + Tier III)      | partial     |
 | 5     | NXDN trunking                          | partial     |
-| 6     | Trunking engine (grant follower)       | upcoming    |
+| 6     | Trunking engine (grant follower)       | partial     |
 | 7a    | Voice passthrough (FM, raw frames)     | upcoming    |
 | 7b    | IMBE (P25 Phase 1, default)            | upcoming    |
 | 7c    | AMBE+2 (mbelib build tag, DVSI)        | upcoming    |
@@ -209,6 +209,71 @@ Deferred to follow-up phases:
 - Full RCCH state machine (paging, channel-grant follow, neighbor-
   list reaction) — Phase 6 along with the engine.
 - Voice frame AMBE+2 payloads — Phase 7.
+
+## Phase 6 — Trunking Engine (in progress)
+
+Landed in this phase:
+
+- `internal/trunking/grant.go` — Cross-protocol `Grant` payload type
+  (System, Protocol, GroupID, SourceID, FrequencyHz, ChannelID/Num,
+  Encrypted, Emergency, DataCall) used by P25/DMR/NXDN decoders to
+  publish to the events bus, plus `EndReason` enum and the
+  `CallStart` / `CallEnd` event payloads consumed by the API and
+  recorder layers.
+- `internal/trunking/talkgroup.go` — `TalkGroup` model + thread-safe
+  `TalkgroupDB` with Trunk-Recorder-style CSV loader (Decimal /
+  Alpha Tag / Mode / Tag / Group / Priority / Lockout — including
+  the "L" priority sentinel for inferred lockouts) and a JSON
+  loader.
+- `internal/trunking/priority.go` — `EffectivePriority(grant,
+  talkgroup)` + `CanPreempt(active, incoming)` with the
+  Trunk-Recorder convention: lower number = higher priority,
+  emergency = priority 0 (above everything), strict-higher
+  preemption (equal does NOT preempt), and lockout drops the
+  incoming grant outright.
+- `internal/trunking/voicepool.go` — `VoicePool` allocator over the
+  Voice-role SDR list (using the existing `Tuner` interface).
+  `FindFree` for first-fit allocation, `LowestPriorityActive` for
+  preemption decisions, `Bind` retunes + records an `ActiveCall`,
+  `Release` frees, `Touch` refreshes the watchdog timestamp.
+- `internal/trunking/engine.go` — Central state machine. Subscribes
+  to `events.KindGrant` at construction time so callers can publish
+  before `Run` starts, dispatches grants through lookup → priority
+  → pool, emits `events.KindCallStart` / `events.KindCallEnd`,
+  preempts strictly-lower-priority calls when the pool is full, and
+  runs a watchdog that ends silent calls after `CallTimeout`
+  (default 30 s).
+
+Tests cover Grant string formatting, talkgroup CSV + JSON round-
+trip including the Trunk-Recorder priority "L" sentinel, priority +
+preemption logic across emergency / lockout / equal / nil-talkgroup
+cases, voice-pool allocation + retuning + release + lowest-priority
+selection + watchdog touch, the engine's grant dispatch path
+(start-on-grant, drop-locked-out, drop-zero-frequency,
+preempt-lower-priority, hold-on-equal, emergency-preempts-anything,
+explicit EndCall, watchdog timeout via injected clock), and the Run
+loop dispatching events published on the bus.
+
+Bug caught and fixed during testing: the engine originally
+subscribed to the bus inside `Run`, which lost any grant published
+between `NewEngine` and the first `Run` iteration; moved the
+subscription into `NewEngine` with a paired `Close()` so the engine
+is reachable as soon as it's constructed.
+
+Deferred to follow-up phases:
+- Wiring protocol decoders (P25 phase1 / DMR tier3 / NXDN) to
+  publish `events.KindGrant` when they decode an actual grant
+  opcode — this is gated on completing the Phase 3 / 4 / 5
+  channel-coding deferrals (P25 trellis tables + interleaver, DMR
+  slot-type Hamming(20,8), NXDN SACCH FEC) and on a band-plan
+  resolver that converts (channel ID, channel number) → Hz.
+- Demod-pipeline composer that subscribes to `CallStart` events,
+  tunes a per-call demod chain on the bound Voice device, calls
+  `Engine.Touch` on every voice frame, and `Engine.EndCall` on
+  voice-channel release announcements or PTT-off.
+- Multi-site neighbor list + affiliation-based site selection
+  (extension to `internal/trunking/site.go`).
+- Daemon-side wiring of the Engine into `cmd/gophertrunk run`.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
