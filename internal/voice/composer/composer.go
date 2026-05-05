@@ -27,10 +27,31 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// EqualizerConfig opts an adaptive blind equalizer (CMA) into the
+// post-decimation, pre-FM-demod stage of the per-call analog chain.
+// The win is simulcast-distortion mitigation: when multiple
+// transmitters cover the same frequency at slightly different arrival
+// delays, CMA drives the complex baseband back toward a constant
+// modulus and unblurs the FM signal. Defaults are conservative — eight
+// taps and a small step size — chosen so the equalizer behaves close
+// to a pass-through on a clean signal and converges within a few
+// hundred samples on a degraded one.
+//
+// FM voice has constant envelope on air, so the LMS variant (which
+// needs a known training symbol stream) isn't useful here; the LMS
+// type is exported from internal/dsp/equalizer for protocol decoders
+// (P25 C4FM with a known FSW preamble) that need a directed update.
+type EqualizerConfig struct {
+	Enabled  bool
+	Taps     int     // default 8
+	StepSize float32 // default 1e-4
+}
 
 // IQSource is the subset of sdr.Device the composer needs. Decoupling
 // keeps the package free of a hard import on internal/sdr and makes
@@ -77,6 +98,10 @@ type Options struct {
 	// TouchInterval is how often the chain pings Engine.Touch while
 	// audio is flowing (default 1 s).
 	TouchInterval time.Duration
+	// Equalizer optionally enables a CMA blind equalizer between the
+	// front-end LPF and the FM demod. Off by default; flip Enabled
+	// to true and tune Taps / StepSize per site.
+	Equalizer EqualizerConfig
 }
 
 // Composer is the long-lived event-driven bridge.
@@ -91,6 +116,7 @@ type Composer struct {
 	pcmHz        uint32
 	bw           uint32
 	touchEvery   time.Duration
+	eqCfg        EqualizerConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -127,6 +153,14 @@ func New(opts Options) (*Composer, error) {
 	if opts.TouchInterval <= 0 {
 		opts.TouchInterval = time.Second
 	}
+	if opts.Equalizer.Enabled {
+		if opts.Equalizer.Taps <= 0 {
+			opts.Equalizer.Taps = 8
+		}
+		if opts.Equalizer.StepSize <= 0 {
+			opts.Equalizer.StepSize = 1e-4
+		}
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -141,6 +175,7 @@ func New(opts Options) (*Composer, error) {
 		pcmHz:      opts.PCMSampleRate,
 		bw:         opts.VoiceBandwidthHz,
 		touchEvery: opts.TouchInterval,
+		eqCfg:      opts.Equalizer,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}
@@ -298,6 +333,15 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 
 	fm := demod.NewFM()
 
+	// Optional CMA blind equalizer for simulcast-distortion mitigation.
+	// Sits between the front-end LPF (decimated) and the FM demod so it
+	// operates at the intermediate rate (~48 kHz) rather than 2.4 MS/s.
+	// R^2 = 1 because FM has unit-magnitude carrier on air.
+	var eq *equalizer.CMA
+	if c.eqCfg.Enabled {
+		eq = equalizer.NewCMA(c.eqCfg.Taps, c.eqCfg.StepSize, 1.0)
+	}
+
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
@@ -315,6 +359,14 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 			filtered := lpf.Process(nil, iq)
 			decimated := decimateComplex(filtered, decim1)
+			if eq != nil {
+				equalized := make([]complex64, len(decimated))
+				for i, x := range decimated {
+					y, _ := eq.Process(x)
+					equalized[i] = y
+				}
+				decimated = equalized
+			}
 			audio := fm.Process(nil, decimated)
 			pcm := decimateAndConvert(audio, decim2)
 			if c.sink != nil && len(pcm) > 0 {

@@ -70,6 +70,19 @@ type RecordingsConfig struct {
 	Dir         string `yaml:"dir"`
 	SampleRate  uint32 `yaml:"sample_rate"`
 	WriteRaw    bool   `yaml:"write_raw"`
+	// Equalizer enables the per-call CMA blind equalizer that the FM
+	// composer chain runs between the front-end LPF and the FM demod.
+	// Off by default; useful when receiving simulcast systems with
+	// multiple transmitters at slightly different arrival delays.
+	Equalizer EqualizerConfig `yaml:"equalizer"`
+}
+
+// EqualizerConfig is the YAML shape of the optional CMA equalizer in
+// the per-call FM voice chain.
+type EqualizerConfig struct {
+	Enabled  bool    `yaml:"enabled"`
+	Taps     int     `yaml:"taps"`      // default 8 when enabled
+	StepSize float32 `yaml:"step_size"` // default 1e-4 when enabled
 }
 
 // MetricsConfig toggles the Prometheus collector. The /metrics endpoint

@@ -261,6 +261,72 @@ func TestNewValidates(t *testing.T) {
 	}
 }
 
+func TestComposerEqualizerEnabledStillProducesPCM(t *testing.T) {
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		Equalizer: EqualizerConfig{
+			Enabled:  true,
+			Taps:     8,
+			StepSize: 1e-4,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()
+		c.Close()
+		bus.Close()
+	}()
+	go c.Run(ctx)
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return len(src.chs) > 0
+	})
+
+	chunk := make([]complex64, 4096)
+	for i := range chunk {
+		chunk[i] = complex(0.5, 0.5)
+	}
+	src.SendIQ(chunk)
+
+	waitFor(t, time.Second, func() bool { return sink.total("VOICE-1") > 0 })
+}
+
+func TestComposerEqualizerDefaultsApplied(t *testing.T) {
+	bus := events.NewBus(2)
+	defer bus.Close()
+	c, err := New(Options{
+		Bus:          bus,
+		Devices:      &fakeDevices{},
+		IQSampleRate: 2_400_000,
+		Equalizer:    EqualizerConfig{Enabled: true}, // taps/step zero
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.eqCfg.Taps != 8 {
+		t.Errorf("default Taps = %d, want 8", c.eqCfg.Taps)
+	}
+	if c.eqCfg.StepSize != 1e-4 {
+		t.Errorf("default StepSize = %g, want 1e-4", c.eqCfg.StepSize)
+	}
+}
+
 func TestCloseIsIdempotent(t *testing.T) {
 	bus := events.NewBus(2)
 	defer bus.Close()
