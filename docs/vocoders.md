@@ -46,16 +46,41 @@ frames without any vocoder linked into the daemon.
 
 ## Building with `mbelib`
 
-When you have `libmbe.so` and the headers installed:
+`internal/voice/mbelib` ships a CGO wrapper around the szechyjs
+[`mbelib`](https://github.com/szechyjs/mbelib) library, gated behind
+the `mbelib` build tag. With `libmbe.so` and `mbelib.h` installed
+on the host, opt in by running:
 
 ```sh
 make build TAGS=mbelib
 ```
 
-The CGO wrapper at `internal/voice/mbelib` will register an `ambe`
-factory. The default `make build` target produces a binary that does
-**not** link `libmbe.so` and exposes only `null` (and `imbe`, once it
-lands).
+This registers two factories on `voice.DefaultRegistry`:
+
+- `imbe`  — IMBE 4400 bps for P25 Phase 1 LDU1 / LDU2 voice frames
+  (88-bit input, 11-byte packed). Targets `mbe_processImbe4400Dataf`.
+- `ambe2` — AMBE+2 2400 bps for P25 Phase 2, DMR, and NXDN voice
+  frames (49-bit input, 7-byte packed with 7 padding bits).
+  Targets `mbe_processAmbe2400Dataf`.
+
+Both produce 8 kHz / 20 ms / 160 samples of int16 PCM per call,
+matching the recorder's PCM contract.
+
+The default `make build` target compiles the stub at
+`internal/voice/mbelib/cgo_stub.go` instead, registers nothing, and
+links no extra libraries. CI exercises the stub path only — the
+wrapper is verified at build time when an operator opts in.
+
+If `make build TAGS=mbelib` fails with `mbelib.h: No such file or
+directory`, install the library:
+
+```sh
+git clone https://github.com/szechyjs/mbelib && cd mbelib
+mkdir build && cd build && cmake .. && make && sudo make install
+sudo ldconfig
+```
+
+Then re-run the build.
 
 ## Why a plugin model
 
