@@ -174,6 +174,11 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
 			PCMSampleRate: cfg.Recordings.SampleRate,
+			Equalizer: composer.EqualizerConfig{
+				Enabled:  cfg.Recordings.Equalizer.Enabled,
+				Taps:     cfg.Recordings.Equalizer.Taps,
+				StepSize: cfg.Recordings.Equalizer.StepSize,
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: composer: %w", err)

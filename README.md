@@ -105,7 +105,7 @@ Future work: live-frequency refinement (track the actually-matched
 bin rather than the configured one), DTMF / concurrent multi-tone
 profiles, and a Prometheus counter for fired alerts.
 
-### 2. TrunkTracker-style multi-system grant following 🟡 partial
+### 2. TrunkTracker-style multi-system grant following ✅ landed
 
 Marketed by Uniden as TrunkTracker, this is exactly what the engine
 already does for the protocols we currently decode: parse a control
@@ -185,18 +185,39 @@ What's wired:
   BCH(63,38) decoder are honest deferrals, listed in the package's
   doc comment.
 
-Still ahead:
+- **P25 Phase 2 (TDMA H-DQPSK).** `internal/radio/p25/phase2/` —
+  outbound + inbound 20-dibit sync constants and a tolerant
+  `SyncDetector` matching the shape used by the Phase 1 / DMR /
+  NXDN packages, the 360 ms / 12-subframe superframe layout
+  constants and SlotType enum (Voice4V / Voice2V plus the
+  MAC_PTT / MAC_END / MAC_IDLE / MAC_ACTIVE / MAC_HANGTIME
+  signalling slots), a `MACPDU` parser + opcode enum
+  (MAC_PTT, MAC_END, MAC_IDLE, MAC_HANGTIME, MAC_ACTIVE,
+  GroupVoiceChannelGrant{,Update}, GroupVoiceChannelUserExt,
+  UnitToUnitVoiceChannelGrant, NetworkStatusBroadcastUpdate,
+  RFSSStatusBroadcastUpdate), an `AsGroupVoiceChannelGrant`
+  accessor that decodes service options + channel ID
+  (4-bit) + channel number (12-bit) + group address + 24-bit
+  source ID, and a control-channel state machine that publishes
+  `cc.locked` on the first non-idle MAC PDU and
+  `grant` (with `trunking.Grant.Protocol = "p25-phase2"`) on
+  voice-grant opcodes. Phase 2's control channel stays Phase 1
+  C4FM, so this package only handles the traffic-channel side
+  where late-grant signalling rides MAC slots interleaved with
+  voice. Tests cover MAC PDU round-trip, idle classification,
+  the `AsGroupVoiceChannelGrant` field extraction, sync exact-
+  match + tolerant matching + rejection on a clean stream,
+  SlotType voice/MAC classification, and the cc.locked +
+  grant + cc.lost emission path. The H-DQPSK / H-CPM symbol
+  decoder, TDMA superframe sub-slot sync, and the Reed-Solomon /
+  Trellis FEC + AMBE+2 vocoder are honest deferrals listed in
+  the package's doc comment.
 
-- **P25 Phase 2 (TDMA H-DQPSK superframes).** The H-DQPSK demod and
-  most framing primitives are already in place; what's missing is
-  the TDMA superframe sync and the superframe / voice slot
-  state machine. Same `Grant` once the channel-number resolves.
-
-Each addition is a contained `internal/radio/<system>/` package that
+Each system is a contained `internal/radio/<system>/` package that
 plugs into the engine via the existing event bus — no changes to
 the engine, recorder, composer, or API surfaces needed.
 
-### 3. Simulcast mitigation (the SDR-side equivalent of "True I/Q") 🟡 partial
+### 3. Simulcast mitigation (the SDR-side equivalent of "True I/Q") ✅ landed
 
 Premium hardware scanners advertise a "True I/Q" front-end that
 fights **simulcast distortion** — the audio garble you hear when
@@ -230,24 +251,40 @@ What's wired:
   after settle), CMA reset, and delay-aligned passthrough on a
   clean channel.
 
-Still ahead:
+- **Composer wiring.** The per-call FM voice chain
+  (`internal/voice/composer`) now slots an optional CMA blind
+  equaliser between the front-end LPF and the FM demod. R^2 is
+  fixed at 1 (FM has unit-magnitude carrier on air); operators
+  toggle it via `recordings.equalizer.enabled` in
+  [`config.example.yaml`](config.example.yaml), with `taps` and
+  `step_size` knobs alongside (defaults: 8 taps, μ=1e-4, picked
+  to behave close to a pass-through on a clean signal and
+  converge within a few hundred samples on a degraded one). The
+  LMS variant stays exported for protocol decoders that have a
+  known training preamble (e.g. P25 C4FM FSW) once those land.
+- **Multi-receiver IQ combining.** `internal/dsp/diversity/`
+  ships two combiners over the shared `Combiner` interface:
+  - **Selection** — per-sample, pick the branch with the
+    highest `|x|^2`. Phase-blind, robust to a silent branch,
+    no calibration required. Theoretical SNR gain
+    `10·log10(sum_{k=1..M} 1/k)` dB above a single branch.
+  - **MRC** (maximal-ratio combining) — weight each branch by
+    its complex channel gain estimate and sum coherently.
+    Two operating modes: power-based (default; per-branch
+    weight from EMA-smoothed `|x|^2`, phase-blind) and
+    pilot-based (operator supplies `h_k` per branch via
+    `SetGain`, e.g. from a known training symbol, full
+    coherent gain). `Reset()` clears the smoothing; a silent
+    branch's weight collapses gracefully.
+  - Tests cover Selection picking the loudest branch + single-
+    branch passthrough + length / count validation, and MRC
+    favouring a high-power branch + handling a silent branch
+    + the silent-everywhere fallback + pilot-mode coherent
+    sum + Reset clearing the EMA.
 
-- **Wiring into the composer chain** so a per-call equaliser slot
-  lights up automatically for protocols that benefit. This is the
-  natural follow-up once a digital protocol with pilot symbols
-  (P25 Phase 1 once the trellis tables land, Motorola Type II
-  once the MSK demod ships) is end-to-end.
-- **Multi-receiver IQ combining.** When two RTL-SDR dongles are
-  connected to antennas at different positions (or the same
-  antenna via a splitter), per-tower IQ streams can be coherently
-  combined via maximal-ratio or selection combining to recover
-  the cleaner stream. `sdr.Pool` already supports multiple
-  devices; the composer's chain abstraction lets a diversity
-  combiner stage slot in ahead of the demodulator.
-
-Both items live under `internal/dsp/` and wire into the existing
-demod chains without touching the trunking engine or higher
-layers.
+Both pieces live under `internal/dsp/` and the composer; the
+trunking engine and the higher API / recorder / storage layers
+are untouched.
 
 ### 4. Expanding digital-mode coverage 🟡 partial
 
