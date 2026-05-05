@@ -29,6 +29,7 @@ type Server struct {
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
+	metrics    http.Handler
 	log        *slog.Logger
 	version    string
 
@@ -87,7 +88,12 @@ type ServerOptions struct {
 	// History is optional. When non-nil the server exposes
 	// GET /api/v1/calls/history.
 	History HistoryQuery
-	Log     *slog.Logger
+	// MetricsHandler is optional. When non-nil it is mounted at
+	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
+	// here. Decoupling via http.Handler keeps the api package free of a
+	// hard dependency on the metrics package.
+	MetricsHandler http.Handler
+	Log            *slog.Logger
 	// Version is reported by GET /api/v1/version.
 	Version string
 }
@@ -115,6 +121,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		talkgroups: opts.Talkgroups,
 		systems:    append([]trunking.System(nil), opts.Systems...),
 		history:    opts.History,
+		metrics:    opts.MetricsHandler,
 		log:        log,
 		version:    opts.Version,
 	}, nil
@@ -182,6 +189,9 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
+	if s.metrics != nil {
+		mux.Handle("GET /metrics", s.metrics)
+	}
 	return mux
 }
 

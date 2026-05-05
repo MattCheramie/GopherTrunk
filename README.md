@@ -7,18 +7,21 @@ and decodes the control channels of P25, DMR, and NXDN trunked radio systems
 — with the engine pieces that follow voice grants, hold talkgroups by
 priority, and stream metadata + audio to a frontend layered on top.
 
-> **Status: under active development.** Phases 0 – 9 of the build plan
-> have landed (foundation, SDR hardware, DSP core, P25 Phase 1 control
-> channel, system-ID & CC hunter, DMR Tier III CSBK, NXDN frame
-> structure, the trunking engine, the voice-recording infrastructure,
-> the API — protobuf schemas, an HTTP REST surface, an SSE event
-> stream, a WebSocket bridge, and a gRPC server — and persistence: a
-> SQLite call log subscribing to engine events, a `/api/v1/calls/history`
-> endpoint, and a retention sweeper that ages out both DB rows and the
-> recorded WAV / raw files). The full phased roadmap lives in
-> [`docs/phases.md`](docs/phases.md); the architectural overview is in
-> [`docs/architecture.md`](docs/architecture.md); the vocoder-licensing
-> situation is in [`docs/vocoders.md`](docs/vocoders.md).
+> **Status: under active development.** Phases 0 – 10 of the build
+> plan have landed (foundation, SDR hardware, DSP core, P25 Phase 1
+> control channel, system-ID & CC hunter, DMR Tier III CSBK, NXDN
+> frame structure, the trunking engine, the voice-recording
+> infrastructure, the API — protobuf + gRPC + HTTP/SSE/WebSocket —
+> persistence with a SQLite call log + history endpoint + retention
+> sweeper, and hardening: a Prometheus metrics collector mounted at
+> `/metrics`, a multi-stage Dockerfile, a docker-compose example with
+> RTL-SDR USB pass-through, and the operator hardening guide). The
+> full phased roadmap lives in [`docs/phases.md`](docs/phases.md);
+> the architectural overview is in
+> [`docs/architecture.md`](docs/architecture.md); the
+> vocoder-licensing situation is in
+> [`docs/vocoders.md`](docs/vocoders.md); the operations playbook is
+> in [`docs/hardening.md`](docs/hardening.md).
 
 ## What's built so far
 
@@ -35,6 +38,7 @@ priority, and stream metadata + audio to a frontend layered on top.
 | Voice infrastructure | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder that subscribes to `CallStart` / `CallEnd` and writes `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder |
 | API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history}`); Server-Sent Events stream (`/api/v1/events`); WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + (stub) `AudioService` over the same in-process state |
 | Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log that subscribes to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs (config / talkgroup CSVs are preserved) |
+| Hardening         | Prometheus collector (events / calls / CC-locked / IQ-underrun / USB-reconnect / decode-error / SDR-attached / build-info series) exposed at `/metrics`; multi-stage `Dockerfile`; `docker-compose.yml` with RTL-SDR USB pass-through, healthcheck, and Prometheus scrape labels; non-root runtime user with `cap_add: DAC_OVERRIDE` |
 | Daemon            | `cmd/gophertrunk` with `version`, `sdr list`, and `run` subcommands; YAML config; `log/slog`; signal-driven shutdown |
 
 ## What's intentionally deferred
@@ -58,12 +62,14 @@ The build plan calls these out by phase; the most visible items still ahead:
   ([`docs/vocoders.md`](docs/vocoders.md)). The recorder, plugin
   interface, and raw-frame sidecar that the decoders will plug into
   have already landed.
-- Hardening (metrics, reconnect, Docker — Phase 10) is the next major
-  area. The persistence layer (Phase 9 — SQLite call log + retention)
-  and API (Phase 8) have both landed; the gating piece is the
-  demod-pipeline composer that produces the live PCM the
-  `AudioService` will stream and the engine events the call log
-  expects from real captures.
+- The single remaining gating piece across every "deferred" item is
+  the demod-pipeline composer that produces the live PCM the
+  `AudioService` will stream and the engine events the call log,
+  recorder, and metrics counters all already know how to consume.
+  Wiring the Engine + Recorder + Storage + Metrics into
+  `cmd/gophertrunk run` and standing up the integration test
+  (`make integration` replaying recorded IQ end-to-end) lands with
+  that composer.
 
 ## ✨ Goals
 
