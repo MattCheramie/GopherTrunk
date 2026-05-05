@@ -17,6 +17,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
 
 // Daemon owns the lifecycle of every long-lived component the
@@ -39,6 +40,7 @@ type Daemon struct {
 	voicePool  *trunking.VoicePool
 	recorder   *voice.Recorder
 	composer   *composer.Composer
+	toneout    *toneout.Detector
 	db         *storage.DB
 	callLog    *storage.CallLog
 	retention  *storage.Retention
@@ -136,14 +138,38 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		d.recorder = rec
 	}
 
+	// Tone-out detector — optional. Built before the composer so it can
+	// share the composer's PCM sink via fanoutSink.
+	if len(cfg.ToneOut.Profiles) > 0 {
+		profiles, err := toneProfilesFromConfig(cfg.ToneOut.Profiles)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		det, err := toneout.New(toneout.Options{
+			Bus:        d.bus,
+			Profiles:   profiles,
+			SampleRate: cfg.Recordings.SampleRate,
+			Log:        log,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: tone-out: %w", err)
+		}
+		d.toneout = det
+	}
+
 	// Composer is wired when we have a Voice device pool to source IQ
 	// from + a recorder to feed PCM into. Without an SDR pool there's
 	// nothing to demod, and without a recorder PCM has no destination.
 	if d.pool != nil && d.recorder != nil {
+		// Fan PCM to recorder + tone-out (if configured).
+		var sink composer.PCMSink = d.recorder
+		if d.toneout != nil {
+			sink = fanoutSink{d.recorder, d.toneout}
+		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
 			Devices:       &poolDevices{pool: d.pool},
-			Sink:          d.recorder,
+			Sink:          sink,
 			Engine:        d.engine,
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
@@ -377,6 +403,72 @@ func retentionInterval(s string) (time.Duration, error) {
 		return time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// fanoutSink writes the same PCM frame to several composer.PCMSink
+// downstreams. Used to feed both the recorder and the tone-out
+// detector from one composer.
+type fanoutSink []composer.PCMSink
+
+func (f fanoutSink) WritePCM(serial string, samples []int16) error {
+	for _, s := range f {
+		_ = s.WritePCM(serial, samples)
+	}
+	return nil
+}
+
+// toneProfilesFromConfig converts the YAML config shape into the
+// internal toneout.Profile shape, parsing duration strings.
+func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {
+	out := make([]toneout.Profile, 0, len(in))
+	for _, p := range in {
+		tones := make([]toneout.Tone, 0, len(p.Tones))
+		for ti, t := range p.Tones {
+			minD, err := time.ParseDuration(t.MinDuration)
+			if err != nil {
+				return nil, fmt.Errorf("profile %q tone[%d] min_duration: %w", p.Name, ti, err)
+			}
+			maxD := time.Duration(0)
+			if t.MaxDuration != "" {
+				maxD, err = time.ParseDuration(t.MaxDuration)
+				if err != nil {
+					return nil, fmt.Errorf("profile %q tone[%d] max_duration: %w", p.Name, ti, err)
+				}
+			}
+			tones = append(tones, toneout.Tone{
+				FrequencyHz: t.FrequencyHz,
+				MinDuration: minD,
+				MaxDuration: maxD,
+			})
+		}
+		var maxGap, cooldown time.Duration
+		if p.MaxGap != "" {
+			d, err := time.ParseDuration(p.MaxGap)
+			if err != nil {
+				return nil, fmt.Errorf("profile %q max_gap: %w", p.Name, err)
+			}
+			maxGap = d
+		}
+		if p.Cooldown != "" {
+			d, err := time.ParseDuration(p.Cooldown)
+			if err != nil {
+				return nil, fmt.Errorf("profile %q cooldown: %w", p.Name, err)
+			}
+			cooldown = d
+		}
+		out = append(out, toneout.Profile{
+			Name:               p.Name,
+			AlphaTag:           p.AlphaTag,
+			Tones:              tones,
+			ToleranceHz:        p.ToleranceHz,
+			MagnitudeThreshold: p.MagnitudeThreshold,
+			MaxGap:             maxGap,
+			Cooldown:           cooldown,
+			System:             p.System,
+			GroupID:            p.GroupID,
+		})
+	}
+	return out, nil
 }
 
 // poolDevices adapts *sdr.Pool to composer.Devices. The composer only

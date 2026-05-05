@@ -47,3 +47,20 @@ trunking:
         - 851_000_000
         - 852_000_000
       talkgroup_file: "/etc/gophertrunk/talkgroups-p25.csv"
+
+# tone_out fires events.KindToneAlert when the configured paging tones
+# are detected on a Voice device's PCM stream. Empty profiles disable
+# the detector. Two-tone sequential (Quick Call II) is the most common
+# US fire/EMS pattern; supply the A-tone and B-tone in order.
+tone_out:
+  profiles:
+    - name: "station-1-engine"
+      alpha_tag: "Station 1 Engine"
+      cooldown: "30s"
+      tones:
+        - frequency_hz: 1042.2
+          min_duration: "250ms"
+          max_duration: "1500ms"
+        - frequency_hz: 1297.4
+          min_duration: "2.5s"
+          max_duration: "5s"

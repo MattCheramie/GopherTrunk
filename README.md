@@ -63,35 +63,45 @@ These are the next four feature areas on the table, mapped to where
 they plug into the existing architecture. Order isn't fixed; each is
 landable independently.
 
-### 1. Tone-out alerting
+### 1. Tone-out alerting ✅ landed
 
 Mirrors the "Tone-Out" feature on hardware scanners: fire an alarm
 only when a specific paging tone (or tone pair) is heard on a
 configured channel. Most US fire / EMS departments use **Two-Tone
 Sequential** (Motorola Quick Call II — typically a 0.5–1.5 s
 "A-tone" in the 250–1100 Hz range followed by a ~3 s "B-tone" in
-roughly the same range). Some agencies use single-tone, GE/Reach,
-EAS preamble tones, or DTMF.
+roughly the same range).
 
-Where it fits:
+What's wired:
 
-- Audio is already produced by `internal/voice/composer` for analog
-  FM channels. A new `internal/voice/toneout` package subscribes to
-  PCM frames per device serial (same surface the recorder uses),
-  runs a bank of Goertzel detectors tuned to configured tone
-  frequencies, and matches against per-channel tone profiles.
-- Detections publish a new `events.KindToneAlert` with a payload
-  carrying the system name, channel info, the matched tone(s), an
-  alpha tag from config, and the inbound audio segment.
-- The events bus carries the alert to anyone subscribed: the API's
-  SSE / WebSocket stream gets it for free, the Prometheus
-  collector ticks a `gophertrunk_tone_alerts_total{profile}`
-  counter, and operators can wire a webhook subscriber.
-- Config grows a `tone_profiles` section: profile name, frequency
-  list, per-tone duration window + Hz tolerance, optional channel
-  / talkgroup filter, optional dwell (ignore re-fires within N s).
+- `internal/voice/toneout` runs Goertzel filters against each
+  Voice device's PCM stream (one filter per unique target
+  frequency across all profiles, so a profile with N tones costs
+  N Goertzel passes per block, not N × profiles).
+- A per-device state machine matches sequential tones against the
+  configured profile list, honouring per-tone min/max duration,
+  per-profile inter-tone gap, and a refractory cooldown that
+  suppresses re-fires.
+- Detections publish `events.KindToneAlert` with the profile name,
+  alpha tag, device serial, matched timestamp, and the actual
+  matched frequencies. The bus payload flows through the SSE /
+  WebSocket stream automatically.
+- The composer's PCM output is fanned into both the recorder and
+  the detector via a `fanoutSink` in the daemon, so existing
+  recordings keep working.
+- YAML config: `tone_out.profiles` with `name`, `alpha_tag`,
+  `cooldown`, optional `system` / `group_id` filters, and a
+  per-tone `frequency_hz` + `min_duration` / `max_duration`. See
+  [`config.example.yaml`](config.example.yaml).
 
-Bounded scope; the DSP and event plumbing are already in place.
+Tests cover Goertzel on/off-target magnitude separation,
+single-tone matching, two-tone sequential matching with realistic
+QC-II timing, wrong-frequency rejection, too-short-tone rejection,
+cooldown suppression, and per-device state isolation.
+
+Future work: live-frequency refinement (track the actually-matched
+bin rather than the configured one), DTMF / concurrent multi-tone
+profiles, and a Prometheus counter for fired alerts.
 
 ### 2. TrunkTracker-style multi-system grant following
 

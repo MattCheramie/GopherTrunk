@@ -12,14 +12,15 @@ import (
 type Kind string
 
 const (
-	KindSDRAttached  Kind = "sdr.attached"
-	KindSDRDetached  Kind = "sdr.detached"
-	KindCCLocked     Kind = "cc.locked"
-	KindCCLost       Kind = "cc.lost"
-	KindCallStart    Kind = "call.start"
-	KindCallEnd      Kind = "call.end"
-	KindGrant        Kind = "grant"
-	KindError        Kind = "error"
+	KindSDRAttached Kind = "sdr.attached"
+	KindSDRDetached Kind = "sdr.detached"
+	KindCCLocked    Kind = "cc.locked"
+	KindCCLost      Kind = "cc.lost"
+	KindCallStart   Kind = "call.start"
+	KindCallEnd     Kind = "call.end"
+	KindGrant       Kind = "grant"
+	KindToneAlert   Kind = "tone.alert"
+	KindError       Kind = "error"
 )
 
 type Event struct {
