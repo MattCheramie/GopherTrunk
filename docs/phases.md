@@ -7,7 +7,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | ----- | -------------------------------------- | ----------- |
 | 0     | Foundation                             | done        |
 | 1     | SDR hardware layer (CGO librtlsdr)     | done        |
-| 2     | DSP core (channelizer, demods)         | upcoming    |
+| 2     | DSP core (channelizer, demods)         | done        |
 | 3     | P25 trunking (Phase 1 then Phase 2)    | upcoming    |
 | 3.5   | System ID & control-channel hunting    | upcoming    |
 | 4     | DMR trunking (Tier II + Tier III)      | upcoming    |
@@ -48,12 +48,26 @@ Verification:
 
 ## Phase 2 — DSP Core
 
-- `internal/dsp/filter` (FIR, CIC, halfband).
-- `internal/dsp/channelizer` polyphase channelizer over an FFT abstraction
-  (`internal/dsp/fft` wrapping `gonum.org/v1/gonum/dsp/fourier`).
-- `internal/dsp/demod` (FM, C4FM, H-DQPSK).
-- `internal/dsp/sync` (Mueller-Müller, Gardner, frame correlator).
-- Verification: golden vectors generated against GNU Radio reference.
+- `internal/dsp/window` standard window functions (Hann, Hamming, Blackman,
+  Kaiser, Rect).
+- `internal/dsp/fft` swappable FFT plan interface, default backend wraps
+  `gonum.org/v1/gonum/dsp/fourier`.
+- `internal/dsp/filter` FIR (with stateful history), Kaiser-window LPF
+  designer, root-raised-cosine pulse shaping, CIC decimator, halfband LPF.
+- `internal/dsp/agc` AGC feedback loop.
+- `internal/dsp/resampler` polyphase rational resampler (L/M).
+- `internal/dsp/channelizer` M-channel critically-sampled polyphase
+  channelizer; FFT-rotated branch outputs.
+- `internal/dsp/demod` quadrature FM, C4FM (RRC matched filter + 4-level
+  slicer), H-DQPSK (differential QPSK with configurable rotation).
+- `internal/dsp/sync` Mueller-Müller symbol-timing recovery and a
+  correlator-based frame sync.
+- Verification (no external golden vectors required): impulse response
+  equality for FIR; passband/stopband power tests for Kaiser LPF; tone
+  steering verified for the channelizer (positive +k·Fs/M tone lands in
+  channel k with adjacent-channel rejection > 20 dB); AGC convergence;
+  RRC unit-energy and matched-filter peak-at-center; FM demod against a
+  linear chirp; D-QPSK against constant phase steps.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
