@@ -1,0 +1,69 @@
+# Example docker-compose for a single GopherTrunk daemon with one
+# RTL-SDR dongle passed through from the host.
+#
+# Two important bits:
+#
+#   1. devices: maps the dongle into the container.
+#      Adjust the bus / device path to match `lsusb` on your host or
+#      use `/dev/bus/usb` (broader; usually only needed in privileged
+#      installations).
+#
+#   2. group_add: gives the container access to the host's plugdev /
+#      whatever group your udev rules grant USB access to. The host's
+#      /etc/udev/rules.d/20-rtlsdr.rules should set MODE="0660" and
+#      GROUP="plugdev" (or the GID you supply here).
+#
+# See docs/hardening.md for the full operator checklist.
+
+version: "3.9"
+
+services:
+  gophertrunk:
+    image: ghcr.io/mattcheramie/gophertrunk:latest
+    # Build locally with `docker compose build` (uses the repo Dockerfile).
+    build:
+      context: .
+      args:
+        VERSION: "compose-dev"
+
+    container_name: gophertrunk
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8080:8080"   # HTTP REST + SSE + WebSocket
+      - "127.0.0.1:50051:50051" # gRPC
+
+    volumes:
+      - ./config.yaml:/etc/gophertrunk/config.yaml:ro
+      - ./recordings:/var/lib/gophertrunk/recordings
+      - ./calls.db:/var/lib/gophertrunk/calls.db
+
+    # Pass through the RTL-SDR. Adjust the host path to match your
+    # dongle. `lsusb` will show e.g. "Bus 003 Device 002: ID 0bda:2838".
+    devices:
+      - "/dev/bus/usb/003/002:/dev/bus/usb/003/002"
+
+    # Ensure the container user can claim USB. The GID should match
+    # whatever the host's udev rules grant access to (commonly
+    # plugdev = 46 on Debian, but verify with `getent group plugdev`).
+    group_add:
+      - "46"
+
+    # Drop everything we don't need; only DAC_OVERRIDE is required to
+    # let the non-root user open the device node.
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    # Optional: scrape /metrics from a sidecar Prometheus.
+    labels:
+      - "prometheus.scrape=true"
+      - "prometheus.port=8080"
+      - "prometheus.path=/metrics"

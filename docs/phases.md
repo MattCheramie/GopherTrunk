@@ -18,7 +18,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 7c    | AMBE+2 (mbelib build tag, DVSI)        | upcoming    |
 | 8     | API (gRPC + WebSocket)                 | done        |
 | 9     | Persistence + recording                | done        |
-| 10    | Hardening (metrics, reconnect, docker) | upcoming    |
+| 10    | Hardening (metrics, reconnect, docker) | partial     |
 
 ## Phase 0 — Foundation
 
@@ -455,6 +455,67 @@ Deferred:
 - Retention policies expressed in YAML config + wired through the
   daemon — the type and tests are in place but the operator
   surface lands with the daemon-wiring deferred work above.
+
+## Phase 10 — Hardening (in progress)
+
+Landed in this phase:
+
+- `internal/metrics/prom.go` — `Metrics` owns a private
+  `prometheus.Registry` and registers counters + gauges:
+  - `gophertrunk_events_total{kind}` — every event observed on
+    the bus.
+  - `gophertrunk_calls_total{reason}` — calls completed, by
+    `EndReason`.
+  - `gophertrunk_calls_active` — gauge tracking active call count.
+  - `gophertrunk_control_channel_locked{system}` — 1/0 per system.
+  - `gophertrunk_sdr_iq_underruns_total{driver,serial}`,
+    `gophertrunk_sdr_usb_reconnects_total{driver,serial}` — manual
+    push-counter hooks for the SDR layer.
+  - `gophertrunk_decode_errors_total{protocol,stage}` — manual
+    push-counter for protocol decoders.
+  - `gophertrunk_sdr_attached{driver,serial,role}` — gauge.
+  - `gophertrunk_build_info{version}` — informational.
+  `Metrics.Run(ctx)` subscribes to the events bus and updates the
+  bus-driven series automatically. Subsystems push the others via
+  the public `RecordIQUnderrun`, `RecordUSBReconnect`,
+  `RecordDecodeError`, and `SetSDRAttached` methods.
+- `api.ServerOptions.MetricsHandler` — typed `http.Handler` field
+  the daemon populates with `Metrics.Handler()`. When set, the API
+  server mounts it at `GET /metrics`. The api package stays free of
+  a hard dependency on the metrics package.
+- `Dockerfile` — multi-stage build. The builder image installs
+  `librtlsdr-dev` + `libusb-1.0-0-dev` for the CGO binding; the
+  runtime image carries only `librtlsdr2` + `libusb-1.0-0` and runs
+  the daemon as a non-root user.
+- `docker-compose.yml` — single-daemon example with USB
+  pass-through (`devices`, `group_add`, `cap_add: DAC_OVERRIDE`),
+  bind-mounted config + recordings + SQLite DB, a healthcheck
+  hitting `/api/v1/health`, and Prometheus scrape labels.
+- `.dockerignore` to keep the build context lean.
+- `docs/hardening.md` — operator notes covering the metric
+  catalogue, the udev / DVB-blacklist / docker-USB recipe, the
+  graceful-shutdown sequence, and a smoke-test checklist.
+
+Tests cover the events counter increment path, calls-active /
+calls-total tracking across CallStart + CallEnd, every Record* hook,
+the Prometheus scrape format including the `build_info` label and a
+manually-recorded decode-error counter, and the api `/metrics`
+endpoint mount (404 without the handler, scrape body when present).
+
+Deferred:
+- Daemon-side wiring of the Engine + Recorder + Storage + Metrics
+  into `cmd/gophertrunk run`. The components and their tests are in
+  place; the wiring lands with the demod-pipeline composer that has
+  been the gating piece since Phase 6.
+- The integration target (`make integration` replaying 30 minutes
+  of recorded IQ through the full stack and diffing event totals
+  against a golden manifest). The replay path needs the same
+  composer; the metrics + Docker plumbing here is independent and
+  ready to be exercised today.
+- Auto-reconnect of the SDR USB driver on transient errors. The
+  `Pool` already supervises devices; the `RecordUSBReconnect`
+  metric hook is in place to track recoveries when reconnect logic
+  lands.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
