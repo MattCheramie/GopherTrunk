@@ -18,6 +18,7 @@ type Config struct {
 	Recordings RecordingsConfig `yaml:"recordings"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 	Retention  RetentionConfig  `yaml:"retention"`
+	ToneOut    ToneOutConfig    `yaml:"tone_out"`
 }
 
 type LogConfig struct {
@@ -85,6 +86,40 @@ type RetentionConfig struct {
 	CallLogDays int           `yaml:"call_log_days"`
 	FilesDays   int           `yaml:"files_days"`
 	Interval    string        `yaml:"interval"` // Go duration string; default 1h
+}
+
+// ToneOutConfig describes paging-tone profiles to monitor. Empty
+// Profiles disables the detector. Each ToneProfileConfig maps to one
+// internal/voice/toneout.Profile.
+type ToneOutConfig struct {
+	Profiles []ToneProfileConfig `yaml:"profiles"`
+}
+
+// ToneProfileConfig is the YAML shape of one tone-out alarm.
+//
+//   - For two-tone sequential paging (most US fire/EMS) supply two
+//     entries in `tones`: A-tone first, then B-tone.
+//   - For single-tone supervision pages supply one tone.
+//
+// Durations are Go duration strings ("250ms", "1.5s"). MaxDuration
+// of 0 disables the upper bound.
+type ToneProfileConfig struct {
+	Name               string                  `yaml:"name"`
+	AlphaTag           string                  `yaml:"alpha_tag"`
+	Tones              []ToneProfileToneConfig `yaml:"tones"`
+	ToleranceHz        float64                 `yaml:"tolerance_hz"`
+	MagnitudeThreshold float64                 `yaml:"magnitude_threshold"`
+	MaxGap             string                  `yaml:"max_gap"`
+	Cooldown           string                  `yaml:"cooldown"`
+	System             string                  `yaml:"system"`
+	GroupID            uint32                  `yaml:"group_id"`
+}
+
+// ToneProfileToneConfig is one tone within a profile sequence.
+type ToneProfileToneConfig struct {
+	FrequencyHz float64 `yaml:"frequency_hz"`
+	MinDuration string  `yaml:"min_duration"`
+	MaxDuration string  `yaml:"max_duration"`
 }
 
 func Default() Config {
