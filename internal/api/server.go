@@ -28,12 +28,52 @@ type Server struct {
 	engine     EngineSnapshot
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
+	history    HistoryQuery
 	log        *slog.Logger
 	version    string
 
-	mu      sync.Mutex
-	srv     *http.Server
-	closed  bool
+	mu     sync.Mutex
+	srv    *http.Server
+	closed bool
+}
+
+// HistoryQuery is the subset of storage.DB the history endpoint needs.
+// Decoupling keeps the api package free of a hard dependency on the
+// storage package and lets tests inject fakes.
+type HistoryQuery interface {
+	History(ctx context.Context, f HistoryFilter) ([]CallRow, error)
+}
+
+// HistoryFilter mirrors storage.HistoryFilter for the api layer's
+// purposes (passed through to whatever HistoryQuery implementation the
+// daemon wires up).
+type HistoryFilter struct {
+	System    string
+	GroupID   uint32
+	Since     time.Time
+	Until     time.Time
+	Limit     int
+	OnlyEnded bool
+}
+
+// CallRow mirrors storage.CallRow as a JSON-friendly row. Lives in the
+// api package so the storage package can stay free of API concerns.
+type CallRow struct {
+	ID             int64     `json:"id"`
+	System         string    `json:"system"`
+	Protocol       string    `json:"protocol"`
+	GroupID        uint32    `json:"group_id"`
+	SourceID       uint32    `json:"source_id"`
+	FrequencyHz    uint32    `json:"frequency_hz"`
+	Encrypted      bool      `json:"encrypted"`
+	Emergency      bool      `json:"emergency"`
+	DataCall       bool      `json:"data_call"`
+	DeviceSerial   string    `json:"device_serial"`
+	StartedAt      time.Time `json:"started_at"`
+	EndedAt        time.Time `json:"ended_at,omitempty"`
+	DurationMs     int64     `json:"duration_ms,omitempty"`
+	EndReason      string    `json:"end_reason,omitempty"`
+	TalkgroupAlpha string    `json:"talkgroup_alpha,omitempty"`
 }
 
 // ServerOptions configure a new Server.
@@ -44,7 +84,10 @@ type ServerOptions struct {
 	Engine     EngineSnapshot
 	Talkgroups *trunking.TalkgroupDB
 	Systems    []trunking.System
-	Log        *slog.Logger
+	// History is optional. When non-nil the server exposes
+	// GET /api/v1/calls/history.
+	History HistoryQuery
+	Log     *slog.Logger
 	// Version is reported by GET /api/v1/version.
 	Version string
 }
@@ -71,6 +114,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		engine:     opts.Engine,
 		talkgroups: opts.Talkgroups,
 		systems:    append([]trunking.System(nil), opts.Systems...),
+		history:    opts.History,
 		log:        log,
 		version:    opts.Version,
 	}, nil
@@ -135,6 +179,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/talkgroups", s.handleListTalkgroups)
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
+	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
 	return mux
