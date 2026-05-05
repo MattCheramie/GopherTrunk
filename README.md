@@ -249,7 +249,7 @@ Both items live under `internal/dsp/` and wire into the existing
 demod chains without touching the trunking engine or higher
 layers.
 
-### 4. Expanding digital-mode coverage
+### 4. Expanding digital-mode coverage 🟡 partial
 
 The hardware-scanner equivalent is firmware "digital upgrades" that
 unlock DMR, NXDN, and ProVoice. GopherTrunk's `Vocoder` plugin
@@ -259,18 +259,27 @@ splits into vocoders (decoding voice frames) and protocols
 
 Vocoders:
 
-- **IMBE for P25 Phase 1** — pure-Go decoder. Core US patents are
-  expired; the algorithm is implementable. Default build target.
-- **AMBE+2** — the licensing reality is documented in
-  [`docs/vocoders.md`](docs/vocoders.md). The plan is a `mbelib`
-  CGO wrapper behind the `-tags mbelib` build tag (off by default)
-  and a DVSI USB-3000 / AMBE-3003 hardware backend for operators
-  who hold a licence.
+- ✅ **`mbelib` CGO wrapper** — `internal/voice/mbelib` ships
+  IMBE 4400 bps and AMBE+2 2400 bps decoders backed by the
+  szechyjs [`mbelib`](https://github.com/szechyjs/mbelib) library,
+  gated behind the `mbelib` build tag. With libmbe + headers
+  installed, `make build TAGS=mbelib` registers `imbe` and
+  `ambe2` factories on `voice.DefaultRegistry`. Default builds
+  use a no-op stub and link nothing extra. CI exercises the
+  stub path only — the wrapper is verified at build time when
+  an operator opts in. Full operator instructions in
+  [`docs/vocoders.md`](docs/vocoders.md).
+- **IMBE pure-Go** — for default builds without any C
+  dependency. Core US patents are expired; the algorithm is
+  implementable. Bigger DSP undertaking; lands in a follow-up.
+- **DVSI USB-3000 / AMBE-3003 hardware backend** — for operators
+  with the chip. Same `Vocoder` plug-in shape as the mbelib
+  wrapper; the daemon picks the factory by name from config.
 - **ProVoice** (GE/Harris, EDACS family) is patent- and
   trade-secret-encumbered with limited public documentation.
-  Realistic path: raw-frame export only, with decoding deferred to
-  hardware vocoders or operator-supplied plugins via the same
-  `Vocoder` registry.
+  Realistic path: raw-frame export only, with decoding deferred
+  to hardware vocoders or operator-supplied plugins via the
+  same `Vocoder` registry.
 
 Protocols:
 

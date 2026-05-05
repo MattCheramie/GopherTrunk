@@ -13,6 +13,13 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	_ "github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/version"
+
+	// Blank import: under default builds this pulls in the stub
+	// (no init effect); under `make build TAGS=mbelib` it pulls in
+	// the CGO wrapper that registers the `imbe` and `ambe2`
+	// vocoders against voice.DefaultRegistry. Either way, the
+	// daemon's import set picks the right path automatically.
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/mbelib"
 )
 
 func main() {
