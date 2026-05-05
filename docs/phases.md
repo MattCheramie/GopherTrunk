@@ -17,7 +17,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 7b    | IMBE (P25 Phase 1, default)            | upcoming    |
 | 7c    | AMBE+2 (mbelib build tag, DVSI)        | upcoming    |
 | 8     | API (gRPC + WebSocket)                 | done        |
-| 9     | Persistence + recording                | upcoming    |
+| 9     | Persistence + recording                | done        |
 | 10    | Hardening (metrics, reconnect, docker) | upcoming    |
 
 ## Phase 0 — Foundation
@@ -396,6 +396,65 @@ Deferred:
 - HTTP-to-gRPC transcoding (gRPC-Gateway). The hand-written REST
   layer covers the same data so a transcoder is optional rather than
   required.
+
+## Phase 9 — Persistence & Recording
+
+Landed in this phase:
+
+- `internal/storage/sqlite.go` — `Open(path)` creates / migrates a
+  SQLite DB at `path` using the pure-Go `modernc.org/sqlite` driver
+  (no extra CGO beyond what librtlsdr already needs). Schema:
+  `call_log` with started/ended nanosecond timestamps, talkgroup
+  alpha tag, frequency, encrypted/emergency/data flags, and indexes
+  on `started_at`, `(system, started_at)`, `(group_id, started_at)`,
+  plus a unique `(device_serial, started_at)` index that makes
+  duplicate-start events idempotent.
+- `internal/storage/calllog.go` — `CallLog` subscribes to
+  `events.KindCallStart` / `KindCallEnd` and writes / updates rows.
+  `DB.History(ctx, HistoryFilter)` queries the table newest-first
+  with optional system / group / since / until / limit / only-ended
+  filters.
+- `internal/storage/retention.go` — `Retention` background sweeper
+  that runs once at startup and then on a configurable interval.
+  Deletes `call_log` rows whose `started_at` is older than
+  `CallRowMaxAge`, and deletes `.wav` / `.raw` files under
+  `FilesRoot` whose mtime is older than `FilesMaxAge`. Non-recording
+  files (anything outside the `.wav` / `.raw` whitelist) are
+  preserved so operators can park config / talkgroup CSVs alongside
+  recordings without losing them to a sweep.
+- `internal/api/storage_adapter.go` — `HistoryFromStorage(*storage.DB)`
+  exposes the call log to the API as a `HistoryQuery` without
+  leaking JSON DTO types into the storage package.
+- `GET /api/v1/calls/history` (in `internal/api/handlers.go`) —
+  paginated newest-first query supporting `?system=`, `?group_id=`,
+  `?since=` / `?until=` (RFC 3339), `?limit=` (default 100, max
+  1000), and `?only_ended=true`. Returns `503` when the daemon was
+  started without persistence wired up.
+
+Tests cover schema migration + in-memory open + missing-path
+rejection, CallLog round-trip (start → row, end → row update with
+duration + reason), idempotent repeat-starts collapsing to one row,
+multi-row filtering by system / group / since / limit / newest-
+first ordering, retention deletion of old DB rows past cutoff,
+retention deletion of old `.wav` / `.raw` files (with `.yaml`
+preserved), and end-to-end through the new HTTP endpoint
+(persisted-row surfacing, system filter, 503 without persistence,
+400 on bad parameters).
+
+Deferred:
+- Wiring the storage layer into `cmd/gophertrunk run` (currently
+  the daemon doesn't construct a `*storage.DB`; that lands when the
+  demod-pipeline composer plugs the engine + recorder + storage
+  together end-to-end).
+- gRPC `CallLogService` for the same history query — the HTTP
+  endpoint covers the same data so a gRPC mirror is optional.
+- Persisting the per-call WAV / raw file paths into the call log
+  row (currently the recorder constructs paths independently; a
+  future event will let the call log track them so the API can
+  serve direct download links).
+- Retention policies expressed in YAML config + wired through the
+  daemon — the type and tests are in place but the operator
+  surface lands with the daemon-wiring deferred work above.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.

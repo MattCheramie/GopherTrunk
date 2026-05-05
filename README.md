@@ -7,16 +7,18 @@ and decodes the control channels of P25, DMR, and NXDN trunked radio systems
 — with the engine pieces that follow voice grants, hold talkgroups by
 priority, and stream metadata + audio to a frontend layered on top.
 
-> **Status: under active development.** Phases 0 – 8 of the build plan
+> **Status: under active development.** Phases 0 – 9 of the build plan
 > have landed (foundation, SDR hardware, DSP core, P25 Phase 1 control
 > channel, system-ID & CC hunter, DMR Tier III CSBK, NXDN frame
 > structure, the trunking engine, the voice-recording infrastructure,
-> and the API: protobuf schemas, an HTTP REST surface, an SSE event
-> stream, a WebSocket bridge, and a gRPC server). The full phased
-> roadmap lives in [`docs/phases.md`](docs/phases.md); the
-> architectural overview is in [`docs/architecture.md`](docs/architecture.md);
-> the vocoder-licensing situation is in
-> [`docs/vocoders.md`](docs/vocoders.md).
+> the API — protobuf schemas, an HTTP REST surface, an SSE event
+> stream, a WebSocket bridge, and a gRPC server — and persistence: a
+> SQLite call log subscribing to engine events, a `/api/v1/calls/history`
+> endpoint, and a retention sweeper that ages out both DB rows and the
+> recorded WAV / raw files). The full phased roadmap lives in
+> [`docs/phases.md`](docs/phases.md); the architectural overview is in
+> [`docs/architecture.md`](docs/architecture.md); the vocoder-licensing
+> situation is in [`docs/vocoders.md`](docs/vocoders.md).
 
 ## What's built so far
 
@@ -31,7 +33,8 @@ priority, and stream metadata + audio to a frontend layered on top.
 | Orchestration     | In-process pub/sub event bus, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
 | Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
 | Voice infrastructure | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder that subscribes to `CallStart` / `CallEnd` and writes `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder |
-| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active}`); Server-Sent Events stream (`/api/v1/events`); WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + (stub) `AudioService` over the same in-process state |
+| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history}`); Server-Sent Events stream (`/api/v1/events`); WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + (stub) `AudioService` over the same in-process state |
+| Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log that subscribes to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs (config / talkgroup CSVs are preserved) |
 | Daemon            | `cmd/gophertrunk` with `version`, `sdr list`, and `run` subcommands; YAML config; `log/slog`; signal-driven shutdown |
 
 ## What's intentionally deferred
@@ -55,11 +58,12 @@ The build plan calls these out by phase; the most visible items still ahead:
   ([`docs/vocoders.md`](docs/vocoders.md)). The recorder, plugin
   interface, and raw-frame sidecar that the decoders will plug into
   have already landed.
-- Persistence + recording (Phase 9 — SQLite call log, retention) and
-  hardening (metrics, reconnect, Docker — Phase 10) are still ahead.
-  The API itself (Phase 8 — protobuf + gRPC + HTTP/SSE/WebSocket) has
-  landed; the demod-pipeline composer that produces the live PCM the
-  `AudioService` will stream is the gating piece.
+- Hardening (metrics, reconnect, Docker — Phase 10) is the next major
+  area. The persistence layer (Phase 9 — SQLite call log + retention)
+  and API (Phase 8) have both landed; the gating piece is the
+  demod-pipeline composer that produces the live PCM the
+  `AudioService` will stream and the engine events the call log
+  expects from real captures.
 
 ## ✨ Goals
 
