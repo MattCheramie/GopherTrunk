@@ -320,8 +320,29 @@ Vocoders:
 
 Protocols:
 
-- **dPMR (digital PMR446)** — public ETSI TS 102 658 spec, similar
-  framing to NXDN. A natural addition once NXDN's SACCH FEC lands.
+- ✅ **dPMR (digital PMR446)** — `internal/radio/dpmr/` — Mode 3
+  trunked signalling per ETSI TS 102 658. Ships FS1 / FS2 / FS3
+  24-dibit sync constants and a tolerant `SyncDetector` matching
+  the Phase 1 / DMR / NXDN shape, an 80-bit `CSBK` parser
+  (5-bit message type + 3-bit flags + 24-bit source + 24-bit
+  destination + 8-bit service info + 16-bit opcode-specific
+  field), a `MessageType` enum (RegistrationRequest / Response,
+  VoiceServiceAllocation, IndividualVoiceAllocation,
+  DataServiceAllocation, ServiceRequest, StandingServiceStatus,
+  Release, Idle), per-message accessors that surface
+  group / emergency / encryption flags from the 3-bit Flags
+  field, a `LinearBandPlan` / `TableBandPlan` channel resolver
+  (PMR446 default 446 006 250 Hz @ 6.25 kHz spacing), and a
+  control-channel state machine that publishes `cc.locked` on
+  StandingServiceStatus (or the first voice grant) and `grant`
+  with `trunking.Grant.Protocol = "dpmr"` on voice allocations.
+  Tests cover CSBK byte + bit round-trip, flag accessors,
+  AsVoiceGrant / AsSiteBroadcast extraction, IsIdle, sync
+  constants distinctness + exact + tolerant matching + noise
+  rejection, both band-plan strategies, and the full
+  cc.locked / grant / cc.lost emission path. The 4FSK demodulator,
+  CSBK FEC + interleaver, and AMBE+2 vocoder are honest
+  deferrals listed in the package's doc comment.
 - **TETRA** — full public spec (ETSI TS 100 392); large undertaking
   but well-defined.
 - **D-STAR / Yaesu System Fusion** — amateur-radio digital modes
