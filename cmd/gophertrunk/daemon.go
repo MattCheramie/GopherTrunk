@@ -16,6 +16,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
 )
 
 // Daemon owns the lifecycle of every long-lived component the
@@ -37,6 +38,7 @@ type Daemon struct {
 	engine     *trunking.Engine
 	voicePool  *trunking.VoicePool
 	recorder   *voice.Recorder
+	composer   *composer.Composer
 	db         *storage.DB
 	callLog    *storage.CallLog
 	retention  *storage.Retention
@@ -132,6 +134,25 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
 		}
 		d.recorder = rec
+	}
+
+	// Composer is wired when we have a Voice device pool to source IQ
+	// from + a recorder to feed PCM into. Without an SDR pool there's
+	// nothing to demod, and without a recorder PCM has no destination.
+	if d.pool != nil && d.recorder != nil {
+		comp, err := composer.New(composer.Options{
+			Bus:           d.bus,
+			Devices:       &poolDevices{pool: d.pool},
+			Sink:          d.recorder,
+			Engine:        d.engine,
+			Log:           log,
+			IQSampleRate:  cfg.SDR.SampleRate,
+			PCMSampleRate: cfg.Recordings.SampleRate,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: composer: %w", err)
+		}
+		d.composer = comp
 	}
 
 	// Storage / call log / retention — optional.
@@ -249,6 +270,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.recorder.Run(ctx)
 		})
 	}
+	if d.composer != nil {
+		d.spawn(ctx, "composer", func(ctx context.Context) error {
+			return d.composer.Run(ctx)
+		})
+	}
 	if d.metrics != nil {
 		d.spawn(ctx, "metrics", func(ctx context.Context) error {
 			return d.metrics.Run(ctx)
@@ -282,6 +308,9 @@ func (d *Daemon) Close() {
 		}
 		if d.grpcAPI != nil {
 			d.grpcAPI.Stop()
+		}
+		if d.composer != nil {
+			_ = d.composer.Close()
 		}
 		if d.recorder != nil {
 			_ = d.recorder.Close()
@@ -348,4 +377,19 @@ func retentionInterval(s string) (time.Duration, error) {
 		return time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// poolDevices adapts *sdr.Pool to composer.Devices. The composer only
+// needs StreamIQ; sdr.Device satisfies that subset directly.
+type poolDevices struct{ pool *sdr.Pool }
+
+func (p *poolDevices) FindBySerial(serial string) composer.IQSource {
+	if p.pool == nil {
+		return nil
+	}
+	e := p.pool.FindBySerial(serial)
+	if e == nil {
+		return nil
+	}
+	return e.Device
 }

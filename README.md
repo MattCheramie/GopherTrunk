@@ -7,7 +7,7 @@ and decodes the control channels of P25, DMR, and NXDN trunked radio systems
 — with the engine pieces that follow voice grants, hold talkgroups by
 priority, and stream metadata + audio to a frontend layered on top.
 
-> **Status: under active development.** All eleven phases of the
+> **Status: under active development.** All twelve phases of the
 > build plan have landed: foundation, SDR hardware, DSP core, P25
 > Phase 1 control channel, system-ID & CC hunter, DMR Tier III
 > CSBK, NXDN frame structure, the trunking engine, the
@@ -15,14 +15,18 @@ priority, and stream metadata + audio to a frontend layered on top.
 > (protobuf + gRPC + HTTP/SSE/WebSocket), persistence
 > (SQLite call log + history endpoint + retention sweeper),
 > hardening (Prometheus `/metrics`, a multi-stage Dockerfile,
-> a docker-compose example with USB pass-through), and the daemon
+> a docker-compose example with USB pass-through), the daemon
 > wiring that ties every component together inside `gophertrunk
 > run` plus a `make integration` target that boots the wired daemon
-> end-to-end on every PR. See [`config.example.yaml`](config.example.yaml)
-> for the operator surface, [`docs/phases.md`](docs/phases.md) for
-> the full phased roadmap, [`docs/architecture.md`](docs/architecture.md)
-> for the architecture, [`docs/vocoders.md`](docs/vocoders.md) for
-> the vocoder-licensing situation, and
+> end-to-end on every PR, and the demod-pipeline composer that
+> turns a `CallStart` event into a per-call FM voice chain on the
+> bound device → 16-bit PCM into the recorder, with periodic
+> `Engine.Touch` to keep the call alive. See
+> [`config.example.yaml`](config.example.yaml) for the operator
+> surface, [`docs/phases.md`](docs/phases.md) for the full phased
+> roadmap, [`docs/architecture.md`](docs/architecture.md) for the
+> architecture, [`docs/vocoders.md`](docs/vocoders.md) for the
+> vocoder-licensing situation, and
 > [`docs/hardening.md`](docs/hardening.md) for the operations
 > playbook.
 
@@ -42,7 +46,8 @@ priority, and stream metadata + audio to a frontend layered on top.
 | API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history}`); Server-Sent Events stream (`/api/v1/events`); WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + (stub) `AudioService` over the same in-process state |
 | Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log that subscribes to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs (config / talkgroup CSVs are preserved) |
 | Hardening         | Prometheus collector (events / calls / CC-locked / IQ-underrun / USB-reconnect / decode-error / SDR-attached / build-info series) exposed at `/metrics`; multi-stage `Dockerfile`; `docker-compose.yml` with RTL-SDR USB pass-through, healthcheck, and Prometheus scrape labels; non-root runtime user with `cap_add: DAC_OVERRIDE` |
-| Daemon wiring     | `cmd/gophertrunk run` composes events bus + SDR pool + talkgroup DB + trunking engine + voice pool + recorder + SQLite call log + retention sweeper + Prometheus collector + HTTP API + gRPC API into a single supervised process with signal-driven shutdown; everything optional is opt-in via `config.yaml` |
+| Daemon wiring     | `cmd/gophertrunk run` composes events bus + SDR pool + talkgroup DB + trunking engine + voice pool + recorder + demod composer + SQLite call log + retention sweeper + Prometheus collector + HTTP API + gRPC API into a single supervised process with signal-driven shutdown; everything optional is opt-in via `config.yaml` |
+| Demod pipeline    | `internal/voice/composer` subscribes to `CallStart` events, opens the bound Voice device's IQ stream, runs an LPF → decimate → FM demod → decimate → int16 PCM chain into the recorder, and pings `Engine.Touch` every second so the silent-call watchdog leaves the call alone. Digital-protocol grants are skipped pending the IMBE / AMBE+2 vocoders. |
 | Testing           | Per-package unit tests under `make test`; `make integration` boots the wired daemon end-to-end (no SDR), publishes a synthetic call on the bus, and asserts the engine + recorder + call log + metrics + API agree — runs on every CI build |
 
 ## What's intentionally deferred
@@ -66,16 +71,16 @@ The build plan calls these out by phase; the most visible items still ahead:
   ([`docs/vocoders.md`](docs/vocoders.md)). The recorder, plugin
   interface, and raw-frame sidecar that the decoders will plug into
   have already landed.
-- The remaining gating piece is the **demod-pipeline composer** —
-  the bridge that turns a `CallStart` event into a per-call FM /
-  C4FM / H-DQPSK chain on the bound Voice device, pushes PCM into
-  the recorder, and calls `Engine.Touch` on every voice frame. The
-  ingredients (DSP package, voice pool, recorder, engine) are all
-  in place and the daemon happily carries synthetic events through
-  the integration test today; the composer is meaningful new DSP
-  wiring and lands in a follow-up. Once it ships, the same wiring
-  carries real grants from the protocol decoders without further
-  changes.
+- The demod-pipeline composer landed in Phase 12 — `CallStart`
+  events flow through to a per-call FM voice chain on the bound
+  Voice device that pushes PCM into the recorder. The remaining
+  gating pieces are the **vocoders** (pure-Go IMBE for P25 Phase 1
+  is in progress; AMBE+2 stays behind the `mbelib` build tag) and
+  the **protocol decoders publishing grants on real signals**
+  (gated on the Phase 3/4/5 channel-coding deferrals + a band-plan
+  resolver). Once those land, the wiring already carries real
+  audio for analog FM today and will pick up digital voice without
+  further changes.
 
 ## ✨ Goals
 

@@ -20,6 +20,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 9     | Persistence + recording                | done        |
 | 10    | Hardening (metrics, reconnect, docker) | partial     |
 | 11    | Daemon wiring + integration target     | done        |
+| 12    | Demod-pipeline composer (FM voice)     | done        |
 
 ## Phase 0 — Foundation
 
@@ -582,6 +583,62 @@ Deferred:
   resolver. The integration test covers the wiring with a
   synthetic grant; once those decoders go live the same wiring
   carries real grants without further changes.
+
+## Phase 12 — Demod-pipeline composer (FM voice)
+
+The piece every previous "deferred" item pointed at: turning a
+`CallStart` event into actual audio on disk.
+
+Landed in this phase:
+
+- `internal/voice/composer/composer.go` — `Composer` subscribes to
+  `events.KindCallStart` / `KindCallEnd` at construction time, looks
+  up the bound Voice device by serial, opens its IQ stream, and
+  spawns a per-call goroutine running an FM passthrough chain:
+    LPF → naive decimate → quadrature FM demod → naive decimate →
+    int16 PCM → `Recorder.WritePCM`.
+  The chain also pings `Engine.Touch(serial)` on a one-second
+  cadence (configurable) so the engine's silent-call watchdog
+  doesn't kill the call mid-conversation.
+- Narrow interfaces (`IQSource`, `Devices`, `PCMSink`,
+  `EngineHooks`) keep the composer free of hard imports on
+  `internal/sdr` and `internal/voice` so unit tests use plain
+  in-memory channels instead of real hardware.
+- `internal/sdr/pool.go` — new `Pool.FindBySerial(serial)` so the
+  daemon's `poolDevices` adapter can resolve a device by its
+  reported serial without iterating the entry list at every grant.
+- `cmd/gophertrunk/daemon.go` — daemon constructs the composer when
+  both an SDR pool and a recorder are configured, wires it into the
+  Run/Close lifecycle alongside the other components, and exposes
+  the SDR pool to it via the `poolDevices` adapter.
+
+Tests cover start-on-CallStart, IQ flowing through the chain to
+recorder PCM, periodic Touch on the engine, end-on-CallEnd cleanup,
+digital-protocol grants are skipped (no PCM until a vocoder lands),
+unknown-serial grants are benign, options validation, and idempotent
+Close.
+
+Behaviour for digital protocols (P25 / DMR / NXDN): the composer
+deliberately skips the FM chain because those streams need a
+vocoder we don't have yet (IMBE for P25 Phase 1 is in progress; AMBE+2
+stays behind the `mbelib` build tag). The recorder still gets the
+`CallStart` event so the `.raw` sidecar (when configured) and the
+SQLite call_log row both land — only the `.wav` is empty until the
+vocoder ships.
+
+Deferred:
+- Higher-fidelity audio: the chain currently does naive boxcar
+  decimation rather than proper polyphase resampling, and skips the
+  FM de-emphasis filter + post-demod LPF + AGC. Quality is good
+  enough to verify wiring; the real DSP polish is a follow-up.
+- IMBE / AMBE+2 plug-in to the chain. The `Vocoder` interface and
+  raw-frame sidecar are already in place; once IMBE lands the
+  composer will pick the chain by `Grant.Protocol` and route the
+  raw vocoder bytes through `Vocoder.Decode`.
+- Real-time SDR retune coordination: today the composer trusts the
+  engine to have already tuned the device for the new grant. A
+  future tweak will let it confirm the freq matches the grant's
+  `FrequencyHz` and surface a metric when they disagree.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.

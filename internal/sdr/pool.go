@@ -137,6 +137,20 @@ func (p *Pool) AllByRole(r Role) []*PoolEntry {
 	return out
 }
 
+// FindBySerial returns the entry whose info.Serial matches, or nil.
+// Used by the demod-pipeline composer to look up a Voice device that
+// the engine has just bound to a call.
+func (p *Pool) FindBySerial(serial string) *PoolEntry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, e := range p.entries {
+		if e.Info.Serial == serial {
+			return e
+		}
+	}
+	return nil
+}
+
 func (p *Pool) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
