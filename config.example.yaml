@@ -1,0 +1,49 @@
+# Example GopherTrunk daemon configuration. Copy to ./config.yaml (or
+# whatever path you pass to `gophertrunk run -config`) and adjust to
+# match your hardware + systems.
+
+log:
+  level: info       # debug | info | warn | error
+  format: text      # text | json
+
+api:
+  http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
+  grpc_addr: "127.0.0.1:50051"  # gRPC
+
+metrics:
+  enabled: true     # mounts /metrics on the HTTP API
+
+storage:
+  path: "/var/lib/gophertrunk/calls.db"
+  cc_cache_file: "/var/lib/gophertrunk/cc-cache.json"
+
+recordings:
+  dir: "/var/lib/gophertrunk/recordings"
+  sample_rate: 8000
+  write_raw: true   # also append a .raw sidecar with the vocoder frames
+
+retention:
+  call_log_days: 30   # 0 disables call-log row sweep
+  files_days: 14      # 0 disables filesystem sweep
+  interval: "1h"      # how often the sweeper runs
+
+sdr:
+  sample_rate: 2_400_000
+  devices:
+    - serial: "00000001"   # match `gophertrunk sdr list`; first-found wins when blank
+      role: control        # control | voice | auto
+      ppm: 0
+      gain: "auto"
+    - serial: "00000002"
+      role: voice
+      ppm: 0
+      gain: "auto"
+
+trunking:
+  systems:
+    - name: "Example-P25"
+      protocol: p25
+      control_channels:
+        - 851_000_000
+        - 852_000_000
+      talkgroup_file: "/etc/gophertrunk/talkgroups-p25.csv"

@@ -27,6 +27,7 @@ type Engine struct {
 	timeout    time.Duration
 	now        func() time.Time
 	sub        *events.Subscription
+	closeOnce  sync.Once
 
 	mu    sync.Mutex
 	calls map[string]*ActiveCall // by device serial; mirror of pool.active for fast access
@@ -80,12 +81,14 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	return e, nil
 }
 
-// Close releases the engine's subscription. Safe to call after Run returns.
+// Close releases the engine's subscription. Safe to call concurrently
+// with Run; idempotent on repeat calls. Subscription.Close is itself
+// idempotent so we don't need to nil the field — that nil-write was
+// previously a race with Run's read of e.sub.C.
 func (e *Engine) Close() {
-	if e.sub != nil {
+	e.closeOnce.Do(func() {
 		e.sub.Close()
-		e.sub = nil
-	}
+	})
 }
 
 // Run drains grant events from the bus and runs the watchdog until ctx

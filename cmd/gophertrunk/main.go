@@ -69,26 +69,14 @@ func runDaemon(args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if len(cfg.SDR.Devices) > 0 {
-		pool := sdr.NewPool(logger)
-		var hints []sdr.Hint
-		for _, d := range cfg.SDR.Devices {
-			hints = append(hints, sdr.Hint{Serial: d.Serial, Role: sdr.ParseRole(d.Role)})
-		}
-		if err := pool.Open(hints); err != nil {
-			logger.Warn("sdr pool open failed", "err", err)
-		} else {
-			defer pool.Close()
-			for _, e := range pool.Entries() {
-				logger.Info("sdr ready", "driver", e.Info.Driver, "serial", e.Info.Serial, "role", e.Role.String())
-			}
-		}
-	} else {
-		logger.Info("no SDR devices configured; idling. Configure devices in YAML to begin.")
+	d, err := NewDaemon(cfg, version.Version, logger)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "daemon init: %v\n", err)
+		os.Exit(1)
 	}
-
-	<-ctx.Done()
-	logger.Info("shutting down")
+	if err := d.Run(ctx); err != nil && err != context.Canceled {
+		logger.Warn("daemon exited", "err", err)
+	}
 }
 
 func runSDR(args []string) {

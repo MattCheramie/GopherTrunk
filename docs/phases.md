@@ -19,6 +19,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 8     | API (gRPC + WebSocket)                 | done        |
 | 9     | Persistence + recording                | done        |
 | 10    | Hardening (metrics, reconnect, docker) | partial     |
+| 11    | Daemon wiring + integration target     | done        |
 
 ## Phase 0 — Foundation
 
@@ -516,6 +517,71 @@ Deferred:
   `Pool` already supervises devices; the `RecordUSBReconnect`
   metric hook is in place to track recoveries when reconnect logic
   lands.
+
+## Phase 11 — Daemon wiring + integration target
+
+The previous ten phases each delivered a self-contained library. This
+phase wires them together inside `cmd/gophertrunk run` and stands up
+the integration test the plan calls for.
+
+Landed in this phase:
+
+- `internal/config/config.go` — extended with `api`, `storage`,
+  `recordings`, `metrics`, and `retention` sections. Validation
+  rejects unreasonable sample rates and malformed retention
+  intervals; everything else is opt-in (zero values disable the
+  matching component).
+- `cmd/gophertrunk/daemon.go` — `Daemon` owns the lifecycle of every
+  long-lived component: events bus, SDR pool, talkgroup DB, trunking
+  engine, voice pool, recorder, SQLite call log, retention sweeper,
+  Prometheus collector, HTTP API, and gRPC API. `NewDaemon`
+  constructs in dependency order; `Run(ctx)` spawns one goroutine per
+  component via a tracked `sync.WaitGroup`; `Close()` tears them
+  down in reverse on `ctx.Done`. Components disabled by config are
+  simply not constructed.
+- `cmd/gophertrunk/main.go` — slimmed to argument parsing + a thin
+  call into `Daemon.Run`.
+- `cmd/gophertrunk/integration_test.go` (build-tagged
+  `//go:build integration`) — boots the daemon end-to-end with the
+  HTTP API + storage + recordings + metrics enabled, publishes a
+  synthetic call grant on the bus, and asserts every component
+  agrees:
+  - `/api/v1/calls/history` surfaces the row with the talkgroup
+    alpha tag.
+  - The recordings directory contains a `.wav` under
+    `<system>/<talkgroup>/...`.
+  - `/metrics` reflects `gophertrunk_calls_active 1` and the
+    `build_info` gauge with the supplied version.
+  - On `CallEnd`, `gophertrunk_calls_total{reason="normal"}` ticks.
+  Plus a smoke test that the daemon boots cleanly with every
+  optional component disabled.
+- `Makefile` — new `integration` target running the build-tagged
+  test under `-race`. The default `make test` stays a fast unit
+  run.
+- `.github/workflows/ci.yml` — runs `make integration` after the
+  unit-test step, so the wiring stays exercised on every PR.
+- `config.example.yaml` — operator-ready starter config covering
+  every section.
+
+Bug caught and fixed during testing: `trunking.Engine.Close()` was
+nil-ing `e.sub` after closing it, racing with `Run`'s read of
+`e.sub.C` — the same pattern fixed in `voice.Recorder` during
+Phase 7a. Wrapped in `sync.Once` and dropped the field mutation;
+`Subscription.Close` is itself idempotent.
+
+Deferred:
+- The actual demod-pipeline composer (subscribe to `CallStart` →
+  spin up a per-call FM/C4FM/H-DQPSK chain on the bound Voice
+  device → push PCM to `Recorder` and call `Engine.Touch`). The
+  ingredients (DSP package + voice pool + recorder) are all in
+  place; the composer is meaningful new DSP wiring and lands in a
+  follow-up.
+- Protocol decoders publishing `events.KindGrant` on a real signal.
+  The decoders themselves work synthetically today; the gating piece
+  is the Phase 3 / 4 / 5 channel-coding deferrals + a band-plan
+  resolver. The integration test covers the wiring with a
+  synthetic grant; once those decoders go live the same wiring
+  carries real grants without further changes.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.

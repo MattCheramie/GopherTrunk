@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test lint tidy vet clean run proto
+.PHONY: all build test integration lint tidy vet clean run proto
 
 all: build
 
@@ -14,6 +14,12 @@ build:
 
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
+
+# integration boots the wired daemon (no real SDR) end-to-end and asserts
+# the engine + recorder + call log + metrics + API agree on a synthetic
+# call. Build-tagged so default `make test` stays a fast unit run.
+integration:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

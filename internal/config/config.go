@@ -4,14 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Log      LogConfig      `yaml:"log"`
-	SDR      SDRConfig      `yaml:"sdr"`
-	Trunking TrunkingConfig `yaml:"trunking"`
+	Log        LogConfig        `yaml:"log"`
+	SDR        SDRConfig        `yaml:"sdr"`
+	Trunking   TrunkingConfig   `yaml:"trunking"`
+	API        APIConfig        `yaml:"api"`
+	Storage    StorageConfig    `yaml:"storage"`
+	Recordings RecordingsConfig `yaml:"recordings"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
+	Retention  RetentionConfig  `yaml:"retention"`
 }
 
 type LogConfig struct {
@@ -40,6 +46,45 @@ type SystemConfig struct {
 	Protocol         string   `yaml:"protocol"`
 	ControlChannels  []uint32 `yaml:"control_channels"`
 	TalkgroupFile    string   `yaml:"talkgroup_file"`
+}
+
+// APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
+// Both addresses are TCP listen specifiers (":8080", "127.0.0.1:9000",
+// etc.). An empty value disables that surface.
+type APIConfig struct {
+	HTTPAddr string `yaml:"http_addr"`
+	GRPCAddr string `yaml:"grpc_addr"`
+}
+
+// StorageConfig configures the SQLite call log. An empty Path disables
+// persistence (the daemon still runs, just without a call history).
+type StorageConfig struct {
+	Path string `yaml:"path"`
+	// CCCacheFile is the JSON cache used by the CC hunter. Empty disables.
+	CCCacheFile string `yaml:"cc_cache_file"`
+}
+
+// RecordingsConfig configures the per-call WAV recorder.
+type RecordingsConfig struct {
+	Dir         string `yaml:"dir"`
+	SampleRate  uint32 `yaml:"sample_rate"`
+	WriteRaw    bool   `yaml:"write_raw"`
+}
+
+// MetricsConfig toggles the Prometheus collector. The /metrics endpoint
+// is mounted on the API HTTP server when both Enabled is true and the
+// API HTTP address is configured.
+type MetricsConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// RetentionConfig configures the background sweeper that ages out call
+// log rows and recorded files. Zero values disable the corresponding
+// sweep; both can be active independently.
+type RetentionConfig struct {
+	CallLogDays int           `yaml:"call_log_days"`
+	FilesDays   int           `yaml:"files_days"`
+	Interval    string        `yaml:"interval"` // Go duration string; default 1h
 }
 
 func Default() Config {
@@ -88,5 +133,19 @@ func (c Config) Validate() error {
 			return fmt.Errorf("trunking.systems[%d]: protocol must be p25|dmr|nxdn", i)
 		}
 	}
+	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
+		return fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)
+	}
+	if c.Retention.Interval != "" {
+		if _, err := parseDurationFlexible(c.Retention.Interval); err != nil {
+			return fmt.Errorf("retention.interval: %w", err)
+		}
+	}
 	return nil
+}
+
+// parseDurationFlexible accepts a Go duration string. Wrapped here so
+// the dependency lives in one place and tests can lean on it.
+func parseDurationFlexible(s string) (time.Duration, error) {
+	return time.ParseDuration(s)
 }
