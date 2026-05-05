@@ -7,13 +7,16 @@ and decodes the control channels of P25, DMR, and NXDN trunked radio systems
 — with the engine pieces that follow voice grants, hold talkgroups by
 priority, and stream metadata + audio to a frontend layered on top.
 
-> **Status: under active development.** Phases 0 – 6 of the build plan have
-> landed (foundation, SDR hardware, DSP core, P25 Phase 1 control channel,
-> system-ID & CC hunter, DMR Tier III CSBK, NXDN frame structure, and the
-> trunking engine — talkgroup DB + priority preemption + voice-device
-> allocator + grant follower). The full phased roadmap lives in
-> [`docs/phases.md`](docs/phases.md); the architectural overview is in
-> [`docs/architecture.md`](docs/architecture.md).
+> **Status: under active development.** Phases 0 – 7a of the build plan
+> have landed (foundation, SDR hardware, DSP core, P25 Phase 1 control
+> channel, system-ID & CC hunter, DMR Tier III CSBK, NXDN frame
+> structure, the trunking engine — talkgroup DB + priority preemption +
+> voice-device allocator + grant follower — and the voice
+> infrastructure: vocoder plugin interface, per-call WAV writer, and a
+> raw-frame sidecar so users can BYO decoder). The full phased roadmap
+> lives in [`docs/phases.md`](docs/phases.md); the architectural
+> overview is in [`docs/architecture.md`](docs/architecture.md); the
+> vocoder-licensing situation is in [`docs/vocoders.md`](docs/vocoders.md).
 
 ## What's built so far
 
@@ -27,6 +30,7 @@ priority, and stream metadata + audio to a frontend layered on top.
 | NXDN              | 192-dibit frame layout (4800 BFSK / 9600 4-FSK), LICH parse with parity + 16-bit doubled-wire decoder, FSW correlator, CAC parser with CRC, RCCH opcode enum + payload parsers, control-channel state machine |
 | Orchestration     | In-process pub/sub event bus, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
 | Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
+| Voice infrastructure | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder that subscribes to `CallStart` / `CallEnd` and writes `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder |
 | Daemon            | `cmd/gophertrunk` with `version`, `sdr list`, and `run` subcommands; YAML config; `log/slog`; signal-driven shutdown |
 
 ## What's intentionally deferred
@@ -44,9 +48,12 @@ The build plan calls these out by phase; the most visible items still ahead:
   live captures end-to-end).
 - Hamming(20,8) over the DMR slot-type field; SACCH FEC + sub-frame
   interleaver for NXDN.
-- Voice frame decoding — IMBE for P25 Phase 1 lands as Phase 7; AMBE+2
-  (P25 Phase 2 / DMR / NXDN) is gated behind a `mbelib` build tag for
-  patent-licensing clarity.
+- Voice frame _decoding_ — the pure-Go IMBE decoder for P25 Phase 1 is
+  in progress (patents have expired); AMBE+2 (P25 Phase 2 / DMR / NXDN)
+  stays gated behind a `mbelib` build tag for patent-licensing clarity
+  ([`docs/vocoders.md`](docs/vocoders.md)). The recorder, plugin
+  interface, and raw-frame sidecar that the decoders will plug into
+  have already landed.
 - gRPC + WebSocket API surfaces (Phase 8), persistence + recording
   (Phase 9), and hardening (metrics, reconnect, Docker — Phase 10).
 

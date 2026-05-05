@@ -13,7 +13,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 4     | DMR trunking (Tier II + Tier III)      | partial     |
 | 5     | NXDN trunking                          | partial     |
 | 6     | Trunking engine (grant follower)       | partial     |
-| 7a    | Voice passthrough (FM, raw frames)     | upcoming    |
+| 7a    | Voice passthrough (FM, raw frames)     | done        |
 | 7b    | IMBE (P25 Phase 1, default)            | upcoming    |
 | 7c    | AMBE+2 (mbelib build tag, DVSI)        | upcoming    |
 | 8     | API (gRPC + WebSocket)                 | deferred    |
@@ -274,6 +274,57 @@ Deferred to follow-up phases:
 - Multi-site neighbor list + affiliation-based site selection
   (extension to `internal/trunking/site.go`).
 - Daemon-side wiring of the Engine into `cmd/gophertrunk run`.
+
+## Phase 7a — Voice infrastructure (recorder + plugin model)
+
+Landed in this phase:
+
+- `internal/voice/vocoder.go` — `Vocoder` interface (Name, FrameSize,
+  Decode, Reset, Close) + thread-safe `Registry` keyed by name plus
+  a `VocoderFactory` so each call gets a fresh decoder instance and
+  internal state can't bleed between calls. `NullVocoder` is
+  registered by default and emits 20 ms of silence per frame, giving
+  the daemon a safe always-available decoder.
+- `internal/voice/wav.go` — 16-bit PCM mono WAV writer over an
+  `io.WriteSeeker` with a `NewWavFile` convenience for on-disk
+  recording. RIFF / data length fields are patched on `Close` so a
+  daemon crash leaves a still-readable file.
+- `internal/voice/recorder.go` — Per-call recorder that subscribes
+  to `events.KindCallStart` / `KindCallEnd` from the trunking
+  engine, opens a WAV (and optional raw-frame sidecar) under
+  `<OutDir>/<system>/<talkgroup>/<UTC>_src<src>.{wav,raw}`, exposes
+  `WritePCM(serial, samples)` and `WriteRawFrame(serial, frame)`
+  for the future demod pipeline to push into, and closes everything
+  cleanly on `Close()`.
+- `docs/vocoders.md` — Vocoder licensing realities (IMBE patents
+  expired, AMBE+2 still encumbered), the plugin-model rationale, and
+  build-tag-gated paths for `mbelib` and DVSI hardware backends.
+
+Tests cover NullVocoder silence output + frame size, registry
+listing + factory lookup, default registry contents, WAV header
+shape + little-endian sample serialisation + length patching +
+double-Close idempotency + zero-rate rejection, recorder per-call
+WAV emission with the documented filename layout, raw-frame sidecar
+appending, dropped writes when no session exists, clean Close
+draining open sessions, and filename sanitisation.
+
+Bugs caught and fixed during testing:
+- Recorder originally nil-ed `r.sub` after closing it, racing with
+  the still-running Run goroutine's read of `r.sub.C`. Wrapped the
+  Close path in `sync.Once` and rely on `Subscription.Close`'s own
+  idempotency, removing the field mutation entirely.
+- Test inspected `r.sessions` without holding the lock; added
+  `SessionCount()` and `HasSession()` accessors that take the lock
+  internally, race-free for tests.
+
+Deferred:
+- Pure-Go IMBE decoder (`internal/voice/imbe`) for P25 Phase 1
+  voice frames. Core patents have expired; this lands alongside
+  actual P25 LDU1 / LDU2 decoding (Phase 7b in the plan).
+- `mbelib` CGO wrapper behind `-tags mbelib` for AMBE+2 (Phase 7c).
+- DVSI USB-3000 / AMBE-3003 hardware backend.
+- Demod pipeline that produces the PCM samples / raw frames the
+  recorder consumes (gated on the Phase 6 wiring deferrals).
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
