@@ -1,3 +1,5 @@
+![GopherTrunk](GopherTrunkLogo.png)
+
 # GopherTrunk 📻🐹
 
 A headless, low-latency digital-trunking scanner engine in Go.
