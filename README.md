@@ -57,6 +57,144 @@ The Go interfaces and event payloads carry digital protocols already,
 so dropping in a band-plan resolver and IMBE will light up the
 remaining paths without further changes elsewhere.
 
+## Roadmap
+
+These are the next four feature areas on the table, mapped to where
+they plug into the existing architecture. Order isn't fixed; each is
+landable independently.
+
+### 1. Tone-out alerting
+
+Mirrors the "Tone-Out" feature on hardware scanners: fire an alarm
+only when a specific paging tone (or tone pair) is heard on a
+configured channel. Most US fire / EMS departments use **Two-Tone
+Sequential** (Motorola Quick Call II — typically a 0.5–1.5 s
+"A-tone" in the 250–1100 Hz range followed by a ~3 s "B-tone" in
+roughly the same range). Some agencies use single-tone, GE/Reach,
+EAS preamble tones, or DTMF.
+
+Where it fits:
+
+- Audio is already produced by `internal/voice/composer` for analog
+  FM channels. A new `internal/voice/toneout` package subscribes to
+  PCM frames per device serial (same surface the recorder uses),
+  runs a bank of Goertzel detectors tuned to configured tone
+  frequencies, and matches against per-channel tone profiles.
+- Detections publish a new `events.KindToneAlert` with a payload
+  carrying the system name, channel info, the matched tone(s), an
+  alpha tag from config, and the inbound audio segment.
+- The events bus carries the alert to anyone subscribed: the API's
+  SSE / WebSocket stream gets it for free, the Prometheus
+  collector ticks a `gophertrunk_tone_alerts_total{profile}`
+  counter, and operators can wire a webhook subscriber.
+- Config grows a `tone_profiles` section: profile name, frequency
+  list, per-tone duration window + Hz tolerance, optional channel
+  / talkgroup filter, optional dwell (ignore re-fires within N s).
+
+Bounded scope; the DSP and event plumbing are already in place.
+
+### 2. TrunkTracker-style multi-system grant following
+
+Marketed by Uniden as TrunkTracker, this is exactly what the engine
+already does for the protocols we currently decode: parse a control
+channel, see a Group Voice Channel Grant, retune a Voice SDR, follow
+the call. The architecture covers it; what's missing is **decoders
+for additional trunking systems** so the existing
+`events.KindGrant` → engine pipeline carries them.
+
+Targets, easiest to hardest:
+
+- **Motorola Type II / SmartZone (3600 baud).** Best documented
+  legacy trunked system; an OSW (Outbound Status Word) decoder
+  fits in `internal/radio/motorola/` and publishes a `Grant` with
+  the existing `Protocol="motorola"` tag. The hardest piece is
+  the channel-number → Hz band-plan mapping, which is per-system
+  config (matches what the P25 work already needs).
+- **EDACS / GE-Marc (9600 baud control channel).** Public format;
+  similar shape to Motorola Type II.
+- **LTR (Logic Trunked Radio).** Each repeater carries its own
+  status word at 300 baud; no central control channel. The engine
+  supports the per-repeater "trunk-as-conventional" pattern via the
+  same `Grant` payload.
+- **MPT-1327.** UK / Commonwealth utility trunking; cleanly
+  documented MAP-27 messages.
+- **P25 Phase 2 (TDMA H-DQPSK superframes).** The H-DQPSK demod and
+  most framing primitives are already in place; what's missing is
+  the TDMA superframe sync and the superframe / voice slot
+  state machine. Same `Grant` once the channel-number resolves.
+
+Each addition is a contained `internal/radio/<system>/` package that
+plugs into the engine via the existing event bus — no changes to
+the engine, recorder, composer, or API surfaces needed.
+
+### 3. Simulcast mitigation (the SDR-side equivalent of "True I/Q")
+
+Premium hardware scanners advertise a "True I/Q" front-end that
+fights **simulcast distortion** — the audio garble you hear when
+multiple cell towers transmit the identical signal on the same
+frequency and the differing arrival delays at the receiver smear
+the symbols (it's effectively self-multipath). GopherTrunk runs on
+SDR hardware so it always has full I/Q access; the actual win
+versus a hardware scanner is what you do with it once you have it.
+
+Two complementary improvements:
+
+- **Per-channel adaptive equalizer.** A new `internal/dsp/equalizer`
+  package implementing an LMS or RLS feed-forward equalizer slotted
+  between the channelizer and the demodulator. Fights inter-symbol
+  interference from multipath / simulcast delay spread. Most
+  effective on digital protocols (P25 / DMR / NXDN) where pilot
+  symbols give the equalizer something to lock to; for analog FM
+  the same multipath becomes audible artefacts that the equalizer
+  can soften via the IQ envelope.
+- **Multi-receiver IQ combining.** When two RTL-SDR dongles are
+  connected to antennas at different positions (or the same antenna
+  via a splitter), per-tower IQ streams can be coherently combined
+  via maximal-ratio or selection combining to recover the cleaner
+  stream. The `sdr.Pool` already supports multiple devices; the
+  composer's chain abstraction lets a "diversity combiner" stage
+  slot in ahead of the demodulator.
+
+Both items live under `internal/dsp/` and wire into the existing
+demod chains without touching the trunking engine or higher
+layers.
+
+### 4. Expanding digital-mode coverage
+
+The hardware-scanner equivalent is firmware "digital upgrades" that
+unlock DMR, NXDN, and ProVoice. GopherTrunk's `Vocoder` plugin
+interface and raw-frame sidecar are already in place; the work
+splits into vocoders (decoding voice frames) and protocols
+(decoding signalling).
+
+Vocoders:
+
+- **IMBE for P25 Phase 1** — pure-Go decoder. Core US patents are
+  expired; the algorithm is implementable. Default build target.
+- **AMBE+2** — the licensing reality is documented in
+  [`docs/vocoders.md`](docs/vocoders.md). The plan is a `mbelib`
+  CGO wrapper behind the `-tags mbelib` build tag (off by default)
+  and a DVSI USB-3000 / AMBE-3003 hardware backend for operators
+  who hold a licence.
+- **ProVoice** (GE/Harris, EDACS family) is patent- and
+  trade-secret-encumbered with limited public documentation.
+  Realistic path: raw-frame export only, with decoding deferred to
+  hardware vocoders or operator-supplied plugins via the same
+  `Vocoder` registry.
+
+Protocols:
+
+- **dPMR (digital PMR446)** — public ETSI TS 102 658 spec, similar
+  framing to NXDN. A natural addition once NXDN's SACCH FEC lands.
+- **TETRA** — full public spec (ETSI TS 100 392); large undertaking
+  but well-defined.
+- **D-STAR / Yaesu System Fusion** — amateur-radio digital modes
+  with public specs. Lower priority.
+
+The vocoder pieces are pure plug-ins. New protocols follow the
+same `internal/radio/<protocol>/` shape used for P25 / DMR / NXDN
+and publish events via the existing bus.
+
 ## Tech stack
 
 - **Language:** Go 1.24+
