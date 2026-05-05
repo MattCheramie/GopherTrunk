@@ -152,7 +152,7 @@ Each addition is a contained `internal/radio/<system>/` package that
 plugs into the engine via the existing event bus — no changes to
 the engine, recorder, composer, or API surfaces needed.
 
-### 3. Simulcast mitigation (the SDR-side equivalent of "True I/Q")
+### 3. Simulcast mitigation (the SDR-side equivalent of "True I/Q") 🟡 partial
 
 Premium hardware scanners advertise a "True I/Q" front-end that
 fights **simulcast distortion** — the audio garble you hear when
@@ -162,23 +162,44 @@ the symbols (it's effectively self-multipath). GopherTrunk runs on
 SDR hardware so it always has full I/Q access; the actual win
 versus a hardware scanner is what you do with it once you have it.
 
-Two complementary improvements:
+What's wired:
 
-- **Per-channel adaptive equalizer.** A new `internal/dsp/equalizer`
-  package implementing an LMS or RLS feed-forward equalizer slotted
-  between the channelizer and the demodulator. Fights inter-symbol
-  interference from multipath / simulcast delay spread. Most
-  effective on digital protocols (P25 / DMR / NXDN) where pilot
-  symbols give the equalizer something to lock to; for analog FM
-  the same multipath becomes audible artefacts that the equalizer
-  can soften via the IQ envelope.
+- **`internal/dsp/equalizer`** ships two adaptive equalizers for
+  the demod chain:
+  - **LMS** (`lms.go`) — complex tapped-delay-line FIR with the
+    standard Least-Mean-Squares update
+    `w[n+1] = w[n] + μ · x[n] · conj(e[n])`. Trained with a
+    reference symbol (training preamble) or in decision-directed
+    mode with the slicer's hard decision. Centre-spike init makes
+    a clean channel benign; on a 2-tap multipath QPSK channel the
+    test sweep drives MSE down by > 4× over 4 000 symbols.
+  - **CMA** (`cma.go`) — Constant Modulus Algorithm blind
+    equalizer (Godard/CMA-2 cost) for PSK-family signals where no
+    training preamble is available. Drives `|y|^2` toward a
+    configurable `R^2`; documented phase-blindness caveat.
+  - Both expose `Reset()`, `Taps()`, and a single-sample
+    `Process` so a chain stage can drop them in between the
+    channelizer and the symbol-time-recovery / demodulator stages.
+- Tests cover LMS convergence on a 2-tap multipath QPSK channel
+  (early vs late MSE), centre-spike reset, bad-config panics,
+  CMA constellation opening (RMS deviation of `|y|^2` from `R^2`
+  after settle), CMA reset, and delay-aligned passthrough on a
+  clean channel.
+
+Still ahead:
+
+- **Wiring into the composer chain** so a per-call equaliser slot
+  lights up automatically for protocols that benefit. This is the
+  natural follow-up once a digital protocol with pilot symbols
+  (P25 Phase 1 once the trellis tables land, Motorola Type II
+  once the MSK demod ships) is end-to-end.
 - **Multi-receiver IQ combining.** When two RTL-SDR dongles are
-  connected to antennas at different positions (or the same antenna
-  via a splitter), per-tower IQ streams can be coherently combined
-  via maximal-ratio or selection combining to recover the cleaner
-  stream. The `sdr.Pool` already supports multiple devices; the
-  composer's chain abstraction lets a "diversity combiner" stage
-  slot in ahead of the demodulator.
+  connected to antennas at different positions (or the same
+  antenna via a splitter), per-tower IQ streams can be coherently
+  combined via maximal-ratio or selection combining to recover
+  the cleaner stream. `sdr.Pool` already supports multiple
+  devices; the composer's chain abstraction lets a diversity
+  combiner stage slot in ahead of the demodulator.
 
 Both items live under `internal/dsp/` and wire into the existing
 demod chains without touching the trunking engine or higher
