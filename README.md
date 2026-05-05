@@ -343,8 +343,34 @@ Protocols:
   cc.locked / grant / cc.lost emission path. The 4FSK demodulator,
   CSBK FEC + interleaver, and AMBE+2 vocoder are honest
   deferrals listed in the package's doc comment.
-- **TETRA** — full public spec (ETSI TS 100 392); large undertaking
-  but well-defined.
+- ✅ **TETRA (Trunked-Mode Operation).** `internal/radio/tetra/`
+  — TMO signalling per ETSI EN 300 392-2. Ships normal +
+  extended training-sequence sync constants and a tolerant
+  `SyncDetector`, a generic Layer-3 `PDU` parser
+  (4-bit Discriminator + 4-bit type + payload), CMCE D-CONNECT /
+  D-TX-GRANTED accessors that surface the 14-bit Call Identifier,
+  24-bit Source + Destination SSIs, 12-bit Carrier Number,
+  2-bit Timeslot, plus group / emergency / encryption flags;
+  D-RELEASE accessor with disconnect cause; MLE-SYSINFO
+  accessor that decodes the 10-bit MCC + 14-bit MNC + 14-bit
+  Location Area; a `LinearBandPlan` / `TableBandPlan` carrier
+  resolver (TETRA-380 / 410 / 800 typical at 25 kHz spacing);
+  and a control-channel state machine that publishes
+  `cc.locked` on the first SYSINFO (or first voice grant) and
+  `grant` with `trunking.Grant.Protocol = "tetra"` on
+  D-CONNECT / D-TX-GRANTED. Tests cover PDU byte + bit
+  round-trip, Discriminator classification, AsVoiceGrant field
+  extraction (with both D-CONNECT and D-TX-GRANTED) + rejection
+  on wrong type / wrong Discriminator / short payload,
+  AsRelease, AsSystemBroadcast, IsIdle, sync constant
+  distinctness + exact + tolerant matching, both band-plan
+  strategies (including zero-spacing + negative-index errors),
+  and the cc.locked / grant / no-resolver / cc.lost /
+  no-republish paths. The π/4-DQPSK demod, TDMA timing
+  recovery, RCPC + Reed-Muller FEC across BSCH / AACH / SCH/F /
+  BNCH, end-to-end TEA1/2/3/4 encryption, and AMBE+2 voice
+  decode are honest deferrals listed in the package's doc
+  comment.
 - **D-STAR / Yaesu System Fusion** — amateur-radio digital modes
   with public specs. Lower priority.
 
