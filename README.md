@@ -150,13 +150,25 @@ What's wired:
   emission path. The 9600-baud GMSK demodulator + the
   interleaved Reed-Solomon-derived FEC are honest deferrals,
   spelled out in the package's doc comment.
+- **LTR (Logic Trunked Radio).** `internal/radio/ltr/` —
+  41-bit per-repeater Status word parser
+  (`Sync + Area + Group flag + Channel + Home + GroupID + Free
+  + FCS`), `Channel → Hz` band-plan resolver (linear and
+  table), and a per-repeater state machine that publishes
+  `cc.locked` on the first valid status and `grant` (with
+  `trunking.Grant.Protocol = "ltr"`) when a status indicates
+  an active call. Architecturally different from the
+  central-CC trunked systems above: each repeater is its own
+  conventional channel and carries its own status word at
+  300 bps under the in-band voice. Optional area filter so
+  one physical channel can host multiple LTR systems without
+  cross-talk. Tests cover status round-trip, area filtering,
+  active-call detection, no-republish-on-same-group, no-resolver
+  fallback, and the cc.locked / cc.lost emissions. The 300-baud
+  sub-audible status-word demodulator is the honest deferral.
 
 Still ahead:
 
-- **LTR (Logic Trunked Radio).** Each repeater carries its own
-  status word at 300 baud; no central control channel. The engine
-  supports the per-repeater "trunk-as-conventional" pattern via the
-  same `Grant` payload.
 - **MPT-1327.** UK / Commonwealth utility trunking; cleanly
   documented MAP-27 messages.
 - **P25 Phase 2 (TDMA H-DQPSK superframes).** The H-DQPSK demod and
