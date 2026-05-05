@@ -103,23 +103,38 @@ Future work: live-frequency refinement (track the actually-matched
 bin rather than the configured one), DTMF / concurrent multi-tone
 profiles, and a Prometheus counter for fired alerts.
 
-### 2. TrunkTracker-style multi-system grant following
+### 2. TrunkTracker-style multi-system grant following 🟡 partial
 
 Marketed by Uniden as TrunkTracker, this is exactly what the engine
 already does for the protocols we currently decode: parse a control
 channel, see a Group Voice Channel Grant, retune a Voice SDR, follow
-the call. The architecture covers it; what's missing is **decoders
+the call. The architecture covers it; what's needed is **decoders
 for additional trunking systems** so the existing
 `events.KindGrant` → engine pipeline carries them.
 
-Targets, easiest to hardest:
+What's wired:
 
-- **Motorola Type II / SmartZone (3600 baud).** Best documented
-  legacy trunked system; an OSW (Outbound Status Word) decoder
-  fits in `internal/radio/motorola/` and publishes a `Grant` with
-  the existing `Protocol="motorola"` tag. The hardest piece is
-  the channel-number → Hz band-plan mapping, which is per-system
-  config (matches what the P25 work already needs).
+- **Motorola Type II / SmartZone.** `internal/radio/motorola/` —
+  OSW (Outbound Status Word) parser, opcode constants
+  (GroupVoiceChannelGrant, GroupVoiceChannelGrantUpdate,
+  AdjacentSiteStatus, SystemIDExtended, Idle, Encryption,
+  Emergency), an `LCN → Hz` band-plan resolver with linear and
+  table strategies, and a control-channel state machine that
+  ingests OSWs and publishes `cc.locked` (on
+  SystemIDExtended) and `grant` (on the voice-grant opcodes) on
+  the events bus, with the `trunking.Grant.Protocol` tag set to
+  `"motorola"`. Same shape as the P25 / DMR / NXDN packages.
+  Tests cover OSW round-trip, opcode + LCN extraction, the
+  per-grant-type accessors, both band-plan strategies, sync
+  detection with tolerance, and the control-channel emission path.
+- The Motorola **MSK demodulator** + **BCH(64,16,11)** error
+  corrector that turn IQ into the bits the OSW parser consumes
+  are honest deferrals — the package's doc comment lists them
+  explicitly so a contributor can pick them up. Same pattern as
+  the P25 trellis-tables / TSBK-interleaver gap.
+
+Still ahead:
+
 - **EDACS / GE-Marc (9600 baud control channel).** Public format;
   similar shape to Motorola Type II.
 - **LTR (Logic Trunked Radio).** Each repeater carries its own
