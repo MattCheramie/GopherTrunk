@@ -10,7 +10,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 2     | DSP core (channelizer, demods)         | done        |
 | 3     | P25 trunking (Phase 1 then Phase 2)    | partial     |
 | 3.5   | System ID & control-channel hunting    | done        |
-| 4     | DMR trunking (Tier II + Tier III)      | upcoming    |
+| 4     | DMR trunking (Tier II + Tier III)      | partial     |
 | 5     | NXDN trunking                          | upcoming    |
 | 6     | Trunking engine (grant follower)       | upcoming    |
 | 7a    | Voice passthrough (FM, raw frames)     | upcoming    |
@@ -119,6 +119,51 @@ Wiring into the daemon (`cmd/gophertrunk`) belongs to Phase 6 along
 with the demod pipeline that ultimately publishes `cc.locked` for the
 hunter to consume — in this phase the hunter is library-ready and
 unit-tested but not yet reachable from the CLI.
+
+## Phase 4 — DMR Trunking (in progress)
+
+Landed in this phase:
+
+- `internal/radio/framing/hamming1393.go` — Hamming(13,9,3) encoder +
+  single-error-correcting decoder. Used as the BPTC column code.
+- `internal/radio/framing/bptc.go` — BPTC(196,96) encoder + iterative
+  Hamming row/column decoder, plus the channel interleaver
+  (out[i] = in[(i*181) mod 196]) and its inverse.
+- `internal/radio/dmr/sync.go` — All 9 ETSI sync patterns (BS-Voice,
+  BS-Data, MS-Voice, MS-Data, MS-RC, DM-Voice T1/T2, DM-Data T1/T2)
+  as 48-bit constants and 24-dibit decompositions, plus a sliding
+  sync detector.
+- `internal/radio/dmr/burst.go` — DMR burst layout (132 dibits = 49 +
+  5 + 24 + 5 + 49) with helpers to extract each section. PayloadBits
+  concatenates the two info halves into the 196-bit BPTC codeword.
+- `internal/radio/dmr/slottype.go` — Color Code + Data Type enum
+  (CSBK / VoiceLCHeader / Idle / etc.) with assemble/parse.
+- `internal/radio/dmr/tier3/csbk.go` — CSBK assemble/parse with CRC
+  trailer, opcode enum (Aloha, RAND, Ahoy, MoveTSCC, Preamble,
+  TV/PV/TD/PD-Grant, AdjacentSiteStatus, SystemInfo).
+- `internal/radio/dmr/tier3/payloads.go` — payload parsers for
+  TalkGroup/Private Voice grants, Aloha, AdjacentSiteStatus, and
+  SystemInfoBroadcast.
+- `internal/radio/dmr/tier3/control.go` — control-channel state
+  machine that consumes bursts whose Slot Type identifies a CSBK,
+  runs BPTC + CRC, and emits `cc.locked` / `cc.lost` events with a
+  DMR-specific LockState payload.
+
+Tests cover Hamming(13,9,3) full round-trip + every single-bit error
+position; BPTC encode→decode round-trip, single-bit error correction
+across all 196 positions, all-zero/all-one fills, and interleave-as-
+permutation; DMR sync hex distinctness, dibit decomposition, clean +
+tolerant matching, and best-match selection; burst slice geometry and
+PayloadBits unpacking; CSBK round-trip + CRC corruption detection;
+opcode payload parsers; and the control-channel emission path.
+
+Deferred to follow-up phases:
+- Hamming(20,8) over the 20-bit slot-type field (ETSI Annex B.1.4).
+- Embedded LC reassembly across superframes for voice bursts.
+- Tier II conventional / repeater operation distinct from the Tier
+  III scaffolding (Tier II is mostly a configuration variation).
+- Voice burst payload (two AMBE+2 frames per burst) — Phase 7.
+- Vendor extensions behind FID != 0 (Hytera, Motorola Connect+).
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
