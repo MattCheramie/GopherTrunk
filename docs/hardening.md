@@ -1,8 +1,8 @@
 # Hardening & operations
 
-This page covers the production-readiness items that landed in
-Phase 10 of the build plan: Prometheus metrics, graceful shutdown,
-the Docker assets, and the USB pass-through recipe.
+Operator playbook for running GopherTrunk in production: Prometheus
+metrics, graceful shutdown, the Docker assets, and the RTL-SDR USB
+pass-through recipe.
 
 ## Metrics
 
@@ -110,13 +110,19 @@ USB pass-through are misconfigured — check `dmesg` on the host for
 DVB driver claims, and `ls -l /dev/bus/usb/...` from inside the
 container.
 
-## Integration test (deferred)
+## Integration test
 
-The plan calls for a `make integration` target that replays 30 minutes
-of recorded IQ through the full stack and diffs the resulting event
-totals against a golden manifest. That replay path needs the
-demod-pipeline composer (gated on the Phase 3/4/5 channel-coding
-deferrals plus the per-call demod chain) before it can run end-to-end,
-so the integration target is not yet wired up. The metrics, Docker
-assets, and graceful-shutdown plumbing here are independent and ready
-to use today.
+`make integration` boots the wired daemon end-to-end (no real SDR),
+publishes a synthetic call grant on the events bus, and asserts every
+component agrees: the call appears in the SQLite history, a `.wav`
+lands under `<recordings>/<system>/<talkgroup>/`, `/metrics` reflects
+`gophertrunk_calls_active 1`, and `CallEnd` ticks
+`gophertrunk_calls_total{reason="normal"}`. The target runs on every
+CI build alongside the unit tests.
+
+A live-IQ replay variant (replay a recorded `.cfile` through the
+real SDR mock + protocol decoders + composer chain and diff the
+resulting event totals against a golden manifest) is future work —
+it needs live grant publication from the protocol decoders, which is
+gated on the channel-coding pieces still in flight (P25 trellis +
+TSBK interleaver, DMR slot-type Hamming(20,8), NXDN SACCH FEC).

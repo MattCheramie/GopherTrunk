@@ -17,8 +17,8 @@ import (
 //
 // The engine deliberately knows nothing about the demod pipeline — it
 // just tunes Voice devices and publishes structured events. Downstream
-// consumers (Phase 7 voice decoder, Phase 9 recorder) subscribe to the
-// CallStart / CallEnd events to do their work.
+// consumers (the voice composer + recorder, the SQLite call log)
+// subscribe to the CallStart / CallEnd events to do their work.
 type Engine struct {
 	bus        *events.Bus
 	log        *slog.Logger

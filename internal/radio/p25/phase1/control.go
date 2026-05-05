@@ -14,8 +14,8 @@ import (
 // (placeholder) TSBK extraction. Trellis decoding and TSBK CRC validation
 // for the live stream land alongside the interleaver work in a follow-up
 // — for now the state machine emits CCLocked / CCLost events when a NID
-// with a TSDU DUID is observed, which is enough to drive Phase 3.5 (CC
-// hunting) and gives downstream layers a stable surface to subscribe to.
+// with a TSDU DUID is observed, which is enough to drive the CC hunter
+// and gives downstream layers a stable surface to subscribe to.
 type ControlChannel struct {
 	bus     *events.Bus
 	log     *slog.Logger
@@ -80,9 +80,10 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	return next
 }
 
-// LossThreshold is the number of consecutive Process calls without a TSDU
-// NID after which CCLost is published. Loss tracking is intentionally
-// simple — Phase 3.5 (CC hunting) replaces this with a watchdog.
+// MarkLost publishes a CCLost event for the current frequency and resets
+// the locked flag. Loss tracking is intentionally simple — the engine /
+// hunter pair owns the watchdog logic and calls this when the control
+// channel goes silent.
 func (c *ControlChannel) MarkLost() {
 	if !c.locked {
 		return

@@ -21,32 +21,32 @@ hardware are interchangeable.
 └─────────────┘        └─────────────┘            └─────────────┘
 
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/sdr (Phase 1)                                      │
+│  internal/sdr                                                │
 │    Driver registry → rtlsdr (CGO), mock (file replay)        │
 │    Pool: enumerates, opens, role-assigns, supervises         │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ chan []complex64
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/dsp (Phase 2)  filters · channelizer · demod · sync│
+│  internal/dsp           filters · channelizer · demod · sync │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ symbol streams
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/radio (Phases 3–5)  framing · p25 · dmr · nxdn     │
+│  internal/radio         framing · p25 · dmr · nxdn           │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ control-channel events
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/trunking (Phase 6) engine · grant · priority · site│
+│  internal/trunking      engine · grant · priority · site     │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ events.Bus
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/voice (Phase 7) recorder · imbe · mbelib (-tags)   │
-│  internal/api    (Phase 8) gRPC server · WebSocket bridge    │
-│  internal/storage (Phase 9) SQLite call log · audio files    │
-│  internal/metrics (Phase 10) Prometheus exporter             │
+│  internal/voice         recorder · composer · vocoder plugin │
+│  internal/api           gRPC server · HTTP/SSE · WebSocket   │
+│  internal/storage       SQLite call log · retention sweeper  │
+│  internal/metrics       Prometheus exporter                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,5 +75,6 @@ to. `cmd/gophertrunk` blank-imports the drivers it ships with.
 - `-tags mbelib` — links libmbe via CGO for AMBE+2 (P25 P2 / DMR / NXDN
   voice). Off by default for distribution-license clarity.
 
-See `docs/phases.md` for the phased build roadmap and `docs/hardware.md`
-for the hardware setup checklist.
+See `docs/hardware.md` for the hardware setup checklist,
+`docs/hardening.md` for the operations playbook, and
+`docs/vocoders.md` for the IMBE / AMBE+2 licensing situation.

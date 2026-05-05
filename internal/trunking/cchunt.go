@@ -24,10 +24,8 @@ type Tuner interface {
 //
 // The hunter is intentionally protocol-agnostic at the wiring level: it
 // retunes the SDR and watches the events.Bus. The downstream demod
-// pipeline (channelizer + C4FM/H-DQPSK demod + protocol decoder) is
-// expected to be running and publishing cc.locked events. Phase 6 wires
-// that pipeline up; until then the hunter is exercised by tests that
-// publish events directly.
+// pipeline (channelizer + C4FM/H-DQPSK demod + protocol decoder)
+// publishes cc.locked events; the hunter parks on the first match.
 type Hunter struct {
 	bus     *events.Bus
 	log     *slog.Logger

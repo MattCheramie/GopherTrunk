@@ -20,9 +20,9 @@ type LockState struct {
 // observes a SITE_INFO or CCH announcement message that confirms the
 // frequency. Mirrors the P25 phase1 / DMR tier3 control channels.
 //
-// This is the minimum scaffolding; the full RCCH state machine (Aloha
-// tracking, channel-grant follow, neighbor list reaction) lands in
-// Phase 6 alongside the trunking engine.
+// The full RCCH state machine (Aloha tracking, channel-grant follow,
+// neighbor list reaction) lives in the trunking engine, which
+// subscribes to the events this package emits.
 type ControlChannel struct {
 	bus    *events.Bus
 	log    *slog.Logger

@@ -12,8 +12,8 @@ package dmr
 //
 // The two 98-bit info halves concatenate to form one 196-bit BPTC(196,96)
 // codeword for control/data bursts (CSBKs etc.). For voice bursts the same
-// payload bits carry two AMBE+2 frames; that decoding lands with the voice
-// pipeline (Phase 7).
+// payload bits carry two AMBE+2 frames; that decoding plugs in via the
+// vocoder registry once the AMBE+2 backend is built.
 
 const (
 	BurstDibits          = 132

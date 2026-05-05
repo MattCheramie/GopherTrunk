@@ -77,7 +77,7 @@ func (r EndReason) String() string {
 
 // CallStart is the payload of an events.KindCallStart event. The engine
 // publishes this once a Voice device has been retuned to the grant's
-// frequency; downstream pipelines (Phase 7 voice decoder, recorder) can
+// frequency; downstream pipelines (the demod composer, the recorder)
 // subscribe and start consuming IQ.
 type CallStart struct {
 	Grant        Grant

@@ -19,9 +19,9 @@ type LockState struct {
 // ControlChannel ingests detected DMR bursts whose Slot Type identifies a
 // CSBK, runs BPTC(196,96) decode + CRC, and emits cc.locked the first time
 // it sees an Aloha or System-Info CSBK with self-consistent fields. This
-// is intentionally minimal scaffolding mirroring the P25 phase1 control
-// channel; the fuller Tier III state machine (Aloha tracking, neighbor
-// list, channel-grant follow) is Phase 6 territory.
+// mirrors the P25 phase1 control channel; the fuller Tier III state
+// machine (Aloha tracking, neighbor list, channel-grant follow) lives in
+// the trunking engine, which subscribes to the events this package emits.
 type ControlChannel struct {
 	bus    *events.Bus
 	log    *slog.Logger
@@ -38,8 +38,8 @@ func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32) *Contro
 }
 
 // IngestBurst hands one DMR burst to the state machine. The burst's slot
-// type must already be parsed by the caller (Phase 4 doesn't yet wire the
-// 20-bit Hamming(20,8) over the slot type — see dmr/slottype.go).
+// type must already be parsed by the caller; the 20-bit Hamming(20,8)
+// over the slot type is not yet wired (see dmr/slottype.go).
 func (c *ControlChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 	if slot.DataType != dmr.DTCSBK {
 		return
