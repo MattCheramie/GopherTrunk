@@ -1,0 +1,11 @@
+/bin/
+/dist/
+*.test
+*.out
+*.prof
+*.cfile
+!testdata/**/*.cfile
+.idea/
+.vscode/
+*.swp
+.DS_Store
