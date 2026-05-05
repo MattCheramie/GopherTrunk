@@ -133,11 +133,11 @@ func TestEnginePreemptsLowerPriority(t *testing.T) {
 	defer sub.Close()
 	collector := &testBusCollector{}
 
-	go collector.drain(sub, 3, 1*time.Second)
-
 	low := Grant{System: "X", Protocol: "p25", GroupID: 100, FrequencyHz: 851_000_000}
 	high := Grant{System: "X", Protocol: "p25", GroupID: 200, FrequencyHz: 852_000_000}
 
+	// HandleGrant publishes synchronously (Bus.Publish is buffered at 32
+	// here), so events land on the subscription channel before we drain.
 	e.HandleGrant(low)
 	e.HandleGrant(high) // should preempt
 

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package gophertrunk.v1;
+
+option go_package = "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1;apiv1";
+
+// System mirrors trunking.System.
+message System {
+  string name             = 1;
+  string protocol         = 2; // "p25" / "dmr" / "nxdn"
+  repeated uint32 control_channels = 3; // candidate frequencies in Hz
+  uint32 wacn             = 4; // 20-bit (P25)
+  uint32 system_id        = 5; // 12-bit
+  uint32 rfss             = 6;
+  uint32 site             = 7;
+}
+
+message ListSystemsRequest {}
+
+message ListSystemsResponse {
+  repeated System systems = 1;
+}
+
+message GetSystemRequest {
+  string name = 1;
+}
+
+message GetSystemResponse {
+  System system = 1;
+}
+
+// SystemService exposes read-only access to the configured systems.
+service SystemService {
+  rpc ListSystems(ListSystemsRequest) returns (ListSystemsResponse);
+  rpc GetSystem(GetSystemRequest)    returns (GetSystemResponse);
+}

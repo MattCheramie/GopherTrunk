@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package gophertrunk.v1;
+
+import "events.proto";
+
+option go_package = "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1;apiv1";
+
+// AudioFrame is one chunk of decoded PCM (or raw vocoder bytes) for an
+// active call. Streamed from the daemon to subscribers.
+message AudioFrame {
+  // Server-stamped time the frame was emitted (RFC 3339 UTC).
+  string timestamp = 1;
+
+  // The call this frame belongs to. Source ID + group ID + start time
+  // disambiguate concurrent calls on different Voice devices.
+  Grant  grant         = 2;
+  string device_serial = 3;
+
+  oneof body {
+    PCMSamples pcm = 10; // decoded 16-bit mono PCM
+    RawVocoderFrame raw = 11; // un-decoded vocoder bytes (IMBE / AMBE+2)
+  }
+}
+
+message PCMSamples {
+  uint32 sample_rate = 1; // typically 8000
+  // Little-endian 16-bit signed samples.
+  bytes samples = 2;
+}
+
+message RawVocoderFrame {
+  // Vocoder name as registered in the voice/Registry ("imbe", "ambe",
+  // ...). "" means unknown / passthrough.
+  string vocoder = 1;
+  bytes  frame   = 2;
+}
+
+message StreamAudioRequest {
+  // Optional filter: only emit frames for these device serials. Empty
+  // matches all.
+  repeated string device_serials = 1;
+  // Optional filter: only emit frames for these talkgroup IDs.
+  repeated uint32 talkgroup_ids  = 2;
+  // If true, also stream raw vocoder bytes (defaults false; PCM only).
+  bool include_raw = 3;
+}
+
+service AudioService {
+  // Server-streaming RPC. The daemon emits one AudioFrame per arriving
+  // PCM chunk for matching active calls.
+  rpc StreamAudio(StreamAudioRequest) returns (stream AudioFrame);
+}

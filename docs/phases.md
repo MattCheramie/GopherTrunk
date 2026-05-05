@@ -16,7 +16,7 @@ buildable and testable; the project stays useful even if work pauses partway.
 | 7a    | Voice passthrough (FM, raw frames)     | done        |
 | 7b    | IMBE (P25 Phase 1, default)            | upcoming    |
 | 7c    | AMBE+2 (mbelib build tag, DVSI)        | upcoming    |
-| 8     | API (gRPC + WebSocket)                 | deferred    |
+| 8     | API (gRPC + WebSocket)                 | done        |
 | 9     | Persistence + recording                | upcoming    |
 | 10    | Hardening (metrics, reconnect, docker) | upcoming    |
 
@@ -325,6 +325,77 @@ Deferred:
 - DVSI USB-3000 / AMBE-3003 hardware backend.
 - Demod pipeline that produces the PCM samples / raw frames the
   recorder consumes (gated on the Phase 6 wiring deferrals).
+
+## Phase 8 — API (gRPC + HTTP/SSE/WebSocket)
+
+Landed in this phase:
+
+- `proto/` at the repo root — canonical wire schemas:
+  - `events.proto`    — Event envelope + CCLocked / CCLost / Grant /
+                        CallStart / CallEnd / SDRStatus / ErrorEvent
+                        + the shared TalkGroup row.
+  - `system.proto`    — System message + SystemService (List / Get).
+  - `talkgroup.proto` — TalkgroupService (List / Get) + ActiveCall +
+                        ListActiveCalls.
+  - `audio.proto`     — AudioFrame (PCM | RawVocoderFrame) +
+                        AudioService.StreamAudio (server-streaming
+                        RPC, served as Unimplemented until the demod
+                        pipeline composer wires PCM in).
+- `internal/api/pb/v1/*` — generated Go bindings (committed; `make proto`
+  regenerates from the protos using `protoc-gen-go` / `protoc-gen-go-grpc`).
+- `internal/api/server.go` — HTTP server lifecycle (Run, Close), routing
+  via `net/http` 1.22 method-aware patterns.
+- `internal/api/handlers.go` — REST endpoints:
+  - `GET /api/v1/health`
+  - `GET /api/v1/version`
+  - `GET /api/v1/systems`
+  - `GET /api/v1/systems/{name}`
+  - `GET /api/v1/talkgroups`
+  - `GET /api/v1/talkgroups/{id}`
+  - `GET /api/v1/calls/active`
+- `internal/api/sse.go` — `GET /api/v1/events` Server-Sent Events
+  bridge over `internal/events.Bus`. Each event becomes a
+  `data: {...}` line with the `event:` field set to the event kind so
+  browser clients can dispatch via `addEventListener`.
+- `internal/api/ws.go` — `GET /api/v1/events/ws` WebSocket bridge
+  emitting the same JSON envelope as a single text frame per event,
+  with 30 s server-side pings to keep proxies from idling the socket.
+- `internal/api/grpc.go` — gRPC server registering `SystemService`,
+  `TalkgroupService`, and `AudioService` against the same in-process
+  state used by the HTTP layer. `AudioService.StreamAudio` returns
+  `Unimplemented` so clients fail fast until audio lands.
+- `internal/api/types.go` — JSON DTOs that mirror the proto messages
+  for the HTTP/SSE/WebSocket surfaces.
+- Makefile `proto` target documents the toolchain (`apt-get install
+  protobuf-compiler`, `go install protoc-gen-go`,
+  `protoc-gen-go-grpc`) and regenerates bindings under
+  `internal/api/pb/v1` with `paths=source_relative`.
+
+Tests cover health + version, list/get for systems and talkgroups
+(including 404 / 400 on missing or malformed input), the engine-
+backed active-calls endpoint, the SSE stream picking up a
+`call.start` event, the WebSocket bridge picking up a `cc.locked`
+event, server-options validation, and the full gRPC surface (List /
+Get for both services, NotFound mapping, Unimplemented on the audio
+stream) over an in-process `bufconn` listener.
+
+Bug caught and fixed during testing: the existing
+`TestEnginePreemptsLowerPriority` (Phase 6) was running the
+collector's `drain` in two goroutines reading the same subscription
+channel, which non-deterministically interleaved events. Tightened
+to a single drain so the test's assertion about ordered
+`[start, end, start]` events is reliable.
+
+Deferred:
+- Audio stream end-to-end — `AudioService.StreamAudio` is registered
+  but returns `Unimplemented`; the demod pipeline composer (Phase 6
+  follow-up) will plug PCM frames in.
+- Authentication / authorization — the API surface is read-only and
+  intended for private-network deployment; operators exposing it
+  publicly should put it behind a reverse proxy.
+- HTTP-to-gRPC transcoding (gRPC-Gateway). The hand-written REST
+  layer covers the same data so a transcoder is optional rather than
+  required.
 
 …subsequent phases follow the plan in
 `/root/.claude/plans/using-the-readme-md-as-sleepy-fairy.md`.
