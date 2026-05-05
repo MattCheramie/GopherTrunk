@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package gophertrunk.v1;
+
+import "events.proto";
+
+option go_package = "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1;apiv1";
+
+message ListTalkgroupsRequest {
+  // Optional system filter; empty = all systems.
+  string system = 1;
+}
+
+message ListTalkgroupsResponse {
+  repeated TalkGroup talkgroups = 1;
+}
+
+message GetTalkgroupRequest {
+  uint32 id = 1;
+}
+
+message GetTalkgroupResponse {
+  TalkGroup talkgroup = 1;
+}
+
+message ListActiveCallsRequest {}
+
+message ActiveCall {
+  Grant     grant         = 1;
+  TalkGroup talkgroup     = 2;
+  string    device_serial = 3;
+  string    started_at    = 4;
+  string    last_heard_at = 5;
+}
+
+message ListActiveCallsResponse {
+  repeated ActiveCall calls = 1;
+}
+
+service TalkgroupService {
+  rpc ListTalkgroups(ListTalkgroupsRequest)   returns (ListTalkgroupsResponse);
+  rpc GetTalkgroup(GetTalkgroupRequest)       returns (GetTalkgroupResponse);
+  rpc ListActiveCalls(ListActiveCallsRequest) returns (ListActiveCallsResponse);
+}

@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+// Package gophertrunk.v1 holds the canonical wire schemas for the
+// GopherTrunk control + audio API. Generated Go bindings live under
+// `internal/api/pb/v1` once `make proto` is run with protoc and the
+// `protoc-gen-go` / `protoc-gen-go-grpc` plugins installed.
+//
+// The default `make build` does NOT regenerate or require protoc; the
+// REST + SSE + WebSocket surfaces in `internal/api` are hand-written
+// against the in-package DTOs and serve as the gRPC server's
+// request/response shape once the bindings are generated.
+package gophertrunk.v1;
+
+option go_package = "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1;apiv1";
+
+// Event is the canonical envelope for everything published on the
+// internal events bus and bridged out over the streaming API.
+message Event {
+  // Event kind. Values match internal/events.Kind constants
+  // ("cc.locked", "cc.lost", "grant", "call.start", "call.end",
+  // "sdr.attached", "sdr.detached", "error").
+  string kind = 1;
+
+  // Server-stamped timestamp in RFC 3339 (UTC).
+  string timestamp = 2;
+
+  // Discriminated payload. Exactly one of these is set per event.
+  oneof payload {
+    CCLocked   cc_locked   = 10;
+    CCLost     cc_lost     = 11;
+    Grant      grant       = 12;
+    CallStart  call_start  = 13;
+    CallEnd    call_end    = 14;
+    SDRStatus  sdr_status  = 15;
+    ErrorEvent error       = 16;
+  }
+}
+
+message CCLocked {
+  uint32 frequency_hz = 1;
+  // Protocol-specific identifier: P25 NAC, DMR Color Code, NXDN
+  // BaudRate, etc. Carried as a key/value bag for extensibility.
+  map<string, string> attrs = 2;
+}
+
+message CCLost {
+  uint32 frequency_hz = 1;
+  map<string, string> attrs = 2;
+}
+
+message Grant {
+  string system          = 1;
+  string protocol        = 2; // "p25" / "dmr" / "nxdn"
+  uint32 group_id        = 3;
+  uint32 source_id       = 4;
+  uint32 frequency_hz    = 5;
+  uint32 channel_id      = 6;
+  uint32 channel_number  = 7;
+  bool   encrypted       = 8;
+  bool   emergency       = 9;
+  bool   data_call       = 10;
+}
+
+message CallStart {
+  Grant     grant         = 1;
+  TalkGroup talkgroup     = 2; // optional; null if unknown
+  string    device_serial = 3;
+}
+
+message CallEnd {
+  Grant     grant         = 1;
+  TalkGroup talkgroup     = 2;
+  string    device_serial = 3;
+  string    started_at    = 4; // RFC 3339
+  string    ended_at      = 5;
+  string    reason        = 6; // EndReason.String()
+}
+
+message SDRStatus {
+  string driver = 1;
+  string serial = 2;
+  string role   = 3; // "control" / "voice" / "auto"
+  bool   attached = 4;
+}
+
+message ErrorEvent {
+  string source  = 1; // subsystem ("sdr", "p25", "trunking", ...)
+  string message = 2;
+}
+
+// TalkGroup mirrors trunking.TalkGroup. Used in CallStart/CallEnd
+// envelopes and as the row type for ListTalkgroups responses.
+message TalkGroup {
+  uint32 id          = 1;
+  string alpha_tag   = 2;
+  string description = 3;
+  string tag         = 4;
+  string group       = 5;
+  string mode        = 6;
+  int32  priority    = 7;
+  bool   lockout     = 8;
+}
