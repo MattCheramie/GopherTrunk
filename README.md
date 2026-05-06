@@ -116,6 +116,26 @@ to its own package and lands independently.
 
 ## Quick start
 
+### Download a prebuilt release
+
+Each tagged release publishes installers / archives on the
+[**Releases page**][releases]:
+
+| Platform   | File                                                   | What it is                                              |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup, bundles librtlsdr DLLs) |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same files, no installer                  |
+| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed binary + sample config                         |
+
+Windows users: after running the installer, follow
+[`docs/install-windows.md`](docs/install-windows.md) to swap the
+RTL-SDR driver to WinUSB via Zadig — the OS won't see your dongle
+until that's done. The installer's last page links there too.
+
+[releases]: https://github.com/MattCheramie/GopherTrunk/releases
+
+### Build from source
+
 ### Prerequisites
 
 ```sh
