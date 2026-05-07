@@ -23,10 +23,36 @@ func NewActive() *ActivePanel {
 	return &ActivePanel{tbl: t}
 }
 
-func (ActivePanel) Title() string       { return "Active calls" }
-func (ActivePanel) Keys() []key.Binding { return nil }
+func (ActivePanel) Title() string { return "Active calls" }
+
+var activeEndKey = key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "end call"))
+
+func (ActivePanel) Keys() []key.Binding { return []key.Binding{activeEndKey} }
+
+func (p *ActivePanel) selectedCall(s *state.SharedState) (client.ActiveCallDTO, bool) {
+	idx := p.tbl.Cursor()
+	if idx < 0 || idx >= len(s.ActiveCalls) {
+		return client.ActiveCallDTO{}, false
+	}
+	return s.ActiveCalls[idx], true
+}
 
 func (p *ActivePanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok {
+		if key.Matches(km, activeEndKey) {
+			ac, found := p.selectedCall(s)
+			if !found {
+				return p, nil
+			}
+			req := state.WriteRequest{
+				Confirm: fmt.Sprintf("End call on device %s (TG %d)?", ac.DeviceSerial, ac.Grant.GroupID),
+				Label:   "ended call on " + ac.DeviceSerial,
+				Kind:    state.WriteKindEndCall,
+				EndCall: &state.EndCallReq{DeviceSerial: ac.DeviceSerial, Reason: "manual"},
+			}
+			return p, Emit(req)
+		}
+	}
 	// Refresh on every update — the polling cadence is 1 s and the
 	// table is small.
 	p.refresh(s.ActiveCalls)

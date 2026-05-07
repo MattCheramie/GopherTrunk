@@ -20,10 +20,11 @@ func runTUI(args []string) {
 	insecure := fs.Bool("insecure", false, "skip TLS verification (https only)")
 	timeout := fs.Duration("timeout", 5*time.Second, "per-request timeout")
 	noColor := fs.Bool("no-color", false, "disable ANSI colours")
+	write := fs.Bool("write", false, "enable mutation keybindings (end call, set priority/lockout, retention sweep, tone reset). Daemon must also have api.allow_mutations: true.")
 	_ = fs.Parse(args)
 
 	cli := client.New(*server, *timeout, *insecure)
-	m := tui.New(cli, tui.Options{NoColor: *noColor})
+	m := tui.New(cli, tui.Options{NoColor: *noColor, Write: *write})
 	prog := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tui: %v\n", err)

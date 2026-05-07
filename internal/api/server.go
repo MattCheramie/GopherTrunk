@@ -20,18 +20,45 @@ type EngineSnapshot interface {
 	ActiveCalls() []*trunking.ActiveCall
 }
 
+// EngineMutator is the optional write side of the engine. Daemons
+// that have AllowMutations enabled supply a real engine; tests can
+// inject a fake. When nil the end-call route returns 503.
+type EngineMutator interface {
+	EndCall(deviceSerial string, reason trunking.EndReason) bool
+}
+
+// RetentionSweeper is the optional write side of the retention
+// system: kick off one ad-hoc sweep. The daemon supplies the real
+// sweeper from internal/storage; tests can fake it.
+type RetentionSweeper interface {
+	SweepOnce(ctx context.Context)
+}
+
+// ToneDetectorReset is the optional write side of the tone-out
+// detector: clear per-device match progress without throwing away
+// the cooldown clock. Daemons that wire the detector supply the
+// real impl; tests can fake it.
+type ToneDetectorReset interface {
+	ResetDevice(serial string)
+}
+
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
 	addr       string
 	bus        *events.Bus
 	engine     EngineSnapshot
+	mutator    EngineMutator
+	retention  RetentionSweeper
+	tones      ToneDetectorReset
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
 	metrics    http.Handler
 	log        *slog.Logger
 	version    string
+
+	allowMutations bool
 
 	mu     sync.Mutex
 	srv    *http.Server
@@ -96,6 +123,19 @@ type ServerOptions struct {
 	Log            *slog.Logger
 	// Version is reported by GET /api/v1/version.
 	Version string
+	// AllowMutations gates the write endpoints. Off by default —
+	// the HTTP API has no authentication, so mutations are unsafe
+	// to expose unless the operator explicitly opts in.
+	AllowMutations bool
+	// Mutator is the engine's write side (end call). Optional;
+	// when nil the corresponding routes return 503.
+	Mutator EngineMutator
+	// Retention is the storage sweeper's write side (run a sweep
+	// now). Optional.
+	Retention RetentionSweeper
+	// Tones is the tone-out detector's write side (reset per-device
+	// match state). Optional.
+	Tones ToneDetectorReset
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -115,15 +155,19 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.Talkgroups = trunking.NewTalkgroupDB()
 	}
 	return &Server{
-		addr:       opts.Addr,
-		bus:        opts.Bus,
-		engine:     opts.Engine,
-		talkgroups: opts.Talkgroups,
-		systems:    append([]trunking.System(nil), opts.Systems...),
-		history:    opts.History,
-		metrics:    opts.MetricsHandler,
-		log:        log,
-		version:    opts.Version,
+		addr:           opts.Addr,
+		bus:            opts.Bus,
+		engine:         opts.Engine,
+		mutator:        opts.Mutator,
+		retention:      opts.Retention,
+		tones:          opts.Tones,
+		talkgroups:     opts.Talkgroups,
+		systems:        append([]trunking.System(nil), opts.Systems...),
+		history:        opts.History,
+		metrics:        opts.MetricsHandler,
+		log:            log,
+		version:        opts.Version,
+		allowMutations: opts.AllowMutations,
 	}, nil
 }
 
@@ -192,7 +236,31 @@ func (s *Server) routes() *http.ServeMux {
 	if s.metrics != nil {
 		mux.Handle("GET /metrics", s.metrics)
 	}
+
+	// Mutation routes — wrapped in s.gate so a non-AllowMutations
+	// daemon returns 403 without dispatching to the handler. The
+	// gate also reports the daemon's mutation capability via
+	// GET /api/v1/mutations so clients can light up keybindings.
+	mux.HandleFunc("GET /api/v1/mutations", s.handleMutationStatus)
+	mux.HandleFunc("POST /api/v1/calls/{deviceSerial}/end", s.gate(s.handleEndCall))
+	mux.HandleFunc("PATCH /api/v1/talkgroups/{id}", s.gate(s.handleUpdateTalkgroup))
+	mux.HandleFunc("POST /api/v1/retention/sweep", s.gate(s.handleRetentionSweep))
+	mux.HandleFunc("POST /api/v1/devices/{serial}/tone-reset", s.gate(s.handleToneReset))
+
 	return mux
+}
+
+// gate wraps a handler so it short-circuits with 403 when the
+// daemon was started without api.allow_mutations. The body carries
+// the same {"error":"..."} envelope existing 4xx handlers use.
+func (s *Server) gate(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowMutations {
+			writeError(w, http.StatusForbidden, "mutations disabled (set api.allow_mutations: true to enable)")
+			return
+		}
+		h(w, r)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

@@ -24,10 +24,38 @@ func NewTones() *TonesPanel {
 	return &TonesPanel{tbl: t}
 }
 
-func (TonesPanel) Title() string       { return "Tone alerts" }
-func (TonesPanel) Keys() []key.Binding { return nil }
+func (TonesPanel) Title() string { return "Tone alerts" }
+
+var toneResetKey = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reset detector"))
+
+func (TonesPanel) Keys() []key.Binding { return []key.Binding{toneResetKey} }
+
+// selectedDevice extracts the device serial of the currently
+// highlighted row, returning ("", false) when the table is empty.
+func (p *TonesPanel) selectedDevice() (string, bool) {
+	idx := p.tbl.Cursor()
+	rows := p.tbl.Rows()
+	if idx < 0 || idx >= len(rows) {
+		return "", false
+	}
+	// Column 2 is "Device" per toneColumns.
+	return rows[idx][2], true
+}
 
 func (p *TonesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, toneResetKey) {
+		serial, ok := p.selectedDevice()
+		if !ok {
+			return p, nil
+		}
+		req := state.WriteRequest{
+			Confirm: fmt.Sprintf("Reset tone-out match progress on device %s?", serial),
+			Label:   "reset tone detector for " + serial,
+			Kind:    state.WriteKindResetTone,
+			ResetTone: &state.ResetToneReq{DeviceSerial: serial},
+		}
+		return p, Emit(req)
+	}
 	if s.ToneAlerts != nil && s.ToneAlerts.Len() != p.last {
 		p.refresh(s)
 	}

@@ -100,3 +100,42 @@ func connectSSE(cli *client.Client) tea.Cmd {
 		return sseUpMsg{ch: ch, cancel: cancel}
 	}
 }
+
+func cmdMutationStatus(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		s, err := cli.MutationStatus(context.Background())
+		return pollMutationStatusMsg{s: s, err: err}
+	}
+}
+
+// Write-side Cmd builders. Each returns a tea.Cmd that runs the
+// HTTP request and surfaces the outcome as writeResultMsg, which
+// the root model turns into a toast.
+
+func cmdEndCall(cli *client.Client, deviceSerial, reason, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.EndCall(context.Background(), deviceSerial, reason)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
+func cmdUpdateTalkgroup(cli *client.Client, id uint32, priority *int, lockout *bool, label string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := cli.UpdateTalkgroup(context.Background(), id, priority, lockout)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
+func cmdSweepRetention(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.SweepRetention(context.Background())
+		return writeResultMsg{Label: "retention sweep", Err: err}
+	}
+}
+
+func cmdResetTone(cli *client.Client, deviceSerial string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ResetToneDevice(context.Background(), deviceSerial)
+		return writeResultMsg{Label: "reset tone detector for " + deviceSerial, Err: err}
+	}
+}

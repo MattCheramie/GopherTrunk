@@ -75,4 +75,68 @@ type SharedState struct {
 	LastPoll time.Time
 	Toast    string
 	Server   string
+
+	// Write capability — populated at startup from the daemon's
+	// /api/v1/mutations endpoint AND-ed with the TUI's --write
+	// flag. Panels read this to decide whether write keybindings
+	// should fire actions or show a "mutations disabled" toast.
+	WriteEnabled bool
+	// Mutations exposes per-subsystem capability so panels can
+	// show finer-grained tooltips (e.g. "tone-out detector not
+	// wired" vs "mutations disabled at daemon").
+	Mutations client.MutationStatus
+}
+
+// WriteRequest is a plain-value command emitted by panels when the
+// operator presses a mutation keybinding. The root model unwraps
+// the embedded request type, optionally pops a confirmation modal,
+// and dispatches the matching client method.
+//
+// Panels can't build the write Cmds themselves (they don't hold a
+// client.Client), so the request shape is a typed value the root
+// resolves. Each request kind has its own struct so the root's
+// type switch is exhaustive.
+type WriteRequest struct {
+	Confirm string
+	Label   string
+	Kind    WriteKind
+
+	EndCall         *EndCallReq
+	UpdateTalkgroup *UpdateTalkgroupReq
+	SweepRetention  *SweepRetentionReq
+	ResetTone       *ResetToneReq
+}
+
+// WriteKind discriminates a WriteRequest's payload.
+type WriteKind int
+
+const (
+	WriteKindUnknown WriteKind = iota
+	WriteKindEndCall
+	WriteKindUpdateTalkgroup
+	WriteKindSweepRetention
+	WriteKindResetTone
+)
+
+// EndCallReq forces the engine to release the active call held on
+// the given device.
+type EndCallReq struct {
+	DeviceSerial string
+	Reason       string // optional; "" means "manual"
+}
+
+// UpdateTalkgroupReq mutates priority and/or lockout on a talkgroup.
+// Pointer fields allow "leave unchanged" semantics.
+type UpdateTalkgroupReq struct {
+	ID       uint32
+	Priority *int
+	Lockout  *bool
+}
+
+// SweepRetentionReq runs one immediate retention sweep.
+type SweepRetentionReq struct{}
+
+// ResetToneReq clears tone-out match progress on the given device.
+type ResetToneReq struct {
+	DeviceSerial string
 }

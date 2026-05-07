@@ -95,13 +95,60 @@ A long-lived `/api/v1/events` SSE stream complements the polls, so
 instantly. If the SSE stream drops, the TUI shows a transient toast
 and reconnects with exponential backoff (1 s → 30 s cap).
 
-## Limitations (v1)
+## Mutations
 
-The first release is **read-only**. Mutation actions (end an active
-call, change a talkgroup's priority or lockout, sweep retention,
-reset the tone detector) need new daemon endpoints and a
-`api.allow_mutations` gate, and land in a follow-up PR. The TUI's
-keybindings for those actions are reserved but not bound yet.
+The TUI can drive five operator actions when both sides opt in:
+
+```bash
+# Daemon side: enable in config.yaml.
+api:
+  http_addr: 127.0.0.1:8080   # bind to loopback if you can
+  allow_mutations: true
+
+# TUI side: pass --write to surface the keybindings.
+gophertrunk tui --write
+```
+
+Both ends are gated separately on purpose. The daemon's HTTP API
+has no authentication today, so any host that can reach the
+listener can call mutations once the gate is open — bind to
+`127.0.0.1` and trust the operator before flipping it on.
+
+| Panel | Key | Action | Confirm? |
+| --- | --- | --- | --- |
+| Active calls | `e` | End the highlighted call (`POST /api/v1/calls/{serial}/end`, reason=manual) | yes |
+| Talkgroups | `l` | Toggle lockout on the highlighted talkgroup (`PATCH /api/v1/talkgroups/{id}`) | no — reversible |
+| Talkgroups | `+` / `-` | Bump priority up / down (clamped 0–99) | no |
+| Tone alerts | `R` | Reset tone-out match progress on the highlighted device (`POST /api/v1/devices/{serial}/tone-reset`) | yes |
+| Metrics | `S` | Run a retention sweep now (`POST /api/v1/retention/sweep`) | yes |
+
+When a key requires confirmation, a centered modal opens. The
+modal captures keyboard focus until you press:
+
+- `y` or `Enter` — fire the action and close the modal
+- `n` or `Esc` — cancel and close the modal
+
+On success the status bar shows `<label> ok` and the dependent
+read panels (active calls + talkgroups) refresh immediately rather
+than waiting for the next poll tick. On failure the status bar
+shows the HTTP error.
+
+The TUI fetches `GET /api/v1/mutations` once at startup to learn
+which subsystems the daemon has wired (engine / retention / tone
+detector). If the daemon doesn't recognise the route (older build),
+the TUI assumes mutations are off and `--write` is a no-op.
+
+### Endpoints reference
+
+| Method | Path | Body | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/mutations` | — | Capability probe. Always 200. |
+| `POST` | `/api/v1/calls/{deviceSerial}/end` | `{"reason":"manual"}` | 404 if no active call on that device. |
+| `PATCH` | `/api/v1/talkgroups/{id}` | `{"priority":3,"lockout":true}` | Both fields optional; supply at least one. Returns the updated TalkgroupDTO. |
+| `POST` | `/api/v1/retention/sweep` | — | Synchronous; 503 if no call-log persistence configured. |
+| `POST` | `/api/v1/devices/{serial}/tone-reset` | — | 503 if the tone-out detector isn't wired. |
+
+Every mutation endpoint returns `403 Forbidden` with `{"error":"mutations disabled (set api.allow_mutations: true to enable)"}` when the daemon was started without the gate.
 
 ## Troubleshooting
 

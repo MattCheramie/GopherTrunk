@@ -232,19 +232,27 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 	// HTTP API — optional.
 	if cfg.API.HTTPAddr != "" {
 		opts := api.ServerOptions{
-			Addr:       cfg.API.HTTPAddr,
-			Bus:        d.bus,
-			Engine:     d.engine,
-			Talkgroups: d.talkgroups,
-			Systems:    d.systems,
-			Log:        log,
-			Version:    version,
+			Addr:           cfg.API.HTTPAddr,
+			Bus:            d.bus,
+			Engine:         d.engine,
+			Mutator:        d.engine,
+			Talkgroups:     d.talkgroups,
+			Systems:        d.systems,
+			Log:            log,
+			Version:        version,
+			AllowMutations: cfg.API.AllowMutations,
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)
 		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
+		}
+		if d.retention != nil {
+			opts.Retention = d.retention
+		}
+		if d.toneout != nil {
+			opts.Tones = d.toneout
 		}
 		srv, err := api.NewServer(opts)
 		if err != nil {

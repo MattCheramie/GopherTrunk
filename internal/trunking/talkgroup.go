@@ -50,6 +50,33 @@ func (d *TalkgroupDB) Add(tg *TalkGroup) {
 	d.tgs[tg.ID] = tg
 }
 
+// UpdateFields applies fn to the talkgroup with the given id under
+// the write lock. Returns false if no such talkgroup exists. Used
+// by the API to mutate Priority / Lockout without exposing the raw
+// pointer to outside callers.
+func (d *TalkgroupDB) UpdateFields(id uint32, fn func(*TalkGroup)) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	tg, ok := d.tgs[id]
+	if !ok {
+		return false
+	}
+	fn(tg)
+	return true
+}
+
+// Delete removes the talkgroup with the given id. Returns false
+// if no such talkgroup exists.
+func (d *TalkgroupDB) Delete(id uint32) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.tgs[id]; !ok {
+		return false
+	}
+	delete(d.tgs, id)
+	return true
+}
+
 // All returns a snapshot of every talkgroup in the DB.
 func (d *TalkgroupDB) All() []*TalkGroup {
 	d.mu.RLock()

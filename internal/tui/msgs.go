@@ -58,3 +58,16 @@ type sseUpMsg struct {
 
 // errToastMsg displays a transient error in the status bar.
 type errToastMsg struct{ msg string }
+
+// writeResultMsg carries the outcome of a write Cmd.
+type writeResultMsg struct {
+	Label string
+	Err   error
+}
+
+// pollMutationStatusMsg fetches /api/v1/mutations once at startup
+// to set shared.Mutations + WriteEnabled.
+type pollMutationStatusMsg struct {
+	s   client.MutationStatus
+	err error
+}

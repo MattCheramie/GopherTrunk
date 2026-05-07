@@ -54,6 +54,7 @@ const (
 	EndReasonLockout              // talkgroup is locked out by policy
 	EndReasonNoVoiceSDR           // every Voice-role SDR was busy
 	EndReasonError
+	EndReasonManual // operator ended the call via API / TUI
 )
 
 func (r EndReason) String() string {
@@ -70,6 +71,8 @@ func (r EndReason) String() string {
 		return "no-voice-sdr"
 	case EndReasonError:
 		return "error"
+	case EndReasonManual:
+		return "manual"
 	default:
 		return "unknown"
 	}

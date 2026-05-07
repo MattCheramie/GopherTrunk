@@ -59,13 +59,36 @@ func NewTalkgroups() *TalkgroupsPanel {
 func (TalkgroupsPanel) Title() string { return "Talkgroups" }
 
 var (
-	tgFilterKey = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
-	tgSortKey   = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
-	tgEscKey    = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "exit filter"))
+	tgFilterKey   = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
+	tgSortKey     = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
+	tgEscKey      = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "exit filter"))
+	tgLockoutKey  = key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle lockout"))
+	tgPriUpKey    = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "priority up"))
+	tgPriDownKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "priority down"))
 )
 
 func (TalkgroupsPanel) Keys() []key.Binding {
-	return []key.Binding{tgFilterKey, tgSortKey}
+	return []key.Binding{tgFilterKey, tgSortKey, tgLockoutKey, tgPriUpKey, tgPriDownKey}
+}
+
+// selectedTalkgroup returns the currently-highlighted row's
+// underlying TalkgroupDTO, respecting the active filter+sort.
+func (p *TalkgroupsPanel) selectedTalkgroup(tgs []client.TalkgroupDTO) (client.TalkgroupDTO, bool) {
+	idx := p.tbl.Cursor()
+	rows := p.tbl.Rows()
+	if idx < 0 || idx >= len(rows) {
+		return client.TalkgroupDTO{}, false
+	}
+	// First column is the ID as a string. Map back to the source
+	// slice; refresh() never re-orders without invalidating the
+	// table, so this is safe.
+	idStr := rows[idx][0]
+	for _, tg := range tgs {
+		if fmt.Sprintf("%d", tg.ID) == idStr {
+			return tg, true
+		}
+	}
+	return client.TalkgroupDTO{}, false
 }
 
 // FilterValue exposes the current filter for testing.
@@ -106,6 +129,47 @@ func (p *TalkgroupsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.
 			p.lastSort = -1 // force refresh
 			p.refresh(s.Talkgroups)
 			return p, nil
+		case key.Matches(m, tgLockoutKey):
+			tg, ok := p.selectedTalkgroup(s.Talkgroups)
+			if !ok {
+				return p, nil
+			}
+			next := !tg.Lockout
+			req := state.WriteRequest{
+				// No confirmation — toggling lockout is reversible.
+				Label: fmt.Sprintf("set lockout=%v on TG %d", next, tg.ID),
+				Kind:  state.WriteKindUpdateTalkgroup,
+				UpdateTalkgroup: &state.UpdateTalkgroupReq{
+					ID:      tg.ID,
+					Lockout: &next,
+				},
+			}
+			return p, Emit(req)
+		case key.Matches(m, tgPriUpKey), key.Matches(m, tgPriDownKey):
+			tg, ok := p.selectedTalkgroup(s.Talkgroups)
+			if !ok {
+				return p, nil
+			}
+			delta := 1
+			if key.Matches(m, tgPriDownKey) {
+				delta = -1
+			}
+			next := tg.Priority + delta
+			if next < 0 {
+				next = 0
+			}
+			if next > 99 {
+				next = 99
+			}
+			req := state.WriteRequest{
+				Label: fmt.Sprintf("set priority=%d on TG %d", next, tg.ID),
+				Kind:  state.WriteKindUpdateTalkgroup,
+				UpdateTalkgroup: &state.UpdateTalkgroupReq{
+					ID:       tg.ID,
+					Priority: &next,
+				},
+			}
+			return p, Emit(req)
 		}
 	}
 	if p.lastCount != len(s.Talkgroups) || p.lastSort != p.sortBy || p.lastQuery != p.filter.Value() {

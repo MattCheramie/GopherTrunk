@@ -9,6 +9,11 @@ log:
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
   grpc_addr: "127.0.0.1:50051"  # gRPC
+  # Off by default. Set true to expose the operator mutation
+  # endpoints (end call, set talkgroup priority/lockout, retention
+  # sweep, tone-out detector reset). The HTTP API has no auth, so
+  # only enable when the listener is bound to a trusted interface.
+  allow_mutations: false
 
 metrics:
   enabled: true     # mounts /metrics on the HTTP API

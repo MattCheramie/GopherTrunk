@@ -41,10 +41,22 @@ func NewMetrics() *MetricsPanel {
 	return &MetricsPanel{tbl: t}
 }
 
-func (MetricsPanel) Title() string       { return "Metrics" }
-func (MetricsPanel) Keys() []key.Binding { return nil }
+func (MetricsPanel) Title() string { return "Metrics" }
+
+var metricsSweepKey = key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "retention sweep"))
+
+func (MetricsPanel) Keys() []key.Binding { return []key.Binding{metricsSweepKey} }
 
 func (p *MetricsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, metricsSweepKey) {
+		req := state.WriteRequest{
+			Confirm:        "Run a retention sweep now?",
+			Label:          "retention sweep",
+			Kind:           state.WriteKindSweepRetention,
+			SweepRetention: &state.SweepRetentionReq{},
+		}
+		return p, Emit(req)
+	}
 	p.refresh(s.Metrics)
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)

@@ -221,9 +221,11 @@ disconnect:
 | `?` | toggle help |
 | `q` / `Ctrl+C` | quit |
 
-v1 is a viewer only. End-call, set-priority, lockout, retention-sweep
-and tone-detector reset land in a clearly-scoped follow-up PR; see
-[`docs/tui.md`](docs/tui.md) for the full reference.
+For mutation actions (end-call, set-priority, lockout,
+retention-sweep, tone-detector reset) start the daemon with
+`api.allow_mutations: true` and the TUI with `--write`. Both ends
+gate independently because the HTTP API has no authentication.
+See [`docs/tui.md`](docs/tui.md) for the full reference.
 
 ## Documentation
 

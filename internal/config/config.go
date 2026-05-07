@@ -52,9 +52,16 @@ type SystemConfig struct {
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
 // Both addresses are TCP listen specifiers (":8080", "127.0.0.1:9000",
 // etc.). An empty value disables that surface.
+//
+// AllowMutations gates the write endpoints (end call, set talkgroup
+// priority/lockout, retention sweep, tone-detector reset). Off by
+// default — the daemon's HTTP API has no authentication, so any
+// network-reachable instance is unauthenticated by definition. Only
+// turn this on if you trust everything that can reach the listener.
 type APIConfig struct {
-	HTTPAddr string `yaml:"http_addr"`
-	GRPCAddr string `yaml:"grpc_addr"`
+	HTTPAddr       string `yaml:"http_addr"`
+	GRPCAddr       string `yaml:"grpc_addr"`
+	AllowMutations bool   `yaml:"allow_mutations"`
 }
 
 // StorageConfig configures the SQLite call log. An empty Path disables

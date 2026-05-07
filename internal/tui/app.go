@@ -22,6 +22,10 @@ import (
 // Options controls the TUI's startup behaviour.
 type Options struct {
 	NoColor bool
+	// Write enables the TUI's mutation keybindings. AND-ed with
+	// the daemon's /api/v1/mutations capability — both must agree
+	// for write-side keys to fire.
+	Write bool
 }
 
 // Model is the root bubbletea model.
@@ -40,6 +44,8 @@ type Model struct {
 	eventCh    <-chan client.Event
 	sseCancel  func()
 	sseRetries int
+
+	confirm *confirmModal
 
 	historyLoaded bool
 	toastUntil    time.Time
@@ -85,6 +91,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollActive(m.cli),
 		cmdPollMetrics(m.cli),
 		cmdPollHistory(m.cli, client.HistoryFilter{Limit: 100}),
+		cmdMutationStatus(m.cli),
 		connectSSE(m.cli),
 	)
 }
@@ -105,6 +112,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tea.KeyMsg:
+		// Modal capture: when a confirmation is pending, every key
+		// goes to the modal — global nav and panels are frozen.
+		if m.confirm != nil {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				req := m.confirm.req
+				m.confirm = nil
+				return m, m.dispatchWrite(req)
+			case "n", "N", "esc":
+				m.confirm = nil
+				m.toast("cancelled")
+				return m, nil
+			}
+			return m, nil // swallow other keys while modal is up
+		}
 		// Quit & global navigation always win.
 		switch {
 		case key.Matches(msg, m.keys.Quit):
@@ -226,6 +248,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.toast("event stream disconnected — reconnecting in " + backoff.Truncate(time.Second).String())
 		cmds = append(cmds, tea.Tick(backoff, func(time.Time) tea.Msg { return connectSSE(m.cli)() }))
+
+	case pollMutationStatusMsg:
+		// /api/v1/mutations only fails on a network error; an
+		// older daemon that doesn't know the route yields a
+		// zero-value status. WriteEnabled is the AND of the
+		// daemon's allow_mutations and the TUI's --write flag.
+		m.shared.Mutations = msg.s
+		m.shared.WriteEnabled = m.opts.Write && msg.s.AllowMutations
+
+	case panels.WriteActionMsg:
+		if !m.shared.WriteEnabled {
+			m.toast("mutations disabled — pass --write to the TUI and api.allow_mutations: true to the daemon")
+			return m, nil
+		}
+		// requestConfirm either fires the request now or stashes
+		// it for the modal. The returned Cmd is non-nil only on
+		// the immediate-fire path.
+		if cmd := m.requestConfirm(msg.Request); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case writeResultMsg:
+		if msg.Err != nil {
+			m.toast(fmt.Sprintf("%s: %v", msg.Label, msg.Err))
+		} else if msg.Label != "" {
+			m.toast(msg.Label + " ok")
+		}
+		// Refresh the dependent surfaces immediately so the UI
+		// reflects the mutation without waiting for the next
+		// poll tick.
+		cmds = append(cmds,
+			cmdPollActive(m.cli),
+			cmdPollTalkgroups(m.cli),
+		)
 	}
 
 	// Forward to active panel.
@@ -258,7 +314,11 @@ func (m *Model) View() string {
 		bodyH = 4
 	}
 	body := m.panels[m.active].View(m.width, bodyH, true, m.shared)
-	return lipgloss.JoinVertical(lipgloss.Left, tabs, body, status)
+	full := lipgloss.JoinVertical(lipgloss.Left, tabs, body, status)
+	if m.confirm != nil {
+		return m.renderModal(m.width, m.height, full)
+	}
+	return full
 }
 
 func (m *Model) renderTabs() string {
@@ -301,4 +361,35 @@ func (m *Model) renderStatusBar() string {
 func (m *Model) toast(s string) {
 	m.shared.Toast = s
 	m.toastUntil = time.Now().Add(4 * time.Second)
+}
+
+// dispatchWrite turns a state.WriteRequest into the matching write
+// Cmd. The Cmd's outcome arrives back as writeResultMsg, which the
+// Update loop surfaces as a toast and uses to refresh dependent
+// reads.
+func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
+	switch r.Kind {
+	case state.WriteKindEndCall:
+		if r.EndCall == nil {
+			return nil
+		}
+		return cmdEndCall(m.cli, r.EndCall.DeviceSerial, r.EndCall.Reason, r.Label)
+	case state.WriteKindUpdateTalkgroup:
+		if r.UpdateTalkgroup == nil {
+			return nil
+		}
+		return cmdUpdateTalkgroup(m.cli,
+			r.UpdateTalkgroup.ID,
+			r.UpdateTalkgroup.Priority,
+			r.UpdateTalkgroup.Lockout,
+			r.Label)
+	case state.WriteKindSweepRetention:
+		return cmdSweepRetention(m.cli)
+	case state.WriteKindResetTone:
+		if r.ResetTone == nil {
+			return nil
+		}
+		return cmdResetTone(m.cli, r.ResetTone.DeviceSerial)
+	}
+	return nil
 }
