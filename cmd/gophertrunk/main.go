@@ -32,6 +32,8 @@ func main() {
 		fmt.Println(version.Version)
 	case "sdr":
 		runSDR(os.Args[2:])
+	case "tui":
+		runTUI(os.Args[2:])
 	case "daemon", "run":
 		runDaemon(os.Args[2:])
 	case "help", "--help", "-h":
@@ -47,6 +49,7 @@ func printUsage() {
 USAGE:
   gophertrunk [run] [-config path]    run the daemon (default)
   gophertrunk sdr list                list discovered SDR devices
+  gophertrunk tui [-server URL]       open the read-only operator TUI
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)
 }

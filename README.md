@@ -177,7 +177,8 @@ tests.
 ## Repository layout
 
 ```
-cmd/gophertrunk/        daemon entrypoint + sdr list CLI
+cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
+internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, CGO librtlsdr, mock
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
@@ -192,10 +193,44 @@ proto/                  *.proto schemas (events, system, talkgroup, audio)
 docs/                   architecture · hardware · vocoders · hardening
 ```
 
+## TUI
+
+GopherTrunk ships a read-only operator TUI that points at a running
+daemon. From a second terminal:
+
+```bash
+gophertrunk tui                    # default: http://127.0.0.1:8080
+gophertrunk tui -server http://10.0.0.5:8080
+gophertrunk tui -no-color          # disable ANSI colour
+gophertrunk tui -insecure          # skip TLS verification
+```
+
+Eight panels covering every read surface, vim-style navigation, live
+SSE event stream, periodic REST refresh, automatic reconnect on
+disconnect:
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift+Tab` | next / previous panel |
+| `1`–`8` | jump to Dashboard / Systems / Talkgroups / Active / History / Events / Tones / Metrics |
+| `j` / `k` | move row up / down inside a table |
+| `/` | filter (Talkgroups, Events) |
+| `s` | cycle sort (Talkgroups) |
+| `p` | pause auto-scroll (Events) |
+| `r` | reload (History) |
+| `?` | toggle help |
+| `q` / `Ctrl+C` | quit |
+
+v1 is a viewer only. End-call, set-priority, lockout, retention-sweep
+and tone-detector reset land in a clearly-scoped follow-up PR; see
+[`docs/tui.md`](docs/tui.md) for the full reference.
+
 ## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — layered overview,
   concurrency model, driver registry, build tags
+- [`docs/tui.md`](docs/tui.md) — TUI keybindings, panel reference,
+  troubleshooting
 - [`docs/hardware.md`](docs/hardware.md) — udev rules, DVB blacklist,
   IQ capture for replay
 - [`docs/vocoders.md`](docs/vocoders.md) — IMBE / AMBE+2 licensing
