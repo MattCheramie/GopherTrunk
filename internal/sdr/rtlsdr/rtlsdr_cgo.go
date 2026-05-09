@@ -158,6 +158,23 @@ func (d *Device) SetPPM(ppm int) error {
 	return nil
 }
 
+// SetBiasTee toggles the dongle's software-controlled bias-tee, the
+// 5V output that powers external LNAs through the antenna SMA. The
+// NooElec NESDR Smart v5 and most modern RTL-SDR clones expose this;
+// older units route the GPIO to a missing component (the call still
+// succeeds but no voltage appears). librtlsdr handles the GPIO bit
+// regardless of tuner type.
+func (d *Device) SetBiasTee(enable bool) error {
+	on := C.int(0)
+	if enable {
+		on = 1
+	}
+	if rc := C.rtlsdr_set_bias_tee(d.dev, on); rc != 0 {
+		return fmt.Errorf("rtlsdr_set_bias_tee(%v): rc=%d", enable, rc)
+	}
+	return nil
+}
+
 // StreamIQ resets the buffer, kicks off rtlsdr_read_async on a goroutine, and
 // returns a channel of complex64 samples. The channel closes when ctx cancels
 // or Close is called.

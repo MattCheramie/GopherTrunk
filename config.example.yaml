@@ -41,12 +41,14 @@ sdr:
   devices:
     - serial: "00000001"   # match `gophertrunk sdr list`; first-found wins when blank
       role: control        # control | voice | auto
-      ppm: 0
-      gain: "auto"
+      ppm: 0               # 0 is fine for TCXO-equipped units like the NESDR Smart v5
+      gain: "auto"         # "auto" or a tenths-of-dB string ("496" = 49.6 dB)
+      bias_tee: false      # enable the 5V bias-tee output for an external LNA
     - serial: "00000002"
       role: voice
       ppm: 0
       gain: "auto"
+      bias_tee: false
 
 trunking:
   systems:

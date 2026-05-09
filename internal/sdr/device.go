@@ -55,6 +55,11 @@ type Device interface {
 	SetSampleRate(hz uint32) error
 	SetGain(tenthDB int) error // -1 selects automatic gain control
 	SetPPM(ppm int) error
+	// SetBiasTee toggles the dongle's 5V bias-tee output (used to
+	// power external LNAs through the antenna SMA). Devices without
+	// the circuit silently no-op. Implementations should return nil
+	// if the underlying driver doesn't model bias-tee at all.
+	SetBiasTee(enable bool) error
 	StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	Close() error
 }
