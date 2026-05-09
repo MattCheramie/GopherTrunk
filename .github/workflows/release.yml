@@ -53,6 +53,10 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          # Inherit the runner's Windows PATH so the Go binary
+          # placed by actions/setup-go is visible inside the msys2
+          # shell (default `minimal` strips it).
+          path-type: inherit
           install: >-
             git
             zip

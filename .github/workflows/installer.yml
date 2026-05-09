@@ -1,0 +1,118 @@
+name: Windows installer (PR)
+
+# Builds the Windows installer (.exe) on every pull request so
+# regressions in the cgo build, the bundled DLL set, or the Inno
+# Setup script surface before merge — not at the next release tag.
+#
+# This intentionally mirrors the windows job in release.yml rather
+# than sharing one. The release job is tightly coupled to tag-shaped
+# version strings and to the artifact layout the Release page
+# expects; PR builds use a synthetic version and only upload the
+# installer .exe (not the portable ZIP), so duplication is cheaper
+# than the abstraction.
+#
+# Concurrency cancels any in-flight run for the same PR when a new
+# commit is pushed, so quick rebases don't burn idle Windows runner
+# minutes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: installer-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: Build Windows installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: version
+        shell: bash
+        run: |
+          # Synthetic version for PR builds: pr-<number>-<short-sha>.
+          # Filename-safe; gets stamped into the binary's version
+          # string and the installer's AppVersion.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+            echo "version=pr-${{ github.event.pull_request.number }}-${SHA}" >> "$GITHUB_OUTPUT"
+          else
+            SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+            echo "version=manual-${SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          # Inherit the runner's Windows PATH so the Go binary
+          # placed by actions/setup-go is visible inside the msys2
+          # shell (default `minimal` strips it and `go build` fails
+          # with "command not found").
+          path-type: inherit
+          install: >-
+            git
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-rtl-sdr
+            mingw-w64-x86_64-libusb
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build gophertrunk.exe
+        env:
+          CGO_ENABLED: "1"
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/staging
+          go build \
+            -trimpath \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
+            -o dist/staging/gophertrunk.exe \
+            ./cmd/gophertrunk
+
+      - name: Bundle DLLs and docs
+        run: |
+          set -eu
+          STAGE=dist/staging
+          for dll in \
+            librtlsdr.dll \
+            libusb-1.0.dll \
+            libwinpthread-1.dll \
+            libgcc_s_seh-1.dll
+          do
+            if [ -f "/mingw64/bin/$dll" ]; then
+              cp "/mingw64/bin/$dll" "$STAGE/"
+            else
+              echo "warning: $dll not found in MINGW64 bin"
+            fi
+          done
+          cp README.md LICENSE config.example.yaml "$STAGE/"
+          cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
+
+      - name: Build Inno Setup installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer/windows/gophertrunk.iss
+          options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-${{ steps.version.outputs.version }}
+          path: dist/*setup.exe
+          retention-days: 14
+          if-no-files-found: error
