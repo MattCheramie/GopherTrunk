@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +21,37 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
+
+// parseGain converts a config.DeviceConfig.Gain value to a tenths-
+// of-dB integer suitable for sdr.Device.SetGain. Accepts:
+//
+//   "auto" / "AUTO" / ""        →  -1 (automatic)
+//   "49.6" or "49,6"            →  496
+//   "496"                       →  496
+//
+// Returns ok=false on any other shape so the caller can warn and
+// move on without crashing the daemon.
+func parseGain(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.EqualFold(s, "auto") {
+		return -1, true
+	}
+	// Accept "49.6" by multiplying. Comma is tolerated for non-US
+	// locales pasted out of GUI tools.
+	if strings.ContainsAny(s, ".,") {
+		s = strings.ReplaceAll(s, ",", ".")
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, false
+		}
+		return int(f*10 + 0.5), true
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
 
 // Daemon owns the lifecycle of every long-lived component the
 // gophertrunk binary runs: the events bus, SDR pool, trunking engine,
@@ -101,7 +134,22 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		d.pool = sdr.NewPool(log)
 		var hints []sdr.Hint
 		for _, dev := range cfg.SDR.Devices {
-			hints = append(hints, sdr.Hint{Serial: dev.Serial, Role: sdr.ParseRole(dev.Role)})
+			h := sdr.Hint{
+				Serial:  dev.Serial,
+				Role:    sdr.ParseRole(dev.Role),
+				PPM:     dev.PPM,
+				BiasTee: dev.BiasTee,
+			}
+			if dev.Gain != "" {
+				gain, ok := parseGain(dev.Gain)
+				if !ok {
+					log.Warn("daemon: ignoring unparseable gain",
+						"serial", dev.Serial, "gain", dev.Gain)
+				} else {
+					h = h.WithGain(gain)
+				}
+			}
+			hints = append(hints, h)
 		}
 		if err := d.pool.Open(hints); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)

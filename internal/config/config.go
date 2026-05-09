@@ -32,10 +32,22 @@ type SDRConfig struct {
 }
 
 type DeviceConfig struct {
-	Serial string `yaml:"serial"`
-	Role   string `yaml:"role"`
-	PPM    int    `yaml:"ppm"`
-	Gain   string `yaml:"gain"`
+	Serial  string `yaml:"serial"`
+	Role    string `yaml:"role"`
+	PPM     int    `yaml:"ppm"`
+	// Gain is the tuner gain setting. "auto" (or empty) selects
+	// the dongle's automatic gain control; any other value is
+	// parsed as a tenths-of-dB integer matching librtlsdr's
+	// gain table (e.g. "496" → 49.6 dB). Use `gophertrunk sdr
+	// list` to see the supported values per device.
+	Gain    string `yaml:"gain"`
+	// BiasTee enables the dongle's 5V bias-tee output, used to
+	// power external LNAs through the antenna SMA. Off by
+	// default. Most modern RTL-SDR clones (e.g. NooElec NESDR
+	// Smart v5) wire this through; older units may toggle a
+	// GPIO bit that goes nowhere — librtlsdr accepts the call
+	// either way.
+	BiasTee bool `yaml:"bias_tee"`
 }
 
 type TrunkingConfig struct {

@@ -47,12 +47,15 @@ driver is what you'd use to watch broadcast TV, and it's the wrong
 driver for SDR work. We need to swap it for **WinUSB** on a
 per-device basis. The standard tool is **Zadig**:
 
-1. Plug in the RTL-SDR dongle.
+1. Plug in the RTL-SDR dongle. The same flow works for any
+   `0bda:2838` device — generic RTL-SDR Blog units, the **NooElec
+   NESDR Smart v5**, and equivalent clones.
 2. Download Zadig from <https://zadig.akeo.ie> (single .exe, no
    install). Run it as **Administrator**.
 3. **Options → List All Devices** so the RTL-SDR shows up.
 4. From the dropdown, pick the dongle. It'll typically appear as
-   **Bulk-In, Interface (Interface 0)** or **RTL2832U**.
+   **Bulk-In, Interface (Interface 0)** or **RTL2832U** (the
+   NESDR Smart v5 reports as `RTL2838UHIDIR`).
 5. With **WinUSB** selected as the target driver, click
    **Replace Driver** (or **Install Driver**, first time).
 6. Wait ~10 seconds for the success dialog.
