@@ -87,10 +87,16 @@ to its own package and lands independently.
   excitation step extends (`synth.go`); §6.2 amplitude prep
   (log2(Ml) → linear Ml = 2^log2(Ml), the R_M0 = Σ Ml² and
   R_M1 = Σ Ml² · cos(ω₀·l) spectral moments, and a voicing-fraction
-  summary that the synthesis combiner consumes) is in (`amps.go`).
-  Currently still emits silence per frame; follow-up PRs land the
-  voiced harmonic generator (§6.3), unvoiced FFT excitation (§6.4),
-  and the §6.2 enhancement + final PCM combine.
+  summary that the synthesis combiner consumes) is in (`amps.go`);
+  §6.3 voiced harmonic generator (per-harmonic sinusoid at l · ω₀
+  with linear amp tilt M_prev → M_curr + quadratic phase
+  integration of the ω₀ drift, dual-frame iteration so
+  voiced↔unvoiced transitions fade in / out cleanly) is in
+  (`synth_voiced.go`, `SynthState` extended with `PrevPhase` +
+  `PrevMl`). Currently still emits silence per frame because the
+  decoder hasn't been wired through the synthesis chain yet;
+  follow-up PRs land the unvoiced FFT excitation (§6.4) and the
+  §6.2 enhancement + final PCM combine.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name

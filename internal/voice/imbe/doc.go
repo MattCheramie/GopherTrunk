@@ -64,11 +64,15 @@
 //     coarse voiced/unvoiced hint by the upcoming synthesis
 //     combiner. See amps.go.
 //
-//  4c. Speech synthesis — voiced harmonic generator. For each
-//     Vl[l] = 1 harmonic, a sinusoid at l · ω₀ with phase
-//     continuity across frames + linear amplitude tilt between
-//     prev-frame Ml and curr-frame Ml over the 160-sample frame.
-//     TIA-102.BABA §6.3.
+//  4c. Speech synthesis — voiced harmonic generator. ← THIS PR.
+//     For each harmonic that's voiced this frame OR was voiced
+//     last frame, a sinusoid at l · ω₀ with linear amplitude tilt
+//     between M_prev[l] and M_curr[l] across 160 samples + a
+//     quadratic phase term that integrates the linear ω₀ drift.
+//     The dual-frame iteration gives clean fade-in / fade-out on
+//     voicing transitions without click artifacts. SynthState
+//     gains PrevPhase + PrevMl for the cross-frame continuity.
+//     TIA-102.BABA §6.3. See synth_voiced.go.
 //
 //  4d. Speech synthesis — unvoiced excitation. White-noise
 //     spectrum shaped by the unvoiced bands of Ml, IFFT, overlap-add

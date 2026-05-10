@@ -26,7 +26,9 @@ const PredictionGain = 0.65
 
 // SynthState carries inter-frame memory needed by the synthesizer.
 // Step 4a uses PrevW0 / PrevL / PrevLog2Ml for the eq. 75-77
-// log-amplitude prediction; step 4b adds voicing + phase memory.
+// log-amplitude prediction; step 4c adds PrevMl + PrevPhase for the
+// §6.3 voiced harmonic generator (linear-amp tilt + quadratic-phase
+// continuity).
 //
 // Zero value is the "fresh stream / no prev frame" starting state —
 // what the decoder presents to the first IMBE frame on a call.
@@ -35,6 +37,8 @@ type SynthState struct {
 	PrevW0     float64    // ω₀ from the previous decoded frame (rad/sample); 0 ⇒ no prev frame
 	PrevL      int        // L from the previous decoded frame (1-indexed slice extent)
 	PrevLog2Ml [57]float64 // log2(Ml) at indices [1..PrevL]; [0] + tail unused
+	PrevMl     [57]float64 // linear Ml at end of prev frame; 0 if was unvoiced / absent
+	PrevPhase  [57]float64 // accumulated phase per harmonic in [0, 2π)
 }
 
 // Reset clears all inter-frame memory. Callers invoke it on stream
