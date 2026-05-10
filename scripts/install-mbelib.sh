@@ -81,6 +81,32 @@ cmake --build . \
 
 log "installing to $PREFIX (sudo=${USE_SUDO})"
 $SUDO cmake --install .
+
+# MinGW post-install fixup. mbelib's install rule (LIBRARY +
+# ARCHIVE destinations only, no RUNTIME) installs the .dll.a
+# import library but skips libmbe.dll itself — the runtime stays
+# in the build dir. CMake silently honors that on POSIX (the .so
+# IS the runtime) but on Windows the .dll and .dll.a are separate
+# files and CGO callers need the .dll on PATH at load time. Detect
+# the case + copy the .dll from the build tree into $PREFIX/bin/.
+# Linux installs (no .dll.a) skip this branch entirely.
+if [[ -f "$PREFIX/lib/libmbe.dll.a" || -f "$PREFIX/bin/libmbe.dll.a" ]]; then
+  if ! ls "$PREFIX"/bin/libmbe*.dll >/dev/null 2>&1 \
+     && ! ls "$PREFIX"/lib/libmbe*.dll >/dev/null 2>&1; then
+    log "MinGW import lib installed but no libmbe.dll — copying runtime from build tree"
+    BUILT_DLL="$(find . -maxdepth 4 -name 'libmbe*.dll' 2>/dev/null | head -1)"
+    if [[ -z "$BUILT_DLL" ]]; then
+      log "FAIL: import lib installed but no libmbe.dll found in build tree"
+      log "build tree DLLs (for diagnosis):"
+      find . -name '*.dll' 2>/dev/null | head -10
+      exit 2
+    fi
+    $SUDO mkdir -p "$PREFIX/bin"
+    $SUDO cp "$BUILT_DLL" "$PREFIX/bin/"
+    log "  copied $BUILT_DLL → $PREFIX/bin/"
+  fi
+fi
+
 # ldconfig only exists on Linux/glibc + only matters when the
 # system loader needs to refresh its cache. Silently no-op on
 # Windows/MSYS2 where it isn't shipped.
