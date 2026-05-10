@@ -58,16 +58,19 @@ SQLite. The honest gaps:
   shipped — absolute-level calibration against a known-good
   reference decoder is the only remaining polish item. Pure-Go
   AMBE+2 lives under `internal/voice/ambe2/` and registers the
-  `ambe2` name on every default build; the 49-bit parameter
-  unpack is shipped (b₀..b₈ extraction, codebook lookups against
-  the auto-generated `AmbePlus*` tables, 8-point inverse DCT for
-  PRBA, four per-band inverse DCTs for Tl). Synthesis wire-up
-  via the shared `internal/voice/mbe/` pipeline is the remaining
-  piece — Decode still emits silence until the cross-frame
-  `gamma` bookkeeping lands. The AMBE+2 algorithm carries active
-  patents in some jurisdictions; re-implementing it in pure Go
-  does not change that posture — see
-  [docs/vocoders.md](docs/vocoders.md).
+  `ambe2` name on every default build; `Decode` now produces real
+  audio end-to-end via the shared `internal/voice/mbe/` synthesis
+  pipeline (49-bit parameter unpack → cross-frame gamma fold →
+  `mbe.PredictLog2Ml` → linear M → unvoiced `Unvc` scaling →
+  `mbe.EnhanceAmplitudes` → voiced + unvoiced OA synthesis →
+  state roll-forward → per-frame AGC). Remaining polish:
+  calibration against a DSD-FME-decoded DMR reference WAV (AGC
+  defaults are tuned for IMBE and AMBE+2 quantisation may need a
+  per-frame gain tweak); proper tone-frame synthesis (single +
+  dual sinewave) replacing the current silence-out path. The
+  AMBE+2 algorithm carries active patents in some jurisdictions;
+  re-implementing it in pure Go does not change that posture —
+  see [docs/vocoders.md](docs/vocoders.md).
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
   de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
   polyphase L/M audio resampler — the full polish stack ships.
@@ -174,30 +177,39 @@ to its own package and lands independently.
   20 ms / 160 PCM cadence, same harmonic + unvoiced FFT synthesis
   shape — so the synthesis half reuses `internal/voice/mbe/`
   directly. Only the front half (bit-level unpack from 49
-  information bits into `mbe.Params`) is AMBE+2-specific. The
-  AMBE+2 algorithm carries active patents in some jurisdictions;
-  re-implementing it in Go does not change that posture
+  information bits into `mbe.Params` plus the AMBE+2-specific
+  cross-frame gamma) is AMBE+2-specific. The AMBE+2 algorithm
+  carries active patents in some jurisdictions; re-implementing
+  it in Go does not change that posture
   ([docs/vocoders.md](docs/vocoders.md)). Status: skeleton +
   Vocoder interface registered as `ambe2` on the default build
-  (`internal/voice/ambe2/decoder.go`); the 49-bit parameter
-  unpack is in (`internal/voice/ambe2/params.go`) — bit
-  extraction for b₀..b₈, tone-frame detection (b₀ ∈ {0x7E,0x7F}),
-  fundamental + L from `AmbePlusLtable[b₀]`, voicing decisions
-  via `AmbePlusVuv[b₁][jl]`, gain delta from `AmbePlusDg[b₂]`,
+  (`internal/voice/ambe2/decoder.go`); 49-bit parameter unpack
+  is in (`internal/voice/ambe2/params.go`) — bit extraction for
+  b₀..b₈, tone-frame detection (b₀ ∈ {0x7E,0x7F}), fundamental
+  + L from `AmbePlusLtable[b₀]`, voicing decisions via
+  `AmbePlusVuv[b₁][jl]`, gain delta from `AmbePlusDg[b₂]`,
   PRBA24/PRBA58 → Gm → 8-point inverse DCT → Ri → first two
   Cik coefficients per band, HOC tables b₅..b₈ → remaining Cik
   rows, four per-band inverse DCTs producing the Tl[1..L]
   spectral residuals. Codebook tables are auto-generated from
   szechyjs/mbelib's `ambe3600x2400_const.h` under ISC
   (`internal/voice/ambe2/tables.go`,
-  `scripts/gen-ambe2-tables.sh`). Remaining: synthesis wire-up
-  via the shared `mbe.PredictLog2Ml` → `mbe.SynthVoiced` →
-  `mbe.SynthUnvoicedOverlapAdd` → `mbe.AGC.Apply` pipeline
-  threaded through a per-decoder cross-frame state that carries
-  the AMBE+2-specific `gamma` (overall gain) alongside the
-  shared `mbe.SynthState`; AGC calibration against a
-  DSD-FME-decoded DMR reference recording; full bad-frame
-  + tone-synthesis paths.
+  `scripts/gen-ambe2-tables.sh`). Synthesis is wired through
+  the shared `mbe` pipeline: `Decode()` resolves the absolute
+  gamma (gamma_curr = ΔG + 0.5·gamma_prev cached on the
+  Decoder), folds gamma + DC removal + 0.5·log2(L) into Tl so
+  the shared `mbe.PredictLog2Ml` produces AMBE+2-spec
+  log-amplitudes, applies the AMBE+2 unvoiced `Unvc` scaling
+  (0.2046/√ω₀) between log2Ml→Ml and the §6.2 enhancement,
+  then runs `mbe.SynthVoiced` + `mbe.SynthUnvoicedOverlapAdd`
+  + state roll-forward + per-frame AGC into int16 PCM. Tone
+  frames route through the §6.4 OA fade-out + state reset;
+  bad-frame replay uses the shared `mbe.MaxBadFrames` /
+  `mbe.BadFrameAttenuation`. **Remaining polish**: calibration
+  against a DSD-FME-decoded DMR reference recording (testdata
+  follow-up); proper tone-frame synthesis (single + dual
+  sinewave from preserved B1/B2) replacing the current silence
+  path.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/ambe2`; the daemon picks the factory by name

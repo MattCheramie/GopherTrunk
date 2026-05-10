@@ -20,38 +20,48 @@
 // that posture. Operators in licence-restrictive jurisdictions
 // should evaluate before deploying.
 //
-// Roadmap (each item lands as its own self-contained PR so review
-// stays tractable):
+// Roadmap (each item landed as its own self-contained PR so review
+// stayed tractable):
 //
-//  1. Skeleton + Vocoder interface integration. ← THIS PR.
-//     Decoder satisfies voice.Vocoder, registers as "ambe2" in
-//     voice.DefaultRegistry unconditionally on the default build,
-//     and emits silence per frame so the full call pipeline can
-//     wire to it now and start receiving audio for free as the
-//     later pieces land. FrameSize is 7 bytes (49 information
-//     bits + 7 padding) matching the libmbe wrapper's contract.
+//  1. Skeleton + Vocoder interface integration. Decoder satisfies
+//     voice.Vocoder, registers as "ambe2" in voice.DefaultRegistry
+//     unconditionally on the default build. FrameSize is 7 bytes
+//     (49 information bits + 7 padding) matching the libmbe
+//     wrapper's contract.
 //
-//  2. Parameter unpacking — 49 bits → mbe.Params. The largest
-//     single PR of the AMBE+2 work. Reads b₀ → ω₀ + L from a
-//     scattered bit position layout; voicing-pattern table
-//     lookup → Vl[1..L]; gain-vector index → log-amplitude offset
-//     feeding the gain block; two-stage spectral VQ index → DCT
-//     residual coefficients per band; DCT-II → Tl[1..L].
-//     Reference: szechyjs/mbelib's mbe_decodeAmbe2400Parms in
-//     ambe3600x2400.c, with constants from
-//     ambe3600x2450_const.h (ISC-licensed code; algorithm
+//  2. Parameter unpacking — 49 bits → ambe2.Params (mbe.Params +
+//     AMBE+2-specific DeltaGamma / Unvc / Tone / B0..B8). Reads
+//     b₀ → ω₀ + L from a scattered bit position layout;
+//     voicing-pattern table lookup → Vl[1..L]; gain-vector index →
+//     log-amplitude offset feeding the gain block; two-stage
+//     spectral VQ index → DCT residual coefficients per band;
+//     DCT-II → Tl[1..L]. Reference: szechyjs/mbelib's
+//     mbe_decodeAmbe2400Parms in ambe3600x2400.c with constants
+//     from ambe3600x2400_const.h (ISC-licensed code; algorithm
 //     patents are a separate concern — see docs/vocoders.md).
 //
-//  3. Synthesis wire-up + bad-frame handling + calibration.
-//     Decode() runs the shared mbe pipeline:
-//     UnpackParams → mbe.PredictLog2Ml → mbe.AmplitudesFromLog2Ml
-//     → mbe.EnhanceAmplitudes → mbe.SynthVoiced
-//     → mbe.SynthUnvoicedOverlapAdd → mbe.SynthState.Update…
-//     → mbe.AGC.Apply. AMBE+2-specific silence-frame indicator +
-//     frame-repeat-on-bad-frame using shared mbe.MaxBadFrames /
-//     BadFrameAttenuation. Calibration loop against a DSD-FME or
-//     OP25 reference WAV at testdata/. Tune the per-frame gain
-//     constant if AGC shows systematic level offset — AGC
-//     defaults are tuned for IMBE and AMBE+2 quantization may
-//     produce different per-frame energy.
+//  3. Synthesis wire-up + bad-frame handling. ← THIS PR.
+//     Decode() runs the shared mbe pipeline: UnpackParams → gamma
+//     fold (DC removal + 0.5·prev_gamma recursion + 0.5·log2(L)
+//     offset) → mbe.PredictLog2Ml → mbe.AmplitudesFromLog2Ml →
+//     unvoiced amplitude scaling by Unvc → mbe.EnhanceAmplitudes
+//     → mbe.SynthVoiced + mbe.SynthUnvoicedOverlapAdd →
+//     SynthState.Update… → mbe.AGC.Apply. AMBE+2-specific
+//     tone-frame path (b₀ ∈ {0x7E, 0x7F}) routes through the §6.4
+//     OA fade-out + state reset; bad-frame replay uses the shared
+//     mbe.MaxBadFrames / mbe.BadFrameAttenuation. The cross-frame
+//     gamma (gamma_curr = ΔG + 0.5·gamma_prev) lives on the
+//     Decoder; the per-frame fold rewrites Tl so the shared
+//     mbe.PredictLog2Ml produces AMBE+2-spec output without an
+//     AMBE+2-aware variant.
+//
+//  4. Remaining polish: calibration against a DSD-FME or OP25
+//     reference WAV at testdata/ (capture a known DMR voice frame
+//     + decode through both, compare RMS + cross-correlation);
+//     tune the per-frame gain constant if AGC shows systematic
+//     level offset against the reference (AGC defaults are tuned
+//     for IMBE and AMBE+2 quantization may produce different
+//     per-frame energy); proper tone-frame synthesis (single +
+//     dual sinewave from the preserved B1/B2 indices) replacing
+//     the current silence-out path.
 package ambe2
