@@ -103,10 +103,20 @@ SQLite. The honest gaps:
   synthetic LDU containing 9 encoded IMBE frames, runs them
   through `ExtractVoiceFrames` → `recorder.WriteRawFrame` →
   registered IMBE vocoder → WAV, and confirms the WAV carries
-  the expected 9·160·2 PCM bytes with non-silent samples. The AMBE+2 algorithm carries active
-  patents in some jurisdictions; re-implementing it in pure Go
-  does not change that posture — see
-  [docs/vocoders.md](docs/vocoders.md).
+  the expected 9·160·2 PCM bytes with non-silent samples.
+  Upstream of the LDU extraction, `phase1.LDUAssembler`
+  (`internal/radio/p25/phase1/ldu_assembler.go`) consumes a
+  C4FM dibit stream (post-symbol-clock-recovery, value 0..3
+  per dibit), latches on the 24-dibit Frame Sync Word
+  (configurable mismatch tolerance for noisy signals), and
+  emits complete 1728-bit LDU buffers to a sink callback
+  ready for `ExtractVoiceFrames`. The only remaining gap to
+  process a live captured P25 P1 stream is the **IQ → C4FM
+  dibit** step (matched filter, symbol clock recovery, slicer);
+  the symbol-domain side is fully wired. The AMBE+2 algorithm
+  carries active patents in some jurisdictions;
+  re-implementing it in pure Go does not change that posture
+  — see [docs/vocoders.md](docs/vocoders.md).
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
   de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
   polyphase L/M audio resampler — the full polish stack ships.
