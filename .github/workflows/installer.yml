@@ -104,10 +104,74 @@ jobs:
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
 
-      - name: Build Inno Setup installer
+      - name: Build Inno Setup installer (default — no mbelib)
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
         with:
           path: installer/windows/gophertrunk.iss
+          options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
+
+      # mbelib variant — same gating as release.yml so PR diffs that
+      # touch CGO + the mbelib wrapper are validated end-to-end at PR
+      # time rather than at the next release tag. AMBE+2 is patent-
+      # encumbered; the variant ships under a distinct
+      # `-with-mbelib-setup.exe` filename and the in-installer welcome
+      # message reiterates the caveat. See docs/vocoders.md.
+      - name: Install mbelib in MSYS2
+        env:
+          USE_SUDO: "0"
+          PREFIX: /mingw64
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF"
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          scripts/install-mbelib.sh
+
+      - name: Build gophertrunk.exe (-tags mbelib)
+        env:
+          CGO_ENABLED: "1"
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/staging-mbelib
+          go build \
+            -trimpath \
+            -tags mbelib \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
+            -o dist/staging-mbelib/gophertrunk.exe \
+            ./cmd/gophertrunk
+
+      - name: Bundle DLLs and docs (mbelib variant)
+        run: |
+          set -eu
+          STAGE=dist/staging-mbelib
+          for dll in \
+            librtlsdr.dll \
+            libusb-1.0.dll \
+            libwinpthread-1.dll \
+            libgcc_s_seh-1.dll \
+            libstdc++-6.dll
+          do
+            if [ -f "/mingw64/bin/$dll" ]; then
+              cp "/mingw64/bin/$dll" "$STAGE/"
+            else
+              echo "warning: $dll not found in MINGW64 bin"
+            fi
+          done
+          if compgen -G "/mingw64/bin/libmbe*.dll" >/dev/null; then
+            cp /mingw64/bin/libmbe*.dll "$STAGE/"
+          else
+            echo "FAIL: no libmbe DLL found under /mingw64/bin/"
+            ls -la /mingw64/bin/ | grep -i mbe || true
+            exit 1
+          fi
+          cp README.md LICENSE config.example.yaml "$STAGE/"
+          cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
+          cp docs/vocoders.md "$STAGE/VOCODERS.md"
+
+      - name: Build Inno Setup installer (with mbelib)
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer/windows/gophertrunk-mbelib.iss
           options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
 
       - uses: actions/upload-artifact@v4

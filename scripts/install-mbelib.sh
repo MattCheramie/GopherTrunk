@@ -27,6 +27,11 @@ REPO_REF="${REPO_REF:-master}"
 PREFIX="${PREFIX:-/usr/local}"
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d -t mbelib-build-XXXXXX)}"
 USE_SUDO="${USE_SUDO:-1}"
+# CMAKE_EXTRA_ARGS is passed straight through to the cmake invocation.
+# Set this to e.g. "-DBUILD_TESTING=OFF" in CI to skip the gtest /
+# gmock subbuilds that mbelib's tree pulls in for its unit tests but
+# which add ~30 s of build time and add no value to a runtime install.
+CMAKE_EXTRA_ARGS="${CMAKE_EXTRA_ARGS:-}"
 
 log() { printf '==> %s\n' "$*" >&2; }
 
@@ -50,10 +55,11 @@ done
 log "cloning $REPO_URL ($REPO_REF) into $BUILD_DIR"
 git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$BUILD_DIR/mbelib"
 
-log "configuring (prefix=$PREFIX)"
+log "configuring (prefix=$PREFIX, extra=$CMAKE_EXTRA_ARGS)"
 mkdir -p "$BUILD_DIR/mbelib/build"
 cd "$BUILD_DIR/mbelib/build"
-cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" ..
+# shellcheck disable=SC2086 # CMAKE_EXTRA_ARGS intentionally word-split
+cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" $CMAKE_EXTRA_ARGS ..
 
 log "building"
 make -j"$(nproc 2>/dev/null || echo 2)"

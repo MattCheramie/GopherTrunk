@@ -11,10 +11,17 @@ name: Release
 #
 # Outputs in the GitHub Release:
 #
-#   gophertrunk-<ver>-windows-amd64-setup.exe   one-click installer
-#   gophertrunk-<ver>-windows-amd64.zip         portable ZIP (no installer)
-#   gophertrunk-<ver>-linux-amd64.tar.gz        Linux tarball
-#   SHA256SUMS                                  per-file SHA-256 checksums
+#   gophertrunk-<ver>-windows-amd64-setup.exe              default installer
+#   gophertrunk-<ver>-windows-amd64-with-mbelib-setup.exe  + bundled mbelib (AMBE+2 / IMBE C ref)
+#   gophertrunk-<ver>-windows-amd64.zip                    portable ZIP (no installer)
+#   gophertrunk-<ver>-linux-amd64.tar.gz                   Linux tarball
+#   SHA256SUMS                                             per-file SHA-256 checksums
+#
+# AMBE+2 is patent-encumbered. The default installer doesn't bundle
+# mbelib — operators who need AMBE+2 (P25 Phase 2 / DMR / NXDN) or
+# the C IMBE reference download the `-with-mbelib-` variant after
+# evaluating the patent situation for their use case. See
+# docs/vocoders.md.
 on:
   push:
     tags:
@@ -114,10 +121,80 @@ jobs:
           cp -r dist/staging/. "dist/${NAME}/"
           (cd dist && zip -r "${NAME}.zip" "${NAME}")
 
-      - name: Build Inno Setup installer
+      - name: Build Inno Setup installer (default — no mbelib)
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
         with:
           path: installer/windows/gophertrunk.iss
+          options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
+
+      # ----- mbelib variant: bundles the szechyjs/mbelib library so
+      # AMBE+2 (P25 Phase 2 / DMR / NXDN) + the C IMBE reference are
+      # available out of the box. AMBE+2 is patent-encumbered; this
+      # variant is opt-in at download time and ships under a distinct
+      # `-with-mbelib-setup.exe` filename so users can't pick it up
+      # accidentally. See docs/vocoders.md.
+      - name: Install mbelib in MSYS2
+        env:
+          USE_SUDO: "0"
+          PREFIX: /mingw64
+          # Skip the gtest / gmock subbuilds that mbelib pulls in for
+          # its tests — saves ~30 s of CI time and reduces the
+          # failure surface to just the library itself.
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF"
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          scripts/install-mbelib.sh
+
+      - name: Build gophertrunk.exe (-tags mbelib)
+        env:
+          CGO_ENABLED: "1"
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          export PATH="/mingw64/bin:$PATH"
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/staging-mbelib
+          go build \
+            -trimpath \
+            -tags mbelib \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
+            -o dist/staging-mbelib/gophertrunk.exe \
+            ./cmd/gophertrunk
+
+      - name: Bundle DLLs and docs (mbelib variant)
+        run: |
+          set -eu
+          STAGE=dist/staging-mbelib
+          # Same runtime DLLs as the default variant…
+          for dll in \
+            librtlsdr.dll \
+            libusb-1.0.dll \
+            libwinpthread-1.dll \
+            libgcc_s_seh-1.dll \
+            libstdc++-6.dll
+          do
+            if [ -f "/mingw64/bin/$dll" ]; then
+              cp "/mingw64/bin/$dll" "$STAGE/"
+            else
+              echo "warning: $dll not found in MINGW64 bin"
+            fi
+          done
+          # …plus mbelib's runtime DLL. CMake's MinGW build outputs
+          # libmbe.dll; the wildcard tolerates upstream rename.
+          if compgen -G "/mingw64/bin/libmbe*.dll" >/dev/null; then
+            cp /mingw64/bin/libmbe*.dll "$STAGE/"
+          else
+            echo "FAIL: no libmbe DLL found under /mingw64/bin/"
+            ls -la /mingw64/bin/ | grep -i mbe || true
+            exit 1
+          fi
+          cp README.md LICENSE config.example.yaml "$STAGE/"
+          cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
+          cp docs/vocoders.md "$STAGE/VOCODERS.md"
+
+      - name: Build Inno Setup installer (with mbelib)
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer/windows/gophertrunk-mbelib.iss
           options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
 
       - uses: actions/upload-artifact@v4
@@ -205,8 +282,10 @@ jobs:
           body: |
             ## Install
 
-            **Windows 11:** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu and bundles the librtlsdr / libusb runtime DLLs. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+            **Windows 11 (default):** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu and bundles the librtlsdr / libusb runtime DLLs. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
 
-            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Requires `librtlsdr` + `libusb-1.0` from your package manager.
+            **Windows 11 (with AMBE+2 / IMBE C reference):** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-with-mbelib-setup.exe`. Same package as above plus the szechyjs/mbelib runtime DLL so AMBE+2 (P25 Phase 2 / DMR / NXDN) and the C IMBE decoder are available out of the box — no need to build mbelib yourself. **AMBE+2 is patent-encumbered**; only download this variant after evaluating the patent situation for your use case. See [docs/vocoders.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/vocoders.md).
+
+            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Requires `librtlsdr` + `libusb-1.0` from your package manager. For AMBE+2 / mbelib support, run `make mbelib-install && make build TAGS=mbelib` from a source checkout (see [docs/vocoders.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/vocoders.md)).
 
             All artifacts are SHA-256-checksummed in `SHA256SUMS`.

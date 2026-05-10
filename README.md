@@ -57,9 +57,11 @@ SQLite. The honest gaps:
   spectral enhancement + frame-repeat on bad-frame indicator
   shipped — only mbelib-bit-equivalent absolute-level calibration
   remains as a follow-up. AMBE+2 stays behind the `mbelib` build
-  tag; operators who hold (or don't need) the patent licence run
-  `make mbelib-install && make build TAGS=mbelib` to get both
-  IMBE + AMBE+2 via the C reference implementation.
+  tag; on Windows it's a separate prebuilt installer
+  (`-with-mbelib-setup.exe`) that bundles `libmbe.dll` so the
+  full vocoder set is click-installable, and on Linux operators
+  run `make mbelib-install && make build TAGS=mbelib` from a
+  source checkout. The patent posture still gates either path.
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
   de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
   polyphase L/M audio resampler — the full polish stack ships.
@@ -182,16 +184,21 @@ to its own package and lands independently.
 Each tagged release publishes installers / archives on the
 [**Releases page**][releases]:
 
-| Platform   | File                                                   | What it is                                              |
-| ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
-| Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup, bundles librtlsdr DLLs) |
-| Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same files, no installer                  |
-| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed binary + sample config                         |
+| Platform   | File                                                              | What it is                                              |
+| ---------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`                       | One-click installer (Inno Setup, bundles librtlsdr DLLs) |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64-with-mbelib-setup.exe`           | Same + bundled `libmbe.dll` so AMBE+2 + C IMBE work out of the box. **AMBE+2 is patent-encumbered** — only download if you've evaluated the patent situation for your use case. See [`docs/vocoders.md`](docs/vocoders.md). |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                             | Portable ZIP — same files as the default installer, no installer wrapper |
+| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                            | Tarballed binary + sample config (no mbelib; `make mbelib-install` from a source checkout to add it) |
 
 Windows users: after running the installer, follow
 [`docs/install-windows.md`](docs/install-windows.md) to swap the
 RTL-SDR driver to WinUSB via Zadig — the OS won't see your dongle
 until that's done. The installer's last page links there too.
+
+The two Windows installers share an `AppId`, so installing one
+upgrades / replaces the other in *Add or remove programs* — pick a
+variant at download time rather than installing both side by side.
 
 [releases]: https://github.com/MattCheramie/GopherTrunk/releases
 

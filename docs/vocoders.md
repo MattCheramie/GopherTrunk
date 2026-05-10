@@ -48,8 +48,19 @@ frames without any vocoder linked into the daemon.
 
 `internal/voice/mbelib` ships a CGO wrapper around the szechyjs
 [`mbelib`](https://github.com/szechyjs/mbelib) library, gated behind
-the `mbelib` build tag. With `libmbe.so` and `mbelib.h` installed
-on the host, opt in by running:
+the `mbelib` build tag.
+
+**Windows operators** can skip the build entirely: each tagged
+release publishes a separate `gophertrunk-<ver>-windows-amd64-with-mbelib-setup.exe`
+variant alongside the default installer. The variant bundles
+`libmbe.dll` next to `gophertrunk.exe` so AMBE+2 + the C IMBE
+reference are available out of the box. The installer's welcome
+page reiterates the AMBE+2 patent caveat — by installing the
+variant, the operator confirms they've evaluated the patent
+situation for their use case.
+
+**Linux operators** with `libmbe.so` and `mbelib.h` installed on the
+host opt in by running:
 
 ```sh
 make build TAGS=mbelib
