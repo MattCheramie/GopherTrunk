@@ -77,8 +77,12 @@ to its own package and lands independently.
   (Golay(23,12) for u_0..u_3 + Hamming(15,11) for u_4..u_6 + no-FEC
   u_7 passthrough) is in (`internal/voice/imbe/channel.go`); the
   TIA-102.BABA §7.4 u_0-keyed LCG pseudo-random scrambler is in
-  (`scrambler.go`). Currently emits silence per frame; follow-up
-  PRs land the rest of channel-coding
+  (`scrambler.go`); the §5.3 parameter-unpack header
+  (b_0 → ω₀ + L + K, plus the full ba / hoba / bo / ImbeJi /
+  quantstep / standdev / B2 quantization tables transcribed from
+  mbelib) is in (`params.go` / `tables.go`). Currently emits
+  silence per frame; follow-up PRs land voicing + gain + spectral
+  amplitudes
   inverse, parameter unpacking, and speech synthesis layers in
   that order so each step ships testable progress.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
