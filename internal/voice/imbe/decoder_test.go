@@ -258,6 +258,12 @@ func TestResetClearsCrossFrameState(t *testing.T) {
 // signals a silence boundary; the next non-silent frame should
 // start from clean state, not interpolate from before the silence.
 // Decode must invoke Reset internally on the silence indicator.
+//
+// Step 5a (§6.4 overlap-add) added a fade-out: the silence frame's
+// dst[0..95] receives the prev frame's unvoiced tail before reset
+// (no click on the boundary). dst[96..159] is all-zero. After the
+// frame all SynthState fields are zero — including the tail itself,
+// which the OA function clears once it's emitted.
 func TestDecodeSilenceFrameResetsState(t *testing.T) {
 	d := New()
 	// Establish state.
@@ -274,14 +280,52 @@ func TestDecodeSilenceFrameResetsState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("silence Decode: %v", err)
 	}
-	for i, s := range out {
-		if s != 0 {
-			t.Fatalf("silence sample[%d] = %d, want 0", i, s)
+	// dst[96..159] (the non-overlap region) must be silent — no
+	// new synthesis happens on a silent frame.
+	for i := 96; i < SamplesPerFrame; i++ {
+		if out[i] != 0 {
+			t.Errorf("silence sample[%d] = %d, want 0 (non-overlap region)", i, out[i])
 		}
 	}
+	// dst[0..95] is the OA fade-out region; values can be non-zero
+	// (prev unvoiced tail) but must be valid int16. We don't pin
+	// exact values — those depend on the rng seed + FFT path.
 	if d.state.PrevW0 != 0 || d.state.PrevL != 0 {
 		t.Errorf("after silence frame: PrevW0=%v PrevL=%d, want 0/0",
 			d.state.PrevW0, d.state.PrevL)
+	}
+	// Tail must be cleared so a *second* silence frame is fully
+	// silent (no perpetual fade-out loop).
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		if d.state.PrevUnvoicedTail[n] != 0 {
+			t.Errorf("PrevUnvoicedTail[%d] = %v, want 0 after silence",
+				n, d.state.PrevUnvoicedTail[n])
+		}
+	}
+}
+
+// TestDecodeSilenceAfterSilenceIsFullySilent: a second silence frame
+// after the first should produce all-zero PCM (no leftover tail to
+// fade). Pins that the OA tail-clear in the silent path actually
+// happened.
+func TestDecodeSilenceAfterSilenceIsFullySilent(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	silence := make([]byte, FrameBytes)
+	silence[0] = 0xD8
+	if _, err := d.Decode(silence); err != nil {
+		t.Fatalf("silence1: %v", err)
+	}
+	out, err := d.Decode(silence)
+	if err != nil {
+		t.Fatalf("silence2: %v", err)
+	}
+	for i, s := range out {
+		if s != 0 {
+			t.Errorf("silence2[%d] = %d, want 0", i, s)
+		}
 	}
 }
 

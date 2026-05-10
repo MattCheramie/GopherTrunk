@@ -99,12 +99,29 @@
 //     synthesizer produces intelligible voice without them, just
 //     with frame-edge click artifacts and an untilted envelope.
 //
-//  5. Quality polish: §6.4 overlap-add synthesis window for the
-//     unvoiced step, §6.2 spectral-amplitude enhancement (closed
-//     form over R_M0 + R_M1 + ω₀ + l), spec-derived gain
-//     calibration (replacing the placeholder pcmGain), enhancement
-//     filter, frame-repeat on bad-frame indicator, gain smoothing
-//     across frames.
+//  5a. Speech synthesis — §6.4 overlap-add window. ← THIS PR.
+//     SynthState gains PrevUnvoicedTail[96]; SynthUnvoicedOverlapAdd
+//     wraps the §6.4 IFFT in a 256-sample periodic Hann window,
+//     emits the prev-frame's windowed tail into dst[0..95]
+//     (the overlap region) and stashes the curr-frame's tail
+//     [160..255] for the next call. Eliminates the click artifacts
+//     that plain truncated-IFFT excitation produced at frame
+//     boundaries. Decoder.Decode runs the OA path on every frame,
+//     including silence frames where the prev tail still fades
+//     out before the state is cleared. See synth_unvoiced.go.
+//
+//  5b. §6.2 spectral-amplitude enhancement. Per-harmonic Ml
+//     multiplier from the closed-form weight over R_M0 + R_M1 +
+//     ω₀ + l (§6.2). Boosts harmonics the model under-represents
+//     so the spectral envelope tilts correctly.
+//
+//  5c. Spec-derived gain calibration. Replaces the placeholder
+//     pcmGain = 4096 with the gain that makes mbelib + imbe-go
+//     produce comparable output levels for the same input frame
+//     stream.
+//
+//  5d. Robustness polish: enhancement filter, frame-repeat on
+//     bad-frame indicator, gain smoothing across frames.
 //
 // Patent + licensing context lives in docs/vocoders.md. The core US
 // IMBE patents have expired; this implementation is built from the

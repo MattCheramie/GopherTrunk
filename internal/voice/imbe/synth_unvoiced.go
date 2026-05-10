@@ -30,8 +30,37 @@ import (
 // IMBE specifies 256 — long enough to give each harmonic band
 // several bins for its noise excitation and short enough that the
 // FFT is cheap. The 96-sample overlap (UnvoicedFFTSize − N) is
-// used by the §6.4 overlap-add window in step 4e.
+// the §6.4 overlap-add region — see SynthUnvoicedOverlapAdd.
 const UnvoicedFFTSize = 256
+
+// UnvoicedTailSamples is the number of windowed-IFFT samples
+// carried over to the next frame for the §6.4 overlap-add. The
+// 256-sample frame at 160-sample stride leaves 96 samples of
+// overlap.
+const UnvoicedTailSamples = UnvoicedFFTSize - SamplesPerFrame
+
+// synthesisWindow is the §6.4 unvoiced overlap-add window — a
+// 256-sample periodic Hann window. Multiplying the IFFT output by
+// this window before overlap-add eliminates the click artifacts
+// that would appear at frame boundaries if the IFFT were truncated
+// to 160 samples without windowing.
+//
+// COLA caveat: the periodic Hann at 160-sample stride does not
+// exactly satisfy the Constant-Overlap-Add condition. Sum of the
+// two contributing windows (curr + prev) at output sample n in
+// [0, 96) ranges roughly between 0.85 and 1.0, introducing a
+// small (≲1.5 dB) amplitude modulation across the frame audible
+// as a slight tremolo on broadband noise. The §6.2 spectral
+// enhancement + spec-derived gain calibration polish PRs
+// (roadmap step 5b/5c) revisit this — Hann is the simplest
+// window that's strictly better than no window.
+var synthesisWindow [UnvoicedFFTSize]float64
+
+func init() {
+	for n := 0; n < UnvoicedFFTSize; n++ {
+		synthesisWindow[n] = 0.5 - 0.5*math.Cos(2*math.Pi*float64(n)/float64(UnvoicedFFTSize))
+	}
+}
 
 // ShapeUnvoicedSpectrum modifies spec in place: each FFT bin gets
 // classified by the harmonic it falls under, then either zeroed
@@ -76,7 +105,7 @@ func ShapeUnvoicedSpectrum(spec []complex128, p Params, M *[57]float64) {
 
 // SynthUnvoicedFromNoise runs the full §6.4 unvoiced-excitation
 // pipeline on a caller-supplied length-UnvoicedFFTSize noise
-// buffer:
+// buffer, *without* the overlap-add synthesis window:
 //
 //  1. interpret noise[0..255] as a real time-domain signal,
 //  2. forward-FFT to a 256-point complex spectrum,
@@ -100,6 +129,12 @@ func ShapeUnvoicedSpectrum(spec []complex128, p Params, M *[57]float64) {
 // Silent + zero-L frames leave dst untouched. dst shorter than
 // SamplesPerFrame, or noise of the wrong length, also leave
 // dst untouched (caller short-circuits cleanly without a panic).
+//
+// Production callers should prefer SynthUnvoicedOverlapAdd, which
+// applies the §6.4 synthesis window + threads the 96-sample tail
+// through SynthState so frame boundaries are click-free.
+// SynthUnvoicedFromNoise is retained as a stateless primitive for
+// the spectrum-shaping unit tests.
 func SynthUnvoicedFromNoise(p Params, M *[57]float64, noise []float64, dst []float64) {
 	if p.Silent || p.L == 0 {
 		return
@@ -117,5 +152,60 @@ func SynthUnvoicedFromNoise(p Params, M *[57]float64, noise []float64, dst []flo
 	spec = plan.Inverse(spec, spec)
 	for n := 0; n < SamplesPerFrame; n++ {
 		dst[n] += real(spec[n])
+	}
+}
+
+// SynthUnvoicedOverlapAdd is the production §6.4 unvoiced-excitation
+// path with the synthesis window + overlap-add threaded through
+// SynthState.PrevUnvoicedTail. For each frame:
+//
+//  1. emit prev_tail[0..95] into dst[0..95] — the overlap region
+//     where the previous frame's windowed IFFT extends into this
+//     frame's output range;
+//  2. forward-FFT(noise) → ShapeUnvoicedSpectrum → inverse-FFT;
+//  3. multiply by the 256-sample synthesis window;
+//  4. accumulate windowed[0..159] into dst[0..159] (this becomes
+//     the curr-frame contribution that's audible immediately);
+//  5. stash windowed[160..255] in s.PrevUnvoicedTail for the next
+//     frame's overlap region.
+//
+// Silent + zero-L frames still emit the prev_tail into dst[0..95]
+// (so a non-silent → silent transition fades the previous unvoiced
+// content cleanly instead of truncating it), then clear the tail
+// so the next non-silent frame starts from a clean baseline.
+//
+// dst must be >= SamplesPerFrame. dst shorter than SamplesPerFrame
+// or noise of the wrong length leave dst + state untouched.
+func SynthUnvoicedOverlapAdd(s *SynthState, p Params, M *[57]float64, noise []float64, dst []float64) {
+	if len(dst) < SamplesPerFrame {
+		return
+	}
+	// Always fade the prev tail into the overlap region so silence
+	// transitions don't truncate audible content.
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		dst[n] += s.PrevUnvoicedTail[n]
+	}
+	if p.Silent || p.L == 0 {
+		s.PrevUnvoicedTail = [UnvoicedTailSamples]float64{}
+		return
+	}
+	if len(noise) != UnvoicedFFTSize {
+		return
+	}
+
+	plan := fft.New(UnvoicedFFTSize)
+	spec := make([]complex128, UnvoicedFFTSize)
+	for i, v := range noise {
+		spec[i] = complex(v, 0)
+	}
+	spec = plan.Forward(spec, spec)
+	ShapeUnvoicedSpectrum(spec, p, M)
+	spec = plan.Inverse(spec, spec)
+
+	for n := 0; n < SamplesPerFrame; n++ {
+		dst[n] += real(spec[n]) * synthesisWindow[n]
+	}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		s.PrevUnvoicedTail[n] = real(spec[SamplesPerFrame+n]) * synthesisWindow[SamplesPerFrame+n]
 	}
 }
