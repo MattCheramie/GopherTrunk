@@ -543,3 +543,206 @@ func TestAGCDoesNotPumpOnConstantInput(t *testing.T) {
 			stddev/mean)
 	}
 }
+
+// badFrame returns an 11-byte frame whose b_0 = 208 — an invalid
+// fundamental-frequency parameter that UnpackParams rejects with
+// ErrInvalidFundamental.
+func badFrame() []byte {
+	f := make([]byte, FrameBytes)
+	f[0] = 0xD0 // 0b11010000 → b_0 packs to 208 (invalid)
+	return f
+}
+
+// TestFrameRepeatOnBadFrameAfterGood: a bad frame following a good
+// frame replays the cached params with attenuation — the output
+// must be non-zero (proving the repeat actually synthesized rather
+// than emitting silence).
+func TestFrameRepeatOnBadFrameAfterGood(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("good seed: %v", err)
+	}
+	if d.lastGoodParams.L == 0 {
+		t.Fatal("good frame didn't populate the repeat cache; test setup invalid")
+	}
+	out, err := d.Decode(badFrame())
+	if err != nil {
+		t.Fatalf("bad frame Decode: %v", err)
+	}
+	if agcPeak(out) == 0 {
+		t.Fatal("bad-frame output is fully silent; expected repeat to synthesize")
+	}
+	if d.badFrameCount != 1 {
+		t.Errorf("badFrameCount = %d after one bad frame, want 1", d.badFrameCount)
+	}
+}
+
+// TestFrameRepeatProgressiveAttenuation: after a good frame, six
+// consecutive bad frames produce outputs whose peaks should be
+// non-strictly decreasing (each frame attenuates by 0.7 of the
+// previous, but AGC freezing means the *gain* is fixed across
+// frames so the peaks track the synthesizer's float output).
+//
+// The strict decrease can occasionally flip due to noise variance
+// in the §6.4 unvoiced step, so test that the *trend* is
+// downward: peak[5] < peak[0].
+func TestFrameRepeatProgressiveAttenuation(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("good seed: %v", err)
+	}
+	var peaks [MaxBadFrames]int
+	for i := 0; i < MaxBadFrames; i++ {
+		out, err := d.Decode(badFrame())
+		if err != nil {
+			t.Fatalf("bad frame %d: %v", i, err)
+		}
+		peaks[i] = agcPeak(out)
+	}
+	if peaks[MaxBadFrames-1] >= peaks[0] {
+		t.Errorf("peaks didn't trend down: peaks=%v (first %d, last %d)",
+			peaks, peaks[0], peaks[MaxBadFrames-1])
+	}
+}
+
+// TestFrameRepeatExhaustedBudgetForcesSilence: after MaxBadFrames
+// consecutive bad-frame replays, the next bad frame must hit the
+// "no cache or budget exhausted" path → silence + cache cleared.
+func TestFrameRepeatExhaustedBudgetForcesSilence(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("good seed: %v", err)
+	}
+	for i := 0; i < MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad frame %d: %v", i, err)
+		}
+	}
+	// Next bad frame: budget exhausted (count == MaxBadFrames),
+	// silence + clear.
+	out, err := d.Decode(badFrame())
+	if err != nil {
+		t.Fatalf("budget-exhausted Decode: %v", err)
+	}
+	for i, s := range out {
+		if s != 0 {
+			t.Fatalf("budget-exhausted sample[%d] = %d, want 0", i, s)
+		}
+	}
+	if d.lastGoodParams.L != 0 {
+		t.Errorf("lastGoodParams.L = %d after budget exhaustion, want 0",
+			d.lastGoodParams.L)
+	}
+	if d.badFrameCount != 0 {
+		t.Errorf("badFrameCount = %d after clear, want 0", d.badFrameCount)
+	}
+}
+
+// TestFrameRepeatCounterResetsOnGoodFrame: counter goes good → bad
+// (count=1) → bad (count=2) → good (count=0). Pins that a single
+// good frame inside a bad streak resets the budget so the next
+// bad streak gets a fresh budget.
+func TestFrameRepeatCounterResetsOnGoodFrame(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("good seed: %v", err)
+	}
+	if _, err := d.Decode(badFrame()); err != nil {
+		t.Fatalf("bad1: %v", err)
+	}
+	if _, err := d.Decode(badFrame()); err != nil {
+		t.Fatalf("bad2: %v", err)
+	}
+	if d.badFrameCount != 2 {
+		t.Fatalf("badFrameCount = %d after 2 bads, want 2", d.badFrameCount)
+	}
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("recovery: %v", err)
+	}
+	if d.badFrameCount != 0 {
+		t.Errorf("badFrameCount = %d after recovery, want 0", d.badFrameCount)
+	}
+	if d.lastGoodParams.L == 0 {
+		t.Error("lastGoodParams cleared after recovery; should be repopulated")
+	}
+}
+
+// TestSilenceFrameClearsRepeatCache: a silence-window frame clears
+// the last-good cache, so a subsequent bad frame can't repeat the
+// pre-silence content (we'd want fresh-state behavior across the
+// silence boundary).
+func TestSilenceFrameClearsRepeatCache(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("good seed: %v", err)
+	}
+	silence := make([]byte, FrameBytes)
+	silence[0] = 0xD8
+	if _, err := d.Decode(silence); err != nil {
+		t.Fatalf("silence: %v", err)
+	}
+	if d.lastGoodParams.L != 0 {
+		t.Errorf("lastGoodParams.L = %d after silence, want 0",
+			d.lastGoodParams.L)
+	}
+	if d.badFrameCount != 0 {
+		t.Errorf("badFrameCount = %d after silence, want 0", d.badFrameCount)
+	}
+	// Bad frame after silence → silence (no cache).
+	out, err := d.Decode(badFrame())
+	if err != nil {
+		t.Fatalf("post-silence bad: %v", err)
+	}
+	for i, s := range out {
+		if s != 0 {
+			t.Fatalf("post-silence bad[%d] = %d, want 0", i, s)
+		}
+	}
+}
+
+// TestResetClearsFrameRepeatCache: explicit Reset() clears the
+// last-good cache + counter alongside SynthState + AGC. Pins the
+// "Reset = clean slate" contract.
+func TestResetClearsFrameRepeatCache(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Decode(badFrame()); err != nil {
+		t.Fatal(err)
+	}
+	if d.lastGoodParams.L == 0 || d.badFrameCount == 0 {
+		t.Fatal("test setup invalid: cache empty before Reset")
+	}
+	d.Reset()
+	if d.lastGoodParams.L != 0 {
+		t.Errorf("after Reset: lastGoodParams.L = %d, want 0",
+			d.lastGoodParams.L)
+	}
+	if d.badFrameCount != 0 {
+		t.Errorf("after Reset: badFrameCount = %d, want 0", d.badFrameCount)
+	}
+}
+
+// TestFrameRepeatFreezesAGC: a bad-frame replay must not perturb
+// the AGC envelope (the freeze contract is what makes the
+// attenuation audible — without it AGC would partially compensate).
+func TestFrameRepeatFreezesAGC(t *testing.T) {
+	d := New()
+	for i := 0; i < 5; i++ {
+		if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+			t.Fatalf("warmup %d: %v", i, err)
+		}
+	}
+	envBefore := d.agc
+	if envBefore == 0 {
+		t.Fatal("envelope is zero after warmup; test setup invalid")
+	}
+	if _, err := d.Decode(badFrame()); err != nil {
+		t.Fatalf("bad frame: %v", err)
+	}
+	if d.agc != envBefore {
+		t.Errorf("after bad-frame replay: agc shifted from %v to %v (want exact preservation)",
+			envBefore, d.agc)
+	}
+}

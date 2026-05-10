@@ -136,8 +136,24 @@
 //     speech-pause-speech transitions emerge at consistent
 //     loudness without audible level pumping. See decoder.go.
 //
-//  5d. Robustness polish: enhancement filter, frame-repeat on
-//     bad-frame indicator, gain smoothing across frames.
+//  5d. Frame-repeat on bad-frame indicator. ← THIS PR.
+//     When UnpackParams returns an error (FEC slip, invalid b_0,
+//     etc.) and a previous good frame is cached, Decode replays
+//     that frame's params with M scaled by
+//     BadFrameAttenuation^badFrameCount. After MaxBadFrames
+//     consecutive replays the cache clears and Decode emits
+//     silence so an extended bad streak fades naturally instead of
+//     looping the same envelope. The repeat path freezes the AGC
+//     envelope so the attenuation is audible — without freeze the
+//     AGC would partially compensate, hiding the signal-loss cue.
+//     See decoder.go.
+//
+//  5e. Remaining polish: comparison-tuning the synthesis output
+//     level against an mbelib reference (the AGC keeps levels
+//     consistent but absolute calibration to mbelib output is still
+//     a follow-up); enhancement filter tuning if real-world frames
+//     show mid-band envelope drift; phase-aware bad-frame fade-in
+//     when good frames return after a streak.
 //
 // Patent + licensing context lives in docs/vocoders.md. The core US
 // IMBE patents have expired; this implementation is built from the
