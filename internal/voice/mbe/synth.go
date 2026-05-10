@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 // IMBE 4400 speech synthesis — TIA-102.BABA §6.1 cross-frame
 // log-amplitude recovery.

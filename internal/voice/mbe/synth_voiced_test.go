@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 import (
 	"math"
@@ -12,7 +12,7 @@ const synthEpsilon = 1e-9
 // Pins the "no spurious carrier on the first frame" invariant.
 func TestSynthVoicedFreshStreamUnvoiced(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	// All Vl[l] = 0 (default). M is irrelevant when unvoiced.
 	var M [57]float64
 	dst := make([]float64, SamplesPerFrame)
@@ -31,7 +31,7 @@ func TestSynthVoicedFreshStreamUnvoiced(t *testing.T) {
 func TestSynthVoicedFreshStreamSingleHarmonic(t *testing.T) {
 	var s SynthState
 	w0 := math.Pi / 30
-	p := Params{Header: Header{W0: w0, L: 1, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -62,7 +62,7 @@ func TestSynthVoicedSteadyState(t *testing.T) {
 		PrevMl:    [57]float64{},
 	}
 	s.PrevMl[1] = 1.0
-	p := Params{Header: Header{W0: w0, L: 1, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -85,7 +85,7 @@ func TestSynthVoicedFadeOut(t *testing.T) {
 	w0 := math.Pi / 30
 	s := SynthState{PrevW0: w0, PrevL: 1}
 	s.PrevMl[1] = 1.0
-	p := Params{Header: Header{W0: w0, L: 1, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 1}}
 	// Vl[1] = 0 — curr unvoiced.
 	var M [57]float64
 	dst := make([]float64, SamplesPerFrame)
@@ -109,7 +109,7 @@ func TestSynthVoicedFadeOut(t *testing.T) {
 func TestSynthVoicedPhaseContinuity(t *testing.T) {
 	var s SynthState
 	w0 := math.Pi / 17 // not a clean divisor of 2π so phase wrap is non-trivial
-	p := Params{Header: Header{W0: w0, L: 1, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -149,7 +149,7 @@ func TestSynthVoicedMultiHarmonicSum(t *testing.T) {
 	s := SynthState{PrevW0: w0, PrevL: 2}
 	s.PrevMl[1] = 1.0
 	s.PrevMl[2] = 0.5
-	p := Params{Header: Header{W0: w0, L: 2, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 2}}
 	p.Vl[1] = 1
 	p.Vl[2] = 1
 	var M [57]float64
@@ -175,7 +175,7 @@ func TestSynthVoicedQuadraticPhase(t *testing.T) {
 	wCurr := math.Pi / 15 // doubled
 	s := SynthState{PrevW0: wPrev, PrevL: 1}
 	s.PrevMl[1] = 1.0
-	p := Params{Header: Header{W0: wCurr, L: 1, K: 1}}
+	p := Params{Header: Header{W0: wCurr, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -200,7 +200,7 @@ func TestSynthVoicedQuadraticPhase(t *testing.T) {
 func TestSynthVoicedAddsToExistingDst(t *testing.T) {
 	var s SynthState
 	w0 := math.Pi / 30
-	p := Params{Header: Header{W0: w0, L: 1, K: 1}}
+	p := Params{Header: Header{W0: w0, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -246,7 +246,7 @@ func TestSynthVoicedSilentFrameLeavesDstUntouched(t *testing.T) {
 // callers fail-fast in unit tests without crashing the daemon.
 func TestSynthVoicedShortDstNoPanic(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 1, K: 1}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 1}}
 	p.Vl[1] = 1
 	var M [57]float64
 	M[1] = 1.0
@@ -269,7 +269,7 @@ func TestUpdateVoicedStateAdvancesPhase(t *testing.T) {
 	wPrev := 0.1
 	wCurr := 0.2
 	s := SynthState{PrevW0: wPrev, PrevL: 2, PrevPhase: [57]float64{0, 1.0, 0.5}}
-	p := Params{Header: Header{W0: wCurr, L: 2, K: 1}}
+	p := Params{Header: Header{W0: wCurr, L: 2}}
 	p.Vl[1] = 1
 	p.Vl[2] = 1
 	var M [57]float64
@@ -300,7 +300,7 @@ func TestUpdateVoicedStateZeroesUnvoiced(t *testing.T) {
 	s.PrevMl[1] = 9
 	s.PrevMl[2] = 9
 	s.PrevMl[3] = 9
-	p := Params{Header: Header{W0: 0.1, L: 3, K: 1}}
+	p := Params{Header: Header{W0: 0.1, L: 3}}
 	p.Vl[1] = 1 // voiced
 	p.Vl[2] = 0 // unvoiced
 	p.Vl[3] = 1 // voiced
@@ -358,7 +358,7 @@ func TestResetClearsVoicedFields(t *testing.T) {
 // short-circuit optimization (skips the inner loop entirely).
 func TestSynthVoicedZeroAmpSkipsHarmonic(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 3, K: 1}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 3}}
 	p.Vl[1] = 1
 	p.Vl[2] = 0
 	p.Vl[3] = 1

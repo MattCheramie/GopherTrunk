@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
 
 func TestDecoderRegistered(t *testing.T) {
@@ -44,8 +45,8 @@ func TestDecodeReturnsSilenceForB0SilenceFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if len(out) != SamplesPerFrame {
-		t.Errorf("len(out) = %d, want %d", len(out), SamplesPerFrame)
+	if len(out) != mbe.SamplesPerFrame {
+		t.Errorf("len(out) = %d, want %d", len(out), mbe.SamplesPerFrame)
 	}
 	for i, s := range out {
 		if s != 0 {
@@ -99,8 +100,8 @@ func TestDecodeBadB0ReturnsSilenceNoError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: unexpected error %v on bad b_0", err)
 	}
-	if len(out) != SamplesPerFrame {
-		t.Errorf("len(out) = %d, want %d", len(out), SamplesPerFrame)
+	if len(out) != mbe.SamplesPerFrame {
+		t.Errorf("len(out) = %d, want %d", len(out), mbe.SamplesPerFrame)
 	}
 	for i, s := range out {
 		if s != 0 {
@@ -283,7 +284,7 @@ func TestDecodeSilenceFrameResetsState(t *testing.T) {
 	}
 	// dst[96..159] (the non-overlap region) must be silent — no
 	// new synthesis happens on a silent frame.
-	for i := 96; i < SamplesPerFrame; i++ {
+	for i := 96; i < mbe.SamplesPerFrame; i++ {
 		if out[i] != 0 {
 			t.Errorf("silence sample[%d] = %d, want 0 (non-overlap region)", i, out[i])
 		}
@@ -297,7 +298,7 @@ func TestDecodeSilenceFrameResetsState(t *testing.T) {
 	}
 	// Tail must be cleared so a *second* silence frame is fully
 	// silent (no perpetual fade-out loop).
-	for n := 0; n < UnvoicedTailSamples; n++ {
+	for n := 0; n < mbe.UnvoicedTailSamples; n++ {
 		if d.state.PrevUnvoicedTail[n] != 0 {
 			t.Errorf("PrevUnvoicedTail[%d] = %v, want 0 after silence",
 				n, d.state.PrevUnvoicedTail[n])
@@ -354,7 +355,7 @@ func TestDecodeOutputIsBounded(t *testing.T) {
 			// also catches NaN / Inf which would have failed earlier
 			// at the int16 cast.
 			_ = s
-			if i >= SamplesPerFrame {
+			if i >= mbe.SamplesPerFrame {
 				t.Errorf("output longer than expected at pattern 0x%02X", fill)
 			}
 		}
@@ -395,7 +396,7 @@ func TestAGCConvergesTowardTarget(t *testing.T) {
 	}
 	// After convergence the peak should be within ~30% of the target
 	// (loose because the §6.4 noise draw varies per frame).
-	target := DefaultAGCConfig().TargetPeak
+	target := mbe.DefaultAGCConfig().TargetPeak
 	const tol = 0.3
 	lo := int(target * (1 - tol))
 	hi := int(target * (1 + tol))
@@ -440,10 +441,10 @@ func TestAGCSilenceFramePreservesEnvelope(t *testing.T) {
 			t.Fatalf("seed frame %d: %v", i, err)
 		}
 	}
-	if d.agc == 0 {
+	if d.agc.Envelope() == 0 {
 		t.Fatal("envelope is still zero after seed frames; test setup invalid")
 	}
-	envBefore := d.agc
+	envBefore := d.agc.Envelope()
 
 	silence := make([]byte, FrameBytes)
 	silence[0] = 0xD8
@@ -453,9 +454,9 @@ func TestAGCSilenceFramePreservesEnvelope(t *testing.T) {
 	// Envelope must not drift at all — silence path passes
 	// freezeEnvelope=true to applyAGC so the OA tail magnitude
 	// doesn't perturb the envelope.
-	if d.agc != envBefore {
+	if d.agc.Envelope() != envBefore {
 		t.Errorf("after silence: agc shifted from %v to %v (want exact preservation)",
-			envBefore, d.agc)
+			envBefore, d.agc.Envelope())
 	}
 }
 
@@ -467,12 +468,12 @@ func TestAGCResetClearsEnvelope(t *testing.T) {
 	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
 		t.Fatal(err)
 	}
-	if d.agc == 0 {
+	if d.agc.Envelope() == 0 {
 		t.Fatal("envelope is zero after one frame; test setup invalid")
 	}
 	d.Reset()
-	if d.agc != 0 {
-		t.Errorf("after Reset: agc = %v, want 0", d.agc)
+	if d.agc.Envelope() != 0 {
+		t.Errorf("after Reset: agc = %v, want 0", d.agc.Envelope())
 	}
 }
 
@@ -497,8 +498,8 @@ func TestAGCBoundedOutputAcrossFramePatterns(t *testing.T) {
 				_ = s // every int16 is by construction in [-32768, 32767]
 			}
 			// Cross-check that the AGC didn't NaN.
-			if math.IsNaN(d.agc) || math.IsInf(d.agc, 0) {
-				t.Fatalf("agc envelope = %v after round %d", d.agc, round)
+			if math.IsNaN(d.agc.Envelope()) || math.IsInf(d.agc.Envelope(), 0) {
+				t.Fatalf("agc envelope = %v after round %d", d.agc.Envelope(), round)
 			}
 		}
 	}
@@ -592,21 +593,21 @@ func TestFrameRepeatProgressiveAttenuation(t *testing.T) {
 	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
 		t.Fatalf("good seed: %v", err)
 	}
-	var peaks [MaxBadFrames]int
-	for i := 0; i < MaxBadFrames; i++ {
+	var peaks [mbe.MaxBadFrames]int
+	for i := 0; i < mbe.MaxBadFrames; i++ {
 		out, err := d.Decode(badFrame())
 		if err != nil {
 			t.Fatalf("bad frame %d: %v", i, err)
 		}
 		peaks[i] = agcPeak(out)
 	}
-	if peaks[MaxBadFrames-1] >= peaks[0] {
+	if peaks[mbe.MaxBadFrames-1] >= peaks[0] {
 		t.Errorf("peaks didn't trend down: peaks=%v (first %d, last %d)",
-			peaks, peaks[0], peaks[MaxBadFrames-1])
+			peaks, peaks[0], peaks[mbe.MaxBadFrames-1])
 	}
 }
 
-// TestFrameRepeatExhaustedBudgetForcesSilence: after MaxBadFrames
+// TestFrameRepeatExhaustedBudgetForcesSilence: after mbe.MaxBadFrames
 // consecutive bad-frame replays, the next bad frame must hit the
 // "no cache or budget exhausted" path → silence + cache cleared.
 func TestFrameRepeatExhaustedBudgetForcesSilence(t *testing.T) {
@@ -614,12 +615,12 @@ func TestFrameRepeatExhaustedBudgetForcesSilence(t *testing.T) {
 	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
 		t.Fatalf("good seed: %v", err)
 	}
-	for i := 0; i < MaxBadFrames; i++ {
+	for i := 0; i < mbe.MaxBadFrames; i++ {
 		if _, err := d.Decode(badFrame()); err != nil {
 			t.Fatalf("bad frame %d: %v", i, err)
 		}
 	}
-	// Next bad frame: budget exhausted (count == MaxBadFrames),
+	// Next bad frame: budget exhausted (count == mbe.MaxBadFrames),
 	// silence + clear.
 	out, err := d.Decode(badFrame())
 	if err != nil {
@@ -727,15 +728,15 @@ func TestResetClearsFrameRepeatCache(t *testing.T) {
 
 // TestDefaultAGCConfigMatchesNew: a Decoder constructed via New()
 // uses the same AGC parameters as one constructed via
-// NewWithConfig(0, DefaultAGCConfig()). Pins that the old
+// NewWithConfig(0, mbe.DefaultAGCConfig()). Pins that the old
 // constructors aren't accidentally divergent from the documented
 // defaults.
 func TestDefaultAGCConfigMatchesNew(t *testing.T) {
 	a := New()
-	b := NewWithConfig(0, DefaultAGCConfig())
-	if a.agcCfg != b.agcCfg {
+	b := NewWithConfig(0, mbe.DefaultAGCConfig())
+	if a.agc.Config() != b.agc.Config() {
 		t.Errorf("New().agcCfg = %+v, NewWithConfig(default).agcCfg = %+v",
-			a.agcCfg, b.agcCfg)
+			a.agc.Config(), b.agc.Config())
 	}
 	frame := make([]byte, FrameBytes)
 	outA, _ := a.Decode(frame)
@@ -749,44 +750,44 @@ func TestDefaultAGCConfigMatchesNew(t *testing.T) {
 	}
 }
 
-// TestAGCConfigZeroValueBackfillsDefaults: an AGCConfig{} (all zero)
+// TestAGCConfigZeroValueBackfillsDefaults: an mbe.AGCConfig{} (all zero)
 // passed to NewWithConfig backfills every field from
-// DefaultAGCConfig. Lets callers override one knob without
+// mbe.DefaultAGCConfig. Lets callers override one knob without
 // re-specifying everything.
 func TestAGCConfigZeroValueBackfillsDefaults(t *testing.T) {
-	d := NewWithConfig(0, AGCConfig{})
-	want := DefaultAGCConfig()
-	if d.agcCfg != want {
-		t.Errorf("zero-value cfg backfill = %+v, want %+v", d.agcCfg, want)
+	d := NewWithConfig(0, mbe.AGCConfig{})
+	want := mbe.DefaultAGCConfig()
+	if d.agc.Config() != want {
+		t.Errorf("zero-value cfg backfill = %+v, want %+v", d.agc.Config(), want)
 	}
 }
 
-// TestAGCConfigPartialOverrideKeepsDefaults: an AGCConfig with one
-// field set inherits all other fields from DefaultAGCConfig. Pins
+// TestAGCConfigPartialOverrideKeepsDefaults: an mbe.AGCConfig with one
+// field set inherits all other fields from mbe.DefaultAGCConfig. Pins
 // the partial-override pattern.
 func TestAGCConfigPartialOverrideKeepsDefaults(t *testing.T) {
-	custom := AGCConfig{TargetPeak: 12000}
+	custom := mbe.AGCConfig{TargetPeak: 12000}
 	d := NewWithConfig(0, custom)
-	def := DefaultAGCConfig()
-	if d.agcCfg.TargetPeak != 12000 {
-		t.Errorf("TargetPeak = %v, want 12000", d.agcCfg.TargetPeak)
+	def := mbe.DefaultAGCConfig()
+	if d.agc.Config().TargetPeak != 12000 {
+		t.Errorf("TargetPeak = %v, want 12000", d.agc.Config().TargetPeak)
 	}
-	if d.agcCfg.Attack != def.Attack {
+	if d.agc.Config().Attack != def.Attack {
 		t.Errorf("Attack = %v, want default %v (partial override)",
-			d.agcCfg.Attack, def.Attack)
+			d.agc.Config().Attack, def.Attack)
 	}
-	if d.agcCfg.Release != def.Release {
-		t.Errorf("Release = %v, want default %v", d.agcCfg.Release, def.Release)
+	if d.agc.Config().Release != def.Release {
+		t.Errorf("Release = %v, want default %v", d.agc.Config().Release, def.Release)
 	}
-	if d.agcCfg.MinGain != def.MinGain {
-		t.Errorf("MinGain = %v, want default %v", d.agcCfg.MinGain, def.MinGain)
+	if d.agc.Config().MinGain != def.MinGain {
+		t.Errorf("MinGain = %v, want default %v", d.agc.Config().MinGain, def.MinGain)
 	}
-	if d.agcCfg.MaxGain != def.MaxGain {
-		t.Errorf("MaxGain = %v, want default %v", d.agcCfg.MaxGain, def.MaxGain)
+	if d.agc.Config().MaxGain != def.MaxGain {
+		t.Errorf("MaxGain = %v, want default %v", d.agc.Config().MaxGain, def.MaxGain)
 	}
-	if d.agcCfg.NoiseFloor != def.NoiseFloor {
+	if d.agc.Config().NoiseFloor != def.NoiseFloor {
 		t.Errorf("NoiseFloor = %v, want default %v",
-			d.agcCfg.NoiseFloor, def.NoiseFloor)
+			d.agc.Config().NoiseFloor, def.NoiseFloor)
 	}
 }
 
@@ -796,8 +797,8 @@ func TestAGCConfigPartialOverrideKeepsDefaults(t *testing.T) {
 // actually controls output level.
 func TestAGCConfigCustomTargetShiftsOutputLevel(t *testing.T) {
 	frame := make([]byte, FrameBytes)
-	loudCfg := AGCConfig{TargetPeak: 24000}
-	quietCfg := AGCConfig{TargetPeak: 8000}
+	loudCfg := mbe.AGCConfig{TargetPeak: 24000}
+	quietCfg := mbe.AGCConfig{TargetPeak: 8000}
 	loud := NewWithConfig(0, loudCfg)
 	quiet := NewWithConfig(0, quietCfg)
 	// Warm both AGCs to convergence.
@@ -823,16 +824,16 @@ func TestAGCConfigCustomTargetShiftsOutputLevel(t *testing.T) {
 // tuning. Pins that callers don't have to re-specify cfg after
 // every stream re-sync.
 func TestAGCConfigPreservedAcrossReset(t *testing.T) {
-	cfg := AGCConfig{TargetPeak: 16000, Attack: 0.5}
+	cfg := mbe.AGCConfig{TargetPeak: 16000, Attack: 0.5}
 	d := NewWithConfig(0, cfg)
 	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
 		t.Fatal(err)
 	}
 	d.Reset()
-	want := cfg.withDefaults()
-	if d.agcCfg != want {
+	want := cfg.WithDefaults()
+	if d.agc.Config() != want {
 		t.Errorf("after Reset: agcCfg = %+v, want %+v (cfg preserved)",
-			d.agcCfg, want)
+			d.agc.Config(), want)
 	}
 }
 
@@ -846,15 +847,15 @@ func TestFrameRepeatFreezesAGC(t *testing.T) {
 			t.Fatalf("warmup %d: %v", i, err)
 		}
 	}
-	envBefore := d.agc
+	envBefore := d.agc.Envelope()
 	if envBefore == 0 {
 		t.Fatal("envelope is zero after warmup; test setup invalid")
 	}
 	if _, err := d.Decode(badFrame()); err != nil {
 		t.Fatalf("bad frame: %v", err)
 	}
-	if d.agc != envBefore {
+	if d.agc.Envelope() != envBefore {
 		t.Errorf("after bad-frame replay: agc shifted from %v to %v (want exact preservation)",
-			envBefore, d.agc)
+			envBefore, d.agc.Envelope())
 	}
 }

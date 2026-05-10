@@ -78,48 +78,57 @@ to its own package and lands independently.
   default builds without a CGO dependency. Core US patents are
   expired; the algorithm is implementable from TIA-102.BABA. The
   `mbelib` build-tagged path already covers IMBE for operators with
-  libmbe installed. Status: skeleton + Vocoder interface registered
-  as `imbe` (the canonical name; the pure-Go decoder is the sole
-  IMBE backend in default builds); per-vector channel-coding FEC inverse
-  (Golay(23,12) for u_0..u_3 + Hamming(15,11) for u_4..u_6 + no-FEC
-  u_7 passthrough) is in (`internal/voice/imbe/channel.go`); the
-  TIA-102.BABA §7.4 u_0-keyed LCG pseudo-random scrambler is in
-  (`scrambler.go`); full §5.3 / §5.4 / Annex E parameter unpack
-  (b_0 → ω₀ + L + K + Vl voicing + Gm PRBA gains + Cik spectral
-  coefficients + Tl log-amplitude residuals via two inverse DCTs)
-  is in (`params.go` / `tables.go`); §6.1 cross-frame log2(Ml)
-  prediction (eqs. 75-77 — γ = 0.65 interpolation of prev-frame
-  harmonics at l · ω₀_curr/ω₀_prev positions, DC-bias removal,
-  Tl residual addition) is in on a `SynthState` that the
-  excitation step extends (`synth.go`); §6.2 amplitude prep
-  (log2(Ml) → linear Ml = 2^log2(Ml), the R_M0 = Σ Ml² and
-  R_M1 = Σ Ml² · cos(ω₀·l) spectral moments, and a voicing-fraction
-  summary that the synthesis combiner consumes) is in (`amps.go`);
-  §6.3 voiced harmonic generator (per-harmonic sinusoid at l · ω₀
-  with linear amp tilt M_prev → M_curr + quadratic phase
-  integration of the ω₀ drift, dual-frame iteration so
-  voiced↔unvoiced transitions fade in / out cleanly) is in
-  (`synth_voiced.go`, `SynthState` extended with `PrevPhase` +
-  `PrevMl`); §6.4 unvoiced excitation (256-point FFT spectrum
-  shaping — bins under voiced harmonics zeroed, bins under
-  unvoiced harmonics scaled by Ml[l], bins outside [1..L]
-  zeroed, conjugate-mirror invariant preserved so the IFFT
-  output stays real-valued) is in (`synth_unvoiced.go`);
-  caller supplies the noise buffer so unit tests stay
-  deterministic; the §6.4 overlap-add synthesis window
-  (256-sample periodic Hann × IFFT, 96-sample tail threaded
-  through `SynthState.PrevUnvoicedTail` so frame boundaries are
-  click-free) is in via `SynthUnvoicedOverlapAdd`; the §6.2
-  spectral-amplitude enhancement (per-harmonic W_l =
-  (0.96 · num/den)^0.25 clamped to [0.5, 1.2] for mid/high-band
-  harmonics + low-band W = 1, followed by an energy-preserving
-  rescale that holds R_M0 stable) is in (`enhance.go`); the
-  output gain calibration is now a per-frame fast-attack /
-  slow-release peak-envelope tracker on the Decoder (target peak
-  24000, attack 0.4, release 0.02, gain clamped to [10, 1e5])
-  with first-frame seeding, freeze-on-silence, and Reset clearing
-  — replaces the prior `pcmGain = 4096` magic constant with
-  consistent loudness across speech-pause-speech transitions.
+  libmbe installed. The synthesis half of the pipeline (cross-frame
+  log-amplitude prediction, voiced harmonic generator, unvoiced
+  FFT excitation + overlap-add window, §6.2 spectral-amplitude
+  enhancement, per-frame AGC) lives in `internal/voice/mbe/` so
+  the in-progress AMBE+2 decoder can consume the same primitives
+  via `mbe.SynthState` + `mbe.Params`. Status: skeleton + Vocoder
+  interface registered as `imbe` (the canonical name; the pure-Go
+  decoder is the sole IMBE backend in default builds); per-vector
+  channel-coding FEC inverse (Golay(23,12) for u_0..u_3 +
+  Hamming(15,11) for u_4..u_6 + no-FEC u_7 passthrough) is in
+  (`internal/voice/imbe/channel.go`); the TIA-102.BABA §7.4
+  u_0-keyed LCG pseudo-random scrambler is in
+  (`internal/voice/imbe/scrambler.go`); full §5.3 / §5.4 / Annex E
+  parameter unpack (b_0 → ω₀ + L + K + Vl voicing + Gm PRBA
+  gains + Cik spectral coefficients + Tl log-amplitude residuals
+  via two inverse DCTs) is in
+  (`internal/voice/imbe/params.go` / `tables.go`); §6.1 cross-frame
+  log2(Ml) prediction (eqs. 75-77 — γ = 0.65 interpolation of
+  prev-frame harmonics at l · ω₀_curr/ω₀_prev positions, DC-bias
+  removal, Tl residual addition) is in on a `SynthState` that the
+  excitation step extends (`internal/voice/mbe/synth.go`); §6.2
+  amplitude prep (log2(Ml) → linear Ml = 2^log2(Ml), the
+  R_M0 = Σ Ml² and R_M1 = Σ Ml² · cos(ω₀·l) spectral moments, and
+  a voicing-fraction summary that the synthesis combiner consumes)
+  is in (`internal/voice/mbe/amps.go`); §6.3 voiced harmonic
+  generator (per-harmonic sinusoid at l · ω₀ with linear amp tilt
+  M_prev → M_curr + quadratic phase integration of the ω₀ drift,
+  dual-frame iteration so voiced↔unvoiced transitions fade in /
+  out cleanly) is in (`internal/voice/mbe/synth_voiced.go`,
+  `SynthState` extended with `PrevPhase` + `PrevMl`); §6.4 unvoiced
+  excitation (256-point FFT spectrum shaping — bins under voiced
+  harmonics zeroed, bins under unvoiced harmonics scaled by Ml[l],
+  bins outside [1..L] zeroed, conjugate-mirror invariant preserved
+  so the IFFT output stays real-valued) is in
+  (`internal/voice/mbe/synth_unvoiced.go`); caller supplies the
+  noise buffer so unit tests stay deterministic; the §6.4
+  overlap-add synthesis window (256-sample periodic Hann × IFFT,
+  96-sample tail threaded through `SynthState.PrevUnvoicedTail` so
+  frame boundaries are click-free) is in via
+  `SynthUnvoicedOverlapAdd`; the §6.2 spectral-amplitude
+  enhancement (per-harmonic W_l = (0.96 · num/den)^0.25 clamped to
+  [0.5, 1.2] for mid/high-band harmonics + low-band W = 1, followed
+  by an energy-preserving rescale that holds R_M0 stable) is in
+  (`internal/voice/mbe/enhance.go`); the output gain calibration is
+  a per-frame fast-attack / slow-release peak-envelope tracker
+  shared with AMBE+2 (target peak 24000, attack 0.4, release 0.02,
+  gain clamped to [10, 1e5]) with first-frame seeding,
+  freeze-on-silence, and Reset clearing — replaces the prior
+  `pcmGain = 4096` magic constant with consistent loudness across
+  speech-pause-speech transitions
+  (`internal/voice/mbe/agc.go`).
   **`Decode()` emits real audio**: 88 info bits → params →
   §6.1 prediction → linear Ml → §6.2 enhancement → §6.3 voiced
   harmonic sum + §6.4 unvoiced excitation with overlap-add
@@ -132,12 +141,12 @@ to its own package and lands independently.
   Three decoder constructors are exposed: `New()` seeds the
   unvoiced noise source from a fixed default for reproducibility;
   `NewWithSeed(seed)` lets parallel calls + production callers
-  spread noise across decoders; `NewWithConfig(seed, AGCConfig{...})`
-  takes a public `AGCConfig` (TargetPeak / Attack / Release /
+  spread noise across decoders; `NewWithConfig(seed, mbe.AGCConfig{...})`
+  takes the shared `mbe.AGCConfig` (TargetPeak / Attack / Release /
   MinGain / MaxGain / NoiseFloor) so operators can dial level +
   responsiveness for their downstream chain — zero-value fields
-  backfill from `DefaultAGCConfig()` so partial overrides like
-  `AGCConfig{TargetPeak: 16000}` (drop level by ~3 dB) keep the
+  backfill from `mbe.DefaultAGCConfig()` so partial overrides like
+  `mbe.AGCConfig{TargetPeak: 16000}` (drop level by ~3 dB) keep the
   rest of the defaults. **Frame-repeat on bad-frame indicator**:
   a bad frame (UnpackParams error from upstream FEC slip)
   following a good frame replays the cached params with M scaled

@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 import (
 	"math"
@@ -40,7 +40,7 @@ func TestEnhanceAmplitudesZeroLNoOp(t *testing.T) {
 // = 0 (every M[l] = 0) is left alone — there's nothing to enhance
 // or rescale.
 func TestEnhanceAmplitudesAllZeroNoOp(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	want := M
 	EnhanceAmplitudes(p, &M)
@@ -56,7 +56,7 @@ func TestEnhanceAmplitudesAllZeroNoOp(t *testing.T) {
 // preservation contract that makes the §6.2 enhancement safe to
 // drop into the synthesis path.
 func TestEnhanceAmplitudesEnergyPreserved(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 12, K: 5}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 12}}
 	var M [57]float64
 	// Skewed input: amplitudes vary by 10x across harmonics.
 	M[1] = 0.5
@@ -89,7 +89,7 @@ func TestEnhanceAmplitudesEnergyPreserved(t *testing.T) {
 // input doesn't degenerate into zeros + that enhancement reshapes
 // rather than destroys.
 func TestEnhanceAmplitudesUniformBoundedAndNonzero(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 16, K: 6}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 16}}
 	var M [57]float64
 	for l := 1; l <= p.L; l++ {
 		M[l] = 1.0
@@ -117,7 +117,7 @@ func TestEnhanceAmplitudesUniformBoundedAndNonzero(t *testing.T) {
 // ratio between two low-band harmonics is preserved exactly.
 func TestEnhanceAmplitudesLowBandUntouchedBeforeRescale(t *testing.T) {
 	// L = 16 → low band is l ≤ 2 (since 8·2 = 16 ≤ 16, but 8·3 = 24 > 16).
-	p := Params{Header: Header{W0: math.Pi / 30, L: 16, K: 6}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 16}}
 	var M [57]float64
 	for l := 1; l <= p.L; l++ {
 		M[l] = 1.0
@@ -143,7 +143,7 @@ func TestEnhanceAmplitudesLowBandUntouchedBeforeRescale(t *testing.T) {
 // for any non-degenerate frame. Pins that the §6.2 step doesn't
 // accidentally silence harmonics.
 func TestEnhanceAmplitudesPreservesMidbandHarmonicCount(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 22, L: 22, K: 8}}
+	p := Params{Header: Header{W0: math.Pi / 22, L: 22}}
 	var M [57]float64
 	// Steeply skewed spectrum to exercise the clamp boundary.
 	for l := 1; l <= p.L; l++ {
@@ -166,7 +166,7 @@ func TestEnhanceWMinMaxBound(t *testing.T) {
 	// A near-pure-tone spectrum (most energy on one harmonic) makes
 	// R_M1² ≈ R_M0², which sends den → 0 and would blow up xi if
 	// unclamped.
-	p := Params{Header: Header{W0: math.Pi / 30, L: 12, K: 5}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 12}}
 	var M [57]float64
 	M[1] = 10.0
 	for l := 2; l <= p.L; l++ {
@@ -198,7 +198,7 @@ func TestEnhanceWMinMaxBound(t *testing.T) {
 // = 2.4× compared to the global rescale).
 func TestEnhanceAmplitudesAtOrPastClampHigh(t *testing.T) {
 	for _, L := range []int{10, 20, 30, 40, 56} {
-		p := Params{Header: Header{W0: math.Pi / float64(L+5), L: L, K: 4}}
+		p := Params{Header: Header{W0: math.Pi / float64(L+5), L: L}}
 		var M [57]float64
 		for l := 1; l <= L; l++ {
 			M[l] = 1.0 + 0.5*math.Sin(float64(l)) // varied
@@ -232,35 +232,6 @@ func TestEnhanceAmplitudesAtOrPastClampHigh(t *testing.T) {
 	}
 }
 
-// TestDecodeOutputChangesWithEnhancement: a deterministic Decode
-// run with the §6.2 enhancement enabled should produce *different*
-// PCM output than the synthesizer would have without it. Pins
-// "enhancement is wired into the audio path" rather than being a
-// silent no-op. We can't toggle enhancement off easily without a
-// test fixture, so instead verify: a frame that the enhancement
-// modifies M for produces audio whose RMS is sane (not zero, not
-// saturated).
-func TestDecodeOutputChangesWithEnhancement(t *testing.T) {
-	d := New()
-	frame := make([]byte, FrameBytes) // valid b_0 = 0 frame
-	out, err := d.Decode(frame)
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-	var sumSq float64
-	for _, s := range out {
-		v := float64(s)
-		sumSq += v * v
-	}
-	rms := math.Sqrt(sumSq / float64(len(out)))
-	if rms == 0 {
-		t.Fatal("decoded output is fully silent; enhancement may have zeroed M")
-	}
-	if rms > 32000 {
-		t.Errorf("rms = %v, want < 32000 (sanity envelope)", rms)
-	}
-}
-
 // TestEnhanceClosedFormSmallCase verifies the per-harmonic weight
 // formula on a hand-derived input where every step can be checked
 // analytically. L = 4 is below 8·1 (= 8), so all 4 harmonics are
@@ -282,7 +253,7 @@ func TestDecodeOutputChangesWithEnhancement(t *testing.T) {
 // Verify pre-rescale ratios (rescale is a global multiplier so
 // M[a]·W[b] / (M[b]·W[a]) is preserved).
 func TestEnhanceClosedFormSmallCase(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 2, L: 4, K: 2}}
+	p := Params{Header: Header{W0: math.Pi / 2, L: 4}}
 	var M [57]float64
 	M[1] = 1.0
 	M[2] = 2.0

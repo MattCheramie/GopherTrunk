@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 import (
 	"math"
@@ -48,7 +48,7 @@ func TestShapeUnvoicedSpectrumWrongLengthNoOp(t *testing.T) {
 	for k := range spec {
 		spec[k] = complex(1, 1)
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	ShapeUnvoicedSpectrum(spec, p, &M)
 	for k := range spec {
@@ -68,7 +68,7 @@ func TestShapeUnvoicedSpectrumAllVoicedZerosEverything(t *testing.T) {
 	for k := range spec {
 		spec[k] = complex(float64(k), float64(k+1))
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	for l := 1; l <= 10; l++ {
 		p.Vl[l] = 1
 	}
@@ -94,7 +94,7 @@ func TestShapeUnvoicedSpectrumBinMapping(t *testing.T) {
 		spec[k] = complex(1, 0) // sentinel
 	}
 	L := 20
-	p := Params{Header: Header{W0: w0, L: L, K: 8}}
+	p := Params{Header: Header{W0: w0, L: L}}
 	var M [57]float64
 	for l := 1; l <= L; l++ {
 		M[l] = 1.0 // identity scale
@@ -134,7 +134,7 @@ func TestShapeUnvoicedSpectrumScaling(t *testing.T) {
 	for k := range spec {
 		spec[k] = complex(1, 0)
 	}
-	p := Params{Header: Header{W0: w0, L: 4, K: 2}}
+	p := Params{Header: Header{W0: w0, L: 4}}
 	p.Vl[1] = 0
 	p.Vl[2] = 1 // voiced
 	p.Vl[3] = 0
@@ -188,7 +188,7 @@ func TestSynthUnvoicedFromNoiseSilentNoOp(t *testing.T) {
 // or a too-short dst returns without writing. Lets callers
 // fail-fast on shape bugs without a panic.
 func TestSynthUnvoicedFromNoiseWrongSizes(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	M[1] = 1.0
 	p.Vl[1] = 0
@@ -223,7 +223,7 @@ func TestSynthUnvoicedFromNoiseWrongSizes(t *testing.T) {
 // regardless of noise — IFFT(zero) = zero — so dst stays at its
 // caller-set sentinel.
 func TestSynthUnvoicedFromNoiseAllVoicedSilentOutput(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	for l := 1; l <= 10; l++ {
 		p.Vl[l] = 1
 	}
@@ -246,7 +246,7 @@ func TestSynthUnvoicedFromNoiseAllVoicedSilentOutput(t *testing.T) {
 // zero spectrum; shaping zero is zero; IFFT(0) = 0; dst stays at
 // the caller-set sentinel.
 func TestSynthUnvoicedFromNoiseZeroNoiseOutputZero(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0
@@ -269,7 +269,7 @@ func TestSynthUnvoicedFromNoiseZeroNoiseOutputZero(t *testing.T) {
 // identical output. Pins reproducibility (no internal nondeterminism
 // like a global rand source).
 func TestSynthUnvoicedFromNoiseDeterministic(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0
@@ -291,7 +291,7 @@ func TestSynthUnvoicedFromNoiseDeterministic(t *testing.T) {
 // rather than overwrites so it can be summed with the voiced step's
 // output into the same buffer.
 func TestSynthUnvoicedFromNoiseAddsToDst(t *testing.T) {
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0
@@ -330,7 +330,7 @@ func TestSynthUnvoicedFromNoiseRealOutput(t *testing.T) {
 	// directly, so we verify via deterministic-output stability:
 	// the answer doesn't drift across runs because the imag side
 	// stays well below epsilon.
-	p := Params{Header: Header{W0: math.Pi / 25, L: 12, K: 5}}
+	p := Params{Header: Header{W0: math.Pi / 25, L: 12}}
 	var M [57]float64
 	for l := 1; l <= 12; l++ {
 		M[l] = float64(l) * 0.1
@@ -393,7 +393,7 @@ func TestSynthesisWindowHannShape(t *testing.T) {
 // scaled by the window.
 func TestSynthUnvoicedOverlapAddFreshStream(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0 // all unvoiced (Vl=0 default), unit amplitudes
@@ -423,7 +423,7 @@ func TestSynthUnvoicedOverlapAddFreshStream(t *testing.T) {
 // will pick up.
 func TestSynthUnvoicedOverlapAddStashesTail(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0
@@ -462,7 +462,7 @@ func TestSynthUnvoicedOverlapAddSecondFrameUsesPrevTail(t *testing.T) {
 		s.PrevUnvoicedTail[n] = float64(n + 1) // distinctive sentinel
 	}
 	expectedTail := s.PrevUnvoicedTail
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	for l := 1; l <= 10; l++ {
 		M[l] = 1.0
@@ -533,7 +533,7 @@ func TestSynthUnvoicedOverlapAddShortDstNoOp(t *testing.T) {
 	for n := 0; n < UnvoicedTailSamples; n++ {
 		s.PrevUnvoicedTail[n] = 5
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10}}
 	var M [57]float64
 	short := make([]float64, SamplesPerFrame-1)
 	SynthUnvoicedOverlapAdd(&s, p, &M, seededNoise(44, UnvoicedFFTSize), short)

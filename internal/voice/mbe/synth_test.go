@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 import (
 	"math"
@@ -17,7 +17,7 @@ func almostEqual(a, b float64) bool {
 // Tl values pass through unchanged.
 func TestPredictLog2MlFirstFrameIsTl(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 20, K: 8}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 20}}
 	for l := 1; l <= p.L; l++ {
 		p.Tl[l] = float64(l) * 0.1
 	}
@@ -42,7 +42,7 @@ func TestPredictLog2MlConstantPrevCancels(t *testing.T) {
 	for l := 1; l <= s.PrevL; l++ {
 		s.PrevLog2Ml[l] = c
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 20, K: 8}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 20}}
 	for l := 1; l <= p.L; l++ {
 		p.Tl[l] = float64(l) - 10.5 // arbitrary signed values
 	}
@@ -67,7 +67,7 @@ func TestPredictLog2MlSamePitchExactInterp(t *testing.T) {
 	for l := 1; l <= s.PrevL; l++ {
 		s.PrevLog2Ml[l] = prev[l]
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 4, K: 2}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 4}}
 	// Tl all zero so dst directly reflects prediction - mean(prediction).
 	var dst [57]float64
 	PredictLog2Ml(&s, p, &dst)
@@ -92,7 +92,7 @@ func TestPredictLog2MlInterpolationFraction(t *testing.T) {
 	s.PrevLog2Ml[3] = 6.0
 	s.PrevLog2Ml[4] = 8.0
 	// Curr ω₀ is half of prev → curr harmonic l sits at prev pos l/2.
-	p := Params{Header: Header{W0: math.Pi / 60, L: 6, K: 3}}
+	p := Params{Header: Header{W0: math.Pi / 60, L: 6}}
 	var dst [57]float64
 	PredictLog2Ml(&s, p, &dst)
 
@@ -127,7 +127,7 @@ func TestPredictLog2MlClampsBeyondPrevL(t *testing.T) {
 	s.PrevLog2Ml[2] = 2.0
 	s.PrevLog2Ml[3] = 3.0
 	// Half pitch → curr L bigger; positions for high l exceed PrevL.
-	p := Params{Header: Header{W0: math.Pi / 20, L: 10, K: 4}}
+	p := Params{Header: Header{W0: math.Pi / 20, L: 10}}
 	var dst [57]float64
 	PredictLog2Ml(&s, p, &dst)
 
@@ -174,7 +174,7 @@ func TestUpdateLog2MlRollsState(t *testing.T) {
 	for l := 1; l <= 30; l++ {
 		s.PrevLog2Ml[l] = 99
 	}
-	p := Params{Header: Header{W0: 0.42, L: 5, K: 2}}
+	p := Params{Header: Header{W0: 0.42, L: 5}}
 	src := [57]float64{}
 	src[1] = 1
 	src[2] = 2
@@ -226,7 +226,7 @@ func TestPredictLog2MlTwoFrameSequence(t *testing.T) {
 	var s SynthState
 
 	// Frame 1: fresh state. dst1 = Tl1 (no prediction).
-	p1 := Params{Header: Header{W0: math.Pi / 30, L: 4, K: 2}}
+	p1 := Params{Header: Header{W0: math.Pi / 30, L: 4}}
 	for l := 1; l <= p1.L; l++ {
 		p1.Tl[l] = float64(l)
 	}
@@ -241,7 +241,7 @@ func TestPredictLog2MlTwoFrameSequence(t *testing.T) {
 
 	// Frame 2: same pitch + L; prev = {1,2,3,4}. With Tl2 = 0,
 	// dst2[l] = 0.65*l - mean(0.65*{1,2,3,4}) = 0.65*l - 0.65*2.5.
-	p2 := Params{Header: Header{W0: math.Pi / 30, L: 4, K: 2}}
+	p2 := Params{Header: Header{W0: math.Pi / 30, L: 4}}
 	var dst2 [57]float64
 	PredictLog2Ml(&s, p2, &dst2)
 	predMean := PredictionGain * (1.0 + 2.0 + 3.0 + 4.0) / 4.0
@@ -262,7 +262,7 @@ func TestPredictLog2MlMeanCenteredOutput(t *testing.T) {
 	for l := 1; l <= s.PrevL; l++ {
 		s.PrevLog2Ml[l] = float64(l) * 1.7
 	}
-	p := Params{Header: Header{W0: math.Pi / 30, L: 6, K: 3}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 6}}
 	// Mean-centered Tl: sums to zero.
 	tlVals := []float64{-3, -1, 0, 0, 1, 3}
 	for l := 1; l <= p.L; l++ {

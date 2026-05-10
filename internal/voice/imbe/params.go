@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
 
 // IMBE 4400 model parameter unpacking — TIA-102.BABA §5.3 / Annex E.
@@ -57,6 +59,24 @@ type Params struct {
 	Gm  [7]float64     // Gm[1..6] PRBA gain block values
 	Cik [7][11]float64 // Cik[1..6][1..imbeJi[L9][i-1]] DCT coefficients
 	Tl  [57]float64    // Tl[1..L] spectral log-amplitude residuals
+}
+
+// MBE returns the subset of this header the shared synthesis core
+// consumes (drops the IMBE-specific voicing-decision count K).
+func (h Header) MBE() mbe.Header {
+	return mbe.Header{W0: h.W0, L: h.L, Silent: h.Silent}
+}
+
+// MBE returns the IMBE Params projected to the shared mbe.Params
+// shape: header (without K) + Vl + Tl. The IMBE intermediates
+// Gm + Cik are dropped — the synthesis primitives in
+// internal/voice/mbe consume only what's preserved here.
+func (p Params) MBE() mbe.Params {
+	return mbe.Params{
+		Header: p.Header.MBE(),
+		Vl:     p.Vl,
+		Tl:     p.Tl,
+	}
 }
 
 // ErrInfoLength is returned by UnpackHeader when the supplied

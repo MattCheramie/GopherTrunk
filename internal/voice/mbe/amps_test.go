@@ -1,4 +1,4 @@
-package imbe
+package mbe
 
 import (
 	"math"
@@ -243,7 +243,7 @@ func TestSpectralCosineSumZeroL(t *testing.T) {
 // pipeline shape the synthesizer will use one frame at a time.
 func TestEndToEndPathFromTl(t *testing.T) {
 	var s SynthState
-	p := Params{Header: Header{W0: math.Pi / 30, L: 4, K: 2}}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 4}}
 	for l := 1; l <= p.L; l++ {
 		p.Tl[l] = math.Log2(float64(l + 1))
 	}
