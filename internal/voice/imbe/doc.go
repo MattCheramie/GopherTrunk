@@ -148,12 +148,24 @@
 //     AGC would partially compensate, hiding the signal-loss cue.
 //     See decoder.go.
 //
-//  5e. Remaining polish: comparison-tuning the synthesis output
-//     level against an mbelib reference (the AGC keeps levels
-//     consistent but absolute calibration to mbelib output is still
-//     a follow-up); enhancement filter tuning if real-world frames
-//     show mid-band envelope drift; phase-aware bad-frame fade-in
-//     when good frames return after a streak.
+//  5e. AGCConfig — tunable AGC parameters. ← THIS PR.
+//     Exposes a public AGCConfig struct (TargetPeak / Attack /
+//     Release / MinGain / MaxGain / NoiseFloor) and a NewWithConfig
+//     constructor so operators can dial level + responsiveness for
+//     their downstream chain. DefaultAGCConfig() returns the
+//     constants the previous PR pinned; zero-value fields in a
+//     caller-supplied cfg backfill from the defaults so partial
+//     overrides don't have to specify every knob. Replaces the
+//     prior package-level constants with cfg field reads in
+//     applyAGC. See decoder.go.
+//
+//  5f. Remaining polish: comparison-tuning the absolute synthesis
+//     output level against an mbelib reference (the AGC keeps
+//     intra-stream levels consistent but mbelib-bit-equivalent
+//     calibration is still a follow-up); enhancement filter tuning
+//     if real-world frames show mid-band envelope drift;
+//     phase-aware bad-frame fade-in when good frames return after
+//     a streak.
 //
 // Patent + licensing context lives in docs/vocoders.md. The core US
 // IMBE patents have expired; this implementation is built from the
