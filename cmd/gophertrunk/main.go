@@ -14,6 +14,13 @@ import (
 	_ "github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/version"
 
+	// Blank import: pulls in the pure-Go IMBE skeleton + future
+	// channel-coding / parameter-decode / synthesis layers so the
+	// daemon registers the "imbe-go" vocoder name regardless of
+	// build tags. The decoder currently emits silence; later PRs
+	// turn on real audio without changing this import.
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/imbe"
+
 	// Blank import: under default builds this pulls in the stub
 	// (no init effect); under `make build TAGS=mbelib` it pulls in
 	// the CGO wrapper that registers the `imbe` and `ambe2`

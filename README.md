@@ -72,7 +72,11 @@ to its own package and lands independently.
   default builds without a CGO dependency. Core US patents are
   expired; the algorithm is implementable from TIA-102.BABA. The
   `mbelib` build-tagged path already covers IMBE for operators with
-  libmbe installed.
+  libmbe installed. Status: the `internal/voice/imbe` skeleton is
+  in tree (registered as the `imbe-go` vocoder name, currently
+  emits silence per frame); follow-up PRs land the channel-coding
+  inverse, parameter unpacking, and speech synthesis layers in
+  that order so each step ships testable progress.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
