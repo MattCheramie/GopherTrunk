@@ -6,10 +6,10 @@
 // from the bus. On a CallStart it looks up the Voice device by serial,
 // opens its IQ stream, and starts a goroutine that runs an FM
 // passthrough chain (LPF → decimate → quadrature FM demod → optional
-// post-demod de-emphasis → coarse resample → int16 PCM →
-// recorder.WritePCM). The chain also calls Engine.Touch on a one-second
-// cadence so the engine's silent-call watchdog doesn't kill the call
-// mid-conversation.
+// post-demod de-emphasis → optional post-demod audio LPF → coarse
+// resample → int16 PCM → recorder.WritePCM). The chain also calls
+// Engine.Touch on a one-second cadence so the engine's silent-call
+// watchdog doesn't kill the call mid-conversation.
 //
 // Digital protocols (P25 / DMR / NXDN) need vocoders that haven't
 // landed yet — IMBE for P25 Phase 1 is in progress and AMBE+2 stays
@@ -109,6 +109,13 @@ type Options struct {
 	// pick TimeConstant (75µs in NA, 50µs in EU). Filter runs at the
 	// intermediate ~48 kHz rate, before the second decimation.
 	DeEmphasis DeEmphasisConfig
+	// AudioLPF configures a Kaiser-windowed FIR low-pass on the real
+	// audio after de-emphasis and before the decimation to PCM. The
+	// point is two-fold: band-limit voice to roughly 3.4 kHz (telephony
+	// quality, kills hiss + sub-carriers), and act as the
+	// anti-aliasing filter for the second decimation. Off by default;
+	// callers tune CutoffHz (typical 3400) and Taps (default 81).
+	AudioLPF AudioLPFConfig
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -116,6 +123,17 @@ type Options struct {
 type DeEmphasisConfig struct {
 	Enabled      bool
 	TimeConstant time.Duration // typically 75µs (NA) or 50µs (EU)
+}
+
+// AudioLPFConfig holds runtime knobs for the post-demod audio
+// low-pass. CutoffHz is in Hz (relative to the intermediate rate the
+// FM demod emits). Taps controls the FIR length; longer = sharper
+// transition at the cost of latency. Both fall back to sane defaults
+// when zero.
+type AudioLPFConfig struct {
+	Enabled  bool
+	CutoffHz uint32
+	Taps     int
 }
 
 // Composer is the long-lived event-driven bridge.
@@ -132,6 +150,7 @@ type Composer struct {
 	touchEvery   time.Duration
 	eqCfg        EqualizerConfig
 	deemphCfg    DeEmphasisConfig
+	lpfCfg       AudioLPFConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -179,6 +198,14 @@ func New(opts Options) (*Composer, error) {
 	if opts.DeEmphasis.Enabled && opts.DeEmphasis.TimeConstant <= 0 {
 		opts.DeEmphasis.TimeConstant = filter.DeEmphasis75us
 	}
+	if opts.AudioLPF.Enabled {
+		if opts.AudioLPF.CutoffHz == 0 {
+			opts.AudioLPF.CutoffHz = 3_400
+		}
+		if opts.AudioLPF.Taps <= 0 {
+			opts.AudioLPF.Taps = 81
+		}
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -195,6 +222,7 @@ func New(opts Options) (*Composer, error) {
 		touchEvery: opts.TouchInterval,
 		eqCfg:      opts.Equalizer,
 		deemphCfg:  opts.DeEmphasis,
+		lpfCfg:     opts.AudioLPF,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}
@@ -365,10 +393,24 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	// treble for SNR; without the matching low-pass the recording
 	// sounds harsh. Filter runs on the real audio at the intermediate
 	// rate (~48 kHz) before the second naive decimation to PCM.
+	intermediateHzf := float64(c.iqHz) / float64(decim1)
 	var deemph *filter.DeEmphasis
 	if c.deemphCfg.Enabled {
-		intermediateHzf := float64(c.iqHz) / float64(decim1)
 		deemph = filter.NewDeEmphasis(c.deemphCfg.TimeConstant, intermediateHzf)
+	}
+
+	// Optional post-demod audio LPF. Two jobs: band-limit voice to
+	// ~3.4 kHz (telephony grade, kills hiss + sub-carriers like the
+	// 19 kHz pilot tone on broadcast FM if any leaks through) and
+	// act as the anti-aliasing filter for the decimation that
+	// follows. Cutoff is normalized against the intermediate rate.
+	var audioLPF *filter.RealFIR
+	if c.lpfCfg.Enabled {
+		fc := float64(c.lpfCfg.CutoffHz) / intermediateHzf
+		if fc >= 0.5 {
+			fc = 0.45
+		}
+		audioLPF = filter.NewRealFIR(filter.LowpassKaiser(c.lpfCfg.Taps, fc, 8.6))
 	}
 
 	touchTicker := time.NewTicker(c.touchEvery)
@@ -399,6 +441,9 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			audio := fm.Process(nil, decimated)
 			if deemph != nil {
 				audio = deemph.Process(audio, audio)
+			}
+			if audioLPF != nil {
+				audio = audioLPF.Process(audio, audio)
 			}
 			pcm := decimateAndConvert(audio, decim2)
 			if c.sink != nil && len(pcm) > 0 {

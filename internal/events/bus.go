@@ -31,11 +31,15 @@ const (
 //
 // Stage taxonomy (extend, don't rename — these become Prometheus labels):
 //
-//   - "nid-bch"          P25 Phase 1 NID BCH(63,16,11)
-//   - "tsbk-trellis"     P25 Phase 1 TSBK ½-rate trellis
-//   - "tsbk-crc"         P25 Phase 1 TSBK CRC trailer
-//   - "slottype-hamming" DMR slot-type Hamming(20,8)
-//   - "sacch-trellis"    NXDN SACCH ½-rate trellis
+//   - "nid-bch"            P25 Phase 1 NID BCH(63,16,11)
+//   - "tsbk-trellis"       P25 Phase 1 TSBK ½-rate trellis
+//   - "tsbk-crc"           P25 Phase 1 TSBK CRC trailer
+//   - "no-bandplan"        Voice grant arrived for an unknown channel
+//                          ID / LCN (P25 IdentifierUpdate or DMR
+//                          Tier III LCN→Hz resolver hadn't seen it yet)
+//   - "slottype-hamming"   DMR slot-type Hamming(20,8)
+//   - "voiceheader-bptc"   DMR Tier II Voice LC Header BPTC(196,96)
+//   - "sacch-trellis"      NXDN SACCH ½-rate trellis
 type DecodeError struct {
 	Protocol string
 	Stage    string
