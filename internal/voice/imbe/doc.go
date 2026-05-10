@@ -9,10 +9,11 @@
 // stays tractable):
 //
 //  1. Skeleton + Vocoder interface integration. Decoder satisfies
-//     voice.Vocoder, registers as "imbe-go" in
-//     voice.DefaultRegistry, and emits silence per frame so the
-//     full call pipeline can wire to it now and start receiving
-//     audio for free as the later pieces land.
+//     voice.Vocoder, registers as "imbe" in voice.DefaultRegistry
+//     (the canonical name; the pure-Go decoder is the sole IMBE
+//     backend), and emits silence per frame so the full call
+//     pipeline can wire to it now and start receiving audio for
+//     free as the later pieces land.
 //
 //  2. Channel coding inverse — per-vector FEC.
 //     144 channel bits → 88 information bits via Golay(23,12,7)
@@ -159,13 +160,13 @@
 //     prior package-level constants with cfg field reads in
 //     applyAGC. See decoder.go.
 //
-//  5f. Remaining polish: comparison-tuning the absolute synthesis
-//     output level against an mbelib reference (the AGC keeps
-//     intra-stream levels consistent but mbelib-bit-equivalent
-//     calibration is still a follow-up); enhancement filter tuning
-//     if real-world frames show mid-band envelope drift;
-//     phase-aware bad-frame fade-in when good frames return after
-//     a streak.
+//  5f. Remaining polish: absolute-level calibration against a
+//     known-good reference decoder (DSD-FME / OP25 — capture a P25
+//     Phase 1 voice exchange, decode through both, compare RMS +
+//     cross-correlation against the reference WAV under
+//     internal/voice/imbe/testdata/); enhancement filter tuning if
+//     real-world frames show mid-band envelope drift; phase-aware
+//     bad-frame fade-in when good frames return after a streak.
 //
 // Patent + licensing context lives in docs/vocoders.md. The core US
 // IMBE patents have expired; this implementation is built from the

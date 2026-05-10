@@ -31,9 +31,9 @@ const (
 	FrameDurationMs = 20
 
 	// VocoderName is the registry key the daemon resolves at startup.
-	// Distinct from mbelib's "imbe" so both backends can be linked
-	// into the same binary; the daemon picks one in config.
-	VocoderName = "imbe-go"
+	// This is the canonical "imbe" name; the pure-Go decoder is the
+	// sole IMBE backend in default builds.
+	VocoderName = "imbe"
 
 	// MaxBadFrames is the number of consecutive bad frames the
 	// frame-repeat path will replay before giving up and emitting

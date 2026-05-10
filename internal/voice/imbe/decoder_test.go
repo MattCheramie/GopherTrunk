@@ -20,8 +20,8 @@ func TestDecoderRegistered(t *testing.T) {
 
 func TestDecoderName(t *testing.T) {
 	d := New()
-	if d.Name() != "imbe-go" {
-		t.Errorf("Name() = %q, want %q", d.Name(), "imbe-go")
+	if d.Name() != "imbe" {
+		t.Errorf("Name() = %q, want %q", d.Name(), "imbe")
 	}
 }
 

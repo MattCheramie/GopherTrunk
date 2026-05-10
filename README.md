@@ -79,7 +79,8 @@ to its own package and lands independently.
   expired; the algorithm is implementable from TIA-102.BABA. The
   `mbelib` build-tagged path already covers IMBE for operators with
   libmbe installed. Status: skeleton + Vocoder interface registered
-  as `imbe-go`; per-vector channel-coding FEC inverse
+  as `imbe` (the canonical name; the pure-Go decoder is the sole
+  IMBE backend in default builds); per-vector channel-coding FEC inverse
   (Golay(23,12) for u_0..u_3 + Hamming(15,11) for u_4..u_6 + no-FEC
   u_7 passthrough) is in (`internal/voice/imbe/channel.go`); the
   TIA-102.BABA §7.4 u_0-keyed LCG pseudo-random scrambler is in
@@ -144,11 +145,12 @@ to its own package and lands independently.
   frames bridge ~120 ms of weak signal before Decode emits silence
   + clears the cache. The repeat path freezes the AGC envelope
   so the attenuation is audible (signals signal degradation).
-  **Remaining audio polish**: comparison-tuning the absolute
-  output level against an mbelib reference (the AGC keeps
-  intra-stream levels consistent but mbelib-bit-equivalent
-  calibration is still a future follow-up); enhancement filter
-  tuning if real-world frames show mid-band envelope drift.
+  **Remaining audio polish**: absolute-level calibration against a
+  known-good reference decoder (DSD-FME or OP25 — capture a P25
+  Phase 1 voice exchange, decode through both, compare RMS +
+  cross-correlation against the reference WAV under
+  `internal/voice/imbe/testdata/`); enhancement filter tuning if
+  real-world frames show mid-band envelope drift.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
