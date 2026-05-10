@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // buildLockedStream constructs a synthetic dibit window that places the
@@ -13,13 +14,19 @@ import (
 // TSBK channel block (single Last-Block TSBK with the supplied opcode).
 // Tail dibits are zero-padded.
 func buildLockedStream(offset int, nac uint16, duid DUID, op Opcode) []uint8 {
+	return buildLockedStreamWithTSBK(offset, nac, duid, TSBK{LB: true, Opcode: op})
+}
+
+// buildLockedStreamWithTSBK is the variant that takes a fully-formed
+// TSBK so callers can carry a payload (used by the IdentifierUpdate +
+// grant publication tests).
+func buildLockedStreamWithTSBK(offset int, nac uint16, duid DUID, tsbk TSBK) []uint8 {
 	out := make([]uint8, offset+24+32+98+16)
 	copy(out[offset:], FrameSyncWord[:])
 	bits := EncodeNIDBits(nac, duid)
 	for i := 0; i < 32; i++ {
 		out[offset+24+i] = (bits[2*i] << 1) | bits[2*i+1]
 	}
-	tsbk := TSBK{LB: true, Opcode: op}
 	channel := EncodeTSBKChannel(AssembleTSBK(tsbk))
 	copy(out[offset+24+32:], channel)
 	return out
@@ -123,6 +130,108 @@ func TestControlChannelPublishesDecodeErrorOnUncorrectableNID(t *testing.T) {
 			return
 		case <-deadline:
 			t.Fatal("no decode-error event published")
+		}
+	}
+}
+
+func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// Build a stream with two TSBKs back-to-back: an IdentifierUpdate
+	// for ChannelID 1 (12.5 kHz spacing, base 851 MHz) followed by a
+	// GroupVoiceChannelGrant on (ID=1, Number=16) which should resolve
+	// to 851.2 MHz on the bus.
+	identTSBK := TSBK{LB: false, Opcode: OpIdentifierUpdate}
+	identTSBK.Payload = AssembleIdentifierUpdate(IdentifierUpdate{
+		ChannelID: 1, SpacingHz: 12_500, BaseHz: 851_000_000,
+	})
+
+	grantPayload := [8]byte{
+		0xC0,                               // service options: emergency + encrypted
+		(1 << 4) | 0x00, 0x10,              // channel = ID 1, number 0x010 (=16)
+		0x12, 0x34,                         // group address 0x1234
+		0xAB, 0xCD, 0xEF,                   // source ID 0xABCDEF
+	}
+	grantTSBK := TSBK{LB: true, Opcode: OpGroupVoiceChannelGrant, Payload: grantPayload}
+
+	stream1 := buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, identTSBK)
+	stream2 := buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, grantTSBK)
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestSys",
+		FrequencyHz: 851_000_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	cc.Process(stream1, 0)
+	cc.Process(stream2, len(stream1))
+
+	// Drain events; assert exactly one Grant event lands and looks right.
+	var got *trunking.Grant
+	deadline := time.After(time.Second)
+	for got == nil {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				g := ev.Payload.(trunking.Grant)
+				got = &g
+			}
+		case <-deadline:
+			t.Fatal("no grant event published")
+		}
+	}
+	if got.System != "TestSys" || got.Protocol != "p25" {
+		t.Errorf("identity = %s/%s", got.System, got.Protocol)
+	}
+	if got.GroupID != 0x1234 || got.SourceID != 0xABCDEF {
+		t.Errorf("group/source = %d/%d, want 4660/11259375", got.GroupID, got.SourceID)
+	}
+	if got.ChannelID != 1 || got.ChannelNum != 0x010 {
+		t.Errorf("channel = %d.%d, want 1.16", got.ChannelID, got.ChannelNum)
+	}
+	if got.FrequencyHz != 851_200_000 {
+		t.Errorf("freq = %d, want 851_200_000", got.FrequencyHz)
+	}
+	if !got.Encrypted || !got.Emergency {
+		t.Errorf("flags = enc=%v emer=%v, want both", got.Encrypted, got.Emergency)
+	}
+	if got.At.Unix() != 1_700_000_000 {
+		t.Errorf("At = %v, want injected Now", got.At)
+	}
+}
+
+func TestControlChannelGrantBeforeIdentifierUpdateEmitsDecodeError(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	grantPayload := [8]byte{0x00, 0x20, 0x05, 0x00, 0x42, 0, 0, 0}
+	grantTSBK := TSBK{LB: true, Opcode: OpGroupVoiceChannelGrant, Payload: grantPayload}
+	stream := buildLockedStreamWithTSBK(10, 0x111, DUIDTrunkingSignaling, grantTSBK)
+
+	cc := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 1})
+	cc.Process(stream, 0)
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				t.Fatalf("unexpected grant emitted without band-plan: %+v", ev.Payload)
+			}
+			if ev.Kind != events.KindDecodeError {
+				continue
+			}
+			de := ev.Payload.(events.DecodeError)
+			if de.Protocol == "p25" && de.Stage == "no-bandplan" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no decode-error with stage=no-bandplan")
 		}
 	}
 }

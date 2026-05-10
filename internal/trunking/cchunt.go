@@ -8,9 +8,19 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
+
+// LockedPayload is the protocol-neutral shape the hunter expects on
+// CCLocked events. Each radio package's LockState satisfies it via
+// methods, so the hunter can stay protocol-agnostic instead of
+// importing every radio package (which would also create import
+// cycles, since some radio packages now import this `trunking`
+// package to publish `Grant` events).
+type LockedPayload interface {
+	LockedFrequencyHz() uint32
+	LockedNAC() uint16
+}
 
 // Tuner is the subset of sdr.Device the hunter needs. Decoupling from the
 // full Device interface keeps the hunter testable without an IQ source.
@@ -109,22 +119,23 @@ func (h *Hunter) Hunt(ctx context.Context) (LockResult, error) {
 		locked, ok := waitForLock(ctx, sub, deadline.C, freq)
 		deadline.Stop()
 		if ok {
+			nac := locked.LockedNAC()
 			result := LockResult{
 				System:    h.system.Name,
 				Frequency: freq,
-				NAC:       locked.NAC,
+				NAC:       nac,
 				At:        time.Now().UTC(),
 			}
 			if h.cache != nil {
 				if err := h.cache.Set(h.system.Name, CachedSystem{
 					LastFrequencyHz: freq,
 					LastLockAt:      result.At,
-					NAC:             locked.NAC,
+					NAC:             nac,
 				}); err != nil {
 					h.log.Warn("cc-hunt: cache write failed", "err", err)
 				}
 			}
-			h.log.Info("cc-hunt: locked", "system", h.system.Name, "freq_hz", freq, "nac", locked.NAC)
+			h.log.Info("cc-hunt: locked", "system", h.system.Name, "freq_hz", freq, "nac", nac)
 			return result, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -159,28 +170,28 @@ func drainSubscription(sub *events.Subscription) {
 	}
 }
 
-func waitForLock(ctx context.Context, sub *events.Subscription, timeout <-chan time.Time, freq uint32) (phase1.LockState, bool) {
+func waitForLock(ctx context.Context, sub *events.Subscription, timeout <-chan time.Time, freq uint32) (LockedPayload, bool) {
 	for {
 		select {
 		case ev, ok := <-sub.C:
 			if !ok {
-				return phase1.LockState{}, false
+				return nil, false
 			}
 			if ev.Kind != events.KindCCLocked {
 				continue
 			}
-			ls, ok := ev.Payload.(phase1.LockState)
+			lp, ok := ev.Payload.(LockedPayload)
 			if !ok {
 				continue
 			}
-			if ls.FrequencyHz != freq {
+			if lp.LockedFrequencyHz() != freq {
 				continue
 			}
-			return ls, true
+			return lp, true
 		case <-timeout:
-			return phase1.LockState{}, false
+			return nil, false
 		case <-ctx.Done():
-			return phase1.LockState{}, false
+			return nil, false
 		}
 	}
 }

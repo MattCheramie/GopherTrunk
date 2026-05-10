@@ -17,7 +17,7 @@ gRPC, HTTP/SSE, or WebSocket.
 | Hardware          | CGO `librtlsdr` binding, multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
 | DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, AGC, rational resampler, FM / C4FM / H-DQPSK demods, Mueller-Müller clock recovery, frame-sync correlator |
 | FEC primitives    | CRC-CCITT/FALSE, CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8), BCH(63,16,11), BPTC(196,96), 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (NXDN SACCH) |
-| P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, control-channel state machine emitting `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` stages |
+| P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
 | P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, control-channel state machine emitting `protocol = "p25-phase2"` grants |
 | DMR (Tier III)    | All 9 ETSI sync patterns, burst layout (132 dibits), Color Code + Data Type via (20,8,7) shortened-Hamming slot-type FEC (corrects up to 3 bit errors per slot type), CSBK with CRC, payload parsers for TalkGroup/Private Voice grants + Aloha + AdjacentSiteStatus + SystemInfoBroadcast, control-channel state machine |
 | NXDN              | 192-dibit frame layout (4800 BFSK / 9600 4-FSK), LICH parse with parity + 16-bit doubled-wire decoder, FSW correlator, full SACCH channel decode (K=5 ½-rate convolutional Viterbi + 60-position sub-frame deinterleaver + 12-bit puncture undo + CRC-6 trailer), CAC parser with CRC, RCCH opcode enum + payload parsers, control-channel state machine |
@@ -47,14 +47,6 @@ control channel locks, the engine allocates a Voice device on a
 grant, the composer pulls IQ → PCM → WAV, and the call is logged to
 SQLite. The honest gaps:
 
-- **Live P25 grant emission** is the remaining wire-up: the TSBK
-  channel decode pipeline (NID BCH + Annex-A trellis + 98-dibit
-  block deinterleaver + CRC) is now end-to-end, and the parsed
-  GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus
-  payload accessors are already in place; they need to feed a
-  band-plan resolver to publish full `protocol = "p25"` grants on
-  the bus. Decode failures at every FEC stage already publish
-  `decode.error` events that fan out to Prometheus.
 - **DMR Tier II** is mostly a configuration variation on the Tier
   III scaffolding that's already in place; both share the burst,
   slot-type, and BPTC pieces.
@@ -69,8 +61,7 @@ SQLite. The honest gaps:
   verify wiring; real DSP polish is follow-up work.
 
 The Go interfaces and event payloads carry digital protocols already,
-so dropping in a band-plan resolver and IMBE will light up the
-remaining paths without further changes elsewhere.
+so the remaining paths light up once IMBE drops in.
 
 ## Roadmap
 
