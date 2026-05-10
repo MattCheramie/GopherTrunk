@@ -1,24 +1,25 @@
 package phase1
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
 
-// ControlChannel consumes a stream of P25 Phase 1 dibits (already symbol-
-// time-recovered and mapped via SymbolToDibit) and emits trunking events
-// onto an events.Bus.
+// ControlChannel consumes a stream of P25 Phase 1 dibits (already
+// symbol-time-recovered and mapped via SymbolToDibit) and emits
+// trunking events onto an events.Bus.
 //
-// This is the minimum scaffold: dibit window → FSW detect → NID parse
-// (with BCH(63,16,11) error correction) → (placeholder) TSBK extraction.
-// Trellis decoding and TSBK CRC validation for the live stream land
-// alongside the interleaver work in a follow-up — for now the state
-// machine emits CCLocked / CCLost events when a corrected NID with a
-// TSDU DUID is observed, which is enough to drive the CC hunter and
-// gives downstream layers a stable surface to subscribe to. Uncorrectable
-// NIDs publish a KindDecodeError event so the metrics collector can
-// count them.
+// Pipeline: dibit window → FSW detect → NID parse (BCH(63,16,11) +
+// even-parity check) → if DUID is TSDU and the buffer holds enough
+// dibits, deinterleave + Viterbi-decode the next 98-dibit TSBK block,
+// validate the CRC trailer, and (on success) log the parsed opcode.
+// CCLocked / CCLost events fan out on every corrected NID with a TSDU
+// DUID. Uncorrectable NIDs and TSBK CRC failures publish
+// KindDecodeError events so the metrics collector can count them; full
+// Grant emission from parsed TSBK opcodes lands in a follow-up that
+// adds the band-plan resolver.
 type ControlChannel struct {
 	bus     *events.Bus
 	log     *slog.Logger
@@ -86,6 +87,29 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			})
 			c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz)
 		}
+
+		// Try to extract the next TSBK that follows the NID. The
+		// channel TSBK occupies 98 dibits; if the buffer is short we
+		// defer to a later call (the buffer-edge case).
+		tsbkStart := startInWindow + 32
+		if tsbkStart+98 > len(dibits) {
+			continue
+		}
+		tsbk, metric, err := DecodeTSBKChannel(dibits[tsbkStart : tsbkStart+98])
+		if err != nil {
+			c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
+			stage := "tsbk-trellis"
+			if errors.Is(err, CRCError) {
+				stage = "tsbk-crc"
+			}
+			c.bus.Publish(events.Event{
+				Kind:    events.KindDecodeError,
+				Payload: events.DecodeError{Protocol: "p25", Stage: stage},
+			})
+			continue
+		}
+		c.log.Debug("tsbk decoded",
+			"opcode", tsbk.Opcode, "lb", tsbk.LB, "metric", metric, "nac", nid.NAC)
 	}
 	return next
 }
