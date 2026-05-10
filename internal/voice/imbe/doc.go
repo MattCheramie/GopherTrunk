@@ -158,13 +158,27 @@
 //     prior package-level constants with cfg field reads in
 //     applyAGC. See decoder.go.
 //
-//  5f. Remaining polish: absolute-level calibration against a
+//  5f. Phase-aware bad-frame fade-in. After MaxBadFrames+1
+//     consecutive bad frames the SynthState clear leaves
+//     PrevPhase + PrevMl at zero; the next good frame's voiced
+//     harmonics start at phase 0 with a linear amplitude tilt
+//     0 → M[l] across 160 samples. The amplitude tilt naturally
+//     keeps sample 0 at exactly 0 regardless of phase coherence,
+//     but a 60 ms envelope ramp on top (recoveryRampFactors =
+//     {0.4, 0.7, 1.0}) eases the listener back in over three
+//     frames rather than jumping straight to full amplitude. The
+//     AGC freezes during recovery so the attenuation is audible.
+//     The ramped M is cached for the bad-frame replay path so a
+//     fresh bad streak mid-recovery replays from the actually-
+//     synthesised level rather than from full amplitude. See
+//     decoder.go.
+//
+//  5g. Remaining polish: absolute-level calibration against a
 //     known-good reference decoder (DSD-FME / OP25 — capture a P25
 //     Phase 1 voice exchange, decode through both, compare RMS +
 //     cross-correlation against the reference WAV under
 //     internal/voice/imbe/testdata/); enhancement filter tuning if
-//     real-world frames show mid-band envelope drift; phase-aware
-//     bad-frame fade-in when good frames return after a streak.
+//     real-world frames show mid-band envelope drift.
 //
 // Patent + licensing context lives in docs/vocoders.md. The core US
 // IMBE patents have expired; this implementation is built from the

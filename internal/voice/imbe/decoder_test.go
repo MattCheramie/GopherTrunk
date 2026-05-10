@@ -837,6 +837,199 @@ func TestAGCConfigPreservedAcrossReset(t *testing.T) {
 	}
 }
 
+// TestRecoveryRampArmedOnBadStreakClear: after MaxBadFrames+1
+// consecutive bad frames the decoder hits the budget-exhaustion
+// branch (silence + state clear). That branch arms the recovery
+// ramp so the next len(recoveryRampFactors) good frames fade
+// back in. Pin that recoveryFramesRemaining is set to exactly
+// len(recoveryRampFactors) once the budget is exhausted.
+func TestRecoveryRampArmedOnBadStreakClear(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// MaxBadFrames consecutive bad replays — these stay within
+	// budget, so recoveryFramesRemaining is still 0.
+	for i := 0; i < mbe.MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad %d: %v", i, err)
+		}
+	}
+	if d.recoveryFramesRemaining != 0 {
+		t.Errorf("after %d bads (within budget): recoveryFramesRemaining = %d, want 0",
+			mbe.MaxBadFrames, d.recoveryFramesRemaining)
+	}
+	// One more bad frame trips the budget-exhaust branch.
+	if _, err := d.Decode(badFrame()); err != nil {
+		t.Fatalf("budget-exhaust: %v", err)
+	}
+	if d.recoveryFramesRemaining != len(recoveryRampFactors) {
+		t.Errorf("after budget exhaust: recoveryFramesRemaining = %d, want %d",
+			d.recoveryFramesRemaining, len(recoveryRampFactors))
+	}
+}
+
+// TestRecoveryRampNotArmedDuringBudgetedBadStreak: bad frames
+// within budget go through the replay path which DOES NOT arm
+// the recovery ramp — those frames are bridging signal loss with
+// the cached params, so a fade-in on top would double-attenuate.
+func TestRecoveryRampNotArmedDuringBudgetedBadStreak(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for i := 0; i < mbe.MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad %d: %v", i, err)
+		}
+		if d.recoveryFramesRemaining != 0 {
+			t.Errorf("after bad %d (within budget): "+
+				"recoveryFramesRemaining = %d, want 0",
+				i, d.recoveryFramesRemaining)
+		}
+	}
+}
+
+// TestRecoveryRampDecrementsOverGoodFrames: once armed, each
+// good frame decrements the recovery counter. After
+// len(recoveryRampFactors) good frames the counter is back to 0
+// and subsequent frames take the normal path.
+func TestRecoveryRampDecrementsOverGoodFrames(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// MaxBadFrames + 1 to trip budget exhaust.
+	for i := 0; i <= mbe.MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad %d: %v", i, err)
+		}
+	}
+	if d.recoveryFramesRemaining != len(recoveryRampFactors) {
+		t.Fatalf("setup: recoveryFramesRemaining = %d, want %d",
+			d.recoveryFramesRemaining, len(recoveryRampFactors))
+	}
+	// Walk through the recovery ramp.
+	for i := len(recoveryRampFactors); i > 0; i-- {
+		if d.recoveryFramesRemaining != i {
+			t.Errorf("before good frame %d: recoveryFramesRemaining = %d, want %d",
+				len(recoveryRampFactors)-i+1, d.recoveryFramesRemaining, i)
+		}
+		if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+			t.Fatalf("good frame: %v", err)
+		}
+	}
+	if d.recoveryFramesRemaining != 0 {
+		t.Errorf("after %d good frames: recoveryFramesRemaining = %d, want 0",
+			len(recoveryRampFactors), d.recoveryFramesRemaining)
+	}
+	// Subsequent good frames don't underflow the counter.
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("post-recovery good frame: %v", err)
+	}
+	if d.recoveryFramesRemaining != 0 {
+		t.Errorf("post-recovery: recoveryFramesRemaining = %d, want 0",
+			d.recoveryFramesRemaining)
+	}
+}
+
+// TestRecoveryRampAttenuatesOutput: with the AGC frozen during
+// recovery, the first good frame's output peak should be
+// noticeably lower than a fresh-decoder baseline at the same
+// frame index. A frame at recoveryRampFactors[0] = 0.4 should
+// produce roughly 0.4× the baseline output peak.
+//
+// Tolerance is loose: the §6.4 unvoiced noise + AGC envelope
+// state introduce per-frame variance, but the 0.4 vs 1.0 ratio
+// is large enough to detect even with that noise.
+func TestRecoveryRampAttenuatesOutput(t *testing.T) {
+	// Baseline: fresh decoder, decode one frame.
+	baseline := New()
+	baseOut, err := baseline.Decode(make([]byte, FrameBytes))
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	basePeak := agcPeak(baseOut)
+
+	// Recovery: drive a decoder through bad-streak exhaustion,
+	// then decode one good frame. Use the same seed so the
+	// unvoiced noise stream matches the baseline.
+	rec := New()
+	if _, err := rec.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("rec seed: %v", err)
+	}
+	for i := 0; i <= mbe.MaxBadFrames; i++ {
+		if _, err := rec.Decode(badFrame()); err != nil {
+			t.Fatalf("rec bad %d: %v", i, err)
+		}
+	}
+	recOut, err := rec.Decode(make([]byte, FrameBytes))
+	if err != nil {
+		t.Fatalf("rec good: %v", err)
+	}
+	recPeak := agcPeak(recOut)
+
+	// Recovery peak should be substantially below baseline. The
+	// 0.4 factor + frozen AGC means the output is roughly
+	// 0.4·baseline, but the AGC envelope at the moment of freeze
+	// reflects the pre-bad-streak state which can drift slightly
+	// from baseline. Allow a wide window: recovery peak should be
+	// less than 70% of baseline.
+	if recPeak >= basePeak*7/10 {
+		t.Errorf("recovery peak = %d, baseline peak = %d "+
+			"(recovery/baseline = %.2f, want < 0.70)",
+			recPeak, basePeak, float64(recPeak)/float64(basePeak))
+	}
+}
+
+// TestRecoveryRampClearedByReset: explicit Reset on a decoder
+// mid-recovery clears the counter so the next stream's first
+// frame doesn't get attenuated. Pins the "Reset = clean slate"
+// contract.
+func TestRecoveryRampClearedByReset(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for i := 0; i <= mbe.MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad %d: %v", i, err)
+		}
+	}
+	if d.recoveryFramesRemaining == 0 {
+		t.Fatal("setup: recovery ramp not armed")
+	}
+	d.Reset()
+	if d.recoveryFramesRemaining != 0 {
+		t.Errorf("after Reset: recoveryFramesRemaining = %d, want 0",
+			d.recoveryFramesRemaining)
+	}
+}
+
+// TestRecoveryRampFactorsMonotonicallyIncrease: the ramp must be
+// non-decreasing (so each step eases the listener back without
+// regressing). Pins that any future re-tuning of the ramp keeps
+// the monotonic-increase property.
+func TestRecoveryRampFactorsMonotonicallyIncrease(t *testing.T) {
+	prev := 0.0
+	for i, f := range recoveryRampFactors {
+		if f < prev {
+			t.Errorf("recoveryRampFactors[%d] = %v < previous %v "+
+				"(ramp must be non-decreasing)", i, f, prev)
+		}
+		if f <= 0 || f > 1 {
+			t.Errorf("recoveryRampFactors[%d] = %v out of (0, 1]",
+				i, f)
+		}
+		prev = f
+	}
+	if recoveryRampFactors[len(recoveryRampFactors)-1] != 1.0 {
+		t.Errorf("ramp's last factor = %v, want exactly 1.0 "+
+			"(must reach full amplitude before normal operation resumes)",
+			recoveryRampFactors[len(recoveryRampFactors)-1])
+	}
+}
+
 // TestFrameRepeatFreezesAGC: a bad-frame replay must not perturb
 // the AGC envelope (the freeze contract is what makes the
 // attenuation audible — without it AGC would partially compensate).

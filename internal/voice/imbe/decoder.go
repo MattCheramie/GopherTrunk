@@ -28,6 +28,26 @@ const (
 	VocoderName = "imbe"
 )
 
+// recoveryRampFactors scales the synthesised amplitudes M[1..L] for
+// the first len(recoveryRampFactors) good frames after a bad-streak
+// state clear. The ramp 0.4 → 0.7 → 1.0 across 60 ms (3 frames at
+// 20 ms each) eases the listener back in after silence rather than
+// jumping straight back to full amplitude — the §6.3 voiced
+// harmonic generator's per-frame amp interpolation provides 20 ms
+// of natural fade, but a 60 ms envelope ramp on top is more
+// musically natural after extended bit loss. The AGC is frozen
+// during recovery so the attenuation is audible (and not
+// compensated by the envelope tracker).
+//
+// Phase-aware: PrevPhase is zeroed by the state clear, so the
+// voiced harmonic generator starts every harmonic at phase 0.
+// The amplitude-tilt 0 → factor·M[l] keeps sample 0 at exactly 0
+// regardless of phase coherence, so there's no zero-crossing
+// click. Subsequent samples mix harmonics at phases that diverge
+// quickly per their ω₀·l·n term, decorrelating the energy
+// naturally.
+var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
+
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one
 // mbe.SynthState (cross-frame log2(Ml) prediction memory + voiced
 // phase + amp memory + §6.4 OA tail), one math/rand source for
@@ -43,6 +63,7 @@ const (
 //   - mbe.PredictLog2Ml: §6.1 cross-frame prediction
 //   - mbe.AmplitudesFromLog2Ml: log2(Ml) → linear Ml
 //   - mbe.EnhanceAmplitudes: §6.2 spectral-amplitude enhancement
+//   - recovery ramp (if applicable): scale M by recoveryRampFactors
 //   - mbe.SynthVoiced: §6.3 voiced harmonic generator
 //   - mbe.SynthUnvoicedOverlapAdd: §6.4 unvoiced FFT excitation + OA
 //   - mbe.SynthState.Update{Log2Ml,VoicedState}: roll state forward
@@ -54,7 +75,9 @@ const (
 // mbe.BadFrameAttenuation^badFrameCount. After mbe.MaxBadFrames
 // consecutive bad frames the cache is cleared and Decode returns
 // silence so an extended bad streak fades naturally instead of
-// looping the same envelope forever.
+// looping the same envelope forever. When good frames return after
+// such a clear, the recovery ramp eases the synthesiser back in
+// over 60 ms.
 type Decoder struct {
 	state mbe.SynthState
 	rng   *rand.Rand
@@ -71,6 +94,15 @@ type Decoder struct {
 	// Consecutive bad-frame count. Increments once per replay,
 	// resets to 0 on every good non-silent frame.
 	badFrameCount int
+
+	// recoveryFramesRemaining is the number of upcoming good frames
+	// that should run through the recovery ramp. Set to
+	// len(recoveryRampFactors) by the bad-streak budget-exhaust
+	// path; decremented each good frame; zero outside recovery.
+	// The ramp index is len(recoveryRampFactors) -
+	// recoveryFramesRemaining so the first recovery frame uses the
+	// smallest factor and the last uses 1.0 (full amplitude).
+	recoveryFramesRemaining int
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -161,9 +193,13 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// Bad frame with no cache, or bad-frame budget exhausted:
 		// emit silence + clear cache + reset SynthState. AGC envelope
 		// preserved so audio level is consistent when good frames
-		// return.
+		// return. Arm the recovery ramp so the first
+		// len(recoveryRampFactors) good frames after the clear fade
+		// back in at 0.4 → 0.7 → 1.0 amplitude rather than jumping
+		// straight to full level.
 		d.state.Reset()
 		d.clearLastGood()
+		d.recoveryFramesRemaining = len(recoveryRampFactors)
 		d.agc.Apply(pcm, out, true)
 		return out, nil
 
@@ -190,6 +226,30 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	mbe.AmplitudesFromLog2Ml(&log2M, m.L, &M)
 	mbe.EnhanceAmplitudes(m, &M)
 
+	// Recovery ramp after a bad-streak state clear: scale the post-
+	// enhancement amplitudes by recoveryRampFactors over the next
+	// len(recoveryRampFactors) good frames so the listener eases
+	// back in. The ramped M flows through synthesis (so SynthState's
+	// PrevMl reflects the actually-synthesised amplitudes) and is
+	// cached as lastGoodM for the bad-frame replay path. That keeps
+	// a fresh bad streak mid-recovery consistent with how the
+	// previous frame actually sounded — replaying from the
+	// pre-ramp full amplitude would create an audible jump.
+	recoveryFreezeAGC := false
+	if d.recoveryFramesRemaining > 0 {
+		idx := len(recoveryRampFactors) - d.recoveryFramesRemaining
+		factor := recoveryRampFactors[idx]
+		for l := 1; l <= m.L; l++ {
+			M[l] *= factor
+		}
+		d.recoveryFramesRemaining--
+		// Freeze the AGC during the ramp so the attenuation is
+		// audible — without freeze the envelope tracker would scale
+		// the output back up to TargetPeak and the listener would
+		// hear no fade-in.
+		recoveryFreezeAGC = true
+	}
+
 	d.synthFrame(m, &log2M, &M, pcm)
 
 	// Cache for the frame-repeat path on a future bad frame.
@@ -197,7 +257,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	d.lastGoodLog2M = log2M
 	d.lastGoodM = M
 
-	d.agc.Apply(pcm, out, false)
+	d.agc.Apply(pcm, out, recoveryFreezeAGC)
 	return out, nil
 }
 
@@ -250,6 +310,7 @@ func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc.Reset()
 	d.clearLastGood()
+	d.recoveryFramesRemaining = 0
 }
 
 // Close releases any resources held by the decoder. The pure-Go

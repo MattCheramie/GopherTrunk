@@ -167,6 +167,14 @@ to its own package and lands independently.
   frames bridge ~120 ms of weak signal before Decode emits silence
   + clears the cache. The repeat path freezes the AGC envelope
   so the attenuation is audible (signals signal degradation).
+  **Phase-aware fade-in**: when a bad-streak state clear is
+  followed by good frames returning, the next 3 frames run with
+  M scaled by `recoveryRampFactors = {0.4, 0.7, 1.0}` and the
+  AGC frozen so the listener eases back in over 60 ms rather
+  than jumping straight to full amplitude. The §6.3 voiced
+  harmonic generator's amplitude tilt 0 → factor·M[l] keeps the
+  first sample at exactly 0 regardless of phase coherence, so
+  there's no zero-crossing click on resumption.
   **Remaining audio polish**: absolute-level calibration against a
   known-good reference decoder (DSD-FME or OP25 — capture a P25
   Phase 1 voice exchange, decode through both, compare RMS +
