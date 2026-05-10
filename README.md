@@ -86,12 +86,20 @@ SQLite. The honest gaps:
   post-deinterleave burst → 11-byte recorder-ready frame in one
   call (descramble → per-vector Golay + Hamming → bit-pack);
   upstream protocol decoders call it for each voice slot and
-  forward the result to `recorder.WriteRawFrame`. The
-  protocol-side LDU extraction itself (the 1728-bit burst layout
-  + the bit positions of the 9 IMBE slots) is the next gap.
-  The AMBE+2 algorithm carries active patents in some
-  jurisdictions; re-implementing it in pure Go does not change
-  that posture — see [docs/vocoders.md](docs/vocoders.md).
+  forward the result to `recorder.WriteRawFrame`. The P25
+  Phase 1 LDU framework now ships its structural primitives at
+  `internal/radio/p25/phase1/ldu.go`: the 1728-bit total budget,
+  the FS / NID / voice / LC / LSD / status field widths, the
+  status-symbol deinterleaver (`StripStatusSymbols` /
+  `StatusSymbols` / `InjectStatusSymbols`) implementing the
+  "2 status bits after every 70 payload bits" rule from
+  TIA-102.BAAA-A § 8 (Figure 8-3 / 8-4), and an
+  `ExtractVoiceFrames` stub returning `ErrLDUVoicePositionsUnknown`
+  until the per-subframe bit positions inside the 1680-bit
+  payload are sourced. The AMBE+2 algorithm carries active
+  patents in some jurisdictions; re-implementing it in pure Go
+  does not change that posture — see
+  [docs/vocoders.md](docs/vocoders.md).
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
   de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
   polyphase L/M audio resampler — the full polish stack ships.
