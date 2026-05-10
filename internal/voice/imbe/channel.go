@@ -142,6 +142,58 @@ func EncodeChannel(info []byte) ([]byte, error) {
 	return channel, nil
 }
 
+// PackInfoBitsToFrame packs InfoBits (88) information bits — one
+// bit per byte (0/1) — into a FrameBytes (11)-byte buffer
+// MSB-first, the wire shape Decoder.Decode and
+// voice.DecodeStream consume. Inverse of the unpacking those
+// functions perform internally.
+//
+// Used by upstream protocol decoders (P25 Phase 1 LDU extractor
+// and friends) to produce a recorder-ready frame after running
+// the per-vector channel-coding inverse.
+func PackInfoBitsToFrame(info []byte) ([]byte, error) {
+	if len(info) != InfoBits {
+		return nil, fmt.Errorf("%w: got %d info bits, want %d",
+			ErrChannelLength, len(info), InfoBits)
+	}
+	frame := make([]byte, FrameBytes)
+	for i, b := range info {
+		if b&1 != 0 {
+			frame[i/8] |= 1 << (7 - uint(i)%8)
+		}
+	}
+	return frame, nil
+}
+
+// DecodeChannelToFrame is the convenience pipeline that bridges
+// "144 channel bits, post-deinterleave" → "FrameBytes-byte
+// recorder-ready IMBE frame". It runs the §7.4 PRBS descrambler,
+// then the per-vector Golay+Hamming FEC inverse, then packs the
+// 88 recovered information bits MSB-first.
+//
+// Used by upstream protocol decoders (P25 Phase 1 LDU extraction,
+// future) that hand off post-deinterleave channel bursts: each
+// LDU carries 9 IMBE voice frames, each 144 bits — call this
+// helper for each slot and forward the resulting frame to
+// voice.Recorder.WriteRawFrame.
+//
+// Returns the total bit-errors corrected across all FEC vectors.
+// Uncorrectable codewords surface as ErrUncorrectable from
+// DecodeChannel; the partially-recovered frame is still returned
+// so callers can log + frame-repeat upstream.
+func DecodeChannelToFrame(channel []byte) (frame []byte, errs int, err error) {
+	descrambled, err := Descramble(channel)
+	if err != nil {
+		return nil, 0, err
+	}
+	info, errs, decErr := DecodeChannel(descrambled)
+	frame, packErr := PackInfoBitsToFrame(info)
+	if decErr != nil {
+		return frame, errs, decErr
+	}
+	return frame, errs, packErr
+}
+
 // bitsToUint32 packs up to 32 bits (MSB-first) from src into the
 // low bits of a uint32. Used for codewords of any width that fits.
 func bitsToUint32(src []byte) uint32 {

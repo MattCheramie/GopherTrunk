@@ -17,6 +17,12 @@
 //     144 channel bits → 88 information bits via Golay(23,12,7)
 //     for u_0..u_3 + Hamming(15,11,3) for u_4..u_6 + a
 //     no-FEC u_7 passthrough. See channel.go.
+//     The convenience helper DecodeChannelToFrame collapses the
+//     descramble + per-vector decode + bit-pack steps into one
+//     call so upstream protocol decoders (P25 Phase 1 LDU
+//     extraction, future) get a recorder.WriteRawFrame-ready
+//     11-byte frame from a 144-bit post-deinterleave channel
+//     burst.
 //
 //  2b. Channel coding inverse — pseudo-random scrambler. ← THIS PR.
 //     XORs a 114-bit u_0-keyed LCG PRBS (TIA-102.BABA §7.4) over
