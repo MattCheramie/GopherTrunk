@@ -117,14 +117,100 @@ const _ = uintptr(LDUTotalBits - (LDUFrameSyncBits + LDUNIDBits +
 // when the input doesn't have exactly LDUTotalBits bits.
 var ErrLDULength = errors.New("p25/phase1: LDU input must be exactly 1728 bits (one bit per byte, 0/1)")
 
-// ErrLDUVoicePositionsUnknown signals that the bit-level
-// interleaving of voice / LC / LSD inside the 1680-bit LDU
-// payload isn't yet implemented in this package. Callers who
-// want recorder-ready IMBE frames from a captured LDU stream
-// should wait for the follow-up that adds those bit positions
-// (TIA-102.BAAA-A § 8 voice frame layout).
+// LDU payload-bit offsets for each field inside the 1680-bit
+// post-status-strip payload. Source: TIA-102.BAAA-A § 8
+// (Logical Link Data Unit 1 / 2 voice-frame layout). The 9 IMBE
+// voice subframes are interleaved with 6 × 40-bit LC (LDU1) or
+// ES (LDU2) blocks and 2 × 16-bit LSD blocks per the table:
+//
+//	Field                   Length   Cumulative
+//	Frame Sync (FS)             48       48
+//	Network ID (NID)            64      112
+//	Voice Frame 1 (u_0)        144      256
+//	Voice Frame 2 (u_1)        144      400
+//	LC / ES Block 1             40      440
+//	Voice Frame 3 (u_2)        144      584
+//	LC / ES Block 2             40      624
+//	Voice Frame 4 (u_3)        144      768
+//	LC / ES Block 3             40      808
+//	Voice Frame 5 (u_4)        144      952
+//	LC / ES Block 4             40      992
+//	Voice Frame 6 (u_5)        144     1136
+//	LC / ES Block 5             40     1176
+//	Voice Frame 7 (u_6)        144     1320
+//	LC / ES Block 6             40     1360
+//	Voice Frame 8 (u_7)        144     1504
+//	LSD Block 1                 16     1520
+//	Voice Frame 9 (u_8)        144     1664
+//	LSD Block 2                 16     1680
+//
+// (LDU1 carries Link Control bits in the LC/ES slots; LDU2
+// carries Encryption Sync bits at the identical positions.)
+var (
+	// lduFSOffset, lduNIDOffset locate the two fixed-position
+	// fields at the start of every LDU.
+	lduFSOffset  = 0
+	lduNIDOffset = LDUFrameSyncBits
+
+	// lduVoiceOffsets[i] is the bit offset of voice subframe
+	// u_i (0 ≤ i < 9) inside the 1680-bit payload. Each voice
+	// subframe is LDUVoiceSubframeBits = 144 bits long.
+	lduVoiceOffsets = [LDUVoiceSubframeCount]int{
+		112,  // u_0 → ends at 256
+		256,  // u_1 → ends at 400
+		440,  // u_2 → ends at 584  (post LC/ES Block 1)
+		624,  // u_3 → ends at 768  (post LC/ES Block 2)
+		808,  // u_4 → ends at 952  (post LC/ES Block 3)
+		992,  // u_5 → ends at 1136 (post LC/ES Block 4)
+		1176, // u_6 → ends at 1320 (post LC/ES Block 5)
+		1360, // u_7 → ends at 1504 (post LC/ES Block 6)
+		1520, // u_8 → ends at 1664 (post LSD Block 1)
+	}
+
+	// lduLCESBlockOffsets[j] is the bit offset of LC/ES block j
+	// (0 ≤ j < 6) inside the 1680-bit payload. Each block is
+	// 40 bits = 4 × Hamming(10,6,3) short codewords.
+	lduLCESBlockOffsets = [6]int{
+		400,  // Block 1
+		584,  // Block 2 (post u_2)
+		768,  // Block 3 (post u_3)
+		952,  // Block 4 (post u_4)
+		1136, // Block 5 (post u_5)
+		1320, // Block 6 (post u_6)
+	}
+
+	// lduLSDBlockOffsets[k] is the bit offset of LSD block k
+	// (0 ≤ k < 2). Each block is 16 bits = 1 cyclic codeword.
+	lduLSDBlockOffsets = [2]int{
+		1504, // Block 1 (post u_7)
+		1664, // Block 2 (post u_8)
+	}
+)
+
+// LDULCESBlockBits is the bit width of one of the 6 LC (in LDU1)
+// or ES (in LDU2) blocks interleaved between voice subframes.
+// 6 × 40 = 240 total.
+const LDULCESBlockBits = 40
+
+// LDULCESBlockCount is the number of LC/ES blocks per LDU.
+const LDULCESBlockCount = 6
+
+// LDULSDBlockBits is the bit width of one of the 2 LSD blocks.
+// 2 × 16 = 32 total.
+const LDULSDBlockBits = 16
+
+// LDULSDBlockCount is the number of LSD blocks per LDU.
+const LDULSDBlockCount = 2
+
+// ErrLDUVoicePositionsUnknown is kept as a deprecated alias for
+// callers that gated on it before the LDU layout was sourced.
+// New code should not encounter this; ExtractVoiceFrames now
+// returns frames for well-formed input.
+//
+// Deprecated: kept for one release cycle so external callers can
+// migrate; will be removed in a future PR.
 var ErrLDUVoicePositionsUnknown = errors.New(
-	"p25/phase1: LDU voice-subframe bit positions not yet implemented (see TIA-102.BAAA-A §8)")
+	"p25/phase1: legacy sentinel; LDU voice-frame extraction is now implemented")
 
 // StripStatusSymbols removes the 24 interleaved status symbols
 // (each 2 bits) from a 1728-bit LDU stream and returns the
@@ -185,34 +271,93 @@ func InjectStatusSymbols(payload []byte, status [LDUStatusSymbolCount]uint8) ([]
 	return out, nil
 }
 
-// ExtractVoiceFrames is the not-yet-implemented entry point for
-// turning a 1728-bit LDU bit stream into 9 IMBE-frame byte
-// buffers ready for recorder.WriteRawFrame. The TIA-102.BAAA-A
-// figures embedded in available references show the high-level
-// LDU structure but not the precise bit positions of each voice
-// subframe inside the 1680-bit payload — that requires the
-// section 8 voice-frame layout text.
+// ExtractVoiceFrames turns a 1728-bit on-air LDU bit stream into
+// 9 IMBE-frame byte buffers ready for recorder.WriteRawFrame. The
+// pipeline is:
 //
-// When the bit positions are sourced (TIA spec direct, or a
-// non-copyleft reference; OP25 is GPLv3 and unsuitable as a
-// transcription source for this project), the implementation
-// shape will be:
+//	1728-bit on-air ldu
+//	  → StripStatusSymbols     (1680-bit payload)
+//	  → slice u_0..u_8 at lduVoiceOffsets   (9 × 144 bits)
+//	  → imbe.DecodeChannelToFrame for each  (descramble, FEC,
+//	                                         bit-pack → 11 bytes)
+//	  → [9] recorder-ready frames
 //
-//	payload, err := StripStatusSymbols(ldu)
-//	if err != nil { return nil, err }
-//	for i := 0; i < LDUVoiceSubframeCount; i++ {
-//	    channel := payload[voiceOffsets[i] : voiceOffsets[i] + LDUVoiceSubframeBits]
-//	    frame, _, _ := imbe.DecodeChannelToFrame(channel)
-//	    frames[i] = frame
-//	}
+// totalErrs is the sum of bit-errors corrected by the per-vector
+// Golay + Hamming FEC across all 9 subframes. A non-nil err
+// surfaces an uncorrectable codeword in at least one subframe
+// (the partially-recovered frame is still returned in that slot
+// so callers can frame-repeat the failing one).
 //
-// Until those positions land, callers receive ErrLDUVoicePositionsUnknown.
-// The recorder-side wire-up (PR-75) is ready to consume the
-// frames once they're available.
-func ExtractVoiceFrames(ldu []byte) ([LDUVoiceSubframeCount][]byte, error) {
-	var frames [LDUVoiceSubframeCount][]byte
+// frames[i] is the IMBE info-bit frame for voice subframe u_i; an
+// 11-byte slice consumable by imbe.Decoder.Decode (which the
+// recorder calls when a vocoder is wired to the call's protocol;
+// see voice.DefaultVocoderForProtocol). Use the
+// ExtractLCESBlocks / ExtractLSDBlocks helpers below to pull the
+// metadata interleaved between voice subframes.
+//
+// Bit positions sourced from TIA-102.BAAA-A § 8 (Logical Link
+// Data Unit 1 / 2 voice-frame layout).
+func ExtractVoiceFrames(ldu []byte) (frames [LDUVoiceSubframeCount][]byte, totalErrs int, err error) {
 	if len(ldu) != LDUTotalBits {
-		return frames, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
+		return frames, 0, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
 	}
-	return frames, ErrLDUVoicePositionsUnknown
+	payload, err := StripStatusSymbols(ldu)
+	if err != nil {
+		return frames, 0, err
+	}
+
+	var firstErr error
+	for i, off := range lduVoiceOffsets {
+		channel := payload[off : off+LDUVoiceSubframeBits]
+		frame, errs, decErr := imbe.DecodeChannelToFrame(channel)
+		frames[i] = frame
+		totalErrs += errs
+		if decErr != nil && firstErr == nil {
+			firstErr = fmt.Errorf("subframe %d: %w", i, decErr)
+		}
+	}
+	return frames, totalErrs, firstErr
+}
+
+// ExtractLCESBlocks returns the 6 LC (LDU1) / ES (LDU2) blocks
+// interleaved between the voice subframes. Each block is 40 bits
+// long and carries 4 × Hamming(10,6,3) short codewords. Concatenating
+// the 6 blocks yields the 240-bit LC or ES word that downstream
+// processing decodes into source/destination unit IDs (LDU1) or
+// the Message Indicator + Algorithm ID + Key ID (LDU2).
+//
+// The caller is responsible for knowing which DUID was just
+// decoded (DUIDLogicalLink1 vs DUIDLogicalLink2) and interpreting
+// the bits accordingly.
+func ExtractLCESBlocks(ldu []byte) (blocks [LDULCESBlockCount][]byte, err error) {
+	if len(ldu) != LDUTotalBits {
+		return blocks, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
+	}
+	payload, err := StripStatusSymbols(ldu)
+	if err != nil {
+		return blocks, err
+	}
+	for i, off := range lduLCESBlockOffsets {
+		blocks[i] = payload[off : off+LDULCESBlockBits]
+	}
+	return blocks, nil
+}
+
+// ExtractLSDBlocks returns the 2 Low-Speed Data blocks
+// interleaved into the LDU. Each block is 16 bits long = one
+// cyclic codeword. LSD piggybacks on the voice channel and
+// carries low-bandwidth out-of-band signalling (sensor data,
+// status messages, etc.) that operators can opt into.
+func ExtractLSDBlocks(ldu []byte) (blocks [LDULSDBlockCount][]byte, err error) {
+	if len(ldu) != LDUTotalBits {
+		return blocks, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
+	}
+	payload, err := StripStatusSymbols(ldu)
+	if err != nil {
+		return blocks, err
+	}
+	for i, off := range lduLSDBlockOffsets {
+		blocks[i] = payload[off : off+LDULSDBlockBits]
+	}
+	return blocks, nil
 }

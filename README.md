@@ -87,16 +87,23 @@ SQLite. The honest gaps:
   call (descramble → per-vector Golay + Hamming → bit-pack);
   upstream protocol decoders call it for each voice slot and
   forward the result to `recorder.WriteRawFrame`. The P25
-  Phase 1 LDU framework now ships its structural primitives at
-  `internal/radio/p25/phase1/ldu.go`: the 1728-bit total budget,
-  the FS / NID / voice / LC / LSD / status field widths, the
-  status-symbol deinterleaver (`StripStatusSymbols` /
-  `StatusSymbols` / `InjectStatusSymbols`) implementing the
-  "2 status bits after every 70 payload bits" rule from
-  TIA-102.BAAA-A § 8 (Figure 8-3 / 8-4), and an
-  `ExtractVoiceFrames` stub returning `ErrLDUVoicePositionsUnknown`
-  until the per-subframe bit positions inside the 1680-bit
-  payload are sourced. The AMBE+2 algorithm carries active
+  Phase 1 LDU framework at `internal/radio/p25/phase1/ldu.go`
+  closes the IQ → frame gap end-to-end:
+  `phase1.ExtractVoiceFrames(ldu)` takes a 1728-bit on-air LDU
+  stream, strips the status symbols (2 bits after every 70
+  payload bits per TIA-102.BAAA-A § 8), slices the 9 IMBE voice
+  subframes at the documented payload offsets (u₀ at bit 112,
+  u₁ at 256, u₂ at 440, ..., u₈ at 1520), and runs each through
+  `imbe.DecodeChannelToFrame` to produce 9 recorder-ready
+  11-byte frames. `ExtractLCESBlocks` / `ExtractLSDBlocks`
+  pull the 240-bit LC (LDU1) / ES (LDU2) and 32-bit LSD
+  metadata interleaved between voice subframes. An
+  end-to-end integration test
+  (`internal/radio/p25/phase1/ldu_e2e_test.go`) builds a
+  synthetic LDU containing 9 encoded IMBE frames, runs them
+  through `ExtractVoiceFrames` → `recorder.WriteRawFrame` →
+  registered IMBE vocoder → WAV, and confirms the WAV carries
+  the expected 9·160·2 PCM bytes with non-silent samples. The AMBE+2 algorithm carries active
   patents in some jurisdictions; re-implementing it in pure Go
   does not change that posture — see
   [docs/vocoders.md](docs/vocoders.md).

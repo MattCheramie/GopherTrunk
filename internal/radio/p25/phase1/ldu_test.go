@@ -3,7 +3,10 @@ package phase1
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/voice/imbe"
 )
 
 // TestLDUStructuralBitBudget: the 1728-bit LDU stream must
@@ -152,21 +155,219 @@ func TestStatusSymbolsExtraction(t *testing.T) {
 	}
 }
 
-// TestExtractVoiceFramesIsStubbed: until the LDU voice-frame
-// bit positions are sourced from TIA-102.BAAA-A § 8, callers
-// must receive ErrLDUVoicePositionsUnknown. Pin the contract so
-// the future implementation lands as a clear before/after
-// behaviour change.
-func TestExtractVoiceFramesIsStubbed(t *testing.T) {
-	_, err := ExtractVoiceFrames(make([]byte, LDUTotalBits))
-	if !errors.Is(err, ErrLDUVoicePositionsUnknown) {
-		t.Errorf("err = %v, want ErrLDUVoicePositionsUnknown", err)
-	}
-
-	// Wrong-length input still surfaces ErrLDULength (the length
-	// check runs before the voice-position TODO).
-	_, err = ExtractVoiceFrames(make([]byte, 100))
+// TestExtractVoiceFramesRejectsWrongLength: pin that
+// ExtractVoiceFrames surfaces ErrLDULength for any input that
+// isn't exactly LDUTotalBits. Mirrors the StripStatusSymbols
+// length check.
+func TestExtractVoiceFramesRejectsWrongLength(t *testing.T) {
+	_, _, err := ExtractVoiceFrames(make([]byte, 100))
 	if !errors.Is(err, ErrLDULength) {
 		t.Errorf("err = %v, want ErrLDULength for short input", err)
+	}
+}
+
+// TestExtractVoiceFramesSliceBoundsMatchTIATable: pin the 9
+// voice-subframe slice offsets against the documented
+// TIA-102.BAAA-A § 8 table. We do this by writing a known
+// pattern at each documented voice slot in the 1680-bit payload
+// (each slot gets bit value (i+1) % 2 to keep things simple),
+// injecting status symbols to build the 1728-bit on-air stream,
+// then reading the bits at the voice slots back out via
+// StripStatusSymbols + manual slicing. A mismatch in offsets
+// would surface as a wrong pattern at slot i.
+//
+// This catches off-by-one errors in lduVoiceOffsets without
+// depending on the imbe channel decoder behaving correctly on
+// the patterns.
+func TestExtractVoiceFramesSliceBoundsMatchTIATable(t *testing.T) {
+	payload := make([]byte, LDUPayloadBits)
+	// Mark each voice slot with a distinctive pattern: slot i
+	// gets all bits = (i+1)&1 (alternating 1, 0, 1, 0, 1, 0, 1, 0, 1).
+	for i, off := range lduVoiceOffsets {
+		marker := byte((i + 1) & 1)
+		for k := 0; k < LDUVoiceSubframeBits; k++ {
+			payload[off+k] = marker
+		}
+	}
+	var status [LDUStatusSymbolCount]uint8
+	ldu, err := InjectStatusSymbols(payload, status)
+	if err != nil {
+		t.Fatalf("InjectStatusSymbols: %v", err)
+	}
+	gotPayload, err := StripStatusSymbols(ldu)
+	if err != nil {
+		t.Fatalf("StripStatusSymbols: %v", err)
+	}
+	for i, off := range lduVoiceOffsets {
+		marker := byte((i + 1) & 1)
+		for k := 0; k < LDUVoiceSubframeBits; k++ {
+			if gotPayload[off+k] != marker {
+				t.Fatalf("voice slot %d bit %d: got %d, want %d (offset %d)",
+					i, k, gotPayload[off+k], marker, off)
+			}
+		}
+	}
+}
+
+// TestLDUFieldsCoverPayloadWithoutOverlap: pin that the
+// concatenation of {FS, NID, 9 voice slots, 6 LC/ES blocks,
+// 2 LSD blocks} exactly covers the 1680-bit payload with no gaps
+// and no overlaps. Mismatch here means at least one offset is
+// wrong against the TIA-102.BAAA-A § 8 cumulative table.
+func TestLDUFieldsCoverPayloadWithoutOverlap(t *testing.T) {
+	covered := make([]bool, LDUPayloadBits)
+
+	cover := func(name string, off, length int) {
+		t.Helper()
+		if off < 0 || off+length > LDUPayloadBits {
+			t.Errorf("%s: out of bounds (off=%d len=%d)", name, off, length)
+			return
+		}
+		for k := off; k < off+length; k++ {
+			if covered[k] {
+				t.Errorf("%s: bit %d already covered (overlap)", name, k)
+			}
+			covered[k] = true
+		}
+	}
+
+	cover("FS", lduFSOffset, LDUFrameSyncBits)
+	cover("NID", lduNIDOffset, LDUNIDBits)
+	for i, off := range lduVoiceOffsets {
+		cover(fmt.Sprintf("voice u_%d", i), off, LDUVoiceSubframeBits)
+	}
+	for i, off := range lduLCESBlockOffsets {
+		cover(fmt.Sprintf("LC/ES Block %d", i+1), off, LDULCESBlockBits)
+	}
+	for i, off := range lduLSDBlockOffsets {
+		cover(fmt.Sprintf("LSD Block %d", i+1), off, LDULSDBlockBits)
+	}
+
+	for i, b := range covered {
+		if !b {
+			t.Errorf("payload bit %d not covered by any field (gap)", i)
+		}
+	}
+}
+
+// TestExtractVoiceFramesRoundTrip: build a synthetic LDU by
+// encoding 9 distinct IMBE info-bit patterns through
+// EncodeChannel + Scramble, placing them at the documented voice
+// offsets, injecting status symbols, then calling
+// ExtractVoiceFrames and confirming each returned frame
+// round-trips back to its original info bits.
+//
+// This is the load-bearing test for the LDU layout: a single
+// wrong offset in lduVoiceOffsets would surface as a mismatched
+// frame at that slot index.
+func TestExtractVoiceFramesRoundTrip(t *testing.T) {
+	// Per-subframe info bits: subframe i gets bit pattern
+	// (i + k*3) % 2 — picks distinct 0/1 stripes per slot so a
+	// swapped pair of offsets would be caught.
+	var originals [LDUVoiceSubframeCount][]byte
+	for i := 0; i < LDUVoiceSubframeCount; i++ {
+		info := make([]byte, imbe.InfoBits)
+		for k := range info {
+			info[k] = byte((i + k*3) % 2)
+		}
+		originals[i] = info
+	}
+
+	payload := make([]byte, LDUPayloadBits)
+	for i, info := range originals {
+		encoded, err := imbe.EncodeChannel(info)
+		if err != nil {
+			t.Fatalf("EncodeChannel u_%d: %v", i, err)
+		}
+		scrambled, err := imbe.Scramble(encoded)
+		if err != nil {
+			t.Fatalf("Scramble u_%d: %v", i, err)
+		}
+		copy(payload[lduVoiceOffsets[i]:lduVoiceOffsets[i]+LDUVoiceSubframeBits], scrambled)
+	}
+	var status [LDUStatusSymbolCount]uint8
+	ldu, err := InjectStatusSymbols(payload, status)
+	if err != nil {
+		t.Fatalf("InjectStatusSymbols: %v", err)
+	}
+
+	frames, errs, err := ExtractVoiceFrames(ldu)
+	if err != nil {
+		t.Fatalf("ExtractVoiceFrames: %v", err)
+	}
+	if errs != 0 {
+		t.Errorf("totalErrs = %d, want 0 on a clean LDU", errs)
+	}
+	for i, original := range originals {
+		frame := frames[i]
+		if len(frame) != imbe.FrameBytes {
+			t.Errorf("u_%d frame length = %d, want %d", i, len(frame), imbe.FrameBytes)
+			continue
+		}
+		// Unpack frame to bits and compare to original.
+		for k := 0; k < imbe.InfoBits; k++ {
+			got := (frame[k/8] >> (7 - uint(k)%8)) & 1
+			if got != original[k] {
+				t.Fatalf("u_%d bit %d: extracted = %d, original = %d", i, k, got, original[k])
+			}
+		}
+	}
+}
+
+// TestExtractLCESBlocksRoundTrip: place 6 distinct 40-bit
+// patterns at the documented LC/ES offsets, inject status, then
+// confirm ExtractLCESBlocks returns the same patterns.
+func TestExtractLCESBlocksRoundTrip(t *testing.T) {
+	payload := make([]byte, LDUPayloadBits)
+	var want [LDULCESBlockCount][]byte
+	for i, off := range lduLCESBlockOffsets {
+		block := make([]byte, LDULCESBlockBits)
+		for k := range block {
+			block[k] = byte((i*7 + k) % 2)
+		}
+		copy(payload[off:off+LDULCESBlockBits], block)
+		want[i] = block
+	}
+	var status [LDUStatusSymbolCount]uint8
+	ldu, err := InjectStatusSymbols(payload, status)
+	if err != nil {
+		t.Fatalf("InjectStatusSymbols: %v", err)
+	}
+	got, err := ExtractLCESBlocks(ldu)
+	if err != nil {
+		t.Fatalf("ExtractLCESBlocks: %v", err)
+	}
+	for i := range want {
+		if !bytes.Equal(got[i], want[i]) {
+			t.Errorf("LC/ES block %d mismatch", i+1)
+		}
+	}
+}
+
+// TestExtractLSDBlocksRoundTrip: same idea for the 2 LSD slots.
+func TestExtractLSDBlocksRoundTrip(t *testing.T) {
+	payload := make([]byte, LDUPayloadBits)
+	var want [LDULSDBlockCount][]byte
+	for i, off := range lduLSDBlockOffsets {
+		block := make([]byte, LDULSDBlockBits)
+		for k := range block {
+			block[k] = byte((i*5 + k) % 2)
+		}
+		copy(payload[off:off+LDULSDBlockBits], block)
+		want[i] = block
+	}
+	var status [LDUStatusSymbolCount]uint8
+	ldu, err := InjectStatusSymbols(payload, status)
+	if err != nil {
+		t.Fatalf("InjectStatusSymbols: %v", err)
+	}
+	got, err := ExtractLSDBlocks(ldu)
+	if err != nil {
+		t.Fatalf("ExtractLSDBlocks: %v", err)
+	}
+	for i := range want {
+		if !bytes.Equal(got[i], want[i]) {
+			t.Errorf("LSD block %d mismatch", i+1)
+		}
 	}
 }
