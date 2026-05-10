@@ -4,7 +4,7 @@ A headless, low-latency digital-trunking scanner engine in Go.
 
 GopherTrunk manages a pool of RTL-SDR dongles, runs a custom Go DSP
 pipeline, decodes the signalling layers of every major trunked-radio
-family (P25 Phase 1 / Phase 2, DMR Tier III, NXDN, Motorola Type II /
+family (P25 Phase 1 / Phase 2, DMR Tier II / III, NXDN, Motorola Type II /
 SmartZone, EDACS / GE-Marc, LTR, MPT 1327, dPMR Mode 3, TETRA TMO)
 plus the D-STAR amateur repeater header, follows voice grants by
 talkgroup priority, and streams metadata + audio to any frontend over
@@ -20,6 +20,7 @@ gRPC, HTTP/SSE, or WebSocket.
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
 | P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, control-channel state machine emitting `protocol = "p25-phase2"` grants |
 | DMR (Tier III)    | All 9 ETSI sync patterns, burst layout (132 dibits), Color Code + Data Type via (20,8,7) shortened-Hamming slot-type FEC (corrects up to 3 bit errors per slot type), CSBK with CRC, payload parsers for TalkGroup/Private Voice grants + Aloha + AdjacentSiteStatus + SystemInfoBroadcast, control-channel state machine |
+| DMR (Tier II)     | Shares the burst / slot-type / BPTC(196,96) layers with Tier III; adds a 72-bit Full Link Control parser (FLCO enum: GroupVoiceChannelUser / UnitToUnitVoice / TalkerAlias / GPS / Terminator) and a per-repeater conventional-mode state machine that decodes Voice LC Header bursts and emits `protocol = "dmr-tier2"` grants on the bus, deduped per call and cleared on Terminator-with-LC |
 | NXDN              | 192-dibit frame layout (4800 BFSK / 9600 4-FSK), LICH parse with parity + 16-bit doubled-wire decoder, FSW correlator, full SACCH channel decode (K=5 ½-rate convolutional Viterbi + 60-position sub-frame deinterleaver + 12-bit puncture undo + CRC-6 trailer), CAC parser with CRC, RCCH opcode enum + payload parsers, control-channel state machine |
 | Motorola Type II  | OSW parser, opcode constants, LCN → Hz band-plan resolver (linear + table), control-channel state machine emitting `protocol = "motorola"` grants |
 | EDACS / GE-Marc   | 40-bit CCW parser, command enum (Idle / GroupVoiceGrant / ProVoiceGrant / IndividualCall / DataGrant / SystemID / AdjacentSite / Emergency / Affiliation / Encryption), per-command accessors with encrypted / emergency flags, LCN → Hz resolver, control-channel state machine emitting `protocol = "edacs"` grants |
@@ -47,9 +48,6 @@ control channel locks, the engine allocates a Voice device on a
 grant, the composer pulls IQ → PCM → WAV, and the call is logged to
 SQLite. The honest gaps:
 
-- **DMR Tier II** is mostly a configuration variation on the Tier
-  III scaffolding that's already in place; both share the burst,
-  slot-type, and BPTC pieces.
 - **Digital voice** (P25 Phase 1 IMBE; AMBE+2 for P25 Phase 2 / DMR
   / NXDN) is gated on the vocoders. The `Vocoder` plugin interface
   + raw-frame sidecar are in place; pure-Go IMBE is in progress
