@@ -58,13 +58,33 @@ const (
 	agcMinGain    = 10.0
 	agcMaxGain    = 1e5
 	agcNoiseFloor = 1e-3
+
+	// MaxBadFrames is the number of consecutive bad frames the
+	// frame-repeat path will replay before giving up and emitting
+	// silence + clearing state. The TIA-102.BABA spec range is
+	// 1..6; mbelib uses 6, which gives the upstream P25 LDU FEC
+	// roughly 120 ms of grace before the audio path drops out
+	// completely. After MaxBadFrames bad frames the cumulative
+	// attenuation is BadFrameAttenuation^6 ≈ 0.118 — quiet enough
+	// that an extended bad streak fades naturally rather than
+	// looping the same envelope.
+	MaxBadFrames = 6
+
+	// BadFrameAttenuation is the per-frame multiplier applied to
+	// the cached last-good amplitudes during a frame-repeat. A
+	// single bad frame plays at 70% of the prev good frame's
+	// amplitudes; six in a row taper to ~12%. This is a balance
+	// between hiding the FEC slip (no abrupt mute) and signalling
+	// the listener that signal is degrading (audible volume drop).
+	BadFrameAttenuation = 0.7
 )
 
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one SynthState
 // (cross-frame log2(Ml) prediction memory + voiced phase + amp
 // memory), one math/rand source for the §6.4 unvoiced excitation
-// noise, and one AGC envelope tracker — all per-call so concurrent
-// calls on different decoders don't share state.
+// noise, one AGC envelope tracker, and a one-frame cache of the
+// last-good parameters for the frame-repeat path — all per-call
+// so concurrent calls on different decoders don't share state.
 //
 // Decode() runs the full TIA-102.BABA pipeline:
 //   - bytes → 88 info bits
@@ -77,10 +97,29 @@ const (
 //   - Update{Log2Ml,VoicedState}: roll state forward
 //   - applyAGC: per-frame fast-attack / slow-release peak tracker
 //     scaling to agcTargetPeak, then int16 clip
+//
+// On a bad frame (UnpackParams returns ErrInvalidFundamental, etc.),
+// Decode replays the last good frame's amplitudes scaled by
+// BadFrameAttenuation^badFrameCount. After MaxBadFrames consecutive
+// bad frames the cache is cleared and Decode returns silence so an
+// extended bad streak fades naturally instead of looping the same
+// envelope forever.
 type Decoder struct {
 	state SynthState
 	rng   *rand.Rand
 	agc   float64 // smoothed peak envelope; 0 = fresh (next frame seeds it)
+
+	// One-frame cache for the frame-repeat path. Populated after a
+	// good non-silent frame; consumed by the bad-frame path; cleared
+	// on silence-window frames + on Reset + when MaxBadFrames is
+	// exceeded.
+	lastGoodParams Params
+	lastGoodLog2M  [57]float64
+	lastGoodM      [57]float64
+
+	// Consecutive bad-frame count. Increments once per replay,
+	// resets to 0 on every good non-silent frame.
+	badFrameCount int
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -114,11 +153,21 @@ func (d *Decoder) FrameSize() int { return FrameBytes }
 // runs the full TIA-102.BABA pipeline, and returns 160 int16 PCM
 // samples at 8 kHz.
 //
-// Frames with an invalid fundamental-frequency parameter (b_0 ≥ 220
-// or b_0 in {208..215}) decode as silence so the upstream P25 LDU
-// FEC slip doesn't crash the audio path; on these frames the
-// SynthState is left untouched so the next valid frame picks up
-// from the last-known-good prediction history.
+// Frame disposition:
+//
+//   - good non-silent frame: full synthesis pipeline; cache p +
+//     log2M + M for the next bad frame's repeat path; reset
+//     badFrameCount.
+//   - silence-window frame (b_0 ∈ [216, 219]): emit §6.4 OA tail
+//     fade-out into pcm[0..95]; reset SynthState + last-good cache
+//     + badFrameCount; AGC envelope preserved across the silence.
+//   - bad frame (UnpackParams error) with cached last-good frame
+//     and badFrameCount < MaxBadFrames: replay last-good params
+//     with M scaled by BadFrameAttenuation^badFrameCount; AGC
+//     freezes so the attenuation is audible (signals signal loss).
+//   - bad frame with no cache, or after MaxBadFrames consecutive
+//     bad frames: emit silence; clear last-good cache + reset
+//     SynthState; AGC envelope preserved.
 func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	if len(frame) != FrameBytes {
 		return nil, fmt.Errorf("imbe: frame must be %d bytes (88 bits), got %d", FrameBytes, len(frame))
@@ -126,58 +175,93 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 
 	info := unpackInfoBits(frame)
 	out := make([]int16, SamplesPerFrame)
-
-	p, err := UnpackParams(info)
-	if err != nil {
-		// Bad frame — graceful silence. State preserved so the next
-		// valid frame's cross-frame prediction has the previous
-		// good frame's history.
-		return out, nil
-	}
-
 	pcm := make([]float64, SamplesPerFrame)
 
-	if p.Silent {
+	p, err := UnpackParams(info)
+
+	switch {
+	case err != nil && d.lastGoodParams.L > 0 && d.badFrameCount < MaxBadFrames:
+		// Frame repeat: replay the last-good params with progressive
+		// per-frame attenuation. Synthesis still runs (so OA tail +
+		// phase memory continue rolling forward), AGC freezes so the
+		// attenuation is audible.
+		d.badFrameCount++
+		atten := math.Pow(BadFrameAttenuation, float64(d.badFrameCount))
+		repeatedM := d.lastGoodM
+		for l := 1; l <= d.lastGoodParams.L; l++ {
+			repeatedM[l] *= atten
+		}
+		d.synthFrame(d.lastGoodParams, &d.lastGoodLog2M, &repeatedM, pcm)
+		d.applyAGC(pcm, out, true)
+		return out, nil
+
+	case err != nil:
+		// Bad frame with no cache, or bad-frame budget exhausted:
+		// emit silence + clear cache + reset SynthState. AGC envelope
+		// preserved so audio level is consistent when good frames
+		// return.
+		d.state.Reset()
+		d.clearLastGood()
+		d.applyAGC(pcm, out, true)
+		return out, nil
+
+	case p.Silent:
 		// b_0 ∈ [216, 219]: explicit silence indicator. Run the §6.4
 		// overlap-add with no new noise so the prev-frame unvoiced
 		// tail still fades into pcm[0..95] (no click on the silence
-		// boundary), then reset all cross-frame state so the next
-		// non-silent frame starts from a clean baseline (§6.1
-		// prediction needs no prev-frame anchor on a silence
-		// boundary).
+		// boundary), then reset SynthState + last-good cache so the
+		// next non-silent frame starts from a clean baseline.
 		SynthUnvoicedOverlapAdd(&d.state, p, nil, nil, pcm)
 		d.state.Reset()
-	} else {
-		// §6.1: cross-frame log-amplitude recovery.
-		var log2M [57]float64
-		PredictLog2Ml(&d.state, p, &log2M)
-
-		// log2(Ml) → linear Ml, then §6.2 spectral-amplitude
-		// enhancement (per-harmonic weight from R_M0 + R_M1, plus
-		// energy-preserving rescale).
-		var M [57]float64
-		AmplitudesFromLog2Ml(&log2M, p.L, &M)
-		EnhanceAmplitudes(p, &M)
-
-		// §6.3: voiced harmonic generator (additive into pcm).
-		SynthVoiced(&d.state, p, &M, pcm)
-
-		// §6.4: unvoiced FFT excitation with overlap-add (additive
-		// into pcm). Threads PrevUnvoicedTail through SynthState so
-		// frame boundaries are click-free.
-		noise := make([]float64, UnvoicedFFTSize)
-		for i := range noise {
-			noise[i] = d.rng.NormFloat64()
-		}
-		SynthUnvoicedOverlapAdd(&d.state, p, &M, noise, pcm)
-
-		// Roll cross-frame state forward.
-		d.state.UpdateLog2Ml(p, &log2M)
-		d.state.UpdateVoicedState(p, &M)
+		d.clearLastGood()
+		d.applyAGC(pcm, out, true)
+		return out, nil
 	}
 
-	d.applyAGC(pcm, out, p.Silent)
+	// Good non-silent frame.
+	d.badFrameCount = 0
+	var log2M [57]float64
+	PredictLog2Ml(&d.state, p, &log2M)
+
+	var M [57]float64
+	AmplitudesFromLog2Ml(&log2M, p.L, &M)
+	EnhanceAmplitudes(p, &M)
+
+	d.synthFrame(p, &log2M, &M, pcm)
+
+	// Cache for the frame-repeat path on a future bad frame.
+	d.lastGoodParams = p
+	d.lastGoodLog2M = log2M
+	d.lastGoodM = M
+
+	d.applyAGC(pcm, out, false)
 	return out, nil
+}
+
+// synthFrame runs the §6.3 voiced + §6.4 unvoiced overlap-add legs
+// of the pipeline and rolls SynthState forward by log2M / M. Used
+// by both the good-frame path and the bad-frame replay path so the
+// two share identical synthesis behavior — the only difference is
+// what M values get fed in.
+func (d *Decoder) synthFrame(p Params, log2M *[57]float64, M *[57]float64, pcm []float64) {
+	SynthVoiced(&d.state, p, M, pcm)
+	noise := make([]float64, UnvoicedFFTSize)
+	for i := range noise {
+		noise[i] = d.rng.NormFloat64()
+	}
+	SynthUnvoicedOverlapAdd(&d.state, p, M, noise, pcm)
+	d.state.UpdateLog2Ml(p, log2M)
+	d.state.UpdateVoicedState(p, M)
+}
+
+// clearLastGood resets the frame-repeat cache + bad-frame counter.
+// Called on silence-window frames, on the bad-frame budget being
+// exceeded, and from the public Reset.
+func (d *Decoder) clearLastGood() {
+	d.lastGoodParams = Params{}
+	d.lastGoodLog2M = [57]float64{}
+	d.lastGoodM = [57]float64{}
+	d.badFrameCount = 0
 }
 
 // applyAGC tracks the per-frame peak with fast-attack / slow-release
@@ -257,15 +341,17 @@ func unpackInfoBits(frame []byte) []byte {
 
 // Reset clears all per-call synthesis state — the cross-frame
 // log-amplitude prediction history, the voiced harmonic phase +
-// amplitude memory, the §6.4 overlap-add tail, and the AGC
-// envelope. Callers invoke it on stream re-sync (e.g., a frame-
-// loss event from the upstream P25 LDU decoder) so the next frame
-// starts from a clean baseline. The noise source is intentionally
-// not re-seeded — noise reproducibility is a constructor concern
-// (New / NewWithSeed), not a per-call concern.
+// amplitude memory, the §6.4 overlap-add tail, the AGC envelope,
+// and the frame-repeat cache + bad-frame counter. Callers invoke
+// it on stream re-sync (e.g., a frame-loss event from the upstream
+// P25 LDU decoder) so the next frame starts from a clean baseline.
+// The noise source is intentionally not re-seeded — noise
+// reproducibility is a constructor concern (New / NewWithSeed),
+// not a per-call concern.
 func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc = 0
+	d.clearLastGood()
 }
 
 // Close releases any resources held by the decoder. The pure-Go
