@@ -138,14 +138,17 @@ jobs:
         env:
           USE_SUDO: "0"
           PREFIX: /mingw64
-          # -DBUILD_TESTING=OFF skips the gtest / gmock subbuilds
-          # mbelib pulls in for its unit tests — saves ~30 s of CI
-          # time and reduces the failure surface to just the library.
-          # -DCMAKE_POLICY_VERSION_MINIMUM=3.5 papers over the
-          # upstream `cmake_minimum_required(VERSION ...)` value
-          # that's older than CMake 4.x will accept; without it the
-          # MSYS2 cmake bails on the obsolete policy declaration.
-          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+          # -DBUILD_TESTING=OFF: skip gtest / gmock subbuilds.
+          # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: paper over upstream
+          #   `cmake_minimum_required(VERSION <3.5)` that CMake 4.x
+          #   refuses without an explicit override.
+          # -DBUILD_SHARED_LIBS=ON: defensive — forces shared-lib
+          #   production so libmbe.dll is built. The CGO wrapper +
+          #   the installer both need the .dll at runtime; without
+          #   this flag mbelib has historically built both shared +
+          #   static, but it's cheap insurance against an upstream
+          #   default flip to static-only.
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=ON"
         run: |
           export PATH="/mingw64/bin:$PATH"
           scripts/install-mbelib.sh
@@ -183,15 +186,27 @@ jobs:
               echo "warning: $dll not found in MINGW64 bin"
             fi
           done
-          # …plus mbelib's runtime DLL. CMake's MinGW build outputs
-          # libmbe.dll; the wildcard tolerates upstream rename.
-          if compgen -G "/mingw64/bin/libmbe*.dll" >/dev/null; then
-            cp /mingw64/bin/libmbe*.dll "$STAGE/"
-          else
-            echo "FAIL: no libmbe DLL found under /mingw64/bin/"
-            ls -la /mingw64/bin/ | grep -i mbe || true
+          # …plus mbelib's runtime DLL. mbelib's CMakeLists doesn't
+          # specify RUNTIME DESTINATION, so CMake's MinGW install
+          # puts the .dll in lib/ (not the conventional bin/) — we
+          # check both, and fall back to a recursive find with full
+          # diagnostic output on a miss so future upstream layout
+          # changes surface clearly instead of looking like a "no
+          # mbelib" error.
+          DLLS=$(find /mingw64/bin /mingw64/lib -maxdepth 1 -name 'libmbe*.dll' -o -name 'mbe*.dll' 2>/dev/null)
+          if [ -z "$DLLS" ]; then
+            DLLS=$(find /mingw64 -name 'libmbe*.dll' -o -name 'mbe*.dll' 2>/dev/null)
+          fi
+          if [ -z "$DLLS" ]; then
+            echo "FAIL: no libmbe DLL anywhere under /mingw64/"
+            echo "Install layout for diagnosis:"
+            find /mingw64 \( -name 'libmbe*' -o -name 'mbe*' \) 2>/dev/null | head -40
             exit 1
           fi
+          for d in $DLLS; do
+            echo "bundling $d"
+            cp "$d" "$STAGE/"
+          done
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
           cp docs/vocoders.md "$STAGE/VOCODERS.md"

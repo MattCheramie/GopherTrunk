@@ -122,7 +122,7 @@ jobs:
           USE_SUDO: "0"
           PREFIX: /mingw64
           # See release.yml for rationale on the CMake flags.
-          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=ON"
         run: |
           export PATH="/mingw64/bin:$PATH"
           scripts/install-mbelib.sh
@@ -159,13 +159,23 @@ jobs:
               echo "warning: $dll not found in MINGW64 bin"
             fi
           done
-          if compgen -G "/mingw64/bin/libmbe*.dll" >/dev/null; then
-            cp /mingw64/bin/libmbe*.dll "$STAGE/"
-          else
-            echo "FAIL: no libmbe DLL found under /mingw64/bin/"
-            ls -la /mingw64/bin/ | grep -i mbe || true
+          # See release.yml for rationale: mbelib's CMakeLists puts
+          # its .dll in lib/ on MinGW (not the usual bin/), so we
+          # check both locations + fall back to a recursive find.
+          DLLS=$(find /mingw64/bin /mingw64/lib -maxdepth 1 -name 'libmbe*.dll' -o -name 'mbe*.dll' 2>/dev/null)
+          if [ -z "$DLLS" ]; then
+            DLLS=$(find /mingw64 -name 'libmbe*.dll' -o -name 'mbe*.dll' 2>/dev/null)
+          fi
+          if [ -z "$DLLS" ]; then
+            echo "FAIL: no libmbe DLL anywhere under /mingw64/"
+            echo "Install layout for diagnosis:"
+            find /mingw64 \( -name 'libmbe*' -o -name 'mbe*' \) 2>/dev/null | head -40
             exit 1
           fi
+          for d in $DLLS; do
+            echo "bundling $d"
+            cp "$d" "$STAGE/"
+          done
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
           cp docs/vocoders.md "$STAGE/VOCODERS.md"
