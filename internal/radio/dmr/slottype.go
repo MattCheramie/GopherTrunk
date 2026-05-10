@@ -1,30 +1,21 @@
 package dmr
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
 // SlotType is the 20-bit field framing each data/control burst (10 bits
-// before sync + 10 bits after sync). Per ETSI TS 102 361-1 §9.1.2:
+// before sync + 10 bits after sync). Per ETSI TS 102 361-1 §6.4.2 + Annex
+// B.1.1, the field carries 8 information bits (4-bit Color Code + 4-bit
+// Data Type) followed by 12 parity bits computed by the (20,8,7)
+// shortened Hamming / Golay slot-type code.
 //
-//   bits 0..3   : Color Code (high nibble)
-//   bits 4..7   : Data Type
-//   bits 8..11  : padding (zero)
-//   bits 12..15 : Hamming(20,11) parity? Actually the field is encoded
-//                 with a shortened Hamming(20,11) producing 9 parity bits;
-//                 we treat the 20-bit field as a hand-rolled Hamming.
-//
-// In practice, the spec layout is:
-//   8 info bits  (CC[0..3], DT[0..3])
-//   12 parity    (a shortened Hamming(20,8) — see Annex B.1.4).
-//
-// For a foundation phase we expose a simple unprotected parser plus a
-// helper that runs the Hamming(15,11,3) row code over the 20 bits when
-// callers want soft error correction. The full TS 102 361-1 Annex B.1.4
-// Hamming(20,8) implementation is left as a follow-up; the wire format
-// is parsed correctly either way.
+//	bits 0..3   : Color Code
+//	bits 4..7   : Data Type
+//	bits 8..19  : (20,8) Hamming parity
 type SlotType struct {
 	ColorCode uint8 // 4-bit
 	DataType  DataType
@@ -34,18 +25,18 @@ type SlotType struct {
 type DataType uint8
 
 const (
-	DTPIHeader            DataType = 0x0
-	DTVoiceLCHeader       DataType = 0x1
-	DTTerminatorWithLC    DataType = 0x2
-	DTCSBK                DataType = 0x3
-	DTMBCHeader           DataType = 0x4
-	DTMBCContinuation     DataType = 0x5
-	DTDataHeader          DataType = 0x6
-	DT12Rate              DataType = 0x7
-	DT34Rate              DataType = 0x8
-	DTIdle                DataType = 0x9
-	DT1Rate              DataType = 0xA
-	DTReserved            DataType = 0xB
+	DTPIHeader         DataType = 0x0
+	DTVoiceLCHeader    DataType = 0x1
+	DTTerminatorWithLC DataType = 0x2
+	DTCSBK             DataType = 0x3
+	DTMBCHeader        DataType = 0x4
+	DTMBCContinuation  DataType = 0x5
+	DTDataHeader       DataType = 0x6
+	DT12Rate           DataType = 0x7
+	DT34Rate           DataType = 0x8
+	DTIdle             DataType = 0x9
+	DT1Rate            DataType = 0xA
+	DTReserved         DataType = 0xB
 	// 0xC..0xF reserved
 )
 
@@ -78,38 +69,50 @@ func (d DataType) String() string {
 	}
 }
 
-// ParseSlotType extracts CC and DataType from the 20-bit slot-type field
-// (caller passes the 20-bit concatenation Burst.SlotTypeBitsAll() returns).
-// The Hamming code over the 20 bits is not yet validated (see file
-// header); callers requiring FEC should treat the result as best-effort.
-func ParseSlotType(bits []byte) (SlotType, error) {
-	if len(bits) < 8 {
-		return SlotType{}, fmt.Errorf("dmr: slot type needs >= 8 bits, got %d", len(bits))
+// ErrSlotTypeUncorrectable is returned by ParseSlotType when the (20,8)
+// Hamming decoder cannot recover the codeword within its t=3 error-
+// correction radius.
+var ErrSlotTypeUncorrectable = errors.New("dmr: slot type Hamming(20,8) uncorrectable")
+
+// ParseSlotType extracts CC and DataType from the 20-bit slot-type
+// field, running the (20,8,7) shortened Hamming decoder over the
+// codeword. Returns the decoded SlotType, the number of bit errors
+// corrected (0 on a clean codeword), and a non-nil error if the
+// codeword is uncorrectable.
+//
+// Callers pass the 20-bit concatenation that Burst.SlotTypeBitsAll()
+// produces (bits[0..7] = info MSB-first, bits[8..19] = parity MSB-first).
+func ParseSlotType(bits []byte) (SlotType, int, error) {
+	if len(bits) < 20 {
+		return SlotType{}, -1, fmt.Errorf("dmr: slot type needs 20 bits, got %d", len(bits))
 	}
-	var cc, dt uint8
-	for i := 0; i < 4; i++ {
-		cc = (cc << 1) | (bits[i] & 1)
+	var cw uint32
+	for i := 0; i < 20; i++ {
+		if bits[i]&1 != 0 {
+			cw |= uint32(1) << uint(19-i)
+		}
 	}
-	for i := 0; i < 4; i++ {
-		dt = (dt << 1) | (bits[4+i] & 1)
+	data, errs := framing.HammingDecode20_8(cw)
+	if errs < 0 {
+		return SlotType{}, -1, ErrSlotTypeUncorrectable
 	}
-	return SlotType{ColorCode: cc, DataType: DataType(dt)}, nil
+	return SlotType{
+		ColorCode: (data >> 4) & 0x0F,
+		DataType:  DataType(data & 0x0F),
+	}, errs, nil
 }
 
-// AssembleSlotType produces a 20-bit slot-type field with the 8 info bits
-// followed by 12 zero pad bits. For tests; the real wire format substitutes
-// a Hamming(20,8) parity tail.
+// AssembleSlotType produces the 20-bit slot-type codeword (info + 12
+// parity bits) ready to splice into a burst around the sync. Useful for
+// tests and synthetic streams.
 func AssembleSlotType(s SlotType) []byte {
+	info := (uint8(s.ColorCode&0x0F) << 4) | uint8(s.DataType&0x0F)
+	cw := framing.HammingEncode20_8(info)
 	out := make([]byte, 20)
-	for i := 0; i < 4; i++ {
-		out[i] = (s.ColorCode >> uint(3-i)) & 1
-	}
-	for i := 0; i < 4; i++ {
-		out[4+i] = (uint8(s.DataType) >> uint(3-i)) & 1
+	for i := 0; i < 20; i++ {
+		if cw&(uint32(1)<<uint(19-i)) != 0 {
+			out[i] = 1
+		}
 	}
 	return out
 }
-
-// Compile-time assertion that we depend on framing for future Hamming
-// integration; keeps the import lit even before the full FEC lands.
-var _ = framing.HammingDecode15_11
