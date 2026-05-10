@@ -38,7 +38,7 @@
 //     positions {0..5, 85, 86}; ω₀ + L + K all derive from it
 //     per TIA-102.BABA §5.3 / Annex E. See params.go.
 //
-//  3b. Parameter unpacking — voicing + gain + spectral. ← THIS PR.
+//  3b. Parameter unpacking — voicing + gain + spectral.
 //     Re-orders the remaining 79 bits via bo[L9] into the bb[v][p]
 //     layout, then extracts Vl[1..L] voicing decisions, the b_2
 //     gain index → Gm[1] = B2[b_2], the 5 PRBA gain blocks
@@ -47,11 +47,20 @@
 //     DCT-IIs (over Gm and over Cik) produce Tl[1..L], the
 //     pre-prediction log-amplitude residuals. The cross-frame
 //     log2Ml prediction (eq. 75-77) needs prev-frame state and
-//     lives in the synthesizer (step 4).
+//     lives in the synthesizer (step 4a).
 //
-//  4. Speech synthesis. Voiced harmonic sum + unvoiced random
-//     excitation + spectral-amplitude shaping → 160 PCM samples /
-//     20 ms / 8 kHz mono per frame. Per TIA-102.BABA Section 6.
+//  4a. Speech synthesis — cross-frame log-amplitude recovery. ← THIS PR.
+//     TIA-102.BABA §6.1 eqs. 75-77: predict at curr-frame harmonic
+//     positions by interpolating prev-frame log2(Ml) at l ·
+//     ω₀_curr/ω₀_prev (γ = 0.65 scale), subtract the prediction's
+//     DC bias, then add Tl[l]. Lives on a SynthState that the
+//     synthesizer (step 4b) extends with voicing + phase memory.
+//     See synth.go.
+//
+//  4b. Speech synthesis — excitation + PCM. Voiced harmonic sum +
+//     unvoiced random excitation + spectral-amplitude shaping →
+//     160 PCM samples / 20 ms / 8 kHz mono per frame. Per
+//     TIA-102.BABA §6.2-6.4.
 //
 //  5. Quality polish: enhancement filter, frame-repeat on bad-frame
 //     indicator, gain smoothing across frames.

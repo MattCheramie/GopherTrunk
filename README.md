@@ -80,10 +80,13 @@ to its own package and lands independently.
   (`scrambler.go`); full §5.3 / §5.4 / Annex E parameter unpack
   (b_0 → ω₀ + L + K + Vl voicing + Gm PRBA gains + Cik spectral
   coefficients + Tl log-amplitude residuals via two inverse DCTs)
-  is in (`params.go` / `tables.go`). Currently emits silence per
-  frame; follow-up PRs land speech synthesis
-  inverse, parameter unpacking, and speech synthesis layers in
-  that order so each step ships testable progress.
+  is in (`params.go` / `tables.go`); §6.1 cross-frame log2(Ml)
+  prediction (eqs. 75-77 — γ = 0.65 interpolation of prev-frame
+  harmonics at l · ω₀_curr/ω₀_prev positions, DC-bias removal,
+  Tl residual addition) is in on a `SynthState` that the
+  excitation step extends (`synth.go`). Currently still emits
+  silence per frame; follow-up PR lands voiced/unvoiced
+  excitation + spectral shaping + 8 kHz PCM synthesis (§6.2-6.4).
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
