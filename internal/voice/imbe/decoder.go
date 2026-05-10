@@ -2,6 +2,7 @@ package imbe
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
@@ -34,41 +35,52 @@ const (
 	// into the same binary; the daemon picks one in config.
 	VocoderName = "imbe-go"
 
-	// pcmGain scales the float64 synthesis output before int16
-	// clipping. The voiced step sums L sinusoids of up to
-	// O(unit) amplitude each, so the instantaneous peak can reach
-	// ~L when all cosines align; with L ≤ 56, picking 4096 (2^12)
-	// gives ~3 bits of headroom for the typical mid-L voiced+unvoiced
-	// mix without constantly saturating int16. The §6.2 spectral
-	// amplitude enhancement (a follow-up polish PR) will replace
-	// this with the spec-derived gain.
-	pcmGain = 4096
+	// AGC parameters. The synthesizer's float output magnitude is
+	// stable per-frame (R_M0-preserving §6.2 enhancement holds total
+	// energy constant across a frame) but varies wildly between
+	// frames depending on Tl, voicing, and the §6.4 noise draw.
+	// Without an AGC every frame would be either clipped (loud frames)
+	// or near-silent (quiet frames). The AGC tracks the per-frame
+	// peak with fast-attack / slow-release smoothing, then scales each
+	// frame so the smoothed envelope hits agcTargetPeak.
+	//
+	// agcTargetPeak = 24000 sits ~3 dB below int16 max so the soft
+	// knee of the envelope tracker has headroom for transients.
+	// agcAttack > agcRelease so loud onsets are caught quickly while
+	// gain ramps back up slowly during quiet passages — standard
+	// AGC behavior that keeps speech intelligible without pumping.
+	// agcMinGain / agcMaxGain prevent the envelope from sending
+	// silence to full scale or compressing extreme transients to
+	// inaudible levels.
+	agcTargetPeak = 24000.0
+	agcAttack     = 0.4
+	agcRelease    = 0.02
+	agcMinGain    = 10.0
+	agcMaxGain    = 1e5
+	agcNoiseFloor = 1e-3
 )
 
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one SynthState
 // (cross-frame log2(Ml) prediction memory + voiced phase + amp
-// memory) and one math/rand source for the §6.4 unvoiced excitation
-// noise — both per-call so concurrent calls on different decoders
-// don't share state.
+// memory), one math/rand source for the §6.4 unvoiced excitation
+// noise, and one AGC envelope tracker — all per-call so concurrent
+// calls on different decoders don't share state.
 //
 // Decode() runs the full TIA-102.BABA pipeline:
 //   - bytes → 88 info bits
 //   - UnpackParams: §5.3 / §5.4 / Annex E
 //   - PredictLog2Ml: §6.1 cross-frame prediction
 //   - AmplitudesFromLog2Ml: log2(Ml) → linear Ml
+//   - EnhanceAmplitudes: §6.2 spectral-amplitude enhancement
 //   - SynthVoiced: §6.3 voiced harmonic generator
-//   - SynthUnvoicedFromNoise: §6.4 unvoiced FFT excitation
+//   - SynthUnvoicedOverlapAdd: §6.4 unvoiced FFT excitation + OA
 //   - Update{Log2Ml,VoicedState}: roll state forward
-//   - hard-clip + scale to int16 PCM
-//
-// Audio quality is "first pass": the §6.4 overlap-add window and
-// §6.2 spectral amplitude enhancement are quality-polish steps that
-// land in subsequent PRs. Without them the output has frame-edge
-// click artifacts and untilted spectral envelope, but is otherwise
-// intelligible voice.
+//   - applyAGC: per-frame fast-attack / slow-release peak tracker
+//     scaling to agcTargetPeak, then int16 clip
 type Decoder struct {
 	state SynthState
 	rng   *rand.Rand
+	agc   float64 // smoothed peak envelope; 0 = fresh (next frame seeds it)
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -164,11 +176,66 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.state.UpdateVoicedState(p, &M)
 	}
 
-	// Hard-clip + scale to int16. The pcmGain placeholder gives
-	// headroom; the §6.2 enhancement polish PR will replace it with
-	// the spec gain.
+	d.applyAGC(pcm, out, p.Silent)
+	return out, nil
+}
+
+// applyAGC tracks the per-frame peak with fast-attack / slow-release
+// smoothing and scales pcm so the smoothed envelope hits
+// agcTargetPeak. Frames whose peak falls below agcNoiseFloor leave
+// the envelope unchanged so a tail fade-out into silence doesn't
+// drag the envelope up artificially.
+//
+// First-frame seed: when d.agc == 0 (fresh decoder, post-Reset), the
+// envelope is initialised directly to peak rather than via the attack
+// coefficient. Without this seed the first frame would emerge ~2.5×
+// over-gained (envelope = 0.4 · peak ⇒ gain = target / (0.4 · peak)
+// ⇒ output peak = 2.5 · target ⇒ int16 saturation).
+//
+// Frozen mode (freezeEnvelope = true): apply the existing envelope's
+// gain without updating it. The Decode() silent path uses this so a
+// brief silence frame doesn't shift the AGC envelope based on the
+// small §6.4 overlap-add fade-out content. The first frame after
+// silence then applies the same gain as the last frame before
+// silence — no audible level jump on speech-pause-speech transitions.
+// Stream re-sync via the public Reset() does clear the envelope.
+//
+// agcMinGain / agcMaxGain prevent the envelope from sending
+// silence to full scale or compressing extreme transients to
+// inaudible levels. After the gain multiply, samples beyond int16
+// range are hard-clipped at ±32767.
+func (d *Decoder) applyAGC(pcm []float64, out []int16, freezeEnvelope bool) {
+	if !freezeEnvelope {
+		var peak float64
+		for _, v := range pcm {
+			if a := math.Abs(v); a > peak {
+				peak = a
+			}
+		}
+		if d.agc == 0 && peak > agcNoiseFloor {
+			// First-frame seed: skip attack smoothing so the first frame
+			// lands at exactly agcTargetPeak instead of 2.5× over.
+			d.agc = peak
+		} else if peak > agcNoiseFloor {
+			coef := agcAttack
+			if peak < d.agc {
+				coef = agcRelease
+			}
+			d.agc += (peak - d.agc) * coef
+		}
+	}
+	envelope := d.agc
+	if envelope < agcNoiseFloor {
+		envelope = agcNoiseFloor
+	}
+	gain := agcTargetPeak / envelope
+	if gain < agcMinGain {
+		gain = agcMinGain
+	} else if gain > agcMaxGain {
+		gain = agcMaxGain
+	}
 	for i, v := range pcm {
-		s := v * pcmGain
+		s := v * gain
 		if s > 32767 {
 			s = 32767
 		} else if s < -32768 {
@@ -176,7 +243,6 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		}
 		out[i] = int16(s)
 	}
-	return out, nil
 }
 
 // unpackInfoBits expands 11 bytes (MSB-first) into an 88-element
@@ -191,14 +257,15 @@ func unpackInfoBits(frame []byte) []byte {
 
 // Reset clears all per-call synthesis state — the cross-frame
 // log-amplitude prediction history, the voiced harmonic phase +
-// amplitude memory, and any future overlap-add tail. Callers
-// invoke it on stream re-sync (e.g., a frame-loss event from the
-// upstream P25 LDU decoder) so the next frame starts from a clean
-// baseline. The noise source is intentionally not re-seeded —
-// noise reproducibility is a constructor concern (New /
-// NewWithSeed), not a per-call concern.
+// amplitude memory, the §6.4 overlap-add tail, and the AGC
+// envelope. Callers invoke it on stream re-sync (e.g., a frame-
+// loss event from the upstream P25 LDU decoder) so the next frame
+// starts from a clean baseline. The noise source is intentionally
+// not re-seeded — noise reproducibility is a constructor concern
+// (New / NewWithSeed), not a per-call concern.
 func (d *Decoder) Reset() {
 	d.state.Reset()
+	d.agc = 0
 }
 
 // Close releases any resources held by the decoder. The pure-Go

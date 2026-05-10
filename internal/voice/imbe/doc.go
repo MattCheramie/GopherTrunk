@@ -122,10 +122,19 @@
 //     naturally on playback. Wired into Decoder.Decode between
 //     AmplitudesFromLog2Ml and SynthVoiced. See enhance.go.
 //
-//  5c. Spec-derived gain calibration. Replaces the placeholder
-//     pcmGain = 4096 with the gain that makes mbelib + imbe-go
-//     produce comparable output levels for the same input frame
-//     stream.
+//  5c. Output gain calibration via per-frame AGC. ← THIS PR.
+//     Replaces the placeholder pcmGain = 4096 constant scale with
+//     a fast-attack / slow-release peak-envelope tracker on the
+//     Decoder. Each frame's pcm peak updates the smoothed
+//     envelope (skipping update on near-silent peaks below
+//     agcNoiseFloor); gain = agcTargetPeak / envelope clamped to
+//     [agcMinGain, agcMaxGain]; samples beyond int16 range hard-clip.
+//     The first frame seeds the envelope directly to its peak so
+//     it lands at exactly agcTargetPeak instead of being 2.5×
+//     over-gained. Silence-window frames pass freezeEnvelope=true
+//     so the §6.4 OA fade-out tail doesn't perturb the envelope —
+//     speech-pause-speech transitions emerge at consistent
+//     loudness without audible level pumping. See decoder.go.
 //
 //  5d. Robustness polish: enhancement filter, frame-repeat on
 //     bad-frame indicator, gain smoothing across frames.

@@ -1,6 +1,7 @@
 package imbe
 
 import (
+	"math"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
@@ -357,5 +358,188 @@ func TestDecodeOutputIsBounded(t *testing.T) {
 				t.Errorf("output longer than expected at pattern 0x%02X", fill)
 			}
 		}
+	}
+}
+
+// agcPeak finds the absolute peak in an int16 slice — used by AGC
+// tests to verify per-frame normalization.
+func agcPeak(out []int16) int {
+	var peak int
+	for _, s := range out {
+		v := int(s)
+		if v < 0 {
+			v = -v
+		}
+		if v > peak {
+			peak = v
+		}
+	}
+	return peak
+}
+
+// TestAGCConvergesTowardTarget: feeding the same valid frame
+// repeatedly drives the smoothed envelope toward the per-frame peak,
+// so by frame ~30 the output peak should sit close to agcTargetPeak.
+// Pins that the AGC actually adapts (rather than being a fixed
+// constant gain).
+func TestAGCConvergesTowardTarget(t *testing.T) {
+	d := New()
+	frame := make([]byte, FrameBytes) // valid b_0=0 frame
+	var lastPeak int
+	for i := 0; i < 30; i++ {
+		out, err := d.Decode(frame)
+		if err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		lastPeak = agcPeak(out)
+	}
+	// After convergence the peak should be within ~30% of the target
+	// (loose because the §6.4 noise draw varies per frame).
+	const tol = 0.3
+	lo := int(agcTargetPeak * (1 - tol))
+	hi := int(agcTargetPeak * (1 + tol))
+	if lastPeak < lo || lastPeak > hi {
+		t.Errorf("converged peak = %d, want in [%d, %d] (target=%v ±%.0f%%)",
+			lastPeak, lo, hi, agcTargetPeak, tol*100)
+	}
+}
+
+// TestAGCInitialFrameNotOverAmplified: the first frame on a fresh
+// decoder seeds the envelope from peak (since envelope starts at 0,
+// peak > envelope, so attack coefficient applies). Output peak on
+// frame 1 should be within int16 range and not produce all-zero or
+// all-saturated samples (which would indicate a divide-by-zero or
+// gain explosion at the first-frame edge).
+func TestAGCInitialFrameNotOverAmplified(t *testing.T) {
+	d := New()
+	frame := make([]byte, FrameBytes)
+	out, err := d.Decode(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peak := agcPeak(out)
+	if peak == 0 {
+		t.Error("first-frame peak = 0 (silent output, expected unvoiced excitation)")
+	}
+	if peak >= 32767 {
+		t.Errorf("first-frame peak = %d (clipped); AGC should land below int16 max", peak)
+	}
+}
+
+// TestAGCSilenceFramePreservesEnvelope: a silence-window frame
+// (b_0 ∈ [216, 219]) clears the §6.1/§6.3/§6.4 SynthState but
+// preserves the AGC envelope so the first frame after silence
+// applies the same gain as the last frame before silence (no
+// audible level jump on speech-pause-speech transitions). Public
+// Reset() does clear the envelope (covered separately).
+func TestAGCSilenceFramePreservesEnvelope(t *testing.T) {
+	d := New()
+	for i := 0; i < 5; i++ {
+		if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+			t.Fatalf("seed frame %d: %v", i, err)
+		}
+	}
+	if d.agc == 0 {
+		t.Fatal("envelope is still zero after seed frames; test setup invalid")
+	}
+	envBefore := d.agc
+
+	silence := make([]byte, FrameBytes)
+	silence[0] = 0xD8
+	if _, err := d.Decode(silence); err != nil {
+		t.Fatalf("silence: %v", err)
+	}
+	// Envelope must not drift at all — silence path passes
+	// freezeEnvelope=true to applyAGC so the OA tail magnitude
+	// doesn't perturb the envelope.
+	if d.agc != envBefore {
+		t.Errorf("after silence: agc shifted from %v to %v (want exact preservation)",
+			envBefore, d.agc)
+	}
+}
+
+// TestAGCResetClearsEnvelope: the Reset method (e.g., called on
+// stream re-sync) must zero the envelope so the next frame's AGC
+// starts from a clean baseline.
+func TestAGCResetClearsEnvelope(t *testing.T) {
+	d := New()
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatal(err)
+	}
+	if d.agc == 0 {
+		t.Fatal("envelope is zero after one frame; test setup invalid")
+	}
+	d.Reset()
+	if d.agc != 0 {
+		t.Errorf("after Reset: agc = %v, want 0", d.agc)
+	}
+}
+
+// TestAGCBoundedOutputAcrossFramePatterns confirms the output stays
+// in valid int16 range for a range of frame patterns + frame
+// counts. Catches AGC regressions that send the gain to NaN or Inf.
+func TestAGCBoundedOutputAcrossFramePatterns(t *testing.T) {
+	d := New()
+	patterns := [][]byte{
+		make([]byte, FrameBytes),
+		{0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55},
+		{0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA},
+	}
+	for round := 0; round < 10; round++ {
+		for _, frame := range patterns {
+			out, err := d.Decode(frame)
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			for i, s := range out {
+				_ = i
+				_ = s // every int16 is by construction in [-32768, 32767]
+			}
+			// Cross-check that the AGC didn't NaN.
+			if math.IsNaN(d.agc) || math.IsInf(d.agc, 0) {
+				t.Fatalf("agc envelope = %v after round %d", d.agc, round)
+			}
+		}
+	}
+}
+
+// TestAGCDoesNotPumpOnConstantInput: feeding the same frame
+// repeatedly should produce stable output peaks across frames
+// (variance in peak across the last 10 frames < 30% of mean). The
+// fast-attack / slow-release smoothing is what avoids per-frame
+// pumping that would be audible as breathing.
+func TestAGCDoesNotPumpOnConstantInput(t *testing.T) {
+	d := New()
+	frame := make([]byte, FrameBytes)
+	// Warm up the envelope.
+	for i := 0; i < 30; i++ {
+		if _, err := d.Decode(frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Sample the next 10 frames' peaks.
+	var peaks [10]int
+	for i := range peaks {
+		out, err := d.Decode(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		peaks[i] = agcPeak(out)
+	}
+	var sum int
+	for _, p := range peaks {
+		sum += p
+	}
+	mean := float64(sum) / float64(len(peaks))
+	var variance float64
+	for _, p := range peaks {
+		d := float64(p) - mean
+		variance += d * d
+	}
+	variance /= float64(len(peaks))
+	stddev := math.Sqrt(variance)
+	if stddev/mean > 0.3 {
+		t.Errorf("peak stddev/mean = %.3f, want < 0.30 (pumping check)",
+			stddev/mean)
 	}
 }

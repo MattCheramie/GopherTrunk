@@ -108,24 +108,32 @@ to its own package and lands independently.
   spectral-amplitude enhancement (per-harmonic W_l =
   (0.96 · num/den)^0.25 clamped to [0.5, 1.2] for mid/high-band
   harmonics + low-band W = 1, followed by an energy-preserving
-  rescale that holds R_M0 stable) is in (`enhance.go`).
+  rescale that holds R_M0 stable) is in (`enhance.go`); the
+  output gain calibration is now a per-frame fast-attack /
+  slow-release peak-envelope tracker on the Decoder (target peak
+  24000, attack 0.4, release 0.02, gain clamped to [10, 1e5])
+  with first-frame seeding, freeze-on-silence, and Reset clearing
+  — replaces the prior `pcmGain = 4096` magic constant with
+  consistent loudness across speech-pause-speech transitions.
   **`Decode()` emits real audio**: 88 info bits → params →
   §6.1 prediction → linear Ml → §6.2 enhancement → §6.3 voiced
   harmonic sum + §6.4 unvoiced excitation with overlap-add
-  additive into one buffer → state roll-forward → hard-clip ×
-  placeholder gain → int16 PCM at 8 kHz. Silence-window frames
-  (b_0 ∈ [216, 219]) still fade the prev unvoiced tail through
-  the overlap region before resetting state — no click on the
-  silence boundary. Two decoder constructors are exposed:
-  `New()` seeds the unvoiced noise source from a fixed default
-  for reproducibility; `NewWithSeed(seed)` lets parallel calls
-  + production callers spread noise. Bad-b_0 frames return
-  graceful silence without disturbing the prediction history.
-  **Remaining audio polish**: a spec-derived gain calibration
-  (replacing the placeholder pcmGain = 4096), enhancement
-  filter tuning, and frame-repeat on bad-frame indicator —
-  the absolute output level still differs slightly from mbelib's
-  reference until 5c lands.
+  additive into one buffer → state roll-forward → per-frame AGC
+  → int16 PCM at 8 kHz. Silence-window frames (b_0 ∈ [216, 219])
+  still fade the prev unvoiced tail through the overlap region
+  before resetting SynthState — no click on the silence
+  boundary, and the AGC envelope is preserved across the
+  silence so the next non-silent frame applies the same gain.
+  Two decoder constructors are exposed: `New()` seeds the
+  unvoiced noise source from a fixed default for reproducibility;
+  `NewWithSeed(seed)` lets parallel calls + production callers
+  spread noise. Bad-b_0 frames return graceful silence without
+  disturbing the prediction history. **Remaining audio polish**:
+  enhancement filter tuning + frame-repeat on bad-frame indicator
+  + comparison-tuning the synthesis output level against an
+  mbelib reference — the AGC keeps levels consistent but the
+  absolute calibration to mbelib output is still a future
+  follow-up.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
