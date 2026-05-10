@@ -395,12 +395,13 @@ func TestAGCConvergesTowardTarget(t *testing.T) {
 	}
 	// After convergence the peak should be within ~30% of the target
 	// (loose because the §6.4 noise draw varies per frame).
+	target := DefaultAGCConfig().TargetPeak
 	const tol = 0.3
-	lo := int(agcTargetPeak * (1 - tol))
-	hi := int(agcTargetPeak * (1 + tol))
+	lo := int(target * (1 - tol))
+	hi := int(target * (1 + tol))
 	if lastPeak < lo || lastPeak > hi {
 		t.Errorf("converged peak = %d, want in [%d, %d] (target=%v ±%.0f%%)",
-			lastPeak, lo, hi, agcTargetPeak, tol*100)
+			lastPeak, lo, hi, target, tol*100)
 	}
 }
 
@@ -721,6 +722,117 @@ func TestResetClearsFrameRepeatCache(t *testing.T) {
 	}
 	if d.badFrameCount != 0 {
 		t.Errorf("after Reset: badFrameCount = %d, want 0", d.badFrameCount)
+	}
+}
+
+// TestDefaultAGCConfigMatchesNew: a Decoder constructed via New()
+// uses the same AGC parameters as one constructed via
+// NewWithConfig(0, DefaultAGCConfig()). Pins that the old
+// constructors aren't accidentally divergent from the documented
+// defaults.
+func TestDefaultAGCConfigMatchesNew(t *testing.T) {
+	a := New()
+	b := NewWithConfig(0, DefaultAGCConfig())
+	if a.agcCfg != b.agcCfg {
+		t.Errorf("New().agcCfg = %+v, NewWithConfig(default).agcCfg = %+v",
+			a.agcCfg, b.agcCfg)
+	}
+	frame := make([]byte, FrameBytes)
+	outA, _ := a.Decode(frame)
+	outB, _ := b.Decode(frame)
+	for i := range outA {
+		if outA[i] != outB[i] {
+			t.Errorf("output diverges at i=%d: New=%d NewWithConfig(default)=%d",
+				i, outA[i], outB[i])
+			break
+		}
+	}
+}
+
+// TestAGCConfigZeroValueBackfillsDefaults: an AGCConfig{} (all zero)
+// passed to NewWithConfig backfills every field from
+// DefaultAGCConfig. Lets callers override one knob without
+// re-specifying everything.
+func TestAGCConfigZeroValueBackfillsDefaults(t *testing.T) {
+	d := NewWithConfig(0, AGCConfig{})
+	want := DefaultAGCConfig()
+	if d.agcCfg != want {
+		t.Errorf("zero-value cfg backfill = %+v, want %+v", d.agcCfg, want)
+	}
+}
+
+// TestAGCConfigPartialOverrideKeepsDefaults: an AGCConfig with one
+// field set inherits all other fields from DefaultAGCConfig. Pins
+// the partial-override pattern.
+func TestAGCConfigPartialOverrideKeepsDefaults(t *testing.T) {
+	custom := AGCConfig{TargetPeak: 12000}
+	d := NewWithConfig(0, custom)
+	def := DefaultAGCConfig()
+	if d.agcCfg.TargetPeak != 12000 {
+		t.Errorf("TargetPeak = %v, want 12000", d.agcCfg.TargetPeak)
+	}
+	if d.agcCfg.Attack != def.Attack {
+		t.Errorf("Attack = %v, want default %v (partial override)",
+			d.agcCfg.Attack, def.Attack)
+	}
+	if d.agcCfg.Release != def.Release {
+		t.Errorf("Release = %v, want default %v", d.agcCfg.Release, def.Release)
+	}
+	if d.agcCfg.MinGain != def.MinGain {
+		t.Errorf("MinGain = %v, want default %v", d.agcCfg.MinGain, def.MinGain)
+	}
+	if d.agcCfg.MaxGain != def.MaxGain {
+		t.Errorf("MaxGain = %v, want default %v", d.agcCfg.MaxGain, def.MaxGain)
+	}
+	if d.agcCfg.NoiseFloor != def.NoiseFloor {
+		t.Errorf("NoiseFloor = %v, want default %v",
+			d.agcCfg.NoiseFloor, def.NoiseFloor)
+	}
+}
+
+// TestAGCConfigCustomTargetShiftsOutputLevel: lowering TargetPeak
+// from 24000 to 8000 (3x quieter) makes the converged output peak
+// drop by roughly the same factor. Pins that the TargetPeak knob
+// actually controls output level.
+func TestAGCConfigCustomTargetShiftsOutputLevel(t *testing.T) {
+	frame := make([]byte, FrameBytes)
+	loudCfg := AGCConfig{TargetPeak: 24000}
+	quietCfg := AGCConfig{TargetPeak: 8000}
+	loud := NewWithConfig(0, loudCfg)
+	quiet := NewWithConfig(0, quietCfg)
+	// Warm both AGCs to convergence.
+	const warmup = 30
+	var loudPeak, quietPeak int
+	for i := 0; i < warmup; i++ {
+		out, _ := loud.Decode(frame)
+		loudPeak = agcPeak(out)
+		out, _ = quiet.Decode(frame)
+		quietPeak = agcPeak(out)
+	}
+	// Loud should be ~3× the quiet peak (within a generous tol —
+	// noise variance shifts each sample).
+	ratio := float64(loudPeak) / float64(quietPeak)
+	if ratio < 2.0 || ratio > 4.5 {
+		t.Errorf("loud/quiet peak ratio = %.2f (loud=%d quiet=%d), want ~3 ± loose",
+			ratio, loudPeak, quietPeak)
+	}
+}
+
+// TestAGCConfigPreservedAcrossReset: Reset clears the envelope but
+// keeps the configured cfg so subsequent frames use the same
+// tuning. Pins that callers don't have to re-specify cfg after
+// every stream re-sync.
+func TestAGCConfigPreservedAcrossReset(t *testing.T) {
+	cfg := AGCConfig{TargetPeak: 16000, Attack: 0.5}
+	d := NewWithConfig(0, cfg)
+	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		t.Fatal(err)
+	}
+	d.Reset()
+	want := cfg.withDefaults()
+	if d.agcCfg != want {
+		t.Errorf("after Reset: agcCfg = %+v, want %+v (cfg preserved)",
+			d.agcCfg, want)
 	}
 }
 

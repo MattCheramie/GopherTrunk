@@ -124,21 +124,27 @@ to its own package and lands independently.
   before resetting SynthState — no click on the silence
   boundary, and the AGC envelope is preserved across the
   silence so the next non-silent frame applies the same gain.
-  Two decoder constructors are exposed: `New()` seeds the
+  Three decoder constructors are exposed: `New()` seeds the
   unvoiced noise source from a fixed default for reproducibility;
   `NewWithSeed(seed)` lets parallel calls + production callers
-  spread noise. **Frame-repeat on bad-frame indicator**: a bad
-  frame (UnpackParams error from upstream FEC slip) following a
-  good frame replays the cached params with M scaled by 0.7 per
-  consecutive bad frame; up to 6 consecutive bad frames bridge
-  ~120 ms of weak signal before Decode emits silence + clears the
-  cache. The repeat path freezes the AGC envelope so the
-  attenuation is audible (signals signal degradation). **Remaining
-  audio polish**: comparison-tuning the synthesis output level
-  against an mbelib reference (the AGC keeps levels consistent
-  but the absolute calibration to mbelib output is still a future
-  follow-up); enhancement filter tuning if real-world frames show
-  mid-band envelope drift.
+  spread noise across decoders; `NewWithConfig(seed, AGCConfig{...})`
+  takes a public `AGCConfig` (TargetPeak / Attack / Release /
+  MinGain / MaxGain / NoiseFloor) so operators can dial level +
+  responsiveness for their downstream chain — zero-value fields
+  backfill from `DefaultAGCConfig()` so partial overrides like
+  `AGCConfig{TargetPeak: 16000}` (drop level by ~3 dB) keep the
+  rest of the defaults. **Frame-repeat on bad-frame indicator**:
+  a bad frame (UnpackParams error from upstream FEC slip)
+  following a good frame replays the cached params with M scaled
+  by 0.7 per consecutive bad frame; up to 6 consecutive bad
+  frames bridge ~120 ms of weak signal before Decode emits silence
+  + clears the cache. The repeat path freezes the AGC envelope
+  so the attenuation is audible (signals signal degradation).
+  **Remaining audio polish**: comparison-tuning the absolute
+  output level against an mbelib reference (the AGC keeps
+  intra-stream levels consistent but mbelib-bit-equivalent
+  calibration is still a future follow-up); enhancement filter
+  tuning if real-world frames show mid-band envelope drift.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
