@@ -43,8 +43,12 @@ else
 fi
 
 # Required tools — fail fast with a clear message rather than a
-# cryptic mid-build error.
-for tool in git cmake make cc; do
+# cryptic mid-build error. The build/install steps go through
+# `cmake --build .`, which handles whatever generator cmake picks
+# (Unix Makefiles on most Linux installs, Ninja on MSYS2 /
+# distros that ship ninja by default), so we don't require make
+# or ninja to be on PATH directly.
+for tool in git cmake cc; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     log "missing required tool: $tool"
     log "install with your distro's package manager (e.g. apt-get install build-essential cmake git)"
@@ -61,11 +65,19 @@ cd "$BUILD_DIR/mbelib/build"
 # shellcheck disable=SC2086 # CMAKE_EXTRA_ARGS intentionally word-split
 cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" $CMAKE_EXTRA_ARGS ..
 
+# `cmake --build .` invokes whichever generator cmake picked at
+# configure time (Unix Makefiles on Linux, Ninja on MSYS2 +
+# distros that ship ninja by default). Avoids hardcoding `make` —
+# the previous version of the script broke on MSYS2 because its
+# CMake defaults to Ninja and there's no Makefile to run.
 log "building"
-make -j"$(nproc 2>/dev/null || echo 2)"
+cmake --build . --parallel "$(nproc 2>/dev/null || echo 2)"
 
 log "installing to $PREFIX (sudo=${USE_SUDO})"
-$SUDO make install
+$SUDO cmake --build . --target install
+# ldconfig only exists on Linux/glibc + only matters when the
+# system loader needs to refresh its cache. Silently no-op on
+# Windows/MSYS2 where it isn't shipped.
 $SUDO ldconfig 2>/dev/null || true
 
 # Verify the install — header + shared object + pkg-config file.
