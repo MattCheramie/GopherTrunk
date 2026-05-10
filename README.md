@@ -283,28 +283,32 @@ to its own package and lands independently.
   `sdr.Device` interface and IQ-format conversion at
   `internal/sdr/rtlsdr/rtlsdr_cgo.go:225-240` are preserved
   bit-identically so the DSP chain is untouched. Status: PR-01 +
-  PR-02 landed — `internal/sdr/rtlsdr/usb/` exposes the
+  PR-02 + PR-03 landed — `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
-  `MockTransport` for unit tests, and platform backends for
-  Linux + Windows. Linux uses USBDEVFS ioctls
+  `MockTransport` for unit tests, and platform backends across
+  Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
   (`/sys/bus/usb/devices` enumeration without root, vendor-IN/OUT
   control transfers, 32-deep URB ring on the bulk-IN endpoint
-  with a dedicated reaper goroutine). Windows uses
-  WinUSB via lazy-loaded `setupapi.dll` + `winusb.dll`
-  (SetupDi-based enumeration of `GUID_DEVINTERFACE_USB_DEVICE`,
-  device-path → VID/PID/serial parser, RAW_IO bulk-IN with an
-  auto-reset-event ring driven by `WaitForMultipleObjects` /
+  with a dedicated reaper goroutine). Windows uses WinUSB via
+  lazy-loaded `setupapi.dll` + `winusb.dll` (SetupDi-based
+  enumeration of `GUID_DEVINTERFACE_USB_DEVICE`, device-path →
+  VID/PID/serial parser, RAW_IO bulk-IN with an auto-reset-event
+  ring driven by `WaitForMultipleObjects` /
   `WinUsb_GetOverlappedResult`, `WinUsb_AbortPipe` for cancel).
-  CI now compiles + vets + tests the package on
-  `windows-latest` under `CGO_ENABLED=0`. macOS still falls
-  through to the `ErrUnsupportedPlatform` stub. PRs 03-10 land
-  the macOS stub formalization + IOKit follow-up, the RTL2832U
-  register/I2C layer, the R820T2 tuner, the wire-up under the
-  alternate driver name `rtlsdr-go`, the remaining five tuners,
-  the default flip, and the deletion of `rtlsdr_cgo.go` + every
-  `librtlsdr` apt / MSYS2 / DLL-bundling step in `Dockerfile`,
-  `.github/workflows/*.yml`, `installer/gophertrunk.iss`, and
-  the install docs.
+  macOS ships a documented `ErrMacOSUnsupported` stub that
+  chains into `ErrUnsupportedPlatform` and points users at the
+  PR-10 tracking issue (#82) for the IOKit-via-`purego`
+  follow-up — day-one macOS binaries build and start cleanly;
+  only live dongle access is gated. CI compiles + vets + tests
+  the package on `ubuntu-latest` + `windows-latest` +
+  `macos-latest` under `CGO_ENABLED=0`. PRs 04-10 land the
+  RTL2832U register/I2C layer, the R820T2 tuner, the wire-up
+  under the alternate driver name `rtlsdr-go`, the remaining
+  five tuners, the default flip, the deletion of
+  `rtlsdr_cgo.go` + every `librtlsdr` apt / MSYS2 / DLL-bundling
+  step in `Dockerfile`, `.github/workflows/*.yml`,
+  `installer/gophertrunk.iss`, and the install docs, and the
+  macOS IOKit transport itself.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
   K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
@@ -400,7 +404,7 @@ tests.
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
 internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, CGO librtlsdr (→ pure-Go), mock
-internal/sdr/rtlsdr/usb/ Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, mock
+internal/sdr/rtlsdr/usb/ Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
 internal/trunking/      System, talkgroup DB, priority, engine, CC hunter

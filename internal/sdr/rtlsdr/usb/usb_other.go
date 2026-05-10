@@ -1,10 +1,11 @@
-//go:build !(linux && (amd64 || arm64 || 386 || arm || riscv64 || loong64)) && !(windows && (amd64 || arm64))
+//go:build !(linux && (amd64 || arm64 || 386 || arm || riscv64 || loong64)) && !(windows && (amd64 || arm64)) && !darwin
 
 package usb
 
 // platformEnumerator returns a stub [Enumerator] whose every method
-// reports [ErrUnsupportedPlatform]. PR-10 replaces this on macOS with a
-// real IOKit-via-purego implementation.
+// reports [ErrUnsupportedPlatform]. macOS has its own dedicated stub
+// (usb_darwin.go) with a tracking-issue link; this file only catches
+// truly exotic targets (e.g. freebsd, netbsd, plan9).
 func platformEnumerator() Enumerator { return unsupportedEnumerator{} }
 
 type unsupportedEnumerator struct{}
