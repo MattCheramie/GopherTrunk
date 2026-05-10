@@ -19,3 +19,28 @@ jobs:
       - run: go build ./...
       - run: go test -race -count=1 ./...
       - run: make integration
+
+  # Cross-platform check for the pure-Go USB transport (internal/sdr/rtlsdr/usb).
+  # The rest of the tree still requires CGO + librtlsdr on non-Linux, but the
+  # usb sub-package must build & test cleanly under CGO_ENABLED=0 on every
+  # supported OS as it lands platform-specific backends. Currently exercises
+  # the WinUSB backend introduced in PR-02.
+  usb-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Build (CGO disabled)
+        env:
+          CGO_ENABLED: "0"
+        run: go build ./internal/sdr/rtlsdr/usb/...
+      - name: Vet
+        env:
+          CGO_ENABLED: "0"
+        run: go vet ./internal/sdr/rtlsdr/usb/...
+      - name: Test
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./internal/sdr/rtlsdr/usb/...
