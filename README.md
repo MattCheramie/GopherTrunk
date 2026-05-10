@@ -15,7 +15,7 @@ gRPC, HTTP/SSE, or WebSocket.
 | Area              | Component                                                  |
 | ----------------- | ---------------------------------------------------------- |
 | Hardware          | CGO `librtlsdr` binding, multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
-| DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, AGC, rational resampler, FM / C4FM / H-DQPSK demods, Mueller-Müller clock recovery, frame-sync correlator |
+| DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, AGC, rational resampler, FM / C4FM / H-DQPSK demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
 | FEC primitives    | CRC-CCITT/FALSE, CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8), BCH(63,16,11), BPTC(196,96), 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (NXDN SACCH) |
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
 | P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, control-channel state machine emitting `protocol = "p25-phase2"` grants |
@@ -53,10 +53,10 @@ SQLite. The honest gaps:
   + raw-frame sidecar are in place; pure-Go IMBE is in progress
   ([patents have expired](docs/vocoders.md)) and AMBE+2 stays
   behind the `mbelib` build tag.
-- **Higher-fidelity audio**: the FM chain currently does naive
-  decimation rather than proper polyphase resampling, and skips
-  de-emphasis + post-demod LPF + AGC. Quality is good enough to
-  verify wiring; real DSP polish is follow-up work.
+- **Higher-fidelity audio**: the FM chain has opt-in 75/50µs
+  de-emphasis but still does naive decimation rather than proper
+  polyphase resampling, and skips a post-demod LPF + AGC. Quality is
+  good enough to verify wiring; real DSP polish is follow-up work.
 
 The Go interfaces and event payloads carry digital protocols already,
 so the remaining paths light up once IMBE drops in.
@@ -78,10 +78,9 @@ to its own package and lands independently.
 - **Yaesu System Fusion (C4FM, FICH).** Amateur-radio digital mode,
   public spec. New `internal/radio/ysf/` package following the
   D-STAR pattern: header parser + repeater state machine.
-- **Higher-fidelity FM voice chain.** The composer's per-call FM
-  chain currently does naive decimation rather than proper
-  polyphase resampling, and skips de-emphasis + post-demod LPF +
-  AGC. Quality is good enough to verify wiring; this is real DSP
+- **Higher-fidelity FM voice chain.** Opt-in 75/50µs de-emphasis is
+  in (`composer.DeEmphasisConfig`); still pending are proper
+  polyphase resampling, a post-demod LPF, and AGC. This is real DSP
   polish for production audio.
 
 ## Tech stack
