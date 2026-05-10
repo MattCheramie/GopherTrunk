@@ -110,10 +110,17 @@
 //     including silence frames where the prev tail still fades
 //     out before the state is cleared. See synth_unvoiced.go.
 //
-//  5b. §6.2 spectral-amplitude enhancement. Per-harmonic Ml
-//     multiplier from the closed-form weight over R_M0 + R_M1 +
-//     ω₀ + l (§6.2). Boosts harmonics the model under-represents
-//     so the spectral envelope tilts correctly.
+//  5b. §6.2 spectral-amplitude enhancement. ← THIS PR.
+//     Per-harmonic Ml multiplier W_l from the closed-form weight
+//     over R_M0 + R_M1 + ω₀ + l: low-band harmonics (8·l ≤ L) are
+//     left at W = 1; mid- and high-band harmonics get
+//     W = (0.96 · num/den)^0.25 clamped to [0.5, 1.2]. After the
+//     per-harmonic multiply, frame energy is renormalized so
+//     R_M0 (total power) is preserved — gives the synthesizer a
+//     stable amplitude across frames. Boosts harmonics the model
+//     under-represents so the spectral envelope tilts more
+//     naturally on playback. Wired into Decoder.Decode between
+//     AmplitudesFromLog2Ml and SynthVoiced. See enhance.go.
 //
 //  5c. Spec-derived gain calibration. Replaces the placeholder
 //     pcmGain = 4096 with the gain that makes mbelib + imbe-go

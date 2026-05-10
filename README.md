@@ -104,12 +104,16 @@ to its own package and lands independently.
   deterministic; the §6.4 overlap-add synthesis window
   (256-sample periodic Hann × IFFT, 96-sample tail threaded
   through `SynthState.PrevUnvoicedTail` so frame boundaries are
-  click-free) is in via `SynthUnvoicedOverlapAdd`. **`Decode()`
-  now emits real audio**: it runs the full pipeline (88 info
-  bits → params → §6.1 prediction → linear Ml → §6.3 voiced
+  click-free) is in via `SynthUnvoicedOverlapAdd`; the §6.2
+  spectral-amplitude enhancement (per-harmonic W_l =
+  (0.96 · num/den)^0.25 clamped to [0.5, 1.2] for mid/high-band
+  harmonics + low-band W = 1, followed by an energy-preserving
+  rescale that holds R_M0 stable) is in (`enhance.go`).
+  **`Decode()` emits real audio**: 88 info bits → params →
+  §6.1 prediction → linear Ml → §6.2 enhancement → §6.3 voiced
   harmonic sum + §6.4 unvoiced excitation with overlap-add
   additive into one buffer → state roll-forward → hard-clip ×
-  placeholder gain → int16 PCM at 8 kHz). Silence-window frames
+  placeholder gain → int16 PCM at 8 kHz. Silence-window frames
   (b_0 ∈ [216, 219]) still fade the prev unvoiced tail through
   the overlap region before resetting state — no click on the
   silence boundary. Two decoder constructors are exposed:
@@ -117,11 +121,11 @@ to its own package and lands independently.
   for reproducibility; `NewWithSeed(seed)` lets parallel calls
   + production callers spread noise. Bad-b_0 frames return
   graceful silence without disturbing the prediction history.
-  **Remaining audio polish**: the §6.2 spectral-amplitude
-  enhancement and a spec-derived gain calibration (replacing
-  the placeholder pcmGain = 4096) — without them the spectral
-  envelope tilts slightly differently from mbelib output, and
-  the absolute level is approximate.
+  **Remaining audio polish**: a spec-derived gain calibration
+  (replacing the placeholder pcmGain = 4096), enhancement
+  filter tuning, and frame-repeat on bad-frame indicator —
+  the absolute output level still differs slightly from mbelib's
+  reference until 5c lands.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
