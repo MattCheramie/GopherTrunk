@@ -138,17 +138,17 @@ jobs:
         env:
           USE_SUDO: "0"
           PREFIX: /mingw64
-          # -DBUILD_TESTING=OFF: skip gtest / gmock subbuilds.
-          # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: paper over upstream
-          #   `cmake_minimum_required(VERSION <3.5)` that CMake 4.x
-          #   refuses without an explicit override.
-          # -DBUILD_SHARED_LIBS=ON: defensive — forces shared-lib
-          #   production so libmbe.dll is built. The CGO wrapper +
-          #   the installer both need the .dll at runtime; without
-          #   this flag mbelib has historically built both shared +
-          #   static, but it's cheap insurance against an upstream
-          #   default flip to static-only.
-          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=ON"
+          # -DBUILD_TESTING=OFF: standard CTest variable; mbelib
+          #   ignores it (the test/ subdir is unconditional in
+          #   upstream CMakeLists), but we leave it set in case
+          #   upstream picks it up later. The script's build step
+          #   skips test/ explicitly via --target mbe-static
+          #   --target mbe-shared so the unused-var warning is
+          #   harmless.
+          # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: paper over the
+          #   upstream `cmake_minimum_required(VERSION <3.5)` value
+          #   that CMake 4.x refuses without an explicit override.
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         run: |
           export PATH="/mingw64/bin:$PATH"
           scripts/install-mbelib.sh

@@ -65,16 +65,22 @@ cd "$BUILD_DIR/mbelib/build"
 # shellcheck disable=SC2086 # CMAKE_EXTRA_ARGS intentionally word-split
 cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" $CMAKE_EXTRA_ARGS ..
 
-# `cmake --build .` invokes whichever generator cmake picked at
-# configure time (Unix Makefiles on Linux, Ninja on MSYS2 +
-# distros that ship ninja by default). Avoids hardcoding `make` —
-# the previous version of the script broke on MSYS2 because its
-# CMake defaults to Ninja and there's no Makefile to run.
+# Build only the library targets. Naming them explicitly skips
+# the unconditional `test/` subdir — mbelib's CMakeLists ignores
+# the standard BUILD_TESTING variable, and the vendored gmock
+# subbuild fails to link on MinGW (gtest symbols don't get
+# exported across the DLL boundary). The library targets are
+# stable upstream names visible in szechyjs/mbelib's
+# CMakeLists.txt: mbe-static (libmbe.a) + mbe-shared (libmbe.so
+# on POSIX, libmbe.dll on MinGW). `cmake --build .` invokes
+# whichever generator cmake picked (Unix Makefiles / Ninja / etc).
 log "building"
-cmake --build . --parallel "$(nproc 2>/dev/null || echo 2)"
+cmake --build . \
+  --target mbe-static --target mbe-shared \
+  --parallel "$(nproc 2>/dev/null || echo 2)"
 
 log "installing to $PREFIX (sudo=${USE_SUDO})"
-$SUDO cmake --build . --target install
+$SUDO cmake --install .
 # ldconfig only exists on Linux/glibc + only matters when the
 # system loader needs to refresh its cache. Silently no-op on
 # Windows/MSYS2 where it isn't shipped.
