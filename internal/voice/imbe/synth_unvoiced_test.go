@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/fft"
 )
 
 const unvoicedEpsilon = 1e-9
@@ -354,5 +356,209 @@ func TestSynthUnvoicedFromNoiseRealOutput(t *testing.T) {
 	rms := math.Sqrt(sumSq / float64(len(dst)))
 	if rms > 10 || rms < 1e-3 {
 		t.Errorf("rms = %v, want roughly 0.001..10 (sanity envelope)", rms)
+	}
+}
+
+// TestSynthesisWindowEndpoints: the periodic Hann window starts and
+// ends at zero (well, n=0 is exactly zero; n=N-1 is near zero) and
+// peaks at n = N/2 = 128. Pins the window definition so a future
+// switch to a different window can't silently regress.
+func TestSynthesisWindowEndpoints(t *testing.T) {
+	if synthesisWindow[0] != 0 {
+		t.Errorf("synthesisWindow[0] = %v, want 0 (Hann left edge)", synthesisWindow[0])
+	}
+	if !almostEqual(synthesisWindow[UnvoicedFFTSize/2], 1.0) {
+		t.Errorf("synthesisWindow[N/2] = %v, want 1.0 (Hann peak)",
+			synthesisWindow[UnvoicedFFTSize/2])
+	}
+}
+
+// TestSynthesisWindowHannShape: the periodic Hann window is
+// symmetric in the sense that w[k] == w[N-k] for k in [1..N/2-1].
+// Pins the symmetry property the OA recipe assumes.
+func TestSynthesisWindowHannShape(t *testing.T) {
+	for k := 1; k < UnvoicedFFTSize/2; k++ {
+		if !almostEqual(synthesisWindow[k], synthesisWindow[UnvoicedFFTSize-k]) {
+			t.Errorf("symmetry: w[%d]=%v != w[%d]=%v",
+				k, synthesisWindow[k], UnvoicedFFTSize-k,
+				synthesisWindow[UnvoicedFFTSize-k])
+		}
+	}
+}
+
+// TestSynthUnvoicedOverlapAddFreshStream: on a fresh state, the OA
+// path produces dst[0..159] = synthesisWindow × IFFT(...) — the
+// prev_tail is zero so dst[0..95] gets only the windowed curr-frame
+// contribution. Confirm equivalence with the no-OA primitive
+// scaled by the window.
+func TestSynthUnvoicedOverlapAddFreshStream(t *testing.T) {
+	var s SynthState
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	var M [57]float64
+	for l := 1; l <= 10; l++ {
+		M[l] = 1.0 // all unvoiced (Vl=0 default), unit amplitudes
+	}
+	noise := seededNoise(11, UnvoicedFFTSize)
+
+	// Reference: no-OA path output (just first 160 IFFT samples).
+	ref := make([]float64, SamplesPerFrame)
+	SynthUnvoicedFromNoise(p, &M, noise, ref)
+
+	// OA path output.
+	got := make([]float64, SamplesPerFrame)
+	SynthUnvoicedOverlapAdd(&s, p, &M, noise, got)
+
+	// Each got[n] should be ref[n] · synthesisWindow[n].
+	for n := 0; n < SamplesPerFrame; n++ {
+		want := ref[n] * synthesisWindow[n]
+		if math.Abs(got[n]-want) > 1e-9 {
+			t.Fatalf("dst[%d] = %v, want %v (= ref[n]·w[n])", n, got[n], want)
+		}
+	}
+}
+
+// TestSynthUnvoicedOverlapAddStashesTail: after a fresh-stream call,
+// PrevUnvoicedTail[0..95] equals synthesisWindow[160..255] · IFFT
+// samples [160..255]. Pins the state-handoff that the next frame
+// will pick up.
+func TestSynthUnvoicedOverlapAddStashesTail(t *testing.T) {
+	var s SynthState
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	var M [57]float64
+	for l := 1; l <= 10; l++ {
+		M[l] = 1.0
+	}
+	noise := seededNoise(22, UnvoicedFFTSize)
+
+	// Compute the reference IFFT independently to derive the
+	// expected windowed tail values.
+	specRef := make([]complex128, UnvoicedFFTSize)
+	for i, v := range noise {
+		specRef[i] = complex(v, 0)
+	}
+	plan := fft.New(UnvoicedFFTSize)
+	specRef = plan.Forward(specRef, specRef)
+	ShapeUnvoicedSpectrum(specRef, p, &M)
+	specRef = plan.Inverse(specRef, specRef)
+
+	got := make([]float64, SamplesPerFrame)
+	SynthUnvoicedOverlapAdd(&s, p, &M, noise, got)
+
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		want := real(specRef[SamplesPerFrame+n]) * synthesisWindow[SamplesPerFrame+n]
+		if math.Abs(s.PrevUnvoicedTail[n]-want) > 1e-9 {
+			t.Fatalf("PrevUnvoicedTail[%d] = %v, want %v",
+				n, s.PrevUnvoicedTail[n], want)
+		}
+	}
+}
+
+// TestSynthUnvoicedOverlapAddSecondFrameUsesPrevTail: a second frame
+// gets dst[0..95] = curr_windowed[0..95] + prev_tail[0..95]. Pins
+// the cross-frame additive contract.
+func TestSynthUnvoicedOverlapAddSecondFrameUsesPrevTail(t *testing.T) {
+	s := SynthState{}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		s.PrevUnvoicedTail[n] = float64(n + 1) // distinctive sentinel
+	}
+	expectedTail := s.PrevUnvoicedTail
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	var M [57]float64
+	for l := 1; l <= 10; l++ {
+		M[l] = 1.0
+	}
+	noise := seededNoise(33, UnvoicedFFTSize)
+
+	// Reference curr-frame windowed contribution (no OA, no prev).
+	freshState := SynthState{}
+	curr := make([]float64, SamplesPerFrame)
+	SynthUnvoicedOverlapAdd(&freshState, p, &M, noise, curr)
+
+	// OA call on s with the planted tail.
+	got := make([]float64, SamplesPerFrame)
+	SynthUnvoicedOverlapAdd(&s, p, &M, noise, got)
+
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		want := curr[n] + expectedTail[n]
+		if math.Abs(got[n]-want) > 1e-9 {
+			t.Errorf("dst[%d] = %v, want %v (curr_windowed + prev_tail)",
+				n, got[n], want)
+		}
+	}
+	// dst[96..159] is curr-only.
+	for n := UnvoicedTailSamples; n < SamplesPerFrame; n++ {
+		if math.Abs(got[n]-curr[n]) > 1e-9 {
+			t.Errorf("dst[%d] = %v, want %v (curr-only past overlap region)",
+				n, got[n], curr[n])
+		}
+	}
+}
+
+// TestSynthUnvoicedOverlapAddSilentFadesTail: a silent frame still
+// emits the prev tail into dst[0..95] (no click on silence boundary)
+// and clears the tail so a subsequent silent frame is fully silent.
+func TestSynthUnvoicedOverlapAddSilentFadesTail(t *testing.T) {
+	s := SynthState{}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		s.PrevUnvoicedTail[n] = 7
+	}
+	p := Params{Header: Header{Silent: true}}
+	var M [57]float64
+	dst := make([]float64, SamplesPerFrame)
+	SynthUnvoicedOverlapAdd(&s, p, &M, nil, dst)
+
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		if dst[n] != 7 {
+			t.Errorf("dst[%d] = %v, want 7 (faded tail)", n, dst[n])
+		}
+	}
+	for n := UnvoicedTailSamples; n < SamplesPerFrame; n++ {
+		if dst[n] != 0 {
+			t.Errorf("dst[%d] = %v, want 0 (no curr-frame synthesis)", n, dst[n])
+		}
+	}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		if s.PrevUnvoicedTail[n] != 0 {
+			t.Errorf("PrevUnvoicedTail[%d] = %v, want 0 (cleared after fade)",
+				n, s.PrevUnvoicedTail[n])
+		}
+	}
+}
+
+// TestSynthUnvoicedOverlapAddShortDstNoOp: dst < SamplesPerFrame
+// returns immediately without touching state — including without
+// emitting the prev_tail (the dst contract is the gate).
+func TestSynthUnvoicedOverlapAddShortDstNoOp(t *testing.T) {
+	s := SynthState{}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		s.PrevUnvoicedTail[n] = 5
+	}
+	p := Params{Header: Header{W0: math.Pi / 30, L: 10, K: 4}}
+	var M [57]float64
+	short := make([]float64, SamplesPerFrame-1)
+	SynthUnvoicedOverlapAdd(&s, p, &M, seededNoise(44, UnvoicedFFTSize), short)
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		if s.PrevUnvoicedTail[n] != 5 {
+			t.Errorf("tail[%d] = %v, want 5 (untouched on short-dst no-op)",
+				n, s.PrevUnvoicedTail[n])
+		}
+	}
+}
+
+// TestResetClearsPrevUnvoicedTail confirms the new SynthState field
+// is zeroed by Reset (the SynthState{} assignment covers it for free,
+// but the test guards against future struct refactors that drift
+// from Reset).
+func TestResetClearsPrevUnvoicedTail(t *testing.T) {
+	s := SynthState{}
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		s.PrevUnvoicedTail[n] = float64(n)
+	}
+	s.Reset()
+	for n := 0; n < UnvoicedTailSamples; n++ {
+		if s.PrevUnvoicedTail[n] != 0 {
+			t.Errorf("Reset: PrevUnvoicedTail[%d] = %v, want 0",
+				n, s.PrevUnvoicedTail[n])
+		}
 	}
 }

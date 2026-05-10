@@ -123,37 +123,43 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		return out, nil
 	}
 
-	if p.Silent {
-		// b_0 ∈ [216, 219]: explicit silence indicator. Reset state
-		// so the next non-silent frame starts from a clean baseline
-		// (§6.1 prediction needs no prev-frame anchor on a silence
-		// boundary).
-		d.state.Reset()
-		return out, nil
-	}
-
-	// §6.1: cross-frame log-amplitude recovery.
-	var log2M [57]float64
-	PredictLog2Ml(&d.state, p, &log2M)
-
-	// §6.2 amplitude prep: log2(Ml) → linear Ml.
-	var M [57]float64
-	AmplitudesFromLog2Ml(&log2M, p.L, &M)
-
-	// §6.3: voiced harmonic generator (additive into pcm).
 	pcm := make([]float64, SamplesPerFrame)
-	SynthVoiced(&d.state, p, &M, pcm)
 
-	// §6.4: unvoiced FFT excitation (additive into pcm).
-	noise := make([]float64, UnvoicedFFTSize)
-	for i := range noise {
-		noise[i] = d.rng.NormFloat64()
+	if p.Silent {
+		// b_0 ∈ [216, 219]: explicit silence indicator. Run the §6.4
+		// overlap-add with no new noise so the prev-frame unvoiced
+		// tail still fades into pcm[0..95] (no click on the silence
+		// boundary), then reset all cross-frame state so the next
+		// non-silent frame starts from a clean baseline (§6.1
+		// prediction needs no prev-frame anchor on a silence
+		// boundary).
+		SynthUnvoicedOverlapAdd(&d.state, p, nil, nil, pcm)
+		d.state.Reset()
+	} else {
+		// §6.1: cross-frame log-amplitude recovery.
+		var log2M [57]float64
+		PredictLog2Ml(&d.state, p, &log2M)
+
+		// §6.2 amplitude prep: log2(Ml) → linear Ml.
+		var M [57]float64
+		AmplitudesFromLog2Ml(&log2M, p.L, &M)
+
+		// §6.3: voiced harmonic generator (additive into pcm).
+		SynthVoiced(&d.state, p, &M, pcm)
+
+		// §6.4: unvoiced FFT excitation with overlap-add (additive
+		// into pcm). Threads PrevUnvoicedTail through SynthState so
+		// frame boundaries are click-free.
+		noise := make([]float64, UnvoicedFFTSize)
+		for i := range noise {
+			noise[i] = d.rng.NormFloat64()
+		}
+		SynthUnvoicedOverlapAdd(&d.state, p, &M, noise, pcm)
+
+		// Roll cross-frame state forward.
+		d.state.UpdateLog2Ml(p, &log2M)
+		d.state.UpdateVoicedState(p, &M)
 	}
-	SynthUnvoicedFromNoise(p, &M, noise, pcm)
-
-	// Roll cross-frame state forward.
-	d.state.UpdateLog2Ml(p, &log2M)
-	d.state.UpdateVoicedState(p, &M)
 
 	// Hard-clip + scale to int16. The pcmGain placeholder gives
 	// headroom; the §6.2 enhancement polish PR will replace it with
