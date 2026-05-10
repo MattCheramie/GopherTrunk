@@ -39,6 +39,7 @@ const (
 //                          Tier III LCN→Hz resolver hadn't seen it yet)
 //   - "slottype-hamming"   DMR slot-type Hamming(20,8)
 //   - "voiceheader-bptc"   DMR Tier II Voice LC Header BPTC(196,96)
+//   - "voiceheader-rs"     DMR Tier II Voice LC Header RS(12,9,4)
 //   - "sacch-trellis"      NXDN SACCH ½-rate trellis
 type DecodeError struct {
 	Protocol string

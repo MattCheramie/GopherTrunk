@@ -91,7 +91,21 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		})
 		return
 	}
-	flc, err := dmr.ParseFLC(infoBitsToBytes(bits))
+	infoBytes := infoBitsToBytes(bits)
+	// RS(12,9,4) parity check on the BPTC-recovered info block.
+	// BPTC reports its own correction success but doesn't catch
+	// systematic FEC misses — the RS layer above gives that
+	// confidence. ETSI applies a per-context XOR seed to the parity
+	// before transmission; for Voice LC Header it's 0x96 0x96 0x96.
+	if !framing.VerifyRS12_9(infoBytes, framing.RS129SeedVoiceLCHeader) {
+		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch")
+		c.bus.Publish(events.Event{
+			Kind:    events.KindDecodeError,
+			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: "voiceheader-rs"},
+		})
+		return
+	}
+	flc, err := dmr.ParseFLC(infoBytes)
 	if err != nil {
 		c.log.Debug("dmr/tier2: FLC parse failed", "err", err)
 		return

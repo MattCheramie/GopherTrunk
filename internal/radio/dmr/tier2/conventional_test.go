@@ -11,13 +11,18 @@ import (
 )
 
 // burstWithFLC builds a Voice-LC-Header-shaped burst whose 96-bit
-// info block is the supplied FLC followed by 3 zero RS-parity octets.
-// Three zero octets aren't a valid RS(12,9) parity, but parseFLC
-// ignores the trailer so this is sufficient for state-machine tests.
+// info block is the supplied FLC followed by a properly computed
+// RS(12,9) parity trailer XOR'd with the Voice LC Header seed —
+// matching what a DMR transmitter would put on air.
 func burstWithFLC(f dmr.FLC) *dmr.Burst {
 	flcBytes := dmr.AssembleFLC(f)
-	info := make([]byte, 12)
-	copy(info, flcBytes) // bytes 9..11 stay zero (RS placeholder)
+	var data [9]byte
+	copy(data[:], flcBytes)
+	cw := framing.EncodeRS12_9(data)
+	for i := 0; i < 3; i++ {
+		cw[9+i] ^= framing.RS129SeedVoiceLCHeader[i]
+	}
+	info := cw[:]
 
 	bits := make([]byte, 96)
 	for i := 0; i < 96; i++ {
@@ -177,5 +182,60 @@ func TestConventionalIgnoresNonGroupFLCO(t *testing.T) {
 	case ev := <-sub.C:
 		t.Errorf("unit-to-unit FLCO produced an event: %s", ev.Kind)
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestConventionalEmitsRSDecodeErrorOnBadParity(t *testing.T) {
+	// Build a Voice LC Header with valid BPTC framing but corrupted
+	// RS(12,9) parity (skip the seed XOR step). The state machine
+	// should publish decode.error stage="voiceheader-rs" and not a
+	// grant.
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 1})
+
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x42, SrcAddr: 0x100}
+	flcBytes := dmr.AssembleFLC(flc)
+	var data [9]byte
+	copy(data[:], flcBytes)
+	cw := framing.EncodeRS12_9(data)
+	// Skip the seed XOR — the verifier expects the seed-applied form,
+	// so skipping it leaves the parity 'wrong' and verify must fail.
+	bits := make([]byte, 96)
+	for i := 0; i < 96; i++ {
+		bits[i] = (cw[i>>3] >> uint(7-(i&7))) & 1
+	}
+	channel := framing.EncodeBPTC196_96(bits)
+	var b dmr.Burst
+	for i := 0; i < dmr.HalfPayloadDibits; i++ {
+		b.Dibits[i] = (channel[2*i] << 1) | channel[2*i+1]
+	}
+	for i := 0; i < dmr.HalfPayloadDibits; i++ {
+		b.Dibits[dmr.BurstDibits-dmr.HalfPayloadDibits+i] =
+			(channel[2*(dmr.HalfPayloadDibits+i)] << 1) | channel[2*(dmr.HalfPayloadDibits+i)+1]
+	}
+
+	cc.IngestBurst(&b, dmr.SlotType{ColorCode: 1, DataType: dmr.DTVoiceLCHeader})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				t.Fatalf("unexpected grant emitted with bad RS parity: %+v", ev.Payload)
+			}
+			if ev.Kind != events.KindDecodeError {
+				continue
+			}
+			de := ev.Payload.(events.DecodeError)
+			if de.Protocol == "dmr-tier2" && de.Stage == "voiceheader-rs" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no decode-error with stage=voiceheader-rs")
+		}
 	}
 }
