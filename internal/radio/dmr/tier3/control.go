@@ -184,7 +184,7 @@ func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
 		c.log.Debug("dmr/tier3: grant dropped, no band-plan resolver configured", "lcn", lcn)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier3", Stage: "no-bandplan"},
+			Payload: events.DecodeError{Protocol: "dmr-tier3", Stage: events.StageNoBandPlan},
 		})
 		return 0, false
 	}
@@ -193,7 +193,7 @@ func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
 		c.log.Debug("dmr/tier3: band-plan miss", "lcn", lcn, "err", err)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier3", Stage: "no-bandplan"},
+			Payload: events.DecodeError{Protocol: "dmr-tier3", Stage: events.StageNoBandPlan},
 		})
 		return 0, false
 	}

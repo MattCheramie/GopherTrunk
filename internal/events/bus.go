@@ -24,26 +24,33 @@ const (
 	KindError       Kind = "error"
 )
 
+// Stage names a particular FEC / parser checkpoint inside a protocol
+// decoder. Stages are used as Prometheus label values, so the wire
+// shapes below are part of the Stage's public contract — extend the
+// const block, don't rename existing entries.
+type Stage string
+
+// Known decode stages. Add new ones here and reference them from the
+// publishing protocol package; the events bus itself stays neutral.
+const (
+	StageNIDBCH         Stage = "nid-bch"          // P25 Phase 1 NID BCH(63,16,11)
+	StageTSBKTrellis    Stage = "tsbk-trellis"     // P25 Phase 1 TSBK ½-rate trellis
+	StageTSBKCRC        Stage = "tsbk-crc"         // P25 Phase 1 TSBK CRC trailer
+	StageNoBandPlan     Stage = "no-bandplan"      // Voice grant arrived for an unknown channel ID / LCN
+	StageSlotTypeHamming Stage = "slottype-hamming" // DMR slot-type Hamming(20,8)
+	StageVoiceHeaderBPTC Stage = "voiceheader-bptc" // DMR Tier II Voice LC Header BPTC(196,96)
+	StageVoiceHeaderRS   Stage = "voiceheader-rs"   // DMR Tier II Voice LC Header RS(12,9,4)
+	StageSACCHTrellis   Stage = "sacch-trellis"    // NXDN SACCH ½-rate trellis
+)
+
 // DecodeError is the payload published with KindDecodeError. Protocol
-// packages publish this when an FEC primitive returns errCount == -1 so
-// the metrics collector can increment gophertrunk_decode_errors_total
-// without each package having to hold a *metrics.Metrics handle.
-//
-// Stage taxonomy (extend, don't rename — these become Prometheus labels):
-//
-//   - "nid-bch"            P25 Phase 1 NID BCH(63,16,11)
-//   - "tsbk-trellis"       P25 Phase 1 TSBK ½-rate trellis
-//   - "tsbk-crc"           P25 Phase 1 TSBK CRC trailer
-//   - "no-bandplan"        Voice grant arrived for an unknown channel
-//                          ID / LCN (P25 IdentifierUpdate or DMR
-//                          Tier III LCN→Hz resolver hadn't seen it yet)
-//   - "slottype-hamming"   DMR slot-type Hamming(20,8)
-//   - "voiceheader-bptc"   DMR Tier II Voice LC Header BPTC(196,96)
-//   - "voiceheader-rs"     DMR Tier II Voice LC Header RS(12,9,4)
-//   - "sacch-trellis"      NXDN SACCH ½-rate trellis
+// packages publish this when an FEC primitive returns errCount == -1
+// (or a parser short-circuits on a structural failure) so the metrics
+// collector can increment gophertrunk_decode_errors_total without
+// each package having to hold a *metrics.Metrics handle.
 type DecodeError struct {
 	Protocol string
-	Stage    string
+	Stage    Stage
 }
 
 type Event struct {

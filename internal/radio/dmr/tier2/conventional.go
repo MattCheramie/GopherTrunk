@@ -87,7 +87,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: voice header BPTC uncorrectable")
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: "voiceheader-bptc"},
+			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: events.StageVoiceHeaderBPTC},
 		})
 		return
 	}
@@ -101,7 +101,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch")
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: "voiceheader-rs"},
+			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: events.StageVoiceHeaderRS},
 		})
 		return
 	}

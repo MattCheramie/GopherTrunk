@@ -209,7 +209,7 @@ func (m *Metrics) observeEvent(ev events.Event) {
 		m.ccLockedGauge.WithLabelValues(systemLabel(ev)).Set(0)
 	case events.KindDecodeError:
 		if de, ok := ev.Payload.(events.DecodeError); ok {
-			m.decodeErrors.WithLabelValues(de.Protocol, de.Stage).Inc()
+			m.decodeErrors.WithLabelValues(de.Protocol, string(de.Stage)).Inc()
 		}
 	}
 }

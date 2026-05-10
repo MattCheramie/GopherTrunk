@@ -58,3 +58,26 @@ func TestBusDropsWhenSlow(t *testing.T) {
 		t.Errorf("dropped = %d, want 1", dropped)
 	}
 }
+
+func TestStageConstantsHaveStableWireValues(t *testing.T) {
+	// Stage strings end up as Prometheus label values, so renaming a
+	// constant silently breaks dashboards + alerts. This test pins
+	// each constant to its current wire value — if you really need
+	// to rename one, update the table here so the breaking change
+	// shows up in code review.
+	cases := map[Stage]string{
+		StageNIDBCH:          "nid-bch",
+		StageTSBKTrellis:     "tsbk-trellis",
+		StageTSBKCRC:         "tsbk-crc",
+		StageNoBandPlan:      "no-bandplan",
+		StageSlotTypeHamming: "slottype-hamming",
+		StageVoiceHeaderBPTC: "voiceheader-bptc",
+		StageVoiceHeaderRS:   "voiceheader-rs",
+		StageSACCHTrellis:    "sacch-trellis",
+	}
+	for stage, want := range cases {
+		if string(stage) != want {
+			t.Errorf("stage = %q, want %q", string(stage), want)
+		}
+	}
+}

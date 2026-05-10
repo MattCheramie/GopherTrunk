@@ -106,7 +106,7 @@ func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "p25", Stage: "nid-bch"},
+			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
 		})
 	}
 

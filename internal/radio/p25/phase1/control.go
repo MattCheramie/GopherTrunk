@@ -117,7 +117,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			c.log.Debug("nid parse failed", "err", err, "errs", errs)
 			c.bus.Publish(events.Event{
 				Kind:    events.KindDecodeError,
-				Payload: events.DecodeError{Protocol: "p25", Stage: "nid-bch"},
+				Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
 			})
 			continue
 		}
@@ -149,9 +149,9 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		tsbk, metric, err := DecodeTSBKChannel(dibits[tsbkStart : tsbkStart+98])
 		if err != nil {
 			c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
-			stage := "tsbk-trellis"
+			stage := events.StageTSBKTrellis
 			if errors.Is(err, CRCError) {
-				stage = "tsbk-crc"
+				stage = events.StageTSBKCRC
 			}
 			c.bus.Publish(events.Event{
 				Kind:    events.KindDecodeError,
@@ -198,7 +198,7 @@ func (c *ControlChannel) publishGroupGrant(g GroupVoiceChannelGrant, nac uint16)
 			"nac", nac, "id", g.ChannelID, "num", g.ChannelNumber, "err", err)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "p25", Stage: "no-bandplan"},
+			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNoBandPlan},
 		})
 		return
 	}
