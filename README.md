@@ -282,8 +282,8 @@ to its own package and lands independently.
   R820T2, R828D, E4000, FC0012, FC0013, FC2580). The
   `sdr.Device` interface and IQ-format conversion at
   `internal/sdr/rtlsdr/rtlsdr_cgo.go:225-240` are preserved
-  bit-identically so the DSP chain is untouched. Status: PR-01 +
-  PR-02 + PR-03 landed — `internal/sdr/rtlsdr/usb/` exposes the
+  bit-identically so the DSP chain is untouched. Status: PR-01
+  through PR-04 landed. `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
   `MockTransport` for unit tests, and platform backends across
   Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
@@ -301,12 +301,26 @@ to its own package and lands independently.
   follow-up — day-one macOS binaries build and start cleanly;
   only live dongle access is gated. CI compiles + vets + tests
   the package on `ubuntu-latest` + `windows-latest` +
-  `macos-latest` under `CGO_ENABLED=0`. PRs 04-10 land the
-  RTL2832U register/I2C layer, the R820T2 tuner, the wire-up
-  under the alternate driver name `rtlsdr-go`, the remaining
-  five tuners, the default flip, the deletion of
-  `rtlsdr_cgo.go` + every `librtlsdr` apt / MSYS2 / DLL-bundling
-  step in `Dockerfile`, `.github/workflows/*.yml`,
+  `macos-latest` under `CGO_ENABLED=0`.
+  `internal/sdr/rtlsdr/rtl2832u/` is the demodulator-chip layer
+  on top of the transport: `ReadBlockReg` / `WriteBlockReg`
+  (USB / SYS register space) and `ReadDemodReg` / `WriteDemodReg`
+  (page-addressed demod registers) match the librtlsdr wire
+  format byte-for-byte (including the load-bearing
+  page-0x0A/0x01 commit read after every demod write), plus
+  `InitBaseband` (the full 24-step + 20-byte-FIR power-on
+  sequence), `SetSampleRate` with the 28.4 fixed-point divisor
+  math (golden table covering 250 kS/s / 1.024 / 2.048 / 2.4 /
+  3.2 MS/s pins the realRatio sign-bit-extension corner case),
+  `SetIFFreq`, `SetSampleFreqCorrection` (PPM), `ResetBuffer`,
+  `SetFIR` / `SetFIRDefault`, the I2C bridge (`SetI2CRepeater`
+  caches the last value, `I2CReadReg` / `I2CWriteReg` /
+  `I2CRead` / `I2CWrite`), and GPIO + `SetBiasTee` plumbing.
+  PRs 05-10 land the R820T2 tuner, the wire-up under the
+  alternate driver name `rtlsdr-go`, the remaining five
+  tuners, the default flip, the deletion of `rtlsdr_cgo.go` +
+  every `librtlsdr` apt / MSYS2 / DLL-bundling step in
+  `Dockerfile`, `.github/workflows/*.yml`,
   `installer/gophertrunk.iss`, and the install docs, and the
   macOS IOKit transport itself.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
@@ -404,7 +418,8 @@ tests.
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
 internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, CGO librtlsdr (→ pure-Go), mock
-internal/sdr/rtlsdr/usb/ Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
+internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
+internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
 internal/trunking/      System, talkgroup DB, priority, engine, CC hunter
