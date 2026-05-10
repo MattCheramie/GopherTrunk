@@ -8,16 +8,25 @@
 // Roadmap (each item lands as its own self-contained PR so review
 // stays tractable):
 //
-//  1. Skeleton + Vocoder interface integration. ← THIS PR.
-//     Decoder satisfies voice.Vocoder, registers as "imbe-go" in
+//  1. Skeleton + Vocoder interface integration. Decoder satisfies
+//     voice.Vocoder, registers as "imbe-go" in
 //     voice.DefaultRegistry, and emits silence per frame so the
 //     full call pipeline can wire to it now and start receiving
 //     audio for free as the later pieces land.
 //
-//  2. Channel coding inverse. 144 transmitted channel bits → 88
-//     information bits via Golay(23,12) + Hamming(15,11) + the
-//     IMBE-specific bit interleaver + pseudo-random scrambler.
-//     framing/golay + framing/hamming are already in tree.
+//  2. Channel coding inverse — per-vector FEC. ← THIS PR.
+//     144 channel bits → 88 information bits via Golay(23,12,7)
+//     for u_0..u_3 + Hamming(15,11,3) for u_4..u_6 + a
+//     no-FEC u_7 passthrough. See channel.go. Operates on
+//     already-deinterleaved + already-descrambled channel bits;
+//     the deinterleaver permutation (TIA-102.BABA §7.5) and the
+//     u_0-keyed pseudo-random scrambler (§7.4) land in step 2b.
+//
+//  2b. Channel coding inverse — deinterleaver + scrambler. The
+//     144-bit interleaver permutation that scatters codeword bits
+//     across the frame, plus the PRBS keyed off u_0 that whitens
+//     u_1..u_6. Self-contained follow-up so the per-bit table can
+//     be reviewed independently of the FEC math above.
 //
 //  3. Parameter unpacking. 88 information bits → IMBE model
 //     parameters (b_0..b_7+ vectors): fundamental frequency,
