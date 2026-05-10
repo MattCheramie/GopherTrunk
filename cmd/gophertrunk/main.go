@@ -19,12 +19,13 @@ import (
 	// This is the sole IMBE backend in default builds.
 	_ "github.com/MattCheramie/GopherTrunk/internal/voice/imbe"
 
-	// Blank import: under default builds this pulls in the stub
-	// (no init effect); under `make build TAGS=mbelib` it pulls in
-	// the CGO wrapper that registers the `imbe` and `ambe2`
-	// vocoders against voice.DefaultRegistry. Either way, the
-	// daemon's import set picks the right path automatically.
-	_ "github.com/MattCheramie/GopherTrunk/internal/voice/mbelib"
+	// Blank import: pulls in the pure-Go AMBE+2 decoder so the
+	// daemon registers the "ambe2" vocoder name (P25 Phase 2, DMR,
+	// NXDN voice) regardless of build tags. The skeleton currently
+	// emits silence; PR-D plugs in 49-bit parameter unpacking and
+	// PR-E wires the shared mbe synthesis pipeline. See
+	// docs/vocoders.md for the AMBE+2 patent posture.
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
 )
 
 func main() {

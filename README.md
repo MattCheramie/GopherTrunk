@@ -55,11 +55,15 @@ SQLite. The honest gaps:
   intelligible audio end-to-end ([patents have expired](docs/vocoders.md)),
   with operator-tunable AGC + §6.4 overlap-add windowing + §6.2
   spectral enhancement + frame-repeat on bad-frame indicator
-  shipped — only mbelib-bit-equivalent absolute-level calibration
-  remains as a follow-up. AMBE+2 stays behind the `mbelib` build
-  tag; operators who hold (or don't need) the patent licence run
-  `make mbelib-install && make build TAGS=mbelib` to get both
-  IMBE + AMBE+2 via the C reference implementation.
+  shipped — absolute-level calibration against a known-good
+  reference decoder is the only remaining polish item. Pure-Go
+  AMBE+2 is scaffolded under `internal/voice/ambe2/` and registers
+  the `ambe2` name on every default build; the skeleton emits
+  silence pending follow-up PRs that plug in 49-bit parameter
+  unpacking and wire the shared `internal/voice/mbe/` synthesis
+  pipeline. The AMBE+2 algorithm carries active patents in some
+  jurisdictions; re-implementing it in pure Go does not change
+  that posture — see [docs/vocoders.md](docs/vocoders.md).
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
   de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
   polyphase L/M audio resampler — the full polish stack ships.
@@ -160,9 +164,31 @@ to its own package and lands independently.
   cross-correlation against the reference WAV under
   `internal/voice/imbe/testdata/`); enhancement filter tuning if
   real-world frames show mid-band envelope drift.
+- **Pure-Go AMBE+2 vocoder.** A native-Go AMBE+2 2400 bps decoder
+  for P25 Phase 2, DMR (Tier II / III), and NXDN voice frames.
+  AMBE+2 is the same MBE-family algorithm as IMBE — same 8 kHz /
+  20 ms / 160 PCM cadence, same harmonic + unvoiced FFT synthesis
+  shape — so the synthesis half reuses `internal/voice/mbe/`
+  directly. Only the front half (bit-level unpack from 49
+  information bits into `mbe.Params`) is AMBE+2-specific. The
+  AMBE+2 algorithm carries active patents in some jurisdictions;
+  re-implementing it in Go does not change that posture
+  ([docs/vocoders.md](docs/vocoders.md)). Status: skeleton +
+  Vocoder interface registered as `ambe2` on the default build
+  (`internal/voice/ambe2/decoder.go`), `Decode` emits silence
+  pending parameter unpack + synthesis wiring. **Roadmap**:
+  parameter unpack (b₀ → ω₀ + L + voicing-pattern table → Vl,
+  gain VQ → gain block, two-stage spectral VQ → DCT residuals
+  → Tl) — codebook tables transcribed from szechyjs/mbelib's
+  `ambe3600x2400.c` / `ambe3600x2450_const.h` under ISC; synthesis
+  wire-up via the shared `mbe.PredictLog2Ml` → `mbe.SynthVoiced`
+  → `mbe.SynthUnvoicedOverlapAdd` → `mbe.AGC.Apply` pipeline +
+  the shared `mbe.MaxBadFrames` / `mbe.BadFrameAttenuation`
+  frame-repeat path; AGC calibration against a DSD-FME-decoded
+  DMR reference recording.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
-  as `internal/voice/mbelib`; the daemon picks the factory by name
+  as `internal/voice/ambe2`; the daemon picks the factory by name
   from `voice.DefaultRegistry`.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
