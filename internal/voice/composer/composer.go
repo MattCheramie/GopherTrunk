@@ -6,10 +6,11 @@
 // from the bus. On a CallStart it looks up the Voice device by serial,
 // opens its IQ stream, and starts a goroutine that runs an FM
 // passthrough chain (LPF → decimate → quadrature FM demod → optional
-// post-demod de-emphasis → optional post-demod audio LPF → coarse
-// resample → int16 PCM → recorder.WritePCM). The chain also calls
-// Engine.Touch on a one-second cadence so the engine's silent-call
-// watchdog doesn't kill the call mid-conversation.
+// post-demod de-emphasis → optional Kaiser audio LPF → optional
+// audio AGC → coarse resample → int16 PCM → recorder.WritePCM). The
+// chain also calls Engine.Touch on a one-second cadence so the
+// engine's silent-call watchdog doesn't kill the call
+// mid-conversation.
 //
 // Digital protocols (P25 / DMR / NXDN) need vocoders that haven't
 // landed yet — IMBE for P25 Phase 1 is in progress and AMBE+2 stays
@@ -27,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
@@ -116,6 +118,13 @@ type Options struct {
 	// anti-aliasing filter for the second decimation. Off by default;
 	// callers tune CutoffHz (typical 3400) and Taps (default 81).
 	AudioLPF AudioLPFConfig
+	// AudioAGC configures a real-valued envelope-follower-based AGC
+	// applied after the audio LPF (so the envelope follower sees a
+	// clean band-limited signal). The point is to level out the
+	// loudness difference between weak and strong transmitters on
+	// the same talkgroup so recordings don't whiplash. Off by
+	// default; analog FM systems opt in via daemon config.
+	AudioAGC AudioAGCConfig
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -136,6 +145,17 @@ type AudioLPFConfig struct {
 	Taps     int
 }
 
+// AudioAGCConfig holds runtime knobs for the post-demod audio AGC.
+// Reference, Attack, Release, and MaxGain default to sane voice
+// values when zero.
+type AudioAGCConfig struct {
+	Enabled   bool
+	Reference float32       // target |output| (default 0.3)
+	Attack    time.Duration // ramp-up time constant (default 5 ms)
+	Release   time.Duration // ramp-down time constant (default 200 ms)
+	MaxGain   float32       // ceiling on adaptive gain (default 64.0)
+}
+
 // Composer is the long-lived event-driven bridge.
 type Composer struct {
 	bus    *events.Bus
@@ -151,6 +171,7 @@ type Composer struct {
 	eqCfg        EqualizerConfig
 	deemphCfg    DeEmphasisConfig
 	lpfCfg       AudioLPFConfig
+	agcCfg       AudioAGCConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -206,6 +227,8 @@ func New(opts Options) (*Composer, error) {
 			opts.AudioLPF.Taps = 81
 		}
 	}
+	// AudioAGC defaults are applied inside dsp.NewAudioAGC, so the
+	// composer doesn't need to materialize them here.
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -223,6 +246,7 @@ func New(opts Options) (*Composer, error) {
 		eqCfg:      opts.Equalizer,
 		deemphCfg:  opts.DeEmphasis,
 		lpfCfg:     opts.AudioLPF,
+		agcCfg:     opts.AudioAGC,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}
@@ -413,6 +437,24 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 		audioLPF = filter.NewRealFIR(filter.LowpassKaiser(c.lpfCfg.Taps, fc, 8.6))
 	}
 
+	// Optional audio AGC. Sits after the LPF so the envelope
+	// follower sees a clean band-limited signal — pre-emphasis is
+	// already undone, hiss + sub-carriers already trimmed — which
+	// keeps the level estimate stable and prevents the AGC from
+	// chasing high-frequency garbage. Operates at the intermediate
+	// rate so attack/release time constants line up with what the
+	// caller configured.
+	var agc *dsp.AudioAGC
+	if c.agcCfg.Enabled {
+		agc = dsp.NewAudioAGC(dsp.AudioAGCConfig{
+			Reference:  c.agcCfg.Reference,
+			Attack:     c.agcCfg.Attack,
+			Release:    c.agcCfg.Release,
+			MaxGain:    c.agcCfg.MaxGain,
+			SampleRate: intermediateHzf,
+		})
+	}
+
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
@@ -444,6 +486,9 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 			if audioLPF != nil {
 				audio = audioLPF.Process(audio, audio)
+			}
+			if agc != nil {
+				audio = agc.Process(audio, audio)
 			}
 			pcm := decimateAndConvert(audio, decim2)
 			if c.sink != nil && len(pcm) > 0 {
