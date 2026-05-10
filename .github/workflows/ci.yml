@@ -24,9 +24,30 @@ jobs:
   # The rest of the tree still requires CGO + librtlsdr on non-Linux, but the
   # usb sub-package must build & test cleanly under CGO_ENABLED=0 on every
   # supported OS as it lands platform-specific backends. Currently exercises
-  # the WinUSB backend introduced in PR-02.
+  # the WinUSB backend (PR-02) and the macOS stub (PR-03); PR-10 swaps the
+  # stub for the real IOKit-via-purego implementation.
   usb-windows:
     runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Build (CGO disabled)
+        env:
+          CGO_ENABLED: "0"
+        run: go build ./internal/sdr/rtlsdr/usb/...
+      - name: Vet
+        env:
+          CGO_ENABLED: "0"
+        run: go vet ./internal/sdr/rtlsdr/usb/...
+      - name: Test
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./internal/sdr/rtlsdr/usb/...
+
+  usb-macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
