@@ -13,9 +13,9 @@
 // Digital protocols (P25 / DMR / NXDN) need vocoders that haven't
 // landed yet — IMBE for P25 Phase 1 is in progress and AMBE+2 stays
 // behind a build tag. Until they ship, a digital grant produces no
-// PCM and only the raw-frame sidecar (when WriteRaw is enabled) is
-// useful. The composer logs a warning per digital grant so the
-// behaviour is visible in operations.
+// PCM and only the raw-frame sidecar (when WriteRaw is enabled, or
+// always for EDACS ProVoice grants) is useful. The composer logs a
+// warning per digital grant so the behaviour is visible in operations.
 package composer
 
 import (

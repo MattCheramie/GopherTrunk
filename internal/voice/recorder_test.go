@@ -157,6 +157,114 @@ func TestRecorderRawFrameSidecar(t *testing.T) {
 	}
 }
 
+func TestRecorderProVoiceForcesRawSidecar(t *testing.T) {
+	// Even with the recorder's global WriteRaw flag off, an EDACS
+	// ProVoice grant must open a .raw sidecar — that's the only useful
+	// output for an unstreamable vocoder.
+	r, bus, dir := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "EDACS-Site", Protocol: "edacs", GroupID: 0x4321,
+			SourceID: 12, ProVoice: true,
+		},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 1, 2, 3, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	frame := []byte{0x11, 0x22, 0x33, 0x44}
+	if err := r.WriteRawFrame("VOICE-1", frame); err != nil {
+		t.Fatal(err)
+	}
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallEnd,
+		Payload: trunking.CallEnd{
+			Grant: cs.Grant, DeviceSerial: "VOICE-1",
+			StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(time.Second),
+			Reason: trunking.EndReasonNormal,
+		},
+	})
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	rawPath := filepath.Join(dir, "EDACS-Site", "17185", "20260505T010203Z_src12.raw")
+	data, err := os.ReadFile(rawPath)
+	if err != nil {
+		t.Fatalf("expected .raw sidecar at %s: %v", rawPath, err)
+	}
+	if len(data) != len(frame) {
+		t.Errorf("raw size = %d, want %d", len(data), len(frame))
+	}
+}
+
+func TestRecorderNonProVoiceSkipsRawWhenDisabled(t *testing.T) {
+	// Sanity check: with WriteRaw=false and a non-ProVoice grant, the
+	// recorder must not create a .raw sidecar.
+	r, bus, dir := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "p25", GroupID: 7, SourceID: 1},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// WriteRawFrame should be a silent drop with no sidecar open.
+	if err := r.WriteRawFrame("VOICE-1", []byte{0xAA}); err != nil {
+		t.Fatal(err)
+	}
+	bus.Publish(events.Event{
+		Kind: events.KindCallEnd,
+		Payload: trunking.CallEnd{
+			Grant: cs.Grant, DeviceSerial: "VOICE-1",
+			StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(time.Second),
+			Reason: trunking.EndReasonNormal,
+		},
+	})
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	rawPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src1.raw")
+	if _, err := os.Stat(rawPath); !os.IsNotExist(err) {
+		t.Errorf(".raw sidecar should not exist (WriteRaw=false, non-ProVoice): err=%v", err)
+	}
+}
+
 func TestRecorderClosesOpenSessions(t *testing.T) {
 	r, bus, _ := mkRecorder(t, false)
 	defer bus.Close()

@@ -24,7 +24,13 @@ type Grant struct {
 	Encrypted   bool
 	Emergency   bool
 	DataCall    bool // false = voice call (default)
-	At          time.Time
+	// ProVoice marks the grant as an EDACS ProVoice (digital) call. The
+	// vocoder is patent + trade-secret encumbered so we cannot ship a
+	// built-in decoder; the recorder treats this flag as a directive to
+	// emit a `.raw` frame sidecar regardless of its global WriteRaw
+	// setting, so researchers can decode out-of-band.
+	ProVoice bool
+	At       time.Time
 }
 
 // String renders a one-line summary of a Grant for log output.
@@ -38,6 +44,9 @@ func (g Grant) String() string {
 	}
 	if g.DataCall {
 		flags += "D"
+	}
+	if g.ProVoice {
+		flags += "P"
 	}
 	return fmt.Sprintf("%s/%s tg=%d src=%d freq=%d %s", g.System, g.Protocol, g.GroupID, g.SourceID, g.FrequencyHz, flags)
 }

@@ -103,6 +103,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceGrant) {
 			ChannelNum:  uint16(g.LCN),
 			Encrypted:   g.Encrypted,
 			Emergency:   g.Emergency,
+			ProVoice:    g.ProVoice,
 			At:          c.now(),
 		},
 	})

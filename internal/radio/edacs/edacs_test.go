@@ -248,6 +248,44 @@ func TestControlChannelPublishesGrant(t *testing.T) {
 	}
 }
 
+func TestControlChannelPropagatesProVoiceFlag(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestSys",
+		FrequencyHz: 851_000_000,
+		Resolver:    LinearBandPlan{BaseHz: 866_000_000, SpacingHz: 25_000},
+	})
+	cc.Ingest(CCW{Command: CmdProVoiceGrant, Address: 0x4321, LCN: 9})
+
+	select {
+	case ev := <-sub.C:
+		g, ok := ev.Payload.(trunking.Grant)
+		if !ok {
+			t.Fatalf("payload type = %T", ev.Payload)
+		}
+		if !g.ProVoice {
+			t.Errorf("ProVoice flag not set on trunking.Grant: %+v", g)
+		}
+		if g.GroupID != 0x4321 || g.ChannelNum != 9 {
+			t.Errorf("identity wrong: %+v", g)
+		}
+		// Plain GroupVoiceGrants must not have ProVoice set; verify the
+		// flag is grant-type-specific, not always-on.
+		cc.Ingest(CCW{Command: CmdGroupVoiceGrant, Address: 0x100, LCN: 1})
+		ev2 := <-sub.C
+		if g2 := ev2.Payload.(trunking.Grant); g2.ProVoice {
+			t.Errorf("regular GroupVoiceGrant flagged ProVoice: %+v", g2)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no grant event")
+	}
+}
+
 func TestControlChannelGrantWithoutResolverHasZeroFreq(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

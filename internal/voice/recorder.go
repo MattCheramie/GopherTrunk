@@ -30,6 +30,11 @@ import (
 // The raw sidecar is appended once per WriteRawFrame call. It is
 // intentionally a flat concatenation of frames so users can BYO decoder
 // (mbelib, DVSI, etc.) without parsing surrounding metadata.
+//
+// EDACS ProVoice grants (Grant.ProVoice == true) always force a `.raw`
+// sidecar even when WriteRaw is false. The vocoder is patent +
+// trade-secret encumbered so we cannot ship a built-in decoder; the
+// sidecar lets researchers feed frames into an external decoder.
 type Recorder struct {
 	bus        *events.Bus
 	log        *slog.Logger
@@ -165,12 +170,11 @@ func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
 	return s.wav.WriteSamples(samples)
 }
 
-// WriteRawFrame appends a raw vocoder frame to the per-call sidecar (if
-// WriteRaw is enabled). Otherwise it is a no-op.
+// WriteRawFrame appends a raw vocoder frame to the per-call sidecar.
+// The session decides whether a sidecar exists: it is opened either when
+// WriteRaw is globally enabled or when the call's grant is flagged
+// ProVoice. Frames for a session without a sidecar are dropped silently.
 func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
-	if !r.writeRaw {
-		return nil
-	}
 	r.mu.Lock()
 	s, ok := r.sessions[deviceSerial]
 	r.mu.Unlock()
@@ -204,7 +208,9 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		return
 	}
 	s := &recordingSession{wav: wav, wavPath: wavPath, startedAt: cs.StartedAt}
-	if r.writeRaw {
+	// ProVoice grants always get a sidecar — the vocoder isn't decodable
+	// in-process, so the .raw file is the only way to capture the call.
+	if r.writeRaw || cs.Grant.ProVoice {
 		rawPath := filepath.Join(dir, base+".raw")
 		raw, err := os.Create(rawPath)
 		if err != nil {
@@ -216,7 +222,8 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 	}
 	r.sessions[cs.DeviceSerial] = s
 	r.log.Info("recorder: call started",
-		"device", cs.DeviceSerial, "wav", wavPath, "tg", cs.Grant.GroupID)
+		"device", cs.DeviceSerial, "wav", wavPath,
+		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice)
 }
 
 func (r *Recorder) handleEnd(ce trunking.CallEnd) {
