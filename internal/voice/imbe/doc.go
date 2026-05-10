@@ -32,20 +32,22 @@
 //     channel.go's per-vector layout already matches the order the
 //     upstream extractor will hand it.
 //
-//  3. Parameter unpacking — header. ← THIS PR.
+//  3. Parameter unpacking — header.
 //     88 information bits → IMBE Header { W0, L, K, Silent }. The
 //     b_0 fundamental-frequency parameter lives at scattered
 //     positions {0..5, 85, 86}; ω₀ + L + K all derive from it
-//     per TIA-102.BABA §5.3 / Annex E. The full
-//     TIA-102.BABA / mbelib quantization tables (ba, hoba, bo,
-//     ImbeJi, quantstep, standdev, B2) ship in tables.go ready
-//     for the spectral-amplitude follow-up.
+//     per TIA-102.BABA §5.3 / Annex E. See params.go.
 //
-//  3b. Parameter unpacking — voicing + gain + spectral. Read the
-//     remaining 79 bits via the bo[L9] re-order, then extract
-//     Vl[1..L] voicing decisions, the b_2 gain index, and the
-//     PRBA + HOC spectral amplitude blocks per §5.3 / §5.4.
-//     Inverse DCTs over Gm and Cik land here too.
+//  3b. Parameter unpacking — voicing + gain + spectral. ← THIS PR.
+//     Re-orders the remaining 79 bits via bo[L9] into the bb[v][p]
+//     layout, then extracts Vl[1..L] voicing decisions, the b_2
+//     gain index → Gm[1] = B2[b_2], the 5 PRBA gain blocks
+//     Gm[2..6] (Annex E eq. 68), and the HOC spectral coefficients
+//     Cik via hoba[L9] × quantstep × standdev (§5.4). Two inverse
+//     DCT-IIs (over Gm and over Cik) produce Tl[1..L], the
+//     pre-prediction log-amplitude residuals. The cross-frame
+//     log2Ml prediction (eq. 75-77) needs prev-frame state and
+//     lives in the synthesizer (step 4).
 //
 //  4. Speech synthesis. Voiced harmonic sum + unvoiced random
 //     excitation + spectral-amplitude shaping → 160 PCM samples /
