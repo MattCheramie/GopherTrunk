@@ -5,8 +5,16 @@ package framing
 // This is the variant used by the P25 TSBK trailer (the trailer stores the
 // bitwise complement; callers handle that at protocol level).
 func CRCCCITT(msg []byte) uint16 {
+	return CRCCCITTWithInit(msg, 0xFFFF)
+}
+
+// CRCCCITTWithInit is the same CRC-CCITT (poly 0x1021, no reflection,
+// no final XOR) but with a caller-supplied initial value. Pass
+// 0xFFFF for the CCITT/FALSE variant the P25 TSBK trailer uses; pass
+// 0x0000 for the XMODEM / YSF FICH variant.
+func CRCCCITTWithInit(msg []byte, init uint16) uint16 {
 	const poly uint16 = 0x1021
-	crc := uint16(0xFFFF)
+	crc := init
 	for _, b := range msg {
 		crc ^= uint16(b) << 8
 		for i := 0; i < 8; i++ {

@@ -29,7 +29,7 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 | dPMR (Mode 3)     | FS1 / FS2 / FS3 24-dibit sync, 80-bit CSBK parser, MessageType enum (RegistrationRequest / Response, VoiceServiceAllocation, IndividualVoiceAllocation, DataServiceAllocation, ServiceRequest, StandingServiceStatus, Release, Idle), AsVoiceGrant + AsSiteBroadcast accessors, PMR446 default band-plan, control-channel state machine emitting `protocol = "dpmr"` grants |
 | TETRA (TMO)       | Normal + extended training-sequence sync, generic Layer-3 PDU parser (4-bit Discriminator + type + payload), CMCE D-CONNECT / D-TX-GRANTED / D-RELEASE accessors, MLE-SYSINFO accessor (MCC / MNC / Location Area), TETRA-380 / 410 / 800 carrier resolver, control-channel state machine emitting `protocol = "tetra"` grants |
 | D-STAR            | Frame Sync + Slow Data sync, 41-byte PCH header parser (FLAG1 + RPT2 / RPT1 / UR / MY1 / MY2 + CRC-CCITT), IsGroupCall / IsEmergency / IsData accessors, repeater state machine emitting `protocol = "dstar"` grants on group transmissions |
-| YSF (Yaesu System Fusion) | 4800-baud C4FM, 480-dibit / 100 ms frame layout (FSW / FICH / DCH offsets), 40-bit FSW correlator with mismatch tolerance, per-frequency state machine emitting `cc.locked` on sync detect (FICH parse + grant emission is a follow-up — Trellis decode lands separately) |
+| YSF (Yaesu System Fusion) | 4800-baud C4FM, 480-dibit / 100 ms frame layout (FSW / FICH / DCH offsets), 40-bit FSW correlator with mismatch tolerance, 32-bit Frame Information Channel parser (FrameType / CallType / Frame Number / Frame Total / DataType / VoIP / Squelch fields) with CRC-16 trailer, per-frequency state machine emitting `cc.locked` on sync detect (Trellis FEC + grant emission is a follow-up) |
 | Orchestration     | In-process pub/sub event bus, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
 | Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
 | Demod pipeline    | `internal/voice/composer` subscribes to `CallStart` events, opens the bound Voice device's IQ stream, runs an LPF → decimate → optional CMA equalizer → FM demod → optional 75/50µs de-emphasis → optional Kaiser audio LPF → optional audio AGC → optional polyphase L/M resample (or naive decimate fallback) → int16 PCM chain into the recorder, and pings `Engine.Touch` every second so the silent-call watchdog leaves the call alone |
@@ -77,11 +77,11 @@ to its own package and lands independently.
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
   from `voice.DefaultRegistry`.
-- **YSF FICH decode + grant emission.** The `internal/radio/ysf/`
-  package ships sync detection + frame layout; the FICH (Frame
-  Information Channel) carries Trellis-encoded Frame Type / Call
-  Sign Mode / Frame Number bits that the next pass will decode +
-  republish as `protocol = "ysf"` grants on the bus.
+- **YSF Trellis decode + grant emission.** Sync, frame layout, and
+  the post-FEC FICH bit-level parser are in; what's left is the
+  K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
+  region and the control-channel wiring that publishes
+  `protocol = "ysf"` grants on the bus when a Header FICH lands.
 - **Higher-fidelity FM voice chain.** ✅ Shipped: opt-in 75/50µs
   de-emphasis (`composer.DeEmphasisConfig`), Kaiser-windowed audio
   LPF (`composer.AudioLPFConfig`), audio AGC
