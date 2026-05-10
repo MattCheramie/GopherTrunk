@@ -1,10 +1,10 @@
-//go:build !(linux && (amd64 || arm64 || 386 || arm || riscv64 || loong64))
+//go:build !(linux && (amd64 || arm64 || 386 || arm || riscv64 || loong64)) && !(windows && (amd64 || arm64))
 
 package usb
 
 // platformEnumerator returns a stub [Enumerator] whose every method
-// reports [ErrUnsupportedPlatform]. PR-02 (Windows / WinUSB) and PR-10
-// (macOS / IOKit via purego) replace this with real implementations.
+// reports [ErrUnsupportedPlatform]. PR-10 replaces this on macOS with a
+// real IOKit-via-purego implementation.
 func platformEnumerator() Enumerator { return unsupportedEnumerator{} }
 
 type unsupportedEnumerator struct{}
