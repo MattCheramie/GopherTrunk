@@ -15,7 +15,7 @@ gRPC, HTTP/SSE, or WebSocket.
 | Area              | Component                                                  |
 | ----------------- | ---------------------------------------------------------- |
 | Hardware          | CGO `librtlsdr` binding, multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
-| DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, IQ + audio AGC (attack/release envelope follower for voice), rational resampler, FM / C4FM / H-DQPSK demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
+| DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, IQ + audio AGC (attack/release envelope follower for voice), L/M polyphase resampler (complex IQ + real audio), FM / C4FM / H-DQPSK demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
 | FEC primitives    | CRC-CCITT/FALSE, CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8), BCH(63,16,11), BPTC(196,96), 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (NXDN SACCH) |
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
 | P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, control-channel state machine emitting `protocol = "p25-phase2"` grants |
@@ -31,7 +31,7 @@ gRPC, HTTP/SSE, or WebSocket.
 | D-STAR            | Frame Sync + Slow Data sync, 41-byte PCH header parser (FLAG1 + RPT2 / RPT1 / UR / MY1 / MY2 + CRC-CCITT), IsGroupCall / IsEmergency / IsData accessors, repeater state machine emitting `protocol = "dstar"` grants on group transmissions |
 | Orchestration     | In-process pub/sub event bus, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
 | Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
-| Demod pipeline    | `internal/voice/composer` subscribes to `CallStart` events, opens the bound Voice device's IQ stream, runs an LPF → decimate → optional CMA equalizer → FM demod → optional 75/50µs de-emphasis → optional Kaiser audio LPF → optional audio AGC → decimate → int16 PCM chain into the recorder, and pings `Engine.Touch` every second so the silent-call watchdog leaves the call alone |
+| Demod pipeline    | `internal/voice/composer` subscribes to `CallStart` events, opens the bound Voice device's IQ stream, runs an LPF → decimate → optional CMA equalizer → FM demod → optional 75/50µs de-emphasis → optional Kaiser audio LPF → optional audio AGC → optional polyphase L/M resample (or naive decimate fallback) → int16 PCM chain into the recorder, and pings `Engine.Touch` every second so the silent-call watchdog leaves the call alone |
 | Simulcast / "True I/Q" | `internal/dsp/equalizer` (LMS + CMA blind equalizers) for inter-symbol-interference / multipath mitigation, plus `internal/dsp/diversity` (Selection + maximal-ratio combiners over a shared `Combiner` interface) for multi-receiver IQ combining |
 | Tone-out alerting | `internal/voice/toneout` runs Goertzel filters against each Voice device's PCM stream, matches QC-II two-tone-sequential sequences against operator-configured profiles with per-tone duration + cooldown, and publishes `tone.alert` events that fan out through SSE / WebSocket / gRPC |
 | Voice recording   | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder writing `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder; EDACS ProVoice grants always force a `.raw` sidecar (the vocoder is patent + trade-secret encumbered) so researchers can decode out-of-band |
@@ -53,11 +53,11 @@ SQLite. The honest gaps:
   + raw-frame sidecar are in place; pure-Go IMBE is in progress
   ([patents have expired](docs/vocoders.md)) and AMBE+2 stays
   behind the `mbelib` build tag.
-- **Higher-fidelity audio**: the FM chain has opt-in 75/50µs
-  de-emphasis, a Kaiser-windowed audio LPF, and audio AGC. Still
-  pending is proper polyphase resampling rather than naive
-  decimation. Quality is good enough to verify wiring; real DSP
-  polish is follow-up work.
+- **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
+  de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
+  polyphase L/M audio resampler — the full polish stack ships.
+  Defaults stay analog-FM-friendly so digital protocols and
+  passthrough callers see no behavior change.
 
 The Go interfaces and event payloads carry digital protocols already,
 so the remaining paths light up once IMBE drops in.
@@ -79,11 +79,11 @@ to its own package and lands independently.
 - **Yaesu System Fusion (C4FM, FICH).** Amateur-radio digital mode,
   public spec. New `internal/radio/ysf/` package following the
   D-STAR pattern: header parser + repeater state machine.
-- **Higher-fidelity FM voice chain.** Opt-in 75/50µs de-emphasis
-  (`composer.DeEmphasisConfig`), a Kaiser-windowed audio LPF
-  (`composer.AudioLPFConfig`), and audio AGC
-  (`composer.AudioAGCConfig`) are in. Still pending: proper
-  polyphase resampling for production audio.
+- **Higher-fidelity FM voice chain.** ✅ Shipped: opt-in 75/50µs
+  de-emphasis (`composer.DeEmphasisConfig`), Kaiser-windowed audio
+  LPF (`composer.AudioLPFConfig`), audio AGC
+  (`composer.AudioAGCConfig`), and polyphase L/M audio resampler
+  (`composer.AudioResamplerConfig`).
 
 ## Tech stack
 
