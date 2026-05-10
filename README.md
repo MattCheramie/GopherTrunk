@@ -84,9 +84,13 @@ to its own package and lands independently.
   prediction (eqs. 75-77 — γ = 0.65 interpolation of prev-frame
   harmonics at l · ω₀_curr/ω₀_prev positions, DC-bias removal,
   Tl residual addition) is in on a `SynthState` that the
-  excitation step extends (`synth.go`). Currently still emits
-  silence per frame; follow-up PR lands voiced/unvoiced
-  excitation + spectral shaping + 8 kHz PCM synthesis (§6.2-6.4).
+  excitation step extends (`synth.go`); §6.2 amplitude prep
+  (log2(Ml) → linear Ml = 2^log2(Ml), the R_M0 = Σ Ml² and
+  R_M1 = Σ Ml² · cos(ω₀·l) spectral moments, and a voicing-fraction
+  summary that the synthesis combiner consumes) is in (`amps.go`).
+  Currently still emits silence per frame; follow-up PRs land the
+  voiced harmonic generator (§6.3), unvoiced FFT excitation (§6.4),
+  and the §6.2 enhancement + final PCM combine.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/mbelib`; the daemon picks the factory by name
