@@ -68,6 +68,7 @@ jobs:
             git
             zip
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-rtl-sdr
             mingw-w64-x86_64-libusb
@@ -137,10 +138,14 @@ jobs:
         env:
           USE_SUDO: "0"
           PREFIX: /mingw64
-          # Skip the gtest / gmock subbuilds that mbelib pulls in for
-          # its tests — saves ~30 s of CI time and reduces the
-          # failure surface to just the library itself.
-          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF"
+          # -DBUILD_TESTING=OFF skips the gtest / gmock subbuilds
+          # mbelib pulls in for its unit tests — saves ~30 s of CI
+          # time and reduces the failure surface to just the library.
+          # -DCMAKE_POLICY_VERSION_MINIMUM=3.5 papers over the
+          # upstream `cmake_minimum_required(VERSION ...)` value
+          # that's older than CMake 4.x will accept; without it the
+          # MSYS2 cmake bails on the obsolete policy declaration.
+          CMAKE_EXTRA_ARGS: "-DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         run: |
           export PATH="/mingw64/bin:$PATH"
           scripts/install-mbelib.sh
