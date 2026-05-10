@@ -3,6 +3,8 @@ package nxdn
 import (
 	"errors"
 	"fmt"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
 // NXDN Slow Associated Control Channel (SACCH) channel coding, per
@@ -145,7 +147,7 @@ func DecodeSACCH(channel []byte) ([]byte, int, error) {
 	}
 	pre := depuncture(punctured)
 	const stages = SACCHInfoBits + sacchTailBits // 36 Viterbi stages
-	allBits, metric := viterbiK5(pre, stages)
+	allBits, metric := framing.ViterbiK5(pre, stages)
 	out := allBits[:SACCHInfoBits]
 	// CRC-6 over the first 26 bits = 18 SR + ... payload preceding the
 	// CRC trailer (per NXDN Single SACCH layout). We don't dictate
@@ -156,11 +158,10 @@ func DecodeSACCH(channel []byte) ([]byte, int, error) {
 	return out, metric, nil
 }
 
-// depunctureMark is the sentinel byte stored at puncture positions in
-// the depunctured stream. The K=5 Viterbi treats it as "no information"
-// — neither expected output value contributes path-metric cost — so the
-// surviving path is determined entirely by the other 60 received bits.
-const depunctureMark byte = 0xFF
+// depunctureMark is the sentinel byte the K=5 Viterbi recognizes as
+// "no information at this slot". Aliased onto framing.DepunctureMark
+// so the puncture / depuncture helpers below stay readable.
+const depunctureMark = framing.DepunctureMark
 
 // puncture drops 12 fixed positions from the first 72 of the 80-bit
 // encoded stream, plus the trailing 8 tail bits (the encoder ends in
@@ -196,78 +197,6 @@ func depuncture(in []byte) []byte {
 		src++
 	}
 	return out
-}
-
-// viterbiK5 runs hard-decision Viterbi over a K=5 1/2-rate
-// convolutional code with NXDN's polynomials. Input is `2*stages`
-// channel bits arranged as (g1, g2) pairs; output is `stages`
-// recovered input bits and the path metric of the surviving path.
-func viterbiK5(channel []byte, stages int) ([]byte, int) {
-	const numStates = 16
-	const inf = 1 << 30
-	pm := make([]int, numStates)
-	for i := range pm {
-		pm[i] = inf
-	}
-	pm[0] = 0
-	trace := make([][numStates]uint8, stages)
-
-	for s := 0; s < stages; s++ {
-		var npm [numStates]int
-		for i := range npm {
-			npm[i] = inf
-		}
-		rxG1 := channel[2*s]
-		rxG2 := channel[2*s+1]
-		for cur := 0; cur < numStates; cur++ {
-			if pm[cur] >= inf {
-				continue
-			}
-			d1 := (cur >> 3) & 1
-			d2 := (cur >> 2) & 1
-			d3 := (cur >> 1) & 1
-			d4 := cur & 1
-			for input := 0; input < 2; input++ {
-				g1 := byte(input^d3^d4) & 1
-				g2 := byte(input^d1^d2^d4) & 1
-				cost := pm[cur]
-				// Punctured positions contribute zero cost because the
-				// receiver had no information to correlate against;
-				// they're filled with depunctureMark to skip the bit-
-				// distance check below.
-				if rxG1 != depunctureMark && g1 != rxG1 {
-					cost++
-				}
-				if rxG2 != depunctureMark && g2 != rxG2 {
-					cost++
-				}
-				next := (input << 3) | (d1 << 2) | (d2 << 1) | d3
-				if cost < npm[next] {
-					npm[next] = cost
-					trace[s][next] = uint8((cur << 1) | input)
-				}
-			}
-		}
-		copy(pm, npm[:])
-	}
-
-	// Encoder is flushed back to state 0 by the 4 tail bits — use the
-	// terminal-state constraint and pick state 0 unconditionally. Even
-	// with channel errors the Viterbi remembers state 0 as a feasible
-	// terminus because the depuncturer marked the tail-output bits as
-	// no-info, so any path ending in state 0 has zero metric
-	// contribution from those slots.
-	final := 0
-	metric := pm[final]
-
-	out := make([]byte, stages)
-	state := final
-	for s := stages - 1; s >= 0; s-- {
-		entry := trace[s][state]
-		out[s] = entry & 1
-		state = int(entry >> 1)
-	}
-	return out, metric
 }
 
 // CRC-6 over a bit-stream with NXDN's polynomial g(x) = x^6 + x + 1
