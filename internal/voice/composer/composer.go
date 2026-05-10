@@ -7,7 +7,8 @@
 // opens its IQ stream, and starts a goroutine that runs an FM
 // passthrough chain (LPF → decimate → quadrature FM demod → optional
 // post-demod de-emphasis → optional Kaiser audio LPF → optional
-// audio AGC → coarse resample → int16 PCM → recorder.WritePCM). The
+// audio AGC → optional polyphase resample (or coarse decimate) →
+// int16 PCM → recorder.WritePCM). The
 // chain also calls Engine.Touch on a one-second cadence so the
 // engine's silent-call watchdog doesn't kill the call
 // mid-conversation.
@@ -125,6 +126,15 @@ type Options struct {
 	// the same talkgroup so recordings don't whiplash. Off by
 	// default; analog FM systems opt in via daemon config.
 	AudioAGC AudioAGCConfig
+	// AudioResampler swaps the naive integer decimation that hands
+	// audio to the recorder for a polyphase L/M resampler with
+	// proper anti-aliasing built into the prototype filter. The
+	// resampler is sized from the intermediate-rate / PCM-rate ratio
+	// the chain already computes, so the caller only opts in
+	// (Enabled) and optionally tunes TapsPerBranch / Beta. Off by
+	// default; the existing AudioLPF + naive decimation produces
+	// equivalent audio when the two rates are integer multiples.
+	AudioResampler AudioResamplerConfig
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -143,6 +153,17 @@ type AudioLPFConfig struct {
 	Enabled  bool
 	CutoffHz uint32
 	Taps     int
+}
+
+// AudioResamplerConfig holds runtime knobs for the polyphase audio
+// resampler. TapsPerBranch (default 16) controls the prototype
+// filter's per-branch length; Beta (default 8.6) is the Kaiser
+// window shape parameter — higher β = steeper transition, more
+// stopband rejection, longer impulse.
+type AudioResamplerConfig struct {
+	Enabled       bool
+	TapsPerBranch int
+	Beta          float64
 }
 
 // AudioAGCConfig holds runtime knobs for the post-demod audio AGC.
@@ -172,6 +193,7 @@ type Composer struct {
 	deemphCfg    DeEmphasisConfig
 	lpfCfg       AudioLPFConfig
 	agcCfg       AudioAGCConfig
+	resampCfg    AudioResamplerConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -229,6 +251,14 @@ func New(opts Options) (*Composer, error) {
 	}
 	// AudioAGC defaults are applied inside dsp.NewAudioAGC, so the
 	// composer doesn't need to materialize them here.
+	if opts.AudioResampler.Enabled {
+		if opts.AudioResampler.TapsPerBranch <= 0 {
+			opts.AudioResampler.TapsPerBranch = 16
+		}
+		if opts.AudioResampler.Beta <= 0 {
+			opts.AudioResampler.Beta = 8.6
+		}
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -247,6 +277,7 @@ func New(opts Options) (*Composer, error) {
 		deemphCfg:  opts.DeEmphasis,
 		lpfCfg:     opts.AudioLPF,
 		agcCfg:     opts.AudioAGC,
+		resampCfg:  opts.AudioResampler,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}
@@ -455,6 +486,17 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 		})
 	}
 
+	// Optional polyphase audio resampler. Replaces the naive
+	// decimateAndConvert audio decimation with an L/M polyphase
+	// resampler whose prototype filter doubles as the anti-aliasing
+	// LPF. L and M come from the intermediate-rate / PCM-rate ratio
+	// the chain already computed (decim2 = M with L = 1 for the
+	// integer-multiple case), so callers only opt in.
+	var resamp *dsp.RealResampler
+	if c.resampCfg.Enabled {
+		resamp = dsp.NewRealResampler(1, decim2, c.resampCfg.TapsPerBranch, c.resampCfg.Beta)
+	}
+
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
@@ -490,7 +532,15 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			if agc != nil {
 				audio = agc.Process(audio, audio)
 			}
-			pcm := decimateAndConvert(audio, decim2)
+			var pcm []int16
+			if resamp != nil {
+				// Polyphase rate-conversion already emits at the
+				// PCM rate; convert in place without further
+				// decimation.
+				pcm = convertToPCM(resamp.Process(nil, audio))
+			} else {
+				pcm = decimateAndConvert(audio, decim2)
+			}
 			if c.sink != nil && len(pcm) > 0 {
 				_ = c.sink.WritePCM(serial, pcm)
 			}
@@ -527,6 +577,24 @@ func decimateAndConvert(in []float32, factor int) []int16 {
 			v = math.MinInt16
 		}
 		out = append(out, int16(v))
+	}
+	return out
+}
+
+// convertToPCM converts a float32 audio stream that's already at the
+// PCM sample rate (i.e. handed back from RealResampler) to 16-bit
+// signed PCM with the same scale + clamp decimateAndConvert uses.
+func convertToPCM(in []float32) []int16 {
+	out := make([]int16, len(in))
+	for i, x := range in {
+		v := float64(x) * 10_000
+		if v > math.MaxInt16 {
+			v = math.MaxInt16
+		}
+		if v < math.MinInt16 {
+			v = math.MinInt16
+		}
+		out[i] = int16(v)
 	}
 	return out
 }
