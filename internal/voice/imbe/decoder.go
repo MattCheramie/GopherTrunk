@@ -140,9 +140,12 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		var log2M [57]float64
 		PredictLog2Ml(&d.state, p, &log2M)
 
-		// §6.2 amplitude prep: log2(Ml) → linear Ml.
+		// log2(Ml) → linear Ml, then §6.2 spectral-amplitude
+		// enhancement (per-harmonic weight from R_M0 + R_M1, plus
+		// energy-preserving rescale).
 		var M [57]float64
 		AmplitudesFromLog2Ml(&log2M, p.L, &M)
+		EnhanceAmplitudes(p, &M)
 
 		// §6.3: voiced harmonic generator (additive into pcm).
 		SynthVoiced(&d.state, p, &M, pcm)
