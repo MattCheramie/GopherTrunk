@@ -5,10 +5,11 @@
 // One Composer subscribes to events.KindCallStart / events.KindCallEnd
 // from the bus. On a CallStart it looks up the Voice device by serial,
 // opens its IQ stream, and starts a goroutine that runs an FM
-// passthrough chain (LPF → decimate → quadrature FM demod → coarse
-// resample → int16 PCM → recorder.WritePCM). The chain also calls
-// Engine.Touch on a one-second cadence so the engine's silent-call
-// watchdog doesn't kill the call mid-conversation.
+// passthrough chain (LPF → decimate → quadrature FM demod → optional
+// post-demod de-emphasis → coarse resample → int16 PCM →
+// recorder.WritePCM). The chain also calls Engine.Touch on a one-second
+// cadence so the engine's silent-call watchdog doesn't kill the call
+// mid-conversation.
 //
 // Digital protocols (P25 / DMR / NXDN) need vocoders that haven't
 // landed yet — IMBE for P25 Phase 1 is in progress and AMBE+2 stays
@@ -102,6 +103,19 @@ type Options struct {
 	// front-end LPF and the FM demod. Off by default; flip Enabled
 	// to true and tune Taps / StepSize per site.
 	Equalizer EqualizerConfig
+	// DeEmphasis configures the post-demod single-pole IIR that
+	// recovers the pre-emphasized treble curve broadcast FM
+	// transmitters apply for SNR. Off by default — set Enabled and
+	// pick TimeConstant (75µs in NA, 50µs in EU). Filter runs at the
+	// intermediate ~48 kHz rate, before the second decimation.
+	DeEmphasis DeEmphasisConfig
+}
+
+// DeEmphasisConfig holds runtime knobs for the post-FM-demod
+// de-emphasis filter.
+type DeEmphasisConfig struct {
+	Enabled      bool
+	TimeConstant time.Duration // typically 75µs (NA) or 50µs (EU)
 }
 
 // Composer is the long-lived event-driven bridge.
@@ -117,6 +131,7 @@ type Composer struct {
 	bw           uint32
 	touchEvery   time.Duration
 	eqCfg        EqualizerConfig
+	deemphCfg    DeEmphasisConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -161,6 +176,9 @@ func New(opts Options) (*Composer, error) {
 			opts.Equalizer.StepSize = 1e-4
 		}
 	}
+	if opts.DeEmphasis.Enabled && opts.DeEmphasis.TimeConstant <= 0 {
+		opts.DeEmphasis.TimeConstant = filter.DeEmphasis75us
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -176,6 +194,7 @@ func New(opts Options) (*Composer, error) {
 		bw:         opts.VoiceBandwidthHz,
 		touchEvery: opts.TouchInterval,
 		eqCfg:      opts.Equalizer,
+		deemphCfg:  opts.DeEmphasis,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}
@@ -342,6 +361,16 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 		eq = equalizer.NewCMA(c.eqCfg.Taps, c.eqCfg.StepSize, 1.0)
 	}
 
+	// Optional post-demod de-emphasis. The transmitter pre-emphasized
+	// treble for SNR; without the matching low-pass the recording
+	// sounds harsh. Filter runs on the real audio at the intermediate
+	// rate (~48 kHz) before the second naive decimation to PCM.
+	var deemph *filter.DeEmphasis
+	if c.deemphCfg.Enabled {
+		intermediateHzf := float64(c.iqHz) / float64(decim1)
+		deemph = filter.NewDeEmphasis(c.deemphCfg.TimeConstant, intermediateHzf)
+	}
+
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
@@ -368,6 +397,9 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 				decimated = equalized
 			}
 			audio := fm.Process(nil, decimated)
+			if deemph != nil {
+				audio = deemph.Process(audio, audio)
+			}
 			pcm := decimateAndConvert(audio, decim2)
 			if c.sink != nil && len(pcm) > 0 {
 				_ = c.sink.WritePCM(serial, pcm)
