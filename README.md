@@ -80,7 +80,16 @@ SQLite. The honest gaps:
   mapping per-recorder via `RecorderOptions.VocoderForProtocol`
   (pass an empty non-nil map to disable auto-decode entirely;
   the `.raw` sidecar then becomes the only path for digital
-  voice). The AMBE+2 algorithm carries active patents in some
+  voice). For protocols that emit channel-coded IMBE bursts
+  (P25 Phase 1 LDU1 / LDU2 carry 9 such bursts each), the
+  `imbe.DecodeChannelToFrame` helper bridges a 144-bit
+  post-deinterleave burst → 11-byte recorder-ready frame in one
+  call (descramble → per-vector Golay + Hamming → bit-pack);
+  upstream protocol decoders call it for each voice slot and
+  forward the result to `recorder.WriteRawFrame`. The
+  protocol-side LDU extraction itself (the 1728-bit burst layout
+  + the bit positions of the 9 IMBE slots) is the next gap.
+  The AMBE+2 algorithm carries active patents in some
   jurisdictions; re-implementing it in pure Go does not change
   that posture — see [docs/vocoders.md](docs/vocoders.md).
 - **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs

@@ -172,3 +172,182 @@ func TestChannelInfoBitsConstantMatchesPackageConstant(t *testing.T) {
 		t.Errorf("vector info-bit sum = %d, want %d", wantInfo, InfoBits)
 	}
 }
+
+// TestPackInfoBitsToFrameRoundTrip: 88 info bits → 11-byte frame
+// → unpack via the same MSB-first scheme as Decoder.Decode → must
+// recover the original 88 bits. Pins the frame-packing wire
+// format against the implicit unpacking the Decoder + DecodeStream
+// path performs.
+func TestPackInfoBitsToFrameRoundTrip(t *testing.T) {
+	info := make([]byte, InfoBits)
+	// Mix of bit patterns: every 7th bit set so the byte boundaries
+	// see both 0 and 1 across the whole frame.
+	for i := range info {
+		if i%7 == 0 {
+			info[i] = 1
+		}
+	}
+	frame, err := PackInfoBitsToFrame(info)
+	if err != nil {
+		t.Fatalf("PackInfoBitsToFrame: %v", err)
+	}
+	if len(frame) != FrameBytes {
+		t.Errorf("frame length = %d, want %d", len(frame), FrameBytes)
+	}
+	// Manually unpack the same way Decoder.Decode does and confirm
+	// every bit matches.
+	for i := 0; i < InfoBits; i++ {
+		got := (frame[i/8] >> (7 - uint(i)%8)) & 1
+		if got != info[i] {
+			t.Fatalf("bit %d: packed/unpacked = %d, original = %d", i, got, info[i])
+		}
+	}
+}
+
+// TestPackInfoBitsToFrameRejectsWrongLength: any input that isn't
+// exactly InfoBits long surfaces ErrChannelLength so callers don't
+// silently produce truncated/over-long frames.
+func TestPackInfoBitsToFrameRejectsWrongLength(t *testing.T) {
+	for _, n := range []int{0, InfoBits - 1, InfoBits + 1, 87, 89, 144} {
+		_, err := PackInfoBitsToFrame(make([]byte, n))
+		if err == nil {
+			t.Errorf("PackInfoBitsToFrame(len=%d) returned no error", n)
+		}
+	}
+}
+
+// TestDecodeChannelToFrameRoundTrip: the full channel-decode
+// pipeline must recover the original 88 information bits when
+// fed clean (zero-error) channel bits. The on-air shape is:
+//
+//	info → EncodeChannel → 144 channel bits
+//	     → Scramble       → 144 scrambled channel bits  (transmitted)
+//	     → Descramble     → 144 channel bits             (after RX)
+//	     → DecodeChannel  → 88 info bits
+//	     → PackInfoBitsToFrame → 11-byte frame
+//
+// DecodeChannelToFrame collapses the last three steps, so feeding
+// it post-Scramble bits should reproduce the original info inside
+// the packed frame.
+func TestDecodeChannelToFrameRoundTrip(t *testing.T) {
+	original := make([]byte, InfoBits)
+	for i := range original {
+		// Pseudo-random 0/1 pattern that exercises every vector.
+		original[i] = byte((i*13 + 7) % 2)
+	}
+	encoded, err := EncodeChannel(original)
+	if err != nil {
+		t.Fatalf("EncodeChannel: %v", err)
+	}
+	scrambled, err := Scramble(encoded)
+	if err != nil {
+		t.Fatalf("Scramble: %v", err)
+	}
+
+	frame, errs, err := DecodeChannelToFrame(scrambled)
+	if err != nil {
+		t.Fatalf("DecodeChannelToFrame: %v", err)
+	}
+	if errs != 0 {
+		t.Errorf("errs = %d, want 0 on a clean channel", errs)
+	}
+	if len(frame) != FrameBytes {
+		t.Errorf("frame length = %d, want %d", len(frame), FrameBytes)
+	}
+
+	// Unpack the frame and compare to the original.
+	for i := 0; i < InfoBits; i++ {
+		got := (frame[i/8] >> (7 - uint(i)%8)) & 1
+		if got != original[i] {
+			t.Fatalf("bit %d: round-trip = %d, original = %d", i, got, original[i])
+		}
+	}
+}
+
+// TestDecodeChannelToFrameWiresIntoDecoder: the recorder-ready
+// frame produced by DecodeChannelToFrame must be consumable by a
+// fresh imbe.Decoder.Decode() — that's the whole point of the
+// helper: bridge a protocol-layer 144-bit burst into the same
+// frame format the Decoder ingests. Pin the wire shape end-to-end.
+func TestDecodeChannelToFrameWiresIntoDecoder(t *testing.T) {
+	// Use the canonical b₀=216 silence frame as the reference.
+	// info bits 0..5 = (1,1,0,1,1,0) ⇒ b₀ MSBs = 0xD8 = 216.
+	// bits 85, 86 (the two LSBs of b₀) stay 0; remaining info bits
+	// are 0. UnpackHeader then flags Silent=true.
+	info := make([]byte, InfoBits)
+	info[0] = 1
+	info[1] = 1
+	info[2] = 0
+	info[3] = 1
+	info[4] = 1
+	info[5] = 0
+
+	encoded, err := EncodeChannel(info)
+	if err != nil {
+		t.Fatalf("EncodeChannel: %v", err)
+	}
+	scrambled, err := Scramble(encoded)
+	if err != nil {
+		t.Fatalf("Scramble: %v", err)
+	}
+	frame, errs, err := DecodeChannelToFrame(scrambled)
+	if err != nil {
+		t.Fatalf("DecodeChannelToFrame: %v", err)
+	}
+	if errs != 0 {
+		t.Errorf("errs = %d, want 0 on clean channel", errs)
+	}
+
+	// Hand the packed frame to a Decoder. A silence frame produces
+	// 160 zero PCM samples.
+	d := New()
+	out, err := d.Decode(frame)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	for i, s := range out {
+		if s != 0 {
+			t.Fatalf("sample[%d] = %d, want 0 (silence frame round-tripped through DecodeChannelToFrame)", i, s)
+		}
+	}
+}
+
+// TestDecodeChannelToFrameSurvivesRecoverableError: a single
+// flipped bit in a Golay(23,12) vector is correctable; the
+// round-trip recovers the original info, and errs > 0 reports the
+// correction count. Pins that the helper preserves the
+// "frame still usable, just with non-zero errs" contract.
+func TestDecodeChannelToFrameSurvivesRecoverableError(t *testing.T) {
+	original := make([]byte, InfoBits)
+	for i := range original {
+		original[i] = byte((i*5 + 1) % 2)
+	}
+	encoded, err := EncodeChannel(original)
+	if err != nil {
+		t.Fatalf("EncodeChannel: %v", err)
+	}
+	scrambled, err := Scramble(encoded)
+	if err != nil {
+		t.Fatalf("Scramble: %v", err)
+	}
+	// Flip a single bit inside u_1 (a Golay(23,12) vector,
+	// correction radius 3). Bits 0..11 of the channel double as
+	// the seed for the §7.4 PRBS scrambler — a flip in that range
+	// would cascade through descrambling of u_1..u_6 and isn't
+	// straightforwardly recoverable. u_1 spans bits 23..45, so
+	// bit 25 sits comfortably past the seed region.
+	scrambled[25] ^= 1
+	frame, errs, err := DecodeChannelToFrame(scrambled)
+	if err != nil {
+		t.Fatalf("DecodeChannelToFrame: %v", err)
+	}
+	if errs == 0 {
+		t.Errorf("errs = 0 after a 1-bit flip; expected the FEC to report the correction")
+	}
+	for i := 0; i < InfoBits; i++ {
+		got := (frame[i/8] >> (7 - uint(i)%8)) & 1
+		if got != original[i] {
+			t.Fatalf("bit %d: round-trip = %d, original = %d (single-bit error should be correctable)", i, got, original[i])
+		}
+	}
+}
