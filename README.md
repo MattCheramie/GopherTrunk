@@ -76,7 +76,13 @@ The remaining gaps:
   is the next follow-up. The CAC CRC-CCITT-16 strict-mode
   remains enforced. **LTR** has a `SetManchesterMode` config
   for deployments that bi-phase-encode the sub-audible status
-  word; FCS verification (12-bit trailer) is still pending.
+  word, plus a `framing.CRC7LTR` primitive in
+  `internal/radio/framing/crc_ltr.go` (polynomial 0xFD, table
+  from DSheirer/sdrtrunk's CRCLTR.java) that future PRs can
+  wire into the adapter; the wiring is pending because
+  sdrtrunk's bit-layout reading (1-bit Area, 5-bit Channel)
+  disagrees with GopherTrunk's `Status` struct (5-bit Area,
+  4-bit Channel).
   **Motorola Type II** has `SetBCHMode(BCHOn)` to run
   BCH(64,16,11) over each codeword pair. **P25 Phase 2** now
   has `SetTrellisMode(TrellisOn)` to run the TIA-102 Annex A
@@ -170,6 +176,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **LTR Standard CRC-7 primitive in framing/.** New shared
+  `framing/crc_ltr.go` adds `CRC7LTR` / `VerifyCRC7LTR` for
+  the LTR Standard message check (polynomial 0xFD, initial
+  fill 0x00) per DSheirer/sdrtrunk's `edac/CRCLTR.java`. The
+  24-entry syndrome lookup table covers the four fields LTR
+  protects (Area, Channel, Home, Group, Free — 24 bits total),
+  with direction-aware verification: OSW (outbound) frames
+  must match the calculated checksum as-is; ISW (inbound)
+  frames carry the bit-inverted checksum. The primitive isn't
+  yet wired into the LTR `ControlChannel` adapter because the
+  bit layout sdrtrunk documents (1-bit Area, 5-bit Channel)
+  disagrees with the GopherTrunk `Status` struct (5-bit Area,
+  4-bit Channel) — reconciling the two LTR Standard
+  interpretations is the documented follow-up. Tests cover
+  zero-message zero-checksum, single-bit syndrome matches,
+  256 random-message round-trips, single-bit-error detection
+  across all 24 positions, ISW checksum inversion, and
+  table-uniqueness / 7-bit-bound sanity.
 - **Gardner clock recovery threaded into the P25 Phase 2 +
   TETRA receivers.** Each π/4-DQPSK receiver gains an
   `Options.ClockMode` (`ClockNaive` default, `ClockGardner`
