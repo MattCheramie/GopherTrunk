@@ -29,6 +29,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 )
 
@@ -63,7 +64,43 @@ type Options struct {
 	PulseSpanSymbols int
 	// Alpha overrides the RRC roll-off. <= 0 uses RolloffAlpha.
 	Alpha float64
+	// ClockMode selects the symbol-time recovery strategy. See
+	// the ClockMode type doc for the trade-offs. Zero value is
+	// ClockNaive (matches the receiver's pre-Gardner behaviour).
+	ClockMode ClockMode
+	// GardnerGain overrides the Gardner loop step (default 0.03,
+	// applied only when ClockMode is ClockGardner).
+	GardnerGain float64
 }
+
+// ClockMode selects how the receiver decimates the matched-filter
+// output to one sample per symbol.
+//
+//   - ClockNaive (default): picks every sps-th sample starting at
+//     an offset advanced by sps each emission. Works on
+//     synthesized signals whose symbol-time peaks fall at fixed
+//     sample positions; matches the receiver's pre-Gardner
+//     behaviour exactly.
+//
+//   - ClockGardner: routes the matched-filter output through the
+//     Gardner symbol-timing-recovery loop in internal/dsp/sync —
+//     non-data-aided, complex-valued, with cross-call state for
+//     chunked streams. Useful for noisier on-air captures where
+//     the symbol clock isn't perfectly aligned with the SDR
+//     sample clock.
+//
+// Wiring Gardner into the pipeline is the follow-up the Gardner
+// primitive PR (#128) called out; the choice is per-receiver and
+// runtime-configurable so the existing test fixtures (which
+// depend on fixed sample alignment) keep passing under
+// ClockNaive while ClockGardner becomes the recommended default
+// for live SDR captures.
+type ClockMode uint8
+
+const (
+	ClockNaive ClockMode = iota
+	ClockGardner
+)
 
 // Receiver is the composed IQ → dibit pipeline.
 type Receiver struct {
@@ -77,12 +114,17 @@ type Receiver struct {
 	// pending matched-filter buffer is consumed.
 	rxOffset int
 
+	clockMode ClockMode
+	gardner   *sync.Gardner
+
 	// Scratch buffers reused across calls.
 	matched []complex64
 	dibits  []uint8
+	symbols []complex64
 	// pending holds matched-filter samples from prior Process calls
 	// that didn't align with a symbol centre and are needed for the
-	// next decimation step.
+	// next decimation step (ClockNaive). Under ClockGardner the
+	// Gardner loop manages its own cross-call tail internally.
 	pending []complex64
 }
 
@@ -107,11 +149,20 @@ func New(opts Options) *Receiver {
 	if alpha <= 0 {
 		alpha = RolloffAlpha
 	}
-	return &Receiver{
+	r := &Receiver{
 		dq:        demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
 		sps:       int(sps + 0.5),
 		dibitSink: opts.DibitSink,
+		clockMode: opts.ClockMode,
 	}
+	if r.clockMode == ClockGardner {
+		gain := opts.GardnerGain
+		if gain <= 0 {
+			gain = 0.03
+		}
+		r.gardner = sync.NewGardner(float64(r.sps), gain)
+	}
+	return r
 }
 
 // Process pushes one chunk of complex64 IQ samples through the
@@ -122,41 +173,43 @@ func (r *Receiver) Process(iq []complex64) {
 		return
 	}
 	r.matched = r.dq.MatchedFilter(r.matched, iq)
-	r.pending = append(r.pending, r.matched...)
-
-	// Decimate the pending buffer: pick one sample per sps
-	// starting at rxOffset.
 	r.dibits = r.dibits[:0]
-	var symbols []complex64
-	for r.rxOffset < len(r.pending) {
-		symbols = append(symbols, r.pending[r.rxOffset])
-		r.rxOffset += r.sps
-	}
-	if len(symbols) == 0 {
-		return
-	}
-	r.dibits = r.dq.Decode(r.dibits, symbols)
-	r.dibitSink(r.dibits, r.dibitBase)
-	r.dibitBase += len(r.dibits)
+	r.symbols = r.symbols[:0]
 
-	// Trim the pending buffer: keep only the samples we haven't
-	// consumed yet. rxOffset becomes the offset into the trimmed
-	// buffer.
-	drop := r.rxOffset - r.sps
-	if drop < 0 {
-		drop = 0
-	}
-	if drop > len(r.pending) {
-		drop = len(r.pending)
-	}
-	if drop > 0 {
-		copy(r.pending, r.pending[drop:])
-		r.pending = r.pending[:len(r.pending)-drop]
-		r.rxOffset -= drop
-		if r.rxOffset < 0 {
-			r.rxOffset = 0
+	if r.clockMode == ClockGardner {
+		// Gardner manages its own cross-call tail state, so the
+		// receiver hands each matched-filter chunk straight in.
+		r.symbols = r.gardner.Process(r.symbols, r.matched)
+	} else {
+		// Naive decimation: pick every sps-th sample starting at
+		// rxOffset, preserving cross-call state in r.pending.
+		r.pending = append(r.pending, r.matched...)
+		for r.rxOffset < len(r.pending) {
+			r.symbols = append(r.symbols, r.pending[r.rxOffset])
+			r.rxOffset += r.sps
+		}
+		drop := r.rxOffset - r.sps
+		if drop < 0 {
+			drop = 0
+		}
+		if drop > len(r.pending) {
+			drop = len(r.pending)
+		}
+		if drop > 0 {
+			copy(r.pending, r.pending[drop:])
+			r.pending = r.pending[:len(r.pending)-drop]
+			r.rxOffset -= drop
+			if r.rxOffset < 0 {
+				r.rxOffset = 0
+			}
 		}
 	}
+	if len(r.symbols) == 0 {
+		return
+	}
+	r.dibits = r.dq.Decode(r.dibits, r.symbols)
+	r.dibitSink(r.dibits, r.dibitBase)
+	r.dibitBase += len(r.dibits)
 }
 
 // Reset returns the receiver to its initial state. Call on stream
@@ -168,4 +221,7 @@ func (r *Receiver) Reset() {
 	r.dq.Reset()
 	r.pending = r.pending[:0]
 	r.rxOffset = 0
+	if r.gardner != nil {
+		r.gardner.Reset()
+	}
 }

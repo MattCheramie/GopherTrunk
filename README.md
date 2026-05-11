@@ -93,14 +93,17 @@ The remaining gaps:
   protocols (EDACS, TETRA, LTR FCS) still have their
   per-protocol FEC layers pending — see each adapter PR for
   the specific FEC parameters.
-- **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
-  family (P25 Phase 2, TETRA). The Gardner timing-recovery
-  primitive now ships in `internal/dsp/sync/gardner.go` —
-  non-data-aided, complex-valued, with cross-call state for
-  chunked streams. It isn't yet wired into the π/4-DQPSK
-  receivers (which still use naive decimation); the follow-up
-  PR threads it into the `MatchedFilter → clock recovery →
-  Decode` pipeline so noisier on-air captures lock.
+- **Symbol-time clock recovery on complex IQ.** The Gardner
+  timing-recovery primitive in `internal/dsp/sync/gardner.go`
+  is now threaded into both the **P25 Phase 2** and **TETRA**
+  receivers via a per-receiver `ClockMode` opt-in
+  (`ClockNaive` default preserves the pre-Gardner behaviour for
+  existing tests; `ClockGardner` routes the matched-filter
+  output through the Gardner loop). Noisier on-air captures
+  whose symbol clock isn't aligned with the SDR sample clock
+  should lock cleanly under `ClockGardner`. The connector
+  configuration for picking the mode at runtime is the
+  follow-up.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -167,6 +170,21 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Gardner clock recovery threaded into the P25 Phase 2 +
+  TETRA receivers.** Each π/4-DQPSK receiver gains an
+  `Options.ClockMode` (`ClockNaive` default, `ClockGardner`
+  opt-in) that swaps the naive every-sps-th-sample decimation
+  for the `sync.Gardner` timing-recovery loop landed in PR
+  #128. The Gardner loop manages its own cross-call tail
+  state, so chunked streams converge once rather than per
+  chunk; `Reset()` clears the loop state alongside the rest
+  of the receiver. The existing test fixtures (which assume
+  fixed sample alignment) keep passing under the default
+  `ClockNaive`. New tests confirm the Gardner path produces
+  valid in-range dibits, the loop is constructed only when
+  requested, and `Reset()` restarts the dibit-base counter.
+  The connector configuration plumbing for picking the mode
+  at runtime is the documented follow-up.
 - **MPT 1327 `SetBCHMode(BCHOn)` opt-in.** Wires the
   `BCHEncodeMPT1327` / `BCHDecodeMPT1327` framing primitive
   into the MPT 1327 `ControlChannel.Process` adapter. When on,
