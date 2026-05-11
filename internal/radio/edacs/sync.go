@@ -1,5 +1,16 @@
 package edacs
 
+// BitSink consumes the raw stream of bits an EDACS receiver decodes
+// from IQ. baseIdx is the absolute bit index of bits[0] across the
+// stream lifetime — monotonically non-decreasing across calls, and
+// reset to 0 by Receiver.Reset so a retune produces a fresh
+// baseline. EDACS is bit-oriented (2-level GFSK at 9600 baud); the
+// other 4-level trunked protocols use a DibitSink instead. Wire
+// this into a future ControlChannel.Process adapter (sync detect
+// → 40-bit CCW slice → CCWFromBits → Ingest) so the connector can
+// drive the EDACS CC state machine on live IQ.
+type BitSink func(bits []byte, baseIdx int)
+
 // SyncWord is the 24-bit sync sequence prefacing each EDACS Control
 // Channel Word. Stored as MSB-first bits to mesh with the rest of the
 // radio stack's framing layer.
