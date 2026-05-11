@@ -55,7 +55,20 @@ type ControlChannel struct {
 	// activeGroup tracks the group currently announced as active so
 	// repeated grant frames during one call don't republish a new
 	// grant on every status word.
-	activeGroup uint16
+	activeGroup      uint16
+	strictValidation bool
+}
+
+// SetStrictValidation toggles the strict frame-validity filter on the
+// Ingest path. When enabled, Status words whose fixed-range fields
+// (Channel 1..20, Home 1..20) fall outside the documented set are
+// silently dropped at Ingest time. The Process adapter already
+// filters at the framing layer; strict-mode tightens it further so
+// frames from a misaligned-but-passing sync window still drop out.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
 }
 
 // Options configure a ControlChannel.
@@ -97,6 +110,12 @@ func New(opts Options) *ControlChannel {
 // arrive from an upstream sub-audible 300-baud demod; tests publish
 // status words directly.
 func (c *ControlChannel) Ingest(s Status) {
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !s.IsWellFormed() {
+		return
+	}
 	if !s.Sync {
 		// Malformed frame; drop.
 		return

@@ -32,8 +32,21 @@ type ControlChannel struct {
 	// first Process call.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
+	mu               sync.Mutex
+	locked           bool
+	strictValidation bool
+}
+
+// SetStrictValidation toggles the strict frame-validity filter on the
+// Ingest path. When enabled, MAC PDUs whose 8-bit Opcode is not in
+// the documented TIA-102.AABF / BBAB set are silently dropped at
+// Ingest time. The Process adapter already filters at the framing
+// layer; strict-mode tightens it further so PDUs from a
+// misaligned-but-passing window still drop out.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
 }
 
 // Options configure a ControlChannel.
@@ -68,6 +81,12 @@ func New(opts Options) *ControlChannel {
 // captures arrive from an upstream H-DQPSK demod + TDMA superframe
 // sync + Trellis FEC; tests publish PDUs directly.
 func (c *ControlChannel) Ingest(p MACPDU) {
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !p.Opcode.IsKnown() {
+		return
+	}
 	if p.IsIdle() {
 		return
 	}

@@ -36,9 +36,22 @@ type ControlChannel struct {
 	// don't pay the construction cost.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu               sync.Mutex
+	locked           bool
+	last             LockState
+	strictValidation bool
+}
+
+// SetStrictValidation toggles the strict frame-validity filter on the
+// Ingest path. When enabled, CSBKs whose 5-bit MessageType is not in
+// the documented ETSI TS 102 658 §6.5.2 set are silently dropped at
+// Ingest time. The Process adapter already filters at the framing
+// layer; strict-mode tightens it further so PDUs from a
+// misaligned-but-passing window still drop out.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
 }
 
 // Options configure a ControlChannel.
@@ -75,6 +88,12 @@ func New(opts Options) *ControlChannel {
 // captures arrive via an upstream 4FSK demod + FEC; tests publish
 // CSBKs directly.
 func (c *ControlChannel) Ingest(b CSBK) {
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !b.Type.IsKnown() {
+		return
+	}
 	if b.IsIdle() {
 		return
 	}

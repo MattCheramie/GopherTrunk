@@ -125,3 +125,21 @@ func StatusBits(s Status) []byte {
 // on this repeater. By convention LTR sets the Group ("F") bit to 1
 // while a group is transmitting and the GroupID is non-zero.
 func (s Status) IsActive() bool { return s.Group && s.GroupID != 0 }
+
+// IsWellFormed reports whether the status word's fixed-range fields
+// look like a legitimate LTR frame rather than noise that happened to
+// pass the sync test. LTR channels are numbered 1..20 and the home
+// repeater identifier is 1..20; either field being zero means the
+// frame was almost certainly bit-garbage.
+func (s Status) IsWellFormed() bool {
+	if !s.Sync {
+		return false
+	}
+	if s.Channel == 0 || s.Channel > 20 {
+		return false
+	}
+	if s.Home == 0 || s.Home > 20 {
+		return false
+	}
+	return true
+}

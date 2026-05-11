@@ -176,3 +176,30 @@ func (p PDU) IsIdle() bool {
 	}
 	return false
 }
+
+// IsKnown reports whether the PDU's (Discriminator, Type) pair is
+// one of the documented ETSI EN 300 392-2 values the state machine
+// recognises. Used by SetStrictValidation to drop PDUs whose 4-bit
+// type field falls in the unallocated range for the sub-protocol
+// the Discriminator selects.
+func (p PDU) IsKnown() bool {
+	t := PDUType(p.Type)
+	if p.IsCMCE() {
+		switch t {
+		case CMCEDSetup, CMCEDConnect, CMCEDRelease, CMCEDTxCeased,
+			CMCEDTxGranted, CMCEDInfo, CMCEDCallProceeding:
+			return true
+		}
+		return false
+	}
+	if p.IsMLE() {
+		switch t {
+		case MLESystemInfo:
+			return true
+		}
+		return false
+	}
+	// MM and SDS sub-protocols don't carry trunking-relevant grants;
+	// strict mode drops them entirely.
+	return false
+}
