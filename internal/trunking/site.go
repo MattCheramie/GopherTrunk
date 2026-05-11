@@ -14,9 +14,10 @@ type Protocol uint8
 
 const (
 	ProtocolUnknown Protocol = iota
-	ProtocolP25     // P25 Phase 1 / Phase 2
-	ProtocolDMR     // DMR Tier II / III
-	ProtocolNXDN    // NXDN
+	ProtocolP25              // P25 Phase 1 / Phase 2
+	ProtocolDMR              // DMR Tier II / III
+	ProtocolNXDN             // NXDN
+	ProtocolDPMR             // dPMR Mode 3 (digital PMR446 trunking)
 )
 
 func (p Protocol) String() string {
@@ -27,12 +28,15 @@ func (p Protocol) String() string {
 		return "dmr"
 	case ProtocolNXDN:
 		return "nxdn"
+	case ProtocolDPMR:
+		return "dpmr"
 	default:
 		return "unknown"
 	}
 }
 
-// ParseProtocol maps a string ("p25", "dmr", "nxdn") to a Protocol value.
+// ParseProtocol maps a string ("p25", "dmr", "nxdn", "dpmr") to a
+// Protocol value.
 func ParseProtocol(s string) (Protocol, error) {
 	switch strings.ToLower(s) {
 	case "p25":
@@ -41,6 +45,8 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolDMR, nil
 	case "nxdn":
 		return ProtocolNXDN, nil
+	case "dpmr":
+		return ProtocolDPMR, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q", s)
 	}
@@ -63,7 +69,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|dmr|nxdn")
+		return errors.New("trunking: protocol must be p25|dmr|nxdn|dpmr")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")

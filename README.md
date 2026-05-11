@@ -56,7 +56,7 @@ expose their state through `/api/v1/scanner` and the TUI cockpit
 panel. The honest remaining gaps:
 
 - **Per-protocol `ControlChannel.Process(stream, baseIdx)` adapters
-  for everything beyond P25 Phase 1 and YSF.** The
+  for the 8 protocols beyond P25 Phase 1, YSF, and dPMR.** The
   `internal/scanner/ccdecoder` package is wired into
   `cmd/gophertrunk/daemon.go` — when a control SDR + trunked system
   are configured, the daemon constructs a `ccdecoder.Decoder`
@@ -67,15 +67,16 @@ panel. The honest remaining gaps:
   the active pipeline whose CC state machine publishes `cc.locked`
   / `grant` events back on the bus — the trigger that lights up
   every downstream surface (engine, recorder, call log, API, TUI).
-  Live trunked reception works today for P25 Phase 1 and YSF
-  (both have IQ → symbol → CC state machine chains shipping
-  end-to-end). DMR / NXDN / dPMR / EDACS / MPT 1327 / LTR /
-  Motorola / P25 P2 / TETRA each have IQ → symbol receivers
-  shipping but their CC state machines still consume pre-parsed
-  PDUs; adding the `Process(stream, baseIdx)` adapter on each
-  (sync detect → frame slice → existing parser → Ingest) lights
-  up the rest. The adapter shape is ~30 lines per protocol and
-  documented per-receiver in the relevant PR descriptions.
+  Live trunked reception works today for P25 Phase 1, YSF, and
+  dPMR Mode 3 (all three have IQ → symbol → CC state machine
+  chains shipping end-to-end). DMR / NXDN / EDACS / MPT 1327 /
+  LTR / Motorola / P25 P2 / TETRA each have IQ → symbol
+  receivers shipping but their CC state machines still consume
+  pre-parsed PDUs; adding the `Process(stream, baseIdx)` adapter
+  on each (sync detect → frame slice → existing parser → Ingest)
+  lights up the rest. The adapter shape is ~30–50 lines per
+  protocol and documented per-receiver in the relevant PR
+  descriptions.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -142,6 +143,15 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **dPMR Mode 3 `ControlChannel.Process(stream, baseIdx)` adapter +
+  ccdecoder factory.** Closes the IQ → CC loop for dPMR: the
+  receiver's `DibitSink` forwards into `dpmr.ControlChannel.Process`,
+  which buffers across calls + detects the 24-dibit FS3 sync +
+  slices the 40-dibit / 80-bit CSBK + parses it via `CSBKFromBits`
+  + dispatches via the existing `Ingest`. `trunking.Protocol` gains
+  `ProtocolDPMR` (config string `"dpmr"`) so the ccdecoder factory
+  map can resolve it. First of the per-protocol adapter follow-ups
+  from the connector PR.
 - **Daemon wiring for the IQ → CC decoder connector**
   (`cmd/gophertrunk/daemon.go`). When the daemon's pool has a
   control-role SDR + at least one trunked system configured, it

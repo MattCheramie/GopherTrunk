@@ -4,6 +4,8 @@ import (
 	"log/slog"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
+	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
@@ -58,7 +60,8 @@ type PipelineFactory func(PipelineOptions) (ProtocolPipeline, error)
 // detect sync + frame + dispatch into the existing parsers is a
 // follow-up.
 var factories = map[trunking.Protocol]PipelineFactory{
-	trunking.ProtocolP25: newP25Phase1Pipeline,
+	trunking.ProtocolP25:  newP25Phase1Pipeline,
+	trunking.ProtocolDPMR: newDPMRPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -123,3 +126,34 @@ type ysfPipeline struct {
 func (p *ysfPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *ysfPipeline) Reset()                  { p.rx.Reset() }
 func (p *ysfPipeline) Close() error            { return nil }
+
+// newDPMRPipeline wires internal/radio/dpmr/receiver into
+// dpmr.ControlChannel.Process. The receiver's DibitSink forwards
+// dibits + baseIdx straight into the state machine's Process
+// method (sync detect → 80-bit CSBK slice → CSBKFromBits →
+// Ingest), which publishes events.KindCCLocked +
+// events.KindGrant on the bus.
+func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := dpmr.New(dpmr.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := dpmrrx.New(dpmrrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &dpmrPipeline{rx: rx, cc: cc}, nil
+}
+
+type dpmrPipeline struct {
+	rx *dpmrrx.Receiver
+	cc *dpmr.ControlChannel
+}
+
+func (p *dpmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *dpmrPipeline) Reset()                  { p.rx.Reset() }
+func (p *dpmrPipeline) Close() error            { return nil }
