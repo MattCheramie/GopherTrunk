@@ -37,9 +37,22 @@ type ControlChannel struct {
 	// first Process call.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu               sync.Mutex
+	locked           bool
+	last             LockState
+	strictValidation bool
+}
+
+// SetStrictValidation toggles the strict frame-validity filter on the
+// Ingest path. When enabled, PDUs whose (Discriminator, Type) pair is
+// not in the documented ETSI EN 300 392-2 set are silently dropped at
+// Ingest time. The Process adapter already filters at the framing
+// layer; strict-mode tightens it further so PDUs from a
+// misaligned-but-passing window still drop out.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
 }
 
 // Options configure a ControlChannel.
@@ -76,6 +89,12 @@ func New(opts Options) *ControlChannel {
 // captures arrive via an upstream π/4-DQPSK demod + RCPC/RM FEC;
 // tests publish PDUs directly.
 func (c *ControlChannel) Ingest(p PDU) {
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !p.IsKnown() {
+		return
+	}
 	if p.IsIdle() {
 		return
 	}

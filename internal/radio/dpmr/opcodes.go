@@ -105,3 +105,18 @@ func (c CSBK) IsIdle() bool {
 	}
 	return false
 }
+
+// IsKnown reports whether the MessageType is one of the documented
+// ETSI TS 102 658 §6.5.2 values the state machine recognises. Used
+// by SetStrictValidation to drop CSBKs whose 5-bit Message Type field
+// falls in the unallocated range.
+func (m MessageType) IsKnown() bool {
+	switch m {
+	case MsgRegistrationRequest, MsgRegistrationResponse,
+		MsgVoiceServiceAllocation, MsgIndividualVoiceAllocation,
+		MsgDataServiceAllocation, MsgServiceRequest,
+		MsgStandingServiceStatus, MsgRelease, MsgIdle:
+		return true
+	}
+	return false
+}

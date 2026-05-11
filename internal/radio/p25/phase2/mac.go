@@ -140,3 +140,18 @@ func (p MACPDU) IsIdle() bool {
 	}
 	return false
 }
+
+// IsKnown reports whether the Opcode is one of the documented
+// TIA-102.AABF / BBAB MAC PDU opcodes the state machine recognises.
+// Used by SetStrictValidation to drop PDUs whose 8-bit opcode field
+// falls outside the recognised set.
+func (o Opcode) IsKnown() bool {
+	switch o {
+	case OpMACPTT, OpMACEnd, OpMACIdle, OpMACHangtime, OpMACActive,
+		OpGroupVoiceChannelGrant, OpGroupVoiceChannelGrantUpdate,
+		OpGroupVoiceChannelUserExt, OpUnitToUnitVoiceChannelGrant,
+		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:
+		return true
+	}
+	return false
+}

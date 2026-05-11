@@ -149,6 +149,26 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Cross-protocol strict-validation FEC bundle: LTR + dPMR +
+  TETRA + P25 Phase 2 `SetStrictValidation(bool)`.** Extends
+  the soft-FEC noise filter from the previous PR across the
+  remaining four protocols, completing the family of seven.
+  Same pattern as the EDACS / Motorola / MPT 1327 bundle: each
+  Ingest path now drops frames whose opcode / type / range
+  fields fall outside the documented set before the state
+  machine acts on them. dPMR rejects CSBKs whose 5-bit
+  MessageType is unallocated (per ETSI TS 102 658 §6.5.2);
+  TETRA rejects PDUs whose (Discriminator, Type) pair isn't in
+  the documented CMCE / MLE set (also drops MM and SDS sub-
+  protocols, which the state machine doesn't surface for
+  trunking); P25 Phase 2 rejects MAC PDUs whose 8-bit Opcode
+  is outside the TIA-102.AABF / BBAB table; LTR rejects Status
+  words whose Channel or Home field falls outside the
+  documented 1..20 range. Each protocol also gains an
+  `IsKnown()` / `IsWellFormed()` method on its enum / status
+  type for callers that want to apply the same allow-list
+  themselves. Strict validation is now available on every
+  protocol with an enumerable opcode space.
 - **Cross-protocol strict-validation FEC bundle: EDACS +
   Motorola + MPT 1327 `SetStrictValidation(bool)`.** Each
   adapter gains a soft-FEC noise-reduction mode that rejects
