@@ -22,7 +22,7 @@ hardware are interchangeable.
 
 ┌──────────────────────────────────────────────────────────────┐
 │  internal/sdr                                                │
-│    Driver registry → rtlsdr (CGO), mock (file replay)        │
+│    Driver registry → rtlsdr (pure-Go), mock (file replay)    │
 │    Pool: enumerates, opens, role-assigns, supervises         │
 └──────────────────────────────────────────────────────────────┘
                               │
@@ -64,16 +64,17 @@ hardware are interchangeable.
 
 ## Driver registry
 
-`internal/sdr` maintains a process-global registry. Each backend (CGO
-librtlsdr, file-replay mock, future HackRF/Airspy) calls `sdr.Register` from
-its `init()` so the binary's import set chooses what hardware it can talk
-to. `cmd/gophertrunk` blank-imports the drivers it ships with.
+`internal/sdr` maintains a process-global registry. Each backend
+(pure-Go RTL-SDR under `internal/sdr/rtlsdr/purego`, file-replay
+mock, future HackRF/Airspy) calls `sdr.Register` from its `init()`
+so the binary's import set chooses what hardware it can talk to.
+`cmd/gophertrunk` blank-imports the drivers it ships with.
 
 ## Build tags
 
-- *(default)* — links librtlsdr; registers the pure-Go IMBE
-  (`internal/voice/imbe`) and AMBE+2 (`internal/voice/ambe2`)
-  vocoders. No CGO dependencies for voice decoding.
+- *(default)* — fully pure-Go (`CGO_ENABLED=0`). Pure-Go RTL-SDR
+  driver, pure-Go IMBE (`internal/voice/imbe`), and pure-Go
+  AMBE+2 (`internal/voice/ambe2`).
 - `-tags integration` — enables the wired end-to-end daemon test
   under `cmd/gophertrunk` (no real SDR; synthetic call on the bus).
 - `-tags dvsi` — *planned* — links a DVSI USB-3000 / AMBE-3003

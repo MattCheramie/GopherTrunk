@@ -4,10 +4,10 @@ name: Release
 # when the workflow is triggered manually from the Actions tab) and
 # uploads them to a GitHub Release.
 #
-# The Windows job runs on a Windows runner so cgo can link against
-# librtlsdr's Windows port. MSYS2 supplies the toolchain + headers +
-# DLLs; Inno Setup turns the bundled directory into a single setup.exe
-# the user can run on Windows 11.
+# Pure-Go since PR-09: every build runs CGO_ENABLED=0. The Windows
+# job no longer needs MSYS2 / mingw / DLL bundling; the Linux job no
+# longer needs librtlsdr-dev. Inno Setup turns the bundled directory
+# into a single setup.exe the user can run on Windows 11.
 #
 # Outputs in the GitHub Release:
 #
@@ -33,9 +33,6 @@ jobs:
   windows:
     name: Build Windows installer
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,32 +46,15 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          # Inherit the runner's Windows PATH so the Go binary
-          # placed by actions/setup-go is visible inside the msys2
-          # shell (default `minimal` strips it).
-          path-type: inherit
-          install: >-
-            git
-            zip
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-rtl-sdr
-            mingw-w64-x86_64-libusb
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
       - name: Build gophertrunk.exe
+        shell: bash
         env:
-          CGO_ENABLED: "1"
-          CC: x86_64-w64-mingw32-gcc
+          CGO_ENABLED: "0"
         run: |
-          export PATH="/mingw64/bin:$PATH"
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist/staging
           go build \
@@ -83,36 +63,23 @@ jobs:
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
-      - name: Bundle DLLs and docs
+      - name: Stage docs
+        shell: bash
         run: |
           set -eu
           STAGE=dist/staging
-          # Runtime DLLs the cgo binding pulls in. Inside the MSYS2
-          # MINGW64 shell, /mingw64/bin/ is the canonical location
-          # regardless of where MSYS2 actually got installed on disk.
-          for dll in \
-            librtlsdr.dll \
-            libusb-1.0.dll \
-            libwinpthread-1.dll \
-            libgcc_s_seh-1.dll
-          do
-            if [ -f "/mingw64/bin/$dll" ]; then
-              cp "/mingw64/bin/$dll" "$STAGE/"
-            else
-              echo "warning: $dll not found in MINGW64 bin"
-            fi
-          done
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
 
       - name: Build portable ZIP
+        shell: bash
         run: |
           set -eu
           VERSION="${{ steps.version.outputs.version }}"
           NAME="gophertrunk-${VERSION}-windows-amd64"
           mkdir -p "dist/${NAME}"
           cp -r dist/staging/. "dist/${NAME}/"
-          (cd dist && zip -r "${NAME}.zip" "${NAME}")
+          (cd dist && 7z a "${NAME}.zip" "${NAME}")
 
       - name: Build Inno Setup installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
@@ -137,9 +104,6 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Install librtlsdr
-        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev libusb-1.0-0-dev
-
       - name: Compute version
         id: version
         run: |
@@ -150,6 +114,8 @@ jobs:
           fi
 
       - name: Build gophertrunk
+        env:
+          CGO_ENABLED: "0"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           NAME="gophertrunk-${VERSION}-linux-amd64"
@@ -205,8 +171,8 @@ jobs:
           body: |
             ## Install
 
-            **Windows 11:** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu and bundles the librtlsdr / libusb runtime DLLs. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+            **Windows 11:** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
 
-            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Requires `librtlsdr` + `libusb-1.0` from your package manager.
+            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Single static binary; no system dependencies needed.
 
             All artifacts are SHA-256-checksummed in `SHA256SUMS`.

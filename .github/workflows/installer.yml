@@ -1,15 +1,11 @@
 name: Windows installer (PR)
 
 # Builds the Windows installer (.exe) on every pull request so
-# regressions in the cgo build, the bundled DLL set, or the Inno
+# regressions in the Windows build, the staged file set, or the Inno
 # Setup script surface before merge — not at the next release tag.
 #
-# This intentionally mirrors the windows job in release.yml rather
-# than sharing one. The release job is tightly coupled to tag-shaped
-# version strings and to the artifact layout the Release page
-# expects; PR builds use a synthetic version and only upload the
-# installer .exe (not the portable ZIP), so duplication is cheaper
-# than the abstraction.
+# Pure-Go since PR-09: no MSYS2 / mingw / DLL bundling. Just
+# `actions/setup-go` + `CGO_ENABLED=0 go build` + Inno Setup.
 #
 # Concurrency cancels any in-flight run for the same PR when a new
 # commit is pushed, so quick rebases don't burn idle Windows runner
@@ -30,9 +26,6 @@ jobs:
   installer:
     name: Build Windows installer
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,32 +44,15 @@ jobs:
             echo "version=manual-${SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          # Inherit the runner's Windows PATH so the Go binary
-          # placed by actions/setup-go is visible inside the msys2
-          # shell (default `minimal` strips it and `go build` fails
-          # with "command not found").
-          path-type: inherit
-          install: >-
-            git
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-rtl-sdr
-            mingw-w64-x86_64-libusb
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
       - name: Build gophertrunk.exe
+        shell: bash
         env:
-          CGO_ENABLED: "1"
-          CC: x86_64-w64-mingw32-gcc
+          CGO_ENABLED: "0"
         run: |
-          export PATH="/mingw64/bin:$PATH"
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist/staging
           go build \
@@ -85,22 +61,11 @@ jobs:
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
-      - name: Bundle DLLs and docs
+      - name: Stage docs
+        shell: bash
         run: |
           set -eu
           STAGE=dist/staging
-          for dll in \
-            librtlsdr.dll \
-            libusb-1.0.dll \
-            libwinpthread-1.dll \
-            libgcc_s_seh-1.dll
-          do
-            if [ -f "/mingw64/bin/$dll" ]; then
-              cp "/mingw64/bin/$dll" "$STAGE/"
-            else
-              echo "warning: $dll not found in MINGW64 bin"
-            fi
-          done
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
 

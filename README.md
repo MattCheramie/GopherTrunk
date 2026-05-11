@@ -14,7 +14,7 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 
 | Area              | Component                                                  |
 | ----------------- | ---------------------------------------------------------- |
-| Hardware          | Pure-Go RTL-SDR driver (USBDEVFS / WinUSB transport + RTL2832U register layer + R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580 tuner drivers; legacy CGO `librtlsdr` path still available via `-tags rtlsdr_cgo` for one release of safety-net coexistence), multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
+| Hardware          | Pure-Go RTL-SDR driver (USBDEVFS / WinUSB transport + RTL2832U register layer + R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580 tuner drivers; `CGO_ENABLED=0` everywhere, no `librtlsdr` / `libusb` build dependency), multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
 | DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, IQ + audio AGC (attack/release envelope follower for voice), L/M polyphase resampler (complex IQ + real audio), FM / C4FM / H-DQPSK demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
 | FEC primitives    | CRC-CCITT/FALSE + CRC-CCITT/XMODEM (callable init), CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8) + non-extended Golay(23,12,7) (P25 IMBE), BCH(63,16,11), BPTC(196,96), Reed-Solomon(12,9,4) over GF(2^8) with DMR Voice LC Header / Terminator / Embedded LC seeds, 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (shared by NXDN SACCH + planned YSF FICH) with depuncture-marker support |
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
@@ -280,11 +280,14 @@ to its own package and lands independently.
   lazy-loaded DLL, macOS IOKit via `purego`) under a pure-Go
   RTL2832U register / I2C layer and per-tuner drivers (R820T,
   R820T2, R828D, E4000, FC0012, FC0013, FC2580). The
-  `sdr.Device` interface and IQ-format conversion at
-  `internal/sdr/rtlsdr/rtlsdr_cgo.go:225-240` are preserved
-  bit-identically so the DSP chain is untouched. Status: PR-01
-  through PR-08 landed; the pure-Go driver is now the default
-  `rtlsdr` registrant. `internal/sdr/rtlsdr/usb/` exposes the
+  `sdr.Device` interface and the u8-IQ → complex64 conversion
+  math (subtract 127.5 DC bias, divide by 127.5) are preserved
+  bit-identically from the original CGO wrapper so the DSP chain
+  is untouched. Status: PR-01
+  through PR-09 landed; the pure-Go driver is the only RTL-SDR
+  backend the project ships, every `librtlsdr` / `libusb` build
+  dependency has been removed, and `CGO_ENABLED=0` runs through
+  the entire toolchain (Docker, CI, installer). `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
   `MockTransport` for unit tests, and platform backends across
   Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
@@ -354,21 +357,19 @@ to its own package and lands independently.
   3.57 MHz IF on the demod. `Device.SetCenterFreq` /
   `SetSampleRate` / `SetGain` (manual ladder + AGC) /
   `SetPPM` / `SetBiasTee` dispatch to the right layer with
-  bit-identical math to `rtlsdr_cgo.go:225-240`; `StreamIQ`
-  preserves the 32 × 16 KiB ring + 8-deep buffered channel +
-  drop-on-overrun semantics. As of PR-08 the pure-Go driver
-  registers under the canonical name `rtlsdr` in every build
-  (the `rtlsdr_purego` opt-in flag from PR-06 is gone). The
-  legacy CGO librtlsdr backend is now opt-in via `-tags
-  rtlsdr_cgo` (requires `CGO_ENABLED=1` plus `librtlsdr-dev` on
-  the host) and registers as `rtlsdr-cgo` alongside the pure-Go
-  entry — one release of safety-net coexistence so operators
-  who hit a regression can fall back without rolling the
-  binary. PRs 09-10 land the deletion of `rtlsdr_cgo.go` +
-  every `librtlsdr` apt / MSYS2 / DLL-bundling step in
-  `Dockerfile`, `.github/workflows/*.yml`,
-  `installer/gophertrunk.iss`, and the install docs, and the
-  macOS IOKit transport itself.
+  bit-identical IQ-conversion math to the original CGO wrapper;
+  `StreamIQ` preserves the 32 × 16 KiB ring + 8-deep buffered
+  channel + drop-on-overrun semantics. As of PR-09 the
+  pure-Go driver is the only RTL-SDR backend the project
+  ships — `rtlsdr_cgo.go` is gone, and every `librtlsdr` /
+  `libusb` apt install in `Dockerfile`, the MSYS2 + DLL-bundling
+  steps in `.github/workflows/*.yml`, and the DLL `Source` lines
+  in `installer/windows/gophertrunk.iss` have all been removed.
+  Default builds run `CGO_ENABLED=0` end-to-end. PR-10 lands
+  the macOS IOKit transport itself
+  (see [issue #82](https://github.com/MattCheramie/GopherTrunk/issues/82));
+  until then macOS binaries build cleanly but refuse dongle open
+  with a clear error pointing at the tracking issue.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
   K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
@@ -383,7 +384,7 @@ to its own package and lands independently.
 ## Tech stack
 
 - **Language:** Go 1.24+
-- **Hardware:** Pure-Go RTL-SDR driver — USBDEVFS / WinUSB transport, RTL2832U register layer, and per-chip tuner drivers (R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580). The legacy CGO `librtlsdr` + `libusb-1.0` binding is still selectable for one release via `-tags rtlsdr_cgo`.
+- **Hardware:** Pure-Go RTL-SDR driver — USBDEVFS / WinUSB transport, RTL2832U register layer, and per-chip tuner drivers (R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580). `CGO_ENABLED=0`; no `librtlsdr` / `libusb` build dependency.
 - **DSP:** `gonum/dsp/fourier` for FFT, custom polyphase channelizer,
   filters, and demodulators
 - **Storage:** `modernc.org/sqlite` (pure Go)
@@ -400,9 +401,9 @@ Each tagged release publishes installers / archives on the
 
 | Platform   | File                                                   | What it is                                              |
 | ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
-| Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup, bundles librtlsdr DLLs) |
-| Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same files, no installer                  |
-| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed binary + sample config                         |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup) — single static binary  |
+| Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same binary, no installer                 |
+| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed static binary + sample config                  |
 
 Windows users: after running the installer, follow
 [`docs/install-windows.md`](docs/install-windows.md) to swap the
@@ -415,12 +416,11 @@ until that's done. The installer's last page links there too.
 
 ### Prerequisites
 
-```sh
-sudo apt-get install librtlsdr-dev libusb-1.0-0-dev
-```
+Just Go 1.24+. The pure-Go RTL-SDR driver doesn't need
+`librtlsdr` / `libusb` / a C toolchain on the build host.
 
-See [`docs/hardware.md`](docs/hardware.md) for `udev` rules and DVB
-blacklisting on Linux.
+See [`docs/hardware.md`](docs/hardware.md) for runtime `udev` rules
+and DVB-driver blacklisting on Linux.
 
 ### Build, test, run
 
@@ -463,11 +463,11 @@ tests.
 ```
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
 internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
-internal/sdr/           Driver interface, pool, CGO librtlsdr (→ pure-Go), mock
+internal/sdr/           Driver interface, pool, mock
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
 internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D + E4000 + FC0012 + FC0013 + FC2580 tuner drivers
-internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; default "rtlsdr" registrant (CGO fallback via -tags rtlsdr_cgo as "rtlsdr-cgo")
+internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; canonical "rtlsdr" registrant
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
 internal/trunking/      System, talkgroup DB, priority, engine, CC hunter

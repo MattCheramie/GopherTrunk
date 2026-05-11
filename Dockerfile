@@ -1,20 +1,14 @@
 # GopherTrunk daemon — multi-stage Docker build.
 #
-#   Stage 1 (builder)  links against librtlsdr / libusb-1.0 to compile
-#                      the CGO RTL-SDR binding.
-#   Stage 2 (runtime)  carries only the runtime shared libraries plus
-#                      the daemon binary.
+#   Stage 1 (builder)  pure-Go build (CGO_ENABLED=0). No C toolchain
+#                      or system libraries required.
+#   Stage 2 (runtime)  carries only the daemon binary on a slim base.
 #
 # USB pass-through is the operator's responsibility; see
 # docs/hardening.md for the udev + docker run / compose recipe.
 
 FROM golang:1.24-bookworm AS builder
 WORKDIR /src
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        librtlsdr-dev libusb-1.0-0-dev pkg-config ca-certificates \
- && rm -rf /var/lib/apt/lists/*
 
 # Cache deps before copying the rest of the source.
 COPY go.mod go.sum ./
@@ -23,6 +17,7 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=docker
+ENV CGO_ENABLED=0
 RUN go build -trimpath \
         -ldflags "-s -w -X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
         -o /out/gophertrunk ./cmd/gophertrunk
@@ -31,8 +26,7 @@ RUN go build -trimpath \
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        librtlsdr2 libusb-1.0-0 ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Non-root user. /dev/bus/usb access is configured at runtime via the
