@@ -1,16 +1,21 @@
 # GopherTrunk Architecture
 
 GopherTrunk is a headless, low-latency trunking-radio engine that manages a
-pool of RTL-SDR dongles and decodes P25, DMR, and NXDN trunked systems. The
-engine is structured as a set of pipelined goroutines connected by typed
-channels, with a registry-based driver model so that mock IQ files and real
-hardware are interchangeable.
+pool of RTL-SDR dongles and decodes every major trunked-radio family (P25
+Phase 1 / Phase 2, DMR Tier II / III, NXDN, Motorola Type II, EDACS /
+GE-Marc, LTR, MPT 1327, dPMR Mode 3, TETRA TMO) plus the D-STAR + Yaesu
+System Fusion amateur modes. The engine is structured as a set of pipelined
+goroutines connected by typed channels, with a registry-based driver model
+so that mock IQ files and real hardware are interchangeable. A multi-system
+scanner subsystem and an analog FM conventional scanner sit on top so the
+daemon behaves like a high-end digital-trunking police scanner end-to-end.
 
 ## Layered overview
 
 ```
               ┌────────────────────────────────────────────┐
               │  cmd/gophertrunk  ── daemon + sdr list CLI │
+              │                  ── TUI cockpit (10 panels)│
               └───────────────┬────────────────────────────┘
                               │
        ┌──────────────────────┼──────────────────────────┐
@@ -23,30 +28,50 @@ hardware are interchangeable.
 ┌──────────────────────────────────────────────────────────────┐
 │  internal/sdr                                                │
 │    Driver registry → rtlsdr (pure-Go), mock (file replay)    │
-│    Pool: enumerates, opens, role-assigns, supervises         │
+│    Pool: enumerates, opens, role-assigns, supervises;        │
+│    publishes sdr.attached/sdr.detached events with per-      │
+│    device SDRStatus payloads                                 │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ chan []complex64
 ┌──────────────────────────────────────────────────────────────┐
 │  internal/dsp           filters · channelizer · demod · sync │
+│                         · equalizer · diversity · fft        │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ symbol streams
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/radio         framing · p25 · dmr · nxdn           │
+│  internal/radio         framing · p25/{phase1,phase2} ·      │
+│                         dmr/{tier2,tier3} · nxdn · ysf ·     │
+│                         dstar · dpmr · edacs · ltr ·         │
+│                         motorola · mpt1327 · tetra           │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ control-channel events
 ┌──────────────────────────────────────────────────────────────┐
-│  internal/trunking      engine · grant · priority · site     │
+│  internal/trunking      engine · grant · priority · site ·   │
+│                         ScanMode · HandleSyntheticCall ·     │
+│                         cc cache · Hunter primitive          │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  internal/scanner       cchunt/ (multi-system CC supervisor) │
+│                         conventional/ (FM scan list w/ IQ-   │
+│                         power squelch + hop-on-silence)      │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼ events.Bus
 ┌──────────────────────────────────────────────────────────────┐
 │  internal/voice         recorder · composer · vocoder plugin │
-│  internal/api           gRPC server · HTTP/SSE · WebSocket   │
+│                         · imbe (pure-Go) · ambe2 (pure-Go) · │
+│                         mbe (shared MBE synthesis) · toneout │
+│  internal/api           HTTP/SSE/WebSocket + gRPC servers    │
+│                         (mutations gated by allow_mutations) │
 │  internal/storage       SQLite call log · retention sweeper  │
 │  internal/metrics       Prometheus exporter                  │
+│  internal/tui           bubbletea cockpit (10 panels) over   │
+│                         REST + SSE                           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
