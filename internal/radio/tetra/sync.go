@@ -1,5 +1,16 @@
 package tetra
 
+// DibitSink consumes the raw stream of dibits a TETRA receiver
+// decodes from IQ. baseIdx is the absolute dibit index of dibits[0]
+// across the stream lifetime — monotonically non-decreasing across
+// calls, and reset to 0 by Receiver.Reset so a retune produces a
+// fresh baseline. TETRA is dibit-oriented (π/4-DQPSK, 18000 sym/s,
+// 1 dibit per symbol). Wire this into a future
+// ControlChannel.Process adapter (38-dibit training sync detect →
+// burst slice → channel decode → L3 PDU dispatch) so the connector
+// can drive the TETRA CC state machine on live IQ.
+type DibitSink func(dibits []uint8, baseIdx int)
+
 // TETRA synchronisation burst sync words per ETSI EN 300 392-2 §9.4.
 // The synchronisation training sequences are 38-symbol patterns
 // (76 bits / dibits) used to lock onto the BSCH burst at slot 1 of
