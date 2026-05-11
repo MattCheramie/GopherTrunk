@@ -191,6 +191,34 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA scrambler + (K, a) block-interleaver primitives in
+  framing/.** Closes the remaining framing-layer gap before
+  the full TETRA channel-decode chain can be wired together.
+  - `framing/scramble_tetra.go` — 32-tap LFSR scrambler per
+    ETSI EN 300 392-2 §8.2.5 with connection polynomial
+    `c(x) = 1 + X + X² + X⁴ + X⁵ + X⁷ + X⁸ + X¹⁰ + X¹¹ +
+    X¹² + X¹⁶ + X²² + X²³ + X²⁶ + X³²` (tap mask 0x82608EDB).
+    Seeded by the 30-bit extended colour code (set 0 for
+    BSCH / BSCH-Q per §8.2.5.2). Single XOR is symmetric so
+    `ScrambleTetra` and `DescrambleTetra` are the same
+    operation aliased for call-site readability.
+  - `framing/interleave_tetra.go` — `(K, a)` block
+    interleaver per §8.2.4.1 with the formula
+    `b₄(k) = b₃(i)` where `k = 1 + ((a × i) mod K)`.
+    Per-channel constants (`InterleaveK*`, `InterleaveA*`)
+    cover BSCH (120, 11), SCH/HD/BNCH/STCH (216, 101),
+    SCH/HU (168, 13), SCH/F (432, 103) per §8.3.1.
+  Together with the K=5 R=1/4 RCPC mother code + four
+  puncturing schemes (PR #137) and the existing CRC-16
+  CCITT helper, this completes the framing primitives
+  needed for end-to-end π/4-DQPSK signaling-channel
+  decode. Tests cover symmetric XOR for the scrambler
+  across 4 colour-code values, BSCH initial-state output
+  prediction, sequence-balance entropy sanity, 64 random
+  round-trips, and per-channel interleaver round-trip /
+  permutation / spec-formula checks for all four
+  (K, a) constants. Wiring all the primitives together
+  into `tetra.ControlChannel.Process` is the next PR.
 - **TETRA signaling-channel RCPC + (30,14) RM primitives in
   framing/.** Adds the K=5 R=1/4 16-state convolutional mother
   code and the four puncturing schemes TETRA uses on every
