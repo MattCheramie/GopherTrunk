@@ -71,9 +71,11 @@ panel. The honest remaining gaps:
   Mode 3, NXDN (FSW + LICH only; CAC FEC pending), EDACS /
   GE-Marc (24-bit sync + 40-bit CCW only; interleaved-RS FEC
   pending), Motorola Type II / SmartZone (24-bit sync + 32-bit
-  OSW only; BCH(64,16,11) FEC pending), and LTR (41-bit Status
+  OSW only; BCH(64,16,11) FEC pending), LTR (41-bit Status
   alignment + state-machine dedup only; FCS verification +
-  Manchester decoding pending). DMR / MPT 1327 / P25 P2 / TETRA
+  Manchester decoding pending), and MPT 1327 (38-bit codeword
+  alignment with auto-unlock on unrecognised-codeword runs;
+  64-bit on-air BCH(63,38) FEC pending). DMR / P25 P2 / TETRA
   each have IQ → symbol receivers shipping but their CC state
   machines still consume pre-parsed PDUs; adding the
   `Process(stream, baseIdx)` adapter on each (sync detect →
@@ -146,6 +148,20 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 `ControlChannel.Process(stream, baseIdx)` adapter +
+  ccdecoder factory.** Closes the IQ → CC alignment layer for
+  MPT 1327: the receiver's `BitSink` forwards FFSK bits into
+  `mpt1327.ControlChannel.Process`, which slides a 38-bit window
+  over the stream, commits to the first window that parses as a
+  recognised Address codeword (Aloha / AhoyChan / GoToChan /
+  Ack / Disconnect / Data / Emergency), follows the alignment
+  forward, and auto-unlocks + re-searches after 8 consecutive
+  frames whose codeword fails the recognised-codeword check.
+  `trunking.Protocol` gains `ProtocolMPT1327` (config string
+  `"mpt1327"`). The 64-bit on-air BCH(63,38) FEC + de-
+  interleaving are documented follow-ups; until they land the
+  adapter works on noise-free test fixtures but typically fails
+  to lock on captured MPT 1327 traffic.
 - **LTR `ControlChannel.Process(stream, baseIdx)` adapter +
   ccdecoder factory.** Closes the IQ → CC alignment layer for
   LTR: the receiver's `BitSink` forwards sub-audible bits into

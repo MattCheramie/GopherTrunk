@@ -12,6 +12,8 @@ import (
 	ltrrx "github.com/MattCheramie/GopherTrunk/internal/radio/ltr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	motorolarx "github.com/MattCheramie/GopherTrunk/internal/radio/motorola/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
+	mpt1327rx "github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -74,6 +76,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolEDACS:    newEDACSPipeline,
 	trunking.ProtocolMotorola: newMotorolaPipeline,
 	trunking.ProtocolLTR:      newLTRPipeline,
+	trunking.ProtocolMPT1327:  newMPT1327Pipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -292,3 +295,37 @@ type ltrPipeline struct {
 func (p *ltrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *ltrPipeline) Reset()                  { p.rx.Reset() }
 func (p *ltrPipeline) Close() error            { return nil }
+
+// newMPT1327Pipeline wires internal/radio/mpt1327/receiver into
+// mpt1327.ControlChannel.Process. The receiver's BitSink forwards
+// FFSK bits into the state machine, which slides a 38-bit window
+// over the stream + commits to the first window that parses as a
+// recognised Address codeword + follows the alignment with an
+// auto-unlock on extended runs of unrecognised codewords. The
+// 64-bit on-air codeword's BCH(63,38) FEC + de-interleaving are
+// follow-ups; without them the adapter works on noise-free test
+// fixtures but typically fails on captured MPT 1327 traffic.
+func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := mpt1327.New(mpt1327.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := mpt1327rx.New(mpt1327rx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		BitSink: func(bits []byte, baseIdx int) {
+			cc.Process(bits, baseIdx)
+		},
+	})
+	return &mpt1327Pipeline{rx: rx, cc: cc}, nil
+}
+
+type mpt1327Pipeline struct {
+	rx *mpt1327rx.Receiver
+	cc *mpt1327.ControlChannel
+}
+
+func (p *mpt1327Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *mpt1327Pipeline) Reset()                  { p.rx.Reset() }
+func (p *mpt1327Pipeline) Close() error            { return nil }
