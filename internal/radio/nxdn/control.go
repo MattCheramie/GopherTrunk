@@ -30,6 +30,11 @@ type ControlChannel struct {
 	rate   BaudRate
 	locked bool
 	last   LockState
+
+	// proc is the cross-call dibit / sync state the Process
+	// adapter uses (see process.go). Lazily constructed on the
+	// first Process call.
+	proc *processState
 }
 
 func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32, rate BaudRate) *ControlChannel {

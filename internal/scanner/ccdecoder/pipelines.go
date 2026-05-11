@@ -6,6 +6,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
+	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
@@ -62,6 +64,7 @@ type PipelineFactory func(PipelineOptions) (ProtocolPipeline, error)
 var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolP25:  newP25Phase1Pipeline,
 	trunking.ProtocolDPMR: newDPMRPipeline,
+	trunking.ProtocolNXDN: newNXDNPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -157,3 +160,31 @@ type dpmrPipeline struct {
 func (p *dpmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dpmrPipeline) Reset()                  { p.rx.Reset() }
 func (p *dpmrPipeline) Close() error            { return nil }
+
+// newNXDNPipeline wires internal/radio/nxdn/receiver into
+// nxdn.ControlChannel.Process. The receiver's DibitSink forwards
+// dibits into the state machine, which detects the outbound 8-dibit
+// FSW, parses the LICH from the next 16 wire bits, and pulls the
+// first 44 dibits of the Info field as raw CAC bits. The CAC FEC
+// layer (K=5 ½-rate Viterbi + interleaver + puncture) is a
+// follow-up; until it ships the adapter will sync on FSW + LICH
+// but typically fail the CAC CRC on real on-air signals.
+func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := nxdn.NewControlChannel(opts.Bus, opts.Log, opts.FrequencyHz, nxdn.Rate9600)
+	rx := nxdnrx.New(nxdnrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &nxdnPipeline{rx: rx, cc: cc}, nil
+}
+
+type nxdnPipeline struct {
+	rx *nxdnrx.Receiver
+	cc *nxdn.ControlChannel
+}
+
+func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *nxdnPipeline) Reset()                  { p.rx.Reset() }
+func (p *nxdnPipeline) Close() error            { return nil }
