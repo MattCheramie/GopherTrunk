@@ -76,13 +76,13 @@ The remaining gaps:
   is the next follow-up. The CAC CRC-CCITT-16 strict-mode
   remains enforced. **LTR** has a `SetManchesterMode` config
   for deployments that bi-phase-encode the sub-audible status
-  word, plus a `framing.CRC7LTR` primitive in
-  `internal/radio/framing/crc_ltr.go` (polynomial 0xFD, table
-  from DSheirer/sdrtrunk's CRCLTR.java) that future PRs can
-  wire into the adapter; the wiring is pending because
-  sdrtrunk's bit-layout reading (1-bit Area, 5-bit Channel)
-  disagrees with GopherTrunk's `Status` struct (5-bit Area,
-  4-bit Channel).
+  word, and `SetFCSMode(FCSOn)` to verify the 7-bit CRC trailer
+  per DSheirer/sdrtrunk's CRCLTR.java on the Ingest path. Under
+  FCSOn the CRC covers a 24-bit message vector (gophertrunk's
+  Group F-bit as sdrtrunk's "Area", plus Channel/Home/GroupID/
+  Free); the gophertrunk 5-bit `Status.Area` stays as opaque
+  metadata for the multi-system filter and only the low 7
+  bits of the 12-bit `Status.FCS` field are CRC-protected.
   **Motorola Type II** has `SetBCHMode(BCHOn)` to run
   BCH(64,16,11) over each codeword pair. **P25 Phase 2** now
   has `SetTrellisMode(TrellisOn)` to run the TIA-102 Annex A
@@ -182,6 +182,27 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **LTR `SetFCSMode(FCSOn)` opt-in.** Wires the
+  `framing.CRC7LTR` primitive from PR #131 into the LTR
+  `ControlChannel.Ingest` path. Under FCSOn, Ingest computes
+  the CRC-7 over a 24-bit message vector derived from Status
+  fields (per DSheirer/sdrtrunk's CRCLTR.java layout: 1-bit
+  Group / F-bit as sdrtrunk's "Area", then Channel/Home/
+  GroupID/Free), compares it to the low 7 bits of
+  `Status.FCS`, and drops the frame on mismatch. `ComputeStatusFCS`
+  is exported so test fixtures + future encoders can populate
+  the trailer correctly. The 5-bit gophertrunk `Status.Area`
+  field stays as opaque metadata for the multi-system filter
+  (a different layer than the CRC-protected message); under
+  this wiring the gophertrunk Group F-bit is the canonical
+  sdrtrunk "Area" bit. Tests cover valid CRCs accepted,
+  corrupted CRCs dropped, corrupted message fields dropped,
+  FCSOff bypass preserved, default mode, and CRC-changes-with-
+  the-Group-bit sanity. Doesn't yet resolve the broader
+  layout disagreement between sdrtrunk's 7-bit CRC reading and
+  gophertrunk's 12-bit `Status.FCS` field (only the low 7 bits
+  are CRC-protected in this wiring) — that's a documented
+  follow-up.
 - **EDACS `SetBCHMode(BCHOn)` opt-in.** Wires the
   `BCHEncodeEDACS` / `BCHDecodeEDACS` framing primitive from
   PR #132 into the EDACS `ControlChannel.Process` adapter via

@@ -57,6 +57,46 @@ type ControlChannel struct {
 	// grant on every status word.
 	activeGroup      uint16
 	strictValidation bool
+	fcsMode          FCSMode
+}
+
+// FCSMode selects whether the Ingest path verifies the LTR
+// CRC-7 trailer per DSheirer/sdrtrunk's CRCLTR.java.
+//
+//   - FCSOff (default): the Ingest path doesn't run any
+//     checksum verification. The Status.FCS field is treated as
+//     opaque metadata. Existing behaviour pre-PR #40.
+//
+//   - FCSOn: the Ingest path computes the CRC-7 over a 24-bit
+//     message built from the Status fields per sdrtrunk's layout
+//     and compares it to the low 7 bits of Status.FCS. Frames
+//     whose CRC doesn't match are silently dropped. Useful when
+//     the upstream framing layer has populated Status.FCS from
+//     the on-air bits and the caller wants to filter out
+//     corrupted frames.
+//
+// Per sdrtrunk's layout the 24 message bits cover the four LTR
+// fields the CRC protects: Area (1 bit, mapped from gophertrunk's
+// 1-bit Group / F-bit), Channel (5 bits), Home (5 bits), Group
+// (8 bits, mapped from gophertrunk's GroupID), and Free (5 bits).
+// Note that sdrtrunk's "Area" field is 1 bit, not the 5-bit
+// gophertrunk `Status.Area` — the gophertrunk Group F-bit is what
+// matches sdrtrunk's Area at this layer. Status.Area continues to
+// drive the multi-system filter; the FCS check is independent of
+// it.
+type FCSMode uint8
+
+const (
+	FCSOff FCSMode = iota
+	FCSOn
+)
+
+// SetFCSMode toggles the CRC-7 FCS verification on the Ingest
+// path. See FCSMode for the trade-offs.
+func (c *ControlChannel) SetFCSMode(mode FCSMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fcsMode = mode
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the
@@ -112,8 +152,14 @@ func New(opts Options) *ControlChannel {
 func (c *ControlChannel) Ingest(s Status) {
 	c.mu.Lock()
 	strict := c.strictValidation
+	fcsMode := c.fcsMode
 	c.mu.Unlock()
 	if strict && !s.IsWellFormed() {
+		return
+	}
+	if fcsMode == FCSOn && !verifyStatusFCS(s) {
+		// CRC-7 mismatch — drop. Almost certainly a frame with
+		// bit errors or a misaligned codeword.
 		return
 	}
 	if !s.Sync {
