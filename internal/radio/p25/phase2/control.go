@@ -35,6 +35,48 @@ type ControlChannel struct {
 	mu               sync.Mutex
 	locked           bool
 	strictValidation bool
+	trellisMode      TrellisMode
+}
+
+// TrellisMode selects how the Process adapter interprets the MAC
+// PDU dibit window inside the Phase 2 traffic channel.
+//
+//   - TrellisOff (default): the adapter reads 72 dibits = 144 raw
+//     information bits straight off the wire, parses 18 bytes as
+//     a MAC PDU. Works on test fixtures + clean synthesized
+//     streams whose MAC bits aren't trellis-coded; matches the
+//     legacy adapter behaviour.
+//
+//   - TrellisOn: the adapter collects 146 channel dibits (72 info
+//     + 1 finisher transition × 2 channel dibits per transition),
+//     runs them through the TIA-102 Annex A 4-state ½-rate
+//     trellis Viterbi decoder in
+//     internal/radio/framing/p25_trellis.go, and parses the
+//     recovered 72 info dibits = 18 bytes as a MAC PDU. The
+//     trellis tables are identical to the ones P25 Phase 1 uses
+//     for TSBKs (TIA-102.BAAA-A Annex A); TIA-102.BBAB inherits
+//     them for Phase 2.
+//
+// The Reed-Solomon outer layer + the per-burst block interleaver
+// that the Phase 2 spec wraps around the trellis-coded MAC PDU
+// are documented follow-ups; TrellisOn handles bare-bones
+// trellis coding only.
+type TrellisMode uint8
+
+const (
+	TrellisOff TrellisMode = iota
+	TrellisOn
+)
+
+// SetTrellisMode toggles the 4-state ½-rate trellis FEC layer on
+// the MAC PDU dibit window. See TrellisMode for the trade-offs.
+// The mode applies to every subsequent Process call; the Ingest
+// entry point is unaffected (callers that pre-parse MAC PDUs
+// don't go through this adapter).
+func (c *ControlChannel) SetTrellisMode(mode TrellisMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.trellisMode = mode
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the

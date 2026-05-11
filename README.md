@@ -78,8 +78,12 @@ The remaining gaps:
   for deployments that bi-phase-encode the sub-audible status
   word; FCS verification (12-bit trailer) is still pending.
   **Motorola Type II** has `SetBCHMode(BCHOn)` to run
-  BCH(64,16,11) over each codeword pair. The remaining
-  protocols (EDACS, MPT 1327, P25 Phase 2, TETRA) still have
+  BCH(64,16,11) over each codeword pair. **P25 Phase 2** now
+  has `SetTrellisMode(TrellisOn)` to run the TIA-102 Annex A
+  4-state ½-rate trellis Viterbi decoder over the 146 channel
+  dibits of each MAC PDU; the spec's Reed-Solomon outer layer
+  + per-burst block interleaver are documented follow-ups.
+  The remaining protocols (EDACS, MPT 1327, TETRA) still have
   their per-protocol FEC layers pending — see each adapter PR
   for the specific FEC parameters.
 - **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
@@ -152,6 +156,28 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **P25 Phase 2 4-state ½-rate trellis FEC opt-in over the MAC
+  PDU.** Second heavy-FEC PR. `phase2.SetTrellisMode(TrellisOn)`
+  switches the `ControlChannel.Process` adapter from "read 72
+  raw MAC PDU dibits off the wire" to "collect 146 channel
+  dibits + run them through the TIA-102 Annex A 4-state ½-rate
+  trellis Viterbi decoder". The trellis tables (16-entry
+  constellation table from Annex A Table A.1) are extracted
+  into a new shared primitive
+  `internal/radio/framing/p25_trellis.go` (`EncodeP25Trellis` /
+  `DecodeP25Trellis`) so both Phase 1 (TSBKs, 48 → 98 dibits)
+  and Phase 2 (MAC PDUs, 72 → 146 dibits) can drive the same
+  code; Phase 1's existing local copy stays in place for
+  backward compatibility. Tests cover the framing primitive
+  (round-trip + single-dibit-error correction + length-check)
+  plus end-to-end Phase 2 paths (KindCCLocked from a
+  trellis-encoded `OpMACPTT` PDU; `KindGrant` from a
+  trellis-encoded `OpGroupVoiceChannelGrant` PDU). The spec's
+  Reed-Solomon outer layer + per-burst block interleaver
+  (which wrap around the trellis-coded MAC bits) are
+  documented follow-ups; on-air decode of full P25 P2 traffic
+  needs both layers and accurate symbol-time recovery
+  (Gardner) to land.
 - **NXDN K=5 ½-rate Viterbi FEC opt-in for the CAC region of the
   Info field.** First heavy-FEC PR. `nxdn.SetViterbiMode(
   ViterbiOn)` switches the `ControlChannel.Process` adapter
