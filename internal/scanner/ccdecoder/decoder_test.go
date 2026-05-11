@@ -269,6 +269,23 @@ func TestP25Phase1FactoryConstructs(t *testing.T) {
 	}
 }
 
+func TestTETRAFactoryConstructs(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newTETRAPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Smoke",
+		FrequencyHz: 412_062_500, SampleRateHz: 144_000,
+	})
+	if err != nil {
+		t.Fatalf("newTETRAPipeline: %v", err)
+	}
+	p.Process(make([]complex64, 14400))
+	p.Reset()
+	if err := p.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
 func TestP25Phase2FactoryConstructs(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

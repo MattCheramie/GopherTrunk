@@ -53,36 +53,27 @@ logged to SQLite, and the API + TUI surfaces all light up. Pure-Go
 IMBE / AMBE+2 produce intelligible audio. The CC Hunter supervisor and
 the conventional FM scanner are constructed by `cmd/gophertrunk` and
 expose their state through `/api/v1/scanner` and the TUI cockpit
-panel. The honest remaining gaps:
+panel. **Every trunked control modulation in the Features table now
+has an end-to-end IQ → CC chain shipping** — the `ccdecoder` connector
+constructed by `cmd/gophertrunk` covers all 10 protocols (P25 Phase 1,
+P25 Phase 2, DMR Tier III, NXDN, dPMR Mode 3, EDACS, Motorola Type II,
+LTR, MPT 1327, TETRA TMO) plus YSF on the amateur side.
 
-- **Per-protocol `ControlChannel.Process(stream, baseIdx)` adapters
-  for the 8 protocols beyond P25 Phase 1, YSF, and dPMR.** The
-  `internal/scanner/ccdecoder` package is wired into
-  `cmd/gophertrunk/daemon.go` — when a control SDR + trunked system
-  are configured, the daemon constructs a `ccdecoder.Decoder`
-  alongside the CC Hunter supervisor and spawns it as a goroutine
-  that owns the control SDR's `StreamIQ` loop. The connector
-  subscribes to `KindHuntProgress`, swaps the active per-protocol
-  pipeline on every supervisor retune, and pumps IQ chunks through
-  the active pipeline whose CC state machine publishes `cc.locked`
-  / `grant` events back on the bus — the trigger that lights up
-  every downstream surface (engine, recorder, call log, API, TUI).
-  Live trunked reception works today for P25 Phase 1, YSF, dPMR
-  Mode 3, NXDN (FSW + LICH only; CAC FEC pending), EDACS /
-  GE-Marc (24-bit sync + 40-bit CCW only; interleaved-RS FEC
-  pending), Motorola Type II / SmartZone (24-bit sync + 32-bit
-  OSW only; BCH(64,16,11) FEC pending), LTR (41-bit Status
-  alignment + state-machine dedup only; FCS verification +
-  Manchester decoding pending), MPT 1327 (38-bit codeword
-  alignment with auto-unlock; 64-bit on-air BCH(63,38) FEC
-  pending), DMR Tier III (multi-pattern 9-sync detect +
-  132-dibit burst slice + slot-type Hamming(20,8) + BPTC(196,96)
-  → CSBK end-to-end), and P25 Phase 2 (20-dibit outbound sync +
-  18-byte MAC PDU slice; Trellis FEC + slot-type extraction
-  across the full 180-dibit subframe pending). Only **TETRA**
-  remains: the IQ → symbol receiver ships but its CC state
-  machine still consumes pre-parsed PDUs; the
-  `Process(stream, baseIdx)` adapter is the last piece.
+The remaining gaps:
+
+- **Per-protocol on-air FEC layers.** The connector adapters that
+  shipped between PRs #113–#121 reach the CC state machines via
+  each protocol's `ControlChannel.Process(stream, baseIdx)` method.
+  Most adapters skip the on-air FEC and read information bits
+  straight from the wire — this works on test fixtures + clean
+  signals but typically fails on captured on-air traffic. Each
+  adapter PR documents the specific FEC layer pending; **DMR
+  Tier III** is the exception (full BPTC(196,96) + CSBK CRC chain
+  ships end-to-end via the existing tier3 package).
+- **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
+  family (P25 Phase 2, TETRA). The receivers currently do naive
+  decimation; Gardner-style timing recovery on complex IQ is the
+  follow-up that closes the gap for noisier captures.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -149,6 +140,21 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA TMO `ControlChannel.Process(stream, baseIdx)` adapter +
+  ccdecoder factory.** Closes the IQ → CC sync layer for TETRA —
+  the last per-protocol adapter from the connector roadmap. The
+  receiver's `DibitSink` forwards π/4-DQPSK dibits into
+  `tetra.ControlChannel.Process`, which buffers across calls +
+  detects the 38-dibit normal training-sequence sync + slices a
+  48-dibit PDU (1 header byte + 11 payload bytes = 96 bits) +
+  parses it via `ParsePDU` + dispatches through the existing
+  `Ingest`. `trunking.Protocol` gains `ProtocolTETRA` (config
+  string `"tetra"`). RCPC / RM FEC + interleaving across the
+  full TDMA slot are documented follow-ups; until they land the
+  adapter works on test fixtures but typically fails to lock on
+  captured TETRA traffic. **With this PR every trunked control
+  modulation listed in the Features table has an end-to-end
+  IQ → CC chain shipping.**
 - **P25 Phase 2 `ControlChannel.Process(stream, baseIdx)` adapter +
   ccdecoder factory.** Closes the IQ → CC sync layer for P25
   Phase 2: the receiver's `DibitSink` forwards H-DQPSK dibits
