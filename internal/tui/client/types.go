@@ -113,6 +113,24 @@ type Event struct {
 	Raw  json.RawMessage
 }
 
+// SDRStatus mirrors api.sdr.SDRStatus — the per-device payload
+// returned by GET /api/v1/devices and embedded in sdr.attached /
+// sdr.detached SSE events.
+type SDRStatus struct {
+	Driver       string `json:"driver"`
+	Serial       string `json:"serial"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Product      string `json:"product,omitempty"`
+	TunerName    string `json:"tuner_name,omitempty"`
+	Role         string `json:"role"`
+	Attached     bool   `json:"attached"`
+	GainTenthDB  int    `json:"gain_tenth_db"`
+	GainAuto     bool   `json:"gain_auto"`
+	PPM          int    `json:"ppm"`
+	BiasTee      bool   `json:"bias_tee"`
+	Gains        []int  `json:"gains,omitempty"`
+}
+
 // Tone is the payload shape of a `tone.alert` event.
 type Tone struct {
 	Profile      string    `json:"profile"`

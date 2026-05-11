@@ -29,14 +29,14 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 | dPMR (Mode 3)     | FS1 / FS2 / FS3 24-dibit sync, 80-bit CSBK parser, MessageType enum (RegistrationRequest / Response, VoiceServiceAllocation, IndividualVoiceAllocation, DataServiceAllocation, ServiceRequest, StandingServiceStatus, Release, Idle), AsVoiceGrant + AsSiteBroadcast accessors, PMR446 default band-plan, control-channel state machine emitting `protocol = "dpmr"` grants |
 | TETRA (TMO)       | Normal + extended training-sequence sync, generic Layer-3 PDU parser (4-bit Discriminator + type + payload), CMCE D-CONNECT / D-TX-GRANTED / D-RELEASE accessors, MLE-SYSINFO accessor (MCC / MNC / Location Area), TETRA-380 / 410 / 800 carrier resolver, control-channel state machine emitting `protocol = "tetra"` grants |
 | D-STAR            | Frame Sync + Slow Data sync, 41-byte PCH header parser (FLAG1 + RPT2 / RPT1 / UR / MY1 / MY2 + CRC-CCITT), IsGroupCall / IsEmergency / IsData accessors, repeater state machine emitting `protocol = "dstar"` grants on group transmissions |
-| YSF (Yaesu System Fusion) | 4800-baud C4FM, 480-dibit / 100 ms frame layout (FSW / FICH / DCH offsets), 40-bit FSW correlator with mismatch tolerance, 32-bit Frame Information Channel parser (FrameType / CallType / Frame Number / Frame Total / DataType / VoIP / Squelch fields) with CRC-16 trailer, per-frequency state machine emitting `cc.locked` on sync detect (Trellis FEC + grant emission is a follow-up) |
+| YSF (Yaesu System Fusion) | 4800-baud C4FM, 480-dibit / 100 ms frame layout (FSW / FICH / DCH offsets), 40-bit FSW correlator with mismatch tolerance, 32-bit Frame Information Channel parser (FrameType / CallType / Frame Number / Frame Total / DataType / VoIP / Squelch fields) with CRC-16 trailer, K=5 ½-rate Viterbi Trellis encoder + decoder over the 104-bit (48 info + 4 tail) FICH channel-bit region (`internal/radio/ysf/fich_trellis.go`, shared with NXDN SACCH), per-frequency state machine emitting `cc.locked` on sync detect and `protocol = "ysf"` grants (with the FICH SquelchCode as DG-ID talkgroup) on Header FICH for Group calls — Terminator FICH clears the dedup so the next transmission fires a fresh CallStart |
 | Orchestration     | In-process pub/sub event bus with typed payloads (Grant / CallStart / CallEnd / DecodeError / ToneAlert / etc.) and a typed `events.Stage` enum so protocol packages can't accidentally publish a stage label that drifts from the Prometheus dashboards, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
 | Trunking engine   | Cross-protocol `Grant` payload, Trunk-Recorder-format talkgroup DB (CSV + JSON), priority + preemption (emergency overrides, strict-higher), voice-device pool allocator, central state machine emitting `CallStart` / `CallEnd` events with a watchdog for silent calls |
 | Demod pipeline    | `internal/voice/composer` subscribes to `CallStart` events, opens the bound Voice device's IQ stream, runs an LPF → decimate → optional CMA equalizer → FM demod → optional 75/50µs de-emphasis → optional Kaiser audio LPF → optional audio AGC → optional polyphase L/M resample (or naive decimate fallback) → int16 PCM chain into the recorder, and pings `Engine.Touch` every second so the silent-call watchdog leaves the call alone |
 | Simulcast / "True I/Q" | `internal/dsp/equalizer` (LMS + CMA blind equalizers) for inter-symbol-interference / multipath mitigation, plus `internal/dsp/diversity` (Selection + maximal-ratio combiners over a shared `Combiner` interface) for multi-receiver IQ combining |
 | Tone-out alerting | `internal/voice/toneout` runs Goertzel filters against each Voice device's PCM stream, matches QC-II two-tone-sequential sequences against operator-configured profiles with per-tone duration + cooldown, and publishes `tone.alert` events that fan out through SSE / WebSocket / gRPC |
 | Voice recording   | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder writing `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder; EDACS ProVoice grants always force a `.raw` sidecar (the vocoder is patent + trade-secret encumbered) so researchers can decode out-of-band |
-| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history}`); operator mutations gated behind `api.allow_mutations` (`GET /api/v1/mutations` capability probe; `POST /api/v1/calls/{serial}/end`; `PATCH /api/v1/talkgroups/{id}`; `POST /api/v1/retention/sweep`; `POST /api/v1/devices/{serial}/tone-reset`); Server-Sent Events stream (`/api/v1/events`); WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + `AudioService` over the same in-process state |
+| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history,devices}`); operator mutations gated behind `api.allow_mutations` (`GET /api/v1/mutations` capability probe; `POST /api/v1/calls/{serial}/end`; `PATCH /api/v1/talkgroups/{id}`; `POST /api/v1/retention/sweep`; `POST /api/v1/devices/{serial}/tone-reset`); Server-Sent Events stream (`/api/v1/events`) — per-device hot-plug surfaces as `sdr.attached` / `sdr.detached` events with the same payload shape as `GET /api/v1/devices`; WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + `AudioService` over the same in-process state |
 | Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log subscribing to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs |
 | Observability     | Prometheus collector (events / calls / CC-locked / IQ-underrun / USB-reconnect / decode-error / SDR-attached / build-info series) exposed at `/metrics`; multi-stage `Dockerfile`; `docker-compose.yml` with RTL-SDR USB pass-through, healthcheck, and Prometheus scrape labels |
 | Daemon            | `cmd/gophertrunk run` composes everything above into a single supervised process with signal-driven shutdown; every component is opt-in via `config.yaml` |
@@ -110,10 +110,14 @@ SQLite. The honest gaps:
   per dibit), latches on the 24-dibit Frame Sync Word
   (configurable mismatch tolerance for noisy signals), and
   emits complete 1728-bit LDU buffers to a sink callback
-  ready for `ExtractVoiceFrames`. The only remaining gap to
-  process a live captured P25 P1 stream is the **IQ → C4FM
-  dibit** step (matched filter, symbol clock recovery, slicer);
-  the symbol-domain side is fully wired. The AMBE+2 algorithm
+  ready for `ExtractVoiceFrames`. The IQ → C4FM dibit glue
+  (matched filter, Mueller-Müller symbol clock recovery,
+  4-level slicer) ships in
+  `internal/radio/p25/phase1/receiver`, composing the existing
+  `dsp/demod.FM`, `dsp/demod.C4FM`, and `dsp/sync.MuellerMuller`
+  primitives into one `Receiver.Process(iq)` entry point that
+  feeds the LDU assembler — real-air calibration against
+  captured IQ is the only polish item left. The AMBE+2 algorithm
   carries active patents in some jurisdictions;
   re-implementing it in pure Go does not change that posture
   — see [docs/vocoders.md](docs/vocoders.md).
@@ -377,11 +381,16 @@ to its own package and lands independently.
   interface plumbing, and N OS-thread-pinned goroutines do
   synchronous `ReadPipe`s on the bulk-IN endpoint. The rewrite
   is **complete**.
-- **YSF Trellis decode + grant emission.** Sync, frame layout, and
-  the post-FEC FICH bit-level parser are in; what's left is the
-  K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
-  region and the control-channel wiring that publishes
-  `protocol = "ysf"` grants on the bus when a Header FICH lands.
+- **YSF Trellis decode + grant emission.** ✅ Shipped: the K=5 ½-rate
+  Viterbi Trellis encoder + decoder live at
+  `internal/radio/ysf/fich_trellis.go` (sharing the shared `framing.ViterbiK5`
+  primitive with NXDN SACCH). The control-channel state machine
+  publishes `trunking.Grant` payloads with `Protocol = "ysf"`,
+  `GroupID = FICH.SquelchCode` (DG-ID), `FrequencyHz = repeater_freq`
+  on Header FICH for Group calls; Terminator FICH clears the dedup
+  so the next transmission fires a fresh CallStart. Calibration
+  against a captured stream (interleaver / puncture table validation)
+  is the only remaining polish item.
 - **Higher-fidelity FM voice chain.** ✅ Shipped: opt-in 75/50µs
   de-emphasis (`composer.DeEmphasisConfig`), Kaiser-windowed audio
   LPF (`composer.AudioLPFConfig`), audio AGC
@@ -469,14 +478,14 @@ tests.
 
 ```
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
-internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
+internal/tui/           bubbletea TUI: 9 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, mock
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS IOKit (purego), mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
 internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D + E4000 + FC0012 + FC0013 + FC2580 tuner drivers
 internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; canonical "rtlsdr" registrant
 internal/dsp/           Channelizer, filters, demods, sync, FFT
-internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
+internal/radio/         framing/ + p25/phase1/ (+ phase1/receiver IQ→dibit) + dmr/ + nxdn/ + ysf/
 internal/trunking/      System, talkgroup DB, priority, engine, CC hunter
 internal/voice/         Recorder, vocoder plugin, demod composer
 internal/storage/       SQLite call log + retention sweeper
@@ -500,17 +509,18 @@ gophertrunk tui -no-color          # disable ANSI colour
 gophertrunk tui -insecure          # skip TLS verification
 ```
 
-Eight panels covering every read surface, vim-style navigation, live
+Nine panels covering every read surface, vim-style navigation, live
 SSE event stream, periodic REST refresh, automatic reconnect on
 disconnect:
 
 | Key | Action |
 | --- | --- |
 | `Tab` / `Shift+Tab` | next / previous panel |
-| `1`–`8` | jump to Dashboard / Systems / Talkgroups / Active / History / Events / Tones / Metrics |
+| `1`–`9` | jump to Dashboard / Systems / Talkgroups / Active / History / Events / Tones / Metrics / Devices |
 | `j` / `k` | move row up / down inside a table |
 | `/` | filter (Talkgroups, Events) |
 | `s` | cycle sort (Talkgroups) |
+| `Enter` | open detail card (Systems, Talkgroups) |
 | `p` | pause auto-scroll (Events) |
 | `r` | reload (History) |
 | `?` | toggle help |

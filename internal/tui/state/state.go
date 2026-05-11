@@ -22,6 +22,7 @@ const (
 	PanelEvents
 	PanelTones
 	PanelMetrics
+	PanelDevices
 	PanelCount
 )
 
@@ -43,6 +44,8 @@ func (p PanelKind) String() string {
 		return "Tones"
 	case PanelMetrics:
 		return "Metrics"
+	case PanelDevices:
+		return "Devices"
 	}
 	return "?"
 }
@@ -68,6 +71,8 @@ type SharedState struct {
 	History     []client.CallRow
 	HistoryErr  error
 	Metrics     map[string]float64
+	Devices     []client.SDRStatus
+	DevicesErr  error
 
 	EventLog   RingReader[client.Event]
 	ToneAlerts RingReader[client.Event]

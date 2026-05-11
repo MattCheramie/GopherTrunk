@@ -93,6 +93,20 @@ func (p *DashboardPanel) healthBody(s *state.SharedState) string {
 	if s.Server != "" {
 		lines = append(lines, dashDim.Render("Server: "+s.Server))
 	}
+	if len(s.Devices) > 0 {
+		var control, voice int
+		for _, d := range s.Devices {
+			switch d.Role {
+			case "control":
+				control++
+			case "voice":
+				voice++
+			}
+		}
+		lines = append(lines, dashDim.Render(
+			fmt.Sprintf("SDRs: %d (%d control, %d voice)", len(s.Devices), control, voice),
+		))
+	}
 	return strings.Join(lines, "\n")
 }
 

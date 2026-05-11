@@ -46,6 +46,7 @@ type Model struct {
 	sseRetries int
 
 	confirm *confirmModal
+	detail  *detailModal
 
 	historyLoaded bool
 	toastUntil    time.Time
@@ -76,6 +77,7 @@ func New(cli *client.Client, opts Options) *Model {
 			panels.NewEvents(),
 			panels.NewTones(),
 			panels.NewMetrics(),
+			panels.NewDevices(),
 		},
 	}
 	return m
@@ -91,6 +93,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollActive(m.cli),
 		cmdPollMetrics(m.cli),
 		cmdPollHistory(m.cli, client.HistoryFilter{Limit: 100}),
+		cmdPollDevices(m.cli),
 		cmdMutationStatus(m.cli),
 		connectSSE(m.cli),
 	)
@@ -126,6 +129,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil // swallow other keys while modal is up
+		}
+		// Detail modal: dismissable with esc / q / enter; all other
+		// keys are swallowed so the modal stays focused.
+		if m.detail != nil {
+			switch msg.String() {
+			case "esc", "q", "enter":
+				m.detail = nil
+				return m, nil
+			}
+			return m, nil
 		}
 		// Quit & global navigation always win.
 		switch {
@@ -166,6 +179,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel8):
 			m.active = state.PanelMetrics
+			return m, nil
+		case key.Matches(msg, m.keys.JumpPanel9):
+			m.active = state.PanelDevices
 			return m, nil
 		}
 
@@ -213,6 +229,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, scheduleAfter(pollMetricsEvery, cmdPollMetrics(m.cli)))
 
+	case pollDevicesMsg:
+		m.shared.Devices = msg.devs
+		m.shared.DevicesErr = msg.err
+		cmds = append(cmds, scheduleAfter(pollDevicesEvery, cmdPollDevices(m.cli)))
+
 	case pollHistoryMsg:
 		m.shared.History = msg.rows
 		m.shared.HistoryErr = msg.err
@@ -232,11 +253,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ring != nil {
 			ring.Push(msg.ev)
 		}
-		if msg.ev.Kind == "tone.alert" {
+		switch msg.ev.Kind {
+		case "tone.alert":
 			tones, _ := m.shared.ToneAlerts.(*RingBuf[client.Event])
 			if tones != nil {
 				tones.Push(msg.ev)
 			}
+		case "sdr.attached", "sdr.detached":
+			// Refresh the devices snapshot now rather than waiting
+			// for the next poll tick.
+			cmds = append(cmds, cmdPollDevices(m.cli))
+		case "call.start", "call.end":
+			cmds = append(cmds, cmdPollActive(m.cli))
 		}
 		cmds = append(cmds, listenSSE(m.eventCh))
 
@@ -267,6 +295,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the immediate-fire path.
 		if cmd := m.requestConfirm(msg.Request); cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+
+	case panels.SystemDetailMsg:
+		cmds = append(cmds, cmdFetchSystemDetail(m.cli, msg.Name))
+
+	case panels.TalkgroupDetailMsg:
+		cmds = append(cmds, cmdFetchTalkgroupDetail(m.cli, msg.ID))
+
+	case systemDetailResultMsg:
+		if msg.err != nil {
+			m.toast(fmt.Sprintf("system: %v", msg.err))
+		} else {
+			m.openDetail("System: "+msg.s.Name, formatSystemDetail(msg.s))
+		}
+
+	case talkgroupDetailResultMsg:
+		if msg.err != nil {
+			m.toast(fmt.Sprintf("talkgroup: %v", msg.err))
+		} else {
+			m.openDetail(fmt.Sprintf("Talkgroup %d", msg.tg.ID), formatTalkgroupDetail(msg.tg))
 		}
 
 	case writeResultMsg:
@@ -315,7 +363,7 @@ func (m *Model) View() string {
 	}
 	body := m.panels[m.active].View(m.width, bodyH, true, m.shared)
 	full := lipgloss.JoinVertical(lipgloss.Left, tabs, body, status)
-	if m.confirm != nil {
+	if m.activeModal() {
 		return m.renderModal(m.width, m.height, full)
 	}
 	return full

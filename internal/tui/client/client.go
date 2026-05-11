@@ -82,6 +82,9 @@ type activeCallsResp struct {
 type historyResp struct {
 	Calls []CallRow `json:"calls"`
 }
+type devicesResp struct {
+	Devices []SDRStatus `json:"devices"`
+}
 
 // Systems calls GET /api/v1/systems.
 func (c *Client) Systems(ctx context.Context) ([]SystemDTO, error) {
@@ -99,6 +102,35 @@ func (c *Client) Talkgroups(ctx context.Context) ([]TalkgroupDTO, error) {
 		return nil, err
 	}
 	return r.Talkgroups, nil
+}
+
+// Devices calls GET /api/v1/devices.
+func (c *Client) Devices(ctx context.Context) ([]SDRStatus, error) {
+	var r devicesResp
+	if err := c.getJSON(ctx, "/api/v1/devices", &r); err != nil {
+		return nil, err
+	}
+	return r.Devices, nil
+}
+
+// System calls GET /api/v1/systems/{name} and returns the detail
+// record for one system. Used by the TUI's drill-in modal.
+func (c *Client) System(ctx context.Context, name string) (SystemDTO, error) {
+	var s SystemDTO
+	if err := c.getJSON(ctx, "/api/v1/systems/"+url.PathEscape(name), &s); err != nil {
+		return SystemDTO{}, err
+	}
+	return s, nil
+}
+
+// Talkgroup calls GET /api/v1/talkgroups/{id} and returns the detail
+// record for one talkgroup. Used by the TUI's drill-in modal.
+func (c *Client) Talkgroup(ctx context.Context, id uint32) (TalkgroupDTO, error) {
+	var t TalkgroupDTO
+	if err := c.getJSON(ctx, "/api/v1/talkgroups/"+strconv.FormatUint(uint64(id), 10), &t); err != nil {
+		return TalkgroupDTO{}, err
+	}
+	return t, nil
 }
 
 // ActiveCalls calls GET /api/v1/calls/active.

@@ -35,6 +35,12 @@ func (p *SystemsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 	if len(s.Systems) != p.count {
 		p.refresh(s.Systems)
 	}
+	if k, ok := msg.(tea.KeyMsg); ok && k.String() == "enter" {
+		row := p.tbl.SelectedRow()
+		if len(row) > 0 {
+			return p, EmitSystemDetail(row[0])
+		}
+	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
 	return p, cmd

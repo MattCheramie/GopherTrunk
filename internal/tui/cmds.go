@@ -17,6 +17,7 @@ const (
 	pollTalkgroupsEvery = 30 * time.Second
 	pollActiveEvery     = 1 * time.Second
 	pollMetricsEvery    = 5 * time.Second
+	pollDevicesEvery    = 10 * time.Second
 )
 
 func cmdPollHealth(cli *client.Client) tea.Cmd {
@@ -58,6 +59,13 @@ func cmdPollMetrics(cli *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		m, err := cli.Metrics(context.Background())
 		return pollMetricsMsg{m: m, err: err}
+	}
+}
+
+func cmdPollDevices(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		d, err := cli.Devices(context.Background())
+		return pollDevicesMsg{devs: d, err: err}
 	}
 }
 
@@ -137,5 +145,19 @@ func cmdResetTone(cli *client.Client, deviceSerial string) tea.Cmd {
 	return func() tea.Msg {
 		err := cli.ResetToneDevice(context.Background(), deviceSerial)
 		return writeResultMsg{Label: "reset tone detector for " + deviceSerial, Err: err}
+	}
+}
+
+func cmdFetchSystemDetail(cli *client.Client, name string) tea.Cmd {
+	return func() tea.Msg {
+		s, err := cli.System(context.Background(), name)
+		return systemDetailResultMsg{s: s, err: err}
+	}
+}
+
+func cmdFetchTalkgroupDetail(cli *client.Client, id uint32) tea.Cmd {
+	return func() tea.Msg {
+		tg, err := cli.Talkgroup(context.Background(), id)
+		return talkgroupDetailResultMsg{tg: tg, err: err}
 	}
 }

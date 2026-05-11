@@ -43,6 +43,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | 6 | Events | The full SSE feed in chronological order. Substring filter (`/`), pause auto-scroll (`p`), clear filter (`c`). 500-entry ring buffer. |
 | 7 | Tone alerts | Just `tone.alert` events with profile / device / matched frequencies. 100-entry ring buffer. |
 | 8 | Metrics | Curated subset of `/metrics`: calls active / total, grant total, CC locked, SSE clients, devices attached, tone alerts. |
+| 9 | Devices | The SDR pool snapshot: serial, driver, tuner, role, configured gain / PPM / bias-tee, attach state. Refreshed on `sdr.attached` / `sdr.detached` events for instant updates. |
 
 ## Keybindings
 
@@ -52,7 +53,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | --- | --- |
 | `Tab` | next panel |
 | `Shift+Tab` | previous panel |
-| `1`–`8` | jump directly to a panel |
+| `1`–`9` | jump directly to a panel |
 | `?` | toggle help overlay |
 | `q` / `Ctrl+C` | quit |
 
@@ -70,12 +71,14 @@ gophertrunk tui -server https://radio.example.com -insecure
 
 | Panel | Keys |
 | --- | --- |
-| Talkgroups | `/` filter, `s` cycle sort, `Esc` exit filter input |
+| Systems | `Enter` open detail card |
+| Talkgroups | `/` filter, `s` cycle sort, `Enter` open detail card, `Esc` exit filter input |
 | Active calls | (table navigation only) |
 | Call history | `r` reload |
 | Events | `/` filter, `p` pause auto-scroll, `c` clear filter |
 | Tone alerts | (table navigation only) |
 | Metrics | (table navigation only) |
+| Devices | (table navigation only) |
 
 ## Polling cadences
 
@@ -87,8 +90,11 @@ The TUI keeps SharedState fresh with a fan of polling Cmds:
 | `/api/v1/health` | 2 s |
 | `/metrics` | 5 s |
 | `/api/v1/systems` | 10 s |
+| `/api/v1/devices` | 10 s (also refreshed on `sdr.attached` / `sdr.detached`) |
 | `/api/v1/talkgroups` | 30 s |
 | `/api/v1/calls/history` | on-demand |
+| `/api/v1/systems/{name}` | on-demand (Systems panel `Enter`) |
+| `/api/v1/talkgroups/{id}` | on-demand (Talkgroups panel `Enter`) |
 
 A long-lived `/api/v1/events` SSE stream complements the polls, so
 `call.start` / `call.end` / `cc.locked` / `tone.alert` arrive

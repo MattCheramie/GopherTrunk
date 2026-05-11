@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -42,6 +43,13 @@ type ToneDetectorReset interface {
 	ResetDevice(serial string)
 }
 
+// DevicesProvider returns a snapshot of the SDR pool. The api package
+// stays free of a hard dependency on internal/sdr's implementation
+// details; the daemon supplies *sdr.Pool, tests supply a fake.
+type DevicesProvider interface {
+	Snapshot() []sdr.SDRStatus
+}
+
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
@@ -51,6 +59,7 @@ type Server struct {
 	mutator    EngineMutator
 	retention  RetentionSweeper
 	tones      ToneDetectorReset
+	devices    DevicesProvider
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
@@ -136,6 +145,9 @@ type ServerOptions struct {
 	// Tones is the tone-out detector's write side (reset per-device
 	// match state). Optional.
 	Tones ToneDetectorReset
+	// Devices exposes the SDR pool snapshot for GET /api/v1/devices.
+	// Optional; the route returns 503 when nil.
+	Devices DevicesProvider
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -161,6 +173,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		mutator:        opts.Mutator,
 		retention:      opts.Retention,
 		tones:          opts.Tones,
+		devices:        opts.Devices,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -231,6 +244,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
+	mux.HandleFunc("GET /api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
 	if s.metrics != nil {
