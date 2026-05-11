@@ -5,6 +5,18 @@ import (
 	"fmt"
 )
 
+// BitSink consumes the raw stream of bits an MPT 1327 receiver
+// decodes from IQ. baseIdx is the absolute bit index of bits[0]
+// across the stream lifetime — monotonically non-decreasing across
+// calls, and reset to 0 by Receiver.Reset so a retune produces a
+// fresh baseline. MPT 1327 is 2-level (1200 baud FFSK on top of
+// NBFM audio); the 4-level trunked protocols use a DibitSink
+// instead. Wire this into a future ControlChannel.Process adapter
+// (cross-call bit buffering → 64-bit codeword slice → upstream BCH
+// decode → ParseCodeword → Ingest) so the connector can drive the
+// MPT 1327 CC state machine on live IQ.
+type BitSink func(bits []byte, baseIdx int)
+
 // Codeword is one MPT 1327 address / data codeword — 38 information
 // bits packed into the upper 38 bits of a 64-bit transmission unit
 // (the lower 26 bits hold the BCH(63,38) parity, which the upstream

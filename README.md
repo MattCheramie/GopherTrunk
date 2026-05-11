@@ -25,7 +25,7 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 | Motorola Type II  | OSW parser, opcode constants, LCN → Hz band-plan resolver (linear + table), control-channel state machine emitting `protocol = "motorola"` grants |
 | EDACS / GE-Marc   | 40-bit CCW parser, command enum (Idle / GroupVoiceGrant / ProVoiceGrant / IndividualCall / DataGrant / SystemID / AdjacentSite / Emergency / Affiliation / Encryption), per-command accessors with encrypted / emergency flags, LCN → Hz resolver, IQ → GFSK bit receiver (`internal/radio/edacs/receiver`) composing FM demod + Gaussian matched filter (BT = 0.3) + Mueller-Müller clock recovery + 2-level slicer at 9600 baud to fan `edacs.BitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "edacs"` grants |
 | LTR               | 41-bit per-repeater Status word parser, Channel → Hz resolver, optional area filter, per-repeater state machine emitting `protocol = "ltr"` grants when a status indicates an active call |
-| MPT 1327          | 64-bit address-codeword parser (38 info + 26 BCH parity consumed upstream), CodewordKind enum (ALH / AHY / AHYC / GTC / ACK / Disconnect / Data / Emergency), accessors for GTC voice grants + AHYC system broadcast, channel resolver, control-channel state machine emitting `protocol = "mpt1327"` grants |
+| MPT 1327          | 64-bit address-codeword parser (38 info + 26 BCH parity consumed upstream), CodewordKind enum (ALH / AHY / AHYC / GTC / ACK / Disconnect / Data / Emergency), accessors for GTC voice grants + AHYC system broadcast, channel resolver, IQ → FFSK bit receiver (`internal/radio/mpt1327/receiver`) composing FM demod + FFSK tone discriminator (mark = 1200 Hz / space = 1800 Hz CCIR FFSK) + Mueller-Müller clock recovery at 1200 baud to fan `mpt1327.BitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "mpt1327"` grants |
 | dPMR (Mode 3)     | FS1 / FS2 / FS3 24-dibit sync, 80-bit CSBK parser, MessageType enum (RegistrationRequest / Response, VoiceServiceAllocation, IndividualVoiceAllocation, DataServiceAllocation, ServiceRequest, StandingServiceStatus, Release, Idle), AsVoiceGrant + AsSiteBroadcast accessors, PMR446 default band-plan, IQ → C4FM dibit receiver (`internal/radio/dpmr/receiver`) composing FM demod + RRC matched filter + Mueller-Müller clock recovery + 4-level slicer at the 2400-sym/s rate to fan `dpmr.DibitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "dpmr"` grants |
 | TETRA (TMO)       | Normal + extended training-sequence sync, generic Layer-3 PDU parser (4-bit Discriminator + type + payload), CMCE D-CONNECT / D-TX-GRANTED / D-RELEASE accessors, MLE-SYSINFO accessor (MCC / MNC / Location Area), TETRA-380 / 410 / 800 carrier resolver, control-channel state machine emitting `protocol = "tetra"` grants |
 | D-STAR            | Frame Sync + Slow Data sync, 41-byte PCH header parser (FLAG1 + RPT2 / RPT1 / UR / MY1 / MY2 + CRC-CCITT), IsGroupCall / IsEmergency / IsData accessors, repeater state machine emitting `protocol = "dstar"` grants on group transmissions |
@@ -134,6 +134,17 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 IQ → FFSK bit receiver** (`internal/radio/mpt1327/receiver`)
+  composing FM demod + FFSK tone discriminator (CCIR FFSK:
+  mark = 1200 Hz / space = 1800 Hz) + Mueller-Müller clock
+  recovery at 1200 baud into one entry point that fans bits out
+  via the new `mpt1327.BitSink` callback. Sixth per-protocol
+  receiver in the family and the first audio-band-FSK one — leans
+  on the `demod.FFSK` helper shipped earlier in the roadmap. The
+  `ControlChannel.Process(bits, baseIdx)` adapter that does
+  cross-call bit buffering + 64-bit codeword slice + BCH(63,38)
+  parity verification + `ParseCodeword` + `Ingest` is the next
+  layer up.
 - **EDACS / GE-Marc IQ → GFSK bit receiver** (`internal/radio/edacs/receiver`)
   composing FM demod + Gaussian matched filter (BT = 0.3) +
   Mueller-Müller clock recovery + 2-level slicer at 9600 baud
