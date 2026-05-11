@@ -102,18 +102,20 @@ The remaining gaps:
   correction; under BCHOn the effective CCW carries 28 info
   bits (Command + Status + Address + 4 high bits of LCN), the
   legacy struct's LCN bit 0 and Aux become BCH parity rather
-  than data. **TETRA** has both channel-coding families
-  shipped as primitives: the K=5 R=1/3 speech-traffic-channel
-  code in `framing/rcpc_tetra.go` (EN 300 395-2 §5.4.3) and
-  the K=5 R=1/4 signaling-channel code in
-  `framing/rcpc_tetra_sig.go` (EN 300 392-2 §8.2.3.1) covering
-  rates 2/3, 1/3, 292/432 and 148/432, plus the shortened
-  (30,14) Reed-Muller code in `framing/rm_30_14_tetra.go`
-  (§8.2.3.2) for AACH. Wiring all three into the TETRA
-  `ControlChannel.Process` adapter — slicing per the channel
-  type (AACH, SCH/HD, BNCH, STCH, SCH/F, BSCH), running
-  depuncture + Viterbi + CRC-16 (CCITT) verify + tail strip
-  per §8.3.1 — is the documented follow-up.
+  than data. **TETRA** ships the full §8.3.1 signaling-channel
+  chain — K=5 R=1/3 speech-traffic-channel code
+  (`framing/rcpc_tetra.go`, EN 300 395-2 §5.4.3), K=5 R=1/4
+  signaling-channel code (`framing/rcpc_tetra_sig.go`,
+  EN 300 392-2 §8.2.3.1) with rates 2/3, 1/3, 292/432 and
+  148/432, shortened (30,14) Reed-Muller code
+  (`framing/rm_30_14_tetra.go`, §8.2.3.2) for AACH, 32-tap
+  scrambler + (K,a) block interleaver from PR #138, and the
+  per-channel encode/decode helpers from PR #139 — composed
+  on the `tetra.ControlChannel.Process` adapter via the
+  `SetChannelCoding(ChannelCodingOn)` opt-in. The connector
+  surface (per-system colour code + expected-channel config
+  flowing from `trunking.System` into the live decoder)
+  is the remaining wiring task.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
   timing-recovery primitive in `internal/dsp/sync/gardner.go`
   is now threaded into both the **P25 Phase 2** and **TETRA**
@@ -191,6 +193,39 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA `SetChannelCoding(ChannelCodingOn)` opt-in wires
+  per-channel FEC decode into `Process`.** Lights up the
+  full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain
+  (descramble + deinterleave + depuncture + Viterbi +
+  CRC-16 verify + tail strip) on the `tetra.ControlChannel`
+  Process adapter so live IQ captures — not just synthesized
+  type-1 fixtures — can drive `cc.locked` / Grant events.
+  New API mirrors the BCH wirings on MPT 1327 / EDACS /
+  Motorola:
+    - `SetChannelCoding(ChannelCodingOff | ChannelCodingOn)` —
+      default off (legacy 48-dibit raw path); on enables the
+      full FEC chain.
+    - `SetExpectedChannel(ChannelSCHHD | ChannelSCHF |
+      ChannelSCHHU | ChannelBSCH | ChannelAACH)` — picks
+      which logical channel lives in each burst window
+      under the on path. Default `ChannelSCHHD`.
+    - `SetColourCode(uint32)` — 30-bit extended colour code
+      seeding the scrambler (low 30 bits; masked to
+      `0x3FFFFFFF`). Ignored by BSCH per §8.2.5.2.
+  Under `ChannelCodingOn` the adapter slices the
+  channel-appropriate dibit window (108 for SCH/HD, 216
+  for SCH/F, 84 for SCH/HU, 60 for BSCH, 15 for AACH),
+  routes through the matching `DecodeSCHHD` / `DecodeSCHF`
+  / `DecodeSCHHU` / `DecodeBSCH` / `DecodeAACH` helper
+  shipped in PR #139, and silently drops frames whose
+  CRC fails. Tests round-trip a real `MLE SYSINFO` PDU
+  through SCH/HD → `KindCCLocked`, a `CMCE D-CONNECT` PDU
+  through SCH/F → `KindGrant`, plus heavy-corruption
+  rejection (30 adjacent bit flips) and wrong-colour-code
+  rejection. Wiring this into the `ccdecoder` connector
+  so per-system config (colour code, expected channel)
+  flows from `trunking.System` into the live decoder is
+  the next PR.
 - **TETRA per-channel encode/decode helpers in `tetra/`.**
   Composes the framing primitives shipped in PRs #137 and
   #138 (RCPC + (30,14) RM + (K,a) block interleaver +

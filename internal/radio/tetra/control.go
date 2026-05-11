@@ -41,6 +41,9 @@ type ControlChannel struct {
 	locked           bool
 	last             LockState
 	strictValidation bool
+	channelCoding    ChannelCodingMode
+	channelType      ChannelType
+	colourCode       uint32
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the
@@ -53,6 +56,88 @@ func (c *ControlChannel) SetStrictValidation(strict bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.strictValidation = strict
+}
+
+// ChannelCodingMode selects how the Process adapter interprets the
+// incoming dibit stream:
+//
+//   - ChannelCodingOff (default): the adapter slices a fixed 48-
+//     dibit window after each normal-training-sequence sync and
+//     parses the bits straight as a PDU. Works on synthesized
+//     test fixtures where the type-2 / type-5 layers aren't
+//     present; matches the legacy adapter behaviour.
+//
+//   - ChannelCodingOn: the adapter slices the channel-appropriate
+//     number of dibits per the configured ChannelType, runs the
+//     full type-5 → type-1 decode chain (descramble + deinterleave
+//     + depuncture + Viterbi + CRC-16 verify + tail strip) per
+//     ETSI EN 300 392-2 §8.3.1 using the per-channel helpers in
+//     channel_coding.go, then parses the recovered info bits as a
+//     PDU. Frames whose CRC fails are silently dropped.
+//
+// Use SetColourCode to seed the scrambler and SetExpectedChannel
+// to tell the adapter which logical channel lives in each burst.
+type ChannelCodingMode uint8
+
+const (
+	ChannelCodingOff ChannelCodingMode = iota
+	ChannelCodingOn
+)
+
+// ChannelType identifies which TETRA logical channel the Process
+// adapter is currently decoding under ChannelCodingOn. The
+// connector (or higher-layer caller) sets this per burst /
+// per-slot via SetExpectedChannel.
+type ChannelType uint8
+
+const (
+	// ChannelSCHHD covers SCH/HD, BNCH and STCH — they share the
+	// same coding chain per §8.3.1.4.1. 216 type-5 bits / 108
+	// dibits per burst, recovering 124 info bits.
+	ChannelSCHHD ChannelType = iota
+	// ChannelSCHF — full-slot signaling channel. 432 type-5 bits
+	// / 216 dibits, recovering 268 info bits.
+	ChannelSCHF
+	// ChannelSCHHU — half-slot signaling on the uplink. 168
+	// type-5 bits / 84 dibits, recovering 92 info bits.
+	ChannelSCHHU
+	// ChannelBSCH — broadcast synchronisation channel. 120 type-5
+	// bits / 60 dibits, recovering 60 info bits. Colour code
+	// is implicitly 0 for BSCH regardless of SetColourCode.
+	ChannelBSCH
+	// ChannelAACH — access-assignment channel (slot header).
+	// 30 type-5 bits / 15 dibits, recovering 14 info bits.
+	// AACH skips RCPC + interleaving, just RM + scramble.
+	ChannelAACH
+)
+
+// SetChannelCoding toggles the full EN 300 392-2 §8.3.1 channel
+// coding chain on the Process adapter. See ChannelCodingMode for
+// the trade-offs.
+func (c *ControlChannel) SetChannelCoding(mode ChannelCodingMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.channelCoding = mode
+}
+
+// SetExpectedChannel tells the Process adapter which TETRA logical
+// channel lives in each burst window. Only consulted when
+// ChannelCodingMode is ChannelCodingOn; ignored otherwise. The
+// default channel under ChannelCodingOn is ChannelSCHHD (the most
+// common signaling carrier for cc.locked / Grant events).
+func (c *ControlChannel) SetExpectedChannel(ch ChannelType) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.channelType = ch
+}
+
+// SetColourCode sets the 30-bit extended colour code the scrambler
+// uses under ChannelCodingOn (low 30 bits of colourCode hold
+// e(1)..e(30)). BSCH ignores this and uses 0 per §8.2.5.2.
+func (c *ControlChannel) SetColourCode(colourCode uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.colourCode = colourCode & 0x3FFFFFFF
 }
 
 // Options configure a ControlChannel.
