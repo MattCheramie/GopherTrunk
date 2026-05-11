@@ -102,13 +102,18 @@ The remaining gaps:
   correction; under BCHOn the effective CCW carries 28 info
   bits (Command + Status + Address + 4 high bits of LCN), the
   legacy struct's LCN bit 0 and Aux become BCH parity rather
-  than data. **TETRA** has a `framing.EncodeRCPCTetraMother`
-  / `DecodeRCPCTetraMother` primitive in
-  `internal/radio/framing/rcpc_tetra.go` plus puncturing
-  tables for the rate-2/3, 8/18, and 8/17 schemes per ETSI
-  EN 300 395-2 §5.4.3; wiring it into the TETRA adapter is
-  the documented follow-up. RM(1,5) for the broadcast block
-  header is still pending.
+  than data. **TETRA** has both channel-coding families
+  shipped as primitives: the K=5 R=1/3 speech-traffic-channel
+  code in `framing/rcpc_tetra.go` (EN 300 395-2 §5.4.3) and
+  the K=5 R=1/4 signaling-channel code in
+  `framing/rcpc_tetra_sig.go` (EN 300 392-2 §8.2.3.1) covering
+  rates 2/3, 1/3, 292/432 and 148/432, plus the shortened
+  (30,14) Reed-Muller code in `framing/rm_30_14_tetra.go`
+  (§8.2.3.2) for AACH. Wiring all three into the TETRA
+  `ControlChannel.Process` adapter — slicing per the channel
+  type (AACH, SCH/HD, BNCH, STCH, SCH/F, BSCH), running
+  depuncture + Viterbi + CRC-16 (CCITT) verify + tail strip
+  per §8.3.1 — is the documented follow-up.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
   timing-recovery primitive in `internal/dsp/sync/gardner.go`
   is now threaded into both the **P25 Phase 2** and **TETRA**
@@ -186,6 +191,33 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA signaling-channel RCPC + (30,14) RM primitives in
+  framing/.** Adds the K=5 R=1/4 16-state convolutional mother
+  code and the four puncturing schemes TETRA uses on every
+  π/4-DQPSK signaling channel (BSCH, SCH/HD, BNCH, STCH,
+  SCH/HU, SCH/F), plus the shortened (30,14) Reed-Muller block
+  code used by AACH. Per ETSI EN 300 392-2 §8.2.3.1 / .2 —
+  distinct from the K=5 R=1/3 speech-traffic-channel code in
+  PR #135 (EN 300 395-2 §5.4.3): same 16-state structure but
+  four generator polynomials and a different puncturing
+  table family. Generator polynomials: `G₁(D) = 1+D+D⁴`,
+  `G₂(D) = 1+D²+D³+D⁴`, `G₃(D) = 1+D+D²+D⁴`, `G₄(D) =
+  1+D+D³+D⁴`. Puncturing schemes shipped: rate-2/3 (P=(1,2,5),
+  used by all standard signaling channels), rate-1/3
+  (stronger protection, P=(1,2,3,5,6,7)), plus rate-292/432
+  and rate-148/432 (special long-block patterns with index-
+  shift helpers). The (30,14) RM code uses the spec's
+  14×16 parity matrix from §8.2.3.2 and is systematic in
+  the first 14 bits. Tests cover round-trip on clean
+  channels for both rates 2/3 and 1/3, single-bit error
+  correction at the mother-code and punctured layers,
+  encoder impulse-response sanity against the four
+  generator polynomials, all 30 single-bit error positions
+  on the RM code, parity-matrix-row consistency, and
+  index-shift monotonicity for the special rates. The
+  TETRA `ControlChannel` adapter wiring (depuncture +
+  Viterbi + CRC-16 strip → ParsePDU per channel type) is
+  the follow-up PR.
 - **MPT 1327 Op field extension.** Adds the spec's 10-bit Op
   field (between Ident and Function) to `mpt1327.Codeword`,
   closing the documented follow-up from PR #129. New 48-bit
