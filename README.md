@@ -95,12 +95,14 @@ The remaining gaps:
   single-bit correction; the 10-bit Op field that the spec
   carries between Ident and Function isn't modelled by the
   Codeword struct yet (the wiring extracts the 38 info bits
-  the existing struct cares about and drops Op). **EDACS** has
-  a `framing.BCHEncodeEDACS` / `BCHDecodeEDACS` primitive in
-  `internal/radio/framing/bch_edacs.go` (BCH(40, 28, 2),
-  generator 0x1539, parameters from lwvmobile/edacs-fm's
-  bch3.h); wiring it into the EDACS adapter is the documented
-  follow-up. **TETRA** still has its RCPC + RM(1,5) channel
+  the existing struct cares about and drops Op). **EDACS** now
+  has `SetBCHMode(BCHOn)` to run BCH(40, 28, 2) (generator
+  0x1539, parameters from lwvmobile/edacs-fm's bch3.h) over
+  each 40-bit on-wire CCW with single + double-bit error
+  correction; under BCHOn the effective CCW carries 28 info
+  bits (Command + Status + Address + 4 high bits of LCN), the
+  legacy struct's LCN bit 0 and Aux become BCH parity rather
+  than data. **TETRA** still has its RCPC + RM(1,5) channel
   coding pending — needs ETSI EN 300 392-2 §8.2 to source the
   generator polynomials + puncturing patterns.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
@@ -180,6 +182,26 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **EDACS `SetBCHMode(BCHOn)` opt-in.** Wires the
+  `BCHEncodeEDACS` / `BCHDecodeEDACS` framing primitive from
+  PR #132 into the EDACS `ControlChannel.Process` adapter via
+  `SetBCHMode(BCHOff | BCHOn)`. Same opt-in shape as the
+  MPT 1327 wiring (PR #129) and Motorola's pre-existing
+  `SetBCHMode`. Under BCHOn the adapter slices 40-bit on-wire
+  codewords, runs the BCH(40, 28, 2) validation +
+  single/double-bit correction over each slice, then
+  re-encodes the corrected 28-bit info into a 40-bit wire
+  word that the existing `CCWFromBits` parser interprets.
+  Uncorrectable codewords (≥ 3 bit errors in unfavourable
+  positions) drop the frame. Under BCHOn the effective CCW
+  model carries Command (4) + Status (4) + Address (16) +
+  LCN (4 high bits, position 12..15) = 28 info bits; the
+  legacy struct's LCN bit 0 and Aux (11 bits) become BCH
+  parity, not data. Tests cover BCHOn round-trip (an
+  encoded GroupVoiceGrant publishes a Grant with the right
+  Address + LCN), single-bit error correction, double-bit
+  error correction (BCH(40, 28, 2)'s full t=2 capability),
+  triple-bit error rejection, and default-mode regression.
 - **EDACS BCH(40, 28, 2) primitive in framing/.** New shared
   `framing/bch_edacs.go` adds `BCHEncodeEDACS` /
   `BCHDecodeEDACS` for the EDACS Standard control-channel word
