@@ -1,0 +1,235 @@
+package calibrate
+
+import (
+	"math"
+	"os"
+	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/voice"
+
+	// Blank-import the in-tree vocoders so Compare can resolve
+	// them by name through voice.DefaultRegistry.
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
+	_ "github.com/MattCheramie/GopherTrunk/internal/voice/imbe"
+)
+
+func TestRMSZeroOnEmpty(t *testing.T) {
+	if got := rms(nil); got != 0 {
+		t.Errorf("rms(nil) = %f, want 0", got)
+	}
+}
+
+func TestRMSConstantSignal(t *testing.T) {
+	// Constant signal of amplitude A has RMS == A.
+	const A = 1000
+	samples := make([]int16, 800)
+	for i := range samples {
+		samples[i] = A
+	}
+	got := rms(samples)
+	if math.Abs(got-A) > 1e-6 {
+		t.Errorf("rms(constant %d) = %f, want %d", A, got, A)
+	}
+}
+
+func TestRMSSineWaveHasExpectedAmplitude(t *testing.T) {
+	// A sine of peak amplitude A has RMS = A / sqrt(2).
+	const A = 16000
+	const N = 8000 // one second of 8 kHz audio at 1 cycle/8000 samples
+	samples := make([]int16, N)
+	for i := range samples {
+		samples[i] = int16(float64(A) * math.Sin(2*math.Pi*float64(i)/N))
+	}
+	want := float64(A) / math.Sqrt2
+	got := rms(samples)
+	if math.Abs(got-want)/want > 0.01 {
+		t.Errorf("rms(sine A=%d) = %f, want %f (±1%%)", A, got, want)
+	}
+}
+
+// TestBestXcorrFindsKnownDelay: build a signal plus a copy shifted
+// by a known number of samples; bestXcorr must report that exact
+// lag and a correlation magnitude close to 1.
+func TestBestXcorrFindsKnownDelay(t *testing.T) {
+	const N = 4000
+	const knownLag = 37
+	x := make([]int16, N)
+	y := make([]int16, N)
+
+	// Build a non-trivial signal (sum of two tones) so the
+	// correlation peak is sharp.
+	for i := 0; i < N; i++ {
+		v := 8000 * (math.Sin(2*math.Pi*100*float64(i)/8000) +
+			0.5*math.Sin(2*math.Pi*240*float64(i)/8000))
+		x[i] = int16(v)
+		if i+knownLag < N {
+			y[i+knownLag] = x[i]
+		}
+	}
+
+	// We search the lag that aligns x[i] with y[i+lag]. Built y so
+	// y[i+knownLag] = x[i] ⇒ bestXcorr should peak at lag = +knownLag.
+	peak, lag := bestXcorr(x, y, 200)
+	if peak < 0.99 {
+		t.Errorf("peak xcorr = %f, want > 0.99", peak)
+	}
+	if lag != knownLag {
+		t.Errorf("lag = %d, want %d", lag, knownLag)
+	}
+}
+
+func TestBestXcorrZeroEnergyInputs(t *testing.T) {
+	x := make([]int16, 1000)
+	y := make([]int16, 1000)
+	if peak, lag := bestXcorr(x, y, 100); peak != 0 || lag != 0 {
+		t.Errorf("bestXcorr(zeros) = (%f, %d), want (0, 0)", peak, lag)
+	}
+}
+
+// seekableBuffer wraps a bytes.Buffer with the io.Seeker bits that
+// WavWriter needs to patch length fields. The buffer grows on write
+// so Seek calls past the end zero-pad the gap.
+type seekableBuffer struct {
+	data []byte
+	pos  int64
+}
+
+func (b *seekableBuffer) Write(p []byte) (int, error) {
+	end := b.pos + int64(len(p))
+	if int64(cap(b.data)) < end {
+		grown := make([]byte, end)
+		copy(grown, b.data)
+		b.data = grown
+	} else if int64(len(b.data)) < end {
+		b.data = b.data[:end]
+	}
+	copy(b.data[b.pos:end], p)
+	b.pos = end
+	return len(p), nil
+}
+
+func (b *seekableBuffer) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case 0:
+		b.pos = offset
+	case 1:
+		b.pos += offset
+	case 2:
+		b.pos = int64(len(b.data)) + offset
+	}
+	return b.pos, nil
+}
+
+// TestReadWavRoundtripsViaWavWriter: pipe int16 samples through
+// voice.WavWriter, then read them back via readWav. The recovered
+// samples and sample rate must match what we wrote.
+func TestReadWavRoundtripsViaWavWriter(t *testing.T) {
+	const want = 8000
+	in := []int16{0, 1, 2, 100, 200, -100, -200, 32000, -32000}
+
+	buf := &seekableBuffer{}
+	wav, err := voice.NewWavWriter(buf, want)
+	if err != nil {
+		t.Fatalf("NewWavWriter: %v", err)
+	}
+	if err := wav.WriteSamples(in); err != nil {
+		t.Fatalf("WriteSamples: %v", err)
+	}
+	if err := wav.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Spill to a temp file so readWav can os.Open it.
+	tf, err := os.CreateTemp("", "calibrate-wav-*.wav")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	defer os.Remove(tf.Name())
+	if _, err := tf.Write(buf.data); err != nil {
+		t.Fatalf("write temp: %v", err)
+	}
+	tf.Close()
+
+	got, rate, err := readWav(tf.Name())
+	if err != nil {
+		t.Fatalf("readWav: %v", err)
+	}
+	if rate != want {
+		t.Errorf("sample rate = %d, want %d", rate, want)
+	}
+	if len(got) != len(in) {
+		t.Fatalf("sample count = %d, want %d", len(got), len(in))
+	}
+	for i := range in {
+		if got[i] != in[i] {
+			t.Errorf("samples[%d] = %d, want %d", i, got[i], in[i])
+		}
+	}
+}
+
+// TestCompareIMBESkipsWithoutFixtures: the calibration test for the
+// IMBE decoder needs `internal/voice/imbe/testdata/p25-p1-voice.raw`
+// plus a DSD-FME / OP25 reference WAV alongside it. Until those are
+// checked in the test skips and CI stays green. Once fixtures land,
+// remove the skip guard and the assertions enforce |RMS offset| <
+// 3 dB and peak xcorr > 0.85.
+func TestCompareIMBESkipsWithoutFixtures(t *testing.T) {
+	const raw = "../imbe/testdata/p25-p1-voice.raw"
+	const refWav = "../imbe/testdata/p25-p1-voice-dsdfme.wav"
+
+	if _, err := os.Stat(raw); os.IsNotExist(err) {
+		t.Skipf("no IMBE testdata at %s — capture and check in per README", raw)
+	}
+	if _, err := os.Stat(refWav); os.IsNotExist(err) {
+		t.Skipf("no IMBE reference WAV at %s", refWav)
+	}
+
+	res, err := Compare(raw, refWav, "imbe")
+	if err != nil {
+		t.Fatalf("Compare(imbe): %v", err)
+	}
+	t.Logf("IMBE calibration: rmsRatio=%+.2f dB peakXcorr=%.3f lag=%d in=%d ref=%d",
+		res.RMSRatioDb, res.PeakXcorr, res.LagSamples,
+		res.InTreeSampleCount, res.RefSampleCount)
+
+	if math.Abs(res.RMSRatioDb) > 3.0 {
+		t.Errorf("IMBE RMS offset %.2f dB exceeds ±3 dB — adjust mbe.DefaultAGCConfig.TargetPeak in internal/voice/mbe/agc.go",
+			res.RMSRatioDb)
+	}
+	if res.PeakXcorr < 0.85 {
+		t.Errorf("IMBE peak xcorr %.3f < 0.85 (lag=%d) — verify §6.2 spectral enhancement and AGC attack/release in internal/voice/mbe/agc.go:DefaultAGCConfig",
+			res.PeakXcorr, res.LagSamples)
+	}
+}
+
+// TestCompareAMBE2SkipsWithoutFixtures: same idea for the AMBE+2
+// decoder. Fixture path:
+// `internal/voice/ambe2/testdata/dmr-voice.raw` plus reference WAV.
+func TestCompareAMBE2SkipsWithoutFixtures(t *testing.T) {
+	const raw = "../ambe2/testdata/dmr-voice.raw"
+	const refWav = "../ambe2/testdata/dmr-voice-dsdfme.wav"
+
+	if _, err := os.Stat(raw); os.IsNotExist(err) {
+		t.Skipf("no AMBE+2 testdata at %s — capture and check in per README", raw)
+	}
+	if _, err := os.Stat(refWav); os.IsNotExist(err) {
+		t.Skipf("no AMBE+2 reference WAV at %s", refWav)
+	}
+
+	res, err := Compare(raw, refWav, "ambe2")
+	if err != nil {
+		t.Fatalf("Compare(ambe2): %v", err)
+	}
+	t.Logf("AMBE+2 calibration: rmsRatio=%+.2f dB peakXcorr=%.3f lag=%d in=%d ref=%d",
+		res.RMSRatioDb, res.PeakXcorr, res.LagSamples,
+		res.InTreeSampleCount, res.RefSampleCount)
+
+	if math.Abs(res.RMSRatioDb) > 3.0 {
+		t.Errorf("AMBE+2 RMS offset %.2f dB exceeds ±3 dB — adjust mbe.DefaultAGCConfig.TargetPeak",
+			res.RMSRatioDb)
+	}
+	if res.PeakXcorr < 0.85 {
+		t.Errorf("AMBE+2 peak xcorr %.3f < 0.85 (lag=%d) — verify the dual-tone fallback in internal/voice/ambe2/decoder.go (b1 ∈ [128,163] routes through silence; see README) is not corrupting the in-tree signal",
+			res.PeakXcorr, res.LagSamples)
+	}
+}
