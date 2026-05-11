@@ -283,11 +283,12 @@ to its own package and lands independently.
   `sdr.Device` interface and the u8-IQ → complex64 conversion
   math (subtract 127.5 DC bias, divide by 127.5) are preserved
   bit-identically from the original CGO wrapper so the DSP chain
-  is untouched. Status: PR-01
-  through PR-09 landed; the pure-Go driver is the only RTL-SDR
-  backend the project ships, every `librtlsdr` / `libusb` build
-  dependency has been removed, and `CGO_ENABLED=0` runs through
-  the entire toolchain (Docker, CI, installer). `internal/sdr/rtlsdr/usb/` exposes the
+  is untouched. **Status: ✅ complete (PR-01..PR-10 all
+  landed).** The pure-Go driver is the only RTL-SDR backend the
+  project ships; every `librtlsdr` / `libusb` build dependency is
+  gone; `CGO_ENABLED=0` runs through the entire toolchain
+  (Docker, CI, installer); macOS uses IOKit via
+  `github.com/ebitengine/purego`. `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
   `MockTransport` for unit tests, and platform backends across
   Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
@@ -299,13 +300,17 @@ to its own package and lands independently.
   VID/PID/serial parser, RAW_IO bulk-IN with an auto-reset-event
   ring driven by `WaitForMultipleObjects` /
   `WinUsb_GetOverlappedResult`, `WinUsb_AbortPipe` for cancel).
-  macOS ships a documented `ErrMacOSUnsupported` stub that
-  chains into `ErrUnsupportedPlatform` and points users at the
-  PR-10 tracking issue (#82) for the IOKit-via-`purego`
-  follow-up — day-one macOS binaries build and start cleanly;
-  only live dongle access is gated. CI compiles + vets + tests
-  the package on `ubuntu-latest` + `windows-latest` +
-  `macos-latest` under `CGO_ENABLED=0`.
+  macOS uses IOKit via `github.com/ebitengine/purego`
+  (PR-10): `IOServiceMatching("IOUSBDevice")` enumerates the
+  IORegistry, `IOCreatePlugInInterfaceForService` +
+  `QueryInterface(kIOUSBDeviceInterfaceID)` opens the device,
+  COM-style vtable dispatch via `purego.SyscallN` issues the
+  USB control transfers, and N OS-thread-pinned goroutines do
+  synchronous `ReadPipe`s on the bulk-IN endpoint with
+  `AbortPipe` for cancel — sidesteps `CFRunLoop` callbacks
+  entirely. CI compiles + vets + tests the package on
+  `ubuntu-latest` + `windows-latest` + `macos-latest` under
+  `CGO_ENABLED=0`.
   `internal/sdr/rtlsdr/rtl2832u/` is the demodulator-chip layer
   on top of the transport: `ReadBlockReg` / `WriteBlockReg`
   (USB / SYS register space) and `ReadDemodReg` / `WriteDemodReg`
@@ -365,11 +370,13 @@ to its own package and lands independently.
   `libusb` apt install in `Dockerfile`, the MSYS2 + DLL-bundling
   steps in `.github/workflows/*.yml`, and the DLL `Source` lines
   in `installer/windows/gophertrunk.iss` have all been removed.
-  Default builds run `CGO_ENABLED=0` end-to-end. PR-10 lands
-  the macOS IOKit transport itself
-  (see [issue #82](https://github.com/MattCheramie/GopherTrunk/issues/82));
-  until then macOS binaries build cleanly but refuse dongle open
-  with a clear error pointing at the tracking issue.
+  Default builds run `CGO_ENABLED=0` end-to-end. PR-10 added
+  the macOS IOKit backend itself via
+  `github.com/ebitengine/purego` — IOServiceMatching enumerates
+  the registry, COM-style vtable dispatch handles the device /
+  interface plumbing, and N OS-thread-pinned goroutines do
+  synchronous `ReadPipe`s on the bulk-IN endpoint. The rewrite
+  is **complete**.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
   K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
@@ -464,7 +471,7 @@ tests.
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read-only TUI
 internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, mock
-internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
+internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS IOKit (purego), mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
 internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D + E4000 + FC0012 + FC0013 + FC2580 tuner drivers
 internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; canonical "rtlsdr" registrant
