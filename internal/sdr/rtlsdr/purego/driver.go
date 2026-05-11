@@ -10,12 +10,9 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
-// DriverName is the [sdr.Driver.Name] this backend registers under.
-// PR-08 flipped this from "rtlsdr-go" to "rtlsdr" so the pure-Go
-// path is the default for downstream consumers (config files,
-// `gophertrunk sdr list` output, Prometheus labels). The CGO driver
-// — when explicitly enabled via -tags rtlsdr_cgo — now registers as
-// "rtlsdr-cgo" instead. PR-09 deletes the CGO file entirely.
+// DriverName is the [sdr.Driver.Name] this backend registers under
+// — the canonical "rtlsdr" string downstream config files,
+// `gophertrunk sdr list` output, and Prometheus labels expect.
 const DriverName = "rtlsdr"
 
 // Driver implements [sdr.Driver]. The optional Enumerator field lets
@@ -38,7 +35,7 @@ func New(e usb.Enumerator) *Driver {
 }
 
 // Name returns "rtlsdr" — the canonical name the SDR registry
-// exposes this driver under as of PR-08.
+// exposes this driver under.
 func (d *Driver) Name() string { return DriverName }
 
 func (d *Driver) enumerator() usb.Enumerator {

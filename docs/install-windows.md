@@ -28,8 +28,8 @@ anywhere — the contents are the same.
 
 Double-click `setup.exe` and accept the defaults. The installer:
 
-- Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\`
-  alongside the librtlsdr / libusb runtime DLLs.
+- Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\` —
+  a single static binary, no DLLs to ship.
 - Adds Start Menu entries for the daemon, the config template,
   and these instructions.
 - Optionally adds `C:\Program Files\GopherTrunk` to your system
@@ -137,8 +137,8 @@ under your call-log directory are left alone.
 | -------------------------------------- | -------------------------------------------------- |
 | `gophertrunk` not recognised           | PATH wasn't added — open a fresh terminal or run from `C:\Program Files\GopherTrunk` directly. |
 | `sdr list` prints nothing              | Zadig WinUSB swap didn't take — see step 3.        |
-| `LIBUSB_ERROR_ACCESS` on stream        | The DVB driver re-attached itself — re-run Zadig. |
-| `librtlsdr.dll was not found`          | The installer's DLL bundle was tampered with — reinstall. |
+| `usb: device disconnected` mid-stream  | The DVB driver re-attached itself — re-run Zadig. |
+| `WinUsb_Initialize` fails              | The dongle is bound to the wrong driver — re-run Zadig and pick **WinUSB**. |
 | Smart Screen blocks the installer      | Right-click → Properties → Unblock, or **More info → Run anyway**. |
 
 For anything else: open an issue at

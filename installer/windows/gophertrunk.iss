@@ -48,10 +48,6 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "..\..\dist\staging\gophertrunk.exe";  DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\dist\staging\librtlsdr.dll";    DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\..\dist\staging\libusb-1.0.dll";   DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\..\dist\staging\libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\..\dist\staging\libgcc_s_seh-1.dll";  DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\..\dist\staging\config.example.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\README.md";        DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\LICENSE";          DestDir: "{app}"; Flags: ignoreversion

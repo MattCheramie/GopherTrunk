@@ -8,9 +8,6 @@ import (
 )
 
 func TestDriverNameIsRtlsdr(t *testing.T) {
-	// PR-08 flipped the default from "rtlsdr-go" to "rtlsdr"; the
-	// CGO backend now registers as "rtlsdr-cgo" when explicitly
-	// enabled via -tags rtlsdr_cgo.
 	d := New(nil)
 	if got, want := d.Name(), "rtlsdr"; got != want {
 		t.Errorf("Name() = %q, want %q", got, want)

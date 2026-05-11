@@ -13,19 +13,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - name: Install librtlsdr
-        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev libusb-1.0-0-dev
       - run: go vet ./...
       - run: go build ./...
       - run: go test -race -count=1 ./...
       - run: make integration
 
-  # Cross-platform check for the pure-Go USB transport (internal/sdr/rtlsdr/usb).
-  # The rest of the tree still requires CGO + librtlsdr on non-Linux, but the
-  # usb sub-package must build & test cleanly under CGO_ENABLED=0 on every
-  # supported OS as it lands platform-specific backends. Currently exercises
-  # the WinUSB backend (PR-02) and the macOS stub (PR-03); PR-10 swaps the
-  # stub for the real IOKit-via-purego implementation.
+  # The pure-Go USB transport (internal/sdr/rtlsdr/usb) lands platform-
+  # specific backends — Linux USBDEVFS, Windows WinUSB, macOS IOKit
+  # (PR-10). Each must build + test cleanly under CGO_ENABLED=0 on its
+  # native runner before merge.
   usb-windows:
     runs-on: windows-latest
     steps:

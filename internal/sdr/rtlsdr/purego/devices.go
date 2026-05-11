@@ -3,14 +3,8 @@
 // (internal/sdr/rtlsdr/usb), the RTL2832U register layer
 // (internal/sdr/rtlsdr/rtl2832u), and the per-chip tuner drivers
 // (internal/sdr/rtlsdr/tuners). It is the consumer-facing layer of
-// the librtlsdr → pure-Go rewrite.
-//
-// As of PR-08 this driver registers under the canonical name
-// "rtlsdr" in every build. The legacy CGO librtlsdr backend
-// (internal/sdr/rtlsdr/rtlsdr_cgo.go) is gated behind the
-// rtlsdr_cgo build tag and, when explicitly enabled, registers as
-// "rtlsdr-cgo" so operators have one release of safety-net
-// coexistence to fall back to before PR-09 deletes the CGO path.
+// the librtlsdr → pure-Go rewrite and the only RTL-SDR backend the
+// project ships — PR-09 removed the legacy CGO librtlsdr wrapper.
 package purego
 
 // knownDevice is one row of the VID/PID table librtlsdr maintains in

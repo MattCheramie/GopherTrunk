@@ -1,13 +1,16 @@
 # Hardware Setup
 
-GopherTrunk ships with a CGO binding to librtlsdr. Building the daemon
-requires `librtlsdr-dev` and `libusb-1.0-0-dev` on the host.
+GopherTrunk ships with a pure-Go RTL-SDR driver — no `librtlsdr`,
+`libusb`, or C toolchain on the build host. The daemon talks to
+RTL2832U dongles directly through the platform's USB stack
+(USBDEVFS ioctls on Linux, WinUSB on Windows; macOS lands in a
+follow-up — see [issue #82](https://github.com/MattCheramie/GopherTrunk/issues/82)).
 
 ## Supported devices
 
-Anything librtlsdr supports — RTL2832U + R820T / R820T2 / R828D / E4000 /
-FC0012 / FC0013 / FC2580 — works through a single code path. There's
-no per-tuner or per-vendor branching in the daemon.
+The same code path covers everything `librtlsdr` did — RTL2832U
+paired with R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 /
+FC2580. Tuner detection is automatic on `Open`.
 
 Tested combinations:
 
@@ -33,9 +36,8 @@ sdr:
 
 ## Linux
 
-```sh
-sudo apt-get install librtlsdr-dev libusb-1.0-0-dev
-```
+No package install is needed for the build itself; the driver only
+needs USB-device permissions at runtime.
 
 Add a udev rule so non-root processes can claim the dongle:
 
@@ -54,6 +56,12 @@ Blacklist the kernel's DVB driver, which otherwise grabs the device first:
 blacklist dvb_usb_rtl28xxu
 ```
 
+## Windows
+
+Bind the dongle to **WinUSB** with [Zadig](https://zadig.akeo.ie)
+once per device — see [docs/install-windows.md](install-windows.md)
+for the click-by-click walkthrough.
+
 ## Verifying the build
 
 ```sh
@@ -62,14 +70,13 @@ make build
 ```
 
 You should see one row per attached dongle with index, serial, tuner type
-(usually `R820T` or `R828D`), and the supported gain values.
+(usually `R820T2` or `R828D`), and the supported gain values. The
+`Driver` column reads `rtlsdr` for every entry.
 
 ## Capturing IQ for replay
 
-`librtlsdr` ships `rtl_sdr` for raw captures:
-
-```sh
-rtl_sdr -f 851000000 -s 2400000 -g 49.6 -n 24000000 cc.cfile
-```
-
-Drop `.cfile` files under `testdata/iq/` to use them with the mock driver.
+The mock driver replays raw u8-IQ files (`.cfile` format). You can
+generate one with any tool that produces interleaved unsigned-8-bit
+samples — e.g. `gqrx`'s baseband recorder or a dedicated capture
+utility. Drop `.cfile` files under `testdata/iq/` to use them
+through the mock driver.
