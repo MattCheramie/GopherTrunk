@@ -1,5 +1,18 @@
 package motorola
 
+// BitSink consumes the raw stream of bits a Motorola Type II
+// receiver decodes from IQ. baseIdx is the absolute bit index of
+// bits[0] across the stream lifetime — monotonically non-
+// decreasing across calls, and reset to 0 by Receiver.Reset so a
+// retune produces a fresh baseline. Motorola Type II is 2-level
+// (3600-baud MSK on the control channel); the 4-level trunked
+// protocols use a DibitSink instead. Wire this into a future
+// ControlChannel.Process adapter (cross-call bit buffering →
+// 24-bit sync detect → 84-bit OSW slice → BCH(64,16) decode →
+// ParseOSW → Ingest) so the connector can drive the Motorola CC
+// state machine on live IQ.
+type BitSink func(bits []byte, baseIdx int)
+
 // SyncWord is the 24-bit sync sequence prefacing each Motorola Type II
 // SmartZone control-channel frame. Stored as MSB-first bits to mesh
 // with the rest of the radio stack's framing layer.
