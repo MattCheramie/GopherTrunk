@@ -16,7 +16,7 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 | ----------------- | ---------------------------------------------------------- |
 | Hardware          | Pure-Go RTL-SDR driver (USBDEVFS / WinUSB transport + RTL2832U register layer + R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580 tuner drivers; `CGO_ENABLED=0` everywhere, no `librtlsdr` / `libusb` build dependency), multi-device pool, role assignment, per-device gain (`auto` / tenths-of-dB) + PPM + bias-tee (5 V LNA power, e.g. NESDR Smart v5) applied at open time, DC blocker, IQ-imbalance correction, file-backed IQ replay (mock) |
 | DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC, CIC, halfband, IQ + audio AGC (attack/release envelope follower for voice), L/M polyphase resampler (complex IQ + real audio), FM / C4FM / H-DQPSK demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
-| FEC primitives    | CRC-CCITT/FALSE + CRC-CCITT/XMODEM (callable init), CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8) + non-extended Golay(23,12,7) (P25 IMBE), BCH(63,16,11), BPTC(196,96), Reed-Solomon(12,9,4) over GF(2^8) with DMR Voice LC Header / Terminator / Embedded LC seeds, 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (shared by NXDN SACCH + planned YSF FICH) with depuncture-marker support |
+| FEC primitives    | CRC-CCITT/FALSE + CRC-CCITT/XMODEM (callable init), CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8) + non-extended Golay(23,12,7) (P25 IMBE), BCH(63,16,11), BPTC(196,96), Reed-Solomon(12,9,4) over GF(2^8) with DMR Voice LC Header / Terminator / Embedded LC seeds, 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (shared by NXDN SACCH and YSF FICH) with depuncture-marker support |
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
 | P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, control-channel state machine emitting `protocol = "p25-phase2"` grants |
 | DMR (Tier III)    | All 9 ETSI sync patterns, burst layout (132 dibits), Color Code + Data Type via (20,8,7) shortened-Hamming slot-type FEC (corrects up to 3 bit errors per slot type), CSBK with CRC, payload parsers for TalkGroup/Private Voice grants (LCN + timeslot) + Aloha + AdjacentSiteStatus + SystemInfoBroadcast, LCN → Hz band-plan resolver (linear + table forms), control-channel state machine emitting `protocol = "dmr-tier3"` grants and `decode.error` events with `no-bandplan` stage |
@@ -45,358 +45,114 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 
 ## Status & known gaps
 
-End-to-end audio works today for **analog FM voice channels**: the
-control channel locks, the engine allocates a Voice device on a
-grant, the composer pulls IQ → PCM → WAV, and the call is logged to
-SQLite. The honest gaps:
+Once a `grant` event lands on the bus, the engine + recorder pipeline
+runs end-to-end: voice device is allocated, the composer pulls IQ →
+PCM, the recorder writes a WAV (digital-voice protocols decode through
+the right vocoder via `voice.DefaultVocoderForProtocol`), the call is
+logged to SQLite, and the API + TUI surfaces all light up. Pure-Go
+IMBE / AMBE+2 produce intelligible audio. The CC Hunter supervisor and
+the conventional FM scanner are constructed by `cmd/gophertrunk` and
+expose their state through `/api/v1/scanner` and the TUI cockpit
+panel. The honest remaining gaps:
 
-- **Digital voice** (P25 Phase 1 IMBE; AMBE+2 for P25 Phase 2 / DMR
-  / NXDN) is gated on the vocoders. The `Vocoder` plugin interface
-  + raw-frame sidecar are in place; pure-Go IMBE now produces
-  intelligible audio end-to-end ([patents have expired](docs/vocoders.md)),
-  with operator-tunable AGC + §6.4 overlap-add windowing + §6.2
-  spectral enhancement + frame-repeat on bad-frame indicator
-  shipped — absolute-level calibration against a known-good
-  reference decoder is the only remaining polish item. Pure-Go
-  AMBE+2 lives under `internal/voice/ambe2/` and registers the
-  `ambe2` name on every default build; `Decode` now produces real
-  audio end-to-end via the shared `internal/voice/mbe/` synthesis
-  pipeline (49-bit parameter unpack → cross-frame gamma fold →
-  `mbe.PredictLog2Ml` → linear M → unvoiced `Unvc` scaling →
-  `mbe.EnhanceAmplitudes` → voiced + unvoiced OA synthesis →
-  state roll-forward → per-frame AGC). Single-tone synthesis
-  (b₁ ∈ [5, 122] ⇒ sinewave at b₁·31.25 Hz with phase carried
-  across frames) is wired; dual-tone (b₁ ∈ [128, 163]) still
-  routes through silence pending a frequency-pair lookup the
-  public spec doesn't document. Remaining polish: calibration
-  against a DSD-FME-decoded DMR reference WAV (AGC defaults are
-  tuned for IMBE and AMBE+2 quantisation may need a per-frame
-  gain tweak). **Live-pipeline wiring**: when CallStart fires for
-  a digital protocol mapped in
-  `voice.DefaultVocoderForProtocol` (P25 Phase 1 → IMBE; P25
-  Phase 2 / DMR / NXDN / dPMR / TETRA → AMBE+2), the recorder
-  auto-instantiates the right vocoder and decodes each
-  WriteRawFrame into PCM that lands in the call's WAV alongside
-  the optional `.raw` sidecar. Operators can override the
-  mapping per-recorder via `RecorderOptions.VocoderForProtocol`
-  (pass an empty non-nil map to disable auto-decode entirely;
-  the `.raw` sidecar then becomes the only path for digital
-  voice). For protocols that emit channel-coded IMBE bursts
-  (P25 Phase 1 LDU1 / LDU2 carry 9 such bursts each), the
-  `imbe.DecodeChannelToFrame` helper bridges a 144-bit
-  post-deinterleave burst → 11-byte recorder-ready frame in one
-  call (descramble → per-vector Golay + Hamming → bit-pack);
-  upstream protocol decoders call it for each voice slot and
-  forward the result to `recorder.WriteRawFrame`. The P25
-  Phase 1 LDU framework at `internal/radio/p25/phase1/ldu.go`
-  closes the IQ → frame gap end-to-end:
-  `phase1.ExtractVoiceFrames(ldu)` takes a 1728-bit on-air LDU
-  stream, strips the status symbols (2 bits after every 70
-  payload bits per TIA-102.BAAA-A § 8), slices the 9 IMBE voice
-  subframes at the documented payload offsets (u₀ at bit 112,
-  u₁ at 256, u₂ at 440, ..., u₈ at 1520), and runs each through
-  `imbe.DecodeChannelToFrame` to produce 9 recorder-ready
-  11-byte frames. `ExtractLCESBlocks` / `ExtractLSDBlocks`
-  pull the 240-bit LC (LDU1) / ES (LDU2) and 32-bit LSD
-  metadata interleaved between voice subframes. An
-  end-to-end integration test
-  (`internal/radio/p25/phase1/ldu_e2e_test.go`) builds a
-  synthetic LDU containing 9 encoded IMBE frames, runs them
-  through `ExtractVoiceFrames` → `recorder.WriteRawFrame` →
-  registered IMBE vocoder → WAV, and confirms the WAV carries
-  the expected 9·160·2 PCM bytes with non-silent samples.
-  Upstream of the LDU extraction, `phase1.LDUAssembler`
-  (`internal/radio/p25/phase1/ldu_assembler.go`) consumes a
-  C4FM dibit stream (post-symbol-clock-recovery, value 0..3
-  per dibit), latches on the 24-dibit Frame Sync Word
-  (configurable mismatch tolerance for noisy signals), and
-  emits complete 1728-bit LDU buffers to a sink callback
-  ready for `ExtractVoiceFrames`. The IQ → C4FM dibit glue
-  (matched filter, Mueller-Müller symbol clock recovery,
-  4-level slicer) ships in
-  `internal/radio/p25/phase1/receiver`, composing the existing
-  `dsp/demod.FM`, `dsp/demod.C4FM`, and `dsp/sync.MuellerMuller`
-  primitives into one `Receiver.Process(iq)` entry point that
-  feeds the LDU assembler — real-air calibration against
-  captured IQ is the only polish item left. The AMBE+2 algorithm
-  carries active patents in some jurisdictions;
-  re-implementing it in pure Go does not change that posture
-  — see [docs/vocoders.md](docs/vocoders.md).
-- **Higher-fidelity audio**: the FM chain now has opt-in 75/50µs
-  de-emphasis, a Kaiser-windowed audio LPF, audio AGC, and a
-  polyphase L/M audio resampler — the full polish stack ships.
-  Defaults stay analog-FM-friendly so digital protocols and
-  passthrough callers see no behavior change.
+- **IQ → control-channel decoder daemon wiring.** Every protocol
+  package ships a unit-tested control-channel state machine and the
+  P25 Phase 1 IQ → C4FM dibit glue is in
+  (`internal/radio/p25/phase1/receiver`), but the connector that takes
+  the control SDR's live IQ stream, demodulates it, and feeds the
+  right protocol's receiver+control-channel pipeline isn't constructed
+  by `cmd/gophertrunk` yet. Until that lands the CC Hunter supervisor
+  exhausts every candidate frequency without seeing a `cc.locked`
+  event, so each system enters `state=failed` and backs off — the TUI
+  Scanner panel surfaces this honestly rather than faking a lock.
+- **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
+  real audio end-to-end with shared AGC, frame-repeat on bad-frame
+  indicator, phase-aware fade-in, and §6.2 spectral enhancement
+  shipping. Absolute-level calibration against a known-good reference
+  decoder (DSD-FME or OP25) is a polish item that needs captured
+  P25 P1 / DMR voice exchanges in `internal/voice/{imbe,ambe2}/testdata/`.
+  AMBE+2 single-tone synthesis works; dual-tone (b₁ ∈ [128, 163])
+  routes through silence pending a frequency-pair lookup that the
+  public spec doesn't document. See [docs/vocoders.md](docs/vocoders.md)
+  for the licensing posture.
+- **YSF FICH on-air interleaver / puncture validation.** The K=5
+  ½-rate Trellis encoder + decoder are in
+  (`internal/radio/ysf/fich_trellis.go`) and round-trip cleanly in
+  unit tests; calibration against a captured YSF transmission's
+  exact interleaver / puncture schedule lands once a real-air capture
+  is available.
 
-The Go interfaces and event payloads carry digital protocols already,
-so the remaining paths light up once IMBE drops in.
+The Go interfaces and event payloads carry every protocol already;
+the remaining decoder wiring is the load-bearing follow-up.
 
 ## Roadmap
 
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
-- **Pure-Go IMBE vocoder.** A native-Go IMBE 4400 bps decoder for
-  default builds without a CGO dependency. Core US patents are
-  expired; the algorithm is implementable from TIA-102.BABA. The
-  synthesis half of the pipeline (cross-frame log-amplitude
-  prediction, voiced harmonic generator, unvoiced FFT excitation
-  + overlap-add window, §6.2 spectral-amplitude enhancement,
-  per-frame AGC) lives in `internal/voice/mbe/` so the AMBE+2
-  decoder consumes the same primitives via `mbe.SynthState` +
-  `mbe.Params`. Status: skeleton + Vocoder interface registered
-  as `imbe` (the canonical name; the pure-Go decoder is the sole
-  IMBE backend in default builds); per-vector
-  channel-coding FEC inverse (Golay(23,12) for u_0..u_3 +
-  Hamming(15,11) for u_4..u_6 + no-FEC u_7 passthrough) is in
-  (`internal/voice/imbe/channel.go`); the TIA-102.BABA §7.4
-  u_0-keyed LCG pseudo-random scrambler is in
-  (`internal/voice/imbe/scrambler.go`); full §5.3 / §5.4 / Annex E
-  parameter unpack (b_0 → ω₀ + L + K + Vl voicing + Gm PRBA
-  gains + Cik spectral coefficients + Tl log-amplitude residuals
-  via two inverse DCTs) is in
-  (`internal/voice/imbe/params.go` / `tables.go`); §6.1 cross-frame
-  log2(Ml) prediction (eqs. 75-77 — γ = 0.65 interpolation of
-  prev-frame harmonics at l · ω₀_curr/ω₀_prev positions, DC-bias
-  removal, Tl residual addition) is in on a `SynthState` that the
-  excitation step extends (`internal/voice/mbe/synth.go`); §6.2
-  amplitude prep (log2(Ml) → linear Ml = 2^log2(Ml), the
-  R_M0 = Σ Ml² and R_M1 = Σ Ml² · cos(ω₀·l) spectral moments, and
-  a voicing-fraction summary that the synthesis combiner consumes)
-  is in (`internal/voice/mbe/amps.go`); §6.3 voiced harmonic
-  generator (per-harmonic sinusoid at l · ω₀ with linear amp tilt
-  M_prev → M_curr + quadratic phase integration of the ω₀ drift,
-  dual-frame iteration so voiced↔unvoiced transitions fade in /
-  out cleanly) is in (`internal/voice/mbe/synth_voiced.go`,
-  `SynthState` extended with `PrevPhase` + `PrevMl`); §6.4 unvoiced
-  excitation (256-point FFT spectrum shaping — bins under voiced
-  harmonics zeroed, bins under unvoiced harmonics scaled by Ml[l],
-  bins outside [1..L] zeroed, conjugate-mirror invariant preserved
-  so the IFFT output stays real-valued) is in
-  (`internal/voice/mbe/synth_unvoiced.go`); caller supplies the
-  noise buffer so unit tests stay deterministic; the §6.4
-  overlap-add synthesis window (256-sample periodic Hann × IFFT,
-  96-sample tail threaded through `SynthState.PrevUnvoicedTail` so
-  frame boundaries are click-free) is in via
-  `SynthUnvoicedOverlapAdd`; the §6.2 spectral-amplitude
-  enhancement (per-harmonic W_l = (0.96 · num/den)^0.25 clamped to
-  [0.5, 1.2] for mid/high-band harmonics + low-band W = 1, followed
-  by an energy-preserving rescale that holds R_M0 stable) is in
-  (`internal/voice/mbe/enhance.go`); the output gain calibration is
-  a per-frame fast-attack / slow-release peak-envelope tracker
-  shared with AMBE+2 (target peak 24000, attack 0.4, release 0.02,
-  gain clamped to [10, 1e5]) with first-frame seeding,
-  freeze-on-silence, and Reset clearing — replaces the prior
-  `pcmGain = 4096` magic constant with consistent loudness across
-  speech-pause-speech transitions
-  (`internal/voice/mbe/agc.go`).
-  **`Decode()` emits real audio**: 88 info bits → params →
-  §6.1 prediction → linear Ml → §6.2 enhancement → §6.3 voiced
-  harmonic sum + §6.4 unvoiced excitation with overlap-add
-  additive into one buffer → state roll-forward → per-frame AGC
-  → int16 PCM at 8 kHz. Silence-window frames (b_0 ∈ [216, 219])
-  still fade the prev unvoiced tail through the overlap region
-  before resetting SynthState — no click on the silence
-  boundary, and the AGC envelope is preserved across the
-  silence so the next non-silent frame applies the same gain.
-  Three decoder constructors are exposed: `New()` seeds the
-  unvoiced noise source from a fixed default for reproducibility;
-  `NewWithSeed(seed)` lets parallel calls + production callers
-  spread noise across decoders; `NewWithConfig(seed, mbe.AGCConfig{...})`
-  takes the shared `mbe.AGCConfig` (TargetPeak / Attack / Release /
-  MinGain / MaxGain / NoiseFloor) so operators can dial level +
-  responsiveness for their downstream chain — zero-value fields
-  backfill from `mbe.DefaultAGCConfig()` so partial overrides like
-  `mbe.AGCConfig{TargetPeak: 16000}` (drop level by ~3 dB) keep the
-  rest of the defaults. **Frame-repeat on bad-frame indicator**:
-  a bad frame (UnpackParams error from upstream FEC slip)
-  following a good frame replays the cached params with M scaled
-  by 0.7 per consecutive bad frame; up to 6 consecutive bad
-  frames bridge ~120 ms of weak signal before Decode emits silence
-  + clears the cache. The repeat path freezes the AGC envelope
-  so the attenuation is audible (signals signal degradation).
-  **Phase-aware fade-in**: when a bad-streak state clear is
-  followed by good frames returning, the next 3 frames run with
-  M scaled by `recoveryRampFactors = {0.4, 0.7, 1.0}` and the
-  AGC frozen so the listener eases back in over 60 ms rather
-  than jumping straight to full amplitude. The §6.3 voiced
-  harmonic generator's amplitude tilt 0 → factor·M[l] keeps the
-  first sample at exactly 0 regardless of phase coherence, so
-  there's no zero-crossing click on resumption.
-  **Remaining audio polish**: absolute-level calibration against a
-  known-good reference decoder (DSD-FME or OP25 — capture a P25
-  Phase 1 voice exchange, decode through both, compare RMS +
-  cross-correlation against the reference WAV under
-  `internal/voice/imbe/testdata/`); enhancement filter tuning if
-  real-world frames show mid-band envelope drift.
-- **Pure-Go AMBE+2 vocoder.** A native-Go AMBE+2 2400 bps decoder
-  for P25 Phase 2, DMR (Tier II / III), and NXDN voice frames.
-  AMBE+2 is the same MBE-family algorithm as IMBE — same 8 kHz /
-  20 ms / 160 PCM cadence, same harmonic + unvoiced FFT synthesis
-  shape — so the synthesis half reuses `internal/voice/mbe/`
-  directly. Only the front half (bit-level unpack from 49
-  information bits into `mbe.Params` plus the AMBE+2-specific
-  cross-frame gamma) is AMBE+2-specific. The AMBE+2 algorithm
-  carries active patents in some jurisdictions; re-implementing
-  it in Go does not change that posture
-  ([docs/vocoders.md](docs/vocoders.md)). Status: skeleton +
-  Vocoder interface registered as `ambe2` on the default build
-  (`internal/voice/ambe2/decoder.go`); 49-bit parameter unpack
-  is in (`internal/voice/ambe2/params.go`) — bit extraction for
-  b₀..b₈, tone-frame detection (b₀ ∈ {0x7E,0x7F}), fundamental
-  + L from `AmbePlusLtable[b₀]`, voicing decisions via
-  `AmbePlusVuv[b₁][jl]`, gain delta from `AmbePlusDg[b₂]`,
-  PRBA24/PRBA58 → Gm → 8-point inverse DCT → Ri → first two
-  Cik coefficients per band, HOC tables b₅..b₈ → remaining Cik
-  rows, four per-band inverse DCTs producing the Tl[1..L]
-  spectral residuals. Codebook tables are auto-generated from
-  szechyjs/mbelib's `ambe3600x2400_const.h` under ISC
-  (`internal/voice/ambe2/tables.go`,
-  `scripts/gen-ambe2-tables.sh`). Synthesis is wired through
-  the shared `mbe` pipeline: `Decode()` resolves the absolute
-  gamma (gamma_curr = ΔG + 0.5·gamma_prev cached on the
-  Decoder), folds gamma + DC removal + 0.5·log2(L) into Tl so
-  the shared `mbe.PredictLog2Ml` produces AMBE+2-spec
-  log-amplitudes, applies the AMBE+2 unvoiced `Unvc` scaling
-  (0.2046/√ω₀) between log2Ml→Ml and the §6.2 enhancement,
-  then runs `mbe.SynthVoiced` + `mbe.SynthUnvoicedOverlapAdd`
-  + state roll-forward + per-frame AGC into int16 PCM. Tone
-  frames (b₀ ∈ {0x7E, 0x7F}) decode b₁/b₂ via the
-  AMBE+2-specific bit layout (t5/t6/t7 table lookup on
-  info[6,7,8] feeding bits 5..7 of b₁); valid single-tone
-  indices (b₁ ∈ [5, 122]) synthesise a sinewave at b₁·31.25 Hz
-  scaled by b₂, with oscillator phase carried across frames in
-  the Decoder so a held tone is click-free. Dual-tone
-  (b₁ ∈ [128, 163]) and invalid tone indices route through the
-  §6.4 OA fade-out + state reset. Bad-frame replay uses the
-  shared `mbe.MaxBadFrames` / `mbe.BadFrameAttenuation`.
-  **Remaining polish**: calibration against a DSD-FME-decoded
-  DMR reference recording (testdata follow-up); dual-tone
-  synthesis once a frequency-pair lookup is sourced.
+- **IQ-domain control-channel decoder daemon wiring.** The protocol
+  packages all ship unit-tested control-channel state machines; the
+  P25 Phase 1 IQ → C4FM dibit receiver is in
+  (`internal/radio/p25/phase1/receiver`); the CC Hunter supervisor
+  (`internal/scanner/cchunt`) round-robins systems and retunes the
+  control SDR. What's missing is the connector that takes the live IQ
+  stream from the control device, runs it through the right protocol's
+  receiver + control-channel pipeline, and publishes the resulting
+  `cc.locked` / `grant` events on the bus. Without it the supervisor
+  will always report `state=failed` per system (which the TUI Scanner
+  panel shows truthfully). This is the load-bearing follow-up that
+  lights up live trunked reception.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/ambe2`; the daemon picks the factory by name
-  from `voice.DefaultRegistry`.
-- **Pure-Go RTL-SDR driver.** A `CGO_ENABLED=0` replacement for
-  the `librtlsdr` + `libusb-1.0` C dependency, mirroring the
-  mbelib → pure-Go IMBE/AMBE+2 migration. The driver layers a
-  platform USB transport (`internal/sdr/rtlsdr/usb/` — Linux
-  USBDEVFS ioctls on `/dev/bus/usb/BBB/DDD`, Windows WinUSB via
-  lazy-loaded DLL, macOS IOKit via `purego`) under a pure-Go
-  RTL2832U register / I2C layer and per-tuner drivers (R820T,
-  R820T2, R828D, E4000, FC0012, FC0013, FC2580). The
-  `sdr.Device` interface and the u8-IQ → complex64 conversion
-  math (subtract 127.5 DC bias, divide by 127.5) are preserved
-  bit-identically from the original CGO wrapper so the DSP chain
-  is untouched. **Status: ✅ complete (PR-01..PR-10 all
-  landed).** The pure-Go driver is the only RTL-SDR backend the
-  project ships; every `librtlsdr` / `libusb` build dependency is
-  gone; `CGO_ENABLED=0` runs through the entire toolchain
-  (Docker, CI, installer); macOS uses IOKit via
-  `github.com/ebitengine/purego`. `internal/sdr/rtlsdr/usb/` exposes the
-  `Transport` + `Enumerator` interfaces, a record/replay
-  `MockTransport` for unit tests, and platform backends across
-  Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
-  (`/sys/bus/usb/devices` enumeration without root, vendor-IN/OUT
-  control transfers, 32-deep URB ring on the bulk-IN endpoint
-  with a dedicated reaper goroutine). Windows uses WinUSB via
-  lazy-loaded `setupapi.dll` + `winusb.dll` (SetupDi-based
-  enumeration of `GUID_DEVINTERFACE_USB_DEVICE`, device-path →
-  VID/PID/serial parser, RAW_IO bulk-IN with an auto-reset-event
-  ring driven by `WaitForMultipleObjects` /
-  `WinUsb_GetOverlappedResult`, `WinUsb_AbortPipe` for cancel).
-  macOS uses IOKit via `github.com/ebitengine/purego`
-  (PR-10): `IOServiceMatching("IOUSBDevice")` enumerates the
-  IORegistry, `IOCreatePlugInInterfaceForService` +
-  `QueryInterface(kIOUSBDeviceInterfaceID)` opens the device,
-  COM-style vtable dispatch via `purego.SyscallN` issues the
-  USB control transfers, and N OS-thread-pinned goroutines do
-  synchronous `ReadPipe`s on the bulk-IN endpoint with
-  `AbortPipe` for cancel — sidesteps `CFRunLoop` callbacks
-  entirely. CI compiles + vets + tests the package on
-  `ubuntu-latest` + `windows-latest` + `macos-latest` under
-  `CGO_ENABLED=0`.
-  `internal/sdr/rtlsdr/rtl2832u/` is the demodulator-chip layer
-  on top of the transport: `ReadBlockReg` / `WriteBlockReg`
-  (USB / SYS register space) and `ReadDemodReg` / `WriteDemodReg`
-  (page-addressed demod registers) match the librtlsdr wire
-  format byte-for-byte (including the load-bearing
-  page-0x0A/0x01 commit read after every demod write), plus
-  `InitBaseband` (the full 24-step + 20-byte-FIR power-on
-  sequence), `SetSampleRate` with the 28.4 fixed-point divisor
-  math (golden table covering 250 kS/s / 1.024 / 2.048 / 2.4 /
-  3.2 MS/s pins the realRatio sign-bit-extension corner case),
-  `SetIFFreq`, `SetSampleFreqCorrection` (PPM), `ResetBuffer`,
-  `SetFIR` / `SetFIRDefault`, the I2C bridge (`SetI2CRepeater`
-  caches the last value, `I2CReadReg` / `I2CWriteReg` /
-  `I2CRead` / `I2CWrite`), and GPIO + `SetBiasTee` plumbing.
-  `internal/sdr/rtlsdr/tuners/` is the per-chip tuner layer
-  covering the full librtlsdr matrix: R820T / R820T2 / R828D
-  (the dominant family — NESDR Smart v5, RTL-SDR Blog v3/v4,
-  generic clones), E4000 (older Elonics, Terratec NOXON DAB
-  sticks), FC0012 / FC0013 (Fitipower, found on some legacy
-  clones), and FC2580 (FCI multi-band niche dongles). Each
-  driver pins the corresponding `tuner_*.c` register sequence:
-  R820T uses a shadow-register cache (read-modify-write is
-  free, redundant writes are elided) plus bit-reversed-byte
-  read handling, a 27-byte init flood at 0x05..0x1F, a
-  mixer-divider PLL synthesizer over the 1.77–3.9 GHz VCO range,
-  21-entry freq-range → RF-mux table, and a 16-entry IF-filter
-  table. FC0012 / FC0013 share an 11-band PLL with per-band
-  multipliers (96/64/48/32/24/16/12/8/6/4/2) and XDIV+FA+PM
-  fractional math; FC0013 adds a 26-step LNA ladder. E4000 ports
-  the zero-IF synth (Z + 16-bit Σ-Δ X across 12 VCO bands plus
-  the magic-init + AGC default flood — IMR / DC-offset
-  calibration sweeps stay at defaults until a real-hardware
-  capture lands). FC2580 ports the 54-register init flood,
-  multi-band synth with band-dependent IF (5.6 MHz VHF, 4.6 MHz
-  UHF, 1.4 MHz L-band). The unified `tuners.Detect` orchestrator
-  wraps the whole probe sequence in one `SetI2CRepeater` on/off
-  pair, walks every candidate I2C address (0x34/0x74 R820T,
-  0xC8 E4000, 0xC6 FC0013/FC0012 with GPIO-5 enable for the
-  latter, 0xAC FC2580) and returns a ready driver — `purego.Open`
-  now binds whichever tuner the hardware advertises with no
-  changes upstream.
-  `internal/sdr/rtlsdr/purego/` is the consumer-facing driver
-  that composes the three layers above into the
-  `sdr.Driver` + `sdr.Device` contracts. `Driver.Enumerate`
-  filters discovered USB devices against a 41-entry known-VID/PID
-  table mirroring `librtlsdr`'s `known_devices`. `Driver.Open`
-  claims interface 0, runs `Demod.InitBaseband`, probes for an
-  R820T-family tuner, runs `Tuner.Init`, and programs the
-  3.57 MHz IF on the demod. `Device.SetCenterFreq` /
-  `SetSampleRate` / `SetGain` (manual ladder + AGC) /
-  `SetPPM` / `SetBiasTee` dispatch to the right layer with
-  bit-identical IQ-conversion math to the original CGO wrapper;
-  `StreamIQ` preserves the 32 × 16 KiB ring + 8-deep buffered
-  channel + drop-on-overrun semantics. As of PR-09 the
-  pure-Go driver is the only RTL-SDR backend the project
-  ships — `rtlsdr_cgo.go` is gone, and every `librtlsdr` /
-  `libusb` apt install in `Dockerfile`, the MSYS2 + DLL-bundling
-  steps in `.github/workflows/*.yml`, and the DLL `Source` lines
-  in `installer/windows/gophertrunk.iss` have all been removed.
-  Default builds run `CGO_ENABLED=0` end-to-end. PR-10 added
-  the macOS IOKit backend itself via
-  `github.com/ebitengine/purego` — IOServiceMatching enumerates
-  the registry, COM-style vtable dispatch handles the device /
-  interface plumbing, and N OS-thread-pinned goroutines do
-  synchronous `ReadPipe`s on the bulk-IN endpoint. The rewrite
-  is **complete**.
-- **YSF Trellis decode + grant emission.** ✅ Shipped: the K=5 ½-rate
-  Viterbi Trellis encoder + decoder live at
-  `internal/radio/ysf/fich_trellis.go` (sharing the shared `framing.ViterbiK5`
-  primitive with NXDN SACCH). The control-channel state machine
-  publishes `trunking.Grant` payloads with `Protocol = "ysf"`,
-  `GroupID = FICH.SquelchCode` (DG-ID), `FrequencyHz = repeater_freq`
-  on Header FICH for Group calls; Terminator FICH clears the dedup
-  so the next transmission fires a fresh CallStart. Calibration
-  against a captured stream (interleaver / puncture table validation)
-  is the only remaining polish item.
-- **Higher-fidelity FM voice chain.** ✅ Shipped: opt-in 75/50µs
-  de-emphasis (`composer.DeEmphasisConfig`), Kaiser-windowed audio
-  LPF (`composer.AudioLPFConfig`), audio AGC
-  (`composer.AudioAGCConfig`), and polyphase L/M audio resampler
-  (`composer.AudioResamplerConfig`).
+  from `voice.DefaultRegistry`. Useful for operators who want
+  vendor-blessed AMBE+2 decode on jurisdictions where the patent
+  posture matters.
+- **Vocoder level calibration.** Pure-Go IMBE / AMBE+2 produce real
+  audio end-to-end today. Absolute-level calibration against a
+  DSD-FME or OP25 reference recording (capture a P25 P1 / DMR voice
+  exchange, decode through both, compare RMS + cross-correlation
+  against a reference WAV under `internal/voice/{imbe,ambe2}/testdata/`)
+  is a polish item — useful when downstream pipelines need consistent
+  loudness across decoders. AMBE+2 dual-tone synthesis
+  (b₁ ∈ [128, 163]) routes through silence pending a frequency-pair
+  lookup that the public spec doesn't document.
+- **YSF on-air interleaver / puncture validation.** The K=5 ½-rate
+  Trellis encoder + decoder round-trip cleanly; matching the exact
+  on-air interleaver / puncture schedule to a captured YSF
+  transmission lands once a real-air capture is available.
+
+### Recently shipped
+
+- **Police-scanner subsystem** (`internal/scanner/{cchunt,conventional}`)
+  — multi-system CC Hunter supervisor with hold/resume/force-retune,
+  conventional FM scan list with IQ-power squelch, talkgroup scan
+  list with global ScanMode, 10th TUI panel and REST cockpit at
+  `/api/v1/scanner`.
+- **TUI Devices panel** + `GET /api/v1/devices` + `sdr.attached` /
+  `sdr.detached` event publishing in the SDR pool.
+- **TUI drill-in modals** on Systems and Talkgroups (Enter).
+- **P25 Phase 1 IQ → C4FM dibit receiver** (`internal/radio/p25/phase1/receiver`)
+  composing FM demod + RRC matched filter + Mueller-Müller clock
+  recovery + 4-level slicer into one entry point feeding the LDU
+  assembler.
+- **YSF FICH Trellis decoder + grant emission** on Header FICH for
+  Group calls (`internal/radio/ysf/fich_trellis.go` + extended
+  `control.go`).
+- **Pure-Go RTL-SDR driver** (`internal/sdr/rtlsdr/{usb,rtl2832u,tuners,purego}/`)
+  replaced the `librtlsdr` + `libusb` C dependency. Pure-Go USB
+  transports for Linux (USBDEVFS), Windows (WinUSB), and macOS (IOKit
+  via `purego`); RTL2832U register/I2C layer; R820T/R820T2/R828D +
+  E4000 + FC0012 + FC0013 + FC2580 tuner drivers. Default builds
+  run `CGO_ENABLED=0` end-to-end.
+- **Pure-Go IMBE vocoder** (`internal/voice/imbe/` + shared
+  `internal/voice/mbe/`) and **pure-Go AMBE+2 vocoder**
+  (`internal/voice/ambe2/`) — both produce intelligible audio
+  end-to-end with shared AGC, §6.2 spectral enhancement, frame-repeat
+  on bad-frame indicator, phase-aware fade-in.
+- **Higher-fidelity FM voice chain**: opt-in 75/50µs de-emphasis,
+  Kaiser-windowed audio LPF, audio AGC, polyphase L/M audio
+  resampler (`composer.{DeEmphasis,AudioLPF,AudioAGC,AudioResampler}Config`).
 
 ## Tech stack
 
@@ -487,7 +243,8 @@ internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D + E4000 + FC0012 + FC0013 + FC2
 internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; canonical "rtlsdr" registrant
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ (+ phase1/receiver IQ→dibit) + dmr/ + nxdn/ + ysf/
-internal/trunking/      System, talkgroup DB, priority, engine, CC hunter
+internal/trunking/      System, talkgroup DB (Scan flag), engine (ScanMode, HandleSyntheticCall), priority, CC hunter primitive, cc cache
+internal/scanner/       cchunt/ (multi-system CC supervisor) + conventional/ (analog FM scan list)
 internal/voice/         Recorder, vocoder plugin, demod composer
 internal/storage/       SQLite call log + retention sweeper
 internal/api/           HTTP REST + SSE + WebSocket + gRPC
@@ -500,7 +257,7 @@ docs/                   architecture · hardware · vocoders · hardening
 
 ## TUI
 
-GopherTrunk ships a read-only operator TUI that points at a running
+GopherTrunk ships an operator TUI that points at a running
 daemon. From a second terminal:
 
 ```bash
@@ -531,8 +288,9 @@ refresh, automatic reconnect on disconnect:
 | `?` | toggle help |
 | `q` / `Ctrl+C` | quit |
 
-For mutation actions (end-call, set-priority, lockout,
-retention-sweep, tone-detector reset) start the daemon with
+For mutation actions (end-call; set talkgroup priority / lockout /
+scan; retention-sweep; tone-detector reset; scanner cockpit
+hold/resume/retune/dwell + scan_mode flip) start the daemon with
 `api.allow_mutations: true` and the TUI with `--write`. Both ends
 gate independently because the HTTP API has no authentication.
 See [`docs/tui.md`](docs/tui.md) for the full reference.
