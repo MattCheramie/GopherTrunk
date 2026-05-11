@@ -283,7 +283,7 @@ to its own package and lands independently.
   `sdr.Device` interface and IQ-format conversion at
   `internal/sdr/rtlsdr/rtlsdr_cgo.go:225-240` are preserved
   bit-identically so the DSP chain is untouched. Status: PR-01
-  through PR-05 landed. `internal/sdr/rtlsdr/usb/` exposes the
+  through PR-06 landed. `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
   `MockTransport` for unit tests, and platform backends across
   Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
@@ -331,13 +331,30 @@ to its own package and lands independently.
   (LNA + mixer + VGA stages), AGC ↔ manual mode toggle, and a
   Standby low-power sequence. Detection probes I2C addresses
   0x34 and 0x74, accepts chip ID 0x69 (or the bit-reversed
-  0x96 clone variant). PRs 06-10 land the wire-up under the
-  alternate driver name `rtlsdr-go`, the remaining four tuners
-  (E4000, FC0012, FC0013, FC2580), the default flip, the
-  deletion of `rtlsdr_cgo.go` + every `librtlsdr` apt / MSYS2 /
-  DLL-bundling step in `Dockerfile`, `.github/workflows/*.yml`,
-  `installer/gophertrunk.iss`, and the install docs, and the
-  macOS IOKit transport itself.
+  0x96 clone variant).
+  `internal/sdr/rtlsdr/purego/` is the consumer-facing driver
+  that composes the three layers above into the
+  `sdr.Driver` + `sdr.Device` contracts. `Driver.Enumerate`
+  filters discovered USB devices against a 41-entry known-VID/PID
+  table mirroring `librtlsdr`'s `known_devices`. `Driver.Open`
+  claims interface 0, runs `Demod.InitBaseband`, probes for an
+  R820T-family tuner, runs `Tuner.Init`, and programs the
+  3.57 MHz IF on the demod. `Device.SetCenterFreq` /
+  `SetSampleRate` / `SetGain` (manual ladder + AGC) /
+  `SetPPM` / `SetBiasTee` dispatch to the right layer with
+  bit-identical math to `rtlsdr_cgo.go:225-240`; `StreamIQ`
+  preserves the 32 × 16 KiB ring + 8-deep buffered channel +
+  drop-on-overrun semantics. Registration is gated by the
+  `-tags rtlsdr_purego` build flag so the new driver is opt-in
+  during the rewrite — the existing CGO driver keeps the
+  `rtlsdr` registration name in default builds. With the tag,
+  `rtlsdr-go` shows up in `gophertrunk sdr list` alongside any
+  CGO-backed `rtlsdr` entries (PR-08 swaps the names so
+  pure-Go becomes default; PR-09 deletes the CGO file and the
+  associated `librtlsdr` apt / MSYS2 / DLL-bundling steps).
+  PRs 07-10 land the remaining four tuners (E4000, FC0012,
+  FC0013, FC2580), the default flip, the deletion of
+  `rtlsdr_cgo.go`, and the macOS IOKit transport itself.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
   K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
@@ -436,6 +453,7 @@ internal/sdr/           Driver interface, pool, CGO librtlsdr (→ pure-Go), moc
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
 internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D tuner driver (PLL + mux + gain + bandwidth)
+internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; -tags rtlsdr_purego registers as "rtlsdr-go"
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
 internal/trunking/      System, talkgroup DB, priority, engine, CC hunter
