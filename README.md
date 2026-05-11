@@ -71,13 +71,20 @@ panel. The honest remaining gaps:
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
-  shipping. Absolute-level calibration against a known-good reference
-  decoder (DSD-FME or OP25) is a polish item that needs captured
-  P25 P1 / DMR voice exchanges in `internal/voice/{imbe,ambe2}/testdata/`.
-  AMBE+2 single-tone synthesis works; dual-tone (b₁ ∈ [128, 163])
-  routes through silence pending a frequency-pair lookup that the
-  public spec doesn't document. See [docs/vocoders.md](docs/vocoders.md)
-  for the licensing posture.
+  shipping. The comparison harness lives at
+  `internal/voice/calibrate/` — `calibrate.Compare(raw, refWav,
+  vocoderName)` returns `RMSRatioDb` + normalised cross-correlation
+  + lag against a reference WAV from DSD-FME or OP25, and the
+  package's `TestCompare{IMBE,AMBE2}SkipsWithoutFixtures` tests
+  enforce `|RMS offset| < 3 dB` and peak xcorr > 0.85 once
+  fixtures are in place. The remaining gap is sourcing the
+  reference data: captured P25 P1 / DMR voice exchanges plus
+  DSD-FME / OP25 decodes belong at
+  `internal/voice/{imbe,ambe2}/testdata/`. AMBE+2 single-tone
+  synthesis works; dual-tone (b₁ ∈ [128, 163]) routes through
+  silence pending a frequency-pair lookup that the public spec
+  doesn't document. See [docs/vocoders.md](docs/vocoders.md) for
+  the licensing posture.
 - **YSF FICH on-air interleaver / puncture validation.** The K=5
   ½-rate Trellis encoder + decoder are in
   (`internal/radio/ysf/fich_trellis.go`) and round-trip cleanly in
@@ -127,6 +134,15 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Vocoder calibration harness** (`internal/voice/calibrate/`)
+  — `Compare(raw, refWav, vocoderName)` returns RMS-ratio (dB),
+  normalised cross-correlation, and best alignment lag against an
+  external decoder's reference WAV. Unit tests cover the RMS +
+  cross-correlation primitives + a WAV round-trip via the shared
+  `voice.WavWriter`; integration tests for IMBE / AMBE+2 skip
+  cleanly until the testdata fixtures land. The harness's failure
+  output names the AGC constant in
+  `internal/voice/mbe/agc.go:DefaultAGCConfig` to adjust.
 - **Police-scanner subsystem** (`internal/scanner/{cchunt,conventional}`)
   — multi-system CC Hunter supervisor with hold/resume/force-retune,
   conventional FM scan list with IQ-power squelch, talkgroup scan
