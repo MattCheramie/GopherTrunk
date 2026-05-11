@@ -83,9 +83,16 @@ The remaining gaps:
   4-state ½-rate trellis Viterbi decoder over the 146 channel
   dibits of each MAC PDU; the spec's Reed-Solomon outer layer
   + per-burst block interleaver are documented follow-ups.
-  The remaining protocols (EDACS, MPT 1327, TETRA) still have
-  their per-protocol FEC layers pending — see each adapter PR
-  for the specific FEC parameters.
+  **MPT 1327** now has `SetBCHMode(BCHOn)` to run BCH(64,48,2)
+  (polynomial 0x6815, init 0x0001, matching DSheirer/sdrtrunk's
+  CRCFleetsync) over each 64-bit on-wire codeword with
+  single-bit correction; the 10-bit Op field that the spec
+  carries between Ident and Function isn't modelled by the
+  Codeword struct yet (the wiring extracts the 38 info bits
+  the existing struct cares about and drops Op). The remaining
+  protocols (EDACS, TETRA, LTR FCS) still have their
+  per-protocol FEC layers pending — see each adapter PR for
+  the specific FEC parameters.
 - **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
   family (P25 Phase 2, TETRA). The Gardner timing-recovery
   primitive now ships in `internal/dsp/sync/gardner.go` —
@@ -160,6 +167,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 `SetBCHMode(BCHOn)` opt-in.** Wires the
+  `BCHEncodeMPT1327` / `BCHDecodeMPT1327` framing primitive
+  into the MPT 1327 `ControlChannel.Process` adapter. When on,
+  the adapter slices 64-bit on-wire codewords (instead of the
+  default 38-bit pre-stripped info windows), runs BCH(64,48,2)
+  decode + single-bit error correction, then extracts the 38
+  info bits the existing `Codeword` struct models (Type +
+  Prefix + Ident + Function, with the spec's 10-bit Op field
+  between Ident and Function dropped — the struct doesn't yet
+  model it). The alignment search picks the first 64-bit
+  window that BCH-passes, which is much more selective than
+  the 38-bit "recognised opcode" search BCHOff uses, so
+  live-air captures whose first few codewords carry single-bit
+  errors still synchronise. Tests cover BCHOn round-trip (an
+  Aloha → GoToChannel stream produces cc.locked + Grant),
+  single-bit error correction (one flipped bit per codeword
+  still locks), uncorrectable-codeword rejection (two-bit
+  flips drop the frame), and default-mode preservation.
 - **MPT 1327 BCH(64,48) primitive in framing/.** New shared
   `framing/bch_mpt1327.go` adds `BCHEncodeMPT1327` /
   `BCHDecodeMPT1327` for the 64-bit codeword layout MPT 1327

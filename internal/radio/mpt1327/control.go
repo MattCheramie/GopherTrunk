@@ -40,6 +40,7 @@ type ControlChannel struct {
 	locked           bool
 	last             LockState
 	strictValidation bool
+	bchMode          BCHMode
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on
@@ -53,6 +54,48 @@ func (c *ControlChannel) SetStrictValidation(strict bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.strictValidation = strict
+}
+
+// BCHMode selects how the Process adapter interprets the incoming
+// bit stream:
+//
+//   - BCHOff (default): the adapter reads 38-bit information
+//     windows directly from the wire and treats them as Codewords.
+//     Works on synthesized test fixtures whose codewords are
+//     pre-stripped of the FEC layer.
+//
+//   - BCHOn: the adapter reads 64-bit on-wire codewords, runs
+//     them through the BCH(64,48,2) check + single-bit correction
+//     in internal/radio/framing/bch_mpt1327.go, and extracts the
+//     38-bit information field expected by the existing
+//     CodewordFromBits parser. The 10-bit Op field that the
+//     spec carries between Ident and Function isn't modelled by
+//     this package and is dropped during extraction; the Kind
+//     extracted from the upper 4 bits of Function (as
+//     CodewordKind defines) still drives the state machine.
+//
+// Under BCHOn, the alignment search picks the first 64-bit
+// window that passes BCH (much more selective than the 38-bit
+// "recognised opcode" search), so live-air captures whose first
+// few codewords carry bit errors still synchronise. Single-bit
+// errors per codeword are corrected; uncorrectable codewords
+// (≥ 2 bit errors in unfavourable positions) are dropped.
+type BCHMode uint8
+
+const (
+	BCHOff BCHMode = iota
+	BCHOn
+)
+
+// SetBCHMode toggles the BCH FEC layer on the Process adapter.
+// See BCHMode for the trade-offs. The mode applies to every
+// subsequent Process call; the Ingest entry point is unaffected
+// (callers that pre-parse codewords don't go through this
+// adapter).
+func (c *ControlChannel) SetBCHMode(mode BCHMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bchMode = mode
 }
 
 // Options configure a ControlChannel.
