@@ -477,43 +477,9 @@ func TestComputePLLDivisor_VHFRange(t *testing.T) {
 	}
 }
 
-func TestR82xx_DetectFailsOnEmptyResponses(t *testing.T) {
-	// First candidate (0x34) returns 0x00 (no chip), second (0x74) too.
-	m := usb.NewMockTransport()
-	// Detect calls SetI2CRepeater(true) once, then reads from 0x34 (bit-reversed 0 = 0),
-	// reads from 0x74 (0), then SetI2CRepeater(false).
-	m.Script = append(m.Script, expectRepeaterToggle(true)...)
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0034, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0074, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
-	m.Script = append(m.Script, expectRepeaterToggle(false)...)
-
-	demod := rtl2832u.New(m)
-	_, _, err := Detect(demod)
-	if err == nil {
-		t.Fatal("Detect with no responsive chip returned nil")
-	}
-}
-
-func TestR82xx_DetectMatchesR820T2OnFirstAddress(t *testing.T) {
-	// 0x34 returns 0x96 (bit-reversed of 0x69) — driver un-reverses
-	// to 0x69 and accepts.
-	m := usb.NewMockTransport()
-	m.Script = append(m.Script, expectRepeaterToggle(true)...)
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0034, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x96}})
-	m.Script = append(m.Script, expectRepeaterToggle(false)...)
-
-	demod := rtl2832u.New(m)
-	addr, chip, err := Detect(demod)
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if addr != r82xxI2CAddr {
-		t.Errorf("detected addr = 0x%02x, want 0x%02x", addr, r82xxI2CAddr)
-	}
-	if chip != TypeR820T2 {
-		t.Errorf("detected chip = %v, want R820T2", chip)
-	}
-}
+// Detect orchestrator tests moved to detect_test.go (it walks every
+// candidate tuner, not just R820T, so the scripts that pin its
+// behavior live with the orchestrator).
 
 func TestErrUnsupportedFreq_ErrorMessage(t *testing.T) {
 	e := &ErrUnsupportedFreq{Hz: 2_000_000_000, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: "R820T2"}

@@ -283,7 +283,7 @@ to its own package and lands independently.
   `sdr.Device` interface and IQ-format conversion at
   `internal/sdr/rtlsdr/rtlsdr_cgo.go:225-240` are preserved
   bit-identically so the DSP chain is untouched. Status: PR-01
-  through PR-06 landed. `internal/sdr/rtlsdr/usb/` exposes the
+  through PR-07 landed. `internal/sdr/rtlsdr/usb/` exposes the
   `Transport` + `Enumerator` interfaces, a record/replay
   `MockTransport` for unit tests, and platform backends across
   Linux, Windows, and macOS. Linux uses USBDEVFS ioctls
@@ -316,22 +316,33 @@ to its own package and lands independently.
   `SetFIR` / `SetFIRDefault`, the I2C bridge (`SetI2CRepeater`
   caches the last value, `I2CReadReg` / `I2CWriteReg` /
   `I2CRead` / `I2CWrite`), and GPIO + `SetBiasTee` plumbing.
-  `internal/sdr/rtlsdr/tuners/` is the per-chip tuner layer; the
-  R820T / R820T2 / R828D driver (the dominant family in the wild
-  — NESDR Smart v5, RTL-SDR Blog v3/v4, generic clones) lands
-  first. It pins the librtlsdr `tuner_r82xx.c` wire format:
-  shadow-register cache (read-modify-write is free, redundant
-  writes are elided to save USB roundtrips), bit-reversed-byte
-  read handling, I2C-bridged 27-byte init flood at registers
-  0x05..0x1F, PLL synthesizer (mixer-divider sweep over
-  {2,4,8,16,32,64} against the 1.77–3.9 GHz VCO range,
-  integer + sigma-delta fractional path, VCO fine-tune
-  compensation), 21-entry freq-range → RF-mux / tracking-filter
-  table, 16-entry IF-filter-bandwidth table, gain ladder
-  (LNA + mixer + VGA stages), AGC ↔ manual mode toggle, and a
-  Standby low-power sequence. Detection probes I2C addresses
-  0x34 and 0x74, accepts chip ID 0x69 (or the bit-reversed
-  0x96 clone variant).
+  `internal/sdr/rtlsdr/tuners/` is the per-chip tuner layer
+  covering the full librtlsdr matrix: R820T / R820T2 / R828D
+  (the dominant family — NESDR Smart v5, RTL-SDR Blog v3/v4,
+  generic clones), E4000 (older Elonics, Terratec NOXON DAB
+  sticks), FC0012 / FC0013 (Fitipower, found on some legacy
+  clones), and FC2580 (FCI multi-band niche dongles). Each
+  driver pins the corresponding `tuner_*.c` register sequence:
+  R820T uses a shadow-register cache (read-modify-write is
+  free, redundant writes are elided) plus bit-reversed-byte
+  read handling, a 27-byte init flood at 0x05..0x1F, a
+  mixer-divider PLL synthesizer over the 1.77–3.9 GHz VCO range,
+  21-entry freq-range → RF-mux table, and a 16-entry IF-filter
+  table. FC0012 / FC0013 share an 11-band PLL with per-band
+  multipliers (96/64/48/32/24/16/12/8/6/4/2) and XDIV+FA+PM
+  fractional math; FC0013 adds a 26-step LNA ladder. E4000 ports
+  the zero-IF synth (Z + 16-bit Σ-Δ X across 12 VCO bands plus
+  the magic-init + AGC default flood — IMR / DC-offset
+  calibration sweeps stay at defaults until a real-hardware
+  capture lands). FC2580 ports the 54-register init flood,
+  multi-band synth with band-dependent IF (5.6 MHz VHF, 4.6 MHz
+  UHF, 1.4 MHz L-band). The unified `tuners.Detect` orchestrator
+  wraps the whole probe sequence in one `SetI2CRepeater` on/off
+  pair, walks every candidate I2C address (0x34/0x74 R820T,
+  0xC8 E4000, 0xC6 FC0013/FC0012 with GPIO-5 enable for the
+  latter, 0xAC FC2580) and returns a ready driver — `purego.Open`
+  now binds whichever tuner the hardware advertises with no
+  changes upstream.
   `internal/sdr/rtlsdr/purego/` is the consumer-facing driver
   that composes the three layers above into the
   `sdr.Driver` + `sdr.Device` contracts. `Driver.Enumerate`
@@ -352,9 +363,12 @@ to its own package and lands independently.
   CGO-backed `rtlsdr` entries (PR-08 swaps the names so
   pure-Go becomes default; PR-09 deletes the CGO file and the
   associated `librtlsdr` apt / MSYS2 / DLL-bundling steps).
-  PRs 07-10 land the remaining four tuners (E4000, FC0012,
-  FC0013, FC2580), the default flip, the deletion of
-  `rtlsdr_cgo.go`, and the macOS IOKit transport itself.
+  PRs 08-10 land the default flip (pure-Go re-registers as
+  `rtlsdr`; CGO moves to `rtlsdr-cgo`), the deletion of
+  `rtlsdr_cgo.go` + every `librtlsdr` apt / MSYS2 / DLL-bundling
+  step in `Dockerfile`, `.github/workflows/*.yml`,
+  `installer/gophertrunk.iss`, and the install docs, and the
+  macOS IOKit transport itself.
 - **YSF Trellis decode + grant emission.** Sync, frame layout, and
   the post-FEC FICH bit-level parser are in; what's left is the
   K=5 ½-rate Viterbi Trellis decoder over the on-air 100-bit FICH
@@ -452,7 +466,7 @@ internal/tui/           bubbletea TUI: 8 read-only panels over REST+SSE
 internal/sdr/           Driver interface, pool, CGO librtlsdr (→ pure-Go), mock
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS stub, mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
-internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D tuner driver (PLL + mux + gain + bandwidth)
+internal/sdr/rtlsdr/tuners/   R820T/R820T2/R828D + E4000 + FC0012 + FC0013 + FC2580 tuner drivers
 internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; -tags rtlsdr_purego registers as "rtlsdr-go"
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ + dmr/ + nxdn/
