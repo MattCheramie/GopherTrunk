@@ -67,16 +67,17 @@ panel. The honest remaining gaps:
   the active pipeline whose CC state machine publishes `cc.locked`
   / `grant` events back on the bus — the trigger that lights up
   every downstream surface (engine, recorder, call log, API, TUI).
-  Live trunked reception works today for P25 Phase 1, YSF, and
-  dPMR Mode 3 (all three have IQ → symbol → CC state machine
-  chains shipping end-to-end). DMR / NXDN / EDACS / MPT 1327 /
-  LTR / Motorola / P25 P2 / TETRA each have IQ → symbol
-  receivers shipping but their CC state machines still consume
-  pre-parsed PDUs; adding the `Process(stream, baseIdx)` adapter
-  on each (sync detect → frame slice → existing parser → Ingest)
-  lights up the rest. The adapter shape is ~30–50 lines per
-  protocol and documented per-receiver in the relevant PR
-  descriptions.
+  Live trunked reception works today for P25 Phase 1, YSF, dPMR
+  Mode 3, and NXDN (FSW sync + LICH parse only — full CAC FEC
+  decoding is the next NXDN follow-up; until then the adapter
+  sync-locks but typically fails the CAC CRC on real on-air
+  signals). DMR / EDACS / MPT 1327 / LTR / Motorola / P25 P2 /
+  TETRA each have IQ → symbol receivers shipping but their CC
+  state machines still consume pre-parsed PDUs; adding the
+  `Process(stream, baseIdx)` adapter on each (sync detect → frame
+  slice → existing parser → Ingest) lights up the rest. The
+  adapter shape is ~30–50 lines per protocol and documented
+  per-receiver in the relevant PR descriptions.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -143,6 +144,21 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **NXDN `ControlChannel.Process(stream, baseIdx)` adapter +
+  ccdecoder factory.** Closes the IQ → CC sync layer for NXDN:
+  the receiver's `DibitSink` forwards into
+  `nxdn.ControlChannel.Process`, which buffers across calls +
+  detects the 8-dibit outbound FSW + parses the LICH from the
+  next 16 wire bits (doubled-bit majority decode via
+  `DecodeLICHWire` → `ParseLICH`) + pulls the first 44 dibits of
+  the 144-dibit Info field as raw CAC bits → `ParseCAC` →
+  `IngestFrame`. The CAC FEC layer (K=5 ½-rate Viterbi +
+  interleaver + puncture across the full 288-wire-bit Info field)
+  is the next NXDN follow-up; until it ships the adapter
+  sync-locks but typically fails the CAC CRC on real on-air
+  signals. Inbound (MS → BS) FSW matches are silently ignored
+  since they don't carry the CC announcement payloads the state
+  machine locks on.
 - **dPMR Mode 3 `ControlChannel.Process(stream, baseIdx)` adapter +
   ccdecoder factory.** Closes the IQ → CC loop for dPMR: the
   receiver's `DibitSink` forwards into `dpmr.ControlChannel.Process`,
