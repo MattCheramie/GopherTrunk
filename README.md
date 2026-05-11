@@ -160,6 +160,28 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 BCH(64,48) primitive in framing/.** New shared
+  `framing/bch_mpt1327.go` adds `BCHEncodeMPT1327` /
+  `BCHDecodeMPT1327` for the 64-bit codeword layout MPT 1327
+  uses (48 info bits + 15 BCH check + 1 overall parity bit).
+  Polynomial `g(x) = x^15 + x^14 + x^13 + x^11 + x^4 + x^2 + 1`
+  (= 0x6815 without the implicit leading x^15) and 0x0001
+  initial fill — the parameters DSheirer/sdrtrunk uses in
+  `edac/CRCFleetsync.java` for Fleetsync and MPT 1327
+  (which share the codeword format). 48-entry syndrome table
+  generated at package init from `x^i mod g(x)` for the info
+  bits. Single-bit error correction is best-effort: info-bit
+  errors (positions 0..47) and parity-bit errors (position 63)
+  recover the info field exactly; CRC-bit errors (positions
+  48..62) have known syndrome collisions with info bits 0..14
+  and are resolved by preferring info-bit correction (garbage
+  at the info layer gets rejected by the protocol parser
+  anyway). Tests cover round-trip, single-bit detection across
+  all 64 positions, exact info-bit recovery for the
+  unambiguous half of the position space, random round-trips,
+  and a double-bit-error detection sanity check. Wiring this
+  primitive into the MPT 1327 adapter via a `SetBCHMode` opt-in
+  is the follow-up.
 - **Gardner symbol-time recovery for complex IQ.**
   `internal/dsp/sync/gardner.go` adds a non-data-aided
   feedback timing-recovery loop sibling to the existing
