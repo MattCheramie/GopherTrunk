@@ -10,9 +10,20 @@ name: Windows installer (PR)
 # Concurrency cancels any in-flight run for the same PR when a new
 # commit is pushed, so quick rebases don't burn idle Windows runner
 # minutes.
+#
+# paths-ignore: docs-only / config-example-only / license-only PRs
+# can't possibly affect the installer (it bundles only the binary +
+# docs/LICENSE, and a doc change doesn't change the binary). Skip the
+# Windows build to save ~2 min of windows-latest runner time per
+# docs PR.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - "config.example.yaml"
   workflow_dispatch:
 
 concurrency:

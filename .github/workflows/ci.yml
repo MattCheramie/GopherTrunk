@@ -1,9 +1,32 @@
 name: CI
 
+# Trigger policy:
+#   - push to main only: post-merge gate + protects against direct
+#     pushes to main bypassing PRs. Per-branch push triggers used to
+#     duplicate every PR run (one from push, one from pull_request);
+#     narrowing to main fixes that.
+#   - pull_request: every PR, every update. The branch's CI runs come
+#     in via this trigger.
+#   - paths-ignore: docs-only / config-example-only / license-only
+#     changes don't compile any Go code, so skip the CI matrix
+#     entirely. Branch protection auto-passes the required checks
+#     when a workflow is skipped via paths-ignore (GitHub default
+#     since the actions/runner #2080 fix), so this doesn't block PR
+#     merges.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - "config.example.yaml"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - "config.example.yaml"
 
 jobs:
   build-test:
