@@ -92,6 +92,24 @@ type System struct {
 	SystemID        uint16   // 12-bit system identifier (P25 SYSID)
 	RFSS            uint8    // RF SubSystem ID (P25)
 	Site            uint8    // Site ID
+
+	// TETRAColourCode is the low 30 bits of the extended colour code
+	// the TETRA scrambler uses to seed its LFSR per ETSI EN 300 392-2
+	// §8.2.5 ("ec" in the spec). The ccdecoder connector forwards this
+	// into tetra.ControlChannel.SetColourCode under ChannelCodingOn.
+	// Zero is valid (BSCH always uses 0 per §8.2.5.2) but disables
+	// channel coding because the colour code is the per-cell secret
+	// the descrambler needs to recover the type-3 stream. Bits 30..31
+	// are silently ignored downstream.
+	TETRAColourCode uint32
+	// TETRAChannel selects which TETRA logical channel lives in each
+	// burst window under ChannelCodingOn. Recognised values:
+	// "sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach" (case-insensitive,
+	// "/" optional). Empty defaults to "sch/hd" — the most common
+	// signaling carrier for cc.locked / Grant events. Forwarded into
+	// tetra.ControlChannel.SetExpectedChannel by the ccdecoder
+	// connector after parsing via tetra.ParseChannelType.
+	TETRAChannel string
 }
 
 // Validate returns an error if the System lacks required fields.

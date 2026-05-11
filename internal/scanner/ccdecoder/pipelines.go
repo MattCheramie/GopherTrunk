@@ -44,12 +44,20 @@ type ProtocolPipeline interface {
 // connector hands the bus + log down, plus the (system, frequency)
 // the supervisor is currently attempting and the IQ sample rate
 // the receiver needs to size its matched filter.
+//
+// System carries the full trunking.System the supervisor is hunting,
+// so per-protocol factories can read protocol-specific config off it
+// (TETRA colour code + expected channel, P25 WACN, etc.) without
+// needing a new field on PipelineOptions per protocol. SystemName +
+// FrequencyHz remain at the top level because they're consumed by
+// every factory.
 type PipelineOptions struct {
 	Bus          *events.Bus
 	Log          *slog.Logger
 	SystemName   string
 	FrequencyHz  uint32
 	SampleRateHz float64
+	System       trunking.System
 }
 
 // PipelineFactory constructs a fresh ProtocolPipeline for one tuned
@@ -163,10 +171,18 @@ func (p *p25Phase2Pipeline) Close() error            { return nil }
 
 // newTETRAPipeline wires internal/radio/tetra/receiver into
 // tetra.ControlChannel.Process. The receiver's DibitSink forwards
-// π/4-DQPSK dibits into the state machine (38-dibit normal
-// training-sequence detect → 48-dibit PDU slice → ParsePDU →
-// Ingest). The RCPC + RM FEC + interleaving across the full TDMA
-// slot are follow-ups.
+// π/4-DQPSK dibits into the state machine.
+//
+// When the supplied trunking.System carries a non-zero TETRAColourCode,
+// the factory flips the CC into ChannelCodingOn — slicing per the
+// configured TETRAChannel (default ChannelSCHHD) and running the full
+// ETSI EN 300 392-2 §8.3.1 type-5 → type-1 decode chain (descramble +
+// deinterleave + depuncture + Viterbi + CRC-16 verify + tail strip)
+// per burst. Leaving TETRAColourCode at zero keeps the legacy
+// ChannelCodingOff raw-dibit path (38-dibit normal training-sequence
+// detect → 48-dibit PDU slice → ParsePDU → Ingest), which still
+// works on synthesized fixtures but won't lock on live FEC-encoded
+// captures.
 //
 // The connector wires the receiver with `ClockMode: ClockGardner`
 // — Gardner timing recovery on complex IQ replaces the receiver's
@@ -180,6 +196,16 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if opts.System.TETRAColourCode != 0 {
+		ch, ok := tetra.ParseChannelType(opts.System.TETRAChannel)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised tetra_channel; falling back to SCH/HD",
+				"system", opts.SystemName, "value", opts.System.TETRAChannel)
+		}
+		cc.SetChannelCoding(tetra.ChannelCodingOn)
+		cc.SetExpectedChannel(ch)
+		cc.SetColourCode(opts.System.TETRAColourCode)
+	}
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {

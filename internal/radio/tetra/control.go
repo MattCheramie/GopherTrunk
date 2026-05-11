@@ -2,6 +2,7 @@ package tetra
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,6 +112,33 @@ const (
 	ChannelAACH
 )
 
+// ParseChannelType maps a config / user-facing string into a
+// ChannelType. Recognised values (case-insensitive, "/" optional):
+// "sch/hd" | "schhd" | "sch_hd", "sch/f" | "schf", "sch/hu" |
+// "schhu", "bsch", "aach". An empty string returns ChannelSCHHD —
+// the default ChannelCodingOn channel — and `ok = true` so config
+// callers can leave the field blank. Unknown strings return
+// ChannelSCHHD with `ok = false` so callers can surface the
+// misconfiguration.
+func ParseChannelType(s string) (ChannelType, bool) {
+	switch strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "/", ""), "_", "")) {
+	case "":
+		return ChannelSCHHD, true
+	case "schhd", "bnch", "stch":
+		return ChannelSCHHD, true
+	case "schf":
+		return ChannelSCHF, true
+	case "schhu":
+		return ChannelSCHHU, true
+	case "bsch":
+		return ChannelBSCH, true
+	case "aach":
+		return ChannelAACH, true
+	default:
+		return ChannelSCHHD, false
+	}
+}
+
 // SetChannelCoding toggles the full EN 300 392-2 §8.3.1 channel
 // coding chain on the Process adapter. See ChannelCodingMode for
 // the trade-offs.
@@ -138,6 +166,30 @@ func (c *ControlChannel) SetColourCode(colourCode uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.colourCode = colourCode & 0x3FFFFFFF
+}
+
+// ChannelCoding returns the current ChannelCodingMode. Mirrors the
+// Set* family so callers (and tests) can introspect the configured
+// mode without poking at unexported state.
+func (c *ControlChannel) ChannelCoding() ChannelCodingMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.channelCoding
+}
+
+// ExpectedChannel returns the ChannelType the Process adapter
+// currently expects under ChannelCodingOn.
+func (c *ControlChannel) ExpectedChannel() ChannelType {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.channelType
+}
+
+// ColourCode returns the configured 30-bit extended colour code.
+func (c *ControlChannel) ColourCode() uint32 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.colourCode
 }
 
 // Options configure a ControlChannel.

@@ -119,6 +119,8 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			Name:            sys.Name,
 			Protocol:        proto,
 			ControlChannels: sys.ControlChannels,
+			TETRAColourCode: sys.TETRAColourCode,
+			TETRAChannel:    sys.TETRAChannel,
 		}
 		if err := s.Validate(); err != nil {
 			return nil, fmt.Errorf("daemon: system %q: %w", sys.Name, err)

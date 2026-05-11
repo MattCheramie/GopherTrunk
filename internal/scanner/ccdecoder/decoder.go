@@ -192,6 +192,7 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 		SystemName:   sys.Name,
 		FrequencyHz:  p.AttemptedFreqHz,
 		SampleRateHz: d.sampleRateHz,
+		System:       sys,
 	})
 	if err != nil {
 		d.log.Warn("ccdecoder: pipeline factory failed",

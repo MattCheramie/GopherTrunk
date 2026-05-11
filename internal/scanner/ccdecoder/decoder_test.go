@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -283,6 +284,62 @@ func TestTETRAFactoryConstructs(t *testing.T) {
 	p.Reset()
 	if err := p.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestTETRAFactoryEnablesChannelCodingFromSystem: when the
+// trunking.System carries a non-zero TETRAColourCode, the factory
+// must flip the underlying ControlChannel into ChannelCodingOn and
+// apply the colour code + expected channel from config.
+func TestTETRAFactoryEnablesChannelCodingFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newTETRAPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 412_062_500,
+		SampleRateHz: 144_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolTETRA,
+			ControlChannels: []uint32{412_062_500},
+			TETRAColourCode: 0x12345,
+			TETRAChannel:    "sch/f",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newTETRAPipeline: %v", err)
+	}
+	tp := p.(*tetraPipeline)
+	if got := tp.cc.ChannelCoding(); got != tetra.ChannelCodingOn {
+		t.Errorf("ChannelCoding = %v, want ChannelCodingOn", got)
+	}
+	if got := tp.cc.ExpectedChannel(); got != tetra.ChannelSCHF {
+		t.Errorf("ExpectedChannel = %v, want ChannelSCHF", got)
+	}
+	if got := tp.cc.ColourCode(); got != 0x12345 {
+		t.Errorf("ColourCode = %#x, want 0x12345", got)
+	}
+}
+
+// TestTETRAFactoryDefaultColourCodeKeepsCodingOff: zero
+// TETRAColourCode preserves the legacy raw-dibit path so existing
+// synthesized-fixture tests stay green.
+func TestTETRAFactoryDefaultColourCodeKeepsCodingOff(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newTETRAPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 412_062_500,
+		SampleRateHz: 144_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolTETRA,
+			ControlChannels: []uint32{412_062_500},
+			// TETRAColourCode left at zero.
+		},
+	})
+	if err != nil {
+		t.Fatalf("newTETRAPipeline: %v", err)
+	}
+	tp := p.(*tetraPipeline)
+	if got := tp.cc.ChannelCoding(); got != tetra.ChannelCodingOff {
+		t.Errorf("ChannelCoding = %v, want ChannelCodingOff", got)
 	}
 }
 
