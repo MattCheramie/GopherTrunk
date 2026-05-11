@@ -79,6 +79,7 @@ func New(cli *client.Client, opts Options) *Model {
 			panels.NewMetrics(),
 			panels.NewDevices(),
 			panels.NewScanner(),
+			panels.NewSettings(),
 		},
 	}
 	return m

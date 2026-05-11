@@ -130,6 +130,37 @@ type System struct {
 	// Forwarded into ltr.ControlChannel.SetManchesterMode by the
 	// ccdecoder connector after parsing via ltr.ParseManchesterMode.
 	LTRManchesterMode string
+
+	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
+	// decoder on the P25 Phase 2 MAC PDU window. Recognised values
+	// (case-insensitive): "" / "off" → TrellisOff (legacy 72-dibit
+	// raw-MAC-PDU path); "on" → TrellisOn (146 channel dibits via
+	// the TIA-102.AABF trellis decoder). Forwarded into
+	// p25phase2.ControlChannel.SetTrellisMode by the ccdecoder
+	// connector after parsing via p25phase2.ParseTrellisMode.
+	P25Phase2TrellisMode string
+	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
+	// on the NXDN CAC region. Recognised values (case-insensitive):
+	// "" / "off" → ViterbiOff (legacy 44-dibit raw-CAC path);
+	// "on" → ViterbiOn (92 dibits via the K=5 Viterbi decoder).
+	// Forwarded into nxdn.ControlChannel.SetViterbiMode by the
+	// ccdecoder connector after parsing via nxdn.ParseViterbiMode.
+	NXDNViterbiMode string
+	// EDACSBCHMode enables the BCH(40, 28, 2) FEC layer on the
+	// EDACS CCW. Recognised values (case-insensitive): "" / "off"
+	// → BCHOff (legacy pre-stripped 40-bit CCW path); "on" → BCHOn
+	// (40-bit on-wire BCH(40, 28, 2) decode + single/double-bit
+	// correction). Forwarded into edacs.ControlChannel.SetBCHMode
+	// by the ccdecoder connector after parsing via
+	// edacs.ParseBCHMode.
+	EDACSBCHMode string
+	// MPT1327BCHMode enables the BCH(63, 38) FEC layer on the MPT
+	// 1327 codeword. Recognised values (case-insensitive): "" /
+	// "off" → BCHOff (legacy 38-bit pre-stripped codeword path);
+	// "on" → BCHOn (64-bit on-wire BCH(63, 38) decode). Forwarded
+	// into mpt1327.ControlChannel.SetBCHMode by the ccdecoder
+	// connector after parsing via mpt1327.ParseBCHMode.
+	MPT1327BCHMode string
 }
 
 // Validate returns an error if the System lacks required fields.

@@ -2,6 +2,7 @@ package nxdn
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
@@ -77,6 +78,30 @@ const (
 // frames don't go through this adapter).
 func (c *ControlChannel) SetViterbiMode(mode ViterbiMode) {
 	c.viterbiMode = mode
+}
+
+// ViterbiMode returns the configured ViterbiMode. Mirrors the
+// Set* family so callers (and tests) can introspect the configured
+// mode without poking at unexported state.
+func (c *ControlChannel) ViterbiMode() ViterbiMode {
+	return c.viterbiMode
+}
+
+// ParseViterbiMode maps a config / user-facing string into a
+// ViterbiMode. Recognised values (case-insensitive): "" / "off" /
+// "false" / "0" → ViterbiOff (the legacy 44-dibit raw-CAC path);
+// "on" / "true" / "1" → ViterbiOn (92 dibits run through the K=5
+// ½-rate Viterbi decoder). Unknown strings return ViterbiOff
+// with `ok = false`.
+func ParseViterbiMode(s string) (ViterbiMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return ViterbiOff, true
+	case "on", "true", "1":
+		return ViterbiOn, true
+	default:
+		return ViterbiOff, false
+	}
 }
 
 func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32, rate BaudRate) *ControlChannel {

@@ -135,6 +135,34 @@ type SystemConfig struct {
 	// tolerate noise bursts). Live captures of sub-audible LTR
 	// signaling should set "soft". Ignored for non-LTR protocols.
 	LTRManchesterMode string `yaml:"ltr_manchester_mode"`
+
+	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
+	// decoder on the P25 Phase 2 MAC PDU window. Recognised values:
+	// "" / "off" (default, legacy 72-dibit raw-MAC-PDU path) or
+	// "on" (146 channel dibits via the TIA-102.AABF trellis
+	// decoder). Live P25 Phase 2 captures need "on" to recover
+	// MAC PDUs through the FEC layer. Ignored for non-P25-Phase-2
+	// protocols.
+	P25Phase2TrellisMode string `yaml:"p25_phase2_trellis_mode"`
+	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
+	// on the NXDN CAC region. Recognised values: "" / "off"
+	// (default, legacy raw-CAC path) or "on" (92 dibits via the
+	// K=5 Viterbi decoder). Live NXDN CAC captures need "on" to
+	// recover the CAC through its FEC. Ignored for non-NXDN
+	// protocols.
+	NXDNViterbiMode string `yaml:"nxdn_viterbi_mode"`
+	// EDACSBCHMode enables the BCH(40, 28, 2) FEC layer on the
+	// EDACS CCW. Recognised values: "" / "off" (default, legacy
+	// pre-stripped 40-bit CCW) or "on" (40-bit on-wire BCH decode
+	// with single/double-bit correction). Live EDACS CCW captures
+	// should set "on". Ignored for non-EDACS protocols.
+	EDACSBCHMode string `yaml:"edacs_bch_mode"`
+	// MPT1327BCHMode enables the BCH(63, 38) FEC layer on the MPT
+	// 1327 codeword. Recognised values: "" / "off" (default, legacy
+	// 38-bit pre-stripped codeword) or "on" (64-bit on-wire BCH
+	// decode). Live MPT 1327 captures should set "on". Ignored for
+	// non-MPT-1327 protocols.
+	MPT1327BCHMode string `yaml:"mpt1327_bch_mode"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.

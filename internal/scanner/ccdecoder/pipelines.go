@@ -150,6 +150,14 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if v := opts.System.P25Phase2TrellisMode; v != "" {
+		mode, ok := p25phase2.ParseTrellisMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised p25_phase2_trellis_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetTrellisMode(mode)
+	}
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
@@ -332,6 +340,14 @@ func (p *dmrPipeline) Close() error            { return nil }
 // but typically fail the CAC CRC on real on-air signals.
 func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := nxdn.NewControlChannel(opts.Bus, opts.Log, opts.FrequencyHz, nxdn.Rate9600)
+	if v := opts.System.NXDNViterbiMode; v != "" {
+		mode, ok := nxdn.ParseViterbiMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised nxdn_viterbi_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetViterbiMode(mode)
+	}
 	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
@@ -364,6 +380,14 @@ func newEDACSPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if v := opts.System.EDACSBCHMode; v != "" {
+		mode, ok := edacs.ParseBCHMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised edacs_bch_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetBCHMode(mode)
+	}
 	rx := edacsrx.New(edacsrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
@@ -487,6 +511,14 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if v := opts.System.MPT1327BCHMode; v != "" {
+		mode, ok := mpt1327.ParseBCHMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised mpt1327_bch_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetBCHMode(mode)
+	}
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

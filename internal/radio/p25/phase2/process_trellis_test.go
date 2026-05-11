@@ -170,12 +170,48 @@ func TestSetTrellisModeDefault(t *testing.T) {
 	if cc.trellisMode != TrellisOff {
 		t.Errorf("default trellisMode = %v, want TrellisOff", cc.trellisMode)
 	}
+	if got := cc.TrellisMode(); got != TrellisOff {
+		t.Errorf("TrellisMode() = %v, want TrellisOff", got)
+	}
 	cc.SetTrellisMode(TrellisOn)
 	if cc.trellisMode != TrellisOn {
 		t.Errorf("SetTrellisMode(TrellisOn) did not take effect")
 	}
+	if got := cc.TrellisMode(); got != TrellisOn {
+		t.Errorf("TrellisMode() = %v, want TrellisOn", got)
+	}
 	cc.SetTrellisMode(TrellisOff)
 	if cc.trellisMode != TrellisOff {
 		t.Errorf("SetTrellisMode(TrellisOff) did not take effect")
+	}
+}
+
+// TestParseTrellisMode covers the config-string → TrellisMode
+// mapping the ccdecoder connector uses to translate the
+// `p25_phase2_trellis_mode` YAML field into a SetTrellisMode call.
+func TestParseTrellisMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want TrellisMode
+		ok   bool
+	}{
+		{"", TrellisOff, true},
+		{"off", TrellisOff, true},
+		{"OFF", TrellisOff, true},
+		{"false", TrellisOff, true},
+		{"0", TrellisOff, true},
+		{"on", TrellisOn, true},
+		{"ON", TrellisOn, true},
+		{"true", TrellisOn, true},
+		{"1", TrellisOn, true},
+		{" on ", TrellisOn, true},
+		{"nonsense", TrellisOff, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseTrellisMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseTrellisMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
 }

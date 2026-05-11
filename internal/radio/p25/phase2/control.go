@@ -2,6 +2,7 @@ package phase2
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,33 @@ func (c *ControlChannel) SetTrellisMode(mode TrellisMode) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.trellisMode = mode
+}
+
+// TrellisMode returns the current TrellisMode. Mirrors the Set*
+// family so callers (and tests) can introspect the configured
+// mode without poking at unexported state.
+func (c *ControlChannel) TrellisMode() TrellisMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.trellisMode
+}
+
+// ParseTrellisMode maps a config / user-facing string into a
+// TrellisMode. Recognised values (case-insensitive): "" / "off" /
+// "false" / "0" → TrellisOff (the legacy 72-dibit raw-MAC-PDU
+// path); "on" / "true" / "1" → TrellisOn (146 channel dibits run
+// through the 4-state ½-rate trellis decoder). Unknown strings
+// return TrellisOff with `ok = false` so callers can surface the
+// misconfiguration.
+func ParseTrellisMode(s string) (TrellisMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return TrellisOff, true
+	case "on", "true", "1":
+		return TrellisOn, true
+	default:
+		return TrellisOff, false
+	}
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the

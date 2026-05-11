@@ -252,12 +252,47 @@ func TestSetBCHModeDefault(t *testing.T) {
 	if cc.bchMode != BCHOff {
 		t.Errorf("default bchMode = %v, want BCHOff", cc.bchMode)
 	}
+	if got := cc.BCHMode(); got != BCHOff {
+		t.Errorf("BCHMode() = %v, want BCHOff", got)
+	}
 	cc.SetBCHMode(BCHOn)
 	if cc.bchMode != BCHOn {
 		t.Errorf("SetBCHMode(BCHOn) did not take effect")
 	}
+	if got := cc.BCHMode(); got != BCHOn {
+		t.Errorf("BCHMode() = %v, want BCHOn", got)
+	}
 	cc.SetBCHMode(BCHOff)
 	if cc.bchMode != BCHOff {
 		t.Errorf("SetBCHMode(BCHOff) did not take effect")
+	}
+}
+
+// TestParseBCHMode covers the config-string → BCHMode mapping the
+// ccdecoder connector uses to translate the `edacs_bch_mode` YAML
+// field into a SetBCHMode call.
+func TestParseBCHMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want BCHMode
+		ok   bool
+	}{
+		{"", BCHOff, true},
+		{"off", BCHOff, true},
+		{"false", BCHOff, true},
+		{"0", BCHOff, true},
+		{"on", BCHOn, true},
+		{"ON", BCHOn, true},
+		{"true", BCHOn, true},
+		{"1", BCHOn, true},
+		{" on ", BCHOn, true},
+		{"nonsense", BCHOff, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseBCHMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseBCHMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
 }

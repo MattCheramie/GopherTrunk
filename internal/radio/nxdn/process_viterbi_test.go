@@ -153,12 +153,47 @@ func TestSetViterbiModeRetainsViterbiOffDefault(t *testing.T) {
 	if cc.viterbiMode != ViterbiOff {
 		t.Errorf("default viterbiMode = %v, want ViterbiOff", cc.viterbiMode)
 	}
+	if got := cc.ViterbiMode(); got != ViterbiOff {
+		t.Errorf("ViterbiMode() = %v, want ViterbiOff", got)
+	}
 	cc.SetViterbiMode(ViterbiOn)
 	if cc.viterbiMode != ViterbiOn {
 		t.Errorf("SetViterbiMode(ViterbiOn) did not take effect")
 	}
+	if got := cc.ViterbiMode(); got != ViterbiOn {
+		t.Errorf("ViterbiMode() = %v, want ViterbiOn", got)
+	}
 	cc.SetViterbiMode(ViterbiOff)
 	if cc.viterbiMode != ViterbiOff {
 		t.Errorf("SetViterbiMode(ViterbiOff) did not take effect")
+	}
+}
+
+// TestParseViterbiMode covers the config-string → ViterbiMode
+// mapping the ccdecoder connector uses to translate the
+// `nxdn_viterbi_mode` YAML field into a SetViterbiMode call.
+func TestParseViterbiMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want ViterbiMode
+		ok   bool
+	}{
+		{"", ViterbiOff, true},
+		{"off", ViterbiOff, true},
+		{"false", ViterbiOff, true},
+		{"0", ViterbiOff, true},
+		{"on", ViterbiOn, true},
+		{"ON", ViterbiOn, true},
+		{"true", ViterbiOn, true},
+		{"1", ViterbiOn, true},
+		{" on ", ViterbiOn, true},
+		{"nonsense", ViterbiOff, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseViterbiMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseViterbiMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package mpt1327
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,29 @@ func (c *ControlChannel) SetBCHMode(mode BCHMode) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.bchMode = mode
+}
+
+// BCHMode returns the configured BCHMode.
+func (c *ControlChannel) BCHMode() BCHMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bchMode
+}
+
+// ParseBCHMode maps a config / user-facing string into a BCHMode.
+// Recognised values (case-insensitive): "" / "off" / "false" / "0"
+// → BCHOff (legacy 38-bit pre-stripped codeword path); "on" /
+// "true" / "1" → BCHOn (64-bit on-wire BCH(63, 38) decode). Unknown
+// strings return BCHOff with `ok = false`.
+func ParseBCHMode(s string) (BCHMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return BCHOff, true
+	case "on", "true", "1":
+		return BCHOn, true
+	default:
+		return BCHOff, false
+	}
 }
 
 // Options configure a ControlChannel.

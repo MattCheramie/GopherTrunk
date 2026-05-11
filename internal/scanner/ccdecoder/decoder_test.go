@@ -7,7 +7,11 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
+	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -550,5 +554,120 @@ func TestYSFFactoryConstructs(t *testing.T) {
 	p.Reset()
 	if err := p.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestP25Phase2FactoryAppliesTrellisFromSystem: a populated
+// trunking.System with P25Phase2TrellisMode = "on" must call
+// SetTrellisMode(TrellisOn) on the underlying ControlChannel.
+func TestP25Phase2FactoryAppliesTrellisFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newP25Phase2Pipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_062_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolP25Phase2,
+			ControlChannels:      []uint32{851_062_500},
+			P25Phase2TrellisMode: "on",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newP25Phase2Pipeline: %v", err)
+	}
+	pp := p.(*p25Phase2Pipeline)
+	if got := pp.cc.TrellisMode(); got != p25phase2.TrellisOn {
+		t.Errorf("TrellisMode = %v, want TrellisOn", got)
+	}
+}
+
+// TestP25Phase2FactoryDefaultsKeepTrellisOff: empty config string
+// preserves the legacy 72-dibit raw-MAC-PDU path.
+func TestP25Phase2FactoryDefaultsKeepTrellisOff(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newP25Phase2Pipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_062_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolP25Phase2,
+			ControlChannels: []uint32{851_062_500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newP25Phase2Pipeline: %v", err)
+	}
+	pp := p.(*p25Phase2Pipeline)
+	if got := pp.cc.TrellisMode(); got != p25phase2.TrellisOff {
+		t.Errorf("TrellisMode = %v, want TrellisOff", got)
+	}
+}
+
+// TestNXDNFactoryAppliesViterbiFromSystem: NXDNViterbiMode = "on"
+// flips the underlying ControlChannel's CAC region into ViterbiOn.
+func TestNXDNFactoryAppliesViterbiFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newNXDNPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_062_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolNXDN,
+			ControlChannels: []uint32{851_062_500},
+			NXDNViterbiMode: "on",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newNXDNPipeline: %v", err)
+	}
+	np := p.(*nxdnPipeline)
+	if got := np.cc.ViterbiMode(); got != nxdn.ViterbiOn {
+		t.Errorf("ViterbiMode = %v, want ViterbiOn", got)
+	}
+}
+
+// TestEDACSFactoryAppliesBCHFromSystem: EDACSBCHMode = "on" flips
+// the CCW decoder into BCHOn.
+func TestEDACSFactoryAppliesBCHFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newEDACSPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 866_000_000,
+		SampleRateHz: 96_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolEDACS,
+			ControlChannels: []uint32{866_000_000},
+			EDACSBCHMode:    "on",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newEDACSPipeline: %v", err)
+	}
+	ep := p.(*edacsPipeline)
+	if got := ep.cc.BCHMode(); got != edacs.BCHOn {
+		t.Errorf("BCHMode = %v, want BCHOn", got)
+	}
+}
+
+// TestMPT1327FactoryAppliesBCHFromSystem: MPT1327BCHMode = "on"
+// flips the codeword decoder into BCHOn.
+func TestMPT1327FactoryAppliesBCHFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newMPT1327Pipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 169_212_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolMPT1327,
+			ControlChannels: []uint32{169_212_500},
+			MPT1327BCHMode:  "on",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newMPT1327Pipeline: %v", err)
+	}
+	mp := p.(*mpt1327Pipeline)
+	if got := mp.cc.BCHMode(); got != mpt1327.BCHOn {
+		t.Errorf("BCHMode = %v, want BCHOn", got)
 	}
 }
