@@ -199,6 +199,34 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TUI Settings panel + README FEC opt-ins reference.** The
+  11th TUI panel (`Tab` past Scanner) renders each configured
+  system with a one-line summary of its FEC opt-in state across
+  every protocol that has a public-spec FEC chain — TETRA channel
+  coding, LTR FCS + Manchester, P25 Phase 2 trellis, NXDN
+  Viterbi, EDACS + MPT 1327 BCH. The panel reads the new opt-in
+  fields off `/api/v1/systems`' per-system DTO; the API
+  `SystemDTO` was extended to expose every opt-in flag as an
+  `omitempty` JSON value, and the client mirror picks them up
+  without further plumbing.
+
+  The panel is read-only; the bottom-line hint says "Edit
+  config.yaml + restart daemon to change", which matches the
+  existing wiring (opt-ins flow `SystemConfig` →
+  `trunking.System` → `ccdecoder.PipelineFactory` at construction
+  / on each `HuntProgress` retune). Runtime mutation is a future
+  follow-up that requires a PATCH endpoint + daemon-side
+  reconfig of active pipelines.
+
+  README gained an "FEC opt-ins" section with a table covering
+  every YAML key, its default behaviour, and what the on-path
+  unlocks. Each protocol's `ControlChannel` also picked up
+  matching getters (`tetra.ChannelCoding()` / `ExpectedChannel()`
+  / `ColourCode()`, `ltr.FCSMode()` / `ManchesterMode()`,
+  `p25phase2.TrellisMode()`, `nxdn.ViterbiMode()`,
+  `edacs.BCHMode()`, `mpt1327.BCHMode()`) — the TUI uses them
+  indirectly through the DTO; tests + observability code use
+  them directly.
 - **`ccdecoder` connector threads the remaining per-protocol
   FEC opt-ins from per-system config.** Closes out the
   connector-side FEC wiring for every protocol whose
@@ -1152,7 +1180,7 @@ gophertrunk tui -no-color          # disable ANSI colour
 gophertrunk tui -insecure          # skip TLS verification
 ```
 
-Ten panels covering every read surface plus the operator scanner
+Eleven panels covering every read surface plus the operator scanner
 cockpit, vim-style navigation, live SSE event stream, periodic REST
 refresh, automatic reconnect on disconnect:
 
@@ -1179,6 +1207,52 @@ hold/resume/retune/dwell + scan_mode flip) start the daemon with
 `api.allow_mutations: true` and the TUI with `--write`. Both ends
 gate independently because the HTTP API has no authentication.
 See [`docs/tui.md`](docs/tui.md) for the full reference.
+
+## FEC opt-ins
+
+Every protocol that has a public-spec FEC chain ships the chain as
+an **opt-in**: the connector constructs each `ControlChannel` in
+its legacy raw-bit mode by default and only flips on the FEC layer
+when the operator sets a per-system key in `config.yaml`. Empty /
+absent keys preserve the legacy path so the synthesized-fixture
+tests stay green and operators with pre-stripped capture files
+(DSD-FME `-r` dumps, OP25 fixtures) don't see surprise CRC
+failures.
+
+Verify which opt-ins are active by opening the **Settings** panel
+in the TUI — it lists every configured system with a one-line
+summary of its FEC opt-in state (`channel coding: on (colour=…,
+sch/f)`, `viterbi: off`, `bch: on`, etc.). The panel is read-only;
+runtime mutation is a future PR. To change a mode, edit
+`config.yaml` and restart the daemon.
+
+| Protocol | YAML key(s) | Off (default) | On |
+| --- | --- | --- | --- |
+| TETRA | `tetra_colour_code` (uint32, low 30 bits), `tetra_channel` (`"sch/hd"` / `"sch/f"` / `"sch/hu"` / `"bsch"` / `"aach"`, default `sch/hd`) | Legacy 48-dibit raw-PDU path. CRC fails on live captures. | Full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain (descramble + deinterleave + depuncture + Viterbi + CRC-16 verify + tail strip) per burst. Non-zero `tetra_colour_code` flips it on. |
+| LTR | `ltr_fcs_mode` (`""` / `"off"` / `"on"`), `ltr_manchester_mode` (`""` / `"off"` / `"nrz"` / `"strict"` / `"soft"`) | NRZ Status bits, no FCS verification. Matches synthesized-fixture path. | CRC-7 FCS check against sdrtrunk's CRCLTR.java layout (`on`) and/or Manchester decode of sub-audible signaling (`soft` = majority decode, `strict` = require mid-bit transition). Live sub-audible captures typically need `manchester: soft` + `fcs: on`. |
+| P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"off"` / `"on"`) | Legacy 72-dibit raw-MAC-PDU path. | 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). |
+| NXDN | `nxdn_viterbi_mode` (`""` / `"off"` / `"on"`) | Legacy 44-dibit raw-CAC path. | K=5 ½-rate Viterbi over the CAC region (92 dibits → 88 info bits + 4 tail zeros per MMDVMHost's `NXDNConvolution`). NXDN CAC interleave / puncture remains a follow-up (not in the public spec). |
+| EDACS | `edacs_bch_mode` (`""` / `"off"` / `"on"`) | Legacy pre-stripped 40-bit CCW; payload struct's LCN bit 0 + Aux fields are data. | BCH(40, 28, 2) with single/double-bit correction over the 40-bit on-wire CCW; under `on` the effective CCW carries 28 info bits (Command + Status + Address + high LCN bits), the remaining bits become BCH parity. |
+| MPT 1327 | `mpt1327_bch_mode` (`""` / `"off"` / `"on"`) | Legacy 38-bit pre-stripped codeword. | BCH(63, 38) decode over the 64-bit on-wire codeword. |
+
+All string values are case-insensitive with whitespace tolerated;
+recognised on-values include `"on"` / `"true"` / `"1"`, off-values
+`""` / `"off"` / `"false"` / `"0"`. Unrecognised values fall back
+to off with a `warn`-level log line ("ccdecoder: unrecognised
+`<key>`; falling back to off") so a typo doesn't silently break
+the decoder.
+
+Each protocol's `ControlChannel` exposes matching getters
+(`tetra.ControlChannel.ChannelCoding()` / `ExpectedChannel()` /
+`ColourCode()`, `ltr.ControlChannel.FCSMode()` / `ManchesterMode()`,
+`p25phase2.ControlChannel.TrellisMode()`,
+`nxdn.ControlChannel.ViterbiMode()`,
+`edacs.ControlChannel.BCHMode()`,
+`mpt1327.ControlChannel.BCHMode()`) so tests + observability code
+can introspect the configured state without poking at unexported
+fields. The TUI Settings panel reads these via the
+`/api/v1/systems` endpoint's per-system DTO, which carries every
+opt-in field as a `omitempty` JSON value.
 
 ## Documentation
 

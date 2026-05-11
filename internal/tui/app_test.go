@@ -82,10 +82,17 @@ func TestPanelSwitch_DigitAndTab(t *testing.T) {
 			t.Errorf("after %q active=%v, want %v", c.key, m.active, c.want)
 		}
 	}
-	// Tab cycles forward — Scanner is the last panel, so Tab wraps to Dashboard.
+	// Tab cycles forward — Scanner advances to Settings (the new
+	// last panel after PR #144).
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(*Model)
+	if m.active != state.PanelSettings {
+		t.Errorf("Tab from Scanner: active=%v, want Settings", m.active)
+	}
+	// Tab again wraps Settings → Dashboard.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(*Model)
 	if m.active != state.PanelDashboard {
-		t.Errorf("Tab from Scanner: active=%v, want Dashboard", m.active)
+		t.Errorf("Tab from Settings: active=%v, want Dashboard", m.active)
 	}
 }

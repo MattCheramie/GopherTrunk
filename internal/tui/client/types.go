@@ -33,6 +33,17 @@ type SystemDTO struct {
 	SystemID        uint16   `json:"system_id,omitempty"`
 	RFSS            uint8    `json:"rfss,omitempty"`
 	Site            uint8    `json:"site,omitempty"`
+
+	// Per-protocol FEC opt-in surface (mirrors api.SystemDTO).
+	// The TUI Settings panel renders these.
+	TETRAColourCode      uint32 `json:"tetra_colour_code,omitempty"`
+	TETRAChannel         string `json:"tetra_channel,omitempty"`
+	LTRFCSMode           string `json:"ltr_fcs_mode,omitempty"`
+	LTRManchesterMode    string `json:"ltr_manchester_mode,omitempty"`
+	P25Phase2TrellisMode string `json:"p25_phase2_trellis_mode,omitempty"`
+	NXDNViterbiMode      string `json:"nxdn_viterbi_mode,omitempty"`
+	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
+	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
 }
 
 // TalkgroupDTO mirrors api.TalkgroupDTO.
