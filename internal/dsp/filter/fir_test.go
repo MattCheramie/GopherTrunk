@@ -74,6 +74,64 @@ func TestRRCUnitEnergy(t *testing.T) {
 	}
 }
 
+func TestGaussianPeakSymmetryAndUnitDCGain(t *testing.T) {
+	taps := Gaussian(10, 4, 0.3)
+	mid := len(taps) / 2
+
+	// Peak at the centre.
+	for i, v := range taps {
+		if v > taps[mid] {
+			t.Errorf("Gaussian: taps[%d]=%f > centre taps[%d]=%f",
+				i, v, mid, taps[mid])
+		}
+	}
+
+	// Symmetric about the centre.
+	for i := 0; i < mid; i++ {
+		if math.Abs(float64(taps[i]-taps[len(taps)-1-i])) > 1e-7 {
+			t.Errorf("Gaussian asymmetric at i=%d: %f vs %f",
+				i, taps[i], taps[len(taps)-1-i])
+		}
+	}
+
+	// Unit DC gain so a sustained NRZ level passes through
+	// unchanged at the symbol centre.
+	var sum float64
+	for _, v := range taps {
+		sum += float64(v)
+	}
+	if math.Abs(sum-1.0) > 1e-6 {
+		t.Errorf("Gaussian DC gain = %f, want 1", sum)
+	}
+}
+
+// TestGaussianBTSetsBandwidth: the Gaussian impulse drops to
+// e^(-0.5) at ±σ; the σ implied by BT = sps · sqrt(ln 2) / (2π · BT)
+// must match the impulse shape within 1 %.
+func TestGaussianBTSetsBandwidth(t *testing.T) {
+	const sps = 10
+	const bt = 0.3
+	taps := Gaussian(sps, 8, bt)
+	mid := len(taps) / 2
+	peak := float64(taps[mid])
+	const target = 0.6065306597 // e^(-1/2)
+
+	for i := mid; i < len(taps)-1; i++ {
+		hi := float64(taps[i]) / peak
+		lo := float64(taps[i+1]) / peak
+		if hi >= target && lo <= target {
+			frac := (hi - target) / (hi - lo)
+			gotSigma := float64(i-mid) + frac
+			wantSigma := float64(sps) * math.Sqrt(math.Ln2) / (2 * math.Pi * bt)
+			if math.Abs(gotSigma-wantSigma)/wantSigma > 0.01 {
+				t.Errorf("σ from impulse = %f, want %f", gotSigma, wantSigma)
+			}
+			return
+		}
+	}
+	t.Errorf("could not locate σ in impulse — filter span too short?")
+}
+
 func TestRRCMatchedFilterPeakAtCenter(t *testing.T) {
 	// RRC * RRC = RC; symbol-rate convolution should peak at the center.
 	rrc := RootRaisedCosine(4, 8, 0.3)

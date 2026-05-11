@@ -146,3 +146,37 @@ func rrcSample(t, T, alpha float64) float64 {
 	den := math.Pi * t / T * (1 - math.Pow(4*alpha*t/T, 2))
 	return num / (T * den)
 }
+
+// Gaussian returns the impulse response of a Gaussian pulse-shaping
+// / matched filter parameterised by samples-per-symbol, span (in
+// symbols), and the BT product (3 dB bandwidth × symbol period).
+// BT = 0.3 is the standard GFSK premod for EDACS / GE-Marc; BT = 0.5
+// is typical for Bluetooth. Taps are normalised to unit DC gain so a
+// sustained NRZ level passes through unchanged at the symbol centre.
+func Gaussian(sps, nSymbols int, bt float64) []float32 {
+	if sps <= 0 || nSymbols <= 0 || bt <= 0 {
+		panic("filter: Gaussian requires positive sps, nSymbols, bt")
+	}
+	N := sps*nSymbols + 1 // odd length for symmetric linear-phase filter
+	taps := make([]float32, N)
+	mid := (N - 1) / 2
+	// σ (in samples). From the standard Gaussian impulse + 3 dB
+	// bandwidth relation B = sqrt(ln 2) / (2π σ) with B·T = BT and
+	// T = sps samples: σ = sps · sqrt(ln 2) / (2π · BT).
+	sigma := float64(sps) * math.Sqrt(math.Ln2) / (2 * math.Pi * bt)
+	for i := 0; i < N; i++ {
+		x := float64(i - mid)
+		taps[i] = float32(math.Exp(-(x * x) / (2 * sigma * sigma)))
+	}
+	var sum float64
+	for _, t := range taps {
+		sum += float64(t)
+	}
+	if sum > 0 {
+		k := float32(1.0 / sum)
+		for i := range taps {
+			taps[i] *= k
+		}
+	}
+	return taps
+}
