@@ -9,40 +9,30 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// codewordToWire64 maps a gophertrunk Codeword (38 info bits) into
-// the 48-bit info field BCHEncodeMPT1327 expects, then encodes the
-// full 64-bit on-wire codeword, then unpacks it into a 64-bit
-// wire-bit array suitable for feeding into Process(BCHOn).
+// codewordToWire64 maps a gophertrunk Codeword (all five fields:
+// Type, Prefix, Ident, Op, Function) into the 48-bit info field
+// BCHEncodeMPT1327 expects, then encodes the full 64-bit on-wire
+// codeword, then unpacks it into a 64-bit wire-bit array suitable
+// for feeding into Process(BCHOn).
 //
-// The 10-bit Op field (which gophertrunk's Codeword doesn't model)
-// is filled with zero. The bit layout matches what parseCodeword's
-// inverse extraction expects:
+// Bit layout matches what parseCodeword's inverse extraction
+// expects:
 //
 //	wire 0..20  = Type (1) + Prefix (7) + Ident (13) — 21 bits
-//	wire 21..30 = Op (10) — set to zero
+//	wire 21..30 = Op (10)
 //	wire 31..47 = Function (17)
 //	wire 48..62 = BCH check (computed)
 //	wire 63     = overall even parity (computed)
 //
-// The 38-bit prefix of wire (Type + Prefix + Ident + Function with
-// Op skipped) preserves the same MSB-first bit order that
-// CodewordBits produces, so the round-trip back through
-// CodewordFromBits decodes the same Codeword.
+// The 48-bit prefix of wire preserves the same MSB-first bit order
+// that CodewordBits48 produces, so the round-trip back through
+// CodewordFromBits48 decodes the same Codeword.
 func codewordToWire64(c Codeword) []byte {
-	wire38 := CodewordBits(c)
+	wire48 := CodewordBits48(c)
 	var info48 uint64
-	// Place Type + Prefix + Ident in info48 bits 0..20.
-	for i := 0; i < 21; i++ {
-		if wire38[i]&1 != 0 {
+	for i := 0; i < 48; i++ {
+		if wire48[i]&1 != 0 {
 			info48 |= uint64(1) << uint(i)
-		}
-	}
-	// Op (10 bits) at info48 21..30 stays zero — Codeword
-	// doesn't model the Op field.
-	// Place Function in info48 bits 31..47.
-	for i := 0; i < 17; i++ {
-		if wire38[21+i]&1 != 0 {
-			info48 |= uint64(1) << uint(31+i)
 		}
 	}
 	cw := framing.BCHEncodeMPT1327(info48)
@@ -215,5 +205,52 @@ func TestSetBCHModeDefault(t *testing.T) {
 	cc.SetBCHMode(BCHOff)
 	if cc.bchMode != BCHOff {
 		t.Errorf("SetBCHMode(BCHOff) did not take effect")
+	}
+}
+
+// TestParseCodewordBCHOnSurfacesOp: encode a Codeword whose Op
+// field is non-zero through the 64-bit on-wire form, run it back
+// through parseCodeword under BCHOn, and confirm Op survives the
+// round-trip (along with Type / Prefix / Ident / Function).
+func TestParseCodewordBCHOnSurfacesOp(t *testing.T) {
+	cc := New(Options{Bus: events.NewBus(1)})
+	in := Codeword{
+		Type:     TypeAddress,
+		Prefix:   0x05,
+		Ident:    0x123,
+		Op:       0x2AA, // 10-bit non-zero
+		Function: 0x1ABCD,
+	}
+	wire := codewordToWire64(in)
+	got, ok := cc.parseCodeword(wire, BCHOn)
+	if !ok {
+		t.Fatalf("parseCodeword rejected a clean codeword under BCHOn")
+	}
+	if got != in {
+		t.Errorf("BCHOn round-trip lost a field:\n  got  %+v\n  want %+v", got, in)
+	}
+}
+
+// TestParseCodewordBCHOffPreservesLegacyOp: under BCHOff the
+// adapter takes a 38-bit wire window and parses via CodewordFromBits
+// (legacy 38-bit path). Op stays at zero because the 38-bit layout
+// doesn't include it — confirms back-compat for callers that still
+// use the legacy fixture-generation path.
+func TestParseCodewordBCHOffPreservesLegacyOp(t *testing.T) {
+	cc := New(Options{Bus: events.NewBus(1)})
+	in := Codeword{
+		Type:     TypeAddress,
+		Prefix:   0x05,
+		Ident:    0x123,
+		Op:       0x000, // legacy 38-bit fixtures don't populate Op
+		Function: 0x1ABCD,
+	}
+	wire := CodewordBits(in) // 38-bit, legacy
+	got, ok := cc.parseCodeword(wire, BCHOff)
+	if !ok {
+		t.Fatalf("parseCodeword rejected a clean 38-bit codeword under BCHOff")
+	}
+	if got != in {
+		t.Errorf("BCHOff round-trip mismatch:\n  got  %+v\n  want %+v", got, in)
 	}
 }

@@ -127,9 +127,14 @@ func (p *p25Phase1Pipeline) Close() error            { return nil }
 // detect → 72-dibit MAC PDU slice → ParseMACPDU → Ingest), which
 // publishes cc.locked on the first non-idle MAC PDU and grants on
 // GroupVoiceChannelGrant variants. Trellis FEC + slot-type
-// extraction across the full 180-dibit subframe are follow-ups;
-// without them the adapter works on test fixtures but typically
-// fails to lock on captured Phase 2 traffic.
+// extraction across the full 180-dibit subframe are follow-ups.
+//
+// The connector wires the receiver with `ClockMode: ClockGardner`
+// — Gardner timing recovery on complex IQ replaces the receiver's
+// default naive decimation, which matters for noisier live SDR
+// captures where the symbol clock isn't aligned with the sample
+// clock. The legacy ClockNaive path stays callable for in-package
+// tests that synthesize sample-aligned IQ fixtures.
 func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := p25phase2.New(p25phase2.Options{
 		Bus:         opts.Bus,
@@ -142,6 +147,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
+		ClockMode: p25phase2rx.ClockGardner,
 	})
 	return &p25Phase2Pipeline{rx: rx, cc: cc}, nil
 }
@@ -160,8 +166,13 @@ func (p *p25Phase2Pipeline) Close() error            { return nil }
 // π/4-DQPSK dibits into the state machine (38-dibit normal
 // training-sequence detect → 48-dibit PDU slice → ParsePDU →
 // Ingest). The RCPC + RM FEC + interleaving across the full TDMA
-// slot are follow-ups; without them the adapter works on test
-// fixtures but typically fails to lock on captured TETRA traffic.
+// slot are follow-ups.
+//
+// The connector wires the receiver with `ClockMode: ClockGardner`
+// — Gardner timing recovery on complex IQ replaces the receiver's
+// default naive decimation. Same pattern as the P25 Phase 2
+// pipeline; the legacy ClockNaive path stays callable for
+// in-package tests that synthesize sample-aligned IQ fixtures.
 func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := tetra.New(tetra.Options{
 		Bus:         opts.Bus,
@@ -174,6 +185,7 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
+		ClockMode: tetrarx.ClockGardner,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil
 }

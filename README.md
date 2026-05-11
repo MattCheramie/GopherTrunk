@@ -186,6 +186,43 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 Op field extension.** Adds the spec's 10-bit Op
+  field (between Ident and Function) to `mpt1327.Codeword`,
+  closing the documented follow-up from PR #129. New 48-bit
+  helpers — `AssembleCodeword48` / `ParseCodeword48` /
+  `CodewordFromBits48` / `CodewordBits48` — operate on the
+  full information set (Type + Prefix + Ident + Op +
+  Function = 48 bits, MSB-first per field). The legacy
+  38-bit `AssembleCodeword` / `ParseCodeword` /
+  `CodewordFromBits` / `CodewordBits` stay back-compat: they
+  silently drop Op on encode and leave it at zero on
+  decode, so existing fixtures + tests that pre-date the Op
+  field keep working byte-identically. The BCH wiring in
+  `process.go` now routes through `CodewordFromBits48` so
+  under `SetBCHMode(BCHOn)` the recovered codeword carries
+  all 48 information bits, surfacing the full spec layout
+  to downstream `Ingest`. Tests cover 48-bit round-trip
+  preserving Op, legacy 38-bit round-trip dropping Op,
+  reject-wrong-length error paths, the 10-bit Op mask
+  preventing overflow into Ident, and a BCHOn end-to-end
+  round-trip that verifies a non-zero Op survives encode →
+  BCH-protect → decode → CCW recovery.
+- **ClockGardner wired into the ccdecoder connector for the
+  π/4-DQPSK pipelines.** The `newP25Phase2Pipeline` and
+  `newTETRAPipeline` factories in
+  `internal/scanner/ccdecoder/pipelines.go` now pass
+  `ClockMode: ClockGardner` into the receiver constructor, so
+  every live SDR retune through the connector runs symbol
+  recovery via the Gardner timing-recovery loop landed in
+  PR #128 + threaded into the receivers in PR #130. The
+  `ClockNaive` path stays available for in-package
+  receiver-level tests that synthesize sample-aligned IQ
+  fixtures. Other pipelines (P25 Phase 1, DMR, NXDN, EDACS,
+  etc.) are unaffected — they use 4FSK / GFSK / FFSK demods
+  where the existing Mueller-Müller path already handles
+  symbol-time recovery. Existing factory tests continue to
+  pass; the change is purely additive at the connector
+  layer.
 - **TETRA RCPC primitive in framing/.** New shared
   `framing/rcpc_tetra.go` adds the K=5 ½-rate→1/3-rate
   16-state convolutional mother code plus puncturing /
@@ -311,8 +348,10 @@ to its own package and lands independently.
   `ClockNaive`. New tests confirm the Gardner path produces
   valid in-range dibits, the loop is constructed only when
   requested, and `Reset()` restarts the dibit-base counter.
-  The connector configuration plumbing for picking the mode
-  at runtime is the documented follow-up.
+  The ccdecoder connector now wires both pipelines with
+  `ClockMode: ClockGardner` so every live SDR retune
+  through `newP25Phase2Pipeline` / `newTETRAPipeline` runs
+  Gardner symbol recovery automatically.
 - **MPT 1327 `SetBCHMode(BCHOn)` opt-in.** Wires the
   `BCHEncodeMPT1327` / `BCHDecodeMPT1327` framing primitive
   into the MPT 1327 `ControlChannel.Process` adapter. When on,
