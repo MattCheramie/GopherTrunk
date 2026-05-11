@@ -70,14 +70,16 @@ panel. The honest remaining gaps:
   Live trunked reception works today for P25 Phase 1, YSF, dPMR
   Mode 3, NXDN (FSW + LICH only; CAC FEC pending), EDACS /
   GE-Marc (24-bit sync + 40-bit CCW only; interleaved-RS FEC
-  pending), and Motorola Type II / SmartZone (24-bit sync +
-  32-bit OSW only; BCH(64,16,11) FEC pending). DMR / MPT 1327 /
-  LTR / P25 P2 / TETRA each have IQ → symbol receivers shipping
-  but their CC state machines still consume pre-parsed PDUs;
-  adding the `Process(stream, baseIdx)` adapter on each (sync
-  detect → frame slice → existing parser → Ingest) lights up
-  the rest. The adapter shape is ~30–50 lines per protocol and
-  documented per-receiver in the relevant PR descriptions.
+  pending), Motorola Type II / SmartZone (24-bit sync + 32-bit
+  OSW only; BCH(64,16,11) FEC pending), and LTR (41-bit Status
+  alignment + state-machine dedup only; FCS verification +
+  Manchester decoding pending). DMR / MPT 1327 / P25 P2 / TETRA
+  each have IQ → symbol receivers shipping but their CC state
+  machines still consume pre-parsed PDUs; adding the
+  `Process(stream, baseIdx)` adapter on each (sync detect →
+  frame slice → existing parser → Ingest) lights up the rest.
+  The adapter shape is ~30–50 lines per protocol and documented
+  per-receiver in the relevant PR descriptions.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -144,6 +146,21 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **LTR `ControlChannel.Process(stream, baseIdx)` adapter +
+  ccdecoder factory.** Closes the IQ → CC alignment layer for
+  LTR: the receiver's `BitSink` forwards sub-audible bits into
+  `ltr.ControlChannel.Process`, which buffers across calls,
+  slides a 41-bit window over the stream, commits to the first
+  position whose Sync bit is set, and follows the alignment
+  forward — unlocking + re-searching if a subsequent frame's
+  Sync bit drops to 0. Each successfully-aligned Status word is
+  dispatched into the existing `Ingest` path. `trunking.Protocol`
+  gains `ProtocolLTR` (config string `"ltr"`). FCS verification
+  over the 12-bit trailer + Manchester decoding of the on-air
+  bit stream are documented follow-ups; until they land the
+  adapter is honest about its noise floor (spurious alignments
+  drop through the state machine's Area / activeGroup dedup,
+  correctly-aligned frames drive cc.locked + grants).
 - **Motorola Type II `ControlChannel.Process(stream, baseIdx)`
   adapter + ccdecoder factory.** Closes the IQ → CC sync layer
   for Motorola: the receiver's `BitSink` forwards bits into

@@ -8,6 +8,8 @@ import (
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	edacsrx "github.com/MattCheramie/GopherTrunk/internal/radio/edacs/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
+	ltrrx "github.com/MattCheramie/GopherTrunk/internal/radio/ltr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	motorolarx "github.com/MattCheramie/GopherTrunk/internal/radio/motorola/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
@@ -71,6 +73,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolNXDN:     newNXDNPipeline,
 	trunking.ProtocolEDACS:    newEDACSPipeline,
 	trunking.ProtocolMotorola: newMotorolaPipeline,
+	trunking.ProtocolLTR:      newLTRPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -257,3 +260,35 @@ type motorolaPipeline struct {
 func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *motorolaPipeline) Reset()                  { p.rx.Reset() }
 func (p *motorolaPipeline) Close() error            { return nil }
+
+// newLTRPipeline wires internal/radio/ltr/receiver into
+// ltr.ControlChannel.Process. The receiver's BitSink forwards
+// sub-audible bits into the state machine, which slides a 41-bit
+// window across the stream, commits to the first Sync=1 alignment
+// it finds, and dispatches each Status word into the existing
+// Ingest path. FCS validation + Manchester decoding are
+// follow-ups.
+func newLTRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := ltr.New(ltr.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := ltrrx.New(ltrrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		BitSink: func(bits []byte, baseIdx int) {
+			cc.Process(bits, baseIdx)
+		},
+	})
+	return &ltrPipeline{rx: rx, cc: cc}, nil
+}
+
+type ltrPipeline struct {
+	rx *ltrrx.Receiver
+	cc *ltr.ControlChannel
+}
+
+func (p *ltrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *ltrPipeline) Reset()                  { p.rx.Reset() }
+func (p *ltrPipeline) Close() error            { return nil }

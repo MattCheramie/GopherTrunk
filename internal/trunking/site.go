@@ -20,6 +20,7 @@ const (
 	ProtocolDPMR              // dPMR Mode 3 (digital PMR446 trunking)
 	ProtocolEDACS             // EDACS / GE-Marc
 	ProtocolMotorola          // Motorola Type II / SmartZone
+	ProtocolLTR               // Logic Trunked Radio (LTR / LTR-Net)
 )
 
 func (p Protocol) String() string {
@@ -36,13 +37,15 @@ func (p Protocol) String() string {
 		return "edacs"
 	case ProtocolMotorola:
 		return "motorola"
+	case ProtocolLTR:
+		return "ltr"
 	default:
 		return "unknown"
 	}
 }
 
 // ParseProtocol maps a string ("p25", "dmr", "nxdn", "dpmr",
-// "edacs", "motorola") to a Protocol value.
+// "edacs", "motorola", "ltr") to a Protocol value.
 func ParseProtocol(s string) (Protocol, error) {
 	switch strings.ToLower(s) {
 	case "p25":
@@ -57,6 +60,8 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolEDACS, nil
 	case "motorola":
 		return ProtocolMotorola, nil
+	case "ltr":
+		return ProtocolLTR, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q", s)
 	}
@@ -79,7 +84,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|dmr|nxdn|dpmr|edacs|motorola")
+		return errors.New("trunking: protocol must be p25|dmr|nxdn|dpmr|edacs|motorola|ltr")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")
