@@ -40,6 +40,10 @@ type ControlChannel struct {
 	expectedArea uint8
 	areaSet      bool
 
+	// proc is the cross-call bit buffer the Process adapter uses
+	// (see process.go). Lazily constructed on the first Process call.
+	proc *processState
+
 	mu     sync.Mutex
 	locked bool
 	last   LockState
