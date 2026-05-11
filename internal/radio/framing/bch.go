@@ -64,3 +64,54 @@ func BCHDecode63_16(cw uint64) (uint16, int) {
 func BCH6316ParityBit(cw uint64) byte {
 	return byte(PopCount64(cw&((uint64(1)<<63)-1)) & 1)
 }
+
+// BCHEncode64_16 encodes 16 information bits into a 64-bit BCH
+// codeword: the 63-bit BCH(63,16,11) codeword from BCHEncode63_16
+// plus a trailing overall-even-parity bit. This is the FEC layer
+// used by Motorola Type II / SmartZone control-channel OSWs (each
+// OSW frame carries two BCH(64,16,11) codewords concatenated; two
+// codewords' 16 info bits each combine into the OSW's 32-bit
+// {Address, Command} field).
+//
+// Bit 0 of the returned uint64 is the parity bit; bits 1..63 are
+// the 63-bit BCH codeword (info in the high 16 bits of that
+// range, parity in the low 47). Encoders that want the canonical
+// MSB-first 64-bit wire representation should pack [parity, bch63
+// high → low].
+func BCHEncode64_16(data uint16) uint64 {
+	cw63 := BCHEncode63_16(data)
+	parity := uint64(BCH6316ParityBit(cw63))
+	return (cw63 << 1) | parity
+}
+
+// BCHDecode64_16 decodes a 64-bit BCH codeword by extracting the
+// 63-bit BCH(63,16,11) codeword (top 63 bits) and the trailing
+// parity bit, running BCHDecode63_16 on the 63-bit codeword, and
+// reporting the corrected info + total error count.
+//
+// Returns (data, errors) where errors is the bit-error count
+// corrected. errors = -1 means uncorrectable (the inner BCH
+// decoder reported > 11 errors); the returned data is the closest
+// codeword's info but should not be trusted.
+//
+// The trailing parity bit is included in the error count: if the
+// 63-bit decode reports E errors AND the recomputed parity over
+// the corrected 63-bit codeword doesn't match the received
+// parity, the total is E + 1 (still uncorrectable if E > 10).
+func BCHDecode64_16(cw uint64) (uint16, int) {
+	parity := byte(cw & 1)
+	cw63 := (cw >> 1) & ((uint64(1) << 63) - 1)
+	data, errs := BCHDecode63_16(cw63)
+	if errs < 0 {
+		return data, -1
+	}
+	// Recompute parity over the corrected 63-bit codeword.
+	gotParity := BCH6316ParityBit(BCHEncode63_16(data))
+	if gotParity != parity {
+		errs++
+		if errs > 11 {
+			return data, -1
+		}
+	}
+	return data, errs
+}

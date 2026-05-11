@@ -73,10 +73,12 @@ The remaining gaps:
   K=5 Viterbi + interleaver over the 288-wire-bit Info field is
   still pending. **LTR** has a `SetManchesterMode` config for
   deployments that bi-phase-encode the sub-audible status word;
-  FCS verification (12-bit trailer) is still pending. The other
-  protocols (EDACS, Motorola, MPT 1327, P25 Phase 2, TETRA)
-  still have their per-protocol FEC layers pending — see each
-  adapter PR for the specific FEC parameters.
+  FCS verification (12-bit trailer) is still pending.
+  **Motorola Type II** has `SetBCHMode(BCHOn)` to run
+  BCH(64,16,11) over each codeword pair. The remaining
+  protocols (EDACS, MPT 1327, P25 Phase 2, TETRA) still have
+  their per-protocol FEC layers pending — see each adapter PR
+  for the specific FEC parameters.
 - **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
   family (P25 Phase 2, TETRA). The receivers currently do naive
   decimation; Gardner-style timing recovery on complex IQ is the
@@ -147,6 +149,19 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Motorola BCH(64,16,11) FEC.** `framing/bch.go` gains
+  `BCHEncode64_16` / `BCHDecode64_16` — the existing BCH(63,16,11)
+  primitive used by P25 Phase 1 NID, extended with an overall-
+  even-parity bit. The Motorola adapter gains `SetBCHMode(BCHOff
+  | BCHOn)`; when on, the adapter reads two 64-bit codewords
+  (128 channel bits) after each sync, decodes each via the
+  framing primitive, and concatenates the recovered 16-bit
+  halves into the 32-bit OSW. Uncorrectable codewords (> 11
+  errors) drop the frame silently. Tests cover the framing
+  primitive (round-trip, single-bit corrections, parity-flip
+  detection, > 11-bit rejection) plus an end-to-end Motorola
+  Process call decoding a BCH-encoded `OpGroupVoiceChannelGrant`
+  OSW.
 - **FEC bundle: framing `ManchesterEncode` / `ManchesterDecode` /
   `ManchesterDecodeMajority` helpers + LTR Manchester opt-in +
   NXDN CAC CRC strict-mode.** First FEC implementations PR.

@@ -120,6 +120,88 @@ func TestProcessHandlesSyncSpanningCalls(t *testing.T) {
 	}
 }
 
+// TestProcessBCHModeDecodesEncodedOSW: in BCHOn mode the adapter
+// must read two 64-bit BCH(64,16,11) codewords after sync and
+// recover the underlying 32-bit OSW.
+func TestProcessBCHModeDecodesEncodedOSW(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus: bus, Log: slog.Default(), SystemName: "Sys",
+		FrequencyHz: 851_012_500,
+	})
+	cc.SetBCHMode(BCHOn)
+
+	cmd := (uint16(OpGroupVoiceChannelGrant) << 4) | 0x4
+	osw := OSW{Address: 0xC0DE, Command: cmd}
+
+	// Encode the OSW's two 16-bit halves through BCH(64,16,11)
+	// and pack into a 128-bit channel stream.
+	cw1 := framingBCHEncode64_16(osw.Address)
+	cw2 := framingBCHEncode64_16(osw.Command)
+	encoded := make([]byte, 128)
+	for i := 0; i < 64; i++ {
+		if cw1&(uint64(1)<<uint(63-i)) != 0 {
+			encoded[i] = 1
+		}
+	}
+	for i := 0; i < 64; i++ {
+		if cw2&(uint64(1)<<uint(63-i)) != 0 {
+			encoded[64+i] = 1
+		}
+	}
+
+	stream := make([]byte, 30)
+	stream = append(stream, OutboundSyncBits()...)
+	stream = append(stream, encoded...)
+
+	cc.Process(stream, 0)
+
+	var sawGrant bool
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				g, _ := ev.Payload.(trunking.Grant)
+				if g.GroupID == 0xC0DE {
+					sawGrant = true
+				}
+			}
+		default:
+			if !sawGrant {
+				t.Errorf("BCHOn mode did not publish a KindGrant for the encoded OSW")
+			}
+			return
+		}
+	}
+}
+
+// framingBCHEncode64_16 is a tiny shim so this test file doesn't
+// import framing directly (which would require widening the
+// existing test file's import set).
+func framingBCHEncode64_16(data uint16) uint64 {
+	// Reproduce framing.BCHEncode64_16 inline. Keeping this local
+	// avoids a wider import for one test.
+	const generator uint64 = 0xF391E2F34B99
+	info := uint64(data) & 0xFFFF
+	rem := info << 47
+	for i := 62; i >= 47; i-- {
+		if rem&(uint64(1)<<uint(i)) != 0 {
+			rem ^= generator << uint(i-47)
+		}
+	}
+	cw63 := (info << 47) | (rem & ((uint64(1) << 47) - 1))
+	// Append overall-even parity bit at bit 0.
+	parity := uint64(0)
+	for b := 0; b < 63; b++ {
+		parity ^= (cw63 >> uint(b)) & 1
+	}
+	return (cw63 << 1) | parity
+}
+
 func TestSyncDetectorReset(t *testing.T) {
 	det := NewSyncDetector(OutboundSyncBits(), 0)
 	junk := make([]byte, 100)
