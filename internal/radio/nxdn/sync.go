@@ -1,5 +1,15 @@
 package nxdn
 
+// DibitSink consumes the raw stream of dibits an NXDN receiver
+// decodes from IQ. baseIdx is the absolute dibit index of dibits[0]
+// across the stream lifetime — monotonically non-decreasing across
+// calls, and reset to 0 by Receiver.Reset so a retune produces a
+// fresh baseline. Wire this into a future ControlChannel.Process
+// adapter (sync detect → 192-dibit frame slice → LICH/SACCH decode
+// → IngestFrame) so the connector can drive the NXDN CC state
+// machine on live IQ.
+type DibitSink func(dibits []uint8, baseIdx int)
+
 // FSW patterns (16 bits = 8 dibits). These constants follow the NXDN
 // Common Air Interface specification §6.2.1; the exact bit pattern
 // should be cross-checked against the published technical document
