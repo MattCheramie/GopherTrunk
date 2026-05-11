@@ -68,16 +68,15 @@ panel. The honest remaining gaps:
   / `grant` events back on the bus — the trigger that lights up
   every downstream surface (engine, recorder, call log, API, TUI).
   Live trunked reception works today for P25 Phase 1, YSF, dPMR
-  Mode 3, and NXDN (FSW sync + LICH parse only — full CAC FEC
-  decoding is the next NXDN follow-up; until then the adapter
-  sync-locks but typically fails the CAC CRC on real on-air
-  signals). DMR / EDACS / MPT 1327 / LTR / Motorola / P25 P2 /
-  TETRA each have IQ → symbol receivers shipping but their CC
-  state machines still consume pre-parsed PDUs; adding the
-  `Process(stream, baseIdx)` adapter on each (sync detect → frame
-  slice → existing parser → Ingest) lights up the rest. The
-  adapter shape is ~30–50 lines per protocol and documented
-  per-receiver in the relevant PR descriptions.
+  Mode 3, NXDN (FSW + LICH only; CAC FEC pending), and EDACS /
+  GE-Marc (24-bit sync + 40-bit CCW only; interleaved-RS FEC
+  pending). DMR / MPT 1327 / LTR / Motorola / P25 P2 / TETRA each
+  have IQ → symbol receivers shipping but their CC state machines
+  still consume pre-parsed PDUs; adding the `Process(stream,
+  baseIdx)` adapter on each (sync detect → frame slice → existing
+  parser → Ingest) lights up the rest. The adapter shape is
+  ~30–50 lines per protocol and documented per-receiver in the
+  relevant PR descriptions.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -144,6 +143,17 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **EDACS / GE-Marc `ControlChannel.Process(stream, baseIdx)`
+  adapter + ccdecoder factory.** Closes the IQ → CC loop for
+  EDACS: the receiver's `BitSink` forwards bits into
+  `edacs.ControlChannel.Process`, which buffers across calls +
+  detects the 24-bit outbound sync + slices the 40-bit CCW +
+  parses it via `CCWFromBits` + dispatches via the existing
+  `Ingest`. `trunking.Protocol` gains `ProtocolEDACS` (config
+  string `"edacs"`). The interleaved Reed-Solomon-derived FEC
+  over the CCW is a follow-up; until it lands the adapter
+  sync-locks but typically fails CCW parsing on noisy on-air
+  signals.
 - **NXDN `ControlChannel.Process(stream, baseIdx)` adapter +
   ccdecoder factory.** Closes the IQ → CC sync layer for NXDN:
   the receiver's `DibitSink` forwards into

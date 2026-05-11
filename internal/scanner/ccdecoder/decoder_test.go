@@ -269,6 +269,23 @@ func TestP25Phase1FactoryConstructs(t *testing.T) {
 	}
 }
 
+func TestEDACSFactoryConstructs(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newEDACSPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Smoke",
+		FrequencyHz: 866_000_000, SampleRateHz: 96_000,
+	})
+	if err != nil {
+		t.Fatalf("newEDACSPipeline: %v", err)
+	}
+	p.Process(make([]complex64, 9600))
+	p.Reset()
+	if err := p.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
 func TestNXDNFactoryConstructs(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
