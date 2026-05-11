@@ -191,6 +191,37 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA per-channel encode/decode helpers in `tetra/`.**
+  Composes the framing primitives shipped in PRs #137 and
+  #138 (RCPC + (30,14) RM + (K,a) block interleaver +
+  scrambler + the existing CRC-16 CCITT) into the full
+  type-1 → type-5 encode chain and its inverse per ETSI
+  EN 300 392-2 §8.3.1 for every standard π/4-DQPSK signaling
+  channel:
+    - `EncodeSCHHD` / `DecodeSCHHD` — 124 ↔ 216 bits
+      (§8.3.1.4.1, also covers BNCH + STCH)
+    - `EncodeSCHF` / `DecodeSCHF` — 268 ↔ 432 bits
+      (§8.3.1.4.5)
+    - `EncodeSCHHU` / `DecodeSCHHU` — 92 ↔ 168 bits
+      (§8.3.1.4.3)
+    - `EncodeBSCH` / `DecodeBSCH` — 60 ↔ 120 bits, colour
+      code fixed at 0 per §8.2.5.2 (§8.3.1.2)
+    - `EncodeAACH` / `DecodeAACH` — 14 ↔ 30 bits, simpler
+      chain (RM + scramble only, no RCPC or interleave per
+      §8.3.1.1)
+  Tests round-trip every channel cleanly across multiple
+  colour codes, confirm CRC-fail detection on heavily-
+  corrupted streams, single-bit-error correction by the
+  Viterbi inner decoder under R=2/3 puncturing, wrong-
+  colour-code failure, and wrong-input-size rejection. The
+  CRC-16 used in §8.2.3.3 is the spec's `(K1+16, K1)` block
+  code — equivalent to CRC-CCITT with `init = 0xFFFF`,
+  `final XOR = 0xFFFF`, processed bit-level for the
+  non-byte-aligned K1 values TETRA uses. Wiring these
+  helpers into `tetra.ControlChannel.Process` (with the
+  burst-position discrimination from EN 300 392-2 §9 to
+  pick which channel decode runs per slot) is the next
+  PR.
 - **TETRA scrambler + (K, a) block-interleaver primitives in
   framing/.** Closes the remaining framing-layer gap before
   the full TETRA channel-decode chain can be wired together.
