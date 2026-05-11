@@ -102,9 +102,13 @@ The remaining gaps:
   correction; under BCHOn the effective CCW carries 28 info
   bits (Command + Status + Address + 4 high bits of LCN), the
   legacy struct's LCN bit 0 and Aux become BCH parity rather
-  than data. **TETRA** still has its RCPC + RM(1,5) channel
-  coding pending — needs ETSI EN 300 392-2 §8.2 to source the
-  generator polynomials + puncturing patterns.
+  than data. **TETRA** has a `framing.EncodeRCPCTetraMother`
+  / `DecodeRCPCTetraMother` primitive in
+  `internal/radio/framing/rcpc_tetra.go` plus puncturing
+  tables for the rate-2/3, 8/18, and 8/17 schemes per ETSI
+  EN 300 395-2 §5.4.3; wiring it into the TETRA adapter is
+  the documented follow-up. RM(1,5) for the broadcast block
+  header is still pending.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
   timing-recovery primitive in `internal/dsp/sync/gardner.go`
   is now threaded into both the **P25 Phase 2** and **TETRA**
@@ -182,6 +186,36 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TETRA RCPC primitive in framing/.** New shared
+  `framing/rcpc_tetra.go` adds the K=5 ½-rate→1/3-rate
+  16-state convolutional mother code plus puncturing /
+  depuncturing helpers per ETSI EN 300 395-2 §5.4.3. Generator
+  polynomials `G₁(D) = 1 + D + D² + D³ + D⁴` (= 0x1F),
+  `G₂(D) = 1 + D + D³ + D⁴` (= 0x1B), `G₃(D) = 1 + D² + D⁴`
+  (= 0x15) — distinct from the K=5 R=½ code in
+  `viterbi_k5.go` (NXDN / YSF), so this is a separate
+  primitive with the same 16-state structure but three
+  outputs per input. Includes spec-verbatim puncturing tables
+  for the three rates TETRA's normal + stealing-mode speech
+  traffic channels use: rate-8/12 (= 2/3) for class-1 bits
+  (P = (1, 2, 4), Period = 6, §5.5.2.1), rate-8/18 for
+  class-2 bits in normal traffic (P = (1..5, 7, 8, 10, 11),
+  Period = 12, §5.5.2.2), and rate-8/17 for class-2 bits
+  under frame-stealing (17-element P, Period = 24,
+  §5.6.2.1). The mother-code `DecodeRCPCTetraMother` is a
+  16-state hard-decision Viterbi; depunctured positions use
+  the same `DepunctureMark` sentinel as the K=5 R=½ code so
+  callers can mix the two via a single decoder pattern.
+  Tests cover mother-code round-trip + single-bit
+  correction, encoder impulse-response sanity against the
+  three generator polynomials, round-trips for all three
+  puncturing schemes, single-bit-error correction over a
+  punctured rate-2/3 channel, and a schedule-sanity check
+  asserting the puncturing tables are strictly increasing
+  and bounded by their Period. Wiring this primitive into
+  the TETRA `ControlChannel.Process` adapter (sliced 432-bit
+  type-3 → type-2 stream per §5.5 / §5.6) is the
+  documented follow-up.
 - **LTR `SetFCSMode(FCSOn)` opt-in.** Wires the
   `framing.CRC7LTR` primitive from PR #131 into the LTR
   `ControlChannel.Ingest` path. Under FCSOn, Ingest computes
