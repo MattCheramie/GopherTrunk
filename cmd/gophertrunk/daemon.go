@@ -14,6 +14,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -81,6 +82,7 @@ type Daemon struct {
 	retention  *storage.Retention
 	ccCache    *trunking.Cache
 	cchuntSup  *cchunt.Supervisor
+	ccDecoder  *ccdecoder.Decoder
 	convScan   *conventional.Scanner
 	metrics    *metrics.Metrics
 	httpAPI    *api.Server
@@ -255,12 +257,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 
 	// CC hunter supervisor — opt-in via scanner.cc_hunt.enabled OR
 	// by default when at least one trunked system is configured.
-	// Honest scope flag: this orchestrates retunes + telemetry but
-	// nothing in the daemon currently publishes cc.locked, so until
-	// the IQ-domain protocol decoders land the supervisor will
-	// report "failed" + back off. Operators see that in the TUI
-	// Scanner panel, which is the correct behavior — silently
-	// pretending decode works would be worse.
+	// Constructs an IQ → CC decoder connector alongside (below) so
+	// the supervisor's retunes drive a live demod pipeline. P25
+	// Phase 1 and YSF have wired pipelines today; other protocols
+	// stay in `state=hunting` until their per-protocol
+	// ControlChannel.Process(stream, baseIdx) adapters ship — see
+	// internal/scanner/ccdecoder/pipelines.go for the factory map.
 	if d.pool != nil && len(d.systems) > 0 {
 		cchEnabled := cfg.Scanner.CCHunt.Enabled || cfg.Scanner.CCHunt == (config.CCHuntConfig{})
 		if cchEnabled {
@@ -280,6 +282,32 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 					return nil, fmt.Errorf("daemon: cchunt: %w", err)
 				}
 				d.cchuntSup = sup
+
+				// IQ → CC decoder connector. Owns one StreamIQ
+				// loop on the control SDR, subscribes to
+				// KindHuntProgress so it learns which system /
+				// frequency the supervisor is currently attempting,
+				// and pumps IQ through the matching per-protocol
+				// pipeline so the CC state machine publishes
+				// cc.locked / grant events on the bus. Only P25
+				// Phase 1 and YSF have wired pipelines today —
+				// other protocols log a "no factory" debug message
+				// when their HuntProgress lands and the supervisor
+				// stays in `state=hunting`. See README for the
+				// per-protocol Process(stream, baseIdx) adapter
+				// follow-ups.
+				dec, err := ccdecoder.New(ccdecoder.Options{
+					Bus:          d.bus,
+					Log:          log,
+					Tuner:        controlEntry.Device,
+					IQ:           controlEntry.Device,
+					Systems:      d.systems,
+					SampleRateHz: float64(cfg.SDR.SampleRate),
+				})
+				if err != nil {
+					return nil, fmt.Errorf("daemon: ccdecoder: %w", err)
+				}
+				d.ccDecoder = dec
 			} else {
 				log.Warn("daemon: scanner.cc_hunt enabled but no control SDR in pool; skipping")
 			}
@@ -475,6 +503,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.cchuntSup.Run(ctx)
 		})
 	}
+	if d.ccDecoder != nil {
+		d.spawn(ctx, "ccdecoder", func(ctx context.Context) error {
+			return d.ccDecoder.Run(ctx)
+		})
+	}
 	if d.convScan != nil {
 		d.spawn(ctx, "conv-scanner", func(ctx context.Context) error {
 			return d.convScan.Run(ctx)
@@ -508,6 +541,9 @@ func (d *Daemon) Close() {
 		}
 		if d.grpcAPI != nil {
 			d.grpcAPI.Stop()
+		}
+		if d.ccDecoder != nil {
+			_ = d.ccDecoder.Close()
 		}
 		if d.composer != nil {
 			_ = d.composer.Close()

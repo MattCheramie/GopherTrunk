@@ -55,22 +55,27 @@ the conventional FM scanner are constructed by `cmd/gophertrunk` and
 expose their state through `/api/v1/scanner` and the TUI cockpit
 panel. The honest remaining gaps:
 
-- **Daemon-side connector wiring.** The
-  `internal/scanner/ccdecoder` package ships the IQ → CC connector
-  (subscribes to `KindHuntProgress`, owns the control SDR's
-  `StreamIQ` loop, swaps the active per-protocol pipeline on every
-  supervisor retune, pumps IQ chunks through the active pipeline
-  whose CC state machine publishes `cc.locked` / `grant` events).
-  The P25 Phase 1 and YSF pipeline factories are wired end-to-end;
-  DMR / NXDN / dPMR / EDACS / MPT 1327 / LTR / Motorola / P25 P2
-  / TETRA each have IQ → symbol receivers shipping but their
-  ControlChannel state machines still consume pre-parsed PDUs, so
-  their pipeline factories land alongside the `Process(stream,
-  baseIdx)` adapters in follow-up PRs. What's still missing for
-  live trunked reception is `cmd/gophertrunk` constructing a
-  `ccdecoder.Decoder` next to the existing supervisor and spawning
-  it as a daemon goroutine — that wiring + an end-to-end
-  integration test is the final piece.
+- **Per-protocol `ControlChannel.Process(stream, baseIdx)` adapters
+  for everything beyond P25 Phase 1 and YSF.** The
+  `internal/scanner/ccdecoder` package is wired into
+  `cmd/gophertrunk/daemon.go` — when a control SDR + trunked system
+  are configured, the daemon constructs a `ccdecoder.Decoder`
+  alongside the CC Hunter supervisor and spawns it as a goroutine
+  that owns the control SDR's `StreamIQ` loop. The connector
+  subscribes to `KindHuntProgress`, swaps the active per-protocol
+  pipeline on every supervisor retune, and pumps IQ chunks through
+  the active pipeline whose CC state machine publishes `cc.locked`
+  / `grant` events back on the bus — the trigger that lights up
+  every downstream surface (engine, recorder, call log, API, TUI).
+  Live trunked reception works today for P25 Phase 1 and YSF
+  (both have IQ → symbol → CC state machine chains shipping
+  end-to-end). DMR / NXDN / dPMR / EDACS / MPT 1327 / LTR /
+  Motorola / P25 P2 / TETRA each have IQ → symbol receivers
+  shipping but their CC state machines still consume pre-parsed
+  PDUs; adding the `Process(stream, baseIdx)` adapter on each
+  (sync detect → frame slice → existing parser → Ingest) lights
+  up the rest. The adapter shape is ~30 lines per protocol and
+  documented per-receiver in the relevant PR descriptions.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -137,6 +142,19 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Daemon wiring for the IQ → CC decoder connector**
+  (`cmd/gophertrunk/daemon.go`). When the daemon's pool has a
+  control-role SDR + at least one trunked system configured, it
+  constructs a `ccdecoder.Decoder` next to the existing
+  `cchunt.Supervisor` and spawns it as a daemon goroutine. The
+  connector owns the control SDR's `StreamIQ` loop, swaps the
+  active per-protocol pipeline on every `KindHuntProgress` retune,
+  and pumps IQ chunks through the active pipeline whose CC state
+  machine publishes `cc.locked` / `grant` events back on the bus
+  — the trigger that lights up every downstream surface (engine,
+  recorder, call log, API, TUI). `make integration` now boots the
+  full chain with a mock SDR and asserts the connector is
+  constructed + runs without crashing.
 - **IQ → control-channel decoder connector** (`internal/scanner/ccdecoder`)
   — subscribes to `events.KindHuntProgress`, owns one
   `StreamIQ(ctx)` loop on the control SDR, swaps the active
