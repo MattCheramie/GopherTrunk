@@ -6,6 +6,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
+	edacsrx "github.com/MattCheramie/GopherTrunk/internal/radio/edacs/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -62,9 +64,10 @@ type PipelineFactory func(PipelineOptions) (ProtocolPipeline, error)
 // detect sync + frame + dispatch into the existing parsers is a
 // follow-up.
 var factories = map[trunking.Protocol]PipelineFactory{
-	trunking.ProtocolP25:  newP25Phase1Pipeline,
-	trunking.ProtocolDPMR: newDPMRPipeline,
-	trunking.ProtocolNXDN: newNXDNPipeline,
+	trunking.ProtocolP25:   newP25Phase1Pipeline,
+	trunking.ProtocolDPMR:  newDPMRPipeline,
+	trunking.ProtocolNXDN:  newNXDNPipeline,
+	trunking.ProtocolEDACS: newEDACSPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -188,3 +191,35 @@ type nxdnPipeline struct {
 func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *nxdnPipeline) Reset()                  { p.rx.Reset() }
 func (p *nxdnPipeline) Close() error            { return nil }
+
+// newEDACSPipeline wires internal/radio/edacs/receiver into
+// edacs.ControlChannel.Process. The receiver's BitSink forwards
+// bits + baseIdx into the state machine (24-bit sync detect →
+// 40-bit CCW slice → CCWFromBits → Ingest). The interleaved
+// Reed-Solomon-derived FEC over the CCW is a follow-up; until
+// it lands the adapter sync-locks but typically fails CCW
+// parsing on noisy on-air signals.
+func newEDACSPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := edacs.New(edacs.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := edacsrx.New(edacsrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		BitSink: func(bits []byte, baseIdx int) {
+			cc.Process(bits, baseIdx)
+		},
+	})
+	return &edacsPipeline{rx: rx, cc: cc}, nil
+}
+
+type edacsPipeline struct {
+	rx *edacsrx.Receiver
+	cc *edacs.ControlChannel
+}
+
+func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *edacsPipeline) Reset()                  { p.rx.Reset() }
+func (p *edacsPipeline) Close() error            { return nil }
