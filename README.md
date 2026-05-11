@@ -68,12 +68,15 @@ The remaining gaps:
   straight from the wire — this works on test fixtures + clean
   signals but typically fails on captured on-air traffic.
   **DMR Tier III** ships full FEC end-to-end (BPTC(196,96) +
-  CSBK CRC). **NXDN** now enforces the CAC CRC-CCITT-16 strict-
-  mode at the adapter level (so noise gets dropped) but the
-  K=5 Viterbi + interleaver over the 288-wire-bit Info field is
-  still pending. **LTR** has a `SetManchesterMode` config for
-  deployments that bi-phase-encode the sub-audible status word;
-  FCS verification (12-bit trailer) is still pending.
+  CSBK CRC). **NXDN** now has `SetViterbiMode(ViterbiOn)` to
+  run K=5 ½-rate Viterbi over the 92 encoded CAC dibits in the
+  Info field (88 CAC info bits + 4 tail bits → 184 wire bits =
+  92 dibits — the bare-bones K=5 chain MMDVMHost / DSDcc / op25
+  share); the per-protocol interleaver + puncture inner layer
+  is the next follow-up. The CAC CRC-CCITT-16 strict-mode
+  remains enforced. **LTR** has a `SetManchesterMode` config
+  for deployments that bi-phase-encode the sub-audible status
+  word; FCS verification (12-bit trailer) is still pending.
   **Motorola Type II** has `SetBCHMode(BCHOn)` to run
   BCH(64,16,11) over each codeword pair. The remaining
   protocols (EDACS, MPT 1327, P25 Phase 2, TETRA) still have
@@ -149,6 +152,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **NXDN K=5 ½-rate Viterbi FEC opt-in for the CAC region of the
+  Info field.** First heavy-FEC PR. `nxdn.SetViterbiMode(
+  ViterbiOn)` switches the `ControlChannel.Process` adapter
+  from "read 44 raw CAC dibits off the wire" to "collect 92
+  encoded CAC dibits + run them through the K=5 ½-rate Viterbi
+  primitive in `internal/radio/framing/viterbi_k5.go` to
+  recover 88 CAC info bits + 4 tail bits". The convolutional
+  primitive (constraint length 5, generator pair g1 = 0x19 /
+  g2 = 0x17 octal 31/27) is the same one MMDVMHost / DSDcc /
+  op25 use across NXDN SACCH and other K=5 open-spec systems;
+  this PR wires it into the CAC slot. Tests round-trip
+  CAC bytes → `EncodeK5` → 184 channel bits → 92 dibits →
+  Process → ParseCAC → cc.locked. The per-protocol interleave
+  + puncture inner layer NXDN applies inside the Info field
+  isn't reversed yet (the public references don't fully
+  document it); ViterbiOn is the bare-bones convolutional
+  decode, ViterbiOff (default) preserves the legacy raw-wire
+  behaviour for test fixtures and clean synthesized streams.
 - **Cross-protocol strict-validation FEC bundle: LTR + dPMR +
   TETRA + P25 Phase 2 `SetStrictValidation(bool)`.** Extends
   the soft-FEC noise filter from the previous PR across the

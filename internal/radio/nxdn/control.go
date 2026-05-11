@@ -35,6 +35,48 @@ type ControlChannel struct {
 	// adapter uses (see process.go). Lazily constructed on the
 	// first Process call.
 	proc *processState
+
+	// viterbiMode controls whether Process treats the CAC region
+	// of the Info field as raw on-wire bits (ViterbiOff, default)
+	// or runs the 144 dibits through the K=5 ½-rate Viterbi
+	// primitive before parsing (ViterbiOn). Set via
+	// SetViterbiMode.
+	viterbiMode ViterbiMode
+}
+
+// ViterbiMode selects how the Process adapter interprets the CAC
+// region inside the 144-dibit Info field.
+//
+//   - ViterbiOff (default): the adapter reads 44 dibits = 88 raw
+//     information bits straight off the wire. Works on test
+//     fixtures + clean synthesized streams whose CAC bits aren't
+//     channel-coded; it does NOT match the on-air NXDN encoding,
+//     so live-air CAC frames typically fail their CRC and the
+//     adapter silently drops them.
+//
+//   - ViterbiOn: the adapter collects the first 92 dibits of the
+//     Info field (= 184 wire bits), runs them through the K=5
+//     ½-rate Viterbi primitive in internal/radio/framing (the
+//     same code-polynomial pair used by MMDVMHost / DSDcc /
+//     op25), and parses the 88 leading info bits as a CAC. This
+//     matches the bare-bones NXDN CAC FEC layer (88 CAC bits +
+//     4 tail zeros → K=5 R=½). Inner per-protocol interleaver +
+//     puncture (spec-shape-dependent and not in the public
+//     references) are still deferred.
+type ViterbiMode uint8
+
+const (
+	ViterbiOff ViterbiMode = iota
+	ViterbiOn
+)
+
+// SetViterbiMode toggles the K=5 ½-rate Viterbi FEC layer on the
+// CAC region of the Info field. See ViterbiMode for the trade-
+// offs. The mode applies to every subsequent Process call; the
+// IngestFrame entry point is unaffected (callers that pre-parse
+// frames don't go through this adapter).
+func (c *ControlChannel) SetViterbiMode(mode ViterbiMode) {
+	c.viterbiMode = mode
 }
 
 func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32, rate BaudRate) *ControlChannel {

@@ -22,17 +22,29 @@ type processState struct {
 }
 
 // postSyncDibits is the count of dibits the adapter collects after
-// the 8-dibit FSW match: 8 LICH wire + 32 SACCH (skipped) + 44 CAC
-// info dibits = 84 dibits. The remaining 100 dibits of the 144-dibit
-// Info field carry the CAC FEC redundancy that a future package PR
-// decodes; this adapter only uses the first 44 dibits, which is
-// sufficient to drive cc.locked in test fixtures where the CAC
-// information bits are placed directly in the wire (no FEC encoding).
-// For real on-air NXDN traffic the CAC FEC layer is the next
-// follow-up; until that lands this adapter will sync on the FSW
-// but typically fail the CAC CRC and stay silent on production
-// signals.
+// the 8-dibit FSW match when SetViterbiMode is ViterbiOff: 8 LICH
+// wire + 32 SACCH (skipped) + 44 CAC info dibits = 84 dibits. The
+// remaining 100 dibits of the 144-dibit Info field carry FEC
+// redundancy or other content the no-FEC path doesn't read. This
+// mode drives cc.locked in test fixtures where the CAC bits are
+// placed directly on the wire; on real on-air signals the CAC CRC
+// almost always fails and the adapter silently drops the frame.
 const postSyncDibits = 84
+
+// postSyncDibitsViterbi is the count of dibits the adapter collects
+// after the 8-dibit FSW match when SetViterbiMode is ViterbiOn: 8
+// LICH + 32 SACCH (skipped) + 92 CAC-encoded dibits = 132 dibits.
+// The 92 CAC-encoded dibits = 184 wire bits = (88 CAC info + 4 tail
+// bits) × 2 — the K=5 ½-rate convolutional output. The remaining
+// 52 dibits of the 144-dibit Info field carry per-protocol
+// puncture / interleave content the public references don't fully
+// document; those layers are documented follow-ups.
+const postSyncDibitsViterbi = 8 + 32 + 92
+
+// cacViterbiInfoBits is the number of source bits the K=5 ½-rate
+// Viterbi decode recovers from the 92 encoded CAC dibits: 88 CAC
+// information bits + 4 zero tail bits to flush the encoder.
+const cacViterbiInfoBits = 92
 
 // Process consumes a window of raw dibits from the NXDN receiver
 // (the IQ → C4FM dibit chain in internal/radio/nxdn/receiver/),
@@ -52,10 +64,14 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	if c.proc == nil {
 		c.proc = &processState{
 			det:   NewSyncDetector([][]uint8{FSWDibitsOutbound}, 1),
-			frame: make([]uint8, 0, postSyncDibits),
+			frame: make([]uint8, 0, postSyncDibitsViterbi),
 		}
 	}
 	p := c.proc
+	frameLen := postSyncDibits
+	if c.viterbiMode == ViterbiOn {
+		frameLen = postSyncDibitsViterbi
+	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
 	matchIdx := 0
@@ -82,7 +98,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		// machine locks on.
 		for matchIdx < len(p.matchScratch) && p.matchScratch[matchIdx].Index == absPos {
 			if !p.matchScratch[matchIdx].Inbound {
-				p.remaining = postSyncDibits
+				p.remaining = frameLen
 				p.frame = p.frame[:0]
 			}
 			matchIdx++
@@ -96,38 +112,77 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // Drops the frame silently on any parse / CRC error — the next
 // FSW match anchors the stream again.
 func (c *ControlChannel) tryIngestFrame(frame []uint8) {
-	if len(frame) != postSyncDibits {
+	// LICH: 8 wire dibits → 16 wire bits → DecodeLICHWire → info
+	// byte → ParseLICH. Layout is the same in both Viterbi modes.
+	if len(frame) < 8 {
 		return
 	}
-	// LICH: 8 wire dibits → 16 wire bits → DecodeLICHWire → info
-	// byte → ParseLICH.
 	lichBits := framing.DibitsToBits(frame[0:8])
 	lichByte, _ := DecodeLICHWire(lichBits)
 	lich := ParseLICH(lichByte)
 
-	// CAC: 44 dibits → 88 information bits → 11 bytes → ParseCAC.
-	// Frame offsets: 8..40 is the 32-dibit SACCH (skipped here;
-	// SACCH carries channel signalling decoded via the K=5
-	// Viterbi chain in sacch.go but isn't required for the
-	// cc.locked path). Offsets 40..84 are the first 44 dibits
-	// of the 144-dibit Info field.
-	cacBits := framing.DibitsToBits(frame[40:84])
-	cacBytes := framing.PackBitsMSB(cacBits)
-	if len(cacBytes) < 11 {
+	cacBytes, ok := c.extractCACBytes(frame)
+	if !ok {
 		return
 	}
-	cac, err := ParseCAC(cacBytes[:11])
+	cac, err := ParseCAC(cacBytes)
 	if err != nil {
-		// CRC-CCITT-16 mismatch — drop the frame. The Process
-		// adapter doesn't yet reverse the Viterbi + interleaver
-		// + puncture chain that the CAC FEC layer applies to
-		// the 288-wire-bit Info field, so on real on-air
-		// signals the CRC will almost always fail and this
-		// path silently skips. On test fixtures + clean
-		// fixtures the CRC validates and IngestFrame runs.
+		// CRC-CCITT-16 mismatch — drop the frame silently.
+		// ViterbiOff: the wire bits are read raw, so any noise
+		// on the CAC slot fails the CRC. ViterbiOn: the K=5
+		// decode recovers info bits but the per-protocol
+		// interleave / puncture isn't reversed, so on-air
+		// frames still typically fail; clean synthesized
+		// streams (or a future PR that adds the interleave
+		// reversal) pass.
 		return
 	}
 	c.IngestFrame(lich, &cac)
+}
+
+// extractCACBytes pulls the 11 CAC bytes (88 information bits +
+// CRC) out of the post-sync frame. The slice layout depends on
+// ViterbiMode:
+//
+//   - ViterbiOff: frame is 84 dibits total. Offsets 8..40 are the
+//     32-dibit SACCH (skipped). Offsets 40..84 are the first 44
+//     dibits of the Info field; their 88 wire bits ARE the CAC
+//     information bits (no FEC reversal).
+//
+//   - ViterbiOn: frame is 132 dibits total. Offsets 8..40 are
+//     SACCH (skipped). Offsets 40..132 are the first 92 dibits
+//     of the Info field = 184 wire bits = K=5 ½-rate-encoded
+//     output. ViterbiK5 recovers 92 source bits; the first 88
+//     are the CAC info bits.
+func (c *ControlChannel) extractCACBytes(frame []uint8) ([]byte, bool) {
+	switch c.viterbiMode {
+	case ViterbiOn:
+		if len(frame) != postSyncDibitsViterbi {
+			return nil, false
+		}
+		channelBits := framing.DibitsToBits(frame[40:postSyncDibitsViterbi])
+		if len(channelBits) != 2*cacViterbiInfoBits {
+			return nil, false
+		}
+		info, _ := framing.ViterbiK5(channelBits, cacViterbiInfoBits)
+		// Drop the 4 trailing tail bits; the first 88 source
+		// bits are the CAC information field.
+		cacBytes := framing.PackBitsMSB(info[:88])
+		if len(cacBytes) < 11 {
+			return nil, false
+		}
+		return cacBytes[:11], true
+	default:
+		if len(frame) != postSyncDibits {
+			return nil, false
+		}
+		cacBits := framing.DibitsToBits(frame[40:postSyncDibits])
+		cacBytes := framing.PackBitsMSB(cacBits)
+		if len(cacBytes) < 11 {
+			return nil, false
+		}
+		return cacBytes[:11], true
+	}
 }
 
 // Reset clears the Process adapter's sync-detection + partial-frame
