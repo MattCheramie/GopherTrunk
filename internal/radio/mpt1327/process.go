@@ -163,19 +163,17 @@ func (c *ControlChannel) parseCodeword(window []byte, mode BCHMode) (Codeword, b
 	if errs == -1 {
 		return Codeword{}, false
 	}
-	// Extract the 38-bit info field expected by CodewordFromBits.
-	// The 48-bit info is laid out as wire bits 0..47:
-	//   wire 0..20  = Type (1) + Prefix (7) + Ident (13) — 21 bits
-	//   wire 21..30 = Op (10) — dropped (not modelled by Codeword)
-	//   wire 31..47 = Function (17)
-	wire38 := make([]byte, 38)
-	for i := 0; i < 21; i++ {
-		wire38[i] = byte((info48 >> uint(i)) & 1)
+	// The 48-bit info is laid out per the framing primitive
+	// convention with info48 bit i = wire bit i (LSB-first packing).
+	// The Codeword struct's CodewordFromBits48 helper expects
+	// MSB-first wire bits, so we expand info48 directly into a
+	// 48-bit wire array first. This surfaces the spec's full
+	// information set (Type + Prefix + Ident + Op + Function).
+	wire48 := make([]byte, 48)
+	for i := 0; i < 48; i++ {
+		wire48[i] = byte((info48 >> uint(i)) & 1)
 	}
-	for i := 0; i < 17; i++ {
-		wire38[21+i] = byte((info48 >> uint(31+i)) & 1)
-	}
-	w, _ := CodewordFromBits(wire38)
+	w, _ := CodewordFromBits48(wire48)
 	return w, true
 }
 

@@ -186,6 +186,27 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **MPT 1327 Op field extension.** Adds the spec's 10-bit Op
+  field (between Ident and Function) to `mpt1327.Codeword`,
+  closing the documented follow-up from PR #129. New 48-bit
+  helpers — `AssembleCodeword48` / `ParseCodeword48` /
+  `CodewordFromBits48` / `CodewordBits48` — operate on the
+  full information set (Type + Prefix + Ident + Op +
+  Function = 48 bits, MSB-first per field). The legacy
+  38-bit `AssembleCodeword` / `ParseCodeword` /
+  `CodewordFromBits` / `CodewordBits` stay back-compat: they
+  silently drop Op on encode and leave it at zero on
+  decode, so existing fixtures + tests that pre-date the Op
+  field keep working byte-identically. The BCH wiring in
+  `process.go` now routes through `CodewordFromBits48` so
+  under `SetBCHMode(BCHOn)` the recovered codeword carries
+  all 48 information bits, surfacing the full spec layout
+  to downstream `Ingest`. Tests cover 48-bit round-trip
+  preserving Op, legacy 38-bit round-trip dropping Op,
+  reject-wrong-length error paths, the 10-bit Op mask
+  preventing overflow into Ident, and a BCHOn end-to-end
+  round-trip that verifies a non-zero Op survives encode →
+  BCH-protect → decode → CCW recovery.
 - **ClockGardner wired into the ccdecoder connector for the
   π/4-DQPSK pipelines.** The `newP25Phase2Pipeline` and
   `newTETRAPipeline` factories in
