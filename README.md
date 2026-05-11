@@ -112,10 +112,16 @@ The remaining gaps:
   scrambler + (K,a) block interleaver from PR #138, and the
   per-channel encode/decode helpers from PR #139 — composed
   on the `tetra.ControlChannel.Process` adapter via the
-  `SetChannelCoding(ChannelCodingOn)` opt-in. The connector
-  surface (per-system colour code + expected-channel config
-  flowing from `trunking.System` into the live decoder)
-  is the remaining wiring task.
+  `SetChannelCoding(ChannelCodingOn)` opt-in and wired into
+  the live decoder by the `ccdecoder` connector reading
+  `tetra_colour_code` + `tetra_channel` off each
+  `trunking.System` per PR #141. The remaining TETRA work
+  on the "lights up live trunked reception" path is
+  validation against a captured TETRA TMO IQ exchange —
+  unit tests round-trip clean fixtures end-to-end, but
+  on-air recovery margins (Viterbi correction depth vs.
+  real co-channel + adjacent-channel interference) need a
+  live capture to characterise.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
   timing-recovery primitive in `internal/dsp/sync/gardner.go`
   is now threaded into both the **P25 Phase 2** and **TETRA**
@@ -193,6 +199,47 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`ccdecoder` connector threads TETRA channel coding from
+  per-system config.** Closes the last gap between the
+  daemon's YAML and the §8.3.1 type-5 → type-1 decoder
+  shipped in PR #140 — operators set the cell's extended
+  colour code + signaling channel once in `config.yaml` and
+  the `newTETRAPipeline` factory flips
+  `tetra.ControlChannel.SetChannelCoding(ChannelCodingOn)`
+  automatically on every retune.
+  - `trunking.System` gains `TETRAColourCode uint32` (low
+    30 bits of the §8.2.5 extended colour code, bits 30..31
+    silently ignored) and `TETRAChannel string` (the
+    config-side name for the logical channel that lives in
+    each burst window).
+  - `config.SystemConfig` exposes those as `tetra_colour_code`
+    + `tetra_channel` YAML keys; `cmd/gophertrunk/daemon.go`
+    forwards them into `trunking.System` on construction.
+  - `ccdecoder.PipelineOptions` carries the full
+    `trunking.System` so per-protocol factories can read
+    protocol-specific config without a new field per protocol.
+  - `tetra.ParseChannelType` maps the YAML string
+    (`"sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach"`,
+    case-insensitive, `"/"` and `"_"` both accepted, empty
+    defaults to `sch/hd`) into a `tetra.ChannelType`;
+    unknown values fall back to SCH/HD with a warn-level
+    log entry.
+  - `tetra.ControlChannel.ChannelCoding` / `ExpectedChannel`
+    / `ColourCode` accessors let tests + observability code
+    introspect the configured state without poking at
+    unexported fields.
+  - Zero `TETRAColourCode` preserves the legacy
+    `ChannelCodingOff` raw-dibit path so existing
+    synthesized-fixture tests stay green.
+  Tests cover the config-string → ChannelType parser across
+  every recognised value (plus a misconfigured-input
+  warning case), the factory turning channel coding on
+  with the right colour code + channel under a populated
+  System, and the factory leaving channel coding off when
+  the colour code is left at the zero default. The remaining
+  work toward "lights up live trunked reception" is now
+  protocol-by-protocol FEC wiring across the other 9
+  protocols, not connector plumbing.
 - **TETRA `SetChannelCoding(ChannelCodingOn)` opt-in wires
   per-channel FEC decode into `Process`.** Lights up the
   full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain

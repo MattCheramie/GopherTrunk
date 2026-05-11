@@ -275,6 +275,42 @@ func TestSetChannelCodingDefault(t *testing.T) {
 	}
 }
 
+// TestParseChannelType covers the config-string → ChannelType
+// mapping the ccdecoder connector uses to translate the
+// `tetra_channel` YAML field into a SetExpectedChannel call.
+func TestParseChannelType(t *testing.T) {
+	cases := []struct {
+		in   string
+		want ChannelType
+		ok   bool
+	}{
+		{"", ChannelSCHHD, true},
+		{"sch/hd", ChannelSCHHD, true},
+		{"SCH/HD", ChannelSCHHD, true},
+		{"sch_hd", ChannelSCHHD, true},
+		{"schhd", ChannelSCHHD, true},
+		{"bnch", ChannelSCHHD, true}, // BNCH shares the SCH/HD coding chain.
+		{"stch", ChannelSCHHD, true}, // STCH too.
+		{"sch/f", ChannelSCHF, true},
+		{"schf", ChannelSCHF, true},
+		{"sch/hu", ChannelSCHHU, true},
+		{"schhu", ChannelSCHHU, true},
+		{"bsch", ChannelBSCH, true},
+		{"BSCH", ChannelBSCH, true},
+		{"aach", ChannelAACH, true},
+		{"AACH", ChannelAACH, true},
+		{"nonsense", ChannelSCHHD, false},
+		{"sch/q", ChannelSCHHD, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseChannelType(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseChannelType(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 // TestChannelDibitCount sanity check that each channel maps to
 // its spec-correct type-5-bit / dibit count.
 func TestChannelDibitCount(t *testing.T) {

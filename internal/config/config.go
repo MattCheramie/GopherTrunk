@@ -97,10 +97,27 @@ type TrunkingConfig struct {
 }
 
 type SystemConfig struct {
-	Name             string   `yaml:"name"`
-	Protocol         string   `yaml:"protocol"`
-	ControlChannels  []uint32 `yaml:"control_channels"`
-	TalkgroupFile    string   `yaml:"talkgroup_file"`
+	Name            string   `yaml:"name"`
+	Protocol        string   `yaml:"protocol"`
+	ControlChannels []uint32 `yaml:"control_channels"`
+	TalkgroupFile   string   `yaml:"talkgroup_file"`
+
+	// TETRAColourCode is the 30-bit extended colour code the TETRA
+	// scrambler uses to seed its LFSR (ETSI EN 300 392-2 §8.2.5).
+	// Set this to the per-cell colour code of the TETRA TMO system
+	// being decoded so the ccdecoder connector turns on the full
+	// §8.3.1 type-5 → type-1 decode chain (descramble + deinterleave
+	// + depuncture + Viterbi + CRC-16). Bits 30..31 are silently
+	// ignored. Zero (the default) keeps the legacy raw-dibit path,
+	// which only works on FEC-free synthesized fixtures. Ignored
+	// for non-TETRA protocols.
+	TETRAColourCode uint32 `yaml:"tetra_colour_code"`
+	// TETRAChannel selects which TETRA logical channel lives in
+	// each burst window under ChannelCodingOn. Recognised values:
+	// "sch/hd" | "sch/f" | "sch/hu" | "bsch" | "aach". Empty
+	// defaults to "sch/hd" — the standard signaling channel for
+	// cc.locked / Grant events. Ignored for non-TETRA protocols.
+	TETRAChannel string `yaml:"tetra_channel"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
