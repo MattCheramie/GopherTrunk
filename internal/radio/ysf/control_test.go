@@ -129,3 +129,131 @@ func TestLockStateSatisfiesTrunkingLockedPayload(t *testing.T) {
 		t.Errorf("LockedNAC = %d, want 0 (YSF has no NAC)", lp.LockedNAC())
 	}
 }
+
+func TestControlChannelHeaderFICHEmitsGrant(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "demo-repeater",
+		FrequencyHz: 444_525_000,
+	})
+	cc.ProcessFICH(FICH{
+		FrameType:   FrameTypeHeader,
+		CallType:    CallTypeGroup,
+		DataType:    DataTypeVDMode2,
+		SquelchMode: true,
+		SquelchCode: 23,
+	})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			g, ok := ev.Payload.(trunking.Grant)
+			if !ok {
+				t.Fatalf("payload type = %T, want trunking.Grant", ev.Payload)
+			}
+			if g.Protocol != "ysf" {
+				t.Errorf("protocol = %q, want ysf", g.Protocol)
+			}
+			if g.System != "demo-repeater" {
+				t.Errorf("system = %q, want demo-repeater", g.System)
+			}
+			if g.GroupID != 23 {
+				t.Errorf("group_id = %d, want 23 (DG-ID)", g.GroupID)
+			}
+			if g.FrequencyHz != 444_525_000 {
+				t.Errorf("freq = %d, want 444525000", g.FrequencyHz)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event published")
+		}
+	}
+}
+
+func TestControlChannelDuplicateHeaderSuppressed(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "x", FrequencyHz: 1})
+	header := FICH{FrameType: FrameTypeHeader, CallType: CallTypeGroup, SquelchMode: true, SquelchCode: 5}
+	cc.ProcessFICH(header)
+	cc.ProcessFICH(header)
+
+	grants := 0
+	deadline := time.After(150 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				grants++
+			}
+		case <-deadline:
+			if grants != 1 {
+				t.Errorf("got %d grants for duplicate Header, want 1", grants)
+			}
+			return
+		}
+	}
+}
+
+func TestControlChannelTerminatorClearsGrantState(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "x", FrequencyHz: 1})
+	header := FICH{FrameType: FrameTypeHeader, CallType: CallTypeGroup, SquelchMode: true, SquelchCode: 5}
+	cc.ProcessFICH(header)
+	cc.ProcessFICH(FICH{FrameType: FrameTypeTerminator, CallType: CallTypeGroup})
+	cc.ProcessFICH(header)
+
+	grants := 0
+	deadline := time.After(150 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				grants++
+			}
+		case <-deadline:
+			if grants != 2 {
+				t.Errorf("got %d grants (Header → Terminator → Header), want 2", grants)
+			}
+			return
+		}
+	}
+}
+
+func TestControlChannelPrivateCallSkipsGrant(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "x", FrequencyHz: 1})
+	cc.ProcessFICH(FICH{
+		FrameType:   FrameTypeHeader,
+		CallType:    CallTypeRadioID,
+		SquelchMode: true,
+		SquelchCode: 5,
+	})
+
+	select {
+	case ev := <-sub.C:
+		t.Errorf("private call should not fire grant; got %s", ev.Kind)
+	case <-time.After(50 * time.Millisecond):
+		// expected
+	}
+}

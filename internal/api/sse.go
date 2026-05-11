@@ -84,6 +84,9 @@ func eventToDTO(ev events.Event) EventDTO {
 	case trunking.Grant:
 		dto.Payload = grantToDTO(p)
 	default:
+		// Includes sdr.SDRStatus (already JSON-tagged) and any
+		// future payload types the api package hasn't grown an
+		// explicit DTO for yet.
 		dto.Payload = p
 	}
 	return dto

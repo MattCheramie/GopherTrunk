@@ -132,6 +132,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 	// fall through gracefully when the pool is empty.
 	if len(cfg.SDR.Devices) > 0 {
 		d.pool = sdr.NewPool(log)
+		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
 		for _, dev := range cfg.SDR.Devices {
 			h := sdr.Hint{
@@ -301,6 +302,9 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		}
 		if d.toneout != nil {
 			opts.Tones = d.toneout
+		}
+		if d.pool != nil {
+			opts.Devices = d.pool
 		}
 		srv, err := api.NewServer(opts)
 		if err != nil {

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -142,4 +144,20 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 		rows = []CallRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"calls": rows})
+}
+
+// handleListDevices returns the SDR pool snapshot — every opened
+// device with its role, configured gain/PPM/bias-tee, tuner identity,
+// and the gain ladder. Returns 503 when the daemon was started without
+// a pool (e.g. integration tests with no SDR hints in config).
+func (s *Server) handleListDevices(w http.ResponseWriter, _ *http.Request) {
+	if s.devices == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"devices": []any{}})
+		return
+	}
+	devs := s.devices.Snapshot()
+	if devs == nil {
+		devs = []sdr.SDRStatus{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"devices": devs})
 }

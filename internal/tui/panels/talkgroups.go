@@ -124,6 +124,12 @@ func (p *TalkgroupsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.
 			p.editing = true
 			p.filter.Focus()
 			return p, textinput.Blink
+		case m.String() == "enter":
+			tg, ok := p.selectedTalkgroup(s.Talkgroups)
+			if !ok {
+				return p, nil
+			}
+			return p, EmitTalkgroupDetail(tg.ID)
 		case key.Matches(m, tgSortKey):
 			p.sortBy = (p.sortBy + 1) % 3
 			p.lastSort = -1 // force refresh

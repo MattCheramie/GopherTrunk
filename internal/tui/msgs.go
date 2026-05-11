@@ -39,6 +39,10 @@ type pollMetricsMsg struct {
 	m   map[string]float64
 	err error
 }
+type pollDevicesMsg struct {
+	devs []client.SDRStatus
+	err  error
+}
 
 // eventMsg carries one decoded SSE event. The root model fans this
 // out into its event log + tone alert ring buffer, then forwards
@@ -69,5 +73,17 @@ type writeResultMsg struct {
 // to set shared.Mutations + WriteEnabled.
 type pollMutationStatusMsg struct {
 	s   client.MutationStatus
+	err error
+}
+
+// systemDetailResultMsg / talkgroupDetailResultMsg carry the response
+// of a Systems/Talkgroups drill-in fetch. The root model opens a
+// read-only modal on success or surfaces the error as a toast.
+type systemDetailResultMsg struct {
+	s   client.SystemDTO
+	err error
+}
+type talkgroupDetailResultMsg struct {
+	tg  client.TalkgroupDTO
 	err error
 }

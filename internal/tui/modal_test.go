@@ -157,3 +157,49 @@ func TestWriteResult_TogglesPollRefresh(t *testing.T) {
 		t.Errorf("toast = %q", m.shared.Toast)
 	}
 }
+
+func TestDetailModal_OpensFromSystemResult(t *testing.T) {
+	cli := client.New("http://example.invalid", time.Second, false)
+	m := New(cli, Options{NoColor: true})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(*Model)
+
+	updated, _ = m.Update(systemDetailResultMsg{
+		s: client.SystemDTO{Name: "Demo", Protocol: "p25", ControlChannels: []uint32{851012500}},
+	})
+	m = updated.(*Model)
+	if m.detail == nil {
+		t.Fatal("expected detail modal to open")
+	}
+	if !strings.Contains(m.detail.title, "Demo") {
+		t.Errorf("title = %q, want Demo", m.detail.title)
+	}
+	if !strings.Contains(m.detail.body, "p25") {
+		t.Errorf("body missing protocol: %q", m.detail.body)
+	}
+	// Esc closes it.
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(*Model)
+	if m.detail != nil {
+		t.Errorf("esc should close detail modal")
+	}
+	if cmd != nil {
+		t.Errorf("esc should not yield a Cmd")
+	}
+}
+
+func TestDetailModal_ErrorShowsToast(t *testing.T) {
+	cli := client.New("http://example.invalid", time.Second, false)
+	m := New(cli, Options{NoColor: true})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(*Model)
+
+	updated, _ = m.Update(systemDetailResultMsg{err: &client.HTTPError{Status: 404, Method: "GET", URL: "/api/v1/systems/missing"}})
+	m = updated.(*Model)
+	if m.detail != nil {
+		t.Errorf("error result should not open modal")
+	}
+	if !strings.Contains(m.shared.Toast, "system:") {
+		t.Errorf("toast = %q", m.shared.Toast)
+	}
+}
