@@ -32,6 +32,11 @@ type ControlChannel struct {
 	resolver   Resolver
 	now        func() time.Time
 
+	// proc is the cross-call dibit / sync state the Process
+	// adapter uses (see process.go). Lazily constructed on the
+	// first Process call.
+	proc *processState
+
 	mu     sync.Mutex
 	locked bool
 	last   LockState

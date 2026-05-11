@@ -23,6 +23,7 @@ const (
 	ProtocolLTR                // Logic Trunked Radio (LTR / LTR-Net)
 	ProtocolMPT1327            // MPT 1327 (UK / Commonwealth utility trunking)
 	ProtocolP25Phase2          // P25 Phase 2 (H-DQPSK TDMA, config "p25-phase2")
+	ProtocolTETRA              // TETRA TMO (π/4-DQPSK, ETSI EN 300 392-2)
 )
 
 func (p Protocol) String() string {
@@ -45,14 +46,16 @@ func (p Protocol) String() string {
 		return "mpt1327"
 	case ProtocolP25Phase2:
 		return "p25-phase2"
+	case ProtocolTETRA:
+		return "tetra"
 	default:
 		return "unknown"
 	}
 }
 
 // ParseProtocol maps a string ("p25", "dmr", "nxdn", "dpmr",
-// "edacs", "motorola", "ltr", "mpt1327", "p25-phase2") to a
-// Protocol value.
+// "edacs", "motorola", "ltr", "mpt1327", "p25-phase2", "tetra") to
+// a Protocol value.
 func ParseProtocol(s string) (Protocol, error) {
 	switch strings.ToLower(s) {
 	case "p25":
@@ -73,6 +76,8 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolMPT1327, nil
 	case "p25-phase2", "p25_phase2", "p25p2":
 		return ProtocolP25Phase2, nil
+	case "tetra":
+		return ProtocolTETRA, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q", s)
 	}
@@ -95,7 +100,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|nxdn|dpmr|edacs|motorola|ltr|mpt1327")
+		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")

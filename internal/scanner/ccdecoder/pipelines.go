@@ -23,6 +23,8 @@ import (
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	p25phase2rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
+	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
 	ysfrx "github.com/MattCheramie/GopherTrunk/internal/radio/ysf/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -84,6 +86,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolMotorola:  newMotorolaPipeline,
 	trunking.ProtocolLTR:       newLTRPipeline,
 	trunking.ProtocolMPT1327:   newMPT1327Pipeline,
+	trunking.ProtocolTETRA:     newTETRAPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -151,6 +154,38 @@ type p25Phase2Pipeline struct {
 func (p *p25Phase2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *p25Phase2Pipeline) Reset()                  { p.rx.Reset() }
 func (p *p25Phase2Pipeline) Close() error            { return nil }
+
+// newTETRAPipeline wires internal/radio/tetra/receiver into
+// tetra.ControlChannel.Process. The receiver's DibitSink forwards
+// π/4-DQPSK dibits into the state machine (38-dibit normal
+// training-sequence detect → 48-dibit PDU slice → ParsePDU →
+// Ingest). The RCPC + RM FEC + interleaving across the full TDMA
+// slot are follow-ups; without them the adapter works on test
+// fixtures but typically fails to lock on captured TETRA traffic.
+func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := tetra.New(tetra.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := tetrarx.New(tetrarx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &tetraPipeline{rx: rx, cc: cc}, nil
+}
+
+type tetraPipeline struct {
+	rx *tetrarx.Receiver
+	cc *tetra.ControlChannel
+}
+
+func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *tetraPipeline) Reset()                  { p.rx.Reset() }
+func (p *tetraPipeline) Close() error            { return nil }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
 // into ysf.ControlChannel.Process. YSF lacks a published
