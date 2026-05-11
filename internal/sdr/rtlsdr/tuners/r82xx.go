@@ -72,14 +72,12 @@ func (r *R82xx) Gains() []int {
 	return out
 }
 
-// Detect probes both candidate I2C addresses (R820T/R820T2 at 0x34,
-// R828D at 0x74) and returns the first that responds with a valid
-// chip-ID byte. Caller wraps the result in NewR82xx.
-func Detect(d *rtl2832u.Demod) (i2cAddr uint8, chip Type, err error) {
-	if err := d.SetI2CRepeater(true); err != nil {
-		return 0, TypeUnknown, fmt.Errorf("r82xx detect: I2C repeater: %w", err)
-	}
-	defer d.SetI2CRepeater(false)
+// detectR82xx probes the two candidate I2C addresses for an R820T
+// family chip and returns a ready (uninitialized) driver, or nil if
+// no chip responded. Caller is responsible for the surrounding
+// SetI2CRepeater(true)/(false) pair — the orchestrator in detect.go
+// does this once across all candidate tuners.
+func detectR82xx(d *rtl2832u.Demod) Tuner {
 	for _, c := range []struct {
 		addr uint8
 		typ  Type
@@ -96,10 +94,10 @@ func Detect(d *rtl2832u.Demod) (i2cAddr uint8, chip Type, err error) {
 		// respond with different patterns; we only claim a
 		// match if the ID is plausible.
 		if id == 0x69 || id == 0x96 { // includes some bit-reversed clones
-			return c.addr, c.typ, nil
+			return NewR82xx(d, c.addr, c.typ)
 		}
 	}
-	return 0, TypeUnknown, errors.New("r82xx: no R820T family chip on either candidate I2C address")
+	return nil
 }
 
 // Init walks the librtlsdr power-on sequence: write the 27-byte init

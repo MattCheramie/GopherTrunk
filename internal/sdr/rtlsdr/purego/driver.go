@@ -137,11 +137,10 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		return nil, fmt.Errorf("rtlsdr-go: init baseband: %w", err)
 	}
 
-	i2cAddr, chipType, err := tuners.Detect(demod)
+	tuner, err := tuners.Detect(demod)
 	if err != nil {
 		return nil, fmt.Errorf("rtlsdr-go: tuner detect: %w", err)
 	}
-	tuner := tuners.NewR82xx(demod, i2cAddr, chipType)
 	if err := tuner.Init(); err != nil {
 		return nil, fmt.Errorf("rtlsdr-go: tuner init: %w", err)
 	}
@@ -160,7 +159,7 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		Serial:       desc.Serial,
 		Manufacturer: desc.Manufacturer,
 		Product:      product,
-		TunerName:    chipType.String(),
+		TunerName:    tuner.Type().String(),
 		Gains:        tuner.Gains(),
 	}
 	return &Device{
