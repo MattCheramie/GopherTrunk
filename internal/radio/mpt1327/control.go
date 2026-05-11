@@ -36,9 +36,23 @@ type ControlChannel struct {
 	// first Process call.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu               sync.Mutex
+	locked           bool
+	last             LockState
+	strictValidation bool
+}
+
+// SetStrictValidation toggles the strict frame-validity filter on
+// the Ingest path. When enabled, codewords whose Kind falls
+// outside the recognised opcode set (Aloha / Ahoy / AhoyChan /
+// GoToChan / Ack / Disconnect / Data / Emergency) are silently
+// dropped. The Process adapter already filters at the alignment
+// layer; strict-mode tightens it further at Ingest time so PDUs
+// from a misaligned-but-passing window still drop out.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
 }
 
 // Options configure a ControlChannel.
@@ -71,10 +85,32 @@ func New(opts Options) *ControlChannel {
 	}
 }
 
+// codewordKindIsRecognised reports whether the Codeword's Kind
+// matches one of the trunking-relevant opcodes the state machine
+// acts on. Mirrors the Process adapter's alignment filter so
+// SetStrictValidation can apply it on the Ingest path too.
+func codewordKindIsRecognised(w Codeword) bool {
+	if w.Type != TypeAddress {
+		return false
+	}
+	switch w.Kind() {
+	case KindAloha, KindAhoy, KindAhoyChan, KindGoToChan,
+		KindAck, KindDisconnect, KindData, KindEmergency:
+		return true
+	}
+	return false
+}
+
 // Ingest hands a single decoded codeword to the state machine. Real
 // captures arrive via an upstream FFSK demod + BCH decoder; tests
 // publish codewords directly.
 func (c *ControlChannel) Ingest(w Codeword) {
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !codewordKindIsRecognised(w) {
+		return
+	}
 	if w.Type != TypeAddress {
 		// Data codewords carry short-message payloads we don't
 		// follow at the trunking layer.

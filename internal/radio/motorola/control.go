@@ -46,9 +46,10 @@ type ControlChannel struct {
 	// but not for noisy on-air traffic).
 	bchMode BCHMode
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu               sync.Mutex
+	locked           bool
+	last             LockState
+	strictValidation bool
 }
 
 // Options configure a ControlChannel.
@@ -85,11 +86,29 @@ func New(opts Options) *ControlChannel {
 	}
 }
 
+// SetStrictValidation toggles the strict frame-validity filter on
+// the Ingest path. When enabled, OSWs whose Opcode field falls
+// outside the recognised set (see Opcode.IsKnown) are silently
+// dropped. Soft-FEC noise reduction; complements the BCH(64,16,11)
+// FEC layer that SetBCHMode enables.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
+}
+
 // Ingest hands a single decoded OSW to the state machine. Real
 // captures arrive via an upstream MSK demod + BCH decoder; tests
 // publish OSWs directly.
 func (c *ControlChannel) Ingest(o OSW) {
 	if o.IsIdle() {
+		return
+	}
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !o.Opcode().IsKnown() {
+		// Drop OSWs whose Opcode is outside the recognised set.
 		return
 	}
 

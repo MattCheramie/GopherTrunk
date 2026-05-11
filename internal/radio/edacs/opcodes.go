@@ -21,6 +21,22 @@ const (
 	CmdReserved          Command = 0xF
 )
 
+// IsKnown reports whether the Command value is one of the
+// documented opcodes the state machine knows how to handle.
+// Strict-mode operators use this to reject CCWs whose Command
+// field falls outside the recognised set (a strong signal of
+// bit errors or a misaligned codeword).
+func (c Command) IsKnown() bool {
+	switch c {
+	case CmdIdle, CmdGroupVoiceGrant, CmdProVoiceGrant,
+		CmdIndividualCall, CmdDataGrant, CmdSystemID,
+		CmdAdjacentSite, CmdEmergency, CmdAffiliation,
+		CmdEncryption, CmdReserved:
+		return true
+	}
+	return false
+}
+
 func (c Command) String() string {
 	switch c {
 	case CmdIdle:

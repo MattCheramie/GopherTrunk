@@ -34,9 +34,10 @@ type ControlChannel struct {
 	// Process call.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu               sync.Mutex
+	locked           bool
+	last             LockState
+	strictValidation bool
 }
 
 // Options configure a ControlChannel.
@@ -69,11 +70,33 @@ func New(opts Options) *ControlChannel {
 	}
 }
 
+// SetStrictValidation toggles the strict frame-validity filter on
+// the Ingest path. When enabled, CCWs whose Command field falls
+// outside the recognised opcode set (see Command.IsKnown) are
+// silently dropped. This is "soft FEC" — it doesn't correct bit
+// errors, but it rejects most random-noise codewords by relying on
+// the protocol-level invariant that real CCWs only ever carry one
+// of the documented opcodes. Useful when the upstream FEC layer
+// isn't yet implemented.
+func (c *ControlChannel) SetStrictValidation(strict bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.strictValidation = strict
+}
+
 // Ingest hands a single decoded CCW to the state machine. Real
 // captures arrive via an upstream GMSK demod + FEC; tests publish
 // CCWs directly.
 func (c *ControlChannel) Ingest(w CCW) {
 	if w.IsIdle() {
+		return
+	}
+	c.mu.Lock()
+	strict := c.strictValidation
+	c.mu.Unlock()
+	if strict && !w.Command.IsKnown() {
+		// Drop CCWs whose Command is outside the recognised set.
+		// Almost certainly a misaligned codeword or noise.
 		return
 	}
 	if sys, ok := w.AsSystemID(); ok {

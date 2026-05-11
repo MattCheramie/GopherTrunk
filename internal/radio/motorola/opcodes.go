@@ -56,6 +56,22 @@ func (o Opcode) String() string {
 // Opcode returns the 12-bit operation field encoded in OSW.Command.
 func (o OSW) Opcode() Opcode { return Opcode(o.Command >> 4) }
 
+// IsKnown reports whether the Opcode value is one of the
+// documented constants the state machine recognises. Strict-mode
+// operators use this to reject OSWs whose Opcode field falls
+// outside the recognised set (a strong signal of bit errors or a
+// misaligned codeword pair).
+func (o Opcode) IsKnown() bool {
+	switch o {
+	case OpGroupVoiceChannelGrant, OpGroupVoiceChannelGrantUpdate,
+		OpPrivateCallGrant, OpAdjacentSiteStatus, OpSystemIDExtended,
+		OpDataChannelGrant, OpAffiliationResponse,
+		OpIdle1, OpIdle2, OpEncryption, OpEmergency:
+		return true
+	}
+	return false
+}
+
 // LCN returns the 4-bit logical-channel-number nibble that voice and
 // data grants pack into the bottom of OSW.Command.
 func (o OSW) LCN() uint16 { return o.Command & 0x000F }

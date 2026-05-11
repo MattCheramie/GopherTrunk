@@ -149,6 +149,20 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Cross-protocol strict-validation FEC bundle: EDACS +
+  Motorola + MPT 1327 `SetStrictValidation(bool)`.** Each
+  adapter gains a soft-FEC noise-reduction mode that rejects
+  parsed control-channel frames whose opcode / kind / command
+  field falls outside the documented set. Same pattern across
+  all three protocols: when on, the Ingest path drops frames
+  with unrecognised `Command` / `Opcode` / `Codeword.Kind`
+  before the state machine acts on them. Each protocol also
+  gains an `IsKnown()` method on its enum type for callers that
+  want to apply the same allow-list themselves. Doesn't correct
+  bit errors — that's what BCH / RS / Viterbi do per protocol —
+  but it cheaply eliminates the largest source of false-positive
+  `KindCCLocked` / `KindGrant` events from misaligned codewords
+  in environments without per-protocol FEC.
 - **Motorola BCH(64,16,11) FEC.** `framing/bch.go` gains
   `BCHEncode64_16` / `BCHDecode64_16` — the existing BCH(63,16,11)
   primitive used by P25 Phase 1 NID, extended with an overall-
