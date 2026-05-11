@@ -78,6 +78,7 @@ func New(cli *client.Client, opts Options) *Model {
 			panels.NewTones(),
 			panels.NewMetrics(),
 			panels.NewDevices(),
+			panels.NewScanner(),
 		},
 	}
 	return m
@@ -94,6 +95,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollMetrics(m.cli),
 		cmdPollHistory(m.cli, client.HistoryFilter{Limit: 100}),
 		cmdPollDevices(m.cli),
+		cmdPollScanner(m.cli),
 		cmdMutationStatus(m.cli),
 		connectSSE(m.cli),
 	)
@@ -183,6 +185,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.JumpPanel9):
 			m.active = state.PanelDevices
 			return m, nil
+		case key.Matches(msg, m.keys.JumpPanel0):
+			m.active = state.PanelScanner
+			return m, nil
 		}
 
 	case pollHealthMsg:
@@ -234,6 +239,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shared.DevicesErr = msg.err
 		cmds = append(cmds, scheduleAfter(pollDevicesEvery, cmdPollDevices(m.cli)))
 
+	case pollScannerMsg:
+		if msg.err == nil {
+			m.shared.Scanner = msg.s
+		}
+		m.shared.ScannerErr = msg.err
+		cmds = append(cmds, scheduleAfter(pollScannerEvery, cmdPollScanner(m.cli)))
+
 	case pollHistoryMsg:
 		m.shared.History = msg.rows
 		m.shared.HistoryErr = msg.err
@@ -265,6 +277,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmdPollDevices(m.cli))
 		case "call.start", "call.end":
 			cmds = append(cmds, cmdPollActive(m.cli))
+			cmds = append(cmds, cmdPollScanner(m.cli))
+		case "cchunt.progress", "cchunt.failed", "cc.locked", "cc.lost":
+			cmds = append(cmds, cmdPollScanner(m.cli))
 		}
 		cmds = append(cmds, listenSSE(m.eventCh))
 
@@ -430,6 +445,7 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			r.UpdateTalkgroup.ID,
 			r.UpdateTalkgroup.Priority,
 			r.UpdateTalkgroup.Lockout,
+			r.UpdateTalkgroup.Scan,
 			r.Label)
 	case state.WriteKindSweepRetention:
 		return cmdSweepRetention(m.cli)
@@ -438,6 +454,35 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			return nil
 		}
 		return cmdResetTone(m.cli, r.ResetTone.DeviceSerial)
+	case state.WriteKindScannerMode:
+		if r.ScannerMode == nil {
+			return nil
+		}
+		return cmdScannerSetMode(m.cli, r.ScannerMode.Mode, r.Label)
+	case state.WriteKindScannerHuntHold:
+		if r.ScannerHunt == nil {
+			return nil
+		}
+		return cmdScannerHuntHold(m.cli, r.ScannerHunt.System, r.Label)
+	case state.WriteKindScannerHuntResume:
+		if r.ScannerHunt == nil {
+			return nil
+		}
+		return cmdScannerHuntResume(m.cli, r.ScannerHunt.System, r.Label)
+	case state.WriteKindScannerHuntRetune:
+		if r.ScannerHunt == nil {
+			return nil
+		}
+		return cmdScannerHuntRetune(m.cli, r.ScannerHunt.System, r.Label)
+	case state.WriteKindScannerConvHold:
+		return cmdScannerConvHold(m.cli, r.Label)
+	case state.WriteKindScannerConvResume:
+		return cmdScannerConvResume(m.cli, r.Label)
+	case state.WriteKindScannerConvDwell:
+		if r.ScannerConv == nil {
+			return nil
+		}
+		return cmdScannerConvDwell(m.cli, r.ScannerConv.Index, r.Label)
 	}
 	return nil
 }

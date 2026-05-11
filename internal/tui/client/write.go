@@ -48,7 +48,7 @@ func (c *Client) EndCall(ctx context.Context, deviceSerial, reason string) error
 
 // UpdateTalkgroup calls PATCH /api/v1/talkgroups/{id}. Pass nil for
 // fields you don't want to change.
-func (c *Client) UpdateTalkgroup(ctx context.Context, id uint32, priority *int, lockout *bool) (TalkgroupDTO, error) {
+func (c *Client) UpdateTalkgroup(ctx context.Context, id uint32, priority *int, lockout *bool, scan *bool) (TalkgroupDTO, error) {
 	body := map[string]any{}
 	if priority != nil {
 		body["priority"] = *priority
@@ -56,8 +56,11 @@ func (c *Client) UpdateTalkgroup(ctx context.Context, id uint32, priority *int, 
 	if lockout != nil {
 		body["lockout"] = *lockout
 	}
+	if scan != nil {
+		body["scan"] = *scan
+	}
 	if len(body) == 0 {
-		return TalkgroupDTO{}, fmt.Errorf("client: supply priority and/or lockout")
+		return TalkgroupDTO{}, fmt.Errorf("client: supply priority, lockout, or scan")
 	}
 	var out TalkgroupDTO
 	if err := c.do(ctx, http.MethodPatch,
@@ -71,6 +74,43 @@ func (c *Client) UpdateTalkgroup(ctx context.Context, id uint32, priority *int, 
 // SweepRetention calls POST /api/v1/retention/sweep.
 func (c *Client) SweepRetention(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/retention/sweep", nil, nil)
+}
+
+// ScannerSetMode calls PATCH /api/v1/scanner with the new global
+// scan_mode ("all" or "list").
+func (c *Client) ScannerSetMode(ctx context.Context, mode string) error {
+	return c.do(ctx, http.MethodPatch, "/api/v1/scanner",
+		map[string]string{"scan_mode": mode}, nil)
+}
+
+// ScannerHuntHold / ScannerHuntResume / ScannerHuntRetune call the
+// per-system hunt mutation endpoints. system must match a configured
+// trunked system name.
+func (c *Client) ScannerHuntHold(ctx context.Context, system string) error {
+	return c.do(ctx, http.MethodPost,
+		"/api/v1/scanner/hunt/"+system+"/hold", nil, nil)
+}
+func (c *Client) ScannerHuntResume(ctx context.Context, system string) error {
+	return c.do(ctx, http.MethodPost,
+		"/api/v1/scanner/hunt/"+system+"/resume", nil, nil)
+}
+func (c *Client) ScannerHuntRetune(ctx context.Context, system string) error {
+	return c.do(ctx, http.MethodPost,
+		"/api/v1/scanner/hunt/"+system+"/retune", nil, nil)
+}
+
+// ScannerConvHold / ScannerConvResume / ScannerConvDwell drive the
+// conventional FM scanner.
+func (c *Client) ScannerConvHold(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/scanner/conventional/hold", nil, nil)
+}
+func (c *Client) ScannerConvResume(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/scanner/conventional/resume", nil, nil)
+}
+func (c *Client) ScannerConvDwell(ctx context.Context, index int) error {
+	return c.do(ctx, http.MethodPost,
+		fmt.Sprintf("/api/v1/scanner/conventional/%d/dwell", index),
+		nil, nil)
 }
 
 // ResetToneDevice calls POST /api/v1/devices/{serial}/tone-reset.

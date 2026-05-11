@@ -19,6 +19,48 @@ type Config struct {
 	Metrics    MetricsConfig    `yaml:"metrics"`
 	Retention  RetentionConfig  `yaml:"retention"`
 	ToneOut    ToneOutConfig    `yaml:"tone_out"`
+	Scanner    ScannerConfig    `yaml:"scanner"`
+}
+
+// ScannerConfig controls the police-scanner subsystems: the CC hunter,
+// the talkgroup scan-list mode, and the conventional FM scanner.
+// Empty == defaults; the daemon stays backwards compatible with
+// pre-scanner configs.
+type ScannerConfig struct {
+	// ScanMode is "all" (every non-locked-out grant is followed,
+	// the original behavior) or "list" (only TGs with Scan=true).
+	// Empty string defaults to "all". Operators can flip this at
+	// runtime from the TUI via PATCH /api/v1/scanner.
+	ScanMode string `yaml:"scan_mode"`
+	// CCHunt configures the multi-system control-channel hunter.
+	CCHunt CCHuntConfig `yaml:"cc_hunt"`
+	// Conventional is the fixed-frequency analog scan list.
+	Conventional []ConvChannelConfig `yaml:"conventional"`
+}
+
+// CCHuntConfig tunes the hunter's dwell + exponential backoff.
+type CCHuntConfig struct {
+	// Enabled defaults to true when any trunked system is configured.
+	// Set explicitly to false to ship without the hunter.
+	Enabled bool `yaml:"enabled"`
+	// DwellMs is the per-frequency wait window before declaring no
+	// lock. Defaults to 3000.
+	DwellMs int `yaml:"dwell_ms"`
+	// BackoffMs is the initial sleep after exhausting a system's CC
+	// list. Defaults to 5000. Doubles per failure up to MaxBackoffMs.
+	BackoffMs int `yaml:"backoff_ms"`
+	// MaxBackoffMs caps the exponential backoff. Defaults to 60000.
+	MaxBackoffMs int `yaml:"max_backoff_ms"`
+}
+
+// ConvChannelConfig is one entry in the conventional scan list.
+type ConvChannelConfig struct {
+	Label       string  `yaml:"label"`
+	FrequencyHz uint32  `yaml:"frequency_hz"`
+	Mode        string  `yaml:"mode"`        // "fm" | "nfm"
+	SquelchDbFS float64 `yaml:"squelch_dbfs"` // default -50
+	HangtimeMs  int     `yaml:"hangtime_ms"`  // default 1500
+	Priority    int     `yaml:"priority"`     // 1..10, 0 = unset
 }
 
 type LogConfig struct {
@@ -206,6 +248,21 @@ func (c Config) Validate() error {
 	if c.Retention.Interval != "" {
 		if _, err := parseDurationFlexible(c.Retention.Interval); err != nil {
 			return fmt.Errorf("retention.interval: %w", err)
+		}
+	}
+	switch c.Scanner.ScanMode {
+	case "", "all", "list":
+	default:
+		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
+	}
+	for i, ch := range c.Scanner.Conventional {
+		if ch.FrequencyHz == 0 {
+			return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
+		}
+		switch ch.Mode {
+		case "", "fm", "nfm":
+		default:
+			return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
 		}
 	}
 	return nil

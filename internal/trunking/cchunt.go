@@ -103,11 +103,25 @@ func (h *Hunter) Hunt(ctx context.Context) (LockResult, error) {
 	sub := h.bus.Subscribe()
 	defer sub.Close()
 
-	for _, freq := range candidates {
+	for i, freq := range candidates {
 		if err := ctx.Err(); err != nil {
 			return LockResult{}, err
 		}
 		h.log.Info("cc-hunt: trying", "system", h.system.Name, "freq_hz", freq)
+		// Telemetry: let the TUI render "trying 851.012500 MHz
+		// (2/3)" without scraping logs. Published before the
+		// SetCenterFreq call so a stuck driver still surfaces the
+		// progress.
+		h.bus.Publish(events.Event{
+			Kind: events.KindHuntProgress,
+			Payload: HuntProgress{
+				System:          h.system.Name,
+				AttemptedFreqHz: freq,
+				AttemptIndex:    i,
+				TotalCandidates: len(candidates),
+				At:              time.Now(),
+			},
+		})
 		if err := h.tuner.SetCenterFreq(freq); err != nil {
 			h.log.Warn("cc-hunt: tune failed", "freq_hz", freq, "err", err)
 			continue
@@ -151,6 +165,26 @@ type LockResult struct {
 	Frequency uint32
 	NAC       uint16
 	At        time.Time
+}
+
+// HuntProgress is the payload published with events.KindHuntProgress.
+// One event fires per CC candidate the hunter tries; the TUI uses
+// AttemptIndex / TotalCandidates to render a position indicator.
+type HuntProgress struct {
+	System          string    `json:"system"`
+	AttemptedFreqHz uint32    `json:"attempted_freq_hz"`
+	AttemptIndex    int       `json:"attempt_index"`
+	TotalCandidates int       `json:"total_candidates"`
+	At              time.Time `json:"at"`
+}
+
+// HuntFailed is the payload for events.KindHuntFailed — published when
+// a system's CC candidate list exhausts without locking. BackoffMs is
+// the supervisor's next sleep window so the TUI can show "retry in 5 s".
+type HuntFailed struct {
+	System    string    `json:"system"`
+	At        time.Time `json:"at"`
+	BackoffMs int       `json:"backoff_ms"`
 }
 
 // ErrNoControlChannel is returned when every candidate frequency exhausts

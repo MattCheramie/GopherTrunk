@@ -63,12 +63,13 @@ var (
 	tgSortKey     = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
 	tgEscKey      = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "exit filter"))
 	tgLockoutKey  = key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle lockout"))
+	tgScanKey     = key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "toggle scan"))
 	tgPriUpKey    = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "priority up"))
 	tgPriDownKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "priority down"))
 )
 
 func (TalkgroupsPanel) Keys() []key.Binding {
-	return []key.Binding{tgFilterKey, tgSortKey, tgLockoutKey, tgPriUpKey, tgPriDownKey}
+	return []key.Binding{tgFilterKey, tgSortKey, tgLockoutKey, tgScanKey, tgPriUpKey, tgPriDownKey}
 }
 
 // selectedTalkgroup returns the currently-highlighted row's
@@ -151,6 +152,21 @@ func (p *TalkgroupsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.
 				},
 			}
 			return p, Emit(req)
+		case key.Matches(m, tgScanKey):
+			tg, ok := p.selectedTalkgroup(s.Talkgroups)
+			if !ok {
+				return p, nil
+			}
+			next := !tg.Scan
+			req := state.WriteRequest{
+				Label: fmt.Sprintf("set scan=%v on TG %d", next, tg.ID),
+				Kind:  state.WriteKindUpdateTalkgroup,
+				UpdateTalkgroup: &state.UpdateTalkgroupReq{
+					ID:   tg.ID,
+					Scan: &next,
+				},
+			}
+			return p, Emit(req)
 		case key.Matches(m, tgPriUpKey), key.Matches(m, tgPriDownKey):
 			tg, ok := p.selectedTalkgroup(s.Talkgroups)
 			if !ok {
@@ -209,6 +225,10 @@ func (p *TalkgroupsPanel) refresh(tgs []client.TalkgroupDTO) {
 		if tg.Lockout {
 			lock = "✓"
 		}
+		scan := "✓"
+		if !tg.Scan {
+			scan = ""
+		}
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", tg.ID),
 			tg.AlphaTag,
@@ -217,6 +237,7 @@ func (p *TalkgroupsPanel) refresh(tgs []client.TalkgroupDTO) {
 			tg.Mode,
 			fmt.Sprintf("%d", tg.Priority),
 			lock,
+			scan,
 		})
 	}
 	p.tbl.SetRows(rows)
@@ -241,12 +262,13 @@ func talkgroupsColumns(w int) []table.Column {
 	}
 	idW := 8
 	alphaW := w * 22 / 100
-	tagW := w * 16 / 100
-	groupW := w * 18 / 100
-	modeW := 10
-	priW := 6
-	lockW := 6
-	used := idW + alphaW + tagW + groupW + modeW + priW + lockW + 14
+	tagW := w * 14 / 100
+	groupW := w * 16 / 100
+	modeW := 8
+	priW := 5
+	lockW := 5
+	scanW := 5
+	used := idW + alphaW + tagW + groupW + modeW + priW + lockW + scanW + 16
 	if used >= w {
 		alphaW -= used - w + 1
 	}
@@ -258,5 +280,6 @@ func talkgroupsColumns(w int) []table.Column {
 		{Title: "Mode", Width: modeW},
 		{Title: "Pri", Width: priW},
 		{Title: "Lock", Width: lockW},
+		{Title: "Scan", Width: scanW},
 	}
 }

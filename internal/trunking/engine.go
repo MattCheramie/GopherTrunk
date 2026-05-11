@@ -29,8 +29,15 @@ type Engine struct {
 	sub        *events.Subscription
 	closeOnce  sync.Once
 
-	mu    sync.Mutex
-	calls map[string]*ActiveCall // by device serial; mirror of pool.active for fast access
+	// scanMode is read under modeMu so the API cockpit can flip it at
+	// runtime without a daemon restart. HandleGrant takes a snapshot
+	// under the read lock to avoid blocking the bus loop.
+	modeMu   sync.RWMutex
+	scanMode ScanMode
+
+	mu        sync.Mutex
+	calls     map[string]*ActiveCall // by device serial; mirror of pool.active for fast access
+	synthetic map[string]*ActiveCall // by device serial; calls owned by external scanners (conv FM)
 }
 
 // EngineOptions configure a new Engine.
@@ -44,6 +51,10 @@ type EngineOptions struct {
 	CallTimeout time.Duration
 	// Now is injectable for tests; defaults to time.Now.
 	Now func() time.Time
+	// ScanMode controls whether HandleGrant respects the per-talkgroup
+	// Scan flag. Default ScanModeAll keeps every non-locked-out grant
+	// flowing through; ScanModeList enforces the talkgroup scan list.
+	ScanMode ScanMode
 }
 
 // NewEngine validates opts and returns a ready-to-Run engine.
@@ -73,7 +84,9 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		talkgroups: opts.Talkgroups,
 		timeout:    opts.CallTimeout,
 		now:        opts.Now,
+		scanMode:   opts.ScanMode,
 		calls:      make(map[string]*ActiveCall),
+		synthetic:  make(map[string]*ActiveCall),
 	}
 	// Subscribe at construction time so callers can publish grants
 	// before Run starts without losing them.
@@ -136,6 +149,15 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.log.Info("grant locked out", "grant", g.String(), "tg", tg.AlphaTag)
 		return
 	}
+	// Scan list gate: in ScanModeList, drop grants whose TG is missing
+	// or has Scan==false (Emergency bypasses, matching Lockout's
+	// emergency exception above). In ScanModeAll the gate is a no-op.
+	if e.ScanMode() == ScanModeList && !g.Emergency {
+		if tg == nil || !tg.Scan {
+			e.log.Debug("grant not in scan list", "grant", g.String())
+			return
+		}
+	}
 
 	// 1) Free device available? Allocate.
 	if free := e.pool.FindFree(); free != nil {
@@ -180,8 +202,19 @@ func (e *Engine) Touch(deviceSerial string) {
 	e.pool.Touch(deviceSerial, e.now())
 }
 
-// ActiveCalls returns a snapshot of every active call.
-func (e *Engine) ActiveCalls() []*ActiveCall { return e.pool.Active() }
+// ActiveCalls returns a snapshot of every active call — trunked
+// calls allocated through the voice pool plus synthetic calls owned
+// by external scanners (the conventional FM scanner publishes these
+// through HandleSyntheticCall).
+func (e *Engine) ActiveCalls() []*ActiveCall {
+	out := e.pool.Active()
+	e.mu.Lock()
+	for _, ac := range e.synthetic {
+		out = append(out, ac)
+	}
+	e.mu.Unlock()
+	return out
+}
 
 func (e *Engine) startCall(d *VoiceDevice, g Grant, tg *TalkGroup) {
 	ac, err := e.pool.Bind(d, g, tg, e.now())
@@ -246,4 +279,92 @@ func (e *Engine) shutdown() {
 	for _, ac := range e.pool.Active() {
 		e.endCall(ac, EndReasonNormal)
 	}
+}
+
+// HandleSyntheticCall registers a call originated by a non-trunked
+// source (the conventional FM scanner is the canonical example) that
+// already owns its SDR — no VoicePool binding, no re-tune, no
+// preemption logic. The engine publishes CallStart and adds the call
+// to ActiveCalls() so the API + TUI surfaces light up like any
+// other call. Pair with EndSyntheticCall to release.
+//
+// deviceSerial must be unique across the daemon's call set so the
+// recorder can route WritePCM samples to the right WAV.
+func (e *Engine) HandleSyntheticCall(g Grant, deviceSerial string) {
+	if g.At.IsZero() {
+		g.At = e.now()
+	}
+	tg := e.talkgroups.Lookup(g.GroupID)
+	ac := &ActiveCall{
+		Device:      &VoiceDevice{Serial: deviceSerial},
+		Grant:       g,
+		Talkgroup:   tg,
+		StartedAt:   e.now(),
+		LastHeardAt: e.now(),
+	}
+	e.mu.Lock()
+	e.synthetic[deviceSerial] = ac
+	e.mu.Unlock()
+	e.bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: CallStart{
+			Grant:        g,
+			Talkgroup:    tg,
+			DeviceSerial: deviceSerial,
+			StartedAt:    ac.StartedAt,
+		},
+	})
+	e.log.Info("synthetic call started",
+		"device", deviceSerial,
+		"grant", g.String())
+}
+
+// EndSyntheticCall is the conventional scanner's "carrier dropped"
+// signal. Publishes CallEnd and forgets the call. Returns false if
+// the engine has no synthetic call bound to deviceSerial.
+func (e *Engine) EndSyntheticCall(deviceSerial string, reason EndReason) bool {
+	e.mu.Lock()
+	ac, ok := e.synthetic[deviceSerial]
+	if ok {
+		delete(e.synthetic, deviceSerial)
+	}
+	e.mu.Unlock()
+	if !ok {
+		return false
+	}
+	e.bus.Publish(events.Event{
+		Kind: events.KindCallEnd,
+		Payload: CallEnd{
+			Grant:        ac.Grant,
+			Talkgroup:    ac.Talkgroup,
+			DeviceSerial: deviceSerial,
+			StartedAt:    ac.StartedAt,
+			EndedAt:      e.now(),
+			Reason:       reason,
+		},
+	})
+	e.log.Info("synthetic call ended",
+		"device", deviceSerial,
+		"reason", reason.String())
+	return true
+}
+
+// ScanMode returns the engine's current scan mode. Safe to call from
+// any goroutine.
+func (e *Engine) ScanMode() ScanMode {
+	e.modeMu.RLock()
+	defer e.modeMu.RUnlock()
+	return e.scanMode
+}
+
+// SetScanMode swaps the engine's scan mode at runtime — the API
+// cockpit calls this when the operator flips the global scan_mode
+// from the TUI. Returns the previous mode so the caller can log /
+// audit the change.
+func (e *Engine) SetScanMode(m ScanMode) ScanMode {
+	e.modeMu.Lock()
+	defer e.modeMu.Unlock()
+	prev := e.scanMode
+	e.scanMode = m
+	return prev
 }

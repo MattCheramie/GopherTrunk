@@ -12,16 +12,26 @@ import (
 type Kind string
 
 const (
-	KindSDRAttached Kind = "sdr.attached"
-	KindSDRDetached Kind = "sdr.detached"
-	KindCCLocked    Kind = "cc.locked"
-	KindCCLost      Kind = "cc.lost"
-	KindCallStart   Kind = "call.start"
-	KindCallEnd     Kind = "call.end"
-	KindGrant       Kind = "grant"
-	KindToneAlert   Kind = "tone.alert"
-	KindDecodeError Kind = "decode.error"
-	KindError       Kind = "error"
+	KindSDRAttached  Kind = "sdr.attached"
+	KindSDRDetached  Kind = "sdr.detached"
+	KindCCLocked     Kind = "cc.locked"
+	KindCCLost       Kind = "cc.lost"
+	KindCallStart    Kind = "call.start"
+	KindCallEnd      Kind = "call.end"
+	KindGrant        Kind = "grant"
+	KindToneAlert    Kind = "tone.alert"
+	KindDecodeError  Kind = "decode.error"
+	KindError        Kind = "error"
+	// Scanner subsystem (internal/scanner/cchunt):
+	//   KindHuntProgress fires once per CC candidate the hunter
+	//     tries — payload identifies which system + frequency +
+	//     position in the candidate list, so the TUI can render
+	//     "trying 851.012500 MHz (2/3)".
+	//   KindHuntFailed fires when a system exhausts its CC list
+	//     without locking; payload carries the next backoff window
+	//     so operators can see "retry in 5 s".
+	KindHuntProgress Kind = "cchunt.progress"
+	KindHuntFailed   Kind = "cchunt.failed"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

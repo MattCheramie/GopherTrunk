@@ -14,6 +14,13 @@ import (
 
 // TalkGroup describes one talkgroup loaded from disk. The schema follows
 // the Trunk Recorder / RadioReference talkgroup CSV convention.
+//
+// Scan participates in the engine's per-talkgroup scan list when the
+// engine runs in ScanModeList — only talkgroups with Scan == true get
+// their grants followed (Emergency grants bypass the gate). In
+// ScanModeAll (the default for backwards compat with pre-scanner
+// configs) the field is moot. Defaults to true on every loader so a
+// legacy CSV without a Scan column keeps the existing behavior.
 type TalkGroup struct {
 	ID          uint32 `json:"id"`
 	AlphaTag    string `json:"alpha_tag"`
@@ -23,6 +30,7 @@ type TalkGroup struct {
 	Mode        string `json:"mode,omitempty"`    // D=digital, A=analog, M=mixed
 	Priority    int    `json:"priority,omitempty"` // 1 = highest, 10 = lowest, 0 = unset
 	Lockout     bool   `json:"lockout,omitempty"`
+	Scan        bool   `json:"scan"`
 }
 
 // TalkgroupDB is a thread-safe lookup over loaded talkgroups.
@@ -148,7 +156,7 @@ func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
 		if err != nil {
 			continue // skip malformed rows
 		}
-		tg := &TalkGroup{ID: uint32(idVal)}
+		tg := &TalkGroup{ID: uint32(idVal), Scan: true}
 		tg.AlphaTag = field(row, colIdx, "alpha tag", "alphatag", "alpha_tag")
 		tg.Description = field(row, colIdx, "description")
 		tg.Mode = field(row, colIdx, "mode")
@@ -167,6 +175,15 @@ func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
 				tg.Lockout = true
 			}
 		}
+		// Optional Scan / Active column. Default is true; explicit
+		// "no"/"false"/"0"/"n" turns it off so a CSV-shipped scan-list
+		// can ride alongside an operator's runtime mutations.
+		if s := field(row, colIdx, "scan", "active"); s != "" {
+			switch strings.ToLower(s) {
+			case "n", "no", "false", "0", "off":
+				tg.Scan = false
+			}
+		}
 		d.Add(tg)
 		loaded++
 	}
@@ -183,15 +200,42 @@ func (d *TalkgroupDB) LoadCSVFile(path string) (int, error) {
 	return d.LoadCSV(f)
 }
 
-// LoadJSON reads a JSON array of TalkGroup records.
+// LoadJSON reads a JSON array of TalkGroup records. Records missing
+// the "scan" key resolve to Scan=true so legacy JSON dumps keep the
+// "follow every grant" behavior; explicit `"scan": false` turns off
+// participation in the scan list.
 func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
-	var arr []TalkGroup
+	type talkGroupRaw struct {
+		ID          uint32 `json:"id"`
+		AlphaTag    string `json:"alpha_tag"`
+		Description string `json:"description,omitempty"`
+		Tag         string `json:"tag,omitempty"`
+		Group       string `json:"group,omitempty"`
+		Mode        string `json:"mode,omitempty"`
+		Priority    int    `json:"priority,omitempty"`
+		Lockout     bool   `json:"lockout,omitempty"`
+		Scan        *bool  `json:"scan"`
+	}
+	var arr []talkGroupRaw
 	if err := json.NewDecoder(r).Decode(&arr); err != nil {
 		return 0, fmt.Errorf("trunking: decode json: %w", err)
 	}
-	for i := range arr {
-		tg := arr[i]
-		d.Add(&tg)
+	for _, raw := range arr {
+		tg := &TalkGroup{
+			ID:          raw.ID,
+			AlphaTag:    raw.AlphaTag,
+			Description: raw.Description,
+			Tag:         raw.Tag,
+			Group:       raw.Group,
+			Mode:        raw.Mode,
+			Priority:    raw.Priority,
+			Lockout:     raw.Lockout,
+			Scan:        true,
+		}
+		if raw.Scan != nil {
+			tg.Scan = *raw.Scan
+		}
+		d.Add(tg)
 	}
 	return len(arr), nil
 }

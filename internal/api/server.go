@@ -50,6 +50,81 @@ type DevicesProvider interface {
 	Snapshot() []sdr.SDRStatus
 }
 
+// ScannerCockpit is the API surface for the police-scanner subsystem:
+// reads the current state (per-system CC hunt, conventional channel
+// list, talkgroup-scan stats) and applies operator mutations from
+// the TUI (hold/resume/retune the hunter, hold/resume/dwell-on the
+// conventional scanner, flip the global scan mode).
+//
+// The daemon supplies a single ScannerCockpit implementation that
+// aggregates the cchunt.Supervisor + conventional.Scanner + engine;
+// tests can stub a single struct that satisfies the whole interface.
+type ScannerCockpit interface {
+	// Status returns the unified read snapshot the TUI panel renders.
+	Status() ScannerStatus
+	// SetScanMode flips the global TG-scan-list mode at runtime.
+	// Returns the previous mode for audit / UX feedback.
+	SetScanMode(mode string) (prev string, err error)
+	// HoldHunt / ResumeHunt / ForceRetuneHunt apply to a single
+	// trunked system. Returns false when the system isn't configured.
+	HoldHunt(system string) bool
+	ResumeHunt(system string) bool
+	ForceRetuneHunt(system string) bool
+	// HoldConventional / ResumeConventional / DwellConventional
+	// drive the conventional FM scanner. DwellConventional indexes
+	// into the configured Channels list. The Hold/Resume operations
+	// return false when the conventional scanner isn't configured.
+	HoldConventional() bool
+	ResumeConventional() bool
+	DwellConventional(index int) bool
+}
+
+// ScannerStatus is the JSON shape returned by GET /api/v1/scanner —
+// a unified view over all three scanner-subsystem read surfaces.
+type ScannerStatus struct {
+	ScanMode            string                `json:"scan_mode"`
+	Systems             []SystemHuntStatusDTO `json:"systems"`
+	Conventional        ConvScannerStatusDTO  `json:"conventional"`
+	TalkgroupScanCount  int                   `json:"tg_scan_count"`
+	TalkgroupTotalCount int                   `json:"tg_total"`
+}
+
+// SystemHuntStatusDTO mirrors cchunt.SystemStatus for the wire layer
+// so the api package doesn't import internal/scanner.
+type SystemHuntStatusDTO struct {
+	Name            string    `json:"name"`
+	Protocol        string    `json:"protocol"`
+	State           string    `json:"state"`
+	AttemptedFreqHz uint32    `json:"attempted_freq_hz,omitempty"`
+	AttemptIndex    int       `json:"attempt_index,omitempty"`
+	TotalCandidates int       `json:"total_candidates,omitempty"`
+	LockedFreqHz    uint32    `json:"locked_freq_hz,omitempty"`
+	LockedAt        time.Time `json:"locked_at,omitempty"`
+	NAC             uint16    `json:"nac,omitempty"`
+	LastFailedAt    time.Time `json:"last_failed_at,omitempty"`
+	BackoffMs       int       `json:"backoff_ms,omitempty"`
+	LastGrantAt     time.Time `json:"last_grant_at,omitempty"`
+}
+
+// ConvScannerStatusDTO is the conventional FM scanner's read shape.
+type ConvScannerStatusDTO struct {
+	Enabled      bool                  `json:"enabled"`
+	State        string                `json:"state,omitempty"`
+	DeviceSerial string                `json:"device_serial,omitempty"`
+	CursorIndex  int                   `json:"cursor_index,omitempty"`
+	Channels     []ConvChannelStatusDTO `json:"channels"`
+}
+
+// ConvChannelStatusDTO mirrors conventional.ChannelStatus.
+type ConvChannelStatusDTO struct {
+	Index       int       `json:"index"`
+	Label       string    `json:"label"`
+	FrequencyHz uint32    `json:"frequency_hz"`
+	Mode        string    `json:"mode"`
+	Active      bool      `json:"active"`
+	LastBreakAt time.Time `json:"last_break_at,omitempty"`
+}
+
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
@@ -60,6 +135,7 @@ type Server struct {
 	retention  RetentionSweeper
 	tones      ToneDetectorReset
 	devices    DevicesProvider
+	scanner    ScannerCockpit
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
@@ -148,6 +224,11 @@ type ServerOptions struct {
 	// Devices exposes the SDR pool snapshot for GET /api/v1/devices.
 	// Optional; the route returns 503 when nil.
 	Devices DevicesProvider
+	// Scanner exposes the police-scanner cockpit (CC hunter,
+	// conventional FM scanner, TG scan list) for GET + PATCH
+	// /api/v1/scanner and the related mutation routes. Optional;
+	// when nil, the routes return 503.
+	Scanner ScannerCockpit
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -174,6 +255,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		retention:      opts.Retention,
 		tones:          opts.Tones,
 		devices:        opts.Devices,
+		scanner:        opts.Scanner,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -260,6 +342,17 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("PATCH /api/v1/talkgroups/{id}", s.gate(s.handleUpdateTalkgroup))
 	mux.HandleFunc("POST /api/v1/retention/sweep", s.gate(s.handleRetentionSweep))
 	mux.HandleFunc("POST /api/v1/devices/{serial}/tone-reset", s.gate(s.handleToneReset))
+
+	// Scanner cockpit — read endpoint is always open; mutations are
+	// gated behind allow_mutations like every other write route.
+	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
+	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))
+	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/hold", s.gate(s.handleHuntHold))
+	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/resume", s.gate(s.handleHuntResume))
+	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/retune", s.gate(s.handleHuntRetune))
+	mux.HandleFunc("POST /api/v1/scanner/conventional/hold", s.gate(s.handleConvHold))
+	mux.HandleFunc("POST /api/v1/scanner/conventional/resume", s.gate(s.handleConvResume))
+	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/dwell", s.gate(s.handleConvDwell))
 
 	return mux
 }

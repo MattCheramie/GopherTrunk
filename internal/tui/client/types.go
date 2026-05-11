@@ -45,6 +45,7 @@ type TalkgroupDTO struct {
 	Mode        string `json:"mode,omitempty"`
 	Priority    int    `json:"priority,omitempty"`
 	Lockout     bool   `json:"lockout,omitempty"`
+	Scan        bool   `json:"scan"`
 }
 
 // GrantDTO mirrors api.GrantDTO.
@@ -111,6 +112,53 @@ type Event struct {
 	Kind string
 	Time time.Time
 	Raw  json.RawMessage
+}
+
+// ScannerStatusDTO mirrors api.ScannerStatus — the unified scanner
+// snapshot returned by GET /api/v1/scanner. Fields are zero-valued
+// when the underlying subsystem isn't wired (e.g. no CC hunter →
+// empty Systems list).
+type ScannerStatusDTO struct {
+	ScanMode            string                   `json:"scan_mode"`
+	Systems             []SystemHuntStatusDTO    `json:"systems"`
+	Conventional        ConvScannerStatusDTO     `json:"conventional"`
+	TalkgroupScanCount  int                      `json:"tg_scan_count"`
+	TalkgroupTotalCount int                      `json:"tg_total"`
+}
+
+// SystemHuntStatusDTO mirrors api.SystemHuntStatusDTO.
+type SystemHuntStatusDTO struct {
+	Name            string    `json:"name"`
+	Protocol        string    `json:"protocol"`
+	State           string    `json:"state"`
+	AttemptedFreqHz uint32    `json:"attempted_freq_hz,omitempty"`
+	AttemptIndex    int       `json:"attempt_index,omitempty"`
+	TotalCandidates int       `json:"total_candidates,omitempty"`
+	LockedFreqHz    uint32    `json:"locked_freq_hz,omitempty"`
+	LockedAt        time.Time `json:"locked_at,omitempty"`
+	NAC             uint16    `json:"nac,omitempty"`
+	LastFailedAt    time.Time `json:"last_failed_at,omitempty"`
+	BackoffMs       int       `json:"backoff_ms,omitempty"`
+	LastGrantAt     time.Time `json:"last_grant_at,omitempty"`
+}
+
+// ConvScannerStatusDTO mirrors api.ConvScannerStatusDTO.
+type ConvScannerStatusDTO struct {
+	Enabled      bool                  `json:"enabled"`
+	State        string                `json:"state,omitempty"`
+	DeviceSerial string                `json:"device_serial,omitempty"`
+	CursorIndex  int                   `json:"cursor_index,omitempty"`
+	Channels     []ConvChannelStatusDTO `json:"channels"`
+}
+
+// ConvChannelStatusDTO mirrors api.ConvChannelStatusDTO.
+type ConvChannelStatusDTO struct {
+	Index       int       `json:"index"`
+	Label       string    `json:"label"`
+	FrequencyHz uint32    `json:"frequency_hz"`
+	Mode        string    `json:"mode"`
+	Active      bool      `json:"active"`
+	LastBreakAt time.Time `json:"last_break_at,omitempty"`
 }
 
 // SDRStatus mirrors api.sdr.SDRStatus — the per-device payload

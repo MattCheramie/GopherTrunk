@@ -18,6 +18,7 @@ const (
 	pollActiveEvery     = 1 * time.Second
 	pollMetricsEvery    = 5 * time.Second
 	pollDevicesEvery    = 10 * time.Second
+	pollScannerEvery    = 2 * time.Second
 )
 
 func cmdPollHealth(cli *client.Client) tea.Cmd {
@@ -66,6 +67,58 @@ func cmdPollDevices(cli *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		d, err := cli.Devices(context.Background())
 		return pollDevicesMsg{devs: d, err: err}
+	}
+}
+
+func cmdPollScanner(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		s, err := cli.Scanner(context.Background())
+		return pollScannerMsg{s: s, err: err}
+	}
+}
+
+// Scanner-cockpit write Cmds — one per WriteKind.
+
+func cmdScannerSetMode(cli *client.Client, mode, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerSetMode(context.Background(), mode)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerHuntHold(cli *client.Client, system, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerHuntHold(context.Background(), system)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerHuntResume(cli *client.Client, system, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerHuntResume(context.Background(), system)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerHuntRetune(cli *client.Client, system, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerHuntRetune(context.Background(), system)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerConvHold(cli *client.Client, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerConvHold(context.Background())
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerConvResume(cli *client.Client, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerConvResume(context.Background())
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerConvDwell(cli *client.Client, idx int, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerConvDwell(context.Background(), idx)
+		return writeResultMsg{Label: label, Err: err}
 	}
 }
 
@@ -127,9 +180,9 @@ func cmdEndCall(cli *client.Client, deviceSerial, reason, label string) tea.Cmd 
 	}
 }
 
-func cmdUpdateTalkgroup(cli *client.Client, id uint32, priority *int, lockout *bool, label string) tea.Cmd {
+func cmdUpdateTalkgroup(cli *client.Client, id uint32, priority *int, lockout *bool, scan *bool, label string) tea.Cmd {
 	return func() tea.Msg {
-		_, err := cli.UpdateTalkgroup(context.Background(), id, priority, lockout)
+		_, err := cli.UpdateTalkgroup(context.Background(), id, priority, lockout, scan)
 		return writeResultMsg{Label: label, Err: err}
 	}
 }

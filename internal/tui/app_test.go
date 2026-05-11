@@ -73,6 +73,7 @@ func TestPanelSwitch_DigitAndTab(t *testing.T) {
 		{"5", state.PanelHistory},
 		{"8", state.PanelMetrics},
 		{"9", state.PanelDevices},
+		{"0", state.PanelScanner},
 	}
 	for _, c := range cases {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(c.key)})
@@ -81,10 +82,10 @@ func TestPanelSwitch_DigitAndTab(t *testing.T) {
 			t.Errorf("after %q active=%v, want %v", c.key, m.active, c.want)
 		}
 	}
-	// Tab cycles forward — Devices is the last panel, so Tab wraps to Dashboard.
+	// Tab cycles forward — Scanner is the last panel, so Tab wraps to Dashboard.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(*Model)
 	if m.active != state.PanelDashboard {
-		t.Errorf("Tab from Devices: active=%v, want Dashboard", m.active)
+		t.Errorf("Tab from Scanner: active=%v, want Dashboard", m.active)
 	}
 }

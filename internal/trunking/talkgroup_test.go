@@ -80,3 +80,66 @@ func TestLoadJSON(t *testing.T) {
 		t.Errorf("OPS-2 lockout flag missing: %+v", tg)
 	}
 }
+
+func TestLoadCSVDefaultsScanTrue(t *testing.T) {
+	// A CSV without a Scan column must leave every TG with Scan=true
+	// so legacy configs keep their "follow every grant" behavior.
+	csv := `Decimal,Alpha Tag
+1,OPS-A
+2,OPS-B
+`
+	d := NewTalkgroupDB()
+	if _, err := d.LoadCSV(strings.NewReader(csv)); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	for _, id := range []uint32{1, 2} {
+		tg := d.Lookup(id)
+		if tg == nil || !tg.Scan {
+			t.Errorf("TG %d Scan = false, want true (default for missing column)", id)
+		}
+	}
+}
+
+func TestLoadCSVScanColumnOverrides(t *testing.T) {
+	csv := `Decimal,Alpha Tag,Scan
+1,OPS-A,Y
+2,OPS-B,n
+3,OPS-C,
+`
+	d := NewTalkgroupDB()
+	if _, err := d.LoadCSV(strings.NewReader(csv)); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	if !d.Lookup(1).Scan {
+		t.Errorf("TG 1 Scan = false, want true (explicit Y)")
+	}
+	if d.Lookup(2).Scan {
+		t.Errorf("TG 2 Scan = true, want false (explicit n)")
+	}
+	if !d.Lookup(3).Scan {
+		t.Errorf("TG 3 Scan = false, want true (empty cell falls back to default)")
+	}
+}
+
+func TestLoadJSONDefaultsScanWhenAbsent(t *testing.T) {
+	// JSON records without "scan" resolve to true; explicit
+	// "scan":false carries through.
+	js := `[
+  {"id": 1, "alpha_tag": "A"},
+  {"id": 2, "alpha_tag": "B", "scan": false},
+  {"id": 3, "alpha_tag": "C", "scan": true}
+]`
+	d := NewTalkgroupDB()
+	if _, err := d.LoadJSON(strings.NewReader(js)); err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	if !d.Lookup(1).Scan {
+		t.Errorf("TG 1 Scan = false, want true (no scan key)")
+	}
+	if d.Lookup(2).Scan {
+		t.Errorf("TG 2 Scan = true, want false (explicit false)")
+	}
+	if !d.Lookup(3).Scan {
+		t.Errorf("TG 3 Scan = false, want true (explicit true)")
+	}
+}
