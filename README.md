@@ -55,19 +55,22 @@ the conventional FM scanner are constructed by `cmd/gophertrunk` and
 expose their state through `/api/v1/scanner` and the TUI cockpit
 panel. The honest remaining gaps:
 
-- **IQ → control-channel decoder daemon wiring.** Every protocol
-  package ships a unit-tested control-channel state machine and the
-  P25 Phase 1 IQ → C4FM dibit receiver
-  (`internal/radio/p25/phase1/receiver`) now exposes both an LDU
-  sink (voice path) and a raw-dibit sink (control-channel path —
-  feeds `phase1.ControlChannel.Process` directly), but the connector
-  that takes the control SDR's live IQ stream, picks the right
-  protocol's receiver, and feeds its control-channel pipeline isn't
-  constructed by `cmd/gophertrunk` yet. Until that lands the CC
-  Hunter supervisor exhausts every candidate frequency without
-  seeing a `cc.locked` event, so each system enters `state=failed`
-  and backs off — the TUI Scanner panel surfaces this honestly
-  rather than faking a lock.
+- **Daemon-side connector wiring.** The
+  `internal/scanner/ccdecoder` package ships the IQ → CC connector
+  (subscribes to `KindHuntProgress`, owns the control SDR's
+  `StreamIQ` loop, swaps the active per-protocol pipeline on every
+  supervisor retune, pumps IQ chunks through the active pipeline
+  whose CC state machine publishes `cc.locked` / `grant` events).
+  The P25 Phase 1 and YSF pipeline factories are wired end-to-end;
+  DMR / NXDN / dPMR / EDACS / MPT 1327 / LTR / Motorola / P25 P2
+  / TETRA each have IQ → symbol receivers shipping but their
+  ControlChannel state machines still consume pre-parsed PDUs, so
+  their pipeline factories land alongside the `Process(stream,
+  baseIdx)` adapters in follow-up PRs. What's still missing for
+  live trunked reception is `cmd/gophertrunk` constructing a
+  `ccdecoder.Decoder` next to the existing supervisor and spawning
+  it as a daemon goroutine — that wiring + an end-to-end
+  integration test is the final piece.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -134,6 +137,17 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **IQ → control-channel decoder connector** (`internal/scanner/ccdecoder`)
+  — subscribes to `events.KindHuntProgress`, owns one
+  `StreamIQ(ctx)` loop on the control SDR, swaps the active
+  per-protocol pipeline (IQ → symbol-domain decoder → CC state
+  machine) on every supervisor retune, and pumps IQ chunks through
+  the active pipeline whose CC state machine publishes
+  `cc.locked` / `grant` events back on the bus. Closes the
+  load-bearing gap from "Status & known gaps". P25 Phase 1 and YSF
+  pipelines wire end-to-end today; other protocols register their
+  factories once the per-protocol `ControlChannel.Process(stream,
+  baseIdx)` adapters ship.
 - **TETRA TMO IQ → π/4-DQPSK dibit receiver** (`internal/radio/tetra/receiver`)
   composing the `demod.PiOver4DQPSK` helper (RRC matched filter at
   α = 0.35, π/4-rotated differential decode) with naive symbol-
@@ -363,7 +377,7 @@ internal/sdr/rtlsdr/purego/   sdr.Driver+sdr.Device wire-up; canonical "rtlsdr" 
 internal/dsp/           Channelizer, filters, demods, sync, FFT
 internal/radio/         framing/ + p25/phase1/ (+ phase1/receiver IQ→dibit) + dmr/ + nxdn/ + ysf/
 internal/trunking/      System, talkgroup DB (Scan flag), engine (ScanMode, HandleSyntheticCall), priority, CC hunter primitive, cc cache
-internal/scanner/       cchunt/ (multi-system CC supervisor) + conventional/ (analog FM scan list)
+internal/scanner/       cchunt/ (multi-system CC supervisor) + conventional/ (analog FM scan list) + ccdecoder/ (IQ→CC connector)
 internal/voice/         Recorder, vocoder plugin, demod composer
 internal/storage/       SQLite call log + retention sweeper
 internal/api/           HTTP REST + SSE + WebSocket + gRPC
