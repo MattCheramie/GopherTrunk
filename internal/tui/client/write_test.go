@@ -69,7 +69,7 @@ func TestUpdateTalkgroup_OmitsNilFields(t *testing.T) {
 	defer srv.Close()
 	c := New(srv.URL, time.Second, false)
 	pri := 3
-	out, err := c.UpdateTalkgroup(context.Background(), 42, &pri, nil)
+	out, err := c.UpdateTalkgroup(context.Background(), 42, &pri, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,13 +82,38 @@ func TestUpdateTalkgroup_OmitsNilFields(t *testing.T) {
 	if strings.Contains(body, `"lockout"`) {
 		t.Errorf("body should omit lockout when nil: %s", body)
 	}
+	if strings.Contains(body, `"scan"`) {
+		t.Errorf("body should omit scan when nil: %s", body)
+	}
+}
+
+func TestUpdateTalkgroup_PassesScanFlag(t *testing.T) {
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf, _ := io.ReadAll(r.Body)
+		body = string(buf)
+		_, _ = w.Write([]byte(`{"id":7,"alpha_tag":"x","scan":false}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, time.Second, false)
+	scan := false
+	out, err := c.UpdateTalkgroup(context.Background(), 7, nil, nil, &scan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Scan {
+		t.Errorf("out.Scan = true, want false")
+	}
+	if !strings.Contains(body, `"scan":false`) {
+		t.Errorf("body should include scan=false: %s", body)
+	}
 }
 
 func TestUpdateTalkgroup_RequiresAtLeastOneField(t *testing.T) {
 	c := New("http://example.invalid", time.Second, false)
-	_, err := c.UpdateTalkgroup(context.Background(), 42, nil, nil)
+	_, err := c.UpdateTalkgroup(context.Background(), 42, nil, nil, nil)
 	if err == nil {
-		t.Fatal("want error when both fields are nil")
+		t.Fatal("want error when all fields are nil")
 	}
 }
 

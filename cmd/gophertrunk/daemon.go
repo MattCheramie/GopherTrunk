@@ -14,6 +14,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -77,6 +79,9 @@ type Daemon struct {
 	db         *storage.DB
 	callLog    *storage.CallLog
 	retention  *storage.Retention
+	ccCache    *trunking.Cache
+	cchuntSup  *cchunt.Supervisor
+	convScan   *conventional.Scanner
 	metrics    *metrics.Metrics
 	httpAPI    *api.Server
 	grpcAPI    *api.GRPCServer
@@ -166,6 +171,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		Log:        log,
 		VoicePool:  d.voicePool,
 		Talkgroups: d.talkgroups,
+		ScanMode:   trunking.ParseScanMode(cfg.Scanner.ScanMode),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: engine: %w", err)
@@ -233,6 +239,93 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			return nil, fmt.Errorf("daemon: composer: %w", err)
 		}
 		d.composer = comp
+	}
+
+	// CC cache — JSON file used by the hunter to bias retunes toward
+	// the last-known good control channel per system. Optional; nil
+	// disables persistence (hunts still work, just without the cache
+	// bias).
+	if cfg.Storage.CCCacheFile != "" {
+		cache, err := trunking.OpenCache(cfg.Storage.CCCacheFile)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: cc cache: %w", err)
+		}
+		d.ccCache = cache
+	}
+
+	// CC hunter supervisor — opt-in via scanner.cc_hunt.enabled OR
+	// by default when at least one trunked system is configured.
+	// Honest scope flag: this orchestrates retunes + telemetry but
+	// nothing in the daemon currently publishes cc.locked, so until
+	// the IQ-domain protocol decoders land the supervisor will
+	// report "failed" + back off. Operators see that in the TUI
+	// Scanner panel, which is the correct behavior — silently
+	// pretending decode works would be worse.
+	if d.pool != nil && len(d.systems) > 0 {
+		cchEnabled := cfg.Scanner.CCHunt.Enabled || cfg.Scanner.CCHunt == (config.CCHuntConfig{})
+		if cchEnabled {
+			controlEntry := d.pool.FirstByRole(sdr.RoleControl)
+			if controlEntry != nil {
+				sup, err := cchunt.New(cchunt.Options{
+					Bus:            d.bus,
+					Log:            log,
+					Tuner:          controlEntry.Device,
+					Cache:          d.ccCache,
+					Systems:        d.systems,
+					Dwell:          msToDuration(cfg.Scanner.CCHunt.DwellMs, 3*time.Second),
+					InitialBackoff: msToDuration(cfg.Scanner.CCHunt.BackoffMs, 5*time.Second),
+					MaxBackoff:     msToDuration(cfg.Scanner.CCHunt.MaxBackoffMs, 60*time.Second),
+				})
+				if err != nil {
+					return nil, fmt.Errorf("daemon: cchunt: %w", err)
+				}
+				d.cchuntSup = sup
+			} else {
+				log.Warn("daemon: scanner.cc_hunt enabled but no control SDR in pool; skipping")
+			}
+		}
+	}
+
+	// Conventional FM scanner — opt-in via scanner.conventional list.
+	// Requires its own dedicated Voice SDR (carved out of the pool's
+	// voice fleet) and a recorder to land WAVs into. The scanner
+	// publishes synthetic CallStart/CallEnd events through
+	// Engine.HandleSyntheticCall, so the recorder, call log, and
+	// /api/v1/calls/active surfaces light up like any other call.
+	if d.pool != nil && d.recorder != nil && d.engine != nil && len(cfg.Scanner.Conventional) > 0 {
+		voiceEntries := d.pool.AllByRole(sdr.RoleVoice)
+		if len(voiceEntries) == 0 {
+			log.Warn("daemon: scanner.conventional configured but no Voice SDRs in the pool; skipping")
+		} else {
+			// Use the LAST voice SDR so the trunking engine still
+			// has the first N-1 voice radios for normal grants.
+			convEntry := voiceEntries[len(voiceEntries)-1]
+			channels := make([]conventional.Channel, 0, len(cfg.Scanner.Conventional))
+			for _, ch := range cfg.Scanner.Conventional {
+				channels = append(channels, conventional.Channel{
+					Label:       ch.Label,
+					FrequencyHz: ch.FrequencyHz,
+					Mode:        ch.Mode,
+					SquelchDbFS: ch.SquelchDbFS,
+					Hangtime:    msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
+					Priority:    ch.Priority,
+				})
+			}
+			cs, err := conventional.New(conventional.Options{
+				Log:          log,
+				Tuner:        convEntry.Device,
+				IQ:           convEntry.Device,
+				Engine:       d.engine,
+				Recorder:     d.recorder,
+				DeviceSerial: convEntry.Info.Serial,
+				SystemName:   "scanner",
+				Channels:     channels,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("daemon: conv scanner: %w", err)
+			}
+			d.convScan = cs
+		}
 	}
 
 	// Storage / call log / retention — optional.
@@ -306,6 +399,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		if d.pool != nil {
 			opts.Devices = d.pool
 		}
+		opts.Scanner = scannerCockpit{
+			cchunt:     d.cchuntSup,
+			conv:       d.convScan,
+			engine:     d.engine,
+			talkgroups: d.talkgroups,
+		}
 		srv, err := api.NewServer(opts)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: http api: %w", err)
@@ -369,6 +468,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.metrics != nil {
 		d.spawn(ctx, "metrics", func(ctx context.Context) error {
 			return d.metrics.Run(ctx)
+		})
+	}
+	if d.cchuntSup != nil {
+		d.spawn(ctx, "cchunt", func(ctx context.Context) error {
+			return d.cchuntSup.Run(ctx)
+		})
+	}
+	if d.convScan != nil {
+		d.spawn(ctx, "conv-scanner", func(ctx context.Context) error {
+			return d.convScan.Run(ctx)
 		})
 	}
 	if d.httpAPI != nil {
@@ -468,6 +577,15 @@ func retentionInterval(s string) (time.Duration, error) {
 		return time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// msToDuration converts a config milliseconds field to a Duration,
+// falling back to fallback when the field is zero or negative.
+func msToDuration(ms int, fallback time.Duration) time.Duration {
+	if ms <= 0 {
+		return fallback
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // fanoutSink writes the same PCM frame to several composer.PCMSink

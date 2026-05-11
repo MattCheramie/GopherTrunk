@@ -44,6 +44,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | 7 | Tone alerts | Just `tone.alert` events with profile / device / matched frequencies. 100-entry ring buffer. |
 | 8 | Metrics | Curated subset of `/metrics`: calls active / total, grant total, CC locked, SSE clients, devices attached, tone alerts. |
 | 9 | Devices | The SDR pool snapshot: serial, driver, tuner, role, configured gain / PPM / bias-tee, attach state. Refreshed on `sdr.attached` / `sdr.detached` events for instant updates. |
+| 0 | Scanner | Police-scanner cockpit: per-trunked-system CC hunter state, conventional FM scan list (current dwell highlighted), talkgroup scan-list summary. Operator can hold/resume/force-retune systems, dwell on conventional channels, and cycle scan_mode — all gated behind `--write` + `api.allow_mutations`. |
 
 ## Keybindings
 
@@ -53,7 +54,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | --- | --- |
 | `Tab` | next panel |
 | `Shift+Tab` | previous panel |
-| `1`–`9` | jump directly to a panel |
+| `1`–`9`, `0` | jump directly to a panel (0 = Scanner) |
 | `?` | toggle help overlay |
 | `q` / `Ctrl+C` | quit |
 
@@ -72,13 +73,14 @@ gophertrunk tui -server https://radio.example.com -insecure
 | Panel | Keys |
 | --- | --- |
 | Systems | `Enter` open detail card |
-| Talkgroups | `/` filter, `s` cycle sort, `Enter` open detail card, `Esc` exit filter input |
+| Talkgroups | `/` filter, `s` cycle sort, `S` toggle scan flag, `Enter` open detail card, `Esc` exit filter input |
 | Active calls | (table navigation only) |
 | Call history | `r` reload |
 | Events | `/` filter, `p` pause auto-scroll, `c` clear filter |
 | Tone alerts | (table navigation only) |
 | Metrics | (table navigation only) |
 | Devices | (table navigation only) |
+| Scanner | `j` / `k` move row, `h` hold/resume highlighted row, `r` force re-hunt (Systems section, confirms), `Enter` dwell on highlighted conv channel, `m` cycle scan_mode |
 
 ## Polling cadences
 
@@ -124,9 +126,14 @@ listener can call mutations once the gate is open — bind to
 | --- | --- | --- | --- |
 | Active calls | `e` | End the highlighted call (`POST /api/v1/calls/{serial}/end`, reason=manual) | yes |
 | Talkgroups | `l` | Toggle lockout on the highlighted talkgroup (`PATCH /api/v1/talkgroups/{id}`) | no — reversible |
+| Talkgroups | `S` | Toggle scan flag (relevant when `scan_mode: list`) | no |
 | Talkgroups | `+` / `-` | Bump priority up / down (clamped 0–99) | no |
 | Tone alerts | `R` | Reset tone-out match progress on the highlighted device (`POST /api/v1/devices/{serial}/tone-reset`) | yes |
 | Metrics | `S` | Run a retention sweep now (`POST /api/v1/retention/sweep`) | yes |
+| Scanner | `h` | Hold/resume highlighted system or conv channel (`POST /api/v1/scanner/hunt/{system}/hold\|resume` or `/conventional/hold\|resume`) | no |
+| Scanner | `r` | Force re-hunt the highlighted system (`POST /api/v1/scanner/hunt/{system}/retune`) | yes |
+| Scanner | `Enter` | Dwell on the highlighted conv channel (`POST /api/v1/scanner/conventional/{index}/dwell`) | no |
+| Scanner | `m` | Cycle global scan_mode list ↔ all (`PATCH /api/v1/scanner`) | no |
 
 When a key requires confirmation, a centered modal opens. The
 modal captures keyboard focus until you press:

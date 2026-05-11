@@ -194,6 +194,34 @@ func TestUpdateTalkgroup_AppliesPriorityAndLockout(t *testing.T) {
 	}
 }
 
+func TestUpdateTalkgroup_AppliesScan(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	tgs := trunking.NewTalkgroupDB()
+	tgs.Add(&trunking.TalkGroup{ID: 42, AlphaTag: "Dispatch", Scan: true})
+	base, teardown := mkServer(t, ServerOptions{
+		Bus:            bus,
+		AllowMutations: true,
+		Talkgroups:     tgs,
+	})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"scan":false}`))
+	req, _ := http.NewRequest(http.MethodPatch, base+"/api/v1/talkgroups/42", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	if tgs.Lookup(42).Scan {
+		t.Errorf("Scan still true after PATCH")
+	}
+}
+
 func TestUpdateTalkgroup_NotFound(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

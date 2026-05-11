@@ -108,6 +108,114 @@ func TestEngineDropsLockedOutGrant(t *testing.T) {
 	}
 }
 
+func TestEngineScanModeListDropsTGOutsideList(t *testing.T) {
+	e, _, bus, tuners := mkEngine(t, 1)
+	defer bus.Close()
+	e.SetScanMode(ScanModeList)
+	// TG with Scan=false should be dropped.
+	e.talkgroups.Add(&TalkGroup{ID: 77, AlphaTag: "OFF-LIST", Scan: false})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 77, FrequencyHz: 1_000_000})
+
+	select {
+	case ev := <-sub.C:
+		t.Errorf("unexpected event for off-list grant: %s", ev.Kind)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := tuners[0].tuned(); len(got) != 0 {
+		t.Errorf("off-list grant should not retune; got %v", got)
+	}
+}
+
+func TestEngineScanModeListAllowsScanTrueTG(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.SetScanMode(ScanModeList)
+	e.talkgroups.Add(&TalkGroup{ID: 78, AlphaTag: "ON-LIST", Scan: true})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 78, FrequencyHz: 1_000_000})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallStart {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no CallStart published for on-list grant")
+		}
+	}
+}
+
+func TestEngineScanModeListBypassedByEmergency(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.SetScanMode(ScanModeList)
+	// Off-list (Scan=false) but Emergency — must still fire.
+	e.talkgroups.Add(&TalkGroup{ID: 79, AlphaTag: "OFF-LIST-EMER", Scan: false})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 79, FrequencyHz: 1_000_000, Emergency: true})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallStart {
+				return
+			}
+		case <-deadline:
+			t.Fatal("Emergency grant should bypass scan-list gate")
+		}
+	}
+}
+
+func TestEngineScanModeListUnknownTGDropped(t *testing.T) {
+	// TG not in the DB at all (Lookup returns nil) → dropped.
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.SetScanMode(ScanModeList)
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 999, FrequencyHz: 1_000_000})
+
+	select {
+	case ev := <-sub.C:
+		t.Errorf("unexpected event for unknown TG: %s", ev.Kind)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestEngineScanModeAllIgnoresScanFlag(t *testing.T) {
+	// Default mode (all): a TG with Scan=false still fires.
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.talkgroups.Add(&TalkGroup{ID: 80, AlphaTag: "OFF-LIST", Scan: false})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 80, FrequencyHz: 1_000_000})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallStart {
+				return
+			}
+		case <-deadline:
+			t.Fatal("ScanModeAll should ignore Scan flag")
+		}
+	}
+}
+
 func TestEngineDropsZeroFrequencyGrant(t *testing.T) {
 	e, _, bus, _ := mkEngine(t, 1)
 	defer bus.Close()

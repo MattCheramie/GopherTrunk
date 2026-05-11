@@ -49,6 +49,7 @@ type TalkgroupDTO struct {
 	Mode        string `json:"mode,omitempty"`
 	Priority    int    `json:"priority,omitempty"`
 	Lockout     bool   `json:"lockout,omitempty"`
+	Scan        bool   `json:"scan"`
 }
 
 func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
@@ -64,6 +65,7 @@ func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
 		Mode:        tg.Mode,
 		Priority:    tg.Priority,
 		Lockout:     tg.Lockout,
+		Scan:        tg.Scan,
 	}
 }
 

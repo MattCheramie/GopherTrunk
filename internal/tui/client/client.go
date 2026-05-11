@@ -104,6 +104,16 @@ func (c *Client) Talkgroups(ctx context.Context) ([]TalkgroupDTO, error) {
 	return r.Talkgroups, nil
 }
 
+// Scanner calls GET /api/v1/scanner. Always returns 200 even when
+// no scanner subsystem is wired (an empty ScannerStatusDTO).
+func (c *Client) Scanner(ctx context.Context) (ScannerStatusDTO, error) {
+	var s ScannerStatusDTO
+	if err := c.getJSON(ctx, "/api/v1/scanner", &s); err != nil {
+		return ScannerStatusDTO{}, err
+	}
+	return s, nil
+}
+
 // Devices calls GET /api/v1/devices.
 func (c *Client) Devices(ctx context.Context) ([]SDRStatus, error) {
 	var r devicesResp

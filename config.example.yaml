@@ -59,6 +59,31 @@ trunking:
         - 852_000_000
       talkgroup_file: "/etc/gophertrunk/talkgroups-p25.csv"
 
+# Police-scanner subsystems:
+#   - scan_mode controls the engine's per-grant gate. "all" follows every
+#     non-locked-out grant (the original behavior). "list" only follows
+#     grants whose talkgroup carries Scan=true; Emergency grants bypass.
+#   - cc_hunt is the multi-system control-channel scanner. Operator can
+#     hold/resume/force-retune any system from the TUI Scanner panel.
+#   - conventional is the fixed-frequency analog FM scan list. Requires
+#     a dedicated Voice SDR (the last voice device in the pool is used).
+scanner:
+  scan_mode: all       # all | list
+  cc_hunt:
+    enabled: true
+    dwell_ms: 3000
+    backoff_ms: 5000
+    max_backoff_ms: 60000
+  conventional: []
+  # Example conventional channels:
+  # conventional:
+  #   - label: "Sheriff Repeater"
+  #     frequency_hz: 155895000
+  #     mode: fm
+  #     squelch_dbfs: -48
+  #     hangtime_ms: 1500
+  #     priority: 4
+
 # tone_out fires events.KindToneAlert when the configured paging tones
 # are detected on a Voice device's PCM stream. Empty profiles disable
 # the detector. Two-tone sequential (Quick Call II) is the most common

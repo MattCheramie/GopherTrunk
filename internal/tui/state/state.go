@@ -23,6 +23,7 @@ const (
 	PanelTones
 	PanelMetrics
 	PanelDevices
+	PanelScanner
 	PanelCount
 )
 
@@ -46,6 +47,8 @@ func (p PanelKind) String() string {
 		return "Metrics"
 	case PanelDevices:
 		return "Devices"
+	case PanelScanner:
+		return "Scanner"
 	}
 	return "?"
 }
@@ -73,6 +76,8 @@ type SharedState struct {
 	Metrics     map[string]float64
 	Devices     []client.SDRStatus
 	DevicesErr  error
+	Scanner     client.ScannerStatusDTO
+	ScannerErr  error
 
 	EventLog   RingReader[client.Event]
 	ToneAlerts RingReader[client.Event]
@@ -110,6 +115,9 @@ type WriteRequest struct {
 	UpdateTalkgroup *UpdateTalkgroupReq
 	SweepRetention  *SweepRetentionReq
 	ResetTone       *ResetToneReq
+	ScannerMode     *ScannerModeReq
+	ScannerHunt     *ScannerHuntReq
+	ScannerConv     *ScannerConvReq
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -121,7 +129,25 @@ const (
 	WriteKindUpdateTalkgroup
 	WriteKindSweepRetention
 	WriteKindResetTone
+	WriteKindScannerMode
+	WriteKindScannerHuntHold
+	WriteKindScannerHuntResume
+	WriteKindScannerHuntRetune
+	WriteKindScannerConvHold
+	WriteKindScannerConvResume
+	WriteKindScannerConvDwell
 )
+
+// ScannerModeReq sets the engine's global scan_mode at runtime.
+type ScannerModeReq struct{ Mode string }
+
+// ScannerHuntReq targets a single trunked system for hold / resume /
+// force-retune. The WriteKind discriminates the operation.
+type ScannerHuntReq struct{ System string }
+
+// ScannerConvReq is shared by hold / resume / dwell-on-index for the
+// conventional scanner. Index is ignored for hold/resume.
+type ScannerConvReq struct{ Index int }
 
 // EndCallReq forces the engine to release the active call held on
 // the given device.
@@ -130,12 +156,13 @@ type EndCallReq struct {
 	Reason       string // optional; "" means "manual"
 }
 
-// UpdateTalkgroupReq mutates priority and/or lockout on a talkgroup.
-// Pointer fields allow "leave unchanged" semantics.
+// UpdateTalkgroupReq mutates priority and/or lockout and/or scan on a
+// talkgroup. Pointer fields allow "leave unchanged" semantics.
 type UpdateTalkgroupReq struct {
 	ID       uint32
 	Priority *int
 	Lockout  *bool
+	Scan     *bool
 }
 
 // SweepRetentionReq runs one immediate retention sweep.

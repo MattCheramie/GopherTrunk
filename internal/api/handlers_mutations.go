@@ -87,12 +87,13 @@ func parseEndReason(s string) trunking.EndReason {
 	return trunking.EndReasonManual
 }
 
-// updateTalkgroupRequest is the PATCH body shape. Both fields are
+// updateTalkgroupRequest is the PATCH body shape. All fields are
 // pointers so JSON-omitted fields aren't accidentally zeroed: only
 // supplied fields are applied.
 type updateTalkgroupRequest struct {
 	Priority *int  `json:"priority"`
 	Lockout  *bool `json:"lockout"`
+	Scan     *bool `json:"scan"`
 }
 
 // handleUpdateTalkgroup updates a talkgroup's mutable policy fields
@@ -118,8 +119,8 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	if req.Priority == nil && req.Lockout == nil {
-		writeError(w, http.StatusBadRequest, "supply priority and/or lockout")
+	if req.Priority == nil && req.Lockout == nil && req.Scan == nil {
+		writeError(w, http.StatusBadRequest, "supply priority and/or lockout and/or scan")
 		return
 	}
 	ok := s.talkgroups.UpdateFields(uint32(id), func(tg *trunking.TalkGroup) {
@@ -128,6 +129,9 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Lockout != nil {
 			tg.Lockout = *req.Lockout
+		}
+		if req.Scan != nil {
+			tg.Scan = *req.Scan
 		}
 	})
 	if !ok {
