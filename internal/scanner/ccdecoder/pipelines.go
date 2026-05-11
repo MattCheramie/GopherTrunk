@@ -8,6 +8,8 @@ import (
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	edacsrx "github.com/MattCheramie/GopherTrunk/internal/radio/edacs/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
+	motorolarx "github.com/MattCheramie/GopherTrunk/internal/radio/motorola/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -64,10 +66,11 @@ type PipelineFactory func(PipelineOptions) (ProtocolPipeline, error)
 // detect sync + frame + dispatch into the existing parsers is a
 // follow-up.
 var factories = map[trunking.Protocol]PipelineFactory{
-	trunking.ProtocolP25:   newP25Phase1Pipeline,
-	trunking.ProtocolDPMR:  newDPMRPipeline,
-	trunking.ProtocolNXDN:  newNXDNPipeline,
-	trunking.ProtocolEDACS: newEDACSPipeline,
+	trunking.ProtocolP25:      newP25Phase1Pipeline,
+	trunking.ProtocolDPMR:     newDPMRPipeline,
+	trunking.ProtocolNXDN:     newNXDNPipeline,
+	trunking.ProtocolEDACS:    newEDACSPipeline,
+	trunking.ProtocolMotorola: newMotorolaPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -223,3 +226,34 @@ type edacsPipeline struct {
 func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *edacsPipeline) Reset()                  { p.rx.Reset() }
 func (p *edacsPipeline) Close() error            { return nil }
+
+// newMotorolaPipeline wires internal/radio/motorola/receiver into
+// motorola.ControlChannel.Process. The receiver's BitSink forwards
+// bits + baseIdx into the state machine (24-bit sync detect →
+// 32-bit OSW slice → OSWFromBits → Ingest). The BCH(64,16,11)
+// FEC over the OSW is a follow-up; until it lands the adapter
+// sync-locks but typically fails OSW parsing on noisy signals.
+func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := motorola.New(motorola.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := motorolarx.New(motorolarx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		BitSink: func(bits []byte, baseIdx int) {
+			cc.Process(bits, baseIdx)
+		},
+	})
+	return &motorolaPipeline{rx: rx, cc: cc}, nil
+}
+
+type motorolaPipeline struct {
+	rx *motorolarx.Receiver
+	cc *motorola.ControlChannel
+}
+
+func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *motorolaPipeline) Reset()                  { p.rx.Reset() }
+func (p *motorolaPipeline) Close() error            { return nil }
