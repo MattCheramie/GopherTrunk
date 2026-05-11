@@ -199,6 +199,45 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`ccdecoder` connector threads LTR FCS + Manchester modes
+  from per-system config.** Same pattern as the TETRA wiring in
+  PR #141 — operators set `ltr_fcs_mode` + `ltr_manchester_mode`
+  once in `config.yaml` and the `newLTRPipeline` factory calls
+  `ltr.ControlChannel.SetFCSMode` / `SetManchesterMode` before
+  any sample flows. Both `ltr.ControlChannel` primitives have
+  shipped for a while (CRC-7 FCS check against sdrtrunk's
+  CRCLTR.java layout, Manchester decode with strict / soft
+  variants); this PR flips them on under config control.
+  - `trunking.System` gains `LTRFCSMode string` + `LTRManchesterMode
+    string`; `config.SystemConfig` exposes them as
+    `ltr_fcs_mode` (recognises `"off"` / `"on"`) +
+    `ltr_manchester_mode` (recognises `"off"` / `"nrz"` /
+    `"strict"` / `"soft"`, all case-insensitive with whitespace
+    tolerated).
+  - `ltr.ParseFCSMode` + `ltr.ParseManchesterMode` map the
+    YAML string into the typed mode; unknown values warn-log
+    and fall back to the legacy off / NRZ default rather than
+    failing the retune.
+  - `ltr.ControlChannel.FCSMode` + `ManchesterMode` accessors
+    mirror the TETRA pattern so tests + observability code can
+    introspect configured state without poking at unexported
+    fields.
+  - Empty strings preserve the legacy `FCSOff` + `ManchesterOff`
+    raw-NRZ path so existing synthesized-fixture tests stay
+    green. Live captures of sub-audible LTR signaling typically
+    need `ltr_manchester_mode: soft` + `ltr_fcs_mode: on` to
+    pass the CRC.
+  Tests cover the config-string parsers across every recognised
+  value (plus a misconfigured-input case), the factory applying
+  both modes when the System carries non-empty strings, and the
+  factory preserving the legacy modes when both strings are
+  empty. The connector now configures every protocol whose
+  control-channel state machine has a tunable on-air FEC layer
+  (TETRA channel coding, LTR FCS + Manchester); per-protocol
+  FEC wiring for NXDN CAC / EDACS CCW / P25 Phase 2 trellis
+  remains the next code work, gated on the public-references
+  question (NXDN CAC interleave / puncture isn't documented
+  in the public spec).
 - **`ccdecoder` connector threads TETRA channel coding from
   per-system config.** Closes the last gap between the
   daemon's YAML and the §8.3.1 type-5 → type-1 decoder

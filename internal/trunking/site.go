@@ -110,6 +110,26 @@ type System struct {
 	// tetra.ControlChannel.SetExpectedChannel by the ccdecoder
 	// connector after parsing via tetra.ParseChannelType.
 	TETRAChannel string
+
+	// LTRFCSMode enables CRC-7 FCS verification on the LTR Status
+	// Ingest path (per DSheirer/sdrtrunk's CRCLTR.java layout).
+	// Recognised values (case-insensitive): "" / "off" — no
+	// verification (default, pre-PR #40 behaviour); "on" / "true" —
+	// drop Status words whose 7-bit FCS trailer doesn't match the
+	// CRC over the 24-bit message vector. Forwarded into
+	// ltr.ControlChannel.SetFCSMode by the ccdecoder connector
+	// after parsing via ltr.ParseFCSMode.
+	LTRFCSMode string
+	// LTRManchesterMode controls Manchester decoding of the LTR
+	// sub-audible bit stream. Recognised values (case-insensitive):
+	// "" / "off" / "nrz" — raw NRZ (default, in-package tests);
+	// "strict" — require a mid-bit transition per pair, drop
+	// transition-less pairs; "soft" / "on" — majority-decode each
+	// pair and tolerate noise bursts. Live captures of sub-audible
+	// LTR signaling should use "soft" (the dominant on-air encoding).
+	// Forwarded into ltr.ControlChannel.SetManchesterMode by the
+	// ccdecoder connector after parsing via ltr.ParseManchesterMode.
+	LTRManchesterMode string
 }
 
 // Validate returns an error if the System lacks required fields.

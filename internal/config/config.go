@@ -118,6 +118,23 @@ type SystemConfig struct {
 	// defaults to "sch/hd" — the standard signaling channel for
 	// cc.locked / Grant events. Ignored for non-TETRA protocols.
 	TETRAChannel string `yaml:"tetra_channel"`
+
+	// LTRFCSMode enables the CRC-7 FCS check on the LTR Status
+	// Ingest path. Recognised values: "" / "off" (default,
+	// no verification — matches pre-PR #40 behaviour) or
+	// "on" / "true" (drop Status words whose FCS trailer doesn't
+	// match). Useful when the upstream framing layer has populated
+	// Status.FCS from the on-air bits and the operator wants to
+	// filter out corrupted frames. Ignored for non-LTR protocols.
+	LTRFCSMode string `yaml:"ltr_fcs_mode"`
+	// LTRManchesterMode controls Manchester decoding of the
+	// sub-audible LTR bit stream. Recognised values: "" / "off" /
+	// "nrz" (raw NRZ, default — matches the synthesized-fixture
+	// path), "strict" (require a mid-bit transition per pair,
+	// drop transition-less pairs), "soft" / "on" (majority-decode,
+	// tolerate noise bursts). Live captures of sub-audible LTR
+	// signaling should set "soft". Ignored for non-LTR protocols.
+	LTRManchesterMode string `yaml:"ltr_manchester_mode"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.

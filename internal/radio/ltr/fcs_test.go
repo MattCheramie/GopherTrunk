@@ -137,13 +137,91 @@ func TestSetFCSModeDefault(t *testing.T) {
 	if cc.fcsMode != FCSOff {
 		t.Errorf("default fcsMode = %v, want FCSOff", cc.fcsMode)
 	}
+	if got := cc.FCSMode(); got != FCSOff {
+		t.Errorf("FCSMode() = %v, want FCSOff", got)
+	}
 	cc.SetFCSMode(FCSOn)
 	if cc.fcsMode != FCSOn {
 		t.Errorf("SetFCSMode(FCSOn) did not take effect")
 	}
+	if got := cc.FCSMode(); got != FCSOn {
+		t.Errorf("FCSMode() = %v, want FCSOn", got)
+	}
 	cc.SetFCSMode(FCSOff)
 	if cc.fcsMode != FCSOff {
 		t.Errorf("SetFCSMode(FCSOff) did not take effect")
+	}
+}
+
+// TestParseFCSMode covers the config-string → FCSMode mapping the
+// ccdecoder connector uses to translate the `ltr_fcs_mode` YAML
+// field into a SetFCSMode call.
+func TestParseFCSMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want FCSMode
+		ok   bool
+	}{
+		{"", FCSOff, true},
+		{"off", FCSOff, true},
+		{"OFF", FCSOff, true},
+		{"false", FCSOff, true},
+		{"0", FCSOff, true},
+		{"on", FCSOn, true},
+		{"ON", FCSOn, true},
+		{"true", FCSOn, true},
+		{"1", FCSOn, true},
+		{" on ", FCSOn, true}, // whitespace tolerated
+		{"nonsense", FCSOff, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseFCSMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseFCSMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// TestParseManchesterMode covers the config-string →
+// ManchesterDecodeMode mapping for `ltr_manchester_mode`.
+func TestParseManchesterMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want ManchesterDecodeMode
+		ok   bool
+	}{
+		{"", ManchesterOff, true},
+		{"off", ManchesterOff, true},
+		{"nrz", ManchesterOff, true},
+		{"NRZ", ManchesterOff, true},
+		{"strict", ManchesterStrict, true},
+		{"Strict", ManchesterStrict, true},
+		{"soft", ManchesterSoft, true},
+		{"on", ManchesterSoft, true},
+		{"Soft", ManchesterSoft, true},
+		{" strict ", ManchesterStrict, true},
+		{"nonsense", ManchesterOff, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseManchesterMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseManchesterMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// TestManchesterModeAccessor mirrors TestSetFCSModeDefault for the
+// Manchester mode getter.
+func TestManchesterModeAccessor(t *testing.T) {
+	cc := New(Options{Bus: events.NewBus(1)})
+	if got := cc.ManchesterMode(); got != ManchesterOff {
+		t.Errorf("default ManchesterMode() = %v, want ManchesterOff", got)
+	}
+	cc.SetManchesterMode(ManchesterSoft)
+	if got := cc.ManchesterMode(); got != ManchesterSoft {
+		t.Errorf("ManchesterMode() = %v, want ManchesterSoft", got)
 	}
 }
 

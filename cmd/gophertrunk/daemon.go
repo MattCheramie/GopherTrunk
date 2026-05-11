@@ -116,11 +116,13 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			return nil, fmt.Errorf("daemon: %w", err)
 		}
 		s := trunking.System{
-			Name:            sys.Name,
-			Protocol:        proto,
-			ControlChannels: sys.ControlChannels,
-			TETRAColourCode: sys.TETRAColourCode,
-			TETRAChannel:    sys.TETRAChannel,
+			Name:              sys.Name,
+			Protocol:          proto,
+			ControlChannels:   sys.ControlChannels,
+			TETRAColourCode:   sys.TETRAColourCode,
+			TETRAChannel:      sys.TETRAChannel,
+			LTRFCSMode:        sys.LTRFCSMode,
+			LTRManchesterMode: sys.LTRManchesterMode,
 		}
 		if err := s.Validate(); err != nil {
 			return nil, fmt.Errorf("daemon: system %q: %w", sys.Name, err)

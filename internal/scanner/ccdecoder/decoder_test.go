@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -408,6 +409,62 @@ func TestLTRFactoryConstructs(t *testing.T) {
 	p.Reset()
 	if err := p.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestLTRFactoryAppliesFCSAndManchesterFromSystem: when the
+// trunking.System carries LTRFCSMode + LTRManchesterMode strings,
+// the factory must parse them and apply them to the underlying
+// ControlChannel.
+func TestLTRFactoryAppliesFCSAndManchesterFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newLTRPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 935_012_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolLTR,
+			ControlChannels:   []uint32{935_012_500},
+			LTRFCSMode:        "on",
+			LTRManchesterMode: "soft",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newLTRPipeline: %v", err)
+	}
+	lp := p.(*ltrPipeline)
+	if got := lp.cc.FCSMode(); got != ltr.FCSOn {
+		t.Errorf("FCSMode = %v, want FCSOn", got)
+	}
+	if got := lp.cc.ManchesterMode(); got != ltr.ManchesterSoft {
+		t.Errorf("ManchesterMode = %v, want ManchesterSoft", got)
+	}
+}
+
+// TestLTRFactoryDefaultsKeepLegacyModes: empty LTRFCSMode +
+// LTRManchesterMode preserve the legacy FCSOff + ManchesterOff
+// path so existing synthesized-fixture tests stay green.
+func TestLTRFactoryDefaultsKeepLegacyModes(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newLTRPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 935_012_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolLTR,
+			ControlChannels: []uint32{935_012_500},
+			// LTRFCSMode + LTRManchesterMode left empty.
+		},
+	})
+	if err != nil {
+		t.Fatalf("newLTRPipeline: %v", err)
+	}
+	lp := p.(*ltrPipeline)
+	if got := lp.cc.FCSMode(); got != ltr.FCSOff {
+		t.Errorf("FCSMode = %v, want FCSOff", got)
+	}
+	if got := lp.cc.ManchesterMode(); got != ltr.ManchesterOff {
+		t.Errorf("ManchesterMode = %v, want ManchesterOff", got)
 	}
 }
 

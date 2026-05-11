@@ -418,8 +418,18 @@ func (p *motorolaPipeline) Close() error            { return nil }
 // sub-audible bits into the state machine, which slides a 41-bit
 // window across the stream, commits to the first Sync=1 alignment
 // it finds, and dispatches each Status word into the existing
-// Ingest path. FCS validation + Manchester decoding are
-// follow-ups.
+// Ingest path.
+//
+// FCS verification + Manchester decoding are gated on per-system
+// config: trunking.System.LTRFCSMode and LTRManchesterMode (the
+// `ltr_fcs_mode` + `ltr_manchester_mode` YAML keys) flip the
+// corresponding modes on the ControlChannel before any sample
+// flows. Empty strings preserve the legacy raw-NRZ + no-CRC path
+// so existing synthesized-fixture tests stay green; live captures
+// of sub-audible LTR signaling typically need
+// `ltr_manchester_mode: soft` + `ltr_fcs_mode: on`. Unknown values
+// warn-log and fall back to the off / NRZ default rather than
+// failing the retune.
 func newLTRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := ltr.New(ltr.Options{
 		Bus:         opts.Bus,
@@ -427,6 +437,22 @@ func newLTRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if v := opts.System.LTRFCSMode; v != "" {
+		mode, ok := ltr.ParseFCSMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised ltr_fcs_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetFCSMode(mode)
+	}
+	if v := opts.System.LTRManchesterMode; v != "" {
+		mode, ok := ltr.ParseManchesterMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised ltr_manchester_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetManchesterMode(mode)
+	}
 	rx := ltrrx.New(ltrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

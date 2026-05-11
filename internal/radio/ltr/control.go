@@ -2,6 +2,7 @@ package ltr
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -97,6 +98,57 @@ func (c *ControlChannel) SetFCSMode(mode FCSMode) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.fcsMode = mode
+}
+
+// FCSMode returns the current FCSMode. Mirrors the Set* family so
+// callers (and tests) can introspect the configured mode without
+// poking at unexported state.
+func (c *ControlChannel) FCSMode() FCSMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.fcsMode
+}
+
+// ManchesterMode returns the configured Manchester decode mode.
+func (c *ControlChannel) ManchesterMode() ManchesterDecodeMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.manchesterMode
+}
+
+// ParseFCSMode maps a config / user-facing string into an FCSMode.
+// Recognised values (case-insensitive): "" / "off" → FCSOff (the
+// pre-PR #40 behaviour, no CRC check), "on" / "true" → FCSOn.
+// Unknown strings return FCSOff with `ok = false` so callers can
+// surface the misconfiguration.
+func ParseFCSMode(s string) (FCSMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return FCSOff, true
+	case "on", "true", "1":
+		return FCSOn, true
+	default:
+		return FCSOff, false
+	}
+}
+
+// ParseManchesterMode maps a config / user-facing string into a
+// ManchesterDecodeMode. Recognised values (case-insensitive):
+// "" / "off" / "nrz" → ManchesterOff (raw NRZ), "strict" →
+// ManchesterStrict (drop transition-less pairs), "soft" / "on" →
+// ManchesterSoft (majority-decode + tolerate noise bursts).
+// Unknown strings return ManchesterOff with `ok = false`.
+func ParseManchesterMode(s string) (ManchesterDecodeMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "nrz":
+		return ManchesterOff, true
+	case "strict":
+		return ManchesterStrict, true
+	case "soft", "on":
+		return ManchesterSoft, true
+	default:
+		return ManchesterOff, false
+	}
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the
