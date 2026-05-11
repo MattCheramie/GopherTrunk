@@ -1,5 +1,9 @@
 package edacs
 
+import (
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+)
+
 // processState is the cross-call bit buffering + sync-detection
 // state the Process adapter holds. Lazily initialised on the first
 // Process call.
@@ -42,6 +46,9 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 		}
 	}
 	p := c.proc
+	c.mu.Lock()
+	mode := c.bchMode
+	c.mu.Unlock()
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], bits, baseIdx)
 	matchIdx := 0
@@ -56,7 +63,7 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 			p.ccw = append(p.ccw, b&1)
 			p.remaining--
 			if p.remaining == 0 {
-				if ccw, err := CCWFromBits(p.ccw); err == nil {
+				if ccw, ok := c.parseCCW(p.ccw, mode); ok {
 					c.Ingest(ccw)
 				}
 				p.ccw = p.ccw[:0]
@@ -69,6 +76,58 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 		}
 	}
 	return baseIdx + len(bits)
+}
+
+// parseCCW turns a 40-bit wire window into a CCW. Under BCHOff
+// the window is treated as 40 bits of pre-stripped information;
+// under BCHOn the window is the on-wire BCH(40,28,2) codeword:
+// the adapter packs it into the framing primitive's uint64
+// convention, runs BCH validation + correction, then re-encodes
+// the corrected 28-bit info field into a fresh 40-bit wire word
+// (parity bits set to zero / cleared) so the existing
+// CCWFromBits parser can interpret it. Uncorrectable codewords
+// (errs == -1) are dropped by returning (zero, false).
+func (c *ControlChannel) parseCCW(wire []byte, mode BCHMode) (CCW, bool) {
+	if len(wire) != 40 {
+		return CCW{}, false
+	}
+	if mode != BCHOn {
+		w, err := CCWFromBits(wire)
+		if err != nil {
+			return CCW{}, false
+		}
+		return w, true
+	}
+	// Pack 40 wire bits into the framing primitive's uint64
+	// convention. wire[0] is the MSB of the on-wire CCW (Command
+	// bit 3), which maps to bit 39 of the codeword; wire[39] is
+	// the LSB (Aux bit 0), which maps to bit 0.
+	var cw uint64
+	for i := 0; i < 40; i++ {
+		if wire[i]&1 != 0 {
+			cw |= uint64(1) << uint(39-i)
+		}
+	}
+	info28, errs := framing.BCHDecodeEDACS(cw)
+	if errs == -1 {
+		return CCW{}, false
+	}
+	// Re-encode the corrected info field into a clean wire word.
+	// The parity bits in positions 0..11 become a valid checksum
+	// of the corrected info; CCWFromBits then reads the field
+	// values out of the canonical bit positions.
+	corrected := framing.BCHEncodeEDACS(info28)
+	out := make([]byte, 40)
+	for i := 0; i < 40; i++ {
+		if corrected&(uint64(1)<<uint(39-i)) != 0 {
+			out[i] = 1
+		}
+	}
+	w, err := CCWFromBits(out)
+	if err != nil {
+		return CCW{}, false
+	}
+	return w, true
 }
 
 // Reset clears the SyncDetector's history so a stale match doesn't

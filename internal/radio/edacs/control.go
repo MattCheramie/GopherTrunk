@@ -38,6 +38,53 @@ type ControlChannel struct {
 	locked           bool
 	last             LockState
 	strictValidation bool
+	bchMode          BCHMode
+}
+
+// BCHMode selects how the Process adapter interprets the incoming
+// bit stream:
+//
+//   - BCHOff (default): the adapter slices 40-bit pre-stripped
+//     information windows and treats them as CCWs. Works on
+//     synthesized test fixtures whose codewords are not BCH-
+//     protected.
+//
+//   - BCHOn: the adapter slices 40-bit on-wire BCH(40,28,2)
+//     codewords (info at bits 12..39 high; 12-bit BCH parity at
+//     bits 0..11 low), runs the
+//     internal/radio/framing/bch_edacs.go primitive to
+//     validate + correct up to 2 bit errors per codeword, then
+//     re-encodes the corrected info into a 40-bit wire word
+//     that the existing CCWFromBits parser consumes.
+//
+// Under BCHOn the effective CCW model carries:
+//
+//	Command (4 bits, positions 36..39 of the codeword)
+//	Status  (4 bits, positions 32..35)
+//	Address (16 bits, positions 16..31)
+//	LCN     (4 bits, positions 12..15 — only the high 4 bits
+//	         of the existing 5-bit Codeword.LCN field;
+//	         the low bit is BCH parity)
+//
+// The existing `Aux` field at codeword bits 0..10 is BCH parity
+// under BCHOn — not data. Callers that depend on the legacy
+// 5-bit LCN range or the Aux payload should keep using BCHOff.
+type BCHMode uint8
+
+const (
+	BCHOff BCHMode = iota
+	BCHOn
+)
+
+// SetBCHMode toggles the BCH(40, 28, 2) FEC layer on the Process
+// adapter. See BCHMode for the trade-offs. The mode applies to
+// every subsequent Process call; the Ingest entry point is
+// unaffected (callers that pre-parse CCWs don't go through this
+// adapter).
+func (c *ControlChannel) SetBCHMode(mode BCHMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bchMode = mode
 }
 
 // Options configure a ControlChannel.
