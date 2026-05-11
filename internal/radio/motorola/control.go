@@ -39,6 +39,13 @@ type ControlChannel struct {
 	// Process call.
 	proc *processState
 
+	// bchMode controls whether the Process adapter runs the
+	// BCH(64,16,11) FEC over each on-air codeword. Set via
+	// SetBCHMode; default BCHOff treats the 32 bits after sync
+	// as raw OSW info (works for test fixtures + clean signals
+	// but not for noisy on-air traffic).
+	bchMode BCHMode
+
 	mu     sync.Mutex
 	locked bool
 	last   LockState

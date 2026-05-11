@@ -2,6 +2,72 @@ package framing
 
 import "testing"
 
+// TestBCH6416RoundTrip: every clean BCH(64,16,11) codeword
+// decodes back to its source info with zero errors.
+func TestBCH6416RoundTrip(t *testing.T) {
+	for d := uint32(0); d < 1<<16; d += 257 {
+		cw := BCHEncode64_16(uint16(d))
+		got, errs := BCHDecode64_16(cw)
+		if errs != 0 {
+			t.Errorf("d=%04x: clean decode reported %d errors", d, errs)
+		}
+		if uint32(got) != d {
+			t.Errorf("d=%04x: decode round-trip = %04x", d, got)
+		}
+	}
+}
+
+// TestBCH6416CorrectsSingleBitErrors: flip any single bit in a
+// 64-bit codeword and confirm the decoder still recovers the
+// original info with errors == 1.
+func TestBCH6416CorrectsSingleBitErrors(t *testing.T) {
+	data := uint16(0xABCD)
+	cw := BCHEncode64_16(data)
+	for bit := 0; bit < 64; bit++ {
+		corrupted := cw ^ (uint64(1) << uint(bit))
+		got, errs := BCHDecode64_16(corrupted)
+		if errs != 1 {
+			t.Errorf("bit=%d: errs = %d, want 1", bit, errs)
+		}
+		if got != data {
+			t.Errorf("bit=%d: data = %04x, want %04x", bit, got, data)
+		}
+	}
+}
+
+// TestBCH6416DetectsParityFlip: flipping the trailing parity bit
+// alone is uncorrectable by the 63-bit BCH but the decoder must
+// still report errs >= 1 (not a clean decode).
+func TestBCH6416DetectsParityFlip(t *testing.T) {
+	data := uint16(0x5A5A)
+	cw := BCHEncode64_16(data)
+	corrupted := cw ^ 1 // flip the parity bit
+	got, errs := BCHDecode64_16(corrupted)
+	if errs < 1 {
+		t.Errorf("errs = %d, want >= 1", errs)
+	}
+	if got != data {
+		t.Errorf("data = %04x, want %04x (parity flip should still recover info)",
+			got, data)
+	}
+}
+
+// TestBCH6416RejectsManyErrors: corrupt 12 bits in a 64-bit
+// codeword (one past the 11-bit correction limit) and confirm
+// the decoder reports errs == -1.
+func TestBCH6416RejectsManyErrors(t *testing.T) {
+	data := uint16(0xDEAD)
+	cw := BCHEncode64_16(data)
+	// Flip bits 0..11 — 12 bit flips.
+	for bit := 0; bit < 12; bit++ {
+		cw ^= uint64(1) << uint(bit)
+	}
+	_, errs := BCHDecode64_16(cw)
+	if errs != -1 {
+		t.Errorf("errs = %d, want -1 (uncorrectable)", errs)
+	}
+}
+
 func TestBCH6316RoundTrip(t *testing.T) {
 	// Sparse sweep across the 65536-entry info space; brute-force decode
 	// is ~1 ms per call so an exhaustive sweep would dominate the test
