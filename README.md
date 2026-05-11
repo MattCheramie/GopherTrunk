@@ -87,9 +87,13 @@ The remaining gaps:
   their per-protocol FEC layers pending — see each adapter PR
   for the specific FEC parameters.
 - **Symbol-time clock recovery on complex IQ** for the π/4-DQPSK
-  family (P25 Phase 2, TETRA). The receivers currently do naive
-  decimation; Gardner-style timing recovery on complex IQ is the
-  follow-up that closes the gap for noisier captures.
+  family (P25 Phase 2, TETRA). The Gardner timing-recovery
+  primitive now ships in `internal/dsp/sync/gardner.go` —
+  non-data-aided, complex-valued, with cross-call state for
+  chunked streams. It isn't yet wired into the π/4-DQPSK
+  receivers (which still use naive decimation); the follow-up
+  PR threads it into the `MatchedFilter → clock recovery →
+  Decode` pipeline so noisier on-air captures lock.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement
@@ -156,6 +160,22 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Gardner symbol-time recovery for complex IQ.**
+  `internal/dsp/sync/gardner.go` adds a non-data-aided
+  feedback timing-recovery loop sibling to the existing
+  real-valued `MuellerMuller`. Uses the standard Gardner 1986
+  detector — `e[n] = Re{(s[n] − s[n−1])* · m[n]}` over the
+  symbol-time samples and the midpoint sample between them —
+  which converges before the demod has acquired symbol
+  polarity, so it works for π/4-DQPSK / QPSK / QAM IQ streams
+  where Mueller-Muller would need an upstream rotation pass.
+  Cross-call state preserves the timing estimate so chunked
+  streams converge once rather than per-chunk. Tests cover
+  aligned QPSK recovery, fractional-sample phase-offset
+  pull-in, chunked-vs-contiguous symbol agreement, and reset
+  semantics. Closes the README's "Symbol-time clock recovery
+  on complex IQ" primitive gap; threading it into the
+  π/4-DQPSK receivers (P25 Phase 2, TETRA) is the follow-up.
 - **P25 Phase 2 4-state ½-rate trellis FEC opt-in over the MAC
   PDU.** Second heavy-FEC PR. `phase2.SetTrellisMode(TrellisOn)`
   switches the `ControlChannel.Process` adapter from "read 72
