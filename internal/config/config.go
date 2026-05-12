@@ -223,10 +223,21 @@ type SystemConfig struct {
 	// no outer RS verification; matches historical decoder
 	// behaviour) or "on" / "true" / "1" (verify RS syndromes per
 	// TIA-102.BAAA-A §5.9; drop MAC PDUs whose syndromes are
-	// non-zero before parsing). The per-burst block interleaver
-	// schedule defined in TIA-102.BBAC remains a follow-up.
-	// Ignored for non-P25-Phase-2 protocols.
+	// non-zero before parsing). Ignored for non-P25-Phase-2
+	// protocols.
 	P25Phase2RSMode string `yaml:"p25_phase2_rs_mode"`
+	// P25Phase2ScramblerMode enables the PN44 descrambling layer
+	// per TIA-102.BBAC-1 §7.2.5 on top of the trellis-decoded MAC
+	// PDU. Recognised values: "" / "off" / "false" / "0" (the
+	// default — no PN44 descrambling; matches historical decoder
+	// behaviour and synthesized-fixture expectations) or "on" /
+	// "true" / "1" (XOR the trellis-decoded 144-bit MAC PDU with
+	// the leading 144 bits of the PN44 sequence). The scrambler
+	// seed is derived from (WACN, SystemID, Color Code = NAC) per
+	// spec equation (5); the zero-seed edge case maps to (2^44 - 1).
+	// Full superframe-aware per-burst offset tracking is a
+	// follow-up. Ignored for non-P25-Phase-2 protocols.
+	P25Phase2ScramblerMode string `yaml:"p25_phase2_scrambler_mode"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner

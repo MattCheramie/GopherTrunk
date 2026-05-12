@@ -39,9 +39,10 @@ type SystemDTO struct {
 	TETRAChannelCoding   string `json:"tetra_channel_coding,omitempty"`
 	LTRFCSMode           string `json:"ltr_fcs_mode,omitempty"`
 	LTRManchesterMode    string `json:"ltr_manchester_mode,omitempty"`
-	P25Phase2TrellisMode string `json:"p25_phase2_trellis_mode,omitempty"`
-	P25Phase2RSMode      string `json:"p25_phase2_rs_mode,omitempty"`
-	NXDNViterbiMode      string `json:"nxdn_viterbi_mode,omitempty"`
+	P25Phase2TrellisMode   string `json:"p25_phase2_trellis_mode,omitempty"`
+	P25Phase2RSMode        string `json:"p25_phase2_rs_mode,omitempty"`
+	P25Phase2ScramblerMode string `json:"p25_phase2_scrambler_mode,omitempty"`
+	NXDNViterbiMode        string `json:"nxdn_viterbi_mode,omitempty"`
 	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
 	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
 	MotorolaBCHMode      string `json:"motorola_bch_mode,omitempty"`
@@ -61,9 +62,10 @@ func systemToDTO(s trunking.System) SystemDTO {
 		TETRAChannelCoding:   s.TETRAChannelCoding,
 		LTRFCSMode:           s.LTRFCSMode,
 		LTRManchesterMode:    s.LTRManchesterMode,
-		P25Phase2TrellisMode: s.P25Phase2TrellisMode,
-		P25Phase2RSMode:      s.P25Phase2RSMode,
-		NXDNViterbiMode:      s.NXDNViterbiMode,
+		P25Phase2TrellisMode:   s.P25Phase2TrellisMode,
+		P25Phase2RSMode:        s.P25Phase2RSMode,
+		P25Phase2ScramblerMode: s.P25Phase2ScramblerMode,
+		NXDNViterbiMode:        s.NXDNViterbiMode,
 		EDACSBCHMode:         s.EDACSBCHMode,
 		MPT1327BCHMode:       s.MPT1327BCHMode,
 		MotorolaBCHMode:      s.MotorolaBCHMode,

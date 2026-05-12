@@ -54,6 +54,8 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	c.mu.Lock()
 	mode := c.trellisMode
 	rsMode := c.rsMode
+	scramblerMode := c.scramblerMode
+	scramblerSeed := c.scramblerSeed
 	c.mu.Unlock()
 	frameLen := macPDUDibits
 	if mode == TrellisOn {
@@ -69,7 +71,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			p.macDibits = append(p.macDibits, d)
 			p.remaining--
 			if p.remaining == 0 {
-				c.tryIngestMACPDU(p.macDibits, mode, rsMode)
+				c.tryIngestMACPDU(p.macDibits, mode, rsMode, scramblerMode, scramblerSeed)
 				p.macDibits = p.macDibits[:0]
 			}
 		}
@@ -93,11 +95,20 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 //     dibits + 1 finisher transition. DecodeP25Trellis recovers
 //     the 72 information dibits.
 //
-// When rsMode is RSOn the recovered 18-byte (144-bit) MAC PDU is
+// When scramblerMode is ScramblerOn the recovered 144 info bits
+// are XORed with the leading 144 bits of the PN44 sequence derived
+// from scramblerSeed per TIA-102.BBAC-1 §7.2.5 before RS check or
+// MAC parse runs. (Full superframe-aware offset tracking is a
+// follow-up; the current shim starts the sequence at offset 0 on
+// every burst, which round-trips synthesized-and-scrambled
+// fixtures but does not yet decode live captures whose bursts land
+// at arbitrary offsets in the 4320-bit superframe sequence.)
+//
+// When rsMode is RSOn the (post-descramble) 18-byte MAC PDU is
 // re-grouped into 24 hex symbols and verified against the
 // RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9. PDUs whose
 // syndromes are non-zero are dropped silently.
-func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode) {
+func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode, scramblerMode ScramblerMode, scramblerSeed uint64) {
 	var infoDibits []uint8
 	switch mode {
 	case TrellisOn:
@@ -116,6 +127,9 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 		infoDibits = macDibits
 	}
 	bits := framing.DibitsToBits(infoDibits)
+	if scramblerMode == ScramblerOn {
+		framing.NewPN44Scrambler(scramblerSeed).Apply(bits)
+	}
 	info := framing.PackBitsMSB(bits)
 	if len(info) < 18 {
 		return

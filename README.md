@@ -83,19 +83,28 @@ The remaining gaps:
     interleaver/puncture detail-level matching against captured
     MMDVMHost transmissions is the calibration step that lands
     next.
-  - **P25 Phase 2 outer Reed-Solomon (now shipping) + per-burst
-    block interleaver (pending TIA-102.BBAC).** The Trellis
-    decoder (`SetTrellisMode(TrellisOn)`) handles the inner
-    4-state ½-rate code. The outer RS(24, 16, 9) layer over
-    GF(2^6) (TIA-102.BAAA-A §5.9, reused by Phase 2 on top of
-    the trellis-decoded MAC PDU) now ships through
-    `SetRSMode(RSOn)` — when enabled, MAC PDUs whose RS
-    syndromes are non-zero are dropped at the framing layer
-    before parsing. The per-burst block interleaver schedule
-    defined in TIA-102.BBAC (MAC Layer) remains a documented
-    follow-up; the spec text was not available at
-    implementation time and a real-air capture is needed to
-    validate the schedule against on-air transmissions.
+  - **P25 Phase 2 FEC chain (trellis + outer RS + PN44
+    scrambler, all shipping).** The full TIA-102 chain wraps the
+    MAC PDU in three layers, each opt-in via a per-system flag:
+    - The inner 4-state ½-rate trellis decoder
+      (`SetTrellisMode(TrellisOn)`) handles the on-wire FEC.
+    - The outer RS(24, 16, 9) over GF(2^6) per TIA-102.BAAA-A
+      §5.9 (`SetRSMode(RSOn)`) drops MAC PDUs whose syndromes
+      are non-zero.
+    - The PN44 LFSR scrambler per TIA-102.BBAC-1 §7.2.5
+      (`SetScramblerMode(ScramblerOn)`) descrambles the trellis-
+      decoded info bits with the (WACN, SystemID, NAC)-derived
+      seed (`SetScramblerSeed`).
+
+    The remaining follow-up is full superframe-aware per-burst
+    offset tracking — the spec scrambling sequence restarts at
+    the start of each 360 ms superframe and each slot lands at
+    a known offset (Figure 7-5). The shipped descrambler runs
+    starting at offset 0 on every burst, which is correct for
+    synthesized fixtures whose bursts always start at offset 0
+    and is a known limitation against on-air traffic. Live
+    captures with arbitrary slot landing need the superframe
+    tracker that lands together with NSB-message ingestion.
   - **MPT 1327 inter-codeword interleaver.** BCH(64,48,2) ships
     per-codeword; the inter-codeword bit-interleaver across
     5-codeword CCDB groups still needs spec implementation work
@@ -2054,7 +2063,7 @@ the daemon.
 | --- | --- | --- | --- |
 | TETRA | `tetra_colour_code` (uint32, low 30 bits — required for non-BSCH), `tetra_channel` (`"sch/hd"` / `"sch/f"` / `"sch/hu"` / `"bsch"` / `"aach"`, default `sch/hd`), `tetra_channel_coding` (`""` / `"on"` / `"off"`) | Full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain (descramble + deinterleave + depuncture + Viterbi + CRC-16 verify + tail strip) per burst. `tetra_colour_code` of 0 is only valid for BSCH; non-BSCH channels need the per-cell colour code or descrambling produces garbage (the connector warn-logs this case). | `tetra_channel_coding: off` falls back to the legacy 48-dibit raw-PDU path. CRC will fail on live captures; only useful for pre-stripped fixtures. |
 | LTR | `ltr_fcs_mode` (`""` / `"on"` / `"off"`), `ltr_manchester_mode` (`""` / `"on"` / `"soft"` / `"strict"` / `"off"` / `"nrz"`) | `fcs: on` — CRC-7 FCS check against sdrtrunk's CRCLTR.java layout. `manchester: soft` — majority-decode each pair (matches the dominant on-air encoding for sub-audible LTR signaling). | `fcs: off` skips the CRC check (synthesized fixtures whose FCS trailer isn't populated). `manchester: off` / `nrz` treats the stream as raw NRZ (synthesized NRZ fixtures). |
-| P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"on"` / `"off"`), `p25_phase2_rs_mode` (`""` / `"on"` / `"off"`) | `trellis: on` — 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). `rs: off` — the outer RS(24, 16, 9) layer (TIA-102.BAAA-A §5.9, reused for Phase 2) is shipped but defaults off because the per-burst block interleaver schedule from TIA-102.BBAC is still pending. | `trellis: off` — legacy 72-dibit raw-MAC-PDU path for pre-stripped fixtures. `rs: on` — verify RS(24, 16, 9) syndromes on the trellis-decoded MAC PDU; PDUs whose syndromes are non-zero are dropped before parsing. |
+| P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"on"` / `"off"`), `p25_phase2_rs_mode` (`""` / `"on"` / `"off"`), `p25_phase2_scrambler_mode` (`""` / `"on"` / `"off"`) | `trellis: on` — 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). `rs: off` — outer RS(24, 16, 9) verification per TIA-102.BAAA-A §5.9 defaults off; flip on to drop MAC PDUs with non-zero syndromes. `scrambler: off` — PN44 descrambler per TIA-102.BBAC-1 §7.2.5 defaults off; flip on to XOR the trellis-decoded 144-bit MAC PDU with the leading bits of the (WACN, SystemID, NAC)-seeded PN44 sequence. Full superframe-offset tracking is a follow-up. | `trellis: off` — legacy 72-dibit raw-MAC-PDU path for pre-stripped fixtures. `rs: on` / `scrambler: on` — opt in to the outer FEC layers (see the on-default description for the verify/descramble semantics). |
 | NXDN | `nxdn_viterbi_mode` (`""` / `"spec"` / `"on"` / `"off"`) | `spec` — full NXDN-TS-1-A rev 1.3 §4.5.1.1 outbound CAC chain (150 dibits → deinterleave 25×12 → depuncture 50/350 → K=5 Viterbi → 16-bit CRC verify → 155 info bits). | `on` — intermediate 92-dibit K=5 Viterbi path for older MMDVMHost / DSDcc fixtures. `off` — legacy 44-dibit raw-CAC path for pre-stripped fixtures. |
 | EDACS | `edacs_bch_mode` (`""` / `"on"` / `"off"`) | BCH(40, 28, 2) with single/double-bit correction over the 40-bit on-wire CCW; the effective CCW carries 28 info bits (Command + Status + Address + high LCN bits), the remaining bits become BCH parity. | Falls back to the legacy pre-stripped 40-bit CCW; payload struct's LCN bit 0 + Aux fields are treated as data instead of parity. |
 | MPT 1327 | `mpt1327_bch_mode` (`""` / `"on"` / `"off"`) | BCH(63, 38) decode over the 64-bit on-wire codeword. | Falls back to the legacy 38-bit pre-stripped codeword. |

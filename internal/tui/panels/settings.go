@@ -104,12 +104,13 @@ func (p *SettingsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cm
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
 		h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s",
+			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s",
 				sys.Name, sys.Protocol,
 				sys.TETRAColourCode, sys.TETRAChannel,
 				sys.TETRAChannelCoding,
 				sys.LTRFCSMode, sys.LTRManchesterMode,
 				sys.P25Phase2TrellisMode, sys.P25Phase2RSMode,
+				sys.P25Phase2ScramblerMode,
 				sys.NXDNViterbiMode,
 				sys.EDACSBCHMode)
 		})
@@ -352,6 +353,7 @@ func fecSummary(s client.SystemDTO) string {
 	case "p25-phase2":
 		parts = append(parts, "trellis: "+orDefault(s.P25Phase2TrellisMode, "on"))
 		parts = append(parts, "rs: "+orDefault(s.P25Phase2RSMode, "off"))
+		parts = append(parts, "scrambler: "+orDefault(s.P25Phase2ScramblerMode, "off"))
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
 	case "edacs":

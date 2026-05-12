@@ -41,9 +41,10 @@ type SystemDTO struct {
 	TETRAChannelCoding   string `json:"tetra_channel_coding,omitempty"`
 	LTRFCSMode           string `json:"ltr_fcs_mode,omitempty"`
 	LTRManchesterMode    string `json:"ltr_manchester_mode,omitempty"`
-	P25Phase2TrellisMode string `json:"p25_phase2_trellis_mode,omitempty"`
-	P25Phase2RSMode      string `json:"p25_phase2_rs_mode,omitempty"`
-	NXDNViterbiMode      string `json:"nxdn_viterbi_mode,omitempty"`
+	P25Phase2TrellisMode   string `json:"p25_phase2_trellis_mode,omitempty"`
+	P25Phase2RSMode        string `json:"p25_phase2_rs_mode,omitempty"`
+	P25Phase2ScramblerMode string `json:"p25_phase2_scrambler_mode,omitempty"`
+	NXDNViterbiMode        string `json:"nxdn_viterbi_mode,omitempty"`
 	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
 	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
 	MotorolaBCHMode      string `json:"motorola_bch_mode,omitempty"`

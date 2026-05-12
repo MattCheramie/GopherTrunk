@@ -29,9 +29,9 @@ import (
 // parseGain converts a config.DeviceConfig.Gain value to a tenths-
 // of-dB integer suitable for sdr.Device.SetGain. Accepts:
 //
-//   "auto" / "AUTO" / ""        →  -1 (automatic)
-//   "49.6" or "49,6"            →  496
-//   "496"                       →  496
+//	"auto" / "AUTO" / ""        →  -1 (automatic)
+//	"49.6" or "49,6"            →  496
+//	"496"                       →  496
 //
 // Returns ok=false on any other shape so the caller can warn and
 // move on without crashing the daemon.
@@ -119,23 +119,24 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			return nil, fmt.Errorf("daemon: %w", err)
 		}
 		s := trunking.System{
-			Name:                 sys.Name,
-			Protocol:             proto,
-			ControlChannels:      sys.ControlChannels,
-			TETRAColourCode:      sys.TETRAColourCode,
-			TETRAChannel:         sys.TETRAChannel,
-			TETRAChannelCoding:   sys.TETRAChannelCoding,
-			TETRAClockMode:       sys.TETRAClockMode,
-			LTRFCSMode:           sys.LTRFCSMode,
-			LTRManchesterMode:    sys.LTRManchesterMode,
-			P25Phase2TrellisMode: sys.P25Phase2TrellisMode,
-			P25Phase2RSMode:      sys.P25Phase2RSMode,
-			P25Phase2ClockMode:   sys.P25Phase2ClockMode,
-			NXDNViterbiMode:      sys.NXDNViterbiMode,
-			EDACSBCHMode:         sys.EDACSBCHMode,
-			MPT1327BCHMode:       sys.MPT1327BCHMode,
-			MotorolaBCHMode:      sys.MotorolaBCHMode,
-			DStarFECMode:         sys.DStarFECMode,
+			Name:                   sys.Name,
+			Protocol:               proto,
+			ControlChannels:        sys.ControlChannels,
+			TETRAColourCode:        sys.TETRAColourCode,
+			TETRAChannel:           sys.TETRAChannel,
+			TETRAChannelCoding:     sys.TETRAChannelCoding,
+			TETRAClockMode:         sys.TETRAClockMode,
+			LTRFCSMode:             sys.LTRFCSMode,
+			LTRManchesterMode:      sys.LTRManchesterMode,
+			P25Phase2TrellisMode:   sys.P25Phase2TrellisMode,
+			P25Phase2RSMode:        sys.P25Phase2RSMode,
+			P25Phase2ScramblerMode: sys.P25Phase2ScramblerMode,
+			P25Phase2ClockMode:     sys.P25Phase2ClockMode,
+			NXDNViterbiMode:        sys.NXDNViterbiMode,
+			EDACSBCHMode:           sys.EDACSBCHMode,
+			MPT1327BCHMode:         sys.MPT1327BCHMode,
+			MotorolaBCHMode:        sys.MotorolaBCHMode,
+			DStarFECMode:           sys.DStarFECMode,
 		}
 		if err := s.Validate(); err != nil {
 			return nil, fmt.Errorf("daemon: system %q: %w", sys.Name, err)
