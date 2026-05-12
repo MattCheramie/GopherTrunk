@@ -79,6 +79,7 @@ type Daemon struct {
 	composer   *composer.Composer
 	player     *player.Player
 	toneout    *toneout.Detector
+	audioPub   *api.AudioPublisher
 	db         *storage.DB
 	callLog    *storage.CallLog
 	retention  *storage.Retention
@@ -245,11 +246,22 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 	}
 	d.player = pl
 
+	// Audio publisher — fans decoded PCM out to gRPC StreamAudio
+	// subscribers. Constructed unconditionally so the gRPC server
+	// can register the RPC; if no composer is wired downstream
+	// the publisher just sits idle (no producers, no consumers
+	// matter). Run is spawned by Daemon.Run.
+	audioPub, err := api.NewAudioPublisher(d.bus, log)
+	if err != nil {
+		return nil, fmt.Errorf("daemon: audio publisher: %w", err)
+	}
+	d.audioPub = audioPub
+
 	// Composer is wired when we have a Voice device pool to source IQ
 	// from + a recorder to feed PCM into. Without an SDR pool there's
 	// nothing to demod, and without a recorder PCM has no destination.
 	if d.pool != nil && d.recorder != nil {
-		// Fan PCM to recorder + tone-out (if configured) + live player.
+		// Fan PCM to recorder + tone-out (if configured) + live player + gRPC publisher.
 		sinks := []composer.PCMSink{d.recorder}
 		if d.toneout != nil {
 			sinks = append(sinks, d.toneout)
@@ -257,6 +269,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		if d.player != nil {
 			sinks = append(sinks, playerSink{d.player})
 		}
+		sinks = append(sinks, d.audioPub)
 		var sink composer.PCMSink = d.recorder
 		if len(sinks) > 1 {
 			sink = fanoutSink(sinks)
@@ -499,6 +512,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			Systems:    d.systems,
 			Talkgroups: d.talkgroups,
 			Engine:     d.engine,
+			Audio:      d.audioPub,
 			Log:        log,
 		})
 		if err != nil {
@@ -543,6 +557,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.composer != nil {
 		d.spawn(ctx, "composer", func(ctx context.Context) error {
 			return d.composer.Run(ctx)
+		})
+	}
+	if d.audioPub != nil {
+		d.spawn(ctx, "audio-publisher", func(ctx context.Context) error {
+			return d.audioPub.Run(ctx)
 		})
 	}
 	if d.metrics != nil {
@@ -599,6 +618,9 @@ func (d *Daemon) Close() {
 		}
 		if d.composer != nil {
 			_ = d.composer.Close()
+		}
+		if d.audioPub != nil {
+			_ = d.audioPub.Close()
 		}
 		if d.player != nil {
 			_ = d.player.Close()

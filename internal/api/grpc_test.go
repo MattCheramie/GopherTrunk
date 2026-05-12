@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 
 	apiv1 "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -25,6 +28,7 @@ func mkGRPC(t *testing.T, opts GRPCServerOptions) (*grpc.ClientConn, func()) {
 		Systems:    opts.Systems,
 		Talkgroups: opts.Talkgroups,
 		Engine:     opts.Engine,
+		Audio:      opts.Audio,
 		Log:        opts.Log,
 	})
 	if err != nil {
@@ -129,7 +133,13 @@ func TestGRPCActiveCalls(t *testing.T) {
 	}
 }
 
-func TestGRPCAudioStreamUnimplemented(t *testing.T) {
+// TestGRPCAudioStreamUnavailable verifies the server reports
+// Unavailable when no AudioPublisher is wired (degraded daemon path —
+// composer disabled, audio off, etc.). Older code returned
+// Unimplemented; we now ship a real publisher when one is supplied,
+// so an absent publisher means "audio temporarily unavailable"
+// rather than "RPC not implemented".
+func TestGRPCAudioStreamUnavailable(t *testing.T) {
 	conn, teardown := mkGRPC(t, GRPCServerOptions{})
 	defer teardown()
 
@@ -141,7 +151,75 @@ func TestGRPCAudioStreamUnimplemented(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = stream.Recv()
-	if status.Code(err) != codes.Unimplemented {
-		t.Errorf("expected Unimplemented, got %v", err)
+	if status.Code(err) != codes.Unavailable {
+		t.Errorf("expected Unavailable, got %v", err)
+	}
+}
+
+// TestGRPCAudioStreamPublishes verifies the end-to-end gRPC streaming
+// path: construct a server with an AudioPublisher, publish a
+// CallStart on the bus, drive WritePCM, and confirm the client
+// reads an AudioFrame off the stream.
+func TestGRPCAudioStreamPublishes(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubCtx, pubCancel := context.WithCancel(context.Background())
+	pubDone := make(chan struct{})
+	go func() { _ = pub.Run(pubCtx); close(pubDone) }()
+	defer func() {
+		pubCancel()
+		<-pubDone
+		_ = pub.Close()
+	}()
+
+	conn, teardown := mkGRPC(t, GRPCServerOptions{Audio: pub})
+	defer teardown()
+
+	cli := apiv1.NewAudioServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream, err := cli.StreamAudio(ctx, &apiv1.StreamAudioRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish a CallStart so the publisher knows which Grant
+	// VOICE-1 belongs to.
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant:        trunking.Grant{System: "Alpha", GroupID: 42},
+		DeviceSerial: "VOICE-1",
+	}})
+
+	// Spin until the publisher reports a tracked grant + at least
+	// one subscriber (the gRPC stream registers asynchronously
+	// after the client call).
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		st := pub.Stats()
+		if st.TrackedGrants >= 1 && st.Subscribers >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	_ = pub.WritePCM("VOICE-1", []int16{1, -2, 3, -4})
+
+	frame, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv: %v", err)
+	}
+	if frame.GetGrant().GroupId != 42 {
+		t.Errorf("frame.grant.group_id = %d, want 42", frame.GetGrant().GroupId)
+	}
+	if frame.DeviceSerial != "VOICE-1" {
+		t.Errorf("frame.device_serial = %q, want VOICE-1", frame.DeviceSerial)
+	}
+	pcm := frame.GetPcm()
+	if pcm == nil || len(pcm.Samples) != 8 {
+		t.Errorf("PCM body missing or wrong length: %+v", pcm)
 	}
 }

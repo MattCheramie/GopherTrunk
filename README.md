@@ -188,6 +188,22 @@ The remaining gaps:
   also emits a 10 ms linear fade-out tail on call end
   (`internal/voice/composer`) so the audio sink doesn't hear an
   abrupt squelch-close click on the host speakers.
+- **gRPC `AudioService.StreamAudio` live audio fan-out.** The
+  daemon now ships an `api.AudioPublisher` that fans decoded PCM
+  from the per-call composer to any number of gRPC subscribers.
+  `StreamAudio` (defined in `proto/audio.proto`) reads
+  `device_serials` + `talkgroup_ids` as filter allow-lists; the
+  default empty filter forwards every call. Each subscriber gets a
+  64-frame bounded channel — slow clients drop frames on full
+  rather than back-pressuring the composer (per-subscriber and
+  publisher-wide drop counters surface via the publisher's
+  `Stats()` method). The publisher tracks per-device `Grant`
+  context off the events bus so every frame carries talkgroup +
+  system metadata. Disabled-cleanly: when the daemon runs without a
+  composer (no SDR pool, audio off, etc.) the RPC returns
+  `Unavailable` so a remote client gets a clean error instead of a
+  hanging stream. Try it locally with
+  `grpcurl -plaintext -d '{}' 127.0.0.1:50051 gophertrunk.v1.AudioService/StreamAudio`.
 - **Manual VFO tune from the TUI / API.** The Scanner panel now binds
   `f` to a bubbles/textinput overlay: type a frequency in MHz, Enter,
   and the conventional FM scanner appends a runtime "manual" channel

@@ -29,6 +29,7 @@ type GRPCServer struct {
 	systems    []trunking.System
 	talkgroups *trunking.TalkgroupDB
 	engine     EngineSnapshot
+	audio      *AudioPublisher
 	log        *slog.Logger
 
 	srv *grpc.Server
@@ -40,7 +41,12 @@ type GRPCServerOptions struct {
 	Systems    []trunking.System
 	Talkgroups *trunking.TalkgroupDB
 	Engine     EngineSnapshot
-	Log        *slog.Logger
+	// Audio is the optional AudioPublisher backing StreamAudio.
+	// When nil the RPC still registers (so clients don't churn
+	// at the wire-protocol layer if audio is configured off) but
+	// returns Unavailable rather than streaming frames.
+	Audio *AudioPublisher
+	Log   *slog.Logger
 }
 
 // NewGRPCServer constructs the server but does not bind a listener.
@@ -60,6 +66,7 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		systems:    append([]trunking.System(nil), opts.Systems...),
 		talkgroups: opts.Talkgroups,
 		engine:     opts.Engine,
+		audio:      opts.Audio,
 		log:        log,
 	}
 	g.srv = grpc.NewServer()
@@ -140,13 +147,46 @@ func (g *GRPCServer) ListActiveCalls(_ context.Context, _ *apiv1.ListActiveCalls
 	return &apiv1.ListActiveCallsResponse{Calls: out}, nil
 }
 
-// --- AudioService (stub) ---
-// StreamAudio is registered so clients can call it without churn at the
-// wire-protocol layer once the demod pipeline composer (deferred) starts
-// producing PCM. For now it returns Unimplemented so downstream code
-// fails cleanly rather than silently hanging.
-func (g *GRPCServer) StreamAudio(_ *apiv1.StreamAudioRequest, _ apiv1.AudioService_StreamAudioServer) error {
-	return status.Error(codes.Unimplemented, "audio streaming lands with the demod pipeline composer")
+// --- AudioService ---
+// StreamAudio fans decoded PCM from the per-call composer to the
+// gRPC client. The request's device_serials / talkgroup_ids filters
+// act as allow-lists; empty matches everything. PCM samples are
+// 16-bit little-endian mono at the recorder's configured rate
+// (typically 8 kHz).
+//
+// Returns:
+//
+//	codes.Unavailable when the daemon was started without an audio
+//	  publisher (no composer wired, audio off, or older
+//	  configuration).
+//	nil on graceful client cancel.
+//	any send-side error from the gRPC stream — typically the
+//	  caller hung up.
+func (g *GRPCServer) StreamAudio(req *apiv1.StreamAudioRequest, srv apiv1.AudioService_StreamAudioServer) error {
+	if g.audio == nil {
+		return status.Error(codes.Unavailable, "audio publisher not wired (no composer or audio off)")
+	}
+	filter := AudioSubFilter{
+		DeviceSerials: append([]string(nil), req.GetDeviceSerials()...),
+		TalkgroupIDs:  append([]uint32(nil), req.GetTalkgroupIds()...),
+		IncludeRaw:    req.GetIncludeRaw(),
+	}
+	sub := g.audio.Subscribe(filter)
+	defer g.audio.Unsubscribe(sub)
+	ctx := srv.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case frame, ok := <-sub.ch:
+			if !ok {
+				return nil
+			}
+			if err := srv.Send(frame); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // --- helpers: trunking/* → *apiv1.* ---
