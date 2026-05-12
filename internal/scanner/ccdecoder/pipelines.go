@@ -84,6 +84,31 @@ type PipelineFactory func(PipelineOptions) (ProtocolPipeline, error)
 // Adding `Process(stream, baseIdx)` adapters that buffer +
 // detect sync + frame + dispatch into the existing parsers is a
 // follow-up.
+// SetTestFactory replaces the registered pipeline factory for a
+// single protocol and returns a restore function the caller is
+// expected to defer. INTENDED FOR INTEGRATION TESTS ONLY — the
+// in-package unit tests substitute factories by mutating the
+// unexported map directly. Out-of-package integration tests
+// (e.g. cmd/gophertrunk's end-to-end "lights up live trunked
+// reception" check) need an exported hook so they can pump
+// known-good dibit streams through the daemon's real ccdecoder
+// without owning a working C4FM modulator.
+//
+// Production code MUST NOT call this — the factory map is
+// initialised once at package load and the daemon assumes it
+// stays stable for the rest of the process lifetime.
+func SetTestFactory(protocol trunking.Protocol, f PipelineFactory) (restore func()) {
+	saved, hadSaved := factories[protocol]
+	factories[protocol] = f
+	return func() {
+		if hadSaved {
+			factories[protocol] = saved
+		} else {
+			delete(factories, protocol)
+		}
+	}
+}
+
 var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolP25:       newP25Phase1Pipeline,
 	trunking.ProtocolP25Phase2: newP25Phase2Pipeline,
