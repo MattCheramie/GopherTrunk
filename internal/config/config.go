@@ -100,6 +100,23 @@ type ConvChannelConfig struct {
 	SquelchDbFS float64 `yaml:"squelch_dbfs"` // default -50
 	HangtimeMs  int     `yaml:"hangtime_ms"`  // default 1500
 	Priority    int     `yaml:"priority"`     // 1..10, 0 = unset
+	// Tone is the optional CTCSS / DCS sub-audible squelch gate.
+	// Zero / "none" disables tone gating (default).
+	Tone ConvToneConfig `yaml:"tone"`
+}
+
+// ConvToneConfig configures CTCSS / DCS gating for one conventional
+// channel.
+type ConvToneConfig struct {
+	// Mode is "ctcss", "dcs", or "" / "none".
+	Mode string `yaml:"mode"`
+	// CTCSSHz is the target CTCSS frequency (50..300 Hz).
+	// Required when Mode is "ctcss".
+	CTCSSHz float64 `yaml:"ctcss_hz"`
+	// DCSCode is the 3-digit octal DCS code. Required when
+	// Mode is "dcs". Detector wiring is a tracked follow-up; the
+	// config is accepted now so deployments can pre-stage YAML.
+	DCSCode string `yaml:"dcs_code"`
 }
 
 type LogConfig struct {
@@ -377,6 +394,26 @@ func (c Config) Validate() error {
 		case "", "fm", "nfm":
 		default:
 			return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
+		}
+		switch ch.Tone.Mode {
+		case "", "none":
+		case "ctcss":
+			if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
+				return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
+					i, ch.Tone.CTCSSHz)
+			}
+		case "dcs":
+			if len(ch.Tone.DCSCode) != 3 {
+				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
+			}
+			for _, r := range ch.Tone.DCSCode {
+				if r < '0' || r > '7' {
+					return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
+						i, ch.Tone.DCSCode)
+				}
+			}
+		default:
+			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
 		}
 	}
 	return nil

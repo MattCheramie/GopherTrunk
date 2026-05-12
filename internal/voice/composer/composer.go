@@ -504,9 +504,36 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 
+	// lastSample tracks the most recent PCM sample written so we
+	// can ramp it down to zero when the chain ends. Without this
+	// the audio sink hears an abrupt cut from carrier-active audio
+	// to silence — a 'click' that's the analog-scanner equivalent
+	// of a squelch tail. A 10 ms linear fade-out covers most call
+	// ends inaudibly.
+	var lastSample int16
+	emitTail := func() {
+		if c.sink == nil {
+			return
+		}
+		// 10 ms at the PCM rate; integer division is fine here
+		// because the cadence is forgiving.
+		n := int(c.pcmHz / 100)
+		if n < 8 {
+			n = 8
+		}
+		tail := make([]int16, n)
+		startF := float32(lastSample)
+		for i := range n {
+			ramp := 1.0 - float32(i)/float32(n)
+			tail[i] = int16(startF * ramp)
+		}
+		_ = c.sink.WritePCM(serial, tail)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			emitTail()
 			return
 		case <-touchTicker.C:
 			if c.engine != nil {
@@ -514,6 +541,7 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 		case iq, ok := <-iqCh:
 			if !ok {
+				emitTail()
 				return
 			}
 			filtered := lpf.Process(nil, iq)
@@ -547,6 +575,7 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			}
 			if c.sink != nil && len(pcm) > 0 {
 				_ = c.sink.WritePCM(serial, pcm)
+				lastSample = pcm[len(pcm)-1]
 			}
 		}
 	}

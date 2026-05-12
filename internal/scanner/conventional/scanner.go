@@ -3,6 +3,7 @@ package conventional
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -30,6 +31,31 @@ type Channel struct {
 	// engine's preemption logic respects it relative to other
 	// conv-scanner channels.
 	Priority int
+	// Tone is the optional CTCSS / DCS gate. When set, the
+	// scanner only declares "carrier present" while BOTH the
+	// IQ-power squelch is open AND the configured sub-audible
+	// tone is detected. Zero value (Mode="" / "none") disables
+	// tone gating and the scanner behaves identically to its
+	// pre-tone version. DCS mode parses + validates but the
+	// detector is a tracked follow-up — see ctcss.go.
+	Tone ToneConfig
+}
+
+// ToneConfig configures CTCSS / DCS squelch gating for one channel.
+// Mode selects the family; the relevant field for the chosen mode
+// must be populated.
+type ToneConfig struct {
+	// Mode is "ctcss", "dcs", or "" / "none" (default). Unknown
+	// values are rejected at validation time.
+	Mode string
+	// CTCSSHz is the target CTCSS frequency (50–300 Hz). Required
+	// when Mode is "ctcss". Standard EIA codes range from 67.0 to
+	// 254.1 Hz; 38 are widely deployed.
+	CTCSSHz float64
+	// DCSCode is the three-digit octal DCS code (e.g. "023",
+	// "754"). Required when Mode is "dcs". Detector wiring is
+	// deferred — see Workstream D follow-up.
+	DCSCode string
 }
 
 // Tuner is the subset of sdr.Device the scanner needs.
@@ -78,6 +104,12 @@ type Options struct {
 	// SCANNING before advancing — even if squelch never opens. Default
 	// 100 ms; let signals settle after retune.
 	MinDwellPerChannel time.Duration
+	// SampleRateHz is the IQ sample rate the IQ source delivers
+	// (typically 2.4e6 for RTL-SDR). Required when any configured
+	// channel has Tone gating — without it the CTCSS detector
+	// can't pick the right Goertzel bin. Zero is fine when no
+	// tone gating is in play; the field is otherwise inert.
+	SampleRateHz float64
 	// Now is injectable for tests; defaults to time.Now.
 	Now func() time.Time
 }
@@ -116,6 +148,10 @@ type Scanner struct {
 
 	mu          sync.RWMutex
 	channels    []Channel // mutable; opts.Channels is the seed, AddTemporaryChannel grows it
+	// detectors parallels channels: detectors[i] is non-nil iff
+	// channels[i] has Tone gating configured. Built at New() and
+	// kept in sync by AddTemporaryChannel / RemoveTemporaryChannel.
+	detectors   []*CTCSSDetector
 	cursor      int
 	state       State
 	held        bool
@@ -180,17 +216,87 @@ func New(opts Options) (*Scanner, error) {
 		if ch.Mode == "" {
 			ch.Mode = "fm"
 		}
+		if err := validateTone(ch.Tone); err != nil {
+			return nil, fmt.Errorf("conventional: channel %q: %w", ch.Label, err)
+		}
+	}
+	// Bump min dwell when any channel has tone gating so the
+	// Goertzel block has time to fire. 250 ms covers a SampleHz/5
+	// block plus margin; without this the scanner would advance
+	// before the detector ever updated and tone-gated channels
+	// would never lock.
+	if hasToneGate(channels) && opts.MinDwellPerChannel < 250*time.Millisecond {
+		opts.MinDwellPerChannel = 250 * time.Millisecond
+	}
+	detectors := make([]*CTCSSDetector, len(channels))
+	for i, ch := range channels {
+		if d := buildDetector(ch.Tone, opts.SampleRateHz); d != nil {
+			detectors[i] = d
+		}
 	}
 	return &Scanner{
 		opts:             opts,
 		log:              opts.Log,
 		channels:         channels,
+		detectors:        detectors,
 		state:            StateScanning,
 		dwellIndex:       -1,
 		forcedDwellIndex: -1,
 		lastBreakAt:      make([]time.Time, len(channels)),
 		tempChannels:     make(map[int]bool),
 	}, nil
+}
+
+// validateTone rejects malformed tone configs at construction time.
+// "" / "none" disables gating; "ctcss" requires CTCSSHz in the
+// practical band; "dcs" requires a 3-digit octal code (detector
+// not yet implemented — config is accepted so deployments can
+// pre-stage their YAML).
+func validateTone(t ToneConfig) error {
+	switch t.Mode {
+	case "", "none":
+		return nil
+	case "ctcss":
+		if t.CTCSSHz < 50 || t.CTCSSHz > 300 {
+			return fmt.Errorf("tone.ctcss_hz %v outside 50..300 Hz", t.CTCSSHz)
+		}
+		return nil
+	case "dcs":
+		if len(t.DCSCode) != 3 {
+			return fmt.Errorf("tone.dcs_code must be a 3-digit octal code")
+		}
+		for _, r := range t.DCSCode {
+			if r < '0' || r > '7' {
+				return fmt.Errorf("tone.dcs_code %q must be octal digits 0..7", t.DCSCode)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("tone.mode %q must be ctcss|dcs|none", t.Mode)
+	}
+}
+
+func hasToneGate(channels []Channel) bool {
+	for _, ch := range channels {
+		if ch.Tone.Mode == "ctcss" || ch.Tone.Mode == "dcs" {
+			return true
+		}
+	}
+	return false
+}
+
+// buildDetector returns a CTCSS detector when tone gating is
+// configured for the channel and the sample rate is set. Returns
+// nil for ungated channels, DCS channels (detector deferred), or
+// when SampleHz is zero. The scanner treats nil as "no gating".
+func buildDetector(t ToneConfig, sampleHz float64) *CTCSSDetector {
+	if t.Mode != "ctcss" || sampleHz <= 0 {
+		return nil
+	}
+	return NewCTCSSDetector(CTCSSConfig{
+		SampleHz: sampleHz,
+		TargetHz: t.CTCSSHz,
+	})
 }
 
 // Run blocks until ctx cancels. Tunes, measures squelch, hands off
@@ -231,6 +337,14 @@ func (s *Scanner) Run(ctx context.Context) error {
 			continue
 		}
 
+		// Reset the per-channel CTCSS detector (if any) so leftover
+		// state from a previous dwell on this index doesn't bias
+		// the new window. The detector itself is owned by the
+		// scanner so we don't need to thread it through.
+		if det := s.detectorFor(idx); det != nil {
+			det.Reset()
+		}
+
 		// Wait for either squelch to break, the min-dwell timer to
 		// expire (advance), or ctx cancel.
 		broken := s.scanWindow(ctx, idx, ch, stream)
@@ -246,10 +360,13 @@ func (s *Scanner) Run(ctx context.Context) error {
 }
 
 // scanWindow returns true when squelch opens within MinDwellPerChannel,
-// false when the timer expires (advance to next channel).
+// false when the timer expires (advance to next channel). When the
+// channel has tone gating configured the detector must also be
+// matched — power alone isn't enough to declare "right system".
 func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64) bool {
 	deadline := time.NewTimer(s.opts.MinDwellPerChannel)
 	defer deadline.Stop()
+	det := s.detectorFor(idx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -260,7 +377,14 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			if !ok {
 				return false
 			}
-			if PowerDbFS(iq) >= ch.SquelchDbFS {
+			powerOK := PowerDbFS(iq) >= ch.SquelchDbFS
+			if !powerOK {
+				continue
+			}
+			if det == nil {
+				return true
+			}
+			if det.Process(iq) {
 				return true
 			}
 		}
@@ -302,6 +426,13 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// FM-demod chain here — that's a follow-up. For now the
 	// recorder gets a silent WAV that documents the carrier-active
 	// window, which is enough to validate the integration.
+	//
+	// When the channel has tone gating, an "active" sample requires
+	// BOTH carrier present AND tone matched. Hangtime starts as soon
+	// as either condition goes false — so a transmitter dropping
+	// the CTCSS tone (e.g. switching to a different talkgroup on
+	// the same repeater) hangs up just like a true carrier drop.
+	det := s.detectorFor(idx)
 	belowSince := time.Time{}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -318,7 +449,11 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 				return
 			}
 			power := PowerDbFS(iq)
-			if power >= ch.SquelchDbFS {
+			active := power >= ch.SquelchDbFS
+			if active && det != nil {
+				active = det.Process(iq)
+			}
+			if active {
 				belowSince = time.Time{}
 			} else if belowSince.IsZero() {
 				belowSince = s.opts.Now()
@@ -363,6 +498,19 @@ func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 	idx := s.cursor
 	s.cursor = (s.cursor + 1) % n
 	return idx, s.channels[idx], true
+}
+
+// detectorFor returns the CTCSS detector for the given channel
+// index, or nil if the channel has no tone gating configured. The
+// returned detector is owned by the scanner; callers must not
+// retain it across Run iterations.
+func (s *Scanner) detectorFor(idx int) *CTCSSDetector {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if idx < 0 || idx >= len(s.detectors) {
+		return nil
+	}
+	return s.detectors[idx]
 }
 
 func (s *Scanner) sleep(ctx context.Context, d time.Duration) {
@@ -420,8 +568,10 @@ func (s *Scanner) DwellOn(idx int) bool {
 // AddTemporaryChannel appends a runtime "VFO" channel and forces
 // the scanner to dwell on it next round. Returns the new index.
 // Defaults are applied identically to the config-seeded path
-// (SquelchDbFS=-50, Hangtime=1500ms, Mode=fm). Safe to call from
-// any goroutine.
+// (SquelchDbFS=-50, Hangtime=1500ms, Mode=fm). Tone config is
+// validated and may produce an out-of-range detector failure
+// that's silently ignored — the manual-tune path is best-effort
+// for the v1 surface. Safe to call from any goroutine.
 func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	if ch.SquelchDbFS == 0 {
 		ch.SquelchDbFS = -50
@@ -432,10 +582,19 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	if ch.Mode == "" {
 		ch.Mode = "fm"
 	}
+	if err := validateTone(ch.Tone); err != nil {
+		// Bad tone config on a temp channel: log and strip the
+		// tone rather than reject the whole tune. The manual
+		// tune surface is meant to be forgiving.
+		s.log.Warn("conv: dropping invalid tone config on temp channel", "err", err)
+		ch.Tone = ToneConfig{}
+	}
+	det := buildDetector(ch.Tone, s.opts.SampleRateHz)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := len(s.channels)
 	s.channels = append(s.channels, ch)
+	s.detectors = append(s.detectors, det)
 	s.lastBreakAt = append(s.lastBreakAt, time.Time{})
 	s.tempChannels[idx] = true
 	s.forcedDwellIndex = idx
@@ -477,6 +636,7 @@ func (s *Scanner) RemoveTemporaryChannel(idx int) bool {
 		return false
 	}
 	s.channels = append(s.channels[:idx], s.channels[idx+1:]...)
+	s.detectors = append(s.detectors[:idx], s.detectors[idx+1:]...)
 	s.lastBreakAt = append(s.lastBreakAt[:idx], s.lastBreakAt[idx+1:]...)
 	// Rebuild the tempChannels set with shifted indices.
 	rebuilt := make(map[int]bool, len(s.tempChannels))

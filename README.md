@@ -156,6 +156,33 @@ The remaining gaps:
   unit tests; calibration against a captured YSF transmission's
   exact interleaver / puncture schedule lands once a real-air capture
   is available.
+- **CTCSS sub-audible squelch + tail-fade on call end.** The
+  conventional FM scanner now optionally gates squelch on a CTCSS
+  tone in addition to IQ power, so adjacent-system traffic on the
+  same frequency doesn't trigger a false dwell. Per-channel YAML:
+  ```yaml
+  conventional:
+    - label: "Sheriff Repeater"
+      frequency_hz: 155895000
+      tone:
+        mode: ctcss
+        ctcss_hz: 100.0
+  ```
+  The detector is FM-discriminator → single-pole IIR low-pass at
+  500 Hz → Goertzel at the configured tone, reusing the existing
+  `internal/voice/toneout` Goertzel primitive. Hangtime triggers on
+  either condition (carrier OR tone) going false so a transmitter
+  dropping CTCSS hangs up just like a true carrier drop. The
+  Goertzel block is ~200 ms (5 Hz resolution) which is comfortable
+  for distinguishing the 38-code EIA list; the scanner auto-bumps
+  the per-channel min dwell to 250 ms whenever any channel has a
+  tone gate. DCS (Digital-Coded Squelch) parses + validates in YAML
+  so deployments can pre-stage configs, but the bit-level Golay
+  decoder is a tracked follow-up — DCS-gated channels run with
+  power-only squelch until then. The composer now also emits a
+  10 ms linear fade-out tail on call end (`internal/voice/composer`)
+  so the audio sink doesn't hear an abrupt squelch-close click on
+  the host speakers.
 - **Manual VFO tune from the TUI / API.** The Scanner panel now binds
   `f` to a bubbles/textinput overlay: type a frequency in MHz, Enter,
   and the conventional FM scanner appends a runtime "manual" channel

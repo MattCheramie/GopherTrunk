@@ -91,6 +91,15 @@ scanner:
   #     squelch_dbfs: -48
   #     hangtime_ms: 1500
   #     priority: 4
+  #     # Optional CTCSS / DCS sub-audible squelch gate. With tone
+  #     # gating set the scanner only opens when both the carrier is
+  #     # present AND the configured tone is detected, so adjacent-
+  #     # system traffic on the same frequency doesn't trigger a
+  #     # false dwell. Omit / set mode: none to disable.
+  #     tone:
+  #       mode: ctcss        # ctcss | dcs | none
+  #       ctcss_hz: 100.0    # required for ctcss
+  #       # dcs_code: "023"  # required for dcs (detector landing in a follow-up)
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;
 # WAV recording is unaffected and continues whether audio is on or off.
