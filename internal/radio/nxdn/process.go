@@ -1,6 +1,8 @@
 package nxdn
 
 import (
+	"encoding/binary"
+
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
@@ -37,13 +39,26 @@ const postSyncDibits = 84
 // The 92 CAC-encoded dibits = 184 wire bits = (88 CAC info + 4 tail
 // bits) × 2 — the K=5 ½-rate convolutional output. The remaining
 // 52 dibits of the 144-dibit Info field carry per-protocol
-// puncture / interleave content the public references don't fully
-// document; those layers are documented follow-ups.
+// puncture / interleave content this simplified path doesn't
+// model; the spec-correct ViterbiSpec path covers them.
 const postSyncDibitsViterbi = 8 + 32 + 92
 
+// postSyncDibitsViterbiSpec is the count of dibits the adapter
+// collects after the 8-dibit FSW match when SetViterbiMode is
+// ViterbiSpec: 8 LICH + 150 CAC = 158 dibits. The 150 CAC dibits =
+// 300 channel bits run through the full NXDN-TS-1-A §4.5.1.1
+// outbound chain (deinterleave 25×12 + depuncture 50/350 + K=5
+// R=½ Viterbi + 16-bit CRC verify + tail strip), recovering the
+// 155-bit info block (8 SR + 144 L3 + 3 Null). The RCCH outbound
+// frame layout is FSW(20) + LICH(16) + CAC(300) + E(24) + Post(24)
+// per §4.6, so the post-CAC 48 bits aren't read here; an upstream
+// PR can extend this if E / Post become useful.
+const postSyncDibitsViterbiSpec = 8 + 150
+
 // cacViterbiInfoBits is the number of source bits the K=5 ½-rate
-// Viterbi decode recovers from the 92 encoded CAC dibits: 88 CAC
-// information bits + 4 zero tail bits to flush the encoder.
+// Viterbi decode recovers from the 92 encoded CAC dibits under
+// ViterbiOn: 88 CAC information bits + 4 zero tail bits to flush
+// the encoder.
 const cacViterbiInfoBits = 92
 
 // Process consumes a window of raw dibits from the NXDN receiver
@@ -69,8 +84,11 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	}
 	p := c.proc
 	frameLen := postSyncDibits
-	if c.viterbiMode == ViterbiOn {
+	switch c.viterbiMode {
+	case ViterbiOn:
 		frameLen = postSyncDibitsViterbi
+	case ViterbiSpec:
+		frameLen = postSyncDibitsViterbiSpec
 	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
@@ -154,8 +172,49 @@ func (c *ControlChannel) tryIngestFrame(frame []uint8) {
 //     of the Info field = 184 wire bits = K=5 ½-rate-encoded
 //     output. ViterbiK5 recovers 92 source bits; the first 88
 //     are the CAC info bits.
+//
+//   - ViterbiSpec: frame is 158 dibits (8 LICH + 150 CAC) per the
+//     §4.6 RCCH outbound layout. Offsets 8..158 are the 150 CAC
+//     dibits = 300 channel bits. DecodeCACChannel runs the
+//     spec's full chain (deinterleave 25×12 + depuncture + K=5
+//     Viterbi + 16-bit CRC verify) and returns 155 info bits. The
+//     8-bit SR header is dropped; the next 88 bits of the L3
+//     payload feed the existing ParseCAC. CRC-fail drops the
+//     frame silently.
 func (c *ControlChannel) extractCACBytes(frame []uint8) ([]byte, bool) {
 	switch c.viterbiMode {
+	case ViterbiSpec:
+		if len(frame) != postSyncDibitsViterbiSpec {
+			return nil, false
+		}
+		channelBits := framing.DibitsToBits(frame[8:postSyncDibitsViterbiSpec])
+		if len(channelBits) != CACChannelBits {
+			return nil, false
+		}
+		info, ok := DecodeCACChannel(channelBits)
+		if !ok {
+			return nil, false
+		}
+		// Layout per §4.5.1.1 step ①: 8 bits SR ‖ 144 bits L3 Data
+		// ‖ 3 Null. The first 8 L3 bits carry the RCCH message
+		// type; the next 64 carry the existing CAC payload. Drop
+		// SR, pack the 72-bit L3 prefix into 9 bytes, and synthesize
+		// the trailing 16-bit inner CRC that the legacy ParseCAC
+		// path expects — the spec's outer CRC has already validated
+		// the whole 155-bit info block, so the inner-CRC sentinel
+		// is a no-op here. Use binary.BigEndian to keep the layout
+		// identical to AssembleCAC.
+		if len(info) < 8+72 {
+			return nil, false
+		}
+		l3 := framing.PackBitsMSB(info[8 : 8+72])
+		if len(l3) < 9 {
+			return nil, false
+		}
+		block := make([]byte, 11)
+		copy(block, l3[:9])
+		binary.BigEndian.PutUint16(block[9:11], framing.CRCCCITT(block[:9]))
+		return block, true
 	case ViterbiOn:
 		if len(frame) != postSyncDibitsViterbi {
 			return nil, false

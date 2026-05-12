@@ -199,6 +199,51 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **NXDN CAC spec-correct interleave + puncture per
+  NXDN-TS-1-A rev 1.3 §4.5.1.1.** Closes the "blocked on
+  spec data" gap on the previous round — the user uploaded
+  `NXDN-TS-1-A_v0103.pdf` and the full outbound CAC channel
+  coding chain landed end-to-end.
+  - `internal/radio/nxdn/cac_channel.go` adds `EncodeCACChannel`
+    + `DecodeCACChannel` implementing the spec's six-stage
+    chain: 155 info bits (8 SR + 144 L3 Data + 3 Null) ‖
+    16-bit CRC-CCITT (poly `0x1021`, init `0xFFFF`, no XOR,
+    evaluated bit-level since 155 isn't byte-aligned) ‖
+    4 zero tail bits → K=5 R=½ convolutional encode (350
+    bits) → puncture matrix `1111111 / 1011101` drops 50
+    pre-puncture positions (300 bits) → 25×12 block
+    interleaver (write rows, read columns) → 300 channel
+    bits = 150 dibits on air.
+  - The puncture positions are derived from the spec's
+    matrix at package-init time so a future spec revision
+    can patch the matrix in one place. An `init()` invariant
+    panics if the matrix, encoder length, or channel-bit
+    arithmetic ever drift apart.
+  - `ViterbiMode` gains a new `ViterbiSpec` value; the
+    Process adapter under `ViterbiSpec` slices 158 post-sync
+    dibits (8 LICH + 150 CAC) per the §4.6 RCCH outbound
+    layout (FSW + LICH + CAC + E + Post = 384 bits / 192
+    dibits), runs the full decode chain, and forwards the
+    recovered L3 prefix into the existing `ParseCAC`. The
+    spec's outer CRC has already validated the 155-bit info
+    block, so the inner-CRC sentinel `ParseCAC` enforces is
+    re-synthesized locally over the recovered L3 prefix.
+  - `ParseViterbiMode` recognises `"spec"` (case-insensitive,
+    whitespace tolerated) so the existing `nxdn_viterbi_mode`
+    YAML key + `ccdecoder` connector + TUI Settings panel
+    all light up without further plumbing.
+  - The legacy `ViterbiOn` path (8 LICH + 32 SACCH + 92
+    encoded CAC dibits) is preserved for back-compat with
+    the older MMDVMHost / DSDcc fixtures; existing tests
+    keep passing.
+  Tests cover the framing primitives (round-trip across four
+  seeds, single-bit error correction, heavy-corruption CRC
+  catch, wrong-size rejection, puncture-matrix algebra,
+  interleaver bijection, byte-aligned CRC sanity against the
+  existing `framing.CRCCCITT`) plus the Process integration
+  (spec-encoded SITE_INFO recovers `KindCCLocked` with the
+  expected SiteID / SystemID; heavily-corrupted spec frames
+  drop silently).
 - **TUI Settings panel + README FEC opt-ins reference.** The
   11th TUI panel (`Tab` past Scanner) renders each configured
   system with a one-line summary of its FEC opt-in state across
@@ -259,13 +304,11 @@ to its own package and lands independently.
   than failing the retune.
 
   With this PR, the only connector wiring that remains is
-  protocol-by-protocol on-air interleaver / puncture
-  layers for protocols whose public specs don't fully
-  document them (NXDN CAC interleave / puncture, EDACS
-  CCW interleaved RS-derived FEC layer above the BCH).
-  The plain "lights up live trunked reception" path is now
-  unblocked end-to-end across every protocol whose CC
-  state machine + FEC chain has a public reference.
+  protocol-by-protocol on-air interleaver / puncture layers
+  for protocols whose public specs don't fully document
+  them. NXDN CAC interleave / puncture landed as a separate
+  follow-up (see the NXDN CAC entry above); EDACS CCW
+  interleaved RS-derived FEC remains the open item.
 - **`ccdecoder` connector threads LTR FCS + Manchester modes
   from per-system config.** Same pattern as the TETRA wiring in
   PR #141 — operators set `ltr_fcs_mode` + `ltr_manchester_mode`
@@ -1231,7 +1274,7 @@ runtime mutation is a future PR. To change a mode, edit
 | TETRA | `tetra_colour_code` (uint32, low 30 bits), `tetra_channel` (`"sch/hd"` / `"sch/f"` / `"sch/hu"` / `"bsch"` / `"aach"`, default `sch/hd`) | Legacy 48-dibit raw-PDU path. CRC fails on live captures. | Full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain (descramble + deinterleave + depuncture + Viterbi + CRC-16 verify + tail strip) per burst. Non-zero `tetra_colour_code` flips it on. |
 | LTR | `ltr_fcs_mode` (`""` / `"off"` / `"on"`), `ltr_manchester_mode` (`""` / `"off"` / `"nrz"` / `"strict"` / `"soft"`) | NRZ Status bits, no FCS verification. Matches synthesized-fixture path. | CRC-7 FCS check against sdrtrunk's CRCLTR.java layout (`on`) and/or Manchester decode of sub-audible signaling (`soft` = majority decode, `strict` = require mid-bit transition). Live sub-audible captures typically need `manchester: soft` + `fcs: on`. |
 | P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"off"` / `"on"`) | Legacy 72-dibit raw-MAC-PDU path. | 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). |
-| NXDN | `nxdn_viterbi_mode` (`""` / `"off"` / `"on"`) | Legacy 44-dibit raw-CAC path. | K=5 ½-rate Viterbi over the CAC region (92 dibits → 88 info bits + 4 tail zeros per MMDVMHost's `NXDNConvolution`). NXDN CAC interleave / puncture remains a follow-up (not in the public spec). |
+| NXDN | `nxdn_viterbi_mode` (`""` / `"off"` / `"on"` / `"spec"`) | Legacy 44-dibit raw-CAC path. | `on`: simplified K=5 ½-rate Viterbi over the CAC region (92 dibits → 88 info bits + 4 tail zeros — matches the older MMDVMHost / DSDcc fixtures). `spec`: full NXDN-TS-1-A rev 1.3 §4.5.1.1 outbound chain (150 dibits = 300 channel bits → deinterleave 25×12 → depuncture 50/350 → K=5 Viterbi → 16-bit CRC verify → 155 info bits = 8 SR + 144 L3 + 3 Null). Use `spec` for live captures; `on` for back-compat with the older synthesized fixtures. |
 | EDACS | `edacs_bch_mode` (`""` / `"off"` / `"on"`) | Legacy pre-stripped 40-bit CCW; payload struct's LCN bit 0 + Aux fields are data. | BCH(40, 28, 2) with single/double-bit correction over the 40-bit on-wire CCW; under `on` the effective CCW carries 28 info bits (Command + Status + Address + high LCN bits), the remaining bits become BCH parity. |
 | MPT 1327 | `mpt1327_bch_mode` (`""` / `"off"` / `"on"`) | Legacy 38-bit pre-stripped codeword. | BCH(63, 38) decode over the 64-bit on-wire codeword. |
 

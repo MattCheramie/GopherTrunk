@@ -57,18 +57,28 @@ type ControlChannel struct {
 //
 //   - ViterbiOn: the adapter collects the first 92 dibits of the
 //     Info field (= 184 wire bits), runs them through the K=5
-//     ½-rate Viterbi primitive in internal/radio/framing (the
-//     same code-polynomial pair used by MMDVMHost / DSDcc /
-//     op25), and parses the 88 leading info bits as a CAC. This
-//     matches the bare-bones NXDN CAC FEC layer (88 CAC bits +
-//     4 tail zeros → K=5 R=½). Inner per-protocol interleaver +
-//     puncture (spec-shape-dependent and not in the public
-//     references) are still deferred.
+//     ½-rate Viterbi primitive in internal/radio/framing, and
+//     parses the 88 leading info bits as a CAC. This matches a
+//     bare-bones NXDN CAC FEC layer (88 CAC bits + 4 tail zeros
+//     → K=5 R=½), as used by MMDVMHost / DSDcc test fixtures.
+//     Inner per-protocol interleaver + puncture are still
+//     deferred.
+//
+//   - ViterbiSpec: the adapter slices the full 150-dibit CAC slot
+//     (= 300 channel bits) and runs the spec-correct chain per
+//     NXDN-TS-1-A rev 1.3 §4.5.1.1 (CAC outbound): deinterleave
+//     25×12 → depuncture 50/350 → K=5 R=½ Viterbi → 16-bit CRC
+//     verify → strip tail. Recovers the 155-bit info block
+//     (8 SR + 144 L3 Data + 3 Null); the first 88 bits of the L3
+//     are then run through ParseCAC for compatibility with the
+//     existing RCCH parser. This is the path that lights up on
+//     live captures.
 type ViterbiMode uint8
 
 const (
 	ViterbiOff ViterbiMode = iota
 	ViterbiOn
+	ViterbiSpec
 )
 
 // SetViterbiMode toggles the K=5 ½-rate Viterbi FEC layer on the
@@ -89,16 +99,22 @@ func (c *ControlChannel) ViterbiMode() ViterbiMode {
 
 // ParseViterbiMode maps a config / user-facing string into a
 // ViterbiMode. Recognised values (case-insensitive): "" / "off" /
-// "false" / "0" → ViterbiOff (the legacy 44-dibit raw-CAC path);
-// "on" / "true" / "1" → ViterbiOn (92 dibits run through the K=5
-// ½-rate Viterbi decoder). Unknown strings return ViterbiOff
-// with `ok = false`.
+// "false" / "0" → ViterbiOff (legacy 44-dibit raw-CAC path);
+// "on" / "true" / "1" → ViterbiOn (92 dibits via the simplified
+// K=5 Viterbi path used by older MMDVMHost / DSDcc fixtures);
+// "spec" → ViterbiSpec (150 dibits via the full NXDN-TS-1-A
+// §4.5.1.1 outbound CAC chain — deinterleave + depuncture + K=5
+// Viterbi + 16-bit CRC + tail strip — the path that works on
+// live captures). Unknown strings return ViterbiOff with
+// `ok = false`.
 func ParseViterbiMode(s string) (ViterbiMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "off", "false", "0":
 		return ViterbiOff, true
 	case "on", "true", "1":
 		return ViterbiOn, true
+	case "spec":
+		return ViterbiSpec, true
 	default:
 		return ViterbiOff, false
 	}
