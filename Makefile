@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 lint tidy vet clean run proto
 
 all: build
 
@@ -78,6 +78,15 @@ integration-cc-motorola:
 # exercise the π/4-DQPSK modulator primitive shipped alongside this PR.
 integration-cc-tetra:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesTETRA ./cmd/gophertrunk/...
+
+# integration-cc-p25p2 boots the daemon with synthesized H-DQPSK IQ
+# (6000 sym/s, α = 0.20, π/8 rotation) carrying a 20-dibit outbound sync
+# + 146-dibit trellis-coded MAC PDU and asserts the production
+# newP25Phase2Pipeline + p25_phase2_trellis_mode + supervisor + API +
+# metrics chain recovers the lock. Reuses the π/4-DQPSK modulator from
+# PR #154.
+integration-cc-p25p2:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesP25Phase2 ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

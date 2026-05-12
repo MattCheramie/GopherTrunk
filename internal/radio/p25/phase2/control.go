@@ -186,6 +186,19 @@ type LockState struct {
 	FrequencyHz uint32
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises P25 Phase 2 lock events alongside the protocol-neutral
+// P25 Phase 1 / DMR / NXDN / TETRA payloads. Phase 2's MAC PDU
+// header doesn't carry a NAC equivalent (the NAC lives one layer
+// up in the Phase 2 superframe), so LockedNAC returns 0; the
+// supervisor uses it only as a cache key on retune, so 0 is
+// harmless. Without these methods, the supervisor's type-assertion
+// on cc.locked silently drops the event and /api/v1/scanner never
+// surfaces state=locked.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return 0 }
+
 func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode) {
 	if c.bus == nil {
 		return
