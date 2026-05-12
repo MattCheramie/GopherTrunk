@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs lint tidy vet clean run proto
 
 all: build
 
@@ -53,6 +53,15 @@ integration-cc-dmr:
 # chain recovers the lock.
 integration-cc-dpmr:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesDPMR ./cmd/gophertrunk/...
+
+# integration-cc-edacs boots the daemon with synthesized 9600-baud 2-FSK
+# GFSK IQ (BT = 0.3, ±2.4 kHz deviation) carrying a 24-bit outbound sync
+# + 40-bit BCH(40, 28, 2)-encoded CmdSystemID CCW and asserts the
+# production newEDACSPipeline + edacs_bch_mode: on + supervisor + API
+# + metrics chain recovers the lock. First non-C4FM protocol integration
+# test; exercises the new GFSKModulator primitive in internal/dsp/demod.
+integration-cc-edacs:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesEDACS ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)
