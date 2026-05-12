@@ -199,6 +199,47 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Sub-audible NRZ modulator + `make integration-cc-ltr`.**
+  **Closes the "lights up live trunked reception" punch list
+  — every trunked protocol gophertrunk decodes now has an
+  end-to-end integration test running synthesized IQ through
+  the production daemon + receiver chain.**
+  - `internal/dsp/demod/subaudible_nrz_modulator.go` ships the
+    TX counterpart to the LTR receiver's FM-demod →
+    narrow-LPF → MM clock recovery → zero-threshold slicer
+    chain: bit → bipolar symbol (±audioAmp) → FM modulator
+    (phase advances by `audioAmp` per sample) → IQ. The audio
+    amplitude is tuned so the FM demod output sits comfortably
+    inside the receiver's LPF passband (below 300 Hz) at the
+    9600× lower symbol rate vs the other protocols.
+  - `ltr.LockState` now implements `trunking.LockedPayload`.
+    **Eighth and final protocol with the same latent-bug class
+    fixed** (NXDN / dPMR / EDACS / Motorola / TETRA / P25 Phase
+    2 / MPT 1327 / LTR). LTR doesn't have a P25-style NAC; the
+    `(Area, Repeater)` pair gets packed into the NAC slot as
+    `(Area << 8) | Repeater`.
+  - The integration test synthesizes 80 back-to-back idle
+    Status words (no gap — LTR's 41-bit Status word stream is
+    continuous) at 300 baud, modulates via the new sub-audible
+    primitive, and asserts the daemon recovers the lock with
+    the expected Area + Repeater. Warmup is all-zero (the
+    parser's sliding 41-bit window would otherwise commit to
+    a spurious Sync=1 alignment from alternating-pattern
+    warmup).
+  - Round-trip modulator tests cover the chain end-to-end
+    against the FM discriminator + Kaiser LPF (100 random
+    bits, every bit recovered exactly past the LPF group-
+    delay warmup), phase continuity across chunked Modulate
+    calls, constant envelope, and Reset semantics. 30-run
+    flakiness check clean.
+
+  Punch-list status: **all 9 protocols + 4 modulator
+  primitives shipped** — P25 P1 / NXDN / DMR Tier III / dPMR
+  Mode 3 / EDACS / Motorola Type II / TETRA / P25 Phase 2 /
+  MPT 1327 / LTR. The C4FM modulator (PR #148) drove the
+  4-FSK family; GFSK (PR #152) drove EDACS + Motorola;
+  π/4-DQPSK (PR #154) drove TETRA + P25 P2; FFSK (PR #156)
+  drove MPT 1327; sub-audible NRZ (this PR) drove LTR.
 - **FFSK modulator + `make integration-cc-mpt1327`.**
   First integration test to exercise audio-band FSK
   modulation. Lights up MPT 1327 end-to-end through the
@@ -1576,6 +1617,7 @@ make integration-cc-motorola  # Motorola Type II "lights up" — GFSK + BCH(64, 
 make integration-cc-tetra     # TETRA TMO "lights up" — π/4-DQPSK + full §8.3.1 chain
 make integration-cc-p25p2     # P25 Phase 2 "lights up" — H-DQPSK + trellis MAC PDU
 make integration-cc-mpt1327   # MPT 1327 "lights up" — audio-band FFSK + BCH(63, 38)
+make integration-cc-ltr       # LTR "lights up" — sub-audible NRZ at 300 baud
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

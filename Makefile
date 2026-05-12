@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr lint tidy vet clean run proto
 
 all: build
 
@@ -96,6 +96,15 @@ integration-cc-p25p2:
 # exercise the FFSK modulator primitive shipped alongside this PR.
 integration-cc-mpt1327:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesMPT1327 ./cmd/gophertrunk/...
+
+# integration-cc-ltr boots the daemon with synthesized sub-audible NRZ IQ
+# (300 baud below ~300 Hz, FM-modulated) carrying back-to-back LTR Status
+# words and asserts the production newLTRPipeline + supervisor + API +
+# metrics chain recovers the lock. Last item on the "lights up live
+# trunked reception" punch list — closes per-protocol coverage of the
+# trunked-radio families gophertrunk decodes.
+integration-cc-ltr:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesLTR ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

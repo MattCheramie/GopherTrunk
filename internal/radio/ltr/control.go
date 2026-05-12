@@ -20,6 +20,17 @@ type LockState struct {
 	Repeater    uint8 // home repeater number from the first valid status word
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises LTR lock events alongside the protocol-neutral P25 /
+// DMR / NXDN / TETRA payloads. LTR doesn't have a P25-style NAC;
+// (Area, Repeater) is the closest per-site identifier — packed
+// into the NAC slot as (Area << 8) | Repeater. Without these
+// methods, the supervisor's type-assertion on cc.locked silently
+// drops the event and /api/v1/scanner never surfaces state=locked.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return uint16(s.Area)<<8 | uint16(s.Repeater) }
+
 // ControlChannel ingests Status words from a single LTR repeater,
 // emits cc.locked the first time a valid status arrives on a
 // freshly-tuned device, and republishes any active call as a
