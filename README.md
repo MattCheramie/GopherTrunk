@@ -199,6 +199,37 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc-nxdn` — NXDN end-to-end lights-up
+  check.** First sibling target of `integration-cc` covering
+  a second protocol end-to-end. Boots the daemon with a mock
+  SDR replaying a fully-synthesized NXDN-TS-1-A §4.6 RCCH
+  outbound frame (FSW + LICH + 150-dibit CAC carrying a
+  SITE_INFO message through the §4.5.1.1 spec FEC chain
+  shipped in PR #144), and asserts the production
+  `newNXDNPipeline` + `nxdn_viterbi_mode: spec` recover the
+  lock and surface it through the bus + supervisor + API +
+  metrics.
+  - `internal/radio/nxdn/receiver` gains the same
+    `Options.DeviationHz` calibration knob the P25 Phase 1
+    receiver picked up in PR #148. The ccdecoder's
+    `newNXDNPipeline` factory passes the spec 1800 Hz value
+    so live captures slice correctly out of the box.
+  - `nxdn.LockState` now implements `trunking.LockedPayload`
+    (`LockedFrequencyHz` + `LockedNAC` methods). NXDN
+    doesn't have a P25-style NAC; the SiteID is the closest
+    per-cell identifier and is plumbed into the NAC slot.
+    Without this, cc.locked events fired correctly but the
+    cchunt supervisor's state machine silently dropped them
+    on the type-assertion check and `/api/v1/scanner` never
+    surfaced `state=locked` for NXDN systems.
+  - The C4FM modulator from PR #148 carries straight over —
+    NXDN's 9600-baud 4-FSK / α = 0.20 / 1800 Hz deviation
+    matches P25 Phase 1's modulation params exactly. The
+    only differences are framing (192-dibit / 80 ms frames,
+    8-dibit FSW vs P25's 24-dibit FSW, LICH + CAC vs NID +
+    TSBK) and the channel-coding chain above the demod —
+    both of which were already wired up by earlier PRs.
+  20-run flakiness check clean.
 - **C4FM modulator + RRC pulse shaping + receiver-side
   slicer calibration.** Closes the last stub in the
   `make integration-cc` chain. The IQ → dibit demodulation
@@ -1305,10 +1336,11 @@ and DVB-driver blacklisting on Linux.
 ### Build, test, run
 
 ```sh
-make build           # produces ./bin/gophertrunk
-make test            # go test -race ./...
-make integration     # boots the wired daemon end-to-end (no SDR needed)
-make integration-cc  # focused "lights up live trunked reception" check
+make build                 # produces ./bin/gophertrunk
+make test                  # go test -race ./...
+make integration           # boots the wired daemon end-to-end (no SDR needed)
+make integration-cc        # P25 Phase 1 "lights up live trunked reception"
+make integration-cc-nxdn   # NXDN "lights up" — synthesizes spec FEC chain
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

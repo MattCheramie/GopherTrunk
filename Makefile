@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn lint tidy vet clean run proto
 
 all: build
 
@@ -30,6 +30,14 @@ integration:
 # this one isolates the CC-decoder critical path.
 integration-cc:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesP25Phase1 ./cmd/gophertrunk/...
+
+# integration-cc-nxdn is the NXDN-specific sibling of integration-cc. Boots
+# the daemon with synthesized C4FM IQ replaying a SITE_INFO RCCH message
+# through the NXDN-TS-1-A §4.5.1.1 spec FEC chain (`nxdn_viterbi_mode: spec`)
+# and asserts the production newNXDNPipeline + the supervisor + API + metrics
+# all recover the lock.
+integration-cc-nxdn:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesNXDN ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

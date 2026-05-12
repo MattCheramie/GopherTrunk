@@ -383,6 +383,11 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	}
 	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
+		// NXDN spec peak deviation per the Common Air Interface
+		// (same value P25 Phase 1 uses). Calibrates the slicer
+		// thresholds against the FM-discriminator output level so
+		// live captures slice correctly out of the box.
+		DeviationHz: 1800.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},

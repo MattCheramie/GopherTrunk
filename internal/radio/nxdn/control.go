@@ -16,6 +16,19 @@ type LockState struct {
 	SystemID    uint16
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state
+// machine recognises NXDN lock events alongside the protocol-
+// neutral P25 / DMR / TETRA payloads it already handles.
+//
+// NXDN doesn't have a P25-style NAC; the SiteID is the closest
+// per-cell identifier (it scopes the lock to a specific repeater
+// + site combination), so it's plumbed into the "NAC" slot.
+// Downstream consumers that key off LockedNAC see a stable
+// per-site value across re-locks.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return s.SiteID }
+
 // ControlChannel ingests parsed NXDN frames whose LICH indicates RCCH
 // (control channel), reads the CAC payload, and emits cc.locked when it
 // observes a SITE_INFO or CCH announcement message that confirms the

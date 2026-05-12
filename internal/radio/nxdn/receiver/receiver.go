@@ -22,6 +22,8 @@
 package receiver
 
 import (
+	"math"
+
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
@@ -57,6 +59,15 @@ type Options struct {
 	Alpha float64
 	// ClockGain is the Mueller-Müller loop gain. <= 0 uses 0.05.
 	ClockGain float64
+	// DeviationHz is the peak frequency deviation of the C4FM
+	// signal at symbol ±3 (1800 Hz on NXDN per the Common Air
+	// Interface spec — same value P25 Phase 1 uses). Used to
+	// calibrate the slicer thresholds against the
+	// FM-discriminator output level (slicer scale =
+	// 2π · DeviationHz / SampleRateHz). <= 0 falls back to the
+	// legacy slicerScale = 1.0 — back-compat with fixtures that
+	// pre-scale their FM levels.
+	DeviationHz float64
 }
 
 // Receiver is the composed IQ → dibit pipeline.
@@ -99,7 +110,15 @@ func New(opts Options) *Receiver {
 	if gain <= 0 {
 		gain = 0.05
 	}
-	const slicerScale = 1.0
+	// Slicer thresholds: when DeviationHz is set, calibrate
+	// against the physical FM-discriminator level so a real
+	// captured / synthesized signal slices correctly. Without it,
+	// fall back to the legacy "FM-output-already-normalised-to-±1"
+	// thresholds (matches existing fixture tests that pre-scale).
+	slicerScale := 1.0
+	if opts.DeviationHz > 0 {
+		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
+	}
 
 	return &Receiver{
 		fm:        demod.NewFM(),
