@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto
 
 all: build
 
@@ -105,6 +105,28 @@ integration-cc-mpt1327:
 # trunked-radio families gophertrunk decodes.
 integration-cc-ltr:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesLTR ./cmd/gophertrunk/...
+
+# integration-cc-ysf boots the daemon with synthesized 4800-baud C4FM IQ
+# carrying back-to-back YSF FSW-bearing frames and asserts the production
+# newYSFPipeline + supervisor + API + metrics chain recovers the lock.
+# Same C4FM modulator as P25 P1 / NXDN / DMR / dPMR (480-dibit YSF frame
+# layout with FSWPattern at offset 0); closes per-protocol coverage of
+# the trunked-radio families gophertrunk decodes.
+integration-cc-ysf:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesYSF ./cmd/gophertrunk/...
+
+# integration-cc-grant extends the cc.locked path with the full
+# status → IdentifierUpdate → GroupVoiceChannelGrant TSBK chain on
+# the P25 Phase 1 control channel. Uses ccdecoder.SetTestFactory to
+# install a stub pipeline that pumps the synthesized dibit stream
+# directly into a real phase1.ControlChannel (bypassing the
+# Mueller-Müller clock loop, which reliably lands cc.locked but not
+# every subsequent FSW + NID + 98-dibit TSBK trellis window in one
+# streaming pass). Verifies the band-plan dispatch, KindGrant
+# publication with resolved FrequencyHz, scanner state-locked
+# transition, and the metrics handler's grant counter.
+integration-cc-grant:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesP25Phase1GrantChain ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

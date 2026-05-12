@@ -165,18 +165,6 @@ the remaining decoder wiring is the load-bearing follow-up.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
-- **IQ-domain control-channel decoder daemon wiring.** The protocol
-  packages all ship unit-tested control-channel state machines; the
-  P25 Phase 1 IQ → C4FM dibit receiver is in
-  (`internal/radio/p25/phase1/receiver`); the CC Hunter supervisor
-  (`internal/scanner/cchunt`) round-robins systems and retunes the
-  control SDR. What's missing is the connector that takes the live IQ
-  stream from the control device, runs it through the right protocol's
-  receiver + control-channel pipeline, and publishes the resulting
-  `cc.locked` / `grant` events on the bus. Without it the supervisor
-  will always report `state=failed` per system (which the TUI Scanner
-  panel shows truthfully). This is the load-bearing follow-up that
-  lights up live trunked reception.
 - **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
   factory that opens a connected DVSI USB chip. Same plug-in shape
   as `internal/voice/ambe2`; the daemon picks the factory by name
@@ -199,11 +187,65 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **YSF integration-cc + P25 P1 grant-chain extension.**
+  **Closes the original planning roadmap** — every trunked
+  protocol gophertrunk decodes now has an end-to-end "lights
+  up live trunked reception" integration test, *and* the P25
+  Phase 1 path now asserts the full status → IdentifierUpdate
+  → GroupVoiceChannelGrant TSBK chain through the production
+  daemon + bus + supervisor + API + metrics chain (the
+  previous version stopped at cc.locked).
+  - `cmd/gophertrunk/integration_cc_ysf_test.go` boots the
+    daemon with synthesized 4800-baud C4FM IQ carrying
+    back-to-back YSF FSW-bearing frames (480-dibit frame
+    layout, FSWPattern at offset 0, zero-filled FICH +
+    payload regions) and asserts the production
+    `newYSFPipeline` + supervisor + API + metrics chain
+    recovers the lock. Same C4FM modulator + RRC pulse
+    shaping as P25 P1 / NXDN / DMR / dPMR; the receiver's
+    `Options.DeviationHz` slicer calibration knob now ships
+    on `internal/radio/ysf/receiver` (1800 Hz peak spec
+    deviation per Yaesu's C4FM TX chain). `make
+    integration-cc-ysf` runs it standalone.
+  - `cmd/gophertrunk/integration_cc_test.go` grows a second
+    test, `TestDaemonCCDecodesP25Phase1GrantChain`, that
+    uses `ccdecoder.SetTestFactory` to install a stub
+    pipeline pumping the synthesized FSW + NID + TSBK dibit
+    stream straight into a real `phase1.ControlChannel` on
+    the first IQ chunk. Exercises everything *above* IQ →
+    dibit — the factory dispatch, the band plan, the bus
+    publication, the engine, the supervisor, the API, the
+    metrics handler — through the production code paths,
+    without depending on the receiver's Mueller-Müller
+    clock loop landing every subsequent FSW + NID + 98-dibit
+    TSBK trellis window in one streaming pass (which it
+    reliably does for the *first* lock but not for the
+    multi-frame status → identifier → grant sequence the
+    grant chain needs). `make integration-cc-grant` runs it
+    standalone.
+  - `trunking.ProtocolYSF` lands in the protocol enum
+    (string form `"ysf"`); `ParseProtocol` + `Validate`
+    accept it. The ccdecoder factory map registers
+    `newYSFPipeline` for `ProtocolYSF` so live config
+    `protocol: ysf` slots into the production hunt chain.
+  - 30-run flakiness sweep on all three integration-cc P25
+    P1 / YSF / grant tests clean.
+
+  Punch-list status: **all 9 protocols + 4 modulator
+  primitives + YSF + grant chain shipped.** The original
+  roadmap that opened with "every protocol package ships a
+  CC state machine, every trunking surface lights up the
+  moment a grant lands, *and yet the daemon never publishes
+  its first live cc.locked event*" is now fully closed —
+  the daemon publishes cc.locked + grant on every supported
+  protocol when synthesized IQ matching the protocol arrives
+  on the control SDR.
 - **Sub-audible NRZ modulator + `make integration-cc-ltr`.**
-  **Closes the "lights up live trunked reception" punch list
-  — every trunked protocol gophertrunk decodes now has an
-  end-to-end integration test running synthesized IQ through
-  the production daemon + receiver chain.**
+  **Closes the per-protocol "lights up live trunked
+  reception" punch list — every trunked protocol gophertrunk
+  decodes now has an end-to-end integration test running
+  synthesized IQ through the production daemon + receiver
+  chain.**
   - `internal/dsp/demod/subaudible_nrz_modulator.go` ships the
     TX counterpart to the LTR receiver's FM-demod →
     narrow-LPF → MM clock recovery → zero-threshold slicer

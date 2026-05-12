@@ -120,6 +120,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolLTR:       newLTRPipeline,
 	trunking.ProtocolMPT1327:   newMPT1327Pipeline,
 	trunking.ProtocolTETRA:     newTETRAPipeline,
+	trunking.ProtocolYSF:       newYSFPipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -280,11 +281,10 @@ func (p *tetraPipeline) Reset()                  { p.rx.Reset() }
 func (p *tetraPipeline) Close() error            { return nil }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
-// into ysf.ControlChannel.Process. YSF lacks a published
-// trunking.Protocol enum value today (the config layer expects
-// "p25" / "dmr" / "nxdn"); the factory is exposed for direct use
-// by the daemon + tests rather than via the factory map. Once the
-// Protocol enum gains a YSF entry the factory map gains a row.
+// into ysf.ControlChannel.Process. YSF is the System Fusion
+// (Yaesu) C4FM amateur trunked variant — same 4800-baud
+// modulation as P25 P1 / NXDN / DMR / dPMR, with α = 0.20 RRC and
+// the standard 1800 Hz peak deviation.
 func newYSFPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := ysf.New(ysf.Options{
 		Bus:         opts.Bus,
@@ -294,6 +294,10 @@ func newYSFPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	})
 	rx := ysfrx.New(ysfrx.Options{
 		SampleRateHz: opts.SampleRateHz,
+		// YSF spec peak deviation, same calibration knob the
+		// P25 P1 / NXDN / DMR / dPMR receivers picked up so live
+		// captures slice correctly out of the box.
+		DeviationHz: 1800.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},

@@ -21,6 +21,8 @@
 package receiver
 
 import (
+	"math"
+
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
@@ -67,6 +69,14 @@ type Options struct {
 	// which is appropriate for clean signals; raise for noisy /
 	// drifting transmitters.
 	ClockGain float64
+	// DeviationHz is the peak frequency deviation of the C4FM
+	// signal at symbol ±3 (1800 Hz on YSF, same as P25 P1 / NXDN).
+	// Used to calibrate the slicer thresholds against the
+	// FM-discriminator output level (slicer scale = 2π ·
+	// DeviationHz / SampleRateHz). <= 0 falls back to the legacy
+	// slicerScale = 1.0 — back-compat with fixtures that pre-scale
+	// their FM levels.
+	DeviationHz float64
 }
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
@@ -113,12 +123,14 @@ func New(opts Options) *Receiver {
 		gain = 0.05
 	}
 
-	// Slicer scale normalises the FM-discriminator output so ±1 maps
-	// to ±deviation. 1.0 puts the inner thresholds at ±2/3 and the
-	// outer at >2/3, matching the {-3,-1,+1,+3} symbol alphabet after
-	// the discriminator scales the four C4FM levels into a real ramp
-	// around zero.
-	const slicerScale = 1.0
+	// Slicer thresholds: calibrate against the physical FM level
+	// when DeviationHz is set (same fix as the P25 P1 / NXDN /
+	// DMR / dPMR receivers). Legacy fixtures that pre-scale their
+	// FM output to ±1 stay green via the fallback.
+	slicerScale := 1.0
+	if opts.DeviationHz > 0 {
+		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
+	}
 
 	return &Receiver{
 		fm:        demod.NewFM(),
