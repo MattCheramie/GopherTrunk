@@ -278,6 +278,29 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **TUI Revealer / MouseAware: palette + mouse converge on the same
+  row.** Picking a system / talkgroup / device from `Ctrl+P` now
+  jumps to the destination panel and pre-positions the panel's
+  cursor on the matching row before opening the detail modal —
+  follow-up keystrokes (`Enter`, mutation keys) operate on the
+  selection without an extra scroll. A new `panels.Revealer`
+  interface formalises the contract; SystemsPanel (by name),
+  TalkgroupsPanel (by decimal ID), DevicesPanel (by serial), and
+  ScannerPanel (by `sys:<name>` / `conv:<idx>`) implement it.
+  Mouse hit-testing was extended past the tab strip via a sibling
+  `panels.MouseAware` interface: left-clicks on data rows in the
+  three table panels translate the click position to a row index
+  (accounting for the canonical panelFrame chrome offset) and call
+  `SetCursor`. Chrome clicks are ignored; out-of-range clicks
+  clamp to the last row.
+- **Async history refresh off the Update goroutine.** The history
+  panel was the one remaining surface that built its bubbles/table
+  rows inline inside `Update`. The conversion now runs in a
+  `tea.Cmd` and commits via a routed `HistoryRefreshedMsg`; a
+  `pendingAt` guard prevents duplicate dispatch and stale results
+  (a newer snapshot landed mid-flight) are dropped silently. The
+  reducer stays unblocked on row formatting that doesn't need to
+  hold it.
 - **Direct-ioctl ALSA backend (drops the runtime libasound2 dep).**
   Setting `audio.device: ioctl` (or `ioctl:hw:C,D` for a specific
   card / device) on Linux selects a direct-kernel backend that
@@ -1883,6 +1906,7 @@ refresh, automatic reconnect on disconnect:
 | --- | --- |
 | `Tab` / `Shift+Tab` | next / previous panel |
 | `1`–`9`, `0` | jump to Dashboard / Systems / Talkgroups / Active / History / Events / Tones / Metrics / Devices / Scanner |
+| `Ctrl+P` | open fuzzy command palette (panel jumps, system / TG / device drill-ins, audio mutations, retention sweep, scanner hold/resume) |
 | `j` / `k` | move row up / down inside a table |
 | `/` | filter (Talkgroups, Events) |
 | `s` | cycle sort (Talkgroups) |
@@ -1895,6 +1919,18 @@ refresh, automatic reconnect on disconnect:
 | `r` | reload (History) |
 | `?` | toggle help |
 | `q` / `Ctrl+C` | quit |
+
+The tab strip is also clickable, and a left-click on any data row in
+the Systems / Talkgroups / Devices panels moves the cursor onto that
+row — pair it with `Enter` to open the detail card or with a
+mutation key to act on the selection. Picking a system / talkgroup /
+device from the command palette pre-positions the destination panel's
+cursor on the matching row before opening the detail modal, so
+keyboard and mouse paths converge on the same selection.
+
+Settings is a tabbed inspector (`[` / `]` to cycle) covering
+Daemon · Storage · Audio · Recording · Tones · API · Vocoders · SDR
+— every config knob the daemon reads is visible.
 
 For mutation actions (end-call; set talkgroup priority / lockout /
 scan; retention-sweep; tone-detector reset; scanner cockpit
