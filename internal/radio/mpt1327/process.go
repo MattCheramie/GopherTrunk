@@ -25,6 +25,24 @@ const codewordInfoBits = 38
 // recovers the 48-bit info field.
 const codewordWireBits = 64
 
+// cwscBits is the length of the MPT 1327 Codeword Synchronisation
+// Code (CWSC) per the standard: a 16-bit bit pattern transmitted
+// immediately before the first codeword of every message on the
+// control channel. The pattern is `1100010011010111` (= 0xC4D7
+// MSB-first); the adapter scans for it during alignment search
+// so a fixture / capture whose payload doesn't happen to parse
+// as a recognised opcode can still synchronise.
+const cwscBits = 16
+
+// cwscPattern[i] is bit i (MSB-first) of the 16-bit Codeword
+// Synchronisation Code. Indexing bit-by-bit (rather than packing
+// into a uint16) keeps the matcher's hot loop branchless against
+// the byte-slice bit representation the receiver delivers.
+var cwscPattern = [cwscBits]byte{
+	1, 1, 0, 0, 0, 1, 0, 0,
+	1, 1, 0, 1, 0, 1, 1, 1,
+}
+
 // maxConsecBad is how many consecutive recognised-codeword-failed
 // frames the adapter tolerates while aligned before unlocking and
 // re-searching. Long quiet periods + the occasional bit error keep
@@ -35,23 +53,23 @@ const maxConsecBad = 8
 // (the IQ → FFSK bit chain in internal/radio/mpt1327/receiver/) and
 // drives the MPT 1327 state machine.
 //
-// MPT 1327 has no fixed inter-codeword sync pattern — codewords
-// flow back-to-back at 1200 bps. The adapter searches the buffered
-// stream for the first 38-bit window that parses as a recognised
-// Address codeword (Aloha / AhoyChan / GoToChan), commits to that
-// alignment, and follows it forward — unlocking + restarting the
-// search after maxConsecBad consecutive frames whose Type or Kind
-// fail the recognised-codeword check.
+// Alignment is two-stage: the adapter first searches the buffered
+// stream for the 16-bit Codeword Synchronisation Code (CWSC,
+// `1100010011010111`) the standard mandates before every message,
+// and locks immediately when a CWSC match is found. If no CWSC
+// appears (synthesized fixtures often skip it), the adapter falls
+// back to the legacy "first recognised codeword wins" alignment.
+// Either path unlocks + restarts the search after maxConsecBad
+// consecutive frames whose Type or Kind fail the recognised-
+// codeword check.
 //
 // baseIdx is the absolute bit index of bits[0] across the stream
 // lifetime; the adapter doesn't use it directly today.
 //
-// The 64-bit on-air codeword + BCH(63,38) FEC isn't reversed
-// here — the adapter reads 38 info bits straight from the wire.
-// Real on-air signals require the BCH layer (a documented
-// follow-up); until it ships the adapter sync-aligns on noise-
-// free test fixtures but typically fails to lock on captured
-// MPT 1327 traffic.
+// Under BCHOn (the default), the alignment search picks a 64-bit
+// window that passes the BCH(63, 38) check; under BCHOff the
+// window is the pre-stripped 38-bit information field. CWSC
+// detection is mode-independent.
 func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 	if c.proc == nil {
 		c.proc = &processState{}
@@ -69,12 +87,34 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 
 	for {
 		if !p.aligned {
-			// Search forward for a recognised codeword. Under
-			// BCHOff the alignment discriminator is "the 38-bit
-			// window parses as a recognised Address codeword";
-			// under BCHOn it's "the 64-bit window passes the BCH
-			// check + the recovered codeword parses as a
-			// recognised Address codeword".
+			// Try CWSC match first — much more selective than the
+			// parseable-codeword fallback. CWSC + a parseable
+			// following codeword locks us into the message stream
+			// at a known boundary; CWSC + a corrupted following
+			// codeword still locks us but lets the consecBad
+			// counter unlock on the next 8 bad frames.
+			if cwscOff, ok := findCWSC(p.buf, p.off); ok && cwscOff+cwscBits+frameLen <= len(p.buf) {
+				// Lock immediately at the start of the codeword
+				// window that follows CWSC. The first codeword
+				// after CWSC is always an Address codeword per
+				// spec, so even if it doesn't parse as one of the
+				// recognised Kinds, we trust the sync match more
+				// than the parser and just consume forward.
+				p.off = cwscOff + cwscBits
+				if w, ok := c.parseCodeword(p.buf[p.off:p.off+frameLen], mode); ok {
+					c.Ingest(w)
+				}
+				p.aligned = true
+				p.off += frameLen
+				p.consecBad = 0
+				continue
+			}
+			// Fallback: search forward for the first parseable
+			// recognised codeword. Under BCHOff the alignment
+			// discriminator is "the 38-bit window parses as a
+			// recognised Address codeword"; under BCHOn it's "the
+			// 64-bit window passes the BCH check + the recovered
+			// codeword parses as a recognised Address codeword".
 			found := false
 			for ; p.off+frameLen <= len(p.buf); p.off++ {
 				w, ok := c.parseCodeword(p.buf[p.off:p.off+frameLen], mode)
@@ -132,6 +172,36 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 		p.off = 0
 	}
 	return baseIdx + len(bits)
+}
+
+// findCWSC scans buf[from:] for the 16-bit CWSC pattern and returns
+// the absolute index of the first matching bit (i.e. the index in
+// buf of the leading '1' of `1100010011010111`). Returns (0, false)
+// when no exact match is present in the buffer.
+//
+// The scan is exact-match: MPT 1327 receivers tolerate a small
+// number of bit errors in CWSC in practice, but a 0-error first
+// pass keeps the alignment selectivity high. Bit-error tolerance
+// is a follow-up that lands together with on-air capture
+// calibration.
+func findCWSC(buf []byte, from int) (int, bool) {
+	if from < 0 {
+		from = 0
+	}
+	end := len(buf) - cwscBits
+	for i := from; i <= end; i++ {
+		match := true
+		for j := 0; j < cwscBits; j++ {
+			if buf[i+j]&1 != cwscPattern[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // parseCodeword turns a wire-bit window of length frameLen into a

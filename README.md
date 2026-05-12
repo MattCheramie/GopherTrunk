@@ -105,10 +105,19 @@ The remaining gaps:
     and is a known limitation against on-air traffic. Live
     captures with arbitrary slot landing need the superframe
     tracker that lands together with NSB-message ingestion.
-  - **MPT 1327 inter-codeword interleaver.** BCH(64,48,2) ships
-    per-codeword; the inter-codeword bit-interleaver across
-    5-codeword CCDB groups still needs spec implementation work
-    + a real-air capture to validate.
+  - **MPT 1327 sync detection + bit-error-tolerant CWSC.** The
+    BCH(64, 48, 2) per-codeword check + the 16-bit Codeword
+    Synchronisation Code (`1100010011010111`) alignment per the
+    MPT 1327 standard both ship — the Process adapter searches
+    the bit stream for an exact CWSC match before falling back
+    to the legacy "first parseable codeword" alignment. The
+    previously-cited "inter-codeword bit-interleaver across
+    5-codeword CCDB groups" doesn't exist in the standard;
+    MPT 1327 transmits 64-bit codewords back-to-back at 1200 bps
+    FFSK with no inter-codeword bit permutation. The remaining
+    follow-up is 1-2 bit error tolerance on the CWSC match
+    (currently exact-match), which lands together with on-air
+    capture calibration.
   - **YSF FICH on-air interleaver / puncture validation.** The
     K=5 ½-rate Trellis encoder + decoder
     (`internal/radio/ysf/fich_trellis.go`) round-trip cleanly
