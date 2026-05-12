@@ -2016,6 +2016,10 @@ opt-in field as a `omitempty` JSON value.
   realities and the plugin model
 - [`docs/hardening.md`](docs/hardening.md) — Prometheus catalogue,
   Docker / compose USB pass-through, smoke-test checklist
+- [`docs/opt-in-features.md`](docs/opt-in-features.md) — every
+  disabled-by-default feature (protocol FEC, receiver clock,
+  daemon-level, build tags), why it's opt-in, and the work to flip
+  the default
 - [`docs/specs/`](docs/specs/) — reference air-interface PDFs the
   on-air FEC implementations derive from (NXDN-TS-1-A,
   ETSI EN 300 392-2 TETRA, plus a negative-reference M/A-COM LBI
