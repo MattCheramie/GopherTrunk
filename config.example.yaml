@@ -84,6 +84,18 @@ scanner:
   #     hangtime_ms: 1500
   #     priority: 4
 
+# audio routes decoded PCM to the host's speakers. Disabled by default;
+# WAV recording is unaffected and continues whether audio is on or off.
+# Backend init failure (no audio device, no PulseAudio/ALSA) falls back
+# to a silent player automatically so the daemon stays running.
+audio:
+  enabled: false       # set true to play decoded calls live
+  device: ""           # empty = system default sink; "null" forces no-op
+  sample_rate: 8000    # must match recordings.sample_rate
+  buffer_ms: 80        # playback queue depth; higher = more jitter-tolerant
+  volume: 0.8          # 0..1 software gain
+  muted: false
+
 # tone_out fires events.KindToneAlert when the configured paging tones
 # are detected on a Voice device's PCM stream. Empty profiles disable
 # the detector. Two-tone sequential (Quick Call II) is the most common

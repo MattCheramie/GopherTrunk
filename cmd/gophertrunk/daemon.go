@@ -22,6 +22,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 )
 
@@ -76,6 +77,7 @@ type Daemon struct {
 	voicePool  *trunking.VoicePool
 	recorder   *voice.Recorder
 	composer   *composer.Composer
+	player     *player.Player
 	toneout    *toneout.Detector
 	db         *storage.DB
 	callLog    *storage.CallLog
@@ -223,14 +225,41 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		d.toneout = det
 	}
 
+	// Live audio player — optional. Independent of the composer; if
+	// enabled, we feed it as one fan-out arm alongside the recorder.
+	// Defaults to disabled so headless servers stay quiet.
+	playerSampleRate := cfg.Audio.SampleRate
+	if playerSampleRate == 0 {
+		playerSampleRate = cfg.Recordings.SampleRate
+	}
+	pl, err := player.New(player.Config{
+		Enabled:    cfg.Audio.Enabled,
+		Device:     cfg.Audio.Device,
+		SampleRate: playerSampleRate,
+		BufferMs:   cfg.Audio.BufferMs,
+		Volume:     cfg.Audio.Volume,
+		Muted:      cfg.Audio.Muted,
+	}, log)
+	if err != nil {
+		return nil, fmt.Errorf("daemon: player: %w", err)
+	}
+	d.player = pl
+
 	// Composer is wired when we have a Voice device pool to source IQ
 	// from + a recorder to feed PCM into. Without an SDR pool there's
 	// nothing to demod, and without a recorder PCM has no destination.
 	if d.pool != nil && d.recorder != nil {
-		// Fan PCM to recorder + tone-out (if configured).
-		var sink composer.PCMSink = d.recorder
+		// Fan PCM to recorder + tone-out (if configured) + live player.
+		sinks := []composer.PCMSink{d.recorder}
 		if d.toneout != nil {
-			sink = fanoutSink{d.recorder, d.toneout}
+			sinks = append(sinks, d.toneout)
+		}
+		if d.player != nil {
+			sinks = append(sinks, playerSink{d.player})
+		}
+		var sink composer.PCMSink = d.recorder
+		if len(sinks) > 1 {
+			sink = fanoutSink(sinks)
 		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
@@ -348,12 +377,16 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 					Priority:    ch.Priority,
 				})
 			}
+			var convRec conventional.Recorder = d.recorder
+			if d.player != nil {
+				convRec = convFanoutRecorder{d.recorder, playerSink{d.player}}
+			}
 			cs, err := conventional.New(conventional.Options{
 				Log:          log,
 				Tuner:        convEntry.Device,
 				IQ:           convEntry.Device,
 				Engine:       d.engine,
-				Recorder:     d.recorder,
+				Recorder:     convRec,
 				DeviceSerial: convEntry.Info.Serial,
 				SystemName:   "scanner",
 				Channels:     channels,
@@ -557,6 +590,9 @@ func (d *Daemon) Close() {
 		if d.composer != nil {
 			_ = d.composer.Close()
 		}
+		if d.player != nil {
+			_ = d.player.Close()
+		}
 		if d.recorder != nil {
 			_ = d.recorder.Close()
 		}
@@ -697,6 +733,29 @@ func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, e
 		})
 	}
 	return out, nil
+}
+
+// playerSink adapts *player.Player to composer.PCMSink. The Player's
+// WritePCM signature is identical so the adapter is a zero-cost shim
+// that exists only to satisfy Go's nominal-typing for the fan-out
+// slice element type.
+type playerSink struct{ p *player.Player }
+
+func (s playerSink) WritePCM(serial string, samples []int16) error {
+	return s.p.WritePCM(serial, samples)
+}
+
+// convFanoutRecorder lets the conventional scanner drive both the
+// WAV recorder and the live player. The conventional.Recorder
+// interface only requires WritePCM, matching what both downstreams
+// implement.
+type convFanoutRecorder []conventional.Recorder
+
+func (f convFanoutRecorder) WritePCM(serial string, samples []int16) error {
+	for _, r := range f {
+		_ = r.WritePCM(serial, samples)
+	}
+	return nil
 }
 
 // poolDevices adapts *sdr.Pool to composer.Devices. The composer only

@@ -156,6 +156,20 @@ The remaining gaps:
   unit tests; calibration against a captured YSF transmission's
   exact interleaver / puncture schedule lands once a real-air capture
   is available.
+- **Live audio playback to speakers.** The daemon now ships a
+  `voice.Player` sink (`internal/voice/player`) wrapping
+  github.com/ebitengine/oto/v3 (ALSA on Linux, CoreAudio on macOS,
+  WASAPI on Windows; libasound2-dev required at build time on Linux).
+  When `audio.enabled: true` is set in config the per-call composer
+  and the conventional FM scanner fan PCM into the player alongside
+  the existing WAV recorder, so calls play out the host's default
+  output device in real time. Software gain stage in front of the
+  backend makes volume and mute changes instant. Disabled by default;
+  headless servers stay silent and continue to record WAVs identically
+  to before. TUI volume / mute / record-toggle keybindings + REST
+  mutation endpoints (`/api/v1/audio/*`) are the next follow-up — for
+  now operators tune via the `audio.volume` and `audio.muted` config
+  fields. New CLI: `gophertrunk audio list` mirrors `sdr list`.
 
 The Go interfaces and event payloads carry every protocol already;
 the remaining decoder wiring is the load-bearing follow-up.
