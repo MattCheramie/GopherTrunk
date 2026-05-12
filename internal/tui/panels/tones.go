@@ -14,8 +14,9 @@ import (
 
 // TonesPanel renders the tone-alert ring buffer.
 type TonesPanel struct {
-	tbl  table.Model
-	last int
+	tbl      table.Model
+	last     int
+	lastHash uint64
 }
 
 func NewTones() *TonesPanel {
@@ -56,8 +57,13 @@ func (p *TonesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) 
 		}
 		return p, Emit(req)
 	}
-	if s.ToneAlerts != nil && s.ToneAlerts.Len() != p.last {
-		p.refresh(s)
+	if s.ToneAlerts != nil {
+		// Only the Len changes drive a refresh today (ring buffer is
+		// append-only). Hashing the snapshot is overkill — Len is the
+		// canonical invalidation signal.
+		if s.ToneAlerts.Len() != p.last {
+			p.refresh(s)
+		}
 	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)

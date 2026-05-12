@@ -61,6 +61,11 @@ var (
 	sndPCMRecover   func(pcm uintptr, err int32, silent int32) int32
 )
 
+// loadALSAFn is the indirection that the real loadALSA fills. Tests
+// replace it to simulate a dlopen failure without touching the
+// shared library on disk.
+var loadALSAFn = loadALSA
+
 // loadALSA dlopens libasound2.so.2 once. Subsequent calls return
 // the cached error (if any). Idempotent.
 func loadALSA() error {
@@ -124,7 +129,19 @@ func newALSABackend(cfg Config) (Backend, error) {
 		return newIoctlALSABackend(cfg, spec)
 	}
 
-	if err := loadALSA(); err != nil {
+	if err := loadALSAFn(); err != nil {
+		// Linux distroless / Alpine images often ship the kernel
+		// sound subsystem (so /dev/snd/pcm*p exists) but not the
+		// userspace libasound2.so.2 SONAME. Falling back to the
+		// direct-ioctl backend keeps audio working out of the box
+		// in those environments. Only the dlopen failure path
+		// triggers the fallback — a libasound that loaded but failed
+		// to resolve a symbol is a deeper problem and still bubbles
+		// up. The fallback is gated by AutoFallback (default true)
+		// so tests + advanced operators can pin behaviour.
+		if !cfg.DisableAutoFallback && strings.Contains(err.Error(), "dlopen") {
+			return newIoctlALSABackend(cfg, "")
+		}
 		return nil, err
 	}
 

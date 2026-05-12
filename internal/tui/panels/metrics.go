@@ -17,7 +17,8 @@ import (
 // whitelist captures the headline counters operators usually care
 // about.
 type MetricsPanel struct {
-	tbl table.Model
+	tbl      table.Model
+	lastHash uint64
 }
 
 // curatedMetrics is the order metrics are displayed in. Names that
@@ -57,7 +58,11 @@ func (p *MetricsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 		}
 		return p, Emit(req)
 	}
-	p.refresh(s.Metrics)
+	h := hashStringMap(s.Metrics)
+	if h != p.lastHash {
+		p.refresh(s.Metrics)
+		p.lastHash = h
+	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
 	return p, cmd

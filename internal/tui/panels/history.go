@@ -19,9 +19,9 @@ import (
 // `r`. The panel does not poll continuously — history is a stable
 // list and the daemon already paginates it.
 type HistoryPanel struct {
-	tbl       table.Model
-	lastCount int
-	reloadAt  time.Time
+	tbl      table.Model
+	lastHash uint64
+	reloadAt time.Time
 }
 
 // NewHistory constructs the panel.
@@ -56,8 +56,16 @@ func (p *HistoryPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 			return p, nil
 		}
 	}
-	if len(s.History) != p.lastCount {
+	h := hashRows(s.History, func(r client.CallRow) string {
+		return fmt.Sprintf("%s|%s|%d|%s|%d|%s|%s",
+			r.StartedAt.Format(time.RFC3339Nano),
+			r.EndedAt.Format(time.RFC3339Nano),
+			r.GroupID, r.TalkgroupAlpha, r.SourceID,
+			r.System, r.EndReason)
+	})
+	if h != p.lastHash {
 		p.refresh(s.History)
+		p.lastHash = h
 	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
@@ -86,7 +94,6 @@ func (p *HistoryPanel) refresh(rows []client.CallRow) {
 		})
 	}
 	p.tbl.SetRows(out)
-	p.lastCount = len(rows)
 }
 
 func (p *HistoryPanel) View(width, height int, focused bool, s *state.SharedState) string {

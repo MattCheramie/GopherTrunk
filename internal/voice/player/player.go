@@ -47,6 +47,12 @@ type Config struct {
 	Volume float32
 	// Muted is the initial mute state.
 	Muted bool
+	// DisableAutoFallback turns OFF the default Linux behaviour of
+	// transparently dropping to the direct-ioctl backend when
+	// libasound2.so.2 fails to dlopen (typical on distroless /
+	// Alpine images). Zero value (false) = auto-fallback enabled.
+	// Other platforms ignore the flag.
+	DisableAutoFallback bool
 }
 
 // Backend is the per-OS audio sink the Player drives. Production
@@ -293,14 +299,15 @@ func (p *Player) run() {
 }
 
 // ListDevices returns the audio outputs the linked backend can route
-// to. Both the oto-based backend (macOS / Windows) and the ALSA-based
-// backend (Linux) route to the OS default sink — neither exposes a
-// device picker today — so the listing is always one entry. Kept on
-// the package surface so `gophertrunk audio list` has something to
-// print and future backends can plug in real enumeration without
-// changing the CLI shape.
+// to. On Linux the listing includes "default" (system sink via
+// libasound2 or the ioctl fallback), "null" (no-op backend), plus an
+// entry per /dev/snd/pcmC*D*p the kernel exposes — the latter are
+// what audio.device: "ioctl:hw:C,D" selects. On macOS / Windows the
+// list is short by design (oto routes to the OS default sink).
 func ListDevices() []string {
-	return []string{"default (system output)"}
+	devs := []string{"default (system output)", "null (no-op)"}
+	devs = append(devs, listPlatformDevices()...)
+	return devs
 }
 
 // String returns a human-readable description of the player state,

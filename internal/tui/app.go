@@ -47,6 +47,12 @@ type Model struct {
 
 	confirm *confirmModal
 	detail  *detailModal
+	palette *paletteModel
+
+	// tabRects caches the bounding boxes of each tab in the most
+	// recently rendered tab strip. Mouse hit-testing reads it to map
+	// a click to a panel.
+	tabRects []tabRect
 
 	historyLoaded bool
 	toastUntil    time.Time
@@ -62,12 +68,13 @@ func New(cli *client.Client, opts Options) *Model {
 		Metrics:    map[string]float64{},
 	}
 	m := &Model{
-		cli:    cli,
-		opts:   opts,
-		styles: st,
-		keys:   newGlobalKeys(),
-		help:   help.New(),
-		shared: shared,
+		cli:     cli,
+		opts:    opts,
+		styles:  st,
+		keys:    newGlobalKeys(),
+		help:    help.New(),
+		shared:  shared,
+		palette: newPalette(),
 		panels: []panels.Panel{
 			panels.NewDashboard(),
 			panels.NewSystems(),
@@ -98,6 +105,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollDevices(m.cli),
 		cmdPollScanner(m.cli),
 		cmdPollAudio(m.cli),
+		cmdPollRuntime(m.cli),
 		cmdMutationStatus(m.cli),
 		connectSSE(m.cli),
 	)
@@ -118,7 +126,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case tea.MouseMsg:
+		if cmd, consumed := m.handleMouseMsg(msg); consumed {
+			return m, cmd
+		}
 	case tea.KeyMsg:
+		// Palette captures keys when open. Always evaluated first so
+		// the operator can dismiss/run actions even from inside a
+		// modal-less state.
+		if m.palette != nil && m.palette.open {
+			if cmd := m.handlePaletteKey(msg); cmd != nil {
+				return m, cmd
+			}
+			return m, nil
+		}
+		// Help overlay captures keys when open. ? or esc closes.
+		if m.help.ShowAll {
+			switch msg.String() {
+			case "?", "esc", "q":
+				m.help.ShowAll = false
+			}
+			return m, nil
+		}
 		// Modal capture: when a confirmation is pending, every key
 		// goes to the modal — global nav and panels are frozen.
 		if m.confirm != nil {
@@ -153,6 +182,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
+		case key.Matches(msg, m.keys.Palette):
+			m.openPalette()
 			return m, nil
 		case key.Matches(msg, m.keys.NextPanel):
 			m.active = (m.active + 1) % state.PanelCount
@@ -254,6 +286,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.shared.AudioErr = msg.err
 		cmds = append(cmds, scheduleAfter(pollAudioEvery, cmdPollAudio(m.cli)))
+
+	case pollRuntimeMsg:
+		if msg.err == nil {
+			m.shared.Runtime = msg.r
+		}
+		m.shared.RuntimeErr = msg.err
+		cmds = append(cmds, scheduleAfter(pollRuntimeEvery, cmdPollRuntime(m.cli)))
 
 	case pollHistoryMsg:
 		m.shared.History = msg.rows
@@ -400,15 +439,64 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderTabs() string {
-	parts := make([]string, 0, state.PanelCount)
+	// Build the full label set first so we can decide if we need to
+	// collapse for narrow terminals.
+	labels := make([]string, state.PanelCount)
 	for i := state.PanelKind(0); i < state.PanelCount; i++ {
-		label := fmt.Sprintf("%d %s", int(i)+1, m.panels[i].Title())
-		if i == m.active {
-			parts = append(parts, m.styles.activeTab.Render(label))
-		} else {
-			parts = append(parts, m.styles.tab.Render(label))
-		}
+		labels[i] = fmt.Sprintf("%d %s", int(i)+1, m.panels[i].Title())
 	}
+	// Estimate width: each tab gets 2 padding cells + label runes + 1 separator.
+	full := 0
+	for _, l := range labels {
+		full += lipgloss.Width(l) + 3
+	}
+	// Below the natural width, switch to compact mode: render the
+	// active tab fully + the panel index sequence "1·2·3·…" with the
+	// active index inverted, plus a "more" pill that opens the
+	// palette filtered to panel jumps.
+	if m.width > 0 && full > m.width {
+		return m.renderCompactTabs(labels)
+	}
+	parts := make([]string, 0, state.PanelCount)
+	rects := make([]tabRect, 0, state.PanelCount)
+	x := 0
+	for i := state.PanelKind(0); i < state.PanelCount; i++ {
+		var rendered string
+		if i == m.active {
+			rendered = m.styles.activeTab.Render(labels[i])
+		} else {
+			rendered = m.styles.tab.Render(labels[i])
+		}
+		parts = append(parts, rendered)
+		w := lipgloss.Width(rendered)
+		rects = append(rects, tabRect{kind: i, xStart: x, xEnd: x + w})
+		x += w + 1 // +1 for the separator space
+	}
+	m.tabRects = rects
+	return strings.Join(parts, " ")
+}
+
+// renderCompactTabs is the narrow-terminal fallback: a strip of
+// numeric indices ("1 2 3 …") with the active one labelled fully, and
+// a trailing "more" pill that points the operator at ctrl+p.
+func (m *Model) renderCompactTabs(labels []string) string {
+	parts := make([]string, 0, state.PanelCount+1)
+	rects := make([]tabRect, 0, state.PanelCount)
+	x := 0
+	for i := state.PanelKind(0); i < state.PanelCount; i++ {
+		var rendered string
+		if i == m.active {
+			rendered = m.styles.activeTab.Render(labels[i])
+		} else {
+			rendered = m.styles.tab.Render(fmt.Sprintf("%d", int(i)+1))
+		}
+		parts = append(parts, rendered)
+		w := lipgloss.Width(rendered)
+		rects = append(rects, tabRect{kind: i, xStart: x, xEnd: x + w})
+		x += w + 1
+	}
+	m.tabRects = rects
+	parts = append(parts, m.styles.help.Render("⌃P more"))
 	return strings.Join(parts, " ")
 }
 
@@ -423,7 +511,7 @@ func (m *Model) renderStatusBar() string {
 		len(m.shared.ActiveCalls),
 		m.shared.EventLog.Len(),
 		m.shared.ToneAlerts.Len())
-	help := m.styles.help.Render("tab:next  ?:help  q:quit")
+	help := m.styles.help.Render("tab:next  ⌃P:cmd  ?:help  q:quit")
 	toast := ""
 	if m.shared.Toast != "" && time.Now().Before(m.toastUntil) {
 		toast = m.styles.toast.Render(m.shared.Toast)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/state"
+	"github.com/MattCheramie/GopherTrunk/internal/tui/theme"
 )
 
 // DashboardPanel is the at-a-glance landing screen. It is a pure
@@ -27,17 +28,24 @@ func (p *DashboardPanel) Update(_ tea.Msg, _ *state.SharedState) (Panel, tea.Cmd
 	return p, nil
 }
 
-var (
-	dashHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	dashOK     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	dashErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	dashDim    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	dashAlert  = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-)
-
 func (p *DashboardPanel) View(width, height int, _ bool, s *state.SharedState) string {
 	if width < 4 || height < 4 {
 		return ""
+	}
+	// Below 80 cols the 2×2 grid is unreadable; stack vertically and
+	// trim the bottom row to whatever space is left.
+	if width < 80 {
+		rowH := (height - 1) / 4
+		if rowH < 3 {
+			rowH = 3
+		}
+		parts := []string{
+			dashboardCard("Health", width, rowH, p.healthBody(s)),
+			dashboardCard("Active calls", width, rowH, p.activeBody(s)),
+			dashboardCard("Recent events", width, rowH, p.eventsBody(s)),
+			dashboardCard("Tone alerts", width, rowH, p.tonesBody(s)),
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 	colW := (width - 2) / 2
 	if colW < 20 {
@@ -59,10 +67,7 @@ func (p *DashboardPanel) View(width, height int, _ bool, s *state.SharedState) s
 }
 
 func dashboardCard(title string, w, h int, body string) string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1).
+	style := theme.Theme().Frame(false).
 		Width(w - 2).
 		Height(h - 2)
 	header := dashHeader.Render(title)

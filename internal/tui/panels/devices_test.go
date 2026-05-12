@@ -22,8 +22,8 @@ func TestDevicesPanel_RendersSnapshot(t *testing.T) {
 	}
 	// First Update populates the table.
 	_, _ = p.Update(tea.WindowSizeMsg{Width: 120, Height: 30}, s)
-	if p.count != 2 {
-		t.Fatalf("rows = %d, want 2", p.count)
+	if got := len(p.tbl.Rows()); got != 2 {
+		t.Fatalf("rows = %d, want 2", got)
 	}
 	view := p.View(120, 30, true, s)
 	for _, want := range []string{"AAA", "BBB", "control", "voice", "auto", "49.6 dB"} {

@@ -83,6 +83,8 @@ type SharedState struct {
 	ScannerErr  error
 	Audio       client.AudioStatusDTO
 	AudioErr    error
+	Runtime     client.RuntimeDTO
+	RuntimeErr  error
 
 	EventLog   RingReader[client.Event]
 	ToneAlerts RingReader[client.Event]

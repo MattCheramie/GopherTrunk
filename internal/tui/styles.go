@@ -1,9 +1,14 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
 
-// styles bundles the lipgloss styles the panels share. Holding them
-// in one place keeps colour decisions in lockstep across panels.
+	"github.com/MattCheramie/GopherTrunk/internal/tui/theme"
+)
+
+// styles bundles the lipgloss styles the root model and modals
+// share. Every style is derived from theme.Theme() so a future
+// light-mode palette swap is a one-line change here.
 type styles struct {
 	border      lipgloss.Style
 	focusBorder lipgloss.Style
@@ -20,31 +25,28 @@ type styles struct {
 	toast       lipgloss.Style
 }
 
-// newStyles builds a style set. If noColor is true colours are
-// stripped — useful when writing to a non-TTY or when --no-color
-// is passed.
+// newStyles builds a style set. If noColor is true the active theme
+// is swapped to the monochrome palette so every accessor across the
+// process collapses to default fg/bg simultaneously.
 func newStyles(noColor bool) styles {
 	if noColor {
 		lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(nil))
+		theme.Set(theme.MonochromePalette())
 	}
-	border := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1)
-	focus := border.Copy().BorderForeground(lipgloss.Color("39"))
+	p := theme.Theme()
 	return styles{
-		border:      border,
-		focusBorder: focus,
-		header:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")),
-		tab:         lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("245")),
-		activeTab:   lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("39")).Bold(true),
-		statusBar:   lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Background(lipgloss.Color("236")).Padding(0, 1),
-		dim:         lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		accent:      lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true),
-		alert:       lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true),
-		ok:          lipgloss.NewStyle().Foreground(lipgloss.Color("42")),
-		error:       lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
-		help:        lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		toast:       lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("88")).Padding(0, 1),
+		border:      p.Frame(false),
+		focusBorder: p.Frame(true),
+		header:      p.Header(),
+		tab:         p.Tab(),
+		activeTab:   p.ActiveTab(),
+		statusBar:   p.StatusBar(),
+		dim:         p.Dim(),
+		accent:      p.Accented(),
+		alert:       p.Alert(),
+		ok:          p.OK(),
+		error:       p.Error(),
+		help:        p.Hint(),
+		toast:       p.Toast(),
 	}
 }

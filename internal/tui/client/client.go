@@ -61,6 +61,13 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	return h, c.getJSON(ctx, "/api/v1/health", &h)
 }
 
+// Runtime calls GET /api/v1/runtime — the read-only daemon config
+// snapshot consumed by the TUI's tabbed Settings inspector.
+func (c *Client) Runtime(ctx context.Context) (RuntimeDTO, error) {
+	var r RuntimeDTO
+	return r, c.getJSON(ctx, "/api/v1/runtime", &r)
+}
+
 // Version calls GET /api/v1/version.
 func (c *Client) Version(ctx context.Context) (string, error) {
 	var v Version

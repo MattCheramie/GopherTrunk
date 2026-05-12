@@ -20,6 +20,7 @@ const (
 	pollDevicesEvery    = 10 * time.Second
 	pollScannerEvery    = 2 * time.Second
 	pollAudioEvery      = 3 * time.Second
+	pollRuntimeEvery    = 30 * time.Second
 )
 
 func cmdPollHealth(cli *client.Client) tea.Cmd {
@@ -132,6 +133,17 @@ func cmdScannerConvUnlockout(cli *client.Client, idx int, label string) tea.Cmd 
 	return func() tea.Msg {
 		err := cli.ScannerConvUnlockout(context.Background(), idx)
 		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
+// cmdPollRuntime fetches the daemon's read-only runtime snapshot
+// — config knobs, output paths, audio device list, etc. Polled
+// every 30s since none of these mutate at runtime; rebuilding the
+// Settings panel cells more often would just burn CPU.
+func cmdPollRuntime(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		r, err := cli.Runtime(context.Background())
+		return pollRuntimeMsg{r: r, err: err}
 	}
 }
 

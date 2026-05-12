@@ -390,7 +390,7 @@ func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {
 		case "locked":
 			stateStyle = dashOK
 		case "hunting":
-			stateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+			stateStyle = dashWarn
 		case "failed":
 			stateStyle = dashErr
 		case "held":

@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/state"
@@ -15,8 +14,8 @@ import (
 
 // SystemsPanel renders the configured trunking systems.
 type SystemsPanel struct {
-	tbl    table.Model
-	count  int
+	tbl      table.Model
+	lastHash uint64
 }
 
 func NewSystems() *SystemsPanel {
@@ -32,8 +31,14 @@ func (SystemsPanel) Title() string       { return "Systems" }
 func (SystemsPanel) Keys() []key.Binding { return nil }
 
 func (p *SystemsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
-	if len(s.Systems) != p.count {
+	h := hashRows(s.Systems, func(sys client.SystemDTO) string {
+		return fmt.Sprintf("%s|%s|%v|%d|%d|%d|%d",
+			sys.Name, sys.Protocol, sys.ControlChannels,
+			sys.WACN, sys.SystemID, sys.RFSS, sys.Site)
+	})
+	if h != p.lastHash {
 		p.refresh(s.Systems)
+		p.lastHash = h
 	}
 	if k, ok := msg.(tea.KeyMsg); ok && k.String() == "enter" {
 		row := p.tbl.SelectedRow()
@@ -66,7 +71,6 @@ func (p *SystemsPanel) refresh(sys []client.SystemDTO) {
 		rows = append(rows, table.Row{s.Name, s.Protocol, ccs, strings.Join(ids, " ")})
 	}
 	p.tbl.SetRows(rows)
-	p.count = len(sys)
 }
 
 func (p *SystemsPanel) View(width, height int, focused bool, s *state.SharedState) string {
@@ -97,36 +101,3 @@ func systemsColumns(w int) []table.Column {
 	}
 }
 
-// panelFrame is shared by all table panels: rounded border, title,
-// focus colour.
-func panelFrame(title string, w, h int, focused bool, body string) string {
-	border := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1)
-	if focused {
-		border = border.BorderForeground(lipgloss.Color("39"))
-	}
-	if w > 4 {
-		border = border.Width(w - 2)
-	}
-	if h > 4 {
-		border = border.Height(h - 2)
-	}
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render(title)
-	return border.Render(header + "\n" + body)
-}
-
-func tableStyles() table.Styles {
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(true).
-		Foreground(lipgloss.Color("39"))
-	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("231")).
-		Background(lipgloss.Color("57"))
-	return s
-}

@@ -20,6 +20,7 @@ type globalKeys struct {
 	JumpPanel9 key.Binding
 	JumpPanel0 key.Binding
 	Refresh    key.Binding
+	Palette    key.Binding
 }
 
 func newGlobalKeys() globalKeys {
@@ -39,6 +40,7 @@ func newGlobalKeys() globalKeys {
 		JumpPanel9: key.NewBinding(key.WithKeys("9"), key.WithHelp("9", "devices")),
 		JumpPanel0: key.NewBinding(key.WithKeys("0"), key.WithHelp("0", "scanner")),
 		Refresh:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+		Palette:    key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "command palette")),
 	}
 }
 

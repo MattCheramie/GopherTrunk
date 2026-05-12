@@ -13,8 +13,8 @@ import (
 
 // ActivePanel renders calls currently being followed.
 type ActivePanel struct {
-	tbl       table.Model
-	lastCount int
+	tbl      table.Model
+	lastHash uint64
 }
 
 func NewActive() *ActivePanel {
@@ -53,9 +53,19 @@ func (p *ActivePanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd)
 			return p, Emit(req)
 		}
 	}
-	// Refresh on every update — the polling cadence is 1 s and the
-	// table is small.
-	p.refresh(s.ActiveCalls)
+	// Refresh on every update — the polling cadence is 1 s. The hash
+	// gate keeps us from rebuilding the bubbles/table on every Update
+	// call when nothing has changed.
+	h := hashRows(s.ActiveCalls, func(ac client.ActiveCallDTO) string {
+		return fmt.Sprintf("%s|%d|%d|%s|%d|%v|%v",
+			ac.DeviceSerial, ac.Grant.GroupID, ac.Grant.SourceID,
+			ac.Grant.System, ac.Grant.FrequencyHz,
+			ac.Grant.Encrypted, ac.Grant.Emergency)
+	})
+	if h != p.lastHash {
+		p.refresh(s.ActiveCalls)
+		p.lastHash = h
+	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
 	return p, cmd
@@ -87,7 +97,6 @@ func (p *ActivePanel) refresh(calls []client.ActiveCallDTO) {
 		})
 	}
 	p.tbl.SetRows(rows)
-	p.lastCount = len(calls)
 }
 
 func (p *ActivePanel) View(width, height int, focused bool, s *state.SharedState) string {

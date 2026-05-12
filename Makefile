@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto cross-build release-archives
 
 all: build
 
@@ -136,6 +136,40 @@ lint: vet
 
 tidy:
 	$(GO) mod tidy
+
+# cross-build produces a static, dependency-free binary for every
+# common (OS, arch) pair the daemon supports. CGO_ENABLED=0 is safe:
+# the project uses purego for every system FFI (ALSA / WASAPI /
+# CoreAudio / IOKit / WinUSB) and modernc.org/sqlite for the call
+# log, so no cgo is required. Each output lands under dist/.
+GOOSES   ?= linux darwin windows
+GOARCHES ?= amd64 arm64
+
+cross-build:
+	@mkdir -p dist
+	@for os in $(GOOSES); do \
+	    for arch in $(GOARCHES); do \
+	        ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
+	        echo "  → CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch"; \
+	        CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
+	            $(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" \
+	            -o dist/gophertrunk-$$os-$$arch$$ext ./cmd/gophertrunk || exit 1; \
+	    done; \
+	done
+	@ls -lh dist/
+
+# release-archives wraps the cross-build outputs in per-target
+# tarballs (linux/darwin) and zips (windows). Run `make cross-build`
+# first, or chain: `make cross-build release-archives`.
+release-archives:
+	@command -v zip >/dev/null || { echo "zip not installed"; exit 1; }
+	@cd dist && for f in gophertrunk-*; do \
+	    case "$$f" in \
+	        *windows*) zip -q $${f%.exe}.zip $$f ;; \
+	        *) tar czf $$f.tar.gz $$f ;; \
+	    esac; \
+	done
+	@ls -lh dist/
 
 clean:
 	rm -rf bin/ dist/

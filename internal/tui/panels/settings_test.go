@@ -25,8 +25,14 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 		},
 	}
 	_, _ = p.Update(tea.WindowSizeMsg{Width: 140, Height: 30}, s)
-	if p.count != 8 {
-		t.Fatalf("rows = %d, want 8", p.count)
+	// Switch to the FEC opt-ins tab — the inspector defaults to the
+	// Daemon tab and only the FEC tab renders the per-system FEC
+	// summary table this test asserts on.
+	for p.tab != tabFEC {
+		_, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")}, s)
+	}
+	if got := len(p.tbl.Rows()); got != 8 {
+		t.Fatalf("rows = %d, want 8", got)
 	}
 	view := p.View(140, 30, true, s)
 	wants := []string{

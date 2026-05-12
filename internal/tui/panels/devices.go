@@ -16,8 +16,8 @@ import (
 // daemon has opened, with role / tuner / configured gain / PPM /
 // bias-tee state.
 type DevicesPanel struct {
-	tbl   table.Model
-	count int
+	tbl      table.Model
+	lastHash uint64
 }
 
 func NewDevices() *DevicesPanel {
@@ -33,8 +33,14 @@ func (DevicesPanel) Title() string       { return "Devices" }
 func (DevicesPanel) Keys() []key.Binding { return nil }
 
 func (p *DevicesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
-	if len(s.Devices) != p.count {
+	h := hashRows(s.Devices, func(d client.SDRStatus) string {
+		return fmt.Sprintf("%s|%s|%s|%s|%v|%d|%d|%v|%v",
+			d.Serial, d.Driver, d.TunerName, d.Role,
+			d.GainAuto, d.GainTenthDB, d.PPM, d.BiasTee, d.Attached)
+	})
+	if h != p.lastHash {
 		p.refresh(s.Devices)
+		p.lastHash = h
 	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
@@ -69,7 +75,6 @@ func (p *DevicesPanel) refresh(devs []client.SDRStatus) {
 		})
 	}
 	p.tbl.SetRows(rows)
-	p.count = len(devs)
 }
 
 func (p *DevicesPanel) View(width, height int, focused bool, s *state.SharedState) string {

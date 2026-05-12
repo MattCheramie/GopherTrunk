@@ -202,6 +202,7 @@ type Server struct {
 	devices    DevicesProvider
 	scanner    ScannerCockpit
 	audio      AudioController
+	runtime    RuntimeProvider
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
@@ -299,6 +300,11 @@ type ServerOptions struct {
 	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
 	// return 503.
 	Audio AudioController
+	// Runtime exposes the read-only daemon config snapshot served at
+	// GET /api/v1/runtime. The TUI's tabbed Settings inspector uses
+	// it to surface every config knob. Optional; when nil, the
+	// route returns 503.
+	Runtime RuntimeProvider
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -327,6 +333,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
 		audio:          opts.Audio,
+		runtime:        opts.Runtime,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -390,6 +397,7 @@ func (s *Server) shutdown(ctx context.Context) error {
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/runtime", s.handleRuntime)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	mux.HandleFunc("GET /api/v1/systems", s.handleListSystems)
 	mux.HandleFunc("GET /api/v1/systems/{name}", s.handleGetSystem)

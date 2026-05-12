@@ -1,11 +1,66 @@
 package panels
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"strings"
 	"time"
 )
+
+// hashSeed is the per-process maphash seed. Held module-wide so
+// successive hashRows calls on the same payload return the same
+// digest across an entire daemon run.
+var hashSeed = maphash.MakeSeed()
+
+// hashRows produces a stable digest over a slice of rows. Panels
+// call it on the latest snapshot from SharedState; if the digest
+// hasn't changed since the last refresh, the bubbles/table rebuild
+// is skipped — the user-flagged "rebuilt every tick" path.
+//
+// keyFn must return a deterministic string for each row covering
+// every field the table renders. Order matters; reordering a slice
+// counts as a change even if the contents are identical.
+func hashRows[T any](rows []T, keyFn func(T) string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(hashSeed)
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(len(rows)))
+	_, _ = h.Write(buf[:])
+	for _, r := range rows {
+		_, _ = h.WriteString(keyFn(r))
+		_, _ = h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// hashStringMap is the map-flavoured sibling of hashRows. metrics.go
+// holds map[string]float64; we sort keys so the digest is stable
+// across iteration order.
+func hashStringMap(m map[string]float64) uint64 {
+	var h maphash.Hash
+	h.SetSeed(hashSeed)
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// stable sort without importing sort package for one call site —
+	// insertion sort over short maps is fine.
+	for i := 1; i < len(keys); i++ {
+		for j := i; j > 0 && keys[j-1] > keys[j]; j-- {
+			keys[j-1], keys[j] = keys[j], keys[j-1]
+		}
+	}
+	for _, k := range keys {
+		_, _ = h.WriteString(k)
+		_, _ = h.Write([]byte{0})
+		var buf [8]byte
+		binary.LittleEndian.PutUint64(buf[:], uint64(int64(m[k]*1000)))
+		_, _ = h.Write(buf[:])
+	}
+	return h.Sum64()
+}
 
 // jsonUnmarshal centralises the json.Unmarshal call so panels don't
 // each pull in encoding/json directly. Returns nil on empty raw.

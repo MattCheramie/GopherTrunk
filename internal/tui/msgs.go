@@ -51,6 +51,10 @@ type pollAudioMsg struct {
 	a   client.AudioStatusDTO
 	err error
 }
+type pollRuntimeMsg struct {
+	r   client.RuntimeDTO
+	err error
+}
 
 // eventMsg carries one decoded SSE event. The root model fans this
 // out into its event log + tone alert ring buffer, then forwards

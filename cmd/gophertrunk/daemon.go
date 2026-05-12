@@ -498,6 +498,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		if d.player != nil || d.recorder != nil {
 			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
 		}
+		cfgCopy := cfg
+		opts.Runtime = &runtimeSnapshot{
+			cfg:     &cfgCopy,
+			version: version,
+			metrics: cfg.Metrics.Enabled,
+		}
 		srv, err := api.NewServer(opts)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: http api: %w", err)

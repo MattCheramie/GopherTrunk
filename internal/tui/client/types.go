@@ -218,6 +218,67 @@ type LockState struct {
 // HTTPError is returned by the REST methods on a non-2xx response.
 // Status carries the HTTP code; Body carries up to a few hundred
 // bytes of the response for the toast UI to show.
+// RuntimeDTO mirrors api.RuntimeDTO. Consumed by the TUI's tabbed
+// Settings inspector to render every configured feature, output,
+// protocol surface, etc. — the touch-point inventory the operator
+// expects to see in one place.
+type RuntimeDTO struct {
+	HTTPAddr       string `json:"http_addr,omitempty"`
+	GRPCAddr       string `json:"grpc_addr,omitempty"`
+	WSPath         string `json:"ws_path,omitempty"`
+	SSEPath        string `json:"sse_path,omitempty"`
+	MetricsPath    string `json:"metrics_path,omitempty"`
+	AllowMutations bool   `json:"allow_mutations"`
+
+	LogLevel  string `json:"log_level"`
+	LogFormat string `json:"log_format"`
+	Version   string `json:"version,omitempty"`
+
+	StorageDBPath  string `json:"storage_db_path,omitempty"`
+	StorageCCCache string `json:"storage_cc_cache,omitempty"`
+
+	RetentionCallLogDays int           `json:"retention_call_log_days"`
+	RetentionFilesDays   int           `json:"retention_files_days"`
+	RetentionInterval    time.Duration `json:"retention_interval_ns"`
+
+	RecordingDir        string `json:"recording_dir,omitempty"`
+	RecordingSampleRate int    `json:"recording_sample_rate"`
+	RecordingWriteRaw   bool   `json:"recording_write_raw"`
+	RecordingEQEnabled  bool   `json:"recording_eq_enabled"`
+	RecordingEQTaps     int    `json:"recording_eq_taps,omitempty"`
+	RecordingEQStepSize string `json:"recording_eq_step_size,omitempty"`
+
+	AudioEnabled       bool     `json:"audio_enabled"`
+	AudioDevice        string   `json:"audio_device,omitempty"`
+	AudioSampleRate    int      `json:"audio_sample_rate"`
+	AudioBufferMs      int      `json:"audio_buffer_ms"`
+	AudioBackends      []string `json:"audio_backends"`
+	AudioDisableFallbk bool     `json:"audio_disable_fallback"`
+
+	SDRSampleRate int      `json:"sdr_sample_rate"`
+	SDRBackends   []string `json:"sdr_backends"`
+
+	ScannerScanMode          string `json:"scanner_scan_mode"`
+	ScannerCCHuntEnabled     bool   `json:"scanner_cc_hunt_enabled"`
+	ScannerCCHuntDwellMs     int    `json:"scanner_cc_hunt_dwell_ms"`
+	ScannerCCHuntBackoffMs   int    `json:"scanner_cc_hunt_backoff_ms"`
+	ScannerCCMaxBackoffMs    int    `json:"scanner_cc_max_backoff_ms"`
+	ScannerManualTuneEnabled bool   `json:"scanner_manual_tune_enabled"`
+
+	ToneProfiles []ToneProfileDTO `json:"tone_profiles,omitempty"`
+
+	VocoderMap     map[string]string `json:"vocoder_map"`
+	MetricsEnabled bool              `json:"metrics_enabled"`
+}
+
+// ToneProfileDTO mirrors api.ToneProfileDTO.
+type ToneProfileDTO struct {
+	Name      string        `json:"name"`
+	AlphaTag  string        `json:"alpha_tag,omitempty"`
+	Cooldown  time.Duration `json:"cooldown_ns"`
+	ToneCount int           `json:"tone_count"`
+}
+
 type HTTPError struct {
 	Status int
 	Method string
