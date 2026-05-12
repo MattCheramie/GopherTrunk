@@ -105,6 +105,30 @@ func (p *TalkgroupsPanel) SetFilterValue(v string) {
 // RowCount returns the number of rows currently in the table.
 func (p *TalkgroupsPanel) RowCount() int { return len(p.tbl.Rows()) }
 
+// Reveal positions the cursor on the row whose ID (decimal string in
+// the first column) matches key. Used by the command palette to land
+// the operator on the talkgroup they searched for.
+func (p *TalkgroupsPanel) Reveal(key string) {
+	for i, row := range p.tbl.Rows() {
+		if len(row) > 0 && row[0] == key {
+			p.tbl.SetCursor(i)
+			return
+		}
+	}
+}
+
+// HandleMouseAt moves the cursor to the clicked data row. The first
+// body line is reserved for the filter input + sort summary, so the
+// table starts one row below the canonical chrome offset.
+func (p *TalkgroupsPanel) HandleMouseAt(_, localY int) tea.Cmd {
+	// Account for the extra filter+summary line above the table.
+	idx := tableRowFromLocalY(localY-1, len(p.tbl.Rows()))
+	if idx >= 0 {
+		p.tbl.SetCursor(idx)
+	}
+	return nil
+}
+
 func (p *TalkgroupsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:

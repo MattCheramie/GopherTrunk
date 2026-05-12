@@ -20,3 +20,22 @@ type Panel interface {
 	Update(msg tea.Msg, shared *state.SharedState) (Panel, tea.Cmd)
 	View(width, height int, focused bool, shared *state.SharedState) string
 }
+
+// Revealer is an optional interface for panels that can pre-position
+// their internal cursor on a specific row when the operator jumps in
+// from the command palette. key is panel-defined: SystemsPanel takes
+// a system name, TalkgroupsPanel a decimal ID, DevicesPanel a serial,
+// ScannerPanel "sys:<name>" or "conv:<idx>".
+type Revealer interface {
+	Reveal(key string)
+}
+
+// MouseAware is an optional interface for panels that want to react to
+// left-clicks inside their body. localY is the row index relative to
+// the panel's top-left (0 = panel border row). Implementations should
+// translate it into a row index and call SetCursor on their internal
+// table. Returning a tea.Cmd is permitted but most implementations
+// will return nil.
+type MouseAware interface {
+	HandleMouseAt(localX, localY int) tea.Cmd
+}

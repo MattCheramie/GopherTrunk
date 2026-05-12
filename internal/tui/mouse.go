@@ -3,6 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MattCheramie/GopherTrunk/internal/tui/panels"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/state"
 )
 
@@ -14,25 +15,50 @@ type tabRect struct {
 	xStart, xEnd int
 }
 
+// bodyTopY records the row at which the active panel's frame begins —
+// always immediately under the tab strip. Cached at render time so
+// body clicks can be translated into panel-local coordinates without
+// re-measuring.
+//
+// The tab strip is currently a single line in every rendered layout
+// (renderTabs returns one row regardless of wide vs. compact mode),
+// so this defaults to 1. The field is kept on the Model so future
+// multi-line chrome (e.g. a session banner) can update it from one
+// place.
+//
+// We don't measure lipgloss.Height(tabs) here because that would
+// re-invoke renderTabs from a non-View path and force a duplicate
+// render. Storing the height during View() is simpler.
+
 // handleMouseMsg routes a tea.MouseMsg to the right tabbable
-// surface. Currently only the tab strip (top row) and the "more"
-// pill (also top row) are wired. Returns true when the click was
-// consumed.
+// surface. Left-clicks on the tab strip switch panels; left-clicks in
+// the body are delegated to the active panel when it implements
+// panels.MouseAware. Returns true when the click was consumed.
 func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Cmd, bool) {
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		return nil, false
 	}
-	// Tab strip is always row 0. If the click is below the strip
-	// pass it through to the active panel (delegated below in
-	// Update once panel-side mouse hooks land).
-	if msg.Y != 0 {
+	// Tab strip is always row 0 — both wide and compact tab renderers
+	// emit a single line.
+	if msg.Y == 0 {
+		for _, r := range m.tabRects {
+			if msg.X >= r.xStart && msg.X < r.xEnd {
+				m.active = r.kind
+				return nil, true
+			}
+		}
 		return nil, false
 	}
-	for _, r := range m.tabRects {
-		if msg.X >= r.xStart && msg.X < r.xEnd {
-			m.active = r.kind
-			return nil, true
-		}
+	// Body clicks: delegate to the active panel if it cares. Local Y
+	// is global Y minus the tab strip height (one row).
+	if int(m.active) < 0 || int(m.active) >= len(m.panels) {
+		return nil, false
 	}
-	return nil, false
+	aware, ok := m.panels[m.active].(panels.MouseAware)
+	if !ok {
+		return nil, false
+	}
+	localY := msg.Y - 1
+	cmd := aware.HandleMouseAt(msg.X, localY)
+	return cmd, true
 }

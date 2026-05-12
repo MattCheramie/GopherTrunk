@@ -287,6 +287,7 @@ func (m *Model) discoverActions() []paletteAction {
 			Label: "Scanner: hold/resume hunt — " + sys.Name,
 			Kind:  "scanner",
 			Run: func(mm *Model) tea.Cmd {
+				mm.revealOn(state.PanelScanner, "sys:"+sys.Name)
 				kind := state.WriteKindScannerHuntHold
 				verb := "hold"
 				if sys.State == "held" {
@@ -303,7 +304,10 @@ func (m *Model) discoverActions() []paletteAction {
 		})
 	}
 
-	// 6) System / talkgroup / device drill-ins — handy nav.
+	// 6) System / talkgroup / device drill-ins — handy nav. Each
+	// action jumps to the relevant panel, pre-positions the panel's
+	// cursor on the matching row via the Revealer interface, and
+	// fires the detail modal where applicable.
 	for _, sys := range m.shared.Systems {
 		sys := sys
 		out = append(out, paletteAction{
@@ -311,6 +315,8 @@ func (m *Model) discoverActions() []paletteAction {
 			Label: "Open system: " + sys.Name + " (" + sys.Protocol + ")",
 			Kind:  "system",
 			Run: func(mm *Model) tea.Cmd {
+				mm.active = state.PanelSystems
+				mm.revealOn(state.PanelSystems, sys.Name)
 				return func() tea.Msg { return panels.SystemDetailMsg{Name: sys.Name} }
 			},
 		})
@@ -332,6 +338,8 @@ func (m *Model) discoverActions() []paletteAction {
 			Label: fmt.Sprintf("Open TG %d  %s", tg.ID, alpha),
 			Kind:  "talkgroup",
 			Run: func(mm *Model) tea.Cmd {
+				mm.active = state.PanelTalkgroups
+				mm.revealOn(state.PanelTalkgroups, fmt.Sprintf("%d", tg.ID))
 				return func() tea.Msg { return panels.TalkgroupDetailMsg{ID: tg.ID} }
 			},
 		})
@@ -344,12 +352,24 @@ func (m *Model) discoverActions() []paletteAction {
 			Kind:  "device",
 			Run: func(mm *Model) tea.Cmd {
 				mm.active = state.PanelDevices
+				mm.revealOn(state.PanelDevices, dev.Serial)
 				return nil
 			},
 		})
 	}
 
 	return out
+}
+
+// revealOn calls Reveal(key) on the target panel if it implements
+// panels.Revealer. Silent no-op otherwise — Revealer is opt-in.
+func (m *Model) revealOn(kind state.PanelKind, key string) {
+	if int(kind) < 0 || int(kind) >= len(m.panels) {
+		return
+	}
+	if r, ok := m.panels[kind].(panels.Revealer); ok {
+		r.Reveal(key)
+	}
 }
 
 func paletteAudioVol(delta float32) func(*Model) tea.Cmd {

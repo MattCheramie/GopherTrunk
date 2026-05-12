@@ -18,10 +18,24 @@ import (
 // when this panel becomes active and again when the user presses
 // `r`. The panel does not poll continuously — history is a stable
 // list and the daemon already paginates it.
+//
+// Refresh is asynchronous: when the SharedState hash for History
+// changes, Update returns a tea.Cmd that builds the new []table.Row
+// slice off the Update goroutine. The result arrives back as a
+// HistoryRefreshedMsg and is committed only when its hash still
+// matches the latest snapshot — newer results win.
 type HistoryPanel struct {
-	tbl      table.Model
-	lastHash uint64
-	reloadAt time.Time
+	tbl       table.Model
+	lastHash  uint64
+	pendingAt uint64 // hash of the in-flight async refresh, 0 when idle
+	reloadAt  time.Time
+}
+
+// HistoryRefreshedMsg carries the result of an async refresh job.
+// Exported so the root model can route it to the history panel.
+type HistoryRefreshedMsg struct {
+	Hash uint64
+	Rows []table.Row
 }
 
 // NewHistory constructs the panel.
@@ -55,6 +69,15 @@ func (p *HistoryPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 			p.reloadAt = time.Now()
 			return p, nil
 		}
+	case HistoryRefreshedMsg:
+		// Drop stale results — a newer snapshot landed in between
+		// dispatch and completion.
+		if m.Hash == p.pendingAt {
+			p.tbl.SetRows(m.Rows)
+			p.lastHash = m.Hash
+			p.pendingAt = 0
+		}
+		return p, nil
 	}
 	h := hashRows(s.History, func(r client.CallRow) string {
 		return fmt.Sprintf("%s|%s|%d|%s|%d|%s|%s",
@@ -63,37 +86,50 @@ func (p *HistoryPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 			r.GroupID, r.TalkgroupAlpha, r.SourceID,
 			r.System, r.EndReason)
 	})
-	if h != p.lastHash {
-		p.refresh(s.History)
-		p.lastHash = h
+	var refreshCmd tea.Cmd
+	if h != p.lastHash && h != p.pendingAt {
+		// Take a defensive copy so the goroutine sees a stable view
+		// of the input — the root model may overwrite s.History on
+		// the next poll tick.
+		snapshot := append([]client.CallRow(nil), s.History...)
+		p.pendingAt = h
+		refreshCmd = buildHistoryRowsCmd(snapshot, h)
 	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
+	if refreshCmd != nil {
+		cmd = tea.Batch(refreshCmd, cmd)
+	}
 	return p, cmd
 }
 
-func (p *HistoryPanel) refresh(rows []client.CallRow) {
-	out := make([]table.Row, 0, len(rows))
-	for _, r := range rows {
-		alpha := r.TalkgroupAlpha
-		if alpha == "" {
-			alpha = "—"
+// buildHistoryRowsCmd returns a tea.Cmd that formats rows off the
+// Update goroutine and delivers them as a HistoryRefreshedMsg. The
+// hash is echoed so the panel can drop stale results.
+func buildHistoryRowsCmd(rows []client.CallRow, hash uint64) tea.Cmd {
+	return func() tea.Msg {
+		out := make([]table.Row, 0, len(rows))
+		for _, r := range rows {
+			alpha := r.TalkgroupAlpha
+			if alpha == "" {
+				alpha = "—"
+			}
+			ended := "—"
+			if !r.EndedAt.IsZero() {
+				ended = r.EndedAt.Format("15:04:05")
+			}
+			out = append(out, table.Row{
+				r.StartedAt.Format("01-02 15:04:05"),
+				ended,
+				fmt.Sprintf("%d", r.GroupID),
+				alpha,
+				fmt.Sprintf("%d", r.SourceID),
+				r.System,
+				r.EndReason,
+			})
 		}
-		ended := "—"
-		if !r.EndedAt.IsZero() {
-			ended = r.EndedAt.Format("15:04:05")
-		}
-		out = append(out, table.Row{
-			r.StartedAt.Format("01-02 15:04:05"),
-			ended,
-			fmt.Sprintf("%d", r.GroupID),
-			alpha,
-			fmt.Sprintf("%d", r.SourceID),
-			r.System,
-			r.EndReason,
-		})
+		return HistoryRefreshedMsg{Hash: hash, Rows: out}
 	}
-	p.tbl.SetRows(out)
 }
 
 func (p *HistoryPanel) View(width, height int, focused bool, s *state.SharedState) string {

@@ -38,6 +38,10 @@ type ScannerPanel struct {
 	manualInput  textinput.Model
 	editingFreq  bool
 	inputErr     string
+
+	// pendingReveal stashes a Reveal() request until the next Update
+	// gives us a SharedState to resolve against. Cleared once applied.
+	pendingReveal string
 }
 
 // NewScanner returns a new read+write scanner cockpit.
@@ -82,6 +86,48 @@ func (ScannerPanel) Keys() []key.Binding {
 // handheld scanner without overshooting on a keyboard.
 const volumeStep = 0.05
 
+// Reveal pre-positions the scanner's virtual cursor on a system or
+// conventional channel. key forms:
+//
+//	"sys:<name>"   — trunked system by name
+//	"conv:<index>" — conventional channel by zero-based index
+//
+// The actual cursor index can't be computed until we see SharedState,
+// so we stash the request and resolve it on the next Update tick.
+func (p *ScannerPanel) Reveal(key string) {
+	p.pendingReveal = key
+}
+
+// applyPendingReveal consumes p.pendingReveal against the current
+// scanner snapshot. Called at the top of Update so subsequent
+// keybindings (hold/resume/retune) operate on the revealed row.
+func (p *ScannerPanel) applyPendingReveal(s *state.SharedState) {
+	if p.pendingReveal == "" {
+		return
+	}
+	key := p.pendingReveal
+	p.pendingReveal = ""
+	if rest, ok := strings.CutPrefix(key, "sys:"); ok {
+		for i, sys := range s.Scanner.Systems {
+			if sys.Name == rest {
+				p.cursor = i
+				return
+			}
+		}
+		return
+	}
+	if rest, ok := strings.CutPrefix(key, "conv:"); ok {
+		idx, err := strconv.Atoi(rest)
+		if err != nil {
+			return
+		}
+		nSys := len(s.Scanner.Systems)
+		if idx >= 0 && idx < len(s.Scanner.Conventional.Channels) {
+			p.cursor = nSys + idx
+		}
+	}
+}
+
 func (p *ScannerPanel) rowCount(s *state.SharedState) int {
 	return len(s.Scanner.Systems) + len(s.Scanner.Conventional.Channels)
 }
@@ -107,6 +153,7 @@ func (p *ScannerPanel) resolveCursor(s *state.SharedState) (string, int) {
 }
 
 func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	p.applyPendingReveal(s)
 	km, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return p, nil

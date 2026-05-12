@@ -82,6 +82,31 @@ func (p *SystemsPanel) View(width, height int, focused bool, s *state.SharedStat
 	return panelFrame("Systems", width, height, focused, p.tbl.View())
 }
 
+// Cursor exposes the current table cursor index for tests.
+func (p *SystemsPanel) Cursor() int { return p.tbl.Cursor() }
+
+// Reveal positions the cursor on the row whose Name matches the
+// given key. No-op when the row is absent; the operator still ends
+// up on the panel.
+func (p *SystemsPanel) Reveal(key string) {
+	for i, row := range p.tbl.Rows() {
+		if len(row) > 0 && row[0] == key {
+			p.tbl.SetCursor(i)
+			return
+		}
+	}
+}
+
+// HandleMouseAt moves the cursor to the clicked row when the click
+// lands on a data row; chrome clicks are ignored.
+func (p *SystemsPanel) HandleMouseAt(_, localY int) tea.Cmd {
+	idx := tableRowFromLocalY(localY, len(p.tbl.Rows()))
+	if idx >= 0 {
+		p.tbl.SetCursor(idx)
+	}
+	return nil
+}
+
 func systemsColumns(w int) []table.Column {
 	if w < 40 {
 		w = 40

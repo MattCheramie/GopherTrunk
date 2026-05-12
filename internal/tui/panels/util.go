@@ -112,3 +112,24 @@ func containsFold(haystack, needle string) bool {
 	}
 	return strings.Contains(strings.ToLower(haystack), strings.ToLower(needle))
 }
+
+// tableRowFromLocalY maps a panel-local Y (0 = panel's top border) to
+// a bubbles/table row index, accounting for the canonical chrome that
+// panelFrame draws: top border, title line, table column header. The
+// returned index is clamped to [0, rowCount-1]; -1 means the click
+// landed on chrome, not a row.
+func tableRowFromLocalY(localY, rowCount int) int {
+	// panelFrame: row 0 border, row 1 title, row 2 column header.
+	// First data row sits at local Y == 3.
+	idx := localY - 3
+	if idx < 0 {
+		return -1
+	}
+	if rowCount == 0 {
+		return -1
+	}
+	if idx >= rowCount {
+		return rowCount - 1
+	}
+	return idx
+}

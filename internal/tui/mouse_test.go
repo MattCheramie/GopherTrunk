@@ -5,6 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
+	"github.com/MattCheramie/GopherTrunk/internal/tui/panels"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/state"
 )
 
@@ -34,22 +36,50 @@ func TestHitTestTab_SelectsClickedTab(t *testing.T) {
 	}
 }
 
-func TestHitTestTab_IgnoresBodyClicks(t *testing.T) {
+func TestHitTestTab_BodyClickDelegatesToActivePanel(t *testing.T) {
 	m := newTestModel(t)
 	m.width = 200
 	m.height = 24
 	_ = m.renderTabs()
-	original := m.active
+	// Land on Systems so the click feeds into a MouseAware panel.
+	m.active = state.PanelSystems
+	m.shared.Systems = []client.SystemDTO{
+		{Name: "A", Protocol: "p25"},
+		{Name: "B", Protocol: "dmr"},
+		{Name: "C", Protocol: "nxdn"},
+	}
+	// One Update tick populates the systems table.
+	_, _ = m.panels[state.PanelSystems].Update(tea.WindowSizeMsg{Width: m.width, Height: m.height}, m.shared)
+
+	// Click on body row 1: global Y == 1 (tab strip) + 3 (border, title, col header) + 1 = 5.
 	msg := tea.MouseMsg{
-		X: 5, Y: 8, // below the tab strip
+		X: 5, Y: 5,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	}
+	_, consumed := m.handleMouseMsg(msg)
+	if !consumed {
+		t.Fatal("body click on MouseAware panel should be consumed")
+	}
+	if got := m.panels[state.PanelSystems].(*panels.SystemsPanel); got.Cursor() != 1 {
+		t.Errorf("systems cursor = %d, want 1", got.Cursor())
+	}
+}
+
+func TestHitTestTab_BodyClickWithoutMouseAware(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 200
+	m.height = 24
+	_ = m.renderTabs()
+	// Dashboard isn't MouseAware — body clicks should not be consumed.
+	m.active = state.PanelDashboard
+	msg := tea.MouseMsg{
+		X: 5, Y: 8,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	}
 	_, consumed := m.handleMouseMsg(msg)
 	if consumed {
-		t.Fatal("body click should not be consumed by tab hit-test")
-	}
-	if m.active != original {
-		t.Errorf("active changed unexpectedly: %v → %v", original, m.active)
+		t.Errorf("dashboard body click should be left unconsumed")
 	}
 }

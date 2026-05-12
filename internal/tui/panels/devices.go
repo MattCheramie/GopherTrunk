@@ -93,6 +93,25 @@ func (p *DevicesPanel) View(width, height int, focused bool, s *state.SharedStat
 	return panelFrame("Devices", width, height, focused, body)
 }
 
+// Reveal positions the cursor on the row whose Serial matches key.
+func (p *DevicesPanel) Reveal(key string) {
+	for i, row := range p.tbl.Rows() {
+		if len(row) > 0 && row[0] == key {
+			p.tbl.SetCursor(i)
+			return
+		}
+	}
+}
+
+// HandleMouseAt moves the cursor to the clicked data row.
+func (p *DevicesPanel) HandleMouseAt(_, localY int) tea.Cmd {
+	idx := tableRowFromLocalY(localY, len(p.tbl.Rows()))
+	if idx >= 0 {
+		p.tbl.SetCursor(idx)
+	}
+	return nil
+}
+
 func devicesColumns(w int) []table.Column {
 	if w < 60 {
 		w = 60
