@@ -1,8 +1,111 @@
 # Hardening & operations
 
-Operator playbook for running GopherTrunk in production: Prometheus
-metrics, graceful shutdown, the Docker assets, and the RTL-SDR USB
-pass-through recipe.
+Operator playbook for running GopherTrunk in production: API
+authentication, Prometheus metrics, graceful shutdown, the Docker
+assets, and the RTL-SDR USB pass-through recipe.
+
+## API authentication
+
+Every HTTP mutation endpoint (end-call, talkgroup priority/lockout/
+scan, retention sweep, tone-detector reset, scanner cockpit, audio
+cockpit, manual tune) is gated by `api.auth` in `config.yaml`. The
+default policy (`mode: auto`) is loopback-permissive but requires a
+bearer token on every public-interface bind.
+
+### Policy modes
+
+- **`auto` (default).** Require a bearer token on non-loopback binds;
+  bypass the check when bound to `127.0.0.1` / `::1`. Reasonable for
+  single-host operator boxes — kernel-enforced reachability is a
+  peer-cred proxy. The daemon refuses to start in `auto` mode on a
+  public bind without a configured token.
+- **`required`.** Every mutation request must carry a valid Bearer
+  token, even from loopback. Use when the daemon shares a host with
+  untrusted users.
+- **`disabled`.** Wide-open mutations, no auth. Equivalent to the
+  legacy `allow_mutations: true` behaviour; the daemon logs a warning
+  at startup. Only safe behind an external proxy that does its own
+  auth, or on a strictly trusted segment.
+
+### Generating a token
+
+```sh
+# 32 bytes of urandom, hex-encoded — 64 ASCII chars.
+openssl rand -hex 32 > /etc/gophertrunk/api-token
+chmod 600 /etc/gophertrunk/api-token
+chown gophertrunk:gophertrunk /etc/gophertrunk/api-token
+```
+
+Reference the file from config:
+
+```yaml
+api:
+  http_addr: "0.0.0.0:8080"
+  auth:
+    mode: "required"
+    token_file: "/etc/gophertrunk/api-token"
+```
+
+The daemon re-reads `token_file` on every mutation request, so
+rotation is a one-step `openssl rand` + file write — no SIGHUP, no
+restart.
+
+### Client usage
+
+```sh
+TOKEN=$(cat /etc/gophertrunk/api-token)
+
+# Probe capability first — always open.
+curl -sS http://daemon:8080/api/v1/mutations
+
+# Mutation — Authorization header required.
+curl -sS -X POST \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"reason":"manual"}' \
+     http://daemon:8080/api/v1/calls/00000001/end
+```
+
+`GET /api/v1/mutations` reports `auth_mode` and `can_mutate` (plus a
+`allow_mutations` legacy alias) so TUI / scripts can light up
+write-side keybindings without probing real endpoints for 401.
+
+### Trusted networks (LAN bypass)
+
+If the daemon binds to a LAN address and you trust everything on that
+segment, list the prefix under `auth.trusted_networks` and run in
+`auto` mode:
+
+```yaml
+api:
+  http_addr: "192.168.1.10:8080"
+  auth:
+    mode: "auto"
+    trusted_networks:
+      - "192.168.0.0/16"
+```
+
+The middleware honours `RemoteAddr` only — `X-Forwarded-For` is
+intentionally ignored so the bypass isn't forgeable by a hostile
+upstream proxy. If you front the daemon with an authenticating
+reverse proxy (nginx, Caddy, Envoy), point its upstream at the daemon
+on loopback and let the proxy handle auth; `auth.mode: auto` then
+bypasses on the loopback hop.
+
+### Migrating from `allow_mutations`
+
+Existing configs with `allow_mutations: true` still work: the daemon
+logs a deprecation warning at startup and maps the flag to
+`auth.mode: disabled` (the wide-open legacy behaviour). Migrate to
+explicit `auth.mode` at the next config edit:
+
+```diff
+ api:
+   http_addr: "127.0.0.1:8080"
+-  allow_mutations: true
++  auth:
++    mode: "auto"      # loopback-bypass; switch to required on public binds
+```
 
 ## Metrics
 

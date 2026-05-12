@@ -264,15 +264,45 @@ type SystemConfig struct {
 // Both addresses are TCP listen specifiers (":8080", "127.0.0.1:9000",
 // etc.). An empty value disables that surface.
 //
-// AllowMutations gates the write endpoints (end call, set talkgroup
-// priority/lockout, retention sweep, tone-detector reset). Off by
-// default — the daemon's HTTP API has no authentication, so any
-// network-reachable instance is unauthenticated by definition. Only
-// turn this on if you trust everything that can reach the listener.
+// Auth gates the write endpoints (end call, set talkgroup
+// priority/lockout, retention sweep, tone-detector reset, scanner
+// cockpit, audio cockpit). See APIAuthConfig for the policy modes;
+// the default `auto` mode bypasses auth on loopback binds and
+// requires a bearer token on public binds.
+//
+// AllowMutations is the legacy gate. Setting it to true logs a
+// deprecation warning and maps to `auth.mode: disabled` so the
+// daemon's existing wide-open behaviour is preserved.
 type APIConfig struct {
-	HTTPAddr       string `yaml:"http_addr"`
-	GRPCAddr       string `yaml:"grpc_addr"`
-	AllowMutations bool   `yaml:"allow_mutations"`
+	HTTPAddr       string         `yaml:"http_addr"`
+	GRPCAddr       string         `yaml:"grpc_addr"`
+	AllowMutations bool           `yaml:"allow_mutations"`
+	Auth           APIAuthConfig  `yaml:"auth"`
+}
+
+// APIAuthConfig configures bearer-token authentication on the HTTP
+// API's mutation endpoints. See internal/api/AuthMode for the policy
+// modes.
+type APIAuthConfig struct {
+	// Mode picks the auth policy. Recognised values:
+	//   "" / "auto"     → auto (the default — require a token on
+	//                     non-loopback binds, bypass on loopback)
+	//   "required" / "on" → require a token on every mutation
+	//   "disabled" / "off" → no auth, mutations wide open (the
+	//                       legacy `allow_mutations: true` behaviour)
+	Mode string `yaml:"mode"`
+	// Token is the inline bearer token (compared via crypto/subtle).
+	// Prefer TokenFile so the token doesn't live in config.yaml.
+	Token string `yaml:"token"`
+	// TokenFile is a path to a file containing the bearer token
+	// (whitespace stripped). The daemon re-reads it on every
+	// request so operators can rotate without a restart.
+	TokenFile string `yaml:"token_file"`
+	// TrustedNetworks is a list of CIDRs whose source addresses
+	// bypass the token check under `auto` mode. Loopback
+	// (127.0.0.1/32 and ::1/128) is implicitly trusted under
+	// `auto` and does not need to be listed here.
+	TrustedNetworks []string `yaml:"trusted_networks"`
 }
 
 // StorageConfig configures the SQLite call log. An empty Path disables

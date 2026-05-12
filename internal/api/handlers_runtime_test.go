@@ -18,7 +18,7 @@ func (f fakeRuntime) Runtime() RuntimeDTO { return f.dto }
 func TestHandleRuntime_503WhenNotConfigured(t *testing.T) {
 	bus := events.NewBus(8)
 	s, err := NewServer(ServerOptions{
-		Addr: ":0",
+		Addr: "127.0.0.1:0",
 		Bus:  bus,
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func TestHandleRuntime_ServesDTO(t *testing.T) {
 		RetentionInterval: 1 * time.Hour,
 		VocoderMap:        map[string]string{"p25": "imbe"},
 	}}
-	s, err := NewServer(ServerOptions{Addr: ":0", Bus: bus, Runtime: fake})
+	s, err := NewServer(ServerOptions{Addr: "127.0.0.1:0", Bus: bus, Runtime: fake})
 	if err != nil {
 		t.Fatal(err)
 	}

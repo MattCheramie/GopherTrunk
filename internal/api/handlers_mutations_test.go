@@ -58,12 +58,14 @@ func (f *fakeTones) ResetDevice(serial string) {
 func TestMutations_Disabled_ReturnForbidden(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
+	// Force auth to required-mode with no token in the request →
+	// the gate fires before any handler runs.
 	base, teardown := mkServer(t, ServerOptions{
-		Bus:            bus,
-		AllowMutations: false, // explicit
-		Mutator:        &fakeMutator{pending: map[string]bool{"abc": true}},
-		Retention:      &fakeRetention{},
-		Tones:          &fakeTones{},
+		Bus:       bus,
+		Auth:      AuthConfig{Mode: AuthModeRequired, Token: "test-token"},
+		Mutator:   &fakeMutator{pending: map[string]bool{"abc": true}},
+		Retention: &fakeRetention{},
+		Tones:     &fakeTones{},
 	})
 	defer teardown()
 
@@ -81,8 +83,8 @@ func TestMutations_Disabled_ReturnForbidden(t *testing.T) {
 			t.Fatalf("%s %s: %v", c.method, c.path, err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusForbidden {
-			t.Errorf("%s %s: status=%d, want 403", c.method, c.path, resp.StatusCode)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s %s: status=%d, want 401", c.method, c.path, resp.StatusCode)
 		}
 	}
 }
@@ -106,21 +108,30 @@ func TestMutationStatus_AlwaysExposed(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status=%d", resp.StatusCode)
 	}
-	var body map[string]bool
+	var body map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !body["allow_mutations"] {
-		t.Errorf("allow_mutations = false")
+	// AllowMutations: true → maps to AuthModeDisabled via the
+	// legacy migration → can_mutate is true and the legacy alias
+	// allow_mutations mirrors it.
+	if body["auth_mode"] != "disabled" {
+		t.Errorf("auth_mode = %v, want disabled", body["auth_mode"])
 	}
-	if !body["engine_writable"] {
-		t.Errorf("engine_writable = false")
+	if body["can_mutate"] != true {
+		t.Errorf("can_mutate = %v, want true", body["can_mutate"])
 	}
-	if !body["retention_writable"] {
-		t.Errorf("retention_writable = false")
+	if body["allow_mutations"] != true {
+		t.Errorf("allow_mutations (legacy alias) = %v, want true", body["allow_mutations"])
 	}
-	if body["tones_writable"] {
-		t.Errorf("tones_writable = true (none wired)")
+	if body["engine_writable"] != true {
+		t.Errorf("engine_writable = %v, want true", body["engine_writable"])
+	}
+	if body["retention_writable"] != true {
+		t.Errorf("retention_writable = %v, want true", body["retention_writable"])
+	}
+	if body["tones_writable"] != false {
+		t.Errorf("tones_writable = %v, want false (none wired)", body["tones_writable"])
 	}
 }
 

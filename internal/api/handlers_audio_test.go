@@ -246,14 +246,15 @@ func TestAudioPatch_RejectsEmptyBody(t *testing.T) {
 	}
 }
 
-func TestAudioPatch_GatedByAllowMutations(t *testing.T) {
+func TestAudioPatch_GatedByAuth(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	fa := newFakeAudio()
 	base, teardown := mkServer(t, ServerOptions{
 		Bus:   bus,
 		Audio: fa,
-		// AllowMutations: false (default)
+		// Force token-required auth; loopback bypass doesn't apply.
+		Auth: AuthConfig{Mode: AuthModeRequired, Token: "test-token"},
 	})
 	defer teardown()
 
@@ -265,8 +266,8 @@ func TestAudioPatch_GatedByAllowMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 403 {
-		t.Errorf("status=%d, want 403", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", resp.StatusCode)
 	}
 	if fa.setMuteN.Load() != 0 {
 		t.Errorf("SetMuted called despite gate")

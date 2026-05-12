@@ -480,6 +480,10 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 
 	// HTTP API — optional.
 	if cfg.API.HTTPAddr != "" {
+		authMode, ok := api.ParseAuthMode(cfg.API.Auth.Mode)
+		if !ok {
+			return nil, fmt.Errorf("daemon: api.auth.mode: unrecognised value %q (expected auto / required / disabled)", cfg.API.Auth.Mode)
+		}
 		opts := api.ServerOptions{
 			Addr:           cfg.API.HTTPAddr,
 			Bus:            d.bus,
@@ -490,6 +494,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			Log:            log,
 			Version:        version,
 			AllowMutations: cfg.API.AllowMutations,
+			Auth: api.AuthConfig{
+				Mode:            authMode,
+				Token:           cfg.API.Auth.Token,
+				TokenFile:       cfg.API.Auth.TokenFile,
+				TrustedNetworks: cfg.API.Auth.TrustedNetworks,
+			},
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)

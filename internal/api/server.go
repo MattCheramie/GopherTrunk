@@ -210,6 +210,11 @@ type Server struct {
 	log        *slog.Logger
 	version    string
 
+	auth *authState
+	// allowMutations is kept for backwards compatibility with
+	// callers that haven't migrated to AuthConfig yet. When set
+	// without an explicit AuthConfig the server constructs an
+	// AuthModeDisabled state (legacy wide-open behaviour).
 	allowMutations bool
 
 	mu     sync.Mutex
@@ -275,10 +280,20 @@ type ServerOptions struct {
 	Log            *slog.Logger
 	// Version is reported by GET /api/v1/version.
 	Version string
-	// AllowMutations gates the write endpoints. Off by default —
-	// the HTTP API has no authentication, so mutations are unsafe
-	// to expose unless the operator explicitly opts in.
+	// AllowMutations is the legacy mutation gate. Deprecated in
+	// favour of Auth — set Auth.Mode = AuthModeDisabled to get the
+	// same wide-open semantics, or AuthModeAuto / AuthModeRequired
+	// for the bearer-token middleware. When Auth.Mode is the zero
+	// value (AuthModeAuto) and AllowMutations is true, the daemon
+	// emits a deprecation warning and treats the daemon as
+	// AuthModeDisabled to preserve the existing behaviour.
 	AllowMutations bool
+	// Auth configures the mutation auth middleware. See AuthMode
+	// for the policy semantics. Zero-value is AuthModeAuto, which
+	// requires a token on non-loopback binds and bypasses the
+	// check on loopback (peer-cred trust on a single-host
+	// deployment).
+	Auth AuthConfig
 	// Mutator is the engine's write side (end call). Optional;
 	// when nil the corresponding routes return 503.
 	Mutator EngineMutator
@@ -323,6 +338,23 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Talkgroups == nil {
 		opts.Talkgroups = trunking.NewTalkgroupDB()
 	}
+	authCfg := opts.Auth
+	// Legacy migration: AllowMutations: true with no explicit Auth
+	// config maps to AuthModeDisabled so the existing wide-open
+	// behaviour is preserved. The daemon logs a deprecation
+	// warning so operators know to migrate to the explicit auth
+	// config.
+	if opts.AllowMutations && authCfg.Mode == AuthModeAuto && authCfg.Token == "" && authCfg.TokenFile == "" && len(authCfg.TrustedNetworks) == 0 {
+		log.Warn("api: AllowMutations is deprecated; migrate to api.auth (mapping to auth.mode=disabled for backwards compatibility)")
+		authCfg.Mode = AuthModeDisabled
+	}
+	auth, err := newAuthState(authCfg, opts.Addr)
+	if err != nil {
+		return nil, err
+	}
+	if authCfg.Mode == AuthModeDisabled {
+		log.Warn("api: auth disabled — mutation endpoints are not authenticated; bind to loopback or trusted network only")
+	}
 	return &Server{
 		addr:           opts.Addr,
 		bus:            opts.Bus,
@@ -340,6 +372,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
+		auth:           auth,
 		allowMutations: opts.AllowMutations,
 	}, nil
 }
@@ -445,13 +478,15 @@ func (s *Server) routes() *http.ServeMux {
 	return mux
 }
 
-// gate wraps a handler so it short-circuits with 403 when the
-// daemon was started without api.allow_mutations. The body carries
-// the same {"error":"..."} envelope existing 4xx handlers use.
+// gate wraps a mutation handler in the auth middleware. The middleware
+// returns 401 when a token is required but missing / wrong, 403 when
+// auth is disabled by misconfiguration, and otherwise dispatches to
+// the handler. The body always carries the same {"error":"..."}
+// envelope existing 4xx handlers use.
 func (s *Server) gate(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowMutations {
-			writeError(w, http.StatusForbidden, "mutations disabled (set api.allow_mutations: true to enable)")
+		if status, reason := s.auth.authorize(r); status != 0 {
+			writeError(w, status, reason)
 			return
 		}
 		h(w, r)

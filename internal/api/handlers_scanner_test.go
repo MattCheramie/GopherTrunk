@@ -210,11 +210,16 @@ func TestScannerSetMode_Applies(t *testing.T) {
 	}
 }
 
-func TestScannerSetMode_GatedByAllowMutations(t *testing.T) {
+func TestScannerSetMode_GatedByAuth(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	cock := &fakeCockpit{}
-	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: false})
+	// Force token-required auth and don't supply a token — should
+	// short-circuit with 401 before the handler runs.
+	base, teardown := mkServer(t, ServerOptions{
+		Bus: bus, Scanner: cock,
+		Auth: AuthConfig{Mode: AuthModeRequired, Token: "test-token"},
+	})
 	defer teardown()
 
 	body := bytes.NewReader([]byte(`{"scan_mode":"list"}`))
@@ -225,8 +230,8 @@ func TestScannerSetMode_GatedByAllowMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 403 {
-		t.Errorf("status=%d, want 403 (gated)", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401 (gated)", resp.StatusCode)
 	}
 }
 
@@ -436,7 +441,11 @@ func TestScannerManualTune_Gated(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	cock := &fakeCockpit{}
-	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock /* AllowMutations:false */})
+	// Force token-required auth, supply no token — gate should fire.
+	base, teardown := mkServer(t, ServerOptions{
+		Bus: bus, Scanner: cock,
+		Auth: AuthConfig{Mode: AuthModeRequired, Token: "test-token"},
+	})
 	defer teardown()
 
 	body := bytes.NewReader([]byte(`{"frequency_hz":155895000}`))
@@ -445,8 +454,8 @@ func TestScannerManualTune_Gated(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 403 {
-		t.Errorf("status=%d, want 403", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status=%d, want 401", resp.StatusCode)
 	}
 	if len(cock.manualReqs) != 0 {
 		t.Errorf("ManualTune called despite gate")
