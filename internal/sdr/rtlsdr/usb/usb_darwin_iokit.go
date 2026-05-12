@@ -151,8 +151,9 @@ var (
 // CoreFoundation function pointers we hold across the package
 // lifetime. RegisterLibFunc populates each at init.
 var (
-	cfRelease                func(cf cfTypeRef)
+	cfRelease                 func(cf cfTypeRef)
 	cfStringCreateWithCString func(alloc cfAllocatorRef, str *byte, encoding uint32) cfStringRef
+	cfStringGetCString        func(theString cfStringRef, buffer *byte, bufferSize int64, encoding uint32) bool
 	cfNumberGetValue          func(num cfNumberRef, theType uint32, valuePtr unsafe.Pointer) bool
 	cfUUIDCreateFromUUIDBytes func(alloc cfAllocatorRef, bytes cfUUIDBytes) cfTypeRef
 	cfUUIDGetUUIDBytes        func(uuid cfTypeRef) cfUUIDBytes
@@ -174,6 +175,14 @@ const kCFAllocatorDefault cfAllocatorRef = 0
 
 // kCFStringEncodingASCII for CFStringCreateWithCString.
 const kCFStringEncodingASCII uint32 = 0x0600
+
+// kCFStringEncodingUTF8 is the encoding CFStringGetCString uses to
+// decode the IORegistry's USB descriptor strings ("USB Vendor Name",
+// "USB Serial Number", etc.). USB string descriptors arrive as
+// UTF-16LE on the wire and IOKit decodes them to UTF-8 in the
+// IORegistry property dictionary, so UTF-8 is the right read-back
+// encoding.
+const kCFStringEncodingUTF8 uint32 = 0x08000100
 
 // loadIOKit opens IOKit + CoreFoundation and binds the function
 // pointers we use. Lazy: called from platformEnumerator on first
@@ -206,6 +215,7 @@ func loadIOKit() (err error) {
 	hIOKit = io
 	purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
 	purego.RegisterLibFunc(&cfStringCreateWithCString, cf, "CFStringCreateWithCString")
+	purego.RegisterLibFunc(&cfStringGetCString, cf, "CFStringGetCString")
 	purego.RegisterLibFunc(&cfNumberGetValue, cf, "CFNumberGetValue")
 	purego.RegisterLibFunc(&cfUUIDCreateFromUUIDBytes, cf, "CFUUIDCreateFromUUIDBytes")
 	purego.RegisterLibFunc(&cfUUIDGetUUIDBytes, cf, "CFUUIDGetUUIDBytes")
