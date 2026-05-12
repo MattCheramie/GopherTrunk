@@ -199,6 +199,25 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Reference spec PDFs consolidated under `docs/specs/`.** The
+  NXDN-TS-1-A and ETSI EN 300 392-2 PDFs that drive the
+  on-air FEC implementations were previously sitting at the
+  repo root with vendor-supplied filenames; the M/A-COM
+  LBI-38463C "EDACS System Manager Supervisor's Guide"
+  uploaded as a candidate EDACS air-interface reference was
+  only in the chat. All three now live under
+  [`docs/specs/`](docs/specs/) with normalised filenames
+  (`nxdn-ts-1-a-v1.3.pdf`, `etsi-en-300-392-2-v3.8.1.pdf`,
+  `lbi-38463c-edacs-system-manager.pdf`) and a
+  [`docs/specs/README.md`](docs/specs/README.md) that maps
+  each PDF to the code paths it backs (NXDN → §4.5 channel
+  coding; TETRA → §8.2/§8.3.1 chain) and explains why the
+  LBI is a **negative reference** — it documents the
+  system-admin workstation UI, not the air interface, so
+  future readers looking for an EDACS spec know to skip it
+  and pursue LBI-39031 / LBI-39154 / LBI-38894 instead.
+  `git mv` preserves history for the two previously-tracked
+  PDFs.
 - **EDACS FEC documentation correction.** Earlier package
   docstrings + README bullets called out an "interleaved
   Reed-Solomon-derived FEC layer above the BCH" on the
@@ -215,8 +234,10 @@ to its own package and lands independently.
 - **NXDN CAC spec-correct interleave + puncture per
   NXDN-TS-1-A rev 1.3 §4.5.1.1.** Closes the "blocked on
   spec data" gap on the previous round — the user uploaded
-  `NXDN-TS-1-A_v0103.pdf` and the full outbound CAC channel
-  coding chain landed end-to-end.
+  the NXDN-TS-1-A spec (now in
+  [`docs/specs/nxdn-ts-1-a-v1.3.pdf`](docs/specs/nxdn-ts-1-a-v1.3.pdf))
+  and the full outbound CAC channel coding chain landed
+  end-to-end.
   - `internal/radio/nxdn/cac_channel.go` adds `EncodeCACChannel`
     + `DecodeCACChannel` implementing the spec's six-stage
     chain: 155 info bits (8 SR + 144 L3 Data + 3 Null) ‖
@@ -1330,6 +1351,10 @@ opt-in field as a `omitempty` JSON value.
   realities and the plugin model
 - [`docs/hardening.md`](docs/hardening.md) — Prometheus catalogue,
   Docker / compose USB pass-through, smoke-test checklist
+- [`docs/specs/`](docs/specs/) — reference air-interface PDFs the
+  on-air FEC implementations derive from (NXDN-TS-1-A,
+  ETSI EN 300 392-2 TETRA, plus a negative-reference M/A-COM LBI
+  for EDACS that documents *not* what to look for)
 
 ## License
 
