@@ -190,20 +190,50 @@ func readUSBProperty(svc ioService, key string) (uint32, bool) {
 	return uint32(v), true
 }
 
-// readUSBString returns a UTF-8 string property from the IORegistry,
-// or "" when missing. Implementation note: CFStringRef → C string
-// requires CFStringGetCString which we don't currently bind; this
-// stub returns "" until that helper lands. Real RTL-SDR enumeration
-// works without the strings — VID/PID + serial-from-config-by-Path
-// disambiguate multi-dongle setups.
+// readUSBString reads a UTF-8 string property from the IORegistry.
+// IOKit decodes USB string descriptors (UTF-16LE on the wire) into
+// UTF-8 CFStringRefs in the property dictionary, so we read them
+// back via CFStringGetCString with kCFStringEncodingUTF8.
+//
+// USB descriptor strings are bounded at 255 chars by the USB spec
+// (1 length byte + 254 UTF-16 code units, which can round up to
+// ~500 UTF-8 bytes worst case for full BMP characters). A 1024-byte
+// stack-allocated buffer covers every realistic device. CFStringGetCString
+// returns false when the buffer is too small; in that case we log
+// (not yet — silent fallback) and return "" so the caller stays on
+// the friendly-name path.
+//
+// Returns "" when the property is missing, the buffer is too small,
+// or the framework hasn't loaded.
 func readUSBString(svc ioService, key string) string {
-	// TODO(macos-strings): bind CFStringGetCString and read the
-	// CFStringRef into a Go string. For now the caller treats the
-	// empty result as "fall back to friendly name from the known-
-	// devices table" (see purego/devices.go).
-	_ = svc
-	_ = key
-	return ""
+	if cfStringGetCString == nil {
+		return ""
+	}
+	keyBytes := append([]byte(key), 0)
+	cfKey := cfStringCreateWithCString(kCFAllocatorDefault, &keyBytes[0], kCFStringEncodingASCII)
+	if cfKey == 0 {
+		return ""
+	}
+	defer cfRelease(cfKey)
+	cfStr := ioRegistryEntryCreateCFProperty(svc, cfKey, kCFAllocatorDefault, 0)
+	if cfStr == 0 {
+		return ""
+	}
+	defer cfRelease(cfStr)
+	// 1024 bytes is the practical upper bound for a USB descriptor
+	// string converted to UTF-8 (255-char limit × ≤4 UTF-8 bytes per
+	// code unit, plus terminator). Stack allocation avoids the GC.
+	var buf [1024]byte
+	if !cfStringGetCString(cfStr, &buf[0], int64(len(buf)), kCFStringEncodingUTF8) {
+		return ""
+	}
+	// Walk to the NUL terminator and slice. We don't trust the buffer
+	// to be entirely NUL-padded beyond the string itself.
+	end := 0
+	for end < len(buf) && buf[end] != 0 {
+		end++
+	}
+	return string(buf[:end])
 }
 
 // Open creates a IOUSBDeviceInterface for the device at d.Path

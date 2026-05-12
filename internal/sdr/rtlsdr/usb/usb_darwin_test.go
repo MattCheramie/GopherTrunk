@@ -99,3 +99,26 @@ func TestUUIDByteSize(t *testing.T) {
 		t.Errorf("sizeof(cfUUIDBytes) = %d, want %d", got, want)
 	}
 }
+
+// TestReadUSBStringHandlesMissingSymbol confirms readUSBString stays
+// safe when the IOKit load is bypassed (test binary running on a
+// macOS revision where purego.Dlopen failed). The contract is "empty
+// string, no panic" — same as the pre-CFStringGetCString stub.
+//
+// Constructing a "real service handle that doesn't have the property"
+// path would require an actual IOKit-equipped macOS host, and
+// invoking IORegistryEntryCreateCFProperty with a synthesised bogus
+// handle segfaults inside the framework rather than degrading
+// gracefully — so this is the deepest test we can write portably.
+func TestReadUSBStringHandlesMissingSymbol(t *testing.T) {
+	// Force the unloaded path by saving + nilling the resolved
+	// function pointer; restore after the assertion.
+	saved := cfStringGetCString
+	cfStringGetCString = nil
+	defer func() { cfStringGetCString = saved }()
+
+	got := readUSBString(0, "USB Serial Number")
+	if got != "" {
+		t.Errorf("readUSBString with no resolver = %q, want empty", got)
+	}
+}

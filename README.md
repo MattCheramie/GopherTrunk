@@ -277,6 +277,16 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **macOS RTL-SDR serial / manufacturer / product strings.** The
+  pure-Go USB enumerator's Darwin backend
+  (`internal/sdr/rtlsdr/usb/usb_darwin.go`) now reads the IORegistry
+  string properties via `CFStringGetCString` instead of returning
+  empty placeholders, so `gophertrunk sdr list` on macOS prints the
+  same per-device identification (serial, manufacturer, product)
+  that Linux and Windows have shipped since PR-10. Useful for
+  multi-dongle hosts where the operator wants to pin a specific SDR
+  by serial in `config.yaml`. Closes the
+  `TODO(macos-strings)` flagged in the file since PR-03.
 - **YSF integration-cc + P25 P1 grant-chain extension.**
   **Closes the original planning roadmap** — every trunked
   protocol gophertrunk decodes now has an end-to-end "lights
