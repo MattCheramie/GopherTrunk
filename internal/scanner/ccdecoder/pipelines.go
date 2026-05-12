@@ -343,6 +343,19 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	})
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
+		// DMR spec peak deviation per ETSI TS 102 361-1 §6.3.
+		// Calibrates the slicer thresholds against the
+		// FM-discriminator output level so live captures slice
+		// correctly out of the box.
+		DeviationHz: 1944.0,
+		// ClockGain tuned smaller than the 0.05 default — at
+		// 1944 Hz deviation the per-sample phase excursion is
+		// ~8% larger than P25 P1's, and the standard MM gain
+		// slips on the harder symbol transitions during burst
+		// payloads. 0.025 tracks cleanly on synthesized IQ
+		// and stays well within the loop's noise margin for
+		// live captures.
+		ClockGain: 0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},

@@ -24,6 +24,8 @@
 package receiver
 
 import (
+	"math"
+
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -64,6 +66,14 @@ type Options struct {
 	Alpha float64
 	// ClockGain is the Mueller-Müller loop gain. <= 0 uses 0.05.
 	ClockGain float64
+	// DeviationHz is the peak frequency deviation of the C4FM
+	// signal at symbol ±3 (1944 Hz on DMR per ETSI TS 102 361-1
+	// §6.3). Used to calibrate the slicer thresholds against the
+	// FM-discriminator output level (slicer scale = 2π ·
+	// DeviationHz / SampleRateHz). <= 0 falls back to the legacy
+	// slicerScale = 1.0 — back-compat with fixtures that pre-scale
+	// their FM levels.
+	DeviationHz float64
 }
 
 // Receiver is the composed IQ → dibit pipeline. Process is the only
@@ -108,7 +118,15 @@ func New(opts Options) *Receiver {
 	if gain <= 0 {
 		gain = 0.05
 	}
-	const slicerScale = 1.0
+	// Slicer thresholds: when DeviationHz is set, calibrate
+	// against the physical FM-discriminator level (same fix as
+	// the P25 P1 / NXDN receivers). Legacy fixtures that
+	// pre-scale their FM output to ±1 stay green via the
+	// fallback.
+	slicerScale := 1.0
+	if opts.DeviationHz > 0 {
+		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
+	}
 
 	return &Receiver{
 		fm:        demod.NewFM(),

@@ -199,6 +199,42 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc-dmr` — DMR Tier III end-to-end
+  lights-up check.** Third per-protocol sibling of
+  `integration-cc`. Boots the daemon with a mock SDR
+  replaying a fully-synthesized 132-dibit DMR Tier III
+  burst (49-dibit first-half payload + 5-dibit slot-type +
+  24-dibit BS-Data sync + 5-dibit slot-type + 49-dibit
+  second-half payload, with the payload carrying an Aloha
+  CSBK through BPTC(196, 96)), and asserts the production
+  `newDMRTier3Pipeline` + supervisor + API + metrics chain
+  recovers the lock.
+  - `internal/radio/dmr/receiver` picks up the same
+    `Options.DeviationHz` slicer-calibration knob shipped
+    on the P25 P1 + NXDN receivers (PRs #148 + #149). The
+    ccdecoder's `newDMRTier3Pipeline` passes 1944 Hz —
+    the ETSI TS 102 361-1 §6.3 spec deviation.
+  - The same factory also bumps `ClockGain` down to 0.025
+    (from the 0.05 default). DMR's 1944 Hz deviation is
+    ~8% larger per-sample phase excursion than P25 P1's
+    1800 Hz; the standard MM gain slips on the harder
+    symbol transitions inside random BPTC payloads. The
+    lower gain tracks cleanly on synthesized IQ and stays
+    well within the loop's noise margin for live captures.
+  - The DMR Tier III `LockState` already implemented
+    `trunking.LockedPayload`, so no per-protocol wiring
+    bug surfaced here (unlike NXDN in PR #149).
+  - The C4FM modulator from PR #148 handles DMR's 4800-baud
+    4-FSK / α = 0.20 modulation identically to P25 P1 + NXDN;
+    the only per-protocol differences are the deviation
+    (1944 Hz), the burst framing (132-dibit TDMA bursts vs
+    P25's continuous stream), and the channel coding
+    (BPTC(196, 96) + slot-type Hamming(20, 8) vs P25's
+    trellis-encoded TSBK).
+  - 30-run flakiness check clean. The flakiness fix was a
+    longer (800-dibit) warmup prefix so the lower-gain MM
+    loop has time to fully converge before the first burst's
+    random payload tests it.
 - **`make integration-cc-nxdn` — NXDN end-to-end lights-up
   check.** First sibling target of `integration-cc` covering
   a second protocol end-to-end. Boots the daemon with a mock
@@ -1341,6 +1377,7 @@ make test                  # go test -race ./...
 make integration           # boots the wired daemon end-to-end (no SDR needed)
 make integration-cc        # P25 Phase 1 "lights up live trunked reception"
 make integration-cc-nxdn   # NXDN "lights up" — synthesizes spec FEC chain
+make integration-cc-dmr    # DMR Tier III "lights up" — Aloha CSBK via BPTC
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

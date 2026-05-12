@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr lint tidy vet clean run proto
 
 all: build
 
@@ -38,6 +38,14 @@ integration-cc:
 # all recover the lock.
 integration-cc-nxdn:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesNXDN ./cmd/gophertrunk/...
+
+# integration-cc-dmr boots the daemon with synthesized 4800-baud 4-FSK IQ
+# carrying a 132-dibit DMR Tier III burst (Aloha CSBK through BPTC(196, 96)
+# inside a BS-Data sync + slot-type Hamming(20, 8) frame) and asserts the
+# production newDMRTier3Pipeline + supervisor + API + metrics chain recovers
+# the lock.
+integration-cc-dmr:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesDMRTier3 ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)
