@@ -53,6 +53,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	p := c.proc
 	c.mu.Lock()
 	mode := c.trellisMode
+	rsMode := c.rsMode
 	c.mu.Unlock()
 	frameLen := macPDUDibits
 	if mode == TrellisOn {
@@ -68,7 +69,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			p.macDibits = append(p.macDibits, d)
 			p.remaining--
 			if p.remaining == 0 {
-				c.tryIngestMACPDU(p.macDibits, mode)
+				c.tryIngestMACPDU(p.macDibits, mode, rsMode)
 				p.macDibits = p.macDibits[:0]
 			}
 		}
@@ -91,7 +92,12 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 //     channel dibits = the trellis-encoded form of the 72 info
 //     dibits + 1 finisher transition. DecodeP25Trellis recovers
 //     the 72 information dibits.
-func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode) {
+//
+// When rsMode is RSOn the recovered 18-byte (144-bit) MAC PDU is
+// re-grouped into 24 hex symbols and verified against the
+// RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9. PDUs whose
+// syndromes are non-zero are dropped silently.
+func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode) {
 	var infoDibits []uint8
 	switch mode {
 	case TrellisOn:
@@ -114,9 +120,38 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode) {
 	if len(info) < 18 {
 		return
 	}
+	if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
+		return
+	}
 	if pdu, err := ParseMACPDU(info[:18]); err == nil {
 		c.Ingest(pdu)
 	}
+}
+
+// verifyMACPDURS treats the 18-byte (144-bit) MAC PDU as 24 hex
+// symbols and runs the RS(24, 16, 9) outer-code syndrome check per
+// TIA-102.BAAA-A §5.9. Bit packing: the 144 information bits are
+// read MSB-first from the byte stream, then grouped into 24 6-bit
+// hex symbols where the first 6 bits form symbol 0.
+func verifyMACPDURS(pdu []byte) bool {
+	if len(pdu) != 18 {
+		return false
+	}
+	var bits [144]byte
+	for i := 0; i < 18; i++ {
+		for j := 0; j < 8; j++ {
+			bits[i*8+j] = (pdu[i] >> uint(7-j)) & 1
+		}
+	}
+	var syms [24]byte
+	for i := 0; i < 24; i++ {
+		var s byte
+		for j := 0; j < 6; j++ {
+			s = (s << 1) | bits[i*6+j]
+		}
+		syms[i] = s
+	}
+	return framing.VerifyRS24_16(syms[:])
 }
 
 // Reset clears the SyncDetector's history so a stale match doesn't

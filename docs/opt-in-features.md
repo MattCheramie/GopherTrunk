@@ -39,7 +39,8 @@ per-system with `<key>: off`.
 | TETRA | `tetra_channel_coding` | `ChannelCodingOn` (full §8.3.1 chain) | `off` |
 | LTR FCS | `ltr_fcs_mode` | `FCSOn` | `off` |
 | LTR Manchester | `ltr_manchester_mode` | `ManchesterSoft` | `off` / `nrz` |
-| P25 Phase 2 | `p25_phase2_trellis_mode` | `TrellisOn` | `off` |
+| P25 Phase 2 (inner trellis) | `p25_phase2_trellis_mode` | `TrellisOn` | `off` |
+| P25 Phase 2 (outer RS) | `p25_phase2_rs_mode` | `RSOff` (RS(24, 16, 9) verifier shipped; default off pending per-burst interleaver schedule) | `on` flips RS verification on |
 | NXDN | `nxdn_viterbi_mode` | `ViterbiSpec` | `off` |
 | EDACS | `edacs_bch_mode` | `BCHOn` | `off` |
 | MPT 1327 | `mpt1327_bch_mode` | `BCHOn` | `off` |
@@ -137,7 +138,7 @@ real-air capture to validate against:
 | Item | Status | Blocker |
 | --- | --- | --- |
 | **NXDN per-protocol interleaver + puncture inner layer** | `ViterbiSpec` mode wired through the connector; calibration against a captured MMDVMHost / DSDcc transmission lands next | Real-air capture |
-| **P25 Phase 2 outer Reed-Solomon + per-burst block interleaver** | Trellis decoder shipping (`SetTrellisMode(TrellisOn)`); the spec's outer RS layer + per-burst block interleaver are pending | TIA-102.BBAB spec access + real-air capture |
+| **P25 Phase 2 per-burst block interleaver** | Trellis decoder shipping (`SetTrellisMode(TrellisOn)`); the outer RS(24, 16, 9) verifier shipping as opt-in via `SetRSMode(RSOn)` per TIA-102.BAAA-A §5.9. The per-burst block interleaver schedule that the Phase 2 spec wraps around the trellis-coded MAC PDU still pending | TIA-102.BBAC (Two-Slot TDMA MAC Layer) spec access + real-air capture |
 | **MPT 1327 inter-codeword interleaver** | BCH(64, 48, 2) ships per-codeword; the inter-codeword bit-interleaver across 5-codeword CCDB groups still pending | MPT 1327 spec implementation work + real-air capture |
 | **YSF FICH interleaver / puncture validation** | K=5 ½-rate trellis encoder + decoder round-trip in unit tests; validating against a captured YSF transmission's exact schedule remains | Real-air capture |
 | **TETRA on-air recovery margins** | Full §8.3.1 chain ships and unit tests round-trip clean fixtures; on-air recovery margins (Viterbi correction depth vs. real co-channel + adjacent-channel interference) need profiling | Live capture |

@@ -129,6 +129,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			LTRFCSMode:           sys.LTRFCSMode,
 			LTRManchesterMode:    sys.LTRManchesterMode,
 			P25Phase2TrellisMode: sys.P25Phase2TrellisMode,
+			P25Phase2RSMode:      sys.P25Phase2RSMode,
 			P25Phase2ClockMode:   sys.P25Phase2ClockMode,
 			NXDNViterbiMode:      sys.NXDNViterbiMode,
 			EDACSBCHMode:         sys.EDACSBCHMode,

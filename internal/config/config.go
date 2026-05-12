@@ -217,6 +217,16 @@ type SystemConfig struct {
 	// "false" / "0" (legacy 72-dibit raw-MAC-PDU path, opt-out for
 	// pre-stripped fixtures). Ignored for non-P25-Phase-2 protocols.
 	P25Phase2TrellisMode string `yaml:"p25_phase2_trellis_mode"`
+	// P25Phase2RSMode enables the outer Reed-Solomon RS(24, 16, 9)
+	// verification layer on top of the trellis-decoded MAC PDU.
+	// Recognised values: "" / "off" / "false" / "0" (the default —
+	// no outer RS verification; matches historical decoder
+	// behaviour) or "on" / "true" / "1" (verify RS syndromes per
+	// TIA-102.BAAA-A §5.9; drop MAC PDUs whose syndromes are
+	// non-zero before parsing). The per-burst block interleaver
+	// schedule defined in TIA-102.BBAC remains a follow-up.
+	// Ignored for non-P25-Phase-2 protocols.
+	P25Phase2RSMode string `yaml:"p25_phase2_rs_mode"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
 	// "gardner" / "on" (the new default — non-data-aided Gardner

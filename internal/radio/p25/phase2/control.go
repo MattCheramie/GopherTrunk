@@ -37,6 +37,7 @@ type ControlChannel struct {
 	locked           bool
 	strictValidation bool
 	trellisMode      TrellisMode
+	rsMode           RSMode
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -107,6 +108,69 @@ func ParseTrellisMode(s string) (TrellisMode, bool) {
 		return TrellisOn, true
 	default:
 		return TrellisOn, false
+	}
+}
+
+// RSMode selects whether the Process adapter applies the outer
+// Reed-Solomon verification layer per TIA-102.BAAA-A §5.9 on top
+// of the trellis-decoded MAC PDU.
+//
+//   - RSOff (default): the trellis-decoded 144-bit MAC PDU is parsed
+//     straight into the state machine. Matches every shipped capture
+//     fixture in the test suite and the historical decoder output.
+//
+//   - RSOn: the trellis-decoded 144-bit MAC PDU is treated as 24
+//     hex symbols and verified with the RS(24, 16, 9) outer code
+//     (8-symbol parity, t = 4 corrections of detection). MAC PDUs
+//     whose syndromes are non-zero are dropped at the framing layer
+//     before reaching the state machine.
+//
+// RSOn is currently the only opt-in setting that exercises the
+// outer RS layer; the per-burst block interleaver schedule defined
+// in TIA-102.BBAC (MAC Layer) is documented as a follow-up because
+// the spec text was not available at implementation time. The
+// framing primitives (EncodeRS24_*, VerifyRS24_*) are spec-correct
+// per TIA-102.BAAA-A §5.9 and round-trip through unit tests.
+type RSMode uint8
+
+const (
+	RSOff RSMode = iota
+	RSOn
+)
+
+// SetRSMode toggles the outer Reed-Solomon verification layer on
+// the trellis-decoded MAC PDU window. See RSMode for the trade-offs.
+// The mode applies to every subsequent Process call; the Ingest
+// entry point is unaffected (callers that pre-parse MAC PDUs
+// don't go through this adapter).
+func (c *ControlChannel) SetRSMode(mode RSMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rsMode = mode
+}
+
+// RSMode returns the current RSMode.
+func (c *ControlChannel) RSMode() RSMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.rsMode
+}
+
+// ParseRSMode maps a config / user-facing string into an RSMode.
+// Recognised values (case-insensitive): "" / "off" / "false" / "0"
+// → RSOff (the default — outer RS verification is off; matches the
+// historical decoder behaviour); "on" / "true" / "1" → RSOn (outer
+// RS(24, 16, 9) verification on top of trellis-decoded MAC PDU).
+// Unknown strings return RSOff with `ok = false` so callers can
+// surface the misconfiguration.
+func ParseRSMode(s string) (RSMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return RSOff, true
+	case "on", "true", "1":
+		return RSOn, true
+	default:
+		return RSOff, false
 	}
 }
 

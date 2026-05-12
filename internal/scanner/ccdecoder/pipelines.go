@@ -200,6 +200,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2TrellisMode)
 	}
 	cc.SetTrellisMode(trellisMode)
+	rsMode, rsOK := p25phase2.ParseRSMode(opts.System.P25Phase2RSMode)
+	if !rsOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_rs_mode; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2RSMode)
+	}
+	cc.SetRSMode(rsMode)
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",

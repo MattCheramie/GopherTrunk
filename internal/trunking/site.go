@@ -168,6 +168,16 @@ type System struct {
 	// into p25phase2.ControlChannel.SetTrellisMode by the ccdecoder
 	// connector after parsing via p25phase2.ParseTrellisMode.
 	P25Phase2TrellisMode string
+	// P25Phase2RSMode enables the outer Reed-Solomon RS(24, 16, 9)
+	// verification layer on top of the trellis-decoded MAC PDU.
+	// Recognised values (case-insensitive): "" / "off" / "false" /
+	// "0" → RSOff (the default — no outer RS verification; matches
+	// historical decoder behaviour); "on" / "true" / "1" → RSOn
+	// (verify RS syndromes per TIA-102.BAAA-A §5.9; drop MAC PDUs
+	// whose syndromes are non-zero before parsing). Forwarded into
+	// p25phase2.ControlChannel.SetRSMode by the ccdecoder connector
+	// after parsing via p25phase2.ParseRSMode.
+	P25Phase2RSMode string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new
