@@ -80,7 +80,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | Tone alerts | (table navigation only) |
 | Metrics | (table navigation only) |
 | Devices | (table navigation only) |
-| Scanner | `j` / `k` move row, `h` hold/resume highlighted row, `r` force re-hunt (Systems section, confirms), `Enter` dwell on highlighted conv channel, `m` cycle scan_mode |
+| Scanner | `j` / `k` move row, `h` hold/resume highlighted row, `r` force re-hunt (Systems section, confirms), `Enter` dwell on highlighted conv channel, `m` cycle scan_mode, `+` / `-` volume up/down (5% step), `M` mute toggle, `R` recording toggle |
 
 ## Polling cadences
 

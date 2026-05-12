@@ -475,6 +475,9 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			engine:     d.engine,
 			talkgroups: d.talkgroups,
 		}
+		if d.player != nil || d.recorder != nil {
+			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
+		}
 		srv, err := api.NewServer(opts)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: http api: %w", err)
@@ -756,6 +759,79 @@ func (f convFanoutRecorder) WritePCM(serial string, samples []int16) error {
 		_ = r.WritePCM(serial, samples)
 	}
 	return nil
+}
+
+// audioCockpit aggregates the live-audio Player and the WAV
+// Recorder into the api.AudioController interface so GET / PATCH
+// /api/v1/audio can drive volume, mute, and recording from one
+// place. A nil Player (audio.enabled=false in config) collapses
+// the playback side to no-ops while the recorder gate still works.
+type audioCockpit struct {
+	player   *player.Player
+	recorder *voice.Recorder
+}
+
+func (a audioCockpit) Volume() float32 {
+	if a.player == nil {
+		return 0
+	}
+	return a.player.Volume()
+}
+
+func (a audioCockpit) SetVolume(v float32) {
+	if a.player == nil {
+		return
+	}
+	a.player.SetVolume(v)
+}
+
+func (a audioCockpit) Muted() bool {
+	if a.player == nil {
+		return true
+	}
+	return a.player.Muted()
+}
+
+func (a audioCockpit) SetMuted(m bool) {
+	if a.player == nil {
+		return
+	}
+	a.player.SetMuted(m)
+}
+
+func (a audioCockpit) RecordingEnabled() bool {
+	if a.recorder == nil {
+		return false
+	}
+	return a.recorder.RecordingEnabled()
+}
+
+func (a audioCockpit) SetRecordingEnabled(enabled bool) {
+	if a.recorder == nil {
+		return
+	}
+	a.recorder.SetRecordingEnabled(enabled)
+}
+
+func (a audioCockpit) DropsTotal() uint64 {
+	if a.player == nil {
+		return 0
+	}
+	return a.player.Stats().DropsTotal
+}
+
+func (a audioCockpit) SampleRate() uint32 {
+	if a.player == nil {
+		return 0
+	}
+	return a.player.Stats().SampleRate
+}
+
+func (a audioCockpit) BackendEnabled() bool {
+	if a.player == nil {
+		return false
+	}
+	return a.player.Stats().Enabled
 }
 
 // poolDevices adapts *sdr.Pool to composer.Devices. The composer only

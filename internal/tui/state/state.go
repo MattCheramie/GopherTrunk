@@ -81,6 +81,8 @@ type SharedState struct {
 	DevicesErr  error
 	Scanner     client.ScannerStatusDTO
 	ScannerErr  error
+	Audio       client.AudioStatusDTO
+	AudioErr    error
 
 	EventLog   RingReader[client.Event]
 	ToneAlerts RingReader[client.Event]
@@ -121,6 +123,7 @@ type WriteRequest struct {
 	ScannerMode     *ScannerModeReq
 	ScannerHunt     *ScannerHuntReq
 	ScannerConv     *ScannerConvReq
+	Audio           *AudioReq
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -139,7 +142,16 @@ const (
 	WriteKindScannerConvHold
 	WriteKindScannerConvResume
 	WriteKindScannerConvDwell
+	WriteKindAudio
 )
+
+// AudioReq sets one or more knobs on the audio cockpit. Nil fields
+// are left unchanged.
+type AudioReq struct {
+	Volume    *float32
+	Muted     *bool
+	Recording *bool
+}
 
 // ScannerModeReq sets the engine's global scan_mode at runtime.
 type ScannerModeReq struct{ Mode string }
