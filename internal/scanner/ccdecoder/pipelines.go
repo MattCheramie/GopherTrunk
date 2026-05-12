@@ -195,17 +195,23 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2TrellisMode)
 	}
 	cc.SetTrellisMode(trellisMode)
+	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
+	if !clockOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
+			"system", opts.SystemName, "value", opts.System.P25Phase2ClockMode)
+	}
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
-		ClockMode: p25phase2rx.ClockGardner,
+		ClockMode: clockMode,
 		// Tuned smaller than the 0.03 default — H-DQPSK at
 		// 6000 sym/s has the same slip behaviour as TETRA's
 		// π/4-DQPSK at the default gain (see PR #154). 0.005
 		// tracks both clean synthesized IQ and noisier on-air
 		// captures within the loop's lock-acquisition margin.
+		// Only applied when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
 	})
 	return &p25Phase2Pipeline{rx: rx, cc: cc}, nil
@@ -267,18 +273,24 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 				"system", opts.SystemName, "channel", opts.System.TETRAChannel)
 		}
 	}
+	tetraClockMode, tetraClockOK := tetrarx.ParseClockMode(opts.System.TETRAClockMode)
+	if !tetraClockOK {
+		opts.Log.Warn("ccdecoder: unrecognised tetra_clock_mode; falling back to gardner",
+			"system", opts.SystemName, "value", opts.System.TETRAClockMode)
+	}
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
-		ClockMode: tetrarx.ClockGardner,
+		ClockMode: tetraClockMode,
 		// Tuned smaller than the 0.03 default — at TETRA's 18000
 		// sym/s the standard gain over-corrects on clean signals
 		// and slips. 0.005 tracks both clean synthesized IQ (the
 		// integration-cc test) and noisier on-air captures within
 		// the loop's lock-acquisition margin. Same pattern as the
-		// DMR Tier III ClockGain tweak in PR #150.
+		// DMR Tier III ClockGain tweak in PR #150. Only applied
+		// when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil

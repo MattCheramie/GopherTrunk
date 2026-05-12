@@ -158,6 +158,20 @@ type System struct {
 	// into p25phase2.ControlChannel.SetTrellisMode by the ccdecoder
 	// connector after parsing via p25phase2.ParseTrellisMode.
 	P25Phase2TrellisMode string
+	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
+	// for the P25 Phase 2 receiver. Recognised values (case-
+	// insensitive): "" / "gardner" / "on" → ClockGardner (the new
+	// default — non-data-aided Gardner loop; recommended for live
+	// SDR captures); "naive" / "off" → ClockNaive (decimate every
+	// sps-th sample; works on sample-aligned synthesized IQ).
+	// Forwarded into p25phase2rx.Options.ClockMode by the ccdecoder
+	// connector after parsing via p25phase2rx.ParseClockMode.
+	P25Phase2ClockMode string
+	// TETRAClockMode mirrors P25Phase2ClockMode for the TETRA
+	// receiver. Same recognised values + parser semantics; the
+	// underlying ClockMode enums in the two receivers share the
+	// same name + values but are independent types.
+	TETRAClockMode string
 	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
 	// on the NXDN CAC region. Recognised values (case-insensitive):
 	// "" / "spec" → ViterbiSpec (the new default — full NXDN-TS-1-A

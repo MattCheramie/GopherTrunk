@@ -124,15 +124,13 @@ The remaining gaps:
   live capture to characterise.
 - **Symbol-time clock recovery on complex IQ.** The Gardner
   timing-recovery primitive in `internal/dsp/sync/gardner.go`
-  is now threaded into both the **P25 Phase 2** and **TETRA**
-  receivers via a per-receiver `ClockMode` opt-in
-  (`ClockNaive` default preserves the pre-Gardner behaviour for
-  existing tests; `ClockGardner` routes the matched-filter
-  output through the Gardner loop). Noisier on-air captures
-  whose symbol clock isn't aligned with the SDR sample clock
-  should lock cleanly under `ClockGardner`. The connector
-  configuration for picking the mode at runtime is the
-  follow-up.
+  is threaded into both the **P25 Phase 2** and **TETRA**
+  receivers via a per-system `ClockMode`. The connector now
+  reads `p25_phase2_clock_mode` / `tetra_clock_mode` from the
+  per-system YAML and constructs the receiver with
+  `ClockGardner` (the new default — recommended for live SDR
+  captures). Operators feeding sample-aligned synthesized IQ
+  fixtures can opt back to `naive` per-system if needed.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
   real audio end-to-end with shared AGC, frame-repeat on bad-frame
   indicator, phase-aware fade-in, and §6.2 spectral enhancement

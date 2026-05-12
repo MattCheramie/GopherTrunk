@@ -160,3 +160,35 @@ func TestReceiverEmittedDibitsAreValid(t *testing.T) {
 		t.Errorf("%d dibit(s) outside 0..3 range", bad)
 	}
 }
+
+// TestParseClockMode covers the config-string → ClockMode mapping
+// the ccdecoder connector uses to translate the
+// `tetra_clock_mode` YAML field into Options.ClockMode.
+func TestParseClockMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want ClockMode
+		ok   bool
+	}{
+		{"", ClockGardner, true},
+		{"gardner", ClockGardner, true},
+		{"Gardner", ClockGardner, true},
+		{"on", ClockGardner, true},
+		{"true", ClockGardner, true},
+		{"1", ClockGardner, true},
+		{" gardner ", ClockGardner, true},
+		{"naive", ClockNaive, true},
+		{"NAIVE", ClockNaive, true},
+		{"off", ClockNaive, true},
+		{"false", ClockNaive, true},
+		{"0", ClockNaive, true},
+		{"nonsense", ClockGardner, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseClockMode(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ParseClockMode(%q) = (%v, %v), want (%v, %v)",
+				tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}

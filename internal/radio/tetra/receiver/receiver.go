@@ -21,6 +21,7 @@ package receiver
 
 import (
 	"math"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
@@ -83,6 +84,26 @@ const (
 	ClockNaive ClockMode = iota
 	ClockGardner
 )
+
+// ParseClockMode maps a config / user-facing string into a
+// ClockMode. Recognised values (case-insensitive): "" / "gardner" /
+// "on" / "true" / "1" → ClockGardner (the new default — Gardner
+// timing-recovery loop, recommended for live SDR captures); "naive"
+// / "off" / "false" / "0" → ClockNaive (pre-Gardner behaviour,
+// preserved for tests using sample-aligned synthesized IQ
+// fixtures). Unknown strings return ClockGardner with `ok = false`.
+func ParseClockMode(s string) (ClockMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
+		return ClockGardner, true
+	case "gardner", "on", "true", "1":
+		return ClockGardner, true
+	case "naive", "off", "false", "0":
+		return ClockNaive, true
+	default:
+		return ClockGardner, false
+	}
+}
 
 // Receiver is the composed IQ → dibit pipeline.
 type Receiver struct {

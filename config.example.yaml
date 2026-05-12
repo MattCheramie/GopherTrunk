@@ -94,14 +94,21 @@ scanner:
     dwell_ms: 3000
     backoff_ms: 5000
     max_backoff_ms: 60000
-  # manual_tune_enabled opts in to constructing the conventional
-  # scanner even when no static channels are configured, so the
-  # TUI's `f` key (or POST /api/v1/scanner/manual_tune) can
-  # VFO-tune at runtime. The scanner steals one Voice SDR from
-  # the trunking pool, so only enable if you have a spare Voice
-  # SDR or are willing to trade trunked grant-following for
-  # manual tune.
+  # manual_tune_enabled forces construction of the conventional
+  # scanner so the TUI's `f` key (or POST /api/v1/scanner/manual_tune)
+  # can VFO-tune at runtime even when no static channels are
+  # configured. With this set the scanner steals one Voice SDR
+  # from the trunking pool regardless of how many Voice SDRs
+  # exist.
+  #
+  # Default false; the daemon auto-detects when >= 2 Voice SDRs
+  # are present and constructs the scanner from the spare without
+  # needing this flag. To keep all Voice SDRs reserved for
+  # trunking even with a spare, set manual_tune_disabled: true to
+  # opt out of the auto-detect.
   manual_tune_enabled: false
+  # manual_tune_disabled vetoes the auto-detect rule.
+  manual_tune_disabled: false
   conventional: []
   # Example conventional channels:
   # conventional:

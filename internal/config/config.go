@@ -67,14 +67,25 @@ type ScannerConfig struct {
 	CCHunt CCHuntConfig `yaml:"cc_hunt"`
 	// Conventional is the fixed-frequency analog scan list.
 	Conventional []ConvChannelConfig `yaml:"conventional"`
-	// ManualTuneEnabled opts in to constructing the conventional
-	// scanner even when no static channels are configured, so the
-	// TUI's `f` key (or POST /api/v1/scanner/manual_tune) can
-	// VFO-tune at runtime. Off by default — the scanner steals a
-	// Voice SDR from the trunking pool, so operators with only
-	// one Voice SDR need to know they're trading trunked grant-
-	// following for manual tune.
+	// ManualTuneEnabled forces construction of the conventional
+	// scanner so the TUI's `f` key (or POST
+	// /api/v1/scanner/manual_tune) can VFO-tune at runtime even
+	// when no static channels are configured. With this set the
+	// scanner steals one Voice SDR from the trunking pool
+	// regardless of how many Voice SDRs are available.
+	//
+	// Default false; the daemon auto-detects when at least two
+	// Voice SDRs are present (sum >= 2) and constructs the
+	// scanner from the spare without requiring this flag. To
+	// keep all Voice SDRs reserved for trunking even with a
+	// spare, leave this false and the auto-detect rule still
+	// holds — set ManualTuneDisabled to opt out entirely.
 	ManualTuneEnabled bool `yaml:"manual_tune_enabled"`
+	// ManualTuneDisabled vetoes the auto-detect rule. When true,
+	// the conventional scanner is constructed only when
+	// `conventional` channels are explicitly listed or
+	// ManualTuneEnabled is set true.
+	ManualTuneDisabled bool `yaml:"manual_tune_disabled"`
 }
 
 // CCHuntConfig tunes the hunter's dwell + exponential backoff.
@@ -206,6 +217,17 @@ type SystemConfig struct {
 	// "false" / "0" (legacy 72-dibit raw-MAC-PDU path, opt-out for
 	// pre-stripped fixtures). Ignored for non-P25-Phase-2 protocols.
 	P25Phase2TrellisMode string `yaml:"p25_phase2_trellis_mode"`
+	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
+	// for the P25 Phase 2 receiver. Recognised values: "" /
+	// "gardner" / "on" (the new default — non-data-aided Gardner
+	// loop; recommended for live SDR captures) or "naive" / "off"
+	// (decimate every sps-th sample; works on sample-aligned
+	// synthesized IQ). Ignored for non-P25-Phase-2 protocols.
+	P25Phase2ClockMode string `yaml:"p25_phase2_clock_mode"`
+	// TETRAClockMode mirrors P25Phase2ClockMode for the TETRA
+	// receiver. Recognised values: "" / "gardner" / "on" (the new
+	// default) or "naive" / "off". Ignored for non-TETRA protocols.
+	TETRAClockMode string `yaml:"tetra_clock_mode"`
 	// NXDNViterbiMode enables the K=5 ½-rate Viterbi FEC decoder
 	// on the NXDN CAC region. Recognised values: "" / "spec" (the
 	// new default — full NXDN-TS-1-A §4.5.1.1 outbound CAC chain),

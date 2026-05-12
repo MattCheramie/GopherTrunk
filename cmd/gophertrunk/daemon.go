@@ -125,9 +125,11 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			TETRAColourCode:      sys.TETRAColourCode,
 			TETRAChannel:         sys.TETRAChannel,
 			TETRAChannelCoding:   sys.TETRAChannelCoding,
+			TETRAClockMode:       sys.TETRAClockMode,
 			LTRFCSMode:           sys.LTRFCSMode,
 			LTRManchesterMode:    sys.LTRManchesterMode,
 			P25Phase2TrellisMode: sys.P25Phase2TrellisMode,
+			P25Phase2ClockMode:   sys.P25Phase2ClockMode,
 			NXDNViterbiMode:      sys.NXDNViterbiMode,
 			EDACSBCHMode:         sys.EDACSBCHMode,
 			MPT1327BCHMode:       sys.MPT1327BCHMode,
@@ -366,15 +368,29 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		}
 	}
 
-	// Conventional FM scanner — opt-in via scanner.conventional list.
+	// Conventional FM scanner — constructed when:
+	//   (a) scanner.conventional channels are configured, OR
+	//   (b) scanner.manual_tune_enabled is explicitly true, OR
+	//   (c) auto-detect finds a spare Voice SDR (>= 2 Voice SDRs
+	//       in the pool) AND manual_tune_disabled is not set.
+	//
 	// Requires its own dedicated Voice SDR (carved out of the pool's
 	// voice fleet) and a recorder to land WAVs into. The scanner
 	// publishes synthetic CallStart/CallEnd events through
 	// Engine.HandleSyntheticCall, so the recorder, call log, and
 	// /api/v1/calls/active surfaces light up like any other call.
-	convWanted := len(cfg.Scanner.Conventional) > 0 || cfg.Scanner.ManualTuneEnabled
+	var voiceEntries []*sdr.PoolEntry
+	if d.pool != nil {
+		voiceEntries = d.pool.AllByRole(sdr.RoleVoice)
+	}
+	hasConventional := len(cfg.Scanner.Conventional) > 0
+	autoEnable := !cfg.Scanner.ManualTuneDisabled && len(voiceEntries) >= 2
+	convWanted := hasConventional || cfg.Scanner.ManualTuneEnabled || autoEnable
+	if convWanted && autoEnable && !cfg.Scanner.ManualTuneEnabled && !hasConventional {
+		log.Info("daemon: scanner: auto-enabling manual tune (spare Voice SDR detected)",
+			"voice_sdrs", len(voiceEntries))
+	}
 	if d.pool != nil && d.recorder != nil && d.engine != nil && convWanted {
-		voiceEntries := d.pool.AllByRole(sdr.RoleVoice)
 		if len(voiceEntries) == 0 {
 			log.Warn("daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping")
 		} else {
