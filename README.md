@@ -62,99 +62,67 @@ conventional and YSF / D-STAR on the amateur side.
 
 The remaining gaps:
 
-- **Per-protocol on-air FEC layers.** The connector adapters that
-  shipped between PRs #113–#121 reach the CC state machines via
-  each protocol's `ControlChannel.Process(stream, baseIdx)` method.
-  Most adapters skip the on-air FEC and read information bits
-  straight from the wire — this works on test fixtures + clean
-  signals but typically fails on captured on-air traffic.
-  **DMR Tier III** ships full FEC end-to-end (BPTC(196,96) +
-  CSBK CRC). **NXDN** now has `SetViterbiMode(ViterbiOn)` to
-  run K=5 ½-rate Viterbi over the 92 encoded CAC dibits in the
-  Info field (88 CAC info bits + 4 tail bits → 184 wire bits =
-  92 dibits — the bare-bones K=5 chain MMDVMHost / DSDcc / op25
-  share); the per-protocol interleaver + puncture inner layer
-  is the next follow-up. The CAC CRC-CCITT-16 strict-mode
-  remains enforced. **LTR** has a `SetManchesterMode` config
-  for deployments that bi-phase-encode the sub-audible status
-  word, and `SetFCSMode(FCSOn)` to verify the 7-bit CRC trailer
-  per DSheirer/sdrtrunk's CRCLTR.java on the Ingest path. Under
-  FCSOn the CRC covers a 24-bit message vector (gophertrunk's
-  Group F-bit as sdrtrunk's "Area", plus Channel/Home/GroupID/
-  Free); the gophertrunk 5-bit `Status.Area` stays as opaque
-  metadata for the multi-system filter and only the low 7
-  bits of the 12-bit `Status.FCS` field are CRC-protected.
-  **Motorola Type II** has `SetBCHMode(BCHOn)` to run
-  BCH(64,16,11) over each codeword pair. **P25 Phase 2** now
-  has `SetTrellisMode(TrellisOn)` to run the TIA-102 Annex A
-  4-state ½-rate trellis Viterbi decoder over the 146 channel
-  dibits of each MAC PDU; the spec's Reed-Solomon outer layer
-  + per-burst block interleaver are documented follow-ups.
-  **MPT 1327** now has `SetBCHMode(BCHOn)` to run BCH(64,48,2)
-  (polynomial 0x6815, init 0x0001, matching DSheirer/sdrtrunk's
-  CRCFleetsync) over each 64-bit on-wire codeword with
-  single-bit correction; the 10-bit Op field that the spec
-  carries between Ident and Function isn't modelled by the
-  Codeword struct yet (the wiring extracts the 38 info bits
-  the existing struct cares about and drops Op). **EDACS** now
-  has `SetBCHMode(BCHOn)` to run BCH(40, 28, 2) (generator
-  0x1539, parameters from lwvmobile/edacs-fm's bch3.h) over
-  each 40-bit on-wire CCW with single + double-bit error
-  correction; under BCHOn the effective CCW carries 28 info
-  bits (Command + Status + Address + 4 high bits of LCN), the
-  legacy struct's LCN bit 0 and Aux become BCH parity rather
-  than data. **TETRA** ships the full §8.3.1 signaling-channel
-  chain — K=5 R=1/3 speech-traffic-channel code
-  (`framing/rcpc_tetra.go`, EN 300 395-2 §5.4.3), K=5 R=1/4
-  signaling-channel code (`framing/rcpc_tetra_sig.go`,
-  EN 300 392-2 §8.2.3.1) with rates 2/3, 1/3, 292/432 and
-  148/432, shortened (30,14) Reed-Muller code
-  (`framing/rm_30_14_tetra.go`, §8.2.3.2) for AACH, 32-tap
-  scrambler + (K,a) block interleaver from PR #138, and the
-  per-channel encode/decode helpers from PR #139 — composed
-  on the `tetra.ControlChannel.Process` adapter via the
-  `SetChannelCoding(ChannelCodingOn)` opt-in and wired into
-  the live decoder by the `ccdecoder` connector reading
-  `tetra_colour_code` + `tetra_channel` off each
-  `trunking.System` per PR #141. The remaining TETRA work
-  on the "lights up live trunked reception" path is
-  validation against a captured TETRA TMO IQ exchange —
-  unit tests round-trip clean fixtures end-to-end, but
-  on-air recovery margins (Viterbi correction depth vs.
-  real co-channel + adjacent-channel interference) need a
-  live capture to characterise.
-- **Symbol-time clock recovery on complex IQ.** The Gardner
-  timing-recovery primitive in `internal/dsp/sync/gardner.go`
-  is threaded into both the **P25 Phase 2** and **TETRA**
-  receivers via a per-system `ClockMode`. The connector now
-  reads `p25_phase2_clock_mode` / `tetra_clock_mode` from the
-  per-system YAML and constructs the receiver with
-  `ClockGardner` (the new default — recommended for live SDR
-  captures). Operators feeding sample-aligned synthesized IQ
-  fixtures can opt back to `naive` per-system if needed.
-- **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2 emit
-  real audio end-to-end with shared AGC, frame-repeat on bad-frame
-  indicator, phase-aware fade-in, and §6.2 spectral enhancement
-  shipping. The comparison harness lives at
-  `internal/voice/calibrate/` — `calibrate.Compare(raw, refWav,
-  vocoderName)` returns `RMSRatioDb` + normalised cross-correlation
-  + lag against a reference WAV from DSD-FME or OP25, and the
-  package's `TestCompare{IMBE,AMBE2}SkipsWithoutFixtures` tests
-  enforce `|RMS offset| < 3 dB` and peak xcorr > 0.85 once
-  fixtures are in place. The remaining gap is sourcing the
-  reference data: captured P25 P1 / DMR voice exchanges plus
+- **Per-protocol on-air FEC layers — most shipping, some inner
+  layers TODO.** Every protocol's `ControlChannel.Process`
+  adapter ships a working IQ → CC chain (see
+  [FEC opt-outs](#fec-opt-outs) for the full reference). The
+  spec-correct chain is on by default for every protocol;
+  operators with pre-stripped capture files opt out per-system.
+  TETRA ships the full ETSI EN 300 392-2 §8.3.1 chain
+  (descramble + deinterleave + depuncture + Viterbi + CRC-16);
+  DMR Tier III + Tier II both ship full BPTC(196,96) + RS(12,9)
+  + CSBK CRC; LTR ships CRC-7 FCS + Manchester soft decode;
+  D-STAR ships the full JARL DV-mode header chain (K=5 R=1/2 +
+  PN15 + 22×30 interleaver); P25 Phase 1, P25 Phase 2 trellis,
+  EDACS BCH(40,28,2), MPT 1327 BCH(64,48,2), Motorola BCH(64,16,11)
+  all ship as opt-out. The inner FEC layers still pending:
+  - **NXDN per-protocol interleaver + puncture.** `ViterbiSpec`
+    mode runs the full §4.5.1.1 chain; `ViterbiOn` is the
+    simpler bare-bones path the older MMDVMHost / DSDcc fixtures
+    use. Both are wired through the connector; the
+    interleaver/puncture detail-level matching against captured
+    MMDVMHost transmissions is the calibration step that lands
+    next.
+  - **P25 Phase 2 Reed-Solomon outer + per-burst block
+    interleaver.** Trellis decoder (`SetTrellisMode(TrellisOn)`)
+    works; the spec's outer RS layer + per-burst block
+    interleaver (TIA-102.BBAB) are documented follow-ups
+    blocked on access to the spec text and a real-air capture
+    to validate against.
+  - **MPT 1327 inter-codeword interleaver.** BCH(64,48,2) ships
+    per-codeword; the inter-codeword bit-interleaver across
+    5-codeword CCDB groups still needs spec implementation work
+    + a real-air capture to validate.
+  - **YSF FICH on-air interleaver / puncture validation.** The
+    K=5 ½-rate Trellis encoder + decoder
+    (`internal/radio/ysf/fich_trellis.go`) round-trip cleanly
+    in unit tests; calibration against a captured YSF
+    transmission's exact schedule is blocked on real-air data.
+  - **TETRA on-air recovery margins.** Unit tests round-trip
+    clean fixtures end-to-end; on-air recovery margins
+    (Viterbi correction depth vs. real co-channel +
+    adjacent-channel interference) need a live capture to
+    characterise.
+- **DMR Tier II synthesized IQ fixture.** The Tier II pipeline
+  + Process adapter + unit test all ship (PR #184); the
+  end-to-end integration test (`TestDaemonCCDecodesDMRTier2`)
+  is currently `t.Skip`'d because the synthesized Voice LC
+  Header IQ fixture doesn't survive the C4FM modulator+demod
+  round-trip cleanly — Tier III's structurally-identical Aloha
+  CSBK fixture scrapes by but Tier II's payload bit
+  distribution stresses the Mueller-Müller clock loop more.
+  Real-air repeater captures exercise the pipeline fine; the
+  synthesized fixture is the follow-up.
+- **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2
+  emit real audio end-to-end. The comparison harness at
+  `internal/voice/calibrate/` is ready;
+  reference data (captured P25 P1 / DMR voice exchanges plus
   DSD-FME / OP25 decodes belong at
-  `internal/voice/{imbe,ambe2}/testdata/`. AMBE+2 single-tone
-  + DTMF dual-tone synthesis work; knox / call-alert dual-tones
-  (b₁ ∈ [144, 163]) are vendor-specific and route through
-  silence until per-vendor frequency tables land. See
-  [docs/vocoders.md](docs/vocoders.md) for the licensing posture.
-- **YSF FICH on-air interleaver / puncture validation.** The K=5
-  ½-rate Trellis encoder + decoder are in
-  (`internal/radio/ysf/fich_trellis.go`) and round-trip cleanly in
-  unit tests; calibration against a captured YSF transmission's
-  exact interleaver / puncture schedule lands once a real-air capture
-  is available.
+  `internal/voice/{imbe,ambe2}/testdata/`) is the remaining gap.
+  Knox / call-alert AMBE+2 tones (b₁ ∈ [144, 163]) are
+  vendor-specific and stay silent until per-vendor frequency
+  tables land. See [docs/vocoders.md](docs/vocoders.md) for the
+  licensing posture.
 - **CTCSS + DCS sub-audible squelch + tail-fade on call end.** The
   conventional FM scanner optionally gates squelch on a sub-audible
   tone or digital code in addition to IQ power, so adjacent-system
@@ -246,8 +214,10 @@ The remaining gaps:
   (stripped-down container, etc.) the backend logs once and falls
   back to the null player so the rest of the daemon keeps running.
 
-The Go interfaces and event payloads carry every protocol already;
-the remaining decoder wiring is the load-bearing follow-up.
+The Go interfaces, event payloads, and per-protocol pipelines all
+ship for every protocol in the Features table; the remaining work
+above is per-protocol FEC inner-layer detail + reference data
+sourcing.
 
 ## Roadmap
 
