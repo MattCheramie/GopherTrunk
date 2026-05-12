@@ -33,7 +33,7 @@ func genFMModulatedTone(toneHz, devHz, sampleHz float64, n int) []complex64 {
 }
 
 func TestCTCSSDetector_RejectsSilence(t *testing.T) {
-	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 4800})
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
 	// Constant-phase carrier (no modulation) — discriminator output
 	// is silence, no tone.
 	iq := make([]complex64, 4800)
@@ -46,28 +46,28 @@ func TestCTCSSDetector_RejectsSilence(t *testing.T) {
 }
 
 func TestCTCSSDetector_MatchesConfiguredTone(t *testing.T) {
-	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 4800})
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
 	// FM-modulate at 100 Hz with 1 kHz peak deviation — a typical
 	// CTCSS injection level on commercial repeaters.
-	iq := genFMModulatedTone(100, 1000, 48_000, 4800)
+	iq := genFMModulatedTone(100, 1000, 48_000, 9600)
 	if !d.Process(iq) {
 		t.Error("detector failed to match a 100 Hz CTCSS tone")
 	}
 }
 
 func TestCTCSSDetector_RejectsOffFrequencyTone(t *testing.T) {
-	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 4800})
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
 	// Configure for 100 Hz but transmit 250 Hz — the Goertzel
 	// magnitude at the 100 Hz bin should stay below threshold.
-	iq := genFMModulatedTone(250, 1000, 48_000, 4800)
+	iq := genFMModulatedTone(250, 1000, 48_000, 9600)
 	if d.Process(iq) {
 		t.Error("detector matched on a 250 Hz tone configured for 100 Hz")
 	}
 }
 
 func TestCTCSSDetector_ResetClearsState(t *testing.T) {
-	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 4800})
-	iq := genFMModulatedTone(100, 1000, 48_000, 4800)
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
+	iq := genFMModulatedTone(100, 1000, 48_000, 9600)
 	d.Process(iq)
 	if !d.Present() {
 		t.Fatal("test setup: detector never matched")
@@ -91,6 +91,48 @@ func TestCTCSSDetector_BadConfigReturnsNil(t *testing.T) {
 	}
 	if NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000}) != nil {
 		t.Error("missing TargetHz should yield nil")
+	}
+}
+
+// TestCTCSSDetector_RejectsAdjacentTone confirms reverse-bin
+// rejection blocks an adjacent EIA code that would have spilled
+// energy into the target bin under the old single-bin design.
+// Picks a configured tone of 100 Hz (EIA code "26B") and transmits
+// 97.4 Hz (the adjacent "26A" code) at the same deviation. The
+// target-bin Goertzel sees significant leak from the off-target
+// tone, but the +25 Hz / -25 Hz reverse bins see a similar amount
+// of energy, so the rejectRatio guard keeps the detector silent.
+func TestCTCSSDetector_RejectsAdjacentTone(t *testing.T) {
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
+	// 97.4 Hz is the next EIA code below 100.0 (smallest spacing
+	// in the standard list, ~2.6 Hz).
+	iq := genFMModulatedTone(97.4, 1000, 48_000, 9600)
+	if d.Process(iq) {
+		t.Error("detector matched a 97.4 Hz adjacent tone configured for 100 Hz")
+	}
+}
+
+// TestCTCSSDetector_StillMatchesWithSetRejectRatioZero verifies the
+// SetRejectRatio(0) escape hatch — operators who want the older
+// single-bin behaviour can disable reverse-bin rejection and the
+// detector falls back to the pre-PR magnitude-only path.
+func TestCTCSSDetector_StillMatchesWithSetRejectRatioZero(t *testing.T) {
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
+	d.SetRejectRatio(0)
+	iq := genFMModulatedTone(100, 1000, 48_000, 9600)
+	if !d.Process(iq) {
+		t.Error("detector failed to match exact tone with reject ratio off")
+	}
+}
+
+// TestCTCSSDetector_NegativeRejectRatioClamped verifies the setter
+// clamps negative values to zero (a malformed config value
+// shouldn't dynamite the detector).
+func TestCTCSSDetector_NegativeRejectRatioClamped(t *testing.T) {
+	d := NewCTCSSDetector(CTCSSConfig{SampleHz: 48_000, TargetHz: 100, BlockSize: 9600})
+	d.SetRejectRatio(-1)
+	if d.rejectRatio != 0 {
+		t.Errorf("rejectRatio = %v, want clamped to 0", d.rejectRatio)
 	}
 }
 
