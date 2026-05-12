@@ -114,6 +114,13 @@ type ScannerCockpit interface {
 	HoldConventional() bool
 	ResumeConventional() bool
 	DwellConventional(index int) bool
+	// LockoutConventional / UnlockoutConventional toggle the per-
+	// channel lockout flag the scan loop respects. Locked-out
+	// channels are skipped by pickNextChannel. Returns false when
+	// the conventional scanner isn't configured or the index is
+	// out of range.
+	LockoutConventional(index int) bool
+	UnlockoutConventional(index int) bool
 	// ManualTune appends a VFO-style temporary channel to the
 	// conventional scanner and forces dwell on it. Returns the new
 	// index + ok=true on success; ok=false when the conventional
@@ -179,6 +186,7 @@ type ConvChannelStatusDTO struct {
 	FrequencyHz uint32    `json:"frequency_hz"`
 	Mode        string    `json:"mode"`
 	Active      bool      `json:"active"`
+	LockedOut   bool      `json:"locked_out,omitempty"`
 	LastBreakAt time.Time `json:"last_break_at,omitempty"`
 }
 
@@ -416,6 +424,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/scanner/conventional/hold", s.gate(s.handleConvHold))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/resume", s.gate(s.handleConvResume))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/dwell", s.gate(s.handleConvDwell))
+	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/lockout", s.gate(s.handleConvLockout))
+	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/unlockout", s.gate(s.handleConvUnlockout))
 	mux.HandleFunc("POST /api/v1/scanner/manual_tune", s.gate(s.handleScannerManualTune))
 	mux.HandleFunc("DELETE /api/v1/scanner/manual_tune/{index}", s.gate(s.handleScannerClearManualTune))
 

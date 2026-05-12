@@ -130,6 +130,10 @@ type ChannelStatus struct {
 	FrequencyHz uint32    `json:"frequency_hz"`
 	Mode        string    `json:"mode"`
 	Active      bool      `json:"active"`
+	// LockedOut reports whether the channel is excluded from the
+	// scan cycle by operator action. Runtime-only — the field is
+	// not persisted across daemon restarts.
+	LockedOut   bool      `json:"locked_out,omitempty"`
 	LastBreakAt time.Time `json:"last_break_at,omitempty"`
 }
 
@@ -168,6 +172,12 @@ type Scanner struct {
 	// VFO-style entry rather than a config-seeded one. Bool value
 	// is irrelevant — set membership only.
 	tempChannels map[int]bool
+	// lockedOut tracks indices the operator has skipped at
+	// runtime. The scan loop omits these from pickNextChannel
+	// rotation. Cleared by UnlockoutChannel; persists across
+	// scanner state changes (hold / resume) but not across daemon
+	// restarts.
+	lockedOut map[int]bool
 }
 
 // New constructs a Scanner. Channels may be empty when the operator
@@ -244,6 +254,7 @@ func New(opts Options) (*Scanner, error) {
 		forcedDwellIndex: -1,
 		lastBreakAt:      make([]time.Time, len(channels)),
 		tempChannels:     make(map[int]bool),
+		lockedOut:        make(map[int]bool),
 	}, nil
 }
 
@@ -502,9 +513,16 @@ func (s *Scanner) endDwell(idx int, reason trunking.EndReason) {
 }
 
 // pickNextChannel returns the index + a copy of the next channel to
-// tune, respecting any forced-dwell override from DwellOn. The
-// returned ok=false signals an empty channel list — the Run loop
-// idles until AddTemporaryChannel populates one.
+// tune, respecting any forced-dwell override from DwellOn and
+// skipping locked-out channels. The returned ok=false signals
+// either an empty channel list OR every channel locked out — the
+// Run loop idles in both cases until AddTemporaryChannel populates
+// one or the operator unlocks a row.
+//
+// Forced-dwell beats lockout: pressing the conv-dwell key on a
+// locked-out row deliberately overrides the lockout for one cycle.
+// The operator's explicit intent wins; the lockout flag stays
+// set so the scanner skips it again on the next pass.
 func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -521,9 +539,18 @@ func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 	if s.cursor >= n {
 		s.cursor = 0
 	}
-	idx := s.cursor
-	s.cursor = (s.cursor + 1) % n
-	return idx, s.channels[idx], true
+	// Walk at most n steps looking for a non-locked-out channel.
+	// One full lap with no candidates means every channel is
+	// locked out — return ok=false so the Run loop idles.
+	for attempts := 0; attempts < n; attempts++ {
+		idx := s.cursor
+		s.cursor = (s.cursor + 1) % n
+		if s.lockedOut[idx] {
+			continue
+		}
+		return idx, s.channels[idx], true
+	}
+	return 0, Channel{}, false
 }
 
 // detectorFor returns the CTCSS detector for the given channel
@@ -588,6 +615,45 @@ func (s *Scanner) DwellOn(idx int) bool {
 		return false
 	}
 	s.forcedDwellIndex = idx
+	return true
+}
+
+// LockoutChannel marks the channel index as skipped during scan.
+// The scan loop's pickNextChannel respects this — a locked-out
+// channel is omitted from rotation. If the locked-out channel is
+// currently dwelling, the synthetic call ends immediately so the
+// operator's intent ("don't listen to this") takes effect within
+// one IQ chunk rather than waiting for hangtime.
+//
+// Returns false when idx is out of range. Locking out an already-
+// locked channel is a no-op (still true).
+func (s *Scanner) LockoutChannel(idx int) bool {
+	s.mu.Lock()
+	if idx < 0 || idx >= len(s.channels) {
+		s.mu.Unlock()
+		return false
+	}
+	s.lockedOut[idx] = true
+	dwelling := s.dwellIndex == idx
+	s.mu.Unlock()
+	if dwelling {
+		s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, trunking.EndReasonLockout)
+	}
+	return true
+}
+
+// UnlockoutChannel undoes LockoutChannel. The scanner picks the
+// channel back up on the next pass.
+//
+// Returns false when idx is out of range. Unlocking an already-
+// unlocked channel is a no-op (still true).
+func (s *Scanner) UnlockoutChannel(idx int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if idx < 0 || idx >= len(s.channels) {
+		return false
+	}
+	delete(s.lockedOut, idx)
 	return true
 }
 
@@ -664,19 +730,11 @@ func (s *Scanner) RemoveTemporaryChannel(idx int) bool {
 	s.channels = append(s.channels[:idx], s.channels[idx+1:]...)
 	s.detectors = append(s.detectors[:idx], s.detectors[idx+1:]...)
 	s.lastBreakAt = append(s.lastBreakAt[:idx], s.lastBreakAt[idx+1:]...)
-	// Rebuild the tempChannels set with shifted indices.
-	rebuilt := make(map[int]bool, len(s.tempChannels))
-	for i := range s.tempChannels {
-		switch {
-		case i == idx:
-			// dropped
-		case i > idx:
-			rebuilt[i-1] = true
-		default:
-			rebuilt[i] = true
-		}
-	}
-	s.tempChannels = rebuilt
+	// Rebuild the tempChannels + lockedOut sets with shifted indices.
+	// Both maps share the same shift rule: drop the removed entry,
+	// decrement anything above it.
+	s.tempChannels = shiftIndexSet(s.tempChannels, idx)
+	s.lockedOut = shiftIndexSet(s.lockedOut, idx)
 	if s.cursor > idx {
 		s.cursor--
 	}
@@ -710,6 +768,7 @@ func (s *Scanner) Snapshot() Status {
 			FrequencyHz: ch.FrequencyHz,
 			Mode:        ch.Mode,
 			Active:      i == s.dwellIndex,
+			LockedOut:   s.lockedOut[i],
 			LastBreakAt: s.lastBreakAt[i],
 		}
 	}
@@ -719,4 +778,23 @@ func (s *Scanner) Snapshot() Status {
 		CursorIndex:  s.cursor,
 		DeviceSerial: s.opts.DeviceSerial,
 	}
+}
+
+// shiftIndexSet rebuilds a set keyed by channel index after the
+// removal of dropIdx. Entries above dropIdx shift down by one;
+// the entry at dropIdx is dropped. Used to keep tempChannels and
+// lockedOut consistent with the post-removal channels slice.
+func shiftIndexSet(in map[int]bool, dropIdx int) map[int]bool {
+	out := make(map[int]bool, len(in))
+	for i := range in {
+		switch {
+		case i == dropIdx:
+			// dropped
+		case i > dropIdx:
+			out[i-1] = true
+		default:
+			out[i] = true
+		}
+	}
+	return out
 }

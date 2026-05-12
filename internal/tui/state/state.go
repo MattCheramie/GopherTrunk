@@ -143,6 +143,8 @@ const (
 	WriteKindScannerConvHold
 	WriteKindScannerConvResume
 	WriteKindScannerConvDwell
+	WriteKindScannerConvLockout
+	WriteKindScannerConvUnlockout
 	WriteKindAudio
 	WriteKindScannerManualTune
 )

@@ -122,6 +122,18 @@ func cmdScannerConvDwell(cli *client.Client, idx int, label string) tea.Cmd {
 		return writeResultMsg{Label: label, Err: err}
 	}
 }
+func cmdScannerConvLockout(cli *client.Client, idx int, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerConvLockout(context.Background(), idx)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+func cmdScannerConvUnlockout(cli *client.Client, idx int, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ScannerConvUnlockout(context.Background(), idx)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
 
 // cmdPollAudio fetches the audio cockpit's current state. Used to
 // keep the dashboard volume / mute / record indicator in sync with

@@ -63,8 +63,9 @@ var (
 	scanVolDnKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "volume down"))
 	scanMuteKey   = key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mute toggle"))
 	scanRecKey    = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "record toggle"))
-	scanManualKey = key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "manual tune"))
-	scanEscKey    = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+	scanManualKey  = key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "manual tune"))
+	scanLockoutKey = key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "lockout/unlockout"))
+	scanEscKey     = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
 )
 
 func (ScannerPanel) Keys() []key.Binding {
@@ -72,7 +73,7 @@ func (ScannerPanel) Keys() []key.Binding {
 		scanHoldKey, scanRetuneKey, scanDwellKey, scanModeKey,
 		scanUpKey, scanDownKey,
 		scanVolUpKey, scanVolDnKey, scanMuteKey, scanRecKey,
-		scanManualKey,
+		scanManualKey, scanLockoutKey,
 	}
 }
 
@@ -221,6 +222,22 @@ func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 			req := state.WriteRequest{
 				Label:       fmt.Sprintf("dwell on %s (%d Hz)", ch.Label, ch.FrequencyHz),
 				Kind:        state.WriteKindScannerConvDwell,
+				ScannerConv: &state.ScannerConvReq{Index: idx},
+			}
+			return p, Emit(req)
+		}
+	case key.Matches(km, scanLockoutKey):
+		if section == "conv" {
+			ch := s.Scanner.Conventional.Channels[idx]
+			kind := state.WriteKindScannerConvLockout
+			verb := "lockout"
+			if ch.LockedOut {
+				kind = state.WriteKindScannerConvUnlockout
+				verb = "unlockout"
+			}
+			req := state.WriteRequest{
+				Label:       fmt.Sprintf("%s %s", verb, ch.Label),
+				Kind:        kind,
 				ScannerConv: &state.ScannerConvReq{Index: idx},
 			}
 			return p, Emit(req)
@@ -420,6 +437,12 @@ func (p *ScannerPanel) renderConventional(width int, s *state.SharedState) strin
 		if ch.Active {
 			active = "●"
 			style = dashOK
+		}
+		if ch.LockedOut {
+			// Lockout overrides the active indicator visually so
+			// the operator can spot a skipped channel at a glance.
+			active = "✗"
+			style = dashDim
 		}
 		break_ := "—"
 		if !ch.LastBreakAt.IsZero() {
