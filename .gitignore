@@ -1,5 +1,9 @@
 /bin/
 /dist/
+# `go build ./...` without -o drops a `gophertrunk` binary at the
+# repo root; the canonical build location is bin/gophertrunk via
+# `make build`. Don't track the stray.
+/gophertrunk
 *.test
 *.out
 *.prof
