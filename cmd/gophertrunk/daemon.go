@@ -358,10 +358,11 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 	// publishes synthetic CallStart/CallEnd events through
 	// Engine.HandleSyntheticCall, so the recorder, call log, and
 	// /api/v1/calls/active surfaces light up like any other call.
-	if d.pool != nil && d.recorder != nil && d.engine != nil && len(cfg.Scanner.Conventional) > 0 {
+	convWanted := len(cfg.Scanner.Conventional) > 0 || cfg.Scanner.ManualTuneEnabled
+	if d.pool != nil && d.recorder != nil && d.engine != nil && convWanted {
 		voiceEntries := d.pool.AllByRole(sdr.RoleVoice)
 		if len(voiceEntries) == 0 {
-			log.Warn("daemon: scanner.conventional configured but no Voice SDRs in the pool; skipping")
+			log.Warn("daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping")
 		} else {
 			// Use the LAST voice SDR so the trunking engine still
 			// has the first N-1 voice radios for normal grants.

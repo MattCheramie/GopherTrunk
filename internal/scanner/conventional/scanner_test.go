@@ -252,9 +252,127 @@ func TestConvScannerDwellOn(t *testing.T) {
 	if s.DwellOn(99) {
 		t.Errorf("DwellOn(99) should fail")
 	}
-	// Next call to nextChannel must return 2.
-	if idx := s.nextChannel(); idx != 2 {
-		t.Errorf("nextChannel after DwellOn(2) = %d, want 2", idx)
+	// Next call to pickNextChannel must return 2.
+	idx, _, ok := s.pickNextChannel()
+	if !ok {
+		t.Fatal("pickNextChannel returned no channel")
+	}
+	if idx != 2 {
+		t.Errorf("pickNextChannel after DwellOn(2) = %d, want 2", idx)
+	}
+}
+
+func TestAddTemporaryChannelGrowsAndForcesDwell(t *testing.T) {
+	s, err := New(Options{
+		Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{},
+		Recorder: fakeRecorder{}, DeviceSerial: "x",
+		Channels: []Channel{{Label: "static", FrequencyHz: 100}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := s.AddTemporaryChannel(Channel{Label: "VFO", FrequencyHz: 155895000})
+	if idx != 1 {
+		t.Errorf("new idx = %d, want 1", idx)
+	}
+	snap := s.Snapshot()
+	if len(snap.Channels) != 2 {
+		t.Fatalf("Snapshot channels = %d, want 2", len(snap.Channels))
+	}
+	if snap.Channels[1].FrequencyHz != 155895000 {
+		t.Errorf("VFO freq = %d, want 155895000", snap.Channels[1].FrequencyHz)
+	}
+	// AddTemporaryChannel must force the next pick to land on the new
+	// channel (manual tune = "listen now" intent).
+	got, _, ok := s.pickNextChannel()
+	if !ok || got != 1 {
+		t.Errorf("first pick after AddTemporaryChannel = %d ok=%t, want 1 ok=true", got, ok)
+	}
+}
+
+func TestAddTemporaryChannelDefaultsAppliedOncePerChannel(t *testing.T) {
+	s, err := New(Options{
+		Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{},
+		Recorder: fakeRecorder{}, DeviceSerial: "x",
+		Channels: []Channel{{Label: "static", FrequencyHz: 100}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Zero-valued knobs should default the same way config-seeded
+	// channels do.
+	s.AddTemporaryChannel(Channel{Label: "vfo", FrequencyHz: 1})
+	snap := s.Snapshot()
+	got := snap.Channels[1]
+	if got.Mode != "fm" {
+		t.Errorf("default mode = %q, want fm", got.Mode)
+	}
+}
+
+func TestRemoveTemporaryChannelRevokesAndReindexes(t *testing.T) {
+	s, err := New(Options{
+		Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{},
+		Recorder: fakeRecorder{}, DeviceSerial: "x",
+		Channels: []Channel{{Label: "static", FrequencyHz: 100}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := s.AddTemporaryChannel(Channel{Label: "VFO", FrequencyHz: 1})
+	if !s.RemoveTemporaryChannel(idx) {
+		t.Fatal("RemoveTemporaryChannel(1) returned false")
+	}
+	snap := s.Snapshot()
+	if len(snap.Channels) != 1 {
+		t.Errorf("after remove channels = %d, want 1", len(snap.Channels))
+	}
+	// Removing again returns false (not a temp channel anymore).
+	if s.RemoveTemporaryChannel(idx) {
+		t.Error("second remove should return false")
+	}
+	// Removing a static (config-seeded) channel returns false.
+	if s.RemoveTemporaryChannel(0) {
+		t.Error("removing static channel should return false")
+	}
+}
+
+func TestRunWithEmptyChannelsIdlesUntilAdd(t *testing.T) {
+	tnr := &fakeTuner{}
+	s, err := New(Options{
+		Engine: &fakeEngine{}, Tuner: tnr, IQ: &fakeIQ{tuner: tnr},
+		Recorder: fakeRecorder{}, DeviceSerial: "x",
+		// No Channels — operator only ever drives this via
+		// AddTemporaryChannel from the TUI / API.
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = s.Run(ctx)
+		close(done)
+	}()
+	// Idle for a tick; no tune should happen with zero channels.
+	time.Sleep(60 * time.Millisecond)
+	if len(tnr.tuned()) != 0 {
+		t.Errorf("empty-channels scanner tuned anyway: %v", tnr.tuned())
+	}
+	cancel()
+	<-done
+}
+
+func TestConvScannerAcceptsEmptyChannels(t *testing.T) {
+	// Distinct from TestConvScannerRejectsBadConfig — empty Channels
+	// used to fail validation but now must succeed to support manual
+	// VFO tune via AddTemporaryChannel.
+	_, err := New(Options{
+		Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{},
+		Recorder: fakeRecorder{}, DeviceSerial: "x",
+	})
+	if err != nil {
+		t.Fatalf("New with empty channels: %v", err)
 	}
 }
 
@@ -265,7 +383,6 @@ func TestConvScannerRejectsBadConfig(t *testing.T) {
 	}{
 		{"no engine", Options{Tuner: &fakeTuner{}, IQ: &fakeIQ{}, Recorder: fakeRecorder{}, DeviceSerial: "x", Channels: []Channel{{FrequencyHz: 1}}}},
 		{"no tuner", Options{Engine: &fakeEngine{}, IQ: &fakeIQ{}, Recorder: fakeRecorder{}, DeviceSerial: "x", Channels: []Channel{{FrequencyHz: 1}}}},
-		{"no channels", Options{Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{}, Recorder: fakeRecorder{}, DeviceSerial: "x"}},
 		{"no device serial", Options{Engine: &fakeEngine{}, Tuner: &fakeTuner{}, IQ: &fakeIQ{}, Recorder: fakeRecorder{}, Channels: []Channel{{FrequencyHz: 1}}}},
 	}
 	for _, tc := range cases {

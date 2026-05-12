@@ -144,6 +144,14 @@ func cmdSetAudio(cli *client.Client, volume *float32, muted *bool, recording *bo
 	}
 }
 
+// cmdScannerManualTune adds a runtime VFO channel and forces dwell.
+func cmdScannerManualTune(cli *client.Client, freqHz uint32, label, mode, toastLabel string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := cli.ScannerManualTune(context.Background(), freqHz, label, mode)
+		return writeResultMsg{Label: toastLabel, Err: err}
+	}
+}
+
 func cmdPollHistory(cli *client.Client, f client.HistoryFilter) tea.Cmd {
 	return func() tea.Msg {
 		rows, err := cli.History(context.Background(), f)

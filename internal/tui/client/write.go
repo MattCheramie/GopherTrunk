@@ -162,6 +162,32 @@ func (c *Client) SetAudio(ctx context.Context, volume *float32, muted *bool, rec
 	return out, nil
 }
 
+// ScannerManualTune calls POST /api/v1/scanner/manual_tune. The
+// optional label / mode / squelch_dbfs default on the server side
+// when empty; only frequency_hz is required.
+func (c *Client) ScannerManualTune(ctx context.Context, freqHz uint32, label, mode string) (int, error) {
+	body := map[string]any{"frequency_hz": freqHz}
+	if label != "" {
+		body["label"] = label
+	}
+	if mode != "" {
+		body["mode"] = mode
+	}
+	var out struct {
+		OK    bool `json:"ok"`
+		Index int  `json:"index"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/api/v1/scanner/manual_tune", body, &out); err != nil {
+		return 0, err
+	}
+	return out.Index, nil
+}
+
+// ScannerClearManualTune calls DELETE /api/v1/scanner/manual_tune/{index}.
+func (c *Client) ScannerClearManualTune(ctx context.Context, index int) error {
+	return c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/scanner/manual_tune/%d", index), nil, nil)
+}
+
 // ResetToneDevice calls POST /api/v1/devices/{serial}/tone-reset.
 func (c *Client) ResetToneDevice(ctx context.Context, serial string) error {
 	if serial == "" {

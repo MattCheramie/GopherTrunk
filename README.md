@@ -156,6 +156,19 @@ The remaining gaps:
   unit tests; calibration against a captured YSF transmission's
   exact interleaver / puncture schedule lands once a real-air capture
   is available.
+- **Manual VFO tune from the TUI / API.** The Scanner panel now binds
+  `f` to a bubbles/textinput overlay: type a frequency in MHz, Enter,
+  and the conventional FM scanner appends a runtime "manual" channel
+  and forces dwell on it. Same flow available over REST as `POST
+  /api/v1/scanner/manual_tune` (and `DELETE /api/v1/scanner/manual_tune/{idx}`
+  to revoke), gated behind `api.allow_mutations`. To run manual tune
+  without any static `scanner.conventional` entries, set
+  `scanner.manual_tune_enabled: true` in config — the daemon then
+  constructs the conventional scanner against the last Voice SDR
+  regardless of the static channel count. `internal/scanner/conventional`
+  now accepts an empty seed channel list and exposes
+  `AddTemporaryChannel` / `RemoveTemporaryChannel` so the same VFO
+  surface is callable from any embedder.
 - **Live audio playback to speakers + TUI / API audio cockpit.** The
   daemon ships a `voice.Player` sink (`internal/voice/player`) wrapping
   github.com/ebitengine/oto/v3 (ALSA on Linux, CoreAudio on macOS,

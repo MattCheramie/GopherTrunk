@@ -114,6 +114,26 @@ type ScannerCockpit interface {
 	HoldConventional() bool
 	ResumeConventional() bool
 	DwellConventional(index int) bool
+	// ManualTune appends a VFO-style temporary channel to the
+	// conventional scanner and forces dwell on it. Returns the new
+	// index + ok=true on success; ok=false when the conventional
+	// scanner isn't configured (no Voice SDR carved out for it).
+	ManualTune(req ManualTuneRequest) (index int, ok bool)
+	// ClearManualTune removes a previously-added temp channel by
+	// index. Returns false if the index isn't a temp channel or
+	// the scanner isn't configured.
+	ClearManualTune(index int) bool
+}
+
+// ManualTuneRequest is the shape of POST /api/v1/scanner/manual_tune.
+// FrequencyHz is required; everything else falls back to scanner
+// defaults (Mode=fm, SquelchDbFS=-50, Hangtime=1500ms).
+type ManualTuneRequest struct {
+	FrequencyHz uint32  `json:"frequency_hz"`
+	Label       string  `json:"label"`
+	Mode        string  `json:"mode"`
+	SquelchDbFS float64 `json:"squelch_dbfs"`
+	HangtimeMs  int     `json:"hangtime_ms"`
 }
 
 // ScannerStatus is the JSON shape returned by GET /api/v1/scanner —
@@ -396,6 +416,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/scanner/conventional/hold", s.gate(s.handleConvHold))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/resume", s.gate(s.handleConvResume))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/dwell", s.gate(s.handleConvDwell))
+	mux.HandleFunc("POST /api/v1/scanner/manual_tune", s.gate(s.handleScannerManualTune))
+	mux.HandleFunc("DELETE /api/v1/scanner/manual_tune/{index}", s.gate(s.handleScannerClearManualTune))
 
 	// Audio cockpit — read endpoint is always open; the PATCH is
 	// gated behind allow_mutations like every other write route.

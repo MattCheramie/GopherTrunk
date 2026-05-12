@@ -28,6 +28,10 @@ type fakeCockpit struct {
 	convNotConfigured bool
 	dwellRange int // valid range [0..dwellRange); -1 means any index accepted
 	prevMode string
+	manualReqs []ManualTuneRequest
+	manualNextIdx int
+	clearedManual []int
+	clearOK bool
 }
 
 func (f *fakeCockpit) Status() ScannerStatus { return f.status }
@@ -103,6 +107,26 @@ func (f *fakeCockpit) DwellConventional(i int) bool {
 	f.mu.Lock()
 	f.dwell = append(f.dwell, i)
 	f.mu.Unlock()
+	return true
+}
+func (f *fakeCockpit) ManualTune(req ManualTuneRequest) (int, bool) {
+	if f.convNotConfigured {
+		return 0, false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	idx := f.manualNextIdx
+	f.manualNextIdx++
+	f.manualReqs = append(f.manualReqs, req)
+	return idx, true
+}
+func (f *fakeCockpit) ClearManualTune(i int) bool {
+	if !f.clearOK {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clearedManual = append(f.clearedManual, i)
 	return true
 }
 
@@ -278,3 +302,139 @@ func TestScannerConvHold_NoConvScanner(t *testing.T) {
 		t.Errorf("status=%d, want 503 (no conv scanner)", resp.StatusCode)
 	}
 }
+
+func TestScannerManualTune_OK(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"frequency_hz":155895000,"label":"sheriff","mode":"fm"}`))
+	resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	if len(cock.manualReqs) != 1 || cock.manualReqs[0].FrequencyHz != 155895000 || cock.manualReqs[0].Label != "sheriff" {
+		t.Errorf("ManualTune not routed: %+v", cock.manualReqs)
+	}
+}
+
+func TestScannerManualTune_RejectsMissingFreq(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"label":"x"}`))
+	resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+	if len(cock.manualReqs) != 0 {
+		t.Errorf("ManualTune should not be called on rejected request")
+	}
+}
+
+func TestScannerManualTune_RejectsOutOfRangeFreq(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"frequency_hz":5000000000}`))
+	resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Errorf("status=%d, want 400", resp.StatusCode)
+	}
+}
+
+func TestScannerManualTune_503WhenNoConvScanner(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{convNotConfigured: true}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"frequency_hz":155895000}`))
+	resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 503 {
+		t.Errorf("status=%d, want 503", resp.StatusCode)
+	}
+}
+
+func TestScannerClearManualTune(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{clearOK: true}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	req, _ := http.NewRequest(http.MethodDelete, base+"/api/v1/scanner/manual_tune/3", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("status=%d, want 200", resp.StatusCode)
+	}
+	if len(cock.clearedManual) != 1 || cock.clearedManual[0] != 3 {
+		t.Errorf("ClearManualTune not routed: %v", cock.clearedManual)
+	}
+
+	// Same call with clearOK=false → 404.
+	cock.clearOK = false
+	req, _ = http.NewRequest(http.MethodDelete, base+"/api/v1/scanner/manual_tune/3", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Errorf("clearOK=false status=%d, want 404", resp.StatusCode)
+	}
+}
+
+func TestScannerManualTune_Gated(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock /* AllowMutations:false */})
+	defer teardown()
+
+	body := bytes.NewReader([]byte(`{"frequency_hz":155895000}`))
+	resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Errorf("status=%d, want 403", resp.StatusCode)
+	}
+	if len(cock.manualReqs) != 0 {
+		t.Errorf("ManualTune called despite gate")
+	}
+}
+
+// suppress "unused import" issues; using io / fmt may be needed via bytes.
+var _ = io.Discard
+var _ = fmt.Sprintf

@@ -2,10 +2,12 @@ package panels
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -28,11 +30,24 @@ type ScannerPanel struct {
 	// We treat both sections as one virtual list keyed by
 	// (section, index); cursorAt yields the selected slot.
 	cursor int
+
+	// manualInput is the textinput overlay for the 'f' (frequency)
+	// keybind: operator types a frequency in MHz and Enter dispatches
+	// a manual_tune mutation. Esc aborts. inputErr surfaces a parse
+	// error inline so the operator can correct without dispatching.
+	manualInput  textinput.Model
+	editingFreq  bool
+	inputErr     string
 }
 
 // NewScanner returns a new read+write scanner cockpit.
 func NewScanner() *ScannerPanel {
-	return &ScannerPanel{}
+	in := textinput.New()
+	in.Placeholder = "freq MHz (e.g. 155.895)"
+	in.CharLimit = 16
+	in.Width = 24
+	in.Prompt = "freq> "
+	return &ScannerPanel{manualInput: in}
 }
 
 func (ScannerPanel) Title() string { return "Scanner" }
@@ -48,6 +63,8 @@ var (
 	scanVolDnKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "volume down"))
 	scanMuteKey   = key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mute toggle"))
 	scanRecKey    = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "record toggle"))
+	scanManualKey = key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "manual tune"))
+	scanEscKey    = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
 )
 
 func (ScannerPanel) Keys() []key.Binding {
@@ -55,6 +72,7 @@ func (ScannerPanel) Keys() []key.Binding {
 		scanHoldKey, scanRetuneKey, scanDwellKey, scanModeKey,
 		scanUpKey, scanDownKey,
 		scanVolUpKey, scanVolDnKey, scanMuteKey, scanRecKey,
+		scanManualKey,
 	}
 }
 
@@ -92,8 +110,49 @@ func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 	if !ok {
 		return p, nil
 	}
+	// While the manual-tune textinput is open, all keys go to the
+	// input field. Enter commits, Esc aborts, everything else is a
+	// character.
+	if p.editingFreq {
+		switch {
+		case key.Matches(km, scanEscKey):
+			p.editingFreq = false
+			p.inputErr = ""
+			p.manualInput.SetValue("")
+			p.manualInput.Blur()
+			return p, nil
+		case km.String() == "enter":
+			hz, err := parseFreqMHz(p.manualInput.Value())
+			if err != nil {
+				p.inputErr = err.Error()
+				return p, nil
+			}
+			p.editingFreq = false
+			p.inputErr = ""
+			p.manualInput.SetValue("")
+			p.manualInput.Blur()
+			req := state.WriteRequest{
+				Label: fmt.Sprintf("manual tune %.4f MHz", float64(hz)/1e6),
+				Kind:  state.WriteKindScannerManualTune,
+				ScannerManualTune: &state.ScannerManualTuneReq{
+					FrequencyHz: hz,
+					Mode:        "fm",
+				},
+			}
+			return p, Emit(req)
+		}
+		var cmd tea.Cmd
+		p.manualInput, cmd = p.manualInput.Update(msg)
+		return p, cmd
+	}
 	section, idx := p.resolveCursor(s)
 	switch {
+	case key.Matches(km, scanManualKey):
+		p.editingFreq = true
+		p.inputErr = ""
+		p.manualInput.SetValue("")
+		p.manualInput.Focus()
+		return p, textinput.Blink
 	case key.Matches(km, scanUpKey):
 		if p.cursor > 0 {
 			p.cursor--
@@ -226,13 +285,50 @@ func (p *ScannerPanel) View(width, height int, focused bool, s *state.SharedStat
 	if width < 30 || height < 6 {
 		return panelFrame("Scanner", width, height, focused, "")
 	}
-	body := strings.Join([]string{
+	parts := []string{
 		p.renderSystems(width, s),
 		p.renderConventional(width, s),
 		p.renderTGSummary(width, s),
 		p.renderAudio(width, s),
-	}, "\n")
+	}
+	if mt := p.renderManualTune(width); mt != "" {
+		parts = append(parts, mt)
+	}
+	body := strings.Join(parts, "\n")
 	return panelFrame("Scanner", width, height, focused, body)
+}
+
+// parseFreqMHz accepts a frequency in MHz (e.g. "155.895" or
+// "851.5") and returns the Hz value. Empty / un-parseable / out
+// of the practical RTL-SDR tuning range surface as an error the
+// caller renders inline next to the textinput.
+func parseFreqMHz(s string) (uint32, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("enter a frequency")
+	}
+	mhz, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("not a number")
+	}
+	if mhz < 25 || mhz > 1300 {
+		return 0, fmt.Errorf("outside 25 – 1300 MHz")
+	}
+	return uint32(mhz*1e6 + 0.5), nil
+}
+
+func (p *ScannerPanel) renderManualTune(width int) string {
+	if !p.editingFreq && p.inputErr == "" {
+		return ""
+	}
+	header := dashHeader.Render("Manual tune")
+	line := "  " + p.manualInput.View()
+	if p.inputErr != "" {
+		line += "  " + dashErr.Render("("+p.inputErr+")")
+	} else {
+		line += "  " + dashDim.Render("(Enter to tune, Esc to cancel)")
+	}
+	return "\n" + header + "\n" + line
 }
 
 func (p *ScannerPanel) renderAudio(width int, s *state.SharedState) string {

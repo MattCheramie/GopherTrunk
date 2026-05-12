@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
@@ -136,4 +137,36 @@ func (c scannerCockpit) DwellConventional(index int) bool {
 		return false
 	}
 	return c.conv.DwellOn(index)
+}
+
+// ManualTune adds a VFO-style temporary channel and forces dwell on
+// it. Falls back to scanner defaults (SquelchDbFS=-50, Hangtime=
+// 1500ms, Mode=fm) so the API caller only has to supply
+// FrequencyHz to "listen now".
+func (c scannerCockpit) ManualTune(req api.ManualTuneRequest) (int, bool) {
+	if c.conv == nil {
+		return 0, false
+	}
+	ch := conventional.Channel{
+		Label:       req.Label,
+		FrequencyHz: req.FrequencyHz,
+		Mode:        req.Mode,
+		SquelchDbFS: req.SquelchDbFS,
+	}
+	if req.HangtimeMs > 0 {
+		ch.Hangtime = time.Duration(req.HangtimeMs) * time.Millisecond
+	}
+	if ch.Label == "" {
+		ch.Label = "manual"
+	}
+	idx := c.conv.AddTemporaryChannel(ch)
+	return idx, true
+}
+
+// ClearManualTune removes a previously-added temp channel.
+func (c scannerCockpit) ClearManualTune(index int) bool {
+	if c.conv == nil {
+		return false
+	}
+	return c.conv.RemoveTemporaryChannel(index)
 }

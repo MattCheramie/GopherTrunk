@@ -500,6 +500,18 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			cmdSetAudio(m.cli, r.Audio.Volume, r.Audio.Muted, r.Audio.Recording, r.Label),
 			cmdPollAudio(m.cli),
 		)
+	case state.WriteKindScannerManualTune:
+		if r.ScannerManualTune == nil {
+			return nil
+		}
+		return tea.Batch(
+			cmdScannerManualTune(m.cli,
+				r.ScannerManualTune.FrequencyHz,
+				r.ScannerManualTune.Label,
+				r.ScannerManualTune.Mode,
+				r.Label),
+			cmdPollScanner(m.cli),
+		)
 	}
 	return nil
 }

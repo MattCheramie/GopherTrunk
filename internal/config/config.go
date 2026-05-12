@@ -67,6 +67,14 @@ type ScannerConfig struct {
 	CCHunt CCHuntConfig `yaml:"cc_hunt"`
 	// Conventional is the fixed-frequency analog scan list.
 	Conventional []ConvChannelConfig `yaml:"conventional"`
+	// ManualTuneEnabled opts in to constructing the conventional
+	// scanner even when no static channels are configured, so the
+	// TUI's `f` key (or POST /api/v1/scanner/manual_tune) can
+	// VFO-tune at runtime. Off by default — the scanner steals a
+	// Voice SDR from the trunking pool, so operators with only
+	// one Voice SDR need to know they're trading trunked grant-
+	// following for manual tune.
+	ManualTuneEnabled bool `yaml:"manual_tune_enabled"`
 }
 
 // CCHuntConfig tunes the hunter's dwell + exponential backoff.

@@ -120,10 +120,11 @@ type WriteRequest struct {
 	UpdateTalkgroup *UpdateTalkgroupReq
 	SweepRetention  *SweepRetentionReq
 	ResetTone       *ResetToneReq
-	ScannerMode     *ScannerModeReq
-	ScannerHunt     *ScannerHuntReq
-	ScannerConv     *ScannerConvReq
-	Audio           *AudioReq
+	ScannerMode       *ScannerModeReq
+	ScannerHunt       *ScannerHuntReq
+	ScannerConv       *ScannerConvReq
+	ScannerManualTune *ScannerManualTuneReq
+	Audio             *AudioReq
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -143,7 +144,15 @@ const (
 	WriteKindScannerConvResume
 	WriteKindScannerConvDwell
 	WriteKindAudio
+	WriteKindScannerManualTune
 )
+
+// ScannerManualTuneReq adds a temp VFO channel and forces dwell.
+type ScannerManualTuneReq struct {
+	FrequencyHz uint32
+	Label       string
+	Mode        string
+}
 
 // AudioReq sets one or more knobs on the audio cockpit. Nil fields
 // are left unchanged.

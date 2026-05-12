@@ -115,6 +115,7 @@ type Scanner struct {
 	log  *slog.Logger
 
 	mu          sync.RWMutex
+	channels    []Channel // mutable; opts.Channels is the seed, AddTemporaryChannel grows it
 	cursor      int
 	state       State
 	held        bool
@@ -126,9 +127,16 @@ type Scanner struct {
 	// forcedDwellIndex is set by DwellOn — the next round picks this
 	// channel up directly, bypassing the scan cursor.
 	forcedDwellIndex int
+	// tempChannels tracks indices added by AddTemporaryChannel so
+	// RemoveTemporaryChannel can validate the index belongs to a
+	// VFO-style entry rather than a config-seeded one. Bool value
+	// is irrelevant — set membership only.
+	tempChannels map[int]bool
 }
 
-// New constructs a Scanner. Channels must be non-empty.
+// New constructs a Scanner. Channels may be empty when the operator
+// only intends to drive the scanner via AddTemporaryChannel (manual
+// VFO tune from the TUI / API).
 func New(opts Options) (*Scanner, error) {
 	if opts.Engine == nil {
 		return nil, errors.New("conventional: Engine is required")
@@ -141,9 +149,6 @@ func New(opts Options) (*Scanner, error) {
 	}
 	if opts.Recorder == nil {
 		return nil, errors.New("conventional: Recorder is required")
-	}
-	if len(opts.Channels) == 0 {
-		return nil, errors.New("conventional: at least one channel is required")
 	}
 	if opts.DeviceSerial == "" {
 		return nil, errors.New("conventional: DeviceSerial is required")
@@ -160,9 +165,12 @@ func New(opts Options) (*Scanner, error) {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
-	// Apply per-channel defaults.
-	for i := range opts.Channels {
-		ch := &opts.Channels[i]
+	// Copy + apply per-channel defaults so the caller's slice
+	// stays untouched.
+	channels := make([]Channel, len(opts.Channels))
+	copy(channels, opts.Channels)
+	for i := range channels {
+		ch := &channels[i]
 		if ch.SquelchDbFS == 0 {
 			ch.SquelchDbFS = -50
 		}
@@ -176,10 +184,12 @@ func New(opts Options) (*Scanner, error) {
 	return &Scanner{
 		opts:             opts,
 		log:              opts.Log,
+		channels:         channels,
 		state:            StateScanning,
 		dwellIndex:       -1,
 		forcedDwellIndex: -1,
-		lastBreakAt:      make([]time.Time, len(opts.Channels)),
+		lastBreakAt:      make([]time.Time, len(channels)),
+		tempChannels:     make(map[int]bool),
 	}, nil
 }
 
@@ -195,8 +205,15 @@ func (s *Scanner) Run(ctx context.Context) error {
 			s.sleep(ctx, 100*time.Millisecond)
 			continue
 		}
-		idx := s.nextChannel()
-		ch := s.opts.Channels[idx]
+		idx, ch, ok := s.pickNextChannel()
+		if !ok {
+			// Empty channel list — operator has neither configured
+			// any static channels nor added a temporary one. Idle
+			// in 100 ms ticks so AddTemporaryChannel picks up on
+			// the next round.
+			s.sleep(ctx, 100*time.Millisecond)
+			continue
+		}
 
 		if err := s.opts.Tuner.SetCenterFreq(ch.FrequencyHz); err != nil {
 			s.log.Warn("conv: tune failed", "freq_hz", ch.FrequencyHz, "err", err)
@@ -323,20 +340,29 @@ func (s *Scanner) endDwell(idx int, reason trunking.EndReason) {
 	s.mu.Unlock()
 }
 
-// nextChannel returns the index of the next channel to tune,
-// respecting any forced-dwell override from DwellOn.
-func (s *Scanner) nextChannel() int {
+// pickNextChannel returns the index + a copy of the next channel to
+// tune, respecting any forced-dwell override from DwellOn. The
+// returned ok=false signals an empty channel list — the Run loop
+// idles until AddTemporaryChannel populates one.
+func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.forcedDwellIndex >= 0 && s.forcedDwellIndex < len(s.opts.Channels) {
+	n := len(s.channels)
+	if n == 0 {
+		return 0, Channel{}, false
+	}
+	if s.forcedDwellIndex >= 0 && s.forcedDwellIndex < n {
 		idx := s.forcedDwellIndex
 		s.forcedDwellIndex = -1
-		s.cursor = (idx + 1) % len(s.opts.Channels)
-		return idx
+		s.cursor = (idx + 1) % n
+		return idx, s.channels[idx], true
+	}
+	if s.cursor >= n {
+		s.cursor = 0
 	}
 	idx := s.cursor
-	s.cursor = (s.cursor + 1) % len(s.opts.Channels)
-	return idx
+	s.cursor = (s.cursor + 1) % n
+	return idx, s.channels[idx], true
 }
 
 func (s *Scanner) sleep(ctx context.Context, d time.Duration) {
@@ -384,10 +410,104 @@ func (s *Scanner) IsHeld() bool {
 func (s *Scanner) DwellOn(idx int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if idx < 0 || idx >= len(s.opts.Channels) {
+	if idx < 0 || idx >= len(s.channels) {
 		return false
 	}
 	s.forcedDwellIndex = idx
+	return true
+}
+
+// AddTemporaryChannel appends a runtime "VFO" channel and forces
+// the scanner to dwell on it next round. Returns the new index.
+// Defaults are applied identically to the config-seeded path
+// (SquelchDbFS=-50, Hangtime=1500ms, Mode=fm). Safe to call from
+// any goroutine.
+func (s *Scanner) AddTemporaryChannel(ch Channel) int {
+	if ch.SquelchDbFS == 0 {
+		ch.SquelchDbFS = -50
+	}
+	if ch.Hangtime <= 0 {
+		ch.Hangtime = 1500 * time.Millisecond
+	}
+	if ch.Mode == "" {
+		ch.Mode = "fm"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := len(s.channels)
+	s.channels = append(s.channels, ch)
+	s.lastBreakAt = append(s.lastBreakAt, time.Time{})
+	s.tempChannels[idx] = true
+	s.forcedDwellIndex = idx
+	// Make sure we're not held — a manual tune is an explicit
+	// "listen now" intent.
+	s.held = false
+	s.state = StateScanning
+	return idx
+}
+
+// RemoveTemporaryChannel deletes a channel previously added via
+// AddTemporaryChannel. Static (config-seeded) channels can't be
+// removed at runtime; this returns false for those. If the
+// channel is currently dwelling, the scanner ends the synthetic
+// call before removing it.
+//
+// Note: removing a temporary channel re-indexes everything after
+// it. This is fine for the v1 manual-tune flow (which adds one
+// VFO at a time and revokes it on a new tune) but callers must
+// not assume indices are stable across a remove.
+func (s *Scanner) RemoveTemporaryChannel(idx int) bool {
+	s.mu.Lock()
+	if !s.tempChannels[idx] {
+		s.mu.Unlock()
+		return false
+	}
+	// If we're currently dwelling on the channel being removed,
+	// end the synthetic call first so the engine cleans up.
+	dwelling := s.dwellIndex == idx
+	s.mu.Unlock()
+	if dwelling {
+		s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, trunking.EndReasonManual)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Re-validate under the lock (a concurrent remove could have
+	// snuck in).
+	if !s.tempChannels[idx] || idx >= len(s.channels) {
+		return false
+	}
+	s.channels = append(s.channels[:idx], s.channels[idx+1:]...)
+	s.lastBreakAt = append(s.lastBreakAt[:idx], s.lastBreakAt[idx+1:]...)
+	// Rebuild the tempChannels set with shifted indices.
+	rebuilt := make(map[int]bool, len(s.tempChannels))
+	for i := range s.tempChannels {
+		switch {
+		case i == idx:
+			// dropped
+		case i > idx:
+			rebuilt[i-1] = true
+		default:
+			rebuilt[i] = true
+		}
+	}
+	s.tempChannels = rebuilt
+	if s.cursor > idx {
+		s.cursor--
+	}
+	if s.cursor >= len(s.channels) {
+		s.cursor = 0
+	}
+	if s.dwellIndex == idx {
+		s.dwellIndex = -1
+		s.state = StateScanning
+	} else if s.dwellIndex > idx {
+		s.dwellIndex--
+	}
+	if s.forcedDwellIndex == idx {
+		s.forcedDwellIndex = -1
+	} else if s.forcedDwellIndex > idx {
+		s.forcedDwellIndex--
+	}
 	return true
 }
 
@@ -396,8 +516,8 @@ func (s *Scanner) DwellOn(idx int) bool {
 func (s *Scanner) Snapshot() Status {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	channels := make([]ChannelStatus, len(s.opts.Channels))
-	for i, ch := range s.opts.Channels {
+	channels := make([]ChannelStatus, len(s.channels))
+	for i, ch := range s.channels {
 		channels[i] = ChannelStatus{
 			Index:       i,
 			Label:       ch.Label,
