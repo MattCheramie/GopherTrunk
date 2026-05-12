@@ -199,6 +199,39 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **GFSK modulator + `make integration-cc-edacs`.** First
+  non-C4FM protocol to light up end-to-end through the
+  daemon's mock-SDR + production-receiver chain.
+  - `internal/dsp/demod/gfsk_modulator.go` ships the
+    Gaussian-FSK TX counterpart to the existing GFSK
+    demodulator: bit → bipolar symbol → impulse train × sps
+    → unit-sum-normalised Gaussian premod filter → FM
+    modulator (phase accumulator) → IQ. `GFSKModulator` is
+    stateful across `Modulate` calls so long streams can be
+    chunked; `ModulateGFSK` is the single-shot convenience.
+  - The receiver-side slicer at zero threshold needs no
+    `DeviationHz` calibration knob — GFSK is symmetric
+    around DC, and the receiver's existing zero-threshold
+    slicer Just Works once the modulator produces a real
+    Gaussian-shaped FSK signal.
+  - `edacs.LockState` now implements `trunking.LockedPayload`
+    (`LockedFrequencyHz` + `LockedNAC`). Same latent-bug
+    class as the NXDN / dPMR fixes in PRs #149 / #151 —
+    without these methods, the supervisor's type-assertion
+    on cc.locked silently drops the event and
+    `/api/v1/scanner` never surfaces `state=locked` for
+    EDACS systems.
+  - `make integration-cc-edacs` boots the daemon with
+    synthesized 9600-baud GFSK IQ (BT = 0.3, ±2.4 kHz peak
+    deviation) carrying a 24-bit outbound sync + 40-bit
+    BCH(40, 28, 2)-encoded CmdSystemID CCW. The test
+    enables `edacs_bch_mode: on` so the FEC layer is
+    exercised end-to-end on the recovered bits.
+  - Round-trip tests cover the modulator against the
+    existing GFSK demodulator (200 random bits, every
+    bit recovered exactly), phase continuity across chunked
+    calls, constant-envelope (|IQ| = 1 ± 1e-6), and Reset
+    semantics. 30-run integration flakiness check clean.
 - **`make integration-cc-dpmr` — dPMR Mode 3 end-to-end
   lights-up check.** Fourth per-protocol sibling of
   `integration-cc`. Boots the daemon with a mock SDR
@@ -1409,6 +1442,7 @@ make integration-cc        # P25 Phase 1 "lights up live trunked reception"
 make integration-cc-nxdn   # NXDN "lights up" — synthesizes spec FEC chain
 make integration-cc-dmr    # DMR Tier III "lights up" — Aloha CSBK via BPTC
 make integration-cc-dpmr   # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CSBK
+make integration-cc-edacs  # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles
