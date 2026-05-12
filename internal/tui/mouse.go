@@ -31,16 +31,14 @@ type tabRect struct {
 // render. Storing the height during View() is simpler.
 
 // handleMouseMsg routes a tea.MouseMsg to the right tabbable
-// surface. Left-clicks on the tab strip switch panels; left-clicks in
-// the body are delegated to the active panel when it implements
-// panels.MouseAware. Returns true when the click was consumed.
+// surface. Left-clicks on the tab strip switch panels; left-clicks
+// and wheel events in the body are delegated to the active panel
+// when it implements panels.MouseAware. Returns true when the event
+// was consumed.
 func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Cmd, bool) {
-	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
-		return nil, false
-	}
-	// Tab strip is always row 0 — both wide and compact tab renderers
-	// emit a single line.
-	if msg.Y == 0 {
+	// Tab-strip clicks are left-press only — wheel ticks over the
+	// strip still belong to the active panel's body.
+	if msg.Y == 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 		for _, r := range m.tabRects {
 			if msg.X >= r.xStart && msg.X < r.xEnd {
 				m.active = r.kind
@@ -49,8 +47,11 @@ func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Cmd, bool) {
 		}
 		return nil, false
 	}
-	// Body clicks: delegate to the active panel if it cares. Local Y
-	// is global Y minus the tab strip height (one row).
+	// Drop button releases and motion events — they're noisy and no
+	// panel cares about them today.
+	if msg.Action == tea.MouseActionRelease || msg.Action == tea.MouseActionMotion {
+		return nil, false
+	}
 	if int(m.active) < 0 || int(m.active) >= len(m.panels) {
 		return nil, false
 	}
@@ -58,7 +59,11 @@ func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Cmd, bool) {
 	if !ok {
 		return nil, false
 	}
+	// Local Y is global Y minus the tab strip height (one row). For
+	// wheel events that arrive over the tab strip we still want the
+	// body to receive them, hence localY may be negative — panels
+	// must guard against it via tableRowFromLocalY.
 	localY := msg.Y - 1
-	cmd := aware.HandleMouseAt(msg.X, localY)
+	cmd := aware.HandleMouse(msg, localY)
 	return cmd, true
 }

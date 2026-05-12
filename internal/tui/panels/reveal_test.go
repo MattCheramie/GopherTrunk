@@ -94,28 +94,77 @@ func TestScannerPanel_RevealResolvedOnNextUpdate(t *testing.T) {
 	}
 }
 
-func TestSystemsPanel_HandleMouseAtMovesCursor(t *testing.T) {
+func TestSystemsPanel_HandleMouseMovesCursor(t *testing.T) {
 	p := NewSystems()
 	s := &state.SharedState{Systems: []client.SystemDTO{
 		{Name: "A"}, {Name: "B"}, {Name: "C"}, {Name: "D"},
 	}}
 	_, _ = p.Update(tea.WindowSizeMsg{Width: 120, Height: 30}, s)
 
+	leftPress := func(y int) tea.MouseMsg {
+		return tea.MouseMsg{X: 10, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	}
+
 	// localY 0/1/2 are chrome; first data row is local Y == 3.
-	if cmd := p.HandleMouseAt(10, 2); cmd != nil {
+	if cmd := p.HandleMouse(leftPress(0), 2); cmd != nil {
 		t.Errorf("expected nil cmd on chrome click")
 	}
 	if got := p.tbl.Cursor(); got != 0 {
 		t.Errorf("chrome click moved cursor to %d", got)
 	}
-	_ = p.HandleMouseAt(10, 4) // row 1
+	_ = p.HandleMouse(leftPress(0), 4) // row 1
 	if got := p.tbl.Cursor(); got != 1 {
 		t.Errorf("cursor = %d after click on row 1, want 1", got)
 	}
 	// Past-end clamps to the last row.
-	_ = p.HandleMouseAt(10, 50)
+	_ = p.HandleMouse(leftPress(0), 50)
 	if got := p.tbl.Cursor(); got != 3 {
 		t.Errorf("cursor = %d after out-of-range click, want 3", got)
+	}
+}
+
+func TestSystemsPanel_HandleMouseWheel(t *testing.T) {
+	p := NewSystems()
+	s := &state.SharedState{Systems: []client.SystemDTO{
+		{Name: "A"}, {Name: "B"}, {Name: "C"}, {Name: "D"},
+	}}
+	_, _ = p.Update(tea.WindowSizeMsg{Width: 120, Height: 30}, s)
+	// Cursor starts at 0.
+	wheel := func(btn tea.MouseButton) tea.MouseMsg {
+		return tea.MouseMsg{X: 5, Y: 5, Button: btn, Action: tea.MouseActionPress}
+	}
+	_ = p.HandleMouse(wheel(tea.MouseButtonWheelDown), 5)
+	if got := p.tbl.Cursor(); got != 1 {
+		t.Errorf("after wheel-down cursor = %d, want 1", got)
+	}
+	_ = p.HandleMouse(wheel(tea.MouseButtonWheelDown), 5)
+	_ = p.HandleMouse(wheel(tea.MouseButtonWheelDown), 5)
+	if got := p.tbl.Cursor(); got != 3 {
+		t.Errorf("after three wheel-downs cursor = %d, want 3", got)
+	}
+	_ = p.HandleMouse(wheel(tea.MouseButtonWheelUp), 5)
+	if got := p.tbl.Cursor(); got != 2 {
+		t.Errorf("after wheel-up cursor = %d, want 2", got)
+	}
+}
+
+func TestAllTablePanels_HandleMouseInterface(t *testing.T) {
+	// Compile-time + runtime check that the four panels added in this
+	// PR satisfy MouseAware and don't panic on a wheel event.
+	cases := []struct {
+		name string
+		p    MouseAware
+	}{
+		{"active", NewActive()},
+		{"history", NewHistory()},
+		{"tones", NewTones()},
+		{"metrics", NewMetrics()},
+	}
+	wheel := tea.MouseMsg{X: 0, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
+	for _, c := range cases {
+		if cmd := c.p.HandleMouse(wheel, 5); cmd != nil {
+			t.Errorf("%s: wheel returned non-nil cmd", c.name)
+		}
 	}
 }
 

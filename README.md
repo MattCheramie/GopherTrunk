@@ -278,6 +278,20 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Mouse coverage on every table panel + scroll-wheel scroll.**
+  The `MouseAware` interface added in the Revealer PR now lives on
+  Active, History, Tones, and Metrics in addition to Systems,
+  Talkgroups, and Devices — left-clicks on a data row move the
+  cursor onto that row in every table-backed panel. Scroll-wheel
+  ticks are forwarded the same way (one-row-per-tick up or down)
+  because bubbles/table v1.0.0 doesn't handle `MouseMsg` itself.
+  The `MouseAware` signature changed from
+  `HandleMouseAt(localX, localY int)` to
+  `HandleMouse(msg tea.MouseMsg, localY int)` so panels can
+  distinguish a click on a row from a wheel tick from a button
+  release. A shared `handleTableMouse` helper centralises the
+  left-press + wheel switch so every table panel handles input the
+  same way.
 - **TUI Revealer / MouseAware: palette + mouse converge on the same
   row.** Picking a system / talkgroup / device from `Ctrl+P` now
   jumps to the destination panel and pre-positions the panel's
@@ -1920,13 +1934,17 @@ refresh, automatic reconnect on disconnect:
 | `?` | toggle help |
 | `q` / `Ctrl+C` | quit |
 
-The tab strip is also clickable, and a left-click on any data row in
-the Systems / Talkgroups / Devices panels moves the cursor onto that
-row — pair it with `Enter` to open the detail card or with a
-mutation key to act on the selection. Picking a system / talkgroup /
-device from the command palette pre-positions the destination panel's
-cursor on the matching row before opening the detail modal, so
-keyboard and mouse paths converge on the same selection.
+The tab strip is also clickable, and a left-click on any data row
+in the Systems / Talkgroups / Active / History / Devices / Tones /
+Metrics panels moves the cursor onto that row — pair it with `Enter`
+to open the detail card or with a mutation key (`e` to end the
+highlighted active call, `R` to reset the highlighted tone detector,
+`L` to toggle conventional channel lockout, etc.) to act on the
+selection. Scroll-wheel ticks advance the cursor one row at a time
+in the same panels. Picking a system / talkgroup / device from the
+command palette pre-positions the destination panel's cursor on the
+matching row before opening the detail modal, so keyboard and mouse
+paths converge on the same selection.
 
 Settings is a tabbed inspector (`[` / `]` to cycle) covering
 Daemon · Storage · Audio · Recording · Tones · API · Vocoders · SDR

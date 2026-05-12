@@ -99,6 +99,13 @@ func (p *ActivePanel) refresh(calls []client.ActiveCallDTO) {
 	p.tbl.SetRows(rows)
 }
 
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. After picking a row the `e` keybind ends that call.
+func (p *ActivePanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
+	return nil
+}
+
 func (p *ActivePanel) View(width, height int, focused bool, s *state.SharedState) string {
 	p.tbl.SetColumns(activeColumns(width))
 	p.tbl.SetWidth(width)

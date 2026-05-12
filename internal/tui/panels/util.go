@@ -7,6 +7,9 @@ import (
 	"hash/maphash"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // hashSeed is the per-process maphash seed. Held module-wide so
@@ -132,4 +135,38 @@ func tableRowFromLocalY(localY, rowCount int) int {
 		return rowCount - 1
 	}
 	return idx
+}
+
+// handleTableMouse is the canonical MouseAware implementation for the
+// bubbles/table-backed panels. Translates a press-left into a row
+// cursor and forwards wheel ticks one-row-at-a-time. chromeRows is
+// the number of body lines drawn above the table (always 0 for
+// systems/devices/active/history/tones/metrics; 1 for talkgroups
+// which renders a filter row first).
+//
+// Bubbles v1.0.0's table.Update is KeyMsg-only — it ignores MouseMsg
+// entirely — so wheel forwarding has to live in the host panel. We
+// centralise it here so every table panel handles wheel scroll the
+// same way without each one importing tea constants separately.
+func handleTableMouse(tbl interface {
+	Cursor() int
+	Rows() []table.Row
+	SetCursor(int)
+	MoveUp(int)
+	MoveDown(int)
+}, msg tea.MouseMsg, localY, chromeRows int) {
+	switch msg.Button {
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return
+		}
+		idx := tableRowFromLocalY(localY-chromeRows, len(tbl.Rows()))
+		if idx >= 0 {
+			tbl.SetCursor(idx)
+		}
+	case tea.MouseButtonWheelUp:
+		tbl.MoveUp(1)
+	case tea.MouseButtonWheelDown:
+		tbl.MoveDown(1)
+	}
 }

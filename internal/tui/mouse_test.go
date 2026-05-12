@@ -83,3 +83,44 @@ func TestHitTestTab_BodyClickWithoutMouseAware(t *testing.T) {
 		t.Errorf("dashboard body click should be left unconsumed")
 	}
 }
+
+func TestHandleMouseMsg_WheelForwardsToActivePanel(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 200
+	m.height = 24
+	_ = m.renderTabs()
+	m.active = state.PanelSystems
+	m.shared.Systems = []client.SystemDTO{
+		{Name: "A"}, {Name: "B"}, {Name: "C"},
+	}
+	_, _ = m.panels[state.PanelSystems].Update(tea.WindowSizeMsg{Width: m.width, Height: m.height}, m.shared)
+
+	wheelDown := tea.MouseMsg{
+		X: 5, Y: 5,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	}
+	_, consumed := m.handleMouseMsg(wheelDown)
+	if !consumed {
+		t.Fatal("wheel event should be consumed by MouseAware panel")
+	}
+	if got := m.panels[state.PanelSystems].(*panels.SystemsPanel).Cursor(); got != 1 {
+		t.Errorf("systems cursor = %d after wheel-down, want 1", got)
+	}
+}
+
+func TestHandleMouseMsg_ReleaseAndMotionIgnored(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 200
+	m.height = 24
+	_ = m.renderTabs()
+	m.active = state.PanelSystems
+
+	for _, action := range []tea.MouseAction{tea.MouseActionRelease, tea.MouseActionMotion} {
+		msg := tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: action}
+		_, consumed := m.handleMouseMsg(msg)
+		if consumed {
+			t.Errorf("action %v should not be consumed", action)
+		}
+	}
+}

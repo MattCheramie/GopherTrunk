@@ -117,15 +117,11 @@ func (p *TalkgroupsPanel) Reveal(key string) {
 	}
 }
 
-// HandleMouseAt moves the cursor to the clicked data row. The first
-// body line is reserved for the filter input + sort summary, so the
-// table starts one row below the canonical chrome offset.
-func (p *TalkgroupsPanel) HandleMouseAt(_, localY int) tea.Cmd {
-	// Account for the extra filter+summary line above the table.
-	idx := tableRowFromLocalY(localY-1, len(p.tbl.Rows()))
-	if idx >= 0 {
-		p.tbl.SetCursor(idx)
-	}
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. The first body line is reserved for the filter input +
+// sort summary, so chromeRows == 1.
+func (p *TalkgroupsPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 1)
 	return nil
 }
 

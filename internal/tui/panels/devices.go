@@ -103,12 +103,10 @@ func (p *DevicesPanel) Reveal(key string) {
 	}
 }
 
-// HandleMouseAt moves the cursor to the clicked data row.
-func (p *DevicesPanel) HandleMouseAt(_, localY int) tea.Cmd {
-	idx := tableRowFromLocalY(localY, len(p.tbl.Rows()))
-	if idx >= 0 {
-		p.tbl.SetCursor(idx)
-	}
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks.
+func (p *DevicesPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
 	return nil
 }
 

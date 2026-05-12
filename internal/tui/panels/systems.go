@@ -97,13 +97,10 @@ func (p *SystemsPanel) Reveal(key string) {
 	}
 }
 
-// HandleMouseAt moves the cursor to the clicked row when the click
-// lands on a data row; chrome clicks are ignored.
-func (p *SystemsPanel) HandleMouseAt(_, localY int) tea.Cmd {
-	idx := tableRowFromLocalY(localY, len(p.tbl.Rows()))
-	if idx >= 0 {
-		p.tbl.SetCursor(idx)
-	}
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. Chrome clicks are ignored.
+func (p *SystemsPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
 	return nil
 }
 

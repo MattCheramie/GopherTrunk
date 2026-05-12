@@ -92,6 +92,14 @@ func (p *TonesPanel) refresh(s *state.SharedState) {
 	p.last = s.ToneAlerts.Len()
 }
 
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. After picking a row the `R` keybind resets that device's
+// tone-detector.
+func (p *TonesPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
+	return nil
+}
+
 func (p *TonesPanel) View(width, height int, focused bool, s *state.SharedState) string {
 	p.tbl.SetColumns(toneColumns(width))
 	p.tbl.SetWidth(width)

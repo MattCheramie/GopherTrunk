@@ -105,6 +105,14 @@ func formatMetric(v float64) string {
 	return fmt.Sprintf("%.3f", v)
 }
 
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. Metrics rows aren't actionable; the cursor is purely for
+// keyboard navigation.
+func (p *MetricsPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
+	return nil
+}
+
 func (p *MetricsPanel) View(width, height int, focused bool, s *state.SharedState) string {
 	cols := []table.Column{{Title: "Metric", Width: width * 3 / 4}, {Title: "Value", Width: width / 4}}
 	p.tbl.SetColumns(cols)

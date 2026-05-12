@@ -31,11 +31,12 @@ type Revealer interface {
 }
 
 // MouseAware is an optional interface for panels that want to react to
-// left-clicks inside their body. localY is the row index relative to
-// the panel's top-left (0 = panel border row). Implementations should
-// translate it into a row index and call SetCursor on their internal
-// table. Returning a tea.Cmd is permitted but most implementations
-// will return nil.
+// mouse events inside their body. localY is the row offset relative
+// to the panel's top-left (0 = panel border row); msg carries the
+// full bubbletea mouse payload so the panel can distinguish a
+// left-click on a data row (move cursor) from a scroll-wheel tick
+// (advance one row) from a button release (no-op). Returning a
+// tea.Cmd is permitted but most implementations will return nil.
 type MouseAware interface {
-	HandleMouseAt(localX, localY int) tea.Cmd
+	HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd
 }

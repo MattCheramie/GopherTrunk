@@ -132,6 +132,14 @@ func buildHistoryRowsCmd(rows []client.CallRow, hash uint64) tea.Cmd {
 	}
 }
 
+// HandleMouse moves the cursor on a left-click and forwards wheel
+// ticks. History is read-only — the cursor just controls which row
+// is highlighted.
+func (p *HistoryPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
+	handleTableMouse(&p.tbl, msg, localY, 0)
+	return nil
+}
+
 func (p *HistoryPanel) View(width, height int, focused bool, s *state.SharedState) string {
 	p.tbl.SetColumns(historyColumns(width))
 	p.tbl.SetWidth(width)
