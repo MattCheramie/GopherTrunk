@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola lint tidy vet clean run proto
 
 all: build
 
@@ -62,6 +62,14 @@ integration-cc-dpmr:
 # test; exercises the new GFSKModulator primitive in internal/dsp/demod.
 integration-cc-edacs:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesEDACS ./cmd/gophertrunk/...
+
+# integration-cc-motorola boots the daemon with synthesized 3600-baud 2-FSK
+# GFSK IQ (BT = 0.5) carrying a 24-bit outbound sync + 128-bit BCH(64, 16, 11)
+# OSW pair encoding an OpSystemIDExtended announcement. Reuses the GFSKModulator
+# from the EDACS PR; differences are framing + per-codeword BCH instead of
+# whole-CCW BCH.
+integration-cc-motorola:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesMotorola ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

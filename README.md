@@ -199,6 +199,31 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc-motorola` — Motorola Type II
+  end-to-end lights-up check.** Second non-C4FM protocol
+  to light up through the daemon; reuses the GFSK
+  modulator shipped in PR #152 with different per-protocol
+  framing (Motorola Type II OSW vs EDACS CCW) and a
+  different FEC chain (per-codeword BCH(64, 16, 11)
+  wrapping each 16-bit OSW half vs EDACS' single
+  BCH(40, 28, 2) over the whole CCW).
+  - 3600-baud 2-FSK with BT = 0.5 — the SmartZone
+    standard's tighter-bandwidth profile vs EDACS' 0.3.
+    Sample rate picked at 97.2 kHz so an integer sps = 27
+    matches the receiver's float computation with no
+    rounding drift.
+  - `motorola.LockState` now implements
+    `trunking.LockedPayload` (`LockedFrequencyHz` +
+    `LockedNAC`). Same latent-bug class fixed on NXDN /
+    dPMR / EDACS in PRs #149 / #151 / #152 — fourth
+    protocol with the same shape.
+  - The test synthesizes an `OpSystemIDExtended` OSW
+    (carrying a SystemID announcement) through
+    `framing.BCHEncode64_16` × 2 for the two halves,
+    sandwiches it between the 24-bit outbound sync and
+    idle padding, and asserts the daemon recovers the
+    lock via the `motorola_bch_mode: on` opt-in.
+  - 30-run flakiness check clean.
 - **GFSK modulator + `make integration-cc-edacs`.** First
   non-C4FM protocol to light up end-to-end through the
   daemon's mock-SDR + production-receiver chain.
@@ -1435,14 +1460,15 @@ and DVB-driver blacklisting on Linux.
 ### Build, test, run
 
 ```sh
-make build                 # produces ./bin/gophertrunk
-make test                  # go test -race ./...
-make integration           # boots the wired daemon end-to-end (no SDR needed)
-make integration-cc        # P25 Phase 1 "lights up live trunked reception"
-make integration-cc-nxdn   # NXDN "lights up" — synthesizes spec FEC chain
-make integration-cc-dmr    # DMR Tier III "lights up" — Aloha CSBK via BPTC
-make integration-cc-dpmr   # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CSBK
-make integration-cc-edacs  # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
+make build                    # produces ./bin/gophertrunk
+make test                     # go test -race ./...
+make integration              # boots the wired daemon end-to-end (no SDR needed)
+make integration-cc           # P25 Phase 1 "lights up live trunked reception"
+make integration-cc-nxdn      # NXDN "lights up" — synthesizes spec FEC chain
+make integration-cc-dmr       # DMR Tier III "lights up" — Aloha CSBK via BPTC
+make integration-cc-dpmr      # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CSBK
+make integration-cc-edacs     # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
+make integration-cc-motorola  # Motorola Type II "lights up" — GFSK + BCH(64, 16, 11) OSW
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

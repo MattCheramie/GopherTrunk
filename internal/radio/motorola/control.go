@@ -16,6 +16,17 @@ type LockState struct {
 	SystemID    uint16
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises Motorola lock events alongside the protocol-neutral P25 /
+// DMR / NXDN / TETRA payloads. Motorola doesn't have a P25-style NAC;
+// SystemID is the closest per-site identifier and gets plumbed into
+// the NAC slot. Without these methods, the supervisor's type-assertion
+// on cc.locked silently drops the event and /api/v1/scanner never
+// surfaces state=locked.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return s.SystemID }
+
 // ControlChannel ingests OSWs from a single SmartZone control channel,
 // emits cc.locked the first time it sees a System-ID announcement on
 // a freshly-tuned device, and republishes voice grants as
