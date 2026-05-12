@@ -199,6 +199,19 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **EDACS FEC documentation correction.** Earlier package
+  docstrings + README bullets called out an "interleaved
+  Reed-Solomon-derived FEC layer above the BCH" on the
+  EDACS CCW as missing / a future PR. Per the canonical
+  open reference (`lwvmobile/edacs-fm`) and a careful read
+  of the existing `internal/radio/framing/bch_edacs.go`
+  implementation, **no such outer layer exists in Standard
+  EDACS** — BCH(40, 28, 2) per CCW is the only on-wire FEC,
+  and it's already shipping behind `edacs_bch_mode: on`.
+  Each affected docstring is updated to say so explicitly,
+  and the historical "Recently shipped" entries that named
+  the imaginary RS layer as a follow-up gain a corrective
+  footnote. No code logic changes — only documentation.
 - **NXDN CAC spec-correct interleave + puncture per
   NXDN-TS-1-A rev 1.3 §4.5.1.1.** Closes the "blocked on
   spec data" gap on the previous round — the user uploaded
@@ -307,8 +320,12 @@ to its own package and lands independently.
   protocol-by-protocol on-air interleaver / puncture layers
   for protocols whose public specs don't fully document
   them. NXDN CAC interleave / puncture landed as a separate
-  follow-up (see the NXDN CAC entry above); EDACS CCW
-  interleaved RS-derived FEC remains the open item.
+  follow-up (see the NXDN CAC entry above). EDACS Standard
+  has no outer FEC layer above the BCH — earlier README
+  claims of an "interleaved Reed-Solomon-derived FEC layer"
+  on the CCW were a documentation error; per the canonical
+  open reference (`lwvmobile/edacs-fm`) the BCH(40, 28, 2)
+  is the only on-wire FEC, and that path already ships.
 - **`ccdecoder` connector threads LTR FCS + Manchester modes
   from per-system config.** Same pattern as the TETRA wiring in
   PR #141 — operators set `ltr_fcs_mode` + `ltr_manchester_mode`
@@ -919,10 +936,14 @@ to its own package and lands independently.
   detects the 24-bit outbound sync + slices the 40-bit CCW +
   parses it via `CCWFromBits` + dispatches via the existing
   `Ingest`. `trunking.Protocol` gains `ProtocolEDACS` (config
-  string `"edacs"`). The interleaved Reed-Solomon-derived FEC
-  over the CCW is a follow-up; until it lands the adapter
-  sync-locks but typically fails CCW parsing on noisy on-air
-  signals.
+  string `"edacs"`). On-air recovery margins improve once the
+  per-CCW BCH(40, 28, 2) FEC layer (later wired as
+  `edacs_bch_mode: on`) is enabled — Standard EDACS uses BCH
+  as its only CCW-level FEC per the `lwvmobile/edacs-fm`
+  reference. Earlier README revisions called out an outer
+  "interleaved Reed-Solomon-derived FEC" as a follow-up; that
+  was a documentation error, no such layer exists in Standard
+  EDACS.
 - **NXDN `ControlChannel.Process(stream, baseIdx)` adapter +
   ccdecoder factory.** Closes the IQ → CC sync layer for NXDN:
   the receiver's `DibitSink` forwards into

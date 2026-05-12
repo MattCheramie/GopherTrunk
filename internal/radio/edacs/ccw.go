@@ -6,8 +6,12 @@ import (
 )
 
 // CCW is one EDACS Control Channel Word — a 40-bit information block
-// that rides every EDACS control-channel slot after sync detection
-// and the interleaved Reed-Solomon-derived FEC have been removed.
+// that rides every EDACS control-channel slot after sync detection.
+// Under SetBCHMode(BCHOn) the 40 on-wire bits are the BCH(40, 28, 2)
+// codeword (28 info high, 12 parity low) and the parse logic decodes
+// + corrects up to 2 bit errors before reading the fields. The
+// BCH layer is the only on-wire FEC on the Standard EDACS CCW per
+// the lwvmobile/edacs-fm reference.
 //
 // Field layout follows the most-cited public reference:
 //

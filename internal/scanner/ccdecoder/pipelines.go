@@ -369,10 +369,10 @@ func (p *nxdnPipeline) Close() error            { return nil }
 // newEDACSPipeline wires internal/radio/edacs/receiver into
 // edacs.ControlChannel.Process. The receiver's BitSink forwards
 // bits + baseIdx into the state machine (24-bit sync detect →
-// 40-bit CCW slice → CCWFromBits → Ingest). The interleaved
-// Reed-Solomon-derived FEC over the CCW is a follow-up; until
-// it lands the adapter sync-locks but typically fails CCW
-// parsing on noisy on-air signals.
+// 40-bit CCW slice → CCWFromBits → Ingest). The per-CCW BCH(40,
+// 28, 2) FEC layer flips on via edacs_bch_mode: on in the
+// system's YAML; BCH is the only on-wire FEC layer on the
+// Standard EDACS CCW per the lwvmobile/edacs-fm reference.
 func newEDACSPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := edacs.New(edacs.Options{
 		Bus:         opts.Bus,

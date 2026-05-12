@@ -30,11 +30,14 @@ type processState struct {
 // Process calls so a sync match in one chunk and the payload in
 // the next still decode cleanly.
 //
-// The interleaved Reed-Solomon-derived FEC over the CCW is NOT
-// reversed here — the package's CCW parser assumes the upstream
-// caller delivered the 40 information bits already, which is the
-// case for test fixtures + clean signals but not for noisy on-air
-// captures. Adding the RS FEC layer is a documented follow-up.
+// The per-CCW BCH(40, 28, 2) FEC layer is gated by SetBCHMode —
+// BCHOff (default) reads the 40 wire bits straight as the
+// information field (matches test fixtures and clean fixtures);
+// BCHOn runs framing.BCHDecodeEDACS over each 40-bit codeword and
+// recovers up to 2 bit errors before parsing. Per the canonical
+// open reference (lwvmobile/edacs-fm), BCH is the only on-wire FEC
+// on the Standard EDACS CCW — no outer interleaved or
+// Reed-Solomon-derived layer sits above it.
 //
 // Returns baseIdx + len(bits) to match the YSF / P25 Phase 1 /
 // dPMR / NXDN ControlChannel.Process contracts.
