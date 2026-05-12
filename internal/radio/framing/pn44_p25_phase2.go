@@ -136,3 +136,36 @@ func PN44SeedInbound(outboundSeed uint64) uint64 {
 	}
 	return s.state
 }
+
+// PN44SlotOffsetsOutbound lists the spec-defined offsets into the
+// 4320-bit outbound (downlink) scrambling sequence at which each of
+// the 12 outbound slots begins per TIA-102.BBAC-1 §7.2.5 Figure 7-5.
+//
+// A burst-level descrambler that doesn't have full superframe sync
+// can probe each offset in turn — descramble + verify against the
+// outer RS(24, 16, 9) code — and accept the offset whose syndrome
+// is zero. The blind-probe form is implemented in
+// internal/radio/p25/phase2/process.go under ScramblerProbe mode.
+//
+// Slot offsets are 0 + k × 360 for k = 0..11. The 360-bit spacing
+// reflects the 30 ms slot duration at 12 ksym/s × 2 bits/symbol /
+// 2 slots — a slot carries 360 channel bits worth of scrambling
+// sequence.
+var PN44SlotOffsetsOutbound = [12]int{
+	0, 360, 720, 1080, 1440, 1800,
+	2160, 2520, 2880, 3240, 3600, 3960,
+}
+
+// PN44SlotOffsetsInbound is the inbound counterpart of
+// PN44SlotOffsetsOutbound per Figure 7-5. The 12 inbound slots
+// share the same 360-bit spacing but the VCH0 and VCH1 traffic
+// lanes interleave at half-slot boundaries, so a comprehensive
+// blind probe walks every 180-bit candidate. For now the table
+// mirrors the outbound slot grid; refining to the precise
+// inbound-slot grid (per VCH0 / VCH1 offsets) is a follow-up that
+// only affects inbound captures and lands together with a
+// per-slot identifier.
+var PN44SlotOffsetsInbound = [12]int{
+	0, 360, 720, 1080, 1440, 1800,
+	2160, 2520, 2880, 3240, 3600, 3960,
+}

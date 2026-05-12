@@ -40,6 +40,7 @@ type ControlChannel struct {
 	rsMode           RSMode
 	scramblerMode    ScramblerMode
 	scramblerSeed    uint64
+	scramblerOffset  int
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -194,16 +195,32 @@ func ParseRSMode(s string) (RSMode, bool) {
 //     zero seed maps to (2^44 - 1) per spec, which is unlikely to
 //     produce useful decoding against on-air traffic.
 //
-// Note that the spec's full superframe-aware descrambling needs
-// per-burst offset tracking against the 4320-bit superframe
-// (Figure 7-5). ScramblerOn applies the descrambler starting at
-// offset 0 on every MAC PDU; the per-burst-offset shim is a
-// follow-up that lands together with superframe synchronization.
+//     ScramblerOn descrambles from the per-burst slot offset
+//     installed via SetScramblerOffset (default 0). Operators
+//     with superframe tracking can update the offset before each
+//     burst arrives; operators without superframe tracking should
+//     use ScramblerProbe instead.
+//
+//   - ScramblerProbe: the Process adapter walks each of the 12
+//     spec-defined slot offsets in
+//     framing.PN44SlotOffsetsOutbound (Figure 7-5), descrambles
+//     with each, and accepts the first candidate whose outer
+//     RS(24, 16, 9) syndromes are zero. This is the blind-probe
+//     form for receivers without superframe synchronization — it
+//     locks onto any of the 12 slots without external timing
+//     context.
+//
+//     ScramblerProbe requires RSMode to be RSOn — without RS
+//     verification there is no way to tell which of the 12
+//     descrambled candidates is the true PDU. When RSMode is
+//     RSOff, ScramblerProbe degrades silently to ScramblerOn
+//     behaviour (the leading offset wins).
 type ScramblerMode uint8
 
 const (
 	ScramblerOff ScramblerMode = iota
 	ScramblerOn
+	ScramblerProbe
 )
 
 // SetScramblerMode toggles the PN44 descrambler. See ScramblerMode
@@ -239,11 +256,43 @@ func (c *ControlChannel) ScramblerSeed() uint64 {
 	return c.scramblerSeed
 }
 
+// SetScramblerOffset positions the PN44 sequence at the supplied
+// offset (in bits) before XORing with the MAC PDU under
+// ScramblerOn. Operators with superframe tracking update the
+// offset before each burst arrives (see Figure 7-5 of the spec
+// for the slot offsets); operators without superframe tracking
+// should use ScramblerProbe so the Process adapter walks the
+// offsets automatically.
+//
+// Negative or out-of-range offsets are folded into the 4320-bit
+// superframe period at apply time.
+func (c *ControlChannel) SetScramblerOffset(offset int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.scramblerOffset = offset
+}
+
+// ScramblerOffset returns the currently-configured PN44 offset.
+func (c *ControlChannel) ScramblerOffset() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.scramblerOffset
+}
+
 // ParseScramblerMode maps a config / user-facing string into a
 // ScramblerMode. Recognised values (case-insensitive): "" / "off" /
 // "false" / "0" → ScramblerOff (the default — no PN44 descrambling);
 // "on" / "true" / "1" → ScramblerOn (XOR the trellis-decoded MAC
-// PDU bits with the leading 144 bits of the PN44 sequence).
+// PDU bits with the PN44 sequence starting at the configured
+// per-burst offset); "probe" / "auto" → ScramblerProbe (try each
+// of the 12 spec-defined slot offsets and accept the first that
+// passes RS verification).
+//
+// ScramblerProbe is only meaningful when RSMode is RSOn — without
+// RS verification there's no way to tell which offset produced the
+// real PDU; the connector emits a warning if probe is selected
+// without RSOn and degrades to ScramblerOn behaviour.
+//
 // Unknown strings return ScramblerOff with `ok = false`.
 func ParseScramblerMode(s string) (ScramblerMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -251,6 +300,8 @@ func ParseScramblerMode(s string) (ScramblerMode, bool) {
 		return ScramblerOff, true
 	case "on", "true", "1":
 		return ScramblerOn, true
+	case "probe", "auto":
+		return ScramblerProbe, true
 	default:
 		return ScramblerOff, false
 	}
