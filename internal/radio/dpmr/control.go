@@ -16,6 +16,17 @@ type LockState struct {
 	SystemID    uint32 // first StandingServiceStatus' DestID, when seen
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises dPMR lock events alongside the protocol-neutral P25 /
+// DMR / NXDN / TETRA payloads. dPMR doesn't have a P25-style NAC;
+// the low 16 bits of SystemID are the closest per-cell identifier
+// and get plumbed into the NAC slot. Without these methods, the
+// supervisor's type-assertion on cc.locked silently drops the event
+// and /api/v1/scanner never surfaces state=locked.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return uint16(s.SystemID) }
+
 // ControlChannel ingests CSBKs from a single dPMR Mode 3 control
 // channel, emits cc.locked the first time a valid StandingServiceStatus
 // (or any non-idle CSBK) arrives on a freshly-tuned device, and

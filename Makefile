@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr lint tidy vet clean run proto
 
 all: build
 
@@ -46,6 +46,13 @@ integration-cc-nxdn:
 # the lock.
 integration-cc-dmr:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesDMRTier3 ./cmd/gophertrunk/...
+
+# integration-cc-dpmr boots the daemon with synthesized 2400-baud 4-FSK IQ
+# carrying a 24-dibit FS3 sync + 40-dibit StandingServiceStatus CSBK and
+# asserts the production newDPMRPipeline + supervisor + API + metrics
+# chain recovers the lock.
+integration-cc-dpmr:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesDPMR ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

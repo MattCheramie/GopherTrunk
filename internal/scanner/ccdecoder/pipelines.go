@@ -312,6 +312,11 @@ func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	})
 	rx := dpmrrx.New(dpmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
+		// dPMR Mode 3 peak deviation — half of P25 / DMR / YSF,
+		// matching the 6.25 kHz channel spacing. Calibrates
+		// slicer thresholds against the FM-discriminator output
+		// level so live captures slice correctly.
+		DeviationHz: 900.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},

@@ -199,6 +199,36 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc-dpmr` — dPMR Mode 3 end-to-end
+  lights-up check.** Fourth per-protocol sibling of
+  `integration-cc`. Boots the daemon with a mock SDR
+  replaying synthesized dPMR Mode 3 IQ (24-dibit FS3 sync
+  + 40-dibit / 80-bit `StandingServiceStatus` CSBK), and
+  asserts the production `newDPMRPipeline` + supervisor +
+  API + metrics chain recovers the lock.
+  - `internal/radio/dpmr/receiver` picks up the same
+    `Options.DeviationHz` slicer-calibration knob as the
+    P25 P1 / NXDN / DMR receivers (PRs #148 / #149 / #150).
+    The ccdecoder's `newDPMRPipeline` passes **900 Hz** —
+    half the P25 / DMR / YSF deviation, matching the
+    6.25 kHz channel spacing dPMR targets.
+  - `dpmr.LockState` now implements
+    `trunking.LockedPayload` (`LockedFrequencyHz` +
+    `LockedNAC`). dPMR doesn't have a P25-style NAC; the
+    low 16 bits of SystemID are the closest per-cell
+    identifier and get plumbed into the NAC slot. Same
+    latent-bug class as the NXDN fix in PR #149 — without
+    these methods, the supervisor's type-assertion on
+    cc.locked silently drops the event and
+    `/api/v1/scanner` never surfaces `state=locked`.
+  - The C4FM modulator from PR #148 handles dPMR's
+    half-rate 2400 sym/s modulation directly via the `sps`
+    parameter (20 instead of P25/DMR/NXDN's 10 at the same
+    sample rate). No DSP changes needed.
+  - 30-run flakiness check clean on first try — the lower
+    symbol rate + lower deviation gives the MM clock loop
+    a comfortable margin without needing the ClockGain
+    tweak DMR needed in PR #150.
 - **`make integration-cc-dmr` — DMR Tier III end-to-end
   lights-up check.** Third per-protocol sibling of
   `integration-cc`. Boots the daemon with a mock SDR
@@ -1378,6 +1408,7 @@ make integration           # boots the wired daemon end-to-end (no SDR needed)
 make integration-cc        # P25 Phase 1 "lights up live trunked reception"
 make integration-cc-nxdn   # NXDN "lights up" — synthesizes spec FEC chain
 make integration-cc-dmr    # DMR Tier III "lights up" — Aloha CSBK via BPTC
+make integration-cc-dpmr   # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CSBK
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles
