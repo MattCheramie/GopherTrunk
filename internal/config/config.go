@@ -163,6 +163,13 @@ type SystemConfig struct {
 	// decode). Live MPT 1327 captures should set "on". Ignored for
 	// non-MPT-1327 protocols.
 	MPT1327BCHMode string `yaml:"mpt1327_bch_mode"`
+	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
+	// Motorola Type II OSW. Recognised values: "" / "off" (default,
+	// legacy 32-bit raw-OSW path) or "on" (two 64-bit BCH(64, 16, 11)
+	// codewords reassembled into the 32-bit OSW with single- through
+	// 11-bit-error correction). Live Motorola Type II captures
+	// should set "on". Ignored for non-Motorola protocols.
+	MotorolaBCHMode string `yaml:"motorola_bch_mode"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.

@@ -161,6 +161,15 @@ type System struct {
 	// into mpt1327.ControlChannel.SetBCHMode by the ccdecoder
 	// connector after parsing via mpt1327.ParseBCHMode.
 	MPT1327BCHMode string
+	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
+	// Motorola Type II OSW. Recognised values (case-insensitive):
+	// "" / "off" → BCHOff (legacy 32-bit raw-OSW path); "on" →
+	// BCHOn (two 64-bit BCH(64, 16, 11) codewords reassembled into
+	// the 32-bit OSW, with up to 11 bit errors corrected per
+	// codeword). Forwarded into
+	// motorola.ControlChannel.SetBCHMode by the ccdecoder
+	// connector after parsing via motorola.ParseBCHMode.
+	MotorolaBCHMode string
 }
 
 // Validate returns an error if the System lacks required fields.

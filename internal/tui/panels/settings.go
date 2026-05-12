@@ -115,6 +115,8 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "bch: "+orOff(s.EDACSBCHMode))
 	case "mpt1327":
 		parts = append(parts, "bch: "+orOff(s.MPT1327BCHMode))
+	case "motorola":
+		parts = append(parts, "bch: "+orOff(s.MotorolaBCHMode))
 	default:
 		parts = append(parts, "—")
 	}

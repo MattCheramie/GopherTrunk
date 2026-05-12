@@ -409,9 +409,16 @@ func (p *edacsPipeline) Close() error            { return nil }
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
 // bits + baseIdx into the state machine (24-bit sync detect →
-// 32-bit OSW slice → OSWFromBits → Ingest). The BCH(64,16,11)
-// FEC over the OSW is a follow-up; until it lands the adapter
-// sync-locks but typically fails OSW parsing on noisy signals.
+// 32-bit OSW slice → OSWFromBits → Ingest).
+//
+// The BCH(64, 16, 11) FEC layer is gated on per-system config:
+// trunking.System.MotorolaBCHMode (the `motorola_bch_mode` YAML
+// key) flips SetBCHMode on the ControlChannel before any sample
+// flows. Empty string preserves the legacy 32-bit raw-OSW path so
+// existing synthesized-fixture tests stay green; live Motorola
+// Type II captures typically need `motorola_bch_mode: on` to pass
+// the FEC layer. Unknown values warn-log and fall back to off
+// rather than failing the retune.
 func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := motorola.New(motorola.Options{
 		Bus:         opts.Bus,
@@ -419,6 +426,14 @@ func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	if v := opts.System.MotorolaBCHMode; v != "" {
+		mode, ok := motorola.ParseBCHMode(v)
+		if !ok {
+			opts.Log.Warn("ccdecoder: unrecognised motorola_bch_mode; falling back to off",
+				"system", opts.SystemName, "value", v)
+		}
+		cc.SetBCHMode(mode)
+	}
 	rx := motorolarx.New(motorolarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

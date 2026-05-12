@@ -127,6 +127,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			NXDNViterbiMode:      sys.NXDNViterbiMode,
 			EDACSBCHMode:         sys.EDACSBCHMode,
 			MPT1327BCHMode:       sys.MPT1327BCHMode,
+			MotorolaBCHMode:      sys.MotorolaBCHMode,
 		}
 		if err := s.Validate(); err != nil {
 			return nil, fmt.Errorf("daemon: system %q: %w", sys.Name, err)

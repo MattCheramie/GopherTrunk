@@ -199,6 +199,31 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Motorola Type II BCH(64, 16, 11) wired through the
+  connector.** Closes the last unfinished FEC opt-in in the
+  TETRA / LTR / P25 P2 / NXDN / EDACS / MPT 1327 / Motorola
+  family. The BCH layer existed on `motorola.ControlChannel`
+  for a while (`SetBCHMode(BCHOn)` reads two 64-bit codewords
+  after sync, decodes each via `framing.BCHDecode64_16`, and
+  reassembles the 32-bit OSW from the two recovered 16-bit
+  halves with single- through 11-bit-error correction per
+  codeword); this PR threads it through the same per-system
+  YAML pipeline every other protocol uses:
+    - `trunking.System` gains `MotorolaBCHMode string`;
+      `config.SystemConfig` exposes it as `motorola_bch_mode`
+      (`""` / `"off"` / `"on"`).
+    - `motorola.ParseBCHMode` + `motorola.ControlChannel.BCHMode()`
+      mirror the accessors on every other FEC-opt-in protocol.
+    - `newMotorolaPipeline` calls `SetBCHMode` before any
+      sample flows; empty string preserves the legacy 32-bit
+      raw-OSW path for synthesized-fixture tests.
+    - `api.SystemDTO` + `client.SystemDTO` carry the field as
+      `omitempty` JSON; the TUI **Settings** panel renders a
+      `bch: on` / `bch: off` row for Motorola systems.
+    - README's FEC opt-ins table gains a Motorola row.
+  With this PR, every protocol whose ControlChannel exposes a
+  tunable on-air FEC layer is now connector-configurable from
+  per-system YAML.
 - **Reference spec PDFs consolidated under `docs/specs/`.** The
   NXDN-TS-1-A and ETSI EN 300 392-2 PDFs that drive the
   on-air FEC implementations were previously sitting at the
@@ -1319,6 +1344,7 @@ runtime mutation is a future PR. To change a mode, edit
 | NXDN | `nxdn_viterbi_mode` (`""` / `"off"` / `"on"` / `"spec"`) | Legacy 44-dibit raw-CAC path. | `on`: simplified K=5 ½-rate Viterbi over the CAC region (92 dibits → 88 info bits + 4 tail zeros — matches the older MMDVMHost / DSDcc fixtures). `spec`: full NXDN-TS-1-A rev 1.3 §4.5.1.1 outbound chain (150 dibits = 300 channel bits → deinterleave 25×12 → depuncture 50/350 → K=5 Viterbi → 16-bit CRC verify → 155 info bits = 8 SR + 144 L3 + 3 Null). Use `spec` for live captures; `on` for back-compat with the older synthesized fixtures. |
 | EDACS | `edacs_bch_mode` (`""` / `"off"` / `"on"`) | Legacy pre-stripped 40-bit CCW; payload struct's LCN bit 0 + Aux fields are data. | BCH(40, 28, 2) with single/double-bit correction over the 40-bit on-wire CCW; under `on` the effective CCW carries 28 info bits (Command + Status + Address + high LCN bits), the remaining bits become BCH parity. |
 | MPT 1327 | `mpt1327_bch_mode` (`""` / `"off"` / `"on"`) | Legacy 38-bit pre-stripped codeword. | BCH(63, 38) decode over the 64-bit on-wire codeword. |
+| Motorola Type II | `motorola_bch_mode` (`""` / `"off"` / `"on"`) | Legacy 32-bit raw-OSW path. | Two 64-bit BCH(64, 16, 11) codewords reassembled into the 32-bit OSW with single- through 11-bit-error correction per codeword. Live captures should set `on`. |
 
 All string values are case-insensitive with whitespace tolerated;
 recognised on-values include `"on"` / `"true"` / `"1"`, off-values

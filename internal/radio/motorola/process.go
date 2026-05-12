@@ -1,6 +1,10 @@
 package motorola
 
-import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+import (
+	"strings"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+)
 
 // processState is the cross-call bit buffering + sync-detection
 // state the Process adapter holds. Lazily initialised on the first
@@ -41,6 +45,32 @@ func (c *ControlChannel) SetBCHMode(m BCHMode) {
 	if c.proc != nil {
 		c.proc.remaining = 0
 		c.proc.osw = c.proc.osw[:0]
+	}
+}
+
+// BCHMode returns the configured BCHMode. Mirrors the Set* family
+// so callers (and tests) can introspect the configured mode
+// without poking at unexported state.
+func (c *ControlChannel) BCHMode() BCHMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bchMode
+}
+
+// ParseBCHMode maps a config / user-facing string into a BCHMode.
+// Recognised values (case-insensitive): "" / "off" / "false" /
+// "0" → BCHOff (legacy 32-bit raw-OSW path); "on" / "true" /
+// "1" → BCHOn (two 64-bit BCH(64, 16, 11) codewords reassembled
+// into the 32-bit OSW). Unknown strings return BCHOff with
+// `ok = false` so callers can surface the misconfiguration.
+func ParseBCHMode(s string) (BCHMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return BCHOff, true
+	case "on", "true", "1":
+		return BCHOn, true
+	default:
+		return BCHOff, false
 	}
 }
 

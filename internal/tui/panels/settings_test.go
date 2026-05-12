@@ -21,11 +21,12 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 			{Name: "Mining", Protocol: "edacs", EDACSBCHMode: "on"},
 			{Name: "UK", Protocol: "mpt1327", MPT1327BCHMode: "on"},
 			{Name: "PSC", Protocol: "nxdn", NXDNViterbiMode: "on"},
+			{Name: "Moto", Protocol: "motorola", MotorolaBCHMode: "on"},
 		},
 	}
 	_, _ = p.Update(tea.WindowSizeMsg{Width: 140, Height: 30}, s)
-	if p.count != 7 {
-		t.Fatalf("rows = %d, want 7", p.count)
+	if p.count != 8 {
+		t.Fatalf("rows = %d, want 8", p.count)
 	}
 	view := p.View(140, 30, true, s)
 	wants := []string{
@@ -37,6 +38,7 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 		"Mining", "bch: on",
 		"UK", "bch: on",
 		"PSC", "viterbi: on",
+		"Moto", "bch: on",
 		"config.yaml",
 	}
 	for _, w := range wants {

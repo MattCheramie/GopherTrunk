@@ -9,6 +9,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
@@ -486,6 +487,51 @@ func TestMotorolaFactoryConstructs(t *testing.T) {
 	p.Reset()
 	if err := p.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestMotorolaFactoryAppliesBCHFromSystem: MotorolaBCHMode = "on"
+// flips the OSW decoder into BCHOn.
+func TestMotorolaFactoryAppliesBCHFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newMotorolaPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_012_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolMotorola,
+			ControlChannels: []uint32{851_012_500},
+			MotorolaBCHMode: "on",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newMotorolaPipeline: %v", err)
+	}
+	mp := p.(*motorolaPipeline)
+	if got := mp.cc.BCHMode(); got != motorola.BCHOn {
+		t.Errorf("BCHMode = %v, want BCHOn", got)
+	}
+}
+
+// TestMotorolaFactoryDefaultsKeepBCHOff: empty MotorolaBCHMode
+// preserves the legacy 32-bit raw-OSW path.
+func TestMotorolaFactoryDefaultsKeepBCHOff(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newMotorolaPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_012_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolMotorola,
+			ControlChannels: []uint32{851_012_500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newMotorolaPipeline: %v", err)
+	}
+	mp := p.(*motorolaPipeline)
+	if got := mp.cc.BCHMode(); got != motorola.BCHOff {
+		t.Errorf("BCHMode = %v, want BCHOff", got)
 	}
 }
 

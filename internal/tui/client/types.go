@@ -44,6 +44,7 @@ type SystemDTO struct {
 	NXDNViterbiMode      string `json:"nxdn_viterbi_mode,omitempty"`
 	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
 	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
+	MotorolaBCHMode      string `json:"motorola_bch_mode,omitempty"`
 }
 
 // TalkgroupDTO mirrors api.TalkgroupDTO.
