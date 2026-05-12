@@ -19,6 +19,7 @@ const (
 	pollMetricsEvery    = 5 * time.Second
 	pollDevicesEvery    = 10 * time.Second
 	pollScannerEvery    = 2 * time.Second
+	pollAudioEvery      = 3 * time.Second
 )
 
 func cmdPollHealth(cli *client.Client) tea.Cmd {
@@ -118,6 +119,27 @@ func cmdScannerConvResume(cli *client.Client, label string) tea.Cmd {
 func cmdScannerConvDwell(cli *client.Client, idx int, label string) tea.Cmd {
 	return func() tea.Msg {
 		err := cli.ScannerConvDwell(context.Background(), idx)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
+// cmdPollAudio fetches the audio cockpit's current state. Used to
+// keep the dashboard volume / mute / record indicator in sync with
+// any out-of-band mutations (another TUI instance, a curl command,
+// etc.).
+func cmdPollAudio(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		a, err := cli.AudioStatus(context.Background())
+		return pollAudioMsg{a: a, err: err}
+	}
+}
+
+// cmdSetAudio dispatches a PATCH /api/v1/audio with whichever knobs
+// are non-nil. Returns a writeResultMsg with the supplied label so
+// the toast surface stays consistent with the other writes.
+func cmdSetAudio(cli *client.Client, volume *float32, muted *bool, recording *bool, label string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := cli.SetAudio(context.Background(), volume, muted, recording)
 		return writeResultMsg{Label: label, Err: err}
 	}
 }

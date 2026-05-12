@@ -41,6 +41,8 @@ func main() {
 		fmt.Println(version.Version)
 	case "sdr":
 		runSDR(os.Args[2:])
+	case "audio":
+		runAudio(os.Args[2:])
 	case "tui":
 		runTUI(os.Args[2:])
 	case "decode":
@@ -60,6 +62,7 @@ func printUsage() {
 USAGE:
   gophertrunk [run] [-config path]    run the daemon (default)
   gophertrunk sdr list                list discovered SDR devices
+  gophertrunk audio list              list audio output devices
   gophertrunk tui [-server URL]       open the read-only operator TUI
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
   gophertrunk version                 print build version

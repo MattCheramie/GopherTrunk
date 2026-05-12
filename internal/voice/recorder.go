@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -58,6 +59,14 @@ type Recorder struct {
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
+
+	// recordDisabled gates new sessions at runtime. Toggled from
+	// the API by operators who want to stop laying down WAVs
+	// without restarting the daemon. In-flight sessions are NOT
+	// truncated on disable — they finish naturally on CallEnd so
+	// the head of a call isn't lost when the operator flips the
+	// switch mid-conversation.
+	recordDisabled atomic.Bool
 }
 
 // RecorderOptions configure a new Recorder.
@@ -139,6 +148,20 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	}
 	r.sub = opts.Bus.Subscribe()
 	return r, nil
+}
+
+// SetRecordingEnabled toggles the recorder's runtime "create new
+// sessions" gate. When enabled is false, subsequent CallStart events
+// do NOT open .wav / .raw files; in-flight sessions are left alone
+// so the head of a mid-call disable isn't lost on disk. Default
+// (after NewRecorder) is enabled = true.
+func (r *Recorder) SetRecordingEnabled(enabled bool) {
+	r.recordDisabled.Store(!enabled)
+}
+
+// RecordingEnabled reports the current gate state.
+func (r *Recorder) RecordingEnabled() bool {
+	return !r.recordDisabled.Load()
 }
 
 // SessionCount returns the number of currently-open recording sessions.
@@ -262,6 +285,13 @@ func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
 }
 
 func (r *Recorder) handleStart(cs trunking.CallStart) {
+	if r.recordDisabled.Load() {
+		// Operator has flipped off recording at runtime. Drop the
+		// CallStart silently so no files land on disk for this call.
+		// In-flight sessions started before the disable continue to
+		// completion via handleEnd.
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, busy := r.sessions[cs.DeviceSerial]; busy {

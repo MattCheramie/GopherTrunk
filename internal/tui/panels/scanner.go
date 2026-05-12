@@ -44,11 +44,24 @@ var (
 	scanModeKey   = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "cycle scan mode"))
 	scanUpKey     = key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("k/↑", "row up"))
 	scanDownKey   = key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("j/↓", "row down"))
+	scanVolUpKey  = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "volume up"))
+	scanVolDnKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "volume down"))
+	scanMuteKey   = key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mute toggle"))
+	scanRecKey    = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "record toggle"))
 )
 
 func (ScannerPanel) Keys() []key.Binding {
-	return []key.Binding{scanHoldKey, scanRetuneKey, scanDwellKey, scanModeKey, scanUpKey, scanDownKey}
+	return []key.Binding{
+		scanHoldKey, scanRetuneKey, scanDwellKey, scanModeKey,
+		scanUpKey, scanDownKey,
+		scanVolUpKey, scanVolDnKey, scanMuteKey, scanRecKey,
+	}
 }
+
+// volumeStep is the increment per +/− press. 0.05 maps to 20 presses
+// edge-to-edge — matches the analog volume-knob muscle memory of a
+// handheld scanner without overshooting on a keyboard.
+const volumeStep = 0.05
 
 func (p *ScannerPanel) rowCount(s *state.SharedState) int {
 	return len(s.Scanner.Systems) + len(s.Scanner.Conventional.Channels)
@@ -153,8 +166,59 @@ func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 			}
 			return p, Emit(req)
 		}
+	case key.Matches(km, scanVolUpKey):
+		v := clampVolume(s.Audio.Volume + volumeStep)
+		req := state.WriteRequest{
+			Label: fmt.Sprintf("volume %d%%", int(v*100+0.5)),
+			Kind:  state.WriteKindAudio,
+			Audio: &state.AudioReq{Volume: &v},
+		}
+		return p, Emit(req)
+	case key.Matches(km, scanVolDnKey):
+		v := clampVolume(s.Audio.Volume - volumeStep)
+		req := state.WriteRequest{
+			Label: fmt.Sprintf("volume %d%%", int(v*100+0.5)),
+			Kind:  state.WriteKindAudio,
+			Audio: &state.AudioReq{Volume: &v},
+		}
+		return p, Emit(req)
+	case key.Matches(km, scanMuteKey):
+		next := !s.Audio.Muted
+		label := "unmute"
+		if next {
+			label = "mute"
+		}
+		req := state.WriteRequest{
+			Label: label,
+			Kind:  state.WriteKindAudio,
+			Audio: &state.AudioReq{Muted: &next},
+		}
+		return p, Emit(req)
+	case key.Matches(km, scanRecKey):
+		next := !s.Audio.RecordingEnabled
+		label := "recording off"
+		if next {
+			label = "recording on"
+		}
+		req := state.WriteRequest{
+			Label: label,
+			Kind:  state.WriteKindAudio,
+			Audio: &state.AudioReq{Recording: &next},
+		}
+		return p, Emit(req)
 	}
 	return p, nil
+}
+
+// clampVolume keeps the +/− stepping inside the legal 0..1 range.
+func clampVolume(v float32) float32 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
 
 func (p *ScannerPanel) View(width, height int, focused bool, s *state.SharedState) string {
@@ -166,8 +230,34 @@ func (p *ScannerPanel) View(width, height int, focused bool, s *state.SharedStat
 		p.renderSystems(width, s),
 		p.renderConventional(width, s),
 		p.renderTGSummary(width, s),
+		p.renderAudio(width, s),
 	}, "\n")
 	return panelFrame("Scanner", width, height, focused, body)
+}
+
+func (p *ScannerPanel) renderAudio(width int, s *state.SharedState) string {
+	header := dashHeader.Render("Audio")
+	a := s.Audio
+	state := "off"
+	style := dashDim
+	if a.BackendEnabled {
+		state = "on"
+		style = dashOK
+		if a.Muted {
+			state = "muted"
+			style = dashErr
+		}
+	}
+	rec := "off"
+	if a.RecordingEnabled {
+		rec = "on"
+	}
+	line := fmt.Sprintf("  output=%s  vol=%d%%  rec=%s   (+/- volume, M mute, R record)",
+		style.Render(state),
+		int(a.Volume*100+0.5),
+		rec,
+	)
+	return "\n" + header + "\n" + dashDim.Render(line)
 }
 
 func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {

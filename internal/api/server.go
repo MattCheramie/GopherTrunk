@@ -50,6 +50,43 @@ type DevicesProvider interface {
 	Snapshot() []sdr.SDRStatus
 }
 
+// AudioController is the API surface for the live-audio subsystem
+// (the voice.Player sink + the WAV recorder gate). All four methods
+// are safe to call from any goroutine; the daemon supplies a single
+// adapter that fans into player.Player + voice.Recorder, tests use a
+// fake.
+type AudioController interface {
+	// Volume returns the current software gain (0..1).
+	Volume() float32
+	// SetVolume clamps to 0..1 and applies immediately.
+	SetVolume(v float32)
+	// Muted reports the mute state.
+	Muted() bool
+	// SetMuted toggles mute. Mute is a software-gain bypass, not a
+	// device-level operation — toggling is instant.
+	SetMuted(m bool)
+	// RecordingEnabled reports whether the recorder's "create new
+	// sessions" gate is open. In-flight sessions are not affected
+	// by this gate.
+	RecordingEnabled() bool
+	// SetRecordingEnabled flips the recorder gate. False stops new
+	// WAVs from landing on disk; in-flight sessions complete.
+	SetRecordingEnabled(enabled bool)
+	// DropsTotal is a monotonically increasing counter of PCM
+	// samples lost because the playback queue was full. Surfaced
+	// so operators can spot scheduling-jitter problems from the
+	// TUI without reaching for /metrics.
+	DropsTotal() uint64
+	// SampleRate is the host playback rate the player was opened
+	// at, in Hz. Read-only; reopening the device with a different
+	// rate requires a daemon restart.
+	SampleRate() uint32
+	// BackendEnabled reports whether a real audio backend is
+	// attached. False means audio.enabled was off in config or the
+	// backend failed to init, and writes are silently dropped.
+	BackendEnabled() bool
+}
+
 // ScannerCockpit is the API surface for the police-scanner subsystem:
 // reads the current state (per-system CC hunt, conventional channel
 // list, talkgroup-scan stats) and applies operator mutations from
@@ -136,6 +173,7 @@ type Server struct {
 	tones      ToneDetectorReset
 	devices    DevicesProvider
 	scanner    ScannerCockpit
+	audio      AudioController
 	talkgroups *trunking.TalkgroupDB
 	systems    []trunking.System
 	history    HistoryQuery
@@ -229,6 +267,10 @@ type ServerOptions struct {
 	// /api/v1/scanner and the related mutation routes. Optional;
 	// when nil, the routes return 503.
 	Scanner ScannerCockpit
+	// Audio exposes the live-audio player + recorder gate for
+	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
+	// return 503.
+	Audio AudioController
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -256,6 +298,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		tones:          opts.Tones,
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
+		audio:          opts.Audio,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -353,6 +396,11 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/scanner/conventional/hold", s.gate(s.handleConvHold))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/resume", s.gate(s.handleConvResume))
 	mux.HandleFunc("POST /api/v1/scanner/conventional/{index}/dwell", s.gate(s.handleConvDwell))
+
+	// Audio cockpit — read endpoint is always open; the PATCH is
+	// gated behind allow_mutations like every other write route.
+	mux.HandleFunc("GET /api/v1/audio", s.handleAudioStatus)
+	mux.HandleFunc("PATCH /api/v1/audio", s.gate(s.handleAudioPatch))
 
 	return mux
 }

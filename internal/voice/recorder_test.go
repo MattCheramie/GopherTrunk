@@ -91,6 +91,61 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 	}
 }
 
+// TestRecorderGateBlocksNewSessions confirms the runtime
+// SetRecordingEnabled(false) gate stops handleStart from opening
+// new .wav files while leaving in-flight sessions alone. Matches the
+// TUI / API "press R to toggle recording" semantics.
+func TestRecorderGateBlocksNewSessions(t *testing.T) {
+	r, bus, dir := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	r.SetRecordingEnabled(false)
+	if r.RecordingEnabled() {
+		t.Fatal("RecordingEnabled should report false after SetRecordingEnabled(false)")
+	}
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System:   "Sys",
+			Protocol: "p25",
+			GroupID:  7,
+			SourceID: 8,
+		},
+		Talkgroup:    &trunking.TalkGroup{ID: 7, AlphaTag: "GATE"},
+		DeviceSerial: "VOICE-G",
+		StartedAt:    time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	time.Sleep(50 * time.Millisecond)
+	if r.HasSession("VOICE-G") {
+		t.Fatal("recorder opened a session despite gate")
+	}
+
+	// Re-enable and confirm the next CallStart opens a session.
+	r.SetRecordingEnabled(true)
+	cs2 := cs
+	cs2.DeviceSerial = "VOICE-G2"
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs2})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-G2") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !r.HasSession("VOICE-G2") {
+		t.Fatal("session not opened after gate re-enabled")
+	}
+	// dir is unused here but the helper drops a tempdir we should
+	// not crash on.
+	_ = dir
+}
+
 func TestRecorderWritePCMDropsWithoutSession(t *testing.T) {
 	r, bus, _ := mkRecorder(t, false)
 	defer r.Close()

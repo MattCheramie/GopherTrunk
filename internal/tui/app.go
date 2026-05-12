@@ -97,6 +97,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollHistory(m.cli, client.HistoryFilter{Limit: 100}),
 		cmdPollDevices(m.cli),
 		cmdPollScanner(m.cli),
+		cmdPollAudio(m.cli),
 		cmdMutationStatus(m.cli),
 		connectSSE(m.cli),
 	)
@@ -246,6 +247,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.shared.ScannerErr = msg.err
 		cmds = append(cmds, scheduleAfter(pollScannerEvery, cmdPollScanner(m.cli)))
+
+	case pollAudioMsg:
+		if msg.err == nil {
+			m.shared.Audio = msg.a
+		}
+		m.shared.AudioErr = msg.err
+		cmds = append(cmds, scheduleAfter(pollAudioEvery, cmdPollAudio(m.cli)))
 
 	case pollHistoryMsg:
 		m.shared.History = msg.rows
@@ -484,6 +492,14 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			return nil
 		}
 		return cmdScannerConvDwell(m.cli, r.ScannerConv.Index, r.Label)
+	case state.WriteKindAudio:
+		if r.Audio == nil {
+			return nil
+		}
+		return tea.Batch(
+			cmdSetAudio(m.cli, r.Audio.Volume, r.Audio.Muted, r.Audio.Recording, r.Label),
+			cmdPollAudio(m.cli),
+		)
 	}
 	return nil
 }

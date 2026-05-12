@@ -20,6 +20,37 @@ type Config struct {
 	Retention  RetentionConfig  `yaml:"retention"`
 	ToneOut    ToneOutConfig    `yaml:"tone_out"`
 	Scanner    ScannerConfig    `yaml:"scanner"`
+	Audio      AudioConfig      `yaml:"audio"`
+}
+
+// AudioConfig controls live audio playback to the host's speakers.
+// The daemon mixes decoded PCM from the per-call composer and the
+// conventional scanner into a single output stream, applied with
+// software gain so volume / mute changes are instant.
+//
+// Disabled by default — headless servers stay silent unless
+// audio.enabled is set true. Backend init failure (e.g. no audio
+// device, no PulseAudio / ALSA on the host) falls back to the null
+// player automatically.
+type AudioConfig struct {
+	// Enabled gates live playback. Default false. The recorder
+	// path is unaffected: WAVs land on disk whether audio is on
+	// or off.
+	Enabled bool `yaml:"enabled"`
+	// Device is the backend-specific output device name. Empty
+	// (or "default") routes to the system default sink. "null"
+	// forces the no-op backend even when Enabled=true.
+	Device string `yaml:"device"`
+	// SampleRate is the host playback rate in Hz. Default 8000;
+	// must match recordings.sample_rate so the composer's PCM
+	// frames don't need a resample stage.
+	SampleRate uint32 `yaml:"sample_rate"`
+	// BufferMs is the depth of the playback queue. Default 80.
+	BufferMs int `yaml:"buffer_ms"`
+	// Volume is the initial software gain (0..1). Default 0.8.
+	Volume float32 `yaml:"volume"`
+	// Muted is the initial mute state. Default false.
+	Muted bool `yaml:"muted"`
 }
 
 // ScannerConfig controls the police-scanner subsystems: the CC hunter,
@@ -323,6 +354,12 @@ func (c Config) Validate() error {
 	case "", "all", "list":
 	default:
 		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
+	}
+	if c.Audio.SampleRate != 0 && (c.Audio.SampleRate < 4000 || c.Audio.SampleRate > 48_000) {
+		return fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate)
+	}
+	if c.Audio.Volume != 0 && (c.Audio.Volume < 0 || c.Audio.Volume > 1) {
+		return fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume)
 	}
 	for i, ch := range c.Scanner.Conventional {
 		if ch.FrequencyHz == 0 {

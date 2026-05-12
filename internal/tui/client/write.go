@@ -113,6 +113,55 @@ func (c *Client) ScannerConvDwell(ctx context.Context, index int) error {
 		nil, nil)
 }
 
+// AudioStatusDTO mirrors api.AudioStatusDTO for the wire layer.
+type AudioStatusDTO struct {
+	BackendEnabled   bool    `json:"backend_enabled"`
+	SampleRate       uint32  `json:"sample_rate"`
+	Volume           float32 `json:"volume"`
+	Muted            bool    `json:"muted"`
+	RecordingEnabled bool    `json:"recording_enabled"`
+	DropsTotal       uint64  `json:"drops_total"`
+}
+
+// AudioStatus calls GET /api/v1/audio. Returns a zero value (no
+// error) when the daemon doesn't have the audio cockpit wired so
+// older daemons don't break the TUI.
+func (c *Client) AudioStatus(ctx context.Context) (AudioStatusDTO, error) {
+	var s AudioStatusDTO
+	err := c.getJSON(ctx, "/api/v1/audio", &s)
+	if err != nil {
+		var herr *HTTPError
+		if asHTTPErr(err, &herr) && (herr.Status == http.StatusNotFound || herr.Status == http.StatusServiceUnavailable) {
+			return AudioStatusDTO{}, nil
+		}
+		return AudioStatusDTO{}, err
+	}
+	return s, nil
+}
+
+// SetAudio calls PATCH /api/v1/audio with whichever knobs are non-nil.
+// Pass nil to leave a field unchanged.
+func (c *Client) SetAudio(ctx context.Context, volume *float32, muted *bool, recording *bool) (AudioStatusDTO, error) {
+	body := map[string]any{}
+	if volume != nil {
+		body["volume"] = *volume
+	}
+	if muted != nil {
+		body["muted"] = *muted
+	}
+	if recording != nil {
+		body["recording_enabled"] = *recording
+	}
+	if len(body) == 0 {
+		return AudioStatusDTO{}, fmt.Errorf("client: supply volume, muted, or recording_enabled")
+	}
+	var out AudioStatusDTO
+	if err := c.do(ctx, http.MethodPatch, "/api/v1/audio", body, &out); err != nil {
+		return AudioStatusDTO{}, err
+	}
+	return out, nil
+}
+
 // ResetToneDevice calls POST /api/v1/devices/{serial}/tone-reset.
 func (c *Client) ResetToneDevice(ctx context.Context, serial string) error {
 	if serial == "" {

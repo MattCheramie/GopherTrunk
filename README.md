@@ -156,6 +156,24 @@ The remaining gaps:
   unit tests; calibration against a captured YSF transmission's
   exact interleaver / puncture schedule lands once a real-air capture
   is available.
+- **Live audio playback to speakers + TUI / API audio cockpit.** The
+  daemon ships a `voice.Player` sink (`internal/voice/player`) wrapping
+  github.com/ebitengine/oto/v3 (ALSA on Linux, CoreAudio on macOS,
+  WASAPI on Windows; libasound2-dev required at build time on Linux).
+  When `audio.enabled: true` is set in config the per-call composer
+  and the conventional FM scanner fan PCM into the player alongside
+  the existing WAV recorder, so calls play out the host's default
+  output device in real time. Volume / mute / recording can be
+  toggled live: the TUI's Scanner panel binds `+` / `-` for volume
+  (5% step), `M` for mute, and `R` for record on/off; the same knobs
+  are exposed as `GET` / `PATCH /api/v1/audio` for remote clients
+  (PATCH gated by `api.allow_mutations` like every other write
+  endpoint). The recorder gate stops new WAVs from landing without
+  truncating in-flight sessions, matching scanner muscle memory.
+  Disabled by default; headless servers stay silent and continue to
+  record WAVs identically to before. New CLI: `gophertrunk audio
+  list` mirrors `sdr list`. Drop-the-libasound2-dev-build-dep
+  follow-up tracked under Workstream F of the active plan.
 
 The Go interfaces and event payloads carry every protocol already;
 the remaining decoder wiring is the load-bearing follow-up.
