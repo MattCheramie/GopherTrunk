@@ -10,8 +10,11 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
+	dstarrx "github.com/MattCheramie/GopherTrunk/internal/radio/dstar/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	edacsrx "github.com/MattCheramie/GopherTrunk/internal/radio/edacs/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
 	ltrrx "github.com/MattCheramie/GopherTrunk/internal/radio/ltr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
@@ -28,8 +31,6 @@ import (
 	tetrarx "github.com/MattCheramie/GopherTrunk/internal/radio/tetra/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
 	ysfrx "github.com/MattCheramie/GopherTrunk/internal/radio/ysf/receiver"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
-	dstarrx "github.com/MattCheramie/GopherTrunk/internal/radio/dstar/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -165,8 +166,8 @@ type p25Phase1Pipeline struct {
 }
 
 func (p *p25Phase1Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *p25Phase1Pipeline) Reset()                  { p.rx.Reset() }
-func (p *p25Phase1Pipeline) Close() error            { return nil }
+func (p *p25Phase1Pipeline) Reset()                 { p.rx.Reset() }
+func (p *p25Phase1Pipeline) Close() error           { return nil }
 
 // newP25Phase2Pipeline wires internal/radio/p25/phase2/receiver into
 // p25phase2.ControlChannel.Process. The receiver's DibitSink forwards
@@ -206,6 +207,22 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2RSMode)
 	}
 	cc.SetRSMode(rsMode)
+	scramblerMode, scrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
+	if !scrOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
+	}
+	cc.SetScramblerMode(scramblerMode)
+	// Derive the PN44 seed from (WACN, SystemID, low-12 bits of Site
+	// as the spec's Color Code = NAC) per TIA-102.BBAC-1 §7.2.5
+	// equation (5). System operators who haven't configured these
+	// values end up with a zero-input seed that maps to (2^44 - 1)
+	// per spec — the descrambler runs but with an unlikely-to-help
+	// sequence. Future PRs derive the seed from the Network Status
+	// Broadcast MAC message at runtime instead of static config.
+	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
+		opts.System.WACN, opts.System.SystemID, uint16(opts.System.Site),
+	))
 	clockMode, clockOK := p25phase2rx.ParseClockMode(opts.System.P25Phase2ClockMode)
 	if !clockOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
@@ -234,8 +251,8 @@ type p25Phase2Pipeline struct {
 }
 
 func (p *p25Phase2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *p25Phase2Pipeline) Reset()                  { p.rx.Reset() }
-func (p *p25Phase2Pipeline) Close() error            { return nil }
+func (p *p25Phase2Pipeline) Reset()                 { p.rx.Reset() }
+func (p *p25Phase2Pipeline) Close() error           { return nil }
 
 // newTETRAPipeline wires internal/radio/tetra/receiver into
 // tetra.ControlChannel.Process. The receiver's DibitSink forwards
@@ -313,8 +330,8 @@ type tetraPipeline struct {
 }
 
 func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *tetraPipeline) Reset()                  { p.rx.Reset() }
-func (p *tetraPipeline) Close() error            { return nil }
+func (p *tetraPipeline) Reset()                 { p.rx.Reset() }
+func (p *tetraPipeline) Close() error           { return nil }
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
 // into ysf.ControlChannel.Process. YSF is the System Fusion
@@ -347,8 +364,8 @@ type ysfPipeline struct {
 }
 
 func (p *ysfPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *ysfPipeline) Reset()                  { p.rx.Reset() }
-func (p *ysfPipeline) Close() error            { return nil }
+func (p *ysfPipeline) Reset()                 { p.rx.Reset() }
+func (p *ysfPipeline) Close() error           { return nil }
 
 // newDPMRPipeline wires internal/radio/dpmr/receiver into
 // dpmr.ControlChannel.Process. The receiver's DibitSink forwards
@@ -383,8 +400,8 @@ type dpmrPipeline struct {
 }
 
 func (p *dpmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *dpmrPipeline) Reset()                  { p.rx.Reset() }
-func (p *dpmrPipeline) Close() error            { return nil }
+func (p *dpmrPipeline) Reset()                 { p.rx.Reset() }
+func (p *dpmrPipeline) Close() error           { return nil }
 
 // newDMRTier3Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier3.ControlChannel.Process. The receiver's DibitSink
@@ -431,8 +448,8 @@ type dmrPipeline struct {
 var _ = dmr.BurstDibits
 
 func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *dmrPipeline) Reset()                  { p.rx.Reset() }
-func (p *dmrPipeline) Close() error            { return nil }
+func (p *dmrPipeline) Reset()                 { p.rx.Reset() }
+func (p *dmrPipeline) Close() error           { return nil }
 
 // newDMRTier2Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier2.ConventionalChannel.Process. DMR Tier II is conventional
@@ -472,8 +489,8 @@ type dmrTier2Pipeline struct {
 }
 
 func (p *dmrTier2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *dmrTier2Pipeline) Reset()                  { p.rx.Reset() }
-func (p *dmrTier2Pipeline) Close() error            { return nil }
+func (p *dmrTier2Pipeline) Reset()                 { p.rx.Reset() }
+func (p *dmrTier2Pipeline) Close() error           { return nil }
 
 // newNXDNPipeline wires internal/radio/nxdn/receiver into
 // nxdn.ControlChannel.Process. The receiver's DibitSink forwards
@@ -511,8 +528,8 @@ type nxdnPipeline struct {
 }
 
 func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *nxdnPipeline) Reset()                  { p.rx.Reset() }
-func (p *nxdnPipeline) Close() error            { return nil }
+func (p *nxdnPipeline) Reset()                 { p.rx.Reset() }
+func (p *nxdnPipeline) Close() error           { return nil }
 
 // newEDACSPipeline wires internal/radio/edacs/receiver into
 // edacs.ControlChannel.Process. The receiver's BitSink forwards
@@ -549,8 +566,8 @@ type edacsPipeline struct {
 }
 
 func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *edacsPipeline) Reset()                  { p.rx.Reset() }
-func (p *edacsPipeline) Close() error            { return nil }
+func (p *edacsPipeline) Reset()                 { p.rx.Reset() }
+func (p *edacsPipeline) Close() error           { return nil }
 
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
@@ -593,8 +610,8 @@ type motorolaPipeline struct {
 }
 
 func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *motorolaPipeline) Reset()                  { p.rx.Reset() }
-func (p *motorolaPipeline) Close() error            { return nil }
+func (p *motorolaPipeline) Reset()                 { p.rx.Reset() }
+func (p *motorolaPipeline) Close() error           { return nil }
 
 // newLTRPipeline wires internal/radio/ltr/receiver into
 // ltr.ControlChannel.Process. The receiver's BitSink forwards
@@ -647,8 +664,8 @@ type ltrPipeline struct {
 }
 
 func (p *ltrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *ltrPipeline) Reset()                  { p.rx.Reset() }
-func (p *ltrPipeline) Close() error            { return nil }
+func (p *ltrPipeline) Reset()                 { p.rx.Reset() }
+func (p *ltrPipeline) Close() error           { return nil }
 
 // newMPT1327Pipeline wires internal/radio/mpt1327/receiver into
 // mpt1327.ControlChannel.Process. The receiver's BitSink forwards
@@ -687,8 +704,8 @@ type mpt1327Pipeline struct {
 }
 
 func (p *mpt1327Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *mpt1327Pipeline) Reset()                  { p.rx.Reset() }
-func (p *mpt1327Pipeline) Close() error            { return nil }
+func (p *mpt1327Pipeline) Reset()                 { p.rx.Reset() }
+func (p *mpt1327Pipeline) Close() error           { return nil }
 
 // newDStarPipeline wires internal/radio/dstar/receiver into
 // dstar.ControlChannel.Process. D-STAR is the JARL DV-mode amateur

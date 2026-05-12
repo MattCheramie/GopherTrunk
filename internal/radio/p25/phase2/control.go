@@ -38,6 +38,8 @@ type ControlChannel struct {
 	strictValidation bool
 	trellisMode      TrellisMode
 	rsMode           RSMode
+	scramblerMode    ScramblerMode
+	scramblerSeed    uint64
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -171,6 +173,86 @@ func ParseRSMode(s string) (RSMode, bool) {
 		return RSOn, true
 	default:
 		return RSOff, false
+	}
+}
+
+// ScramblerMode selects whether the Process adapter applies the
+// PN44 descrambler per TIA-102.BBAC-1 §7.2.5 to the trellis-decoded
+// MAC PDU.
+//
+//   - ScramblerOff (default): the trellis-decoded 144-bit MAC PDU
+//     is parsed straight into the state machine. Matches every
+//     shipped capture fixture in the test suite (the fixtures
+//     synthesize MAC PDUs without applying scrambling) and the
+//     historical decoder output.
+//
+//   - ScramblerOn: the trellis-decoded 144-bit MAC PDU is XORed
+//     with the leading 144 bits of the PN44 scrambling sequence
+//     derived from the configured (WACN_ID, System_ID, Color_Code)
+//     seed before ParseMACPDU runs. SetScramblerSeed must be
+//     called first so the LFSR has a real seed to clock from; a
+//     zero seed maps to (2^44 - 1) per spec, which is unlikely to
+//     produce useful decoding against on-air traffic.
+//
+// Note that the spec's full superframe-aware descrambling needs
+// per-burst offset tracking against the 4320-bit superframe
+// (Figure 7-5). ScramblerOn applies the descrambler starting at
+// offset 0 on every MAC PDU; the per-burst-offset shim is a
+// follow-up that lands together with superframe synchronization.
+type ScramblerMode uint8
+
+const (
+	ScramblerOff ScramblerMode = iota
+	ScramblerOn
+)
+
+// SetScramblerMode toggles the PN44 descrambler. See ScramblerMode
+// for the trade-offs.
+func (c *ControlChannel) SetScramblerMode(mode ScramblerMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.scramblerMode = mode
+}
+
+// ScramblerMode returns the current ScramblerMode.
+func (c *ControlChannel) ScramblerMode() ScramblerMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.scramblerMode
+}
+
+// SetScramblerSeed installs the 44-bit PN44 seed the descrambler
+// uses when ScramblerMode is ScramblerOn. Typical callers derive
+// the seed via framing.PN44SeedFromIdentity(WACN, SysID, CC) from
+// the values published in the system's Network Status Broadcast
+// MAC message.
+func (c *ControlChannel) SetScramblerSeed(seed uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.scramblerSeed = seed
+}
+
+// ScramblerSeed returns the currently-configured 44-bit PN44 seed.
+func (c *ControlChannel) ScramblerSeed() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.scramblerSeed
+}
+
+// ParseScramblerMode maps a config / user-facing string into a
+// ScramblerMode. Recognised values (case-insensitive): "" / "off" /
+// "false" / "0" → ScramblerOff (the default — no PN44 descrambling);
+// "on" / "true" / "1" → ScramblerOn (XOR the trellis-decoded MAC
+// PDU bits with the leading 144 bits of the PN44 sequence).
+// Unknown strings return ScramblerOff with `ok = false`.
+func ParseScramblerMode(s string) (ScramblerMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return ScramblerOff, true
+	case "on", "true", "1":
+		return ScramblerOn, true
+	default:
+		return ScramblerOff, false
 	}
 }
 

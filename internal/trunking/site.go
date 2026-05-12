@@ -178,6 +178,16 @@ type System struct {
 	// p25phase2.ControlChannel.SetRSMode by the ccdecoder connector
 	// after parsing via p25phase2.ParseRSMode.
 	P25Phase2RSMode string
+	// P25Phase2ScramblerMode enables the PN44 descrambler per
+	// TIA-102.BBAC-1 §7.2.5 on the trellis-decoded MAC PDU bits.
+	// Recognised values (case-insensitive): "" / "off" / "false" /
+	// "0" → ScramblerOff (the default — no PN44 descrambling);
+	// "on" / "true" / "1" → ScramblerOn. The seed is computed from
+	// (WACN, SystemID, low 12 bits of Site as the spec's Color
+	// Code = NAC) per spec equation (5). Forwarded into
+	// p25phase2.ControlChannel.SetScramblerMode +
+	// SetScramblerSeed by the ccdecoder connector.
+	P25Phase2ScramblerMode string
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values (case-
 	// insensitive): "" / "gardner" / "on" → ClockGardner (the new
