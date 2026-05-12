@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +26,14 @@ type Client struct {
 	base    string
 	hc      *http.Client
 	timeout time.Duration
+
+	// token holds the most recently observed Bearer token (inline or
+	// file-loaded). Empty disables the Authorization header.
+	token atomic.Pointer[string]
+	// tokenFile, when non-empty, is re-read on every request so the
+	// TUI picks up daemon-side rotation without a restart (matches
+	// the daemon's per-request reload behaviour).
+	tokenFile string
 }
 
 // New constructs a Client. timeout applies per request; the SSE
@@ -45,6 +55,63 @@ func New(baseURL string, timeout time.Duration, insecure bool) *Client {
 			Transport: tr,
 		},
 	}
+}
+
+// SetToken sets an inline Bearer token. Empty disables the header.
+// Safe to call after construction; takes effect on the next request.
+func (c *Client) SetToken(t string) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		c.token.Store(nil)
+		return
+	}
+	c.token.Store(&t)
+}
+
+// SetTokenFile registers a file path the client re-reads on every
+// request to pick up daemon-side rotation. Empty disables file-based
+// tokens. Sets the in-memory token from an initial read; returns the
+// error from that read so the caller can surface it at startup.
+func (c *Client) SetTokenFile(path string) error {
+	path = strings.TrimSpace(path)
+	c.tokenFile = path
+	if path == "" {
+		return nil
+	}
+	return c.reloadTokenFile()
+}
+
+func (c *Client) reloadTokenFile() error {
+	if c.tokenFile == "" {
+		return nil
+	}
+	data, err := os.ReadFile(c.tokenFile)
+	if err != nil {
+		return err
+	}
+	tok := strings.TrimSpace(string(data))
+	if tok == "" {
+		c.token.Store(nil)
+		return nil
+	}
+	c.token.Store(&tok)
+	return nil
+}
+
+// authorize attaches the Authorization header when a token is
+// configured. Silently re-reads tokenFile on every call so rotation
+// works without a restart.
+func (c *Client) authorize(req *http.Request) {
+	if c.tokenFile != "" {
+		// Best-effort reload; if the file vanishes the in-memory
+		// token from a previous read is still used.
+		_ = c.reloadTokenFile()
+	}
+	tok := c.token.Load()
+	if tok == nil || *tok == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+*tok)
 }
 
 // Base returns the daemon base URL the client is pointed at. Used
@@ -203,6 +270,7 @@ func (c *Client) Metrics(ctx context.Context) (map[string]float64, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
+	c.authorize(req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return nil, err
@@ -277,6 +345,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
+	c.authorize(req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return err

@@ -41,6 +41,7 @@ func (c *Client) Stream(ctx context.Context) (<-chan Event, <-chan error) {
 		req.Header.Set("User-Agent", userAgent)
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("Cache-Control", "no-cache")
+		c.authorize(req)
 
 		// SSE is long-lived; use a transport without per-request
 		// timeout. We rely on ctx for cancellation.

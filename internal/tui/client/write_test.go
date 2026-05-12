@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -189,5 +190,78 @@ func TestMutationStatus_404_ReturnsZero(t *testing.T) {
 	}
 	if s != (MutationStatus{}) {
 		t.Errorf("want zero MutationStatus on 404, got %+v", s)
+	}
+}
+
+func TestAuthHeader_SetTokenAttachesBearer(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, time.Second, false)
+	c.SetToken("secret-token")
+	if err := c.EndCall(context.Background(), "abc", "manual"); err != nil {
+		t.Fatalf("EndCall: %v", err)
+	}
+	if gotAuth != "Bearer secret-token" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
+	}
+}
+
+func TestAuthHeader_NoTokenOmitsHeader(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, time.Second, false)
+	if err := c.EndCall(context.Background(), "abc", "manual"); err != nil {
+		t.Fatalf("EndCall: %v", err)
+	}
+	if gotAuth != "" {
+		t.Errorf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
+func TestAuthHeader_TokenFileReloadedPerRequest(t *testing.T) {
+	dir := t.TempDir()
+	tokPath := dir + "/token"
+	if err := os.WriteFile(tokPath, []byte("first-tok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, time.Second, false)
+	if err := c.SetTokenFile(tokPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EndCall(context.Background(), "abc", "manual"); err != nil {
+		t.Fatalf("EndCall: %v", err)
+	}
+	if gotAuth != "Bearer first-tok" {
+		t.Errorf("first request: Authorization = %q, want %q", gotAuth, "Bearer first-tok")
+	}
+	// Rotate the file; the next request should pick it up automatically.
+	if err := os.WriteFile(tokPath, []byte("second-tok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EndCall(context.Background(), "abc", "manual"); err != nil {
+		t.Fatalf("EndCall: %v", err)
+	}
+	if gotAuth != "Bearer second-tok" {
+		t.Errorf("after rotation: Authorization = %q, want %q", gotAuth, "Bearer second-tok")
 	}
 }

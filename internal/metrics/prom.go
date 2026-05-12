@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -210,6 +211,14 @@ func (m *Metrics) observeEvent(ev events.Event) {
 	case events.KindDecodeError:
 		if de, ok := ev.Payload.(events.DecodeError); ok {
 			m.decodeErrors.WithLabelValues(de.Protocol, string(de.Stage)).Inc()
+		}
+	case events.KindSDRAttached:
+		if st, ok := ev.Payload.(sdr.SDRStatus); ok {
+			m.SetSDRAttached(st.Driver, st.Serial, st.Role, true)
+		}
+	case events.KindSDRDetached:
+		if st, ok := ev.Payload.(sdr.SDRStatus); ok {
+			m.SetSDRAttached(st.Driver, st.Serial, st.Role, false)
 		}
 	}
 }

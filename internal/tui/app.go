@@ -359,7 +359,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case panels.WriteActionMsg:
 		if !m.shared.WriteEnabled {
-			m.toast("mutations disabled — pass --write to the TUI and api.allow_mutations: true to the daemon")
+			m.toast("mutations disabled — pass --write to the TUI; daemon must allow mutations (api.auth.mode != disabled or legacy api.allow_mutations: true)")
 			return m, nil
 		}
 		// requestConfirm either fires the request now or stashes
@@ -391,7 +391,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case writeResultMsg:
 		if msg.Err != nil {
-			m.toast(fmt.Sprintf("%s: %v", msg.Label, msg.Err))
+			m.toast(formatMutationErr(msg.Label, msg.Err))
 		} else if msg.Label != "" {
 			m.toast(msg.Label + " ok")
 		}
@@ -644,4 +644,22 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 		)
 	}
 	return nil
+}
+
+// formatMutationErr formats a write-result error for the toast bar,
+// surfacing 401 / 403 responses with a clear instruction instead of
+// the raw HTTPError string.
+func formatMutationErr(label string, err error) string {
+	if err == nil {
+		return label
+	}
+	if herr, ok := err.(*client.HTTPError); ok {
+		switch herr.Status {
+		case 401:
+			return label + ": API requires auth — pass -token / -token-file or set GOPHERTRUNK_API_TOKEN"
+		case 403:
+			return label + ": API denied the request (token missing or wrong; check api.auth.mode on the daemon)"
+		}
+	}
+	return fmt.Sprintf("%s: %v", label, err)
 }

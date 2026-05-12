@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -180,5 +181,45 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 	if err := m.Close(); err != nil {
 		t.Errorf("second Close = %v, want nil", err)
+	}
+}
+
+func TestSDRAttachedGaugeFromBusEvents(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	m, err := New(bus, "v0.0.0-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	st := sdr.SDRStatus{Driver: "rtlsdr", Serial: "00000001", Role: "control"}
+	bus.Publish(events.Event{Kind: events.KindSDRAttached, Payload: st})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(m.sdrAttached.WithLabelValues(st.Driver, st.Serial, st.Role)) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(m.sdrAttached.WithLabelValues(st.Driver, st.Serial, st.Role)); got != 1 {
+		t.Errorf("after KindSDRAttached: gauge = %v, want 1", got)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindSDRDetached, Payload: st})
+
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(m.sdrAttached.WithLabelValues(st.Driver, st.Serial, st.Role)) == 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(m.sdrAttached.WithLabelValues(st.Driver, st.Serial, st.Role)); got != 0 {
+		t.Errorf("after KindSDRDetached: gauge = %v, want 0", got)
 	}
 }

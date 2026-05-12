@@ -242,6 +242,7 @@ func (c *Client) do(ctx context.Context, method, path string, in any, out any) e
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	c.authorize(req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return err
