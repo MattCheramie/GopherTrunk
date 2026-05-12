@@ -418,6 +418,23 @@ func TestDMRTier3FactoryConstructs(t *testing.T) {
 	}
 }
 
+func TestDMRTier2FactoryConstructs(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newDMRTier2Pipeline(PipelineOptions{
+		Bus: bus, SystemName: "Smoke",
+		FrequencyHz: 460_500_000, SampleRateHz: 48_000,
+	})
+	if err != nil {
+		t.Fatalf("newDMRTier2Pipeline: %v", err)
+	}
+	p.Process(make([]complex64, 4800))
+	p.Reset()
+	if err := p.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
 func TestMPT1327FactoryConstructs(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

@@ -6,6 +6,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
 	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
@@ -124,6 +125,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolTETRA:     newTETRAPipeline,
 	trunking.ProtocolYSF:       newYSFPipeline,
 	trunking.ProtocolDStar:     newDStarPipeline,
+	trunking.ProtocolDMRTier2:  newDMRTier2Pipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -425,6 +427,47 @@ var _ = dmr.BurstDibits
 func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrPipeline) Reset()                  { p.rx.Reset() }
 func (p *dmrPipeline) Close() error            { return nil }
+
+// newDMRTier2Pipeline wires internal/radio/dmr/receiver into
+// dmr/tier2.ConventionalChannel.Process. DMR Tier II is conventional
+// (per-repeater) rather than trunked — there's no dedicated control
+// channel. The pipeline still slots into the trunked-decoder model
+// because the ConventionalChannel state machine emits a `protocol =
+// "dmr-tier2"` grant on every Voice LC Header burst (deduped per
+// call, cleared on Terminator-with-LC) plus cc.locked on the first
+// valid slot-type decode, so the engine + recorder + composer don't
+// need to know the protocol is conventional.
+//
+// Receiver chain is identical to Tier III: C4FM dibits via the
+// shared dmr/receiver. Differences live in the per-protocol state
+// machine — Tier II doesn't read CSBK, it reads Voice LC Headers
+// (BPTC(196,96) + RS(12,9,4) parity check) for call setup.
+func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := tier2.New(tier2.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+	})
+	rx := dmrrx.New(dmrrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DeviationHz:  1944.0,
+		ClockGain:    0.025,
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &dmrTier2Pipeline{rx: rx, cc: cc}, nil
+}
+
+type dmrTier2Pipeline struct {
+	rx *dmrrx.Receiver
+	cc *tier2.ConventionalChannel
+}
+
+func (p *dmrTier2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *dmrTier2Pipeline) Reset()                  { p.rx.Reset() }
+func (p *dmrTier2Pipeline) Close() error            { return nil }
 
 // newNXDNPipeline wires internal/radio/nxdn/receiver into
 // nxdn.ControlChannel.Process. The receiver's DibitSink forwards

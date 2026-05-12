@@ -26,6 +26,7 @@ const (
 	ProtocolTETRA              // TETRA TMO (π/4-DQPSK, ETSI EN 300 392-2)
 	ProtocolYSF                // System Fusion (C4FM, amateur trunked variant — config "ysf")
 	ProtocolDStar              // D-STAR (GMSK 4800 bps, amateur — header-only repeater protocol; config "dstar")
+	ProtocolDMRTier2           // DMR Tier II conventional (per-repeater; config "dmr-tier2")
 )
 
 func (p Protocol) String() string {
@@ -54,6 +55,8 @@ func (p Protocol) String() string {
 		return "ysf"
 	case ProtocolDStar:
 		return "dstar"
+	case ProtocolDMRTier2:
+		return "dmr-tier2"
 	default:
 		return "unknown"
 	}
@@ -88,6 +91,8 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolYSF, nil
 	case "dstar", "d-star", "d_star":
 		return ProtocolDStar, nil
+	case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2":
+		return ProtocolDMRTier2, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q", s)
 	}

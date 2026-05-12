@@ -62,29 +62,37 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 	}
 	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 5, DataType: dmr.DTVoiceLCHeader})
 
-	select {
-	case ev := <-sub.C:
-		if ev.Kind != events.KindGrant {
-			t.Fatalf("kind = %s", ev.Kind)
+	// Drain until we hit the grant (cc.locked may fire first).
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLocked {
+				continue
+			}
+			if ev.Kind != events.KindGrant {
+				t.Fatalf("kind = %s", ev.Kind)
+			}
+			g, ok := ev.Payload.(trunking.Grant)
+			if !ok {
+				t.Fatalf("payload type = %T", ev.Payload)
+			}
+			if g.System != "TestRepeater" || g.Protocol != "dmr-tier2" {
+				t.Errorf("identity = %s/%s", g.System, g.Protocol)
+			}
+			if g.GroupID != 0x64 || g.SourceID != 0x100200 {
+				t.Errorf("group/source = %d/%d", g.GroupID, g.SourceID)
+			}
+			if g.FrequencyHz != 451_000_000 || g.ChannelID != 5 {
+				t.Errorf("freq/cc = %d/%d", g.FrequencyHz, g.ChannelID)
+			}
+			if !g.Encrypted || !g.Emergency {
+				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event")
 		}
-		g, ok := ev.Payload.(trunking.Grant)
-		if !ok {
-			t.Fatalf("payload type = %T", ev.Payload)
-		}
-		if g.System != "TestRepeater" || g.Protocol != "dmr-tier2" {
-			t.Errorf("identity = %s/%s", g.System, g.Protocol)
-		}
-		if g.GroupID != 0x64 || g.SourceID != 0x100200 {
-			t.Errorf("group/source = %d/%d", g.GroupID, g.SourceID)
-		}
-		if g.FrequencyHz != 451_000_000 || g.ChannelID != 5 {
-			t.Errorf("freq/cc = %d/%d", g.FrequencyHz, g.ChannelID)
-		}
-		if !g.Encrypted || !g.Emergency {
-			t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("no grant event")
 	}
 }
 
@@ -102,15 +110,17 @@ func TestConventionalDedupsRepeatedVoiceLCHeader(t *testing.T) {
 	cc.IngestBurst(burstWithFLC(flc), slot) // dedup → no event
 	cc.IngestBurst(burstWithFLC(flc), slot) // dedup → no event
 
-	count := 0
+	grants := 0
 	timeout := time.After(150 * time.Millisecond)
 	for {
 		select {
-		case <-sub.C:
-			count++
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				grants++
+			}
 		case <-timeout:
-			if count != 1 {
-				t.Errorf("got %d grant events, want 1 (dedup expected)", count)
+			if grants != 1 {
+				t.Errorf("got %d grant events, want 1 (dedup expected)", grants)
 			}
 			return
 		}
@@ -159,10 +169,25 @@ func TestConventionalIgnoresNonHeaderBursts(t *testing.T) {
 	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x42}
 	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 
-	select {
-	case ev := <-sub.C:
-		t.Errorf("unexpected event for CSBK burst: %s", ev.Kind)
-	case <-time.After(50 * time.Millisecond):
+	// CSBK burst triggers cc.locked (any valid slot-type decode does)
+	// but should NOT trigger a grant — CSBK belongs to Tier III.
+	timeout := time.After(50 * time.Millisecond)
+	var sawLock bool
+DrainCSBK:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLocked {
+				sawLock = true
+				continue
+			}
+			t.Errorf("unexpected event for CSBK burst: %s", ev.Kind)
+		case <-timeout:
+			break DrainCSBK
+		}
+	}
+	if !sawLock {
+		t.Errorf("expected cc.locked from valid CSBK burst, got none")
 	}
 }
 
@@ -174,14 +199,32 @@ func TestConventionalIgnoresNonGroupFLCO(t *testing.T) {
 
 	cc := New(Options{Bus: bus, SystemName: "S", FrequencyHz: 1})
 	// Unit-to-unit calls are intentionally not republished as grants
-	// in this PR; the engine's grant model is talkgroup-keyed.
+	// in this PR; the engine's grant model is talkgroup-keyed. They
+	// still trigger cc.locked because the burst itself is valid.
 	flc := dmr.FLC{FLCO: dmr.FLCOUnitToUnitVoice, DstAddr: 0x100, SrcAddr: 0x200}
 	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 1, DataType: dmr.DTVoiceLCHeader})
 
-	select {
-	case ev := <-sub.C:
-		t.Errorf("unit-to-unit FLCO produced an event: %s", ev.Kind)
-	case <-time.After(50 * time.Millisecond):
+	timeout := time.After(50 * time.Millisecond)
+	var sawLock bool
+DrainU2U:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLocked {
+				sawLock = true
+				continue
+			}
+			if ev.Kind == events.KindGrant {
+				t.Errorf("unit-to-unit FLCO produced a grant event")
+				continue
+			}
+			t.Errorf("unexpected event for unit-to-unit FLCO: %s", ev.Kind)
+		case <-timeout:
+			break DrainU2U
+		}
+	}
+	if !sawLock {
+		t.Errorf("expected cc.locked from valid Voice LC Header, got none")
 	}
 }
 

@@ -13,6 +13,7 @@ package tier2
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -20,6 +21,24 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// LockState is the payload of cc.locked / cc.lost events emitted by
+// the Tier II per-repeater state machine. DMR Tier II is conventional
+// (no dedicated control channel), so "locked" here means "we've
+// received at least one burst with a valid slot-type codeword on the
+// tuned frequency."
+type LockState struct {
+	FrequencyHz uint32
+	ColorCode   uint8 // from the first valid slot-type decode
+}
+
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises Tier II lock events alongside the other protocols. DMR
+// doesn't have a P25-style NAC; the color code is the closest
+// per-site identifier and gets plumbed into the NAC slot.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return uint16(s.ColorCode) }
 
 // ConventionalChannel ingests bursts from one Tier II repeater
 // frequency and emits a trunking.Grant the first time a Voice LC
@@ -34,6 +53,15 @@ type ConventionalChannel struct {
 	systemName string
 	freqHz     uint32
 	now        func() time.Time
+
+	// proc is the cross-call dibit / sync state the Process adapter
+	// uses (see process.go). Lazily constructed on the first
+	// Process call.
+	proc *processState
+
+	mu     sync.Mutex
+	locked bool
+	last   LockState
 
 	inCall  bool
 	lastTG  uint32
@@ -69,16 +97,48 @@ func New(opts Options) *ConventionalChannel {
 }
 
 // IngestBurst hands one DMR burst (with its already-decoded slot type)
-// to the state machine. Bursts whose data type isn't a Voice LC
-// Header or Terminator-with-LC are ignored: voice payload bursts (B-F)
-// don't carry a fresh FLC, and CSBK bursts belong to Tier III.
+// to the state machine. Any burst with a valid slot-type codeword
+// triggers cc.locked the first time it arrives on a freshly-tuned
+// device. Bursts whose data type isn't a Voice LC Header or
+// Terminator-with-LC otherwise only update the lock state: voice
+// payload bursts (B-F) don't carry a fresh FLC, and CSBK bursts
+// belong to Tier III.
 func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
+	c.maybeLock(LockState{
+		FrequencyHz: c.freqHz,
+		ColorCode:   slot.ColorCode,
+	})
 	switch slot.DataType {
 	case dmr.DTVoiceLCHeader:
 		c.handleVoiceHeader(b, slot)
 	case dmr.DTTerminatorWithLC:
 		c.handleTerminator()
 	}
+}
+
+func (c *ConventionalChannel) maybeLock(s LockState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.locked && c.last == s {
+		return
+	}
+	c.locked = true
+	c.last = s
+	c.bus.Publish(events.Event{Kind: events.KindCCLocked, Payload: s})
+	c.log.Info("dmr/tier2 cc locked",
+		"freq", s.FrequencyHz, "cc", s.ColorCode, "system", c.systemName)
+}
+
+// MarkLost publishes cc.lost and resets the locked flag. The trunking
+// engine's hunter calls this when the repeater goes silent.
+func (c *ConventionalChannel) MarkLost() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.locked {
+		return
+	}
+	c.locked = false
+	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
 }
 
 func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType) {
