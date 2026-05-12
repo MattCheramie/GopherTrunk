@@ -82,6 +82,14 @@ type Decoder struct {
 	sampleRateHz float64
 	systems      map[string]trunking.System
 
+	// sub is the bus subscription the Decoder uses to learn about
+	// KindHuntProgress retunes. Subscribed in New so the
+	// subscription is alive before any other goroutine
+	// (notably the cchunt supervisor) starts publishing on the
+	// same bus — eliminates the race where the first
+	// HuntProgress fires before Run subscribes.
+	sub *events.Subscription
+
 	mu       sync.Mutex
 	active   ProtocolPipeline
 	activeAt string // system name the active pipeline is bound to
@@ -109,6 +117,7 @@ func New(opts Options) (*Decoder, error) {
 		iq:           opts.IQ,
 		sampleRateHz: opts.SampleRateHz,
 		systems:      make(map[string]trunking.System, len(opts.Systems)),
+		sub:          opts.Bus.Subscribe(),
 	}
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
@@ -130,14 +139,13 @@ func (d *Decoder) Run(ctx context.Context) error {
 		return err
 	}
 
-	sub := d.bus.Subscribe()
-	defer sub.Close()
+	defer d.sub.Close()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case ev, ok := <-sub.C:
+		case ev, ok := <-d.sub.C:
 			if !ok {
 				return nil
 			}

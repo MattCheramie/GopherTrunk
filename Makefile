@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc lint tidy vet clean run proto
 
 all: build
 
@@ -20,6 +20,16 @@ test:
 # call. Build-tagged so default `make test` stays a fast unit run.
 integration:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 ./cmd/gophertrunk/...
+
+# integration-cc is the focused "lights up live trunked reception" check:
+# boots the daemon with a mock SDR + a stubbed P25 Phase 1 pipeline factory
+# that injects synthesized dibits into the real phase1.ControlChannel, and
+# asserts the full chain above the IQ→dibit demod (supervisor →
+# ccdecoder → state machine → bus → API + metrics) recovers the lock. The
+# sibling `make integration` target covers a wider engine+recorder loop;
+# this one isolates the CC-decoder critical path.
+integration-cc:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesP25Phase1 ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)

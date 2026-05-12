@@ -199,6 +199,49 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc` — the "lights up live trunked
+  reception" milestone.** Closes Workstream A of the
+  original plan. The new target boots the wired daemon
+  (mock SDR + cchunt supervisor + ccdecoder + API +
+  metrics) and asserts the full chain above the IQ → dibit
+  demod recovers a P25 Phase 1 lock end-to-end:
+    - daemon construction
+    - cchunt supervisor publishing `KindHuntProgress`
+    - ccdecoder factory dispatch + pipeline construction
+    - `pipeline.Process` invoked on every IQ chunk
+    - `phase1.ControlChannel.Process` driving the state
+      machine from FSW + NID + TSBK dibit fixtures
+    - state machine emitting `cc.locked` on the bus
+    - supervisor consuming `cc.locked` → `state=locked`
+    - `/api/v1/scanner` reflecting the lock
+    - `gophertrunk_control_channel_locked{system=…}` = 1
+    - `gophertrunk_events_total{kind="cc.locked"}` = 1
+  The one chain step the test stubs is C4FM IQ→dibit
+  demodulation (RRC pulse shaping + continuous-phase
+  integration are a non-trivial DSP layer in their own
+  right). The receiver layer is covered by
+  `internal/radio/p25/phase1/receiver`'s unit tests; this
+  PR validates everything *above* it.
+
+  Plumbing changes:
+    - `ccdecoder.SetTestFactory` is a new exported
+      tests-only hook that replaces the registered pipeline
+      factory for a single protocol and returns a restore
+      function. Production code must not call it.
+    - `ccdecoder.Decoder` now subscribes to the events bus
+      at `New` time rather than inside `Run`. That removes
+      a race where the cchunt supervisor could publish
+      `KindHuntProgress` before the decoder's subscription
+      landed, causing the first lock attempt to silently
+      miss the connector and the test to fail intermittently.
+      The change also makes the production daemon's startup
+      deterministic — no more "first hunt round drops on
+      the floor" timing dependency.
+
+  A future PR can land a proper C4FM modulator + RRC
+  shaping primitive in `internal/dsp/`, swap the factory
+  stub for real synthesized IQ, and exercise the demod
+  layer in the same integration test.
 - **Motorola Type II BCH(64, 16, 11) wired through the
   connector.** Closes the last unfinished FEC opt-in in the
   TETRA / LTR / P25 P2 / NXDN / EDACS / MPT 1327 / Motorola
@@ -1221,9 +1264,10 @@ and DVB-driver blacklisting on Linux.
 ### Build, test, run
 
 ```sh
-make build         # produces ./bin/gophertrunk
-make test          # go test -race ./...
-make integration   # boots the wired daemon end-to-end (no SDR needed)
+make build           # produces ./bin/gophertrunk
+make test            # go test -race ./...
+make integration     # boots the wired daemon end-to-end (no SDR needed)
+make integration-cc  # focused "lights up live trunked reception" check
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles
