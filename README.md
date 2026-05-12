@@ -199,6 +199,48 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **π/4-DQPSK modulator + `make integration-cc-tetra`.**
+  First integration test to exercise a non-FSK modulation
+  family, lighting up the full TETRA TMO control-channel
+  decode end-to-end against synthesized IQ.
+  - `internal/dsp/demod/piover4_dqpsk_modulator.go` ships
+    the TX counterpart to the existing `PiOver4DQPSK`
+    demodulator: dibit → raw phase delta ∈ {0, π/2, π,
+    -π/2} → +rotation per symbol → cumulative phase →
+    complex symbol → impulse train × sps → unit-energy RRC
+    pulse shape → IQ. The rotation argument selects between
+    true π/4-DQPSK (TETRA TMO, rotation = π/4) and
+    π/8-shifted H-DQPSK (P25 Phase 2, rotation = π/8).
+    `PiOver4DQPSKModulator` carries phase + FIR history
+    across `Modulate` calls so long streams can be chunked.
+  - `tetra.LockState` now implements
+    `trunking.LockedPayload` (`LockedFrequencyHz` +
+    `LockedNAC`). Fifth protocol with the same
+    latent-bug class fixed on NXDN / dPMR / EDACS / Motorola
+    in PRs #149 / #151 / #152 / #153. TETRA doesn't have a
+    P25-style NAC; the LocationArea is the closest per-cell
+    identifier and gets plumbed into the NAC slot.
+  - The TETRA pipeline factory tunes the Gardner clock loop
+    down from the 0.03 default to 0.005. At 18000 sym/s
+    the standard gain over-corrects on clean signals and
+    slips with > 50% dibit errors; 0.005 tracks both clean
+    synthesized IQ and noisier on-air captures within the
+    loop's lock-acquisition margin. Same pattern as the
+    DMR Tier III ClockGain tweak in PR #150.
+  - The integration test synthesizes a full §8.3.1 SCH/HD
+    burst (38-dibit normal training-sequence sync +
+    108-dibit channel-coded SCH/HD carrying an MLE SYSINFO
+    PDU with a known LocationArea), modulates via the new
+    π/4-DQPSK primitive, and asserts the daemon recovers
+    the lock through the production `newTETRAPipeline` with
+    `tetra_channel_coding: on` + `tetra_colour_code`
+    config.
+  - Round-trip modulator tests cover dibit recovery
+    through the existing RRC matched filter + DQPSK
+    quadrant decoder (200 random dibits, every one
+    recovered exactly), phase continuity across chunked
+    Modulate calls, and Reset semantics.
+  - 30-run integration flakiness check clean.
 - **`make integration-cc-motorola` — Motorola Type II
   end-to-end lights-up check.** Second non-C4FM protocol
   to light up through the daemon; reuses the GFSK
@@ -1469,6 +1511,7 @@ make integration-cc-dmr       # DMR Tier III "lights up" — Aloha CSBK via BPTC
 make integration-cc-dpmr      # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CSBK
 make integration-cc-edacs     # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
 make integration-cc-motorola  # Motorola Type II "lights up" — GFSK + BCH(64, 16, 11) OSW
+make integration-cc-tetra     # TETRA TMO "lights up" — π/4-DQPSK + full §8.3.1 chain
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

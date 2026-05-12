@@ -19,6 +19,17 @@ type LockState struct {
 	LocationArea uint16
 }
 
+// LockedFrequencyHz / LockedNAC make LockState satisfy
+// trunking.LockedPayload so the cchunt supervisor's state machine
+// recognises TETRA lock events alongside the protocol-neutral P25 /
+// DMR / NXDN payloads. TETRA doesn't have a P25-style NAC; the
+// LocationArea is the closest per-cell identifier and gets plumbed
+// into the NAC slot. Without these methods, the supervisor's
+// type-assertion on cc.locked silently drops the event and
+// /api/v1/scanner never surfaces state=locked.
+func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
+func (s LockState) LockedNAC() uint16         { return s.LocationArea }
+
 // ControlChannel ingests TETRA Layer-3 PDUs from a single control
 // channel, emits cc.locked the first time a valid MLE-SYSINFO (or
 // any non-idle CMCE PDU) arrives on a freshly-tuned device, and

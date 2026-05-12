@@ -253,6 +253,13 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			cc.Process(dibits, baseIdx)
 		},
 		ClockMode: tetrarx.ClockGardner,
+		// Tuned smaller than the 0.03 default — at TETRA's 18000
+		// sym/s the standard gain over-corrects on clean signals
+		// and slips. 0.005 tracks both clean synthesized IQ (the
+		// integration-cc test) and noisier on-air captures within
+		// the loop's lock-acquisition margin. Same pattern as the
+		// DMR Tier III ClockGain tweak in PR #150.
+		GardnerGain: 0.005,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil
 }

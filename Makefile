@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra lint tidy vet clean run proto
 
 all: build
 
@@ -70,6 +70,14 @@ integration-cc-edacs:
 # whole-CCW BCH.
 integration-cc-motorola:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesMotorola ./cmd/gophertrunk/...
+
+# integration-cc-tetra boots the daemon with synthesized π/4-DQPSK IQ
+# (18000 sym/s, α = 0.35) carrying a 38-dibit normal training sequence +
+# 108-dibit SCH/HD burst encoding an MLE SYSINFO PDU through the full ETSI
+# EN 300 392-2 §8.3.1 channel-coding chain. First integration test to
+# exercise the π/4-DQPSK modulator primitive shipped alongside this PR.
+integration-cc-tetra:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesTETRA ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)
