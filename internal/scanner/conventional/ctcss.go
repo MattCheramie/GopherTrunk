@@ -56,6 +56,22 @@ type CTCSSDetector struct {
 	// with the paging-tone detector.
 	goertzel *toneout.Goertzel
 
+	// reverseBins are Goertzel detectors at nearby off-target
+	// frequencies. They sample the noise / leak floor so the
+	// detector can require target_mag > rejectRatio * max(reverse).
+	// This rejects adjacent CTCSS codes whose spectral leak would
+	// otherwise show up in the target bin — the EIA list has codes
+	// as close as ~3 Hz at the low end and the configured-tone-only
+	// path can false-trigger on those.
+	reverseBins []*toneout.Goertzel
+
+	// rejectRatio is how much the target bin must dominate the
+	// largest reverse bin before declaring a match. 1.5 is a
+	// reasonable default — tight enough that a 5 Hz-offset
+	// adjacent CTCSS leaks below threshold, loose enough that a
+	// real tone still locks under noise. Tunable per detector.
+	rejectRatio float64
+
 	// Magnitude threshold above which the tone is considered
 	// present. Tunable per detector via SetMagnitudeThreshold; the
 	// constructor picks a conservative default that works against
@@ -115,10 +131,32 @@ func NewCTCSSDetector(cfg CTCSSConfig) *CTCSSDetector {
 	dt := 1.0 / cfg.SampleHz
 	rc := 1.0 / (2 * math.Pi * cfg.AudioCutoffHz)
 	alpha := dt / (rc + dt)
+	// Reverse-bin detectors at ±5 Hz off the target — exactly one
+	// Goertzel bin away under the default 5 Hz resolution. An
+	// adjacent CTCSS code in the standard 38-code EIA list (codes
+	// spaced as close as ~3 Hz) puts most of its energy in the
+	// nearest reverse bin while leaking a smaller amount into the
+	// target. The ratio check `target > rejectRatio · max(reverse)`
+	// rejects that case while still passing a clean on-target tone
+	// (whose adjacent-bin leakage is ~30% of peak under Goertzel's
+	// sinc response). Two bins (high + low) give symmetric
+	// rejection regardless of which side the off-target tone is on.
+	reverseOffsets := []float64{-5.0, 5.0}
+	reverseBins := make([]*toneout.Goertzel, 0, len(reverseOffsets))
+	for _, off := range reverseOffsets {
+		hz := cfg.TargetHz + off
+		if hz <= 0 {
+			continue
+		}
+		reverseBins = append(reverseBins, toneout.NewGoertzel(hz, cfg.SampleHz, cfg.BlockSize))
+	}
+
 	return &CTCSSDetector{
-		last:         complex(1, 0),
-		lpfAlpha:     alpha,
-		goertzel:     toneout.NewGoertzel(cfg.TargetHz, cfg.SampleHz, cfg.BlockSize),
+		last:        complex(1, 0),
+		lpfAlpha:    alpha,
+		goertzel:    toneout.NewGoertzel(cfg.TargetHz, cfg.SampleHz, cfg.BlockSize),
+		reverseBins: reverseBins,
+		rejectRatio: 1.5,
 		// 5e-4 catches typical CTCSS injection (~500-1000 Hz peak
 		// deviation on commercial repeaters) with ~3x headroom
 		// over the noise floor measured on RTL-SDR captures.
@@ -126,6 +164,18 @@ func NewCTCSSDetector(cfg CTCSSConfig) *CTCSSDetector {
 		magThreshold: 5e-4,
 		targetHz:     cfg.TargetHz,
 	}
+}
+
+// SetRejectRatio tunes the reverse-bin rejection ratio: target bin
+// magnitude must exceed rejectRatio × max(reverse_bins) to count as
+// a match. Setting ratio ≤ 1 disables the check effectively (any
+// target-bin magnitude above the leak floor will pass). Default
+// is 1.5.
+func (d *CTCSSDetector) SetRejectRatio(r float64) {
+	if r < 0 {
+		r = 0
+	}
+	d.rejectRatio = r
 }
 
 // SetMagnitudeThreshold tunes the detection threshold. Higher values
@@ -150,6 +200,9 @@ func (d *CTCSSDetector) Reset() {
 	d.last = complex(1, 0)
 	d.lpfState = 0
 	d.goertzel.Reset()
+	for _, rb := range d.reverseBins {
+		rb.Reset()
+	}
 	d.present = false
 }
 
@@ -179,9 +232,34 @@ func (d *CTCSSDetector) Process(iq []complex64) bool {
 		// scaling.
 		const scale = 32768.0 / math.Pi
 		sample := int16(d.lpfState * scale)
-		if mag, ready := d.goertzel.Process(sample); ready {
-			d.present = mag >= d.magThreshold
+
+		// Feed every Goertzel — they all share the same block
+		// size, so the ready signals fire on the same sample.
+		// We hold off on the decision until the target reports
+		// ready (the reverse bins must report on the same sample
+		// to be valid comparators).
+		targetMag, ready := d.goertzel.Process(sample)
+		var maxReverseMag float64
+		for _, rb := range d.reverseBins {
+			if rmag, _ := rb.Process(sample); rmag > maxReverseMag {
+				maxReverseMag = rmag
+			}
 		}
+		if !ready {
+			continue
+		}
+		// Match when target exceeds the magnitude floor AND
+		// dominates the reverse bins by rejectRatio. The second
+		// check guards against adjacent-code spectral leak.
+		if targetMag < d.magThreshold {
+			d.present = false
+			continue
+		}
+		if d.rejectRatio > 0 && targetMag < d.rejectRatio*maxReverseMag {
+			d.present = false
+			continue
+		}
+		d.present = true
 	}
 	return d.present
 }

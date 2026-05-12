@@ -172,9 +172,16 @@ The remaining gaps:
   ```
   Both detectors share an `FM discriminator → single-pole IIR
   low-pass → bit/bin detector` pipeline. **CTCSS** runs a Goertzel
-  at the configured frequency (reusing the existing
-  `internal/voice/toneout` primitive, ~200 ms block, 5 Hz
-  resolution — comfortable for the 38-code EIA list). **DCS**
+  at the configured frequency plus two reverse-bin Goertzels at
+  ±5 Hz; a match requires the target bin both to exceed the
+  magnitude floor AND to dominate the largest reverse bin by a
+  configurable factor (default 1.5×). This rejects adjacent EIA
+  codes whose spectral leak would otherwise show up in the target
+  bin under the 5 Hz Goertzel resolution; the 38-code list has
+  codes spaced as close as ~3 Hz at the low end and the
+  single-bin path was prone to false-trigger on them. Reuses the
+  existing `internal/voice/toneout` Goertzel primitive (~200 ms
+  block). **DCS**
   recovers the 134.4 baud sub-audible NRZ stream, slides a 23-bit
   window, and matches against the 46 precomputed rotations (23
   cyclic shifts × 2 polarities) of the Golay(23,12,7) codeword
