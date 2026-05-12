@@ -161,7 +161,7 @@ Cycle through tabs with `[` / `]` (or `h` / `l` / `←` / `→`):
 | API | HTTP / gRPC / WebSocket / metrics listener addresses, mutations allowed |
 | Vocoders | per-protocol vocoder mapping |
 | SDR | registered backend names, per-device serial / role / gain |
-| FEC | per-system FEC opt-in summary (the original Settings table) |
+| FEC | per-system FEC state — every protocol's chain is on by default, this view surfaces explicit `<key>: off` opt-outs and the current channel-coding / colour-code parameters |
 
 Every config knob the daemon reads has a touch-point here. Mutating
 the settings still requires editing `config.yaml` and restarting

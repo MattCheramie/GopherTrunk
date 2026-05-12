@@ -25,9 +25,9 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 		},
 	}
 	_, _ = p.Update(tea.WindowSizeMsg{Width: 140, Height: 30}, s)
-	// Switch to the FEC opt-ins tab — the inspector defaults to the
-	// Daemon tab and only the FEC tab renders the per-system FEC
-	// summary table this test asserts on.
+	// Switch to the FEC tab — the inspector defaults to the Daemon
+	// tab and only the FEC tab renders the per-system FEC summary
+	// table this test asserts on.
 	for p.tab != tabFEC {
 		_, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")}, s)
 	}

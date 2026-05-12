@@ -50,7 +50,7 @@ func (t settingsTab) String() string {
 	case tabSDR:
 		return "SDR"
 	case tabFEC:
-		return "FEC opt-ins"
+		return "FEC"
 	}
 	return "?"
 }
@@ -62,8 +62,10 @@ func (t settingsTab) String() string {
 type SettingsPanel struct {
 	tab settingsTab
 
-	// FEC opt-ins tab retains the existing table view; the other
-	// tabs render plain text.
+	// FEC tab retains the existing table view; the other tabs
+	// render plain text. The tab summarises each system's FEC
+	// state — every protocol's chain is on by default, so the
+	// table is operationally an opt-out reference.
 	tbl      table.Model
 	lastHash uint64
 }
@@ -142,7 +144,7 @@ func (p *SettingsPanel) View(width, height int, focused bool, s *state.SharedSta
 		if height > 6 {
 			p.tbl.SetHeight(height - 6)
 		}
-		body = p.tbl.View() + "\n\n" + dashDim.Render("Edit config.yaml + restart daemon to change; see the FEC opt-ins section in README.md.")
+		body = p.tbl.View() + "\n\n" + dashDim.Render("Edit config.yaml + restart daemon to change; see the FEC opt-outs section in README.md.")
 	} else {
 		body = p.renderTab(width, s)
 	}
@@ -271,7 +273,7 @@ func settingsColumns(w int) []table.Column {
 	return []table.Column{
 		{Title: "Name", Width: nameW},
 		{Title: "Protocol", Width: protoW},
-		{Title: "FEC opt-ins", Width: fecW},
+		{Title: "FEC", Width: fecW},
 	}
 }
 

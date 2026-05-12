@@ -128,7 +128,7 @@ to flip on by default.
 ## 5. How to verify what's currently enabled
 
 - **FEC defaults per system.** Open the **Settings** panel in the
-  TUI — the "FEC opt-ins" tab lists every configured system with a
+  TUI — the **FEC** tab lists every configured system with a
   one-line summary (`channel coding: on (colour=…, sch/f)`,
   `viterbi: spec`, `bch: on`, etc.).
 - **Programmatic introspection.** Each protocol's `ControlChannel`
