@@ -25,18 +25,22 @@ type BitSink func(bits []byte, baseIdx int)
 // across all protocols here — call-sites pack their bits into the
 // dibit slots two-bits-at-a-time when they reach this stage).
 const (
-	// FrameSyncHex is the 32-bit Frame Sync that prefixes every D-STAR
-	// PCH (Preamble + Header). The bit pattern is the well-known
-	// 0x55555555 toggle preceded by the JARL fixed identifier; we
-	// store the 32 bits MSB-first as the lower 32 bits of the
-	// constant.
-	FrameSyncHex uint64 = 0x55_5555_5555_5555 & 0xFFFFFFFF
+	// FrameSyncHex is the 24-bit Header Frame Sync that prefixes
+	// every D-STAR PCH (Preamble + Header) per the JARL DV-mode
+	// specification. The canonical value 0xEAA060 ("111 0101 0101
+	// 0000 0011 0000 0000" MSB-first, then 0x60 padding) is the
+	// pattern emitted by MMDVMHost / DSDcc / OpenDV transmitters.
+	// On-air it follows a long bit-sync preamble (alternating
+	// 1010… for clock-recovery convergence); the bit-sync isn't
+	// part of the sync correlator because it has no information
+	// alignment value.
+	FrameSyncHex uint64 = 0xEAA060
 
 	// SlowDataSyncHex is the 24-bit Slow Data sync used inside voice
 	// frames to demarcate the slow-data channel. JARL spec value.
 	SlowDataSyncHex uint64 = 0x55_2D16
 
-	FrameSyncBits    = 32
+	FrameSyncBits    = 24
 	SlowDataSyncBits = 24
 )
 

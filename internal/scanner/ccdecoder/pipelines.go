@@ -664,6 +664,12 @@ func newDStarPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	fecMode, fecOK := dstar.ParseFECMode(opts.System.DStarFECMode)
+	if !fecOK {
+		opts.Log.Warn("ccdecoder: unrecognised dstar_fec_mode; falling back to off",
+			"system", opts.SystemName, "value", opts.System.DStarFECMode)
+	}
+	cc.SetFECMode(fecMode)
 	rx := dstarrx.New(dstarrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

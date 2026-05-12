@@ -58,9 +58,10 @@ type ControlChannel struct {
 	// Process call.
 	proc *processState
 
-	mu     sync.Mutex
-	locked bool
-	last   LockState
+	mu      sync.Mutex
+	locked  bool
+	last    LockState
+	fecMode FECMode
 }
 
 // Options configure a ControlChannel.

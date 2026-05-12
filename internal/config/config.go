@@ -258,6 +258,14 @@ type SystemConfig struct {
 	// raw-OSW path, opt-out for pre-stripped fixtures). Ignored
 	// for non-Motorola protocols.
 	MotorolaBCHMode string `yaml:"motorola_bch_mode"`
+	// DStarFECMode enables the JARL DV-mode header FEC chain on
+	// the D-STAR Process adapter (conv R=1/2 K=5 + PN15 scrambler
+	// + 22×30 block interleaver). Recognised values: "" / "off" /
+	// "false" / "0" (the default — 328 info bits straight off the
+	// wire) or "on" / "true" / "1" (660 on-wire bits → full FEC
+	// chain → 328 info bits → ParseHeader). Ignored for non-D-STAR
+	// protocols.
+	DStarFECMode string `yaml:"dstar_fec_mode"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
