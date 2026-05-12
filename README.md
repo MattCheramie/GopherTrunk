@@ -1,6 +1,6 @@
 # GopherTrunk 📻🐹
 
-A headless, low-latency digital-trunking scanner engine in Go.
+A low-latency digital-trunking scanner engine in Go.
 
 GopherTrunk manages a pool of RTL-SDR dongles, runs a custom Go DSP
 pipeline, decodes the signalling layers of every major trunked-radio
