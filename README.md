@@ -278,6 +278,20 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Runtime theme toggle (Ctrl+T) + docs/tui.md sync.** The dark
+  and monochrome palettes have lived in `internal/tui/theme` since
+  the operator-console PR but weren't reachable from the UI;
+  `Ctrl+T` (and a "Toggle theme" entry in the command palette) now
+  cycles between them at runtime. A `panels.ThemeChangedMsg`
+  broadcast lets each `bubbles/table`-backed panel re-apply its
+  cached `tableStyles()` so the swap takes effect on the next
+  render without a restart. `docs/tui.md` was rewritten end-to-end
+  to cover everything shipped since the operator-console work:
+  the Settings panel and its tab cycle, the Ctrl+P command
+  palette, mouse hit-testing and scroll-wheel forwarding,
+  Revealer-driven cursor pre-positioning, async history refresh,
+  and every audio / scanner / runtime endpoint that wasn't in the
+  old reference.
 - **Mouse coverage on every table panel + scroll-wheel scroll.**
   The `MouseAware` interface added in the Revealer PR now lives on
   Active, History, Tones, and Metrics in addition to Systems,
@@ -1921,6 +1935,7 @@ refresh, automatic reconnect on disconnect:
 | `Tab` / `Shift+Tab` | next / previous panel |
 | `1`–`9`, `0` | jump to Dashboard / Systems / Talkgroups / Active / History / Events / Tones / Metrics / Devices / Scanner |
 | `Ctrl+P` | open fuzzy command palette (panel jumps, system / TG / device drill-ins, audio mutations, retention sweep, scanner hold/resume) |
+| `Ctrl+T` | toggle theme (dark ↔ monochrome) |
 | `j` / `k` | move row up / down inside a table |
 | `/` | filter (Talkgroups, Events) |
 | `s` | cycle sort (Talkgroups) |
