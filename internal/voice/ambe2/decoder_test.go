@@ -433,6 +433,142 @@ func singleToneFrame(b1, b2 int) []byte {
 	return frame
 }
 
+// dualToneFrame builds an AMBE+2 tone frame with b1 ∈ [128, 143]
+// (the DTMF dual-tone range) and 8-bit volume b2. The bit layout
+// matches the single-tone helper above; the difference is the t-
+// table dispatch: for the dual-tone range the upper-3-bit pattern
+// is (t7, t6, t5) = (1, 0, 0), which corresponds to t-table
+// idx = 0 (info[6,7,8] = 0, 0, 0).
+func dualToneFrame(b1, b2 int) []byte {
+	if b1 < 128 || b1 > 143 {
+		panic("dualToneFrame test helper only emits b1 in [128, 143]")
+	}
+	info := make([]byte, InfoBits)
+	for i := 0; i <= 5; i++ {
+		info[i] = 1
+	}
+	// t-table idx = 0 → info[6,7,8] all zero (default). Skip.
+	// Low 4 bits of b1 via the same info positions as single-tone.
+	low := b1 - 128
+	info[9] = byte((low >> 4) & 1) // bit 4 of low (always 0 for [128,143])
+	info[42] = byte((low >> 3) & 1)
+	info[43] = byte((low >> 2) & 1)
+	info[10] = byte((low >> 1) & 1)
+	info[11] = byte(low & 1)
+	// b2 packing — identical to single-tone.
+	info[12] = byte((b2 >> 7) & 1)
+	info[13] = byte((b2 >> 6) & 1)
+	info[14] = byte((b2 >> 5) & 1)
+	info[15] = byte((b2 >> 4) & 1)
+	info[16] = byte((b2 >> 3) & 1)
+	info[44] = byte((b2 >> 2) & 1)
+	info[45] = byte((b2 >> 1) & 1)
+	info[17] = byte(b2 & 1)
+	frame := make([]byte, FrameBytes)
+	for i := 0; i < InfoBits; i++ {
+		frame[i/8] |= info[i] << (7 - uint(i)%8)
+	}
+	return frame
+}
+
+// TestDecodeDualToneDTMFAudible: a valid DTMF dual-tone frame
+// (b1 ∈ [128, 143]) synthesises audio. Pins that the dual-tone
+// path actually produces sound rather than the legacy
+// route-to-silence behaviour.
+func TestDecodeDualToneDTMFAudible(t *testing.T) {
+	d := New()
+	// b1 = 128 (DTMF "1": 697, 1209 Hz); b2 = 200 (loud).
+	out, err := d.Decode(dualToneFrame(128, 200))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(out) != mbe.SamplesPerFrame {
+		t.Errorf("len(out) = %d, want %d", len(out), mbe.SamplesPerFrame)
+	}
+	if agcPeak(out) == 0 {
+		t.Fatal("DTMF dual-tone frame output is fully silent; synthesis didn't run")
+	}
+}
+
+// TestDecodeDualToneDTMFFrequencyContent: a DTMF "1" tone should
+// have most of its energy split between 697 Hz and 1209 Hz. We do
+// a coarse Goertzel at each expected frequency and at a quiet
+// neighbour (300 Hz) and verify both expected bins dominate.
+func TestDecodeDualToneDTMFFrequencyContent(t *testing.T) {
+	d := New()
+	// Decode 5 frames so the AGC has settled and we have enough
+	// samples for stable Goertzel magnitudes.
+	frame := dualToneFrame(128, 200) // DTMF "1": 697 + 1209 Hz
+	var pcm []int16
+	for i := 0; i < 5; i++ {
+		out, err := d.Decode(frame)
+		if err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		pcm = append(pcm, out...)
+	}
+	mag697 := goertzelMag(pcm, 697, mbe.PCMSampleRate)
+	mag1209 := goertzelMag(pcm, 1209, mbe.PCMSampleRate)
+	magOff := goertzelMag(pcm, 300, mbe.PCMSampleRate) // unrelated bin
+	if mag697 < 10*magOff {
+		t.Errorf("697 Hz bin (%.0f) not dominant vs 300 Hz (%.0f)", mag697, magOff)
+	}
+	if mag1209 < 10*magOff {
+		t.Errorf("1209 Hz bin (%.0f) not dominant vs 300 Hz (%.0f)", mag1209, magOff)
+	}
+}
+
+// TestDecodeDualToneKnoxIsSilent: knox / call-alert dual-tone
+// indices (b1 ∈ [144, 163]) fall through to the silence branch
+// because the public AMBE+2 spec doesn't document their
+// frequencies. Pins that contract — operators who want them
+// configurable will need to extend ambeDualToneTable.
+func TestDecodeDualToneKnoxIsSilent(t *testing.T) {
+	d := New()
+	// Build a knox-range tone frame directly. b1 high bits come
+	// from t-table idx = 0 with bit-4 of low set (b1 = 128 | 16 =
+	// 144), matching the boundary of the knox range.
+	info := make([]byte, InfoBits)
+	for i := 0; i <= 5; i++ {
+		info[i] = 1
+	}
+	info[9] = 1 // sets bit 4 of low, so b1 = 128 + 16 = 144
+	frame := make([]byte, FrameBytes)
+	for i := 0; i < InfoBits; i++ {
+		frame[i/8] |= info[i] << (7 - uint(i)%8)
+	}
+	out, err := d.Decode(frame)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	// SynthUnvoicedOverlapAdd path fills pcm[0..95] with the §6.4
+	// tail; for a fresh decoder state that tail is all-zero.
+	for i := 96; i < len(out); i++ {
+		if out[i] != 0 {
+			t.Errorf("sample[%d] = %d, want 0 (knox dual-tone routes to silence)", i, out[i])
+		}
+	}
+}
+
+// goertzelMag computes the squared magnitude of `targetHz` in the
+// supplied int16 PCM stream. Cheap stand-alone implementation
+// (not the production toneout one) to keep the test self-contained.
+func goertzelMag(samples []int16, targetHz, sampleHz int) float64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	k := math.Round(float64(len(samples)) * float64(targetHz) / float64(sampleHz))
+	omega := 2 * math.Pi * k / float64(len(samples))
+	coeff := 2 * math.Cos(omega)
+	var s1, s2 float64
+	for _, x := range samples {
+		s0 := float64(x)/32768.0 + coeff*s1 - s2
+		s2 = s1
+		s1 = s0
+	}
+	return s1*s1 + s2*s2 - coeff*s1*s2
+}
+
 // TestDecodeSingleToneFrameAudible: a valid single-tone frame
 // (b1 ∈ [5, 122]) synthesises a sinewave at b1·31.25 Hz scaled by
 // b2. Pins that the tone path actually produces audio rather than
@@ -552,33 +688,6 @@ func TestDecodeSingleToneFrameVolumeScaling(t *testing.T) {
 	quietEnv := quiet.agc.Envelope()
 	if loudEnv <= quietEnv {
 		t.Errorf("loud envelope %v should exceed quiet envelope %v", loudEnv, quietEnv)
-	}
-}
-
-// TestDecodeDualToneFrameStaysSilent: dual-tone indices
-// (b1 ∈ [128, 163]) need an AMBE+2-specific frequency-pair lookup
-// the public spec doesn't document; until that lands they route
-// through the §6.4 OA fade-out + silence path. Pin that
-// behaviour so adding a dual-tone synthesis path later doesn't
-// silently break the silent-out contract for unsupported
-// indices.
-func TestDecodeDualToneFrameStaysSilent(t *testing.T) {
-	d := New()
-	// frame[0] = 0xFC ⇒ b0 = 0x7E (tone frame). info[6..8] = 0 ⇒
-	// idx = 0 ⇒ t7tab[0]<<7 = 0x80 = 128 (dual-tone). Other bits
-	// zero, so b1 = 128.
-	frame := make([]byte, FrameBytes)
-	frame[0] = 0xFC
-	out, err := d.Decode(frame)
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-	// Non-overlap region (pcm[96..159]) must be silent on a
-	// dual-tone frame — the silence path runs there.
-	for i := mbe.SamplesPerFrame - 64; i < mbe.SamplesPerFrame; i++ {
-		if out[i] != 0 {
-			t.Errorf("sample[%d] = %d, want 0 (dual-tone is silence)", i, out[i])
-		}
 	}
 }
 

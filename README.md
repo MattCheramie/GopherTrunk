@@ -146,10 +146,10 @@ The remaining gaps:
   reference data: captured P25 P1 / DMR voice exchanges plus
   DSD-FME / OP25 decodes belong at
   `internal/voice/{imbe,ambe2}/testdata/`. AMBE+2 single-tone
-  synthesis works; dual-tone (b₁ ∈ [128, 163]) routes through
-  silence pending a frequency-pair lookup that the public spec
-  doesn't document. See [docs/vocoders.md](docs/vocoders.md) for
-  the licensing posture.
+  + DTMF dual-tone synthesis work; knox / call-alert dual-tones
+  (b₁ ∈ [144, 163]) are vendor-specific and route through
+  silence until per-vendor frequency tables land. See
+  [docs/vocoders.md](docs/vocoders.md) for the licensing posture.
 - **YSF FICH on-air interleaver / puncture validation.** The K=5
   ½-rate Trellis encoder + decoder are in
   (`internal/radio/ysf/fich_trellis.go`) and round-trip cleanly in
@@ -267,9 +267,10 @@ to its own package and lands independently.
   exchange, decode through both, compare RMS + cross-correlation
   against a reference WAV under `internal/voice/{imbe,ambe2}/testdata/`)
   is a polish item — useful when downstream pipelines need consistent
-  loudness across decoders. AMBE+2 dual-tone synthesis
-  (b₁ ∈ [128, 163]) routes through silence pending a frequency-pair
-  lookup that the public spec doesn't document.
+  loudness across decoders. AMBE+2 DTMF dual-tone synthesis
+  (b₁ ∈ [128, 143]) is wired against the ITU-T Q.23 4×4 matrix;
+  knox / call-alert pairs (b₁ ∈ [144, 163]) are vendor-specific
+  and stay silent pending per-vendor frequency tables.
 - **YSF on-air interleaver / puncture validation.** The K=5 ½-rate
   Trellis encoder + decoder round-trip cleanly; matching the exact
   on-air interleaver / puncture schedule to a captured YSF
@@ -277,6 +278,19 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **AMBE+2 DTMF dual-tone synthesis.** Tone frames with
+  b₁ ∈ [128, 143] (the AMBE+2 DTMF range) now synthesise the
+  correct summed sinewaves instead of routing through silence.
+  Sixteen-entry b₁ → (low Hz, high Hz) lookup table sourced from
+  ITU-T Q.23's 4×4 DTMF matrix (rows 697/770/852/941 ×
+  cols 1209/1336/1477/1633); the b₁ → key mapping follows the
+  AMBE+2 layout shared by mbelib / DSDcc / DSD-FME — 128 is "1",
+  143 is "D". Two oscillator phases ride across frame boundaries
+  so held keys are click-free. Knox / call-alert pairs
+  (b₁ ∈ [144, 163]) are vendor-specific (Motorola Trbo vs.
+  Hytera vs. generic) and stay routed through silence pending
+  per-vendor frequency tables — operators who need them can drop
+  rows into the `ambeDualToneTable` upper range.
 - **`audio.state` SSE event for instant TUI convergence.** PATCH
   `/api/v1/audio` now publishes the resulting state on the events
   bus as `KindAudioState`, which the SSE pump forwards to every

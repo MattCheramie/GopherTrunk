@@ -66,14 +66,24 @@
 //     info[12..17,44,45]. Reference: mbelib's
 //     mbe_decodeAmbe2400Parms tone branch.
 //
-//  5. Remaining polish: calibration against a DSD-FME or OP25
+//  5. DTMF dual-tone synthesis (b₁ ∈ [128, 143]). Sixteen-entry
+//     b₁ → (low Hz, high Hz) lookup table sourced from ITU-T
+//     Q.23's 4×4 DTMF keypad matrix (rows 697/770/852/941 ×
+//     cols 1209/1336/1477/1633). The b₁ → key mapping follows
+//     the AMBE+2 layout shared by mbelib / DSDcc / DSD-FME —
+//     b₁ = 128 is "1", 143 is "D". Two oscillator phases are
+//     carried across frames (d.tonePhase + d.toneDualPhase) so
+//     held DTMF keys are click-free. Knox / call-alert indices
+//     (b₁ ∈ [144, 163]) are vendor-specific (Motorola Trbo vs.
+//     Hytera vs. generic) and the public AMBE+2 spec doesn't
+//     document their frequencies; those routes through the
+//     silence branch with a TODO for operators who need them.
+//
+//  6. Remaining polish: calibration against a DSD-FME or OP25
 //     reference WAV at testdata/ (capture a known DMR voice frame
 //     + decode through both, compare RMS + cross-correlation);
 //     tune the per-frame gain constant if AGC shows systematic
 //     level offset against the reference (AGC defaults are tuned
 //     for IMBE and AMBE+2 quantization may produce different
-//     per-frame energy); dual-tone synthesis (b₁ ∈ [128, 163])
-//     requires an AMBE+2-specific (b₁ → freq_a, freq_b) lookup
-//     table the public spec doesn't document — those route
-//     through silence until a reference is available.
+//     per-frame energy).
 package ambe2

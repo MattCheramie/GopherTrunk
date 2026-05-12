@@ -61,6 +61,12 @@ type Decoder struct {
 	// click-free between frame boundaries. Cleared on any non-tone
 	// frame (voice / silence / dual-tone fallback) and on Reset.
 	tonePhase float64
+	// Second oscillator phase used for dual-tone (DTMF) synthesis.
+	// The first oscillator runs from tonePhase; toneDualPhase
+	// tracks the second sinusoid so a held DTMF key stays
+	// click-free across frame boundaries. Cleared whenever
+	// tonePhase is cleared.
+	toneDualPhase float64
 
 	// One-frame cache for the bad-frame replay path. Holds the
 	// post-fold mbe.Params (Tl values already centered + gamma
@@ -183,19 +189,42 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.agc.Apply(pcm, out, false)
 		return out, nil
 
+	case p.Tone && !p.Silent && p.B1 >= 128 && p.B1 <= 143:
+		// DTMF dual-tone (b1 ∈ [128, 143]): summed sinewaves at
+		// the 16-key DTMF matrix (ITU-T Q.23: 4 row × 4 column
+		// frequencies). The b1 → key mapping follows the AMBE+2
+		// tone-frame layout shared by mbelib + DSD-FME +
+		// DSDcc — 128 is "1", 143 is "D". See ambeDualToneTable
+		// below for the per-index frequency pair.
+		//
+		// Knox / call-alert dual-tones (b1 ∈ [144, 163]) are
+		// vendor-specific; the AMBE+2 spec doesn't document
+		// their frequencies publicly, so they fall through to
+		// the silence branch below with a TODO note. Operators
+		// hitting them in practice can drop a per-vendor
+		// frequency table into ambeDualToneTable's upper range.
+		freqA, freqB := ambeDualToneTable[p.B1-128][0], ambeDualToneTable[p.B1-128][1]
+		d.synthDualTone(freqA, freqB, p.B2, pcm)
+		d.state.Reset()
+		d.clearLastGood()
+		d.prevGamma = 0
+		d.agc.Apply(pcm, out, false)
+		return out, nil
+
 	case p.Tone || p.Silent:
-		// Dual-tone (b1 in [128, 163]), invalid tone, or explicit
-		// silence: emit the §6.4 OA tail fade-out into pcm[0..95]
-		// and reset state. Dual-tone synthesis requires an
-		// AMBE+2-specific (b1, freq_a, freq_b) lookup table that
-		// the public spec doesn't document — those route through
-		// silence until a reference is available. Silent frames
-		// (invalid tone index) hit the same path.
+		// Knox / call-alert dual-tone (b1 ∈ [144, 163]), invalid
+		// tone index, or explicit silence: emit the §6.4 OA tail
+		// fade-out into pcm[0..95] and reset state. The
+		// vendor-specific frequency table for knox tones isn't
+		// in the public AMBE+2 spec; operators who need them
+		// can extend ambeDualToneTable with their per-vendor
+		// pairs and add a case branch above.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.Params, nil, nil, pcm)
 		d.state.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.tonePhase = 0
+		d.toneDualPhase = 0
 		d.agc.Apply(pcm, out, true)
 		return out, nil
 	}
@@ -205,6 +234,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	// tone (the voice frame breaks oscillator continuity).
 	d.badFrameCount = 0
 	d.tonePhase = 0
+	d.toneDualPhase = 0
 
 	// Combine the per-frame delta with prev-frame gamma to recover
 	// the absolute gain, then fold gamma + DC removal into Tl so
@@ -280,6 +310,79 @@ func (d *Decoder) synthSingleTone(b1, b2 int, pcm []float64) {
 	if d.tonePhase < 0 {
 		d.tonePhase += twoPi
 	}
+}
+
+// synthDualTone fills pcm with the sum of two equal-amplitude
+// sinewaves at freqA and freqB Hz, scaled by b2 (the same 8-bit
+// volume index single-tone uses). Each oscillator carries its own
+// phase across frame boundaries (d.tonePhase + d.toneDualPhase) so
+// a held DTMF key is click-free across the two-frame minimum.
+//
+// Per-tone amplitude is half of the single-tone peak so the summed
+// peak still fits the same headroom (avoiding pre-AGC clipping on
+// the simultaneous-phase sample). The AGC normalises afterwards
+// the same way as single-tone, so the two paths land at the same
+// loudness.
+func (d *Decoder) synthDualTone(freqA, freqB float64, b2 int, pcm []float64) {
+	const (
+		peakAmpScale = 8192.0 // matches synthSingleTone headroom
+		volMax       = 255.0
+	)
+	twoPi := 2 * math.Pi
+	// Half-amplitude per oscillator so the summed peak ≈ peakAmpScale
+	// at perfect phase alignment.
+	amp := 0.5 * peakAmpScale * float64(b2) / volMax
+	stepA := twoPi * freqA / float64(mbe.PCMSampleRate)
+	stepB := twoPi * freqB / float64(mbe.PCMSampleRate)
+	for n := 0; n < mbe.SamplesPerFrame; n++ {
+		pcm[n] = amp*math.Sin(d.tonePhase) + amp*math.Sin(d.toneDualPhase)
+		d.tonePhase += stepA
+		d.toneDualPhase += stepB
+	}
+	d.tonePhase = math.Mod(d.tonePhase, twoPi)
+	if d.tonePhase < 0 {
+		d.tonePhase += twoPi
+	}
+	d.toneDualPhase = math.Mod(d.toneDualPhase, twoPi)
+	if d.toneDualPhase < 0 {
+		d.toneDualPhase += twoPi
+	}
+}
+
+// ambeDualToneTable maps AMBE+2 tone-frame b1 indices in the
+// dual-tone range [128, 143] to their (low, high) DTMF frequency
+// pair in Hz. ITU-T Q.23 defines the standard 4×4 DTMF matrix
+// (rows 697 / 770 / 852 / 941 Hz × cols 1209 / 1336 / 1477 /
+// 1633 Hz). The b1 → key mapping follows the AMBE+2 layout shared
+// across mbelib / DSDcc / DSD-FME: b1=128 is "1", 143 is "D".
+//
+// Indices [144, 163] are knox / call-alert tones whose
+// frequencies are vendor-specific (Motorola Trbo vs. Hytera vs.
+// generic). The public AMBE+2 spec doesn't document them, so
+// those rows stay at the zero default and the decoder's case
+// branch routes them to silence. Operators with a specific
+// vendor's reference can extend the table below.
+var ambeDualToneTable = [36][2]float64{
+	// DTMF 1..D, indexed by b1 - 128.
+	0: {697, 1209},  // 128: "1"
+	1: {697, 1336},  // 129: "2"
+	2: {697, 1477},  // 130: "3"
+	3: {697, 1633},  // 131: "A"
+	4: {770, 1209},  // 132: "4"
+	5: {770, 1336},  // 133: "5"
+	6: {770, 1477},  // 134: "6"
+	7: {770, 1633},  // 135: "B"
+	8: {852, 1209},  // 136: "7"
+	9: {852, 1336},  // 137: "8"
+	10: {852, 1477}, // 138: "9"
+	11: {852, 1633}, // 139: "C"
+	12: {941, 1209}, // 140: "*"
+	13: {941, 1336}, // 141: "0"
+	14: {941, 1477}, // 142: "#"
+	15: {941, 1633}, // 143: "D"
+	// Indices 16..35 (b1 144..163) are vendor-specific knox /
+	// call-alert tones — left at zero; decoder routes them to
+	// silence until a per-vendor table lands.
 }
 
 // synthFrame runs the §6.3 voiced + §6.4 unvoiced overlap-add legs
@@ -370,6 +473,7 @@ func (d *Decoder) Reset() {
 	d.clearLastGood()
 	d.prevGamma = 0
 	d.tonePhase = 0
+	d.toneDualPhase = 0
 }
 
 // Close releases any resources held by the decoder. The pure-Go
