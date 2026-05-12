@@ -199,6 +199,34 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`make integration-cc-p25p2` — P25 Phase 2 end-to-end
+  lights-up check.** Second protocol to use the
+  π/4-DQPSK modulator shipped in PR #154; reuses the
+  primitive with `rotation = π/8` to synthesize H-DQPSK
+  (the π/8-shifted variant P25 Phase 2 specifies).
+  - 6000 sym/s, α = 0.20 RRC, sps = 8 at the test's 48 kHz
+    sample rate — different from TETRA's 18000 sym/s /
+    α = 0.35 / sps = 4 path, but the modulator's rotation
+    + sps + α parameters cover both cleanly.
+  - `p25phase2.LockState` now implements
+    `trunking.LockedPayload`. Sixth protocol with the same
+    latent-bug class fixed (NXDN / dPMR / EDACS / Motorola
+    / TETRA / P25 Phase 2). P25 Phase 2's MAC PDU header
+    doesn't carry a NAC equivalent — the NAC lives one
+    layer up in the Phase 2 superframe — so `LockedNAC`
+    returns 0; the supervisor uses it only as a cache key
+    on retune, so 0 is harmless.
+  - The P25 Phase 2 pipeline factory tunes its Gardner
+    `ClockGain` to 0.005 (same value as the TETRA factory
+    in PR #154; the 0.03 default over-corrects on clean
+    H-DQPSK signals and slips).
+  - Integration test synthesizes 80 back-to-back
+    `OpMACPTT` MAC PDUs (the canonical "lock me" non-idle
+    PDU) through the production trellis encoder
+    (`framing.EncodeP25Trellis`), wraps each in a 20-dibit
+    outbound sync, and asserts the daemon recovers the
+    lock via `p25_phase2_trellis_mode: on`. 30-run
+    flakiness check clean on first try.
 - **π/4-DQPSK modulator + `make integration-cc-tetra`.**
   First integration test to exercise a non-FSK modulation
   family, lighting up the full TETRA TMO control-channel
@@ -1512,6 +1540,7 @@ make integration-cc-dpmr      # dPMR Mode 3 "lights up" — FS3 sync + 80-bit CS
 make integration-cc-edacs     # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
 make integration-cc-motorola  # Motorola Type II "lights up" — GFSK + BCH(64, 16, 11) OSW
 make integration-cc-tetra     # TETRA TMO "lights up" — π/4-DQPSK + full §8.3.1 chain
+make integration-cc-p25p2     # P25 Phase 2 "lights up" — H-DQPSK + trellis MAC PDU
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles

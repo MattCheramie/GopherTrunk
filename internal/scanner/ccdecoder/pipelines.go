@@ -197,6 +197,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			cc.Process(dibits, baseIdx)
 		},
 		ClockMode: p25phase2rx.ClockGardner,
+		// Tuned smaller than the 0.03 default — H-DQPSK at
+		// 6000 sym/s has the same slip behaviour as TETRA's
+		// π/4-DQPSK at the default gain (see PR #154). 0.005
+		// tracks both clean synthesized IQ and noisier on-air
+		// captures within the loop's lock-acquisition margin.
+		GardnerGain: 0.005,
 	})
 	return &p25Phase2Pipeline{rx: rx, cc: cc}, nil
 }
