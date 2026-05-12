@@ -37,7 +37,7 @@ frontend over gRPC, HTTP/SSE, or WebSocket.
 | Simulcast / "True I/Q" | `internal/dsp/equalizer` (LMS + CMA blind equalizers) for inter-symbol-interference / multipath mitigation, plus `internal/dsp/diversity` (Selection + maximal-ratio combiners over a shared `Combiner` interface) for multi-receiver IQ combining |
 | Tone-out alerting | `internal/voice/toneout` runs Goertzel filters against each Voice device's PCM stream, matches QC-II two-tone-sequential sequences against operator-configured profiles with per-tone duration + cooldown, and publishes `tone.alert` events that fan out through SSE / WebSocket / gRPC |
 | Voice recording   | `Vocoder` plugin interface + `NullVocoder` baseline, 16-bit PCM mono WAV writer with patched-length trailers, per-call recorder writing `<system>/<tg>/<UTC>_src<id>.wav` plus an optional raw-frame sidecar so users can BYO decoder; EDACS ProVoice grants always force a `.raw` sidecar (the vocoder is patent + trade-secret encumbered) so researchers can decode out-of-band |
-| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history,devices,scanner}`); operator mutations gated behind `api.allow_mutations` (`GET /api/v1/mutations` capability probe; `POST /api/v1/calls/{serial}/end`; `PATCH /api/v1/talkgroups/{id}` accepts priority/lockout/scan; `POST /api/v1/retention/sweep`; `POST /api/v1/devices/{serial}/tone-reset`; `PATCH /api/v1/scanner` flips scan_mode at runtime; `POST /api/v1/scanner/hunt/{system}/{hold\|resume\|retune}` and `POST /api/v1/scanner/conventional/{hold\|resume\|{index}/dwell}` drive the police-scanner cockpit); Server-Sent Events stream (`/api/v1/events`) — per-device hot-plug surfaces as `sdr.attached` / `sdr.detached`, scanner progress as `cchunt.progress` / `cchunt.failed`; WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + `AudioService` over the same in-process state |
+| API               | `proto/*.proto` schemas under repo root; HTTP REST (`/api/v1/{health,version,systems,talkgroups,calls/active,calls/history,devices,scanner}`); operator mutations authenticated via `api.auth` (bearer token; loopback-bypass under `mode: auto`) (`GET /api/v1/mutations` capability probe; `POST /api/v1/calls/{serial}/end`; `PATCH /api/v1/talkgroups/{id}` accepts priority/lockout/scan; `POST /api/v1/retention/sweep`; `POST /api/v1/devices/{serial}/tone-reset`; `PATCH /api/v1/scanner` flips scan_mode at runtime; `POST /api/v1/scanner/hunt/{system}/{hold\|resume\|retune}` and `POST /api/v1/scanner/conventional/{hold\|resume\|{index}/dwell}` drive the police-scanner cockpit); Server-Sent Events stream (`/api/v1/events`) — per-device hot-plug surfaces as `sdr.attached` / `sdr.detached`, scanner progress as `cchunt.progress` / `cchunt.failed`; WebSocket bridge (`/api/v1/events/ws`); gRPC `SystemService` + `TalkgroupService` + `AudioService` over the same in-process state |
 | Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log subscribing to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs |
 | Observability     | Prometheus collector (events / calls / CC-locked / IQ-underrun / USB-reconnect / decode-error / SDR-attached / build-info series) exposed at `/metrics`; multi-stage `Dockerfile`; `docker-compose.yml` with RTL-SDR USB pass-through, healthcheck, and Prometheus scrape labels |
 | Daemon            | `cmd/gophertrunk run` composes everything above into a single supervised process with signal-driven shutdown; every component is opt-in via `config.yaml` |
@@ -214,7 +214,7 @@ The remaining gaps:
   and the conventional FM scanner appends a runtime "manual" channel
   and forces dwell on it. Same flow available over REST as `POST
   /api/v1/scanner/manual_tune` (and `DELETE /api/v1/scanner/manual_tune/{idx}`
-  to revoke), gated behind `api.allow_mutations`. To run manual tune
+  to revoke), gated behind `api.auth` (see [API authentication](#api-authentication)). To run manual tune
   without any static `scanner.conventional` entries, set
   `scanner.manual_tune_enabled: true` in config — the daemon then
   constructs the conventional scanner against the last Voice SDR
@@ -236,8 +236,8 @@ The remaining gaps:
   toggled live: the TUI's Scanner panel binds `+` / `-` for volume
   (5% step), `M` for mute, and `R` for record on/off; the same knobs
   are exposed as `GET` / `PATCH /api/v1/audio` for remote clients
-  (PATCH gated by `api.allow_mutations` like every other write
-  endpoint). The recorder gate stops new WAVs from landing without
+  (PATCH gated by `api.auth` like every other write endpoint;
+  see [API authentication](#api-authentication)). The recorder gate stops new WAVs from landing without
   truncating in-flight sessions, matching scanner muscle memory.
   Disabled by default; headless servers stay silent and continue to
   record WAVs identically to before. New CLI: `gophertrunk audio
@@ -1965,10 +1965,87 @@ Daemon · Storage · Audio · Recording · Tones · API · Vocoders · SDR
 
 For mutation actions (end-call; set talkgroup priority / lockout /
 scan; retention-sweep; tone-detector reset; scanner cockpit
-hold/resume/retune/dwell + scan_mode flip) start the daemon with
-`api.allow_mutations: true` and the TUI with `--write`. Both ends
-gate independently because the HTTP API has no authentication.
-See [`docs/tui.md`](docs/tui.md) for the full reference.
+hold/resume/retune/dwell + scan_mode flip) the HTTP API uses
+bearer-token authentication (`api.auth.mode`). The default `auto`
+mode bypasses auth on loopback binds (`127.0.0.1` / `::1`) — peer-
+cred via kernel-enforced reachability is a reasonable trust proxy
+for single-host operator boxes — and requires a `Authorization:
+Bearer <token>` header on every mutation request when the listener
+binds to a public interface. See the [API authentication](#api-authentication)
+section below; `docs/tui.md` documents the matching `--write`
+TUI flag.
+
+## API authentication
+
+The HTTP API's mutation endpoints (every write route: end-call,
+talkgroup priority/lockout/scan, retention sweep, tone-detector
+reset, scanner cockpit, audio cockpit, manual tune) authenticate
+via bearer tokens. Configure under `api.auth` in `config.yaml`:
+
+```yaml
+api:
+  http_addr: "127.0.0.1:8080"
+  auth:
+    mode: "auto"                # auto | required | disabled
+    # token: "inline-token"     # discouraged; use token_file
+    token_file: "/etc/gophertrunk/api-token"
+    trusted_networks:
+      - "10.0.0.0/8"
+```
+
+**Policy modes:**
+
+| Mode | Behaviour |
+| --- | --- |
+| `auto` (default) | Require a token on non-loopback binds; bypass on loopback (`127.0.0.1` / `::1`). Reasonable for single-host operator boxes — kernel-enforced reachability is a peer-cred proxy. The daemon refuses to start in `auto` mode on a public bind without a configured token. |
+| `required` | Every mutation request must carry a valid Bearer token, even from loopback. Use when the daemon shares a host with untrusted users. |
+| `disabled` | Wide-open mutations, no auth. Equivalent to the legacy `allow_mutations: true` behaviour. The daemon logs a warning at startup. |
+
+**Token storage.** `token_file` is preferred — the secret stays out
+of `config.yaml`, and the daemon re-reads the file on every request
+so operators can rotate without a restart. Inline `token` is
+supported for ephemeral / test setups.
+
+**Trusted networks.** A CIDR allowlist of source addresses that
+bypass the token check under `auto` mode. Loopback prefixes are
+implicit; list private subnets here if the daemon binds to a LAN
+interface and you trust everything on that segment. The middleware
+reads `RemoteAddr` only — `X-Forwarded-For` is intentionally
+ignored so the bypass isn't forgeable by a hostile upstream proxy.
+
+**Header format.** Standard RFC 6750:
+
+```
+Authorization: Bearer <token>
+```
+
+The token is compared with `crypto/subtle.ConstantTimeCompare`.
+Mutation requests without a valid token return 401; the body carries
+the same `{"error":"..."}` envelope every other 4xx response uses.
+
+**Capability probe.** `GET /api/v1/mutations` is always open and
+reports the daemon's policy plus whether the current request would
+be accepted:
+
+```json
+{
+  "auth_mode": "auto",
+  "can_mutate": true,
+  "allow_mutations": true,
+  "engine_writable": true,
+  "retention_writable": true,
+  "tones_writable": false
+}
+```
+
+`allow_mutations` is the legacy alias of `can_mutate`; new clients
+should prefer `can_mutate`.
+
+**Migration from `allow_mutations: true`.** The legacy flag is still
+recognised: setting it to `true` logs a deprecation warning at
+startup and maps to `auth.mode: disabled` so existing wide-open
+deployments keep working. Migrate to explicit `auth.mode` at your
+next config edit.
 
 ## FEC opt-outs
 

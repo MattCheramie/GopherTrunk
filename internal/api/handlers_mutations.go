@@ -9,15 +9,24 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// handleMutationStatus reports whether the daemon was started with
-// mutations enabled. Always returns 200 — clients use this to
-// light up write-side keybindings without having to probe for 403s.
-func (s *Server) handleMutationStatus(w http.ResponseWriter, _ *http.Request) {
+// handleMutationStatus reports the daemon's mutation policy and
+// whether the current request would be accepted. Always returns 200;
+// clients use can_mutate to light up write-side keybindings without
+// having to probe a real endpoint for 401 / 403.
+//
+//   auth_mode      — "auto" | "required" | "disabled"
+//   can_mutate     — true when the current request would pass auth
+//   allow_mutations— legacy alias for can_mutate (deprecated)
+//   engine_writable / retention_writable / tones_writable — wiring
+func (s *Server) handleMutationStatus(w http.ResponseWriter, r *http.Request) {
+	canMutate := s.auth.canMutate(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"allow_mutations":  s.allowMutations,
-		"engine_writable":  s.mutator != nil,
+		"auth_mode":          s.auth.mode.String(),
+		"can_mutate":         canMutate,
+		"allow_mutations":    canMutate, // legacy alias
+		"engine_writable":    s.mutator != nil,
 		"retention_writable": s.retention != nil,
-		"tones_writable":   s.tones != nil,
+		"tones_writable":     s.tones != nil,
 	})
 }
 

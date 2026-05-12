@@ -9,10 +9,42 @@ log:
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
   grpc_addr: "127.0.0.1:50051"  # gRPC
-  # Off by default. Set true to expose the operator mutation
-  # endpoints (end call, set talkgroup priority/lockout, retention
-  # sweep, tone-out detector reset). The HTTP API has no auth, so
-  # only enable when the listener is bound to a trusted interface.
+
+  # Bearer-token authentication on the mutation endpoints (end call,
+  # talkgroup priority/lockout, retention sweep, tone-out detector
+  # reset, scanner cockpit, audio cockpit).
+  #
+  # mode:
+  #   auto      — (default) require a token on non-loopback binds;
+  #               bypass the check when bound to 127.0.0.1 / ::1
+  #               (peer-cred via kernel-enforced reachability is a
+  #               reasonable trust proxy on a single-host operator
+  #               box). Recommended for most deployments.
+  #   required  — require a token on every mutation, even from
+  #               loopback. Recommended when the daemon shares a
+  #               host with untrusted users.
+  #   disabled  — wide-open mutations, no auth. Equivalent to the
+  #               legacy `allow_mutations: true` behaviour. The
+  #               daemon logs a warning at startup.
+  #
+  # token_file is preferred over inline token so the secret doesn't
+  # live in config.yaml. The daemon re-reads it on every request so
+  # operators can rotate without a restart.
+  #
+  # trusted_networks is a CIDR allowlist that bypasses the token
+  # check under `auto` mode. Loopback (127.0.0.1/32, ::1/128) is
+  # implicitly trusted under `auto` and doesn't need to be listed.
+  auth:
+    mode: "auto"
+    # token: "inline-token-here"   # discouraged; use token_file
+    # token_file: "/etc/gophertrunk/api-token"
+    # trusted_networks:
+    #   - "10.0.0.0/8"
+    #   - "192.168.0.0/16"
+
+  # Legacy gate. Setting this to true logs a deprecation warning and
+  # maps to `auth.mode: disabled` (mutations wide open). Prefer
+  # `auth.mode` for new deployments.
   allow_mutations: false
 
 metrics:
