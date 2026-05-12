@@ -170,6 +170,7 @@ type ConvChannelStatusDTO struct {
 	FrequencyHz uint32    `json:"frequency_hz"`
 	Mode        string    `json:"mode"`
 	Active      bool      `json:"active"`
+	LockedOut   bool      `json:"locked_out,omitempty"`
 	LastBreakAt time.Time `json:"last_break_at,omitempty"`
 }
 

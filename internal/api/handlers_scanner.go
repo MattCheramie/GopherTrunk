@@ -127,6 +127,54 @@ func (s *Server) handleConvDwell(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "index": idx})
 }
 
+// handleConvLockout flips the per-channel lockout flag on. Locked-
+// out channels are skipped by the scanner's pickNextChannel until
+// the operator unlocks them via handleConvUnlockout.
+//
+//	POST /api/v1/scanner/conventional/{index}/lockout
+//
+// Responses:
+//
+//	200 {"ok":true,"index":N,"locked_out":true}
+//	404 if the channel index is out of range
+//	503 if the scanner cockpit isn't wired
+func (s *Server) handleConvLockout(w http.ResponseWriter, r *http.Request) {
+	s.convLockoutOp(w, r, s.scanner.LockoutConventional, true)
+}
+
+// handleConvUnlockout flips the per-channel lockout flag off. Same
+// shape as handleConvLockout.
+//
+//	POST /api/v1/scanner/conventional/{index}/unlockout
+func (s *Server) handleConvUnlockout(w http.ResponseWriter, r *http.Request) {
+	s.convLockoutOp(w, r, s.scanner.UnlockoutConventional, false)
+}
+
+// convLockoutOp is the shared mechanics for both lockout sides.
+// Factors out the index parsing + 404/503 logic so the two
+// handlers stay one-liners.
+func (s *Server) convLockoutOp(w http.ResponseWriter, r *http.Request, op func(int) bool, newState bool) {
+	if s.scanner == nil {
+		writeError(w, http.StatusServiceUnavailable, "scanner not wired")
+		return
+	}
+	idxStr := r.PathValue("index")
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil || idx < 0 {
+		writeError(w, http.StatusBadRequest, "invalid index")
+		return
+	}
+	if !op(idx) {
+		writeError(w, http.StatusNotFound, "channel index out of range")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"index":      idx,
+		"locked_out": newState,
+	})
+}
+
 // handleScannerManualTune adds a VFO-style temporary channel to the
 // conventional scanner and forces dwell on it. Mirrors the muscle
 // memory of a traditional scanner's "FREQ" / "MAN" / "TUNE" key.

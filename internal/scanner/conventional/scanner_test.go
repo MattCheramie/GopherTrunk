@@ -126,6 +126,129 @@ func loudChunk(n int) []complex64 {
 	return out
 }
 
+// TestConvScannerLockoutSkipsChannel confirms LockoutChannel(idx)
+// removes the channel from the scan rotation and Snapshot reports
+// LockedOut=true. The scanner should tune only the two non-locked
+// channels during the test window.
+func TestConvScannerLockoutSkipsChannel(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &fakeIQ{chunks: map[uint32][][]complex64{}, tuner: tuner}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-LO",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 100_000_000, SquelchDbFS: -10},
+			{Label: "B-LOCKED", FrequencyHz: 200_000_000, SquelchDbFS: -10},
+			{Label: "C", FrequencyHz: 300_000_000, SquelchDbFS: -10},
+		},
+		MinDwellPerChannel: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.LockoutChannel(1) {
+		t.Fatal("LockoutChannel returned false on a valid index")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	// Snapshot should reflect the lockout.
+	snap := s.Snapshot()
+	if !snap.Channels[1].LockedOut {
+		t.Errorf("Snapshot.Channels[1].LockedOut = false, want true")
+	}
+	if snap.Channels[0].LockedOut || snap.Channels[2].LockedOut {
+		t.Errorf("non-locked channels reported LockedOut=true")
+	}
+
+	// The locked channel's frequency must not appear in the tune list.
+	for _, hz := range tuner.tuned() {
+		if hz == 200_000_000 {
+			t.Errorf("scanner tuned the locked-out channel (200 MHz)")
+		}
+	}
+
+	// Unlock and confirm the flag clears.
+	if !s.UnlockoutChannel(1) {
+		t.Fatal("UnlockoutChannel returned false on a valid index")
+	}
+	if s.Snapshot().Channels[1].LockedOut {
+		t.Error("Snapshot.Channels[1].LockedOut still true after UnlockoutChannel")
+	}
+}
+
+// TestConvScannerLockoutAllIdles confirms the Run loop idles when
+// every channel is locked out (rather than spinning or panicking).
+// pickNextChannel should report ok=false; the loop sleeps for a
+// short tick and re-checks.
+func TestConvScannerLockoutAllIdles(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &fakeIQ{chunks: map[uint32][][]complex64{}, tuner: tuner}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-ALL-LO",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 100_000_000, SquelchDbFS: -10},
+			{Label: "B", FrequencyHz: 200_000_000, SquelchDbFS: -10},
+		},
+		MinDwellPerChannel: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.LockoutChannel(0)
+	s.LockoutChannel(1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	// With every channel locked out the scanner shouldn't have
+	// tuned anything.
+	if len(tuner.tuned()) != 0 {
+		t.Errorf("scanner tuned despite every channel locked out: %v", tuner.tuned())
+	}
+}
+
+// TestConvScannerLockoutOutOfRangeReturnsFalse pins the
+// out-of-range return contract — the caller (HTTP handler, TUI
+// keybind) uses false to surface a 404 / toast.
+func TestConvScannerLockoutOutOfRangeReturnsFalse(t *testing.T) {
+	tuner := &fakeTuner{}
+	iq := &fakeIQ{chunks: map[uint32][][]complex64{}, tuner: tuner}
+	eng := &fakeEngine{}
+	s, err := New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-OOR",
+		SystemName:   "test",
+		Channels: []Channel{
+			{Label: "A", FrequencyHz: 100_000_000, SquelchDbFS: -10},
+		},
+		MinDwellPerChannel: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.LockoutChannel(-1) {
+		t.Error("LockoutChannel(-1) should return false")
+	}
+	if s.LockoutChannel(99) {
+		t.Error("LockoutChannel(99) should return false")
+	}
+	if s.UnlockoutChannel(-1) {
+		t.Error("UnlockoutChannel(-1) should return false")
+	}
+	if s.UnlockoutChannel(99) {
+		t.Error("UnlockoutChannel(99) should return false")
+	}
+}
+
 func TestConvScannerHopsThroughEmptyChannels(t *testing.T) {
 	tuner := &fakeTuner{}
 	iq := &fakeIQ{chunks: map[uint32][][]complex64{}, tuner: tuner}

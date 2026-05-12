@@ -492,6 +492,16 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			return nil
 		}
 		return cmdScannerConvDwell(m.cli, r.ScannerConv.Index, r.Label)
+	case state.WriteKindScannerConvLockout:
+		if r.ScannerConv == nil {
+			return nil
+		}
+		return cmdScannerConvLockout(m.cli, r.ScannerConv.Index, r.Label)
+	case state.WriteKindScannerConvUnlockout:
+		if r.ScannerConv == nil {
+			return nil
+		}
+		return cmdScannerConvUnlockout(m.cli, r.ScannerConv.Index, r.Label)
 	case state.WriteKindAudio:
 		if r.Audio == nil {
 			return nil

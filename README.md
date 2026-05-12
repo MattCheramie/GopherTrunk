@@ -277,6 +277,18 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Conventional channel runtime lockout.** Press `L` on the TUI's
+  Scanner panel (or `POST /api/v1/scanner/conventional/{idx}/lockout`)
+  to skip a conventional FM channel during scan, matching the
+  muscle memory of a Uniden / Whistler lockout button. Skipped
+  channels show a `✗` marker in the channel list and are omitted
+  from `pickNextChannel` rotation; pressing `L` again (or POSTing
+  `unlockout`) restores them. If the locked-out channel is
+  currently dwelling, the synthetic call ends immediately
+  (`EndReasonLockout`) so the operator's intent takes effect
+  within one IQ chunk. Lockouts are runtime-only — they don't
+  persist across daemon restarts, since config is the right
+  place to permanently exclude a channel.
 - **macOS RTL-SDR serial / manufacturer / product strings.** The
   pure-Go USB enumerator's Darwin backend
   (`internal/sdr/rtlsdr/usb/usb_darwin.go`) now reads the IORegistry

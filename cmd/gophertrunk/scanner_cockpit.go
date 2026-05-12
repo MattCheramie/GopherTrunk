@@ -61,6 +61,7 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 				FrequencyHz: ch.FrequencyHz,
 				Mode:        ch.Mode,
 				Active:      ch.Active,
+				LockedOut:   ch.LockedOut,
 				LastBreakAt: ch.LastBreakAt,
 			})
 		}
@@ -137,6 +138,18 @@ func (c scannerCockpit) DwellConventional(index int) bool {
 		return false
 	}
 	return c.conv.DwellOn(index)
+}
+func (c scannerCockpit) LockoutConventional(index int) bool {
+	if c.conv == nil {
+		return false
+	}
+	return c.conv.LockoutChannel(index)
+}
+func (c scannerCockpit) UnlockoutConventional(index int) bool {
+	if c.conv == nil {
+		return false
+	}
+	return c.conv.UnlockoutChannel(index)
 }
 
 // ManualTune adds a VFO-style temporary channel and forces dwell on

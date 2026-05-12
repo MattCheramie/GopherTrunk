@@ -109,6 +109,24 @@ func (f *fakeCockpit) DwellConventional(i int) bool {
 	f.mu.Unlock()
 	return true
 }
+func (f *fakeCockpit) LockoutConventional(i int) bool {
+	if f.dwellRange == 0 {
+		return false
+	}
+	if f.dwellRange > 0 && (i < 0 || i >= f.dwellRange) {
+		return false
+	}
+	return true
+}
+func (f *fakeCockpit) UnlockoutConventional(i int) bool {
+	if f.dwellRange == 0 {
+		return false
+	}
+	if f.dwellRange > 0 && (i < 0 || i >= f.dwellRange) {
+		return false
+	}
+	return true
+}
 func (f *fakeCockpit) ManualTune(req ManualTuneRequest) (int, bool) {
 	if f.convNotConfigured {
 		return 0, false

@@ -113,6 +113,21 @@ func (c *Client) ScannerConvDwell(ctx context.Context, index int) error {
 		nil, nil)
 }
 
+// ScannerConvLockout / ScannerConvUnlockout toggle the per-channel
+// lockout the scanner respects when picking the next channel to
+// dwell on. The flag is runtime-only; it doesn't persist across
+// daemon restarts.
+func (c *Client) ScannerConvLockout(ctx context.Context, index int) error {
+	return c.do(ctx, http.MethodPost,
+		fmt.Sprintf("/api/v1/scanner/conventional/%d/lockout", index),
+		nil, nil)
+}
+func (c *Client) ScannerConvUnlockout(ctx context.Context, index int) error {
+	return c.do(ctx, http.MethodPost,
+		fmt.Sprintf("/api/v1/scanner/conventional/%d/unlockout", index),
+		nil, nil)
+}
+
 // AudioStatusDTO mirrors api.AudioStatusDTO for the wire layer.
 type AudioStatusDTO struct {
 	BackendEnabled   bool    `json:"backend_enabled"`
