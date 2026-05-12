@@ -1,3 +1,13 @@
+// Backend factory wiring for non-Linux platforms. Linux runs through
+// alsa_linux.go which talks to libasound2.so.2 directly via purego
+// (no cgo, no build-time headers required). macOS / Windows / others
+// keep using github.com/ebitengine/oto/v3 — oto routes to CoreAudio
+// on Darwin and WASAPI on Windows, both via purego, so neither
+// platform needs a system audio dev-headers package at build time
+// either.
+
+//go:build !linux
+
 package player
 
 import (
@@ -219,10 +229,3 @@ func waitWithTimeout(c *sync.Cond, d time.Duration) {
 	c.Wait()
 }
 
-// ListDevices is a placeholder enumeration. oto/v3 does not expose
-// a device picker — it routes to whatever the OS audio service
-// considers the default sink. We surface that as a single entry
-// so `gophertrunk audio list` still produces something useful.
-func ListDevices() []string {
-	return []string{"default (system output)"}
-}

@@ -213,6 +213,51 @@ func TestComposerStopsChainOnCallEnd(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return len(c.ActiveChains()) == 0 })
 }
 
+// TestComposerTailFadeOnCallEnd verifies the 10ms linear fade-out
+// that smooths the squelch-close click: the recorder's last few
+// samples should ramp from the previous non-zero value down to (or
+// near) zero rather than cutting abruptly.
+func TestComposerTailFadeOnCallEnd(t *testing.T) {
+	src := newFakeSource()
+	_, bus, sink, _, teardown := mkComposer(t, src)
+	defer teardown()
+
+	publishStartFM(bus, "VOICE-1")
+	waitFor(t, time.Second, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return len(src.chs) > 0
+	})
+
+	// Push enough IQ to produce PCM, then end the call.
+	chunk := make([]complex64, 4096)
+	for i := range chunk {
+		chunk[i] = complex(0.5, 0.5)
+	}
+	src.SendIQ(chunk)
+	waitFor(t, time.Second, func() bool { return sink.total("VOICE-1") > 0 })
+
+	publishEnd(bus, "VOICE-1")
+	// Give the chain time to emit the fade-out tail before we read.
+	waitFor(t, time.Second, func() bool {
+		// 10 ms at 8 kHz = 80 samples appended after the last
+		// IQ-driven sample.
+		return sink.total("VOICE-1") > 0
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	sink.mu.Lock()
+	pcm := sink.pcm["VOICE-1"]
+	sink.mu.Unlock()
+	if len(pcm) < 80 {
+		t.Fatalf("not enough PCM to inspect tail: %d", len(pcm))
+	}
+	// Final sample must be 0 (linear ramp ends at zero).
+	if pcm[len(pcm)-1] != 0 {
+		t.Errorf("tail final sample = %d, want 0", pcm[len(pcm)-1])
+	}
+}
+
 func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	src := newFakeSource()
 	c, bus, sink, _, teardown := mkComposer(t, src)

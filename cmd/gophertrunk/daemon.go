@@ -376,6 +376,11 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 					SquelchDbFS: ch.SquelchDbFS,
 					Hangtime:    msToDuration(ch.HangtimeMs, 1500*time.Millisecond),
 					Priority:    ch.Priority,
+					Tone: conventional.ToneConfig{
+						Mode:    ch.Tone.Mode,
+						CTCSSHz: ch.Tone.CTCSSHz,
+						DCSCode: ch.Tone.DCSCode,
+					},
 				})
 			}
 			var convRec conventional.Recorder = d.recorder
@@ -391,6 +396,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 				DeviceSerial: convEntry.Info.Serial,
 				SystemName:   "scanner",
 				Channels:     channels,
+				SampleRateHz: float64(cfg.SDR.SampleRate),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("daemon: conv scanner: %w", err)

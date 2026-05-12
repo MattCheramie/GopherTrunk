@@ -156,6 +156,33 @@ The remaining gaps:
   unit tests; calibration against a captured YSF transmission's
   exact interleaver / puncture schedule lands once a real-air capture
   is available.
+- **CTCSS sub-audible squelch + tail-fade on call end.** The
+  conventional FM scanner now optionally gates squelch on a CTCSS
+  tone in addition to IQ power, so adjacent-system traffic on the
+  same frequency doesn't trigger a false dwell. Per-channel YAML:
+  ```yaml
+  conventional:
+    - label: "Sheriff Repeater"
+      frequency_hz: 155895000
+      tone:
+        mode: ctcss
+        ctcss_hz: 100.0
+  ```
+  The detector is FM-discriminator → single-pole IIR low-pass at
+  500 Hz → Goertzel at the configured tone, reusing the existing
+  `internal/voice/toneout` Goertzel primitive. Hangtime triggers on
+  either condition (carrier OR tone) going false so a transmitter
+  dropping CTCSS hangs up just like a true carrier drop. The
+  Goertzel block is ~200 ms (5 Hz resolution) which is comfortable
+  for distinguishing the 38-code EIA list; the scanner auto-bumps
+  the per-channel min dwell to 250 ms whenever any channel has a
+  tone gate. DCS (Digital-Coded Squelch) parses + validates in YAML
+  so deployments can pre-stage configs, but the bit-level Golay
+  decoder is a tracked follow-up — DCS-gated channels run with
+  power-only squelch until then. The composer now also emits a
+  10 ms linear fade-out tail on call end (`internal/voice/composer`)
+  so the audio sink doesn't hear an abrupt squelch-close click on
+  the host speakers.
 - **Manual VFO tune from the TUI / API.** The Scanner panel now binds
   `f` to a bubbles/textinput overlay: type a frequency in MHz, Enter,
   and the conventional FM scanner appends a runtime "manual" channel
@@ -170,13 +197,16 @@ The remaining gaps:
   `AddTemporaryChannel` / `RemoveTemporaryChannel` so the same VFO
   surface is callable from any embedder.
 - **Live audio playback to speakers + TUI / API audio cockpit.** The
-  daemon ships a `voice.Player` sink (`internal/voice/player`) wrapping
-  github.com/ebitengine/oto/v3 (ALSA on Linux, CoreAudio on macOS,
-  WASAPI on Windows; libasound2-dev required at build time on Linux).
-  When `audio.enabled: true` is set in config the per-call composer
-  and the conventional FM scanner fan PCM into the player alongside
-  the existing WAV recorder, so calls play out the host's default
-  output device in real time. Volume / mute / recording can be
+  daemon ships a `voice.Player` sink (`internal/voice/player`) that
+  routes decoded PCM to the host's default audio output. On Linux it
+  talks to `libasound2.so.2` directly via `github.com/ebitengine/purego`
+  — no cgo, no `libasound2-dev` at build time, no pkg-config; the
+  runtime library ships on every standard Linux image. macOS / Windows
+  use `github.com/ebitengine/oto/v3` (CoreAudio + WASAPI, also via
+  purego). When `audio.enabled: true` is set in config the per-call
+  composer and the conventional FM scanner fan PCM into the player
+  alongside the existing WAV recorder, so calls play out the host's
+  default output device in real time. Volume / mute / recording can be
   toggled live: the TUI's Scanner panel binds `+` / `-` for volume
   (5% step), `M` for mute, and `R` for record on/off; the same knobs
   are exposed as `GET` / `PATCH /api/v1/audio` for remote clients
@@ -185,8 +215,9 @@ The remaining gaps:
   truncating in-flight sessions, matching scanner muscle memory.
   Disabled by default; headless servers stay silent and continue to
   record WAVs identically to before. New CLI: `gophertrunk audio
-  list` mirrors `sdr list`. Drop-the-libasound2-dev-build-dep
-  follow-up tracked under Workstream F of the active plan.
+  list` mirrors `sdr list`. If `libasound2.so.2` isn't reachable
+  (stripped-down container, etc.) the backend logs once and falls
+  back to the null player so the rest of the daemon keeps running.
 
 The Go interfaces and event payloads carry every protocol already;
 the remaining decoder wiring is the load-bearing follow-up.

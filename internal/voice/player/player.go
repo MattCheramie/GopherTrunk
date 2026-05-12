@@ -292,6 +292,17 @@ func (p *Player) run() {
 	}
 }
 
+// ListDevices returns the audio outputs the linked backend can route
+// to. Both the oto-based backend (macOS / Windows) and the ALSA-based
+// backend (Linux) route to the OS default sink — neither exposes a
+// device picker today — so the listing is always one entry. Kept on
+// the package surface so `gophertrunk audio list` has something to
+// print and future backends can plug in real enumeration without
+// changing the CLI shape.
+func ListDevices() []string {
+	return []string{"default (system output)"}
+}
+
 // String returns a human-readable description of the player state,
 // suitable for logging and the TUI status strip.
 func (p *Player) String() string {
