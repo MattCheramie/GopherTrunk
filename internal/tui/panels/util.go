@@ -137,6 +137,16 @@ func tableRowFromLocalY(localY, rowCount int) int {
 	return idx
 }
 
+// applyThemeIfChanged re-applies tableStyles() to the supplied table
+// when msg is a ThemeChangedMsg. Table panels call this at the top
+// of Update so a runtime palette swap (Ctrl+T) takes effect on the
+// next render without the operator restarting the TUI.
+func applyThemeIfChanged(msg tea.Msg, tbl *table.Model) {
+	if _, ok := msg.(ThemeChangedMsg); ok {
+		tbl.SetStyles(tableStyles())
+	}
+}
+
 // handleTableMouse is the canonical MouseAware implementation for the
 // bubbles/table-backed panels. Translates a press-left into a row
 // cursor and forwards wheel ticks one-row-at-a-time. chromeRows is

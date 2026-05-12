@@ -38,6 +38,7 @@ func (p *ActivePanel) selectedCall(s *state.SharedState) (client.ActiveCallDTO, 
 }
 
 func (p *ActivePanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	if km, ok := msg.(tea.KeyMsg); ok {
 		if key.Matches(km, activeEndKey) {
 			ac, found := p.selectedCall(s)

@@ -31,6 +31,7 @@ func (SystemsPanel) Title() string       { return "Systems" }
 func (SystemsPanel) Keys() []key.Binding { return nil }
 
 func (p *SystemsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	h := hashRows(s.Systems, func(sys client.SystemDTO) string {
 		return fmt.Sprintf("%s|%s|%v|%d|%d|%d|%d",
 			sys.Name, sys.Protocol, sys.ControlChannels,

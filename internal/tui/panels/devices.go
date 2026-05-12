@@ -33,6 +33,7 @@ func (DevicesPanel) Title() string       { return "Devices" }
 func (DevicesPanel) Keys() []key.Binding { return nil }
 
 func (p *DevicesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	h := hashRows(s.Devices, func(d client.SDRStatus) string {
 		return fmt.Sprintf("%s|%s|%s|%s|%v|%d|%d|%v|%v",
 			d.Serial, d.Driver, d.TunerName, d.Role,

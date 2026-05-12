@@ -17,6 +17,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/panels"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/state"
+	"github.com/MattCheramie/GopherTrunk/internal/tui/theme"
 )
 
 // Options controls the TUI's startup behaviour.
@@ -186,6 +187,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Palette):
 			m.openPalette()
 			return m, nil
+		case key.Matches(msg, m.keys.ToggleTheme):
+			return m, m.toggleTheme()
 		case key.Matches(msg, m.keys.NextPanel):
 			m.active = (m.active + 1) % state.PanelCount
 			return m, nil
@@ -527,6 +530,29 @@ func (m *Model) renderStatusBar() string {
 func (m *Model) toast(s string) {
 	m.shared.Toast = s
 	m.toastUntil = time.Now().Add(4 * time.Second)
+}
+
+// toggleTheme cycles the active palette between the dark and
+// monochrome presets. The root model's cached styles are rebuilt
+// in place, and panels.ThemeChangedMsg is broadcast so every
+// bubbles/table-backed panel re-applies its cached table styles
+// on the next Update. Surfaces a toast so the operator sees the
+// switch is real even on terminals where the palette delta is
+// subtle (e.g. monochrome where the renderer also strips ANSI).
+func (m *Model) toggleTheme() tea.Cmd {
+	current := theme.Theme()
+	var next theme.Palette
+	label := "monochrome"
+	if current.Accent == "" {
+		next = theme.DarkPalette()
+		label = "dark"
+	} else {
+		next = theme.MonochromePalette()
+	}
+	theme.Set(next)
+	m.styles = newStyles(false)
+	m.toast("theme: " + label)
+	return func() tea.Msg { return panels.ThemeChangedMsg{} }
 }
 
 // dispatchWrite turns a state.WriteRequest into the matching write

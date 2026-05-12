@@ -89,6 +89,7 @@ func (SettingsPanel) Keys() []key.Binding {
 }
 
 func (p *SettingsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	if km, ok := msg.(tea.KeyMsg); ok {
 		switch {
 		case key.Matches(km, settingsNextTab):

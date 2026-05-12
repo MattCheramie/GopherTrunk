@@ -63,6 +63,7 @@ func (p *HistoryPanel) ReloadRequested() bool {
 }
 
 func (p *HistoryPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	switch m := msg.(type) {
 	case tea.KeyMsg:
 		if key.Matches(m, historyReloadKey) {

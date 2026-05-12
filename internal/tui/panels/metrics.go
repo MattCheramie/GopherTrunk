@@ -49,6 +49,7 @@ var metricsSweepKey = key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "reten
 func (MetricsPanel) Keys() []key.Binding { return []key.Binding{metricsSweepKey} }
 
 func (p *MetricsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, metricsSweepKey) {
 		req := state.WriteRequest{
 			Confirm:        "Run a retention sweep now?",

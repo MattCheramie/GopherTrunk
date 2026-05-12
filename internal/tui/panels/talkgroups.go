@@ -126,6 +126,7 @@ func (p *TalkgroupsPanel) HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd {
 }
 
 func (p *TalkgroupsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	switch m := msg.(type) {
 	case tea.KeyMsg:
 		if p.editing {

@@ -209,7 +209,7 @@ func (m *Model) discoverActions() []paletteAction {
 		})
 	}
 
-	// 2) Help / quit.
+	// 2) Help / theme toggle / quit.
 	out = append(out, paletteAction{
 		ID:    "help",
 		Label: "Show keyboard reference",
@@ -218,6 +218,15 @@ func (m *Model) discoverActions() []paletteAction {
 		Run: func(mm *Model) tea.Cmd {
 			mm.help.ShowAll = true
 			return nil
+		},
+	})
+	out = append(out, paletteAction{
+		ID:    "theme:toggle",
+		Label: "Toggle theme (dark / monochrome)",
+		Kind:  "theme",
+		Hint:  "ctrl+t",
+		Run: func(mm *Model) tea.Cmd {
+			return mm.toggleTheme()
 		},
 	})
 	out = append(out, paletteAction{

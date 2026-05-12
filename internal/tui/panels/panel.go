@@ -40,3 +40,11 @@ type Revealer interface {
 type MouseAware interface {
 	HandleMouse(msg tea.MouseMsg, localY int) tea.Cmd
 }
+
+// ThemeChangedMsg is broadcast by the root model after a palette
+// swap. Panels that cache lipgloss styles (chiefly the
+// bubbles/table-backed ones, which call SetStyles in their
+// constructor) handle it by re-applying tableStyles() so the new
+// palette takes effect on the next render. Read-only panels that
+// fetch theme.Theme() on every View() can ignore it.
+type ThemeChangedMsg struct{}

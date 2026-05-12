@@ -44,6 +44,7 @@ func (p *TonesPanel) selectedDevice() (string, bool) {
 }
 
 func (p *TonesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
+	applyThemeIfChanged(msg, &p.tbl)
 	if km, ok := msg.(tea.KeyMsg); ok && key.Matches(km, toneResetKey) {
 		serial, ok := p.selectedDevice()
 		if !ok {
