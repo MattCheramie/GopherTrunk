@@ -130,12 +130,16 @@ func TestBuildDetector_CTCSSReturnsDetector(t *testing.T) {
 	}
 }
 
-func TestBuildDetector_DCSDefers(t *testing.T) {
-	// DCS detector is a follow-up — build should return nil so
-	// the scanner falls back to power-only squelch.
+func TestBuildDetector_DCSReturnsDetector(t *testing.T) {
 	d := buildDetector(ToneConfig{Mode: "dcs", DCSCode: "023"}, 48_000)
-	if d != nil {
-		t.Error("DCS detector should be nil until implemented")
+	if d == nil {
+		t.Fatal("expected detector for dcs/023")
+	}
+	// The dispatch should produce a DCSDetector specifically — assert
+	// the concrete type so a future refactor doesn't silently route
+	// DCS configs through the CTCSS detector.
+	if _, ok := d.(*DCSDetector); !ok {
+		t.Errorf("expected *DCSDetector, got %T", d)
 	}
 }
 

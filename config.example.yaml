@@ -99,7 +99,7 @@ scanner:
   #     tone:
   #       mode: ctcss        # ctcss | dcs | none
   #       ctcss_hz: 100.0    # required for ctcss
-  #       # dcs_code: "023"  # required for dcs (detector landing in a follow-up)
+  #       # dcs_code: "023"  # required for dcs (3-digit octal)
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;
 # WAV recording is unaffected and continues whether audio is on or off.

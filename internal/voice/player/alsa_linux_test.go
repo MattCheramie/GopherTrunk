@@ -19,8 +19,8 @@ func TestLoadALSA(t *testing.T) {
 	if sndPCMOpen == nil {
 		t.Error("sndPCMOpen function pointer should be bound after loadALSA")
 	}
-	if sndStrerror == nil {
-		t.Error("sndStrerror function pointer should be bound after loadALSA")
+	if sndPCMClose == nil {
+		t.Error("sndPCMClose function pointer should be bound after loadALSA")
 	}
 }
 
@@ -47,21 +47,15 @@ func TestNewALSABackend_HeadlessFallback(t *testing.T) {
 	}
 }
 
-// TestALSAErrorString verifies the error-message helper returns a
-// non-empty string even when the symbol resolver hasn't bound
-// snd_strerror. The fallback ("errno=N") is the safety net that
-// keeps log lines useful in degraded environments.
+// TestALSAErrorString verifies the error-message helper returns the
+// "errno=N" form for log lines. Kept simple — we don't translate
+// ALSA error codes to strings (would require a C-pointer →
+// unsafe.Pointer conversion that trips go vet's unsafeptr check),
+// but the numeric code is enough for operators to grep against
+// errno tables.
 func TestALSAErrorString(t *testing.T) {
-	// Force the fallback path by clearing the resolved symbol.
-	saved := sndStrerror
-	sndStrerror = nil
-	defer func() { sndStrerror = saved }()
-
 	got := alsaErrorString(-32) // -EPIPE on Linux
-	if got == "" {
-		t.Error("alsaErrorString returned empty string")
-	}
 	if got != "errno=-32" {
-		t.Errorf("alsaErrorString fallback = %q, want errno=-32", got)
+		t.Errorf("alsaErrorString = %q, want errno=-32", got)
 	}
 }

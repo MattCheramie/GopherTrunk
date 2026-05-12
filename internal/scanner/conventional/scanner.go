@@ -151,7 +151,7 @@ type Scanner struct {
 	// detectors parallels channels: detectors[i] is non-nil iff
 	// channels[i] has Tone gating configured. Built at New() and
 	// kept in sync by AddTemporaryChannel / RemoveTemporaryChannel.
-	detectors   []*CTCSSDetector
+	detectors   []toneDetector
 	cursor      int
 	state       State
 	held        bool
@@ -228,7 +228,7 @@ func New(opts Options) (*Scanner, error) {
 	if hasToneGate(channels) && opts.MinDwellPerChannel < 250*time.Millisecond {
 		opts.MinDwellPerChannel = 250 * time.Millisecond
 	}
-	detectors := make([]*CTCSSDetector, len(channels))
+	detectors := make([]toneDetector, len(channels))
 	for i, ch := range channels {
 		if d := buildDetector(ch.Tone, opts.SampleRateHz); d != nil {
 			detectors[i] = d
@@ -285,18 +285,44 @@ func hasToneGate(channels []Channel) bool {
 	return false
 }
 
-// buildDetector returns a CTCSS detector when tone gating is
-// configured for the channel and the sample rate is set. Returns
-// nil for ungated channels, DCS channels (detector deferred), or
-// when SampleHz is zero. The scanner treats nil as "no gating".
-func buildDetector(t ToneConfig, sampleHz float64) *CTCSSDetector {
-	if t.Mode != "ctcss" || sampleHz <= 0 {
+// toneDetector is the shared interface CTCSS / DCS detectors satisfy.
+// Lets the scanner store either one in a single field without losing
+// the typed Process / Reset signatures. Adding a new tone family
+// (e.g. selective five-call) reduces to adding a new implementation
+// and a new branch in buildDetector.
+type toneDetector interface {
+	// Process feeds one IQ chunk and returns the latest detection
+	// state. Implementations must be safe to call between Resets.
+	Process(iq []complex64) bool
+	// Present reports the most recent detection state without
+	// processing any new samples.
+	Present() bool
+	// Reset clears all internal state. The scanner calls this on
+	// every retune so leftover state from a previous channel
+	// doesn't bias the new dwell.
+	Reset()
+}
+
+// buildDetector returns a tone detector when gating is configured for
+// the channel and the sample rate is set. CTCSS routes to the
+// Goertzel-based CTCSSDetector; DCS routes to the Golay-based
+// DCSDetector. Returns nil for ungated channels or when SampleHz is
+// zero. The scanner treats nil as "no gating".
+func buildDetector(t ToneConfig, sampleHz float64) toneDetector {
+	if sampleHz <= 0 {
 		return nil
 	}
-	return NewCTCSSDetector(CTCSSConfig{
-		SampleHz: sampleHz,
-		TargetHz: t.CTCSSHz,
-	})
+	switch t.Mode {
+	case "ctcss":
+		if d := NewCTCSSDetector(CTCSSConfig{SampleHz: sampleHz, TargetHz: t.CTCSSHz}); d != nil {
+			return d
+		}
+	case "dcs":
+		if d := NewDCSDetector(DCSConfig{SampleHz: sampleHz, Code: t.DCSCode}); d != nil {
+			return d
+		}
+	}
+	return nil
 }
 
 // Run blocks until ctx cancels. Tunes, measures squelch, hands off
@@ -504,7 +530,7 @@ func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 // index, or nil if the channel has no tone gating configured. The
 // returned detector is owned by the scanner; callers must not
 // retain it across Run iterations.
-func (s *Scanner) detectorFor(idx int) *CTCSSDetector {
+func (s *Scanner) detectorFor(idx int) toneDetector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if idx < 0 || idx >= len(s.detectors) {

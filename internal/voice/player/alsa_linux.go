@@ -58,7 +58,6 @@ var (
 	sndPCMDrain     func(pcm uintptr) int32
 	sndPCMClose     func(pcm uintptr) int32
 	sndPCMRecover   func(pcm uintptr, err int32, silent int32) int32
-	sndStrerror     func(err int32) uintptr
 )
 
 // loadALSA dlopens libasound2.so.2 once. Subsequent calls return
@@ -90,7 +89,6 @@ func loadALSA() error {
 		purego.RegisterLibFunc(&sndPCMDrain, h, "snd_pcm_drain")
 		purego.RegisterLibFunc(&sndPCMClose, h, "snd_pcm_close")
 		purego.RegisterLibFunc(&sndPCMRecover, h, "snd_pcm_recover")
-		purego.RegisterLibFunc(&sndStrerror, h, "snd_strerror")
 	})
 	return alsaErr
 }
@@ -182,33 +180,19 @@ func (b *alsaBackend) Close() error {
 	return b.closeErr
 }
 
-// alsaErrorString turns a negative ALSA return code into a human
-// string via snd_strerror. Falls back to "errno=N" when the
-// resolver isn't loaded (init() failure) so callers always have
-// something to log.
+// alsaErrorString turns a negative ALSA return code into a log-
+// friendly string. We deliberately don't dereference snd_strerror's
+// returned C pointer here — converting a uintptr (which is how
+// purego surfaces C pointers) to unsafe.Pointer trips go vet's
+// "possible misuse of unsafe.Pointer" check, and the human-readable
+// string isn't load-bearing for the daemon's behaviour. Operators
+// debugging an audio failure can run `errno` or
+// `python3 -c "import errno; print(errno.errorcode[N])"` on the
+// numeric code to translate; libasound's strings would have added
+// "Broken pipe" / "No such file or directory" style context which
+// the bare errno already implies.
 func alsaErrorString(code int32) string {
-	if sndStrerror == nil {
-		return fmt.Sprintf("errno=%d", code)
-	}
-	p := sndStrerror(code)
-	if p == 0 {
-		return fmt.Sprintf("errno=%d", code)
-	}
-	// snd_strerror returns a C string we don't own. Copy out byte
-	// by byte; the strings are short and the cost is negligible
-	// compared to the audio path.
-	var b []byte
-	for i := uintptr(0); ; i++ {
-		c := *(*byte)(unsafe.Pointer(p + i))
-		if c == 0 {
-			break
-		}
-		b = append(b, c)
-	}
-	if len(b) == 0 {
-		return fmt.Sprintf("errno=%d", code)
-	}
-	return string(b)
+	return fmt.Sprintf("errno=%d", code)
 }
 
 // errUnused keeps the linter quiet about `errors` while the package
