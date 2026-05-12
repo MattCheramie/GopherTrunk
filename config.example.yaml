@@ -177,11 +177,34 @@ audio:
   muted: false
 
 # tone_out fires events.KindToneAlert when the configured paging tones
-# are detected on a Voice device's PCM stream. Empty profiles disable
-# the detector. Two-tone sequential (Quick Call II) is the most common
-# US fire/EMS pattern; supply the A-tone and B-tone in order.
+# are detected on a Voice device's PCM stream. An empty `profiles`
+# list disables the detector (the daemon default).
+#
+# Two-tone sequential (Motorola Quick Call II) is the most common US
+# fire/EMS pattern: an A-tone followed by a B-tone, each with a
+# typical Quick Call II frequency from the Motorola 1000-1400 Hz
+# group. Operators verify tone pairs against their agency's
+# dispatch console — the example below is illustrative only.
+#
+# Per-profile schema (see internal/voice/toneout/profile.go for the
+# Validate() rules):
+#   name                 — required, unique within profiles list
+#   alpha_tag            — human-readable label (UI / webhook / log)
+#   tones                — ordered tone list, ≥ 1 entry
+#     frequency_hz       — target tone (Hz)
+#     min_duration       — required dwell before counting
+#     max_duration       — caps the on-time; 0 = no upper bound
+#   tolerance_hz         — frequency drift tolerance (default 15 Hz)
+#   magnitude_threshold  — Goertzel-magnitude floor (default 0.05)
+#   max_gap              — silence allowed between tones (default 200ms)
+#   cooldown             — re-fire suppression window (default 30s)
+#   system               — restrict to one trunked system (empty = all)
+#   group_id             — restrict to one talkgroup (0 = all)
 tone_out:
   profiles:
+    # Quick Call II two-tone sequential — the canonical US fire/EMS
+    # paging pattern. Replace the frequencies with your agency's
+    # actual A/B tones.
     - name: "station-1-engine"
       alpha_tag: "Station 1 Engine"
       cooldown: "30s"
@@ -192,3 +215,54 @@ tone_out:
         - frequency_hz: 1297.4
           min_duration: "2.5s"
           max_duration: "5s"
+
+    # ---------------------------------------------------------------
+    # Additional example profiles (commented out — uncomment and
+    # adjust per your agency). Multiple profiles can coexist; the
+    # detector fires the first one whose tone sequence matches.
+    # ---------------------------------------------------------------
+    #
+    # # Single-tone supervisory page (older simplex pattern). Useful
+    # # when an agency still uses a one-shot dispatcher tone instead
+    # # of a sequential A/B pair.
+    # - name: "supervisor-recall"
+    #   alpha_tag: "Supervisor Recall"
+    #   cooldown: "60s"
+    #   tones:
+    #     - frequency_hz: 1500.0
+    #       min_duration: "500ms"
+    #       max_duration: "3s"
+    #
+    # # Two-tone with system + talkgroup scoping. Use when the same
+    # # tone pair appears on multiple systems and you only want the
+    # # alert to fire for one talkgroup on one named system.
+    # - name: "metro-fire-dispatch"
+    #   alpha_tag: "Metro Fire Dispatch"
+    #   system: "Example-P25"     # matches trunking.systems[].name
+    #   group_id: 42              # talkgroup ID
+    #   cooldown: "45s"
+    #   tones:
+    #     - frequency_hz: 853.8
+    #       min_duration: "250ms"
+    #       max_duration: "1500ms"
+    #     - frequency_hz: 960.9
+    #       min_duration: "2.5s"
+    #       max_duration: "5s"
+    #
+    # # Tightened tolerances for an agency with very stable
+    # # frequency reference. Drops the default 15 Hz tolerance to
+    # # 5 Hz and raises the magnitude floor to filter weak co-channel
+    # # bleed-over.
+    # - name: "county-ems-tac"
+    #   alpha_tag: "County EMS Tac"
+    #   tolerance_hz: 5.0
+    #   magnitude_threshold: 0.10
+    #   max_gap: "100ms"
+    #   cooldown: "30s"
+    #   tones:
+    #     - frequency_hz: 1122.5
+    #       min_duration: "300ms"
+    #       max_duration: "1500ms"
+    #     - frequency_hz: 1465.3
+    #       min_duration: "2.5s"
+    #       max_duration: "5s"
