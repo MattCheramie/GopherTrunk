@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 lint tidy vet clean run proto
+.PHONY: all build test integration integration-cc integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 lint tidy vet clean run proto
 
 all: build
 
@@ -87,6 +87,15 @@ integration-cc-tetra:
 # PR #154.
 integration-cc-p25p2:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesP25Phase2 ./cmd/gophertrunk/...
+
+# integration-cc-mpt1327 boots the daemon with synthesized FFSK IQ
+# (audio-band CCIR FFSK at 1200 baud — mark = 1200 Hz, space = 1800 Hz —
+# inside an FM channel) carrying a BCH(63, 38)-encoded ALH codeword and
+# asserts the production newMPT1327Pipeline + mpt1327_bch_mode + supervisor
+# + API + metrics chain recovers the lock. First integration test to
+# exercise the FFSK modulator primitive shipped alongside this PR.
+integration-cc-mpt1327:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 -run TestDaemonCCDecodesMPT1327 ./cmd/gophertrunk/...
 
 vet:
 	$(GO) vet -tags "$(TAGS)" $(PKGS)
