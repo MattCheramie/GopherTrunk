@@ -19,7 +19,8 @@ default applies, why, and (where relevant) how to opt out.
 2. [Receiver clock recovery](#2-receiver-clock-recovery) — on by default, opt-out per protocol
 3. [Daemon-level features](#3-daemon-level-features) — mix of on / off / auto-detect
 4. [Build-time options](#4-build-time-options) — patent / CI gates that stay opt-in permanently
-5. [How to verify what's currently enabled](#5-how-to-verify-whats-currently-enabled)
+5. [Remaining FEC follow-ups](#5-remaining-fec-follow-ups) — per-protocol inner FEC layers pending spec / capture data
+6. [How to verify what's currently enabled](#6-how-to-verify-whats-currently-enabled)
 
 ---
 
@@ -43,6 +44,7 @@ per-system with `<key>: off`.
 | EDACS | `edacs_bch_mode` | `BCHOn` | `off` |
 | MPT 1327 | `mpt1327_bch_mode` | `BCHOn` | `off` |
 | Motorola Type II | `motorola_bch_mode` | `BCHOn` | `off` |
+| D-STAR | `dstar_fec_mode` | `FECOff` (info-bits passthrough) | `on` flips to the JARL DV-mode FEC chain |
 
 The README's [FEC opt-outs section](../README.md#fec-opt-outs)
 documents the full reference table with on-default behaviour
@@ -125,7 +127,32 @@ to flip on by default.
 
 ---
 
-## 5. How to verify what's currently enabled
+## 5. Remaining FEC follow-ups
+
+Per-protocol on-air FEC chains land in stages. Most ship today as
+opt-out (see §1); a handful of inner FEC layers remain as
+documented follow-ups, generally blocked on either spec access or a
+real-air capture to validate against:
+
+| Item | Status | Blocker |
+| --- | --- | --- |
+| **NXDN per-protocol interleaver + puncture inner layer** | `ViterbiSpec` mode wired through the connector; calibration against a captured MMDVMHost / DSDcc transmission lands next | Real-air capture |
+| **P25 Phase 2 outer Reed-Solomon + per-burst block interleaver** | Trellis decoder shipping (`SetTrellisMode(TrellisOn)`); the spec's outer RS layer + per-burst block interleaver are pending | TIA-102.BBAB spec access + real-air capture |
+| **MPT 1327 inter-codeword interleaver** | BCH(64, 48, 2) ships per-codeword; the inter-codeword bit-interleaver across 5-codeword CCDB groups still pending | MPT 1327 spec implementation work + real-air capture |
+| **YSF FICH interleaver / puncture validation** | K=5 ½-rate trellis encoder + decoder round-trip in unit tests; validating against a captured YSF transmission's exact schedule remains | Real-air capture |
+| **TETRA on-air recovery margins** | Full §8.3.1 chain ships and unit tests round-trip clean fixtures; on-air recovery margins (Viterbi correction depth vs. real co-channel + adjacent-channel interference) need profiling | Live capture |
+| **DMR Tier II synthesized IQ fixture** | Pipeline + Process adapter + unit test all ship; `TestDaemonCCDecodesDMRTier2` is `t.Skip`'d because the synthesized Voice LC Header IQ fixture doesn't round-trip cleanly through the C4FM modulator+demod chain | Fixture calibration (or real-air capture exercises the pipeline) |
+
+These don't block protocol-level operation today — every protocol's
+production pipeline ships through to `events.KindCCLocked` /
+`events.KindGrant` on the bus, and the engine + recorder + API
+surfaces light up unchanged. The follow-ups improve on-air decode
+robustness for specific noise conditions or fully-spec-correct
+encoding.
+
+---
+
+## 6. How to verify what's currently enabled
 
 - **FEC defaults per system.** Open the **Settings** panel in the
   TUI — the **FEC** tab lists every configured system with a
