@@ -199,6 +199,40 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **FFSK modulator + `make integration-cc-mpt1327`.**
+  First integration test to exercise audio-band FSK
+  modulation. Lights up MPT 1327 end-to-end through the
+  daemon's mock-SDR + production-receiver chain.
+  - `internal/dsp/demod/ffsk_modulator.go` ships the TX
+    counterpart to the existing FFSK tone discriminator:
+    bit → tone select (mark / space) → continuous-phase
+    audio sinusoid at the tone frequency → FM modulator
+    (phase accumulator integrates audio) → IQ.
+    `FFSKModulator` carries both the audio-phase and the
+    RF-phase accumulators across `Modulate` calls so long
+    streams stay phase-continuous; `ModulateFFSK` is the
+    single-shot convenience.
+  - `mpt1327.LockState` now implements
+    `trunking.LockedPayload` (`LockedFrequencyHz` +
+    `LockedNAC`). **Seventh protocol with the same latent
+    bug fixed** (NXDN / dPMR / EDACS / Motorola / TETRA /
+    P25 Phase 2 / MPT 1327). MPT 1327 doesn't have a
+    P25-style NAC; the AHYC SystemID is the closest
+    per-cell identifier and gets plumbed into the NAC slot.
+  - The integration test synthesizes 100 back-to-back
+    BCH(63, 38)-encoded ALH (Aloha) codewords (the
+    canonical "lock me" address codeword), modulates via
+    the new FFSK primitive at the standard CCIR FFSK
+    tone pair (1200 Hz mark / 1800 Hz space) at 1200
+    baud, and asserts the daemon recovers the lock via
+    `mpt1327_bch_mode: on`. 30-run flakiness check clean.
+  - Round-trip modulator tests cover the FFSK chain
+    against the existing FM discriminator + FFSK tone
+    discriminator (200 random bits, every bit recovered
+    exactly past the LPF group-delay warmup), phase
+    continuity across chunked Modulate calls,
+    constant-envelope (|IQ| = 1 ± 1e-6), and Reset
+    semantics.
 - **`make integration-cc-p25p2` — P25 Phase 2 end-to-end
   lights-up check.** Second protocol to use the
   π/4-DQPSK modulator shipped in PR #154; reuses the
@@ -1541,6 +1575,7 @@ make integration-cc-edacs     # EDACS "lights up" — GFSK + BCH(40, 28, 2) CCW
 make integration-cc-motorola  # Motorola Type II "lights up" — GFSK + BCH(64, 16, 11) OSW
 make integration-cc-tetra     # TETRA TMO "lights up" — π/4-DQPSK + full §8.3.1 chain
 make integration-cc-p25p2     # P25 Phase 2 "lights up" — H-DQPSK + trellis MAC PDU
+make integration-cc-mpt1327   # MPT 1327 "lights up" — audio-band FFSK + BCH(63, 38)
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles
