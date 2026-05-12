@@ -2105,14 +2105,16 @@ opt-in field as a `omitempty` JSON value.
   IQ capture for replay
 - [`docs/vocoders.md`](docs/vocoders.md) — IMBE / AMBE+2 licensing
   realities and the plugin model
-- [`docs/hardening.md`](docs/hardening.md) — Prometheus catalogue,
-  Docker / compose USB pass-through, smoke-test checklist
-- [`docs/opt-in-features.md`](docs/opt-in-features.md) — every
-  disabled-by-default feature (receiver clock, daemon-level audio /
-  equalizer / mutations / tone-out, build tags), why it's opt-in,
-  and the work to flip the default. Protocol FEC chains are now
-  on-by-default; see the FEC opt-outs section above for the
-  per-protocol opt-out keys.
+- [`docs/hardening.md`](docs/hardening.md) — API authentication,
+  Prometheus catalogue, Docker / compose USB pass-through,
+  smoke-test checklist
+- [`docs/opt-in-features.md`](docs/opt-in-features.md) — operator
+  reference for every default the daemon carries: protocol FEC
+  defaults (on, opt-out per protocol), receiver clock recovery (on,
+  opt-out per protocol), daemon-level features (mix of on / off /
+  auto-detect), and the permanent build-time gates (DVSI patent
+  tag, integration tests). Cross-references the README's relevant
+  sections.
 - [`docs/specs/`](docs/specs/) — reference air-interface PDFs the
   on-air FEC implementations derive from (NXDN-TS-1-A,
   ETSI EN 300 392-2 TETRA, plus a negative-reference M/A-COM LBI
