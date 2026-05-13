@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"time"
 
 	apiv1 "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
@@ -69,7 +71,26 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		audio:      opts.Audio,
 		log:        log,
 	}
-	g.srv = grpc.NewServer()
+	// Keep-alive guards long-lived RPCs (StreamAudio in particular)
+	// against silently-dead peers — without server-side pings, a
+	// client whose network drops without a TCP FIN/RST would pin a
+	// gRPC stream + its publisher subscription forever. The values
+	// match Google's published defaults: Time = 30 s of idle before
+	// the first ping, Timeout = 10 s for the ack before the
+	// connection is closed. MinTime = 5 s gates client-side ping
+	// floods.
+	keepaliveParams := keepalive.ServerParameters{
+		Time:    30 * time.Second,
+		Timeout: 10 * time.Second,
+	}
+	keepaliveEnforcement := keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Second,
+		PermitWithoutStream: true,
+	}
+	g.srv = grpc.NewServer(
+		grpc.KeepaliveParams(keepaliveParams),
+		grpc.KeepaliveEnforcementPolicy(keepaliveEnforcement),
+	)
 	apiv1.RegisterSystemServiceServer(g.srv, g)
 	apiv1.RegisterTalkgroupServiceServer(g.srv, g)
 	apiv1.RegisterAudioServiceServer(g.srv, g)

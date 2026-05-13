@@ -322,6 +322,23 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **API server hardening: HTTP timeouts + gRPC keep-alive + drain
+  window.** `internal/api/server.go` now sets `ReadTimeout` /
+  `WriteTimeout` / `IdleTimeout` on the HTTP server (30 s / 30 s /
+  120 s) on top of the existing `ReadHeaderTimeout`. SSE
+  (`/api/v1/events`) opts out of `WriteTimeout` per-request via
+  `http.ResponseController.SetWriteDeadline(time.Time{})` so the
+  long-lived stream isn't torn down mid-call; the WebSocket
+  endpoint hijacks the connection on Upgrade and is unaffected.
+  `internal/api/grpc.go` configures `keepalive.ServerParameters`
+  (30 s idle ping, 10 s ack timeout) + `EnforcementPolicy`
+  (5 s min-time floor, `PermitWithoutStream: true`) so long-lived
+  `AudioService.StreamAudio` subscribers detect dead peers
+  without back-pressuring the publisher. Shutdown ctx bumped from
+  5 s to 30 s so in-flight SSE / WebSocket / audio-stream
+  subscribers drain cleanly on a daemon restart. See
+  [docs/hardening.md](docs/hardening.md#timeouts-and-keep-alive)
+  for the full knob reference.
 - **Runtime theme toggle (Ctrl+T) + docs/tui.md sync.** The dark
   and monochrome palettes have lived in `internal/tui/theme` since
   the operator-console PR but weren't reachable from the UI;

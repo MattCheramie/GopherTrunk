@@ -386,8 +386,21 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.srv = &http.Server{
-		Handler:           mux,
+		Handler: mux,
+		// ReadHeaderTimeout protects against Slowloris attacks; the
+		// existing 10 s bound stays.
 		ReadHeaderTimeout: 10 * time.Second,
+		// ReadTimeout / WriteTimeout / IdleTimeout cap per-request
+		// resource use so slow clients can't pin a worker or a
+		// socket. Streaming endpoints (SSE at /api/v1/events,
+		// WebSocket at /api/v1/events/ws, the per-call audio stream
+		// in api/audio.go) disable WriteTimeout per-request via
+		// http.ResponseController so the long-lived connections keep
+		// working — the standard REST handlers are bounded by these
+		// at the server level.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	s.mu.Unlock()
 
@@ -422,7 +435,12 @@ func (s *Server) shutdown(ctx context.Context) error {
 		return nil
 	}
 	s.closed = true
-	shutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
+	// get up to 30 s to drain rather than the 5 s the old bound gave
+	// them. Cuts user-visible connection drops on a clean restart.
+	// Static HTTP requests complete in milliseconds either way; the
+	// extra headroom only matters for long-lived streams.
+	shutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return s.srv.Shutdown(shutCtx)
 }

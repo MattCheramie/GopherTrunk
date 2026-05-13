@@ -149,6 +149,36 @@ The pre-built `engine.Engine.shutdown()` already implements step 3;
 the wiring for steps 1-2 lives in `cmd/gophertrunk` (and lands in
 the demod-pipeline composer follow-up).
 
+### Connection-drain window
+
+The HTTP server's `Shutdown` ctx is bounded at 30 s (was 5 s before).
+The window covers in-flight SSE / WebSocket / per-call audio-stream
+subscribers — those connections see a clean close instead of being
+torn down mid-frame on a daemon restart. Static REST requests
+complete in milliseconds either way; the extra headroom only
+matters for streaming endpoints. gRPC uses
+`grpc.Server.GracefulStop()`, which waits for every in-flight RPC
+(including `AudioService.StreamAudio` subscribers) to finish or
+voluntarily close.
+
+## Timeouts and keep-alive
+
+| Knob | Value | What it bounds |
+| --- | --- | --- |
+| `http.Server.ReadHeaderTimeout` | 10 s | Slowloris-style header send delays |
+| `http.Server.ReadTimeout` | 30 s | Total request-read time (bounds slow uploads) |
+| `http.Server.WriteTimeout` | 30 s | Per-request write window for non-streaming handlers; **disabled per-request** for SSE (`/api/v1/events`) and audio-streaming endpoints via `http.ResponseController.SetWriteDeadline(time.Time{})`; not enforced after WebSocket Upgrade hijacks the connection |
+| `http.Server.IdleTimeout` | 120 s | Idle keep-alive socket lifetime |
+| `grpc.KeepaliveParams.Time` | 30 s | Server pings idle clients after this much inactivity |
+| `grpc.KeepaliveParams.Timeout` | 10 s | Server waits this long for a ping ack before closing the connection |
+| `grpc.KeepaliveEnforcementPolicy.MinTime` | 5 s | Floors how often clients are allowed to ping the server (anti-flood) |
+| `grpc.KeepaliveEnforcementPolicy.PermitWithoutStream` | `true` | Long-lived idle `StreamAudio` subscribers stay open through their keep-alive pings |
+
+The bounds are conservative — every standard REST endpoint
+completes in well under 30 s, and live streaming endpoints (SSE,
+WebSocket, gRPC `StreamAudio`) opt out of HTTP `WriteTimeout`
+explicitly so they aren't torn down mid-frame.
+
 ## Docker
 
 The repository ships a multi-stage `Dockerfile`:
