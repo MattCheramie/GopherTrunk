@@ -322,6 +322,17 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Operational docs landed.** [`SECURITY.md`](SECURITY.md)
+  documents the vulnerability disclosure process (private GitHub
+  security advisories), supported versions, in-scope vs.
+  out-of-scope issues, and the maintainer's response-time SLAs.
+  [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the dev setup, the
+  house-style conventions, and the PR scoping rules.
+  [`CHANGELOG.md`](CHANGELOG.md) seeds a Keep-a-Changelog with
+  every user-visible change since the calibration / hardening
+  pass. [`docs/gophertrunk.service`](docs/gophertrunk.service) is
+  an example systemd unit (DynamicUser + ProtectSystem + USB
+  device-allow) operators install at `/etc/systemd/system/`.
 - **Optional TLS on HTTP + gRPC + extended health endpoint.**
   `api.tls_cert` / `api.tls_key` in `config.yaml` switches both
   the HTTP REST/SSE/WebSocket server and the gRPC server to TLS;
