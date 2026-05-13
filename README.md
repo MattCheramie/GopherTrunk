@@ -144,7 +144,15 @@ The remaining gaps:
   CSBK fixture scrapes by but Tier II's payload bit
   distribution stresses the Mueller-Müller clock loop more.
   Real-air repeater captures exercise the pipeline fine; the
-  synthesized fixture is the follow-up.
+  synthesized fixture is the follow-up. The diagnostic test
+  `TestDMRTier2VsTier3SymbolDensity` /
+  `TestDMRTier2SlotTypeVsPayloadIsolation` in
+  `cmd/gophertrunk/dmr_tier2_diagnostic_test.go` (run via
+  `make integration` and reads `-v` output) localises the
+  divergent statistic to the BPTC(196,96)-encoded payload's
+  class-3 dibit overrepresentation (21.4% Tier II vs 5.1%
+  Tier III) and the matching mean-transition magnitude (1.27
+  vs 0.90); the fix lands in a follow-up PR.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2
   emit real audio end-to-end. The comparison harness at
   `internal/voice/calibrate/` is ready;
