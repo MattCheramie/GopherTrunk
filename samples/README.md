@@ -60,13 +60,49 @@ go run ./samples/cmd/audio_smoketest -file samples/mpt1327/MPT1327_423.6_1.mp3
 The harness uses `ffmpeg` to decode the audio to PCM, so install
 `ffmpeg` first (`apt-get install ffmpeg`). Per-protocol behaviour:
 
-| Protocol | Audio decode viability | Sigidwiki MP3 sample results |
+| Protocol | Sample | Result |
 | --- | --- | --- |
-| MPT 1327 | **Works** — FFSK tones in audio band survive MP3 compression cleanly | 2 of 9 samples (the long `423.6_1` / `423.6_2` captures) emit real BCH-verified cc.locked + grant events |
-| YSF | Partial — symbols flow through MM clock recovery but the 4-level amplitude structure collapses into ±1 (MP3-compression artefact) | 1 sample tested; no decode |
-| NXDN | Partial — same 4-level audio-amplitude limitation as YSF | 8 samples tested; no decode |
-| TETRA | **Not viable from audio** — phase modulation, FM demod is lossy | 3 samples (audio only; need IQ) |
-| DMR Tier II | Same as NXDN; needs IQ | No samples uploaded |
+| MPT 1327 | `MPT1327_423.6_1.mp3` (audio) | **Works** — 7 cc.locked + 1 grant, BCH-verified |
+| MPT 1327 | `MPT1327_423.6_2.mp3` (audio) | **Works** — 7 cc.locked + 4 grants, SystemID `0x1fd7` |
+| MPT 1327 | other (audio, < 30 s) | Too short for the BCH alignment search to lock |
+| NXDN | `NXDN48 IQ.wav` (IQ) | Chain runs, 4-level slicer produces balanced dibits (26/27/15/32 %), but **FSW sync doesn't match** — file likely 4800-bps BFSK rather than 9600 4-FSK |
+| NXDN | `NXDN96 IQ.wav` (IQ) | Chain runs, dibit distribution is **bimodal (3/50/3/44 %)** — outer ±3 levels dominate, inner ±1 underrepresented; consistent with a different deviation than the spec value |
+| NXDN | other (audio MP3) | 4-level amplitude collapses to ±1 (MP3 artefact) |
+| YSF | `Yaesu_sys_fusion.wav` (audio) | Same 4-level collapse as NXDN audio |
+| TETRA | `TETRA IQ.wav` (IQ) | **Sample rate too low** — 48 kHz gives only 2.67 sps at 18 ksym/s π/4-DQPSK; receiver needs ≥ 4 sps for reliable Gardner lock |
+| TETRA | `TETRA.mp3` and similar (audio) | Not viable — phase modulation can't be recovered from FM-demod audio |
+| DMR Tier II | (no uploads) | n/a |
+
+### What works today
+
+- **MPT 1327** — fully validated end-to-end against captured RF (audio path works because FFSK tones live in the audio band). The CWSC + BCH(64, 48, 2) chain shipped via PR #189 is confirmed working on real-air signals.
+
+### What's blocked by the available samples
+
+- **NXDN** — the IQ chain runs cleanly and produces dibits at the right rate, but no FSW sync. Two likely causes:
+  - `NXDN48` is probably NXDN-BFSK (4800 bps, 2-level FSK) which our receiver doesn't support — the production receiver is hardcoded to `nxdn.Rate9600` (9600 bps, 4-level FSK). A BFSK-mode receiver is a separate body of work.
+  - `NXDN96`'s bimodal dibit distribution suggests its on-air deviation differs from the 1800 Hz default the slicer is calibrated against. Tunable deviation (per-system YAML key) would help.
+- **TETRA** — needs a higher sample-rate IQ capture (≥ 72 kHz) for reliable Gardner clock lock at 18 ksym/s.
+
+### Smoketest harness
+
+[`cmd/audio_smoketest/main.go`](cmd/audio_smoketest/main.go) ingests either:
+
+- **Audio** (MP3/WAV) — converted via ffmpeg, routed through the protocol's matched filter + MM clock + state machine. Bypasses the receiver's FM-demod stage.
+- **IQ WAV** (stereo 16-bit, SDR# convention with I in left channel, Q in right) — auto-detected from `IQ` in the filename, routed through the **real** receiver pipeline (`nxdnrx.New`, `tetrarx.New`) end-to-end.
+
+Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `-file <path>` | required |
+| `-protocol mpt1327\|nxdn\|tetra\|ysf\|auto` | overrides folder-based auto-detection |
+| `-swap-iq` | swaps I and Q channels (try if a capture won't lock) |
+| `-conj-iq` | conjugates IQ (negate Q) — alternative spectrum-flip experiment |
+| `-rate <hz>` | force a specific resample rate for audio input |
+| `-gain <f>` | Mueller-Müller loop gain (default 0.05) |
+
+Requires `ffmpeg` for MP3/audio input (`apt-get install ffmpeg`).
 
 The MPT 1327 result is the actionable win: real signaling traffic
 decoded from a downloadable audio sample, confirming the receiver
