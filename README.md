@@ -10,6 +10,18 @@ plus the D-STAR + Yaesu System Fusion amateur modes, follows voice
 grants by talkgroup priority, and streams metadata + audio to any
 frontend over gRPC, HTTP/SSE, or WebSocket.
 
+## Support the project
+
+GopherTrunk is developed in the open and powered entirely by community
+support. If it's useful to you, please consider chipping in to keep the
+work going:
+
+- [Sponsor on GitHub](https://github.com/sponsors/MattCheramie)
+- [Tip on Ko-fi](https://ko-fi.com/Mrcheramie)
+
+See [docs/support.md](docs/support.md) for the full pitch and other
+ways to help out.
+
 ## Features
 
 | Area              | Component                                                  |
