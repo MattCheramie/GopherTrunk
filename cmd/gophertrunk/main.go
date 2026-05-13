@@ -38,7 +38,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "version", "--version", "-v":
-		fmt.Println(version.Version)
+		fmt.Println(version.String())
 	case "sdr":
 		runSDR(os.Args[2:])
 	case "audio":
@@ -89,12 +89,25 @@ func runDaemon(args []string) {
 	}
 	logger := gtlog.New(cfg.Log.Level, cfg.Log.Format)
 
-	logger.Info("gophertrunk starting", "version", version.Version)
+	logger.Info("gophertrunk starting", "version", version.String())
+
+	// Patent-posture banner — AMBE+2 decoding is patent-encumbered
+	// in some jurisdictions (DVSI IPR portfolio). The pure-Go
+	// decoder ships unconditionally as a clean-room implementation,
+	// but operators in those jurisdictions may need a license. The
+	// full discussion lives in docs/vocoders.md §"Patent posture";
+	// this one-line banner surfaces the link at startup so
+	// operators see it without having to grep the repo. Suppress
+	// with GOPHERTRUNK_QUIET_BANNER=1 (intended for CI / test
+	// harnesses where the banner is just noise).
+	if os.Getenv("GOPHERTRUNK_QUIET_BANNER") == "" {
+		logger.Info("AMBE+2 voice decoding is patent-encumbered in some jurisdictions; see docs/vocoders.md §\"Patent posture\"")
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	d, err := NewDaemon(cfg, version.Version, logger)
+	d, err := NewDaemon(cfg, version.String(), logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon init: %v\n", err)
 		os.Exit(1)

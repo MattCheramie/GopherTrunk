@@ -9,6 +9,23 @@ for tagged releases.
 
 ### Added
 
+- `internal/version` now exposes `Version`, `Commit`, and
+  `BuildTime` (all `-ldflags`-injectable) plus a `String()`
+  formatter (`"vX.Y.Z (sha=…, built=…)"`). Makefile and the
+  release workflow both populate all three. `gophertrunk version`
+  CLI subcommand prints the formatted string; the daemon logs it
+  on startup.
+- AMBE+2 patent-posture banner: daemon logs a one-line notice at
+  startup pointing operators at
+  [`docs/vocoders.md`](docs/vocoders.md). Suppressible via
+  `GOPHERTRUNK_QUIET_BANNER=1` for CI / test harnesses.
+- `make release-dry-run VERSION=v0.99.0` rehearses the release
+  build locally — produces a `dist/dry-run/gophertrunk` with the
+  supplied version metadata injected and a `SHA256SUMS` file.
+  See [`CONTRIBUTING.md` §"Cutting a release"](CONTRIBUTING.md#cutting-a-release).
+- Toolchain pinned to Go 1.25.10 (closes 23 stdlib CVEs in the
+  default 1.25.0 toolchain auto-downloaded by `go 1.25.0` in
+  go.mod).
 - CI hardening: `vulncheck` job runs `govulncheck` against the
   direct + transitive dependency graph; `licenses` job regenerates
   the transitive-deps inventory via `google/go-licenses` and

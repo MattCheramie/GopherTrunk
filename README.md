@@ -322,6 +322,17 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Release-ready version metadata + AMBE+2 patent banner.**
+  [`internal/version/`](internal/version/) now exposes `Version`,
+  `Commit`, `BuildTime`, and a `String()` formatter
+  (`"vX.Y.Z (sha=…, built=…)"`); all three are populated via
+  `-ldflags` by the Makefile + release workflow. The daemon logs
+  a one-line AMBE+2 patent-posture notice at startup pointing at
+  [`docs/vocoders.md`](docs/vocoders.md); set
+  `GOPHERTRUNK_QUIET_BANNER=1` in CI / test harnesses to suppress
+  it. New `make release-dry-run VERSION=v0.99.0` target rehearses
+  the release build locally so ldflags + packaging surface before
+  a tag is cut — see [`CONTRIBUTING.md` §"Cutting a release"](CONTRIBUTING.md#cutting-a-release).
 - **CI gates: govulncheck + license audit + full-tree integration
   run.** `.github/workflows/ci.yml` gains a `vulncheck` job
   (govulncheck against the direct + transitive dependency graph),

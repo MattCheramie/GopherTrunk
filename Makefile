@@ -1,11 +1,15 @@
 VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
-LDFLAGS := -X github.com/MattCheramie/GopherTrunk/internal/version.Version=$(VERSION)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X github.com/MattCheramie/GopherTrunk/internal/version.Version=$(VERSION) \
+           -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=$(COMMIT) \
+           -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=$(BUILD_TIME)
 TAGS    ?=
 
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives
+.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run
 
 all: build
 
@@ -199,6 +203,27 @@ cross-build:
 	    done; \
 	done
 	@ls -lh dist/
+
+# release-dry-run rehearses the release.yml linux job locally so an
+# operator can validate ldflags wiring + version-string injection
+# before pushing a tag. Skips the GitHub Release publish step; just
+# produces the tarball + checksum under dist/. Run with
+#   make release-dry-run VERSION=v0.99.0
+# to exercise a prerelease build; default VERSION picks up the same
+# git-describe value the release workflow would compute.
+release-dry-run:
+	@echo "→ Rehearsing release build for version $(VERSION)"
+	@echo "→ COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME)"
+	@rm -rf dist/dry-run
+	@mkdir -p dist/dry-run
+	CGO_ENABLED=0 $(GO) build -trimpath \
+	    -ldflags "$(LDFLAGS)" \
+	    -o dist/dry-run/gophertrunk \
+	    ./cmd/gophertrunk
+	@echo "→ Built binary reports:"
+	@dist/dry-run/gophertrunk version
+	@cd dist/dry-run && sha256sum gophertrunk > SHA256SUMS && cat SHA256SUMS
+	@echo "✓ Dry-run complete. Output: dist/dry-run/"
 
 # release-archives wraps the cross-build outputs in per-target
 # tarballs (linux/darwin) and zips (windows). Run `make cross-build`

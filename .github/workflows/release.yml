@@ -56,10 +56,12 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p dist/staging
           go build \
             -trimpath \
-            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
@@ -118,11 +120,13 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           NAME="gophertrunk-${VERSION}-linux-amd64"
           mkdir -p "dist/${NAME}"
           go build \
             -trimpath \
-            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION}" \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
             -o "dist/${NAME}/gophertrunk" \
             ./cmd/gophertrunk
           cp README.md LICENSE config.example.yaml "dist/${NAME}/"

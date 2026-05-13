@@ -99,6 +99,32 @@ every PR. A green CI is required before merge.
    is fine on feature branches; the maintainer squashes on merge
    to keep `main` history clean).
 
+## Cutting a release
+
+Releases are produced by [`.github/workflows/release.yml`](.github/workflows/release.yml),
+triggered by pushing a SemVer tag (`vX.Y.Z`) or via the workflow
+dispatch button in the GitHub Actions UI.
+
+Before tagging a new release, rehearse the build locally so any
+ldflags / packaging breakage surfaces before a tag is cut:
+
+```sh
+make release-dry-run VERSION=v0.99.0
+```
+
+…which produces `dist/dry-run/gophertrunk` with the supplied
+`VERSION`, `COMMIT` (short SHA), and `BUILD_TIME` (UTC ISO-8601)
+injected via `-ldflags`. The script then runs `./gophertrunk
+version` against the built binary and writes a `SHA256SUMS` file —
+match those values against what you expect the production release
+to print before pushing the real tag.
+
+The first production release should be a prerelease (e.g.
+`v0.99.0`) so the full release workflow runs end-to-end against
+the live GitHub Actions infrastructure before a v1.0.0 tag goes
+out. Trigger via the **Actions → Release → Run workflow** button
+with the version field set.
+
 ## Security issues
 
 If you've found a vulnerability, please follow the disclosure
