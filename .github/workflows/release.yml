@@ -48,7 +48,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
 
       - name: Build gophertrunk.exe
         shell: bash
@@ -102,7 +102,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
 
       - name: Compute version
         id: version

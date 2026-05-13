@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       # Linux audio playback runs through internal/voice/player/alsa_linux.go,
       # which dlopens libasound2.so.2 via github.com/ebitengine/purego at
       # runtime. No build-time dev headers required; the runtime library
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - name: Build (CGO disabled)
         env:
           CGO_ENABLED: "0"
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - name: Build (CGO disabled)
         env:
           CGO_ENABLED: "0"
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - name: Vet (tagged)
         run: go vet -tags dvsi ./internal/voice/dvsi/...
       - name: Build (tagged)
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - run: make test-integration
 
   # govulncheck enumerates known CVEs that affect the direct +
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25.10"
       - name: Install go-licenses
         run: go install github.com/google/go-licenses/v2@latest
       - name: Regenerate inventory
