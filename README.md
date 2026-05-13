@@ -125,11 +125,23 @@ The remaining gaps:
     MPT 1327 transmits 64-bit codewords back-to-back at 1200 bps
     FFSK with no inter-codeword bit permutation. No remaining
     MPT 1327 spec follow-ups.
-  - **YSF FICH on-air interleaver / puncture validation.** The
-    K=5 ½-rate Trellis encoder + decoder
+  - ~~**YSF FICH on-air interleaver / puncture validation**~~
+    (now shipping the spec-level codec). The K=5 ½-rate Trellis
+    encoder + decoder
     (`internal/radio/ysf/fich_trellis.go`) round-trip cleanly
-    in unit tests; calibration against a captured YSF
-    transmission's exact schedule is blocked on real-air data.
+    in unit tests. `EncodeFICHOnAir` / `DecodeFICHOnAir` now
+    layer the full on-air chain — puncture (drop channel-bit
+    positions `{0, 1, 102, 103}`) plus column-major 10×10
+    interleave (out[k] = depunctured[(k%10)*10 + (k/10)]) — per
+    the MMDVMHost / DSDcc / Pi-Star reference. Every
+    single-bit-flip in the 100-bit on-air stream is repaired
+    by the Viterbi (`TestFICHOnAirRecoversFromSingleBitFlip`
+    exhaustively confirms all 100 positions). On-air capture
+    validation against a real Yaesu transmission is the
+    remaining real-air-blocked piece — if the captured FICH
+    fails CRC after the on-air decoder, the alternate-schedule
+    swap is a two-line change documented in
+    `samples/ysf/README.md`.
   - **TETRA on-air recovery margins.** Unit tests round-trip
     clean fixtures end-to-end; on-air recovery margins
     (Viterbi correction depth vs. real co-channel +
@@ -285,10 +297,16 @@ to its own package and lands independently.
   (b₁ ∈ [128, 143]) is wired against the ITU-T Q.23 4×4 matrix;
   knox / call-alert pairs (b₁ ∈ [144, 163]) are vendor-specific
   and stay silent pending per-vendor frequency tables.
-- **YSF on-air interleaver / puncture validation.** The K=5 ½-rate
-  Trellis encoder + decoder round-trip cleanly; matching the exact
-  on-air interleaver / puncture schedule to a captured YSF
-  transmission lands once a real-air capture is available.
+- **YSF on-air interleaver / puncture validation (real-air capture).**
+  The spec-level on-air codec ships in
+  `internal/radio/ysf/fich_trellis.go`'s `EncodeFICHOnAir` /
+  `DecodeFICHOnAir` per the MMDVMHost / DSDcc / Pi-Star reference
+  (puncture positions `{0, 1, 102, 103}`, column-major 10×10
+  interleave). Unit tests confirm every single-bit-flip is
+  Viterbi-corrected. The remaining work is calibration against a
+  real captured YSF transmission — if the captured FICH fails CRC
+  after on-air decode, swap to the alternate schedule per
+  `samples/ysf/README.md`.
 
 ### Recently shipped
 
