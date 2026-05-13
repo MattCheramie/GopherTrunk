@@ -44,7 +44,7 @@ type Vocoder interface {
 | `null` (silence)         | none         | yes      | Always available                                |
 | `imbe` (pure-Go, P25 P1) | none         | yes      | Producing intelligible audio; calibration TODO  |
 | `ambe2` (pure-Go)        | none         | yes      | Producing audio; calibration TODO; dual-tone → silence |
-| `dvsi` (USB-3000 chip)   | `-tags dvsi` | **no**   | Hardware backend, planned                       |
+| `dvsi` (USB-3000 chip)   | `-tags dvsi` | **no**   | Wire-protocol + Vocoder scaffolding shipping; USB transport stub (returns `ErrNoDevice`) — hardware integration follows in a separate PR |
 
 ### Live-pipeline auto-decode
 
@@ -153,21 +153,95 @@ This is exactly what SDR# / OP25 / DSD do. The key benefits:
 
 1. The default binary has no external library dependencies for voice
    (no CGO, no system shared library, no install scripts).
-2. Users with DVSI hardware can opt in by building with `-tags dvsi`
-   once that backend lands.
+2. Users with DVSI hardware can opt in by building with `-tags dvsi`.
+   The Vocoder + AMBE-3003 wire protocol + voice.Vocoder interface
+   conformance ship in [`internal/voice/dvsi/`](../internal/voice/dvsi/);
+   the USB / FTDI transport that talks to the physical chip is a stub
+   today (returns `ErrNoDevice`) so the recorder fallback chain
+   activates cleanly. Hardware integration with a real DVSI USB-3000
+   lands in a follow-up. CI exercises the wire protocol + Vocoder
+   plumbing via the scripted mock Transport and the
+   software-loopback Transport (`Options{LoopbackOnly: true}`); both
+   live behind the `-tags dvsi` build tag.
 3. Captures contain raw frames so a researcher can defer the decoding
    choice to post-processing.
 
+## DVSI backend layout (`-tags dvsi`)
+
+[`internal/voice/dvsi/`](../internal/voice/dvsi/):
+
+- `packet.go` — AMBE-3003 wire format (sync byte + length + type +
+  payload). Always compiled — no patent surface in describing a
+  serial wire protocol.
+- `doc.go` — exports `VocoderName = "dvsi"` so config validation
+  paths can reference the key without `-tags dvsi` linked in.
+- `dvsi_enabled.go` (`//go:build dvsi`) — `Vocoder`, `Transport`
+  interface, `loopbackTransport`, `openUSBTransport` stub, and the
+  `init()` registration into `voice.DefaultRegistry`.
+- `dvsi_disabled.go` (`//go:build !dvsi`) — empty; default builds
+  link nothing from the DVSI codepath.
+- `dvsi_test.go` (`//go:build dvsi`) — Vocoder interface
+  conformance, loopback round-trip, scripted-mock wire-format
+  verification, frame-size validation, unexpected-reply rejection.
+
+`make test-dvsi` runs the tagged unit tests; the `dvsi` CI job runs
+the same target on Ubuntu.
+
+## Voice calibration plumbing
+
+The calibration harness ships end-to-end:
+
+- [`internal/voice/calibrate`](../internal/voice/calibrate/) — RMS-
+  ratio + best-alignment cross-correlation comparison against a
+  reference WAV from DSD-FME / OP25.
+- [`internal/voice/imbe/testdata/`](../internal/voice/imbe/testdata/)
+  and
+  [`internal/voice/ambe2/testdata/`](../internal/voice/ambe2/testdata/)
+  — fixture drop zones with READMEs documenting the file layout
+  the calibrate tests expect.
+- [`docs/voice-calibration.md`](voice-calibration.md) — operator-
+  facing capture-and-validate recipe.
+- [`cmd/voice-calibrate`](../cmd/voice-calibrate/) — CLI wrapper
+  around `calibrate.Compare` so a one-off check doesn't require
+  writing a test.
+
+## Knox / call-alert extension hook
+
+AMBE+2 tone frames with b1 ∈ [144, 163] are vendor-specific knox /
+call-alert pairs. The public spec doesn't document them; without
+registration, the decoder routes those frames through silence.
+
+Operators with a per-vendor reference can register the
+(freqA, freqB) pair via
+[`ambe2.SetKnoxTone`](../internal/voice/ambe2/knox.go) (typically
+from a per-vendor sub-package `init()`):
+
+```go
+import "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
+
+func init() {
+    // Hypothetical Motorola Trbo call alert (frequencies illustrative).
+    _ = ambe2.SetKnoxTone(150, 1100, 1750)
+}
+```
+
+Registered indices synthesise through the same summed-sinewave
+dual-tone path as DTMF — phase-continuous across consecutive tone
+frames, AGC-scaled, click-free.
+
 ## Future work
 
-- Absolute-level calibration against a DSD-FME or OP25 reference
-  recording for both `imbe` and `ambe2` decoders; AGC per-frame gain
-  tweaks if real frames show systematic level offset.
-- AMBE+2 dual-tone synthesis (b₁ ∈ [128, 163]) — single tones
-  already synthesise a sinewave at b₁·31.25 Hz with cross-frame
-  phase continuity; dual-tone requires an AMBE+2-specific
-  (b₁ → freq_a, freq_b) lookup the public spec doesn't document.
-- DVSI USB-3000 / AMBE-3003 hardware backend (`-tags dvsi`).
+- Absolute-level calibration thresholds documented; reference data
+  (operator-supplied DSD-FME / OP25 decoded WAVs) is the remaining
+  blocker. AGC per-frame gain tweaks if real frames show systematic
+  level offset.
+- Per-vendor knox tone tables (Motorola Trbo, Hytera, generic
+  AMBE+2) — the extension hook ships; vendor reference data is the
+  remaining piece.
+- DVSI USB-3000 / AMBE-3003 USB / FTDI transport implementation —
+  the wire-protocol + Vocoder + interface conformance ship now;
+  the actual USB bulk-IN / bulk-OUT plumbing follows when a chip is
+  available for round-trip testing.
 - Optional Opus / FLAC re-encoding of the recorded WAVs to shrink
   long-running archives.
 - Plain AMBE decoder for D-STAR voice (different algorithm from AMBE+2;

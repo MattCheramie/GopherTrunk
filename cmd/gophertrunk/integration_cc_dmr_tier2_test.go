@@ -34,22 +34,21 @@ import (
 // at the start of every transmission rather than a CSBK on a
 // dedicated control channel.
 func TestDaemonCCDecodesDMRTier2(t *testing.T) {
-	// Skip pending fixture calibration. The Process adapter is exercised
-	// end-to-end by the in-package unit test
-	// (internal/radio/dmr/tier2.TestProcess_DecodesVoiceLCHeaderBurst,
-	// which feeds the same synthesized dibit stream directly into
-	// ConventionalChannel.Process and confirms KindCCLocked + KindGrant
-	// land on the bus). The end-to-end IQ → C4FM → dmrrx → Process →
-	// state-machine integration path doesn't produce sync matches on
-	// the synthesized Voice LC Header fixture used here, while the
-	// structurally-identical Tier III CSBK Aloha fixture in
-	// TestDaemonCCDecodesDMRTier3 does. The receiver chain is the
-	// same; the divergence is between the two synthesized payloads'
-	// symbol distributions interacting with the C4FM modulator state.
-	// Real-air Tier II repeater captures will exercise the chain with
-	// recoverable signals; the fixture work to match Tier III's
-	// throughput is a follow-up.
-	t.Skip("pending Voice LC Header IQ-fixture calibration; unit test covers the Process adapter end-to-end")
+	// Fixture was previously t.Skip'd because the synthesized Voice
+	// LC Header payload's symbol distribution slipped the receiver's
+	// Mueller-Müller clock loop at ClockGain = 0.025 (the value
+	// shared with Tier III). The diagnostic in
+	// dmr_tier2_diagnostic_test.go localised the divergent statistic
+	// to the BPTC(196, 96)-encoded payload's class-3 dibit fraction
+	// (21.4% Tier II vs 5.1% Tier III) and the matching mean
+	// transition magnitude (1.27 vs 0.90); the RS(12, 9) seed
+	// 0x96 0x96 0x96 and the BPTC parity rows distribute
+	// high-Hamming-weight bits throughout the channel-bit output,
+	// and the resulting rapid-transition stream needs a more
+	// conservative loop gain. Lowering Tier II's pipeline ClockGain
+	// to 0.015 (see newDMRTier2Pipeline in
+	// internal/scanner/ccdecoder/pipelines.go) closes the gap; the
+	// receiver locks within ~100 ms of the first burst.
 
 	const (
 		controlFreqHz = 460_500_000
@@ -186,11 +185,15 @@ func buildDMRTier2VoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sou
 	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
 	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
 
-	// 2000-dibit warmup: MM clock recovery needs extra time when the
-	// burst payload's symbol distribution stresses the loop more than
-	// the Tier III Aloha CSBK fixture does.
-	out := make([]uint8, 0, 2000+repeats*(len(burst)+32)+100)
-	for i := 0; i < 2000; i++ {
+	// 800-dibit warmup + 32-dibit inter-burst gap, matching Tier III.
+	// Tier II's harder symbol distribution (mean transition magnitude
+	// 1.27 vs Tier III's 0.90 per TestDMRTier2VsTier3SymbolDensity
+	// in dmr_tier2_diagnostic_test.go) is handled by the lower
+	// ClockGain (0.015) on the Tier II pipeline, not by fixture
+	// padding — see internal/scanner/ccdecoder/pipelines.go's
+	// newDMRTier2Pipeline.
+	out := make([]uint8, 0, 800+repeats*(len(burst)+32)+100)
+	for i := 0; i < 800; i++ {
 		out = append(out, uint8(i&3))
 	}
 	for r := 0; r < repeats; r++ {

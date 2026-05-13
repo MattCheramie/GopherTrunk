@@ -45,12 +45,32 @@ already round-trip clean fixtures end-to-end; what's missing is
 co-channel + adjacent-channel interference** — the synthesized
 fixtures don't model the burst-error structure live RF produces.
 
-The captures here will feed a future
-`internal/radio/tetra/recovery_margin_test.go` that asserts:
+## Acceptance criteria
 
-- the §8.3.1 chain recovers ≥ X% of frames at Y dB SNR,
-- the Viterbi correction-depth metric stays within spec under
-  interference conditions Z.
+A capture is considered "validating" when:
+
+1. **Lock latency.** Replayed through `newTETRAPipeline`, the daemon
+   publishes `events.KindCCLocked` within **5 seconds wall time** of
+   the first burst arriving. The exact wiring lives at
+   [`cmd/gophertrunk/integration_cc_tetra_test.go`](../../cmd/gophertrunk/integration_cc_tetra_test.go);
+   add a `_realair_test.go` sibling that points the mock SDR at the
+   capture file and asserts the timeout.
+2. **Frame recovery rate.** ≥ 90% of bursts that pass the
+   §8.3.1 CRC-16 verify when re-encoded round-trip on the in-tree
+   chain must also pass when decoded straight from the capture.
+3. **Viterbi correction-depth histogram.** The
+   `gophertrunk_tetra_viterbi_corrections` Prometheus histogram
+   (gated by `metrics.detailed_fec: true`; new metric in
+   `internal/metrics/metrics.go`) reports the bit-error count per
+   recovered frame. Acceptable margin: p95 ≤ 8 bit errors per
+   116-bit logical channel, p99 ≤ 12. Captures with co-channel
+   interference will sit higher; that's the signal the calibration
+   work was designed to surface.
+
+The new Prometheus histogram is **not yet wired** — it lands
+together with the first real-air capture validating it. Implementing
+the histogram before a capture exists would risk emitting metrics
+nobody can interpret.
 
 ## Recommended sources
 

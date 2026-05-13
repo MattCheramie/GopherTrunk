@@ -198,11 +198,10 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// below for the per-index frequency pair.
 		//
 		// Knox / call-alert dual-tones (b1 ∈ [144, 163]) are
-		// vendor-specific; the AMBE+2 spec doesn't document
-		// their frequencies publicly, so they fall through to
-		// the silence branch below with a TODO note. Operators
-		// hitting them in practice can drop a per-vendor
-		// frequency table into ambeDualToneTable's upper range.
+		// vendor-specific; operators that register a per-vendor
+		// override via SetKnoxTone get dual-tone synthesis there
+		// too (case branch below). Without an override, those
+		// indices fall through to the silence branch.
 		freqA, freqB := ambeDualToneTable[p.B1-128][0], ambeDualToneTable[p.B1-128][1]
 		d.synthDualTone(freqA, freqB, p.B2, pcm)
 		d.state.Reset()
@@ -211,14 +210,31 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.agc.Apply(pcm, out, false)
 		return out, nil
 
+	case p.Tone && !p.Silent && p.B1 >= KnoxIndexLow && p.B1 <= KnoxIndexHigh:
+		// Knox / call-alert dual-tone (b1 ∈ [144, 163]): the public
+		// AMBE+2 spec doesn't document these frequencies, but
+		// operators with a vendor reference can register pairs via
+		// ambe2.SetKnoxTone. When a registration exists for b1,
+		// synthesise the same summed-sinewave dual-tone DTMF uses;
+		// otherwise fall through to the silence branch below.
+		if freqA, freqB, ok := KnoxTone(p.B1); ok {
+			d.synthDualTone(freqA, freqB, p.B2, pcm)
+			d.state.Reset()
+			d.clearLastGood()
+			d.prevGamma = 0
+			d.agc.Apply(pcm, out, false)
+			return out, nil
+		}
+		fallthrough
+
 	case p.Tone || p.Silent:
-		// Knox / call-alert dual-tone (b1 ∈ [144, 163]), invalid
-		// tone index, or explicit silence: emit the §6.4 OA tail
-		// fade-out into pcm[0..95] and reset state. The
-		// vendor-specific frequency table for knox tones isn't
-		// in the public AMBE+2 spec; operators who need them
-		// can extend ambeDualToneTable with their per-vendor
-		// pairs and add a case branch above.
+		// Knox / call-alert dual-tone (b1 ∈ [144, 163]) without a
+		// registered override, invalid tone index, or explicit
+		// silence: emit the §6.4 OA tail fade-out into pcm[0..95]
+		// and reset state. The vendor-specific frequency table
+		// for knox tones isn't in the public AMBE+2 spec;
+		// operators who need them can call SetKnoxTone from their
+		// vendor-specific init() and add their per-vendor pairs.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.Params, nil, nil, pcm)
 		d.state.Reset()
 		d.clearLastGood()

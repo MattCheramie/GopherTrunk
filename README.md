@@ -4,15 +4,22 @@
 
 # GopherTrunk 📻🐹
 
-A low-latency digital-trunking scanner engine in Go.
+A low-latency digital-trunking scanner engine in Go. Pure-Go, zero
+CGO, single static binary.
 
 GopherTrunk manages a pool of RTL-SDR dongles, runs a custom Go DSP
 pipeline, decodes the signalling layers of every major trunked-radio
 family (P25 Phase 1 / Phase 2, DMR Tier II / III, NXDN, Motorola Type II /
 SmartZone, EDACS / GE-Marc, LTR, MPT 1327, dPMR Mode 3, TETRA TMO)
 plus the D-STAR + Yaesu System Fusion amateur modes, follows voice
-grants by talkgroup priority, and streams metadata + audio to any
-frontend over gRPC, HTTP/SSE, or WebSocket.
+grants by talkgroup priority, decodes the voice payload through pure-Go
+IMBE / AMBE+2 vocoders, writes per-call WAVs + raw-frame sidecars to
+disk, logs everything to SQLite, and streams metadata + live PCM to
+any frontend over gRPC, HTTP/SSE, or WebSocket. Live audio playback
+to the host's speakers + a Bubbletea TUI cockpit ship alongside the
+headless daemon. Optional TLS, bearer-token auth on mutations, and a
+Prometheus `/metrics` surface make it deployable on shared
+infrastructure.
 
 ## Support the project
 
@@ -34,7 +41,7 @@ ways to help out.
 | DSP               | Polyphase channelizer, FIR + Kaiser LPF designer + RRC + Gaussian-pulse premod designer, CIC, halfband, IQ + audio AGC (attack/release envelope follower for voice), L/M polyphase resampler (complex IQ + real audio), FM / C4FM / GFSK / FFSK (audio-band 1200-baud, MPT 1327) / DQPSK / π/4-DQPSK (configurable rotation; π/4 = TETRA, π/8 = P25 Phase 2 H-DQPSK) demods, single-pole IIR de-emphasis (75/50µs), Mueller-Müller clock recovery, frame-sync correlator |
 | FEC primitives    | CRC-CCITT/FALSE + CRC-CCITT/XMODEM (callable init), CRC-6 (NXDN SACCH), Hamming(15,11,3), Hamming(13,9,3), Hamming(20,8) (DMR slot-type, t=3), extended Golay(24,12,8) + non-extended Golay(23,12,7) (P25 IMBE), BCH(63,16,11), BPTC(196,96), Reed-Solomon(12,9,4) over GF(2^8) with DMR Voice LC Header / Terminator / Embedded LC seeds, 4-state ½-rate Viterbi, 16-state K=5 ½-rate Viterbi (shared by NXDN SACCH and YSF FICH) with depuncture-marker support |
 | P25 Phase 1       | 48-bit FSW + sync detector, NID parser (NAC + DUID) with BCH(63,16,11) error correction + even-parity check, full TSBK channel decode (TIA-102.BAAA Annex A 4-state ½-rate trellis + 98-dibit block deinterleaver) → CRC trailer validation, payload parsers for GroupVoiceChannelGrant / Update / NetworkStatus / RFSSStatus, IdentifierUpdate band-plan resolver, control-channel state machine emitting `protocol = "p25"` grants and `decode.error` events with `nid-bch` / `tsbk-trellis` / `tsbk-crc` / `no-bandplan` stages |
-| P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, IQ → H-DQPSK dibit receiver (`internal/radio/p25/phase2/receiver`) composing the `demod.PiOver4DQPSK` helper with π/8 rotation + naive symbol-time decimation at 6000 sym/s to fan `phase2.DibitSink` out to a future `ControlChannel.Process` adapter (full symbol-time clock recovery on complex IQ is a follow-up), control-channel state machine emitting `protocol = "p25-phase2"` grants |
+| P25 Phase 2       | Outbound + inbound 20-dibit sync, 360 ms / 12-subframe superframe + SlotType enum, MAC PDU parser + opcode enum, GroupVoiceChannelGrant accessor, IQ → H-DQPSK dibit receiver (`internal/radio/p25/phase2/receiver`) composing the `demod.PiOver4DQPSK` helper with π/8 rotation + Gardner symbol-timing recovery (default on; `p25_phase2_clock_mode: naive` for synthesized fixtures) at 6000 sym/s, control-channel state machine emitting `protocol = "p25-phase2"` grants; full TIA-102 chain (4-state ½-rate trellis + RS(24, 16, 9) outer verifier + PN44 LFSR scrambler with per-burst slot-offset blind probe + NSB-driven runtime seed installation) all default-on |
 | DMR (Tier III)    | All 9 ETSI sync patterns, burst layout (132 dibits), Color Code + Data Type via (20,8,7) shortened-Hamming slot-type FEC (corrects up to 3 bit errors per slot type), CSBK with CRC, payload parsers for TalkGroup/Private Voice grants (LCN + timeslot) + Aloha + AdjacentSiteStatus + SystemInfoBroadcast, LCN → Hz band-plan resolver (linear + table forms), IQ → C4FM dibit receiver (`internal/radio/dmr/receiver`) composing FM demod + RRC matched filter + Mueller-Müller clock recovery + 4-level slicer to fan `dmr.DibitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "dmr-tier3"` grants and `decode.error` events with `no-bandplan` stage |
 | DMR (Tier II)     | Shares the burst / slot-type / BPTC(196,96) layers with Tier III; adds a 72-bit Full Link Control parser (FLCO enum: GroupVoiceChannelUser / UnitToUnitVoice / TalkerAlias / GPS / Terminator) with RS(12,9,4) parity verification (Voice LC Header seed) and a per-repeater conventional-mode state machine that decodes Voice LC Header bursts and emits `protocol = "dmr-tier2"` grants on the bus (deduped per call, cleared on Terminator-with-LC) and `decode.error` events with `voiceheader-bptc` / `voiceheader-rs` stages. IQ → C4FM dibit chain (same `internal/radio/dmr/receiver` Tier III uses) feeds `tier2.ConventionalChannel.Process` (multi-pattern sync detect across all 9 ETSI sync words → 132-dibit burst slice → slot-type Hamming(20,8) decode → IngestBurst → BPTC(196,96) → RS(12,9) → grant publication). DMR Tier II is conventional (per-repeater) rather than trunked, but the `ccdecoder` pipeline factory (`newDMRTier2Pipeline`) routes it through the same engine + recorder + composer surfaces as the trunked protocols — the state machine emits cc.locked on first valid burst so the supervisor's lock model still works. |
 | NXDN              | 192-dibit frame layout (4800 BFSK / 9600 4-FSK), LICH parse with parity + 16-bit doubled-wire decoder, FSW correlator, full SACCH channel decode (K=5 ½-rate convolutional Viterbi + 60-position sub-frame deinterleaver + 12-bit puncture undo + CRC-6 trailer), CAC parser with CRC, RCCH opcode enum + payload parsers, IQ → C4FM dibit receiver (`internal/radio/nxdn/receiver`) for the 9600-baud 4-FSK variant composing FM demod + RRC matched filter + Mueller-Müller clock recovery + 4-level slicer to fan `nxdn.DibitSink` out to a future `ControlChannel.Process` adapter (BFSK variant — 2-level slicer — is a follow-up), control-channel state machine |
@@ -43,7 +50,7 @@ ways to help out.
 | LTR               | 41-bit per-repeater Status word parser, Channel → Hz resolver, optional area filter, IQ → sub-audible bit receiver (`internal/radio/ltr/receiver`) composing FM demod + narrow sub-audible LPF (~300 Hz Kaiser-windowed FIR) + Mueller-Müller clock recovery at 300 baud + 2-level slicer to fan `ltr.BitSink` out to a future `ControlChannel.Process` adapter (Manchester decode + 41-bit framing live there), per-repeater state machine emitting `protocol = "ltr"` grants when a status indicates an active call |
 | MPT 1327          | 64-bit address-codeword parser (38 info + 26 BCH parity consumed upstream), CodewordKind enum (ALH / AHY / AHYC / GTC / ACK / Disconnect / Data / Emergency), accessors for GTC voice grants + AHYC system broadcast, channel resolver, IQ → FFSK bit receiver (`internal/radio/mpt1327/receiver`) composing FM demod + FFSK tone discriminator (mark = 1200 Hz / space = 1800 Hz CCIR FFSK) + Mueller-Müller clock recovery at 1200 baud to fan `mpt1327.BitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "mpt1327"` grants |
 | dPMR (Mode 3)     | FS1 / FS2 / FS3 24-dibit sync, 80-bit CSBK parser, MessageType enum (RegistrationRequest / Response, VoiceServiceAllocation, IndividualVoiceAllocation, DataServiceAllocation, ServiceRequest, StandingServiceStatus, Release, Idle), AsVoiceGrant + AsSiteBroadcast accessors, PMR446 default band-plan, IQ → C4FM dibit receiver (`internal/radio/dpmr/receiver`) composing FM demod + RRC matched filter + Mueller-Müller clock recovery + 4-level slicer at the 2400-sym/s rate to fan `dpmr.DibitSink` out to a future `ControlChannel.Process` adapter, control-channel state machine emitting `protocol = "dpmr"` grants |
-| TETRA (TMO)       | Normal + extended training-sequence sync, generic Layer-3 PDU parser (4-bit Discriminator + type + payload), CMCE D-CONNECT / D-TX-GRANTED / D-RELEASE accessors, MLE-SYSINFO accessor (MCC / MNC / Location Area), TETRA-380 / 410 / 800 carrier resolver, IQ → π/4-DQPSK dibit receiver (`internal/radio/tetra/receiver`) composing the `demod.PiOver4DQPSK` helper with π/4 rotation + α = 0.35 RRC + naive symbol-time decimation at 18000 sym/s to fan `tetra.DibitSink` out to a future `ControlChannel.Process` adapter (full symbol-time clock recovery is a follow-up), control-channel state machine emitting `protocol = "tetra"` grants |
+| TETRA (TMO)       | Normal + extended training-sequence sync, generic Layer-3 PDU parser (4-bit Discriminator + type + payload), CMCE D-CONNECT / D-TX-GRANTED / D-RELEASE accessors, MLE-SYSINFO accessor (MCC / MNC / Location Area), TETRA-380 / 410 / 800 carrier resolver, IQ → π/4-DQPSK dibit receiver (`internal/radio/tetra/receiver`) composing the `demod.PiOver4DQPSK` helper with π/4 rotation + α = 0.35 RRC + Gardner symbol-timing recovery (default on; `tetra_clock_mode: naive` for synthesized fixtures) at 18000 sym/s, full ETSI EN 300 392-2 §8.3.1 channel-coding chain (descramble + deinterleave + depuncture + K=5 Viterbi + CRC-16) default-on via `tetra_channel_coding: on`, control-channel state machine emitting `protocol = "tetra"` grants |
 | D-STAR            | 24-bit JARL Header Frame Sync (`0xEAA060`) + 24-bit Slow Data Sync, 41-byte PCH header parser (FLAG1 + RPT2 / RPT1 / UR / MY1 / MY2 + CRC-CCITT), IsGroupCall / IsEmergency / IsData accessors, IQ → GMSK bit receiver (`internal/radio/dstar/receiver`) composing FM demod + Gaussian matched filter (BT = 0.5) + Mueller-Müller clock recovery + 2-level slicer at 4800 baud to fan `dstar.BitSink` into `ControlChannel.Process` (24-bit Frame Sync detector with tolerance=2 → PCH window → CRC-CCITT verify → Header → Ingest), full JARL DV-mode FEC chain (`internal/radio/framing/dstar_header.go`: K=5 R=1/2 convolutional encoder + ViterbiK5 decoder + PN15 LFSR scrambler + 22×30 block interleaver, 660 on-wire bits → 328 info bits, gated by `SetFECMode(FECOn)` and `dstar_fec_mode: on`), repeater state machine emitting `protocol = "dstar"` grants on group transmissions. The full chain recovers single-bit channel errors through the Viterbi inner code; calibration against an MMDVMHost-encoded real-air capture (to confirm the interleaver column order matches the wire format) lands once captured data is available. |
 | YSF (Yaesu System Fusion) | 4800-baud C4FM, 480-dibit / 100 ms frame layout (FSW / FICH / DCH offsets), 40-bit FSW correlator with mismatch tolerance, 32-bit Frame Information Channel parser (FrameType / CallType / Frame Number / Frame Total / DataType / VoIP / Squelch fields) with CRC-16 trailer, K=5 ½-rate Viterbi Trellis encoder + decoder over the 104-bit (48 info + 4 tail) FICH channel-bit region (`internal/radio/ysf/fich_trellis.go`, shared with NXDN SACCH), IQ → C4FM dibit receiver (`internal/radio/ysf/receiver`) composing FM demod + RRC matched filter + Mueller-Müller clock recovery + 4-level slicer to feed `ysf.DibitSink` into `ControlChannel.Process`, per-frequency state machine emitting `cc.locked` on sync detect and `protocol = "ysf"` grants (with the FICH SquelchCode as DG-ID talkgroup) on Header FICH for Group calls — Terminator FICH clears the dedup so the next transmission fires a fresh CallStart |
 | Orchestration     | In-process pub/sub event bus with typed payloads (Grant / CallStart / CallEnd / DecodeError / ToneAlert / etc.) and a typed `events.Stage` enum so protocol packages can't accidentally publish a stage label that drifts from the Prometheus dashboards, `System` model, JSON-on-disk last-known-CC cache, control-channel `Hunter` that retunes the SDR and parks on the first responsive frequency |
@@ -57,7 +64,7 @@ ways to help out.
 | Persistence       | Pure-Go SQLite (`modernc.org/sqlite`) call log subscribing to `CallStart` / `CallEnd` events; newest-first history queries with system / group / time filters; retention sweeper that ages out DB rows and recorded `.wav` / `.raw` files past configurable cutoffs |
 | Observability     | Prometheus collector (events / calls / CC-locked / IQ-underrun / USB-reconnect / decode-error / SDR-attached / build-info series) exposed at `/metrics`; multi-stage `Dockerfile`; `docker-compose.yml` with RTL-SDR USB pass-through, healthcheck, and Prometheus scrape labels |
 | Daemon            | `cmd/gophertrunk run` composes everything above into a single supervised process with signal-driven shutdown; every component is opt-in via `config.yaml` |
-| Testing           | Per-package unit tests under `make test`; `make integration` boots the wired daemon end-to-end (no SDR), publishes a synthetic call on the bus, and asserts the engine + recorder + call log + metrics + API agree — runs on every CI build |
+| Testing           | Per-package unit tests under `make test`; `make integration` boots the wired daemon end-to-end (no SDR) and asserts the engine + recorder + call log + metrics + API agree on a synthetic call; `make test-integration` walks every `//go:build integration` test across the module; per-protocol "lights up live trunked reception" checks (`make integration-cc-{p25,nxdn,dmr,dpmr,edacs,motorola,ltr,mpt1327,tetra,p25p2,ysf}`) inject synthesized IQ through the production daemon + receiver + supervisor + API chain; `make test-dvsi` exercises the patent-encumbered DVSI USB-3000 / AMBE-3003 backend behind `-tags dvsi` via scripted mock + software-loopback Transports; `make vulncheck` runs `govulncheck` against direct + transitive deps; `make licenses` regenerates the transitive-deps license inventory; `make release-dry-run` rehearses the release build locally with full ldflags injection. All targets run as separate jobs in GitHub Actions on every PR |
 
 ## Status & known gaps
 
@@ -141,34 +148,51 @@ The remaining gaps:
     MPT 1327 transmits 64-bit codewords back-to-back at 1200 bps
     FFSK with no inter-codeword bit permutation. No remaining
     MPT 1327 spec follow-ups.
-  - **YSF FICH on-air interleaver / puncture validation.** The
-    K=5 ½-rate Trellis encoder + decoder
+  - ~~**YSF FICH on-air interleaver / puncture validation**~~
+    (now shipping the spec-level codec). The K=5 ½-rate Trellis
+    encoder + decoder
     (`internal/radio/ysf/fich_trellis.go`) round-trip cleanly
-    in unit tests; calibration against a captured YSF
-    transmission's exact schedule is blocked on real-air data.
+    in unit tests. `EncodeFICHOnAir` / `DecodeFICHOnAir` now
+    layer the full on-air chain — puncture (drop channel-bit
+    positions `{0, 1, 102, 103}`) plus column-major 10×10
+    interleave (out[k] = depunctured[(k%10)*10 + (k/10)]) — per
+    the MMDVMHost / DSDcc / Pi-Star reference. Every
+    single-bit-flip in the 100-bit on-air stream is repaired
+    by the Viterbi (`TestFICHOnAirRecoversFromSingleBitFlip`
+    exhaustively confirms all 100 positions). On-air capture
+    validation against a real Yaesu transmission is the
+    remaining real-air-blocked piece — if the captured FICH
+    fails CRC after the on-air decoder, the alternate-schedule
+    swap is a two-line change documented in
+    `samples/ysf/README.md`.
   - **TETRA on-air recovery margins.** Unit tests round-trip
     clean fixtures end-to-end; on-air recovery margins
     (Viterbi correction depth vs. real co-channel +
     adjacent-channel interference) need a live capture to
     characterise.
-- **DMR Tier II synthesized IQ fixture.** The Tier II pipeline
-  + Process adapter + unit test all ship (PR #184); the
-  end-to-end integration test (`TestDaemonCCDecodesDMRTier2`)
-  is currently `t.Skip`'d because the synthesized Voice LC
-  Header IQ fixture doesn't survive the C4FM modulator+demod
-  round-trip cleanly — Tier III's structurally-identical Aloha
-  CSBK fixture scrapes by but Tier II's payload bit
-  distribution stresses the Mueller-Müller clock loop more.
-  Real-air repeater captures exercise the pipeline fine; the
-  synthesized fixture is the follow-up. The diagnostic test
-  `TestDMRTier2VsTier3SymbolDensity` /
+- ~~**DMR Tier II synthesized IQ fixture**~~ (now shipping).
+  The Tier II pipeline + Process adapter + unit test all
+  shipped in PR #184; the end-to-end integration test
+  (`TestDaemonCCDecodesDMRTier2`) was previously `t.Skip`'d
+  because the synthesized Voice LC Header IQ fixture's symbol
+  distribution stresses the Mueller-Müller clock loop harder
+  than Tier III's structurally-identical CSBK Aloha fixture.
+  The diagnostic test (`TestDMRTier2VsTier3SymbolDensity` /
   `TestDMRTier2SlotTypeVsPayloadIsolation` in
-  `cmd/gophertrunk/dmr_tier2_diagnostic_test.go` (run via
-  `make integration` and reads `-v` output) localises the
-  divergent statistic to the BPTC(196,96)-encoded payload's
-  class-3 dibit overrepresentation (21.4% Tier II vs 5.1%
-  Tier III) and the matching mean-transition magnitude (1.27
-  vs 0.90); the fix lands in a follow-up PR.
+  `cmd/gophertrunk/dmr_tier2_diagnostic_test.go`) localised
+  the divergent statistic to the BPTC(196, 96)-encoded
+  payload's class-3 dibit overrepresentation (21.4% Tier II
+  vs 5.1% Tier III) and matching mean-transition magnitude
+  (1.27 vs 0.90); the RS(12, 9) seed `0x96 0x96 0x96` and the
+  BPTC parity rows distribute high-Hamming-weight bits
+  throughout the channel-bit output. The fix lives in
+  `internal/scanner/ccdecoder/pipelines.go`'s
+  `newDMRTier2Pipeline`: lowering the per-protocol pipeline
+  ClockGain from 0.025 (the value shared with Tier III) to
+  0.015 keeps the MM loop locked under the harder symbol
+  distribution. Receiver locks within ~100 ms of the first
+  burst; the more conservative gain stays well within the
+  loop's noise margin on live captures.
 - **Digital-voice level calibration.** Pure-Go IMBE / AMBE+2
   emit real audio end-to-end. The comparison harness at
   `internal/voice/calibrate/` is ready;
@@ -280,29 +304,129 @@ sourcing.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
-- **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
-  factory that opens a connected DVSI USB chip. Same plug-in shape
-  as `internal/voice/ambe2`; the daemon picks the factory by name
-  from `voice.DefaultRegistry`. Useful for operators who want
-  vendor-blessed AMBE+2 decode on jurisdictions where the patent
-  posture matters.
-- **Vocoder level calibration.** Pure-Go IMBE / AMBE+2 produce real
-  audio end-to-end today. Absolute-level calibration against a
-  DSD-FME or OP25 reference recording (capture a P25 P1 / DMR voice
-  exchange, decode through both, compare RMS + cross-correlation
-  against a reference WAV under `internal/voice/{imbe,ambe2}/testdata/`)
-  is a polish item — useful when downstream pipelines need consistent
-  loudness across decoders. AMBE+2 DTMF dual-tone synthesis
-  (b₁ ∈ [128, 143]) is wired against the ITU-T Q.23 4×4 matrix;
-  knox / call-alert pairs (b₁ ∈ [144, 163]) are vendor-specific
-  and stay silent pending per-vendor frequency tables.
-- **YSF on-air interleaver / puncture validation.** The K=5 ½-rate
-  Trellis encoder + decoder round-trip cleanly; matching the exact
-  on-air interleaver / puncture schedule to a captured YSF
-  transmission lands once a real-air capture is available.
+- **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
+  The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
+  conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)
+  behind `-tags dvsi`; the package's `init()` registers `"dvsi"`
+  with `voice.DefaultRegistry`. CI exercises the wire protocol +
+  Vocoder plumbing through the scripted mock Transport and the
+  software-loopback Transport (`make test-dvsi`). The USB / FTDI
+  bulk-endpoint plumbing that talks to a physical chip remains a
+  stub returning `ErrNoDevice` — the recorder fallback chain
+  activates cleanly when no chip is connected. The actual FTDI
+  hardware integration lands when a DVSI USB-3000 is available for
+  round-trip testing.
+- **Vocoder level calibration (reference data).** The plumbing
+  ships — comparison harness at `internal/voice/calibrate`,
+  per-vocoder testdata READMEs at
+  `internal/voice/{imbe,ambe2}/testdata/`, the end-to-end recipe at
+  [docs/voice-calibration.md](docs/voice-calibration.md), and a
+  one-off CLI wrapper at `cmd/voice-calibrate` (run
+  `go run ./cmd/voice-calibrate -raw call.raw -ref-wav ref.wav
+  -vocoder imbe`). Operators just need to drop reference WAVs
+  decoded by DSD-FME / OP25 from the same `.raw` into testdata; the
+  existing calibrate tests run unguarded once both files are
+  present. AMBE+2 DTMF dual-tone synthesis (b₁ ∈ [128, 143]) is
+  wired against the ITU-T Q.23 4×4 matrix; knox / call-alert pairs
+  (b₁ ∈ [144, 163]) are vendor-specific — operators with a per-
+  vendor reference register the (freqA, freqB) pair via
+  `ambe2.SetKnoxTone` and the matching tone frames synthesise
+  through the same dual-tone path as DTMF.
+- **YSF on-air interleaver / puncture validation (real-air capture).**
+  The spec-level on-air codec ships in
+  `internal/radio/ysf/fich_trellis.go`'s `EncodeFICHOnAir` /
+  `DecodeFICHOnAir` per the MMDVMHost / DSDcc / Pi-Star reference
+  (puncture positions `{0, 1, 102, 103}`, column-major 10×10
+  interleave). Unit tests confirm every single-bit-flip is
+  Viterbi-corrected. The remaining work is calibration against a
+  real captured YSF transmission — if the captured FICH fails CRC
+  after on-air decode, swap to the alternate schedule per
+  `samples/ysf/README.md`.
 
 ### Recently shipped
 
+- **Capture-spec acceptance criteria for every real-air-blocked
+  follow-up.** Each [`samples/<proto>/README.md`](samples/) now
+  documents the explicit numerical thresholds a contributor with
+  hardware can run a capture against to close the corresponding
+  follow-up: TETRA wants 5 s lock latency + ≥ 90% frame recovery
+  + a new (not-yet-wired) `gophertrunk_tetra_viterbi_corrections`
+  Prometheus histogram; NXDN wants ≥ 80% CRC-verified CAC bursts
+  + SystemID match; MPT 1327 wants ≥ 95% true-positive lock rate
+  + a non-decreasing tolerance sweep; DMR Tier II wants
+  byte-for-byte FLC match + clean Terminator-with-LC handling.
+  The DMR Tier II and MPT 1327 follow-ups are already closed
+  algorithmically (PR-A, PR-C); their captures are now optional
+  secondary validation rather than the blocker. The
+  [`samples/README.md`](samples/) top-level table summarises
+  status + acceptance criteria across all five protocols.
+- **Release-ready version metadata + AMBE+2 patent banner.**
+  [`internal/version/`](internal/version/) now exposes `Version`,
+  `Commit`, `BuildTime`, and a `String()` formatter
+  (`"vX.Y.Z (sha=…, built=…)"`); all three are populated via
+  `-ldflags` by the Makefile + release workflow. The daemon logs
+  a one-line AMBE+2 patent-posture notice at startup pointing at
+  [`docs/vocoders.md`](docs/vocoders.md); set
+  `GOPHERTRUNK_QUIET_BANNER=1` in CI / test harnesses to suppress
+  it. New `make release-dry-run VERSION=v0.99.0` target rehearses
+  the release build locally so ldflags + packaging surface before
+  a tag is cut — see [`CONTRIBUTING.md` §"Cutting a release"](CONTRIBUTING.md#cutting-a-release).
+- **CI gates: govulncheck + license audit + full-tree integration
+  run.** `.github/workflows/ci.yml` gains a `vulncheck` job
+  (govulncheck against the direct + transitive dependency graph),
+  a `licenses` job (regenerates the transitive-deps inventory via
+  google/go-licenses and diffs against the committed
+  `THIRD_PARTY_LICENSES.csv`), and an `integration` job that
+  walks `make test-integration` across the whole module (the
+  existing `build-test` job runs `make integration` against
+  `cmd/gophertrunk/` only; this future-proofs against
+  integration-tagged tests landing in other packages). New
+  `Makefile` targets: `make vulncheck`, `make licenses`,
+  `make test-integration`.
+  [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) ships a
+  hand-curated direct-deps table + the ISC attribution for the
+  mbelib-derived AMBE+2 / IMBE codebook tables.
+- **Operational docs landed.** [`SECURITY.md`](SECURITY.md)
+  documents the vulnerability disclosure process (private GitHub
+  security advisories), supported versions, in-scope vs.
+  out-of-scope issues, and the maintainer's response-time SLAs.
+  [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the dev setup, the
+  house-style conventions, and the PR scoping rules.
+  [`CHANGELOG.md`](CHANGELOG.md) seeds a Keep-a-Changelog with
+  every user-visible change since the calibration / hardening
+  pass. [`docs/gophertrunk.service`](docs/gophertrunk.service) is
+  an example systemd unit (DynamicUser + ProtectSystem + USB
+  device-allow) operators install at `/etc/systemd/system/`.
+- **Optional TLS on HTTP + gRPC + extended health endpoint.**
+  `api.tls_cert` / `api.tls_key` in `config.yaml` switches both
+  the HTTP REST/SSE/WebSocket server and the gRPC server to TLS;
+  the daemon refuses to start when one is set without the other.
+  Plain TCP stays the default for loopback / trusted-LAN
+  deployments. `GET /api/v1/health` now returns
+  `pool_attached_count`, `active_calls`, `db_connected`,
+  `metrics_enabled`, `auth_mode`, and `version` alongside the
+  legacy `status` + `now` — supports two-field k8s / Nomad
+  readiness probes that distinguish "process up" from "actually
+  working". See [docs/hardening.md](docs/hardening.md#transport-encryption-tls)
+  for the TLS recipe and [docs/hardening.md](docs/hardening.md#health-endpoint-diagnostics)
+  for the health schema.
+- **API server hardening: HTTP timeouts + gRPC keep-alive + drain
+  window.** `internal/api/server.go` now sets `ReadTimeout` /
+  `WriteTimeout` / `IdleTimeout` on the HTTP server (30 s / 30 s /
+  120 s) on top of the existing `ReadHeaderTimeout`. SSE
+  (`/api/v1/events`) opts out of `WriteTimeout` per-request via
+  `http.ResponseController.SetWriteDeadline(time.Time{})` so the
+  long-lived stream isn't torn down mid-call; the WebSocket
+  endpoint hijacks the connection on Upgrade and is unaffected.
+  `internal/api/grpc.go` configures `keepalive.ServerParameters`
+  (30 s idle ping, 10 s ack timeout) + `EnforcementPolicy`
+  (5 s min-time floor, `PermitWithoutStream: true`) so long-lived
+  `AudioService.StreamAudio` subscribers detect dead peers
+  without back-pressuring the publisher. Shutdown ctx bumped from
+  5 s to 30 s so in-flight SSE / WebSocket / audio-stream
+  subscribers drain cleanly on a daemon restart. See
+  [docs/hardening.md](docs/hardening.md#timeouts-and-keep-alive)
+  for the full knob reference.
 - **Runtime theme toggle (Ctrl+T) + docs/tui.md sync.** The dark
   and monochrome palettes have lived in `internal/tui/theme` since
   the operator-console PR but weren't reachable from the UI;
@@ -1830,32 +1954,53 @@ to its own package and lands independently.
 
 ## Tech stack
 
-- **Language:** Go 1.24+
-- **Hardware:** Pure-Go RTL-SDR driver — USBDEVFS / WinUSB transport, RTL2832U register layer, and per-chip tuner drivers (R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580). `CGO_ENABLED=0`; no `librtlsdr` / `libusb` build dependency.
+- **Language:** Go 1.25+ (toolchain pinned to 1.25.10 in `go.mod`)
+- **Hardware:** Pure-Go RTL-SDR driver — USBDEVFS / WinUSB / macOS IOKit transport, RTL2832U register layer, and per-chip tuner drivers (R820T/R820T2/R828D/E4000/FC0012/FC0013/FC2580). `CGO_ENABLED=0`; no `librtlsdr` / `libusb` build dependency.
 - **DSP:** `gonum/dsp/fourier` for FFT, custom polyphase channelizer,
-  filters, and demodulators
+  filters, and demodulators (FM / C4FM / GFSK / FFSK / π/4-DQPSK / H-DQPSK)
+- **Vocoders:** Pure-Go IMBE + AMBE+2 (clean-room re-implementations
+  of mbelib codebook tables); optional DVSI USB-3000 hardware
+  backend behind `-tags dvsi`
+- **Audio:** Pure-Go ALSA backend (direct-ioctl + libasound2 via
+  purego), macOS CoreAudio + Windows WASAPI via `ebitengine/oto`
 - **Storage:** `modernc.org/sqlite` (pure Go)
-- **API:** gRPC + Protobuf, HTTP/SSE, WebSocket
+- **API:** gRPC + Protobuf, HTTP/SSE, WebSocket; optional TLS;
+  bearer-token auth on mutations
+- **TUI:** `charmbracelet/bubbletea` 10-panel cockpit
 - **Logging:** `log/slog` (stdlib)
 - **Metrics:** `prometheus/client_golang`
+- **CI:** GitHub Actions running `go vet` + `go test -race` + `make
+  integration` + `make test-dvsi` + `govulncheck` + license audit
+  across Linux / macOS / Windows runners
 
 ## Quick start
 
 ### Download a prebuilt release
 
-Each tagged release publishes installers / archives on the
-[**Releases page**][releases]:
+The fastest path is the **[Downloads page]({{ site.url | default: "https://mattcheramie.github.io/GopherTrunk" }}/downloads.html)**
+on the project site — it has per-platform recipes (Linux / Windows /
+macOS / Docker), checksum-verification commands, and pointers to
+the latest tag. Or jump straight to the **[Releases page][releases]**
+on GitHub to grab the artefacts directly:
 
 | Platform   | File                                                   | What it is                                              |
 | ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
 | Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup) — single static binary  |
 | Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same binary, no installer                 |
 | Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed static binary + sample config                  |
+| all        | `SHA256SUMS`                                           | SHA-256 checksums for every artefact in the release      |
 
 Windows users: after running the installer, follow
 [`docs/install-windows.md`](docs/install-windows.md) to swap the
 RTL-SDR driver to WinUSB via Zadig — the OS won't see your dongle
 until that's done. The installer's last page links there too.
+
+After install, `gophertrunk version` reports the build provenance:
+
+```sh
+$ gophertrunk version
+v0.99.0 (sha=abc1234, built=2026-05-13T19:00:00Z)
+```
 
 [releases]: https://github.com/MattCheramie/GopherTrunk/releases
 
@@ -1863,8 +2008,11 @@ until that's done. The installer's last page links there too.
 
 ### Prerequisites
 
-Just Go 1.24+. The pure-Go RTL-SDR driver doesn't need
-`librtlsdr` / `libusb` / a C toolchain on the build host.
+Just Go 1.25+. The pure-Go RTL-SDR driver doesn't need
+`librtlsdr` / `libusb` / a C toolchain on the build host. The
+project's `go.mod` pins the toolchain to 1.25.10 (closes the 23
+stdlib CVEs in the bare 1.25.0 release); older Go versions
+auto-download 1.25.10 via Go's toolchain mechanism.
 
 See [`docs/hardware.md`](docs/hardware.md) for runtime `udev` rules
 and DVB-driver blacklisting on Linux.
@@ -1875,6 +2023,11 @@ and DVB-driver blacklisting on Linux.
 make build                    # produces ./bin/gophertrunk
 make test                     # go test -race ./...
 make integration              # boots the wired daemon end-to-end (no SDR needed)
+make test-integration         # every //go:build integration test across the module
+make test-dvsi                # DVSI USB-3000 / AMBE-3003 backend (under -tags dvsi)
+make vulncheck                # govulncheck against direct + transitive deps
+make licenses                 # regenerate THIRD_PARTY_LICENSES.csv
+make release-dry-run          # rehearses the release.yml linux build locally
 make integration-cc           # P25 Phase 1 "lights up live trunked reception"
 make integration-cc-nxdn      # NXDN "lights up" — synthesizes spec FEC chain
 make integration-cc-dmr       # DMR Tier III "lights up" — Aloha CSBK via BPTC
@@ -1885,6 +2038,7 @@ make integration-cc-tetra     # TETRA TMO "lights up" — π/4-DQPSK + full §8.
 make integration-cc-p25p2     # P25 Phase 2 "lights up" — H-DQPSK + trellis MAC PDU
 make integration-cc-mpt1327   # MPT 1327 "lights up" — audio-band FFSK + BCH(63, 38)
 make integration-cc-ltr       # LTR "lights up" — sub-audible NRZ at 300 baud
+make integration-cc-ysf       # YSF "lights up" — 4800-baud C4FM 480-dibit frames
 
 ./bin/gophertrunk version
 ./bin/gophertrunk sdr list                # enumerates attached dongles
@@ -2133,6 +2287,8 @@ opt-in field as a `omitempty` JSON value.
 
 ## Documentation
 
+### Project docs
+
 - [`docs/architecture.md`](docs/architecture.md) — layered overview,
   concurrency model, driver registry, build tags
 - [`docs/tui.md`](docs/tui.md) — TUI keybindings, panel reference,
@@ -2140,21 +2296,40 @@ opt-in field as a `omitempty` JSON value.
 - [`docs/hardware.md`](docs/hardware.md) — udev rules, DVB blacklist,
   IQ capture for replay
 - [`docs/vocoders.md`](docs/vocoders.md) — IMBE / AMBE+2 licensing
-  realities and the plugin model
-- [`docs/hardening.md`](docs/hardening.md) — API authentication,
-  Prometheus catalogue, Docker / compose USB pass-through,
-  smoke-test checklist
+  realities, the plugin model, the DVSI backend layout, and the
+  knox / call-alert extension hook
+- [`docs/voice-calibration.md`](docs/voice-calibration.md) — operator
+  recipe for tuning the IMBE / AMBE+2 decoders against a DSD-FME /
+  OP25 reference recording via `cmd/voice-calibrate`
+- [`docs/hardening.md`](docs/hardening.md) — API authentication, TLS
+  setup, health endpoint diagnostics, HTTP / gRPC timeouts +
+  keep-alive reference, graceful shutdown, Prometheus catalogue,
+  Docker / compose USB pass-through, smoke-test checklist
 - [`docs/opt-in-features.md`](docs/opt-in-features.md) — operator
   reference for every default the daemon carries: protocol FEC
-  defaults (on, opt-out per protocol), receiver clock recovery (on,
-  opt-out per protocol), daemon-level features (mix of on / off /
-  auto-detect), and the permanent build-time gates (DVSI patent
-  tag, integration tests). Cross-references the README's relevant
-  sections.
+  defaults, receiver clock recovery, daemon-level features
+  (mix of on / off / auto-detect), and the permanent build-time
+  gates (DVSI patent tag, integration tests)
+- [`docs/gophertrunk.service`](docs/gophertrunk.service) — example
+  systemd unit (DynamicUser, ProtectSystem, USB device-allow) for
+  Linux operators standing the daemon up on a server
 - [`docs/specs/`](docs/specs/) — reference air-interface PDFs the
   on-air FEC implementations derive from (NXDN-TS-1-A,
   ETSI EN 300 392-2 TETRA, plus a negative-reference M/A-COM LBI
   for EDACS that documents *not* what to look for)
+
+### Project metadata
+
+- [`CHANGELOG.md`](CHANGELOG.md) — user-visible changes per release,
+  Keep-a-Changelog format
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup, PR scoping
+  rules, house-style conventions, release-cutting recipe
+- [`SECURITY.md`](SECURITY.md) — vulnerability disclosure process
+  via GitHub's private security advisories; in-scope vs.
+  out-of-scope; response-time SLAs
+- [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) — direct
+  Go-module deps + the mbelib ISC attribution for the AMBE+2 /
+  IMBE codebook tables
 
 ## License
 

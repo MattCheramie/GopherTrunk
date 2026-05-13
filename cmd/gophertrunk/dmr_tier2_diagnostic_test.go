@@ -50,7 +50,7 @@ func TestDMRTier2VsTier3SymbolDensity(t *testing.T) {
 	// stream where the receiver is actually decoding bursts. Tier II
 	// uses a 2000-dibit warmup; Tier III uses 800. The post-warmup
 	// region is where the MM clock loop has to track real payload.
-	const tier2Warmup = 2000
+	const tier2Warmup = 800
 	const tier3Warmup = 800
 	tier2Burst := tier2[tier2Warmup:]
 	tier3Burst := tier3[tier3Warmup:]
@@ -132,7 +132,7 @@ func TestDMRTier2SlotTypeVsPayloadIsolation(t *testing.T) {
 	tier2 := buildDMRTier2VoiceLCHeaderDibits(burstRepeats, colorCode, groupID, sourceID)
 	tier3 := buildDMRTier3CSBKDibits(burstRepeats, colorCode, systemID)
 
-	const tier2Warmup = 2000
+	const tier2Warmup = 800
 	const tier3Warmup = 800
 	tier2Burst := tier2[tier2Warmup:]
 	tier3Burst := tier3[tier3Warmup:]

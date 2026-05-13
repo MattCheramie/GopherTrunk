@@ -2,6 +2,15 @@ module github.com/MattCheramie/GopherTrunk
 
 go 1.25.0
 
+// Toolchain pinned to 1.25.10 to close the 23 stdlib CVEs
+// govulncheck surfaced against go1.25.0 (html/template XSS,
+// crypto/tls KeyUpdate DoS + ALPN info leak, crypto/x509 chain
+// build + policy validation, net/url IPv6 + query parse, etc.).
+// The toolchain directive auto-downloads 1.25.10 on a build host
+// running an older 1.25.x; CI's setup-go is pinned to the same
+// version so the toolchain download doesn't run at every CI step.
+toolchain go1.25.10
+
 require gopkg.in/yaml.v3 v3.0.1
 
 require (

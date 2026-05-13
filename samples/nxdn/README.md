@@ -68,3 +68,30 @@ doesn't catch:
 - noise-margin behaviour the Viterbi corrector needs to handle.
 
 A single captured + labeled outbound RCCH burst closes all three.
+
+## Acceptance criteria
+
+A capture is considered "validating" when:
+
+1. **CRC-verified CAC burst rate.** ≥ **80% of CAC bursts**
+   recovered through the IQ → 4-FSK slicer → §4.5.1.1 chain pass
+   the trailing CRC-16. The threshold is intentionally lower than
+   TETRA's 90% — NXDN's 6.25 kHz channel width + minimum-shift
+   deviation gives less margin against adjacent-channel
+   interference, and 80% is the rate MMDVMHost reports on
+   comparable hardware.
+2. **System metadata match.** The decoded SystemID + SiteID + RAN
+   from the captured CAC bursts must match `metadata.expected`'s
+   values byte-for-byte. CRC-passing bursts whose payload doesn't
+   match the metadata flag a bit-ordering / endianness regression
+   rather than a noise issue.
+3. **Lock latency.** `events.KindCCLocked` within **3 seconds** of
+   the first valid CAC burst's start in the capture (NXDN locks
+   faster than TETRA because there's no Gardner step in the
+   receiver chain).
+
+The validation wires through `newNXDNPipeline`'s existing
+integration test
+[`cmd/gophertrunk/integration_cc_nxdn_test.go`](../../cmd/gophertrunk/integration_cc_nxdn_test.go)
+— add a `_realair_test.go` sibling pointing the mock SDR at the
+capture path.

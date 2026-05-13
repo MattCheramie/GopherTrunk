@@ -1,0 +1,79 @@
+# Example systemd unit for GopherTrunk.
+#
+# Install:
+#   sudo install -m 0644 docs/gophertrunk.service /etc/systemd/system/gophertrunk.service
+#   sudo install -m 0755 bin/gophertrunk /usr/local/bin/gophertrunk
+#   sudo install -d -m 0755 /etc/gophertrunk
+#   sudo install -m 0640 config.example.yaml /etc/gophertrunk/config.yaml
+#   # Edit /etc/gophertrunk/config.yaml — set device serials, talkgroup_file, etc.
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gophertrunk
+#
+# Tail logs:
+#   journalctl -u gophertrunk -f
+#
+# udev rules for RTL-SDR access live alongside this unit at
+# docs/hardware.md (the daemon talks to /dev/bus/usb/* directly via
+# the pure-Go USBDEVFS backend; no kernel driver is required).
+
+[Unit]
+Description=GopherTrunk digital trunking scanner
+Documentation=https://github.com/mattcheramie/gophertrunk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/gophertrunk run -config /etc/gophertrunk/config.yaml
+Restart=on-failure
+RestartSec=5
+
+# Optional: pull a bearer token out of an environment file so it's not
+# committed in config.yaml. Reference it from config.yaml as
+# api.auth.token_file.
+# EnvironmentFile=-/etc/gophertrunk/env
+
+# Hardening — most operators leave these alone; remove any that
+# block your deployment's specifics.
+DynamicUser=true
+# Allow access to USB devices for SDR enumeration; tighten to
+# AF_NETLINK + AF_UNIX once the daemon's USB transport stops using
+# udev's netlink monitor.
+PrivateUsers=false
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gophertrunk /etc/gophertrunk/last_cc_cache.json
+StateDirectory=gophertrunk
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+# USB device access — add explicit DeviceAllow lines for every RTL-SDR
+# you've enumerated, or use the looser pattern when you trust the
+# host. The pure-Go USBDEVFS backend needs read+write on
+# /dev/bus/usb/<bus>/<dev>; libsystemd routes this through cgroup
+# device controllers.
+DeviceAllow=char-usb_device rwm
+SupplementaryGroups=plugdev
+
+# Audio playback — only relevant when audio.enabled: true in the
+# config. The direct-ioctl backend (audio.device: ioctl) talks to
+# /dev/snd/pcm* without any libasound2; add a SupplementaryGroups=audio
+# if you'd rather use the dlopen backend.
+# DeviceAllow=char-alsa rwm
+# SupplementaryGroups=audio
+
+# Resource limits — set if your deployment is on a memory-constrained
+# host. Defaults below are conservative for a 2-SDR setup.
+# MemoryHigh=512M
+# MemoryMax=1G
+# TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

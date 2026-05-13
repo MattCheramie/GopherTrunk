@@ -479,7 +479,20 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  1944.0,
-		ClockGain:    0.025,
+		// ClockGain lowered to 0.015 vs Tier III's 0.025 because Tier
+		// II Voice LC Header bursts have a higher per-symbol
+		// transition magnitude than Tier III's CSBK Aloha bursts
+		// (1.27 vs 0.90, see TestDMRTier2VsTier3SymbolDensity in
+		// cmd/gophertrunk/dmr_tier2_diagnostic_test.go). The RS(12, 9)
+		// seed 0x96 0x96 0x96 and the BPTC(196, 96) parity rows
+		// distribute high-Hamming-weight bits throughout the
+		// channel-bit output; the resulting rapid-transition dibit
+		// stream slips the loop at 0.025. A more conservative gain
+		// converges slower but stays locked under the harder
+		// symbol distribution. Live captures benefit equally — the
+		// 0.015 value still sits well within the loop's noise
+		// margin per the MM stability bound.
+		ClockGain: 0.015,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},

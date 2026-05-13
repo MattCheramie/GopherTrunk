@@ -1,11 +1,15 @@
 VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
-LDFLAGS := -X github.com/MattCheramie/GopherTrunk/internal/version.Version=$(VERSION)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X github.com/MattCheramie/GopherTrunk/internal/version.Version=$(VERSION) \
+           -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=$(COMMIT) \
+           -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=$(BUILD_TIME)
 TAGS    ?=
 
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto cross-build release-archives
+.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run
 
 all: build
 
@@ -15,11 +19,28 @@ build:
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
 
+# test-dvsi runs the DVSI hardware-backend tests under the -tags dvsi
+# build. The Vocoder + Transport + USB-enumeration codepath is gated
+# behind the build tag (patent-encumbered AMBE+2 hardware backend
+# documented in docs/vocoders.md). The tagged unit tests use a
+# scripted mock Transport and a software-loopback Transport so the
+# wire protocol + Vocoder state machine + voice.Vocoder interface
+# conformance all exercise in CI without a real DVSI USB-3000.
+test-dvsi:
+	$(GO) test -tags "dvsi $(TAGS)" -race -count=1 ./internal/voice/dvsi/...
+
 # integration boots the wired daemon (no real SDR) end-to-end and asserts
 # the engine + recorder + call log + metrics + API agree on a synthetic
 # call. Build-tagged so default `make test` stays a fast unit run.
 integration:
 	$(GO) test -tags "integration $(TAGS)" -race -count=1 ./cmd/gophertrunk/...
+
+# test-integration is the full-tree variant — runs every
+# integration-tagged test across the codebase, not just the ones in
+# cmd/gophertrunk/. Future-proofs against integration-tagged tests
+# landing in other packages without an explicit CI / Makefile change.
+test-integration:
+	$(GO) test -tags "integration $(TAGS)" -race -count=1 $(PKGS)
 
 # integration-cc is the focused "lights up live trunked reception" check:
 # boots the daemon with a mock SDR + a stubbed P25 Phase 1 pipeline factory
@@ -137,6 +158,31 @@ lint: vet
 tidy:
 	$(GO) mod tidy
 
+# vulncheck runs golang.org/x/vuln/cmd/govulncheck against the
+# project's direct + transitive dependencies. CI runs this on every
+# PR; the binary lives at $(go env GOBIN)/govulncheck after
+#   go install golang.org/x/vuln/cmd/govulncheck@latest
+vulncheck:
+	@command -v govulncheck >/dev/null || { \
+	  echo "govulncheck not installed; run: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+	  exit 1; \
+	}
+	govulncheck ./...
+
+# licenses regenerates the machine-readable transitive-deps inventory
+# (THIRD_PARTY_LICENSES.csv) using google/go-licenses. The
+# hand-curated direct-deps table in THIRD_PARTY_LICENSES.md stays in
+# sync with go.mod; this target backstops it with the full graph.
+# Requires:
+#   go install github.com/google/go-licenses/v2@latest
+licenses:
+	@command -v go-licenses >/dev/null || { \
+	  echo "go-licenses not installed; run: go install github.com/google/go-licenses/v2@latest"; \
+	  exit 1; \
+	}
+	go-licenses csv ./... > THIRD_PARTY_LICENSES.csv 2>/dev/null || \
+	  echo "go-licenses reported errors; review THIRD_PARTY_LICENSES.csv for what landed"
+
 # cross-build produces a static, dependency-free binary for every
 # common (OS, arch) pair the daemon supports. CGO_ENABLED=0 is safe:
 # the project uses purego for every system FFI (ALSA / WASAPI /
@@ -157,6 +203,27 @@ cross-build:
 	    done; \
 	done
 	@ls -lh dist/
+
+# release-dry-run rehearses the release.yml linux job locally so an
+# operator can validate ldflags wiring + version-string injection
+# before pushing a tag. Skips the GitHub Release publish step; just
+# produces the tarball + checksum under dist/. Run with
+#   make release-dry-run VERSION=v0.99.0
+# to exercise a prerelease build; default VERSION picks up the same
+# git-describe value the release workflow would compute.
+release-dry-run:
+	@echo "→ Rehearsing release build for version $(VERSION)"
+	@echo "→ COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME)"
+	@rm -rf dist/dry-run
+	@mkdir -p dist/dry-run
+	CGO_ENABLED=0 $(GO) build -trimpath \
+	    -ldflags "$(LDFLAGS)" \
+	    -o dist/dry-run/gophertrunk \
+	    ./cmd/gophertrunk
+	@echo "→ Built binary reports:"
+	@dist/dry-run/gophertrunk version
+	@cd dist/dry-run && sha256sum gophertrunk > SHA256SUMS && cat SHA256SUMS
+	@echo "✓ Dry-run complete. Output: dist/dry-run/"
 
 # release-archives wraps the cross-build outputs in per-target
 # tarballs (linux/darwin) and zips (windows). Run `make cross-build`

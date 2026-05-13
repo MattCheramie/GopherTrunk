@@ -312,10 +312,18 @@ type SystemConfig struct {
 // deprecation warning and maps to `auth.mode: disabled` so the
 // daemon's existing wide-open behaviour is preserved.
 type APIConfig struct {
-	HTTPAddr       string         `yaml:"http_addr"`
-	GRPCAddr       string         `yaml:"grpc_addr"`
-	AllowMutations bool           `yaml:"allow_mutations"`
-	Auth           APIAuthConfig  `yaml:"auth"`
+	HTTPAddr       string        `yaml:"http_addr"`
+	GRPCAddr       string        `yaml:"grpc_addr"`
+	AllowMutations bool          `yaml:"allow_mutations"`
+	Auth           APIAuthConfig `yaml:"auth"`
+	// TLSCert / TLSKey, when both set, switch both the HTTP and
+	// gRPC servers to TLS. Paths point at PEM-encoded files on
+	// disk that the daemon reads at start-up (rotation requires a
+	// restart). Leave both empty for plain TCP (the default;
+	// appropriate for loopback / private-network deployments).
+	// See docs/hardening.md §"Transport encryption (TLS)".
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
 }
 
 // APIAuthConfig configures bearer-token authentication on the HTTP

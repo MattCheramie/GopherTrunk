@@ -217,6 +217,9 @@ type Server struct {
 	// AuthModeDisabled state (legacy wide-open behaviour).
 	allowMutations bool
 
+	tlsCert string
+	tlsKey  string
+
 	mu     sync.Mutex
 	srv    *http.Server
 	closed bool
@@ -320,6 +323,14 @@ type ServerOptions struct {
 	// it to surface every config knob. Optional; when nil, the
 	// route returns 503.
 	Runtime RuntimeProvider
+	// TLSCert and TLSKey, when both non-empty, switch the HTTP
+	// server to TLS. Paths point at PEM-encoded files on disk that
+	// the daemon reads at start-up. Leaving either empty serves
+	// plain HTTP (the default — appropriate for loopback / private-
+	// network deployments where the bearer-token auth gate is the
+	// only protection on mutations).
+	TLSCert string
+	TLSKey  string
 }
 
 // NewServer constructs a server but does not yet bind a listener; call
@@ -355,6 +366,12 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if authCfg.Mode == AuthModeDisabled {
 		log.Warn("api: auth disabled — mutation endpoints are not authenticated; bind to loopback or trusted network only")
 	}
+	// TLS: both files must be set to enable TLS; one without the
+	// other is a misconfiguration the operator should hear about
+	// rather than silently fall back to plain HTTP.
+	if (opts.TLSCert == "") != (opts.TLSKey == "") {
+		return nil, errors.New("api: tls_cert and tls_key must both be set or both be empty")
+	}
 	return &Server{
 		addr:           opts.Addr,
 		bus:            opts.Bus,
@@ -374,6 +391,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		version:        opts.Version,
 		auth:           auth,
 		allowMutations: opts.AllowMutations,
+		tlsCert:        opts.TLSCert,
+		tlsKey:         opts.TLSKey,
 	}, nil
 }
 
@@ -386,15 +405,40 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.srv = &http.Server{
-		Handler:           mux,
+		Handler: mux,
+		// ReadHeaderTimeout protects against Slowloris attacks; the
+		// existing 10 s bound stays.
 		ReadHeaderTimeout: 10 * time.Second,
+		// ReadTimeout / WriteTimeout / IdleTimeout cap per-request
+		// resource use so slow clients can't pin a worker or a
+		// socket. Streaming endpoints (SSE at /api/v1/events,
+		// WebSocket at /api/v1/events/ws, the per-call audio stream
+		// in api/audio.go) disable WriteTimeout per-request via
+		// http.ResponseController so the long-lived connections keep
+		// working — the standard REST handlers are bounded by these
+		// at the server level.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	s.mu.Unlock()
 
 	errCh := make(chan error, 1)
+	tlsEnabled := s.tlsCert != "" && s.tlsKey != ""
 	go func() {
-		s.log.Info("api: listening", "addr", listener.Addr().String())
-		if err := s.srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+		s.log.Info("api: listening",
+			"addr", listener.Addr().String(),
+			"tls", tlsEnabled)
+		var err error
+		if tlsEnabled {
+			// ServeTLS reads the cert / key off disk at start;
+			// rotation requires a daemon restart. Document this
+			// in docs/hardening.md.
+			err = s.srv.ServeTLS(listener, s.tlsCert, s.tlsKey)
+		} else {
+			err = s.srv.Serve(listener)
+		}
+		if err != nil && err != http.ErrServerClosed {
 			errCh <- err
 			return
 		}
@@ -422,7 +466,12 @@ func (s *Server) shutdown(ctx context.Context) error {
 		return nil
 	}
 	s.closed = true
-	shutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
+	// get up to 30 s to drain rather than the 5 s the old bound gave
+	// them. Cuts user-visible connection drops on a clean restart.
+	// Static HTTP requests complete in milliseconds either way; the
+	// extra headroom only matters for long-lived streams.
+	shutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return s.srv.Shutdown(shutCtx)
 }

@@ -3,13 +3,17 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	apiv1 "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
@@ -47,6 +51,13 @@ type GRPCServerOptions struct {
 	// returns Unavailable rather than streaming frames.
 	Audio *AudioPublisher
 	Log   *slog.Logger
+	// TLSCert and TLSKey, when both non-empty, switch the gRPC
+	// server to TLS using credentials.NewServerTLSFromFile. Same
+	// disk-loaded-once semantics as the HTTP server's TLS support.
+	// Leave both empty for plain TCP (default; appropriate for
+	// loopback / private-network deployments).
+	TLSCert string
+	TLSKey  string
 }
 
 // NewGRPCServer constructs the server but does not bind a listener.
@@ -69,7 +80,38 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		audio:      opts.Audio,
 		log:        log,
 	}
-	g.srv = grpc.NewServer()
+	// Keep-alive guards long-lived RPCs (StreamAudio in particular)
+	// against silently-dead peers — without server-side pings, a
+	// client whose network drops without a TCP FIN/RST would pin a
+	// gRPC stream + its publisher subscription forever. The values
+	// match Google's published defaults: Time = 30 s of idle before
+	// the first ping, Timeout = 10 s for the ack before the
+	// connection is closed. MinTime = 5 s gates client-side ping
+	// floods.
+	keepaliveParams := keepalive.ServerParameters{
+		Time:    30 * time.Second,
+		Timeout: 10 * time.Second,
+	}
+	keepaliveEnforcement := keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Second,
+		PermitWithoutStream: true,
+	}
+	srvOpts := []grpc.ServerOption{
+		grpc.KeepaliveParams(keepaliveParams),
+		grpc.KeepaliveEnforcementPolicy(keepaliveEnforcement),
+	}
+	// TLS: same all-or-nothing semantics as the HTTP server.
+	if (opts.TLSCert == "") != (opts.TLSKey == "") {
+		return nil, errors.New("api: grpc tls_cert and tls_key must both be set or both be empty")
+	}
+	if opts.TLSCert != "" {
+		creds, err := credentials.NewServerTLSFromFile(opts.TLSCert, opts.TLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("api: load gRPC TLS credentials: %w", err)
+		}
+		srvOpts = append(srvOpts, grpc.Creds(creds))
+	}
+	g.srv = grpc.NewServer(srvOpts...)
 	apiv1.RegisterSystemServiceServer(g.srv, g)
 	apiv1.RegisterTalkgroupServiceServer(g.srv, g)
 	apiv1.RegisterAudioServiceServer(g.srv, g)

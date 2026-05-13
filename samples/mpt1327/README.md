@@ -1,10 +1,18 @@
 # MPT 1327 captures
 
-Drop **MPT 1327 control channel** bit-stream / IQ recordings here to
-calibrate the bit-error tolerance threshold on the 16-bit Codeword
-Synchronisation Code (CWSC) detector
+The 16-bit Codeword Synchronisation Code (CWSC) detector in
 [`internal/radio/mpt1327/process.go`](../../internal/radio/mpt1327/process.go)
-ships today as exact-match.
+**now matches against a configurable Hamming-distance threshold**
+(default 2 bits out of 16, matching commercial MPT 1327 receivers).
+Operators replaying pre-stripped synthesized fixtures opt back into
+exact-match per system via `mpt1327_cwsc_tolerance: 0`.
+
+Real-air **MPT 1327 control channel** recordings are still welcome
+for empirical false-positive-rate validation — the combinatorial
+math (C(16, 0..2) / 2^16 ≈ 0.21% per window, combined with the
+BCH(64, 48, 2)-validated codeword that must follow) bounds the
+false-lock rate, but a real capture closes the loop against actual
+noise distributions.
 
 ## Capture format
 
@@ -37,23 +45,41 @@ ships today as exact-match.
 }
 ```
 
-## Why captures are needed
+## Why captures are still welcome
 
-The exact-match CWSC detector in
-[`process.go::findCWSC`](../../internal/radio/mpt1327/process.go)
-locks reliably on synthesized fixtures but is fragile when real-air
-captures introduce occasional bit errors in the sync sequence. The
-spec doesn't mandate a tolerance threshold — implementations
-typically choose 1 or 2 bit errors based on empirical SNR vs.
-false-lock measurements.
+The tolerance default (2 out of 16) is grounded in the
+combinatorial math + the BCH validation that gates downstream
+codeword acceptance. What a real capture closes:
 
-The calibration experiment:
+- **Empirical false-positive count.** Pre-PR-A theory said ~6e-8
+  per bit position; a real capture lets us measure that directly
+  and confirm the BCH gate behaves as expected on actual noise.
+- **Per-vendor CWSC bit-error distribution.** Tait vs. Motorola
+  vs. Simoco transmitters may have characteristic patterns in
+  which sync bits flip; that signals which tolerance value
+  operators in those ecosystems should pin.
 
-1. Walk a labeled capture with `findCWSC` at tolerance ∈ {0, 1, 2}.
-2. For each tolerance, measure (true-positive locks / false-positive
-   locks / lock latency) against `metadata.expected.messages`.
-3. Pick the tolerance that maximises true-positive rate while
-   keeping false positives within the noise floor.
+## Acceptance criteria
+
+A capture is considered "validating" when:
+
+1. **No spurious locks in clean traffic.** Run the capture with
+   `mpt1327_cwsc_tolerance: 2` (default) — every
+   `events.KindCCLocked` must align with a sync sequence the
+   metadata's `messages` list contains. False-positive locks
+   (locks that don't correspond to a real message) bound the
+   false-positive rate per Hamming distance.
+2. **True-positive rate ≥ 95%.** ≥ **95% of CWSC sync
+   sequences** in `metadata.expected.messages` must produce a
+   downstream `events.KindGrant` or `events.KindCCLocked` at the
+   default tolerance. Missing locks at tolerance ≥ 2 suggest a
+   different failure mode than the CWSC threshold (signal level,
+   adjacent-channel interference, etc.).
+3. **Tolerance sweep stays monotone.** Running the capture at
+   tolerance ∈ {0, 1, 2, 3} must produce monotonically
+   non-decreasing lock counts (more permissive thresholds should
+   never lose locks). A non-monotone sweep flags a bug in the
+   matcher.
 
 ## Recommended sources
 

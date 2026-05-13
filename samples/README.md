@@ -14,13 +14,18 @@ protocol subfolder has a `README.md` that describes:
 
 ## What lives here
 
-| Subfolder | Protocol | Follow-up it unblocks |
-| --- | --- | --- |
-| [`nxdn/`](nxdn/) | NXDN (NXDN-TS-1-A) | Interleaver + puncture inner-layer end-to-end validation |
-| [`ysf/`](ysf/) | Yaesu System Fusion | FICH interleaver / puncture schedule calibration |
-| [`tetra/`](tetra/) | ETSI TETRA | On-air recovery margins (Viterbi correction depth profiling) |
-| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | Lifts the `TestDaemonCCDecodesDMRTier2` skip |
-| [`mpt1327/`](mpt1327/) | MPT 1327 | CWSC bit-error tolerance threshold calibration |
+| Subfolder | Protocol | Status | What captures buy |
+| --- | --- | --- | --- |
+| [`nxdn/`](nxdn/) | NXDN (NXDN-TS-1-A) | ⏳ Real-air capture pending | ≥ 80% CRC-verified CAC bursts + SystemID match + 3 s lock latency |
+| [`ysf/`](ysf/) | Yaesu System Fusion | ⏳ Real-air capture pending | Validates MMDVMHost schedule choice for `EncodeFICHOnAir` / `DecodeFICHOnAir`; swap to DSDcc alternate if CRC fails |
+| [`tetra/`](tetra/) | ETSI TETRA | ⏳ Real-air capture pending | 5 s lock latency + ≥ 90% frame recovery + Viterbi correction-depth histogram |
+| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | ✅ Pipeline closed (PR-C); captures optional | Burst-error structure validation + per-call payload diversity |
+| [`mpt1327/`](mpt1327/) | MPT 1327 | ✅ CWSC tolerance closed (PR-A); captures optional | Empirical false-positive count + per-vendor sync bit-error patterns |
+
+Each subfolder's README documents the capture format, metadata
+schema, and **acceptance criteria** — the explicit numerical
+thresholds a contributor with hardware can run the capture against
+to close the corresponding follow-up.
 
 ## Audio-vs-IQ caveat
 

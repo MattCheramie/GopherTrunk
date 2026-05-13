@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -18,6 +19,13 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
+	// Disable the server-level WriteTimeout for this connection — the
+	// SSE stream is long-lived (subscribers stay connected until the
+	// client disconnects or the daemon shuts down) and a 30 s ceiling
+	// would tear it down mid-call. SetWriteDeadline(zero) leaves the
+	// connection unbounded; the bus-side ctx cancellation below is
+	// what closes the stream cleanly.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
