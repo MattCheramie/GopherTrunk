@@ -152,6 +152,12 @@ surfaces light up unchanged. The follow-ups improve on-air decode
 robustness for specific noise conditions or fully-spec-correct
 encoding.
 
+Captures that close each follow-up belong in the
+[`samples/`](../samples/) directory at the repo root — one
+subfolder per protocol. Each subfolder's `README.md` documents the
+capture format and the metadata schema GopherTrunk needs to
+validate the decode end-to-end.
+
 ---
 
 ## 6. How to verify what's currently enabled

@@ -1,0 +1,30 @@
+# Capture binaries — typically multi-megabyte IQ recordings that
+# don't belong in source control. Drop them in the per-protocol
+# subfolders locally; the README per subfolder describes the
+# expected format + metadata. Larger captures should be linked
+# from the subfolder README (Git LFS, GitHub Releases, or a
+# separate fixture bucket).
+*.cfile
+*.iq
+*.raw
+*.bin
+*.dat
+*.fc32
+*.sc16
+*.cs16
+*.cu8
+*.wav
+*.flac
+*.ogg
+*.mp3
+
+# Common archive formats — captures sometimes come zipped from
+# replay tools / vendor diagnostic dumps.
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.zst
+
+# Keep the per-protocol READMEs + any metadata.json sidecars.
+!**/README.md
+!**/*.metadata.json

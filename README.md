@@ -1910,6 +1910,7 @@ internal/events/        In-process pub/sub bus
 internal/config/        YAML loader
 proto/                  *.proto schemas (events, system, talkgroup, audio)
 docs/                   architecture · hardware · vocoders · hardening
+samples/                drop-zone for real-air captures that close the remaining FEC follow-ups in docs/opt-in-features.md §5 (nxdn/, ysf/, tetra/, dmr-tier2/, mpt1327/ — each subfolder has a README documenting the expected capture format + metadata schema)
 ```
 
 ## TUI
