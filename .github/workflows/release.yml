@@ -159,9 +159,22 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.version }}"
           else
-            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # SemVer prerelease policy: any v0.x.y tag is treated as a
+          # prerelease (sub-1.0 = "not yet stable" per SemVer §4); any
+          # tag with a hyphenated suffix (e.g. v1.0.0-rc.1, v1.0.0-beta)
+          # is also a prerelease per SemVer §9. Stable releases
+          # (v1.0.0+, no suffix) land with prerelease=false so the
+          # softprops/action-gh-release "latest" auto-detection picks
+          # them as the operator-facing default.
+          if [[ "${VERSION}" =~ ^v0\. ]] || [[ "${VERSION}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish GitHub Release
@@ -170,6 +183,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           name: GopherTrunk ${{ steps.version.outputs.version }}
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           files: |
             out/*
           body: |
