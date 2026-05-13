@@ -17,7 +17,7 @@ support. If it's useful to you, please consider chipping in to keep the
 work going:
 
 - [Sponsor on GitHub](https://github.com/sponsors/MattCheramie)
-- [Tip on Ko-fi](https://ko-fi.com/Mrcheramie)
+- [Tip on Ko-fi](buymeacoffee.com/Mrcheramie)
 
 See [docs/support.md](docs/support.md) for the full pitch and other
 ways to help out.
