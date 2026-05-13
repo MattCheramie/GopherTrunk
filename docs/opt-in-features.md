@@ -124,7 +124,7 @@ to flip on by default.
 
 | Feature | Mechanism | Default | Why |
 | --- | --- | --- | --- |
-| **DVSI hardware vocoder backend** | `-tags dvsi` build tag ([`docs/architecture.md`](architecture.md), [`docs/vocoders.md`](vocoders.md)) | Not built | Patent-encumbered. Requires DVSI USB-3000 / AMBE-3003 hardware. Status: planned, not yet shipped. The pure-Go AMBE+2 backend is the default and ships everywhere. Stays opt-in permanently for licensing reasons. |
+| **DVSI hardware vocoder backend** | `-tags dvsi` build tag ([`docs/architecture.md`](architecture.md), [`docs/vocoders.md`](vocoders.md)) | Not built | Patent-encumbered. Requires DVSI USB-3000 / AMBE-3003 hardware. Status: Vocoder + AMBE-3003 wire protocol + voice.Vocoder interface conformance shipping behind the build tag (`internal/voice/dvsi/`); USB / FTDI transport that talks to the physical chip is a stub returning `ErrNoDevice`. Recorder fallback chain activates cleanly when no chip is connected. `make test-dvsi` exercises the wire protocol + scripted-mock Transport + loopback Transport without hardware. The pure-Go AMBE+2 backend is the default and ships everywhere. Stays opt-in permanently for licensing reasons. |
 | **Integration tests** | `-tags integration` build tag | Not run by `go test ./...` | Enables a wired end-to-end daemon test that doesn't need a real SDR. Long-running, intentionally outside the default unit-test wall-time budget. CI runs the tagged suite separately. |
 | **Pure-Go (no CGO)** | implicit `CGO_ENABLED=0` build | On | Already the default everywhere — no `librtlsdr` / `libusb` dependency. Listed for completeness because the README emphasises it as a design property. |
 

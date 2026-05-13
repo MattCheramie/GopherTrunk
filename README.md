@@ -281,12 +281,18 @@ sourcing.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
-- **DVSI USB-3000 / AMBE-3003 hardware backend.** A `Vocoder`
-  factory that opens a connected DVSI USB chip. Same plug-in shape
-  as `internal/voice/ambe2`; the daemon picks the factory by name
-  from `voice.DefaultRegistry`. Useful for operators who want
-  vendor-blessed AMBE+2 decode on jurisdictions where the patent
-  posture matters.
+- **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
+  The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
+  conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)
+  behind `-tags dvsi`; the package's `init()` registers `"dvsi"`
+  with `voice.DefaultRegistry`. CI exercises the wire protocol +
+  Vocoder plumbing through the scripted mock Transport and the
+  software-loopback Transport (`make test-dvsi`). The USB / FTDI
+  bulk-endpoint plumbing that talks to a physical chip remains a
+  stub returning `ErrNoDevice` — the recorder fallback chain
+  activates cleanly when no chip is connected. The actual FTDI
+  hardware integration lands when a DVSI USB-3000 is available for
+  round-trip testing.
 - **Vocoder level calibration.** Pure-Go IMBE / AMBE+2 produce real
   audio end-to-end today. Absolute-level calibration against a
   DSD-FME or OP25 reference recording (capture a P25 P1 / DMR voice
