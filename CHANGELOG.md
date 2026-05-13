@@ -9,6 +9,19 @@ for tagged releases.
 
 ### Added
 
+- Capture-spec **acceptance criteria** for every real-air-blocked
+  follow-up at [`samples/<proto>/README.md`](samples/): TETRA
+  wants 5 s lock latency + ≥ 90% frame recovery + a new
+  `gophertrunk_tetra_viterbi_corrections` Prometheus histogram
+  (gated by `metrics.detailed_fec: true`, not yet wired); NXDN
+  wants ≥ 80% CRC-verified CAC bursts + SystemID match + 3 s
+  lock; DMR Tier II wants byte-for-byte FLC match + clean
+  Terminator-with-LC handling; MPT 1327 wants ≥ 95% true-positive
+  lock rate + monotone tolerance sweep. [`samples/README.md`](samples/README.md)'s
+  top-level table now shows status (✅ closed vs ⏳ capture
+  pending) plus per-protocol "what captures buy" — DMR Tier II
+  and MPT 1327 captures are optional secondary validation rather
+  than the blocker (closed algorithmically in PR-A / PR-C).
 - `internal/version` now exposes `Version`, `Commit`, and
   `BuildTime` (all `-ldflags`-injectable) plus a `String()`
   formatter (`"vX.Y.Z (sha=…, built=…)"`). Makefile and the

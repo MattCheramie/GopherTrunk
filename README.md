@@ -322,6 +322,21 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Capture-spec acceptance criteria for every real-air-blocked
+  follow-up.** Each [`samples/<proto>/README.md`](samples/) now
+  documents the explicit numerical thresholds a contributor with
+  hardware can run a capture against to close the corresponding
+  follow-up: TETRA wants 5 s lock latency + ≥ 90% frame recovery
+  + a new (not-yet-wired) `gophertrunk_tetra_viterbi_corrections`
+  Prometheus histogram; NXDN wants ≥ 80% CRC-verified CAC bursts
+  + SystemID match; MPT 1327 wants ≥ 95% true-positive lock rate
+  + a non-decreasing tolerance sweep; DMR Tier II wants
+  byte-for-byte FLC match + clean Terminator-with-LC handling.
+  The DMR Tier II and MPT 1327 follow-ups are already closed
+  algorithmically (PR-A, PR-C); their captures are now optional
+  secondary validation rather than the blocker. The
+  [`samples/README.md`](samples/) top-level table summarises
+  status + acceptance criteria across all five protocols.
 - **Release-ready version metadata + AMBE+2 patent banner.**
   [`internal/version/`](internal/version/) now exposes `Version`,
   `Commit`, `BuildTime`, and a `String()` formatter

@@ -1,8 +1,17 @@
 # DMR Tier II (conventional) captures
 
-Drop **DMR Tier II repeater** IQ recordings here to lift the
-`t.Skip` on `TestDaemonCCDecodesDMRTier2` in
-[`cmd/gophertrunk/integration_cc_dmr_tier2_test.go`](../../cmd/gophertrunk/integration_cc_dmr_tier2_test.go).
+`TestDaemonCCDecodesDMRTier2` is **no longer skipped** — the
+synthesized-fixture path was fixed by lowering the Tier II
+pipeline's Mueller-Müller `ClockGain` from 0.025 to 0.015 (see
+[`internal/scanner/ccdecoder/pipelines.go`](../../internal/scanner/ccdecoder/pipelines.go)'s
+`newDMRTier2Pipeline` + the diagnostic test at
+[`cmd/gophertrunk/dmr_tier2_diagnostic_test.go`](../../cmd/gophertrunk/dmr_tier2_diagnostic_test.go)).
+
+Real-air **DMR Tier II repeater** captures are still useful for
+secondary validation — the synthesized fixture confirms the
+pipeline plumbs IQ → C4FM → state-machine end-to-end, but
+real RF exercises the burst-error structure that synthesized IQ
+doesn't model.
 
 ## Capture format
 
@@ -34,23 +43,45 @@ Drop **DMR Tier II repeater** IQ recordings here to lift the
 }
 ```
 
-## Why captures are needed
+## Why captures are still welcome
 
 The Tier II pipeline + Process adapter ship in
-`internal/radio/dmr/tier2/`. The integration test is currently
-`t.Skip`'d because the **synthesized** Voice LC Header IQ fixture
-doesn't round-trip cleanly through the C4FM modulator+demod chain —
-multiple prior debug attempts couldn't get it to lock.
+`internal/radio/dmr/tier2/`, and the synthesized integration test
+passes end-to-end since the ClockGain fix. What a real-air capture
+adds:
 
-A real-air capture sidesteps the fixture problem entirely: real
-repeater RF has the burst-symbol distribution and SNR characteristics
-the Mueller-Müller clock recovery + sync detector need. Drop a
-capture here and the test can be re-enabled by:
+- **Burst-error structure validation.** Synthesized IQ has clean
+  white-Gaussian noise margins; real RF has impulse interference,
+  multipath, and SNR variation that the synthesized path can't
+  exercise.
+- **Across-payload distribution coverage.** The synthesized fixture
+  uses one specific FLC (group voice user with `0x123` /
+  `0x456789` IDs). Real captures sample the per-call bit-pattern
+  diversity that surfaces any pathology the synthesized fixture
+  happens to miss.
 
-1. Replacing `t.Skip(...)` with a `loadIQFromFile(t, "...")` call.
-2. Pointing the SDR mock driver at the capture path.
-3. Asserting the metadata's `voice_lc_header` matches the
-   `events.KindCCLocked` payload.
+## Acceptance criteria
+
+A capture is considered "validating" when:
+
+1. **Voice LC Header lock.** The capture's first Voice LC Header
+   burst produces `events.KindCCLocked` within **2 seconds** of
+   the start of the recording. Tier II locks faster than Tier III
+   because there's no CC-hunt phase.
+2. **Group + source ID match.** The decoded FLC payload's
+   `DstAddr` (group) + `SrcAddr` (source) match the
+   metadata's `voice_lc_header.group_address` /
+   `voice_lc_header.source_id` byte-for-byte.
+3. **Terminator-with-LC ends the call cleanly.** When the
+   capture includes a call end, the daemon publishes
+   `events.KindCallEnd` with `EndReasonNormal` (not
+   `EndReasonTimeout`); the in-tree recorder writes a
+   well-formed WAV without truncation.
+
+A capture missing the Terminator with LC is still useful for
+items 1 + 2 — partial-call recordings should set
+`expected.terminator_with_lc: false` in the metadata so the test
+harness doesn't expect it.
 
 ## Recommended sources
 
