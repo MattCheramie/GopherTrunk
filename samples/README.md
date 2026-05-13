@@ -22,6 +22,58 @@ protocol subfolder has a `README.md` that describes:
 | [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | Lifts the `TestDaemonCCDecodesDMRTier2` skip |
 | [`mpt1327/`](mpt1327/) | MPT 1327 | CWSC bit-error tolerance threshold calibration |
 
+## Audio-vs-IQ caveat
+
+GopherTrunk's production pipelines start at **complex IQ baseband**
+(`*.cfile` / `*.bin` / `*.iq`). Audio recordings (`*.mp3` / `*.wav`)
+are post-FM-demodulation — they sit ONE STAGE DOWNSTREAM of the
+receiver's first block.
+
+Audio captures still work for protocols whose FEC chain operates on
+audio-band tones (MPT 1327 FFSK, sub-audible LTR Manchester). They
+**don't** work for protocols whose recovery needs IQ-domain
+information:
+
+- **TETRA** is π/4-DQPSK — phase information is lost in FM demod,
+  so audio captures can't be decoded back to symbols.
+- **NXDN / YSF** are 4-level FSK; the 4-level constellation lives
+  in the audio amplitude, but MP3 compression at typical bitrates
+  (128 kbps) blurs the levels enough that the matched filter
+  collapses into the inner ±1 bins (confirmed empirically with the
+  uploaded samples).
+- **DMR Tier II** is C4FM at 4800 sym/s; same caveat as NXDN.
+
+For the protocols that need IQ, drop a `*.cfile` / `*.bin` / `*.iq`
+recording rather than an MP3.
+
+## Smoke-test harness
+
+[`cmd/audio_smoketest/main.go`](cmd/audio_smoketest/main.go) is a
+small bypass-the-FM-stage tool that ingests post-FM-demod audio and
+runs it through the FFSK / C4FM matched filter + MM clock recovery
++ state-machine chain. Build and run:
+
+```
+go run ./samples/cmd/audio_smoketest -file samples/mpt1327/MPT1327_423.6_1.mp3
+```
+
+The harness uses `ffmpeg` to decode the audio to PCM, so install
+`ffmpeg` first (`apt-get install ffmpeg`). Per-protocol behaviour:
+
+| Protocol | Audio decode viability | Sigidwiki MP3 sample results |
+| --- | --- | --- |
+| MPT 1327 | **Works** — FFSK tones in audio band survive MP3 compression cleanly | 2 of 9 samples (the long `423.6_1` / `423.6_2` captures) emit real BCH-verified cc.locked + grant events |
+| YSF | Partial — symbols flow through MM clock recovery but the 4-level amplitude structure collapses into ±1 (MP3-compression artefact) | 1 sample tested; no decode |
+| NXDN | Partial — same 4-level audio-amplitude limitation as YSF | 8 samples tested; no decode |
+| TETRA | **Not viable from audio** — phase modulation, FM demod is lossy | 3 samples (audio only; need IQ) |
+| DMR Tier II | Same as NXDN; needs IQ | No samples uploaded |
+
+The MPT 1327 result is the actionable win: real signaling traffic
+decoded from a downloadable audio sample, confirming the receiver
+chain works end-to-end on captured RF — which validates the
+CWSC sync + BCH(64, 48, 2) + codeword parsing path shipped in
+PR #185 / PR #188 (commit `94464d0`).
+
 ## What's expected vs. what's committed
 
 The per-protocol README in each subfolder lays out the **format** and
@@ -71,3 +123,4 @@ func TestNXDNAgainstCapture(t *testing.T) {
 See [`cmd/gophertrunk/integration_cc_dmr_test.go`](../cmd/gophertrunk/integration_cc_dmr_test.go)
 for a fully-worked synthesized-fixture example whose shape applies
 to real-air captures with minor adaptations.
+
