@@ -89,3 +89,22 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test -count=1 ./internal/sdr/rtlsdr/usb/...
+
+  # dvsi exercises the patent-encumbered DVSI USB-3000 / AMBE-3003
+  # hardware backend behind the `-tags dvsi` build tag. The tagged
+  # tests use a scripted mock Transport and a software-loopback
+  # Transport so the wire protocol + Vocoder state machine + the
+  # voice.Vocoder interface conformance run in CI without a real chip.
+  dvsi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Vet (tagged)
+        run: go vet -tags dvsi ./internal/voice/dvsi/...
+      - name: Build (tagged)
+        run: go build -tags dvsi ./internal/voice/dvsi/...
+      - name: Test (tagged)
+        run: make test-dvsi

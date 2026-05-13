@@ -5,7 +5,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto cross-build release-archives
+.PHONY: all build test test-dvsi integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet clean run proto cross-build release-archives
 
 all: build
 
@@ -14,6 +14,16 @@ build:
 
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
+
+# test-dvsi runs the DVSI hardware-backend tests under the -tags dvsi
+# build. The Vocoder + Transport + USB-enumeration codepath is gated
+# behind the build tag (patent-encumbered AMBE+2 hardware backend
+# documented in docs/vocoders.md). The tagged unit tests use a
+# scripted mock Transport and a software-loopback Transport so the
+# wire protocol + Vocoder state machine + voice.Vocoder interface
+# conformance all exercise in CI without a real DVSI USB-3000.
+test-dvsi:
+	$(GO) test -tags "dvsi $(TAGS)" -race -count=1 ./internal/voice/dvsi/...
 
 # integration boots the wired daemon (no real SDR) end-to-end and asserts
 # the engine + recorder + call log + metrics + API agree on a synthetic
