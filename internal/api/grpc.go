@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
@@ -49,6 +51,13 @@ type GRPCServerOptions struct {
 	// returns Unavailable rather than streaming frames.
 	Audio *AudioPublisher
 	Log   *slog.Logger
+	// TLSCert and TLSKey, when both non-empty, switch the gRPC
+	// server to TLS using credentials.NewServerTLSFromFile. Same
+	// disk-loaded-once semantics as the HTTP server's TLS support.
+	// Leave both empty for plain TCP (default; appropriate for
+	// loopback / private-network deployments).
+	TLSCert string
+	TLSKey  string
 }
 
 // NewGRPCServer constructs the server but does not bind a listener.
@@ -87,10 +96,22 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		MinTime:             5 * time.Second,
 		PermitWithoutStream: true,
 	}
-	g.srv = grpc.NewServer(
+	srvOpts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepaliveParams),
 		grpc.KeepaliveEnforcementPolicy(keepaliveEnforcement),
-	)
+	}
+	// TLS: same all-or-nothing semantics as the HTTP server.
+	if (opts.TLSCert == "") != (opts.TLSKey == "") {
+		return nil, errors.New("api: grpc tls_cert and tls_key must both be set or both be empty")
+	}
+	if opts.TLSCert != "" {
+		creds, err := credentials.NewServerTLSFromFile(opts.TLSCert, opts.TLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("api: load gRPC TLS credentials: %w", err)
+		}
+		srvOpts = append(srvOpts, grpc.Creds(creds))
+	}
+	g.srv = grpc.NewServer(srvOpts...)
 	apiv1.RegisterSystemServiceServer(g.srv, g)
 	apiv1.RegisterTalkgroupServiceServer(g.srv, g)
 	apiv1.RegisterAudioServiceServer(g.srv, g)

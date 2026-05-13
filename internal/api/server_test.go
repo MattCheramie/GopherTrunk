@@ -80,6 +80,27 @@ func TestHealth(t *testing.T) {
 	if body["status"] != "ok" {
 		t.Errorf("health status = %v", body["status"])
 	}
+	if body["version"] != "test" {
+		t.Errorf("health version = %v, want %q", body["version"], "test")
+	}
+	// Extended diagnostic fields default to zero/false when their
+	// collaborators aren't wired (this test doesn't pass Engine,
+	// Devices, History, MetricsHandler).
+	if got := body["pool_attached_count"]; got != 0.0 {
+		t.Errorf("pool_attached_count = %v, want 0", got)
+	}
+	if got := body["active_calls"]; got != 0.0 {
+		t.Errorf("active_calls = %v, want 0", got)
+	}
+	if got := body["db_connected"]; got != false {
+		t.Errorf("db_connected = %v, want false", got)
+	}
+	if got := body["metrics_enabled"]; got != false {
+		t.Errorf("metrics_enabled = %v, want false", got)
+	}
+	if _, ok := body["now"]; !ok {
+		t.Error("health body missing 'now' timestamp")
+	}
 }
 
 func TestVersion(t *testing.T) {

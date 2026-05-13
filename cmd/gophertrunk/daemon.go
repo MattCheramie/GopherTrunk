@@ -504,6 +504,8 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 				TokenFile:       cfg.API.Auth.TokenFile,
 				TrustedNetworks: cfg.API.Auth.TrustedNetworks,
 			},
+			TLSCert: cfg.API.TLSCert,
+			TLSKey:  cfg.API.TLSKey,
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)
@@ -551,6 +553,8 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			Engine:     d.engine,
 			Audio:      d.audioPub,
 			Log:        log,
+			TLSCert:    cfg.API.TLSCert,
+			TLSKey:     cfg.API.TLSKey,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: grpc api: %w", err)

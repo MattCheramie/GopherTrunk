@@ -322,6 +322,19 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Optional TLS on HTTP + gRPC + extended health endpoint.**
+  `api.tls_cert` / `api.tls_key` in `config.yaml` switches both
+  the HTTP REST/SSE/WebSocket server and the gRPC server to TLS;
+  the daemon refuses to start when one is set without the other.
+  Plain TCP stays the default for loopback / trusted-LAN
+  deployments. `GET /api/v1/health` now returns
+  `pool_attached_count`, `active_calls`, `db_connected`,
+  `metrics_enabled`, `auth_mode`, and `version` alongside the
+  legacy `status` + `now` — supports two-field k8s / Nomad
+  readiness probes that distinguish "process up" from "actually
+  working". See [docs/hardening.md](docs/hardening.md#transport-encryption-tls)
+  for the TLS recipe and [docs/hardening.md](docs/hardening.md#health-endpoint-diagnostics)
+  for the health schema.
 - **API server hardening: HTTP timeouts + gRPC keep-alive + drain
   window.** `internal/api/server.go` now sets `ReadTimeout` /
   `WriteTimeout` / `IdleTimeout` on the HTTP server (30 s / 30 s /

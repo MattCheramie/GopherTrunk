@@ -161,6 +161,89 @@ matters for streaming endpoints. gRPC uses
 (including `AudioService.StreamAudio` subscribers) to finish or
 voluntarily close.
 
+## Transport encryption (TLS)
+
+Both the HTTP API (REST + SSE + WebSocket) and the gRPC server
+support optional TLS. Plain TCP stays the default — bearer-token
+auth in `api.auth` is sufficient for loopback / trusted-LAN
+deployments and TLS adds operational overhead (cert rotation, CA
+choice). Public-bind operators should enable TLS.
+
+Wire up by adding two paths to `api` in `config.yaml`:
+
+```yaml
+api:
+  http_addr: ":8080"
+  grpc_addr: ":50051"
+  tls_cert: "/etc/gophertrunk/tls/cert.pem"
+  tls_key:  "/etc/gophertrunk/tls/key.pem"
+```
+
+Both keys must be set together — setting one without the other is
+a config error the daemon refuses to start with rather than
+silently falling back to plain HTTP. The same cert / key pair
+is used for both the HTTP and gRPC listeners. Generate a real
+cert with `certbot`, your CA's tooling, or for testing:
+
+```sh
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+    -keyout /etc/gophertrunk/tls/key.pem \
+    -out    /etc/gophertrunk/tls/cert.pem \
+    -subj "/CN=gophertrunk.example.com" \
+    -addext "subjectAltName=DNS:gophertrunk.example.com,IP:10.0.0.1"
+```
+
+Cert rotation requires a daemon restart — `internal/api/server.go`'s
+`ServeTLS` reads both files at start-up. SIGHUP / auto-reload is a
+follow-up.
+
+Once TLS is up, clients use `https://` and `grpc+tls://`:
+
+```sh
+curl --cacert /etc/gophertrunk/tls/cert.pem \
+     -H "Authorization: Bearer $TOKEN" \
+     https://gophertrunk.example.com:8080/api/v1/health
+
+grpcurl -cacert /etc/gophertrunk/tls/cert.pem \
+        gophertrunk.example.com:50051 \
+        gophertrunk.v1.AudioService/StreamAudio
+```
+
+## Health endpoint diagnostics
+
+`GET /api/v1/health` returns a JSON body shaped like:
+
+```json
+{
+  "status":              "ok",
+  "now":                 "2026-05-13T19:00:00Z",
+  "version":             "v1.2.3",
+  "pool_attached_count": 2,
+  "active_calls":        1,
+  "db_connected":        true,
+  "metrics_enabled":     true,
+  "auth_mode":           "auto"
+}
+```
+
+The endpoint is always open (no token required) so liveness /
+readiness probes can hit it from outside the auth boundary. Every
+field beyond `status` and `now` is best-effort — a daemon
+configured without a particular collaborator (no SDR pool, no
+engine, no history DB) just reports the corresponding field at its
+zero value rather than failing the request.
+
+Suggested probe semantics:
+
+| Probe type | Condition |
+| --- | --- |
+| Liveness | HTTP 200 + body decodes |
+| Readiness | `status == "ok"` AND `pool_attached_count >= 1` AND `db_connected == true` |
+
+The two-field readiness check distinguishes "the daemon process
+is up" from "the daemon process is actually doing work" so
+orchestrators (k8s, Nomad) can roll deployments cleanly.
+
 ## Timeouts and keep-alive
 
 | Knob | Value | What it bounds |

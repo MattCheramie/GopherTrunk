@@ -8,11 +8,66 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
+// HealthDTO is the body shape returned by GET /api/v1/health. The
+// extended fields (every key beyond status + now) let k8s / Nomad
+// readiness probes and operator dashboards distinguish "the daemon
+// process is up" from "the daemon process is actually doing work".
+// All fields are best-effort — missing collaborators (no SDR pool,
+// no engine, no history DB) just leave the corresponding field at
+// its zero value rather than failing the request.
+type HealthDTO struct {
+	// Status is always "ok" for a serving daemon — present so old
+	// callers that only check `.status == "ok"` keep working.
+	Status string `json:"status"`
+	// Now is the daemon-side timestamp in UTC. Useful for detecting
+	// clock skew between probe and daemon.
+	Now time.Time `json:"now"`
+	// Version is the daemon build version, redundant with the
+	// dedicated /api/v1/version endpoint but useful so probes can
+	// confirm process identity in one round-trip.
+	Version string `json:"version,omitempty"`
+	// PoolAttachedCount is the number of currently-attached SDR
+	// devices. Zero means no Devices provider is wired OR every
+	// device has detached — both are operator-actionable signals.
+	PoolAttachedCount int `json:"pool_attached_count"`
+	// ActiveCalls is the count of in-flight voice calls.
+	ActiveCalls int `json:"active_calls"`
+	// DBConnected reports whether the call-history database is
+	// wired. A daemon configured without `db_path` legitimately
+	// runs with DBConnected = false.
+	DBConnected bool `json:"db_connected"`
+	// MetricsEnabled reports whether /metrics is mounted.
+	MetricsEnabled bool `json:"metrics_enabled"`
+	// AuthMode echoes the bearer-token auth policy
+	// ("auto" / "required" / "disabled") so probes can flag a
+	// misconfigured production deployment.
+	AuthMode string `json:"auth_mode,omitempty"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"now":    time.Now().UTC(),
-	})
+	body := HealthDTO{
+		Status:         "ok",
+		Now:            time.Now().UTC(),
+		Version:        s.version,
+		DBConnected:    s.history != nil,
+		MetricsEnabled: s.metrics != nil,
+	}
+	if s.devices != nil {
+		attached := 0
+		for _, d := range s.devices.Snapshot() {
+			if d.Attached {
+				attached++
+			}
+		}
+		body.PoolAttachedCount = attached
+	}
+	if s.engine != nil {
+		body.ActiveCalls = len(s.engine.ActiveCalls())
+	}
+	if s.auth != nil {
+		body.AuthMode = s.auth.mode.String()
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
