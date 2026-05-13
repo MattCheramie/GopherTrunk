@@ -4,6 +4,14 @@ Drop **YSF DN-mode** voice/data IQ recordings here to unblock the
 FICH interleaver / puncture schedule calibration documented in
 [`docs/opt-in-features.md`](../../docs/opt-in-features.md) §5.
 
+> **Note**: audio-only recordings (MP3, post-FM-demod WAV) cannot
+> validate the YSF decoder. YSF is 4-level FSK and the
+> constellation amplitude doesn't survive a discriminator-output
+> recording (let alone MP3 compression). The earlier
+> `Yaesu_sys_fusion.wav` upload was removed for this reason. **IQ
+> recordings only** (stereo 16-bit WAV with I/Q separated, or
+> `.cfile` / `.bin`) are usable.
+
 ## Capture format
 
 | Property | Expected value |

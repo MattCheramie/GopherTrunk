@@ -64,14 +64,33 @@ The harness uses `ffmpeg` to decode the audio to PCM, so install
 | --- | --- | --- |
 | MPT 1327 | `MPT1327_423.6_1.mp3` (audio) | **Works** — 7 cc.locked + 1 grant, BCH-verified |
 | MPT 1327 | `MPT1327_423.6_2.mp3` (audio) | **Works** — 7 cc.locked + 4 grants, SystemID `0x1fd7` |
-| MPT 1327 | other (audio, < 30 s) | Too short for the BCH alignment search to lock |
 | NXDN | `NXDN48 IQ.wav` (IQ) | Chain runs, 4-level slicer produces balanced dibits (26/27/15/32 %), but **FSW sync doesn't match** — file likely 4800-bps BFSK rather than 9600 4-FSK |
 | NXDN | `NXDN96 IQ.wav` (IQ) | Chain runs, dibit distribution is **bimodal (3/50/3/44 %)** — outer ±3 levels dominate, inner ±1 underrepresented; consistent with a different deviation than the spec value |
-| NXDN | other (audio MP3) | 4-level amplitude collapses to ±1 (MP3 artefact) |
-| YSF | `Yaesu_sys_fusion.wav` (audio) | Same 4-level collapse as NXDN audio |
 | TETRA | `TETRA IQ.wav` (IQ) | **Sample rate too low** — 48 kHz gives only 2.67 sps at 18 ksym/s π/4-DQPSK; receiver needs ≥ 4 sps for reliable Gardner lock |
-| TETRA | `TETRA.mp3` and similar (audio) | Not viable — phase modulation can't be recovered from FM-demod audio |
-| DMR Tier II | (no uploads) | n/a |
+| YSF | (none retained) | Audio-only WAV removed; needs IQ to recover the 4-FSK constellation |
+| DMR Tier II | (none retained) | n/a |
+
+### What's retained
+
+Only samples that **work today** or are **structurally usable**:
+
+- `samples/mpt1327/MPT1327_423.6_1.mp3` and `MPT1327_423.6_2.mp3` — the two long captures that decode end-to-end through the production CWSC + BCH chain.
+- `samples/nxdn/NXDN48 IQ.wav` and `NXDN96 IQ.wav` — real IQ captures; the receiver chain runs cleanly. Decode is blocked on protocol-variant (NXDN-BFSK support) or deviation calibration, not on the sample itself.
+- `samples/tetra/TETRA IQ.wav` — real IQ capture; blocked on sample rate (need ≥ 72 kHz instead of 48 kHz).
+
+### What was removed (and why)
+
+Audio recordings that **structurally cannot decode** for protocols that need IQ:
+
+- **NXDN MP3s** (8 files) — NXDN encodes information in the amplitude of a 4-FSK signal. 128 kbps MP3 compression on a 4-level discriminator output collapses the levels into the inner ±1 bins (empirically confirmed). Needs lossless IQ.
+- **TETRA MP3s** (3 files) — TETRA is π/4-DQPSK; the information lives in the phase of the carrier, which is destroyed by FM demodulation regardless of compression. Audio captures cannot be decoded.
+- **YSF WAV** (`Yaesu_sys_fusion.wav`) — same 4-level FSK collapse as NXDN MP3s, even though the WAV itself is lossless: the underlying recording is post-FM-demod audio, not IQ.
+- **Short MPT 1327 MP3s** (7 files, all ≤ 30 s) — too short for the BCH alignment search to converge and produce a measurable decode outcome.
+
+These files were tracked in git history; the deletion makes the
+sample drop-zone reflect only captures that contribute to
+validating decoders. Re-upload IQ-format equivalents to put any
+of these protocols back on the radar.
 
 ### What works today
 
