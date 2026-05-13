@@ -2,6 +2,7 @@ package mpt1327
 
 import (
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,7 @@ type ControlChannel struct {
 	last             LockState
 	strictValidation bool
 	bchMode          BCHMode
+	cwscTolerance    int
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on
@@ -138,6 +140,54 @@ func ParseBCHMode(s string) (BCHMode, bool) {
 	}
 }
 
+// SetCWSCTolerance sets the Hamming-distance threshold the Process
+// adapter uses when searching the bit stream for the 16-bit Codeword
+// Synchronisation Code. Range: 0 (exact match — useful for
+// synthesized fixtures whose CWSC is bit-perfect) to a small positive
+// integer. Values >= cwscBits are silently clamped to cwscBits-1 since
+// matching every window is never useful. The default (set by New) is
+// cwscDefaultMaxErrors = 2.
+func (c *ControlChannel) SetCWSCTolerance(n int) {
+	if n < 0 {
+		n = 0
+	}
+	if n >= cwscBits {
+		n = cwscBits - 1
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cwscTolerance = n
+}
+
+// CWSCTolerance returns the configured CWSC Hamming-distance threshold.
+func (c *ControlChannel) CWSCTolerance() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cwscTolerance
+}
+
+// ParseCWSCTolerance maps a config / user-facing string into a CWSC
+// Hamming-distance tolerance. Recognised values (case-insensitive):
+// "" → cwscDefaultMaxErrors (the new default — 2-bit tolerance,
+// matching commercial MPT 1327 receivers); "0" / "exact" / "off" →
+// 0 (exact-match for pre-stripped synthesized fixtures); a decimal
+// integer string in [0, cwscBits-1] → that value. Unknown strings
+// return cwscDefaultMaxErrors with `ok = false` so the connector
+// can log the misconfiguration.
+func ParseCWSCTolerance(s string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
+		return cwscDefaultMaxErrors, true
+	case "exact", "off", "false":
+		return 0, true
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 0 || n >= cwscBits {
+		return cwscDefaultMaxErrors, false
+	}
+	return n, true
+}
+
 // Options configure a ControlChannel.
 type Options struct {
 	Bus         *events.Bus
@@ -165,6 +215,11 @@ func New(opts Options) *ControlChannel {
 		freqHz:     opts.FrequencyHz,
 		resolver:   opts.Resolver,
 		now:        now,
+		// cwscTolerance zero-values to 0 (exact-match) so direct
+		// callers — primarily in-package unit tests with synthesized
+		// fixtures — see the legacy behaviour. The ccdecoder connector
+		// goes through ParseCWSCTolerance which maps the empty string
+		// to cwscDefaultMaxErrors (2) for production paths.
 	}
 }
 

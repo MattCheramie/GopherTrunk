@@ -360,6 +360,7 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "bch: "+orDefault(s.EDACSBCHMode, "on"))
 	case "mpt1327":
 		parts = append(parts, "bch: "+orDefault(s.MPT1327BCHMode, "on"))
+		parts = append(parts, "cwsc: "+orDefault(s.MPT1327CWSCTolerance, "2"))
 	case "motorola":
 		parts = append(parts, "bch: "+orDefault(s.MotorolaBCHMode, "on"))
 	default:

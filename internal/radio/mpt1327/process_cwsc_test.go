@@ -2,6 +2,7 @@ package mpt1327
 
 import (
 	"log/slog"
+	"math/rand"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -30,7 +31,7 @@ func TestFindCWSCFindsExactPattern(t *testing.T) {
 			buf[i] = byte(i & 1)
 		}
 		copy(buf[lead:], cwscBitsSlice())
-		got, ok := findCWSC(buf, 0)
+		got, ok := findCWSC(buf, 0, 0)
 		if !ok {
 			t.Errorf("lead=%d: findCWSC returned !ok", lead)
 			continue
@@ -41,17 +42,68 @@ func TestFindCWSCFindsExactPattern(t *testing.T) {
 	}
 }
 
-// TestFindCWSCSkipsPartialMatches confirms a near-miss in the pattern
-// doesn't false-positive.
-func TestFindCWSCSkipsPartialMatches(t *testing.T) {
-	pattern := cwscBitsSlice()
-	// Flip exactly one bit in the middle so the sequence no longer
-	// matches.
-	buf := make([]byte, len(pattern))
-	copy(buf, pattern)
-	buf[7] ^= 1
-	if _, ok := findCWSC(buf, 0); ok {
-		t.Errorf("findCWSC accepted a 1-bit-flipped pattern; expected exact-match rejection")
+// TestFindCWSCWithinTolerance is the table-driven replacement for the
+// old exact-match-rejection check. With the matcher now accepting up
+// to maxErrors bit flips, the spec-compliant 1-2-bit-error tolerance
+// is exercised across the boundary: 0/1/2 flips must match under
+// tolerance 2; 3+ flips must reject. Exact-match (tolerance 0) only
+// accepts the unmodified pattern.
+func TestFindCWSCWithinTolerance(t *testing.T) {
+	cases := []struct {
+		name      string
+		flips     []int // bit positions inside the 16-bit window to invert
+		tolerance int
+		wantMatch bool
+	}{
+		{"zero_flips_tol_0", nil, 0, true},
+		{"zero_flips_tol_2", nil, 2, true},
+		{"one_flip_tol_0", []int{7}, 0, false},
+		{"one_flip_tol_1", []int{7}, 1, true},
+		{"one_flip_tol_2", []int{7}, 2, true},
+		{"two_flips_tol_1", []int{3, 11}, 1, false},
+		{"two_flips_tol_2", []int{3, 11}, 2, true},
+		{"three_flips_tol_2", []int{3, 7, 11}, 2, false},
+		{"three_flips_tol_3", []int{3, 7, 11}, 3, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := cwscBitsSlice()
+			for _, idx := range tc.flips {
+				buf[idx] ^= 1
+			}
+			_, ok := findCWSC(buf, 0, tc.tolerance)
+			if ok != tc.wantMatch {
+				t.Errorf("findCWSC(flips=%v, tol=%d) = %v, want %v",
+					tc.flips, tc.tolerance, ok, tc.wantMatch)
+			}
+		})
+	}
+}
+
+// TestFindCWSCFalsePositiveControl asserts the default tolerance of 2
+// keeps random 16-bit-window false-positive rate within the
+// combinatorial bound — C(16, 0..2) / 2^16 ≈ 0.21%. Sample size large
+// enough that 0.5% is comfortably above statistical noise.
+func TestFindCWSCFalsePositiveControl(t *testing.T) {
+	const trials = 65536
+	const tolerance = cwscDefaultMaxErrors
+	rng := rand.New(rand.NewSource(0xC4D7C4D7))
+	hits := 0
+	buf := make([]byte, cwscBits)
+	for i := 0; i < trials; i++ {
+		for j := 0; j < cwscBits; j++ {
+			buf[j] = byte(rng.Intn(2))
+		}
+		if _, ok := findCWSC(buf, 0, tolerance); ok {
+			hits++
+		}
+	}
+	rate := float64(hits) / float64(trials)
+	// Theoretical bound: (1 + 16 + 120) / 65536 ≈ 0.0021.
+	// Allow generous headroom (0.005) to absorb sampling variance.
+	if rate > 0.005 {
+		t.Errorf("false-positive rate %.4f exceeds 0.005 ceiling (hits=%d, trials=%d)",
+			rate, hits, trials)
 	}
 }
 
@@ -63,13 +115,74 @@ func TestFindCWSCRespectsFromOffset(t *testing.T) {
 	second := cwscBitsSlice()
 	gap := make([]byte, 8)
 	buf := append(append(first, gap...), second...)
-	got, ok := findCWSC(buf, len(first))
+	got, ok := findCWSC(buf, len(first), 0)
 	if !ok {
 		t.Fatalf("findCWSC didn't find the second copy")
 	}
 	want := len(first) + len(gap)
 	if got != want {
 		t.Errorf("findCWSC = %d, want %d", got, want)
+	}
+}
+
+// TestParseCWSCTolerance verifies the user-facing string parser the
+// ccdecoder connector uses to translate the mpt1327_cwsc_tolerance
+// system field into a numeric threshold.
+func TestParseCWSCTolerance(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    int
+		wantOK  bool
+	}{
+		{"", cwscDefaultMaxErrors, true},
+		{"0", 0, true},
+		{"exact", 0, true},
+		{"off", 0, true},
+		{"OFF", 0, true},
+		{"  exact  ", 0, true},
+		{"1", 1, true},
+		{"2", 2, true},
+		{"4", 4, true},
+		{"15", 15, true},  // cwscBits-1 is the upper bound
+		{"16", cwscDefaultMaxErrors, false}, // >= cwscBits is invalid
+		{"-1", cwscDefaultMaxErrors, false},
+		{"banana", cwscDefaultMaxErrors, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseCWSCTolerance(tc.in)
+		if got != tc.want || ok != tc.wantOK {
+			t.Errorf("ParseCWSCTolerance(%q) = (%d, %v), want (%d, %v)",
+				tc.in, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+// TestSetCWSCToleranceRoundTrips covers the setter + getter pair the
+// ccdecoder connector uses after parsing the config field, and the
+// boundary clamps for negative and oversized values.
+func TestSetCWSCToleranceRoundTrips(t *testing.T) {
+	cc := New(Options{
+		Log:         slog.Default(),
+		SystemName:  "Sys",
+		FrequencyHz: 169_212_500,
+	})
+	// New() zero-values cwscTolerance to 0 (exact-match) so in-package
+	// fixture tests stay unaffected; the ccdecoder connector raises it
+	// to cwscDefaultMaxErrors via ParseCWSCTolerance("").
+	if got := cc.CWSCTolerance(); got != 0 {
+		t.Errorf("default CWSCTolerance = %d, want 0", got)
+	}
+	cc.SetCWSCTolerance(3)
+	if got := cc.CWSCTolerance(); got != 3 {
+		t.Errorf("after SetCWSCTolerance(3) = %d, want 3", got)
+	}
+	cc.SetCWSCTolerance(-5)
+	if got := cc.CWSCTolerance(); got != 0 {
+		t.Errorf("negative input not clamped: got %d, want 0", got)
+	}
+	cc.SetCWSCTolerance(1000)
+	if got := cc.CWSCTolerance(); got != cwscBits-1 {
+		t.Errorf("oversized input not clamped: got %d, want %d", got, cwscBits-1)
 	}
 }
 

@@ -271,6 +271,15 @@ type SystemConfig struct {
 	// for pre-stripped fixtures). Ignored for non-MPT-1327
 	// protocols.
 	MPT1327BCHMode string `yaml:"mpt1327_bch_mode"`
+	// MPT1327CWSCTolerance sets the Hamming-distance threshold the
+	// Process adapter uses when scanning for the 16-bit Codeword
+	// Synchronisation Code that precedes every MPT 1327 message.
+	// Recognised values: "" → default 2-bit tolerance (matches
+	// commercial MPT 1327 receivers on noisy on-air captures);
+	// "0" / "exact" / "off" → exact match (use for pre-stripped
+	// synthesized fixtures); a decimal integer in [0, 15] for
+	// custom thresholds. Ignored for non-MPT-1327 protocols.
+	MPT1327CWSCTolerance string `yaml:"mpt1327_cwsc_tolerance"`
 	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
 	// Motorola Type II OSW. Recognised values: "" / "on" / "true" /
 	// "1" (the new default — two 64-bit BCH(64, 16, 11) codewords

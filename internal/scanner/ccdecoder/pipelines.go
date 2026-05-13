@@ -693,6 +693,12 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.MPT1327BCHMode)
 	}
 	cc.SetBCHMode(bchMode)
+	cwscTol, ok := mpt1327.ParseCWSCTolerance(opts.System.MPT1327CWSCTolerance)
+	if !ok {
+		opts.Log.Warn("ccdecoder: unrecognised mpt1327_cwsc_tolerance; falling back to default",
+			"system", opts.SystemName, "value", opts.System.MPT1327CWSCTolerance)
+	}
+	cc.SetCWSCTolerance(cwscTol)
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

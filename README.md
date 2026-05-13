@@ -109,19 +109,22 @@ The remaining gaps:
     (opcode 0xFB) via `pn44SeedFromNSB`. Per-system static config
     still provides the initial seed for the first few PDUs before
     NSB lands, and stays available as an override.
-  - **MPT 1327 sync detection + bit-error-tolerant CWSC.** The
-    BCH(64, 48, 2) per-codeword check + the 16-bit Codeword
-    Synchronisation Code (`1100010011010111`) alignment per the
-    MPT 1327 standard both ship — the Process adapter searches
-    the bit stream for an exact CWSC match before falling back
-    to the legacy "first parseable codeword" alignment. The
+  - ~~**MPT 1327 sync detection + bit-error-tolerant CWSC**~~
+    (now shipping). The BCH(64, 48, 2) per-codeword check + the
+    16-bit Codeword Synchronisation Code (`1100010011010111`)
+    alignment per the MPT 1327 standard both ship. The Process
+    adapter now matches CWSC against a Hamming-distance threshold
+    (default 2 bits out of 16, matching commercial MPT 1327
+    receivers on noisy on-air captures) instead of exact-match,
+    falling back to the legacy "first parseable codeword"
+    alignment when no CWSC window is within tolerance. Operators
+    replaying pre-stripped synthesized fixtures opt back into
+    exact-match per system via `mpt1327_cwsc_tolerance: 0`. The
     previously-cited "inter-codeword bit-interleaver across
     5-codeword CCDB groups" doesn't exist in the standard;
     MPT 1327 transmits 64-bit codewords back-to-back at 1200 bps
-    FFSK with no inter-codeword bit permutation. The remaining
-    follow-up is 1-2 bit error tolerance on the CWSC match
-    (currently exact-match), which lands together with on-air
-    capture calibration.
+    FFSK with no inter-codeword bit permutation. No remaining
+    MPT 1327 spec follow-ups.
   - **YSF FICH on-air interleaver / puncture validation.** The
     K=5 ½-rate Trellis encoder + decoder
     (`internal/radio/ysf/fich_trellis.go`) round-trip cleanly

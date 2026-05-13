@@ -7,10 +7,11 @@ import (
 // processState is the cross-call bit buffering + frame-alignment
 // state the Process adapter holds. Lazily initialised.
 type processState struct {
-	buf       []byte
-	aligned   bool
-	off       int
-	consecBad int
+	buf           []byte
+	aligned       bool
+	off           int
+	consecBad     int
+	cwscMaxErrors int
 }
 
 // codewordInfoBits is the count of MPT 1327 address-codeword
@@ -49,6 +50,17 @@ var cwscPattern = [cwscBits]byte{
 // the threshold modest.
 const maxConsecBad = 8
 
+// cwscDefaultMaxErrors is the default Hamming-distance tolerance the
+// CWSC matcher accepts: a 16-bit window is treated as a sync match
+// when it differs from the spec pattern in at most this many bit
+// positions. Two errors out of sixteen matches the behaviour of
+// commercial MPT 1327 receivers on noisy on-air captures. Combined
+// false-positive math against the BCH(64, 48, 2)-validated codeword
+// that must follow (~2^-15) keeps the per-bit-position false-lock
+// rate under 1e-7. Operators replaying pre-stripped synthesized
+// fixtures can drop the tolerance to 0 via mpt1327_cwsc_tolerance.
+const cwscDefaultMaxErrors = 2
+
 // Process consumes a window of raw bits from the MPT 1327 receiver
 // (the IQ → FFSK bit chain in internal/radio/mpt1327/receiver/) and
 // drives the MPT 1327 state machine.
@@ -71,13 +83,18 @@ const maxConsecBad = 8
 // window is the pre-stripped 38-bit information field. CWSC
 // detection is mode-independent.
 func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
-	if c.proc == nil {
-		c.proc = &processState{}
-	}
-	p := c.proc
 	c.mu.Lock()
 	mode := c.bchMode
+	cwscTol := c.cwscTolerance
 	c.mu.Unlock()
+	if c.proc == nil {
+		c.proc = &processState{cwscMaxErrors: cwscTol}
+	} else {
+		// SetCWSCTolerance may have changed the value after first
+		// Process; keep the proc state in sync.
+		c.proc.cwscMaxErrors = cwscTol
+	}
+	p := c.proc
 	p.buf = append(p.buf, bits...)
 
 	frameLen := codewordInfoBits
@@ -93,7 +110,7 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 			// at a known boundary; CWSC + a corrupted following
 			// codeword still locks us but lets the consecBad
 			// counter unlock on the next 8 bad frames.
-			if cwscOff, ok := findCWSC(p.buf, p.off); ok && cwscOff+cwscBits+frameLen <= len(p.buf) {
+			if cwscOff, ok := findCWSC(p.buf, p.off, p.cwscMaxErrors); ok && cwscOff+cwscBits+frameLen <= len(p.buf) {
 				// Lock immediately at the start of the codeword
 				// window that follows CWSC. The first codeword
 				// after CWSC is always an Address codeword per
@@ -175,29 +192,36 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 }
 
 // findCWSC scans buf[from:] for the 16-bit CWSC pattern and returns
-// the absolute index of the first matching bit (i.e. the index in
-// buf of the leading '1' of `1100010011010111`). Returns (0, false)
-// when no exact match is present in the buffer.
+// the absolute index of the first window whose Hamming distance to
+// `1100010011010111` is at most maxErrors. Returns (0, false) when
+// no such window exists in the buffer.
 //
-// The scan is exact-match: MPT 1327 receivers tolerate a small
-// number of bit errors in CWSC in practice, but a 0-error first
-// pass keeps the alignment selectivity high. Bit-error tolerance
-// is a follow-up that lands together with on-air capture
-// calibration.
-func findCWSC(buf []byte, from int) (int, bool) {
+// maxErrors == 0 reproduces the legacy exact-match behaviour and is
+// the right choice for pre-stripped synthesized fixtures. The
+// production default is cwscDefaultMaxErrors (2), matching commercial
+// MPT 1327 receivers on noisy on-air captures. The downstream
+// codeword that follows still has to pass BCH(64, 48, 2) before the
+// state machine consumes it, so a permissive CWSC threshold doesn't
+// translate into a permissive frame-acceptance threshold.
+func findCWSC(buf []byte, from int, maxErrors int) (int, bool) {
 	if from < 0 {
 		from = 0
 	}
+	if maxErrors < 0 {
+		maxErrors = 0
+	}
 	end := len(buf) - cwscBits
 	for i := from; i <= end; i++ {
-		match := true
+		errs := 0
 		for j := 0; j < cwscBits; j++ {
 			if buf[i+j]&1 != cwscPattern[j] {
-				match = false
-				break
+				errs++
+				if errs > maxErrors {
+					break
+				}
 			}
 		}
-		if match {
+		if errs <= maxErrors {
 			return i, true
 		}
 	}

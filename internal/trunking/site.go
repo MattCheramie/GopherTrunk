@@ -231,6 +231,17 @@ type System struct {
 	// by the ccdecoder connector after parsing via
 	// mpt1327.ParseBCHMode.
 	MPT1327BCHMode string
+	// MPT1327CWSCTolerance sets the Hamming-distance threshold the
+	// MPT 1327 Process adapter uses when matching the 16-bit
+	// Codeword Synchronisation Code. Recognised values
+	// (case-insensitive): "" → 2-bit tolerance (the new default,
+	// matches commercial MPT 1327 receivers on noisy on-air
+	// captures); "0" / "exact" / "off" → exact match (for
+	// pre-stripped synthesized fixtures); a decimal integer in
+	// [0, 15]. Forwarded into mpt1327.ControlChannel.SetCWSCTolerance
+	// by the ccdecoder connector after parsing via
+	// mpt1327.ParseCWSCTolerance.
+	MPT1327CWSCTolerance string
 	// MotorolaBCHMode enables the BCH(64, 16, 11) FEC layer on the
 	// Motorola Type II OSW. Recognised values (case-insensitive):
 	// "" / "on" / "true" / "1" → BCHOn (the new default — two

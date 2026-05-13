@@ -135,6 +135,7 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			NXDNViterbiMode:        sys.NXDNViterbiMode,
 			EDACSBCHMode:           sys.EDACSBCHMode,
 			MPT1327BCHMode:         sys.MPT1327BCHMode,
+			MPT1327CWSCTolerance:   sys.MPT1327CWSCTolerance,
 			MotorolaBCHMode:        sys.MotorolaBCHMode,
 			DStarFECMode:           sys.DStarFECMode,
 		}
