@@ -1,0 +1,52 @@
+{%- assign current_group = page.nav_group -%}
+<header class="site-nav" role="banner">
+  <div class="site-nav__inner container">
+    <a class="site-nav__brand" href="{{ '/' | relative_url }}" aria-label="GopherTrunk home">
+      <img src="{{ '/assets/gophertrunk-logo.png' | relative_url }}" alt="" width="32" height="32">
+      <span class="site-nav__wordmark">GopherTrunk</span>
+    </a>
+
+    <button class="site-nav__hamburger" type="button" aria-label="Toggle menu" aria-expanded="false" aria-controls="site-nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+
+    <nav class="site-nav__menu" id="site-nav-menu" aria-label="Primary">
+      <ul class="site-nav__groups">
+        {%- for group in site.data.nav.groups -%}
+          {%- assign is_active = false -%}
+          {%- if current_group == group.label -%}{%- assign is_active = true -%}{%- endif -%}
+          <li class="nav-group{% if is_active %} nav-group--active{% endif %}">
+            <button type="button" class="nav-group__label" aria-haspopup="true" aria-expanded="false">
+              {{ group.label }}
+              <svg class="nav-group__chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <ul class="nav-group__items" role="menu">
+              {%- for item in group.items -%}
+                {%- assign item_url = item.url | relative_url -%}
+                <li role="none">
+                  <a role="menuitem" href="{{ item_url }}"{% if page.url == item.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
+                </li>
+              {%- endfor -%}
+            </ul>
+          </li>
+        {%- endfor -%}
+      </ul>
+
+      <ul class="site-nav__external">
+        {%- for link in site.data.nav.external -%}
+          <li>
+            <a href="{{ link.url }}" rel="noopener" aria-label="{{ link.title }}" title="{{ link.title }}">
+              {%- include icons/{{ link.icon }}.svg -%}
+            </a>
+          </li>
+        {%- endfor -%}
+        <li>
+          <button class="dark-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+            <span class="dark-toggle__sun" aria-hidden="true">{% include icons/sun.svg %}</span>
+            <span class="dark-toggle__moon" aria-hidden="true">{% include icons/moon.svg %}</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</header>

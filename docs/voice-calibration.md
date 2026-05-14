@@ -1,3 +1,10 @@
+---
+layout: page
+title: Voice calibration
+description: Tuning AGC TargetPeak so pure-Go IMBE / AMBE+2 loudness matches DSD-FME and OP25
+nav_group: Reference
+---
+
 # Voice decoder calibration
 
 GopherTrunk's pure-Go IMBE (P25 P1) and AMBE+2 (DMR, NXDN, dPMR,

@@ -1,0 +1,28 @@
+---
+layout: default
+---
+<main id="content" class="home" role="main">
+  <section class="hero">
+    <div class="container hero__inner">
+      <img class="hero__logo" src="{{ '/assets/gophertrunk-logo.png' | relative_url }}" alt="GopherTrunk logo" width="180" height="180">
+      <h1 class="hero__title">{{ site.title }}</h1>
+      <p class="hero__tagline">{{ site.description }}</p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="{{ '/downloads.html' | relative_url }}">Download</a>
+        <a class="btn btn--secondary" href="{{ '/install-windows.html' | relative_url }}">Install guide</a>
+        <a class="btn btn--ghost" href="https://github.com/MattCheramie/GopherTrunk" rel="noopener">
+          {% include icons/github.svg %}
+          <span>View on GitHub</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="home__content">
+    <div class="container">
+      <article class="prose prose--wide">
+        {{ content }}
+      </article>
+    </div>
+  </section>
+</main>

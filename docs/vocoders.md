@@ -1,3 +1,10 @@
+---
+layout: page
+title: Vocoders
+description: IMBE and AMBE+2 in pure Go — patent status, licensing, and decoder architecture
+nav_group: Reference
+---
+
 # Vocoders
 
 Digital trunked-radio voice traffic is carried by one of two

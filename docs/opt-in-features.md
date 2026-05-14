@@ -1,3 +1,10 @@
+---
+layout: page
+title: Opt-in features
+description: Defaults vs flags for protocol decoders, daemon surfaces, and patent-encumbered backends
+nav_group: Reference
+---
+
 # Opt-in / opt-out features
 
 GopherTrunk's protocol decoders and daemon-level surfaces have a
