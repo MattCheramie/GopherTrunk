@@ -23,6 +23,31 @@
     });
   }
 
+  // Downloads page: highlight the card matching the visitor's OS
+  var cards = document.querySelectorAll('.download-card[data-platform]');
+  if (cards.length) {
+    var uad = navigator.userAgentData;
+    var hay = ((uad && uad.platform) || navigator.platform || '') + ' ' + (navigator.userAgent || '');
+    hay = hay.toLowerCase();
+    var detected = null;
+    if (/win/.test(hay))                              detected = 'windows';
+    else if (/mac|darwin|iphone|ipad/.test(hay))      detected = 'macos';
+    else if (/linux|x11|android|cros/.test(hay))      detected = 'linux';
+    if (detected) {
+      cards.forEach(function (card) {
+        if (card.dataset.platform !== detected) return;
+        card.classList.add('download-card--match');
+        var h3 = card.querySelector('h3');
+        if (h3 && !h3.querySelector('.download-card__badge')) {
+          var badge = document.createElement('span');
+          badge.className = 'download-card__badge';
+          badge.textContent = 'Your platform';
+          h3.appendChild(badge);
+        }
+      });
+    }
+  }
+
   // Mobile: tap a group label to expand its submenu (desktop uses :hover/:focus-within)
   var isCoarse = window.matchMedia('(max-width: 800px)').matches;
   if (isCoarse) {

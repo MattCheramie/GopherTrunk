@@ -521,6 +521,25 @@ button { font: inherit; cursor: pointer; }
   font-weight: 600;
   border-bottom: none;
   padding-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.download-card--match {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.download-card__badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
 }
 .download-card__lede {
   color: var(--fg-muted);

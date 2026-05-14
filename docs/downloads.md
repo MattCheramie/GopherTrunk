@@ -24,7 +24,7 @@ nav_group: Install
 
 <div class="download-cards">
 
-  <div class="download-card">
+  <div class="download-card" data-platform="linux">
     <h3>Linux</h3>
     <p class="download-card__lede">Tarballed static binary. No <code>librtlsdr</code> or <code>libusb</code> at runtime.</p>
     <div class="download-card__buttons">
@@ -34,7 +34,7 @@ nav_group: Install
     <p class="download-card__note">aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs. RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
   </div>
 
-  <div class="download-card">
+  <div class="download-card" data-platform="macos">
     <h3>macOS</h3>
     <p class="download-card__lede">Static binary + sample config. Bundled with README and LICENSE.</p>
     <div class="download-card__buttons">
@@ -44,7 +44,7 @@ nav_group: Install
     <p class="download-card__note">Builds are unsigned — right-click → Open the first time to bypass Gatekeeper, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
   </div>
 
-  <div class="download-card">
+  <div class="download-card" data-platform="windows">
     <h3>Windows 11</h3>
     <p class="download-card__lede">One-click installer (x64), portable ZIPs for x64 and ARM.</p>
     <div class="download-card__buttons">
