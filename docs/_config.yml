@@ -1,5 +1,6 @@
 title: GopherTrunk
 description: Pure-Go digital trunking radio scanner engine
+url: https://gophertrunk.com
 theme: jekyll-theme-cayman
 show_downloads: false
 markdown: kramdown
