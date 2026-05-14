@@ -9,7 +9,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run
+.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean
 
 all: build
 
@@ -243,6 +243,36 @@ clean:
 
 run: build
 	./bin/gophertrunk
+
+# --- Web UI -----------------------------------------------------------------
+# The browser-side operator console lives in web/. It's a Vite + React + Tailwind
+# SPA whose build output is plain HTML/JS/CSS — no Node.js runtime, no
+# server-side rendering. The release pipeline ships web/dist/ alongside the
+# daemon binary as a sibling `gophertrunk-web/` folder; operators open
+# `index.html` in any browser and point it at their daemon.
+#
+# `make web-build` is the only target the release pipeline needs. Targets
+# require a local Node.js (npm 9+ recommended); see web/README.md for the
+# tested versions.
+
+# web-build produces the shippable static bundle in web/dist/. Idempotent —
+# re-running it without source changes is a no-op after the npm cache is warm.
+web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/README.md"; exit 1; }
+	cd web && npm ci --no-audit --no-fund
+	cd web && npm run build
+
+# web-dev runs the Vite dev server with HMR. The dev server proxies
+# /api/* and /metrics to a daemon listening on 127.0.0.1:8080 so the SPA
+# can talk to a live backend without manual CORS config.
+web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/README.md"; exit 1; }
+	cd web && npm install --no-audit --no-fund
+	cd web && npm run dev
+
+web-clean:
+	rm -rf web/dist web/node_modules web/dev-dist
+
 
 # Regenerate Go bindings under internal/api/pb/v1 from proto/*.proto.
 # Requires:

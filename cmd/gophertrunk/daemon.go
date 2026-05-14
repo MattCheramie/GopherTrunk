@@ -504,8 +504,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 				TokenFile:       cfg.API.Auth.TokenFile,
 				TrustedNetworks: cfg.API.Auth.TrustedNetworks,
 			},
-			TLSCert: cfg.API.TLSCert,
-			TLSKey:  cfg.API.TLSKey,
+			CORS: api.CORSConfig{
+				AllowedOrigins: cfg.API.CORS.AllowedOrigins,
+			},
+			AudioPublisher: d.audioPub,
+			TLSCert:        cfg.API.TLSCert,
+			TLSKey:         cfg.API.TLSKey,
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)

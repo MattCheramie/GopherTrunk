@@ -7,7 +7,7 @@
 <p align="center">
   <strong>Pure-Go digital-trunking radio scanner engine for RTL-SDR.</strong><br>
   P25 · DMR · TETRA · NXDN · Motorola Type II · EDACS · LTR · MPT 1327 · dPMR · D-STAR · YSF.<br>
-  Zero CGO, single static binary, headless daemon + Bubbletea TUI cockpit.
+  Zero CGO, single static binary, headless daemon + Bubbletea TUI cockpit + browser web console.
 </p>
 
 <p align="center">
@@ -57,7 +57,7 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **API + observability** — gRPC + HTTP/SSE + WebSocket surfaces, optional TLS + bearer-token auth on mutations, Prometheus `/metrics`, pure-Go SQLite call log, in-process pub/sub event bus with typed payloads.
 
-**Operator surfaces** — first-class Bubbletea TUI cockpit (`gophertrunk tui`) with 11 panels; conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune.
+**Operator surfaces** — first-class Bubbletea TUI cockpit (`gophertrunk tui`) with 11 panels and a sibling **web console** (a pure-browser React/Tailwind SPA, shipped pre-built as `gophertrunk-web/` next to the binary — see [`web/README.md`](web/README.md) and the [§Web console](#web-console) section); conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune.
 
 **System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. See **[`docs/import.md`](docs/import.md)**.
 
@@ -310,6 +310,19 @@ sourcing.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
+- **Web operator console — remaining panels.** The browser SPA in
+  [`web/`](web/) (Vite + React + TypeScript + Tailwind) currently
+  ships a working Dashboard with the live WebSocket event feed and
+  audio cockpit, a Settings tab (theme / write-mode / forget device),
+  and a ConnectScreen that points the SPA at any daemon on the
+  network. The remaining 9 TUI panels (Systems, Talkgroups, Active,
+  History, Events, Tones, Metrics, Devices, Scanner) are stubbed via
+  `Placeholder` and land panel-by-panel in follow-up PRs against the
+  same shared `src/store/` + `src/api/` plumbing. Daemon-side support
+  (CORS middleware, `GET /api/v1/audio/stream` PCM-over-WAV endpoint)
+  already ships; no further Go-side work is required to fill the
+  panels in. Operator playbook for running the daemon on a Raspberry
+  Pi and driving it from a laptop is in [`web/README.md`](web/README.md).
 - **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
   The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
   conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)
@@ -1984,7 +1997,11 @@ to its own package and lands independently.
 - **Storage:** `modernc.org/sqlite` (pure Go)
 - **API:** gRPC + Protobuf, HTTP/SSE, WebSocket; optional TLS;
   bearer-token auth on mutations
-- **TUI:** `charmbracelet/bubbletea` 10-panel cockpit
+- **TUI:** `charmbracelet/bubbletea` 11-panel cockpit
+- **Web console:** Vite + React + TypeScript + Tailwind CSS +
+  Zustand + Chart.js + D3 scale, bundled into a static
+  `gophertrunk-web/` directory shipped alongside the binary
+  (installable PWA, no Node.js at runtime)
 - **Logging:** `log/slog` (stdlib)
 - **Metrics:** `prometheus/client_golang`
 - **CI:** GitHub Actions running `go vet` + `go test -race` + `make
@@ -2005,7 +2022,7 @@ on GitHub to grab the artefacts directly:
 | ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
 | Windows 11 | `gophertrunk-<ver>-windows-amd64-setup.exe`            | One-click installer (Inno Setup) — single static binary  |
 | Windows 11 | `gophertrunk-<ver>-windows-amd64.zip`                  | Portable ZIP — same binary, no installer                 |
-| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed static binary + sample config                  |
+| Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed static binary + sample config + `gophertrunk-web/` console |
 | all        | `SHA256SUMS`                                           | SHA-256 checksums for every artefact in the release      |
 
 Windows users: after running the installer, follow
@@ -2100,6 +2117,7 @@ tests.
 ```
 cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read+write TUI cockpit + RadioReference/CSV importer (import-pdf subcommand)
 internal/tui/           bubbletea TUI: 11 panels (Dashboard, Systems, Talkgroups, Active, History, Events, Tones, Metrics, Devices, Scanner, Settings) over REST+SSE
+web/                    standalone browser SPA (Vite + React + TypeScript + Tailwind) — ships as `gophertrunk-web/` in release archives, talks to the daemon via REST + WebSocket + new /api/v1/audio/stream
 internal/sdr/           Driver interface, pool, mock
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS IOKit (purego), mock
 internal/sdr/rtlsdr/rtl2832u/ RTL2832U register/I2C layer (sample-rate, IF, FIR, GPIO, I2C bridge)
@@ -2182,6 +2200,64 @@ Bearer <token>` header on every mutation request when the listener
 binds to a public interface. See the [API authentication](#api-authentication)
 section below; `docs/tui.md` documents the matching `--write`
 TUI flag.
+
+## Web console
+
+GopherTrunk also ships a browser-based operator console as a separate
+standalone package alongside the binary — no Node.js, no embedded
+web server, no extra service to install. Each release archive
+contains a sibling `gophertrunk-web/` directory holding a pre-built
+React SPA (`index.html` + bundled JS/CSS); double-click `index.html`
+to open it in any browser, point the connect screen at a running
+daemon on the local network, and start operating.
+
+```
+gophertrunk-v<version>-<os>-<arch>/
+├── gophertrunk            # the daemon/CLI binary
+├── gophertrunk-web/       # standalone web console (open index.html)
+│   ├── index.html
+│   ├── assets/…           # bundled React / Tailwind / Chart.js
+│   ├── favicon.svg
+│   └── manifest.webmanifest
+├── config.example.yaml
+└── samples/…
+```
+
+Headless-Pi + laptop is a first-class scenario: run
+`gophertrunk run -config config.yaml` on a Raspberry Pi (or any host
+with the RTL-SDR attached) with `api.host: 0.0.0.0` and
+`api.cors.allowed_origins` permitting the SPA's origin (`"null"` for
+`file://`, or the URL it's served from), then open
+`gophertrunk-web/index.html` on a laptop / tablet / phone on the same
+network and enter the daemon's URL + bearer token on the connect
+screen. The SPA is installable as a Progressive Web App (Add to Home
+Screen) and persists server URL + token in browser storage so return
+visits skip the connect screen.
+
+**Status: foundation only.** The current build ships:
+
+- **ConnectScreen** — server-URL + bearer-token entry with a
+  `GET /api/v1/health` reachability probe before commit.
+- **Dashboard** — live WebSocket event feed (auth-aware
+  `/api/v1/events/ws`), call-state ticker, audio cockpit with
+  PCM-over-WAV playback from the new `GET /api/v1/audio/stream`
+  endpoint, volume / mute / record-toggle wired to
+  `PATCH /api/v1/audio`.
+- **Settings** — theme toggle (dark / monochrome), write-mode gate
+  mirroring the TUI's `--write` flag, "forget this device" to clear
+  stored credentials.
+
+The remaining nine TUI panels (Systems, Talkgroups, Active, History,
+Events, Tones, Metrics, Devices, Scanner) are stubbed via
+`Placeholder` and land panel-by-panel in follow-up PRs against the
+same `src/store/` + `src/api/` plumbing — every read and mutation
+endpoint they need already lives on the daemon. See
+[`web/README.md`](web/README.md) for the operator playbook (LAN
+deployment, CORS config, PWA install steps) and the dev workflow
+(`make web-dev`, `make web-build`).
+
+For full feature parity with the TUI today, continue using
+`gophertrunk tui` (above).
 
 ## API authentication
 
@@ -2319,6 +2395,9 @@ opt-in field as a `omitempty` JSON value.
   concurrency model, driver registry, build tags
 - [`docs/tui.md`](docs/tui.md) — TUI keybindings, panel reference,
   troubleshooting
+- [`web/README.md`](web/README.md) — browser web console (standalone
+  `gophertrunk-web/` package): LAN deployment recipe, CORS config,
+  PWA install steps, dev workflow (`make web-dev` / `make web-build`)
 - [`docs/hardware.md`](docs/hardware.md) — udev rules, DVB blacklist,
   IQ capture for replay
 - [`docs/vocoders.md`](docs/vocoders.md) — IMBE / AMBE+2 licensing

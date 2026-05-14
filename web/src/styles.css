@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme tokens. Swap these via the `data-theme` attribute on <html>;
+   the Settings panel toggles between "dark" (default) and "mono". */
+:root,
+[data-theme="dark"] {
+  --gt-bg: 15 23 42;        /* slate-900 */
+  --gt-panel: 30 41 59;     /* slate-800 */
+  --gt-muted: 100 116 139;  /* slate-500 */
+  --gt-fg: 226 232 240;     /* slate-200 */
+  --gt-accent: 56 189 248;  /* sky-400 */
+  --gt-ok: 34 197 94;       /* green-500 */
+  --gt-warn: 234 179 8;     /* yellow-500 */
+  --gt-err: 244 63 94;      /* rose-500 */
+  color-scheme: dark;
+}
+
+[data-theme="mono"] {
+  --gt-bg: 17 17 17;
+  --gt-panel: 33 33 33;
+  --gt-muted: 130 130 130;
+  --gt-fg: 235 235 235;
+  --gt-accent: 235 235 235;
+  --gt-ok: 235 235 235;
+  --gt-warn: 235 235 235;
+  --gt-err: 235 235 235;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
+  /* iOS: prevent text scaling on rotation. */
+  -webkit-text-size-adjust: 100%;
+  /* iOS: disable tap-highlight, we draw our own focus states. */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* Touch targets: every interactive element should be at least 44px tall on
+   coarse pointers (per Apple HIG / Material). */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a.touch-target,
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+  }
+}
+
+/* Reusable utilities. */
+@layer components {
+  .panel {
+    @apply rounded-lg bg-panel/60 border border-panel ring-1 ring-white/5 shadow-sm;
+  }
+  .panel-title {
+    @apply text-sm font-medium text-muted uppercase tracking-wider;
+  }
+  .stat-value {
+    @apply text-3xl font-semibold text-fg tabular-nums;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-bg hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-fg hover:bg-panel/80 border border-panel;
+  }
+  .btn-danger {
+    @apply btn bg-err text-white hover:bg-err/90;
+  }
+  .input {
+    @apply rounded-md bg-bg border border-panel px-3 py-2 text-fg placeholder-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-xs text-muted font-medium;
+  }
+  .pill-ok {
+    @apply pill bg-ok/15 text-ok;
+  }
+  .pill-warn {
+    @apply pill bg-warn/15 text-warn;
+  }
+  .pill-err {
+    @apply pill bg-err/15 text-err;
+  }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GopherTrunk">
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <g fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round">
+    <path d="M32 12 L32 22"/>
+    <path d="M22 18 C22 18 17 22 14 26 M42 18 C42 18 47 22 50 26"/>
+    <circle cx="32" cy="40" r="11" fill="#0f172a"/>
+    <path d="M28 39 L31 42 L36 36"/>
+  </g>
+  <circle cx="32" cy="11" r="3" fill="#38bdf8"/>
+</svg>

@@ -316,6 +316,12 @@ type APIConfig struct {
 	GRPCAddr       string        `yaml:"grpc_addr"`
 	AllowMutations bool          `yaml:"allow_mutations"`
 	Auth           APIAuthConfig `yaml:"auth"`
+	// CORS gates cross-origin browser requests. Off by default
+	// (no Access-Control-* headers emitted). Enable when serving
+	// the bundled web UI from a different origin than the daemon
+	// (e.g. opening web/index.html via file:// → Origin: null, or
+	// hosting the SPA on a separate static server).
+	CORS APICORSConfig `yaml:"cors"`
 	// TLSCert / TLSKey, when both set, switch both the HTTP and
 	// gRPC servers to TLS. Paths point at PEM-encoded files on
 	// disk that the daemon reads at start-up (rotation requires a
@@ -324,6 +330,24 @@ type APIConfig struct {
 	// See docs/hardening.md §"Transport encryption (TLS)".
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
+}
+
+// APICORSConfig configures cross-origin browser access to the HTTP
+// API + WebSocket upgrade. Off by default; the daemon emits no
+// Access-Control-* headers and rejects WS upgrades whose Origin
+// header is not in AllowedOrigins.
+//
+// Common values:
+//
+//	["null"]                       allow web UI opened via file://
+//	["http://laptop.local:8000"]   allow a specific static host
+//	["*"]                          allow any origin (use with auth)
+type APICORSConfig struct {
+	// AllowedOrigins is the exact origin string the daemon
+	// echoes back in Access-Control-Allow-Origin. Browsers send
+	// the literal "null" for file:// loads. Use "*" to allow
+	// any origin (must not be combined with credentials).
+	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
 // APIAuthConfig configures bearer-token authentication on the HTTP

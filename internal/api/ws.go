@@ -11,6 +11,10 @@ import (
 // meant to run on a private network or localhost, and the API is
 // read-only. Operators that expose the API publicly should put it
 // behind a reverse proxy that enforces origin policy.
+//
+// When api.cors.allowed_origins is configured, the upgrader's
+// CheckOrigin is overridden per-request in handleWS so the same
+// allow-list governs both REST CORS and the WS upgrade.
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
@@ -22,7 +26,24 @@ var wsUpgrader = websocket.Upgrader{
 // Clients should treat the connection as one-way (server → client); the
 // server pings every 30 s to keep proxies from idling the socket.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	upgrader := wsUpgrader
+	if s.cors.enabled() {
+		// When CORS is configured, gate the WS upgrade by the same
+		// origin allow-list rather than the wide-open default. An
+		// empty Origin header (curl, websocat, server-to-server) is
+		// allowed through — non-browser clients can't be spoofed via
+		// CSRF the way browser pages can.
+		cors := s.cors
+		upgrader.CheckOrigin = func(req *http.Request) bool {
+			origin := req.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			_, ok := cors.originAllowed(origin)
+			return ok
+		}
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Upgrader writes its own error response.
 		s.log.Debug("api: WS upgrade failed", "err", err)

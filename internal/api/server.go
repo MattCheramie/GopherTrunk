@@ -220,6 +220,14 @@ type Server struct {
 	tlsCert string
 	tlsKey  string
 
+	cors CORSConfig
+	// audioPub is the optional publisher feeding the new
+	// /api/v1/audio/stream HTTP endpoint. The daemon shares its
+	// existing *AudioPublisher (the same instance backing gRPC
+	// StreamAudio) so the HTTP stream is a parallel subscriber on
+	// the same fan-out. nil disables the route.
+	audioPub *AudioPublisher
+
 	mu     sync.Mutex
 	srv    *http.Server
 	closed bool
@@ -323,6 +331,18 @@ type ServerOptions struct {
 	// it to surface every config knob. Optional; when nil, the
 	// route returns 503.
 	Runtime RuntimeProvider
+	// AudioPublisher, when non-nil, enables the
+	// GET /api/v1/audio/stream HTTP endpoint that streams live
+	// composed PCM as a continuous WAV body. Reuses the same
+	// publisher that backs gRPC StreamAudio so the HTTP stream is
+	// a parallel subscriber rather than a second fan-out.
+	AudioPublisher *AudioPublisher
+	// CORS configures the cross-origin middleware. Off when
+	// AllowedOrigins is empty (the daemon emits no CORS headers).
+	// Set this when the browser-served SPA is loaded from an
+	// origin different to the daemon's (most commonly file://,
+	// whose Origin header is the literal string "null").
+	CORS CORSConfig
 	// TLSCert and TLSKey, when both non-empty, switch the HTTP
 	// server to TLS. Paths point at PEM-encoded files on disk that
 	// the daemon reads at start-up. Leaving either empty serves
@@ -393,19 +413,25 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		allowMutations: opts.AllowMutations,
 		tlsCert:        opts.TLSCert,
 		tlsKey:         opts.TLSKey,
+		cors:           opts.CORS,
+		audioPub:       opts.AudioPublisher,
 	}, nil
 }
 
 // Run binds the listener and serves until ctx cancels.
 func (s *Server) Run(ctx context.Context) error {
 	mux := s.routes()
+	var handler http.Handler = mux
+	if s.cors.enabled() {
+		handler = corsMiddleware(s.cors, handler)
+	}
 	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
 	s.srv = &http.Server{
-		Handler: mux,
+		Handler: handler,
 		// ReadHeaderTimeout protects against Slowloris attacks; the
 		// existing 10 s bound stays.
 		ReadHeaderTimeout: 10 * time.Second,
@@ -523,6 +549,11 @@ func (s *Server) routes() *http.ServeMux {
 	// gated behind allow_mutations like every other write route.
 	mux.HandleFunc("GET /api/v1/audio", s.handleAudioStatus)
 	mux.HandleFunc("PATCH /api/v1/audio", s.gate(s.handleAudioPatch))
+	// Live audio stream — open like every other read route. Emits
+	// a continuous WAV body of composed PCM frames; browsers play
+	// it via <audio src="/api/v1/audio/stream">. Returns 503 when
+	// the daemon was started without an audio publisher.
+	mux.HandleFunc("GET /api/v1/audio/stream", s.handleAudioStream)
 
 	return mux
 }

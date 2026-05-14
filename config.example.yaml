@@ -47,6 +47,26 @@ api:
   # `auth.mode` for new deployments.
   allow_mutations: false
 
+  # Cross-origin browser access. Off by default — the daemon emits
+  # no Access-Control-* headers and rejects WebSocket upgrades whose
+  # Origin header isn't on the allow-list. Enable when serving the
+  # bundled web UI (gophertrunk-web/) from a different origin than
+  # the daemon. Common values:
+  #
+  #   - "null"                          allow web UI opened via file://
+  #   - "http://laptop.local:8000"      allow a specific static host
+  #   - "*"                             allow any origin
+  #
+  # Browsers send the literal string "null" as the Origin for file://
+  # loads, so listing "null" is what enables the easiest LAN
+  # deployment (daemon on a Raspberry Pi, web UI as a folder copied
+  # to a laptop and opened with a double-click).
+  cors:
+    allowed_origins: []
+    # allowed_origins:
+    #   - "null"
+    #   - "http://laptop.local:8000"
+
 metrics:
   enabled: true     # mounts /metrics on the HTTP API
 
