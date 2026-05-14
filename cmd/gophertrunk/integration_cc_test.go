@@ -134,12 +134,15 @@ func TestDaemonCCDecodesP25Phase1(t *testing.T) {
 	base := "http://" + cfg.API.HTTPAddr
 	waitReachable(t, base+"/api/v1/health", 5*time.Second)
 
-	// 10 s deadline absorbs cold-start latency on the first
+	// 30 s deadline absorbs cold-start latency on the first
 	// iteration of a `-count` flakiness sweep (Go runtime + RRC
 	// filter init + MM clock-loop convergence + mock SDR ticker
-	// warmup all run lazily on first call). Subsequent iterations
-	// complete in under 100 ms.
-	deadline := time.After(10 * time.Second)
+	// warmup all run lazily on first call). GitHub-hosted runners
+	// occasionally take 10-15 s just for the daemon's cold path
+	// (observed flake at 10.31 s on a 10 s deadline), so the
+	// budget is generous. Subsequent iterations complete in under
+	// 100 ms.
+	deadline := time.After(30 * time.Second)
 	var locked bool
 WaitLoop:
 	for !locked {
@@ -357,10 +360,11 @@ func TestDaemonCCDecodesP25Phase1GrantChain(t *testing.T) {
 	base := "http://" + cfg.API.HTTPAddr
 	waitReachable(t, base+"/api/v1/health", 5*time.Second)
 
-	// 10 s deadline absorbs first-iteration cold-start in `-count`
-	// flakiness sweeps — same pattern as TestDaemonCCDecodesP25Phase1.
-	// Subsequent iterations complete in under 100 ms.
-	deadline := time.After(10 * time.Second)
+	// 30 s deadline absorbs first-iteration cold-start in `-count`
+	// flakiness sweeps — same pattern + same budget as
+	// TestDaemonCCDecodesP25Phase1. Subsequent iterations complete
+	// in under 100 ms.
+	deadline := time.After(30 * time.Second)
 	var locked, granted bool
 	var grantPayload trunking.Grant
 WaitLoop:
