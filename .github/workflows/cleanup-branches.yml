@@ -1,0 +1,123 @@
+name: Cleanup branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only — list what would be deleted without deleting"
+        type: boolean
+        default: true
+      include_closed_unmerged:
+        description: "Also delete branches whose PRs were all closed without merging"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Identify and delete merged branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          INCLUDE_CLOSED: ${{ inputs.include_closed_unmerged }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          default_branch=$(gh api "repos/$REPO" -q .default_branch)
+          current_ref="${GITHUB_REF#refs/heads/}"
+
+          gh api --paginate "repos/$REPO/pulls?state=all&per_page=100" \
+            --jq '.[] | {head: .head.ref, state, merged_at}' \
+            | jq -s '.' > /tmp/all_prs.json
+
+          gh api --paginate "repos/$REPO/branches?per_page=100" \
+            --jq '.[] | {name, protected}' \
+            | jq -s '.' > /tmp/all_branches.json
+
+          mapfile -t candidates < <(
+            jq -r --arg main "$default_branch" --arg cur "$current_ref" '
+              .[]
+              | select(.protected == false)
+              | select(.name != $main and .name != $cur)
+              | .name
+            ' /tmp/all_branches.json
+          )
+
+          merged=()
+          closed_unmerged=()
+          open_prs=()
+          no_pr=()
+
+          for branch in "${candidates[@]}"; do
+            status=$(jq -r --arg b "$branch" '
+              [.[] | select(.head == $b)] as $prs
+              | if ($prs | length) == 0 then "no_pr"
+                elif ($prs | map(select(.state == "open")) | length) > 0 then "open"
+                elif ($prs | map(select(.merged_at != null)) | length) > 0 then "merged"
+                else "closed_unmerged"
+                end
+            ' /tmp/all_prs.json)
+            case "$status" in
+              merged)          merged+=("$branch") ;;
+              closed_unmerged) closed_unmerged+=("$branch") ;;
+              open)            open_prs+=("$branch") ;;
+              no_pr)           no_pr+=("$branch") ;;
+            esac
+          done
+
+          to_delete=("${merged[@]}")
+          if [[ "$INCLUDE_CLOSED" == "true" && ${#closed_unmerged[@]} -gt 0 ]]; then
+            to_delete+=("${closed_unmerged[@]}")
+          fi
+
+          {
+            echo "## Branch cleanup plan"
+            echo
+            echo "| Category | Count |"
+            echo "| --- | --- |"
+            echo "| Merged (will delete) | ${#merged[@]} |"
+            echo "| Closed without merge | ${#closed_unmerged[@]}$( [[ "$INCLUDE_CLOSED" == "true" ]] && echo ' (will delete)' || echo ' (skipped)' ) |"
+            echo "| Open PR (skipped) | ${#open_prs[@]} |"
+            echo "| No PR (skipped) | ${#no_pr[@]} |"
+            echo
+            if (( ${#to_delete[@]} > 0 )); then
+              echo "### To delete (${#to_delete[@]})"
+              printf -- '- %s\n' "${to_delete[@]}"
+            fi
+            if (( ${#no_pr[@]} > 0 )); then
+              echo
+              echo "### No PR — review manually"
+              printf -- '- %s\n' "${no_pr[@]}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "::notice::Dry run — re-run with dry_run=false to delete ${#to_delete[@]} branches"
+            exit 0
+          fi
+
+          failed=()
+          for b in "${to_delete[@]}"; do
+            echo "Deleting $b"
+            if ! gh api -X DELETE "repos/$REPO/git/refs/heads/$b" --silent; then
+              failed+=("$b")
+            fi
+          done
+
+          if (( ${#failed[@]} > 0 )); then
+            {
+              echo
+              echo "### Failed to delete (${#failed[@]})"
+              printf -- '- %s\n' "${failed[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Failed to delete ${#failed[@]} branches"
+            exit 1
+          fi
+
+          echo "::notice::Deleted ${#to_delete[@]} branches"
