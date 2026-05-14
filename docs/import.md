@@ -1,5 +1,8 @@
 ---
-title: Importing systems from PDFs and CSVs
+layout: page
+title: Import (PDF / CSV)
+description: Importing trunked-system definitions from RadioReference PDFs and structured CSV bundles into config.yaml
+nav_group: Operate
 ---
 
 # `gophertrunk import-pdf`
