@@ -25,10 +25,11 @@ nav_group: Install
 
   <div class="download-card">
     <h3>Windows 11</h3>
-    <p class="download-card__lede">One-click installer, signed static binary, no DLLs to ship.</p>
+    <p class="download-card__lede">One-click installer (x64), portable ZIPs for x64 and ARM.</p>
     <div class="download-card__buttons">
-      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64-setup.exe">Installer (.exe)</a>
-      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64.zip">Portable (.zip)</a>
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64-setup.exe">x64 Installer (.exe)</a>
+      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64.zip">x64 Portable (.zip)</a>
+      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-arm64.zip">ARM64 Portable (.zip)</a>
     </div>
     <p class="download-card__note">After install, swap the WinUSB driver via <a href="{{ '/install-windows.html' | relative_url }}">Zadig</a> — the OS won't see your RTL-SDR until you do this once.</p>
   </div>
@@ -48,8 +49,9 @@ nav_group: Install
     <p class="download-card__lede">Tarballed static binary. No <code>librtlsdr</code> or <code>libusb</code> at runtime.</p>
     <div class="download-card__buttons">
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-amd64.tar.gz">x86_64 (.tar.gz)</a>
+      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-arm64.tar.gz">aarch64 (.tar.gz)</a>
     </div>
-    <p class="download-card__note">RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
+    <p class="download-card__note">aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs. RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
   </div>
 
 </div>
@@ -90,10 +92,15 @@ The `sha=` value matches the commit on the [release tag][releases]; `built=` is 
 
 ```sh
 VERSION={{ ver }}
+ARCH=$(uname -m)                            # x86_64 or aarch64 / arm64
+case "$ARCH" in
+  x86_64)         PKG=linux-amd64 ;;
+  aarch64|arm64)  PKG=linux-arm64 ;;
+esac
 curl -L -o gophertrunk.tar.gz \
-  https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
+  https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-${PKG}.tar.gz
 tar xzf gophertrunk.tar.gz
-cd gophertrunk-${VERSION}-linux-amd64
+cd gophertrunk-${VERSION}-${PKG}
 cp config.example.yaml config.yaml          # edit before launch
 ./gophertrunk version                       # confirms ldflags landed
 ./gophertrunk run -config config.yaml

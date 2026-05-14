@@ -11,9 +11,11 @@ name: Release
 #
 # Outputs in the GitHub Release:
 #
-#   gophertrunk-<ver>-windows-amd64-setup.exe   one-click installer
-#   gophertrunk-<ver>-windows-amd64.zip         portable ZIP (no installer)
-#   gophertrunk-<ver>-linux-amd64.tar.gz        Linux tarball
+#   gophertrunk-<ver>-windows-amd64-setup.exe   one-click installer (x64)
+#   gophertrunk-<ver>-windows-amd64.zip         portable ZIP (x64)
+#   gophertrunk-<ver>-windows-arm64.zip         portable ZIP (Windows on ARM)
+#   gophertrunk-<ver>-linux-amd64.tar.gz        Linux x86_64 tarball
+#   gophertrunk-<ver>-linux-arm64.tar.gz        Linux aarch64 tarball
 #   gophertrunk-<ver>-darwin-amd64.tar.gz       macOS Intel tarball
 #   gophertrunk-<ver>-darwin-arm64.tar.gz       macOS Apple Silicon tarball
 #   SHA256SUMS                                  per-file SHA-256 checksums
@@ -75,7 +77,7 @@ jobs:
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
 
-      - name: Build portable ZIP
+      - name: Build portable ZIP (amd64)
         shell: bash
         run: |
           set -eu
@@ -85,21 +87,43 @@ jobs:
           cp -r dist/staging/. "dist/${NAME}/"
           (cd dist && 7z a "${NAME}.zip" "${NAME}")
 
-      - name: Build Inno Setup installer
+      - name: Build Inno Setup installer (amd64)
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
         with:
           path: installer/windows/gophertrunk.iss
           options: /DAppVersion=${{ steps.version.outputs.version }} /Qp
 
+      - name: Build gophertrunk.exe (arm64)
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: arm64
+        run: |
+          set -eu
+          VERSION="${{ steps.version.outputs.version }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          NAME="gophertrunk-${VERSION}-windows-arm64"
+          mkdir -p "dist/${NAME}"
+          go build \
+            -trimpath \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
+            -o "dist/${NAME}/gophertrunk.exe" \
+            ./cmd/gophertrunk
+          cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+          cp docs/install-windows.md "dist/${NAME}/INSTALL-WINDOWS.md"
+          (cd dist && 7z a "${NAME}.zip" "${NAME}")
+
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-amd64
+          name: windows
           path: |
             dist/*.zip
             dist/*setup.exe
 
   linux:
-    name: Build Linux tarball
+    name: Build Linux tarballs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -117,26 +141,31 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build gophertrunk
+      - name: Build Linux tarballs
         env:
           CGO_ENABLED: "0"
+          GOOS: linux
         run: |
+          set -eu
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          NAME="gophertrunk-${VERSION}-linux-amd64"
-          mkdir -p "dist/${NAME}"
-          go build \
-            -trimpath \
-            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
-            -o "dist/${NAME}/gophertrunk" \
-            ./cmd/gophertrunk
-          cp README.md LICENSE config.example.yaml "dist/${NAME}/"
-          (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}"
+          for ARCH in amd64 arm64; do
+            NAME="gophertrunk-${VERSION}-linux-${ARCH}"
+            mkdir -p "dist/${NAME}"
+            GOARCH="${ARCH}" go build \
+              -trimpath \
+              -ldflags "${LDFLAGS}" \
+              -o "dist/${NAME}/gophertrunk" \
+              ./cmd/gophertrunk
+            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-amd64
+          name: linux
           path: dist/*.tar.gz
 
   macos:
@@ -237,10 +266,12 @@ jobs:
           body: |
             ## Install
 
-            **Windows 11:** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+            **Windows 11 (x64):** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+
+            **Windows on ARM:** extract `gophertrunk-${{ steps.version.outputs.version }}-windows-arm64.zip` (no installer for arm64 yet — portable ZIP only).
 
             **macOS:** extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper.
 
-            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Single static binary; no system dependencies needed.
+            **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` (x86_64) or `gophertrunk-${{ steps.version.outputs.version }}-linux-arm64.tar.gz` (aarch64, e.g. Raspberry Pi 4/5) and run `./gophertrunk`. Single static binary; no system dependencies needed.
 
             All artifacts are SHA-256-checksummed in `SHA256SUMS`.
