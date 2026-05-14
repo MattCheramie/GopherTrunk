@@ -31,7 +31,7 @@ nav_group: Install
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-amd64.tar.gz">x86_64 (.tar.gz)</a>
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-arm64.tar.gz">aarch64 (.tar.gz)</a>
     </div>
-    <p class="download-card__note">aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs. RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
+    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-linux.html' | relative_url }}">Linux install guide</a>. aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs; RTL-SDR needs udev rules + DVB blacklist on first install.</p>
   </div>
 
   <div class="download-card" data-platform="macos">
@@ -41,7 +41,7 @@ nav_group: Install
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
       <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
     </div>
-    <p class="download-card__note">Builds are unsigned — right-click → Open the first time to bypass Gatekeeper, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
+    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-macos.html' | relative_url }}">macOS install guide</a>. Builds are unsigned — right-click → Open the first time, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
   </div>
 
   <div class="download-card" data-platform="windows">
@@ -52,7 +52,7 @@ nav_group: Install
       <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64.zip">x64 Portable (.zip)</a>
       <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-arm64.zip">ARM64 Portable (.zip)</a>
     </div>
-    <p class="download-card__note">After install, swap the WinUSB driver via <a href="{{ '/install-windows.html' | relative_url }}">Zadig</a> — the OS won't see your RTL-SDR until you do this once.</p>
+    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-windows.html' | relative_url }}">Windows install guide</a>. After install, swap the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.</p>
   </div>
 
 </div>

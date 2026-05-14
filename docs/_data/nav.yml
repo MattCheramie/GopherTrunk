@@ -5,6 +5,10 @@ groups:
         url: /downloads.html
       - title: Hardware
         url: /hardware.html
+      - title: Linux install
+        url: /install-linux.html
+      - title: macOS install
+        url: /install-macos.html
       - title: Windows install
         url: /install-windows.html
   - label: Operate
