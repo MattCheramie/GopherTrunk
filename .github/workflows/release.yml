@@ -14,6 +14,8 @@ name: Release
 #   gophertrunk-<ver>-windows-amd64-setup.exe   one-click installer
 #   gophertrunk-<ver>-windows-amd64.zip         portable ZIP (no installer)
 #   gophertrunk-<ver>-linux-amd64.tar.gz        Linux tarball
+#   gophertrunk-<ver>-darwin-amd64.tar.gz       macOS Intel tarball
+#   gophertrunk-<ver>-darwin-arm64.tar.gz       macOS Apple Silicon tarball
 #   SHA256SUMS                                  per-file SHA-256 checksums
 on:
   push:
@@ -137,9 +139,55 @@ jobs:
           name: linux-amd64
           path: dist/*.tar.gz
 
+  macos:
+    name: Build macOS bundles
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.10"
+
+      - name: Compute version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build macOS bundles
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+        run: |
+          set -eu
+          VERSION="${{ steps.version.outputs.version }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}"
+          for ARCH in amd64 arm64; do
+            NAME="gophertrunk-${VERSION}-darwin-${ARCH}"
+            mkdir -p "dist/${NAME}"
+            GOARCH="${ARCH}" go build \
+              -trimpath \
+              -ldflags "${LDFLAGS}" \
+              -o "dist/${NAME}/gophertrunk" \
+              ./cmd/gophertrunk
+            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin
+          path: dist/*.tar.gz
+
   release:
     name: Publish GitHub Release
-    needs: [windows, linux]
+    needs: [windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -190,6 +238,8 @@ jobs:
             ## Install
 
             **Windows 11:** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+
+            **macOS:** extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper.
 
             **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` and run `./gophertrunk`. Single static binary; no system dependencies needed.
 
