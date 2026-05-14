@@ -5,47 +5,93 @@ description: Install GopherTrunk on Linux, macOS, or Windows
 nav_group: Install
 ---
 
+{%- assign latest = site.github.latest_release -%}
+{%- if latest and latest.tag_name -%}
+  {%- assign ver = latest.tag_name -%}
+{%- else -%}
+  {%- assign ver = "v0.1.0" -%}
+{%- endif -%}
+{%- assign rel_url = "https://github.com/MattCheramie/GopherTrunk/releases/download/" | append: ver -%}
+
 # Download GopherTrunk
 
-Each tagged release publishes signed-and-checksummed binaries to the
-**[Releases page on GitHub][releases]**. Pick the bundle for your
-platform below.
+<p class="downloads-version">
+  Latest release: <a href="https://github.com/MattCheramie/GopherTrunk/releases/tag/{{ ver }}"><strong>{{ ver }}</strong></a>
+  · <a href="https://github.com/MattCheramie/GopherTrunk/releases">all releases</a>
+  · <a href="{{ rel_url }}/SHA256SUMS"><code>SHA256SUMS</code></a>
+</p>
+
+<div class="download-cards">
+
+  <div class="download-card">
+    <h3>Windows 11</h3>
+    <p class="download-card__lede">One-click installer, signed static binary, no DLLs to ship.</p>
+    <div class="download-card__buttons">
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64-setup.exe">Installer (.exe)</a>
+      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64.zip">Portable (.zip)</a>
+    </div>
+    <p class="download-card__note">After install, swap the WinUSB driver via <a href="{{ '/install-windows.html' | relative_url }}">Zadig</a> — the OS won't see your RTL-SDR until you do this once.</p>
+  </div>
+
+  <div class="download-card">
+    <h3>macOS</h3>
+    <p class="download-card__lede">Static binary + sample config. Bundled with README and LICENSE.</p>
+    <div class="download-card__buttons">
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
+      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
+    </div>
+    <p class="download-card__note">Builds are unsigned — right-click → Open the first time to bypass Gatekeeper, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
+  </div>
+
+  <div class="download-card">
+    <h3>Linux</h3>
+    <p class="download-card__lede">Tarballed static binary. No <code>librtlsdr</code> or <code>libusb</code> at runtime.</p>
+    <div class="download-card__buttons">
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-amd64.tar.gz">x86_64 (.tar.gz)</a>
+    </div>
+    <p class="download-card__note">RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
+  </div>
+
+</div>
+
+## Verify your download
+
+Every binary archive is SHA-256-checksummed. Refuse to install on a hash mismatch:
+
+```sh
+# Linux / macOS
+curl -L -O {{ rel_url }}/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS    # Linux
+shasum -a 256 --ignore-missing -c SHA256SUMS  # macOS
+```
+
+```powershell
+# Windows
+$expected = (Get-Content SHA256SUMS | Select-String "windows-amd64-setup.exe").ToString().Split(" ")[0]
+$actual = (Get-FileHash gophertrunk-{{ ver }}-windows-amd64-setup.exe -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected) { throw "checksum mismatch" }
+```
+
+The daemon also self-reports its build provenance — every release pins the commit + build time at link time:
+
+```sh
+$ ./gophertrunk version
+{{ ver }} (sha=abc1234, built=2026-05-13T19:00:00Z)
+```
+
+The `sha=` value matches the commit on the [release tag][releases]; `built=` is the UTC timestamp the CI runner produced the artefact. Both are injected via `-ldflags` and are empty on `go run` / `go test` builds.
 
 [releases]: https://github.com/MattCheramie/GopherTrunk/releases
 [latest]: https://github.com/MattCheramie/GopherTrunk/releases/latest
 
-<p align="center">
-  <a href="{{ '/releases.html' | relative_url }}" class="btn">Latest release</a>
-  <a href="https://github.com/MattCheramie/GopherTrunk/releases" class="btn">All releases</a>
-</p>
+## Quick start by OS
 
-## What ships in every release
-
-Every tag produces a static, dependency-free binary built with
-`CGO_ENABLED=0`. No `librtlsdr`, no `libusb`, no system libraries
-required at runtime. The release artefact bundle is:
-
-| File                                                   | Platform   | What it is |
-| ------------------------------------------------------ | ---------- | ---------- |
-| `gophertrunk-<ver>-windows-amd64-setup.exe`            | Windows 11 | Inno Setup installer — one-click install, Start Menu entry, signed binary inside |
-| `gophertrunk-<ver>-windows-amd64.zip`                  | Windows 11 | Portable ZIP — same binary, no installer (extract anywhere) |
-| `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Linux      | Tarballed static binary + `README.md` + `LICENSE` + `config.example.yaml` |
-| `SHA256SUMS`                                           | all        | SHA-256 checksums for every binary archive in the release |
-
-## Linux
+### Linux
 
 ```sh
-# 1. Fetch the tarball + checksum
-VERSION=v0.99.0   # or v1.0.0, whatever's listed as the latest release
+VERSION={{ ver }}
 curl -L -o gophertrunk.tar.gz \
-    https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
-curl -L -o SHA256SUMS \
-    https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/SHA256SUMS
-
-# 2. Verify the checksum (refuse to install on a hash mismatch)
-sha256sum --ignore-missing -c SHA256SUMS
-
-# 3. Extract + run
+  https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
 tar xzf gophertrunk.tar.gz
 cd gophertrunk-${VERSION}-linux-amd64
 cp config.example.yaml config.yaml          # edit before launch
@@ -53,44 +99,39 @@ cp config.example.yaml config.yaml          # edit before launch
 ./gophertrunk run -config config.yaml
 ```
 
-RTL-SDR access on Linux needs the udev rules + DVB-driver blacklist
-documented in **[`hardware.md`]({{ '/hardware.html' | relative_url }})**.
-For a systemd-managed install, copy
-[`gophertrunk.service`](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/gophertrunk.service)
-to `/etc/systemd/system/` and follow the install header.
+For a systemd-managed install, copy [`gophertrunk.service`](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/gophertrunk.service) to `/etc/systemd/system/` and follow the install header.
 
-## Windows 11
+### macOS
+
+```sh
+VERSION={{ ver }}
+ARCH=$(uname -m)                            # arm64 on Apple Silicon, x86_64 on Intel
+case "$ARCH" in
+  arm64)  PKG=darwin-arm64 ;;
+  x86_64) PKG=darwin-amd64 ;;
+esac
+curl -L -o gophertrunk.tar.gz \
+  https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-${PKG}.tar.gz
+tar xzf gophertrunk.tar.gz
+cd gophertrunk-${VERSION}-${PKG}
+xattr -dr com.apple.quarantine gophertrunk  # bypass Gatekeeper (unsigned build)
+cp config.example.yaml config.yaml
+./gophertrunk version
+./gophertrunk run -config config.yaml
+```
+
+RTL-SDR on macOS uses the bundled IOKit driver — no kext or driver swap required.
+
+### Windows 11
 
 Run the installer:
 
 ```powershell
 # Or just double-click the .exe in Explorer.
-.\gophertrunk-v0.99.0-windows-amd64-setup.exe
+.\gophertrunk-{{ ver }}-windows-amd64-setup.exe
 ```
 
-After install, complete the WinUSB driver swap via Zadig — see
-**[`install-windows.md`]({{ '/install-windows.html' | relative_url }})**
-for the full step-by-step (the installer's last page links there too).
-The OS won't see your RTL-SDR until that swap is done.
-
-## macOS
-
-Tagged releases don't currently ship a pre-built macOS bundle —
-the CI matrix builds + tests the macOS path on every PR via the
-`usb-macos` job, but signing + notarisation are still operator
-work. Build from source:
-
-```sh
-git clone https://github.com/MattCheramie/GopherTrunk.git
-cd gophertrunk
-make build
-./bin/gophertrunk version
-```
-
-A pre-built macOS bundle lands once code-signing + notarisation
-are wired into `release.yml` — track via
-[issue #XX](https://github.com/MattCheramie/GopherTrunk/issues)
-or open a new one if it doesn't exist yet.
+After install, complete the WinUSB driver swap via Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (the installer's last page links there too). The OS won't see your RTL-SDR until that swap is done.
 
 ## Build from source
 
@@ -104,15 +145,11 @@ make test                # unit tests
 make integration         # daemon end-to-end (no SDR required)
 ```
 
-Requires Go 1.25+ — the project's `go.mod` pins the toolchain to
-1.25.10 (closes the 23 stdlib CVEs in the bare 1.25.0). See
-**[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)**
-for the full dev setup.
+Requires Go 1.25+ — the project's `go.mod` pins the toolchain to 1.25.10 (closes the 23 stdlib CVEs in the bare 1.25.0). See **[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)** for the full dev setup.
 
 ## Docker
 
-The repository ships a multi-stage `Dockerfile` + `docker-compose.yml`
-with RTL-SDR USB pass-through wired:
+The repository ships a multi-stage `Dockerfile` + `docker-compose.yml` with RTL-SDR USB pass-through wired:
 
 ```sh
 git clone https://github.com/MattCheramie/GopherTrunk.git
@@ -120,44 +157,14 @@ cd gophertrunk
 docker compose up -d
 ```
 
-See **[`hardening.md` §"Docker"]({{ '/hardening.html#docker' | relative_url }})**
-for the USB pass-through + healthcheck + Prometheus scrape config.
-
-## Verifying a build
-
-After installing, the daemon binary self-reports its build
-provenance:
-
-```sh
-$ ./gophertrunk version
-v0.99.0 (sha=abc1234, built=2026-05-13T19:00:00Z)
-```
-
-The `sha=` value matches the commit on the [Releases page][releases]
-that produced the binary; `built=` is the UTC timestamp the CI
-runner produced the artefact. Both are injected at link time via
-`-ldflags` — they're empty on `go run` / `go test` builds and on
-binaries built without the `Makefile` / release workflow.
-
-## What's in this release
-
-The full per-release changelog lives at
-**[`CHANGELOG.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CHANGELOG.md)**.
-Each tagged release also generates a GitHub-side release-notes
-section automatically from the merged-PR history.
+See **[`hardening.md` §"Docker"]({{ '/hardening.html#docker' | relative_url }})** for the USB pass-through + healthcheck + Prometheus scrape config.
 
 ## Security
 
-Found a vulnerability? Please follow the responsible-disclosure
-process in
-**[`SECURITY.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/SECURITY.md)** —
-do not open a public issue. Use GitHub's private security advisory
-workflow:
+Found a vulnerability? Please follow the responsible-disclosure process in **[`SECURITY.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/SECURITY.md)** — do not open a public issue. Use GitHub's private security advisory workflow:
 
 <https://github.com/MattCheramie/GopherTrunk/security/advisories/new>
 
 ## Older releases
 
-Every prior tag stays on GitHub's [Releases page][releases]; binaries
-remain downloadable indefinitely. Security fixes only back-port to
-the most recent stable tag — older tags receive best-effort support.
+Every prior tag stays on GitHub's [Releases page][releases]; binaries remain downloadable indefinitely. Security fixes only back-port to the most recent stable tag — older tags receive best-effort support.

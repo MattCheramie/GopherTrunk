@@ -468,6 +468,62 @@ button { font: inherit; cursor: pointer; }
 
 .home__content { padding: 2.5rem 0 4rem; }
 
+/* ---------- Download cards (downloads page) ---------- */
+.downloads-version {
+  font-size: 1rem;
+  color: var(--fg-muted);
+  margin: 0.25rem 0 1.5rem;
+}
+.downloads-version a { color: var(--fg); }
+.downloads-version a:hover { color: var(--accent); }
+
+.download-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2.5rem;
+}
+.download-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.25rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+}
+.download-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.download-card__lede {
+  color: var(--fg-muted);
+  font-size: 0.92rem;
+  margin: 0 0 0.9rem;
+}
+.download-card__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+.download-card__buttons .btn {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.85rem;
+}
+.download-card__note {
+  margin: auto 0 0;
+  padding-top: 0.7rem;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+}
+.download-card__note code {
+  font-size: 0.82rem;
+}
+
 /* ---------- Footer ---------- */
 .site-footer {
   background: var(--bg-elev);
