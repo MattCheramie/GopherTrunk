@@ -1,19 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import type { CallRow } from "../api/types";
-import { selectClientConfig, useShared } from "../store/shared";
+import {
+  selectCanMutate,
+  selectClientConfig,
+  useShared,
+} from "../store/shared";
 
 // History reads /api/v1/calls/history with the same filter shape the
 // daemon accepts: limit, system, group_id. Read-only in this pass;
 // retention-sweep button lands in the mutation pass.
 export function History() {
   const cfg = useShared(selectClientConfig);
+  const canMutate = useShared(selectCanMutate);
+  const setGlobalError = useShared((s) => s.setError);
 
   const [rows, setRows] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmSweep, setConfirmSweep] = useState(false);
 
   // Form fields kept separate from the "submitted" filter object so
   // typing into the inputs doesn't trigger a fetch on every keystroke.
@@ -134,13 +143,23 @@ export function History() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-xl font-semibold">Call history</h2>
-        <span className="text-xs text-muted">
-          {loading
-            ? "loading…"
-            : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted">
+            {loading
+              ? "loading…"
+              : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
+          </span>
+          {canMutate && (
+            <button
+              className="btn-ghost text-xs"
+              onClick={() => setConfirmSweep(true)}
+            >
+              Sweep retention
+            </button>
+          )}
+        </div>
       </header>
 
       <form
@@ -275,6 +294,30 @@ export function History() {
             value={selected.device_serial ?? null}
           />
         </DetailModal>
+      )}
+
+      {confirmSweep && (
+        <ConfirmModal
+          title="Run retention sweep?"
+          message="Apply the daemon's storage.retention_days policy now — older call rows and WAV files are deleted."
+          confirmLabel="Sweep"
+          destructive
+          onConfirm={async () => {
+            try {
+              await writes.sweepRetention(cfg);
+              // Refresh the current view so the user sees the result.
+              const fresh = await api.history(cfg, filter);
+              setRows(fresh);
+            } catch (e: unknown) {
+              setGlobalError(
+                e instanceof Error ? e.message : "retention sweep failed",
+              );
+              throw e;
+            }
+            setConfirmSweep(false);
+          }}
+          onCancel={() => setConfirmSweep(false)}
+        />
       )}
     </div>
   );

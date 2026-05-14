@@ -11,10 +11,12 @@ import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
 import { History } from "./panels/History";
-import { Placeholder } from "./panels/Placeholder";
+import { Metrics } from "./panels/Metrics";
+import { Scanner } from "./panels/Scanner";
 import { Settings } from "./panels/Settings";
 import { Systems } from "./panels/Systems";
 import { Talkgroups } from "./panels/Talkgroups";
+import { Tones } from "./panels/Tones";
 import {
   selectClientConfig,
   useShared,
@@ -120,37 +122,13 @@ export function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/active" element={<Active />} />
-          <Route
-            path="/scanner"
-            element={
-              <Placeholder
-                title="Scanner cockpit"
-                hint="Hold / resume / retune the CC hunter, lockout conventional channels, and manual-tune a VFO."
-              />
-            }
-          />
+          <Route path="/scanner" element={<Scanner />} />
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />
           <Route path="/history" element={<History />} />
           <Route path="/events" element={<Events />} />
-          <Route
-            path="/tones"
-            element={
-              <Placeholder
-                title="Tones"
-                hint="Tone-out alert review and per-device resets."
-              />
-            }
-          />
-          <Route
-            path="/metrics"
-            element={
-              <Placeholder
-                title="Metrics"
-                hint="Charted Prometheus counters via Chart.js."
-              />
-            }
-          />
+          <Route path="/tones" element={<Tones />} />
+          <Route path="/metrics" element={<Metrics />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

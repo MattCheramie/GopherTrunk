@@ -160,3 +160,13 @@ export interface EventDTO {
   timestamp: string;
   payload?: unknown;
 }
+
+export interface ToneAlertDTO {
+  profile: string;
+  alpha_tag?: string;
+  system?: string;
+  group_id?: number;
+  device_serial: string;
+  matched_at: string;
+  frequencies_hz: number[];
+}

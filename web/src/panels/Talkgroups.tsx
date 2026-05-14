@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import type { TalkgroupDTO } from "../api/types";
-import { selectClientConfig, useShared } from "../store/shared";
+import {
+  selectCanMutate,
+  selectClientConfig,
+  useShared,
+} from "../store/shared";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -12,10 +17,32 @@ const POLL_INTERVAL_MS = 15_000;
 // that introduces the daemon-write capability gate UI.
 export function Talkgroups() {
   const cfg = useShared(selectClientConfig);
+  const canMutate = useShared(selectCanMutate);
+  const setError = useShared((s) => s.setError);
   const talkgroups = useShared((s) => s.talkgroups);
   const setTalkgroups = useShared((s) => s.setTalkgroups);
   const [selected, setSelected] = useState<TalkgroupDTO | null>(null);
   const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function patch(id: number, body: { priority?: number; lockout?: boolean; scan?: boolean }) {
+    setBusy(true);
+    try {
+      const updated = await writes.updateTalkgroup(cfg, id, body);
+      // Optimistically merge the response into the local list and
+      // selected detail so the UI updates without waiting for the poll.
+      setTalkgroups(
+        talkgroups.map((t) => (t.id === id ? { ...t, ...updated } : t)),
+      );
+      setSelected((s) => (s && s.id === id ? { ...s, ...updated } : s));
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error ? e.message : "talkgroup update failed",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancel = false;
@@ -158,11 +185,55 @@ export function Talkgroups() {
               value={selected.lockout ? "locked out" : "active"}
             />
           </div>
-          <p className="text-xs text-muted pt-2">
-            Mutations (scan / lockout / priority) land in a follow-up
-            PR. Use the TUI's <code className="font-mono">S</code> /
-            priority shortcuts for now.
-          </p>
+          {canMutate ? (
+            <div className="pt-3 border-t border-panel space-y-3">
+              <p className="text-xs uppercase tracking-wider text-muted">
+                Mutations
+              </p>
+              <label className="flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5"
+                  checked={!!selected.scan}
+                  disabled={busy}
+                  onChange={(e) => patch(selected.id, { scan: e.target.checked })}
+                />
+                <span>Scan</span>
+              </label>
+              <label className="flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5"
+                  checked={!!selected.lockout}
+                  disabled={busy}
+                  onChange={(e) =>
+                    patch(selected.id, { lockout: e.target.checked })
+                  }
+                />
+                <span>Lockout</span>
+              </label>
+              <label className="flex items-center gap-3 text-sm">
+                <span className="w-20">Priority</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={9}
+                  className="input w-20"
+                  value={selected.priority ?? 0}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isFinite(v)) patch(selected.id, { priority: v });
+                  }}
+                />
+              </label>
+            </div>
+          ) : (
+            <p className="text-xs text-muted pt-2">
+              Enable write mode in Settings to edit scan / lockout /
+              priority from this browser.
+            </p>
+          )}
         </DetailModal>
       )}
     </div>

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import type { ActiveCallDTO } from "../api/types";
-import { selectClientConfig, useShared } from "../store/shared";
+import {
+  selectCanMutate,
+  selectClientConfig,
+  useShared,
+} from "../store/shared";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -12,10 +18,28 @@ const POLL_INTERVAL_MS = 2_000;
 // per-call detail, grant breakdown, and a duration ticker.
 export function Active() {
   const cfg = useShared(selectClientConfig);
+  const canMutate = useShared(selectCanMutate);
+  const setError = useShared((s) => s.setError);
   const activeCalls = useShared((s) => s.activeCalls);
   const setActiveCalls = useShared((s) => s.setActiveCalls);
   const [selected, setSelected] = useState<ActiveCallDTO | null>(null);
+  const [confirmEnd, setConfirmEnd] = useState<ActiveCallDTO | null>(null);
   const [now, setNow] = useState(() => Date.now());
+
+  async function endCall(call: ActiveCallDTO) {
+    try {
+      await writes.endCall(cfg, call.device_serial);
+      // Optimistically refresh the active list so the UI doesn't show
+      // the ended call for the next poll cycle.
+      const fresh = await api.activeCalls(cfg);
+      setActiveCalls(fresh);
+      setSelected(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "end-call request failed");
+      throw e;
+    }
+    setConfirmEnd(null);
+  }
 
   useEffect(() => {
     let cancel = false;
@@ -195,12 +219,33 @@ export function Active() {
               <DetailField label="Mode" value={selected.talkgroup.mode} />
             </div>
           )}
-          <p className="text-xs text-muted pt-2">
-            End-call mutation lands in a follow-up PR. Use the TUI's
-            <code className="font-mono mx-1">e</code>
-            shortcut for now.
-          </p>
+          {canMutate ? (
+            <div className="pt-2">
+              <button
+                className="btn-danger w-full"
+                onClick={() => setConfirmEnd(selected)}
+              >
+                End this call
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted pt-2">
+              Enable write mode in Settings to allow ending calls from
+              this browser.
+            </p>
+          )}
         </DetailModal>
+      )}
+
+      {confirmEnd && (
+        <ConfirmModal
+          title={`End call on ${confirmEnd.device_serial}?`}
+          message={`This releases the voice device. The recorder closes the WAV cleanly.`}
+          confirmLabel="End call"
+          destructive
+          onConfirm={() => endCall(confirmEnd)}
+          onCancel={() => setConfirmEnd(null)}
+        />
       )}
     </div>
   );

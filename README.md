@@ -310,26 +310,6 @@ sourcing.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
-- **Web operator console — remaining panels.** The browser SPA in
-  [`web/`](web/) (Vite + React + TypeScript + Tailwind) currently
-  ships Dashboard (live WebSocket event feed + audio cockpit),
-  Settings (theme / write-mode / forget device), ConnectScreen
-  (server-URL + token entry), the read-only data browsers
-  **Systems**, **Talkgroups**, **Devices** (sortable tables with
-  detail modals) and **Events** (live ring-buffer viewer with
-  filter + pause + inline JSON expansion), and the call-lifecycle
-  panels **Active** (per-call detail, live duration ticker) and
-  **History** (filterable call-log explorer over `/api/v1/calls/history`).
-  The remaining 3 TUI panels (Tones, Metrics, Scanner) are stubbed
-  via `Placeholder` and land panel-by-panel in follow-up PRs against
-  the same shared `src/store/` + `src/api/` plumbing — Scanner and
-  the Talkgroup-priority / call-end / retention-sweep mutations
-  introduce the daemon-write gate UI. Daemon-side support (CORS
-  middleware, `GET /api/v1/audio/stream` PCM-over-WAV endpoint)
-  already ships; no further Go-side work is required to fill the
-  panels in. Operator playbook for running the daemon on a
-  Raspberry Pi and driving it from a laptop is in
-  [`web/README.md`](web/README.md).
 - **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
   The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
   conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)
@@ -371,6 +351,23 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Web operator console reaches feature parity with the TUI.**
+  Every TUI panel now has a browser counterpart in [`web/`](web/)
+  (Vite + React + TypeScript + Tailwind), shipped as the
+  standalone `gophertrunk-web/` directory beside the binary in each
+  release archive: Dashboard, Active (with end-call mutation),
+  History (with retention-sweep mutation), Systems, Talkgroups
+  (with priority / lockout / scan PATCH controls), Devices, Events,
+  **Tones** (live ring + per-device reset), **Metrics** (Chart.js
+  trend of curated `gophertrunk_*` counters + Prometheus snapshot
+  tiles), **Scanner** (CC hunter hold/resume/retune per system,
+  conventional channel dwell/lockout/unlockout, manual VFO tune,
+  scan_mode toggle), Settings. All mutations are AND-gated through
+  the `selectCanMutate` selector — write-mode toggle in Settings
+  combined with the daemon's `/api/v1/mutations` capability flag —
+  and confirm-modal-wrapped where destructive. The standalone-
+  bundle, daemon-on-Pi / laptop-on-couch scenario is documented
+  end-to-end in [`web/README.md`](web/README.md).
 - **`gophertrunk import-pdf` subcommand.** Bootstraps a region's
   trunked-system definitions into `config.yaml` + per-system
   Trunk-Recorder talkgroup CSVs by parsing RadioReference.com PDF
@@ -2241,7 +2238,8 @@ screen. The SPA is installable as a Progressive Web App (Add to Home
 Screen) and persists server URL + token in browser storage so return
 visits skip the connect screen.
 
-**Status: read panels landing.** The current build ships:
+**Status: TUI parity.** Every Bubbletea TUI panel has a browser
+counterpart:
 
 - **ConnectScreen** — server-URL + bearer-token entry with a
   `GET /api/v1/health` reachability probe before commit.
@@ -2250,42 +2248,43 @@ visits skip the connect screen.
   PCM-over-WAV playback from the new `GET /api/v1/audio/stream`
   endpoint, volume / mute / record-toggle wired to
   `PATCH /api/v1/audio`.
-- **Active** — full active-call list with per-call detail modal
-  (grant breakdown: TGID / source / frequency / channel / flags),
-  live elapsed-time ticker, and a multi-column sortable table that
-  mirrors the TUI's Active panel.
+- **Active** — full active-call list with per-call detail modal,
+  live elapsed-time ticker, and a confirm-wrapped end-call button
+  (`POST /api/v1/calls/{deviceSerial}/end`) when write mode is on.
 - **History** — filterable call-log explorer over
   `GET /api/v1/calls/history?limit&system&group_id` with a form-
-  driven filter and a per-row detail modal showing duration,
-  end-reason, encryption / emergency / data flags.
+  driven filter, a per-row detail modal, and a write-mode-gated
+  "Sweep retention" button (`POST /api/v1/retention/sweep`).
 - **Systems** — sortable browser of every trunked system in
   `GET /api/v1/systems`, with a detail modal exposing protocol,
   WACN / System ID / RFSS / Site, and control-channel frequencies.
-- **Talkgroups** — sortable, filterable browser of every talkgroup
-  with priority / scan / lockout flag pills and a detail modal. Read-
-  only in this pass; PATCH mutations land with the write-mode pass.
+- **Talkgroups** — sortable, filterable browser with priority / scan
+  / lockout flag pills and inline PATCH controls in the detail
+  modal (`PATCH /api/v1/talkgroups/{id}`) when write mode is on.
 - **Devices** — SDR pool inspector with attached/detached status,
   driver / tuner / role columns, and a detail modal for gain / PPM /
-  bias-T. Live via the same `sdr.attached` / `sdr.detached` events
-  the Dashboard already subscribes to.
-- **Events** — live ring-buffer viewer (capped at 500 to mirror the
-  TUI) with substring filter across kind / timestamp / payload, a
-  Pause/Resume toggle that freezes the snapshot for forensic review,
-  and click-to-expand row that pretty-prints the full event JSON.
-- **Settings** — theme toggle (dark / monochrome), write-mode gate
-  mirroring the TUI's `--write` flag, "forget this device" to clear
-  stored credentials.
+  bias-T. Live via `sdr.attached` / `sdr.detached` events.
+- **Events** — live ring-buffer viewer (capped at 500) with
+  substring filter, Pause/Resume snapshot, and click-to-expand JSON.
+- **Tones** — filtered view of `tone.alert` events with per-device
+  reset button (`POST /api/v1/devices/{serial}/tone-reset`) gated
+  by write mode.
+- **Metrics** — `GET /metrics` Prometheus snapshot with curated
+  `gophertrunk_*` counter tiles + a Chart.js trend line for
+  `calls_active`, `devices_attached`, `cc_locked` over ~5 min.
+- **Scanner** — CC hunter (hold / resume / retune per system),
+  conventional channel list (dwell / lockout / unlockout), manual
+  VFO tune (`POST /api/v1/scanner/manual_tune`), scan_mode toggle
+  (all ↔ list). All mutations gated by write mode + confirm modals.
+- **Settings** — theme toggle (dark / monochrome), write-mode
+  master switch, "forget this device".
 
-The remaining three TUI panels (Tones, Metrics, Scanner) are stubbed
-via `Placeholder` and land panel-by-panel in follow-up PRs against
-the same `src/store/` + `src/api/` plumbing — every read and
-mutation endpoint they need already lives on the daemon. See
-[`web/README.md`](web/README.md) for the operator playbook (LAN
-deployment, CORS config, PWA install steps) and the dev workflow
-(`make web-dev`, `make web-build`).
-
-For full feature parity with the TUI today, continue using
-`gophertrunk tui` (above).
+All mutations are AND-gated by `selectCanMutate` (write mode +
+daemon `allow_mutations`) and the destructive ones are wrapped in a
+`ConfirmModal` so a fat-finger tap in the bottom nav doesn't end a
+call. See [`web/README.md`](web/README.md) for the operator
+playbook (LAN deployment, CORS config, PWA install steps) and the
+dev workflow (`make web-dev`, `make web-build`).
 
 ## API authentication
 

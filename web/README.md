@@ -109,30 +109,28 @@ development.
 
 ## Status
 
-The SPA is built incrementally; each PR ships a slice of panels
-behind the same shared store + API client.
+TUI parity — every Bubbletea TUI panel has a browser counterpart.
 
-Shipping today:
+| Panel         | Reads                                           | Mutations (write-mode gated)              |
+| ------------- | ----------------------------------------------- | ----------------------------------------- |
+| ConnectScreen | `GET /api/v1/health` reachability probe         | —                                         |
+| Dashboard     | `/api/v1/{health,calls/active,devices,audio}` + WebSocket + `/api/v1/audio/stream` | `PATCH /api/v1/audio` (volume/mute/record) |
+| Active        | `GET /api/v1/calls/active` (live elapsed ticker) | `POST /api/v1/calls/{serial}/end`        |
+| History       | `GET /api/v1/calls/history?limit&system&group_id` | `POST /api/v1/retention/sweep`          |
+| Systems       | `GET /api/v1/systems`                           | —                                         |
+| Talkgroups    | `GET /api/v1/talkgroups`                        | `PATCH /api/v1/talkgroups/{id}` (scan/lockout/priority) |
+| Devices       | `GET /api/v1/devices` + `sdr.attached/detached` | —                                         |
+| Events        | WebSocket ring buffer                           | —                                         |
+| Tones         | `tone.alert` events                             | `POST /api/v1/devices/{serial}/tone-reset` |
+| Metrics       | `GET /metrics` (curated tiles + Chart.js trend) | —                                         |
+| Scanner       | `GET /api/v1/scanner` (CC hunter + conv + manual tune) | `PATCH /api/v1/scanner`, `POST /api/v1/scanner/{hunt,conventional,manual_tune}/*`, `DELETE …` |
+| Settings      | —                                               | theme, write-mode, forget-device          |
 
-| Panel         | Backed by                                       |
-| ------------- | ----------------------------------------------- |
-| ConnectScreen | `GET /api/v1/health` reachability probe         |
-| Dashboard     | `GET /api/v1/{health,calls/active,devices,audio}` + WebSocket event feed + `/api/v1/audio/stream` |
-| Active        | `GET /api/v1/calls/active` (sortable list, live elapsed ticker, detail modal) |
-| History       | `GET /api/v1/calls/history?limit&system&group_id` (form-driven filter + per-row detail) |
-| Systems       | `GET /api/v1/systems` (sortable list + detail)  |
-| Talkgroups    | `GET /api/v1/talkgroups` (sortable list + filter + detail) |
-| Devices       | `GET /api/v1/devices` (live attach/detach)      |
-| Events        | WebSocket ring buffer (filter + pause + JSON expansion) |
-| Settings      | theme, write-mode, forget-device                |
-
-Pending — stubbed by `Placeholder` and arriving in follow-up PRs:
-
-| Panel        | Will mirror                                     |
-| ------------ | ----------------------------------------------- |
-| Tones        | `tone.alert` ring + per-device reset            |
-| Metrics      | `GET /metrics` charted via Chart.js             |
-| Scanner      | `GET /api/v1/scanner` + hold/resume/retune/lockout mutations |
+All mutations are AND-gated by `selectCanMutate` (the Settings
+write-mode toggle ∧ the daemon's `/api/v1/mutations.allow_mutations`
+flag). Destructive ones — end-call, channel lockout, retune,
+retention sweep — are wrapped in a `ConfirmModal` so an accidental
+tap in the bottom nav can't fire one.
 
 ## Architecture
 
