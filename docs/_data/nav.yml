@@ -15,8 +15,8 @@ groups:
     items:
       - title: TUI
         url: /tui.html
-      - title: Import from RadioReference
-        url: /import-pdf.html
+      - title: Import (PDF / CSV)
+        url: /import.html
       - title: Hardening
         url: /hardening.html
   - label: Reference

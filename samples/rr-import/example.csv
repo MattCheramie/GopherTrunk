@@ -1,0 +1,29 @@
+# Example import bundle for `gophertrunk import-pdf -csv`.
+# Sections are delimited by `# Section: <name>` markers. Order does
+# not matter, but every system needs at least metadata.name and one of
+# sites or talkgroups. Other comment lines starting with `#` are
+# ignored. See docs/import.md for the full reference.
+
+# Section: metadata
+key,value
+name,Example P25 System
+protocol,p25
+sysid,49A
+wacn,BEE99
+location,"Example City, AZ"
+county,Example County
+system_type,Project 25 Phase II
+
+# Section: sites
+rfss,site_id,site_name,county,frequencies
+1,1,Tower Alpha,Example,851.0125c|851.2625c|852.0125|853.0125
+1,2,Tower Bravo,Example,853.5125c|854.0125c|854.5125
+
+# Section: talkgroups
+decimal,hex,mode,alpha_tag,description,tag,group,priority,lockout,scan
+1000,3e8,D,DISPATCH,Primary Dispatch,Law Dispatch,Police,1,,Y
+1001,3e9,D,TAC1,Tactical 1,Law Tac,Police,,,Y
+1002,3ea,D,FIRE-DSP,Fire Dispatch,Fire Dispatch,Fire,2,,Y
+1003,3eb,D,FIRE-TAC,Fire Tactical,Fire-Tac,Fire,,,Y
+1004,,D,EMS,EMS Operations,EMS Dispatch,EMS,2,,Y
+1005,,A,Analog Repeat,Backup analog,Multi-Tac,Common,,Y,N

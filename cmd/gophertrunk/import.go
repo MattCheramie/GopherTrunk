@@ -25,22 +25,30 @@ func runImport(args []string) {
 	dryRun := fs.Bool("dry-run", false, "print the planned changes and exit without writing")
 	force := fs.Bool("force", false, "overwrite an existing trunking.systems entry with the same name")
 	var pdfPaths repeatedString
+	var csvPaths repeatedString
 	fs.Var(&pdfPaths, "pdf", "path to a RadioReference PDF system export (repeatable)")
+	fs.Var(&csvPaths, "csv", "path to a structured CSV bundle (repeatable; see docs/import.md)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `gophertrunk import-pdf — import RadioReference.com system PDFs into config.yaml
+		fmt.Fprintf(fs.Output(), `gophertrunk import-pdf — import system definitions into config.yaml
 
-Parses one or more RadioReference PDF exports, extracts the system metadata,
-site/control-channel list, and talkgroups, and merges the result into an
-existing config.yaml (preserving comments). A per-system talkgroup CSV is
-written next to the config (or to -csv-dir).
+Sources:
+  -pdf <file.pdf>   RadioReference.com PDF export (auto-extracts metadata,
+                    sites, and talkgroups).
+  -csv <file.csv>   Multi-section structured CSV bundle. One file per system,
+                    with metadata / sites / talkgroups sections. See
+                    docs/import.md for the format spec and an annotated example.
+
+Both flags are repeatable and may be combined in a single invocation. The
+parsed systems are merged into config.yaml (preserving comments) and a
+per-system Trunk-Recorder-style talkgroup CSV is written next to the config
+(or to -csv-dir).
 
 By default the importer launches an interactive TUI so you can prune sites,
 toggle Scan/Lockout flags, and set priorities before write. Pass -no-tui to
-merge straight from parsed defaults — every site enabled, every talkgroup
-flagged Scan=true.
+merge straight from parsed defaults.
 
 Usage:
-  gophertrunk import-pdf -pdf <file.pdf> [-pdf <file.pdf>...] [flags]
+  gophertrunk import-pdf -pdf <file.pdf> [-pdf <file.pdf>...] [-csv <file.csv>...] [flags]
 
 Flags:
 `)
@@ -48,21 +56,30 @@ Flags:
 	}
 	_ = fs.Parse(args)
 
-	if len(pdfPaths) == 0 {
+	if len(pdfPaths) == 0 && len(csvPaths) == 0 {
 		fs.Usage()
-		fail("at least one -pdf argument is required")
+		fail("at least one -pdf or -csv argument is required")
 	}
 
-	// Parse every PDF up front. If any one fails we abort before
+	// Parse every source up front. If any one fails we abort before
 	// touching the user's config.
-	parsed := make([]parsedSystem, 0, len(pdfPaths))
+	parsed := make([]parsedSystem, 0, len(pdfPaths)+len(csvPaths))
 	for _, p := range pdfPaths {
 		sys, err := parsePDFFile(p)
 		if err != nil {
 			fail(err.Error())
 		}
 		parsed = append(parsed, sys)
-		fmt.Fprintf(os.Stderr, "import-pdf: parsed %s: %s (%d sites, %d talkgroups)\n",
+		fmt.Fprintf(os.Stderr, "import-pdf: parsed PDF %s: %s (%d sites, %d talkgroups)\n",
+			p, sys.Name, len(sys.Sites), len(sys.Talkgroups))
+	}
+	for _, p := range csvPaths {
+		sys, err := parseCSVFile(p)
+		if err != nil {
+			fail(err.Error())
+		}
+		parsed = append(parsed, sys)
+		fmt.Fprintf(os.Stderr, "import-pdf: parsed CSV %s: %s (%d sites, %d talkgroups)\n",
 			p, sys.Name, len(sys.Sites), len(sys.Talkgroups))
 	}
 
