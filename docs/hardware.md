@@ -9,9 +9,8 @@ nav_group: Install
 
 GopherTrunk ships with a pure-Go RTL-SDR driver — no `librtlsdr`,
 `libusb`, or C toolchain on the build host. The daemon talks to
-RTL2832U dongles directly through the platform's USB stack
-(USBDEVFS ioctls on Linux, WinUSB on Windows; macOS lands in a
-follow-up — see [issue #82](https://github.com/MattCheramie/GopherTrunk/issues/82)).
+RTL2832U dongles directly through the platform's USB stack:
+USBDEVFS ioctls on Linux, IOKit on macOS, WinUSB on Windows.
 
 ## Supported devices
 
@@ -63,10 +62,22 @@ Blacklist the kernel's DVB driver, which otherwise grabs the device first:
 blacklist dvb_usb_rtl28xxu
 ```
 
+See [`install-linux.md`]({{ '/install-linux.html' | relative_url }})
+for the full step-by-step including systemd service setup.
+
+## macOS
+
+IOKit lets user-space claim USB devices without rebinding the kernel
+driver, so there's no kext to install and no driver swap to perform.
+Plug in the dongle and run `gophertrunk sdr list`. See
+[`install-macos.md`]({{ '/install-macos.html' | relative_url }}) for
+the full step-by-step including the Gatekeeper bypass and launchd
+service setup.
+
 ## Windows
 
 Bind the dongle to **WinUSB** with [Zadig](https://zadig.akeo.ie)
-once per device — see [docs/install-windows.md](install-windows.md)
+once per device — see [`install-windows.md`]({{ '/install-windows.html' | relative_url }})
 for the click-by-click walkthrough.
 
 ## Verifying the build
