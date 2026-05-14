@@ -1,3 +1,10 @@
+---
+layout: page
+title: TUI
+description: Eleven-panel full-screen operator console over the daemon's REST + SSE API
+nav_group: Operate
+---
+
 # GopherTrunk TUI
 
 A full-screen operator console over the daemon's REST + SSE API.

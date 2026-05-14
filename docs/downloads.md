@@ -1,7 +1,8 @@
 ---
-layout: default
+layout: page
 title: Downloads
 description: Install GopherTrunk on Linux, macOS, or Windows
+nav_group: Install
 ---
 
 # Download GopherTrunk

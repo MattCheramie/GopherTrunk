@@ -1,3 +1,10 @@
+---
+layout: page
+title: Hardening & operations
+description: API auth, Prometheus, graceful shutdown, Docker, and RTL-SDR pass-through for production deployments
+nav_group: Operate
+---
+
 # Hardening & operations
 
 Operator playbook for running GopherTrunk in production: API

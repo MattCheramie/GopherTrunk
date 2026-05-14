@@ -35,12 +35,15 @@ jobs:
       - name: Synthesize landing page from README.md
         run: |
           {
-            printf -- '---\nlayout: default\ntitle: Home\n---\n\n'
-            # Rewrite README image/link paths that are relative to the repo
-            # root so they resolve correctly when served from the Jekyll
-            # site root (./docs is the Jekyll source, so docs/assets/foo
-            # is published at /assets/foo).
-            sed -e 's#docs/assets/#/assets/#g' README.md
+            printf -- '---\nlayout: home\ntitle: Home\n---\n\n'
+            # Rewrite README paths that are relative to the repo root so
+            # they resolve correctly when served from the Jekyll site root
+            # (./docs is the Jekyll source, so docs/assets/foo publishes
+            # at /assets/foo, and docs/foo.md publishes at /foo.html).
+            sed -E \
+              -e 's|docs/assets/|/assets/|g' \
+              -e 's|\]\(docs/([a-z0-9_-]+)\.md(#[^)]*)?\)|](/\1.html\2)|g' \
+              README.md
           } > docs/index.md
 
       - uses: actions/configure-pages@v5

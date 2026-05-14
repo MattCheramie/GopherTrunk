@@ -1,3 +1,10 @@
+---
+layout: page
+title: Hardware setup
+description: RTL-SDR dongles, udev rules, DVB blacklist, and supported USB chipsets
+nav_group: Install
+---
+
 # Hardware Setup
 
 GopherTrunk ships with a pure-Go RTL-SDR driver — no `librtlsdr`,

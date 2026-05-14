@@ -1,0 +1,40 @@
+groups:
+  - label: Install
+    items:
+      - title: Downloads
+        url: /downloads.html
+      - title: Hardware
+        url: /hardware.html
+      - title: Windows install
+        url: /install-windows.html
+  - label: Operate
+    items:
+      - title: TUI
+        url: /tui.html
+      - title: Hardening
+        url: /hardening.html
+  - label: Reference
+    items:
+      - title: Architecture
+        url: /architecture.html
+      - title: Vocoders
+        url: /vocoders.html
+      - title: Voice calibration
+        url: /voice-calibration.html
+      - title: Opt-in features
+        url: /opt-in-features.html
+  - label: Support
+    items:
+      - title: Support
+        url: /support.html
+
+external:
+  - title: GitHub
+    url: https://github.com/MattCheramie/GopherTrunk
+    icon: github
+  - title: Releases
+    url: https://github.com/MattCheramie/GopherTrunk/releases
+    icon: tag
+  - title: Sponsor
+    url: https://github.com/sponsors/MattCheramie
+    icon: heart

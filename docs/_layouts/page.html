@@ -1,0 +1,30 @@
+---
+layout: default
+---
+<main id="content" class="page" role="main">
+  <div class="container page__container">
+    {%- if page.nav_group or page.title -%}
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="{{ '/' | relative_url }}">Home</a></li>
+          {%- if page.nav_group -%}
+            <li><span class="breadcrumb__group">{{ page.nav_group }}</span></li>
+          {%- endif -%}
+          <li><span aria-current="page">{{ page.title | default: page.name }}</span></li>
+        </ol>
+      </nav>
+    {%- endif -%}
+
+    <article class="prose">
+      {{ content }}
+    </article>
+
+    {%- if page.path -%}
+      <footer class="page__edit">
+        <a href="https://github.com/MattCheramie/GopherTrunk/blob/main/{{ page.path }}" rel="noopener">
+          Edit this page on GitHub &rarr;
+        </a>
+      </footer>
+    {%- endif -%}
+  </div>
+</main>

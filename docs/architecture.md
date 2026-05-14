@@ -1,3 +1,10 @@
+---
+layout: page
+title: Architecture
+description: Pipelined goroutines, typed channels, and the registry-based driver model behind GopherTrunk
+nav_group: Reference
+---
+
 # GopherTrunk Architecture
 
 GopherTrunk is a headless, low-latency trunking-radio engine that manages a
