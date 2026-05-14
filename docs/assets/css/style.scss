@@ -150,13 +150,13 @@ button { font: inherit; cursor: pointer; }
   z-index: 100;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: saturate(180%) blur(8px);
+  padding-top: env(safe-area-inset-top, 0);
 }
 .site-nav__inner {
   display: flex;
   align-items: center;
   gap: 1rem;
-  min-height: 60px;
+  height: 56px;
 }
 .site-nav__brand {
   display: flex;
@@ -164,8 +164,10 @@ button { font: inherit; cursor: pointer; }
   gap: 0.55rem;
   font-weight: 700;
   font-size: 1.05rem;
+  line-height: 1;
   color: var(--fg);
   text-decoration: none;
+  flex-shrink: 0;
 }
 .site-nav__brand:hover { color: var(--fg); text-decoration: none; }
 .site-nav__brand img { width: 28px; height: 28px; }
@@ -299,7 +301,7 @@ button { font: inherit; cursor: pointer; }
   .site-nav__hamburger { display: inline-flex; }
   .site-nav__menu {
     position: fixed;
-    top: 60px;
+    top: calc(56px + env(safe-area-inset-top, 0px));
     right: 0;
     left: 0;
     flex-direction: column;
