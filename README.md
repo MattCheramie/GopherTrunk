@@ -59,6 +59,8 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **Operator surfaces** — first-class Bubbletea TUI cockpit (`gophertrunk tui`) with 11 panels; conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune.
 
+**System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. See **[`docs/import.md`](docs/import.md)**.
+
 Full encyclopedic breakdown — per-protocol FEC chains, receiver internals, frame layouts, API mutation routes, telemetry events — lives at **[`docs/architecture.md`](docs/architecture.md)**.
 
 ## Support the project
@@ -349,6 +351,18 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **`gophertrunk import-pdf` subcommand.** Bootstraps a region's
+  trunked-system definitions into `config.yaml` + per-system
+  Trunk-Recorder talkgroup CSVs by parsing RadioReference.com PDF
+  exports or structured multi-section CSV bundles (mixable with
+  `-pdf` and `-csv` in a single invocation). Launches a Bubbletea
+  TUI by default for reviewing parsed sites and toggling per-talkgroup
+  Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` /
+  `-force` cover scripting and CI. Atomic writes (in-memory schema
+  validation → temp file → rename) so a malformed source never
+  corrupts the existing config. Supports P25 Phase 1 + Phase 2 PDFs;
+  CSV bundles cover P25 / DMR / NXDN. Full operator reference at
+  [`docs/import.md`](docs/import.md).
 - **Capture-spec acceptance criteria for every real-air-blocked
   follow-up.** Each [`samples/<proto>/README.md`](samples/) now
   documents the explicit numerical thresholds a contributor with
@@ -2054,12 +2068,20 @@ make integration-cc-ysf       # YSF "lights up" — 4800-baud C4FM 480-dibit fra
 # is enabled.
 ./bin/gophertrunk decode -in call.raw -out call.wav -vocoder imbe
 ./bin/gophertrunk decode -list-vocoders
+
+# Bootstrap a new region: parse one or more RadioReference PDFs (or a
+# structured CSV bundle) and merge them into config.yaml + per-system
+# talkgroup CSVs. Launches a TUI for review; -no-tui for scripting.
+./bin/gophertrunk import-pdf -pdf maricopa.pdf -pdf rwc.pdf -config config.yaml
+./bin/gophertrunk import-pdf -csv my-system.csv -config config.yaml -no-tui -dry-run
 ```
 
 A starter [`config.example.yaml`](config.example.yaml) is in the
 repo root — copy it, set the `serial` of your dongle from
-`gophertrunk sdr list`, point `talkgroup_file` at a
-Trunk-Recorder-format CSV, and you're going.
+`gophertrunk sdr list`, then either hand-write the
+`trunking.systems[]` block + a Trunk-Recorder talkgroup CSV, or let
+`gophertrunk import-pdf` build both from a RadioReference PDF or a
+structured CSV bundle (see [`docs/import.md`](docs/import.md)).
 
 ### Docker
 
@@ -2076,7 +2098,7 @@ tests.
 ## Repository layout
 
 ```
-cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read+write TUI cockpit
+cmd/gophertrunk/        daemon entrypoint + sdr list CLI + read+write TUI cockpit + RadioReference/CSV importer (import-pdf subcommand)
 internal/tui/           bubbletea TUI: 11 panels (Dashboard, Systems, Talkgroups, Active, History, Events, Tones, Metrics, Devices, Scanner, Settings) over REST+SSE
 internal/sdr/           Driver interface, pool, mock
 internal/sdr/rtlsdr/usb/      Pure-Go USB transport: Linux USBDEVFS, Windows WinUSB, macOS IOKit (purego), mock
@@ -2305,6 +2327,10 @@ opt-in field as a `omitempty` JSON value.
 - [`docs/voice-calibration.md`](docs/voice-calibration.md) — operator
   recipe for tuning the IMBE / AMBE+2 decoders against a DSD-FME /
   OP25 reference recording via `cmd/voice-calibrate`
+- [`docs/import.md`](docs/import.md) — `gophertrunk import-pdf`
+  operator reference: RadioReference PDF workflow, structured CSV
+  bundle format (metadata / sites / talkgroups sections), TUI key
+  bindings, and CLI flag reference
 - [`docs/hardening.md`](docs/hardening.md) — API authentication, TLS
   setup, health endpoint diagnostics, HTTP / gRPC timeouts +
   keep-alive reference, graceful shutdown, Prometheus catalogue,
