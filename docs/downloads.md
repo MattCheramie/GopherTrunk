@@ -19,9 +19,30 @@ nav_group: Install
   Latest release: <a href="https://github.com/MattCheramie/GopherTrunk/releases/tag/{{ ver }}"><strong>{{ ver }}</strong></a>
   · <a href="https://github.com/MattCheramie/GopherTrunk/releases">all releases</a>
   · <a href="{{ rel_url }}/SHA256SUMS"><code>SHA256SUMS</code></a>
+  · <a href="#verify-your-download">verify</a>
 </p>
 
 <div class="download-cards">
+
+  <div class="download-card">
+    <h3>Linux</h3>
+    <p class="download-card__lede">Tarballed static binary. No <code>librtlsdr</code> or <code>libusb</code> at runtime.</p>
+    <div class="download-card__buttons">
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-amd64.tar.gz">x86_64 (.tar.gz)</a>
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-arm64.tar.gz">aarch64 (.tar.gz)</a>
+    </div>
+    <p class="download-card__note">aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs. RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
+  </div>
+
+  <div class="download-card">
+    <h3>macOS</h3>
+    <p class="download-card__lede">Static binary + sample config. Bundled with README and LICENSE.</p>
+    <div class="download-card__buttons">
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
+      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
+    </div>
+    <p class="download-card__note">Builds are unsigned — right-click → Open the first time to bypass Gatekeeper, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
+  </div>
 
   <div class="download-card">
     <h3>Windows 11</h3>
@@ -34,54 +55,11 @@ nav_group: Install
     <p class="download-card__note">After install, swap the WinUSB driver via <a href="{{ '/install-windows.html' | relative_url }}">Zadig</a> — the OS won't see your RTL-SDR until you do this once.</p>
   </div>
 
-  <div class="download-card">
-    <h3>macOS</h3>
-    <p class="download-card__lede">Static binary + sample config. Bundled with README and LICENSE.</p>
-    <div class="download-card__buttons">
-      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-arm64.tar.gz">Apple Silicon (.tar.gz)</a>
-      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-darwin-amd64.tar.gz">Intel (.tar.gz)</a>
-    </div>
-    <p class="download-card__note">Builds are unsigned — right-click → Open the first time to bypass Gatekeeper, or run <code>xattr -dr com.apple.quarantine gophertrunk</code>.</p>
-  </div>
-
-  <div class="download-card">
-    <h3>Linux</h3>
-    <p class="download-card__lede">Tarballed static binary. No <code>librtlsdr</code> or <code>libusb</code> at runtime.</p>
-    <div class="download-card__buttons">
-      <a class="btn btn--primary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-amd64.tar.gz">x86_64 (.tar.gz)</a>
-      <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-linux-arm64.tar.gz">aarch64 (.tar.gz)</a>
-    </div>
-    <p class="download-card__note">aarch64 covers Raspberry Pi 4 / 5 + most modern ARM SBCs. RTL-SDR needs <a href="{{ '/hardware.html' | relative_url }}">udev rules + DVB blacklist</a> on first install.</p>
-  </div>
-
 </div>
 
-## Verify your download
-
-Every binary archive is SHA-256-checksummed. Refuse to install on a hash mismatch:
-
-```sh
-# Linux / macOS
-curl -L -O {{ rel_url }}/SHA256SUMS
-sha256sum --ignore-missing -c SHA256SUMS    # Linux
-shasum -a 256 --ignore-missing -c SHA256SUMS  # macOS
-```
-
-```powershell
-# Windows
-$expected = (Get-Content SHA256SUMS | Select-String "windows-amd64-setup.exe").ToString().Split(" ")[0]
-$actual = (Get-FileHash gophertrunk-{{ ver }}-windows-amd64-setup.exe -Algorithm SHA256).Hash.ToLower()
-if ($actual -ne $expected) { throw "checksum mismatch" }
-```
-
-The daemon also self-reports its build provenance — every release pins the commit + build time at link time:
-
-```sh
-$ ./gophertrunk version
-{{ ver }} (sha=abc1234, built=2026-05-13T19:00:00Z)
-```
-
-The `sha=` value matches the commit on the [release tag][releases]; `built=` is the UTC timestamp the CI runner produced the artefact. Both are injected via `-ldflags` and are empty on `go run` / `go test` builds.
+<p class="downloads-jump">
+  Jump to: <a href="#linux">Linux quick start</a> · <a href="#macos">macOS quick start</a> · <a href="#windows-11">Windows quick start</a> · <a href="#verify-your-download">Verify</a> · <a href="#build-from-source">Build from source</a> · <a href="#docker">Docker</a>
+</p>
 
 [releases]: https://github.com/MattCheramie/GopherTrunk/releases
 [latest]: https://github.com/MattCheramie/GopherTrunk/releases/latest
@@ -139,6 +117,33 @@ Run the installer:
 ```
 
 After install, complete the WinUSB driver swap via Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (the installer's last page links there too). The OS won't see your RTL-SDR until that swap is done.
+
+## Verify your download
+
+Every binary archive is SHA-256-checksummed. Refuse to install on a hash mismatch:
+
+```sh
+# Linux / macOS
+curl -L -O {{ rel_url }}/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS    # Linux
+shasum -a 256 --ignore-missing -c SHA256SUMS  # macOS
+```
+
+```powershell
+# Windows
+$expected = (Get-Content SHA256SUMS | Select-String "windows-amd64-setup.exe").ToString().Split(" ")[0]
+$actual = (Get-FileHash gophertrunk-{{ ver }}-windows-amd64-setup.exe -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected) { throw "checksum mismatch" }
+```
+
+The daemon also self-reports its build provenance — every release pins the commit + build time at link time:
+
+```sh
+$ ./gophertrunk version
+{{ ver }} (sha=abc1234, built=2026-05-13T19:00:00Z)
+```
+
+The `sha=` value matches the commit on the [release tag][releases]; `built=` is the UTC timestamp the CI runner produced the artefact. Both are injected via `-ldflags` and are empty on `go run` / `go test` builds.
 
 ## Build from source
 

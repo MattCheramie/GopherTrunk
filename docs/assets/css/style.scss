@@ -493,6 +493,14 @@ button { font: inherit; cursor: pointer; }
 .downloads-version a { color: var(--fg); }
 .downloads-version a:hover { color: var(--accent); }
 
+.downloads-jump {
+  font-size: 0.92rem;
+  color: var(--fg-muted);
+  margin: 0 0 2rem;
+}
+.downloads-jump a { color: var(--fg); }
+.downloads-jump a:hover { color: var(--accent); }
+
 .download-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
