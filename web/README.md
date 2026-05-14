@@ -118,6 +118,8 @@ Shipping today:
 | ------------- | ----------------------------------------------- |
 | ConnectScreen | `GET /api/v1/health` reachability probe         |
 | Dashboard     | `GET /api/v1/{health,calls/active,devices,audio}` + WebSocket event feed + `/api/v1/audio/stream` |
+| Active        | `GET /api/v1/calls/active` (sortable list, live elapsed ticker, detail modal) |
+| History       | `GET /api/v1/calls/history?limit&system&group_id` (form-driven filter + per-row detail) |
 | Systems       | `GET /api/v1/systems` (sortable list + detail)  |
 | Talkgroups    | `GET /api/v1/talkgroups` (sortable list + filter + detail) |
 | Devices       | `GET /api/v1/devices` (live attach/detach)      |
@@ -128,8 +130,6 @@ Pending — stubbed by `Placeholder` and arriving in follow-up PRs:
 
 | Panel        | Will mirror                                     |
 | ------------ | ----------------------------------------------- |
-| Active       | `GET /api/v1/calls/active` + end-call mutation  |
-| History      | `GET /api/v1/calls/history` + filters           |
 | Tones        | `tone.alert` ring + per-device reset            |
 | Metrics      | `GET /metrics` charted via Chart.js             |
 | Scanner      | `GET /api/v1/scanner` + hold/resume/retune/lockout mutations |

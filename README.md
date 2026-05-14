@@ -314,19 +314,22 @@ to its own package and lands independently.
   [`web/`](web/) (Vite + React + TypeScript + Tailwind) currently
   ships Dashboard (live WebSocket event feed + audio cockpit),
   Settings (theme / write-mode / forget device), ConnectScreen
-  (server-URL + token entry), plus the read-only data browsers:
+  (server-URL + token entry), the read-only data browsers
   **Systems**, **Talkgroups**, **Devices** (sortable tables with
-  detail modals), and **Events** (live ring-buffer viewer with
-  filter + pause + inline JSON expansion). The remaining 5 TUI
-  panels (Active, History, Tones, Metrics, Scanner) are stubbed via
-  `Placeholder` and land panel-by-panel in follow-up PRs against the
-  same shared `src/store/` + `src/api/` plumbing — Scanner and the
-  Talkgroup-priority / call-end mutations introduce the daemon-write
-  gate UI. Daemon-side support (CORS middleware,
-  `GET /api/v1/audio/stream` PCM-over-WAV endpoint) already ships;
-  no further Go-side work is required to fill the panels in.
-  Operator playbook for running the daemon on a Raspberry Pi and
-  driving it from a laptop is in [`web/README.md`](web/README.md).
+  detail modals) and **Events** (live ring-buffer viewer with
+  filter + pause + inline JSON expansion), and the call-lifecycle
+  panels **Active** (per-call detail, live duration ticker) and
+  **History** (filterable call-log explorer over `/api/v1/calls/history`).
+  The remaining 3 TUI panels (Tones, Metrics, Scanner) are stubbed
+  via `Placeholder` and land panel-by-panel in follow-up PRs against
+  the same shared `src/store/` + `src/api/` plumbing — Scanner and
+  the Talkgroup-priority / call-end / retention-sweep mutations
+  introduce the daemon-write gate UI. Daemon-side support (CORS
+  middleware, `GET /api/v1/audio/stream` PCM-over-WAV endpoint)
+  already ships; no further Go-side work is required to fill the
+  panels in. Operator playbook for running the daemon on a
+  Raspberry Pi and driving it from a laptop is in
+  [`web/README.md`](web/README.md).
 - **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
   The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
   conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)
@@ -2247,6 +2250,14 @@ visits skip the connect screen.
   PCM-over-WAV playback from the new `GET /api/v1/audio/stream`
   endpoint, volume / mute / record-toggle wired to
   `PATCH /api/v1/audio`.
+- **Active** — full active-call list with per-call detail modal
+  (grant breakdown: TGID / source / frequency / channel / flags),
+  live elapsed-time ticker, and a multi-column sortable table that
+  mirrors the TUI's Active panel.
+- **History** — filterable call-log explorer over
+  `GET /api/v1/calls/history?limit&system&group_id` with a form-
+  driven filter and a per-row detail modal showing duration,
+  end-reason, encryption / emergency / data flags.
 - **Systems** — sortable browser of every trunked system in
   `GET /api/v1/systems`, with a detail modal exposing protocol,
   WACN / System ID / RFSS / Site, and control-channel frequencies.
@@ -2265,13 +2276,13 @@ visits skip the connect screen.
   mirroring the TUI's `--write` flag, "forget this device" to clear
   stored credentials.
 
-The remaining five TUI panels (Active, History, Tones, Metrics,
-Scanner) are stubbed via `Placeholder` and land panel-by-panel in
-follow-up PRs against the same `src/store/` + `src/api/` plumbing —
-every read and mutation endpoint they need already lives on the
-daemon. See [`web/README.md`](web/README.md) for the operator
-playbook (LAN deployment, CORS config, PWA install steps) and the
-dev workflow (`make web-dev`, `make web-build`).
+The remaining three TUI panels (Tones, Metrics, Scanner) are stubbed
+via `Placeholder` and land panel-by-panel in follow-up PRs against
+the same `src/store/` + `src/api/` plumbing — every read and
+mutation endpoint they need already lives on the daemon. See
+[`web/README.md`](web/README.md) for the operator playbook (LAN
+deployment, CORS config, PWA install steps) and the dev workflow
+(`make web-dev`, `make web-build`).
 
 For full feature parity with the TUI today, continue using
 `gophertrunk tui` (above).

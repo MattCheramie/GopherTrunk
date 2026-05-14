@@ -6,9 +6,11 @@ import { ConnectScreen } from "./components/ConnectScreen";
 import { TabBar, type Tab } from "./components/TabBar";
 import { AudioPlayer } from "./components/AudioPlayer";
 import { InstallPrompt } from "./components/InstallPrompt";
+import { Active } from "./panels/Active";
 import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
+import { History } from "./panels/History";
 import { Placeholder } from "./panels/Placeholder";
 import { Settings } from "./panels/Settings";
 import { Systems } from "./panels/Systems";
@@ -117,15 +119,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route
-            path="/active"
-            element={
-              <Placeholder
-                title="Active calls"
-                hint="The dashboard already lists active calls. This panel will add per-call detail, end-call mutations, and audio-cockpit shortcuts."
-              />
-            }
-          />
+          <Route path="/active" element={<Active />} />
           <Route
             path="/scanner"
             element={
@@ -137,10 +131,7 @@ export function App() {
           />
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />
-          <Route
-            path="/history"
-            element={<Placeholder title="History" hint="Call log explorer." />}
-          />
+          <Route path="/history" element={<History />} />
           <Route path="/events" element={<Events />} />
           <Route
             path="/tones"
