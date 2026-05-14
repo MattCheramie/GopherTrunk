@@ -1,11 +1,31 @@
 title: GopherTrunk
-description: Pure-Go digital trunking radio scanner engine
+description: Pure-Go digital-trunking RTL-SDR scanner engine. P25, DMR, TETRA, NXDN, Motorola, EDACS, LTR, MPT 1327, dPMR, D-STAR, YSF — single static binary.
 url: https://gophertrunk.org
+lang: en
 markdown: kramdown
+logo: /assets/gophertrunk-logo.png
+
+# jekyll-seo-tag picks these up automatically. `image` becomes the
+# default og:image / twitter:image when a page doesn't set its own.
+author:
+  name: Matt Cheramie
+  url: https://github.com/MattCheramie
+image: /assets/gophertrunk-logo.png
+
+# Schema.org SoftwareApplication metadata consumed by
+# _includes/head.html.
+software:
+  application_category: DeveloperApplication
+  operating_systems: "Linux, macOS, Windows"
+  programming_language: Go
+  license: https://github.com/MattCheramie/GopherTrunk/blob/main/LICENSE
+  download_url: https://gophertrunk.org/downloads.html
+  repository: https://github.com/MattCheramie/GopherTrunk
 
 plugins:
   - jekyll-relative-links
   - jekyll-seo-tag
+  - jekyll-sitemap
 
 relative_links:
   enabled: true

@@ -35,15 +35,27 @@ jobs:
       - name: Synthesize landing page from README.md
         run: |
           {
-            printf -- '---\nlayout: home\ntitle: Home\n---\n\n'
-            # Rewrite README paths that are relative to the repo root so
-            # they resolve correctly when served from the Jekyll site root
-            # (./docs is the Jekyll source, so docs/assets/foo publishes
-            # at /assets/foo, and docs/foo.md publishes at /foo.html).
+            # No `title:` front-matter — jekyll-seo-tag falls back to
+            # site.title for the homepage <title>, which gives us the
+            # SEO-optimal "GopherTrunk · <site.description>" string
+            # instead of "Home | GopherTrunk".
+            printf -- '---\nlayout: home\n---\n\n'
+            # Three transforms:
+            # 1. docs/assets/foo -> /assets/foo (docs/ is the Jekyll
+            #    source root, so the asset publishes at /assets/foo).
+            # 2. ](docs/foo.md) -> ](/foo.html) so README cross-links
+            #    resolve on the Pages site.
+            # 3. Strip everything from the start of the README through
+            #    the first `---` horizontal-rule separator. That cuts
+            #    the README hero (logo + H1 + tagline + badges) which
+            #    is already rendered by the home.html layout's own
+            #    hero block — without this, the homepage double-H1s
+            #    and Google penalizes multi-H1 documents.
             sed -E \
               -e 's|docs/assets/|/assets/|g' \
               -e 's|\]\(docs/([a-z0-9_-]+)\.md(#[^)]*)?\)|](/\1.html\2)|g' \
-              README.md
+              README.md \
+              | sed '0,/^---$/d'
           } > docs/index.md
 
       - uses: actions/configure-pages@v5

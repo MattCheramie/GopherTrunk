@@ -9,6 +9,40 @@
 <link rel="icon" type="image/png" href="{{ '/assets/gophertrunk-logo.png' | relative_url }}">
 <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
 
+{%- comment -%}
+Schema.org SoftwareApplication structured data — surfaces in Google
+rich-results panels (sidebar info card on SERP, version chip, license
+chip). Only rendered on the homepage to avoid duplicate-entity signals.
+{%- endcomment -%}
+{%- if page.url == "/" -%}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": {{ site.title | jsonify }},
+  "description": {{ site.description | jsonify }},
+  "url": {{ site.url | jsonify }},
+  "image": {{ site.url | append: site.image | jsonify }},
+  "applicationCategory": {{ site.software.application_category | jsonify }},
+  "operatingSystem": {{ site.software.operating_systems | jsonify }},
+  "programmingLanguage": {{ site.software.programming_language | jsonify }},
+  "license": {{ site.software.license | jsonify }},
+  "downloadUrl": {{ site.software.download_url | jsonify }},
+  "codeRepository": {{ site.software.repository | jsonify }},
+  "author": {
+    "@type": "Person",
+    "name": {{ site.author.name | jsonify }},
+    "url": {{ site.author.url | jsonify }}
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+{%- endif -%}
+
 <script>
   (function () {
     try {
