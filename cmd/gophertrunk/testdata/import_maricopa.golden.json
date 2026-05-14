@@ -1,0 +1,2672 @@
+{
+  "name": "Maricopa County",
+  "location": "Maricopa County, AZ",
+  "county": "4 Counties",
+  "sysid": "49A",
+  "wacn": "BEE00",
+  "system_type": "Project 25 Phase II",
+  "protocol": "p25",
+  "sites": [
+    {
+      "rfss": 1,
+      "site_id": 16,
+      "site_name": "Oatman Mountain",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 769543750,
+          "cc": true
+        },
+        {
+          "hz": 769793750,
+          "cc": true
+        },
+        {
+          "hz": 770043750,
+          "cc": true
+        },
+        {
+          "hz": 771081250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 17,
+      "site_name": "Smith Peak",
+      "cty": "La Paz",
+      "frequencies": [
+        {
+          "hz": 851075000,
+          "cc": false
+        },
+        {
+          "hz": 851262500,
+          "cc": true
+        },
+        {
+          "hz": 851575000,
+          "cc": true
+        },
+        {
+          "hz": 851812500,
+          "cc": true
+        },
+        {
+          "hz": 853875000,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 18,
+      "site_name": "Towers Mountain",
+      "cty": "Yavapai",
+      "frequencies": [
+        {
+          "hz": 772956250,
+          "cc": false
+        },
+        {
+          "hz": 773206250,
+          "cc": true
+        },
+        {
+          "hz": 773456250,
+          "cc": true
+        },
+        {
+          "hz": 773706250,
+          "cc": true
+        },
+        {
+          "hz": 774156250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 19,
+      "site_name": "Lewis State Prison",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 771218750,
+          "cc": false
+        },
+        {
+          "hz": 771518750,
+          "cc": true
+        },
+        {
+          "hz": 771781250,
+          "cc": true
+        },
+        {
+          "hz": 772243750,
+          "cc": true
+        },
+        {
+          "hz": 772518750,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 20,
+      "site_name": "Burnt Mountain",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 771731250,
+          "cc": true
+        },
+        {
+          "hz": 771968750,
+          "cc": true
+        },
+        {
+          "hz": 772218750,
+          "cc": true
+        },
+        {
+          "hz": 772468750,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 23,
+      "site_name": "Childs Mountain",
+      "cty": "Pima",
+      "frequencies": [
+        {
+          "hz": 769506250,
+          "cc": true
+        },
+        {
+          "hz": 769756250,
+          "cc": true
+        },
+        {
+          "hz": 770006250,
+          "cc": true
+        },
+        {
+          "hz": 770256250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 31,
+      "site_name": "Phoenix Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 771206250,
+          "cc": false
+        },
+        {
+          "hz": 771456250,
+          "cc": false
+        },
+        {
+          "hz": 771531250,
+          "cc": false
+        },
+        {
+          "hz": 771743750,
+          "cc": false
+        },
+        {
+          "hz": 771956250,
+          "cc": false
+        },
+        {
+          "hz": 772206250,
+          "cc": false
+        },
+        {
+          "hz": 772506250,
+          "cc": true
+        },
+        {
+          "hz": 772756250,
+          "cc": true
+        },
+        {
+          "hz": 772968750,
+          "cc": true
+        },
+        {
+          "hz": 774631250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 32,
+      "site_name": "White Tanks",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 770406250,
+          "cc": false
+        },
+        {
+          "hz": 771156250,
+          "cc": false
+        },
+        {
+          "hz": 771406250,
+          "cc": false
+        },
+        {
+          "hz": 771656250,
+          "cc": false
+        },
+        {
+          "hz": 771906250,
+          "cc": false
+        },
+        {
+          "hz": 772156250,
+          "cc": false
+        },
+        {
+          "hz": 772406250,
+          "cc": false
+        },
+        {
+          "hz": 772656250,
+          "cc": true
+        },
+        {
+          "hz": 772906250,
+          "cc": true
+        },
+        {
+          "hz": 773968750,
+          "cc": true
+        },
+        {
+          "hz": 774656250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 33,
+      "site_name": "Thompson Peak",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 769268750,
+          "cc": false
+        },
+        {
+          "hz": 769518750,
+          "cc": false
+        },
+        {
+          "hz": 769768750,
+          "cc": false
+        },
+        {
+          "hz": 770018750,
+          "cc": false
+        },
+        {
+          "hz": 770268750,
+          "cc": false
+        },
+        {
+          "hz": 772706250,
+          "cc": true
+        },
+        {
+          "hz": 773881250,
+          "cc": true
+        },
+        {
+          "hz": 774381250,
+          "cc": true
+        },
+        {
+          "hz": 774881250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 34,
+      "site_name": "Chandler/Mesa Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 770518750,
+          "cc": false
+        },
+        {
+          "hz": 770768750,
+          "cc": false
+        },
+        {
+          "hz": 771018750,
+          "cc": false
+        },
+        {
+          "hz": 771243750,
+          "cc": false
+        },
+        {
+          "hz": 771331250,
+          "cc": true
+        },
+        {
+          "hz": 771493750,
+          "cc": true
+        },
+        {
+          "hz": 771706250,
+          "cc": true
+        },
+        {
+          "hz": 771831250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 35,
+      "site_name": "Northeast Mountain Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 771193750,
+          "cc": false
+        },
+        {
+          "hz": 771693750,
+          "cc": true
+        },
+        {
+          "hz": 771943750,
+          "cc": true
+        },
+        {
+          "hz": 772193750,
+          "cc": true
+        },
+        {
+          "hz": 772456250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 36,
+      "site_name": "Anthem/New River Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 770043750,
+          "cc": false
+        },
+        {
+          "hz": 771481250,
+          "cc": true
+        },
+        {
+          "hz": 771718750,
+          "cc": true
+        },
+        {
+          "hz": 772256250,
+          "cc": true
+        },
+        {
+          "hz": 773631250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 37,
+      "site_name": "East Lakes Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 769081250,
+          "cc": false
+        },
+        {
+          "hz": 769543750,
+          "cc": false
+        },
+        {
+          "hz": 769793750,
+          "cc": true
+        },
+        {
+          "hz": 771081250,
+          "cc": true
+        },
+        {
+          "hz": 771543750,
+          "cc": true
+        },
+        {
+          "hz": 771806250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 38,
+      "site_name": "Queen Creek Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 771268750,
+          "cc": false
+        },
+        {
+          "hz": 771731250,
+          "cc": true
+        },
+        {
+          "hz": 771968750,
+          "cc": true
+        },
+        {
+          "hz": 772218750,
+          "cc": true
+        },
+        {
+          "hz": 774131250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 39,
+      "site_name": "Gila Bend Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 769293750,
+          "cc": false
+        },
+        {
+          "hz": 770518750,
+          "cc": true
+        },
+        {
+          "hz": 770768750,
+          "cc": true
+        },
+        {
+          "hz": 771018750,
+          "cc": true
+        },
+        {
+          "hz": 771481250,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 40,
+      "site_name": "Vekol Valley Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 770293750,
+          "cc": true
+        },
+        {
+          "hz": 770543750,
+          "cc": true
+        },
+        {
+          "hz": 770793750,
+          "cc": true
+        },
+        {
+          "hz": 771043750,
+          "cc": true
+        }
+      ],
+      "include": true
+    },
+    {
+      "rfss": 1,
+      "site_id": 41,
+      "site_name": "Wickenburg Simulcast",
+      "cty": "Maricopa",
+      "frequencies": [
+        {
+          "hz": 769331250,
+          "cc": false
+        },
+        {
+          "hz": 769581250,
+          "cc": true
+        },
+        {
+          "hz": 769831250,
+          "cc": true
+        },
+        {
+          "hz": 770081250,
+          "cc": true
+        },
+        {
+          "hz": 770331250,
+          "cc": true
+        }
+      ],
+      "include": true
+    }
+  ],
+  "talkgroups": [
+    {
+      "dec": 1000,
+      "hex": "3e8",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO Ops",
+      "description": "Operations with outside agencies",
+      "tag": "Interop",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1001,
+      "hex": "3e9",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D1 SE D1",
+      "description": "Southeast",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1002,
+      "hex": "3ea",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D2 SW D2",
+      "description": "Southwest",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1003,
+      "hex": "3eb",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D3 NW D3",
+      "description": "Northwest",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1004,
+      "hex": "3ec",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D4 NE D4",
+      "description": "Northeast",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1005,
+      "hex": "3ed",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D5A Lakes D5A",
+      "description": "Lakes A",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1006,
+      "hex": "3ee",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D5B Lakes D5B",
+      "description": "Lakes B",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1007,
+      "hex": "3ef",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D6 QC D6",
+      "description": "Queen Creek",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1008,
+      "hex": "3f0",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO D7 FH D7",
+      "description": "Fountain Hills",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1009,
+      "hex": "3f1",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO",
+      "description": "Central Central - Constables, Process Servers etc",
+      "tag": "Law Dispatch",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1011,
+      "hex": "3f3",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO Info",
+      "description": "Information",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1021,
+      "hex": "3fd",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Lakes",
+      "description": "Callboxes Callboxes to MCSO",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1022,
+      "hex": "3fe",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO TAC 1 TAC",
+      "description": "1",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1041,
+      "hex": "411",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO TAC 3 TAC",
+      "description": "3",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1044,
+      "hex": "414",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 1NE",
+      "description": "Special Details 1 Northeast",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1046,
+      "hex": "416",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 3NE",
+      "description": "Special Details 3 Northeast",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1048,
+      "hex": "418",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 5 SE",
+      "description": "Special Details 5 Southeast",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1050,
+      "hex": "41a",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 7SE",
+      "description": "Special Details 7 Southeast",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1052,
+      "hex": "41c",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 9 NW",
+      "description": "Special Details 9 Northwest",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1054,
+      "hex": "41e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 11 NW",
+      "description": "Special Details 11 Northwest",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1056,
+      "hex": "420",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 13 SW",
+      "description": "Special Details 13 Southwest",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1058,
+      "hex": "422",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SP DTL 15 SW",
+      "description": "Special Details 15 Southwest",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1060,
+      "hex": "424",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO Court Sec",
+      "description": "Central Court Security",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1063,
+      "hex": "427",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCSO Ops",
+      "description": "Special Events ROBERT units",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 3201,
+      "hex": "c81",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SCW Posse 3201 Sun",
+      "description": "City West Sheriffs Posse 1",
+      "tag": "Emergency Ops",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 3202,
+      "hex": "c82",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SCW Posse TAC-1 Sun",
+      "description": "City West Sheriffs Posse TAC-1",
+      "tag": "Emergency Ops",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 3203,
+      "hex": "c83",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "SCW Posse TAC-2 Sun",
+      "description": "City West Sheriffs Posse TAC-2",
+      "tag": "Emergency Ops",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5901,
+      "hex": "170d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT A",
+      "description": "Internal Ops A",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5902,
+      "hex": "170e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT B",
+      "description": "Internal Ops B",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5903,
+      "hex": "170f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT C",
+      "description": "Internal Ops C",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5904,
+      "hex": "1710",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT D",
+      "description": "Internal Ops D",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5905,
+      "hex": "1711",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT E",
+      "description": "Internal Ops E",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5906,
+      "hex": "1712",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT F",
+      "description": "Internal Ops F",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5907,
+      "hex": "1713",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT G",
+      "description": "Internal Ops",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5908,
+      "hex": "1714",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT H",
+      "description": "Internal Ops H",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5909,
+      "hex": "1715",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT I",
+      "description": "Internal Ops I",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5910,
+      "hex": "1716",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT J",
+      "description": "Internal Ops J",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5911,
+      "hex": "1717",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT K",
+      "description": "Internal Ops K",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5912,
+      "hex": "1718",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT L",
+      "description": "Internal Ops L",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5913,
+      "hex": "1719",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT M",
+      "description": "Internal Ops M",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5914,
+      "hex": "171a",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT N",
+      "description": "Internal Ops N",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5915,
+      "hex": "171b",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "INT O",
+      "description": "Internal Ops O",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5916,
+      "hex": "171c",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "Special",
+      "description": "Details Details Tac Channel",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5917,
+      "hex": "171d",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 02",
+      "description": "Details 02",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5918,
+      "hex": "171e",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 03",
+      "description": "Details 03",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5919,
+      "hex": "171f",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 04",
+      "description": "Details 04",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5920,
+      "hex": "1720",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 05",
+      "description": "Details 05",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5921,
+      "hex": "1721",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 06",
+      "description": "Details 06",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5922,
+      "hex": "1722",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 07",
+      "description": "Details 07",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5923,
+      "hex": "1723",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 08",
+      "description": "Details 08",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5924,
+      "hex": "1724",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 09",
+      "description": "Details 09",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5925,
+      "hex": "1725",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 10",
+      "description": "Details 10",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5926,
+      "hex": "1726",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 11",
+      "description": "Details 11",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5927,
+      "hex": "1727",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 12",
+      "description": "Details 12",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5928,
+      "hex": "1728",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 13",
+      "description": "Details 13",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5929,
+      "hex": "1729",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 14",
+      "description": "Details 14",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5930,
+      "hex": "172a",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 15",
+      "description": "Details 15",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 5931,
+      "hex": "172b",
+      "mode": "D",
+      "encrypted": true,
+      "alpha_tag": "MCSO 16",
+      "description": "Details 16",
+      "tag": "Law Tac",
+      "group": "Sheriffs Office",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1101,
+      "hex": "44d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1101",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1102,
+      "hex": "44e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1102",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1103,
+      "hex": "44f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1103",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1104,
+      "hex": "450",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1104",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1105,
+      "hex": "451",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1105",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1106,
+      "hex": "452",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1106",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1107,
+      "hex": "453",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1107",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1108,
+      "hex": "454",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1108",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1109,
+      "hex": "455",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1109",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1110,
+      "hex": "456",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1110",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1111,
+      "hex": "457",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1111",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1112,
+      "hex": "458",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1112",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1113,
+      "hex": "459",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1113",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1114,
+      "hex": "45a",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 1114",
+      "description": "Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2501,
+      "hex": "9c5",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 2501",
+      "description": "Juvenile Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2502,
+      "hex": "9c6",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Probation 2502",
+      "description": "Juvenile Probation Officers",
+      "tag": "Corrections",
+      "group": "Probation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1201,
+      "hex": "4b1",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "AC East",
+      "description": "Animal Care and Control East",
+      "tag": "Public Works",
+      "group": "Animal Care and Control",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1203,
+      "hex": "4b3",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "AC West",
+      "description": "Animal Care and Control West",
+      "tag": "Public Works",
+      "group": "Animal Care and Control",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1204,
+      "hex": "4b4",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Animal",
+      "description": "Control 2 Animal Care and Control 2",
+      "tag": "Public Works",
+      "group": "Animal Care and Control",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1402,
+      "hex": "57a",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1402",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1403,
+      "hex": "57b",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1403",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1404,
+      "hex": "57c",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1404",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1405,
+      "hex": "57d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1405",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1406,
+      "hex": "57e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1406",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1407,
+      "hex": "57f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT REACTREACT",
+      "description": "Response Trucks",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1408,
+      "hex": "580",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "MCDOT 1408",
+      "description": "Transportation Department",
+      "tag": "Public Works",
+      "group": "Transportation Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1601,
+      "hex": "641",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 4thAve 4th Av",
+      "description": "Detention",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1602,
+      "hex": "642",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention",
+      "description": "Cntral Central Intake",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1603,
+      "hex": "643",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1603",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1604,
+      "hex": "644",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1604",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1605,
+      "hex": "645",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention MASH",
+      "description": "Detention MASH",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1606,
+      "hex": "646",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention ITR",
+      "description": "Intake Transfer Release",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1607,
+      "hex": "647",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Cust 512",
+      "description": "Custody",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1608,
+      "hex": "648",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention ITR",
+      "description": "Intake Transfer Release Tac",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1609,
+      "hex": "649",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention ITR",
+      "description": "Intake Transfer Release Court",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1612,
+      "hex": "64c",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention SRT 1",
+      "description": "Corrections Special Response Team",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1613,
+      "hex": "64d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention SRT 2 Corr",
+      "description": "Special Response Team Tac",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1614,
+      "hex": "64e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Durango Jail",
+      "description": "Durango Jail Main Ops",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1615,
+      "hex": "64f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention ILD",
+      "description": "Detention Inmate Labor Ch A",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1617,
+      "hex": "651",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Estrella 1 Main",
+      "description": "Estrella Main Ops",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1618,
+      "hex": "652",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Estrella 2",
+      "description": "Estrella Ops 2",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1619,
+      "hex": "653",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1619",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1620,
+      "hex": "654",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention LBJF LBJF",
+      "description": "",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1621,
+      "hex": "655",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1621",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1622,
+      "hex": "656",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1622",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1623,
+      "hex": "657",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1623",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1624,
+      "hex": "658",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Med Corr",
+      "description": "Transfer to Hosp/ER",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1625,
+      "hex": "659",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Towers 1 Main",
+      "description": "Towers Jail Ops",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1626,
+      "hex": "65a",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Towers 2",
+      "description": "Towers Detention Ops 2",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1627,
+      "hex": "65b",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1627",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1628,
+      "hex": "65c",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Gang A",
+      "description": "Detention Chain Gang Ch A",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1629,
+      "hex": "65d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Labor",
+      "description": "Inmate Labor Details",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1630,
+      "hex": "65e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention",
+      "description": "Intake Blg B Intake Transfer",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1631,
+      "hex": "65f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1631",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1632,
+      "hex": "660",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1632",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1633,
+      "hex": "661",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention CRT",
+      "description": "Crisis Response Team",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1634,
+      "hex": "662",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention CRT SE",
+      "description": "Crisis Response Team",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1635,
+      "hex": "663",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1635",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1636,
+      "hex": "664",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1636",
+      "description": "Inmate Transportation",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1637,
+      "hex": "665",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Med",
+      "description": "Detention Medical Transportation",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1638,
+      "hex": "666",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1638",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1639,
+      "hex": "667",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Inmate",
+      "description": "Transport Inmate Transportation",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1640,
+      "hex": "668",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Inmate",
+      "description": "Movement Inmate Movement",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1641,
+      "hex": "669",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Central",
+      "description": "Intake Central Intake Dispatch",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1645,
+      "hex": "66d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Food",
+      "description": "Detention Food Services",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1646,
+      "hex": "66e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detent",
+      "description": "Laundry Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1647,
+      "hex": "66f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Dist",
+      "description": "Detention Distribution",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1648,
+      "hex": "670",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Food Jail",
+      "description": "Canteen",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1649,
+      "hex": "671",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention 1649",
+      "description": "Detention Operations",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1651,
+      "hex": "673",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Acad",
+      "description": "Detention Academy",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1652,
+      "hex": "674",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Acad",
+      "description": "Detention Academy",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1653,
+      "hex": "675",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Maint",
+      "description": "Detention Facility Maintenance Officer",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1801,
+      "hex": "709",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Detention Med",
+      "description": "Detention Medical",
+      "tag": "Corrections",
+      "group": "Sheriffs Office Detention",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2001,
+      "hex": "7d1",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Court",
+      "description": "Security Court Security Dispatch",
+      "tag": "Security",
+      "group": "Superior Court",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2002,
+      "hex": "7d2",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Court",
+      "description": "Security Court Security 2002",
+      "tag": "Security",
+      "group": "Superior Court",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2003,
+      "hex": "7d3",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Court",
+      "description": "Security Court Security Ops",
+      "tag": "Security",
+      "group": "Superior Court",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2004,
+      "hex": "7d4",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Court",
+      "description": "Security Court Security 2004",
+      "tag": "Security",
+      "group": "Superior Court",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2101,
+      "hex": "835",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "EM Emerg Mgmnt",
+      "description": "Emergency Management",
+      "tag": "Emergency Ops",
+      "group": "Emergency Management",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2107,
+      "hex": "83b",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "EM-link",
+      "description": "to MCSO Emergency Management Link to MCSO",
+      "tag": "Emergency Ops",
+      "group": "Emergency Management",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2201,
+      "hex": "899",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Equipment Svcs",
+      "description": "Equipment Services",
+      "tag": "Public Works",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2301,
+      "hex": "8fd",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "FacilitiesMaint1",
+      "description": "Facilities Maintenance Div 1",
+      "tag": "Public Works",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2302,
+      "hex": "8fe",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "FacilitiesMaint2",
+      "description": "Facilities Maintenance Div 2",
+      "tag": "Public Works",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2303,
+      "hex": "8ff",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "FacilitiesMaint3",
+      "description": "Facilities Maintenance Div 3",
+      "tag": "Public Works",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2901,
+      "hex": "b55",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Security 2901",
+      "description": "Security Services 2901",
+      "tag": "Security",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2902,
+      "hex": "b56",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Security 2902",
+      "description": "Security Services 2902",
+      "tag": "Security",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2903,
+      "hex": "b57",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Security 2903",
+      "description": "Security Services 2903",
+      "tag": "Security",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2904,
+      "hex": "b58",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Security 2904",
+      "description": "Security Services 2904",
+      "tag": "Security",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2905,
+      "hex": "b59",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Security 2905",
+      "description": "Security Services 2905",
+      "tag": "Security",
+      "group": "Facilities Maintenance",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2701,
+      "hex": "a8d",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Parks East Lake",
+      "description": "Pleasant Etc.",
+      "tag": "Public Works",
+      "group": "Parks Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2702,
+      "hex": "a8e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Parks West Lakes",
+      "description": "and Parks",
+      "tag": "Public Works",
+      "group": "Parks Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2403,
+      "hex": "963",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2403",
+      "description": "Public Health Department 2403",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2404,
+      "hex": "964",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2404",
+      "description": "Public Health Department 2404",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2405,
+      "hex": "965",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2405",
+      "description": "Public Health Department 2405",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2406,
+      "hex": "966",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2406",
+      "description": "Public Health Department 2406",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2804,
+      "hex": "af4",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2804",
+      "description": "Public Health Department 2804",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 2807,
+      "hex": "af7",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "PublicHealth2807",
+      "description": "Public Health Department 2807",
+      "tag": "Public Works",
+      "group": "Public Health Department",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1301,
+      "hex": "515",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Flood",
+      "description": "Control Flood Control",
+      "tag": "Public Works",
+      "group": "Miscellaneous",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 3001,
+      "hex": "bb9",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Construction",
+      "description": "Construction",
+      "tag": "Public Works",
+      "group": "Miscellaneous",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1501,
+      "hex": "5dd",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Radio Shop Radio",
+      "description": "Repair Shop",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1502,
+      "hex": "5de",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Radio Shop Radio",
+      "description": "Maintenance",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1504,
+      "hex": "5e0",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Radio",
+      "description": "Service Radio Service Testing",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1510,
+      "hex": "5e6",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Testing 1510",
+      "description": "Initial Testing Setup",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1598,
+      "hex": "63e",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "IC 1 Radio Shop",
+      "description": "1",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 1599,
+      "hex": "63f",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "IC 2 Radio Shop",
+      "description": "2",
+      "tag": "Other",
+      "group": "34 022 T Testing 034 Grid Testing Other",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    }
+  ]
+}

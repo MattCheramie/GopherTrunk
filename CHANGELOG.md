@@ -9,6 +9,17 @@ for tagged releases.
 
 ### Added
 
+- `gophertrunk import-pdf` subcommand parses RadioReference.com
+  trunking-system PDF exports and merges them into the operator's
+  `config.yaml`, generating per-system Trunk-Recorder-style talkgroup
+  CSVs in the same directory. Launches a Bubbletea TUI by default for
+  reviewing/pruning sites and toggling per-talkgroup Scan/Lockout/
+  Priority before write; `-no-tui`/`-dry-run`/`-force` flags cover
+  scripting and CI bring-up. Atomic writes (in-memory schema
+  validation + temp file + rename) so a malformed PDF never corrupts
+  the existing config. Supports P25 Phase 1 + Phase 2 PDFs; see
+  [`docs/import-pdf.md`](docs/import-pdf.md) for the full operator
+  reference.
 - Capture-spec **acceptance criteria** for every real-air-blocked
   follow-up at [`samples/<proto>/README.md`](samples/): TETRA
   wants 5 s lock latency + ≥ 90% frame recovery + a new

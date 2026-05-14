@@ -47,6 +47,8 @@ func main() {
 		runTUI(os.Args[2:])
 	case "decode":
 		runDecode(os.Args[2:])
+	case "import-pdf":
+		runImport(os.Args[2:])
 	case "daemon", "run":
 		runDaemon(os.Args[2:])
 	case "help", "--help", "-h":
@@ -65,6 +67,7 @@ USAGE:
   gophertrunk audio list              list audio output devices
   gophertrunk tui [-server URL]       open the read-only operator TUI
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
+  gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)
 }

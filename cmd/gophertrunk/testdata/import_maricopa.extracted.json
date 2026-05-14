@@ -1,0 +1,1212 @@
+[
+  {
+    "y": 755.2886260736407,
+    "page": 1,
+    "text": ""
+  },
+  {
+    "y": 682.9442001679919,
+    "page": 1,
+    "text": "Maricopa County  Menu"
+  },
+  {
+    "y": 649.0171590536187,
+    "page": 1,
+    "text": "System Name: Maricopa County"
+  },
+  {
+    "y": 633.0514926468547,
+    "page": 1,
+    "text": "Location: Maricopa County, AZ"
+  },
+  {
+    "y": 617.0858262400909,
+    "page": 1,
+    "text": "County: 4 Counties"
+  },
+  {
+    "y": 601.6190869085384,
+    "page": 1,
+    "text": "System Type: Project 25 Phase II"
+  },
+  {
+    "y": 585.6534205017746,
+    "page": 1,
+    "text": "System Voice: APCO-25 Common Air Interface Exclusive"
+  },
+  {
+    "y": 570.1866811702221,
+    "page": 1,
+    "text": "System ID: Sysid: 49A WACN: BEE00"
+  },
+  {
+    "y": 554.2210147634582,
+    "page": 1,
+    "text": "Last Updated: June 26, 2024, 19:11 pm UTC Ñ [Added P25 CH ID Table [Network: BEE00.49A]]"
+  },
+  {
+    "y": 532.2682234541578,
+    "page": 1,
+    "text": "System Notes"
+  },
+  {
+    "y": 518.2982653482395,
+    "page": 1,
+    "text": "Please see the Wiki for unknown talkgroups logged on this system: Maricopa P25 Unknown TGID's"
+  },
+  {
+    "y": 487.36478668513445,
+    "page": 1,
+    "text": "Sites and Frequencies"
+  },
+  {
+    "y": 468.90448490231375,
+    "page": 1,
+    "text": "Red (c) are control channel capable frequencies"
+  },
+  {
+    "y": 449.9452560442816,
+    "page": 1,
+    "text": "RFSSSite Name County Freqs"
+  },
+  {
+    "y": 435.97529793836327,
+    "page": 1,
+    "text": "1 (1) 016 (10) Oatman Mountain Maricopa 769.54375c 769.79375c 770.04375c 771.08125c"
+  },
+  {
+    "y": 421.5064127572335,
+    "page": 1,
+    "text": "1 (1) 017 (11) Smith Peak La Paz 851.075 851.2625c 851.575c 851.8125c 853.875c"
+  },
+  {
+    "y": 407.5364546513151,
+    "page": 1,
+    "text": "1 (1) 018 (12) Towers Mountain Yavapai 772.95625 773.20625c 773.45625c 773.70625c 774.15625c"
+  },
+  {
+    "y": 393.06756947018533,
+    "page": 1,
+    "text": "1 (1) 019 (13) Lewis State Prison Maricopa 771.21875 771.51875c 771.78125c 772.24375c 772.51875c"
+  },
+  {
+    "y": 379.097611364267,
+    "page": 1,
+    "text": "1 (1) 020 (14) Burnt Mountain Maricopa 771.73125c 771.96875c 772.21875c 772.46875c"
+  },
+  {
+    "y": 364.6287261831372,
+    "page": 1,
+    "text": "1 (1) 023 (17) Childs Mountain Pima 769.50625c 769.75625c 770.00625c 770.25625c"
+  },
+  {
+    "y": 350.65876807721884,
+    "page": 1,
+    "text": "1 (1) 031 (1F) Phoenix Simulcast Maricopa 771.20625 771.45625 771.53125 771.74375 771.95625 772.20625 772.50625c"
+  },
+  {
+    "y": 336.18988289608905,
+    "page": 1,
+    "text": "772.75625c 772.96875c 774.63125c"
+  },
+  {
+    "y": 322.2199247901707,
+    "page": 1,
+    "text": "1 (1) 032 (20) White Tanks Maricopa 770.40625 771.15625 771.40625 771.65625 771.90625 772.15625 772.40625"
+  },
+  {
+    "y": 308.2499666842523,
+    "page": 1,
+    "text": "772.65625c 772.90625c 773.96875c 774.65625c"
+  },
+  {
+    "y": 293.78108150312255,
+    "page": 1,
+    "text": "1 (1) 033 (21) Thompson Peak Maricopa 769.26875 769.51875 769.76875 770.01875 770.26875 772.70625c 773.88125c"
+  },
+  {
+    "y": 279.81112339720414,
+    "page": 1,
+    "text": "774.38125c 774.88125c"
+  },
+  {
+    "y": 265.3422382160744,
+    "page": 1,
+    "text": "1 (1) 034 (22) Chandler/Mesa Simulcast Maricopa 770.51875 770.76875 771.01875 771.24375 771.33125c 771.49375c 771.70625c"
+  },
+  {
+    "y": 251.372280110156,
+    "page": 1,
+    "text": "771.83125c"
+  },
+  {
+    "y": 236.90339492902626,
+    "page": 1,
+    "text": "1 (1) 035 (23) Northeast Mountain Simulcast Maricopa 771.19375 771.69375c 771.94375c 772.19375c 772.45625c"
+  },
+  {
+    "y": 222.93343682310785,
+    "page": 1,
+    "text": "1 (1) 036 (24) Anthem/New River Simulcast Maricopa 770.04375 771.48125c 771.71875c 772.25625c 773.63125c"
+  },
+  {
+    "y": 208.46455164197812,
+    "page": 1,
+    "text": "1 (1) 037 (25) East Lakes Simulcast Maricopa 769.08125 769.54375 769.79375c 771.08125c 771.54375c 771.80625c"
+  },
+  {
+    "y": 194.4945935360597,
+    "page": 1,
+    "text": "1 (1) 038 (26) Queen Creek Simulcast Maricopa 771.26875 771.73125c 771.96875c 772.21875c 774.13125c"
+  },
+  {
+    "y": 180.02570835492998,
+    "page": 1,
+    "text": "1 (1) 039 (27) Gila Bend Simulcast Maricopa 769.29375 770.51875c 770.76875c 771.01875c 771.48125c"
+  },
+  {
+    "y": 166.05575024901157,
+    "page": 1,
+    "text": "1 (1) 040 (28) Vekol Valley Simulcast Maricopa 770.29375c 770.54375c 770.79375c 771.04375c"
+  },
+  {
+    "y": 152.08579214309316,
+    "page": 1,
+    "text": "1 (1) 041 (29) Wickenburg Simulcast Maricopa 769.33125 769.58125c 769.83125c 770.08125c 770.33125c"
+  },
+  {
+    "y": 126.14158423210188,
+    "page": 1,
+    "text": "Talkgroups"
+  },
+  {
+    "y": 107.18235537406974,
+    "page": 1,
+    "text": "Grouped All Talkgroups New/Updated Talkgroups"
+  },
+  {
+    "y": 85.72849113998086,
+    "page": 1,
+    "text": "Sheriffs Office"
+  },
+  {
+    "y": 64.7735539811033,
+    "page": 1,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 50.304668799973456,
+    "page": 1,
+    "text": "1000 3e8 T MCSO Ops Operations with outside agencies Interop"
+  },
+  {
+    "y": 35.33685654363239,
+    "page": 1,
+    "text": "1001 3e9 T MCSO D1 SE D1 Southeast Law Dispatch"
+  },
+  {
+    "y": 763.2714581250225,
+    "page": 2,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8025729438928,
+    "page": 2,
+    "text": "1002 3ea T MCSO D2 SW D2 Southwest Law Dispatch"
+  },
+  {
+    "y": 733.8347606875517,
+    "page": 2,
+    "text": "1003 3eb T MCSO D3 NW D3 Northwest Law Dispatch"
+  },
+  {
+    "y": 719.3658755064218,
+    "page": 2,
+    "text": "1004 3ec T MCSO D4 NE D4 Northeast Law Dispatch"
+  },
+  {
+    "y": 704.3980632500808,
+    "page": 2,
+    "text": "1005 3ed T MCSO D5A Lakes D5A Lakes A Law Dispatch"
+  },
+  {
+    "y": 689.929178068951,
+    "page": 2,
+    "text": "1006 3ee T MCSO D5B Lakes D5B Lakes B Law Dispatch"
+  },
+  {
+    "y": 674.9613658126099,
+    "page": 2,
+    "text": "1007 3ef T MCSO D6 QC D6 Queen Creek Law Dispatch"
+  },
+  {
+    "y": 660.4924806314801,
+    "page": 2,
+    "text": "1008 3f0 T MCSO D7 FH D7 Fountain Hills Law Dispatch"
+  },
+  {
+    "y": 645.524668375139,
+    "page": 2,
+    "text": "1009 3f1 T MCSO Central Central - Constables, Process Servers etc Law Dispatch"
+  },
+  {
+    "y": 631.0557831940092,
+    "page": 2,
+    "text": "1011 3f3 TE MCSO Info Information Law Tac"
+  },
+  {
+    "y": 616.087970937668,
+    "page": 2,
+    "text": "1021 3fd T Lakes Callboxes Callboxes to MCSO Law Tac"
+  },
+  {
+    "y": 601.6190857565383,
+    "page": 2,
+    "text": "1022 3fe TE MCSO TAC 1 TAC 1 Law Tac"
+  },
+  {
+    "y": 586.6512735001972,
+    "page": 2,
+    "text": "1041 411 TE MCSO TAC 3 TAC 3 Law Tac"
+  },
+  {
+    "y": 572.1823883190674,
+    "page": 2,
+    "text": "1044 414 T SP DTL 1NE Special Details 1 Northeast Law Tac"
+  },
+  {
+    "y": 557.2145760627263,
+    "page": 2,
+    "text": "1046 416 T SP DTL 3NE Special Details 3 Northeast Law Tac"
+  },
+  {
+    "y": 542.7456908815966,
+    "page": 2,
+    "text": "1048 418 T SP DTL 5 SE Special Details 5 Southeast Law Tac"
+  },
+  {
+    "y": 527.7778786252554,
+    "page": 2,
+    "text": "1050 41a T SP DTL 7SE Special Details 7 Southeast Law Tac"
+  },
+  {
+    "y": 513.3089934441257,
+    "page": 2,
+    "text": "1052 41c T SP DTL 9 NW Special Details 9 Northwest Law Tac"
+  },
+  {
+    "y": 498.3411811877845,
+    "page": 2,
+    "text": "1054 41e T SP DTL 11 NW Special Details 11 Northwest Law Tac"
+  },
+  {
+    "y": 483.8722960066548,
+    "page": 2,
+    "text": "1056 420 T SP DTL 13 SW Special Details 13 Southwest Law Tac"
+  },
+  {
+    "y": 468.9044837503136,
+    "page": 2,
+    "text": "1058 422 T SP DTL 15 SW Special Details 15 Southwest Law Tac"
+  },
+  {
+    "y": 454.43559856918387,
+    "page": 2,
+    "text": "1060 424 T MCSO Court Sec Central Court Security Law Tac"
+  },
+  {
+    "y": 439.4677863128427,
+    "page": 2,
+    "text": "1063 427 T MCSO Ops Special Events ROBERT units Law Tac"
+  },
+  {
+    "y": 424.99890113171296,
+    "page": 2,
+    "text": "3201 c81 T SCW Posse 3201 Sun City West Sheriffs Posse 1 Emergency Ops"
+  },
+  {
+    "y": 410.0310888753718,
+    "page": 2,
+    "text": "3202 c82 T SCW Posse TAC-1 Sun City West Sheriffs Posse TAC-1 Emergency Ops"
+  },
+  {
+    "y": 395.56220369424204,
+    "page": 2,
+    "text": "3203 c83 T SCW Posse TAC-2 Sun City West Sheriffs Posse TAC-2 Emergency Ops"
+  },
+  {
+    "y": 380.5943914379011,
+    "page": 2,
+    "text": "5901 170d T INT A Internal Ops A Law Tac"
+  },
+  {
+    "y": 366.12550625677113,
+    "page": 2,
+    "text": "5902 170e T INT B Internal Ops B Law Tac"
+  },
+  {
+    "y": 351.6566210756414,
+    "page": 2,
+    "text": "5903 170f T INT C Internal Ops C Law Tac"
+  },
+  {
+    "y": 336.68880881930045,
+    "page": 2,
+    "text": "5904 1710 T INT D Internal Ops D Law Tac"
+  },
+  {
+    "y": 322.2199236381705,
+    "page": 2,
+    "text": "5905 1711 T INT E Internal Ops E Law Tac"
+  },
+  {
+    "y": 307.25211138182954,
+    "page": 2,
+    "text": "5906 1712 T INT F Internal Ops F Law Tac"
+  },
+  {
+    "y": 292.7832262006998,
+    "page": 2,
+    "text": "5907 1713 T INT G Internal Ops Law Tac"
+  },
+  {
+    "y": 277.8154139443586,
+    "page": 2,
+    "text": "5908 1714 T INT H Internal Ops H Law Tac"
+  },
+  {
+    "y": 263.3465287632289,
+    "page": 2,
+    "text": "5909 1715 T INT I Internal Ops I Law Tac"
+  },
+  {
+    "y": 248.3787165068877,
+    "page": 2,
+    "text": "5910 1716 T INT J Internal Ops J Law Tac"
+  },
+  {
+    "y": 233.90983132575798,
+    "page": 2,
+    "text": "5911 1717 T INT K Internal Ops K Law Tac"
+  },
+  {
+    "y": 218.9420190694168,
+    "page": 2,
+    "text": "5912 1718 T INT L Internal Ops L Law Tac"
+  },
+  {
+    "y": 204.47313388828707,
+    "page": 2,
+    "text": "5913 1719 T INT M Internal Ops M Law Tac"
+  },
+  {
+    "y": 189.5053216319459,
+    "page": 2,
+    "text": "5914 171a T INT N Internal Ops N Law Tac"
+  },
+  {
+    "y": 175.03643645081615,
+    "page": 2,
+    "text": "5915 171b T INT O Internal Ops O Law Tac"
+  },
+  {
+    "y": 160.06862419447498,
+    "page": 2,
+    "text": "5916 171c TE Special Details Details Tac Channel Law Tac"
+  },
+  {
+    "y": 145.59973901334524,
+    "page": 2,
+    "text": "5917 171d TE MCSO 02 Details 02 Law Tac"
+  },
+  {
+    "y": 130.63192675700407,
+    "page": 2,
+    "text": "5918 171e TE MCSO 03 Details 03 Law Tac"
+  },
+  {
+    "y": 116.16304157587433,
+    "page": 2,
+    "text": "5919 171f TE MCSO 04 Details 04 Law Tac"
+  },
+  {
+    "y": 101.19522931953315,
+    "page": 2,
+    "text": "5920 1720 TE MCSO 05 Details 05 Law Tac"
+  },
+  {
+    "y": 86.72634413840342,
+    "page": 2,
+    "text": "5921 1721 TE MCSO 06 Details 06 Law Tac"
+  },
+  {
+    "y": 71.75853188206224,
+    "page": 2,
+    "text": "5922 1722 TE MCSO 07 Details 07 Law Tac"
+  },
+  {
+    "y": 57.28964670093251,
+    "page": 2,
+    "text": "5923 1723 TE MCSO 08 Details 08 Law Tac"
+  },
+  {
+    "y": 42.32183444459156,
+    "page": 2,
+    "text": "5924 1724 TE MCSO 09 Details 09 Law Tac"
+  },
+  {
+    "y": 27.852949263461596,
+    "page": 2,
+    "text": "5925 1725 TE MCSO 10 Details 10 Law Tac"
+  },
+  {
+    "y": 763.2714569730229,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8025717918931,
+    "page": 3,
+    "text": "5926 1726 TE MCSO 11 Details 11 Law Tac"
+  },
+  {
+    "y": 733.8347595355519,
+    "page": 3,
+    "text": "5927 1727 TE MCSO 12 Details 12 Law Tac"
+  },
+  {
+    "y": 719.3658743544222,
+    "page": 3,
+    "text": "5928 1728 TE MCSO 13 Details 13 Law Tac"
+  },
+  {
+    "y": 704.398062098081,
+    "page": 3,
+    "text": "5929 1729 TE MCSO 14 Details 14 Law Tac"
+  },
+  {
+    "y": 689.9291769169513,
+    "page": 3,
+    "text": "5930 172a TE MCSO 15 Details 15 Law Tac"
+  },
+  {
+    "y": 674.9613646606101,
+    "page": 3,
+    "text": "5931 172b TE MCSO 16 Details 16 Law Tac"
+  },
+  {
+    "y": 649.0171567496188,
+    "page": 3,
+    "text": "Probation Department"
+  },
+  {
+    "y": 628.5611466659527,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 613.5933344096115,
+    "page": 3,
+    "text": "1101 44d T Probation 1101 Probation Officers Corrections"
+  },
+  {
+    "y": 599.1244492284818,
+    "page": 3,
+    "text": "1102 44e T Probation 1102 Probation Officers Corrections"
+  },
+  {
+    "y": 584.1566369721406,
+    "page": 3,
+    "text": "1103 44f T Probation 1103 Probation Officers Corrections"
+  },
+  {
+    "y": 569.6877517910109,
+    "page": 3,
+    "text": "1104 450 T Probation 1104 Probation Officers Corrections"
+  },
+  {
+    "y": 554.7199395346697,
+    "page": 3,
+    "text": "1105 451 T Probation 1105 Probation Officers Corrections"
+  },
+  {
+    "y": 540.25105435354,
+    "page": 3,
+    "text": "1106 452 T Probation 1106 Probation Officers Corrections"
+  },
+  {
+    "y": 525.283242097199,
+    "page": 3,
+    "text": "1107 453 T Probation 1107 Probation Officers Corrections"
+  },
+  {
+    "y": 510.8143569160691,
+    "page": 3,
+    "text": "1108 454 T Probation 1108 Probation Officers Corrections"
+  },
+  {
+    "y": 495.8465446597281,
+    "page": 3,
+    "text": "1109 455 T Probation 1109 Probation Officers Corrections"
+  },
+  {
+    "y": 481.3776594785984,
+    "page": 3,
+    "text": "1110 456 T Probation 1110 Probation Officers Corrections"
+  },
+  {
+    "y": 466.4098472222572,
+    "page": 3,
+    "text": "1111 457 T Probation 1111 Probation Officers Corrections"
+  },
+  {
+    "y": 451.9409620411275,
+    "page": 3,
+    "text": "1112 458 T Probation 1112 Probation Officers Corrections"
+  },
+  {
+    "y": 436.9731497847863,
+    "page": 3,
+    "text": "1113 459 T Probation 1113 Probation Officers Corrections"
+  },
+  {
+    "y": 422.50426460365657,
+    "page": 3,
+    "text": "1114 45a T Probation 1114 Probation Officers Corrections"
+  },
+  {
+    "y": 407.5364523473154,
+    "page": 3,
+    "text": "2501 9c5 T Probation 2501 Juvenile Probation Officers Corrections"
+  },
+  {
+    "y": 393.06756716618565,
+    "page": 3,
+    "text": "2502 9c6 D Probation 2502 Juvenile Probation Officers Corrections"
+  },
+  {
+    "y": 367.1233592551944,
+    "page": 3,
+    "text": "Animal Care and Control"
+  },
+  {
+    "y": 346.1684220963168,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 331.6995369151871,
+    "page": 3,
+    "text": "1201 4b1 T AC East Animal Care and Control East Public Works"
+  },
+  {
+    "y": 316.7317246588459,
+    "page": 3,
+    "text": "1203 4b3 T AC West Animal Care and Control West Public Works"
+  },
+  {
+    "y": 302.26283947771617,
+    "page": 3,
+    "text": "1204 4b4 T Animal Control 2 Animal Care and Control 2 Public Works"
+  },
+  {
+    "y": 276.3186315667249,
+    "page": 3,
+    "text": "Transportation Department"
+  },
+  {
+    "y": 255.36369440784733,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 240.89480922671737,
+    "page": 3,
+    "text": "1402 57a T MCDOT 1402 Transportation Department Public Works"
+  },
+  {
+    "y": 225.92699697037642,
+    "page": 3,
+    "text": "1403 57b T MCDOT 1403 Transportation Department Public Works"
+  },
+  {
+    "y": 211.4581117892467,
+    "page": 3,
+    "text": "1404 57c T MCDOT 1404 Transportation Department Public Works"
+  },
+  {
+    "y": 196.49029953290528,
+    "page": 3,
+    "text": "1405 57d T MCDOT 1405 Transportation Department Public Works"
+  },
+  {
+    "y": 182.02141435177555,
+    "page": 3,
+    "text": "1406 57e T MCDOT 1406 Transportation Department Public Works"
+  },
+  {
+    "y": 167.0536020954346,
+    "page": 3,
+    "text": "1407 57f T MCDOT REACTREACT Response Trucks Public Works"
+  },
+  {
+    "y": 152.58471691430486,
+    "page": 3,
+    "text": "1408 580 T MCDOT 1408 Transportation Department Public Works"
+  },
+  {
+    "y": 126.64050900331358,
+    "page": 3,
+    "text": "Sheriffs Office Detention"
+  },
+  {
+    "y": 105.6855718444358,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 91.21668666330606,
+    "page": 3,
+    "text": "1601 641 T Detention 4thAve 4th Av Detention Corrections"
+  },
+  {
+    "y": 76.24887440696511,
+    "page": 3,
+    "text": "1602 642 T Detention Cntral Central Intake Corrections"
+  },
+  {
+    "y": 61.77998922583538,
+    "page": 3,
+    "text": "1603 643 T Detention 1603 Detention Operations Corrections"
+  },
+  {
+    "y": 46.812176969493976,
+    "page": 3,
+    "text": "1604 644 T Detention 1604 Detention Operations Corrections"
+  },
+  {
+    "y": 32.34329178836424,
+    "page": 3,
+    "text": "1605 645 T Detention MASH Detention MASH Corrections"
+  },
+  {
+    "y": 763.2713598210266,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8024746398969,
+    "page": 4,
+    "text": "1606 646 T Detention ITR Intake Transfer Release Corrections"
+  },
+  {
+    "y": 733.834662383556,
+    "page": 4,
+    "text": "1607 647 T Detention Cust 512 Custody Corrections"
+  },
+  {
+    "y": 719.3657772024262,
+    "page": 4,
+    "text": "1608 648 T Detention ITR Intake Transfer Release Tac Corrections"
+  },
+  {
+    "y": 704.3979649460848,
+    "page": 4,
+    "text": "1609 649 T Detention ITR Intake Transfer Release Court Corrections"
+  },
+  {
+    "y": 689.9290797649551,
+    "page": 4,
+    "text": "1612 64c T Detention SRT 1 Corrections Special Response Team Corrections"
+  },
+  {
+    "y": 674.9612675086141,
+    "page": 4,
+    "text": "1613 64d T Detention SRT 2 Corr Special Response Team Tac Corrections"
+  },
+  {
+    "y": 660.4923823274844,
+    "page": 4,
+    "text": "1614 64e T Durango Jail Durango Jail Main Ops Corrections"
+  },
+  {
+    "y": 645.524570071143,
+    "page": 4,
+    "text": "1615 64f T Detention ILD Detention Inmate Labor Ch A Corrections"
+  },
+  {
+    "y": 631.0556848900133,
+    "page": 4,
+    "text": "1617 651 T Estrella 1 Main Estrella Main Ops Corrections"
+  },
+  {
+    "y": 616.0878726336723,
+    "page": 4,
+    "text": "1618 652 T Estrella 2 Estrella Ops 2 Corrections"
+  },
+  {
+    "y": 601.6189874525426,
+    "page": 4,
+    "text": "1619 653 T Detention 1619 Detention Operations Corrections"
+  },
+  {
+    "y": 586.6511751962012,
+    "page": 4,
+    "text": "1620 654 T Detention LBJF LBJF Corrections"
+  },
+  {
+    "y": 572.1822900150714,
+    "page": 4,
+    "text": "1621 655 T Detention 1621 Detention Operations Corrections"
+  },
+  {
+    "y": 557.2144777587305,
+    "page": 4,
+    "text": "1622 656 T Detention 1622 Detention Operations Corrections"
+  },
+  {
+    "y": 542.7455925776007,
+    "page": 4,
+    "text": "1623 657 T Detention 1623 Detention Operations Corrections"
+  },
+  {
+    "y": 527.7777803212598,
+    "page": 4,
+    "text": "1624 658 T Detention Med Corr Transfer to Hosp/ER Corrections"
+  },
+  {
+    "y": 513.3088951401296,
+    "page": 4,
+    "text": "1625 659 T Towers 1 Main Towers Jail Ops Corrections"
+  },
+  {
+    "y": 498.34108288378866,
+    "page": 4,
+    "text": "1626 65a T Towers 2 Towers Detention Ops 2 Corrections"
+  },
+  {
+    "y": 483.8721977026589,
+    "page": 4,
+    "text": "1627 65b T Detention 1627 Detention Operations Corrections"
+  },
+  {
+    "y": 468.904385446318,
+    "page": 4,
+    "text": "1628 65c T Detention Gang A Detention Chain Gang Ch A Corrections"
+  },
+  {
+    "y": 454.43550026518824,
+    "page": 4,
+    "text": "1629 65d T Detention Labor Inmate Labor Details Corrections"
+  },
+  {
+    "y": 439.46768800884684,
+    "page": 4,
+    "text": "1630 65e T Detention Intake Blg B Intake Transfer Corrections"
+  },
+  {
+    "y": 424.9988028277171,
+    "page": 4,
+    "text": "1631 65f T Detention 1631 Detention Operations Corrections"
+  },
+  {
+    "y": 410.03099057137615,
+    "page": 4,
+    "text": "1632 660 T Detention 1632 Detention Operations Corrections"
+  },
+  {
+    "y": 395.5621053902464,
+    "page": 4,
+    "text": "1633 661 T Detention CRT Crisis Response Team Corrections"
+  },
+  {
+    "y": 380.594293133905,
+    "page": 4,
+    "text": "1634 662 T Detention CRT SE Crisis Response Team Corrections"
+  },
+  {
+    "y": 366.1254079527753,
+    "page": 4,
+    "text": "1635 663 T Detention 1635 Detention Operations Corrections"
+  },
+  {
+    "y": 351.65652277164554,
+    "page": 4,
+    "text": "1636 664 T Detention 1636 Inmate Transportation Corrections"
+  },
+  {
+    "y": 336.6887105153046,
+    "page": 4,
+    "text": "1637 665 T Detention Med Detention Medical Transportation Corrections"
+  },
+  {
+    "y": 322.21982533417486,
+    "page": 4,
+    "text": "1638 666 T Detention 1638 Detention Operations Corrections"
+  },
+  {
+    "y": 307.25201307783345,
+    "page": 4,
+    "text": "1639 667 T Inmate Transport Inmate Transportation Corrections"
+  },
+  {
+    "y": 292.7831278967037,
+    "page": 4,
+    "text": "1640 668 T Inmate Movement Inmate Movement Corrections"
+  },
+  {
+    "y": 277.81531564036277,
+    "page": 4,
+    "text": "1641 669 T Central Intake Central Intake Dispatch Corrections"
+  },
+  {
+    "y": 263.34643045923303,
+    "page": 4,
+    "text": "1645 66d T Detention Food Detention Food Services Corrections"
+  },
+  {
+    "y": 248.37861820289163,
+    "page": 4,
+    "text": "1646 66e T Detent Laundry Detention Operations Corrections"
+  },
+  {
+    "y": 233.9097330217619,
+    "page": 4,
+    "text": "1647 66f T Detention Dist Detention Distribution Corrections"
+  },
+  {
+    "y": 218.94192076542095,
+    "page": 4,
+    "text": "1648 670 T Detention Food Jail Canteen Corrections"
+  },
+  {
+    "y": 204.4730355842912,
+    "page": 4,
+    "text": "1649 671 T Detention 1649 Detention Operations Corrections"
+  },
+  {
+    "y": 189.50522332795026,
+    "page": 4,
+    "text": "1651 673 T Detention Acad Detention Academy Corrections"
+  },
+  {
+    "y": 175.03633814682007,
+    "page": 4,
+    "text": "1652 674 T Detention Acad Detention Academy Corrections"
+  },
+  {
+    "y": 160.06852589047912,
+    "page": 4,
+    "text": "1653 675 T Detention Maint Detention Facility Maintenance Officer Corrections"
+  },
+  {
+    "y": 145.5996407093494,
+    "page": 4,
+    "text": "1801 709 T Detention Med Detention Medical Corrections"
+  },
+  {
+    "y": 119.6554327983581,
+    "page": 4,
+    "text": "Superior Court"
+  },
+  {
+    "y": 98.70049563948032,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 84.23161045835059,
+    "page": 4,
+    "text": "2001 7d1 T Court Security Court Security Dispatch Security"
+  },
+  {
+    "y": 69.26379820200964,
+    "page": 4,
+    "text": "2002 7d2 T Court Security Court Security 2002 Security"
+  },
+  {
+    "y": 54.7949130208799,
+    "page": 4,
+    "text": "2003 7d3 T Court Security Court Security Ops Security"
+  },
+  {
+    "y": 39.827100764538955,
+    "page": 4,
+    "text": "2004 7d4 T Court Security Court Security 2004 Security"
+  },
+  {
+    "y": 765.2671869698675,
+    "page": 5,
+    "text": "Emergency Management"
+  },
+  {
+    "y": 744.3122498109901,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 729.8433646298604,
+    "page": 5,
+    "text": "2101 835 T EM Emerg Mgmnt Emergency Management Emergency Ops"
+  },
+  {
+    "y": 714.875552373519,
+    "page": 5,
+    "text": "2107 83b T EM-link to MCSO Emergency Management Link to MCSO Emergency Ops"
+  },
+  {
+    "y": 688.9313444625277,
+    "page": 5,
+    "text": "Facilities Maintenance"
+  },
+  {
+    "y": 668.4753343788616,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 653.5075221225206,
+    "page": 5,
+    "text": "2201 899 T Equipment Svcs Equipment Services Public Works"
+  },
+  {
+    "y": 639.0386369413909,
+    "page": 5,
+    "text": "2301 8fd T FacilitiesMaint1 Facilities Maintenance Div 1 Public Works"
+  },
+  {
+    "y": 624.0708246850495,
+    "page": 5,
+    "text": "2302 8fe T FacilitiesMaint2 Facilities Maintenance Div 2 Public Works"
+  },
+  {
+    "y": 609.6019395039198,
+    "page": 5,
+    "text": "2303 8ff T FacilitiesMaint3 Facilities Maintenance Div 3 Public Works"
+  },
+  {
+    "y": 594.6341272475788,
+    "page": 5,
+    "text": "2901 b55 T Security 2901 Security Services 2901 Security"
+  },
+  {
+    "y": 580.1652420664491,
+    "page": 5,
+    "text": "2902 b56 T Security 2902 Security Services 2902 Security"
+  },
+  {
+    "y": 565.1974298101081,
+    "page": 5,
+    "text": "2903 b57 T Security 2903 Security Services 2903 Security"
+  },
+  {
+    "y": 550.7285446289779,
+    "page": 5,
+    "text": "2904 b58 T Security 2904 Security Services 2904 Security"
+  },
+  {
+    "y": 535.760732372637,
+    "page": 5,
+    "text": "2905 b59 T Security 2905 Security Services 2905 Security"
+  },
+  {
+    "y": 509.8165244616457,
+    "page": 5,
+    "text": "Parks Department"
+  },
+  {
+    "y": 489.3605143779796,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha TagDescription Tag"
+  },
+  {
+    "y": 474.3927021216382,
+    "page": 5,
+    "text": "2701 a8d T Parks East Lake Pleasant Etc. Public Works"
+  },
+  {
+    "y": 459.92381694050846,
+    "page": 5,
+    "text": "2702 a8e T Parks West Lakes and Parks Public Works"
+  },
+  {
+    "y": 433.9796090295172,
+    "page": 5,
+    "text": "Public Health Department"
+  },
+  {
+    "y": 413.02467187063985,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 398.5557866895101,
+    "page": 5,
+    "text": "2403 963 T PublicHealth2403 Public Health Department 2403 Public Works"
+  },
+  {
+    "y": 383.5879744331687,
+    "page": 5,
+    "text": "2404 964 T PublicHealth2404 Public Health Department 2404 Public Works"
+  },
+  {
+    "y": 369.119089252039,
+    "page": 5,
+    "text": "2405 965 T PublicHealth2405 Public Health Department 2405 Public Works"
+  },
+  {
+    "y": 354.151276995698,
+    "page": 5,
+    "text": "2406 966 T PublicHealth2406 Public Health Department 2406 Public Works"
+  },
+  {
+    "y": 339.6823918145683,
+    "page": 5,
+    "text": "2804 af4 T PublicHealth2804 Public Health Department 2804 Public Works"
+  },
+  {
+    "y": 324.7145795582269,
+    "page": 5,
+    "text": "2807 af7 T PublicHealth2807 Public Health Department 2807 Public Works"
+  },
+  {
+    "y": 298.7703716472356,
+    "page": 5,
+    "text": "Miscellaneous"
+  },
+  {
+    "y": 278.3143615635695,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 263.34654930722854,
+    "page": 5,
+    "text": "1301 515 T Flood Control Flood Control Public Works"
+  },
+  {
+    "y": 248.8776641260988,
+    "page": 5,
+    "text": "3001 bb9 T Construction Construction Public Works"
+  },
+  {
+    "y": 222.93345621510753,
+    "page": 5,
+    "text": "System Testing"
+  },
+  {
+    "y": 201.97851905622974,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 187.0107067998888,
+    "page": 5,
+    "text": "1 001 T Testing 001 Initial Testing Setup Other"
+  },
+  {
+    "y": 172.54182161875906,
+    "page": 5,
+    "text": "2 002 T Testing 002 Initial Testing Setup Other"
+  },
+  {
+    "y": 157.57400936241766,
+    "page": 5,
+    "text": "3 003 T Testing 003 Initial Testing Setup Other"
+  },
+  {
+    "y": 143.10512418128792,
+    "page": 5,
+    "text": "4 004 T Testing 004 Initial Testing Setup Other"
+  },
+  {
+    "y": 128.63623900015818,
+    "page": 5,
+    "text": "5 005 T Testing 005 Initial Testing Setup Other"
+  },
+  {
+    "y": 113.66842674381724,
+    "page": 5,
+    "text": "6 006 T Testing 006 Initial Testing Setup Other"
+  },
+  {
+    "y": 99.1995415626875,
+    "page": 5,
+    "text": "7 007 T Testing 007 Initial Testing Setup Other"
+  },
+  {
+    "y": 84.2317293063461,
+    "page": 5,
+    "text": "8 008 T Testing 008 Initial Testing Setup Other"
+  },
+  {
+    "y": 69.76284412521636,
+    "page": 5,
+    "text": "9 009 T Testing 009 Initial Testing Setup Other"
+  },
+  {
+    "y": 54.79503186887541,
+    "page": 5,
+    "text": "10 00a T Testing 010 Initial Testing Setup Other"
+  },
+  {
+    "y": 40.32614668774568,
+    "page": 5,
+    "text": "11 00b T Testing 011 Initial Testing Setup Other"
+  },
+  {
+    "y": 25.358334431404728,
+    "page": 5,
+    "text": "12 00c T Testing 012 Initial Testing Setup Other"
+  },
+  {
+    "y": 763.2713575170269,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8024723358972,
+    "page": 6,
+    "text": "20 014 T Testing 020 Initial Testing Setup Other"
+  },
+  {
+    "y": 733.8346600795562,
+    "page": 6,
+    "text": "34 022 T Testing 034 Grid Testing Other"
+  },
+  {
+    "y": 719.3657748984265,
+    "page": 6,
+    "text": "1501 5dd T Radio Shop Radio Repair Shop Other"
+  },
+  {
+    "y": 704.3979626420851,
+    "page": 6,
+    "text": "1502 5de T Radio Shop Radio Maintenance Other"
+  },
+  {
+    "y": 689.9290774609553,
+    "page": 6,
+    "text": "1504 5e0 T Radio Service Radio Service Testing Other"
+  },
+  {
+    "y": 674.9612652046144,
+    "page": 6,
+    "text": "1510 5e6 T Testing 1510 Initial Testing Setup Other"
+  },
+  {
+    "y": 660.4923800234847,
+    "page": 6,
+    "text": "1598 63e T IC 1 Radio Shop 1 Other"
+  },
+  {
+    "y": 645.5245677671433,
+    "page": 6,
+    "text": "1599 63f T IC 2 Radio Shop 2 Other"
+  },
+  {
+    "y": 599.6232768476971,
+    "page": 6,
+    "text": "Rev:2.1.8844"
+  }
+]
