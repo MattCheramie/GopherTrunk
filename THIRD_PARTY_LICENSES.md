@@ -22,6 +22,7 @@ the daemon imports directly. License names follow SPDX identifiers.
 | `github.com/ebitengine/purego` | v0.10.0 | Apache-2.0 | https://github.com/ebitengine/purego/blob/main/LICENSE |
 | `github.com/ebitengine/oto/v3` | v3.3.3 | Apache-2.0 | https://github.com/ebitengine/oto/blob/main/LICENSE |
 | `github.com/gorilla/websocket` | v1.5.3 | BSD-2-Clause | https://github.com/gorilla/websocket/blob/master/LICENSE |
+| `github.com/ledongthuc/pdf` | v0.0.0-20250511090121-5959a4027728 | BSD-3-Clause | https://github.com/ledongthuc/pdf/blob/master/LICENSE |
 | `github.com/prometheus/client_golang` | v1.23.2 | Apache-2.0 | https://github.com/prometheus/client_golang/blob/main/LICENSE |
 | `golang.org/x/sys` | v0.42.0 | BSD-3-Clause | https://cs.opensource.google/go/x/sys/+/refs/tags/v0.42.0:LICENSE |
 | `gonum.org/v1/gonum` | v0.17.0 | BSD-3-Clause | https://github.com/gonum/gonum/blob/master/LICENSE |

@@ -1,0 +1,3787 @@
+[
+  {
+    "y": 755.2886260736407,
+    "page": 1,
+    "text": ""
+  },
+  {
+    "y": 682.9442001679919,
+    "page": 1,
+    "text": "Regional Wireless Cooperative (RWC)  Menu"
+  },
+  {
+    "y": 649.0171590536187,
+    "page": 1,
+    "text": "System Name: Regional Wireless Cooperative (RWC)"
+  },
+  {
+    "y": 633.0514926468547,
+    "page": 1,
+    "text": "Location: Phoenix, AZ"
+  },
+  {
+    "y": 617.0858262400909,
+    "page": 1,
+    "text": "County: 3 Counties"
+  },
+  {
+    "y": 601.6190869085384,
+    "page": 1,
+    "text": "System Type: Project 25 Phase II"
+  },
+  {
+    "y": 585.6534205017746,
+    "page": 1,
+    "text": "System Voice: APCO-25 Common Air Interface Exclusive"
+  },
+  {
+    "y": 570.1866811702221,
+    "page": 1,
+    "text": "System ID: Sysid: 534 WACN: BEE08"
+  },
+  {
+    "y": 554.2210147634582,
+    "page": 1,
+    "text": "Last Updated: April 3, 2026, 22:46 pm UTC Ñ [Updated 6 talkgroups for Valley Metro Public Transit System]"
+  },
+  {
+    "y": 528.2768068524668,
+    "page": 1,
+    "text": "Sites and Frequencies"
+  },
+  {
+    "y": 509.81650506964615,
+    "page": 1,
+    "text": "Red (c) are control channel capable frequencies"
+  },
+  {
+    "y": 490.8572762116141,
+    "page": 1,
+    "text": "RFSSSite Name County Freqs"
+  },
+  {
+    "y": 476.88731810569567,
+    "page": 1,
+    "text": "1 (1) 001 (1) Simulcast B: Phoenix Fire and Public Works Maricopa 770.83125c 771.13125c 771.18125c 771.38125 771.43125c 771.63125 771.88125"
+  },
+  {
+    "y": 462.41843292456593,
+    "page": 1,
+    "text": "771.98125 772.13125 772.23125 772.38125 772.43125 772.63125 772.68125"
+  },
+  {
+    "y": 448.4484748186475,
+    "page": 1,
+    "text": "772.88125 773.13125 773.38125 773.68125 774.18125 774.43125"
+  },
+  {
+    "y": 433.9795896375178,
+    "page": 1,
+    "text": "1 (1) 002 (2) Simulcast C: Chandler Maricopa 769.10625 769.35625 769.60625 769.85625 770.10625c 770.35625c 770.60625"
+  },
+  {
+    "y": 420.0096315315994,
+    "page": 1,
+    "text": "770.85625 771.10625 771.35625 771.60625 771.85625 772.10625c 772.35625c"
+  },
+  {
+    "y": 405.54074635046965,
+    "page": 1,
+    "text": "772.60625 772.85625"
+  },
+  {
+    "y": 391.57078824455124,
+    "page": 1,
+    "text": "1 (1) 003 (3) Sky Harbor IR Maricopa 772.08125c 772.33125c 772.58125c 772.83125c 773.15625 773.40625 773.65625"
+  },
+  {
+    "y": 377.1019030634215,
+    "page": 1,
+    "text": "773.90625"
+  },
+  {
+    "y": 363.1319449575031,
+    "page": 1,
+    "text": "2 (2) 001 (1) Simulcast A: Phoenix PD and City Services Maricopa 771.68125c 771.79375c 771.93125 772.04375c 772.18125c 772.29375 772.48125"
+  },
+  {
+    "y": 349.1619868515847,
+    "page": 1,
+    "text": "772.54375 772.73125 772.79375 772.93125 773.18125 773.43125 774.23125"
+  },
+  {
+    "y": 334.69310167045495,
+    "page": 1,
+    "text": "774.48125 774.73125"
+  },
+  {
+    "y": 320.72314356453654,
+    "page": 1,
+    "text": "2 (2) 002 (2) Simulcast D: Daisy Mtn/Anthem/New River Maricopa 772.08125c 772.33125c 772.58125c 772.83125c 773.15625 773.40625"
+  },
+  {
+    "y": 306.2542583834068,
+    "page": 1,
+    "text": "2 (2) 005 (5) Simulcast F: Tempe Maricopa 771.16875 771.41875 771.66875 771.91875c 772.16875 772.41875 772.55625"
+  },
+  {
+    "y": 292.2843002774884,
+    "page": 1,
+    "text": "772.66875 772.80625 772.91875 773.16875c 773.41875 773.66875 773.91875"
+  },
+  {
+    "y": 277.81541509635866,
+    "page": 1,
+    "text": "774.16875c 774.41875c"
+  },
+  {
+    "y": 263.84545699044025,
+    "page": 1,
+    "text": "3 (3) 001 (1) Simulcast H: Scottsdale Maricopa 769.09375 769.34375 769.59375 769.84375 770.09375 770.34375 770.59375"
+  },
+  {
+    "y": 249.37657180931046,
+    "page": 1,
+    "text": "770.84375 771.09375c 771.34375c 771.59375c 771.84375c"
+  },
+  {
+    "y": 235.40661370339217,
+    "page": 1,
+    "text": "4 (4) 001 (1) South Mountain High Maricopa 769.30625c 769.55625c 769.80625c 770.05625c 770.30625 770.55625 770.80625"
+  },
+  {
+    "y": 220.93772852226232,
+    "page": 1,
+    "text": "771.05625 771.30625 771.55625"
+  },
+  {
+    "y": 206.96777041634402,
+    "page": 1,
+    "text": "4 (4) 002 (2) North Mountain High Maricopa 769.28125c 769.53125c 769.78125c 770.03125c 770.28125 770.53125 770.78125"
+  },
+  {
+    "y": 192.99781231042562,
+    "page": 1,
+    "text": "771.03125 771.28125 771.53125"
+  },
+  {
+    "y": 178.52892712929588,
+    "page": 1,
+    "text": "4 (4) 003 (3) Far North Mountain (Mt. Gillen) High Maricopa 769.25625c 769.50625c 769.75625c 770.00625c 770.25625 770.50625 770.75625"
+  },
+  {
+    "y": 164.55896902337747,
+    "page": 1,
+    "text": "771.00625 771.25625"
+  },
+  {
+    "y": 150.09008384224774,
+    "page": 1,
+    "text": "4 (4) 004 (4) Sacaton Mountain High Pinal 772.46875c 772.71875c 772.96875c 773.21875c 773.46875 773.71875 773.96875"
+  },
+  {
+    "y": 136.12012573632933,
+    "page": 1,
+    "text": "774.21875 774.46875 774.71875"
+  },
+  {
+    "y": 121.65124055519959,
+    "page": 1,
+    "text": "4 (4) 005 (5) Thompson Peak High Maricopa 771.76875c 772.01875c 772.26875c 772.98125c 773.14375 773.23125 773.39375"
+  },
+  {
+    "y": 107.68128244928118,
+    "page": 1,
+    "text": "773.48125 773.73125 773.98125"
+  },
+  {
+    "y": 93.21239726815145,
+    "page": 1,
+    "text": "4 (4) 006 (6) Towers Mountain High Yavapai 772.49375c 772.74375c 772.99375c 773.24375c 773.49375 773.74375 773.99375"
+  },
+  {
+    "y": 79.24243916223304,
+    "page": 1,
+    "text": "774.24375 774.49375 774.74375"
+  },
+  {
+    "y": 64.7735539811033,
+    "page": 1,
+    "text": "4 (4) 007 (7) White Tanks Regional Park Maricopa 772.44375c 772.69375c 772.94375c 773.19375c 773.44375 773.69375 773.94375"
+  },
+  {
+    "y": 50.8035958751849,
+    "page": 1,
+    "text": "774.19375 774.44375"
+  },
+  {
+    "y": 36.83363776926649,
+    "page": 1,
+    "text": "4 (4) 008 (8) Burnt Mountain Maricopa 773.14375c 773.39375c 773.71875c"
+  },
+  {
+    "y": 764.7682393506566,
+    "page": 2,
+    "text": "4 (4) 009 (9) Wickenburg Maricopa 771.75625c 772.00625 772.71875 773.21875"
+  },
+  {
+    "y": 750.2993541695269,
+    "page": 2,
+    "text": "5 (5) 001 (1) Simulcast G: West Valley Maricopa 769.31875 769.56875 769.81875 770.06875 770.31875 770.56875 770.81875"
+  },
+  {
+    "y": 736.3293960636084,
+    "page": 2,
+    "text": "771.06875c 771.31875 771.56875c 771.61875c 771.86875c 772.05625 772.11875"
+  },
+  {
+    "y": 721.8605108824787,
+    "page": 2,
+    "text": "772.30625 772.36875 772.61875 772.86875"
+  },
+  {
+    "y": 707.8905527765603,
+    "page": 2,
+    "text": "5 (5) 002 (2) Quintero IR Maricopa 772.06875c 772.31875c 772.56875c 772.81875c"
+  },
+  {
+    "y": 693.4216675954306,
+    "page": 2,
+    "text": "5 (5) 003 (3) Simulcast J: Buckeye Maricopa 769.11875c 769.36875c 769.61875c 769.86875c 770.11875 770.36875 772.78125"
+  },
+  {
+    "y": 679.4517094895122,
+    "page": 2,
+    "text": "773.93125 774.18125"
+  },
+  {
+    "y": 653.5075015785209,
+    "page": 2,
+    "text": "Talkgroups"
+  },
+  {
+    "y": 635.0471997957002,
+    "page": 2,
+    "text": "Grouped All Talkgroups New/Updated Talkgroups"
+  },
+  {
+    "y": 613.0944084863999,
+    "page": 2,
+    "text": "Mutual Aid Channels"
+  },
+  {
+    "y": 592.6383984027336,
+    "page": 2,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 577.6705861463926,
+    "page": 2,
+    "text": "1730 6c2 D G1 Interop G1 Interop A Interop"
+  },
+  {
+    "y": 563.2017009652627,
+    "page": 2,
+    "text": "2849 b21 D G2 Interop G2 Interop B Interop"
+  },
+  {
+    "y": 548.2338887089217,
+    "page": 2,
+    "text": "3223 c97 D G3 Interop G3 Interop C Interop"
+  },
+  {
+    "y": 533.7650035277919,
+    "page": 2,
+    "text": "2904 b58 D G4 Interop G4 Interop D Interop"
+  },
+  {
+    "y": 518.7971912714507,
+    "page": 2,
+    "text": "3224 c98 D G5 Interop G5 Interop E Interop"
+  },
+  {
+    "y": 504.328306090321,
+    "page": 2,
+    "text": "1731 6c3 D G6 Interop G6 Interop F Interop"
+  },
+  {
+    "y": 489.36049383397994,
+    "page": 2,
+    "text": "3225 c99 D G7 Interop G7 Interop G Interop"
+  },
+  {
+    "y": 474.8916086528502,
+    "page": 2,
+    "text": "2847 b1f D G8 Interop G8 Interop H Interop"
+  },
+  {
+    "y": 459.92379639650903,
+    "page": 2,
+    "text": "3226 c9a D G9 Interop G9 Interop I Interop"
+  },
+  {
+    "y": 445.4549112153793,
+    "page": 2,
+    "text": "1732 6c4 D G10Interop G10 Interop J Interop"
+  },
+  {
+    "y": 430.4870989590381,
+    "page": 2,
+    "text": "3222 c96 D G11 Interop G11 Interop K Interop"
+  },
+  {
+    "y": 416.0182137779084,
+    "page": 2,
+    "text": "1734 6c6 D G12 Interop G12 Interop L Interop"
+  },
+  {
+    "y": 401.0504015215672,
+    "page": 2,
+    "text": "2844 b1c D G13 Interop G13 Interop M Interop"
+  },
+  {
+    "y": 386.5815163404375,
+    "page": 2,
+    "text": "3227 c9b D G14 Interop G14 Interop N Interop"
+  },
+  {
+    "y": 371.6137040840963,
+    "page": 2,
+    "text": "2843 b1b D G15 Interop G15 Interop O Interop"
+  },
+  {
+    "y": 357.14481890296656,
+    "page": 2,
+    "text": "4516 11a4 D OCEAN 1 O01 OCEAN 1 Interop Interop"
+  },
+  {
+    "y": 342.1770066466254,
+    "page": 2,
+    "text": "4515 11a3 D OCEAN 2 O02 OCEAN 2 Interop Interop"
+  },
+  {
+    "y": 327.70812146549565,
+    "page": 2,
+    "text": "4514 11a2 D OCEAN 3 O03 OCEAN 3 Interop Interop"
+  },
+  {
+    "y": 312.7403092091545,
+    "page": 2,
+    "text": "4513 11a1 D OCEAN 4 O04 OCEAN 4 Interop Interop"
+  },
+  {
+    "y": 298.27142402802474,
+    "page": 2,
+    "text": "4512 11a0 D OCEAN 5 O05 OCEAN 5 Interop Interop"
+  },
+  {
+    "y": 283.30361177168356,
+    "page": 2,
+    "text": "4511 119f D OCEAN 6 O06 OCEAN 6 Interop Interop"
+  },
+  {
+    "y": 268.8347265905538,
+    "page": 2,
+    "text": "4510 119e D OCEAN 7 O07 OCEAN 7 Interop Interop"
+  },
+  {
+    "y": 253.86691433421265,
+    "page": 2,
+    "text": "4509 119d D OCEAN 8 O08 OCEAN 8 Interop Interop"
+  },
+  {
+    "y": 239.39802915308292,
+    "page": 2,
+    "text": "4508 119c D OCEAN 9 O09 OCEAN 9 Interop Interop"
+  },
+  {
+    "y": 224.43021689674197,
+    "page": 2,
+    "text": "4507 119b D OCEAN 10 O10 OCEAN 10 Interop Interop"
+  },
+  {
+    "y": 209.961331715612,
+    "page": 2,
+    "text": "4506 119a D OCEAN 11 O11 OCEAN 11 Interop Interop"
+  },
+  {
+    "y": 194.99351945927106,
+    "page": 2,
+    "text": "4505 1199 D OCEAN 12 O12 OCEAN 12 Interop Interop"
+  },
+  {
+    "y": 180.52463427814132,
+    "page": 2,
+    "text": "4504 1198 D OCEAN 13 O13 OCEAN 13 Interop Interop"
+  },
+  {
+    "y": 165.55682202180014,
+    "page": 2,
+    "text": "4503 1197 D OCEAN 14 O14 OCEAN 14 Interop Interop"
+  },
+  {
+    "y": 151.0879368406704,
+    "page": 2,
+    "text": "4502 1196 D OCEAN 15 O15 OCEAN 15 Interop Interop"
+  },
+  {
+    "y": 136.61905165954067,
+    "page": 2,
+    "text": "4501 1195 D OCEAN 16 O16 OCEAN 16 Interop Interop"
+  },
+  {
+    "y": 121.6512394031995,
+    "page": 2,
+    "text": "1767 6e7 DE H1 PS 01 H1 PS 01 Interop"
+  },
+  {
+    "y": 107.18235422206976,
+    "page": 2,
+    "text": "2851 b23 DE H2 PS 02 H2 PS 02 Interop"
+  },
+  {
+    "y": 92.21454196572859,
+    "page": 2,
+    "text": "3230 c9e DE H3 PS 03 H3 PS 03 Interop"
+  },
+  {
+    "y": 77.74565678459885,
+    "page": 2,
+    "text": "2894 b4e DE H4 PS 04 H4 PS 04 Interop"
+  },
+  {
+    "y": 62.777844528257674,
+    "page": 2,
+    "text": "2893 b4d DE H5 PS 05 H5 PS 05 Interop"
+  },
+  {
+    "y": 48.30895934712794,
+    "page": 2,
+    "text": "2892 b4c DE H6 PS 06 H6 PS 06 Interop"
+  },
+  {
+    "y": 33.34114709078676,
+    "page": 2,
+    "text": "2891 b4b DE H7 PS 07 H7 PS 07 Interop"
+  },
+  {
+    "y": 763.2714569730229,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8025717918931,
+    "page": 3,
+    "text": "1799 707 DE H8 PS 08 H8 PS 08 Interop"
+  },
+  {
+    "y": 733.8347595355519,
+    "page": 3,
+    "text": "1798 706 DE H9 PS 09 H9 PS 09 Interop"
+  },
+  {
+    "y": 719.3658743544222,
+    "page": 3,
+    "text": "1797 705 DE H10 PS 10 H10 PS 10 Interop"
+  },
+  {
+    "y": 704.398062098081,
+    "page": 3,
+    "text": "3228 c9c DE H11 PS 11 H11 PS 11 Interop"
+  },
+  {
+    "y": 689.9291769169513,
+    "page": 3,
+    "text": "3219 c93 DE H12 PS 12 H12 PS 12 Interop"
+  },
+  {
+    "y": 674.9613646606101,
+    "page": 3,
+    "text": "1736 6c8 DE H13 PS 13 H13 PS 13 Interop"
+  },
+  {
+    "y": 660.4924794794804,
+    "page": 3,
+    "text": "1735 6c7 DE H14 PS 14 H14 PS 14 Interop"
+  },
+  {
+    "y": 645.5246672231394,
+    "page": 3,
+    "text": "2842 b1a DE H15 PS 15 H15 PS 15 Interop"
+  },
+  {
+    "y": 631.0557820420095,
+    "page": 3,
+    "text": "2841 b19 DE H16 PS 16 H16 PS 16 Interop"
+  },
+  {
+    "y": 616.0879697856685,
+    "page": 3,
+    "text": "2890 b4a DE M12 CMN 1 M12 Common 1 Interop"
+  },
+  {
+    "y": 601.6190846045388,
+    "page": 3,
+    "text": "2889 b49 DE M13 CMN 2 M13 Common 2 Interop"
+  },
+  {
+    "y": 586.6512723481976,
+    "page": 3,
+    "text": "1796 704 DE M14 CMN 3 M14 Common 3 Interop"
+  },
+  {
+    "y": 572.1823871670679,
+    "page": 3,
+    "text": "3231 c9f DE M15 CMN 4 M15 Common 4 Interop"
+  },
+  {
+    "y": 557.2145749107267,
+    "page": 3,
+    "text": "2901 b55 D M16 MUN2PPDM16 Municipal Emergency (to Phoenix Police) Interop"
+  },
+  {
+    "y": 542.745689729597,
+    "page": 3,
+    "text": "2834 b12 D SRPD - VAL Salt River PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 527.7778774732558,
+    "page": 3,
+    "text": "2835 b13 D LAFB - VAL Luke AFB to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 513.308992292126,
+    "page": 3,
+    "text": "2836 b14 D SCPD - VAL State Capitol PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 498.3411800357849,
+    "page": 3,
+    "text": "2852 b24 D PSAP - West PSAP - West Interop"
+  },
+  {
+    "y": 483.87229485465514,
+    "page": 3,
+    "text": "2853 b25 D TOLLE PD-VAL Tolleson PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 468.90448259831396,
+    "page": 3,
+    "text": "2854 b26 D TEMPE PD-VAL Tempe PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 454.4355974171842,
+    "page": 3,
+    "text": "2855 b27 D SurpPD - VAL Suprise PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 439.46778516084305,
+    "page": 3,
+    "text": "2858 b2a D SkyHPD - VAL Sky Harbor PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 424.9988999797133,
+    "page": 3,
+    "text": "2859 b2b D SCOTT PD-VAL Scottsdale PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 410.03108772337214,
+    "page": 3,
+    "text": "2862 b2e D PEORIAPD-VAL Peoria PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 395.5622025422424,
+    "page": 3,
+    "text": "2863 b2f D PVPD - VAL Paradise Valley PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 380.59439028590145,
+    "page": 3,
+    "text": "2864 b30 D MCSO-VAL MCSO to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 366.1255051047715,
+    "page": 3,
+    "text": "2865 b31 D MCSO-VAL B MCSO to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 351.65661992364176,
+    "page": 3,
+    "text": "2866 b32 D GOOD PD-VAL Goodyear PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 336.6888076673008,
+    "page": 3,
+    "text": "2867 b33 D GLEN PD-VAL Glendale PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 322.21992248617084,
+    "page": 3,
+    "text": "2868 b34 D GilbPD - VAL Gilbert PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 307.2521102298299,
+    "page": 3,
+    "text": "2869 b35 D GRPD-VALLEY Gila River PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 292.78322504870016,
+    "page": 3,
+    "text": "2870 b36 D FBI - VALLEY FBI to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 277.815412792359,
+    "page": 3,
+    "text": "2871 b37 D ELMPD - VAL El Mirage PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 263.34652761122925,
+    "page": 3,
+    "text": "2872 b38 D PSAP - East PSAP - East Interop"
+  },
+  {
+    "y": 248.37871535488807,
+    "page": 3,
+    "text": "2873 b39 D DPS - VALLEY DPS to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 233.9098301737581,
+    "page": 3,
+    "text": "2874 b3a D CHAND PD-VAL Chandler PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 218.94201791741716,
+    "page": 3,
+    "text": "2875 b3b D CAP - VALLEY Central Arizona Project to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 204.47313273628743,
+    "page": 3,
+    "text": "2876 b3c D BuckPD - VAL Buckeye PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 189.50532047994648,
+    "page": 3,
+    "text": "2877 b3d D AVON PD-VAL Avondale PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 175.0364352988163,
+    "page": 3,
+    "text": "2878 b3e D ASU PD - VAL ASU PD to All Valley Police Departments Link Interop"
+  },
+  {
+    "y": 160.06862304247534,
+    "page": 3,
+    "text": "2879 b3f D ADOT - VAL ADOT to Al Valley Police Departments Link Interop"
+  },
+  {
+    "y": 145.5997378613456,
+    "page": 3,
+    "text": "2880 b40 D AJPD - VAL Apache Junction PD to Al Valley Police Departments Link Interop"
+  },
+  {
+    "y": 119.65552995035432,
+    "page": 3,
+    "text": "Avondale Police"
+  },
+  {
+    "y": 98.70059279147654,
+    "page": 3,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 84.2317076103468,
+    "page": 3,
+    "text": "4499 1193 T Avondale PD A01 A01 Dispatch Law Dispatch"
+  },
+  {
+    "y": 69.26389535400585,
+    "page": 3,
+    "text": "4497 1191 TE Avondale TAC A Tactical A Law Tac"
+  },
+  {
+    "y": 54.79501017287612,
+    "page": 3,
+    "text": "4496 1190 TE Avondale TAC B Tactical B Law Tac"
+  },
+  {
+    "y": 39.82719791653517,
+    "page": 3,
+    "text": "4495 118f TE Avondale TAC C Tactical C Law Tac"
+  },
+  {
+    "y": 25.358312735405434,
+    "page": 3,
+    "text": "4493 118d TE Avondale TAC D Tactical D Law Tac"
+  },
+  {
+    "y": 763.2713598210266,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8024746398969,
+    "page": 4,
+    "text": "4492 118c TE Avondale TAC E Tactical E Law Tac"
+  },
+  {
+    "y": 733.834662383556,
+    "page": 4,
+    "text": "4489 1189 TE Avondale TAC F Tactical F Law Tac"
+  },
+  {
+    "y": 707.8904544725647,
+    "page": 4,
+    "text": "Avondale Public Works"
+  },
+  {
+    "y": 687.4344443888981,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 672.4666321325572,
+    "page": 4,
+    "text": "4450 1162 T Avondale PW1 Public Works 1 Public Works"
+  },
+  {
+    "y": 657.9977469514274,
+    "page": 4,
+    "text": "4449 1161 T Avondale PW2 Public Works 2 Public Works"
+  },
+  {
+    "y": 643.0299346950865,
+    "page": 4,
+    "text": "4448 1160 T Avondale PW3 Public Works 3 Public Works"
+  },
+  {
+    "y": 617.0857267840952,
+    "page": 4,
+    "text": "Buckeye Police"
+  },
+  {
+    "y": 596.6297167004286,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 581.6619044440877,
+    "page": 4,
+    "text": "4201 1069 DE Buckeye PD 1 Dispatch Law Dispatch"
+  },
+  {
+    "y": 567.1930192629579,
+    "page": 4,
+    "text": "4202 106a DE Buckeye PD 2 Info Law Dispatch"
+  },
+  {
+    "y": 552.2252070066165,
+    "page": 4,
+    "text": "4203 106b D Buckeye PD Alt Dispatch (Alternate) Law Dispatch"
+  },
+  {
+    "y": 537.7563218254868,
+    "page": 4,
+    "text": "4208 1070 DE Buckeye PD A Tactical Law Tac"
+  },
+  {
+    "y": 522.7885095691458,
+    "page": 4,
+    "text": "4210 1072 DE Buckeye PD B Tactical Law Tac"
+  },
+  {
+    "y": 508.3196243880161,
+    "page": 4,
+    "text": "4211 1073 D Buckeye PD Event Events Law Tac"
+  },
+  {
+    "y": 482.3754164770248,
+    "page": 4,
+    "text": "Chandler Police"
+  },
+  {
+    "y": 461.42047931814704,
+    "page": 4,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 446.4526670618061,
+    "page": 4,
+    "text": "2499 9c3 TE CPD Info A A01 Info A Law Talk"
+  },
+  {
+    "y": 431.98378188067636,
+    "page": 4,
+    "text": "2498 9c2 T CPD Patrol A A02 Patrol A Law Dispatch"
+  },
+  {
+    "y": 417.5148966995466,
+    "page": 4,
+    "text": "2497 9c1 TE CPD HOT A03 HOT Law Tac"
+  },
+  {
+    "y": 402.5470844432057,
+    "page": 4,
+    "text": "2496 9c0 TE CPD C2C A04 Car-to-Car Law Talk"
+  },
+  {
+    "y": 388.0781992620755,
+    "page": 4,
+    "text": "2495 9bf TE CPD TraNc A05 TraNc Law Tac"
+  },
+  {
+    "y": 373.11038700573454,
+    "page": 4,
+    "text": "2494 9be T CPD Metro A06 Metro Law Tac"
+  },
+  {
+    "y": 358.6415018246048,
+    "page": 4,
+    "text": "2493 9bd TE CPD CIB 1 A07 CIB 1 Law Tac"
+  },
+  {
+    "y": 343.67368956826385,
+    "page": 4,
+    "text": "2492 9bc TE CPD SAU A08 SAU Law Tac"
+  },
+  {
+    "y": 329.2048043871341,
+    "page": 4,
+    "text": "2491 9bb TE CPD K9 A09 K9 Law Tac"
+  },
+  {
+    "y": 314.2369921307927,
+    "page": 4,
+    "text": "2490 9ba T CPD Bike A10 Bike Law Tac"
+  },
+  {
+    "y": 299.768106949663,
+    "page": 4,
+    "text": "2489 9b9 T CPD Event 1 A11 Event 1 Law Tac"
+  },
+  {
+    "y": 284.80029469332203,
+    "page": 4,
+    "text": "2488 9b8 T CPD Event 2 A12 Event 2 Law Tac"
+  },
+  {
+    "y": 270.3314095121923,
+    "page": 4,
+    "text": "2487 9b7 TE CPD Training A13 Training Law Talk"
+  },
+  {
+    "y": 255.3635972558509,
+    "page": 4,
+    "text": "2486 9b6 TE CPD Info B B01 Info B Law Talk"
+  },
+  {
+    "y": 240.89471207472116,
+    "page": 4,
+    "text": "2485 9b5 T CPD Patrol B B02 Patrol B Law Dispatch"
+  },
+  {
+    "y": 225.9268998183802,
+    "page": 4,
+    "text": "2484 9b4 TE CPD Info C C01 Info C Law Talk"
+  },
+  {
+    "y": 211.45801463725047,
+    "page": 4,
+    "text": "2483 9b3 T CPD Patrol C C02 Patrol C Law Dispatch"
+  },
+  {
+    "y": 196.49020238090907,
+    "page": 4,
+    "text": "2481 9b1 TE CPD CAU C11 CAU Law Tac"
+  },
+  {
+    "y": 182.02131719977933,
+    "page": 4,
+    "text": "2482 9b2 TE CPD CIB 2 D10 CIB 2 Law Tac"
+  },
+  {
+    "y": 167.05350494343838,
+    "page": 4,
+    "text": "2480 9b0 TE CPD Persons D12 Persons Law Tac"
+  },
+  {
+    "y": 152.58461976230865,
+    "page": 4,
+    "text": "2479 9af TE CPD Property D13 Property Law Tac"
+  },
+  {
+    "y": 137.6168075059677,
+    "page": 4,
+    "text": "2478 9ae TE CPD NARC D15 NARC Law Tac"
+  },
+  {
+    "y": 123.14792232483751,
+    "page": 4,
+    "text": "2477 9ad TE CPD GANG D16 Gang Law Tac"
+  },
+  {
+    "y": 108.18011006849656,
+    "page": 4,
+    "text": "2476 9ac TE CPD Event 3 E09 Event 3 Law Talk"
+  },
+  {
+    "y": 93.71122488736682,
+    "page": 4,
+    "text": "2475 9ab T CPD Explorer E11 Explorer Law Talk"
+  },
+  {
+    "y": 78.74341263102588,
+    "page": 4,
+    "text": "2469 9a5 T CPD Jail J16 Jail Law Talk"
+  },
+  {
+    "y": 53.29813179524581,
+    "page": 4,
+    "text": "Chandler Public Works"
+  },
+  {
+    "y": 759.7789891425427,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 745.310103961413,
+    "page": 5,
+    "text": "2299 8fb T Chandler City W M01 PW City Wide Public Works"
+  },
+  {
+    "y": 730.3422917050716,
+    "page": 5,
+    "text": "2298 8fa T Chandler Tfc En M02 TraNc Engineering Public Works"
+  },
+  {
+    "y": 715.8734065239419,
+    "page": 5,
+    "text": "2297 8f9 T Chandler Street M03 Streets Public Works"
+  },
+  {
+    "y": 700.9055942676009,
+    "page": 5,
+    "text": "2296 8f8 T Chandler Water M04 Water Public Works"
+  },
+  {
+    "y": 686.4367090864712,
+    "page": 5,
+    "text": "2295 8f7 T Chandler Sld Wst M05 Solid Waste Public Works"
+  },
+  {
+    "y": 671.4688968301298,
+    "page": 5,
+    "text": "2294 8f6 T Chandler Muni 1 M06 Municipal 1 Public Works"
+  },
+  {
+    "y": 657.000011649,
+    "page": 5,
+    "text": "2293 8f5 T Chandler Muni 2 M07 Municipal 2 Public Works"
+  },
+  {
+    "y": 642.0321993926591,
+    "page": 5,
+    "text": "2292 8f4 T Chandler Com Tec M08 Commtech Public Works"
+  },
+  {
+    "y": 616.586918556879,
+    "page": 5,
+    "text": "El Mirage Police"
+  },
+  {
+    "y": 595.6319813980017,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 580.6641691416603,
+    "page": 5,
+    "text": "4330 10ea DE El M PD Disp Dispatch Law Dispatch"
+  },
+  {
+    "y": 566.1952839605306,
+    "page": 5,
+    "text": "4331 10eb DE El M PD Info Info Law Tac"
+  },
+  {
+    "y": 551.2274717041896,
+    "page": 5,
+    "text": "4332 10ec DE El M PD OPS1 Ops 1 Law Tac"
+  },
+  {
+    "y": 525.2832637931983,
+    "page": 5,
+    "text": "Glendale Police"
+  },
+  {
+    "y": 504.8272537095322,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 489.8594414531908,
+    "page": 5,
+    "text": "4740 1284 D Glendale A01 A01 South Dispatch Law Dispatch"
+  },
+  {
+    "y": 475.3905562720611,
+    "page": 5,
+    "text": "4739 1283 DE Glendale A02 A02 South Tactical Law Tac"
+  },
+  {
+    "y": 460.4227440157201,
+    "page": 5,
+    "text": "4738 1282 DE Glendale A03 A03 Information Law Talk"
+  },
+  {
+    "y": 445.9538588345904,
+    "page": 5,
+    "text": "4737 1281 D Glendale A04 A04 North Dispatch Law Dispatch"
+  },
+  {
+    "y": 430.986046578249,
+    "page": 5,
+    "text": "4736 1280 DE Glendale A05 A05 North Tactical Law Tac"
+  },
+  {
+    "y": 416.51716139711925,
+    "page": 5,
+    "text": "4735 127f DE Glendale A06 A06 Car to Car Law Talk"
+  },
+  {
+    "y": 401.5493491407783,
+    "page": 5,
+    "text": "4734 127e DE Glendale A07 A07 Alternate Law Tac"
+  },
+  {
+    "y": 387.08046395964857,
+    "page": 5,
+    "text": "4733 127d DE Glendale A08 A08 Alternate Law Talk"
+  },
+  {
+    "y": 372.11265170330717,
+    "page": 5,
+    "text": "4732 127c DE Glendale A09 A09 Alternate Law Talk"
+  },
+  {
+    "y": 357.64376652217743,
+    "page": 5,
+    "text": "4731 127b D Glendale A10 A10 Alternate Law Talk"
+  },
+  {
+    "y": 342.6759542658365,
+    "page": 5,
+    "text": "4730 127a D Glendale A11 A11 Alternate Law Talk"
+  },
+  {
+    "y": 328.20706908470675,
+    "page": 5,
+    "text": "4729 1279 D Glendale A12 A12 Possibly Arena associated Law Talk"
+  },
+  {
+    "y": 313.23925682836534,
+    "page": 5,
+    "text": "4728 1278 D Glendale A13 A13 Arena 1 Law Talk"
+  },
+  {
+    "y": 298.7703716472356,
+    "page": 5,
+    "text": "4727 1277 D Glendale A14 A14 Arena 2 Law Talk"
+  },
+  {
+    "y": 283.80255939089466,
+    "page": 5,
+    "text": "4726 1276 DE Glendale A15 A15 Alternate Encrypted Law Talk"
+  },
+  {
+    "y": 269.3336742097649,
+    "page": 5,
+    "text": "4725 1275 DE Glendale A16 A16 Alternate Encrypted Law Talk"
+  },
+  {
+    "y": 243.38946629877364,
+    "page": 5,
+    "text": "Glendale Public Works"
+  },
+  {
+    "y": 222.43452913989586,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 207.96564395876612,
+    "page": 5,
+    "text": "4691 1253 D Glendale Uty Utilities Department Utilities"
+  },
+  {
+    "y": 192.99783170242517,
+    "page": 5,
+    "text": "4692 1254 DE Glendale Air Airport Operations Public Works"
+  },
+  {
+    "y": 178.52894652129544,
+    "page": 5,
+    "text": "4693 1255 D Glendale DR1 Dial-A-Ride 1 Public Works"
+  },
+  {
+    "y": 163.5611342649545,
+    "page": 5,
+    "text": "4694 1256 D Glendale DR2 Dial-A-Ride 2 Public Works"
+  },
+  {
+    "y": 149.0922490838243,
+    "page": 5,
+    "text": "4695 1257 D Glendale TraNc TraNc Department Public Works"
+  },
+  {
+    "y": 134.12443682748335,
+    "page": 5,
+    "text": "4696 1258 D Glendale Parks Parks and Recreation Department Public Works"
+  },
+  {
+    "y": 119.65555164635362,
+    "page": 5,
+    "text": "4698 125a D Glendale San 1 Sanitation Department Public Works"
+  },
+  {
+    "y": 104.68773939001267,
+    "page": 5,
+    "text": "4699 125b D Glendale San 2 Sanitation Department Public Works"
+  },
+  {
+    "y": 79.2424585542326,
+    "page": 5,
+    "text": "Goodyear Police"
+  },
+  {
+    "y": 58.287521395354815,
+    "page": 5,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 43.31970913901387,
+    "page": 5,
+    "text": "4999 1387 DE Goodyear PD Disp Dispatch Law Dispatch"
+  },
+  {
+    "y": 28.85082395788413,
+    "page": 5,
+    "text": "4998 1386 DE Goodyear PD Alt Dispatch (Alternate) Law Dispatch"
+  },
+  {
+    "y": 763.2713575170269,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8024723358972,
+    "page": 6,
+    "text": "4992 1380 D Good PD EvtA Events A Law Tac"
+  },
+  {
+    "y": 733.8346600795562,
+    "page": 6,
+    "text": "4991 137f D Good PD EvtB Events B Law Tac"
+  },
+  {
+    "y": 719.3657748984265,
+    "page": 6,
+    "text": "4988 137c DE Good PD TAC Tactical Law Tac"
+  },
+  {
+    "y": 693.4215669874352,
+    "page": 6,
+    "text": "Maricopa City Police"
+  },
+  {
+    "y": 672.4666298285574,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 657.9977446474277,
+    "page": 6,
+    "text": "2599 a27 TE MPD A1 Dispatch A1 Dispatch Law Dispatch"
+  },
+  {
+    "y": 643.0299323910867,
+    "page": 6,
+    "text": "2598 a26 T MPD A2 Alternate A2 Alternate Law Dispatch"
+  },
+  {
+    "y": 628.561047209957,
+    "page": 6,
+    "text": "2597 a25 TE MPD A3 TAC A3 TAC Law Tac"
+  },
+  {
+    "y": 613.5932349536156,
+    "page": 6,
+    "text": "2595 a23 TE MPD A5 TAC A5 TAC Law Tac"
+  },
+  {
+    "y": 599.1243497724859,
+    "page": 6,
+    "text": "2594 a22 T MPD A6 Event A6 Event Law Dispatch"
+  },
+  {
+    "y": 573.1801418614946,
+    "page": 6,
+    "text": "Maricopa Community Colleges"
+  },
+  {
+    "y": 552.2252047026168,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 537.7563195214871,
+    "page": 6,
+    "text": "4552 11c8 D E/G Security Estrella/200 \u0026 Glendale/400 Security Security"
+  },
+  {
+    "y": 522.7885072651461,
+    "page": 6,
+    "text": "4554 11ca D SM/PV Secty South Mountain/700 \u0026 Paradise Valley/600 Security Security"
+  },
+  {
+    "y": 508.3196220840164,
+    "page": 6,
+    "text": "4555 11cb D G/S Security Gateway/300 \u0026 Scottsdale/1100 Security Security"
+  },
+  {
+    "y": 493.3518098276754,
+    "page": 6,
+    "text": "4557 11cd D CG/M Secty Chandler-Gilbert/100 \u0026 Mesa/500 Security Security"
+  },
+  {
+    "y": 467.40760191668414,
+    "page": 6,
+    "text": "Maricopa County"
+  },
+  {
+    "y": 452.9387167355544,
+    "page": 6,
+    "text": "Maricopa County operates on this sytem:ÑMaricopa County Trunking System, Maricopa County, Arizona"
+  },
+  {
+    "y": 428.49129005019677,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha TagDescription Tag"
+  },
+  {
+    "y": 413.5234777938558,
+    "page": 6,
+    "text": "1565 61d D MC EOC EOC Emergency Ops"
+  },
+  {
+    "y": 387.57926988286454,
+    "page": 6,
+    "text": "Paradise Valley Police"
+  },
+  {
+    "y": 367.1232597991984,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha TagDescription Tag"
+  },
+  {
+    "y": 352.1554475428575,
+    "page": 6,
+    "text": "3696 e70 D PV PD Disp Dispatch Law Dispatch"
+  },
+  {
+    "y": 337.1876352865165,
+    "page": 6,
+    "text": "3698 e72 DE PV PD TAC TAC Law Tac"
+  },
+  {
+    "y": 311.74235445073646,
+    "page": 6,
+    "text": "Peoria Police"
+  },
+  {
+    "y": 290.7874172918582,
+    "page": 6,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 275.81960503551727,
+    "page": 6,
+    "text": "4141 102d D A1 Peoria PD A1 Dispatch Law Dispatch"
+  },
+  {
+    "y": 261.35071985438753,
+    "page": 6,
+    "text": "4140 102c DE A2 Peoria PD A2 Information Law Tac"
+  },
+  {
+    "y": 246.3829075980466,
+    "page": 6,
+    "text": "4139 102b DE A3 Peoria PD A3 Chase Law Tac"
+  },
+  {
+    "y": 231.91402241691685,
+    "page": 6,
+    "text": "4138 102a D A4 Peoria PD A4 Event Law Tac"
+  },
+  {
+    "y": 216.9462101605759,
+    "page": 6,
+    "text": "4137 1029 DE A5 Peoria PD A5 Car to Car Law Tac"
+  },
+  {
+    "y": 202.47732497944617,
+    "page": 6,
+    "text": "4136 1028 D A6 Peoria PD A6 Metro Law Tac"
+  },
+  {
+    "y": 187.50951272310522,
+    "page": 6,
+    "text": "4135 1027 DE A7 Peoria PD A7 Supervisors Law Tac"
+  },
+  {
+    "y": 173.04062754197548,
+    "page": 6,
+    "text": "4134 1026 DE A8 Peoria PD A8 TAC Law Tac"
+  },
+  {
+    "y": 158.07281528563362,
+    "page": 6,
+    "text": "4133 1025 DE A9 Peoria PD A9 TAC Law Tac"
+  },
+  {
+    "y": 143.6039301045039,
+    "page": 6,
+    "text": "4132 1024 DE A10 Peoria PDA10 Investigations Law Tac"
+  },
+  {
+    "y": 129.13504492337415,
+    "page": 6,
+    "text": "4131 1023 DE A11 Peoria PDA11 Investigations Law Tac"
+  },
+  {
+    "y": 114.1672326670332,
+    "page": 6,
+    "text": "4130 1022 D A16 Peoria PDA16 City Common Law Tac"
+  },
+  {
+    "y": 99.69834748590347,
+    "page": 6,
+    "text": "4129 1021 D B1 Peoria PD B1 Dispatch (Future use) Law Dispatch"
+  },
+  {
+    "y": 84.73053522956252,
+    "page": 6,
+    "text": "4128 1020 DE B2 Peoria PD B2 Information Law Tac"
+  },
+  {
+    "y": 70.26165004843278,
+    "page": 6,
+    "text": "4127 101f DE B3 Peoria PD B3 Chase Law Tac"
+  },
+  {
+    "y": 55.293837792091836,
+    "page": 6,
+    "text": "4126 101e D B4 Peoria PD B4 Event Law Tac"
+  },
+  {
+    "y": 40.8249526109621,
+    "page": 6,
+    "text": "4125 101d DE B5 Peoria PD B5 Car to Car Law Tac"
+  },
+  {
+    "y": 25.857140354620242,
+    "page": 6,
+    "text": "4124 101c D B6 Peoria PD B6 Metro Law Tac"
+  },
+  {
+    "y": 763.2711643650355,
+    "page": 7,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8022791839057,
+    "page": 7,
+    "text": "4123 101b DE B7 Peoria PD B7 Supervisor Law Tac"
+  },
+  {
+    "y": 733.8344669275639,
+    "page": 7,
+    "text": "4122 101a DE B8 Peoria PD B8 TAC Law Tac"
+  },
+  {
+    "y": 719.3655817464341,
+    "page": 7,
+    "text": "4121 1019 DE B9 Peoria PD B9 TAC Law Tac"
+  },
+  {
+    "y": 704.3977694900932,
+    "page": 7,
+    "text": "4120 1018 DE B10 Peoria PDB10 Investigations Law Tac"
+  },
+  {
+    "y": 689.9288843089635,
+    "page": 7,
+    "text": "4119 1017 DE B11 Peoria PDB11 Investigations Law Tac"
+  },
+  {
+    "y": 674.9610720526225,
+    "page": 7,
+    "text": "4105 1009 D B13 Peoria PDB13 Event Law Tac"
+  },
+  {
+    "y": 660.4921868714928,
+    "page": 7,
+    "text": "4118 1016 D B16 Peoria PDB16 City Common Law Tac"
+  },
+  {
+    "y": 645.5243746151518,
+    "page": 7,
+    "text": "4117 1015 D C1 Peoria PD C1 Dispatch (Future use) Law Dispatch"
+  },
+  {
+    "y": 631.0554894340221,
+    "page": 7,
+    "text": "4116 1014 DE C2 Peoria PD C2 Information Law Tac"
+  },
+  {
+    "y": 616.0876771776802,
+    "page": 7,
+    "text": "4115 1013 DE C3 Peoria PD C3 Chase Law Tac"
+  },
+  {
+    "y": 601.6187919965505,
+    "page": 7,
+    "text": "4114 1012 D C4 Peoria PD C4 Event Law Tac"
+  },
+  {
+    "y": 586.6509797402096,
+    "page": 7,
+    "text": "4113 1011 DE C5 Peoria PD C5 Car to Car Law Tac"
+  },
+  {
+    "y": 572.1820945590798,
+    "page": 7,
+    "text": "4112 1010 DE C6 Peoria PD C6 Metro Law Tac"
+  },
+  {
+    "y": 557.2142823027389,
+    "page": 7,
+    "text": "4111 100f D C7 Peoria PD C7 Event Law Tac"
+  },
+  {
+    "y": 542.7453971216091,
+    "page": 7,
+    "text": "4110 100e DE C8 Peoria PD C8 TAC Law Tac"
+  },
+  {
+    "y": 527.7775848652682,
+    "page": 7,
+    "text": "4109 100d DE C9 Peoria PD C9 TAC Law Tac"
+  },
+  {
+    "y": 513.3086996841384,
+    "page": 7,
+    "text": "4108 100c DE C10 Peoria PDC10 Investigations Law Tac"
+  },
+  {
+    "y": 498.3408874277975,
+    "page": 7,
+    "text": "4107 100b DE C11 Peoria PDC11 Investigations Law Tac"
+  },
+  {
+    "y": 483.87200224666776,
+    "page": 7,
+    "text": "4104 1008 D C13 Peoria PDC13 Event Law Tac"
+  },
+  {
+    "y": 468.9041899903259,
+    "page": 7,
+    "text": "4106 100a D C16 Peoria PDC16 EOC Interop"
+  },
+  {
+    "y": 443.45890915454584,
+    "page": 7,
+    "text": "Peoria Public Works"
+  },
+  {
+    "y": 422.5039719956685,
+    "page": 7,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 407.53615973932756,
+    "page": 7,
+    "text": "4010 faa D Peoria Water Water Resources Utilities"
+  },
+  {
+    "y": 393.0672745581978,
+    "page": 7,
+    "text": "4011 fab D Peoria Env Environmental Public Works"
+  },
+  {
+    "y": 378.0994623018569,
+    "page": 7,
+    "text": "4012 fac D Peoria Eng Engineering Public Works"
+  },
+  {
+    "y": 363.63057712072714,
+    "page": 7,
+    "text": "4013 fad D Peoria Utilities Utilities Management Utilities"
+  },
+  {
+    "y": 348.6627648643862,
+    "page": 7,
+    "text": "4014 fae D Peoria BlueStake Blue Stake Public Works"
+  },
+  {
+    "y": 334.19387968325645,
+    "page": 7,
+    "text": "4015 faf D Peoria Waste Wat Waste Water Utilities"
+  },
+  {
+    "y": 319.2260674269146,
+    "page": 7,
+    "text": "4016 fb0 D Peoria Water Pro Water Production Utilities"
+  },
+  {
+    "y": 304.75718224578486,
+    "page": 7,
+    "text": "4017 fb1 D Peoria Water Dis Water Distribution Utilities"
+  },
+  {
+    "y": 289.7893699894439,
+    "page": 7,
+    "text": "4018 fb2 D Peoria Meter Rep Instrument Technicians Utilities"
+  },
+  {
+    "y": 275.3204848083142,
+    "page": 7,
+    "text": "4019 fb3 D Peoria Butler Pl Butler Water Treatment Plant Utilities"
+  },
+  {
+    "y": 260.3526725519732,
+    "page": 7,
+    "text": "4020 fb4 D Peoria Jomax Pla Jomax Water Treatment Plant Utilities"
+  },
+  {
+    "y": 245.8837873708435,
+    "page": 7,
+    "text": "4021 fb5 D Peoria Brdsy Pla Beardsley Water Treatment Plant Utilities"
+  },
+  {
+    "y": 231.41490218971376,
+    "page": 7,
+    "text": "4022 fb6 D Peoria GW and Q Greenway and Quintero Water Treatment Plants Utilities"
+  },
+  {
+    "y": 216.4470899333728,
+    "page": 7,
+    "text": "4023 fb7 D Peoria Utilities General Utilities Utilities"
+  },
+  {
+    "y": 201.97820475224307,
+    "page": 7,
+    "text": "4024 fb8 D Peoria Sups Senior Supervisors Public Works"
+  },
+  {
+    "y": 187.01039249590121,
+    "page": 7,
+    "text": "4025 fb9 D Peoria Waste Sup Solid Waste Supervisors Public Works"
+  },
+  {
+    "y": 172.54150731477148,
+    "page": 7,
+    "text": "4026 fba D Peoria Sweepers Sweepers Public Works"
+  },
+  {
+    "y": 157.57369505843053,
+    "page": 7,
+    "text": "4027 fbb D Peoria Signals Signals Public Works"
+  },
+  {
+    "y": 143.1048098773008,
+    "page": 7,
+    "text": "4028 fbc D Peor Utlty Signs and Striping Public Works"
+  },
+  {
+    "y": 128.13699762095985,
+    "page": 7,
+    "text": "4029 fbd D Peor Streets Street Maintenance Public Works"
+  },
+  {
+    "y": 113.66811243983011,
+    "page": 7,
+    "text": "4030 fbe D Peor SldWst1 Solid Waste - Commercial Public Works"
+  },
+  {
+    "y": 98.70030018348916,
+    "page": 7,
+    "text": "4031 fbf D Peor SldWste Solid Waste - Residential Public Works"
+  },
+  {
+    "y": 84.23141500235943,
+    "page": 7,
+    "text": "4032 fc0 D Peor ParkRgr Park Rangers Public Works"
+  },
+  {
+    "y": 69.26360274601848,
+    "page": 7,
+    "text": "4033 fc1 D Peor Parks 1 Parks 1 South Public Works"
+  },
+  {
+    "y": 54.79471756488783,
+    "page": 7,
+    "text": "4034 fc2 D Peor Parks 2 Parks 2 North Public Works"
+  },
+  {
+    "y": 39.826905308546884,
+    "page": 7,
+    "text": "4035 fc3 D Peor Flt Svc Fleet Services Public Works"
+  },
+  {
+    "y": 25.35802012741715,
+    "page": 7,
+    "text": "4036 fc4 D Peor InfTech Information Technology Public Works"
+  },
+  {
+    "y": 763.2712352130329,
+    "page": 8,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8023500319032,
+    "page": 8,
+    "text": "4037 fc5 D Peor Meter Meter Readers Public Works"
+  },
+  {
+    "y": 733.8345377755613,
+    "page": 8,
+    "text": "4038 fc6 DE Peor CodeEnf Code Enforcement Public Works"
+  },
+  {
+    "y": 719.3656525944316,
+    "page": 8,
+    "text": "4039 fc7 D Peor Faclity Facilities Management Public Works"
+  },
+  {
+    "y": 704.3978403380906,
+    "page": 8,
+    "text": "4040 fc8 D Peor Transit Transit Dial a Ride Public Works"
+  },
+  {
+    "y": 678.4536324270994,
+    "page": 8,
+    "text": "Phoenix Fire Department and Regional Dispatch"
+  },
+  {
+    "y": 663.9847472459696,
+    "page": 8,
+    "text": "Phoenix Fire Department (Phoenix Regional Fire Dispatch) dispatches many suburban agencies as well as PFD."
+  },
+  {
+    "y": 653.5072786665305,
+    "page": 8,
+    "text": "Phoenix FD itself uses the RWC system only for non-hazard incidents. Hazard incidentsÑare onÑthe Phoenix FD VHF frequencies."
+  },
+  {
+    "y": 629.0598519811738,
+    "page": 8,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 614.0920397248328,
+    "page": 8,
+    "text": "1795 703 T K1 PHX Alarm K1 - Alarm VHF-Patched Ch 1 Fire Dispatch"
+  },
+  {
+    "y": 599.6231545437031,
+    "page": 8,
+    "text": "1753 6d9 T PHXFD K2 K2 Fire-Tac"
+  },
+  {
+    "y": 584.6553422873621,
+    "page": 8,
+    "text": "1786 6fa T PHXFD K3 K3 Fire-Tac"
+  },
+  {
+    "y": 570.1864571062315,
+    "page": 8,
+    "text": "1772 6ec TE PHXFD K4 K4 - Encrypted Fire-Tac"
+  },
+  {
+    "y": 555.2186448498906,
+    "page": 8,
+    "text": "1754 6da TE PHXFD K5 K5 - Encrypted Fire-Tac"
+  },
+  {
+    "y": 540.7497596687608,
+    "page": 8,
+    "text": "1615 64f T PHXFD K6 K6 - FDCOM 6 - North Fire-Tac"
+  },
+  {
+    "y": 525.7819474124199,
+    "page": 8,
+    "text": "1614 64e T PHXFD K7 K7 - FDCOM 7 - East Fire-Tac"
+  },
+  {
+    "y": 511.31306223129013,
+    "page": 8,
+    "text": "1613 64d T PHXFD K8 K8 - FDCOM 8 - South Fire-Tac"
+  },
+  {
+    "y": 496.3452499749492,
+    "page": 8,
+    "text": "1612 64c T PHXFD K9 K9 - FDCOM 9 - West Fire-Tac"
+  },
+  {
+    "y": 481.87636479381945,
+    "page": 8,
+    "text": "1611 64b T PHXFD K10 K10 - FDCOM 10 - Major Incident / Mountain Rescue Fire-Tac"
+  },
+  {
+    "y": 466.9085525374785,
+    "page": 8,
+    "text": "1610 64a T PHXFD K11 K11 - FDCOM 11 - Major Incident / Mountain Rescue Fire-Tac"
+  },
+  {
+    "y": 452.43966735634876,
+    "page": 8,
+    "text": "1609 649 T PHXFD K12 K12 - FDCOM 12 - Major Incident / Mountain Rescue Fire-Tac"
+  },
+  {
+    "y": 437.4718551000069,
+    "page": 8,
+    "text": "1608 648 T PHXFD K13 K13 - FDCOM 13 - Major Incident / Mountain Rescue Fire-Tac"
+  },
+  {
+    "y": 423.00296991887717,
+    "page": 8,
+    "text": "1607 647 T PHXFD K14 K14 - FDCOM 14 Fire-Tac"
+  },
+  {
+    "y": 408.0351576625362,
+    "page": 8,
+    "text": "1606 646 T PHXFD K15 K15 - FDCOM 15 Fire-Tac"
+  },
+  {
+    "y": 393.5662724814065,
+    "page": 8,
+    "text": "1629 65d T PHXFDEvnt L2 L2 - Events 2 Fire-Tac"
+  },
+  {
+    "y": 378.59846022506554,
+    "page": 8,
+    "text": "1628 65c T PHXFDEvnt L3 L3 - Events 3 Fire-Tac"
+  },
+  {
+    "y": 364.1295750439358,
+    "page": 8,
+    "text": "1627 65b T PHXFDEvnt L4 L4 - Events 4 Fire-Tac"
+  },
+  {
+    "y": 349.16176278759485,
+    "page": 8,
+    "text": "1626 65a T PHXFDEvnt L5 L5 - Events 5 Fire-Tac"
+  },
+  {
+    "y": 334.6928776064651,
+    "page": 8,
+    "text": "1625 659 T PHXFDEvnt L6 L6 - Events 6 Fire-Tac"
+  },
+  {
+    "y": 319.72506535012417,
+    "page": 8,
+    "text": "1624 658 T PHXFDEvnt L7 L7 - Events 7 Fire-Tac"
+  },
+  {
+    "y": 305.2561801689935,
+    "page": 8,
+    "text": "1623 657 T PHXFDEvnt L8 L8 - Events 8 Fire-Tac"
+  },
+  {
+    "y": 290.2883679126526,
+    "page": 8,
+    "text": "1622 656 T PHXFDEvnt L9 L9 - Events 9 Fire-Tac"
+  },
+  {
+    "y": 275.81948273152284,
+    "page": 8,
+    "text": "1621 655 T PHXFDEvntL10 L10 - Events 10 Fire-Tac"
+  },
+  {
+    "y": 260.8516704751819,
+    "page": 8,
+    "text": "1620 654 T PHXFDEvntL11 L11 - Events 11 Fire-Tac"
+  },
+  {
+    "y": 246.38278529405216,
+    "page": 8,
+    "text": "1619 653 T PHXFDEvntL12 L12 - Events 12 Fire-Tac"
+  },
+  {
+    "y": 231.4149730377112,
+    "page": 8,
+    "text": "1618 652 T PHXFDEvntL13 L13 - Events 13 Fire-Tac"
+  },
+  {
+    "y": 216.94608785658147,
+    "page": 8,
+    "text": "1617 651 T PHXFDEvntL14 L14 - Events 14 Fire-Tac"
+  },
+  {
+    "y": 202.47720267545174,
+    "page": 8,
+    "text": "1616 650 T PHXFDEvntL15 L15 - Events 15 Fire-Tac"
+  },
+  {
+    "y": 187.5093904191108,
+    "page": 8,
+    "text": "1630 65e T PHXFDEvntL16 L16 - Events 16 Fire-Tac"
+  },
+  {
+    "y": 173.04050523798105,
+    "page": 8,
+    "text": "1600 640 TE Tempe E5 Tempe FD E5 Fire-Tac"
+  },
+  {
+    "y": 158.0726929816392,
+    "page": 8,
+    "text": "1601 641 TE Tempe E4 Tempe FD E4 Fire-Tac"
+  },
+  {
+    "y": 143.60380780050946,
+    "page": 8,
+    "text": "1602 642 T Tempe E3 Tempe FD E3 Fire-Tac"
+  },
+  {
+    "y": 128.6359955441685,
+    "page": 8,
+    "text": "1603 643 T Tempe E2 Tempe FD E2 Fire-Tac"
+  },
+  {
+    "y": 114.16711036303877,
+    "page": 8,
+    "text": "1604 644 TE PHXFD A2 A2 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 99.19929810669782,
+    "page": 8,
+    "text": "1605 645 TE PHXFD A3 A3 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 84.73041292556809,
+    "page": 8,
+    "text": "1631 65f TE PHXFD A5 A5 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 69.76260066922714,
+    "page": 8,
+    "text": "1632 660 TE Tolleson E5 Tolleson FD E5 Fire-Tac"
+  },
+  {
+    "y": 55.293715488097405,
+    "page": 8,
+    "text": "1633 661 TE Tolleson E4 Tolleson FD E4 Fire-Tac"
+  },
+  {
+    "y": 40.32590323175555,
+    "page": 8,
+    "text": "1634 662 T Tolleson E3 Tolleson FD E3 Fire-Tac"
+  },
+  {
+    "y": 25.85701805062581,
+    "page": 8,
+    "text": "1635 663 T Tolleson E2 Tolleson FD E2 Fire-Tac"
+  },
+  {
+    "y": 763.2715460610198,
+    "page": 9,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.80266087989,
+    "page": 9,
+    "text": "1636 664 TE Scottsdale E5 Scottsdale FD E5 Fire-Tac"
+  },
+  {
+    "y": 733.8348486235482,
+    "page": 9,
+    "text": "1637 665 TE Scottsdale E4 Scottsdale FD E4 Fire-Tac"
+  },
+  {
+    "y": 719.3659634424184,
+    "page": 9,
+    "text": "1638 666 T Scottsdale E3 Scottsdale FD E3 Fire-Tac"
+  },
+  {
+    "y": 704.3981511860775,
+    "page": 9,
+    "text": "1639 667 T Scottsdale E2 Scottsdale FD E2 Fire-Tac"
+  },
+  {
+    "y": 689.9292660049477,
+    "page": 9,
+    "text": "1640 668 TE Peoria E5 Peoria FD E5 Fire-Tac"
+  },
+  {
+    "y": 674.9614537486068,
+    "page": 9,
+    "text": "1641 669 TE Peoria E4 Peoria FD E4 Fire-Tac"
+  },
+  {
+    "y": 660.4925685674771,
+    "page": 9,
+    "text": "1642 66a T Peoria E3 Peoria FD E3 Fire-Tac"
+  },
+  {
+    "y": 645.5247563111361,
+    "page": 9,
+    "text": "1643 66b T Peoria E2 Peoria FD E2 Fire-Tac"
+  },
+  {
+    "y": 631.0558711300064,
+    "page": 9,
+    "text": "1644 66c TE Paradise Vly E5 Paradise Valley FD E5 Fire-Tac"
+  },
+  {
+    "y": 616.0880588736645,
+    "page": 9,
+    "text": "1645 66d TE Paradise Vly E4 Paradise Valley FD E4 Fire-Tac"
+  },
+  {
+    "y": 601.6191736925348,
+    "page": 9,
+    "text": "1646 66e T Paradise Vly E3 Paradise Valley FD E3 Fire-Tac"
+  },
+  {
+    "y": 586.6513614361938,
+    "page": 9,
+    "text": "1647 66f T Paradise Vly E2 Paradise Valley FD E2 Fire-Tac"
+  },
+  {
+    "y": 572.1824762550641,
+    "page": 9,
+    "text": "1648 670 TE Surprise E5 Surprise FD E5 Fire-Tac"
+  },
+  {
+    "y": 557.2146639987232,
+    "page": 9,
+    "text": "1649 671 TE Surprise E4 Surprise FD E4 Fire-Tac"
+  },
+  {
+    "y": 542.7457788175934,
+    "page": 9,
+    "text": "1650 672 T Surprise E3 Surprise FD E3 Fire-Tac"
+  },
+  {
+    "y": 527.7779665612525,
+    "page": 9,
+    "text": "1651 673 T Surprise E2 Surprise FD E2 Fire-Tac"
+  },
+  {
+    "y": 513.3090813801227,
+    "page": 9,
+    "text": "1652 674 TE Sun City E5 Sun City FD E5 Fire-Tac"
+  },
+  {
+    "y": 498.3412691237818,
+    "page": 9,
+    "text": "1653 675 TE Sun City E4 Sun City FD E4 Fire-Tac"
+  },
+  {
+    "y": 483.87238394265205,
+    "page": 9,
+    "text": "1654 676 T Sun City E3 Sun City FD E3 Fire-Tac"
+  },
+  {
+    "y": 468.9045716863102,
+    "page": 9,
+    "text": "1655 677 T Sun City E2 Sun City FD E2 Fire-Tac"
+  },
+  {
+    "y": 454.43568650518046,
+    "page": 9,
+    "text": "1656 678 TE Maricopa E5 Maricopa FD E5 Fire-Tac"
+  },
+  {
+    "y": 439.4678742488395,
+    "page": 9,
+    "text": "1657 679 TE Maricopa E4 Maricopa FD E4 Fire-Tac"
+  },
+  {
+    "y": 424.9989890677098,
+    "page": 9,
+    "text": "1658 67a T Maricopa E3 Maricopa FD E3 Fire-Tac"
+  },
+  {
+    "y": 410.0311768113688,
+    "page": 9,
+    "text": "1659 67b T Maricopa E2 Maricopa FD E2 Fire-Tac"
+  },
+  {
+    "y": 395.5622916302391,
+    "page": 9,
+    "text": "1660 67c TE Goodyear E5 Goodyear FD E5 Fire-Tac"
+  },
+  {
+    "y": 380.59447937389814,
+    "page": 9,
+    "text": "1661 67d TE Goodyear E4 Goodyear FD E4 Fire-Tac"
+  },
+  {
+    "y": 366.1255941927684,
+    "page": 9,
+    "text": "1662 67e T Goodyear E3 Goodyear FD E3 Fire-Tac"
+  },
+  {
+    "y": 351.65670901163867,
+    "page": 9,
+    "text": "1663 67f T Goodyear E2 Goodyear FD E2 Fire-Tac"
+  },
+  {
+    "y": 336.6888967552968,
+    "page": 9,
+    "text": "1664 680 TE Glendale E5 Glendale FD E5 Fire-Tac"
+  },
+  {
+    "y": 322.2200115741671,
+    "page": 9,
+    "text": "1665 681 TE Glendale E4 Glendale FD E4 Fire-Tac"
+  },
+  {
+    "y": 307.2521993178261,
+    "page": 9,
+    "text": "1666 682 T Glendale E3 Glendale FD E3 Fire-Tac"
+  },
+  {
+    "y": 292.7833141366964,
+    "page": 9,
+    "text": "1667 683 T Glendale E2 Glendale FD E2 Fire-Tac"
+  },
+  {
+    "y": 277.81550188035544,
+    "page": 9,
+    "text": "1668 684 TE Guadalupe E5 Guadalupe FD E5 Fire-Tac"
+  },
+  {
+    "y": 263.3466166992257,
+    "page": 9,
+    "text": "1669 685 TE Guadalupe E4 Guadalupe FD E4 Fire-Tac"
+  },
+  {
+    "y": 248.37880444288476,
+    "page": 9,
+    "text": "1670 686 T Guadalupe E3 Guadalupe FD E3 Fire-Tac"
+  },
+  {
+    "y": 233.90991926175502,
+    "page": 9,
+    "text": "1671 687 T Guadalupe E2 Guadalupe FD E2 Fire-Tac"
+  },
+  {
+    "y": 218.94210700541407,
+    "page": 9,
+    "text": "1672 688 TE Gila River E5 Gila River FD E5 Fire-Tac"
+  },
+  {
+    "y": 204.47322182428343,
+    "page": 9,
+    "text": "1673 689 TE Gila River E4 Gila River FD E4 Fire-Tac"
+  },
+  {
+    "y": 189.50540956794248,
+    "page": 9,
+    "text": "1674 68a T Gila River E3 Gila River FD E3 Fire-Tac"
+  },
+  {
+    "y": 175.03652438681274,
+    "page": 9,
+    "text": "1675 68b T Gila River E2 Gila River FD E2 Fire-Tac"
+  },
+  {
+    "y": 160.0687121304718,
+    "page": 9,
+    "text": "1676 68c TE Chandler E5 Chandler FD E5 Fire-Tac"
+  },
+  {
+    "y": 145.59982694934206,
+    "page": 9,
+    "text": "1677 68d TE Chandler E4 Chandler FD E4 Fire-Tac"
+  },
+  {
+    "y": 130.6320146930011,
+    "page": 9,
+    "text": "1678 68e T Chandler E3 Chandler FD E3 Fire-Tac"
+  },
+  {
+    "y": 116.16312951187138,
+    "page": 9,
+    "text": "1679 68f T Chandler E2 Chandler FD E2 Fire-Tac"
+  },
+  {
+    "y": 101.19531725553043,
+    "page": 9,
+    "text": "1680 690 TE Buckeye E5 Buckeye (City) FD E5 Fire-Tac"
+  },
+  {
+    "y": 86.72643207440069,
+    "page": 9,
+    "text": "1681 691 TE Buckeye E4 Buckeye (City) FD E4 Fire-Tac"
+  },
+  {
+    "y": 71.75861981805883,
+    "page": 9,
+    "text": "1682 692 T Buckeye E3 Buckeye (City) FD E3 Fire-Tac"
+  },
+  {
+    "y": 57.2897346369291,
+    "page": 9,
+    "text": "1683 693 T Buckeye E2 Buckeye (City) FD E2 Fire-Tac"
+  },
+  {
+    "y": 42.32192238058815,
+    "page": 9,
+    "text": "1684 694 TE Avondale E5 Avondale FD E5 Fire-Tac"
+  },
+  {
+    "y": 27.853037199458413,
+    "page": 9,
+    "text": "1685 695 TE Avondale E4 Avondale FD E4 Fire-Tac"
+  },
+  {
+    "y": 763.2713769090269,
+    "page": 10,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8024917278972,
+    "page": 10,
+    "text": "1686 696 T Avondale E3 Avondale FD E3 Fire-Tac"
+  },
+  {
+    "y": 733.8346794715553,
+    "page": 10,
+    "text": "1687 697 T Avondale E2 Avondale FD E2 Fire-Tac"
+  },
+  {
+    "y": 719.3657942904256,
+    "page": 10,
+    "text": "1688 698 TE PHXFD A6 A6 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 704.3979820340846,
+    "page": 10,
+    "text": "1729 6c1 TE PHXFD A7 A7 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 689.9290968529549,
+    "page": 10,
+    "text": "1733 6c5 TE PHXFD A8 A8 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 674.961284596614,
+    "page": 10,
+    "text": "1737 6c9 TE Daisy Mtn E5 Daisy Mtn FD E5 Fire-Tac"
+  },
+  {
+    "y": 660.4923994154842,
+    "page": 10,
+    "text": "1738 6ca TE Daisy Mtn E4 Daisy Mtn FD E4 Fire-Tac"
+  },
+  {
+    "y": 645.5245871591433,
+    "page": 10,
+    "text": "1739 6cb T Daisy Mtn E3 Daisy Mtn FD E3 Fire-Tac"
+  },
+  {
+    "y": 631.0557019780135,
+    "page": 10,
+    "text": "1740 6cc T Daisy Mtn E2 Daisy Mtn FD E2 Fire-Tac"
+  },
+  {
+    "y": 616.0878897216717,
+    "page": 10,
+    "text": "1747 6d3 TE PHXFD A9 A9 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 601.6190045405419,
+    "page": 10,
+    "text": "1750 6d6 TE PHXFD A10 A10 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 586.651192284201,
+    "page": 10,
+    "text": "1751 6d7 TE PHXFD A11 A11 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 572.1823071030713,
+    "page": 10,
+    "text": "1752 6d8 TE PHXFD A12 A12 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 557.2144948467303,
+    "page": 10,
+    "text": "1760 6e0 TE PHXFD A13 A13 VHF Patch Fire-Tac"
+  },
+  {
+    "y": 542.7456096656006,
+    "page": 10,
+    "text": "1805 70d TE Sun Lakes E5 Sun Lakes FD E5 Fire-Tac"
+  },
+  {
+    "y": 527.7777974092596,
+    "page": 10,
+    "text": "1806 70e TE Sun Lakes E4 Sun Lakes FD E4 Fire-Tac"
+  },
+  {
+    "y": 513.3089122281299,
+    "page": 10,
+    "text": "1807 70f T Sun Lakes E3 Sun Lakes FD E3 Fire-Tac"
+  },
+  {
+    "y": 498.34109997178894,
+    "page": 10,
+    "text": "1808 710 T Sun Lakes E2 Sun Lakes FD E2 Fire-Tac"
+  },
+  {
+    "y": 483.8722147906592,
+    "page": 10,
+    "text": "1809 711 TE North County E5 North County FD E5 Fire-Tac"
+  },
+  {
+    "y": 468.90440253431734,
+    "page": 10,
+    "text": "1810 712 TE North County E4 North County FD E4 Fire-Tac"
+  },
+  {
+    "y": 454.4355173531876,
+    "page": 10,
+    "text": "1811 713 T North County E3 North County FD E3 Fire-Tac"
+  },
+  {
+    "y": 439.46770509684666,
+    "page": 10,
+    "text": "1812 714 T North County E2 North County FD E2 Fire-Tac"
+  },
+  {
+    "y": 424.9988199157169,
+    "page": 10,
+    "text": "1813 715 TE Luke AFB E5 Luke AFB FD E5 Fire-Tac"
+  },
+  {
+    "y": 410.031007659376,
+    "page": 10,
+    "text": "1814 716 TE Luke AFB E4 Luke AFB FD E4 Fire-Tac"
+  },
+  {
+    "y": 395.56212247824624,
+    "page": 10,
+    "text": "1815 717 T Luke AFB E3 Luke AFB FD E3 Fire-Tac"
+  },
+  {
+    "y": 380.5943102219053,
+    "page": 10,
+    "text": "1816 718 T Luke AFB E2 Luke AFB FD E2 Fire-Tac"
+  },
+  {
+    "y": 366.12542504077555,
+    "page": 10,
+    "text": "1817 719 TE El Mirage E5 El Mirage FD E5 Fire-Tac"
+  },
+  {
+    "y": 351.6565398596458,
+    "page": 10,
+    "text": "1818 71a TE El Mirage E4 El Mirage FD E4 Fire-Tac"
+  },
+  {
+    "y": 336.68872760330396,
+    "page": 10,
+    "text": "1819 71b T El Mirage E3 El Mirage FD E3 Fire-Tac"
+  },
+  {
+    "y": 322.2198424221742,
+    "page": 10,
+    "text": "1820 71c T El Mirage E2 El Mirage FD E2 Fire-Tac"
+  },
+  {
+    "y": 307.2520301658333,
+    "page": 10,
+    "text": "1821 71d TE Buckeye Vly E5 Buckeye Valley FD E5 Fire-Tac"
+  },
+  {
+    "y": 292.78314498470354,
+    "page": 10,
+    "text": "1822 71e TE Buckeye Vly E4 Buckeye Valley FD E4 Fire-Tac"
+  },
+  {
+    "y": 277.8153327283626,
+    "page": 10,
+    "text": "1823 71f T Buckeye Vly E3 Buckeye Valley FD E3 Fire-Tac"
+  },
+  {
+    "y": 263.34644754723286,
+    "page": 10,
+    "text": "1824 720 T Buckeye Vly E2 Buckeye Valley FD E2 Fire-Tac"
+  },
+  {
+    "y": 237.40223963624157,
+    "page": 10,
+    "text": "Phoenix Police Department"
+  },
+  {
+    "y": 216.44730247736425,
+    "page": 10,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 201.9784172962345,
+    "page": 10,
+    "text": "2812 afc T PPD - A01 A01 100 A Future Use Law Tac"
+  },
+  {
+    "y": 187.01060503989265,
+    "page": 10,
+    "text": "2811 afb T PPD - 200 A A02 200 Black Mt Prec Law Dispatch"
+  },
+  {
+    "y": 172.54171985876292,
+    "page": 10,
+    "text": "2810 afa T PPD - A03 A03 300 A Future Use Law Tac"
+  },
+  {
+    "y": 157.57390760242197,
+    "page": 10,
+    "text": "2996 bb4 T PPD - 400 A A04 400 South Mt Prec Law Dispatch"
+  },
+  {
+    "y": 143.10502242129223,
+    "page": 10,
+    "text": "2995 bb3 T PPD - 500 A A05 500 Central City Prec Law Dispatch"
+  },
+  {
+    "y": 128.13721016495128,
+    "page": 10,
+    "text": "2994 bb2 T PPD - 600 A A06 600 Desert Horizon Prec Law Dispatch"
+  },
+  {
+    "y": 113.66832498382155,
+    "page": 10,
+    "text": "2993 bb1 T PPD - 700 A A07 700 Mt View Prec Law Dispatch"
+  },
+  {
+    "y": 98.7005127274806,
+    "page": 10,
+    "text": "2992 bb0 T PPD - 800 A A08 800 Maryvale Estralla Prec Law Dispatch"
+  },
+  {
+    "y": 84.23162754635086,
+    "page": 10,
+    "text": "2991 baf T PPD - 900 A A09 900 Cactus Park Prec Law Dispatch"
+  },
+  {
+    "y": 69.26381529000992,
+    "page": 10,
+    "text": "2990 bae TE PPD Talk A10 A10 TALK Law Talk"
+  },
+  {
+    "y": 54.79493010888018,
+    "page": 10,
+    "text": "2985 ba9 TE A15 Talk N A15 Talk North Law Talk"
+  },
+  {
+    "y": 39.82711785253832,
+    "page": 10,
+    "text": "2984 ba8 TE PPD Info N A16 Info North Law Tac"
+  },
+  {
+    "y": 25.358232671408587,
+    "page": 10,
+    "text": "2809 af9 TE PPD - B01 B01 100 B Future Use Law Tac"
+  },
+  {
+    "y": 763.2712077570332,
+    "page": 11,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8023225759034,
+    "page": 11,
+    "text": "2808 af8 TE PPD - 200 B B02 200 TAC Black Mt Prec Law Tac"
+  },
+  {
+    "y": 733.8345103195616,
+    "page": 11,
+    "text": "2807 af7 TE PPD - B03 B03 300 B Future Use Law Tac"
+  },
+  {
+    "y": 719.3656251384318,
+    "page": 11,
+    "text": "2980 ba4 TE PPD - 400 B B04 400 TAC S Mt Prec Law Tac"
+  },
+  {
+    "y": 704.3978128820909,
+    "page": 11,
+    "text": "2979 ba3 TE PPD - 500 B B05 500 TAC Central City Prec Law Tac"
+  },
+  {
+    "y": 689.9289277009611,
+    "page": 11,
+    "text": "2978 ba2 TE PPD - 600 B B06 600 TAC Desert Horizon Prec Law Tac"
+  },
+  {
+    "y": 674.9611154446202,
+    "page": 11,
+    "text": "2977 ba1 TE PPD - 700 B B07 700 TAC Mt View Prec Law Tac"
+  },
+  {
+    "y": 660.4922302634905,
+    "page": 11,
+    "text": "2976 ba0 TE PPD - 800 B B08 800 TAC Maryvale Estralla Prec Law Tac"
+  },
+  {
+    "y": 645.5244180071495,
+    "page": 11,
+    "text": "2975 b9f TE PPD - 900 B B09 900 TAC Cactus Park Prec Law Tac"
+  },
+  {
+    "y": 631.0555328260198,
+    "page": 11,
+    "text": "2882 b42 TE PPD - C01 C01 TAC 1 Future Use Law Tac"
+  },
+  {
+    "y": 616.0877205696779,
+    "page": 11,
+    "text": "2966 b96 TE PPD-200 C C02 200 Hot Law Tac"
+  },
+  {
+    "y": 601.6188353885482,
+    "page": 11,
+    "text": "2965 b95 TE PPD - C03 C03 TAC 3 Future Use Law Tac"
+  },
+  {
+    "y": 586.6510231322072,
+    "page": 11,
+    "text": "2964 b94 TE PPD-400 C C04 400 Hot Law Tac"
+  },
+  {
+    "y": 572.1821379510775,
+    "page": 11,
+    "text": "2963 b93 TE PPD-500 C C05 500 Hot Law Tac"
+  },
+  {
+    "y": 557.2143256947365,
+    "page": 11,
+    "text": "2962 b92 TE PPD-600 C C06 600 Hot Law Tac"
+  },
+  {
+    "y": 542.7454405136068,
+    "page": 11,
+    "text": "2961 b91 TE PPD-700 C C07 700 Hot Law Tac"
+  },
+  {
+    "y": 527.7776282572659,
+    "page": 11,
+    "text": "2960 b90 TE PPD-800 C C08 800 Hot Law Tac"
+  },
+  {
+    "y": 513.3087430761361,
+    "page": 11,
+    "text": "2959 b8f TE PPD-900 C C09 900 Hot Law Tac"
+  },
+  {
+    "y": 498.3409308197952,
+    "page": 11,
+    "text": "2958 b8e TE C10 TAC 10 C10 TAC 10 Law Tac"
+  },
+  {
+    "y": 483.87204563866544,
+    "page": 11,
+    "text": "2957 b8d TE C11 TAC 11 C11 TAC 11 Law Tac"
+  },
+  {
+    "y": 468.9042333823236,
+    "page": 11,
+    "text": "2956 b8c TE C12 TAC 12 C12 TAC 12 Law Tac"
+  },
+  {
+    "y": 454.43534820119385,
+    "page": 11,
+    "text": "2955 b8b TE C13 TAC 13 C13 TAC 13 Law Tac"
+  },
+  {
+    "y": 439.4675359448529,
+    "page": 11,
+    "text": "2954 b8a TE C14 HOT Mon C14 HOT Monitor Law Tac"
+  },
+  {
+    "y": 424.99865076372316,
+    "page": 11,
+    "text": "2953 b89 TE C15 Talk S C15 Talk South Law Talk"
+  },
+  {
+    "y": 410.0308385073822,
+    "page": 11,
+    "text": "2952 b88 TE PPD Info S C16 Info South Law Tac"
+  },
+  {
+    "y": 395.5619533262525,
+    "page": 11,
+    "text": "2948 b84 TE PPD - 400 D D04 400 South Mt Prec Law Tac"
+  },
+  {
+    "y": 380.59414106991153,
+    "page": 11,
+    "text": "2945 b81 TE PPD - 700 D D07 700 Mt View Prec Law Tac"
+  },
+  {
+    "y": 366.1252558887818,
+    "page": 11,
+    "text": "2944 b80 TE PPD - 800 D D08 800 Maryvale Estralla Prec Law Tac"
+  },
+  {
+    "y": 351.65637070765206,
+    "page": 11,
+    "text": "2943 b7f TE PPD - 900 D D09 900 Cactus Park Prec Law Tac"
+  },
+  {
+    "y": 325.7121627966608,
+    "page": 11,
+    "text": "Phoenix Public Works and City Services"
+  },
+  {
+    "y": 304.75722563778254,
+    "page": 11,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 289.7894133814416,
+    "page": 11,
+    "text": "2391 957 T OPERATR City Operators Public Works"
+  },
+  {
+    "y": 275.32052820031186,
+    "page": 11,
+    "text": "1501 5dd T SWNORTH Group 1 Ch. 1 Solid Waste North Region Public Works"
+  },
+  {
+    "y": 260.3527159439709,
+    "page": 11,
+    "text": "1503 5df T PWPROJ1 Group 1 Ch. 10 Public Works Public Works"
+  },
+  {
+    "y": 245.88383076284117,
+    "page": 11,
+    "text": "1506 5e2 T PWPROJ2 Group 1 Ch. 11 Public Works Public Works"
+  },
+  {
+    "y": 231.41494558171144,
+    "page": 11,
+    "text": "1578 62a T PUBWRKS Group 1 Ch. 16 Public Works Public Works"
+  },
+  {
+    "y": 216.4471333253705,
+    "page": 11,
+    "text": "1512 5e8 T SWEAST Group 1 Ch. 2 Solid Waste East Region Public Works"
+  },
+  {
+    "y": 201.97824814424075,
+    "page": 11,
+    "text": "1513 5e9 T SWWEST Group 1 Ch. 3 Solid Waste West Region Public Works"
+  },
+  {
+    "y": 187.0104358878989,
+    "page": 11,
+    "text": "1515 5eb T SWSOUTH Group 1 Ch. 4 Solid Waste South Region Public Works"
+  },
+  {
+    "y": 172.54155070676916,
+    "page": 11,
+    "text": "1505 5e1 T SWDSKCR Group 1 Ch. 5 Solid Waste Skunk Creek LandLll Public Works"
+  },
+  {
+    "y": 157.5737384504282,
+    "page": 11,
+    "text": "1508 5e4 T SWD27AV Group 1 Ch. 6 Solid Waste 27th Avenue Transfer Station Public Works"
+  },
+  {
+    "y": 143.10485326929847,
+    "page": 11,
+    "text": "1517 5ed T SWDSR85 Group 1 Ch. 7 Solid Waste SR 85 LandLll Public Works"
+  },
+  {
+    "y": 128.13704101295752,
+    "page": 11,
+    "text": "1507 5e3 T EMD Group 1 Ch. 8 Equipment Maintenance Department Public Works"
+  },
+  {
+    "y": 113.66815583182688,
+    "page": 11,
+    "text": "1587 633 T FACMNT Group 1 Ch. 9 Facility Management Public Works"
+  },
+  {
+    "y": 98.70034357548684,
+    "page": 11,
+    "text": "2394 95a T HUMNSVC Human Services Public Works"
+  },
+  {
+    "y": 84.2314583943571,
+    "page": 11,
+    "text": "1582 62e T INFOTEC Information Technology Public Works"
+  },
+  {
+    "y": 69.26364613801525,
+    "page": 11,
+    "text": "2396 95c TE K09 Park Rangers K09 Park Rangers Law Dispatch"
+  },
+  {
+    "y": 54.79476095688551,
+    "page": 11,
+    "text": "2389 955 TE K10 Transit Sec K10 Transit Security Security"
+  },
+  {
+    "y": 39.82694870054547,
+    "page": 11,
+    "text": "2399 95f T COURT Municipal Court Public Works"
+  },
+  {
+    "y": 25.358063519415737,
+    "page": 11,
+    "text": "2390 956 T SECURTY Municipal Security Security"
+  },
+  {
+    "y": 763.2715186050209,
+    "page": 12,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8026334238912,
+    "page": 12,
+    "text": "1570 622 T S Mountain Park Park Ops at South Mountain City Park Public Works"
+  },
+  {
+    "y": 733.8348211675511,
+    "page": 12,
+    "text": "1576 628 T PHX Parks Parks Public Works"
+  },
+  {
+    "y": 719.3659359864214,
+    "page": 12,
+    "text": "1571 623 T Parks Maint Parks Maintenance Public Works"
+  },
+  {
+    "y": 704.3981237300795,
+    "page": 12,
+    "text": "1574 626 T PHX Pks Mnt Parks Maintenance Public Works"
+  },
+  {
+    "y": 689.9292385489498,
+    "page": 12,
+    "text": "1598 63e T Parks Maint 1598 Parks Maintenance Public Works"
+  },
+  {
+    "y": 674.9614262926079,
+    "page": 12,
+    "text": "2908 b5c T PD Tech PD Technician Public Works"
+  },
+  {
+    "y": 660.4925411114782,
+    "page": 12,
+    "text": "1597 63d T PHX Conv Ctr Phoenix Convention Center Public Works"
+  },
+  {
+    "y": 645.5247288551382,
+    "page": 12,
+    "text": "2381 94d T Library Security Phoenix Public Library Security Security"
+  },
+  {
+    "y": 631.0558436740084,
+    "page": 12,
+    "text": "2388 954 T Library Security Phoenix Public Library Security (Burton Barr Central Library) Security"
+  },
+  {
+    "y": 616.0880314176666,
+    "page": 12,
+    "text": "2380 94c T Library Sec Disp Phoenix Public Library Security Dispatch Security"
+  },
+  {
+    "y": 601.6191462365368,
+    "page": 12,
+    "text": "2379 94b T Library Sec Tac Phoenix Public Library Security TAC Security"
+  },
+  {
+    "y": 586.6513339801968,
+    "page": 12,
+    "text": "2393 959 T ROADSVC Road Service Public Works"
+  },
+  {
+    "y": 572.1824487990671,
+    "page": 12,
+    "text": "2362 93a T PhxDPW-Sign Sign Shop Public Works"
+  },
+  {
+    "y": 557.2146365427252,
+    "page": 12,
+    "text": "2369 941 T PHX Street Maint Streets Maintenance Sweepers Public Works"
+  },
+  {
+    "y": 542.7457513615955,
+    "page": 12,
+    "text": "2397 95d T STREETS Streets Transportion Public Works"
+  },
+  {
+    "y": 527.7779391052536,
+    "page": 12,
+    "text": "2365 93d T PhxDPW Trfc2 TraNc Public Works"
+  },
+  {
+    "y": 513.3090539241239,
+    "page": 12,
+    "text": "2363 93b T PhxDPW-Trfc TraNc Signal Construction and Maintenance Public Works"
+  },
+  {
+    "y": 498.34124166778383,
+    "page": 12,
+    "text": "2364 93c T PhxDPW Trfc3 TraNc Signals Public Works"
+  },
+  {
+    "y": 483.8723564866541,
+    "page": 12,
+    "text": "2366 93e T PhxDPW TrfSi TraNc Signals Public Works"
+  },
+  {
+    "y": 468.90454423031224,
+    "page": 12,
+    "text": "1568 620 T Unk Golf Crs Unknown Golf Course Public Works"
+  },
+  {
+    "y": 454.4356590491825,
+    "page": 12,
+    "text": "1539 603 T PhxWasteWtr Waste Water Collection Public Works"
+  },
+  {
+    "y": 439.46784679284247,
+    "page": 12,
+    "text": "1599 63f T WATER Water Department Public Works"
+  },
+  {
+    "y": 424.99896161171273,
+    "page": 12,
+    "text": "1536 600 T PhxWaterMnt Water Maintenance Public Works"
+  },
+  {
+    "y": 410.03114935537087,
+    "page": 12,
+    "text": "1541 605 T PHXWtrMntB Water Maintenance Public Works"
+  },
+  {
+    "y": 395.56226417424114,
+    "page": 12,
+    "text": "1555 613 T PhxWtrMtr Water Meter Reading Public Works"
+  },
+  {
+    "y": 380.5944519178993,
+    "page": 12,
+    "text": "1543 607 T PHX WTP Water Treatment Plant Public Works"
+  },
+  {
+    "y": 366.12556673676954,
+    "page": 12,
+    "text": "1544 608 T PHX WTP B Water Treatment Plant Public Works"
+  },
+  {
+    "y": 351.6566815556398,
+    "page": 12,
+    "text": "1542 606 T PHX WTP Mnt Water Treatment Plant Maintenance Public Works"
+  },
+  {
+    "y": 325.71247364464944,
+    "page": 12,
+    "text": "Phoenix Deer Valley Airport (DVT)"
+  },
+  {
+    "y": 304.7575364857712,
+    "page": 12,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 289.78972422943116,
+    "page": 12,
+    "text": "1158 486 DE DeerVal Airport Operations Public Works"
+  },
+  {
+    "y": 264.3444433936511,
+    "page": 12,
+    "text": "Phoenix Goodyear Airport (GYR)"
+  },
+  {
+    "y": 243.38950623477285,
+    "page": 12,
+    "text": "DECÑ HEXÑ ModeÑ Alpha TagDescription Tag"
+  },
+  {
+    "y": 228.421693978431,
+    "page": 12,
+    "text": "1161 489 DE GYAprtOps Operations Business"
+  },
+  {
+    "y": 202.97641314265093,
+    "page": 12,
+    "text": "Phoenix Sky Harbor International Airport (PHX)"
+  },
+  {
+    "y": 182.0214759837745,
+    "page": 12,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 167.05366372743265,
+    "page": 12,
+    "text": "1145 479 TE SKY PARKING Parking Public Works"
+  },
+  {
+    "y": 152.5847785463029,
+    "page": 12,
+    "text": "1154 482 TE SKY PARKING2 Parking 2 Public Works"
+  },
+  {
+    "y": 137.61696628996287,
+    "page": 12,
+    "text": "1157 485 TE SkyTrain-A Sky Train Operations - A Transportation"
+  },
+  {
+    "y": 123.14808110883314,
+    "page": 12,
+    "text": "1159 487 TE SkyTrain-B Sky Train Operations - B Transportation"
+  },
+  {
+    "y": 108.18026885249128,
+    "page": 12,
+    "text": "1168 490 TE SKY TRANSPT Transportation Public Works"
+  },
+  {
+    "y": 93.71138367136155,
+    "page": 12,
+    "text": "1179 49b TE SKY FACLTY 2 Facilities 2 - Terminal Services Public Works"
+  },
+  {
+    "y": 78.74357141501969,
+    "page": 12,
+    "text": "1180 49c TE SKY FACLTY 1 Facilities 1 - Dispatch Public Works"
+  },
+  {
+    "y": 64.27468623388995,
+    "page": 12,
+    "text": "1181 49d TE SKY EngyMgmt Energy Management Public Works"
+  },
+  {
+    "y": 49.30687397754991,
+    "page": 12,
+    "text": "1182 49e TE SKY AirCoord Air Field Coordination Public Works"
+  },
+  {
+    "y": 34.83798879642018,
+    "page": 12,
+    "text": "1183 49f TE SKY Electric Electrical Public Works"
+  },
+  {
+    "y": 763.2711094530368,
+    "page": 13,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8022242719071,
+    "page": 13,
+    "text": "1184 4a0 TE SKY TermOps Terminal Operations Public Works"
+  },
+  {
+    "y": 733.8344120155671,
+    "page": 13,
+    "text": "1188 4a4 TE SKY AIR OPS Air Operations Talk Public Works"
+  },
+  {
+    "y": 719.3655268344373,
+    "page": 13,
+    "text": "1190 4a6 TE SKY IMS 1 Incident Management IMS 1 Fire-Tac"
+  },
+  {
+    "y": 704.3977145780955,
+    "page": 13,
+    "text": "1191 4a7 TE SKY IMS 2 Incident Management IMS 2 Fire-Tac"
+  },
+  {
+    "y": 689.9288293969657,
+    "page": 13,
+    "text": "1192 4a8 TE SKY IMS 3 Incident Management IMS 3 Fire-Tac"
+  },
+  {
+    "y": 674.9610171406239,
+    "page": 13,
+    "text": "1198 4ae TE SKY Emergncy Emergency Dispatch Fire Dispatch"
+  },
+  {
+    "y": 660.4921319594941,
+    "page": 13,
+    "text": "1199 4af T SKY MainDisp Main Dispatch Multi-Dispatch"
+  },
+  {
+    "y": 645.5243197031541,
+    "page": 13,
+    "text": "2987 bab TE Sky Harb PD Sky Harbor PD Law Dispatch"
+  },
+  {
+    "y": 620.079038867374,
+    "page": 13,
+    "text": "Radio Service Technicians"
+  },
+  {
+    "y": 599.1241017084958,
+    "page": 13,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 584.1562894521558,
+    "page": 13,
+    "text": "131 083 T Radio Shop 131 Radio Shop Test 131 Public Works"
+  },
+  {
+    "y": 569.687404271026,
+    "page": 13,
+    "text": "201 0c9 T Sim A Test Simulcast A Test Public Works"
+  },
+  {
+    "y": 554.7195920146842,
+    "page": 13,
+    "text": "202 0ca T Sim B Test Simulcast B Test Public Works"
+  },
+  {
+    "y": 540.2507068335544,
+    "page": 13,
+    "text": "203 0cb T Sim C Test Simulcast C Test Public Works"
+  },
+  {
+    "y": 525.2828945772126,
+    "page": 13,
+    "text": "211 0d3 T Sim F Test Simulcast F Test Public Works"
+  },
+  {
+    "y": 510.81400939608284,
+    "page": 13,
+    "text": "1589 635 T RM/RWC Ops Radio Maintenance RWC Operations Public Works"
+  },
+  {
+    "y": 495.8461971397428,
+    "page": 13,
+    "text": "1590 636 T Test 1590 Radio Maintenance Testing Public Works"
+  },
+  {
+    "y": 481.37731195861306,
+    "page": 13,
+    "text": "1594 63a T WirelessRadT Wireless Radio Technicians Public Works"
+  },
+  {
+    "y": 466.4094997022712,
+    "page": 13,
+    "text": "1804 70c T Test 1804 Radio Techs Public Works"
+  },
+  {
+    "y": 440.96421886649114,
+    "page": 13,
+    "text": "Scottsdale Police"
+  },
+  {
+    "y": 420.0092817076147,
+    "page": 13,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 405.04146945127286,
+    "page": 13,
+    "text": "3401 d49 TE SPD PD1 South A01 District 1 McKellips \u0026 Downtown Section Law Dispatch"
+  },
+  {
+    "y": 390.5725842701431,
+    "page": 13,
+    "text": "3402 d4a TE SPD PD2 North A02 District 3 Via Linda \u0026 District 4 Foothills Law Dispatch"
+  },
+  {
+    "y": 375.60477201380127,
+    "page": 13,
+    "text": "3403 d4b T SPD PD3 A03 Future Use Law Tac"
+  },
+  {
+    "y": 361.13588683267153,
+    "page": 13,
+    "text": "3417 d59 T SPD PD4 A04 Future Use Law Tac"
+  },
+  {
+    "y": 346.1680745763315,
+    "page": 13,
+    "text": "3404 d4c T SPD Event 1 A05 Event 1 Law Talk"
+  },
+  {
+    "y": 331.69918939520176,
+    "page": 13,
+    "text": "3405 d4d T SPD Event 3 A06 Event 3 Law Talk"
+  },
+  {
+    "y": 316.7313771388599,
+    "page": 13,
+    "text": "3406 d4e T SPD TraNc 1 A07 TraNc 1 Law Tac"
+  },
+  {
+    "y": 302.26249195773016,
+    "page": 13,
+    "text": "3407 d4f TE SPD Propery A08 Property Law Tac"
+  },
+  {
+    "y": 287.2946797013901,
+    "page": 13,
+    "text": "3408 d50 TE SPD ROP A09 ROP Law Tac"
+  },
+  {
+    "y": 272.8257945202604,
+    "page": 13,
+    "text": "3409 d51 TE SPD HEAT A10 HEAT Law Tac"
+  },
+  {
+    "y": 257.85798226391853,
+    "page": 13,
+    "text": "3410 d52 TE SPD GANG A11 Gang Law Tac"
+  },
+  {
+    "y": 243.3890970827888,
+    "page": 13,
+    "text": "3412 d54 TE SPD Wide A12 Wide Area Law Tac"
+  },
+  {
+    "y": 228.42128482644694,
+    "page": 13,
+    "text": "3413 d55 TE SPD Supervisor A13 Supervisor Law Talk"
+  },
+  {
+    "y": 213.9523996453172,
+    "page": 13,
+    "text": "3425 d61 T SPD RMU A14 RMU (Resource Mgt Unit) Law Tac"
+  },
+  {
+    "y": 198.98458738897716,
+    "page": 13,
+    "text": "3415 d57 TE SPD Emergency 2 A15 Emergency 2 Law Tac"
+  },
+  {
+    "y": 184.51570220784743,
+    "page": 13,
+    "text": "3416 d58 TE SPD Emergency 1 A16 Emergency 1 Law Tac"
+  },
+  {
+    "y": 169.54788995150557,
+    "page": 13,
+    "text": "3421 d5d TE SPD Info A B03 Info A Law Tac"
+  },
+  {
+    "y": 155.07900477037583,
+    "page": 13,
+    "text": "3422 d5e TE SPD Info B B05 Info B Law Tac"
+  },
+  {
+    "y": 140.1111925140358,
+    "page": 13,
+    "text": "3424 d60 TE SPD TRNS B12 TRNS Law Tac"
+  },
+  {
+    "y": 125.64230733290606,
+    "page": 13,
+    "text": "3459 d83 TE SPD Admin B14 Admin Public Works"
+  },
+  {
+    "y": 110.6744950765642,
+    "page": 13,
+    "text": "3431 d67 TE SPD Talk 1 C01 Talk 1 Law Talk"
+  },
+  {
+    "y": 96.20560989543446,
+    "page": 13,
+    "text": "3432 d68 TE SPD Talk 2 C02 Talk 2 Law Tac"
+  },
+  {
+    "y": 81.73672471430473,
+    "page": 13,
+    "text": "3433 d69 TE SPD Talk 3 C03 Talk 3 Law Talk"
+  },
+  {
+    "y": 66.76891245796287,
+    "page": 13,
+    "text": "3440 d70 TE SPD Talk 4 C04 Talk 4 Law Talk"
+  },
+  {
+    "y": 52.300027276833134,
+    "page": 13,
+    "text": "3443 d73 T SPD Event 2 C05 Event 2 Law Talk"
+  },
+  {
+    "y": 37.332215020493095,
+    "page": 13,
+    "text": "3434 d6a T SPD Event 4 C06 Event 4 Law Talk"
+  },
+  {
+    "y": 763.2714203010237,
+    "page": 14,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.802535119894,
+    "page": 14,
+    "text": "3435 d6b T SPD TraNc 2 C07 TraNc 2 Law Tac"
+  },
+  {
+    "y": 733.8347228635539,
+    "page": 14,
+    "text": "3436 d6c TE SPD Intel C08 Intel Law Tac"
+  },
+  {
+    "y": 719.3658376824242,
+    "page": 14,
+    "text": "3437 d6d TE SPD SAU C09 SAU Law Tac"
+  },
+  {
+    "y": 704.3980254260823,
+    "page": 14,
+    "text": "3438 d6e TE SPD NARC 1 C10 NARC 1 Law Tac"
+  },
+  {
+    "y": 689.9291402449526,
+    "page": 14,
+    "text": "3439 d6f TE SPD NARC 2 C11 NARC 2 Law Tac"
+  },
+  {
+    "y": 674.9613279886107,
+    "page": 14,
+    "text": "3441 d71 TE SPD Prison Trans C12 Prisoner Transport Law Tac"
+  },
+  {
+    "y": 660.492442807481,
+    "page": 14,
+    "text": "3414 d56 T SPD PD to Muni C14 PD to Municipal Services Law Talk"
+  },
+  {
+    "y": 645.524630551141,
+    "page": 14,
+    "text": "3451 d7b TE SPD Training 1 D04 Training 1 Law Tac"
+  },
+  {
+    "y": 631.0557453700112,
+    "page": 14,
+    "text": "3452 d7c TE SPD Training 2 D05 Training 2 Law Tac"
+  },
+  {
+    "y": 616.0879331136694,
+    "page": 14,
+    "text": "3458 d82 TE SPD Training 3 D06 Training 3 Law Tac"
+  },
+  {
+    "y": 590.6426522778893,
+    "page": 14,
+    "text": "Scottsdale Public Works"
+  },
+  {
+    "y": 569.6877151190129,
+    "page": 14,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 554.719902862671,
+    "page": 14,
+    "text": "3455 d7f T Sct Apt Ops Airport Operations Public Works"
+  },
+  {
+    "y": 540.2510176815413,
+    "page": 14,
+    "text": "3567 def T Sct Muni Sec Municipal Security Security"
+  },
+  {
+    "y": 525.2832054251994,
+    "page": 14,
+    "text": "3570 df2 T Sct Fleet Ops P03 Fleet Operations Public Works"
+  },
+  {
+    "y": 510.8143202440697,
+    "page": 14,
+    "text": "3572 df4 T Sct Wat Ops P05 Water Ops Public Works"
+  },
+  {
+    "y": 495.84650798772964,
+    "page": 14,
+    "text": "3573 df5 T Sct Wat Prod P06 Water Production Public Works"
+  },
+  {
+    "y": 481.3776228065999,
+    "page": 14,
+    "text": "3574 df6 T Sct Water Dist P07 Water Distribution Public Works"
+  },
+  {
+    "y": 466.40981055025804,
+    "page": 14,
+    "text": "3575 df7 T Sct Water N P08 Water North Public Works"
+  },
+  {
+    "y": 451.9409253691283,
+    "page": 14,
+    "text": "3578 dfa T Sct Wat Elct P11 Water Electric Public Works"
+  },
+  {
+    "y": 436.97311311278827,
+    "page": 14,
+    "text": "3579 dfb T Sct Fld Svcs P12 Field Service Public Works"
+  },
+  {
+    "y": 422.50422793165853,
+    "page": 14,
+    "text": "3580 dfc T Sct Asphalt P13 Asphalt Public Works"
+  },
+  {
+    "y": 407.5364156753167,
+    "page": 14,
+    "text": "3581 dfd T Sct Sweeper P14 Sweeper Public Works"
+  },
+  {
+    "y": 393.06753049418694,
+    "page": 14,
+    "text": "3582 dfe T Sct Hvy Eqip P15 Heavy Equipment Public Works"
+  },
+  {
+    "y": 378.0997182378451,
+    "page": 14,
+    "text": "3583 dff T Sct Signs P16 Signs Public Works"
+  },
+  {
+    "y": 363.63083305671535,
+    "page": 14,
+    "text": "3586 e02 T Sct Sld Wste Q06 Solid Waste Public Works"
+  },
+  {
+    "y": 348.6630208003753,
+    "page": 14,
+    "text": "3587 e03 T Sct Rsd Wste Q07 Residential Waste Public Works"
+  },
+  {
+    "y": 334.19413561924557,
+    "page": 14,
+    "text": "3588 e04 T Sct Cml Wste Q08 Commercial Waste Public Works"
+  },
+  {
+    "y": 319.2263233629037,
+    "page": 14,
+    "text": "3589 e05 T Sct Strts Bh Q09 Streets Brush Public Works"
+  },
+  {
+    "y": 304.757438181774,
+    "page": 14,
+    "text": "3591 e07 T Sct Transp Q11 Transportation Public Works"
+  },
+  {
+    "y": 289.78962592543394,
+    "page": 14,
+    "text": "3592 e08 T Sct Tnsp Sig Q12 Transportation Signals Public Works"
+  },
+  {
+    "y": 275.3207407443042,
+    "page": 14,
+    "text": "3594 e0a T Sct Parks South Parks South Public Works"
+  },
+  {
+    "y": 249.376532833312,
+    "page": 14,
+    "text": "Surprise Police"
+  },
+  {
+    "y": 228.42159567443377,
+    "page": 14,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 213.95271049330404,
+    "page": 14,
+    "text": "4301 10cd T SurpPD Disp Dispatch Law Dispatch"
+  },
+  {
+    "y": 198.984898236964,
+    "page": 14,
+    "text": "4302 10ce TE SurpPD Info Info Law Tac"
+  },
+  {
+    "y": 184.51601305583426,
+    "page": 14,
+    "text": "4303 10cf TE SurpPD Super Supervisor Law Tac"
+  },
+  {
+    "y": 169.5482007994924,
+    "page": 14,
+    "text": "4304 10d0 TE SurpPD Talk Talk Law Talk"
+  },
+  {
+    "y": 155.07931561836267,
+    "page": 14,
+    "text": "4305 10d1 TE SurpPD Event Event Law Tac"
+  },
+  {
+    "y": 140.11150336202263,
+    "page": 14,
+    "text": "4306 10d2 T Surp Citywid Citywide Multi-Tac"
+  },
+  {
+    "y": 125.6426181808929,
+    "page": 14,
+    "text": "4307 10d3 TE SurpPD Ops1 Ops 1 Law Tac"
+  },
+  {
+    "y": 99.6984102699007,
+    "page": 14,
+    "text": "Surprise Public Works"
+  },
+  {
+    "y": 78.74347311102247,
+    "page": 14,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 64.27458792989273,
+    "page": 14,
+    "text": "4320 10e0 T Surprise Refuse Surprise PW Refuse trucks Public Works"
+  },
+  {
+    "y": 38.33038001890236,
+    "page": 14,
+    "text": "Tempe Police"
+  },
+  {
+    "y": 759.7782816225717,
+    "page": 15,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 745.309396441442,
+    "page": 15,
+    "text": "2607 a2f TE TPD A01 A01 Hot 1 Law Tac"
+  },
+  {
+    "y": 730.341584185102,
+    "page": 15,
+    "text": "2601 a29 T TPD A02 A02 North Law Dispatch"
+  },
+  {
+    "y": 715.8726990039722,
+    "page": 15,
+    "text": "2602 a2a T TPD A03 A03 TAC Law Tac"
+  },
+  {
+    "y": 700.9048867476304,
+    "page": 15,
+    "text": "2603 a2b T TPD A04 A04 South Law Dispatch"
+  },
+  {
+    "y": 686.4360015665006,
+    "page": 15,
+    "text": "2637 a4d T TPD A05 A05 Mill Ave Law Tac"
+  },
+  {
+    "y": 671.4681893101588,
+    "page": 15,
+    "text": "2624 a40 T TPD A06 A06 Security Law Tac"
+  },
+  {
+    "y": 656.999304129029,
+    "page": 15,
+    "text": "2635 a4b TE TPD A07 A07 Action Team Law Tac"
+  },
+  {
+    "y": 642.031491872689,
+    "page": 15,
+    "text": "2613 a35 TE TPD A08 A08 TraNc Law Tac"
+  },
+  {
+    "y": 627.5626066915593,
+    "page": 15,
+    "text": "2621 a3d T TPD A09 A09 Event 2 Law Tac"
+  },
+  {
+    "y": 612.5947944352174,
+    "page": 15,
+    "text": "2618 a3a TE TPD A10 A10 Event 5 Law Tac"
+  },
+  {
+    "y": 598.1259092540877,
+    "page": 15,
+    "text": "2633 a49 TE TPD A11 A11 SEU Law Tac"
+  },
+  {
+    "y": 583.1580969977476,
+    "page": 15,
+    "text": "2631 a47 TE TPD A12 A12 Narc Law Tac"
+  },
+  {
+    "y": 568.6892118166161,
+    "page": 15,
+    "text": "2632 a48 TE TPD A13 A13 Gangs Law Tac"
+  },
+  {
+    "y": 553.721399560276,
+    "page": 15,
+    "text": "2628 a44 TE TPD A14 A14 SIB Law Tac"
+  },
+  {
+    "y": 539.2525143791463,
+    "page": 15,
+    "text": "2615 a37 TE TPD A15 A15 Transport Law Tac"
+  },
+  {
+    "y": 524.2847021228044,
+    "page": 15,
+    "text": "2616 a38 TE TPD A16 A16 Detention Law Tac"
+  },
+  {
+    "y": 509.8158169416747,
+    "page": 15,
+    "text": "2608 a30 TE TPD B01 B01 Hot 2 Law Tac"
+  },
+  {
+    "y": 494.8480046853347,
+    "page": 15,
+    "text": "2604 a2c TE TPD B02/7/11 B02, B07, B11 - Info 1 Law Tac"
+  },
+  {
+    "y": 480.37911950420494,
+    "page": 15,
+    "text": "2606 a2e TE TPD B03 B03 Info 2 Law Tac"
+  },
+  {
+    "y": 465.4113072478631,
+    "page": 15,
+    "text": "2605 a2d TE TPD B4/12/13 B04, B12, B13 - Info 3 Law Tac"
+  },
+  {
+    "y": 450.94242206673334,
+    "page": 15,
+    "text": "2636 a4c TE TPD B05 B05 Info Mill Ave Law Tac"
+  },
+  {
+    "y": 435.9746098103915,
+    "page": 15,
+    "text": "2629 a45 TE TPD B06 B06 EOD Law Tac"
+  },
+  {
+    "y": 421.50572462926175,
+    "page": 15,
+    "text": "2614 a36 TE TPD B08 B08 CIB Law Tac"
+  },
+  {
+    "y": 406.5379123729217,
+    "page": 15,
+    "text": "2620 a3c T TPD B09 B09 Event 3 Law Tac"
+  },
+  {
+    "y": 392.069027191792,
+    "page": 15,
+    "text": "2617 a39 TE TPD B10 B10 Event 6 Law Tac"
+  },
+  {
+    "y": 377.1012149354501,
+    "page": 15,
+    "text": "2627 a43 TE TPD B14 B14 SIB 2 Law Tac"
+  },
+  {
+    "y": 362.6323297543204,
+    "page": 15,
+    "text": "2634 a4a TE TPD B16 B16 Tech Center Law Tac"
+  },
+  {
+    "y": 348.16344457319065,
+    "page": 15,
+    "text": "2609 a31 TE TPD C01 C01 Hot 3 Law Tac"
+  },
+  {
+    "y": 333.1956323168506,
+    "page": 15,
+    "text": "2610 a32 TE TPD C02 C02 Talk 1 Law Talk"
+  },
+  {
+    "y": 318.72674713572087,
+    "page": 15,
+    "text": "2611 a33 TE TPD C03 C03 Talk 2 Law Talk"
+  },
+  {
+    "y": 303.758934879379,
+    "page": 15,
+    "text": "2612 a34 TE TPD C04 C04 Talk 3 Law Talk"
+  },
+  {
+    "y": 289.2900496982493,
+    "page": 15,
+    "text": "2080 820 T TPD C07 C07 PW to PD Link Interop"
+  },
+  {
+    "y": 274.3222374419074,
+    "page": 15,
+    "text": "2619 a3b T TPD C09 C09 Event 4 Law Tac"
+  },
+  {
+    "y": 259.8533522607777,
+    "page": 15,
+    "text": "2622 a3e T TPD C11 C11 Event 1 Law Tac"
+  },
+  {
+    "y": 244.88554000443764,
+    "page": 15,
+    "text": "2630 a46 TE TPD C12 C12 SWAT Law Tac"
+  },
+  {
+    "y": 230.4166548233079,
+    "page": 15,
+    "text": "2626 a42 TE TPD C15 C15 Training Law Tac"
+  },
+  {
+    "y": 204.47244691231572,
+    "page": 15,
+    "text": "Tempe Public Works and City Services"
+  },
+  {
+    "y": 183.5175097534393,
+    "page": 15,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 169.04862457230956,
+    "page": 15,
+    "text": "2079 81f T Tempe Water 1 A1 Water 1 Public Works"
+  },
+  {
+    "y": 154.0808123159677,
+    "page": 15,
+    "text": "2078 81e T Tempe Water 2 A2 Water 2 Public Works"
+  },
+  {
+    "y": 139.61192713483797,
+    "page": 15,
+    "text": "2077 81d T Tempe Water 3 A3 Water 3 Public Works"
+  },
+  {
+    "y": 124.64411487849611,
+    "page": 15,
+    "text": "2076 81c T Tempe PW 1 A4 Public Works 1 Public Works"
+  },
+  {
+    "y": 110.17522969736638,
+    "page": 15,
+    "text": "2075 81b T Tempe PW 2 A5 Public Works 2 Public Works"
+  },
+  {
+    "y": 95.20741744102634,
+    "page": 15,
+    "text": "2074 81a T Tempe PW 3 A6 Public Works 3 Public Works"
+  },
+  {
+    "y": 80.7385322598966,
+    "page": 15,
+    "text": "2073 819 T Tempe PW 4 A7 Public Works 4 Public Works"
+  },
+  {
+    "y": 65.77072000355474,
+    "page": 15,
+    "text": "2072 818 T Tempe PW 5 A8 Public Works 5 Public Works"
+  },
+  {
+    "y": 51.30183482242501,
+    "page": 15,
+    "text": "2071 817 T Tempe TraNc 1 A9 TraNc 1 Public Works"
+  },
+  {
+    "y": 36.33402256608497,
+    "page": 15,
+    "text": "2070 816 T Tempe TraNc 2 A10 TraNc 2 Public Works"
+  },
+  {
+    "y": 763.271081997038,
+    "page": 16,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 748.8021968159082,
+    "page": 16,
+    "text": "2069 815 T Tempe Transit A11 Transit Public Works"
+  },
+  {
+    "y": 733.8343845595682,
+    "page": 16,
+    "text": "2068 814 T Tempe Streets 1 A12 Streets 1 Public Works"
+  },
+  {
+    "y": 719.3654993784385,
+    "page": 16,
+    "text": "2067 813 T Tempe Refuse A15 Refuse 1 Public Works"
+  },
+  {
+    "y": 704.3976871220966,
+    "page": 16,
+    "text": "2093 82d T Tempe Diablo 1 Diablo Stadium 1 Public Works"
+  },
+  {
+    "y": 689.9288019409669,
+    "page": 16,
+    "text": "2092 82c T Tempe Diablo 2 Diablo Stadium 2 Public Works"
+  },
+  {
+    "y": 674.960989684625,
+    "page": 16,
+    "text": "2098 832 T Tempe Escalante Escalante Center Public Works"
+  },
+  {
+    "y": 660.4921045034953,
+    "page": 16,
+    "text": "2061 80d T Tempe Maint 1 Maintenance 1 Public Works"
+  },
+  {
+    "y": 645.5242922471552,
+    "page": 16,
+    "text": "2060 80c T Tempe Maint 2 Maintenance 2 Public Works"
+  },
+  {
+    "y": 631.0554070660255,
+    "page": 16,
+    "text": "2064 810 T Tempe Parks 1 Parks 1 Public Works"
+  },
+  {
+    "y": 616.0875948096837,
+    "page": 16,
+    "text": "2063 80f T Tempe Parks 2 Parks 2 Public Works"
+  },
+  {
+    "y": 601.6187096285539,
+    "page": 16,
+    "text": "2062 80e T Tempe Parks 3 Parks 3 Public Works"
+  },
+  {
+    "y": 586.6508973722139,
+    "page": 16,
+    "text": "2066 812 T Tempe Refuse 2 Refuse 2 Public Works"
+  },
+  {
+    "y": 572.1820121910841,
+    "page": 16,
+    "text": "2065 811 T Tempe Refuse 3 Refuse 3 Public Works"
+  },
+  {
+    "y": 546.237804280092,
+    "page": 16,
+    "text": "Tohono O'odham Nation"
+  },
+  {
+    "y": 525.2828671212137,
+    "page": 16,
+    "text": "DECÑ HEXÑ ModeÑ Alpha TagDescription Tag"
+  },
+  {
+    "y": 510.813981940084,
+    "page": 16,
+    "text": "4895 131f D Tohono PDPolice Desert Diamond West Valley Casino and Resort Law Dispatch"
+  },
+  {
+    "y": 484.8697740290936,
+    "page": 16,
+    "text": "Tolleson Police"
+  },
+  {
+    "y": 463.91483687021537,
+    "page": 16,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 449.44595168908563,
+    "page": 16,
+    "text": "4899 1323 DE Tolleson PDDispatch Law Dispatch"
+  },
+  {
+    "y": 423.50174377809526,
+    "page": 16,
+    "text": "Valley Metro Public Transit System"
+  },
+  {
+    "y": 409.0328585969655,
+    "page": 16,
+    "text": "Valley Metro Public Transit System also operates on this system:ÑValley Metro Transit System DT3 Trunking System, Phoenix, Arizona"
+  },
+  {
+    "y": 384.08650483639576,
+    "page": 16,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 369.617619655266,
+    "page": 16,
+    "text": "1401 579 D VM Rail Ops 1 Light Rail Operations 1 Railroad"
+  },
+  {
+    "y": 354.649807398926,
+    "page": 16,
+    "text": "1402 57a D VM Rail Mnt 1 Light Rail Maintenance 1 Railroad"
+  },
+  {
+    "y": 340.18092221779625,
+    "page": 16,
+    "text": "1403 57b D VM Rail EMG Light Rail Emergency Railroad"
+  },
+  {
+    "y": 325.2131099614544,
+    "page": 16,
+    "text": "1404 57c D VM Rail Ops 2 Light Rail Operations 2 Railroad"
+  },
+  {
+    "y": 310.74422478032466,
+    "page": 16,
+    "text": "1405 57d D VM Rail Mnt 2 Light Rail Maintenance 2 Railroad"
+  },
+  {
+    "y": 295.7764125239846,
+    "page": 16,
+    "text": "1406 57e D VM Rail SEC Light Rail Security Security"
+  },
+  {
+    "y": 281.3075273428549,
+    "page": 16,
+    "text": "1407 57f D VM Rail Ops 3 Light Rail Operations 3 Railroad"
+  },
+  {
+    "y": 266.339715086513,
+    "page": 16,
+    "text": "1409 581 D VM Rail Ops 5 Light Rail Operations 5 Railroad"
+  },
+  {
+    "y": 240.39550717552083,
+    "page": 16,
+    "text": "Wickenburg"
+  },
+  {
+    "y": 219.93949709185472,
+    "page": 16,
+    "text": "DECÑ HEXÑ ModeÑ Alpha Tag Description Tag"
+  },
+  {
+    "y": 204.97168483551468,
+    "page": 16,
+    "text": "4597 11f5 DE WickenburgPD4597 Wickenburg Police Department 4597 Law Tac"
+  },
+  {
+    "y": 190.50279965438494,
+    "page": 16,
+    "text": "4598 11f6 DE WickenburgPD4598 Wickenburg Police Department 4598 Law Tac"
+  },
+  {
+    "y": 175.53498739804309,
+    "page": 16,
+    "text": "4599 11f7 DE WickenburgPDdisp Wickenburg Police Department Dispatch Law Dispatch"
+  },
+  {
+    "y": 129.1347694033866,
+    "page": 16,
+    "text": "Rev:2.1.8844"
+  }
+]
