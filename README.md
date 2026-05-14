@@ -1977,7 +1977,7 @@ to its own package and lands independently.
 
 ### Download a prebuilt release
 
-The fastest path is the **[Downloads page]({{ site.url | default: "https://gophertrunk.com" }}/downloads.html)**
+The fastest path is the **[Downloads page]({{ site.url | default: "https://gophertrunk.org" }}/downloads.html)**
 on the project site — it has per-platform recipes (Linux / Windows /
 macOS / Docker), checksum-verification commands, and pointers to
 the latest tag. Or jump straight to the **[Releases page][releases]**
