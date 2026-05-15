@@ -79,6 +79,18 @@ func runDaemon(args []string) {
 	logFormat := fs.String("log-format", "", "override log format (text|json)")
 	_ = fs.Parse(args)
 
+	// No -config passed: walk the standard discovery precedence
+	// ($GOPHERTRUNK_CONFIG → UserConfigDir → Documents → cwd) so
+	// the Windows installer's chosen path (and equivalent setups
+	// on other platforms) is picked up automatically. Empty result
+	// means "use built-in defaults" — Load handles that case.
+	if *cfgPath == "" {
+		if discovered := config.Discover(); discovered != "" {
+			fmt.Fprintf(os.Stderr, "config: loaded %s\n", discovered)
+			*cfgPath = discovered
+		}
+	}
+
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
