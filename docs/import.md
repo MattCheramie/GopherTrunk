@@ -227,6 +227,50 @@ Without `-force` the importer aborts before touching anything on disk.
 | `-no-tui` | Skip the review TUI; merge straight from parsed defaults. |
 | `-dry-run` | Print the planned changes and exit without writing. |
 | `-force` | Overwrite an existing `trunking.systems[]` entry with the same name. |
+| `-wizard` | Launch the interactive config-builder wizard (see below). |
+
+## Config-file builder (`-wizard`)
+
+`-wizard` is for first-time operators who don't yet have a
+`config.yaml`. It launches an interactive walk-through that asks one
+question per daemon-config section — log level, API bind addresses,
+auth mode, CORS, storage paths, recordings directory, retention,
+SDR devices, scanner cockpit, audio playback — and then writes a
+fully-annotated `config.yaml` you can immediately run. Defaults at
+every step match what `config.example.yaml` ships, so pressing
+Enter through every screen still produces a valid file.
+
+Three usage patterns:
+
+```
+# Build a fresh config from scratch (no PDF / CSV imports).
+gophertrunk import-pdf -wizard
+
+# Build a fresh config and immediately merge a RadioReference PDF
+# on top of it — the wizard runs first, then the existing site-
+# review TUI takes over.
+gophertrunk import-pdf -wizard -pdf maricopa.pdf
+
+# Write to a custom path.
+gophertrunk import-pdf -wizard -config /etc/gophertrunk/config.yaml
+```
+
+### Wizard key bindings
+
+| Key | Action |
+| --- | --- |
+| `Enter` | Save the current field and advance — to the next field within a step, or to the next step when on the last field. |
+| `Tab` / `Shift+Tab` | Move between fields within a step (without advancing). |
+| `↑` / `↓` | Same as Shift+Tab / Tab. |
+| `←` / `→` | Cycle through values on a choice field (log level, auth mode, scan mode, …). |
+| `y` / `n` / `Space` | Toggle a boolean field. |
+| `Esc` | Back up one step. |
+| `q` / `Ctrl+C` | Abort without writing. |
+
+The CORS allow-list and SDR-device builder are list editors —
+type a value and press Enter to append, Backspace to pop. The
+review step (final screen) shows a preview of the rendered YAML;
+press Enter to write or Esc to back up and edit.
 
 ## What the importer writes
 

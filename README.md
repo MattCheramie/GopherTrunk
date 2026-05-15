@@ -59,7 +59,7 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **Operator surfaces** — first-class Bubbletea TUI cockpit (`gophertrunk tui`) with 11 panels and a sibling **web console** (a pure-browser React/Tailwind SPA, shipped pre-built as `gophertrunk-web/` next to the binary — see [`web/README.md`](web/README.md) and the [§Web console](#web-console) section); conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune.
 
-**System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. See **[`docs/import.md`](docs/import.md)**.
+**System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. **`-wizard`** launches an interactive config-builder that walks through every section of `config.yaml` (log, API, auth, CORS, storage, recordings, retention, SDR devices, scanner, audio) so first-time operators get a runnable file without hand-editing YAML. See **[`docs/import.md`](docs/import.md)**.
 
 Full encyclopedic breakdown — per-protocol FEC chains, receiver internals, frame layouts, API mutation routes, telemetry events — lives at **[`docs/architecture.md`](docs/architecture.md)**.
 
@@ -2095,6 +2095,11 @@ make integration-cc-ysf       # YSF "lights up" — 4800-baud C4FM 480-dibit fra
 # talkgroup CSVs. Launches a TUI for review; -no-tui for scripting.
 ./bin/gophertrunk import-pdf -pdf maricopa.pdf -pdf rwc.pdf -config config.yaml
 ./bin/gophertrunk import-pdf -csv my-system.csv -config config.yaml -no-tui -dry-run
+
+# Don't have a config.yaml yet? Launch the interactive builder that
+# walks you through every section. Can be combined with -pdf / -csv.
+./bin/gophertrunk import-pdf -wizard
+./bin/gophertrunk import-pdf -wizard -pdf maricopa.pdf
 ```
 
 A starter [`config.example.yaml`](config.example.yaml) is in the
