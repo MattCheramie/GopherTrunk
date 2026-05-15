@@ -24,6 +24,7 @@ func runImport(args []string) {
 	noTUI := fs.Bool("no-tui", false, "skip the review TUI and write straight from parsed defaults")
 	dryRun := fs.Bool("dry-run", false, "print the planned changes and exit without writing")
 	force := fs.Bool("force", false, "overwrite an existing trunking.systems entry with the same name")
+	wizard := fs.Bool("wizard", false, "launch the interactive config-builder wizard before any import")
 	var pdfPaths repeatedString
 	var csvPaths repeatedString
 	fs.Var(&pdfPaths, "pdf", "path to a RadioReference PDF system export (repeatable)")
@@ -47,8 +48,20 @@ By default the importer launches an interactive TUI so you can prune sites,
 toggle Scan/Lockout flags, and set priorities before write. Pass -no-tui to
 merge straight from parsed defaults.
 
+Config-file builder:
+  -wizard           Launch the interactive config-builder wizard. Walks you
+                    through every section the daemon's loader expects (log,
+                    API, auth, CORS, storage, recordings, retention, SDR
+                    devices, scanner, audio) and writes a fully-annotated
+                    config.yaml. Can be combined with -pdf / -csv: the
+                    wizard runs first, then the existing site-review TUI
+                    merges trunking systems on top. Can also be run without
+                    any imports to produce a daemon-startable scaffold.
+
 Usage:
   gophertrunk import-pdf -pdf <file.pdf> [-pdf <file.pdf>...] [-csv <file.csv>...] [flags]
+  gophertrunk import-pdf -wizard                              (build a fresh config)
+  gophertrunk import-pdf -wizard -pdf <file.pdf>              (wizard then import)
 
 Flags:
 `)
@@ -56,9 +69,46 @@ Flags:
 	}
 	_ = fs.Parse(args)
 
-	if len(pdfPaths) == 0 && len(csvPaths) == 0 {
+	if !*wizard && len(pdfPaths) == 0 && len(csvPaths) == 0 {
 		fs.Usage()
-		fail("at least one -pdf or -csv argument is required")
+		fail("at least one of -wizard, -pdf, or -csv is required")
+	}
+
+	// Wizard mode: run the interactive config builder first. The
+	// resulting answers feed both the standalone "build a fresh
+	// config" path and the "wizard then merge" path below.
+	if *wizard {
+		seed := defaultWizardAnswers()
+		seed.ConfigPath = *cfgPath
+		keep := len(pdfPaths) > 0 || len(csvPaths) > 0
+		answers, wrote, err := runConfigWizard(seed, keep)
+		if err != nil {
+			fail("wizard: " + err.Error())
+		}
+		if !keep {
+			if wrote {
+				fmt.Fprintf(os.Stderr, "import-pdf: wrote %s\n", answers.ConfigPath)
+			} else {
+				fmt.Fprintln(os.Stderr, "import-pdf: wizard cancelled, no file written")
+			}
+			return
+		}
+		// Wizard + import: write the scaffold first so the merge path
+		// has something to layer trunking.systems on top of.
+		body, err := renderConfigYAML(answers)
+		if err != nil {
+			fail("wizard render: " + err.Error())
+		}
+		if err := os.WriteFile(answers.ConfigPath, body, 0o644); err != nil {
+			fail("wizard write: " + err.Error())
+		}
+		fmt.Fprintf(os.Stderr, "import-pdf: wizard scaffold written to %s\n", answers.ConfigPath)
+		*cfgPath = answers.ConfigPath
+	}
+
+	if len(pdfPaths) == 0 && len(csvPaths) == 0 {
+		// Wizard-only path already handled above.
+		return
 	}
 
 	// Parse every source up front. If any one fails we abort before
