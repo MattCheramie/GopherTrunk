@@ -13,6 +13,8 @@ groups:
         url: /install-windows.html
   - label: Operate
     items:
+      - title: Windows user guide
+        url: /user-guide-windows.html
       - title: TUI
         url: /tui.html
       - title: Web console
