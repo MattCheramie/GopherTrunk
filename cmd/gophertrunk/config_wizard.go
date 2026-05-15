@@ -483,14 +483,21 @@ func (m configWizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.advanceStep()
 	case "esc":
 		return m.retreatStep()
-	case "left":
-		if s.fields[m.field].kind == fieldChoice {
-			m.cycleChoice(s.fields[m.field], -1)
-		}
-		return m, nil
-	case "right":
-		if s.fields[m.field].kind == fieldChoice {
-			m.cycleChoice(s.fields[m.field], +1)
+	case "left", "right":
+		switch s.fields[m.field].kind {
+		case fieldChoice:
+			dir := -1
+			if msg.String() == "right" {
+				dir = +1
+			}
+			m.cycleChoice(s.fields[m.field], dir)
+		case fieldBool:
+			// The footer hint promises ←/→ "changes the value" for
+			// non-text fields. Booleans honour that contract too —
+			// otherwise an operator who follows the on-screen hint
+			// sees the toggle appear locked.
+			cur := wizardParseBool(m.buf[m.field])
+			m.buf[m.field] = boolStr(!cur)
 		}
 		return m, nil
 	case "y":
@@ -886,7 +893,7 @@ func (m configWizardModel) View() string {
 
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render(
-		"[Tab] next field  [Shift+Tab] prev  [←/→] choice  [Enter] next step  [Esc] back  [q] abort"))
+		"[Tab] next field  [Shift+Tab] prev  [←/→ or y/n/Space] change value  [Enter] next step  [Esc] back  [q] abort"))
 	if m.status != "" {
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render(m.status))

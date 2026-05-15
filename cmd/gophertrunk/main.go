@@ -63,7 +63,7 @@ func printUsage() {
 
 USAGE:
   gophertrunk [run] [-config path]    run the daemon (default)
-  gophertrunk sdr list                list discovered SDR devices
+  gophertrunk sdr list [--probe]      list discovered SDR devices (--probe opens each to fill TUNER + gains)
   gophertrunk audio list              list audio output devices
   gophertrunk tui [-server URL]       open the read-only operator TUI
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
@@ -122,24 +122,61 @@ func runDaemon(args []string) {
 
 func runSDR(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: gophertrunk sdr list")
+		fmt.Fprintln(os.Stderr, "usage: gophertrunk sdr list [--probe]")
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "list":
-		listSDRs()
+		listSDRs(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown sdr subcommand: %s\n", args[0])
 		os.Exit(2)
 	}
 }
 
-func listSDRs() {
+func listSDRs(args []string) {
+	probe := false
+	for _, a := range args {
+		switch a {
+		case "--probe", "-probe":
+			probe = true
+		default:
+			fmt.Fprintf(os.Stderr, "unknown sdr list flag: %s\n", a)
+			os.Exit(2)
+		}
+	}
+
 	infos := sdr.EnumerateAll()
 	if len(infos) == 0 {
 		fmt.Println("no SDR devices found")
 		return
 	}
+
+	// --probe: open each device long enough to run the demod + tuner
+	// bring-up so TunerName and the gain ladder can be filled in. Each
+	// device is closed before the next is opened to avoid claiming two
+	// dongles at once. Failures don't abort the loop — the row just
+	// keeps the empty fields from Enumerate and the error is printed
+	// to stderr so the operator can see why probing failed.
+	if probe {
+		for i := range infos {
+			d, err := sdr.DriverByName(infos[i].Driver)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "probe %s[%d]: %v\n", infos[i].Driver, infos[i].Index, err)
+				continue
+			}
+			dev, err := d.Open(infos[i].Index)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "probe %s[%d]: %v\n", infos[i].Driver, infos[i].Index, err)
+				continue
+			}
+			probed := dev.Info()
+			infos[i].TunerName = probed.TunerName
+			infos[i].Gains = probed.Gains
+			_ = dev.Close()
+		}
+	}
+
 	fmt.Printf("%-8s  %-3s  %-16s  %-8s  %-8s  gains(0.1 dB)\n", "DRIVER", "IDX", "SERIAL", "TUNER", "PRODUCT")
 	for _, i := range infos {
 		fmt.Printf("%-8s  %-3d  %-16s  %-8s  %-8s  %v\n",
