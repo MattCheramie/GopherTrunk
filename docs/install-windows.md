@@ -108,25 +108,39 @@ cd "C:\Program Files\GopherTrunk"
 
 ## 5. Configure and start the daemon
 
-The installer drops a starter config at:
+The installer asked you for an "editable files folder" (default
+`Documents\GopherTrunk`) and seeded a `config.yaml` there. It also
+set the `GOPHERTRUNK_CONFIG` user environment variable to point at
+that file, so the daemon discovers it automatically — no `-config`
+flag needed. Use the Start Menu shortcut "Edit my config.yaml
+(Notepad)" to open it, set your device serial + control-channel
+frequencies, and save.
 
-```
-C:\Program Files\GopherTrunk\config.example.yaml
-```
-
-Copy it somewhere writable — your home directory is fine — and
-edit the device serial + control-channel frequencies:
-
-```powershell
-cp "C:\Program Files\GopherTrunk\config.example.yaml" "$HOME\gophertrunk.yaml"
-notepad "$HOME\gophertrunk.yaml"
-```
-
-Then run the daemon against it:
+Then start the daemon:
 
 ```powershell
-gophertrunk run -config "$HOME\gophertrunk.yaml"
+gophertrunk run
 ```
+
+The daemon prints `config: loaded <path>` on startup so you can
+confirm it picked up the right file. To override (e.g. running
+against a second config for testing), use `-config`:
+
+```powershell
+gophertrunk run -config "C:\path\to\other.yaml"
+```
+
+If you drop multiple `*.yaml` files into the editable-files folder
+(e.g. `config.yaml` + `prod.yaml` + `test.yaml`), the daemon prints
+a numbered menu on startup and asks which one to load. Pick the
+number, press Enter, and that file is used. Set `-config` or
+`GOPHERTRUNK_CONFIG` to skip the prompt for unattended runs (a
+non-interactive launch — Windows service, scheduled task —
+auto-selects the first file and logs the choice).
+
+A read-only reference copy of the full annotated template lives at
+`C:\Program Files\GopherTrunk\config.example.yaml` (Start Menu →
+"Configuration template").
 
 Logs stream to the terminal. Press `Ctrl+C` to stop cleanly.
 

@@ -54,6 +54,15 @@ Source: "..\..\dist\staging\config.example.yaml"; DestDir: "{app}"; Flags: ignor
 Source: "..\..\dist\staging\README.md";        DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\LICENSE";          DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\staging\INSTALL-WINDOWS.md"; DestDir: "{app}"; Flags: ignoreversion
+; Seed the operator's chosen editable-files folder with a starter
+; config.yaml the first time they install. onlyifdoesntexist
+; preserves any edits across re-installs; uninsneveruninstall
+; leaves the file behind on uninstall so the operator doesn't lose
+; the config (and any per-system trunking data alongside it).
+Source: "..\..\dist\staging\config.example.yaml"; \
+  DestDir: "{code:ConfigDir}"; \
+  DestName: "config.yaml"; \
+  Flags: onlyifdoesntexist uninsneveruninstall
 ; The web console is a standalone static folder — index.html plus the
 ; bundled JS/CSS/manifest. The user picks the destination on the
 ; custom WebUIPage below; {code:WebUIDir} resolves to that choice.
@@ -67,7 +76,11 @@ Name: "{group}\GopherTrunk (PowerShell)"; Filename: "{cmd}"; \
   Parameters: "/k cd /d ""{app}"" && gophertrunk help"; \
   WorkingDir: "{app}"; \
   Comment: "Open a console with GopherTrunk on PATH"
-Name: "{group}\Configuration template (open in Notepad)"; \
+Name: "{group}\Edit my config.yaml (Notepad)"; \
+  Filename: "notepad.exe"; \
+  Parameters: """{code:ConfigDir}\config.yaml"""; \
+  Comment: "Open the config file the daemon will load on startup"
+Name: "{group}\Configuration template (read-only reference)"; \
   Filename: "notepad.exe"; \
   Parameters: """{app}\config.example.yaml"""
 Name: "{group}\Windows install instructions"; \
@@ -100,6 +113,17 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
   ValueData: "{olddata};{app}"; \
   Check: NeedsAddPath('{app}'); \
   Tasks: addtopath
+; Per-user env var pointing at the operator's chosen config.yaml.
+; The daemon's internal/config.Discover() reads this first when no
+; -config flag is passed, so launching the daemon from any shell
+; "just works". ChangesEnvironment=yes (above) triggers Inno's
+; WM_SETTINGCHANGE broadcast so newly-opened shells see the value.
+; uninsdeletevalue cleans the variable up if the operator
+; uninstalls, even though the config.yaml file itself is preserved.
+Root: HKCU; Subkey: "Environment"; \
+  ValueType: expandsz; ValueName: "GOPHERTRUNK_CONFIG"; \
+  ValueData: "{code:ConfigDir}\config.yaml"; \
+  Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\INSTALL-WINDOWS.md"; \
@@ -116,16 +140,41 @@ Filename: "{code:WebUIDir}\index.html"; \
 
 [Code]
 var
-  WebUIPage: TInputDirWizardPage;
+  ConfigPage: TInputDirWizardPage;
+  WebUIPage:  TInputDirWizardPage;
 
 procedure InitializeWizard;
 begin
-  // CreateInputDirPage gives us a "pick a folder" wizard step with a
-  // Browse button. Placed AFTER wpSelectTasks so we know whether the
-  // user actually wants the web console — ShouldSkipPage hides the
-  // page entirely when the task is unchecked.
-  WebUIPage := CreateInputDirPage(
+  // Editable-files folder: where the operator's config.yaml (and
+  // any per-system data that lands next to it) lives. We default
+  // to Documents\GopherTrunk because it's the spot non-Admin
+  // Windows users can always write to without surprises — and the
+  // [Files] step seeds a starter config.yaml there. The path is
+  // also written to HKCU\Environment\GOPHERTRUNK_CONFIG so the
+  // daemon discovers it without needing -config on the command
+  // line. Placed first so the operator sees the most important
+  // path choice before anything else.
+  ConfigPage := CreateInputDirPage(
     wpSelectTasks,
+    'Select your editable-files folder',
+    'Where should your config.yaml and per-system data live?',
+    'Pick a folder Setup can drop a starter config.yaml in. The ' +
+    'GopherTrunk daemon will look for config.yaml in this folder ' +
+    'automatically — no -config flag needed. The default is your ' +
+    'Documents folder so it''s easy to find and back up; you can ' +
+    'choose anywhere you can write to. If a config.yaml already ' +
+    'exists in the folder it will NOT be overwritten.',
+    False, '');
+  ConfigPage.Add('Editable files folder:');
+  ConfigPage.Values[0] :=
+    ExpandConstant('{userdocs}\GopherTrunk');
+
+  // CreateInputDirPage gives us a "pick a folder" wizard step with a
+  // Browse button. Placed AFTER ConfigPage so the page order matches
+  // the order of importance — config first, web UI second. ShouldSkipPage
+  // hides this one entirely when the webui task is unchecked.
+  WebUIPage := CreateInputDirPage(
+    ConfigPage.ID,
     'Select web operator console location',
     'Where should Setup put the GopherTrunk web console?',
     'Pick a folder for the standalone web UI. Setup will copy a ' +
@@ -148,6 +197,11 @@ begin
   if PageID = WebUIPage.ID then begin
     Result := not WizardIsTaskSelected('webui');
   end;
+end;
+
+function ConfigDir(Param: string): string;
+begin
+  Result := ConfigPage.Values[0];
 end;
 
 function WebUIDir(Param: string): string;

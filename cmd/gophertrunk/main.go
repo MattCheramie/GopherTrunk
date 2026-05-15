@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
@@ -78,6 +82,25 @@ func runDaemon(args []string) {
 	logLevel := fs.String("log-level", "", "override log level (debug|info|warn|error)")
 	logFormat := fs.String("log-format", "", "override log format (text|json)")
 	_ = fs.Parse(args)
+
+	// No -config passed: walk the standard discovery precedence
+	// ($GOPHERTRUNK_CONFIG → UserConfigDir → Documents → cwd) so
+	// the Windows installer's chosen path (and equivalent setups
+	// on other platforms) is picked up automatically. When the
+	// chosen directory holds more than one *.yaml / *.yml the
+	// picker prompts the operator on stdin. Empty result means
+	// "use built-in defaults" — Load handles that case.
+	if *cfgPath == "" {
+		discovered, err := config.DiscoverWith(config.DiscoverOptions{Pick: pickConfigInteractive})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "config: %v\n", err)
+			os.Exit(2)
+		}
+		if discovered != "" {
+			fmt.Fprintf(os.Stderr, "config: loaded %s\n", discovered)
+			*cfgPath = discovered
+		}
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -189,4 +212,53 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// pickConfigInteractive is the DiscoverOptions.Pick callback for
+// runDaemon. When stdin is a terminal, it prints a numbered list of
+// the candidate configs and reads the operator's choice. When stdin
+// isn't a terminal (Windows service, systemd unit, CI), it falls
+// back to the first match with a stderr warning so the daemon can
+// still start unattended — the operator can pin a specific file
+// later via -config or GOPHERTRUNK_CONFIG.
+func pickConfigInteractive(paths []string) (string, error) {
+	if !stdinIsTerminal() {
+		fmt.Fprintf(os.Stderr,
+			"config: multiple config files in %s, defaulting to %s (set -config or GOPHERTRUNK_CONFIG to pick a specific one)\n",
+			filepath.Dir(paths[0]), paths[0])
+		return paths[0], nil
+	}
+	fmt.Fprintf(os.Stderr, "Multiple config files found in %s:\n", filepath.Dir(paths[0]))
+	for i, p := range paths {
+		fmt.Fprintf(os.Stderr, "  [%d] %s\n", i+1, filepath.Base(p))
+	}
+	fmt.Fprintf(os.Stderr, "Pick one [1-%d, default 1]: ", len(paths))
+
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		// EOF on stdin (closed pipe, Ctrl+D) — same fallback as
+		// the non-TTY branch: keep the daemon startable.
+		fmt.Fprintln(os.Stderr)
+		return paths[0], nil
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return paths[0], nil
+	}
+	idx, perr := strconv.Atoi(line)
+	if perr != nil || idx < 1 || idx > len(paths) {
+		return "", fmt.Errorf("invalid config selection %q (want 1..%d)", line, len(paths))
+	}
+	return paths[idx-1], nil
+}
+
+// stdinIsTerminal returns true when stdin is attached to a character
+// device (i.e. an interactive terminal). False for pipes, redirected
+// input, service runners, and detached background processes.
+func stdinIsTerminal() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
 }

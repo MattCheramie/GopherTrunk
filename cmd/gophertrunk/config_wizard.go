@@ -1017,15 +1017,24 @@ func expandWindowsEnv(p string) string {
 }
 
 // defaultConfigPath picks a sensible default location for the
-// generated config.yaml. Returns "./config.yaml" when the current
-// working directory is writable; otherwise falls back to
-// <os.UserConfigDir()>/GopherTrunk/config.yaml.
+// generated config.yaml. Precedence:
+//   1. $GOPHERTRUNK_CONFIG (the Windows installer sets this to
+//      the operator's chosen editable-files directory; honouring
+//      it here means the wizard writes to the same file the
+//      daemon will later discover).
+//   2. ./config.yaml when the current working directory is writable.
+//   3. <os.UserConfigDir()>/GopherTrunk/config.yaml as the final
+//      fallback (~%APPDATA% on Windows, ~/.config on Linux).
 //
 // Windows operators frequently launch the installed binary from
 // C:\Program Files\GopherTrunk\, which is read-only for non-Admin
 // users — defaulting to ./config.yaml there guarantees a write
-// error on the final review screen. The probe sidesteps that.
+// error on the final review screen. The cwd writability probe and
+// the env-var lookup both sidestep that.
 func defaultConfigPath() string {
+	if p := os.Getenv("GOPHERTRUNK_CONFIG"); p != "" {
+		return p
+	}
 	if cwdWritable() {
 		return "./config.yaml"
 	}
