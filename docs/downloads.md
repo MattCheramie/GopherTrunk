@@ -116,6 +116,8 @@ Run the installer:
 .\gophertrunk-{{ ver }}-windows-amd64-setup.exe
 ```
 
+During setup the wizard asks where to install the **browser-based web operator console** (default `%USERPROFILE%\Documents\GopherTrunk Web Console`). A Start Menu shortcut opens `index.html` in your default browser; untick the "Install the web operator console" task on the Tasks page to skip it for a headless install.
+
 After install, complete the WinUSB driver swap via Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (the installer's last page links there too). The OS won't see your RTL-SDR until that swap is done.
 
 ## Verify your download

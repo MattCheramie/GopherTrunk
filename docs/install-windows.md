@@ -39,13 +39,23 @@ Double-click `setup.exe` and accept the defaults. The installer:
   a single static binary, no DLLs to ship.
 - Adds Start Menu entries for the daemon, the config template,
   and these instructions.
+- Installs the **browser-based web operator console** (a static
+  HTML / JS folder you open in any browser) to a location you
+  pick — the wizard offers a "Select web operator console
+  location" page after the Tasks step, defaulting to
+  `%USERPROFILE%\Documents\GopherTrunk Web Console`. Untick the
+  "Install the web operator console" checkbox on the Tasks page
+  to skip it (e.g. for a headless server install). Setup +
+  quick-start guide for the console: **[Web console]({{ '/web.html' | relative_url }})**.
 - Optionally adds `C:\Program Files\GopherTrunk` to your system
   PATH so you can run `gophertrunk` from any PowerShell window
   (off by default — tick the "Add GopherTrunk to my PATH"
   checkbox during install if you want it).
 
-When the wizard finishes, it'll offer to open this document and a
-console window. Both are harmless to skip.
+When the wizard finishes, it'll offer to open this document, a
+console window, and (if you installed the web console) the
+console itself in your default browser. All three are harmless
+to skip.
 
 ## 3. Install the WinUSB driver via Zadig (one-time, for each dongle)
 

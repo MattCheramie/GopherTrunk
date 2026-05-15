@@ -59,6 +59,20 @@ jobs:
         with:
           go-version: "1.25.10"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web console (gophertrunk-web)
+        shell: bash
+        run: |
+          set -eu
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
+
       - name: Build gophertrunk.exe
         shell: bash
         env:
@@ -72,13 +86,15 @@ jobs:
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
-      - name: Stage docs
+      - name: Stage docs + web console
         shell: bash
         run: |
           set -eu
           STAGE=dist/staging
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
+          mkdir -p "$STAGE/gophertrunk-web"
+          cp -r web/dist/. "$STAGE/gophertrunk-web/"
 
       - name: Build Inno Setup installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5

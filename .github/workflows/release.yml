@@ -54,6 +54,20 @@ jobs:
         with:
           go-version: "1.25.10"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web console (gophertrunk-web)
+        shell: bash
+        run: |
+          set -eu
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
+
       - name: Build gophertrunk.exe
         shell: bash
         env:
@@ -69,13 +83,19 @@ jobs:
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
-      - name: Stage docs
+      - name: Stage docs + web console
         shell: bash
         run: |
           set -eu
           STAGE=dist/staging
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
+          # Standalone browser console bundled into each release. The
+          # Inno Setup script consumes this directory and asks the
+          # user where to install it; the portable ZIP just includes
+          # it next to the binary.
+          mkdir -p "$STAGE/gophertrunk-web"
+          cp -r web/dist/. "$STAGE/gophertrunk-web/"
 
       - name: Build portable ZIP (amd64)
         shell: bash
@@ -113,6 +133,8 @@ jobs:
             ./cmd/gophertrunk
           cp README.md LICENSE config.example.yaml "dist/${NAME}/"
           cp docs/install-windows.md "dist/${NAME}/INSTALL-WINDOWS.md"
+          mkdir -p "dist/${NAME}/gophertrunk-web"
+          cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
           (cd dist && 7z a "${NAME}.zip" "${NAME}")
 
       - uses: actions/upload-artifact@v4
@@ -131,6 +153,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.10"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web console (gophertrunk-web)
+        run: |
+          set -eu
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
 
       - name: Compute version
         id: version
@@ -160,6 +195,8 @@ jobs:
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
             cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            mkdir -p "dist/${NAME}/gophertrunk-web"
+            cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
             (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
           done
 
@@ -177,6 +214,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.10"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web console (gophertrunk-web)
+        run: |
+          set -eu
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
 
       - name: Compute version
         id: version
@@ -206,6 +256,8 @@ jobs:
               -o "dist/${NAME}/gophertrunk" \
               ./cmd/gophertrunk
             cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            mkdir -p "dist/${NAME}/gophertrunk-web"
+            cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
             (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
           done
 
@@ -266,12 +318,14 @@ jobs:
           body: |
             ## Install
 
-            **Windows 11 (x64):** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship. After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
+            **Windows 11 (x64):** download `gophertrunk-${{ steps.version.outputs.version }}-windows-amd64-setup.exe` and double-click. The installer adds GopherTrunk to your Start Menu — single static binary, no DLLs to ship — and **prompts for a folder to install the browser-based web operator console** (default: `Documents\GopherTrunk Web Console`). After install, follow [INSTALL-WINDOWS.md](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/install-windows.md) to install the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.
 
-            **Windows on ARM:** extract `gophertrunk-${{ steps.version.outputs.version }}-windows-arm64.zip` (no installer for arm64 yet — portable ZIP only).
+            **Windows on ARM:** extract `gophertrunk-${{ steps.version.outputs.version }}-windows-arm64.zip` (no installer for arm64 yet — portable ZIP only). The web console lives in the `gophertrunk-web\` subfolder inside the zip.
 
             **macOS:** extract `gophertrunk-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz` (Apple Silicon) or `gophertrunk-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz` (Intel) and run `./gophertrunk`. Builds are unsigned — right-click → Open the first time to bypass Gatekeeper.
 
             **Linux:** extract `gophertrunk-${{ steps.version.outputs.version }}-linux-amd64.tar.gz` (x86_64) or `gophertrunk-${{ steps.version.outputs.version }}-linux-arm64.tar.gz` (aarch64, e.g. Raspberry Pi 4/5) and run `./gophertrunk`. Single static binary; no system dependencies needed.
+
+            **Web operator console:** every archive includes a standalone `gophertrunk-web/` folder. Open its `index.html` in any browser and point it at a running daemon. Setup walkthrough: [gophertrunk.org/web.html](https://gophertrunk.org/web.html).
 
             All artifacts are SHA-256-checksummed in `SHA256SUMS`.
