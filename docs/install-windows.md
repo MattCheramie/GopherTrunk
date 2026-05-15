@@ -91,12 +91,20 @@ gophertrunk sdr list
 ```
 
 `sdr list` should print one line per attached dongle with its
-driver, index, serial, tuner, product string, and the gain settings
-the tuner exposes. If you see `no SDR devices found` and you're
-sure the dongle is plugged in, the WinUSB driver swap probably
-didn't take — re-run Zadig with **Options → List All Devices**
-checked and verify the "Driver" column shows **WinUSB** for your
-dongle.
+driver, index, serial, and product string. The TUNER and gains
+columns are blank by design — they need the device to be opened
+(USB claim + RTL2832U baseband init + I2C tuner probe), which `sdr
+list` skips so the command is fast and never collides with a
+running daemon. Pass `--probe` when you want those columns filled:
+
+```powershell
+gophertrunk sdr list --probe
+```
+
+If you see `no SDR devices found` and you're sure the dongle is
+plugged in, the WinUSB driver swap probably didn't take — re-run
+Zadig with **Options → List All Devices** checked and verify the
+"Driver" column shows **WinUSB** for your dongle.
 
 If you didn't tick the PATH option during install, run from the
 install folder instead:

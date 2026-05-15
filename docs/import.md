@@ -262,7 +262,7 @@ gophertrunk import-pdf -wizard -config /etc/gophertrunk/config.yaml
 | `Enter` | Save the current field and advance — to the next field within a step, or to the next step when on the last field. |
 | `Tab` / `Shift+Tab` | Move between fields within a step (without advancing). |
 | `↑` / `↓` | Same as Shift+Tab / Tab. |
-| `←` / `→` | Cycle through values on a choice field (log level, auth mode, scan mode, …). |
+| `←` / `→` | Cycle through values on a choice field (log level, auth mode, scan mode, …) **or** toggle a boolean field. |
 | `y` / `n` / `Space` | Toggle a boolean field. |
 | `Esc` | Back up one step. |
 | `q` / `Ctrl+C` | Abort without writing. |
@@ -271,6 +271,18 @@ The CORS allow-list and SDR-device builder are list editors —
 type a value and press Enter to append, Backspace to pop. The
 review step (final screen) shows a preview of the rendered YAML;
 press Enter to write or Esc to back up and edit.
+
+**Config-file path field:** the welcome step's path accepts shell-
+style env-var references — `%APPDATA%\GopherTrunk\config.yaml`
+(Windows), `$HOME/.config/gophertrunk/config.yaml` (POSIX), and a
+leading `~` for the home dir all expand at write time. The review
+screen shows "resolves to: \<abs\>" beneath the typed path when
+expansion changes it, so you see the actual destination before
+pressing Enter. The default picked when the wizard starts is
+whatever `$GOPHERTRUNK_CONFIG` points at (the Windows installer
+sets this); otherwise `./config.yaml` when the current directory
+is writable, or `<UserConfigDir>/GopherTrunk/config.yaml` when
+it isn't (e.g. launched from `C:\Program Files\GopherTrunk\`).
 
 ## What the importer writes
 

@@ -80,9 +80,16 @@ gophertrunk sdr list
 ```
 
 `sdr list` should print one line per attached dongle with its driver,
-index, serial, tuner, product string, and the gain settings the tuner
-exposes. If you see `no SDR devices found` and the dongle is plugged
-in:
+index, serial, product string, and (when populated) tuner + gain
+ladder. The plain command only reads USB descriptors, so the TUNER
+and gains columns stay blank — pass `--probe` to open each device
+just long enough to enumerate them:
+
+```sh
+gophertrunk sdr list --probe
+```
+
+If you see `no SDR devices found` and the dongle is plugged in:
 
 - Check `system_profiler SPUSBDataType | grep -A 4 RTL2838` shows the
   dongle (typically `0x0bda:0x2838`).
@@ -96,20 +103,29 @@ matrix of supported tuners and dongles.
 
 ## 5. Configure and start the daemon
 
-The tarball includes `config.example.yaml`. Copy it to a writable
-location and edit the device serial + control-channel frequencies:
+The tarball includes `config.example.yaml`. Drop a copy at
+`~/Library/Application Support/GopherTrunk/config.yaml` and edit
+it — the daemon walks `$GOPHERTRUNK_CONFIG` →
+`~/Library/Application Support/GopherTrunk/config.yaml` →
+`~/Documents/GopherTrunk/config.yaml` → `./config.yaml` and loads
+the first one it finds, so no `-config` flag is needed:
 
 ```sh
-mkdir -p ~/.config/gophertrunk
-cp config.example.yaml ~/.config/gophertrunk/config.yaml
-${EDITOR:-nano} ~/.config/gophertrunk/config.yaml
+mkdir -p ~/Library/Application\ Support/GopherTrunk
+cp config.example.yaml ~/Library/Application\ Support/GopherTrunk/config.yaml
+${EDITOR:-nano} ~/Library/Application\ Support/GopherTrunk/config.yaml
+gophertrunk run
 ```
 
-Then run the daemon against it:
+On startup the daemon prints `config: loaded <path>` so you can
+confirm it picked the right file. Override discovery any time with
+`-config <path>` or by exporting `GOPHERTRUNK_CONFIG`.
 
-```sh
-gophertrunk run -config ~/.config/gophertrunk/config.yaml
-```
+If you keep more than one config in that directory (e.g.
+`config.yaml` + `prod.yaml`), `gophertrunk run` prints a numbered
+menu and asks which to load. Non-interactive launches (launchd,
+cron) auto-pick the first match with a stderr warning; pin a
+specific file via `-config` or `GOPHERTRUNK_CONFIG` for those.
 
 Logs stream to the terminal. Press `Ctrl+C` to stop cleanly.
 
