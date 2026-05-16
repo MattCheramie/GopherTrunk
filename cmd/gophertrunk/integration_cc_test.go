@@ -134,15 +134,17 @@ func TestDaemonCCDecodesP25Phase1(t *testing.T) {
 	base := "http://" + cfg.API.HTTPAddr
 	waitReachable(t, base+"/api/v1/health", 5*time.Second)
 
-	// 30 s deadline absorbs cold-start latency on the first
+	// 60 s deadline absorbs cold-start latency on the first
 	// iteration of a `-count` flakiness sweep (Go runtime + RRC
 	// filter init + MM clock-loop convergence + mock SDR ticker
-	// warmup all run lazily on first call). GitHub-hosted runners
-	// occasionally take 10-15 s just for the daemon's cold path
-	// (observed flake at 10.31 s on a 10 s deadline), so the
-	// budget is generous. Subsequent iterations complete in under
-	// 100 ms.
-	deadline := time.After(30 * time.Second)
+	// warmup all run lazily on first call). PR #220's CI flake
+	// at 10.31 s on a 10 s deadline drove the first bump to 30 s
+	// (commit f2a728e); a subsequent flake on PR #244's CI hit
+	// the full 30 s deadline under -race + GitHub-hosted runner
+	// contention, so the budget is doubled again. Subsequent
+	// iterations complete in under 100 ms.
+	const ccLockedDeadline = 60 * time.Second
+	deadline := time.After(ccLockedDeadline)
 	var locked bool
 WaitLoop:
 	for !locked {
@@ -166,7 +168,7 @@ WaitLoop:
 			locked = true
 			break WaitLoop
 		case <-deadline:
-			t.Fatalf("no cc.locked event arrived within 10s")
+			t.Fatalf("no cc.locked event arrived within %s", ccLockedDeadline)
 		}
 	}
 
@@ -360,11 +362,13 @@ func TestDaemonCCDecodesP25Phase1GrantChain(t *testing.T) {
 	base := "http://" + cfg.API.HTTPAddr
 	waitReachable(t, base+"/api/v1/health", 5*time.Second)
 
-	// 30 s deadline absorbs first-iteration cold-start in `-count`
+	// 60 s deadline absorbs first-iteration cold-start in `-count`
 	// flakiness sweeps — same pattern + same budget as
-	// TestDaemonCCDecodesP25Phase1. Subsequent iterations complete
-	// in under 100 ms.
-	deadline := time.After(30 * time.Second)
+	// TestDaemonCCDecodesP25Phase1 (which flaked again at 30 s
+	// under -race + GitHub-hosted runner contention on PR #244,
+	// driving the doubled budget).
+	const grantChainDeadline = 60 * time.Second
+	deadline := time.After(grantChainDeadline)
 	var locked, granted bool
 	var grantPayload trunking.Grant
 WaitLoop:
@@ -397,11 +401,11 @@ WaitLoop:
 			}
 		case <-deadline:
 			if !locked {
-				t.Fatalf("no cc.locked event arrived within 10s")
+				t.Fatalf("no cc.locked event arrived within %s", grantChainDeadline)
 			}
 			if !granted {
 				t.Logf("metrics at timeout:\n%s", scrape(t, base+"/metrics"))
-				t.Fatalf("no KindGrant event arrived within 10s")
+				t.Fatalf("no KindGrant event arrived within %s", grantChainDeadline)
 			}
 			break WaitLoop
 		}
