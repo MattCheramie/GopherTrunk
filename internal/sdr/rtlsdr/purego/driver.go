@@ -1,8 +1,10 @@
 package purego
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"syscall"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
@@ -140,10 +142,10 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 
 	tuner, err := tuners.Detect(demod)
 	if err != nil {
-		return nil, fmt.Errorf("rtlsdr: tuner detect: %w", err)
+		return nil, fmt.Errorf("rtlsdr: tuner detect: %w%s", err, tunerBringupHint(err))
 	}
 	if err := tuner.Init(); err != nil {
-		return nil, fmt.Errorf("rtlsdr: tuner init: %w", err)
+		return nil, fmt.Errorf("rtlsdr: tuner init: %w%s", err, tunerBringupHint(err))
 	}
 	if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
 		return nil, fmt.Errorf("rtlsdr: set IF freq: %w", err)
@@ -169,4 +171,25 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		tuner:     tuner,
 		info:      info,
 	}, nil
+}
+
+// tunerBringupHint returns a parenthesized, space-prefixed remediation
+// string when err looks like the tuner-not-acking-on-I2C case
+// (issue #248): EPIPE from the first I2C burst, or the device
+// disappearing mid-bringup. The hint covers the three known root
+// causes — DVB kernel driver still bound, marginal USB power, or a
+// half-initialized tuner state — and links to the docs troubleshooting
+// table. Returns "" for unrelated errors so the wrapped message stays
+// clean.
+func tunerBringupHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrDeviceGone) {
+		return " (hint: tuner did not respond on the I2C bus — common causes:" +
+			" DVB kernel driver still bound (run `sudo modprobe -r dvb_usb_rtl28xxu` and re-plug)," +
+			" marginal USB power, or a flaky cable/hub." +
+			" See https://mattcheramie.github.io/GopherTrunk/install-linux.html#troubleshooting)"
+	}
+	return ""
 }
