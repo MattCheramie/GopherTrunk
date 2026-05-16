@@ -96,6 +96,28 @@ jobs:
           mkdir -p "$STAGE/gophertrunk-web"
           cp -r web/dist/. "$STAGE/gophertrunk-web/"
 
+      - name: Download Zadig (pinned + SHA256-verified)
+        shell: pwsh
+        # Bumping Zadig: pick the latest stable from
+        # https://github.com/pbatard/libwdi/releases, update both
+        # ZADIG_VERSION and ZADIG_SHA256 below, then verify locally:
+        #   (Get-FileHash zadig-X.Y.exe -Algorithm SHA256).Hash
+        env:
+          ZADIG_VERSION: "2.9"
+          ZADIG_SHA256: "TODO-FILL-IN-AT-PR-TIME"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "https://github.com/pbatard/libwdi/releases/download/b${env:ZADIG_VERSION}/zadig-${env:ZADIG_VERSION}.exe"
+          $dest = "dist/staging/zadig.exe"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          $actual = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+          $expected = $env:ZADIG_SHA256.ToLower()
+          if ($actual -ne $expected) {
+            throw "Zadig SHA256 mismatch: got $actual, want $expected"
+          }
+          Write-Host "Zadig SHA256 OK: $actual"
+
       - name: Build Inno Setup installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
         with:

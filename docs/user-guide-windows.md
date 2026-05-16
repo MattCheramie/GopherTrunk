@@ -92,6 +92,9 @@ The condensed version:
 
    - Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\`
      (single static binary, no DLLs).
+   - Bundles **Zadig** next to the daemon and adds a Start Menu
+     shortcut "Install RTL-SDR driver (Zadig)" so you don't have
+     to chase a separate download.
    - Adds Start Menu entries for the daemon, the config template,
      and the install walkthrough.
    - Offers to install the **browser-based web operator console** to
@@ -105,18 +108,23 @@ The condensed version:
      during install if you want it).
 
 When the wizard finishes it offers to open this guide, a console
-window, and (if installed) the web console.
+window, Zadig (to bind the WinUSB driver — see §3), and (if
+installed) the web console.
 
 ## 3. Bind the RTL-SDR to WinUSB with Zadig
 
 Windows ships an RTL-SDR DVB-T driver by default — that's the
 broadcast-TV driver, and it's the wrong driver for SDR work. You
 need to swap it to **WinUSB** on a per-device basis with **Zadig**.
+The installer **bundles Zadig** (GPL-3.0, from
+<https://zadig.akeo.ie>), so you don't have to chase a download.
 You only do this once per dongle.
 
 1. Plug in the RTL-SDR dongle.
-2. Download Zadig from <https://zadig.akeo.ie> (single .exe, no
-   install). Run as **Administrator**.
+2. Launch Zadig via **Start Menu → GopherTrunk → "Install RTL-SDR
+   driver (Zadig)"**. Approve the UAC prompt. (Or tick the
+   **"Run Zadig now to bind the WinUSB driver"** option on the
+   installer's last page before clicking Finish.)
 3. **Options → List All Devices** so the RTL-SDR shows up.
 4. From the dropdown, pick the dongle — typically **Bulk-In,
    Interface (Interface 0)** or **RTL2832U** (the NESDR Smart v5

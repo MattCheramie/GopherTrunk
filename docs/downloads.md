@@ -52,7 +52,7 @@ nav_group: Install
       <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-amd64.zip">x64 Portable (.zip)</a>
       <a class="btn btn--secondary" href="{{ rel_url }}/gophertrunk-{{ ver }}-windows-arm64.zip">ARM64 Portable (.zip)</a>
     </div>
-    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-windows.html' | relative_url }}">Windows install guide</a>. After install, swap the WinUSB driver via Zadig — the OS won't see your RTL-SDR until you do this once.</p>
+    <p class="download-card__note">Full walkthrough: <a href="{{ '/install-windows.html' | relative_url }}">Windows install guide</a>. The installer bundles Zadig (the WinUSB driver-binding tool) and adds a Start Menu shortcut — the OS won't see your RTL-SDR until you run it once per dongle.</p>
   </div>
 
 </div>
@@ -124,7 +124,7 @@ Run the installer:
 
 During setup the wizard asks where to install the **browser-based web operator console** (default `%USERPROFILE%\Documents\GopherTrunk Web Console`). A Start Menu shortcut opens `index.html` in your default browser; untick the "Install the web operator console" task on the Tasks page to skip it for a headless install.
 
-After install, complete the WinUSB driver swap via Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (the installer's last page links there too). The OS won't see your RTL-SDR until that swap is done.
+After install, complete the WinUSB driver swap via the bundled Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (Start Menu → GopherTrunk → "Install RTL-SDR driver (Zadig)", or tick the postinstall option before clicking Finish). The OS won't see your RTL-SDR until that swap is done.
 
 ## Verify your download
 
