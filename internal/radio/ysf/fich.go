@@ -44,18 +44,18 @@ import (
 // Octets 4..5 carry the CRC-16 trailer over octets 0..3, computed
 // with poly 0x1021 and initial value 0x0000 (XMODEM / CCITT-true).
 type FICH struct {
-	FrameType    FrameType
-	CallType     CallType
-	BlockNumber  uint8 // 2-bit BN
-	BlockTotal   uint8 // 2-bit BT
-	FrameNumber  uint8 // 3-bit FN within the current block
-	FrameTotal   uint8 // 3-bit FT total frames in the block
-	DataType     DataType
-	VoIP         bool
-	DataType2    uint8 // 2-bit DT2 / Mode-2 sub-field
-	SquelchMode  bool  // false = open carrier, true = code-squelch active
-	SquelchCode  uint8 // 7-bit SQ
-	Device       uint8 // 2-bit DEV / reserved
+	FrameType   FrameType
+	CallType    CallType
+	BlockNumber uint8 // 2-bit BN
+	BlockTotal  uint8 // 2-bit BT
+	FrameNumber uint8 // 3-bit FN within the current block
+	FrameTotal  uint8 // 3-bit FT total frames in the block
+	DataType    DataType
+	VoIP        bool
+	DataType2   uint8 // 2-bit DT2 / Mode-2 sub-field
+	SquelchMode bool  // false = open carrier, true = code-squelch active
+	SquelchCode uint8 // 7-bit SQ
+	Device      uint8 // 2-bit DEV / reserved
 }
 
 // FrameType is the 2-bit FT field — what kind of frame this is in
@@ -90,9 +90,9 @@ func (f FrameType) String() string {
 type CallType uint8
 
 const (
-	CallTypeGroup    CallType = 0x0 // group call
-	CallTypeRadioID  CallType = 0x1 // private (radio-ID-addressed) call
-	CallTypeReserved CallType = 0x2
+	CallTypeGroup     CallType = 0x0 // group call
+	CallTypeRadioID   CallType = 0x1 // private (radio-ID-addressed) call
+	CallTypeReserved  CallType = 0x2
 	CallTypeReservedB CallType = 0x3
 )
 
@@ -116,10 +116,10 @@ func (c CallType) String() string {
 type DataType uint8
 
 const (
-	DataTypeVDMode1     DataType = 0x0 // V/D mode 1 (½-rate voice + data)
-	DataTypeDataFR      DataType = 0x1 // Data Full Rate
-	DataTypeVDMode2     DataType = 0x2 // V/D mode 2
-	DataTypeVoiceFR     DataType = 0x3 // Voice Full Rate
+	DataTypeVDMode1 DataType = 0x0 // V/D mode 1 (½-rate voice + data)
+	DataTypeDataFR  DataType = 0x1 // Data Full Rate
+	DataTypeVDMode2 DataType = 0x2 // V/D mode 2
+	DataTypeVoiceFR DataType = 0x3 // Voice Full Rate
 )
 
 func (d DataType) String() string {

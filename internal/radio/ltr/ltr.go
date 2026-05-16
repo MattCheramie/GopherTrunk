@@ -10,22 +10,22 @@
 //
 // Files:
 //
-//   status.go    41-bit Status word: Sync + Area + Group flag +
-//                Channel + Home repeater + Group ID + Free + FCS.
-//                Round-trip assemble / parse helpers and bit
-//                accessors.
-//   bandplan.go  Channel → Hz resolver. LTR uses 4-bit channel
-//                numbers (1..20 typically); the operator-supplied
-//                band plan maps each to the repeater's transmit
-//                frequency. Same Resolver shape as the
-//                motorola / edacs packages.
-//   control.go   Per-repeater state machine. Ingest each decoded
-//                Status word and republish it as a
-//                events.KindGrant when the status indicates an
-//                active call on this repeater, plus a one-shot
-//                events.KindCCLocked the first time we see a valid
-//                status from a given repeater (so the hunter can
-//                confirm we're tuned to the right place).
+//	status.go    41-bit Status word: Sync + Area + Group flag +
+//	             Channel + Home repeater + Group ID + Free + FCS.
+//	             Round-trip assemble / parse helpers and bit
+//	             accessors.
+//	bandplan.go  Channel → Hz resolver. LTR uses 4-bit channel
+//	             numbers (1..20 typically); the operator-supplied
+//	             band plan maps each to the repeater's transmit
+//	             frequency. Same Resolver shape as the
+//	             motorola / edacs packages.
+//	control.go   Per-repeater state machine. Ingest each decoded
+//	             Status word and republish it as a
+//	             events.KindGrant when the status indicates an
+//	             active call on this repeater, plus a one-shot
+//	             events.KindCCLocked the first time we see a valid
+//	             status from a given repeater (so the hunter can
+//	             confirm we're tuned to the right place).
 //
 // What's NOT yet wired (honest deferrals):
 //

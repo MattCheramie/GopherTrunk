@@ -111,8 +111,8 @@ func EncodeSACCH(info []byte) []byte {
 		d2 := (state >> 2) & 1
 		d3 := (state >> 1) & 1
 		d4 := state & 1
-		g1 := byte(int(d) ^ d3 ^ d4) & 1
-		g2 := byte(int(d) ^ d1 ^ d2 ^ d4) & 1
+		g1 := byte(int(d)^d3^d4) & 1
+		g2 := byte(int(d)^d1^d2^d4) & 1
 		pre[2*i] = g1
 		pre[2*i+1] = g2
 		state = (int(d) << 3) | (d1 << 2) | (d2 << 1) | d3

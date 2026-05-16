@@ -9,9 +9,9 @@ import (
 // applies an RRC matched filter and slices to the four-level alphabet
 // {+3, +1, -1, -3} (multiplied by a deviation scale).
 type C4FM struct {
-	rrc      []float32
-	hist     []float32
-	histPos  int
+	rrc       []float32
+	hist      []float32
+	histPos   int
 	deviation float32
 }
 

@@ -97,11 +97,11 @@ func NewNullVocoder(frameSize int) *NullVocoder {
 	return &NullVocoder{frameSize: frameSize, samplesOut: pcmHzDefault * frameDurationMs / 1000}
 }
 
-func (n *NullVocoder) Name() string                          { return "null" }
-func (n *NullVocoder) FrameSize() int                        { return n.frameSize }
-func (n *NullVocoder) Decode(_ []byte) ([]int16, error)      { return make([]int16, n.samplesOut), nil }
-func (n *NullVocoder) Reset()                                {}
-func (n *NullVocoder) Close() error                          { return nil }
+func (n *NullVocoder) Name() string                     { return "null" }
+func (n *NullVocoder) FrameSize() int                   { return n.frameSize }
+func (n *NullVocoder) Decode(_ []byte) ([]int16, error) { return make([]int16, n.samplesOut), nil }
+func (n *NullVocoder) Reset()                           {}
+func (n *NullVocoder) Close() error                     { return nil }
 
 func init() {
 	DefaultRegistry.Register("null", func() (Vocoder, error) { return NewNullVocoder(11), nil })

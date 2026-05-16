@@ -80,9 +80,10 @@ var CRCError = errors.New("nxdn: CAC CRC mismatch")
 
 // ParseCAC consumes 11 bytes (88 information bits, MSB-first) and returns
 // a parsed message. Layout:
-//   byte 0     : message type (RCCH opcode)
-//   bytes 1-8  : payload
-//   bytes 9-10 : CRC-CCITT (covering bytes 0..8)
+//
+//	byte 0     : message type (RCCH opcode)
+//	bytes 1-8  : payload
+//	bytes 9-10 : CRC-CCITT (covering bytes 0..8)
 func ParseCAC(info []byte) (CACMessage, error) {
 	if len(info) != 11 {
 		return CACMessage{}, fmt.Errorf("nxdn: CAC info must be 11 bytes, got %d", len(info))

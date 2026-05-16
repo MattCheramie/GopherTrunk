@@ -82,9 +82,9 @@ type ImportPreviewResponse struct {
 // awaiting commit. A TTL sweep drops abandoned previews so memory
 // stays bounded.
 type importStaging struct {
-	mu       sync.Mutex
-	entries  map[string]*stagingEntry
-	ttl      time.Duration
+	mu      sync.Mutex
+	entries map[string]*stagingEntry
+	ttl     time.Duration
 }
 
 type stagingEntry struct {

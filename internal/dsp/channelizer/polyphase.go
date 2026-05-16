@@ -16,11 +16,11 @@ import (
 
 type Polyphase struct {
 	m         int
-	taps      int          // taps per branch
-	branches  [][]float32  // [m][taps]
+	taps      int           // taps per branch
+	branches  [][]float32   // [m][taps]
 	hist      [][]complex64 // [m][taps] ring buffer per branch
 	histPos   []int
-	commIdx   int          // next branch to receive an input sample
+	commIdx   int // next branch to receive an input sample
 	plan      fft.Plan
 	scratchIn []complex128
 }

@@ -7,15 +7,15 @@
 //
 // Two complementary algorithms ship here:
 //
-//   lms.go   Least-Mean-Squares adaptive FIR equalizer. Trained
-//            with reference (or decision-directed) symbols; fast to
-//            converge but needs a known training sequence (or a
-//            slicer it can trust).
-//   cma.go   Constant Modulus Algorithm — blind equalizer for
-//            constant-envelope modulations (PSK family). Drives the
-//            output toward a constant magnitude without ever needing
-//            a reference; useful when the upstream demod has no
-//            preamble to lock to.
+//	lms.go   Least-Mean-Squares adaptive FIR equalizer. Trained
+//	         with reference (or decision-directed) symbols; fast to
+//	         converge but needs a known training sequence (or a
+//	         slicer it can trust).
+//	cma.go   Constant Modulus Algorithm — blind equalizer for
+//	         constant-envelope modulations (PSK family). Drives the
+//	         output toward a constant magnitude without ever needing
+//	         a reference; useful when the upstream demod has no
+//	         preamble to lock to.
 //
 // The package operates on complex64 IQ samples / symbols (matching
 // the rest of the DSP stack). Equalizers slot between the channelizer

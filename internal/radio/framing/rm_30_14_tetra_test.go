@@ -7,11 +7,11 @@ import (
 
 func TestRM3014TetraRoundTripCleanCodeword(t *testing.T) {
 	cases := [][]byte{
-		make([]byte, 14),                                              // all zeros
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},                    // all ones
-		{1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0},                    // alternating
-		{0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1},                    // alternating opposite
-		{1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1},                    // pattern
+		make([]byte, 14), // all zeros
+		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, // all ones
+		{1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0}, // alternating
+		{0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1}, // alternating opposite
+		{1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1}, // pattern
 	}
 	for _, info := range cases {
 		cw := EncodeRM3014Tetra(info)

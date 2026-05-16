@@ -139,9 +139,9 @@ func (p *AudioPublisher) Close() error {
 // Stats reports cumulative publisher counters. Useful for the
 // /metrics surface and for diagnosing slow consumers.
 type AudioPublisherStats struct {
-	Subscribers    int
-	DroppedTotal   uint64
-	TrackedGrants  int
+	Subscribers   int
+	DroppedTotal  uint64
+	TrackedGrants int
 }
 
 func (p *AudioPublisher) Stats() AudioPublisherStats {

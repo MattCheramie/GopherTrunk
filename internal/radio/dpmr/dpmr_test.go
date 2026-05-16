@@ -60,9 +60,9 @@ func TestParseCSBKWrongLength(t *testing.T) {
 
 func TestCSBKFlagAccessors(t *testing.T) {
 	cases := []struct {
-		flags        byte
-		group, emer  bool
-		enc          bool
+		flags       byte
+		group, emer bool
+		enc         bool
 	}{
 		{0x00, false, false, false},
 		{FlagGroupCall, true, false, false},

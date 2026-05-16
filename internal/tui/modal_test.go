@@ -80,9 +80,9 @@ func TestModal_EscCancels(t *testing.T) {
 	m := newWriteModel(t)
 	// Open a modal.
 	updated, _ := m.Update(panels.WriteActionMsg{Request: state.WriteRequest{
-		Confirm: "Sweep?",
-		Label:   "sweep",
-		Kind:    state.WriteKindSweepRetention,
+		Confirm:        "Sweep?",
+		Label:          "sweep",
+		Kind:           state.WriteKindSweepRetention,
 		SweepRetention: &state.SweepRetentionReq{},
 	}})
 	m = updated.(*Model)

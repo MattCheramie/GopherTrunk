@@ -4,10 +4,10 @@
 // in Europe and a sibling of NXDN in framing philosophy. Three
 // operating modes are defined:
 //
-//   Mode 1   peer-to-peer (no infrastructure)
-//   Mode 2   managed direct (no repeater, but a dispatch channel)
-//   Mode 3   centralised trunking (a dedicated control channel that
-//            grants voice / data calls onto traffic channels)
+//	Mode 1   peer-to-peer (no infrastructure)
+//	Mode 2   managed direct (no repeater, but a dispatch channel)
+//	Mode 3   centralised trunking (a dedicated control channel that
+//	         grants voice / data calls onto traffic channels)
 //
 // This package targets Mode 3 — the only mode where the standard
 // "see CC opcode → retune Voice device → follow grant" loop applies.
@@ -15,19 +15,19 @@
 //
 // What this package gives you:
 //
-//   sync.go      Frame Sync 1 / 2 / 3 constants and a tolerant
-//                SyncDetector matching the shape used by the other
-//                trunked-protocol packages.
-//   csbk.go      CSBK (Common Signalling Block) parser — 80-bit
-//                signalling unit with a 5-bit message type, source
-//                and destination IDs, and opcode-specific fields.
-//   opcodes.go   MessageType enum + per-message accessors
-//                (VoiceServiceAllocation, IndividualCall,
-//                DataServiceAllocation, Status, Release, …).
-//   bandplan.go  Channel-number → Hz resolver, linear and table.
-//   control.go   State machine that ingests CSBKs and publishes
-//                events.KindCCLocked / events.KindGrant on the bus
-//                with `trunking.Grant.Protocol = "dpmr"`.
+//	sync.go      Frame Sync 1 / 2 / 3 constants and a tolerant
+//	             SyncDetector matching the shape used by the other
+//	             trunked-protocol packages.
+//	csbk.go      CSBK (Common Signalling Block) parser — 80-bit
+//	             signalling unit with a 5-bit message type, source
+//	             and destination IDs, and opcode-specific fields.
+//	opcodes.go   MessageType enum + per-message accessors
+//	             (VoiceServiceAllocation, IndividualCall,
+//	             DataServiceAllocation, Status, Release, …).
+//	bandplan.go  Channel-number → Hz resolver, linear and table.
+//	control.go   State machine that ingests CSBKs and publishes
+//	             events.KindCCLocked / events.KindGrant on the bus
+//	             with `trunking.Grant.Protocol = "dpmr"`.
 //
 // What's NOT yet wired (honest deferrals):
 //

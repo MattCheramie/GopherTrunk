@@ -12,16 +12,16 @@ import (
 type Kind string
 
 const (
-	KindSDRAttached  Kind = "sdr.attached"
-	KindSDRDetached  Kind = "sdr.detached"
-	KindCCLocked     Kind = "cc.locked"
-	KindCCLost       Kind = "cc.lost"
-	KindCallStart    Kind = "call.start"
-	KindCallEnd      Kind = "call.end"
-	KindGrant        Kind = "grant"
-	KindToneAlert    Kind = "tone.alert"
-	KindDecodeError  Kind = "decode.error"
-	KindError        Kind = "error"
+	KindSDRAttached Kind = "sdr.attached"
+	KindSDRDetached Kind = "sdr.detached"
+	KindCCLocked    Kind = "cc.locked"
+	KindCCLost      Kind = "cc.lost"
+	KindCallStart   Kind = "call.start"
+	KindCallEnd     Kind = "call.end"
+	KindGrant       Kind = "grant"
+	KindToneAlert   Kind = "tone.alert"
+	KindDecodeError Kind = "decode.error"
+	KindError       Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):
 	//   KindHuntProgress fires once per CC candidate the hunter
 	//     tries — payload identifies which system + frequency +
@@ -50,14 +50,14 @@ type Stage string
 // Known decode stages. Add new ones here and reference them from the
 // publishing protocol package; the events bus itself stays neutral.
 const (
-	StageNIDBCH         Stage = "nid-bch"          // P25 Phase 1 NID BCH(63,16,11)
-	StageTSBKTrellis    Stage = "tsbk-trellis"     // P25 Phase 1 TSBK ½-rate trellis
-	StageTSBKCRC        Stage = "tsbk-crc"         // P25 Phase 1 TSBK CRC trailer
-	StageNoBandPlan     Stage = "no-bandplan"      // Voice grant arrived for an unknown channel ID / LCN
+	StageNIDBCH          Stage = "nid-bch"          // P25 Phase 1 NID BCH(63,16,11)
+	StageTSBKTrellis     Stage = "tsbk-trellis"     // P25 Phase 1 TSBK ½-rate trellis
+	StageTSBKCRC         Stage = "tsbk-crc"         // P25 Phase 1 TSBK CRC trailer
+	StageNoBandPlan      Stage = "no-bandplan"      // Voice grant arrived for an unknown channel ID / LCN
 	StageSlotTypeHamming Stage = "slottype-hamming" // DMR slot-type Hamming(20,8)
 	StageVoiceHeaderBPTC Stage = "voiceheader-bptc" // DMR Tier II Voice LC Header BPTC(196,96)
 	StageVoiceHeaderRS   Stage = "voiceheader-rs"   // DMR Tier II Voice LC Header RS(12,9,4)
-	StageSACCHTrellis   Stage = "sacch-trellis"    // NXDN SACCH ½-rate trellis
+	StageSACCHTrellis    Stage = "sacch-trellis"    // NXDN SACCH ½-rate trellis
 )
 
 // DecodeError is the payload published with KindDecodeError. Protocol

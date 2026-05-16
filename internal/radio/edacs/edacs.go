@@ -7,20 +7,20 @@
 //
 // Files:
 //
-//   sync.go       Standard EDACS control-channel sync word + a
-//                 sliding correlator over a bit stream.
-//   ccw.go        CCW = {Command, Status, Address, LCN, Aux} packed
-//                 into 40 bits. Round-trip assemble / parse helpers.
-//   opcodes.go    Command enum + per-command payload accessors
-//                 (Group Voice Grant, Data Grant, System ID,
-//                 Adjacent Site, Idle).
-//   bandplan.go   LCN → Hz resolver. Linear and table strategies,
-//                 same shape as the Motorola package's resolver.
-//   control.go    Control-channel state machine ingesting CCWs and
-//                 emitting cc.locked / grant events on the bus. The
-//                 SetBCHMode / ParseBCHMode opt-in turns the BCH(40,
-//                 28, 2) decode on per system via the ccdecoder
-//                 connector's edacs_bch_mode YAML key.
+//	sync.go       Standard EDACS control-channel sync word + a
+//	              sliding correlator over a bit stream.
+//	ccw.go        CCW = {Command, Status, Address, LCN, Aux} packed
+//	              into 40 bits. Round-trip assemble / parse helpers.
+//	opcodes.go    Command enum + per-command payload accessors
+//	              (Group Voice Grant, Data Grant, System ID,
+//	              Adjacent Site, Idle).
+//	bandplan.go   LCN → Hz resolver. Linear and table strategies,
+//	              same shape as the Motorola package's resolver.
+//	control.go    Control-channel state machine ingesting CCWs and
+//	              emitting cc.locked / grant events on the bus. The
+//	              SetBCHMode / ParseBCHMode opt-in turns the BCH(40,
+//	              28, 2) decode on per system via the ccdecoder
+//	              connector's edacs_bch_mode YAML key.
 //
 // What's NOT yet wired (honest deferrals so a contributor can pick
 // these up):

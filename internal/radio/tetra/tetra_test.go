@@ -62,12 +62,12 @@ func TestPDUFromBitsTooShort(t *testing.T) {
 
 func TestDiscriminatorClassification(t *testing.T) {
 	cases := map[Discriminator]struct{ cmce, mle bool }{
-		DiscMLE:                {false, true},
-		DiscMLE | 0x1:          {false, true},
-		DiscCMCE:               {true, false},
-		DiscCMCE | 0x2:         {true, false},
-		DiscMM:                 {false, false},
-		DiscSDS:                {false, false},
+		DiscMLE:        {false, true},
+		DiscMLE | 0x1:  {false, true},
+		DiscCMCE:       {true, false},
+		DiscCMCE | 0x2: {true, false},
+		DiscMM:         {false, false},
+		DiscSDS:        {false, false},
 	}
 	for d, want := range cases {
 		p := PDU{Disc: d}

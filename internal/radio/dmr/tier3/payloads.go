@@ -99,11 +99,11 @@ func ParseAdjacentSiteStatus(p [8]byte) AdjacentSiteStatus {
 // SystemInfoBroadcast (CSBKO 0x39). Announces the System ID, RFSS, and
 // site number associated with the listening channel.
 type SystemInfoBroadcast struct {
-	SystemID  uint16
-	RFSSID    uint8
-	SiteID    uint8
-	NetMask   uint8
-	Reserved  uint16
+	SystemID uint16
+	RFSSID   uint8
+	SiteID   uint8
+	NetMask  uint8
+	Reserved uint16
 }
 
 func ParseSystemInfoBroadcast(p [8]byte) SystemInfoBroadcast {

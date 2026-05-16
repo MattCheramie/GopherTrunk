@@ -267,9 +267,9 @@ func TestProcessDescramblerProbeFindsOffset(t *testing.T) {
 // the scrambling seed should fail all 12 candidate offsets.
 func TestProcessDescramblerProbeRejectsWrongSeed(t *testing.T) {
 	const (
-		seed         = uint64(0xABCDE0123)
+		seed          = uint64(0xABCDE0123)
 		differentSeed = uint64(0x1234567890A)
-		slotIndex    = 3
+		slotIndex     = 3
 	)
 	offset := framing.PN44SlotOffsetsOutbound[slotIndex]
 

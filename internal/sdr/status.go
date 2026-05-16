@@ -23,10 +23,10 @@ type SDRStatus struct {
 	// parts-per-million; GainTenthDB follows the SetGain convention
 	// (negative = AGC). BiasTee reflects whether the YAML asked the
 	// pool to enable the 5 V output.
-	GainTenthDB  int  `json:"gain_tenth_db"`
-	GainAuto     bool `json:"gain_auto"`
-	PPM          int  `json:"ppm"`
-	BiasTee      bool `json:"bias_tee"`
+	GainTenthDB int  `json:"gain_tenth_db"`
+	GainAuto    bool `json:"gain_auto"`
+	PPM         int  `json:"ppm"`
+	BiasTee     bool `json:"bias_tee"`
 
 	// Gains is the tuner's quantized gain ladder (tenths of dB),
 	// useful for UIs that want to render valid choices.

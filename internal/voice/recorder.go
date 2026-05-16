@@ -25,8 +25,8 @@ import (
 //
 // Layout under OutDir (Trunk-Recorder-style):
 //
-//   <OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.wav
-//   <OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.raw
+//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.wav
+//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.raw
 //
 // The raw sidecar is appended once per WriteRawFrame call. It is
 // intentionally a flat concatenation of frames so users can BYO decoder

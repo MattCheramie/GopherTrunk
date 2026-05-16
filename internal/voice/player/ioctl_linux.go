@@ -101,8 +101,8 @@ type sndInterval struct {
 // Layout is fixed by the UAPI; do not reorder.
 type sndPCMHwParams struct {
 	Flags     uint32
-	Masks     [3]sndMask    // ACCESS, FORMAT, SUBFORMAT
-	Mres      [5]sndMask    // reserved masks
+	Masks     [3]sndMask // ACCESS, FORMAT, SUBFORMAT
+	Mres      [5]sndMask // reserved masks
 	Intervals [12]sndInterval
 	Ires      [9]sndInterval // reserved intervals
 	Rmask     uint32         // requested mask (set by user, kernel may clear)

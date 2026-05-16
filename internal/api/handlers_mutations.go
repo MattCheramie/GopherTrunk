@@ -14,10 +14,10 @@ import (
 // clients use can_mutate to light up write-side keybindings without
 // having to probe a real endpoint for 401 / 403.
 //
-//   auth_mode      — "auto" | "required" | "disabled"
-//   can_mutate     — true when the current request would pass auth
-//   allow_mutations— legacy alias for can_mutate (deprecated)
-//   engine_writable / retention_writable / tones_writable — wiring
+//	auth_mode      — "auto" | "required" | "disabled"
+//	can_mutate     — true when the current request would pass auth
+//	allow_mutations— legacy alias for can_mutate (deprecated)
+//	engine_writable / retention_writable / tones_writable — wiring
 func (s *Server) handleMutationStatus(w http.ResponseWriter, r *http.Request) {
 	canMutate := s.auth.canMutate(r)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -40,14 +40,15 @@ type endCallRequest struct {
 // given device serial, publishing a CallEnd event with the supplied
 // reason (default: "manual").
 //
-//   POST /api/v1/calls/00000001/end
-//   Content-Type: application/json
-//   {"reason":"manual"}
+//	POST /api/v1/calls/00000001/end
+//	Content-Type: application/json
+//	{"reason":"manual"}
 //
 // Responses:
-//   200 {"ok":true,"device_serial":"...","reason":"manual"}
-//   404 if no active call holds the device
-//   503 if the daemon doesn't have an EngineMutator wired
+//
+//	200 {"ok":true,"device_serial":"...","reason":"manual"}
+//	404 if no active call holds the device
+//	503 if the daemon doesn't have an EngineMutator wired
 func (s *Server) handleEndCall(w http.ResponseWriter, r *http.Request) {
 	if s.mutator == nil {
 		writeError(w, http.StatusServiceUnavailable, "engine not wired for mutations")
@@ -108,14 +109,15 @@ type updateTalkgroupRequest struct {
 // handleUpdateTalkgroup updates a talkgroup's mutable policy fields
 // (priority and/or lockout). The full updated record is returned.
 //
-//   PATCH /api/v1/talkgroups/42
-//   Content-Type: application/json
-//   {"priority":3,"lockout":false}
+//	PATCH /api/v1/talkgroups/42
+//	Content-Type: application/json
+//	{"priority":3,"lockout":false}
 //
 // Responses:
-//   200 with the updated TalkgroupDTO
-//   400 if the id can't be parsed or the body is malformed
-//   404 if no such talkgroup exists
+//
+//	200 with the updated TalkgroupDTO
+//	400 if the id can't be parsed or the body is malformed
+//	404 if no such talkgroup exists
 func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -157,12 +159,13 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 // runs are sub-second; if a deployment outgrows that we'll move
 // it to a goroutine + 202.
 //
-//   POST /api/v1/retention/sweep
+//	POST /api/v1/retention/sweep
 //
 // Responses:
-//   200 {"ok":true}
-//   503 if the daemon doesn't have a Retention wired (e.g. no
-//       call-log persistence configured)
+//
+//	200 {"ok":true}
+//	503 if the daemon doesn't have a Retention wired (e.g. no
+//	    call-log persistence configured)
 func (s *Server) handleRetentionSweep(w http.ResponseWriter, r *http.Request) {
 	if s.retention == nil {
 		writeError(w, http.StatusServiceUnavailable, "retention not wired")
@@ -176,11 +179,12 @@ func (s *Server) handleRetentionSweep(w http.ResponseWriter, r *http.Request) {
 // given device, leaving the cooldown clock intact (so an in-flight
 // false alarm doesn't immediately re-fire).
 //
-//   POST /api/v1/devices/00000001/tone-reset
+//	POST /api/v1/devices/00000001/tone-reset
 //
 // Responses:
-//   200 {"ok":true,"device_serial":"..."}
-//   503 if the daemon doesn't have a tone detector wired
+//
+//	200 {"ok":true,"device_serial":"..."}
+//	503 if the daemon doesn't have a tone detector wired
 func (s *Server) handleToneReset(w http.ResponseWriter, r *http.Request) {
 	if s.tones == nil {
 		writeError(w, http.StatusServiceUnavailable, "tone detector not wired")

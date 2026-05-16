@@ -14,22 +14,22 @@
 //
 // What this package gives you:
 //
-//   sync.go     Frame Sync and Slow Data sync constants and a
-//               tolerant SyncDetector matching the shape used by the
-//               other protocol packages.
-//   header.go   PCH (Preamble + Header) parser — the 660-bit
-//               packet that opens a transmission carrying the eight
-//               callsign fields (RPT2, RPT1, UR, MY1) plus the
-//               Repeater / Personal flags (RF1).
-//   control.go  State machine that ingests Header frames and
-//               publishes events.KindCCLocked + events.KindGrant on
-//               the bus with `trunking.Grant.Protocol = "dstar"`.
-//               cc.locked fires on the first valid header (the
-//               receiver has locked onto the repeater); grant fires
-//               on every header whose UR field is a group call ("CQCQCQ"
-//               or a "/repeater" routing tag). Same shape as the other
-//               protocol packages so the engine + recorder + composer
-//               don't need to know D-STAR is conventional.
+//	sync.go     Frame Sync and Slow Data sync constants and a
+//	            tolerant SyncDetector matching the shape used by the
+//	            other protocol packages.
+//	header.go   PCH (Preamble + Header) parser — the 660-bit
+//	            packet that opens a transmission carrying the eight
+//	            callsign fields (RPT2, RPT1, UR, MY1) plus the
+//	            Repeater / Personal flags (RF1).
+//	control.go  State machine that ingests Header frames and
+//	            publishes events.KindCCLocked + events.KindGrant on
+//	            the bus with `trunking.Grant.Protocol = "dstar"`.
+//	            cc.locked fires on the first valid header (the
+//	            receiver has locked onto the repeater); grant fires
+//	            on every header whose UR field is a group call ("CQCQCQ"
+//	            or a "/repeater" routing tag). Same shape as the other
+//	            protocol packages so the engine + recorder + composer
+//	            don't need to know D-STAR is conventional.
 //
 // What's NOT yet wired (honest deferrals):
 //

@@ -150,10 +150,10 @@ func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	})
 
 	grantPayload := [8]byte{
-		0xC0,                               // service options: emergency + encrypted
-		(1 << 4) | 0x00, 0x10,              // channel = ID 1, number 0x010 (=16)
-		0x12, 0x34,                         // group address 0x1234
-		0xAB, 0xCD, 0xEF,                   // source ID 0xABCDEF
+		0xC0,                  // service options: emergency + encrypted
+		(1 << 4) | 0x00, 0x10, // channel = ID 1, number 0x010 (=16)
+		0x12, 0x34, // group address 0x1234
+		0xAB, 0xCD, 0xEF, // source ID 0xABCDEF
 	}
 	grantTSBK := TSBK{LB: true, Opcode: OpGroupVoiceChannelGrant, Payload: grantPayload}
 

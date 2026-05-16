@@ -110,10 +110,10 @@ func ParseLICH(b byte) LICH {
 		parity ^= (b >> uint(i)) & 1
 	}
 	return LICH{
-		RFCh:      RFChannelType((b >> 7) & 1),                  // info bit 0 → byte bit 7
+		RFCh:      RFChannelType((b >> 7) & 1), // info bit 0 → byte bit 7
 		FCT:       FunctionChannelType(((b >> 4) & 2) | ((b >> 6) & 1)),
-		Option:    (b >> 3) & 0x3,                               // bits 4..3 → Option[1..0]
-		Direction: Direction((b >> 1) & 1),                      // info bit 6 → byte bit 1
+		Option:    (b >> 3) & 0x3,          // bits 4..3 → Option[1..0]
+		Direction: Direction((b >> 1) & 1), // info bit 6 → byte bit 1
 		ParityOK:  (b & 1) == parity,
 	}
 }

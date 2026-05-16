@@ -74,10 +74,11 @@ func (o Opcode) String() string {
 }
 
 // GroupVoiceChannelGrant (opcode 0x00) — base format. Payload layout:
-//   byte 0:    service options
-//   byte 1-2:  channel (4-bit ID + 12-bit number)
-//   byte 3-4:  group address (talkgroup)
-//   byte 5-7:  source unit (24-bit)
+//
+//	byte 0:    service options
+//	byte 1-2:  channel (4-bit ID + 12-bit number)
+//	byte 3-4:  group address (talkgroup)
+//	byte 5-7:  source unit (24-bit)
 type GroupVoiceChannelGrant struct {
 	ServiceOptions uint8
 	ChannelID      uint8
@@ -124,10 +125,11 @@ func ParseGroupVoiceChannelUpdate(p [8]byte) GroupVoiceChannelUpdate {
 // vendor variants — TIA-102.AABF is unfortunately revised over time;
 // callers should look at MFID + opcode together to disambiguate). This
 // parser handles the standard explicit-form payload:
-//   bytes 0-2:  WACN ID (20 bits in upper 20 of 24)
-//   bytes 2-3:  System ID (12 bits)
-//   bytes 4-5:  channel
-//   bytes 6-7:  system service class
+//
+//	bytes 0-2:  WACN ID (20 bits in upper 20 of 24)
+//	bytes 2-3:  System ID (12 bits)
+//	bytes 4-5:  channel
+//	bytes 6-7:  system service class
 type NetworkStatusBroadcast struct {
 	WACN          uint32 // 20-bit
 	SystemID      uint16 // 12-bit
@@ -150,12 +152,13 @@ func ParseNetworkStatusBroadcast(p [8]byte) NetworkStatusBroadcast {
 }
 
 // RFSSStatusBroadcast (opcode 0x3A in standard form). Payload:
-//   byte 0:     LRA (Location Registration Area)
-//   byte 1:     System ID high nibble + RFSS ID
-//   byte 2:     RFSS ID continued / Site ID
-//   byte 3:     Site ID continued
-//   bytes 4-5:  channel
-//   bytes 6-7:  system service class
+//
+//	byte 0:     LRA (Location Registration Area)
+//	byte 1:     System ID high nibble + RFSS ID
+//	byte 2:     RFSS ID continued / Site ID
+//	byte 3:     Site ID continued
+//	bytes 4-5:  channel
+//	bytes 6-7:  system service class
 type RFSSStatusBroadcast struct {
 	LRA           uint8
 	SystemID      uint16 // 12-bit

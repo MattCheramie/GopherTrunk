@@ -13,22 +13,22 @@
 //
 // What this package gives you:
 //
-//   sync.go      Synchronisation burst sync words and a tolerant
-//                SyncDetector matching the shape used by the other
-//                trunked-protocol packages.
-//   pdu.go       TETRA Layer-3 PDU parser — discriminator + PDU
-//                type + payload bytes, mirroring the L3 message
-//                framing across MLE / MM / CMCE / SDS sub-protocols.
-//   cmce.go      CMCE (Circuit-Mode Control Entity) PDU accessors
-//                for the trunking-grant subset: D-CONNECT,
-//                D-RELEASE, plus SYSINFO broadcasts that identify
-//                the network. Extracts the assigned carrier
-//                number / timeslot / call identifier / encryption
-//                + emergency flags / source + destination SSIs.
-//   bandplan.go  Carrier-number → Hz resolver, linear and table.
-//   control.go   State machine that ingests PDUs and publishes
-//                events.KindCCLocked / events.KindGrant on the bus
-//                with `trunking.Grant.Protocol = "tetra"`.
+//	sync.go      Synchronisation burst sync words and a tolerant
+//	             SyncDetector matching the shape used by the other
+//	             trunked-protocol packages.
+//	pdu.go       TETRA Layer-3 PDU parser — discriminator + PDU
+//	             type + payload bytes, mirroring the L3 message
+//	             framing across MLE / MM / CMCE / SDS sub-protocols.
+//	cmce.go      CMCE (Circuit-Mode Control Entity) PDU accessors
+//	             for the trunking-grant subset: D-CONNECT,
+//	             D-RELEASE, plus SYSINFO broadcasts that identify
+//	             the network. Extracts the assigned carrier
+//	             number / timeslot / call identifier / encryption
+//	             + emergency flags / source + destination SSIs.
+//	bandplan.go  Carrier-number → Hz resolver, linear and table.
+//	control.go   State machine that ingests PDUs and publishes
+//	             events.KindCCLocked / events.KindGrant on the bus
+//	             with `trunking.Grant.Protocol = "tetra"`.
 //
 // What's NOT yet wired (honest deferrals):
 //

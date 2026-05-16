@@ -12,9 +12,9 @@ import (
 
 // fakeTuner records every SetCenterFreq call.
 type fakeTuner struct {
-	mu     sync.Mutex
-	calls  []uint32
-	err    error
+	mu    sync.Mutex
+	calls []uint32
+	err   error
 }
 
 func (f *fakeTuner) SetCenterFreq(hz uint32) error {
@@ -40,7 +40,7 @@ type fakeLock struct {
 }
 
 func (f fakeLock) LockedFrequencyHz() uint32 { return f.freq }
-func (f fakeLock) LockedNAC() uint16          { return f.nac }
+func (f fakeLock) LockedNAC() uint16         { return f.nac }
 
 func TestSupervisorFailsClosedWhenNothingLocks(t *testing.T) {
 	bus := events.NewBus(32)
@@ -182,9 +182,9 @@ func TestSupervisorForceRetuneClearsBackoff(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
 	sup, err := New(Options{
-		Bus:     bus,
-		Tuner:   &fakeTuner{},
-		Systems: []trunking.System{{Name: "R", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}}},
+		Bus:            bus,
+		Tuner:          &fakeTuner{},
+		Systems:        []trunking.System{{Name: "R", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}}},
 		InitialBackoff: time.Hour,
 		MaxBackoff:     time.Hour,
 	})

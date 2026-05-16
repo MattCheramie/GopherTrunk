@@ -12,11 +12,11 @@ type FLCO uint8
 // commonly-seen voice-call opcodes are listed here; vendor extensions
 // live behind FID != 0.
 const (
-	FLCOGroupVoiceUser FLCO = 0x00 // Group voice channel user
+	FLCOGroupVoiceUser  FLCO = 0x00 // Group voice channel user
 	FLCOUnitToUnitVoice FLCO = 0x03 // Unit-to-Unit voice channel user
-	FLCOTalkerAlias    FLCO = 0x04 // Talker alias header
-	FLCOGPS            FLCO = 0x08 // GPS info
-	FLCOTerminator     FLCO = 0x30 // Terminator
+	FLCOTalkerAlias     FLCO = 0x04 // Talker alias header
+	FLCOGPS             FLCO = 0x08 // GPS info
+	FLCOTerminator      FLCO = 0x30 // Terminator
 )
 
 func (o FLCO) String() string {

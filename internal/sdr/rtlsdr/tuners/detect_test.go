@@ -116,9 +116,9 @@ func (p *permissiveMockTransport) ControlIn(_ uint8, _, _ uint16, n int, _ int) 
 	return out, nil
 }
 func (p *permissiveMockTransport) ControlOut(_ uint8, _, _ uint16, _ []byte, _ int) error { return nil }
-func (p *permissiveMockTransport) ClaimInterface(int) error                                 { return nil }
-func (p *permissiveMockTransport) ReleaseInterface(int) error                               { return nil }
-func (p *permissiveMockTransport) StartBulkIn(byte, int, int, func([]byte)) error           { return nil }
-func (p *permissiveMockTransport) StopBulkIn() error                                        { return nil }
-func (p *permissiveMockTransport) Reset() error                                             { return nil }
-func (p *permissiveMockTransport) Close() error                                             { return nil }
+func (p *permissiveMockTransport) ClaimInterface(int) error                               { return nil }
+func (p *permissiveMockTransport) ReleaseInterface(int) error                             { return nil }
+func (p *permissiveMockTransport) StartBulkIn(byte, int, int, func([]byte)) error         { return nil }
+func (p *permissiveMockTransport) StopBulkIn() error                                      { return nil }
+func (p *permissiveMockTransport) Reset() error                                           { return nil }
+func (p *permissiveMockTransport) Close() error                                           { return nil }

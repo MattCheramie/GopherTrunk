@@ -48,7 +48,7 @@ type Detector struct {
 
 // deviceState is the Goertzel + match state for one Voice device serial.
 type deviceState struct {
-	gs        []*Goertzel    // per unique frequency
+	gs        []*Goertzel      // per unique frequency
 	progress  []*matchProgress // per profile
 	lastBlock time.Time
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
-	gtweb "github.com/MattCheramie/GopherTrunk/web"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -25,6 +24,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
+	gtweb "github.com/MattCheramie/GopherTrunk/web"
 )
 
 // parseGain converts a config.DeviceConfig.Gain value to a tenths-
@@ -72,11 +72,11 @@ type Daemon struct {
 	// config fields (HTTPListenAddr, startup logging, runtime DTO
 	// build). Reload takes the write lock for the whole apply
 	// phase; readers use Cfg() to take an RLock'd snapshot.
-	cfgMu    sync.RWMutex
-	cfg      config.Config
-	cfgPath  string
-	log      *slog.Logger
-	writer   *config.Writer // optional; nil when daemon ran without -config
+	cfgMu   sync.RWMutex
+	cfg     config.Config
+	cfgPath string
+	log     *slog.Logger
+	writer  *config.Writer // optional; nil when daemon ran without -config
 
 	bus        *events.Bus
 	pool       *sdr.Pool

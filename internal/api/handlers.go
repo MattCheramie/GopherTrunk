@@ -135,12 +135,13 @@ func (s *Server) handleActiveCalls(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleCallHistory queries the persisted call_log table.
-//   ?system=<name>      filter by system
-//   ?group_id=<n>       filter by talkgroup
-//   ?since=<rfc3339>    only calls started at/after this time
-//   ?until=<rfc3339>    only calls started before this time
-//   ?limit=<n>          cap rows (default 100, max 1000)
-//   ?only_ended=true    skip calls that haven't ended
+//
+//	?system=<name>      filter by system
+//	?group_id=<n>       filter by talkgroup
+//	?since=<rfc3339>    only calls started at/after this time
+//	?until=<rfc3339>    only calls started before this time
+//	?limit=<n>          cap rows (default 100, max 1000)
+//	?only_ended=true    skip calls that haven't ended
 func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if s.history == nil {
 		writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")

@@ -38,7 +38,7 @@ const (
 // matching frame. Read latency is ~50 ns vs. ~5 µs for the
 // synthesis itself, so the lock cost is in the noise.
 var (
-	knoxMu       sync.RWMutex
+	knoxMu        sync.RWMutex
 	knoxToneTable [KnoxIndexHigh - KnoxIndexLow + 1][2]float64
 )
 

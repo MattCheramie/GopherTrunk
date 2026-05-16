@@ -7,12 +7,12 @@ package phase2
 // either a 4-voice / 2-voice slot or a MAC slot, identified by the
 // SlotType field that prefixes the sub-frame.
 const (
-	SuperframeMs        = 360
-	SubframeMs          = 30
+	SuperframeMs           = 360
+	SubframeMs             = 30
 	SubframesPerSuperframe = 12
 	TimeslotsPerSuperframe = 2
-	SymbolsPerSecond    = 6000
-	DibitsPerSubframe   = (SymbolsPerSecond * SubframeMs) / 1000 / 1 // 180
+	SymbolsPerSecond       = 6000
+	DibitsPerSubframe      = (SymbolsPerSecond * SubframeMs) / 1000 / 1 // 180
 )
 
 // SlotType is the 4-bit identifier that names what a sub-frame
@@ -21,16 +21,16 @@ const (
 type SlotType uint8
 
 const (
-	SlotTypeUnknown        SlotType = 0x0
-	SlotTypeVoice4V        SlotType = 0x1 // 4 voice frames
-	SlotTypeVoice2V        SlotType = 0x2 // 2 voice frames + MAC
-	SlotTypeMACPTT         SlotType = 0x3 // MAC PTT signalling
-	SlotTypeMACEnd         SlotType = 0x4 // MAC end of transmission
-	SlotTypeMACIdle        SlotType = 0x5 // MAC channel idle
-	SlotTypeMACActive      SlotType = 0x6 // MAC active update
-	SlotTypeMACHangtime    SlotType = 0x7 // MAC hang-time
-	SlotTypeMACSignaling   SlotType = 0x8
-	SlotTypeMACEndCont     SlotType = 0x9 // MAC end + continuation
+	SlotTypeUnknown      SlotType = 0x0
+	SlotTypeVoice4V      SlotType = 0x1 // 4 voice frames
+	SlotTypeVoice2V      SlotType = 0x2 // 2 voice frames + MAC
+	SlotTypeMACPTT       SlotType = 0x3 // MAC PTT signalling
+	SlotTypeMACEnd       SlotType = 0x4 // MAC end of transmission
+	SlotTypeMACIdle      SlotType = 0x5 // MAC channel idle
+	SlotTypeMACActive    SlotType = 0x6 // MAC active update
+	SlotTypeMACHangtime  SlotType = 0x7 // MAC hang-time
+	SlotTypeMACSignaling SlotType = 0x8
+	SlotTypeMACEndCont   SlotType = 0x9 // MAC end + continuation
 )
 
 // String returns a stable human-readable label for log output.

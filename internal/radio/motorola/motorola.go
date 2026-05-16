@@ -7,16 +7,16 @@
 //
 // What's wired here:
 //
-//   sync.go      Standard Motorola control-channel sync words and a
-//                sliding correlator over a bit stream.
-//   osw.go       OSW assemble/parse over the 32 information bits.
-//   opcodes.go   Opcode constants + per-opcode payload accessors
-//                (Group Voice Channel Grant, Adjacent Site,
-//                System ID, Idle).
-//   bandplan.go  Logical Channel Number → frequency (Hz) resolver
-//                with linear and table-backed strategies.
-//   control.go   Control-channel state machine ingesting OSWs and
-//                emitting cc.locked / grant events on the bus.
+//	sync.go      Standard Motorola control-channel sync words and a
+//	             sliding correlator over a bit stream.
+//	osw.go       OSW assemble/parse over the 32 information bits.
+//	opcodes.go   Opcode constants + per-opcode payload accessors
+//	             (Group Voice Channel Grant, Adjacent Site,
+//	             System ID, Idle).
+//	bandplan.go  Logical Channel Number → frequency (Hz) resolver
+//	             with linear and table-backed strategies.
+//	control.go   Control-channel state machine ingesting OSWs and
+//	             emitting cc.locked / grant events on the bus.
 //
 // What's NOT yet wired (honest deferrals so a contributor can pick
 // these up):

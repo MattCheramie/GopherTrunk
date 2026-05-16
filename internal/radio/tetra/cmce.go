@@ -12,13 +12,13 @@ type PDUType uint8
 
 const (
 	// CMCE PDU types (Disc = DiscCMCE).
-	CMCEDSetup           PDUType = 0x1 // D-SETUP — incoming call setup
-	CMCEDConnect         PDUType = 0x2 // D-CONNECT — call connected (carries grant)
-	CMCEDRelease         PDUType = 0x4 // D-RELEASE — call released
-	CMCEDTxCeased        PDUType = 0x5 // D-TX-CEASED — talker stopped
-	CMCEDTxGranted       PDUType = 0x7 // D-TX-GRANTED — late-grant transmission
-	CMCEDInfo            PDUType = 0x9 // D-INFO — supplementary services
-	CMCEDCallProceeding  PDUType = 0xA // D-CALL-PROCEEDING
+	CMCEDSetup          PDUType = 0x1 // D-SETUP — incoming call setup
+	CMCEDConnect        PDUType = 0x2 // D-CONNECT — call connected (carries grant)
+	CMCEDRelease        PDUType = 0x4 // D-RELEASE — call released
+	CMCEDTxCeased       PDUType = 0x5 // D-TX-CEASED — talker stopped
+	CMCEDTxGranted      PDUType = 0x7 // D-TX-GRANTED — late-grant transmission
+	CMCEDInfo           PDUType = 0x9 // D-INFO — supplementary services
+	CMCEDCallProceeding PDUType = 0xA // D-CALL-PROCEEDING
 
 	// MLE PDU types (Disc = DiscMLE).
 	MLESystemInfo PDUType = 0x3 // SYSINFO — system identity broadcast
@@ -56,11 +56,11 @@ func (p PDU) TypeString() string {
 // fields surface what a trunking follower needs to retune a Voice
 // device to the assigned slot:
 //
-//   bytes 0-1  Call Identifier (14 bits) + flags
-//   bytes 2-4  Source SSI (24 bits)
-//   bytes 5-7  Destination SSI (24 bits)
-//   byte  8    Communication type / flags
-//   bytes 9-10 Carrier Number (12 bits) + Timeslot (2 bits) + flags
+//	bytes 0-1  Call Identifier (14 bits) + flags
+//	bytes 2-4  Source SSI (24 bits)
+//	bytes 5-7  Destination SSI (24 bits)
+//	byte  8    Communication type / flags
+//	bytes 9-10 Carrier Number (12 bits) + Timeslot (2 bits) + flags
 //
 // The exact bit positions follow the most-cited public reference for
 // CMCE D-CONNECT; vendor extensions repurpose the high bits of
@@ -113,7 +113,7 @@ func (p PDU) AsVoiceGrant() (VoiceGrant, bool) {
 // surface the call identifier so a higher-layer state machine can
 // match the release to a previously-seen D-CONNECT.
 type CallRelease struct {
-	CallIdentifier uint16
+	CallIdentifier  uint16
 	DisconnectCause uint8
 }
 

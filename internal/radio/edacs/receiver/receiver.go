@@ -58,11 +58,11 @@ type Options struct {
 
 // Receiver is the composed IQ → bit pipeline.
 type Receiver struct {
-	fm       *demod.FM
-	gfsk     *demod.GFSK
-	clock    *sync.MuellerMuller
-	bitSink  edacs.BitSink
-	bitBase  int
+	fm      *demod.FM
+	gfsk    *demod.GFSK
+	clock   *sync.MuellerMuller
+	bitSink edacs.BitSink
+	bitBase int
 
 	disc    []float32
 	matched []float32

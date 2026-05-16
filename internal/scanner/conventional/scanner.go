@@ -125,11 +125,11 @@ const (
 
 // ChannelStatus is one row in the Snapshot.
 type ChannelStatus struct {
-	Index       int       `json:"index"`
-	Label       string    `json:"label"`
-	FrequencyHz uint32    `json:"frequency_hz"`
-	Mode        string    `json:"mode"`
-	Active      bool      `json:"active"`
+	Index       int    `json:"index"`
+	Label       string `json:"label"`
+	FrequencyHz uint32 `json:"frequency_hz"`
+	Mode        string `json:"mode"`
+	Active      bool   `json:"active"`
 	// LockedOut reports whether the channel is excluded from the
 	// scan cycle by operator action. Runtime-only — the field is
 	// not persisted across daemon restarts.
@@ -139,10 +139,10 @@ type ChannelStatus struct {
 
 // Status is the scanner-wide snapshot.
 type Status struct {
-	State       State           `json:"state"`
-	Channels    []ChannelStatus `json:"channels"`
-	CursorIndex int             `json:"cursor_index"`
-	DeviceSerial string         `json:"device_serial,omitempty"`
+	State        State           `json:"state"`
+	Channels     []ChannelStatus `json:"channels"`
+	CursorIndex  int             `json:"cursor_index"`
+	DeviceSerial string          `json:"device_serial,omitempty"`
 }
 
 // Scanner is the state machine. Construct via New, Run with a ctx.
@@ -150,8 +150,8 @@ type Scanner struct {
 	opts Options
 	log  *slog.Logger
 
-	mu          sync.RWMutex
-	channels    []Channel // mutable; opts.Channels is the seed, AddTemporaryChannel grows it
+	mu       sync.RWMutex
+	channels []Channel // mutable; opts.Channels is the seed, AddTemporaryChannel grows it
 	// detectors parallels channels: detectors[i] is non-nil iff
 	// channels[i] has Tone gating configured. Built at New() and
 	// kept in sync by AddTemporaryChannel / RemoveTemporaryChannel.

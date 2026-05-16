@@ -22,7 +22,7 @@ type LockState struct {
 // the cc-hunter can consume Tier III lock events without importing
 // this package.
 func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
-func (s LockState) LockedNAC() uint16          { return s.SystemID }
+func (s LockState) LockedNAC() uint16         { return s.SystemID }
 
 // ControlChannel ingests detected DMR bursts whose Slot Type
 // identifies a CSBK, runs BPTC(196,96) decode + CRC, and dispatches

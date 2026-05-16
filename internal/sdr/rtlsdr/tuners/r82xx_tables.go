@@ -10,8 +10,8 @@ const (
 	// r82xxI2CAddr is the bridged I2C address librtlsdr always uses
 	// for R820T / R820T2. The R828D variant lives at 0x74 instead;
 	// detection in r82xx.go picks the right address.
-	r82xxI2CAddr     uint8 = 0x34
-	r828dI2CAddr     uint8 = 0x74
+	r82xxI2CAddr uint8 = 0x34
+	r828dI2CAddr uint8 = 0x74
 
 	// r82xxIFFreqHz is the intermediate frequency the demod should
 	// be programmed to when this tuner is bound.
@@ -121,11 +121,11 @@ var r82xxFilterBWTable = []uint32{
 // SetMux walks the table and applies the first row whose
 // frequency-range contains the target hz.
 type r82xxFreqRange struct {
-	freqHz   uint32 // upper bound (inclusive) for which this row applies
-	openD    byte   // reg 0x17 (low nibble) — input switch / open drain
-	rfMux    byte   // reg 0x1A — RF mux configuration
-	tfC      byte   // reg 0x1B — tracking-filter cap
-	xtalCap20p byte // reg 0x10 — xtal-cap selection bits
+	freqHz     uint32 // upper bound (inclusive) for which this row applies
+	openD      byte   // reg 0x17 (low nibble) — input switch / open drain
+	rfMux      byte   // reg 0x1A — RF mux configuration
+	tfC        byte   // reg 0x1B — tracking-filter cap
+	xtalCap20p byte   // reg 0x10 — xtal-cap selection bits
 	xtalCap10p byte
 	xtalCap0p  byte
 }

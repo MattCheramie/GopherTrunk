@@ -332,9 +332,9 @@ func TestFFSKDiscriminateStateAcrossChunks(t *testing.T) {
 
 func TestFFSKConstructorPanicsOnBadParams(t *testing.T) {
 	cases := []struct {
-		name             string
-		sampleRate       float64
-		markHz, spaceHz  float64
+		name            string
+		sampleRate      float64
+		markHz, spaceHz float64
 	}{
 		{"zero sample rate", 0, 1200, 1800},
 		{"zero mark", 48_000, 0, 1800},

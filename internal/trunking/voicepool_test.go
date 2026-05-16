@@ -46,7 +46,7 @@ func mkPool(n int) (*VoicePool, []*fakeVoiceTuner) {
 }
 
 func serial(i int) string {
-	return string(rune('A' + i)) + "-voice"
+	return string(rune('A'+i)) + "-voice"
 }
 
 func TestPoolFindFreeAndBind(t *testing.T) {

@@ -22,7 +22,7 @@ type LockState struct {
 // YSF doesn't have a P25-style NAC; LockedNAC returns 0 and the
 // hunter treats it as a don't-care.
 func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
-func (s LockState) LockedNAC() uint16          { return 0 }
+func (s LockState) LockedNAC() uint16         { return 0 }
 
 // Options configure a ControlChannel. Backwards-compatible with the
 // old NewControlChannel positional constructor — callers that don't
@@ -57,9 +57,9 @@ type ControlChannel struct {
 	freqHz     uint32
 	now        func() time.Time
 
-	locked     bool
-	lastDGID   uint8 // last group ID we published a grant for; suppresses duplicate emission until a Terminator clears it
-	hasGrant   bool
+	locked   bool
+	lastDGID uint8 // last group ID we published a grant for; suppresses duplicate emission until a Terminator clears it
+	hasGrant bool
 }
 
 // New constructs a ControlChannel from Options.

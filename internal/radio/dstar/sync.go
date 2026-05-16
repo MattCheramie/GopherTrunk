@@ -14,10 +14,10 @@ type BitSink func(bits []byte, baseIdx int)
 // D-STAR sync words per the JARL D-STAR DV-mode specification.
 // Two distinct patterns mark the two burst types a receiver tracks:
 //
-//   FrameSync     32-bit "Frame Sync" prefix that opens every voice
-//                 + data superframe (the "FRMSYNC" bit pattern).
-//   DataSync      24-bit Slow Data sync inside the voice payload's
-//                 alternating-frame slow-data channel.
+//	FrameSync     32-bit "Frame Sync" prefix that opens every voice
+//	              + data superframe (the "FRMSYNC" bit pattern).
+//	DataSync      24-bit Slow Data sync inside the voice payload's
+//	              alternating-frame slow-data channel.
 //
 // Stored as canonical hex; helpers materialise the dibits MSB-first
 // for the symbol-domain detector (D-STAR is GMSK so symbols are

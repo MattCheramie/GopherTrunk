@@ -28,6 +28,6 @@ const (
 // Frame offsets for callers that want to slice a 480-dibit window.
 const (
 	FSWOffset     = 0
-	FICHOffset    = FSWOffset + FSWDibits  // 20
+	FICHOffset    = FSWOffset + FSWDibits   // 20
 	PayloadOffset = FICHOffset + FICHDibits // 120
 )

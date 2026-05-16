@@ -15,23 +15,23 @@ import (
 // fakeCockpit captures every mutation method call so tests can
 // verify the route → cockpit wiring.
 type fakeCockpit struct {
-	mu       sync.Mutex
-	status   ScannerStatus
-	modeErr  error
-	holdSys  []string
-	resSys   []string
-	retSys   []string
-	holdConv int
-	resConv  int
-	dwell    []int
-	missingSys map[string]bool // systems for which Hold/Resume/Retune should return false
+	mu                sync.Mutex
+	status            ScannerStatus
+	modeErr           error
+	holdSys           []string
+	resSys            []string
+	retSys            []string
+	holdConv          int
+	resConv           int
+	dwell             []int
+	missingSys        map[string]bool // systems for which Hold/Resume/Retune should return false
 	convNotConfigured bool
-	dwellRange int // valid range [0..dwellRange); -1 means any index accepted
-	prevMode string
-	manualReqs []ManualTuneRequest
-	manualNextIdx int
-	clearedManual []int
-	clearOK bool
+	dwellRange        int // valid range [0..dwellRange); -1 means any index accepted
+	prevMode          string
+	manualReqs        []ManualTuneRequest
+	manualNextIdx     int
+	clearedManual     []int
+	clearOK           bool
 }
 
 func (f *fakeCockpit) Status() ScannerStatus { return f.status }

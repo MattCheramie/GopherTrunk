@@ -23,9 +23,9 @@ func TestConvertU8IQ_BitIdenticalWithCGO(t *testing.T) {
 		buf []byte
 	}{
 		{buf: []byte{}},
-		{buf: []byte{127, 128}},                       // ~zero IQ
-		{buf: []byte{0, 0}},                            // negative max
-		{buf: []byte{255, 255}},                        // positive max
+		{buf: []byte{127, 128}}, // ~zero IQ
+		{buf: []byte{0, 0}},     // negative max
+		{buf: []byte{255, 255}}, // positive max
 		{buf: []byte{127, 128, 0, 0, 255, 255, 64, 192}},
 	}
 	for _, c := range cases {
@@ -96,22 +96,22 @@ func TestConvertU8IQ_ExtremesScaleToUnit(t *testing.T) {
 // between Device methods and the tuner without needing the full
 // R820T register-script setup.
 type fakeTuner struct {
-	mu                sync.Mutex
-	freqCalls         []uint32
-	bwCalls           []uint32
-	gainCalls         []int
-	gainModeCalls     []bool
-	standbyCalls      int
-	freqErr, bwErr    error
-	gainErr, modeErr  error
+	mu               sync.Mutex
+	freqCalls        []uint32
+	bwCalls          []uint32
+	gainCalls        []int
+	gainModeCalls    []bool
+	standbyCalls     int
+	freqErr, bwErr   error
+	gainErr, modeErr error
 }
 
-func (f *fakeTuner) Type() tuners.Type     { return tuners.TypeR820T2 }
-func (f *fakeTuner) IFFreqHz() uint32      { return 3_570_000 }
-func (f *fakeTuner) Init() error           { return nil }
-func (f *fakeTuner) Standby() error        { f.standbyCalls++; return nil }
-func (f *fakeTuner) Close() error          { return f.Standby() }
-func (f *fakeTuner) Gains() []int          { return []int{0, 100, 200} }
+func (f *fakeTuner) Type() tuners.Type { return tuners.TypeR820T2 }
+func (f *fakeTuner) IFFreqHz() uint32  { return 3_570_000 }
+func (f *fakeTuner) Init() error       { return nil }
+func (f *fakeTuner) Standby() error    { f.standbyCalls++; return nil }
+func (f *fakeTuner) Close() error      { return f.Standby() }
+func (f *fakeTuner) Gains() []int      { return []int{0, 100, 200} }
 func (f *fakeTuner) SetFreq(hz uint32) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

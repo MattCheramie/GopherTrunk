@@ -9,10 +9,10 @@ import (
 // and selects the sub-protocol (MLE / MM / CMCE / SDS / …). Per
 // ETSI EN 300 392-2 §14.7 the discriminator is structured:
 //
-//   bits 3..2  Protocol Identifier (00 = MLE, 01 = MM, 10 = CMCE,
-//              11 = SDS).
-//   bits 1..0  PDU type within the sub-protocol (the upper 2 bits of
-//              the type field for that sub-protocol).
+//	bits 3..2  Protocol Identifier (00 = MLE, 01 = MM, 10 = CMCE,
+//	           11 = SDS).
+//	bits 1..0  PDU type within the sub-protocol (the upper 2 bits of
+//	           the type field for that sub-protocol).
 //
 // The combined 4-bit value is what callers see. The per-PDU accessors
 // in cmce.go interpret it.
@@ -46,9 +46,9 @@ func (d Discriminator) String() string {
 // PDU is one TETRA Layer-3 signalling unit. After the upstream FEC
 // removes coding the structured layout is:
 //
-//   byte 0, bits 7..4   Discriminator (4 bits)
-//   byte 0, bits 3..0   PDU type (4 bits)
-//   bytes 1..N          opcode-specific information bits
+//	byte 0, bits 7..4   Discriminator (4 bits)
+//	byte 0, bits 3..0   PDU type (4 bits)
+//	bytes 1..N          opcode-specific information bits
 //
 // The structure is intentionally permissive: callers parse the
 // discriminator + type, then dispatch to a per-PDU accessor.

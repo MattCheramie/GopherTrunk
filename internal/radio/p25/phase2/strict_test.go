@@ -44,9 +44,9 @@ func TestStrictValidationKeepsKnownOpcode(t *testing.T) {
 	// group address, source ID. Channel ID 1, channel 7, talkgroup
 	// 0xCAFE, source 0x123456.
 	payload := []byte{
-		0x00,             // service options
-		0x10, 0x07,       // channel ID 1 (upper 4 bits) + channel 7
-		0xCA, 0xFE,       // group address
+		0x00,       // service options
+		0x10, 0x07, // channel ID 1 (upper 4 bits) + channel 7
+		0xCA, 0xFE, // group address
 		0x12, 0x34, 0x56, // source ID
 	}
 	cc.Ingest(MACPDU{Opcode: OpGroupVoiceChannelGrant, Payload: payload})

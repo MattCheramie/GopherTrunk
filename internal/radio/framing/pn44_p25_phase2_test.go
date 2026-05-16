@@ -8,11 +8,11 @@ import (
 // per TIA-102.BBAC-1 §7.2.5 equation (5).
 func TestPN44SeedFromIdentity(t *testing.T) {
 	cases := []struct {
-		name              string
-		wacn              uint32
-		sysID             uint16
-		colorCode         uint16
-		wantSeed          uint64
+		name      string
+		wacn      uint32
+		sysID     uint16
+		colorCode uint16
+		wantSeed  uint64
 	}{
 		{
 			name:      "all-zero maps to all-ones per spec",

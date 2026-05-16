@@ -57,12 +57,12 @@ type wizardStep struct {
 
 // field describes one editable widget on a step.
 type wizardField struct {
-	label    string
-	help     string
-	kind     fieldKind
-	choices  []string // for choice fields
-	get      func(a *wizardAnswers) string
-	set      func(a *wizardAnswers, v string)
+	label   string
+	help    string
+	kind    fieldKind
+	choices []string // for choice fields
+	get     func(a *wizardAnswers) string
+	set     func(a *wizardAnswers, v string)
 }
 
 type fieldKind int
@@ -73,10 +73,10 @@ const (
 	fieldFloat
 	fieldBool
 	fieldChoice
-	fieldCORSList    // edits answers.CORSAllowedOrigins via listBuf
-	fieldSDRDevices  // edits answers.SDRDevices via devBuf
+	fieldCORSList   // edits answers.CORSAllowedOrigins via listBuf
+	fieldSDRDevices // edits answers.SDRDevices via devBuf
 	fieldConfigPath
-	fieldReview      // terminal preview step; Enter writes
+	fieldReview // terminal preview step; Enter writes
 )
 
 // runConfigWizard launches the bubbletea program and returns the
@@ -951,8 +951,8 @@ func previewLines(s string, max int) string {
 	if len(lines) > max {
 		return strings.Join(lines[:max], "\n") +
 			"\n" + lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf(
-				"  … (%d total lines; full file written on Enter)",
-				strings.Count(s, "\n")+1))
+			"  … (%d total lines; full file written on Enter)",
+			strings.Count(s, "\n")+1))
 	}
 	return s
 }
@@ -979,8 +979,8 @@ func expandConfigPath(p string) string {
 			p = filepath.Join(home, p[2:])
 		}
 	}
-	p = os.ExpandEnv(p)         // $VAR, ${VAR}
-	p = expandWindowsEnv(p)     // %VAR%
+	p = os.ExpandEnv(p)     // $VAR, ${VAR}
+	p = expandWindowsEnv(p) // %VAR%
 	return p
 }
 
@@ -1018,13 +1018,13 @@ func expandWindowsEnv(p string) string {
 
 // defaultConfigPath picks a sensible default location for the
 // generated config.yaml. Precedence:
-//   1. $GOPHERTRUNK_CONFIG (the Windows installer sets this to
-//      the operator's chosen editable-files directory; honouring
-//      it here means the wizard writes to the same file the
-//      daemon will later discover).
-//   2. ./config.yaml when the current working directory is writable.
-//   3. <os.UserConfigDir()>/GopherTrunk/config.yaml as the final
-//      fallback (~%APPDATA% on Windows, ~/.config on Linux).
+//  1. $GOPHERTRUNK_CONFIG (the Windows installer sets this to
+//     the operator's chosen editable-files directory; honouring
+//     it here means the wizard writes to the same file the
+//     daemon will later discover).
+//  2. ./config.yaml when the current working directory is writable.
+//  3. <os.UserConfigDir()>/GopherTrunk/config.yaml as the final
+//     fallback (~%APPDATA% on Windows, ~/.config on Linux).
 //
 // Windows operators frequently launch the installed binary from
 // C:\Program Files\GopherTrunk\, which is read-only for non-Admin

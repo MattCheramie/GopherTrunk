@@ -15,8 +15,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 

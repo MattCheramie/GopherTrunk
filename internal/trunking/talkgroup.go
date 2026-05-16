@@ -25,9 +25,9 @@ type TalkGroup struct {
 	ID          uint32 `json:"id"`
 	AlphaTag    string `json:"alpha_tag"`
 	Description string `json:"description,omitempty"`
-	Tag         string `json:"tag,omitempty"`     // department / category
-	Group       string `json:"group,omitempty"`   // top-level group
-	Mode        string `json:"mode,omitempty"`    // D=digital, A=analog, M=mixed
+	Tag         string `json:"tag,omitempty"`      // department / category
+	Group       string `json:"group,omitempty"`    // top-level group
+	Mode        string `json:"mode,omitempty"`     // D=digital, A=analog, M=mixed
 	Priority    int    `json:"priority,omitempty"` // 1 = highest, 10 = lowest, 0 = unset
 	Lockout     bool   `json:"lockout,omitempty"`
 	Scan        bool   `json:"scan"`

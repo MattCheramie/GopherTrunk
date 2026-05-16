@@ -36,20 +36,20 @@ type SystemDTO struct {
 
 	// Per-protocol FEC opt-out surface (mirrors api.SystemDTO).
 	// The TUI Settings panel renders these.
-	TETRAColourCode      uint32 `json:"tetra_colour_code,omitempty"`
-	TETRAChannel         string `json:"tetra_channel,omitempty"`
-	TETRAChannelCoding   string `json:"tetra_channel_coding,omitempty"`
-	LTRFCSMode           string `json:"ltr_fcs_mode,omitempty"`
-	LTRManchesterMode    string `json:"ltr_manchester_mode,omitempty"`
-	P25Phase2TrellisMode   string `json:"p25_phase2_trellis_mode,omitempty"`
-	P25Phase2RSMode        string `json:"p25_phase2_rs_mode,omitempty"`
-	P25Phase2ScramblerMode string `json:"p25_phase2_scrambler_mode,omitempty"`
-	NXDNViterbiMode        string `json:"nxdn_viterbi_mode,omitempty"`
+	TETRAColourCode        uint32  `json:"tetra_colour_code,omitempty"`
+	TETRAChannel           string  `json:"tetra_channel,omitempty"`
+	TETRAChannelCoding     string  `json:"tetra_channel_coding,omitempty"`
+	LTRFCSMode             string  `json:"ltr_fcs_mode,omitempty"`
+	LTRManchesterMode      string  `json:"ltr_manchester_mode,omitempty"`
+	P25Phase2TrellisMode   string  `json:"p25_phase2_trellis_mode,omitempty"`
+	P25Phase2RSMode        string  `json:"p25_phase2_rs_mode,omitempty"`
+	P25Phase2ScramblerMode string  `json:"p25_phase2_scrambler_mode,omitempty"`
+	NXDNViterbiMode        string  `json:"nxdn_viterbi_mode,omitempty"`
 	NXDNDeviationHz        float64 `json:"nxdn_deviation_hz,omitempty"`
-	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
-	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
-	MPT1327CWSCTolerance string `json:"mpt1327_cwsc_tolerance,omitempty"`
-	MotorolaBCHMode      string `json:"motorola_bch_mode,omitempty"`
+	EDACSBCHMode           string  `json:"edacs_bch_mode,omitempty"`
+	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`
+	MPT1327CWSCTolerance   string  `json:"mpt1327_cwsc_tolerance,omitempty"`
+	MotorolaBCHMode        string  `json:"motorola_bch_mode,omitempty"`
 }
 
 // TalkgroupDTO mirrors api.TalkgroupDTO.
@@ -116,7 +116,7 @@ type HistoryFilter struct {
 	GroupID   uint32
 	Since     time.Time
 	Until     time.Time
-	Limit     int  // 0 → server default (100)
+	Limit     int // 0 → server default (100)
 	OnlyEnded bool
 }
 
@@ -136,11 +136,11 @@ type Event struct {
 // when the underlying subsystem isn't wired (e.g. no CC hunter →
 // empty Systems list).
 type ScannerStatusDTO struct {
-	ScanMode            string                   `json:"scan_mode"`
-	Systems             []SystemHuntStatusDTO    `json:"systems"`
-	Conventional        ConvScannerStatusDTO     `json:"conventional"`
-	TalkgroupScanCount  int                      `json:"tg_scan_count"`
-	TalkgroupTotalCount int                      `json:"tg_total"`
+	ScanMode            string                `json:"scan_mode"`
+	Systems             []SystemHuntStatusDTO `json:"systems"`
+	Conventional        ConvScannerStatusDTO  `json:"conventional"`
+	TalkgroupScanCount  int                   `json:"tg_scan_count"`
+	TalkgroupTotalCount int                   `json:"tg_total"`
 }
 
 // SystemHuntStatusDTO mirrors api.SystemHuntStatusDTO.
@@ -161,10 +161,10 @@ type SystemHuntStatusDTO struct {
 
 // ConvScannerStatusDTO mirrors api.ConvScannerStatusDTO.
 type ConvScannerStatusDTO struct {
-	Enabled      bool                  `json:"enabled"`
-	State        string                `json:"state,omitempty"`
-	DeviceSerial string                `json:"device_serial,omitempty"`
-	CursorIndex  int                   `json:"cursor_index,omitempty"`
+	Enabled      bool                   `json:"enabled"`
+	State        string                 `json:"state,omitempty"`
+	DeviceSerial string                 `json:"device_serial,omitempty"`
+	CursorIndex  int                    `json:"cursor_index,omitempty"`
 	Channels     []ConvChannelStatusDTO `json:"channels"`
 }
 
@@ -199,12 +199,12 @@ type SDRStatus struct {
 
 // Tone is the payload shape of a `tone.alert` event.
 type Tone struct {
-	Profile      string    `json:"profile"`
-	AlphaTag     string    `json:"alpha_tag,omitempty"`
-	System       string    `json:"system,omitempty"`
-	GroupID      uint32    `json:"group_id,omitempty"`
-	DeviceSerial string    `json:"device_serial"`
-	MatchedAt    time.Time `json:"matched_at"`
+	Profile       string    `json:"profile"`
+	AlphaTag      string    `json:"alpha_tag,omitempty"`
+	System        string    `json:"system,omitempty"`
+	GroupID       uint32    `json:"group_id,omitempty"`
+	DeviceSerial  string    `json:"device_serial"`
+	MatchedAt     time.Time `json:"matched_at"`
 	FrequenciesHz []float64 `json:"frequencies_hz"`
 }
 

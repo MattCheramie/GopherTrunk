@@ -82,7 +82,8 @@ func (c *ControlChannel) SetStrictValidation(strict bool) {
 //   - ChannelCodingOn: the adapter slices the channel-appropriate
 //     number of dibits per the configured ChannelType, runs the
 //     full type-5 → type-1 decode chain (descramble + deinterleave
-//     + depuncture + Viterbi + CRC-16 verify + tail strip) per
+//
+//   - depuncture + Viterbi + CRC-16 verify + tail strip) per
 //     ETSI EN 300 392-2 §8.3.1 using the per-channel helpers in
 //     channel_coding.go, then parses the recovered info bits as a
 //     PDU. Frames whose CRC fails are silently dropped.

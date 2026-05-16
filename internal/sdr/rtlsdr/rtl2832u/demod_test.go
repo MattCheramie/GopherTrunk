@@ -40,9 +40,9 @@ func TestComputeResamplerDivisor_GoldenTable(t *testing.T) {
 	// and the post-quantization "real" rate that downstream DSP will
 	// see.
 	cases := []struct {
-		samp        uint32
-		wantDiv     uint32
-		wantRealHz  uint32
+		samp       uint32
+		wantDiv    uint32
+		wantRealHz uint32
 	}{
 		// 2.4 MS/s — the project's default working rate.
 		// xtal*2^22 / 2_400_000 = 50_331_648 = 0x03000000.

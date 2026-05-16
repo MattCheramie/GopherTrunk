@@ -7,10 +7,10 @@ import (
 
 func TestRealResamplerOutputRateMatchesLOverM(t *testing.T) {
 	cases := []struct{ L, M int }{
-		{1, 6},  // 48k → 8k (composer audio path)
-		{1, 5},  // 40k → 8k
+		{1, 6},     // 48k → 8k (composer audio path)
+		{1, 5},     // 40k → 8k
 		{441, 480}, // 48k → 44.1k (rational, common audio rate)
-		{2, 1},  // upsample by 2
+		{2, 1},     // upsample by 2
 	}
 	for _, c := range cases {
 		r := NewRealResampler(c.L, c.M, 16, 8.6)

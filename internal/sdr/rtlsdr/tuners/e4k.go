@@ -19,41 +19,41 @@ import (
 // in zero-IF mode and the chip emits I/Q baseband directly.
 
 const (
-	e4kI2CAddr     uint8  = 0xC8
-	e4kCheckAddr   uint8  = 0x02
-	e4kCheckVal    uint8  = 0x40
-	e4kIFFreqHz    uint32 = 0
-	e4kXtalHz      uint32 = 28_800_000
+	e4kI2CAddr   uint8  = 0xC8
+	e4kCheckAddr uint8  = 0x02
+	e4kCheckVal  uint8  = 0x40
+	e4kIFFreqHz  uint32 = 0
+	e4kXtalHz    uint32 = 28_800_000
 )
 
 // E4K register addresses (subset; see librtlsdr's e4k_reg.h for full
 // list). Only the ones our port actually writes are named here to
 // keep this table small.
 const (
-	e4kRegMaster1  uint8 = 0x00
-	e4kRegMaster2  uint8 = 0x01
-	e4kRegMaster3  uint8 = 0x02
-	e4kRegClkInp   uint8 = 0x05
-	e4kRegRefClk   uint8 = 0x06
-	e4kRegSynth1   uint8 = 0x07
-	e4kRegSynth7   uint8 = 0x0D
-	e4kRegSynth8   uint8 = 0x0E
-	e4kRegFilt1    uint8 = 0x10
-	e4kRegFilt2    uint8 = 0x11
-	e4kRegFilt3    uint8 = 0x12
-	e4kRegGain1    uint8 = 0x14
-	e4kRegGain2    uint8 = 0x15
-	e4kRegGain3    uint8 = 0x16
-	e4kRegGain4    uint8 = 0x17
-	e4kRegAGC1     uint8 = 0x1A
-	e4kRegAGC4     uint8 = 0x1D
-	e4kRegAGC5     uint8 = 0x1E
-	e4kRegAGC6     uint8 = 0x1F
-	e4kRegAGC7     uint8 = 0x20
-	e4kRegAGC8     uint8 = 0x21
-	e4kRegAGC11    uint8 = 0x24
-	e4kRegDC1      uint8 = 0x29
-	e4kRegDC5      uint8 = 0x2D
+	e4kRegMaster1 uint8 = 0x00
+	e4kRegMaster2 uint8 = 0x01
+	e4kRegMaster3 uint8 = 0x02
+	e4kRegClkInp  uint8 = 0x05
+	e4kRegRefClk  uint8 = 0x06
+	e4kRegSynth1  uint8 = 0x07
+	e4kRegSynth7  uint8 = 0x0D
+	e4kRegSynth8  uint8 = 0x0E
+	e4kRegFilt1   uint8 = 0x10
+	e4kRegFilt2   uint8 = 0x11
+	e4kRegFilt3   uint8 = 0x12
+	e4kRegGain1   uint8 = 0x14
+	e4kRegGain2   uint8 = 0x15
+	e4kRegGain3   uint8 = 0x16
+	e4kRegGain4   uint8 = 0x17
+	e4kRegAGC1    uint8 = 0x1A
+	e4kRegAGC4    uint8 = 0x1D
+	e4kRegAGC5    uint8 = 0x1E
+	e4kRegAGC6    uint8 = 0x1F
+	e4kRegAGC7    uint8 = 0x20
+	e4kRegAGC8    uint8 = 0x21
+	e4kRegAGC11   uint8 = 0x24
+	e4kRegDC1     uint8 = 0x29
+	e4kRegDC5     uint8 = 0x2D
 )
 
 // e4kLNAGains is the 14-step LNA gain ladder in tenths of dB.
@@ -76,9 +76,9 @@ var e4kLNAGainRegs = []byte{
 // e4kPLLRange picks the synthesizer's divider for a given LO target.
 // 11-band table verbatim from osmocom's e4k_pll_compute path.
 type e4kPLLRange struct {
-	freqMax  uint32 // upper bound (inclusive) for this band
-	divLow   uint32 // VCO/freq divisor (3-bit reg field)
-	bandSel  byte   // reg 0x07 high nibble: VCO band
+	freqMax uint32 // upper bound (inclusive) for this band
+	divLow  uint32 // VCO/freq divisor (3-bit reg field)
+	bandSel byte   // reg 0x07 high nibble: VCO band
 }
 
 var e4kPLLRanges = []e4kPLLRange{

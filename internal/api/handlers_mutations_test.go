@@ -34,8 +34,8 @@ func (f *fakeMutator) EndCall(serial string, reason trunking.EndReason) bool {
 }
 
 type fakeRetention struct {
-	mu     sync.Mutex
-	swept  int
+	mu    sync.Mutex
+	swept int
 }
 
 func (f *fakeRetention) SweepOnce(_ context.Context) {

@@ -11,7 +11,7 @@ import (
 // cached every renderTabs() call so hitTestTab can map a mouse click
 // back to a state.PanelKind without re-measuring the strip.
 type tabRect struct {
-	kind        state.PanelKind
+	kind         state.PanelKind
 	xStart, xEnd int
 }
 

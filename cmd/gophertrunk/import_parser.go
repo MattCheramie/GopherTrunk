@@ -16,25 +16,25 @@ import (
 
 // parsedSystem is the result of importing one RadioReference PDF.
 type parsedSystem struct {
-	Name        string             `json:"name"`
-	Location    string             `json:"location"`
-	County      string             `json:"county"`
-	SysID       string             `json:"sysid"`
-	WACN        string             `json:"wacn"`
-	SystemType  string             `json:"system_type"`
-	Protocol    string             `json:"protocol"`
-	Sites       []parsedSite       `json:"sites"`
-	Talkgroups  []parsedTalkgroup  `json:"talkgroups"`
-	SourcePath  string             `json:"-"`
+	Name       string            `json:"name"`
+	Location   string            `json:"location"`
+	County     string            `json:"county"`
+	SysID      string            `json:"sysid"`
+	WACN       string            `json:"wacn"`
+	SystemType string            `json:"system_type"`
+	Protocol   string            `json:"protocol"`
+	Sites      []parsedSite      `json:"sites"`
+	Talkgroups []parsedTalkgroup `json:"talkgroups"`
+	SourcePath string            `json:"-"`
 }
 
 type parsedSite struct {
-	RFSS        int             `json:"rfss"`
-	SiteID      int             `json:"site_id"`
-	SiteName    string          `json:"site_name"`
-	Cty         string          `json:"cty"`
-	Frequencies []parsedFreq    `json:"frequencies"`
-	Include     bool            `json:"include"`
+	RFSS        int          `json:"rfss"`
+	SiteID      int          `json:"site_id"`
+	SiteName    string       `json:"site_name"`
+	Cty         string       `json:"cty"`
+	Frequencies []parsedFreq `json:"frequencies"`
+	Include     bool         `json:"include"`
 }
 
 type parsedFreq struct {
@@ -61,9 +61,9 @@ type parsedTalkgroup struct {
 // Tests construct parseRow values directly to exercise parseSystem
 // without going through the PDF library.
 type parseRow struct {
-	Y     float64  `json:"y"`
-	Page  int      `json:"page"`
-	Text  string   `json:"text"`
+	Y    float64 `json:"y"`
+	Page int     `json:"page"`
+	Text string  `json:"text"`
 }
 
 // parsePDFFile is the production entry point: PDF on disk → parsedSystem.

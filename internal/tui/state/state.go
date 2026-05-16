@@ -121,10 +121,10 @@ type WriteRequest struct {
 	Label   string
 	Kind    WriteKind
 
-	EndCall         *EndCallReq
-	UpdateTalkgroup *UpdateTalkgroupReq
-	SweepRetention  *SweepRetentionReq
-	ResetTone       *ResetToneReq
+	EndCall           *EndCallReq
+	UpdateTalkgroup   *UpdateTalkgroupReq
+	SweepRetention    *SweepRetentionReq
+	ResetTone         *ResetToneReq
 	ScannerMode       *ScannerModeReq
 	ScannerHunt       *ScannerHuntReq
 	ScannerConv       *ScannerConvReq

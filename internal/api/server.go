@@ -174,10 +174,10 @@ type SystemHuntStatusDTO struct {
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.
 type ConvScannerStatusDTO struct {
-	Enabled      bool                  `json:"enabled"`
-	State        string                `json:"state,omitempty"`
-	DeviceSerial string                `json:"device_serial,omitempty"`
-	CursorIndex  int                   `json:"cursor_index,omitempty"`
+	Enabled      bool                   `json:"enabled"`
+	State        string                 `json:"state,omitempty"`
+	DeviceSerial string                 `json:"device_serial,omitempty"`
+	CursorIndex  int                    `json:"cursor_index,omitempty"`
 	Channels     []ConvChannelStatusDTO `json:"channels"`
 }
 
@@ -195,7 +195,7 @@ type ConvChannelStatusDTO struct {
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
-	addr         string
+	addr string
 	// boundAddr is populated by Run() with the listener's actual
 	// address after net.Listen — important for ":0" / "127.0.0.1:0"
 	// configurations where the kernel picks the port. Read via

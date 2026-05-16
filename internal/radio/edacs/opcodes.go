@@ -8,17 +8,17 @@ import "fmt"
 type Command uint8
 
 const (
-	CmdIdle              Command = 0x0
-	CmdGroupVoiceGrant   Command = 0x1
-	CmdProVoiceGrant     Command = 0x2 // EDACS ProVoice (digital)
-	CmdIndividualCall    Command = 0x3
-	CmdDataGrant         Command = 0x4
-	CmdSystemID          Command = 0x5
-	CmdAdjacentSite      Command = 0x6
-	CmdEmergency         Command = 0x7
-	CmdAffiliation       Command = 0x8
-	CmdEncryption        Command = 0x9
-	CmdReserved          Command = 0xF
+	CmdIdle            Command = 0x0
+	CmdGroupVoiceGrant Command = 0x1
+	CmdProVoiceGrant   Command = 0x2 // EDACS ProVoice (digital)
+	CmdIndividualCall  Command = 0x3
+	CmdDataGrant       Command = 0x4
+	CmdSystemID        Command = 0x5
+	CmdAdjacentSite    Command = 0x6
+	CmdEmergency       Command = 0x7
+	CmdAffiliation     Command = 0x8
+	CmdEncryption      Command = 0x9
+	CmdReserved        Command = 0xF
 )
 
 // IsKnown reports whether the Command value is one of the

@@ -15,7 +15,7 @@ func TestPiOver4DQPSKModulatorRoundTripThroughDemod(t *testing.T) {
 	const (
 		sps      = 8
 		span     = 8
-		alpha    = 0.35       // TETRA RRC roll-off
+		alpha    = 0.35 // TETRA RRC roll-off
 		rotation = math.Pi / 4
 	)
 

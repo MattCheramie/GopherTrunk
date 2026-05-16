@@ -44,12 +44,12 @@ type RuntimeDTO struct {
 	// Audio runtime (mirrors AudioStatus but adds device list +
 	// backend identity so operators can confirm whether the Linux
 	// fallback path took effect).
-	AudioEnabled        bool     `json:"audio_enabled"`
-	AudioDevice         string   `json:"audio_device,omitempty"`
-	AudioSampleRate     int      `json:"audio_sample_rate"`
-	AudioBufferMs       int      `json:"audio_buffer_ms"`
-	AudioBackends       []string `json:"audio_backends"`
-	AudioDisableFallbk  bool     `json:"audio_disable_fallback"`
+	AudioEnabled       bool     `json:"audio_enabled"`
+	AudioDevice        string   `json:"audio_device,omitempty"`
+	AudioSampleRate    int      `json:"audio_sample_rate"`
+	AudioBufferMs      int      `json:"audio_buffer_ms"`
+	AudioBackends      []string `json:"audio_backends"`
+	AudioDisableFallbk bool     `json:"audio_disable_fallback"`
 
 	// SDR pool config (the live status is on /api/v1/devices).
 	SDRSampleRate int      `json:"sdr_sample_rate"`

@@ -49,8 +49,8 @@ type fakeDevices struct{ src map[string]IQSource }
 func (d *fakeDevices) FindBySerial(s string) IQSource { return d.src[s] }
 
 type recordingSink struct {
-	mu   sync.Mutex
-	pcm  map[string][]int16
+	mu  sync.Mutex
+	pcm map[string][]int16
 }
 
 func (r *recordingSink) WritePCM(serial string, samples []int16) error {

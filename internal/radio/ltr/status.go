@@ -10,24 +10,24 @@ import (
 //
 // Field layout (MSB-first across the 41-bit word):
 //
-//   bits 40..40 (1 bit)   Sync   — frame-start marker (always 1).
-//   bits 39..35 (5 bits)  Area   — area code (0..31). Multiple LTR
-//                                  systems on the same frequency are
-//                                  disambiguated by Area.
-//   bits 34..34 (1 bit)   Group  — the "F-bit". 1 = call is active
-//                                  on this repeater for the named
-//                                  group; 0 = idle / free.
-//   bits 33..30 (4 bits)  Chan   — physical channel number (1..20)
-//                                  this status word references.
-//   bits 29..25 (5 bits)  Home   — home-repeater number (1..20)
-//                                  for the active group.
-//   bits 24..17 (8 bits)  Group  — group / talkgroup ID (1..250).
-//   bits 16..12 (5 bits)  Free   — free-repeater hint
-//                                  (which repeater is currently
-//                                  unallocated, for handoff).
-//   bits 11..0  (12 bits) FCS    — frame check / parity. Computed
-//                                  by the encoder and verified by
-//                                  the decoder.
+//	bits 40..40 (1 bit)   Sync   — frame-start marker (always 1).
+//	bits 39..35 (5 bits)  Area   — area code (0..31). Multiple LTR
+//	                               systems on the same frequency are
+//	                               disambiguated by Area.
+//	bits 34..34 (1 bit)   Group  — the "F-bit". 1 = call is active
+//	                               on this repeater for the named
+//	                               group; 0 = idle / free.
+//	bits 33..30 (4 bits)  Chan   — physical channel number (1..20)
+//	                               this status word references.
+//	bits 29..25 (5 bits)  Home   — home-repeater number (1..20)
+//	                               for the active group.
+//	bits 24..17 (8 bits)  Group  — group / talkgroup ID (1..250).
+//	bits 16..12 (5 bits)  Free   — free-repeater hint
+//	                               (which repeater is currently
+//	                               unallocated, for handoff).
+//	bits 11..0  (12 bits) FCS    — frame check / parity. Computed
+//	                               by the encoder and verified by
+//	                               the decoder.
 //
 // As with the other protocol packages, the field positions follow
 // the most-cited public reference; some LTR-Net variants pack

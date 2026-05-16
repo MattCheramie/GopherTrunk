@@ -35,11 +35,11 @@ const PredictionGain = 0.65
 // what the decoder presents to the first IMBE frame on a call.
 // Slices are 1-indexed to match TIA-102.BABA / mbelib conventions.
 type SynthState struct {
-	PrevW0           float64                       // ω₀ from the previous decoded frame (rad/sample); 0 ⇒ no prev frame
-	PrevL            int                           // L from the previous decoded frame (1-indexed slice extent)
-	PrevLog2Ml       [57]float64                   // log2(Ml) at indices [1..PrevL]; [0] + tail unused
-	PrevMl           [57]float64                   // linear Ml at end of prev frame; 0 if was unvoiced / absent
-	PrevPhase        [57]float64                   // accumulated phase per harmonic in [0, 2π)
+	PrevW0           float64                      // ω₀ from the previous decoded frame (rad/sample); 0 ⇒ no prev frame
+	PrevL            int                          // L from the previous decoded frame (1-indexed slice extent)
+	PrevLog2Ml       [57]float64                  // log2(Ml) at indices [1..PrevL]; [0] + tail unused
+	PrevMl           [57]float64                  // linear Ml at end of prev frame; 0 if was unvoiced / absent
+	PrevPhase        [57]float64                  // accumulated phase per harmonic in [0, 2π)
 	PrevUnvoicedTail [UnvoicedTailSamples]float64 // §6.4 overlap-add tail from prev frame's windowed IFFT
 }
 

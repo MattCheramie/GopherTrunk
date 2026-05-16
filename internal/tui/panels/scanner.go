@@ -35,9 +35,9 @@ type ScannerPanel struct {
 	// keybind: operator types a frequency in MHz and Enter dispatches
 	// a manual_tune mutation. Esc aborts. inputErr surfaces a parse
 	// error inline so the operator can correct without dispatching.
-	manualInput  textinput.Model
-	editingFreq  bool
-	inputErr     string
+	manualInput textinput.Model
+	editingFreq bool
+	inputErr    string
 
 	// pendingReveal stashes a Reveal() request until the next Update
 	// gives us a SharedState to resolve against. Cleared once applied.
@@ -57,16 +57,16 @@ func NewScanner() *ScannerPanel {
 func (ScannerPanel) Title() string { return "Scanner" }
 
 var (
-	scanHoldKey   = key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "hold/resume"))
-	scanRetuneKey = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "force re-hunt"))
-	scanDwellKey  = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "dwell on conv channel"))
-	scanModeKey   = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "cycle scan mode"))
-	scanUpKey     = key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("k/↑", "row up"))
-	scanDownKey   = key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("j/↓", "row down"))
-	scanVolUpKey  = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "volume up"))
-	scanVolDnKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "volume down"))
-	scanMuteKey   = key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mute toggle"))
-	scanRecKey    = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "record toggle"))
+	scanHoldKey    = key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "hold/resume"))
+	scanRetuneKey  = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "force re-hunt"))
+	scanDwellKey   = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "dwell on conv channel"))
+	scanModeKey    = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "cycle scan mode"))
+	scanUpKey      = key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("k/↑", "row up"))
+	scanDownKey    = key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("j/↓", "row down"))
+	scanVolUpKey   = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "volume up"))
+	scanVolDnKey   = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "volume down"))
+	scanMuteKey    = key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mute toggle"))
+	scanRecKey     = key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "record toggle"))
 	scanManualKey  = key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "manual tune"))
 	scanLockoutKey = key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "lockout/unlockout"))
 	scanEscKey     = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))

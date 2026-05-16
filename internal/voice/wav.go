@@ -16,11 +16,11 @@ import (
 // wrapped in an in-memory seeker). The dedicated NewFile helper opens a
 // regular file on disk.
 type WavWriter struct {
-	w           io.WriteSeeker
-	closed      bool
-	sampleRate  uint32
+	w            io.WriteSeeker
+	closed       bool
+	sampleRate   uint32
 	bytesWritten uint32 // payload bytes (excluding header)
-	closeFn     func() error
+	closeFn      func() error
 }
 
 const (

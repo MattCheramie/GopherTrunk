@@ -47,7 +47,7 @@ type Options struct {
 	Log         *slog.Logger
 	SystemName  string
 	FrequencyHz uint32
-	BandPlan    *BandPlan       // optional; a new empty BandPlan is used if nil
+	BandPlan    *BandPlan // optional; a new empty BandPlan is used if nil
 	Now         func() time.Time
 }
 
@@ -97,7 +97,7 @@ type LockState struct {
 
 // LockedFrequencyHz / LockedNAC implement trunking.LockedPayload.
 func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
-func (s LockState) LockedNAC() uint16          { return s.NAC }
+func (s LockState) LockedNAC() uint16         { return s.NAC }
 
 // Process consumes a window of dibits and runs detection/parsing. baseIdx
 // is the absolute dibit index of dibits[0]. Returns the new baseIndex.

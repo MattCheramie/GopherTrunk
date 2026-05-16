@@ -64,9 +64,10 @@ func TestRCPCTetraEncoderInitialStateZero(t *testing.T) {
 // TestRCPCTetraEncoderMatchesGeneratorPolys: the second triple (lag
 // 1, i.e. input = 0, d1 = 1, others zero) must equal the polynomial
 // pattern at index 1:
-//   g1 = 0 ^ 1 ^ 0 ^ 0 ^ 0 = 1
-//   g2 = 0 ^ 1 ^ 0 ^ 0 = 1
-//   g3 = 0 ^ 0 ^ 0 = 0
+//
+//	g1 = 0 ^ 1 ^ 0 ^ 0 ^ 0 = 1
+//	g2 = 0 ^ 1 ^ 0 ^ 0 = 1
+//	g3 = 0 ^ 0 ^ 0 = 0
 func TestRCPCTetraEncoderMatchesGeneratorPolys(t *testing.T) {
 	in := []byte{1, 0, 0, 0, 0, 0, 0, 0, 0}
 	out := EncodeRCPCTetraMother(in)

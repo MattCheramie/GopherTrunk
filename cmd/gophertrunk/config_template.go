@@ -39,10 +39,10 @@ type wizardAnswers struct {
 	StorageCCCacheFile string
 
 	// recordings
-	RecordingsDir       string
-	RecordingsSampleHz  int
-	RecordingsWriteRaw  bool
-	EqualizerEnabled    bool
+	RecordingsDir      string
+	RecordingsSampleHz int
+	RecordingsWriteRaw bool
+	EqualizerEnabled   bool
 
 	// retention
 	RetentionCallLogDays int
@@ -54,12 +54,12 @@ type wizardAnswers struct {
 	SDRDevices  []wizardSDR
 
 	// scanner
-	ScannerScanMode      string // "all" | "list"
-	CCHuntEnabled        bool
-	CCHuntDwellMs        int
-	CCHuntBackoffMs      int
-	CCHuntMaxBackoffMs   int
-	ManualTuneEnabled    bool
+	ScannerScanMode    string // "all" | "list"
+	CCHuntEnabled      bool
+	CCHuntDwellMs      int
+	CCHuntBackoffMs    int
+	CCHuntMaxBackoffMs int
+	ManualTuneEnabled  bool
 
 	// audio
 	AudioEnabled  bool

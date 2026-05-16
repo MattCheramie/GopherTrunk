@@ -225,7 +225,7 @@ func TestDetectorIgnoresTooShortTone(t *testing.T) {
 	d, err := New(Options{
 		Bus: bus,
 		Profiles: []Profile{{
-			Name: "long-only",
+			Name:  "long-only",
 			Tones: []Tone{{FrequencyHz: 1000, MinDuration: 500 * time.Millisecond}},
 		}},
 		SampleRate: sampleRate,
@@ -362,7 +362,7 @@ func TestNewValidates(t *testing.T) {
 	bus := events.NewBus(1)
 	defer bus.Close()
 	_, err := New(Options{
-		Bus: bus,
+		Bus:      bus,
 		Profiles: []Profile{{Name: "bad"}}, // no tones
 	})
 	if err == nil {

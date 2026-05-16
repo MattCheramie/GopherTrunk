@@ -185,15 +185,15 @@ type Composer struct {
 	engine EngineHooks
 	log    *slog.Logger
 
-	iqHz         uint32
-	pcmHz        uint32
-	bw           uint32
-	touchEvery   time.Duration
-	eqCfg        EqualizerConfig
-	deemphCfg    DeEmphasisConfig
-	lpfCfg       AudioLPFConfig
-	agcCfg       AudioAGCConfig
-	resampCfg    AudioResamplerConfig
+	iqHz       uint32
+	pcmHz      uint32
+	bw         uint32
+	touchEvery time.Duration
+	eqCfg      EqualizerConfig
+	deemphCfg  DeEmphasisConfig
+	lpfCfg     AudioLPFConfig
+	agcCfg     AudioAGCConfig
+	resampCfg  AudioResamplerConfig
 
 	sub       *events.Subscription
 	runDone   chan struct{}

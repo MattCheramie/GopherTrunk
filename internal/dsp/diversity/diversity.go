@@ -3,13 +3,13 @@
 // less faded than any one source. Two complementary strategies live
 // here:
 //
-//   selection.go  Selection combining — pick the branch with the
-//                 highest instantaneous |x|^2. Cheap, no calibration,
-//                 graceful degradation when one branch goes silent.
-//   mrc.go        Maximal-ratio combining — weight each branch by an
-//                 estimate of its complex channel response and sum.
-//                 Optimal in AWGN; needs SNR estimates per branch and
-//                 cooperating front-ends (matched RF chains).
+//	selection.go  Selection combining — pick the branch with the
+//	              highest instantaneous |x|^2. Cheap, no calibration,
+//	              graceful degradation when one branch goes silent.
+//	mrc.go        Maximal-ratio combining — weight each branch by an
+//	              estimate of its complex channel response and sum.
+//	              Optimal in AWGN; needs SNR estimates per branch and
+//	              cooperating front-ends (matched RF chains).
 //
 // Both combiners take []complex64 chunks per branch and emit a single
 // []complex64 chunk. Branch alignment is the caller's job: a delay line

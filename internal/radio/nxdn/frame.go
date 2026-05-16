@@ -35,14 +35,14 @@ func (b BaudRate) String() string {
 
 // Frame layout in dibits (1 dibit = 2 bits at 9600; 1 dibit ≡ 2 sym at 4800).
 const (
-	FSWDibits        = 8   // 16 bits
-	LICHWireDibits   = 8   // 16 bits transmitted
-	LICHInfoBits     = 8   // 8 information bits (each on-air bit doubled)
-	SACCHDibits      = 32  // 64 bits
-	InfoFieldDibits  = 144 // 288 bits — CAC / VCH / UDCH / FACCH
-	FrameDibits      = FSWDibits + LICHWireDibits + SACCHDibits + InfoFieldDibits
-	FrameBits        = FrameDibits * 2
-	FrameDurationMs  = 80
+	FSWDibits       = 8   // 16 bits
+	LICHWireDibits  = 8   // 16 bits transmitted
+	LICHInfoBits    = 8   // 8 information bits (each on-air bit doubled)
+	SACCHDibits     = 32  // 64 bits
+	InfoFieldDibits = 144 // 288 bits — CAC / VCH / UDCH / FACCH
+	FrameDibits     = FSWDibits + LICHWireDibits + SACCHDibits + InfoFieldDibits
+	FrameBits       = FrameDibits * 2
+	FrameDurationMs = 80
 )
 
 // Layout offsets within the 192-dibit frame.

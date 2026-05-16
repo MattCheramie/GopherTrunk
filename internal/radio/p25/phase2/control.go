@@ -61,7 +61,8 @@ type ControlChannel struct {
 //     pre-stripped capture files.
 //
 //   - TrellisOn (default): the adapter collects 146 channel dibits (72 info
-//     + 1 finisher transition × 2 channel dibits per transition),
+//
+//   - 1 finisher transition × 2 channel dibits per transition),
 //     runs them through the TIA-102 Annex A 4-state ½-rate
 //     trellis Viterbi decoder in
 //     internal/radio/framing/p25_trellis.go, and parses the

@@ -4,10 +4,10 @@ import "testing"
 
 func TestCSBKAssembleParseRoundTrip(t *testing.T) {
 	in := CSBK{
-		LB:     true,
-		PF:     false,
-		Opcode: OpTVGrant,
-		FID:    0x00,
+		LB:      true,
+		PF:      false,
+		Opcode:  OpTVGrant,
+		FID:     0x00,
 		Payload: [8]byte{0x80, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x00},
 	}
 	bytes := AssembleCSBK(in)
@@ -85,10 +85,10 @@ func TestParseSystemInfoBroadcast(t *testing.T) {
 
 func TestInfoBitsToBytes(t *testing.T) {
 	bits := make([]byte, 96)
-	bits[0] = 1   // → byte 0 bit 7
-	bits[7] = 1   // → byte 0 bit 0
-	bits[8] = 1   // → byte 1 bit 7
-	bits[95] = 1  // → byte 11 bit 0
+	bits[0] = 1  // → byte 0 bit 7
+	bits[7] = 1  // → byte 0 bit 0
+	bits[8] = 1  // → byte 1 bit 7
+	bits[95] = 1 // → byte 11 bit 0
 	got := InfoBitsToBytes(bits)
 	want := [12]byte{0x81, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}
 	for i := range want {
@@ -100,10 +100,10 @@ func TestInfoBitsToBytes(t *testing.T) {
 
 func TestOpcodeString(t *testing.T) {
 	cases := map[CSBKOpcode]string{
-		OpAloha:     "Aloha",
-		OpTVGrant:   "TalkGroupVoiceChannelGrant",
-		OpSysInfo:   "SystemInfoBroadcast",
-		OpAdjStatus: "AdjacentSiteStatus",
+		OpAloha:          "Aloha",
+		OpTVGrant:        "TalkGroupVoiceChannelGrant",
+		OpSysInfo:        "SystemInfoBroadcast",
+		OpAdjStatus:      "AdjacentSiteStatus",
 		CSBKOpcode(0xFE): "CSBKOpcode(FE)",
 	}
 	for op, want := range cases {

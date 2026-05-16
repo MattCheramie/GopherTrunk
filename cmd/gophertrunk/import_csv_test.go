@@ -184,8 +184,8 @@ func TestParseCSVFrequencies_Separators(t *testing.T) {
 		want int
 	}{
 		{"851.0125c|851.2625|852.0125c", 3},
-		{"851.0125c;851.2625;852.0125", 3},   // semicolons
-		{"851.0125c 851.2625 852.0125c", 3},  // spaces
+		{"851.0125c;851.2625;852.0125", 3},  // semicolons
+		{"851.0125c 851.2625 852.0125c", 3}, // spaces
 		{"", 0},
 	}
 	for _, tc := range cases {

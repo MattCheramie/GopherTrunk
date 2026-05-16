@@ -121,7 +121,7 @@ func (d *Decoder) FrameSize() int { return FrameBytes }
 //   - good voice frame: full synthesis pipeline (UnpackParams →
 //     gamma fold → mbe.PredictLog2Ml → mbe.AmplitudesFromLog2Ml →
 //     unvoiced scaling → mbe.EnhanceAmplitudes → mbe.SynthVoiced
-//     + mbe.SynthUnvoicedOverlapAdd → state update → AGC). Caches
+//   - mbe.SynthUnvoicedOverlapAdd → state update → AGC). Caches
 //     params + log2M + M for the next bad frame's replay; resets
 //     badFrameCount.
 //   - tone frame (b₀ ∈ {0x7E, 0x7F}) or silence: emits the §6.4 OA
@@ -380,16 +380,16 @@ func (d *Decoder) synthDualTone(freqA, freqB float64, b2 int, pcm []float64) {
 // vendor's reference can extend the table below.
 var ambeDualToneTable = [36][2]float64{
 	// DTMF 1..D, indexed by b1 - 128.
-	0: {697, 1209},  // 128: "1"
-	1: {697, 1336},  // 129: "2"
-	2: {697, 1477},  // 130: "3"
-	3: {697, 1633},  // 131: "A"
-	4: {770, 1209},  // 132: "4"
-	5: {770, 1336},  // 133: "5"
-	6: {770, 1477},  // 134: "6"
-	7: {770, 1633},  // 135: "B"
-	8: {852, 1209},  // 136: "7"
-	9: {852, 1336},  // 137: "8"
+	0:  {697, 1209}, // 128: "1"
+	1:  {697, 1336}, // 129: "2"
+	2:  {697, 1477}, // 130: "3"
+	3:  {697, 1633}, // 131: "A"
+	4:  {770, 1209}, // 132: "4"
+	5:  {770, 1336}, // 133: "5"
+	6:  {770, 1477}, // 134: "6"
+	7:  {770, 1633}, // 135: "B"
+	8:  {852, 1209}, // 136: "7"
+	9:  {852, 1336}, // 137: "8"
 	10: {852, 1477}, // 138: "9"
 	11: {852, 1633}, // 139: "C"
 	12: {941, 1209}, // 140: "*"

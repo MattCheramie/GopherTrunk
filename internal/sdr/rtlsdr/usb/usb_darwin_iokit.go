@@ -34,22 +34,22 @@ type (
 // IOKit type aliases. mach_port_t / io_object_t / io_iterator_t /
 // io_service_t are all 32-bit kernel handles on macOS.
 type (
-	machPort     uint32
-	ioObject     = machPort
-	ioIterator   = machPort
-	ioService    = machPort
-	ioRegEntry   = machPort
+	machPort   uint32
+	ioObject   = machPort
+	ioIterator = machPort
+	ioService  = machPort
+	ioRegEntry = machPort
 )
 
 // kIOReturn (kern_return_t) status codes. We only check for
 // kIOReturnSuccess on the hot path; specific errors get translated
 // in translateIOReturn below.
 const (
-	kIOReturnSuccess     = 0
-	kIOReturnNoDevice    = 0xE00002C0
-	kIOReturnAborted     = 0xE00002EB
-	kIOReturnTimeout     = 0xE00002D6
-	kIOReturnExclusive   = 0xE00002C5 // already opened by another process
+	kIOReturnSuccess       = 0
+	kIOReturnNoDevice      = 0xE00002C0
+	kIOReturnAborted       = 0xE00002EB
+	kIOReturnTimeout       = 0xE00002D6
+	kIOReturnExclusive     = 0xE00002C5 // already opened by another process
 	kIOReturnNotResponding = 0xE00002ED
 )
 
@@ -106,13 +106,13 @@ const (
 
 // IOUSBInterfaceInterface vtable indices (post-IUnknown).
 const (
-	ifaceUSBInterfaceOpen   = 8
-	ifaceUSBInterfaceClose  = 9
-	ifaceGetNumEndpoints    = 19
-	ifaceGetPipeProperties  = 26
-	ifaceAbortPipe          = 28
-	ifaceResetPipe          = 29
-	ifaceReadPipe           = 31
+	ifaceUSBInterfaceOpen  = 8
+	ifaceUSBInterfaceClose = 9
+	ifaceGetNumEndpoints   = 19
+	ifaceGetPipeProperties = 26
+	ifaceAbortPipe         = 28
+	ifaceResetPipe         = 29
+	ifaceReadPipe          = 31
 )
 
 // iousbDevRequest mirrors IOUSBDevRequest from IOUSBLib.h. Layout:
@@ -161,10 +161,10 @@ var (
 
 // IOKit function pointers.
 var (
-	ioServiceMatching            func(name *byte) cfMutableDictRef
-	ioServiceGetMatchingServices func(masterPort machPort, matching cfDictionaryRef, iter *ioIterator) int32
-	ioIteratorNext               func(iter ioIterator) ioObject
-	ioObjectRelease              func(obj ioObject) int32
+	ioServiceMatching                 func(name *byte) cfMutableDictRef
+	ioServiceGetMatchingServices      func(masterPort machPort, matching cfDictionaryRef, iter *ioIterator) int32
+	ioIteratorNext                    func(iter ioIterator) ioObject
+	ioObjectRelease                   func(obj ioObject) int32
 	ioCreatePlugInInterfaceForService func(service ioService, pluginType cfTypeRef, interfaceType cfTypeRef, theInterface **uintptr, score *int32) int32
 	ioRegistryEntryCreateCFProperty   func(entry ioRegEntry, key cfStringRef, alloc cfAllocatorRef, options uint32) cfTypeRef
 )

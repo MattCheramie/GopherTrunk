@@ -50,9 +50,9 @@ func (a *fakeSettingsApplier) SetLogLevel(level string) error {
 	a.logCalls.Add(1)
 	return a.logErr
 }
-func (a *fakeSettingsApplier) SetAudioVolume(v float32)  { a.volCalls.Add(1) }
-func (a *fakeSettingsApplier) SetAudioMuted(m bool)      { a.muteCalls.Add(1) }
-func (a *fakeSettingsApplier) SetAudioEnabled(e bool)    {}
+func (a *fakeSettingsApplier) SetAudioVolume(v float32)   { a.volCalls.Add(1) }
+func (a *fakeSettingsApplier) SetAudioMuted(m bool)       { a.muteCalls.Add(1) }
+func (a *fakeSettingsApplier) SetAudioEnabled(e bool)     {}
 func (a *fakeSettingsApplier) SetRecordingEnabled(e bool) { a.recCalls.Add(1) }
 func (a *fakeSettingsApplier) SetScannerScanMode(m string) error {
 	a.scanCalls.Add(1)

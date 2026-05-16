@@ -36,12 +36,12 @@ func TestDaemonCCDecodesMPT1327(t *testing.T) {
 		// MPT 1327 receiver expects ≥ 2 × max tone (1800 Hz) =
 		// 3600 Hz. 48 kHz is a comfortable margin and matches the
 		// audio-rate floor.
-		sampleRate     = 48_000.0
-		markHz         = 1200.0
-		spaceHz        = 1800.0
-		symbolRate     = 1200.0
-		prefix    uint8 = 0x5
-		codewordRepeats = 100
+		sampleRate            = 48_000.0
+		markHz                = 1200.0
+		spaceHz               = 1800.0
+		symbolRate            = 1200.0
+		prefix          uint8 = 0x5
+		codewordRepeats       = 100
 	)
 
 	bits := buildMPT1327AlohaStream(codewordRepeats, prefix)

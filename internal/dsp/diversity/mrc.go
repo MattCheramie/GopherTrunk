@@ -8,7 +8,7 @@ package diversity
 //
 // What this implementation does:
 //
-//   y[i] = ( sum_k  conj(h_k) · x_k[i] ) / sum_k |h_k|^2
+//	y[i] = ( sum_k  conj(h_k) · x_k[i] ) / sum_k |h_k|^2
 //
 // where h_k is the per-branch complex gain estimate. Two estimation
 // modes are supported:
@@ -36,9 +36,9 @@ package diversity
 //     unlocks the full coherent gain.
 type MRC struct {
 	branches int
-	alpha    float64       // EMA factor (0,1]; higher tracks faster
-	power    []float64     // smoothed P_k = E[|x_k|^2]
-	gains    []complex64   // operator-supplied complex weights
+	alpha    float64     // EMA factor (0,1]; higher tracks faster
+	power    []float64   // smoothed P_k = E[|x_k|^2]
+	gains    []complex64 // operator-supplied complex weights
 	usePilot bool
 }
 

@@ -138,9 +138,9 @@ func TestConventionalNewCallAfterTerminator(t *testing.T) {
 	hdr := dmr.SlotType{ColorCode: 1, DataType: dmr.DTVoiceLCHeader}
 	term := dmr.SlotType{ColorCode: 1, DataType: dmr.DTTerminatorWithLC}
 
-	cc.IngestBurst(burstWithFLC(flc), hdr) // grant 1
+	cc.IngestBurst(burstWithFLC(flc), hdr)  // grant 1
 	cc.IngestBurst(burstWithFLC(flc), term) // call ended
-	cc.IngestBurst(burstWithFLC(flc), hdr) // grant 2 (state cleared)
+	cc.IngestBurst(burstWithFLC(flc), hdr)  // grant 2 (state cleared)
 
 	count := 0
 	timeout := time.After(150 * time.Millisecond)

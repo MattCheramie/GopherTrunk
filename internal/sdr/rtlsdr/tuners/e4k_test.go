@@ -68,12 +68,12 @@ func TestE4000PLLRangeTable_BandPicks(t *testing.T) {
 func TestE4000PLLSynthMath(t *testing.T) {
 	const fosc uint64 = 28_800_000
 	cases := []struct {
-		name           string
-		hz             uint32
-		wantDivLow     uint32
-		wantBandSel    byte
-		wantZ          uint32
-		wantX          uint32
+		name        string
+		hz          uint32
+		wantDivLow  uint32
+		wantBandSel byte
+		wantZ       uint32
+		wantX       uint32
 	}{
 		// 50 MHz — exact min-boundary, picks the 72.4 MHz row (div=48).
 		// fvco = 2_400_000_000, z = 83 (28.8M * 83 = 2_390_400_000),
@@ -145,13 +145,13 @@ func TestE4000SetFreqBoundaryInclusivity(t *testing.T) {
 	e := NewE4000(rtl2832u.New(usb.NewMockTransport()))
 	e.initDone = true
 	cases := []struct {
-		hz       uint32
+		hz        uint32
 		wantRange bool // true = expect *ErrUnsupportedFreq
 	}{
-		{49_999_999, true},      // just below floor
-		{50_000_000, false},     // exact floor — accepted
-		{2_200_000_000, false},  // exact ceiling — accepted
-		{2_200_000_001, true},   // just above ceiling
+		{49_999_999, true},     // just below floor
+		{50_000_000, false},    // exact floor — accepted
+		{2_200_000_000, false}, // exact ceiling — accepted
+		{2_200_000_001, true},  // just above ceiling
 	}
 	for _, c := range cases {
 		err := e.SetFreq(c.hz)
@@ -176,16 +176,16 @@ func TestE4000NearestGainIndex_LadderQuantization(t *testing.T) {
 		tenthDB int
 		wantIdx int
 	}{
-		{-30, 0},       // exact: lowest entry
-		{-100, 0},      // far below: clamps to lowest
-		{-27, 1},       // |-27-(-30)|=3, |-27-(-25)|=2 → -25 wins (idx 1)
-		{0, 6},         // exact: -10/-5/0/25 → 0 wins
-		{12, 6},        // dist to 0 = 12, dist to 25 = 13 → 0 wins (idx 6)
-		{13, 7},        // dist to 0 = 13, dist to 25 = 12 → 25 wins (idx 7)
-		{37, 7},        // dist to 25 = 12, dist to 50 = 13 → 25 wins
-		{38, 8},        // dist to 25 = 13, dist to 50 = 12 → 50 wins
-		{300, 16},      // exact: top entry
-		{1000, 16},     // far above: clamps to top
+		{-30, 0},   // exact: lowest entry
+		{-100, 0},  // far below: clamps to lowest
+		{-27, 1},   // |-27-(-30)|=3, |-27-(-25)|=2 → -25 wins (idx 1)
+		{0, 6},     // exact: -10/-5/0/25 → 0 wins
+		{12, 6},    // dist to 0 = 12, dist to 25 = 13 → 0 wins (idx 6)
+		{13, 7},    // dist to 0 = 13, dist to 25 = 12 → 25 wins (idx 7)
+		{37, 7},    // dist to 25 = 12, dist to 50 = 13 → 25 wins
+		{38, 8},    // dist to 25 = 13, dist to 50 = 12 → 50 wins
+		{300, 16},  // exact: top entry
+		{1000, 16}, // far above: clamps to top
 	}
 	for _, c := range cases {
 		got := nearestGainIndex(e4kLNAGains, c.tenthDB)

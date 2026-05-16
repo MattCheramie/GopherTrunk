@@ -43,7 +43,7 @@ type audioPatchRequest struct {
 
 // handleAudioStatus reports the live-audio cockpit's current state.
 //
-//   GET /api/v1/audio
+//	GET /api/v1/audio
 //
 // Responses:
 //
@@ -61,9 +61,9 @@ func (s *Server) handleAudioStatus(w http.ResponseWriter, _ *http.Request) {
 // the updated state. Each field is optional; omit a field to leave
 // that knob alone.
 //
-//   PATCH /api/v1/audio
-//   Content-Type: application/json
-//   {"volume":0.5,"muted":false,"recording_enabled":true}
+//	PATCH /api/v1/audio
+//	Content-Type: application/json
+//	{"volume":0.5,"muted":false,"recording_enabled":true}
 //
 // Responses:
 //

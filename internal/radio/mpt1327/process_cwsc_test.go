@@ -130,9 +130,9 @@ func TestFindCWSCRespectsFromOffset(t *testing.T) {
 // system field into a numeric threshold.
 func TestParseCWSCTolerance(t *testing.T) {
 	cases := []struct {
-		in      string
-		want    int
-		wantOK  bool
+		in     string
+		want   int
+		wantOK bool
 	}{
 		{"", cwscDefaultMaxErrors, true},
 		{"0", 0, true},
@@ -143,7 +143,7 @@ func TestParseCWSCTolerance(t *testing.T) {
 		{"1", 1, true},
 		{"2", 2, true},
 		{"4", 4, true},
-		{"15", 15, true},  // cwscBits-1 is the upper bound
+		{"15", 15, true},                    // cwscBits-1 is the upper bound
 		{"16", cwscDefaultMaxErrors, false}, // >= cwscBits is invalid
 		{"-1", cwscDefaultMaxErrors, false},
 		{"banana", cwscDefaultMaxErrors, false},

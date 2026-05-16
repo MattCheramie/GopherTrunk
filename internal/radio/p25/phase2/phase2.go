@@ -8,16 +8,16 @@
 //
 // What this package gives you:
 //
-//   sync.go        Phase 2 outbound + inbound sync constants.
-//   superframe.go  Superframe + slot-type layout constants.
-//   mac.go         MAC PDU structure + opcode enum + payload
-//                  accessors. MAC PDUs carry late-grant signalling
-//                  (GroupVoiceChannelGrantUpdate, MAC_PTT, etc.)
-//                  on top of the Phase 2 voice frames.
-//   control.go     State machine that ingests MAC PDUs and
-//                  publishes events.KindGrant on the bus, with the
-//                  trunking.Grant.Protocol tag set to
-//                  "p25-phase2".
+//	sync.go        Phase 2 outbound + inbound sync constants.
+//	superframe.go  Superframe + slot-type layout constants.
+//	mac.go         MAC PDU structure + opcode enum + payload
+//	               accessors. MAC PDUs carry late-grant signalling
+//	               (GroupVoiceChannelGrantUpdate, MAC_PTT, etc.)
+//	               on top of the Phase 2 voice frames.
+//	control.go     State machine that ingests MAC PDUs and
+//	               publishes events.KindGrant on the bus, with the
+//	               trunking.Grant.Protocol tag set to
+//	               "p25-phase2".
 //
 // What's NOT yet wired (honest deferrals):
 //

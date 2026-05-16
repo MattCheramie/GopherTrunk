@@ -10,12 +10,12 @@ import (
 // the control channel transmits between voice grants. After FEC
 // removal the structured layout is:
 //
-//   bits  0..4   (5)  Message type      (see opcodes.go)
-//   bits  5..7   (3)  Format / flags    (reserved + emergency + group)
-//   bits  8..31  (24) Source ID         (calling subscriber)
-//   bits 32..55  (24) Destination ID    (callee — group or subscriber)
-//   bits 56..63  (8)  Service info      (priority / payload type)
-//   bits 64..79  (16) Opcode-specific   (channel number, status, …)
+//	bits  0..4   (5)  Message type      (see opcodes.go)
+//	bits  5..7   (3)  Format / flags    (reserved + emergency + group)
+//	bits  8..31  (24) Source ID         (calling subscriber)
+//	bits 32..55  (24) Destination ID    (callee — group or subscriber)
+//	bits 56..63  (8)  Service info      (priority / payload type)
+//	bits 64..79  (16) Opcode-specific   (channel number, status, …)
 //
 // Field layout follows ETSI TS 102 658 §6.5; vendor extensions
 // repurpose Service info and the trailing 16 bits, so cross-check

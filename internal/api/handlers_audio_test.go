@@ -57,9 +57,9 @@ func (f *fakeAudio) SetRecordingEnabled(enabled bool) {
 	f.setRecN.Add(1)
 }
 
-func (f *fakeAudio) DropsTotal() uint64    { return f.drops }
-func (f *fakeAudio) SampleRate() uint32    { return f.rate }
-func (f *fakeAudio) BackendEnabled() bool  { return f.backend }
+func (f *fakeAudio) DropsTotal() uint64   { return f.drops }
+func (f *fakeAudio) SampleRate() uint32   { return f.rate }
+func (f *fakeAudio) BackendEnabled() bool { return f.backend }
 
 func float32bits32(f float32) uint32     { return math.Float32bits(f) }
 func float32frombits32(u uint32) float32 { return math.Float32frombits(u) }

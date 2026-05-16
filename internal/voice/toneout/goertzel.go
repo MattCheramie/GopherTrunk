@@ -5,13 +5,13 @@
 //
 // Files:
 //
-//   goertzel.go   single-frequency power detector (the Goertzel
-//                 algorithm — much cheaper than a full FFT for the
-//                 small handful of tones each profile cares about)
-//   profile.go    Profile + Tone configuration types
-//   detector.go   per-device state machine; satisfies composer.PCMSink
-//                 so the daemon can fan PCM into it alongside the
-//                 recorder
+//	goertzel.go   single-frequency power detector (the Goertzel
+//	              algorithm — much cheaper than a full FFT for the
+//	              small handful of tones each profile cares about)
+//	profile.go    Profile + Tone configuration types
+//	detector.go   per-device state machine; satisfies composer.PCMSink
+//	              so the daemon can fan PCM into it alongside the
+//	              recorder
 package toneout
 
 import "math"
@@ -30,11 +30,11 @@ import "math"
 //	        // last 800 samples. Block-aligned; not a sliding window.
 //	    }
 type Goertzel struct {
-	coeff      float64
-	s1, s2     float64
-	count      int
-	blockSize  int
-	normalize  float64
+	coeff     float64
+	s1, s2    float64
+	count     int
+	blockSize int
+	normalize float64
 }
 
 // NewGoertzel constructs a detector for targetHz over a sampleHz PCM

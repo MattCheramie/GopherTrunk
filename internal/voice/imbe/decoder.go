@@ -154,7 +154,7 @@ func (d *Decoder) FrameSize() int { return FrameBytes }
 //     badFrameCount.
 //   - silence-window frame (b_0 ∈ [216, 219]): emit §6.4 OA tail
 //     fade-out into pcm[0..95]; reset SynthState + last-good cache
-//     + badFrameCount; AGC envelope preserved across the silence.
+//   - badFrameCount; AGC envelope preserved across the silence.
 //   - bad frame (UnpackParams error) with cached last-good frame
 //     and badFrameCount < mbe.MaxBadFrames: replay last-good params
 //     with M scaled by mbe.BadFrameAttenuation^badFrameCount; AGC

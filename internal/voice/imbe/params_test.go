@@ -78,10 +78,10 @@ func TestUnpackHeaderLFromW0(t *testing.T) {
 	// future refactor that "simplifies" the formula trips this
 	// regression.
 	cases := []struct {
-		b0   uint
+		b0    uint
 		wantL int
 	}{
-		{0, 9},   // smallest b_0 → highest fundamental → smallest L
+		{0, 9},    // smallest b_0 → highest fundamental → smallest L
 		{207, 56}, // largest valid b_0 → lowest fundamental → largest L
 	}
 	for _, tc := range cases {

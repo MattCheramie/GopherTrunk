@@ -20,10 +20,10 @@ type DibitSink func(dibits []uint8, baseIdx int)
 //
 // Two pattern variants are defined:
 //
-//   NormalSync     normal-burst training sequence (downlink + uplink)
-//   ExtendedSync   extended training sequence used on the broadcast
-//                  burst — gives the receiver more energy to lock the
-//                  initial frame timing on cold start.
+//	NormalSync     normal-burst training sequence (downlink + uplink)
+//	ExtendedSync   extended training sequence used on the broadcast
+//	               burst — gives the receiver more energy to lock the
+//	               initial frame timing on cold start.
 //
 // Both are 38 dibits long. Stored as the full hex constant; the
 // per-dibit unpacker materialises them on demand.

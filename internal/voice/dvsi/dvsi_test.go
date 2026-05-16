@@ -127,12 +127,12 @@ func TestVocoderRejectsWrongFrameSize(t *testing.T) {
 // the wire protocol byte-by-byte without a chip or the loopback's
 // silence shortcut.
 type scriptedTransport struct {
-	t            *testing.T
-	expectedOut  []byte
-	reply        []byte
-	writeCalled  int
-	readCalled   int
-	closeCalled  int
+	t             *testing.T
+	expectedOut   []byte
+	reply         []byte
+	writeCalled   int
+	readCalled    int
+	closeCalled   int
 	readNoPending bool
 }
 

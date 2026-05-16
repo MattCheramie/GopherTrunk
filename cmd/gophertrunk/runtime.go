@@ -15,10 +15,10 @@ import (
 // on every /api/v1/runtime call since the daemon config is immutable
 // at runtime; cost is a handful of slice allocs.
 type runtimeSnapshot struct {
-	cfg      *config.Config
-	version  string
-	metrics  bool
-	daemon   *Daemon // for StartupWarnings, ConfigPath, ...
+	cfg     *config.Config
+	version string
+	metrics bool
+	daemon  *Daemon // for StartupWarnings, ConfigPath, ...
 }
 
 // vocoderProtocolMap is the canonical mapping the daemon hands to
@@ -27,17 +27,17 @@ type runtimeSnapshot struct {
 // Keep in sync with the per-protocol pipeline factories in
 // internal/radio/*/pipeline.go.
 var vocoderProtocolMap = map[string]string{
-	"p25":         "imbe",
-	"p25-phase2":  "ambe2",
-	"dmr":         "ambe2",
-	"nxdn":        "ambe2",
-	"dpmr":        "ambe2",
-	"tetra":       "ambe2",
-	"ysf":         "ambe2",
-	"edacs":       "ambe2",
-	"motorola":    "—",
-	"ltr":         "—",
-	"mpt1327":     "—",
+	"p25":        "imbe",
+	"p25-phase2": "ambe2",
+	"dmr":        "ambe2",
+	"nxdn":       "ambe2",
+	"dpmr":       "ambe2",
+	"tetra":      "ambe2",
+	"ysf":        "ambe2",
+	"edacs":      "ambe2",
+	"motorola":   "—",
+	"ltr":        "—",
+	"mpt1327":    "—",
 }
 
 func (r *runtimeSnapshot) Runtime() api.RuntimeDTO {

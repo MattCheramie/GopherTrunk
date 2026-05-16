@@ -21,8 +21,8 @@ import (
 type mergeOptions struct {
 	ConfigPath string
 	CSVDir     string
-	Force      bool   // overwrite an existing system with the same name
-	DryRun     bool   // produce buffers but don't write to disk
+	Force      bool // overwrite an existing system with the same name
+	DryRun     bool // produce buffers but don't write to disk
 }
 
 // mergeResult is the outcome of a merge — the YAML bytes that would be

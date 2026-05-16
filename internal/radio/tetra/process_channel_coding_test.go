@@ -119,7 +119,7 @@ func TestProcessChannelCodingOnSCHFRoundTrip(t *testing.T) {
 	payload[0], payload[1] = 0x00, 0x04 // CID = 1
 	payload[2], payload[3], payload[4] = 0xAA, 0xAA, 0xAA
 	payload[5], payload[6], payload[7] = 0xBB, 0xBB, 0xBB
-	payload[8] = 0x80                  // group flag
+	payload[8] = 0x80                    // group flag
 	payload[9], payload[10] = 0x00, 0x70 // carrier 7
 	pdu := PDU{Disc: DiscCMCE, Type: uint8(CMCEDConnect), Payload: payload}
 	info := pduToType1Bits(pdu, 268)

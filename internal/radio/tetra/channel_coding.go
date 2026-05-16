@@ -94,9 +94,9 @@ func decodeRCPCRate23(type3 []byte) []byte {
 // 4 zero tail bits + RCPC R=2/3 + (K, a) interleave + scramble —
 // producing K3 type-5 output bits from K1 type-1 input bits.
 func signalingEncode(type1 []byte, interleaverK, interleaverA int, colourCode uint32) []byte {
-	withCRC := appendCRC16(type1)                // K1 + 16
-	type2 := appendTailBits(withCRC, 4)          // K1 + 20
-	type3 := encodeRCPCRate23(type2)             // (K1 + 20) * 3 / 2
+	withCRC := appendCRC16(type1)       // K1 + 16
+	type2 := appendTailBits(withCRC, 4) // K1 + 20
+	type3 := encodeRCPCRate23(type2)    // (K1 + 20) * 3 / 2
 	type4 := framing.BlockInterleaveTetra(type3, interleaverK, interleaverA)
 	type5 := framing.ScrambleTetra(type4, colourCode)
 	return type5

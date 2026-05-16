@@ -114,10 +114,10 @@ func TestAsAhoyChannel(t *testing.T) {
 
 func TestKindString(t *testing.T) {
 	cases := map[CodewordKind]string{
-		KindAloha:     "Aloha",
-		KindGoToChan:  "GoToChannel",
-		KindAhoyChan:  "AhoyChan",
-		KindAck:       "Ack",
+		KindAloha:         "Aloha",
+		KindGoToChan:      "GoToChannel",
+		KindAhoyChan:      "AhoyChan",
+		KindAck:           "Ack",
 		CodewordKind(0xD): "CodewordKind(D)",
 	}
 	for k, want := range cases {

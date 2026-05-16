@@ -13,9 +13,9 @@ type DibitSink func(dibits []uint8, baseIdx int)
 // dPMR sync words per ETSI TS 102 658 §4.4. Three distinct 48-bit
 // (24-dibit) patterns mark the three burst types Mode 3 uses:
 //
-//   FS1  start of a voice / data superframe
-//   FS2  middle synchronisation inside a superframe (every 4th burst)
-//   FS3  start of a CSBK (signalling) burst on the control channel
+//	FS1  start of a voice / data superframe
+//	FS2  middle synchronisation inside a superframe (every 4th burst)
+//	FS3  start of a CSBK (signalling) burst on the control channel
 //
 // All three are stored as canonical 48-bit hex constants; helpers
 // materialise the dibits MSB-first for the symbol-domain detector.

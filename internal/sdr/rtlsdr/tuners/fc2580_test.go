@@ -67,13 +67,13 @@ func TestFC2580BandSelect_IFChangesAcrossBands(t *testing.T) {
 	// Verify the band table picks different IF frequencies for VHF
 	// (5.6 MHz) vs UHF (4.6 MHz).
 	cases := []struct {
-		hz       uint32
-		wantIF   uint32
+		hz     uint32
+		wantIF uint32
 	}{
-		{80_000_000, 5_600_000},   // FM VHF-II
-		{150_000_000, 5_600_000},  // VHF-III / DAB
-		{500_000_000, 4_600_000},  // UHF
-		{700_000_000, 4_600_000},  // UHF (above 500)
+		{80_000_000, 5_600_000},    // FM VHF-II
+		{150_000_000, 5_600_000},   // VHF-III / DAB
+		{500_000_000, 4_600_000},   // UHF
+		{700_000_000, 4_600_000},   // UHF (above 500)
 		{1_500_000_000, 1_400_000}, // L-band fallback
 	}
 	for _, c := range cases {

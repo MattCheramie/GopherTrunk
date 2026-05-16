@@ -15,17 +15,17 @@ const CallsignLen = 8
 // scrambler / interleave layers, the structured layout per the JARL
 // DV-mode specification is:
 //
-//   bytes  0     Flag byte 1 (FLAG1) — Repeater / Interrupted /
-//                Control / EMR / Data flags.
-//   bytes  1     Flag byte 2 (FLAG2) — supplementary flags.
-//   bytes  2     Flag byte 3 (FLAG3) — supplementary flags.
-//   bytes  3-10  RPT2 callsign — destination repeater (or "        ").
-//   bytes 11-18  RPT1 callsign — gateway / source repeater.
-//   bytes 19-26  UR   callsign — destination station ("CQCQCQ" =
-//                group call, "/<rpt>" = repeater routing).
-//   bytes 27-34  MY1  callsign — source / own station callsign.
-//   bytes 35-38  MY2  4-char short suffix.
-//   bytes 39-40  CRC-16-CCITT over bytes 0..38.
+//	bytes  0     Flag byte 1 (FLAG1) — Repeater / Interrupted /
+//	             Control / EMR / Data flags.
+//	bytes  1     Flag byte 2 (FLAG2) — supplementary flags.
+//	bytes  2     Flag byte 3 (FLAG3) — supplementary flags.
+//	bytes  3-10  RPT2 callsign — destination repeater (or "        ").
+//	bytes 11-18  RPT1 callsign — gateway / source repeater.
+//	bytes 19-26  UR   callsign — destination station ("CQCQCQ" =
+//	             group call, "/<rpt>" = repeater routing).
+//	bytes 27-34  MY1  callsign — source / own station callsign.
+//	bytes 35-38  MY2  4-char short suffix.
+//	bytes 39-40  CRC-16-CCITT over bytes 0..38.
 //
 // The structure is intentionally permissive: callers parse the
 // callsign + flag fields and dispatch on the UR field.

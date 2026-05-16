@@ -41,7 +41,7 @@ import (
 // of the (already-deinterleaved + already-descrambled) 144-bit
 // channel buffer.
 const (
-	ChannelBits = 144
+	ChannelBits   = 144
 	InfoBitsTotal = InfoBits // re-exported so callers don't have to recall the name
 
 	u0Offset, u0Bits, u0InfoBits = 0, 23, 12

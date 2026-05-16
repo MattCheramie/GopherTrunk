@@ -18,7 +18,7 @@ func TestFFSKModulatorRoundTripThroughDemod(t *testing.T) {
 		markHz     = 1200.0
 		spaceHz    = 1800.0
 	)
-	const sps = int(sampleRate/symbolRate) // 40 samples per bit
+	const sps = int(sampleRate / symbolRate) // 40 samples per bit
 
 	src := make([]byte, 200)
 	for i := range src {

@@ -274,9 +274,9 @@ func patchEdits(p Patch) []patchPath {
 // can't tear each other's writes. The writer also enforces an
 // mtime guard so externally-edited files aren't clobbered.
 type Writer struct {
-	mu          sync.Mutex
-	path        string
-	knownMtime  int64
+	mu         sync.Mutex
+	path       string
+	knownMtime int64
 }
 
 // NewWriter constructs a Writer bound to path. The path must point

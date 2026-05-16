@@ -18,12 +18,12 @@ import (
 // Detect (in detect.go) handles that GPIO dance.
 
 const (
-	fc0012I2CAddr     uint8  = 0xC6
-	fc0012CheckAddr   uint8  = 0x00
-	fc0012CheckVal    uint8  = 0xA1
-	fc0012IFFreqHz    uint32 = 6_000_000
-	fc0012XtalHz      uint32 = 28_800_000
-	fc0012GPIOEnable  uint8  = 5
+	fc0012I2CAddr    uint8  = 0xC6
+	fc0012CheckAddr  uint8  = 0x00
+	fc0012CheckVal   uint8  = 0xA1
+	fc0012IFFreqHz   uint32 = 6_000_000
+	fc0012XtalHz     uint32 = 28_800_000
+	fc0012GPIOEnable uint8  = 5
 )
 
 // fc0012InitArray is the 20-register power-on flood; index i lands at

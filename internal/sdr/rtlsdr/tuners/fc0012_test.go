@@ -138,14 +138,14 @@ func TestFC0012BandSelect_BoundaryRanges(t *testing.T) {
 func TestFC0012NearestGainIndex(t *testing.T) {
 	// Verify the rounding behavior for the 5-step ladder.
 	cases := []struct {
-		tenthDB  int
-		wantIdx  int
+		tenthDB int
+		wantIdx int
 	}{
-		{-100, 0},   // closest to -99
-		{-50, 1},    // closest to -40
-		{50, 2},     // closest to 71? distance: |50-(-40)|=90, |50-71|=21, |50-179|=129. → idx 2
-		{200, 4},    // 192 is closest
-		{1000, 4},   // above range: clamps to top
+		{-100, 0}, // closest to -99
+		{-50, 1},  // closest to -40
+		{50, 2},   // closest to 71? distance: |50-(-40)|=90, |50-71|=21, |50-179|=129. → idx 2
+		{200, 4},  // 192 is closest
+		{1000, 4}, // above range: clamps to top
 	}
 	for _, c := range cases {
 		got := fc0012NearestGainIndex(c.tenthDB)

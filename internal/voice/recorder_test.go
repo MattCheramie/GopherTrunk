@@ -354,11 +354,11 @@ func TestSanitize(t *testing.T) {
 	// are common); slashes / spaces / shell metacharacters are mapped to
 	// underscores. Empty input stays empty.
 	cases := map[string]string{
-		"FIRE-DISP":          "FIRE-DISP",
-		"Fire / EMS":         "Fire___EMS",
-		"  spaces  ":         "spaces",
-		"path/../traversal":  "path_.._traversal",
-		"":                   "",
+		"FIRE-DISP":         "FIRE-DISP",
+		"Fire / EMS":        "Fire___EMS",
+		"  spaces  ":        "spaces",
+		"path/../traversal": "path_.._traversal",
+		"":                  "",
 	}
 	for in, want := range cases {
 		if got := sanitize(in); got != want {

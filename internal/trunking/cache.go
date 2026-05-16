@@ -22,8 +22,8 @@ type Cache struct {
 }
 
 type cacheFile struct {
-	Version int                       `json:"version"`
-	Systems map[string]CachedSystem  `json:"systems"`
+	Version int                     `json:"version"`
+	Systems map[string]CachedSystem `json:"systems"`
 }
 
 // CachedSystem is the on-disk record for one system.

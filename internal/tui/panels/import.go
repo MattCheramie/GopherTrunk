@@ -24,14 +24,14 @@ import (
 //  3. Result — list of systems_added / systems_replaced; esc returns
 //     to Stage.
 type ImportPanel struct {
-	view        importView
-	input       textinput.Model
-	paths       []string
-	inputErr    string
-	previewID   string
-	preview     []client.ParsedSystemDTO
-	result      *client.ImportResult
-	statusMsg   string
+	view      importView
+	input     textinput.Model
+	paths     []string
+	inputErr  string
+	previewID string
+	preview   []client.ParsedSystemDTO
+	result    *client.ImportResult
+	statusMsg string
 }
 
 type importView int

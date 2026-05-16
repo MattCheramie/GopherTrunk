@@ -15,17 +15,17 @@ import (
 //
 // Field layout follows the most-cited public reference:
 //
-//   bits 39..36 (4 bits)  Command  — operation type (voice grant,
-//                                    data grant, system, idle, ...).
-//   bits 35..32 (4 bits)  Status   — per-command flag bits
-//                                    (encryption, emergency, etc.).
-//   bits 31..16 (16 bits) Address  — talkgroup / radio ID / site ID,
-//                                    interpretation depends on
-//                                    Command.
-//   bits 15..11 (5 bits)  LCN      — logical channel number; voice
-//                                    grants reference the band plan.
-//   bits 10..0  (11 bits) Aux      — command-specific auxiliary
-//                                    parameter.
+//	bits 39..36 (4 bits)  Command  — operation type (voice grant,
+//	                                 data grant, system, idle, ...).
+//	bits 35..32 (4 bits)  Status   — per-command flag bits
+//	                                 (encryption, emergency, etc.).
+//	bits 31..16 (16 bits) Address  — talkgroup / radio ID / site ID,
+//	                                 interpretation depends on
+//	                                 Command.
+//	bits 15..11 (5 bits)  LCN      — logical channel number; voice
+//	                                 grants reference the band plan.
+//	bits 10..0  (11 bits) Aux      — command-specific auxiliary
+//	                                 parameter.
 //
 // Higher-level helpers in opcodes.go interpret these fields per
 // command so callers don't need to touch the bit packing directly.

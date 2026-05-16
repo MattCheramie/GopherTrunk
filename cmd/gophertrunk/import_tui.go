@@ -19,19 +19,19 @@ import (
 // Sites tab:        space toggle Include
 // Talkgroups tab:   s scan, l lockout, e edit alpha, 0-9 priority
 type importTUIModel struct {
-	systems   []parsedSystem
-	sysIdx    int
-	view      tuiView
-	tab       tuiTab
-	cursor    int
-	editing   bool
-	editBuf   string
-	writeFn   func([]parsedSystem) (mergeResult, error)
-	status    string
-	confirm   string
-	width     int
-	height    int
-	wrote     bool
+	systems []parsedSystem
+	sysIdx  int
+	view    tuiView
+	tab     tuiTab
+	cursor  int
+	editing bool
+	editBuf string
+	writeFn func([]parsedSystem) (mergeResult, error)
+	status  string
+	confirm string
+	width   int
+	height  int
+	wrote   bool
 }
 
 type tuiView int

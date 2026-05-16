@@ -71,8 +71,8 @@ func NewSyncDetector(patterns [][]uint8, tolerance int) *SyncDetector {
 
 // Match reports a sync hit: the dibit index where the FSW ends.
 type Match struct {
-	Index    int
-	Inbound  bool // true if the matched pattern was FSWDibitsInbound
+	Index   int
+	Inbound bool // true if the matched pattern was FSWDibitsInbound
 }
 
 // Process scans src and appends matches to dst. baseIndex is the absolute

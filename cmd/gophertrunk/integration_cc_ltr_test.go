@@ -32,12 +32,12 @@ func TestDaemonCCDecodesLTR(t *testing.T) {
 		controlFreqHz = 935_012_500
 		// LTR receiver wants ≥ 2 × 300 baud = 600 Hz. 48 kHz
 		// keeps the LPF stopband + transition band comfortable.
-		sampleRate         = 48_000.0
-		symbolRate         = 300.0
-		audioAmp           = 0.05
-		area         uint8 = 7
-		homeRepeater uint8 = 4
-		statusRepeats      = 80
+		sampleRate          = 48_000.0
+		symbolRate          = 300.0
+		audioAmp            = 0.05
+		area          uint8 = 7
+		homeRepeater  uint8 = 4
+		statusRepeats       = 80
 	)
 
 	bits := buildLTRStatusStream(statusRepeats, area, homeRepeater)

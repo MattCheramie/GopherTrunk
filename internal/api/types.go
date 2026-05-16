@@ -34,45 +34,45 @@ type SystemDTO struct {
 	// can verify their config landed; runtime mutation is a follow-up
 	// (currently requires editing config.yaml + restarting the
 	// daemon).
-	TETRAColourCode      uint32 `json:"tetra_colour_code,omitempty"`
-	TETRAChannel         string `json:"tetra_channel,omitempty"`
-	TETRAChannelCoding   string `json:"tetra_channel_coding,omitempty"`
-	LTRFCSMode           string `json:"ltr_fcs_mode,omitempty"`
-	LTRManchesterMode    string `json:"ltr_manchester_mode,omitempty"`
-	P25Phase2TrellisMode   string `json:"p25_phase2_trellis_mode,omitempty"`
-	P25Phase2RSMode        string `json:"p25_phase2_rs_mode,omitempty"`
-	P25Phase2ScramblerMode string `json:"p25_phase2_scrambler_mode,omitempty"`
-	NXDNViterbiMode        string `json:"nxdn_viterbi_mode,omitempty"`
+	TETRAColourCode        uint32  `json:"tetra_colour_code,omitempty"`
+	TETRAChannel           string  `json:"tetra_channel,omitempty"`
+	TETRAChannelCoding     string  `json:"tetra_channel_coding,omitempty"`
+	LTRFCSMode             string  `json:"ltr_fcs_mode,omitempty"`
+	LTRManchesterMode      string  `json:"ltr_manchester_mode,omitempty"`
+	P25Phase2TrellisMode   string  `json:"p25_phase2_trellis_mode,omitempty"`
+	P25Phase2RSMode        string  `json:"p25_phase2_rs_mode,omitempty"`
+	P25Phase2ScramblerMode string  `json:"p25_phase2_scrambler_mode,omitempty"`
+	NXDNViterbiMode        string  `json:"nxdn_viterbi_mode,omitempty"`
 	NXDNDeviationHz        float64 `json:"nxdn_deviation_hz,omitempty"`
-	EDACSBCHMode         string `json:"edacs_bch_mode,omitempty"`
-	MPT1327BCHMode       string `json:"mpt1327_bch_mode,omitempty"`
-	MPT1327CWSCTolerance string `json:"mpt1327_cwsc_tolerance,omitempty"`
-	MotorolaBCHMode      string `json:"motorola_bch_mode,omitempty"`
+	EDACSBCHMode           string  `json:"edacs_bch_mode,omitempty"`
+	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`
+	MPT1327CWSCTolerance   string  `json:"mpt1327_cwsc_tolerance,omitempty"`
+	MotorolaBCHMode        string  `json:"motorola_bch_mode,omitempty"`
 }
 
 func systemToDTO(s trunking.System) SystemDTO {
 	return SystemDTO{
-		Name:                 s.Name,
-		Protocol:             s.Protocol.String(),
-		ControlChannels:      append([]uint32(nil), s.ControlChannels...),
-		WACN:                 s.WACN,
-		SystemID:             s.SystemID,
-		RFSS:                 s.RFSS,
-		Site:                 s.Site,
-		TETRAColourCode:      s.TETRAColourCode,
-		TETRAChannel:         s.TETRAChannel,
-		TETRAChannelCoding:   s.TETRAChannelCoding,
-		LTRFCSMode:           s.LTRFCSMode,
-		LTRManchesterMode:    s.LTRManchesterMode,
+		Name:                   s.Name,
+		Protocol:               s.Protocol.String(),
+		ControlChannels:        append([]uint32(nil), s.ControlChannels...),
+		WACN:                   s.WACN,
+		SystemID:               s.SystemID,
+		RFSS:                   s.RFSS,
+		Site:                   s.Site,
+		TETRAColourCode:        s.TETRAColourCode,
+		TETRAChannel:           s.TETRAChannel,
+		TETRAChannelCoding:     s.TETRAChannelCoding,
+		LTRFCSMode:             s.LTRFCSMode,
+		LTRManchesterMode:      s.LTRManchesterMode,
 		P25Phase2TrellisMode:   s.P25Phase2TrellisMode,
 		P25Phase2RSMode:        s.P25Phase2RSMode,
 		P25Phase2ScramblerMode: s.P25Phase2ScramblerMode,
 		NXDNViterbiMode:        s.NXDNViterbiMode,
 		NXDNDeviationHz:        s.NXDNDeviationHz,
-		EDACSBCHMode:         s.EDACSBCHMode,
-		MPT1327BCHMode:       s.MPT1327BCHMode,
-		MPT1327CWSCTolerance: s.MPT1327CWSCTolerance,
-		MotorolaBCHMode:      s.MotorolaBCHMode,
+		EDACSBCHMode:           s.EDACSBCHMode,
+		MPT1327BCHMode:         s.MPT1327BCHMode,
+		MPT1327CWSCTolerance:   s.MPT1327CWSCTolerance,
+		MotorolaBCHMode:        s.MotorolaBCHMode,
 	}
 }
 
@@ -133,11 +133,11 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 
 // ActiveCallDTO mirrors trunking.ActiveCall for JSON.
 type ActiveCallDTO struct {
-	Grant        GrantDTO       `json:"grant"`
+	Grant        GrantDTO      `json:"grant"`
 	Talkgroup    *TalkgroupDTO `json:"talkgroup,omitempty"`
-	DeviceSerial string         `json:"device_serial"`
-	StartedAt    time.Time      `json:"started_at"`
-	LastHeardAt  time.Time      `json:"last_heard_at"`
+	DeviceSerial string        `json:"device_serial"`
+	StartedAt    time.Time     `json:"started_at"`
+	LastHeardAt  time.Time     `json:"last_heard_at"`
 }
 
 func activeCallToDTO(ac *trunking.ActiveCall) ActiveCallDTO {
@@ -152,19 +152,19 @@ func activeCallToDTO(ac *trunking.ActiveCall) ActiveCallDTO {
 
 // CallStartDTO / CallEndDTO mirror the trunking event payloads.
 type CallStartDTO struct {
-	Grant        GrantDTO       `json:"grant"`
+	Grant        GrantDTO      `json:"grant"`
 	Talkgroup    *TalkgroupDTO `json:"talkgroup,omitempty"`
-	DeviceSerial string         `json:"device_serial"`
-	StartedAt    time.Time      `json:"started_at"`
+	DeviceSerial string        `json:"device_serial"`
+	StartedAt    time.Time     `json:"started_at"`
 }
 
 type CallEndDTO struct {
-	Grant        GrantDTO       `json:"grant"`
+	Grant        GrantDTO      `json:"grant"`
 	Talkgroup    *TalkgroupDTO `json:"talkgroup,omitempty"`
-	DeviceSerial string         `json:"device_serial"`
-	StartedAt    time.Time      `json:"started_at"`
-	EndedAt      time.Time      `json:"ended_at"`
-	Reason       string         `json:"reason"`
+	DeviceSerial string        `json:"device_serial"`
+	StartedAt    time.Time     `json:"started_at"`
+	EndedAt      time.Time     `json:"ended_at"`
+	Reason       string        `json:"reason"`
 }
 
 func callStartToDTO(cs trunking.CallStart) CallStartDTO {

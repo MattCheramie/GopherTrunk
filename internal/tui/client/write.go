@@ -318,22 +318,22 @@ func (c *Client) UpdateSettings(ctx context.Context, p SettingsPatch) (SettingsR
 
 // ImportPreview mirrors the daemon's POST /api/v1/import response.
 type ImportPreview struct {
-	ID      string             `json:"id"`
-	Systems []ParsedSystemDTO  `json:"systems"`
+	ID      string            `json:"id"`
+	Systems []ParsedSystemDTO `json:"systems"`
 }
 
 // ParsedSystemDTO mirrors the daemon's preview row.
 type ParsedSystemDTO struct {
-	Name        string                 `json:"name"`
-	Protocol    string                 `json:"protocol"`
-	SiteCount   int                    `json:"site_count"`
-	TalkgroupCt int                    `json:"talkgroup_count"`
-	SourcePath  string                 `json:"source_path,omitempty"`
-	Location    string                 `json:"location,omitempty"`
-	County      string                 `json:"county,omitempty"`
-	SysID       string                 `json:"sysid,omitempty"`
-	WACN        string                 `json:"wacn,omitempty"`
-	SystemType  string                 `json:"system_type,omitempty"`
+	Name        string `json:"name"`
+	Protocol    string `json:"protocol"`
+	SiteCount   int    `json:"site_count"`
+	TalkgroupCt int    `json:"talkgroup_count"`
+	SourcePath  string `json:"source_path,omitempty"`
+	Location    string `json:"location,omitempty"`
+	County      string `json:"county,omitempty"`
+	SysID       string `json:"sysid,omitempty"`
+	WACN        string `json:"wacn,omitempty"`
+	SystemType  string `json:"system_type,omitempty"`
 }
 
 // ImportResult mirrors the daemon's commit response.

@@ -148,11 +148,11 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant) {
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:        c.systemName,
-			Protocol:      "motorola",
-			GroupID:       uint32(g.GroupAddress),
-			FrequencyHz:   freq,
-			ChannelID:     0, // Motorola LCNs carry no separate band-ID; we
+			System:      c.systemName,
+			Protocol:    "motorola",
+			GroupID:     uint32(g.GroupAddress),
+			FrequencyHz: freq,
+			ChannelID:   0, // Motorola LCNs carry no separate band-ID; we
 			// represent the LCN in ChannelNumber so downstream
 			// consumers that don't yet have a band plan still see
 			// something useful.

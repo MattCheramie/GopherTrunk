@@ -48,10 +48,10 @@ var rs129Gen [3]byte
 // DMR-specific seeds applied to the parity octets before transmission.
 // VerifyRS12_9 un-XORs the parity bytes before computing syndromes.
 var (
-	RS129SeedVoiceLCHeader   = [3]byte{0x96, 0x96, 0x96}
-	RS129SeedTerminatorLC    = [3]byte{0x99, 0x99, 0x99}
-	RS129SeedEmbeddedLC      = [3]byte{0x6A, 0x6A, 0x6A}
-	RS129SeedNone            = [3]byte{0x00, 0x00, 0x00}
+	RS129SeedVoiceLCHeader = [3]byte{0x96, 0x96, 0x96}
+	RS129SeedTerminatorLC  = [3]byte{0x99, 0x99, 0x99}
+	RS129SeedEmbeddedLC    = [3]byte{0x6A, 0x6A, 0x6A}
+	RS129SeedNone          = [3]byte{0x00, 0x00, 0x00}
 )
 
 func init() {

@@ -5,12 +5,12 @@
 // samples/mpt1327/ are MP3 recordings of the FM-demodulated audio
 // — already at the FFSK helper's input. This harness:
 //
-//   1. shells out to ffmpeg to convert MP3 → 8 kHz mono float32 PCM,
-//   2. feeds the PCM through the same FFSK + Mueller-Müller chain
-//      the real receiver uses,
-//   3. routes the resulting bit stream into mpt1327.ControlChannel,
-//   4. prints every cc.locked and grant event the state machine
-//      emits.
+//  1. shells out to ffmpeg to convert MP3 → 8 kHz mono float32 PCM,
+//  2. feeds the PCM through the same FFSK + Mueller-Müller chain
+//     the real receiver uses,
+//  3. routes the resulting bit stream into mpt1327.ControlChannel,
+//  4. prints every cc.locked and grant event the state machine
+//     emits.
 //
 // Build / run:
 //

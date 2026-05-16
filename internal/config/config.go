@@ -107,7 +107,7 @@ type CCHuntConfig struct {
 type ConvChannelConfig struct {
 	Label       string  `yaml:"label"`
 	FrequencyHz uint32  `yaml:"frequency_hz"`
-	Mode        string  `yaml:"mode"`        // "fm" | "nfm"
+	Mode        string  `yaml:"mode"`         // "fm" | "nfm"
 	SquelchDbFS float64 `yaml:"squelch_dbfs"` // default -50
 	HangtimeMs  int     `yaml:"hangtime_ms"`  // default 1500
 	Priority    int     `yaml:"priority"`     // 1..10, 0 = unset
@@ -136,20 +136,20 @@ type LogConfig struct {
 }
 
 type SDRConfig struct {
-	SampleRate uint32          `yaml:"sample_rate"`
-	Devices    []DeviceConfig  `yaml:"devices"`
+	SampleRate uint32         `yaml:"sample_rate"`
+	Devices    []DeviceConfig `yaml:"devices"`
 }
 
 type DeviceConfig struct {
-	Serial  string `yaml:"serial"`
-	Role    string `yaml:"role"`
-	PPM     int    `yaml:"ppm"`
+	Serial string `yaml:"serial"`
+	Role   string `yaml:"role"`
+	PPM    int    `yaml:"ppm"`
 	// Gain is the tuner gain setting. "auto" (or empty) selects
 	// the dongle's automatic gain control; any other value is
 	// parsed as a tenths-of-dB integer matching librtlsdr's
 	// gain table (e.g. "496" → 49.6 dB). Use `gophertrunk sdr
 	// list` to see the supported values per device.
-	Gain    string `yaml:"gain"`
+	Gain string `yaml:"gain"`
 	// BiasTee enables the dongle's 5V bias-tee output, used to
 	// power external LNAs through the antenna SMA. Off by
 	// default. Most modern RTL-SDR clones (e.g. NooElec NESDR
@@ -395,9 +395,9 @@ type StorageConfig struct {
 
 // RecordingsConfig configures the per-call WAV recorder.
 type RecordingsConfig struct {
-	Dir         string `yaml:"dir"`
-	SampleRate  uint32 `yaml:"sample_rate"`
-	WriteRaw    bool   `yaml:"write_raw"`
+	Dir        string `yaml:"dir"`
+	SampleRate uint32 `yaml:"sample_rate"`
+	WriteRaw   bool   `yaml:"write_raw"`
 	// Equalizer enables the per-call CMA blind equalizer that the FM
 	// composer chain runs between the front-end LPF and the FM demod.
 	// Off by default; useful when receiving simulcast systems with
@@ -424,9 +424,9 @@ type MetricsConfig struct {
 // log rows and recorded files. Zero values disable the corresponding
 // sweep; both can be active independently.
 type RetentionConfig struct {
-	CallLogDays int           `yaml:"call_log_days"`
-	FilesDays   int           `yaml:"files_days"`
-	Interval    string        `yaml:"interval"` // Go duration string; default 1h
+	CallLogDays int    `yaml:"call_log_days"`
+	FilesDays   int    `yaml:"files_days"`
+	Interval    string `yaml:"interval"` // Go duration string; default 1h
 }
 
 // ToneOutConfig describes paging-tone profiles to monitor. Empty

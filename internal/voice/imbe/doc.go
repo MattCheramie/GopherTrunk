@@ -24,7 +24,7 @@
 //     11-byte frame from a 144-bit post-deinterleave channel
 //     burst.
 //
-//  2b. Channel coding inverse — pseudo-random scrambler. ← THIS PR.
+//     2b. Channel coding inverse — pseudo-random scrambler. ← THIS PR.
 //     XORs a 114-bit u_0-keyed LCG PRBS (TIA-102.BABA §7.4) over
 //     the channel bits of u_1..u_6 to whiten the spectrum. u_0
 //     stays unscrambled because it carries the seed; u_7 stays
@@ -43,7 +43,7 @@
 //     positions {0..5, 85, 86}; ω₀ + L + K all derive from it
 //     per TIA-102.BABA §5.3 / Annex E. See params.go.
 //
-//  3b. Parameter unpacking — voicing + gain + spectral.
+//     3b. Parameter unpacking — voicing + gain + spectral.
 //     Re-orders the remaining 79 bits via bo[L9] into the bb[v][p]
 //     layout, then extracts Vl[1..L] voicing decisions, the b_2
 //     gain index → Gm[1] = B2[b_2], the 5 PRBA gain blocks
@@ -54,7 +54,7 @@
 //     log2Ml prediction (eq. 75-77) needs prev-frame state and
 //     lives in the synthesizer (step 4a).
 //
-//  4a. Speech synthesis — cross-frame log-amplitude recovery.
+//     4a. Speech synthesis — cross-frame log-amplitude recovery.
 //     TIA-102.BABA §6.1 eqs. 75-77: predict at curr-frame harmonic
 //     positions by interpolating prev-frame log2(Ml) at l ·
 //     ω₀_curr/ω₀_prev (γ = 0.65 scale), subtract the prediction's
@@ -62,14 +62,14 @@
 //     synthesizer (step 4c) extends with voicing + phase memory.
 //     See synth.go.
 //
-//  4b. Speech synthesis — amplitude prep.
+//     4b. Speech synthesis — amplitude prep.
 //     log2(Ml) → linear Ml = 2^log2(Ml), the spectral moments
 //     R_M0 = Σ Ml² and R_M1 = Σ Ml² · cos(ω₀·l) feeding §6.2
 //     enhancement, and a voicing-fraction summary used as a
 //     coarse voiced/unvoiced hint by the upcoming synthesis
 //     combiner. See amps.go.
 //
-//  4c. Speech synthesis — voiced harmonic generator.
+//     4c. Speech synthesis — voiced harmonic generator.
 //     For each harmonic that's voiced this frame OR was voiced
 //     last frame, a sinusoid at l · ω₀ with linear amplitude tilt
 //     between M_prev[l] and M_curr[l] across 160 samples + a
@@ -79,7 +79,7 @@
 //     gains PrevPhase + PrevMl for the cross-frame continuity.
 //     TIA-102.BABA §6.3. See synth_voiced.go.
 //
-//  4d. Speech synthesis — unvoiced excitation.
+//     4d. Speech synthesis — unvoiced excitation.
 //     A 256-point FFT noise spectrum (caller-supplied so unit
 //     tests stay deterministic) is shaped by the §6.4 rules: bins
 //     under voiced harmonics are zeroed (those go through 4c),
@@ -89,7 +89,7 @@
 //     pairs so the IFFT produces a real-valued time-domain
 //     contribution. See synth_unvoiced.go.
 //
-//  4e. Speech synthesis — combine + Decode() wiring. ← THIS PR.
+//     4e. Speech synthesis — combine + Decode() wiring. ← THIS PR.
 //     Decoder gains a SynthState + math/rand source per call.
 //     Decode() runs the full pipeline: bytes → 88 info bits →
 //     UnpackParams → PredictLog2Ml → AmplitudesFromLog2Ml →
@@ -104,7 +104,7 @@
 //     synthesizer produces intelligible voice without them, just
 //     with frame-edge click artifacts and an untilted envelope.
 //
-//  5a. Speech synthesis — §6.4 overlap-add window. ← THIS PR.
+//     5a. Speech synthesis — §6.4 overlap-add window. ← THIS PR.
 //     SynthState gains PrevUnvoicedTail[96]; SynthUnvoicedOverlapAdd
 //     wraps the §6.4 IFFT in a 256-sample periodic Hann window,
 //     emits the prev-frame's windowed tail into dst[0..95]
@@ -115,7 +115,7 @@
 //     including silence frames where the prev tail still fades
 //     out before the state is cleared. See synth_unvoiced.go.
 //
-//  5b. §6.2 spectral-amplitude enhancement. ← THIS PR.
+//     5b. §6.2 spectral-amplitude enhancement. ← THIS PR.
 //     Per-harmonic Ml multiplier W_l from the closed-form weight
 //     over R_M0 + R_M1 + ω₀ + l: low-band harmonics (8·l ≤ L) are
 //     left at W = 1; mid- and high-band harmonics get
@@ -127,7 +127,7 @@
 //     naturally on playback. Wired into Decoder.Decode between
 //     AmplitudesFromLog2Ml and SynthVoiced. See enhance.go.
 //
-//  5c. Output gain calibration via per-frame AGC. ← THIS PR.
+//     5c. Output gain calibration via per-frame AGC. ← THIS PR.
 //     Replaces the placeholder pcmGain = 4096 constant scale with
 //     a fast-attack / slow-release peak-envelope tracker on the
 //     Decoder. Each frame's pcm peak updates the smoothed
@@ -141,7 +141,7 @@
 //     speech-pause-speech transitions emerge at consistent
 //     loudness without audible level pumping. See decoder.go.
 //
-//  5d. Frame-repeat on bad-frame indicator. ← THIS PR.
+//     5d. Frame-repeat on bad-frame indicator. ← THIS PR.
 //     When UnpackParams returns an error (FEC slip, invalid b_0,
 //     etc.) and a previous good frame is cached, Decode replays
 //     that frame's params with M scaled by
@@ -153,7 +153,7 @@
 //     AGC would partially compensate, hiding the signal-loss cue.
 //     See decoder.go.
 //
-//  5e. AGCConfig — tunable AGC parameters. ← THIS PR.
+//     5e. AGCConfig — tunable AGC parameters. ← THIS PR.
 //     Exposes a public AGCConfig struct (TargetPeak / Attack /
 //     Release / MinGain / MaxGain / NoiseFloor) and a NewWithConfig
 //     constructor so operators can dial level + responsiveness for
@@ -164,7 +164,7 @@
 //     prior package-level constants with cfg field reads in
 //     applyAGC. See decoder.go.
 //
-//  5f. Phase-aware bad-frame fade-in. After MaxBadFrames+1
+//     5f. Phase-aware bad-frame fade-in. After MaxBadFrames+1
 //     consecutive bad frames the SynthState clear leaves
 //     PrevPhase + PrevMl at zero; the next good frame's voiced
 //     harmonics start at phase 0 with a linear amplitude tilt
@@ -179,7 +179,7 @@
 //     synthesised level rather than from full amplitude. See
 //     decoder.go.
 //
-//  5g. Remaining polish: absolute-level calibration against a
+//     5g. Remaining polish: absolute-level calibration against a
 //     known-good reference decoder (DSD-FME / OP25 — capture a P25
 //     Phase 1 voice exchange, decode through both, compare RMS +
 //     cross-correlation against the reference WAV under

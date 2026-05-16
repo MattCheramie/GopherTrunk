@@ -187,7 +187,10 @@ func TestCMAResetReturnsToPassThrough(t *testing.T) {
 }
 
 func TestCMAPanicsOnBadConfig(t *testing.T) {
-	for _, tc := range []struct{ taps int; tgt float32 }{
+	for _, tc := range []struct {
+		taps int
+		tgt  float32
+	}{
 		{0, 1.0},
 		{5, 0.0},
 		{5, -1.0},

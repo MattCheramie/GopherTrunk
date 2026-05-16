@@ -16,15 +16,15 @@ package dmr
 // vocoder registry once the AMBE+2 backend is built.
 
 const (
-	BurstDibits          = 132
-	BurstBits            = 264
-	HalfPayloadDibits    = 49
-	HalfPayloadBits      = 98
-	SlotTypeDibits       = 5
-	SlotTypeBits         = 10
-	SyncDibits           = 24
-	SyncBitCount         = 48
-	BPTCPayloadBits      = 196
+	BurstDibits       = 132
+	BurstBits         = 264
+	HalfPayloadDibits = 49
+	HalfPayloadBits   = 98
+	SlotTypeDibits    = 5
+	SlotTypeBits      = 10
+	SyncDibits        = 24
+	SyncBitCount      = 48
+	BPTCPayloadBits   = 196
 )
 
 // Burst stores the 132 dibits of one TDMA burst.

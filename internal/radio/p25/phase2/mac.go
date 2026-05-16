@@ -10,10 +10,10 @@ import (
 // rides MAC slots inside a Phase 2 traffic channel. After Reed-
 // Solomon / Trellis FEC removal, a MAC PDU resolves to:
 //
-//   byte 0     : opcode (the MAC_PDU_OPCODE field)
-//   bytes 1-N  : opcode-specific payload (typically up to 17 bytes
-//                across the MAC slot's 21-byte "MAC PDU SLOT" field;
-//                exact length depends on opcode + format).
+//	byte 0     : opcode (the MAC_PDU_OPCODE field)
+//	bytes 1-N  : opcode-specific payload (typically up to 17 bytes
+//	             across the MAC slot's 21-byte "MAC PDU SLOT" field;
+//	             exact length depends on opcode + format).
 //
 // The structure is intentionally permissive: callers parse the
 // opcode and then dispatch to a per-opcode accessor.
@@ -28,18 +28,18 @@ type MACPDU struct {
 type Opcode uint8
 
 const (
-	OpUnknown                       Opcode = 0x00
-	OpMACPTT                        Opcode = 0x01 // PTT-on
-	OpMACEnd                        Opcode = 0x02 // End of transmission
-	OpMACIdle                       Opcode = 0x03 // Channel idle
-	OpMACHangtime                   Opcode = 0x05 // Hang-time
-	OpMACActive                     Opcode = 0x06 // Late-grant active
-	OpGroupVoiceChannelGrantUpdate  Opcode = 0x40
-	OpGroupVoiceChannelGrant        Opcode = 0x44
-	OpGroupVoiceChannelUserExt      Opcode = 0x46
-	OpUnitToUnitVoiceChannelGrant   Opcode = 0x48
-	OpNetworkStatusBroadcastUpdate  Opcode = 0xFB
-	OpRFSSStatusBroadcastUpdate     Opcode = 0xFA
+	OpUnknown                      Opcode = 0x00
+	OpMACPTT                       Opcode = 0x01 // PTT-on
+	OpMACEnd                       Opcode = 0x02 // End of transmission
+	OpMACIdle                      Opcode = 0x03 // Channel idle
+	OpMACHangtime                  Opcode = 0x05 // Hang-time
+	OpMACActive                    Opcode = 0x06 // Late-grant active
+	OpGroupVoiceChannelGrantUpdate Opcode = 0x40
+	OpGroupVoiceChannelGrant       Opcode = 0x44
+	OpGroupVoiceChannelUserExt     Opcode = 0x46
+	OpUnitToUnitVoiceChannelGrant  Opcode = 0x48
+	OpNetworkStatusBroadcastUpdate Opcode = 0xFB
+	OpRFSSStatusBroadcastUpdate    Opcode = 0xFA
 )
 
 func (o Opcode) String() string {
@@ -98,10 +98,10 @@ func AssembleMACPDU(p MACPDU) []byte {
 // GroupVoiceChannelGrant is the structured shape of a Phase 2
 // voice-grant MAC PDU. Field positions follow the TIA-102 layout:
 //
-//   byte 0    : service options
-//   bytes 1-2 : channel ID + channel number (4 + 12 bits)
-//   bytes 3-4 : group address (talkgroup)
-//   bytes 5-7 : source unit ID (24 bits)
+//	byte 0    : service options
+//	bytes 1-2 : channel ID + channel number (4 + 12 bits)
+//	bytes 3-4 : group address (talkgroup)
+//	bytes 5-7 : source unit ID (24 bits)
 type GroupVoiceChannelGrant struct {
 	ServiceOptions uint8
 	ChannelID      uint8
@@ -143,13 +143,13 @@ func (p MACPDU) AsGroupVoiceChannelGrant() (GroupVoiceChannelGrant, bool) {
 //
 // Payload layout (after the 1-byte opcode the MAC PDU parses off):
 //
-//   byte 0       : LRA (Location Registration Area)
-//   bytes 1..3   : WACN (20 bits in the upper 20 of bytes 1..3,
-//                  i.e., bit 19 of WACN = bit 7 of byte 1, … bit 0
-//                  of WACN = bit 4 of byte 3)
-//   bytes 3..4   : SystemID (low nibble of byte 3 + byte 4)
-//   bytes 5..6   : Color Code (12 bits — high 12 bits of bytes 5..6)
-//   bytes 7..8   : channel info (ChannelID + ChannelNumber)
+//	byte 0       : LRA (Location Registration Area)
+//	bytes 1..3   : WACN (20 bits in the upper 20 of bytes 1..3,
+//	               i.e., bit 19 of WACN = bit 7 of byte 1, … bit 0
+//	               of WACN = bit 4 of byte 3)
+//	bytes 3..4   : SystemID (low nibble of byte 3 + byte 4)
+//	bytes 5..6   : Color Code (12 bits — high 12 bits of bytes 5..6)
+//	bytes 7..8   : channel info (ChannelID + ChannelNumber)
 //
 // The WACN + SystemID bit packing matches the Phase 1 NSB layout
 // (TIA-102.AABF), which Phase 2 reuses. The Color Code position

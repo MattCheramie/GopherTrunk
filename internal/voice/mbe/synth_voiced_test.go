@@ -363,8 +363,8 @@ func TestSynthVoicedZeroAmpSkipsHarmonic(t *testing.T) {
 	p.Vl[2] = 0
 	p.Vl[3] = 1
 	var M [57]float64
-	M[1] = 0  // zero amp on a voiced harmonic — degenerate but possible
-	M[3] = 0  // ditto
+	M[1] = 0 // zero amp on a voiced harmonic — degenerate but possible
+	M[3] = 0 // ditto
 	dst := make([]float64, SamplesPerFrame)
 	SynthVoiced(&s, p, &M, dst)
 	for n, v := range dst {

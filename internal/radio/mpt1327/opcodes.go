@@ -29,15 +29,15 @@ func (t CodewordType) String() string {
 type CodewordKind uint8
 
 const (
-	KindUnknown   CodewordKind = 0x0
-	KindAloha     CodewordKind = 0x1 // ALH  — control-channel idle
-	KindAhoy      CodewordKind = 0x2 // AHY  — paging / inquiry
-	KindAhoyChan  CodewordKind = 0x3 // AHYC — broadcast / system info
-	KindGoToChan  CodewordKind = 0x4 // GTC  — voice grant ("go to channel")
-	KindAck       CodewordKind = 0x5 // ACK
+	KindUnknown    CodewordKind = 0x0
+	KindAloha      CodewordKind = 0x1 // ALH  — control-channel idle
+	KindAhoy       CodewordKind = 0x2 // AHY  — paging / inquiry
+	KindAhoyChan   CodewordKind = 0x3 // AHYC — broadcast / system info
+	KindGoToChan   CodewordKind = 0x4 // GTC  — voice grant ("go to channel")
+	KindAck        CodewordKind = 0x5 // ACK
 	KindDisconnect CodewordKind = 0x6 // DUL — disconnect-unique-to-line
-	KindData      CodewordKind = 0x7 // SAMO / data-request shorthand
-	KindEmergency CodewordKind = 0xE
+	KindData       CodewordKind = 0x7 // SAMO / data-request shorthand
+	KindEmergency  CodewordKind = 0xE
 )
 
 func (k CodewordKind) String() string {

@@ -85,9 +85,9 @@ func TestProcessTrellisOnDecodesEncodedGroupVoiceGrant(t *testing.T) {
 	cc.SetTrellisMode(TrellisOn)
 
 	payload := []byte{
-		0x00,             // service options
-		0x10, 0x07,       // channel ID 1 + channel number 7
-		0xCA, 0xFE,       // group address
+		0x00,       // service options
+		0x10, 0x07, // channel ID 1 + channel number 7
+		0xCA, 0xFE, // group address
 		0x12, 0x34, 0x56, // source ID
 		0, 0, 0, 0, 0, 0, 0, 0, 0, // pad to 17 payload bytes
 	}

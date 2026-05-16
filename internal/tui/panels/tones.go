@@ -51,9 +51,9 @@ func (p *TonesPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) 
 			return p, nil
 		}
 		req := state.WriteRequest{
-			Confirm: fmt.Sprintf("Reset tone-out match progress on device %s?", serial),
-			Label:   "reset tone detector for " + serial,
-			Kind:    state.WriteKindResetTone,
+			Confirm:   fmt.Sprintf("Reset tone-out match progress on device %s?", serial),
+			Label:     "reset tone detector for " + serial,
+			Kind:      state.WriteKindResetTone,
 			ResetTone: &state.ResetToneReq{DeviceSerial: serial},
 		}
 		return p, Emit(req)

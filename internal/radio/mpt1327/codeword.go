@@ -33,21 +33,21 @@ type BitSink func(bits []byte, baseIdx int)
 //
 // Field layout (48-bit, MSB-first per field):
 //
-//   bit 47 (1 bit)   Type    — 0 = address codeword, 1 = data
-//                              codeword.
-//   bits 46..40 (7) Prefix  — area code prefix.
-//   bits 39..27 (13) Ident   — radio / fleet identity (the address).
-//   bits 26..17 (10) Op      — operation / opcode field per the
-//                              spec. The 4-bit Kind the legacy
-//                              `Function >> 13` packs corresponds
-//                              to Op's high 4 bits; deployments
-//                              that want to interpret the full
-//                              10-bit Op (extended opcodes,
-//                              vendor sub-types) can read it
-//                              under BCHOn.
-//   bits 16..0  (17) Function — opcode-specific information bits.
-//                              Decoded by the per-codeword accessors
-//                              in opcodes.go.
+//	bit 47 (1 bit)   Type    — 0 = address codeword, 1 = data
+//	                           codeword.
+//	bits 46..40 (7) Prefix  — area code prefix.
+//	bits 39..27 (13) Ident   — radio / fleet identity (the address).
+//	bits 26..17 (10) Op      — operation / opcode field per the
+//	                           spec. The 4-bit Kind the legacy
+//	                           `Function >> 13` packs corresponds
+//	                           to Op's high 4 bits; deployments
+//	                           that want to interpret the full
+//	                           10-bit Op (extended opcodes,
+//	                           vendor sub-types) can read it
+//	                           under BCHOn.
+//	bits 16..0  (17) Function — opcode-specific information bits.
+//	                           Decoded by the per-codeword accessors
+//	                           in opcodes.go.
 //
 // The 38-bit legacy layout drops Op and shifts Function into bits
 // 16..0 of a 38-bit info field. AssembleCodeword / ParseCodeword

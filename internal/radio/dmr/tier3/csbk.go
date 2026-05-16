@@ -4,12 +4,13 @@
 // (Aloha, channel grants, system info, neighbor lists).
 //
 // Layout per ETSI TS 102 361-4 §7 of the 96-bit info block:
-//   bit 0     : LB  (Last Block in CSBK chain)
-//   bit 1     : PF  (Protected Flag)
-//   bits 2-7  : CSBKO (Control Signaling Block Opcode, 6 bits)
-//   bits 8-15 : FID (Feature set ID; 0x00 = standard ETSI)
-//   bits 16-79: opcode-specific payload (64 bits, 8 octets)
-//   bits 80-95: CRC-16 (CCITT) of bits 0-79; transmitted bitwise-NOT.
+//
+//	bit 0     : LB  (Last Block in CSBK chain)
+//	bit 1     : PF  (Protected Flag)
+//	bits 2-7  : CSBKO (Control Signaling Block Opcode, 6 bits)
+//	bits 8-15 : FID (Feature set ID; 0x00 = standard ETSI)
+//	bits 16-79: opcode-specific payload (64 bits, 8 octets)
+//	bits 80-95: CRC-16 (CCITT) of bits 0-79; transmitted bitwise-NOT.
 package tier3
 
 import (

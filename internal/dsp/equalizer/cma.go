@@ -9,9 +9,9 @@ package equalizer
 //
 // Cost function and gradient (Godard / CMA-2):
 //
-//   J = E[(|y|^2 - R^2)^2]
-//   ∂J/∂w*  ∝  (|y|^2 - R^2) · y · conj(x)
-//   w[n+1]  =  w[n]  -  μ · (|y|^2 - R^2) · y · conj(x)
+//	J = E[(|y|^2 - R^2)^2]
+//	∂J/∂w*  ∝  (|y|^2 - R^2) · y · conj(x)
+//	w[n+1]  =  w[n]  -  μ · (|y|^2 - R^2) · y · conj(x)
 //
 // Pick R^2 so the equilibrium weight scaling matches the expected
 // constellation. For unit-magnitude PSK use R^2 = 1; QPSK with
@@ -27,11 +27,11 @@ package equalizer
 //     function isn't zero at the right answer; use LMS in
 //     decision-directed mode there.
 type CMA struct {
-	taps      []complex64
-	hist      []complex64
-	histPos   int
-	stepSize  float32
-	target    float32 // R^2
+	taps     []complex64
+	hist     []complex64
+	histPos  int
+	stepSize float32
+	target   float32 // R^2
 }
 
 // NewCMA constructs a blind equaliser. `target` is the desired squared

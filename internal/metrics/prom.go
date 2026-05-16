@@ -30,15 +30,15 @@ const namespace = "gophertrunk"
 type Metrics struct {
 	reg *prometheus.Registry
 
-	eventsTotal       *prometheus.CounterVec
-	callsTotal        *prometheus.CounterVec // by end_reason
-	activeCalls       prometheus.Gauge
-	ccLockedGauge     *prometheus.GaugeVec // by system (1 when CC locked)
-	iqUnderruns       *prometheus.CounterVec
-	usbReconnects     *prometheus.CounterVec
-	decodeErrors      *prometheus.CounterVec
-	sdrAttached       *prometheus.GaugeVec
-	versionInfo       *prometheus.GaugeVec
+	eventsTotal   *prometheus.CounterVec
+	callsTotal    *prometheus.CounterVec // by end_reason
+	activeCalls   prometheus.Gauge
+	ccLockedGauge *prometheus.GaugeVec // by system (1 when CC locked)
+	iqUnderruns   *prometheus.CounterVec
+	usbReconnects *prometheus.CounterVec
+	decodeErrors  *prometheus.CounterVec
+	sdrAttached   *prometheus.GaugeVec
+	versionInfo   *prometheus.GaugeVec
 
 	bus       *events.Bus
 	sub       *events.Subscription

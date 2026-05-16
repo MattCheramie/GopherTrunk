@@ -194,10 +194,10 @@ func firstDiff(a, b string) string {
 // going through the full parser.
 func TestSplitTalkgroupTail(t *testing.T) {
 	cases := []struct {
-		in          string
-		wantAlpha   string
-		wantDesc    string
-		wantTag     string
+		in        string
+		wantAlpha string
+		wantDesc  string
+		wantTag   string
 	}{
 		// Common patterns. Alpha/Description splits are inherently
 		// heuristic when the PDF lacks column separators — we assert

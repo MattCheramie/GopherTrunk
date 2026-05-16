@@ -20,7 +20,8 @@ func encodeFECForTest(info []byte) []byte {
 //   - FECOff: the adapter reads HeaderInfoBits (328) bits straight
 //     off the wire and parses them as the 41-byte PCH header.
 //     Useful for synthesized fixtures whose conv encoder + scrambler
-//     + interleaver layers aren't applied. Default — matches the
+//
+//   - interleaver layers aren't applied. Default — matches the
 //     in-package fixture path and operator captures that have been
 //     pre-decoded out of band.
 //

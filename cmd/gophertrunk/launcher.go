@@ -274,6 +274,7 @@ func prepareInProcessTUI(d *Daemon, logSwap *gtlog.SwappableWriter) (*inProcessT
 //     so the SPA bootstraps against the daemon.
 //  3. Fallback: print the URL + asset path to stderr so a remote
 //     operator can open them on a machine that has a browser.
+//
 // Test seams. Production code injects nothing; tests override these
 // to drive openWebUI's decision tree without spawning a real browser.
 var (

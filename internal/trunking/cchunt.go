@@ -37,12 +37,12 @@ type Tuner interface {
 // pipeline (channelizer + C4FM/H-DQPSK demod + protocol decoder)
 // publishes cc.locked events; the hunter parks on the first match.
 type Hunter struct {
-	bus     *events.Bus
-	log     *slog.Logger
-	cache   *Cache
-	tuner   Tuner
-	system  System
-	dwell   time.Duration
+	bus    *events.Bus
+	log    *slog.Logger
+	cache  *Cache
+	tuner  Tuner
+	system System
+	dwell  time.Duration
 }
 
 // HunterOptions configure a Hunter at construction.

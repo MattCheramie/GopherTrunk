@@ -35,6 +35,14 @@ jobs:
       # ships with ubuntu-latest. macOS / Windows use the oto-backed
       # fallback (oto/v3 is purego-only on those platforms).
       - run: go vet ./...
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::unformatted Go files (run 'gofmt -w .' locally):"
+            echo "$unformatted"
+            exit 1
+          fi
       - run: go build ./...
       - run: go test -race -count=1 ./...
       - run: make integration

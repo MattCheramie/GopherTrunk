@@ -11,12 +11,12 @@ import (
 // one or more RadioReference PDFs and merges them into the user's
 // config.yaml + per-system talkgroup CSVs.
 //
-//   -config string     path to existing config.yaml (default "./config.yaml")
-//   -pdf string        path to a RadioReference PDF (repeatable)
-//   -csv-dir string    where to write talkgroup CSVs (default: configDir)
-//   -no-tui            skip TUI; merge straight from parsed defaults
-//   -dry-run           print diff, write nothing
-//   -force             overwrite an existing system block with the same name
+//	-config string     path to existing config.yaml (default "./config.yaml")
+//	-pdf string        path to a RadioReference PDF (repeatable)
+//	-csv-dir string    where to write talkgroup CSVs (default: configDir)
+//	-no-tui            skip TUI; merge straight from parsed defaults
+//	-dry-run           print diff, write nothing
+//	-force             overwrite an existing system block with the same name
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import-pdf", flag.ExitOnError)
 	cfgPath := fs.String("config", defaultConfigPath(), "path to existing config.yaml (merged in place)")

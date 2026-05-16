@@ -40,13 +40,13 @@ type Options struct {
 // an error other than ctx.Err() — individual hunt failures are
 // reported on the bus and via Snapshot.
 type Supervisor struct {
-	bus     *events.Bus
-	log     *slog.Logger
-	tuner   Tuner
-	cache   *trunking.Cache
-	dwell   time.Duration
-	initBO  time.Duration
-	maxBO   time.Duration
+	bus    *events.Bus
+	log    *slog.Logger
+	tuner  Tuner
+	cache  *trunking.Cache
+	dwell  time.Duration
+	initBO time.Duration
+	maxBO  time.Duration
 
 	mu     sync.RWMutex
 	states map[string]*systemRuntime
@@ -67,8 +67,8 @@ type systemRuntime struct {
 	lockedAt     time.Time
 	nac          uint16
 	// Failure state.
-	lastFailedAt   time.Time
-	backoffWindow  time.Duration
+	lastFailedAt  time.Time
+	backoffWindow time.Duration
 	// Last grant observed (any grant whose system matches this one).
 	lastGrantAt time.Time
 	// retuneCh is non-nil while a hunt is in flight; closing it

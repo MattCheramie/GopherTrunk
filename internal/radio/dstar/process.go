@@ -106,10 +106,10 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 // length is wrong, the FEC chain can't recover the info, or the
 // CRC mismatches.
 //
-//   FECOff: bits is 328 information bits MSB-first.
-//   FECOn:  bits is 660 on-wire bits (FEC-encoded); the function
-//           runs framing.DecodeDStarHeaderFEC to recover the 41-byte
-//           information field.
+//	FECOff: bits is 328 information bits MSB-first.
+//	FECOn:  bits is 660 on-wire bits (FEC-encoded); the function
+//	        runs framing.DecodeDStarHeaderFEC to recover the 41-byte
+//	        information field.
 func (c *ControlChannel) parseHeader(bits []byte, mode FECMode) (Header, bool) {
 	var bytesOut []byte
 	switch mode {

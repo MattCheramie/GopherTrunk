@@ -59,13 +59,13 @@ func NewTalkgroups() *TalkgroupsPanel {
 func (TalkgroupsPanel) Title() string { return "Talkgroups" }
 
 var (
-	tgFilterKey   = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
-	tgSortKey     = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
-	tgEscKey      = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "exit filter"))
-	tgLockoutKey  = key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle lockout"))
-	tgScanKey     = key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "toggle scan"))
-	tgPriUpKey    = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "priority up"))
-	tgPriDownKey  = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "priority down"))
+	tgFilterKey  = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
+	tgSortKey    = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
+	tgEscKey     = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "exit filter"))
+	tgLockoutKey = key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle lockout"))
+	tgScanKey    = key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "toggle scan"))
+	tgPriUpKey   = key.NewBinding(key.WithKeys("+", "="), key.WithHelp("+", "priority up"))
+	tgPriDownKey = key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "priority down"))
 )
 
 func (TalkgroupsPanel) Keys() []key.Binding {

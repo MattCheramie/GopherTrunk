@@ -25,8 +25,8 @@ func TestPollActiveMsg_PopulatesShared(t *testing.T) {
 	m := newTestModel(t)
 	updated, _ := m.Update(pollActiveMsg{
 		calls: []client.ActiveCallDTO{{
-			Grant: client.GrantDTO{System: "Demo", GroupID: 42, FrequencyHz: 851012500},
-			Talkgroup: &client.TalkgroupDTO{ID: 42, AlphaTag: "Dispatch"},
+			Grant:        client.GrantDTO{System: "Demo", GroupID: 42, FrequencyHz: 851012500},
+			Talkgroup:    &client.TalkgroupDTO{ID: 42, AlphaTag: "Dispatch"},
 			DeviceSerial: "00000001",
 			StartedAt:    time.Now(),
 		}},

@@ -6,13 +6,13 @@
 //
 // Layout:
 //
-//   sqlite.go     Open + schema migrations. One-shot at startup.
-//   calllog.go    CallLog: subscribes to events.KindCallStart /
-//                 KindCallEnd from the trunking engine, writes rows
-//                 keyed by (device serial, started_at).
-//   retention.go  Background sweeper that deletes DB rows + the WAV /
-//                 raw files written by internal/voice older than a
-//                 configurable cutoff.
+//	sqlite.go     Open + schema migrations. One-shot at startup.
+//	calllog.go    CallLog: subscribes to events.KindCallStart /
+//	              KindCallEnd from the trunking engine, writes rows
+//	              keyed by (device serial, started_at).
+//	retention.go  Background sweeper that deletes DB rows + the WAV /
+//	              raw files written by internal/voice older than a
+//	              configurable cutoff.
 //
 // The API's /api/v1/calls/history endpoint reads through the `History`
 // query helpers exposed here. There is no gRPC call-log service today

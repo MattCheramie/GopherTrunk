@@ -81,10 +81,10 @@ func (f *fakeIQ) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 }
 
 type fakeEngine struct {
-	mu       sync.Mutex
-	starts   []trunking.Grant
-	ends     []string
-	touches  int
+	mu      sync.Mutex
+	starts  []trunking.Grant
+	ends    []string
+	touches int
 }
 
 func (e *fakeEngine) HandleSyntheticCall(g trunking.Grant, deviceSerial string) {

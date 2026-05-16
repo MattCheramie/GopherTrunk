@@ -134,9 +134,9 @@ func summariseEvent(ev client.Event) string {
 		}
 	case "call.start", "call.end":
 		var s struct {
-			Grant     client.GrantDTO    `json:"grant"`
+			Grant     client.GrantDTO      `json:"grant"`
 			Talkgroup *client.TalkgroupDTO `json:"talkgroup,omitempty"`
-			Reason    string             `json:"reason,omitempty"`
+			Reason    string               `json:"reason,omitempty"`
 		}
 		if jsonUnmarshal(ev.Raw, &s) == nil {
 			alpha := ""

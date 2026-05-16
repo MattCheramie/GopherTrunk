@@ -138,7 +138,7 @@ func DecodeBPTC196_96(channel []byte) ([]byte, int) {
 			for c := 0; c < 11; c++ {
 				cw |= uint16(m[r][c]) << uint(c+4) // info → cw bits 4..14
 			}
-			cw |= uint16(m[r][11])      // parity bits → cw bits 0..3
+			cw |= uint16(m[r][11]) // parity bits → cw bits 0..3
 			cw |= uint16(m[r][12]) << 1
 			cw |= uint16(m[r][13]) << 2
 			cw |= uint16(m[r][14]) << 3
@@ -164,7 +164,7 @@ func DecodeBPTC196_96(channel []byte) ([]byte, int) {
 			for r := 0; r < 9; r++ {
 				cw |= uint16(m[r][c]) << uint(r+4) // info → cw bits 4..12
 			}
-			cw |= uint16(m[9][c])        // parity bits → cw bits 0..3
+			cw |= uint16(m[9][c]) // parity bits → cw bits 0..3
 			cw |= uint16(m[10][c]) << 1
 			cw |= uint16(m[11][c]) << 2
 			cw |= uint16(m[12][c]) << 3

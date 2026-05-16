@@ -89,7 +89,7 @@ type Hint struct {
 	Serial  string
 	Role    Role
 	PPM     int
-	Gain    int  // tenths of dB; negative = auto
+	Gain    int // tenths of dB; negative = auto
 	BiasTee bool
 	// gainSet distinguishes "Gain not configured" (apply auto) from
 	// the explicit "auto" choice. The daemon sets this when it parses

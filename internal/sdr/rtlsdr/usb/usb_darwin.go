@@ -333,12 +333,12 @@ type darwinTransport struct {
 	desc       Descriptor
 	closed     atomic.Bool
 
-	bulkMu        sync.Mutex
-	bulkActive    bool
-	bulkPipeRef   uint8
-	bulkSlots     []*darwinBulkSlot
-	bulkStopFlag  atomic.Int32
-	bulkDone      chan struct{}
+	bulkMu       sync.Mutex
+	bulkActive   bool
+	bulkPipeRef  uint8
+	bulkSlots    []*darwinBulkSlot
+	bulkStopFlag atomic.Int32
+	bulkDone     chan struct{}
 }
 
 type darwinBulkSlot struct {

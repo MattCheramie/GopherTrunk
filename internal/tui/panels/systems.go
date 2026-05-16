@@ -123,4 +123,3 @@ func systemsColumns(w int) []table.Column {
 		{Title: "IDs", Width: idsW},
 	}
 }
-

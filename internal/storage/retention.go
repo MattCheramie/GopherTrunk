@@ -12,20 +12,20 @@ import (
 )
 
 // Retention deletes old data on a schedule:
-//   1. call_log rows with started_at older than CallRowMaxAge.
-//   2. WAV / raw files under FilesRoot whose modification time is older
-//      than FilesMaxAge.
+//  1. call_log rows with started_at older than CallRowMaxAge.
+//  2. WAV / raw files under FilesRoot whose modification time is older
+//     than FilesMaxAge.
 //
 // File deletion is opt-in by setting FilesRoot; an empty value skips
 // the filesystem sweep. The sweeper is idempotent and safe to run
 // concurrently with the call-log writer (SQLite serialises).
 type Retention struct {
-	db        *DB
-	log       *slog.Logger
-	files     string
-	dbAge     time.Duration
-	filesAge  time.Duration
-	interval  time.Duration
+	db       *DB
+	log      *slog.Logger
+	files    string
+	dbAge    time.Duration
+	filesAge time.Duration
+	interval time.Duration
 }
 
 // RetentionOptions configure a Retention sweeper.

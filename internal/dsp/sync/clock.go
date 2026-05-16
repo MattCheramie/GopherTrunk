@@ -8,12 +8,12 @@ package sync
 // Inputs are oversampled samples (e.g. 8 sps after the matched filter).
 // Output is one sample per recovered symbol.
 type MuellerMuller struct {
-	sps      float64 // nominal samples per symbol
-	mu       float64 // current sub-sample phase in [0, sps)
-	gain     float64 // loop gain
-	prevSym  float32
-	prevMid  float32
-	have     bool
+	sps     float64 // nominal samples per symbol
+	mu      float64 // current sub-sample phase in [0, sps)
+	gain    float64 // loop gain
+	prevSym float32
+	prevMid float32
+	have    bool
 }
 
 func NewMuellerMuller(sps, gain float64) *MuellerMuller {

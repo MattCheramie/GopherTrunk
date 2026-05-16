@@ -237,8 +237,8 @@ func TestBearerToken_Parsing(t *testing.T) {
 	}{
 		{"", "", false},
 		{"Bearer abc", "abc", true},
-		{"bearer abc", "abc", true},   // case-insensitive prefix
-		{"BEARER xyz", "xyz", true},   // RFC 6750 §2.1 is case-insensitive
+		{"bearer abc", "abc", true}, // case-insensitive prefix
+		{"BEARER xyz", "xyz", true}, // RFC 6750 §2.1 is case-insensitive
 		{"Bearer ", "", false},
 		{"Bearer    secret   ", "secret", true},
 		{"Basic abc", "", false},

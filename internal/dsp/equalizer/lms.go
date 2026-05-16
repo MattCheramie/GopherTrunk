@@ -3,9 +3,9 @@ package equalizer
 // LMS is a complex-valued tapped-delay-line adaptive equalizer trained
 // with the standard Least-Mean-Squares update rule:
 //
-//   y[n]   = sum_k w_k(n) * x[n-k]              // FIR output
-//   e[n]   = d[n] - y[n]                        // training error
-//   w[n+1] = w[n] + μ · x[n] · conj(e[n])       // weight update
+//	y[n]   = sum_k w_k(n) * x[n-k]              // FIR output
+//	e[n]   = d[n] - y[n]                        // training error
+//	w[n+1] = w[n] + μ · x[n] · conj(e[n])       // weight update
 //
 // Notes:
 //
@@ -21,10 +21,10 @@ package equalizer
 // The struct is not safe for concurrent use; one equaliser belongs
 // to one demod chain.
 type LMS struct {
-	taps      []complex64
-	hist      []complex64
-	histPos   int
-	stepSize  float32
+	taps     []complex64
+	hist     []complex64
+	histPos  int
+	stepSize float32
 }
 
 // NewLMS constructs an equaliser with `taps` complex weights and the

@@ -14,12 +14,12 @@
 //
 // Layout:
 //
-//   server.go               HTTP server lifecycle (Run, Close), routing, mux
-//   handlers.go             REST read handlers (health/version/systems/talkgroups/calls/devices)
-//   handlers_mutations.go   REST mutation handlers (end-call, retention, talkgroup, tone-reset)
-//   handlers_scanner.go     Scanner cockpit REST handlers (status + 6 mutation routes)
-//   sse.go                  Server-Sent Events stream of internal/events bus events
-//   ws.go                   WebSocket bridge that streams the same events as JSON
-//   grpc.go                 gRPC server: SystemService + TalkgroupService + AudioService
-//   types.go                JSON-friendly DTOs (mirroring the proto definitions)
+//	server.go               HTTP server lifecycle (Run, Close), routing, mux
+//	handlers.go             REST read handlers (health/version/systems/talkgroups/calls/devices)
+//	handlers_mutations.go   REST mutation handlers (end-call, retention, talkgroup, tone-reset)
+//	handlers_scanner.go     Scanner cockpit REST handlers (status + 6 mutation routes)
+//	sse.go                  Server-Sent Events stream of internal/events bus events
+//	ws.go                   WebSocket bridge that streams the same events as JSON
+//	grpc.go                 gRPC server: SystemService + TalkgroupService + AudioService
+//	types.go                JSON-friendly DTOs (mirroring the proto definitions)
 package api

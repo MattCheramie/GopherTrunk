@@ -14,22 +14,22 @@
 //
 // Files:
 //
-//   codeword.go  Codeword = {Type, Prefix, Ident, Function} packed
-//                into the upper 38 bits of a 64-bit transmission
-//                unit. Round-trip assemble / parse helpers and bit
-//                accessors.
-//   opcodes.go   CodewordKind enum + per-kind payload accessors
-//                — Aloha (ALH) idle, Address Hang Up Yes (AHY)
-//                paging, Aloha Hang Up Yes Channel (AHYC) broadcast,
-//                Go To Channel (GTC) voice grant, Disconnect
-//                Unique-to-Line (DUL), Acknowledge (ACK).
-//   bandplan.go  Channel number → Hz resolver. MPT 1327 channel
-//                numbering is system-specific; both linear and
-//                table strategies are exposed.
-//   control.go   Control-channel state machine that ingests
-//                codewords, locks on the first valid Aloha (ALH)
-//                or AHYC broadcast, and republishes GTC grants as
-//                events.KindGrant with Protocol="mpt1327".
+//	codeword.go  Codeword = {Type, Prefix, Ident, Function} packed
+//	             into the upper 38 bits of a 64-bit transmission
+//	             unit. Round-trip assemble / parse helpers and bit
+//	             accessors.
+//	opcodes.go   CodewordKind enum + per-kind payload accessors
+//	             — Aloha (ALH) idle, Address Hang Up Yes (AHY)
+//	             paging, Aloha Hang Up Yes Channel (AHYC) broadcast,
+//	             Go To Channel (GTC) voice grant, Disconnect
+//	             Unique-to-Line (DUL), Acknowledge (ACK).
+//	bandplan.go  Channel number → Hz resolver. MPT 1327 channel
+//	             numbering is system-specific; both linear and
+//	             table strategies are exposed.
+//	control.go   Control-channel state machine that ingests
+//	             codewords, locks on the first valid Aloha (ALH)
+//	             or AHYC broadcast, and republishes GTC grants as
+//	             events.KindGrant with Protocol="mpt1327".
 //
 // What's NOT yet wired (honest deferrals):
 //

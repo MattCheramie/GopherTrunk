@@ -11,8 +11,8 @@ import (
 // higher layer (rtl2832u, tuners) so the RTL-SDR driver can be exercised
 // without a real dongle in CI.
 type MockEnumerator struct {
-	BackendName string         // override "mock" if set
-	Devices     []Descriptor   // returned by List, filtered by vid/pid
+	BackendName string       // override "mock" if set
+	Devices     []Descriptor // returned by List, filtered by vid/pid
 	OpenFunc    func(Descriptor) (*MockTransport, error)
 }
 

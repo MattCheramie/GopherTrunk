@@ -179,9 +179,9 @@ func (s *Server) convLockoutOp(w http.ResponseWriter, r *http.Request, op func(i
 // conventional scanner and forces dwell on it. Mirrors the muscle
 // memory of a traditional scanner's "FREQ" / "MAN" / "TUNE" key.
 //
-//   POST /api/v1/scanner/manual_tune
-//   Content-Type: application/json
-//   {"frequency_hz":155895000,"label":"sheriff","mode":"fm"}
+//	POST /api/v1/scanner/manual_tune
+//	Content-Type: application/json
+//	{"frequency_hz":155895000,"label":"sheriff","mode":"fm"}
 //
 // Responses:
 //
@@ -234,7 +234,7 @@ func (s *Server) handleScannerManualTune(w http.ResponseWriter, r *http.Request)
 // previously added via manual tune. Static (config-seeded)
 // channels can't be removed at runtime — those return 404.
 //
-//   DELETE /api/v1/scanner/manual_tune/{index}
+//	DELETE /api/v1/scanner/manual_tune/{index}
 //
 // Responses:
 //

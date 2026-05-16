@@ -8,16 +8,16 @@ import "fmt"
 type MessageType uint8
 
 const (
-	MsgUnknown                    MessageType = 0x00
-	MsgRegistrationRequest        MessageType = 0x01
-	MsgRegistrationResponse       MessageType = 0x02
-	MsgVoiceServiceAllocation     MessageType = 0x03 // group voice channel grant
-	MsgIndividualVoiceAllocation  MessageType = 0x04 // unit-to-unit voice grant
-	MsgDataServiceAllocation      MessageType = 0x05
-	MsgServiceRequest             MessageType = 0x06
-	MsgStandingServiceStatus      MessageType = 0x07 // periodic site broadcast
-	MsgRelease                    MessageType = 0x0F
-	MsgIdle                       MessageType = 0x1F
+	MsgUnknown                   MessageType = 0x00
+	MsgRegistrationRequest       MessageType = 0x01
+	MsgRegistrationResponse      MessageType = 0x02
+	MsgVoiceServiceAllocation    MessageType = 0x03 // group voice channel grant
+	MsgIndividualVoiceAllocation MessageType = 0x04 // unit-to-unit voice grant
+	MsgDataServiceAllocation     MessageType = 0x05
+	MsgServiceRequest            MessageType = 0x06
+	MsgStandingServiceStatus     MessageType = 0x07 // periodic site broadcast
+	MsgRelease                   MessageType = 0x0F
+	MsgIdle                      MessageType = 0x1F
 )
 
 // String returns a stable human-readable label for log output.

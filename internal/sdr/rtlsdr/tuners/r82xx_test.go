@@ -395,10 +395,10 @@ func TestR82xx_SetMuxTableWalk(t *testing.T) {
 		hz      uint32
 		wantRow int
 	}{
-		{hz: 25_000_000, wantRow: 0},   // ≤ 50 MHz row
-		{hz: 100_000_000, wantRow: 8},  // 100 MHz boundary
-		{hz: 200_000_000, wantRow: 12}, // 180..220 boundary → row 13 actually
-		{hz: 450_000_000, wantRow: 17}, // ≤ 450 MHz boundary
+		{hz: 25_000_000, wantRow: 0},                         // ≤ 50 MHz row
+		{hz: 100_000_000, wantRow: 8},                        // 100 MHz boundary
+		{hz: 200_000_000, wantRow: 12},                       // 180..220 boundary → row 13 actually
+		{hz: 450_000_000, wantRow: 17},                       // ≤ 450 MHz boundary
 		{hz: 900_000_000, wantRow: len(r82xxFreqRanges) - 1}, // fallback
 	}
 	for _, c := range cases {

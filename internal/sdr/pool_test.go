@@ -23,13 +23,13 @@ type fakeDevice struct {
 	biasTeeSets int
 }
 
-func (d *fakeDevice) Info() Info                                            { return d.info }
-func (d *fakeDevice) SetCenterFreq(uint32) error                            { return nil }
-func (d *fakeDevice) SetSampleRate(uint32) error                            { return nil }
-func (d *fakeDevice) SetGain(int) error                                     { return nil }
-func (d *fakeDevice) SetPPM(int) error                                      { return nil }
-func (d *fakeDevice) SetBiasTee(on bool) error                              { d.biasTeeOn = on; d.biasTeeSets++; return nil }
-func (d *fakeDevice) StreamIQ(context.Context) (<-chan []complex64, error)  { return nil, io.EOF }
+func (d *fakeDevice) Info() Info                                           { return d.info }
+func (d *fakeDevice) SetCenterFreq(uint32) error                           { return nil }
+func (d *fakeDevice) SetSampleRate(uint32) error                           { return nil }
+func (d *fakeDevice) SetGain(int) error                                    { return nil }
+func (d *fakeDevice) SetPPM(int) error                                     { return nil }
+func (d *fakeDevice) SetBiasTee(on bool) error                             { d.biasTeeOn = on; d.biasTeeSets++; return nil }
+func (d *fakeDevice) StreamIQ(context.Context) (<-chan []complex64, error) { return nil, io.EOF }
 func (d *fakeDevice) Close() error {
 	if d.closed {
 		return errors.New("already closed")

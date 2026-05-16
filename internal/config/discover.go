@@ -34,8 +34,8 @@ func Discover() string {
 //     config).
 //  2. The first candidate directory containing one or more
 //     *.yaml / *.yml files. Within that directory:
-//       - 1 file → use it.
-//       - 2+ files → call opts.Pick; if nil, take the first.
+//     - 1 file → use it.
+//     - 2+ files → call opts.Pick; if nil, take the first.
 //
 // Candidate directories (in order):
 //   - <os.UserConfigDir()>/GopherTrunk

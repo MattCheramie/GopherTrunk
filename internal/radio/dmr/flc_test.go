@@ -7,7 +7,7 @@ func TestFLCRoundTripGroupVoiceUser(t *testing.T) {
 		PF:             false,
 		FLCO:           FLCOGroupVoiceUser,
 		FID:            0x00,
-		ServiceOptions: 0xC0, // emergency + encrypted
+		ServiceOptions: 0xC0,     // emergency + encrypted
 		DstAddr:        0x00ABCD, // talkgroup
 		SrcAddr:        0x123456, // subscriber
 	}

@@ -161,8 +161,8 @@ func TestLDUAssemblerToleratesNoisyFSW(t *testing.T) {
 func TestLDUAssemblerResetClearsState(t *testing.T) {
 	var got [][]byte
 	a := NewLDUAssembler(func(ldu []byte) { got = append(got, ldu) }, 0)
-	a.Process(FrameSyncWord[:])           // pending FSW set
-	a.Process(dibitsFor(100, 0))          // collecting
+	a.Process(FrameSyncWord[:])  // pending FSW set
+	a.Process(dibitsFor(100, 0)) // collecting
 	if a.Buffered() == 0 || a.pending < 0 {
 		t.Fatal("setup: assembler not in collecting state")
 	}

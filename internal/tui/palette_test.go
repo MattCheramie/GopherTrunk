@@ -81,4 +81,3 @@ func TestPalette_EscClosesWithoutAction(t *testing.T) {
 		t.Errorf("Esc fired an action — active changed from %v to %v", originalActive, m.active)
 	}
 }
-
