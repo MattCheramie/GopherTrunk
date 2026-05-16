@@ -150,6 +150,9 @@ export interface RuntimeDTO {
     cors_allowed_origins?: string[];
   };
   audio?: AudioStatusDTO;
+  log_level?: string;
+  log_format?: string;
+  metrics_enabled?: boolean;
   // ConfigPath is non-empty when the daemon was started with a
   // -config file. The SPA renders the Settings panel as editable
   // only when this is set; an empty value means PATCH /api/v1/settings

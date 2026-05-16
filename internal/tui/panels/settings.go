@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
@@ -68,6 +69,25 @@ type SettingsPanel struct {
 	// table is operationally an opt-out reference.
 	tbl      table.Model
 	lastHash uint64
+
+	// Editing state. editCursor indexes into editableFieldsForTab
+	// for the current tab; editing flips to true while the operator
+	// is typing into editInput. editErr surfaces validation failures
+	// from the daemon's PATCH response (caught at the root model and
+	// passed back via a panel message — see ApplySettingsError).
+	editCursor int
+	editing    bool
+	editInput  textinput.Model
+	editErr    string
+}
+
+// SettingsErrorMsg is dispatched by the root model when a Settings
+// PATCH comes back with an error (validation failure, 503, etc.).
+// The panel re-opens the editor on the failing row and surfaces the
+// message inline so the operator can correct without re-navigating.
+type SettingsErrorMsg struct {
+	Field   string
+	Message string
 }
 
 func NewSettings() *SettingsPanel {
@@ -87,19 +107,89 @@ var (
 )
 
 func (SettingsPanel) Keys() []key.Binding {
-	return []key.Binding{settingsNextTab, settingsPrevTab}
+	return []key.Binding{
+		settingsNextTab, settingsPrevTab,
+		editUpKey, editDownKey, editStart, editCancel,
+	}
 }
 
 func (p *SettingsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
 	applyThemeIfChanged(msg, &p.tbl)
+
+	// SettingsErrorMsg comes back from the root model when a
+	// PATCH /api/v1/settings dispatch failed — re-focus the row +
+	// surface the error inline.
+	if em, ok := msg.(SettingsErrorMsg); ok {
+		p.editErr = em.Message
+		return p, nil
+	}
+
+	fields := editableFieldsForTab(p.tab)
+	editable := len(fields) > 0 && s.Runtime.ConfigPath != ""
+
 	if km, ok := msg.(tea.KeyMsg); ok {
+		// Tab switching happens regardless of edit state — the
+		// existing UX guarantees []/h/l always navigate tabs. Fall
+		// through so the FEC-tab refresh below still runs when the
+		// operator lands on that tab.
+		switched := false
 		switch {
 		case key.Matches(km, settingsNextTab):
+			p.editing = false
+			p.editErr = ""
 			p.tab = (p.tab + 1) % tabCount
+			p.editCursor = 0
+			switched = true
 		case key.Matches(km, settingsPrevTab):
+			p.editing = false
+			p.editErr = ""
 			p.tab = (p.tab + tabCount - 1) % tabCount
+			p.editCursor = 0
+			switched = true
+		}
+		if switched {
+			// Skip the edit-mode handling but keep the FEC-tab
+			// refresh further down so the table populates on
+			// landing.
+			goto fecRefresh
+		}
+
+		if editable {
+			if p.editing {
+				// Edit mode: route everything to the textinput
+				// except enter (save) and esc (cancel).
+				switch {
+				case key.Matches(km, editStart):
+					return p, p.commitEdit(fields)
+				case key.Matches(km, editCancel):
+					p.editing = false
+					p.editErr = ""
+					return p, nil
+				}
+				var cmd tea.Cmd
+				p.editInput, cmd = p.editInput.Update(msg)
+				return p, cmd
+			}
+			// Navigation mode.
+			switch {
+			case key.Matches(km, editUpKey):
+				if p.editCursor > 0 {
+					p.editCursor--
+				}
+				return p, nil
+			case key.Matches(km, editDownKey):
+				if p.editCursor < len(fields)-1 {
+					p.editCursor++
+				}
+				return p, nil
+			case key.Matches(km, editStart):
+				p.startEdit(fields, s.Runtime)
+				return p, nil
+			}
 		}
 	}
+
+fecRefresh:
 	// Refresh the FEC table whenever we're on (or have just switched
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
@@ -149,7 +239,15 @@ func (p *SettingsPanel) View(width, height int, focused bool, s *state.SharedSta
 		}
 		body = p.tbl.View() + "\n\n" + dashDim.Render("Edit config.yaml + restart daemon to change; see the FEC opt-outs section in README.md.")
 	} else {
-		body = p.renderTab(width, s)
+		// Editable rows first (only when the daemon has a config
+		// file backing it — empty ConfigPath means PATCH returns
+		// 503 and we shouldn't lead the operator on).
+		fields := editableFieldsForTab(p.tab)
+		var head string
+		if len(fields) > 0 && s.Runtime.ConfigPath != "" {
+			head = p.renderEditableRows(fields, s.Runtime)
+		}
+		body = head + p.renderTab(width, s)
 	}
 	return panelFrame("Settings", width, height, focused, header+"\n"+banner+body)
 }

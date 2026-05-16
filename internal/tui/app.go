@@ -412,6 +412,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case panels.ImportDiscardMsg:
 		cmds = append(cmds, cmdImportDiscard(m.cli, msg.ID))
+
+	case settingsWriteMsg:
+		if msg.Err != nil {
+			m.toast(formatMutationErr(msg.Label, msg.Err))
+			// Dispatch the inline error back to the Settings panel
+			// on the next tick so it can re-focus the failing row.
+			cmds = append(cmds, func() tea.Msg {
+				return panels.SettingsErrorMsg{Field: msg.Field, Message: msg.Err.Error()}
+			})
+		} else {
+			m.toast(msg.Label + " ok")
+			cmds = append(cmds, cmdPollRuntime(m.cli))
+		}
 	}
 
 	// Forward to active panel.
@@ -651,6 +664,14 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 				r.ScannerManualTune.Mode,
 				r.Label),
 			cmdPollScanner(m.cli),
+		)
+	case state.WriteKindSettings:
+		if r.Settings == nil {
+			return nil
+		}
+		return tea.Batch(
+			cmdUpdateSettings(m.cli, r.Settings.Field, r.Settings.Value, r.Label),
+			cmdPollRuntime(m.cli),
 		)
 	}
 	return nil

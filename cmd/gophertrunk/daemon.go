@@ -12,6 +12,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	gtweb "github.com/MattCheramie/GopherTrunk/web"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -648,6 +649,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			opts.ConfigWriter = d.writer
 			opts.SettingsApplier = newDaemonSettingsApplier(d, version)
 			opts.Importer = newDaemonImporter(d)
+		}
+		// Embed the SPA when the build linked in real assets
+		// (see web/embed.go). HasAssets is false for fresh
+		// checkouts without `make web-build` — the launcher falls
+		// back to filesystem discovery in that case.
+		if gtweb.HasAssets() {
+			opts.WebAssets = gtweb.Assets()
 		}
 		srv, err := api.NewServer(opts)
 		if err != nil {

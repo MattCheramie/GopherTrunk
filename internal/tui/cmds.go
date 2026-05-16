@@ -309,3 +309,29 @@ func cmdImportDiscard(cli *client.Client, id string) tea.Cmd {
 		return writeResultMsg{Label: "import discard", Err: err}
 	}
 }
+
+// settingsWriteMsg is the unified result of a PATCH /api/v1/settings
+// dispatch. The root Update fans it out into a toast (via the
+// existing writeResultMsg flow) and an inline error on the Settings
+// panel.
+type settingsWriteMsg struct {
+	Label string
+	Field string
+	Err   error
+}
+
+// cmdUpdateSettings converts a Settings panel edit (dotted field +
+// stringified value) into a SettingsPatch and posts it. Wraps both
+// outcomes (network success / network failure / client-side
+// validation failure) into settingsWriteMsg so the root model can
+// surface a toast and re-focus the row in one place.
+func cmdUpdateSettings(cli *client.Client, field, value, label string) tea.Cmd {
+	return func() tea.Msg {
+		patch, perr := buildSettingsPatch(field, value)
+		if perr != nil {
+			return settingsWriteMsg{Label: label, Field: field, Err: perr}
+		}
+		_, err := cli.UpdateSettings(context.Background(), patch)
+		return settingsWriteMsg{Label: label, Field: field, Err: err}
+	}
+}

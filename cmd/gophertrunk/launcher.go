@@ -20,6 +20,7 @@ import (
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/tui"
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
+	gtweb "github.com/MattCheramie/GopherTrunk/web"
 )
 
 // launchMode discriminates the launcher's terminal action. launchAuto
@@ -224,17 +225,35 @@ func runInProcessTUI(ctx context.Context, d *Daemon, log *slog.Logger, logSwap *
 	return err
 }
 
-// openWebUI locates a sibling gophertrunk-web/ directory and opens
-// its index.html with a #server=<url> hash so the SPA bootstraps
-// against the running daemon automatically. When no asset directory
-// is found OR no browser can be launched (headless SSH), prints a
-// clear fallback so the operator can open the URL elsewhere.
+// openWebUI opens the bundled web SPA pointed at the running
+// daemon. Resolution order:
+//
+//  1. If the daemon binary was linked with embedded web/dist assets
+//     (gtweb.HasAssets()), open the daemon URL directly — the
+//     server hosts the SPA at "/" so no file:// hop is needed.
+//  2. Otherwise search sibling-dir locations for a gophertrunk-web/
+//     directory and open its index.html with a #server=<url> hash
+//     so the SPA bootstraps against the daemon.
+//  3. Fallback: print the URL + asset path to stderr so a remote
+//     operator can open them on a machine that has a browser.
 func openWebUI(d *Daemon, log *slog.Logger) error {
 	addr := d.HTTPListenAddr()
 	if addr == "" {
 		return errors.New("-web requires api.http_addr in config")
 	}
 	serverURL := normaliseServerURL(addr)
+
+	if gtweb.HasAssets() {
+		if !canOpenBrowser() {
+			printWebFallback(serverURL, "(embedded in daemon binary)")
+			return nil
+		}
+		log.Info("launcher: opening embedded SPA", "url", serverURL)
+		if err := openBrowser(serverURL); err != nil {
+			printWebFallback(serverURL, "(embedded in daemon binary)")
+		}
+		return nil
+	}
 
 	assetPath := findWebAssets()
 	target := buildWebTargetURL(assetPath, serverURL)
