@@ -274,6 +274,14 @@ func prepareInProcessTUI(d *Daemon, logSwap *gtlog.SwappableWriter) (*inProcessT
 //     so the SPA bootstraps against the daemon.
 //  3. Fallback: print the URL + asset path to stderr so a remote
 //     operator can open them on a machine that has a browser.
+// Test seams. Production code injects nothing; tests override these
+// to drive openWebUI's decision tree without spawning a real browser.
+var (
+	hasWebAssetsFn   = gtweb.HasAssets
+	canOpenBrowserFn = canOpenBrowser
+	openBrowserFn    = openBrowser
+)
+
 func openWebUI(d *Daemon, log *slog.Logger) error {
 	addr := d.HTTPListenAddr()
 	if addr == "" {
@@ -281,13 +289,13 @@ func openWebUI(d *Daemon, log *slog.Logger) error {
 	}
 	serverURL := normaliseServerURL(addr)
 
-	if gtweb.HasAssets() {
-		if !canOpenBrowser() {
+	if hasWebAssetsFn() {
+		if !canOpenBrowserFn() {
 			printWebFallback(serverURL, "(embedded in daemon binary)")
 			return nil
 		}
 		log.Info("launcher: opening embedded SPA", "url", serverURL)
-		if err := openBrowser(serverURL); err != nil {
+		if err := openBrowserFn(serverURL); err != nil {
 			printWebFallback(serverURL, "(embedded in daemon binary)")
 		}
 		return nil
@@ -300,12 +308,12 @@ func openWebUI(d *Daemon, log *slog.Logger) error {
 		return nil
 	}
 
-	if !canOpenBrowser() {
+	if !canOpenBrowserFn() {
 		printWebFallback(serverURL, assetPath)
 		return nil
 	}
 	log.Info("launcher: opening web UI", "target", target)
-	if err := openBrowser(target); err != nil {
+	if err := openBrowserFn(target); err != nil {
 		printWebFallback(serverURL, assetPath)
 		return nil
 	}

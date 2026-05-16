@@ -214,8 +214,11 @@ func runDaemon(args []string) {
 	}()
 
 	// SIGHUP → hot-reload config.yaml (Unix only; no-op on Windows).
-	// Goroutine exits when ctx cancels.
-	go watchReloadSignal(ctx, d, logger)
+	// watchReloadSignal registers signal.Notify synchronously and
+	// then spawns its own goroutine, so the call returns
+	// immediately and the signal handler is in place by the time
+	// we move on.
+	watchReloadSignal(ctx, d, logger)
 
 	// Wait for either Ready (HTTP listener bound, components
 	// settled) or the daemon's Run to return early (essential

@@ -20,6 +20,24 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
 )
 
+// daemonWithoutHTTP builds a daemon that doesn't bind an HTTP
+// listener — its HTTPListenAddr always returns "". Used to assert
+// the "no HTTP API" error paths in tests that depend on the live
+// listener being absent.
+func daemonWithoutHTTP(t *testing.T) *Daemon {
+	t.Helper()
+	cfg := config.Default()
+	cfg.API.HTTPAddr = "" // disabled
+	cfg.API.GRPCAddr = ""
+	cfg.Audio.Enabled = false
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	d, err := NewDaemonWithPath(cfg, "", "test", logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 // daemonForTest wires up a minimum daemon for in-process-TUI tests.
 // It binds to a random loopback port via NewDaemonWithPath +
 // returns its HTTP listen addr after the API server is up.
@@ -72,17 +90,10 @@ func daemonForTest(t *testing.T) (*Daemon, func()) {
 }
 
 func TestPrepareInProcessTUI_RequiresHTTPAddr(t *testing.T) {
-	cfg := config.Default()
-	cfg.API.HTTPAddr = "" // disabled
-	cfg.Audio.Enabled = false
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	d, err := NewDaemonWithPath(cfg, "", "test", logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := daemonWithoutHTTP(t)
 	logSwap := gtlog.NewSwappableWriter(io.Discard)
 
-	_, err = prepareInProcessTUI(d, logSwap)
+	_, err := prepareInProcessTUI(d, logSwap)
 	if err == nil {
 		t.Fatal("expected error when HTTPListenAddr is empty")
 	}
