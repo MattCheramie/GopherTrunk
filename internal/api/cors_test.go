@@ -7,11 +7,12 @@ import (
 	"testing"
 )
 
-func TestCORS_Disabled(t *testing.T) {
-	// When AllowedOrigins is empty the middleware is a pass-through.
+func TestCORS_DefaultPermissive(t *testing.T) {
+	// Empty AllowedOrigins now means "allow any origin" — the
+	// closed-LAN deployment default.
 	cfg := CORSConfig{}
-	if cfg.enabled() {
-		t.Fatalf("enabled() = true; want false")
+	if !cfg.IsDefaultPermissive() {
+		t.Fatalf("IsDefaultPermissive() = false; want true")
 	}
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,8 +25,9 @@ func TestCORS_Disabled(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
-	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("Allow-Origin = %q; want empty", got)
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "http://example.com" {
+		t.Errorf("Allow-Origin = %q; want %q (echoed back under permissive default)",
+			got, "http://example.com")
 	}
 }
 

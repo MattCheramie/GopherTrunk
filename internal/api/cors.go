@@ -11,10 +11,22 @@ import (
 // origin. The literal "null" matches the Origin header browsers
 // send for file:// loads.
 //
-// When AllowedOrigins is empty the middleware is a no-op: no CORS
-// headers are emitted and OPTIONS requests fall through to the mux.
+// When AllowedOrigins is empty the daemon's permissive default
+// (CORS open to any origin) applies — closed-LAN setups don't have
+// to opt into CORS to load the web SPA from file:// or a sibling
+// static server. Operators who run on a hostile network override
+// this list to clamp it back down.
 type CORSConfig struct {
 	AllowedOrigins []string
+}
+
+// effectiveOrigins returns the configured allow-list, substituting
+// the permissive default (["*"]) when none was supplied.
+func (c CORSConfig) effectiveOrigins() []string {
+	if len(c.AllowedOrigins) == 0 {
+		return []string{"*"}
+	}
+	return c.AllowedOrigins
 }
 
 // originAllowed reports whether the supplied request Origin is on
@@ -24,7 +36,7 @@ func (c CORSConfig) originAllowed(origin string) (string, bool) {
 	if origin == "" {
 		return "", false
 	}
-	for _, allowed := range c.AllowedOrigins {
+	for _, allowed := range c.effectiveOrigins() {
 		if allowed == "*" {
 			// Wildcard: echo the actual origin back so credentialed
 			// requests still work. Browsers reject "*" combined with
@@ -38,10 +50,18 @@ func (c CORSConfig) originAllowed(origin string) (string, bool) {
 	return "", false
 }
 
-// enabled reports whether the middleware should add any CORS headers
-// or handle preflights at all.
-func (c CORSConfig) enabled() bool {
-	return len(c.AllowedOrigins) > 0
+// enabled is true whenever the middleware should run. With the
+// permissive default in effect this is always true; an operator who
+// wants no CORS headers at all must explicitly set AllowedOrigins
+// to a non-matching value.
+func (c CORSConfig) enabled() bool { return true }
+
+// IsDefaultPermissive reports whether the runtime is operating on
+// the empty-config-means-allow-all default. Surfaced so the daemon
+// can warn at startup when a non-loopback bind is combined with the
+// permissive default.
+func (c CORSConfig) IsDefaultPermissive() bool {
+	return len(c.AllowedOrigins) == 0
 }
 
 // corsMiddleware wraps the inner handler with CORS headers when the

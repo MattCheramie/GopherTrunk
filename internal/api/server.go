@@ -386,6 +386,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if authCfg.Mode == AuthModeDisabled {
 		log.Warn("api: auth disabled — mutation endpoints are not authenticated; bind to loopback or trusted network only")
 	}
+	// CORS permissive default warning: only surfaces on non-loopback
+	// binds so the common file:// + loopback workflow stays quiet.
+	if opts.CORS.IsDefaultPermissive() && !bindsToLoopback(opts.Addr) {
+		log.Warn("api: CORS open to any origin (default) on a non-loopback bind — set api.cors.allowed_origins to clamp it down on hostile networks")
+	}
 	// TLS: both files must be set to enable TLS; one without the
 	// other is a misconfiguration the operator should hear about
 	// rather than silently fall back to plain HTTP.

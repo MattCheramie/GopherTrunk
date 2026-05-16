@@ -55,20 +55,31 @@ func (m AuthMode) String() string {
 }
 
 // ParseAuthMode maps a config string into an AuthMode. Recognised
-// values (case-insensitive): "" / "auto" → AuthModeAuto (the
-// default); "required" / "on" / "true" → AuthModeRequired;
-// "disabled" / "off" / "false" → AuthModeDisabled. Unknown strings
-// return AuthModeAuto with ok=false.
+// values (case-insensitive):
+//
+//	""             → AuthModeDisabled (the new default — gophertrunk
+//	                 is overwhelmingly deployed on closed LANs where
+//	                 the bearer-token middleware is friction without
+//	                 a corresponding threat model; opt back in by
+//	                 setting "auto" or "required" explicitly)
+//	"auto"         → AuthModeAuto
+//	"required" / "on" / "true"    → AuthModeRequired
+//	"disabled" / "off" / "false"  → AuthModeDisabled
+//
+// Unknown strings return AuthModeDisabled with ok=false so callers
+// can warn without leaving the daemon in an ambiguous state.
 func ParseAuthMode(s string) (AuthMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "auto":
+	case "":
+		return AuthModeDisabled, true
+	case "auto":
 		return AuthModeAuto, true
 	case "required", "on", "true":
 		return AuthModeRequired, true
 	case "disabled", "off", "false":
 		return AuthModeDisabled, true
 	default:
-		return AuthModeAuto, false
+		return AuthModeDisabled, false
 	}
 }
 

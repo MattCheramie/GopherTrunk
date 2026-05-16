@@ -457,6 +457,12 @@ func Default() Config {
 	return Config{
 		Log: LogConfig{Level: "info", Format: "text"},
 		SDR: SDRConfig{SampleRate: 2_400_000},
+		// HTTP API on by default so the bundled launcher's TUI /
+		// web paths have something to attach to without an explicit
+		// config edit. Loopback bind keeps the auth-disabled default
+		// (see api.ParseAuthMode) safe out-of-the-box; operators on
+		// a closed LAN flip this to ":8080" or a LAN IP.
+		API: APIConfig{HTTPAddr: "127.0.0.1:8080"},
 	}
 }
 

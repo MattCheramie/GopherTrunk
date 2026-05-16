@@ -91,8 +91,55 @@ type Daemon struct {
 	httpAPI    *api.Server
 	grpcAPI    *api.GRPCServer
 
+	// startupWarnings collects non-fatal observations from
+	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
+	// empty, etc.) so the launcher can render them above its menu
+	// and the TUI can pin them as a one-shot dashboard banner.
+	startupWarnings []string
+
+	// ready is closed by Run once all spawned essential components
+	// have started. Consumers use it to gate the launcher prompt so
+	// it never lands against a half-dead daemon.
+	ready     chan struct{}
+	readyOnce sync.Once
+
+	// fatalErr is set by an essential component that fails after
+	// Run has begun spawning goroutines. Run's blocking select picks
+	// it up and unwinds the daemon. Guarded by mu.
+	mu       sync.Mutex
+	fatalErr error
+	cancel   context.CancelFunc
+
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+}
+
+// Ready returns a channel that closes once every essential component
+// has started successfully. Used by the launcher to wait for the HTTP
+// API to bind before prompting the operator.
+func (d *Daemon) Ready() <-chan struct{} {
+	if d.ready == nil {
+		// Conservative: a Daemon constructed by code that pre-dates
+		// the Ready surface should still satisfy <-d.Ready() with
+		// an already-closed channel.
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	return d.ready
+}
+
+// StartupWarnings returns the non-fatal warnings collected during
+// NewDaemon construction. Callers should treat the slice as read-only.
+func (d *Daemon) StartupWarnings() []string {
+	return append([]string(nil), d.startupWarnings...)
+}
+
+// addWarning records a non-fatal startup observation. Threaded into
+// the launcher + TUI dashboard so silent degradations get an audible
+// surface.
+func (d *Daemon) addWarning(msg string) {
+	d.startupWarnings = append(d.startupWarnings, msg)
 }
 
 // NewDaemon constructs the daemon from the loaded config. Components
@@ -106,7 +153,12 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		return nil, errors.New("daemon: logger is required")
 	}
 
-	d := &Daemon{cfg: cfg, log: log, bus: events.NewBus(64)}
+	d := &Daemon{
+		cfg:   cfg,
+		log:   log,
+		bus:   events.NewBus(64),
+		ready: make(chan struct{}),
+	}
 
 	// Talkgroup DB — populated below from per-system CSVs.
 	d.talkgroups = trunking.NewTalkgroupDB()
@@ -148,6 +200,9 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			if err != nil {
 				log.Warn("daemon: talkgroup load failed",
 					"system", sys.Name, "file", sys.TalkgroupFile, "err", err)
+				d.addWarning(fmt.Sprintf(
+					"talkgroup_file %q for system %q failed to load (%v) — calls on this system will have no alpha tags",
+					sys.TalkgroupFile, sys.Name, err))
 			} else {
 				log.Info("daemon: talkgroups loaded", "system", sys.Name, "count", n)
 			}
@@ -180,8 +235,16 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 		}
 		if err := d.pool.Open(hints); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)
+			d.addWarning(fmt.Sprintf(
+				"SDR pool failed to open (%v) — no radios will demodulate; check device permissions / cabling / kernel modules",
+				err))
 			d.pool = nil
 		}
+	} else if len(cfg.Trunking.Systems) > 0 {
+		// Trunked systems configured but no SDR devices listed —
+		// the daemon will look healthy from a logs-only vantage but
+		// can't actually decode anything.
+		d.addWarning("trunking.systems configured but sdr.devices is empty — daemon has nothing to demodulate; add at least one device")
 	}
 
 	// Voice device list from the pool; empty when no SDRs.
@@ -569,9 +632,16 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 	return d, nil
 }
 
-// Run starts every long-lived goroutine and blocks until ctx cancels.
-// Each component returns its own error; the first non-nil non-context
-// error short-circuits the rest and triggers Close.
+// Run starts every long-lived goroutine and blocks until ctx cancels
+// (or an essential component fails). Each component returns its own
+// error; non-essential errors land on the log, essential errors
+// cancel the daemon's internal context so the launcher / TUI doesn't
+// keep running against a half-dead daemon.
+//
+// Run also closes d.Ready() once the spawned components have settled.
+// "Settled" today is conservative — a brief 250 ms timer after every
+// spawn call has fired — but ensures the HTTP listener bound (so the
+// launcher's TUI/web flow can reach it) before the prompt appears.
 func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("gophertrunk starting",
 		"http_addr", d.cfg.API.HTTPAddr,
@@ -580,72 +650,125 @@ func (d *Daemon) Run(ctx context.Context) error {
 		"voice_devices", len(d.voicePool.Devices()),
 	)
 
-	d.spawn(ctx, "engine", func(ctx context.Context) error {
+	// Wrap ctx so an essential component error can cancel siblings.
+	runCtx, cancel := context.WithCancel(ctx)
+	d.mu.Lock()
+	d.cancel = cancel
+	d.mu.Unlock()
+	defer cancel()
+
+	d.spawn(runCtx, "engine", true, func(ctx context.Context) error {
 		return d.engine.Run(ctx)
 	})
 
 	if d.callLog != nil {
-		d.spawn(ctx, "calllog", func(ctx context.Context) error {
+		d.spawn(runCtx, "calllog", false, func(ctx context.Context) error {
 			return d.callLog.Run(ctx)
 		})
 	}
 	if d.retention != nil {
-		d.spawn(ctx, "retention", func(ctx context.Context) error {
+		d.spawn(runCtx, "retention", false, func(ctx context.Context) error {
 			return d.retention.Run(ctx)
 		})
 	}
 	if d.recorder != nil {
-		d.spawn(ctx, "recorder", func(ctx context.Context) error {
+		d.spawn(runCtx, "recorder", false, func(ctx context.Context) error {
 			return d.recorder.Run(ctx)
 		})
 	}
 	if d.composer != nil {
-		d.spawn(ctx, "composer", func(ctx context.Context) error {
+		d.spawn(runCtx, "composer", false, func(ctx context.Context) error {
 			return d.composer.Run(ctx)
 		})
 	}
 	if d.audioPub != nil {
-		d.spawn(ctx, "audio-publisher", func(ctx context.Context) error {
+		d.spawn(runCtx, "audio-publisher", false, func(ctx context.Context) error {
 			return d.audioPub.Run(ctx)
 		})
 	}
 	if d.metrics != nil {
-		d.spawn(ctx, "metrics", func(ctx context.Context) error {
+		d.spawn(runCtx, "metrics", false, func(ctx context.Context) error {
 			return d.metrics.Run(ctx)
 		})
 	}
 	if d.cchuntSup != nil {
-		d.spawn(ctx, "cchunt", func(ctx context.Context) error {
+		d.spawn(runCtx, "cchunt", false, func(ctx context.Context) error {
 			return d.cchuntSup.Run(ctx)
 		})
 	}
 	if d.ccDecoder != nil {
-		d.spawn(ctx, "ccdecoder", func(ctx context.Context) error {
+		d.spawn(runCtx, "ccdecoder", false, func(ctx context.Context) error {
 			return d.ccDecoder.Run(ctx)
 		})
 	}
 	if d.convScan != nil {
-		d.spawn(ctx, "conv-scanner", func(ctx context.Context) error {
+		d.spawn(runCtx, "conv-scanner", false, func(ctx context.Context) error {
 			return d.convScan.Run(ctx)
 		})
 	}
 	if d.httpAPI != nil {
-		d.spawn(ctx, "http", func(ctx context.Context) error {
+		// HTTP is essential — the launcher's TUI / web paths need
+		// it bound, and bind failures (port in use, permission
+		// denied) used to be demoted to a warning while the daemon
+		// kept running. Now they abort cleanly.
+		d.spawn(runCtx, "http", true, func(ctx context.Context) error {
 			return d.httpAPI.Run(ctx)
 		})
 	}
 	if d.grpcAPI != nil {
-		d.spawn(ctx, "grpc", func(ctx context.Context) error {
+		d.spawn(runCtx, "grpc", true, func(ctx context.Context) error {
 			return d.grpcAPI.Run(ctx)
 		})
 	}
 
-	<-ctx.Done()
+	// Conservative readiness: give every spawn a brief grace window
+	// so the HTTP listener has time to bind. Components without an
+	// explicit "ready" hook share this same gate.
+	go d.markReadyAfter(runCtx, 250*time.Millisecond)
+
+	<-runCtx.Done()
 	d.log.Info("gophertrunk shutdown initiated")
 	d.Close()
 	d.wg.Wait()
 	d.log.Info("gophertrunk shutdown complete")
+	if err := d.takeFatal(); err != nil {
+		return err
+	}
 	return ctx.Err()
+}
+
+// markReadyAfter waits the supplied grace window and then closes the
+// Ready channel. Cancellation aborts the wait but still closes the
+// channel so blocked consumers don't deadlock.
+func (d *Daemon) markReadyAfter(ctx context.Context, grace time.Duration) {
+	t := time.NewTimer(grace)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	d.readyOnce.Do(func() { close(d.ready) })
+}
+
+// recordFatal stores an essential-component error (first wins) and
+// cancels the daemon's run context so siblings unwind. Safe to call
+// from any goroutine.
+func (d *Daemon) recordFatal(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.fatalErr == nil {
+		d.fatalErr = err
+	}
+	if d.cancel != nil {
+		d.cancel()
+	}
+}
+
+// takeFatal returns the captured essential-component error (if any).
+func (d *Daemon) takeFatal() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.fatalErr
 }
 
 // Close releases every component. Idempotent and safe to call
@@ -706,13 +829,26 @@ func (d *Daemon) HTTPListenAddr() string {
 // synthetic events.
 func (d *Daemon) Bus() *events.Bus { return d.bus }
 
-func (d *Daemon) spawn(ctx context.Context, name string, fn func(context.Context) error) {
+// spawn runs fn in a goroutine. essential=true means a non-context
+// error from fn aborts the whole daemon (the launcher / TUI rely on
+// these components — silently demoting their failures to log warnings
+// produces a half-dead daemon that frustrates the operator).
+// essential=false retains the legacy behaviour: warn-and-continue.
+func (d *Daemon) spawn(ctx context.Context, name string, essential bool, fn func(context.Context) error) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		if err := fn(ctx); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			d.log.Warn("daemon: component exited with error", "component", name, "err", err)
+		err := fn(ctx)
+		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
 		}
+		if essential {
+			d.log.Error("daemon: essential component failed",
+				"component", name, "err", err)
+			d.recordFatal(fmt.Errorf("%s: %w", name, err))
+			return
+		}
+		d.log.Warn("daemon: component exited with error", "component", name, "err", err)
 	}()
 }
 

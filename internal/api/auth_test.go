@@ -17,7 +17,9 @@ func TestParseAuthMode(t *testing.T) {
 		want AuthMode
 		ok   bool
 	}{
-		{"", AuthModeAuto, true},
+		// Empty string now defaults to disabled (the closed-LAN
+		// posture); operators opt back into auto/required.
+		{"", AuthModeDisabled, true},
 		{"auto", AuthModeAuto, true},
 		{"AUTO", AuthModeAuto, true},
 		{" auto ", AuthModeAuto, true},
@@ -27,7 +29,7 @@ func TestParseAuthMode(t *testing.T) {
 		{"disabled", AuthModeDisabled, true},
 		{"off", AuthModeDisabled, true},
 		{"false", AuthModeDisabled, true},
-		{"nonsense", AuthModeAuto, false},
+		{"nonsense", AuthModeDisabled, false},
 	}
 	for _, c := range cases {
 		got, ok := ParseAuthMode(c.in)
