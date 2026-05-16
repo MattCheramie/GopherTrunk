@@ -154,3 +154,30 @@ func TestFC0012NearestGainIndex(t *testing.T) {
 		}
 	}
 }
+
+// TestFC0012SetFreqBoundaryInclusivity confirms the range guard at
+// fc0012.go:115 accepts the exact minHz / maxHz endpoints. The guard
+// is `< 37M || > 1.7G`; values at the boundary must not surface a
+// range error (any I2C error from the un-scripted mock is fine).
+func TestFC0012SetFreqBoundaryInclusivity(t *testing.T) {
+	f := NewFC0012(rtl2832u.New(usb.NewMockTransport()))
+	f.initDone = true
+	cases := []struct {
+		hz        uint32
+		wantRange bool
+	}{
+		{36_999_999, true},     // just below floor
+		{37_000_000, false},    // exact floor — accepted
+		{1_700_000_000, false}, // exact ceiling — accepted
+		{1_700_000_001, true},  // just above ceiling
+	}
+	for _, c := range cases {
+		err := f.SetFreq(c.hz)
+		var rangeErr *ErrUnsupportedFreq
+		isRange := errors.As(err, &rangeErr)
+		if isRange != c.wantRange {
+			t.Errorf("SetFreq(%d) range-err = %v, want %v (err=%v)",
+				c.hz, isRange, c.wantRange, err)
+		}
+	}
+}

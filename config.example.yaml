@@ -113,23 +113,72 @@ trunking:
 
   # Per-protocol FEC is on by default — every protocol the daemon
   # supports (TETRA, LTR, P25 Phase 2, NXDN, EDACS, MPT 1327,
-  # Motorola Type II) ships its spec-correct on-air decoder chain
-  # enabled without needing per-system YAML keys. Operators feeding
-  # pre-stripped capture files (DSD-FME `-r` dumps, OP25 fixtures,
-  # MMDVMHost / DSDcc test data) opt out per-system with the keys
-  # below. TETRA additionally requires a non-zero `tetra_colour_code`
-  # for non-BSCH channels; descrambling produces garbage without it.
+  # Motorola Type II, D-STAR) ships its spec-correct on-air decoder
+  # chain enabled without needing per-system YAML keys. Operators
+  # feeding pre-stripped capture files (DSD-FME `-r` dumps, OP25
+  # fixtures, MMDVMHost / DSDcc test data) opt out per-system with
+  # the keys below. TETRA additionally requires a non-zero
+  # `tetra_colour_code` for non-BSCH channels; descrambling produces
+  # garbage without it.
   #
-  # Example opt-outs for operators using pre-stripped captures:
+  # The full key reference + on / off semantics lives in the README's
+  # "FEC opt-outs" section: https://github.com/MattCheramie/GopherTrunk#fec-opt-outs
+  #
+  # Example opt-outs for operators using pre-stripped captures.
+  # Copy any block, uncomment, and tune to your system:
+  #
   #   - name: "Legacy-Motorola"
   #     protocol: motorola
   #     control_channels: [851_012_500]
-  #     motorola_bch_mode: "off"   # pre-stripped 32-bit raw OSWs
+  #     motorola_bch_mode: "off"        # pre-stripped 32-bit raw OSWs
+  #
   #   - name: "Legacy-LTR"
   #     protocol: ltr
   #     control_channels: [935_012_500]
-  #     ltr_fcs_mode: "off"
-  #     ltr_manchester_mode: "off"
+  #     ltr_fcs_mode: "off"             # skip CRC-7 FCS (synth fixture)
+  #     ltr_manchester_mode: "off"      # raw NRZ stream
+  #
+  #   - name: "Legacy-NXDN"
+  #     protocol: nxdn
+  #     control_channels: [462_212_500]
+  #     nxdn_viterbi_mode: "off"        # legacy 44-dibit raw CAC
+  #     # nxdn_deviation_hz: 2400       # override 1800 Hz spec default
+  #                                     # for non-spec transmitters (see
+  #                                     # samples/nxdn/README.md sweep recipe)
+  #
+  #   - name: "Legacy-P25-Phase2"
+  #     protocol: p25
+  #     control_channels: [851_006_250]
+  #     p25_phase2_trellis_mode: "off"  # legacy 72-dibit raw MAC PDU
+  #     # p25_phase2_rs_mode: "on"      # RS(24, 16, 9) syndrome drop
+  #     # p25_phase2_scrambler_mode: "probe"  # blind PN44 slot probe
+  #     #                              # (degrades to off without rs:on)
+  #     # p25_phase2_clock_mode: "naive"      # decimate; default Gardner
+  #
+  #   - name: "Legacy-TETRA"
+  #     protocol: tetra
+  #     control_channels: [410_000_000]
+  #     tetra_colour_code: 53           # required for non-BSCH (low 30 bits)
+  #     tetra_channel: "sch/hd"         # sch/hd | sch/f | sch/hu | bsch | aach
+  #     tetra_channel_coding: "off"     # legacy 48-dibit raw PDU
+  #     # tetra_clock_mode: "naive"     # decimate; default Gardner
+  #
+  #   - name: "Legacy-EDACS"
+  #     protocol: edacs
+  #     control_channels: [856_012_500]
+  #     edacs_bch_mode: "off"           # legacy pre-stripped 40-bit CCW
+  #
+  #   - name: "Legacy-MPT1327"
+  #     protocol: mpt1327
+  #     control_channels: [165_787_500]
+  #     mpt1327_bch_mode: "off"         # legacy 38-bit pre-stripped codeword
+  #     # mpt1327_cwsc_tolerance: 0     # exact CWSC match (default: 2 bits)
+  #
+  #   - name: "Legacy-DStar"
+  #     protocol: dstar
+  #     control_channels: [144_000_000]
+  #     dstar_fec_mode: "on"            # default off — flip on for raw 660-bit
+  #                                     # on-wire D-STAR JARL DV-mode headers
 
 # Police-scanner subsystems:
 #   - scan_mode controls the engine's per-grant gate. "all" follows every
