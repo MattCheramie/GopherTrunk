@@ -141,10 +141,18 @@ gophertrunk sdr list
 timestamp (all pinned at link time via `-ldflags`).
 
 `sdr list` prints one row per attached dongle with its driver,
-index, serial, tuner, product string, and the supported gain values
-in tenths of a dB:
+index, serial, and product string. The TUNER and gains columns are
+blank by default — `sdr list` only reads USB descriptors, so it's
+fast and never collides with a running daemon. Pass `--probe` when
+you want those columns populated (it opens each device briefly to
+run the demod + tuner bring-up):
 
 ```
+> gophertrunk sdr list
+DRIVER    IDX  SERIAL            TUNER     PRODUCT   gains(0.1 dB)
+rtlsdr    0    00000001                    Generic   []
+
+> gophertrunk sdr list --probe
 DRIVER    IDX  SERIAL            TUNER     PRODUCT   gains(0.1 dB)
 rtlsdr    0    00000001          R820T2    NESDR Sm  [0 9 14 ... 496]
 ```
@@ -170,14 +178,19 @@ gophertrunk audio list
 
 ## 5. Build your first config
 
-The installer drops a starter at
-`C:\Program Files\GopherTrunk\config.example.yaml`. Copy it to a
-writable location and edit:
+The installer asked you for an "editable files folder" (default
+`Documents\GopherTrunk`), seeded a `config.yaml` there, and pinned
+the path in `HKCU\Environment\GOPHERTRUNK_CONFIG` so the daemon
+discovers it automatically. Open it from the Start Menu shortcut
+"Edit my config.yaml (Notepad)" or directly:
 
 ```powershell
-Copy-Item "C:\Program Files\GopherTrunk\config.example.yaml" "$HOME\gophertrunk.yaml"
-notepad "$HOME\gophertrunk.yaml"
+notepad "$env:USERPROFILE\Documents\GopherTrunk\config.yaml"
 ```
+
+A read-only reference copy of the full annotated template stays at
+`C:\Program Files\GopherTrunk\config.example.yaml` (Start Menu →
+"Configuration template").
 
 The full schema reference is in § 11. The bare minimum to get a
 working scanner is:
@@ -219,7 +232,24 @@ Full reference: [`import.md`]({{ '/import.html' | relative_url }}).
 ## 6. Run the daemon
 
 ```powershell
-gophertrunk run -config "$HOME\gophertrunk.yaml"
+gophertrunk run
+```
+
+The daemon walks `$GOPHERTRUNK_CONFIG` →
+`%APPDATA%\GopherTrunk\config.yaml` →
+`%USERPROFILE%\Documents\GopherTrunk\config.yaml` → `.\config.yaml`
+and loads the first one it finds, printing `config: loaded <path>`
+on startup so you can confirm the choice. If you keep multiple
+configs in the editable-files folder (e.g. `config.yaml` plus a
+`prod.yaml`), the daemon prints a numbered menu and asks which to
+load — Enter alone picks #1. A non-interactive launch (Windows
+service, Scheduled Task) auto-selects the first match with a
+stderr warning instead of hanging.
+
+Override discovery any time:
+
+```powershell
+gophertrunk run -config "C:\path\to\other.yaml"
 ```
 
 Logs stream to the terminal. Press `Ctrl+C` to stop cleanly — the
@@ -232,7 +262,7 @@ exit.
 
 | Flag | Description |
 | --- | --- |
-| `-config <path>` | Path to `config.yaml`. Optional — the daemon runs with built-in defaults if omitted. |
+| `-config <path>` | Path to `config.yaml`. Optional — when omitted the daemon walks `$GOPHERTRUNK_CONFIG` → `%APPDATA%\GopherTrunk` → `Documents\GopherTrunk` → cwd and loads the first match (built-in defaults if nothing found). |
 | `-log-level <lvl>` | Override `log.level` (`debug` / `info` / `warn` / `error`). |
 | `-log-format <fmt>` | Override `log.format` (`text` / `json`). |
 

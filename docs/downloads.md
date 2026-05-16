@@ -85,8 +85,10 @@ tar xzf gophertrunk.tar.gz
 cd gophertrunk-${VERSION}-${PKG}
 cp config.example.yaml config.yaml          # edit before launch
 ./gophertrunk version                       # confirms ldflags landed
-./gophertrunk run -config config.yaml
+./gophertrunk run                           # auto-discovers ./config.yaml
 ```
+
+The daemon walks `$GOPHERTRUNK_CONFIG` → `~/.config/gophertrunk/config.yaml` → `~/Documents/GopherTrunk/config.yaml` → `./config.yaml` and loads the first match — see [`install-linux.md`]({{ '/install-linux.html' | relative_url }}#5-configure-and-start-the-daemon) for the full discovery rules and the multi-config picker.
 
 For a systemd-managed install, copy [`gophertrunk.service`](https://github.com/MattCheramie/GopherTrunk/blob/main/docs/gophertrunk.service) to `/etc/systemd/system/` and follow the install header.
 
@@ -106,7 +108,7 @@ cd gophertrunk-${VERSION}-${PKG}
 xattr -dr com.apple.quarantine gophertrunk  # bypass Gatekeeper (unsigned build)
 cp config.example.yaml config.yaml
 ./gophertrunk version
-./gophertrunk run -config config.yaml
+./gophertrunk run                           # auto-discovers ./config.yaml
 ```
 
 RTL-SDR on macOS uses the bundled IOKit driver — no kext or driver swap required.

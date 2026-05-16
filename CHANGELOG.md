@@ -9,6 +9,38 @@ for tagged releases.
 
 ### Added
 
+- **Config auto-discovery.** `gophertrunk run` (no `-config` flag)
+  now walks `$GOPHERTRUNK_CONFIG` → `<UserConfigDir>/GopherTrunk/config.yaml`
+  → `<Home>/Documents/GopherTrunk/config.yaml` → `./config.yaml`
+  and loads the first match, printing `config: loaded <path>` on
+  startup. When the chosen directory holds 2+ `*.yaml`/`*.yml`
+  files, an interactive numbered picker prompts the operator on
+  stdin (non-TTY launches like Windows services / systemd / CI
+  auto-select the first match with a stderr warning instead of
+  hanging). `internal/config.Discover()` + `DiscoverWith(opts)` for
+  programmatic callers.
+- **Windows installer "editable-files folder" page.** The Inno
+  Setup wizard now asks where the operator's `config.yaml` should
+  live (default `Documents\GopherTrunk`), seeds a starter file
+  there (preserved across re-install + uninstall), pins
+  `HKCU\Environment\GOPHERTRUNK_CONFIG` so the daemon finds it
+  without `-config`, and adds a Start Menu shortcut "Edit my
+  config.yaml (Notepad)". See [`install-windows.md`](docs/install-windows.md).
+- **`gophertrunk sdr list --probe`** opens each enumerated device
+  long enough to run the demod + tuner bring-up, populating the
+  TUNER + gains columns. Without the flag those columns stay
+  blank (Enumerate only reads USB descriptors, so the command is
+  fast and never collides with a running daemon).
+- **Config-builder wizard quality-of-life.** `←` / `→` toggles
+  boolean fields (the footer hint already promised this). The
+  path field expands `%VAR%` (Windows), `$VAR` / `${VAR}` (POSIX),
+  and leading `~` at write time; the review screen shows
+  "resolves to: \<abs\>" when expansion changes the path. The
+  default write target now consults `$GOPHERTRUNK_CONFIG` and
+  falls back to `<UserConfigDir>/GopherTrunk/config.yaml` when
+  the current directory isn't writable (fixes "Access is denied"
+  when the binary is launched from `C:\Program Files\GopherTrunk\`).
+  `MkdirAll` errors on commit are surfaced instead of swallowed.
 - `gophertrunk import-pdf` subcommand parses trunking-system data
   from RadioReference.com PDF exports **and** from structured
   multi-section CSV bundles, merging both into the operator's
