@@ -25,6 +25,7 @@ const (
 	PanelDevices
 	PanelScanner
 	PanelSettings
+	PanelImport
 	PanelCount
 )
 
@@ -52,6 +53,8 @@ func (p PanelKind) String() string {
 		return "Scanner"
 	case PanelSettings:
 		return "Settings"
+	case PanelImport:
+		return "Import"
 	}
 	return "?"
 }

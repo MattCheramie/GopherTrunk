@@ -82,17 +82,22 @@ func TestPanelSwitch_DigitAndTab(t *testing.T) {
 			t.Errorf("after %q active=%v, want %v", c.key, m.active, c.want)
 		}
 	}
-	// Tab cycles forward — Scanner advances to Settings (the new
-	// last panel after PR #144).
+	// Tab cycles forward — Scanner advances to Settings, then to
+	// Import (the new last panel after the live-import work).
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(*Model)
 	if m.active != state.PanelSettings {
 		t.Errorf("Tab from Scanner: active=%v, want Settings", m.active)
 	}
-	// Tab again wraps Settings → Dashboard.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(*Model)
+	if m.active != state.PanelImport {
+		t.Errorf("Tab from Settings: active=%v, want Import", m.active)
+	}
+	// Tab again wraps Import → Dashboard.
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(*Model)
 	if m.active != state.PanelDashboard {
-		t.Errorf("Tab from Settings: active=%v, want Dashboard", m.active)
+		t.Errorf("Tab from Import: active=%v, want Dashboard", m.active)
 	}
 }

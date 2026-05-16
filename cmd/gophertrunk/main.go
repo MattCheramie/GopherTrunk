@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -63,13 +64,16 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `gophertrunk — headless P25/DMR/NXDN trunking engine
+	fmt.Fprintln(os.Stderr, `gophertrunk — P25/DMR/NXDN trunking engine
 
 USAGE:
-  gophertrunk [run] [-config path]    run the daemon (default)
+  gophertrunk [run] [-config path]    run the daemon (interactive launcher on a TTY)
+  gophertrunk -tui                    launch in-process TUI after daemon is ready
+  gophertrunk -web                    open the bundled web UI after daemon is ready
+  gophertrunk -headless               skip the launcher (default for non-TTY stdin)
   gophertrunk sdr list [--probe]      list discovered SDR devices (--probe opens each to fill TUNER + gains)
   gophertrunk audio list              list audio output devices
-  gophertrunk tui [-server URL]       open the read-only operator TUI
+  gophertrunk tui [-server URL]       open the operator TUI against a remote daemon
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk version                 print build version
@@ -81,7 +85,19 @@ func runDaemon(args []string) {
 	cfgPath := fs.String("config", "", "path to YAML config (optional)")
 	logLevel := fs.String("log-level", "", "override log level (debug|info|warn|error)")
 	logFormat := fs.String("log-format", "", "override log format (text|json)")
+	// Launcher flags. Mutually exclusive; default is "auto" which
+	// prints an interactive menu on a TTY and stays headless
+	// otherwise.
+	wantTUI := fs.Bool("tui", false, "launch the in-process operator TUI after the daemon comes up")
+	wantWeb := fs.Bool("web", false, "open the bundled web UI in the system browser after the daemon comes up")
+	wantHL := fs.Bool("headless", false, "skip the launcher prompt; daemon runs silent (default for non-TTY stdin)")
 	_ = fs.Parse(args)
+
+	mode, err := pickLaunchMode(*wantTUI, *wantWeb, *wantHL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "launcher: %v\n", err)
+		os.Exit(2)
+	}
 
 	// No -config passed: walk the standard discovery precedence
 	// ($GOPHERTRUNK_CONFIG → UserConfigDir → Documents → cwd) so
@@ -102,6 +118,16 @@ func runDaemon(args []string) {
 		}
 	}
 
+	// First-run fast-fail: no config discoverable, no -config, and
+	// stdin isn't a TTY → we can't prompt and there's no useful
+	// daemon to run. Exit with EX_CONFIG so service managers can
+	// distinguish "missing config" from generic failures.
+	if *cfgPath == "" && !stdinIsTerminal() && os.Getenv("GOPHERTRUNK_CONFIG") == "" {
+		fmt.Fprintln(os.Stderr,
+			"gophertrunk: no config found and stdin is not a TTY; pass -config or set GOPHERTRUNK_CONFIG (see docs/quickstart.md)")
+		os.Exit(78)
+	}
+
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
@@ -113,9 +139,30 @@ func runDaemon(args []string) {
 	if *logFormat != "" {
 		cfg.Log.Format = *logFormat
 	}
-	logger := gtlog.New(cfg.Log.Level, cfg.Log.Format)
+	logger, logSwap := gtlog.NewWithSwap(cfg.Log.Level, cfg.Log.Format)
 
 	logger.Info("gophertrunk starting", "version", version.String())
+
+	// Launcher pre-checks before we burn time spinning up the
+	// daemon: an operator who passed -tui or -web with no HTTP API
+	// in config should hear about it now, not after engine init.
+	if (mode == launchTUI || mode == launchWeb) && cfg.API.HTTPAddr == "" {
+		fmt.Fprintf(os.Stderr,
+			"launcher: -%s requires api.http_addr in config (current value is empty)\n",
+			launchModeFlag(mode))
+		os.Exit(2)
+	}
+	if mode == launchTUI && (!stdinIsTerminal() || !stdoutIsTerminal()) {
+		fmt.Fprintln(os.Stderr,
+			"launcher: -tui requires an interactive terminal (stdin + stdout TTY); use -web or -headless")
+		os.Exit(2)
+	}
+
+	preflightWarnings, err := preflight(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(2)
+	}
 
 	// Patent-posture banner — AMBE+2 decoding is patent-encumbered
 	// in some jurisdictions (DVSI IPR portfolio). The pure-Go
@@ -130,16 +177,50 @@ func runDaemon(args []string) {
 		logger.Info("AMBE+2 voice decoding is patent-encumbered in some jurisdictions; see docs/vocoders.md §\"Patent posture\"")
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(),
+		syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	d, err := NewDaemon(cfg, version.String(), logger)
+	d, err := NewDaemonWithPath(cfg, *cfgPath, version.String(), logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon init: %v\n", err)
 		os.Exit(1)
 	}
-	if err := d.Run(ctx); err != nil && err != context.Canceled {
+	for _, w := range preflightWarnings {
+		d.addWarning(w)
+	}
+
+	// Spawn the daemon's Run in a goroutine so the launcher can
+	// gate on Ready and then attach the TUI / browser on the same
+	// goroutine that owns stdin/stdout. Daemon.Run blocks until ctx
+	// cancels, which is exactly what we want for the main goroutine
+	// to wait on once the launcher has decided what to do.
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- d.Run(ctx)
+	}()
+
+	// Wait for either Ready (HTTP listener bound, components
+	// settled) or the daemon's Run to return early (essential
+	// component failed before Ready fired).
+	select {
+	case <-d.Ready():
+	case err := <-runErr:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "daemon: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Daemon is up. Hand control to the launcher.
+	runLauncher(ctx, d, logger, logSwap, mode)
+
+	// Wait for the daemon goroutine to finish (SIGINT/SIGTERM →
+	// ctx cancels → Run unwinds → returns).
+	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("daemon exited", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -257,6 +338,16 @@ func pickConfigInteractive(paths []string) (string, error) {
 // input, service runners, and detached background processes.
 func stdinIsTerminal() bool {
 	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+// stdoutIsTerminal mirrors stdinIsTerminal for stdout. Both must be
+// TTYs before -tui can drive bubbletea's alt-screen renderer.
+func stdoutIsTerminal() bool {
+	stat, err := os.Stdout.Stat()
 	if err != nil {
 		return false
 	}

@@ -2,11 +2,14 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MattCheramie/GopherTrunk/internal/tui/client"
+	"github.com/MattCheramie/GopherTrunk/internal/tui/panels"
 )
 
 // Polling intervals chosen to balance responsiveness against load
@@ -266,5 +269,43 @@ func cmdFetchTalkgroupDetail(cli *client.Client, id uint32) tea.Cmd {
 	return func() tea.Msg {
 		tg, err := cli.Talkgroup(context.Background(), id)
 		return talkgroupDetailResultMsg{tg: tg, err: err}
+	}
+}
+
+// cmdImportUpload reads every queued path from disk and posts a
+// multipart upload to the daemon.
+func cmdImportUpload(cli *client.Client, paths []string) tea.Cmd {
+	return func() tea.Msg {
+		files := make([]client.ImportUploadFile, 0, len(paths))
+		for _, p := range paths {
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return panels.ImportPreviewArrivedMsg{Err: err}
+			}
+			files = append(files, client.ImportUploadFile{
+				Filename: filepath.Base(p),
+				Data:     data,
+			})
+		}
+		preview, err := cli.ImportUpload(context.Background(), files)
+		return panels.ImportPreviewArrivedMsg{Preview: preview, Err: err}
+	}
+}
+
+// cmdImportCommit finalises a staged preview by ID.
+func cmdImportCommit(cli *client.Client, id string, force bool) tea.Cmd {
+	return func() tea.Msg {
+		res, err := cli.ImportCommit(context.Background(), id, force)
+		return panels.ImportResultArrivedMsg{Result: res, Err: err}
+	}
+}
+
+// cmdImportDiscard drops a staged preview without committing.
+func cmdImportDiscard(cli *client.Client, id string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.ImportDiscard(context.Background(), id)
+		// Discard result rides the writeResultMsg path so the
+		// root model surfaces a toast — same UX as other mutations.
+		return writeResultMsg{Label: "import discard", Err: err}
 	}
 }

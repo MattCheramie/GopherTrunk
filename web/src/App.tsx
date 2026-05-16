@@ -11,6 +11,7 @@ import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
 import { History } from "./panels/History";
+import { Import } from "./panels/Import";
 import { Metrics } from "./panels/Metrics";
 import { Scanner } from "./panels/Scanner";
 import { Settings } from "./panels/Settings";
@@ -36,6 +37,7 @@ const EXTRA_TABS: Tab[] = [
   { to: "/tones", label: "Tones", icon: "♪" },
   { to: "/metrics", label: "Metrics", icon: "▰" },
   { to: "/devices", label: "Devices", icon: "⌗" },
+  { to: "/import", label: "Import", icon: "↗" },
 ];
 
 export function App() {
@@ -131,6 +133,7 @@ export function App() {
           <Route path="/metrics" element={<Metrics />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/import" element={<Import />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>

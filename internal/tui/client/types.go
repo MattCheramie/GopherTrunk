@@ -273,6 +273,15 @@ type RuntimeDTO struct {
 
 	VocoderMap     map[string]string `json:"vocoder_map"`
 	MetricsEnabled bool              `json:"metrics_enabled"`
+
+	// ConfigPath is the path of the config.yaml backing the daemon,
+	// or empty when the daemon was started without -config. The TUI
+	// uses it to render the Settings panel as read-only when empty.
+	ConfigPath string `json:"config_path,omitempty"`
+	// StartupWarnings are the non-fatal observations the daemon
+	// collected during NewDaemon. The Dashboard pins them as a
+	// one-shot banner.
+	StartupWarnings []string `json:"startup_warnings,omitempty"`
 }
 
 // ToneProfileDTO mirrors api.ToneProfileDTO.

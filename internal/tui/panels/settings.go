@@ -139,6 +139,7 @@ func (p *SettingsPanel) refresh(sys []client.SystemDTO) {
 
 func (p *SettingsPanel) View(width, height int, focused bool, s *state.SharedState) string {
 	header := p.renderTabBar(width)
+	banner := p.renderEditBanner(s)
 	var body string
 	if p.tab == tabFEC {
 		p.tbl.SetColumns(settingsColumns(width))
@@ -150,7 +151,23 @@ func (p *SettingsPanel) View(width, height int, focused bool, s *state.SharedSta
 	} else {
 		body = p.renderTab(width, s)
 	}
-	return panelFrame("Settings", width, height, focused, header+"\n"+body)
+	return panelFrame("Settings", width, height, focused, header+"\n"+banner+body)
+}
+
+// renderEditBanner surfaces the daemon's live-edit capability: when
+// the daemon ran with -config, settings can be edited via
+// PATCH /api/v1/settings (curl / web SPA); without a config file the
+// endpoint returns 503 and the panel stays purely read-only.
+func (p *SettingsPanel) renderEditBanner(s *state.SharedState) string {
+	if s == nil {
+		return ""
+	}
+	if s.Runtime.ConfigPath == "" {
+		return dashDim.Render(
+			"  daemon running without -config — Settings are read-only (PATCH /api/v1/settings returns 503)") + "\n\n"
+	}
+	return dashDim.Render(
+		"  live edits supported — PATCH /api/v1/settings (config @ "+s.Runtime.ConfigPath+")") + "\n\n"
 }
 
 func (p *SettingsPanel) renderTabBar(width int) string {

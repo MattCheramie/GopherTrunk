@@ -1,7 +1,14 @@
 // Mutation endpoints. Mirrors internal/tui/client/write.go.
 
-import { type ClientConfig, request } from "./client";
-import type { AudioStatusDTO, TalkgroupDTO } from "./types";
+import { type ClientConfig, joinURL, HTTPError, request } from "./client";
+import type {
+  AudioStatusDTO,
+  ImportPreview,
+  ImportResult,
+  SettingsPatch,
+  SettingsResponse,
+  TalkgroupDTO,
+} from "./types";
 
 export interface TalkgroupPatch {
   priority?: number;
@@ -87,4 +94,61 @@ export const writes = {
 
   clearManualTune: (c: ClientConfig, index: number) =>
     request<void>(c, "DELETE", `/api/v1/scanner/manual_tune/${index}`),
+
+  updateSettings: (c: ClientConfig, patch: SettingsPatch) =>
+    request<SettingsResponse>(c, "PATCH", "/api/v1/settings", patch),
+
+  importUpload: (c: ClientConfig, files: File[]) =>
+    importMultipart(c, files),
+
+  importCommit: (c: ClientConfig, id: string, force = false) =>
+    request<ImportResult>(
+      c,
+      "POST",
+      `/api/v1/import/${encodeURIComponent(id)}/commit${force ? "?force=true" : ""}`,
+    ),
+
+  importDiscard: (c: ClientConfig, id: string) =>
+    request<void>(c, "DELETE", `/api/v1/import/${encodeURIComponent(id)}`),
 };
+
+// importMultipart wraps the multipart upload separately because
+// request() in client.ts only does JSON bodies. The shape matches
+// the request helper otherwise (token, bearer, abort timeout).
+async function importMultipart(
+  cfg: ClientConfig,
+  files: File[],
+): Promise<ImportPreview> {
+  const url = joinURL(cfg.baseURL, "/api/v1/import");
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (cfg.token) headers["Authorization"] = `Bearer ${cfg.token}`;
+
+  const body = new FormData();
+  for (const f of files) body.append("files", f, f.name);
+
+  const controller = new AbortController();
+  // 60s — uploads can be large enough that the default 10s would
+  // race a slow Pi over wifi.
+  const timer = window.setTimeout(() => controller.abort(), 60_000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new HTTPError(
+      res.status,
+      text,
+      `POST /api/v1/import → ${res.status}: ${text || res.statusText}`,
+    );
+  }
+  return (await res.json()) as ImportPreview;
+}

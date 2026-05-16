@@ -88,6 +88,7 @@ func New(cli *client.Client, opts Options) *Model {
 			panels.NewDevices(),
 			panels.NewScanner(),
 			panels.NewSettings(),
+			panels.NewImport(),
 		},
 	}
 	return m
@@ -402,6 +403,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmdPollActive(m.cli),
 			cmdPollTalkgroups(m.cli),
 		)
+
+	case panels.ImportUploadMsg:
+		cmds = append(cmds, cmdImportUpload(m.cli, msg.Paths))
+
+	case panels.ImportCommitMsg:
+		cmds = append(cmds, cmdImportCommit(m.cli, msg.ID, msg.Force))
+
+	case panels.ImportDiscardMsg:
+		cmds = append(cmds, cmdImportDiscard(m.cli, msg.ID))
 	}
 
 	// Forward to active panel.

@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 )
 
@@ -255,6 +257,171 @@ func (c *Client) do(ctx context.Context, method, path string, in any, out any) e
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// SettingsPatch mirrors the daemon's PATCH /api/v1/settings body. All
+// fields are pointers so the TUI can update one knob at a time.
+type SettingsPatch struct {
+	LogLevel  *string `json:"log_level,omitempty"`
+	LogFormat *string `json:"log_format,omitempty"`
+
+	APIHTTPAddr *string `json:"api_http_addr,omitempty"`
+	APIGRPCAddr *string `json:"api_grpc_addr,omitempty"`
+	APIAuthMode *string `json:"api_auth_mode,omitempty"`
+
+	AudioEnabled  *bool    `json:"audio_enabled,omitempty"`
+	AudioDevice   *string  `json:"audio_device,omitempty"`
+	AudioVolume   *float32 `json:"audio_volume,omitempty"`
+	AudioMuted    *bool    `json:"audio_muted,omitempty"`
+	AudioBufferMs *int     `json:"audio_buffer_ms,omitempty"`
+
+	RecordingsDir        *string `json:"recordings_dir,omitempty"`
+	RecordingsSampleRate *uint32 `json:"recordings_sample_rate,omitempty"`
+	RecordingsWriteRaw   *bool   `json:"recordings_write_raw,omitempty"`
+
+	RetentionCallLogDays *int    `json:"retention_call_log_days,omitempty"`
+	RetentionFilesDays   *int    `json:"retention_files_days,omitempty"`
+	RetentionInterval    *string `json:"retention_interval,omitempty"`
+
+	SDRSampleRate *uint32 `json:"sdr_sample_rate,omitempty"`
+
+	ScannerScanMode          *string `json:"scanner_scan_mode,omitempty"`
+	ScannerManualTuneEnabled *bool   `json:"scanner_manual_tune_enabled,omitempty"`
+	ScannerCCHuntEnabled     *bool   `json:"scanner_cc_hunt_enabled,omitempty"`
+	ScannerCCHuntDwellMs     *int    `json:"scanner_cc_hunt_dwell_ms,omitempty"`
+	ScannerCCHuntBackoffMs   *int    `json:"scanner_cc_hunt_backoff_ms,omitempty"`
+	ScannerCCHuntMaxBackoff  *int    `json:"scanner_cc_hunt_max_backoff_ms,omitempty"`
+
+	StoragePath        *string `json:"storage_path,omitempty"`
+	StorageCCCacheFile *string `json:"storage_cc_cache_file,omitempty"`
+
+	MetricsEnabled *bool `json:"metrics_enabled,omitempty"`
+}
+
+// SettingsResponse mirrors the daemon's response.
+type SettingsResponse struct {
+	Applied         []string   `json:"applied"`
+	RestartRequired []string   `json:"restart_required"`
+	ConfigPath      string     `json:"config_path,omitempty"`
+	Runtime         RuntimeDTO `json:"runtime"`
+}
+
+// UpdateSettings posts a SettingsPatch and returns the daemon's
+// applied / restart-required classification.
+func (c *Client) UpdateSettings(ctx context.Context, p SettingsPatch) (SettingsResponse, error) {
+	var resp SettingsResponse
+	if err := c.do(ctx, http.MethodPatch, "/api/v1/settings", p, &resp); err != nil {
+		return SettingsResponse{}, err
+	}
+	return resp, nil
+}
+
+// ImportPreview mirrors the daemon's POST /api/v1/import response.
+type ImportPreview struct {
+	ID      string             `json:"id"`
+	Systems []ParsedSystemDTO  `json:"systems"`
+}
+
+// ParsedSystemDTO mirrors the daemon's preview row.
+type ParsedSystemDTO struct {
+	Name        string                 `json:"name"`
+	Protocol    string                 `json:"protocol"`
+	SiteCount   int                    `json:"site_count"`
+	TalkgroupCt int                    `json:"talkgroup_count"`
+	SourcePath  string                 `json:"source_path,omitempty"`
+	Location    string                 `json:"location,omitempty"`
+	County      string                 `json:"county,omitempty"`
+	SysID       string                 `json:"sysid,omitempty"`
+	WACN        string                 `json:"wacn,omitempty"`
+	SystemType  string                 `json:"system_type,omitempty"`
+}
+
+// ImportResult mirrors the daemon's commit response.
+type ImportResult struct {
+	SystemsAdded    []string `json:"systems_added"`
+	SystemsReplaced []string `json:"systems_replaced"`
+	CSVPaths        []string `json:"csv_paths,omitempty"`
+	ConfigPath      string   `json:"config_path,omitempty"`
+}
+
+// ImportUploadFile is one local file the operator wants to upload.
+type ImportUploadFile struct {
+	Filename string // basename used in the multipart Content-Disposition
+	Data     []byte // raw file bytes
+}
+
+// ImportUpload performs the multipart POST and returns the staged
+// preview. Reads each file path from disk; callers that already have
+// the bytes can build their own multipart body via the lower-level
+// http client.
+func (c *Client) ImportUpload(ctx context.Context, files []ImportUploadFile) (ImportPreview, error) {
+	if len(files) == 0 {
+		return ImportPreview{}, fmt.Errorf("client: at least one file is required")
+	}
+	body, contentType, err := buildImportMultipart(files)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.base+"/api/v1/import", body)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+	c.authorize(req)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return ImportPreview{}, c.httpErr(http.MethodPost, req.URL.String(), resp)
+	}
+	var preview ImportPreview
+	if err := json.NewDecoder(resp.Body).Decode(&preview); err != nil {
+		return ImportPreview{}, err
+	}
+	return preview, nil
+}
+
+// ImportCommit finalises a previously-staged preview.
+func (c *Client) ImportCommit(ctx context.Context, id string, force bool) (ImportResult, error) {
+	path := "/api/v1/import/" + id + "/commit"
+	if force {
+		path += "?force=true"
+	}
+	var out ImportResult
+	if err := c.do(ctx, http.MethodPost, path, nil, &out); err != nil {
+		return ImportResult{}, err
+	}
+	return out, nil
+}
+
+// ImportDiscard drops a staged preview without committing it.
+func (c *Client) ImportDiscard(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodDelete, "/api/v1/import/"+id, nil, nil)
+}
+
+// buildImportMultipart constructs a multipart/form-data body with
+// one `files` part per supplied source.
+func buildImportMultipart(files []ImportUploadFile) (io.Reader, string, error) {
+	buf := new(bytes.Buffer)
+	w := multipart.NewWriter(buf)
+	for _, f := range files {
+		part, err := w.CreateFormFile("files", f.Filename)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := part.Write(f.Data); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf, w.FormDataContentType(), nil
 }
 
 // asHTTPErr is a tiny wrapper around errors.As that avoids dragging

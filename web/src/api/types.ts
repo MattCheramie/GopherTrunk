@@ -150,9 +150,83 @@ export interface RuntimeDTO {
     cors_allowed_origins?: string[];
   };
   audio?: AudioStatusDTO;
+  // ConfigPath is non-empty when the daemon was started with a
+  // -config file. The SPA renders the Settings panel as editable
+  // only when this is set; an empty value means PATCH /api/v1/settings
+  // returns 503 and edits would be lost.
+  config_path?: string;
+  // StartupWarnings are the non-fatal observations the daemon
+  // collected during NewDaemon. The Dashboard pins them until the
+  // operator dismisses them.
+  startup_warnings?: string[];
   // RuntimeDTO is large and changes shape as the daemon grows. Read
   // unknown fields lazily.
   [key: string]: unknown;
+}
+
+// SettingsPatch mirrors the daemon's PATCH /api/v1/settings body.
+// Every field is optional; the daemon leaves unspecified fields
+// alone. Use snake_case keys to match the wire format directly.
+export interface SettingsPatch {
+  log_level?: string;
+  log_format?: string;
+  api_http_addr?: string;
+  api_grpc_addr?: string;
+  api_auth_mode?: string;
+  audio_enabled?: boolean;
+  audio_device?: string;
+  audio_volume?: number;
+  audio_muted?: boolean;
+  audio_buffer_ms?: number;
+  recordings_dir?: string;
+  recordings_sample_rate?: number;
+  recordings_write_raw?: boolean;
+  retention_call_log_days?: number;
+  retention_files_days?: number;
+  retention_interval?: string;
+  sdr_sample_rate?: number;
+  scanner_scan_mode?: string;
+  scanner_manual_tune_enabled?: boolean;
+  scanner_cc_hunt_enabled?: boolean;
+  scanner_cc_hunt_dwell_ms?: number;
+  scanner_cc_hunt_backoff_ms?: number;
+  scanner_cc_hunt_max_backoff_ms?: number;
+  storage_path?: string;
+  storage_cc_cache_file?: string;
+  metrics_enabled?: boolean;
+}
+
+export interface SettingsResponse {
+  applied: string[];
+  restart_required: string[];
+  config_path?: string;
+  runtime: RuntimeDTO;
+}
+
+// ParsedSystemDTO is one row in an import preview.
+export interface ParsedSystemDTO {
+  name: string;
+  protocol: string;
+  site_count: number;
+  talkgroup_count: number;
+  source_path?: string;
+  location?: string;
+  county?: string;
+  sysid?: string;
+  wacn?: string;
+  system_type?: string;
+}
+
+export interface ImportPreview {
+  id: string;
+  systems: ParsedSystemDTO[];
+}
+
+export interface ImportResult {
+  systems_added: string[];
+  systems_replaced?: string[];
+  csv_paths?: string[];
+  config_path?: string;
 }
 
 export interface EventDTO {
