@@ -296,3 +296,99 @@ func TestCompareSamplesSilencePath(t *testing.T) {
 		t.Errorf("RMSRatioDb with silent in-tree = %v, want 0", res.RMSRatioDb)
 	}
 }
+
+// TestCompareSamplesInvertedPolarity verifies the |xcorr| comment at
+// calibrate.go:177-179: a 180°-phase-inverted reference produces
+// PeakXcorr ≈ 1 (the polarity sign is squashed by math.Abs in
+// bestXcorr) and RMSRatioDb ≈ 0. The polarity flag itself surfaces
+// elsewhere (the test harness comparing decoded audio to a reference
+// catches sign inversions via the audible result, not this metric).
+func TestCompareSamplesInvertedPolarity(t *testing.T) {
+	const (
+		sampleRateHz = 8000
+		n            = 8000 // 1 s
+		amp          = 6000.0
+		toneHz       = 440.0
+	)
+	inTree := make([]int16, n)
+	inverted := make([]int16, n)
+	for i := 0; i < n; i++ {
+		v := amp * math.Sin(2*math.Pi*toneHz*float64(i)/sampleRateHz)
+		inTree[i] = int16(v)
+		inverted[i] = int16(-v)
+	}
+
+	res := CompareSamples(inTree, inverted)
+	if res.PeakXcorr < 0.99 {
+		t.Errorf("PeakXcorr for inverted polarity = %.4f, want >= 0.99 (|xcorr| collapses sign)", res.PeakXcorr)
+	}
+	if math.Abs(res.RMSRatioDb) > 0.5 {
+		t.Errorf("RMSRatioDb for inverted polarity = %.3f dB, want |Δ| <= 0.5", res.RMSRatioDb)
+	}
+}
+
+// TestCompareSamplesShortInputReturnsZeroXcorr covers the early-
+// return guard at calibrate.go:185 — when both streams' usable length
+// is at most 2*MaxLagSamples, the search window can't fit and the
+// function must return PeakXcorr=0, LagSamples=0 instead of looping
+// over an empty range.
+func TestCompareSamplesShortInputReturnsZeroXcorr(t *testing.T) {
+	// MaxLagSamples is 200; both streams length 400 yields n ≤
+	// 2*maxLag = 400 → early-return branch.
+	const n = 2 * MaxLagSamples
+	x := make([]int16, n)
+	y := make([]int16, n)
+	for i := 0; i < n; i++ {
+		v := 4000 * math.Sin(2*math.Pi*220*float64(i)/8000)
+		x[i] = int16(v)
+		y[i] = int16(v) // identical → would yield xcorr=1 if measured
+	}
+
+	res := CompareSamples(x, y)
+	if res.PeakXcorr != 0 {
+		t.Errorf("PeakXcorr on short input = %.4f, want 0 (guard at calibrate.go:185)", res.PeakXcorr)
+	}
+	if res.LagSamples != 0 {
+		t.Errorf("LagSamples on short input = %d, want 0", res.LagSamples)
+	}
+}
+
+// TestCompareSamplesLagAtBoundary verifies the search loop's outer
+// bounds: a reference shifted by exactly MaxLagSamples samples must
+// resolve to LagSamples=MaxLagSamples (an off-by-one in the bound
+// check at calibrate.go:201 would land on MaxLagSamples-1 with a
+// lower peak). Uses a deterministic LCG-generated noise sequence
+// so the autocorrelation drops to near-zero at non-zero lags — a
+// periodic test signal can land at a multiple of MaxLagSamples and
+// produce a tie at lag=0.
+func TestCompareSamplesLagAtBoundary(t *testing.T) {
+	const (
+		n   = 8000
+		lag = MaxLagSamples
+	)
+	x := make([]int16, n)
+	// Linear-congruential generator → uniform pseudo-random int16s.
+	// Same trivial LCG used in Go's runtime for fast hashing; far
+	// from cryptographic but its autocorrelation drops below 0.05
+	// for any non-zero offset on this length.
+	seed := uint32(0xC0FFEE)
+	for i := 0; i < n; i++ {
+		seed = seed*1103515245 + 12345
+		x[i] = int16(seed >> 16)
+	}
+	// y is x shifted right by `lag` samples: y[i+lag] = x[i]. The
+	// search reports the lag j where y[i+j] best matches x[i] — so
+	// it should resolve to +lag.
+	y := make([]int16, n)
+	for i := 0; i+lag < n; i++ {
+		y[i+lag] = x[i]
+	}
+
+	res := CompareSamples(x, y)
+	if res.LagSamples != lag {
+		t.Errorf("LagSamples = %d, want %d (search bound)", res.LagSamples, lag)
+	}
+	if res.PeakXcorr < 0.95 {
+		t.Errorf("PeakXcorr at boundary lag = %.4f, want >= 0.95", res.PeakXcorr)
+	}
+}
