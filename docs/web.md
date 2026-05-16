@@ -8,10 +8,18 @@ nav_group: Operate
 # Web console
 
 GopherTrunk ships a full browser-based operator console alongside the
-TUI. It's a **standalone static SPA** — pure HTML / CSS / JS, no
-Node.js, no embedded web server in the daemon. Open `index.html` in
-any modern browser, point it at a running daemon's URL on the
-connect screen, and operate.
+TUI. Two delivery paths:
+
+- **Embedded.** When the daemon binary was linked against the built
+  SPA, the daemon hosts the console at the HTTP API's `/` (no
+  separate static server). Run `gophertrunk -web` (or pick `[2] Web`
+  from the launcher menu) and your default browser opens against the
+  daemon URL automatically.
+- **Standalone static bundle.** A pure HTML / CSS / JS folder that
+  works without the embedded build. Open `index.html` in any modern
+  browser, point it at a running daemon's URL on the connect screen,
+  and operate. Useful when you don't want to (re)build the daemon
+  binary alongside the SPA.
 
 Every Bubbletea TUI panel has a browser counterpart:
 
@@ -27,11 +35,36 @@ Every Bubbletea TUI panel has a browser counterpart:
 | Tones       | `tone.alert` feed with per-device reset                         |
 | Metrics     | Curated `gophertrunk_*` Prometheus tiles + Chart.js trend       |
 | Scanner     | CC hunter, conventional channels, manual VFO tune, scan_mode    |
-| Settings    | Theme, write-mode toggle, "forget this device"                  |
+| Settings    | Theme, write-mode toggle, **live config editing** (PATCH /api/v1/settings) |
+| Import      | Upload PDFs / CSV bundles, preview, commit into config.yaml     |
 
 The headline scenario: run the daemon on a Raspberry Pi (or any host
 with the RTL-SDR attached), then operate from a laptop, tablet, or
 phone anywhere on the LAN.
+
+## Quick path: `gophertrunk -web`
+
+When the daemon binary was built with the SPA embedded (the default
+in release builds), the launcher's `-web` flag wires everything up
+for you:
+
+```sh
+gophertrunk -config config.yaml -web
+```
+
+The daemon binds the HTTP API, registers the SPA at `/`, and opens
+your default browser at the daemon URL. Same flow when you run
+`gophertrunk` with no flags and pick `[2] Web` from the interactive
+launcher menu (see [`launcher.md`]({{ '/launcher.html' | relative_url }})).
+
+On a headless host (SSH session, no `$DISPLAY`) the launcher prints
+the URL + a hint instead of trying to launch a browser, so a remote
+operator can open the URL from their laptop.
+
+If you're building the daemon yourself, run `make web-build` (or
+`cd web && npm run build`) before `go build` so `web/dist/` is
+populated for the embed. Without the embed the launcher falls back
+to the standalone-bundle workflow below.
 
 ## 1. Get the bundle
 

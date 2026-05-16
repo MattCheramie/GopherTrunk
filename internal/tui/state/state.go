@@ -130,6 +130,7 @@ type WriteRequest struct {
 	ScannerConv       *ScannerConvReq
 	ScannerManualTune *ScannerManualTuneReq
 	Audio             *AudioReq
+	Settings          *SettingsReq
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -152,6 +153,7 @@ const (
 	WriteKindScannerConvUnlockout
 	WriteKindAudio
 	WriteKindScannerManualTune
+	WriteKindSettings
 )
 
 // ScannerManualTuneReq adds a temp VFO channel and forces dwell.
@@ -159,6 +161,15 @@ type ScannerManualTuneReq struct {
 	FrequencyHz uint32
 	Label       string
 	Mode        string
+}
+
+// SettingsReq carries a single settings-panel edit. Field is the
+// dotted YAML path (e.g. "audio.volume", "log.level") and Value is
+// the operator's typed input; the dispatcher converts to the right
+// SettingsPatch shape per field.
+type SettingsReq struct {
+	Field string
+	Value string
 }
 
 // AudioReq sets one or more knobs on the audio cockpit. Nil fields

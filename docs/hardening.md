@@ -13,26 +13,51 @@ assets, and the RTL-SDR USB pass-through recipe.
 
 ## API authentication
 
+> **Default flipped for closed-LAN deployments.** Empty
+> `api.auth.mode` now resolves to `disabled` (was `auto`) and an
+> empty `api.cors.allowed_origins` permits any origin. The daemon
+> logs a loud warning at startup whenever those defaults take effect
+> on a non-loopback bind — see the "Hostile networks" section below
+> for the recipe to opt back in. Operators on closed networks who
+> just want the TUI / SPA to work no longer need any explicit auth
+> config.
+
 Every HTTP mutation endpoint (end-call, talkgroup priority/lockout/
 scan, retention sweep, tone-detector reset, scanner cockpit, audio
-cockpit, manual tune) is gated by `api.auth` in `config.yaml`. The
-default policy (`mode: auto`) is loopback-permissive but requires a
-bearer token on every public-interface bind.
+cockpit, manual tune, **settings PATCH**, **import upload/commit**) is
+gated by `api.auth` in `config.yaml`.
 
 ### Policy modes
 
-- **`auto` (default).** Require a bearer token on non-loopback binds;
-  bypass the check when bound to `127.0.0.1` / `::1`. Reasonable for
+- **`disabled` (default — empty `mode` resolves here).** Wide-open
+  mutations, no auth. Equivalent to the legacy `allow_mutations: true`
+  behaviour; the daemon logs a warning at startup when bound to a
+  non-loopback interface. Appropriate for closed-LAN single-host
+  setups where the operator already has shell on the box.
+- **`auto`.** Require a bearer token on non-loopback binds; bypass
+  the check when bound to `127.0.0.1` / `::1`. Reasonable for
   single-host operator boxes — kernel-enforced reachability is a
   peer-cred proxy. The daemon refuses to start in `auto` mode on a
   public bind without a configured token.
 - **`required`.** Every mutation request must carry a valid Bearer
   token, even from loopback. Use when the daemon shares a host with
   untrusted users.
-- **`disabled`.** Wide-open mutations, no auth. Equivalent to the
-  legacy `allow_mutations: true` behaviour; the daemon logs a warning
-  at startup. Only safe behind an external proxy that does its own
-  auth, or on a strictly trusted segment.
+
+### Hostile networks — opt back into the safer posture
+
+```yaml
+api:
+  http_addr: "0.0.0.0:8080"
+  auth:
+    mode: "required"             # or "auto" for the loopback bypass
+    token_file: "/etc/gophertrunk/api-token"
+  cors:
+    allowed_origins:
+      - "http://laptop.local:5173"   # only your SPA host
+  # TLS optional — see docs/tls.md
+  tls_cert: "/etc/ssl/gophertrunk.crt"
+  tls_key:  "/etc/ssl/gophertrunk.key"
+```
 
 ### Generating a token
 

@@ -40,6 +40,37 @@ for tagged releases.
   vanishing into the log. HTTP and gRPC bind failures now abort the
   daemon cleanly instead of being demoted to warnings — the launcher
   never lands against a half-dead daemon.
+- **Embedded web SPA.** The daemon binary now embeds the built SPA
+  (when `make web-build` was run before `go build`) and serves it
+  at `/` on the HTTP API. `gophertrunk -web` opens the daemon URL
+  directly; client-side routes (`/scanner`, `/settings`, `/import`,
+  …) fall back to `index.html` so React-Router takes over. Fresh
+  checkouts without a `web/dist/` build keep the existing sibling-
+  directory discovery path. See [`docs/web.md`](docs/web.md).
+- **Inline-editable Settings.** Every editable runtime knob the
+  daemon hot-reloads (audio volume / mute, log level, scanner scan
+  mode, …) plus the restart-required ones are now editable from
+  both the TUI Settings panel (cursor + Enter to edit, Enter to
+  save, Esc to cancel) and the web SPA's `/settings` route. Rows
+  show a `[restart]` badge when the daemon can't hot-apply.
+- **SIGHUP config reload.** Sending `SIGHUP` to a running daemon
+  reloads `config.yaml`, diff-applies hot-reloadable fields, and
+  logs a list of restart-required changes. The signal handler is a
+  no-op on Windows.
+- **Single-instance lock.** The daemon now flocks
+  `<configdir>/.gophertrunk.lock` at startup so two instances aimed
+  at the same `config.yaml` can't both try to claim the same
+  RTL-SDR devices. The contender exits with a clear "another
+  gophertrunk is running (pid=…, started=…)" message instead of an
+  opaque libusb error.
+- **Friendlier YAML errors.** `config: <path>: parse error …` now
+  carries the resolved config path and a hint to run the wizard or
+  recheck indentation.
+- **Patent-posture notice plumbed through `startup_warnings`.**
+  The AMBE+2 advisory no longer scrolls past on the daemon log
+  immediately before the launcher prompt; it lands in the warnings
+  channel and surfaces on the launcher menu / TUI dashboard / runtime
+  DTO. `GOPHERTRUNK_QUIET_BANNER=1` still suppresses it for CI.
 
 ### Changed
 

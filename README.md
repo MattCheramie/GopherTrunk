@@ -38,10 +38,13 @@ curl -L -o gophertrunk.tar.gz \
 tar xzf gophertrunk.tar.gz && cd gophertrunk-${VERSION}-linux-amd64
 cp config.example.yaml config.yaml
 ./gophertrunk version
-./gophertrunk run -config config.yaml
+# Plain `./gophertrunk` (no subcommand, on a TTY) drops into the
+# interactive launcher: pick [1] TUI, [2] Web, or [3] Headless.
+# Skip the prompt with -tui / -web / -headless.
+./gophertrunk -config config.yaml
 ```
 
-Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): **[gophertrunk.org/downloads.html](https://gophertrunk.org/downloads.html)** · Web console setup + quick start: **[gophertrunk.org/web.html](https://gophertrunk.org/web.html)** · TUI keybindings: [`docs/tui.md`](docs/tui.md) · Hardware setup (udev rules, WinUSB / Zadig): [`docs/hardware.md`](docs/hardware.md) · Production hardening (TLS, bearer-token auth, Docker): [`docs/hardening.md`](docs/hardening.md).
+Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): **[gophertrunk.org/downloads.html](https://gophertrunk.org/downloads.html)** · Launcher / `-tui` / `-web` / `-headless`: [`docs/launcher.md`](docs/launcher.md) · Web console setup + quick start: **[gophertrunk.org/web.html](https://gophertrunk.org/web.html)** · TUI keybindings: [`docs/tui.md`](docs/tui.md) · Hardware setup (udev rules, WinUSB / Zadig): [`docs/hardware.md`](docs/hardware.md) · Production hardening (TLS, bearer-token auth, Docker): [`docs/hardening.md`](docs/hardening.md).
 
 ## Features
 
@@ -57,7 +60,7 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **API + observability** — gRPC + HTTP/SSE + WebSocket surfaces, optional TLS + bearer-token auth on mutations, Prometheus `/metrics`, pure-Go SQLite call log, in-process pub/sub event bus with typed payloads.
 
-**Operator surfaces** — first-class Bubbletea TUI cockpit (`gophertrunk tui`) with 11 panels and a sibling **web console** (a pure-browser React/Tailwind SPA, shipped pre-built as `gophertrunk-web/` next to the binary — see [`web/README.md`](web/README.md) and the [§Web console](#web-console) section); conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune.
+**Operator surfaces** — first-class Bubbletea TUI cockpit with 12 panels (including a live Import panel and inline-editable Settings) and a sibling **web console** (a pure-browser React/Tailwind SPA, either embedded into the daemon binary at build time or shipped pre-built as `gophertrunk-web/` next to the binary — see [`web/README.md`](web/README.md) and the [§Web console](#web-console) section); the daemon binary doubles as its own UI launcher (`gophertrunk -tui` / `-web` / `-headless` — see [`docs/launcher.md`](docs/launcher.md)); conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune. Live `PATCH /api/v1/settings` writes operator edits straight to `config.yaml` (comments preserved) and hot-reloads what it safely can; `POST /api/v1/import` accepts PDF / CSV uploads, parses + previews, then merges into the running daemon.
 
 **System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. **`-wizard`** launches an interactive config-builder that walks through every section of `config.yaml` (log, API, auth, CORS, storage, recordings, retention, SDR devices, scanner, audio) so first-time operators get a runnable file without hand-editing YAML. See **[`docs/import.md`](docs/import.md)**.
 

@@ -48,7 +48,11 @@ never bleed onto the alt-screen canvas. On TUI exit (`q` /
 
 ## How the web launcher works
 
-`-web` searches the canonical locations for a bundled SPA:
+`-web` first checks whether the daemon binary was built with the SPA
+embedded (see [§Embedded SPA](#embedded-spa) below). If so, the
+launcher opens the daemon URL directly — the daemon hosts the SPA
+at `/`. Otherwise the launcher searches the canonical sibling
+locations for a bundled SPA:
 
 1. `<dirname of executable>/gophertrunk-web/index.html`
 2. `<dirname of executable>/web/dist/index.html` (dev tree)
@@ -62,6 +66,18 @@ the SPA against the running daemon:
 ```
 file:///path/to/index.html#server=http://localhost:8080
 ```
+
+### Embedded SPA
+
+When the daemon was built with `make web-build` before `go build`
+(the default in release archives), the SPA is baked into the binary
+via Go's `embed` package and the API server registers it at `/`.
+Client-side routes (`/scanner`, `/settings`, `/import`, …) fall back
+to `index.html` so React-Router takes over.
+
+Fresh checkouts without `make web-build` use the sibling-directory
+discovery above instead — `web/dist/` contains only a `.gitkeep`
+sentinel in that case and the embedded `HasAssets()` reports false.
 
 `xdg-open` is used on Linux, `open` on macOS, and `rundll32
 url.dll,FileProtocolHandler` on Windows. Headless hosts that don't

@@ -164,17 +164,30 @@ func runDaemon(args []string) {
 		os.Exit(2)
 	}
 
-	// Patent-posture banner — AMBE+2 decoding is patent-encumbered
+	// Single-instance lock. Two daemons aimed at the same config
+	// would race the RTL-SDR USB claim and crash both libusb hands;
+	// this surfaces the contention as a clear error before either
+	// touches the radio.
+	releaseLock, err := acquireInstanceLock(*cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	defer releaseLock()
+
+	// Patent-posture notice — AMBE+2 decoding is patent-encumbered
 	// in some jurisdictions (DVSI IPR portfolio). The pure-Go
 	// decoder ships unconditionally as a clean-room implementation,
 	// but operators in those jurisdictions may need a license. The
-	// full discussion lives in docs/vocoders.md §"Patent posture";
-	// this one-line banner surfaces the link at startup so
-	// operators see it without having to grep the repo. Suppress
-	// with GOPHERTRUNK_QUIET_BANNER=1 (intended for CI / test
-	// harnesses where the banner is just noise).
+	// full discussion lives in docs/vocoders.md §"Patent posture".
+	// Threaded through the startup-warnings channel so it surfaces
+	// in the launcher menu / TUI dashboard / runtime DTO rather
+	// than scrolling past on the daemon log right before the
+	// interactive prompt. Suppress with GOPHERTRUNK_QUIET_BANNER=1
+	// (CI / test harnesses).
 	if os.Getenv("GOPHERTRUNK_QUIET_BANNER") == "" {
-		logger.Info("AMBE+2 voice decoding is patent-encumbered in some jurisdictions; see docs/vocoders.md §\"Patent posture\"")
+		preflightWarnings = append(preflightWarnings,
+			"AMBE+2 voice decoding is patent-encumbered in some jurisdictions; see docs/vocoders.md §\"Patent posture\"")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(),
@@ -199,6 +212,10 @@ func runDaemon(args []string) {
 	go func() {
 		runErr <- d.Run(ctx)
 	}()
+
+	// SIGHUP → hot-reload config.yaml (Unix only; no-op on Windows).
+	// Goroutine exits when ctx cancels.
+	go watchReloadSignal(ctx, d, logger)
 
 	// Wait for either Ready (HTTP listener bound, components
 	// settled) or the daemon's Run to return early (essential

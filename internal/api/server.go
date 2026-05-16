@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -207,6 +209,7 @@ type Server struct {
 	settings     SettingsApplier
 	importer     Importer
 	imports      *importStaging
+	webAssets    fs.FS
 	talkgroups   *trunking.TalkgroupDB
 	systems      []trunking.System
 	history      HistoryQuery
@@ -353,6 +356,13 @@ type ServerOptions struct {
 	// the daemon emits 503 so the SPA can present a clear "import
 	// disabled" message.
 	Importer Importer
+	// WebAssets, when non-nil and containing an `index.html`, is
+	// served from `/` (and as the SPA fallback for any non-/api
+	// path). Set this to the embedded web/dist filesystem so the
+	// daemon hosts the operator console without a sibling
+	// gophertrunk-web/ directory. Leave nil to keep the SPA
+	// out-of-process.
+	WebAssets fs.FS
 	// AudioPublisher, when non-nil, enables the
 	// GET /api/v1/audio/stream HTTP endpoint that streams live
 	// composed PCM as a continuous WAV body. Reuses the same
@@ -434,6 +444,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		settings:       opts.SettingsApplier,
 		importer:       opts.Importer,
 		imports:        newImportStaging(5 * time.Minute),
+		webAssets:      opts.WebAssets,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -600,7 +611,47 @@ func (s *Server) routes() *http.ServeMux {
 	// the daemon was started without an audio publisher.
 	mux.HandleFunc("GET /api/v1/audio/stream", s.handleAudioStream)
 
+	// Embedded SPA at "/" — served only when the daemon was linked
+	// against a populated web/dist embed. SPA history routes
+	// (/scanner, /settings, /import, ...) fall back to index.html
+	// so React-Router takes over on the client side.
+	if s.webAssets != nil {
+		if _, err := fs.Stat(s.webAssets, "index.html"); err == nil {
+			mux.Handle("GET /", s.spaHandler())
+		}
+	}
+
 	return mux
+}
+
+// spaHandler serves the embedded SPA, falling back to index.html
+// for client-side routes so React-Router can pick them up.
+func (s *Server) spaHandler() http.Handler {
+	fileSrv := http.FileServerFS(s.webAssets)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// API routes never reach this handler — the mux's
+		// more-specific matchers own /api/v1/* and /metrics.
+		// Defence in depth: refuse those paths so a hypothetical
+		// embed override surfaces loudly in tests.
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/metrics" {
+			http.NotFound(w, r)
+			return
+		}
+		clean := strings.TrimPrefix(r.URL.Path, "/")
+		if clean == "" {
+			fileSrv.ServeHTTP(w, r)
+			return
+		}
+		if _, err := fs.Stat(s.webAssets, clean); err == nil {
+			fileSrv.ServeHTTP(w, r)
+			return
+		}
+		// Fallback to index.html so the SPA's router resolves
+		// /scanner, /settings, /import, ... on the client.
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/"
+		fileSrv.ServeHTTP(w, r2)
+	})
 }
 
 // gate wraps a mutation handler in the auth middleware. The middleware
