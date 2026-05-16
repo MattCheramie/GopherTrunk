@@ -72,6 +72,29 @@ context) the protocol decoders implement against. These are
 distributed under the respective standards bodies' terms — see
 the per-document README in that directory.
 
+## Bundled redistributable tools
+
+### Zadig — WinUSB driver installer (GPL-3.0)
+
+The Windows installer (`gophertrunk-<ver>-windows-amd64-setup.exe`)
+bundles **Zadig**, the standard GUI tool for binding RTL-SDR
+dongles to the WinUSB driver. Zadig is distributed under the
+**GNU GPL v3.0** and is shipped as an unmodified upstream binary
+sourced from the libwdi project. Bundling does not statically or
+dynamically link Zadig into the GopherTrunk daemon — it's a
+separate executable launched by the operator from a Start Menu
+shortcut.
+
+- Project home: <https://zadig.akeo.ie>
+- Source code: <https://github.com/pbatard/libwdi>
+- Source for the bundled binary version is available from the
+  corresponding GitHub release tag at
+  <https://github.com/pbatard/libwdi/releases>
+- License text: <https://github.com/pbatard/libwdi/blob/master/COPYING>
+
+The Linux, macOS, and Windows-on-ARM archives do not ship Zadig
+(it is Windows-x86 only).
+
 ## Regenerating this file
 
 The direct-deps table above is hand-curated and kept in sync with

@@ -76,8 +76,9 @@ service setup.
 
 ## Windows
 
-Bind the dongle to **WinUSB** with [Zadig](https://zadig.akeo.ie)
-once per device — see [`install-windows.md`]({{ '/install-windows.html' | relative_url }})
+Bind the dongle to **WinUSB** with Zadig (bundled in the Windows
+installer — Start Menu → GopherTrunk → "Install RTL-SDR driver
+(Zadig)") once per device. See [`install-windows.md`]({{ '/install-windows.html' | relative_url }})
 for the click-by-click walkthrough.
 
 ## Verifying the build

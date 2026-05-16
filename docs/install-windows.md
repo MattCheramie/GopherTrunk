@@ -37,6 +37,9 @@ Double-click `setup.exe` and accept the defaults. The installer:
 
 - Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\` —
   a single static binary, no DLLs to ship.
+- Bundles **Zadig** (the WinUSB driver-binding tool) next to the
+  daemon and adds a Start Menu shortcut "Install RTL-SDR driver
+  (Zadig)" so you don't have to chase a separate download.
 - Adds Start Menu entries for the daemon, the config template,
   and these instructions.
 - Installs the **browser-based web operator console** (a static
@@ -53,22 +56,27 @@ Double-click `setup.exe` and accept the defaults. The installer:
   checkbox during install if you want it).
 
 When the wizard finishes, it'll offer to open this document, a
-console window, and (if you installed the web console) the
-console itself in your default browser. All three are harmless
-to skip.
+console window, Zadig (to bind the WinUSB driver — see §3), and
+(if you installed the web console) the console itself in your
+default browser. All four are harmless to skip; the Zadig one
+defaults off.
 
 ## 3. Install the WinUSB driver via Zadig (one-time, for each dongle)
 
 Windows ships an RTL-SDR DVB-T receiver driver by default — that
 driver is what you'd use to watch broadcast TV, and it's the wrong
 driver for SDR work. We need to swap it for **WinUSB** on a
-per-device basis. The standard tool is **Zadig**:
+per-device basis. The installer **bundles Zadig** (GPL-3.0, from
+<https://zadig.akeo.ie>) so you don't have to chase a download.
 
 1. Plug in the RTL-SDR dongle. The same flow works for any
    `0bda:2838` device — generic RTL-SDR Blog units, the **NooElec
    NESDR Smart v5**, and equivalent clones.
-2. Download Zadig from <https://zadig.akeo.ie> (single .exe, no
-   install). Run it as **Administrator**.
+2. Launch Zadig via **Start Menu → GopherTrunk → "Install RTL-SDR
+   driver (Zadig)"**. Approve the UAC prompt. (Alternatively, on the
+   last page of the installer there's an unchecked **"Run Zadig now
+   to bind the WinUSB driver"** option — tick it before clicking
+   Finish.)
 3. **Options → List All Devices** so the RTL-SDR shows up.
 4. From the dropdown, pick the dongle. It'll typically appear as
    **Bulk-In, Interface (Interface 0)** or **RTL2832U** (the
@@ -167,8 +175,11 @@ nssm start GopherTrunk
 
 **Settings → Apps → Installed apps → GopherTrunk → Uninstall.**
 The uninstaller removes the install folder and every Start Menu
-entry, and undoes the PATH change if you opted in. Recordings
-under your call-log directory are left alone.
+entry, strips GopherTrunk from your PATH (if you opted in), and
+clears the `GOPHERTRUNK_CONFIG` env var. It then asks whether to
+also delete your editable `config.yaml` and the `gophertrunk-web`
+folder Setup created — the default is **No** so you don't lose
+edits or per-system data.
 
 ## Troubleshooting
 

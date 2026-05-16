@@ -2064,10 +2064,11 @@ on GitHub to grab the artefacts directly:
 | Linux      | `gophertrunk-<ver>-linux-amd64.tar.gz`                 | Tarballed static binary + sample config + `gophertrunk-web/` console |
 | all        | `SHA256SUMS`                                           | SHA-256 checksums for every artefact in the release      |
 
-Windows users: after running the installer, follow
-[`docs/install-windows.md`](docs/install-windows.md) to swap the
-RTL-SDR driver to WinUSB via Zadig — the OS won't see your dongle
-until that's done. The installer's last page links there too.
+Windows users: the installer bundles Zadig and adds a Start Menu
+shortcut "Install RTL-SDR driver (Zadig)". Run it once per dongle
+to bind the WinUSB driver — the OS won't see your dongle until
+that's done. Full walkthrough:
+[`docs/install-windows.md`](docs/install-windows.md).
 
 After install, `gophertrunk version` reports the build provenance:
 
