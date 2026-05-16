@@ -9,7 +9,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean
+.PHONY: all build test test-dvsi test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test
 
 all: build
 
@@ -272,6 +272,14 @@ web-dev:
 
 web-clean:
 	rm -rf web/dist web/node_modules web/dev-dist
+
+# web-test runs Vitest in CI mode against the SPA panels. Uses
+# `npm install` (not `npm ci`) so devs that already ran web-dev
+# don't pay the full reinstall cost.
+web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/README.md"; exit 1; }
+	cd web && npm install --no-audit --no-fund
+	cd web && npm test
 
 
 # Regenerate Go bindings under internal/api/pb/v1 from proto/*.proto.

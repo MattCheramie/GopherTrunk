@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Internal
+
+- **Test infrastructure: web SPA + in-process TUI.**
+  - SPA gains Vitest + React Testing Library. `Import.test.tsx`
+    covers the no-config / no-mutations banners + the
+    Stage→Preview→Result happy path + commit / discard / error
+    flows; `Settings.test.tsx` covers the inline-edit state
+    machine, client-side validation, server PATCH errors, and
+    restart-required badges. Run with `npm test`.
+  - The in-process TUI launcher path (`runInProcessTUI`) is split
+    into a testable `prepareInProcessTUI` (URL resolve, log
+    redirect, model construction) and a thin `prog.Run()` wrapper.
+    New tests cover missing-HTTP-addr error, log-redirect
+    correctness, cleanup restoring the original writer, the
+    constructed client actually reaching the daemon, plus a
+    teatest-driven smoke test of the bubbletea Update loop against
+    a stub HTTP daemon.
+  - `internal/api.Server` now exposes `BoundAddr()`, and
+    `Daemon.HTTPListenAddr()` prefers the actually-bound address
+    when the listener has resolved an ephemeral `:0` port. Fixes
+    a long-standing bug in the `HTTPListenAddr` docstring claim
+    "helpful for tests using an ephemeral `:0` port" — it really
+    is now.
+
 ### Added
 
 - **Interactive daemon launcher.** `gophertrunk` (no args) now prompts

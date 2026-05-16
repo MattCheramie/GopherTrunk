@@ -97,6 +97,11 @@ autoplay rules).
 make web-dev    # starts Vite at http://127.0.0.1:5173 with proxy to :8080
 make web-build  # produces web/dist/ — the shipping artifact
 make web-clean  # removes node_modules/, dist/, and SW dev-dist/
+
+# From web/ directly:
+npm install     # one-time
+npm test        # Vitest + React Testing Library against panels
+npm run typecheck
 ```
 
 Tested with Node.js 20 LTS and npm 10. Older Node versions may
@@ -106,6 +111,16 @@ The dev server proxies `/api/*` and `/metrics` to
 `127.0.0.1:8080`, so the SPA running on `:5173` looks
 same-origin to the browser and you don't need CORS during
 development.
+
+### Tests
+
+`npm test` runs Vitest in CI mode against `src/**/*.{test,spec}.{ts,tsx}`.
+Tests use jsdom for the DOM and React Testing Library for component
+interaction; `vi.mock` replaces the `api/client` and `api/write`
+modules so no network is involved. New panel tests should follow
+the `Import.test.tsx` / `Settings.test.tsx` pattern: mock the API,
+reset the zustand store between tests, and drive the component
+through `userEvent`.
 
 ## Status
 

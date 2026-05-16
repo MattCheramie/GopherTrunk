@@ -195,34 +195,72 @@ func promptLaunchChoice(ctx context.Context) (launchMode, bool) {
 // don't bleed onto the alt-screen canvas; the previous writer is
 // restored on TUI exit.
 func runInProcessTUI(ctx context.Context, d *Daemon, log *slog.Logger, logSwap *gtlog.SwappableWriter) error {
+	setup, err := prepareInProcessTUI(d, logSwap)
+	if err != nil {
+		return err
+	}
+	defer setup.cleanup(log)
+
+	// Run bubbletea synchronously. The ctx isn't passed in (bubbletea
+	// owns the terminal until it returns) — if the daemon is
+	// cancelled mid-TUI the next API poll will fail and the operator
+	// can quit with 'q'.
+	_, err = setup.prog.Run()
+	return err
+}
+
+// inProcessTUISetup holds everything prepareInProcessTUI assembled
+// so runInProcessTUI can run + tear down without re-doing the work.
+// Exposed package-internal for testing — tests construct the setup,
+// inspect it, and then call cleanup without ever calling prog.Run().
+type inProcessTUISetup struct {
+	prog    *tea.Program
+	model   tea.Model
+	cli     *client.Client
+	logFile *os.File
+	logSwap *gtlog.SwappableWriter
+}
+
+// cleanup restores the swappable log writer + closes the temp log
+// file. Logs the captured-log path on the restored writer so the
+// operator sees where the daemon's pre-TUI output landed.
+func (s *inProcessTUISetup) cleanup(log *slog.Logger) {
+	if s.logFile != nil {
+		s.logSwap.Restore()
+		_ = s.logFile.Close()
+		log.Info("tui: daemon log captured", "path", s.logFile.Name())
+	}
+}
+
+// prepareInProcessTUI does everything runInProcessTUI does except
+// the bubbletea Run() call. Factored out so unit tests can verify
+// URL resolution, log redirection, and program construction without
+// needing a real terminal.
+func prepareInProcessTUI(d *Daemon, logSwap *gtlog.SwappableWriter) (*inProcessTUISetup, error) {
 	addr := d.HTTPListenAddr()
 	if addr == "" {
-		return errors.New("in-process TUI requires api.http_addr in config")
+		return nil, errors.New("in-process TUI requires api.http_addr in config")
 	}
 	server := normaliseServerURL(addr)
 
 	cli := client.New(server, 5*time.Second, false)
 
 	// Redirect daemon logs so they don't scribble over the TUI.
-	logFile, err := os.CreateTemp("", "gophertrunk-tui-*.log")
-	if err == nil {
+	logFile, _ := os.CreateTemp("", "gophertrunk-tui-*.log")
+	if logFile != nil {
 		logSwap.Redirect(logFile)
-		defer func() {
-			logSwap.Restore()
-			_ = logFile.Close()
-			log.Info("tui: daemon log captured", "path", logFile.Name())
-		}()
 	}
 
 	m := tui.New(cli, tui.Options{Write: true})
 	prog := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
-	// Run bubbletea synchronously. The ctx isn't passed in (bubbletea
-	// owns the terminal until it returns) — if the daemon is
-	// cancelled mid-TUI the next API poll will fail and the operator
-	// can quit with 'q'.
-	_, err = prog.Run()
-	return err
+	return &inProcessTUISetup{
+		prog:    prog,
+		model:   m,
+		cli:     cli,
+		logFile: logFile,
+		logSwap: logSwap,
+	}, nil
 }
 
 // openWebUI opens the bundled web SPA pointed at the running

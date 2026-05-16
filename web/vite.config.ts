@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+/// <reference types="vitest" />
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -79,5 +80,19 @@ export default defineConfig({
     // pre-cache list short. Chart.js + D3 are the largest deps and
     // ship in the main bundle; splitting them only matters when
     // the SPA grows multiple unrelated entry points.
+  },
+  test: {
+    // jsdom mirrors enough of the browser API surface for React
+    // Testing Library + the SPA's runtime. Each test gets its own
+    // isolated DOM. setupFiles wires in @testing-library/jest-dom's
+    // assertion vocabulary so `expect(node).toBeInTheDocument()`
+    // works.
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    // Limit the test workspace to the SPA — the embedded SW + the
+    // workbox precache list contain non-test JS we don't want vitest
+    // collecting.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });
