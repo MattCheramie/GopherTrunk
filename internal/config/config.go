@@ -257,6 +257,16 @@ type SystemConfig struct {
 	// "0" (legacy 44-dibit raw-CAC path, opt-out for pre-stripped
 	// fixtures). Ignored for non-NXDN protocols.
 	NXDNViterbiMode string `yaml:"nxdn_viterbi_mode"`
+	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
+	// the NXDN receiver's slicer is calibrated against. The Common
+	// Air Interface spec value is 1800 Hz (matched against the
+	// FM-discriminator output level so live captures slice
+	// correctly). Some on-air transmitters deviate from spec —
+	// captures whose dibit distribution is bimodal (outer ±3 levels
+	// dominate, inner ±1 underrepresented) usually want a higher
+	// value (e.g., 2400 Hz). Zero / unset uses the spec default.
+	// Ignored for non-NXDN protocols.
+	NXDNDeviationHz float64 `yaml:"nxdn_deviation_hz,omitempty"`
 	// EDACSBCHMode enables the BCH(40, 28, 2) FEC layer on the
 	// EDACS CCW. Recognised values: "" / "on" / "true" / "1" (the
 	// new default — 40-bit on-wire BCH decode with single/double-

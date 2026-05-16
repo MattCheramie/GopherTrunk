@@ -218,8 +218,10 @@ AMBE+2 tone frames with b1 ∈ [144, 163] are vendor-specific knox /
 call-alert pairs. The public spec doesn't document them; without
 registration, the decoder routes those frames through silence.
 
-Operators with a per-vendor reference can register the
-(freqA, freqB) pair via
+### Single-entry registration
+
+Operators with a per-vendor reference can register one
+(freqA, freqB) pair at a time via
 [`ambe2.SetKnoxTone`](../internal/voice/ambe2/knox.go) (typically
 from a per-vendor sub-package `init()`):
 
@@ -232,9 +234,46 @@ func init() {
 }
 ```
 
+### Preset bundles
+
+For curated tables (a service-manual extract, an open-source
+receiver's vendor table), use
+[`ambe2.RegisterPreset`](../internal/voice/ambe2/knox.go) instead
+of repeated `SetKnoxTone` calls. The preset name shows up in
+`ambe2.ListPresets()` for operator diagnostics:
+
+```go
+import "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
+
+func init() {
+    // Hypothetical Vendor X call-alert table. Replace with values
+    // sourced from a verifiable reference (DSDcc, DSD-FME, vendor
+    // service manual) — the public AMBE+2 spec does not document
+    // these frequencies.
+    _ = ambe2.RegisterPreset(ambe2.KnoxPreset{
+        Name: "vendor-x-call-alerts",
+        Entries: map[int][2]float64{
+            150: {1100, 1750},
+            151: {1200, 1800},
+        },
+    })
+}
+```
+
 Registered indices synthesise through the same summed-sinewave
 dual-tone path as DTMF — phase-continuous across consecutive tone
 frames, AGC-scaled, click-free.
+
+### Sourcing vendor frequencies
+
+The in-tree code ships no vendor presets because the AMBE+2 public
+spec does not document the [144, 163] frequency range and the
+maintainers have not had operator-confirmed reference data to copy
+from. Contributors with a verifiable source (cite the file + commit
+or document section in the PR) can land a per-vendor preset under
+`internal/voice/ambe2/presets/<vendor>/`. Open-source receivers
+worth checking: `szechyjs/mbelib`, DSDcc, DSD-FME, OP25 — search
+the tone-decode paths for the b1 index range.
 
 ## Future work
 

@@ -7,7 +7,44 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-system NXDN deviation tunability** (`nxdn_deviation_hz`).
+  The NXDN receiver's 4-FSK slicer was hardcoded to the Common Air
+  Interface spec value of 1800 Hz peak deviation, which produces a
+  bimodal dibit distribution on captures from transmitters that
+  deviate from spec (e.g. `samples/nxdn/NXDN96 IQ.wav` reports
+  3 / 50 / 3 / 44 % through the production pipeline). Operators can
+  now set `nxdn_deviation_hz: 2400` (or any positive value) on a
+  per-system basis to recalibrate the slicer against the captured
+  signal's actual deviation. Zero / unset keeps the spec default.
+  See [`samples/nxdn/README.md`](samples/nxdn/README.md#tuning-deviation-for-non-spec-captures)
+  for the sweep recipe.
+- **AMBE+2 knox preset bundles** (`ambe2.RegisterPreset` /
+  `ambe2.ListPresets`). The existing `SetKnoxTone` hook (b₁ ∈
+  [144, 163]) registers one vendor-specific dual-tone pair at a
+  time; the new preset API takes a named bundle of entries and
+  records the preset name for operator diagnostics. Lets per-vendor
+  sub-packages ship curated tables via a single `RegisterPreset`
+  call instead of repeated `SetKnoxTone`s. The in-tree code ships
+  no vendor presets because the public AMBE+2 spec does not
+  document the [144, 163] frequency range — see
+  [`docs/vocoders.md`](docs/vocoders.md#sourcing-vendor-frequencies)
+  for the sourcing checklist.
+
 ### Internal
+
+- **Calibrate harness math is testable without external fixtures.**
+  Extracted `calibrate.CompareSamples([]int16, []int16) Result` so
+  the RMS-ratio + cross-correlation math can be exercised on
+  synthetic streams. The two existing skip-gated tests
+  (`TestCompareIMBE*`, `TestCompareAMBE2*`) keep waiting for
+  captured DSD-FME / OP25 reference WAVs; the new
+  `TestCompareSamplesSyntheticGainOffset` validates the math
+  unconditionally (a +3 dB louder reference must produce
+  `RMSRatioDb = −3.0 ± 0.5` and `PeakXcorr ≥ 0.99`). Regressions
+  in the loudness / similarity math now fail CI without needing
+  any external reference data to land first.
 
 - **Cleanup & coverage round.**
   - `web/scripts/seal-node-modules.mjs` is registered as the npm

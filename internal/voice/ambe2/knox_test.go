@@ -178,3 +178,100 @@ func absMaxInt16(samples []int16) int {
 	}
 	return peak
 }
+
+func TestRegisterPresetAppliesEntries(t *testing.T) {
+	ClearKnoxTones()
+	defer ClearKnoxTones()
+
+	preset := KnoxPreset{
+		Name: "test-vendor-a",
+		Entries: map[int][2]float64{
+			145: {950, 1450},
+			150: {1100, 1750},
+			160: {1300, 1850},
+		},
+	}
+	if err := RegisterPreset(preset); err != nil {
+		t.Fatalf("RegisterPreset: %v", err)
+	}
+	for b1, want := range preset.Entries {
+		fA, fB, ok := KnoxTone(b1)
+		if !ok {
+			t.Errorf("KnoxTone(%d) ok = false after RegisterPreset", b1)
+			continue
+		}
+		if fA != want[0] || fB != want[1] {
+			t.Errorf("KnoxTone(%d) = (%v, %v), want (%v, %v)",
+				b1, fA, fB, want[0], want[1])
+		}
+	}
+	if names := ListPresets(); len(names) != 1 || names[0] != "test-vendor-a" {
+		t.Errorf("ListPresets() = %v, want [test-vendor-a]", names)
+	}
+}
+
+func TestRegisterPresetRejectsEmptyName(t *testing.T) {
+	ClearKnoxTones()
+	defer ClearKnoxTones()
+	err := RegisterPreset(KnoxPreset{
+		Entries: map[int][2]float64{150: {1100, 1750}},
+	})
+	if err == nil {
+		t.Fatal("RegisterPreset accepted empty name")
+	}
+}
+
+func TestRegisterPresetRejectsOutOfRangeEntries(t *testing.T) {
+	ClearKnoxTones()
+	defer ClearKnoxTones()
+	err := RegisterPreset(KnoxPreset{
+		Name:    "bad-vendor",
+		Entries: map[int][2]float64{100: {1000, 1700}},
+	})
+	if err == nil {
+		t.Fatal("RegisterPreset accepted out-of-range b1")
+	}
+}
+
+func TestRegisterPresetLaterOverridesEarlier(t *testing.T) {
+	ClearKnoxTones()
+	defer ClearKnoxTones()
+
+	if err := RegisterPreset(KnoxPreset{
+		Name:    "vendor-a",
+		Entries: map[int][2]float64{150: {1000, 1700}},
+	}); err != nil {
+		t.Fatalf("RegisterPreset(vendor-a): %v", err)
+	}
+	if err := RegisterPreset(KnoxPreset{
+		Name:    "vendor-b",
+		Entries: map[int][2]float64{150: {1100, 1750}},
+	}); err != nil {
+		t.Fatalf("RegisterPreset(vendor-b): %v", err)
+	}
+	fA, fB, _ := KnoxTone(150)
+	if fA != 1100 || fB != 1750 {
+		t.Errorf("KnoxTone(150) = (%v, %v), want (1100, 1750) from vendor-b", fA, fB)
+	}
+	names := ListPresets()
+	if len(names) != 2 || names[0] != "vendor-a" || names[1] != "vendor-b" {
+		t.Errorf("ListPresets() = %v, want [vendor-a vendor-b]", names)
+	}
+}
+
+func TestClearKnoxTonesAlsoClearsPresets(t *testing.T) {
+	ClearKnoxTones()
+	if err := RegisterPreset(KnoxPreset{
+		Name:    "test-vendor",
+		Entries: map[int][2]float64{150: {1100, 1750}},
+	}); err != nil {
+		t.Fatalf("RegisterPreset: %v", err)
+	}
+	if len(ListPresets()) != 1 {
+		t.Fatal("preset not registered")
+	}
+	ClearKnoxTones()
+	if names := ListPresets(); len(names) != 0 {
+		t.Errorf("ListPresets() after Clear = %v, want []", names)
+	}
+}

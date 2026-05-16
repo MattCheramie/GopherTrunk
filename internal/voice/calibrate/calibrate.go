@@ -116,6 +116,20 @@ func Compare(rawPath, refWavPath, vocoderName string) (Result, error) {
 			refRate, expectedSampleRate)
 	}
 
+	return CompareSamples(inTree, refSamples), nil
+}
+
+// CompareSamples runs the RMS + cross-correlation math directly on
+// two PCM streams. Compare is the operator-facing entry point that
+// decodes the in-tree vocoder + reads the reference WAV before
+// delegating here; CompareSamples is exposed separately so the
+// loudness / similarity math is testable with synthetic inputs (no
+// vocoder frame fixtures, no on-disk WAV files).
+//
+// Both streams are expected to be 8 kHz / 16-bit / mono PCM. RMS
+// silence in either stream produces RMSRatioDb = 0 (the ratio isn't
+// defined); PeakXcorr will still surface the mismatch.
+func CompareSamples(inTree, refSamples []int16) Result {
 	rmsIn := rms(inTree)
 	rmsRef := rms(refSamples)
 	var rmsDb float64
@@ -136,7 +150,7 @@ func Compare(rawPath, refWavPath, vocoderName string) (Result, error) {
 		LagSamples:        lag,
 		InTreeSampleCount: len(inTree),
 		RefSampleCount:    len(refSamples),
-	}, nil
+	}
 }
 
 // rms returns the root-mean-square amplitude of an int16 sample

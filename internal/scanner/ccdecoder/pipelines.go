@@ -525,23 +525,30 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.NXDNViterbiMode)
 	}
 	cc.SetViterbiMode(viterbiMode)
+	// NXDN spec peak deviation per the Common Air Interface (same
+	// value P25 Phase 1 uses). Calibrates the slicer thresholds
+	// against the FM-discriminator output level so live captures
+	// slice correctly out of the box. Per-system override via
+	// nxdn_deviation_hz for transmitters that deviate from spec —
+	// see samples/nxdn/README.md.
+	deviationHz := 1800.0
+	if opts.System.NXDNDeviationHz > 0 {
+		deviationHz = opts.System.NXDNDeviationHz
+	}
 	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
-		// NXDN spec peak deviation per the Common Air Interface
-		// (same value P25 Phase 1 uses). Calibrates the slicer
-		// thresholds against the FM-discriminator output level so
-		// live captures slice correctly out of the box.
-		DeviationHz: 1800.0,
+		DeviationHz:  deviationHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
 	})
-	return &nxdnPipeline{rx: rx, cc: cc}, nil
+	return &nxdnPipeline{rx: rx, cc: cc, deviationHz: deviationHz}, nil
 }
 
 type nxdnPipeline struct {
-	rx *nxdnrx.Receiver
-	cc *nxdn.ControlChannel
+	rx          *nxdnrx.Receiver
+	cc          *nxdn.ControlChannel
+	deviationHz float64
 }
 
 func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }

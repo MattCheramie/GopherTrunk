@@ -91,4 +91,65 @@ func ClearKnoxTones() {
 	for i := range knoxToneTable {
 		knoxToneTable[i] = [2]float64{}
 	}
+	knoxPresetsMu.Lock()
+	knoxPresets = nil
+	knoxPresetsMu.Unlock()
+}
+
+// KnoxPreset is a named bundle of vendor-specific knox / call-alert
+// dual-tone pairs. Entries map a knox b1 index (in [KnoxIndexLow,
+// KnoxIndexHigh]) to its (freqA, freqB) frequencies in Hz.
+//
+// Presets are an opt-in convenience layer over SetKnoxTone for
+// operators who have a curated per-vendor table (sourced from
+// open-source receivers like DSDcc / DSD-FME / mbelib, or from a
+// vendor service manual). The public AMBE+2 spec does not document
+// these frequencies; ship presets with the citation in a comment so
+// future maintainers can verify.
+type KnoxPreset struct {
+	Name    string
+	Entries map[int][2]float64
+}
+
+var (
+	knoxPresetsMu sync.RWMutex
+	knoxPresets   []string
+)
+
+// RegisterPreset applies every entry in p via SetKnoxTone and records
+// the preset name for ListPresets diagnostics. Returns the first
+// SetKnoxTone error encountered (out-of-range b1, etc.); on error,
+// entries applied before the failure stay registered — callers can
+// ClearKnoxTones to reset.
+//
+// Safe to call from package init(). Calling RegisterPreset multiple
+// times with overlapping b1 indices is well-defined: later
+// registrations overwrite earlier ones in tone-table order. The
+// preset name appears in ListPresets for every successful
+// registration even if subsequent presets shadow some of its entries.
+func RegisterPreset(p KnoxPreset) error {
+	if p.Name == "" {
+		return fmt.Errorf("ambe2: knox preset name is required")
+	}
+	for b1, pair := range p.Entries {
+		if err := SetKnoxTone(b1, pair[0], pair[1]); err != nil {
+			return fmt.Errorf("ambe2: preset %q: %w", p.Name, err)
+		}
+	}
+	knoxPresetsMu.Lock()
+	knoxPresets = append(knoxPresets, p.Name)
+	knoxPresetsMu.Unlock()
+	return nil
+}
+
+// ListPresets returns the names of every preset registered via
+// RegisterPreset since the last ClearKnoxTones. Useful for operator
+// diagnostics ("which vendor tables are active right now?") and
+// startup logging.
+func ListPresets() []string {
+	knoxPresetsMu.RLock()
+	defer knoxPresetsMu.RUnlock()
+	out := make([]string, len(knoxPresets))
+	copy(out, knoxPresets)
+	return out
 }
