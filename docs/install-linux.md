@@ -186,6 +186,7 @@ are left alone — remove them manually if you want a clean slate.
 | `sdr list` prints nothing               | DVB driver still bound — `sudo modprobe -r dvb_usb_rtl28xxu` and re-plug. |
 | `permission denied` on `/dev/bus/usb/…` | udev rule didn't apply — re-run `udevadm control --reload && udevadm trigger`, then re-plug. |
 | `usb: device disconnected` mid-stream   | Power-saving USB autosuspend kicked in — `echo on > /sys/bus/usb/devices/<id>/power/control`, or pin via udev. |
+| `tuner init: ... I2CWrite addr=0x34: broken pipe` | Tuner not ack-ing on the I²C bus. Most common: DVB kernel driver still bound — `sudo modprobe -r dvb_usb_rtl28xxu` and **physically re-plug** the dongle. Also seen with marginal USB power or USB 3.0 hubs — try a USB 2.0 port directly on the host. If `rtl_test` also prints `[R82XX] PLL not locked!` the tuner is in a half-init state; a full power cycle (unplug ~10s) clears it. |
 | Audio plays as silence                  | `audio.enabled: false` by default — set `true` in config; on distroless / Alpine without `libasound2`, set `audio.device: "ioctl"` to use the direct-kernel backend. |
 | systemd unit fails with `203/EXEC`      | Binary path wrong in the unit — confirm `/usr/local/bin/gophertrunk` exists and is `+x`. |
 
