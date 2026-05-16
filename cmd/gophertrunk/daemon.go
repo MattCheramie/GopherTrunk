@@ -66,8 +66,10 @@ func parseGain(s string) (int, bool) {
 // by Run, and torn down by Close in reverse order. Run blocks until
 // ctx cancels; Close is idempotent.
 type Daemon struct {
-	cfg config.Config
-	log *slog.Logger
+	cfg      config.Config
+	cfgPath  string
+	log      *slog.Logger
+	writer   *config.Writer // optional; nil when daemon ran without -config
 
 	bus        *events.Bus
 	pool       *sdr.Pool
@@ -114,6 +116,22 @@ type Daemon struct {
 	closeOnce sync.Once
 }
 
+// ConfigPath returns the absolute path of the config.yaml backing
+// the daemon, or "" when the daemon was started without -config.
+// The settings PATCH endpoint reads this to decide whether
+// edit-and-write is supported.
+func (d *Daemon) ConfigPath() string {
+	if d.writer != nil {
+		return d.writer.Path()
+	}
+	return d.cfgPath
+}
+
+// Writer returns the live config.yaml writer the daemon installed,
+// or nil when no config file backs the daemon. Used by NewDaemon to
+// expose the writer through ServerOptions.ConfigWriter.
+func (d *Daemon) Writer() *config.Writer { return d.writer }
+
 // Ready returns a channel that closes once every essential component
 // has started successfully. Used by the launcher to wait for the HTTP
 // API to bind before prompting the operator.
@@ -148,16 +166,34 @@ func (d *Daemon) addWarning(msg string) {
 //
 // version is stamped into Prometheus build_info and the API
 // /api/v1/version response.
+//
+// Use NewDaemonWithPath to install a live config.yaml writer for the
+// PATCH /api/v1/settings endpoint.
 func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, error) {
+	return NewDaemonWithPath(cfg, "", version, log)
+}
+
+// NewDaemonWithPath is the constructor used by main when a config
+// file backs the daemon: the path is installed as a config.Writer
+// so PATCH /api/v1/settings can re-write the file in place.
+func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
 	}
 
 	d := &Daemon{
-		cfg:   cfg,
-		log:   log,
-		bus:   events.NewBus(64),
-		ready: make(chan struct{}),
+		cfg:     cfg,
+		cfgPath: cfgPath,
+		log:     log,
+		bus:     events.NewBus(64),
+		ready:   make(chan struct{}),
+	}
+	if cfgPath != "" {
+		w, err := config.NewWriter(cfgPath)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: config writer: %w", err)
+		}
+		d.writer = w
 	}
 
 	// Talkgroup DB — populated below from per-system CSVs.
@@ -603,6 +639,14 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 			cfg:     &cfgCopy,
 			version: version,
 			metrics: cfg.Metrics.Enabled,
+			daemon:  d,
+		}
+		// Live settings editing — only enabled when the daemon was
+		// started with a -config (otherwise there's no file to write
+		// back to).
+		if d.writer != nil {
+			opts.ConfigWriter = d.writer
+			opts.SettingsApplier = newDaemonSettingsApplier(d, version)
 		}
 		srv, err := api.NewServer(opts)
 		if err != nil {

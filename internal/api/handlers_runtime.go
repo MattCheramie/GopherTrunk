@@ -72,6 +72,17 @@ type RuntimeDTO struct {
 
 	// MetricsEnabled mirrors metrics.enabled config.
 	MetricsEnabled bool `json:"metrics_enabled"`
+
+	// ConfigPath is the absolute path to the config.yaml backing this
+	// daemon, or empty when the daemon was started without a -config
+	// file. The SPA / TUI use it to gate the editable Settings panel:
+	// empty = render read-only ("daemon running on built-in defaults").
+	ConfigPath string `json:"config_path,omitempty"`
+	// StartupWarnings carries the non-fatal observations the daemon
+	// collected during NewDaemon (missing talkgroup CSV, SDR pool
+	// failed to open, etc.). Surfaced so the SPA Dashboard can pin
+	// them until the operator dismisses them.
+	StartupWarnings []string `json:"startup_warnings,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —

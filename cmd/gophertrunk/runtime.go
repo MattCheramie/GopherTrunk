@@ -15,9 +15,10 @@ import (
 // on every /api/v1/runtime call since the daemon config is immutable
 // at runtime; cost is a handful of slice allocs.
 type runtimeSnapshot struct {
-	cfg     *config.Config
-	version string
-	metrics bool
+	cfg      *config.Config
+	version  string
+	metrics  bool
+	daemon   *Daemon // for StartupWarnings, ConfigPath, ...
 }
 
 // vocoderProtocolMap is the canonical mapping the daemon hands to
@@ -94,6 +95,10 @@ func (r *runtimeSnapshot) Runtime() api.RuntimeDTO {
 			Cooldown:  cooldown,
 			ToneCount: len(prof.Tones),
 		})
+	}
+	if r.daemon != nil {
+		dto.ConfigPath = r.daemon.ConfigPath()
+		dto.StartupWarnings = r.daemon.StartupWarnings()
 	}
 	return dto
 }

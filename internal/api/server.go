@@ -193,22 +193,24 @@ type ConvChannelStatusDTO struct {
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
-	addr       string
-	bus        *events.Bus
-	engine     EngineSnapshot
-	mutator    EngineMutator
-	retention  RetentionSweeper
-	tones      ToneDetectorReset
-	devices    DevicesProvider
-	scanner    ScannerCockpit
-	audio      AudioController
-	runtime    RuntimeProvider
-	talkgroups *trunking.TalkgroupDB
-	systems    []trunking.System
-	history    HistoryQuery
-	metrics    http.Handler
-	log        *slog.Logger
-	version    string
+	addr         string
+	bus          *events.Bus
+	engine       EngineSnapshot
+	mutator      EngineMutator
+	retention    RetentionSweeper
+	tones        ToneDetectorReset
+	devices      DevicesProvider
+	scanner      ScannerCockpit
+	audio        AudioController
+	runtime      RuntimeProvider
+	configWriter ConfigWriter
+	settings     SettingsApplier
+	talkgroups   *trunking.TalkgroupDB
+	systems      []trunking.System
+	history      HistoryQuery
+	metrics      http.Handler
+	log          *slog.Logger
+	version      string
 
 	auth *authState
 	// allowMutations is kept for backwards compatibility with
@@ -331,6 +333,18 @@ type ServerOptions struct {
 	// it to surface every config knob. Optional; when nil, the
 	// route returns 503.
 	Runtime RuntimeProvider
+	// ConfigWriter, when supplied, enables PATCH /api/v1/settings:
+	// the daemon writes the operator's edits to config.yaml
+	// (preserving comments) and feeds the result back to
+	// SettingsApplier for hot-reload. nil disables the endpoint
+	// (returns 503) so daemons started without a -config file don't
+	// pretend the SPA's edits will persist.
+	ConfigWriter ConfigWriter
+	// SettingsApplier is the in-process hot-reload surface invoked
+	// by handleSettingsPatch after the on-disk write succeeds.
+	// Optional: when nil, every field is reported as
+	// "restart_required" in the response.
+	SettingsApplier SettingsApplier
 	// AudioPublisher, when non-nil, enables the
 	// GET /api/v1/audio/stream HTTP endpoint that streams live
 	// composed PCM as a continuous WAV body. Reuses the same
@@ -408,6 +422,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		scanner:        opts.Scanner,
 		audio:          opts.Audio,
 		runtime:        opts.Runtime,
+		configWriter:   opts.ConfigWriter,
+		settings:       opts.SettingsApplier,
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
@@ -554,6 +570,12 @@ func (s *Server) routes() *http.ServeMux {
 	// gated behind allow_mutations like every other write route.
 	mux.HandleFunc("GET /api/v1/audio", s.handleAudioStatus)
 	mux.HandleFunc("PATCH /api/v1/audio", s.gate(s.handleAudioPatch))
+	// Settings cockpit — PATCH writes the supplied fields back to
+	// config.yaml (preserving comments + formatting) and hot-applies
+	// the ones the daemon knows how to reload in-process. The
+	// response carries the new runtime DTO + a per-field list of
+	// what applied vs what needs a daemon restart.
+	mux.HandleFunc("PATCH /api/v1/settings", s.gate(s.handleSettingsPatch))
 	// Live audio stream — open like every other read route. Emits
 	// a continuous WAV body of composed PCM frames; browsers play
 	// it via <audio src="/api/v1/audio/stream">. Returns 503 when

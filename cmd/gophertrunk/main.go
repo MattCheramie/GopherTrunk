@@ -181,7 +181,7 @@ func runDaemon(args []string) {
 		syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	d, err := NewDaemon(cfg, version.String(), logger)
+	d, err := NewDaemonWithPath(cfg, *cfgPath, version.String(), logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon init: %v\n", err)
 		os.Exit(1)
