@@ -5,9 +5,28 @@ description: Install GopherTrunk on Linux, macOS, or Windows
 nav_group: Install
 ---
 
-{%- assign latest = site.github.latest_release -%}
-{%- if latest and latest.tag_name -%}
-  {%- assign ver = latest.tag_name -%}
+{%- comment -%}
+Resolve the version string the download cards should point at.
+Three-tier resolution so the page stays useful no matter what the
+release state looks like:
+
+  1. site.github.latest_release — GitHub's "latest stable" endpoint.
+     Excludes prereleases, so this returns null while every release
+     is a v0.x.y (which release.yml flags prerelease per SemVer §4).
+     Once v1.0.0+ ships stable, this is the right answer.
+  2. site.github.releases[0] — the most recent release of any kind,
+     prereleases included. Drives the page through the pre-1.0
+     window.
+  3. Hardcoded tag — last-ditch fallback if the GitHub metadata
+     API call fails during the Pages build (rare). Bump on each
+     release as a defensive matter, but it should never be the
+     value users actually see.
+{%- endcomment -%}
+{%- assign ver = nil -%}
+{%- if site.github.latest_release and site.github.latest_release.tag_name -%}
+  {%- assign ver = site.github.latest_release.tag_name -%}
+{%- elsif site.github.releases and site.github.releases[0] and site.github.releases[0].tag_name -%}
+  {%- assign ver = site.github.releases[0].tag_name -%}
 {%- else -%}
   {%- assign ver = "v0.1.5" -%}
 {%- endif -%}
