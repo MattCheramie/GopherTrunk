@@ -247,14 +247,22 @@ func TestImportCommit_ErrorPreservesStaging(t *testing.T) {
 	defer teardown()
 
 	body, ct := uploadMultipart(t, map[string][]byte{"sys.csv": []byte("# csv")})
-	resp, _ := http.Post(base+"/api/v1/import", ct, body)
+	resp, err := http.Post(base+"/api/v1/import", ct, body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 	var preview ImportPreviewResponse
-	_ = json.NewDecoder(resp.Body).Decode(&preview)
+	if err := json.NewDecoder(resp.Body).Decode(&preview); err != nil {
+		t.Fatal(err)
+	}
 
-	first, _ := http.Post(
+	first, err := http.Post(
 		fmt.Sprintf("%s/api/v1/import/%s/commit", base, preview.ID),
 		"application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	first.Body.Close()
 	if first.StatusCode != http.StatusBadRequest {
 		t.Fatalf("first commit status=%d want 400", first.StatusCode)
@@ -262,9 +270,12 @@ func TestImportCommit_ErrorPreservesStaging(t *testing.T) {
 
 	// Retry should reach the importer again — staging entry must
 	// still be present.
-	second, _ := http.Post(
+	second, err := http.Post(
 		fmt.Sprintf("%s/api/v1/import/%s/commit", base, preview.ID),
 		"application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	second.Body.Close()
 	if second.StatusCode != http.StatusBadRequest {
 		t.Fatalf("second commit status=%d want 400 (same error)", second.StatusCode)

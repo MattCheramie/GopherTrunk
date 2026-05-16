@@ -9,6 +9,52 @@ for tagged releases.
 
 ### Added
 
+- **Interactive daemon launcher.** `gophertrunk` (no args) now prompts
+  the operator on a TTY for what to drive: `[1]` in-process TUI, `[2]`
+  bundled web SPA in the system browser, or `[3]` stay headless.
+  Non-TTY stdin (systemd, Windows service, Docker) auto-selects
+  headless so service managers see no behaviour change. New flags
+  preselect: `-tui`, `-web`, `-headless`; the three are mutually
+  exclusive. See [`docs/launcher.md`](docs/launcher.md).
+- **Live settings editing.** New `PATCH /api/v1/settings` endpoint
+  accepts a sparse patch (every field optional), writes the result to
+  `config.yaml` preserving comments + formatting, and hot-reloads the
+  fields the daemon knows how to change in-process (audio volume /
+  mute / recording, scanner scan mode, log level). Other fields
+  ("restart required") are written to disk and flagged in the
+  response so the SPA / TUI can render badges. An mtime guard refuses
+  to clobber a config.yaml that was edited externally while the
+  daemon was running.
+- **Live import.** New `POST /api/v1/import` (multipart),
+  `POST /api/v1/import/{id}/commit`, `DELETE /api/v1/import/{id}`
+  endpoints let operators upload RadioReference PDFs / multi-section
+  CSVs to a running daemon, preview the parsed systems, and commit
+  into `config.yaml` without restarting. The TUI grows an Import
+  panel (Stage → Preview → Result); the web SPA grows a matching
+  `/import` route with a native file picker.
+- **Startup hardening.** A new pre-flight step auto-creates the
+  recordings / storage / cc-cache parent dirs and verifies TLS
+  cert/key parse cleanly before the daemon binds. SDR-pool open
+  failures and missing talkgroup CSVs collect into `startup_warnings`
+  (surfaced on the runtime DTO + the launcher menu) instead of
+  vanishing into the log. HTTP and gRPC bind failures now abort the
+  daemon cleanly instead of being demoted to warnings — the launcher
+  never lands against a half-dead daemon.
+
+### Changed
+
+- **Security defaults flipped for closed-LAN deployments.** Empty
+  `api.auth.mode` now defaults to `disabled` (was `auto`) and empty
+  `api.cors.allowed_origins` now permits any origin (was strict). The
+  daemon still warns loudly at startup when these defaults take
+  effect on a non-loopback bind, but the common single-host setup no
+  longer needs explicit auth + CORS config to talk to the web SPA
+  from `file://`. Operators on hostile networks opt back in via
+  explicit `api.auth.mode: required` + `api.cors.allowed_origins:
+  ["http://laptop.local:5173"]`. The default `api.http_addr` is now
+  `127.0.0.1:8080` (was empty) so the bundled launcher's TUI / web
+  paths work out of the box.
+
 - **Config auto-discovery.** `gophertrunk run` (no `-config` flag)
   now walks `$GOPHERTRUNK_CONFIG` → `<UserConfigDir>/GopherTrunk/config.yaml`
   → `<Home>/Documents/GopherTrunk/config.yaml` → `./config.yaml`
