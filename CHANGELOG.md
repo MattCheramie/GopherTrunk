@@ -9,6 +9,21 @@ for tagged releases.
 
 ### Added
 
+- **Bundled Zadig WinUSB driver installer in the Windows installer.**
+  The Windows `setup.exe` now ships `zadig.exe` alongside
+  `gophertrunk.exe`, so first-run operators no longer have to chase a
+  separate download to bind the RTL-SDR's WinUSB driver. Setup adds a
+  Start Menu shortcut **"Install RTL-SDR driver (Zadig)"** and offers
+  an unchecked **"Run Zadig now"** option on the final wizard page;
+  Zadig's own manifest handles the UAC elevation. The uninstaller
+  also now strips the `{app}` entry from the system PATH (previously
+  leaked across uninstalls) and asks whether to wipe the editable
+  `config.yaml` + the Setup-created `gophertrunk-web` subfolder —
+  default **No**, so user data is preserved unless explicitly opted
+  in. Bundled binary is `zadig-2.9.exe` from libwdi `v1.5.1`
+  (GPL-3.0); see [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)
+  for attribution.
+  Shipped in [PR #249](https://github.com/MattCheramie/GopherTrunk/pull/249).
 - **NXDN deviation surfaces on the TUI Settings → FEC tab.**
   The `nxdn_deviation_hz` knob shipped in [PR #243](https://github.com/MattCheramie/GopherTrunk/pull/243)
   but wasn't visible from the operator console. The
