@@ -112,6 +112,19 @@ The dev server proxies `/api/*` and `/metrics` to
 same-origin to the browser and you don't need CORS during
 development.
 
+### node_modules / Go interop
+
+A few npm dependencies (e.g. `flatted`) ship stray Go source files
+inside their tarballs. Without intervention, Go's recursive package
+discovery (`go list ./...`, `go test ./...`) walks into
+`web/node_modules/` and picks them up — harmless to the build, but
+it pollutes package listings and slows incremental compiles. The
+`postinstall` hook in `package.json` runs
+`scripts/seal-node-modules.mjs`, which drops a sentinel
+`web/node_modules/go.mod` so Go treats the whole tree as a separate
+module and skips it. Re-run `npm install` (or `make web-test`)
+after a manual `rm -rf node_modules/go.mod` to recreate it.
+
 ### Tests
 
 `npm test` runs Vitest in CI mode against `src/**/*.{test,spec}.{ts,tsx}`.

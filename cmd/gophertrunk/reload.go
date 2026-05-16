@@ -24,6 +24,11 @@ func (d *Daemon) Reload() (string, error) {
 		return "", err
 	}
 
+	// Serialise the diff-apply phase against concurrent Cfg() reads
+	// (test harnesses + the runtime DTO builder may race with us).
+	d.cfgMu.Lock()
+	defer d.cfgMu.Unlock()
+
 	app := newDaemonSettingsApplier(d, "")
 	var applied, restartRequired []string
 

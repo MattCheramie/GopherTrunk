@@ -9,6 +9,34 @@ for tagged releases.
 
 ### Internal
 
+- **Cleanup & coverage round.**
+  - `web/scripts/seal-node-modules.mjs` is registered as the npm
+    `postinstall` hook. It drops a sentinel `web/node_modules/go.mod`
+    so Go's recursive package discovery (`go list ./...`,
+    `go test ./...`) skips the stray Go packages npm dependencies
+    occasionally ship inside their tarballs (e.g.
+    `flatted/golang/pkg/flatted`). No more spurious entries in Go
+    package listings on developer machines that have run
+    `npm install`.
+  - `cmd/gophertrunk/launcher.go` grows three injectable seams
+    (`hasWebAssetsFn`, `canOpenBrowserFn`, `openBrowserFn`) so
+    `openWebUI` can be exercised end-to-end without spawning a real
+    browser. New tests verify the embedded-SPA branch wins when
+    `gtweb.HasAssets()` returns true, the headless-fallback prints
+    instead of launching, the no-embed sibling-discovery path runs
+    cleanly, and the missing-HTTP-addr error fires.
+  - `watchReloadSignal` now installs `signal.Notify` synchronously
+    before spawning its goroutine — fixes a latent race where
+    SIGHUP delivered immediately after the call could kill the
+    process (default SIGHUP action) before the goroutine got
+    around to registering its handler. Visible only in tightly-
+    timed tests; harmless in production where SIGHUP arrives long
+    after startup.
+  - New `TestSIGHUP_TriggersReload` and
+    `TestSIGHUP_BadConfigDoesNotCrash` send real SIGHUP signals to
+    the test process and assert the watcher's reload path runs and
+    that malformed-YAML reloads leave the in-memory config intact.
+
 - **Test infrastructure: web SPA + in-process TUI.**
   - SPA gains Vitest + React Testing Library. `Import.test.tsx`
     covers the no-config / no-mutations banners + the

@@ -67,6 +67,12 @@ func parseGain(s string) (int, bool) {
 // by Run, and torn down by Close in reverse order. Run blocks until
 // ctx cancels; Close is idempotent.
 type Daemon struct {
+	// cfgMu guards cfg against concurrent reload via SIGHUP /
+	// PATCH /api/v1/settings vs. other goroutines that snapshot
+	// config fields (HTTPListenAddr, startup logging, runtime DTO
+	// build). Reload takes the write lock for the whole apply
+	// phase; readers use Cfg() to take an RLock'd snapshot.
+	cfgMu    sync.RWMutex
 	cfg      config.Config
 	cfgPath  string
 	log      *slog.Logger
@@ -866,6 +872,16 @@ func (d *Daemon) Close() {
 		}
 		d.bus.Close()
 	})
+}
+
+// Cfg returns a snapshot of the daemon's current in-memory config
+// under an RLock. Callers that need to observe values that might
+// race against a SIGHUP / PATCH reload should use this getter
+// instead of reading d.cfg directly.
+func (d *Daemon) Cfg() config.Config {
+	d.cfgMu.RLock()
+	defer d.cfgMu.RUnlock()
+	return d.cfg
 }
 
 // HTTPListenAddr returns the resolved address of the HTTP API
