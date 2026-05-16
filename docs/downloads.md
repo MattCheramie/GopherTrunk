@@ -9,7 +9,7 @@ nav_group: Install
 {%- if latest and latest.tag_name -%}
   {%- assign ver = latest.tag_name -%}
 {%- else -%}
-  {%- assign ver = "v0.1.0" -%}
+  {%- assign ver = "v0.1.5" -%}
 {%- endif -%}
 {%- assign rel_url = "https://github.com/MattCheramie/GopherTrunk/releases/download/" | append: ver -%}
 

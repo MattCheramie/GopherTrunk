@@ -32,7 +32,7 @@ GopherTrunk is a software-defined-radio scanner that follows digital trunked-rad
 
 ```sh
 # Linux x86_64 — see https://gophertrunk.org/downloads.html for macOS, Windows, ARM64
-VERSION=v0.1.0
+VERSION=v0.1.5
 curl -L -o gophertrunk.tar.gz \
   https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
 tar xzf gophertrunk.tar.gz && cd gophertrunk-${VERSION}-linux-amd64
