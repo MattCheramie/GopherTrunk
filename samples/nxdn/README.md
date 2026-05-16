@@ -25,6 +25,8 @@ least:
 {
   "source": "MMDVMHost log @ <site>",
   "tool_cross_check": "DSDcc 1.9.5",
+  "sample_rate_hz": 48000,
+  "center_freq_hz": 851062500,
   "expected": {
     "system_id": "0x1234",
     "site_id": "0x01",
@@ -38,14 +40,38 @@ least:
 }
 ```
 
-The decoder test will:
+`sample_rate_hz` and `center_freq_hz` are required at the top
+level — the GNU Radio cfile format doesn't embed either, so the
+test harness needs them stated explicitly to tune the mock SDR and
+configure the per-system control channel. Operators copy
+`expected.system_id` / `expected.site_id` as hex strings (with or
+without the `0x` prefix) since that's how they appear in
+MMDVMHost / DSDcc logs.
 
-1. Stream the IQ through `newNXDNPipeline` (factory in
-   `internal/scanner/ccdecoder/pipelines.go`).
-2. Subscribe to the bus, collect `events.KindCCLocked` + `Grant`
-   events.
-3. Assert the decoded system ID / RAN / message sequence matches
-   `metadata.expected`.
+The decoder test
+[`cmd/gophertrunk/integration_cc_nxdn_realair_test.go`](../../cmd/gophertrunk/integration_cc_nxdn_realair_test.go)
+runs automatically under `go test -tags integration ./...` when a
+single `*.cfile` + sibling `*.metadata.json` pair is present in
+this directory. It:
+
+1. Registers the in-tree `sdr.MockFloat32Driver` pointing at the
+   capture, sets `cfg.SDR.SampleRate = metadata.sample_rate_hz`,
+   and configures the system's `control_channels` to
+   `[metadata.center_freq_hz]`.
+2. Streams the IQ through the production `newNXDNPipeline`
+   (factory in `internal/scanner/ccdecoder/pipelines.go`) with
+   `nxdn_viterbi_mode: spec`.
+3. Subscribes to the bus and waits up to 3 s for
+   `events.KindCCLocked`.
+4. Asserts the decoded `LockState.SystemID` /
+   `LockState.SiteID` / `LockState.FrequencyHz` match the
+   `metadata.expected` + `center_freq_hz` values byte-for-byte.
+
+The skeleton skips with a documented `t.Skipf` message when no
+capture is present so CI stays green until the fixture lands.
+Multiple `*.cfile` candidates in the directory surface as an
+explicit test error — exactly one capture pair is the supported
+case.
 
 ## Recommended sources
 

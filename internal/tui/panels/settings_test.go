@@ -43,7 +43,7 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 		"P2Sys", "trellis: on",
 		"Mining", "bch: on",
 		"UK", "bch: on",
-		"PSC", "viterbi: on",
+		"PSC", "viterbi: on", "deviation: 1800 Hz",
 		"Moto", "bch: on",
 		"config.yaml",
 	}
@@ -51,6 +51,37 @@ func TestSettingsPanel_RendersFECSummaryPerProtocol(t *testing.T) {
 		if !strings.Contains(view, w) {
 			t.Errorf("view missing %q in:\n%s", w, view)
 		}
+	}
+}
+
+func TestSettingsPanel_NXDNShowsDeviationOverride(t *testing.T) {
+	cases := []struct {
+		name string
+		sys  client.SystemDTO
+		want string
+	}{
+		{
+			name: "default",
+			sys:  client.SystemDTO{Name: "Default", Protocol: "nxdn"},
+			want: "deviation: 1800 Hz",
+		},
+		{
+			name: "override",
+			sys:  client.SystemDTO{Name: "Override", Protocol: "nxdn", NXDNDeviationHz: 2400.0},
+			want: "deviation: 2400 Hz",
+		},
+		{
+			name: "non-integer",
+			sys:  client.SystemDTO{Name: "Fractional", Protocol: "nxdn", NXDNDeviationHz: 1944.5},
+			want: "deviation: 1944 Hz",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := fecSummary(c.sys); !strings.Contains(got, c.want) {
+				t.Errorf("fecSummary(%+v) = %q, want substring %q", c.sys, got, c.want)
+			}
+		})
 	}
 }
 

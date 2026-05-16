@@ -194,7 +194,7 @@ fecRefresh:
 	// to) the FEC tab — the hash gate keeps the cost negligible.
 	if p.tab == tabFEC {
 		h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+			return fmt.Sprintf("%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%.1f|%s",
 				sys.Name, sys.Protocol,
 				sys.TETRAColourCode, sys.TETRAChannel,
 				sys.TETRAChannelCoding,
@@ -202,6 +202,7 @@ fecRefresh:
 				sys.P25Phase2TrellisMode, sys.P25Phase2RSMode,
 				sys.P25Phase2ScramblerMode,
 				sys.NXDNViterbiMode,
+				sys.NXDNDeviationHz,
 				sys.EDACSBCHMode)
 		})
 		if h != p.lastHash {
@@ -471,6 +472,11 @@ func fecSummary(s client.SystemDTO) string {
 		parts = append(parts, "scrambler: "+orDefault(s.P25Phase2ScramblerMode, "off"))
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
+		if s.NXDNDeviationHz > 0 {
+			parts = append(parts, fmt.Sprintf("deviation: %.0f Hz", s.NXDNDeviationHz))
+		} else {
+			parts = append(parts, "deviation: 1800 Hz")
+		}
 	case "edacs":
 		parts = append(parts, "bch: "+orDefault(s.EDACSBCHMode, "on"))
 	case "mpt1327":

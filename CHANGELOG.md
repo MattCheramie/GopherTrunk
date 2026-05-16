@@ -9,6 +9,38 @@ for tagged releases.
 
 ### Added
 
+- **NXDN deviation surfaces on the TUI Settings → FEC tab.**
+  The `nxdn_deviation_hz` knob shipped in [PR #243](https://github.com/MattCheramie/GopherTrunk/pull/243)
+  but wasn't visible from the operator console. The
+  per-system FEC summary now appends `deviation: 1800 Hz`
+  (or whatever override is configured) alongside the existing
+  `viterbi:` mode, matching the pattern P25 Phase 2 / MPT 1327
+  use for their per-protocol opt-outs. The hash gate that
+  controls FEC table refresh covers the new field so a
+  config-reloaded override surfaces inside one SSE round-trip.
+- **NXDN real-air integration harness skeleton.**
+  [`cmd/gophertrunk/integration_cc_nxdn_realair_test.go`](cmd/gophertrunk/integration_cc_nxdn_realair_test.go)
+  is the skip-gated companion to the existing synthesized
+  `TestDaemonCCDecodesNXDN`. When a contributor drops a single
+  `*.cfile` + sibling `*.metadata.json` pair into
+  [`samples/nxdn/`](samples/nxdn/), the harness:
+   - registers the in-tree `sdr.MockFloat32Driver` against the
+     capture,
+   - tunes the daemon to `metadata.center_freq_hz` at
+     `metadata.sample_rate_hz` (both required at the top level
+     since GNU Radio cfiles don't embed them),
+   - boots the daemon with `nxdn_viterbi_mode: spec`,
+   - waits up to 3 s wall time for `events.KindCCLocked`,
+   - asserts `LockState.SystemID` / `SiteID` / `FrequencyHz`
+     match the documented `metadata.expected` values
+     byte-for-byte.
+  
+  CI stays green via a documented `t.Skipf` fall-through until
+  a capture lands. Multiple `*.cfile` candidates surface as an
+  explicit test error so the contributor knows to disambiguate.
+  Metadata schema documented in
+  [`samples/nxdn/README.md`](samples/nxdn/README.md).
+
 - **Per-system NXDN deviation tunability** (`nxdn_deviation_hz`).
   The NXDN receiver's 4-FSK slicer was hardcoded to the Common Air
   Interface spec value of 1800 Hz peak deviation, which produces a

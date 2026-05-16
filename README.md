@@ -121,7 +121,13 @@ The remaining gaps:
     dibit distribution at the slicer output — can be rebalanced
     without code changes. See
     [`samples/nxdn/README.md`](samples/nxdn/README.md#tuning-deviation-for-non-spec-captures)
-    for the sweep recipe.
+    for the sweep recipe. The skip-gated real-air harness at
+    [`cmd/gophertrunk/integration_cc_nxdn_realair_test.go`](cmd/gophertrunk/integration_cc_nxdn_realair_test.go)
+    runs the SystemID + SiteID + 3 s lock-latency acceptance
+    criteria automatically as soon as a contributor drops a
+    `.cfile` + `.metadata.json` pair into `samples/nxdn/` per the
+    documented schema; CI stays green in the meantime via a
+    documented `t.Skipf` fall-through.
   - **P25 Phase 2 FEC chain (trellis + outer RS + PN44
     scrambler + per-burst offset probe, all shipping).** The
     full TIA-102 chain wraps the MAC PDU in three layers, each
