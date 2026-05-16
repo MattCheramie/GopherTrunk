@@ -213,6 +213,16 @@ type System struct {
 	// by the ccdecoder connector after parsing via
 	// nxdn.ParseViterbiMode.
 	NXDNViterbiMode string
+	// NXDNDeviationHz overrides the peak frequency deviation (Hz)
+	// the NXDN receiver's slicer is calibrated against. Spec value
+	// is 1800 Hz (matches the FM-discriminator output level so live
+	// captures slice correctly out of the box). Operators with
+	// on-air captures whose dibit distribution is bimodal (outer
+	// ±3 dominate, inner ±1 underrepresented) can override here —
+	// see samples/nxdn/README.md for the calibration recipe.
+	// Forwarded into nxdnrx.Options.DeviationHz by the ccdecoder
+	// connector; values <= 0 fall back to the spec default.
+	NXDNDeviationHz float64
 	// EDACSBCHMode enables the BCH(40, 28, 2) FEC layer on the
 	// EDACS CCW. Recognised values (case-insensitive): "" / "on" /
 	// "true" / "1" → BCHOn (the new default — 40-bit on-wire

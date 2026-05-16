@@ -802,6 +802,53 @@ func TestNXDNFactoryAppliesViterbiFromSystem(t *testing.T) {
 	}
 }
 
+// TestNXDNFactoryAppliesDeviationFromSystem: a non-zero
+// NXDNDeviationHz on the system overrides the 1800 Hz spec default
+// the slicer calibrates against.
+func TestNXDNFactoryAppliesDeviationFromSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newNXDNPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_062_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolNXDN,
+			ControlChannels: []uint32{851_062_500},
+			NXDNDeviationHz: 2400.0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newNXDNPipeline: %v", err)
+	}
+	np := p.(*nxdnPipeline)
+	if np.deviationHz != 2400.0 {
+		t.Errorf("deviationHz = %v, want 2400.0", np.deviationHz)
+	}
+}
+
+// TestNXDNFactoryDefaultsDeviation: a zero / unset NXDNDeviationHz
+// falls back to the 1800 Hz spec default per the Common Air
+// Interface.
+func TestNXDNFactoryDefaultsDeviation(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	p, err := newNXDNPipeline(PipelineOptions{
+		Bus: bus, SystemName: "Test", FrequencyHz: 851_062_500,
+		SampleRateHz: 48_000,
+		System: trunking.System{
+			Name: "Test", Protocol: trunking.ProtocolNXDN,
+			ControlChannels: []uint32{851_062_500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newNXDNPipeline: %v", err)
+	}
+	np := p.(*nxdnPipeline)
+	if np.deviationHz != 1800.0 {
+		t.Errorf("deviationHz = %v, want 1800.0", np.deviationHz)
+	}
+}
+
 // TestEDACSFactoryAppliesBCHFromSystem: EDACSBCHMode = "on" flips
 // the CCW decoder into BCHOn.
 func TestEDACSFactoryAppliesBCHFromSystem(t *testing.T) {

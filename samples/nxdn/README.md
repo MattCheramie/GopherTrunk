@@ -95,3 +95,31 @@ integration test
 [`cmd/gophertrunk/integration_cc_nxdn_test.go`](../../cmd/gophertrunk/integration_cc_nxdn_test.go)
 — add a `_realair_test.go` sibling pointing the mock SDR at the
 capture path.
+
+## Tuning deviation for non-spec captures
+
+The NXDN receiver's 4-FSK slicer is calibrated against the Common
+Air Interface spec value of 1800 Hz peak deviation. On-air
+transmitters that deviate from spec produce a **bimodal dibit
+distribution** through the slicer — outer ±3 levels dominate, inner
+±1 levels under-fire (e.g. `samples/nxdn/NXDN96 IQ.wav` reports
+3 / 50 / 3 / 44 % through the production pipeline). Override the
+deviation per-system in `config.yaml`:
+
+```yaml
+trunking:
+  systems:
+    - name: "Local NXDN"
+      protocol: "nxdn"
+      control_channels: [851062500]
+      # Override only if the default 1800 Hz produces a bimodal
+      # dibit distribution. Typical values for non-spec
+      # transmitters land between 2200 and 2700 Hz.
+      nxdn_deviation_hz: 2400
+```
+
+Zero / unset (the default) uses the 1800 Hz spec value. The
+existing `cmd/audio_smoketest` tool prints the empirical dibit
+distribution after slicing — sweep `nxdn_deviation_hz` until the
+distribution flattens toward the spec-ideal 25 / 25 / 25 / 25 %
+before locking in a value.

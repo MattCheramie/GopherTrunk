@@ -233,3 +233,66 @@ func TestCompareAMBE2SkipsWithoutFixtures(t *testing.T) {
 			res.PeakXcorr, res.LagSamples)
 	}
 }
+
+// TestCompareSamplesSyntheticGainOffset validates the calibrate
+// math without external fixtures. Generates a 1 s sine through the
+// "in-tree" stream + a +3 dB-louder copy as the "reference", then
+// asserts CompareSamples reports the expected loudness offset and
+// perfect waveform alignment. Keeps the math under test even when
+// the real-air reference WAVs in internal/voice/{imbe,ambe2}/testdata
+// haven't been checked in yet.
+func TestCompareSamplesSyntheticGainOffset(t *testing.T) {
+	const (
+		sampleRateHz = 8000
+		durationSec  = 1.0
+		toneHz       = 440.0
+		inAmplitude  = 5000.0 // int16 RMS of a sine at amplitude A is A/√2.
+	)
+	// gainLinear = 10^(3/20) ≈ 1.4125 → the reference is +3 dB louder
+	// than the in-tree stream. Compare reports RMSRatioDb as
+	// 20·log10(rmsIn / rmsRef), so a louder reference produces a
+	// negative dB value.
+	const wantDb = -3.0
+	gainLinear := math.Pow(10, 3.0/20.0)
+
+	n := int(sampleRateHz * durationSec)
+	inTree := make([]int16, n)
+	refSamples := make([]int16, n)
+	for i := 0; i < n; i++ {
+		v := inAmplitude * math.Sin(2*math.Pi*toneHz*float64(i)/sampleRateHz)
+		inTree[i] = int16(v)
+		refSamples[i] = int16(v * gainLinear)
+	}
+
+	res := CompareSamples(inTree, refSamples)
+
+	if math.Abs(res.RMSRatioDb-wantDb) > 0.5 {
+		t.Errorf("RMSRatioDb = %.3f dB, want %.3f ± 0.5 dB", res.RMSRatioDb, wantDb)
+	}
+	if res.PeakXcorr < 0.99 {
+		t.Errorf("PeakXcorr = %.4f, want >= 0.99 (identical waveforms up to scale)", res.PeakXcorr)
+	}
+	if res.LagSamples != 0 {
+		t.Errorf("LagSamples = %d, want 0 (no delay between identical streams)", res.LagSamples)
+	}
+	if res.InTreeSampleCount != n || res.RefSampleCount != n {
+		t.Errorf("sample counts = (%d, %d), want (%d, %d)",
+			res.InTreeSampleCount, res.RefSampleCount, n, n)
+	}
+}
+
+// TestCompareSamplesSilencePath: one silent stream produces a
+// well-defined zero RMS ratio (vs. NaN / −∞ from a log of zero).
+func TestCompareSamplesSilencePath(t *testing.T) {
+	const n = 800
+	silent := make([]int16, n)
+	noisy := make([]int16, n)
+	for i := range noisy {
+		noisy[i] = int16(1000 * math.Sin(2*math.Pi*440*float64(i)/8000))
+	}
+
+	res := CompareSamples(silent, noisy)
+	if res.RMSRatioDb != 0 {
+		t.Errorf("RMSRatioDb with silent in-tree = %v, want 0", res.RMSRatioDb)
+	}
+}
