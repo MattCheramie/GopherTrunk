@@ -196,6 +196,11 @@ type ConvChannelStatusDTO struct {
 // server (internal/api/grpc.go) shares the same in-process state.
 type Server struct {
 	addr         string
+	// boundAddr is populated by Run() with the listener's actual
+	// address after net.Listen — important for ":0" / "127.0.0.1:0"
+	// configurations where the kernel picks the port. Read via
+	// BoundAddr(). Empty until Run() has bound (or after Close).
+	boundAddr    string
 	bus          *events.Bus
 	engine       EngineSnapshot
 	mutator      EngineMutator
@@ -472,6 +477,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 	s.mu.Lock()
+	s.boundAddr = listener.Addr().String()
 	s.srv = &http.Server{
 		Handler: handler,
 		// ReadHeaderTimeout protects against Slowloris attacks; the
@@ -524,6 +530,15 @@ func (s *Server) Run(ctx context.Context) error {
 // Close gracefully shuts down the server. Safe to call after Run returns.
 func (s *Server) Close() error {
 	return s.shutdown(context.Background())
+}
+
+// BoundAddr returns the actual TCP address the listener bound to,
+// useful when callers configured ":0" / "127.0.0.1:0" and need the
+// kernel-assigned port. Returns "" before Run() has bound.
+func (s *Server) BoundAddr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.boundAddr
 }
 
 func (s *Server) shutdown(ctx context.Context) error {

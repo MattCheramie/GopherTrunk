@@ -870,10 +870,16 @@ func (d *Daemon) Close() {
 
 // HTTPListenAddr returns the resolved address of the HTTP API
 // (helpful for tests using an ephemeral ":0" port). Returns "" if no
-// API server is configured.
+// API server is configured. Prefers the listener's actually-bound
+// address once the API server has called net.Listen — important for
+// configurations that use ":0" / "127.0.0.1:0" so callers see the
+// kernel-assigned port instead of "0".
 func (d *Daemon) HTTPListenAddr() string {
 	if d.httpAPI == nil {
 		return ""
+	}
+	if bound := d.httpAPI.BoundAddr(); bound != "" {
+		return bound
 	}
 	return d.cfg.API.HTTPAddr
 }

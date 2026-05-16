@@ -2064,6 +2064,7 @@ and DVB-driver blacklisting on Linux.
 ```sh
 make build                    # produces ./bin/gophertrunk
 make test                     # go test -race ./...
+make web-test                 # Vitest + React Testing Library against the SPA panels
 make integration              # boots the wired daemon end-to-end (no SDR needed)
 make test-integration         # every //go:build integration test across the module
 make test-dvsi                # DVSI USB-3000 / AMBE-3003 backend (under -tags dvsi)
