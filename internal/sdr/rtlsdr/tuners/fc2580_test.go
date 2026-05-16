@@ -38,6 +38,31 @@ func TestFC2580_SetFreqRangeGuard(t *testing.T) {
 	}
 }
 
+// TestFC2580SetFreqBoundaryInclusivity confirms the range guard at
+// fc2580.go:134 accepts the exact 50 MHz / 2.6 GHz endpoints.
+func TestFC2580SetFreqBoundaryInclusivity(t *testing.T) {
+	f := NewFC2580(rtl2832u.New(usb.NewMockTransport()))
+	f.initDone = true
+	cases := []struct {
+		hz        uint32
+		wantRange bool
+	}{
+		{49_999_999, true},
+		{50_000_000, false},
+		{2_600_000_000, false},
+		{2_600_000_001, true},
+	}
+	for _, c := range cases {
+		err := f.SetFreq(c.hz)
+		var rangeErr *ErrUnsupportedFreq
+		isRange := errors.As(err, &rangeErr)
+		if isRange != c.wantRange {
+			t.Errorf("SetFreq(%d) range-err = %v, want %v (err=%v)",
+				c.hz, isRange, c.wantRange, err)
+		}
+	}
+}
+
 func TestFC2580BandSelect_IFChangesAcrossBands(t *testing.T) {
 	// Verify the band table picks different IF frequencies for VHF
 	// (5.6 MHz) vs UHF (4.6 MHz).

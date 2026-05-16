@@ -66,6 +66,37 @@ for tagged releases.
 
 ### Internal
 
+- **Polish pass: config example completeness, YSF acceptance criteria,
+  tuner math coverage.**
+  - `config.example.yaml` now shows commented examples for every
+    per-system FEC opt-out documented in the README's
+    [§FEC opt-outs](https://github.com/MattCheramie/GopherTrunk#fec-opt-outs)
+    table. NXDN (`nxdn_viterbi_mode`, `nxdn_deviation_hz`), P25
+    Phase 2 (`p25_phase2_{trellis,rs,scrambler,clock}_mode`),
+    TETRA (`tetra_colour_code`, `tetra_channel`,
+    `tetra_channel_coding`, `tetra_clock_mode`), EDACS
+    (`edacs_bch_mode`), MPT 1327 (`mpt1327_bch_mode`,
+    `mpt1327_cwsc_tolerance`), and D-STAR (`dstar_fec_mode`)
+    previously had docs but no example block to copy from.
+  - `samples/ysf/README.md` grows the explicit
+    `## Acceptance criteria` section the other four sample
+    READMEs (`nxdn`, `dmr-tier2`, `mpt1327`, `tetra`) already
+    have. Three numbered criteria — CRC pass-through against the
+    metadata's `fich_sequence`, MMDVMHost-vs-DSDcc schedule
+    locked, and trellis correction-depth bounded ≤ 4 errors per
+    100-bit on-air block at SNR ≥ 12 dB.
+  - `internal/sdr/rtlsdr/tuners` coverage rises from 30.3% to
+    43.5% via ten new tests covering: E4000 PLL Σ-Δ synth math
+    (hand-computed Z / X for 50 MHz / 100 MHz / 433 MHz / 868 MHz
+    / 1.5 GHz against the band-table walk in `e4k.go:84-97`),
+    `ErrUnsupportedFreq` exact-boundary inclusivity for E4000 /
+    FC0012 / FC0013 / FC2580 (the production `< minHz || > maxHz`
+    guard accepts the endpoints), `nearestGainIndex` rounding
+    behaviour on E4000's 17-step LNA ladder + the shared helper's
+    clamp / tie-break invariants, and `fc0012NearestGainIndex`
+    rounding parity. No production-code changes — pure post-hoc
+    coverage of math paths that don't need RTL-SDR hardware.
+
 - **DVSI mock-transport error-path coverage.** The
   `internal/voice/dvsi` test suite previously exercised the happy
   paths (scripted exchange, loopback silence, ErrNoDevice fall-

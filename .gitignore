@@ -7,6 +7,11 @@
 *.test
 *.out
 *.prof
+# Daemon single-instance flock (created at <configdir>/.gophertrunk.lock
+# at startup, removed on clean shutdown — see CHANGELOG "Single-instance
+# lock" entry). Leaks into the working tree if a contributor runs
+# `gophertrunk -config config.example.yaml` from the repo root.
+.gophertrunk.lock
 *.cfile
 !testdata/**/*.cfile
 .idea/

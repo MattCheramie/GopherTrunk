@@ -56,3 +56,72 @@ func TestFC0013_SetFreqRangeGuard(t *testing.T) {
 		t.Errorf("above-ceiling err = %v, want *ErrUnsupportedFreq", err)
 	}
 }
+
+// TestFC0013SetFreqBoundaryInclusivity confirms the range guard at
+// fc0013.go:110 accepts the exact 22 MHz / 1.7 GHz endpoints.
+func TestFC0013SetFreqBoundaryInclusivity(t *testing.T) {
+	f := NewFC0013(rtl2832u.New(usb.NewMockTransport()))
+	f.initDone = true
+	cases := []struct {
+		hz        uint32
+		wantRange bool
+	}{
+		{21_999_999, true},
+		{22_000_000, false},
+		{1_700_000_000, false},
+		{1_700_000_001, true},
+	}
+	for _, c := range cases {
+		err := f.SetFreq(c.hz)
+		var rangeErr *ErrUnsupportedFreq
+		isRange := errors.As(err, &rangeErr)
+		if isRange != c.wantRange {
+			t.Errorf("SetFreq(%d) range-err = %v, want %v (err=%v)",
+				c.hz, isRange, c.wantRange, err)
+		}
+	}
+}
+
+// TestNearestGainIndex_SharedHelper verifies the shared
+// nearestGainIndex (fc0013.go:268) routes midpoint requests to the
+// numerically closer ladder entry. The FC0013 LNA ladder is the
+// longest of the three tuners that use the shared helper, so it
+// exercises the search loop most.
+func TestNearestGainIndex_SharedHelper(t *testing.T) {
+	// fc0013LNAGains has 26 entries; spot-check rounding behavior at
+	// midpoints + at the clamp boundaries.
+	cases := []struct {
+		tenthDB int
+		check   func(int) bool
+		desc    string
+	}{
+		// Below the ladder floor: must clamp to index 0.
+		{tenthDB: -10_000, check: func(i int) bool { return i == 0 }, desc: "clamp low"},
+		// Far above any reasonable ladder value: must clamp to len-1.
+		{tenthDB: 10_000, check: func(i int) bool { return i == len(fc0013LNAGains)-1 }, desc: "clamp high"},
+		// Exact ladder hit picks itself.
+		{tenthDB: fc0013LNAGains[5], check: func(i int) bool { return i == 5 }, desc: "exact match idx=5"},
+		// A small positive delta picks the nearer of two adjacent
+		// entries — assert it's adjacent to the exact match.
+		{tenthDB: fc0013LNAGains[10] + 1, check: func(i int) bool { return i == 10 || i == 11 }, desc: "near idx=10"},
+	}
+	for _, c := range cases {
+		got := nearestGainIndex(fc0013LNAGains, c.tenthDB)
+		if !c.check(got) {
+			t.Errorf("%s: nearestGainIndex(fc0013LNAGains, %d) = %d (entry %d)",
+				c.desc, c.tenthDB, got, fc0013LNAGains[got])
+		}
+	}
+
+	// Empty ladder — production code panics by indexing ladder[0]. We
+	// don't test that explicitly because every tuner passes a populated
+	// ladder; this comment documents the invariant.
+
+	// Tie-break: when two entries are equidistant, the FIRST one wins
+	// (the loop uses `if d < bestDist`, not `<=`). Construct a
+	// synthetic ladder to pin that.
+	synth := []int{0, 100}
+	if got := nearestGainIndex(synth, 50); got != 0 {
+		t.Errorf("tie-break: nearestGainIndex({0, 100}, 50) = %d, want 0 (first-wins)", got)
+	}
+}

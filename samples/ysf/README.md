@@ -87,6 +87,35 @@ publish the polynomial choice (whether the K=5 generator pair is
 `(0o23, 0o35)` or `(0o31, 0o27)`) in this file's metadata block so
 the next iteration knows which variant to start from.
 
+## Acceptance criteria
+
+A capture is considered "validating" when:
+
+1. **CRC pass-through with the shipped schedule.** Every FICH burst
+   in `metadata.expected.fich_sequence` must round-trip through
+   `DecodeFICHOnAir`
+   ([`internal/radio/ysf/fich_trellis.go`](../../internal/radio/ysf/fich_trellis.go))
+   into `ParseFICH` with **100% CRC pass** at SNR ≥ the
+   `snr_estimate_db` field. Anything less than 100% on a
+   clean-SNR capture flags either a schedule mismatch (see
+   criterion 2) or a different K=5 polynomial pair (see
+   criterion 3).
+2. **Schedule choice locked.** If MMDVMHost's table
+   (`fichPuncturePositions = {0, 1, 102, 103}` + column-major
+   10×10 interleave) decodes the capture per criterion 1, the
+   shipped codec is correct — no change required. If CRC fails
+   on ≥ 50% of bursts, swap to the DSDcc alternate
+   (`{0, 51, 52, 103}` + 4-column variant) per the
+   *Alternate schedule (DSDcc fallback)* recipe above and
+   re-evaluate.
+3. **Trellis correction depth bounded.** The metric returned by
+   `DecodeFICHOnAir` (the second return value at
+   [`fich_trellis.go:106`](../../internal/radio/ysf/fich_trellis.go))
+   must average ≤ 4 surviving-path bit errors per 100-bit
+   on-air block at SNR ≥ 12 dB. Persistently higher metrics
+   indicate either a schedule mismatch or the alternate K=5
+   generator polynomial pair `(0o31, 0o27)` is in use.
+
 ## Recommended sources
 
 - **Pi-Star / MMDVMHost** dashboard with FICH logging enabled.
