@@ -7,8 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.1.5] — 2026-05-16
+
 ### Added
 
+- **Remediation hint on tuner-init I²C failures.** The RTL-SDR
+  driver now appends a one-line hint pointing at the three known
+  root causes (DVB kernel driver still bound, marginal USB power,
+  flaky cable / USB 3.0 hub) when the tuner doesn't ack on the I²C
+  bus during bring-up — both the EPIPE-on-first-burst case and the
+  mid-init `ErrDeviceGone` case. `docs/install-linux.md`'s
+  troubleshooting table grows a matching row keyed on the literal
+  error string so operators searching for "broken pipe" land
+  somewhere actionable.
+  Shipped in [PR #251](https://github.com/MattCheramie/GopherTrunk/pull/251),
+  addressing [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248).
 - **Bundled Zadig WinUSB driver installer in the Windows installer.**
   The Windows `setup.exe` now ships `zadig.exe` alongside
   `gophertrunk.exe`, so first-run operators no longer have to chase a
