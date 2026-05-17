@@ -58,13 +58,13 @@ func TestE4000PLLRangeTable_BandPicks(t *testing.T) {
 }
 
 // TestE4000PLLSynthMath replicates the production Σ-Δ math from
-// e4k.go's SetFreq (lines 209–222) and pins the (Z, X) outputs for
-// hand-computed frequencies. Z is the integer divider, X is the
-// 16-bit fractional in (remainder * 65536) / fosc (integer truncation,
-// matching the production uint32 cast). The expected values were
-// derived by hand from fosc = 28.8 MHz and the band table at
-// e4k.go:84-97; a regression in the math or the band-table ordering
-// will flip one of the bytes downstream of register 0x09..0x0C.
+// e4k.go's SetFreq and pins the (Z, X) outputs for hand-computed
+// frequencies. Z is the integer divider, X is the 16-bit fractional
+// in (remainder * 65536) / fosc (integer truncation, matching the
+// production uint32 cast). The expected values were derived by hand
+// from fosc = 28.8 MHz and the band table; a regression in the math
+// or the band-table ordering will flip one of the bytes downstream
+// of register 0x09 (Z), 0x0A/0x0B (X low/high), 0x0D (band/R).
 func TestE4000PLLSynthMath(t *testing.T) {
 	const fosc uint64 = 28_800_000
 	cases := []struct {
@@ -123,11 +123,13 @@ func TestE4000PLLSynthMath(t *testing.T) {
 				t.Errorf("X = %d, want %d (remainder=%d)", x, c.wantX, remainder)
 			}
 
-			// 3. Z must fit in 11 bits (e4k.go:228-233 splits as 8+3).
-			if z >= 1<<11 {
-				t.Errorf("Z = %d overflows the 11-bit synth field", z)
+			// 3. Z must fit in 8 bits (production writes z & 0xFF to
+			//    reg 0x09 with no high-byte counterpart per librtlsdr's
+			//    e4k_tune_params).
+			if z >= 1<<8 {
+				t.Errorf("Z = %d overflows the 8-bit synth field", z)
 			}
-			// 4. X must fit in 16 bits (e4k.go:234-237 splits as 8+8).
+			// 4. X must fit in 16 bits (split 8+8 across reg 0x0A and 0x0B).
 			if x >= 1<<16 {
 				t.Errorf("X = %d overflows the 16-bit fractional field", x)
 			}
@@ -161,6 +163,43 @@ func TestE4000SetFreqBoundaryInclusivity(t *testing.T) {
 			t.Errorf("SetFreq(%d) range-err = %v, want %v (err=%v)",
 				c.hz, isRange, c.wantRange, err)
 		}
+	}
+}
+
+// TestE4000_SetFreq_WireBytes pins the I2C writes E4000.SetFreq emits
+// at 100 MHz against librtlsdr's e4k_tune_params layout (e4k_reg.h):
+//
+//	0x09 SYNTH3 ← Z (integer divider, low byte)
+//	0x0A SYNTH4 ← X low byte (fractional)
+//	0x0B SYNTH5 ← X high byte
+//	0x0D SYNTH7 ← R divider [bits 0-2] + band select [bits 3-7]
+//
+// 100 MHz picks pll_vars row {div=32, bandSel=0x0D}:
+//
+//	fvco = 100_000_000 * 32 = 3_200_000_000
+//	z    = 3_200_000_000 / 28_800_000              = 111   (0x6F)
+//	rem  = 3_200_000_000 - 28_800_000*111          = 3_200_000
+//	x    = (3_200_000 * 65536) / 28_800_000        = 7281  (0x1C71)
+//
+// Pre-fix bug: SetFreq wrote (z>>8)&0x07 | bandSel&0xF0 to 0x0A (zeroed
+// bandSel since values are ≤0x0F), shifted X by one register, never
+// touched 0x0D. A regression to that layout fails this script's
+// strict-order match.
+func TestE4000_SetFreq_WireBytes(t *testing.T) {
+	var script []usb.CtrlExchange
+	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x09, 0x6F})...) // Z
+	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0A, 0x71})...) // X low
+	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0B, 0x1C})...) // X high
+	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0D, 0x0D})...) // band/R
+	m := usb.NewMockTransport()
+	m.Script = script
+	e := NewE4000(rtl2832u.New(m))
+	e.initDone = true
+	if err := e.SetFreq(100_000_000); err != nil {
+		t.Fatalf("SetFreq: %v", err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (script: %d/%d consumed)", m.Remaining(), m.Step, len(script))
 	}
 }
 

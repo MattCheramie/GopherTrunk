@@ -221,23 +221,23 @@ func (e *E4000) SetFreq(hz uint32) error {
 	// X is a 16-bit fractional: (remainder / fosc) * 65536, rounded.
 	x := uint32((remainder * 65536) / fosc)
 
-	// Write synth bytes (Z low + Z high → reg 0x09/0x0A; X low/high
-	// → reg 0x0B/0x0C in librtlsdr layout). E4K's synth reg map
-	// uses 0x09 = Z low, 0x0A = Z high (3 bits), 0x0B = X low,
-	// 0x0C = X high.
+	// E4K synth register layout (e4k_reg.h):
+	//   0x09 SYNTH3 — Z (integer divider, 8 bits is enough across the band table)
+	//   0x0A SYNTH4 — X low byte (fractional)
+	//   0x0B SYNTH5 — X high byte
+	//   0x0D SYNTH7 — R divider (bits 0-2) + 3-phase/band (bits 3-7)
+	// e4kPLLRanges[i].bandSel is the ready-to-write synth7 byte from
+	// librtlsdr's pll_vars table — write it verbatim to reg 0x0D.
 	if err := e.writeReg(0x09, byte(z&0xFF)); err != nil {
 		return err
 	}
-	if err := e.writeReg(0x0A, byte((z>>8)&0x07)|byte(rng.bandSel&0xF0)); err != nil {
+	if err := e.writeReg(0x0A, byte(x&0xFF)); err != nil {
 		return err
 	}
-	if err := e.writeReg(0x0B, byte(x&0xFF)); err != nil {
+	if err := e.writeReg(0x0B, byte((x>>8)&0xFF)); err != nil {
 		return err
 	}
-	if err := e.writeReg(0x0C, byte((x>>8)&0xFF)); err != nil {
-		return err
-	}
-	return nil
+	return e.writeReg(0x0D, rng.bandSel)
 }
 
 // SetBandwidth configures the IF channel filter. The E4000 has three

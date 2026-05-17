@@ -232,19 +232,30 @@ func (r *R82xx) SetGain(tenthDB int) error {
 		// callers use it as a sentinel.
 		return nil
 	}
-	// Walk the LNA + mixer LUTs in lockstep, accumulating gain.
-	// Pick the first index where the next step would exceed tenthDB.
+	// Alternate LNA and mixer increments, pre-incrementing the index
+	// each step. Matches librtlsdr's r82xx_set_gain — the published
+	// gain ladder (r82xxGainsTenthDB) is the alternating sum, so this
+	// is the only walk that lands on a balanced LNA+Mixer split for
+	// each target. The LNA-first-then-mixer alternative produces the
+	// same total at most ladder entries but with all gain concentrated
+	// on LNA — wrong noise figure and front-end linearity.
 	var lnaIdx, mixIdx int
-	var total int
-	for i := 0; i < len(r82xxLNAGainSteps) && total+r82xxLNAGainSteps[i] <= tenthDB; i++ {
-		total += r82xxLNAGainSteps[i]
-		lnaIdx = i
-	}
-	for i := 0; i < len(r82xxMixerGainSteps) && total+r82xxMixerGainSteps[i] <= tenthDB; i++ {
-		if r82xxMixerGainSteps[i] > 0 {
-			total += r82xxMixerGainSteps[i]
+	total := 0
+	for i := 0; i < 15; i++ {
+		if total >= tenthDB {
+			break
 		}
-		mixIdx = i
+		if lnaIdx+1 < len(r82xxLNAGainSteps) {
+			lnaIdx++
+			total += r82xxLNAGainSteps[lnaIdx]
+		}
+		if total >= tenthDB {
+			break
+		}
+		if mixIdx+1 < len(r82xxMixerGainSteps) {
+			mixIdx++
+			total += r82xxMixerGainSteps[mixIdx]
+		}
 	}
 	// Register 0x05 low nibble = LNA gain index; bit 4 must be 0 for manual mode.
 	if err := r.writeRegMask(0x05, byte(lnaIdx&0x0F), 0x0F); err != nil {
