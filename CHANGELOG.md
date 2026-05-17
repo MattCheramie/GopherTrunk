@@ -9,6 +9,23 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR R820T/R820T2 manual gain now uses librtlsdr's balanced
+  LNA+Mixer split.** `R82xx.SetGain` previously walked the LNA gain
+  ladder to maximum-not-exceeding-target, then walked the mixer
+  ladder — landing on the same numeric gain as librtlsdr but with all
+  the gain concentrated on the LNA. The result was a worse noise
+  figure and worse front-end linearity at every ladder entry. The
+  walk now alternates LNA and mixer with pre-increment, matching
+  `r82xx_set_gain` in osmocom librtlsdr. Affects every R820T/R820T2
+  dongle (the common case) the moment the user picks a manual gain.
+- **RTL-SDR E4000 (Elonics) tuner frequency setting now writes the
+  correct synthesizer registers.** `E4000.SetFreq` was writing the
+  fractional `X` value to `SYNTH5`/`SYNTH6` (off-by-one register) and
+  never writing the band-select / R-divider byte to `SYNTH7` at all,
+  so the chip would mistune at every frequency. The PLL math itself
+  was correct; only the wire-level register addresses were wrong.
+  Now matches librtlsdr's `e4k_tune_params` exactly. Affects E4000
+  dongles (legacy hardware — NOXON DAB sticks and similar).
 - **RTL-SDR R820T/R820T2 init burst now chunks at 16 bytes to match
   librtlsdr.** The 27-byte register flood at the top of `R82xx.Init`
   previously went on the wire as a single 28-byte I²C-bridge OUT

@@ -88,8 +88,9 @@ type Tuner interface {
 	// (returned by Gains). Pass -1 to leave the current value alone
 	// — useful when only SetGainMode is changing.
 	SetGain(tenthDB int) error
-	// SetGainMode flips between automatic (true) and manual (false)
-	// gain control.
+	// SetGainMode flips between manual (true) and automatic (false)
+	// gain control. Implementations name the parameter `manual` to make
+	// the polarity obvious at the call site.
 	SetGainMode(manual bool) error
 	// Gains returns the discrete gain ladder, in tenths of dB,
 	// supported by this chip. The slice is sorted ascending.

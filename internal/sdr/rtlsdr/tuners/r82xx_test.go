@@ -311,6 +311,92 @@ func TestR82xx_SetGainNegativeIsNoOp(t *testing.T) {
 	}
 }
 
+// TestR82xx_AlternatingGainWalk pins the cumulative sums the librtlsdr
+// alternating LNA/Mixer walk produces against the LUTs in
+// r82xx_tables.go. Every entry in the published ladder
+// r82xxGainsTenthDB must appear in this walk (with one exception — the
+// walk yields a transient 483 between 480 and 496 that the curated
+// ladder elides). A regression to "LNA-first then mixer" — same total
+// but all gain on LNA — produces a wildly different walk and fails fast.
+func TestR82xx_AlternatingGainWalk(t *testing.T) {
+	// 15 iterations × 2 increments + the starting zero = 31 totals.
+	wantWalk := []int{
+		0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229,
+		254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 439,
+		445, 480, 483, 496, 488,
+	}
+	got := []int{0}
+	total, lnaIdx, mixIdx := 0, 0, 0
+	for i := 0; i < 15; i++ {
+		lnaIdx++
+		total += r82xxLNAGainSteps[lnaIdx]
+		got = append(got, total)
+		mixIdx++
+		total += r82xxMixerGainSteps[mixIdx]
+		got = append(got, total)
+	}
+	if len(got) != len(wantWalk) {
+		t.Fatalf("walk produced %d totals; want %d", len(got), len(wantWalk))
+	}
+	for i, want := range wantWalk {
+		if got[i] != want {
+			t.Errorf("walk[%d] = %d, want %d", i, got[i], want)
+		}
+	}
+	// Every published-ladder entry except the elided 483 must appear in
+	// the walk — the ladder is the user-facing menu of "nice" gain
+	// values reachable by stopping the alternating walk early.
+	walkSet := map[int]bool{}
+	for _, v := range wantWalk {
+		walkSet[v] = true
+	}
+	for _, g := range r82xxGainsTenthDB {
+		if !walkSet[g] {
+			t.Errorf("ladder entry %d not reachable by alternating walk", g)
+		}
+	}
+}
+
+// TestR82xx_SetGain_BalancedSplit pins SetGain(144) end-to-end on the
+// mock transport. librtlsdr picks lnaIdx=4, mixIdx=4 — the balanced
+// split for r82xxGainsTenthDB[8] = 144. The pre-fix two-loop algorithm
+// picked lnaIdx=6, mixIdx=0 (all LNA) which would write 0x05=0x96 and
+// 0x07=0x70 — those bytes are NOT in this script, so a regression to
+// the old algorithm fails fast.
+//
+// Post-init shadow values (from r82xxInitArray):
+//
+//	regs[0x05] = 0x83 → SetGainMode(true) writes 0x93 (bit 4 set)
+//	regs[0x07] = 0x75 (bit 4 already set, SetGainMode emits no write)
+//	regs[0x0C] = 0xF5
+//
+// SetGain(144) then writes (with shadow elision):
+//
+//	0x05: 0x93 → (0x93 &^ 0x0F) | 4 = 0x94
+//	0x07: 0x75 → (0x75 &^ 0x0F) | 4 = 0x74
+//	0x0C: 0xF5 → (0xF5 &^ 0x9F) | 0x0B = 0x6B
+func TestR82xx_SetGain_BalancedSplit(t *testing.T) {
+	var script []usb.CtrlExchange
+	script = append(script, expectR82xxInitBurst()...)
+	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x93})...)
+	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x94})...)
+	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x07, 0x74})...)
+	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0C, 0x6B})...)
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := r.SetGainMode(true); err != nil {
+		t.Fatalf("SetGainMode: %v", err)
+	}
+	if err := r.SetGain(144); err != nil {
+		t.Fatalf("SetGain(144): %v", err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (script: %d/%d consumed)", m.Remaining(), m.Step, len(script))
+	}
+}
+
 func TestR82xx_SetBandwidthSelectsCoarseIndex(t *testing.T) {
 	// 2.4 MS/s → coarse index 0 (2.4 MHz BW entry, low nibble 0).
 	// regs[0x0A] post-init = 0xD6 (per r82xxInitArray).
