@@ -29,14 +29,33 @@ func expectRepeaterToggle(on bool) []usb.CtrlExchange {
 }
 
 // expectI2CWrite returns the full script for one tuner-side I2C write
-// burst, wrapped in repeater-on then repeater-off.
+// burst, wrapped in repeater-on then repeater-off. Use this for
+// single-write public methods or as an outer wrapper when chaining
+// several writes via expectI2CWriteRaw.
 func expectI2CWrite(i2cAddr uint8, data []byte) []usb.CtrlExchange {
 	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
-	out = append(out, usb.CtrlExchange{
-		In: false, BRequest: 0, WValue: uint16(i2cAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: data,
-	})
+	out = append(out, expectI2CWriteRaw(i2cAddr, data))
 	out = append(out, expectRepeaterToggle(false)...)
 	return out
+}
+
+// expectI2CWriteRaw is the single ControlOut for one I2C-bridge write
+// — no surrounding repeater toggles. Use when several writes live
+// inside one public-method bracket (librtlsdr-style: one toggle pair
+// per tune/gain/init call, all writes in between).
+func expectI2CWriteRaw(i2cAddr uint8, data []byte) usb.CtrlExchange {
+	return usb.CtrlExchange{
+		In: false, BRequest: 0, WValue: uint16(i2cAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: data,
+	}
+}
+
+// expectI2CReadRaw is the single ControlIn for one I2C-bridge read —
+// no surrounding repeater toggles. Mirrors expectI2CWriteRaw for the
+// read direction.
+func expectI2CReadRaw(i2cAddr uint8, n int, replyOnWire []byte) usb.CtrlExchange {
+	return usb.CtrlExchange{
+		In: true, BRequest: 0, WValue: uint16(i2cAddr), WIndex: uint16(rtl2832u.BlockIIC) << 8, N: n, Reply: replyOnWire,
+	}
 }
 
 // expectR82xxInitBurst returns the wire script R82xx.Init produces:
@@ -48,12 +67,8 @@ func expectR82xxInitBurst() []usb.CtrlExchange {
 	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
 	chunk1 := append([]byte{r82xxShadowStart}, r82xxInitArray[:r82xxBurstMaxData]...)
 	chunk2 := append([]byte{r82xxShadowStart + r82xxBurstMaxData}, r82xxInitArray[r82xxBurstMaxData:]...)
-	out = append(out, usb.CtrlExchange{
-		In: false, BRequest: 0, WValue: uint16(r82xxI2CAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: chunk1,
-	})
-	out = append(out, usb.CtrlExchange{
-		In: false, BRequest: 0, WValue: uint16(r82xxI2CAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: chunk2,
-	})
+	out = append(out, expectI2CWriteRaw(r82xxI2CAddr, chunk1))
+	out = append(out, expectI2CWriteRaw(r82xxI2CAddr, chunk2))
 	out = append(out, expectRepeaterToggle(false)...)
 	return out
 }
@@ -62,9 +77,7 @@ func expectR82xxInitBurst() []usb.CtrlExchange {
 // replyOnWire is what the mock returns (the driver bit-reverses).
 func expectI2CRead(i2cAddr uint8, n int, replyOnWire []byte) []usb.CtrlExchange {
 	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
-	out = append(out, usb.CtrlExchange{
-		In: true, BRequest: 0, WValue: uint16(i2cAddr), WIndex: uint16(rtl2832u.BlockIIC) << 8, N: n, Reply: replyOnWire,
-	})
+	out = append(out, expectI2CReadRaw(i2cAddr, n, replyOnWire))
 	out = append(out, expectRepeaterToggle(false)...)
 	return out
 }
@@ -254,10 +267,14 @@ func TestR82xx_StandbyWritesPowerDownSequence(t *testing.T) {
 		// {0x0F, 0x68} — skipped: shadow already holds 0x68 post-init.
 		{0x11, 0x03}, {0x17, 0xF4}, {0x19, 0x0C},
 	}
+	// Standby is one public call → one outer repeater toggle pair
+	// wrapping all the inner I2C writes (matches librtlsdr's
+	// rtlsdr_set_tuner_* wrap pattern).
+	script = append(script, expectRepeaterToggle(true)...)
 	for _, s := range standbyVals {
-		// Each standby write is one I2C burst of 2 bytes (addr + val).
-		script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{s.addr, s.val})...)
+		script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{s.addr, s.val}))
 	}
+	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -298,7 +315,9 @@ func TestR82xx_WriteRegMaskOnlyChangesMaskedBits(t *testing.T) {
 	}
 	// regs[0x05] = 0x83 = 1000_0011. Apply mask 0x0F with val 0x05.
 	// Expected new value: (0x83 & ^0x0F) | (0x05 & 0x0F) = 0x80 | 0x05 = 0x85.
-	m.Script = expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x85})
+	// writeRegMask is a private helper — no repeater toggle here.
+	// Callers (public methods) own the SetI2CRepeater bracket.
+	m.Script = []usb.CtrlExchange{expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x85})}
 	m.Step = 0
 	m.Err = nil
 	if err := r.writeRegMask(0x05, 0x05, 0x0F); err != nil {
@@ -432,10 +451,18 @@ func TestR82xx_AlternatingGainWalk(t *testing.T) {
 func TestR82xx_SetGain_BalancedSplit(t *testing.T) {
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x93})...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x94})...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x07, 0x74})...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0C, 0x6B})...)
+	// SetGainMode(true): one repeater on/off pair around the single
+	// 0x05 write (0x07 elided — bit 4 already set post-init).
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x93}))
+	script = append(script, expectRepeaterToggle(false)...)
+	// SetGain(144): one repeater on/off pair around three writes
+	// (LNA 0x05, Mixer 0x07, VGA 0x0C).
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x94}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x74}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0C, 0x6B}))
+	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -459,8 +486,11 @@ func TestR82xx_SetBandwidthSelectsCoarseIndex(t *testing.T) {
 	//   new = (0x6C & ^0xF0) | (0 & 0xF0) = 0x0C.
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0A, 0xD0})...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0B, 0x0C})...)
+	// SetBandwidth: one repeater on/off pair around the two writes.
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0A, 0xD0}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0B, 0x0C}))
+	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)

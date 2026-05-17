@@ -54,7 +54,7 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **Pure-Go voice path** — IMBE (P25 Phase 1) and AMBE+2 (P25 Phase 2 / DMR / NXDN) vocoders implemented in Go, no DVSI / mbelib dependency. Per-call WAV + raw-frame sidecars; live PCM playback via direct ALSA / WASAPI / CoreAudio (no `libasound2` at runtime).
 
-**SDR layer** — Pure-Go RTL-SDR driver across USBDEVFS (Linux), WinUSB (Windows), IOKit (macOS). All major tuner drivers (R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580). Multi-device pool with role assignment, per-device gain / PPM / bias-tee.
+**SDR layer** — Pure-Go RTL-SDR driver across USBDEVFS (Linux), WinUSB (Windows), IOKit (macOS). All major tuner drivers (R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) — each a wire-level port of osmocom librtlsdr's `tuner_*.c`, with librtlsdr-parity init burst chunking, EPIPE warmup + reset on Open, balanced LNA+Mixer gain algorithm, and the same `rtlsdr_open` probe order + GPIO 4/5/6 dances for non-R820T detection. I²C bridge toggles once per public method (`SetFreq`/`SetGain`/...) instead of per register write — drops ~10× the USB control transfers per retune on busy hubs. Multi-device pool with role assignment, per-device gain / PPM / bias-tee.
 
 **DSP** — Polyphase channelizer + CIC + halfband, Kaiser / RRC / Gaussian FIR designers, FM / C4FM / GFSK / FFSK / DQPSK / π/4-DQPSK / π/8-H-DQPSK demods, Mueller-Müller + Gardner clock recovery, LMS + CMA blind equalizers, Selection + maximal-ratio diversity combining.
 
@@ -2011,8 +2011,18 @@ to its own package and lands independently.
   replaced the `librtlsdr` + `libusb` C dependency. Pure-Go USB
   transports for Linux (USBDEVFS), Windows (WinUSB), and macOS (IOKit
   via `purego`); RTL2832U register/I2C layer; R820T/R820T2/R828D +
-  E4000 + FC0012 + FC0013 + FC2580 tuner drivers. Default builds
-  run `CGO_ENABLED=0` end-to-end.
+  E4000 + FC0012 + FC0013 + FC2580 tuner drivers — each a wire-level
+  port of osmocom librtlsdr's `tuner_*.c`. The tuner layer is
+  librtlsdr-parity in three places that previously diverged: the
+  R820T init burst chunks at 16 bytes (`NMAX_WRITES`) for the
+  NESDR v5 stall, `Open` runs an EPIPE warmup + reset retry, and
+  R82xx `SetGain` walks LNA + Mixer in lockstep (matching
+  `r82xx_set_gain`'s alternating pre-increment) instead of all-LNA
+  first. Detection follows `rtlsdr_open`'s exact probe order with
+  GPIO 4/5/6 reset pulses for non-R820T tuners. I²C bridge state
+  flips once per public method (`SetFreq`/`SetGain`/`Init`/...) —
+  the per-write toggle pattern is gone. Default builds run
+  `CGO_ENABLED=0` end-to-end.
 - **Pure-Go IMBE vocoder** (`internal/voice/imbe/` + shared
   `internal/voice/mbe/`) and **pure-Go AMBE+2 vocoder**
   (`internal/voice/ambe2/`) — both produce intelligible audio

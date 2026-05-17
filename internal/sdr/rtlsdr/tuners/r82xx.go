@@ -105,9 +105,11 @@ func detectR82xx(d *rtl2832u.Demod) Tuner {
 // disable Zero-IF mode, enable only the In-phase ADC input, program
 // the 3.57 MHz IF frequency, and enable spectrum inversion. Mirrors
 // the RTLSDR_TUNER_R820T / R828D switch arm in librtlsdr's
-// rtlsdr_open. Callers must invoke this between tuners.Detect (which
-// leaves the I2C repeater on) and Init; PrepareDemod does not touch
-// the repeater so the contract is preserved.
+// rtlsdr_open. All four go through the RTL2832U demod-register path,
+// not the I²C bridge — PrepareDemod intentionally does not touch
+// the SetI2CRepeater state so the post-Detect off-state (from
+// detect.go's defer) is preserved for Init's leading on-toggle
+// (issue #248).
 func (r *R82xx) PrepareDemod() error {
 	if err := r.demod.WriteDemodReg(1, 0xB1, 0x1A, 1); err != nil {
 		return fmt.Errorf("r82xx prep: disable Zero-IF: %w", err)
@@ -124,13 +126,18 @@ func (r *R82xx) PrepareDemod() error {
 	return nil
 }
 
-// Init walks the librtlsdr power-on sequence: write the 27-byte init
-// flood to registers 0x05..0x1F, then perform the standard tuner-side
-// soft-reset by toggling the demod's I2C bridge.
+// Init walks the librtlsdr power-on sequence: open the I²C repeater
+// (a fresh wire write — load-bearing on NESDR v5 silicon, issue
+// #248), write the 27-byte init flood to registers 0x05..0x1F as
+// 16-byte chunks (NMAX_WRITES parity), close the repeater on return.
 func (r *R82xx) Init() error {
 	if r.initDone {
 		return nil
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	// Prime the shadow with the init values; the burst write below
 	// makes them real.
 	for i, v := range r82xxInitArray {
@@ -149,6 +156,10 @@ func (r *R82xx) Standby() error {
 	if !r.initDone {
 		return nil
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	// Sequence taken from osmocom r82xx_standby — power down LDO,
 	// PLL, mixer, LNA, VGA, filter in one burst-style write set.
 	standbyRegs := []struct {
@@ -189,6 +200,10 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	if hz < 24_000_000 || hz > 1_766_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: r.chipType.String()}
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	r.freqHz = hz
 	if err := r.setMux(hz); err != nil {
 		return fmt.Errorf("r82xx SetFreq: setMux: %w", err)
@@ -207,6 +222,10 @@ func (r *R82xx) SetBandwidth(hz uint32) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	if hz == 0 {
 		hz = 6_000_000 // librtlsdr's default when nothing else is set
 	}
@@ -256,6 +275,10 @@ func (r *R82xx) SetGain(tenthDB int) error {
 		// callers use it as a sentinel.
 		return nil
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	// Alternate LNA and mixer increments, pre-incrementing the index
 	// each step. Matches librtlsdr's r82xx_set_gain — the published
 	// gain ladder (r82xxGainsTenthDB) is the alternating sum, so this
@@ -308,6 +331,10 @@ func (r *R82xx) SetGainMode(manual bool) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
 	}
+	if err := r.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer r.demod.SetI2CRepeater(false)
 	r.manual = manual
 	// LNA gain mode: reg 0x05 bit 4 clear = AGC; set = manual.
 	lnaBit := byte(0x00)
@@ -493,21 +520,19 @@ func (r *R82xx) writeRegMask(addr uint8, val, mask byte) error {
 }
 
 // writeBurstRaw bypasses the shadow cache and emits one or more I2C
-// burst writes (address byte followed by data bytes) wrapped in a
-// single I2C-repeater on/off pair.
+// burst writes (address byte followed by data bytes). The caller is
+// responsible for SetI2CRepeater(true)/(false) bracketing — each
+// public method (Init, SetFreq, ...) does this once around its whole
+// body, matching librtlsdr's rtlsdr_set_tuner_* wrap pattern.
 //
 // Data is split into chunks of at most r82xxBurstMaxData bytes to
 // mirror librtlsdr's r82xx_write (NMAX_WRITES = 16). Going beyond
 // that limit stalls the very first multi-byte OUT on some NESDR v5
 // dongles — observed as libusb EPIPE on the 27-byte init flood
-// (issue #248). Each chunk is its own control-OUT under the same
-// repeater session; the register pointer advances by the chunk
-// length between chunks, which matches the chip's auto-increment.
+// (issue #248). Each chunk is its own control-OUT; the register
+// pointer advances by the chunk length between chunks, which matches
+// the chip's auto-increment.
 func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
-	if err := r.demod.SetI2CRepeater(true); err != nil {
-		return err
-	}
-	defer r.demod.SetI2CRepeater(false)
 	for pos := 0; pos < len(data); {
 		size := len(data) - pos
 		if size > r82xxBurstMaxData {
@@ -528,12 +553,9 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 // chip auto-increments so a single read returns regs 0x00..0x00+n-1.
 // Bytes are bit-reversed on the wire; we un-reverse before returning.
 // The result is also stored into the shadow so callers querying via
-// the cache see fresh values for the read-only block.
+// the cache see fresh values for the read-only block. Caller owns
+// the SetI2CRepeater bracket.
 func (r *R82xx) readRegRaw(addr uint8, n int) ([]byte, error) {
-	if err := r.demod.SetI2CRepeater(true); err != nil {
-		return nil, err
-	}
-	defer r.demod.SetI2CRepeater(false)
 	// The R820T family auto-increments from register 0 on every
 	// read; pointer-setting only matters when addr != 0. For PLL
 	// status reads we always pass addr=0, so we skip the pointer
