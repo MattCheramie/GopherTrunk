@@ -39,6 +39,25 @@ func expectI2CWrite(i2cAddr uint8, data []byte) []usb.CtrlExchange {
 	return out
 }
 
+// expectR82xxInitBurst returns the wire script R82xx.Init produces:
+// repeater-on, the chunked init flood (16 + 11 data bytes at reg
+// 0x05 and 0x15 respectively — matches librtlsdr NMAX_WRITES), and
+// repeater-off. Kept in lockstep with writeBurstRaw's chunking
+// (issue #248).
+func expectR82xxInitBurst() []usb.CtrlExchange {
+	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	chunk1 := append([]byte{r82xxShadowStart}, r82xxInitArray[:r82xxBurstMaxData]...)
+	chunk2 := append([]byte{r82xxShadowStart + r82xxBurstMaxData}, r82xxInitArray[r82xxBurstMaxData:]...)
+	out = append(out, usb.CtrlExchange{
+		In: false, BRequest: 0, WValue: uint16(r82xxI2CAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: chunk1,
+	})
+	out = append(out, usb.CtrlExchange{
+		In: false, BRequest: 0, WValue: uint16(r82xxI2CAddr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: chunk2,
+	})
+	out = append(out, expectRepeaterToggle(false)...)
+	return out
+}
+
 // expectI2CRead is the read counterpart. n is the byte count;
 // replyOnWire is what the mock returns (the driver bit-reverses).
 func expectI2CRead(i2cAddr uint8, n int, replyOnWire []byte) []usb.CtrlExchange {
@@ -129,9 +148,10 @@ func TestBitReverseTable(t *testing.T) {
 }
 
 func TestR82xx_InitWritesBurst(t *testing.T) {
-	// Init does one burst write of (addr 0x05, then 27 init bytes).
-	burst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, m := newR82xxForTest(t, expectI2CWrite(r82xxI2CAddr, burst))
+	// Init writes the 27-byte init array as two librtlsdr-style chunks
+	// (16 + 11 data bytes) under one repeater on/off pair. See
+	// r82xxBurstMaxData and issue #248 for the chunking rationale.
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -152,8 +172,7 @@ func TestR82xx_InitWritesBurst(t *testing.T) {
 
 func TestR82xx_InitIdempotent(t *testing.T) {
 	// Second Init call must be a no-op (no I2C traffic).
-	burst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, m := newR82xxForTest(t, expectI2CWrite(r82xxI2CAddr, burst))
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("first Init: %v", err)
 	}
@@ -166,10 +185,9 @@ func TestR82xx_InitIdempotent(t *testing.T) {
 }
 
 func TestR82xx_StandbyWritesPowerDownSequence(t *testing.T) {
-	// Build expected script: Init (one burst), then 11 standby writes.
+	// Build expected script: Init (chunked init burst), then standby writes.
 	var script []usb.CtrlExchange
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, initBurst)...)
+	script = append(script, expectR82xxInitBurst()...)
 	// Note: writes whose new value matches the init-array value are
 	// elided by the shadow cache. 0x0F init = 0x68 (per
 	// r82xxInitArray) and standby also requests 0x68 → skipped.
@@ -205,9 +223,7 @@ func TestR82xx_WriteRegMaskSkipsRedundant(t *testing.T) {
 	// After Init, shadow has known values. Writing a value that
 	// matches the masked region of the shadow must produce no I2C
 	// traffic.
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	script := expectI2CWrite(r82xxI2CAddr, initBurst)
-	r, m := newR82xxForTest(t, script)
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -222,11 +238,7 @@ func TestR82xx_WriteRegMaskSkipsRedundant(t *testing.T) {
 }
 
 func TestR82xx_WriteRegMaskOnlyChangesMaskedBits(t *testing.T) {
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, m := newR82xxForTest(t, append(
-		[]usb.CtrlExchange{},
-		expectI2CWrite(r82xxI2CAddr, initBurst)...,
-	))
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -252,8 +264,7 @@ func TestR82xx_SetGainModeManual(t *testing.T) {
 	// regs[0x07] = 0x75 post-init → 0x75 (bit 4 already set!). Wait, 0x75 = 0111_0101, bit 4 = 1. Hmm.
 	// So writing manual mode (bit 4 = 1) to 0x07 is a no-op. We skip that write.
 	var script []usb.CtrlExchange
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, initBurst)...)
+	script = append(script, expectR82xxInitBurst()...)
 	// Only the 0x05 write should land (0x07's bit 4 is already 1 post-init).
 	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x93})...)
 	r, m := newR82xxForTest(t, script)
@@ -273,8 +284,7 @@ func TestR82xx_SetGainModeManual(t *testing.T) {
 
 func TestR82xx_SetGainOnlyInManualMode(t *testing.T) {
 	// SetGain must be a no-op when AGC is active (default).
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, m := newR82xxForTest(t, expectI2CWrite(r82xxI2CAddr, initBurst))
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -288,8 +298,7 @@ func TestR82xx_SetGainOnlyInManualMode(t *testing.T) {
 }
 
 func TestR82xx_SetGainNegativeIsNoOp(t *testing.T) {
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, m := newR82xxForTest(t, expectI2CWrite(r82xxI2CAddr, initBurst))
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -309,8 +318,7 @@ func TestR82xx_SetBandwidthSelectsCoarseIndex(t *testing.T) {
 	// regs[0x0B] post-init = 0x6C.
 	//   new = (0x6C & ^0xF0) | (0 & 0xF0) = 0x0C.
 	var script []usb.CtrlExchange
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	script = append(script, expectI2CWrite(r82xxI2CAddr, initBurst)...)
+	script = append(script, expectR82xxInitBurst()...)
 	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0A, 0xD0})...)
 	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x0B, 0x0C})...)
 	r, m := newR82xxForTest(t, script)
@@ -363,8 +371,7 @@ func TestSelectBWIndex_SmallestFilterAboveTarget(t *testing.T) {
 }
 
 func TestR82xx_SetFreqOutOfRange(t *testing.T) {
-	initBurst := append([]byte{r82xxShadowStart}, r82xxInitArray[:]...)
-	r, _ := newR82xxForTest(t, expectI2CWrite(r82xxI2CAddr, initBurst))
+	r, _ := newR82xxForTest(t, expectR82xxInitBurst())
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

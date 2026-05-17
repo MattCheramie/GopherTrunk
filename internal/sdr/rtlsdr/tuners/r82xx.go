@@ -457,18 +457,36 @@ func (r *R82xx) writeRegMask(addr uint8, val, mask byte) error {
 	return r.writeBurstRaw(addr, []byte{next})
 }
 
-// writeBurstRaw bypasses the shadow cache and emits one I2C burst
-// (address byte followed by len(data) data bytes) wrapped in
-// I2C-repeater on/off.
+// writeBurstRaw bypasses the shadow cache and emits one or more I2C
+// burst writes (address byte followed by data bytes) wrapped in a
+// single I2C-repeater on/off pair.
+//
+// Data is split into chunks of at most r82xxBurstMaxData bytes to
+// mirror librtlsdr's r82xx_write (NMAX_WRITES = 16). Going beyond
+// that limit stalls the very first multi-byte OUT on some NESDR v5
+// dongles — observed as libusb EPIPE on the 27-byte init flood
+// (issue #248). Each chunk is its own control-OUT under the same
+// repeater session; the register pointer advances by the chunk
+// length between chunks, which matches the chip's auto-increment.
 func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 	if err := r.demod.SetI2CRepeater(true); err != nil {
 		return err
 	}
 	defer r.demod.SetI2CRepeater(false)
-	buf := make([]byte, 1+len(data))
-	buf[0] = addr
-	copy(buf[1:], data)
-	return r.demod.I2CWrite(r.i2cAddr, buf)
+	for pos := 0; pos < len(data); {
+		size := len(data) - pos
+		if size > r82xxBurstMaxData {
+			size = r82xxBurstMaxData
+		}
+		buf := make([]byte, 1+size)
+		buf[0] = addr + uint8(pos)
+		copy(buf[1:], data[pos:pos+size])
+		if err := r.demod.I2CWrite(r.i2cAddr, buf); err != nil {
+			return err
+		}
+		pos += size
+	}
+	return nil
 }
 
 // readRegRaw reads n bytes from the chip starting at addr 0. The
