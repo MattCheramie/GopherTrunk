@@ -114,6 +114,20 @@ func (d *Demod) DeinitBaseband() error {
 	return d.writeBlockRegLocked(BlockSys, SysDemodCtl, 0x20, 1)
 }
 
+// WarmupUSBSysctl issues the single USB-block write that librtlsdr's
+// rtlsdr_open uses as a dummy-write probe immediately after claiming
+// the interface — if it returns EPIPE the caller is expected to
+// libusb_reset_device and retry. The wire bytes match initBasebandSteps[0]
+// on purpose: librtlsdr also repeats the write inside the full init
+// flood, and the chip is happy to receive it twice. Kept separate so
+// the open path can run it with reset-on-EPIPE recovery without
+// dragging the whole baseband sequence into the retry.
+func (d *Demod) WarmupUSBSysctl() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.writeBlockRegLocked(BlockUSB, USBSysctl, 0x09, 1)
+}
+
 // SetFIR uploads custom FIR filter coefficients. Layout matches
 // rtlsdr_set_fir: first 8 entries are 8-bit signed (one byte each),
 // entries 8..15 are 12-bit signed and pack three nibbles per pair —

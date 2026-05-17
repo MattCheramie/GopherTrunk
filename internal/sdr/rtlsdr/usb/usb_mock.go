@@ -73,6 +73,13 @@ type MockTransport struct {
 	ClaimedIfaces map[int]bool
 	Closed        bool
 
+	// ResetCalls counts invocations of Reset; tests use it to assert
+	// the USBDEVFS_RESET recovery path ran. ClaimCalls counts
+	// successful ClaimInterface invocations across all interfaces, so
+	// tests can verify post-reset re-claim happened.
+	ResetCalls int
+	ClaimCalls int
+
 	BulkPackets  [][]byte
 	BulkInterval time.Duration
 
@@ -171,6 +178,7 @@ func (m *MockTransport) ClaimInterface(num int) error {
 		return ErrClosed
 	}
 	m.ClaimedIfaces[num] = true
+	m.ClaimCalls++
 	return nil
 }
 
@@ -246,6 +254,7 @@ func (m *MockTransport) Reset() error {
 	if m.Closed {
 		return ErrClosed
 	}
+	m.ResetCalls++
 	return nil
 }
 

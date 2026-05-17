@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **RTL-SDR tuner init no longer fails on dongles left in a
+  half-initialised USB state.** Open now performs librtlsdr's
+  dummy-write probe (`USB_SYSCTL = 0x09`) immediately after claiming
+  the interface and, on `EPIPE` / `ErrDeviceGone`, runs a one-shot
+  `USBDEVFS_RESET` + re-claim before retrying. Dongles whose endpoint
+  was left stalled by a crashed prior session or a freshly-unbound
+  DVB kernel driver now open transparently instead of surfacing the
+  EPIPE as "r82xx init: burst write: I2CWrite addr=0x34: broken pipe".
+  When both attempts fail the existing tuner-bringup hint is still
+  appended.
+  Addresses [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248).
+
 ## [v0.1.5] — 2026-05-16
 
 ### Added

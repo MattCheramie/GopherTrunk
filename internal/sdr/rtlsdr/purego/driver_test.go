@@ -135,6 +135,121 @@ func TestKnownDevicesNoDuplicates(t *testing.T) {
 	}
 }
 
+// warmupUSBSysctlExchange returns the single mock CtrlExchange that
+// matches the wire bytes WarmupUSBSysctl emits — a vendor-OUT write to
+// BlockUSB / USBSysctl with payload 0x09. Err overrides the mock's
+// response so tests can simulate EPIPE recoveries.
+func warmupUSBSysctlExchange(simulateErr error) usb.CtrlExchange {
+	return usb.CtrlExchange{
+		In:       false,
+		BRequest: 0,
+		WValue:   0x2000,              // USBSysctl
+		WIndex:   uint16(1)<<8 | 0x10, // BlockUSB<<8 | 0x10
+		Data:     []byte{0x09},
+		Err:      simulateErr,
+	}
+}
+
+// Regression for issue #248: the warmup probe in openDevice must run
+// exactly once on a healthy device and must not trigger a USB reset.
+// Termination is forced via an unrelated ErrTimeout on the first
+// InitBaseband write so the script stays minimal.
+func TestOpenDevice_WarmupSucceedsFirstTry(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),
+		// Make InitBaseband's first write (also USBSysctl=0x09 — the
+		// same wire bytes as the warmup) fail with a non-EPIPE error
+		// so openDevice unwinds cleanly without forcing us to script
+		// the full init flood + tuner detect.
+		{
+			In:       false,
+			BRequest: 0,
+			WValue:   0x2000,
+			WIndex:   uint16(1)<<8 | 0x10,
+			Data:     []byte{0x09},
+			Err:      usb.ErrTimeout,
+		},
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-ok"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected init-baseband timeout to terminate the test")
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (proves warmup passed and InitBaseband ran)", err)
+	}
+	if m.ResetCalls != 0 {
+		t.Errorf("ResetCalls = %d, want 0 (healthy warmup must not reset)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 1 {
+		t.Errorf("ClaimCalls = %d, want 1 (single ClaimInterface on healthy path)", m.ClaimCalls)
+	}
+}
+
+// Regression for issue #248: when the warmup write returns EPIPE, the
+// driver must call transport.Reset, re-claim interface 0, and retry the
+// warmup once. The retry succeeds and openDevice proceeds — we again
+// terminate early via ErrTimeout on the first InitBaseband write.
+func TestOpenDevice_WarmupEPIPETriggersResetAndRetry(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(syscall.EPIPE),
+		warmupUSBSysctlExchange(nil),
+		{
+			In:       false,
+			BRequest: 0,
+			WValue:   0x2000,
+			WIndex:   uint16(1)<<8 | 0x10,
+			Data:     []byte{0x09},
+			Err:      usb.ErrTimeout,
+		},
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-retry"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected init-baseband timeout to terminate the test")
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (proves warmup retry succeeded and InitBaseband ran)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (EPIPE on warmup must trigger one USBDEVFS_RESET)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// Regression for issue #248: when both warmup attempts return EPIPE,
+// openDevice must surface the wrapped error with the tunerBringupHint
+// appended — that's the actionable message the user sees and which
+// points them at the DVB / power / cable workarounds.
+func TestOpenDevice_WarmupEPIPETwiceReturnsHintError(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(syscall.EPIPE),
+		warmupUSBSysctlExchange(syscall.EPIPE),
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-fail"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected EPIPE-twice to fail open")
+	}
+	if !errors.Is(err, syscall.EPIPE) {
+		t.Errorf("err = %v, want errors.Is(err, syscall.EPIPE) (the underlying cause must remain inspectable)", err)
+	}
+	if !strings.Contains(err.Error(), "USB warmup") {
+		t.Errorf("err = %v, want substring \"USB warmup\" (identifies the failing stage)", err)
+	}
+	if !strings.Contains(err.Error(), "dvb_usb_rtl28xxu") {
+		t.Errorf("err = %v, want substring \"dvb_usb_rtl28xxu\" (proves tunerBringupHint was appended)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (one reset attempt between the two warmup tries)", m.ResetCalls)
+	}
+}
+
 // Regression for issue #248: tuner-init failures that look like the
 // I2C-bridge-can't-reach-tuner case (EPIPE from the first burst, or
 // the device disappearing mid-bringup) must carry remediation guidance

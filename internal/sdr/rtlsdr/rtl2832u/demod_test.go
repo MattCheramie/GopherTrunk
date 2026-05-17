@@ -311,6 +311,27 @@ func TestInitBaseband_FullSequence(t *testing.T) {
 	}
 }
 
+func TestWarmupUSBSysctl_SingleWrite(t *testing.T) {
+	// Mirrors librtlsdr's rtlsdr_open dummy-write probe. Wire bytes
+	// must be identical to initBasebandSteps[0] (BlockUSB / USBSysctl
+	// / 0x09 / n=1) so the chip happily accepts both this probe and
+	// the InitBaseband write that follows.
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		expectBlockWrite(BlockUSB, USBSysctl, 0x09, 1),
+	}
+	d := New(m)
+	if err := d.WarmupUSBSysctl(); err != nil {
+		t.Fatalf("WarmupUSBSysctl: %v", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0", m.Remaining())
+	}
+}
+
 func TestDeinitBaseband_ClearsDemodCtl(t *testing.T) {
 	m := usb.NewMockTransport()
 	m.Script = []usb.CtrlExchange{

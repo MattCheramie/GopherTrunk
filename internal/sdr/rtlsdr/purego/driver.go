@@ -96,12 +96,14 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 // Steps:
 //  1. Open the USB transport via the enumerator.
 //  2. Claim USB interface 0 (RTL-SDR's only interface).
-//  3. Wrap the transport in [rtl2832u.Demod] and run the baseband
-//     init flood.
-//  4. Probe for an R820T-family tuner; set up the [tuners.Tuner]
+//  3. Wrap the transport in [rtl2832u.Demod] and run a single
+//     librtlsdr-parity USB-sysctl warmup write; if it returns EPIPE,
+//     reset the device and retry once (fixes issue #248).
+//  4. Run the baseband init flood.
+//  5. Probe for an R820T-family tuner; set up the [tuners.Tuner]
 //     and run its init.
-//  5. Program the tuner's IF frequency on the demod.
-//  6. Populate [sdr.Info] with the tuner's name and gain ladder.
+//  6. Program the tuner's IF frequency on the demod.
+//  7. Populate [sdr.Info] with the tuner's name and gain ladder.
 //
 // Failure at any step closes the transport and returns the error.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
@@ -126,16 +128,19 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	return dev, nil
 }
 
-// openDevice runs the full bring-up sequence: claim interface, init
-// demod, detect + init tuner, set IF freq. Factored out of Open so
-// tests can drive it directly with a mock transport without going
-// through the enumerator.
+// openDevice runs the full bring-up sequence: claim interface, warm up
+// the USB endpoint, init demod, detect + init tuner, set IF freq.
+// Factored out of Open so tests can drive it directly with a mock
+// transport without going through the enumerator.
 func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w", err)
 	}
 
 	demod := rtl2832u.New(transport)
+	if err := warmupWithReset(transport, demod); err != nil {
+		return nil, err
+	}
 	if err := demod.InitBaseband(); err != nil {
 		return nil, fmt.Errorf("rtlsdr: init baseband: %w", err)
 	}
@@ -171,6 +176,46 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		tuner:     tuner,
 		info:      info,
 	}, nil
+}
+
+// warmupWithReset mirrors librtlsdr's rtlsdr_open dummy-write probe: it
+// issues one USB-sysctl write to confirm the endpoint is healthy, and
+// on EPIPE / ErrDeviceGone it resets the device and retries once before
+// giving up. Dongles left half-initialised by a crashed previous
+// session (or by a DVB kernel driver that was unbound mid-flight) tend
+// to ack control reads fine but stall the first multi-byte OUT — which
+// in the pre-fix code path showed up as "r82xx init: burst write:
+// I2CWrite addr=0x34: broken pipe" (issue #248). Running the probe
+// here means InitBaseband / tuner.Init see a clean device.
+//
+// USBDEVFS_RESET on Linux invalidates the prior interface claim, so the
+// retry path explicitly re-claims interface 0. On macOS, IOKit
+// ResetDevice may invalidate the device handle entirely; if the
+// re-claim fails we return that error verbatim rather than spinning.
+// On Windows, transport.Reset is a no-op — the retry will EPIPE
+// identically and we surface the wrapped error with the existing hint.
+func warmupWithReset(transport usb.Transport, demod *rtl2832u.Demod) error {
+	const maxAttempts = 2
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err := demod.WarmupUSBSysctl()
+		if err == nil {
+			return nil
+		}
+		if attempt == maxAttempts-1 {
+			return fmt.Errorf("rtlsdr: USB warmup: %w%s", err, tunerBringupHint(err))
+		}
+		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, usb.ErrDeviceGone) {
+			return fmt.Errorf("rtlsdr: USB warmup: %w", err)
+		}
+		if resetErr := transport.Reset(); resetErr != nil {
+			return fmt.Errorf("rtlsdr: USB warmup hit %w; reset failed: %w", err, resetErr)
+		}
+		_ = transport.ReleaseInterface(0)
+		if claimErr := transport.ClaimInterface(0); claimErr != nil {
+			return fmt.Errorf("rtlsdr: re-claim interface 0 after reset: %w", claimErr)
+		}
+	}
+	return nil
 }
 
 // tunerBringupHint returns a parenthesized, space-prefixed remediation
