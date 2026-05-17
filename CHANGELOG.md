@@ -9,6 +9,19 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR R820T/R820T2 init burst now chunks at 16 bytes to match
+  librtlsdr.** The 27-byte register flood at the top of `R82xx.Init`
+  previously went on the wire as a single 28-byte I²C-bridge OUT
+  (1 register pointer + 27 data bytes). Some NESDR v5 dongles stall
+  the very first multi-byte OUT when its data payload exceeds 16
+  bytes — librtlsdr's `r82xx_write` has chunked at `NMAX_WRITES = 16`
+  for exactly this reason. `writeBurstRaw` now splits the data into
+  ≤16-byte segments under one repeater on/off pair, advancing the
+  register pointer per chunk (the chip auto-increments). The wire
+  bytes are otherwise unchanged.
+  Follow-up to the warmup probe shipped earlier in this cycle;
+  addresses the residual reproduction in
+  [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248).
 - **RTL-SDR tuner init no longer fails on dongles left in a
   half-initialised USB state.** Open now performs librtlsdr's
   dummy-write probe (`USB_SYSCTL = 0x09`) immediately after claiming

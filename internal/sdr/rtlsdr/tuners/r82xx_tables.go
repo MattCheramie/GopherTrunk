@@ -37,6 +37,14 @@ const (
 	// vcoPowerRef is the comparison threshold for fine-tuning
 	// divNum based on the chip's VCO fine-tune status bits.
 	r82xxVCOPowerRef = 2
+
+	// r82xxBurstMaxData caps the data-byte count per I2C-bridge OUT
+	// to the tuner. librtlsdr's r82xx_write uses NMAX_WRITES = 16 for
+	// the same reason: some R820T2 dongles stall the very first
+	// multi-byte burst when it exceeds 16 data bytes (issue #248).
+	// The 1-byte register pointer prepended to each chunk is not
+	// counted toward this limit, matching librtlsdr's behavior.
+	r82xxBurstMaxData = 16
 )
 
 // r82xxInitArray is the 27-byte register flood that lands at addr
