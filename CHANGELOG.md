@@ -26,6 +26,23 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR `tuners.Detect` again toggles the I²C repeater off on
+  return.** An earlier change in this cycle had Detect leave the
+  repeater ON across the tuner bring-up window under the theory
+  that the wire toggle was a wasteful divergence from librtlsdr.
+  Empirically on NESDR v5 silicon the toggle is load-bearing —
+  even though the demod register already holds the on-value, the
+  chip needs the fresh write to arm the I²C bridge for the next
+  multi-byte burst. `R82xx.writeBurstRaw`'s leading
+  `SetI2CRepeater(true)` is now a real wire write again (cache=false
+  on entry post-Detect), matching librtlsdr's `rtlsdr_open` flow.
+  The `PrepareDemod` sequence shipped earlier this cycle is
+  unchanged — it remains independently correct librtlsdr-parity
+  work that runs after Detect's off-toggle and before the tuner
+  burst. Re-closes
+  [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248)
+  after the user retest showed the EPIPE persisting.
+
 - **RTL-SDR enumeration on macOS now matches both legacy
   `IOUSBDevice` and modern `IOUSBHostDevice` IOKit classes.** The
   macOS USB enumerator previously matched only `IOUSBDevice`, which

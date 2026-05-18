@@ -142,11 +142,13 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 // tests can drive it directly with a mock transport without going
 // through the enumerator.
 //
-// Detect leaves the I2C repeater on; PrepareDemod (for R820T-family)
-// does not touch it; tuner.Init's writeBurstRaw sees the cached-on
-// state so the first I2C OUT lands without a leading repeater toggle
-// — matching librtlsdr's rtlsdr_open. openDevice toggles the repeater
-// off once tuner.Init returns.
+// Each step manages its own I²C repeater state: Detect wraps itself in
+// an on/off pair; PrepareDemod's writes are demod control transfers
+// that don't touch the I²C bridge; tuner.Init's writeBurstRaw emits
+// its own on/off pair around the burst. The fresh on-toggle inside
+// writeBurstRaw is load-bearing on NESDR v5 silicon (issue #248) —
+// the chip needs the explicit "kick" to arm the bridge for the
+// multi-byte OUT.
 func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w", err)
@@ -167,16 +169,11 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 	_, isR82xx := tuner.(*tuners.R82xx)
 	if isR82xx {
 		if err := tuner.(*tuners.R82xx).PrepareDemod(); err != nil {
-			_ = demod.SetI2CRepeater(false)
 			return nil, fmt.Errorf("rtlsdr: tuner prep: %w%s", err, tunerBringupHint(err))
 		}
 	}
 	if err := tuner.Init(); err != nil {
-		_ = demod.SetI2CRepeater(false)
 		return nil, fmt.Errorf("rtlsdr: tuner init: %w%s", err, tunerBringupHint(err))
-	}
-	if err := demod.SetI2CRepeater(false); err != nil {
-		return nil, fmt.Errorf("rtlsdr: I2C repeater off: %w", err)
 	}
 	if !isR82xx {
 		if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {

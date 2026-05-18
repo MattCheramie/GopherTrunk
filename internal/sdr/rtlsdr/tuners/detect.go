@@ -10,20 +10,27 @@ import (
 // Detect walks the list of supported tuner chips and returns a ready
 // [Tuner] for the first one it finds. Probe order is R820T → R828D →
 // E4000 → FC0013 → FC0012 → FC2580, matching librtlsdr's
-// rtlsdr_open detect flow.
+// rtlsdr_open detect flow. Wraps the entire probe in a single
+// SetI2CRepeater(true)/(false) pair so unnecessary repeater toggles
+// don't appear on the bus between candidate chips.
 //
-// Repeater contract: Detect enables the demod's I2C bridge once at
-// entry and leaves it ON on success — the caller is expected to keep
-// any required tuner-side bring-up (demod prep, tuner.Init) running
-// under the same repeater session and toggle it off when done. On
-// the no-match error path Detect toggles the repeater off before
-// returning so an early-bailing caller does not leak the on state.
+// On success the repeater is toggled OFF before return. The
+// subsequent tuner.Init burst write re-asserts it via
+// R82xx.writeBurstRaw's own SetI2CRepeater(true) — that fresh
+// wire write is load-bearing on NESDR v5 silicon (issue #248):
+// the chip needs the explicit "kick" to arm the I²C bridge for
+// the next multi-byte OUT, even though the demod register already
+// holds the on-value. A previous attempt to leave the repeater on
+// across detect → tuner-init (PR #260) suppressed that toggle via
+// the SetI2CRepeater cache and reproduced the EPIPE this code is
+// meant to prevent.
 //
 // Returns ErrNoTunerDetected when no chip matches.
 func Detect(d *rtl2832u.Demod) (Tuner, error) {
 	if err := d.SetI2CRepeater(true); err != nil {
 		return nil, fmt.Errorf("tuners: I2C repeater on: %w", err)
 	}
+	defer d.SetI2CRepeater(false)
 
 	if t := detectR82xx(d); t != nil {
 		return t, nil
@@ -40,7 +47,6 @@ func Detect(d *rtl2832u.Demod) (Tuner, error) {
 	if t := detectFC2580(d); t != nil {
 		return t, nil
 	}
-	_ = d.SetI2CRepeater(false)
 	return nil, ErrNoTunerDetected
 }
 

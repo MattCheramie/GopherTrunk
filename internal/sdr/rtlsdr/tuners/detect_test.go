@@ -35,15 +35,18 @@ func expectI2CReadReg(addr, reg, replyByte byte) []usb.CtrlExchange {
 }
 
 func TestDetect_R820T2MatchesAt0x34(t *testing.T) {
-	// Detect enables the I2C repeater once at the top, probes 0x34
-	// (returns bit-reversed 0x69 = 0x96), then returns leaving the
-	// repeater ON for the caller to drive PrepareDemod + tuner.Init
-	// without an interleaved off/on toggle (issue #248).
+	// Detect enables the I2C repeater, probes 0x34 (returns
+	// bit-reversed 0x69 = 0x96), then toggles the repeater OFF on
+	// return. The OFF-on-return contract is load-bearing for issue
+	// #248: it leaves writeBurstRaw's leading SetI2CRepeater(true)
+	// as a real wire write rather than a cache-skip, which the
+	// chip's I²C bridge needs to arm the next multi-byte OUT.
 	m := usb.NewMockTransport()
 	m.Script = append(m.Script, expectRepeaterToggle(true)...)
 	m.Script = append(m.Script, usb.CtrlExchange{
 		In: true, BRequest: 0, WValue: 0x0034, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x96},
 	})
+	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 
 	demod := rtl2832u.New(m)
 	tuner, err := Detect(demod)
@@ -54,15 +57,16 @@ func TestDetect_R820T2MatchesAt0x34(t *testing.T) {
 		t.Errorf("Type() = %v, want R820T2", tuner.Type())
 	}
 	if m.Remaining() != 0 {
-		t.Errorf("script remaining = %d, want 0 (Detect must not emit a trailing repeater-off on success)", m.Remaining())
+		t.Errorf("script remaining = %d, want 0 (Detect must emit a trailing repeater-off on success — see issue #248)", m.Remaining())
 	}
 }
 
 func TestDetect_FallsThroughToE4000(t *testing.T) {
-	// Detect enables the I2C repeater once at the top. Each detect
-	// helper emits raw I2C transfers (no per-helper repeater toggles).
-	// Detection order: R820T@0x34 → R820T@0x74 → E4000@0xC8 dummy →
-	// E4000 reg 0x02 → match → return with the repeater LEFT ON.
+	// Detect wraps the whole probe sweep in one SetI2CRepeater on/off
+	// pair. Inside, each detect helper emits raw I²C transfers (no
+	// per-helper repeater toggles). Detection order:
+	// R820T@0x34 → R820T@0x74 → E4000@0xC8 dummy → E4000 reg 0x02 →
+	// match → return with the trailing repeater-off (issue #248).
 	m := usb.NewMockTransport()
 	m.Script = append(m.Script, expectRepeaterToggle(true)...)
 	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0034, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
@@ -70,6 +74,7 @@ func TestDetect_FallsThroughToE4000(t *testing.T) {
 	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
 	m.Script = append(m.Script, usb.CtrlExchange{In: false, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: []byte{0x02}})
 	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x40}})
+	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 
 	demod := rtl2832u.New(m)
 	tuner, err := Detect(demod)
@@ -80,7 +85,7 @@ func TestDetect_FallsThroughToE4000(t *testing.T) {
 		t.Errorf("Type() = %v, want E4000", tuner.Type())
 	}
 	if m.Remaining() != 0 {
-		t.Errorf("script remaining = %d, want 0 (Detect must not emit a trailing repeater-off on success)", m.Remaining())
+		t.Errorf("script remaining = %d, want 0 (Detect must emit a trailing repeater-off on success — see issue #248)", m.Remaining())
 	}
 }
 
