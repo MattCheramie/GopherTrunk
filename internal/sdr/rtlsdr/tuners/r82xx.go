@@ -100,6 +100,30 @@ func detectR82xx(d *rtl2832u.Demod) Tuner {
 	return nil
 }
 
+// PrepareDemod runs the four librtlsdr-parity demod-register writes
+// that must happen BETWEEN Detect and Init for R820T-family tuners:
+// disable Zero-IF mode, enable only the In-phase ADC input, program
+// the 3.57 MHz IF frequency, and enable spectrum inversion. Mirrors
+// the RTLSDR_TUNER_R820T / R828D switch arm in librtlsdr's
+// rtlsdr_open. Callers must invoke this between tuners.Detect (which
+// leaves the I2C repeater on) and Init; PrepareDemod does not touch
+// the repeater so the contract is preserved.
+func (r *R82xx) PrepareDemod() error {
+	if err := r.demod.WriteDemodReg(1, 0xB1, 0x1A, 1); err != nil {
+		return fmt.Errorf("r82xx prep: disable Zero-IF: %w", err)
+	}
+	if err := r.demod.WriteDemodReg(0, 0x08, 0x4D, 1); err != nil {
+		return fmt.Errorf("r82xx prep: In-phase ADC only: %w", err)
+	}
+	if err := r.demod.SetIFFreq(r82xxIFFreqHz); err != nil {
+		return fmt.Errorf("r82xx prep: IF freq: %w", err)
+	}
+	if err := r.demod.WriteDemodReg(1, 0x15, 0x01, 1); err != nil {
+		return fmt.Errorf("r82xx prep: spectrum inversion: %w", err)
+	}
+	return nil
+}
+
 // Init walks the librtlsdr power-on sequence: write the 27-byte init
 // flood to registers 0x05..0x1F, then perform the standard tuner-side
 // soft-reset by toggling the demod's I2C bridge.

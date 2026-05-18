@@ -100,10 +100,17 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 //     librtlsdr-parity USB-sysctl warmup write; if it returns EPIPE,
 //     reset the device and retry once (fixes issue #248).
 //  4. Run the baseband init flood.
-//  5. Probe for an R820T-family tuner; set up the [tuners.Tuner]
-//     and run its init.
-//  6. Program the tuner's IF frequency on the demod.
-//  7. Populate [sdr.Info] with the tuner's name and gain ladder.
+//  5. Probe for a tuner (leaves the I2C repeater ON on success).
+//  6. For R820T-family tuners, run the four-write demod prep that
+//     librtlsdr emits between detect_tuner and tuner->init.
+//  7. Run tuner.Init while the I2C repeater is still on.
+//  8. Toggle the I2C repeater off explicitly.
+//  9. Populate [sdr.Info] with the tuner's name and gain ladder.
+//
+// If RTLSDR_DEBUG_USB=1 is set in the environment, the transport is
+// wrapped with [usb.NewDebugTransport] so every control transfer is
+// logged to stderr — diffable against `LIBUSB_DEBUG=4` traces from
+// rtl_test.
 //
 // Failure at any step closes the transport and returns the error.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
@@ -119,6 +126,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rtlsdr: open USB %s: %w", desc.Path, err)
 	}
+	transport = usb.MaybeWrapDebug(transport, desc)
 
 	dev, err := openDevice(transport, desc, idx)
 	if err != nil {
@@ -129,9 +137,16 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 }
 
 // openDevice runs the full bring-up sequence: claim interface, warm up
-// the USB endpoint, init demod, detect + init tuner, set IF freq.
-// Factored out of Open so tests can drive it directly with a mock
-// transport without going through the enumerator.
+// the USB endpoint, init demod, detect tuner, run any tuner-specific
+// demod prep, init the tuner, set IF freq. Factored out of Open so
+// tests can drive it directly with a mock transport without going
+// through the enumerator.
+//
+// Detect leaves the I2C repeater on; PrepareDemod (for R820T-family)
+// does not touch it; tuner.Init's writeBurstRaw sees the cached-on
+// state so the first I2C OUT lands without a leading repeater toggle
+// — matching librtlsdr's rtlsdr_open. openDevice toggles the repeater
+// off once tuner.Init returns.
 func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w", err)
@@ -149,11 +164,24 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 	if err != nil {
 		return nil, fmt.Errorf("rtlsdr: tuner detect: %w%s", err, tunerBringupHint(err))
 	}
+	_, isR82xx := tuner.(*tuners.R82xx)
+	if isR82xx {
+		if err := tuner.(*tuners.R82xx).PrepareDemod(); err != nil {
+			_ = demod.SetI2CRepeater(false)
+			return nil, fmt.Errorf("rtlsdr: tuner prep: %w%s", err, tunerBringupHint(err))
+		}
+	}
 	if err := tuner.Init(); err != nil {
+		_ = demod.SetI2CRepeater(false)
 		return nil, fmt.Errorf("rtlsdr: tuner init: %w%s", err, tunerBringupHint(err))
 	}
-	if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
-		return nil, fmt.Errorf("rtlsdr: set IF freq: %w", err)
+	if err := demod.SetI2CRepeater(false); err != nil {
+		return nil, fmt.Errorf("rtlsdr: I2C repeater off: %w", err)
+	}
+	if !isR82xx {
+		if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
+			return nil, fmt.Errorf("rtlsdr: set IF freq: %w", err)
+		}
 	}
 
 	kd := lookupKnown(desc.VID, desc.PID)

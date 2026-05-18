@@ -147,6 +147,60 @@ func TestBitReverseTable(t *testing.T) {
 	}
 }
 
+// expectDemodWrite returns the wire script for one rtl2832u.Demod
+// WriteDemodReg(page, addr, val, n=1) call: one ControlOut + one
+// commit ControlIn at page 0x0A addr 0x01. Mirrors the encoding
+// rtl2832u.Demod.writeDemodRegLocked emits.
+func expectDemodWrite(page uint8, addr uint16, val uint16) []usb.CtrlExchange {
+	wValue := (addr << 8) | 0x20
+	wIndex := uint16(0x10) | uint16(page)
+	return []usb.CtrlExchange{
+		{In: false, BRequest: 0, WValue: wValue, WIndex: wIndex, Data: []byte{byte(val & 0xFF)}},
+		commit,
+	}
+}
+
+// expectR82xxPrepareDemod returns the wire script PrepareDemod
+// produces: four demod-page writes in the order librtlsdr emits
+// between detect_tuner and tuner->init for R820T-family tuners.
+// SetIFFreq(3_570_000) at the default 28.8 MHz crystal splits into
+// the three demod page-1 writes at 0x19/0x1A/0x1B; the exact bytes
+// are derived from rtl2832u.Demod.SetIFFreq's math.
+func expectR82xxPrepareDemod() []usb.CtrlExchange {
+	var script []usb.CtrlExchange
+	// Step 1: disable Zero-IF mode (page 1, addr 0xB1, val 0x1A).
+	script = append(script, expectDemodWrite(1, 0xB1, 0x1A)...)
+	// Step 2: In-phase ADC input only (page 0, addr 0x08, val 0x4D).
+	script = append(script, expectDemodWrite(0, 0x08, 0x4D)...)
+	// Step 3: SetIFFreq(3_570_000) at the default 28.8 MHz crystal.
+	// ifFreq = -(3_570_000 * 2^22 / 28_800_000) = -519918 → int32
+	// 0xFFF81112. Three single-byte writes to page 1 addrs
+	// 0x19/0x1A/0x1B; the high byte is masked to 6 bits (0x38).
+	script = append(script, expectDemodWrite(1, 0x19, 0x38)...)
+	script = append(script, expectDemodWrite(1, 0x1A, 0x11)...)
+	script = append(script, expectDemodWrite(1, 0x1B, 0x12)...)
+	// Step 4: enable spectrum inversion (page 1, addr 0x15, val 0x01).
+	script = append(script, expectDemodWrite(1, 0x15, 0x01)...)
+	return script
+}
+
+func TestR82xx_PrepareDemodEmitsLibRTLSDRSequence(t *testing.T) {
+	// PrepareDemod produces the four-write sequence librtlsdr's
+	// rtlsdr_open emits between detect_tuner and tuner->init for the
+	// RTLSDR_TUNER_R820T / R828D arms. PrepareDemod itself does not
+	// touch the I2C repeater — caller owns the on/off lifecycle.
+	r, m := newR82xxForTest(t, expectR82xxPrepareDemod())
+	if err := r.PrepareDemod(); err != nil {
+		t.Fatalf("PrepareDemod: %v", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (extra wire writes: PrepareDemod emitted more than expected)", m.Remaining())
+	}
+}
+
 func TestR82xx_InitWritesBurst(t *testing.T) {
 	// Init writes the 27-byte init array as two librtlsdr-style chunks
 	// (16 + 11 data bytes) under one repeater on/off pair. See

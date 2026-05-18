@@ -7,8 +7,44 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **`RTLSDR_DEBUG_USB=1` environment variable for wire-level debug
+  traces.** When set, every USB control transfer the RTL-SDR driver
+  issues — `ControlIn`, `ControlOut`, `Reset` — is logged to stderr
+  with the bmRequestType, wValue/wIndex/wLength, the payload hex
+  (capped at 64 bytes per call), and the outcome (ok / err + duration).
+  Output is diffable against `LIBUSB_DEBUG=4` traces from osmocom
+  librtlsdr's `rtl_test`, so users can pinpoint exactly which
+  transfer stalls on hardware that still misbehaves after the
+  librtlsdr-parity fixes. Off by default; zero allocation when
+  unset. Documented in the install-linux troubleshooting table.
+
 ### Fixed
 
+- **RTL-SDR open path now matches librtlsdr's R820T/R828D demod-prep
+  sequence between `detect_tuner` and `tuner->init`.** The previous
+  flow ran `tuners.Detect` (which toggled the I²C repeater off on
+  return), then `tuner.Init`, then a generic `SetIFFreq` — skipping
+  four demod-register writes librtlsdr emits before tuner init:
+  disable Zero-IF mode (page 1, addr 0xB1, val 0x1A), enable
+  In-phase ADC input only (page 0, addr 0x08, val 0x4D),
+  `set_if_freq(3.57 MHz)`, and enable spectrum inversion (page 1,
+  addr 0x15, val 0x01). Without those four writes the R820T-family
+  chip is brought up against a Zero-IF / IQ datapath / inversion
+  configuration that diverges from what librtlsdr ships, which has
+  been the residual divergence after the chunking fix shipped in
+  this cycle. New `R82xx.PrepareDemod` runs the sequence; `openDevice`
+  invokes it on the R820T-family branch.
+- **RTL-SDR `tuners.Detect` now leaves the I²C repeater on across the
+  tuner bring-up window.** Previously Detect deferred
+  `SetI2CRepeater(false)` and tuner.Init then re-enabled the repeater
+  per burst, producing an off→on toggle between Detect and the very
+  first I²C OUT — the wire byte right before the multi-byte burst
+  that some NESDR v5 dongles stall on. Detect now leaves the
+  repeater on on success (or toggles it off on the no-tuner
+  error path); the new `openDevice` step list owns the post-Init
+  off toggle.
 - **RTL-SDR R820T/R820T2 manual gain now uses librtlsdr's balanced
   LNA+Mixer split.** `R82xx.SetGain` previously walked the LNA gain
   ladder to maximum-not-exceeding-target, then walked the mixer
