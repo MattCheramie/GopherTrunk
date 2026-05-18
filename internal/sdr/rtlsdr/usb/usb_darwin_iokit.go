@@ -165,6 +165,7 @@ var (
 	ioServiceGetMatchingServices      func(masterPort machPort, matching cfDictionaryRef, iter *ioIterator) int32
 	ioIteratorNext                    func(iter ioIterator) ioObject
 	ioObjectRelease                   func(obj ioObject) int32
+	ioObjectGetClass                  func(obj ioObject, name *byte) int32
 	ioCreatePlugInInterfaceForService func(service ioService, pluginType cfTypeRef, interfaceType cfTypeRef, theInterface **uintptr, score *int32) int32
 	ioRegistryEntryCreateCFProperty   func(entry ioRegEntry, key cfStringRef, alloc cfAllocatorRef, options uint32) cfTypeRef
 )
@@ -223,6 +224,7 @@ func loadIOKit() (err error) {
 	purego.RegisterLibFunc(&ioServiceGetMatchingServices, io, "IOServiceGetMatchingServices")
 	purego.RegisterLibFunc(&ioIteratorNext, io, "IOIteratorNext")
 	purego.RegisterLibFunc(&ioObjectRelease, io, "IOObjectRelease")
+	purego.RegisterLibFunc(&ioObjectGetClass, io, "IOObjectGetClass")
 	purego.RegisterLibFunc(&ioCreatePlugInInterfaceForService, io, "IOCreatePlugInInterfaceForService")
 	purego.RegisterLibFunc(&ioRegistryEntryCreateCFProperty, io, "IORegistryEntryCreateCFProperty")
 	return nil

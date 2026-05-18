@@ -195,6 +195,7 @@ manually if you want a clean slate.
 | `cannot be opened because the developer cannot be verified` | Quarantine xattr still attached — re-run the `xattr -dr` from step 3, or right-click → Open. |
 | `command not found: gophertrunk`                         | Binary isn't on `PATH` — re-check step 2, or run from the install path directly. |
 | `sdr list` prints nothing                                | Another RTL-SDR app (SDR++, GQRX) is holding the device — close it and retry. |
+| `sdr list` still prints nothing with every other SDR app closed | Re-run with `RTLSDR_DEBUG_USB=1 gophertrunk sdr list 2> trace.log`. Attach `trace.log`, `sw_vers`, and `system_profiler SPUSBDataType \| grep -A 10 "Vendor ID"` to a new issue — the trace tells us which IOKit class matched and which properties were readable. |
 | `usb: claim interface failed`                            | Same — IOKit hands the dongle to whoever opened it first.                     |
 | Audio plays as silence                                   | `audio.enabled: false` by default — set `true` in config. CoreAudio is the default backend on Darwin. |
 | LaunchAgent says `Load failed: 5: Input/output error`    | plist syntax error — `plutil -lint ~/Library/LaunchAgents/org.gophertrunk.daemon.plist` will show the line. |

@@ -28,6 +28,25 @@ func TestDarwinEnumeratorCallable(t *testing.T) {
 	}
 }
 
+func TestDarwinEnumerationClassesIncludesHostClass(t *testing.T) {
+	// Regression guard for issue #257: List and Open must match
+	// both legacy "IOUSBDevice" and modern "IOUSBHostDevice" IOKit
+	// classes. Dropping either silently shrinks the set of dongles
+	// visible to sdr list — on Apple Silicon + modern macOS the
+	// legacy class can yield zero services, on older Intel hosts
+	// the host class may be absent. Pin the order to keep the
+	// trace log diff-stable.
+	want := []string{"IOUSBDevice", "IOUSBHostDevice"}
+	if len(darwinEnumerationClasses) != len(want) {
+		t.Fatalf("darwinEnumerationClasses = %v, want %v", darwinEnumerationClasses, want)
+	}
+	for i, c := range want {
+		if darwinEnumerationClasses[i] != c {
+			t.Errorf("darwinEnumerationClasses[%d] = %q, want %q", i, darwinEnumerationClasses[i], c)
+		}
+	}
+}
+
 func TestUUIDsMatchAppleConstants(t *testing.T) {
 	// Pin Apple's IOKit-USB UUIDs so a typo or table reordering
 	// fails noisily rather than silently routing through a wrong

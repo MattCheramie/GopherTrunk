@@ -17,10 +17,26 @@ for tagged releases.
   Output is diffable against `LIBUSB_DEBUG=4` traces from osmocom
   librtlsdr's `rtl_test`, so users can pinpoint exactly which
   transfer stalls on hardware that still misbehaves after the
-  librtlsdr-parity fixes. Off by default; zero allocation when
-  unset. Documented in the install-linux troubleshooting table.
+  librtlsdr-parity fixes. Also emits a per-service trace from the
+  macOS IOKit enumerator (matched IOKit class, locationID, VID/PID,
+  dropped-property reason) when set — intended for diagnosing
+  dongles that don't appear in `sdr list` output. Off by default;
+  zero allocation when unset. Documented in the install-linux and
+  install-macos troubleshooting tables.
 
 ### Fixed
+
+- **RTL-SDR enumeration on macOS now matches both legacy
+  `IOUSBDevice` and modern `IOUSBHostDevice` IOKit classes.** The
+  macOS USB enumerator previously matched only `IOUSBDevice`, which
+  yields zero services on some Apple Silicon + macOS combinations
+  where Apple's IOUSBFamily compatibility bridge is a no-op.
+  `gophertrunk sdr list` returned an empty slice with no error and
+  no diagnostic — dongles that worked fine in SDRTrunk, GQRX, and
+  Homebrew `lsusb` were invisible to GopherTrunk. Both IOKit
+  classes are now matched and their results unioned (deduplicated
+  by IOKit `locationID`) in both `List` and `Open`. Closes
+  [issue #257](https://github.com/MattCheramie/GopherTrunk/issues/257).
 
 - **RTL-SDR open path now matches librtlsdr's R820T/R828D demod-prep
   sequence between `detect_tuner` and `tuner->init`.** The previous
