@@ -12,11 +12,12 @@ for tagged releases.
 RTL-SDR driver stabilization release. Eleven merged PRs land
 librtlsdr-parity fixes for tuner init bursts, I²C bridge timing,
 crystal-frequency selection, macOS IOKit enumeration, and a new
-wire-level USB debug-trace switch — collectively closing the
-long-running issue #248 burst-EPIPE saga (PRs #255, #256, #258,
-#259, #260, #261, #262, #263, #265, #266) plus the macOS
-enumeration miss (issue #257, PR #261). No daemon-level behavior
-changes outside the RTL-SDR driver.
+wire-level USB debug-trace switch — layered defenses against the
+long-running issue #248 burst-EPIPE reproduction (PRs #255, #256,
+#258, #259, #260, #261, #262, #263, #265, #266) plus the macOS
+enumeration miss (issue #257, PR #261). Issues #248 and #257
+remain open pending field validation on the reporter hardware.
+No daemon-level behavior changes outside the RTL-SDR driver.
 
 ### Added
 
