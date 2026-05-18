@@ -90,6 +90,44 @@ func TestMaybeWrapDebug_LogsErrorOutcome(t *testing.T) {
 	}
 }
 
+func TestDebugLogf_RoutesThroughSink(t *testing.T) {
+	// debugLogf must emit one line per call when RTLSDR_DEBUG_USB is
+	// set, with the rtlsdr-usb prefix and the component label.
+	// Mirrors the macOS IOKit enumerator's trace format (issue #257).
+	t.Setenv(debugUSBEnv, "1")
+	var buf bytes.Buffer
+	prev := SetDebugSink(&buf)
+	t.Cleanup(func() { SetDebugSink(prev) })
+
+	debugLogf("iokit-enum", "class=%s returned %d descriptor(s)", "IOUSBHostDevice", 2)
+
+	got := buf.String()
+	if !strings.Contains(got, "rtlsdr-usb [iokit-enum]: ") {
+		t.Errorf("missing prefix in log: %q", got)
+	}
+	if !strings.Contains(got, "class=IOUSBHostDevice returned 2 descriptor(s)") {
+		t.Errorf("missing payload in log: %q", got)
+	}
+}
+
+func TestDebugLogf_NoopWhenEnvUnset(t *testing.T) {
+	// Off-path must be zero output — matches the MaybeWrapDebug
+	// contract so enumerator callers can call debugLogf
+	// unconditionally without paying for it.
+	t.Setenv(debugUSBEnv, "")
+	var buf bytes.Buffer
+	prev := SetDebugSink(&buf)
+	t.Cleanup(func() { SetDebugSink(prev) })
+
+	debugLogf("iokit-enum", "must not appear")
+	if buf.Len() != 0 {
+		t.Errorf("debugLogf wrote %q with env unset; want empty", buf.String())
+	}
+	if debugUSBEnabled() {
+		t.Errorf("debugUSBEnabled() = true with env unset")
+	}
+}
+
 func TestHexBytes_TruncatesAtCap(t *testing.T) {
 	// Long payloads are truncated to debugMaxDataBytes (64) with a
 	// "... (N more)" suffix so the log line stays usable for the

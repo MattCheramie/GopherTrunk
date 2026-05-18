@@ -88,7 +88,30 @@ func (e loadFailedEnumerator) Open(Descriptor) (Transport, error) {
 	return nil, fmt.Errorf("usb: IOKit framework load failed: %w", e.err)
 }
 
-// darwinEnumerator scans IOKit's IOUSBDevice service registry.
+// darwinEnumerationClasses are the IOKit service classes the
+// enumerator queries for USB devices, in order. Both classes are
+// matched and their results unioned (deduplicated by locationID) so
+// the enumerator works across:
+//
+//   - Older macOS / Intel hosts where IOUSBFamily still registers
+//     "IOUSBDevice" entries.
+//   - Modern macOS / Apple Silicon where the canonical class is
+//     "IOUSBHostDevice" (the IOUSBHost framework, present since OS X
+//     10.11 El Capitan, 2015) and "IOUSBDevice" may yield zero
+//     services because Apple's compatibility bridge is no-op on
+//     that build. Pre-fix, sdr list returned an empty slice with no
+//     error on those hosts (issue #257).
+//
+// Iteration order matters only for the trace log when
+// RTLSDR_DEBUG_USB is set; both classes are otherwise treated the
+// same and the locationID dedup handles overlap if any.
+var darwinEnumerationClasses = []string{
+	"IOUSBDevice",
+	"IOUSBHostDevice",
+}
+
+// darwinEnumerator scans IOKit's USB-device service registry. See
+// [darwinEnumerationClasses] for the class-matching policy.
 type darwinEnumerator struct{}
 
 func (d *darwinEnumerator) Name() string { return "iokit" }
@@ -101,28 +124,80 @@ func (d *darwinEnumerator) Name() string { return "iokit" }
 // On macOS, "Path" is the IOService location-id string (a 32-bit
 // hex value Apple guarantees stable across reboots for a given
 // USB-port location); we round-trip it through Open to find the
-// matching service when claiming.
+// matching service when claiming. Two IOKit classes are matched
+// (legacy IOUSBDevice + modern IOUSBHostDevice) and unioned by
+// locationID — see [darwinEnumerationClasses].
+//
+// When RTLSDR_DEBUG_USB is set, each class match emits a count line
+// and each per-service drop emits a reason line; intended for
+// diagnosing dongles that don't appear in sdr list output (issue
+// #257).
 func (d *darwinEnumerator) List(vid, pid uint16) ([]Descriptor, error) {
-	className := append([]byte("IOUSBDevice"), 0)
-	matchingDict := ioServiceMatching(&className[0])
+	seen := make(map[string]struct{})
+	var out []Descriptor
+	for _, class := range darwinEnumerationClasses {
+		descs, err := enumerateClass(class, vid, pid)
+		if err != nil {
+			debugLogf("iokit-enum", "class=%s err=%v", class, err)
+			continue
+		}
+		debugLogf("iokit-enum", "class=%s returned %d descriptor(s)", class, len(descs))
+		for _, desc := range descs {
+			if _, dup := seen[desc.Path]; dup {
+				continue
+			}
+			seen[desc.Path] = struct{}{}
+			out = append(out, desc)
+		}
+	}
+	debugLogf("iokit-enum", "total descriptors after dedup: %d (vid=0x%04x pid=0x%04x)", len(out), vid, pid)
+	return out, nil
+}
+
+// enumerateClass runs one IOServiceMatching/iterator pass against a
+// single IOKit service class and returns the [Descriptor]s for every
+// device whose VID/PID matches the filter (0 = wildcard). Factored
+// out of List so List can union results from multiple classes.
+func enumerateClass(className string, vid, pid uint16) ([]Descriptor, error) {
+	cstr := append([]byte(className), 0)
+	matchingDict := ioServiceMatching(&cstr[0])
 	if matchingDict == 0 {
-		return nil, errors.New("usb: IOServiceMatching(IOUSBDevice) returned NULL")
+		return nil, fmt.Errorf("IOServiceMatching(%s) returned NULL", className)
 	}
 	// IOServiceGetMatchingServices CONSUMES the matching dictionary
 	// — no defer cfRelease here, the kernel owns it after the call.
 	var iter ioIterator
 	if rc := ioServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter); rc != kIOReturnSuccess {
-		return nil, fmt.Errorf("usb: IOServiceGetMatchingServices: 0x%08x", uint32(rc))
+		return nil, fmt.Errorf("IOServiceGetMatchingServices(%s): 0x%08x", className, uint32(rc))
 	}
 	defer ioObjectRelease(iter)
 
+	debugEnabled := debugUSBEnabled()
 	var out []Descriptor
+	svcIdx := -1
 	for {
 		svc := ioIteratorNext(iter)
 		if svc == 0 {
 			break
 		}
-		desc, ok := readServiceDescriptor(svc)
+		svcIdx++
+		var desc Descriptor
+		var ok bool
+		if debugEnabled {
+			var reason string
+			desc, reason = readServiceDescriptorDebug(svc)
+			if reason != "" {
+				debugLogf("iokit-enum", "class=%s svc#%d ioClass=%s dropped: %s",
+					className, svcIdx, ioObjectClassName(svc), reason)
+				ioObjectRelease(svc)
+				continue
+			}
+			debugLogf("iokit-enum", "class=%s svc#%d ioClass=%s loc=%s vid=0x%04x pid=0x%04x serial=%q prod=%q",
+				className, svcIdx, ioObjectClassName(svc), desc.Path, desc.VID, desc.PID, desc.Serial, desc.Product)
+			ok = true
+		} else {
+			desc, ok = readServiceDescriptor(svc)
+		}
 		ioObjectRelease(svc)
 		if !ok {
 			continue
@@ -144,13 +219,23 @@ func (d *darwinEnumerator) List(vid, pid uint16) ([]Descriptor, error) {
 // doesn't carry the expected properties (e.g. it's a hub or composite
 // child rather than a leaf USB device).
 func readServiceDescriptor(svc ioService) (Descriptor, bool) {
+	d, reason := readServiceDescriptorDebug(svc)
+	return d, reason == ""
+}
+
+// readServiceDescriptorDebug is the diagnostic variant: same
+// semantics as readServiceDescriptor but returns the name of the
+// missing/unreadable property when the service is dropped, "" on
+// success. Used by enumerateClass when RTLSDR_DEBUG_USB is set so
+// the trace can name the specific failure.
+func readServiceDescriptorDebug(svc ioService) (Descriptor, string) {
 	vid, ok := readUSBProperty(svc, "idVendor")
 	if !ok {
-		return Descriptor{}, false
+		return Descriptor{}, "missing idVendor"
 	}
 	pid, ok := readUSBProperty(svc, "idProduct")
 	if !ok {
-		return Descriptor{}, false
+		return Descriptor{}, "missing idProduct"
 	}
 	loc, _ := readUSBProperty(svc, "locationID")
 	d := Descriptor{
@@ -166,7 +251,26 @@ func readServiceDescriptor(svc ioService) (Descriptor, bool) {
 	d.Serial = readUSBString(svc, "USB Serial Number")
 	d.Manufacturer = readUSBString(svc, "USB Vendor Name")
 	d.Product = readUSBString(svc, "USB Product Name")
-	return d, true
+	return d, ""
+}
+
+// ioObjectClassName returns the IOKit class name of an IOService,
+// e.g. "IOUSBHostDevice" or "AppleUSBHostDevice". Used only by
+// the debug trace path so we can tell what the IOKit registry
+// actually returned for each class match. Returns "" on FFI error.
+func ioObjectClassName(svc ioService) string {
+	if ioObjectGetClass == nil {
+		return ""
+	}
+	var buf [128]byte
+	if rc := ioObjectGetClass(svc, &buf[0]); rc != kIOReturnSuccess {
+		return ""
+	}
+	end := 0
+	for end < len(buf) && buf[end] != 0 {
+		end++
+	}
+	return string(buf[:end])
 }
 
 // readUSBProperty returns a 32-bit integer property from the
@@ -239,36 +343,18 @@ func readUSBString(svc ioService, key string) string {
 // Open creates a IOUSBDeviceInterface for the device at d.Path
 // (matched by locationID), opens it, walks its interface iterator,
 // claims interface 0, and returns a wired-up [darwinTransport].
+//
+// Searches every IOKit class in [darwinEnumerationClasses] so a
+// device that List found via IOUSBHostDevice can still be opened —
+// pre-fix Open only matched IOUSBDevice and would 404 a Host-only
+// device that had appeared in sdr list (issue #257).
 func (e *darwinEnumerator) Open(d Descriptor) (Transport, error) {
 	wantLoc, err := strconv.ParseUint(d.Path, 0, 32)
 	if err != nil {
 		return nil, fmt.Errorf("usb: bad Descriptor.Path %q: %w", d.Path, err)
 	}
-	className := append([]byte("IOUSBDevice"), 0)
-	matchingDict := ioServiceMatching(&className[0])
-	if matchingDict == 0 {
-		return nil, errors.New("usb: IOServiceMatching returned NULL")
-	}
-	var iter ioIterator
-	if rc := ioServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter); rc != kIOReturnSuccess {
-		return nil, fmt.Errorf("usb: IOServiceGetMatchingServices: 0x%08x", uint32(rc))
-	}
-	defer ioObjectRelease(iter)
-
-	var svc ioService
-	for {
-		next := ioIteratorNext(iter)
-		if next == 0 {
-			break
-		}
-		loc, ok := readUSBProperty(next, "locationID")
-		if ok && uint64(loc) == wantLoc {
-			svc = next
-			break
-		}
-		ioObjectRelease(next)
-	}
-	if svc == 0 {
+	svc, ok := findServiceByLocation(uint32(wantLoc))
+	if !ok {
 		return nil, fmt.Errorf("usb: no IOService with locationID %s (device removed?)", d.Path)
 	}
 	defer ioObjectRelease(svc)
@@ -289,6 +375,39 @@ func (e *darwinEnumerator) Open(d Descriptor) (Transport, error) {
 		desc:     d,
 	}
 	return t, nil
+}
+
+// findServiceByLocation walks every class in
+// [darwinEnumerationClasses] looking for the IOService whose
+// locationID matches wantLoc. Returns the first match (caller owns
+// the IOService reference and must release it) or (0, false) if no
+// class yielded a service at that location.
+func findServiceByLocation(wantLoc uint32) (ioService, bool) {
+	for _, class := range darwinEnumerationClasses {
+		cstr := append([]byte(class), 0)
+		matchingDict := ioServiceMatching(&cstr[0])
+		if matchingDict == 0 {
+			continue
+		}
+		var iter ioIterator
+		if rc := ioServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter); rc != kIOReturnSuccess {
+			continue
+		}
+		for {
+			next := ioIteratorNext(iter)
+			if next == 0 {
+				break
+			}
+			loc, ok := readUSBProperty(next, "locationID")
+			if ok && loc == wantLoc {
+				ioObjectRelease(iter)
+				return next, true
+			}
+			ioObjectRelease(next)
+		}
+		ioObjectRelease(iter)
+	}
+	return 0, false
 }
 
 // openDeviceInterface runs the IOCFPlugIn dance: create the plug-in,

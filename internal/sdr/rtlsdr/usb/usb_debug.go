@@ -36,6 +36,28 @@ func SetDebugSink(w io.Writer) io.Writer {
 	return prev
 }
 
+// debugUSBEnabled reports whether RTLSDR_DEBUG_USB is set in the
+// environment. Public-package helpers like the macOS IOKit enumerator
+// gate per-iteration FFI calls (e.g. IOObjectGetClass) on this so the
+// off-path stays free.
+func debugUSBEnabled() bool { return os.Getenv(debugUSBEnv) != "" }
+
+// debugLogf writes one line to the debug sink with the standard
+// rtlsdr-usb prefix and a component label, when RTLSDR_DEBUG_USB is
+// set. Free function so enumerator paths (not just the per-device
+// transport wrapper) can emit traces — used by the macOS IOKit
+// enumerator to surface service-iteration failures that would
+// otherwise vanish into a silently empty sdr list (issue #257).
+func debugLogf(component, format string, args ...interface{}) {
+	if !debugUSBEnabled() {
+		return
+	}
+	debugSinkMu.Lock()
+	w := debugSink
+	debugSinkMu.Unlock()
+	fmt.Fprintln(w, "rtlsdr-usb ["+component+"]: "+fmt.Sprintf(format, args...))
+}
+
 // MaybeWrapDebug returns t wrapped in a debug-logging Transport when
 // RTLSDR_DEBUG_USB is set in the environment; otherwise it returns t
 // unchanged. Wrapping is gated at Open time so the rest of the code
