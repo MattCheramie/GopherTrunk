@@ -124,6 +124,10 @@ func (e *E4000) Init() error {
 	if e.initDone {
 		return nil
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	// Dummy read — librtlsdr does this to wake the I2C engine; the
 	// first transaction is expected to NAK. We swallow the error.
 	_, _ = e.readReg(0)
@@ -183,6 +187,10 @@ func (e *E4000) Standby() error {
 	if !e.initDone {
 		return nil
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	// Clear the master-enable bits — the chip drops into power-down.
 	if err := e.writeReg(e4kRegMaster1, 0x00); err != nil {
 		return fmt.Errorf("e4k standby: %w", err)
@@ -204,6 +212,10 @@ func (e *E4000) SetFreq(hz uint32) error {
 	if hz < 50_000_000 || hz > 2_200_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 50_000_000, MaxHz: 2_200_000_000, TunerStr: "E4000"}
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	e.freqHz = hz
 
 	rng := e4kPLLRanges[len(e4kPLLRanges)-1]
@@ -249,6 +261,10 @@ func (e *E4000) SetBandwidth(hz uint32) error {
 	if !e.initDone {
 		return errors.New("e4k: Init not called")
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	e.bwHz = hz
 	val := byte(0x0F) // widest channel filter (~9 MHz)
 	switch {
@@ -274,6 +290,10 @@ func (e *E4000) SetGain(tenthDB int) error {
 	if !e.manual || tenthDB < 0 {
 		return nil
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	idx := nearestGainIndex(e4kLNAGains, tenthDB)
 	cur, err := e.readReg(e4kRegGain1)
 	if err != nil {
@@ -289,6 +309,10 @@ func (e *E4000) SetGainMode(manual bool) error {
 	if !e.initDone {
 		return errors.New("e4k: Init not called")
 	}
+	if err := e.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer e.demod.SetI2CRepeater(false)
 	e.manual = manual
 	cur, err := e.readReg(e4kRegAGC1)
 	if err != nil {
@@ -305,19 +329,13 @@ func (e *E4000) SetGainMode(manual bool) error {
 // ----------------------------------------------------------------------
 // Internals
 
+// writeReg / readReg are private I2C plumbing. Callers (public
+// methods) own the SetI2CRepeater bracket — librtlsdr's pattern.
 func (e *E4000) writeReg(addr, val byte) error {
-	if err := e.demod.SetI2CRepeater(true); err != nil {
-		return err
-	}
-	defer e.demod.SetI2CRepeater(false)
 	return e.demod.I2CWriteReg(e4kI2CAddr, addr, val)
 }
 
 func (e *E4000) readReg(addr byte) (byte, error) {
-	if err := e.demod.SetI2CRepeater(true); err != nil {
-		return 0, err
-	}
-	defer e.demod.SetI2CRepeater(false)
 	return e.demod.I2CReadReg(e4kI2CAddr, addr)
 }
 

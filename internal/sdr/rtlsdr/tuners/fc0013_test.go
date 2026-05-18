@@ -30,12 +30,18 @@ func TestFC0013_GainsLadder26Steps(t *testing.T) {
 }
 
 func TestFC0013_InitWritesSoftResetThenFlood(t *testing.T) {
+	// FC0013.Init is one public method = one repeater on/off pair
+	// around all 23 inner writes (2 soft-reset + 21-entry init flood).
+	// FC0013 KEEPS the 0x0C soft-reset; only FC0012's was spurious
+	// (librtlsdr's fc0013_init does the 0x05/0x00 sequence too).
 	m := usb.NewMockTransport()
-	m.Script = append(m.Script, expectI2CWriteReg(fc0013I2CAddr, 0x0C, 0x05)...)
-	m.Script = append(m.Script, expectI2CWriteReg(fc0013I2CAddr, 0x0C, 0x00)...)
+	m.Script = append(m.Script, expectRepeaterToggle(true)...)
+	m.Script = append(m.Script, expectI2CWriteRegRaw(fc0013I2CAddr, 0x0C, 0x05))
+	m.Script = append(m.Script, expectI2CWriteRegRaw(fc0013I2CAddr, 0x0C, 0x00))
 	for i, v := range fc0013InitArray {
-		m.Script = append(m.Script, expectI2CWriteReg(fc0013I2CAddr, byte(i+1), v)...)
+		m.Script = append(m.Script, expectI2CWriteRegRaw(fc0013I2CAddr, byte(i+1), v))
 	}
+	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 	f := NewFC0013(rtl2832u.New(m))
 	if err := f.Init(); err != nil {
 		t.Fatalf("Init: %v", err)

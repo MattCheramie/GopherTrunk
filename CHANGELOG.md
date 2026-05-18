@@ -24,6 +24,38 @@ for tagged releases.
   zero allocation when unset. Documented in the install-linux and
   install-macos troubleshooting tables.
 
+### Changed
+
+- **RTL-SDR tuner I²C bridge now toggles per public method instead of
+  per register write.** Every tuner driver (R82xx, E4000, FC0012,
+  FC0013, FC2580) previously turned the RTL2832U I²C repeater on
+  before each `writeReg`/`readReg` and back off after it — three USB
+  control transfers per single-byte chip register access. The
+  repeater is now opened once at the top of each public method
+  (`Init`, `Standby`, `SetFreq`, `SetBandwidth`, `SetGain`,
+  `SetGainMode`) and closed at the end, matching librtlsdr's
+  `rtlsdr_set_tuner_*` wrap pattern. For an R820T2 `SetFreq` call
+  (~10–15 register writes) this drops 40–60 USB control transfers per
+  retune to the steady-state two — measurably faster on USB 2.0 hubs
+  and meaningfully less timing-fragile on marginal cabling. Compatible
+  with the issue #248 fix: `R82xx.Init`'s leading
+  `SetI2CRepeater(true)` is the fresh wire write the chip needs to
+  arm the bridge before its multi-byte burst, and the cache state
+  ends up `false` post-Detect (off-toggle defer) so the on-toggle
+  is real rather than a cache no-op.
+- **RTL-SDR tuner detection now follows librtlsdr's exact rtlsdr_open
+  probe order and GPIO bring-up dance.** The Go port previously
+  probed R820T → R828D → E4000 → FC0013 → FC0012 → FC2580 with no
+  GPIO pulses, which silently broke detection of non-R820T tuners
+  (FC2580/FC0013/E4000/FC0012) on dongles whose chip-enable lines
+  hold the IC in reset until pulsed. The orchestrator now mirrors
+  `librtlsdr.c` exactly: R820T → R828D → GPIO5 high→low reset →
+  FC2580 → GPIO4 output enable → FC0013 → E4000 → FC0012 (followed by
+  a GPIO6 reset pulse if FC0012 was found). FC0012's `Init` also no
+  longer emits the two spurious `0x0C` register writes ("soft-reset")
+  the pre-fix code shipped — librtlsdr never wrote those; the chip
+  reset is the GPIO5 pulse.
+
 ### Fixed
 
 - **RTL-SDR `tuners.Detect` again toggles the I²C repeater off on

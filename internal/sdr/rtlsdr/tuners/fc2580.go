@@ -100,6 +100,10 @@ func (f *FC2580) Init() error {
 	if f.initDone {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	for i, w := range fc2580InitArray {
 		if err := f.writeReg(w.addr, w.val); err != nil {
 			return fmt.Errorf("fc2580 init step %d (0x%02x): %w", i, w.addr, err)
@@ -113,6 +117,10 @@ func (f *FC2580) Standby() error {
 	if !f.initDone {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	// Power down — reg 0x02 bit 7 enters sleep.
 	if err := f.writeReg(0x02, 0x0E); err != nil {
 		return fmt.Errorf("fc2580 standby: %w", err)
@@ -134,6 +142,10 @@ func (f *FC2580) SetFreq(hz uint32) error {
 	if hz < 50_000_000 || hz > 2_600_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 50_000_000, MaxHz: 2_600_000_000, TunerStr: "FC2580"}
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.freqHz = hz
 
 	band := fc2580Bands[len(fc2580Bands)-1]
@@ -185,6 +197,10 @@ func (f *FC2580) SetGain(tenthDB int) error {
 	if !f.manual || tenthDB < 0 {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	idx := nearestGainIndex(fc2580Gains, tenthDB)
 	// Reg 0x49 = LNA gain stage on FC2580.
 	return f.writeReg(0x49, byte(idx&0x07))
@@ -194,6 +210,10 @@ func (f *FC2580) SetGainMode(manual bool) error {
 	if !f.initDone {
 		return errors.New("fc2580: Init not called")
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.manual = manual
 	cur, err := f.readReg(0x45)
 	if err != nil {
@@ -210,19 +230,13 @@ func (f *FC2580) SetGainMode(manual bool) error {
 // ----------------------------------------------------------------------
 // Internals
 
+// writeReg / readReg are private I2C plumbing. Callers (public
+// methods) own the SetI2CRepeater bracket — librtlsdr's pattern.
 func (f *FC2580) writeReg(addr, val byte) error {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CWriteReg(fc2580I2CAddr, addr, val)
 }
 
 func (f *FC2580) readReg(addr byte) (byte, error) {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return 0, err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CReadReg(fc2580I2CAddr, addr)
 }
 

@@ -9,9 +9,18 @@ import (
 )
 
 // expectI2CWriteReg returns the full script for one I2CWriteReg
-// (=2-byte I2C burst wrapped in repeater on/off).
+// (=2-byte I2C burst wrapped in repeater on/off). Use for single-write
+// public methods; for multi-write sequences inside one public call use
+// expectI2CWriteRegRaw to skip the per-write toggle pair.
 func expectI2CWriteReg(addr, reg, val byte) []usb.CtrlExchange {
 	return expectI2CWrite(addr, []byte{reg, val})
+}
+
+// expectI2CWriteRegRaw is the single ControlOut for one register write
+// without surrounding toggles — for when many writes happen inside one
+// public-method bracket (librtlsdr-style).
+func expectI2CWriteRegRaw(addr, reg, val byte) usb.CtrlExchange {
+	return expectI2CWriteRaw(addr, []byte{reg, val})
 }
 
 func TestFC0012_TypeAndIF(t *testing.T) {
@@ -38,17 +47,19 @@ func TestFC0012_GainsLadder(t *testing.T) {
 	}
 }
 
-func TestFC0012_InitDoesSoftResetThenFlood(t *testing.T) {
-	// Init = 2 soft-reset writes + 20 init-array writes (one I2C
-	// burst per write, since FC0012's I2CWriteReg sends a 2-byte
-	// burst at a time).
+func TestFC0012_InitWritesFlood(t *testing.T) {
+	// FC0012.Init writes the 20-register init array (reg 1..20) inside
+	// a single repeater on/off pair. The two 0x0C "soft-reset" writes
+	// the pre-fix code emitted are NOT in librtlsdr's fc0012_init; the
+	// chip reset is the GPIO5 high→low→high pulse, which detect.go
+	// emits before this Init runs (not exercised by this test —
+	// detect_test.go pins the GPIO sequence).
 	m := usb.NewMockTransport()
-	// Soft reset (0x0C ← 0x05 then 0x0C ← 0x00).
-	m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, 0x0C, 0x05)...)
-	m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, 0x0C, 0x00)...)
+	m.Script = append(m.Script, expectRepeaterToggle(true)...)
 	for i, v := range fc0012InitArray {
-		m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, byte(i+1), v)...)
+		m.Script = append(m.Script, expectI2CWriteRegRaw(fc0012I2CAddr, byte(i+1), v))
 	}
+	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 	d := rtl2832u.New(m)
 	f := NewFC0012(d)
 	if err := f.Init(); err != nil {
@@ -64,11 +75,11 @@ func TestFC0012_InitDoesSoftResetThenFlood(t *testing.T) {
 
 func TestFC0012_InitIdempotent(t *testing.T) {
 	m := usb.NewMockTransport()
-	m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, 0x0C, 0x05)...)
-	m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, 0x0C, 0x00)...)
+	m.Script = append(m.Script, expectRepeaterToggle(true)...)
 	for i, v := range fc0012InitArray {
-		m.Script = append(m.Script, expectI2CWriteReg(fc0012I2CAddr, byte(i+1), v)...)
+		m.Script = append(m.Script, expectI2CWriteRegRaw(fc0012I2CAddr, byte(i+1), v))
 	}
+	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 	d := rtl2832u.New(m)
 	f := NewFC0012(d)
 	if err := f.Init(); err != nil {

@@ -63,19 +63,20 @@ func (f *FC0012) Gains() []int {
 	return out
 }
 
-// Init walks the 20-register init flood plus the chip's soft-reset
-// dance. librtlsdr ships a 4-bit current control quirk: write reg
-// 0x0C twice (0x05 then 0x00) before the rest of the array.
+// Init writes the 20-register init flood (regs 1..20). The chip-reset
+// dance — GPIO 5 high → low → high — happens once in detect.go before
+// the I2C probe, matching librtlsdr's rtlsdr_open ordering. The two
+// 0x0C writes the pre-fix code emitted here ("soft-reset on/off") are
+// NOT in librtlsdr's fc0012_init; the chip reset is a GPIO pulse, not
+// a register write, so we drop them.
 func (f *FC0012) Init() error {
 	if f.initDone {
 		return nil
 	}
-	if err := f.writeReg(0x0C, 0x05); err != nil {
-		return fmt.Errorf("fc0012 init soft-reset on: %w", err)
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
 	}
-	if err := f.writeReg(0x0C, 0x00); err != nil {
-		return fmt.Errorf("fc0012 init soft-reset off: %w", err)
-	}
+	defer f.demod.SetI2CRepeater(false)
 	for i, v := range fc0012InitArray {
 		if err := f.writeReg(uint8(i+1), v); err != nil {
 			return fmt.Errorf("fc0012 init reg 0x%02x: %w", i+1, err)
@@ -92,6 +93,10 @@ func (f *FC0012) Standby() error {
 	if !f.initDone {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	if err := f.writeReg(0x06, 0x0F); err != nil {
 		return fmt.Errorf("fc0012 standby: %w", err)
 	}
@@ -115,6 +120,10 @@ func (f *FC0012) SetFreq(hz uint32) error {
 	if hz < 37_000_000 || hz > 1_700_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 37_000_000, MaxHz: 1_700_000_000, TunerStr: "FC0012"}
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.freqHz = hz
 
 	multi, reg5, reg6 := fc0012BandSelect(hz)
@@ -183,6 +192,10 @@ func (f *FC0012) SetGain(tenthDB int) error {
 	if !f.manual || tenthDB < 0 {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	idx := fc0012NearestGainIndex(tenthDB)
 	cur, err := f.readReg(0x13)
 	if err != nil {
@@ -198,6 +211,10 @@ func (f *FC0012) SetGainMode(manual bool) error {
 	if !f.initDone {
 		return errors.New("fc0012: Init not called")
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.manual = manual
 	cur, err := f.readReg(0x06)
 	if err != nil {
@@ -268,43 +285,23 @@ func abs(x int) int {
 	return x
 }
 
-// writeReg is the FC0012 single-byte I2C write helper. Wraps each
-// burst in SetI2CRepeater on/off — librtlsdr's tuner_fc0012 calls
-// the chip through an explicit I2C-bridge state, so we do the same.
-// The cached-toggle behavior in rtl2832u.Demod elides redundant
-// toggles for back-to-back operations from the same caller.
+// writeReg / readReg are private I2C plumbing. Callers (public
+// methods) own the SetI2CRepeater bracket — librtlsdr's pattern.
+// FC0012 doesn't do the bit-reverse trick the R820T family does,
+// so raw bytes come back from the bridge.
 func (f *FC0012) writeReg(addr, val byte) error {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CWriteReg(fc0012I2CAddr, addr, val)
 }
 
-// readReg reads one byte from the chip. FC0012 doesn't do the
-// bit-reverse trick the R820T family does, so raw bytes come back
-// from the bridge.
 func (f *FC0012) readReg(addr byte) (byte, error) {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return 0, err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CReadReg(fc0012I2CAddr, addr)
 }
 
-// detectFC0012 enables the chip via GPIO 5 (required by the bus
-// layout on the dongles that ship with FC0012), reads the chip-ID
-// byte at addr 0, and returns a ready driver if the response matches.
-// Called from the unified [Detect] orchestrator.
+// detectFC0012 reads the chip-ID byte at addr 0 and returns a ready
+// driver if the response matches. The orchestrator in detect.go runs
+// the GPIO 5 reset pulse + GPIO 6 chip-enable pulse before this call,
+// matching librtlsdr's rtlsdr_open order — we just see the I2C side.
 func detectFC0012(d *rtl2832u.Demod) Tuner {
-	// FC0012 enable: GPIO 5 must be high before the bus responds.
-	// librtlsdr does this in rtlsdr_open before probing.
-	if err := d.SetGPIOOutput(fc0012GPIOEnable); err != nil {
-		return nil
-	}
-	if err := d.SetGPIOBit(fc0012GPIOEnable, true); err != nil {
-		return nil
-	}
 	out, err := d.I2CRead(fc0012I2CAddr, 1)
 	if err != nil || len(out) == 0 {
 		return nil

@@ -8,29 +8,62 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
-// I2CRead at addr A returns 1 byte: 3 USB transfers (no pointer write,
-// auto-increment from 0).
-func expectI2CReadAddr0(addr uint8, replyByte byte) []usb.CtrlExchange {
-	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
-	out = append(out, usb.CtrlExchange{
-		In: true, BRequest: 0, WValue: uint16(addr), WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{replyByte},
-	})
-	out = append(out, expectRepeaterToggle(false)...)
-	return out
+// expectI2CReadRegRaw is the wire sequence for one I2CReadReg call —
+// a 1-byte register-pointer write followed by a 1-byte read, no
+// surrounding repeater toggles. Use when the caller has already
+// established the repeater state (Detect's outer bracket).
+func expectI2CReadRegRaw(addr, reg, replyByte byte) []usb.CtrlExchange {
+	return []usb.CtrlExchange{
+		{In: false, BRequest: 0, WValue: uint16(addr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: []byte{reg}},
+		{In: true, BRequest: 0, WValue: uint16(addr), WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{replyByte}},
+	}
 }
 
-// I2CReadReg(addr, reg) → I2C-bridge write of reg-pointer + I2C read of 1 byte.
-func expectI2CReadReg(addr, reg, replyByte byte) []usb.CtrlExchange {
-	out := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
-	out = append(out, usb.CtrlExchange{
-		In: false, BRequest: 0, WValue: uint16(addr), WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: []byte{reg},
-	})
-	out = append(out, expectRepeaterToggle(false)...)
-	out = append(out, expectRepeaterToggle(true)...)
-	out = append(out, usb.CtrlExchange{
-		In: true, BRequest: 0, WValue: uint16(addr), WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{replyByte},
-	})
-	out = append(out, expectRepeaterToggle(false)...)
+// expectSetGPIOOutput is the read-modify-write sequence Demod.SetGPIOOutput
+// emits to enable the given pin as a system-block output. Reads GPD and
+// GPOE (returning the supplied starting bytes), then writes back the
+// pin-cleared / pin-set values. Matches gpio.go:setGPIOOutputLocked.
+func expectSetGPIOOutput(pin, gpdStart, gpoeStart byte) []usb.CtrlExchange {
+	const (
+		sysGPOE uint16 = 0x3003
+		sysGPD  uint16 = 0x3004
+	)
+	gpdNew := gpdStart &^ (1 << pin)
+	gpoeNew := gpoeStart | (1 << pin)
+	return []usb.CtrlExchange{
+		{In: true, BRequest: 0, WValue: sysGPD, WIndex: 0x0200, N: 1, Reply: []byte{gpdStart}},
+		{In: false, BRequest: 0, WValue: sysGPD, WIndex: 0x0210, Data: []byte{gpdNew}},
+		{In: true, BRequest: 0, WValue: sysGPOE, WIndex: 0x0200, N: 1, Reply: []byte{gpoeStart}},
+		{In: false, BRequest: 0, WValue: sysGPOE, WIndex: 0x0210, Data: []byte{gpoeNew}},
+	}
+}
+
+// expectSetGPIOBit is the read-modify-write Demod.SetGPIOBit emits.
+// Reads GPO (returning gpoStart), writes back with the pin toggled to
+// `high`. Matches gpio.go:setGPIOBitLocked.
+func expectSetGPIOBit(pin byte, high bool, gpoStart byte) []usb.CtrlExchange {
+	const sysGPO uint16 = 0x3001
+	var v byte = gpoStart
+	if high {
+		v |= 1 << pin
+	} else {
+		v &^= 1 << pin
+	}
+	return []usb.CtrlExchange{
+		{In: true, BRequest: 0, WValue: sysGPO, WIndex: 0x0200, N: 1, Reply: []byte{gpoStart}},
+		{In: false, BRequest: 0, WValue: sysGPO, WIndex: 0x0210, Data: []byte{v}},
+	}
+}
+
+// expectGPIOPulse is the full SetGPIOOutput + per-level SetGPIOBit
+// sequence Detect's pulseGPIO helper emits. All starting register
+// reads return 0x00 (mock has no state — production reads what we
+// say it reads).
+func expectGPIOPulse(pin byte, levels ...bool) []usb.CtrlExchange {
+	out := append([]usb.CtrlExchange{}, expectSetGPIOOutput(pin, 0x00, 0x00)...)
+	for _, lvl := range levels {
+		out = append(out, expectSetGPIOBit(pin, lvl, 0x00)...)
+	}
 	return out
 }
 
@@ -38,9 +71,9 @@ func TestDetect_R820T2MatchesAt0x34(t *testing.T) {
 	// Detect enables the I2C repeater, probes 0x34 (returns
 	// bit-reversed 0x69 = 0x96), then toggles the repeater OFF on
 	// return. The OFF-on-return contract is load-bearing for issue
-	// #248: it leaves writeBurstRaw's leading SetI2CRepeater(true)
-	// as a real wire write rather than a cache-skip, which the
-	// chip's I²C bridge needs to arm the next multi-byte OUT.
+	// #248: it leaves R82xx.Init's leading SetI2CRepeater(true) as
+	// a real wire write rather than a cache-skip, which the chip's
+	// I²C bridge needs to arm the next multi-byte OUT.
 	m := usb.NewMockTransport()
 	m.Script = append(m.Script, expectRepeaterToggle(true)...)
 	m.Script = append(m.Script, usb.CtrlExchange{
@@ -62,18 +95,35 @@ func TestDetect_R820T2MatchesAt0x34(t *testing.T) {
 }
 
 func TestDetect_FallsThroughToE4000(t *testing.T) {
-	// Detect wraps the whole probe sweep in one SetI2CRepeater on/off
-	// pair. Inside, each detect helper emits raw I²C transfers (no
-	// per-helper repeater toggles). Detection order:
-	// R820T@0x34 → R820T@0x74 → E4000@0xC8 dummy → E4000 reg 0x02 →
-	// match → return with the trailing repeater-off (issue #248).
+	// Pins librtlsdr's rtlsdr_open probe order (see detect.go Detect):
+	//   1. SetI2CRepeater(true)
+	//   2. R820T@0x34 chip-ID read → miss
+	//   3. R828D@0x74 chip-ID read → miss
+	//   4. GPIO5 reset pulse: out + high + low
+	//   5. FC2580@0xAC reg 0x01 read → miss
+	//   6. GPIO4 output enable (no pulse — librtlsdr just enables)
+	//   7. FC0013@0xC6 chip-ID read → miss
+	//   8. E4000@0xC8 dummy chip-ID read (mock returns 0x00)
+	//   9. E4000@0xC8 reg 0x02 read → 0x40 → match
+	//  10. SetI2CRepeater(false)
 	m := usb.NewMockTransport()
 	m.Script = append(m.Script, expectRepeaterToggle(true)...)
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0034, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x0074, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x00}})
-	m.Script = append(m.Script, usb.CtrlExchange{In: false, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC)<<8 | 0x10, Data: []byte{0x02}})
-	m.Script = append(m.Script, usb.CtrlExchange{In: true, BRequest: 0, WValue: 0x00C8, WIndex: uint16(rtl2832u.BlockIIC) << 8, N: 1, Reply: []byte{0x40}})
+	// R820T / R828D both miss.
+	m.Script = append(m.Script, expectI2CReadRaw(0x34, 1, []byte{0x00}))
+	m.Script = append(m.Script, expectI2CReadRaw(0x74, 1, []byte{0x00}))
+	// GPIO5 pulse: high → low.
+	m.Script = append(m.Script, expectGPIOPulse(5, true, false)...)
+	// FC2580 miss — full read-reg sequence.
+	m.Script = append(m.Script, expectI2CReadRegRaw(0xAC, 0x01, 0x00)...)
+	// GPIO4 output enable (no level writes — librtlsdr only flips
+	// the direction, leaves the value undriven).
+	m.Script = append(m.Script, expectSetGPIOOutput(4, 0x00, 0x00)...)
+	// FC0013 miss.
+	m.Script = append(m.Script, expectI2CReadRaw(0xC6, 1, []byte{0x00}))
+	// E4000 dummy read (NAK wakeup) — mock returns 0x00.
+	m.Script = append(m.Script, expectI2CReadRaw(0xC8, 1, []byte{0x00}))
+	// E4000 chip-ID match.
+	m.Script = append(m.Script, expectI2CReadRegRaw(0xC8, 0x02, 0x40)...)
 	m.Script = append(m.Script, expectRepeaterToggle(false)...)
 
 	demod := rtl2832u.New(m)

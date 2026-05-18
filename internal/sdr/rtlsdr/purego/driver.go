@@ -142,13 +142,15 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 // tests can drive it directly with a mock transport without going
 // through the enumerator.
 //
-// Each step manages its own I²C repeater state: Detect wraps itself in
-// an on/off pair; PrepareDemod's writes are demod control transfers
-// that don't touch the I²C bridge; tuner.Init's writeBurstRaw emits
-// its own on/off pair around the burst. The fresh on-toggle inside
-// writeBurstRaw is load-bearing on NESDR v5 silicon (issue #248) —
-// the chip needs the explicit "kick" to arm the bridge for the
-// multi-byte OUT.
+// Each step manages its own I²C repeater state. Detect wraps the
+// probe sweep in a single on/off pair (off-on-return); PrepareDemod's
+// writes are demod control transfers that don't touch the I²C bridge;
+// tuner.Init opens the repeater once at the top of its body and
+// closes it on return (the per-public-method pattern shared by every
+// tuner driver). The fresh on-toggle inside tuner.Init is
+// load-bearing on NESDR v5 silicon (issue #248) — the chip needs the
+// explicit "kick" to arm the bridge for the multi-byte OUT that
+// follows, even though the demod register already holds the on-value.
 func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w", err)

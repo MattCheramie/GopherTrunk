@@ -186,11 +186,15 @@ func TestE4000SetFreqBoundaryInclusivity(t *testing.T) {
 // touched 0x0D. A regression to that layout fails this script's
 // strict-order match.
 func TestE4000_SetFreq_WireBytes(t *testing.T) {
+	// SetFreq is one public method = one repeater on/off pair around
+	// all four register writes (Z, X low, X high, band/R).
 	var script []usb.CtrlExchange
-	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x09, 0x6F})...) // Z
-	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0A, 0x71})...) // X low
-	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0B, 0x1C})...) // X high
-	script = append(script, expectI2CWrite(e4kI2CAddr, []byte{0x0D, 0x0D})...) // band/R
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(e4kI2CAddr, []byte{0x09, 0x6F})) // Z
+	script = append(script, expectI2CWriteRaw(e4kI2CAddr, []byte{0x0A, 0x71})) // X low
+	script = append(script, expectI2CWriteRaw(e4kI2CAddr, []byte{0x0B, 0x1C})) // X high
+	script = append(script, expectI2CWriteRaw(e4kI2CAddr, []byte{0x0D, 0x0D})) // band/R
+	script = append(script, expectRepeaterToggle(false)...)
 	m := usb.NewMockTransport()
 	m.Script = script
 	e := NewE4000(rtl2832u.New(m))

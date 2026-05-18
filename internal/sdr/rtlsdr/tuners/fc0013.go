@@ -70,6 +70,10 @@ func (f *FC0013) Init() error {
 	if f.initDone {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	// Soft reset: bit 3 of reg 0x0C set then clear.
 	if err := f.writeReg(0x0C, 0x05); err != nil {
 		return fmt.Errorf("fc0013 init soft-reset on: %w", err)
@@ -90,6 +94,10 @@ func (f *FC0013) Standby() error {
 	if !f.initDone {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	if err := f.writeReg(0x06, 0x0F); err != nil {
 		return fmt.Errorf("fc0013 standby: %w", err)
 	}
@@ -110,6 +118,10 @@ func (f *FC0013) SetFreq(hz uint32) error {
 	if hz < 22_000_000 || hz > 1_700_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 22_000_000, MaxHz: 1_700_000_000, TunerStr: "FC0013"}
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.freqHz = hz
 
 	multi, reg5, reg6 := fc0013BandSelect(hz)
@@ -172,6 +184,10 @@ func (f *FC0013) SetGain(tenthDB int) error {
 	if !f.manual || tenthDB < 0 {
 		return nil
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	idx := nearestGainIndex(fc0013LNAGains, tenthDB)
 	cur, err := f.readReg(0x14)
 	if err != nil {
@@ -187,6 +203,10 @@ func (f *FC0013) SetGainMode(manual bool) error {
 	if !f.initDone {
 		return errors.New("fc0013: Init not called")
 	}
+	if err := f.demod.SetI2CRepeater(true); err != nil {
+		return err
+	}
+	defer f.demod.SetI2CRepeater(false)
 	f.manual = manual
 	cur, err := f.readReg(0x0D)
 	if err != nil {
@@ -230,19 +250,13 @@ func fc0013BandSelect(hz uint32) (multi uint32, reg5, reg6 byte) {
 	}
 }
 
+// writeReg / readReg are private I2C plumbing. Callers (public
+// methods) own the SetI2CRepeater bracket — librtlsdr's pattern.
 func (f *FC0013) writeReg(addr, val byte) error {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CWriteReg(fc0013I2CAddr, addr, val)
 }
 
 func (f *FC0013) readReg(addr byte) (byte, error) {
-	if err := f.demod.SetI2CRepeater(true); err != nil {
-		return 0, err
-	}
-	defer f.demod.SetI2CRepeater(false)
 	return f.demod.I2CReadReg(fc0013I2CAddr, addr)
 }
 
