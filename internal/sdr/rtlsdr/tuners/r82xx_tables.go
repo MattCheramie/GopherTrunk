@@ -24,9 +24,17 @@ const (
 	r82xxShadowStart = 0x05
 
 	// r82xxXtalHz matches the RTL2832U reference crystal librtlsdr
-	// drives the R820T from (28.8 MHz). Boards with non-standard
-	// crystals can override via [R82xx.SetXtal].
+	// drives the R820T from (28.8 MHz). R828D variants use 16 MHz —
+	// see r828dXtalHz. Boards with non-standard crystals can override
+	// via [R82xx.SetXtal].
 	r82xxXtalHz uint32 = 28_800_000
+
+	// r828dXtalHz is the reference crystal frequency for R828D-family
+	// tuners (RTL-SDR Blog V4 and similar). librtlsdr exposes this as
+	// R828D_XTAL_FREQ in tuner_r82xx.c. NewR82xx selects this default
+	// when chipType == TypeR828D so SetFreq's PLL math matches what
+	// librtlsdr would compute against the same hardware.
+	r828dXtalHz uint32 = 16_000_000
 
 	// vcoMin / vcoMax bound the R820T VCO range. The PLL math
 	// picks a mixer divider (2/4/8/16/32/64) so freq*div lands

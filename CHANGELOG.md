@@ -58,6 +58,24 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR R828D-family tuners (RTL-SDR Blog V4 and similar) now
+  use the correct 16 MHz reference crystal.** `NewR82xx`
+  previously initialized every R820T/R820T2/R828D instance with
+  `r.xtalHz = 28_800_000`, the R820T value. R828D variants run
+  from a 16 MHz crystal per librtlsdr's `R828D_XTAL_FREQ`. The
+  divergence didn't surface during init (the burst uses fixed
+  register values), but every `SetFreq` call on an R828D would
+  compute PLL parameters against the wrong reference — every
+  tuned frequency landed at ~28.8/16 = 1.8× the requested LO,
+  rendering V4 dongles unusable for tuning once they did open.
+  `NewR82xx` now picks the per-chip default; `SetXtal` keeps
+  working as the explicit override for boards with non-standard
+  crystals. Closes [issue #264](https://github.com/MattCheramie/GopherTrunk/issues/264)'s
+  tuning-after-init half; the init-burst EPIPE half is covered
+  by the existing layered defense from issues #248 / PRs
+  #258 / #260 / #262 / #263 / #265, which apply to R828D writes
+  identically.
+
 - **RTL-SDR R820T burst-init now adds a chip-settle window and
   chunk-size fallback for the EPIPE-on-first-burst case.** Sixth
   iteration on issue #248 after PR #263's per-chunk EPIPE retry +

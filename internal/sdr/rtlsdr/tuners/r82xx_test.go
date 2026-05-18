@@ -869,6 +869,48 @@ func TestR82xx_InitBurst_NonEPIPENoRetry(t *testing.T) {
 	}
 }
 
+// TestNewR82xx_DefaultXtalPerChipType pins librtlsdr's per-chip
+// crystal defaults so a future refactor of NewR82xx can't quietly
+// regress the R828D variant back to 28.8 MHz (issue #264). R820T /
+// R820T2 derive PLL division off the RTL2832U's 28.8 MHz reference;
+// R828D has its own 16 MHz crystal. TypeUnknown falls through to
+// the R820T default — a stricter "error on unknown" check would
+// catch one extra test case but break Detect callers that construct
+// R82xx before deciding the variant.
+func TestNewR82xx_DefaultXtalPerChipType(t *testing.T) {
+	cases := []struct {
+		chip Type
+		want uint32
+	}{
+		{TypeR820T, 28_800_000},
+		{TypeR820T2, 28_800_000},
+		{TypeR828D, 16_000_000},
+		{TypeUnknown, 28_800_000},
+	}
+	for _, c := range cases {
+		r := NewR82xx(nil, 0x34, c.chip)
+		if r.xtalHz != c.want {
+			t.Errorf("NewR82xx(chip=%v).xtalHz = %d, want %d", c.chip, r.xtalHz, c.want)
+		}
+	}
+}
+
+// TestR82xx_SetXtal_OverridesPerChipDefault pins the explicit-override
+// path against the per-chip defaults introduced in issue #264. Boards
+// with non-standard crystals (e.g. some R828D variants with a TCXO
+// at a different frequency) must still be able to point R82xx at the
+// right reference via SetXtal after construction.
+func TestR82xx_SetXtal_OverridesPerChipDefault(t *testing.T) {
+	r := NewR82xx(nil, 0x74, TypeR828D)
+	if r.xtalHz != 16_000_000 {
+		t.Fatalf("pre-condition: NewR82xx(R828D).xtalHz = %d, want 16_000_000", r.xtalHz)
+	}
+	r.SetXtal(40_000_000)
+	if r.xtalHz != 40_000_000 {
+		t.Errorf("after SetXtal(40_000_000): r.xtalHz = %d, want 40_000_000", r.xtalHz)
+	}
+}
+
 func TestErrUnsupportedFreq_ErrorMessage(t *testing.T) {
 	e := &ErrUnsupportedFreq{Hz: 2_000_000_000, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: "R820T2"}
 	msg := e.Error()

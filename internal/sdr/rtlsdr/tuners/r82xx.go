@@ -44,19 +44,29 @@ type R82xx struct {
 
 // NewR82xx constructs a driver bound to the given RTL2832U demod and
 // I2C address. Callers normally obtain the right address via the
-// Detect helper.
+// Detect helper. The reference-crystal frequency defaults are
+// per-chip-type: R820T/R820T2 run from 28.8 MHz (the RTL2832U's
+// reference crystal), R828D runs from 16 MHz (a separate on-board
+// crystal). Boards with non-standard crystals can override via
+// [R82xx.SetXtal] after construction.
 func NewR82xx(d *rtl2832u.Demod, i2cAddr uint8, chip Type) *R82xx {
+	xtal := r82xxXtalHz
+	if chip == TypeR828D {
+		xtal = r828dXtalHz
+	}
 	return &R82xx{
 		demod:    d,
 		i2cAddr:  i2cAddr,
 		chipType: chip,
-		xtalHz:   r82xxXtalHz,
+		xtalHz:   xtal,
 	}
 }
 
 // SetXtal overrides the reference-crystal frequency. R820T chips
 // derive every PLL division off the RTL2832U's crystal, so a
-// non-default board crystal must be propagated here too.
+// non-default board crystal must be propagated here too. Per-chip
+// defaults are set by [NewR82xx] (28.8 MHz for R820T/R820T2, 16 MHz
+// for R828D); SetXtal exists for boards that deviate from those.
 func (r *R82xx) SetXtal(hz uint32) { r.xtalHz = hz }
 
 // Type returns the detected chip family.
