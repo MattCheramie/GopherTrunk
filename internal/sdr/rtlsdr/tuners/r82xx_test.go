@@ -714,33 +714,131 @@ func TestR82xx_InitBurst_EPIPERetrySucceeds(t *testing.T) {
 	}
 }
 
-// TestR82xx_InitBurst_EPIPETwiceReturnsWrappedError: both attempts on
-// the first chunk EPIPE. writeBurstChunk returns a wrapped error
-// keyed on "after 1 retry on EPIPE" so traces show retry attribution.
-// The underlying syscall.EPIPE remains reachable via errors.Is — the
-// outer openDevice envelope keys off that for its reset+retry. The
-// defer in R82xx.Init still emits the trailing repeater-off so the
-// chip state is clean on return.
-func TestR82xx_InitBurst_EPIPETwiceReturnsWrappedError(t *testing.T) {
-	chunk1, _ := expectR82xxInitBurstChunks()
+// burstChunkAt builds the wire payload for one I²C chunk of the
+// r82xxInitArray at offset pos with `size` data bytes. The 1-byte
+// register-pointer prefix is r82xxShadowStart + pos so the chip
+// auto-increments correctly across the burst.
+func burstChunkAt(pos, size int) []byte {
+	return append([]byte{byte(r82xxShadowStart + pos)}, r82xxInitArray[pos:pos+size]...)
+}
+
+// burstScriptAtSize returns the wire script for writing the whole
+// init array at a fixed chunk size, with per-chunk error injection.
+// errPerChunk[i] (if i < len) becomes the Err on chunk i; trailing
+// chunks get nil. Used by the chunk-size fallback tests below.
+func burstScriptAtSize(chunkSize int, errPerChunk ...error) []usb.CtrlExchange {
+	var script []usb.CtrlExchange
+	chunkIdx := 0
+	for pos := 0; pos < len(r82xxInitArray); chunkIdx++ {
+		size := len(r82xxInitArray) - pos
+		if size > chunkSize {
+			size = chunkSize
+		}
+		var err error
+		if chunkIdx < len(errPerChunk) {
+			err = errPerChunk[chunkIdx]
+		}
+		script = append(script, r82xxChunkExchange(burstChunkAt(pos, size), err))
+		pos += size
+	}
+	return script
+}
+
+// TestR82xx_InitBurst_ChunkSizeFallback_8Succeeds: chunk1 at size 16
+// EPIPEs on both writeBurstChunk attempts (initial + inner retry),
+// writeBurstRaw's halving fallback kicks in, the burst re-runs at
+// size 8 and all four 8-byte chunks succeed. R82xx.Init returns nil
+// and the mock script is fully consumed. Verifies the
+// halving-on-EPIPE path lives in writeBurstRaw, not in writeBurstChunk.
+func TestR82xx_InitBurst_ChunkSizeFallback_8Succeeds(t *testing.T) {
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
 	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
-	script = append(script, r82xxChunkExchange(chunk1, syscall.EPIPE)) // first attempt
-	script = append(script, r82xxChunkExchange(chunk1, syscall.EPIPE)) // retry
+	// Size-16 pass: chunk1 EPIPEs, inner retry of chunk1 also EPIPEs.
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	// Size-8 pass: 4 chunks (8+8+8+3 = 27 data bytes), all succeed.
+	script = append(script, burstScriptAtSize(8)...)
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (size-8 fallback should have succeeded)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ChunkSizeFallback_AllSizesFail: chunk1 EPIPEs
+// at every size in the halving walk (16/8/4) with both inner retries
+// failing too. writeBurstRaw wraps the final error as "tried chunk
+// sizes 16,8,4; all EPIPE'd: ..." so reporters see attribution.
+// errors.Is(err, syscall.EPIPE) still holds — the outer openDevice
+// envelope keys off that for its reset+retry. The defer in R82xx.Init
+// still emits the trailing repeater-off so the chip state is clean.
+func TestR82xx_InitBurst_ChunkSizeFallback_AllSizesFail(t *testing.T) {
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	// Size 16: chunk1 + inner retry both EPIPE.
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	// Size 8: chunk1 + inner retry both EPIPE.
+	chunk1at8 := burstChunkAt(0, 8)
+	script = append(script, r82xxChunkExchange(chunk1at8, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at8, syscall.EPIPE))
+	// Size 4 (floor): chunk1 + inner retry both EPIPE.
+	chunk1at4 := burstChunkAt(0, 4)
+	script = append(script, r82xxChunkExchange(chunk1at4, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at4, syscall.EPIPE))
 	script = append(script, expectRepeaterToggle(false)...)
 
 	r, m := newR82xxForTest(t, script)
 	err := r.Init()
 	if err == nil {
-		t.Fatal("Init succeeded; expected wrapped EPIPE")
+		t.Fatal("Init succeeded; expected wrapped EPIPE after all sizes failed")
 	}
 	if !errors.Is(err, syscall.EPIPE) {
 		t.Errorf("err = %v, want errors.Is(err, syscall.EPIPE) (outer envelope keys off this)", err)
 	}
-	if !strings.Contains(err.Error(), "after 1 retry on EPIPE") {
-		t.Errorf("err = %q, want substring \"after 1 retry on EPIPE\" (proves retry fired)", err.Error())
+	if !strings.Contains(err.Error(), "tried chunk sizes 16,8,4") {
+		t.Errorf("err = %q, want substring \"tried chunk sizes 16,8,4\" (proves fallback walked all sizes)", err.Error())
 	}
 	if m.Remaining() != 0 {
 		t.Errorf("remaining=%d, want 0 (deferred repeater-off must still fire)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ChunkSizeFallback_NonEPIPEAborts: chunk1 at
+// size 16 EPIPEs (inner retry exhausted), size 8 returns ErrTimeout
+// (a non-EPIPE error). Asserts the halving walk STOPS immediately —
+// no size-4 attempt fires — and the error wraps ErrTimeout, not
+// syscall.EPIPE. Pins the "EPIPE-only fallback" guard so a future
+// change can't quietly widen it.
+func TestR82xx_InitBurst_ChunkSizeFallback_NonEPIPEAborts(t *testing.T) {
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	chunk1at8 := burstChunkAt(0, 8)
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at16, syscall.EPIPE))
+	script = append(script, r82xxChunkExchange(chunk1at8, usb.ErrTimeout))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	err := r.Init()
+	if err == nil {
+		t.Fatal("Init succeeded; expected wrapped ErrTimeout")
+	}
+	if !errors.Is(err, usb.ErrTimeout) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrTimeout)", err)
+	}
+	if strings.Contains(err.Error(), "tried chunk sizes") {
+		t.Errorf("err = %q, must NOT contain the all-sizes-failed wrap (non-EPIPE must abort the halving walk immediately)", err.Error())
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (no size-4 attempt; deferred repeater-off must fire)", m.Remaining())
 	}
 }
 

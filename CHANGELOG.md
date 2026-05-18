@@ -58,6 +58,38 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR R820T burst-init now adds a chip-settle window and
+  chunk-size fallback for the EPIPE-on-first-burst case.** Sixth
+  iteration on issue #248 after PR #263's per-chunk EPIPE retry +
+  open-path USBDEVFS_RESET envelope still failed to close it on two
+  NESDR SMArt v5 units. The post-#263 trace confirms the USB reset
+  doesn't change the chip's response to the 17-byte burst,
+  `Demod.InitBaseband` matches librtlsdr's `rtlsdr_init_baseband`
+  byte-for-byte across all 20 register writes + the 20-byte FIR
+  upload, the load-bearing `SetI2CRepeater(true)` toggle from PR #262
+  is on the wire immediately before each burst attempt, and EP0
+  stays healthy post-EPIPE (subsequent control transfers succeed
+  without `USBDEVFS_CLEAR_HALT`). Two new defenses ship in this
+  round, layered before the existing inner+outer retry from PR #263:
+  - `R82xx.Init` now sleeps 5 ms between opening the I²C repeater
+    and emitting the burst, covering a chip-settle window librtlsdr
+    gets incidentally via function-call latency that our tight
+    PrepareDemod → Init back-to-back path doesn't.
+  - `writeBurstRaw` now halves the chunk size on
+    EPIPE-after-inner-retry-exhausted (16 → 8 → 4 floor) and re-runs
+    the whole burst at the smaller size before giving up. Probes the
+    chip's effective I²C-bridge FIFO depth empirically — librtlsdr's
+    `NMAX_WRITES = 16` may exceed what specific firmware revisions
+    accept. The final-failure error wraps as
+    `tried chunk sizes 16,8,4; all EPIPE'd: ...` so reporters see
+    attribution. Idempotent-write contract called out at the
+    function comment — register writes through this path must stay
+    safe to replay across the halving walk.
+  If this still reproduces, kernel-level usbmon packet traces become
+  the prerequisite — `LIBUSB_DEBUG=4` doesn't dump payloads and the
+  diagnostic data inferrable from existing traces is exhausted.
+  Continues [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248).
+
 - **RTL-SDR R820T burst-init EPIPE now recovers via a single in-place
   retry + one-shot open-path reset hammer.** Two NESDR SMArt v5 units
   reproduced an EPIPE on the very first `r82xx_init_array` I²C-bridge

@@ -56,6 +56,28 @@ const (
 	// to drain prior PrepareDemod traffic and short enough to be
 	// invisible in the happy path (retry never fires).
 	r82xxBurstRetryDelayMillis = 8
+
+	// r82xxBurstMinData is the smallest chunk size writeBurstRaw will
+	// try before giving up its halving-on-EPIPE retry walk
+	// (16 → 8 → 4). Going below 4 burns wire traffic without
+	// distinguishing a true multi-byte FIFO threshold from any other
+	// behavior — single-byte demod writes already succeed against the
+	// post-EPIPE chip on issue #248's reproduction, so finding a "size
+	// 1 works" branch doesn't tell us anything new. See
+	// writeBurstRaw's halving loop for details.
+	r82xxBurstMinData = 4
+
+	// r82xxPostPrepDemodSettleMillis is a brief chip-settle window
+	// after the I²C repeater opens at the top of R82xx.Init and
+	// before the multi-byte burst goes out. PR #263's trace data
+	// (issue #248) showed the burst EPIPEs on NESDR v5 silicon even
+	// after the load-bearing SetI2CRepeater(true) wire write fired
+	// and after a USBDEVFS_RESET. librtlsdr's rtlsdr_open has
+	// natural latency (function-call boundary + libusb queue
+	// management) between PrepareDemod's last demod-side write and
+	// r82xx_init's first I²C-bridge OUT; gophertrunk's Go code runs
+	// them back-to-back. 5 ms covers that gap.
+	r82xxPostPrepDemodSettleMillis = 5
 )
 
 // r82xxInitArray is the 27-byte register flood that lands at addr

@@ -129,8 +129,9 @@ func (r *R82xx) PrepareDemod() error {
 
 // Init walks the librtlsdr power-on sequence: open the I²C repeater
 // (a fresh wire write — load-bearing on NESDR v5 silicon, issue
-// #248), write the 27-byte init flood to registers 0x05..0x1F as
-// 16-byte chunks (NMAX_WRITES parity), close the repeater on return.
+// #248), wait briefly for the chip-settle window, write the 27-byte
+// init flood to registers 0x05..0x1F via writeBurstRaw's halving
+// fallback (16 → 8 → 4), close the repeater on return.
 func (r *R82xx) Init() error {
 	if r.initDone {
 		return nil
@@ -139,6 +140,12 @@ func (r *R82xx) Init() error {
 		return err
 	}
 	defer r.demod.SetI2CRepeater(false)
+	// Brief chip-settle window between the repeater open and the
+	// multi-byte burst — covers a timing gap librtlsdr gets
+	// incidentally via function-call latency that our tight
+	// PrepareDemod → Init back-to-back path doesn't. See
+	// r82xxPostPrepDemodSettleMillis docstring (issue #248).
+	time.Sleep(r82xxPostPrepDemodSettleMillis * time.Millisecond)
 	// Prime the shadow with the init values; the burst write below
 	// makes them real.
 	for i, v := range r82xxInitArray {
@@ -526,18 +533,52 @@ func (r *R82xx) writeRegMask(addr uint8, val, mask byte) error {
 // public method (Init, SetFreq, ...) does this once around its whole
 // body, matching librtlsdr's rtlsdr_set_tuner_* wrap pattern.
 //
-// Data is split into chunks of at most r82xxBurstMaxData bytes to
-// mirror librtlsdr's r82xx_write (NMAX_WRITES = 16). Going beyond
-// that limit stalls the very first multi-byte OUT on some NESDR v5
-// dongles — observed as libusb EPIPE on the 27-byte init flood
-// (issue #248). Each chunk is its own control-OUT; the register
-// pointer advances by the chunk length between chunks, which matches
-// the chip's auto-increment.
+// Data is normally split into chunks of r82xxBurstMaxData bytes to
+// mirror librtlsdr's r82xx_write (NMAX_WRITES = 16). If a chunk
+// EPIPEs even after writeBurstChunk's per-chunk inner retry, the
+// whole burst is replayed at half the previous chunk size, walking
+// 16 → 8 → 4 until one size succeeds (issue #248: two NESDR SMArt
+// v5 units rejected the 17-byte first chunk even after PR #263's
+// inner retry + outer USBDEVFS_RESET hammer; the hypothesis being
+// tested is that the chip's I²C-bridge FIFO depth on that firmware
+// revision is below librtlsdr's 16-byte assumption).
+//
+// Idempotency note: when a later chunk EPIPEs and the burst restarts
+// at a smaller size, chunks already written at the larger size get
+// their wire bytes replayed against the same chip registers. Safe
+// for R820T because every register write is idempotent and the
+// shadow holds the same values across attempts. Future tuner ports
+// that route non-idempotent writes through writeBurstRaw must
+// revisit this contract.
 func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
+	var lastErr error
+	for chunkSize := r82xxBurstMaxData; chunkSize >= r82xxBurstMinData; chunkSize /= 2 {
+		err := r.writeBurstAtSize(addr, data, chunkSize)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, syscall.EPIPE) {
+			return err
+		}
+		lastErr = err
+		if chunkSize > r82xxBurstMinData {
+			// Let the chip's I²C bridge drain before the next pass.
+			time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
+		}
+	}
+	return fmt.Errorf("tried chunk sizes 16,8,4; all EPIPE'd: %w", lastErr)
+}
+
+// writeBurstAtSize emits the burst with a specific chunk size cap.
+// Pulled out of writeBurstRaw so the halving-fallback loop has a
+// single per-pass entry point. Each chunk is its own control-OUT;
+// the register pointer advances by chunkSize per OUT, matching the
+// chip's auto-increment.
+func (r *R82xx) writeBurstAtSize(addr uint8, data []byte, chunkSize int) error {
 	for pos := 0; pos < len(data); {
 		size := len(data) - pos
-		if size > r82xxBurstMaxData {
-			size = r82xxBurstMaxData
+		if size > chunkSize {
+			size = chunkSize
 		}
 		if err := r.writeBurstChunk(addr+uint8(pos), data[pos:pos+size]); err != nil {
 			return err
