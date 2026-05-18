@@ -151,35 +151,39 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 // load-bearing on NESDR v5 silicon (issue #248) — the chip needs the
 // explicit "kick" to arm the bridge for the multi-byte OUT that
 // follows, even though the demod register already holds the on-value.
+//
+// The whole sequence is wrapped in a one-shot reset+retry envelope on
+// EPIPE / ErrDeviceGone — covers both the librtlsdr "dummy write
+// probe" recovery case (warmup phase) and the NESDR v5 cold-boot
+// I²C-bridge-stall case (issue #248, the chip rejecting the first
+// 17-byte tuner burst even after PR #262's fresh wire toggle is on
+// the wire). At most one USBDEVFS_RESET per Open. Non-EPIPE errors
+// return immediately — reset is the wrong hammer for them.
 func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device, error) {
 	if err := transport.ClaimInterface(0); err != nil {
 		return nil, fmt.Errorf("rtlsdr: claim interface 0: %w", err)
 	}
 
-	demod := rtl2832u.New(transport)
-	if err := warmupWithReset(transport, demod); err != nil {
-		return nil, err
-	}
-	if err := demod.InitBaseband(); err != nil {
-		return nil, fmt.Errorf("rtlsdr: init baseband: %w", err)
-	}
-
-	tuner, err := tuners.Detect(demod)
-	if err != nil {
-		return nil, fmt.Errorf("rtlsdr: tuner detect: %w%s", err, tunerBringupHint(err))
-	}
-	_, isR82xx := tuner.(*tuners.R82xx)
-	if isR82xx {
-		if err := tuner.(*tuners.R82xx).PrepareDemod(); err != nil {
-			return nil, fmt.Errorf("rtlsdr: tuner prep: %w%s", err, tunerBringupHint(err))
+	var (
+		demod *rtl2832u.Demod
+		tuner tuners.Tuner
+		err   error
+	)
+	for attempt := 0; attempt < 2; attempt++ {
+		demod = rtl2832u.New(transport)
+		tuner, err = runBringup(demod)
+		if err == nil {
+			break
 		}
-	}
-	if err := tuner.Init(); err != nil {
-		return nil, fmt.Errorf("rtlsdr: tuner init: %w%s", err, tunerBringupHint(err))
-	}
-	if !isR82xx {
-		if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
-			return nil, fmt.Errorf("rtlsdr: set IF freq: %w", err)
+		if attempt == 1 || !isBringupResetable(err) {
+			return nil, err
+		}
+		if resetErr := transport.Reset(); resetErr != nil {
+			return nil, fmt.Errorf("rtlsdr: bring-up hit %w; reset failed: %w", err, resetErr)
+		}
+		_ = transport.ReleaseInterface(0)
+		if claimErr := transport.ClaimInterface(0); claimErr != nil {
+			return nil, fmt.Errorf("rtlsdr: re-claim interface 0 after reset: %w", claimErr)
 		}
 	}
 
@@ -205,44 +209,49 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 	}, nil
 }
 
-// warmupWithReset mirrors librtlsdr's rtlsdr_open dummy-write probe: it
-// issues one USB-sysctl write to confirm the endpoint is healthy, and
-// on EPIPE / ErrDeviceGone it resets the device and retries once before
-// giving up. Dongles left half-initialised by a crashed previous
-// session (or by a DVB kernel driver that was unbound mid-flight) tend
-// to ack control reads fine but stall the first multi-byte OUT — which
-// in the pre-fix code path showed up as "r82xx init: burst write:
-// I2CWrite addr=0x34: broken pipe" (issue #248). Running the probe
-// here means InitBaseband / tuner.Init see a clean device.
-//
-// USBDEVFS_RESET on Linux invalidates the prior interface claim, so the
-// retry path explicitly re-claims interface 0. On macOS, IOKit
-// ResetDevice may invalidate the device handle entirely; if the
-// re-claim fails we return that error verbatim rather than spinning.
-// On Windows, transport.Reset is a no-op — the retry will EPIPE
-// identically and we surface the wrapped error with the existing hint.
-func warmupWithReset(transport usb.Transport, demod *rtl2832u.Demod) error {
-	const maxAttempts = 2
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		err := demod.WarmupUSBSysctl()
-		if err == nil {
-			return nil
-		}
-		if attempt == maxAttempts-1 {
-			return fmt.Errorf("rtlsdr: USB warmup: %w%s", err, tunerBringupHint(err))
-		}
-		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, usb.ErrDeviceGone) {
-			return fmt.Errorf("rtlsdr: USB warmup: %w", err)
-		}
-		if resetErr := transport.Reset(); resetErr != nil {
-			return fmt.Errorf("rtlsdr: USB warmup hit %w; reset failed: %w", err, resetErr)
-		}
-		_ = transport.ReleaseInterface(0)
-		if claimErr := transport.ClaimInterface(0); claimErr != nil {
-			return fmt.Errorf("rtlsdr: re-claim interface 0 after reset: %w", claimErr)
+// runBringup executes the librtlsdr-parity init sequence on a fresh
+// Demod: USB-sysctl warmup probe → baseband init → tuner detect →
+// R820T-family demod prep (no-op for other tuners) → tuner.Init →
+// IF-freq programming (R820T-family programs its own IF inside
+// PrepareDemod, so non-R82xx tuners use the demod-side path).
+// Returns the initialized tuner on success. All errors are wrapped
+// with a stage prefix so the outer openDevice can spot resetable
+// EPIPE / ErrDeviceGone via errors.Is.
+func runBringup(demod *rtl2832u.Demod) (tuners.Tuner, error) {
+	if err := demod.WarmupUSBSysctl(); err != nil {
+		return nil, fmt.Errorf("rtlsdr: USB warmup: %w%s", err, tunerBringupHint(err))
+	}
+	if err := demod.InitBaseband(); err != nil {
+		return nil, fmt.Errorf("rtlsdr: init baseband: %w%s", err, tunerBringupHint(err))
+	}
+	tuner, err := tuners.Detect(demod)
+	if err != nil {
+		return nil, fmt.Errorf("rtlsdr: tuner detect: %w%s", err, tunerBringupHint(err))
+	}
+	_, isR82xx := tuner.(*tuners.R82xx)
+	if isR82xx {
+		if err := tuner.(*tuners.R82xx).PrepareDemod(); err != nil {
+			return nil, fmt.Errorf("rtlsdr: tuner prep: %w%s", err, tunerBringupHint(err))
 		}
 	}
-	return nil
+	if err := tuner.Init(); err != nil {
+		return nil, fmt.Errorf("rtlsdr: tuner init: %w%s", err, tunerBringupHint(err))
+	}
+	if !isR82xx {
+		if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
+			return nil, fmt.Errorf("rtlsdr: set IF freq: %w%s", err, tunerBringupHint(err))
+		}
+	}
+	return tuner, nil
+}
+
+// isBringupResetable reports whether err is an EPIPE/ErrDeviceGone in
+// any wrap layer — the two error classes USBDEVFS_RESET is the right
+// hammer for. Other errors (timeout, ErrClosed, validation failures)
+// should NOT trigger reset: reset is ~200ms of latency and obscures
+// the real cause when applied to the wrong class.
+func isBringupResetable(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrDeviceGone)
 }
 
 // tunerBringupHint returns a parenthesized, space-prefixed remediation

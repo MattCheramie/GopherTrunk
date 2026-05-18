@@ -58,6 +58,32 @@ for tagged releases.
 
 ### Fixed
 
+- **RTL-SDR R820T burst-init EPIPE now recovers via a single in-place
+  retry + one-shot open-path reset hammer.** Two NESDR SMArt v5 units
+  reproduced an EPIPE on the very first `r82xx_init_array` I²C-bridge
+  OUT even after PR #262's load-bearing `SetI2CRepeater(true)` wire
+  toggle was confirmed firing on the wire (per the post-#262 paired
+  `RTLSDR_DEBUG_USB=1` / `LIBUSB_DEBUG=4` capture). The wire bytes
+  are byte-identical to librtlsdr's `r82xx_write` first chunk, EP0 is
+  not halted (subsequent control transfers succeed without
+  `USBDEVFS_CLEAR_HALT`), and `rtl_test` never calls
+  `libusb_reset_device` — the EPIPE is a request-specific NACK inside
+  the chip, not a USB endpoint state issue.
+  `R82xx.writeBurstChunk` now retries a failing chunk once after an
+  8 ms settle (no extra repeater toggles — PR #262's contract intact;
+  retry attribution is wrapped into the error as
+  `after 1 retry on EPIPE: ...` so traces show whether it fired).
+  `openDevice` now wraps the entire bring-up sequence (USB warmup →
+  baseband init → tuner detect → demod prep → tuner.Init → IF freq)
+  in a 1-shot reset+retry envelope on EPIPE / `ErrDeviceGone` —
+  subsumes the previous warmup-only retry from PR #255 and extends
+  it past the warmup phase. Non-EPIPE errors return immediately
+  (reset is the wrong hammer for them). At most one USBDEVFS_RESET
+  per `Open` call. `docs/install-linux.md` gains a usbmon
+  packet-capture recipe for the next round of diagnostics if this
+  doesn't close it — `LIBUSB_DEBUG=4` doesn't dump control-transfer
+  payloads, usbmon does. Continues
+  [issue #248](https://github.com/MattCheramie/GopherTrunk/issues/248).
 - **RTL-SDR `tuners.Detect` again toggles the I²C repeater off on
   return.** An earlier change in this cycle had Detect leave the
   repeater ON across the tuner bring-up window under the theory

@@ -3,6 +3,7 @@ package tuners
 import (
 	"errors"
 	"fmt"
+	"syscall"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
@@ -538,13 +539,41 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 		if size > r82xxBurstMaxData {
 			size = r82xxBurstMaxData
 		}
-		buf := make([]byte, 1+size)
-		buf[0] = addr + uint8(pos)
-		copy(buf[1:], data[pos:pos+size])
-		if err := r.demod.I2CWrite(r.i2cAddr, buf); err != nil {
+		if err := r.writeBurstChunk(addr+uint8(pos), data[pos:pos+size]); err != nil {
 			return err
 		}
 		pos += size
+	}
+	return nil
+}
+
+// writeBurstChunk emits exactly one I²C-bridge OUT to the tuner with
+// a 1-byte register pointer prefix and len(chunk) data bytes. Caller
+// is responsible for chunking to r82xxBurstMaxData and for holding
+// the SetI2CRepeater bracket open across the call — writeBurstChunk
+// never touches the repeater (PR #262's wire-toggle contract).
+//
+// On EPIPE the chip's USB firmware NACK'd this specific request; the
+// post-PR-#262 trace on issue #248 confirms the EP0 endpoint stays
+// healthy (subsequent control transfers succeed without
+// USBDEVFS_CLEAR_HALT). After a short settle delay we retry the same
+// wire bytes once. Non-EPIPE errors (timeout, ErrDeviceGone, ErrClosed)
+// return immediately — the outer openDevice envelope owns reset
+// recovery for those.
+func (r *R82xx) writeBurstChunk(addr uint8, chunk []byte) error {
+	buf := make([]byte, 1+len(chunk))
+	buf[0] = addr
+	copy(buf[1:], chunk)
+	err := r.demod.I2CWrite(r.i2cAddr, buf)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EPIPE) {
+		return err
+	}
+	time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
+	if retryErr := r.demod.I2CWrite(r.i2cAddr, buf); retryErr != nil {
+		return fmt.Errorf("after 1 retry on EPIPE: %w", retryErr)
 	}
 	return nil
 }

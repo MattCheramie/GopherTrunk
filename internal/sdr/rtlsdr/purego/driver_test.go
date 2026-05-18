@@ -250,6 +250,74 @@ func TestOpenDevice_WarmupEPIPETwiceReturnsHintError(t *testing.T) {
 	}
 }
 
+// Regression for issue #248: EPIPE that surfaces AFTER warmup (so
+// post-warmup, anywhere in InitBaseband / Detect / PrepareDemod /
+// tuner.Init / SetIFFreq) must trigger the outer envelope's one-shot
+// reset+retry of the entire bring-up. This test injects EPIPE on
+// InitBaseband's first write, which has byte-identical wire bytes to
+// the warmup probe but is a distinct call from openDevice's
+// perspective — the outer envelope is the only path that retries
+// past warmup. The retry succeeds the warmup but is terminated early
+// via ErrTimeout on InitBaseband's first write (the second pass) so
+// the script stays minimal.
+func TestOpenDevice_BringupEPIPE_TriggersFullReset(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),            // pass 1: warmup OK
+		warmupUSBSysctlExchange(syscall.EPIPE),  // pass 1: InitBaseband first write EPIPE
+		warmupUSBSysctlExchange(nil),            // pass 2: warmup OK (post-reset)
+		warmupUSBSysctlExchange(usb.ErrTimeout), // pass 2: InitBaseband ErrTimeout terminates
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-bringup-retry"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected init-baseband timeout to terminate the test")
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (proves the retry reached InitBaseband)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (one reset between the two bring-up attempts)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// Regression for issue #248: when EPIPE recurs on the retry pass of
+// the bring-up, openDevice must surface the wrapped error with the
+// tunerBringupHint appended. Only one USBDEVFS_RESET is allowed per
+// Open call — the envelope is a one-shot, never a loop.
+func TestOpenDevice_BringupEPIPETwice_ReturnsHintError(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),           // pass 1: warmup OK
+		warmupUSBSysctlExchange(syscall.EPIPE), // pass 1: InitBaseband EPIPE
+		warmupUSBSysctlExchange(nil),           // pass 2: warmup OK
+		warmupUSBSysctlExchange(syscall.EPIPE), // pass 2: InitBaseband EPIPE again
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-bringup-fail"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected EPIPE-twice to fail open")
+	}
+	if !errors.Is(err, syscall.EPIPE) {
+		t.Errorf("err = %v, want errors.Is(err, syscall.EPIPE)", err)
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (identifies the failing stage)", err)
+	}
+	if !strings.Contains(err.Error(), "dvb_usb_rtl28xxu") {
+		t.Errorf("err = %v, want substring \"dvb_usb_rtl28xxu\" (proves tunerBringupHint was appended)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (envelope is one-shot, not a loop)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
 // Regression for issue #248: tuner-init failures that look like the
 // I2C-bridge-can't-reach-tuner case (EPIPE from the first burst, or
 // the device disappearing mid-bringup) must carry remediation guidance

@@ -45,6 +45,17 @@ const (
 	// The 1-byte register pointer prepended to each chunk is not
 	// counted toward this limit, matching librtlsdr's behavior.
 	r82xxBurstMaxData = 16
+
+	// r82xxBurstRetryDelayMillis is the per-chunk EPIPE-recovery
+	// settle delay inside writeBurstChunk. The post-PR-#262 trace on
+	// NESDR v5 silicon (issue #248) shows the chip's USB firmware
+	// NACK'ing the very first 17-byte I²C-bridge OUT while the
+	// surrounding control transfers stay healthy — the endpoint is
+	// not halted in the libusb sense, the I²C bridge inside the chip
+	// just rejected the burst. 8 ms is long enough for the I²C bus
+	// to drain prior PrepareDemod traffic and short enough to be
+	// invisible in the happy path (retry never fires).
+	r82xxBurstRetryDelayMillis = 8
 )
 
 // r82xxInitArray is the 27-byte register flood that lands at addr

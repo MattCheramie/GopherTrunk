@@ -3,6 +3,7 @@ package tuners
 import (
 	"errors"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
@@ -657,6 +658,118 @@ func TestComputePLLDivisor_VHFRange(t *testing.T) {
 // Detect orchestrator tests moved to detect_test.go (it walks every
 // candidate tuner, not just R820T, so the scripts that pin its
 // behavior live with the orchestrator).
+
+// expectR82xxInitBurstChunks returns chunk1 and chunk2 wire payloads
+// for the R82xx init burst — pulled out as a helper so the
+// EPIPE-retry tests can inject error variants without rebuilding the
+// full happy-path script. Chunk1 is the first 16 data bytes preceded
+// by reg-pointer 0x05; chunk2 is the remaining 11 data bytes preceded
+// by reg-pointer 0x15 (post-NMAX_WRITES auto-increment).
+func expectR82xxInitBurstChunks() (chunk1, chunk2 []byte) {
+	chunk1 = append([]byte{r82xxShadowStart}, r82xxInitArray[:r82xxBurstMaxData]...)
+	chunk2 = append([]byte{r82xxShadowStart + r82xxBurstMaxData}, r82xxInitArray[r82xxBurstMaxData:]...)
+	return
+}
+
+// r82xxChunkExchange returns the single CtrlExchange for one chunked
+// burst-write to the R820T at r82xxI2CAddr. Inlined here (rather than
+// reusing expectI2CWrite, which wraps in repeater toggles) because
+// the burst chunks live inside writeBurstRaw's existing
+// SetI2CRepeater bracket — toggles must NOT be re-emitted between
+// chunks. Err override drives the EPIPE-retry tests below.
+func r82xxChunkExchange(data []byte, simulateErr error) usb.CtrlExchange {
+	return usb.CtrlExchange{
+		In:       false,
+		BRequest: 0,
+		WValue:   uint16(r82xxI2CAddr),
+		WIndex:   uint16(rtl2832u.BlockIIC)<<8 | 0x10,
+		Data:     data,
+		Err:      simulateErr,
+	}
+}
+
+// TestR82xx_InitBurst_EPIPERetrySucceeds: writeBurstChunk's per-chunk
+// EPIPE recovery (issue #248). First chunk's ControlOut returns EPIPE,
+// the retry-of-same-chunk succeeds, second chunk succeeds, repeater
+// toggles fire exactly as in the happy path. R82xx.Init returns nil.
+// Asserts the mock script is fully consumed (no extra wire writes,
+// no missed chunks).
+func TestR82xx_InitBurst_EPIPERetrySucceeds(t *testing.T) {
+	chunk1, chunk2 := expectR82xxInitBurstChunks()
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1, syscall.EPIPE)) // first attempt: EPIPE
+	script = append(script, r82xxChunkExchange(chunk1, nil))           // retry: succeeds
+	script = append(script, r82xxChunkExchange(chunk2, nil))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (the in-place EPIPE retry should have absorbed the failure)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (retry must consume exactly two chunk1 steps)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_EPIPETwiceReturnsWrappedError: both attempts on
+// the first chunk EPIPE. writeBurstChunk returns a wrapped error
+// keyed on "after 1 retry on EPIPE" so traces show retry attribution.
+// The underlying syscall.EPIPE remains reachable via errors.Is — the
+// outer openDevice envelope keys off that for its reset+retry. The
+// defer in R82xx.Init still emits the trailing repeater-off so the
+// chip state is clean on return.
+func TestR82xx_InitBurst_EPIPETwiceReturnsWrappedError(t *testing.T) {
+	chunk1, _ := expectR82xxInitBurstChunks()
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1, syscall.EPIPE)) // first attempt
+	script = append(script, r82xxChunkExchange(chunk1, syscall.EPIPE)) // retry
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	err := r.Init()
+	if err == nil {
+		t.Fatal("Init succeeded; expected wrapped EPIPE")
+	}
+	if !errors.Is(err, syscall.EPIPE) {
+		t.Errorf("err = %v, want errors.Is(err, syscall.EPIPE) (outer envelope keys off this)", err)
+	}
+	if !strings.Contains(err.Error(), "after 1 retry on EPIPE") {
+		t.Errorf("err = %q, want substring \"after 1 retry on EPIPE\" (proves retry fired)", err.Error())
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (deferred repeater-off must still fire)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_NonEPIPENoRetry: non-EPIPE errors (ErrTimeout
+// here) must NOT trigger the EPIPE retry — reset/retry is the wrong
+// hammer for them and would just double the latency on the failure
+// path. Asserts exactly one chunk1 wire write, then the deferred
+// repeater-off, and no retry-attribution wrap on the error.
+func TestR82xx_InitBurst_NonEPIPENoRetry(t *testing.T) {
+	chunk1, _ := expectR82xxInitBurstChunks()
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1, usb.ErrTimeout)) // single attempt: ErrTimeout
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	err := r.Init()
+	if err == nil {
+		t.Fatal("Init succeeded; expected wrapped ErrTimeout")
+	}
+	if !errors.Is(err, usb.ErrTimeout) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrTimeout)", err)
+	}
+	if strings.Contains(err.Error(), "after 1 retry on EPIPE") {
+		t.Errorf("err = %q, must NOT contain retry attribution (non-EPIPE errors skip the retry)", err.Error())
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (script must have exactly one chunk1 attempt)", m.Remaining())
+	}
+}
 
 func TestErrUnsupportedFreq_ErrorMessage(t *testing.T) {
 	e := &ErrUnsupportedFreq{Hz: 2_000_000_000, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: "R820T2"}
