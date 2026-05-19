@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ import (
 func TestEventsCounterIncrements(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, err := New(bus, "v0.0.0-test")
+	m, err := New(bus, nil, "v0.0.0-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestEventsCounterIncrements(t *testing.T) {
 func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, "test")
+	m, _ := New(bus, nil, "test")
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -64,14 +65,15 @@ func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 		StartedAt: time.Now(),
 	}})
 
+	active := m.activeCalls.WithLabelValues("Alpha", "unknown")
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if testutil.ToFloat64(m.activeCalls) == 2 {
+		if testutil.ToFloat64(active) == 2 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := testutil.ToFloat64(m.activeCalls); got != 2 {
+	if got := testutil.ToFloat64(active); got != 2 {
 		t.Errorf("active = %v, want 2", got)
 	}
 
@@ -82,23 +84,23 @@ func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 	}})
 	deadline = time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if testutil.ToFloat64(m.activeCalls) == 1 {
+		if testutil.ToFloat64(active) == 1 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := testutil.ToFloat64(m.activeCalls); got != 1 {
+	if got := testutil.ToFloat64(active); got != 1 {
 		t.Errorf("active after end = %v, want 1", got)
 	}
-	if got := testutil.ToFloat64(m.callsTotal.WithLabelValues("normal")); got != 1 {
-		t.Errorf("calls_total{normal} = %v, want 1", got)
+	if got := testutil.ToFloat64(m.callsTotal.WithLabelValues("Alpha", "unknown", "false", "normal")); got != 1 {
+		t.Errorf("calls_total{Alpha,unknown,false,normal} = %v, want 1", got)
 	}
 }
 
 func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, "test")
+	m, _ := New(bus, nil, "test")
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -124,7 +126,7 @@ func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 }
 
 func TestRecordHooks(t *testing.T) {
-	m, _ := New(nil, "test")
+	m, _ := New(nil, nil, "test")
 	defer m.Close()
 
 	m.RecordIQUnderrun("rtlsdr", "AAA")
@@ -148,7 +150,7 @@ func TestRecordHooks(t *testing.T) {
 }
 
 func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
-	m, _ := New(nil, "v1.2.3")
+	m, _ := New(nil, nil, "v1.2.3")
 	defer m.Close()
 	m.RecordDecodeError("p25", "tsbk-crc")
 
@@ -174,7 +176,7 @@ func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
 func TestCloseIsIdempotent(t *testing.T) {
 	bus := events.NewBus(2)
 	defer bus.Close()
-	m, _ := New(bus, "test")
+	m, _ := New(bus, nil, "test")
 	go m.Run(context.Background())
 	if err := m.Close(); err != nil {
 		t.Fatal(err)
@@ -187,7 +189,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 func TestSDRAttachedGaugeFromBusEvents(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, err := New(bus, "v0.0.0-test")
+	m, err := New(bus, nil, "v0.0.0-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,5 +223,199 @@ func TestSDRAttachedGaugeFromBusEvents(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(m.sdrAttached.WithLabelValues(st.Driver, st.Serial, st.Role)); got != 0 {
 		t.Errorf("after KindSDRDetached: gauge = %v, want 0", got)
+	}
+}
+
+func TestCallsTotalCarriesGrantDimensions(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	m, _ := New(bus, nil, "test")
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	grant := trunking.Grant{
+		System:    "NET-7",
+		Protocol:  "p25",
+		GroupID:   42,
+		Encrypted: true,
+	}
+	start := time.Now()
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: grant, DeviceSerial: "Z", StartedAt: start,
+	}})
+
+	started := m.callsStarted.WithLabelValues("NET-7", "p25", "true")
+	active := m.activeCalls.WithLabelValues("NET-7", "p25")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(started) == 1 && testutil.ToFloat64(active) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(started); got != 1 {
+		t.Errorf("calls_started_total{NET-7,p25,true} = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(active); got != 1 {
+		t.Errorf("calls_active{NET-7,p25} = %v, want 1", got)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: grant, DeviceSerial: "Z",
+		StartedAt: start, EndedAt: start.Add(time.Second),
+		Reason: trunking.EndReasonPreempted,
+	}})
+
+	total := m.callsTotal.WithLabelValues("NET-7", "p25", "true", "preempted")
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(total) == 1 && testutil.ToFloat64(active) == 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(total); got != 1 {
+		t.Errorf("calls_total{NET-7,p25,true,preempted} = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(active); got != 0 {
+		t.Errorf("calls_active{NET-7,p25} after end = %v, want 0", got)
+	}
+}
+
+type fakeLockState struct {
+	freq uint32
+	sys  string
+}
+
+func (f fakeLockState) LockedFrequencyHz() uint32 { return f.freq }
+func (f fakeLockState) LockedNAC() uint16         { return 0 }
+func (f fakeLockState) SystemName() string        { return f.sys }
+
+func TestControlChannelFrequencyAndTransitions(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	m, _ := New(bus, nil, "test")
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	const freqHz = uint32(851012500)
+	bus.Publish(events.Event{Kind: events.KindCCLocked, Payload: fakeLockState{freq: freqHz, sys: "S"}})
+
+	freqGauge := m.ccFrequencyHz.WithLabelValues("S")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(freqGauge) == float64(freqHz) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(freqGauge); got != float64(freqHz) {
+		t.Errorf("control_channel_frequency_hz{S} = %v, want %v", got, freqHz)
+	}
+	if got := testutil.ToFloat64(m.ccTransitions.WithLabelValues("S", "locked")); got != 1 {
+		t.Errorf("transitions{S,locked} = %v, want 1", got)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindCCLost, Payload: fakeLockState{freq: freqHz, sys: "S"}})
+
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(m.ccTransitions.WithLabelValues("S", "lost")) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(m.ccTransitions.WithLabelValues("S", "lost")); got != 1 {
+		t.Errorf("transitions{S,lost} = %v, want 1", got)
+	}
+
+	srv := httptest.NewServer(m.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), `gophertrunk_control_channel_frequency_hz{system="S"}`) {
+		t.Errorf("control_channel_frequency_hz{S} should be deleted after CC lost; body:\n%s", string(body))
+	}
+}
+
+type fakePool struct {
+	statuses []sdr.SDRStatus
+}
+
+func (f *fakePool) Snapshot() []sdr.SDRStatus { return f.statuses }
+
+func TestSDRSnapshotCollectorEmitsPerDevice(t *testing.T) {
+	pool := &fakePool{statuses: []sdr.SDRStatus{
+		{Driver: "rtlsdr", Serial: "A", Role: "control", Attached: true, GainTenthDB: 296, GainAuto: false, PPM: -2, BiasTee: true},
+		{Driver: "rtlsdr", Serial: "B", Role: "voice", Attached: true, GainAuto: true, PPM: 0, BiasTee: false},
+		{Driver: "rtlsdr", Serial: "C", Role: "voice", Attached: false, GainTenthDB: 100},
+	}}
+	m, err := New(nil, pool, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	srv := httptest.NewServer(m.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	for _, want := range []string{
+		`gophertrunk_sdr_ppm{driver="rtlsdr",role="control",serial="A"} -2`,
+		`gophertrunk_sdr_bias_tee{driver="rtlsdr",role="control",serial="A"} 1`,
+		`gophertrunk_sdr_gain_auto{driver="rtlsdr",role="control",serial="A"} 0`,
+		`gophertrunk_sdr_gain_db{driver="rtlsdr",role="control",serial="A"} 29.6`,
+		`gophertrunk_sdr_gain_auto{driver="rtlsdr",role="voice",serial="B"} 1`,
+		`gophertrunk_sdr_gain_db{driver="rtlsdr",role="voice",serial="B"} NaN`,
+		`gophertrunk_sdr_bias_tee{driver="rtlsdr",role="voice",serial="B"} 0`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("scrape missing %q.\nbody:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `serial="C"`) {
+		t.Errorf("detached device C should not appear in snapshot; body:\n%s", text)
+	}
+
+	// Spot-check the NaN path through the registry gather, since the
+	// scrape text always renders NaN identically — Gather lets us check
+	// the actual float bits.
+	families, err := m.Registry().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundNaN bool
+	for _, fam := range families {
+		if fam.GetName() != "gophertrunk_sdr_gain_db" {
+			continue
+		}
+		for _, mf := range fam.GetMetric() {
+			var serial string
+			for _, lp := range mf.GetLabel() {
+				if lp.GetName() == "serial" {
+					serial = lp.GetValue()
+				}
+			}
+			if serial == "B" && math.IsNaN(mf.GetGauge().GetValue()) {
+				foundNaN = true
+			}
+		}
+	}
+	if !foundNaN {
+		t.Errorf("expected NaN gain_db for serial B (AGC), did not find it")
 	}
 }

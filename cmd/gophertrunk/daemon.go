@@ -582,7 +582,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 	// Metrics — optional. Subscribes to the bus at construction time.
 	if cfg.Metrics.Enabled {
-		m, err := metrics.New(d.bus, version)
+		// Avoid the typed-nil interface trap: when d.pool is nil
+		// (no SDRs configured), pass a nil interface explicitly so
+		// the snapshot collector skips itself.
+		var pool metrics.Snapshotter
+		if d.pool != nil {
+			pool = d.pool
+		}
+		m, err := metrics.New(d.bus, pool, version)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: metrics: %w", err)
 		}

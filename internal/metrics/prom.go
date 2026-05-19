@@ -25,20 +25,31 @@ import (
 
 const namespace = "gophertrunk"
 
+// Snapshotter is the subset of sdr.Pool the snapshot collector needs.
+// Declared here (rather than imported from sdr) so callers can pass a
+// nil Pool or a fake without dragging in the full sdr.Pool surface.
+type Snapshotter interface {
+	Snapshot() []sdr.SDRStatus
+}
+
 // Metrics owns the Prometheus registry and counters/gauges used by the
 // daemon.
 type Metrics struct {
 	reg *prometheus.Registry
 
 	eventsTotal   *prometheus.CounterVec
-	callsTotal    *prometheus.CounterVec // by end_reason
-	activeCalls   prometheus.Gauge
-	ccLockedGauge *prometheus.GaugeVec // by system (1 when CC locked)
+	callsTotal    *prometheus.CounterVec // by system,protocol,encrypted,reason
+	callsStarted  *prometheus.CounterVec // by system,protocol,encrypted
+	activeCalls   *prometheus.GaugeVec   // by system,protocol
+	ccLockedGauge *prometheus.GaugeVec   // by system (1 when CC locked)
+	ccFrequencyHz *prometheus.GaugeVec   // by system; deleted on CC loss
+	ccTransitions *prometheus.CounterVec // by system,event (locked|lost)
 	iqUnderruns   *prometheus.CounterVec
 	usbReconnects *prometheus.CounterVec
 	decodeErrors  *prometheus.CounterVec
 	sdrAttached   *prometheus.GaugeVec
 	versionInfo   *prometheus.GaugeVec
+	sdrSnap       *sdrSnapshotCollector
 
 	bus       *events.Bus
 	sub       *events.Subscription
@@ -48,8 +59,9 @@ type Metrics struct {
 
 // New constructs the metrics registry and (optionally) subscribes to the
 // supplied events bus. Pass nil for the bus to use the metrics package
-// purely for the manual Record* methods.
-func New(bus *events.Bus, version string) (*Metrics, error) {
+// purely for the manual Record* methods. Pass nil for pool to skip the
+// SDR snapshot collector.
+func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 	reg := prometheus.NewRegistry()
 	m := &Metrics{
 		reg:     reg,
@@ -66,20 +78,38 @@ func New(bus *events.Bus, version string) (*Metrics, error) {
 	m.callsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "calls_total",
-		Help:      "Total calls completed, by end reason (normal, preempted, timeout, etc.).",
-	}, []string{"reason"})
+		Help:      "Total calls completed, by system, protocol, encryption state, and end reason.",
+	}, []string{"system", "protocol", "encrypted", "reason"})
 
-	m.activeCalls = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.callsStarted = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "calls_started_total",
+		Help:      "Total calls started. More reliable as a rate signal than calls_total because CallEnd can be missed when the daemon dies mid-call.",
+	}, []string{"system", "protocol", "encrypted"})
+
+	m.activeCalls = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "calls_active",
-		Help:      "Number of active calls currently being followed.",
-	})
+		Help:      "Active calls currently being followed, by system and protocol. Use sum() for the daemon-wide total.",
+	}, []string{"system", "protocol"})
 
 	m.ccLockedGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "control_channel_locked",
 		Help:      "1 when GopherTrunk is locked to a control channel for the named system, 0 otherwise.",
 	}, []string{"system"})
+
+	m.ccFrequencyHz = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "control_channel_frequency_hz",
+		Help:      "Currently-locked control-channel frequency for the named system, in Hz. Series is deleted when the CC is lost.",
+	}, []string{"system"})
+
+	m.ccTransitions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "control_channel_transitions_total",
+		Help:      "Control-channel lock/lost transitions per system, useful for spotting churn under poor SNR.",
+	}, []string{"system", "event"})
 
 	m.iqUnderruns = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: namespace,
@@ -119,17 +149,25 @@ func New(bus *events.Bus, version string) (*Metrics, error) {
 		Help:      "Always 1; carries the build version as a label.",
 	}, []string{"version"})
 
-	for _, c := range []prometheus.Collector{
+	collectors := []prometheus.Collector{
 		m.eventsTotal,
 		m.callsTotal,
+		m.callsStarted,
 		m.activeCalls,
 		m.ccLockedGauge,
+		m.ccFrequencyHz,
+		m.ccTransitions,
 		m.iqUnderruns,
 		m.usbReconnects,
 		m.decodeErrors,
 		m.sdrAttached,
 		m.versionInfo,
-	} {
+	}
+	if pool != nil {
+		m.sdrSnap = newSDRSnapshotCollector(pool)
+		collectors = append(collectors, m.sdrSnap)
+	}
+	for _, c := range collectors {
 		if err := reg.Register(c); err != nil {
 			return nil, err
 		}
@@ -194,20 +232,35 @@ func (m *Metrics) observeEvent(ev events.Event) {
 	m.eventsTotal.WithLabelValues(string(ev.Kind)).Inc()
 	switch ev.Kind {
 	case events.KindCallStart:
-		m.activeCalls.Inc()
+		if cs, ok := ev.Payload.(trunking.CallStart); ok {
+			sys, proto, enc := callLabels(cs.Grant)
+			m.activeCalls.WithLabelValues(sys, proto).Inc()
+			m.callsStarted.WithLabelValues(sys, proto, enc).Inc()
+		}
 	case events.KindCallEnd:
-		m.activeCalls.Dec()
 		if ce, ok := ev.Payload.(trunking.CallEnd); ok {
-			m.callsTotal.WithLabelValues(ce.Reason.String()).Inc()
+			sys, proto, enc := callLabels(ce.Grant)
+			m.activeCalls.WithLabelValues(sys, proto).Dec()
+			m.callsTotal.WithLabelValues(sys, proto, enc, ce.Reason.String()).Inc()
 		}
 	case events.KindCCLocked:
 		// Best-effort system-name extraction; both phase1.LockState and
 		// the DMR / NXDN LockStates have FrequencyHz but not all carry
 		// the system name. We default to "unknown" so the gauge always
 		// has at least one label set.
-		m.ccLockedGauge.WithLabelValues(systemLabel(ev)).Set(1)
+		sys := systemLabel(ev)
+		m.ccLockedGauge.WithLabelValues(sys).Set(1)
+		m.ccTransitions.WithLabelValues(sys, "locked").Inc()
+		if lp, ok := ev.Payload.(trunking.LockedPayload); ok {
+			if hz := lp.LockedFrequencyHz(); hz != 0 {
+				m.ccFrequencyHz.WithLabelValues(sys).Set(float64(hz))
+			}
+		}
 	case events.KindCCLost:
-		m.ccLockedGauge.WithLabelValues(systemLabel(ev)).Set(0)
+		sys := systemLabel(ev)
+		m.ccLockedGauge.WithLabelValues(sys).Set(0)
+		m.ccTransitions.WithLabelValues(sys, "lost").Inc()
+		m.ccFrequencyHz.DeleteLabelValues(sys)
 	case events.KindDecodeError:
 		if de, ok := ev.Payload.(events.DecodeError); ok {
 			m.decodeErrors.WithLabelValues(de.Protocol, string(de.Stage)).Inc()
@@ -260,6 +313,26 @@ func systemLabel(ev events.Event) string {
 		}
 	}
 	return "unknown"
+}
+
+// callLabels derives the (system, protocol, encrypted) label triple for
+// the per-call CounterVecs and GaugeVec. Empty strings fall back to
+// "unknown" so cardinality stays bounded.
+func callLabels(g trunking.Grant) (system, protocol, encrypted string) {
+	system = g.System
+	if system == "" {
+		system = "unknown"
+	}
+	protocol = g.Protocol
+	if protocol == "" {
+		protocol = "unknown"
+	}
+	if g.Encrypted {
+		encrypted = "true"
+	} else {
+		encrypted = "false"
+	}
+	return
 }
 
 // ErrAlreadyRegistered is returned by New when the supplied registry

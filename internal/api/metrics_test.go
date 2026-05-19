@@ -13,7 +13,7 @@ import (
 func TestMetricsEndpointExposesPromText(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, err := metrics.New(nil, "v9.9.9-test")
+	m, err := metrics.New(nil, nil, "v9.9.9-test")
 	if err != nil {
 		t.Fatal(err)
 	}

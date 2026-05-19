@@ -7,6 +7,28 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Prometheus metrics for per-system call rate, encryption breakdown,
+  control-channel health, and SDR device tuning state** (issue #269).
+  New series: `gophertrunk_calls_started_total{system,protocol,encrypted}`,
+  `gophertrunk_control_channel_frequency_hz{system}`,
+  `gophertrunk_control_channel_transitions_total{system,event}`,
+  `gophertrunk_sdr_gain_db{driver,serial,role}`,
+  `gophertrunk_sdr_gain_auto{driver,serial,role}`,
+  `gophertrunk_sdr_ppm{driver,serial,role}`,
+  `gophertrunk_sdr_bias_tee{driver,serial,role}`. SDR tuning gauges
+  come from a scrape-time snapshot collector so they always reflect
+  live pool state.
+
+### Changed
+
+- `gophertrunk_calls_total` now carries `{system,protocol,encrypted,reason}`
+  labels (was `{reason}`); `gophertrunk_calls_active` is now a
+  GaugeVec keyed by `{system,protocol}` (was a bare gauge). Dashboards
+  that previously scraped the unlabeled shape can recover with
+  `sum without(system,protocol,encrypted) (gophertrunk_calls_total)`.
+
 ## [v0.1.6] — 2026-05-18
 
 RTL-SDR driver stabilization release. Eleven merged PRs land

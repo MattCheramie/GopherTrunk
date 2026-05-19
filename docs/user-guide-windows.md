@@ -1079,13 +1079,20 @@ Prometheus exposition (when `metrics.enabled: true`):
 | Series | Type | Description |
 | --- | --- | --- |
 | `gophertrunk_events_total{kind=...}` | counter | Every event observed on the internal bus |
-| `gophertrunk_calls_total{reason=...}` | counter | Calls completed by EndReason |
-| `gophertrunk_calls_active` | gauge | Currently-active call count |
+| `gophertrunk_calls_started_total{system,protocol,encrypted}` | counter | Calls started, by system/protocol/encryption |
+| `gophertrunk_calls_total{system,protocol,encrypted,reason}` | counter | Calls completed, by system/protocol/encryption + EndReason |
+| `gophertrunk_calls_active{system,protocol}` | gauge | Active calls per system+protocol (use `sum()` for total) |
 | `gophertrunk_control_channel_locked{system=...}` | gauge | 1 while CC locked |
+| `gophertrunk_control_channel_frequency_hz{system=...}` | gauge | Locked CC frequency in Hz; series deleted on loss |
+| `gophertrunk_control_channel_transitions_total{system,event}` | counter | CC lock/lost transitions |
+| `gophertrunk_sdr_attached{driver,serial,role}` | gauge | 1 per attached SDR (event-driven) |
+| `gophertrunk_sdr_gain_db{driver,serial,role}` | gauge | Configured gain in dB; NaN under AGC |
+| `gophertrunk_sdr_gain_auto{driver,serial,role}` | gauge | 1 when tuner is running AGC |
+| `gophertrunk_sdr_ppm{driver,serial,role}` | gauge | Configured PPM correction |
+| `gophertrunk_sdr_bias_tee{driver,serial,role}` | gauge | 1 when bias-tee is enabled |
 | `gophertrunk_sdr_iq_underruns_total{driver,serial}` | counter | IQ pipeline drops |
 | `gophertrunk_sdr_usb_reconnects_total{driver,serial}` | counter | USB re-opens |
 | `gophertrunk_decode_errors_total{protocol,stage}` | counter | Decode failures |
-| `gophertrunk_sdr_attached{driver,serial,role}` | gauge | 1 per attached SDR |
 | `gophertrunk_build_info{version}` | gauge | Always 1; build version label |
 
 ### `GET /api/v1/health`

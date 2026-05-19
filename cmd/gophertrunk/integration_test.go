@@ -151,7 +151,8 @@ func TestDaemonEndToEnd(t *testing.T) {
 	// build_info gauge with our supplied version.
 	metricsBody := scrape(t, base+"/metrics")
 	for _, want := range []string{
-		`gophertrunk_calls_active 1`,
+		`gophertrunk_calls_active{protocol="p25",system="Alpha"} 1`,
+		`gophertrunk_calls_started_total{encrypted="false",protocol="p25",system="Alpha"} 1`,
 		`gophertrunk_build_info{version="integration-test"} 1`,
 	} {
 		if !strings.Contains(metricsBody, want) {
@@ -174,14 +175,15 @@ func TestDaemonEndToEnd(t *testing.T) {
 	})
 
 	deadline = time.Now().Add(2 * time.Second)
+	want := `gophertrunk_calls_total{encrypted="false",protocol="p25",reason="normal",system="Alpha"} 1`
 	for time.Now().Before(deadline) {
 		body := scrape(t, base+"/metrics")
-		if strings.Contains(body, `gophertrunk_calls_total{reason="normal"} 1`) {
+		if strings.Contains(body, want) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Errorf("metrics never surfaced calls_total{reason=normal}")
+	t.Errorf("metrics never surfaced %s", want)
 }
 
 func waitForRecording(t *testing.T, root, alpha string, timeout time.Duration) {

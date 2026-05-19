@@ -147,22 +147,36 @@ collector lives in [`internal/metrics`](../internal/metrics).
 
 Series exposed:
 
-| Series                                                  | Type    | Description                                                       |
-| ------------------------------------------------------- | ------- | ----------------------------------------------------------------- |
-| `gophertrunk_events_total{kind=...}`                    | counter | Every event observed on the internal bus, by kind                 |
-| `gophertrunk_calls_total{reason=...}`                   | counter | Calls completed, labelled by `EndReason` (normal/preempted/...)   |
-| `gophertrunk_calls_active`                              | gauge   | Currently-active call count                                       |
-| `gophertrunk_control_channel_locked{system=...}`        | gauge   | `1` while the named system has its CC locked, `0` otherwise        |
-| `gophertrunk_sdr_iq_underruns_total{driver,serial}`     | counter | IQ pipeline drops because a downstream stage was too slow         |
-| `gophertrunk_sdr_usb_reconnects_total{driver,serial}`   | counter | Times the USB driver had to re-open a device                      |
-| `gophertrunk_decode_errors_total{protocol,stage}`       | counter | Decode failures by protocol + stage (e.g. `p25`/`tsbk-crc`)       |
-| `gophertrunk_sdr_attached{driver,serial,role}`          | gauge   | `1` per currently-attached SDR                                    |
-| `gophertrunk_build_info{version}`                       | gauge   | Always `1`; carries the build version as a label                  |
+| Series                                                          | Type    | Description                                                                                                |
+| --------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `gophertrunk_events_total{kind=...}`                            | counter | Every event observed on the internal bus, by kind                                                          |
+| `gophertrunk_calls_started_total{system,protocol,encrypted}`    | counter | Calls started; more reliable rate signal than `_total` when the daemon dies mid-call                       |
+| `gophertrunk_calls_total{system,protocol,encrypted,reason}`     | counter | Calls completed, labelled by `Grant` dimensions and `EndReason`                                            |
+| `gophertrunk_calls_active{system,protocol}`                     | gauge   | Active calls per system+protocol; use `sum()` for the daemon-wide total                                    |
+| `gophertrunk_control_channel_locked{system=...}`                | gauge   | `1` while the named system has its CC locked, `0` otherwise                                                |
+| `gophertrunk_control_channel_frequency_hz{system=...}`          | gauge   | Currently-locked CC frequency in Hz; series is deleted on loss                                             |
+| `gophertrunk_control_channel_transitions_total{system,event}`   | counter | CC lock/lost transitions (`event` ∈ `locked`,`lost`) — useful for spotting churn under poor SNR            |
+| `gophertrunk_sdr_attached{driver,serial,role}`                  | gauge   | Event-driven attach state — `1` per currently-attached SDR                                                 |
+| `gophertrunk_sdr_gain_db{driver,serial,role}`                   | gauge   | Configured gain in dB; `NaN` under AGC (pair with `gophertrunk_sdr_gain_auto` to filter)                   |
+| `gophertrunk_sdr_gain_auto{driver,serial,role}`                 | gauge   | `1` when the tuner is running AGC, `0` otherwise                                                           |
+| `gophertrunk_sdr_ppm{driver,serial,role}`                       | gauge   | Configured frequency-error correction in parts-per-million                                                 |
+| `gophertrunk_sdr_bias_tee{driver,serial,role}`                  | gauge   | `1` when the SDR's 5 V bias-tee output is enabled                                                          |
+| `gophertrunk_sdr_iq_underruns_total{driver,serial}`             | counter | IQ pipeline drops because a downstream stage was too slow                                                  |
+| `gophertrunk_sdr_usb_reconnects_total{driver,serial}`           | counter | Times the USB driver had to re-open a device                                                               |
+| `gophertrunk_decode_errors_total{protocol,stage}`               | counter | Decode failures by protocol + stage (e.g. `p25`/`tsbk-crc`)                                                |
+| `gophertrunk_build_info{version}`                               | gauge   | Always `1`; carries the build version as a label                                                           |
 
-The bus-driven counters (`events_total`, `calls_total`, `calls_active`,
-`control_channel_locked`) update automatically. Subsystems push the
-others via `Metrics.RecordIQUnderrun`, `RecordUSBReconnect`,
-`RecordDecodeError`, and `SetSDRAttached`.
+The bus-driven counters and gauges (`events_total`, `calls_started_total`,
+`calls_total`, `calls_active`, `control_channel_locked`,
+`control_channel_frequency_hz`, `control_channel_transitions_total`)
+update automatically as the trunking engine fires events. Subsystems
+push `iq_underruns_total`, `usb_reconnects_total`, `decode_errors_total`,
+and the event-driven `sdr_attached` gauge via `Metrics.RecordIQUnderrun`,
+`RecordUSBReconnect`, `RecordDecodeError`, and `SetSDRAttached`. The
+per-device tuning gauges (`sdr_gain_db`, `sdr_gain_auto`, `sdr_ppm`,
+`sdr_bias_tee`) come from a scrape-time snapshot collector that reads
+`sdr.Pool.Snapshot()` on every `/metrics` request, so the values always
+reflect live pool state.
 
 ## Graceful shutdown
 
