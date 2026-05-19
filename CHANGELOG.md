@@ -7,11 +7,29 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.1.7] — 2026-05-19
+
+Observability + import-pipeline release. Twelve merged PRs land the
+first batch of per-system Prometheus metrics (issue #269), unblock
+RadioReference imports for the post-layout-change PDF format plus
+non-US (Australian MMR) systems and native RR CSV downloads (issue
+\#271, #278, #279), and close two RTL-SDR silent-failure modes that
+prevented P25 control-channel lock on plug-in: a missing
+`SetSampleRate` on pool open (issue #275, PR #281) and a Windows
+cold-boot warmup timeout that wasn't on the bring-up retry envelope
+(PR #274). P25 phase-1 affiliation and unit-registration events now
+flow through the SSE/WS telemetry stream (slice of issue #268, PR
+\#285). New `gophertrunk_sdr_iq_power_dbfs` gauge + throttled
+low-power log catch the gain-at-zero / antenna-disconnected case
+operators previously had to guess at (issue #275 follow-ups, PR
+\#282).
+
 ### Added
 
 - **Prometheus metrics for per-system call rate, encryption breakdown,
-  control-channel health, and SDR device tuning state** (issue #269).
-  New series: `gophertrunk_calls_started_total{system,protocol,encrypted}`,
+  control-channel health, and SDR device tuning state** (issue #269,
+  PR #272). New series:
+  `gophertrunk_calls_started_total{system,protocol,encrypted}`,
   `gophertrunk_control_channel_frequency_hz{system}`,
   `gophertrunk_control_channel_transitions_total{system,event}`,
   `gophertrunk_sdr_gain_db{driver,serial,role}`,
@@ -20,25 +38,73 @@ for tagged releases.
   `gophertrunk_sdr_bias_tee{driver,serial,role}`. SDR tuning gauges
   come from a scrape-time snapshot collector so they always reflect
   live pool state.
+- **`gophertrunk_sdr_iq_power_dbfs{system}` gauge** updated roughly
+  once per second from the cc decoder with mean |IQ|² converted to
+  dBFS (issue #275 follow-ups, PR #282). Idle is ~-45 dBFS, healthy
+  signal ~-25 dBFS, > -3 means the ADC is clipping. The series is
+  dropped on decoder teardown so stale dBFS doesn't outlive the
+  active system. Paired with a throttled low-power debug log on the
+  same path: < -55 dBFS prints `ccdecoder: iq power very low — check
+  antenna, gain, USB` at most once per 5 s — catches the
+  gain-at-zero / antenna-disconnected / USB-stuck cases without
+  flooding the log.
+- **P25 phase-1 affiliation and unit-registration telemetry events**
+  (slice of issue #268, PR #285). The cc decoder previously
+  recognised TSBK opcodes 0x28 (Group Affiliation Response) and 0x2C
+  (Unit Registration Response) but silently dropped them at the
+  `dispatchTSBK` default branch. Both opcodes now decode through new
+  parsers in `internal/trunking`, publish via two new event kinds
+  (`KindAffiliation`, `KindUnitRegistration`), and reach the
+  `/api/v1/events` SSE/WS stream as JSON-tagged DTOs. Byte layouts
+  follow OP25's `trunk_p25.py` reference. Two regression tests pin
+  the JSON shape so downstream dashboards can rely on stable field
+  names.
 - **Native RadioReference CSV import** for `gophertrunk import-pdf`
-  (issue #271). RadioReference's `/db/sid/<sid>/download` CSV is a
-  flat talkgroup list with no metadata — the importer auto-detects
-  the format and the new `-name` / `-sysid` flags supply the missing
-  fields (filename stem is used when `-name` is omitted). Native CSV
-  carries no sites; combine with a `-pdf` (or bundle CSV) when you
-  need control-channel frequencies.
-- **`-extract-only` flag for `gophertrunk import-pdf`.** Paired with
-  a single `-pdf`, dumps the positioned-text rows extracted from the
-  PDF as JSON to stdout and exits, so parser bug reports can ship a
-  ready-to-replay fixture without sharing the original PDF.
+  (issue #271, PR #273). RadioReference's `/db/sid/<sid>/download`
+  CSV is a flat talkgroup list with no metadata — the importer
+  auto-detects the format and the new `-name` / `-sysid` flags
+  supply the missing fields (filename stem is used when `-name` is
+  omitted). Native CSV carries no sites; combine with a `-pdf` (or
+  bundle CSV) when you need control-channel frequencies.
+- **`-extract-only` flag for `gophertrunk import-pdf`** (PR #273).
+  Paired with a single `-pdf`, dumps the positioned-text rows
+  extracted from the PDF as JSON to stdout and exits, so parser bug
+  reports can ship a ready-to-replay fixture without sharing the
+  original PDF.
+- **Per-(VID, PID) bias-tee GPIO table** for the pure-Go RTL-SDR
+  driver (issue #275 follow-ups, PR #282). The hardcoded `GPIO 0`
+  constant in `device.go` moved to a `knownDevice.BiasTeeGPIO`
+  field. Every current entry inherits `GPIO 0` (the dominant
+  RTL-SDR.com v3+ / NESDR Smart v5 pinout), but the mechanism now
+  exists for boards with a different pinout to be added without
+  forking the driver.
+- **Throttled "no sync hits" debug log on P25 phase-1 and phase-2
+  process paths** (PR #281). A 2 s-throttled line fires when the
+  sync detector finds zero hits in a chunk — surfaces the
+  previously-silent "IQ isn't reaching the decoder" case operators
+  couldn't tell apart from a wrong-frequency cc.
+- **"The Story of GopherTrunk" page** on the Pages site
+  (PR #280) — project origin and design philosophy, linked from
+  the README intro and support page.
+- **Discord and Reddit community callouts** on the Pages site
+  (PR #286).
 
 ### Changed
 
 - `gophertrunk_calls_total` now carries `{system,protocol,encrypted,reason}`
   labels (was `{reason}`); `gophertrunk_calls_active` is now a
-  GaugeVec keyed by `{system,protocol}` (was a bare gauge). Dashboards
-  that previously scraped the unlabeled shape can recover with
+  GaugeVec keyed by `{system,protocol}` (was a bare gauge).
+  Dashboards that previously scraped the unlabeled shape can recover
+  with
   `sum without(system,protocol,encrypted) (gophertrunk_calls_total)`.
+- **SDR pool now programs the IQ sample rate at device open** (issue
+  \#275, PR #281). `Pool.Open` takes the rate as its first argument
+  and calls `SetSampleRate` on every device immediately after the
+  USB open; `SetSampleRate` failure closes that device and drops it
+  from the pool rather than letting a wrong-rate radio poison the
+  decoder. The pure-Go RTL-SDR driver also programs 2.048 MS/s in
+  `runBringup` as a belt-and-suspenders default for any future
+  consumer of the driver.
 - `docs/import.md` and `docs/user-guide-windows.md`: RadioReference
   moved the PDF export from the page footer to the top **Download**
   menu (PDF / CSV / DSD options at `/db/sid/<sid>/download`).
@@ -46,41 +112,64 @@ for tagged releases.
 
 ### Fixed
 
-- `gophertrunk import-pdf` no-System-Name error now prints the first
-  ~30 extracted rows inline so the failure is self-diagnosing
-  (issue #271).
+- **RTL-SDR P25 control channel never locked on a freshly opened
+  device** (issue #275, PR #281). The pool opened devices and
+  applied PPM / gain / bias-tee but never called `SetSampleRate`,
+  so the chip's resampler stayed at whatever divisor it powered up
+  with while every decoder pipeline downstream did its
+  matched-filter and symbol-clock math against `cfg.SDR.SampleRate`.
+  Symptom on real hardware was a silent failure: symbol timing
+  wrong, FSW / 20-dibit outbound sync detector never matched, and
+  the only log line that fired was the cc-hunt retune. The pool now
+  programs the rate at open time (see Changed above).
+- **`gophertrunk sdr list --probe` fatal-erroring on Windows cold
+  boot** (PR #274). The WinUSB warmup sysctl-write returned
+  `ErrTimeout` (the Windows equivalent of the Linux EPIPE stall),
+  but `isBringupResetable` only matched EPIPE / `ErrDeviceGone`, so
+  the existing bring-up `USBDEVFS_RESET` + re-claim retry envelope
+  skipped this path. `ErrTimeout` is now treated as resetable; the
+  retry stays one-shot, so worst-case cost on a genuine
+  (non-cold-boot) timeout is one wasted ~200 ms reset before the
+  original error resurfaces. `tunerBringupHint` also grew a
+  Windows-aware remediation pointing at the Zadig step for the case
+  where the retry also times out.
+- `gophertrunk import-pdf` no-System-Name error now prints the
+  first ~30 extracted rows inline so the failure is self-diagnosing
+  (issue #271, PR #273).
 - `parseMetaLine` accepts case-insensitive and whitespace-variant
-  labels (`SYSTEM NAME:`, `System Name :`, double-spaces). Falls back
-  to the page-title banner ("`<System> Menu`") when no explicit
-  `System Name:` line is present, so a minor RadioReference layout
-  tweak no longer breaks extraction (issue #271).
+  labels (`SYSTEM NAME:`, `System Name :`, double-spaces). Falls
+  back to the page-title banner ("`<System> Menu`") when no
+  explicit `System Name:` line is present, so a minor RadioReference
+  layout tweak no longer breaks extraction (issue #271, PR #273).
 - `extractPDFRows` now auto-detects RadioReference's two PDF font
-  encodings (issue #271). Older RR PDFs ship raw glyph bytes that need
-  a `+27` ASCII shift; newer ones (e.g. MMR.pdf, sid 7197) embed a
-  proper font CMap and arrive already-decoded. The extractor sniffs
-  the first 50 rows for anchor strings (`System Name`,
-  `Sites and Frequencies`, `Talkgroups`, `WACN`, `Last Updated`) and
-  applies the shift only when those anchors are absent. `decodeShift`
-  also leaves literal `0x20` spaces alone — the new library release
-  emits the occasional in-text literal space alongside the encoded
-  `0x05` separator-space, and shifting it was corrupting output as
-  `;`.
+  encodings (issue #271, PR #277). Older RR PDFs ship raw glyph
+  bytes that need a `+27` ASCII shift; newer ones (e.g. MMR.pdf,
+  sid 7197) embed a proper font CMap and arrive already-decoded.
+  The extractor sniffs the first 50 rows for anchor strings
+  (`System Name`, `Sites and Frequencies`, `Talkgroups`, `WACN`,
+  `Last Updated`) and applies the shift only when those anchors are
+  absent. `decodeShift` also leaves literal `0x20` spaces alone —
+  the new library release emits the occasional in-text literal
+  space alongside the encoded `0x05` separator-space, and shifting
+  it was corrupting output as `;`.
 - The PDF parser now handles RadioReference's non-US layout (e.g.
-  Australian MMR system). New `siteRowDashRE` pattern matches dash-
-  joined `RFSS-Site (X-Y) Name freqs` rows; `System Frequencies` and
-  `System Talkgroups` are accepted as section markers; `Display`
-  is recognised as an alias for the `Alpha Tag` column; `a`-suffix
-  secondary-control-channel frequencies are now captured; talkgroup
-  hex columns with leading zeros (e.g. `065` for dec=101) are
-  validated numerically rather than by string match.
+  Australian MMR system) (issue #278, PR #283). New `siteRowDashRE`
+  pattern matches dash-joined `RFSS-Site (X-Y) Name freqs` rows;
+  `System Frequencies` and `System Talkgroups` are accepted as
+  section markers; `Display` is recognised as an alias for the
+  `Alpha Tag` column; `a`-suffix secondary-control-channel
+  frequencies are now captured; talkgroup hex columns with leading
+  zeros (e.g. `065` for dec=101) are validated numerically rather
+  than by string match.
 - The `gophertrunk import-pdf` TUI is now usable on systems with
-  dozens of sites or hundreds of talkgroups (issue #271). The Sites
-  tab previously rendered every row unconditionally and spilled
-  off-screen; both tabs now paginate to fit the terminal height
-  (with a 20-row fallback when `tea.WindowSizeMsg` hasn't arrived
-  yet), show a `Site N of M  (showing X-Y)` position indicator, and
-  accept `pgup`/`pgdn` for page jumps plus `home`/`end` / `g`/`G`
-  to jump to the first/last entry. The footer hints are updated.
+  dozens of sites or hundreds of talkgroups (issue #279, PR #284).
+  The Sites tab previously rendered every row unconditionally and
+  spilled off-screen; both tabs now paginate to fit the terminal
+  height (with a 20-row fallback when `tea.WindowSizeMsg` hasn't
+  arrived yet), show a `Site N of M  (showing X-Y)` position
+  indicator, and accept `pgup`/`pgdn` for page jumps plus
+  `home`/`end` / `g`/`G` to jump to the first/last entry. The
+  footer hints are updated.
 
 ## [v0.1.6] — 2026-05-18
 
