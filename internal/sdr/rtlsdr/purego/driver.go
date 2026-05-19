@@ -209,11 +209,18 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 	}, nil
 }
 
+// defaultOpenSampleRateHz mirrors librtlsdr's rtlsdr_open: leave the
+// chip at a known-good 2.048 MS/s so consumers that forget to program
+// the rate before streaming still get coherent IQ instead of whatever
+// the resampler's power-on default happens to be.
+const defaultOpenSampleRateHz uint32 = 2_048_000
+
 // runBringup executes the librtlsdr-parity init sequence on a fresh
 // Demod: USB-sysctl warmup probe → baseband init → tuner detect →
 // R820T-family demod prep (no-op for other tuners) → tuner.Init →
 // IF-freq programming (R820T-family programs its own IF inside
-// PrepareDemod, so non-R82xx tuners use the demod-side path).
+// PrepareDemod, so non-R82xx tuners use the demod-side path) →
+// default sample-rate program (librtlsdr parity; see issue #275).
 // Returns the initialized tuner on success. All errors are wrapped
 // with a stage prefix so the outer openDevice can spot resetable
 // EPIPE / ErrDeviceGone via errors.Is.
@@ -241,6 +248,13 @@ func runBringup(demod *rtl2832u.Demod) (tuners.Tuner, error) {
 		if err := demod.SetIFFreq(tuner.IFFreqHz()); err != nil {
 			return nil, fmt.Errorf("rtlsdr: set IF freq: %w%s", err, tunerBringupHint(err))
 		}
+	}
+	actual, err := demod.SetSampleRate(defaultOpenSampleRateHz)
+	if err != nil {
+		return nil, fmt.Errorf("rtlsdr: default sample rate: %w%s", err, tunerBringupHint(err))
+	}
+	if err := tuner.SetBandwidth(actual); err != nil {
+		return nil, fmt.Errorf("rtlsdr: default tuner bandwidth: %w%s", err, tunerBringupHint(err))
 	}
 	return tuner, nil
 }

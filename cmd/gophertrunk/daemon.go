@@ -277,7 +277,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			hints = append(hints, h)
 		}
-		if err := d.pool.Open(hints); err != nil {
+		if err := d.pool.Open(cfg.SDR.SampleRate, hints); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)
 			d.addWarning(fmt.Sprintf(
 				"SDR pool failed to open (%v) — no radios will demodulate; check device permissions / cabling / kernel modules",

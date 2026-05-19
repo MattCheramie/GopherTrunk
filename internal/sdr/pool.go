@@ -106,15 +106,31 @@ func (h Hint) WithGain(tenthDB int) Hint {
 	return h
 }
 
+// DefaultSampleRateHz mirrors librtlsdr's open-time default and is the
+// rate Pool.Open programs when the caller passes 0. Matches the value
+// the rtlsdr driver also programs during bring-up so the two layers
+// agree on a known-good fallback.
+const DefaultSampleRateHz uint32 = 2_048_000
+
 // Open enumerates every registered driver, opens devices that match the
-// supplied hints (or simply all of them when hints is empty), and assigns
+// supplied hints (or simply all of them when hints is empty), programs
+// the IQ sample rate on each device (issue #275 — without this the chip
+// streams at whatever rate its resampler powered up at), and assigns
 // roles. The first opened device gets RoleControl unless a hint says
-// otherwise; subsequent devices get RoleVoice.
-func (p *Pool) Open(hints []Hint) error {
+// otherwise; subsequent devices get RoleVoice. Passing sampleRateHz == 0
+// falls back to DefaultSampleRateHz. A device whose SetSampleRate
+// fails is closed and skipped — a wrong-rate radio produces silent
+// decoder failures, which is worse than no radio at all.
+func (p *Pool) Open(sampleRateHz uint32, hints []Hint) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.entries) > 0 {
 		return errors.New("pool already populated; close first")
+	}
+
+	rate := sampleRateHz
+	if rate == 0 {
+		rate = DefaultSampleRateHz
 	}
 
 	type discovered struct {
@@ -166,6 +182,12 @@ func (p *Pool) Open(hints []Hint) error {
 			p.log.Error("open device failed", "driver", d.drv.Name(), "index", d.info.Index, "err", err)
 			continue
 		}
+		if err := dev.SetSampleRate(rate); err != nil {
+			p.log.Error("set sample rate failed",
+				"driver", d.drv.Name(), "serial", d.info.Serial, "rate_hz", rate, "err", err)
+			_ = dev.Close()
+			continue
+		}
 		// Apply per-device tuning supplied via Hint. Failures are
 		// non-fatal — the device is still usable, just possibly
 		// with the driver's defaults — but they get logged so an
@@ -176,7 +198,8 @@ func (p *Pool) Open(hints []Hint) error {
 		}
 		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: d.info, Role: role, Hint: hint}
 		p.entries = append(p.entries, entry)
-		p.log.Info("device opened", "driver", d.drv.Name(), "serial", d.info.Serial, "role", role.String())
+		p.log.Info("device opened",
+			"driver", d.drv.Name(), "serial", d.info.Serial, "role", role.String(), "rate_hz", rate)
 		p.publish(events.KindSDRAttached, entry.Snapshot(true))
 	}
 	if len(p.entries) == 0 {

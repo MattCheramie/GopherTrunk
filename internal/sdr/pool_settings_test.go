@@ -18,7 +18,7 @@ func TestPoolAppliesHintSettings(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open([]Hint{
+	if err := p.Open(0, []Hint{
 		Hint{Serial: "S1", PPM: 7, BiasTee: true}.WithGain(496),
 	}); err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestPoolSkipsBiasTeeWhenHintFalse(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open([]Hint{{Serial: "S2"}}); err != nil {
+	if err := p.Open(0, []Hint{{Serial: "S2"}}); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()

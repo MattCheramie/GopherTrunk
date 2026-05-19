@@ -27,7 +27,7 @@ func TestPoolPublishesAttachAndDetachEvents(t *testing.T) {
 
 	p := NewPool(nil)
 	p.SetBus(bus)
-	if err := p.Open([]Hint{Hint{Serial: "EV1", PPM: 3, BiasTee: true}.WithGain(496)}); err != nil {
+	if err := p.Open(0, []Hint{Hint{Serial: "EV1", PPM: 3, BiasTee: true}.WithGain(496)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +83,7 @@ func TestPoolSnapshotMatchesEntries(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open(nil); err != nil {
+	if err := p.Open(0, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
