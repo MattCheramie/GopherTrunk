@@ -198,6 +198,10 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			"tx_offset_hz", u.TxOffsetHz)
 	case OpGroupVoiceChannelGrant:
 		c.publishGroupGrant(ParseGroupVoiceChannelGrant(t.Payload), nac)
+	case OpGroupAffiliationResponse:
+		c.publishAffiliation(ParseGroupAffiliationResponse(t.Payload), nac)
+	case OpUnitRegistrationResponse:
+		c.publishUnitRegistration(ParseUnitRegistrationResponse(t.Payload), nac)
 	default:
 		c.log.Debug("tsbk decoded",
 			"opcode", t.Opcode, "lb", t.LB, "metric", metric, "nac", nac)
@@ -245,6 +249,50 @@ func (c *ControlChannel) publishGroupGrant(g GroupVoiceChannelGrant, nac uint16)
 		"tg", g.GroupAddress, "src", g.SourceID,
 		"id", g.ChannelID, "num", g.ChannelNumber, "freq_hz", freq,
 		"enc", encrypted, "emer", emergency)
+}
+
+// publishAffiliation publishes a trunking.Affiliation on the bus when
+// the site issues a Group Affiliation Response (opcode 0x28). No
+// band-plan resolution is needed — affiliations don't carry channel
+// info.
+func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse, nac uint16) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindAffiliation,
+		Payload: trunking.Affiliation{
+			System:            c.systemName,
+			Protocol:          "p25",
+			SourceID:          g.TargetID,
+			GroupID:           uint32(g.GroupAddress),
+			AnnouncementGroup: uint32(g.AnnouncementGroup),
+			Response:          trunking.AffiliationResponse(g.Response),
+			At:                c.now(),
+		},
+	})
+	c.log.Debug("p25: affiliation",
+		"system", c.systemName, "nac", nac,
+		"src", g.TargetID, "tg", g.GroupAddress,
+		"ann", g.AnnouncementGroup, "rsp", g.Response)
+}
+
+// publishUnitRegistration publishes a trunking.UnitRegistration on the
+// bus when the site issues a Unit Registration Response (opcode 0x2C).
+func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac uint16) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindUnitRegistration,
+		Payload: trunking.UnitRegistration{
+			System:   c.systemName,
+			Protocol: "p25",
+			SourceID: u.SourceID,
+			WACN:     u.WACN,
+			SystemID: u.SystemID,
+			Response: trunking.RegistrationResponse(u.Response),
+			At:       c.now(),
+		},
+	})
+	c.log.Debug("p25: registration",
+		"system", c.systemName, "nac", nac,
+		"src", u.SourceID, "wacn", u.WACN, "sysid", u.SystemID,
+		"rsp", u.Response)
 }
 
 // MarkLost publishes a CCLost event for the current frequency and resets

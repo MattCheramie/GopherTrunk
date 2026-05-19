@@ -203,6 +203,112 @@ func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	}
 }
 
+func TestControlChannelPublishesAffiliation(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// Response = denied (2), AnnGroup = 0xAABB, Group = 0x1234,
+	// TargetID = 0xABCDEF.
+	payload := [8]byte{0x02, 0xAA, 0xBB, 0x12, 0x34, 0xAB, 0xCD, 0xEF}
+	tsbk := TSBK{LB: true, Opcode: OpGroupAffiliationResponse, Payload: payload}
+	stream := buildLockedStreamWithTSBK(10, 0x111, DUIDTrunkingSignaling, tsbk)
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestSys",
+		FrequencyHz: 851_000_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_001, 0).UTC() },
+	})
+	cc.Process(stream, 0)
+
+	var got *trunking.Affiliation
+	deadline := time.After(time.Second)
+	for got == nil {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindAffiliation {
+				a := ev.Payload.(trunking.Affiliation)
+				got = &a
+			}
+		case <-deadline:
+			t.Fatal("no affiliation event published")
+		}
+	}
+	if got.System != "TestSys" || got.Protocol != "p25" {
+		t.Errorf("identity = %s/%s", got.System, got.Protocol)
+	}
+	if got.SourceID != 0xABCDEF {
+		t.Errorf("SourceID = %06X, want ABCDEF", got.SourceID)
+	}
+	if got.GroupID != 0x1234 {
+		t.Errorf("GroupID = %04X, want 1234", got.GroupID)
+	}
+	if got.AnnouncementGroup != 0xAABB {
+		t.Errorf("AnnouncementGroup = %04X, want AABB", got.AnnouncementGroup)
+	}
+	if got.Response != trunking.AffiliationDenied {
+		t.Errorf("Response = %v, want denied", got.Response)
+	}
+	if got.At.Unix() != 1_700_000_001 {
+		t.Errorf("At = %v, want injected Now", got.At)
+	}
+}
+
+func TestControlChannelPublishesUnitRegistration(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// Response = accepted (0), WACN = 0xBEE08, SystemID = 0x534,
+	// SourceID = 0x112233.
+	payload := [8]byte{0x00, 0xBE, 0xE0, 0x85, 0x34, 0x11, 0x22, 0x33}
+	tsbk := TSBK{LB: true, Opcode: OpUnitRegistrationResponse, Payload: payload}
+	stream := buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, tsbk)
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestSys",
+		FrequencyHz: 851_000_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_002, 0).UTC() },
+	})
+	cc.Process(stream, 0)
+
+	var got *trunking.UnitRegistration
+	deadline := time.After(time.Second)
+	for got == nil {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindUnitRegistration {
+				u := ev.Payload.(trunking.UnitRegistration)
+				got = &u
+			}
+		case <-deadline:
+			t.Fatal("no registration event published")
+		}
+	}
+	if got.System != "TestSys" || got.Protocol != "p25" {
+		t.Errorf("identity = %s/%s", got.System, got.Protocol)
+	}
+	if got.SourceID != 0x112233 {
+		t.Errorf("SourceID = %06X, want 112233", got.SourceID)
+	}
+	if got.WACN != 0xBEE08 {
+		t.Errorf("WACN = %05X, want BEE08", got.WACN)
+	}
+	if got.SystemID != 0x534 {
+		t.Errorf("SystemID = %03X, want 534", got.SystemID)
+	}
+	if got.Response != trunking.RegistrationAccepted {
+		t.Errorf("Response = %v, want accepted", got.Response)
+	}
+	if got.At.Unix() != 1_700_000_002 {
+		t.Errorf("At = %v, want injected Now", got.At)
+	}
+}
+
 func TestControlChannelGrantBeforeIdentifierUpdateEmitsDecodeError(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

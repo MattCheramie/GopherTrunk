@@ -68,6 +68,10 @@ func (o Opcode) String() string {
 		return "SecondaryControlChannelBroadcast"
 	case OpIdentifierUpdate:
 		return "IdentifierUpdate"
+	case OpGroupAffiliationResponse:
+		return "GroupAffiliationResponse"
+	case OpUnitRegistrationResponse:
+		return "UnitRegistrationResponse"
 	default:
 		return fmt.Sprintf("Opcode(%02X)", uint8(o))
 	}
@@ -118,6 +122,56 @@ func ParseGroupVoiceChannelUpdate(p [8]byte) GroupVoiceChannelUpdate {
 		ChannelBID:     uint8(cB >> 12),
 		ChannelBNumber: cB & 0x0FFF,
 		GroupAddressB:  binary.BigEndian.Uint16(p[6:8]),
+	}
+}
+
+// GroupAffiliationResponse (opcode 0x28) — published when a radio unit
+// is granted (or denied) affiliation with a talkgroup. Payload layout
+// follows OP25's reference decoder (`trunk_p25.py`):
+//
+//	byte 0:    bits 1-0 = Affiliation Response Value
+//	bytes 1-2: Announcement Group Address (16 bits)
+//	bytes 3-4: Group Address (16 bits) — the talkgroup
+//	bytes 5-7: Target ID (24 bits) — the radio being responded to
+type GroupAffiliationResponse struct {
+	Response          uint8
+	AnnouncementGroup uint16
+	GroupAddress      uint16
+	TargetID          uint32
+}
+
+// ParseGroupAffiliationResponse decodes payload bytes for opcode 0x28.
+func ParseGroupAffiliationResponse(p [8]byte) GroupAffiliationResponse {
+	return GroupAffiliationResponse{
+		Response:          p[0] & 0x03,
+		AnnouncementGroup: binary.BigEndian.Uint16(p[1:3]),
+		GroupAddress:      binary.BigEndian.Uint16(p[3:5]),
+		TargetID:          uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+	}
+}
+
+// UnitRegistrationResponse (opcode 0x2C) — published when a radio
+// completes (or is denied) registration on a site. Payload layout
+// follows OP25's reference decoder (`trunk_p25.py`):
+//
+//	byte 0:        bits 1-0 = Registration Response Value
+//	bytes 1-3 + top nibble of byte 3: WACN (20 bits)
+//	bottom nibble of byte 3 + byte 4: System ID (12 bits)
+//	bytes 5-7:     Source ID (24 bits) — the radio's WUID
+type UnitRegistrationResponse struct {
+	Response uint8
+	WACN     uint32 // 20-bit
+	SystemID uint16 // 12-bit
+	SourceID uint32 // 24-bit
+}
+
+// ParseUnitRegistrationResponse decodes payload bytes for opcode 0x2C.
+func ParseUnitRegistrationResponse(p [8]byte) UnitRegistrationResponse {
+	return UnitRegistrationResponse{
+		Response: p[0] & 0x03,
+		WACN:     uint32(p[1])<<12 | uint32(p[2])<<4 | uint32(p[3])>>4,
+		SystemID: uint16(p[3]&0x0F)<<8 | uint16(p[4]),
+		SourceID: uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
 	}
 }
 

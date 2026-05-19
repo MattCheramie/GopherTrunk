@@ -131,6 +131,46 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 	}
 }
 
+// AffiliationDTO mirrors trunking.Affiliation.
+type AffiliationDTO struct {
+	System            string `json:"system"`
+	Protocol          string `json:"protocol"`
+	SourceID          uint32 `json:"source_id"`
+	GroupID           uint32 `json:"group_id"`
+	AnnouncementGroup uint32 `json:"announcement_group,omitempty"`
+	Response          string `json:"response"`
+}
+
+func affiliationToDTO(a trunking.Affiliation) AffiliationDTO {
+	return AffiliationDTO{
+		System: a.System, Protocol: a.Protocol,
+		SourceID:          a.SourceID,
+		GroupID:           a.GroupID,
+		AnnouncementGroup: a.AnnouncementGroup,
+		Response:          a.Response.String(),
+	}
+}
+
+// UnitRegistrationDTO mirrors trunking.UnitRegistration.
+type UnitRegistrationDTO struct {
+	System   string `json:"system"`
+	Protocol string `json:"protocol"`
+	SourceID uint32 `json:"source_id"`
+	WACN     uint32 `json:"wacn"`
+	SystemID uint16 `json:"system_id"`
+	Response string `json:"response"`
+}
+
+func unitRegistrationToDTO(u trunking.UnitRegistration) UnitRegistrationDTO {
+	return UnitRegistrationDTO{
+		System: u.System, Protocol: u.Protocol,
+		SourceID: u.SourceID,
+		WACN:     u.WACN,
+		SystemID: u.SystemID,
+		Response: u.Response.String(),
+	}
+}
+
 // ActiveCallDTO mirrors trunking.ActiveCall for JSON.
 type ActiveCallDTO struct {
 	Grant        GrantDTO      `json:"grant"`

@@ -54,6 +54,47 @@ func TestParseGroupVoiceChannelGrant(t *testing.T) {
 	}
 }
 
+func TestParseGroupAffiliationResponse(t *testing.T) {
+	// Response = 0x2 (denied), AnnGroup = 0xAABB, Group = 0x1234,
+	// Target = 0xABCDEF. Top 6 bits of byte 0 are reserved; we set
+	// them to 1s to confirm the parser masks them off.
+	p := [8]byte{0xFE, 0xAA, 0xBB, 0x12, 0x34, 0xAB, 0xCD, 0xEF}
+	a := ParseGroupAffiliationResponse(p)
+	if a.Response != 0x2 {
+		t.Errorf("Response = %X, want 2", a.Response)
+	}
+	if a.AnnouncementGroup != 0xAABB {
+		t.Errorf("AnnouncementGroup = %04X, want AABB", a.AnnouncementGroup)
+	}
+	if a.GroupAddress != 0x1234 {
+		t.Errorf("GroupAddress = %04X, want 1234", a.GroupAddress)
+	}
+	if a.TargetID != 0xABCDEF {
+		t.Errorf("TargetID = %06X, want ABCDEF", a.TargetID)
+	}
+}
+
+func TestParseUnitRegistrationResponse(t *testing.T) {
+	// Response = 0x0 (accepted). WACN = 0xBEE08 (20-bit) packed as
+	// byte1 = 0xBE, byte2 = 0xE0, top nibble of byte3 = 0x8.
+	// SystemID = 0x534 (12-bit) packed as bottom nibble of byte3 = 0x5,
+	// byte4 = 0x34. Source = 0x112233.
+	p := [8]byte{0x00, 0xBE, 0xE0, 0x85, 0x34, 0x11, 0x22, 0x33}
+	u := ParseUnitRegistrationResponse(p)
+	if u.Response != 0x0 {
+		t.Errorf("Response = %X, want 0", u.Response)
+	}
+	if u.WACN != 0xBEE08 {
+		t.Errorf("WACN = %05X, want BEE08", u.WACN)
+	}
+	if u.SystemID != 0x534 {
+		t.Errorf("SystemID = %03X, want 534", u.SystemID)
+	}
+	if u.SourceID != 0x112233 {
+		t.Errorf("SourceID = %06X, want 112233", u.SourceID)
+	}
+}
+
 func TestParseNetworkStatusBroadcast(t *testing.T) {
 	// WACN = 0xABCDE (20-bit), SystemID = 0x123 (12-bit).
 	p := [8]byte{0xAB, 0xCD, 0xE1, 0x23, 0x40, 0x10, 0x00, 0x42}

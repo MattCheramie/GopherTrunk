@@ -32,6 +32,22 @@ const (
 	//     so operators can see "retry in 5 s".
 	KindHuntProgress Kind = "cchunt.progress"
 	KindHuntFailed   Kind = "cchunt.failed"
+	// KindAffiliation fires when a radio unit affiliates with a
+	// talkgroup. P25 control-channel publishes one per Group
+	// Affiliation Response TSBK (opcode 0x28); the payload identifies
+	// the source unit, the group it's joining, and the response code
+	// (accepted / denied / refused / failed) from the system. Useful
+	// downstream as a "who is listening where" feed for telemetry
+	// dashboards.
+	//
+	// KindUnitRegistration fires when a radio registers (or
+	// deregisters) on a site. P25 control-channel publishes one per
+	// Unit Registration Response TSBK (opcode 0x2C); the payload
+	// identifies the source unit, the WACN + System ID it's
+	// registering on, and the response code. Useful as a "which
+	// radios are on which site" feed.
+	KindAffiliation      Kind = "affiliation"
+	KindUnitRegistration Kind = "registration"
 	// KindAudioState fires when an operator changes the live-audio
 	// cockpit — volume, mute, or recording-gate. The payload is the
 	// new state (the same shape as GET /api/v1/audio). Subscribers
