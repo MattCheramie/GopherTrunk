@@ -1,4 +1,8 @@
 groups:
+  - label: About
+    items:
+      - title: The Story of GopherTrunk
+        url: /story.html
   - label: Install
     items:
       - title: Downloads
