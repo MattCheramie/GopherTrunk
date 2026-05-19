@@ -152,23 +152,24 @@ func warmupUSBSysctlExchange(simulateErr error) usb.CtrlExchange {
 
 // Regression for issue #248: the warmup probe in openDevice must run
 // exactly once on a healthy device and must not trigger a USB reset.
-// Termination is forced via an unrelated ErrTimeout on the first
-// InitBaseband write so the script stays minimal.
+// Termination is forced via ErrClosed on the first InitBaseband write
+// so the script stays minimal — ErrClosed is explicitly non-resetable
+// (see isBringupResetable) and unwinds the bring-up immediately.
 func TestOpenDevice_WarmupSucceedsFirstTry(t *testing.T) {
 	m := usb.NewMockTransport()
 	m.Script = []usb.CtrlExchange{
 		warmupUSBSysctlExchange(nil),
 		// Make InitBaseband's first write (also USBSysctl=0x09 — the
-		// same wire bytes as the warmup) fail with a non-EPIPE error
-		// so openDevice unwinds cleanly without forcing us to script
-		// the full init flood + tuner detect.
+		// same wire bytes as the warmup) fail with a non-resetable
+		// error so openDevice unwinds cleanly without forcing us to
+		// script the full init flood + tuner detect.
 		{
 			In:       false,
 			BRequest: 0,
 			WValue:   0x2000,
 			WIndex:   uint16(1)<<8 | 0x10,
 			Data:     []byte{0x09},
-			Err:      usb.ErrTimeout,
+			Err:      usb.ErrClosed,
 		},
 	}
 	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-ok"}
@@ -351,9 +352,9 @@ func TestTunerBringupHint(t *testing.T) {
 			empty: true,
 		},
 		{
-			name:  "ETIMEDOUT_not_hinted",
-			err:   fmt.Errorf("wrap: %w", usb.ErrTimeout),
-			empty: true,
+			name:    "ErrTimeout_through_wrap",
+			err:     fmt.Errorf("wrap: %w", usb.ErrTimeout),
+			wantSub: []string{"Zadig", "install-linux.html#troubleshooting"},
 		},
 	}
 	for _, c := range cases {
@@ -371,5 +372,93 @@ func TestTunerBringupHint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Regression: on Windows the cold-boot warmup probe surfaces as
+// usb.ErrTimeout (ERROR_SEM_TIMEOUT from WinUsb_ControlTransfer) rather
+// than EPIPE. openDevice must treat that as resetable and run the same
+// reset + re-claim + retry envelope it uses for EPIPE — otherwise
+// `gophertrunk sdr list --probe` fails on cold-plugged dongles with
+// "rtlsdr: USB warmup: ... usb: transfer timed out".
+func TestOpenDevice_WarmupTimeoutTriggersResetAndRetry(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(usb.ErrTimeout),
+		warmupUSBSysctlExchange(nil),
+		// Terminate the bring-up with a non-resetable error on
+		// InitBaseband's first write so the script stays minimal.
+		{
+			In:       false,
+			BRequest: 0,
+			WValue:   0x2000,
+			WIndex:   uint16(1)<<8 | 0x10,
+			Data:     []byte{0x09},
+			Err:      usb.ErrClosed,
+		},
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-timeout-retry"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected init-baseband terminator to fail the test")
+	}
+	if !strings.Contains(err.Error(), "init baseband") {
+		t.Errorf("err = %v, want substring \"init baseband\" (proves warmup retry succeeded and InitBaseband ran)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (ErrTimeout on warmup must trigger one USBDEVFS_RESET)", m.ResetCalls)
+	}
+	if m.ClaimCalls != 2 {
+		t.Errorf("ClaimCalls = %d, want 2 (initial claim + post-reset re-claim)", m.ClaimCalls)
+	}
+}
+
+// Regression: when ErrTimeout recurs on the warmup retry pass, the
+// surfaced error must carry the Windows-aware hint that points at the
+// WinUSB / Zadig step. Only one USBDEVFS_RESET per Open call.
+func TestOpenDevice_WarmupTimeoutTwiceReturnsHintError(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(usb.ErrTimeout),
+		warmupUSBSysctlExchange(usb.ErrTimeout),
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-timeout-fail"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected ErrTimeout-twice to fail open")
+	}
+	if !errors.Is(err, usb.ErrTimeout) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrTimeout) (the underlying cause must remain inspectable)", err)
+	}
+	if !strings.Contains(err.Error(), "USB warmup") {
+		t.Errorf("err = %v, want substring \"USB warmup\" (identifies the failing stage)", err)
+	}
+	if !strings.Contains(err.Error(), "Zadig") {
+		t.Errorf("err = %v, want substring \"Zadig\" (proves the Windows-aware tunerBringupHint was appended)", err)
+	}
+	if m.ResetCalls != 1 {
+		t.Errorf("ResetCalls = %d, want 1 (one reset attempt between the two warmup tries)", m.ResetCalls)
+	}
+}
+
+// Regression: a non-resetable error class (here usb.ErrClosed) on the
+// warmup probe must surface immediately without any USB reset — reset
+// is the wrong hammer for "transport already closed" and would obscure
+// the real cause.
+func TestOpenDevice_WarmupNonResetableErrorDoesNotReset(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(usb.ErrClosed),
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-warmup-closed"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected ErrClosed to fail open")
+	}
+	if !errors.Is(err, usb.ErrClosed) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrClosed)", err)
+	}
+	if m.ResetCalls != 0 {
+		t.Errorf("ResetCalls = %d, want 0 (non-resetable error must not trigger reset)", m.ResetCalls)
 	}
 }

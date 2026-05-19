@@ -245,23 +245,39 @@ func runBringup(demod *rtl2832u.Demod) (tuners.Tuner, error) {
 	return tuner, nil
 }
 
-// isBringupResetable reports whether err is an EPIPE/ErrDeviceGone in
-// any wrap layer — the two error classes USBDEVFS_RESET is the right
-// hammer for. Other errors (timeout, ErrClosed, validation failures)
-// should NOT trigger reset: reset is ~200ms of latency and obscures
-// the real cause when applied to the wrong class.
+// isBringupResetable reports whether err is one of the three error
+// classes a USB port reset is the right hammer for during open-time
+// bring-up: EPIPE (Linux/USBDEVFS cold-boot stall, the librtlsdr "dummy
+// write probe" case), ErrDeviceGone (the chip dropped off the bus
+// mid-bringup), or ErrTimeout (Windows/WinUSB cold-boot — same root
+// cause as the Linux EPIPE, but WinUsb_ControlTransfer surfaces it as
+// ERROR_SEM_TIMEOUT instead of stalling the pipe). The retry is bounded
+// to one reset per Open so even if a reset is wasted on a non-cold-boot
+// timeout the cost is capped at ~200ms before the original error
+// surfaces. Other errors (ErrClosed, validation failures) stay
+// non-resetable.
 func isBringupResetable(err error) bool {
-	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrDeviceGone)
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, usb.ErrDeviceGone) ||
+		errors.Is(err, usb.ErrTimeout)
 }
 
 // tunerBringupHint returns a parenthesized, space-prefixed remediation
-// string when err looks like the tuner-not-acking-on-I2C case
-// (issue #248): EPIPE from the first I2C burst, or the device
-// disappearing mid-bringup. The hint covers the three known root
-// causes — DVB kernel driver still bound, marginal USB power, or a
-// half-initialized tuner state — and links to the docs troubleshooting
-// table. Returns "" for unrelated errors so the wrapped message stays
-// clean.
+// string when err looks like one of the two known unrecoverable cold-
+// boot classes (issue #248):
+//
+//   - EPIPE / ErrDeviceGone — the Linux/USBDEVFS cold-boot stall: the
+//     tuner did not ACK on the I²C bridge. Common causes: DVB kernel
+//     driver still bound, marginal USB power, or a flaky cable/hub.
+//
+//   - ErrTimeout — the Windows/WinUSB cold-boot equivalent: the device
+//     accepted the control transfer but never responded within the
+//     CTRL_TIMEOUT window. Common causes: WinUSB driver not bound (the
+//     Zadig step was skipped or installed against the wrong device),
+//     marginal USB power, or a flaky cable/hub.
+//
+// Both branches link to the docs troubleshooting table. Returns "" for
+// unrelated errors so the wrapped message stays clean.
 func tunerBringupHint(err error) string {
 	if err == nil {
 		return ""
@@ -270,6 +286,12 @@ func tunerBringupHint(err error) string {
 		return " (hint: tuner did not respond on the I2C bus — common causes:" +
 			" DVB kernel driver still bound (run `sudo modprobe -r dvb_usb_rtl28xxu` and re-plug)," +
 			" marginal USB power, or a flaky cable/hub." +
+			" See https://mattcheramie.github.io/GopherTrunk/install-linux.html#troubleshooting)"
+	}
+	if errors.Is(err, usb.ErrTimeout) {
+		return " (hint: USB control transfer timed out — common causes:" +
+			" on Windows, the WinUSB driver is not bound to the device (re-run Zadig and select the RTL-SDR);" +
+			" on any OS, marginal USB power, a flaky cable/hub, or another process already holding the device." +
 			" See https://mattcheramie.github.io/GopherTrunk/install-linux.html#troubleshooting)"
 	}
 	return ""
