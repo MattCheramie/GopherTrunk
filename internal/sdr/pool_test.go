@@ -21,11 +21,19 @@ type fakeDevice struct {
 	closed      bool
 	biasTeeOn   bool
 	biasTeeSets int
+	sampleRate  uint32
+	rateErr     error
 }
 
-func (d *fakeDevice) Info() Info                                           { return d.info }
-func (d *fakeDevice) SetCenterFreq(uint32) error                           { return nil }
-func (d *fakeDevice) SetSampleRate(uint32) error                           { return nil }
+func (d *fakeDevice) Info() Info                 { return d.info }
+func (d *fakeDevice) SetCenterFreq(uint32) error { return nil }
+func (d *fakeDevice) SetSampleRate(hz uint32) error {
+	if d.rateErr != nil {
+		return d.rateErr
+	}
+	d.sampleRate = hz
+	return nil
+}
 func (d *fakeDevice) SetGain(int) error                                    { return nil }
 func (d *fakeDevice) SetPPM(int) error                                     { return nil }
 func (d *fakeDevice) SetBiasTee(on bool) error                             { d.biasTeeOn = on; d.biasTeeSets++; return nil }
@@ -54,7 +62,7 @@ func TestPoolAssignsRoles(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open([]Hint{{Serial: "BBB", Role: RoleControl}}); err != nil {
+	if err := p.Open(0, []Hint{{Serial: "BBB", Role: RoleControl}}); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
@@ -79,6 +87,69 @@ func TestPoolAssignsRoles(t *testing.T) {
 	}
 }
 
+// TestPoolProgramsSampleRate guards against the bug behind issue #275:
+// without a SetSampleRate call at pool-open time the chip streams at
+// whatever rate its resampler powered up at, the decoder pipeline runs
+// its symbol-timing math against the configured rate, and the result
+// is a silent failure to lock.
+func TestPoolProgramsSampleRate(t *testing.T) {
+	drv := &fakeDriver{name: "fake-rate", infos: []Info{
+		{Driver: "fake-rate", Index: 0, Serial: "R1"},
+		{Driver: "fake-rate", Index: 1, Serial: "R2"},
+	}}
+	registryMu.Lock()
+	registry["fake-rate"] = drv
+	registryMu.Unlock()
+	t.Cleanup(func() {
+		registryMu.Lock()
+		delete(registry, "fake-rate")
+		registryMu.Unlock()
+	})
+
+	p := NewPool(nil)
+	if err := p.Open(2_400_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	for _, e := range p.Entries() {
+		fd, ok := e.Device.(*fakeDevice)
+		if !ok {
+			t.Fatalf("device %s not *fakeDevice", e.Info.Serial)
+		}
+		if fd.sampleRate != 2_400_000 {
+			t.Errorf("%s sample rate = %d, want 2400000", e.Info.Serial, fd.sampleRate)
+		}
+	}
+}
+
+// TestPoolDefaultsZeroSampleRate verifies the librtlsdr-parity fallback
+// when the daemon hasn't been configured with an sdr.sample_rate.
+func TestPoolDefaultsZeroSampleRate(t *testing.T) {
+	drv := &fakeDriver{name: "fake-default-rate", infos: []Info{
+		{Driver: "fake-default-rate", Index: 0, Serial: "D1"},
+	}}
+	registryMu.Lock()
+	registry["fake-default-rate"] = drv
+	registryMu.Unlock()
+	t.Cleanup(func() {
+		registryMu.Lock()
+		delete(registry, "fake-default-rate")
+		registryMu.Unlock()
+	})
+
+	p := NewPool(nil)
+	if err := p.Open(0, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	fd := p.Entries()[0].Device.(*fakeDevice)
+	if fd.sampleRate != DefaultSampleRateHz {
+		t.Errorf("sample rate = %d, want %d", fd.sampleRate, DefaultSampleRateHz)
+	}
+}
+
 func TestPoolFirstByRole(t *testing.T) {
 	drv := &fakeDriver{name: "fake-first", infos: []Info{
 		{Driver: "fake-first", Index: 0, Serial: "X"},
@@ -94,7 +165,7 @@ func TestPoolFirstByRole(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open(nil); err != nil {
+	if err := p.Open(0, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()

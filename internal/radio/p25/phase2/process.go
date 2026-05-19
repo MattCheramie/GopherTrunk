@@ -1,6 +1,8 @@
 package phase2
 
 import (
+	"time"
+
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
@@ -11,7 +13,17 @@ type processState struct {
 	remaining    int
 	macDibits    []uint8
 	matchScratch []int
+	// lastNoHitsAt throttles the "no sync hits" debug log so the
+	// chunk-rate emission doesn't flood at debug level. See Process.
+	lastNoHitsAt time.Time
 }
+
+// noHitsThrottle bounds how often Process emits its "no sync hits"
+// debug log when the sync detector is finding nothing. Issue #275
+// surfaced because that state produced zero logs at all — operators
+// couldn't tell whether the IQ pipeline was alive but unsynchronized
+// or wholly silent.
+const noHitsThrottle = 2 * time.Second
 
 // macPDUDibits is the count of dibits the adapter collects after
 // each 20-dibit outbound sync match when SetTrellisMode is
@@ -65,6 +77,18 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
 	matchIdx := 0
+
+	c.mu.Lock()
+	alreadyLocked := c.locked
+	c.mu.Unlock()
+	if len(p.matchScratch) == 0 && p.remaining == 0 && len(dibits) > 0 && !alreadyLocked {
+		now := c.now()
+		if now.Sub(p.lastNoHitsAt) >= noHitsThrottle {
+			c.log.Debug("p25/phase2: no sync hits in chunk",
+				"system", c.systemName, "freq_hz", c.freqHz, "dibits", len(dibits))
+			p.lastNoHitsAt = now
+		}
+	}
 
 	for i, d := range dibits {
 		absPos := baseIdx + i

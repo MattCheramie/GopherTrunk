@@ -39,6 +39,9 @@ type ControlChannel struct {
 	now        func() time.Time
 	locked     bool
 	lastNAC    uint16
+	// lastNoHitsAt throttles the "no FSW hits" debug log so the chunk-rate
+	// emission doesn't flood at debug level. See Process for the rationale.
+	lastNoHitsAt time.Time
 }
 
 // Options configure a ControlChannel.
@@ -99,10 +102,26 @@ type LockState struct {
 func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
 func (s LockState) LockedNAC() uint16         { return s.NAC }
 
+// noHitsThrottle bounds how often Process emits its "no FSW hits" debug
+// log when the sync detector is finding nothing in successive chunks.
+// Issue #275 surfaced because that state produced zero logs at all —
+// operators couldn't tell whether the IQ pipeline was alive but
+// unsynchronized or wholly silent. Throttling at 2 s keeps the signal
+// visible without flooding.
+const noHitsThrottle = 2 * time.Second
+
 // Process consumes a window of dibits and runs detection/parsing. baseIdx
 // is the absolute dibit index of dibits[0]. Returns the new baseIndex.
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	hits, next := c.det.Process(nil, dibits, baseIdx)
+	if len(hits) == 0 && len(dibits) > 0 && !c.locked {
+		now := c.now()
+		if now.Sub(c.lastNoHitsAt) >= noHitsThrottle {
+			c.log.Debug("p25/phase1: no FSW hits in chunk",
+				"system", c.systemName, "freq_hz", c.freqHz, "dibits", len(dibits))
+			c.lastNoHitsAt = now
+		}
+	}
 	for _, h := range hits {
 		// FSW ends at index h (relative to the absolute dibit stream). The
 		// 32-dibit NID immediately follows.
