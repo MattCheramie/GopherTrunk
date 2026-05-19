@@ -149,6 +149,36 @@ func TestRecordHooks(t *testing.T) {
 	}
 }
 
+func TestRecordIQPowerDbFS(t *testing.T) {
+	m, _ := New(nil, nil, "test")
+	defer m.Close()
+
+	m.RecordIQPowerDbFS("MMR", -27.5)
+	if got := testutil.ToFloat64(m.iqPowerDbFS.WithLabelValues("MMR")); got != -27.5 {
+		t.Errorf("iq power = %v, want -27.5", got)
+	}
+
+	// Updating overwrites — gauge semantics.
+	m.RecordIQPowerDbFS("MMR", -30.0)
+	if got := testutil.ToFloat64(m.iqPowerDbFS.WithLabelValues("MMR")); got != -30.0 {
+		t.Errorf("iq power after update = %v, want -30.0", got)
+	}
+
+	// Clear drops the series so a stale value doesn't outlive the
+	// decoder pipeline.
+	m.ClearIQPowerDbFS("MMR")
+	if testutil.CollectAndCount(m.iqPowerDbFS) != 0 {
+		t.Errorf("iq power series count after clear != 0")
+	}
+
+	// Empty system name falls back to "unknown" on record but is a
+	// no-op on clear (no series to drop).
+	m.RecordIQPowerDbFS("", -40.0)
+	if got := testutil.ToFloat64(m.iqPowerDbFS.WithLabelValues("unknown")); got != -40.0 {
+		t.Errorf("iq power unknown = %v, want -40.0", got)
+	}
+}
+
 func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
 	m, _ := New(nil, nil, "v1.2.3")
 	defer m.Close()

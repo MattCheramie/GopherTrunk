@@ -291,6 +291,23 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.addWarning("trunking.systems configured but sdr.devices is empty — daemon has nothing to demodulate; add at least one device")
 	}
 
+	// Metrics — constructed early so downstream components (notably
+	// the cc decoder's IQ-power gauge) can publish into it. Run +
+	// Close are still kicked off later from Daemon.Run / Daemon.Close
+	// so the subscription does no work until the daemon is actually
+	// running.
+	if cfg.Metrics.Enabled {
+		var pool metrics.Snapshotter
+		if d.pool != nil {
+			pool = d.pool
+		}
+		m, err := metrics.New(d.bus, pool, version)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: metrics: %w", err)
+		}
+		d.metrics = m
+	}
+
 	// Voice device list from the pool; empty when no SDRs.
 	d.voicePool = trunking.NewVoicePool(d.collectVoiceDevices())
 
@@ -461,6 +478,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				// stays in `state=hunting`. See README for the
 				// per-protocol Process(stream, baseIdx) adapter
 				// follow-ups.
+				// Avoid the typed-nil trap: a nil *metrics.Metrics
+				// wrapped in IQPowerObserver still tests as non-nil
+				// inside the decoder. Hand the interface only when
+				// the concrete pointer is alive.
+				var iqObs ccdecoder.IQPowerObserver
+				if d.metrics != nil {
+					iqObs = d.metrics
+				}
 				dec, err := ccdecoder.New(ccdecoder.Options{
 					Bus:          d.bus,
 					Log:          log,
@@ -468,6 +493,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					IQ:           controlEntry.Device,
 					Systems:      d.systems,
 					SampleRateHz: float64(cfg.SDR.SampleRate),
+					Metrics:      iqObs,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("daemon: ccdecoder: %w", err)
@@ -578,22 +604,6 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			d.retention = r
 		}
-	}
-
-	// Metrics — optional. Subscribes to the bus at construction time.
-	if cfg.Metrics.Enabled {
-		// Avoid the typed-nil interface trap: when d.pool is nil
-		// (no SDRs configured), pass a nil interface explicitly so
-		// the snapshot collector skips itself.
-		var pool metrics.Snapshotter
-		if d.pool != nil {
-			pool = d.pool
-		}
-		m, err := metrics.New(d.bus, pool, version)
-		if err != nil {
-			return nil, fmt.Errorf("daemon: metrics: %w", err)
-		}
-		d.metrics = m
 	}
 
 	// HTTP API — optional.

@@ -11,9 +11,19 @@ package purego
 // src/librtlsdr.c known_devices. We claim a USB device only if it
 // matches a row in this table — this keeps random USB devices the
 // kernel would let us open from being mistaken for SDR dongles.
+//
+// BiasTeeGPIO selects which RTL2832U GPIO pin drives the 5 V LNA
+// bias-tee output. Most modern dongles (RTL-SDR.com v3+, NESDR Smart
+// v5, generic 0x0bda:0x283x) wire bias-tee to GPIO 0 — that's the
+// zero-value default, so unset entries inherit the dominant pin and
+// nothing breaks. Boards with a different pinout get an explicit
+// override here; the operator can run with `bias_tee: true` and the
+// right pin toggles. Contributions for non-zero mappings welcome —
+// the docs/troubleshooting page tracks the known list.
 type knownDevice struct {
-	VID, PID uint16
-	Name     string // friendly product name for sdr.Info.Product
+	VID, PID    uint16
+	Name        string // friendly product name for sdr.Info.Product
+	BiasTeeGPIO uint8  // RTL2832U GPIO pin for the 5 V bias-tee output
 }
 
 // knownDevices mirrors librtlsdr's known_devices verbatim; ordering

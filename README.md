@@ -388,6 +388,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **RTL-SDR diagnostics for silent-failure cases (issue #275).** The
+  pool now programs the configured IQ sample rate on every device at
+  open time — closes the librtlsdr-parity gap that left the chip's
+  resampler at an undefined power-on state and silently fed garbage
+  symbols into the decoder. The pure-Go driver also programs a
+  2.048 MS/s safety default during `runBringup` so any consumer that
+  forgets to set the rate still gets coherent IQ. A new
+  `gophertrunk_sdr_iq_power_dbfs{system}` Prometheus gauge (window
+  ≈ 1 s, idle ≈ -45 dBFS, healthy signal ≈ -25 dBFS) makes the silent
+  side of "cc-hunt: trying repeats forever" observable; the cc decoder
+  also emits a throttled debug log when the level drops below -55 dBFS
+  ("check antenna, gain, USB"). The P25 phase 1 + phase 2 control
+  channels throttle-log "no FSW/sync hits in chunk" instead of staying
+  silent when sync detection produces nothing. Bias-tee GPIO is now a
+  per-(VID, PID) override in `internal/sdr/rtlsdr/purego/devices.go`
+  — current rows inherit the historical GPIO 0 default, but boards
+  with a different pinout can be added without forking the device
+  driver.
 - **Web operator console reaches feature parity with the TUI.**
   Every TUI panel now has a browser counterpart in [`web/`](web/)
   (Vite + React + TypeScript + Tailwind), shipped as the

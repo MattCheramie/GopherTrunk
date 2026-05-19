@@ -13,12 +13,11 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
-// biasTeeGPIO is the GPIO pin that drives the 5 V LNA-power output on
-// the dominant RTL-SDR designs (RTL-SDR.com v3+, NESDR Smart v5).
-// Other clones map bias-tee to different pins; future work can table
-// this per (VID, PID) — see the per-product mapping comment in
-// rtl2832u.SetBiasTee.
-const biasTeeGPIO uint8 = 0
+// defaultBiasTeeGPIO is the GPIO pin that drives the 5 V LNA-power
+// output on the dominant RTL-SDR designs (RTL-SDR.com v3+, NESDR Smart
+// v5, generic 0x0bda:0x283x). Per-(VID, PID) overrides live in the
+// knownDevices table — see devices.go.
+const defaultBiasTeeGPIO uint8 = 0
 
 // ErrClosed is returned by [Device] methods invoked after [Device.Close].
 var ErrClosed = errors.New("rtlsdr: device closed")
@@ -34,6 +33,11 @@ type Device struct {
 	demod     *rtl2832u.Demod
 	tuner     tuners.Tuner
 	info      sdr.Info
+	// biasTeeGPIO is the per-device override for the 5 V bias-tee
+	// pin, populated from the knownDevices table at open time. Zero
+	// means "the dominant GPIO 0 design"; non-zero is a deliberate
+	// override for boards with a different pinout.
+	biasTeeGPIO uint8
 
 	streamMu sync.Mutex
 	out      chan []complex64
@@ -117,15 +121,14 @@ func (d *Device) SetPPM(ppm int) error {
 }
 
 // SetBiasTee toggles the dongle's 5 V LNA-power output. The GPIO pin
-// is hard-coded to 0 — the standard for RTL-SDR.com v3+ and NESDR
-// Smart v5 dongles. Boards that wire bias-tee to a different pin
-// will silently no-op; per-product pin mapping is a future
-// enhancement (see the comment in rtl2832u.SetBiasTee).
+// comes from the per-(VID, PID) bias-tee table in devices.go; boards
+// that aren't in the table inherit GPIO 0 (the standard for
+// RTL-SDR.com v3+ and NESDR Smart v5).
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.closed.Load() {
 		return ErrClosed
 	}
-	if err := d.demod.SetBiasTee(biasTeeGPIO, enable); err != nil {
+	if err := d.demod.SetBiasTee(d.biasTeeGPIO, enable); err != nil {
 		return fmt.Errorf("rtlsdr: SetBiasTee(%v): %w", enable, err)
 	}
 	return nil

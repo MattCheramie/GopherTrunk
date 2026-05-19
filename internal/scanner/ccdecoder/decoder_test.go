@@ -894,3 +894,91 @@ func TestMPT1327FactoryAppliesBCHFromSystem(t *testing.T) {
 		t.Errorf("BCHMode = %v, want BCHOn", got)
 	}
 }
+
+// recordingPower captures every IQ-power gauge update + clear so
+// tests can assert the decoder's pump-side observation pipeline
+// without depending on the real Prometheus collector.
+type recordingPower struct {
+	sets    []powerSample
+	cleared []string
+}
+
+type powerSample struct {
+	system string
+	dbfs   float64
+}
+
+func (r *recordingPower) RecordIQPowerDbFS(system string, dbfs float64) {
+	r.sets = append(r.sets, powerSample{system, dbfs})
+}
+func (r *recordingPower) ClearIQPowerDbFS(system string) {
+	r.cleared = append(r.cleared, system)
+}
+
+// TestPumpRecordsIQPowerOnceWindowElapses feeds a known signal level
+// through Process and checks the Metrics observer sees the expected
+// dBFS once iqPowerWindow worth of samples have been folded in.
+func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Pretend the swap has happened so the gauge has a system label.
+	d.activeAt = "TestSys"
+
+	// 0.1 amplitude → |c|^2 = 0.02 mean → -16.99 dBFS, but we're
+	// computing -16.99 dBFS = 10*log10(0.02). Use a chunk of 0.5
+	// amplitude → |c|^2 = 0.5 → -3 dBFS for a value that survives
+	// rounding clearly.
+	chunk := make([]complex64, 128)
+	for i := range chunk {
+		chunk[i] = complex(0.5, 0.5)
+	}
+
+	// First pump primes pwWindowAt — no record yet.
+	d.pump(chunk)
+	if len(pwr.sets) != 0 {
+		t.Fatalf("first pump should not record, got %v", pwr.sets)
+	}
+
+	// Force the window timer past iqPowerWindow.
+	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
+	d.pump(chunk)
+
+	if len(pwr.sets) != 1 {
+		t.Fatalf("after window, sets = %d, want 1", len(pwr.sets))
+	}
+	got := pwr.sets[0]
+	if got.system != "TestSys" {
+		t.Errorf("system = %q, want TestSys", got.system)
+	}
+	// |0.5+0.5i|^2 = 0.5 → 10*log10(0.5) = -3.01 dBFS
+	if got.dbfs < -3.5 || got.dbfs > -2.5 {
+		t.Errorf("dbfs = %v, want roughly -3", got.dbfs)
+	}
+}
+
+// TestClearActiveClearsIQPowerSeries: when the decoder swaps pipelines
+// it must drop the gauge series for the system the previous pipeline
+// owned, so stale dBFS doesn't outlive the active system.
+func TestClearActiveClearsIQPowerSeries(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.activeAt = "TestSys"
+	d.clearActive()
+	if len(pwr.cleared) != 1 || pwr.cleared[0] != "TestSys" {
+		t.Errorf("cleared = %v, want [TestSys]", pwr.cleared)
+	}
+}

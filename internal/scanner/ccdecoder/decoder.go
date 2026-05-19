@@ -39,11 +39,32 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// IQPowerObserver is the minimal Metrics surface the decoder uses to
+// publish its window-averaged dBFS gauge. internal/metrics.Metrics
+// satisfies this; nil disables the gauge entirely.
+type IQPowerObserver interface {
+	RecordIQPowerDbFS(system string, dbfs float64)
+	ClearIQPowerDbFS(system string)
+}
+
+// iqPowerWindow is how long the pump aggregates samples before
+// recomputing the mean dBFS and updating the gauge / debug log.
+const iqPowerWindow = time.Second
+
+// iqLowPowerThresholdDbFS is the level below which pump emits a
+// throttled debug log warning that the IQ stream looks dead — gain
+// at 0, antenna disconnected, or USB stuck. -55 dBFS sits well below
+// the idle-noise floor for an R820T2 at moderate gain (~-45 dBFS)
+// so legitimate weak signal doesn't trip it.
+const iqLowPowerThresholdDbFS = -55.0
 
 // Tuner is the subset of sdr.Device the decoder uses for retuning.
 // Matches the same interface cchunt + conventional consume so the
@@ -70,6 +91,11 @@ type Options struct {
 	// protocol receiver factories so they can size their matched
 	// filters correctly.
 	SampleRateHz float64
+	// Metrics is the optional IQ-power observer the pump updates
+	// once per iqPowerWindow. Nil disables the gauge but leaves the
+	// low-power debug log in place — operators without Prometheus
+	// still get a hint when the dongle goes silent.
+	Metrics IQPowerObserver
 }
 
 // Decoder is the long-lived component that converts the control
@@ -93,6 +119,16 @@ type Decoder struct {
 	mu       sync.Mutex
 	active   ProtocolPipeline
 	activeAt string // system name the active pipeline is bound to
+
+	// IQ-power tracking — see pump for the math. Owned by Run's
+	// goroutine via pump; not protected by mu because no other
+	// goroutine reads it.
+	metrics      IQPowerObserver
+	pwSumSq      float64
+	pwSamples    int
+	pwWindowAt   time.Time
+	pwLowLogAt   time.Time
+	pwLastSystem string
 }
 
 // New constructs a Decoder. Returns an error when required Options
@@ -118,6 +154,7 @@ func New(opts Options) (*Decoder, error) {
 		sampleRateHz: opts.SampleRateHz,
 		systems:      make(map[string]trunking.System, len(opts.Systems)),
 		sub:          opts.Bus.Subscribe(),
+		metrics:      opts.Metrics,
 	}
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
@@ -188,9 +225,7 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	// Close the previous pipeline before constructing a new one so
 	// resources don't accumulate on rapid retune storms.
 	if d.active != nil {
-		_ = d.active.Close()
-		d.active = nil
-		d.activeAt = ""
+		d.clearActiveLocked()
 	}
 	d.mu.Unlock()
 
@@ -217,24 +252,91 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 func (d *Decoder) clearActive() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.clearActiveLocked()
+}
+
+// clearActiveLocked closes and forgets the active pipeline. Caller
+// holds d.mu. Also drops the IQ-power gauge series for the previously
+// active system so stale dBFS doesn't linger.
+func (d *Decoder) clearActiveLocked() {
 	if d.active != nil {
 		_ = d.active.Close()
 		d.active = nil
-		d.activeAt = ""
 	}
+	if d.activeAt != "" && d.metrics != nil {
+		d.metrics.ClearIQPowerDbFS(d.activeAt)
+	}
+	d.activeAt = ""
+	d.pwSumSq = 0
+	d.pwSamples = 0
+	d.pwLastSystem = ""
 }
 
 // pump forwards an IQ chunk to the active pipeline. Holding the lock
 // for the whole Process call serialises against handleProgress's
 // pipeline swap so we never call Process on a half-constructed
 // pipeline.
+//
+// While we have the lock, also fold the chunk into the IQ-power
+// window. The window aggregates |IQ|^2 across chunks; once a second
+// of samples has been seen, the mean is converted to dBFS and pushed
+// to the Metrics observer + a throttled debug log fires if the level
+// looks dead. See iqLowPowerThresholdDbFS.
 func (d *Decoder) pump(iq []complex64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.observeIQPowerLocked(iq)
 	if d.active == nil {
 		return
 	}
 	d.active.Process(iq)
+}
+
+func (d *Decoder) observeIQPowerLocked(iq []complex64) {
+	if len(iq) == 0 || d.sampleRateHz <= 0 {
+		return
+	}
+	// Reset window state if the system the gauge is labelled with
+	// just changed — different system means different gauge label;
+	// don't fold old samples into the new one's average.
+	if d.activeAt != d.pwLastSystem {
+		d.pwSumSq = 0
+		d.pwSamples = 0
+		d.pwLastSystem = d.activeAt
+	}
+	for _, c := range iq {
+		r := float64(real(c))
+		i := float64(imag(c))
+		d.pwSumSq += r*r + i*i
+	}
+	d.pwSamples += len(iq)
+
+	now := time.Now()
+	if d.pwWindowAt.IsZero() {
+		d.pwWindowAt = now
+		return
+	}
+	if now.Sub(d.pwWindowAt) < iqPowerWindow {
+		return
+	}
+	mean := d.pwSumSq / float64(d.pwSamples)
+	// 10*log10(0) is -Inf; clamp with a small epsilon so the gauge
+	// reads as "very low" instead of breaking JSON encoders.
+	if mean < 1e-12 {
+		mean = 1e-12
+	}
+	dbfs := 10 * math.Log10(mean)
+	if d.activeAt != "" && d.metrics != nil {
+		d.metrics.RecordIQPowerDbFS(d.activeAt, dbfs)
+	}
+	if dbfs < iqLowPowerThresholdDbFS && now.Sub(d.pwLowLogAt) >= 5*time.Second {
+		d.log.Debug("ccdecoder: iq power very low — check antenna, gain, USB",
+			"system", d.activeAt, "dbfs", dbfs)
+		d.pwLowLogAt = now
+	}
+	d.pwSumSq = 0
+	d.pwSamples = 0
+	d.pwWindowAt = now
 }
 
 // Close releases the active pipeline. Safe to call from outside Run;
@@ -245,9 +347,9 @@ func (d *Decoder) Close() error {
 	defer d.mu.Unlock()
 	if d.active != nil {
 		err := d.active.Close()
-		d.active = nil
-		d.activeAt = ""
+		d.clearActiveLocked()
 		return err
 	}
+	d.clearActiveLocked()
 	return nil
 }

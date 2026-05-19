@@ -1094,6 +1094,7 @@ Prometheus exposition (when `metrics.enabled: true`):
 | `gophertrunk_sdr_ppm{driver,serial,role}` | gauge | Configured PPM correction |
 | `gophertrunk_sdr_bias_tee{driver,serial,role}` | gauge | 1 when bias-tee is enabled |
 | `gophertrunk_sdr_iq_underruns_total{driver,serial}` | counter | IQ pipeline drops |
+| `gophertrunk_sdr_iq_power_dbfs{system}` | gauge | Mean control-SDR IQ power, ≈ 1 s window (idle ≈ -45, healthy ≈ -25, clip > -3) |
 | `gophertrunk_sdr_usb_reconnects_total{driver,serial}` | counter | USB re-opens |
 | `gophertrunk_decode_errors_total{protocol,stage}` | counter | Decode failures |
 | `gophertrunk_build_info{version}` | gauge | Always 1; build version label |

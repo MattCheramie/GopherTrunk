@@ -45,6 +45,7 @@ type Metrics struct {
 	ccFrequencyHz *prometheus.GaugeVec   // by system; deleted on CC loss
 	ccTransitions *prometheus.CounterVec // by system,event (locked|lost)
 	iqUnderruns   *prometheus.CounterVec
+	iqPowerDbFS   *prometheus.GaugeVec // by system; mean IQ power on the control SDR
 	usbReconnects *prometheus.CounterVec
 	decodeErrors  *prometheus.CounterVec
 	sdrAttached   *prometheus.GaugeVec
@@ -118,6 +119,20 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Help:      "Times the IQ stream pipeline dropped samples because a downstream stage was too slow.",
 	}, []string{"driver", "serial"})
 
+	// Mean IQ power on the control SDR, expressed in dBFS (0 dBFS = ±1.0
+	// full-scale per the convertU8IQ normalization). Surfaces silent
+	// failure modes that issue #275 was the first instance of: cc-hunt
+	// retunes forever with no decoder progress because the dongle is
+	// either delivering near-zero samples (no antenna, gain at 0, USB
+	// stuck) or clipping. -45 dBFS is typical idle noise; -25 dBFS is
+	// healthy signal; > -3 dBFS indicates clipping.
+	m.iqPowerDbFS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "sdr",
+		Name:      "iq_power_dbfs",
+		Help:      "Mean IQ power on the control SDR in dBFS (window ~= 1 s). Idle ≈ -45; healthy signal ≈ -25; > -3 indicates clipping.",
+	}, []string{"system"})
+
 	m.usbReconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "sdr",
@@ -158,6 +173,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.ccFrequencyHz,
 		m.ccTransitions,
 		m.iqUnderruns,
+		m.iqPowerDbFS,
 		m.usbReconnects,
 		m.decodeErrors,
 		m.sdrAttached,
@@ -281,6 +297,25 @@ func (m *Metrics) observeEvent(ev events.Event) {
 // RecordIQUnderrun increments the underrun counter for the supplied SDR.
 func (m *Metrics) RecordIQUnderrun(driver, serial string) {
 	m.iqUnderruns.WithLabelValues(driver, serial).Inc()
+}
+
+// RecordIQPowerDbFS sets the mean-IQ-power gauge for system. Caller
+// computes the window mean; the metrics package just stores it.
+func (m *Metrics) RecordIQPowerDbFS(system string, dbfs float64) {
+	if system == "" {
+		system = "unknown"
+	}
+	m.iqPowerDbFS.WithLabelValues(system).Set(dbfs)
+}
+
+// ClearIQPowerDbFS drops the gauge series for system. Called when a
+// decoder pipeline tears down so stale dBFS values don't linger after
+// the SDR is no longer being driven for that system.
+func (m *Metrics) ClearIQPowerDbFS(system string) {
+	if system == "" {
+		return
+	}
+	m.iqPowerDbFS.DeleteLabelValues(system)
 }
 
 // RecordUSBReconnect increments the reconnect counter for the supplied SDR.

@@ -189,8 +189,14 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 
 	kd := lookupKnown(desc.VID, desc.PID)
 	product := desc.Product
-	if product == "" && kd != nil {
-		product = kd.Name
+	biasTeeGPIO := defaultBiasTeeGPIO
+	if kd != nil {
+		if product == "" {
+			product = kd.Name
+		}
+		if kd.BiasTeeGPIO != 0 {
+			biasTeeGPIO = kd.BiasTeeGPIO
+		}
 	}
 	info := sdr.Info{
 		Driver:       DriverName,
@@ -202,10 +208,11 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		Gains:        tuner.Gains(),
 	}
 	return &Device{
-		transport: transport,
-		demod:     demod,
-		tuner:     tuner,
-		info:      info,
+		transport:   transport,
+		demod:       demod,
+		tuner:       tuner,
+		info:        info,
+		biasTeeGPIO: biasTeeGPIO,
 	}, nil
 }
 

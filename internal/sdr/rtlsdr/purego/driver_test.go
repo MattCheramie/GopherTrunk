@@ -135,6 +135,29 @@ func TestKnownDevicesNoDuplicates(t *testing.T) {
 	}
 }
 
+// TestKnownDevicesBiasTeeGPIODefault asserts the zero-value fallback
+// the per-(VID, PID) bias-tee table relies on. The dominant RTL-SDR
+// designs wire bias-tee to GPIO 0, so every entry in the table that
+// doesn't override it must surface as GPIO 0 to keep the historical
+// behaviour. New non-zero entries are deliberate overrides and not
+// covered here.
+func TestKnownDevicesBiasTeeGPIODefault(t *testing.T) {
+	for _, k := range knownDevices {
+		if k.BiasTeeGPIO > 7 {
+			t.Errorf("%s: BiasTeeGPIO = %d, must be 0..7", k.Name, k.BiasTeeGPIO)
+		}
+	}
+	// The standard Realtek reference VID/PID — operators rely on the
+	// historical GPIO 0 mapping.
+	k := lookupKnown(0x0bda, 0x2832)
+	if k == nil {
+		t.Fatalf("generic 0x0bda:0x2832 missing from knownDevices")
+	}
+	if k.BiasTeeGPIO != 0 {
+		t.Errorf("generic RTL2832U bias-tee GPIO = %d, want 0 (regression)", k.BiasTeeGPIO)
+	}
+}
+
 // warmupUSBSysctlExchange returns the single mock CtrlExchange that
 // matches the wire bytes WarmupUSBSysctl emits — a vendor-OUT write to
 // BlockUSB / USBSysctl with payload 0x09. Err overrides the mock's
