@@ -2,31 +2,65 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-// parseCSVFile loads a multi-section CSV bundle from disk and turns it
-// into a parsedSystem. See docs/import.md for the format. Sections
-// supported: metadata, sites, talkgroups. Order doesn't matter; any
-// section may be omitted (but metadata.name is required and at least
-// one of sites/talkgroups must be present).
-func parseCSVFile(path string) (parsedSystem, error) {
-	f, err := os.Open(path)
+// csvImportOpts carries operator-supplied metadata for CSV imports.
+// The fields are only consulted by the native-RadioReference-CSV path
+// (which has no metadata section); the multi-section bundle format
+// ignores them and continues to require metadata.name in the file.
+type csvImportOpts struct {
+	Name  string
+	SysID string
+}
+
+// parseCSVFile loads a CSV from disk and turns it into a parsedSystem.
+// Two formats are supported and detected by content sniffing:
+//
+//   - **Multi-section bundle** — `# Section: …` markers delimit
+//     metadata / sites / talkgroups blocks. See docs/import.md.
+//   - **Native RadioReference CSV** — the flat talkgroup table that
+//     RadioReference's `/db/sid/<sid>/download` page serves. Carries
+//     no metadata; opts.Name and opts.SysID supply it (with the
+//     filename stem as a fallback for the name).
+func parseCSVFile(path string, opts csvImportOpts) (parsedSystem, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return parsedSystem{}, fmt.Errorf("import-pdf: open %s: %w", path, err)
 	}
-	defer f.Close()
-	sys, err := parseCSVStream(f)
+	var sys parsedSystem
+	if looksLikeRRNativeCSV(data) {
+		fillOpts := opts
+		if fillOpts.Name == "" {
+			fillOpts.Name = filenameStem(path)
+		}
+		sys, err = parseRRNativeCSVStream(bytes.NewReader(data), fillOpts)
+	} else {
+		sys, err = parseCSVStream(bytes.NewReader(data))
+	}
 	if err != nil {
 		return parsedSystem{}, fmt.Errorf("import-pdf: %s: %w", path, err)
 	}
 	sys.SourcePath = path
 	return sys, nil
+}
+
+// filenameStem returns the base filename with its extension stripped —
+// used as the default system name for native RR CSV imports when the
+// operator didn't pass -name.
+func filenameStem(path string) string {
+	base := filepath.Base(path)
+	if i := strings.LastIndexByte(base, '.'); i > 0 {
+		base = base[:i]
+	}
+	return base
 }
 
 // csvSection collects raw lines (as []string slices, already CSV-split)
@@ -373,6 +407,22 @@ func parseCSVFrequencies(s string) ([]parsedFreq, error) {
 	return out, nil
 }
 
+// talkgroupAliases is the canonical column-alias map shared by both the
+// bundle's `talkgroups` section and the native-RR-CSV parser. Keeping
+// it in one place means a single header change covers both formats.
+var talkgroupAliases = map[string][]string{
+	"decimal":     {"dec"},
+	"hex":         {"hexadecimal"},
+	"mode":        {"type"},
+	"alpha_tag":   {"alpha tag", "alphatag", "tag_short"},
+	"description": {"desc", "name"},
+	"tag":         {"category"},
+	"group":       {"group_name", "alpha_group"},
+	"priority":    {"prio", "pri"},
+	"lockout":     {"locked", "block"},
+	"scan":        {"active", "monitor"},
+}
+
 // parseTalkgroupsSection expects decimal + alpha_tag at minimum.
 // Aliases match Trunk Recorder's CSV column names exactly so users can
 // reuse files they already have.
@@ -381,18 +431,7 @@ func parseTalkgroupsSection(sec csvSection) ([]parsedTalkgroup, error) {
 		return nil, errors.New("talkgroups section is empty")
 	}
 	header := sec.rows[0]
-	col, _ := columnMap(header, map[string][]string{
-		"decimal":     {"dec"},
-		"hex":         {"hexadecimal"},
-		"mode":        {"type"},
-		"alpha_tag":   {"alpha tag", "alphatag", "tag_short"},
-		"description": {"desc", "name"},
-		"tag":         {"category"},
-		"group":       {"group_name", "alpha_group"},
-		"priority":    {"prio", "pri"},
-		"lockout":     {"locked", "block"},
-		"scan":        {"active", "monitor"},
-	})
+	col, _ := columnMap(header, talkgroupAliases)
 	if _, ok := col["decimal"]; !ok {
 		return nil, fmt.Errorf("talkgroups header missing required column `decimal` (or `dec`) (header: %s)", strings.Join(header, ","))
 	}
@@ -400,53 +439,176 @@ func parseTalkgroupsSection(sec csvSection) ([]parsedTalkgroup, error) {
 	var out []parsedTalkgroup
 	for i, row := range sec.rows[1:] {
 		lineNum := sec.startLn + i + 1
-		decStr := cell(row, col, "decimal")
-		if decStr == "" {
+		tg, ok, err := tgFromCSVRow(row, col, lineNum)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
 			continue
 		}
-		dec64, err := strconv.ParseUint(decStr, 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("talkgroups row %d: invalid decimal %q: %w", lineNum, decStr, err)
-		}
-		hex := strings.ToLower(strings.TrimSpace(cell(row, col, "hex")))
-		if hex == "" {
-			hex = fmt.Sprintf("%x", dec64)
-		}
-		mode := strings.ToUpper(cell(row, col, "mode"))
-		switch mode {
-		case "", "D", "A", "M":
-			// ok
-		case "DE":
-			mode = "D"
-		case "TE", "T":
-			mode = "D"
-		default:
-			return nil, fmt.Errorf("talkgroups row %d: invalid mode %q (use D, A, or M)", lineNum, mode)
-		}
-		if mode == "" {
-			mode = "D"
-		}
-		pri := 0
-		if p := cell(row, col, "priority"); p != "" {
-			pri, err = strconv.Atoi(p)
-			if err != nil {
-				return nil, fmt.Errorf("talkgroups row %d: invalid priority %q", lineNum, p)
-			}
-		}
-		out = append(out, parsedTalkgroup{
-			Dec:         uint32(dec64),
-			Hex:         hex,
-			Mode:        mode,
-			AlphaTag:    cell(row, col, "alpha_tag"),
-			Description: cell(row, col, "description"),
-			Tag:         cell(row, col, "tag"),
-			Group:       cell(row, col, "group"),
-			Priority:    pri,
-			Lockout:     parseBool(cell(row, col, "lockout"), false),
-			Scan:        parseBool(cell(row, col, "scan"), true),
-		})
+		out = append(out, tg)
 	}
 	return out, nil
+}
+
+// tgFromCSVRow turns one CSV row into a parsedTalkgroup using the
+// canonical column map. ok=false (with nil error) for rows that have
+// no decimal value — typically blank rows or footer comments left in
+// place by spreadsheet exports.
+func tgFromCSVRow(row []string, col map[string]int, lineNum int) (parsedTalkgroup, bool, error) {
+	decStr := cell(row, col, "decimal")
+	if decStr == "" {
+		return parsedTalkgroup{}, false, nil
+	}
+	dec64, err := strconv.ParseUint(decStr, 10, 32)
+	if err != nil {
+		return parsedTalkgroup{}, false, fmt.Errorf("talkgroups row %d: invalid decimal %q: %w", lineNum, decStr, err)
+	}
+	hex := strings.ToLower(strings.TrimSpace(cell(row, col, "hex")))
+	if hex == "" {
+		hex = fmt.Sprintf("%x", dec64)
+	}
+	mode := strings.ToUpper(cell(row, col, "mode"))
+	switch mode {
+	case "", "D", "A", "M":
+		// ok
+	case "DE":
+		mode = "D"
+	case "TE", "T":
+		mode = "D"
+	default:
+		return parsedTalkgroup{}, false, fmt.Errorf("talkgroups row %d: invalid mode %q (use D, A, or M)", lineNum, mode)
+	}
+	if mode == "" {
+		mode = "D"
+	}
+	pri := 0
+	if p := cell(row, col, "priority"); p != "" {
+		pri, err = strconv.Atoi(p)
+		if err != nil {
+			return parsedTalkgroup{}, false, fmt.Errorf("talkgroups row %d: invalid priority %q", lineNum, p)
+		}
+	}
+	return parsedTalkgroup{
+		Dec:         uint32(dec64),
+		Hex:         hex,
+		Mode:        mode,
+		AlphaTag:    cell(row, col, "alpha_tag"),
+		Description: cell(row, col, "description"),
+		Tag:         cell(row, col, "tag"),
+		Group:       cell(row, col, "group"),
+		Priority:    pri,
+		Lockout:     parseBool(cell(row, col, "lockout"), false),
+		Scan:        parseBool(cell(row, col, "scan"), true),
+	}, true, nil
+}
+
+// looksLikeRRNativeCSV returns true when the input looks like a
+// RadioReference-native talkgroup CSV: no `# Section: …` markers
+// anywhere AND a header row whose normalised column names include at
+// least three of the canonical talkgroup fields. The check stops after
+// scanning the first 8 KiB so it stays cheap on large files.
+func looksLikeRRNativeCSV(data []byte) bool {
+	head := data
+	const peek = 8 * 1024
+	if len(head) > peek {
+		head = head[:peek]
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(head))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var headerLine string
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		// Any section marker disqualifies the file: it's a bundle.
+		if _, ok := matchSectionMarker(trimmed); ok {
+			return false
+		}
+		// Other comments are skipped; the bundle format uses them
+		// freely and RR's native export never does, but a stray "#"
+		// at the top shouldn't trip the sniffer either way.
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if headerLine == "" {
+			headerLine = line
+		}
+	}
+	if headerLine == "" {
+		return false
+	}
+	fields, err := splitCSVLine(headerLine)
+	if err != nil || len(fields) < 5 {
+		return false
+	}
+	known := map[string]bool{
+		"dec": true, "decimal": true, "hex": true, "mode": true,
+		"alpha tag": true, "alpha_tag": true, "alphatag": true,
+		"description": true, "tag": true, "category": true, "group": true,
+	}
+	hits := 0
+	for _, f := range fields {
+		norm := strings.ToLower(strings.TrimSpace(f))
+		if known[norm] {
+			hits++
+		}
+	}
+	return hits >= 3
+}
+
+// parseRRNativeCSVStream parses RadioReference's flat talkgroup CSV
+// (the file served from `/db/sid/<sid>/download`). The format has no
+// metadata or sites — the operator supplies the system name and ID
+// out-of-band via opts. Empty Name yields an error: the caller is
+// expected to default to the filename stem before calling.
+func parseRRNativeCSVStream(r io.Reader, opts csvImportOpts) (parsedSystem, error) {
+	sys := parsedSystem{Protocol: "p25", Name: opts.Name, SysID: opts.SysID}
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var header []string
+	var col map[string]int
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		raw := scanner.Text()
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields, err := splitCSVLine(raw)
+		if err != nil {
+			return sys, fmt.Errorf("line %d: %w", lineNum, err)
+		}
+		if header == nil {
+			header = fields
+			col, _ = columnMap(header, talkgroupAliases)
+			if _, ok := col["decimal"]; !ok {
+				return sys, fmt.Errorf("native RR CSV header missing `decimal`/`dec` column (header: %s)", strings.Join(header, ","))
+			}
+			continue
+		}
+		tg, ok, err := tgFromCSVRow(fields, col, lineNum)
+		if err != nil {
+			return sys, err
+		}
+		if !ok {
+			continue
+		}
+		sys.Talkgroups = append(sys.Talkgroups, tg)
+	}
+	if err := scanner.Err(); err != nil {
+		return sys, fmt.Errorf("csv scan: %w", err)
+	}
+	if sys.Name == "" {
+		return sys, errors.New("native RR CSV: missing system name (pass -name or use a filename stem)")
+	}
+	if len(sys.Talkgroups) == 0 {
+		return sys, errors.New("native RR CSV: no talkgroups found")
+	}
+	return sys, nil
 }
 
 // parseBool turns the Trunk-Recorder-style yes/no/Y/N/1/0/true/false

@@ -140,7 +140,7 @@ func parseImportFile(path string, kind api.ImportSourceKind) (parsedSystem, erro
 	case api.ImportSourcePDF:
 		return parsePDFFile(path)
 	case api.ImportSourceCSV:
-		return parseCSVFile(path)
+		return parseCSVFile(path, csvImportOpts{})
 	}
 	return parsedSystem{}, fmt.Errorf("import: unsupported kind %q", kind)
 }

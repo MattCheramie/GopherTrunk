@@ -501,8 +501,10 @@ The `import-pdf` subcommand parses two source types and merges them
 into your `config.yaml`, generating Trunk-Recorder-style talkgroup
 CSVs as it goes:
 
-- **RadioReference.com PDF exports** — the "Export PDF" button on
-  any P25 trunking-system page.
+- **RadioReference.com PDF exports** — the **Download** menu near the
+  top of any P25 trunking-system page (offers PDF / CSV / DSD).
+- **RadioReference native CSV** — the **CSV** option from the same
+  Download menu. Flat talkgroup list; pair with `-name` and `-sysid`.
 - **Structured CSV bundles** — a single multi-section CSV file per
   system (format documented in
   [`import.md#csv-format`]({{ '/import.html#csv-format' | relative_url }})).
@@ -510,8 +512,9 @@ CSVs as it goes:
 ### Quick start — RadioReference PDF
 
 1. Sign in to RadioReference, open the trunking-system page (e.g.
-   "Maricopa County"), click **Export PDF** in the footer, save the
-   file.
+   "Maricopa County"), click **Download → PDF** in the page header,
+   save the file. (URL pattern:
+   `https://www.radioreference.com/db/sid/<sid>/download`.)
 2. Run:
 
    ```powershell

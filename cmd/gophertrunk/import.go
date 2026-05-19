@@ -25,24 +25,39 @@ func runImport(args []string) {
 	dryRun := fs.Bool("dry-run", false, "print the planned changes and exit without writing")
 	force := fs.Bool("force", false, "overwrite an existing trunking.systems entry with the same name")
 	wizard := fs.Bool("wizard", false, "launch the interactive config-builder wizard before any import")
+	extractOnly := fs.Bool("extract-only", false, "dump positioned-text rows from a -pdf as JSON to stdout and exit (for parser bug reports)")
+	nameOverride := fs.String("name", "", "system name for native RadioReference CSV imports (bundle CSVs ignore this — use the metadata section)")
+	sysidOverride := fs.String("sysid", "", "system ID for native RadioReference CSV imports")
 	var pdfPaths repeatedString
 	var csvPaths repeatedString
 	fs.Var(&pdfPaths, "pdf", "path to a RadioReference PDF system export (repeatable)")
-	fs.Var(&csvPaths, "csv", "path to a structured CSV bundle (repeatable; see docs/import.md)")
+	fs.Var(&csvPaths, "csv", "path to a CSV file (repeatable). Either a multi-section bundle (see docs/import.md) or RadioReference's native /db/sid/<sid>/download CSV.")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), `gophertrunk import-pdf — import system definitions into config.yaml
 
 Sources:
   -pdf <file.pdf>   RadioReference.com PDF export (auto-extracts metadata,
-                    sites, and talkgroups).
-  -csv <file.csv>   Multi-section structured CSV bundle. One file per system,
-                    with metadata / sites / talkgroups sections. See
-                    docs/import.md for the format spec and an annotated example.
+                    sites, and talkgroups). Available from the "Download"
+                    menu at the top of a trunked-system page (URL pattern
+                    https://www.radioreference.com/db/sid/<sid>/download).
+  -csv <file.csv>   Either a multi-section structured CSV bundle (one file
+                    per system; see docs/import.md) OR RadioReference's
+                    native talkgroup CSV from the same Download menu. The
+                    importer auto-detects which format the file is. Native
+                    RR CSVs carry no metadata — combine with -name / -sysid
+                    to supply it (the filename stem is used when -name is
+                    omitted).
 
 Both flags are repeatable and may be combined in a single invocation. The
 parsed systems are merged into config.yaml (preserving comments) and a
 per-system Trunk-Recorder-style talkgroup CSV is written next to the config
 (or to -csv-dir).
+
+Bug reports:
+  -extract-only     Combined with a single -pdf, dumps the positioned-text
+                    rows extracted from the PDF as JSON to stdout, then
+                    exits. Attach the output to a parser bug report so
+                    maintainers can reproduce without the original PDF.
 
 By default the importer launches an interactive TUI so you can prune sites,
 toggle Scan/Lockout flags, and set priorities before write. Pass -no-tui to
@@ -72,6 +87,26 @@ Flags:
 	if !*wizard && len(pdfPaths) == 0 && len(csvPaths) == 0 {
 		fs.Usage()
 		fail("at least one of -wizard, -pdf, or -csv is required")
+	}
+
+	// -extract-only is a diagnostic dump: must be paired with exactly
+	// one -pdf and nothing else, so we never silently merge anything
+	// when the operator just wanted to share a fixture.
+	if *extractOnly {
+		if *wizard || len(csvPaths) > 0 {
+			fail("-extract-only cannot be combined with -wizard or -csv")
+		}
+		if len(pdfPaths) != 1 {
+			fail("-extract-only requires exactly one -pdf <file>")
+		}
+		rows, err := extractPDFRows(pdfPaths[0])
+		if err != nil {
+			fail(err.Error())
+		}
+		if err := dumpParseRowsJSON(os.Stdout, rows); err != nil {
+			fail("write rows: " + err.Error())
+		}
+		return
 	}
 
 	// Wizard mode: run the interactive config builder first. The
@@ -123,8 +158,9 @@ Flags:
 		fmt.Fprintf(os.Stderr, "import-pdf: parsed PDF %s: %s (%d sites, %d talkgroups)\n",
 			p, sys.Name, len(sys.Sites), len(sys.Talkgroups))
 	}
+	csvOpts := csvImportOpts{Name: *nameOverride, SysID: *sysidOverride}
 	for _, p := range csvPaths {
-		sys, err := parseCSVFile(p)
+		sys, err := parseCSVFile(p, csvOpts)
 		if err != nil {
 			fail(err.Error())
 		}

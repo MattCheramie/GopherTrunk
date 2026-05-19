@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,6 +221,98 @@ func TestSplitTalkgroupTail(t *testing.T) {
 				t.Errorf("tag = %q, want %q", g, tc.wantTag)
 			}
 		})
+	}
+}
+
+func TestParseMetaLine_Variants(t *testing.T) {
+	cases := []struct {
+		in        string
+		wantName  string
+		wantLoc   string
+		wantSysID string
+		wantWACN  string
+	}{
+		{in: "System Name: Foo", wantName: "Foo"},
+		{in: "System Name : Foo", wantName: "Foo"},
+		{in: "  System Name:   Foo  ", wantName: "Foo"},
+		{in: "SYSTEM NAME: Foo", wantName: "Foo"},
+		{in: "system name: Foo Bar", wantName: "Foo Bar"},
+		{in: "Location: Phoenix, AZ", wantLoc: "Phoenix, AZ"},
+		{in: "System ID: Sysid: 49A WACN: BEE00", wantSysID: "49A", wantWACN: "BEE00"},
+		{in: "SYSTEM ID: sysid: 49A wacn: BEE00", wantSysID: "49A", wantWACN: "BEE00"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			var sys parsedSystem
+			parseMetaLine(tc.in, &sys)
+			if sys.Name != tc.wantName {
+				t.Errorf("Name = %q, want %q", sys.Name, tc.wantName)
+			}
+			if sys.Location != tc.wantLoc {
+				t.Errorf("Location = %q, want %q", sys.Location, tc.wantLoc)
+			}
+			if sys.SysID != tc.wantSysID {
+				t.Errorf("SysID = %q, want %q", sys.SysID, tc.wantSysID)
+			}
+			if sys.WACN != tc.wantWACN {
+				t.Errorf("WACN = %q, want %q", sys.WACN, tc.wantWACN)
+			}
+		})
+	}
+}
+
+func TestParseSystem_PageTitleFallback(t *testing.T) {
+	// No "System Name:" line — only the "<Name> Menu" banner.
+	// Followed by a minimum-viable Sites section so the parser
+	// doesn't trip the "neither sites nor talkgroups" check.
+	rows := []parseRow{
+		{Y: 700, Page: 1, Text: "Maricopa County  Menu"},
+		{Y: 650, Page: 1, Text: "Sites and Frequencies"},
+		{Y: 600, Page: 1, Text: "1 (1) 016 (10) Oatman Mountain Maricopa 769.54375c 770.04375"},
+	}
+	sys, err := parseSystem(rows)
+	if err != nil {
+		t.Fatalf("parseSystem: %v", err)
+	}
+	if sys.Name != "Maricopa County" {
+		t.Errorf("Name = %q, want %q", sys.Name, "Maricopa County")
+	}
+	if len(sys.Sites) != 1 {
+		t.Fatalf("Sites = %d, want 1", len(sys.Sites))
+	}
+}
+
+func TestParseSystem_NoSystemNameDumpsRows(t *testing.T) {
+	// 50 rows, no system name anywhere, no page-title banner.
+	rows := make([]parseRow, 50)
+	for i := range rows {
+		rows[i] = parseRow{Y: float64(700 - i), Page: 1, Text: fmt.Sprintf("row-%02d-content", i)}
+	}
+	_, err := parseSystem(rows)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no System Name found") {
+		t.Errorf("error missing canonical phrase: %s", msg)
+	}
+	if !strings.Contains(msg, "first extracted rows") {
+		t.Errorf("error missing diagnostic dump header: %s", msg)
+	}
+	if !strings.Contains(msg, "row-00-content") {
+		t.Errorf("error missing first row text: %s", msg)
+	}
+	if strings.Contains(msg, "row-30-content") {
+		t.Errorf("error should cap at 30 rows but contains row-30: %s", msg)
+	}
+}
+
+func TestTruncateRunes(t *testing.T) {
+	if got := truncateRunes("abc", 10); got != "abc" {
+		t.Errorf("short string truncated: %q", got)
+	}
+	if got := truncateRunes("abcdefghij", 5); got != "abcde…" {
+		t.Errorf("truncate = %q, want abcde…", got)
 	}
 }
 

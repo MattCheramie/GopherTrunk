@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -201,7 +202,7 @@ func TestParseCSVFrequencies_Separators(t *testing.T) {
 }
 
 func TestParseCSVFile_ExampleFixture(t *testing.T) {
-	sys, err := parseCSVFile("../../samples/rr-import/example.csv")
+	sys, err := parseCSVFile("../../samples/rr-import/example.csv", csvImportOpts{})
 	if err != nil {
 		t.Fatalf("parseCSVFile: %v", err)
 	}
@@ -256,5 +257,138 @@ decimal,alpha_tag,tag
 	}
 	if len(res.CSVs) != 1 {
 		t.Errorf("expected 1 CSV output, got %d", len(res.CSVs))
+	}
+}
+
+func TestLooksLikeRRNativeCSV(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{
+			name: "rr native header",
+			in:   "DEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n1000,3e8,D,OPS,Operations,Law Dispatch,Police\n",
+			want: true,
+		},
+		{
+			name: "lower-case columns",
+			in:   "decimal,hex,mode,alpha_tag,description,tag,group\n1000,3e8,D,OPS,Ops,Law Dispatch,Police\n",
+			want: true,
+		},
+		{
+			name: "bundle with section marker",
+			in:   "# Section: metadata\nkey,value\nname,Foo\n# Section: talkgroups\ndecimal,alpha_tag\n1000,OPS\n",
+			want: false,
+		},
+		{
+			name: "blank file",
+			in:   "",
+			want: false,
+		},
+		{
+			name: "single column",
+			in:   "name\nfoo\n",
+			want: false,
+		},
+		{
+			name: "unrelated csv",
+			in:   "a,b,c,d,e,f\n1,2,3,4,5,6\n",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := looksLikeRRNativeCSV([]byte(tc.in))
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseRRNativeCSVStream(t *testing.T) {
+	const in = `DEC,HEX,Mode,Alpha Tag,Description,Tag,Group
+1000,3e8,D,OPS,Operations,Law Dispatch,Police
+1001,3e9,D,TAC1,Tactical 1,Law Tac,Police
+1002,,D,FIRE,Fire Dispatch,Fire Dispatch,Fire
+`
+	sys, err := parseRRNativeCSVStream(strings.NewReader(in), csvImportOpts{Name: "Test", SysID: "49A"})
+	if err != nil {
+		t.Fatalf("parseRRNativeCSVStream: %v", err)
+	}
+	if sys.Name != "Test" {
+		t.Errorf("Name = %q, want Test", sys.Name)
+	}
+	if sys.SysID != "49A" {
+		t.Errorf("SysID = %q, want 49A", sys.SysID)
+	}
+	if sys.Protocol != "p25" {
+		t.Errorf("Protocol = %q, want p25", sys.Protocol)
+	}
+	if len(sys.Talkgroups) != 3 {
+		t.Fatalf("Talkgroups = %d, want 3", len(sys.Talkgroups))
+	}
+	if sys.Talkgroups[2].Hex != "3ea" {
+		t.Errorf("third hex auto-fill = %q, want 3ea", sys.Talkgroups[2].Hex)
+	}
+	if len(sys.Sites) != 0 {
+		t.Errorf("Sites should be empty for RR native CSV, got %d", len(sys.Sites))
+	}
+}
+
+func TestParseRRNativeCSVStream_MissingName(t *testing.T) {
+	const in = "DEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n1000,3e8,D,OPS,Operations,Law Dispatch,Police\n"
+	_, err := parseRRNativeCSVStream(strings.NewReader(in), csvImportOpts{})
+	if err == nil {
+		t.Fatal("expected error for missing name, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing system name") {
+		t.Errorf("error %q missing expected phrase", err.Error())
+	}
+}
+
+func TestParseCSVFile_RRNativeWithFilenameStem(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/maricopa-49A.csv"
+	body := "DEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n1000,3e8,D,OPS,Operations,Law Dispatch,Police\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sys, err := parseCSVFile(path, csvImportOpts{})
+	if err != nil {
+		t.Fatalf("parseCSVFile: %v", err)
+	}
+	if sys.Name != "maricopa-49A" {
+		t.Errorf("Name = %q, want maricopa-49A (filename stem fallback)", sys.Name)
+	}
+	if len(sys.Talkgroups) != 1 {
+		t.Errorf("Talkgroups = %d, want 1", len(sys.Talkgroups))
+	}
+}
+
+func TestParseCSVFile_BundleStillWorks(t *testing.T) {
+	// parseCSVFile must continue to dispatch bundle files to
+	// parseCSVStream — the sniffer should reject them.
+	dir := t.TempDir()
+	path := dir + "/bundle.csv"
+	body := `# Section: metadata
+key,value
+name,BundleTest
+protocol,p25
+
+# Section: talkgroups
+decimal,alpha_tag
+1000,OPS
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sys, err := parseCSVFile(path, csvImportOpts{})
+	if err != nil {
+		t.Fatalf("parseCSVFile: %v", err)
+	}
+	if sys.Name != "BundleTest" {
+		t.Errorf("Name = %q, want BundleTest", sys.Name)
 	}
 }

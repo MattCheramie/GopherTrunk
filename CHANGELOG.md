@@ -20,6 +20,17 @@ for tagged releases.
   `gophertrunk_sdr_bias_tee{driver,serial,role}`. SDR tuning gauges
   come from a scrape-time snapshot collector so they always reflect
   live pool state.
+- **Native RadioReference CSV import** for `gophertrunk import-pdf`
+  (issue #271). RadioReference's `/db/sid/<sid>/download` CSV is a
+  flat talkgroup list with no metadata — the importer auto-detects
+  the format and the new `-name` / `-sysid` flags supply the missing
+  fields (filename stem is used when `-name` is omitted). Native CSV
+  carries no sites; combine with a `-pdf` (or bundle CSV) when you
+  need control-channel frequencies.
+- **`-extract-only` flag for `gophertrunk import-pdf`.** Paired with
+  a single `-pdf`, dumps the positioned-text rows extracted from the
+  PDF as JSON to stdout and exits, so parser bug reports can ship a
+  ready-to-replay fixture without sharing the original PDF.
 
 ### Changed
 
@@ -28,6 +39,21 @@ for tagged releases.
   GaugeVec keyed by `{system,protocol}` (was a bare gauge). Dashboards
   that previously scraped the unlabeled shape can recover with
   `sum without(system,protocol,encrypted) (gophertrunk_calls_total)`.
+- `docs/import.md` and `docs/user-guide-windows.md`: RadioReference
+  moved the PDF export from the page footer to the top **Download**
+  menu (PDF / CSV / DSD options at `/db/sid/<sid>/download`).
+  Instructions updated.
+
+### Fixed
+
+- `gophertrunk import-pdf` no-System-Name error now prints the first
+  ~30 extracted rows inline so the failure is self-diagnosing
+  (issue #271).
+- `parseMetaLine` accepts case-insensitive and whitespace-variant
+  labels (`SYSTEM NAME:`, `System Name :`, double-spaces). Falls back
+  to the page-title banner ("`<System> Menu`") when no explicit
+  `System Name:` line is present, so a minor RadioReference layout
+  tweak no longer breaks extraction (issue #271).
 
 ## [v0.1.6] — 2026-05-18
 

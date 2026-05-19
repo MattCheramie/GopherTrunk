@@ -273,7 +273,16 @@ func parseSystem(rows []parseRow) (parsedSystem, error) {
 	}
 
 	if sys.Name == "" {
-		return sys, errors.New("import-pdf: no System Name found — wrong PDF?")
+		// Fallback: RadioReference pages have a "<System> Menu"
+		// banner at the top of page 1. If the explicit "System
+		// Name:" line is missing (e.g. RR tweaked the field label)
+		// we can still recover the name from the banner.
+		if name := inferSystemNameFromPageTitle(rows); name != "" {
+			sys.Name = name
+		}
+	}
+	if sys.Name == "" {
+		return sys, formatNoSystemNameError(rows)
 	}
 	if len(sys.Sites) == 0 && len(sys.Talkgroups) == 0 {
 		return sys, errors.New("import-pdf: PDF contained no sites or talkgroups")
@@ -568,27 +577,139 @@ func isTGNavLine(line string) bool {
 }
 
 // parseMetaLine extracts "System Name: …", "Location: …", "System ID: …"
-// metadata. Lines that don't match any known prefix are ignored.
+// metadata. Matching is case-insensitive and tolerates extra whitespace
+// around the label (e.g. "SYSTEM NAME : Foo", "  System Name:   Foo  ")
+// — RadioReference occasionally tweaks the PDF capitalisation and we'd
+// rather extract correctly than re-issue a parser patch every time.
+// Lines that don't match any known key are ignored.
 func parseMetaLine(line string, sys *parsedSystem) {
-	switch {
-	case strings.HasPrefix(line, "System Name:"):
-		sys.Name = strings.TrimSpace(strings.TrimPrefix(line, "System Name:"))
-	case strings.HasPrefix(line, "Location:"):
-		sys.Location = strings.TrimSpace(strings.TrimPrefix(line, "Location:"))
-	case strings.HasPrefix(line, "County:"):
-		sys.County = strings.TrimSpace(strings.TrimPrefix(line, "County:"))
-	case strings.HasPrefix(line, "System Type:"):
-		sys.SystemType = strings.TrimSpace(strings.TrimPrefix(line, "System Type:"))
-	case strings.HasPrefix(line, "System ID:"):
-		rest := strings.TrimSpace(strings.TrimPrefix(line, "System ID:"))
-		// "Sysid: 49A WACN: BEE00"
-		if i := strings.Index(rest, "WACN:"); i >= 0 {
-			sys.SysID = strings.TrimSpace(strings.TrimPrefix(rest[:i], "Sysid:"))
-			sys.WACN = strings.TrimSpace(rest[i+len("WACN:"):])
+	key, val, ok := splitMetaLine(line)
+	if !ok {
+		return
+	}
+	switch key {
+	case "system name":
+		sys.Name = val
+	case "location":
+		sys.Location = val
+	case "county":
+		sys.County = val
+	case "system type":
+		sys.SystemType = val
+	case "system id":
+		// "Sysid: 49A WACN: BEE00" appears as the value when the
+		// label is "System ID:" — split on the inner WACN: token.
+		if i := indexFoldASCII(val, "WACN:"); i >= 0 {
+			left := strings.TrimSpace(val[:i])
+			left = strings.TrimPrefix(left, "Sysid:")
+			left = strings.TrimPrefix(left, "sysid:")
+			left = strings.TrimPrefix(left, "SYSID:")
+			sys.SysID = strings.TrimSpace(left)
+			sys.WACN = strings.TrimSpace(val[i+len("WACN:"):])
 		} else {
-			sys.SysID = rest
+			sys.SysID = val
 		}
 	}
+}
+
+// splitMetaLine splits a "Key: Value" line at the first colon, returning
+// the normalised key (lower-case, whitespace-collapsed) and the trimmed
+// value. ok=false when the line has no colon or an empty key.
+func splitMetaLine(line string) (key, val string, ok bool) {
+	i := strings.IndexByte(line, ':')
+	if i <= 0 {
+		return "", "", false
+	}
+	rawKey := strings.TrimSpace(line[:i])
+	if rawKey == "" {
+		return "", "", false
+	}
+	key = strings.ToLower(collapseSpaces(rawKey))
+	val = strings.TrimSpace(line[i+1:])
+	return key, val, true
+}
+
+// indexFoldASCII is a case-insensitive strings.Index for ASCII needles.
+func indexFoldASCII(haystack, needle string) int {
+	if needle == "" {
+		return 0
+	}
+	lh := strings.ToLower(haystack)
+	ln := strings.ToLower(needle)
+	return strings.Index(lh, ln)
+}
+
+// pageTitleRE matches RadioReference's top-of-page nav banner — the
+// system page title followed by " Menu" (the dropdown trigger). When the
+// PDF lacks an explicit "System Name:" line we fall back to this row.
+// "Menu" is kept case-sensitive on purpose: the banner uses it
+// verbatim, and a relaxed match would catch unrelated rows.
+var pageTitleRE = regexp.MustCompile(`^(.+?)\s+Menu\s*$`)
+
+// inferSystemNameFromPageTitle scans page 1 for the "<Name> Menu" banner
+// row and returns the captured name. Empty string when no candidate is
+// found. Used only when parseMetaLine never set sys.Name.
+func inferSystemNameFromPageTitle(rows []parseRow) string {
+	for _, r := range rows {
+		if r.Page != 1 {
+			continue
+		}
+		txt := strings.TrimSpace(r.Text)
+		if txt == "" {
+			continue
+		}
+		m := pageTitleRE.FindStringSubmatch(txt)
+		if m == nil {
+			continue
+		}
+		name := strings.TrimSpace(m[1])
+		if name == "" {
+			continue
+		}
+		return name
+	}
+	return ""
+}
+
+// formatNoSystemNameError builds the diagnostic error returned when the
+// parser can't find a system name in the PDF. The error string carries
+// the first 30 (or 4 KiB of) extracted rows so reporters and
+// maintainers see the actual PDF contents without having to re-run with
+// -extract-only. Each row's text is truncated at 120 runes.
+func formatNoSystemNameError(rows []parseRow) error {
+	const (
+		maxRows  = 30
+		maxBytes = 4 * 1024
+		maxText  = 120
+	)
+	var b strings.Builder
+	b.WriteString("import-pdf: no System Name found — wrong PDF?\n")
+	b.WriteString("hint: re-run with -extract-only to share a JSON fixture (see docs/import.md)\n")
+	b.WriteString("first extracted rows (page/Y/text, text truncated at 120 runes):")
+	count := 0
+	for _, r := range rows {
+		if count >= maxRows {
+			break
+		}
+		line := fmt.Sprintf("\n  p%d y=%.2f %q", r.Page, r.Y, truncateRunes(r.Text, maxText))
+		if b.Len()+len(line) > maxBytes {
+			break
+		}
+		b.WriteString(line)
+		count++
+	}
+	if count == 0 {
+		b.WriteString("\n  (no rows extracted — the PDF may be empty or use an unsupported encoding)")
+	}
+	return errors.New(b.String())
+}
+
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
 }
 
 // loadParseRowsJSON loads a serialised []parseRow from disk (used by

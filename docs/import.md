@@ -11,8 +11,14 @@ The `import-pdf` subcommand parses trunked-system data from two sources
 and merges it into your `config.yaml`, generating per-system Trunk-
 Recorder-style talkgroup CSVs as it goes:
 
-- **RadioReference.com PDF exports** — the page-footer "Export PDF"
-  button on any P25 trunking-system page.
+- **RadioReference.com PDF exports** — choose **PDF** from the
+  **Download** menu near the top of any P25 trunking-system page (URL
+  pattern `https://www.radioreference.com/db/sid/<sid>/download`).
+- **RadioReference.com native CSV exports** — the **CSV** option from
+  the same Download menu. A flat talkgroup list with no metadata or
+  sites — combine with `-name` / `-sysid` (see [native-CSV quick
+  start](#quick-start--radioreference-native-csv)) and a separate
+  `-pdf` (or bundle CSV) when you need control-channel frequencies.
 - **Structured CSV bundles** — a single multi-section CSV file per
   system, format documented below. Use this when your data comes from
   somewhere other than RadioReference (the radio wiki for your region,
@@ -32,7 +38,10 @@ regardless of input format.
 
 1. Sign in to RadioReference and open the trunking-system page (e.g.
    the "Maricopa County" or "Regional Wireless Cooperative" page).
-2. Click "Export PDF" in the page footer; save the file.
+2. Click **Download** in the page header (the menu next to **Menu**)
+   and choose **PDF**. The same menu also offers a CSV talkgroup list
+   and a DSD export; save the PDF file. URL pattern:
+   `https://www.radioreference.com/db/sid/<sid>/download`.
 3. Run:
 
    ```
@@ -46,7 +55,29 @@ regardless of input format.
    on talkgroups, then press <kbd>w</kbd> to write or <kbd>q</kbd> to
    discard.
 
-## Quick start — CSV
+## Quick start — RadioReference native CSV
+
+RadioReference's **Download → CSV** option serves a flat talkgroup
+table with no system metadata and no site/frequency rows. Pair it
+with `-name` and (optionally) `-sysid` to supply the missing data:
+
+```
+gophertrunk import-pdf \
+  -csv talkgroups-49A.csv \
+  -name "Maricopa County" -sysid 49A \
+  -config /etc/gophertrunk/config.yaml
+```
+
+If `-name` is omitted, the filename stem is used as the system name.
+The CSV is auto-detected by content — there's no separate flag to
+pick the format.
+
+Trunked operators still need control-channel frequencies, which the
+native CSV doesn't carry. Either pass a `-pdf` alongside the `-csv`
+in the same invocation, or hand-edit the resulting
+`trunking.systems[].control_channels` block after the import.
+
+## Quick start — CSV bundle
 
 1. Build a CSV file in the format below (one file per system).
 2. Run:
@@ -221,13 +252,16 @@ Without `-force` the importer aborts before touching anything on disk.
 | Flag | Description |
 | --- | --- |
 | `-pdf <file.pdf>` | RadioReference PDF (repeatable). |
-| `-csv <file.csv>` | Structured CSV bundle (repeatable). |
+| `-csv <file.csv>` | CSV file (repeatable). Either a multi-section bundle (this page) or RadioReference's native CSV (auto-detected). |
 | `-config <path>` | Existing `config.yaml` (merged in place). Default `./config.yaml`. |
 | `-csv-dir <dir>` | Where to write talkgroup CSVs. Default: directory of `-config`. |
 | `-no-tui` | Skip the review TUI; merge straight from parsed defaults. |
 | `-dry-run` | Print the planned changes and exit without writing. |
 | `-force` | Overwrite an existing `trunking.systems[]` entry with the same name. |
 | `-wizard` | Launch the interactive config-builder wizard (see below). |
+| `-name <name>` | System name for native RadioReference CSV imports (bundle CSVs ignore this — use the `metadata` section). |
+| `-sysid <id>` | System ID for native RadioReference CSV imports. |
+| `-extract-only` | Combined with a single `-pdf`, dumps the positioned-text rows extracted from the PDF as JSON to stdout, then exits. Attach the output to a parser bug report. |
 
 ## Config-file builder (`-wizard`)
 
@@ -324,7 +358,16 @@ correct for Phase 1 captures.
   subset where every glyph's encoded byte sits 27 below its real
   ASCII codepoint. The importer reverses the shift per-glyph during
   extraction. If RadioReference changes the encoding the importer
-  will produce gibberish — open an issue with a sample PDF attached.
+  will produce gibberish — open an issue and attach the JSON output of
+  `gophertrunk import-pdf -pdf <file> -extract-only` (and the PDF
+  itself if you can). The dump is also surfaced inline whenever the
+  parser fails to find a system name.
+- **Field-label tolerance.** Metadata labels (`System Name:`,
+  `Location:`, `County:`, `System Type:`, `System ID:`) are matched
+  case-insensitively with whitespace flexibility. When no
+  `System Name:` line is found the importer falls back to the top-of-
+  page banner ("`<System> Menu`"), so a layout tweak that drops the
+  explicit label still works.
 - **Ligature drops.** The font subset has no `ﬃ`/`ﬁ`/`ﬂ` glyphs, so
   words like "Office" arrive as "ONce". The importer applies a small
   fix-up table (`Office`, `Officers`, `Official`, …). If you see
