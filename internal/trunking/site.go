@@ -159,6 +159,20 @@ type System struct {
 	// connector after parsing via ltr.ParseManchesterMode.
 	LTRManchesterMode string
 
+	// P25Phase1DemodMode selects the symbol-recovery path for the
+	// P25 Phase 1 receiver. Recognised values (case-insensitive):
+	// "" / "c4fm" / "fm" → DemodC4FM (the default — FM
+	// discriminator + 4-level slicer; matches every previously
+	// shipping config and works on conventional non-simulcast P25
+	// transmitters); "cqpsk" / "lsm" / "linear" → DemodCQPSK (the
+	// linear / LSM path — complex RRC + Gardner + differential
+	// QPSK; required for simulcast P25 deployments whose control
+	// channel transmits Linear Simulcast Modulation rather than
+	// straight C4FM, see issue #275 and TIA-102.BAAA). Forwarded
+	// into p25phase1rx.Options.DemodMode by the ccdecoder connector
+	// after parsing via p25phase1rx.ParseDemodMode.
+	P25Phase1DemodMode string
+
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values
 	// (case-insensitive): "" / "on" / "true" / "1" → TrellisOn (the

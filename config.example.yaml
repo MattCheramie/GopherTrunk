@@ -146,6 +146,15 @@ trunking:
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
   #
+  #   - name: "Simulcast-P25"
+  #     protocol: p25
+  #     control_channels: [420_087_500]
+  #     p25_phase1_demod_mode: "cqpsk"  # LSM linear-CQPSK — required on
+  #                                     # P25 simulcast sites whose CC
+  #                                     # is transmitted as Linear
+  #                                     # Simulcast Modulation rather
+  #                                     # than C4FM (issue #275)
+  #
   #   - name: "Legacy-P25-Phase2"
   #     protocol: p25
   #     control_channels: [851_006_250]

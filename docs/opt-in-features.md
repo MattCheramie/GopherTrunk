@@ -95,6 +95,33 @@ decimator per system.
 | P25 Phase 2 | `p25_phase2_clock_mode` | `ClockGardner` | `naive` / `off` |
 | TETRA | `tetra_clock_mode` | `ClockGardner` | `naive` / `off` |
 
+---
+
+## 2a. P25 Phase 1 demodulator selection
+
+**C4FM on by default; opt into CQPSK/LSM per system.** Conventional
+P25 Phase 1 sites transmit C4FM on the air — the FM-discriminator +
+4-level slicer the receiver ships with handles them. P25 simulcast
+deployments commonly transmit the control channel as
+[Linear Simulcast Modulation](https://www.dsheirer.com/linear-simulcast-modulation/)
+(LSM, TIA-102.BAAA), a CQPSK-shaped variant designed to survive the
+multi-transmitter overlap that destroys pure C4FM. LSM pushed through
+an FM discriminator produces near-random dibits and the FSW never
+matches — the failure mode reported against
+[issue #275](https://github.com/MattCheramie/GopherTrunk/issues/275).
+
+Operators on simulcast sites opt into the CQPSK path per system:
+
+| Receiver | YAML key | Default | Opt-in string |
+| --- | --- | --- | --- |
+| P25 Phase 1 | `p25_phase1_demod_mode` | `c4fm` (FM discriminator + 4-level slicer) | `cqpsk` / `lsm` / `linear` (complex RRC + Gardner + differential QPSK) |
+
+The CQPSK path internally pins Gardner timing recovery on (the LSM
+demod operates on complex IQ at the sample rate; naive sps-th-sample
+decimation produces meaningless symbols at any timing offset). The
+log line `ccdecoder: p25/phase1 pipeline configured demod=…` on
+startup confirms which path is active.
+
 Other receivers (DMR, dPMR, NXDN, EDACS, LTR, MPT 1327, Motorola
 Type II, YSF) either don't need timing recovery or use protocol-
 specific clock-tracking primitives. The Gardner loop is wired

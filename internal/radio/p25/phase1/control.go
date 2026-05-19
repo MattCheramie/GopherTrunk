@@ -113,7 +113,7 @@ const noHitsThrottle = 2 * time.Second
 // Process consumes a window of dibits and runs detection/parsing. baseIdx
 // is the absolute dibit index of dibits[0]. Returns the new baseIndex.
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
-	hits, next := c.det.Process(nil, dibits, baseIdx)
+	hits, rots, next := c.det.ProcessWithRotation(nil, nil, dibits, baseIdx)
 	if len(hits) == 0 && len(dibits) > 0 && !c.locked {
 		now := c.now()
 		if now.Sub(c.lastNoHitsAt) >= noHitsThrottle {
@@ -122,7 +122,8 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			c.lastNoHitsAt = now
 		}
 	}
-	for _, h := range hits {
+	for i, h := range hits {
+		rot := rots[i]
 		// FSW ends at index h (relative to the absolute dibit stream). The
 		// 32-dibit NID immediately follows.
 		startInWindow := h - baseIdx + 1
@@ -130,10 +131,15 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			// Crosses the buffer edge; future calls will have the rest.
 			continue
 		}
-		nidDibits := dibits[startInWindow : startInWindow+32]
+		// Apply the inverse rotation to the dibits that follow the FSW
+		// — the sync detector matched the FSW after adding `rot` mod 4
+		// to each input dibit, so the canonical dibit values the BCH /
+		// trellis decoders expect are recovered by subtracting `rot`
+		// (equivalently, adding (4 - rot) mod 4) before parsing.
+		nidDibits := rotateDibits(dibits[startInWindow:startInWindow+32], rot)
 		nid, errs, err := NIDFromDibits(nidDibits)
 		if err != nil {
-			c.log.Debug("nid parse failed", "err", err, "errs", errs)
+			c.log.Debug("nid parse failed", "err", err, "errs", errs, "rot", rot)
 			c.bus.Publish(events.Event{
 				Kind:    events.KindDecodeError,
 				Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
@@ -141,7 +147,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			continue
 		}
 		if errs > 0 {
-			c.log.Debug("nid corrected", "errs", errs, "nac", nid.NAC)
+			c.log.Debug("nid corrected", "errs", errs, "nac", nid.NAC, "rot", rot)
 		}
 		if nid.DUID != DUIDTrunkingSignaling {
 			// Some non-control DUID — record but don't lock.
@@ -155,7 +161,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 				Kind:    events.KindCCLocked,
 				Payload: LockState{FrequencyHz: c.freqHz, NAC: nid.NAC, DUID: nid.DUID},
 			})
-			c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz)
+			c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz, "rot", rot)
 		}
 
 		// Try to extract the next TSBK that follows the NID. The
@@ -165,7 +171,8 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		if tsbkStart+98 > len(dibits) {
 			continue
 		}
-		tsbk, metric, err := DecodeTSBKChannel(dibits[tsbkStart : tsbkStart+98])
+		tsbkDibits := rotateDibits(dibits[tsbkStart:tsbkStart+98], rot)
+		tsbk, metric, err := DecodeTSBKChannel(tsbkDibits)
 		if err != nil {
 			c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
 			stage := events.StageTSBKTrellis
@@ -181,6 +188,21 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		c.dispatchTSBK(tsbk, nid.NAC, metric)
 	}
 	return next
+}
+
+// rotateDibits returns a copy of src with the inverse FSW-search
+// rotation applied: each dibit value has `rot` subtracted mod 4.
+// rot=0 short-circuits to avoid the copy.
+func rotateDibits(src []uint8, rot uint8) []uint8 {
+	if rot == 0 {
+		return src
+	}
+	inv := (4 - rot) & 3
+	out := make([]uint8, len(src))
+	for i, d := range src {
+		out[i] = (d + inv) & 3
+	}
+	return out
 }
 
 // dispatchTSBK routes a successfully-CRC'd TSBK to the right opcode

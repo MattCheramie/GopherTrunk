@@ -143,6 +143,15 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
+	log := opts.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	demodMode, ok := p25phase1rx.ParseDemodMode(opts.System.P25Phase1DemodMode)
+	if !ok {
+		log.Warn("ccdecoder: unrecognised p25_phase1_demod_mode; falling back to c4fm",
+			"system", opts.SystemName, "value", opts.System.P25Phase1DemodMode)
+	}
 	rx := p25phase1rx.New(p25phase1rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		// P25 Phase 1 nominal peak deviation per TIA-102.BAAA-A
@@ -151,13 +160,28 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// p25phase1rx.Options.DeviationHz). Hardcoded since the
 		// air-interface deviation is spec-fixed; if a future
 		// site uses non-standard deviation the connector can
-		// expose this as a per-system YAML key.
+		// expose this as a per-system YAML key. Only consulted on
+		// the C4FM path; the CQPSK path is amplitude-invariant
+		// after the matched filter so DeviationHz isn't used.
 		DeviationHz: 1800.0,
+		DemodMode:   demodMode,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			cc.Process(dibits, baseIdx)
 		},
 	})
+	log.Info("ccdecoder: p25/phase1 pipeline configured",
+		"system", opts.SystemName, "freq_hz", opts.FrequencyHz,
+		"demod", demodModeLabel(demodMode))
 	return &p25Phase1Pipeline{rx: rx, cc: cc}, nil
+}
+
+func demodModeLabel(m p25phase1rx.DemodMode) string {
+	switch m {
+	case p25phase1rx.DemodCQPSK:
+		return "cqpsk"
+	default:
+		return "c4fm"
+	}
 }
 
 type p25Phase1Pipeline struct {

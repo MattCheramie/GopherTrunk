@@ -7,6 +7,27 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **P25 Phase 1 CQPSK / LSM demodulator path** for simulcast P25
+  sites (issue #275). New per-system YAML key
+  `p25_phase1_demod_mode: cqpsk` routes the control-channel IQ
+  through a complex RRC matched filter + Gardner timing recovery +
+  differential QPSK quadrant decode with LSM dibit remap, replacing
+  the FM-discriminator + 4-level slicer path that produces near-
+  random dibits on Linear Simulcast Modulation. The C4FM path stays
+  the default for conventional non-simulcast deployments. Pipeline
+  construction now logs `ccdecoder: p25/phase1 pipeline configured
+  demod=…` so operators can confirm which path is active.
+- **Multi-rotation FSW search** on the P25 Phase 1 sync detector.
+  `SyncDetector.ProcessWithRotation` tries all four cyclic shifts
+  of the dibit alphabet against the canonical FrameSyncWord and
+  returns the rotation that matched, absorbing residual symbol-
+  polarity / I-Q-swap ambiguity. The downstream control-channel
+  parser inverts the rotation before NID BCH + TSBK trellis decode.
+  Rotation=0 wins on ties so existing clean-fixture tests stay
+  green.
+
 ## [v0.1.7] — 2026-05-19
 
 Observability + import-pipeline release. Twelve merged PRs land the

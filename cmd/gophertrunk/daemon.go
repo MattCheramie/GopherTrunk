@@ -223,6 +223,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			TETRAClockMode:         sys.TETRAClockMode,
 			LTRFCSMode:             sys.LTRFCSMode,
 			LTRManchesterMode:      sys.LTRManchesterMode,
+			P25Phase1DemodMode:     sys.P25Phase1DemodMode,
 			P25Phase2TrellisMode:   sys.P25Phase2TrellisMode,
 			P25Phase2RSMode:        sys.P25Phase2RSMode,
 			P25Phase2ScramblerMode: sys.P25Phase2ScramblerMode,

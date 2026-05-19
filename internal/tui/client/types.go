@@ -41,6 +41,7 @@ type SystemDTO struct {
 	TETRAChannelCoding     string  `json:"tetra_channel_coding,omitempty"`
 	LTRFCSMode             string  `json:"ltr_fcs_mode,omitempty"`
 	LTRManchesterMode      string  `json:"ltr_manchester_mode,omitempty"`
+	P25Phase1DemodMode     string  `json:"p25_phase1_demod_mode,omitempty"`
 	P25Phase2TrellisMode   string  `json:"p25_phase2_trellis_mode,omitempty"`
 	P25Phase2RSMode        string  `json:"p25_phase2_rs_mode,omitempty"`
 	P25Phase2ScramblerMode string  `json:"p25_phase2_scrambler_mode,omitempty"`

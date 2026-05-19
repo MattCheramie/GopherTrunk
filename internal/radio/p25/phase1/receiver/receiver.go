@@ -1,16 +1,29 @@
-// Package receiver wires the IQ → C4FM dibit chain that feeds either
-// the P25 Phase 1 LDU assembler (voice path) or the control-channel
-// state machine (CC path) — or both at once. It composes primitives
-// that already live in internal/dsp + internal/radio/p25/phase1:
+// Package receiver wires the IQ → dibit chain that feeds either the
+// P25 Phase 1 LDU assembler (voice path) or the control-channel state
+// machine (CC path) — or both at once. It composes primitives that
+// already live in internal/dsp + internal/radio/p25/phase1.
 //
-//	IQ samples
-//	  → FM discriminator (internal/dsp/demod.FM)
-//	  → RRC matched filter + 4-level slicer (internal/dsp/demod.C4FM)
-//	  → Mueller-Müller symbol clock recovery (internal/dsp/sync.MuellerMuller)
-//	  → C4FM symbol → 0..3 dibit (phase1.SymbolToDibit)
-//	  → dibit fan-out:
-//	      • Options.DibitSink (raw dibits → phase1.ControlChannel.Process)
-//	      • Options.Sink      (LDU assembler → phase1.LDUSink)
+// Two demod paths are selectable via Options.DemodMode (see modes.go):
+//
+//	DemodC4FM (default):
+//	  IQ
+//	    → FM discriminator (internal/dsp/demod.FM)
+//	    → RRC matched filter + 4-level slicer (internal/dsp/demod.C4FM)
+//	    → Mueller-Müller symbol clock recovery (sync.MuellerMuller)
+//	    → C4FM symbol → 0..3 dibit (phase1.SymbolToDibit)
+//
+//	DemodCQPSK (LSM / simulcast):
+//	  IQ
+//	    → complex RRC matched filter (demod.PiOver4DQPSK, rotation=π/4)
+//	    → Gardner timing recovery on complex IQ (sync.Gardner)
+//	    → differential QPSK quadrant decode
+//	    → LSM dibit remap → canonical 0..3 dibit
+//
+// In both cases the dibit stream the receiver emits matches the
+// TIA-102.BAAA convention, so downstream code (FSW detect, NID parse,
+// TSBK trellis) is demod-agnostic. CQPSK demod is the path operators
+// on simulcast P25 sites need — issue #275 surfaced because the
+// FM-discriminator path produces near-random dibits on an LSM signal.
 //
 // Either sink may be nil; at least one must be set. The receiver is
 // stateful and not safe for concurrent Process calls. Instantiate one
@@ -26,6 +39,12 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 )
+
+// defaultGardnerGain is the Gardner step the CQPSK path uses when the
+// caller leaves Options.GardnerGain at zero. Matches the value Phase 2
+// and TETRA settled on after live-capture tuning (internal/scanner/
+// ccdecoder/pipelines.go).
+const defaultGardnerGain = 0.03
 
 // P25 Phase 1 on-air parameters.
 const (
@@ -90,19 +109,41 @@ type Options struct {
 	// normalised-to-±1" assumption, which only fires for
 	// synthesized fixtures that pre-scale their signal levels.
 	DeviationHz float64
+	// DemodMode selects the symbol recovery path. Zero value is
+	// DemodC4FM (the legacy FM-discriminator → Mueller-Müller
+	// path). DemodCQPSK routes IQ through the LSM / linear-CQPSK
+	// chain (complex RRC → Gardner → π/4-DQPSK + LSM dibit remap)
+	// — required for simulcast P25 sites whose control channel is
+	// on the wire as LSM rather than C4FM. See modes.go.
+	DemodMode DemodMode
+	// GardnerGain overrides the Gardner loop step used by the
+	// CQPSK path. <=0 uses defaultGardnerGain. Ignored when
+	// DemodMode == DemodC4FM (the C4FM path uses Mueller-Müller).
+	GardnerGain float64
 }
 
 // Receiver is the composed IQ → dibit → LDU pipeline. Process is the
 // only hot path; instantiate once per call chain and reuse.
 type Receiver struct {
-	fm        *demod.FM
-	mf        *demod.C4FM
-	clock     *sync.MuellerMuller
+	demodMode DemodMode
+
+	// C4FM path: FM discriminator → real RRC + 4-level slicer →
+	// Mueller-Müller. Allocated only when demodMode == DemodC4FM.
+	fm    *demod.FM
+	mf    *demod.C4FM
+	clock *sync.MuellerMuller
+
+	// CQPSK / LSM path: complex RRC + Gardner + DQPSK quadrant
+	// decode + LSM dibit remap. Allocated only when demodMode ==
+	// DemodCQPSK.
+	cq *cqpskDemod
+
 	assembler *phase1.LDUAssembler
 	dibitSink phase1.DibitSink
 	dibitBase int
 
-	// Reusable scratch slices so Process doesn't allocate per call.
+	// Reusable scratch slices so Process doesn't allocate per call
+	// on the C4FM path.
 	disc    []float32
 	matched []float32
 	symbols []float32
@@ -156,10 +197,16 @@ func New(opts Options) *Receiver {
 	}
 
 	r := &Receiver{
-		fm:        demod.NewFM(),
-		mf:        demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
-		clock:     sync.NewMuellerMuller(sps, gain),
+		demodMode: opts.DemodMode,
 		dibitSink: opts.DibitSink,
+	}
+	switch opts.DemodMode {
+	case DemodCQPSK:
+		r.cq = newCQPSKDemod(int(sps+0.5), span, alpha, opts.GardnerGain)
+	default:
+		r.fm = demod.NewFM()
+		r.mf = demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale)
+		r.clock = sync.NewMuellerMuller(sps, gain)
 	}
 	if opts.Sink != nil {
 		r.assembler = phase1.NewLDUAssembler(opts.Sink, opts.Tolerance)
@@ -176,20 +223,30 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
-	r.disc = r.fm.Process(r.disc, iq)
-	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
-	r.symbols = r.clock.Process(r.symbols, r.matched)
-	if len(r.symbols) == 0 {
-		return
-	}
-	r.sliced = r.mf.SliceMany(r.sliced, r.symbols)
-	if cap(r.dibits) < len(r.sliced) {
-		r.dibits = make([]uint8, len(r.sliced))
+	if r.demodMode == DemodCQPSK {
+		// cq.process returns its internal dibit buffer; we hand
+		// it directly to the sinks below — both consume
+		// synchronously before the next Process call.
+		r.dibits = r.cq.process(iq)
 	} else {
-		r.dibits = r.dibits[:len(r.sliced)]
+		r.disc = r.fm.Process(r.disc, iq)
+		r.matched = r.mf.MatchedFilter(r.matched, r.disc)
+		r.symbols = r.clock.Process(r.symbols, r.matched)
+		if len(r.symbols) == 0 {
+			return
+		}
+		r.sliced = r.mf.SliceMany(r.sliced, r.symbols)
+		if cap(r.dibits) < len(r.sliced) {
+			r.dibits = make([]uint8, len(r.sliced))
+		} else {
+			r.dibits = r.dibits[:len(r.sliced)]
+		}
+		for i, sym := range r.sliced {
+			r.dibits[i] = phase1.SymbolToDibit(sym)
+		}
 	}
-	for i, sym := range r.sliced {
-		r.dibits[i] = phase1.SymbolToDibit(sym)
+	if len(r.dibits) == 0 {
+		return
 	}
 	if r.dibitSink != nil {
 		r.dibitSink(r.dibits, r.dibitBase)
@@ -210,6 +267,9 @@ func (r *Receiver) Reset() {
 		r.assembler.Reset()
 	}
 	r.dibitBase = 0
+	if r.cq != nil {
+		r.cq.reset()
+	}
 	// FM discriminator's `last` is harmless to leave alone — the
 	// next sample it processes will produce one slightly-wrong
 	// derivative, which the matched filter smooths out.

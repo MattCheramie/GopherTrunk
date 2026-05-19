@@ -210,6 +210,17 @@ type SystemConfig struct {
 	// fixtures). Ignored for non-LTR protocols.
 	LTRManchesterMode string `yaml:"ltr_manchester_mode"`
 
+	// P25Phase1DemodMode selects the symbol-recovery path for the
+	// P25 Phase 1 receiver. Recognised values: "" / "c4fm" / "fm"
+	// (the default — FM discriminator + 4-level slicer; matches
+	// every previously shipping config and works on conventional
+	// non-simulcast P25 transmitters) or "cqpsk" / "lsm" / "linear"
+	// (the linear / LSM path — complex RRC + Gardner + differential
+	// QPSK; required for simulcast P25 deployments whose control
+	// channel transmits Linear Simulcast Modulation rather than
+	// straight C4FM, see issue #275 and TIA-102.BAAA). Ignored for
+	// non-P25-Phase-1 protocols.
+	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values:
 	// "" / "on" / "true" / "1" (the new default — 146 channel
