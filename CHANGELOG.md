@@ -73,6 +73,14 @@ for tagged releases.
   secondary-control-channel frequencies are now captured; talkgroup
   hex columns with leading zeros (e.g. `065` for dec=101) are
   validated numerically rather than by string match.
+- The `gophertrunk import-pdf` TUI is now usable on systems with
+  dozens of sites or hundreds of talkgroups (issue #271). The Sites
+  tab previously rendered every row unconditionally and spilled
+  off-screen; both tabs now paginate to fit the terminal height
+  (with a 20-row fallback when `tea.WindowSizeMsg` hasn't arrived
+  yet), show a `Site N of M  (showing X-Y)` position indicator, and
+  accept `pgup`/`pgdn` for page jumps plus `home`/`end` / `g`/`G`
+  to jump to the first/last entry. The footer hints are updated.
 
 ## [v0.1.6] — 2026-05-18
 
