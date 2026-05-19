@@ -7169,6 +7169,71 @@
       "lockout": false
     },
     {
+      "dec": 131,
+      "hex": "083",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Radio Shop 131 Radio",
+      "description": "Shop Test 131",
+      "tag": "Public Works",
+      "group": "Radio Service Technicians",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 201,
+      "hex": "0c9",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Sim A Test",
+      "description": "Simulcast A Test",
+      "tag": "Public Works",
+      "group": "Radio Service Technicians",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 202,
+      "hex": "0ca",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Sim B Test",
+      "description": "Simulcast B Test",
+      "tag": "Public Works",
+      "group": "Radio Service Technicians",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 203,
+      "hex": "0cb",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Sim C Test",
+      "description": "Simulcast C Test",
+      "tag": "Public Works",
+      "group": "Radio Service Technicians",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
+      "dec": 211,
+      "hex": "0d3",
+      "mode": "D",
+      "encrypted": false,
+      "alpha_tag": "Sim F Test",
+      "description": "Simulcast F Test",
+      "tag": "Public Works",
+      "group": "Radio Service Technicians",
+      "scan": true,
+      "priority": 0,
+      "lockout": false
+    },
+    {
       "dec": 1589,
       "hex": "635",
       "mode": "D",
@@ -7176,7 +7241,7 @@
       "alpha_tag": "RM/RWC Ops Radio",
       "description": "Maintenance RWC Operations",
       "tag": "Public Works",
-      "group": "211 0d3 T Sim F Test Simulcast F Test Public Works",
+      "group": "Radio Service Technicians",
       "scan": true,
       "priority": 0,
       "lockout": false
@@ -7189,7 +7254,7 @@
       "alpha_tag": "Test 1590 Radio",
       "description": "Maintenance Testing",
       "tag": "Public Works",
-      "group": "211 0d3 T Sim F Test Simulcast F Test Public Works",
+      "group": "Radio Service Technicians",
       "scan": true,
       "priority": 0,
       "lockout": false
@@ -7202,7 +7267,7 @@
       "alpha_tag": "WirelessRadT",
       "description": "Wireless Radio Technicians",
       "tag": "Public Works",
-      "group": "211 0d3 T Sim F Test Simulcast F Test Public Works",
+      "group": "Radio Service Technicians",
       "scan": true,
       "priority": 0,
       "lockout": false
@@ -7215,7 +7280,7 @@
       "alpha_tag": "Test 1804 Radio Techs",
       "description": "",
       "tag": "Public Works",
-      "group": "211 0d3 T Sim F Test Simulcast F Test Public Works",
+      "group": "Radio Service Technicians",
       "scan": true,
       "priority": 0,
       "lockout": false

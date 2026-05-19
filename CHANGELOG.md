@@ -54,6 +54,33 @@ for tagged releases.
   to the page-title banner ("`<System> Menu`") when no explicit
   `System Name:` line is present, so a minor RadioReference layout
   tweak no longer breaks extraction (issue #271).
+- `extractPDFRows` now auto-detects RadioReference's two PDF font
+  encodings (issue #271). Older RR PDFs ship raw glyph bytes that need
+  a `+27` ASCII shift; newer ones (e.g. MMR.pdf, sid 7197) embed a
+  proper font CMap and arrive already-decoded. The extractor sniffs
+  the first 50 rows for anchor strings (`System Name`,
+  `Sites and Frequencies`, `Talkgroups`, `WACN`, `Last Updated`) and
+  applies the shift only when those anchors are absent. `decodeShift`
+  also leaves literal `0x20` spaces alone — the new library release
+  emits the occasional in-text literal space alongside the encoded
+  `0x05` separator-space, and shifting it was corrupting output as
+  `;`.
+- The PDF parser now handles RadioReference's non-US layout (e.g.
+  Australian MMR system). New `siteRowDashRE` pattern matches dash-
+  joined `RFSS-Site (X-Y) Name freqs` rows; `System Frequencies` and
+  `System Talkgroups` are accepted as section markers; `Display`
+  is recognised as an alias for the `Alpha Tag` column; `a`-suffix
+  secondary-control-channel frequencies are now captured; talkgroup
+  hex columns with leading zeros (e.g. `065` for dec=101) are
+  validated numerically rather than by string match.
+- The `gophertrunk import-pdf` TUI is now usable on systems with
+  dozens of sites or hundreds of talkgroups (issue #271). The Sites
+  tab previously rendered every row unconditionally and spilled
+  off-screen; both tabs now paginate to fit the terminal height
+  (with a 20-row fallback when `tea.WindowSizeMsg` hasn't arrived
+  yet), show a `Site N of M  (showing X-Y)` position indicator, and
+  accept `pgup`/`pgdn` for page jumps plus `home`/`end` / `g`/`G`
+  to jump to the first/last entry. The footer hints are updated.
 
 ## [v0.1.6] — 2026-05-18
 

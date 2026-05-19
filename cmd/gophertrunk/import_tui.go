@@ -156,6 +156,16 @@ func (m importTUIModel) updateSitesTab(msg tea.KeyMsg, sys *parsedSystem) (tea.M
 		if m.cursor < len(sys.Sites)-1 {
 			m.cursor++
 		}
+	case "pgup":
+		m.cursor = clampCursor(m.cursor-pageJump(m.visibleRows()), len(sys.Sites))
+	case "pgdown":
+		m.cursor = clampCursor(m.cursor+pageJump(m.visibleRows()), len(sys.Sites))
+	case "home", "g":
+		m.cursor = 0
+	case "end", "G":
+		if len(sys.Sites) > 0 {
+			m.cursor = len(sys.Sites) - 1
+		}
 	case " ", "space":
 		if m.cursor < len(sys.Sites) {
 			sys.Sites[m.cursor].Include = !sys.Sites[m.cursor].Include
@@ -175,13 +185,13 @@ func (m importTUIModel) updateTalkgroupsTab(msg tea.KeyMsg, sys *parsedSystem) (
 			m.cursor++
 		}
 	case "pgup":
-		m.cursor -= 10
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
+		m.cursor = clampCursor(m.cursor-pageJump(m.visibleRows()), len(sys.Talkgroups))
 	case "pgdown":
-		m.cursor += 10
-		if m.cursor >= len(sys.Talkgroups) {
+		m.cursor = clampCursor(m.cursor+pageJump(m.visibleRows()), len(sys.Talkgroups))
+	case "home", "g":
+		m.cursor = 0
+	case "end", "G":
+		if len(sys.Talkgroups) > 0 {
 			m.cursor = len(sys.Talkgroups) - 1
 		}
 	case "s":
@@ -267,9 +277,15 @@ func (m importTUIModel) renderSystemTabs() string {
 	b.WriteString(headerStyle.Render(fmt.Sprintf("%s — %s",
 		sys.Name, tabLabel(m.tab))))
 	b.WriteString("\n")
+	page := m.visibleRows()
 	switch m.tab {
 	case tabSites:
-		for i, site := range sys.Sites {
+		total := len(sys.Sites)
+		start, end := pageBounds(m.cursor, total, page)
+		b.WriteString(hintStyle.Render(positionLabel("Site", m.cursor, total, start, end)))
+		b.WriteString("\n")
+		for i := start; i < end; i++ {
+			site := sys.Sites[i]
 			cursor := "  "
 			if i == m.cursor {
 				cursor = "▶ "
@@ -290,7 +306,10 @@ func (m importTUIModel) renderSystemTabs() string {
 				len(site.Frequencies), ccCount)
 		}
 	case tabTalkgroups:
-		start, end := pageBounds(m.cursor, len(sys.Talkgroups), 20)
+		total := len(sys.Talkgroups)
+		start, end := pageBounds(m.cursor, total, page)
+		b.WriteString(hintStyle.Render(positionLabel("Talkgroup", m.cursor, total, start, end)))
+		b.WriteString("\n")
 		for i := start; i < end; i++ {
 			tg := sys.Talkgroups[i]
 			cursor := "  "
@@ -317,6 +336,19 @@ func (m importTUIModel) renderSystemTabs() string {
 	return b.String()
 }
 
+// positionLabel formats the "<Noun> N of M" indicator under the
+// header. When the whole list fits on screen we drop the
+// "(showing X-Y)" suffix since it's redundant.
+func positionLabel(noun string, cursor, total, start, end int) string {
+	if total == 0 {
+		return fmt.Sprintf("(no %ss)", strings.ToLower(noun))
+	}
+	if end-start >= total {
+		return fmt.Sprintf("%s %d of %d", noun, cursor+1, total)
+	}
+	return fmt.Sprintf("%s %d of %d  (showing %d-%d)", noun, cursor+1, total, start+1, end)
+}
+
 func (m importTUIModel) renderEditModal() string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -330,9 +362,9 @@ func (m importTUIModel) renderFooter() string {
 	case viewSystemTabs:
 		switch m.tab {
 		case tabSites:
-			help = "↑/↓ move  space toggle site  tab switch  esc back  w write  q quit"
+			help = "↑/↓ move  pgup/pgdn page  g/G first/last  space toggle  tab switch  esc back  w write  q quit"
 		case tabTalkgroups:
-			help = "↑/↓ move  s scan  L lockout  0-9 priority  e edit  tab switch  esc back  w write  q quit"
+			help = "↑/↓ move  pgup/pgdn page  g/G first/last  s scan  L lockout  0-9 priority  e edit  tab switch  esc back  w write  q quit"
 		}
 	}
 	footer := hintStyle.Render(help)
@@ -340,6 +372,32 @@ func (m importTUIModel) renderFooter() string {
 		footer = m.status + "\n" + footer
 	}
 	return footer
+}
+
+// pageJump returns the cursor delta for one pgup/pgdown — one screen
+// minus one row of overlap, so the user keeps a familiar anchor row
+// across the jump. Floors at 1 so tiny terminals still advance.
+func pageJump(visible int) int {
+	if visible <= 1 {
+		return 1
+	}
+	return visible - 1
+}
+
+// clampCursor pins the cursor inside [0, total). When total is 0 the
+// cursor is forced to 0 — callers should still guard with len() > 0
+// before dereferencing.
+func clampCursor(c, total int) int {
+	if c < 0 {
+		return 0
+	}
+	if total <= 0 {
+		return 0
+	}
+	if c >= total {
+		return total - 1
+	}
+	return c
 }
 
 func tabLabel(t tuiTab) string {
@@ -360,6 +418,12 @@ func trunc(s string, n int) string {
 }
 
 func pageBounds(cursor, total, page int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if total <= 0 {
+		return 0, 0
+	}
 	start := cursor - page/2
 	if start < 0 {
 		start = 0
@@ -367,8 +431,30 @@ func pageBounds(cursor, total, page int) (int, int) {
 	end := start + page
 	if end > total {
 		end = total
+		start = end - page
+		if start < 0 {
+			start = 0
+		}
 	}
 	return start, end
+}
+
+// visibleRows returns how many list rows fit in the current terminal
+// for the Sites / Talkgroups tabs. Reserves a fixed budget for header
+// (1 line + position-indicator line), footer (2 lines, including the
+// optional status line), and a safety margin. Falls back to 20 when
+// the model hasn't yet received a tea.WindowSizeMsg (first paint on
+// some terminals).
+func (m importTUIModel) visibleRows() int {
+	if m.height == 0 {
+		return 20
+	}
+	const reserve = 6
+	n := m.height - reserve
+	if n < 5 {
+		return 5
+	}
+	return n
 }
 
 var (

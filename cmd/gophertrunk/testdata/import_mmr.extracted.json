@@ -1,0 +1,4622 @@
+[
+  {
+    "y": 733.42,
+    "page": 1,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 705.67,
+    "page": 1,
+    "text": "System Name: Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 691.5,
+    "page": 1,
+    "text": "Location: Statewide, VIC"
+  },
+  {
+    "y": 677.33,
+    "page": 1,
+    "text": "County Statewide"
+  },
+  {
+    "y": 663.15,
+    "page": 1,
+    "text": "System Type: Project 25 Phase II"
+  },
+  {
+    "y": 648.98,
+    "page": 1,
+    "text": "System Voice: APCO-25 Common Air Interface Exclusive"
+  },
+  {
+    "y": 634.81,
+    "page": 1,
+    "text": "System ID: Sysid: 164 WACN: BEE00"
+  },
+  {
+    "y": 620.64,
+    "page": 1,
+    "text": "Last Updated: November 11, 2023, 8:59 pm UTC"
+  },
+  {
+    "y": 590.57,
+    "page": 1,
+    "text": "System Frequencies"
+  },
+  {
+    "y": 580.43,
+    "page": 1,
+    "text": "Red (c) are Primary Control Channels Blue (a) are Secondary Control Channels"
+  },
+  {
+    "y": 565.66,
+    "page": 1,
+    "text": "Site Description Freqs"
+  },
+  {
+    "y": 554.62,
+    "page": 1,
+    "text": "1-001 (1-1) Melbourne 420.01250c 420.16250 420.31250c 420.71250 421.26250 421.63750 421.71250 422.23750"
+  },
+  {
+    "y": 543.28,
+    "page": 1,
+    "text": "422.33750 422.93750 467.90000 468.80000 469.10000"
+  },
+  {
+    "y": 531.94,
+    "page": 1,
+    "text": "1-002 (1-2) 120 Collins Street 420.03750c 420.18750 420.33750a 421.46250 421.61250 422.21250 422.36250 468.52500"
+  },
+  {
+    "y": 520.61,
+    "page": 1,
+    "text": "468.82500"
+  },
+  {
+    "y": 509.27,
+    "page": 1,
+    "text": "1-003 (1-3) Arthurs Seat 420.10000c 420.40000a 420.70000 422.27500 467.96250 469.07500"
+  },
+  {
+    "y": 497.93,
+    "page": 1,
+    "text": "1-004 (1-4) Bass Hill 422.70000c 422.77500 423.00000a 425.85000 467.95000 469.20000"
+  },
+  {
+    "y": 486.59,
+    "page": 1,
+    "text": "1-005 (1-5) Briarty Hill 422.37500a 422.67500 422.97500c 425.95000 465.07500 469.41250"
+  },
+  {
+    "y": 475.25,
+    "page": 1,
+    "text": "1-006 (1-6) Drouin 420.05000a 420.35000c 420.65000 421.42500 421.72500 467.98750 468.28750 468.68750"
+  },
+  {
+    "y": 463.91,
+    "page": 1,
+    "text": "468.98750"
+  },
+  {
+    "y": 452.57,
+    "page": 1,
+    "text": "1-007 (1-7) Cape Schanck 422.61250c 422.91250a 425.26250 425.56250 425.86250 467.93750 468.30000 468.92500"
+  },
+  {
+    "y": 441.24,
+    "page": 1,
+    "text": "469.22500"
+  },
+  {
+    "y": 429.9,
+    "page": 1,
+    "text": "1-008 (1-8) Geelong 420.07500c 420.37500 420.67500 421.50000 421.66250 421.80000 422.10000 422.40000"
+  },
+  {
+    "y": 418.56,
+    "page": 1,
+    "text": "1-009 (1-9) Chadstone 420.02500c 420.17500 420.32500a 420.47500 420.62500 421.30000 421.45000 421.60000"
+  },
+  {
+    "y": 407.22,
+    "page": 1,
+    "text": "421.75000 421.90000 422.05000 422.20000 422.35000 422.50000 467.91250 468.21250"
+  },
+  {
+    "y": 395.88,
+    "page": 1,
+    "text": "468.51250 469.28750"
+  },
+  {
+    "y": 384.54,
+    "page": 1,
+    "text": "1-010 (1-A) Dandenong 421.82500c 422.12500a 422.42500 422.72500 423.02500 425.30000 425.60000 467.88750"
+  },
+  {
+    "y": 373.2,
+    "page": 1,
+    "text": "468.18750 468.45000 468.83750"
+  },
+  {
+    "y": 361.86,
+    "page": 1,
+    "text": "1-011 (1-B) Ferny Creek 420.06250c 420.26250 420.36250a 420.56250 420.66250 421.28750 421.36250 421.58750"
+  },
+  {
+    "y": 350.53,
+    "page": 1,
+    "text": "421.68750 421.88750 421.98750 422.18750 422.28750 422.48750 422.58750 422.78750"
+  },
+  {
+    "y": 339.19,
+    "page": 1,
+    "text": "422.88750 423.08750 423.18750 468.37500 468.67500 468.97500 469.27500"
+  },
+  {
+    "y": 327.85,
+    "page": 1,
+    "text": "1-012 (1-C) Mt Beenak 420.12500c 420.42500 420.72500a 422.17500 422.47500"
+  },
+  {
+    "y": 316.51,
+    "page": 1,
+    "text": "1-013 (1-D) Greensborough 421.51250c 421.81250 422.11250a 422.41250 422.71250 423.01250 425.28750 425.43750"
+  },
+  {
+    "y": 305.17,
+    "page": 1,
+    "text": "425.58750 425.73750 425.88750 467.87500 468.17500 468.43750 468.85000 469.15000"
+  },
+  {
+    "y": 293.83,
+    "page": 1,
+    "text": "1-014 (1-E) Flinders 422.98750 425.36250 425.66250 425.96250 468.40000 468.70000 469.00000 469.30000"
+  },
+  {
+    "y": 282.49,
+    "page": 1,
+    "text": "1-015 (1-F) Frankston 422.37500c 422.67500 422.97500a 425.35000 425.65000 425.78750 425.95000 465.07500"
+  },
+  {
+    "y": 271.16,
+    "page": 1,
+    "text": "465.67500 469.11250 469.41250"
+  },
+  {
+    "y": 259.82,
+    "page": 1,
+    "text": "1-017 (1-11) Hastings 422.60000a 422.90000c 423.20000 425.40000 425.70000 467.97500 468.23750 468.27500"
+  },
+  {
+    "y": 248.48,
+    "page": 1,
+    "text": "469.08750"
+  },
+  {
+    "y": 237.14,
+    "page": 1,
+    "text": "1-018 (1-12) Kangaroo Ground 420.13750c 420.43750 420.73750a 421.48750 421.66250 421.78750 422.08750 422.22500"
+  },
+  {
+    "y": 225.8,
+    "page": 1,
+    "text": "422.38750 468.10000 468.76250 469.31250"
+  },
+  {
+    "y": 214.46,
+    "page": 1,
+    "text": "1-019 (1-13) Kinglake 420.07500a 420.11250 420.37500c 420.67500 421.50000 421.80000 422.10000 422.16250"
+  },
+  {
+    "y": 203.12,
+    "page": 1,
+    "text": "422.40000 422.46250 468.05000 468.73750 469.26250"
+  },
+  {
+    "y": 191.79,
+    "page": 1,
+    "text": "1-020 (1-14) Lake Mountain 420.38750a 420.68750c 421.32500 421.62500 421.92500 422.27500 467.37500 468.06250"
+  },
+  {
+    "y": 180.45,
+    "page": 1,
+    "text": "468.36250 468.91250 469.40000"
+  },
+  {
+    "y": 169.11,
+    "page": 1,
+    "text": "1-021 (1-15) Cranbourne South 418.37500a 418.67500 419.00000c 419.32500 419.62500 419.77500 419.97500 468.42500"
+  },
+  {
+    "y": 157.77,
+    "page": 1,
+    "text": "468.72500 469.06250 469.32500"
+  },
+  {
+    "y": 146.43,
+    "page": 1,
+    "text": "1-023 (1-17) Mt Dandenong - BDA 421.47500c 421.55000 421.72500 421.77500a 421.80000 421.83750"
+  },
+  {
+    "y": 135.09,
+    "page": 1,
+    "text": "1-029 (1-1D) Mt Cottrell 420.12500c 420.72500a"
+  },
+  {
+    "y": 123.75,
+    "page": 1,
+    "text": "1-033 (1-21) Mt Gregory 418.37500c 418.67500 419.00000 419.32500 468.42500 468.72500 469.06250 469.32500"
+  },
+  {
+    "y": 112.42,
+    "page": 1,
+    "text": "1-034 (1-22) Sunbury 421.53750c 421.96250 422.26250 422.56250 422.86250 423.16250 425.33750 425.51250"
+  },
+  {
+    "y": 101.08,
+    "page": 1,
+    "text": "425.63750 425.81250 425.93750 466.87500 467.77500 468.02500 469.23750 469.43750"
+  },
+  {
+    "y": 89.74,
+    "page": 1,
+    "text": "1-037 (1-25) Mt Matlock 422.31250c 422.61250 422.91250 425.26250 425.56250 425.86250"
+  },
+  {
+    "y": 78.4,
+    "page": 1,
+    "text": "1-038 (1-26) Mt St Leonard 421.83750 422.13750 422.43750 422.73750c 422.82500 423.03750 423.11250 425.31250"
+  },
+  {
+    "y": 67.06,
+    "page": 1,
+    "text": "425.46250 425.61250 425.76250 425.91250 467.86250 468.41250 468.71250 469.05000"
+  },
+  {
+    "y": 26.25,
+    "page": 1,
+    "text": "Page 1/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 1,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 2,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 2,
+    "text": "1-039 (1-27) Tynong 421.35000c 421.65000 421.95000 422.55000 422.85000 423.15000 425.42500 466.27500"
+  },
+  {
+    "y": 696.35,
+    "page": 2,
+    "text": "467.47500 467.82500 468.13750 468.32500 469.21250"
+  },
+  {
+    "y": 685.01,
+    "page": 2,
+    "text": "1-040 (1-28) Mt Victoria 421.83750 422.13750 422.43750 422.73750c 423.03750 425.31250 425.61250 425.91250"
+  },
+  {
+    "y": 673.68,
+    "page": 2,
+    "text": "467.86250 468.41250 468.71250 469.05000"
+  },
+  {
+    "y": 662.34,
+    "page": 2,
+    "text": "1-043 (1-2B) Phillip Island 420.13750 420.43750 420.73750 421.48750 421.78750 422.08750 422.38750 468.10000"
+  },
+  {
+    "y": 651,
+    "page": 2,
+    "text": "468.76250 469.31250"
+  },
+  {
+    "y": 639.66,
+    "page": 2,
+    "text": "1-044 (1-2C) Point Leo 421.55000 421.85000 422.66250 422.96250 425.38750 425.68750 465.37500 465.97500"
+  },
+  {
+    "y": 628.32,
+    "page": 2,
+    "text": "467.72500 468.73750 469.12500 469.42500"
+  },
+  {
+    "y": 616.98,
+    "page": 2,
+    "text": "1-045 (1-2D) Ferny Creek - BDA 503.15000c 503.20000 503.22500 503.30000 503.32500 503.40000"
+  },
+  {
+    "y": 605.64,
+    "page": 2,
+    "text": "1-046 (1-2E) Pretty Sally 418.37500 418.67500a 419.00000 419.32500 419.62500 419.68750c 419.97500 468.42500"
+  },
+  {
+    "y": 594.31,
+    "page": 2,
+    "text": "468.72500 469.06250 469.32500"
+  },
+  {
+    "y": 582.97,
+    "page": 2,
+    "text": "1-049 (1-31) Cheltenham 421.43750c 421.73750 422.57500 422.87500 423.23750 425.32500 425.47500 425.62500"
+  },
+  {
+    "y": 571.63,
+    "page": 2,
+    "text": "425.77500 425.92500 467.85000 468.11250 468.35000 469.25000"
+  },
+  {
+    "y": 560.29,
+    "page": 2,
+    "text": "1-052 (1-34) Upper Beaconsfield 422.26250c 422.56250 422.86250 423.16250 425.33750 425.63750 425.93750 466.87500"
+  },
+  {
+    "y": 548.95,
+    "page": 2,
+    "text": "467.77500 468.02500 469.23750 469.43750"
+  },
+  {
+    "y": 537.61,
+    "page": 2,
+    "text": "1-053 (1-35) Campbellfield 419.43750 421.82500 422.12500 422.42500c 422.72500 423.02500 425.30000 425.60000"
+  },
+  {
+    "y": 526.27,
+    "page": 2,
+    "text": "425.90000 467.88750 468.18750 468.45000 468.83750 469.13750"
+  },
+  {
+    "y": 514.94,
+    "page": 2,
+    "text": "1-054 (1-36) Whittlesea 420.10000 420.40000 420.70000c 421.37500 421.67500 467.96250 468.26250 468.77500"
+  },
+  {
+    "y": 503.6,
+    "page": 2,
+    "text": "469.07500 469.37500"
+  },
+  {
+    "y": 492.26,
+    "page": 2,
+    "text": "1-058 (1-3A) Doncaster 422.60000 422.65000c 422.90000 422.95000 423.20000 425.37500 425.40000 425.67500"
+  },
+  {
+    "y": 480.92,
+    "page": 2,
+    "text": "425.70000 425.97500 467.97500 468.23750 468.27500 469.08750 469.38750"
+  },
+  {
+    "y": 469.58,
+    "page": 2,
+    "text": "1-060 (1-3C) Craigieburn 421.52500c 422.15000 422.45000 422.75000 423.05000 425.27500 425.57500 425.87500"
+  },
+  {
+    "y": 458.24,
+    "page": 2,
+    "text": "468.01250 468.31250 468.88750 469.18750"
+  },
+  {
+    "y": 446.9,
+    "page": 2,
+    "text": "1-061 (1-3D) Cranbourne 420.08750 420.38750 420.68750 421.32500 421.62500 468.06250 468.36250 468.91250"
+  },
+  {
+    "y": 435.57,
+    "page": 2,
+    "text": "469.40000"
+  },
+  {
+    "y": 424.23,
+    "page": 2,
+    "text": "1-062 (1-3E) Diamond Creek 420.05000 420.35000 420.65000c 421.42500 421.72500 467.98750 468.28750 468.68750"
+  },
+  {
+    "y": 412.89,
+    "page": 2,
+    "text": "468.98750 469.30000"
+  },
+  {
+    "y": 401.55,
+    "page": 2,
+    "text": "1-063 (1-3F) Mt Elevyn 420.38750c 420.68750 421.32500 421.62500"
+  },
+  {
+    "y": 390.21,
+    "page": 2,
+    "text": "1-066 (1-42) 120 Collins Street 503.35000c 503.47500 503.52500 503.55000 503.60000 503.62500 503.67500 503.72500"
+  },
+  {
+    "y": 378.87,
+    "page": 2,
+    "text": "503.75000 503.82500"
+  },
+  {
+    "y": 367.53,
+    "page": 2,
+    "text": "1-067 (1-43) Carrum 421.40000c 421.70000 422.00000 422.62500 422.92500 423.17500 423.22500 425.45000"
+  },
+  {
+    "y": 356.2,
+    "page": 2,
+    "text": "425.55000 425.75000 468.03750 468.33750 468.87500 469.17500"
+  },
+  {
+    "y": 344.86,
+    "page": 2,
+    "text": "1-069 (1-45) MCG - East Melbourn 420.08750 420.40000 420.73750 421.27500 421.67500 422.17500"
+  },
+  {
+    "y": 333.52,
+    "page": 2,
+    "text": "1-085 (1-55) Red Hill 422.43750c 422.73750a 422.82500 423.03750 425.31250 425.46250 425.61250 425.76250"
+  },
+  {
+    "y": 322.18,
+    "page": 2,
+    "text": "425.91250"
+  },
+  {
+    "y": 310.84,
+    "page": 2,
+    "text": "1-086 (1-56) Park Orchards 418.51250a 418.68750 419.10000 419.40000 419.77500 419.91250 421.92500c 422.77500"
+  },
+  {
+    "y": 299.5,
+    "page": 2,
+    "text": "423.07500 423.17500 425.48750 425.85000 468.00000 468.12500 468.25000"
+  },
+  {
+    "y": 288.16,
+    "page": 2,
+    "text": "1-087 (1-57) Research 418.50000c 418.81250 418.98750 419.38750 419.70000 419.92500 420.21250 420.28750"
+  },
+  {
+    "y": 276.83,
+    "page": 2,
+    "text": "421.97500 422.27500 422.32500 467.95000 468.07500 468.16250 468.90000 469.20000"
+  },
+  {
+    "y": 265.49,
+    "page": 2,
+    "text": "1-088 (1-58) Berwick 419.41250 420.11250c 420.23750 420.37500 420.67500 421.50000 422.10000 422.40000a"
+  },
+  {
+    "y": 254.15,
+    "page": 2,
+    "text": "422.46250"
+  },
+  {
+    "y": 242.81,
+    "page": 2,
+    "text": "1-089 (1-59) Beaconsfield Upper 419.01250a 419.38750c 419.96250 421.53750 421.96250 422.31250 425.26250 425.51250"
+  },
+  {
+    "y": 231.47,
+    "page": 2,
+    "text": "425.81250"
+  },
+  {
+    "y": 220.13,
+    "page": 2,
+    "text": "1-090 (1-5A) Pakenham 418.52500c 419.26250 419.56250 419.67500 419.76250 422.80000 423.10000 425.53750"
+  },
+  {
+    "y": 208.79,
+    "page": 2,
+    "text": "425.83750"
+  },
+  {
+    "y": 197.46,
+    "page": 2,
+    "text": "1-091 (1-5B) Cockatoo 418.50000c 418.81250 418.98750 419.43750 419.70000 419.93750 421.38750 425.52500"
+  },
+  {
+    "y": 186.12,
+    "page": 2,
+    "text": "425.72500"
+  },
+  {
+    "y": 174.78,
+    "page": 2,
+    "text": "1-092 (1-5C) Pakenham Upper 421.52500c 422.15000 422.45000 422.75000 423.05000 425.27500 425.57500 425.87500"
+  },
+  {
+    "y": 163.44,
+    "page": 2,
+    "text": "2-001 (2-1) Deer Park 421.40000 421.70000c 422.00000 422.62500 422.92500 423.22500 425.45000 425.75000"
+  },
+  {
+    "y": 152.1,
+    "page": 2,
+    "text": "2-002 (2-2) Werribee 421.47500 421.77500 422.07500c 422.52500 422.68750 422.98750 425.36250 425.50000"
+  },
+  {
+    "y": 140.76,
+    "page": 2,
+    "text": "425.66250 425.80000 425.96250 468.40000 468.70000 469.00000 469.30000"
+  },
+  {
+    "y": 129.42,
+    "page": 2,
+    "text": "2-003 (2-3) Keilor 419.01250 421.38750c 422.01250 422.31250 422.61250 422.91250 425.26250 425.56250"
+  },
+  {
+    "y": 118.09,
+    "page": 2,
+    "text": "425.86250 467.93750 468.30000 468.92500 469.22500"
+  },
+  {
+    "y": 106.75,
+    "page": 2,
+    "text": "2-004 (2-4) Laverton 418.11250c 418.52500 419.26250 419.37500 419.56250 419.67500 419.76250 419.98750"
+  },
+  {
+    "y": 95.41,
+    "page": 2,
+    "text": "422.70000 422.80000 423.00000 423.10000 425.41250 425.53750 425.71250 425.83750"
+  },
+  {
+    "y": 84.07,
+    "page": 2,
+    "text": "2-005 (2-5) Lorne 418.37500c 418.67500a 419.00000 419.32500 419.62500 419.97500"
+  },
+  {
+    "y": 72.73,
+    "page": 2,
+    "text": "2-006 (2-6) Melton 422.67500c 422.97500 425.35000 425.65000 425.95000 465.07500 465.67500 467.83750"
+  },
+  {
+    "y": 61.39,
+    "page": 2,
+    "text": "468.15000 469.11250 469.41250"
+  },
+  {
+    "y": 26.25,
+    "page": 2,
+    "text": "Page 2/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 2,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 3,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 3,
+    "text": "2-007 (2-7) Mt Anakie 420.08750c 420.38750 420.68750 421.32500 421.62500 421.92500 422.22500 468.06250"
+  },
+  {
+    "y": 696.35,
+    "page": 3,
+    "text": "468.36250 468.91250 469.40000"
+  },
+  {
+    "y": 685.01,
+    "page": 3,
+    "text": "2-008 (2-8) Darley 421.51250c 421.81250a 422.11250 422.41250 422.71250 423.01250 425.28750 467.87500"
+  },
+  {
+    "y": 673.68,
+    "page": 3,
+    "text": "468.17500 468.43750 468.85000"
+  },
+  {
+    "y": 662.34,
+    "page": 3,
+    "text": "2-009 (2-9) Murradoc Hill 420.05000c 420.35000a 420.65000 421.42500 421.72500 422.02500 422.32500 467.98750"
+  },
+  {
+    "y": 651,
+    "page": 3,
+    "text": "468.28750 468.68750 468.98750"
+  },
+  {
+    "y": 639.66,
+    "page": 3,
+    "text": "2-010 (2-A) Mt Blackwood 421.83750c 422.13750 422.43750a 422.73750 423.03750 425.31250 425.61250 425.91250"
+  },
+  {
+    "y": 628.32,
+    "page": 3,
+    "text": "467.86250 468.41250 468.71250 469.05000"
+  },
+  {
+    "y": 616.98,
+    "page": 3,
+    "text": "2-011 (2-B) Mt Cowley 421.35000 421.65000a 421.95000c 422.55000 422.85000 423.21250 425.48750"
+  },
+  {
+    "y": 605.64,
+    "page": 3,
+    "text": "2-012 (2-C) Mt Gellibrand 422.75000c 423.05000a 425.27500 425.57500 425.87500"
+  },
+  {
+    "y": 594.31,
+    "page": 3,
+    "text": "2-013 (2-D) Anglesea 422.31250c 422.70000a 423.00000 425.41250 425.71250"
+  },
+  {
+    "y": 582.97,
+    "page": 3,
+    "text": "2-014 (2-E) Mt Macedon 419.13750 421.55000a 421.85000c 422.66250 422.96250 425.38750 425.68750 425.98750"
+  },
+  {
+    "y": 571.63,
+    "page": 3,
+    "text": "465.37500 465.97500 467.72500 469.12500 469.42500"
+  },
+  {
+    "y": 560.29,
+    "page": 3,
+    "text": "2-015 (2-F) Ocean Grove 420.02500 420.32500 420.62500c 421.30000 421.60000 421.90000"
+  },
+  {
+    "y": 548.95,
+    "page": 3,
+    "text": "2-016 (2-10) Peters Hill 422.26250 422.56250c 422.86250 423.16250 425.33750 425.63750"
+  },
+  {
+    "y": 537.61,
+    "page": 3,
+    "text": "2-017 (2-11) Jan Juc 422.60000c 422.65000 422.90000 423.20000 425.40000 425.70000"
+  },
+  {
+    "y": 526.27,
+    "page": 3,
+    "text": "2-018 (2-12) Melbourne Airport 421.35000 421.65000c 421.95000 422.55000 422.85000 423.15000 425.42500 425.52500"
+  },
+  {
+    "y": 514.94,
+    "page": 3,
+    "text": "425.72500 425.82500 466.27500 467.47500 467.82500 468.13750 468.32500 469.21250"
+  },
+  {
+    "y": 503.6,
+    "page": 3,
+    "text": "2-026 (2-1A) Mount Helen 421.47500 421.55000 421.72500 421.77500"
+  },
+  {
+    "y": 477.19,
+    "page": 3,
+    "text": "System Talkgroups"
+  },
+  {
+    "y": 460.78,
+    "page": 3,
+    "text": "All Talkgroups"
+  },
+  {
+    "y": 446.9,
+    "page": 3,
+    "text": "DEC HEX Mode Display Description Tag"
+  },
+  {
+    "y": 435.57,
+    "page": 3,
+    "text": "101 065 DE 01-01 Northern M 01-01 North West Metro - Div 1 Law Dispatch"
+  },
+  {
+    "y": 424.23,
+    "page": 3,
+    "text": "102 066 DE 01-02 Northern M 01-02 North West Metro - Div 2 Law Dispatch"
+  },
+  {
+    "y": 412.89,
+    "page": 3,
+    "text": "103 067 DE 01-03 Northern M 01-03 North West Metro - Div 3 Law Dispatch"
+  },
+  {
+    "y": 401.55,
+    "page": 3,
+    "text": "104 068 DE 01-04 Northern M 01-04 North West Metro - Div 4 Law Dispatch"
+  },
+  {
+    "y": 390.21,
+    "page": 3,
+    "text": "105 069 DE 01-05 Northern M 01-05 North West Metro - Div 5 Law Dispatch"
+  },
+  {
+    "y": 378.87,
+    "page": 3,
+    "text": "106 06a DE 01-06A Northern 01-06A Northern Metro Law Dispatch"
+  },
+  {
+    "y": 367.53,
+    "page": 3,
+    "text": "107 06b DE 01-07A Northern 01-07A Northern Metro Law Dispatch"
+  },
+  {
+    "y": 356.2,
+    "page": 3,
+    "text": "108 06c DE 01-08A Northern 01-08A Northern Metro Law Dispatch"
+  },
+  {
+    "y": 344.86,
+    "page": 3,
+    "text": "109 06d DE 01-09A Northern 01-09A Northern Metro Law Dispatch"
+  },
+  {
+    "y": 333.52,
+    "page": 3,
+    "text": "110 06e DE 01-10 Northern M 01-10 North West Metro - Div 1 Law Dispatch"
+  },
+  {
+    "y": 322.18,
+    "page": 3,
+    "text": "111 06f DE 01-11EV Northern 01-11EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 310.84,
+    "page": 3,
+    "text": "112 070 DE 01-12EV Norther 01-12EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 299.5,
+    "page": 3,
+    "text": "113 071 DE 01-13EV Norther 01-13EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 288.16,
+    "page": 3,
+    "text": "114 072 DE 01-14EV Norther 01-14EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 276.83,
+    "page": 3,
+    "text": "115 073 DE 01-15EV Norther 01-15EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 265.49,
+    "page": 3,
+    "text": "116 074 DE 01-16EV Norther 01-16EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 254.15,
+    "page": 3,
+    "text": "117 075 DE 01-17EV Norther 01-17EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 242.81,
+    "page": 3,
+    "text": "118 076 DE 01-18EV Norther 01-18EV Northern Metro Event Law Dispatch"
+  },
+  {
+    "y": 231.47,
+    "page": 3,
+    "text": "119 077 DE 01-19 Northern M 01-19 Northern Metro Law Dispatch"
+  },
+  {
+    "y": 220.13,
+    "page": 3,
+    "text": "120 078 DE 01-20 Northern M 01-20 Northern Metro Law Dispatch"
+  },
+  {
+    "y": 208.79,
+    "page": 3,
+    "text": "121 079 DE 01-21 Northern M 01-21 Northern Metro MCG - Game Day Ops Law Talk"
+  },
+  {
+    "y": 197.46,
+    "page": 3,
+    "text": "122 07a DE 01-22 Northern M 01-22 Northern Metro MCG - Game Day Ops Law Talk"
+  },
+  {
+    "y": 186.12,
+    "page": 3,
+    "text": "123 07b D 01-23CL Northern 01-23 Northern Metro - Clear Law Dispatch"
+  },
+  {
+    "y": 174.78,
+    "page": 3,
+    "text": "124 07c D 01-24CL Northern 01-24 Northern Metro - Clear Law Dispatch"
+  },
+  {
+    "y": 163.44,
+    "page": 3,
+    "text": "125 07d D 01-25CL Northern 01-25 Northern Metro - Clear Law Dispatch"
+  },
+  {
+    "y": 152.1,
+    "page": 3,
+    "text": "126 07e DE 01-26 Northern M 01-26 Northern Metro Law Dispatch"
+  },
+  {
+    "y": 140.76,
+    "page": 3,
+    "text": "127 07f DE 01-27 Northern M 01-27 Northern Metro Law Dispatch"
+  },
+  {
+    "y": 129.42,
+    "page": 3,
+    "text": "128 080 DE 01-28SP Northern 01-28 Northern Metro Special Law Talk"
+  },
+  {
+    "y": 118.09,
+    "page": 3,
+    "text": "129 081 DE 01-29SP Northern 01-29 Northern Metro Special Law Talk"
+  },
+  {
+    "y": 106.75,
+    "page": 3,
+    "text": "130 082 DE 01-30SP Northern 01-30 Northern Metro Special Law Talk"
+  },
+  {
+    "y": 95.41,
+    "page": 3,
+    "text": "201 0c9 DE 02-01 Western Me 02-01 Western Metro - Div 1 Law Dispatch"
+  },
+  {
+    "y": 84.07,
+    "page": 3,
+    "text": "202 0ca DE 02-02 Western Me 02-02 Western Metro Law Dispatch"
+  },
+  {
+    "y": 72.73,
+    "page": 3,
+    "text": "203 0cb DE 02-03 Western Me 02-03 Western Metro Law Dispatch"
+  },
+  {
+    "y": 61.39,
+    "page": 3,
+    "text": "204 0cc DE 02-04 Western Me 02-04 Western Metro Law Dispatch"
+  },
+  {
+    "y": 26.25,
+    "page": 3,
+    "text": "Page 3/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 3,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 4,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 4,
+    "text": "205 0cd DE 02-05 Western Me 02-05 Western Metro Law Dispatch"
+  },
+  {
+    "y": 696.35,
+    "page": 4,
+    "text": "206 0ce DE 02-06A Western M 02-06 Western Metro Alternate Law Dispatch"
+  },
+  {
+    "y": 685.01,
+    "page": 4,
+    "text": "207 0cf DE 02-07A Wester M 02-07 Western Metro Alternate Law Dispatch"
+  },
+  {
+    "y": 673.68,
+    "page": 4,
+    "text": "208 0d0 DE 02-08 Western Me 02-08 Western Metro Law Dispatch"
+  },
+  {
+    "y": 662.34,
+    "page": 4,
+    "text": "209 0d1 DE 02-09 Western Me 02-09 Western Metro Law Dispatch"
+  },
+  {
+    "y": 651,
+    "page": 4,
+    "text": "210 0d2 DE 02-10 Western Me 02-10 Western Metro Law Dispatch"
+  },
+  {
+    "y": 639.66,
+    "page": 4,
+    "text": "211 0d3 DE 02-11EV Western 02-11 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 628.32,
+    "page": 4,
+    "text": "212 0d4 DE 02-12EV Western 02-12 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 616.98,
+    "page": 4,
+    "text": "213 0d5 DE 02-13EV Western 02-13 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 605.64,
+    "page": 4,
+    "text": "214 0d6 DE 02-14EV Western 02-14 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 594.31,
+    "page": 4,
+    "text": "215 0d7 DE 02-15EV Western 02-15 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 582.97,
+    "page": 4,
+    "text": "216 0d8 DE 02-16EV Western 02-16 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 571.63,
+    "page": 4,
+    "text": "217 0d9 DE 02-17EV Western 02-17 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 560.29,
+    "page": 4,
+    "text": "218 0da DE 02-18EV Western 02-18 Western Metro Event Law Dispatch"
+  },
+  {
+    "y": 548.95,
+    "page": 4,
+    "text": "219 0db DE 02-19 Western Me 02-19 Western Metro Law Dispatch"
+  },
+  {
+    "y": 537.61,
+    "page": 4,
+    "text": "220 0dc DE 02-20 Western Me 02-20 Western Metro Law Dispatch"
+  },
+  {
+    "y": 526.27,
+    "page": 4,
+    "text": "221 0dd DE 02-21 Western Me 02-21 Western Metro Law Dispatch"
+  },
+  {
+    "y": 514.94,
+    "page": 4,
+    "text": "222 0de DE 02-22 Western Me 02-22 Western Metro Law Dispatch"
+  },
+  {
+    "y": 503.6,
+    "page": 4,
+    "text": "223 0df D 02-23CL Western 02-23 Western Metro - Clear Law Dispatch"
+  },
+  {
+    "y": 492.26,
+    "page": 4,
+    "text": "224 0e0 D 02-24CL Western 02-24 Western Metro - Clear Law Dispatch"
+  },
+  {
+    "y": 480.92,
+    "page": 4,
+    "text": "225 0e1 DE 02-25 Western Me 02-25 Western Metro Law Dispatch"
+  },
+  {
+    "y": 469.58,
+    "page": 4,
+    "text": "226 0e2 DE 02-26 Western Me 02-26 Western Metro Law Dispatch"
+  },
+  {
+    "y": 458.24,
+    "page": 4,
+    "text": "227 0e3 DE 02-27 Western Me 02-27 Western Metro Law Dispatch"
+  },
+  {
+    "y": 446.9,
+    "page": 4,
+    "text": "228 0e4 DE 02-28SP Western 02-28 Western Metro Special Law Talk"
+  },
+  {
+    "y": 435.57,
+    "page": 4,
+    "text": "229 0e5 DE 02-29SP Western 02-29 Western Metro Special Law Talk"
+  },
+  {
+    "y": 424.23,
+    "page": 4,
+    "text": "230 0e6 DE 02-30SP Western 02-30 Western Metro Special Law Talk"
+  },
+  {
+    "y": 412.89,
+    "page": 4,
+    "text": "301 12d DE 03-01 Southern M 03-01 Southern Metro - Div 1 Law Dispatch"
+  },
+  {
+    "y": 401.55,
+    "page": 4,
+    "text": "302 12e DE 03-02 Southern M 03-02 Southern Metro - Div 2 Law Dispatch"
+  },
+  {
+    "y": 390.21,
+    "page": 4,
+    "text": "303 12f DE 03-03 Southern M 03-03 Southern Metro - Div 3 Law Dispatch"
+  },
+  {
+    "y": 378.87,
+    "page": 4,
+    "text": "304 130 DE 03-04 Southern M 03-04 Southern Metro - Div 4 Law Dispatch"
+  },
+  {
+    "y": 367.53,
+    "page": 4,
+    "text": "305 131 DE 03-05 Southern M 03-05 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 356.2,
+    "page": 4,
+    "text": "306 132 DE 03-06A Southern 03-06 Southern Metro Alternate Law Dispatch"
+  },
+  {
+    "y": 344.86,
+    "page": 4,
+    "text": "307 133 DE 03-07A Southern 03-07 Southern Metro Alternate Law Dispatch"
+  },
+  {
+    "y": 333.52,
+    "page": 4,
+    "text": "308 134 DE 03-08 Southern M 03-08 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 322.18,
+    "page": 4,
+    "text": "309 135 DE 03-09 Southern M 03-09 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 310.84,
+    "page": 4,
+    "text": "310 136 DE 03-10 Southern M 03-10 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 299.5,
+    "page": 4,
+    "text": "311 137 DE 03-11EV Southern 03-11 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 288.16,
+    "page": 4,
+    "text": "312 138 DE 03-12EV Southern 03-12 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 276.83,
+    "page": 4,
+    "text": "313 139 DE 03-13EV Southern 03-13 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 265.49,
+    "page": 4,
+    "text": "314 13a DE 03-14EV Southern 03-14 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 254.15,
+    "page": 4,
+    "text": "315 13b DE 03-15EV Southern 03-15 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 242.81,
+    "page": 4,
+    "text": "316 13c DE 03-16EV Southern 03-16 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 231.47,
+    "page": 4,
+    "text": "317 13d DE 03-17EV Southern 03-17 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 220.13,
+    "page": 4,
+    "text": "318 13e DE 03-18EV Southern 03-18 Southern Metro Event Law Dispatch"
+  },
+  {
+    "y": 208.79,
+    "page": 4,
+    "text": "319 13f DE 03-19 Southern M 03-19 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 197.46,
+    "page": 4,
+    "text": "320 140 DE 03-20 Southern M 03-20 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 186.12,
+    "page": 4,
+    "text": "321 141 DE 03-21 Southern M 03-21 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 174.78,
+    "page": 4,
+    "text": "322 142 DE 03-22 Southern M 03-22 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 163.44,
+    "page": 4,
+    "text": "323 143 D 03-23CL Southern 03-23 Southern Metro Clear Law Dispatch"
+  },
+  {
+    "y": 152.1,
+    "page": 4,
+    "text": "324 144 D 03-24CL Southern 03-24 Southern Metro Clear Law Dispatch"
+  },
+  {
+    "y": 140.76,
+    "page": 4,
+    "text": "325 145 DE 03-25 Southern M 03-25 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 129.42,
+    "page": 4,
+    "text": "326 146 DE 03-26 Southern M 03-26 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 118.09,
+    "page": 4,
+    "text": "327 147 DE 03-27 Southern M 03-27 Southern Metro Law Dispatch"
+  },
+  {
+    "y": 106.75,
+    "page": 4,
+    "text": "328 148 DE 03-28SP Southern 03-28 Southern Metro Special Law Talk"
+  },
+  {
+    "y": 95.41,
+    "page": 4,
+    "text": "329 149 DE 03-29SP Southern 03-29 Southern Metro Special Law Talk"
+  },
+  {
+    "y": 84.07,
+    "page": 4,
+    "text": "330 14a DE 03-30SP Southern 03-30 Southern Metro Special Law Talk"
+  },
+  {
+    "y": 72.73,
+    "page": 4,
+    "text": "401 191 DE 04-01 Eastern M 04-01 Eastern Metro - Div 1 Law Dispatch"
+  },
+  {
+    "y": 61.39,
+    "page": 4,
+    "text": "402 192 DE 04-02 Eastern M 04-02 Eastern Metro - Div 2 Law Dispatch"
+  },
+  {
+    "y": 26.25,
+    "page": 4,
+    "text": "Page 4/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 4,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 5,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 5,
+    "text": "403 193 DE 04-03 Eastern M 04-03 Eastern M Law Dispatch"
+  },
+  {
+    "y": 696.35,
+    "page": 5,
+    "text": "404 194 DE 04-04 Eastern M 04-04 Eastern M Law Dispatch"
+  },
+  {
+    "y": 685.01,
+    "page": 5,
+    "text": "405 195 DE 04-05 Eastern M 04-05 Eastern M Law Dispatch"
+  },
+  {
+    "y": 673.68,
+    "page": 5,
+    "text": "406 196 DE 04-06A Eastern M 04-06A Eastern M Law Dispatch"
+  },
+  {
+    "y": 662.34,
+    "page": 5,
+    "text": "407 197 DE 04-07A Eastern M 04-07A Eastern M Law Dispatch"
+  },
+  {
+    "y": 651,
+    "page": 5,
+    "text": "408 198 DE 04-08A Eastern M 04-08A Eastern M Law Dispatch"
+  },
+  {
+    "y": 639.66,
+    "page": 5,
+    "text": "409 199 DE 04-09 Eastern M 04-09 Eastern M Law Dispatch"
+  },
+  {
+    "y": 628.32,
+    "page": 5,
+    "text": "410 19a DE 04-10 Eastern M 04-10 Eastern M Law Dispatch"
+  },
+  {
+    "y": 616.98,
+    "page": 5,
+    "text": "411 19b DE 04-11EV Eastern 04-11EV Eastern Law Talk"
+  },
+  {
+    "y": 605.64,
+    "page": 5,
+    "text": "412 19c DE 04-12EV Eastern 04-12EV Eastern Law Talk"
+  },
+  {
+    "y": 594.31,
+    "page": 5,
+    "text": "413 19d DE 04-13EV Eastern 04-13EV Eastern Law Talk"
+  },
+  {
+    "y": 582.97,
+    "page": 5,
+    "text": "414 19e DE 04-14EV Eastern 04-14EV Eastern Law Talk"
+  },
+  {
+    "y": 571.63,
+    "page": 5,
+    "text": "415 19f DE 04-15EV Eastern 04-15EV Eastern Law Talk"
+  },
+  {
+    "y": 560.29,
+    "page": 5,
+    "text": "416 1a0 DE 04-16EV Eastern 04-16EV Eastern Law Talk"
+  },
+  {
+    "y": 548.95,
+    "page": 5,
+    "text": "417 1a1 DE 04-17EV Eastern 04-17EV Eastern Law Talk"
+  },
+  {
+    "y": 537.61,
+    "page": 5,
+    "text": "418 1a2 DE 04-18EV Eastern 04-18EV Eastern Law Talk"
+  },
+  {
+    "y": 526.27,
+    "page": 5,
+    "text": "419 1a3 DE 04-19 Eastern 04-19 Eastern Law Dispatch"
+  },
+  {
+    "y": 514.94,
+    "page": 5,
+    "text": "420 1a4 DE 04-20 Eastern 04-20 Eastern Law Dispatch"
+  },
+  {
+    "y": 503.6,
+    "page": 5,
+    "text": "421 1a5 DE 04-21 Eastern 04-21 Eastern Law Dispatch"
+  },
+  {
+    "y": 492.26,
+    "page": 5,
+    "text": "422 1a6 DE 04-22 Eastern 04-22 Eastern Law Dispatch"
+  },
+  {
+    "y": 480.92,
+    "page": 5,
+    "text": "423 1a7 D 04-23Clear Easte 04-23Clear Eastern Law Talk"
+  },
+  {
+    "y": 469.58,
+    "page": 5,
+    "text": "424 1a8 D 04-24Clear Easte 04-24Clear Eastern Law Talk"
+  },
+  {
+    "y": 458.24,
+    "page": 5,
+    "text": "425 1a9 D 04-25Clear Easte 04-25Clear Eastern Law Talk"
+  },
+  {
+    "y": 446.9,
+    "page": 5,
+    "text": "426 1aa DE 04-26 Eastern 04-26 Eastern Law Dispatch"
+  },
+  {
+    "y": 435.57,
+    "page": 5,
+    "text": "427 1ab DE 04-27 Eastern 04-27 Eastern Law Dispatch"
+  },
+  {
+    "y": 424.23,
+    "page": 5,
+    "text": "428 1ac DE 04-28SP Eastern 04-28SP Eastern Law Talk"
+  },
+  {
+    "y": 412.89,
+    "page": 5,
+    "text": "429 1ad DE 04-29SP Eastern 04-29SP Eastern Law Talk"
+  },
+  {
+    "y": 401.55,
+    "page": 5,
+    "text": "430 1ae DE 04-30SP Eastern 04-30SP Eastern Law Talk"
+  },
+  {
+    "y": 390.21,
+    "page": 5,
+    "text": "501 1f5 DE 05-01 05-01 Law Dispatch"
+  },
+  {
+    "y": 378.87,
+    "page": 5,
+    "text": "502 1f6 DE 05-02 05-02 Law Dispatch"
+  },
+  {
+    "y": 367.53,
+    "page": 5,
+    "text": "503 1f7 DE 05-03 05-03 Law Dispatch"
+  },
+  {
+    "y": 356.2,
+    "page": 5,
+    "text": "504 1f8 DE 05-04 05-04 Law Dispatch"
+  },
+  {
+    "y": 344.86,
+    "page": 5,
+    "text": "505 1f9 DE 05-05 05-05 Law Dispatch"
+  },
+  {
+    "y": 333.52,
+    "page": 5,
+    "text": "506 1fa DE 05-06A 05-06A Law Dispatch"
+  },
+  {
+    "y": 322.18,
+    "page": 5,
+    "text": "507 1fb DE 05-07A 05-07A Law Dispatch"
+  },
+  {
+    "y": 310.84,
+    "page": 5,
+    "text": "508 1fc DE 05-08 05-08 Law Dispatch"
+  },
+  {
+    "y": 299.5,
+    "page": 5,
+    "text": "509 1fd DE 05-09 05-09 Law Dispatch"
+  },
+  {
+    "y": 288.16,
+    "page": 5,
+    "text": "510 1fe DE 05-10 05-10 Law Dispatch"
+  },
+  {
+    "y": 276.83,
+    "page": 5,
+    "text": "511 1ff DE 05-11 Ev 05-11 Ev Law Talk"
+  },
+  {
+    "y": 265.49,
+    "page": 5,
+    "text": "512 200 DE 05-12 Ev 05-12 Ev Law Talk"
+  },
+  {
+    "y": 254.15,
+    "page": 5,
+    "text": "513 201 DE 05-13 Ev 05-13 Ev Law Talk"
+  },
+  {
+    "y": 242.81,
+    "page": 5,
+    "text": "514 202 DE 05-14 Ev 05-14 Ev Law Talk"
+  },
+  {
+    "y": 231.47,
+    "page": 5,
+    "text": "515 203 DE 05-15 Ev 05-15 Ev Law Talk"
+  },
+  {
+    "y": 220.13,
+    "page": 5,
+    "text": "516 204 DE 05-16 Ev 05-16 Ev Law Talk"
+  },
+  {
+    "y": 208.79,
+    "page": 5,
+    "text": "517 205 DE 05-17 Ev 05-17 Ev Law Talk"
+  },
+  {
+    "y": 197.46,
+    "page": 5,
+    "text": "518 206 DE 05-18 Ev 05-18 Ev Law Talk"
+  },
+  {
+    "y": 186.12,
+    "page": 5,
+    "text": "519 207 DE 05-19 05-19 Law Dispatch"
+  },
+  {
+    "y": 174.78,
+    "page": 5,
+    "text": "520 208 DE 05-20 05-20 Law Dispatch"
+  },
+  {
+    "y": 163.44,
+    "page": 5,
+    "text": "521 209 DE 05-21 05-21 Law Dispatch"
+  },
+  {
+    "y": 152.1,
+    "page": 5,
+    "text": "522 20a DE 05-22 05-22 Law Dispatch"
+  },
+  {
+    "y": 140.76,
+    "page": 5,
+    "text": "523 20b D 05-23 Clear 05-23 Clear Law Talk"
+  },
+  {
+    "y": 129.42,
+    "page": 5,
+    "text": "524 20c D 05-24 Clear 05-24 Clear Law Talk"
+  },
+  {
+    "y": 118.09,
+    "page": 5,
+    "text": "525 20d DE 05-25 05-25 Law Dispatch"
+  },
+  {
+    "y": 106.75,
+    "page": 5,
+    "text": "526 20e DE 05-26 05-26 Law Dispatch"
+  },
+  {
+    "y": 95.41,
+    "page": 5,
+    "text": "527 20f DE 05-27 05-27 Law Dispatch"
+  },
+  {
+    "y": 84.07,
+    "page": 5,
+    "text": "528 210 DE 05-28 Special 05-28 Special Law Talk"
+  },
+  {
+    "y": 72.73,
+    "page": 5,
+    "text": "529 211 DE 05-29 Special 05-29 Special Law Talk"
+  },
+  {
+    "y": 61.39,
+    "page": 5,
+    "text": "530 212 DE 05-30 Special 05-30 Special Law Talk"
+  },
+  {
+    "y": 26.25,
+    "page": 5,
+    "text": "Page 5/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 5,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 6,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 6,
+    "text": "601 259 DE 06-01 06-01 Law Dispatch"
+  },
+  {
+    "y": 696.35,
+    "page": 6,
+    "text": "602 25a DE 06-02 06-02 Law Dispatch"
+  },
+  {
+    "y": 685.01,
+    "page": 6,
+    "text": "603 25b DE 06-03 06-03 Law Dispatch"
+  },
+  {
+    "y": 673.68,
+    "page": 6,
+    "text": "604 25c DE 06-04 06-04 Law Dispatch"
+  },
+  {
+    "y": 662.34,
+    "page": 6,
+    "text": "605 25d DE 06-05 06-05 Law Dispatch"
+  },
+  {
+    "y": 651,
+    "page": 6,
+    "text": "606 25e DE 06-06 06-06 Law Dispatch"
+  },
+  {
+    "y": 639.66,
+    "page": 6,
+    "text": "607 25f DE 06-07 06-07 Law Dispatch"
+  },
+  {
+    "y": 628.32,
+    "page": 6,
+    "text": "608 260 DE 06-08 06-08 Law Dispatch"
+  },
+  {
+    "y": 616.98,
+    "page": 6,
+    "text": "609 261 DE 06-09 06-09 Law Dispatch"
+  },
+  {
+    "y": 605.64,
+    "page": 6,
+    "text": "610 262 DE 06-10 06-10 Law Dispatch"
+  },
+  {
+    "y": 594.31,
+    "page": 6,
+    "text": "611 263 DE 06-11 06-11 Law Talk"
+  },
+  {
+    "y": 582.97,
+    "page": 6,
+    "text": "612 264 DE 06-12 06-12 Law Talk"
+  },
+  {
+    "y": 571.63,
+    "page": 6,
+    "text": "613 265 DE 06-13 06-13 Law Talk"
+  },
+  {
+    "y": 560.29,
+    "page": 6,
+    "text": "614 266 DE 06-14 06-14 Law Talk"
+  },
+  {
+    "y": 548.95,
+    "page": 6,
+    "text": "615 267 DE 06-15 06-15 Law Talk"
+  },
+  {
+    "y": 537.61,
+    "page": 6,
+    "text": "616 268 DE 06-16 06-16 Law Talk"
+  },
+  {
+    "y": 526.27,
+    "page": 6,
+    "text": "617 269 DE 06-17 06-17 Law Talk"
+  },
+  {
+    "y": 514.94,
+    "page": 6,
+    "text": "618 26a DE 06-18 06-18 Law Talk"
+  },
+  {
+    "y": 503.6,
+    "page": 6,
+    "text": "619 26b DE 06-19 06-19 Law Dispatch"
+  },
+  {
+    "y": 492.26,
+    "page": 6,
+    "text": "620 26c DE 06-20 06-20 Law Dispatch"
+  },
+  {
+    "y": 480.92,
+    "page": 6,
+    "text": "621 26d DE 06-21 06-21 Law Dispatch"
+  },
+  {
+    "y": 469.58,
+    "page": 6,
+    "text": "622 26e DE 06-22 06-22 Law Dispatch"
+  },
+  {
+    "y": 458.24,
+    "page": 6,
+    "text": "623 26f DE 06-23 06-23 Law Dispatch"
+  },
+  {
+    "y": 446.9,
+    "page": 6,
+    "text": "624 270 DE 06-24 06-24 Law Dispatch"
+  },
+  {
+    "y": 435.57,
+    "page": 6,
+    "text": "625 271 DE 06-25 06-25 Law Dispatch"
+  },
+  {
+    "y": 424.23,
+    "page": 6,
+    "text": "626 272 DE 06-26 06-26 Law Dispatch"
+  },
+  {
+    "y": 412.89,
+    "page": 6,
+    "text": "627 273 DE 06-27 06-27 Law Dispatch"
+  },
+  {
+    "y": 401.55,
+    "page": 6,
+    "text": "628 274 DE 06-28 Special 06-28 Special Law Talk"
+  },
+  {
+    "y": 390.21,
+    "page": 6,
+    "text": "629 275 DE 06-29 Special 06-29 Special Law Talk"
+  },
+  {
+    "y": 378.87,
+    "page": 6,
+    "text": "630 276 DE 06-30 Special 06-30 Special Law Talk"
+  },
+  {
+    "y": 367.53,
+    "page": 6,
+    "text": "701 2bd DE 07-01 TAC 07-01 TAC - Specialist Assets Call Channel - K9, FRU, ROR, CIRT Law Tac"
+  },
+  {
+    "y": 356.2,
+    "page": 6,
+    "text": "702 2be DE 07-02 TAC 07-02 TAC - SOG Field Law Tac"
+  },
+  {
+    "y": 344.86,
+    "page": 6,
+    "text": "703 2bf DE 07-03 TAC 07-03 TAC - Water Police, SAR Law Tac"
+  },
+  {
+    "y": 333.52,
+    "page": 6,
+    "text": "704 2c0 DE 07-04 TAC 07-04 TAC Law Tac"
+  },
+  {
+    "y": 322.18,
+    "page": 6,
+    "text": "705 2c1 DE 07-05 TAC 07-05 TAC Law Tac"
+  },
+  {
+    "y": 310.84,
+    "page": 6,
+    "text": "706 2c2 DE 07-06 TAC 07-06 TAC Law Tac"
+  },
+  {
+    "y": 299.5,
+    "page": 6,
+    "text": "707 2c3 DE 07-07 TAC 07-07 TAC Law Tac"
+  },
+  {
+    "y": 288.16,
+    "page": 6,
+    "text": "708 2c4 DE 07-08 TAC 07-08 TAC Law Tac"
+  },
+  {
+    "y": 276.83,
+    "page": 6,
+    "text": "709 2c5 DE 07-09 TAC 07-09 TAC Law Tac"
+  },
+  {
+    "y": 265.49,
+    "page": 6,
+    "text": "710 2c6 DE 07-10 TAC 07-10 TAC Law Tac"
+  },
+  {
+    "y": 254.15,
+    "page": 6,
+    "text": "711 2c7 DE 07-11 TAC 07-11 TAC Law Tac"
+  },
+  {
+    "y": 242.81,
+    "page": 6,
+    "text": "712 2c8 DE 07-12 TAC 07-12 TAC Law Tac"
+  },
+  {
+    "y": 231.47,
+    "page": 6,
+    "text": "713 2c9 DE 07-13 TAC 07-13 TAC Law Tac"
+  },
+  {
+    "y": 220.13,
+    "page": 6,
+    "text": "714 2ca DE 07-14 TAC 07-14 TAC Law Tac"
+  },
+  {
+    "y": 208.79,
+    "page": 6,
+    "text": "715 2cb DE 07-15 TAC 07-15 TAC Law Tac"
+  },
+  {
+    "y": 197.46,
+    "page": 6,
+    "text": "716 2cc DE 07-16 TAC 07-16 TAC Law Tac"
+  },
+  {
+    "y": 186.12,
+    "page": 6,
+    "text": "717 2cd DE 07-17 TAC 07-17 TAC Law Tac"
+  },
+  {
+    "y": 174.78,
+    "page": 6,
+    "text": "718 2ce DE 07-18 TAC 07-18 TAC Law Tac"
+  },
+  {
+    "y": 163.44,
+    "page": 6,
+    "text": "719 2cf DE 07-19 TAC 07-19 TAC Law Tac"
+  },
+  {
+    "y": 152.1,
+    "page": 6,
+    "text": "720 2d0 DE 07-20 TAC 07-20 TAC Law Tac"
+  },
+  {
+    "y": 140.76,
+    "page": 6,
+    "text": "721 2d1 DE 07-21 TAC 07-21 TAC Law Tac"
+  },
+  {
+    "y": 129.42,
+    "page": 6,
+    "text": "722 2d2 DE 07-22 TAC 07-22 TAC Law Tac"
+  },
+  {
+    "y": 118.09,
+    "page": 6,
+    "text": "723 2d3 DE 07-23 TAC 07-23 TAC Law Tac"
+  },
+  {
+    "y": 106.75,
+    "page": 6,
+    "text": "724 2d4 DE 07-24 TAC 07-24 TAC Law Tac"
+  },
+  {
+    "y": 95.41,
+    "page": 6,
+    "text": "725 2d5 D 07-25 Clear 07-25 Clear Law Tac"
+  },
+  {
+    "y": 84.07,
+    "page": 6,
+    "text": "1103 44f DE 11-03 IA Net 11-03 IA Net Multi-Talk"
+  },
+  {
+    "y": 72.73,
+    "page": 6,
+    "text": "1104 450 DE 11-04 IA Net 11-04 IA Net Multi-Talk"
+  },
+  {
+    "y": 61.39,
+    "page": 6,
+    "text": "1105 451 DE 11-05 IA Net 11-05 IA Net Multi-Talk"
+  },
+  {
+    "y": 26.25,
+    "page": 6,
+    "text": "Page 6/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 6,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 7,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 7,
+    "text": "1106 452 DE 11-06 IA Net 11-06 IA Net Multi-Talk"
+  },
+  {
+    "y": 696.35,
+    "page": 7,
+    "text": "1107 453 DE 11-07 IA Net 11-07 IA Net Multi-Talk"
+  },
+  {
+    "y": 685.01,
+    "page": 7,
+    "text": "1108 454 DE 11-08 IA Net 11-08 IA Net Multi-Talk"
+  },
+  {
+    "y": 673.68,
+    "page": 7,
+    "text": "1109 455 DE 11-09 IA Net 11-09 IA Net Multi-Talk"
+  },
+  {
+    "y": 662.34,
+    "page": 7,
+    "text": "1110 456 DE 11-10 IA Net 11-10 IA Net Multi-Talk"
+  },
+  {
+    "y": 651,
+    "page": 7,
+    "text": "1125 465 D 11-25 AutoNexu 1125 AutoNexu Fitouts Law Talk"
+  },
+  {
+    "y": 639.66,
+    "page": 7,
+    "text": "1126 466 D 11-26 Dynamc 11-26 Dynamc Law Talk"
+  },
+  {
+    "y": 628.32,
+    "page": 7,
+    "text": "1201 4b1 DE 12-01 Special 12-01 Special Law Talk"
+  },
+  {
+    "y": 616.98,
+    "page": 7,
+    "text": "1202 4b2 DE 12-02 Special 12-02 Special Law Talk"
+  },
+  {
+    "y": 605.64,
+    "page": 7,
+    "text": "1203 4b3 DE 12-03 Special 12-03 Special Law Talk"
+  },
+  {
+    "y": 594.31,
+    "page": 7,
+    "text": "1204 4b4 DE 12-04 Special 12-04 Special Law Talk"
+  },
+  {
+    "y": 582.97,
+    "page": 7,
+    "text": "1205 4b5 DE 12-05 Special 12-05 Special Law Talk"
+  },
+  {
+    "y": 571.63,
+    "page": 7,
+    "text": "1206 4b6 DE 12-06 Special 12-06 Special Law Talk"
+  },
+  {
+    "y": 560.29,
+    "page": 7,
+    "text": "1207 4b7 DE 12-07 Special 12-07 Special Law Talk"
+  },
+  {
+    "y": 548.95,
+    "page": 7,
+    "text": "1208 4b8 DE 12-08 Special 12-08 Special Law Talk"
+  },
+  {
+    "y": 537.61,
+    "page": 7,
+    "text": "1209 4b9 DE 12-09 Special 12-09 Special Law Talk"
+  },
+  {
+    "y": 526.27,
+    "page": 7,
+    "text": "1210 4ba DE 12-10 Special 12-10 Special Law Talk"
+  },
+  {
+    "y": 514.94,
+    "page": 7,
+    "text": "1211 4bb DE 12-11 Special 12-11 Special Law Talk"
+  },
+  {
+    "y": 503.6,
+    "page": 7,
+    "text": "1212 4bc DE 12-12 Special 12-12 Special Law Talk"
+  },
+  {
+    "y": 492.26,
+    "page": 7,
+    "text": "1213 4bd DE 12-13 Special 12-13 Special Law Talk"
+  },
+  {
+    "y": 480.92,
+    "page": 7,
+    "text": "1214 4be DE 12-14 Special 12-14 Special Law Talk"
+  },
+  {
+    "y": 469.58,
+    "page": 7,
+    "text": "1215 4bf DE 12-15 Special 12-15 Special Law Talk"
+  },
+  {
+    "y": 458.24,
+    "page": 7,
+    "text": "1216 4c0 DE 12-16 Special 12-16 Special Law Talk"
+  },
+  {
+    "y": 446.9,
+    "page": 7,
+    "text": "1217 4c1 DE 12-17 Special 12-17 Special Law Talk"
+  },
+  {
+    "y": 435.57,
+    "page": 7,
+    "text": "1218 4c2 DE 12-18 Special 12-18 Special Law Talk"
+  },
+  {
+    "y": 424.23,
+    "page": 7,
+    "text": "1219 4c3 DE 12-19 Special 12-19 Special Law Talk"
+  },
+  {
+    "y": 412.89,
+    "page": 7,
+    "text": "1220 4c4 DE 12-20 Special 12-20 Special Law Talk"
+  },
+  {
+    "y": 401.55,
+    "page": 7,
+    "text": "1301 515 DE 13-01 Special 13-01 Special Law Talk"
+  },
+  {
+    "y": 390.21,
+    "page": 7,
+    "text": "1302 516 DE 13-02 Special 13-02 Special Law Talk"
+  },
+  {
+    "y": 378.87,
+    "page": 7,
+    "text": "1303 517 DE 13-03 Special 13-03 Special Law Talk"
+  },
+  {
+    "y": 367.53,
+    "page": 7,
+    "text": "1304 518 DE 13-04 Special 13-04 Special Law Talk"
+  },
+  {
+    "y": 356.2,
+    "page": 7,
+    "text": "1305 519 DE 13-05 Special 13-05 Special Law Talk"
+  },
+  {
+    "y": 344.86,
+    "page": 7,
+    "text": "1306 51a DE 13-06 Special 13-06 Special Law Talk"
+  },
+  {
+    "y": 333.52,
+    "page": 7,
+    "text": "1307 51b DE 13-07 Special 13-07 Special Law Talk"
+  },
+  {
+    "y": 322.18,
+    "page": 7,
+    "text": "1308 51c DE 13-08 Special 13-08 Special Law Talk"
+  },
+  {
+    "y": 310.84,
+    "page": 7,
+    "text": "1309 51d DE 13-09 Special 13-09 Special Law Talk"
+  },
+  {
+    "y": 299.5,
+    "page": 7,
+    "text": "1310 51e DE 13-10 Special 13-10 Special Law Talk"
+  },
+  {
+    "y": 288.16,
+    "page": 7,
+    "text": "1311 51f DE 13-11 Special 13-11 Special Law Talk"
+  },
+  {
+    "y": 276.83,
+    "page": 7,
+    "text": "1312 520 DE 13-12 Special 13-12 Special Law Talk"
+  },
+  {
+    "y": 265.49,
+    "page": 7,
+    "text": "1313 521 DE 13-13 Special 13-13 Special Law Talk"
+  },
+  {
+    "y": 254.15,
+    "page": 7,
+    "text": "1314 522 DE 13-14 Special 13-14 Special Law Talk"
+  },
+  {
+    "y": 242.81,
+    "page": 7,
+    "text": "1315 523 DE 13-15 Special 13-15 Special Law Talk"
+  },
+  {
+    "y": 231.47,
+    "page": 7,
+    "text": "1316 524 DE 13-16 Special 13-16 Special Law Talk"
+  },
+  {
+    "y": 220.13,
+    "page": 7,
+    "text": "1317 525 DE 13-17 Special 13-17 Special Law Talk"
+  },
+  {
+    "y": 208.79,
+    "page": 7,
+    "text": "1318 526 DE 13-18 Special 13-18 Special Law Talk"
+  },
+  {
+    "y": 197.46,
+    "page": 7,
+    "text": "1319 527 DE 13-19 Special 13-19 Special Law Talk"
+  },
+  {
+    "y": 186.12,
+    "page": 7,
+    "text": "1320 528 DE 13-20 Special 13-20 Special Law Talk"
+  },
+  {
+    "y": 174.78,
+    "page": 7,
+    "text": "1321 529 DE 13-21 Special 13-21 Special Law Talk"
+  },
+  {
+    "y": 163.44,
+    "page": 7,
+    "text": "1322 52a DE 13-22 Special 13-22 Special Law Talk"
+  },
+  {
+    "y": 152.1,
+    "page": 7,
+    "text": "1323 52b DE 13-23 Special 13-23 Special Law Talk"
+  },
+  {
+    "y": 140.76,
+    "page": 7,
+    "text": "1324 52c DE 13-24 Special 13-24 Special Law Talk"
+  },
+  {
+    "y": 129.42,
+    "page": 7,
+    "text": "1325 52d DE 13-25 Special 13-25 Special Law Talk"
+  },
+  {
+    "y": 118.09,
+    "page": 7,
+    "text": "1326 52e DE 13-26 Special 13-26 Special Law Talk"
+  },
+  {
+    "y": 106.75,
+    "page": 7,
+    "text": "1327 52f DE 13-27 Special 13-27 Special Law Talk"
+  },
+  {
+    "y": 95.41,
+    "page": 7,
+    "text": "1328 530 DE 13-28 Special 13-28 Special Law Talk"
+  },
+  {
+    "y": 84.07,
+    "page": 7,
+    "text": "1329 531 DE 13-29 Special 13-29 Special Law Talk"
+  },
+  {
+    "y": 72.73,
+    "page": 7,
+    "text": "1330 532 DE 13-30 Special 13-30 Special Law Talk"
+  },
+  {
+    "y": 61.39,
+    "page": 7,
+    "text": "1331 533 DE 13-31 Special 13-31 Special Law Talk"
+  },
+  {
+    "y": 26.25,
+    "page": 7,
+    "text": "Page 7/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 7,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 8,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 8,
+    "text": "1332 534 DE 13-32 Special 13-32 Special Law Talk"
+  },
+  {
+    "y": 696.35,
+    "page": 8,
+    "text": "1333 535 DE 13-33 Special 13-33 Special Law Talk"
+  },
+  {
+    "y": 685.01,
+    "page": 8,
+    "text": "1334 536 DE 13-34 Special 13-34 Special Law Talk"
+  },
+  {
+    "y": 673.68,
+    "page": 8,
+    "text": "1335 537 DE 13-35 Special 13-35 Special Law Talk"
+  },
+  {
+    "y": 662.34,
+    "page": 8,
+    "text": "1336 538 DE 13-36 Special 13-36 Special Law Talk"
+  },
+  {
+    "y": 651,
+    "page": 8,
+    "text": "1337 539 DE 13-37 Special 13-37 Special Law Talk"
+  },
+  {
+    "y": 639.66,
+    "page": 8,
+    "text": "1338 53a DE 13-38 Special 13-38 Special Law Talk"
+  },
+  {
+    "y": 628.32,
+    "page": 8,
+    "text": "1339 53b DE 13-39 Special 13-39 Special Law Talk"
+  },
+  {
+    "y": 616.98,
+    "page": 8,
+    "text": "1340 53c DE 13-40 Special 13-40 Special Law Talk"
+  },
+  {
+    "y": 605.64,
+    "page": 8,
+    "text": "1341 53d DE 13-41 Special 13-41 Special Law Talk"
+  },
+  {
+    "y": 594.31,
+    "page": 8,
+    "text": "1342 53e DE 13-42 Special 13-42 Special Law Talk"
+  },
+  {
+    "y": 582.97,
+    "page": 8,
+    "text": "1343 53f DE 13-43 Special 13-43 Special Law Talk"
+  },
+  {
+    "y": 571.63,
+    "page": 8,
+    "text": "1344 540 DE 13-44 Special 13-44 Special Law Talk"
+  },
+  {
+    "y": 560.29,
+    "page": 8,
+    "text": "1345 541 DE 13-45 Special 13-45 Special Law Talk"
+  },
+  {
+    "y": 548.95,
+    "page": 8,
+    "text": "1346 542 DE 13-46 Special 13-46 Special Law Talk"
+  },
+  {
+    "y": 537.61,
+    "page": 8,
+    "text": "1347 543 DE 13-47 Special 13-47 Special Law Talk"
+  },
+  {
+    "y": 526.27,
+    "page": 8,
+    "text": "1348 544 DE 13-48 Special 13-48 Special Law Talk"
+  },
+  {
+    "y": 514.94,
+    "page": 8,
+    "text": "1401 579 DE 14-01 Special Lo 14-01 Special Location Law Tac"
+  },
+  {
+    "y": 503.6,
+    "page": 8,
+    "text": "1402 57a DE 14-02 Special Lo 14-02 Special Location Law Tac"
+  },
+  {
+    "y": 492.26,
+    "page": 8,
+    "text": "1403 57b DE 14-03 Special Lo 14-03 Special Location Law Tac"
+  },
+  {
+    "y": 480.92,
+    "page": 8,
+    "text": "1404 57c DE 14-04 Special Lo 14-04 Special Location Law Tac"
+  },
+  {
+    "y": 469.58,
+    "page": 8,
+    "text": "1405 57d DE 14-05 Special Lo 14-05 Special Location Law Tac"
+  },
+  {
+    "y": 458.24,
+    "page": 8,
+    "text": "1406 57e DE 14-06 Special Lo 14-06 Special Location Law Tac"
+  },
+  {
+    "y": 446.9,
+    "page": 8,
+    "text": "1407 57f DE 14-07 Special Lo 14-07 Special Location Law Tac"
+  },
+  {
+    "y": 435.57,
+    "page": 8,
+    "text": "1408 580 DE 14-08 Special Lo 14-08 Special Location Law Tac"
+  },
+  {
+    "y": 424.23,
+    "page": 8,
+    "text": "1409 581 DE 14-09 Special Lo 14-09 Special Location Law Tac"
+  },
+  {
+    "y": 412.89,
+    "page": 8,
+    "text": "1410 582 DE 14-10 Special Lo 14-10 Special Location Law Tac"
+  },
+  {
+    "y": 401.55,
+    "page": 8,
+    "text": "1411 583 DE 14-11 Special Lo 14-11 Special Location Law Tac"
+  },
+  {
+    "y": 390.21,
+    "page": 8,
+    "text": "1412 584 DE 14-12 Special Lo 14-12 Special Location Law Tac"
+  },
+  {
+    "y": 378.87,
+    "page": 8,
+    "text": "1413 585 DE 14-13 Special Lo 14-13 Special Location Law Tac"
+  },
+  {
+    "y": 367.53,
+    "page": 8,
+    "text": "1414 586 DE 14-14 Special Lo 14-14 Special Location Law Tac"
+  },
+  {
+    "y": 356.2,
+    "page": 8,
+    "text": "1415 587 DE 14-15 Special Lo 14-15 Special Location Law Tac"
+  },
+  {
+    "y": 344.86,
+    "page": 8,
+    "text": "1416 588 DE 14-16 Special Lo 14-16 Special Location Law Tac"
+  },
+  {
+    "y": 333.52,
+    "page": 8,
+    "text": "1417 589 DE 14-17 Special Lo 14-17 Special Location Law Tac"
+  },
+  {
+    "y": 322.18,
+    "page": 8,
+    "text": "1418 58a DE 14-18 Special Lo 14-18 Special Location Law Tac"
+  },
+  {
+    "y": 310.84,
+    "page": 8,
+    "text": "1501 5dd DE 15-01 Tactic 15-01 Tactic Law Tac"
+  },
+  {
+    "y": 299.5,
+    "page": 8,
+    "text": "1502 5de DE 15-02 Tactic 15-02 Tactic Law Tac"
+  },
+  {
+    "y": 288.16,
+    "page": 8,
+    "text": "1503 5df DE 15-03 Tactic 15-03 Tactic Law Tac"
+  },
+  {
+    "y": 276.83,
+    "page": 8,
+    "text": "1504 5e0 DE 15-04 Tactic 15-04 Tactic Law Tac"
+  },
+  {
+    "y": 265.49,
+    "page": 8,
+    "text": "1505 5e1 DE 15-05 Tactic 15-05 Tactic Law Tac"
+  },
+  {
+    "y": 254.15,
+    "page": 8,
+    "text": "1506 5e2 DE 15-06 Tactic 15-06 Tactic Law Tac"
+  },
+  {
+    "y": 242.81,
+    "page": 8,
+    "text": "1507 5e3 DE 15-07 Tactic 15-07 Tactic Law Tac"
+  },
+  {
+    "y": 231.47,
+    "page": 8,
+    "text": "1508 5e4 DE 15-08 Tactic 15-08 Tactic Law Tac"
+  },
+  {
+    "y": 220.13,
+    "page": 8,
+    "text": "1509 5e5 DE 15-09 Tactic 15-09 Tactic Law Tac"
+  },
+  {
+    "y": 208.79,
+    "page": 8,
+    "text": "1510 5e6 DE 15-10 Tactic 15-10 Tactic Law Tac"
+  },
+  {
+    "y": 197.46,
+    "page": 8,
+    "text": "1511 5e7 DE 15-11 Tactic 15-11 Tactic Law Tac"
+  },
+  {
+    "y": 186.12,
+    "page": 8,
+    "text": "1512 5e8 DE 15-12 Tactic 15-12 Tactic Law Tac"
+  },
+  {
+    "y": 174.78,
+    "page": 8,
+    "text": "1513 5e9 DE 15-13 Tactic 15-13 Tactic Law Tac"
+  },
+  {
+    "y": 163.44,
+    "page": 8,
+    "text": "1514 5ea DE 15-14 Tactic 15-14 Tactic Law Tac"
+  },
+  {
+    "y": 152.1,
+    "page": 8,
+    "text": "1515 5eb DE 15-15 Tactic 15-15 Tactic Law Tac"
+  },
+  {
+    "y": 140.76,
+    "page": 8,
+    "text": "1516 5ec DE 15-16 Tactic 15-16 Tactic Law Tac"
+  },
+  {
+    "y": 129.42,
+    "page": 8,
+    "text": "1517 5ed DE 15-17 Tactic 15-17 Tactic Law Tac"
+  },
+  {
+    "y": 118.09,
+    "page": 8,
+    "text": "1518 5ee DE 15-18 Tactic 15-18 Tactic Law Tac"
+  },
+  {
+    "y": 106.75,
+    "page": 8,
+    "text": "1519 5ef DE 15-19 Tactic 15-19 Tactic Law Tac"
+  },
+  {
+    "y": 95.41,
+    "page": 8,
+    "text": "1520 5f0 DE 15-20 Tactic 15-20 Tactic Law Tac"
+  },
+  {
+    "y": 84.07,
+    "page": 8,
+    "text": "1521 5f1 DE 15-21 Tactic 15-21 Tactic Law Tac"
+  },
+  {
+    "y": 72.73,
+    "page": 8,
+    "text": "1522 5f2 DE 15-22 Tactic 15-22 Tactic Law Tac"
+  },
+  {
+    "y": 61.39,
+    "page": 8,
+    "text": "1523 5f3 DE 15-23 Tactic 15-23 Tactic Law Tac"
+  },
+  {
+    "y": 26.25,
+    "page": 8,
+    "text": "Page 8/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 8,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 9,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 9,
+    "text": "1524 5f4 DE 15-24 Tactic 15-24 Tactic Law Tac"
+  },
+  {
+    "y": 696.35,
+    "page": 9,
+    "text": "1525 5f5 DE 15-25 Tactic 15-25 Tactic Law Tac"
+  },
+  {
+    "y": 685.01,
+    "page": 9,
+    "text": "1526 5f6 DE 15-26 Tactic 15-26 Tactic Law Tac"
+  },
+  {
+    "y": 673.68,
+    "page": 9,
+    "text": "1527 5f7 DE 15-27 Tactic 15-27 Tactic Law Tac"
+  },
+  {
+    "y": 662.34,
+    "page": 9,
+    "text": "1528 5f8 DE 15-28 Tactic 15-28 Tactic Law Tac"
+  },
+  {
+    "y": 651,
+    "page": 9,
+    "text": "1529 5f9 DE 15-29 Tactic 15-29 Tactic Law Tac"
+  },
+  {
+    "y": 639.66,
+    "page": 9,
+    "text": "1530 5fa DE 15-30 Tactic 15-30 Tactic Law Tac"
+  },
+  {
+    "y": 628.32,
+    "page": 9,
+    "text": "1601 641 DE 16-01 TactLoc 16-01 TactLoc Law Tac"
+  },
+  {
+    "y": 616.98,
+    "page": 9,
+    "text": "1602 642 DE 16-02 TactLoc 16-02 TactLoc Law Tac"
+  },
+  {
+    "y": 605.64,
+    "page": 9,
+    "text": "1603 643 DE 16-03 TactLoc 16-03 TactLoc Law Tac"
+  },
+  {
+    "y": 594.31,
+    "page": 9,
+    "text": "1604 644 DE 160-4 TactLoc 16-04 TactLoc Law Tac"
+  },
+  {
+    "y": 582.97,
+    "page": 9,
+    "text": "1701 6a5 D 17-01 ESTA CONS 17-01 ESTA CONSOLE TRAINING Law Talk"
+  },
+  {
+    "y": 571.63,
+    "page": 9,
+    "text": "1702 6a6 D 17-02 ESTA CONS 17-02 ESTA CONSOLE TRAINING Law Talk"
+  },
+  {
+    "y": 560.29,
+    "page": 9,
+    "text": "10000 2710 D Z1 CH1 CENTRAL 01 Fire Dispatch"
+  },
+  {
+    "y": 548.95,
+    "page": 9,
+    "text": "10001 2711 D Z1 CH2 NORTHERN 02 Fire Dispatch"
+  },
+  {
+    "y": 537.61,
+    "page": 9,
+    "text": "10002 2712 D Z1 CH3 SOUTHERN 03 Fire Dispatch"
+  },
+  {
+    "y": 526.27,
+    "page": 9,
+    "text": "10003 2713 D Z1 CH4 WESTERN 04 Fire Dispatch"
+  },
+  {
+    "y": 514.94,
+    "page": 9,
+    "text": "10004 2714 D Z1 CH5 EASTERN 05 Fire Dispatch"
+  },
+  {
+    "y": 503.6,
+    "page": 9,
+    "text": "10009 2719 D Z1 CH22 FIREGROUND 22 Fire-Tac"
+  },
+  {
+    "y": 492.26,
+    "page": 9,
+    "text": "10010 271a D Z1 CH23 FIREGROUND 23 Fire-Tac"
+  },
+  {
+    "y": 480.92,
+    "page": 9,
+    "text": "10011 271b D Z1 CH24 FIREGROUND 24 Fire-Tac"
+  },
+  {
+    "y": 469.58,
+    "page": 9,
+    "text": "10013 271d D Z1 CH6 ALTERNATE 06 Fire Dispatch"
+  },
+  {
+    "y": 458.24,
+    "page": 9,
+    "text": "10014 271e D Z1 CH7 ALTERNATE 07 Fire Dispatch"
+  },
+  {
+    "y": 446.9,
+    "page": 9,
+    "text": "10015 271f D Z1 CH8 FIREGROUND 08 Fire-Tac"
+  },
+  {
+    "y": 435.57,
+    "page": 9,
+    "text": "10016 2720 D Z1 CH25 FIREGROUND 25 Fire-Tac"
+  },
+  {
+    "y": 424.23,
+    "page": 9,
+    "text": "10017 2721 D Z1 CH26 FIREGROUND 26 Fire-Tac"
+  },
+  {
+    "y": 412.89,
+    "page": 9,
+    "text": "10018 2722 D Z1 CH27 FIREGROUND 27 Fire-Tac"
+  },
+  {
+    "y": 401.55,
+    "page": 9,
+    "text": "10019 2723 D Z3 CH11 TRAINING 11 Fire-Talk"
+  },
+  {
+    "y": 390.21,
+    "page": 9,
+    "text": "10020 2724 D Z3 CH12 TRAINING 12 Fire-Talk"
+  },
+  {
+    "y": 378.87,
+    "page": 9,
+    "text": "10021 2725 D Z3 CH13 TRAINING 13 Fire-Talk"
+  },
+  {
+    "y": 367.53,
+    "page": 9,
+    "text": "10023 2727 D Z1 CH37 FIREGROUND 37 Fire-Tac"
+  },
+  {
+    "y": 356.2,
+    "page": 9,
+    "text": "10024 2728 D Z1 CH38 FIREGROUND 38 Fire-Tac"
+  },
+  {
+    "y": 344.86,
+    "page": 9,
+    "text": "10025 2729 D Z1 CH39 FIREGROUND 39 Fire-Tac"
+  },
+  {
+    "y": 333.52,
+    "page": 9,
+    "text": "10027 272b D Z1 CH40 FIREGROUND 40 Fire-Tac"
+  },
+  {
+    "y": 322.18,
+    "page": 9,
+    "text": "10028 272c D Z1 CH41 FIREGROUND 41 Fire-Tac"
+  },
+  {
+    "y": 310.84,
+    "page": 9,
+    "text": "10029 272d D Z1 CH42 FIREGROUND 42 Fire-Tac"
+  },
+  {
+    "y": 299.5,
+    "page": 9,
+    "text": "10031 272f D Z1 CH28 FIREGROUND 28 Fire-Tac"
+  },
+  {
+    "y": 288.16,
+    "page": 9,
+    "text": "10032 2730 D Z1 CH29 FIREGROUND 29 Fire-Tac"
+  },
+  {
+    "y": 276.83,
+    "page": 9,
+    "text": "10033 2731 D Z1 CH30 FIREGROUND 30 Fire-Tac"
+  },
+  {
+    "y": 265.49,
+    "page": 9,
+    "text": "10035 2733 D Z1 CH31 FIREGROUND 31 Fire-Tac"
+  },
+  {
+    "y": 254.15,
+    "page": 9,
+    "text": "10036 2734 D Z1 CH32 FIREGROUND 32 Fire-Tac"
+  },
+  {
+    "y": 242.81,
+    "page": 9,
+    "text": "10037 2735 D Z1 CH33 FIREGROUND 33 Fire-Tac"
+  },
+  {
+    "y": 231.47,
+    "page": 9,
+    "text": "10041 2739 D Z1 CH43 FIREGROUND 43 Fire-Tac"
+  },
+  {
+    "y": 220.13,
+    "page": 9,
+    "text": "10042 273a D Z1 CH44 FIREGROUND 44 Fire-Tac"
+  },
+  {
+    "y": 208.79,
+    "page": 9,
+    "text": "10043 273b D Z1 CH45 FIREGROUND 45 Fire-Tac"
+  },
+  {
+    "y": 197.46,
+    "page": 9,
+    "text": "10045 273d D Z1 CH9 FIREGROUND 09 Fire-Tac"
+  },
+  {
+    "y": 186.12,
+    "page": 9,
+    "text": "10046 273e D Z1 CH10 FIREGROUND 10 Fire-Tac"
+  },
+  {
+    "y": 174.78,
+    "page": 9,
+    "text": "10047 273f D Z1 CH11 FIREGROUND 11 Fire-Tac"
+  },
+  {
+    "y": 163.44,
+    "page": 9,
+    "text": "10048 2740 D Z1 CH12 FIREGROUND 12 Fire-Tac"
+  },
+  {
+    "y": 152.1,
+    "page": 9,
+    "text": "10049 2741 D Z1 CH13 FIREGROUND 13 Fire-Tac"
+  },
+  {
+    "y": 140.76,
+    "page": 9,
+    "text": "10051 2743 D Z1 CH48 FIREGROUND 48 Fire-Tac"
+  },
+  {
+    "y": 129.42,
+    "page": 9,
+    "text": "10052 2744 D Z1 CH49 FIREGROUND 49 Fire-Tac"
+  },
+  {
+    "y": 118.09,
+    "page": 9,
+    "text": "10053 2745 D Z1 CH50 FIREGROUND 50 Fire-Tac"
+  },
+  {
+    "y": 106.75,
+    "page": 9,
+    "text": "10054 2746 D Z1 CH51 FIREGROUND 51 Fire-Tac"
+  },
+  {
+    "y": 95.41,
+    "page": 9,
+    "text": "10055 2747 D Z1 CH52 FIREGROUND 52 Fire-Tac"
+  },
+  {
+    "y": 84.07,
+    "page": 9,
+    "text": "10056 2748 D Z1 CH14 FIREGROUND 14 Fire-Tac"
+  },
+  {
+    "y": 72.73,
+    "page": 9,
+    "text": "10057 2749 DE Z1 CH54 SECURE 54 Fire-Tac"
+  },
+  {
+    "y": 61.39,
+    "page": 9,
+    "text": "10058 274a DE Z1 CH55 SECURE 55 Fire-Tac"
+  },
+  {
+    "y": 26.25,
+    "page": 9,
+    "text": "Page 9/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 9,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 10,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 10,
+    "text": "10059 274b DE Z1 CH56 SECURE 56 Fire-Tac"
+  },
+  {
+    "y": 696.35,
+    "page": 10,
+    "text": "10062 274e D Z3 CH14 TRAINING 14 Fire-Talk"
+  },
+  {
+    "y": 685.01,
+    "page": 10,
+    "text": "10063 274f D Z3 CH15 TRAINING 15 Fire-Talk"
+  },
+  {
+    "y": 673.68,
+    "page": 10,
+    "text": "10064 2750 D Z1 CH15 FIREGROUND 15 Fire-Tac"
+  },
+  {
+    "y": 662.34,
+    "page": 10,
+    "text": "10065 2751 D Z1 CH16 FIREGROUND 16 Fire-Tac"
+  },
+  {
+    "y": 651,
+    "page": 10,
+    "text": "10066 2752 D Z1 CH17 FIREGROUND 17 Fire-Tac"
+  },
+  {
+    "y": 639.66,
+    "page": 10,
+    "text": "10067 2753 D Z1 CH18 FIREGROUND 18 Fire-Tac"
+  },
+  {
+    "y": 628.32,
+    "page": 10,
+    "text": "10068 2754 D Z1 CH19 FIREGROUND 19 Fire-Tac"
+  },
+  {
+    "y": 616.98,
+    "page": 10,
+    "text": "10069 2755 D Z1 CH20 FIREGROUND 20 Fire-Tac"
+  },
+  {
+    "y": 605.64,
+    "page": 10,
+    "text": "10070 2756 D Z1 CH21 FIREGROUND 21 Fire-Tac"
+  },
+  {
+    "y": 594.31,
+    "page": 10,
+    "text": "10071 2757 D Z1 CH34 FIREGROUND 34 Fire-Tac"
+  },
+  {
+    "y": 582.97,
+    "page": 10,
+    "text": "10072 2758 D Z1 CH35 FIREGROUND 35 Fire-Tac"
+  },
+  {
+    "y": 571.63,
+    "page": 10,
+    "text": "10073 2759 D Z1 CH36 FIREGROUND 36 Fire-Tac"
+  },
+  {
+    "y": 560.29,
+    "page": 10,
+    "text": "10074 275a D Z1 CH46 FIREGROUND 46 Fire-Tac"
+  },
+  {
+    "y": 548.95,
+    "page": 10,
+    "text": "10075 275b D Z1 CH47 FIREGROUND 47 Fire-Tac"
+  },
+  {
+    "y": 537.61,
+    "page": 10,
+    "text": "10076 275c D Z3 CH8 TECH 08 Fire-Talk"
+  },
+  {
+    "y": 526.27,
+    "page": 10,
+    "text": "10077 275d D Z3 CH9 TRAINING 9 Fire-Talk"
+  },
+  {
+    "y": 514.94,
+    "page": 10,
+    "text": "10078 275e D Z3 CH10 TRAINING 10 Fire-Talk"
+  },
+  {
+    "y": 503.6,
+    "page": 10,
+    "text": "20000 4e20 DE Ch.103 West EMS Dispatch"
+  },
+  {
+    "y": 492.26,
+    "page": 10,
+    "text": "20001 4e21 DE Ch.102 East EMS Dispatch"
+  },
+  {
+    "y": 480.92,
+    "page": 10,
+    "text": "20002 4e22 DE Ch.104 North EMS Dispatch"
+  },
+  {
+    "y": 469.58,
+    "page": 10,
+    "text": "20003 4e23 DE Ch.105 South EMS Dispatch"
+  },
+  {
+    "y": 458.24,
+    "page": 10,
+    "text": "20004 4e24 D Ch.212 Incident EMS-Talk"
+  },
+  {
+    "y": 446.9,
+    "page": 10,
+    "text": "20005 4e25 D Ch.213 Incident EMS-Talk"
+  },
+  {
+    "y": 435.57,
+    "page": 10,
+    "text": "20006 4e26 D Ch.211 Incident EMS-Talk"
+  },
+  {
+    "y": 424.23,
+    "page": 10,
+    "text": "20007 4e27 DE Ch.107 Clin West EMS Dispatch"
+  },
+  {
+    "y": 412.89,
+    "page": 10,
+    "text": "20008 4e28 DE Ch.106 Clin East EMS Dispatch"
+  },
+  {
+    "y": 401.55,
+    "page": 10,
+    "text": "20009 4e29 DE Ch.109 DTM West EMS Dispatch"
+  },
+  {
+    "y": 390.21,
+    "page": 10,
+    "text": "20010 4e2a DE Ch.108 DTM East EMS Dispatch"
+  },
+  {
+    "y": 378.87,
+    "page": 10,
+    "text": "20011 4e2b DE Ch.101 DTM EMS Dispatch"
+  },
+  {
+    "y": 367.53,
+    "page": 10,
+    "text": "20012 4e2c D Ch.112 Meals EMS Dispatch"
+  },
+  {
+    "y": 356.2,
+    "page": 10,
+    "text": "20013 4e2d DE Ch.115 Netcomm EMS Dispatch"
+  },
+  {
+    "y": 344.86,
+    "page": 10,
+    "text": "20014 4e2e DE Ch.114 Car Div EMS Dispatch"
+  },
+  {
+    "y": 333.52,
+    "page": 10,
+    "text": "20015 4e2f D Ch.117 Air Amb EMS Dispatch"
+  },
+  {
+    "y": 322.18,
+    "page": 10,
+    "text": "20016 4e30 DE Ch.110 HOSP 1 EMS Dispatch"
+  },
+  {
+    "y": 310.84,
+    "page": 10,
+    "text": "20017 4e31 DE Ch.111 HOSP 2 EMS Dispatch"
+  },
+  {
+    "y": 299.5,
+    "page": 10,
+    "text": "20019 4e33 D Ch.131 RAV Ball EMS Dispatch"
+  },
+  {
+    "y": 288.16,
+    "page": 10,
+    "text": "20020 4e34 D Ch.132 RAV Bend EMS Dispatch"
+  },
+  {
+    "y": 276.83,
+    "page": 10,
+    "text": "20021 4e35 D Ch.133 RAV Geel EMS Dispatch"
+  },
+  {
+    "y": 265.49,
+    "page": 10,
+    "text": "20022 4e36 D Ch.134 RAV Wang EMS Dispatch"
+  },
+  {
+    "y": 254.15,
+    "page": 10,
+    "text": "20023 4e37 D Ch.135 RAV Morw EMS Dispatch"
+  },
+  {
+    "y": 242.81,
+    "page": 10,
+    "text": "20024 4e38 D Ch.136 MAS SMR EMS Dispatch"
+  },
+  {
+    "y": 231.47,
+    "page": 10,
+    "text": "20025 4e39 D Ch.137 AAV SMR EMS Dispatch"
+  },
+  {
+    "y": 220.13,
+    "page": 10,
+    "text": "20027 4e3b D Ch.121 CSO EMS Dispatch"
+  },
+  {
+    "y": 208.79,
+    "page": 10,
+    "text": "20028 4e3c D Ch.219 Incident EMS-Talk"
+  },
+  {
+    "y": 197.46,
+    "page": 10,
+    "text": "20029 4e3d DE Ch.208 Secure EMS Dispatch"
+  },
+  {
+    "y": 186.12,
+    "page": 10,
+    "text": "20030 4e3e DE Ch.209 Secure EMS Dispatch"
+  },
+  {
+    "y": 174.78,
+    "page": 10,
+    "text": "20031 4e3f DE Ch.210 Secure EMS Dispatch"
+  },
+  {
+    "y": 163.44,
+    "page": 10,
+    "text": "20032 4e40 D Ch.214 Incident EMS-Talk"
+  },
+  {
+    "y": 152.1,
+    "page": 10,
+    "text": "20033 4e41 DE Ch.113 Netcomm EMS Dispatch"
+  },
+  {
+    "y": 140.76,
+    "page": 10,
+    "text": "20034 4e42 D Ch.118 Fleet EMS Dispatch"
+  },
+  {
+    "y": 129.42,
+    "page": 10,
+    "text": "20035 4e43 D Ch.119 Techserv EMS Dispatch"
+  },
+  {
+    "y": 118.09,
+    "page": 10,
+    "text": "20036 4e44 D Ch.126 Training EMS Dispatch"
+  },
+  {
+    "y": 106.75,
+    "page": 10,
+    "text": "20037 4e45 D Ch.127 Training EMS Dispatch"
+  },
+  {
+    "y": 95.41,
+    "page": 10,
+    "text": "20038 4e46 D Ch.122 Duress EMS Dispatch"
+  },
+  {
+    "y": 84.07,
+    "page": 10,
+    "text": "20040 4e48 D Ch.217 Incident EMS-Talk"
+  },
+  {
+    "y": 72.73,
+    "page": 10,
+    "text": "20041 4e49 D Ch.218 Incident EMS-Talk"
+  },
+  {
+    "y": 61.39,
+    "page": 10,
+    "text": "20042 4e4a D Ch.215 Incident EMS-Talk"
+  },
+  {
+    "y": 26.25,
+    "page": 10,
+    "text": "Page 10/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 10,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 11,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 11,
+    "text": "20043 4e4b D Ch.216 Incident EMS-Talk"
+  },
+  {
+    "y": 696.35,
+    "page": 11,
+    "text": "20044 4e4c D Ch.116 SIG29 40 EMS Dispatch"
+  },
+  {
+    "y": 685.01,
+    "page": 11,
+    "text": "20045 4e4d D Ch.128 ESTA Trn EMS Dispatch"
+  },
+  {
+    "y": 673.68,
+    "page": 11,
+    "text": "20046 4e4e D Ch.129 ESTA Trn EMS Dispatch"
+  },
+  {
+    "y": 662.34,
+    "page": 11,
+    "text": "20047 4e4f D Ch.130 VHF 70 EMS Dispatch"
+  },
+  {
+    "y": 651,
+    "page": 11,
+    "text": "20048 4e50 D Ch.125 Clin EMR EMS Dispatch"
+  },
+  {
+    "y": 639.66,
+    "page": 11,
+    "text": "20049 4e51 D Ch.195 East BU EMS Dispatch"
+  },
+  {
+    "y": 628.32,
+    "page": 11,
+    "text": "20050 4e52 D Ch.196 West BU EMS Dispatch"
+  },
+  {
+    "y": 616.98,
+    "page": 11,
+    "text": "20053 4e55 D Ch.143 HOSP 3 Hospital"
+  },
+  {
+    "y": 605.64,
+    "page": 11,
+    "text": "20054 4e56 D Ch.144 HOSP 4 Hospital"
+  },
+  {
+    "y": 594.31,
+    "page": 11,
+    "text": "20055 4e57 D Ch.145 HOSP 5 Hospital"
+  },
+  {
+    "y": 582.97,
+    "page": 11,
+    "text": "20056 4e58 D Ch.146 HOSP 6 Hospital"
+  },
+  {
+    "y": 571.63,
+    "page": 11,
+    "text": "20057 4e59 D Ch.147 HOSP 7 Hospital"
+  },
+  {
+    "y": 560.29,
+    "page": 11,
+    "text": "20058 4e5a D Ch.148 HOSP 8 Hospital"
+  },
+  {
+    "y": 548.95,
+    "page": 11,
+    "text": "20059 4e5b D Ch.149 HOSP 9 Hospital"
+  },
+  {
+    "y": 537.61,
+    "page": 11,
+    "text": "20073 4e69 D Ch.199 DTM BU EMS Dispatch"
+  },
+  {
+    "y": 526.27,
+    "page": 11,
+    "text": "32301 7e2d D SES 32301 SES Emergency Ops"
+  },
+  {
+    "y": 514.94,
+    "page": 11,
+    "text": "32906 808a D SES West/NW West/North West Metro Emergency Ops"
+  },
+  {
+    "y": 503.6,
+    "page": 11,
+    "text": "32908 808c D SES 32908 SES Emergency Ops"
+  },
+  {
+    "y": 492.26,
+    "page": 11,
+    "text": "33106 8152 D SCMD State Command 1 Emergency Ops"
+  },
+  {
+    "y": 480.92,
+    "page": 11,
+    "text": "33107 8153 D SCMD State Command 2 Emergency Ops"
+  },
+  {
+    "y": 469.58,
+    "page": 11,
+    "text": "33108 8154 D COMMS Comms Techs Emergency Ops"
+  },
+  {
+    "y": 458.24,
+    "page": 11,
+    "text": "33109 8155 D FLEET Fleet Techs Emergency Ops"
+  },
+  {
+    "y": 446.9,
+    "page": 11,
+    "text": "33201 81b1 D NE DISPATCH 1 Dispatch - North East 1 Emergency Ops"
+  },
+  {
+    "y": 435.57,
+    "page": 11,
+    "text": "33202 81b2 D NE DISPATCH 2 Dispatch - North East 2 Emergency Ops"
+  },
+  {
+    "y": 424.23,
+    "page": 11,
+    "text": "33204 81b4 D NE INCIDENT 1 Incident Ground - North East 1 Emergency Ops"
+  },
+  {
+    "y": 412.89,
+    "page": 11,
+    "text": "33205 81b5 D NE INCIDENT 2 Incident Ground - North East 2 Emergency Ops"
+  },
+  {
+    "y": 401.55,
+    "page": 11,
+    "text": "33206 81b6 D NE INCIDENT 3 Incident Ground - North East 3 Emergency Ops"
+  },
+  {
+    "y": 390.21,
+    "page": 11,
+    "text": "33207 81b7 D NE INCIDENT 4 Incident Ground - North East 4 Emergency Ops"
+  },
+  {
+    "y": 378.87,
+    "page": 11,
+    "text": "33208 81b8 D NE INCIDENT 5 Incident Ground - North East 5 Emergency Ops"
+  },
+  {
+    "y": 367.53,
+    "page": 11,
+    "text": "33209 81b9 D NE REG COORD Regional Coordination - North East Emergency Ops"
+  },
+  {
+    "y": 356.2,
+    "page": 11,
+    "text": "33210 81ba D NE REG CMD Regional Command - North East Emergency Ops"
+  },
+  {
+    "y": 344.86,
+    "page": 11,
+    "text": "33212 81bc D ICC WGRT Incident Control Centre - Wangaratta Emergency Ops"
+  },
+  {
+    "y": 333.52,
+    "page": 11,
+    "text": "33213 81bd D ICC SYMR Incident Control Centre - Seymour Emergency Ops"
+  },
+  {
+    "y": 322.18,
+    "page": 11,
+    "text": "33214 81be D ICC SHEP Incident Control Centre - Shepparton Emergency Ops"
+  },
+  {
+    "y": 310.84,
+    "page": 11,
+    "text": "33215 81bf D ICC BENA Incident Control Centre - Benalla Emergency Ops"
+  },
+  {
+    "y": 299.5,
+    "page": 11,
+    "text": "33216 81c0 D ICC WDGA Incident Control Centre - Wodonga Emergency Ops"
+  },
+  {
+    "y": 288.16,
+    "page": 11,
+    "text": "33220 81c4 D DCP TATR DivCom - Tatura Emergency Ops"
+  },
+  {
+    "y": 276.83,
+    "page": 11,
+    "text": "33221 81c5 D DCP SSAR DivCom - Shepparton Search and Rescue Emergency Ops"
+  },
+  {
+    "y": 265.49,
+    "page": 11,
+    "text": "33222 81c6 D DCP EURA DivCom - Euroa Emergency Ops"
+  },
+  {
+    "y": 254.15,
+    "page": 11,
+    "text": "33223 81c7 D DCP YACK DivCom - Yackandandah Emergency Ops"
+  },
+  {
+    "y": 242.81,
+    "page": 11,
+    "text": "33224 81c8 D DCP WDGA DivCom - Wodonga Emergency Ops"
+  },
+  {
+    "y": 231.47,
+    "page": 11,
+    "text": "33225 81c9 D DCP SYMR DivCom - Seymour Emergency Ops"
+  },
+  {
+    "y": 220.13,
+    "page": 11,
+    "text": "33226 81ca D DCP NUMU DivCom - Numurkah Emergency Ops"
+  },
+  {
+    "y": 208.79,
+    "page": 11,
+    "text": "33227 81cb D DCP BRGT DivCom - Bright Emergency Ops"
+  },
+  {
+    "y": 197.46,
+    "page": 11,
+    "text": "33228 81cc D DCP WGRT DivCom - Wangaratta Emergency Ops"
+  },
+  {
+    "y": 186.12,
+    "page": 11,
+    "text": "33229 81cd D DCP YEAA DivCom - Yea Emergency Ops"
+  },
+  {
+    "y": 174.78,
+    "page": 11,
+    "text": "33230 81ce D DCP BENA DivCom - Benalla Emergency Ops"
+  },
+  {
+    "y": 163.44,
+    "page": 11,
+    "text": "33231 81cf D DCP YWGA DivCom - Yarrawonga Emergency Ops"
+  },
+  {
+    "y": 152.1,
+    "page": 11,
+    "text": "33240 81d8 D CMD ALEX Unit Command - Alexandra Emergency Ops"
+  },
+  {
+    "y": 140.76,
+    "page": 11,
+    "text": "33241 81d9 D CMD BEEC Unit Command - Beechworth Emergency Ops"
+  },
+  {
+    "y": 129.42,
+    "page": 11,
+    "text": "33242 81da D CMD BENA Unit Command - Benalla Emergency Ops"
+  },
+  {
+    "y": 118.09,
+    "page": 11,
+    "text": "33243 81db D CMD BRGT Unit Command - Bright Emergency Ops"
+  },
+  {
+    "y": 106.75,
+    "page": 11,
+    "text": "33244 81dc D CMD CHIL Unit Command - Chiltern Emergency Ops"
+  },
+  {
+    "y": 95.41,
+    "page": 11,
+    "text": "33245 81dd D CMD CBRM Unit Command - Cobram Emergency Ops"
+  },
+  {
+    "y": 84.07,
+    "page": 11,
+    "text": "33246 81de D CMD CORR Unit Command - Corryong Emergency Ops"
+  },
+  {
+    "y": 72.73,
+    "page": 11,
+    "text": "33247 81df D CMD EURA Unit Command - Euroa Emergency Ops"
+  },
+  {
+    "y": 61.39,
+    "page": 11,
+    "text": "33248 81e0 D CMD FALL Unit Command - Falls Creek Emergency Ops"
+  },
+  {
+    "y": 26.25,
+    "page": 11,
+    "text": "Page 11/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 11,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 12,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 12,
+    "text": "33249 81e1 D CMD KMRE Unit Command - Kilmore Emergency Ops"
+  },
+  {
+    "y": 696.35,
+    "page": 12,
+    "text": "33250 81e2 D CMD KNKE Unit Command - Kinglake Emergency Ops"
+  },
+  {
+    "y": 685.01,
+    "page": 12,
+    "text": "33251 81e3 D CMD MANS Unit Command - Mansfield Emergency Ops"
+  },
+  {
+    "y": 673.68,
+    "page": 12,
+    "text": "33252 81e4 D CMD MVLE Unit Command - Marysville Emergency Ops"
+  },
+  {
+    "y": 662.34,
+    "page": 12,
+    "text": "33253 81e5 D CMD MTTA Unit Command - Mitta Mitta Emergency Ops"
+  },
+  {
+    "y": 651,
+    "page": 12,
+    "text": "33254 81e6 D CMD MRCN Unit Command - Murchison Emergency Ops"
+  },
+  {
+    "y": 639.66,
+    "page": 12,
+    "text": "33255 81e7 D CMD MYRT Unit Command - Myrtleford Emergency Ops"
+  },
+  {
+    "y": 628.32,
+    "page": 12,
+    "text": "33256 81e8 D CMD NUMU Unit Command - Numurkah Emergency Ops"
+  },
+  {
+    "y": 616.98,
+    "page": 12,
+    "text": "33257 81e9 D CMD RUTH Unit Command - Rutherglen Emergency Ops"
+  },
+  {
+    "y": 605.64,
+    "page": 12,
+    "text": "33258 81ea D CMD SYMR Unit Command - Seymour Emergency Ops"
+  },
+  {
+    "y": 594.31,
+    "page": 12,
+    "text": "33259 81eb D CMD SSAR Unit Command - Shepparton SARS Emergency Ops"
+  },
+  {
+    "y": 582.97,
+    "page": 12,
+    "text": "33260 81ec D CMD TALL Unit Command - Tallangatta Emergency Ops"
+  },
+  {
+    "y": 571.63,
+    "page": 12,
+    "text": "33261 81ed D CMD TATR Unit Command - Tatura Emergency Ops"
+  },
+  {
+    "y": 560.29,
+    "page": 12,
+    "text": "33262 81ee D CMD WGRT Unit Command - Wangaratta Emergency Ops"
+  },
+  {
+    "y": 548.95,
+    "page": 12,
+    "text": "33263 81ef D CMD WDGA Unit Command - Wodonga Emergency Ops"
+  },
+  {
+    "y": 537.61,
+    "page": 12,
+    "text": "33264 81f0 D CMD YACK Unit Command - Yackandandah Emergency Ops"
+  },
+  {
+    "y": 526.27,
+    "page": 12,
+    "text": "33265 81f1 D CMD YWGA Unit Command - Yarrawonga Emergency Ops"
+  },
+  {
+    "y": 514.94,
+    "page": 12,
+    "text": "33301 8215 D MW DISPATCH 1 Dispatch - Mid West 1 Emergency Ops"
+  },
+  {
+    "y": 503.6,
+    "page": 12,
+    "text": "33302 8216 D MW DISPATCH 2 Dispatch - Mid West 2 Emergency Ops"
+  },
+  {
+    "y": 492.26,
+    "page": 12,
+    "text": "33304 8218 D MW INCIDENT 1 Incident Ground - Mid West 1 Emergency Ops"
+  },
+  {
+    "y": 480.92,
+    "page": 12,
+    "text": "33305 8219 D MW INCIDENT 2 Incident Ground - Mid West 2 Emergency Ops"
+  },
+  {
+    "y": 469.58,
+    "page": 12,
+    "text": "33306 821a D MW INCIDENT 3 Incident Ground - Mid West 3 Emergency Ops"
+  },
+  {
+    "y": 458.24,
+    "page": 12,
+    "text": "33307 821b D MW INCIDENT 4 Incident Ground - Mid West 4 Emergency Ops"
+  },
+  {
+    "y": 446.9,
+    "page": 12,
+    "text": "33308 821c D MW INCIDENT 5 Incident Ground - Mid West 5 Emergency Ops"
+  },
+  {
+    "y": 435.57,
+    "page": 12,
+    "text": "33309 821d D MW REG COORD Regional Coordination - Mid West Emergency Ops"
+  },
+  {
+    "y": 424.23,
+    "page": 12,
+    "text": "33310 821e D MW REG CMD Regional Command - Mid West Emergency Ops"
+  },
+  {
+    "y": 412.89,
+    "page": 12,
+    "text": "33312 8220 D ICC BALT Incident Control Centre - Ballarat Emergency Ops"
+  },
+  {
+    "y": 401.55,
+    "page": 12,
+    "text": "33313 8221 D ICC HRSM Incident Control Centre - Horsham Emergency Ops"
+  },
+  {
+    "y": 390.21,
+    "page": 12,
+    "text": "33320 8228 D DCP ARAT DivCom - Ararat Emergency Ops"
+  },
+  {
+    "y": 378.87,
+    "page": 12,
+    "text": "33321 8229 D DCP BALT DivCom - Ballarat Emergency Ops"
+  },
+  {
+    "y": 367.53,
+    "page": 12,
+    "text": "33322 822a D DCP HEPS DivCom - Hepburn Shire Emergency Ops"
+  },
+  {
+    "y": 356.2,
+    "page": 12,
+    "text": "33323 822b D DCP STAW DivCom - Stawall Emergency Ops"
+  },
+  {
+    "y": 344.86,
+    "page": 12,
+    "text": "33324 822c D DCP DRLY DivCom - Darley Emergency Ops"
+  },
+  {
+    "y": 333.52,
+    "page": 12,
+    "text": "33325 822d D DCP EDNH DivCom - Edenhope Emergency Ops"
+  },
+  {
+    "y": 322.18,
+    "page": 12,
+    "text": "33326 822e D DCP NHLL DivCom - Nhill Emergency Ops"
+  },
+  {
+    "y": 310.84,
+    "page": 12,
+    "text": "33327 822f D DCP STAD DivCom - St Arnaud Emergency Ops"
+  },
+  {
+    "y": 299.5,
+    "page": 12,
+    "text": "33328 8230 D DCP WKBL DivCom - Warracknabeal Emergency Ops"
+  },
+  {
+    "y": 288.16,
+    "page": 12,
+    "text": "33329 8231 D DCP WNDO DivCom - Wendouree Emergency Ops"
+  },
+  {
+    "y": 276.83,
+    "page": 12,
+    "text": "33330 8232 D DCP HRSM DivCom - Horsham Emergency Ops"
+  },
+  {
+    "y": 265.49,
+    "page": 12,
+    "text": "33340 823c D CMD ARAT Unit Command - Ararat Emergency Ops"
+  },
+  {
+    "y": 254.15,
+    "page": 12,
+    "text": "33341 823d D CMD BACC Unit Command - Bacchus Marsh Emergency Ops"
+  },
+  {
+    "y": 242.81,
+    "page": 12,
+    "text": "33342 823e D CMD BALT Unit Command - Ballarat Emergency Ops"
+  },
+  {
+    "y": 231.47,
+    "page": 12,
+    "text": "33343 823f D CMD DMBL Unit Command - Dimboola Emergency Ops"
+  },
+  {
+    "y": 220.13,
+    "page": 12,
+    "text": "33344 8240 D CMD DUNM Unit Command - Dunmunkle Emergency Ops"
+  },
+  {
+    "y": 208.79,
+    "page": 12,
+    "text": "33345 8241 D CMD EDNH Unit Command - Edenhope Emergency Ops"
+  },
+  {
+    "y": 197.46,
+    "page": 12,
+    "text": "33346 8242 D CMD GRKE Unit Command - Goroke Emergency Ops"
+  },
+  {
+    "y": 186.12,
+    "page": 12,
+    "text": "33347 8243 D CMD HEPS Unit Command - Hepburn Shire Emergency Ops"
+  },
+  {
+    "y": 174.78,
+    "page": 12,
+    "text": "33348 8244 D CMD HRSM Unit Command - Horsham Emergency Ops"
+  },
+  {
+    "y": 163.44,
+    "page": 12,
+    "text": "33349 8245 D CMD KNVA Unit Command - Kaniva Emergency Ops"
+  },
+  {
+    "y": 152.1,
+    "page": 12,
+    "text": "33350 8246 D CMD NHLL Unit Command - Nhill Emergency Ops"
+  },
+  {
+    "y": 140.76,
+    "page": 12,
+    "text": "33351 8247 D CMD STAD Unit Command - St Arnaud Emergency Ops"
+  },
+  {
+    "y": 129.42,
+    "page": 12,
+    "text": "33352 8248 D CMD STAW Unit Command - Stawell Emergency Ops"
+  },
+  {
+    "y": 118.09,
+    "page": 12,
+    "text": "33353 8249 D CMD WKBL Unit Command - Warracknabeal Emergency Ops"
+  },
+  {
+    "y": 106.75,
+    "page": 12,
+    "text": "33401 8279 D NW DISPATCH 1 Dispatch - North West 1 Emergency Ops"
+  },
+  {
+    "y": 95.41,
+    "page": 12,
+    "text": "33402 827a D NW DISPATCH 2 Dispatch - North West 2 Emergency Ops"
+  },
+  {
+    "y": 84.07,
+    "page": 12,
+    "text": "33404 827c D NW INCIDENT 1 Incident Ground - North West 1 Emergency Ops"
+  },
+  {
+    "y": 72.73,
+    "page": 12,
+    "text": "33405 827d D NW INCIDENT 2 Incident Ground - North West 2 Emergency Ops"
+  },
+  {
+    "y": 61.39,
+    "page": 12,
+    "text": "33406 827e D NW INCIDENT 3 Incident Ground - North West 3 Emergency Ops"
+  },
+  {
+    "y": 26.25,
+    "page": 12,
+    "text": "Page 12/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 12,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 13,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 13,
+    "text": "33407 827f D NW INCIDENT 4 Incident Ground - North West 4 Emergency Ops"
+  },
+  {
+    "y": 696.35,
+    "page": 13,
+    "text": "33408 8280 D NW INCIDENT 5 Incident Ground - North West 5 Emergency Ops"
+  },
+  {
+    "y": 685.01,
+    "page": 13,
+    "text": "33409 8281 D NW REG COORD Regional Coordination - North West Emergency Ops"
+  },
+  {
+    "y": 673.68,
+    "page": 13,
+    "text": "33410 8282 D NW REG CMD Regional Command - North West Emergency Ops"
+  },
+  {
+    "y": 662.34,
+    "page": 13,
+    "text": "33412 8284 D ICC MDRA Incident Control Centre - Mildura Emergency Ops"
+  },
+  {
+    "y": 651,
+    "page": 13,
+    "text": "33413 8285 D ICC BENO Incident Control Centre - Bendigo Emergency Ops"
+  },
+  {
+    "y": 639.66,
+    "page": 13,
+    "text": "33414 8286 D ICC SWAN Incident Control Centre - Swan Hill Emergency Ops"
+  },
+  {
+    "y": 628.32,
+    "page": 13,
+    "text": "33420 828c D DCP BENO DivCom - Bendigo Emergency Ops"
+  },
+  {
+    "y": 616.98,
+    "page": 13,
+    "text": "33421 828d D DCP MDRA DivCom - Mildura Emergency Ops"
+  },
+  {
+    "y": 605.64,
+    "page": 13,
+    "text": "33422 828e D DCP SWAN DivCom - Swan Hill Emergency Ops"
+  },
+  {
+    "y": 594.31,
+    "page": 13,
+    "text": "33423 828f D DCP WYCH DivCom - Wycheproof Emergency Ops"
+  },
+  {
+    "y": 582.97,
+    "page": 13,
+    "text": "33424 8290 D DCP CASE DivCom - Casey Emergency Ops"
+  },
+  {
+    "y": 571.63,
+    "page": 13,
+    "text": "33425 8291 D DCP ECHA DivCom - Echuca Emergency Ops"
+  },
+  {
+    "y": 560.29,
+    "page": 13,
+    "text": "33426 8292 D DCP GISB DivCom - Gisborne Emergency Ops"
+  },
+  {
+    "y": 548.95,
+    "page": 13,
+    "text": "33427 8293 D DCP KRNG DivCom - Kerang Emergency Ops"
+  },
+  {
+    "y": 537.61,
+    "page": 13,
+    "text": "33428 8294 D DCP KYNE DivCom - Kyneton Emergency Ops"
+  },
+  {
+    "y": 526.27,
+    "page": 13,
+    "text": "33429 8295 D DCP PYRU DivCom - Pyramid Hill Emergency Ops"
+  },
+  {
+    "y": 514.94,
+    "page": 13,
+    "text": "33430 8296 D DCP MARH DivCom - Maryborough Emergency Ops"
+  },
+  {
+    "y": 503.6,
+    "page": 13,
+    "text": "33440 82a0 D CMD BENO Unit Command - Bendigo Emergency Ops"
+  },
+  {
+    "y": 492.26,
+    "page": 13,
+    "text": "33441 82a1 D CMD BIRP Unit Command - Birchip Emergency Ops"
+  },
+  {
+    "y": 480.92,
+    "page": 13,
+    "text": "33442 82a2 D CMD CASE Unit Command - Castlemaine Emergency Ops"
+  },
+  {
+    "y": 469.58,
+    "page": 13,
+    "text": "33443 82a3 D CMD DUNO Unit Command - Dunolly Emergency Ops"
+  },
+  {
+    "y": 458.24,
+    "page": 13,
+    "text": "33444 82a4 D CMD ECHA Unit Command - Echuca Emergency Ops"
+  },
+  {
+    "y": 446.9,
+    "page": 13,
+    "text": "33445 82a5 D CMD GISB Unit Command - Gisborne Emergency Ops"
+  },
+  {
+    "y": 435.57,
+    "page": 13,
+    "text": "33446 82a6 D CMD HEAE Unit Command - Heathcote Emergency Ops"
+  },
+  {
+    "y": 424.23,
+    "page": 13,
+    "text": "33447 82a7 D CMD KRNG Unit Command - Kerang Emergency Ops"
+  },
+  {
+    "y": 412.89,
+    "page": 13,
+    "text": "33448 82a8 D CMD MARG Unit Command - Marong Emergency Ops"
+  },
+  {
+    "y": 401.55,
+    "page": 13,
+    "text": "33449 82a9 D CMD MARH Unit Command - Maryborough Emergency Ops"
+  },
+  {
+    "y": 390.21,
+    "page": 13,
+    "text": "33450 82aa D CMD MDRA Unit Command - Mildura Emergency Ops"
+  },
+  {
+    "y": 378.87,
+    "page": 13,
+    "text": "33451 82ab D CMD MURE Unit Command - Murrayville Emergency Ops"
+  },
+  {
+    "y": 367.53,
+    "page": 13,
+    "text": "33452 82ac D CMD OUYE Unit Command - Ouyen Emergency Ops"
+  },
+  {
+    "y": 356.2,
+    "page": 13,
+    "text": "33453 82ad D CMD ROBE Unit Command - Robinvale Emergency Ops"
+  },
+  {
+    "y": 344.86,
+    "page": 13,
+    "text": "33454 82ae D CMD ROCH Unit Command - Rochester Emergency Ops"
+  },
+  {
+    "y": 333.52,
+    "page": 13,
+    "text": "33455 82af D CMD RWTH Unit Command - Rushworth Emergency Ops"
+  },
+  {
+    "y": 322.18,
+    "page": 13,
+    "text": "33456 82b0 D CMD SWAN Unit Command - Swan Hill Emergency Ops"
+  },
+  {
+    "y": 310.84,
+    "page": 13,
+    "text": "33457 82b1 D CMD KYBM Unit Command - Kyabram Emergency Ops"
+  },
+  {
+    "y": 299.5,
+    "page": 13,
+    "text": "33458 82b2 D CMD WEDD Unit Command - Wedderburn Emergency Ops"
+  },
+  {
+    "y": 288.16,
+    "page": 13,
+    "text": "33459 82b3 D CMD WOOG Unit Command - Woomelang Emergency Ops"
+  },
+  {
+    "y": 276.83,
+    "page": 13,
+    "text": "33460 82b4 D CMD WYCF Unit Command - Wycheproof Emergency Ops"
+  },
+  {
+    "y": 265.49,
+    "page": 13,
+    "text": "33461 82b5 D CMD HUNT Unit Command - Huntley Emergency Ops"
+  },
+  {
+    "y": 254.15,
+    "page": 13,
+    "text": "33462 82b6 D CMD WOEN Unit Command - Woodend Emergency Ops"
+  },
+  {
+    "y": 242.81,
+    "page": 13,
+    "text": "33501 82dd D SW DISPATCH 1 Dispatch - South West 1 Emergency Ops"
+  },
+  {
+    "y": 231.47,
+    "page": 13,
+    "text": "33502 82de D SW DISPATCH 2 Dispatch - South West 2 Emergency Ops"
+  },
+  {
+    "y": 220.13,
+    "page": 13,
+    "text": "33504 82e0 D SW INCIDENT 1 Incident Ground - South West 1 Emergency Ops"
+  },
+  {
+    "y": 208.79,
+    "page": 13,
+    "text": "33505 82e1 D SW INCIDENT 2 Incident Ground - South West 2 Emergency Ops"
+  },
+  {
+    "y": 197.46,
+    "page": 13,
+    "text": "33506 82e2 D SW INCIDENT 3 Incident Ground - South West 3 Emergency Ops"
+  },
+  {
+    "y": 186.12,
+    "page": 13,
+    "text": "33507 82e3 D SW INCIDENT 4 Incident Ground - South West 4 Emergency Ops"
+  },
+  {
+    "y": 174.78,
+    "page": 13,
+    "text": "33508 82e4 D SW INCIDENT 5 Incident Ground - South West 5 Emergency Ops"
+  },
+  {
+    "y": 163.44,
+    "page": 13,
+    "text": "33509 82e5 D SW REG COORD Regional Coordination - South West Emergency Ops"
+  },
+  {
+    "y": 152.1,
+    "page": 13,
+    "text": "33510 82e6 D SW REG CMD Regional Command - South West Emergency Ops"
+  },
+  {
+    "y": 140.76,
+    "page": 13,
+    "text": "33512 82e8 D ICC GEEL Incident Control Centre - Geelon Emergency Ops"
+  },
+  {
+    "y": 129.42,
+    "page": 13,
+    "text": "33513 82e9 D ICC WNBL Incident Control Centre - Warranambool Emergency Ops"
+  },
+  {
+    "y": 118.09,
+    "page": 13,
+    "text": "33520 82f0 D DCP HTON DivCom - Hamilton Emergency Ops"
+  },
+  {
+    "y": 106.75,
+    "page": 13,
+    "text": "33521 82f1 D DCP WNBL DivCom - Warrnambool Emergency Ops"
+  },
+  {
+    "y": 95.41,
+    "page": 13,
+    "text": "33522 82f2 D DCP STHB DivCom - South Barwon Emergency Ops"
+  },
+  {
+    "y": 84.07,
+    "page": 13,
+    "text": "33523 82f3 D DCP GEEL DivCom - Geelong Emergency Ops"
+  },
+  {
+    "y": 72.73,
+    "page": 13,
+    "text": "33524 82f4 D DCP CAST DivCom - Casterton Emergency Ops"
+  },
+  {
+    "y": 61.39,
+    "page": 13,
+    "text": "33525 82f5 D DCP PLAD DivCom - Portland Emergency Ops"
+  },
+  {
+    "y": 26.25,
+    "page": 13,
+    "text": "Page 13/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 13,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 14,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 14,
+    "text": "33526 82f6 D DCP COLE DivCom - Coleraine Emergency Ops"
+  },
+  {
+    "y": 696.35,
+    "page": 14,
+    "text": "33527 82f7 D DCP PTFA DivCom - Port Fairy Emergency Ops"
+  },
+  {
+    "y": 685.01,
+    "page": 14,
+    "text": "33528 82f8 D DCP LISM DivCom - Lismore Emergency Ops"
+  },
+  {
+    "y": 673.68,
+    "page": 14,
+    "text": "33529 82f9 D DCP CBDN DivCom - Cobden Emergency Ops"
+  },
+  {
+    "y": 662.34,
+    "page": 14,
+    "text": "33530 82fa D DCP COLC DivCom - Colac Emergency Ops"
+  },
+  {
+    "y": 651,
+    "page": 14,
+    "text": "33531 82fb D DCP TORQ DivCom - Torquay Emergency Ops"
+  },
+  {
+    "y": 639.66,
+    "page": 14,
+    "text": "33532 82fc D DCP CORI DivCom - Corio Emergency Ops"
+  },
+  {
+    "y": 628.32,
+    "page": 14,
+    "text": "33540 8304 D CMD BLML Unit Command - Balmoral Emergency Ops"
+  },
+  {
+    "y": 616.98,
+    "page": 14,
+    "text": "33541 8305 D CMD BANN Unit Command - Bannockburn Emergency Ops"
+  },
+  {
+    "y": 605.64,
+    "page": 14,
+    "text": "33542 8306 D CMD BELL Unit Command - Bellarine Emergency Ops"
+  },
+  {
+    "y": 594.31,
+    "page": 14,
+    "text": "33543 8307 D CMD CMPD Unit Command - Camperdown Emergency Ops"
+  },
+  {
+    "y": 582.97,
+    "page": 14,
+    "text": "33544 8308 D CMD CBDN Unit Command - Cobden Emergency Ops"
+  },
+  {
+    "y": 571.63,
+    "page": 14,
+    "text": "33545 8309 D CMD COLC Unit Command - Colac Emergency Ops"
+  },
+  {
+    "y": 560.29,
+    "page": 14,
+    "text": "33546 830a D CMD CORI Unit Command - Corio Emergency Ops"
+  },
+  {
+    "y": 548.95,
+    "page": 14,
+    "text": "33547 830b D CMD DRTM Unit Command - Dartmoor Emergency Ops"
+  },
+  {
+    "y": 537.61,
+    "page": 14,
+    "text": "33548 830c D CMD DNKL Unit Command - Dunkeld Emergency Ops"
+  },
+  {
+    "y": 526.27,
+    "page": 14,
+    "text": "33549 830d D CMD GEEL Unit Command - Geelong Emergency Ops"
+  },
+  {
+    "y": 514.94,
+    "page": 14,
+    "text": "33550 830e D CMD HTON Unit Command - Hamilton Emergency Ops"
+  },
+  {
+    "y": 503.6,
+    "page": 14,
+    "text": "33551 830f D CMD HYWD Unit Command - Heywood Emergency Ops"
+  },
+  {
+    "y": 492.26,
+    "page": 14,
+    "text": "33552 8310 D CMD LISM Unit Command - Lismore Emergency Ops"
+  },
+  {
+    "y": 480.92,
+    "page": 14,
+    "text": "33553 8311 D CMD LORN Unit Command - Lorne Emergency Ops"
+  },
+  {
+    "y": 469.58,
+    "page": 14,
+    "text": "33554 8312 D CMD MORT Unit Command - Mortlake Emergency Ops"
+  },
+  {
+    "y": 458.24,
+    "page": 14,
+    "text": "33555 8313 D CMD OTWA Unit Command - Otway Emergency Ops"
+  },
+  {
+    "y": 446.9,
+    "page": 14,
+    "text": "33556 8314 D CMD PTCA Unit Command - Port Campbell Emergency Ops"
+  },
+  {
+    "y": 435.57,
+    "page": 14,
+    "text": "33557 8315 D CMD PTFA Unit Command - Port Fairy Emergency Ops"
+  },
+  {
+    "y": 424.23,
+    "page": 14,
+    "text": "33558 8316 D CMD PLAD Unit Command - Portland Emergency Ops"
+  },
+  {
+    "y": 412.89,
+    "page": 14,
+    "text": "33559 8317 D CMD STHB Unit Command - South Barwon Emergency Ops"
+  },
+  {
+    "y": 401.55,
+    "page": 14,
+    "text": "33560 8318 D CMD TRNG Unit Command - Terang Emergency Ops"
+  },
+  {
+    "y": 390.21,
+    "page": 14,
+    "text": "33561 8319 D CMD TORQ Unit Command - Torquay Emergency Ops"
+  },
+  {
+    "y": 378.87,
+    "page": 14,
+    "text": "33562 831a D CMD WNBL Unit Command - Warrnambool Emergency Ops"
+  },
+  {
+    "y": 367.53,
+    "page": 14,
+    "text": "33563 831b D CMD WINC Unit Command - Winchelsea Emergency Ops"
+  },
+  {
+    "y": 356.2,
+    "page": 14,
+    "text": "33601 8341 D CENT NW DISPATCH Dispatch - Central North West Emergency Ops"
+  },
+  {
+    "y": 344.86,
+    "page": 14,
+    "text": "33610 834a D CENT NW REG CMD Regional Command - Central North West Emergency Ops"
+  },
+  {
+    "y": 333.52,
+    "page": 14,
+    "text": "33621 8355 D DCP WYNW DivCom - Wyndham West Emergency Ops"
+  },
+  {
+    "y": 322.18,
+    "page": 14,
+    "text": "33622 8356 D DCP BRBK DivCom - Brimbank Emergency Ops"
+  },
+  {
+    "y": 310.84,
+    "page": 14,
+    "text": "33623 8357 D DCP BROA DivCom - Broadmeadows Emergency Ops"
+  },
+  {
+    "y": 299.5,
+    "page": 14,
+    "text": "33640 8368 D CMD BRBK Unit Command - Brimbank Emergency Ops"
+  },
+  {
+    "y": 288.16,
+    "page": 14,
+    "text": "33641 8369 D CMD BROA Unit Command - Broadmeadows Emergency Ops"
+  },
+  {
+    "y": 276.83,
+    "page": 14,
+    "text": "33642 836a D CMD CRAI Unit Command - Craigieburn Emergency Ops"
+  },
+  {
+    "y": 265.49,
+    "page": 14,
+    "text": "33644 836c D CMD FOOT Unit Command - Footscray Emergency Ops"
+  },
+  {
+    "y": 254.15,
+    "page": 14,
+    "text": "33645 836d D CMD HOBS Unit Command - Hobsons Bay Emergency Ops"
+  },
+  {
+    "y": 242.81,
+    "page": 14,
+    "text": "33646 836e D CMD MELT Unit Command - Melton Emergency Ops"
+  },
+  {
+    "y": 231.47,
+    "page": 14,
+    "text": "33647 836f D CMD NBIK Unit Command - Nillimbik Emergency Ops"
+  },
+  {
+    "y": 220.13,
+    "page": 14,
+    "text": "33648 8370 D CMD NORT Unit Command - Northcote Emergency Ops"
+  },
+  {
+    "y": 208.79,
+    "page": 14,
+    "text": "33649 8371 D CMD SUNB Unit Command - Sunbury Emergency Ops"
+  },
+  {
+    "y": 197.46,
+    "page": 14,
+    "text": "33651 8373 D CMD WYND Unit Command - Wyndham Emergency Ops"
+  },
+  {
+    "y": 186.12,
+    "page": 14,
+    "text": "33652 8374 D CMD WYNW Unit Command - Wyndham West Emergency Ops"
+  },
+  {
+    "y": 174.78,
+    "page": 14,
+    "text": "33701 83a5 D CENT EAST DISPAT Dispatch - Central East Emergency Ops"
+  },
+  {
+    "y": 163.44,
+    "page": 14,
+    "text": "33710 83ae D CENT EAST REG CM Regional Command - Central East Emergency Ops"
+  },
+  {
+    "y": 152.1,
+    "page": 14,
+    "text": "33720 83b8 D DCP KNOX DivCom - Knox Emergency Ops"
+  },
+  {
+    "y": 140.76,
+    "page": 14,
+    "text": "33740 83cc D CMD EMER Unit Command - Emerald Emergency Ops"
+  },
+  {
+    "y": 129.42,
+    "page": 14,
+    "text": "33741 83cd D CMD HEAL Unit Command - Healesville Emergency Ops"
+  },
+  {
+    "y": 118.09,
+    "page": 14,
+    "text": "33742 83ce D CMD KNOX Unit Command - Knox Emergency Ops"
+  },
+  {
+    "y": 106.75,
+    "page": 14,
+    "text": "33743 83cf D CMD LILY Unit Command - Lilydale Emergency Ops"
+  },
+  {
+    "y": 95.41,
+    "page": 14,
+    "text": "33744 83d0 D CMD MHAM Unit Command - Manningham Emergency Ops"
+  },
+  {
+    "y": 84.07,
+    "page": 14,
+    "text": "33745 83d1 D CMD MDAH Unit Command - Maroondah Emergency Ops"
+  },
+  {
+    "y": 72.73,
+    "page": 14,
+    "text": "33746 83d2 D CMD UPYA Unit Command - Upper Yarra Emergency Ops"
+  },
+  {
+    "y": 61.39,
+    "page": 14,
+    "text": "33747 83d3 D CMD WHSE Unit Command - Whitehorse Emergency Ops"
+  },
+  {
+    "y": 26.25,
+    "page": 14,
+    "text": "Page 14/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 14,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 15,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 15,
+    "text": "33801 8409 D CENT SOUTH DISPA Dispatch - Central South Emergency Ops"
+  },
+  {
+    "y": 696.35,
+    "page": 15,
+    "text": "33810 8412 D CENT SOUTH REG C Regional Command - Central South Emergency Ops"
+  },
+  {
+    "y": 685.01,
+    "page": 15,
+    "text": "33820 841c D DCP FRAN DivCom - Frankston Emergency Ops"
+  },
+  {
+    "y": 673.68,
+    "page": 15,
+    "text": "33821 841d D DCP GLEI DivCom - Glen Eira Emergency Ops"
+  },
+  {
+    "y": 662.34,
+    "page": 15,
+    "text": "33822 841e D DCP PAKE DivCom - Pakenham Emergency Ops"
+  },
+  {
+    "y": 651,
+    "page": 15,
+    "text": "33840 8430 D CMD CHEL Unit Command - Chelsea Emergency Ops"
+  },
+  {
+    "y": 639.66,
+    "page": 15,
+    "text": "33841 8431 D CMD FRAN Unit Command - Frankston Emergency Ops"
+  },
+  {
+    "y": 628.32,
+    "page": 15,
+    "text": "33842 8432 D CMD GLEI Unit Command - Glen Eira Emergency Ops"
+  },
+  {
+    "y": 616.98,
+    "page": 15,
+    "text": "33843 8433 D CMD GRDA Unit Command - Greater Dandenong Emergency Ops"
+  },
+  {
+    "y": 605.64,
+    "page": 15,
+    "text": "33844 8434 D CMD HAST Unit Command - Hastings Emergency Ops"
+  },
+  {
+    "y": 594.31,
+    "page": 15,
+    "text": "33845 8435 D CMD MALV Unit Command - Malvern Emergency Ops"
+  },
+  {
+    "y": 582.97,
+    "page": 15,
+    "text": "33846 8436 D CMD MNSH Unit Command - Monash Emergency Ops"
+  },
+  {
+    "y": 571.63,
+    "page": 15,
+    "text": "33847 8437 D CMD MOOR Unit Command - Moorabbin Emergency Ops"
+  },
+  {
+    "y": 560.29,
+    "page": 15,
+    "text": "33848 8438 D CMD NAWA Unit Command - Narre Warren Emergency Ops"
+  },
+  {
+    "y": 548.95,
+    "page": 15,
+    "text": "33849 8439 D CMD PAKE Unit Command - Pakenham Emergency Ops"
+  },
+  {
+    "y": 537.61,
+    "page": 15,
+    "text": "33850 843a D CMD PPHI Unit Command - Port Phillip Bay Emergency Ops"
+  },
+  {
+    "y": 526.27,
+    "page": 15,
+    "text": "33851 843b D CMD SORR Unit Command - Sorrento Emergency Ops"
+  },
+  {
+    "y": 514.94,
+    "page": 15,
+    "text": "33901 846d D E DISPATCH 1 Dispatch - East 1 Emergency Ops"
+  },
+  {
+    "y": 503.6,
+    "page": 15,
+    "text": "33902 846e D E DISPATCH 2 Dispatch - East 2 Emergency Ops"
+  },
+  {
+    "y": 492.26,
+    "page": 15,
+    "text": "33904 8470 D E INCIDENT 1 Incident Ground - East 1 Emergency Ops"
+  },
+  {
+    "y": 480.92,
+    "page": 15,
+    "text": "33905 8471 D E INCIDENT 2 Incident Ground - East 2 Emergency Ops"
+  },
+  {
+    "y": 469.58,
+    "page": 15,
+    "text": "33906 8472 D E INCIDENT 3 Incident Ground - East 3 Emergency Ops"
+  },
+  {
+    "y": 458.24,
+    "page": 15,
+    "text": "33907 8473 D E INCIDENT 4 Incident Ground - East 4 Emergency Ops"
+  },
+  {
+    "y": 446.9,
+    "page": 15,
+    "text": "33908 8474 D E INCIDENT 5 Incident Ground - East 5 Emergency Ops"
+  },
+  {
+    "y": 435.57,
+    "page": 15,
+    "text": "33909 8475 D E REG COORD Regional Coordination - East Emergency Ops"
+  },
+  {
+    "y": 424.23,
+    "page": 15,
+    "text": "33910 8476 D E REG CMD Regional Command - East Emergency Ops"
+  },
+  {
+    "y": 412.89,
+    "page": 15,
+    "text": "33911 8477 D ICC TRGL Incident Control Centre - Traralgon Emergency Ops"
+  },
+  {
+    "y": 401.55,
+    "page": 15,
+    "text": "33912 8478 D ICC BAIR Incident Control Centre - Bairnsdale Emergency Ops"
+  },
+  {
+    "y": 390.21,
+    "page": 15,
+    "text": "33920 8480 D DCP DROU DivCom - Drouin Emergency Ops"
+  },
+  {
+    "y": 378.87,
+    "page": 15,
+    "text": "33921 8481 D DCP LEOG DivCom - Leongatha Emergency Ops"
+  },
+  {
+    "y": 367.53,
+    "page": 15,
+    "text": "33922 8482 D DCP MOEU DivCom - Moe Emergency Ops"
+  },
+  {
+    "y": 356.2,
+    "page": 15,
+    "text": "33923 8483 D DCP YARM DivCom - Yarram Emergency Ops"
+  },
+  {
+    "y": 344.86,
+    "page": 15,
+    "text": "33924 8484 D DCP SALU DivCom - Sale Emergency Ops"
+  },
+  {
+    "y": 333.52,
+    "page": 15,
+    "text": "33925 8485 D DCP BAIR DivCom - Bairnsdale Emergency Ops"
+  },
+  {
+    "y": 322.18,
+    "page": 15,
+    "text": "33926 8486 D DCP ORBS DivCom - Orbost Emergency Ops"
+  },
+  {
+    "y": 310.84,
+    "page": 15,
+    "text": "33927 8487 D DCP WONT DivCom - Wonthaggi Emergency Ops"
+  },
+  {
+    "y": 299.5,
+    "page": 15,
+    "text": "33940 8494 D CMD BAIR Unit Command - Bairnsdale Emergency Ops"
+  },
+  {
+    "y": 288.16,
+    "page": 15,
+    "text": "33941 8495 D CMD BNDC Unit Command - Bendoc Emergency Ops"
+  },
+  {
+    "y": 276.83,
+    "page": 15,
+    "text": "33942 8496 D CMD BTHN Unit Command - Bruthen Emergency Ops"
+  },
+  {
+    "y": 265.49,
+    "page": 15,
+    "text": "33943 8497 D CMD BUCN Unit Command - Buchan Emergency Ops"
+  },
+  {
+    "y": 254.15,
+    "page": 15,
+    "text": "33944 8498 D CMD CANN Unit Command - Cann River Emergency Ops"
+  },
+  {
+    "y": 242.81,
+    "page": 15,
+    "text": "33945 8499 D CMD ERCA Unit Command - Erica Emergency Ops"
+  },
+  {
+    "y": 231.47,
+    "page": 15,
+    "text": "33946 849a D CMD FOSR Unit Command - Foster Emergency Ops"
+  },
+  {
+    "y": 220.13,
+    "page": 15,
+    "text": "33947 849b D CMD INVC Unit Command - Inverloch Emergency Ops"
+  },
+  {
+    "y": 208.79,
+    "page": 15,
+    "text": "33948 849c D CMD LEOG Unit Command - Leongatha Emergency Ops"
+  },
+  {
+    "y": 197.46,
+    "page": 15,
+    "text": "33949 849d D CMD LSPO Unit Command - Loch Sport Emergency Ops"
+  },
+  {
+    "y": 186.12,
+    "page": 15,
+    "text": "33950 849e D CMD MFRA Unit Command - Maffra Emergency Ops"
+  },
+  {
+    "y": 174.78,
+    "page": 15,
+    "text": "33951 849f D CMD MCOT Unit Command - Mallacoota Emergency Ops"
+  },
+  {
+    "y": 163.44,
+    "page": 15,
+    "text": "33952 84a0 D CMD MOEU Unit Command - Moe Emergency Ops"
+  },
+  {
+    "y": 152.1,
+    "page": 15,
+    "text": "33953 84a1 D CMD MWEL Unit Command - Morwell Emergency Ops"
+  },
+  {
+    "y": 140.76,
+    "page": 15,
+    "text": "33954 84a2 D CMD ORBS Unit Command - Orbost Emergency Ops"
+  },
+  {
+    "y": 129.42,
+    "page": 15,
+    "text": "33955 84a3 D CMD PHIL Unit Command - Phillip Island Emergency Ops"
+  },
+  {
+    "y": 118.09,
+    "page": 15,
+    "text": "33956 84a4 D CMD RDLE Unit Command - Rosedale Emergency Ops"
+  },
+  {
+    "y": 106.75,
+    "page": 15,
+    "text": "33957 84a5 D CMD SALU Unit Command - Sale Emergency Ops"
+  },
+  {
+    "y": 95.41,
+    "page": 15,
+    "text": "33958 84a6 D CMD SANR Unit Command - San Remo Emergency Ops"
+  },
+  {
+    "y": 84.07,
+    "page": 15,
+    "text": "33959 84a7 D CMD STRA Unit Command - Stratford Emergency Ops"
+  },
+  {
+    "y": 72.73,
+    "page": 15,
+    "text": "33960 84a8 D CMD TAMB Unit Command - Tambo Valley Emergency Ops"
+  },
+  {
+    "y": 61.39,
+    "page": 15,
+    "text": "33961 84a9 D CMD WGUL Unit Command - Warragul Emergency Ops"
+  },
+  {
+    "y": 26.25,
+    "page": 15,
+    "text": "Page 15/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 15,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  },
+  {
+    "y": 733.42,
+    "page": 16,
+    "text": "Metropolitan Mobile Radio (MMR) System"
+  },
+  {
+    "y": 707.69,
+    "page": 16,
+    "text": "33962 84aa D CMD WONT Unit Command - Wonthaggi Emergency Ops"
+  },
+  {
+    "y": 696.35,
+    "page": 16,
+    "text": "33963 84ab D CMD YARM Unit Command - Yarram Emergency Ops"
+  },
+  {
+    "y": 685.01,
+    "page": 16,
+    "text": "65000 fde8 DE Motorola 1 Motorola Solutions 1 Other"
+  },
+  {
+    "y": 673.68,
+    "page": 16,
+    "text": "65001 fde9 DE Motorola 2 Motorola Solutions 2 Other"
+  },
+  {
+    "y": 662.34,
+    "page": 16,
+    "text": "65002 fdea DE Motorola 3 Motorola Solutions 3 Other"
+  },
+  {
+    "y": 651,
+    "page": 16,
+    "text": "65030 fe06 DE Motorola 31 Motorola Solutions 31 Other"
+  },
+  {
+    "y": 639.66,
+    "page": 16,
+    "text": "65031 fe07 DE Motorola 32 Motorola Solutions 32 Other"
+  },
+  {
+    "y": 628.32,
+    "page": 16,
+    "text": "65040 fe10 DE Motorola 41 Motorola Solutions 41 Other"
+  },
+  {
+    "y": 616.98,
+    "page": 16,
+    "text": "65041 fe11 DE Motorola 42 Motorola Solutions 42 Other"
+  },
+  {
+    "y": 605.64,
+    "page": 16,
+    "text": "65042 fe12 DE Motorola 43 Motorola Solutions 43 Other"
+  },
+  {
+    "y": 594.31,
+    "page": 16,
+    "text": "65043 fe13 DE Motorola 44 Motorola Solutions 44 Other"
+  },
+  {
+    "y": 582.97,
+    "page": 16,
+    "text": "65044 fe14 DE Motorola 45 Motorola Solutions 45 Other"
+  },
+  {
+    "y": 26.25,
+    "page": 16,
+    "text": "Page 16/16 | Report Generated For: arch989898 | Date Generated: Tuesday 19th May 2026 12:00:13 AM"
+  },
+  {
+    "y": 17.74,
+    "page": 16,
+    "text": "This information is Copyright (c) 2026 by RadioReference.com LLC and may not be reproduced without permission."
+  }
+]
