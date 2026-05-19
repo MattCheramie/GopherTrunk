@@ -80,13 +80,22 @@ func parsePDFFile(path string) (parsedSystem, error) {
 	return sys, nil
 }
 
-// extractPDFRows opens the PDF, walks every page, decodes the
-// shifted-encoding font, buckets positioned glyphs into rows, and
-// returns a single flat row list. RadioReference PDFs use a custom
-// font subset where every glyph's encoded byte sits 27 below its real
-// ASCII codepoint (so 'M' = 0x4D is stored as 0x32 = '2', and digit
-// '0' = 0x30 is stored as 0x15, a C0 control byte). Reverse the shift
-// per-glyph.
+// extractPDFRows opens the PDF, walks every page, buckets positioned
+// glyphs into rows, and returns a single flat row list with the font
+// encoding normalised. RadioReference has shipped two different PDF
+// encodings:
+//
+//   - **Shifted (older PDFs, e.g. maricopa.pdf, rwc.pdf).** The custom
+//     font subset has no CMap, so the PDF library returns the raw glyph
+//     bytes. Every glyph sits 27 below its real ASCII codepoint
+//     ('M'=0x4D stored as 0x32='2'). `decodeShift` adds 27 to recover.
+//   - **Decoded (newer PDFs, e.g. mmr.pdf).** RadioReference now ships
+//     a proper font CMap, so the PDF library returns already-correct
+//     UTF-8 text. Running `decodeShift` would corrupt it
+//     ('S'=0x53 → 'n'=0x6E).
+//
+// Which encoding a given PDF uses is detected by sniffing the first
+// rows for anchor strings — see `pdfTextNeedsShift`.
 func extractPDFRows(path string) ([]parseRow, error) {
 	f, r, err := pdf.Open(path)
 	if err != nil {
@@ -94,7 +103,7 @@ func extractPDFRows(path string) ([]parseRow, error) {
 	}
 	defer f.Close()
 
-	var out []parseRow
+	var raws []rawRow
 	for pn := 1; pn <= r.NumPage(); pn++ {
 		p := r.Page(pn)
 		if p.V.IsNull() {
@@ -130,32 +139,88 @@ func extractPDFRows(path string) ([]parseRow, error) {
 				if t.X-lastEnd > 1.5 && sb.Len() > 0 {
 					sb.WriteByte(' ')
 				}
-				sb.WriteString(decodeShift(t.S))
+				sb.WriteString(t.S)
 				lastEnd = t.X + t.W
 			}
-			line := strings.TrimSpace(collapseSpaces(fixupLigatures(sb.String())))
-			if line == "" {
+			text := strings.TrimSpace(collapseSpaces(sb.String()))
+			if text == "" {
 				continue
 			}
-			// Filter footer ("RRDB/TRS/...") at top-of-page and
-			// the literal special bullet U+00D1 used as a column
-			// separator marker.
-			if strings.HasPrefix(line, "RRDB/TRS/") {
-				continue
-			}
-			out = append(out, parseRow{Y: b.y, Page: pn, Text: line})
+			raws = append(raws, rawRow{Y: b.y, Page: pn, Text: text})
 		}
 	}
+
+	shift := pdfTextNeedsShift(raws)
+	out := make([]parseRow, 0, len(raws))
+	for _, rr := range raws {
+		txt := rr.Text
+		if shift {
+			txt = decodeShift(txt)
+		}
+		txt = strings.TrimSpace(collapseSpaces(fixupLigatures(txt)))
+		if txt == "" {
+			continue
+		}
+		// Filter footer ("RRDB/TRS/...") at top-of-page.
+		if strings.HasPrefix(txt, "RRDB/TRS/") {
+			continue
+		}
+		out = append(out, parseRow{Y: rr.Y, Page: rr.Page, Text: txt})
+	}
 	return out, nil
+}
+
+// rawRow is one raw (un-shift-decoded) positioned-text row collected
+// during PDF extraction's first pass. It's an internal type because
+// the shift-decision is per-PDF: we need to look at the whole document
+// before deciding whether to apply `decodeShift` to each row's text.
+type rawRow struct {
+	Y    float64
+	Page int
+	Text string
+}
+
+// pdfTextNeedsShift returns true when the PDF library handed back
+// shifted-encoding bytes (older RadioReference PDFs) and false when it
+// handed back already-decoded text (newer PDFs with a proper font
+// CMap). Probes the first 50 rows (capped at 8 KiB) for anchor markers
+// that only appear in decoded text — every uppercase letter and most
+// punctuation is shifted out of the printable range in the encoded
+// case, so anchors like "System Name" can't accidentally pre-exist.
+func pdfTextNeedsShift(rows []rawRow) bool {
+	var b strings.Builder
+	for i, r := range rows {
+		if i >= 50 || b.Len() > 8*1024 {
+			break
+		}
+		b.WriteString(r.Text)
+		b.WriteByte(' ')
+	}
+	sample := b.String()
+	for _, anchor := range []string{
+		"System Name", "Sites and Frequencies",
+		"Talkgroups", "WACN", "Last Updated",
+	} {
+		if strings.Contains(sample, anchor) {
+			return false
+		}
+	}
+	return true
 }
 
 // decodeShift reverses the PDF font's -27 ASCII shift. Bytes already
 // in the printable range that aren't part of the shifted space (e.g.,
 // the literal Ñ used as a tabular bullet) pass through unchanged.
+//
+// Literal space (0x20) is treated as pass-through: it does occasionally
+// appear in otherwise-encoded text (the PDF text-show operator emits
+// an actual space byte between adjacent text runs), and shifting it to
+// ';' (0x3B) corrupts the output. An encoded space arrives as 0x05
+// (a C0 control byte) which still hits the shift branch normally.
 func decodeShift(s string) string {
 	var b strings.Builder
 	for _, c := range s {
-		if c <= 0x63 {
+		if c <= 0x63 && c != 0x20 {
 			d := c + 27
 			if d >= 0x20 && d <= 0x7E {
 				b.WriteRune(d)
@@ -221,15 +286,18 @@ func parseSystem(rows []parseRow) (parsedSystem, error) {
 	for _, row := range rows {
 		line := row.Text
 
-		// Section transitions.
+		// Section transitions. RR has shipped two heading styles
+		// across PDF layouts — accept either.
 		switch {
-		case strings.EqualFold(line, "Sites and Frequencies"):
+		case strings.EqualFold(line, "Sites and Frequencies"),
+			strings.EqualFold(line, "System Frequencies"):
 			section = sectSites
 			continue
-		case strings.EqualFold(line, "Talkgroups"):
+		case strings.EqualFold(line, "Talkgroups"),
+			strings.EqualFold(line, "System Talkgroups"):
 			section = sectTGs
 			continue
-		case strings.HasPrefix(line, "Red (c) are control channel"):
+		case strings.HasPrefix(line, "Red (c) are"):
 			continue
 		}
 
@@ -238,7 +306,9 @@ func parseSystem(rows []parseRow) (parsedSystem, error) {
 			parseMetaLine(line, &sys)
 		case sectSites:
 			// Column header / footer rows we skip.
-			if strings.HasPrefix(line, "RFSSSite") || strings.HasPrefix(line, "RFSS Site") {
+			if strings.HasPrefix(line, "RFSSSite") ||
+				strings.HasPrefix(line, "RFSS Site") ||
+				strings.HasPrefix(line, "Site Description") {
 				continue
 			}
 			if site, ok := parseSiteRow(line); ok {
@@ -303,43 +373,70 @@ func parseSystem(rows []parseRow) (parsedSystem, error) {
 }
 
 var (
+	// siteRowRE matches the "two-parenthesised-pair" layout used by
+	// older US-style RR PDFs: "1 (1) 016 (10) Oatman Mountain Maricopa
+	// 769.54375c …". RFSS, alt-RFSS, SiteID, alt-SiteID, then the
+	// name + county + freq tail.
 	siteRowRE = regexp.MustCompile(`^(\d+)\s*\((\w+)\)\s*(\d+)\s*\((\w+)\)\s*(.+)$`)
-	freqRE    = regexp.MustCompile(`(\d{3}\.\d{2,5})(c?)`)
+	// siteRowDashRE matches the "dash-joined" layout used by newer
+	// non-US RR PDFs (e.g. MMR): "1-001 (1-1) Melbourne 420.01250c …".
+	// RFSS and SiteID are dash-joined; there's no county column.
+	siteRowDashRE = regexp.MustCompile(`^(\d+)-(\d+)\s*\((\d+)-(\d+)\)\s*(.+)$`)
+	freqRE        = regexp.MustCompile(`(\d{3}\.\d{2,5})([ca]?)`)
 )
 
-// parseSiteRow turns one "1 (1) 016 (10) Oatman Mountain Maricopa 769.54375c …"
-// line into a parsedSite. Returns ok=false if the row doesn't look like
-// a site row (caller treats it as continuation or skips).
+// parseSiteRow turns one site-row line into a parsedSite. Tries the
+// two-parenthesised-pair layout first; falls back to the dash-joined
+// layout. Returns ok=false when neither pattern matches (caller treats
+// the line as a continuation or skips it).
 func parseSiteRow(line string) (parsedSite, bool) {
-	m := siteRowRE.FindStringSubmatch(line)
-	if m == nil {
-		return parsedSite{}, false
+	if m := siteRowRE.FindStringSubmatch(line); m != nil {
+		rfss, err1 := strconv.Atoi(m[1])
+		siteID, err2 := strconv.Atoi(m[3])
+		if err1 != nil || err2 != nil {
+			return parsedSite{}, false
+		}
+		tail := m[5]
+		nameAndCounty, freqText := splitTailAtFreq(tail)
+		siteName, county := splitNameAndCounty(nameAndCounty)
+		return parsedSite{
+			RFSS:        rfss,
+			SiteID:      siteID,
+			SiteName:    siteName,
+			Cty:         county,
+			Frequencies: parseFreqList(freqText),
+			Include:     true,
+		}, true
 	}
-	rfss, err1 := strconv.Atoi(m[1])
-	siteID, err2 := strconv.Atoi(m[3])
-	if err1 != nil || err2 != nil {
-		return parsedSite{}, false
+	if m := siteRowDashRE.FindStringSubmatch(line); m != nil {
+		rfss, err1 := strconv.Atoi(m[1])
+		siteID, err2 := strconv.Atoi(m[2])
+		if err1 != nil || err2 != nil {
+			return parsedSite{}, false
+		}
+		tail := m[5]
+		nameText, freqText := splitTailAtFreq(tail)
+		return parsedSite{
+			RFSS:        rfss,
+			SiteID:      siteID,
+			SiteName:    strings.TrimSpace(nameText),
+			Frequencies: parseFreqList(freqText),
+			Include:     true,
+		}, true
 	}
-	tail := m[5]
-	// Split off frequencies from the right.
+	return parsedSite{}, false
+}
+
+// splitTailAtFreq splits a site-row tail at the first frequency token,
+// returning the name/county portion on the left and the frequency
+// portion on the right. When the tail has no frequencies (continuation
+// lines, malformed rows) the whole string is returned as the name.
+func splitTailAtFreq(tail string) (name, freqs string) {
 	idx := freqRE.FindStringIndex(tail)
-	var nameAndCounty, freqText string
 	if idx == nil {
-		nameAndCounty = tail
-	} else {
-		nameAndCounty = strings.TrimSpace(tail[:idx[0]])
-		freqText = tail[idx[0]:]
+		return tail, ""
 	}
-	siteName, county := splitNameAndCounty(nameAndCounty)
-	freqs := parseFreqList(freqText)
-	return parsedSite{
-		RFSS:        rfss,
-		SiteID:      siteID,
-		SiteName:    siteName,
-		Cty:         county,
-		Frequencies: freqs,
-		Include:     true,
-	}, true
+	return strings.TrimSpace(tail[:idx[0]]), tail[idx[0]:]
 }
 
 // splitNameAndCounty pulls the County off the end of "Oatman Mountain
@@ -395,7 +492,12 @@ func parseFreqList(s string) []parsedFreq {
 			continue
 		}
 		hz := uint32(mhz*1_000_000 + 0.5)
-		out = append(out, parsedFreq{Hz: hz, ControlChannel: m[2] == "c"})
+		// "c" = primary control channel, "a" = secondary control
+		// channel capable. Both count as control-channel-capable
+		// for the daemon's purposes — `control_channels` in the
+		// generated config lists every one of them.
+		cc := m[2] == "c" || m[2] == "a"
+		out = append(out, parsedFreq{Hz: hz, ControlChannel: cc})
 	}
 	return out
 }
@@ -415,8 +517,10 @@ func parseTGRow(line string) (parsedTalkgroup, bool) {
 	if err != nil || dec > 65535 {
 		return parsedTalkgroup{}, false
 	}
-	expectedHex := fmt.Sprintf("%x", dec)
-	if !strings.EqualFold(m[2], expectedHex) {
+	// HEX may be zero-padded in newer PDFs (e.g. "065" for dec=101).
+	// Parse and compare numerically so leading zeros don't matter.
+	gotHex, hexErr := strconv.ParseUint(m[2], 16, 32)
+	if hexErr != nil || gotHex != dec {
 		return parsedTalkgroup{}, false
 	}
 	mode := m[3]
@@ -565,8 +669,11 @@ func looksLikeDescriptionToken(t string) bool {
 
 func isTGHeader(line string) bool {
 	l := strings.ToLower(line)
-	return strings.HasPrefix(l, "dec") && strings.Contains(l, "hex") &&
-		strings.Contains(l, "mode") && strings.Contains(l, "alpha tag")
+	if !strings.HasPrefix(l, "dec") || !strings.Contains(l, "hex") || !strings.Contains(l, "mode") {
+		return false
+	}
+	// Maricopa/RWC use "alpha tag"; MMR uses "display" for the same column.
+	return strings.Contains(l, "alpha tag") || strings.Contains(l, "display")
 }
 
 func isTGNavLine(line string) bool {

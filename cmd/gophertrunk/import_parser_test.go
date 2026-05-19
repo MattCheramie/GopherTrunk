@@ -52,6 +52,17 @@ func TestParseSystem(t *testing.T) {
 			wantMinTGs:      100,
 			wantContainsTag: "Interop",
 		},
+		{
+			name:            "mmr",
+			extractedFile:   "testdata/import_mmr.extracted.json",
+			goldenFile:      "testdata/import_mmr.golden.json",
+			wantName:        "Metropolitan Mobile Radio (MMR) System",
+			wantSysID:       "164",
+			wantWACN:        "BEE00",
+			wantMinSites:    40,
+			wantMinTGs:      500,
+			wantContainsTag: "Law Dispatch",
+		},
 	}
 
 	for _, tc := range cases {
@@ -87,20 +98,22 @@ func TestParseSystem(t *testing.T) {
 				t.Errorf("Talkgroups = %d, want >= %d", len(sys.Talkgroups), tc.wantMinTGs)
 			}
 
-			// Every site has at least one frequency and at least one CC.
+			// Every site has at least one frequency. CC requirement
+			// is system-wide rather than per-site: some MMR sites
+			// are voice-only repeaters with no control channel.
+			totalCC := 0
 			for i, site := range sys.Sites {
 				if len(site.Frequencies) == 0 {
 					t.Errorf("Sites[%d] %q has no frequencies", i, site.SiteName)
 				}
-				ccCount := 0
 				for _, f := range site.Frequencies {
 					if f.ControlChannel {
-						ccCount++
+						totalCC++
 					}
 				}
-				if ccCount == 0 {
-					t.Errorf("Sites[%d] %q has no control-channel-capable frequencies", i, site.SiteName)
-				}
+			}
+			if totalCC == 0 {
+				t.Errorf("system has zero control-channel-capable frequencies across all sites")
 			}
 
 			// At least one talkgroup carries the canonical Tag we expect.
@@ -221,6 +234,47 @@ func TestSplitTalkgroupTail(t *testing.T) {
 				t.Errorf("tag = %q, want %q", g, tc.wantTag)
 			}
 		})
+	}
+}
+
+func TestPDFTextNeedsShift(t *testing.T) {
+	cases := []struct {
+		name string
+		rows []rawRow
+		want bool
+	}{
+		{"system-name anchor", []rawRow{{Text: "System Name: Foo"}}, false},
+		{"sites-and-frequencies anchor", []rawRow{{Text: "Sites and Frequencies"}}, false},
+		{"wacn anchor", []rawRow{{Text: "WACN: BEE08"}}, false},
+		{"last-updated anchor", []rawRow{{Text: "Last Updated: June 2024"}}, false},
+		{"talkgroups anchor", []rawRow{{Text: "Talkgroups"}}, false},
+		{"shifted MMR-style", []rawRow{{Text: "nystem;i|meU hetropolit|n"}}, true},
+		{"shifted maricopa-style", []rawRow{{Text: "2FWNHTUF\x05(TZSY^"}}, true},
+		{"empty", []rawRow{}, true},
+		{"anchor not in first 50 rows", append(
+			make([]rawRow, 60),
+			rawRow{Text: "System Name: Late"},
+		), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pdfTextNeedsShift(tc.rows)
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDecodeShift_LiteralSpacesPreserved(t *testing.T) {
+	// Maricopa-style raw bytes for "Maricopa County Menu". The
+	// gap before "Menu" is a literal 0x20 followed by an encoded
+	// 0x05 — the literal space must not be shifted to ';'.
+	in := "2FWNHTUF\x05(TZSY^ \x052JSZ"
+	want := "Maricopa County  Menu"
+	got := decodeShift(in)
+	if got != want {
+		t.Errorf("decodeShift = %q, want %q", got, want)
 	}
 }
 
