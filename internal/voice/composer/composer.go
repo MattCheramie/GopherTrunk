@@ -13,12 +13,11 @@
 // engine's silent-call watchdog doesn't kill the call
 // mid-conversation.
 //
-// Digital protocols (P25 / DMR / NXDN) need vocoders that haven't
-// landed yet — IMBE for P25 Phase 1 is in progress and AMBE+2 stays
-// behind a build tag. Until they ship, a digital grant produces no
-// PCM and only the raw-frame sidecar (when WriteRaw is enabled, or
-// always for EDACS ProVoice grants) is useful. The composer logs a
-// warning per digital grant so the behaviour is visible in operations.
+// DMR voice grants run a dedicated chain (see dmr_voice.go): IQ →
+// DMR receiver → voice superframe decoder → on-air AMBE frames
+// appended to the recorder's .raw sidecar. Other digital protocols
+// (P25, NXDN, ...) have no composer chain yet — their grants are
+// logged and bypassed.
 package composer
 
 import (
@@ -341,17 +340,14 @@ func (c *Composer) ActiveChains() []string {
 }
 
 func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
-	if cs.Grant.Protocol != "" && cs.Grant.Protocol != "fm" && cs.Grant.Protocol != "analog" {
-		// Digital protocols are decoded out of the recorder's
-		// WriteRawFrame path: the recorder auto-instantiates the
-		// vocoder for the call's protocol (see
-		// voice.DefaultVocoderForProtocol) and writes the decoded
-		// PCM into the WAV. The composer's job for digital is the
-		// IQ → vocoder-frame extraction (in the protocol-specific
-		// radio decoder); FM demod doesn't apply because the IQ
-		// carries C4FM / H-DQPSK / 4FSK symbols, not analog audio.
-		c.log.Info("composer: digital protocol; FM chain bypassed (vocoder decode runs in recorder)",
-			"device", cs.DeviceSerial, "protocol", cs.Grant.Protocol,
+	proto := cs.Grant.Protocol
+	isFM := proto == "" || proto == "fm" || proto == "analog"
+	isDMRVoice := proto == "dmr-tier2" || proto == "dmr-tier3"
+	if !isFM && !isDMRVoice {
+		// Other digital protocols (P25, NXDN, ...) have no composer
+		// voice chain yet — their voice bursts are not decoded.
+		c.log.Info("composer: digital protocol not yet decoded; chain bypassed",
+			"device", cs.DeviceSerial, "protocol", proto,
 			"group", cs.Grant.GroupID)
 		return
 	}
@@ -381,7 +377,11 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()
 
-	go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, ch.done)
+	if isDMRVoice {
+		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, ch.done)
+	} else {
+		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, ch.done)
+	}
 }
 
 func (c *Composer) handleEnd(ce trunking.CallEnd) {

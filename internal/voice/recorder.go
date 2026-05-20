@@ -102,15 +102,27 @@ type RecorderOptions struct {
 // call) and mutate from there — RecorderOptions.VocoderForProtocol
 // is taken as-is, no merging.
 func DefaultVocoderForProtocol() map[string]string {
+	// DMR is intentionally absent: the composer's DMR voice chain
+	// emits pre-FEC 72-bit on-air AMBE frames, which the AMBE+2
+	// vocoder (49-bit post-FEC frames) cannot decode. DMR voice calls
+	// get a .raw sidecar instead; the mapping returns once the AMBE
+	// forward-error-correction lands (issue #276).
 	return map[string]string{
 		"p25":        "imbe",  // P25 Phase 1 — IMBE 4400
 		"p25-phase2": "ambe2", // P25 Phase 2 — AMBE+2 2400
-		"dmr-tier2":  "ambe2", // DMR Tier II conventional
-		"dmr-tier3":  "ambe2", // DMR Tier III trunked
 		"nxdn":       "ambe2",
 		"dpmr":       "ambe2", // dPMR Mode 3 (digital)
 		"tetra":      "ambe2", // TETRA voice
 	}
+}
+
+// dmrVoiceProtocol reports whether protocol is a DMR voice protocol.
+// DMR voice calls always get a .raw sidecar: the recorder has no
+// in-process vocoder for DMR yet (see DefaultVocoderForProtocol), so
+// the on-air AMBE frames the composer extracts are the only capture
+// of the call.
+func dmrVoiceProtocol(protocol string) bool {
+	return protocol == "dmr-tier2" || protocol == "dmr-tier3"
 }
 
 // NewRecorder validates options and returns a recorder ready to Run.
@@ -314,9 +326,10 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		return
 	}
 	s := &recordingSession{wav: wav, wavPath: wavPath, startedAt: cs.StartedAt}
-	// ProVoice grants always get a sidecar — the vocoder isn't decodable
-	// in-process, so the .raw file is the only way to capture the call.
-	if r.writeRaw || cs.Grant.ProVoice {
+	// ProVoice and DMR voice grants always get a sidecar — neither has
+	// an in-process vocoder, so the .raw file is the only capture of
+	// the call.
+	if r.writeRaw || cs.Grant.ProVoice || dmrVoiceProtocol(cs.Grant.Protocol) {
 		rawPath := filepath.Join(dir, base+".raw")
 		raw, err := os.Create(rawPath)
 		if err != nil {

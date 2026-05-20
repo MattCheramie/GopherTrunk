@@ -51,6 +51,7 @@ func (d *fakeDevices) FindBySerial(s string) IQSource { return d.src[s] }
 type recordingSink struct {
 	mu  sync.Mutex
 	pcm map[string][]int16
+	raw map[string][][]byte
 }
 
 func (r *recordingSink) WritePCM(serial string, samples []int16) error {
@@ -63,10 +64,28 @@ func (r *recordingSink) WritePCM(serial string, samples []int16) error {
 	return nil
 }
 
+func (r *recordingSink) WriteRawFrame(serial string, frame []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.raw == nil {
+		r.raw = make(map[string][][]byte)
+	}
+	r.raw[serial] = append(r.raw[serial], append([]byte(nil), frame...))
+	return nil
+}
+
 func (r *recordingSink) total(serial string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.pcm[serial])
+}
+
+func (r *recordingSink) rawFrames(serial string) [][]byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([][]byte, len(r.raw[serial]))
+	copy(out, r.raw[serial])
+	return out
 }
 
 type fakeEngine struct {
