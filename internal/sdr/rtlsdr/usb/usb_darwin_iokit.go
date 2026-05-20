@@ -3,6 +3,7 @@
 package usb
 
 import (
+	"encoding/binary"
 	"fmt"
 	"unsafe"
 
@@ -81,8 +82,9 @@ var (
 )
 
 // cfUUIDBytes mirrors Apple's CFUUIDBytes — 16 raw bytes of a UUID.
-// Layout matches the C struct exactly, so the value can be passed
-// to CFUUIDCreateFromUUIDBytes by reference.
+// purego cannot marshal an array-typed value across the FFI boundary,
+// so this type is never named in a registered function signature;
+// callers split it into two uint64 register halves (see makeCFUUID).
 type cfUUIDBytes [16]byte
 
 // IOCFPlugInInterface vtable indices we need (after the IUnknown
@@ -155,8 +157,10 @@ var (
 	cfStringCreateWithCString func(alloc cfAllocatorRef, str *byte, encoding uint32) cfStringRef
 	cfStringGetCString        func(theString cfStringRef, buffer *byte, bufferSize int64, encoding uint32) bool
 	cfNumberGetValue          func(num cfNumberRef, theType uint32, valuePtr unsafe.Pointer) bool
-	cfUUIDCreateFromUUIDBytes func(alloc cfAllocatorRef, bytes cfUUIDBytes) cfTypeRef
-	cfUUIDGetUUIDBytes        func(uuid cfTypeRef) cfUUIDBytes
+	// cfUUIDCreateFromUUIDBytes takes a CFUUIDBytes by value. purego
+	// can't marshal the 16-byte struct, so the two 8-byte halves are
+	// passed as separate register-sized args — see makeCFUUID.
+	cfUUIDCreateFromUUIDBytes func(alloc cfAllocatorRef, lo, hi uint64) cfTypeRef
 )
 
 // IOKit function pointers.
@@ -219,7 +223,6 @@ func loadIOKit() (err error) {
 	purego.RegisterLibFunc(&cfStringGetCString, cf, "CFStringGetCString")
 	purego.RegisterLibFunc(&cfNumberGetValue, cf, "CFNumberGetValue")
 	purego.RegisterLibFunc(&cfUUIDCreateFromUUIDBytes, cf, "CFUUIDCreateFromUUIDBytes")
-	purego.RegisterLibFunc(&cfUUIDGetUUIDBytes, cf, "CFUUIDGetUUIDBytes")
 	purego.RegisterLibFunc(&ioServiceMatching, io, "IOServiceMatching")
 	purego.RegisterLibFunc(&ioServiceGetMatchingServices, io, "IOServiceGetMatchingServices")
 	purego.RegisterLibFunc(&ioIteratorNext, io, "IOIteratorNext")
@@ -277,25 +280,33 @@ func translateIOReturn(rc uintptr) error {
 	}
 }
 
+// makeCFUUID builds a CFUUIDRef from raw UUID bytes. CFUUIDBytes is a
+// 16-byte by-value struct; purego can't pass it directly, so the two
+// 8-byte halves go in as separate register-sized args. Both supported
+// Darwin arches are little-endian, so LittleEndian.Uint64 reproduces
+// the in-register byte layout the C ABI expects.
+func makeCFUUID(u cfUUIDBytes) cfTypeRef {
+	lo := binary.LittleEndian.Uint64(u[0:8])
+	hi := binary.LittleEndian.Uint64(u[8:16])
+	return cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, lo, hi)
+}
+
 // queryInterface invokes IOCFPlugInInterface::QueryInterface to
 // obtain a typed COM-style interface handle (e.g. IOUSBDeviceInterface)
 // from a plug-in. plugin is a **IOCFPlugInInterface (the indirect
 // pointer IOCreatePlugInInterfaceForService returns). uuid is one of
 // the package-level UUID constants (uuidIOUSBDeviceInterface, etc.).
+//
+// QueryInterface on macOS is (this, REFIID iid, void **ppv) where
+// REFIID is a CFUUIDBytes passed BY VALUE — a 16-byte struct the ABI
+// splits across two registers. The uuid is handed over as its two
+// 8-byte halves; vtableCall places them in consecutive registers.
 func queryInterface(plugin uintptr, uuid cfUUIDBytes) (uintptr, error) {
-	cfUUID := cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, uuid)
-	if cfUUID == 0 {
-		return 0, fmt.Errorf("usb: CFUUIDCreateFromUUIDBytes returned NULL")
-	}
-	defer cfRelease(cfUUID)
-	uuidBytes := cfUUIDGetUUIDBytes(cfUUID)
+	lo := binary.LittleEndian.Uint64(uuid[0:8])
+	hi := binary.LittleEndian.Uint64(uuid[8:16])
 	var iface uintptr
 	rc := vtableCall(plugin, pluginQueryInterface,
-		// QueryInterface signature on macOS: (this, REFIID *, void**)
-		// REFIID is passed by value but it's a 16-byte CFUUIDBytes.
-		// purego splits multi-word values across registers per the
-		// SysV ABI used on Darwin amd64 / AAPCS64 on arm64.
-		uintptr(unsafe.Pointer(&uuidBytes)),
+		uintptr(lo), uintptr(hi),
 		uintptr(unsafe.Pointer(&iface)),
 	)
 	if rc != 0 {

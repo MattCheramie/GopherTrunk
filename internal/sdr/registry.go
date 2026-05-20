@@ -38,15 +38,20 @@ func DriverByName(name string) (Driver, error) {
 	return d, nil
 }
 
-// EnumerateAll asks every registered driver to list its devices.
-func EnumerateAll() []Info {
+// EnumerateAll asks every registered driver to list its devices. It
+// returns the combined device list plus one error per driver that
+// failed to enumerate, so callers can surface the failure instead of
+// silently reporting an empty list.
+func EnumerateAll() ([]Info, []error) {
 	var out []Info
+	var errs []error
 	for _, d := range Drivers() {
 		infos, err := d.Enumerate()
 		if err != nil {
+			errs = append(errs, err)
 			continue
 		}
 		out = append(out, infos...)
 	}
-	return out
+	return out, errs
 }

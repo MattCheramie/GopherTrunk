@@ -129,6 +129,22 @@ func TestUUIDByteSize(t *testing.T) {
 // invoking IORegistryEntryCreateCFProperty with a synthesised bogus
 // handle segfaults inside the framework rather than degrading
 // gracefully — so this is the deepest test we can write portably.
+// TestLoadIOKitNoPanic is the regression guard for issue #257. The
+// macOS USB enumerator panicked inside purego.RegisterLibFunc with
+// "unsupported kind array" because two CoreFoundation function
+// pointers named the array type cfUUIDBytes in their signatures —
+// loadIOKit recovered the panic into an error and every macOS user
+// got zero devices. Calling loadIOKit directly (not via the
+// platformEnumerator sync.Once) and asserting a nil error fails
+// loudly if an array type ever creeps back into a registered
+// signature. TestDarwinEnumeratorCallable can't catch this: it
+// accepts "iokit-load-failed" as a valid outcome.
+func TestLoadIOKitNoPanic(t *testing.T) {
+	if err := loadIOKit(); err != nil {
+		t.Fatalf("loadIOKit() = %v, want nil", err)
+	}
+}
+
 func TestReadUSBStringHandlesMissingSymbol(t *testing.T) {
 	// Force the unloaded path by saving + nilling the resolved
 	// function pointer; restore after the assertion.

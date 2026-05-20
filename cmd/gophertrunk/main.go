@@ -270,7 +270,10 @@ func listSDRs(args []string) {
 		}
 	}
 
-	infos := sdr.EnumerateAll()
+	infos, errs := sdr.EnumerateAll()
+	for _, err := range errs {
+		fmt.Fprintln(os.Stderr, "enumerate:", err)
+	}
 	if len(infos) == 0 {
 		fmt.Println("no SDR devices found")
 		return

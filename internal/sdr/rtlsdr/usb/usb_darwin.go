@@ -417,12 +417,12 @@ func findServiceByLocation(wantLoc uint32) (ioService, bool) {
 func openDeviceInterface(svc ioService) (uintptr, error) {
 	var plugin *uintptr
 	var score int32
-	pluginUUID := cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, uuidIOUSBDeviceUserClientType)
+	pluginUUID := makeCFUUID(uuidIOUSBDeviceUserClientType)
 	if pluginUUID == 0 {
 		return 0, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBDeviceUserClientType) returned NULL")
 	}
 	defer cfRelease(pluginUUID)
-	ifaceUUID := cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, uuidIOCFPlugInInterface)
+	ifaceUUID := makeCFUUID(uuidIOCFPlugInInterface)
 	if ifaceUUID == 0 {
 		return 0, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOCFPlugInInterface) returned NULL")
 	}
@@ -555,12 +555,12 @@ func (t *darwinTransport) ClaimInterface(num int) error {
 
 	var plugin *uintptr
 	var score int32
-	pluginUUID := cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, uuidIOUSBDeviceUserClientType)
+	pluginUUID := makeCFUUID(uuidIOUSBDeviceUserClientType)
 	if pluginUUID == 0 {
 		return errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBDeviceUserClientType) returned NULL")
 	}
 	defer cfRelease(pluginUUID)
-	pluginIfaceUUID := cfUUIDCreateFromUUIDBytes(kCFAllocatorDefault, uuidIOCFPlugInInterface)
+	pluginIfaceUUID := makeCFUUID(uuidIOCFPlugInInterface)
 	if pluginIfaceUUID == 0 {
 		return errors.New("usb: CFUUIDCreateFromUUIDBytes(IOCFPlugInInterface) returned NULL")
 	}
