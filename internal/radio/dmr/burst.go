@@ -11,9 +11,9 @@ package dmr
 //   dibits  83..131   (49 dibits, 98 bits)  — info[1]: payload second half
 //
 // The two 98-bit info halves concatenate to form one 196-bit BPTC(196,96)
-// codeword for control/data bursts (CSBKs etc.). For voice bursts the same
-// payload bits carry two AMBE+2 frames; that decoding plugs in via the
-// vocoder registry once the AMBE+2 backend is built.
+// codeword for control/data bursts (CSBKs etc.). Voice bursts use a
+// different split — 108 + 48 + 108 bits, with no slot-type fields —
+// carrying three 72-bit AMBE+2 frames; see internal/radio/dmr/voice.
 
 const (
 	BurstDibits       = 132
