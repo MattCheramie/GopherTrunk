@@ -293,6 +293,26 @@ func TestHarnessCQPSKChunkBoundary(t *testing.T) {
 	}
 }
 
+// TestHarnessC4FMToleratesCarrierOffset guards the coarse-AFC fix for
+// issue #275. A residual RTL-SDR tuner offset appears as a DC bias on
+// the FM-discriminator output; left in place it shifts the 4-level eye
+// off the slicer's fixed thresholds, and at ≥500 Hz the C4FM Frame Sync
+// Word stopped correlating entirely so the control channel never
+// locked. The coarse-AFC stage tracks and subtracts that bias, so the
+// channel locks across a realistic offset range.
+func TestHarnessC4FMToleratesCarrierOffset(t *testing.T) {
+	for _, offHz := range []float64{-1500, -800, -500, 500, 800, 1000, 1500} {
+		t.Run(fmt.Sprintf("%+gHz", offHz), func(t *testing.T) {
+			res := runHarness(DemodC4FM, demod.Impairments{FreqOffsetHz: offHz})
+			if !res.locked {
+				t.Errorf("C4FM did not lock at %+g Hz carrier offset "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s)",
+					offHz, res.decodeErrors, res.nidErrsSummary())
+			}
+		})
+	}
+}
+
 // TestHarnessImpairedControlChannelCharacterization runs each realistic
 // RTL-SDR impairment through the real demod chain and logs whether the
 // control channel still locks and how the NID decoder fared. It is

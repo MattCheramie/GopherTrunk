@@ -8,9 +8,12 @@
 //	DemodC4FM (default):
 //	  IQ
 //	    → FM discriminator (internal/dsp/demod.FM)
-//	    → RRC matched filter + 4-level slicer (internal/dsp/demod.C4FM)
+//	    → RRC matched filter (internal/dsp/demod.C4FM)
+//	    → coarse AFC: residual carrier-offset removal
+//	      (internal/dsp/demod.CoarseAFC)
 //	    → Mueller-Müller symbol clock recovery (sync.MuellerMuller)
-//	    → C4FM symbol → 0..3 dibit (phase1.SymbolToDibit)
+//	    → 4-level slicer → C4FM symbol → 0..3 dibit
+//	      (internal/dsp/demod.C4FM, phase1.SymbolToDibit)
 //
 //	DemodCQPSK (LSM / simulcast):
 //	  IQ
@@ -127,10 +130,12 @@ type Options struct {
 type Receiver struct {
 	demodMode DemodMode
 
-	// C4FM path: FM discriminator → real RRC + 4-level slicer →
-	// Mueller-Müller. Allocated only when demodMode == DemodC4FM.
+	// C4FM path: FM discriminator → real RRC matched filter →
+	// coarse-AFC carrier-offset removal → Mueller-Müller → 4-level
+	// slicer. Allocated only when demodMode == DemodC4FM.
 	fm    *demod.FM
 	mf    *demod.C4FM
+	afc   *demod.CoarseAFC
 	clock *sync.MuellerMuller
 
 	// CQPSK / LSM path: complex RRC + Gardner + DQPSK quadrant
@@ -206,6 +211,7 @@ func New(opts Options) *Receiver {
 	default:
 		r.fm = demod.NewFM()
 		r.mf = demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale)
+		r.afc = demod.NewCoarseAFC(sps)
 		r.clock = sync.NewMuellerMuller(sps, gain)
 	}
 	if opts.Sink != nil {
@@ -231,6 +237,11 @@ func (r *Receiver) Process(iq []complex64) {
 	} else {
 		r.disc = r.fm.Process(r.disc, iq)
 		r.matched = r.mf.MatchedFilter(r.matched, r.disc)
+		// Coarse AFC: track and subtract the residual carrier-offset
+		// DC bias before the symbol clock + slicer see it, so a real
+		// tuner's frequency error doesn't shift the 4-level eye off
+		// the slicer's fixed thresholds (issue #275).
+		r.afc.Process(r.matched)
 		r.symbols = r.clock.Process(r.symbols, r.matched)
 		if len(r.symbols) == 0 {
 			return
@@ -269,6 +280,9 @@ func (r *Receiver) Reset() {
 	r.dibitBase = 0
 	if r.cq != nil {
 		r.cq.reset()
+	}
+	if r.afc != nil {
+		r.afc.Reset()
 	}
 	// FM discriminator's `last` is harmless to leave alone — the
 	// next sample it processes will produce one slightly-wrong

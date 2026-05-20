@@ -407,6 +407,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **Coarse AFC: P25 C4FM control channel tolerates a real tuner's
+  frequency offset (issue #275).** A residual RTL-SDR carrier offset
+  leaves the FM discriminator as a constant DC bias; against the C4FM
+  4-level slicer's fixed thresholds that shifted the whole eye off its
+  decision regions, and at ≥500 Hz the Frame Sync Word stopped
+  correlating entirely — the control channel never locked, no matter
+  how the operator swept PPM. A new coarse-AFC stage
+  (`internal/dsp/demod/afc.go`, `demod.CoarseAFC`) sits between the
+  matched filter and the symbol clock on the P25 Phase 1 C4FM path: it
+  tracks the bias with a slow single-pole average (time constant far
+  below the symbol rate, so it follows the carrier offset rather than
+  the data) and subtracts it, recentring the eye. On a clean signal the
+  estimate converges to ~0 and the stage is a near-noop. The #275
+  IQ-impairment harness now hard-asserts a C4FM lock across a
+  ±1500 Hz offset sweep (`TestHarnessC4FMToleratesCarrierOffset`); every
+  impaired C4FM case in the harness — carrier offset, DC spike, IQ
+  imbalance, AWGN, and all combined — now locks, where the carrier-offset
+  cases previously could not detect the FSW at all.
 - **P25 CQPSK control channel now locks on real RTL-SDR chunk sizes
   (issue #275).** The CQPSK / LSM simulcast demod recovered symbols
   correctly only when fed large IQ blocks. The Gardner timing-recovery
