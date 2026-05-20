@@ -403,6 +403,28 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **P25 CQPSK control channel now locks on real RTL-SDR chunk sizes
+  (issue #275).** The CQPSK / LSM simulcast demod recovered symbols
+  correctly only when fed large IQ blocks. The Gardner timing-recovery
+  loop (`internal/dsp/sync/gardner.go`) rebuilds its working buffer each
+  call as `stashed-tail ++ new-samples`, but restarted the symbol walk
+  at index 1 — re-processing the stashed tail it had already consumed on
+  the previous call. Every `Process` call re-emitted ≈1 surplus symbol,
+  so a live RTL-SDR delivering ~19-symbol USB transfers inflated the
+  dibit stream by ~5%: the FSW correlator never aligned and the control
+  channel never locked. The stash is now pure look-back context — the
+  symbol walk resumes at the first genuinely new sample — so the
+  recovered symbol count no longer depends on IQ chunk size. Same bug
+  class as #292, one DSP stage earlier. The defect was isolated by the
+  IQ-impairment reproduction harness added alongside the #275
+  diagnostics work (`internal/dsp/demod/impair.go` +
+  `internal/radio/p25/phase1/receiver/harness_test.go`), which drives
+  the real receiver chain in RTL-realistic small chunks; that harness
+  now hard-asserts a clean CQPSK lock and a chunk-size-independent
+  symbol count as permanent regression guards. It continues to
+  characterise residual C4FM sensitivity to carrier offset and DC bias
+  — a coarse-AFC follow-up — so that gap stays reproducible in-tree
+  rather than only on live hardware.
 - **RTL-SDR diagnostics for silent-failure cases (issue #275).** The
   pool now programs the configured IQ sample rate on every device at
   open time — closes the librtlsdr-parity gap that left the chip's
