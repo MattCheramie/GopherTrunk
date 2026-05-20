@@ -65,6 +65,8 @@ func TestValidate(t *testing.T) {
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
 		{"bad role", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Role: "bogus"}}}}, true},
 		{"bad protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "lte"}}}}, true},
+		{"tetra protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "tetra"}}}}, false},
+		{"nxdn protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn"}}}}, false},
 		{"missing name", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Protocol: "p25"}}}}, true},
 	}
 	for _, tc := range cases {

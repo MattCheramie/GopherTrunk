@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"gopkg.in/yaml.v3"
 )
 
@@ -520,10 +521,8 @@ func (c Config) Validate() error {
 		if s.Name == "" {
 			return fmt.Errorf("trunking.systems[%d]: name required", i)
 		}
-		switch s.Protocol {
-		case "p25", "dmr", "nxdn":
-		default:
-			return fmt.Errorf("trunking.systems[%d]: protocol must be p25|dmr|nxdn", i)
+		if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
+			return fmt.Errorf("trunking.systems[%d]: %w", i, err)
 		}
 	}
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {

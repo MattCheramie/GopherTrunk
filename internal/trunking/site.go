@@ -94,7 +94,8 @@ func ParseProtocol(s string) (Protocol, error) {
 	case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2":
 		return ProtocolDMRTier2, nil
 	default:
-		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q", s)
+		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q "+
+			"(want p25|p25-phase2|dmr|dmr-tier2|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar)", s)
 	}
 }
 
@@ -294,7 +295,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf")
+		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|dmr-tier2|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")
