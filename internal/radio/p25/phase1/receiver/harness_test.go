@@ -334,6 +334,9 @@ func TestHarnessImpairedControlChannelCharacterization(t *testing.T) {
 			FreqOffsetHz: 600, DCOffset: complex(0.08, 0.05),
 			IQGainImbalance: 1.08, SNRdB: 18, Seed: 1,
 		}},
+		{"simulcast", demod.Impairments{
+			Multipath: []complex64{1, 0, 0, 0, 0, 0, 0, 0, complex(0.7, 0.35)},
+		}},
 	}
 	for _, m := range demodModes {
 		for _, tc := range cases {
@@ -343,5 +346,34 @@ func TestHarnessImpairedControlChannelCharacterization(t *testing.T) {
 					m.name, tc.name, res.locked, res.decodeErrors, res.nidErrsSummary())
 			})
 		}
+	}
+}
+
+// TestHarnessCQPSKEqualizerRecoversSimulcast guards the CMA-equalizer
+// fix for issue #275. P25 simulcast covers a channel with several
+// synchronised transmitters; their differently-delayed copies sum to a
+// multipath channel that closes the CQPSK constellation, so the Frame
+// Sync Word stops correlating and the control channel never locks.
+// Because LSM is a linear modulation the distortion is linear in the
+// complex symbols, so the blind CMA equalizer reopens the constellation
+// — the channel locks across a realistic simulcast-echo range.
+func TestHarnessCQPSKEqualizerRecoversSimulcast(t *testing.T) {
+	profiles := []struct {
+		name string
+		taps []complex64
+	}{
+		{"echo_0.56_at_0.5sym", []complex64{1, 0, 0, 0, 0, complex(0.5, 0.25)}},
+		{"echo_0.78_at_0.8sym", []complex64{1, 0, 0, 0, 0, 0, 0, 0, complex(0.7, 0.35)}},
+		{"echo_0.98_at_0.5sym", []complex64{1, 0, 0, 0, 0, complex(0.9, 0.4)}},
+	}
+	for _, p := range profiles {
+		t.Run(p.name, func(t *testing.T) {
+			res := runHarness(DemodCQPSK, demod.Impairments{Multipath: p.taps})
+			if !res.locked {
+				t.Errorf("CQPSK did not lock under simulcast multipath %s "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s)",
+					p.name, res.decodeErrors, res.nidErrsSummary())
+			}
+		})
 	}
 }
