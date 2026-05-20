@@ -192,7 +192,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // must hold at least frameLookahead dibits — the caller guarantees it.
 // rot is the FSW-search rotation: the sync detector matched after
 // adding rot mod 4 to each input dibit, so the canonical dibit values
-// the BCH / trellis decoders expect are recovered by subtracting rot
+// the BCH / trellis decoders expect are recovered by adding rot
 // (rotateDibits) before parsing.
 func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
 	nidDibits := rotateDibits(buf[nidStart:nidStart+32], rot)
@@ -259,17 +259,18 @@ func (c *ControlChannel) trimBuffer() {
 	}
 }
 
-// rotateDibits returns a copy of src with the inverse FSW-search
-// rotation applied: each dibit value has `rot` subtracted mod 4.
-// rot=0 short-circuits to avoid the copy.
+// rotateDibits returns a copy of src with the FSW-search rotation
+// undone. The sync detector reported that adding `rot` mod 4 to each
+// received dibit reproduced the canonical FrameSyncWord, so the
+// canonical NID / TSBK dibits are recovered the same way — by adding
+// `rot` mod 4. rot=0 short-circuits to avoid the copy.
 func rotateDibits(src []uint8, rot uint8) []uint8 {
 	if rot == 0 {
 		return src
 	}
-	inv := (4 - rot) & 3
 	out := make([]uint8, len(src))
 	for i, d := range src {
-		out[i] = (d + inv) & 3
+		out[i] = (d + rot) & 3
 	}
 	return out
 }

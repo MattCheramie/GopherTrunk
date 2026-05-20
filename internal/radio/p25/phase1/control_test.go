@@ -59,6 +59,39 @@ func TestControlChannelEmitsLockOnTSDU(t *testing.T) {
 	}
 }
 
+// TestControlChannelLocksUnderDibitRotation feeds a TSDU stream whose
+// dibits have all been shifted by k — the residual quadrant ambiguity
+// the CQPSK/LSM demod leaves on simulcast P25 sites. The sync detector
+// recovers the rotation; parseFrame must undo it so the NID + TSBK
+// still decode. Before the rotateDibits fix, odd rotations (1, 3) —
+// exactly the π/4-DQPSK quadrant slips — corrupted every NID and the
+// control channel never locked.
+func TestControlChannelLocksUnderDibitRotation(t *testing.T) {
+	for k := uint8(0); k < 4; k++ {
+		bus := events.NewBus(8)
+		sub := bus.Subscribe()
+		stream := buildLockedStream(10, 0x293, DUIDTrunkingSignaling, OpRFSSStatusBroadcast)
+		// received = canonical - k, so the detector reports rot == k.
+		for i := range stream {
+			stream[i] = (stream[i] + 4 - k) & 3
+		}
+		cc := NewControlChannel(bus, nil, 851_000_000)
+		cc.Process(stream, 0)
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindCCLocked {
+				t.Errorf("k=%d kind = %s, want cc.locked", k, ev.Kind)
+			} else if ls := ev.Payload.(LockState); ls.NAC != 0x293 {
+				t.Errorf("k=%d NAC = %#x, want 0x293", k, ls.NAC)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("k=%d no lock — NID not recovered under rotation", k)
+		}
+		sub.Close()
+		bus.Close()
+	}
+}
+
 func TestControlChannelIgnoresNonTSDU(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
