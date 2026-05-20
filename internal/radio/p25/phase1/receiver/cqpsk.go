@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 )
 
@@ -29,10 +30,26 @@ const lsmRotation = math.Pi / 4
 // demodulation — no rotation search needed for the CQPSK path itself.
 var lsmDibitRemap = [4]uint8{0, 1, 3, 2}
 
+// cqpskEqualizerTaps / cqpskEqualizerStep configure the CMA blind
+// equalizer on the CQPSK symbol stream. The post-Gardner LSM symbols
+// are unit-modulus QPSK points, so the Constant Modulus Algorithm
+// applies: simulcast multipath blurs that constant magnitude and CMA
+// drives it back, opening the constellation so the FSW correlates.
+const (
+	cqpskEqualizerTaps = 11
+	cqpskEqualizerStep = 0.005
+)
+
 // cqpskDemod is the LSM / linear-CQPSK symbol recovery chain for P25
 // Phase 1. It wraps the shared PiOver4DQPSK primitive at rotation π/4
 // and applies lsmDibitRemap so the dibits it emits are interchangeable
 // with the C4FM path downstream.
+//
+// A CMA blind equalizer sits on the recovered symbol stream. LSM is a
+// linear modulation, so simulcast multipath is a linear distortion of
+// the complex symbols and an equalizer can invert it — this is the
+// path simulcast P25 sites need (issue #275: strong multipath closed
+// the constellation and the Frame Sync Word never correlated).
 //
 // Gardner timing-recovery is mandatory on this path (the demod operates
 // on complex IQ at the sample rate; naive every-sps-th decimation
@@ -41,6 +58,7 @@ var lsmDibitRemap = [4]uint8{0, 1, 3, 2}
 type cqpskDemod struct {
 	dq      *demod.PiOver4DQPSK
 	gardner *sync.Gardner
+	cma     *equalizer.CMA
 
 	// Scratch buffers reused across calls.
 	matched []complex64
@@ -59,6 +77,7 @@ func newCQPSKDemod(sps int, span int, alpha float64, gardnerGain float64) *cqpsk
 	return &cqpskDemod{
 		dq:      demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
 		gardner: sync.NewGardner(float64(sps), gardnerGain),
+		cma:     equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
 	}
 }
 
@@ -74,6 +93,12 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 		c.dibits = c.dibits[:0]
 		return c.dibits
 	}
+	// Blind equalizer: CMA pulls the symbols back to constant modulus,
+	// undoing the simulcast-multipath ISI that closes the constellation.
+	for i, s := range c.symbols {
+		y, _ := c.cma.Process(s)
+		c.symbols[i] = y
+	}
 	c.dibits = c.dq.Decode(c.dibits, c.symbols)
 	for i, d := range c.dibits {
 		c.dibits[i] = lsmDibitRemap[d&3]
@@ -87,4 +112,5 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 func (c *cqpskDemod) reset() {
 	c.dq.Reset()
 	c.gardner.Reset()
+	c.cma.Reset()
 }

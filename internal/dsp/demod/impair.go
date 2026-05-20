@@ -16,6 +16,16 @@ import (
 // input through unchanged. Each field is independent; combine them to
 // model a realistic capture.
 type Impairments struct {
+	// Multipath is a complex channel FIR modelling a multipath /
+	// simulcast propagation path: the received signal becomes
+	// y[n] = Σ Multipath[k]·x[n-k], where Multipath[k] is the complex
+	// gain of the copy arriving k samples late (Multipath[0] is the
+	// main path). Nil or empty applies no multipath. This is the
+	// inter-symbol-interference source a single-transmitter flat-fading
+	// model cannot produce — it reproduces what the overlapping,
+	// differently-delayed transmitters of a simulcast system do to a
+	// control channel.
+	Multipath []complex64
 	// FreqOffsetHz is a residual carrier frequency offset — tuner
 	// crystal ppm error, or a channel that is not exactly centred in
 	// the SDR passband. Applied as a per-sample phase ramp.
@@ -48,6 +58,23 @@ func ApplyImpairments(iq []complex64, sampleRateHz float64, imp Impairments) []c
 	copy(out, iq)
 	if len(out) == 0 {
 		return out
+	}
+
+	// Multipath / simulcast channel: convolve with the channel FIR
+	// before any receiver-side impairment (multipath is a propagation
+	// effect, upstream of the LO and front-end). out currently mirrors
+	// iq; rebuild it as y[n] = Σ Multipath[k]·iq[n-k].
+	if len(imp.Multipath) > 0 {
+		for n := range out {
+			var acc complex64
+			for k, tap := range imp.Multipath {
+				if n-k < 0 {
+					break
+				}
+				acc += tap * iq[n-k]
+			}
+			out[n] = acc
+		}
 	}
 
 	// IQ gain / phase imbalance: keep I pure, distort Q.

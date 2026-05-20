@@ -19,6 +19,8 @@
 //	  IQ
 //	    → complex RRC matched filter (demod.PiOver4DQPSK, rotation=π/4)
 //	    → Gardner timing recovery on complex IQ (sync.Gardner)
+//	    → CMA blind equalizer: simulcast-multipath ISI removal
+//	      (internal/dsp/equalizer.CMA)
 //	    → differential QPSK quadrant decode
 //	    → LSM dibit remap → canonical 0..3 dibit
 //
