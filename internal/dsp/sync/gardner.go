@@ -88,7 +88,20 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 	// midOffset is half the symbol period (in input samples).
 	half := g.sps / 2
 
-	i := 1
+	// Resume the walk at the first genuinely new sample. The stashed
+	// samples (buf[:len(g.stashed)]) were already consumed by the
+	// previous Process call; they are retained only as look-back
+	// context for the midpoint interpolation below. Walking them
+	// again would re-emit their symbols, inflating the recovered
+	// symbol rate by ≈1 per chunk — which desynchronises every
+	// chunked consumer (issue #275: the P25 CQPSK control-channel
+	// path emitted ~5% surplus dibits on RTL-SDR-sized IQ chunks and
+	// never locked). The walk needs buf[i-1], so the first call —
+	// which has no stash — still starts at index 1.
+	i := len(g.stashed)
+	if i < 1 {
+		i = 1
+	}
 	for i < len(buf) {
 		g.mu -= 1.0
 		if g.mu > 0 {

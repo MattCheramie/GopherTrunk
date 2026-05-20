@@ -13,13 +13,14 @@ package receiver
 // (receiver.New → DibitSink → phase1.ControlChannel.Process) against
 // clean and deliberately-impaired IQ, fed in RTL-realistic small chunks:
 //
-//   - TestHarnessC4FMCleanLocks hard-asserts the clean C4FM signal
-//     locks — a permanent regression guard.
-//   - TestHarnessCQPSKChunkBoundary isolates the CQPSK-side root cause:
-//     the Gardner timing loop's symbol count is chunk-size dependent.
-//   - TestHarnessImpairedC4FMCharacterization runs each impairment and
-//     logs whether the lock survives — non-fatal, the diagnostic
-//     deliverable that names the impairments that break decoding.
+//   - TestHarnessCleanControlChannelLocks hard-asserts the clean C4FM
+//     and CQPSK signals lock — a permanent regression guard.
+//   - TestHarnessCQPSKChunkBoundary guards the Gardner timing-loop fix:
+//     the recovered symbol count must not depend on the IQ chunk size.
+//   - TestHarnessImpairedControlChannelCharacterization runs each
+//     impairment and logs whether the lock survives — non-fatal, the
+//     diagnostic deliverable that names the impairments that still
+//     break decoding.
 //
 // Run the full harness with:
 //
@@ -52,6 +53,15 @@ const (
 	// so the cross-chunk frame assembly added in #292 stays exercised.
 	harnessChunk = 192
 )
+
+// demodModes is the set of demod paths the harness exercises.
+var demodModes = []struct {
+	name string
+	mode DemodMode
+}{
+	{"c4fm", DemodC4FM},
+	{"cqpsk", DemodCQPSK},
+}
 
 // buildHarnessDibits assembles a canonical P25 Phase 1 control-channel
 // dibit stream: a 200-dibit warmup so the symbol-clock loop converges,
@@ -210,38 +220,41 @@ func runHarness(mode DemodMode, imp demod.Impairments) harnessResult {
 	return res
 }
 
-// TestHarnessC4FMCleanLocks is the regression guard: an un-impaired
-// synthetic C4FM signal, fed in RTL-realistic small chunks, must lock
-// the control channel.
-func TestHarnessC4FMCleanLocks(t *testing.T) {
-	res := runHarness(DemodC4FM, demod.Impairments{})
-	if !res.locked {
-		t.Fatalf("clean C4FM signal did not lock the control channel "+
-			"(decodeErrors=%d, nidErrs min/max/n=%s)", res.decodeErrors, res.nidErrsSummary())
-	}
-	if res.nac != harnessNAC {
-		t.Errorf("clean C4FM: locked NAC = %#x, want %#x", res.nac, harnessNAC)
+// TestHarnessCleanControlChannelLocks is the regression guard: an
+// un-impaired synthetic signal, fed in RTL-realistic small chunks, must
+// lock the control channel on both demod paths. The CQPSK path locking
+// here is the proof point for the Gardner chunk-boundary fix — before
+// it, the CQPSK demod emitted surplus dibits on small chunks and never
+// locked.
+func TestHarnessCleanControlChannelLocks(t *testing.T) {
+	for _, m := range demodModes {
+		t.Run(m.name, func(t *testing.T) {
+			res := runHarness(m.mode, demod.Impairments{})
+			if !res.locked {
+				t.Fatalf("clean %s signal did not lock the control channel "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s)",
+					m.name, res.decodeErrors, res.nidErrsSummary())
+			}
+			if res.nac != harnessNAC {
+				t.Errorf("clean %s: locked NAC = %#x, want %#x", m.name, res.nac, harnessNAC)
+			}
+		})
 	}
 }
 
-// TestHarnessCQPSKChunkBoundary isolates the CQPSK-side root cause for
+// TestHarnessCQPSKChunkBoundary guards the Gardner timing-loop fix for
 // issue #275. The harness exercised the CQPSK path end-to-end for the
-// first time and found that the Gardner timing loop emits a different
-// number of symbols depending on the IQ chunk size: a single Process
-// call recovers the transmitted dibit count almost exactly, but feeding
-// the same clean signal in RTL-realistic small chunks inflates the
-// count by ~5% — spurious dibits that desynchronise the stream so the
-// FSW correlator and control channel never lock.
+// first time and found the Gardner loop's recovered symbol count was
+// chunk-size dependent: a single Process call recovered the transmitted
+// dibit count, but the same clean signal fed in RTL-realistic small
+// chunks inflated it by ~5% — surplus dibits that desynchronised the
+// stream so the FSW correlator and control channel never locked. (Same
+// bug class as #292, one stage earlier, in symbol timing recovery; the
+// existing CQPSK unit tests missed it because they feed 4096-sample
+// chunks where the drift is negligible.)
 //
-// This is the same bug class as #292 (the frame assembler was
-// chunk-size sensitive) but one stage earlier, in symbol timing
-// recovery. The existing CQPSK unit tests miss it because they feed
-// 4096-sample chunks, large enough to keep the drift negligible.
-//
-// The test asserts the demod core is sound (one-shot count is correct)
-// and logs the small-chunk inflation as the reproduced defect. When the
-// Gardner fix lands, the final block should be promoted to assert that
-// the small-chunk count matches the one-shot count.
+// The fix makes the Gardner stash pure look-back context. This test
+// asserts the recovered dibit count is now independent of chunk size.
 func TestHarnessCQPSKChunkBoundary(t *testing.T) {
 	canonical := buildHarnessDibits(harnessNAC, harnessFrameRepeats)
 	iq := modulateHarness(canonical, DemodCQPSK)
@@ -270,38 +283,23 @@ func TestHarnessCQPSKChunkBoundary(t *testing.T) {
 	t.Logf("#275 CQPSK chunk-boundary: transmitted≈%d dibits  one-shot=%d  small-chunk(%d)=%d (%+d)",
 		len(canonical), oneShot, harnessChunk, small, small-oneShot)
 
-	// The demod core is correct: one Process call recovers very close
-	// to the transmitted dibit count.
 	if oneShot < len(canonical)-tolerance || oneShot > len(canonical)+tolerance {
-		t.Errorf("one-shot CQPSK dibit count = %d, want within %d of %d — CQPSK demod core broken",
-			oneShot, tolerance, len(canonical))
+		t.Errorf("one-shot CQPSK dibit count = %d, want within %d of %d", oneShot, tolerance, len(canonical))
 	}
-
-	// The defect: small (RTL-realistic) chunks inflate the symbol
-	// count. Logged rather than failed — the fix is the #275 follow-up.
-	if small > oneShot+tolerance {
-		t.Logf("REPRODUCED #275 (CQPSK): small chunks emit %d surplus dibits (%.1f%%) — the "+
-			"Gardner timing loop miscounts symbols across IQ-chunk boundaries; the control "+
-			"channel cannot lock until this is fixed",
-			small-oneShot, 100*float64(small-oneShot)/float64(oneShot))
-	} else {
-		t.Logf("CQPSK small-chunk dibit count is within tolerance of one-shot — #275 CQPSK " +
-			"chunk-boundary defect appears fixed; promote this to a hard assertion")
+	if small < oneShot-tolerance || small > oneShot+tolerance {
+		t.Errorf("small-chunk CQPSK dibit count = %d, want within %d of one-shot %d — the "+
+			"Gardner timing loop is miscounting symbols across IQ-chunk boundaries (#275)",
+			small, tolerance, oneShot)
 	}
 }
 
-// TestHarnessImpairedC4FMCharacterization reproduces issue #275 on the
-// C4FM path: it runs each realistic RTL-SDR impairment through the real
-// demod chain and logs whether the control channel still locks and how
-// the NID decoder fared. It is intentionally non-fatal — the value is
-// the logged characterisation, which names the impairment(s) that break
-// decoding and so points the follow-up demod fix at concrete,
-// reproducible targets.
-//
-// (The CQPSK path is not characterised here: its chunk-boundary defect,
-// covered by TestHarnessCQPSKChunkBoundary, breaks it before any
-// impairment is even applied.)
-func TestHarnessImpairedC4FMCharacterization(t *testing.T) {
+// TestHarnessImpairedControlChannelCharacterization runs each realistic
+// RTL-SDR impairment through the real demod chain and logs whether the
+// control channel still locks and how the NID decoder fared. It is
+// intentionally non-fatal — the value is the logged characterisation,
+// which names the impairment(s) that still break decoding and so points
+// any further demod work at concrete, reproducible targets.
+func TestHarnessImpairedControlChannelCharacterization(t *testing.T) {
 	cases := []struct {
 		name string
 		imp  demod.Impairments
@@ -317,11 +315,13 @@ func TestHarnessImpairedC4FMCharacterization(t *testing.T) {
 			IQGainImbalance: 1.08, SNRdB: 18, Seed: 1,
 		}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			res := runHarness(DemodC4FM, tc.imp)
-			t.Logf("#275 harness  c4fm  %-18s  locked=%-5v  decodeErrors=%-3d  nidErrs(min/max/n)=%s",
-				tc.name, res.locked, res.decodeErrors, res.nidErrsSummary())
-		})
+	for _, m := range demodModes {
+		for _, tc := range cases {
+			t.Run(m.name+"/"+tc.name, func(t *testing.T) {
+				res := runHarness(m.mode, tc.imp)
+				t.Logf("#275 harness  %-5s %-18s  locked=%-5v  decodeErrors=%-3d  nidErrs(min/max/n)=%s",
+					m.name, tc.name, res.locked, res.decodeErrors, res.nidErrsSummary())
+			})
+		}
 	}
 }
