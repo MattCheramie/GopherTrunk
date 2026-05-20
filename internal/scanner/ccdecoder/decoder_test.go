@@ -1061,10 +1061,11 @@ func TestDecoderLocksP25Phase1ThroughWidebandDDC(t *testing.T) {
 		t.Fatalf("pipelineRateHz = %v, want %v", d.pipelineRateHz, narrowRateHz)
 	}
 
-	// Pump the wideband stream through in SDR-sized chunks, draining
-	// the bus after each so a full subscriber buffer can't drop the
-	// cc.locked event.
-	const chunk = 131_072
+	// Pump the wideband stream through in chunks the size of a real
+	// RTL-SDR USB transfer (16 KiB = 8192 complex samples ≈ 19 P25
+	// symbols after the down-converter), draining the bus after each
+	// so a full subscriber buffer can't drop the cc.locked event.
+	const chunk = 8_192
 	var locked bool
 	var lockState p25phase1.LockState
 	for off := 0; off < len(wide) && !locked; off += chunk {

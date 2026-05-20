@@ -42,6 +42,25 @@ type ControlChannel struct {
 	// lastNoHitsAt throttles the "no FSW hits" debug log so the chunk-rate
 	// emission doesn't flood at debug level. See Process for the rationale.
 	lastNoHitsAt time.Time
+
+	// buf accumulates dibits across Process calls so a frame whose
+	// FSW + NID + TSBK straddles IQ-chunk boundaries is still
+	// assembled; bufBase is the absolute dibit index of buf[0].
+	// pending holds FSW hits whose NID + TSBK has not been fully
+	// buffered yet. See Process — this is the fix for issue #275,
+	// where a live SDR's small IQ chunks delivered far fewer than a
+	// frame's worth of dibits per call.
+	buf     []uint8
+	bufBase int
+	pending []pendingHit
+}
+
+// pendingHit is an FSW match awaiting enough buffered dibits to decode
+// its NID + TSBK. end is the absolute dibit index of the FSW's last
+// dibit; rot is the cyclic rotation the sync detector matched under.
+type pendingHit struct {
+	end int
+	rot uint8
 }
 
 // Options configure a ControlChannel.
@@ -110,8 +129,22 @@ func (s LockState) LockedNAC() uint16         { return s.NAC }
 // visible without flooding.
 const noHitsThrottle = 2 * time.Second
 
-// Process consumes a window of dibits and runs detection/parsing. baseIdx
-// is the absolute dibit index of dibits[0]. Returns the new baseIndex.
+// frameLookahead is the number of dibits that must follow the FSW for
+// a full frame to decode: the 32-dibit NID plus the 98-dibit TSBK
+// channel block. Process defers an FSW hit until this many dibits have
+// accumulated, so frame assembly no longer depends on the IQ chunking.
+const frameLookahead = 32 + 98
+
+// Process consumes a window of dibits and runs detection/parsing.
+// baseIdx is the absolute dibit index of dibits[0]. Returns the
+// absolute index one past the last consumed dibit.
+//
+// Dibits are accumulated into an internal buffer that spans calls, so
+// a frame whose FSW + NID + TSBK straddles several Process calls is
+// still assembled. This matters on live hardware: a 16 KiB RTL-SDR USB
+// transfer carries only ~19 P25 symbols — far short of the 154-dibit
+// frame — so without cross-call buffering every FSW hit was discarded
+// and the control channel never locked (issue #275).
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	hits, rots, next := c.det.ProcessWithRotation(nil, nil, dibits, baseIdx)
 	if len(hits) == 0 && len(dibits) > 0 && !c.locked {
@@ -122,72 +155,108 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			c.lastNoHitsAt = now
 		}
 	}
-	for i, h := range hits {
-		rot := rots[i]
-		// FSW ends at index h (relative to the absolute dibit stream). The
-		// 32-dibit NID immediately follows.
-		startInWindow := h - baseIdx + 1
-		if startInWindow+32 > len(dibits) {
-			// Crosses the buffer edge; future calls will have the rest.
-			continue
-		}
-		// Apply the inverse rotation to the dibits that follow the FSW
-		// — the sync detector matched the FSW after adding `rot` mod 4
-		// to each input dibit, so the canonical dibit values the BCH /
-		// trellis decoders expect are recovered by subtracting `rot`
-		// (equivalently, adding (4 - rot) mod 4) before parsing.
-		nidDibits := rotateDibits(dibits[startInWindow:startInWindow+32], rot)
-		nid, errs, err := NIDFromDibits(nidDibits)
-		if err != nil {
-			c.log.Debug("nid parse failed", "err", err, "errs", errs, "rot", rot)
-			c.bus.Publish(events.Event{
-				Kind:    events.KindDecodeError,
-				Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
-			})
-			continue
-		}
-		if errs > 0 {
-			c.log.Debug("nid corrected", "errs", errs, "nac", nid.NAC, "rot", rot)
-		}
-		if nid.DUID != DUIDTrunkingSignaling {
-			// Some non-control DUID — record but don't lock.
-			c.log.Debug("non-control DUID", "duid", nid.DUID, "nac", nid.NAC)
-			continue
-		}
-		if !c.locked || c.lastNAC != nid.NAC {
-			c.locked = true
-			c.lastNAC = nid.NAC
-			c.bus.Publish(events.Event{
-				Kind:    events.KindCCLocked,
-				Payload: LockState{FrequencyHz: c.freqHz, NAC: nid.NAC, DUID: nid.DUID},
-			})
-			c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz, "rot", rot)
-		}
 
-		// Try to extract the next TSBK that follows the NID. The
-		// channel TSBK occupies 98 dibits; if the buffer is short we
-		// defer to a later call (the buffer-edge case).
-		tsbkStart := startInWindow + 32
-		if tsbkStart+98 > len(dibits) {
-			continue
-		}
-		tsbkDibits := rotateDibits(dibits[tsbkStart:tsbkStart+98], rot)
-		tsbk, metric, err := DecodeTSBKChannel(tsbkDibits)
-		if err != nil {
-			c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
-			stage := events.StageTSBKTrellis
-			if errors.Is(err, CRCError) {
-				stage = events.StageTSBKCRC
-			}
-			c.bus.Publish(events.Event{
-				Kind:    events.KindDecodeError,
-				Payload: events.DecodeError{Protocol: "p25", Stage: stage},
-			})
-			continue
-		}
-		c.dispatchTSBK(tsbk, nid.NAC, metric)
+	// Accumulate the new dibits. The receiver hands them over in
+	// contiguous, in-order batches, so buf stays a faithful copy of
+	// the dibit stream from bufBase onward.
+	if len(c.buf) == 0 {
+		c.bufBase = baseIdx
 	}
+	c.buf = append(c.buf, dibits...)
+	for i, h := range hits {
+		c.pending = append(c.pending, pendingHit{end: h, rot: rots[i]})
+	}
+
+	// Parse every pending FSW hit whose full frame has now been
+	// buffered; keep the rest for a later call once more dibits land.
+	kept := c.pending[:0]
+	for _, ph := range c.pending {
+		// FSW ends at absolute index ph.end; the 32-dibit NID
+		// immediately follows.
+		nidStart := ph.end + 1 - c.bufBase
+		if nidStart < 0 {
+			continue // buffer already trimmed past this hit — drop it
+		}
+		if nidStart+frameLookahead > len(c.buf) {
+			kept = append(kept, ph) // not enough buffered yet
+			continue
+		}
+		c.parseFrame(c.buf, nidStart, ph.rot)
+	}
+	c.pending = kept
+	c.trimBuffer()
 	return next
+}
+
+// parseFrame decodes the NID + TSBK of one FSW hit. buf[nidStart:]
+// must hold at least frameLookahead dibits — the caller guarantees it.
+// rot is the FSW-search rotation: the sync detector matched after
+// adding rot mod 4 to each input dibit, so the canonical dibit values
+// the BCH / trellis decoders expect are recovered by subtracting rot
+// (rotateDibits) before parsing.
+func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
+	nidDibits := rotateDibits(buf[nidStart:nidStart+32], rot)
+	nid, errs, err := NIDFromDibits(nidDibits)
+	if err != nil {
+		c.log.Debug("nid parse failed", "err", err, "errs", errs, "rot", rot)
+		c.bus.Publish(events.Event{
+			Kind:    events.KindDecodeError,
+			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
+		})
+		return
+	}
+	if errs > 0 {
+		c.log.Debug("nid corrected", "errs", errs, "nac", nid.NAC, "rot", rot)
+	}
+	if nid.DUID != DUIDTrunkingSignaling {
+		// Some non-control DUID — record but don't lock.
+		c.log.Debug("non-control DUID", "duid", nid.DUID, "nac", nid.NAC)
+		return
+	}
+	if !c.locked || c.lastNAC != nid.NAC {
+		c.locked = true
+		c.lastNAC = nid.NAC
+		c.bus.Publish(events.Event{
+			Kind:    events.KindCCLocked,
+			Payload: LockState{FrequencyHz: c.freqHz, NAC: nid.NAC, DUID: nid.DUID},
+		})
+		c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz, "rot", rot)
+	}
+
+	// The channel TSBK occupies the 98 dibits after the NID.
+	tsbkStart := nidStart + 32
+	tsbkDibits := rotateDibits(buf[tsbkStart:tsbkStart+98], rot)
+	tsbk, metric, err := DecodeTSBKChannel(tsbkDibits)
+	if err != nil {
+		c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
+		stage := events.StageTSBKTrellis
+		if errors.Is(err, CRCError) {
+			stage = events.StageTSBKCRC
+		}
+		c.bus.Publish(events.Event{
+			Kind:    events.KindDecodeError,
+			Payload: events.DecodeError{Protocol: "p25", Stage: stage},
+		})
+		return
+	}
+	c.dispatchTSBK(tsbk, nid.NAC, metric)
+}
+
+// trimBuffer drops dibits no pending hit needs any more. With no
+// pending hits the whole buffer is released; otherwise everything
+// before the earliest pending hit's NID is dropped — keeping buf
+// bounded to roughly one frame.
+func (c *ControlChannel) trimBuffer() {
+	keep := len(c.buf)
+	for _, ph := range c.pending {
+		if s := ph.end + 1 - c.bufBase; s >= 0 && s < keep {
+			keep = s
+		}
+	}
+	if keep > 0 {
+		c.buf = append(c.buf[:0], c.buf[keep:]...)
+		c.bufBase += keep
+	}
 }
 
 // rotateDibits returns a copy of src with the inverse FSW-search
@@ -326,6 +395,10 @@ func (c *ControlChannel) MarkLost() {
 		return
 	}
 	c.locked = false
+	// Drop accumulated dibits + pending hits so a re-acquisition
+	// starts from a clean slate.
+	c.buf = c.buf[:0]
+	c.pending = c.pending[:0]
 	c.bus.Publish(events.Event{
 		Kind:    events.KindCCLost,
 		Payload: LockState{FrequencyHz: c.freqHz, NAC: c.lastNAC},

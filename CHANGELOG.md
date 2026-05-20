@@ -41,6 +41,15 @@ for tagged releases.
   per-protocol receivers are matched-filter-tuned for — ~48 kHz for
   the 4800-baud C4FM family, 144 kHz for TETRA — before the pipeline
   sees it. The IQ-power gauge still reports the raw SDR input level.
+- **P25 Phase 1 control channel never locked on live SDR chunking**
+  (issue #275). The control-channel state machine discarded every
+  Frame Sync Word hit unless the whole 154-dibit frame (FSW + NID +
+  TSBK) fell inside a single `Process` call. A live RTL-SDR delivers
+  16 KiB USB transfers — only ~19 P25 symbols per call — so the NID
+  never fit and the channel never locked, even with the IQ stream
+  correctly channelized. `ControlChannel.Process` now accumulates
+  dibits across calls and assembles frames that straddle IQ-chunk
+  boundaries.
 
 ## [v0.1.7] — 2026-05-19
 

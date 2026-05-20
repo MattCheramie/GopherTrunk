@@ -203,6 +203,75 @@ func TestControlChannelAppliesIdentifierUpdateAndPublishesGrant(t *testing.T) {
 	}
 }
 
+// TestControlChannelLocksAndGrantsAcrossSmallChunks feeds a two-frame
+// stream (IdentifierUpdate then GroupVoiceChannelGrant) through Process
+// in 19-dibit batches — the dibit count a real RTL-SDR's 16 KiB USB
+// transfer yields per call. No single batch holds a whole 154-dibit
+// frame, so locking + granting here proves Process assembles frames
+// across call boundaries (issue #275 — previously every FSW hit was
+// discarded because the NID/TSBK lookahead had to fit in one call).
+func TestControlChannelLocksAndGrantsAcrossSmallChunks(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const nac = 0x293
+	identTSBK := TSBK{LB: false, Opcode: OpIdentifierUpdate}
+	identTSBK.Payload = AssembleIdentifierUpdate(IdentifierUpdate{
+		ChannelID: 1, SpacingHz: 12_500, BaseHz: 851_000_000,
+	})
+	grantTSBK := TSBK{LB: true, Opcode: OpGroupVoiceChannelGrant, Payload: [8]byte{
+		0x00,
+		(1 << 4) | 0x00, 0x10, // channel = ID 1, number 16
+		0x12, 0x34, // group address 0x1234
+		0xAB, 0xCD, 0xEF, // source ID 0xABCDEF
+	}}
+
+	stream := append(
+		buildLockedStreamWithTSBK(10, nac, DUIDTrunkingSignaling, identTSBK),
+		buildLockedStreamWithTSBK(10, nac, DUIDTrunkingSignaling, grantTSBK)...,
+	)
+
+	cc := New(Options{
+		Bus: bus, SystemName: "TestSys", FrequencyHz: 851_000_000,
+		Now: func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+
+	const batch = 19
+	for off := 0; off < len(stream); off += batch {
+		end := off + batch
+		if end > len(stream) {
+			end = len(stream)
+		}
+		cc.Process(stream[off:end], off)
+	}
+
+	var locked, granted bool
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindCCLocked:
+				locked = true
+			case events.KindGrant:
+				if g := ev.Payload.(trunking.Grant); g.FrequencyHz != 851_200_000 {
+					t.Errorf("grant freq = %d, want 851_200_000", g.FrequencyHz)
+				}
+				granted = true
+			}
+		default:
+			drained = true
+		}
+	}
+	if !locked {
+		t.Error("no cc.locked event — frame not assembled across 19-dibit batches")
+	}
+	if !granted {
+		t.Error("no grant event — TSBK not assembled across 19-dibit batches")
+	}
+}
+
 func TestControlChannelPublishesAffiliation(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
