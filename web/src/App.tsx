@@ -18,10 +18,7 @@ import { Settings } from "./panels/Settings";
 import { Systems } from "./panels/Systems";
 import { Talkgroups } from "./panels/Talkgroups";
 import { Tones } from "./panels/Tones";
-import {
-  selectClientConfig,
-  useShared,
-} from "./store/shared";
+import { useShared } from "./store/shared";
 
 const TABS: Tab[] = [
   { to: "/dashboard", label: "Dashboard", icon: "▤" },
@@ -41,7 +38,12 @@ const EXTRA_TABS: Tab[] = [
 ];
 
 export function App() {
-  const cfg = useShared(selectClientConfig);
+  // Subscribe to the connection identity as primitives, not a derived
+  // object. Effects keyed on `baseURL`/`token` re-run only when the
+  // server actually changes — they cannot be re-fired by an unstable
+  // selector reference (the failure mode behind issue #290).
+  const baseURL = useShared((s) => s.serverURL ?? "");
+  const token = useShared((s) => s.token);
   const connected = useShared((s) => s.connected);
   const setConnected = useShared((s) => s.setConnected);
   const setMutations = useShared((s) => s.setMutations);
@@ -54,8 +56,9 @@ export function App() {
   // On mount, if we already have a server URL stored, try to validate
   // and skip the connect screen.
   useEffect(() => {
-    if (!cfg.baseURL) return;
+    if (!baseURL) return;
     if (connected) return;
+    const cfg = { baseURL, token };
     let cancel = false;
     (async () => {
       try {
@@ -73,13 +76,14 @@ export function App() {
     return () => {
       cancel = true;
     };
-  }, [cfg, connected, setConnected, setError]);
+  }, [baseURL, token, connected, setConnected, setError]);
 
   // Once connected, open the WS event stream + bootstrap the mutations
   // capability gate. The polling for per-panel data happens inside each
   // panel so the data isn't fetched until a user actually looks at it.
   useEffect(() => {
-    if (!connected || !cfg.baseURL) return;
+    if (!connected || !baseURL) return;
+    const cfg = { baseURL, token };
     api
       .mutations(cfg)
       .then(setMutations)
@@ -92,11 +96,11 @@ export function App() {
     return () => {
       stream.close();
     };
-  }, [connected, cfg, appendEvent, setMutations, setWSStatus]);
+  }, [connected, baseURL, token, appendEvent, setMutations, setWSStatus]);
 
   const visibleTabs = useMemo(() => TABS, []);
 
-  if (!cfg.baseURL || !connected) {
+  if (!baseURL || !connected) {
     return <ConnectScreen />;
   }
 

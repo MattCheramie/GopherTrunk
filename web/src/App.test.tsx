@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 import { HashRouter } from "react-router-dom";
 
-// The real openEventStream synchronously reports "connecting", which
-// writes to the store — the feedback edge that, combined with an
-// unstable `cfg` reference, drove the issue #290 render loop. The mock
-// reproduces that edge so this test genuinely exercises the loop.
+// The real openEventStream reports "connecting", which writes to the
+// store — the feedback edge that, combined with an effect dependency
+// that changed identity on every render, drove the issue #290 render
+// loop. The mock reproduces that edge so this test exercises the loop.
 vi.mock("./api/events", () => ({
   openEventStream: vi.fn(
     (_cfg: unknown, opts: { onStatus?: (s: string) => void }) => {
@@ -67,7 +67,7 @@ describe("App connection bootstrap", () => {
     );
 
     await waitFor(() => expect(openEventStream).toHaveBeenCalled());
-    // A regressed `cfg` reference would re-fire the effect on every
+    // An unstable effect dependency would re-fire the effect on every
     // store write; give that loop a window to manifest.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(openEventStream).toHaveBeenCalledTimes(1);

@@ -19,22 +19,41 @@ interface Options {
   onStatus?: StatusHandler;
 }
 
+const INITIAL_BACKOFF = 500;
+const MAX_BACKOFF = 30_000;
+// A connection must stay open at least this long before it counts as
+// healthy and the backoff is allowed to reset. A socket that opens then
+// drops immediately keeps backing off rather than storming at the floor.
+const STABLE_MS = 5_000;
+
 export function openEventStream(
   cfg: ClientConfig,
   opts: Options,
 ): EventStream {
   let closed = false;
   let ws: WebSocket | null = null;
-  let backoff = 500;
-  const MAX_BACKOFF = 30_000;
+  let backoff = INITIAL_BACKOFF;
   let reconnectTimer: number | undefined;
+  let stableTimer: number | undefined;
 
-  const setStatus = (s: "connecting" | "open" | "closed") =>
-    opts.onStatus?.(s);
+  // Once the stream is closed, no late socket event may write to the
+  // store — the React effect that owns this stream has been torn down.
+  const setStatus = (s: "connecting" | "open" | "closed") => {
+    if (!closed) opts.onStatus?.(s);
+  };
+
+  // Equal jitter: spreads reconnects so clients don't synchronize into a
+  // thundering herd, and keeps a single client's retry from collapsing
+  // toward a zero-delay busy loop.
+  const jittered = (base: number) => base / 2 + Math.random() * (base / 2);
 
   const connect = () => {
     if (closed) return;
-    setStatus("connecting");
+    // Deliver "connecting" on a microtask so openEventStream never
+    // writes to the store synchronously inside the effect that called
+    // it. The closed guard in setStatus covers a teardown that races
+    // the microtask.
+    queueMicrotask(() => setStatus("connecting"));
 
     try {
       let url = eventsWebSocketURL(cfg);
@@ -57,10 +76,17 @@ export function openEventStream(
     }
 
     ws.onopen = () => {
-      backoff = 500;
       setStatus("open");
+      // Only treat the connection as healthy — and reset the backoff —
+      // once it has held for STABLE_MS. Resetting on open alone lets a
+      // flapping connection reconnect-storm at the backoff floor.
+      stableTimer = window.setTimeout(() => {
+        backoff = INITIAL_BACKOFF;
+        stableTimer = undefined;
+      }, STABLE_MS);
     };
     ws.onmessage = (msg) => {
+      if (closed) return;
       try {
         const parsed = JSON.parse(msg.data) as EventDTO;
         opts.onEvent(parsed);
@@ -69,6 +95,10 @@ export function openEventStream(
       }
     };
     ws.onclose = () => {
+      if (stableTimer !== undefined) {
+        window.clearTimeout(stableTimer);
+        stableTimer = undefined;
+      }
       setStatus("closed");
       if (!closed) scheduleReconnect();
     };
@@ -79,10 +109,9 @@ export function openEventStream(
 
   const scheduleReconnect = () => {
     if (closed) return;
-    reconnectTimer = window.setTimeout(() => {
-      backoff = Math.min(backoff * 2, MAX_BACKOFF);
-      connect();
-    }, backoff);
+    const delay = jittered(backoff);
+    backoff = Math.min(backoff * 2, MAX_BACKOFF);
+    reconnectTimer = window.setTimeout(connect, delay);
   };
 
   connect();
@@ -91,7 +120,12 @@ export function openEventStream(
     close() {
       closed = true;
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+      if (stableTimer !== undefined) window.clearTimeout(stableTimer);
       if (ws) {
+        // Null every handler so an in-flight socket that opens or
+        // closes after teardown cannot call back into the store.
+        ws.onopen = null;
+        ws.onmessage = null;
         ws.onclose = null;
         ws.onerror = null;
         try {
@@ -100,7 +134,9 @@ export function openEventStream(
           /* swallow */
         }
       }
-      setStatus("closed");
+      // Deliver the final status directly — setStatus() is now gated by
+      // `closed`, which is already true here.
+      opts.onStatus?.("closed");
     },
   };
 }
