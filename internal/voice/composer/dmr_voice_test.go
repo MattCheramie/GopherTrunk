@@ -13,34 +13,27 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-func TestPackAMBEFrame(t *testing.T) {
-	bits := make([]byte, dmrvoice.AMBEFrameBits)
-	for i := range bits {
+func TestPackBits(t *testing.T) {
+	in := make([]byte, dmrvoice.AMBEFrameBits)
+	for i := range in {
 		if i%3 == 0 {
-			bits[i] = 1
+			in[i] = 1
 		}
 	}
-	got := packAMBEFrame(bits)
+	got := packBits(in)
 	if len(got) != 9 {
 		t.Fatalf("packed length = %d, want 9", len(got))
 	}
-	for i := 0; i < dmrvoice.AMBEFrameBits; i++ {
-		bit := (got[i>>3] >> uint(7-(i&7))) & 1
-		want := byte(0)
-		if i%3 == 0 {
-			want = 1
-		}
-		if bit != want {
-			t.Errorf("bit %d = %d, want %d", i, bit, want)
+	for i := range in {
+		if bit := (got[i>>3] >> uint(7-(i&7))) & 1; bit != in[i] {
+			t.Errorf("bit %d = %d, want %d", i, bit, in[i])
 		}
 	}
 }
 
-// mkAMBEFrame builds a deterministic, unique 72-bit AMBE frame from
-// seed (one bit per byte) via a small LCG so every frame in a test
-// stream is distinct.
-func mkAMBEFrame(seed int) []byte {
-	f := make([]byte, dmrvoice.AMBEFrameBits)
+// mkInfo builds a deterministic, unique 49-bit AMBE payload from seed.
+func mkInfo(seed int) []byte {
+	f := make([]byte, 49)
 	x := uint32(seed)*2654435761 + 1
 	for i := range f {
 		x = x*1664525 + 1013904223
@@ -50,7 +43,7 @@ func mkAMBEFrame(seed int) []byte {
 }
 
 // voiceBurstDibits assembles a 132-dibit voice burst from three 72-bit
-// AMBE frames and a 24-dibit sync / embedded-signalling field.
+// on-air AMBE frames and a 24-dibit sync / embedded-signalling field.
 func voiceBurstDibits(frames [][]byte, sync [24]uint8) []uint8 {
 	var bits []byte
 	for _, f := range frames {
@@ -71,15 +64,24 @@ func voiceBurstDibits(frames [][]byte, sync [24]uint8) []uint8 {
 }
 
 // buildVoiceStream assembles a dibit stream of n DMR voice superframes
-// preceded by a lead-in (transitions so the receiver's clock recovery
-// settles), and returns the 18*n AMBE frames it carries.
-func buildVoiceStream(n int) (dibits []uint8, frames [][]byte) {
+// (with a clock-settling lead-in). Each of the 18*n AMBE frames it
+// carries is the FEC-encoding of mkInfo(frameIndex); the returned
+// slice holds those 49-bit payloads in order.
+func buildVoiceStream(t *testing.T, n int) (dibits []uint8, infos [][]byte) {
+	t.Helper()
 	dibits = make([]uint8, 240)
 	for i := range dibits {
 		dibits[i] = uint8(i % 4)
 	}
+	var onair [][]byte
 	for f := 0; f < n*dmrvoice.FramesPerSuperframe; f++ {
-		frames = append(frames, mkAMBEFrame(f))
+		info := mkInfo(f)
+		frame, err := dmrvoice.EncodeAMBEFrame(info)
+		if err != nil {
+			t.Fatalf("EncodeAMBEFrame: %v", err)
+		}
+		infos = append(infos, info)
+		onair = append(onair, frame)
 	}
 	for s := 0; s < n; s++ {
 		for b := 0; b < dmrvoice.BurstsPerSuperframe; b++ {
@@ -88,16 +90,16 @@ func buildVoiceStream(n int) (dibits []uint8, frames [][]byte) {
 				sync = dmr.BSVoice.Dibits
 			}
 			base := s*dmrvoice.FramesPerSuperframe + b*dmrvoice.FramesPerBurst
-			dibits = append(dibits, voiceBurstDibits(frames[base:base+dmrvoice.FramesPerBurst], sync)...)
+			dibits = append(dibits, voiceBurstDibits(onair[base:base+dmrvoice.FramesPerBurst], sync)...)
 		}
 	}
-	return dibits, frames
+	return dibits, infos
 }
 
 // TestComposerDMRVoiceChainExtractsRawFrames drives the full composer
 // DMR voice path — modulated IQ → DMR receiver → voice superframe
-// decoder → packed AMBE frames → recorder .raw sidecar — and confirms
-// a decoded superframe matches the modulated input exactly.
+// decoder → AMBE FEC → recorder .raw sidecar — and confirms a decoded
+// superframe round-trips to the modulated 49-bit payload exactly.
 func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 	const (
 		sampleRate  = 48_000.0
@@ -107,7 +109,7 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 		deviation   = 1944.0
 		superframes = 12
 	)
-	dibits, frames := buildVoiceStream(superframes)
+	dibits, infos := buildVoiceStream(t, superframes)
 	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRate, deviation)
 
 	src := newFakeSource()
@@ -158,15 +160,16 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 			len(got), dmrvoice.FramesPerSuperframe)
 	}
 	for _, f := range got {
-		if len(f) != 9 {
-			t.Fatalf("raw frame length = %d, want 9 (72 bits packed)", len(f))
+		if len(f) != 7 {
+			t.Fatalf("raw frame length = %d, want 7 (49 FEC-decoded bits packed)", len(f))
 		}
 	}
 
-	// At least one decoded superframe must match an input superframe
-	// exactly — proving the chain extracts the right bits in order.
-	if !matchesAnySuperframe(got, frames) {
-		t.Errorf("no decoded superframe matched an input superframe exactly")
+	// At least one decoded superframe must round-trip to its modulated
+	// 49-bit payload — proving deinterleave + Golay + descramble are
+	// wired correctly through the live chain.
+	if !matchesAnySuperframe(got, infos) {
+		t.Errorf("no decoded superframe round-tripped to its modulated payload")
 	}
 
 	// The chain keeps the call alive via Engine.Touch; the ticker may
@@ -174,13 +177,13 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return eng.touched.Load() > 0 })
 }
 
-func matchesAnySuperframe(got [][]byte, frames [][]byte) bool {
+func matchesAnySuperframe(got [][]byte, infos [][]byte) bool {
 	const sf = dmrvoice.FramesPerSuperframe
-	for in := 0; in+sf <= len(frames); in += sf {
+	for in := 0; in+sf <= len(infos); in += sf {
 		for g := 0; g+sf <= len(got); g += sf {
 			ok := true
 			for k := 0; k < sf; k++ {
-				if !bytes.Equal(got[g+k], packAMBEFrame(frames[in+k])) {
+				if !bytes.Equal(got[g+k], packBits(infos[in+k])) {
 					ok = false
 					break
 				}

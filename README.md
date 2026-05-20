@@ -339,23 +339,22 @@ to its own package and lands independently.
 - **DMR ARC4 / RC4 known-key voice decryption (issue #276).** Many
   DMR systems protect voice with ARC4-based "Enhanced Privacy".
   Operators authorized to monitor such a system — and holding the
-  key — can list it per-system under
-  `trunking.systems[].encryption_keys` (`key_id` + `algorithm: rc4` +
-  hex `key`); the config is validated at load time, and the
-  `algorithm` field keeps the schema open for AES later. The
-  dependency-free RC4 keystream generator
-  ([`internal/crypto/rc4/`](internal/crypto/rc4/)) and the DMR voice
-  superframe decoder ([`internal/radio/dmr/voice/`](internal/radio/dmr/voice/))
-  have shipped, and the composer now runs a DMR voice chain end to
-  end: a DMR voice grant drives an IQ → DMR receiver → superframe
-  decoder pipeline whose on-air AMBE+2 frames are written to the
-  call's `.raw` sidecar (the voice path GopherTrunk previously lacked
-  entirely — DMR decoded control channels only). The remaining work is
-  the AMBE forward-error-correction (72-bit on-air frame → 49-bit
-  vocoder payload), and the RC4 descramble + PI-header (algorithm /
-  key / message-indicator) parsing that together turn the `.raw`
-  capture into playable decrypted audio. Decryption is known-key only
-  — no key recovery — matching the SDRTrunk / DSD-FME / OP25 model.
+  key — list it per-system under `trunking.systems[].encryption_keys`
+  (`key_id` + `algorithm: rc4` + hex `key`), validated at load. Most
+  of the pipeline has shipped: the dependency-free RC4 keystream
+  generator ([`internal/crypto/rc4/`](internal/crypto/rc4/)), the DMR
+  voice superframe decoder plus AMBE+2 forward-error-correction
+  ([`internal/radio/dmr/voice/`](internal/radio/dmr/voice/) — 72-bit
+  on-air frame → C0/C1 Golay(23,12) + C1 descramble → 49-bit vocoder
+  payload, ported from mbelib/DSD), and the composer DMR voice chain
+  that runs IQ → DMR receiver → superframe decoder → AMBE FEC and
+  writes the FEC-decoded frames to the call's `.raw` sidecar (the
+  voice path GopherTrunk previously lacked entirely — DMR decoded
+  control channels only). The remaining work is the RC4 descramble +
+  PI-header (algorithm / key / message-indicator) parsing, and the
+  AMBE+2 vocoder hookup that renders the `.raw` frames to PCM.
+  Decryption is known-key only — no key recovery — matching the
+  SDRTrunk / DSD-FME / OP25 model.
 - **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
   The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
   conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)

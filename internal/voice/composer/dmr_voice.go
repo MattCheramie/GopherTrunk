@@ -27,13 +27,15 @@ type rawFrameSink interface {
 // runDMRVoiceChain consumes IQ for one DMR voice call. It decimates
 // the wideband IQ to a DMR-symbol-friendly rate, recovers the dibit
 // stream with the shared DMR receiver, assembles A–F voice
-// superframes, and appends each superframe's 18 on-air AMBE+2 frames
-// (72 bits, packed MSB-first into 9 bytes) to the recorder's .raw
-// sidecar.
+// superframes, FEC-decodes each superframe's 18 AMBE+2 frames to
+// their 49-bit vocoder payload, and appends them (packed into 7
+// bytes) to the recorder's .raw sidecar.
 //
-// AMBE forward-error-correction and vocoder decode are deliberately
-// not applied here: the .raw sidecar carries the on-air frames for
-// out-of-band decode until the AMBE FEC layer lands (issue #276).
+// AMBE forward-error-correction is applied per frame
+// (dmrvoice.DecodeAMBEFrame): the 72-bit on-air frame is FEC-decoded
+// to its 49-bit vocoder payload before being written. Vocoder decode
+// to PCM is still out of scope — the .raw sidecar carries the
+// post-FEC frames for out-of-band decode (issue #276).
 func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, done chan<- struct{}) {
 	defer close(done)
 
@@ -67,7 +69,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 			}
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
 				for i := range sf.Frames {
-					if err := rs.WriteRawFrame(serial, packAMBEFrame(sf.Frames[i])); err != nil {
+					info, _, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
+					if err != nil {
+						c.log.Warn("composer: DMR AMBE FEC decode failed",
+							"serial", serial, "err", err)
+						continue
+					}
+					if err := rs.WriteRawFrame(serial, packBits(info)); err != nil {
 						c.log.Warn("composer: DMR raw-frame write failed",
 							"serial", serial, "err", err)
 					}
@@ -100,9 +108,9 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	}
 }
 
-// packAMBEFrame packs a 72-element bit slice (one bit per byte,
-// MSB-first) into 9 bytes for the .raw sidecar.
-func packAMBEFrame(bits []byte) []byte {
+// packBits packs a bit slice (one bit per byte, MSB-first) into bytes
+// — 49 FEC-decoded AMBE payload bits become a 7-byte .raw frame.
+func packBits(bits []byte) []byte {
 	out := make([]byte, (len(bits)+7)/8)
 	for i := range bits {
 		if bits[i]&1 != 0 {
