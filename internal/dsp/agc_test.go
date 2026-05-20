@@ -42,3 +42,27 @@ func TestResamplerRateRoughlyMatches(t *testing.T) {
 		t.Errorf("len(out) = %d, want %d ± 4", len(out), want)
 	}
 }
+
+func TestResamplerReset(t *testing.T) {
+	r := NewResampler(3, 2, 8, 8.6)
+	in := make([]complex64, 2000)
+	for i := range in {
+		theta := 2 * math.Pi * 0.05 * float64(i)
+		in[i] = complex(float32(math.Cos(theta)), float32(math.Sin(theta)))
+	}
+	first := append([]complex64(nil), r.Process(nil, in)...)
+
+	// After Reset the resampler must reproduce a fresh run bit-for-
+	// bit — proving the sample history + commutator state cleared.
+	r.Reset()
+	second := r.Process(nil, in)
+
+	if len(first) != len(second) {
+		t.Fatalf("len after reset = %d, want %d", len(second), len(first))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("sample %d after reset = %v, want %v", i, second[i], first[i])
+		}
+	}
+}

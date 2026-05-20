@@ -12,11 +12,18 @@
 //     protocol pipeline (IQ → symbol-domain decoder → CC state
 //     machine) via the package-local factory map keyed on
 //     trunking.Protocol.
-//   - Pumps every IQ chunk arriving on the StreamIQ channel
-//     through the active pipeline's Process method. The pipeline's
-//     CC state machine publishes events.KindCCLocked /
-//     events.KindGrant on the same bus, which the supervisor +
-//     engine consume to drive the rest of the daemon.
+//   - Down-converts every raw IQ chunk to a narrowband channel
+//     stream — rational polyphase decimation, ~48 kHz for the
+//     4800-baud C4FM family, wider for TETRA — before the pipeline
+//     sees it. The per-protocol receivers size their matched
+//     filters for this channelized rate, not the raw SDR rate, so
+//     this stage is what lets a live 2.048 MHz RTL-SDR stream
+//     actually lock (issue #275).
+//   - Pumps every down-converted IQ chunk through the active
+//     pipeline's Process method. The pipeline's CC state machine
+//     publishes events.KindCCLocked / events.KindGrant on the same
+//     bus, which the supervisor + engine consume to drive the rest
+//     of the daemon.
 //
 // What this package does NOT do:
 //
@@ -87,9 +94,12 @@ type Options struct {
 	Tuner   Tuner    // currently unused but kept for API symmetry with cchunt
 	IQ      IQSource // control SDR providing the live IQ stream
 	Systems []trunking.System
-	// SampleRateHz is the IQ stream rate. Forwarded to the per-
-	// protocol receiver factories so they can size their matched
-	// filters correctly.
+	// SampleRateHz is the raw SDR IQ stream rate (e.g. 2_048_000).
+	// The decoder's digital down-converter decimates it to a
+	// narrowband channel rate (~48 kHz for most protocols); the
+	// per-protocol receiver factories are handed that decimated
+	// rate, not this one, so they size their matched filters for
+	// the channelized stream.
 	SampleRateHz float64
 	// Metrics is the optional IQ-power observer the pump updates
 	// once per iqPowerWindow. Nil disables the gauge but leaves the
@@ -108,6 +118,17 @@ type Decoder struct {
 	sampleRateHz float64
 	systems      map[string]trunking.System
 
+	// ddc decimates the raw SDR IQ stream to pipelineRateHz before
+	// the active pipeline sees a chunk; ddcTarget records the
+	// channel rate it was built for so it is only rebuilt when a
+	// retune crosses to a protocol with a different rate (see
+	// ddcTargetForProtocol). pipelineRateHz is what the per-protocol
+	// factories receive as PipelineOptions.SampleRateHz. All three
+	// are owned by handleProgress / pump under mu.
+	ddc            *downconverter
+	ddcTarget      float64
+	pipelineRateHz float64
+
 	// sub is the bus subscription the Decoder uses to learn about
 	// KindHuntProgress retunes. Subscribed in New so the
 	// subscription is alive before any other goroutine
@@ -119,6 +140,11 @@ type Decoder struct {
 	mu       sync.Mutex
 	active   ProtocolPipeline
 	activeAt string // system name the active pipeline is bound to
+
+	// ddcOut is the reusable down-converter output buffer — pump
+	// hands it to downconverter.Process each chunk so the decimated
+	// stream doesn't allocate per call.
+	ddcOut []complex64
 
 	// IQ-power tracking — see pump for the math. Owned by Run's
 	// goroutine via pump; not protected by mu because no other
@@ -227,6 +253,11 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	if d.active != nil {
 		d.clearActiveLocked()
 	}
+	// (Re)build the down-converter for this protocol's channel rate
+	// before the factory call — the factory sizes its matched
+	// filter from the decimated rate.
+	d.ensureDownconverterLocked(ddcTargetForProtocol(sys.Protocol))
+	rate := d.pipelineRateHz
 	d.mu.Unlock()
 
 	p2, err := factory(PipelineOptions{
@@ -234,7 +265,7 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 		Log:          d.log,
 		SystemName:   sys.Name,
 		FrequencyHz:  p.AttemptedFreqHz,
-		SampleRateHz: d.sampleRateHz,
+		SampleRateHz: rate,
 		System:       sys,
 	})
 	if err != nil {
@@ -246,6 +277,9 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	d.mu.Lock()
 	d.active = p2
 	d.activeAt = sys.Name
+	// Flush the down-converter so decimation-filter state from the
+	// previous channel doesn't bleed into the freshly-tuned one.
+	d.ddc.Reset()
 	d.mu.Unlock()
 }
 
@@ -272,10 +306,34 @@ func (d *Decoder) clearActiveLocked() {
 	d.pwLastSystem = ""
 }
 
-// pump forwards an IQ chunk to the active pipeline. Holding the lock
-// for the whole Process call serialises against handleProgress's
-// pipeline swap so we never call Process on a half-constructed
-// pipeline.
+// ensureDownconverterLocked (re)builds the down-converter when the
+// target channel rate changes. Protocols with different symbol
+// rates need different channelized rates — the 4800-baud C4FM
+// family channelizes to ~48 kHz, TETRA's 18000-baud modulation to a
+// wider channel — so a retune that crosses protocols rebuilds it;
+// retunes within the same rate reuse the existing filter. Caller
+// holds d.mu.
+func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
+	if d.ddc != nil && d.ddcTarget == targetHz {
+		return
+	}
+	d.ddc = newDownconverter(d.sampleRateHz, targetHz)
+	d.ddcTarget = targetHz
+	d.pipelineRateHz = d.ddc.outRateHz
+	d.log.Info("ccdecoder: digital down-converter configured",
+		"sdr_rate_hz", d.sampleRateHz,
+		"pipeline_rate_hz", d.pipelineRateHz)
+}
+
+// pump down-converts a raw IQ chunk and forwards it to the active
+// pipeline. Holding the lock for the whole Process call serialises
+// against handleProgress's pipeline swap so we never call Process on
+// a half-constructed pipeline.
+//
+// The chunk is decimated to the pipeline's narrowband rate by the
+// down-converter before Process; the IQ-power window below still
+// measures the *raw* chunk so the gauge reflects the SDR's actual
+// input level, not the post-decimation level.
 //
 // While we have the lock, also fold the chunk into the IQ-power
 // window. The window aggregates |IQ|^2 across chunks; once a second
@@ -289,7 +347,8 @@ func (d *Decoder) pump(iq []complex64) {
 	if d.active == nil {
 		return
 	}
-	d.active.Process(iq)
+	d.ddcOut = d.ddc.Process(d.ddcOut, iq)
+	d.active.Process(d.ddcOut)
 }
 
 func (d *Decoder) observeIQPowerLocked(iq []complex64) {

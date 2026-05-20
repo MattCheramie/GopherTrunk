@@ -107,6 +107,18 @@ func (r *Resampler) computeBranch(b int) complex64 {
 	return complex(accI, accQ)
 }
 
+// Reset clears the sample history and the commutator / decimator
+// state so the next Process call starts a fresh stream — leaving the
+// prototype filter branches intact.
+func (r *Resampler) Reset() {
+	for i := range r.hist {
+		r.hist[i] = 0
+	}
+	r.histPos = 0
+	r.idx = 0
+	r.mCount = 0
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a

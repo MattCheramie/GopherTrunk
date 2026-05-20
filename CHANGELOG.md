@@ -28,6 +28,20 @@ for tagged releases.
   Rotation=0 wins on ties so existing clean-fixture tests stay
   green.
 
+### Fixed
+
+- **Trunked control-channel decode on live RTL-SDR hardware**
+  (issue #275). The ccdecoder fed every per-protocol receiver the
+  full, un-channelized SDR IQ stream (commonly 2.048 MHz), so the
+  matched filter + symbol-clock loop ran at ≈427 samples per symbol
+  against a ±1 MHz swath and the Frame Sync Word never correlated —
+  no protocol could lock on-air, regardless of gain, PPM, or demod
+  mode. A digital down-converter now decimates each raw IQ chunk
+  (rational polyphase resample) to the narrowband channel rate the
+  per-protocol receivers are matched-filter-tuned for — ~48 kHz for
+  the 4800-baud C4FM family, 144 kHz for TETRA — before the pipeline
+  sees it. The IQ-power gauge still reports the raw SDR input level.
+
 ## [v0.1.7] — 2026-05-19
 
 Observability + import-pipeline release. Twelve merged PRs land the

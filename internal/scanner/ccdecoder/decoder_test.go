@@ -6,12 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
+	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -960,6 +963,140 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 	// |0.5+0.5i|^2 = 0.5 → 10*log10(0.5) = -3.01 dBFS
 	if got.dbfs < -3.5 || got.dbfs > -2.5 {
 		t.Errorf("dbfs = %v, want roughly -3", got.dbfs)
+	}
+}
+
+// buildP25CCDibits assembles a P25 Phase 1 control-channel dibit
+// stream — a warmup pattern + `repeats` × (FSW + NID + trellis-
+// encoded TSBK + idle gap) + trailer — mirroring the integration
+// suite's fixture so the C4FM modulator + receiver chain can lock.
+func buildP25CCDibits(nac uint16, repeats int) []uint8 {
+	frame := make([]uint8, 0, 24+32+98)
+	frame = append(frame, p25phase1.FrameSyncWord[:]...)
+	nidBits := p25phase1.EncodeNIDBits(nac, p25phase1.DUIDTrunkingSignaling)
+	for i := 0; i < 32; i++ {
+		frame = append(frame, (nidBits[2*i]<<1)|nidBits[2*i+1])
+	}
+	tsbk := p25phase1.AssembleTSBK(p25phase1.TSBK{
+		LB: true, Opcode: p25phase1.OpRFSSStatusBroadcast,
+	})
+	frame = append(frame, p25phase1.EncodeTSBKChannel(tsbk)...)
+
+	out := make([]uint8, 0, 200+repeats*(len(frame)+50)+100)
+	for i := 0; i < 200; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 50; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// TestDecoderLocksP25Phase1ThroughWidebandDDC is the regression
+// proof for issue #275: a P25 Phase 1 control channel synthesized at
+// the channelized 48 kHz rate, upsampled to a raw 2.048 MHz SDR
+// stream, and fed through the real Decoder must still lock — the
+// down-converter has to channelize the wideband IQ back to ~48 kHz
+// before the production newP25Phase1Pipeline can correlate the FSW.
+//
+// Before the DDC was wired in, the receiver saw the full 2.048 MHz
+// stream (≈427 samples per symbol) and never locked on-air.
+func TestDecoderLocksP25Phase1ThroughWidebandDDC(t *testing.T) {
+	const (
+		nac          = 0x293
+		controlFreq  = 851_000_000
+		sdrRateHz    = 2_048_000.0
+		narrowRateHz = 48_000.0
+		sps          = 10
+		span         = 8
+		alpha        = 0.2
+		deviationHz  = 1800.0
+		frameRepeats = 30
+	)
+
+	// Synthesize the control channel at the narrowband 48 kHz rate,
+	// then upsample (L/M = 128/3) to the raw SDR rate so the
+	// Decoder's down-converter has a genuine wideband chunk to
+	// channelize back down.
+	dibits := buildP25CCDibits(nac, frameRepeats)
+	narrow := demod.ModulateC4FM(dibits, sps, span, alpha, narrowRateHz, deviationHz)
+	wide := dsp.NewResampler(128, 3, 8, 8.0).Process(nil, narrow)
+
+	bus := events.NewBus(256)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{},
+		Systems: []trunking.System{{
+			Name: "WBSys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{controlFreq},
+		}},
+		SampleRateHz: sdrRateHz,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer d.Close()
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// Build the real P25 Phase 1 pipeline (production factory). This
+	// is what (re)builds the down-converter for the P25 channel rate.
+	d.handleProgress(trunking.HuntProgress{
+		System: "WBSys", AttemptedFreqHz: controlFreq,
+	})
+	if d.active == nil {
+		t.Fatalf("handleProgress did not install a pipeline")
+	}
+	// The down-converter must hand the pipeline factory exactly
+	// 48 kHz — the rate every P25 receiver is matched-filter-tuned
+	// for.
+	if d.pipelineRateHz != narrowRateHz {
+		t.Fatalf("pipelineRateHz = %v, want %v", d.pipelineRateHz, narrowRateHz)
+	}
+
+	// Pump the wideband stream through in SDR-sized chunks, draining
+	// the bus after each so a full subscriber buffer can't drop the
+	// cc.locked event.
+	const chunk = 131_072
+	var locked bool
+	var lockState p25phase1.LockState
+	for off := 0; off < len(wide) && !locked; off += chunk {
+		end := off + chunk
+		if end > len(wide) {
+			end = len(wide)
+		}
+		d.pump(wide[off:end])
+		for drained := false; !drained; {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind != events.KindCCLocked {
+					continue
+				}
+				if ls, ok := ev.Payload.(p25phase1.LockState); ok {
+					lockState = ls
+					locked = true
+				}
+			default:
+				drained = true
+			}
+		}
+	}
+
+	if !locked {
+		t.Fatalf("no cc.locked event after pumping %d wideband samples through the DDC", len(wide))
+	}
+	if lockState.NAC != nac {
+		t.Errorf("LockState.NAC = %#x, want %#x", lockState.NAC, nac)
+	}
+	if lockState.FrequencyHz != controlFreq {
+		t.Errorf("LockState.FrequencyHz = %d, want %d", lockState.FrequencyHz, controlFreq)
 	}
 }
 
