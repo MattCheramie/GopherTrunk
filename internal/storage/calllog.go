@@ -101,12 +101,13 @@ func (c *CallLog) recordStart(cs trunking.CallStart) error {
 	const q = `
 INSERT OR REPLACE INTO call_log (
     system, protocol, group_id, source_id, frequency_hz,
-    encrypted, emergency, data_call, device_serial, started_at,
-    talkgroup_alpha
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    encrypted, algorithm_id, key_id, emergency, data_call,
+    device_serial, started_at, talkgroup_alpha
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := c.db.sql.Exec(q,
 		cs.Grant.System, cs.Grant.Protocol, cs.Grant.GroupID, cs.Grant.SourceID, cs.Grant.FrequencyHz,
-		boolToInt(cs.Grant.Encrypted), boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall),
+		boolToInt(cs.Grant.Encrypted), cs.Grant.AlgorithmID, cs.Grant.KeyID,
+		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall),
 		cs.DeviceSerial, cs.StartedAt.UnixNano(),
 		alpha,
 	)
@@ -148,6 +149,8 @@ type CallRow struct {
 	SourceID       uint32    `json:"source_id"`
 	FrequencyHz    uint32    `json:"frequency_hz"`
 	Encrypted      bool      `json:"encrypted"`
+	AlgorithmID    uint8     `json:"algorithm_id"`
+	KeyID          uint16    `json:"key_id"`
 	Emergency      bool      `json:"emergency"`
 	DataCall       bool      `json:"data_call"`
 	DeviceSerial   string    `json:"device_serial"`
@@ -161,8 +164,9 @@ type CallRow struct {
 // History queries the call_log with the supplied filter, newest-first.
 func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
-	             encrypted, emergency, data_call, device_serial,
-	             started_at, ended_at, duration_ms, end_reason, talkgroup_alpha
+	             encrypted, algorithm_id, key_id, emergency, data_call,
+	             device_serial, started_at, ended_at, duration_ms,
+	             end_reason, talkgroup_alpha
 	      FROM call_log WHERE 1=1`
 	args := []any{}
 	if f.System != "" {
@@ -202,15 +206,17 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var durMs sql.NullInt64
 		var reason sql.NullString
 		var alpha sql.NullString
-		var enc, emer, data int
+		var enc, emer, data, algID, keyID int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
-			&enc, &emer, &data, &r.DeviceSerial,
+			&enc, &algID, &keyID, &emer, &data, &r.DeviceSerial,
 			&startNs, &endNs, &durMs, &reason, &alpha,
 		); err != nil {
 			return nil, err
 		}
 		r.Encrypted = enc != 0
+		r.AlgorithmID = uint8(algID)
+		r.KeyID = uint16(keyID)
 		r.Emergency = emer != 0
 		r.DataCall = data != 0
 		r.StartedAt = time.Unix(0, startNs).UTC()

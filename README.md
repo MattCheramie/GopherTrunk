@@ -336,6 +336,21 @@ sourcing.
 What's still on the table. Order isn't fixed; each item is contained
 to its own package and lands independently.
 
+- **DMR ARC4 / RC4 known-key voice decryption (issue #276).** Many
+  DMR systems protect voice with ARC4-based "Enhanced Privacy".
+  Operators authorized to monitor such a system — and holding the
+  key — can list it per-system under
+  `trunking.systems[].encryption_keys` (`key_id` + `algorithm: rc4` +
+  hex `key`); the config is validated at load time, and the
+  `algorithm` field keeps the schema open for AES later. The
+  dependency-free RC4 keystream generator ships in
+  [`internal/crypto/rc4/`](internal/crypto/rc4/), verified against the
+  canonical RC4 test vectors. The remaining work is the DMR voice
+  burst → AMBE decode path the descrambler hooks into: GopherTrunk
+  today decodes DMR control channels (grants) but not the voice bursts
+  themselves, so wiring RC4 through to playable audio lands with that
+  path. Decryption is known-key only — no key recovery — matching the
+  SDRTrunk / DSD-FME / OP25 model.
 - **DVSI USB-3000 / AMBE-3003 hardware backend (USB transport).**
   The `Vocoder` + AMBE-3003 wire protocol + `voice.Vocoder` interface
   conformance ship in [`internal/voice/dvsi/`](internal/voice/dvsi/)

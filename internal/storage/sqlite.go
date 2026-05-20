@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS call_log (
     source_id       INTEGER NOT NULL DEFAULT 0,
     frequency_hz    INTEGER NOT NULL DEFAULT 0,
     encrypted       INTEGER NOT NULL DEFAULT 0,
+    algorithm_id    INTEGER NOT NULL DEFAULT 0,
+    key_id          INTEGER NOT NULL DEFAULT 0,
     emergency       INTEGER NOT NULL DEFAULT 0,
     data_call       INTEGER NOT NULL DEFAULT 0,
     device_serial   TEXT    NOT NULL,
@@ -96,7 +98,56 @@ func (d *DB) migrate() error {
 	if err != nil {
 		return fmt.Errorf("storage: migrate: %w", err)
 	}
-	// Stamp v1; future migrations check this row before running.
-	_, _ = d.sql.Exec(`INSERT OR IGNORE INTO schema_version(version) VALUES (1)`)
+	if err := d.ensureCallLogColumns(); err != nil {
+		return err
+	}
+	// Stamp the current schema version; future migrations check this
+	// row before running.
+	_, _ = d.sql.Exec(`INSERT OR IGNORE INTO schema_version(version) VALUES (2)`)
+	return nil
+}
+
+// ensureCallLogColumns adds call_log columns introduced after the
+// initial schema. CREATE TABLE IF NOT EXISTS never alters an existing
+// table, so a database created by an earlier GopherTrunk keeps the old
+// column set; this brings it forward. It is idempotent — columns
+// already present (fresh databases, repeat opens) are skipped — so it
+// needs no schema-version gate.
+func (d *DB) ensureCallLogColumns() error {
+	rows, err := d.sql.Query(`PRAGMA table_info(call_log)`)
+	if err != nil {
+		return fmt.Errorf("storage: inspect call_log: %w", err)
+	}
+	have := make(map[string]bool)
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("storage: inspect call_log: %w", err)
+		}
+		have[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("storage: inspect call_log: %w", err)
+	}
+	rows.Close()
+
+	adds := []struct{ name, ddl string }{
+		{"algorithm_id", `ALTER TABLE call_log ADD COLUMN algorithm_id INTEGER NOT NULL DEFAULT 0`},
+		{"key_id", `ALTER TABLE call_log ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0`},
+	}
+	for _, a := range adds {
+		if have[a.name] {
+			continue
+		}
+		if _, err := d.sql.Exec(a.ddl); err != nil {
+			return fmt.Errorf("storage: add call_log.%s: %w", a.name, err)
+		}
+	}
 	return nil
 }

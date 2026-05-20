@@ -23,6 +23,13 @@ type Grant struct {
 	ChannelNum  uint16 // raw channel number within the ID
 	Encrypted   bool
 	Emergency   bool
+	// AlgorithmID and KeyID carry the encryption parameters the
+	// protocol's privacy header advertises (the DMR PI header, etc.).
+	// They are meaningful only when Encrypted is true and stay zero
+	// until a privacy header has been parsed. Persisted to the call
+	// log so an operator can see which key a recorded call needs.
+	AlgorithmID uint8
+	KeyID       uint16
 	DataCall    bool // false = voice call (default)
 	// ProVoice marks the grant as an EDACS ProVoice (digital) call. The
 	// vocoder is patent + trade-secret encumbered so we cannot ship a

@@ -188,6 +188,23 @@ trunking:
   #     control_channels: [144_000_000]
   #     dstar_fec_mode: "on"            # default off — flip on for raw 660-bit
   #                                     # on-wire D-STAR JARL DV-mode headers
+  #
+  # Encrypted DMR systems (ARC4 / RC4 "Enhanced Privacy"). If you are
+  # authorized to monitor a DMR system that encrypts voice with ARC4
+  # and you hold the key, list it under `encryption_keys`. GopherTrunk
+  # decrypts only with operator-supplied keys — it performs no key
+  # recovery. `key_id` matches the key identifier the radios carry in
+  # the privacy header (a system may rotate between several keys).
+  # `key` is hex; whitespace and an optional "0x" prefix are ignored.
+  #
+  #   - name: "Example-DMR-Encrypted"
+  #     protocol: dmr
+  #     control_channels: [451_000_000]
+  #     talkgroup_file: "/etc/gophertrunk/talkgroups-dmr.csv"
+  #     encryption_keys:
+  #       - key_id: 1
+  #         algorithm: rc4              # only "rc4" is supported today
+  #         key: "0123456789"           # hex-encoded key
 
 # Police-scanner subsystems:
 #   - scan_mode controls the engine's per-grant gate. "all" follows every

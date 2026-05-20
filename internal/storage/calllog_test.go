@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -227,4 +228,74 @@ func TestOpenInMemory(t *testing.T) {
 	if len(rows) != 0 {
 		t.Errorf("rows = %d, want 0", len(rows))
 	}
+}
+
+// TestMigrationAddsEncryptionColumns builds a pre-#276 call_log table
+// (no algorithm_id / key_id), then reopens it through Open and confirms
+// the migration adds the columns and old rows still read back.
+func TestMigrationAddsEncryptionColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const legacy = `
+CREATE TABLE call_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    system          TEXT    NOT NULL,
+    protocol        TEXT    NOT NULL DEFAULT '',
+    group_id        INTEGER NOT NULL,
+    source_id       INTEGER NOT NULL DEFAULT 0,
+    frequency_hz    INTEGER NOT NULL DEFAULT 0,
+    encrypted       INTEGER NOT NULL DEFAULT 0,
+    emergency       INTEGER NOT NULL DEFAULT 0,
+    data_call       INTEGER NOT NULL DEFAULT 0,
+    device_serial   TEXT    NOT NULL,
+    started_at      INTEGER NOT NULL,
+    ended_at        INTEGER,
+    duration_ms     INTEGER,
+    end_reason      TEXT,
+    talkgroup_alpha TEXT
+);`
+	if _, err := raw.Exec(legacy); err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO call_log (system, group_id, device_serial, started_at) VALUES (?, ?, ?, ?)`,
+		"Legacy-Sys", 100, "dev0", int64(1000),
+	); err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open (migrate): %v", err)
+	}
+	defer db.Close()
+
+	rows, err := db.History(context.Background(), HistoryFilter{})
+	if err != nil {
+		t.Fatalf("History after migration: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].System != "Legacy-Sys" {
+		t.Errorf("system = %q, want Legacy-Sys", rows[0].System)
+	}
+	if rows[0].AlgorithmID != 0 || rows[0].KeyID != 0 {
+		t.Errorf("migrated row: algorithm_id=%d key_id=%d, want 0/0",
+			rows[0].AlgorithmID, rows[0].KeyID)
+	}
+
+	// Reopening must be idempotent — the columns now exist.
+	db2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	db2.Close()
 }

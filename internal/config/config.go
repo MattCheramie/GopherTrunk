@@ -1,9 +1,11 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -318,6 +320,27 @@ type SystemConfig struct {
 	// chain → 328 info bits → ParseHeader). Ignored for non-D-STAR
 	// protocols.
 	DStarFECMode string `yaml:"dstar_fec_mode"`
+
+	// EncryptionKeys lists operator-supplied decryption keys for this
+	// system. GopherTrunk decrypts only with keys the operator
+	// already holds and is authorized to use — it performs no key
+	// recovery. Today only DMR ARC4/RC4 ("Enhanced Privacy") is
+	// recognised; the per-key `algorithm` field keeps the schema open
+	// so AES can be added later without a config break. Ignored for
+	// protocols without an encryption decoder. See issue #276.
+	EncryptionKeys []EncryptionKeyConfig `yaml:"encryption_keys"`
+}
+
+// EncryptionKeyConfig is one operator-supplied decryption key for a
+// trunking system. KeyID matches the key identifier the radios carry
+// in the protocol's privacy header, so a system that rotates between
+// several keys still resolves to the right one. Key is the raw key
+// hex-encoded; surrounding whitespace, internal spaces, and an
+// optional "0x" prefix are tolerated.
+type EncryptionKeyConfig struct {
+	KeyID     uint16 `yaml:"key_id"`
+	Algorithm string `yaml:"algorithm"`
+	Key       string `yaml:"key"`
 }
 
 // APIConfig controls the HTTP REST + SSE + WebSocket and gRPC servers.
@@ -524,6 +547,30 @@ func (c Config) Validate() error {
 		if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
 			return fmt.Errorf("trunking.systems[%d]: %w", i, err)
 		}
+		seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
+		for k, ek := range s.EncryptionKeys {
+			switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
+			case "rc4", "arc4":
+				// supported
+			case "":
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
+			case "aes", "des":
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
+			default:
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
+			}
+			if _, dup := seenKeyIDs[ek.KeyID]; dup {
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
+			}
+			seenKeyIDs[ek.KeyID] = struct{}{}
+			b, err := decodeHexKey(ek.Key)
+			if err != nil {
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
+			}
+			if len(b) > 32 {
+				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
+			}
+		}
 	}
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)
@@ -581,4 +628,29 @@ func (c Config) Validate() error {
 // the dependency lives in one place and tests can lean on it.
 func parseDurationFlexible(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
+}
+
+// decodeHexKey parses a hex-encoded encryption key. Surrounding and
+// internal whitespace plus an optional "0x"/"0X" prefix are stripped
+// so operators can paste keys in whatever form their radio-programming
+// software displays them.
+func decodeHexKey(s string) ([]byte, error) {
+	clean := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\n', '\r':
+			return -1
+		default:
+			return r
+		}
+	}, s)
+	clean = strings.TrimPrefix(clean, "0x")
+	clean = strings.TrimPrefix(clean, "0X")
+	if clean == "" {
+		return nil, errors.New("key is empty")
+	}
+	b, err := hex.DecodeString(clean)
+	if err != nil {
+		return nil, fmt.Errorf("key is not valid hex: %w", err)
+	}
+	return b, nil
 }
