@@ -195,10 +195,11 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // the BCH / trellis decoders expect are recovered by adding rot
 // (rotateDibits) before parsing.
 func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
-	nidDibits := rotateDibits(buf[nidStart:nidStart+32], rot)
-	nid, errs, err := NIDFromDibits(nidDibits)
+	rawNID := buf[nidStart : nidStart+32]
+	nid, errs, err := NIDFromDibits(rotateDibits(rawNID, rot))
 	if err != nil {
 		c.log.Debug("nid parse failed", "err", err, "errs", errs, "rot", rot)
+		c.logNIDRotationProbe(rawNID)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
 			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
@@ -207,6 +208,9 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
 	}
 	if errs > 0 {
 		c.log.Debug("nid corrected", "errs", errs, "nac", nid.NAC, "rot", rot)
+	}
+	if errs >= nidErrsProbeThreshold {
+		c.logNIDRotationProbe(rawNID)
 	}
 	if nid.DUID != DUIDTrunkingSignaling {
 		// Some non-control DUID — record but don't lock.
@@ -273,6 +277,35 @@ func rotateDibits(src []uint8, rot uint8) []uint8 {
 		out[i] = (d + rot) & 3
 	}
 	return out
+}
+
+// nidErrsProbeThreshold is the BCH-corrected error count at or above
+// which parseFrame dumps the per-rotation NID diagnostic. The NID's
+// BCH(63,16,11) corrects at most 11 errors, so a frame landing this
+// close to that ceiling means the dibits reaching the decoder are
+// systematically wrong rather than lightly noisy.
+const nidErrsProbeThreshold = 8
+
+// logNIDRotationProbe re-decodes the raw (un-rotated) NID dibits under
+// all four cyclic dibit rotations and logs the BCH error count each
+// produces (-1 = uncorrectable). It runs only on the diagnostic path —
+// a frame whose FSW matched but whose NID will not cleanly decode — and
+// exists to tell two failure modes apart for issue #275:
+//
+//   - one rotation scores low while the others score high → the
+//     FSW-search picked the wrong rotation (a sync / front-end
+//     polarity bug);
+//   - all four rotations score high → the demodulated dibits are
+//     genuinely corrupt (a demod-quality bug — residual frequency
+//     offset, matched filter, symbol timing) that no rotation repairs.
+func (c *ControlChannel) logNIDRotationProbe(rawNID []uint8) {
+	var probe [4]int
+	for k := uint8(0); k < 4; k++ {
+		_, errs, _ := NIDFromDibits(rotateDibits(rawNID, k))
+		probe[k] = errs
+	}
+	c.log.Debug("nid rotation probe",
+		"rot0", probe[0], "rot1", probe[1], "rot2", probe[2], "rot3", probe[3])
 }
 
 // dispatchTSBK routes a successfully-CRC'd TSBK to the right opcode
