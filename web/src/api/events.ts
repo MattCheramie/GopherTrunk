@@ -35,21 +35,23 @@ export function openEventStream(
   const connect = () => {
     if (closed) return;
     setStatus("connecting");
-    let url = eventsWebSocketURL(cfg);
-    if (cfg.token) {
-      // The daemon's WS upgrade does not currently accept a token
-      // via query parameter; if auth is required, deployments must
-      // bind to a trusted network (auto mode) or front the daemon
-      // with a reverse proxy that adds the header. The token is
-      // still forwarded via the optional Sec-WebSocket-Protocol
-      // sub-protocol form as a future extension point.
-      url += url.includes("?") ? "&" : "?";
-      url += `token=${encodeURIComponent(cfg.token)}`;
-    }
 
     try {
+      let url = eventsWebSocketURL(cfg);
+      if (cfg.token) {
+        // The daemon's WS upgrade does not currently accept a token
+        // via query parameter; if auth is required, deployments must
+        // bind to a trusted network (auto mode) or front the daemon
+        // with a reverse proxy that adds the header. The token is
+        // still forwarded via the optional Sec-WebSocket-Protocol
+        // sub-protocol form as a future extension point.
+        url += url.includes("?") ? "&" : "?";
+        url += `token=${encodeURIComponent(cfg.token)}`;
+      }
       ws = new WebSocket(url);
     } catch {
+      // A malformed base URL (eventsWebSocketURL throwing) or a
+      // WebSocket constructor rejection both land here.
       scheduleReconnect();
       return;
     }

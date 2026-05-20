@@ -182,9 +182,14 @@ export function audioStreamURL(
   return joinURL(cfg.baseURL, `/api/v1/audio/stream${qs ? `?${qs}` : ""}`);
 }
 
-// eventsWebSocketURL composes the WS URL. WebSocket's protocol is
-// derived from the base URL (http→ws, https→wss).
+// eventsWebSocketURL composes the WS URL. The scheme is derived from
+// the base URL (http→ws, https→wss); an empty baseURL means the SPA is
+// served same-origin by the daemon, so we resolve against the current
+// document location. The URL constructor (rather than string concat)
+// avoids malformed output like "ws:/api/v1/events/ws" when baseURL
+// lacks a host, and normalizes an uppercase scheme.
 export function eventsWebSocketURL(cfg: ClientConfig): string {
-  const http = joinURL(cfg.baseURL, "/api/v1/events/ws");
-  return http.replace(/^http(s?):/, (_m, s) => `ws${s}:`);
+  const u = new URL("/api/v1/events/ws", cfg.baseURL || window.location.href);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  return u.toString();
 }

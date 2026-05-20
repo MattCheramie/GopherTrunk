@@ -15,6 +15,7 @@ import type {
   SystemDTO,
   TalkgroupDTO,
 } from "../api/types";
+import type { ClientConfig } from "../api/client";
 import { prefs } from "./prefs";
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "closed";
@@ -146,9 +147,17 @@ export const useShared = create<SharedState>((set, get) => ({
   },
 }));
 
-/** Convenience selector: a stable ClientConfig snapshot. */
-export function selectClientConfig(s: SharedState) {
-  return { baseURL: s.serverURL ?? "", token: s.token };
+/** Convenience selector: a referentially-stable ClientConfig snapshot.
+ *  Returns the SAME object reference until serverURL or token actually
+ *  change, so callers can place `cfg` in useEffect dependency arrays
+ *  without triggering a render loop (see issue #290). */
+let cachedCfg: ClientConfig = { baseURL: "", token: null };
+export function selectClientConfig(s: SharedState): ClientConfig {
+  const baseURL = s.serverURL ?? "";
+  if (cachedCfg.baseURL !== baseURL || cachedCfg.token !== s.token) {
+    cachedCfg = { baseURL, token: s.token };
+  }
+  return cachedCfg;
 }
 
 /** Can-mutate gate combining write-mode toggle with daemon capability. */
