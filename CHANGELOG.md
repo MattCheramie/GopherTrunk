@@ -9,6 +9,23 @@ for tagged releases.
 
 ### Added
 
+- **Outbound call streaming to aggregators and live audio
+  servers.** Completed calls are now encoded to MP3 and streamed
+  to external services, closing the largest functional gap
+  against SDRtrunk. A new `internal/broadcast` subsystem
+  subscribes to a `KindCallComplete` event the recorder
+  publishes once a call's WAV is flushed, encodes the audio via
+  a pure-Go MP3 encoder (`internal/voice/mp3`, no CGO), and
+  fans the call out to every configured backend with bounded
+  exponential-backoff retry. Four backends ship: Broadcastify
+  Calls (two-step metadata + audio upload), RdioScanner
+  (native call-upload API), OpenMHz, and live Icecast/ShoutCast
+  (a continuous paced source connection topped up with silence
+  between calls). Feeds are configured under a new `broadcast:`
+  config section; each feed takes an optional `systems:` filter
+  and a talkgroup can opt out of all feeds with `stream: false`
+  in its CSV/JSON. Feed counters are exposed at
+  `GET /api/v1/broadcast`.
 - **P25 Phase 1 voice decoding and broader control-channel
   coverage** (PR #310). A `p25` voice grant now decodes
   end-to-end — modulated C4FM IQ → Phase 1 receiver → LDU

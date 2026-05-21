@@ -89,6 +89,15 @@ type AudioController interface {
 	BackendEnabled() bool
 }
 
+// BroadcastStatusProvider is the read side of the outbound
+// call-streaming subsystem (internal/broadcast). BroadcastStats
+// returns a JSON-serialisable counter snapshot; the daemon adapts
+// broadcast.Manager.Stats() to this interface so the api package
+// keeps no compile-time dependency on internal/broadcast.
+type BroadcastStatusProvider interface {
+	BroadcastStats() any
+}
+
 // ScannerCockpit is the API surface for the police-scanner subsystem:
 // reads the current state (per-system CC hunt, conventional channel
 // list, talkgroup-scan stats) and applies operator mutations from
@@ -209,6 +218,7 @@ type Server struct {
 	devices      DevicesProvider
 	scanner      ScannerCockpit
 	audio        AudioController
+	broadcast    BroadcastStatusProvider
 	runtime      RuntimeProvider
 	configWriter ConfigWriter
 	settings     SettingsApplier
@@ -338,6 +348,10 @@ type ServerOptions struct {
 	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
 	// return 503.
 	Audio AudioController
+	// Broadcast exposes the outbound call-streaming subsystem's
+	// counters for GET /api/v1/broadcast. Optional; when nil, the
+	// route reports the subsystem as disabled.
+	Broadcast BroadcastStatusProvider
 	// Runtime exposes the read-only daemon config snapshot served at
 	// GET /api/v1/runtime. The TUI's tabbed Settings inspector uses
 	// it to surface every config knob. Optional; when nil, the
@@ -444,6 +458,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
 		audio:          opts.Audio,
+		broadcast:      opts.Broadcast,
 		runtime:        opts.Runtime,
 		configWriter:   opts.ConfigWriter,
 		settings:       opts.SettingsApplier,
@@ -589,6 +604,7 @@ func (s *Server) routes() *http.ServeMux {
 
 	// Scanner cockpit — read endpoint is always open; mutations are
 	// gated behind allow_mutations like every other write route.
+	mux.HandleFunc("GET /api/v1/broadcast", s.handleBroadcastStatus)
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
 	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))
 	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/hold", s.gate(s.handleHuntHold))

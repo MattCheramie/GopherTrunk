@@ -362,3 +362,48 @@ tone_out:
     #     - frequency_hz: 1465.3
     #       min_duration: "2.5s"
     #       max_duration: "5s"
+
+# Outbound call streaming. Completed calls are encoded to MP3 and
+# uploaded to call aggregators, or pushed to a live Icecast/ShoutCast
+# mountpoint. Empty == disabled. Each backend takes a list of feeds;
+# a feed with `enabled: false` is parsed but skipped. The optional
+# per-feed `systems:` list restricts a feed to those trunking-system
+# names (omit to stream every system). A talkgroup with `stream: false`
+# in its CSV/JSON is excluded from all feeds.
+broadcast:
+  # Drop calls shorter than this from every feed (squelch crackle,
+  # failed decodes). 0 streams calls of any length.
+  min_duration_ms: 0
+  # Concurrent upload workers. 0 uses the built-in default.
+  workers: 0
+
+  # broadcastify:
+  #   - enabled: true
+  #     name: "metro-p25"
+  #     api_key: "YOUR_BROADCASTIFY_CALLS_API_KEY"
+  #     system_id: 12345
+  #     systems: ["Metro P25"]
+
+  # rdioscanner:
+  #   - enabled: true
+  #     name: "local-rdio"
+  #     url: "https://scanner.example.org"
+  #     api_key: "YOUR_RDIOSCANNER_API_KEY"
+  #     system_id: 1
+
+  # openmhz:
+  #   - enabled: true
+  #     name: "openmhz-metro"
+  #     api_key: "YOUR_OPENMHZ_API_KEY"
+  #     short_name: "metro911"
+
+  # icecast:
+  #   - enabled: true
+  #     name: "live-feed"
+  #     host: "stream.example.org"
+  #     port: 8000
+  #     mount: "/gophertrunk"
+  #     username: "source"
+  #     password: "YOUR_ICECAST_SOURCE_PASSWORD"
+  #     stream_name: "GopherTrunk Live"
+

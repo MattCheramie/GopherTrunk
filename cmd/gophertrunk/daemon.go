@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
+	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
@@ -85,6 +86,7 @@ type Daemon struct {
 	engine     *trunking.Engine
 	voicePool  *trunking.VoicePool
 	recorder   *voice.Recorder
+	broadcast  *broadcast.Manager
 	composer   *composer.Composer
 	player     *player.Player
 	toneout    *toneout.Detector
@@ -338,6 +340,24 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
 		}
 		d.recorder = rec
+	}
+
+	// Outbound call-streaming manager — optional. Subscribes to the
+	// bus at construction so calls completed before Run starts are
+	// not lost. Built only when at least one feed is enabled.
+	{
+		bcastRate := int(cfg.Recordings.SampleRate)
+		if bcastRate == 0 {
+			bcastRate = 8000
+		}
+		mgr, err := buildBroadcastManager(cfg.Broadcast, bcastRate, d.bus, log)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: broadcast: %w", err)
+		}
+		if mgr != nil {
+			d.broadcast = mgr
+			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
+		}
 	}
 
 	// Tone-out detector — optional. Built before the composer so it can
@@ -661,6 +681,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.player != nil || d.recorder != nil {
 			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
 		}
+		if d.broadcast != nil {
+			opts.Broadcast = broadcastStatus{d.broadcast}
+		}
 		cfgCopy := cfg
 		opts.Runtime = &runtimeSnapshot{
 			cfg:     &cfgCopy,
@@ -753,6 +776,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.recorder != nil {
 		d.spawn(runCtx, "recorder", false, func(ctx context.Context) error {
 			return d.recorder.Run(ctx)
+		})
+	}
+	if d.broadcast != nil {
+		d.spawn(runCtx, "broadcast", false, func(ctx context.Context) error {
+			return d.broadcast.Run(ctx)
 		})
 	}
 	if d.composer != nil {
@@ -871,6 +899,9 @@ func (d *Daemon) Close() {
 		}
 		if d.player != nil {
 			_ = d.player.Close()
+		}
+		if d.broadcast != nil {
+			_ = d.broadcast.Close()
 		}
 		if d.recorder != nil {
 			_ = d.recorder.Close()
@@ -1052,6 +1083,13 @@ type playerSink struct{ p *player.Player }
 func (s playerSink) WritePCM(serial string, samples []int16) error {
 	return s.p.WritePCM(serial, samples)
 }
+
+// broadcastStatus adapts the broadcast.Manager into the
+// api.BroadcastStatusProvider interface, keeping the api package free
+// of a compile-time dependency on internal/broadcast.
+type broadcastStatus struct{ mgr *broadcast.Manager }
+
+func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
 
 // convFanoutRecorder lets the conventional scanner drive both the
 // WAV recorder and the live player. The conventional.Recorder

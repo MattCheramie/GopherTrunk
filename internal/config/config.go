@@ -24,6 +24,69 @@ type Config struct {
 	ToneOut    ToneOutConfig    `yaml:"tone_out"`
 	Scanner    ScannerConfig    `yaml:"scanner"`
 	Audio      AudioConfig      `yaml:"audio"`
+	Broadcast  BroadcastConfig  `yaml:"broadcast"`
+}
+
+// BroadcastConfig configures the outbound call-streaming subsystem
+// (internal/broadcast): completed calls are encoded to MP3 and uploaded
+// to call aggregators or pushed to a live Icecast/ShoutCast mountpoint.
+// Empty == disabled; the daemon runs no broadcast manager when no feed
+// is configured.
+type BroadcastConfig struct {
+	// MinDurationMs drops calls shorter than this from every feed
+	// (squelch crackle, failed decodes). 0 streams calls of any
+	// length.
+	MinDurationMs int `yaml:"min_duration_ms"`
+	// Workers is the number of concurrent upload goroutines. 0 uses
+	// the broadcast package default.
+	Workers int `yaml:"workers"`
+	// Broadcastify, RdioScanner, OpenMHz and Icecast each list zero
+	// or more feeds. A feed with enabled=false is parsed but skipped.
+	Broadcastify []BroadcastifyFeedConfig `yaml:"broadcastify"`
+	RdioScanner  []RdioScannerFeedConfig  `yaml:"rdioscanner"`
+	OpenMHz      []OpenMHzFeedConfig      `yaml:"openmhz"`
+	Icecast      []IcecastFeedConfig      `yaml:"icecast"`
+}
+
+// BroadcastifyFeedConfig is one Broadcastify Calls upload feed.
+type BroadcastifyFeedConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Name     string   `yaml:"name"`
+	APIKey   string   `yaml:"api_key"`
+	SystemID int      `yaml:"system_id"`
+	Systems  []string `yaml:"systems"` // empty = every system
+}
+
+// RdioScannerFeedConfig is one RdioScanner call-upload feed.
+type RdioScannerFeedConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Name     string   `yaml:"name"`
+	URL      string   `yaml:"url"`
+	APIKey   string   `yaml:"api_key"`
+	SystemID int      `yaml:"system_id"`
+	Systems  []string `yaml:"systems"`
+}
+
+// OpenMHzFeedConfig is one OpenMHz upload feed.
+type OpenMHzFeedConfig struct {
+	Enabled   bool     `yaml:"enabled"`
+	Name      string   `yaml:"name"`
+	APIKey    string   `yaml:"api_key"`
+	ShortName string   `yaml:"short_name"`
+	Systems   []string `yaml:"systems"`
+}
+
+// IcecastFeedConfig is one live Icecast/ShoutCast feed.
+type IcecastFeedConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	Name       string   `yaml:"name"`
+	Host       string   `yaml:"host"`
+	Port       int      `yaml:"port"`
+	Mount      string   `yaml:"mount"`
+	Username   string   `yaml:"username"`
+	Password   string   `yaml:"password"`
+	StreamName string   `yaml:"stream_name"`
+	Systems    []string `yaml:"systems"`
 }
 
 // AudioConfig controls live audio playback to the host's speakers.
@@ -626,6 +689,69 @@ func (c Config) Validate() error {
 			}
 		default:
 			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+		}
+	}
+	if err := c.Broadcast.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validate checks that every enabled broadcast feed carries the fields
+// its backend requires. Disabled feeds are left unchecked so operators
+// can pre-stage credentials.
+func (b BroadcastConfig) validate() error {
+	if b.MinDurationMs < 0 {
+		return errors.New("broadcast.min_duration_ms must not be negative")
+	}
+	for i, f := range b.Broadcastify {
+		if !f.Enabled {
+			continue
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.broadcastify[%d]: api_key required", i)
+		}
+		if f.SystemID == 0 {
+			return fmt.Errorf("broadcast.broadcastify[%d]: system_id required", i)
+		}
+	}
+	for i, f := range b.RdioScanner {
+		if !f.Enabled {
+			continue
+		}
+		if f.URL == "" {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: url required", i)
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: api_key required", i)
+		}
+		if f.SystemID == 0 {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: system_id required", i)
+		}
+	}
+	for i, f := range b.OpenMHz {
+		if !f.Enabled {
+			continue
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.openmhz[%d]: api_key required", i)
+		}
+		if f.ShortName == "" {
+			return fmt.Errorf("broadcast.openmhz[%d]: short_name required", i)
+		}
+	}
+	for i, f := range b.Icecast {
+		if !f.Enabled {
+			continue
+		}
+		if f.Host == "" {
+			return fmt.Errorf("broadcast.icecast[%d]: host required", i)
+		}
+		if f.Port == 0 {
+			return fmt.Errorf("broadcast.icecast[%d]: port required", i)
+		}
+		if f.Password == "" {
+			return fmt.Errorf("broadcast.icecast[%d]: password required", i)
 		}
 	}
 	return nil

@@ -73,6 +73,11 @@ func (w *WavWriter) WriteSamples(samples []int16) error {
 	return err
 }
 
+// DataBytes returns the number of PCM payload bytes written so far
+// (excluding the 44-byte header). Stays readable after Close so the
+// recorder can tell whether a call captured any audio.
+func (w *WavWriter) DataBytes() uint32 { return w.bytesWritten }
+
 // Close patches the length fields and closes the underlying file (if the
 // writer owns one).
 func (w *WavWriter) Close() error {

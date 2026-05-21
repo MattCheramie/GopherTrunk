@@ -18,10 +18,20 @@ const (
 	KindCCLost      Kind = "cc.lost"
 	KindCallStart   Kind = "call.start"
 	KindCallEnd     Kind = "call.end"
-	KindGrant       Kind = "grant"
-	KindToneAlert   Kind = "tone.alert"
-	KindDecodeError Kind = "decode.error"
-	KindError       Kind = "error"
+	// KindCallComplete fires after the recorder has finished writing a
+	// call's WAV to disk — the WAV header length fields are patched and
+	// the file is closed and ready to read. It carries the same call
+	// metadata as KindCallEnd plus the on-disk audio path
+	// (trunking.CallComplete). The outbound-streaming subsystem
+	// (internal/broadcast) subscribes to it to upload completed calls
+	// to Broadcastify Calls / RdioScanner / OpenMHz / Icecast. Distinct
+	// from KindCallEnd because KindCallEnd fires the instant the engine
+	// releases the voice channel, before the WAV is flushed.
+	KindCallComplete Kind = "call.complete"
+	KindGrant        Kind = "grant"
+	KindToneAlert    Kind = "tone.alert"
+	KindDecodeError  Kind = "decode.error"
+	KindError        Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):
 	//   KindHuntProgress fires once per CC candidate the hunter
 	//     tries — payload identifies which system + frequency +

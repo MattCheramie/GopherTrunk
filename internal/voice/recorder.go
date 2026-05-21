@@ -371,6 +371,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	if !ok {
 		return
 	}
+	dataBytes := s.wav.DataBytes()
 	if err := s.close(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
 	}
@@ -379,6 +380,25 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 		"wav", s.wavPath,
 		"duration", ce.Duration().Round(time.Millisecond),
 		"reason", ce.Reason)
+	// Announce the finished WAV so the outbound-streaming subsystem
+	// can upload it. Skip calls that captured no PCM (digital voice
+	// whose vocoder produced nothing, or an instantly-preempted
+	// grant) — there is nothing to stream.
+	if dataBytes > 0 {
+		r.bus.Publish(events.Event{
+			Kind: events.KindCallComplete,
+			Payload: trunking.CallComplete{
+				Grant:        ce.Grant,
+				Talkgroup:    ce.Talkgroup,
+				DeviceSerial: ce.DeviceSerial,
+				StartedAt:    ce.StartedAt,
+				EndedAt:      ce.EndedAt,
+				Reason:       ce.Reason,
+				AudioPath:    s.wavPath,
+				SampleRate:   r.sampleRate,
+			},
+		})
+	}
 }
 
 func (r *Recorder) directoryFor(cs trunking.CallStart) string {

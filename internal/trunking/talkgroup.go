@@ -31,6 +31,13 @@ type TalkGroup struct {
 	Priority    int    `json:"priority,omitempty"` // 1 = highest, 10 = lowest, 0 = unset
 	Lockout     bool   `json:"lockout,omitempty"`
 	Scan        bool   `json:"scan"`
+	// Stream gates whether completed calls on this talkgroup are
+	// uploaded to the outbound broadcast aggregators
+	// (internal/broadcast). Defaults to true on every loader so a
+	// legacy CSV/JSON without a Stream column keeps streaming every
+	// call; an explicit "no"/"false" in the CSV (or `"stream": false`
+	// in JSON) opts a sensitive talkgroup out of all feeds.
+	Stream bool `json:"stream"`
 }
 
 // TalkgroupDB is a thread-safe lookup over loaded talkgroups.
@@ -156,7 +163,7 @@ func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
 		if err != nil {
 			continue // skip malformed rows
 		}
-		tg := &TalkGroup{ID: uint32(idVal), Scan: true}
+		tg := &TalkGroup{ID: uint32(idVal), Scan: true, Stream: true}
 		tg.AlphaTag = field(row, colIdx, "alpha tag", "alphatag", "alpha_tag")
 		tg.Description = field(row, colIdx, "description")
 		tg.Mode = field(row, colIdx, "mode")
@@ -182,6 +189,15 @@ func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
 			switch strings.ToLower(s) {
 			case "n", "no", "false", "0", "off":
 				tg.Scan = false
+			}
+		}
+		// Optional Stream column. Default is true; explicit
+		// "no"/"false"/"0"/"n" opts the talkgroup out of all
+		// outbound broadcast feeds.
+		if s := field(row, colIdx, "stream"); s != "" {
+			switch strings.ToLower(s) {
+			case "n", "no", "false", "0", "off":
+				tg.Stream = false
 			}
 		}
 		d.Add(tg)
@@ -215,6 +231,7 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 		Priority    int    `json:"priority,omitempty"`
 		Lockout     bool   `json:"lockout,omitempty"`
 		Scan        *bool  `json:"scan"`
+		Stream      *bool  `json:"stream"`
 	}
 	var arr []talkGroupRaw
 	if err := json.NewDecoder(r).Decode(&arr); err != nil {
@@ -231,9 +248,13 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 			Priority:    raw.Priority,
 			Lockout:     raw.Lockout,
 			Scan:        true,
+			Stream:      true,
 		}
 		if raw.Scan != nil {
 			tg.Scan = *raw.Scan
+		}
+		if raw.Stream != nil {
+			tg.Stream = *raw.Stream
 		}
 		d.Add(tg)
 	}
