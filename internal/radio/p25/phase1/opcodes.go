@@ -125,6 +125,142 @@ func ParseGroupVoiceChannelUpdate(p [8]byte) GroupVoiceChannelUpdate {
 	}
 }
 
+// AssembleGroupVoiceChannelUpdate is the inverse of
+// ParseGroupVoiceChannelUpdate; used by tests.
+func AssembleGroupVoiceChannelUpdate(u GroupVoiceChannelUpdate) [8]byte {
+	var p [8]byte
+	binary.BigEndian.PutUint16(p[0:2], uint16(u.ChannelAID&0x0F)<<12|u.ChannelANumber&0x0FFF)
+	binary.BigEndian.PutUint16(p[2:4], u.GroupAddressA)
+	binary.BigEndian.PutUint16(p[4:6], uint16(u.ChannelBID&0x0F)<<12|u.ChannelBNumber&0x0FFF)
+	binary.BigEndian.PutUint16(p[6:8], u.GroupAddressB)
+	return p
+}
+
+// ParseGroupVoiceChannelUpdateExplicit decodes opcode 0x03, the
+// explicit-channel group voice update. It carries the same channel +
+// group + source fields as a group voice grant (opcode 0x00).
+func ParseGroupVoiceChannelUpdateExplicit(p [8]byte) GroupVoiceChannelGrant {
+	return ParseGroupVoiceChannelGrant(p)
+}
+
+// ServiceOptions decodes the 8-bit SVC_OPTIONS field a P25 voice grant
+// carries (TIA-102.AABF): bit 7 = Emergency, bit 6 = Protected (the
+// encryption indicator), bits 0-2 = call priority.
+type ServiceOptions uint8
+
+// Emergency reports the emergency-call bit.
+func (s ServiceOptions) Emergency() bool { return s&0x80 != 0 }
+
+// Encrypted reports the protected (encryption) bit.
+func (s ServiceOptions) Encrypted() bool { return s&0x40 != 0 }
+
+// Priority returns the 3-bit call-priority field (0 = lowest).
+func (s ServiceOptions) Priority() uint8 { return uint8(s) & 0x07 }
+
+// UnitToUnitVoiceChannelGrant (opcode 0x04) — a private unit-to-unit
+// voice call. Working-model payload layout (TIA-102.AABF):
+//
+//	bytes 0-1 : channel (4-bit ID + 12-bit number)
+//	bytes 2-4 : target unit ID (24 bits)
+//	bytes 5-7 : source unit ID (24 bits)
+type UnitToUnitVoiceChannelGrant struct {
+	ChannelID     uint8
+	ChannelNumber uint16
+	TargetID      uint32
+	SourceID      uint32
+}
+
+// ParseUnitToUnitVoiceChannelGrant decodes payload bytes for opcode 0x04.
+func ParseUnitToUnitVoiceChannelGrant(p [8]byte) UnitToUnitVoiceChannelGrant {
+	ch := binary.BigEndian.Uint16(p[0:2])
+	return UnitToUnitVoiceChannelGrant{
+		ChannelID:     uint8(ch >> 12),
+		ChannelNumber: ch & 0x0FFF,
+		TargetID:      uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]),
+		SourceID:      uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+	}
+}
+
+// AssembleUnitToUnitVoiceChannelGrant is the inverse; used by tests.
+func AssembleUnitToUnitVoiceChannelGrant(g UnitToUnitVoiceChannelGrant) [8]byte {
+	var p [8]byte
+	binary.BigEndian.PutUint16(p[0:2], uint16(g.ChannelID&0x0F)<<12|g.ChannelNumber&0x0FFF)
+	p[2], p[3], p[4] = byte(g.TargetID>>16), byte(g.TargetID>>8), byte(g.TargetID)
+	p[5], p[6], p[7] = byte(g.SourceID>>16), byte(g.SourceID>>8), byte(g.SourceID)
+	return p
+}
+
+// TelephoneInterconnectGrant (opcode 0x08) — a grant for a call bridged
+// to the public telephone network. Working-model payload layout:
+//
+//	byte 0    : service options
+//	bytes 1-2 : channel
+//	bytes 3-4 : call timer (units of 100 ms)
+//	bytes 5-7 : target unit ID — the radio on the call
+type TelephoneInterconnectGrant struct {
+	ServiceOptions uint8
+	ChannelID      uint8
+	ChannelNumber  uint16
+	CallTimer      uint16
+	TargetID       uint32
+}
+
+// ParseTelephoneInterconnectGrant decodes payload bytes for opcode 0x08.
+func ParseTelephoneInterconnectGrant(p [8]byte) TelephoneInterconnectGrant {
+	ch := binary.BigEndian.Uint16(p[1:3])
+	return TelephoneInterconnectGrant{
+		ServiceOptions: p[0],
+		ChannelID:      uint8(ch >> 12),
+		ChannelNumber:  ch & 0x0FFF,
+		CallTimer:      binary.BigEndian.Uint16(p[3:5]),
+		TargetID:       uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+	}
+}
+
+// AssembleTelephoneInterconnectGrant is the inverse; used by tests.
+func AssembleTelephoneInterconnectGrant(g TelephoneInterconnectGrant) [8]byte {
+	var p [8]byte
+	p[0] = g.ServiceOptions
+	binary.BigEndian.PutUint16(p[1:3], uint16(g.ChannelID&0x0F)<<12|g.ChannelNumber&0x0FFF)
+	binary.BigEndian.PutUint16(p[3:5], g.CallTimer)
+	p[5], p[6], p[7] = byte(g.TargetID>>16), byte(g.TargetID>>8), byte(g.TargetID)
+	return p
+}
+
+// SNDCPDataChannelGrant (opcode 0x14) — a grant for a packet-data
+// (SNDCP) channel. Working-model payload layout:
+//
+//	byte 0    : data service options
+//	bytes 1-2 : channel
+//	bytes 3-4 : reserved
+//	bytes 5-7 : target unit ID
+type SNDCPDataChannelGrant struct {
+	ServiceOptions uint8
+	ChannelID      uint8
+	ChannelNumber  uint16
+	TargetID       uint32
+}
+
+// ParseSNDCPDataChannelGrant decodes payload bytes for opcode 0x14.
+func ParseSNDCPDataChannelGrant(p [8]byte) SNDCPDataChannelGrant {
+	ch := binary.BigEndian.Uint16(p[1:3])
+	return SNDCPDataChannelGrant{
+		ServiceOptions: p[0],
+		ChannelID:      uint8(ch >> 12),
+		ChannelNumber:  ch & 0x0FFF,
+		TargetID:       uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+	}
+}
+
+// AssembleSNDCPDataChannelGrant is the inverse; used by tests.
+func AssembleSNDCPDataChannelGrant(g SNDCPDataChannelGrant) [8]byte {
+	var p [8]byte
+	p[0] = g.ServiceOptions
+	binary.BigEndian.PutUint16(p[1:3], uint16(g.ChannelID&0x0F)<<12|g.ChannelNumber&0x0FFF)
+	p[5], p[6], p[7] = byte(g.TargetID>>16), byte(g.TargetID>>8), byte(g.TargetID)
+	return p
+}
+
 // GroupAffiliationResponse (opcode 0x28) — published when a radio unit
 // is granted (or denied) affiliation with a talkgroup. Payload layout
 // follows OP25's reference decoder (`trunk_p25.py`):
