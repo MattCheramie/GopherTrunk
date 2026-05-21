@@ -69,6 +69,17 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 						"serial", serial, "err", werr)
 				}
 			}
+			// An LDU1 carries a Link Control word — surface the call's
+			// talkgroup + source unit it identifies.
+			if duid, derr := phase1.LDUDuid(ldu); derr == nil && duid == phase1.DUIDLogicalLink1 {
+				if blocks, berr := phase1.ExtractLCESBlocks(ldu); berr == nil {
+					if lc, _, lerr := phase1.ParseLinkControl(blocks); lerr == nil {
+						c.log.Debug("composer: p25p1 link control",
+							"serial", serial, "lcf", lc.LCFormat,
+							"tg", lc.TalkgroupID, "src", lc.SourceID)
+					}
+				}
+			}
 		},
 	})
 
