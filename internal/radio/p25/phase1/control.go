@@ -53,6 +53,10 @@ type ControlChannel struct {
 	buf     []uint8
 	bufBase int
 	pending []pendingHit
+
+	// aliasAsm reassembles multi-fragment vendor talker-alias TSBKs
+	// into a radio's display name. Self-synchronised (its own mutex).
+	aliasAsm *TalkerAliasAssembler
 }
 
 // pendingHit is an FSW match awaiting enough buffered dibits to decode
@@ -97,6 +101,7 @@ func New(opts Options) *ControlChannel {
 		freqHz:     opts.FrequencyHz,
 		bandPlan:   bp,
 		now:        now,
+		aliasAsm:   NewTalkerAliasAssembler(now),
 	}
 }
 
@@ -313,6 +318,13 @@ func (c *ControlChannel) logNIDRotationProbe(rawNID []uint8) {
 // logged at debug but not republished, since they're the bulk of what
 // a busy site emits and would drown signal in noise.
 func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
+	// Manufacturer-specific TSBKs are decoded in the vendor's opcode
+	// namespace (Motorola patch/regroup, Harris regroup, talker alias)
+	// — see tsbk_vendor.go.
+	if t.IsVendorMFID() {
+		c.dispatchVendorTSBK(t, nac)
+		return
+	}
 	switch t.Opcode {
 	case OpIdentifierUpdate:
 		u := ParseIdentifierUpdate(t.Payload)
@@ -364,6 +376,73 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.log.Debug("tsbk decoded",
 			"opcode", t.Opcode, "lb", t.LB, "metric", metric, "nac", nac)
 	}
+}
+
+// dispatchVendorTSBK routes a manufacturer-specific TSBK (Motorola or
+// Harris MFID) through the vendor accessors in tsbk_vendor.go and
+// publishes the trunking event it carries.
+func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
+	if pg, ok := t.AsMotorolaPatchGroup(); ok {
+		members := make([]uint32, len(pg.Patched))
+		for i, m := range pg.Patched {
+			members[i] = uint32(m)
+		}
+		c.publishPatch(uint32(pg.SuperGroup), members, "motorola", true)
+		return
+	}
+	if super, ok := t.AsMotorolaPatchDelete(); ok {
+		c.publishPatch(uint32(super), nil, "motorola", false)
+		return
+	}
+	if hr, ok := t.AsHarrisRegroup(); ok {
+		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris", true)
+		return
+	}
+	if f, ok := t.AsTalkerAliasFragment(); ok {
+		if alias, src, done := c.aliasAsm.Add(f); done {
+			c.publishTalkerAlias(src, alias)
+		}
+		return
+	}
+	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+}
+
+// publishPatch publishes an events.KindPatch for a vendor patch /
+// dynamic-regroup TSBK so the engine can attribute later grants on the
+// super-group to its member talkgroups. add=false cancels a patch.
+func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendor string, add bool) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindPatch,
+		Payload: trunking.Patch{
+			System:     c.systemName,
+			Protocol:   "p25",
+			SuperGroup: superGroup,
+			Members:    members,
+			Vendor:     vendor,
+			Add:        add,
+			At:         c.now(),
+		},
+	})
+	c.log.Debug("p25: patch",
+		"system", c.systemName, "vendor", vendor,
+		"super", superGroup, "members", members, "add", add)
+}
+
+// publishTalkerAlias publishes an events.KindTalkerAlias once a radio's
+// display name has been fully reassembled from its fragment TSBKs.
+func (c *ControlChannel) publishTalkerAlias(sourceID uint32, alias string) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindTalkerAlias,
+		Payload: trunking.TalkerAlias{
+			System:   c.systemName,
+			Protocol: "p25",
+			SourceID: sourceID,
+			Alias:    alias,
+			At:       c.now(),
+		},
+	})
+	c.log.Debug("p25: talker alias",
+		"system", c.systemName, "src", sourceID, "alias", alias)
 }
 
 // voiceGrant is the protocol-internal shape publishVoiceGrant resolves
