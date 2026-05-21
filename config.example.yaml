@@ -407,3 +407,18 @@ broadcast:
   #     password: "YOUR_ICECAST_SOURCE_PASSWORD"
   #     stream_name: "GopherTrunk Live"
 
+# Wideband baseband (IQ) recording and offline replay. `record` taps a
+# live tuner and writes its raw IQ to a two-channel 16-bit WAV (the
+# same layout SDRtrunk uses). `replay` mounts recorded WAVs as virtual
+# tuners so a capture can be decoded with no radio attached — record at
+# the same rate as sdr.sample_rate for real-time-correct playback.
+# baseband:
+#   record:
+#     - serial: "00000001"
+#       dir: "baseband/"
+#   replay:
+#     - file: "baseband/00000001_20260521T120000Z.wav"
+#       serial: "replay-01"
+#       role: "control"
+#       loop: true
+

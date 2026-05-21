@@ -25,6 +25,39 @@ type Config struct {
 	Scanner    ScannerConfig    `yaml:"scanner"`
 	Audio      AudioConfig      `yaml:"audio"`
 	Broadcast  BroadcastConfig  `yaml:"broadcast"`
+	Baseband   BasebandConfig   `yaml:"baseband"`
+}
+
+// BasebandConfig configures wideband IQ recording and offline replay.
+// Empty == disabled. `record` taps live tuners and writes their IQ to
+// WAV; `replay` mounts recorded WAVs as virtual tuners so a capture can
+// be decoded offline. Replay recordings should have been made at the
+// same rate as sdr.sample_rate for real-time-correct playback.
+type BasebandConfig struct {
+	Record []BasebandRecordConfig `yaml:"record"`
+	Replay []BasebandReplayConfig `yaml:"replay"`
+}
+
+// BasebandRecordConfig taps one tuner's live IQ to WAV recordings.
+type BasebandRecordConfig struct {
+	// Serial is the SDR serial whose IQ stream is recorded.
+	Serial string `yaml:"serial"`
+	// Dir is the directory recordings are written into.
+	Dir string `yaml:"dir"`
+}
+
+// BasebandReplayConfig mounts one recorded WAV as a virtual tuner.
+type BasebandReplayConfig struct {
+	// File is the path to the baseband WAV recording.
+	File string `yaml:"file"`
+	// Serial is the virtual device serial the pool reports. Empty
+	// generates one.
+	Serial string `yaml:"serial"`
+	// Role is the pool role: control|voice|auto (empty = auto).
+	Role string `yaml:"role"`
+	// Loop restarts the recording on EOF so the offline tuner is a
+	// continuous source. nil defaults to true.
+	Loop *bool `yaml:"loop"`
 }
 
 // BroadcastConfig configures the outbound call-streaming subsystem
@@ -693,6 +726,24 @@ func (c Config) Validate() error {
 	}
 	if err := c.Broadcast.validate(); err != nil {
 		return err
+	}
+	for i, r := range c.Baseband.Record {
+		if r.Serial == "" {
+			return fmt.Errorf("baseband.record[%d]: serial required", i)
+		}
+		if r.Dir == "" {
+			return fmt.Errorf("baseband.record[%d]: dir required", i)
+		}
+	}
+	for i, r := range c.Baseband.Replay {
+		if r.File == "" {
+			return fmt.Errorf("baseband.replay[%d]: file required", i)
+		}
+		switch r.Role {
+		case "", "control", "voice", "auto":
+		default:
+			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+		}
 	}
 	return nil
 }

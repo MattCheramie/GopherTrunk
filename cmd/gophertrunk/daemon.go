@@ -19,6 +19,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
@@ -258,8 +259,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 
 	// SDR pool — best-effort. Components that need a Voice device
-	// fall through gracefully when the pool is empty.
-	if len(cfg.SDR.Devices) > 0 {
+	// fall through gracefully when the pool is empty. The pool is
+	// also constructed when only baseband replay recordings are
+	// configured, so an offline capture can be decoded with no radio.
+	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 {
 		d.pool = sdr.NewPool(log)
 		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
@@ -281,12 +284,32 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			hints = append(hints, h)
 		}
+		// Mount baseband replay recordings as virtual tuners. The
+		// FileDriver registers globally; the pool's Open then
+		// enumerates it alongside any real drivers.
+		if len(cfg.Baseband.Replay) > 0 {
+			specs := make([]baseband.ReplaySpec, 0, len(cfg.Baseband.Replay))
+			for _, r := range cfg.Baseband.Replay {
+				loop := true
+				if r.Loop != nil {
+					loop = *r.Loop
+				}
+				specs = append(specs, baseband.ReplaySpec{Path: r.File, Serial: r.Serial, Loop: loop})
+				if r.Serial != "" {
+					hints = append(hints, sdr.Hint{Serial: r.Serial, Role: sdr.ParseRole(r.Role)})
+				}
+			}
+			sdr.Register(baseband.NewFileDriver(specs))
+			log.Info("baseband replay mounted", "recordings", len(specs))
+		}
 		if err := d.pool.Open(cfg.SDR.SampleRate, hints); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)
 			d.addWarning(fmt.Sprintf(
 				"SDR pool failed to open (%v) — no radios will demodulate; check device permissions / cabling / kernel modules",
 				err))
 			d.pool = nil
+		} else {
+			d.wrapBasebandRecorders(cfg, log)
 		}
 	} else if len(cfg.Trunking.Systems) > 0 {
 		// Trunked systems configured but no SDR devices listed —
@@ -1090,6 +1113,34 @@ func (s playerSink) WritePCM(serial string, samples []int16) error {
 type broadcastStatus struct{ mgr *broadcast.Manager }
 
 func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
+
+// wrapBasebandRecorders replaces the Device of every pool entry whose
+// serial appears in baseband.record with a RecordingDevice, teeing its
+// live IQ to a WAV recording. Runs once at construction, before any
+// streaming starts, so mutating the entry's Device pointer is safe.
+func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
+	if len(cfg.Baseband.Record) == 0 || d.pool == nil {
+		return
+	}
+	dirBySerial := make(map[string]string, len(cfg.Baseband.Record))
+	for _, r := range cfg.Baseband.Record {
+		dirBySerial[r.Serial] = r.Dir
+	}
+	rate := cfg.SDR.SampleRate
+	if rate == 0 {
+		rate = sdr.DefaultSampleRateHz
+	}
+	for _, e := range d.pool.Entries() {
+		dir, ok := dirBySerial[e.Info.Serial]
+		if !ok {
+			continue
+		}
+		rec := baseband.NewRecordingDevice(e.Device, dir, log)
+		_ = rec.SetSampleRate(rate)
+		e.Device = rec
+		log.Info("baseband recording enabled", "serial", e.Info.Serial, "dir", dir)
+	}
+}
 
 // convFanoutRecorder lets the conventional scanner drive both the
 // WAV recorder and the live player. The conventional.Recorder

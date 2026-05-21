@@ -26,6 +26,17 @@ for tagged releases.
   and a talkgroup can opt out of all feeds with `stream: false`
   in its CSV/JSON. Feed counters are exposed at
   `GET /api/v1/broadcast`.
+- **Wideband baseband (IQ) recording and offline replay.** A new
+  `internal/sdr/baseband` package adds two capabilities SDRtrunk
+  has and GopherTrunk lacked. A `RecordingDevice` decorator tees a
+  live tuner's IQ stream to a two-channel 16-bit WAV (in-phase in
+  channel 1, quadrature in channel 2 — the same layout as
+  SDRtrunk's baseband recordings). A `FileDriver` mounts those
+  recordings (and SDRtrunk's) back into the SDR pool as virtual
+  tuners, so a capture can be decoded offline with no radio
+  attached; replay loops on EOF to behave like a continuous
+  source. Both are configured under a new `baseband:` config
+  section (`record:` and `replay:` lists).
 - **P25 Phase 1 voice decoding and broader control-channel
   coverage** (PR #310). A `p25` voice grant now decodes
   end-to-end — modulated C4FM IQ → Phase 1 receiver → LDU
