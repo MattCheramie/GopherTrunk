@@ -70,16 +70,13 @@ func buildP25P1VoiceStream(t *testing.T, ldus int) (dibits []uint8, want [][]byt
 func TestComposerP25Phase1VoiceChainExtractsRawFrames(t *testing.T) {
 	const (
 		sampleRate = 48_000.0
-		sps        = 10
-		span       = 8
-		alpha      = 0.20
 		deviation  = 1800.0
 		ldus       = 12
 	)
 	framesPerLDU := phase1.LDUVoiceSubframeCount
 
 	dibits, want := buildP25P1VoiceStream(t, ldus)
-	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRate, deviation)
+	iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
 
 	src := newFakeSource()
 	bus := events.NewBus(8)

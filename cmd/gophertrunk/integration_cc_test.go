@@ -64,9 +64,6 @@ func TestDaemonCCDecodesP25Phase1(t *testing.T) {
 		nac           = 0x293
 		controlFreqHz = 851_000_000
 		sampleRateHz  = 48_000
-		sps           = 10
-		span          = 8
-		alpha         = 0.2
 		deviationHz   = 1800.0
 		frameRepeats  = 30
 	)
@@ -81,14 +78,14 @@ func TestDaemonCCDecodesP25Phase1(t *testing.T) {
 	// centres, so any one of those frames is enough to lock.
 	dibits := buildP25LockedIQDibits(nac, frameRepeats)
 
-	// Modulate the dibit stream through the C4FM TX chain
-	// (impulse train → RRC pulse shape → FM modulator → IQ).
+	// Modulate the dibit stream through the spec P25 C4FM TX chain
+	// (impulse train → P25 transmit pulse shape → FM modulator → IQ).
 	// 48 kHz @ 10 sps = 4800 baud, the spec rate. 1800 Hz peak
 	// deviation matches TIA-102.BAAA-A; the matched
 	// newP25Phase1Pipeline configures the receiver's slicer
 	// thresholds against this same deviation via the
 	// p25phase1rx.Options.DeviationHz knob.
-	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRateHz, deviationHz)
+	iq := demod.ModulateP25C4FM(dibits, sampleRateHz, deviationHz)
 
 	dir := t.TempDir()
 	iqPath := filepath.Join(dir, "p25-cc.cfile")

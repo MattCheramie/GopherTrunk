@@ -120,8 +120,10 @@ func modulateHarness(canonical []uint8, mode DemodMode) []complex64 {
 		}
 		return demod.ModulatePiOver4DQPSK(modIn, harnessSPS, harnessSpan, harnessAlpha, math.Pi/4)
 	}
-	return demod.ModulateC4FM(canonical, harnessSPS, harnessSpan, harnessAlpha,
-		harnessSampleRateHz, harnessDeviationHz)
+	// C4FM: shape with the spec P25 transmit filter (raised-cosine ×
+	// inverse-sinc), matching a real P25 transmitter — the receiver's
+	// matched filter is the spec C4FM receive filter (issue #275).
+	return demod.ModulateP25C4FM(canonical, harnessSampleRateHz, harnessDeviationHz)
 }
 
 // harnessResult is the outcome of one runHarness pass.

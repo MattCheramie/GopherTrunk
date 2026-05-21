@@ -8,7 +8,8 @@
 //	DemodC4FM (default):
 //	  IQ
 //	    → FM discriminator (internal/dsp/demod.FM)
-//	    → RRC matched filter (internal/dsp/demod.C4FM)
+//	    → spec P25 C4FM matched filter (internal/dsp/demod.C4FM
+//	      with demod.P25C4FMRxTaps — raised-cosine, not RRC)
 //	    → coarse AFC: residual carrier-offset removal
 //	      (internal/dsp/demod.CoarseAFC)
 //	    → Mueller-Müller symbol clock recovery (sync.MuellerMuller)
@@ -186,19 +187,13 @@ func New(opts Options) *Receiver {
 		gain = 0.05
 	}
 
-	// Slicer thresholds are normalised to the FM-discriminator's
-	// output range so ±1 maps to ±deviation. With the FM
-	// discriminator in rad/sample, the FM peak at symbol ±3 is
-	// 2π · DeviationHz / SampleRateHz, so we pass that value
-	// (times the symbol-magnitude reference of 1.0 — symbol +3
-	// produces a peak ±value, +1 produces ±value/3, etc.) as the
-	// "deviation" arg to NewC4FM. The slicer then puts the
-	// +1/+3 boundary at 2/3 of this and the -1/-3 boundary at
-	// -2/3, both proportional to the physical signal level.
-	//
-	// Callers that don't supply DeviationHz fall back to the
-	// legacy slicerScale = 1.0 — matches the existing synthesized
-	// fixture tests that pre-scale their FM levels into ±1.
+	// The C4FM slicer's thresholds are proportional to the physical
+	// signal level: with the FM discriminator in rad/sample, an outer
+	// (±3) symbol peaks at 2π · DeviationHz / SampleRateHz. The spec
+	// C4FM receive filter (demod.P25C4FMRxTaps) is normalised so the
+	// matched-filtered symbol centres land exactly there, so that value
+	// is the slicer scale. Callers that don't supply DeviationHz fall
+	// back to the legacy scale 1.0 (pre-scaled-fixture path).
 	slicerScale := 1.0
 	if opts.DeviationHz > 0 {
 		slicerScale = 2.0 * math.Pi * opts.DeviationHz / opts.SampleRateHz
@@ -213,7 +208,11 @@ func New(opts Options) *Receiver {
 		r.cq = newCQPSKDemod(int(sps+0.5), span, alpha, opts.GardnerGain)
 	default:
 		r.fm = demod.NewFM()
-		r.mf = demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale)
+		// P25 Phase 1 C4FM is not a root-raised-cosine matched-pair
+		// system: the transmitter shapes with a raised-cosine cascaded
+		// with an inverse-sinc, so the matched filter is the spec C4FM
+		// receive filter (a sinc), not an RRC — issue #275.
+		r.mf = demod.NewC4FMP25(opts.SampleRateHz, slicerScale)
 		r.afc = demod.NewCoarseAFC(sps)
 		r.clock = sync.NewMuellerMuller(sps, gain)
 	}

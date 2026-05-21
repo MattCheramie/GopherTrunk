@@ -36,7 +36,7 @@ import (
 // callers can use the convenience function ModulateC4FM below.
 type C4FMModulator struct {
 	sps        int
-	rrc        []float32
+	shapeTaps  []float32
 	deviation  float64
 	sampleRate float64
 
@@ -62,19 +62,30 @@ type C4FMModulator struct {
 // Panics if sps or span are non-positive — these are deterministic
 // programmer errors, not runtime configuration.
 func NewC4FMModulator(sps, span int, alpha, sampleRate, deviation float64) *C4FMModulator {
-	if sps <= 0 {
-		panic("demod: C4FMModulator sps must be positive")
-	}
 	if span <= 0 {
 		panic("demod: C4FMModulator span must be positive")
 	}
-	rrc := filter.RootRaisedCosine(sps, span, alpha)
+	return NewC4FMModulatorWithTaps(sps, filter.RootRaisedCosine(sps, span, alpha), sampleRate, deviation)
+}
+
+// NewC4FMModulatorWithTaps constructs a modulator whose pulse-shaping
+// filter is the supplied FIR taps, instead of the default
+// root-raised-cosine (NewC4FMModulator). P25 Phase 1 uses this with the
+// spec C4FM transmit filter (P25C4FMTxTaps) so a synthesized stream
+// matches a real P25 transmitter — see ModulateP25C4FM and c4fm_p25.go.
+func NewC4FMModulatorWithTaps(sps int, shapeTaps []float32, sampleRate, deviation float64) *C4FMModulator {
+	if sps <= 0 {
+		panic("demod: C4FMModulator sps must be positive")
+	}
+	if len(shapeTaps) == 0 {
+		panic("demod: C4FMModulator shapeTaps must be non-empty")
+	}
 	return &C4FMModulator{
 		sps:        sps,
-		rrc:        rrc,
+		shapeTaps:  shapeTaps,
 		deviation:  deviation,
 		sampleRate: sampleRate,
-		shapeHist:  make([]float32, len(rrc)),
+		shapeHist:  make([]float32, len(shapeTaps)),
 	}
 }
 
@@ -94,7 +105,7 @@ func (m *C4FMModulator) Reset() {
 // chunked.
 func (m *C4FMModulator) Modulate(dibits []uint8) []complex64 {
 	out := make([]complex64, len(dibits)*m.sps)
-	N := len(m.rrc)
+	N := len(m.shapeTaps)
 	for di, d := range dibits {
 		sym := dibitToC4FMSymbol(d)
 		for k := 0; k < m.sps; k++ {
@@ -114,7 +125,7 @@ func (m *C4FMModulator) Modulate(dibits []uint8) []complex64 {
 				idx = N - 1
 			}
 			for k := 0; k < N; k++ {
-				shaped += m.rrc[k] * m.shapeHist[idx]
+				shaped += m.shapeTaps[k] * m.shapeHist[idx]
 				idx--
 				if idx < 0 {
 					idx = N - 1
@@ -141,6 +152,17 @@ func (m *C4FMModulator) Modulate(dibits []uint8) []complex64 {
 // that don't need cross-call phase continuity.
 func ModulateC4FM(dibits []uint8, sps, span int, alpha, sampleRate, deviation float64) []complex64 {
 	return NewC4FMModulator(sps, span, alpha, sampleRate, deviation).Modulate(dibits)
+}
+
+// ModulateP25C4FM synthesises a spec-faithful P25 Phase 1 C4FM stream:
+// it shapes with the real P25 transmit filter (raised-cosine α=0.2
+// cascaded with the inverse-sinc compensation, P25C4FMTxTaps) rather
+// than the root-raised-cosine ModulateC4FM uses. A real P25 transmitter
+// uses this shaping, so this is what the receiver's spec matched filter
+// (NewC4FMP25) must be tested against. sps is derived as sampleRate/4800.
+func ModulateP25C4FM(dibits []uint8, sampleRate, deviation float64) []complex64 {
+	sps := int(math.Round(sampleRate / p25C4FMSymbolRate))
+	return NewC4FMModulatorWithTaps(sps, P25C4FMTxTaps(sampleRate), sampleRate, deviation).Modulate(dibits)
 }
 
 // dibitToC4FMSymbol is the inverse of phase1.SymbolToDibit: maps
