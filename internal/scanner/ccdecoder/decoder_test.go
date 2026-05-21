@@ -1013,9 +1013,6 @@ func TestDecoderLocksP25Phase1ThroughWidebandDDC(t *testing.T) {
 		controlFreq  = 851_000_000
 		sdrRateHz    = 2_048_000.0
 		narrowRateHz = 48_000.0
-		sps          = 10
-		span         = 8
-		alpha        = 0.2
 		deviationHz  = 1800.0
 		frameRepeats = 30
 	)
@@ -1025,7 +1022,7 @@ func TestDecoderLocksP25Phase1ThroughWidebandDDC(t *testing.T) {
 	// Decoder's down-converter has a genuine wideband chunk to
 	// channelize back down.
 	dibits := buildP25CCDibits(nac, frameRepeats)
-	narrow := demod.ModulateC4FM(dibits, sps, span, alpha, narrowRateHz, deviationHz)
+	narrow := demod.ModulateP25C4FM(dibits, narrowRateHz, deviationHz)
 	wide := dsp.NewResampler(128, 3, 8, 8.0).Process(nil, narrow)
 
 	bus := events.NewBus(256)
