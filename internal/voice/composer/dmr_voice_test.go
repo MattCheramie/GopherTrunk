@@ -155,9 +155,15 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 	})
 
 	got := sink.rawFrames("VOICE-1")
-	if len(got) == 0 || len(got)%dmrvoice.FramesPerSuperframe != 0 {
-		t.Fatalf("got %d raw frames, want a non-zero multiple of %d",
-			len(got), dmrvoice.FramesPerSuperframe)
+	if len(got) == 0 {
+		t.Fatal("got no raw frames")
+	}
+	// The chain appends a superframe's 18 frames one WriteRawFrame call
+	// at a time, so a rawFrames read can land mid-superframe. Trim any
+	// partial trailing superframe before the alignment-sensitive checks.
+	got = got[:len(got)-len(got)%dmrvoice.FramesPerSuperframe]
+	if len(got) == 0 {
+		t.Fatalf("no complete superframe among the raw frames")
 	}
 	for _, f := range got {
 		if len(f) != 7 {
