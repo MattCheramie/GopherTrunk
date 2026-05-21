@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
-import { openEventStream, type EventHandler, type StatusHandler } from "./events";
+import { openEventStream, type EventsHandler, type StatusHandler } from "./events";
 import type { ClientConfig } from "./client";
 
 // jsdom ships no WebSocket, so install a controllable mock. It records
@@ -37,13 +37,13 @@ class MockWebSocket {
 const cfg: ClientConfig = { baseURL: "http://host:8080", token: null };
 
 describe("openEventStream", () => {
-  let onEvent: Mock<EventHandler>;
+  let onEvents: Mock<EventsHandler>;
   let onStatus: Mock<StatusHandler>;
 
   beforeEach(() => {
     MockWebSocket.instances = [];
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
-    onEvent = vi.fn<EventHandler>();
+    onEvents = vi.fn<EventsHandler>();
     onStatus = vi.fn<StatusHandler>();
   });
 
@@ -57,7 +57,7 @@ describe("openEventStream", () => {
     // Pin jitter to its low end so each delay is exactly backoff / 2.
     vi.spyOn(Math, "random").mockReturnValue(0);
 
-    openEventStream(cfg, { onEvent, onStatus });
+    openEventStream(cfg, { onEvents, onStatus });
     expect(MockWebSocket.instances).toHaveLength(1);
 
     // First flap: a socket that opens then immediately drops.
@@ -85,7 +85,7 @@ describe("openEventStream", () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
 
-    openEventStream(cfg, { onEvent, onStatus });
+    openEventStream(cfg, { onEvents, onStatus });
 
     // Flap once so the backoff grows past the floor.
     MockWebSocket.instances[0].emitOpen();
@@ -105,7 +105,7 @@ describe("openEventStream", () => {
 
   it("stops reconnecting once the stream is closed", () => {
     vi.useFakeTimers();
-    const stream = openEventStream(cfg, { onEvent, onStatus });
+    const stream = openEventStream(cfg, { onEvents, onStatus });
 
     MockWebSocket.instances[0].emitClose(); // schedules a reconnect
     stream.close();
@@ -115,12 +115,12 @@ describe("openEventStream", () => {
   });
 
   it("delivers no events or status after close()", () => {
-    const stream = openEventStream(cfg, { onEvent, onStatus });
+    const stream = openEventStream(cfg, { onEvents, onStatus });
     const socket = MockWebSocket.instances[0];
 
     stream.close();
     onStatus.mockClear();
-    onEvent.mockClear();
+    onEvents.mockClear();
 
     // A late event from the in-flight socket must not reach the store.
     socket.emitOpen();
@@ -128,12 +128,49 @@ describe("openEventStream", () => {
     socket.emitClose();
 
     expect(onStatus).not.toHaveBeenCalled();
-    expect(onEvent).not.toHaveBeenCalled();
+    expect(onEvents).not.toHaveBeenCalled();
     expect(socket.closeCalls).toBe(1);
   });
 
+  it("coalesces a burst of frames into a single batched delivery", () => {
+    vi.useFakeTimers();
+    openEventStream(cfg, { onEvents, onStatus });
+    const socket = MockWebSocket.instances[0];
+    socket.emitOpen();
+
+    socket.emitMessage(JSON.stringify({ kind: "call.start", timestamp: "t1" }));
+    socket.emitMessage(JSON.stringify({ kind: "cchunt.progress", timestamp: "t2" }));
+    socket.emitMessage(JSON.stringify({ kind: "call.end", timestamp: "t3" }));
+
+    // Nothing is delivered until the flush window elapses.
+    expect(onEvents).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+
+    // One store write for the whole burst, not three.
+    expect(onEvents).toHaveBeenCalledTimes(1);
+    expect(onEvents.mock.calls[0][0]).toHaveLength(3);
+  });
+
+  it("drops frames that aren't a well-formed event", () => {
+    vi.useFakeTimers();
+    openEventStream(cfg, { onEvents, onStatus });
+    const socket = MockWebSocket.instances[0];
+    socket.emitOpen();
+
+    socket.emitMessage("not json at all");
+    socket.emitMessage(JSON.stringify({ kind: 42, timestamp: "t" }));
+    socket.emitMessage(JSON.stringify({ timestamp: "t" })); // no kind
+    socket.emitMessage(JSON.stringify({ kind: "decode.error", timestamp: "t" }));
+
+    vi.advanceTimersByTime(100);
+    expect(onEvents).toHaveBeenCalledTimes(1);
+    expect(onEvents.mock.calls[0][0]).toEqual([
+      { kind: "decode.error", timestamp: "t" },
+    ]);
+  });
+
   it("reports the first connecting status asynchronously, not during setup", async () => {
-    openEventStream(cfg, { onEvent, onStatus });
+    openEventStream(cfg, { onEvents, onStatus });
     // openEventStream must not write to the store synchronously inside
     // the React effect that calls it.
     expect(onStatus).not.toHaveBeenCalled();

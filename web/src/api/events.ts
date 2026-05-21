@@ -7,7 +7,7 @@
 import type { EventDTO } from "./types";
 import { type ClientConfig, eventsWebSocketURL } from "./client";
 
-export type EventHandler = (ev: EventDTO) => void;
+export type EventsHandler = (evs: EventDTO[]) => void;
 export type StatusHandler = (status: "connecting" | "open" | "closed") => void;
 
 export interface EventStream {
@@ -15,7 +15,7 @@ export interface EventStream {
 }
 
 interface Options {
-  onEvent: EventHandler;
+  onEvents: EventsHandler;
   onStatus?: StatusHandler;
 }
 
@@ -25,6 +25,22 @@ const MAX_BACKOFF = 30_000;
 // healthy and the backoff is allowed to reset. A socket that opens then
 // drops immediately keeps backing off rather than storming at the floor.
 const STABLE_MS = 5_000;
+// Incoming frames are coalesced over this window and delivered as one
+// batch, so a burst of events triggers a single store write / render
+// pass instead of one per frame.
+const FLUSH_MS = 100;
+
+// The daemon emits one EventDTO per frame; still validate the shape at
+// this ingest boundary so a malformed frame can't flow into a panel
+// that destructures `kind` / `timestamp`.
+function isEventDTO(v: unknown): v is EventDTO {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as EventDTO).kind === "string" &&
+    typeof (v as EventDTO).timestamp === "string"
+  );
+}
 
 export function openEventStream(
   cfg: ClientConfig,
@@ -35,11 +51,26 @@ export function openEventStream(
   let backoff = INITIAL_BACKOFF;
   let reconnectTimer: number | undefined;
   let stableTimer: number | undefined;
+  let pending: EventDTO[] = [];
+  let flushTimer: number | undefined;
 
   // Once the stream is closed, no late socket event may write to the
   // store — the React effect that owns this stream has been torn down.
   const setStatus = (s: "connecting" | "open" | "closed") => {
     if (!closed) opts.onStatus?.(s);
+  };
+
+  const flush = () => {
+    flushTimer = undefined;
+    if (closed || pending.length === 0) return;
+    const batch = pending;
+    pending = [];
+    opts.onEvents(batch);
+  };
+
+  const scheduleFlush = () => {
+    if (closed || flushTimer !== undefined) return;
+    flushTimer = window.setTimeout(flush, FLUSH_MS);
   };
 
   // Equal jitter: spreads reconnects so clients don't synchronize into a
@@ -87,12 +118,16 @@ export function openEventStream(
     };
     ws.onmessage = (msg) => {
       if (closed) return;
+      let parsed: unknown;
       try {
-        const parsed = JSON.parse(msg.data) as EventDTO;
-        opts.onEvent(parsed);
+        parsed = JSON.parse(msg.data);
       } catch {
         // Malformed frame — ignore. The daemon never emits non-JSON.
+        return;
       }
+      if (!isEventDTO(parsed)) return;
+      pending.push(parsed);
+      scheduleFlush();
     };
     ws.onclose = () => {
       if (stableTimer !== undefined) {
@@ -121,6 +156,8 @@ export function openEventStream(
       closed = true;
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       if (stableTimer !== undefined) window.clearTimeout(stableTimer);
+      if (flushTimer !== undefined) window.clearTimeout(flushTimer);
+      pending = [];
       if (ws) {
         // Null every handler so an in-flight socket that opens or
         // closes after teardown cannot call back into the store.

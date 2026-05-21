@@ -74,9 +74,46 @@ vi.mock("chart.js", () => {
 });
 
 import { openEventStream } from "./api/events";
+import { api } from "./api/client";
+import type { ScannerStatusDTO } from "./api/types";
 import { useShared } from "./store/shared";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+
+const EMPTY_SCANNER: ScannerStatusDTO = {
+  scan_mode: "idle",
+  systems: [],
+  conventional: { enabled: false, channels: [] },
+  tg_scan_count: 0,
+  tg_total: 0,
+};
+
+// A scanner snapshot stuck in perpetual control-channel hunt: trunked
+// systems with state "hunting" and no lock. The second system carries
+// no optional fields at all, exercising every `!= null` guard in the
+// Hunt panel's false branch (issue #290's null-state hypothesis).
+const IN_HUNT_SCANNER: ScannerStatusDTO = {
+  scan_mode: "all",
+  tg_scan_count: 5,
+  tg_total: 20,
+  conventional: { enabled: false, channels: [] },
+  systems: [
+    {
+      name: "Metro P25",
+      protocol: "p25",
+      state: "hunting",
+      attempt_index: 3,
+      total_candidates: 9,
+      attempted_freq_hz: 851_012_500,
+      backoff_ms: 2_000,
+    },
+    {
+      name: "County Trunk",
+      protocol: "p25",
+      state: "hunting",
+    },
+  ],
+};
 
 const ROUTES = [
   "/dashboard",
@@ -96,6 +133,7 @@ const ROUTES = [
 describe("App panel mounting (issue #290 regression)", () => {
   beforeEach(() => {
     vi.mocked(openEventStream).mockClear();
+    vi.mocked(api.scanner).mockResolvedValue(EMPTY_SCANNER);
     useShared.setState({
       serverURL: "http://localhost:8080",
       token: null,
@@ -135,4 +173,22 @@ describe("App panel mounting (issue #290 regression)", () => {
       expect(openEventStream).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("renders the Scanner panel mid control-channel hunt without crashing", async () => {
+    vi.mocked(api.scanner).mockResolvedValue(IN_HUNT_SCANNER);
+
+    render(
+      <ErrorBoundary>
+        <MemoryRouter initialEntries={["/scanner"]}>
+          <App />
+        </MemoryRouter>
+      </ErrorBoundary>,
+    );
+
+    // Both hunting systems render — the one with no optional fields set
+    // must not crash the Hunt panel.
+    await screen.findByText("Metro P25");
+    expect(screen.getByText("County Trunk")).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull();
+  });
 });

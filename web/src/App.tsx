@@ -48,7 +48,7 @@ export function App() {
   const setConnected = useShared((s) => s.setConnected);
   const setMutations = useShared((s) => s.setMutations);
   const setWSStatus = useShared((s) => s.setWSStatus);
-  const appendEvent = useShared((s) => s.appendEvent);
+  const appendEvents = useShared((s) => s.appendEvents);
   const lastError = useShared((s) => s.lastError);
   const setError = useShared((s) => s.setError);
   const navigate = useNavigate();
@@ -90,13 +90,13 @@ export function App() {
       .catch(() => setMutations(null));
 
     const stream = openEventStream(cfg, {
-      onEvent: appendEvent,
+      onEvents: appendEvents,
       onStatus: setWSStatus,
     });
     return () => {
       stream.close();
     };
-  }, [connected, baseURL, token, appendEvent, setMutations, setWSStatus]);
+  }, [connected, baseURL, token, appendEvents, setMutations, setWSStatus]);
 
   const visibleTabs = useMemo(() => TABS, []);
 
