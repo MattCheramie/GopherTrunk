@@ -232,6 +232,19 @@ type ConvToneConfig struct {
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+	// MessageLog configures the optional decoded-message log — a
+	// human-readable, per-event text log of trunking activity
+	// (grants, lock/loss, affiliations, patches, …), the analogue
+	// of SDRtrunk's per-channel decoded message log.
+	MessageLog MessageLogConfig `yaml:"message_log"`
+}
+
+// MessageLogConfig configures the decoded-message log. Empty Path (or
+// Enabled false) disables it.
+type MessageLogConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
 }
 
 type SDRConfig struct {

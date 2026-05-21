@@ -14,6 +14,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
@@ -95,6 +96,7 @@ type Daemon struct {
 	db          *storage.DB
 	callLog     *storage.CallLog
 	locationLog *storage.LocationLog
+	messageLog  *gtlog.MessageLog
 	retention   *storage.Retention
 	ccCache     *trunking.Cache
 	cchuntSup   *cchunt.Supervisor
@@ -382,6 +384,20 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			d.broadcast = mgr
 			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
 		}
+	}
+
+	// Decoded-message log — optional. Subscribes to the bus and writes
+	// a human-readable text log of every trunking event.
+	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
+		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.MessageLog.Path,
+			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: message log: %w", err)
+		}
+		d.messageLog = ml
 	}
 
 	// Tone-out detector — optional. Built before the composer so it can
@@ -807,6 +823,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.locationLog.Run(ctx)
 		})
 	}
+	if d.messageLog != nil {
+		d.spawn(runCtx, "messagelog", false, func(ctx context.Context) error {
+			return d.messageLog.Run(ctx)
+		})
+	}
 	if d.retention != nil {
 		d.spawn(runCtx, "retention", false, func(ctx context.Context) error {
 			return d.retention.Run(ctx)
@@ -950,6 +971,9 @@ func (d *Daemon) Close() {
 		}
 		if d.locationLog != nil {
 			_ = d.locationLog.Close()
+		}
+		if d.messageLog != nil {
+			_ = d.messageLog.Close()
 		}
 		if d.metrics != nil {
 			_ = d.metrics.Close()

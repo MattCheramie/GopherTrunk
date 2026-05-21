@@ -5,6 +5,12 @@
 log:
   level: info       # debug | info | warn | error
   format: text      # text | json
+  # Decoded-message log: a human-readable text log of every trunking
+  # event (grants, CC lock/loss, affiliations, patches, locations).
+  # message_log:
+  #   enabled: true
+  #   path: "logs/messages.log"
+  #   max_size_mb: 16          # rotates to messages.log.1 past this
 
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket

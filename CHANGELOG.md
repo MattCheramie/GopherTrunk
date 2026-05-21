@@ -26,6 +26,14 @@ for tagged releases.
   and a talkgroup can opt out of all feeds with `stream: false`
   in its CSV/JSON. Feed counters are exposed at
   `GET /api/v1/broadcast`.
+- **Decoded-message log.** A new optional `MessageLog`
+  (`internal/log`) writes a human-readable, timestamped text log of
+  every trunking event the bus carries — grants, control-channel
+  lock/loss, affiliations, registrations, patches, talker aliases,
+  locations, tone alerts, decode errors — the GopherTrunk analogue
+  of SDRtrunk's per-channel decoded message log. The file rotates to
+  `<path>.1` past a configurable size cap. Enabled via a new
+  `log.message_log` config block.
 - **GPS / location subsystem.** Geographic fixes a subscriber unit
   reports over the air now flow through a new `KindLocation` event
   (`trunking.Location` payload) to a `location_log` SQLite table and
