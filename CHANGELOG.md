@@ -26,6 +26,18 @@ for tagged releases.
   and a talkgroup can opt out of all feeds with `stream: false`
   in its CSV/JSON. Feed counters are exposed at
   `GET /api/v1/broadcast`.
+- **DMR vendor-trunking recognition (FID-aware CSBK dispatch).**
+  The Tier III control-channel decoder now dispatches each CSBK on
+  its feature-set ID (FID) before opcode, so a Motorola or Hytera
+  vendor CSBK is no longer misdecoded against the standard ETSI
+  opcode table — previously a vendor CSBK whose 6-bit opcode
+  collided with `0x30` would emit a bogus voice grant. Motorola
+  Capacity Plus / Capacity Max voice grants (FID 0x10), which carry
+  the ETSI-shaped 8-octet payload, now decode to real grants, and
+  the Capacity Plus rest channel is tracked from its system-info
+  CSBK. Connect Plus and Hytera XPT CSBKs are recognised and routed
+  to a vendor handler; bit-exact decoding of those proprietary
+  payloads is pending on-air capture validation.
 - **Wideband baseband (IQ) recording and offline replay.** A new
   `internal/sdr/baseband` package adds two capabilities SDRtrunk
   has and GopherTrunk lacked. A `RecordingDevice` decorator tees a

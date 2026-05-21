@@ -49,6 +49,11 @@ type ControlChannel struct {
 	locked     bool
 	last       LockState
 
+	// restChannel tracks the LCN a Capacity Plus system currently
+	// advertises as its rest (control) channel. Zero until a
+	// Motorola vendor system-info CSBK has been seen.
+	restChannel uint8
+
 	// proc is the cross-call dibit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call so tests that drive IngestBurst directly don't
@@ -114,6 +119,13 @@ func (c *ControlChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 }
 
 func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
+	// Dispatch on FID before opcode: a vendor CSBK is routed to the
+	// vendor handler so its opcode is not misread against the
+	// standard ETSI opcode table.
+	if vendor := VendorFromFID(csbk.FID); vendor != VendorStandard {
+		c.handleVendorCSBK(vendor, cc, csbk)
+		return
+	}
 	switch csbk.Opcode {
 	case OpAloha:
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: ParseAloha(csbk.Payload).SystemID})
@@ -129,60 +141,51 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 	}
 }
 
-func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
-	freq, ok := c.resolveLCN(g.LCN)
+// publishGrant resolves an LCN to a downlink frequency and publishes a
+// voice grant on the bus. Shared by the standard and vendor CSBK
+// paths. Returns the resolved frequency and false when the LCN has no
+// band-plan entry (resolveLCN has already published the decode error).
+func (c *ControlChannel) publishGrant(cc, lcn uint8, group, source uint32, serviceOptions uint8) (uint32, bool) {
+	freq, ok := c.resolveLCN(lcn)
 	if !ok {
-		return
+		return 0, false
 	}
-	emergency := g.ServiceOptions&0x80 != 0
-	encrypted := g.ServiceOptions&0x40 != 0
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
 			System:      c.systemName,
 			Protocol:    "dmr-tier3",
-			GroupID:     g.GroupAddress,
-			SourceID:    g.SourceID,
+			GroupID:     group,
+			SourceID:    source,
 			FrequencyHz: freq,
 			ChannelID:   cc,
-			ChannelNum:  uint16(g.LCN),
-			Encrypted:   encrypted,
-			Emergency:   emergency,
+			ChannelNum:  uint16(lcn),
+			Encrypted:   serviceOptions&0x40 != 0,
+			Emergency:   serviceOptions&0x80 != 0,
 			At:          c.now(),
 		},
 	})
+	return freq, true
+}
+
+func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
+	freq, ok := c.publishGrant(cc, g.LCN, g.GroupAddress, g.SourceID, g.ServiceOptions)
+	if !ok {
+		return
+	}
 	c.log.Debug("dmr/tier3: tv-grant",
 		"system", c.systemName, "cc", cc, "tg", g.GroupAddress, "src", g.SourceID,
-		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq,
-		"enc", encrypted, "emer", emergency)
+		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
 }
 
 func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
-	freq, ok := c.resolveLCN(g.LCN)
+	freq, ok := c.publishGrant(cc, g.LCN, g.DestinationID, g.SourceID, g.ServiceOptions)
 	if !ok {
 		return
 	}
-	emergency := g.ServiceOptions&0x80 != 0
-	encrypted := g.ServiceOptions&0x40 != 0
-	c.bus.Publish(events.Event{
-		Kind: events.KindGrant,
-		Payload: trunking.Grant{
-			System:      c.systemName,
-			Protocol:    "dmr-tier3",
-			GroupID:     g.DestinationID,
-			SourceID:    g.SourceID,
-			FrequencyHz: freq,
-			ChannelID:   cc,
-			ChannelNum:  uint16(g.LCN),
-			Encrypted:   encrypted,
-			Emergency:   emergency,
-			At:          c.now(),
-		},
-	})
 	c.log.Debug("dmr/tier3: pv-grant",
 		"system", c.systemName, "cc", cc, "dst", g.DestinationID, "src", g.SourceID,
-		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq,
-		"enc", encrypted, "emer", emergency)
+		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
 }
 
 func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
