@@ -38,6 +38,10 @@ const (
 	// name (talker alias). Both Motorola (MFID 0x90) and Harris
 	// (MFID 0xA4) emit it; AsTalkerAliasFragment decodes either.
 	OpVendorTalkerAlias Opcode = 0x82
+	// OpMotorolaPatchDelete is the Motorola group-regroup delete
+	// command (MOT_GRG_DEL_CMD, MFID 0x90): it cancels a patch
+	// super-group that an earlier OpVendorGroupRegroup established.
+	OpMotorolaPatchDelete Opcode = 0x83
 )
 
 // ManufacturerName returns a human-readable label for an MFID.
@@ -93,6 +97,19 @@ func (p MACPDU) AsMotorolaPatchGroup() (MotorolaPatchGroup, bool) {
 type HarrisRegroup struct {
 	RegroupGroup uint16
 	TargetID     uint32
+}
+
+// AsMotorolaPatchDelete returns the super-group address a Motorola
+// group-regroup delete (MOT_GRG_DEL_CMD) cancels, if the PDU is one,
+// otherwise (0, false).
+func (p MACPDU) AsMotorolaPatchDelete() (uint32, bool) {
+	if p.Opcode != OpMotorolaPatchDelete || p.MFID != MFIDMotorola {
+		return 0, false
+	}
+	if len(p.Payload) < 2 {
+		return 0, false
+	}
+	return uint32(binary.BigEndian.Uint16(p.Payload[0:2])), true
 }
 
 // AsHarrisRegroup returns the structured regroup if the PDU is a Harris

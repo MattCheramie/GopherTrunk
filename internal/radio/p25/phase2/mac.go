@@ -33,20 +33,23 @@ type MACPDU struct {
 type Opcode uint8
 
 const (
-	OpUnknown                      Opcode = 0x00
-	OpMACPTT                       Opcode = 0x01 // PTT-on
-	OpMACEnd                       Opcode = 0x02 // End of transmission
-	OpMACIdle                      Opcode = 0x03 // Channel idle
-	OpMACHangtime                  Opcode = 0x05 // Hang-time
-	OpMACActive                    Opcode = 0x06 // Late-grant active
-	OpGroupVoiceChannelGrantUpdate Opcode = 0x40
-	OpGroupVoiceChannelGrant       Opcode = 0x44
-	OpGroupVoiceChannelUserExt     Opcode = 0x46
-	OpUnitToUnitVoiceChannelGrant  Opcode = 0x48
-	OpEncryptionSync               Opcode = 0x70
-	OpIdentifierUpdate             Opcode = 0x7D
-	OpNetworkStatusBroadcastUpdate Opcode = 0xFB
-	OpRFSSStatusBroadcastUpdate    Opcode = 0xFA
+	OpUnknown                           Opcode = 0x00
+	OpMACPTT                            Opcode = 0x01 // PTT-on
+	OpMACEnd                            Opcode = 0x02 // End of transmission
+	OpMACIdle                           Opcode = 0x03 // Channel idle
+	OpMACHangtime                       Opcode = 0x05 // Hang-time
+	OpMACActive                         Opcode = 0x06 // Late-grant active
+	OpGroupVoiceChannelGrantUpdate      Opcode = 0x40
+	OpGroupVoiceChannelGrant            Opcode = 0x44
+	OpGroupVoiceChannelUserExt          Opcode = 0x46
+	OpUnitToUnitVoiceChannelGrant       Opcode = 0x48
+	OpUnitToUnitVoiceChannelGrantUpdate Opcode = 0x49
+	OpGroupAffiliationResponse          Opcode = 0x4C
+	OpUnitRegistrationResponse          Opcode = 0x4D
+	OpEncryptionSync                    Opcode = 0x70
+	OpIdentifierUpdate                  Opcode = 0x7D
+	OpNetworkStatusBroadcastUpdate      Opcode = 0xFB
+	OpRFSSStatusBroadcastUpdate         Opcode = 0xFA
 )
 
 func (o Opcode) String() string {
@@ -69,10 +72,18 @@ func (o Opcode) String() string {
 		return "GroupVoiceChannelUserExt"
 	case OpUnitToUnitVoiceChannelGrant:
 		return "UnitToUnitVoiceChannelGrant"
+	case OpUnitToUnitVoiceChannelGrantUpdate:
+		return "UnitToUnitVoiceChannelGrantUpdate"
+	case OpGroupAffiliationResponse:
+		return "GroupAffiliationResponse"
+	case OpUnitRegistrationResponse:
+		return "UnitRegistrationResponse"
 	case OpVendorGroupRegroup:
 		return "VendorGroupRegroup"
 	case OpVendorTalkerAlias:
 		return "VendorTalkerAlias"
+	case OpMotorolaPatchDelete:
+		return "MotorolaPatchDelete"
 	case OpEncryptionSync:
 		return "EncryptionSync"
 	case OpIdentifierUpdate:
@@ -251,8 +262,10 @@ func (o Opcode) IsKnown() bool {
 	case OpMACPTT, OpMACEnd, OpMACIdle, OpMACHangtime, OpMACActive,
 		OpGroupVoiceChannelGrant, OpGroupVoiceChannelGrantUpdate,
 		OpGroupVoiceChannelUserExt, OpUnitToUnitVoiceChannelGrant,
+		OpUnitToUnitVoiceChannelGrantUpdate, OpGroupAffiliationResponse,
+		OpUnitRegistrationResponse,
 		OpIdentifierUpdate, OpVendorGroupRegroup, OpVendorTalkerAlias,
-		OpEncryptionSync,
+		OpMotorolaPatchDelete, OpEncryptionSync,
 		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:
 		return true
 	}

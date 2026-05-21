@@ -91,6 +91,34 @@ func EncodeEncryptionSync(es EncryptionSync) MACPDU {
 	return MACPDU{Opcode: OpEncryptionSync, Payload: payload}
 }
 
+// EncodeGroupAffiliationResponse builds the MAC PDU form of a Group
+// Affiliation Response — the inverse of AsGroupAffiliationResponse.
+func EncodeGroupAffiliationResponse(g GroupAffiliationResponse) MACPDU {
+	p := make([]byte, 8)
+	p[0] = g.Response & 0x03
+	binary.BigEndian.PutUint16(p[1:3], g.AnnouncementGroup)
+	binary.BigEndian.PutUint16(p[3:5], g.GroupAddress)
+	p[5] = byte(g.TargetID >> 16)
+	p[6] = byte(g.TargetID >> 8)
+	p[7] = byte(g.TargetID)
+	return MACPDU{Opcode: OpGroupAffiliationResponse, Payload: p}
+}
+
+// EncodeUnitRegistrationResponse builds the MAC PDU form of a Unit
+// Registration Response — the inverse of AsUnitRegistrationResponse.
+func EncodeUnitRegistrationResponse(u UnitRegistrationResponse) MACPDU {
+	p := make([]byte, 8)
+	p[0] = u.Response & 0x03
+	p[1] = byte(u.WACN >> 12)
+	p[2] = byte(u.WACN >> 4)
+	p[3] = byte(u.WACN<<4) | byte((u.SystemID>>8)&0x0F)
+	p[4] = byte(u.SystemID)
+	p[5] = byte(u.SourceID >> 16)
+	p[6] = byte(u.SourceID >> 8)
+	p[7] = byte(u.SourceID)
+	return MACPDU{Opcode: OpUnitRegistrationResponse, Payload: p}
+}
+
 // EncodeTalkerAliasFragment builds the MAC PDU form of a talker-alias
 // fragment — the inverse of MACPDU.AsTalkerAliasFragment.
 func EncodeTalkerAliasFragment(f TalkerAliasFragment) MACPDU {

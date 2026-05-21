@@ -459,10 +459,19 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		for i, m := range pg.Patched {
 			members[i] = uint32(m)
 		}
-		c.publishPatch(uint32(pg.SuperGroup), members, "motorola")
+		c.publishPatch(uint32(pg.SuperGroup), members, "motorola", true)
 	}
 	if hr, ok := p.AsHarrisRegroup(); ok {
-		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris")
+		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris", true)
+	}
+	if super, ok := p.AsMotorolaPatchDelete(); ok {
+		c.publishPatch(super, nil, "motorola", false)
+	}
+	if g, ok := p.AsGroupAffiliationResponse(); ok {
+		c.publishAffiliation(g)
+	}
+	if u, ok := p.AsUnitRegistrationResponse(); ok {
+		c.publishUnitRegistration(u)
 	}
 	if f, ok := p.AsTalkerAliasFragment(); ok {
 		if alias, src, complete := c.aliasAsm.Add(f); complete {
@@ -593,8 +602,8 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 
 // publishPatch publishes an events.KindPatch for a vendor patch /
 // dynamic-regroup MAC PDU so the engine can attribute later grants on
-// the super-group to its member talkgroups.
-func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendor string) {
+// the super-group to its member talkgroups. add=false cancels a patch.
+func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendor string, add bool) {
 	if c.bus == nil {
 		return
 	}
@@ -606,13 +615,54 @@ func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendo
 			SuperGroup: superGroup,
 			Members:    members,
 			Vendor:     vendor,
-			Add:        true,
+			Add:        add,
 			At:         c.now(),
 		},
 	})
 	c.log.Debug("p25/phase2 patch",
 		"system", c.systemName, "vendor", vendor,
-		"super", superGroup, "members", members)
+		"super", superGroup, "members", members, "add", add)
+}
+
+// publishAffiliation publishes an events.KindAffiliation for a Group
+// Affiliation Response MAC PDU — the Phase 2 counterpart of the Phase 1
+// control channel's opcode-0x28 handling.
+func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindAffiliation,
+		Payload: trunking.Affiliation{
+			System:            c.systemName,
+			Protocol:          "p25-phase2",
+			SourceID:          g.TargetID,
+			GroupID:           uint32(g.GroupAddress),
+			AnnouncementGroup: uint32(g.AnnouncementGroup),
+			Response:          trunking.AffiliationResponse(g.Response),
+			At:                c.now(),
+		},
+	})
+}
+
+// publishUnitRegistration publishes an events.KindUnitRegistration for a
+// Unit Registration Response MAC PDU.
+func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindUnitRegistration,
+		Payload: trunking.UnitRegistration{
+			System:   c.systemName,
+			Protocol: "p25-phase2",
+			SourceID: u.SourceID,
+			WACN:     u.WACN,
+			SystemID: u.SystemID,
+			Response: trunking.RegistrationResponse(u.Response),
+			At:       c.now(),
+		},
+	})
 }
 
 // publishTalkerAlias publishes an events.KindTalkerAlias once a radio's

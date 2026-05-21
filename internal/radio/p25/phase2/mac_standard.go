@@ -24,9 +24,12 @@ type UnitToUnitVoiceChannelGrant struct {
 }
 
 // AsUnitToUnitVoiceChannelGrant returns the structured grant if the PDU
-// opcode is OpUnitToUnitVoiceChannelGrant, otherwise (zero, false).
+// opcode is a unit-to-unit voice grant or grant-update, otherwise
+// (zero, false).
 func (p MACPDU) AsUnitToUnitVoiceChannelGrant() (UnitToUnitVoiceChannelGrant, bool) {
-	if p.Opcode != OpUnitToUnitVoiceChannelGrant {
+	switch p.Opcode {
+	case OpUnitToUnitVoiceChannelGrant, OpUnitToUnitVoiceChannelGrantUpdate:
+	default:
 		return UnitToUnitVoiceChannelGrant{}, false
 	}
 	if len(p.Payload) < 9 {
@@ -114,6 +117,72 @@ type EncryptionSync struct {
 	AlgorithmID      uint8
 	KeyID            uint16
 	MessageIndicator [9]byte
+}
+
+// GroupAffiliationResponse is the structured shape of a Phase 2 Group
+// Affiliation Response MAC PDU — published when a radio is granted or
+// denied affiliation with a talkgroup. Layout mirrors the Phase 1 TSBK
+// (phase1.GroupAffiliationResponse):
+//
+//	byte 0     : bits 1-0 = affiliation response value
+//	bytes 1-2  : announcement group address
+//	bytes 3-4  : group address (talkgroup)
+//	bytes 5-7  : target unit ID (24 bits)
+type GroupAffiliationResponse struct {
+	Response          uint8
+	AnnouncementGroup uint16
+	GroupAddress      uint16
+	TargetID          uint32
+}
+
+// AsGroupAffiliationResponse returns the structured response if the PDU
+// opcode is OpGroupAffiliationResponse, otherwise (zero, false).
+func (p MACPDU) AsGroupAffiliationResponse() (GroupAffiliationResponse, bool) {
+	if p.Opcode != OpGroupAffiliationResponse {
+		return GroupAffiliationResponse{}, false
+	}
+	if len(p.Payload) < 8 {
+		return GroupAffiliationResponse{}, false
+	}
+	return GroupAffiliationResponse{
+		Response:          p.Payload[0] & 0x03,
+		AnnouncementGroup: binary.BigEndian.Uint16(p.Payload[1:3]),
+		GroupAddress:      binary.BigEndian.Uint16(p.Payload[3:5]),
+		TargetID:          uint32(p.Payload[5])<<16 | uint32(p.Payload[6])<<8 | uint32(p.Payload[7]),
+	}, true
+}
+
+// UnitRegistrationResponse is the structured shape of a Phase 2 Unit
+// Registration Response MAC PDU — published when a radio completes or
+// is denied registration on a site. Layout mirrors the Phase 1 TSBK
+// (phase1.UnitRegistrationResponse):
+//
+//	byte 0       : bits 1-0 = registration response value
+//	bytes 1-3    : WACN (20 bits, upper 20 of bytes 1-3)
+//	bytes 3-4    : System ID (low nibble of byte 3 + byte 4)
+//	bytes 5-7    : source unit ID (24 bits)
+type UnitRegistrationResponse struct {
+	Response uint8
+	WACN     uint32 // 20-bit
+	SystemID uint16 // 12-bit
+	SourceID uint32 // 24-bit
+}
+
+// AsUnitRegistrationResponse returns the structured response if the PDU
+// opcode is OpUnitRegistrationResponse, otherwise (zero, false).
+func (p MACPDU) AsUnitRegistrationResponse() (UnitRegistrationResponse, bool) {
+	if p.Opcode != OpUnitRegistrationResponse {
+		return UnitRegistrationResponse{}, false
+	}
+	if len(p.Payload) < 8 {
+		return UnitRegistrationResponse{}, false
+	}
+	return UnitRegistrationResponse{
+		Response: p.Payload[0] & 0x03,
+		WACN:     uint32(p.Payload[1])<<12 | uint32(p.Payload[2])<<4 | uint32(p.Payload[3])>>4,
+		SystemID: uint16(p.Payload[3]&0x0F)<<8 | uint16(p.Payload[4]),
+		SourceID: uint32(p.Payload[5])<<16 | uint32(p.Payload[6])<<8 | uint32(p.Payload[7]),
+	}, true
 }
 
 // AsEncryptionSync returns the structured Encryption Sync if the PDU
