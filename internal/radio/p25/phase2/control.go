@@ -49,6 +49,10 @@ type ControlChannel struct {
 	scramblerMode    ScramblerMode
 	scramblerSeed    uint64
 	scramblerOffset  int
+	// bandPlan accumulates IdentifierUpdate MAC PDUs so publishGrant
+	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
+	// downlink frequency. Guarded by mu.
+	bandPlan BandPlan
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -377,6 +381,11 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 	if nsb, ok := p.AsNetworkStatusBroadcast(); ok {
 		c.installSeedFromNSB(nsb)
 	}
+	if u, ok := p.AsIdentifierUpdate(); ok {
+		c.mu.Lock()
+		c.bandPlan.Apply(u)
+		c.mu.Unlock()
+	}
 	if p.IsIdle() {
 		return
 	}
@@ -442,23 +451,40 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode) {
 	if c.bus == nil {
 		return
 	}
+	// Resolve the grant's channel through the band plan. Resolution is
+	// best-effort: a grant that arrives before the site's first
+	// IdentifierUpdate is still published (with FrequencyHz left 0, as
+	// before band-plan support landed) so the event surface is
+	// unchanged; the engine drops a zero-frequency grant on its own.
+	var freq uint32
+	c.mu.Lock()
+	f, err := c.bandPlan.Frequency(g.ChannelID, g.ChannelNumber)
+	c.mu.Unlock()
+	if err == nil {
+		freq = f
+	} else {
+		c.log.Debug("p25/phase2 grant before identifier update",
+			"id", g.ChannelID, "num", g.ChannelNumber, "err", err)
+	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:     c.systemName,
-			Protocol:   "p25-phase2",
-			GroupID:    uint32(g.GroupAddress),
-			SourceID:   g.SourceID,
-			ChannelID:  g.ChannelID,
-			ChannelNum: g.ChannelNumber,
-			At:         c.now(),
+			System:      c.systemName,
+			Protocol:    "p25-phase2",
+			GroupID:     uint32(g.GroupAddress),
+			SourceID:    g.SourceID,
+			FrequencyHz: freq,
+			ChannelID:   g.ChannelID,
+			ChannelNum:  g.ChannelNumber,
+			At:          c.now(),
 		},
 	})
 	c.log.Debug("p25/phase2 grant",
 		"system", c.systemName,
 		"opcode", op, "tg", g.GroupAddress,
 		"src", g.SourceID,
-		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber)
+		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber,
+		"freq_hz", freq)
 }
 
 // MarkLost publishes cc.lost and resets the locked flag. The

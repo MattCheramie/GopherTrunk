@@ -38,6 +38,7 @@ const (
 	OpGroupVoiceChannelGrant       Opcode = 0x44
 	OpGroupVoiceChannelUserExt     Opcode = 0x46
 	OpUnitToUnitVoiceChannelGrant  Opcode = 0x48
+	OpIdentifierUpdate             Opcode = 0x7D
 	OpNetworkStatusBroadcastUpdate Opcode = 0xFB
 	OpRFSSStatusBroadcastUpdate    Opcode = 0xFA
 )
@@ -62,6 +63,8 @@ func (o Opcode) String() string {
 		return "GroupVoiceChannelUserExt"
 	case OpUnitToUnitVoiceChannelGrant:
 		return "UnitToUnitVoiceChannelGrant"
+	case OpIdentifierUpdate:
+		return "IdentifierUpdate"
 	case OpNetworkStatusBroadcastUpdate:
 		return "NetworkStatusBroadcastUpdate"
 	case OpRFSSStatusBroadcastUpdate:
@@ -191,6 +194,17 @@ func (p MACPDU) AsNetworkStatusBroadcast() (NetworkStatusBroadcast, bool) {
 	}, true
 }
 
+// AsIdentifierUpdate returns the structured band-plan definition if the
+// PDU opcode is OpIdentifierUpdate, otherwise (zero, false). The
+// ControlChannel feeds the result to its BandPlan so later voice grants
+// resolve a downlink frequency.
+func (p MACPDU) AsIdentifierUpdate() (IdentifierUpdate, bool) {
+	if p.Opcode != OpIdentifierUpdate {
+		return IdentifierUpdate{}, false
+	}
+	return ParseIdentifierUpdate(p.Payload)
+}
+
 // IsIdle reports whether the PDU is one of the channel-idle / hang-
 // time opcodes a state machine should silently absorb.
 func (p MACPDU) IsIdle() bool {
@@ -210,6 +224,7 @@ func (o Opcode) IsKnown() bool {
 	case OpMACPTT, OpMACEnd, OpMACIdle, OpMACHangtime, OpMACActive,
 		OpGroupVoiceChannelGrant, OpGroupVoiceChannelGrantUpdate,
 		OpGroupVoiceChannelUserExt, OpUnitToUnitVoiceChannelGrant,
+		OpIdentifierUpdate,
 		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:
 		return true
 	}
