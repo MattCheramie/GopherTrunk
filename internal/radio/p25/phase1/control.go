@@ -144,11 +144,21 @@ func (s LockState) LockedNAC() uint16         { return s.NAC }
 // visible without flooding.
 const noHitsThrottle = 2 * time.Second
 
-// frameLookahead is the number of dibits that must follow the FSW for
-// a full frame to decode: the 32-dibit NID plus the 98-dibit TSBK
-// channel block. Process defers an FSW hit until this many dibits have
-// accumulated, so frame assembly no longer depends on the IQ chunking.
-const frameLookahead = 32 + 98
+// p25StatusStride is the on-air dibit period of P25's interleaved
+// status symbols: 35 data dibits followed by one 2-bit status symbol
+// (TIA-102.BAAA — one status symbol per 70 information bits, the same
+// cadence ldu.go's LDUStatusInterval encodes for voice frames).
+// Counting on-air dibits from the FSW's first dibit, a status symbol
+// falls wherever the index mod p25StatusStride is p25StatusStride-1.
+const p25StatusStride = 36
+
+// frameLookahead is the number of on-air dibits that must follow the
+// FSW for a full frame to decode: the 32-dibit NID plus the 98-dibit
+// TSBK channel block — 130 data dibits — plus the 4 status symbols
+// interleaved into that span at the p25StatusStride cadence. Process
+// defers an FSW hit until this many dibits have accumulated, so frame
+// assembly no longer depends on the IQ chunking.
+const frameLookahead = 130 + 4
 
 // Process consumes a window of dibits and runs detection/parsing.
 // baseIdx is the absolute dibit index of dibits[0]. Returns the
@@ -209,8 +219,16 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // adding rot mod 4 to each input dibit, so the canonical dibit values
 // the BCH / trellis decoders expect are recovered by adding rot
 // (rotateDibits) before parsing.
+//
+// P25 interleaves a status symbol into the on-air dibit stream every
+// p25StatusStride dibits; one lands inside the NID region and three
+// inside the TSBK, so the NID and TSBK dibits are gathered around them
+// with gatherDataDibits before decoding.
 func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
-	rawNID := buf[nidStart : nidStart+32]
+	// The 24-dibit FSW ends at nidStart-1, so it begins at nidStart-24;
+	// the interleaved status symbols' phase is measured from there.
+	fswStart := nidStart - len(FrameSyncWord)
+	rawNID, tsbkStart := gatherDataDibits(buf, nidStart, 32, fswStart)
 	nid, errs, err := NIDFromDibits(rotateDibits(rawNID, rot))
 	if err != nil {
 		c.log.Debug("nid parse failed", "err", err, "errs", errs, "rot", rot)
@@ -242,10 +260,10 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, rot uint8) {
 		c.log.Info("control channel locked", "nac", nid.NAC, "freq", c.freqHz, "rot", rot)
 	}
 
-	// The channel TSBK occupies the 98 dibits after the NID.
-	tsbkStart := nidStart + 32
-	tsbkDibits := rotateDibits(buf[tsbkStart:tsbkStart+98], rot)
-	tsbk, metric, err := DecodeTSBKChannel(tsbkDibits)
+	// The channel TSBK occupies the 98 data dibits after the NID,
+	// starting where gatherDataDibits left off.
+	tsbkChannel, _ := gatherDataDibits(buf, tsbkStart, 98, fswStart)
+	tsbk, metric, err := DecodeTSBKChannel(rotateDibits(tsbkChannel, rot))
 	if err != nil {
 		c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", nid.NAC)
 		stage := events.StageTSBKTrellis
@@ -290,6 +308,51 @@ func rotateDibits(src []uint8, rot uint8) []uint8 {
 	out := make([]uint8, len(src))
 	for i, d := range src {
 		out[i] = (d + rot) & 3
+	}
+	return out
+}
+
+// gatherDataDibits copies count P25 data dibits out of buf starting at
+// index start, skipping the status symbols interleaved at the
+// p25StatusStride cadence. fswStart is the index of the frame's first
+// FSW dibit, against which the status-symbol phase is measured (it may
+// be negative if the buffer was trimmed past the FSW — only the
+// distance from it matters, and start is always well past it). It
+// returns the gathered dibits and the index one past the last dibit
+// consumed, so the next field gathers from there. The caller
+// guarantees buf holds enough dibits (see frameLookahead).
+func gatherDataDibits(buf []uint8, start, count, fswStart int) ([]uint8, int) {
+	out := make([]uint8, 0, count)
+	i := start
+	for len(out) < count {
+		if (i-fswStart)%p25StatusStride != p25StatusStride-1 {
+			out = append(out, buf[i])
+		}
+		i++
+	}
+	return out, i
+}
+
+// InjectControlStatusSymbols interleaves P25 status symbols into a
+// contiguous control-channel dibit stream (FSW + NID + TSBK …),
+// producing the on-air dibit stream a real transmitter emits: one
+// status symbol after every p25StatusStride-1 data dibits (TIA-102.BAAA
+// — one status symbol per 70 information bits). It is the inverse of
+// the status-symbol stripping parseFrame applies via gatherDataDibits,
+// and exists to build spec-faithful synthetic streams for tests — the
+// receiver harness, integration tests — that would otherwise feed the
+// decoder an unrealistic status-free stream.
+func InjectControlStatusSymbols(stream []uint8) []uint8 {
+	const dataRun = p25StatusStride - 1
+	out := make([]uint8, 0, len(stream)+len(stream)/dataRun+1)
+	for i, d := range stream {
+		out = append(out, d)
+		if i%dataRun == dataRun-1 {
+			// Cycle the status value through all four symbols so a
+			// test cannot pass by depending on a fixed status value —
+			// the receiver must skip them by position.
+			out = append(out, uint8((i/dataRun)&3))
+		}
 	}
 	return out
 }

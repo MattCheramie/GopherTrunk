@@ -981,6 +981,9 @@ func buildP25CCDibits(nac uint16, repeats int) []uint8 {
 		LB: true, Opcode: p25phase1.OpRFSSStatusBroadcast,
 	})
 	frame = append(frame, p25phase1.EncodeTSBKChannel(tsbk)...)
+	// Interleave the P25 status symbols a real transmitter inserts (one
+	// per 36 dibits); the receiver must strip them to decode the NID.
+	frame = p25phase1.InjectControlStatusSymbols(frame)
 
 	out := make([]uint8, 0, 200+repeats*(len(frame)+50)+100)
 	for i := 0; i < 200; i++ {
