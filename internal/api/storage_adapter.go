@@ -2,9 +2,46 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
+
+// LocationsFromStorage wraps a *storage.LocationLog as an
+// api.LocationQuery so the daemon can pass it to NewServer without the
+// storage package's row types leaking into the api package.
+func LocationsFromStorage(ll *storage.LocationLog) LocationQuery {
+	if ll == nil {
+		return nil
+	}
+	return &storageLocations{ll: ll}
+}
+
+type storageLocations struct {
+	ll *storage.LocationLog
+}
+
+func (s *storageLocations) RecentLocations(limit int) ([]LocationFix, error) {
+	rows, err := s.ll.Recent(limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LocationFix, len(rows))
+	for i, r := range rows {
+		out[i] = LocationFix{
+			System:     r.System,
+			Protocol:   r.Protocol,
+			RadioID:    r.RadioID,
+			Talkgroup:  r.Talkgroup,
+			Latitude:   r.Latitude,
+			Longitude:  r.Longitude,
+			SpeedKnots: r.SpeedKnots,
+			HeadingDeg: r.HeadingDeg,
+			ReportedAt: r.ReportedAt.UTC().Format(time.RFC3339),
+		}
+	}
+	return out, nil
+}
 
 // HistoryFromStorage wraps a *storage.DB as an api.HistoryQuery so the
 // daemon can pass it to NewServer without the api package's CallRow /

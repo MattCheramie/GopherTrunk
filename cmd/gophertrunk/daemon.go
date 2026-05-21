@@ -80,28 +80,29 @@ type Daemon struct {
 	log     *slog.Logger
 	writer  *config.Writer // optional; nil when daemon ran without -config
 
-	bus        *events.Bus
-	pool       *sdr.Pool
-	talkgroups *trunking.TalkgroupDB
-	systems    []trunking.System
-	engine     *trunking.Engine
-	voicePool  *trunking.VoicePool
-	recorder   *voice.Recorder
-	broadcast  *broadcast.Manager
-	composer   *composer.Composer
-	player     *player.Player
-	toneout    *toneout.Detector
-	audioPub   *api.AudioPublisher
-	db         *storage.DB
-	callLog    *storage.CallLog
-	retention  *storage.Retention
-	ccCache    *trunking.Cache
-	cchuntSup  *cchunt.Supervisor
-	ccDecoder  *ccdecoder.Decoder
-	convScan   *conventional.Scanner
-	metrics    *metrics.Metrics
-	httpAPI    *api.Server
-	grpcAPI    *api.GRPCServer
+	bus         *events.Bus
+	pool        *sdr.Pool
+	talkgroups  *trunking.TalkgroupDB
+	systems     []trunking.System
+	engine      *trunking.Engine
+	voicePool   *trunking.VoicePool
+	recorder    *voice.Recorder
+	broadcast   *broadcast.Manager
+	composer    *composer.Composer
+	player      *player.Player
+	toneout     *toneout.Detector
+	audioPub    *api.AudioPublisher
+	db          *storage.DB
+	callLog     *storage.CallLog
+	locationLog *storage.LocationLog
+	retention   *storage.Retention
+	ccCache     *trunking.Cache
+	cchuntSup   *cchunt.Supervisor
+	ccDecoder   *ccdecoder.Decoder
+	convScan    *conventional.Scanner
+	metrics     *metrics.Metrics
+	httpAPI     *api.Server
+	grpcAPI     *api.GRPCServer
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -631,6 +632,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.callLog = cl
 
+		ll, err := storage.NewLocationLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("daemon: location log: %w", err)
+		}
+		d.locationLog = ll
+
 		if cfg.Retention.CallLogDays > 0 || cfg.Retention.FilesDays > 0 {
 			interval, err := retentionInterval(cfg.Retention.Interval)
 			if err != nil {
@@ -682,6 +690,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)
+		}
+		if d.locationLog != nil {
+			opts.Locations = api.LocationsFromStorage(d.locationLog)
 		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
@@ -789,6 +800,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.callLog != nil {
 		d.spawn(runCtx, "calllog", false, func(ctx context.Context) error {
 			return d.callLog.Run(ctx)
+		})
+	}
+	if d.locationLog != nil {
+		d.spawn(runCtx, "locationlog", false, func(ctx context.Context) error {
+			return d.locationLog.Run(ctx)
 		})
 	}
 	if d.retention != nil {
@@ -931,6 +947,9 @@ func (d *Daemon) Close() {
 		}
 		if d.callLog != nil {
 			_ = d.callLog.Close()
+		}
+		if d.locationLog != nil {
+			_ = d.locationLog.Close()
 		}
 		if d.metrics != nil {
 			_ = d.metrics.Close()

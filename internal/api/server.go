@@ -228,6 +228,7 @@ type Server struct {
 	talkgroups   *trunking.TalkgroupDB
 	systems      []trunking.System
 	history      HistoryQuery
+	locations    LocationQuery
 	metrics      http.Handler
 	log          *slog.Logger
 	version      string
@@ -260,6 +261,25 @@ type Server struct {
 // storage package and lets tests inject fakes.
 type HistoryQuery interface {
 	History(ctx context.Context, f HistoryFilter) ([]CallRow, error)
+}
+
+// LocationFix is one geographic fix returned by GET /api/v1/locations.
+type LocationFix struct {
+	System     string  `json:"system"`
+	Protocol   string  `json:"protocol"`
+	RadioID    uint32  `json:"radio_id"`
+	Talkgroup  uint32  `json:"talkgroup"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	SpeedKnots float64 `json:"speed_knots"`
+	HeadingDeg float64 `json:"heading_deg"`
+	ReportedAt string  `json:"reported_at"` // RFC3339
+}
+
+// LocationQuery is the read side of the GPS/location subsystem,
+// supplying recent fixes for GET /api/v1/locations and the web map.
+type LocationQuery interface {
+	RecentLocations(limit int) ([]LocationFix, error)
 }
 
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
@@ -305,6 +325,9 @@ type ServerOptions struct {
 	// History is optional. When non-nil the server exposes
 	// GET /api/v1/calls/history.
 	History HistoryQuery
+	// Locations is optional. When non-nil the server exposes
+	// GET /api/v1/locations for the web map.
+	Locations LocationQuery
 	// MetricsHandler is optional. When non-nil it is mounted at
 	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
 	// here. Decoupling via http.Handler keeps the api package free of a
@@ -468,6 +491,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
+		locations:      opts.Locations,
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
@@ -585,6 +609,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
+	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)

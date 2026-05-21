@@ -78,6 +78,12 @@ const (
 	// alias. The payload (trunking.TalkerAlias) is keyed by source unit
 	// so a consumer can associate it with the active call.
 	KindTalkerAlias Kind = "talker.alias"
+	// KindLocation fires when a subscriber unit reports a geographic
+	// position over the air — P25 Motorola Unit GPS, P25 L3Harris
+	// Talker GPS, or DMR LRRP. The payload (trunking.Location) carries
+	// the reporting radio, the lat/lon fix, and optional speed/heading.
+	// The storage layer persists it; the API + web map surface it.
+	KindLocation Kind = "location"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

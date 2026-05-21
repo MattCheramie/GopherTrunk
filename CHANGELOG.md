@@ -26,6 +26,16 @@ for tagged releases.
   and a talkgroup can opt out of all feeds with `stream: false`
   in its CSV/JSON. Feed counters are exposed at
   `GET /api/v1/broadcast`.
+- **GPS / location subsystem.** Geographic fixes a subscriber unit
+  reports over the air now flow through a new `KindLocation` event
+  (`trunking.Location` payload) to a `location_log` SQLite table and
+  out via `GET /api/v1/locations` for map display. A new
+  `internal/radio/location` package implements a strict NMEA-0183
+  GGA/RMC parser — the format Tait CCDI and many MOTOTRBO GPS
+  profiles transport verbatim — with checksum verification. The
+  per-protocol binary GPS PDU extractors (P25 Motorola Unit GPS,
+  L3Harris Talker GPS, DMR LRRP) and the web map page build on this
+  backbone; their bit-exact wiring is pending capture validation.
 - **DMR vendor-trunking recognition (FID-aware CSBK dispatch).**
   The Tier III control-channel decoder now dispatches each CSBK on
   its feature-set ID (FID) before opcode, so a Motorola or Hytera
