@@ -215,6 +215,9 @@ func buildP25LockedIQDibits(nac uint16, repeats int) []uint8 {
 	}
 	tsbk := phase1.AssembleTSBK(phase1.TSBK{LB: true, Opcode: phase1.OpRFSSStatusBroadcast})
 	frame = append(frame, phase1.EncodeTSBKChannel(tsbk)...)
+	// Interleave the P25 status symbols a real transmitter inserts (one
+	// per 36 dibits); the receiver must strip them to decode the NID.
+	frame = phase1.InjectControlStatusSymbols(frame)
 
 	out := make([]uint8, 0, 200+repeats*(len(frame)+50)+100)
 	for i := 0; i < 200; i++ {
@@ -546,8 +549,9 @@ func buildP25CallChainIQDibits(p buildP25CallChainParams) []uint8 {
 	return out
 }
 
-// buildP25TSBKFrame returns the FSW + NID + trellis-encoded TSBK
-// dibits for a single frame.
+// buildP25TSBKFrame returns the on-air dibits for a single frame: FSW
+// + NID + trellis-encoded TSBK, with P25 status symbols interleaved
+// (one per 36 dibits) the way a real transmitter emits them.
 func buildP25TSBKFrame(nac uint16, tsbk phase1.TSBK) []uint8 {
 	frame := make([]uint8, 0, 24+32+98)
 	frame = append(frame, phase1.FrameSyncWord[:]...)
@@ -556,7 +560,7 @@ func buildP25TSBKFrame(nac uint16, tsbk phase1.TSBK) []uint8 {
 		frame = append(frame, (nidBits[2*i]<<1)|nidBits[2*i+1])
 	}
 	frame = append(frame, phase1.EncodeTSBKChannel(phase1.AssembleTSBK(tsbk))...)
-	return frame
+	return phase1.InjectControlStatusSymbols(frame)
 }
 
 // assembleGroupVoiceChannelGrant packs the 8-byte payload of a

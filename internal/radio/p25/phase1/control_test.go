@@ -17,18 +17,27 @@ func buildLockedStream(offset int, nac uint16, duid DUID, op Opcode) []uint8 {
 	return buildLockedStreamWithTSBK(offset, nac, duid, TSBK{LB: true, Opcode: op})
 }
 
-// buildLockedStreamWithTSBK is the variant that takes a fully-formed
-// TSBK so callers can carry a payload (used by the IdentifierUpdate +
-// grant publication tests).
-func buildLockedStreamWithTSBK(offset int, nac uint16, duid DUID, tsbk TSBK) []uint8 {
-	out := make([]uint8, offset+24+32+98+16)
-	copy(out[offset:], FrameSyncWord[:])
+// buildControlFrame builds one contiguous FSW + NID + TSBK frame (154
+// dibits, no status symbols) for the given NAC / DUID / TSBK.
+func buildControlFrame(nac uint16, duid DUID, tsbk TSBK) []uint8 {
+	frame := make([]uint8, 0, 24+32+98)
+	frame = append(frame, FrameSyncWord[:]...)
 	bits := EncodeNIDBits(nac, duid)
 	for i := 0; i < 32; i++ {
-		out[offset+24+i] = (bits[2*i] << 1) | bits[2*i+1]
+		frame = append(frame, (bits[2*i]<<1)|bits[2*i+1])
 	}
-	channel := EncodeTSBKChannel(AssembleTSBK(tsbk))
-	copy(out[offset+24+32:], channel)
+	return append(frame, EncodeTSBKChannel(AssembleTSBK(tsbk))...)
+}
+
+// buildLockedStreamWithTSBK is the variant that takes a fully-formed
+// TSBK so callers can carry a payload (used by the IdentifierUpdate +
+// grant publication tests). The FSW + NID + TSBK frame is interleaved
+// with P25 status symbols, mirroring a real on-air stream, so the
+// receiver's status-symbol stripping is exercised.
+func buildLockedStreamWithTSBK(offset int, nac uint16, duid DUID, tsbk TSBK) []uint8 {
+	onAir := InjectControlStatusSymbols(buildControlFrame(nac, duid, tsbk))
+	out := make([]uint8, offset+len(onAir)+16)
+	copy(out[offset:], onAir)
 	return out
 }
 
@@ -136,12 +145,16 @@ func TestControlChannelPublishesDecodeErrorOnUncorrectableNID(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	// Stream with FSW followed by 32 dibits of garbage (not a valid NID).
-	stream := make([]uint8, 10+24+32+98)
-	copy(stream[10:], FrameSyncWord[:])
+	// Stream with FSW followed by 32 dibits of garbage (not a valid
+	// NID), interleaved with status symbols as it arrives on-air.
+	frame := make([]uint8, 24+32+98)
+	copy(frame, FrameSyncWord[:])
 	for i := 0; i < 32; i++ {
-		stream[10+24+i] = uint8(i*7) & 0x3
+		frame[24+i] = uint8(i*7) & 0x3
 	}
+	onAir := InjectControlStatusSymbols(frame)
+	stream := make([]uint8, 10+len(onAir)+16)
+	copy(stream[10:], onAir)
 
 	cc := NewControlChannel(bus, nil, 851_000_000)
 	cc.Process(stream, 0)
@@ -450,14 +463,18 @@ func TestControlChannelPublishesDecodeErrorOnCorruptTSBK(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	// Valid FSW + valid NID + corrupted TSBK channel block.
-	stream := buildLockedStream(10, 0x111, DUIDTrunkingSignaling, OpRFSSStatusBroadcast)
-	tsbkStart := 10 + 24 + 32
+	// Valid FSW + valid NID + corrupted TSBK channel block. Corrupt the
+	// contiguous TSBK before status symbols are interleaved, so the
+	// flips land squarely on the 98-dibit channel block.
+	frame := buildControlFrame(0x111, DUIDTrunkingSignaling, TSBK{LB: true, Opcode: OpRFSSStatusBroadcast})
 	// Flip every dibit in the TSBK block — well beyond the Viterbi
 	// correction radius, so the CRC trailer will fail.
-	for i := tsbkStart; i < tsbkStart+98; i++ {
-		stream[i] = (^stream[i]) & 0x3
+	for i := 24 + 32; i < 24+32+98; i++ {
+		frame[i] = (^frame[i]) & 0x3
 	}
+	onAir := InjectControlStatusSymbols(frame)
+	stream := make([]uint8, 10+len(onAir)+16)
+	copy(stream[10:], onAir)
 
 	cc := NewControlChannel(bus, nil, 851_000_000)
 	cc.Process(stream, 0)

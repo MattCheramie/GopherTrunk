@@ -69,8 +69,14 @@ var demodModes = []struct {
 
 // buildHarnessDibits assembles a canonical P25 Phase 1 control-channel
 // dibit stream: a 200-dibit warmup so the symbol-clock loop converges,
-// then `repeats` × (FSW + NID + TSBK + 50 idle dibits), then a
-// 100-dibit trailer.
+// then `repeats` × (status-interleaved FSW+NID+TSBK frame + 50 idle
+// dibits), then a 100-dibit trailer.
+//
+// Each frame carries the status symbols a real P25 transmitter
+// interleaves into the on-air stream (one per 36 dibits) — see
+// phase1.InjectControlStatusSymbols. Without them the receiver would
+// be fed an unrealistic status-free stream and the status-symbol
+// stripping in the control-channel decoder would go untested (#275).
 //
 // The warmup / idle / trailer filler is pseudo-random (fixed seed, so
 // the stream stays reproducible) and must not be periodic. Real P25
@@ -90,6 +96,9 @@ func buildHarnessDibits(nac uint16, repeats int) []uint8 {
 	}
 	tsbk := phase1.AssembleTSBK(phase1.TSBK{LB: true, Opcode: phase1.OpRFSSStatusBroadcast})
 	frame = append(frame, phase1.EncodeTSBKChannel(tsbk)...)
+	// Interleave the P25 status symbols a real transmitter inserts; the
+	// receiver must strip them to recover the NID and TSBK (#275).
+	frame = phase1.InjectControlStatusSymbols(frame)
 
 	out := make([]uint8, 0, 200+repeats*(len(frame)+50)+100)
 	for i := 0; i < 200; i++ {
@@ -318,6 +327,52 @@ func TestHarnessCleanControlChannelLocks(t *testing.T) {
 			}
 			if res.nac != harnessNAC {
 				t.Errorf("clean %s: locked NAC = %#x, want %#x", m.name, res.nac, harnessNAC)
+			}
+		})
+	}
+}
+
+// TestHarnessControlChannelStatusSymbols is the #275 regression guard
+// for the status-symbol fix. P25 interleaves a 2-bit status symbol into
+// the on-air dibit stream every 36 dibits (TIA-102.BAAA); buildHarnessDibits
+// now models that faithfully, so the control-channel decoder must strip
+// the status symbols before assembling the NID and TSBK.
+//
+// Before the fix the receiver read 32 contiguous dibits as the NID,
+// swallowing the status symbol that lands at on-air dibit 35 and
+// misaligning every NID dibit after it — the NID BCH error count pegged
+// at its t=11 ceiling on every frame and the channel never locked. The
+// failure was identical on the C4FM and CQPSK paths because the status
+// strip is a shared post-demod stage, so this guards both.
+//
+// The assertion is on the NID error count, not the TSBK: a stripped NID
+// decodes well inside the BCH radius, while the unstripped #275 symptom
+// pegs it at the ceiling. (TSBK decode errors are left to the
+// mode-specific harness tests — the CQPSK demod's residual error rate
+// is a separate concern from status-symbol alignment.)
+func TestHarnessControlChannelStatusSymbols(t *testing.T) {
+	for _, m := range demodModes {
+		t.Run(m.name, func(t *testing.T) {
+			res := runHarness(m.mode, demod.Impairments{})
+			if !res.locked {
+				t.Fatalf("%s: status-interleaved control channel did not lock "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s) — the receiver is not "+
+					"stripping P25 status symbols (#275)",
+					m.name, res.decodeErrors, res.nidErrsSummary())
+			}
+			if res.nac != harnessNAC {
+				t.Errorf("%s: locked NAC = %#x, want %#x", m.name, res.nac, harnessNAC)
+			}
+			// 8 is the "systematically wrong" diagnostic threshold in
+			// control.go; an unstripped status symbol pegs every NID at
+			// the t=11 ceiling (or -1, uncorrectable).
+			for _, e := range res.nidErrs {
+				if e < 0 || e >= 8 {
+					t.Errorf("%s: a NID decoded with errs=%d, near the BCH ceiling — "+
+						"status symbols are not being stripped (#275); all NID "+
+						"errs(min/max/n)=%s", m.name, e, res.nidErrsSummary())
+					break
+				}
 			}
 		})
 	}
