@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.1.8] — 2026-05-21
+
+P25 reception + voice-path release. The bulk of the work makes
+trunked control-channel decode actually lock on live RTL-SDR
+hardware (issue #275): IQ-stream channelization, cross-chunk
+frame assembly, symbol-clock chunk-boundary fixes, a CQPSK / LSM
+demodulator path with a blind equalizer and AGC for simulcast
+sites, and coarse AFC for tuner carrier offset. On top of that,
+P25 Phase 1 and Phase 2 are built out to functional SDRtrunk
+parity with working voice decoding, and DMR gains a voice
+decoding path (issue #276) where it previously decoded control
+channels only. The web console's connect-time render loop and
+WebSocket reconnect storm (issue #290) are both fixed.
+
 ### Added
 
 - **P25 Phase 1 voice decoding and broader control-channel
@@ -45,6 +59,20 @@ for tagged releases.
   deinterleaver (`p25_phase2_interleave_mode`). Phase 2 now
   emits `KindAffiliation` / `KindUnitRegistration` / `KindPatch`
   / `KindTalkerAlias` like Phase 1.
+- **DMR voice decoding path and Enhanced Privacy key
+  configuration** (issue #276, PR #298, #301, #304, #305). DMR
+  previously decoded control channels only. The voice path now
+  ships: a DMR voice superframe decoder plus AMBE+2
+  forward-error-correction (`internal/radio/dmr/voice/` — 72-bit
+  on-air frame → C0/C1 Golay(23,12) + C1 descramble → 49-bit
+  vocoder payload, ported from mbelib / DSD), and a composer DMR
+  voice chain that runs IQ → DMR receiver → superframe decoder →
+  AMBE FEC and writes the FEC-decoded frames to the call's
+  `.raw` sidecar. A dependency-free RC4 keystream generator
+  (`internal/crypto/rc4/`) and per-system `encryption_keys`
+  config (`key_id` + `algorithm: rc4` + hex `key`, validated at
+  load) lay the foundation for known-key Enhanced Privacy voice
+  decryption.
 - **P25 Phase 1 CQPSK / LSM demodulator path** for simulcast P25
   sites (issue #275). New per-system YAML key
   `p25_phase1_demod_mode: cqpsk` routes the control-channel IQ
@@ -55,6 +83,27 @@ for tagged releases.
   the default for conventional non-simulcast deployments. Pipeline
   construction now logs `ccdecoder: p25/phase1 pipeline configured
   demod=…` so operators can confirm which path is active.
+- **P25 Phase 1 CQPSK blind equalizer for simulcast multipath**
+  (issue #275, PR #306). A P25 simulcast site sums several
+  synchronised transmitters into a multipath channel that closes
+  the CQPSK constellation, so the Frame Sync Word never
+  correlates and the control channel never locks. Because LSM is
+  a linear modulation the distortion is linear in the complex
+  symbols: the `equalizer.CMA` blind (Constant Modulus
+  Algorithm) equalizer is now wired onto the CQPSK symbol stream
+  between Gardner timing recovery and the differential decode.
+  It needs no training sequence and is a near-noop on a clean
+  constant-modulus signal. The #275 IQ-impairment harness gains
+  a multipath channel model.
+- **Coarse AFC on the P25 Phase 1 C4FM control channel** (issue
+  #275, PR #303). A residual RTL-SDR carrier offset leaves the
+  FM discriminator with a constant DC bias that shifts the C4FM
+  4-level slicer's eye off its decision regions; at ≥500 Hz the
+  Frame Sync Word stops correlating entirely. A new coarse-AFC
+  stage (`demod.CoarseAFC`) between the matched filter and the
+  symbol clock tracks the bias with a slow single-pole average
+  and subtracts it, recentring the eye. On a clean signal the
+  estimate converges to ~0 and the stage is a near-noop.
 - **Multi-rotation FSW search** on the P25 Phase 1 sync detector.
   `SyncDetector.ProcessWithRotation` tries all four cyclic shifts
   of the dibit alphabet against the canonical FrameSyncWord and
@@ -79,6 +128,18 @@ for tagged releases.
   render crash. The health-check and event-stream effects are
   keyed on the primitive server URL / token values instead of a
   derived object so they re-run only on a real server change.
+- **Web console SPA render loop blanked the UI on connect**
+  (issue #290, PR #295). `selectClientConfig` returned a fresh
+  object on every call, so the WebSocket effect — which listed
+  the derived config in its deps and synchronously wrote
+  connection status to the store — re-fired without bound (React
+  error #185), blanking the UI and churning the socket open /
+  close. The selector is now memoised to a stable reference
+  until the server URL / token actually change; the event
+  WebSocket URL is rebuilt with the URL API (handles uppercase
+  schemes, never emits a host-less URL); and a top-level
+  `ErrorBoundary` shows a fallback instead of a blank page on a
+  render crash.
 - **P25 Phase 1 CQPSK control channel locked only in a narrow
   RTL-SDR gain window** (issue #275, PR #307). The CMA blind
   equalizer added for simulcast P25 made the CQPSK path
@@ -92,6 +153,28 @@ for tagged releases.
   per-sample feedback loop — which spiked into gain runaway on a
   near-zero symbol of a linear-modulation stream — into a robust
   power-EMA feed-forward normaliser.
+- **P25 Phase 1 symbol-clock loops miscounted symbols across
+  IQ-chunk boundaries** (issue #275, PR #300, #311). Both
+  symbol-timing-recovery loops rebuild their working buffer each
+  call but mishandled the chunk seam, so the recovered dibit
+  count depended on IQ chunk size — a live RTL-SDR delivers
+  ~19-symbol USB transfers, and the drift scattered dibit errors
+  so the Frame Sync Word never aligned and the control channel
+  never locked. The Gardner loop (CQPSK / LSM path) re-emitted
+  ~1 surplus symbol per call; the Mueller-Müller loop (C4FM
+  path) dropped `src[0]` of every continuation chunk. Both now
+  treat the carried-over samples as pure look-back context, so
+  the recovered dibit stream is byte-identical regardless of
+  chunk size.
+- **P25 Phase 1 dibit-rotation inversion broke simulcast
+  control-channel lock** (PR #296). The FSW sync detector
+  reports rotation `k` such that `(received + k) mod 4` is
+  canonical, so dibits are recovered by adding `k` — but
+  `rotateDibits` added `(4-k) & 3`, correct only for even
+  rotations. The odd quadrant slips (1, 3) that the CQPSK / LSM
+  demod leaves on simulcast P25 recovered every dibit off by
+  two, so the NID BCH decode failed and the control channel
+  never locked.
 - **Trunked control-channel decode on live RTL-SDR hardware**
   (issue #275). The ccdecoder fed every per-protocol receiver the
   full, un-channelized SDR IQ stream (commonly 2.048 MHz), so the
@@ -112,6 +195,25 @@ for tagged releases.
   correctly channelized. `ControlChannel.Process` now accumulates
   dibits across calls and assembles frames that straddle IQ-chunk
   boundaries.
+- **macOS device enumeration panicked before listing any
+  RTL-SDR** (issue #257, PR #293). The macOS USB enumerator
+  registered CoreFoundation function pointers whose signatures
+  named a `[16]byte` array type; purego's `RegisterLibFunc`
+  panics with "unsupported kind array" on any array in a
+  registered signature, so IOKit failed to load for every macOS
+  user before a single call ran and `sdr list` found no devices.
+  The 16-byte `CFUUIDBytes` is now passed as two `uint64`
+  register halves. Per-driver enumerate errors also surface from
+  `EnumerateAll`, so `sdr list` prints the failure instead of a
+  silent empty list.
+- **Config rejected valid trunking protocols** (issue #291, PR
+  #294). Config validation hardcoded a `p25|dmr|nxdn` whitelist
+  that was never updated as the other protocols landed, so a
+  valid `protocol: tetra` (or edacs / ltr / mpt1327 / …) system
+  failed at load despite being fully implemented. Validation now
+  routes through `trunking.ParseProtocol` — the same parser the
+  daemon uses — so the canonical protocol list is the single
+  source of truth.
 
 ## [v0.1.7] — 2026-05-19
 
