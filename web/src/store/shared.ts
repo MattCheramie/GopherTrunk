@@ -55,7 +55,7 @@ interface SharedState {
   setActiveCalls(a: ActiveCallDTO[]): void;
   setDevices(d: DeviceDTO[]): void;
   setScanner(s: ScannerStatusDTO | null): void;
-  appendEvent(ev: EventDTO): void;
+  appendEvents(evs: EventDTO[]): void;
   setError(msg: string | null): void;
   reset(): void;
 }
@@ -120,11 +120,15 @@ export const useShared = create<SharedState>((set, get) => ({
   setScanner(s) {
     set({ scanner: s });
   },
-  appendEvent(ev) {
-    const cur = get().events;
+  appendEvents(evs) {
+    if (evs.length === 0) return;
     const cap = get().eventCap;
-    const next = cur.length >= cap ? cur.slice(cur.length - cap + 1) : cur;
-    set({ events: [...next, ev] });
+    const combined = get().events.concat(evs);
+    const next =
+      combined.length > cap
+        ? combined.slice(combined.length - cap)
+        : combined;
+    set({ events: next });
   },
   setError(msg) {
     set({ lastError: msg });
