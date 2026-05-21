@@ -231,6 +231,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2RSMode)
 	}
 	cc.SetRSMode(rsMode)
+	interleaveMode, ilOK := p25phase2.ParseInterleaveMode(opts.System.P25Phase2InterleaveMode)
+	if !ilOK {
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_interleave_mode; falling back to off",
+			"system", opts.SystemName, "value", opts.System.P25Phase2InterleaveMode)
+	}
+	cc.SetInterleaveMode(interleaveMode)
 	scramblerMode, scrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
 	if !scrOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",

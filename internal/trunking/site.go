@@ -193,6 +193,14 @@ type System struct {
 	// p25phase2.ControlChannel.SetRSMode by the ccdecoder connector
 	// after parsing via p25phase2.ParseRSMode.
 	P25Phase2RSMode string
+	// P25Phase2InterleaveMode enables the TIA-102.BBAC per-burst block
+	// deinterleaver applied to the MAC-burst dibits before trellis
+	// decoding. Recognised values (case-insensitive): "" / "off" /
+	// "false" / "0" → InterleaveOff (the default); "on" / "true" / "1"
+	// → InterleaveOn. Forwarded into p25phase2.ControlChannel.
+	// SetInterleaveMode by the ccdecoder connector after parsing via
+	// p25phase2.ParseInterleaveMode.
+	P25Phase2InterleaveMode string
 	// P25Phase2ScramblerMode enables the PN44 descrambler per
 	// TIA-102.BBAC-1 §7.2.5 on the trellis-decoded MAC PDU bits.
 	// Recognised values (case-insensitive): "" / "off" / "false" /

@@ -46,6 +46,7 @@ type ControlChannel struct {
 	strictValidation bool
 	trellisMode      TrellisMode
 	rsMode           RSMode
+	interleaveMode   InterleaveMode
 	scramblerMode    ScramblerMode
 	scramblerSeed    uint64
 	scramblerOffset  int
@@ -187,6 +188,56 @@ func ParseRSMode(s string) (RSMode, bool) {
 		return RSOn, true
 	default:
 		return RSOff, false
+	}
+}
+
+// InterleaveMode selects whether the Process adapter applies the
+// TIA-102.BBAC per-burst block deinterleaver to the collected MAC-burst
+// dibits before trellis decoding.
+//
+//   - InterleaveOff (default): the MAC-burst dibits go straight to the
+//     trellis decoder. Matches every shipped capture fixture (which
+//     synthesize the burst without interleaving) and the historical
+//     decoder output.
+//
+//   - InterleaveOn: the MAC-burst dibits are run through
+//     framing.DeinterleaveMACBurst first, undoing the block interleaver
+//     a real Phase 2 transmitter applies between trellis coding and the
+//     channel.
+type InterleaveMode uint8
+
+const (
+	InterleaveOff InterleaveMode = iota
+	InterleaveOn
+)
+
+// SetInterleaveMode toggles the per-burst block deinterleaver. The mode
+// applies to every subsequent Process call.
+func (c *ControlChannel) SetInterleaveMode(mode InterleaveMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.interleaveMode = mode
+}
+
+// InterleaveMode returns the current InterleaveMode.
+func (c *ControlChannel) InterleaveMode() InterleaveMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.interleaveMode
+}
+
+// ParseInterleaveMode maps a config / user-facing string into an
+// InterleaveMode. Recognised values (case-insensitive): "" / "off" /
+// "false" / "0" → InterleaveOff (the default); "on" / "true" / "1" →
+// InterleaveOn. Unknown strings return InterleaveOff with ok = false.
+func ParseInterleaveMode(s string) (InterleaveMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "off", "false", "0":
+		return InterleaveOff, true
+	case "on", "true", "1":
+		return InterleaveOn, true
+	default:
+		return InterleaveOff, false
 	}
 }
 

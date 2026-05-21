@@ -157,7 +157,7 @@ func TestProcessDescramblerRoundTrip(t *testing.T) {
 		b0 := bits[i*2+1]
 		infoDibits[i] = (b1 << 1) | b0
 	}
-	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOff, ScramblerOn, seed, 0)
+	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOff, InterleaveOff, ScramblerOn, seed, 0)
 
 	// Expect a cc.locked event for the ingested grant.
 	select {
@@ -249,7 +249,7 @@ func TestProcessDescramblerProbeFindsOffset(t *testing.T) {
 	cc.SetRSMode(RSOn)
 	cc.SetScramblerMode(ScramblerProbe)
 	cc.SetScramblerSeed(seed)
-	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOn, ScramblerProbe, seed, 0)
+	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOn, InterleaveOff, ScramblerProbe, seed, 0)
 
 	select {
 	case ev := <-sub.C:
@@ -312,7 +312,7 @@ func TestProcessDescramblerProbeRejectsWrongSeed(t *testing.T) {
 	})
 	cc.SetRSMode(RSOn)
 	cc.SetScramblerMode(ScramblerProbe)
-	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOn, ScramblerProbe, differentSeed, 0)
+	cc.tryIngestMACPDU(infoDibits, TrellisOff, RSOn, InterleaveOff, ScramblerProbe, differentSeed, 0)
 
 	select {
 	case ev := <-sub.C:

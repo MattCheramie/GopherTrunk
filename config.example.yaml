@@ -160,6 +160,7 @@ trunking:
   #     control_channels: [851_006_250]
   #     p25_phase2_trellis_mode: "off"  # legacy 72-dibit raw MAC PDU
   #     # p25_phase2_rs_mode: "on"      # RS(24, 16, 9) syndrome drop
+  #     # p25_phase2_interleave_mode: "on"    # per-burst block deinterleave
   #     # p25_phase2_scrambler_mode: "probe"  # blind PN44 slot probe
   #     #                              # (degrades to off without rs:on)
   #     # p25_phase2_clock_mode: "naive"      # decimate; default Gardner

@@ -240,6 +240,13 @@ type SystemConfig struct {
 	// non-zero before parsing). Ignored for non-P25-Phase-2
 	// protocols.
 	P25Phase2RSMode string `yaml:"p25_phase2_rs_mode"`
+	// P25Phase2InterleaveMode enables the TIA-102.BBAC per-burst block
+	// deinterleaver applied to the MAC-burst dibits before trellis
+	// decoding. Recognised values: "" / "off" / "false" / "0" (the
+	// default — no deinterleave; matches synthesized-fixture
+	// expectations) or "on" / "true" / "1". Ignored for
+	// non-P25-Phase-2 protocols.
+	P25Phase2InterleaveMode string `yaml:"p25_phase2_interleave_mode"`
 	// P25Phase2ScramblerMode enables the PN44 descrambling layer
 	// per TIA-102.BBAC-1 §7.2.5 on top of the trellis-decoded MAC
 	// PDU. Recognised values: "" / "off" / "false" / "0" (the

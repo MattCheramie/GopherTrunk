@@ -66,6 +66,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	c.mu.Lock()
 	mode := c.trellisMode
 	rsMode := c.rsMode
+	interleaveMode := c.interleaveMode
 	scramblerMode := c.scramblerMode
 	scramblerSeed := c.scramblerSeed
 	scramblerOffset := c.scramblerOffset
@@ -96,7 +97,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			p.macDibits = append(p.macDibits, d)
 			p.remaining--
 			if p.remaining == 0 {
-				c.tryIngestMACPDU(p.macDibits, mode, rsMode, scramblerMode, scramblerSeed, scramblerOffset)
+				c.tryIngestMACPDU(p.macDibits, mode, rsMode, interleaveMode, scramblerMode, scramblerSeed, scramblerOffset)
 				p.macDibits = p.macDibits[:0]
 			}
 		}
@@ -139,7 +140,13 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // re-grouped into 24 hex symbols and verified against the
 // RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9. PDUs whose
 // syndromes are non-zero are dropped silently.
-func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) {
+func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) {
+	// Undo the per-burst block interleaver (TIA-102.BBAC) before trellis
+	// decoding, when enabled. DeinterleaveMACBurst returns a fresh slice
+	// so the caller's buffer is untouched.
+	if interleaveMode == InterleaveOn {
+		macDibits = framing.DeinterleaveMACBurst(macDibits)
+	}
 	var infoDibits []uint8
 	switch mode {
 	case TrellisOn:
