@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand"
 	"sync"
 	"testing"
 
@@ -52,6 +53,9 @@ const (
 	// symbols' worth — close to a real 16 KiB RTL-SDR USB transfer —
 	// so the cross-chunk frame assembly added in #292 stays exercised.
 	harnessChunk = 192
+	// harnessFillerSeed seeds the pseudo-random warmup / idle / trailer
+	// filler in buildHarnessDibits. Fixed, so the stream is reproducible.
+	harnessFillerSeed = 0x9275
 )
 
 // demodModes is the set of demod paths the harness exercises.
@@ -66,9 +70,18 @@ var demodModes = []struct {
 // buildHarnessDibits assembles a canonical P25 Phase 1 control-channel
 // dibit stream: a 200-dibit warmup so the symbol-clock loop converges,
 // then `repeats` × (FSW + NID + TSBK + 50 idle dibits), then a
-// 100-dibit trailer. Mirrors buildP25LockedIQDibits in the integration
-// test so the two harnesses stay comparable.
+// 100-dibit trailer.
+//
+// The warmup / idle / trailer filler is pseudo-random (fixed seed, so
+// the stream stays reproducible) and must not be periodic. Real P25
+// control-channel dibits are effectively random — back-to-back
+// trellis-coded TSBKs — and the Mueller-Müller symbol-timing detector
+// is data-pattern dependent: a periodic filler such as a 0,1,2,3 ramp
+// biases its equilibrium off the eye centre, which made the harness
+// mis-measure the C4FM demod and falsely fail timing-phase acquisition
+// (issue #275).
 func buildHarnessDibits(nac uint16, repeats int) []uint8 {
+	rng := rand.New(rand.NewSource(harnessFillerSeed))
 	frame := make([]uint8, 0, 24+32+98)
 	frame = append(frame, phase1.FrameSyncWord[:]...)
 	nidBits := phase1.EncodeNIDBits(nac, phase1.DUIDTrunkingSignaling)
@@ -80,16 +93,16 @@ func buildHarnessDibits(nac uint16, repeats int) []uint8 {
 
 	out := make([]uint8, 0, 200+repeats*(len(frame)+50)+100)
 	for i := 0; i < 200; i++ {
-		out = append(out, uint8(i&3))
+		out = append(out, uint8(rng.Intn(4)))
 	}
 	for r := 0; r < repeats; r++ {
 		out = append(out, frame...)
 		for i := 0; i < 50; i++ {
-			out = append(out, uint8(i&3))
+			out = append(out, uint8(rng.Intn(4)))
 		}
 	}
 	for i := 0; i < 100; i++ {
-		out = append(out, uint8(i&3))
+		out = append(out, uint8(rng.Intn(4)))
 	}
 	return out
 }
@@ -168,6 +181,14 @@ func (h *nidLogCapture) WithGroup(string) slog.Handler      { return h }
 // reports whether the control channel locked and how the NID decoder
 // fared.
 func runHarness(mode DemodMode, imp demod.Impairments) harnessResult {
+	return runHarnessPhase(mode, imp, 0)
+}
+
+// runHarnessPhase is runHarness with a symbol-timing phase offset: it
+// drops the first skip IQ samples, so the receiver's clock starts at an
+// arbitrary phase relative to the signal — what every real RTL-SDR
+// capture presents, and what the symbol-clock loop must pull in from.
+func runHarnessPhase(mode DemodMode, imp demod.Impairments, skip int) harnessResult {
 	canonical := buildHarnessDibits(harnessNAC, harnessFrameRepeats)
 	iq := demod.ApplyImpairments(modulateHarness(canonical, mode), harnessSampleRateHz, imp)
 
@@ -196,7 +217,7 @@ func runHarness(mode DemodMode, imp demod.Impairments) harnessResult {
 		},
 	})
 
-	for i := 0; i < len(iq); i += harnessChunk {
+	for i := skip; i < len(iq); i += harnessChunk {
 		end := i + harnessChunk
 		if end > len(iq) {
 			end = len(iq)
@@ -541,10 +562,31 @@ func TestHarnessC4FMDibitErrorRate(t *testing.T) {
 			der, res := runHarnessDER(DemodC4FM, tc.imp)
 			t.Logf("#275 C4FM DER  %-14s  der=%.4f  locked=%-5v  decodeErrors=%-3d  nidErrs(min/max/n)=%s",
 				tc.name, der, res.locked, res.decodeErrors, res.nidErrsSummary())
-			if tc.name == "clean" && der > 0.10 {
-				t.Errorf("clean C4FM dibit error rate = %.4f, want <= 0.10 — "+
-					"well above the ~0.66 of the #275 chunk-boundary bug, so this "+
-					"flags a gross regression in the clean C4FM demod path", der)
+			if tc.name == "clean" && der > 0.02 {
+				t.Errorf("clean C4FM dibit error rate = %.4f, want <= 0.02 — "+
+					"the noiseless C4FM demod should slice essentially perfectly", der)
+			}
+		})
+	}
+}
+
+// TestHarnessC4FMTimingPhaseAcquisition guards C4FM symbol-clock
+// acquisition for issue #275. A real RTL-SDR capture arrives at an
+// arbitrary symbol-timing phase relative to the receiver's clock, so the
+// Mueller-Müller loop must pull the clock in from any of them. The
+// harness fed only phase-aligned signals before, so this was never
+// exercised — and a periodic dibit filler biased the symbol-timing
+// detector, so the C4FM control channel only locked when the signal
+// happened to start phase-aligned. This feeds the control channel at
+// every symbol-timing phase and asserts it locks at each.
+func TestHarnessC4FMTimingPhaseAcquisition(t *testing.T) {
+	for skip := 0; skip < harnessSPS; skip++ {
+		t.Run(fmt.Sprintf("phase_%d", skip), func(t *testing.T) {
+			res := runHarnessPhase(DemodC4FM, demod.Impairments{}, skip)
+			if !res.locked {
+				t.Errorf("C4FM did not lock at symbol-timing phase offset %d/%d samples "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s) — the symbol-clock loop "+
+					"failed to acquire (#275)", skip, harnessSPS, res.decodeErrors, res.nidErrsSummary())
 			}
 		})
 	}

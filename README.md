@@ -407,6 +407,24 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **P25 Phase 1 C4FM symbol-timing recovery verified
+  correct; #275 reproduction harness made faithful.**
+  Following the Mueller-Müller chunk-boundary fix, the
+  residual clean-signal C4FM dibit error rate was
+  investigated and found to be a harness artifact, not a
+  demod fault. The #275 harness filled its warmup / idle /
+  trailer dibits with a periodic 0,1,2,3 ramp; the
+  Mueller-Müller symbol-timing detector is data-pattern
+  dependent, so that periodic filler biased the detector's
+  equilibrium off the eye centre — the harness mis-measured
+  the C4FM demod and falsely failed symbol-timing-phase
+  acquisition. The filler is now pseudo-random (fixed seed),
+  matching the effectively-random dibit stream of a real
+  trellis-coded P25 control channel. With it the
+  clean-signal C4FM dibit error rate is zero and the control
+  channel locks at every symbol-timing phase — a coverage
+  gap the harness never exercised before, now guarded by
+  `TestHarnessC4FMTimingPhaseAcquisition`.
 - **P25 Phase 1 voice decoding and SDRtrunk feature parity.**
   A `p25` voice grant now decodes end-to-end — the composer's
   `runP25Phase1VoiceChain` takes modulated C4FM IQ → Phase 1
