@@ -1,6 +1,8 @@
 package phase2
 
 import (
+	"encoding/binary"
+
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
@@ -47,6 +49,87 @@ func EncodeSuperframe(subframes [SubframesPerSuperframe][]uint8) []uint8 {
 	base := SyncSubframeIndex * DibitsPerSubframe
 	copy(out[base:base+SyncDibits], sync)
 	return out
+}
+
+// EncodeMACSubframe builds a DibitsPerSubframe-long MAC sub-frame: the
+// ISCH for slotType (which must be a MAC SlotType) at counter, followed
+// by the FEC-encoded MAC PDU at MACPayloadOffset. It is the inverse of
+// the slice + decodeMACPDUDibits step IngestSuperframe runs. The PDU is
+// assembled and zero-padded/truncated to the 18-byte (144-bit) MAC PDU
+// width; mode and interleave must match the decoder's configuration.
+// Panics if slotType is not a MAC SlotType.
+func EncodeMACSubframe(slotType SlotType, counter uint8, pdu MACPDU, mode TrellisMode, interleave InterleaveMode) []uint8 {
+	if !slotType.IsMAC() {
+		panic("p25/phase2: EncodeMACSubframe slotType is not a MAC SlotType")
+	}
+	macBytes := AssembleMACPDU(pdu)
+	full := make([]byte, 18)
+	copy(full, macBytes) // pad short / truncate long to the 144-bit MAC PDU
+	infoDibits := framing.BitsToDibits(framing.UnpackBitsMSB(full, 144))
+
+	channelDibits := infoDibits
+	if mode == TrellisOn {
+		channelDibits = framing.EncodeP25Trellis(infoDibits)
+	}
+	if interleave == InterleaveOn {
+		channelDibits = framing.InterleaveMACBurst(channelDibits)
+	}
+
+	sub := IdleSubframe()
+	WriteISCH(sub, slotType, counter)
+	copy(sub[MACPayloadOffset:MACPayloadOffset+len(channelDibits)], channelDibits)
+	return sub
+}
+
+// EncodeEncryptionSync builds the MAC PDU form of an Encryption Sync —
+// the inverse of MACPDU.AsEncryptionSync.
+func EncodeEncryptionSync(es EncryptionSync) MACPDU {
+	payload := make([]byte, 12)
+	payload[0] = es.AlgorithmID
+	binary.BigEndian.PutUint16(payload[1:3], es.KeyID)
+	copy(payload[3:12], es.MessageIndicator[:])
+	return MACPDU{Opcode: OpEncryptionSync, Payload: payload}
+}
+
+// EncodeGroupAffiliationResponse builds the MAC PDU form of a Group
+// Affiliation Response — the inverse of AsGroupAffiliationResponse.
+func EncodeGroupAffiliationResponse(g GroupAffiliationResponse) MACPDU {
+	p := make([]byte, 8)
+	p[0] = g.Response & 0x03
+	binary.BigEndian.PutUint16(p[1:3], g.AnnouncementGroup)
+	binary.BigEndian.PutUint16(p[3:5], g.GroupAddress)
+	p[5] = byte(g.TargetID >> 16)
+	p[6] = byte(g.TargetID >> 8)
+	p[7] = byte(g.TargetID)
+	return MACPDU{Opcode: OpGroupAffiliationResponse, Payload: p}
+}
+
+// EncodeUnitRegistrationResponse builds the MAC PDU form of a Unit
+// Registration Response — the inverse of AsUnitRegistrationResponse.
+func EncodeUnitRegistrationResponse(u UnitRegistrationResponse) MACPDU {
+	p := make([]byte, 8)
+	p[0] = u.Response & 0x03
+	p[1] = byte(u.WACN >> 12)
+	p[2] = byte(u.WACN >> 4)
+	p[3] = byte(u.WACN<<4) | byte((u.SystemID>>8)&0x0F)
+	p[4] = byte(u.SystemID)
+	p[5] = byte(u.SourceID >> 16)
+	p[6] = byte(u.SourceID >> 8)
+	p[7] = byte(u.SourceID)
+	return MACPDU{Opcode: OpUnitRegistrationResponse, Payload: p}
+}
+
+// EncodeTalkerAliasFragment builds the MAC PDU form of a talker-alias
+// fragment — the inverse of MACPDU.AsTalkerAliasFragment.
+func EncodeTalkerAliasFragment(f TalkerAliasFragment) MACPDU {
+	payload := make([]byte, 5+len(f.Data))
+	payload[0] = byte(f.SourceID >> 16)
+	payload[1] = byte(f.SourceID >> 8)
+	payload[2] = byte(f.SourceID)
+	payload[3] = f.BlockIndex
+	payload[4] = f.BlockCount
+	copy(payload[5:], f.Data)
+	return MACPDU{Opcode: OpVendorTalkerAlias, MFID: MFIDMotorola, Payload: payload}
 }
 
 // EncodeVoiceSubframe builds a DibitsPerSubframe-long voice sub-frame:

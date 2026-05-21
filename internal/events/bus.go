@@ -55,6 +55,19 @@ const (
 	// instead of waiting for the next 3 s poll tick. Emitted by
 	// the HTTP API's PATCH /api/v1/audio handler.
 	KindAudioState Kind = "audio.state"
+	// KindPatch fires when a trunked system announces (or cancels) a
+	// patch / dynamic-regroup — a super-group that merges several
+	// talkgroups onto one channel. P25 Phase 2 publishes one per
+	// Motorola group-regroup or Harris regroup MAC PDU. The payload
+	// (trunking.Patch) carries the super-group, its member talkgroups,
+	// and whether the patch is being added or removed.
+	KindPatch Kind = "patch"
+	// KindTalkerAlias fires when a radio's display name (its "talker
+	// alias") has been fully reassembled from the multi-fragment vendor
+	// MAC PDUs that carry it. P25 Phase 2 publishes one per completed
+	// alias. The payload (trunking.TalkerAlias) is keyed by source unit
+	// so a consumer can associate it with the active call.
+	KindTalkerAlias Kind = "talker.alias"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

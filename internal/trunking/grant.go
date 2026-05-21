@@ -37,7 +37,13 @@ type Grant struct {
 	// emit a `.raw` frame sidecar regardless of its global WriteRaw
 	// setting, so researchers can decode out-of-band.
 	ProVoice bool
-	At       time.Time
+	// PatchedGroups, when non-empty, lists the member talkgroups of a
+	// patch / dynamic-regroup super-group: the call on GroupID is
+	// physically the shared traffic of these groups. The engine fills
+	// it from its PatchRegistry so the call can be attributed to every
+	// member. Empty for an ordinary (non-patched) grant.
+	PatchedGroups []uint32
+	At            time.Time
 }
 
 // String renders a one-line summary of a Grant for log output.

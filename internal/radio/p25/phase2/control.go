@@ -41,6 +41,10 @@ type ControlChannel struct {
 	// first Process call.
 	proc *processState
 
+	// aliasAsm reassembles multi-fragment talker-alias MAC PDUs into
+	// a radio's display name. Self-synchronised (its own mutex).
+	aliasAsm *TalkerAliasAssembler
+
 	mu               sync.Mutex
 	locked           bool
 	strictValidation bool
@@ -54,6 +58,12 @@ type ControlChannel struct {
 	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
 	// downlink frequency. Guarded by mu.
 	bandPlan BandPlan
+	// lastEncSync holds the most recently ingested Encryption Sync
+	// (Algorithm ID + Key ID); publishGrant attaches it to an
+	// encrypted grant so encrypted calls surface which algorithm/key
+	// they use. Guarded by mu.
+	lastEncSync EncryptionSync
+	hasEncSync  bool
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -408,6 +418,7 @@ func New(opts Options) *ControlChannel {
 		systemName: opts.SystemName,
 		freqHz:     opts.FrequencyHz,
 		now:        now,
+		aliasAsm:   NewTalkerAliasAssembler(now),
 	}
 }
 
@@ -436,6 +447,36 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		c.mu.Lock()
 		c.bandPlan.Apply(u)
 		c.mu.Unlock()
+	}
+	if es, ok := p.AsEncryptionSync(); ok {
+		c.mu.Lock()
+		c.lastEncSync = es
+		c.hasEncSync = true
+		c.mu.Unlock()
+	}
+	if pg, ok := p.AsMotorolaPatchGroup(); ok {
+		members := make([]uint32, len(pg.Patched))
+		for i, m := range pg.Patched {
+			members[i] = uint32(m)
+		}
+		c.publishPatch(uint32(pg.SuperGroup), members, "motorola", true)
+	}
+	if hr, ok := p.AsHarrisRegroup(); ok {
+		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris", true)
+	}
+	if super, ok := p.AsMotorolaPatchDelete(); ok {
+		c.publishPatch(super, nil, "motorola", false)
+	}
+	if g, ok := p.AsGroupAffiliationResponse(); ok {
+		c.publishAffiliation(g)
+	}
+	if u, ok := p.AsUnitRegistrationResponse(); ok {
+		c.publishUnitRegistration(u)
+	}
+	if f, ok := p.AsTalkerAliasFragment(); ok {
+		if alias, src, complete := c.aliasAsm.Add(f); complete {
+			c.publishTalkerAlias(src, alias)
+		}
 	}
 	if p.IsIdle() {
 		return
@@ -519,6 +560,21 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 	// before band-plan support landed) so the event surface is
 	// unchanged; the engine drops a zero-frequency grant on its own.
 	freq := c.resolveFreq(g.ChannelID, g.ChannelNumber)
+	// Decode the SVC_OPTIONS byte for the emergency + protected
+	// (encryption) indicators. When the call is protected and an
+	// Encryption Sync has been seen, attach its Algorithm ID / Key ID
+	// so the recorder + API can surface which crypto the call uses.
+	so := ServiceOptions(g.ServiceOptions)
+	var algID uint8
+	var keyID uint16
+	if so.Encrypted() {
+		c.mu.Lock()
+		if c.hasEncSync {
+			algID = c.lastEncSync.AlgorithmID
+			keyID = c.lastEncSync.KeyID
+		}
+		c.mu.Unlock()
+	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
@@ -529,6 +585,10 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 			FrequencyHz: freq,
 			ChannelID:   g.ChannelID,
 			ChannelNum:  g.ChannelNumber,
+			Encrypted:   so.Encrypted(),
+			Emergency:   so.Emergency(),
+			AlgorithmID: algID,
+			KeyID:       keyID,
 			At:          c.now(),
 		},
 	})
@@ -537,7 +597,92 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		"opcode", op, "tg", groupID,
 		"src", g.SourceID,
 		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber,
-		"freq_hz", freq)
+		"freq_hz", freq, "enc", so.Encrypted(), "emer", so.Emergency())
+}
+
+// publishPatch publishes an events.KindPatch for a vendor patch /
+// dynamic-regroup MAC PDU so the engine can attribute later grants on
+// the super-group to its member talkgroups. add=false cancels a patch.
+func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendor string, add bool) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindPatch,
+		Payload: trunking.Patch{
+			System:     c.systemName,
+			Protocol:   "p25-phase2",
+			SuperGroup: superGroup,
+			Members:    members,
+			Vendor:     vendor,
+			Add:        add,
+			At:         c.now(),
+		},
+	})
+	c.log.Debug("p25/phase2 patch",
+		"system", c.systemName, "vendor", vendor,
+		"super", superGroup, "members", members, "add", add)
+}
+
+// publishAffiliation publishes an events.KindAffiliation for a Group
+// Affiliation Response MAC PDU — the Phase 2 counterpart of the Phase 1
+// control channel's opcode-0x28 handling.
+func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindAffiliation,
+		Payload: trunking.Affiliation{
+			System:            c.systemName,
+			Protocol:          "p25-phase2",
+			SourceID:          g.TargetID,
+			GroupID:           uint32(g.GroupAddress),
+			AnnouncementGroup: uint32(g.AnnouncementGroup),
+			Response:          trunking.AffiliationResponse(g.Response),
+			At:                c.now(),
+		},
+	})
+}
+
+// publishUnitRegistration publishes an events.KindUnitRegistration for a
+// Unit Registration Response MAC PDU.
+func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindUnitRegistration,
+		Payload: trunking.UnitRegistration{
+			System:   c.systemName,
+			Protocol: "p25-phase2",
+			SourceID: u.SourceID,
+			WACN:     u.WACN,
+			SystemID: u.SystemID,
+			Response: trunking.RegistrationResponse(u.Response),
+			At:       c.now(),
+		},
+	})
+}
+
+// publishTalkerAlias publishes an events.KindTalkerAlias once a radio's
+// display name has been fully reassembled from its fragment MAC PDUs.
+func (c *ControlChannel) publishTalkerAlias(sourceID uint32, alias string) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindTalkerAlias,
+		Payload: trunking.TalkerAlias{
+			System:   c.systemName,
+			Protocol: "p25-phase2",
+			SourceID: sourceID,
+			Alias:    alias,
+			At:       c.now(),
+		},
+	})
+	c.log.Debug("p25/phase2 talker alias",
+		"system", c.systemName, "src", sourceID, "alias", alias)
 }
 
 // resolveFreq looks the (channelID, channelNumber) pair up in the band

@@ -81,3 +81,16 @@ type UnitRegistration struct {
 	Response RegistrationResponse // accepted / failed / denied / refused
 	At       time.Time
 }
+
+// TalkerAlias is published on the events bus when a radio's display
+// name (the "talker alias") has been fully reassembled from the
+// multi-fragment vendor MAC PDUs that carry it. Emitted by the P25
+// Phase 2 decoder. Keyed by SourceID so a consumer can associate it
+// with the active call whose Grant.SourceID matches.
+type TalkerAlias struct {
+	System   string // System name, matches trunking.System.Name
+	Protocol string // "p25-phase2"
+	SourceID uint32 // radio unit the alias names
+	Alias    string // the reassembled display name
+	At       time.Time
+}
