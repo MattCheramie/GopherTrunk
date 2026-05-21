@@ -49,6 +49,7 @@ per-system with `<key>: off`.
 | P25 Phase 2 (inner trellis) | `p25_phase2_trellis_mode` | `TrellisOn` | `off` |
 | P25 Phase 2 (outer RS) | `p25_phase2_rs_mode` | `RSOff` (RS(24, 16, 9) verifier shipped per TIA-102.BAAA-A §5.9) | `on` flips RS verification on |
 | P25 Phase 2 (PN44 scrambler) | `p25_phase2_scrambler_mode` | `ScramblerOff` (PN44 descrambler shipped per TIA-102.BBAC-1 §7.2.5 with per-burst slot-offset blind probe; seed derived from per-system WACN + SystemID + NAC) | `on` flips PN44 descrambling on at the configured offset / `probe` walks the 12 Figure 7-5 slot offsets and accepts whichever RS-verifies |
+| P25 Phase 2 (block interleaver) | `p25_phase2_interleave_mode` | `off` (no deinterleave; matches synthesized-fixture expectations) | `on` flips the TIA-102.BBAC per-burst MAC block deinterleaver on, applied to the burst dibits before trellis decoding |
 | NXDN | `nxdn_viterbi_mode` | `ViterbiSpec` | `off` |
 | EDACS | `edacs_bch_mode` | `BCHOn` | `off` |
 | MPT 1327 | `mpt1327_bch_mode` | `BCHOn` | `off` |

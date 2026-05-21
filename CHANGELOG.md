@@ -9,6 +9,42 @@ for tagged releases.
 
 ### Added
 
+- **P25 Phase 1 voice decoding and broader control-channel
+  coverage** (PR #310). A `p25` voice grant now decodes
+  end-to-end — modulated C4FM IQ → Phase 1 receiver → LDU
+  assembly → IMBE voice frames → WAV; the composer previously
+  bypassed the P25 Phase 1 voice path and produced no audio.
+  The control-channel decoder gains wider TSBK grant coverage
+  (unit-to-unit voice grant, explicit/implicit group update,
+  telephone-interconnect grant, SNDCP data-channel grant),
+  manufacturer-specific TSBK dispatch by MFID (Motorola /
+  Harris group-regroup, multi-fragment vendor talker alias),
+  LDU1 Link Control and LDU2 Encryption Sync decode (algorithm
+  and key ID surfaced — identify, not decrypt), a `NetworkModel`
+  that accumulates system topology (WACN, RFSS / site IDs,
+  secondary control channels, neighbour sites), and a
+  packet-data decode layer (PDU reassembly → SNDCP → IPv4
+  header). Patch / regroup and talker-alias announcements
+  publish through the new `KindPatch` / `KindTalkerAlias` event
+  kinds.
+- **P25 Phase 2 TDMA decode path** (PR #308, #309). P25 Phase 2
+  grew from a control-channel-only stub into a full TDMA
+  decoder. A `SuperframeDecoder` locks the 360 ms superframe and
+  slices its 12 sub-frames; SlotType decode separates voice from
+  MAC sub-frames; `ExtractVoiceFrames` pulls AMBE+2 frames from
+  4V / 2V voice slots; and a composer voice chain decodes a
+  `p25-phase2` grant end-to-end (modulated IQ → receiver →
+  superframe decode → AMBE+2 → WAV). The live control-channel
+  pipeline now runs through the structured `SuperframeDecoder`.
+  Parity additions: encryption identification (`Encrypted` /
+  `Emergency` / `AlgorithmID` / `KeyID` on the grant), Motorola /
+  Harris patch / regroup feeding an engine `PatchRegistry`,
+  multi-fragment talker-alias reassembly, band-plan
+  channel-to-frequency resolution, MFID-keyed vendor MAC
+  dispatch, and the opt-in TIA-102.BBAC per-burst block
+  deinterleaver (`p25_phase2_interleave_mode`). Phase 2 now
+  emits `KindAffiliation` / `KindUnitRegistration` / `KindPatch`
+  / `KindTalkerAlias` like Phase 1.
 - **P25 Phase 1 CQPSK / LSM demodulator path** for simulcast P25
   sites (issue #275). New per-system YAML key
   `p25_phase1_demod_mode: cqpsk` routes the control-channel IQ
@@ -30,6 +66,32 @@ for tagged releases.
 
 ### Fixed
 
+- **Web console WebSocket reconnect storm and intermittent
+  crash** (issue #290, PR #302). The event-stream client reset
+  its reconnect backoff the instant a socket opened, so a
+  connection that opened then dropped immediately
+  reconnect-stormed at the floor delay forever; the backoff now
+  resets only after a connection holds open for a stability
+  window, and reconnect delays carry equal jitter. Socket
+  teardown nulls every handler and gates status writes behind a
+  `closed` flag, so a late event from an in-flight socket can no
+  longer write to the store after teardown and trip a React
+  render crash. The health-check and event-stream effects are
+  keyed on the primitive server URL / token values instead of a
+  derived object so they re-run only on a real server change.
+- **P25 Phase 1 CQPSK control channel locked only in a narrow
+  RTL-SDR gain window** (issue #275, PR #307). The CMA blind
+  equalizer added for simulcast P25 made the CQPSK path
+  gain-sensitive: the Gardner timing-error detector and the CMA
+  weight update both use un-normalised, amplitude-dependent
+  error terms, so the chain converged only when the signal sat
+  in a narrow amplitude band. An AGC on the matched-filter
+  output now normalises every capture to the level the Gardner
+  and CMA loops are tuned for, restoring scale invariance
+  regardless of front-end gain. `dsp.AGC` was reworked from a
+  per-sample feedback loop — which spiked into gain runaway on a
+  near-zero symbol of a linear-modulation stream — into a robust
+  power-EMA feed-forward normaliser.
 - **Trunked control-channel decode on live RTL-SDR hardware**
   (issue #275). The ccdecoder fed every per-protocol receiver the
   full, un-channelized SDR IQ stream (commonly 2.048 MHz), so the

@@ -407,6 +407,85 @@ to its own package and lands independently.
 
 ### Recently shipped
 
+- **P25 Phase 1 voice decoding and SDRtrunk feature parity.**
+  A `p25` voice grant now decodes end-to-end — the composer's
+  `runP25Phase1VoiceChain` takes modulated C4FM IQ → Phase 1
+  receiver → LDU assembly → IMBE voice-frame extraction →
+  recorder, where it previously bypassed the P25 Phase 1 voice
+  path and produced no WAV. The control-channel decoder also
+  reaches functional parity with SDRtrunk: broader TSBK grant
+  coverage (unit-to-unit voice grant, explicit/implicit group
+  update, telephone-interconnect grant, SNDCP data-channel
+  grant), manufacturer-specific TSBK dispatch keyed on the MFID
+  header byte (Motorola / Harris group-regroup, multi-fragment
+  vendor talker alias), LDU1 Link Control decode through a
+  shortened Hamming(10,6,3) inner FEC, LDU2 Encryption Sync
+  (algorithm ID / key ID surfaced — identify, not decrypt), a
+  `NetworkModel` that accumulates system topology (WACN,
+  RFSS / site IDs, secondary control channels, neighbour
+  sites), and a packet-data decode layer (PDU header +
+  multi-block reassembly → SNDCP convergence → IPv4 header).
+  Patch / regroup and talker-alias announcements publish
+  through the protocol-agnostic `KindPatch` / `KindTalkerAlias`
+  event kinds. HDU parsing and receiver-level PDU dibit framing
+  are documented as deferred pending real-capture calibration.
+- **P25 Phase 2 full TDMA decode path and SDRtrunk parity.**
+  P25 Phase 2 grew from a control-channel-only stub into a
+  functionally complete TDMA decoder. A `SuperframeDecoder`
+  locks the 360 ms TDMA superframe and slices its 12
+  sub-frames, each tagged with its timeslot; the SlotType is
+  decoded (Golay(24,12,8)) so voice and MAC sub-frames are
+  distinguishable off the wire. `ExtractVoiceFrames` pulls
+  AMBE+2 frames from 4V / 2V voice slots, and a composer voice
+  chain takes modulated IQ → receiver → superframe decode →
+  AMBE+2 → WAV. The live control-channel pipeline now runs
+  through the structured `SuperframeDecoder` instead of the
+  flat sync-window slicer. Parity additions: encryption
+  identification (`Encrypted` / `Emergency` / `AlgorithmID` /
+  `KeyID` flagged on the grant), Motorola / Harris patch /
+  regroup MAC PDUs feeding an engine `PatchRegistry`,
+  reorder-tolerant multi-fragment talker-alias reassembly,
+  band-plan `(ChannelID, ChannelNumber)` → downlink frequency
+  resolution, MFID-keyed vendor MAC dispatch, and an opt-in
+  TIA-102.BBAC per-burst block deinterleaver
+  (`p25_phase2_interleave_mode`). Phase 2 now emits
+  `KindAffiliation` / `KindUnitRegistration` / `KindPatch` /
+  `KindTalkerAlias` like Phase 1.
+- **P25 Phase 1 CQPSK control channel now locks regardless of
+  RTL-SDR front-end gain (issue #275).** The CMA blind
+  equalizer added for simulcast P25 made the CQPSK path
+  gain-sensitive: an on-air retest locked the control channel
+  only in a narrow RTL-SDR gain window. The differential
+  decoder is `atan2`-based and so amplitude-blind, but the two
+  adaptive loops — the Gardner timing-error detector and the
+  CMA weight update — use un-normalised error terms that scale
+  with amplitude², so the chain converged only when the signal
+  sat in a narrow amplitude band. An AGC on the matched-filter
+  output now normalises every capture to the level the Gardner
+  and CMA loops are tuned for, restoring scale invariance. The
+  `dsp.AGC` primitive was reworked from a per-sample feedback
+  loop — which spiked its gain into runaway on a near-zero
+  symbol of a linear-modulation stream — into a robust
+  power-EMA feed-forward normaliser. A
+  `TestHarnessCQPSKGainInvariant` regression guard sweeps the
+  IQ amplitude scale 0.05–20.
+- **Web console WebSocket reconnect storm fixed (issue #290).**
+  The browser SPA intermittently crashed (React #185) with
+  "WebSocket is closed before the connection is established"
+  console spam. The event-stream client reset its reconnect
+  backoff the instant a socket opened, so a connection that
+  opened then dropped immediately reconnect-stormed at the
+  floor delay forever; the backoff now resets only after a
+  connection holds open for a stability window, and reconnect
+  delays carry equal jitter. Socket teardown now nulls every
+  handler and gates status writes behind a `closed` flag, so a
+  late event from an in-flight socket can no longer write to
+  the store after teardown. The health-check and event-stream
+  effects are keyed on the primitive server URL / token values
+  instead of a derived object, so they re-run only on a real
+  server change. New `events.test.ts` and `App.panels.test.tsx`
+  cover the backoff / jitter / teardown lifecycle and mount
+  every routed panel connected.
 - **Coarse AFC: P25 C4FM control channel tolerates a real tuner's
   frequency offset (issue #275).** A residual RTL-SDR carrier offset
   leaves the FM discriminator as a constant DC bias; against the C4FM
@@ -2521,7 +2600,7 @@ the daemon.
 | --- | --- | --- | --- |
 | TETRA | `tetra_colour_code` (uint32, low 30 bits — required for non-BSCH), `tetra_channel` (`"sch/hd"` / `"sch/f"` / `"sch/hu"` / `"bsch"` / `"aach"`, default `sch/hd`), `tetra_channel_coding` (`""` / `"on"` / `"off"`) | Full ETSI EN 300 392-2 §8.3.1 type-5 → type-1 chain (descramble + deinterleave + depuncture + Viterbi + CRC-16 verify + tail strip) per burst. `tetra_colour_code` of 0 is only valid for BSCH; non-BSCH channels need the per-cell colour code or descrambling produces garbage (the connector warn-logs this case). | `tetra_channel_coding: off` falls back to the legacy 48-dibit raw-PDU path. CRC will fail on live captures; only useful for pre-stripped fixtures. |
 | LTR | `ltr_fcs_mode` (`""` / `"on"` / `"off"`), `ltr_manchester_mode` (`""` / `"on"` / `"soft"` / `"strict"` / `"off"` / `"nrz"`) | `fcs: on` — CRC-7 FCS check against sdrtrunk's CRCLTR.java layout. `manchester: soft` — majority-decode each pair (matches the dominant on-air encoding for sub-audible LTR signaling). | `fcs: off` skips the CRC check (synthesized fixtures whose FCS trailer isn't populated). `manchester: off` / `nrz` treats the stream as raw NRZ (synthesized NRZ fixtures). |
-| P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"on"` / `"off"`), `p25_phase2_rs_mode` (`""` / `"on"` / `"off"`), `p25_phase2_scrambler_mode` (`""` / `"on"` / `"probe"` / `"off"`) | `trellis: on` — 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). `rs: off` — outer RS(24, 16, 9) verification per TIA-102.BAAA-A §5.9 defaults off; flip on to drop MAC PDUs with non-zero syndromes. `scrambler: off` — PN44 descrambler per TIA-102.BBAC-1 §7.2.5 defaults off. | `trellis: off` — legacy 72-dibit raw-MAC-PDU path for pre-stripped fixtures. `rs: on` — verify RS(24, 16, 9) syndromes on the trellis-decoded MAC PDU. `scrambler: on` — XOR the trellis-decoded 144-bit MAC PDU with the PN44 sequence starting at the configured per-burst offset. `scrambler: probe` — walk all 12 spec-defined slot offsets from Figure 7-5 and accept the first that passes RS verification (requires `rs: on`; degrades to offset-0 descrambling otherwise). |
+| P25 Phase 2 | `p25_phase2_trellis_mode` (`""` / `"on"` / `"off"`), `p25_phase2_rs_mode` (`""` / `"on"` / `"off"`), `p25_phase2_scrambler_mode` (`""` / `"on"` / `"probe"` / `"off"`), `p25_phase2_interleave_mode` (`""` / `"on"` / `"off"`) | `trellis: on` — 4-state ½-rate trellis FEC over the MAC PDU window (146 channel dibits → 72 info dibits per TIA-102.AABF). `rs: off` — outer RS(24, 16, 9) verification per TIA-102.BAAA-A §5.9 defaults off; flip on to drop MAC PDUs with non-zero syndromes. `scrambler: off` — PN44 descrambler per TIA-102.BBAC-1 §7.2.5 defaults off. `interleave: off` — the TIA-102.BBAC per-burst MAC block deinterleaver defaults off. | `trellis: off` — legacy 72-dibit raw-MAC-PDU path for pre-stripped fixtures. `rs: on` — verify RS(24, 16, 9) syndromes on the trellis-decoded MAC PDU. `scrambler: on` — XOR the trellis-decoded 144-bit MAC PDU with the PN44 sequence starting at the configured per-burst offset. `scrambler: probe` — walk all 12 spec-defined slot offsets from Figure 7-5 and accept the first that passes RS verification (requires `rs: on`; degrades to offset-0 descrambling otherwise). `interleave: on` — deinterleave each MAC burst before trellis decoding. |
 | NXDN | `nxdn_viterbi_mode` (`""` / `"spec"` / `"on"` / `"off"`) | `spec` — full NXDN-TS-1-A rev 1.3 §4.5.1.1 outbound CAC chain (150 dibits → deinterleave 25×12 → depuncture 50/350 → K=5 Viterbi → 16-bit CRC verify → 155 info bits). | `on` — intermediate 92-dibit K=5 Viterbi path for older MMDVMHost / DSDcc fixtures. `off` — legacy 44-dibit raw-CAC path for pre-stripped fixtures. |
 | EDACS | `edacs_bch_mode` (`""` / `"on"` / `"off"`) | BCH(40, 28, 2) with single/double-bit correction over the 40-bit on-wire CCW; the effective CCW carries 28 info bits (Command + Status + Address + high LCN bits), the remaining bits become BCH parity. | Falls back to the legacy pre-stripped 40-bit CCW; payload struct's LCN bit 0 + Aux fields are treated as data instead of parity. |
 | MPT 1327 | `mpt1327_bch_mode` (`""` / `"on"` / `"off"`) | BCH(63, 38) decode over the 64-bit on-wire codeword. | Falls back to the legacy 38-bit pre-stripped codeword. |
