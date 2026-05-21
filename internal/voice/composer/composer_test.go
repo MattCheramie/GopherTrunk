@@ -302,6 +302,51 @@ func TestComposerSkipsDigitalProtocol(t *testing.T) {
 	}
 }
 
+func TestComposerRunsFMChainForAnalogTrunking(t *testing.T) {
+	for _, proto := range []string{"motorola", "edacs", "ltr", "mpt1327"} {
+		t.Run(proto, func(t *testing.T) {
+			src := newFakeSource()
+			c, bus, _, _, teardown := mkComposer(t, src)
+			defer teardown()
+			bus.Publish(events.Event{
+				Kind: events.KindCallStart,
+				Payload: trunking.CallStart{
+					Grant:        trunking.Grant{Protocol: proto, GroupID: 1, FrequencyHz: 851_000_000},
+					DeviceSerial: "VOICE-1",
+					StartedAt:    time.Now().UTC(),
+				},
+			})
+			waitFor(t, time.Second, func() bool {
+				for _, s := range c.ActiveChains() {
+					if s == "VOICE-1" {
+						return true
+					}
+				}
+				return false
+			})
+		})
+	}
+}
+
+func TestComposerBypassesEDACSProVoice(t *testing.T) {
+	src := newFakeSource()
+	c, bus, _, _, teardown := mkComposer(t, src)
+	defer teardown()
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			// EDACS ProVoice is digital — it must not be FM-demodulated.
+			Grant:        trunking.Grant{Protocol: "edacs", ProVoice: true, GroupID: 1, FrequencyHz: 851_000_000},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+	time.Sleep(80 * time.Millisecond)
+	if got := len(c.ActiveChains()); got != 0 {
+		t.Errorf("EDACS ProVoice grant spawned %d chains, want 0", got)
+	}
+}
+
 func TestComposerNoDeviceForSerialIsBenign(t *testing.T) {
 	src := newFakeSource()
 	c, bus, _, _, teardown := mkComposer(t, src)

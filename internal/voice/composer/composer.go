@@ -341,13 +341,22 @@ func (c *Composer) ActiveChains() []string {
 
 func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	proto := cs.Grant.Protocol
-	isFM := proto == "" || proto == "fm" || proto == "analog"
+	// Motorola Type II / SmartZone, EDACS, LTR and MPT 1327 are analog
+	// FM trunking — their voice channels carry plain narrowband FM, so
+	// they decode through the same chain as a conventional FM call.
+	// EDACS ProVoice is the exception: it is digital and patent-
+	// encumbered, so a ProVoice grant is left to the recorder's .raw
+	// sidecar rather than FM-demodulated into garbage.
+	isAnalogTrunk := proto == "motorola" || proto == "ltr" || proto == "mpt1327" ||
+		(proto == "edacs" && !cs.Grant.ProVoice)
+	isFM := proto == "" || proto == "fm" || proto == "analog" || isAnalogTrunk
 	isDMRVoice := proto == "dmr-tier2" || proto == "dmr-tier3"
 	isP25P2Voice := proto == "p25-phase2"
 	isP25P1Voice := proto == "p25"
 	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice {
-		// Other digital protocols (NXDN, ...) have no composer voice
-		// chain yet — their voice bursts are not decoded.
+		// Remaining digital protocols (NXDN, dPMR, TETRA, YSF, D-STAR,
+		// EDACS ProVoice) have no composer voice chain yet — their
+		// voice bursts are not decoded into PCM here.
 		c.log.Info("composer: digital protocol not yet decoded; chain bypassed",
 			"device", cs.DeviceSerial, "protocol", proto,
 			"group", cs.Grant.GroupID)
