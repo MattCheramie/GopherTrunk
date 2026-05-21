@@ -105,7 +105,7 @@ func TestDaemonEndToEnd(t *testing.T) {
 			GroupID: 1234, SourceID: 56789,
 			FrequencyHz: 851_000_000,
 		},
-		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP"},
+		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP", Record: true},
 		DeviceSerial: "VOICE-1",
 		StartedAt:    startedAt,
 	}

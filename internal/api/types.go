@@ -89,6 +89,8 @@ type TalkgroupDTO struct {
 	Priority    int    `json:"priority,omitempty"`
 	Lockout     bool   `json:"lockout,omitempty"`
 	Scan        bool   `json:"scan"`
+	Stream      bool   `json:"stream"`
+	Record      bool   `json:"record"`
 }
 
 func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
@@ -105,6 +107,8 @@ func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
 		Priority:    tg.Priority,
 		Lockout:     tg.Lockout,
 		Scan:        tg.Scan,
+		Stream:      tg.Stream,
+		Record:      tg.Record,
 	}
 }
 

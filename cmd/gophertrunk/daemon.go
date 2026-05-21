@@ -11,13 +11,16 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
+	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
@@ -78,27 +81,30 @@ type Daemon struct {
 	log     *slog.Logger
 	writer  *config.Writer // optional; nil when daemon ran without -config
 
-	bus        *events.Bus
-	pool       *sdr.Pool
-	talkgroups *trunking.TalkgroupDB
-	systems    []trunking.System
-	engine     *trunking.Engine
-	voicePool  *trunking.VoicePool
-	recorder   *voice.Recorder
-	composer   *composer.Composer
-	player     *player.Player
-	toneout    *toneout.Detector
-	audioPub   *api.AudioPublisher
-	db         *storage.DB
-	callLog    *storage.CallLog
-	retention  *storage.Retention
-	ccCache    *trunking.Cache
-	cchuntSup  *cchunt.Supervisor
-	ccDecoder  *ccdecoder.Decoder
-	convScan   *conventional.Scanner
-	metrics    *metrics.Metrics
-	httpAPI    *api.Server
-	grpcAPI    *api.GRPCServer
+	bus         *events.Bus
+	pool        *sdr.Pool
+	talkgroups  *trunking.TalkgroupDB
+	systems     []trunking.System
+	engine      *trunking.Engine
+	voicePool   *trunking.VoicePool
+	recorder    *voice.Recorder
+	broadcast   *broadcast.Manager
+	composer    *composer.Composer
+	player      *player.Player
+	toneout     *toneout.Detector
+	audioPub    *api.AudioPublisher
+	db          *storage.DB
+	callLog     *storage.CallLog
+	locationLog *storage.LocationLog
+	messageLog  *gtlog.MessageLog
+	retention   *storage.Retention
+	ccCache     *trunking.Cache
+	cchuntSup   *cchunt.Supervisor
+	ccDecoder   *ccdecoder.Decoder
+	convScan    *conventional.Scanner
+	metrics     *metrics.Metrics
+	httpAPI     *api.Server
+	grpcAPI     *api.GRPCServer
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -256,8 +262,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 
 	// SDR pool — best-effort. Components that need a Voice device
-	// fall through gracefully when the pool is empty.
-	if len(cfg.SDR.Devices) > 0 {
+	// fall through gracefully when the pool is empty. The pool is
+	// also constructed when only baseband replay recordings are
+	// configured, so an offline capture can be decoded with no radio.
+	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 {
 		d.pool = sdr.NewPool(log)
 		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
@@ -279,12 +287,32 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			hints = append(hints, h)
 		}
+		// Mount baseband replay recordings as virtual tuners. The
+		// FileDriver registers globally; the pool's Open then
+		// enumerates it alongside any real drivers.
+		if len(cfg.Baseband.Replay) > 0 {
+			specs := make([]baseband.ReplaySpec, 0, len(cfg.Baseband.Replay))
+			for _, r := range cfg.Baseband.Replay {
+				loop := true
+				if r.Loop != nil {
+					loop = *r.Loop
+				}
+				specs = append(specs, baseband.ReplaySpec{Path: r.File, Serial: r.Serial, Loop: loop})
+				if r.Serial != "" {
+					hints = append(hints, sdr.Hint{Serial: r.Serial, Role: sdr.ParseRole(r.Role)})
+				}
+			}
+			sdr.Register(baseband.NewFileDriver(specs))
+			log.Info("baseband replay mounted", "recordings", len(specs))
+		}
 		if err := d.pool.Open(cfg.SDR.SampleRate, hints); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)
 			d.addWarning(fmt.Sprintf(
 				"SDR pool failed to open (%v) — no radios will demodulate; check device permissions / cabling / kernel modules",
 				err))
 			d.pool = nil
+		} else {
+			d.wrapBasebandRecorders(cfg, log)
 		}
 	} else if len(cfg.Trunking.Systems) > 0 {
 		// Trunked systems configured but no SDR devices listed —
@@ -338,6 +366,38 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
 		}
 		d.recorder = rec
+	}
+
+	// Outbound call-streaming manager — optional. Subscribes to the
+	// bus at construction so calls completed before Run starts are
+	// not lost. Built only when at least one feed is enabled.
+	{
+		bcastRate := int(cfg.Recordings.SampleRate)
+		if bcastRate == 0 {
+			bcastRate = 8000
+		}
+		mgr, err := buildBroadcastManager(cfg.Broadcast, bcastRate, d.bus, log)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: broadcast: %w", err)
+		}
+		if mgr != nil {
+			d.broadcast = mgr
+			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
+		}
+	}
+
+	// Decoded-message log — optional. Subscribes to the bus and writes
+	// a human-readable text log of every trunking event.
+	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
+		ml, err := gtlog.NewMessageLog(gtlog.MessageLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.MessageLog.Path,
+			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: message log: %w", err)
+		}
+		d.messageLog = ml
 	}
 
 	// Tone-out detector — optional. Built before the composer so it can
@@ -588,6 +648,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.callLog = cl
 
+		ll, err := storage.NewLocationLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("daemon: location log: %w", err)
+		}
+		d.locationLog = ll
+
 		if cfg.Retention.CallLogDays > 0 || cfg.Retention.FilesDays > 0 {
 			interval, err := retentionInterval(cfg.Retention.Interval)
 			if err != nil {
@@ -640,6 +707,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.db != nil {
 			opts.History = api.HistoryFromStorage(d.db)
 		}
+		if d.locationLog != nil {
+			opts.Locations = api.LocationsFromStorage(d.locationLog)
+		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
 		}
@@ -660,6 +730,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if d.player != nil || d.recorder != nil {
 			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}
+		}
+		if d.broadcast != nil {
+			opts.Broadcast = broadcastStatus{d.broadcast}
 		}
 		cfgCopy := cfg
 		opts.Runtime = &runtimeSnapshot{
@@ -745,6 +818,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.callLog.Run(ctx)
 		})
 	}
+	if d.locationLog != nil {
+		d.spawn(runCtx, "locationlog", false, func(ctx context.Context) error {
+			return d.locationLog.Run(ctx)
+		})
+	}
+	if d.messageLog != nil {
+		d.spawn(runCtx, "messagelog", false, func(ctx context.Context) error {
+			return d.messageLog.Run(ctx)
+		})
+	}
 	if d.retention != nil {
 		d.spawn(runCtx, "retention", false, func(ctx context.Context) error {
 			return d.retention.Run(ctx)
@@ -753,6 +836,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.recorder != nil {
 		d.spawn(runCtx, "recorder", false, func(ctx context.Context) error {
 			return d.recorder.Run(ctx)
+		})
+	}
+	if d.broadcast != nil {
+		d.spawn(runCtx, "broadcast", false, func(ctx context.Context) error {
+			return d.broadcast.Run(ctx)
 		})
 	}
 	if d.composer != nil {
@@ -872,11 +960,20 @@ func (d *Daemon) Close() {
 		if d.player != nil {
 			_ = d.player.Close()
 		}
+		if d.broadcast != nil {
+			_ = d.broadcast.Close()
+		}
 		if d.recorder != nil {
 			_ = d.recorder.Close()
 		}
 		if d.callLog != nil {
 			_ = d.callLog.Close()
+		}
+		if d.locationLog != nil {
+			_ = d.locationLog.Close()
+		}
+		if d.messageLog != nil {
+			_ = d.messageLog.Close()
 		}
 		if d.metrics != nil {
 			_ = d.metrics.Close()
@@ -1051,6 +1148,41 @@ type playerSink struct{ p *player.Player }
 
 func (s playerSink) WritePCM(serial string, samples []int16) error {
 	return s.p.WritePCM(serial, samples)
+}
+
+// broadcastStatus adapts the broadcast.Manager into the
+// api.BroadcastStatusProvider interface, keeping the api package free
+// of a compile-time dependency on internal/broadcast.
+type broadcastStatus struct{ mgr *broadcast.Manager }
+
+func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
+
+// wrapBasebandRecorders replaces the Device of every pool entry whose
+// serial appears in baseband.record with a RecordingDevice, teeing its
+// live IQ to a WAV recording. Runs once at construction, before any
+// streaming starts, so mutating the entry's Device pointer is safe.
+func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
+	if len(cfg.Baseband.Record) == 0 || d.pool == nil {
+		return
+	}
+	dirBySerial := make(map[string]string, len(cfg.Baseband.Record))
+	for _, r := range cfg.Baseband.Record {
+		dirBySerial[r.Serial] = r.Dir
+	}
+	rate := cfg.SDR.SampleRate
+	if rate == 0 {
+		rate = sdr.DefaultSampleRateHz
+	}
+	for _, e := range d.pool.Entries() {
+		dir, ok := dirBySerial[e.Info.Serial]
+		if !ok {
+			continue
+		}
+		rec := baseband.NewRecordingDevice(e.Device, dir, log)
+		_ = rec.SetSampleRate(rate)
+		e.Device = rec
+		log.Info("baseband recording enabled", "serial", e.Info.Serial, "dir", dir)
+	}
 }
 
 // convFanoutRecorder lets the conventional scanner drive both the

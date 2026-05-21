@@ -89,6 +89,15 @@ type AudioController interface {
 	BackendEnabled() bool
 }
 
+// BroadcastStatusProvider is the read side of the outbound
+// call-streaming subsystem (internal/broadcast). BroadcastStats
+// returns a JSON-serialisable counter snapshot; the daemon adapts
+// broadcast.Manager.Stats() to this interface so the api package
+// keeps no compile-time dependency on internal/broadcast.
+type BroadcastStatusProvider interface {
+	BroadcastStats() any
+}
+
 // ScannerCockpit is the API surface for the police-scanner subsystem:
 // reads the current state (per-system CC hunt, conventional channel
 // list, talkgroup-scan stats) and applies operator mutations from
@@ -209,6 +218,7 @@ type Server struct {
 	devices      DevicesProvider
 	scanner      ScannerCockpit
 	audio        AudioController
+	broadcast    BroadcastStatusProvider
 	runtime      RuntimeProvider
 	configWriter ConfigWriter
 	settings     SettingsApplier
@@ -218,6 +228,7 @@ type Server struct {
 	talkgroups   *trunking.TalkgroupDB
 	systems      []trunking.System
 	history      HistoryQuery
+	locations    LocationQuery
 	metrics      http.Handler
 	log          *slog.Logger
 	version      string
@@ -250,6 +261,25 @@ type Server struct {
 // storage package and lets tests inject fakes.
 type HistoryQuery interface {
 	History(ctx context.Context, f HistoryFilter) ([]CallRow, error)
+}
+
+// LocationFix is one geographic fix returned by GET /api/v1/locations.
+type LocationFix struct {
+	System     string  `json:"system"`
+	Protocol   string  `json:"protocol"`
+	RadioID    uint32  `json:"radio_id"`
+	Talkgroup  uint32  `json:"talkgroup"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	SpeedKnots float64 `json:"speed_knots"`
+	HeadingDeg float64 `json:"heading_deg"`
+	ReportedAt string  `json:"reported_at"` // RFC3339
+}
+
+// LocationQuery is the read side of the GPS/location subsystem,
+// supplying recent fixes for GET /api/v1/locations and the web map.
+type LocationQuery interface {
+	RecentLocations(limit int) ([]LocationFix, error)
 }
 
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
@@ -295,6 +325,9 @@ type ServerOptions struct {
 	// History is optional. When non-nil the server exposes
 	// GET /api/v1/calls/history.
 	History HistoryQuery
+	// Locations is optional. When non-nil the server exposes
+	// GET /api/v1/locations for the web map.
+	Locations LocationQuery
 	// MetricsHandler is optional. When non-nil it is mounted at
 	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
 	// here. Decoupling via http.Handler keeps the api package free of a
@@ -338,6 +371,10 @@ type ServerOptions struct {
 	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
 	// return 503.
 	Audio AudioController
+	// Broadcast exposes the outbound call-streaming subsystem's
+	// counters for GET /api/v1/broadcast. Optional; when nil, the
+	// route reports the subsystem as disabled.
+	Broadcast BroadcastStatusProvider
 	// Runtime exposes the read-only daemon config snapshot served at
 	// GET /api/v1/runtime. The TUI's tabbed Settings inspector uses
 	// it to surface every config knob. Optional; when nil, the
@@ -444,6 +481,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
 		audio:          opts.Audio,
+		broadcast:      opts.Broadcast,
 		runtime:        opts.Runtime,
 		configWriter:   opts.ConfigWriter,
 		settings:       opts.SettingsApplier,
@@ -453,6 +491,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		talkgroups:     opts.Talkgroups,
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
+		locations:      opts.Locations,
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
@@ -570,6 +609,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
+	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
@@ -589,6 +629,7 @@ func (s *Server) routes() *http.ServeMux {
 
 	// Scanner cockpit — read endpoint is always open; mutations are
 	// gated behind allow_mutations like every other write route.
+	mux.HandleFunc("GET /api/v1/broadcast", s.handleBroadcastStatus)
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
 	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))
 	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/hold", s.gate(s.handleHuntHold))

@@ -9,6 +9,70 @@ for tagged releases.
 
 ### Added
 
+- **Outbound call streaming to aggregators and live audio
+  servers.** Completed calls are now encoded to MP3 and streamed
+  to external services, closing the largest functional gap
+  against SDRtrunk. A new `internal/broadcast` subsystem
+  subscribes to a `KindCallComplete` event the recorder
+  publishes once a call's WAV is flushed, encodes the audio via
+  a pure-Go MP3 encoder (`internal/voice/mp3`, no CGO), and
+  fans the call out to every configured backend with bounded
+  exponential-backoff retry. Four backends ship: Broadcastify
+  Calls (two-step metadata + audio upload), RdioScanner
+  (native call-upload API), OpenMHz, and live Icecast/ShoutCast
+  (a continuous paced source connection topped up with silence
+  between calls). Feeds are configured under a new `broadcast:`
+  config section; each feed takes an optional `systems:` filter
+  and a talkgroup can opt out of all feeds with `stream: false`
+  in its CSV/JSON. Feed counters are exposed at
+  `GET /api/v1/broadcast`.
+- **Per-talkgroup recording assignment.** A talkgroup can now be
+  flagged `record: false` (CSV column, JSON field, or
+  `PATCH /api/v1/talkgroups/{id}`) to follow and play its calls live
+  while writing no WAV/raw files for it — the recording analogue of
+  the `stream` opt-out. Both `stream` and `record` are now surfaced
+  in the talkgroup API DTO and accepted by the PATCH endpoint.
+- **Decoded-message log.** A new optional `MessageLog`
+  (`internal/log`) writes a human-readable, timestamped text log of
+  every trunking event the bus carries — grants, control-channel
+  lock/loss, affiliations, registrations, patches, talker aliases,
+  locations, tone alerts, decode errors — the GopherTrunk analogue
+  of SDRtrunk's per-channel decoded message log. The file rotates to
+  `<path>.1` past a configurable size cap. Enabled via a new
+  `log.message_log` config block.
+- **GPS / location subsystem.** Geographic fixes a subscriber unit
+  reports over the air now flow through a new `KindLocation` event
+  (`trunking.Location` payload) to a `location_log` SQLite table and
+  out via `GET /api/v1/locations` for map display. A new
+  `internal/radio/location` package implements a strict NMEA-0183
+  GGA/RMC parser — the format Tait CCDI and many MOTOTRBO GPS
+  profiles transport verbatim — with checksum verification. The
+  per-protocol binary GPS PDU extractors (P25 Motorola Unit GPS,
+  L3Harris Talker GPS, DMR LRRP) and the web map page build on this
+  backbone; their bit-exact wiring is pending capture validation.
+- **DMR vendor-trunking recognition (FID-aware CSBK dispatch).**
+  The Tier III control-channel decoder now dispatches each CSBK on
+  its feature-set ID (FID) before opcode, so a Motorola or Hytera
+  vendor CSBK is no longer misdecoded against the standard ETSI
+  opcode table — previously a vendor CSBK whose 6-bit opcode
+  collided with `0x30` would emit a bogus voice grant. Motorola
+  Capacity Plus / Capacity Max voice grants (FID 0x10), which carry
+  the ETSI-shaped 8-octet payload, now decode to real grants, and
+  the Capacity Plus rest channel is tracked from its system-info
+  CSBK. Connect Plus and Hytera XPT CSBKs are recognised and routed
+  to a vendor handler; bit-exact decoding of those proprietary
+  payloads is pending on-air capture validation.
+- **Wideband baseband (IQ) recording and offline replay.** A new
+  `internal/sdr/baseband` package adds two capabilities SDRtrunk
+  has and GopherTrunk lacked. A `RecordingDevice` decorator tees a
+  live tuner's IQ stream to a two-channel 16-bit WAV (in-phase in
+  channel 1, quadrature in channel 2 — the same layout as
+  SDRtrunk's baseband recordings). A `FileDriver` mounts those
+  recordings (and SDRtrunk's) back into the SDR pool as virtual
+  tuners, so a capture can be decoded offline with no radio
+  attached; replay loops on EOF to behave like a continuous
+  source. Both are configured under a new `baseband:` config
+  section (`record:` and `replay:` lists).
 - **P25 Phase 1 voice decoding and broader control-channel
   coverage** (PR #310). A `p25` voice grant now decodes
   end-to-end — modulated C4FM IQ → Phase 1 receiver → LDU

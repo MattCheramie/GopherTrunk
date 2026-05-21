@@ -14,9 +14,11 @@ toolchain go1.25.10
 require gopkg.in/yaml.v3 v3.0.1
 
 require (
+	github.com/braheezy/shine-mp3 v0.1.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/charmbracelet/x/exp/teatest v0.0.0-20260511125431-fe5d686e0c99
 	github.com/ebitengine/oto/v3 v3.3.3
 	github.com/ebitengine/purego v0.10.0
 	github.com/gorilla/websocket v1.5.3
@@ -39,7 +41,6 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91 // indirect
-	github.com/charmbracelet/x/exp/teatest v0.0.0-20260511125431-fe5d686e0c99 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect

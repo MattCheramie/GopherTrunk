@@ -104,6 +104,8 @@ type updateTalkgroupRequest struct {
 	Priority *int  `json:"priority"`
 	Lockout  *bool `json:"lockout"`
 	Scan     *bool `json:"scan"`
+	Stream   *bool `json:"stream"`
+	Record   *bool `json:"record"`
 }
 
 // handleUpdateTalkgroup updates a talkgroup's mutable policy fields
@@ -130,8 +132,9 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	if req.Priority == nil && req.Lockout == nil && req.Scan == nil {
-		writeError(w, http.StatusBadRequest, "supply priority and/or lockout and/or scan")
+	if req.Priority == nil && req.Lockout == nil && req.Scan == nil &&
+		req.Stream == nil && req.Record == nil {
+		writeError(w, http.StatusBadRequest, "supply priority and/or lockout and/or scan and/or stream and/or record")
 		return
 	}
 	ok := s.talkgroups.UpdateFields(uint32(id), func(tg *trunking.TalkGroup) {
@@ -143,6 +146,12 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Scan != nil {
 			tg.Scan = *req.Scan
+		}
+		if req.Stream != nil {
+			tg.Stream = *req.Stream
+		}
+		if req.Record != nil {
+			tg.Record = *req.Record
 		}
 	})
 	if !ok {

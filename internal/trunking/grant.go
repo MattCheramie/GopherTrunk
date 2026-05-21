@@ -123,3 +123,23 @@ type CallEnd struct {
 
 // Duration returns how long the call ran.
 func (c CallEnd) Duration() time.Duration { return c.EndedAt.Sub(c.StartedAt) }
+
+// CallComplete is the payload of an events.KindCallComplete event. The
+// recorder publishes it once a call's WAV has been flushed and closed,
+// so the outbound-streaming subsystem (internal/broadcast) can read the
+// finished file and upload it to call aggregators. AudioPath is the
+// absolute or working-directory-relative path to the .wav the recorder
+// wrote; SampleRate is its PCM rate in Hz.
+type CallComplete struct {
+	Grant        Grant
+	Talkgroup    *TalkGroup
+	DeviceSerial string
+	StartedAt    time.Time
+	EndedAt      time.Time
+	Reason       EndReason
+	AudioPath    string
+	SampleRate   uint32
+}
+
+// Duration returns how long the call ran.
+func (c CallComplete) Duration() time.Duration { return c.EndedAt.Sub(c.StartedAt) }

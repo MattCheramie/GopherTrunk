@@ -24,6 +24,102 @@ type Config struct {
 	ToneOut    ToneOutConfig    `yaml:"tone_out"`
 	Scanner    ScannerConfig    `yaml:"scanner"`
 	Audio      AudioConfig      `yaml:"audio"`
+	Broadcast  BroadcastConfig  `yaml:"broadcast"`
+	Baseband   BasebandConfig   `yaml:"baseband"`
+}
+
+// BasebandConfig configures wideband IQ recording and offline replay.
+// Empty == disabled. `record` taps live tuners and writes their IQ to
+// WAV; `replay` mounts recorded WAVs as virtual tuners so a capture can
+// be decoded offline. Replay recordings should have been made at the
+// same rate as sdr.sample_rate for real-time-correct playback.
+type BasebandConfig struct {
+	Record []BasebandRecordConfig `yaml:"record"`
+	Replay []BasebandReplayConfig `yaml:"replay"`
+}
+
+// BasebandRecordConfig taps one tuner's live IQ to WAV recordings.
+type BasebandRecordConfig struct {
+	// Serial is the SDR serial whose IQ stream is recorded.
+	Serial string `yaml:"serial"`
+	// Dir is the directory recordings are written into.
+	Dir string `yaml:"dir"`
+}
+
+// BasebandReplayConfig mounts one recorded WAV as a virtual tuner.
+type BasebandReplayConfig struct {
+	// File is the path to the baseband WAV recording.
+	File string `yaml:"file"`
+	// Serial is the virtual device serial the pool reports. Empty
+	// generates one.
+	Serial string `yaml:"serial"`
+	// Role is the pool role: control|voice|auto (empty = auto).
+	Role string `yaml:"role"`
+	// Loop restarts the recording on EOF so the offline tuner is a
+	// continuous source. nil defaults to true.
+	Loop *bool `yaml:"loop"`
+}
+
+// BroadcastConfig configures the outbound call-streaming subsystem
+// (internal/broadcast): completed calls are encoded to MP3 and uploaded
+// to call aggregators or pushed to a live Icecast/ShoutCast mountpoint.
+// Empty == disabled; the daemon runs no broadcast manager when no feed
+// is configured.
+type BroadcastConfig struct {
+	// MinDurationMs drops calls shorter than this from every feed
+	// (squelch crackle, failed decodes). 0 streams calls of any
+	// length.
+	MinDurationMs int `yaml:"min_duration_ms"`
+	// Workers is the number of concurrent upload goroutines. 0 uses
+	// the broadcast package default.
+	Workers int `yaml:"workers"`
+	// Broadcastify, RdioScanner, OpenMHz and Icecast each list zero
+	// or more feeds. A feed with enabled=false is parsed but skipped.
+	Broadcastify []BroadcastifyFeedConfig `yaml:"broadcastify"`
+	RdioScanner  []RdioScannerFeedConfig  `yaml:"rdioscanner"`
+	OpenMHz      []OpenMHzFeedConfig      `yaml:"openmhz"`
+	Icecast      []IcecastFeedConfig      `yaml:"icecast"`
+}
+
+// BroadcastifyFeedConfig is one Broadcastify Calls upload feed.
+type BroadcastifyFeedConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Name     string   `yaml:"name"`
+	APIKey   string   `yaml:"api_key"`
+	SystemID int      `yaml:"system_id"`
+	Systems  []string `yaml:"systems"` // empty = every system
+}
+
+// RdioScannerFeedConfig is one RdioScanner call-upload feed.
+type RdioScannerFeedConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Name     string   `yaml:"name"`
+	URL      string   `yaml:"url"`
+	APIKey   string   `yaml:"api_key"`
+	SystemID int      `yaml:"system_id"`
+	Systems  []string `yaml:"systems"`
+}
+
+// OpenMHzFeedConfig is one OpenMHz upload feed.
+type OpenMHzFeedConfig struct {
+	Enabled   bool     `yaml:"enabled"`
+	Name      string   `yaml:"name"`
+	APIKey    string   `yaml:"api_key"`
+	ShortName string   `yaml:"short_name"`
+	Systems   []string `yaml:"systems"`
+}
+
+// IcecastFeedConfig is one live Icecast/ShoutCast feed.
+type IcecastFeedConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	Name       string   `yaml:"name"`
+	Host       string   `yaml:"host"`
+	Port       int      `yaml:"port"`
+	Mount      string   `yaml:"mount"`
+	Username   string   `yaml:"username"`
+	Password   string   `yaml:"password"`
+	StreamName string   `yaml:"stream_name"`
+	Systems    []string `yaml:"systems"`
 }
 
 // AudioConfig controls live audio playback to the host's speakers.
@@ -136,6 +232,19 @@ type ConvToneConfig struct {
 type LogConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+	// MessageLog configures the optional decoded-message log — a
+	// human-readable, per-event text log of trunking activity
+	// (grants, lock/loss, affiliations, patches, …), the analogue
+	// of SDRtrunk's per-channel decoded message log.
+	MessageLog MessageLogConfig `yaml:"message_log"`
+}
+
+// MessageLogConfig configures the decoded-message log. Empty Path (or
+// Enabled false) disables it.
+type MessageLogConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
 }
 
 type SDRConfig struct {
@@ -626,6 +735,87 @@ func (c Config) Validate() error {
 			}
 		default:
 			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+		}
+	}
+	if err := c.Broadcast.validate(); err != nil {
+		return err
+	}
+	for i, r := range c.Baseband.Record {
+		if r.Serial == "" {
+			return fmt.Errorf("baseband.record[%d]: serial required", i)
+		}
+		if r.Dir == "" {
+			return fmt.Errorf("baseband.record[%d]: dir required", i)
+		}
+	}
+	for i, r := range c.Baseband.Replay {
+		if r.File == "" {
+			return fmt.Errorf("baseband.replay[%d]: file required", i)
+		}
+		switch r.Role {
+		case "", "control", "voice", "auto":
+		default:
+			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+		}
+	}
+	return nil
+}
+
+// validate checks that every enabled broadcast feed carries the fields
+// its backend requires. Disabled feeds are left unchecked so operators
+// can pre-stage credentials.
+func (b BroadcastConfig) validate() error {
+	if b.MinDurationMs < 0 {
+		return errors.New("broadcast.min_duration_ms must not be negative")
+	}
+	for i, f := range b.Broadcastify {
+		if !f.Enabled {
+			continue
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.broadcastify[%d]: api_key required", i)
+		}
+		if f.SystemID == 0 {
+			return fmt.Errorf("broadcast.broadcastify[%d]: system_id required", i)
+		}
+	}
+	for i, f := range b.RdioScanner {
+		if !f.Enabled {
+			continue
+		}
+		if f.URL == "" {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: url required", i)
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: api_key required", i)
+		}
+		if f.SystemID == 0 {
+			return fmt.Errorf("broadcast.rdioscanner[%d]: system_id required", i)
+		}
+	}
+	for i, f := range b.OpenMHz {
+		if !f.Enabled {
+			continue
+		}
+		if f.APIKey == "" {
+			return fmt.Errorf("broadcast.openmhz[%d]: api_key required", i)
+		}
+		if f.ShortName == "" {
+			return fmt.Errorf("broadcast.openmhz[%d]: short_name required", i)
+		}
+	}
+	for i, f := range b.Icecast {
+		if !f.Enabled {
+			continue
+		}
+		if f.Host == "" {
+			return fmt.Errorf("broadcast.icecast[%d]: host required", i)
+		}
+		if f.Port == 0 {
+			return fmt.Errorf("broadcast.icecast[%d]: port required", i)
+		}
+		if f.Password == "" {
+			return fmt.Errorf("broadcast.icecast[%d]: password required", i)
 		}
 	}
 	return nil

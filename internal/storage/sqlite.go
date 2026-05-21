@@ -91,6 +91,22 @@ CREATE INDEX IF NOT EXISTS idx_call_log_started ON call_log(started_at);
 CREATE INDEX IF NOT EXISTS idx_call_log_system  ON call_log(system, started_at);
 CREATE INDEX IF NOT EXISTS idx_call_log_group   ON call_log(group_id, started_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_call_log_active ON call_log(device_serial, started_at);
+
+CREATE TABLE IF NOT EXISTS location_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    system      TEXT    NOT NULL DEFAULT '',
+    protocol    TEXT    NOT NULL DEFAULT '',
+    radio_id    INTEGER NOT NULL DEFAULT 0,
+    talkgroup   INTEGER NOT NULL DEFAULT 0,
+    latitude    REAL    NOT NULL,
+    longitude   REAL    NOT NULL,
+    speed_knots REAL    NOT NULL DEFAULT 0,
+    heading_deg REAL    NOT NULL DEFAULT 0,
+    reported_at INTEGER NOT NULL  -- unix nanoseconds
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_log_time  ON location_log(reported_at);
+CREATE INDEX IF NOT EXISTS idx_location_log_radio ON location_log(radio_id, reported_at);
 `
 
 func (d *DB) migrate() error {

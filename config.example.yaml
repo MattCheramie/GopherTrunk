@@ -5,6 +5,12 @@
 log:
   level: info       # debug | info | warn | error
   format: text      # text | json
+  # Decoded-message log: a human-readable text log of every trunking
+  # event (grants, CC lock/loss, affiliations, patches, locations).
+  # message_log:
+  #   enabled: true
+  #   path: "logs/messages.log"
+  #   max_size_mb: 16          # rotates to messages.log.1 past this
 
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
@@ -362,3 +368,63 @@ tone_out:
     #     - frequency_hz: 1465.3
     #       min_duration: "2.5s"
     #       max_duration: "5s"
+
+# Outbound call streaming. Completed calls are encoded to MP3 and
+# uploaded to call aggregators, or pushed to a live Icecast/ShoutCast
+# mountpoint. Empty == disabled. Each backend takes a list of feeds;
+# a feed with `enabled: false` is parsed but skipped. The optional
+# per-feed `systems:` list restricts a feed to those trunking-system
+# names (omit to stream every system). A talkgroup with `stream: false`
+# in its CSV/JSON is excluded from all feeds.
+broadcast:
+  # Drop calls shorter than this from every feed (squelch crackle,
+  # failed decodes). 0 streams calls of any length.
+  min_duration_ms: 0
+  # Concurrent upload workers. 0 uses the built-in default.
+  workers: 0
+
+  # broadcastify:
+  #   - enabled: true
+  #     name: "metro-p25"
+  #     api_key: "YOUR_BROADCASTIFY_CALLS_API_KEY"
+  #     system_id: 12345
+  #     systems: ["Metro P25"]
+
+  # rdioscanner:
+  #   - enabled: true
+  #     name: "local-rdio"
+  #     url: "https://scanner.example.org"
+  #     api_key: "YOUR_RDIOSCANNER_API_KEY"
+  #     system_id: 1
+
+  # openmhz:
+  #   - enabled: true
+  #     name: "openmhz-metro"
+  #     api_key: "YOUR_OPENMHZ_API_KEY"
+  #     short_name: "metro911"
+
+  # icecast:
+  #   - enabled: true
+  #     name: "live-feed"
+  #     host: "stream.example.org"
+  #     port: 8000
+  #     mount: "/gophertrunk"
+  #     username: "source"
+  #     password: "YOUR_ICECAST_SOURCE_PASSWORD"
+  #     stream_name: "GopherTrunk Live"
+
+# Wideband baseband (IQ) recording and offline replay. `record` taps a
+# live tuner and writes its raw IQ to a two-channel 16-bit WAV (the
+# same layout SDRtrunk uses). `replay` mounts recorded WAVs as virtual
+# tuners so a capture can be decoded with no radio attached — record at
+# the same rate as sdr.sample_rate for real-time-correct playback.
+# baseband:
+#   record:
+#     - serial: "00000001"
+#       dir: "baseband/"
+#   replay:
+#     - file: "baseband/00000001_20260521T120000Z.wav"
+#       serial: "replay-01"
+#       role: "control"
+#       loop: true
+

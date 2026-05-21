@@ -43,7 +43,7 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 			GroupID:  1234,
 			SourceID: 56789,
 		},
-		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP"},
+		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP", Record: true},
 		DeviceSerial: "VOICE-1",
 		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
 	}
@@ -91,6 +91,36 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 	}
 }
 
+// TestRecorderSkipsRecordFalseTalkgroup confirms a talkgroup flagged
+// Record=false is followed (the CallStart is consumed) but no session
+// — and therefore no .wav — is opened for it.
+func TestRecorderSkipsRecordFalseTalkgroup(t *testing.T) {
+	r, bus, _ := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "p25", GroupID: 500, SourceID: 1},
+		Talkgroup:    &trunking.TalkGroup{ID: 500, AlphaTag: "PRIVATE", Record: false},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Now(),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+
+	// Give the recorder time to (correctly) drop the CallStart.
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-1") {
+			t.Fatal("recorder opened a session for a Record=false talkgroup")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // TestRecorderGateBlocksNewSessions confirms the runtime
 // SetRecordingEnabled(false) gate stops handleStart from opening
 // new .wav files while leaving in-flight sessions alone. Matches the
@@ -116,7 +146,7 @@ func TestRecorderGateBlocksNewSessions(t *testing.T) {
 			GroupID:  7,
 			SourceID: 8,
 		},
-		Talkgroup:    &trunking.TalkGroup{ID: 7, AlphaTag: "GATE"},
+		Talkgroup:    &trunking.TalkGroup{ID: 7, AlphaTag: "GATE", Record: true},
 		DeviceSerial: "VOICE-G",
 		StartedAt:    time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC),
 	}
