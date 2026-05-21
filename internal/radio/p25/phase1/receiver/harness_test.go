@@ -117,6 +117,7 @@ type harnessResult struct {
 	nac          uint16
 	decodeErrors int
 	nidErrs      []int64 // every "errs" value the NID decoder logged
+	recovered    []uint8 // the full recovered dibit stream, in order
 }
 
 // nidErrsSummary renders the captured NID error counts as min/max/count.
@@ -182,11 +183,17 @@ func runHarness(mode DemodMode, imp demod.Impairments) harnessResult {
 		FrequencyHz: harnessControlFreq,
 	})
 
+	var recovered []uint8
 	r := New(Options{
 		SampleRateHz: harnessSampleRateHz,
 		DeviationHz:  harnessDeviationHz,
 		DemodMode:    mode,
-		DibitSink:    func(dibits []uint8, baseIdx int) { cc.Process(dibits, baseIdx) },
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			// The receiver reuses its dibit buffer across calls, so the
+			// slice is only valid during the callback — copy it.
+			recovered = append(recovered, dibits...)
+			cc.Process(dibits, baseIdx)
+		},
 	})
 
 	for i := 0; i < len(iq); i += harnessChunk {
@@ -217,7 +224,58 @@ func runHarness(mode DemodMode, imp demod.Impairments) harnessResult {
 	logCap.mu.Lock()
 	res.nidErrs = logCap.errs
 	logCap.mu.Unlock()
+	res.recovered = recovered
 	return res
+}
+
+// dibitErrorRate aligns recovered against the transmitted canonical
+// stream over a bounded lag window and returns the fraction of differing
+// dibits over the steady-state region (past the symbol-clock warmup,
+// before the trailer). The demod only ever delays the stream, so the
+// lag search is one-sided; a single global lag is used, so a timing slip
+// inflates the rate — intended, since a slip is itself a demod failure.
+func dibitErrorRate(transmitted, recovered []uint8) float64 {
+	const (
+		scoreStart = 256 // past the 200-dibit warmup + clock settling
+		trailerPad = 120 // skip the 100-dibit trailer + margin
+		maxLag     = 96  // matched-filter group delay + warmup slack
+	)
+	scoreEnd := len(transmitted) - trailerPad
+	if scoreEnd <= scoreStart || len(recovered) <= scoreStart {
+		return 1.0
+	}
+	bestErrs, bestLen := -1, 0
+	for lag := 0; lag <= maxLag; lag++ {
+		errs, n := 0, 0
+		for i := scoreStart; i < scoreEnd; i++ {
+			j := i + lag
+			if j >= len(recovered) {
+				break
+			}
+			if transmitted[i] != recovered[j] {
+				errs++
+			}
+			n++
+		}
+		// Pick the lag with the lowest error rate (cross-multiply to
+		// compare errs/n without floats).
+		if n > 0 && (bestErrs < 0 || errs*bestLen < bestErrs*n) {
+			bestErrs, bestLen = errs, n
+		}
+	}
+	if bestLen == 0 {
+		return 1.0
+	}
+	return float64(bestErrs) / float64(bestLen)
+}
+
+// runHarnessDER runs the harness and additionally reports the recovered
+// dibit error rate against the transmitted canonical stream — turning
+// the "close but corrupted" #275 C4FM symptom into a measurable number.
+func runHarnessDER(mode DemodMode, imp demod.Impairments) (der float64, res harnessResult) {
+	res = runHarness(mode, imp)
+	canonical := buildHarnessDibits(harnessNAC, harnessFrameRepeats)
+	return dibitErrorRate(canonical, res.recovered), res
 }
 
 // TestHarnessCleanControlChannelLocks is the regression guard: an
@@ -397,6 +455,96 @@ func TestHarnessCQPSKGainInvariant(t *testing.T) {
 					"(decodeErrors=%d, nidErrs min/max/n=%s) — the CQPSK "+
 					"path is gain-sensitive (#275)",
 					scale, res.decodeErrors, res.nidErrsSummary())
+			}
+		})
+	}
+}
+
+// TestHarnessC4FMChunkBoundary guards the Mueller-Müller chunk-boundary
+// fix for issue #275. The C4FM symbol-clock loop skipped src[0] on every
+// Process call, losing one sample of clock phase per IQ chunk; on a real
+// RTL-SDR's ~19-symbol USB transfers that drifted the symbol timing and
+// scattered dibit errors, so the control channel could not hold a lock
+// even though the same signal decoded when fed in one large block. (Same
+// bug class as the #300 Gardner fix, on the C4FM path's clock.) The fix
+// makes the recovered dibit stream independent of how the IQ is chunked;
+// this test asserts the small-chunk stream is identical to the one-shot
+// stream, dibit for dibit.
+func TestHarnessC4FMChunkBoundary(t *testing.T) {
+	canonical := buildHarnessDibits(harnessNAC, harnessFrameRepeats)
+	iq := modulateHarness(canonical, DemodC4FM)
+
+	recoverDibits := func(chunk int) []uint8 {
+		var rec []uint8
+		r := New(Options{
+			SampleRateHz: harnessSampleRateHz,
+			DeviationHz:  harnessDeviationHz,
+			DemodMode:    DemodC4FM,
+			DibitSink:    func(d []uint8, _ int) { rec = append(rec, d...) },
+		})
+		for i := 0; i < len(iq); i += chunk {
+			end := i + chunk
+			if end > len(iq) {
+				end = len(iq)
+			}
+			r.Process(iq[i:end])
+		}
+		return rec
+	}
+
+	oneShot := recoverDibits(len(iq))
+	small := recoverDibits(harnessChunk)
+
+	t.Logf("#275 C4FM chunk-boundary: one-shot=%d  small-chunk(%d)=%d dibits",
+		len(oneShot), harnessChunk, len(small))
+
+	if len(small) != len(oneShot) {
+		t.Fatalf("C4FM recovered dibit count: small-chunk(%d)=%d, one-shot=%d — the "+
+			"Mueller-Müller loop is miscounting symbols across IQ-chunk boundaries (#275)",
+			harnessChunk, len(small), len(oneShot))
+	}
+	for i := range oneShot {
+		if small[i] != oneShot[i] {
+			t.Fatalf("C4FM recovered dibit %d: small-chunk=%d, one-shot=%d — the symbol "+
+				"stream depends on IQ chunk size (#275)", i, small[i], oneShot[i])
+		}
+	}
+}
+
+// TestHarnessC4FMDibitErrorRate is the diagnostic for the remaining #275
+// C4FM failure: the field decoder reaches NID decoding but the dibits
+// are too corrupted to hold a control-channel lock (NID BCH pegs at its
+// errs=11 ceiling). The harness's binary locked/not-locked outcome and
+// NID-only error counts are too coarse to drive a fix, so this measures
+// the recovered dibit error rate directly across every realistic
+// RTL-SDR impairment. The clean case is a hard assertion — it proves the
+// measurement works and the noiseless C4FM path slices cleanly; the
+// impaired cases are logged so the one(s) reproducing the field symptom
+// (high DER, NID errs at the ceiling, no genuine lock) are named.
+func TestHarnessC4FMDibitErrorRate(t *testing.T) {
+	cases := []struct {
+		name string
+		imp  demod.Impairments
+	}{
+		{"clean", demod.Impairments{}},
+		{"dc_spike", demod.Impairments{DCOffset: complex(0.15, 0.10)}},
+		{"iq_imbalance", demod.Impairments{IQGainImbalance: 1.15, IQPhaseSkewRad: 0.12}},
+		{"awgn_20db", demod.Impairments{SNRdB: 20, Seed: 1}},
+		{"awgn_10db", demod.Impairments{SNRdB: 10, Seed: 1}},
+		{"combined", demod.Impairments{
+			FreqOffsetHz: 600, DCOffset: complex(0.08, 0.05),
+			IQGainImbalance: 1.08, SNRdB: 18, Seed: 1,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			der, res := runHarnessDER(DemodC4FM, tc.imp)
+			t.Logf("#275 C4FM DER  %-14s  der=%.4f  locked=%-5v  decodeErrors=%-3d  nidErrs(min/max/n)=%s",
+				tc.name, der, res.locked, res.decodeErrors, res.nidErrsSummary())
+			if tc.name == "clean" && der > 0.10 {
+				t.Errorf("clean C4FM dibit error rate = %.4f, want <= 0.10 — "+
+					"well above the ~0.66 of the #275 chunk-boundary bug, so this "+
+					"flags a gross regression in the clean C4FM demod path", der)
 			}
 		})
 	}
