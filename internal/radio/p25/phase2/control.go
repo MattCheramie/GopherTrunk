@@ -449,6 +449,16 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		c.hasEncSync = true
 		c.mu.Unlock()
 	}
+	if pg, ok := p.AsMotorolaPatchGroup(); ok {
+		members := make([]uint32, len(pg.Patched))
+		for i, m := range pg.Patched {
+			members[i] = uint32(m)
+		}
+		c.publishPatch(uint32(pg.SuperGroup), members, "motorola")
+	}
+	if hr, ok := p.AsHarrisRegroup(); ok {
+		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris")
+	}
 	if p.IsIdle() {
 		return
 	}
@@ -569,6 +579,30 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		"src", g.SourceID,
 		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber,
 		"freq_hz", freq, "enc", so.Encrypted(), "emer", so.Emergency())
+}
+
+// publishPatch publishes an events.KindPatch for a vendor patch /
+// dynamic-regroup MAC PDU so the engine can attribute later grants on
+// the super-group to its member talkgroups.
+func (c *ControlChannel) publishPatch(superGroup uint32, members []uint32, vendor string) {
+	if c.bus == nil {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindPatch,
+		Payload: trunking.Patch{
+			System:     c.systemName,
+			Protocol:   "p25-phase2",
+			SuperGroup: superGroup,
+			Members:    members,
+			Vendor:     vendor,
+			Add:        true,
+			At:         c.now(),
+		},
+	})
+	c.log.Debug("p25/phase2 patch",
+		"system", c.systemName, "vendor", vendor,
+		"super", superGroup, "members", members)
 }
 
 // resolveFreq looks the (channelID, channelNumber) pair up in the band

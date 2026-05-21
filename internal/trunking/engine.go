@@ -24,6 +24,7 @@ type Engine struct {
 	log        *slog.Logger
 	pool       *VoicePool
 	talkgroups *TalkgroupDB
+	patches    *PatchRegistry
 	timeout    time.Duration
 	now        func() time.Time
 	sub        *events.Subscription
@@ -82,6 +83,7 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		log:        opts.Log,
 		pool:       opts.VoicePool,
 		talkgroups: opts.Talkgroups,
+		patches:    NewPatchRegistry(),
 		timeout:    opts.CallTimeout,
 		now:        opts.Now,
 		scanMode:   opts.ScanMode,
@@ -120,14 +122,16 @@ func (e *Engine) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if ev.Kind != events.KindGrant {
-				continue
+			switch ev.Kind {
+			case events.KindGrant:
+				if g, ok := ev.Payload.(Grant); ok {
+					e.HandleGrant(g)
+				}
+			case events.KindPatch:
+				if p, ok := ev.Payload.(Patch); ok {
+					e.handlePatch(p)
+				}
 			}
-			g, ok := ev.Payload.(Grant)
-			if !ok {
-				continue
-			}
-			e.HandleGrant(g)
 		case <-tick.C:
 			e.runWatchdog()
 		}
@@ -149,11 +153,27 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.log.Info("grant locked out", "grant", g.String(), "tg", tg.AlphaTag)
 		return
 	}
+	// Patch attribution: when GroupID is an active patch super-group,
+	// the call is physically the shared traffic of its member
+	// talkgroups. Tag the grant with the members so the call is
+	// attributed to each of them.
+	if members := e.patches.MembersOf(g.GroupID); len(members) > 0 {
+		g.PatchedGroups = members
+	}
 	// Scan list gate: in ScanModeList, drop grants whose TG is missing
 	// or has Scan==false (Emergency bypasses, matching Lockout's
-	// emergency exception above). In ScanModeAll the gate is a no-op.
+	// emergency exception above). A patched super-group passes if the
+	// super-group OR any member talkgroup is scanned. In ScanModeAll
+	// the gate is a no-op.
 	if e.ScanMode() == ScanModeList && !g.Emergency {
-		if tg == nil || !tg.Scan {
+		scanned := tg != nil && tg.Scan
+		for _, m := range g.PatchedGroups {
+			if mt := e.talkgroups.Lookup(m); mt != nil && mt.Scan {
+				scanned = true
+				break
+			}
+		}
+		if !scanned {
 			e.log.Debug("grant not in scan list", "grant", g.String())
 			return
 		}
@@ -179,6 +199,28 @@ func (e *Engine) HandleGrant(g Grant) {
 	e.endCall(victim, EndReasonPreempted)
 	e.startCall(victim.Device, g, tg)
 }
+
+// handlePatch applies a patch announcement to the registry: an Add
+// records the super-group → members mapping so later grants on the
+// super-group are attributed to its members; a cancel drops it.
+func (e *Engine) handlePatch(p Patch) {
+	if p.Add {
+		e.patches.Apply(PatchGroup{
+			SuperGroup: p.SuperGroup,
+			Members:    p.Members,
+			Vendor:     p.Vendor,
+			UpdatedAt:  e.now(),
+		})
+		e.log.Debug("patch group active",
+			"super", p.SuperGroup, "members", p.Members, "vendor", p.Vendor)
+		return
+	}
+	e.patches.Delete(p.SuperGroup)
+	e.log.Debug("patch group cancelled", "super", p.SuperGroup)
+}
+
+// Patches returns a snapshot of the engine's active patch groups.
+func (e *Engine) Patches() []PatchGroup { return e.patches.Active() }
 
 // EndCall is the explicit external signal that a call has ended (e.g.
 // the protocol decoder saw a channel-release announcement, or an upstream
