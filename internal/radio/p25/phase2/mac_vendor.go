@@ -20,10 +20,10 @@ import (
 
 // Manufacturer IDs (MFID) per the TIA-registered P25 manufacturer list.
 const (
-	MFIDStandard uint8 = 0x00 // standard TIA-102 messages
+	MFIDStandard    uint8 = 0x00 // standard TIA-102 messages
 	MFIDStandardAlt uint8 = 0x01 // also-standard MFID some systems emit
-	MFIDMotorola uint8 = 0x90
-	MFIDHarris   uint8 = 0xA4
+	MFIDMotorola    uint8 = 0x90
+	MFIDHarris      uint8 = 0xA4
 )
 
 // Vendor MAC opcodes. They live in the manufacturer-specific opcode
