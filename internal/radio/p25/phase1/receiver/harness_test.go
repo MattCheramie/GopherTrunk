@@ -377,3 +377,27 @@ func TestHarnessCQPSKEqualizerRecoversSimulcast(t *testing.T) {
 		})
 	}
 }
+
+// TestHarnessCQPSKGainInvariant guards the AGC fix for issue #275.
+// Adding the CMA blind equalizer (TestHarnessCQPSKEqualizerRecoversSimulcast)
+// exposed that the CQPSK path is not scale-invariant: both the Gardner
+// timing-error detector and the CMA weight update use un-normalised,
+// amplitude-dependent error terms, so the chain only converges when the
+// signal amplitude sits in a narrow band — on-air the control channel
+// locked only in a narrow RTL-SDR gain window. An AGC on the
+// matched-filter output now normalises the amplitude ahead of both
+// loops, so the channel locks across a wide front-end-gain range,
+// modelled here by the Impairments.Scale IQ-amplitude knob.
+func TestHarnessCQPSKGainInvariant(t *testing.T) {
+	for _, scale := range []float64{0.05, 0.25, 1, 4, 20} {
+		t.Run(fmt.Sprintf("scale_%g", scale), func(t *testing.T) {
+			res := runHarness(DemodCQPSK, demod.Impairments{Scale: scale})
+			if !res.locked {
+				t.Errorf("CQPSK did not lock at IQ amplitude scale %g "+
+					"(decodeErrors=%d, nidErrs min/max/n=%s) — the CQPSK "+
+					"path is gain-sensitive (#275)",
+					scale, res.decodeErrors, res.nidErrsSummary())
+			}
+		})
+	}
+}

@@ -47,12 +47,20 @@ type Impairments struct {
 	SNRdB float64
 	// Seed makes the AWGN draw reproducible across runs.
 	Seed int64
+	// Scale multiplies the whole IQ stream by a constant amplitude
+	// factor, modelling the SDR front-end / ADC gain. The synthetic
+	// modulators emit a fixed unit-ish amplitude; a real capture's level
+	// swings with the tuner gain setting. Zero (the zero value) is
+	// treated as 1.0 — no scaling.
+	Scale float64
 }
 
 // ApplyImpairments returns a new IQ slice degraded by imp; the input is
-// not mutated. Stages run in physical capture order: IQ imbalance (the
-// analog quadrature mixer) → DC offset (summed at the ADC) → carrier
-// frequency offset (LO error) → AWGN (thermal noise, added last).
+// not mutated. Stages run in physical capture order: multipath channel
+// → IQ imbalance (the analog quadrature mixer) → DC offset (summed at
+// the ADC) → carrier frequency offset (LO error) → AWGN (thermal noise)
+// → front-end gain scale, applied last so signal and noise scale
+// together.
 func ApplyImpairments(iq []complex64, sampleRateHz float64, imp Impairments) []complex64 {
 	out := make([]complex64, len(iq))
 	copy(out, iq)
@@ -129,6 +137,15 @@ func ApplyImpairments(iq []complex64, sampleRateHz float64, imp Impairments) []c
 					float32(rng.NormFloat64()*sigma),
 				)
 			}
+		}
+	}
+
+	// Front-end / ADC gain: a constant amplitude scale applied last, so
+	// signal and noise scale together and the SNR is preserved.
+	if imp.Scale != 0 && imp.Scale != 1 {
+		s := float32(imp.Scale)
+		for i := range out {
+			out[i] *= complex(s, 0)
 		}
 	}
 

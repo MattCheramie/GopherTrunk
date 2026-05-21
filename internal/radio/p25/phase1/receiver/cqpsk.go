@@ -3,6 +3,7 @@ package receiver
 import (
 	"math"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
@@ -35,9 +36,32 @@ var lsmDibitRemap = [4]uint8{0, 1, 3, 2}
 // are unit-modulus QPSK points, so the Constant Modulus Algorithm
 // applies: simulcast multipath blurs that constant magnitude and CMA
 // drives it back, opening the constellation so the FSW correlates.
+//
+// cqpskEqualizerStep is tuned for the AGC-normalised symbol amplitude.
+// CMA convergence speed scales with the input power, so before the AGC
+// the equalizer leaned on the power a multipath echo itself adds; with
+// the level now fixed the step is set to converge at that normalised
+// amplitude instead.
 const (
 	cqpskEqualizerTaps = 11
-	cqpskEqualizerStep = 0.005
+	cqpskEqualizerStep = 0.008
+)
+
+// cqpskAGC* configure the AGC that normalises the matched-filter output
+// ahead of Gardner timing recovery. Both the Gardner timing-error
+// detector and the CMA weight update use un-normalised, amplitude-
+// dependent error terms, so the CQPSK path is gain-sensitive without
+// this — issue #275's regression report measured it locking only in a
+// narrow RTL-SDR gain window. cqpskAGCReference is the matched-filter
+// RMS the two loops are tuned against; normalising every capture to it
+// presents identical signal amplitude downstream regardless of the
+// front-end gain. cqpskAGCRate is the power-EMA coefficient at the IQ
+// sample rate — small, so the gain is effectively static across the
+// CMA's adaptation window and the two loops do not fight.
+const (
+	cqpskAGCReference = 0.95
+	cqpskAGCRate      = 1e-3
+	cqpskAGCMaxGain   = 1e4
 )
 
 // cqpskDemod is the LSM / linear-CQPSK symbol recovery chain for P25
@@ -49,7 +73,10 @@ const (
 // linear modulation, so simulcast multipath is a linear distortion of
 // the complex symbols and an equalizer can invert it — this is the
 // path simulcast P25 sites need (issue #275: strong multipath closed
-// the constellation and the Frame Sync Word never correlated).
+// the constellation and the Frame Sync Word never correlated). An AGC
+// on the matched-filter output normalises signal amplitude ahead of
+// the gain-sensitive Gardner and CMA loops, so the path locks
+// regardless of the RTL-SDR front-end gain.
 //
 // Gardner timing-recovery is mandatory on this path (the demod operates
 // on complex IQ at the sample rate; naive every-sps-th decimation
@@ -58,6 +85,7 @@ const (
 type cqpskDemod struct {
 	dq      *demod.PiOver4DQPSK
 	gardner *sync.Gardner
+	agc     *dsp.AGC
 	cma     *equalizer.CMA
 
 	// Scratch buffers reused across calls.
@@ -77,6 +105,7 @@ func newCQPSKDemod(sps int, span int, alpha float64, gardnerGain float64) *cqpsk
 	return &cqpskDemod{
 		dq:      demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
 		gardner: sync.NewGardner(float64(sps), gardnerGain),
+		agc:     dsp.NewAGC(cqpskAGCReference, cqpskAGCRate, cqpskAGCMaxGain),
 		cma:     equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
 	}
 }
@@ -87,6 +116,13 @@ func newCQPSKDemod(sps int, span int, alpha float64, gardnerGain float64) *cqpsk
 // not corrupt the stream.
 func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	c.matched = c.dq.MatchedFilter(c.matched, iq)
+	// AGC: normalise the matched-filter output to the amplitude the
+	// downstream loops are tuned for. The Gardner timing-error detector
+	// and the CMA weight update both use un-normalised, amplitude-
+	// dependent error terms, so without this the CQPSK path is
+	// gain-sensitive and only locks in a narrow RTL-SDR gain window
+	// (issue #275 regression).
+	c.matched = c.agc.Process(c.matched, c.matched)
 	c.symbols = c.symbols[:0]
 	c.symbols = c.gardner.Process(c.symbols, c.matched)
 	if len(c.symbols) == 0 {
@@ -112,5 +148,6 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 func (c *cqpskDemod) reset() {
 	c.dq.Reset()
 	c.gardner.Reset()
+	c.agc.Reset()
 	c.cma.Reset()
 }

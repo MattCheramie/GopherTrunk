@@ -18,6 +18,7 @@
 //	DemodCQPSK (LSM / simulcast):
 //	  IQ
 //	    → complex RRC matched filter (demod.PiOver4DQPSK, rotation=π/4)
+//	    → AGC: amplitude normalisation (internal/dsp.AGC)
 //	    → Gardner timing recovery on complex IQ (sync.Gardner)
 //	    → CMA blind equalizer: simulcast-multipath ISI removal
 //	      (internal/dsp/equalizer.CMA)
