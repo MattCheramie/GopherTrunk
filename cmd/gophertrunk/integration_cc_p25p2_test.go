@@ -15,7 +15,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
@@ -48,10 +47,13 @@ func TestDaemonCCDecodesP25Phase2(t *testing.T) {
 		sps        = 8
 		span       = 8
 		alpha      = 0.20
-		pduRepeats = 80
+		// Each repeat is a full 12-sub-frame superframe; a handful is
+		// ample for the Gardner clock to settle and the superframe
+		// decoder to lock.
+		superframeRepeats = 8
 	)
 
-	dibits := buildP25Phase2MACPTTStream(pduRepeats)
+	dibits := buildP25Phase2MACPTTStream(superframeRepeats)
 	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
 
 	dir := t.TempDir()
@@ -143,33 +145,32 @@ WaitLoop:
 //
 //   - 400-dibit warmup cycling 0..3 so the matched filter +
 //     differential decoder converge on the constellation centre
-//   - `repeats` × (20-dibit outbound sync + 146-dibit
-//     trellis-coded MAC PDU + 30 idle dibits)
+//   - `repeats` × a full 12-sub-frame TDMA superframe, every
+//     sub-frame a MAC sub-frame carrying an OpMACPTT MAC PDU
 //   - 100-dibit trailer for clean flush
 //
-// Each PDU is an OpMACPTT (PTT-on, the canonical "lock me"
-// non-idle MAC PDU). The 72 info dibits run through the
-// TIA-102 Annex A 4-state ½-rate trellis encoder via
-// framing.EncodeP25Trellis.
+// Each superframe is built with EncodeMACSubframe (ISCH + trellis-coded
+// MAC PDU) + EncodeSuperframe (which injects the 20-dibit outbound
+// sync), so the daemon's SuperframeDecoder-backed pipeline locks the
+// superframe, decodes the ISCH SlotTypes, and routes the MAC PDUs into
+// the control-channel state machine. OpMACPTT is the canonical
+// non-idle "lock me" MAC PDU.
 func buildP25Phase2MACPTTStream(repeats int) []uint8 {
 	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpMACPTT, Payload: make([]byte, 17)}
-	pduBits := framing.UnpackBitsMSB(p25phase2.AssembleMACPDU(pdu), 144)
-	infoDibits := framing.BitsToDibits(pduBits)
-	channelDibits := framing.EncodeP25Trellis(infoDibits)
+	var subs [p25phase2.SubframesPerSuperframe][]uint8
+	for i := range subs {
+		subs[i] = p25phase2.EncodeMACSubframe(
+			p25phase2.SlotTypeMACSignaling, uint8(i), pdu,
+			p25phase2.TrellisOn, p25phase2.InterleaveOff)
+	}
+	superframe := p25phase2.EncodeSuperframe(subs)
 
-	frame := make([]uint8, 0, 20+len(channelDibits))
-	frame = append(frame, p25phase2.OutboundSyncDibits()...)
-	frame = append(frame, channelDibits...)
-
-	out := make([]uint8, 0, 400+repeats*(len(frame)+30)+100)
+	out := make([]uint8, 0, 400+repeats*len(superframe)+100)
 	for i := 0; i < 400; i++ {
 		out = append(out, uint8(i&3))
 	}
 	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 30; i++ {
-			out = append(out, uint8(i&3))
-		}
+		out = append(out, superframe...)
 	}
 	for i := 0; i < 100; i++ {
 		out = append(out, uint8(i&3))

@@ -49,6 +49,36 @@ func EncodeSuperframe(subframes [SubframesPerSuperframe][]uint8) []uint8 {
 	return out
 }
 
+// EncodeMACSubframe builds a DibitsPerSubframe-long MAC sub-frame: the
+// ISCH for slotType (which must be a MAC SlotType) at counter, followed
+// by the FEC-encoded MAC PDU at MACPayloadOffset. It is the inverse of
+// the slice + decodeMACPDUDibits step IngestSuperframe runs. The PDU is
+// assembled and zero-padded/truncated to the 18-byte (144-bit) MAC PDU
+// width; mode and interleave must match the decoder's configuration.
+// Panics if slotType is not a MAC SlotType.
+func EncodeMACSubframe(slotType SlotType, counter uint8, pdu MACPDU, mode TrellisMode, interleave InterleaveMode) []uint8 {
+	if !slotType.IsMAC() {
+		panic("p25/phase2: EncodeMACSubframe slotType is not a MAC SlotType")
+	}
+	macBytes := AssembleMACPDU(pdu)
+	full := make([]byte, 18)
+	copy(full, macBytes) // pad short / truncate long to the 144-bit MAC PDU
+	infoDibits := framing.BitsToDibits(framing.UnpackBitsMSB(full, 144))
+
+	channelDibits := infoDibits
+	if mode == TrellisOn {
+		channelDibits = framing.EncodeP25Trellis(infoDibits)
+	}
+	if interleave == InterleaveOn {
+		channelDibits = framing.InterleaveMACBurst(channelDibits)
+	}
+
+	sub := IdleSubframe()
+	WriteISCH(sub, slotType, counter)
+	copy(sub[MACPayloadOffset:MACPayloadOffset+len(channelDibits)], channelDibits)
+	return sub
+}
+
 // EncodeVoiceSubframe builds a DibitsPerSubframe-long voice sub-frame:
 // the ISCH for slotType (which must be SlotTypeVoice4V or
 // SlotTypeVoice2V) at counter, followed by the AMBE+2-FEC-encoded voice

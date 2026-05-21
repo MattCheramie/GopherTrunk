@@ -262,10 +262,19 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_clock_mode; falling back to gardner",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ClockMode)
 	}
+	// The receiver's dibit stream drives a SuperframeDecoder: it locks
+	// the 360 ms TDMA superframe, slices the 12 sub-frames, decodes
+	// each ISCH SlotType, and IngestSuperframe routes the MAC-bearing
+	// sub-frames into the control-channel state machine. cc.Process
+	// (the flat sync-window adapter) stays available for callers that
+	// feed pre-stripped fixtures, but the live pipeline is structured.
+	sfDec := p25phase2.NewSuperframeDecoder()
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
-			cc.Process(dibits, baseIdx)
+			for _, sf := range sfDec.Process(dibits, baseIdx) {
+				cc.IngestSuperframe(sf)
+			}
 		},
 		ClockMode: clockMode,
 		// Tuned smaller than the 0.03 default — H-DQPSK at
@@ -276,17 +285,21 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// Only applied when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
 	})
-	return &p25Phase2Pipeline{rx: rx, cc: cc}, nil
+	return &p25Phase2Pipeline{rx: rx, cc: cc, sfDec: sfDec}, nil
 }
 
 type p25Phase2Pipeline struct {
-	rx *p25phase2rx.Receiver
-	cc *p25phase2.ControlChannel
+	rx    *p25phase2rx.Receiver
+	cc    *p25phase2.ControlChannel
+	sfDec *p25phase2.SuperframeDecoder
 }
 
 func (p *p25Phase2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *p25Phase2Pipeline) Reset()                 { p.rx.Reset() }
-func (p *p25Phase2Pipeline) Close() error           { return nil }
+func (p *p25Phase2Pipeline) Reset() {
+	p.rx.Reset()
+	p.sfDec.Reset()
+}
+func (p *p25Phase2Pipeline) Close() error { return nil }
 
 // newTETRAPipeline wires internal/radio/tetra/receiver into
 // tetra.ControlChannel.Process. The receiver's DibitSink forwards

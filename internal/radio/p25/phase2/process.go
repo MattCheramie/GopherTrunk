@@ -111,7 +111,21 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 }
 
 // tryIngestMACPDU recovers an 18-byte MAC PDU from the collected
-// post-sync dibits. The dibit slice layout depends on TrellisMode:
+// post-sync dibits and, on success, forwards it to Ingest. It is the
+// flat sync-window path; the FEC chain itself lives in the pure
+// decodeMACPDUDibits helper, which the superframe-structured path
+// (superframe_ingest.go) reuses.
+func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) {
+	if pdu, ok := decodeMACPDUDibits(macDibits, mode, rsMode, interleaveMode, scramblerMode, scramblerSeed, scramblerOffset); ok {
+		c.Ingest(pdu)
+	}
+}
+
+// decodeMACPDUDibits runs the full MAC-PDU recovery chain over a
+// collected dibit window and returns the parsed PDU. It is a pure
+// function (no ControlChannel state) so both the flat Process adapter
+// and the superframe-structured IngestSuperframe can share it. The
+// dibit slice layout depends on TrellisMode:
 //
 //   - TrellisOff: macDibits is exactly macPDUDibits (72) raw
 //     dibits whose bits ARE the MAC PDU information bits.
@@ -121,29 +135,29 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 //     dibits + 1 finisher transition. DecodeP25Trellis recovers
 //     the 72 information dibits.
 //
+// When interleaveMode is InterleaveOn the per-burst block
+// interleaver (TIA-102.BBAC) is undone before trellis decoding.
+//
 // When scramblerMode is ScramblerOn the recovered 144 info bits
 // are XORed with 144 bits of the PN44 sequence starting at
 // scramblerOffset (per TIA-102.BBAC-1 §7.2.5) before RS check or
 // MAC parse runs.
 //
-// When scramblerMode is ScramblerProbe the adapter tries each of
-// the 12 spec-defined slot offsets in
-// framing.PN44SlotOffsetsOutbound (Figure 7-5) and accepts the
-// first candidate whose outer RS(24, 16, 9) syndromes are zero —
-// the blind-probe form for receivers without superframe
-// synchronization. ScramblerProbe requires rsMode == RSOn;
-// without RS verification there is no way to tell which
-// descrambled candidate is the true PDU, so the adapter degrades
-// to ScramblerOn behaviour (offset 0).
+// When scramblerMode is ScramblerProbe each of the 12 spec-defined
+// slot offsets in framing.PN44SlotOffsetsOutbound (Figure 7-5) is
+// tried and the first candidate whose outer RS(24, 16, 9) syndromes
+// are zero is accepted — the blind-probe form for receivers without
+// superframe synchronization. ScramblerProbe requires rsMode == RSOn;
+// otherwise it degrades to ScramblerOn behaviour at scramblerOffset.
 //
 // When rsMode is RSOn the (post-descramble) 18-byte MAC PDU is
 // re-grouped into 24 hex symbols and verified against the
-// RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9. PDUs whose
-// syndromes are non-zero are dropped silently.
-func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) {
-	// Undo the per-burst block interleaver (TIA-102.BBAC) before trellis
-	// decoding, when enabled. DeinterleaveMACBurst returns a fresh slice
-	// so the caller's buffer is untouched.
+// RS(24, 16, 9) outer code per TIA-102.BAAA-A §5.9; PDUs whose
+// syndromes are non-zero are rejected.
+func decodeMACPDUDibits(macDibits []uint8, mode TrellisMode, rsMode RSMode, interleaveMode InterleaveMode, scramblerMode ScramblerMode, scramblerSeed uint64, scramblerOffset int) (MACPDU, bool) {
+	// Undo the per-burst block interleaver before trellis decoding,
+	// when enabled. DeinterleaveMACBurst returns a fresh slice so the
+	// caller's buffer is untouched.
 	if interleaveMode == InterleaveOn {
 		macDibits = framing.DeinterleaveMACBurst(macDibits)
 	}
@@ -151,16 +165,16 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 	switch mode {
 	case TrellisOn:
 		if len(macDibits) != macPDUDibitsTrellis {
-			return
+			return MACPDU{}, false
 		}
 		decoded, _ := framing.DecodeP25Trellis(macDibits)
 		if len(decoded) != macPDUDibits {
-			return
+			return MACPDU{}, false
 		}
 		infoDibits = decoded
 	default:
 		if len(macDibits) != macPDUDibits {
-			return
+			return MACPDU{}, false
 		}
 		infoDibits = macDibits
 	}
@@ -168,14 +182,8 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 
 	switch scramblerMode {
 	case ScramblerProbe:
-		// Probe each spec-defined slot offset; accept the first
-		// whose RS(24, 16, 9) syndromes are zero. Falls through to
-		// the ScramblerOn-with-offset-0 path when rsMode is RSOff
-		// since there's no way to pick a winning candidate without
-		// the verifier.
 		if rsMode != RSOn {
-			c.applyDescrambleAndIngest(rawBits, scramblerSeed, scramblerOffset, rsMode)
-			return
+			return descrambleAndParse(rawBits, scramblerSeed, scramblerOffset, rsMode)
 		}
 		for _, off := range framing.PN44SlotOffsetsOutbound {
 			candidate := append([]byte(nil), rawBits...)
@@ -185,43 +193,43 @@ func (c *ControlChannel) tryIngestMACPDU(macDibits []uint8, mode TrellisMode, rs
 				continue
 			}
 			if pdu, err := ParseMACPDU(info[:18]); err == nil {
-				c.Ingest(pdu)
+				return pdu, true
 			}
-			return
+			return MACPDU{}, false
 		}
-		return
+		return MACPDU{}, false
 	case ScramblerOn:
-		c.applyDescrambleAndIngest(rawBits, scramblerSeed, scramblerOffset, rsMode)
-		return
+		return descrambleAndParse(rawBits, scramblerSeed, scramblerOffset, rsMode)
 	default:
 		info := framing.PackBitsMSB(rawBits)
 		if len(info) < 18 {
-			return
+			return MACPDU{}, false
 		}
 		if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
-			return
+			return MACPDU{}, false
 		}
 		if pdu, err := ParseMACPDU(info[:18]); err == nil {
-			c.Ingest(pdu)
+			return pdu, true
 		}
+		return MACPDU{}, false
 	}
 }
 
-// applyDescrambleAndIngest descrambles in-place at the supplied
-// offset, RS-verifies (when rsMode == RSOn), and forwards the PDU
-// to Ingest if parsing succeeds.
-func (c *ControlChannel) applyDescrambleAndIngest(bits []byte, seed uint64, offset int, rsMode RSMode) {
+// descrambleAndParse descrambles bits in-place at the supplied offset,
+// RS-verifies (when rsMode == RSOn), and returns the parsed PDU.
+func descrambleAndParse(bits []byte, seed uint64, offset int, rsMode RSMode) (MACPDU, bool) {
 	descrambleAtOffset(bits, seed, offset)
 	info := framing.PackBitsMSB(bits)
 	if len(info) < 18 {
-		return
+		return MACPDU{}, false
 	}
 	if rsMode == RSOn && !verifyMACPDURS(info[:18]) {
-		return
+		return MACPDU{}, false
 	}
 	if pdu, err := ParseMACPDU(info[:18]); err == nil {
-		c.Ingest(pdu)
+		return pdu, true
 	}
+	return MACPDU{}, false
 }
 
 // descrambleAtOffset XOR-descrambles bits in-place with the PN44
