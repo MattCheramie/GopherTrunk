@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // handleLocations returns recent geographic fixes for the web map.
@@ -28,4 +30,17 @@ func (s *Server) handleLocations(w http.ResponseWriter, r *http.Request) {
 		fixes = []LocationFix{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"locations": fixes})
+}
+
+// handleAffiliations returns the affiliation tracker's unit-activity
+// table — which radio units are currently active on which talkgroups.
+// Always 200; an empty list when the tracker is not wired.
+func (s *Server) handleAffiliations(w http.ResponseWriter, _ *http.Request) {
+	units := []trunking.UnitActivity{}
+	if s.affiliations != nil {
+		if snap := s.affiliations.Affiliations(); snap != nil {
+			units = snap
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"affiliations": units})
 }

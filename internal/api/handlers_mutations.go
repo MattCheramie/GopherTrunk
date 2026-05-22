@@ -101,11 +101,13 @@ func parseEndReason(s string) trunking.EndReason {
 // pointers so JSON-omitted fields aren't accidentally zeroed: only
 // supplied fields are applied.
 type updateTalkgroupRequest struct {
-	Priority *int  `json:"priority"`
-	Lockout  *bool `json:"lockout"`
-	Scan     *bool `json:"scan"`
-	Stream   *bool `json:"stream"`
-	Record   *bool `json:"record"`
+	Priority *int    `json:"priority"`
+	Lockout  *bool   `json:"lockout"`
+	Scan     *bool   `json:"scan"`
+	Stream   *bool   `json:"stream"`
+	Record   *bool   `json:"record"`
+	Mute     *bool   `json:"mute"`
+	Icon     *string `json:"icon"`
 }
 
 // handleUpdateTalkgroup updates a talkgroup's mutable policy fields
@@ -133,8 +135,8 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Priority == nil && req.Lockout == nil && req.Scan == nil &&
-		req.Stream == nil && req.Record == nil {
-		writeError(w, http.StatusBadRequest, "supply priority and/or lockout and/or scan and/or stream and/or record")
+		req.Stream == nil && req.Record == nil && req.Mute == nil && req.Icon == nil {
+		writeError(w, http.StatusBadRequest, "supply at least one of priority, lockout, scan, stream, record, mute, icon")
 		return
 	}
 	ok := s.talkgroups.UpdateFields(uint32(id), func(tg *trunking.TalkGroup) {
@@ -152,6 +154,12 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Record != nil {
 			tg.Record = *req.Record
+		}
+		if req.Mute != nil {
+			tg.Mute = *req.Mute
+		}
+		if req.Icon != nil {
+			tg.Icon = *req.Icon
 		}
 	})
 	if !ok {

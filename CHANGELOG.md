@@ -9,6 +9,25 @@ for tagged releases.
 
 ### Added
 
+- **Protocol-agnostic affiliation tracker.** A new
+  `trunking.AffiliationTracker` maintains a live "which radio unit
+  is on which talkgroup" table, fed by `KindGrant` (the grant's
+  source/group is ground truth), explicit `KindAffiliation` events,
+  and `KindUnitRegistration`. Because every protocol's grant carries
+  a source and group, the table works uniformly across P25, DMR
+  (all tiers and vendors) and NXDN with no per-protocol decoding.
+  Idle units expire after a TTL. Served at `GET /api/v1/affiliations`.
+- **Per-talkgroup mute and icon assignment.** A talkgroup can carry
+  a `mute` flag (suppresses its calls from the live audio player
+  while still following, recording and streaming them) and an
+  `icon` name (the data model behind SDRtrunk's Icon Manager) — set
+  via CSV column, JSON field, or `PATCH /api/v1/talkgroups/{id}`,
+  and surfaced in the talkgroup API DTO.
+- **Analog-trunking voice decoding.** Motorola Type II / SmartZone,
+  EDACS, LTR and MPT 1327 calls now decode to audio through the
+  composer's FM voice chain — they carry plain narrowband FM, so the
+  existing FM chain is the correct decoder. EDACS ProVoice (digital,
+  patent-encumbered) stays on the `.raw` sidecar path.
 - **Outbound call streaming to aggregators and live audio
   servers.** Completed calls are now encoded to MP3 and streamed
   to external services, closing the largest functional gap

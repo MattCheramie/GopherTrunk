@@ -91,6 +91,8 @@ type TalkgroupDTO struct {
 	Scan        bool   `json:"scan"`
 	Stream      bool   `json:"stream"`
 	Record      bool   `json:"record"`
+	Mute        bool   `json:"mute"`
+	Icon        string `json:"icon,omitempty"`
 }
 
 func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
@@ -109,6 +111,8 @@ func talkgroupToDTO(tg *trunking.TalkGroup) *TalkgroupDTO {
 		Scan:        tg.Scan,
 		Stream:      tg.Stream,
 		Record:      tg.Record,
+		Mute:        tg.Mute,
+		Icon:        tg.Icon,
 	}
 }
 

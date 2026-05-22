@@ -229,6 +229,7 @@ type Server struct {
 	systems      []trunking.System
 	history      HistoryQuery
 	locations    LocationQuery
+	affiliations AffiliationProvider
 	metrics      http.Handler
 	log          *slog.Logger
 	version      string
@@ -282,6 +283,12 @@ type LocationQuery interface {
 	RecentLocations(limit int) ([]LocationFix, error)
 }
 
+// AffiliationProvider is the read side of the affiliation tracker,
+// supplying the unit-activity table for GET /api/v1/affiliations.
+type AffiliationProvider interface {
+	Affiliations() []trunking.UnitActivity
+}
+
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
 // purposes (passed through to whatever HistoryQuery implementation the
 // daemon wires up).
@@ -328,6 +335,9 @@ type ServerOptions struct {
 	// Locations is optional. When non-nil the server exposes
 	// GET /api/v1/locations for the web map.
 	Locations LocationQuery
+	// Affiliations is optional. When non-nil the server exposes
+	// GET /api/v1/affiliations (the unit-activity table).
+	Affiliations AffiliationProvider
 	// MetricsHandler is optional. When non-nil it is mounted at
 	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
 	// here. Decoupling via http.Handler keeps the api package free of a
@@ -492,6 +502,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		systems:        append([]trunking.System(nil), opts.Systems...),
 		history:        opts.History,
 		locations:      opts.Locations,
+		affiliations:   opts.Affiliations,
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
@@ -610,6 +621,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
+	mux.HandleFunc("GET /api/v1/affiliations", s.handleAffiliations)
 	mux.HandleFunc("GET /api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)

@@ -391,6 +391,22 @@ func (e *Engine) EndSyntheticCall(deviceSerial string, reason EndReason) bool {
 	return true
 }
 
+// TalkgroupForDevice returns the talkgroup of the active call bound to
+// deviceSerial, or nil when no call is active on that device. The live
+// audio path uses it to honour the per-talkgroup Mute flag. Safe to
+// call from any goroutine.
+func (e *Engine) TalkgroupForDevice(deviceSerial string) *TalkGroup {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ac, ok := e.calls[deviceSerial]; ok {
+		return ac.Talkgroup
+	}
+	if ac, ok := e.synthetic[deviceSerial]; ok {
+		return ac.Talkgroup
+	}
+	return nil
+}
+
 // ScanMode returns the engine's current scan mode. Safe to call from
 // any goroutine.
 func (e *Engine) ScanMode() ScanMode {

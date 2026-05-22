@@ -62,6 +62,14 @@ Full per-OS install (Windows installer / macOS Apple Silicon / Linux aarch64): *
 
 **API + observability** — gRPC + HTTP/SSE + WebSocket surfaces, optional TLS + bearer-token auth on mutations, Prometheus `/metrics`, pure-Go SQLite call log, in-process pub/sub event bus with typed payloads.
 
+**Outbound streaming + call distribution** — completed calls are encoded to MP3 (pure-Go, no `libmp3lame`) and streamed to **Broadcastify Calls**, **RdioScanner**, **OpenMHz**, and live **Icecast / ShoutCast** mountpoints, with bounded exponential-backoff retry and per-feed system filtering (`internal/broadcast`, `GET /api/v1/broadcast`).
+
+**Baseband recording + offline replay** — wideband IQ recording to a two-channel 16-bit WAV (the SDRtrunk layout), and a replay driver that mounts those recordings (and SDRtrunk's) back into the SDR pool as virtual tuners so a capture decodes with no radio attached (`internal/sdr/baseband`).
+
+**Location + affiliation** — over-the-air geographic fixes decode through a strict NMEA-0183 parser into a `KindLocation` event, a `location_log` SQLite table and `GET /api/v1/locations`; a protocol-agnostic affiliation tracker maintains the live "which unit is on which talkgroup" table at `GET /api/v1/affiliations`. A decoded-message log writes a rotating, human-readable text log of every trunking event.
+
+**Per-talkgroup policy** — priority, lockout, scan-list membership, **stream** (broadcast opt-out), **record** (recorder opt-out), **mute** (live-audio opt-out) and an **icon** name — all settable per talkgroup via CSV / JSON and `PATCH /api/v1/talkgroups/{id}`.
+
 **Operator surfaces** — first-class Bubbletea TUI cockpit with 12 panels (including a live Import panel and inline-editable Settings) and a sibling **web console** (a pure-browser React/Tailwind SPA, either embedded into the daemon binary at build time or shipped pre-built as `gophertrunk-web/` next to the binary — see [`web/README.md`](web/README.md) and the [§Web console](#web-console) section); the daemon binary doubles as its own UI launcher (`gophertrunk -tui` / `-web` / `-headless` — see [`docs/launcher.md`](docs/launcher.md)); conventional FM scanner with CTCSS / DCS squelch, two-tone QC-II paging detector, runtime channel lockout, manual VFO tune. Live `PATCH /api/v1/settings` writes operator edits straight to `config.yaml` (comments preserved) and hot-reloads what it safely can; `POST /api/v1/import` accepts PDF / CSV uploads, parses + previews, then merges into the running daemon.
 
 **System bring-up** — `gophertrunk import-pdf` parses RadioReference.com trunking-system PDF exports and structured multi-section CSV bundles, then merges sites + talkgroups into `config.yaml` (preserving comments) plus per-system Trunk-Recorder-format CSVs. Interactive Bubbletea TUI for pruning sites, toggling Scan / Lockout / Priority before write; `-no-tui` / `-dry-run` / `-force` for CI. **`-wizard`** launches an interactive config-builder that walks through every section of `config.yaml` (log, API, auth, CORS, storage, recordings, retention, SDR devices, scanner, audio) so first-time operators get a runnable file without hand-editing YAML. See **[`docs/import.md`](docs/import.md)**.
@@ -94,8 +102,25 @@ constructed by `cmd/gophertrunk` covers all 10 trunked protocols
 Motorola Type II, LTR, MPT 1327, TETRA TMO) plus DMR Tier II
 conventional and YSF / D-STAR on the amateur side.
 
+**SDRtrunk-parity subsystems.** Outbound call streaming
+(Broadcastify Calls / RdioScanner / OpenMHz / Icecast), wideband
+baseband recording + offline replay, the GPS/location and
+affiliation subsystems, the decoded-message log, and per-talkgroup
+stream / record / mute / icon policy all ship and are covered by
+the test suite. Analog FM trunking (Motorola Type II, EDACS, LTR,
+MPT 1327) now decodes voice through the composer's FM chain.
+
 The remaining gaps:
 
+- **Additional SDR hardware.** Only RTL-SDR is supported. Airspy
+  and HackRF are pure-USB and portable to a pure-Go driver like the
+  existing RTL-SDR one, but that work is not yet done; SDRPlay /
+  USRP / BladeRF need vendor C libraries and are out of scope for
+  the zero-CGO build.
+- **Digital-voice composer chains.** FM (incl. analog trunking),
+  DMR and P25 Phase 1/2 decode to audio; NXDN, dPMR, TETRA, YSF and
+  D-STAR voice chains, plus EDACS ProVoice, are still bypassed —
+  their calls are followed and logged but not yet turned into PCM.
 - **Per-protocol on-air FEC layers — most shipping, some inner
   layers TODO.** Every protocol's `ControlChannel.Process`
   adapter ships a working IQ → CC chain (see

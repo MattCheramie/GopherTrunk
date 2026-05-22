@@ -88,6 +88,25 @@ func TestEngineStartsCallOnGrant(t *testing.T) {
 	}
 }
 
+func TestEngineTalkgroupForDevice(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+	e.talkgroups.Add(&TalkGroup{ID: 100, AlphaTag: "OPS", Mute: true})
+
+	if e.TalkgroupForDevice("A-voice") != nil {
+		t.Fatal("no call active yet — TalkgroupForDevice should be nil")
+	}
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 100, FrequencyHz: 851_000_000})
+
+	tg := e.TalkgroupForDevice("A-voice")
+	if tg == nil || tg.ID != 100 || !tg.Mute {
+		t.Fatalf("TalkgroupForDevice = %+v, want the muted OPS talkgroup", tg)
+	}
+	if e.TalkgroupForDevice("no-such-device") != nil {
+		t.Error("unknown device should return nil")
+	}
+}
+
 func TestEngineDropsLockedOutGrant(t *testing.T) {
 	e, _, bus, tuners := mkEngine(t, 1)
 	defer bus.Close()

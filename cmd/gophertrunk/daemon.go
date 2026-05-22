@@ -81,30 +81,31 @@ type Daemon struct {
 	log     *slog.Logger
 	writer  *config.Writer // optional; nil when daemon ran without -config
 
-	bus         *events.Bus
-	pool        *sdr.Pool
-	talkgroups  *trunking.TalkgroupDB
-	systems     []trunking.System
-	engine      *trunking.Engine
-	voicePool   *trunking.VoicePool
-	recorder    *voice.Recorder
-	broadcast   *broadcast.Manager
-	composer    *composer.Composer
-	player      *player.Player
-	toneout     *toneout.Detector
-	audioPub    *api.AudioPublisher
-	db          *storage.DB
-	callLog     *storage.CallLog
-	locationLog *storage.LocationLog
-	messageLog  *gtlog.MessageLog
-	retention   *storage.Retention
-	ccCache     *trunking.Cache
-	cchuntSup   *cchunt.Supervisor
-	ccDecoder   *ccdecoder.Decoder
-	convScan    *conventional.Scanner
-	metrics     *metrics.Metrics
-	httpAPI     *api.Server
-	grpcAPI     *api.GRPCServer
+	bus          *events.Bus
+	pool         *sdr.Pool
+	talkgroups   *trunking.TalkgroupDB
+	systems      []trunking.System
+	engine       *trunking.Engine
+	voicePool    *trunking.VoicePool
+	affiliations *trunking.AffiliationTracker
+	recorder     *voice.Recorder
+	broadcast    *broadcast.Manager
+	composer     *composer.Composer
+	player       *player.Player
+	toneout      *toneout.Detector
+	audioPub     *api.AudioPublisher
+	db           *storage.DB
+	callLog      *storage.CallLog
+	locationLog  *storage.LocationLog
+	messageLog   *gtlog.MessageLog
+	retention    *storage.Retention
+	ccCache      *trunking.Cache
+	cchuntSup    *cchunt.Supervisor
+	ccDecoder    *ccdecoder.Decoder
+	convScan     *conventional.Scanner
+	metrics      *metrics.Metrics
+	httpAPI      *api.Server
+	grpcAPI      *api.GRPCServer
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -400,6 +401,17 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.messageLog = ml
 	}
 
+	// Affiliation tracker — always on. Subscribes to the bus and
+	// maintains the protocol-agnostic unit-activity table surfaced at
+	// GET /api/v1/affiliations.
+	{
+		at, err := trunking.NewAffiliationTracker(trunking.AffiliationTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: affiliation tracker: %w", err)
+		}
+		d.affiliations = at
+	}
+
 	// Tone-out detector — optional. Built before the composer so it can
 	// share the composer's PCM sink via fanoutSink.
 	if len(cfg.ToneOut.Profiles) > 0 {
@@ -460,7 +472,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			sinks = append(sinks, d.toneout)
 		}
 		if d.player != nil {
-			sinks = append(sinks, playerSink{d.player})
+			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
 		}
 		sinks = append(sinks, d.audioPub)
 		var sink composer.PCMSink = d.recorder
@@ -614,7 +626,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			}
 			var convRec conventional.Recorder = d.recorder
 			if d.player != nil {
-				convRec = convFanoutRecorder{d.recorder, playerSink{d.player}}
+				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
 			}
 			cs, err := conventional.New(conventional.Options{
 				Log:          log,
@@ -709,6 +721,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if d.locationLog != nil {
 			opts.Locations = api.LocationsFromStorage(d.locationLog)
+		}
+		if d.affiliations != nil {
+			opts.Affiliations = affiliationProvider{d.affiliations}
 		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
@@ -826,6 +841,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.messageLog != nil {
 		d.spawn(runCtx, "messagelog", false, func(ctx context.Context) error {
 			return d.messageLog.Run(ctx)
+		})
+	}
+	if d.affiliations != nil {
+		d.spawn(runCtx, "affiliations", false, func(ctx context.Context) error {
+			return d.affiliations.Run(ctx)
 		})
 	}
 	if d.retention != nil {
@@ -974,6 +994,9 @@ func (d *Daemon) Close() {
 		}
 		if d.messageLog != nil {
 			_ = d.messageLog.Close()
+		}
+		if d.affiliations != nil {
+			_ = d.affiliations.Close()
 		}
 		if d.metrics != nil {
 			_ = d.metrics.Close()
@@ -1140,13 +1163,21 @@ func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, e
 	return out, nil
 }
 
-// playerSink adapts *player.Player to composer.PCMSink. The Player's
-// WritePCM signature is identical so the adapter is a zero-cost shim
-// that exists only to satisfy Go's nominal-typing for the fan-out
-// slice element type.
-type playerSink struct{ p *player.Player }
+// playerSink adapts *player.Player to composer.PCMSink. When engine is
+// non-nil it also honours the per-talkgroup Mute flag: PCM for a call
+// whose talkgroup is muted is dropped before reaching the speakers
+// (the call is still recorded and streamed).
+type playerSink struct {
+	p      *player.Player
+	engine *trunking.Engine
+}
 
 func (s playerSink) WritePCM(serial string, samples []int16) error {
+	if s.engine != nil {
+		if tg := s.engine.TalkgroupForDevice(serial); tg != nil && tg.Mute {
+			return nil
+		}
+	}
 	return s.p.WritePCM(serial, samples)
 }
 
@@ -1156,6 +1187,12 @@ func (s playerSink) WritePCM(serial string, samples []int16) error {
 type broadcastStatus struct{ mgr *broadcast.Manager }
 
 func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
+
+// affiliationProvider adapts the AffiliationTracker into the
+// api.AffiliationProvider interface.
+type affiliationProvider struct{ t *trunking.AffiliationTracker }
+
+func (a affiliationProvider) Affiliations() []trunking.UnitActivity { return a.t.Snapshot() }
 
 // wrapBasebandRecorders replaces the Device of every pool entry whose
 // serial appears in baseband.record with a RecordingDevice, teeing its

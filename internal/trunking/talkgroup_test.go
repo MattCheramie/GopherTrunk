@@ -52,6 +52,37 @@ func TestLoadCSVTrunkRecorderFormat(t *testing.T) {
 	}
 }
 
+func TestLoadCSVStreamRecordMuteIcon(t *testing.T) {
+	csv := `Decimal,Alpha Tag,Stream,Record,Mute,Icon
+1,DEFAULTS,,,,
+2,NOSTREAM,no,,,
+3,NORECORD,,false,,
+4,MUTED,,,yes,
+5,ICONED,,,,fire-truck
+`
+	d := NewTalkgroupDB()
+	if _, err := d.LoadCSV(strings.NewReader(csv)); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	// Defaults: stream + record on, mute off, no icon.
+	def := d.Lookup(1)
+	if def == nil || !def.Stream || !def.Record || def.Mute || def.Icon != "" {
+		t.Errorf("DEFAULTS = %+v", def)
+	}
+	if tg := d.Lookup(2); tg == nil || tg.Stream {
+		t.Errorf("NOSTREAM should have Stream=false: %+v", tg)
+	}
+	if tg := d.Lookup(3); tg == nil || tg.Record {
+		t.Errorf("NORECORD should have Record=false: %+v", tg)
+	}
+	if tg := d.Lookup(4); tg == nil || !tg.Mute {
+		t.Errorf("MUTED should have Mute=true: %+v", tg)
+	}
+	if tg := d.Lookup(5); tg == nil || tg.Icon != "fire-truck" {
+		t.Errorf("ICONED should have Icon=fire-truck: %+v", tg)
+	}
+}
+
 func TestLoadCSVRequiresDecimal(t *testing.T) {
 	csv := `Hex,Alpha Tag
 4D2,FIRE

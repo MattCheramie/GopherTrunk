@@ -43,6 +43,15 @@ type TalkGroup struct {
 	// loader; an explicit "no"/"false" excludes a talkgroup from
 	// recording (the call is still followed and played live).
 	Record bool `json:"record"`
+	// Mute, when true, suppresses this talkgroup's calls from the
+	// live audio player — the call is still followed, recorded, and
+	// streamed, just not played on the host's speakers. Defaults to
+	// false (not muted).
+	Mute bool `json:"mute,omitempty"`
+	// Icon is an optional icon name assigned to this talkgroup, used
+	// by the operator UIs to render a per-talkgroup glyph (the data
+	// model behind SDRtrunk's Icon Manager). Empty = default icon.
+	Icon string `json:"icon,omitempty"`
 }
 
 // TalkgroupDB is a thread-safe lookup over loaded talkgroups.
@@ -214,6 +223,15 @@ func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
 				tg.Record = false
 			}
 		}
+		// Optional Mute column. Default is false; an explicit
+		// "y"/"yes"/"true"/"1" mutes the talkgroup from live audio.
+		if s := field(row, colIdx, "mute"); s != "" {
+			switch strings.ToLower(s) {
+			case "y", "yes", "true", "1", "on":
+				tg.Mute = true
+			}
+		}
+		tg.Icon = field(row, colIdx, "icon")
 		d.Add(tg)
 		loaded++
 	}
@@ -247,6 +265,8 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 		Scan        *bool  `json:"scan"`
 		Stream      *bool  `json:"stream"`
 		Record      *bool  `json:"record"`
+		Mute        bool   `json:"mute"`
+		Icon        string `json:"icon"`
 	}
 	var arr []talkGroupRaw
 	if err := json.NewDecoder(r).Decode(&arr); err != nil {
@@ -265,6 +285,8 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 			Scan:        true,
 			Stream:      true,
 			Record:      true,
+			Mute:        raw.Mute,
+			Icon:        raw.Icon,
 		}
 		if raw.Scan != nil {
 			tg.Scan = *raw.Scan

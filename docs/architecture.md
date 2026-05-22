@@ -82,6 +82,35 @@ daemon behaves like a high-end digital-trunking police scanner end-to-end.
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## Streaming, recording & telemetry subsystems
+
+Several subsystems hang off the `events.Bus` as independent
+subscribers — they never block the decode path, and each is
+constructed only when its config section is present:
+
+- **`internal/broadcast`** — outbound call streaming. A `Manager`
+  subscribes to `KindCallComplete` (published by the recorder once a
+  call's WAV is flushed), encodes the audio to MP3 via the pure-Go
+  `internal/voice/mp3` package, and fans it out to the configured
+  backends (`broadcastify`, `rdioscanner`, `openmhz`, `icecast`)
+  with bounded exponential-backoff retry. Per-feed `systems` filters
+  and the per-talkgroup `Stream` flag gate delivery. Counters are at
+  `GET /api/v1/broadcast`.
+- **`internal/sdr/baseband`** — wideband IQ capture. A
+  `RecordingDevice` decorates an `sdr.Device` and tees its IQ stream
+  to a two-channel 16-bit WAV; a `FileDriver` registers with the SDR
+  driver registry so recorded WAVs mount as virtual tuners. Wired
+  through the `baseband:` config section.
+- **`internal/radio/location`** + the `location_log` table — a
+  strict NMEA-0183 parser feeds `KindLocation` events that
+  `storage.LocationLog` persists and `GET /api/v1/locations` serves.
+- **`trunking.AffiliationTracker`** — a protocol-agnostic, in-memory
+  table of unit→talkgroup activity built from `KindGrant`,
+  `KindAffiliation` and `KindUnitRegistration` events, served at
+  `GET /api/v1/affiliations`.
+- **`log.MessageLog`** — a rotating, human-readable text log of
+  every trunking event, enabled via `log.message_log`.
+
 ## Concurrency model
 
 - Each opened device owns one async-read goroutine that pushes
