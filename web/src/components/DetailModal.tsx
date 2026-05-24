@@ -62,25 +62,30 @@ export function DetailModal({ title, subtitle, onClose, children }: Props) {
 }
 
 // DetailField renders one label/value pair inside a DetailModal.
+// Pass `emptyHint` to replace the default em-dash with context-specific
+// copy (e.g. "Awaiting status broadcasts") when the value is missing.
 export function DetailField({
   label,
   value,
   mono,
+  emptyHint,
 }: {
   label: string;
   value: React.ReactNode;
   mono?: boolean;
+  emptyHint?: React.ReactNode;
 }) {
+  const empty = value === null || value === undefined || value === "";
   return (
     <div>
       <p className="text-xs uppercase tracking-wider text-muted">{label}</p>
-      <p
-        className={`text-sm mt-0.5 ${mono ? "font-mono" : ""}`}
-        // Empty fields render a clear em-dash so the operator sees the
-        // gap rather than an invisibly-collapsed row.
-      >
-        {value === null || value === undefined || value === "" ? (
-          <span className="text-muted">—</span>
+      <p className={`text-sm mt-0.5 ${mono && !empty ? "font-mono" : ""}`}>
+        {empty ? (
+          emptyHint != null ? (
+            <span className="text-muted italic">{emptyHint}</span>
+          ) : (
+            <span className="text-muted">—</span>
+          )
         ) : (
           value
         )}

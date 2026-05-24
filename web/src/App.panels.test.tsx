@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 // Regression coverage for issue #290. The existing App.test.tsx mocks
@@ -190,5 +191,42 @@ describe("App panel mounting (issue #290 regression)", () => {
     await screen.findByText("Metro P25");
     expect(screen.getByText("County Trunk")).toBeInTheDocument();
     expect(screen.queryByText(/Something went wrong/i)).toBeNull();
+  });
+
+  // Empty WACN/SystemID/RFSS/Site in the Systems detail modal should
+  // be replaced with a hunt-state aware hint rather than a bare dash
+  // — otherwise operators can't tell config from "not yet decoded".
+  it("explains empty network identity fields in the Systems detail modal", async () => {
+    vi.mocked(api.systems).mockResolvedValue([
+      {
+        name: "Metro P25",
+        protocol: "p25",
+        control_channels: [851_000_000, 852_000_000],
+      },
+    ]);
+    vi.mocked(api.scanner).mockResolvedValue(IN_HUNT_SCANNER);
+
+    render(
+      <ErrorBoundary>
+        <MemoryRouter initialEntries={["/systems"]}>
+          <App />
+        </MemoryRouter>
+      </ErrorBoundary>,
+    );
+
+    const row = await screen.findByText("Metro P25");
+    await userEvent.click(row);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Network identity (decoded live)"),
+    ).toBeInTheDocument();
+    // Four identity fields all share the same hunt-state hint.
+    expect(
+      within(dialog).getAllByText("Hunting control channel"),
+    ).toHaveLength(4);
+    // No em-dash fallback inside the modal — every empty cell now
+    // carries an explanatory hint.
+    expect(within(dialog).queryByText("—")).toBeNull();
   });
 });

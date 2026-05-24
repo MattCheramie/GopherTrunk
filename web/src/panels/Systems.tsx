@@ -2,28 +2,48 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
-import type { SystemDTO } from "../api/types";
+import type { SystemDTO, SystemHuntStatusDTO } from "../api/types";
 import { selectClientConfig, useShared } from "../store/shared";
 
 const POLL_INTERVAL_MS = 10_000;
+
+// Network identity (WACN/System ID/RFSS/Site) is populated from
+// decoded P25 TSBKs 0x3A/0x3B, not config. Translate the live hunt
+// state into operator-facing copy so an empty cell explains itself.
+function identityEmptyHint(hunt: SystemHuntStatusDTO | undefined): string {
+  if (!hunt) return "Scanner offline";
+  switch (hunt.state) {
+    case "locked":
+      return "Awaiting status broadcasts";
+    case "hunting":
+      return "Hunting control channel";
+    default:
+      return hunt.state ? `System not locked (${hunt.state})` : "System not locked";
+  }
+}
 
 export function Systems() {
   const cfg = useShared(selectClientConfig);
   const systems = useShared((s) => s.systems);
   const setSystems = useShared((s) => s.setSystems);
+  const scanner = useShared((s) => s.scanner);
+  const setScanner = useShared((s) => s.setScanner);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancel = false;
     const refresh = async () => {
-      try {
-        const data = await api.systems(cfg);
-        if (!cancel) setSystems(data);
-      } catch {
-        // Toast strip surfaces request errors elsewhere; keep the
-        // previous snapshot on the screen rather than blanking it.
-      }
+      // Poll the scanner snapshot alongside systems so the detail
+      // modal can translate empty WACN/SystemID/RFSS/Site into a
+      // hunt-state hint even when the Scanner panel isn't mounted.
+      const [sysRes, scanRes] = await Promise.allSettled([
+        api.systems(cfg),
+        api.scanner(cfg),
+      ]);
+      if (cancel) return;
+      if (sysRes.status === "fulfilled") setSystems(sysRes.value);
+      if (scanRes.status === "fulfilled") setScanner(scanRes.value);
     };
     refresh();
     const t = window.setInterval(refresh, POLL_INTERVAL_MS);
@@ -31,7 +51,7 @@ export function Systems() {
       cancel = true;
       window.clearInterval(t);
     };
-  }, [cfg, setSystems]);
+  }, [cfg, setSystems, setScanner]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return systems;
@@ -132,16 +152,43 @@ export function Systems() {
                 : null
             }
           />
-          <div className="grid grid-cols-2 gap-3">
-            <DetailField label="WACN" mono value={selected.wacn ?? null} />
-            <DetailField
-              label="System ID"
-              mono
-              value={selected.system_id ?? null}
-            />
-            <DetailField label="RFSS" mono value={selected.rfss ?? null} />
-            <DetailField label="Site" mono value={selected.site ?? null} />
-          </div>
+          {(() => {
+            const hunt = scanner?.systems.find((h) => h.name === selected.name);
+            const hint = identityEmptyHint(hunt);
+            return (
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                  Network identity (decoded live)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailField
+                    label="WACN"
+                    mono
+                    value={selected.wacn ?? null}
+                    emptyHint={hint}
+                  />
+                  <DetailField
+                    label="System ID"
+                    mono
+                    value={selected.system_id ?? null}
+                    emptyHint={hint}
+                  />
+                  <DetailField
+                    label="RFSS"
+                    mono
+                    value={selected.rfss ?? null}
+                    emptyHint={hint}
+                  />
+                  <DetailField
+                    label="Site"
+                    mono
+                    value={selected.site ?? null}
+                    emptyHint={hint}
+                  />
+                </div>
+              </div>
+            );
+          })()}
         </DetailModal>
       )}
     </div>
