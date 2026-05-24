@@ -118,6 +118,60 @@ func TestNewRequiresSampleRate(t *testing.T) {
 	}
 }
 
+// closingIQSource returns a channel that closes after dispatching
+// `chunks` worth of IQ — regardless of ctx state. Models the SDR
+// driver's behaviour when its USB reaper dies (issue #345): the
+// channel closes, the decoder must surface ErrIQStreamClosed so the
+// daemon's restart loop can re-open the SDR.
+type closingIQSource struct {
+	chunks [][]complex64
+}
+
+func (c *closingIQSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	ch := make(chan []complex64)
+	go func() {
+		defer close(ch)
+		for _, chunk := range c.chunks {
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- chunk:
+			}
+		}
+	}()
+	return ch, nil
+}
+
+// TestRunReturnsErrIQStreamClosedOnStreamEOF pins the issue-#345
+// surface: when the IQ stream closes while ctx is still live (the
+// SDR's USB reaper died and the driver propagated EOF), Run must
+// return ErrIQStreamClosed so the daemon's restart loop can fire.
+// Before the fix, Run returned nil and the daemon swallowed the exit
+// silently — the entire pipeline went idle at 0% CPU.
+func TestRunReturnsErrIQStreamClosedOnStreamEOF(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	src := &closingIQSource{
+		chunks: [][]complex64{make([]complex64, 4)},
+	}
+	d, err := New(Options{Bus: bus, IQ: src, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Run(context.Background())
+	}()
+	select {
+	case got := <-done:
+		if !errors.Is(got, ErrIQStreamClosed) {
+			t.Errorf("Run = %v, want ErrIQStreamClosed", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after stream EOF")
+	}
+}
+
 func TestRunPropagatesStreamIQError(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -128,8 +182,38 @@ func TestRunPropagatesStreamIQError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := d.Run(context.Background()); !errors.Is(got, wantErr) {
-		t.Errorf("Run = %v, want %v", got, wantErr)
+	got := d.Run(context.Background())
+	// The underlying StreamIQ error must remain inspectable so callers
+	// can still log the root cause.
+	if !errors.Is(got, wantErr) {
+		t.Errorf("Run = %v, want underlying %v preserved", got, wantErr)
+	}
+	// A non-context StreamIQ open failure must now classify as
+	// ErrIQStreamClosed so the daemon's restart loop catches it and
+	// either retries or escalates to a clean fatal. Issue #345.
+	if !errors.Is(got, ErrIQStreamClosed) {
+		t.Errorf("Run = %v, want errors.Is(..., ErrIQStreamClosed)", got)
+	}
+}
+
+// TestRunPassesThroughContextCancelFromStreamIQ pins the inverse: a
+// context-cancel error from StreamIQ must NOT be wrapped as
+// ErrIQStreamClosed — shutdown is not a stream failure.
+func TestRunPassesThroughContextCancelFromStreamIQ(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: erroringIQSource{err: context.Canceled}, SampleRateHz: 48000,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got := d.Run(context.Background())
+	if !errors.Is(got, context.Canceled) {
+		t.Errorf("Run = %v, want context.Canceled", got)
+	}
+	if errors.Is(got, ErrIQStreamClosed) {
+		t.Errorf("Run = %v, must not classify ctx cancel as ErrIQStreamClosed", got)
 	}
 }
 

@@ -20,7 +20,22 @@ type VoicePool struct {
 	mu      sync.Mutex
 	devices []*VoiceDevice
 	active  map[string]*ActiveCall // by device serial
+	// reacquire, when set, is called by Bind on a SetCenterFreq
+	// failure to ask the SDR pool to re-open the device by serial
+	// (typically after a transient USB disconnect / re-enumerate).
+	// The returned Tuner replaces the VoiceDevice's stale handle and
+	// Bind retries SetCenterFreq once. Wired in by the daemon via
+	// SetReacquire; nil = no retry, current behaviour. See issue #345.
+	reacquire ReacquireFunc
 }
+
+// ReacquireFunc asks the SDR pool to re-open the device with the
+// given serial and return its fresh Tuner handle. Implementations
+// (typically the daemon's bridge to sdr.Pool.Reacquire) close the
+// stale handle, re-enumerate the driver, open the matching serial,
+// re-apply per-device tuning, and swap the entry in place — see
+// sdr.Pool.Reacquire for the contract.
+type ReacquireFunc func(serial string) (Tuner, error)
 
 // ActiveCall describes a grant currently being followed on a specific
 // Voice device. The engine creates these via VoicePool.Bind.
@@ -36,6 +51,17 @@ type ActiveCall struct {
 // devices determines allocation preference (first-fit).
 func NewVoicePool(devices []*VoiceDevice) *VoicePool {
 	return &VoicePool{devices: devices, active: make(map[string]*ActiveCall)}
+}
+
+// SetReacquire installs the SDR-pool reacquire callback. After this
+// is set, Bind retries SetCenterFreq once via the callback when the
+// initial tune fails — recovering from a USB disconnect / re-
+// enumerate without dropping the call. Idempotent; passing nil
+// disables the retry (matches the legacy behaviour).
+func (p *VoicePool) SetReacquire(fn ReacquireFunc) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reacquire = fn
 }
 
 // Devices returns a snapshot of the device list.
@@ -77,7 +103,11 @@ func (p *VoicePool) LowestPriorityActive() *ActiveCall {
 }
 
 // Bind retunes the device to grant.FrequencyHz and records an active call.
-// Returns an error if the device is already busy or the tune fails.
+// Returns an error if the device is already busy or the tune fails. When
+// SetReacquire is wired, a SetCenterFreq failure triggers one reacquire
+// attempt against the SDR pool — the stale handle is swapped for a fresh
+// one and the tune is retried. Recovers from a USB disconnect that
+// happened while the device was idle between calls (issue #345).
 func (p *VoicePool) Bind(d *VoiceDevice, g Grant, tg *TalkGroup, now time.Time) (*ActiveCall, error) {
 	if d == nil {
 		return nil, errors.New("trunking: nil device")
@@ -87,9 +117,26 @@ func (p *VoicePool) Bind(d *VoiceDevice, g Grant, tg *TalkGroup, now time.Time) 
 		p.mu.Unlock()
 		return nil, errors.New("trunking: device already busy")
 	}
+	reacquire := p.reacquire
 	p.mu.Unlock()
 	if err := d.Tuner.SetCenterFreq(g.FrequencyHz); err != nil {
-		return nil, err
+		if reacquire == nil {
+			return nil, err
+		}
+		// First tune failed — most often a USB disconnect/re-
+		// enumerate that left this VoiceDevice's Tuner handle dead.
+		// Ask the SDR pool to re-open the same serial; if that
+		// succeeds, swap the live handle in and retry the tune
+		// once. Any retry failure surfaces the second error so the
+		// caller logs the genuine cause rather than the stale one.
+		newTuner, rerr := reacquire(d.Serial)
+		if rerr != nil {
+			return nil, errors.Join(err, rerr)
+		}
+		d.Tuner = newTuner
+		if err2 := d.Tuner.SetCenterFreq(g.FrequencyHz); err2 != nil {
+			return nil, err2
+		}
 	}
 	ac := &ActiveCall{
 		Device:      d,

@@ -87,6 +87,13 @@ type MockTransport struct {
 
 	BulkPackets  [][]byte
 	BulkInterval time.Duration
+	// BulkSimulateDeath, when true, makes the bulk-IN goroutine fire
+	// onStreamDead (with BulkDeathErr, or ErrDeviceGone if nil) after
+	// dispatching all BulkPackets instead of blocking on StopBulkIn.
+	// Tests use it to assert drivers close their consumer channel when
+	// the USB reaper dies unexpectedly (issue #345).
+	BulkSimulateDeath bool
+	BulkDeathErr      error
 
 	mu       sync.Mutex
 	bulkActv bool
@@ -197,7 +204,7 @@ func (m *MockTransport) ReleaseInterface(num int) error {
 	return nil
 }
 
-func (m *MockTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error {
+func (m *MockTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	m.mu.Lock()
 	if m.Closed {
 		m.mu.Unlock()
@@ -212,6 +219,8 @@ func (m *MockTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket 
 	m.bulkDone = make(chan struct{})
 	packets := append([][]byte(nil), m.BulkPackets...)
 	interval := m.BulkInterval
+	simulateDeath := m.BulkSimulateDeath
+	deathErr := m.BulkDeathErr
 	m.mu.Unlock()
 
 	go func() {
@@ -232,6 +241,19 @@ func (m *MockTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket 
 				case <-time.After(interval):
 				}
 			}
+		}
+		if simulateDeath {
+			if onStreamDead != nil {
+				if deathErr == nil {
+					deathErr = ErrDeviceGone
+				}
+				// Dispatch from a fresh goroutine — matches the real
+				// transports' contract: onStreamDead typically calls
+				// StopBulkIn, which waits on bulkDone (closed only
+				// after this goroutine returns).
+				go onStreamDead(deathErr)
+			}
+			return
 		}
 		<-m.bulkStop
 	}()

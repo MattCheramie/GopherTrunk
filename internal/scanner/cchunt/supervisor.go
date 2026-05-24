@@ -178,7 +178,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.startRound(name)
 		hunter, err := trunking.NewHunter(trunking.HunterOptions{
 			System: rt.sys,
-			Tuner:  s.tuner,
+			Tuner:  s.currentTuner(),
 			Bus:    s.bus,
 			Cache:  s.cache,
 			Log:    s.log,
@@ -369,6 +369,48 @@ func (s *Supervisor) recordGrant(system string, at time.Time) {
 	if rt := s.states[system]; rt != nil {
 		rt.lastGrantAt = at
 	}
+}
+
+// currentTuner returns the supervisor's active control tuner under
+// s.mu. Read on every hunt round so SwapTuner can replace the handle
+// in-place after a USB reacquisition without racing the hunt loop.
+func (s *Supervisor) currentTuner() Tuner {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tuner
+}
+
+// SwapTuner replaces the supervisor's control tuner. Newly-spawned
+// hunters use the fresh handle; in-flight hunters keep the previous
+// reference until they finish. Any armed retune channels are closed
+// so the loop drops out of its current dwell and re-hunts immediately
+// with the new tuner — the closed channel triggers the per-system
+// hctx cancel via the goroutine armRetune spawned. Returns an error
+// only when t is nil.
+//
+// Used by the daemon's USB reacquisition path so a freshly re-opened
+// SDR replaces a disconnected one without a process restart. See
+// issue #345.
+func (s *Supervisor) SwapTuner(t Tuner) error {
+	if t == nil {
+		return errors.New("cchunt: SwapTuner requires a non-nil Tuner")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tuner = t
+	for _, rt := range s.states {
+		if rt == nil || rt.retuneCh == nil {
+			continue
+		}
+		select {
+		case <-rt.retuneCh:
+		default:
+			close(rt.retuneCh)
+		}
+		rt.retuneCh = nil
+	}
+	s.log.Info("cchunt: control tuner swapped (reacquired)")
+	return nil
 }
 
 func (s *Supervisor) armRetune(name string, cancel context.CancelFunc) {

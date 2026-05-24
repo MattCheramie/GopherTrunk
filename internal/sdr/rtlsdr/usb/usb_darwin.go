@@ -458,6 +458,28 @@ type darwinTransport struct {
 	bulkSlots    []*darwinBulkSlot
 	bulkStopFlag atomic.Int32
 	bulkDone     chan struct{}
+
+	// Stream-death aggregation. bulkAlive starts at len(bulkSlots) when
+	// StartBulkIn spawns the per-slot reapers; each goroutine decrements
+	// it on exit. When the count hits zero with bulkStopFlag still
+	// unset, the LAST goroutine fires bulkOnDead exactly once so the
+	// driver can close its consumer channel — fixes issue #345's
+	// "process alive at 0% CPU, all event counters frozen" stall.
+	bulkAlive    atomic.Int32
+	bulkOnDead   func(error)
+	bulkErrMu    sync.Mutex
+	bulkDeadErr  error // first non-stop slot error wins
+	bulkDeadOnce sync.Once
+}
+
+// recordBulkErr stashes err as the first-failing-slot reason if no
+// earlier error has won yet. Safe to call from per-slot goroutines.
+func (t *darwinTransport) recordBulkErr(err error) {
+	t.bulkErrMu.Lock()
+	defer t.bulkErrMu.Unlock()
+	if t.bulkDeadErr == nil {
+		t.bulkDeadErr = err
+	}
 }
 
 type darwinBulkSlot struct {
@@ -610,7 +632,7 @@ func (t *darwinTransport) Reset() error {
 // across the C/Go boundary, no run-loop thread to babysit. Cost is
 // ringBufs OS threads (32 default → ~32 MB stack). Acceptable for
 // a foreground SDR daemon.
-func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error {
+func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	if t.closed.Load() {
 		return ErrClosed
 	}
@@ -638,6 +660,12 @@ func (t *darwinTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacke
 	t.bulkActive = true
 	t.bulkStopFlag.Store(0)
 	t.bulkDone = make(chan struct{}, ringBufs)
+	t.bulkOnDead = onStreamDead
+	t.bulkErrMu.Lock()
+	t.bulkDeadErr = nil
+	t.bulkErrMu.Unlock()
+	t.bulkDeadOnce = sync.Once{}
+	t.bulkAlive.Store(int32(len(slots)))
 	for _, s := range slots {
 		go t.bulkLoop(pipeRef, s, onPacket)
 	}
@@ -681,10 +709,34 @@ func (t *darwinTransport) findPipeRef(epAddr byte) (uint8, error) {
 // bulkLoop runs in a dedicated OS-thread-pinned goroutine. ReadPipe
 // blocks the kernel side; on AbortPipe + close-flag we exit. Each
 // successful read is delivered via onPacket.
+//
+// On exit the goroutine decrements bulkAlive; when the last live
+// goroutine returns with bulkStopFlag unset (every slot died of an
+// unrecoverable USB error rather than being aborted by StopBulkIn),
+// it fires bulkOnDead exactly once so the driver can surface "stream
+// died" to its IQ consumer — see issue #345.
 func (t *darwinTransport) bulkLoop(pipeRef uint8, slot *darwinBulkSlot, onPacket func([]byte)) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	defer func() { t.bulkDone <- struct{}{} }()
+	defer func() {
+		t.bulkDone <- struct{}{}
+		if t.bulkAlive.Add(-1) == 0 && t.bulkStopFlag.Load() == 0 && t.bulkOnDead != nil {
+			t.bulkDeadOnce.Do(func() {
+				t.bulkErrMu.Lock()
+				err := t.bulkDeadErr
+				t.bulkErrMu.Unlock()
+				if err == nil {
+					err = ErrDeviceGone
+				}
+				// Dispatch from a fresh goroutine: bulkOnDead
+				// typically calls StopBulkIn (via the driver's cancel
+				// path) which drains bulkDone — and this slot's
+				// goroutine has not finished yet, so calling it inline
+				// would deadlock waiting on its own done event.
+				go t.bulkOnDead(err)
+			})
+		}
+	}()
 	for {
 		if t.bulkStopFlag.Load() != 0 {
 			return
@@ -702,6 +754,7 @@ func (t *darwinTransport) bulkLoop(pipeRef uint8, slot *darwinBulkSlot, onPacket
 			// kIOReturnAborted (cancellation) and any other
 			// transport error both exit the loop. ResetPipe
 			// below would be needed before re-Start.
+			t.recordBulkErr(fmt.Errorf("usb: ReadPipe: 0x%08x", uint32(rc)))
 			return
 		}
 		if size > 0 {

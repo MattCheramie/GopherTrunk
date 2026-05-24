@@ -331,7 +331,7 @@ func (t *winTransport) Reset() error {
 	return nil
 }
 
-func (t *winTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error {
+func (t *winTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	if t.closed.Load() {
 		return ErrClosed
 	}
@@ -417,7 +417,7 @@ func (t *winTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket f
 	t.bulkStopFlag.Store(0)
 	t.bulkDone = make(chan struct{})
 
-	go t.reapLoop(onPacket)
+	go t.reapLoop(onPacket, onStreamDead)
 	return nil
 }
 
@@ -444,14 +444,32 @@ func (t *winTransport) issueReadPipe(epAddr byte, s *winBulkSlot) error {
 	return nil
 }
 
-func (t *winTransport) reapLoop(onPacket func([]byte)) {
+func (t *winTransport) reapLoop(onPacket func([]byte), onStreamDead func(error)) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(t.bulkDone)
 
+	// firstErr stashes the first error that took a slot out of rotation.
+	// When the loop exits with the stop flag unset (i.e. every slot died
+	// of an unrecoverable error rather than being aborted by
+	// StopBulkIn), we hand it to onStreamDead so the driver can surface
+	// "stream died" to its IQ consumer.
+	var firstErr error
 	// Active mask — once a slot's I/O is taken to completion under stop
 	// we mark it consumed; we exit when no slot is still in flight.
 	consumed := make([]bool, len(t.bulkSlots))
+	defer func() {
+		if t.bulkStopFlag.Load() == 0 && onStreamDead != nil {
+			if firstErr == nil {
+				firstErr = ErrDeviceGone
+			}
+			// Dispatch from a fresh goroutine: onStreamDead typically
+			// calls StopBulkIn (via the driver's cancel path) which
+			// waits on `bulkDone` — which is only closed by this
+			// reaper's defer chain (registered earlier, runs after).
+			go onStreamDead(firstErr)
+		}
+	}()
 	for {
 		// Build a wait list of unfinished events.
 		wait := make([]windows.Handle, 0, len(t.bulkSlots))
@@ -467,10 +485,16 @@ func (t *winTransport) reapLoop(onPacket func([]byte)) {
 		}
 		ret, err := windows.WaitForMultipleObjects(wait, false, windows.INFINITE)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("winusb: WaitForMultipleObjects: %w", err)
+			}
 			return
 		}
 		raw := int(ret - windows.WAIT_OBJECT_0)
 		if raw < 0 || raw >= len(wait) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("winusb: WaitForMultipleObjects returned %d outside slot range", ret)
+			}
 			return
 		}
 		slotIdx := idxMap[raw]
@@ -492,6 +516,9 @@ func (t *winTransport) reapLoop(onPacket func([]byte)) {
 		}
 		if err := t.issueReadPipe(t.bulkEpAddr, slot); err != nil {
 			// Slot is dead; mark consumed so we don't wait on its event.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("winusb: ReadPipe resubmit: %w", err)
+			}
 			consumed[slotIdx] = true
 		}
 	}

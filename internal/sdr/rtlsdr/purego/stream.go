@@ -56,7 +56,7 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.out = out
 	d.stopOnce = sync.Once{}
 
-	if err := d.transport.StartBulkIn(bulkInEndpoint, asyncBufCount, asyncBufLen, d.deliver); err != nil {
+	if err := d.transport.StartBulkIn(bulkInEndpoint, asyncBufCount, asyncBufLen, d.deliver, d.onStreamDead); err != nil {
 		d.out = nil
 		return nil, fmt.Errorf("rtlsdr: StartBulkIn: %w", err)
 	}
@@ -69,6 +69,18 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}()
 
 	return out, nil
+}
+
+// onStreamDead is the [usb.Transport] StartBulkIn callback fired when
+// every bulk-IN URB dies of an unrecoverable USB error and the reaper
+// exits without StopBulkIn being called. It runs cancelStream so the
+// consumer channel closes and the IQ consumer (e.g. ccdecoder) sees a
+// real EOF rather than hanging forever. Idempotent via d.stopOnce.
+// The underlying error surfaces upstream as ccdecoder.ErrIQStreamClosed;
+// the daemon logs it once and decides whether to retry / exit. See
+// issue #345.
+func (d *Device) onStreamDead(error) {
+	d.cancelStream()
 }
 
 // deliver receives one bulk-IN buffer from the transport reaper,

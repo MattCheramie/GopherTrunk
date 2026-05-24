@@ -78,7 +78,19 @@ type Transport interface {
 	// URB completes; the slice passed to it is owned by the transport
 	// and reused once onPacket returns — callers must copy any bytes
 	// they wish to retain.
-	StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error
+	//
+	// onStreamDead, when non-nil, is invoked exactly once when every URB
+	// has died of an unrecoverable USB error (host controller hang,
+	// ENODEV, EPROTO storm under load, ...) — i.e. the stream ended
+	// **without** StopBulkIn being called. Implementations must not
+	// invoke it on the normal StopBulkIn path, and must dispatch the
+	// callback from a fresh goroutine — never from the reaper itself,
+	// because the callback typically calls StopBulkIn (to close the
+	// driver's consumer channel) and StopBulkIn waits for the reaper to
+	// exit. Drivers use this hook to surface "stream died" to their IQ
+	// consumer; without it, a silent reaper exit leaves the consumer
+	// blocked forever (issue #345).
+	StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error
 
 	// StopBulkIn cancels every in-flight URB, drains the reaper, and
 	// returns once the goroutine has exited. Safe to call concurrently

@@ -150,9 +150,16 @@ func (d *debugTransport) ReleaseInterface(num int) error {
 	return d.inner.ReleaseInterface(num)
 }
 
-func (d *debugTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error {
+func (d *debugTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	d.logf("StartBulkIn ep=0x%02x ring=%d bufLen=%d", epAddr, ringBufs, bufLen)
-	return d.inner.StartBulkIn(epAddr, ringBufs, bufLen, onPacket)
+	wrappedDead := onStreamDead
+	if onStreamDead != nil {
+		wrappedDead = func(err error) {
+			d.logf("onStreamDead: %v", err)
+			onStreamDead(err)
+		}
+	}
+	return d.inner.StartBulkIn(epAddr, ringBufs, bufLen, onPacket, wrappedDead)
 }
 
 func (d *debugTransport) StopBulkIn() error {

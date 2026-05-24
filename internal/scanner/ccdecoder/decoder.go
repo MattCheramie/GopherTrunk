@@ -45,6 +45,7 @@ package ccdecoder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"sync"
@@ -61,6 +62,18 @@ type IQPowerObserver interface {
 	RecordIQPowerDbFS(system string, dbfs float64)
 	ClearIQPowerDbFS(system string)
 }
+
+// ErrIQStreamClosed is returned by Run whenever the SDR's IQ stream is
+// unexpectedly unavailable while the context is still live — either the
+// channel closed mid-stream (the USB reaper died of an unrecoverable
+// error: host controller hang, ENODEV, EPROTO storm under load) or
+// StreamIQ failed to open at all on a Run retry (the underlying device
+// has physically disconnected and the dead handle now rejects every
+// control transfer with `usb: device disconnected`). Both shapes feed
+// the same restart loop in the daemon; the underlying error is
+// preserved via %w chaining so callers can still inspect the root
+// cause. See issue #345.
+var ErrIQStreamClosed = errors.New("ccdecoder: IQ stream closed unexpectedly")
 
 // iqPowerWindow is how long the pump aggregates samples before
 // recomputing the mean dBFS and updating the gauge / debug log.
@@ -199,7 +212,16 @@ func New(opts Options) (*Decoder, error) {
 func (d *Decoder) Run(ctx context.Context) error {
 	stream, err := d.iq.StreamIQ(ctx)
 	if err != nil {
-		return err
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// On the daemon's retry path the previous Tuner handle is
+		// often dead (USB device pulled and re-enumerated). Surface
+		// the open failure as ErrIQStreamClosed so the daemon's
+		// restart loop classifies it the same as a mid-stream reaper
+		// death and either retries or escalates to a clean fatal.
+		// Issue #345.
+		return fmt.Errorf("%w: %w", ErrIQStreamClosed, err)
 	}
 
 	defer d.sub.Close()
@@ -222,7 +244,7 @@ func (d *Decoder) Run(ctx context.Context) error {
 			d.handleProgress(p)
 		case iq, ok := <-stream:
 			if !ok {
-				return nil
+				return ErrIQStreamClosed
 			}
 			d.pump(iq)
 		}

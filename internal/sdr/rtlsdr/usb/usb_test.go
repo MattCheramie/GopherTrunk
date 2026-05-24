@@ -154,7 +154,7 @@ func TestMockTransport_BulkInDispatch(t *testing.T) {
 		copy(c, p)
 		got = append(got, c)
 		mu.Unlock()
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("StartBulkIn: %v", err)
 	}
 	// Wait for the goroutine to dispatch both packets and park on bulkStop.
@@ -183,10 +183,10 @@ func TestMockTransport_BulkInDispatch(t *testing.T) {
 
 func TestMockTransport_DoubleStartFails(t *testing.T) {
 	m := NewMockTransport()
-	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}); err != nil {
+	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}, nil); err != nil {
 		t.Fatalf("first StartBulkIn: %v", err)
 	}
-	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}); !errors.Is(err, ErrBulkActive) {
+	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}, nil); !errors.Is(err, ErrBulkActive) {
 		t.Errorf("second StartBulkIn err = %v, want ErrBulkActive", err)
 	}
 	_ = m.StopBulkIn()
@@ -233,7 +233,7 @@ func TestMockTransport_CloseIdempotent(t *testing.T) {
 
 func TestMockTransport_CloseStopsBulk(t *testing.T) {
 	m := NewMockTransport()
-	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}); err != nil {
+	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}, nil); err != nil {
 		t.Fatalf("StartBulkIn: %v", err)
 	}
 	done := make(chan struct{})
@@ -245,6 +245,66 @@ func TestMockTransport_CloseStopsBulk(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Close did not return")
+	}
+}
+
+// TestMockTransport_OnStreamDeadFiresWhenSimulated pins the issue-#345
+// contract: when BulkSimulateDeath is set, the mock fires onStreamDead
+// after dispatching all packets — drivers wire this into their consumer-
+// channel teardown path so a real reaper death doesn't leave the IQ
+// consumer (ccdecoder) blocked forever at 0% CPU.
+func TestMockTransport_OnStreamDeadFiresWhenSimulated(t *testing.T) {
+	m := NewMockTransport()
+	m.BulkPackets = [][]byte{{0xaa}}
+	m.BulkSimulateDeath = true
+	m.BulkDeathErr = ErrDeviceGone
+
+	deadCh := make(chan error, 1)
+	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}, func(err error) {
+		deadCh <- err
+	}); err != nil {
+		t.Fatalf("StartBulkIn: %v", err)
+	}
+	select {
+	case err := <-deadCh:
+		if !errors.Is(err, ErrDeviceGone) {
+			t.Errorf("onStreamDead err = %v, want ErrDeviceGone", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("onStreamDead did not fire after simulated death")
+	}
+	// onStreamDead must not fire a second time even if Stop is called.
+	if err := m.StopBulkIn(); err != nil {
+		t.Fatalf("StopBulkIn: %v", err)
+	}
+	select {
+	case err := <-deadCh:
+		t.Errorf("onStreamDead fired again after StopBulkIn: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestMockTransport_OnStreamDeadNotFiredOnNormalStop guards against
+// false positives: a clean StopBulkIn (no simulated death) must not
+// fire onStreamDead, or the daemon's restart loop would trigger on
+// every normal shutdown.
+func TestMockTransport_OnStreamDeadNotFiredOnNormalStop(t *testing.T) {
+	m := NewMockTransport()
+	m.BulkPackets = [][]byte{{0xaa}}
+	called := make(chan struct{}, 1)
+	if err := m.StartBulkIn(0x81, 1, 8, func([]byte) {}, func(error) { called <- struct{}{} }); err != nil {
+		t.Fatalf("StartBulkIn: %v", err)
+	}
+	// Wait briefly so the goroutine dispatches the packet and parks
+	// on bulkStop (rather than racing StopBulkIn).
+	time.Sleep(20 * time.Millisecond)
+	if err := m.StopBulkIn(); err != nil {
+		t.Fatalf("StopBulkIn: %v", err)
+	}
+	select {
+	case <-called:
+		t.Fatal("onStreamDead fired on normal StopBulkIn")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

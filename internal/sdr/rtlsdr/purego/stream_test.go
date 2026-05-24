@@ -240,6 +240,45 @@ loop:
 	}
 }
 
+// TestStreamIQ_ChannelClosesOnReaperDeath is the issue-#345 regression:
+// when the USB reaper dies unexpectedly (every URB unrecoverable), the
+// driver must close its consumer channel so the IQ consumer
+// (ccdecoder) sees EOF and can restart, rather than blocking forever
+// at 0% CPU. Cancellation of ctx is NOT triggered here — the close
+// must happen purely from the dead-reaper path.
+func TestStreamIQ_ChannelClosesOnReaperDeath(t *testing.T) {
+	mock := usb.NewMockTransport()
+	mock.Script = []usb.CtrlExchange{
+		{In: false, BRequest: 0, WValue: rtl2832u.USBEpaCtl, WIndex: uint16(rtl2832u.BlockUSB)<<8 | 0x10, Data: []byte{0x10, 0x02}},
+		{In: false, BRequest: 0, WValue: rtl2832u.USBEpaCtl, WIndex: uint16(rtl2832u.BlockUSB)<<8 | 0x10, Data: []byte{0x00, 0x00}},
+	}
+	mock.BulkPackets = [][]byte{{127, 128, 127, 128}}
+	mock.BulkSimulateDeath = true
+	d := newDeviceWithFakeTuner(mock, &fakeTuner{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := d.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	// Drain the one queued sample then wait for the reaper-death path
+	// to close the channel — without cancelling ctx.
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+loop:
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				break loop
+			}
+		case <-deadline.C:
+			t.Fatal("channel did not close after simulated reaper death")
+		}
+	}
+}
+
 func TestStreamIQ_DoubleStartFails(t *testing.T) {
 	mock := usb.NewMockTransport()
 	mock.Script = []usb.CtrlExchange{

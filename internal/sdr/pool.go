@@ -314,3 +314,121 @@ func (p *Pool) Close() error {
 	p.entries = nil
 	return errors.Join(errs...)
 }
+
+// Reacquire releases the existing device handle for the given serial
+// and tries to re-open the same serial against the entry's original
+// driver. On success the PoolEntry's Device is swapped in place —
+// Role, Hint, and serial identity are preserved, Info.Index updates to
+// reflect the new enumeration — and KindSDRDetached + KindSDRAttached
+// events are published so consumers (and the API/web snapshot) observe
+// the swap. The configured sample rate plus the original Hint
+// (PPM / gain / bias-tee) are re-applied to the fresh handle.
+//
+// Designed for recovery from transient USB disconnect/re-enumerate
+// cycles: the kernel assigns a new device number but the dongle
+// reports the same serial. The caller (typically the daemon's
+// ccdecoder retry loop) drives the backoff between attempts. Closing
+// the existing handle is best-effort — a dead handle's Close may
+// return errors which are logged but not surfaced. See issue #345.
+//
+// Returns the refreshed PoolEntry on success, or an error if the
+// serial is unknown to the pool, the driver re-enumerate misses the
+// serial, or open / sample-rate programming fails.
+func (p *Pool) Reacquire(serial string, sampleRateHz uint32) (*PoolEntry, error) {
+	if serial == "" {
+		return nil, errors.New("sdr: Reacquire requires a non-empty serial")
+	}
+	rate := sampleRateHz
+	if rate == 0 {
+		rate = DefaultSampleRateHz
+	}
+
+	// Snapshot entry identity under the lock, then drop it before the
+	// slow driver enumerate / open calls (USB I/O, potentially
+	// hundreds of ms). The entry itself is preserved — only its Device
+	// handle and Info.Index change — so concurrent readers that hold a
+	// pointer keep working; the actual handle swap is done under the
+	// lock at the end.
+	p.mu.RLock()
+	var (
+		entry *PoolEntry
+	)
+	for _, e := range p.entries {
+		if e.Info.Serial == serial {
+			entry = e
+			break
+		}
+	}
+	if entry == nil {
+		p.mu.RUnlock()
+		return nil, fmt.Errorf("sdr: Reacquire: serial %q not in pool", serial)
+	}
+	drv := entry.Driver
+	oldInfo := entry.Info
+	hint := entry.Hint
+	oldDev := entry.Device
+	p.mu.RUnlock()
+
+	// Best-effort close of the (likely dead) handle. The purego
+	// Device.Close is idempotent and safe to call against a
+	// transport whose USB endpoint has already disappeared.
+	if oldDev != nil {
+		if err := oldDev.Close(); err != nil {
+			p.log.Debug("sdr: Reacquire: close of stale handle returned error",
+				"serial", serial, "err", err)
+		}
+	}
+	// Tell the bus the device went away so the API snapshot and any
+	// UI can show the gap. The Attached event below republishes the
+	// fresh state.
+	p.publish(events.KindSDRDetached, entry.Snapshot(false))
+
+	infos, err := drv.Enumerate()
+	if err != nil {
+		return nil, fmt.Errorf("sdr: Reacquire: %s enumerate: %w", drv.Name(), err)
+	}
+	var freshInfo Info
+	found := false
+	for _, info := range infos {
+		if info.Serial == serial {
+			freshInfo = info
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("sdr: Reacquire: serial %q not present after %s re-enumerate", serial, drv.Name())
+	}
+
+	dev, err := drv.Open(freshInfo.Index)
+	if err != nil {
+		return nil, fmt.Errorf("sdr: Reacquire: open serial %q: %w", serial, err)
+	}
+	if err := dev.SetSampleRate(rate); err != nil {
+		_ = dev.Close()
+		return nil, fmt.Errorf("sdr: Reacquire: set sample rate on serial %q: %w", serial, err)
+	}
+	// Re-apply per-device tuning (PPM, gain, bias-tee). applyHintSettings
+	// only logs failures — it is non-fatal in the original Open path and
+	// stays non-fatal here for the same reason.
+	p.applyHintSettings(dev, freshInfo, hint)
+
+	// Carry forward identity-stable Info fields (Serial, Driver,
+	// Manufacturer/Product/TunerName, Gains list) but accept the
+	// possibly-changed Index from the fresh enumerate.
+	mergedInfo := oldInfo
+	mergedInfo.Index = freshInfo.Index
+	mergedInfo.Gains = freshInfo.Gains
+	mergedInfo.TunerName = freshInfo.TunerName
+
+	p.mu.Lock()
+	entry.Device = dev
+	entry.Info = mergedInfo
+	p.mu.Unlock()
+
+	p.publish(events.KindSDRAttached, entry.Snapshot(true))
+	p.log.Info("sdr: reacquired",
+		"driver", drv.Name(), "serial", serial, "role", entry.Role.String(),
+		"old_index", oldInfo.Index, "new_index", freshInfo.Index)
+	return entry, nil
+}

@@ -144,3 +144,73 @@ func TestBindFailsWhenTuneFails(t *testing.T) {
 		t.Error("device should remain free after tune failure")
 	}
 }
+
+// TestBindReacquiresOnTuneFailure pins the issue-#345 voice-side
+// recovery: a stale Tuner handle (USB disconnected while the device
+// was idle between calls) fails SetCenterFreq; the pool's reacquire
+// callback supplies a fresh handle and Bind retries once. Without
+// the reacquire path, the call would drop with the original error.
+func TestBindReacquiresOnTuneFailure(t *testing.T) {
+	p, tuners := mkPool(1)
+	tuners[0].failOn = 851_000_000 // first SetCenterFreq blows up
+	d := p.FindFree()
+
+	// Fresh handle the reacquire callback hands back — its failOn is
+	// zero so the retry succeeds.
+	fresh := &fakeVoiceTuner{}
+	var reacquireCalls int
+	p.SetReacquire(func(serial string) (Tuner, error) {
+		reacquireCalls++
+		if serial != d.Serial {
+			t.Errorf("reacquire serial = %q, want %q", serial, d.Serial)
+		}
+		return fresh, nil
+	})
+
+	ac, err := p.Bind(d, Grant{FrequencyHz: 851_000_000}, nil, time.Now())
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	if ac == nil {
+		t.Fatal("Bind returned nil ActiveCall on success")
+	}
+	if reacquireCalls != 1 {
+		t.Errorf("reacquire called %d times, want 1", reacquireCalls)
+	}
+	if d.Tuner != fresh {
+		t.Error("VoiceDevice.Tuner was not swapped to fresh handle")
+	}
+	if got := fresh.tuned(); len(got) != 1 || got[0] != 851_000_000 {
+		t.Errorf("fresh tuner saw %v, want [851000000]", got)
+	}
+}
+
+// TestBindReacquireSurfaceFailureWhenReacquireFails: if the SDR pool
+// can't re-open the device (still missing from USB), Bind returns
+// the original tune error joined with the reacquire error so the
+// caller gets the full story.
+func TestBindReacquireSurfaceFailureWhenReacquireFails(t *testing.T) {
+	p, tuners := mkPool(1)
+	tuners[0].failOn = 851_000_000
+	d := p.FindFree()
+	p.SetReacquire(func(serial string) (Tuner, error) {
+		return nil, tuneError("device still gone")
+	})
+	_, err := p.Bind(d, Grant{FrequencyHz: 851_000_000}, nil, time.Now())
+	if err == nil {
+		t.Fatal("expected error when reacquire fails")
+	}
+	msg := err.Error()
+	if !contains(msg, "forced failure") || !contains(msg, "device still gone") {
+		t.Errorf("error %q must surface both original tune error and reacquire failure", msg)
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

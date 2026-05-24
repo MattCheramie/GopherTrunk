@@ -250,6 +250,18 @@ type MessageLogConfig struct {
 type SDRConfig struct {
 	SampleRate uint32         `yaml:"sample_rate"`
 	Devices    []DeviceConfig `yaml:"devices"`
+	// WatchdogIntervalMs governs the periodic USB-disconnect
+	// watchdog that the SDR pool runs while the daemon is up. It
+	// polls the registered drivers, surfaces serials that vanish
+	// from the bus, and calls Pool.Reacquire on serials that
+	// reappear so the next consumer touches a live handle instead
+	// of the stale one. Zero (default) selects
+	// sdr.DefaultWatchdogInterval (30 s). Negative disables the
+	// watchdog entirely — useful when a host with intentionally
+	// slow USB enumeration sees the periodic enumerate as a tax.
+	// In-stream IQ-death recovery (ccdecoder retry loop, voice
+	// Bind reacquire) is unaffected by this knob.
+	WatchdogIntervalMs int `yaml:"watchdog_interval_ms"`
 }
 
 type DeviceConfig struct {

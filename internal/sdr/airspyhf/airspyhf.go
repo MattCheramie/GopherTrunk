@@ -355,7 +355,18 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		case <-ctx.Done():
 		}
 	}
-	if err := d.t.StartBulkIn(bulkInEP, usb.DefaultRingBuffers, usb.DefaultBufferLen, onPacket); err != nil {
+	// streamDead fires (exactly once, via streamDeadOnce) when the USB
+	// reaper exits without StopBulkIn being called — every URB died of
+	// an unrecoverable error. The cleanup goroutine below treats it
+	// just like a ctx-cancel: tear the stream down and close `out`
+	// so the IQ consumer sees a real EOF instead of hanging forever
+	// (issue #345).
+	streamDead := make(chan struct{})
+	var streamDeadOnce sync.Once
+	onStreamDead := func(error) {
+		streamDeadOnce.Do(func() { close(streamDead) })
+	}
+	if err := d.t.StartBulkIn(bulkInEP, usb.DefaultRingBuffers, usb.DefaultBufferLen, onPacket, onStreamDead); err != nil {
 		_ = d.setReceiver(receiverModeOff)
 		d.mu.Lock()
 		d.streaming = false
@@ -365,7 +376,10 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 
 	go func() {
 		defer close(out)
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-streamDead:
+		}
 		_ = d.t.StopBulkIn()
 		_ = d.setReceiver(receiverModeOff)
 		d.mu.Lock()

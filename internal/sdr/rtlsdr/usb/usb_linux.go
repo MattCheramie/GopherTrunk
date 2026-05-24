@@ -363,7 +363,7 @@ func (t *linuxTransport) Reset() error {
 	return nil
 }
 
-func (t *linuxTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte)) error {
+func (t *linuxTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket func([]byte), onStreamDead func(error)) error {
 	if t.closed.Load() {
 		return ErrClosed
 	}
@@ -400,7 +400,7 @@ func (t *linuxTransport) StartBulkIn(epAddr byte, ringBufs, bufLen int, onPacket
 	t.bulkStopFlag.Store(0)
 	t.bulkDone = make(chan struct{})
 
-	go t.reapLoop(onPacket, slots, t.bulkSubmitted, t.bulkDone)
+	go t.reapLoop(onPacket, onStreamDead, slots, t.bulkSubmitted, t.bulkDone)
 	return nil
 }
 
@@ -416,10 +416,16 @@ func (t *linuxTransport) drainSubmitted(n int) {
 	}
 }
 
-func (t *linuxTransport) reapLoop(onPacket func([]byte), slots []*bulkSlot, submitted int, done chan struct{}) {
+func (t *linuxTransport) reapLoop(onPacket func([]byte), onStreamDead func(error), slots []*bulkSlot, submitted int, done chan struct{}) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer close(done)
+	// firstErr keeps the first non-EINTR errno we see — either a ReapURB
+	// failure or a resubmit failure. When the loop exits with the stop
+	// flag unset (i.e. every URB died of an unrecoverable error rather
+	// than being aborted by StopBulkIn), we hand it to onStreamDead so
+	// the driver can surface "stream died" to its IQ consumer.
+	var firstErr error
 	remaining := submitted
 	for remaining > 0 {
 		var ptr uintptr
@@ -428,7 +434,10 @@ func (t *linuxTransport) reapLoop(onPacket func([]byte), slots []*bulkSlot, subm
 			if errno == unix.EINTR {
 				continue
 			}
-			return
+			if firstErr == nil {
+				firstErr = fmt.Errorf("usbdevfs: REAPURB: %w", translateErrno(errno))
+			}
+			break
 		}
 		// The kernel returns the address of the URB we previously submitted.
 		// Don't deref the raw uintptr — look it up against our slot ring
@@ -447,11 +456,23 @@ func (t *linuxTransport) reapLoop(onPacket func([]byte), slots []*bulkSlot, subm
 			urb.Status = 0
 			_, _, errno = unix.Syscall(unix.SYS_IOCTL, uintptr(t.fd), usbdevfsSubmitURB, uintptr(unsafe.Pointer(urb)))
 			if errno != 0 {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("usbdevfs: SUBMITURB resubmit: %w", translateErrno(errno))
+				}
 				remaining--
 			}
 			continue
 		}
 		remaining--
+	}
+	if t.bulkStopFlag.Load() == 0 && onStreamDead != nil {
+		if firstErr == nil {
+			firstErr = ErrDeviceGone
+		}
+		// Dispatch from a fresh goroutine: onStreamDead typically calls
+		// StopBulkIn (via the driver's cancel path) which waits on
+		// `done` — which is only closed after this function returns.
+		go onStreamDead(firstErr)
 	}
 }
 

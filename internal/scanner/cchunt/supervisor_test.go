@@ -204,6 +204,71 @@ func TestSupervisorForceRetuneClearsBackoff(t *testing.T) {
 	}
 }
 
+func TestSupervisorSwapTuner(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	t1 := &fakeTuner{}
+	sup, err := New(Options{
+		Bus:     bus,
+		Tuner:   t1,
+		Systems: []trunking.System{{Name: "S", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sup.currentTuner(); got != t1 {
+		t.Fatalf("currentTuner = %v, want initial t1", got)
+	}
+	t2 := &fakeTuner{}
+	if err := sup.SwapTuner(t2); err != nil {
+		t.Fatalf("SwapTuner: %v", err)
+	}
+	if got := sup.currentTuner(); got != t2 {
+		t.Errorf("currentTuner after swap = %v, want t2", got)
+	}
+}
+
+func TestSupervisorSwapTunerRejectsNil(t *testing.T) {
+	bus := events.NewBus(4)
+	defer bus.Close()
+	sup, err := New(Options{Bus: bus, Tuner: &fakeTuner{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sup.SwapTuner(nil); err == nil {
+		t.Error("SwapTuner(nil): want error, got nil")
+	}
+}
+
+// TestSupervisorSwapTunerCancelsInFlightRetune asserts that armed
+// retune channels are released when the tuner swaps, so the hunt
+// loop drops out of its current dwell and re-hunts using the fresh
+// handle instead of running a hunt against the dead one.
+func TestSupervisorSwapTunerCancelsInFlightRetune(t *testing.T) {
+	bus := events.NewBus(4)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:     bus,
+		Tuner:   &fakeTuner{},
+		Systems: []trunking.System{{Name: "S", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cancelled := make(chan struct{})
+	sup.armRetune("S", func() { close(cancelled) })
+
+	if err := sup.SwapTuner(&fakeTuner{}); err != nil {
+		t.Fatalf("SwapTuner: %v", err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight retune was not cancelled by SwapTuner")
+	}
+}
+
 func TestSupervisorRunReturnsCtxErr(t *testing.T) {
 	bus := events.NewBus(4)
 	defer bus.Close()

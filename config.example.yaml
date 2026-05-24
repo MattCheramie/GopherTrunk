@@ -96,6 +96,14 @@ retention:
 
 sdr:
   sample_rate: 2_400_000
+  # watchdog_interval_ms: periodic USB-disconnect watchdog cadence
+  # (default 30000 = 30 s). Catches dongles that vanish from the bus
+  # while idle and re-acquires them by serial on reappear so the next
+  # consumer touches a live handle. Set to -1 to disable entirely on
+  # hosts where USB enumeration is intentionally slow. In-stream
+  # IQ-death recovery (ccdecoder retry loop, voice Bind reacquire) is
+  # unaffected by this knob. See docs/hardware.md.
+  watchdog_interval_ms: 30000
   devices:
     - serial: "00000001"   # match `gophertrunk sdr list`; first-found wins when blank
       role: control        # control | voice | auto
