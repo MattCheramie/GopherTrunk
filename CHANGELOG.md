@@ -7,30 +7,178 @@ for tagged releases.
 
 ## [Unreleased]
 
-- **P25 Phase 1 `IdentifierUpdateVUHF` (TSBK opcode 0x34) now wired
-  through the dispatcher — UHF P25 sites resolve voice grants without
-  stalling on `no-bandplan`.** The 0x34 opcode constant was already
-  defined in `internal/radio/p25/phase1/opcodes.go`, but it had no
-  parser and no `switch` case, so `IDEN_UP_VUHF` TSBKs arriving from a
-  VHF / UHF site were silently dropped — the `BandPlan` stayed empty
-  and every subsequent `GroupVoiceChannelGrant` emitted
-  `decode.error stage=no-bandplan`. The CC lock itself worked fine; the
-  failure was downstream of the lock and invisible without inspecting
-  the events bus. `ParseIdentifierUpdateVUHF` /
-  `AssembleIdentifierUpdateVUHF` decode the VHF/UHF bit packing per
-  TIA-102.AABF Table 14a (4-bit `BW` lookup → 6.25 / 12.5 kHz per
-  Table 16, 1-bit sign + 13-bit magnitude `TxOffset` whose unit is the
-  channel step rather than a fixed 250 kHz, plus the same 10-bit
-  `STEP × 125 Hz` and 32-bit `FREQ × 5 Hz` as the 0x3D variant) and
-  populate the existing `IdentifierUpdate` struct, so
-  `BandPlan.Apply` / `BandPlan.Frequency` need no change. Cross-checked
-  bit-by-bit against OP25 (`op25/gr-op25_repeater/apps/trunking.py`
-  `iden_up vhf uhf`) and SDRTrunk (`FrequencyBandUpdateVUHF.java`).
-  Round-trip tests cover both negative offset (the typical UHF -5 MHz
-  case) and positive offset (sign-bit coverage); a new end-to-end test
-  feeds a VUHF `IdentifierUpdate` plus a subsequent grant through the
-  real `ControlChannel.Process` chain and asserts the grant resolves
-  to the expected frequency rather than falling to `decode.error`.
+## [v0.2.1] — 2026-05-24
+
+P25-on-live-air follow-up release, fixing every NID/TSBK-decode
+bug that surfaced once real captures from the Mt Anakie site
+went through the pipeline that landed in v0.2.0. The BCH(63,16,11)
+generator polynomial is now spec-correct (was wrong by 10 exponents
+against TIA-102.BAAA Annex A — synthetic round-trip tests had passed
+because encoder + decoder shared the same wrong polynomial), the
+TSBK CRC verifier switches to the augmented variant per TIA-102.AABF
+(the previous CRC-CCITT/FALSE rejected clean Viterbi output), and
+the VHF / UHF `IdentifierUpdateVUHF` band-plan opcode (0x34) is
+wired into the dispatcher so UHF P25 sites resolve grants without
+stalling on `no-bandplan`. A new C4FM symbol-AGC keeps the matched-
+filter outer-symbol centres scaled correctly on real RTL-SDR
+captures, and the offline `gophertrunk replay` / `iq-diag` tool
+grows a TSBK dump + per-instance NID-search span so stubborn
+captures are debuggable without a radio on the bench. Operator-
+visible polish: the daemon's blank 404 at `/` (when a binary was
+built without first running `make web-build`) now serves an HTML
+page explaining the fix; `make dist` is the one-shot build target
+that always embeds the SPA; duplicate SDR serials in `sdr.devices`
+are caught at config-validation time with both indices named;
+WinUSB `ERROR_ACCESS_DENIED` on Windows gets a remediation hint
+pointing at other SDR apps; `internal/version` now auto-stamps
+from Go's VCS info on a bare `go build`, so the version string is
+no longer a useless `dev` when an operator skipped `make build`.
+
+### Added
+
+- **P25 Phase 1 `IdentifierUpdateVUHF` (TSBK opcode 0x34) wired
+  through the dispatcher — UHF P25 sites resolve voice grants
+  without stalling on `no-bandplan`.** The 0x34 opcode constant
+  was already defined in `internal/radio/p25/phase1/opcodes.go`,
+  but it had no parser and no `switch` case, so `IDEN_UP_VUHF`
+  TSBKs arriving from a VHF / UHF site were silently dropped —
+  the `BandPlan` stayed empty and every subsequent
+  `GroupVoiceChannelGrant` emitted `decode.error
+  stage=no-bandplan`. The CC lock itself worked fine; the failure
+  was downstream of the lock and invisible without inspecting the
+  events bus. `ParseIdentifierUpdateVUHF` /
+  `AssembleIdentifierUpdateVUHF` decode the VHF/UHF bit packing
+  per TIA-102.AABF Table 14a (4-bit `BW` lookup → 6.25 / 12.5 kHz
+  per Table 16, 1-bit sign + 13-bit magnitude `TxOffset` whose
+  unit is the channel step rather than a fixed 250 kHz, plus the
+  same 10-bit `STEP × 125 Hz` and 32-bit `FREQ × 5 Hz` as the
+  0x3D variant) and populate the existing `IdentifierUpdate`
+  struct, so `BandPlan.Apply` / `BandPlan.Frequency` need no
+  change. Cross-checked bit-by-bit against OP25
+  (`op25/gr-op25_repeater/apps/trunking.py` `iden_up vhf uhf`)
+  and SDRTrunk (`FrequencyBandUpdateVUHF.java`). Round-trip tests
+  cover both negative offset (the typical UHF -5 MHz case) and
+  positive offset (sign-bit coverage); a new end-to-end test
+  feeds a VUHF `IdentifierUpdate` plus a subsequent grant through
+  the real `ControlChannel.Process` chain and asserts the grant
+  resolves to the expected frequency rather than falling to
+  `decode.error`.
+
+- **C4FM symbol-AGC on the P25 Phase 1 receive path (issue
+  #275).** The P25 receive filter (`P25C4FMRxTaps`) is normalised
+  to a DC gain of `sps`, so on real RTL-SDR captures the matched-
+  filter outer-symbol centres land at `sps × 2π·deviation /
+  sampleRate` radians — orders of magnitude larger than the
+  ±3/±1 dibit decision boundaries the slicer expects. A per-
+  symbol AGC now scales the matched-filter output back into the
+  slicer's expected range, which is what made the BCH-decode
+  fixes below visible on live air rather than just on synthetic
+  modulator round-trip tests.
+
+- **Offline `gophertrunk replay` / `iq-diag` tool grows TSBK dump
+  + per-instance NID-search span (issue #275).** `replay -in
+  capture.iq -diag` now appends the first 24 TSBK dibits at each
+  perfect-distance FSW, which distinguishes a periodic fixed
+  beacon (identical NID + identical TSBK) from a real CC
+  (identical NID + varying TSBK) without running the trellis
+  decoder. A new `-nid-search-span N` flag widens the
+  NID-alignment search beyond the production default (±6 dibits)
+  as a bisect knob for stubborn captures; the production
+  `ccdecoder` is unchanged (zero in `Options` falls back to the
+  default span). The tool is now documented in the README and
+  `docs/hardware.md` so operators can use it without re-reading
+  source.
+
+- **`make dist` one-shot release-build target.** `make dist`
+  runs `web-build` then `build` so the daemon binary always
+  embeds the SPA; `make cross-build`, `make release-dry-run`,
+  and `make run` now depend on `web-build` for the same reason.
+  Closes the v0.1.x footgun where `go build ./cmd/gophertrunk`
+  without first running `make web-build` produced a binary that
+  silently 404'd at `/` (see Fixed below).
+
+### Fixed
+
+- **P25 Phase 1 BCH(63,16,11) generator polynomial was wrong by
+  10 exponents against TIA-102.BAAA Annex A (issue #275).**
+  `bch6316Generator` was `0xF391E2F34B99`; the spec polynomial —
+  the product of the minimal polynomials of α, α³, α⁵, …, α²¹
+  over GF(2⁶) with primitive `p(x) = x⁶ + x + 1` — is
+  `0xCD930BDD3B2B`. Synthetic-modulator round-trip tests passed
+  because the encoder and decoder both used the wrong polynomial,
+  so the bug was invisible until the Mt Anakie capture went
+  through the live pipeline (197/197 NID failures with the wrong
+  polynomial, 195/197 clean decodes with the spec one). Per-DUID
+  parity tables are now derived from the spec polynomial as well.
+  A test shim with the old wrong polynomial hardcoded inline has
+  been removed from `motorola/process_test.go` so the test
+  exercises the same code path the daemon does.
+
+- **P25 Phase 1 TSBK CRC verifier now uses the spec-correct
+  augmented variant per TIA-102.AABF (issue #275).** The original
+  trailer code used the "CRC-CCITT/FALSE" variant (init=0xFFFF,
+  no final XOR, trailer stored inverted). The P25 spec — cross-
+  checked against OP25 (`crc16_ccitt_xor`) and SDRTrunk
+  (`CRCP25.checkCRCCCITT`) — uses the **augmented** variant
+  (init=0xFFFF, the trailer participates in the LFSR shift, no
+  final XOR or inversion). With PR #337's BCH polynomial fix
+  alone, the Mt Anakie capture's TSBKs all came out of the
+  trellis decoder with metric=0 (clean Viterbi path) but still
+  failed CRC; with this fix the CRC verifier agrees with the
+  trellis decoder and the TSBKs actually decode.
+
+- **Motorola Type II patch members no longer emitted as
+  triplicated talkgroup IDs (`[32501 32501 32501]`) — issue
+  #275.** Audit ruled out a parser bug: `AsMotorolaPatchGroup`
+  correctly reads three independent 16-bit fields, and the
+  on-air payload bytes really are `0x7EF5` triplicated (Motorola
+  pads short patch lists with the first member). The parser now
+  deduplicates members on parse so a one-member patch is reported
+  as one member instead of three.
+
+- **Daemon now serves a helpful HTML page (not a blank stdlib
+  404) at `/` when the SPA isn't embedded (issue #290).**
+  `//go:embed all:dist` snapshots `web/dist/` at Go compile time,
+  so a binary built without first running `make web-build`
+  embeds only the `.gitkeep` sentinel and silently 404s at `/`.
+  The 404 body now explains the cause and points at `make dist`;
+  status code stays 404 so proxies/healthchecks are unaffected.
+  Combined with the new `make dist` target above, the case
+  shouldn't arise for release binaries.
+
+- **`sdr.devices` config now rejects duplicate device serials at
+  validation time (issue #333).** A Windows user listed the same
+  RTL-SDR serial twice (control + voice) and the pool silently
+  collapsed the hint, leaving WinUSB to fail the second
+  `CreateFile` with `ERROR_ACCESS_DENIED` ("Toegang
+  geweigerd") — a cryptic OS-level error that obscured a config
+  mistake. `config.Validate()` now rejects duplicate serials in
+  `sdr.devices` with a message naming both offending indices and
+  explaining the one-SDR-per-role rule, and the RTL-SDR USB open
+  path emits a remediation hint on Windows
+  `ERROR_ACCESS_DENIED` pointing at other SDR apps that might
+  be holding the dongle.
+
+- **`internal/version` auto-stamps from Go's VCS info on a bare
+  `go build` (issue #275).** Without the Makefile's `-ldflags`
+  injection the version package stayed at its zero defaults
+  (`Version="dev"`, `Commit=""`, `BuildTime=""`) and the
+  `ccdecoder: p25/phase1 pipeline configured` log line printed
+  `build=dev` even when source HEAD was a real commit. The
+  package now falls back to `debug.ReadBuildInfo()` for both
+  commit and build time when ldflags were not set, so issue-#275
+  retest cycles where operators paste log excerpts always carry
+  identifying build provenance. The Makefile-injected values
+  still take precedence in production / release builds.
+
+- **`TestDaemonCCDecodesDPMR` integration deadline is no longer
+  flaky under `-race`.** dPMR runs at half the symbol rate the
+  sibling P25 / DMR / NXDN tests use (2400 vs 4800 sym/s), so
+  the same mock-SDR IQ chunk carries half the dibits per second
+  and the cold-start path occasionally exceeded the 5 s lock
+  deadline on slower hardware (~3% under `-race`). The deadline
+  is now 30 s; steady-state lock time is still ~0.4 s, so the
+  bump only affects worst-case slow paths.
 
 ## [v0.2.0] — 2026-05-23
 

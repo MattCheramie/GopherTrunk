@@ -28,7 +28,7 @@ release state looks like:
 {%- elsif site.github.releases and site.github.releases[0] and site.github.releases[0].tag_name -%}
   {%- assign ver = site.github.releases[0].tag_name -%}
 {%- else -%}
-  {%- assign ver = "v0.2.0" -%}
+  {%- assign ver = "v0.2.1" -%}
 {%- endif -%}
 {%- assign rel_url = "https://github.com/MattCheramie/GopherTrunk/releases/download/" | append: ver -%}
 
