@@ -51,6 +51,8 @@ groups:
         url: /dmr-encryption.html
       - title: POCSAG paging
         url: /pocsag.html
+      - title: APRS / AX.25
+        url: /aprs.html
       - title: Opt-in features
         url: /opt-in-features.html
       - title: Status

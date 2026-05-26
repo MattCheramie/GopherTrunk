@@ -9,6 +9,19 @@ for tagged releases.
 
 ### Added
 
+- **APRS / AX.25 protocol layer.** First slice of Phase 5 (#365).
+  Pure-Go AX.25 frame parser (`internal/radio/aprs/ax25`):
+  7-byte address packing with the spec's bit-shifted ASCII
+  callsigns, up to 8 digipeater path entries, HDLC CRC-16-CCITT
+  validation, display helpers for the conventional `W1AW-9` /
+  `WIDE2-1*` formats. Plus an APRS info-field decoder
+  (`internal/radio/aprs`) covering positions (`!`, `=`, `/`, `@`),
+  messages (`:`) with ack/rej + bulletins, and status (`>`);
+  Mic-E / weather / telemetry / object types are recognised
+  with payloads stashed for the follow-up decoders. DSP wiring
+  (Bell-202 AFSK demod → HDLC de-stuff → frame delivery) is the
+  protocol-first split's planned follow-up. See
+  [docs/aprs.md](docs/aprs.md).
 - **POCSAG DSP receiver + daemon wiring.** Third slice of Phase 3
   (#365). New `internal/radio/pager/pocsag/receiver` package wires
   the FM demod → rational resampler → integrator-and-slicer → bit

@@ -71,6 +71,12 @@ Silicon and Intel. Full per-OS recipes at
   decoders. Foundation for fire / EMS dispatch text alongside
   the trunked-voice pipeline; DSP wiring follows in the next PR.
   See [docs/pocsag.md](docs/pocsag.md).
+- **APRS / AX.25 packet** — protocol layer for the amateur-
+  radio APRS metadata bus (position beacons, messages,
+  bulletins, status). HDLC-style AX.25 frame parser with
+  CRC-16-CCITT, plus APRS info-field decoders for the
+  operator-visible majority of packet types. See
+  [docs/aprs.md](docs/aprs.md).
 - **Pure-Go voice path** — IMBE (P25 Phase 1) and AMBE+2 (P25
   Phase 2 / DMR) vocoders in Go, no DVSI / mbelib dependency.
   Per-call WAV + raw-frame sidecars; live PCM playback via direct
