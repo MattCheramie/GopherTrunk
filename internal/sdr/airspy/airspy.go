@@ -34,16 +34,16 @@ const (
 // libairspy vendor request opcodes (subset).
 const (
 	reqReceiverMode   uint8 = 1
-	reqSetSampleType  uint8 = 11
-	reqSetFreq        uint8 = 12
-	reqGetSamplerates uint8 = 13
-	reqSetSamplerate  uint8 = 14
-	reqSetLNAGain     uint8 = 19
-	reqSetMixerGain   uint8 = 20
-	reqSetVGAGain     uint8 = 21
-	reqSetLNAAGC      uint8 = 22
-	reqSetMixerAGC    uint8 = 23
-	reqSetRFBiasCmd   uint8 = 24
+	reqSetSampleType  uint8 = 11  // NOTE: libairspy has BOARD_PARTID_SERIALNO_READ at 11; SET_SAMPLE_TYPE has no opcode in current firmware
+	reqSetFreq        uint8 = 13
+	reqGetSamplerates uint8 = 25
+	reqSetSamplerate  uint8 = 12
+	reqSetLNAGain     uint8 = 14
+	reqSetMixerGain   uint8 = 15
+	reqSetVGAGain     uint8 = 16
+	reqSetLNAAGC      uint8 = 17
+	reqSetMixerAGC    uint8 = 18
+	reqSetRFBiasCmd   uint8 = 20
 )
 
 // Sample-type values for reqSetSampleType.
@@ -216,12 +216,16 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 
 // SetSampleRate selects the firmware-advertised rate closest to hz. If
 // the supported-rate table is unavailable, index 0 is used.
+// Patched: match libairspy — IN direction, wValue=0, wIndex=idx, expects a 1-byte
+// status reply. The upstream code used ControlOut with wValue/wIndex swapped,
+// which the Airspy R2/Mini firmware rejects.
 func (d *Device) SetSampleRate(hz uint32) error {
 	if d.isClosed() {
 		return usb.ErrClosed
 	}
 	idx := d.closestRateIndex(hz)
-	return d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs)
+	_, err := d.t.ControlIn(reqSetSamplerate, 0, uint16(idx), 1, controlTimeoutMs)
+	return err
 }
 
 // closestRateIndex returns the index of the supported sample rate
@@ -363,17 +367,12 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	needSampleType := !d.sampleTypeSet
 	d.mu.Unlock()
 
-	// Pin the device to INT16_IQ — the format the StreamIQ decoder
-	// expects. libairspy issues this inside airspy_start_rx rather
-	// than during open; mirroring that ordering avoids a firmware /
-	// Windows-driver NAK on the first vendor OUT (issue #270).
+	// Patched: libairspy's airspy_set_sample_type is purely host-side —
+	// there is no SET_SAMPLE_TYPE vendor opcode in current firmware
+	// (opcode 11 is BOARD_PARTID_SERIALNO_READ). The firmware always
+	// streams raw INT16 IQ; decodeInt16IQ handles it host-side. Just
+	// mark the flag so we don't try this phantom request again.
 	if needSampleType {
-		if err := d.t.ControlOut(reqSetSampleType, sampleTypeInt16IQ, 0, nil, controlTimeoutMs); err != nil {
-			d.mu.Lock()
-			d.streaming = false
-			d.mu.Unlock()
-			return nil, fmt.Errorf("airspy: set sample type: %w", err)
-		}
 		d.mu.Lock()
 		d.sampleTypeSet = true
 		d.mu.Unlock()
