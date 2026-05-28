@@ -15,11 +15,24 @@ import (
 func (s *Server) handleScannerStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.scanner == nil {
 		writeJSON(w, http.StatusOK, ScannerStatus{
-			ScanMode: "all",
+			ScanMode:     "all",
+			Systems:      []SystemHuntStatusDTO{},
+			Conventional: ConvScannerStatusDTO{Channels: []ConvChannelStatusDTO{}},
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.scanner.Status())
+	st := s.scanner.Status()
+	// Normalize nil slices to empty arrays so the web SPA's .find()/.map()
+	// calls don't crash on null. Go marshals a nil []T as JSON "null"; the
+	// frontend expects [] when there's nothing to show (e.g. cc_hunt
+	// disabled, no conventional channels configured).
+	if st.Systems == nil {
+		st.Systems = []SystemHuntStatusDTO{}
+	}
+	if st.Conventional.Channels == nil {
+		st.Conventional.Channels = []ConvChannelStatusDTO{}
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 // scannerSetModeRequest is the PATCH /api/v1/scanner body shape.
