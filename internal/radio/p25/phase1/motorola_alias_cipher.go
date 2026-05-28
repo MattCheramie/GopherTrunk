@@ -77,11 +77,11 @@ func decodeAliasBytes(encoded []byte) []byte {
 
 		var m2 int8 = 1
 		stop := int8(accum | 1)
-		// At most 128 iterations: m2 cycles through odd values
-		// 1, 3, 5, ..., 127, -127, -125, ..., -1. The (m2 != -1)
-		// guard guarantees termination even on pathological input.
+		// This logic relies on the managed wrapping a signed int8 via addition. 
+		// Multiplying by 3 is not equivalent as it will generate an infinite loop.
+		increment := int8(stop << 1)
 		for stop != 1 && m2 != -1 {
-			stop = int8(int(stop) * 3)
+			stop = int8(int(stop) + int(increment))
 			m2 += 2
 		}
 		decoded[i] = byte(int8(int(m1) * int(m2)))
