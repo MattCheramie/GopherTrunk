@@ -579,7 +579,7 @@ func (t *darwinTransport) ClaimInterface(num int) error {
 	var score int32
 	pluginUUID := makeCFUUID(uuidIOUSBInterfaceUserClientType)
 	if pluginUUID == 0 {
-		return errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBInterfaceUserClientType) returned NULL")
+		return errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBInterfaceUserClientType) returned 0")
 	}
 	defer cfRelease(pluginUUID)
 	pluginIfaceUUID := makeCFUUID(uuidIOCFPlugInInterface)
