@@ -4,6 +4,7 @@ import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import type { ActiveCallDTO } from "../api/types";
+import { formatHz } from "../api/format";
 
 // AudioPlayer is a floating, dismissable mini-player that streams
 // /api/v1/audio/stream into a long-lived <audio> element. iOS and
@@ -70,7 +71,7 @@ export function AudioPlayer() {
   // Guard against overlapping requests: slow radios or browsers should
   // not stack /calls/active polls.
   useEffect(() => {
-    if (!cfg.baseURL || (!enabled && selectedKey == null)) return;
+    if (!cfg.baseURL || !enabled) return;
     let cancel = false;
     const refresh = async () => {
       if (activePollInFlightRef.current) return;
@@ -91,7 +92,7 @@ export function AudioPlayer() {
       cancel = true;
       window.clearInterval(t);
     };
-  }, [cfg, enabled, selectedKey, setActiveCalls]);
+  }, [cfg, enabled, setActiveCalls]);
 
   const audioChoices = useMemo(() => {
     const strong = activeCalls.filter(isSelectableForAudio);
@@ -256,7 +257,7 @@ export function AudioPlayer() {
         >
           {audioChoices.map((c) => (
             <option key={callKey(c)} value={callKey(c)}>
-              {callLabel(c)} · {formatMHz(c.grant.frequency_hz)}
+              {callLabel(c)} · {formatHz(c.grant.frequency_hz)}
               {c.signal_dbfs == null ? "" : ` · ${c.signal_dbfs.toFixed(1)} dBFS`}
               {!hasUsableSignal(c) ? " · weak" : ""}
             </option>
@@ -349,6 +350,3 @@ export function AudioPlayer() {
   );
 }
 
-function formatMHz(hz: number): string {
-  return `${(hz / 1_000_000).toFixed(4)} MHz`;
-}

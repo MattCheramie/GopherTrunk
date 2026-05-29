@@ -6,6 +6,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import type { ActiveCallDTO } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
+import { formatHz } from "../api/format";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -314,12 +315,6 @@ function elapsed(startedAt: string, now: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-function formatHz(hz: number): string {
-  if (!Number.isFinite(hz)) return "—";
-  if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(4)} MHz`;
-  if (hz >= 1_000) return `${(hz / 1_000).toFixed(3)} kHz`;
-  return `${hz} Hz`;
-}
 
 function SignalBadge({ dbfs }: { dbfs?: number }) {
   if (dbfs == null || !Number.isFinite(dbfs)) {

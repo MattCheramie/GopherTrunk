@@ -36,7 +36,9 @@ function call(overrides: Partial<ActiveCallDTO> & { group: number; tag: string }
     },
     talkgroup: { id: overrides.group, alpha_tag: overrides.tag },
     device_serial: overrides.device_serial ?? `tap-${overrides.group}`,
-    started_at: overrides.started_at ?? `2026-05-29T12:00:${overrides.group % 60}.000Z`,
+    started_at:
+      overrides.started_at ??
+      `2026-05-29T12:00:${String(overrides.group % 60).padStart(2, "0")}.000Z`,
     signal_dbfs: overrides.signal_dbfs,
     ...overrides,
   };
