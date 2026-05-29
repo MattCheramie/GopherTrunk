@@ -92,6 +92,101 @@ func TestPoolAssignsRoles(t *testing.T) {
 	}
 }
 
+// TestPoolIgnoresConfiguredSerials guards Pool.Open's ignoreSerials
+// filter: any device whose driver-reported Serial matches an entry in
+// the ignore list is discovered (so it stays visible to other libusb
+// consumers via the driver's Enumerate) but never added to the pool.
+// Unmatched entries (typo / unplugged dongle) log an info line so the
+// operator has visible feedback.
+func TestPoolIgnoresConfiguredSerials(t *testing.T) {
+	drv := &fakeDriver{name: "fake-ignore", infos: []Info{
+		{Driver: "fake-ignore", Index: 0, Serial: "AAA"},
+		{Driver: "fake-ignore", Index: 1, Serial: "BBB"},
+		{Driver: "fake-ignore", Index: 2, Serial: "CCC"},
+	}}
+	registryMu.Lock()
+	registry["fake-ignore"] = drv
+	registryMu.Unlock()
+	t.Cleanup(func() {
+		registryMu.Lock()
+		delete(registry, "fake-ignore")
+		registryMu.Unlock()
+	})
+
+	t.Run("skips matching serial", func(t *testing.T) {
+		var buf bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		p := NewPool(log)
+		if err := p.OpenWith(PoolOpenOptions{IgnoreSerials: []string{"BBB"}}); err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+
+		entries := p.Entries()
+		if len(entries) != 2 {
+			t.Fatalf("entries = %d, want 2 (BBB should be skipped)", len(entries))
+		}
+		for _, e := range entries {
+			if e.Info.Serial == "BBB" {
+				t.Errorf("BBB should not be in pool")
+			}
+		}
+		out := buf.String()
+		if !strings.Contains(out, "ignoring device per config") {
+			t.Errorf("expected ignore log line; got: %q", out)
+		}
+		if !strings.Contains(out, "BBB") {
+			t.Errorf("ignore log should mention the serial; got: %q", out)
+		}
+	})
+
+	t.Run("trims whitespace on entries", func(t *testing.T) {
+		p := NewPool(nil)
+		if err := p.OpenWith(PoolOpenOptions{IgnoreSerials: []string{"  AAA  "}}); err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		for _, e := range p.Entries() {
+			if e.Info.Serial == "AAA" {
+				t.Errorf("AAA should have been skipped after whitespace trim")
+			}
+		}
+	})
+
+	t.Run("unmatched entry logs info but pool opens", func(t *testing.T) {
+		var buf bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		p := NewPool(log)
+		if err := p.OpenWith(PoolOpenOptions{IgnoreSerials: []string{"ZZZ"}}); err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		if len(p.Entries()) != 3 {
+			t.Errorf("entries = %d, want 3 (ZZZ matches nothing)", len(p.Entries()))
+		}
+		out := buf.String()
+		if !strings.Contains(out, "ignore_serials entry matched no discovered device") {
+			t.Errorf("expected unmatched-entry log; got: %q", out)
+		}
+		if !strings.Contains(out, "ZZZ") {
+			t.Errorf("unmatched log should mention ZZZ; got: %q", out)
+		}
+	})
+
+	t.Run("empty and whitespace entries ignored", func(t *testing.T) {
+		p := NewPool(nil)
+		// OpenWith trims and drops empties — Validate already rejects
+		// these at config-load time, but the pool stays defensive.
+		if err := p.OpenWith(PoolOpenOptions{IgnoreSerials: []string{"", "   "}}); err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		if len(p.Entries()) != 3 {
+			t.Errorf("entries = %d, want 3 (no effective ignore entries)", len(p.Entries()))
+		}
+	})
+}
+
 // TestPoolProgramsSampleRate guards against the bug behind issue #275:
 // without a SetSampleRate call at pool-open time the chip streams at
 // whatever rate its resampler powered up at, the decoder pipeline runs

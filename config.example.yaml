@@ -111,6 +111,17 @@ retention:
 
 sdr:
   sample_rate: 2_400_000
+  # ignore_serials: dongle serials the daemon should discover but skip.
+  # Use this to share a host with another SDR app (OpenWebRX+, SDRangel,
+  # dump1090) that needs exclusive USB access to a specific dongle: the
+  # device is still enumerated by the driver (so other libusb consumers
+  # can see it), but no gophertrunk subsystem opens or claims it. Match
+  # is exact and case-sensitive against the driver-reported serial —
+  # copy the value verbatim from `gophertrunk sdr list`'s SERIAL column.
+  # A serial may not appear in both ignore_serials and devices/rtl_tcp.
+  #
+  # ignore_serials:
+  #   - "AIRSPYHF SN:0123456789ABCDEF"   # reserved for OpenWebRX+
   # watchdog_interval_ms: periodic USB-disconnect watchdog cadence
   # (default 30000 = 30 s). Catches dongles that vanish from the bus
   # while idle and re-acquires them by serial on reappear so the next

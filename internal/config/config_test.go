@@ -80,6 +80,17 @@ func TestValidate(t *testing.T) {
 		{"duplicate sdr serial", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "00000006", Role: "control"}, {Serial: "00000006", Role: "voice"}}}}, true},
 		{"distinct sdr serials ok", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "00000001", Role: "control"}, {Serial: "00000002", Role: "voice"}}}}, false},
 		{"empty sdr serials ok", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Role: "control"}, {Role: "voice"}}}}, false},
+		// sdr.ignore_serials: a top-level opt-out list for dongles
+		// the daemon should discover-but-skip, e.g. when an HF+ is
+		// reserved for OpenWebRX+ on the same host.
+		{"ignore_serials happy path", Config{SDR: SDRConfig{IgnoreSerials: []string{"AIRSPYHF SN:foo"}}}, false},
+		{"ignore_serials with trim ok", Config{SDR: SDRConfig{IgnoreSerials: []string{"  AIRSPYHF SN:foo  "}}}, false},
+		{"ignore_serials empty entry", Config{SDR: SDRConfig{IgnoreSerials: []string{""}}}, true},
+		{"ignore_serials whitespace entry", Config{SDR: SDRConfig{IgnoreSerials: []string{"   "}}}, true},
+		{"ignore_serials duplicate within list", Config{SDR: SDRConfig{IgnoreSerials: []string{"X", "X"}}}, true},
+		{"ignore_serials duplicate after trim", Config{SDR: SDRConfig{IgnoreSerials: []string{"X", "  X "}}}, true},
+		{"ignore_serials overlaps devices", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "00000011", Role: "voice"}}, IgnoreSerials: []string{"00000011"}}}, true},
+		{"ignore_serials overlaps rtl_tcp", Config{SDR: SDRConfig{RTLTCP: []RTLTCPConfig{{Addr: "127.0.0.1:1234", Serial: "rtltcp-x", Role: "voice"}}, IgnoreSerials: []string{"rtltcp-x"}}}, true},
 		{"oversized key", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", EncryptionKeys: []EncryptionKeyConfig{{KeyID: 1, Algorithm: "rc4", Key: strings.Repeat("ab", 33)}}}}}}, true},
 		// p25_band_plan: the operator's escape hatch for sites that
 		// never broadcast IDEN_UP for some channel ID (issue #345).

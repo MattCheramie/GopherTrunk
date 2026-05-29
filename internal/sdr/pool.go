@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -113,9 +114,10 @@ func (h Hint) WithGain(tenthDB int) Hint {
 const DefaultSampleRateHz uint32 = 2_048_000
 
 // PoolOpenOptions parameterises Pool.OpenWith. Use this when callers
-// need to engage strict mode; the historical Pool.Open(rate, hints)
-// signature still works and remains the default for code paths that
-// want today's open-everything behaviour.
+// need to engage strict mode or list serials the daemon should skip;
+// the historical Pool.Open(rate, hints) signature still works and
+// remains the default for code paths that want today's open-
+// everything behaviour.
 type PoolOpenOptions struct {
 	// SampleRateHz is the IQ rate to program on every opened device.
 	// Zero falls back to DefaultSampleRateHz.
@@ -131,12 +133,23 @@ type PoolOpenOptions struct {
 	// that they want only the devices they named, not whatever else
 	// happens to be on the USB bus.
 	Strict bool
+	// IgnoreSerials is a denylist: dongles whose driver-reported
+	// Serial matches an entry here are discovered (so they remain
+	// visible to other libusb consumers on the host) but never
+	// added to the pool, so no gophertrunk subsystem opens or
+	// claims them. Matching is exact and case-sensitive; entries
+	// are trimmed of whitespace before comparison. Complementary
+	// to Strict — Strict is "use only the dongles I named",
+	// IgnoreSerials is "use everything except the ones I named".
+	// Unmatched entries are logged at INFO so an operator with a
+	// typo or an unplugged dongle has visible feedback.
+	IgnoreSerials []string
 }
 
 // Open is a backwards-compatible shim over OpenWith. It preserves the
 // historical "open every enumerated device" behaviour; callers that
-// want allowlist semantics should construct PoolOpenOptions and call
-// OpenWith directly.
+// want allowlist or denylist semantics should construct
+// PoolOpenOptions and call OpenWith directly.
 func (p *Pool) Open(sampleRateHz uint32, hints []Hint) error {
 	return p.OpenWith(PoolOpenOptions{SampleRateHz: sampleRateHz, Hints: hints})
 }
@@ -157,6 +170,11 @@ func (p *Pool) Open(sampleRateHz uint32, hints []Hint) error {
 // device produce a WARN. Hints with empty serial are dropped at ingest
 // with a WARN — an empty-serial hint in strict mode is ambiguous (no
 // way to honour an allowlist entry that doesn't name anything).
+//
+// opts.IgnoreSerials filters discovered devices independently of
+// Strict / Hints: any device whose serial appears in IgnoreSerials is
+// skipped before role assignment, regardless of whether a Hint also
+// names it. Matching is exact and case-sensitive; entries are trimmed.
 //
 // Strict mode is how operators get "only the devices I listed in
 // config.yaml are touched"; rtl_tcp and baseband replay always
@@ -180,6 +198,15 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		rate = DefaultSampleRateHz
 	}
 
+	ignoreSet := make(map[string]bool, len(opts.IgnoreSerials))
+	for _, s := range opts.IgnoreSerials {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		ignoreSet[s] = false // false = "configured but not yet seen"
+	}
+
 	type discovered struct {
 		drv  Driver
 		info Info
@@ -192,7 +219,19 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			continue
 		}
 		for _, info := range infos {
+			if _, skip := ignoreSet[info.Serial]; skip {
+				p.log.Info("sdr: ignoring device per config",
+					"driver", drv.Name(), "serial", info.Serial)
+				ignoreSet[info.Serial] = true // matched
+				continue
+			}
 			all = append(all, discovered{drv, info})
+		}
+	}
+	for s, matched := range ignoreSet {
+		if !matched {
+			p.log.Info("sdr: ignore_serials entry matched no discovered device",
+				"serial", s)
 		}
 	}
 	if len(all) == 0 {

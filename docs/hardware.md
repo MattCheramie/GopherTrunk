@@ -87,6 +87,38 @@ sdr:
 > on every device (`sdr: gain set ... gain_db=...`). A decimal form like
 > `"32.0"` is taken as whole dB, so that works too.
 
+### Sharing a host with another SDR app — `sdr.ignore_serials`
+
+`sdr.devices[*].role` is the right knob for choosing **how**
+gophertrunk uses a dongle (control / voice / wideband). When you
+need to tell it not to use a dongle at all — because another app on
+the same host (OpenWebRX+ in a container, SDRangel, dump1090, …)
+needs exclusive USB access to it — list the serial under the
+top-level `sdr.ignore_serials`:
+
+```yaml
+sdr:
+  ignore_serials:
+    - "AIRSPYHF SN:0123456789ABCDEF"   # reserved for OpenWebRX+
+```
+
+Matching is exact and case-sensitive against the driver-reported
+serial — copy the value verbatim from the `SERIAL` column of
+`gophertrunk sdr list`. Matched dongles still appear in the
+driver's `Enumerate()` (so libusb consumers in other processes can
+find them) but never enter gophertrunk's pool, so no subsystem
+opens or claims them. A serial may not appear in both
+`ignore_serials` and `sdr.devices[*].serial` / `sdr.rtl_tcp[*].serial`
+— pick one. Entries that match no plugged dongle log
+`sdr: ignore_serials entry matched no discovered device` at startup
+so a typo or an unplugged device is visible.
+
+`ignore_serials` is the **denylist** counterpart to `Strict` mode:
+Strict (auto-engaged when `sdr.devices` is non-empty) treats
+`sdr.devices` as the *allowlist* — only the dongles named there are
+opened. Use `ignore_serials` instead when you want auto-discovery
+for most dongles and only want to opt-out a specific few.
+
 ### HackRF tested combinations
 
 | Device | PID | Coverage | Gain chain | Bias-tee | Notes |

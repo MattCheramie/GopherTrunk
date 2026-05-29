@@ -441,6 +441,19 @@ type SDRConfig struct {
 	// In-stream IQ-death recovery (ccdecoder retry loop, voice
 	// Bind reacquire) is unaffected by this knob.
 	WatchdogIntervalMs int `yaml:"watchdog_interval_ms"`
+	// IgnoreSerials lists dongle serials the daemon discovers but
+	// skips during pool construction. Use this to share a host
+	// with another SDR app (OpenWebRX+, SDRangel, dump1090) that
+	// needs exclusive USB access to a specific dongle: the device
+	// is enumerated by the driver — so it stays visible to other
+	// libusb consumers — but never enters the pool, so no
+	// gophertrunk subsystem opens or claims it. Matching is exact
+	// and case-sensitive against the driver-reported serial (the
+	// value `gophertrunk sdr list` prints in the SERIAL column);
+	// leading/trailing whitespace in YAML entries is trimmed. A
+	// serial may not appear in both Devices/RTLTCP and
+	// IgnoreSerials — pick one.
+	IgnoreSerials []string `yaml:"ignore_serials"`
 }
 
 // RTLTCPConfig describes one remote rtl_tcp endpoint to expose as
@@ -1030,6 +1043,30 @@ func (c Config) Validate() error {
 				i, r.Serial, prev)
 		}
 		seenSerials[r.Serial] = i
+	}
+	// Validate ignore_serials. Each entry must be non-empty (after
+	// trimming whitespace), unique within the list, and disjoint
+	// from any serial already pinned under sdr.devices or
+	// sdr.rtl_tcp — the operator must choose between "use this
+	// dongle with this role" and "leave this dongle entirely
+	// alone".
+	seenIgnored := make(map[string]int, len(c.SDR.IgnoreSerials))
+	for i, raw := range c.SDR.IgnoreSerials {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			return fmt.Errorf("sdr.ignore_serials[%d]: empty serial not allowed", i)
+		}
+		if prev, dup := seenIgnored[s]; dup {
+			return fmt.Errorf(
+				"sdr.ignore_serials[%d]: duplicate serial %q (also at sdr.ignore_serials[%d])",
+				i, s, prev)
+		}
+		if _, conflict := seenSerials[s]; conflict {
+			return fmt.Errorf(
+				"sdr.ignore_serials[%d]: serial %q is also configured under sdr.devices / sdr.rtl_tcp — pick one",
+				i, s)
+		}
+		seenIgnored[s] = i
 	}
 	if c.Trunking.CallTimeoutMs < 0 {
 		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)

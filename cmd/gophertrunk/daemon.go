@@ -526,6 +526,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// alone — they may belong to another process on the
 			// host (issue #264).
 			Strict: len(cfg.SDR.Devices) > 0,
+			// IgnoreSerials is the denylist counterpart to Strict —
+			// used when the operator wants auto-discovery for
+			// everything except specific dongles reserved for
+			// another SDR app on the same host (OpenWebRX+,
+			// SDRangel, dump1090).
+			IgnoreSerials: cfg.SDR.IgnoreSerials,
 		}); err != nil {
 			log.Warn("daemon: SDR pool open failed", "err", err)
 			d.addWarning(fmt.Sprintf(
