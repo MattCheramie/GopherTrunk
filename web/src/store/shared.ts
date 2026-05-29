@@ -64,8 +64,12 @@ interface SharedState {
   reset(): void;
 }
 
+function initialServerURL(): string | null {
+  return prefs.serverURL();
+}
+
 export const useShared = create<SharedState>((set, get) => ({
-  serverURL: prefs.serverURL(),
+  serverURL: initialServerURL(),
   token: prefs.token(),
   rememberToken: prefs.rememberToken(),
   connected: false,
@@ -156,6 +160,7 @@ export const useShared = create<SharedState>((set, get) => ({
         ...ac,
         grant: {
           ...ac.grant,
+          encrypted: true,
           algorithm_id: p.algorithm_id,
           key_id: p.key_id,
         },

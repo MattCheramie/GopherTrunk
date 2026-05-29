@@ -127,6 +127,7 @@ export function Dashboard() {
                 <span className="text-sm">
                   {c.talkgroup?.alpha_tag ?? c.grant.system}
                 </span>
+                <CallAudioBadge encrypted={!!c.grant.encrypted} data={!!c.grant.data_call} />
                 <span className="ml-auto text-xs text-muted">
                   {c.device_serial}
                 </span>
@@ -160,4 +161,10 @@ function StatCard({
       </p>
     </div>
   );
+}
+
+function CallAudioBadge({ encrypted, data }: { encrypted: boolean; data: boolean }) {
+  if (encrypted) return <span className="pill-warn text-[10px]">encrypted</span>;
+  if (data) return <span className="pill text-[10px]">data</span>;
+  return <span className="pill-ok text-[10px]">clear audio</span>;
 }

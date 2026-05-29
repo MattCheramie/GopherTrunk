@@ -153,11 +153,11 @@ export const api = {
     if (opts.system) q.set("system", opts.system);
     if (opts.group_id != null) q.set("group_id", String(opts.group_id));
     const qs = q.toString();
-    return request<{ rows: CallRow[] }>(
+    return request<{ rows?: CallRow[]; calls?: CallRow[] }>(
       c,
       "GET",
       `/api/v1/calls/history${qs ? `?${qs}` : ""}`,
-    ).then((r) => r.rows ?? []);
+    ).then((r) => r.rows ?? r.calls ?? []);
   },
   devices: (c: ClientConfig) =>
     request<{ devices: DeviceDTO[] }>(c, "GET", "/api/v1/devices").then(

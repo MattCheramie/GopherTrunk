@@ -93,6 +93,8 @@ export interface ActiveCallDTO {
   device_serial: string;
   started_at: string;
   ended_at?: string;
+  last_heard_at?: string;
+  signal_dbfs?: number;
 }
 
 export interface DeviceDTO {

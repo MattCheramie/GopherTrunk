@@ -91,6 +91,17 @@ export function Active() {
             b.talkgroup?.alpha_tag ?? "",
           ),
       },
+
+      {
+        key: "frequency",
+        header: "Frequency",
+        render: (r) => (
+          <span className="font-mono text-xs tabular-nums">
+            {formatHz(r.grant.frequency_hz)}
+          </span>
+        ),
+        sort: (a, b) => a.grant.frequency_hz - b.grant.frequency_hz,
+      },
       {
         key: "system",
         header: "System",
@@ -98,6 +109,12 @@ export function Active() {
         sort: (a, b) => a.grant.system.localeCompare(b.grant.system),
         className: "hidden md:table-cell",
         headerClassName: "hidden md:table-cell",
+      },
+      {
+        key: "signal",
+        header: "Signal",
+        render: (r) => <SignalBadge dbfs={r.signal_dbfs} />,
+        sort: (a, b) => (a.signal_dbfs ?? -999) - (b.signal_dbfs ?? -999),
       },
       {
         key: "flags",
@@ -302,4 +319,12 @@ function formatHz(hz: number): string {
   if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(4)} MHz`;
   if (hz >= 1_000) return `${(hz / 1_000).toFixed(3)} kHz`;
   return `${hz} Hz`;
+}
+
+function SignalBadge({ dbfs }: { dbfs?: number }) {
+  if (dbfs == null || !Number.isFinite(dbfs)) {
+    return <span className="text-xs text-muted">—</span>;
+  }
+  const cls = dbfs > -30 ? "pill-ok" : dbfs > -40 ? "pill-warn" : "pill-err";
+  return <span className={`${cls} font-mono tabular-nums`}>{dbfs.toFixed(1)} dBFS</span>;
 }
