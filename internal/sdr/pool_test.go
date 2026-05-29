@@ -24,6 +24,8 @@ type fakeDevice struct {
 	closed      bool
 	biasTeeOn   bool
 	biasTeeSets int
+	ampOn       bool
+	ampSets     int
 	sampleRate  uint32
 	rateErr     error
 	ppm         int
@@ -42,6 +44,7 @@ func (d *fakeDevice) SetSampleRate(hz uint32) error {
 func (d *fakeDevice) SetGain(int) error                                    { return nil }
 func (d *fakeDevice) SetPPM(ppm int) error                                 { d.ppm = ppm; d.ppmSets++; return nil }
 func (d *fakeDevice) SetBiasTee(on bool) error                             { d.biasTeeOn = on; d.biasTeeSets++; return nil }
+func (d *fakeDevice) SetAmp(on bool) error                                 { d.ampOn = on; d.ampSets++; return nil }
 func (d *fakeDevice) StreamIQ(context.Context) (<-chan []complex64, error) { return nil, io.EOF }
 func (d *fakeDevice) Close() error {
 	if d.closed {

@@ -42,6 +42,7 @@ func (s *streamingFakeDevice) SetSampleRate(hz uint32) error {
 func (s *streamingFakeDevice) SetGain(int) error     { return nil }
 func (s *streamingFakeDevice) SetPPM(int) error      { return nil }
 func (s *streamingFakeDevice) SetBiasTee(bool) error { return nil }
+func (s *streamingFakeDevice) SetAmp(bool) error     { return nil }
 func (s *streamingFakeDevice) Close() error          { s.closes.Add(1); return nil }
 
 func (s *streamingFakeDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {

@@ -125,11 +125,13 @@ sdr:
       ppm: 0               # 0 is fine for TCXO-equipped units like the NESDR Smart v5
       gain: "auto"         # "auto" or a tenths-of-dB string ("496" = 49.6 dB)
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      amp: false           # HackRF RF amp; leave false unless needed
     - serial: "00000002"
       role: voice
       ppm: 0
       gain: "auto"
       bias_tee: false
+      amp: false
 
     # role: wideband pins one dongle to a centre frequency and lets a
     # single SDR cover several carriers that all live inside its

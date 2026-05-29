@@ -252,6 +252,7 @@ func (d *reacquireSDRDevice) SetSampleRate(hz uint32) error { d.sampleRate = hz;
 func (d *reacquireSDRDevice) SetGain(int) error             { return nil }
 func (d *reacquireSDRDevice) SetPPM(int) error              { return nil }
 func (d *reacquireSDRDevice) SetBiasTee(bool) error         { return nil }
+func (d *reacquireSDRDevice) SetAmp(bool) error             { return nil }
 func (d *reacquireSDRDevice) Close() error                  { d.closed.Store(true); return nil }
 func (d *reacquireSDRDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	if d.closed.Load() {

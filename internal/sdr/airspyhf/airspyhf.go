@@ -314,6 +314,8 @@ func (d *Device) SetPPM(int) error { return nil }
 
 // SetBiasTee toggles the bias-T on the antenna SMA. Dual Port units
 // only expose this on the SMA-1 / HF port; SMA-2 (VHF) is unaffected.
+func (d *Device) SetAmp(bool) error { return nil }
+
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.isClosed() {
 		return usb.ErrClosed

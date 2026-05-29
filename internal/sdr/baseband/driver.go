@@ -110,6 +110,7 @@ func (d *replayDevice) SetCenterFreq(uint32) error { return nil }
 func (d *replayDevice) SetGain(int) error          { return nil }
 func (d *replayDevice) SetPPM(int) error           { return nil }
 func (d *replayDevice) SetBiasTee(bool) error      { return nil }
+func (d *replayDevice) SetAmp(bool) error          { return nil }
 func (d *replayDevice) Close() error               { return nil }
 
 // SetSampleRate overrides the metering rate. A real-time replay needs

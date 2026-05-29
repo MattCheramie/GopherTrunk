@@ -336,6 +336,8 @@ func (d *Device) setMixerAGC(on bool) error {
 func (d *Device) SetPPM(int) error { return nil }
 
 // SetBiasTee toggles the bias-T on the antenna SMA.
+func (d *Device) SetAmp(bool) error { return nil }
+
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.isClosed() {
 		return usb.ErrClosed

@@ -227,6 +227,8 @@ func (d *device) SetPPM(ppm int) error {
 	return d.sendCmd(cmdSetFreqCorrPPM, uint32(int32(ppm)))
 }
 
+func (d *device) SetAmp(bool) error { return nil }
+
 func (d *device) SetBiasTee(enable bool) error {
 	var v uint32
 	if enable {

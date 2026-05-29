@@ -65,6 +65,41 @@ func TestDriverEnumerateAndOpen(t *testing.T) {
 	}
 }
 
+func TestDriverEnumerateAndOpenUseSameFallbackSerial(t *testing.T) {
+	enum := &usb.MockEnumerator{
+		Devices: []usb.Descriptor{
+			{Bus: 1, Address: 7, VID: vidHackRF, PID: pidHackRFOne, Serial: "\x00\x00\x00", Product: "HackRF One", Path: "mock/1"},
+		},
+		OpenFunc: func(usb.Descriptor) (*usb.MockTransport, error) {
+			mt := usb.NewMockTransport()
+			mt.Script = []usb.CtrlExchange{
+				{In: true, BRequest: reqBoardIDRead, Reply: []byte{2}, N: 1},
+				{In: true, BRequest: reqVersionStringRead, Reply: []byte("git-2024.02.1\x00"), N: 255},
+			}
+			return mt, nil
+		},
+	}
+	drv := New(enum)
+	infos, err := drv.Enumerate()
+	if err != nil {
+		t.Fatalf("Enumerate: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("infos = %d, want 1", len(infos))
+	}
+	if infos[0].Serial != "hackrf-00" {
+		t.Fatalf("Enumerate serial = %q, want hackrf-00", infos[0].Serial)
+	}
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+	if dev.Info().Serial != infos[0].Serial {
+		t.Fatalf("Open serial = %q, want Enumerate serial %q", dev.Info().Serial, infos[0].Serial)
+	}
+}
+
 func TestEnumerateRenamesByPID(t *testing.T) {
 	// Even when the USB descriptor Product is garbage, the canonical
 	// name comes from the PID.
@@ -311,6 +346,23 @@ func TestSetGainIssuesAMPLNAVGA(t *testing.T) {
 	}
 	if mt.Err != nil {
 		t.Fatalf("transport error: %v", mt.Err)
+	}
+}
+
+func TestSetAmpRoundTrips(t *testing.T) {
+	dev, mt := withDevice(t)
+	mt.Script = []usb.CtrlExchange{
+		{BRequest: reqAmpEnable, WValue: 1},
+		{BRequest: reqAmpEnable, WValue: 0},
+	}
+	if err := dev.SetAmp(true); err != nil {
+		t.Fatalf("SetAmp(on): %v", err)
+	}
+	if err := dev.SetAmp(false); err != nil {
+		t.Fatalf("SetAmp(off): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
 	}
 }
 

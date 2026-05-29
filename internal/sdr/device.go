@@ -71,6 +71,9 @@ type Device interface {
 	// the circuit silently no-op. Implementations should return nil
 	// if the underlying driver doesn't model bias-tee at all.
 	SetBiasTee(enable bool) error
+	// SetAmp toggles a driver-specific RF amplifier stage when present.
+	// Devices without a separate RF amp should no-op and return nil.
+	SetAmp(enable bool) error
 	StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	Close() error
 }

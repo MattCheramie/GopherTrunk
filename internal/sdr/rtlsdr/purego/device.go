@@ -123,6 +123,8 @@ func (d *Device) SetPPM(ppm int) error {
 // comes from the per-(VID, PID) bias-tee table in devices.go; boards
 // that aren't in the table inherit GPIO 0 (the standard for
 // RTL-SDR.com v3+ and NESDR Smart v5).
+func (d *Device) SetAmp(bool) error { return nil }
+
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.closed.Load() {
 		return ErrClosed

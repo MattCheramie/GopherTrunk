@@ -27,6 +27,7 @@ type SDRStatus struct {
 	GainAuto    bool `json:"gain_auto"`
 	PPM         int  `json:"ppm"`
 	BiasTee     bool `json:"bias_tee"`
+	Amp         bool `json:"amp,omitempty"`
 
 	// Gains is the tuner's quantized gain ladder (tenths of dB),
 	// useful for UIs that want to render valid choices.

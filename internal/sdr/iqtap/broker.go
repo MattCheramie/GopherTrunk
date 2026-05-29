@@ -197,6 +197,12 @@ func (b *Broker) SetPPM(ppm int) error {
 	return b.inner.SetPPM(ppm)
 }
 
+func (b *Broker) SetAmp(enable bool) error {
+	b.innerMu.RLock()
+	defer b.innerMu.RUnlock()
+	return b.inner.SetAmp(enable)
+}
+
 func (b *Broker) SetBiasTee(enable bool) error {
 	b.innerMu.RLock()
 	defer b.innerMu.RUnlock()
@@ -254,21 +260,8 @@ func (b *Broker) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 // per subscriber — drops are counted but never block the primary.
 func (b *Broker) fanout(chunk []complex64) {
 	b.subsMu.Lock()
-	if len(b.subs) == 0 {
-		b.subsMu.Unlock()
-		return
-	}
-	// Snapshot the subscriber set so we can drop the lock before
-	// allocating + sending — a concurrent Subscribe / Close can't
-	// race a send into a closed channel because Close transitions
-	// the closed flag under the same lock we just dropped.
-	subs := make([]*Subscriber, 0, len(b.subs))
+	defer b.subsMu.Unlock()
 	for s := range b.subs {
-		subs = append(subs, s)
-	}
-	b.subsMu.Unlock()
-
-	for _, s := range subs {
 		if s.closed.Load() {
 			continue
 		}
