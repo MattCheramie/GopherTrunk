@@ -274,7 +274,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		}
 		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: info, Role: role, Hint: hint}
 		p.entries = append(p.entries, entry)
-		openedSerials[d.info.Serial] = struct{}{}
+		openedSerials[info.Serial] = struct{}{}
 		// Include the per-device tuning in the open log so an
 		// operator can grep the boot log to confirm the value they
 		// put in config.yaml actually landed on this serial (issue

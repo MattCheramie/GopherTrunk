@@ -312,10 +312,11 @@ func (d *Device) SetGain(tenthDB int) error {
 // and the libairspyhf wire protocol carries no PPM register.
 func (d *Device) SetPPM(int) error { return nil }
 
-// SetBiasTee toggles the bias-T on the antenna SMA. Dual Port units
-// only expose this on the SMA-1 / HF port; SMA-2 (VHF) is unaffected.
+// SetAmp is a no-op for Airspy HF+; it has no separate RF amp stage.
 func (d *Device) SetAmp(bool) error { return nil }
 
+// SetBiasTee toggles the bias-T on the antenna SMA. Dual Port units
+// only expose this on the SMA-1 / HF port; SMA-2 (VHF) is unaffected.
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.isClosed() {
 		return usb.ErrClosed
