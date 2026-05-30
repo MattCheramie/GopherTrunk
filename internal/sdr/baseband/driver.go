@@ -124,6 +124,17 @@ func (d *replayDevice) SetSampleRate(hz uint32) error {
 	return nil
 }
 
+// SampleRate returns the metering rate the replay is producing IQ
+// at. Implements [sdr.SampleRateGetter] so downstream DSP that
+// queries the device for its actual rate gets the truth — the
+// recording's native wavRate when SetSampleRate was never called,
+// or the override last passed to SetSampleRate.
+func (d *replayDevice) SampleRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.rate
+}
+
 // StreamIQ replays the recording, metered to the configured rate, and
 // loops on EOF when Loop is set.
 func (d *replayDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {

@@ -38,6 +38,15 @@ type Device struct {
 	// override for boards with a different pinout.
 	biasTeeGPIO uint8
 
+	// sampleRate is the actual rate the demod settled on at the most
+	// recent SetSampleRate, exposed through [sdr.SampleRateGetter] so
+	// downstream DSP anchors on the truth. The RTL2832U demod
+	// resampler quantizes to its 28.4 fixed-point divisor (typically
+	// within 1 Hz of requested) and the R820T2 silently caps rates
+	// above ~2.4 MHz, so the value here can differ meaningfully from
+	// what the operator asked for.
+	sampleRate atomic.Uint32
+
 	streamMu sync.Mutex
 	out      chan []complex64
 	stopOnce sync.Once
@@ -66,10 +75,10 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 }
 
 // SetSampleRate programs the demod resampler and the tuner's IF
-// filter to match. Returns the actual rate the chip can produce
-// (the demod quantizes to its 28.4 fixed-point divisor); callers
-// that need the exact value can read it back via [Demod.GetSampleRate]
-// — but the [sdr.Device] contract returns just the error.
+// filter to match. The demod quantizes to its 28.4 fixed-point
+// divisor; the actual landed rate is cached on the device and
+// reachable via [Device.SampleRate] (the [sdr.SampleRateGetter]
+// surface) so downstream DSP can anchor on the truth.
 func (d *Device) SetSampleRate(hz uint32) error {
 	if d.closed.Load() {
 		return ErrClosed
@@ -81,8 +90,15 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	if err := d.tuner.SetBandwidth(actual); err != nil {
 		return fmt.Errorf("rtlsdr: tuner bandwidth: %w", err)
 	}
+	d.sampleRate.Store(actual)
 	return nil
 }
+
+// SampleRate returns the rate the demod resampler is actually
+// running at — the value [Demod.SetSampleRate] last reported back.
+// Zero before the first [SetSampleRate] call. Implements
+// [sdr.SampleRateGetter].
+func (d *Device) SampleRate() uint32 { return d.sampleRate.Load() }
 
 // SetGain takes the [sdr.Device] convention: tenthDB < 0 selects AGC,
 // tenthDB ≥ 0 switches to manual mode and applies the closest

@@ -214,6 +214,11 @@ type Device struct {
 	closed    bool
 	streaming bool
 	rates     []uint32 // supported sample rates, Hz
+	// sampleRate is the firmware-advertised rate the chip actually
+	// landed on after the most recent SetSampleRate. Exposed via the
+	// [sdr.SampleRateGetter] surface so downstream DSP anchors on
+	// the chip's truth rather than the operator's request.
+	sampleRate uint32
 }
 
 // Info implements sdr.Device.
@@ -241,7 +246,26 @@ func (d *Device) SetSampleRate(hz uint32) error {
 		return usb.ErrClosed
 	}
 	idx := d.closestRateIndex(hz)
-	return d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs)
+	if err := d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	if idx >= 0 && idx < len(d.rates) {
+		d.sampleRate = d.rates[idx]
+	} else {
+		d.sampleRate = hz
+	}
+	d.mu.Unlock()
+	return nil
+}
+
+// SampleRate returns the actual rate the firmware landed on at the
+// most recent SetSampleRate. Zero before the first SetSampleRate.
+// Implements [sdr.SampleRateGetter].
+func (d *Device) SampleRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sampleRate
 }
 
 func (d *Device) closestRateIndex(hz uint32) int {

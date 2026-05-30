@@ -847,18 +847,23 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 						break
 					}
 				}
+				// Anchor downstream DSP on the device's actual rate so
+				// quantization (RTL2832U fixed-point divisor, Airspy
+				// closest-rate index, R820T2 silent cap) doesn't
+				// produce off-rate audio.
+				ccActualRate := sdr.ActualSampleRate(controlEntry.Device, cfg.SDR.SampleRate)
 				d.ccDecoderOpts = ccdecoder.Options{
 					Bus:          d.bus,
 					Log:          log,
 					Tuner:        tuner,
 					IQ:           iqSrc,
 					Systems:      d.systems,
-					SampleRateHz: float64(cfg.SDR.SampleRate),
+					SampleRateHz: float64(ccActualRate),
 					Metrics:      iqObs,
 					IQCorrect:    iqCorrect,
 				}
 				d.controlSerial = controlEntry.Info.Serial
-				d.controlSampleRate = cfg.SDR.SampleRate
+				d.controlSampleRate = ccActualRate
 				dec, err := ccdecoder.New(d.ccDecoderOpts)
 				if err != nil {
 					return nil, fmt.Errorf("daemon: ccdecoder: %w", err)
@@ -928,7 +933,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				DeviceSerial: convEntry.Info.Serial,
 				SystemName:   "scanner",
 				Channels:     channels,
-				SampleRateHz: float64(cfg.SDR.SampleRate),
+				// Anchor the FM demod chain on the chip's actual rate
+				// — otherwise R820T2's silent cap at ~2.4 MHz turns a
+				// 3 MHz request into off-rate audio (1.25× speed-up).
+				SampleRateHz: float64(sdr.ActualSampleRate(convEntry.Device, cfg.SDR.SampleRate)),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("daemon: conv scanner: %w", err)
@@ -972,11 +980,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if br := d.iqBrokers[entry.Info.Serial]; br != nil {
 				iqDev = br
 			}
+			// Anchor the polyphase channelizer on the device's actual
+			// rate so per-channel decimation ratios stay correct when
+			// the chip quantizes the requested rate.
+			wbActualRate := sdr.ActualSampleRate(entry.Device, cfg.SDR.SampleRate)
 			eng, err := widebandt2.New(widebandt2.Options{
 				Log:           log,
 				Bus:           d.bus,
 				Device:        iqDev,
-				SampleRateHz:  cfg.SDR.SampleRate,
+				SampleRateHz:  wbActualRate,
 				CenterFreqHz:  devCfg.CenterFreqHz,
 				TunerStrategy: devCfg.TunerStrategy,
 				Channels:      channels,
@@ -2210,12 +2222,17 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 				"serial", devCfg.Serial, "voice_taps", taps)
 			taps = 0
 		}
+		// Anchor the virtual voice DDC on the wideband dongle's actual
+		// rate (Airspy R2/Mini in particular silently rounds 2.4 MHz
+		// requests to 3 MHz via its closest-rate table), so the DDC
+		// decimation ratio matches what the chip is really streaming.
+		wbActualRate := sdr.ActualSampleRate(entry.Device, cfg.SDR.SampleRate)
 		for i := 0; i < taps; i++ {
 			vt, err := wbvoice.New(wbvoice.Options{
 				Serial:           fmt.Sprintf("wb:%s:tap-%d", entry.Info.Serial, i),
 				Broker:           br,
 				WidebandCenterHz: devCfg.CenterFreqHz,
-				SDRSampleRateHz:  cfg.SDR.SampleRate,
+				SDRSampleRateHz:  wbActualRate,
 				Log:              log,
 			})
 			if err != nil {

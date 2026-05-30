@@ -204,12 +204,35 @@ type device struct {
 	mu     sync.Mutex
 	conn   net.Conn
 	closed bool
+	// sampleRate is the last value passed to SetSampleRate, exposed
+	// via [sdr.SampleRateGetter]. The librtlsdr rtl_tcp wire
+	// protocol has no reply field for SET_SAMPLE_RATE, so the rate
+	// the remote chip actually landed on isn't observable from this
+	// side — returning the requested value still lets the daemon
+	// honour a per-tuner rate override.
+	sampleRate uint32
 }
 
 func (d *device) Info() sdr.Info { return d.info }
 
 func (d *device) SetCenterFreq(hz uint32) error { return d.sendCmd(cmdSetFreq, hz) }
-func (d *device) SetSampleRate(hz uint32) error { return d.sendCmd(cmdSetSampleRate, hz) }
+func (d *device) SetSampleRate(hz uint32) error {
+	if err := d.sendCmd(cmdSetSampleRate, hz); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	d.sampleRate = hz
+	d.mu.Unlock()
+	return nil
+}
+
+// SampleRate returns the rate last passed to SetSampleRate.
+// Implements [sdr.SampleRateGetter].
+func (d *device) SampleRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sampleRate
+}
 
 func (d *device) SetGain(tenthDB int) error {
 	if tenthDB < 0 {

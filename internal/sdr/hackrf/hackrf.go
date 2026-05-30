@@ -323,6 +323,16 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	return nil
 }
 
+// SampleRate returns the rate the baseband sampler was last
+// programmed to. HackRF uses a numerator/divider of (hz, 1) so the
+// hardware streams exactly at the value last passed to
+// SetSampleRate. Implements [sdr.SampleRateGetter].
+func (d *Device) SampleRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sampleRate
+}
+
 // SetGain accepts a single tenth-dB target and distributes it across
 // the HackRF's three gain stages (RF amp on/off, LNA 0–40 dB in 8 dB
 // steps, VGA 0–62 dB in 2 dB steps). A negative value selects a

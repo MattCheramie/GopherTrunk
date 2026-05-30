@@ -75,6 +75,39 @@ type Device interface {
 	Close() error
 }
 
+// SampleRateGetter is an optional interface a Device may implement to
+// surface the rate the underlying hardware actually settled on after
+// SetSampleRate. The Device contract's SetSampleRate returns only an
+// error; backends like rtlsdr's RTL2832U resampler quantize to their
+// fixed-point divisor, and the R820T2 silently caps requests over
+// ~2.4 MHz, so the rate the driver acknowledged and the rate the chip
+// is streaming at can differ. Downstream DSP (the conventional FM
+// demod, the wideband channelizer, the CC decoder) must work against
+// the truth — otherwise resampler ratios are off by a small constant
+// and audio plays back at the wrong speed.
+//
+// Implementations should return 0 to signal "I don't know" (the
+// helper [ActualSampleRate] then falls back to the operator-supplied
+// requested rate).
+type SampleRateGetter interface {
+	SampleRate() uint32
+}
+
+// ActualSampleRate returns the device's reported sample rate when the
+// device implements [SampleRateGetter] and reports a non-zero value;
+// otherwise it falls back to requested. Use this everywhere the
+// daemon plumbs cfg.SDR.SampleRate into DSP options — the demod
+// chain, the channelizer, the CC decoder — so chains stay anchored
+// to the chip's truth rather than the operator's wish.
+func ActualSampleRate(dev Device, requested uint32) uint32 {
+	if rg, ok := dev.(SampleRateGetter); ok {
+		if got := rg.SampleRate(); got > 0 {
+			return got
+		}
+	}
+	return requested
+}
+
 // Driver is the factory each backend exposes.
 type Driver interface {
 	Name() string
