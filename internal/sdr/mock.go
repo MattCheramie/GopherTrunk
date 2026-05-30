@@ -59,6 +59,7 @@ func (d *MockDevice) SetCenterFreq(uint32) error { return nil }
 func (d *MockDevice) SetGain(int) error          { return nil }
 func (d *MockDevice) SetPPM(int) error           { return nil }
 func (d *MockDevice) SetBiasTee(bool) error      { return nil }
+func (d *MockDevice) SetAmp(bool) error          { return nil }
 func (d *MockDevice) SetSampleRate(hz uint32) error {
 	d.sampleRate = hz
 	return nil
@@ -159,6 +160,7 @@ func (d *mockF32Device) SetCenterFreq(uint32) error    { return nil }
 func (d *mockF32Device) SetGain(int) error             { return nil }
 func (d *mockF32Device) SetPPM(int) error              { return nil }
 func (d *mockF32Device) SetBiasTee(bool) error         { return nil }
+func (d *mockF32Device) SetAmp(bool) error             { return nil }
 func (d *mockF32Device) SetSampleRate(hz uint32) error { d.sampleRate = hz; return nil }
 func (d *mockF32Device) Close() error                  { return nil }
 

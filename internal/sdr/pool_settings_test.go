@@ -41,9 +41,37 @@ func TestPoolAppliesHintSettings(t *testing.T) {
 	}
 }
 
+func TestPoolAppliesAmpHintWhenSet(t *testing.T) {
+	drv := &fakeDriver{name: "fake-amp", infos: []Info{
+		{Driver: "fake-amp", Index: 0, Serial: "S2"},
+	}}
+	registryMu.Lock()
+	registry["fake-amp"] = drv
+	registryMu.Unlock()
+	t.Cleanup(func() {
+		registryMu.Lock()
+		delete(registry, "fake-amp")
+		registryMu.Unlock()
+	})
+
+	p := NewPool(nil)
+	if err := p.Open(0, []Hint{Hint{Serial: "S2"}.WithAmp(true)}); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	dev := p.Entries()[0].Device.(*fakeDevice)
+	if dev.ampSets != 1 {
+		t.Errorf("SetAmp invocations = %d, want 1", dev.ampSets)
+	}
+	if !dev.ampOn {
+		t.Errorf("ampOn = false, want true")
+	}
+}
+
 func TestPoolSkipsBiasTeeWhenHintFalse(t *testing.T) {
 	drv := &fakeDriver{name: "fake-no-bias", infos: []Info{
-		{Driver: "fake-no-bias", Index: 0, Serial: "S2"},
+		{Driver: "fake-no-bias", Index: 0, Serial: "S3"},
 	}}
 	registryMu.Lock()
 	registry["fake-no-bias"] = drv
@@ -55,12 +83,15 @@ func TestPoolSkipsBiasTeeWhenHintFalse(t *testing.T) {
 	})
 
 	p := NewPool(nil)
-	if err := p.Open(0, []Hint{{Serial: "S2"}}); err != nil {
+	if err := p.Open(0, []Hint{{Serial: "S3"}}); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
 	dev := p.Entries()[0].Device.(*fakeDevice)
 	if dev.biasTeeSets != 0 {
 		t.Errorf("SetBiasTee called %d times when bias_tee was false", dev.biasTeeSets)
+	}
+	if dev.ampSets != 0 {
+		t.Errorf("SetAmp called %d times when amp was unset", dev.ampSets)
 	}
 }

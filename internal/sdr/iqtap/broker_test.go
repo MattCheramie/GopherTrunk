@@ -41,6 +41,7 @@ func (f *fakeDevice) SetSampleRate(hz uint32) error { f.sampleRate.Store(hz); re
 func (f *fakeDevice) SetGain(g int) error           { f.gain.Store(int32(g)); return nil }
 func (f *fakeDevice) SetPPM(int) error              { return nil }
 func (f *fakeDevice) SetBiasTee(bool) error         { return nil }
+func (f *fakeDevice) SetAmp(bool) error             { return nil }
 func (f *fakeDevice) Close() error                  { f.closes.Add(1); return nil }
 
 func (f *fakeDevice) StreamIQ(ctx context.Context) (<-chan []complex64, error) {

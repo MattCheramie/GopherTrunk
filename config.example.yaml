@@ -127,11 +127,13 @@ sdr:
                            # OP25/gqrx users: multiply your dB figure by 10
                            # (32 dB → "320"). "auto" (AGC) is the safe default.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      amp: false           # HackRF RF amp; leave false unless needed
     - serial: "00000002"
       role: voice
       ppm: 0
       gain: "auto"
       bias_tee: false
+      amp: false
 
     # role: wideband pins one dongle to a centre frequency and lets a
     # single SDR cover several carriers that all live inside its

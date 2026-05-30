@@ -39,6 +39,7 @@ func (e *PoolEntry) Snapshot(attached bool) SDRStatus {
 		Attached:     attached,
 		PPM:          e.Hint.PPM,
 		BiasTee:      e.Hint.BiasTee,
+		Amp:          e.Hint.Amp,
 		Gains:        append([]int(nil), e.Info.Gains...),
 	}
 	if e.Hint.gainSet {
@@ -91,11 +92,13 @@ type Hint struct {
 	PPM     int
 	Gain    int // tenths of dB; negative = auto
 	BiasTee bool
+	Amp     bool
 	// gainSet distinguishes "Gain not configured" (apply auto) from
 	// the explicit "auto" choice. The daemon sets this when it parses
 	// the YAML; tests that don't care can leave Hint zero-valued and
 	// pool.Open won't touch the device's gain.
 	gainSet bool
+	ampSet  bool
 }
 
 // WithGain returns a copy of h with Gain set and the gain-set flag
@@ -103,6 +106,13 @@ type Hint struct {
 func (h Hint) WithGain(tenthDB int) Hint {
 	h.Gain = tenthDB
 	h.gainSet = true
+	return h
+}
+
+// WithAmp returns a copy of h with a driver-specific RF amplifier flag set.
+func (h Hint) WithAmp(on bool) Hint {
+	h.Amp = on
+	h.ampSet = true
 	return h
 }
 
@@ -244,9 +254,13 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 				"err", err)
 			continue
 		}
+		info := dev.Info()
+		if info.Driver == "" {
+			info = d.info
+		}
 		if err := dev.SetSampleRate(rate); err != nil {
 			p.log.Error("set sample rate failed",
-				"driver", d.drv.Name(), "serial", d.info.Serial, "rate_hz", rate, "err", err)
+				"driver", d.drv.Name(), "serial", info.Serial, "rate_hz", rate, "err", err)
 			_ = dev.Close()
 			continue
 		}
@@ -256,11 +270,11 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		// operator who put bias_tee: true in config sees that the
 		// device rejected it.
 		if hinted {
-			p.applyHintSettings(dev, d.info, hint)
+			p.applyHintSettings(dev, info, hint)
 		}
-		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: d.info, Role: role, Hint: hint}
+		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: info, Role: role, Hint: hint}
 		p.entries = append(p.entries, entry)
-		openedSerials[d.info.Serial] = struct{}{}
+		openedSerials[info.Serial] = struct{}{}
 		// Include the per-device tuning in the open log so an
 		// operator can grep the boot log to confirm the value they
 		// put in config.yaml actually landed on this serial (issue
@@ -388,6 +402,15 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 	if h.BiasTee {
 		if err := dev.SetBiasTee(true); err != nil {
 			p.log.Warn("set bias_tee failed", "serial", info.Serial, "err", err)
+		}
+	}
+	if h.ampSet {
+		if ampDev, ok := dev.(interface{ SetAmp(bool) error }); ok {
+			if err := ampDev.SetAmp(h.Amp); err != nil {
+				p.log.Warn("set rf amp failed", "serial", info.Serial, "amp", h.Amp, "err", err)
+			}
+		} else if h.Amp {
+			p.log.Warn("rf amp requested but device does not support a separate amp stage", "serial", info.Serial)
 		}
 	}
 }

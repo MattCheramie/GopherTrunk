@@ -488,6 +488,10 @@ type DeviceConfig struct {
 	// GPIO bit that goes nowhere — librtlsdr accepts the call
 	// either way.
 	BiasTee bool `yaml:"bias_tee"`
+	// Amp toggles a driver-specific RF amplifier stage when present.
+	// Currently used by HackRF for its separate RF amp; devices without
+	// a modeled RF amp ignore false and warn on true.
+	Amp bool `yaml:"amp"`
 
 	// CenterFreqHz pins a `role: wideband` dongle to the centre of
 	// the IQ band it should cover. Every Channels[].FrequencyHz must

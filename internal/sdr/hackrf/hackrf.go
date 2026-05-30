@@ -82,7 +82,7 @@ const (
 	defaultSampleRateHz uint32 = 8_000_000
 	defaultLNAGainDB           = 16
 	defaultVGAGainDB           = 20
-	controlTimeoutMs           = 1000
+	controlTimeoutMs           = 5000
 )
 
 // Driver implements sdr.Driver for HackRF.
@@ -124,7 +124,7 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 	out := make([]sdr.Info, len(descs))
 	for i, desc := range descs {
 		serial := desc.Serial
-		if serial == "" {
+		if !isRealSerial(serial) {
 			serial = fmt.Sprintf("hackrf-%02d", i)
 		}
 		out[i] = sdr.Info{
@@ -183,7 +183,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		return nil, fmt.Errorf("hackrf: claim interface 0: %w", err)
 	}
 	serial := desc.Serial
-	if serial == "" {
+	if !isRealSerial(serial) {
 		serial = fmt.Sprintf("hackrf-%02d", idx)
 	}
 	// Best-effort: ask the firmware which board it actually is and
@@ -266,6 +266,18 @@ func cleanVersionString(buf []byte) string {
 func isPortaPack(v string) bool {
 	lv := strings.ToLower(v)
 	return strings.Contains(lv, "portapack") || strings.Contains(lv, "mayhem")
+}
+
+func isRealSerial(serial string) bool {
+	if serial == "" {
+		return false
+	}
+	for _, r := range serial {
+		if r != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Device is one opened HackRF.
@@ -393,6 +405,14 @@ func (d *Device) amp(on bool) error {
 		v = 1
 	}
 	return d.t.ControlOut(reqAmpEnable, v, 0, nil, controlTimeoutMs)
+}
+
+// SetAmp toggles the HackRF's separate RF amplifier stage.
+func (d *Device) SetAmp(on bool) error {
+	if d.isClosed() {
+		return usb.ErrClosed
+	}
+	return d.amp(on)
 }
 
 // SetPPM is a no-op for HackRF — the Si5351C reference clock is

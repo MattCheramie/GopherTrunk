@@ -452,6 +452,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					h = h.WithGain(gain)
 				}
 			}
+			if dev.Amp {
+				h = h.WithAmp(true)
+			}
 			hints = append(hints, h)
 		}
 		// Mount baseband replay recordings as virtual tuners. The

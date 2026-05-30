@@ -68,6 +68,7 @@ func (f *fakeDevice) SetCenterFreq(uint32) error { return nil }
 func (f *fakeDevice) SetGain(int) error          { return nil }
 func (f *fakeDevice) SetPPM(int) error           { return nil }
 func (f *fakeDevice) SetBiasTee(bool) error      { return nil }
+func (f *fakeDevice) SetAmp(bool) error          { return nil }
 func (f *fakeDevice) Close() error               { return nil }
 func (f *fakeDevice) SetSampleRate(hz uint32) error {
 	f.rate = hz

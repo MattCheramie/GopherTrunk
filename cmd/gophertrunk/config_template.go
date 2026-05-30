@@ -78,6 +78,7 @@ type wizardSDR struct {
 	PPM     int
 	Gain    string // "auto" or tenths-of-dB integer ("496" = 49.6 dB)
 	BiasTee bool
+	Amp     bool
 }
 
 // defaultWizardAnswers seeds the wizard with values that satisfy
@@ -261,6 +262,7 @@ sdr:
       ppm: {{.PPM}}
       gain: {{yamlString .Gain}}        # "auto" or tenths-of-dB string ("496" = 49.6 dB)
       bias_tee: {{.BiasTee}}
+      amp: {{.Amp}}
 {{- end}}
 {{- else}}
   # devices is empty — the daemon will start but won't lock any control
@@ -273,6 +275,7 @@ sdr:
   #     ppm: 0                 # 0 is fine for TCXO-equipped units (NESDR Smart v5)
   #     gain: "auto"           # "auto" or tenths-of-dB ("496" = 49.6 dB)
   #     bias_tee: false
+  #     amp: false            # HackRF RF amp; leave false unless needed
 {{- end}}
 
 trunking:

@@ -335,6 +335,9 @@ func (d *Device) setMixerAGC(on bool) error {
 // internally trimmed and the libairspy protocol carries no PPM.
 func (d *Device) SetPPM(int) error { return nil }
 
+// SetAmp is a no-op for Airspy; it has no separate RF amp stage.
+func (d *Device) SetAmp(bool) error { return nil }
+
 // SetBiasTee toggles the bias-T on the antenna SMA.
 func (d *Device) SetBiasTee(enable bool) error {
 	if d.isClosed() {

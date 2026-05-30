@@ -119,6 +119,9 @@ func (d *Device) SetPPM(ppm int) error {
 	return nil
 }
 
+// SetAmp is a no-op for RTL-SDR; it has no separate RF amp stage.
+func (d *Device) SetAmp(bool) error { return nil }
+
 // SetBiasTee toggles the dongle's 5 V LNA-power output. The GPIO pin
 // comes from the per-(VID, PID) bias-tee table in devices.go; boards
 // that aren't in the table inherit GPIO 0 (the standard for

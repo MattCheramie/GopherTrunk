@@ -41,6 +41,7 @@ func (r *RecordingDevice) SetCenterFreq(hz uint32) error { return r.inner.SetCen
 func (r *RecordingDevice) SetGain(tenthDB int) error     { return r.inner.SetGain(tenthDB) }
 func (r *RecordingDevice) SetPPM(ppm int) error          { return r.inner.SetPPM(ppm) }
 func (r *RecordingDevice) SetBiasTee(enable bool) error  { return r.inner.SetBiasTee(enable) }
+func (r *RecordingDevice) SetAmp(enable bool) error      { return r.inner.SetAmp(enable) }
 func (r *RecordingDevice) Close() error                  { return r.inner.Close() }
 
 // SetSampleRate records the rate (for the WAV header) and forwards it.
