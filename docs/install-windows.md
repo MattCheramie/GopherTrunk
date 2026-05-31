@@ -189,6 +189,7 @@ edits or per-system data.
 | `sdr list` prints nothing              | Zadig WinUSB swap didn't take — see step 3.        |
 | `usb: device disconnected` mid-stream  | The DVB driver re-attached itself — re-run Zadig. |
 | `WinUsb_Initialize` fails              | The dongle is bound to the wrong driver — re-run Zadig and pick **WinUSB**. |
+| `ERROR_GEN_FAILURE` / `device rejected request` on `sdr list` | Clone-dongle cold-start quirk — the first USB control transfer after open is NAK'd. v0.2.x absorbs this automatically (the warmup probe is sacrificial). If it still persists: try a different USB port (front vs. rear use different host controllers), avoid hubs and extension cables, and confirm `gophertrunk sdr doctor` shows **WinUSB** bound to interface 0. |
 | Smart Screen blocks the installer      | Right-click → Properties → Unblock, or **More info → Run anyway**. |
 
 For anything else: open an issue at

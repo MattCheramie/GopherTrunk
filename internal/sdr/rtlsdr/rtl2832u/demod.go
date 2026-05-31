@@ -116,12 +116,16 @@ func (d *Demod) DeinitBaseband() error {
 
 // WarmupUSBSysctl issues the single USB-block write that librtlsdr's
 // rtlsdr_open uses as a dummy-write probe immediately after claiming
-// the interface — if it returns EPIPE the caller is expected to
-// libusb_reset_device and retry. The wire bytes match initBasebandSteps[0]
-// on purpose: librtlsdr also repeats the write inside the full init
-// flood, and the chip is happy to receive it twice. Kept separate so
-// the open path can run it with reset-on-EPIPE recovery without
-// dragging the whole baseband sequence into the retry.
+// the interface. The wire bytes match initBasebandSteps[0] on purpose:
+// librtlsdr also repeats the write inside the full init flood, and the
+// chip is happy to receive it twice. Its job is purely sacrificial —
+// to absorb the first-control-transfer NAK that some clone dongles
+// emit right after the interface is claimed — so the caller
+// (runBringup in purego/driver.go) deliberately SWALLOWS any error
+// this returns and proceeds straight to InitBaseband, matching
+// librtlsdr. A genuine stall re-surfaces on InitBaseband's
+// byte-identical step 0, where the open-path reset+retry envelope can
+// act on it.
 func (d *Demod) WarmupUSBSysctl() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
