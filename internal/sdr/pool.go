@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -209,7 +210,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			}
 			continue
 		}
-		hintBySerial[h.Serial] = h
+		hintBySerial[serialKey(h.Serial)] = h
 		if h.Role == RoleControl {
 			controlClaimed = true
 		}
@@ -217,7 +218,8 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 
 	openedSerials := map[string]struct{}{}
 	for _, d := range all {
-		hint, hinted := hintBySerial[d.info.Serial]
+		key := serialKey(d.info.Serial)
+		hint, hinted := hintBySerial[key]
 		if opts.Strict && !hinted {
 			p.log.Info("skipping non-configured SDR; add its serial to sdr.devices to use it",
 				"driver", d.drv.Name(), "serial", d.info.Serial)
@@ -260,7 +262,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		}
 		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: d.info, Role: role, Hint: hint}
 		p.entries = append(p.entries, entry)
-		openedSerials[d.info.Serial] = struct{}{}
+		openedSerials[key] = struct{}{}
 		// Include the per-device tuning in the open log so an
 		// operator can grep the boot log to confirm the value they
 		// put in config.yaml actually landed on this serial (issue
@@ -339,12 +341,26 @@ func (p *Pool) AllByRole(r Role) []*PoolEntry {
 func (p *Pool) FindBySerial(serial string) *PoolEntry {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	target := serialKey(serial)
 	for _, e := range p.entries {
-		if e.Info.Serial == serial {
+		if serialKey(e.Info.Serial) == target {
 			return e
 		}
 	}
 	return nil
+}
+
+func serialKey(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ToLower(s)
+	switch {
+	case strings.HasPrefix(s, "airspy sn:"):
+		return strings.TrimPrefix(s, "airspy sn:")
+	case strings.HasPrefix(s, "airspy_sn:"):
+		return strings.TrimPrefix(s, "airspy_sn:")
+	default:
+		return s
+	}
 }
 
 // applyHintSettings runs the per-device tuners after Open. Caller
