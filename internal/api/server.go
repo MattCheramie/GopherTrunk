@@ -292,6 +292,11 @@ type Server struct {
 	// storage.DSCLog.
 	dsc DSCProvider
 
+	// m17 is the optional provider backing /api/v1/m17/... routes
+	// (M17 link-setup log). nil disables the routes. Implemented by
+	// the daemon over the SQLite-backed storage.M17Log.
+	m17 M17Provider
+
 	// adsb is the optional provider backing /api/v1/adsb/...
 	// routes (ADS-B aircraft report log). nil disables the
 	// routes. Implemented by the daemon over the SQLite-backed
@@ -518,6 +523,11 @@ type ServerOptions struct {
 	// marine DSC sequences. Wired by the daemon over the
 	// SQLite-backed storage.DSCLog.
 	DSC DSCProvider
+	// M17, when non-nil, enables the
+	// GET /api/v1/m17/linksetups route serving recent decoded M17
+	// link-setup frames. Wired by the daemon over the SQLite-backed
+	// storage.M17Log.
+	M17 M17Provider
 	// ADSB, when non-nil, enables the
 	// GET /api/v1/adsb/aircraft route serving recent decoded
 	// Mode-S frames. Wired by the daemon over the SQLite-backed
@@ -630,6 +640,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		aprs:           opts.APRS,
 		ais:            opts.AIS,
 		dsc:            opts.DSC,
+		m17:            opts.M17,
 		adsb:           opts.ADSB,
 		mdc1200:        opts.MDC1200,
 	}, nil
@@ -834,6 +845,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/aprs/packets", s.handleAPRSPackets)
 	mux.HandleFunc("GET /api/v1/ais/vessels", s.handleAISMessages)
 	mux.HandleFunc("GET /api/v1/dsc/messages", s.handleDSCMessages)
+	mux.HandleFunc("GET /api/v1/m17/linksetups", s.handleM17LinkSetups)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft", s.handleADSBAircraft)
 	mux.HandleFunc("GET /api/v1/mdc1200/messages", s.handleMDC1200Messages)
 

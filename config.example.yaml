@@ -375,6 +375,20 @@ sdr:
 #                                     #  or sdr.rtl_tcp), sampling >= 2 Msps
 #       frequency_hz: 1_090_000_000   # 1090 MHz (the default when omitted)
 
+# M17 digital voice (link-layer metadata). Each entry pins one SDR to
+# an M17 frequency and decodes the link setup — source / destination
+# callsigns and mode — via the stream-frame LICH path. Publishes on
+# events.KindM17LinkSetup; storage.M17Log persists to the m17_log
+# table, GET /api/v1/m17/linksetups returns recent rows. Codec2 voice
+# decode is a planned follow-up.
+#
+# m17:
+#   channels:
+#     - serial: "vhf-antenna"         # SDR serial (must be in sdr.devices
+#                                     #  or sdr.rtl_tcp)
+#       frequency_hz: 144_975_000     # 2 m M17 simplex calling
+#                                     #  (region-dependent; 433_475_000 on 70 cm)
+
 trunking:
   # call_timeout_ms: inactivity window after which the engine's
   # watchdog ends a call (publishes CallEnd with EndReasonTimeout

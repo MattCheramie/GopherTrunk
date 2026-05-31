@@ -28,6 +28,7 @@ import (
 	aisgmsk "github.com/MattCheramie/GopherTrunk/internal/radio/ais/gmsk"
 	aprsafsk "github.com/MattCheramie/GopherTrunk/internal/radio/aprs/afsk"
 	dscffsk "github.com/MattCheramie/GopherTrunk/internal/radio/dsc/ffsk"
+	m17rx "github.com/MattCheramie/GopherTrunk/internal/radio/m17/receiver"
 	mdc1200afsk "github.com/MattCheramie/GopherTrunk/internal/radio/mdc1200/afsk"
 	flexrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/flex/receiver"
 	pocsagrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag/receiver"
@@ -153,6 +154,7 @@ type Daemon struct {
 	aprsLog      *storage.APRSLog
 	vesselLog    *storage.VesselLog
 	dscLog       *storage.DSCLog
+	m17Log       *storage.M17Log
 	aircraftLog  *storage.AircraftLog
 	mdc1200Log   *storage.MDC1200Log
 	messageLog   *gtlog.MessageLog
@@ -196,6 +198,11 @@ type Daemon struct {
 	// the pager_log table / panel, tagged protocol="flex".
 	flexReceivers []*flexrx.Receiver
 	flexSpecs     []flexSpec // index-aligned with flexReceivers
+	// m17Receivers holds one M17 link-layer receiver per configured
+	// m17.channels entry. Each subscribes to its SDR's iqtap broker and
+	// publishes link-setup metadata on KindM17LinkSetup.
+	m17Receivers []*m17rx.Receiver
+	m17Specs     []m17Spec // index-aligned with m17Receivers
 	// aprsReceivers holds one APRS AFSK receiver per configured
 	// aprs.channels entry. Each subscribes to the iqtap broker
 	// for its assigned SDR and publishes packets onto the events
@@ -1061,6 +1068,35 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.flexSpecs = append(d.flexSpecs, spec)
 	}
 
+	// M17 link-layer receivers — one per configured m17.channels entry.
+	// Same construction shape as the paging receivers above; decoded
+	// link metadata publishes on KindM17LinkSetup.
+	for _, mc := range cfg.M17.Channels {
+		spec := m17Spec{serial: mc.Serial, freq: mc.FrequencyHz}
+		if mc.Serial == "" || mc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"m17.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				mc.Serial, mc.FrequencyHz))
+			d.m17Receivers = append(d.m17Receivers, nil)
+			d.m17Specs = append(d.m17Specs, spec)
+			continue
+		}
+		rcv, err := m17rx.New(m17rx.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  mc.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("m17.channels[%s]: %v — skipped", mc.Serial, err))
+			d.m17Receivers = append(d.m17Receivers, nil)
+			d.m17Specs = append(d.m17Specs, spec)
+			continue
+		}
+		d.m17Receivers = append(d.m17Receivers, rcv)
+		d.m17Specs = append(d.m17Specs, spec)
+	}
+
 	// APRS / AX.25 Bell-202 AFSK receivers — one per configured
 	// aprs.channels entry. Same construction shape as POCSAG above:
 	// per-entry validation in the receiver, failures surface as a
@@ -1310,6 +1346,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.dscLog = dl
 
+		ml, err := storage.NewM17Log(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("daemon: m17 log: %w", err)
+		}
+		d.m17Log = ml
+
 		acl, err := storage.NewAircraftLog(db, d.bus, log)
 		if err != nil {
 			db.Close()
@@ -1392,6 +1435,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if d.dscLog != nil {
 			opts.DSC = dscProvider{log: d.dscLog}
+		}
+		if d.m17Log != nil {
+			opts.M17 = m17Provider{log: d.m17Log}
 		}
 		if d.aircraftLog != nil {
 			opts.ADSB = adsbProvider{log: d.aircraftLog}
@@ -1581,6 +1627,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.dscLog.Run(ctx)
 		})
 	}
+	if d.m17Log != nil {
+		d.spawn(runCtx, "m17log", false, func(ctx context.Context) error {
+			return d.m17Log.Run(ctx)
+		})
+	}
 	if d.aircraftLog != nil {
 		d.spawn(runCtx, "aircraftlog", false, func(ctx context.Context) error {
 			return d.aircraftLog.Run(ctx)
@@ -1703,6 +1754,33 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 			if err := br.SetCenterFreq(spec.freq); err != nil {
 				d.log.Warn("flex: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			sub := br.Subscribe()
+			defer sub.Close()
+			return rcv.Process(ctx, sub.C)
+		})
+	}
+	// M17 link-layer receivers — same shape as the paging receivers
+	// above. Each subscribes to its SDR's iqtap broker and runs the
+	// C4FM pipeline → LICH reassembly, publishing KindM17LinkSetup.
+	for i, rcv := range d.m17Receivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.m17Specs[i]
+		name := fmt.Sprintf("m17-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("m17: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("m17: SetCenterFreq failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
@@ -2019,6 +2097,9 @@ func (d *Daemon) Close() {
 		}
 		if d.dscLog != nil {
 			_ = d.dscLog.Close()
+		}
+		if d.m17Log != nil {
+			_ = d.m17Log.Close()
 		}
 		if d.aircraftLog != nil {
 			_ = d.aircraftLog.Close()
@@ -2782,6 +2863,14 @@ type flexSpec struct {
 	freq   uint32
 }
 
+// m17Spec captures the broker-side wiring info for one configured M17
+// channel. Index-aligned with Daemon.m17Receivers so the Run loop can
+// spawn each receiver without re-walking the YAML.
+type m17Spec struct {
+	serial string
+	freq   uint32
+}
+
 // aprsProvider adapts storage.APRSLog into api.APRSProvider so the
 // api package stays free of the storage import dependency. Read-only
 // — the decoder writes via the events bus.
@@ -2807,6 +2896,15 @@ type dscProvider struct{ log *storage.DSCLog }
 
 func (d dscProvider) RecentDSCMessages(limit int) ([]storage.DSCMessage, error) {
 	return d.log.Recent(limit)
+}
+
+// m17Provider adapts storage.M17Log into api.M17Provider so the api
+// package stays free of the storage import dependency. Read-only — the
+// decoder writes via the events bus.
+type m17Provider struct{ log *storage.M17Log }
+
+func (m m17Provider) RecentM17LinkSetups(limit int) ([]storage.M17LinkSetup, error) {
+	return m.log.Recent(limit)
 }
 
 // adsbProvider adapts storage.AircraftLog into api.ADSBProvider so

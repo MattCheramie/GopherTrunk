@@ -222,6 +222,25 @@ CREATE TABLE IF NOT EXISTS dsc_log (
 CREATE INDEX IF NOT EXISTS idx_dsc_log_time      ON dsc_log(received_at);
 CREATE INDEX IF NOT EXISTS idx_dsc_log_self_mmsi ON dsc_log(self_mmsi, received_at);
 
+-- M17 link-setup frames persisted from the decoder pipeline. One row
+-- per reassembled Link Setup Frame: source / destination callsigns,
+-- the mode (voice / data / packet), channel-access number, hex META
+-- block, and the CRC-valid flag.
+CREATE TABLE IF NOT EXISTS m17_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at INTEGER NOT NULL,            -- unix nanoseconds
+    src         TEXT    NOT NULL DEFAULT '', -- source callsign
+    dst         TEXT    NOT NULL DEFAULT '', -- destination / "BROADCAST"
+    mode        TEXT    NOT NULL DEFAULT '', -- "voice" | "data" | "packet" | ...
+    can         INTEGER NOT NULL DEFAULT 0,  -- channel-access number
+    meta        TEXT    NOT NULL DEFAULT '', -- hex-encoded META block
+    crc_ok      INTEGER NOT NULL DEFAULT 0,
+    body        TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_m17_log_time ON m17_log(received_at);
+CREATE INDEX IF NOT EXISTS idx_m17_log_src  ON m17_log(src, received_at);
+
 -- ADS-B / Mode-S frames persisted from the decoder pipeline. One
 -- row per decoded extended-squitter message: ICAO 24-bit address +
 -- kind (identification / airborne-pos / velocity / ...) + kind-
