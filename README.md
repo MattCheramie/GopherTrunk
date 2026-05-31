@@ -141,6 +141,16 @@ Silicon and Intel. Full per-OS recipes at
   the BEAST upstream uses. Plus `events.KindAircraftReport` bus
   event, SQLite `aircraft_log`, `GET /api/v1/adsb/aircraft`,
   and `/adsb` web panel. See [docs/adsb.md](docs/adsb.md).
+- **M17 link layer** — metadata decoder for the open, Codec2-based
+  M17 digital voice mode (4FSK, 4800 sym/s). C4FM demod → symbol
+  timing → 4FSK slice → sync hunt → LICH reassembly (Golay(24,12),
+  six chunks) → Link Setup Frame parse: source / destination
+  base-40 callsigns, mode (voice / data / packet), channel-access
+  number, CRC-16. Recovers "who's talking to whom" from an
+  in-progress transmission without decoding audio (Codec2 voice is
+  a planned follow-up). `events.KindM17LinkSetup` bus event, SQLite
+  `m17_log`, `GET /api/v1/m17/linksetups`. Pin an SDR via
+  `m17.channels`. See [docs/m17.md](docs/m17.md).
 - **Live map** — Shared Leaflet map at the top of each
   position-bearing panel (APRS / AIS / DSC / ADS-B) renders
   decoded positions over OpenStreetMap tiles, colour-coded per

@@ -163,6 +163,13 @@ const (
 	// radio check, ...) and the CRC-valid flag. Surfaced over SSE / WS
 	// for the live MDC1200 panel.
 	KindMDC1200Message Kind = "mdc1200.message"
+
+	// KindM17LinkSetup fires when the M17 decoder reassembles a Link
+	// Setup Frame (via the stream-frame LICH path). Payload is a
+	// storage.M17LinkSetup carrying source / destination callsigns, the
+	// mode (voice / data / packet), channel-access number, and the
+	// CRC-valid flag. Surfaced over SSE / WS for the live M17 panel.
+	KindM17LinkSetup Kind = "m17.linksetup"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

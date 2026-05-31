@@ -33,6 +33,7 @@ type Config struct {
 	DSC        DSCConfig        `yaml:"dsc"`
 	MDC1200    MDC1200Config    `yaml:"mdc1200"`
 	ADSB       ADSBConfig       `yaml:"adsb"`
+	M17        M17Config        `yaml:"m17"`
 	Web        WebConfig        `yaml:"web"`
 }
 
@@ -130,6 +131,27 @@ type ADSBChannelConfig struct {
 type ADSBBeastConfig struct {
 	Addr string `yaml:"addr"`
 	Name string `yaml:"name"` // log + metrics label
+}
+
+// M17Config configures the M17 digital-voice link-layer receiver.
+// Each entry pins an SDR to an M17 frequency and runs the DSP frontend
+// (FM demod → C4FM matched filter → symbol-timing recovery → 4FSK
+// slice → sync hunt → LICH reassembly → Link Setup Frame parse).
+// Decoded link metadata (source / destination callsigns, mode)
+// publishes on events.KindM17LinkSetup; storage.M17Log persists it to
+// the m17_log table and the REST endpoint at /api/v1/m17/linksetups
+// returns the recent rows. Voice (Codec2) decode is a later milestone.
+type M17Config struct {
+	Channels []M17ChannelConfig `yaml:"channels"`
+}
+
+// M17ChannelConfig describes one M17 channel to decode. Serial picks
+// the SDR; the daemon tunes it to FrequencyHz and runs the receiver
+// against its full IQ stream. M17 simplex calling is commonly
+// 144.975 MHz (2 m) / 433.475 MHz (70 cm) in many regions.
+type M17ChannelConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
 }
 
 // APRSConfig configures the APRS / AX.25 Bell-202 AFSK receiver.
