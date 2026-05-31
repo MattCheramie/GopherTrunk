@@ -22,6 +22,7 @@ import (
 type PagerMessage struct {
 	ID         int64     `json:"id"`
 	ReceivedAt time.Time `json:"received_at"`
+	Protocol   string    `json:"protocol"` // "pocsag" | "flex"
 	RIC        uint32    `json:"ric"`
 	Func       uint8     `json:"func"` // 0..3 = A..D
 	Encoding   string    `json:"encoding"`
@@ -89,11 +90,15 @@ func (p *PagerLog) insert(m PagerMessage) error {
 	if at.IsZero() {
 		at = time.Now()
 	}
+	proto := m.Protocol
+	if proto == "" {
+		proto = "pocsag"
+	}
 	_, err := p.db.SQL().Exec(
 		`INSERT INTO pager_log
-		 (received_at, ric, func, encoding, body, corrected)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		at.UnixNano(), m.RIC, m.Func, m.Encoding, m.Body, m.Corrected,
+		 (received_at, protocol, ric, func, encoding, body, corrected)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		at.UnixNano(), proto, m.RIC, m.Func, m.Encoding, m.Body, m.Corrected,
 	)
 	return err
 }
@@ -108,7 +113,7 @@ func (p *PagerLog) Recent(limit int) ([]PagerMessage, error) {
 		limit = 5000
 	}
 	rows, err := p.db.SQL().Query(
-		`SELECT id, received_at, ric, func, encoding, body, corrected
+		`SELECT id, received_at, protocol, ric, func, encoding, body, corrected
 		 FROM pager_log ORDER BY received_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage/pagerlog: query: %w", err)
@@ -120,7 +125,7 @@ func (p *PagerLog) Recent(limit int) ([]PagerMessage, error) {
 			m  PagerMessage
 			ns int64
 		)
-		if err := rows.Scan(&m.ID, &ns, &m.RIC, &m.Func, &m.Encoding,
+		if err := rows.Scan(&m.ID, &ns, &m.Protocol, &m.RIC, &m.Func, &m.Encoding,
 			&m.Body, &m.Corrected); err != nil {
 			return nil, fmt.Errorf("storage/pagerlog: scan: %w", err)
 		}

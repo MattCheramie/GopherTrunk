@@ -65,12 +65,17 @@ Silicon and Intel. Full per-OS recipes at
   Motorola Type II / SmartZone, EDACS / GE-Marc, LTR, MPT 1327,
   dPMR Mode 3, TETRA TMO. Amateur-radio: D-STAR and Yaesu System
   Fusion.
-- **POCSAG paging** — protocol layer for the dominant wireline
-  FSK pager protocol (CCIR 584): BCH(31,21) FEC, batch carve-up,
-  numeric (5 BCD/codeword) + alphanumeric (7-bit packed ASCII)
-  decoders. Foundation for fire / EMS dispatch text alongside
-  the trunked-voice pipeline; DSP wiring follows in the next PR.
-  See [docs/pocsag.md](docs/pocsag.md).
+- **POCSAG + FLEX paging** — protocol + DSP for the two dominant
+  pager protocols, both decoding straight off the air and sharing
+  the `pager_log` table / `/pager` panel (tagged by `protocol`).
+  POCSAG (CCIR 584): BCH(31,21) FEC, batch carve-up, numeric
+  (5 BCD/codeword) + alphanumeric (7-bit packed ASCII), 512 /
+  1200 / 2400 bps. FLEX: 1600 bps / 2-level mode — 32-bit sync +
+  mode code → frame-info word → block de-interleave → BCH(31,21)
+  → BIW / address / vector / message-word walk → alphanumeric /
+  numeric pages. Pin SDRs via `paging.pocsag` / `paging.flex`.
+  Foundation for fire / EMS dispatch text alongside the
+  trunked-voice pipeline. See [docs/pocsag.md](docs/pocsag.md).
 - **APRS / AX.25 packet** — end-to-end pipeline for the
   amateur-radio APRS metadata bus (position beacons, messages,
   bulletins, status, Mic-E mobile-tracker compressed format).

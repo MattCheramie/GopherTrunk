@@ -257,6 +257,10 @@ sdr:
 #       frequency_hz: 152_007_500  # local commercial paging / fire
 #                                  #  dispatch / DAPNET / etc.
 #       baud_hz: 1200              # 512 / 1200 / 2400; default 1200
+#   flex:                          # Motorola FLEX (1600 bps / 2-level)
+#     - serial: "antenna-pi2"      # SDR serial; shares the pager_log
+#                                  #  table / panel, tagged protocol=flex
+#       frequency_hz: 929_612_500  # local FLEX paging channel
 
 # APRS / AX.25 Bell-202 AFSK receiver. Each entry pins one SDR to
 # an APRS frequency and runs the full DSP pipeline (FM demod →
