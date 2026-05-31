@@ -358,6 +358,19 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 	if h.gainSet {
 		if err := dev.SetGain(h.Gain); err != nil {
 			p.log.Warn("set gain failed", "serial", info.Serial, "gain", h.Gain, "err", err)
+		} else if h.Gain < 0 {
+			p.log.Info("sdr: gain set to automatic (AGC)", "serial", info.Serial, "role", h.Role.String())
+		} else {
+			// Surface the *applied* gain in dB at INFO. The driver snaps
+			// h.Gain to the nearest rung on the tuner's ladder, so a
+			// units mistake (gain: "32" → 3.2 dB, see parseGain) ends up
+			// near the bottom of the ladder and silently deaf. Logging
+			// the dB figure on the normal startup path lets the operator
+			// catch it without enabling debug.
+			p.log.Info("sdr: gain set",
+				"serial", info.Serial,
+				"role", h.Role.String(),
+				"gain_db", float64(h.Gain)/10.0)
 		}
 	} else {
 		// Surface the "no `gain:` in config" path explicitly. Without

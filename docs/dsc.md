@@ -17,12 +17,9 @@ voice channel two stations are about to switch to. A coast-guard
 MMSI lighting up the channel-70 stream is near-instant visibility
 into search-and-rescue activity.
 
-This page documents the **pipeline scaffolding**: what's wired,
-what's persisted, what's queryable, and what the web panel
-renders. The DSP layer (1200 Bd FSK at 1300 / 2100 Hz tones →
-10-bit symbol assembly → BCH check + DX/RX redundancy → 7-bit
-symbol stream to `dsc.Decode`) is tracked separately under
-"What's pending" below.
+This page documents the **end-to-end pipeline**: the DSP frontend
+that turns an IQ stream into decoded sequences, what's persisted,
+what's queryable, and what the web panel renders.
 
 ## What's wired
 
@@ -104,16 +101,48 @@ Spec references:
 - ITU-R M.541 — operational use, station identification,
   category routing.
 
+### DSP frontend
+
+The receiver decodes DSC straight off the air. Pin an SDR to a
+DSC channel under `dsc.channels` in the config (channel 70 =
+156.525 MHz on VHF; HF DSC rides 2187.5 / 8414.5 / 12577 /
+16804.5 kHz):
+
+```yaml
+dsc:
+  channels:
+    - serial: "marine-antenna"
+      frequency_hz: 156_525_000
+      drop_bad_fcs: false
+```
+
+Pipeline (one goroutine per channel, subscribing to that SDR's
+iqtap broker):
+
+```
+IQ → FM demod → resample to 9600 sps → FFSK discriminator
+   (1300/2100 Hz) → Mueller-Müller symbol timing → direct-FSK
+   slicer (no NRZI) → 10-bit window → BCH(10,7) phasing sync →
+   DX-grid symbol sampling → dsc.Decode → KindDSCMessage
+```
+
+- `internal/radio/dsc/ffsk` owns IQ → bits (mirrors the MDC1200
+  FFSK frontend); `internal/radio/dsc/receiver` owns bits →
+  message.
+- **Polarity** is auto-resolved: the phasing hunt accepts the DX
+  character (125) in either tone sense and inverts the sampled
+  symbols when it locked on the complement.
+- **DX/RX time diversity:** the first slice takes the documented
+  "drop RX, use DX only" path — it locks the 20-bit DX grid via
+  the repeating phasing character and reads DX symbols. Comparing
+  each DX character against its RX twin to recover BCH failures is
+  a yield-improving follow-up. On-wire bit order, tone sense, and
+  DX/RX offset are validated against a synthetic modulator;
+  confirming them against a captured ITU-R M.493 signal is the
+  remaining real-world calibration step.
+
 ## What's pending
 
-- **DSP receiver.** 1200 Bd FSK (mark 1300 Hz, space 2100 Hz)
-  on channel 70 (VHF) or one of the HF DSC channels. Pipeline:
-  iqtap broker subscriber → FM demod → FFSK discriminator
-  (reusing `internal/dsp/demod/ffsk` with DSC's tone
-  frequencies) → symbol-time recovery → 10-bit symbol assembly
-  → BCH syndrome check → DX / RX redundancy merge → 7-bit
-  symbol stream into `dsc.Decode`. Pattern matches the APRS /
-  AIS DSP frontends.
 - **Multi-frame protocol.** A few DSC sequence types span
   multiple slots when transmitted (Auto-Individual ACK chains,
   multi-recipient calls). The single-frame parser covers the

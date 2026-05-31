@@ -38,14 +38,19 @@ import "math"
 //     well-separated eye is tracked, an ambiguous one stays near fixed.
 //   - Per-level clamps and a strict-ordering invariant, so the thresholds
 //     can't run away on noise / loss-of-signal.
-//   - The outer decision thresholds are anchored to the well-estimated
-//     inner rail: they may move *inward* (toward zero) freely to follow a
-//     compressed or DC-shifted eye — the case the fixed slicer genuinely
-//     can't handle — but their *outward* travel is capped at a nominal
-//     inner→outer spacing above the tracked inner level. This closes the
-//     #402 regression where a lower-truncated outer-level EMA dragged the
-//     +1/+3 threshold ever outward (positive feedback), suppressing outer
-//     symbols and collapsing the outer-heavy frame-sync word.
+//   - The outer decision thresholds are *inward-only capped*: they may move
+//     toward zero freely (to follow a compressed or DC-shifted eye — the case
+//     the fixed slicer genuinely can't handle) but their outward travel is
+//     capped at a nominal inner→outer half-spacing (s/3) above the tracked
+//     inner rail, i.e. at the fixed nominal threshold. On the #402 capture
+//     every adaptive threshold that rose above the fixed nominal decoded
+//     worse, so the cap keeps the slicer no worse than fixed there.
+//   - The boundaries are *variance-aware*: each sits at the equal-σ-distance
+//     point between adjacent rails (not the plain midpoint), so when an outer
+//     rail's population is *spread* — the #402 +3 rail spreads low — the
+//     boundary moves toward the tighter inner rail, recovering more of the
+//     spread rail's symbols than a midpoint would. Inner-rail σ is clamped
+//     tight so an overlapping outer tail can't inflate it and cancel this.
 //   - The per-symbol level update is a soft-responsibility (Gaussian
 //     mixture) step rather than a hard decided-rail EMA, so a true outer
 //     symbol that landed below the threshold still contributes to the outer
@@ -71,7 +76,18 @@ type AdaptiveC4FMSlicer struct {
 	hiBound [4]float32
 	rate    float32 // single-pole EMA coefficient
 	sigma   float32 // Gaussian-responsibility width for the soft level update
-	warmup  int     // symbols to slice at nominal thresholds before adapting
+	// varia[i] is the running responsibility-weighted EMA of the squared
+	// residual (soft − level[i])² for rail i — the per-rail spread. It lets
+	// thresholds() place each boundary at the equal-σ-distance point between
+	// adjacent rails (toward the tighter rail) rather than the plain
+	// midpoint, so a rail whose population is spread (the #402 +3 outer rail,
+	// spread low) yields a lower decision boundary that recovers more of its
+	// symbols. Seeded equal across rails so the boundary starts at the
+	// midpoint (== fixed nominal under the inward cap).
+	varia  [4]float32
+	sigMin float32    // σ floor (keeps the equal-σ-distance weighting stable)
+	sigMax [4]float32 // per-rail σ ceiling: outer rails may be spread, inner rails are held tight
+	warmup int        // symbols to slice at nominal thresholds before adapting
 }
 
 // adaptiveSlicerRate is the EMA time constant for level tracking, in
@@ -83,15 +99,18 @@ type AdaptiveC4FMSlicer struct {
 const adaptiveSlicerRate = 1.0 / 512.0
 
 // adaptiveSlicerLeak is a regularization pull back toward the nominal eye,
-// applied to every tracked level each symbol alongside the data-directed
-// update. It makes "degrade gracefully to the fixed slicer" a real
-// property rather than just a clamp: a level only departs nominal as far
-// as the data persistently supports it. At equilibrium a level settles at
-// rate/(rate+leak) of the way from nominal to the observed centroid — with
-// leak = rate/4 that's 0.8, so a strongly-supported asymmetry (the #402
-// +3 rail at ~1.6× nominal) still tracks most of the way, while an
-// ambiguous or partly-closed eye — where decision-directed tracking would
-// otherwise run away and do *worse* than fixed — is held near nominal.
+// applied alongside the data-directed update. It makes "degrade gracefully
+// to the fixed slicer" a real property rather than just a clamp: a level
+// only departs nominal as far as the data persistently supports it. At
+// equilibrium a level settles at rate/(rate+leak) of the way from nominal
+// to the observed centroid — with leak = rate/4 that's 0.8, so a
+// strongly-supported asymmetry (the #402 +3 rail at ~1.6× nominal) still
+// tracks most of the way, while an ambiguous or partly-closed eye — where
+// decision-directed tracking would otherwise run away and do *worse* than
+// fixed — is held near nominal. Both the data pull and this leak are scaled
+// by the per-symbol responsibility in update(), so each rail is regularized
+// in proportion to the evidence it receives and the 0.8 mix is independent
+// of the symbol prior.
 const adaptiveSlicerLeak = adaptiveSlicerRate / 4
 
 // adaptiveSlicerSigmaFrac sets the Gaussian-responsibility width used by the
@@ -102,6 +121,23 @@ const adaptiveSlicerLeak = adaptiveSlicerRate / 4
 // the lower tail that a hard decided-rail EMA never sees — still registers on
 // the outer level. That is what removes the one-sided truncation bias (#402).
 const adaptiveSlicerSigmaFrac = 1.0 / 4.0
+
+// adaptiveSlicerSigmaMinFrac / adaptiveSlicerSigmaMax{Inner,Outer}Frac clamp
+// the tracked per-rail σ (sqrt of varia[i]) used by the variance-aware
+// boundary, as fractions of slicerScale. The floor keeps a near-zero-variance
+// rail from making the equal-σ-distance weighting degenerate. The ceilings
+// are per-rail-type: an OUTER rail may be genuinely spread (the #402 +3
+// population is spread low), so it gets a generous ceiling; an INNER rail is
+// held tight, because on an overlapping eye a spread outer rail's tail leaks
+// partial responsibility onto the adjacent inner rail and would otherwise
+// inflate the inner σ to match — cancelling the very boundary shift we want.
+// Keeping the inner σ tight lets a spread outer rail actually pull the
+// boundary toward the (tight) inner rail.
+const (
+	adaptiveSlicerSigmaMinFrac      = 0.05
+	adaptiveSlicerSigmaMaxOuterFrac = 0.75
+	adaptiveSlicerSigmaMaxInnerFrac = 0.15
+)
 
 // adaptiveSlicerWarmup is the number of symbols the slicer decides at its
 // nominal (fixed-threshold) eye before it starts adapting. Upstream of the
@@ -127,8 +163,20 @@ func NewAdaptiveC4FMSlicer(slicerScale float64) *AdaptiveC4FMSlicer {
 		nominal: nominal,
 		rate:    adaptiveSlicerRate,
 		sigma:   s * adaptiveSlicerSigmaFrac,
-		warmup:  adaptiveSlicerWarmup,
+		sigMin:  s * adaptiveSlicerSigmaMinFrac,
+		sigMax: [4]float32{
+			s * adaptiveSlicerSigmaMaxOuterFrac, // -3 outer
+			s * adaptiveSlicerSigmaMaxInnerFrac, // -1 inner
+			s * adaptiveSlicerSigmaMaxInnerFrac, // +1 inner
+			s * adaptiveSlicerSigmaMaxOuterFrac, // +3 outer
+		},
+		warmup: adaptiveSlicerWarmup,
 	}
+	// Seed every rail's tracked spread equal, so before any data the
+	// equal-σ-distance boundaries reduce to the plain midpoints (== the fixed
+	// nominal thresholds under the inward cap).
+	seedVar := a.sigma * a.sigma
+	a.varia = [4]float32{seedVar, seedVar, seedVar, seedVar}
 	// Per-rail clamp bands. Outer rails may stretch generously (the #402
 	// site ran +3 at ~1.6× nominal); inner rails are held tighter since a
 	// collapsed inner level is the dangerous case (it would pull the zero
@@ -155,44 +203,76 @@ func NewAdaptiveC4FMSlicer(slicerScale float64) *AdaptiveC4FMSlicer {
 	return a
 }
 
-// thresholds returns the three live decision boundaries derived from the
-// tracked levels: the zero (−1/+1) crossing, and the two outer (−3/−1 and
-// +1/+3) boundaries.
-//
-// The zero crossing is the plain inner-rail midpoint, so it follows a
-// DC-shifted eye. The outer boundaries are *anchored*: each is the midpoint
-// between its inner and outer level, but capped so it can never sit farther
-// from zero than a full nominal inner→outer spacing (2·s/3) beyond the
-// tracked inner rail. This lets an outer boundary move inward to follow a
-// compressed eye (where the midpoint is below the cap, so the cap is
-// inactive and the boundary tracks fully) and outward to follow a genuinely
-// stretched eye (the #402 +3 rail at ~1.6× nominal, whose true midpoint is
-// ~0.22 — within the cap), while bounding the outward travel so a
-// truncation-biased outer level can't drag it past the true midpoint and
-// suppress outer symbols (the #402 runaway, which reached ~0.265). The cap
-// is referenced to the *tracked* inner level (not the nominal), so it
-// follows a shifted/scaled eye: it bounds the inner→outer *spacing*, not an
-// absolute threshold. The soft-responsibility update (Mechanism B) keeps the
-// outer level near its true centroid, so on a decodable eye the midpoint —
-// not the cap — sets the boundary; the cap is the safety net for the
-// closed/biased eye where decision-directed tracking would otherwise run.
-func (a *AdaptiveC4FMSlicer) thresholds() (tNegOuter, tZero, tPosOuter float32) {
-	gap := a.nominal[3] - a.nominal[2] // full nominal inner→outer spacing = 2·s/3
+// boundary returns the decision threshold between two adjacent rails (lo
+// below hi) at the equal-σ-distance point: the value x where
+// (x−μlo)/σlo = (μhi−x)/σhi, i.e. x = (μlo·σhi + μhi·σlo)/(σlo+σhi). This is
+// the plain midpoint when the two spreads are equal, but biases toward the
+// *tighter* rail when one is more spread — so a rail whose population is
+// spread (the #402 +3 outer rail) yields a boundary pulled toward the tight
+// inner rail, recovering more of the spread rail's symbols than a midpoint.
+func (a *AdaptiveC4FMSlicer) boundary(lo, hi int) float32 {
+	slo := a.clampSigma(lo)
+	shi := a.clampSigma(hi)
+	return (a.level[lo]*shi + a.level[hi]*slo) / (slo + shi)
+}
 
-	tPosOuter = (a.level[2] + a.level[3]) / 2
-	if capPos := a.level[2] + gap; tPosOuter > capPos {
+// clampSigma returns rail i's tracked σ (sqrt of varia[i]) clamped to
+// [sigMin, sigMax[i]] (the per-rail-type ceiling).
+func (a *AdaptiveC4FMSlicer) clampSigma(i int) float32 {
+	s := float32(math.Sqrt(float64(a.varia[i])))
+	if s < a.sigMin {
+		return a.sigMin
+	}
+	if s > a.sigMax[i] {
+		return a.sigMax[i]
+	}
+	return s
+}
+
+// thresholds returns the three live decision boundaries: the zero (−1/+1)
+// crossing and the two outer (−3/−1 and +1/+3) boundaries.
+//
+// Each is the variance-aware equal-σ-distance point (see boundary), so a
+// spread rail pulls its boundary toward the tighter neighbour. The two outer
+// boundaries are additionally capped *inward-only*: each may move toward zero
+// freely (to follow a compressed / DC-shifted eye, which the fixed slicer
+// can't) but its outward travel is capped at one nominal inner→outer spacing
+// (s/3) beyond the tracked inner rail — i.e. it can never sit farther out
+// than the fixed nominal threshold. On the #402 stretched/closed eye every
+// adaptive threshold that rose above the fixed nominal decoded worse, so the
+// cap keeps the slicer no worse than fixed there while the variance-aware
+// term lets it do *better* on a genuinely spread eye by moving the boundary
+// inward. The cap references the *tracked* inner level, so it bounds the
+// inner→outer spacing, not an absolute threshold (it follows a shifted eye).
+func (a *AdaptiveC4FMSlicer) thresholds() (tNegOuter, tZero, tPosOuter float32) {
+	// half the nominal inner→outer spacing = (s − s/3)/2 = s/3. The fixed
+	// +1/+3 threshold is nominal_inner + s/3 (= 2s/3), so capping the outer
+	// boundary at tracked_inner + s/3 pins it at the fixed nominal on a
+	// nominal-inner eye and never lets it travel farther outward.
+	half := (a.nominal[3] - a.nominal[2]) / 2
+
+	tPosOuter = a.boundary(2, 3)
+	if capPos := a.level[2] + half; tPosOuter > capPos {
 		tPosOuter = capPos
 	}
-	tNegOuter = (a.level[0] + a.level[1]) / 2
-	if capNeg := a.level[1] - gap; tNegOuter < capNeg {
+	tNegOuter = a.boundary(0, 1)
+	if capNeg := a.level[1] - half; tNegOuter < capNeg {
 		tNegOuter = capNeg
 	}
-	tZero = (a.level[1] + a.level[2]) / 2
+	tZero = a.boundary(1, 2)
 	return tNegOuter, tZero, tPosOuter
 }
 
+// Thresholds returns the three live decision boundaries (negative-outer,
+// zero, positive-outer). Diagnostic: lets replay print the actual thresholds
+// the slicer is deciding on, not just the tracked levels (issue #402).
+func (a *AdaptiveC4FMSlicer) Thresholds() [3]float32 {
+	tNeg, tZero, tPos := a.thresholds()
+	return [3]float32{tNeg, tZero, tPos}
+}
+
 // slice maps one soft sample to a symbol in {-3,-1,+1,+3} using the live
-// midpoint thresholds.
+// thresholds.
 func (a *AdaptiveC4FMSlicer) slice(soft float32) int8 {
 	tNegOuter, tZero, tPosOuter := a.thresholds()
 	switch {
@@ -226,11 +306,11 @@ func (a *AdaptiveC4FMSlicer) update(soft float32, sliced int8) {
 	_ = sliced // the soft responsibilities, not the hard decision, drive the update
 
 	inv2s2 := 1.0 / (2 * a.sigma * a.sigma)
-	var w [4]float32
+	var w, d [4]float32
 	var sum float32
 	for k := 0; k < 4; k++ {
-		d := soft - a.level[k]
-		e := float32(math.Exp(float64(-d * d * inv2s2)))
+		d[k] = soft - a.level[k]
+		e := float32(math.Exp(float64(-d[k] * d[k] * inv2s2)))
 		w[k] = e
 		sum += e
 	}
@@ -239,9 +319,20 @@ func (a *AdaptiveC4FMSlicer) update(soft float32, sliced int8) {
 	}
 	for k := int8(0); k < 4; k++ {
 		rk := w[k] / sum
-		// Responsibility-weighted pull toward the sample, plus the same leak
-		// back toward nominal that regularizes the estimate (adaptiveSlicerLeak).
-		a.level[k] += a.rate*rk*(soft-a.level[k]) + adaptiveSlicerLeak*(a.nominal[k]-a.level[k])
+		// Responsibility-weighted pull toward the sample AND a
+		// responsibility-weighted leak back toward nominal. Both terms scale
+		// by rk so each rail is updated at the same cadence the hard
+		// decided-rail EMA used (its symbol prior), preserving the intended
+		// equilibrium mix level = rate/(rate+leak) ≈ 0.8 of the way from
+		// nominal to the observed centroid. (Leaking on every sample while
+		// pulling only by rk halved that mix and made the outer rail
+		// under-track — issue #402 follow-up to #439.)
+		a.level[k] += rk * (a.rate*(soft-a.level[k]) + adaptiveSlicerLeak*(a.nominal[k]-a.level[k]))
+		// Track the rail's spread the same way (responsibility-weighted EMA of
+		// the squared residual against the current level), so thresholds() can
+		// place each boundary at the equal-σ-distance point.
+		dk := d[k]
+		a.varia[k] += rk * a.rate * (dk*dk - a.varia[k])
 		a.clampLevel(k)
 	}
 	a.enforceOrder()
@@ -311,5 +402,7 @@ func (a *AdaptiveC4FMSlicer) Levels() [4]float32 { return a.level }
 // discontinuity.
 func (a *AdaptiveC4FMSlicer) Reset() {
 	a.level = a.nominal
+	seedVar := a.sigma * a.sigma
+	a.varia = [4]float32{seedVar, seedVar, seedVar, seedVar}
 	a.warmup = adaptiveSlicerWarmup
 }

@@ -114,8 +114,11 @@ Silicon and Intel. Full per-OS recipes at
   `events.KindDSCMessage` bus event, SQLite `dsc_log`,
   `GET /api/v1/dsc/messages`, and `/dsc` web panel (rows tint
   by category — distress=red, urgency=orange, safety=blue).
-  DSP frontend (1200 Bd FSK at 1300/2100 Hz tones) follows.
-  See [docs/dsc.md](docs/dsc.md).
+  **DSP frontend** decodes straight off the air: FM demod →
+  FFSK discriminator (1200 Bd, 1300/2100 Hz tones) →
+  symbol-timing recovery → direct-FSK slicer → BCH(10,7)
+  character sync → ITU-R M.493 parser. Pin an SDR via
+  `dsc.channels`. See [docs/dsc.md](docs/dsc.md).
 - **ADS-B aviation** — end-to-end pipeline for the 1090 MHz
   Mode-S transponder broadcasts every commercial flight emits.
   ICAO Annex 10 Vol IV / DO-260B parser (CRC-24 + DF dispatch +
@@ -125,10 +128,14 @@ Silicon and Intel. Full per-OS recipes at
   even+odd pair tracker. **BEAST upstream** consumes Mode-S
   frames from any dump1090 / readsb / BeastSplitter via TCP —
   most 1090 MHz receive chains already run one, GopherTrunk
-  decodes its output. Plus `events.KindAircraftReport` bus
+  decodes its output. **Native PPM DSP frontend** is the
+  alternative: pin an SDR (>= 2 Msps) to 1090 MHz via
+  `adsb.channels` and GopherTrunk demodulates Mode-S itself —
+  magnitude envelope → 8 µs preamble correlation → PPM bit
+  slice → CRC/DF dispatch — feeding the same decode/track path
+  the BEAST upstream uses. Plus `events.KindAircraftReport` bus
   event, SQLite `aircraft_log`, `GET /api/v1/adsb/aircraft`,
-  and `/adsb` web panel. Native 1 Msps PPM DSP frontend
-  follows. See [docs/adsb.md](docs/adsb.md).
+  and `/adsb` web panel. See [docs/adsb.md](docs/adsb.md).
 - **Live map** — Shared Leaflet map at the top of each
   position-bearing panel (APRS / AIS / DSC / ADS-B) renders
   decoded positions over OpenStreetMap tiles, colour-coded per

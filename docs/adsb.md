@@ -19,11 +19,11 @@ flight-tracking service (FlightRadar24, FlightAware, adsb.lol,
 OpenSky); GopherTrunk now has the protocol layer to decode it
 end-to-end on the operator's own SDR.
 
-This page documents the **pipeline scaffolding**: what's wired,
-what's persisted, what's queryable, and what the web panel
-renders. The DSP layer (1 Msps PPM demodulation, Mode-S preamble
-detection, 56 / 112-bit frame extraction) is tracked separately
-under "What's pending" below.
+This page documents the **end-to-end pipeline**: two ways frames
+reach the bus — a native PPM DSP frontend on the operator's own
+1090 MHz SDR, and a BEAST upstream that consumes a separately-
+running dump1090 / readsb — plus what's persisted, queryable, and
+rendered on the web panel.
 
 ## What's wired
 
@@ -66,11 +66,13 @@ under "What's pending" below.
 
 ## Protocol layer (`internal/radio/adsb`)
 
-Pure-Go Mode-S parser. The bit-stream layer above (separate PR)
-handles 1090 MHz PPM demodulation, preamble correlation, and
-56 / 112-bit frame extraction. By the time bytes reach
-`adsb.Decode` they're complete Mode-S frames with the trailing
-24-bit CRC included.
+Pure-Go Mode-S parser. The bit-stream layer above (the native
+PPM receiver or a BEAST upstream) hands it complete Mode-S
+frames with the trailing 24-bit CRC included. Both sources go
+through one shared path — `adsb.ProcessFrame(frame, tracker,
+now)` decodes, gates on CRC, runs the CPR tracker, and returns
+the `storage.AircraftReport` — so a frame off the air and the
+same frame from dump1090 produce identical rows.
 
 - **CRC-24 codec** (`parse.go`) — Mode-S CRC with polynomial
   0xFFF409. Verifies DF 11 / 17 / 18 frames directly (zero
@@ -149,6 +151,41 @@ with backoff on TCP drops (default 2 s); each disconnect
 resets the embedded CPR tracker so stale even/odd halves
 don't pair across a gap.
 
+## Native PPM receiver (`internal/radio/adsb/ppm`)
+
+The alternative to a BEAST upstream: pin one of GopherTrunk's own
+SDRs to 1090 MHz and demodulate Mode-S straight off the air, no
+external decoder. A 1090 MHz SAW filter + LNA ahead of the SDR is
+strongly recommended — Mode-S is a weak, bursty signal.
+
+```yaml
+adsb:
+  channels:
+    - serial: "1090-antenna"      # SDR sampling >= 2 Msps
+      frequency_hz: 1_090_000_000 # 1090 MHz (default when omitted)
+```
+
+Pipeline (one goroutine per channel, subscribing to that SDR's
+iqtap broker):
+
+```
+IQ → resample to 2 Msps → magnitude² envelope → 8 µs preamble
+   correlation (pulses at 0, 1, 3.5, 4.5 µs) → PPM bit slice
+   (1 µs/bit: "1" = high-then-low, "0" = low-then-high) → DF
+   frame-length (56 / 112 bit) → adsb.ProcessFrame
+```
+
+The detector and slicer follow the dump1090 magnitude-domain
+baseline at a fixed 2 Msps; the receiver resamples to that rate
+internally if the SDR runs faster. A magnitude carry buffer
+spans chunk boundaries so a preamble split across two IQ chunks
+still decodes. Phase-corrected re-detection and 2.4 Msps
+operation are refinements left for later — the baseline locks
+cleanly on the strong signals a filtered + amplified chain
+delivers. Frames feed the same `adsb.ProcessFrame` path the
+BEAST client uses, so storage, tracker, panel, and map are
+shared.
+
 ## CPR pair tracker (`internal/radio/adsb.Tracker`)
 
 ADS-B aircraft alternate between even-encoded (`CPRFormat=0`)
@@ -164,15 +201,6 @@ aircraft ever seen.
 
 ## What's pending
 
-- **Native DSP receiver.** 1 Msps PPM demodulation at 1090 MHz
-  with Mode-S preamble correlation and 56 / 112-bit frame
-  extraction. The plan calls for extending
-  `internal/dsp/tuner/channelizerbank.go` to support
-  higher-rate taps, then a Mode-S demod that walks the IQ
-  stream, correlates against the 8 µs preamble pattern, and
-  hands extracted frames into `adsb.Decode`. Once shipped the
-  same panel + storage + tracker chain consumes its output
-  alongside BEAST upstreams.
 - **Aircraft tracker.** An `aircraft_current` SQL view (or a
   separate live-state table indexed by ICAO) showing the
   latest known position / altitude / callsign per aircraft,

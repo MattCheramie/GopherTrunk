@@ -61,7 +61,7 @@ sdr:
     - serial: "00000001"      # whatever `gophertrunk sdr list` shows
       role: control            # or voice / auto
       ppm: 0                   # 0 is fine for TCXO-equipped units
-      gain: "auto"             # or a numeric tenths-of-dB string like "496"
+      gain: "auto"             # TENTHS of a dB, not dB — "496" = 49.6 dB
       bias_tee: true           # 5V on the SMA — only enable if you want it
 ```
 
@@ -74,6 +74,18 @@ sdr:
 > daemon now surfaces this at startup with `sdr: no gain configured
 > for device ...`; if you see that line, set `gain: "auto"` for AGC
 > or pick a tenth-dB value that matches your front-end.
+
+> **`gain:` is in TENTHS of a dB, not whole dB.** This is the most
+> common first-run footgun for operators coming from SDRTrunk / OP25 /
+> gqrx, which all take whole dB. In GopherTrunk `"320"` = 32 dB and
+> `"496"` = 49.6 dB; a bare `"32"` is parsed as **3.2 dB**, which the
+> driver then snaps to the bottom of the tuner's gain ladder, leaving
+> the radio effectively deaf (no control-channel lock, no decodes).
+> Multiply your usual dB figure by 10, or use `"auto"`. The daemon now
+> warns at startup (`gain looks like dB, not tenths-of-dB ...`) when a
+> bare integer gain parses to ≤ 5.0 dB, and logs the applied gain in dB
+> on every device (`sdr: gain set ... gain_db=...`). A decimal form like
+> `"32.0"` is taken as whole dB, so that works too.
 
 ### HackRF tested combinations
 

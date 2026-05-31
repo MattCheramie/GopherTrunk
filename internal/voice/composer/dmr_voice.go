@@ -64,6 +64,14 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	// previous tick. Without this gate a stalled decoder still kept the
 	// call alive forever via an unconditional 1 s heartbeat (issue #356).
 	var superframes atomic.Uint64
+	// Decode-quality telemetry — see runP25Phase1VoiceChain for the
+	// rationale. A high uncorrectable AMBE-frame rate is the measurable
+	// signature of weak signal / wrong gain behind garbled audio (issue
+	// #356 follow-up).
+	var (
+		uncorrectableFrames atomic.Uint64
+		corrErrBits         atomic.Uint64
+	)
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: symbolHz,
 		// DMR spec peak deviation per ETSI TS 102 361-1 §6.3 — matches
@@ -77,9 +85,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 					continue
 				}
 				for i := range sf.Frames {
-					info, _, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
+					info, errBits, err := dmrvoice.DecodeAMBEFrame(sf.Frames[i])
+					if errBits > 0 {
+						corrErrBits.Add(uint64(errBits))
+					}
 					if err != nil {
-						c.log.Warn("composer: DMR AMBE FEC decode failed",
+						uncorrectableFrames.Add(1)
+						c.log.Debug("composer: DMR AMBE FEC decode failed",
 							"serial", serial, "err", err)
 						continue
 					}
@@ -95,10 +107,27 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 	var lastSuperframes uint64
+	// logDecodeQuality emits a rolling decode-quality summary, gated to a
+	// burst of superframes so it does not spam the log every touch tick
+	// (issue #356 follow-up). See runP25Phase1VoiceChain.
+	var lastQualityLogSuperframes uint64
+	const qualityLogEverySuperframes = 25
+	logDecodeQuality := func(final bool) {
+		n := superframes.Load()
+		if n == 0 || (!final && n-lastQualityLogSuperframes < qualityLogEverySuperframes) {
+			return
+		}
+		lastQualityLogSuperframes = n
+		c.log.Info("composer: dmr decode quality",
+			"serial", serial,
+			"superframes", n, "uncorrectable_frames", uncorrectableFrames.Load(),
+			"corrected_bit_errs", corrErrBits.Load())
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
+			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
 			n := superframes.Load()
@@ -106,8 +135,10 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 				c.engine.Touch(serial)
 				lastSuperframes = n
 			}
+			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {
+				logDecodeQuality(true)
 				return
 			}
 			samples := iq

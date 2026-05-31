@@ -13,7 +13,7 @@
 # `gophertrunk -config config.example.yaml` from the repo root.
 .gophertrunk.lock
 *.cfile
-!testdata/**/*.cfile
+!**/testdata/**/*.cfile
 .idea/
 .vscode/
 *.swp

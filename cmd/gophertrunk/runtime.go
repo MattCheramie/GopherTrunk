@@ -80,6 +80,7 @@ func (r *runtimeSnapshot) Runtime() api.RuntimeDTO {
 
 		MetricsEnabled: r.metrics,
 		VocoderMap:     vocoderProtocolMap,
+		HiddenTabs:     cfg.Web.HiddenTabs(),
 	}
 	if cfg.Recordings.Equalizer.StepSize != 0 {
 		dto.RecordingEQStepSize = formatFloat(float64(cfg.Recordings.Equalizer.StepSize))

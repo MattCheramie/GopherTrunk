@@ -94,6 +94,13 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// decoder still kept the call alive forever via an unconditional
 	// 1 s heartbeat (issue #356).
 	var voiceSubframes atomic.Uint64
+	// Decode-quality telemetry — see runP25Phase1VoiceChain for the
+	// rationale. A high uncorrectable rate is the measurable signature of
+	// weak signal / wrong gain behind garbled audio (issue #356 follow-up).
+	var (
+		uncorrectableSubframes atomic.Uint64
+		corrErrBits            atomic.Uint64
+	)
 	rx := p25p2rx.New(p25p2rx.Options{
 		SampleRateHz: symbolHz,
 		ClockMode:    p25p2rx.ClockGardner,
@@ -108,9 +115,13 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 					if rs == nil {
 						continue
 					}
-					frames, _, err := p25p2.ExtractVoiceFrames(sub)
+					frames, errBits, err := p25p2.ExtractVoiceFrames(sub)
+					if errBits > 0 {
+						corrErrBits.Add(uint64(errBits))
+					}
 					if err != nil {
-						c.log.Warn("composer: p25p2 voice extract failed",
+						uncorrectableSubframes.Add(1)
+						c.log.Debug("composer: p25p2 voice extract uncorrectable subframe",
 							"serial", serial, "err", err)
 					}
 					for _, f := range frames {
@@ -161,10 +172,27 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 	var lastSubframes uint64
+	// logDecodeQuality emits a rolling decode-quality summary, gated to a
+	// burst of voice subframes so it does not spam the log every touch
+	// tick (issue #356 follow-up). See runP25Phase1VoiceChain.
+	var lastQualityLogSubframes uint64
+	const qualityLogEverySubframes = 50
+	logDecodeQuality := func(final bool) {
+		n := voiceSubframes.Load()
+		if n == 0 || (!final && n-lastQualityLogSubframes < qualityLogEverySubframes) {
+			return
+		}
+		lastQualityLogSubframes = n
+		c.log.Info("composer: p25p2 decode quality",
+			"serial", serial, "system", system,
+			"voice_subframes", n, "uncorrectable_subframes", uncorrectableSubframes.Load(),
+			"corrected_bit_errs", corrErrBits.Load())
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
+			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
 			n := voiceSubframes.Load()
@@ -172,8 +200,10 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				c.engine.Touch(serial)
 				lastSubframes = n
 			}
+			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {
+				logDecodeQuality(true)
 				return
 			}
 			samples := iq

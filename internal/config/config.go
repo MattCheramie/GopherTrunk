@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,8 +30,68 @@ type Config struct {
 	Paging     PagingConfig     `yaml:"paging"`
 	APRS       APRSConfig       `yaml:"aprs"`
 	AIS        AISConfig        `yaml:"ais"`
+	DSC        DSCConfig        `yaml:"dsc"`
 	MDC1200    MDC1200Config    `yaml:"mdc1200"`
 	ADSB       ADSBConfig       `yaml:"adsb"`
+	Web        WebConfig        `yaml:"web"`
+}
+
+// WebConfig configures the bundled user interfaces (the embedded web SPA
+// and the terminal TUI). Tabs maps a tab key (e.g. "pagers", "metrics")
+// to whether it is shown in the navigation. Absent keys default to
+// visible, so an empty/omitted section shows everything. Set a key to
+// false to turn that tab off — operators running GopherTrunk for a single
+// task can declutter the UI to just the panels they care about. Hiding a
+// tab only removes it from the nav strip; the route/panel is still
+// reachable directly.
+type WebConfig struct {
+	Tabs map[string]bool `yaml:"tabs"`
+}
+
+// KnownUITabs is the canonical set of navigation tab keys both UIs
+// understand. The key is the web route path minus its leading slash; the
+// TUI maps the same keys onto its panels via state.PanelKind.Key(). The
+// web SPA owns the full set; the TUI owns only the core subset, so hiding
+// a web-only tab (pagers/aprs/…) is simply a no-op there. Keep this in
+// sync with web/src/App.tsx (TABS + EXTRA_TABS).
+var KnownUITabs = map[string]bool{
+	"dashboard":     true,
+	"active":        true,
+	"scanner":       true,
+	"settings":      true,
+	"systems":       true,
+	"talkgroups":    true,
+	"rids":          true,
+	"history":       true,
+	"events":        true,
+	"cc":            true,
+	"tones":         true,
+	"pagers":        true,
+	"aprs":          true,
+	"ais":           true,
+	"dsc":           true,
+	"adsb":          true,
+	"mdc1200":       true,
+	"spectrum":      true,
+	"constellation": true,
+	"bookmarks":     true,
+	"metrics":       true,
+	"devices":       true,
+	"import":        true,
+}
+
+// HiddenTabs returns the sorted list of tab keys explicitly switched off
+// (mapped to false). The result feeds /api/v1/runtime so both UIs can
+// filter their navigation from a single source of truth.
+func (w WebConfig) HiddenTabs() []string {
+	var hidden []string
+	for key, visible := range w.Tabs {
+		if !visible {
+			hidden = append(hidden, key)
+		}
+	}
+	sort.Strings(hidden)
+	return hidden
 }
 
 // ADSBConfig configures the ADS-B aircraft-tracking input. The
@@ -41,7 +102,24 @@ type Config struct {
 // RTL-SDR + 1090 MHz filter + LNA; pointing GopherTrunk at it
 // is a one-line config away.
 type ADSBConfig struct {
-	BeastUpstreams []ADSBBeastConfig `yaml:"beast_upstreams"`
+	BeastUpstreams []ADSBBeastConfig   `yaml:"beast_upstreams"`
+	Channels       []ADSBChannelConfig `yaml:"channels"`
+}
+
+// ADSBChannelConfig describes one SDR pinned to 1090 MHz for the
+// native PPM Mode-S receiver — the alternative to a BEAST upstream for
+// operators who want GopherTrunk to own the whole 1090 MHz chain
+// rather than running a separate dump1090 / readsb. Serial picks the
+// SDR; the daemon tunes it to FrequencyHz (default 1090 MHz) and runs
+// the PPM demodulator against its full IQ stream. A 1090 MHz SAW
+// filter + LNA ahead of the SDR is strongly recommended — Mode-S is a
+// weak, bursty signal. The SDR must sample at ≥ 2 Msps; the receiver
+// resamples to 2 Msps internally. Decoded frames merge into the same
+// events.KindAircraftReport stream the BEAST upstreams feed, so the
+// /aircraft panel and storage are shared.
+type ADSBChannelConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"` // defaults to 1090 MHz when zero
 }
 
 // ADSBBeastConfig describes one BEAST upstream to consume. Addr is
@@ -108,6 +186,33 @@ type AISChannelConfig struct {
 	FrequencyHz     uint32 `yaml:"frequency_hz"`
 	DropBadFCS      bool   `yaml:"drop_bad_fcs"`
 	DropNonPosition bool   `yaml:"drop_non_position"`
+}
+
+// DSCConfig configures the marine Digital Selective Calling receiver.
+// Each entry pins an SDR to a DSC channel — VHF channel 70 is
+// 156.525 MHz; HF DSC rides 2187.5 / 8414.5 / 12577 / 16804.5 kHz
+// among others — and runs the DSP frontend (FM demod → FFSK tone
+// discriminator at 1300/2100 Hz → symbol-timing recovery → direct-FSK
+// slicer → BCH(10,7) character sync → ITU-R M.493 sequence parser)
+// against its full IQ stream. Decoded sequences publish on
+// events.KindDSCMessage; storage.DSCLog persists them, the REST
+// endpoint at /api/v1/dsc/messages and the /dsc web panel render them.
+type DSCConfig struct {
+	Channels []DSCChannelConfig `yaml:"channels"`
+}
+
+// DSCChannelConfig describes one DSC channel to decode. Serial picks
+// the SDR; the daemon tunes it to FrequencyHz and runs the FFSK
+// receiver against its full IQ stream. The VHF calling channel 70
+// (156.525 MHz) is the most common target — it carries distress /
+// urgency / safety alerts and the routine call-ups that precede a
+// voice working-channel hand-off. DropBadFCS matches the receiver's
+// option: leave it false to see BCH-marginal sequences on the panel
+// (flagged), flip it on for noisy channels.
+type DSCChannelConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
+	DropBadFCS  bool   `yaml:"drop_bad_fcs"`
 }
 
 // MDC1200Config configures the Motorola MDC1200 FFSK signaling
@@ -484,6 +589,14 @@ type DeviceConfig struct {
 	// physical voice SDR when one is configured. Capped at 8 to
 	// keep CPU bounded.
 	VoiceTaps int `yaml:"voice_taps"`
+
+	// IQCorrect enables blind I/Q-imbalance correction on this device's
+	// raw IQ before decimation (issue #402). Off by default. An
+	// uncorrected RTL-SDR I/Q imbalance distorts the demodulated symbol
+	// eye (worst at the on-channel DC the control decoder's DDC sits on);
+	// validate the benefit with `gophertrunk replay -iq-correct -diag`
+	// on a capture from this device before enabling it here.
+	IQCorrect bool `yaml:"iq_correct"`
 }
 
 // DeviceChannelConfig is one repeater carrier carried by a
@@ -1097,6 +1210,16 @@ func (c Config) Validate() error {
 		case "", "control", "voice", "auto":
 		default:
 			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+		}
+	}
+	for key := range c.Web.Tabs {
+		if !KnownUITabs[key] {
+			valid := make([]string, 0, len(KnownUITabs))
+			for k := range KnownUITabs {
+				valid = append(valid, k)
+			}
+			sort.Strings(valid)
+			return fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))
 		}
 	}
 	return nil

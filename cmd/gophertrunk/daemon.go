@@ -24,8 +24,10 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 
 	adsbbeast "github.com/MattCheramie/GopherTrunk/internal/radio/adsb/beast"
+	adsbppm "github.com/MattCheramie/GopherTrunk/internal/radio/adsb/ppm"
 	aisgmsk "github.com/MattCheramie/GopherTrunk/internal/radio/ais/gmsk"
 	aprsafsk "github.com/MattCheramie/GopherTrunk/internal/radio/aprs/afsk"
+	dscffsk "github.com/MattCheramie/GopherTrunk/internal/radio/dsc/ffsk"
 	mdc1200afsk "github.com/MattCheramie/GopherTrunk/internal/radio/mdc1200/afsk"
 	pocsagrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -71,6 +73,41 @@ func parseGain(s string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// gainLooksLikeDBMistake reports whether a successfully-parsed gain value
+// is almost certainly a dB figure the operator forgot to express in
+// tenths-of-dB. GopherTrunk's gain: string is tenths (so "320" = 32 dB),
+// but SDRTrunk / OP25 / gqrx all take whole dB — a habit that lands "32"
+// (= 3.2 dB, which SetGain then snaps to the bottom of the ladder, leaving
+// the radio effectively deaf) in many first-run configs. A bare integer
+// (no decimal point) that parses to a positive value at or below 50 tenths
+// (5.0 dB) is the tell: real manual gains run ~100-496 tenths and the
+// shipped examples are all three digits, so this never fires on a correct
+// config. Decimal forms like "32.0" are already interpreted as whole dB by
+// parseGain, so they're taken at face value and skipped.
+func gainLooksLikeDBMistake(raw string, tenthDB int) bool {
+	raw = strings.TrimSpace(raw)
+	if strings.ContainsAny(raw, ".,") {
+		return false
+	}
+	return tenthDB > 0 && tenthDB <= 50
+}
+
+// warnGainUnits emits a one-line, actionable WARN when a parsed gain looks
+// like a dB figure that should have been tenths-of-dB (see
+// gainLooksLikeDBMistake). No-op for plausible gains, so it's safe to call
+// unconditionally after every successful parseGain.
+func warnGainUnits(log *slog.Logger, serial, raw string, tenthDB int) {
+	if !gainLooksLikeDBMistake(raw, tenthDB) {
+		return
+	}
+	log.Warn("daemon: gain looks like dB, not tenths-of-dB — radio may be effectively deaf",
+		"serial", serial,
+		"configured", raw,
+		"parsed_db", float64(tenthDB)/10.0,
+		"did_you_mean", strconv.Itoa(tenthDB*10),
+		"hint", "gain: is in TENTHS of a dB (\"320\" = 32 dB). SDRTrunk/OP25/gqrx users multiply dB by 10. Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder.")
 }
 
 // Daemon owns the lifecycle of every long-lived component the
@@ -166,6 +203,12 @@ type Daemon struct {
 	// publishes decoded vessel messages on KindAISMessage.
 	aisReceivers []*aisgmsk.Receiver
 	aisSpecs     []aisSpec // index-aligned with aisReceivers
+	// dscReceivers holds one DSC FFSK receiver per configured
+	// dsc.channels entry. Same shape as the AIS receivers above: each
+	// subscribes to its assigned SDR's iqtap broker and publishes
+	// decoded DSC sequences on KindDSCMessage.
+	dscReceivers []*dscffsk.Receiver
+	dscSpecs     []dscSpec // index-aligned with dscReceivers
 	// mdc1200Receivers holds one MDC1200 FFSK receiver per configured
 	// mdc1200.channels entry. Same shape as the APRS receivers above:
 	// each subscribes to its assigned SDR's iqtap broker and publishes
@@ -175,10 +218,15 @@ type Daemon struct {
 	// adsbBeastClients consume ADS-B Mode-S frames from external
 	// dump1090 / readsb upstreams (BEAST binary protocol). Each
 	// client decodes frames, pairs CPR halves via an embedded
-	// per-ICAO tracker, and publishes KindAircraftReport. Native
-	// 1 Msps PPM DSP frontend is a planned follow-up.
+	// per-ICAO tracker, and publishes KindAircraftReport.
 	adsbBeastClients []*adsbbeast.Client
 	adsbBeastNames   []string // index-aligned with adsbBeastClients
+	// adsbPPMReceivers hold one native 1090 MHz Mode-S PPM receiver per
+	// configured adsb.channels entry. Each subscribes to its assigned
+	// SDR's iqtap broker and publishes the same KindAircraftReport the
+	// BEAST clients do.
+	adsbPPMReceivers []*adsbppm.Receiver
+	adsbPPMSpecs     []adsbPPMSpec // index-aligned with adsbPPMReceivers
 	// iqBrokers holds an iqtap.Broker per pool entry, keyed by serial.
 	// Primary consumers (CC decoder, conventional scanner) stream IQ
 	// through the broker so secondary observers (live spectrum,
@@ -400,6 +448,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					log.Warn("daemon: ignoring unparseable gain",
 						"serial", dev.Serial, "gain", dev.Gain)
 				} else {
+					warnGainUnits(log, dev.Serial, dev.Gain, gain)
 					h = h.WithGain(gain)
 				}
 			}
@@ -456,6 +505,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 							log.Warn("daemon: ignoring unparseable rtl_tcp gain",
 								"serial", r.Serial, "gain", r.Gain)
 						} else {
+							warnGainUnits(log, r.Serial, r.Gain, gain)
 							h = h.WithGain(gain)
 						}
 					}
@@ -790,6 +840,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					iqSrc = br
 					tuner = br
 				}
+				iqCorrect := false
+				for _, dev := range cfg.SDR.Devices {
+					if dev.Serial == controlEntry.Info.Serial {
+						iqCorrect = dev.IQCorrect
+						break
+					}
+				}
 				d.ccDecoderOpts = ccdecoder.Options{
 					Bus:          d.bus,
 					Log:          log,
@@ -798,6 +855,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Systems:      d.systems,
 					SampleRateHz: float64(cfg.SDR.SampleRate),
 					Metrics:      iqObs,
+					IQCorrect:    iqCorrect,
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				d.controlSampleRate = cfg.SDR.SampleRate
@@ -1034,6 +1092,38 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.aisSpecs = append(d.aisSpecs, spec)
 	}
 
+	// DSC FFSK receivers — one per configured dsc.channels entry.
+	// Same construction shape as AIS / MDC1200 above: per-entry
+	// validation in the receiver, failures surface as a startup
+	// warning and skip the entry (nil slot preserved for stable
+	// indexing).
+	for _, dc := range cfg.DSC.Channels {
+		spec := dscSpec{serial: dc.Serial, freq: dc.FrequencyHz}
+		if dc.Serial == "" || dc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"dsc.channels: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				dc.Serial, dc.FrequencyHz))
+			d.dscReceivers = append(d.dscReceivers, nil)
+			d.dscSpecs = append(d.dscSpecs, spec)
+			continue
+		}
+		rcv, err := dscffsk.New(dscffsk.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  dc.Serial,
+			Bus:         d.bus,
+			DropBadFCS:  dc.DropBadFCS,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("dsc.channels[%s]: %v — skipped", dc.Serial, err))
+			d.dscReceivers = append(d.dscReceivers, nil)
+			d.dscSpecs = append(d.dscSpecs, spec)
+			continue
+		}
+		d.dscReceivers = append(d.dscReceivers, rcv)
+		d.dscSpecs = append(d.dscSpecs, spec)
+	}
+
 	// MDC1200 FFSK receivers — one per configured mdc1200.channels
 	// entry. Same construction shape as APRS / AIS above: per-entry
 	// validation in the receiver, failures surface as a startup
@@ -1095,6 +1185,38 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.adsbBeastClients = append(d.adsbBeastClients, client)
 		d.adsbBeastNames = append(d.adsbBeastNames, name)
+	}
+
+	// ADS-B native PPM receivers — one per configured adsb.channels
+	// entry. Each pins an SDR to 1090 MHz and demodulates Mode-S
+	// straight off the air, publishing the same KindAircraftReport the
+	// BEAST clients do. Same construction shape as the AIS receivers.
+	for _, ac := range cfg.ADSB.Channels {
+		freq := ac.FrequencyHz
+		if freq == 0 {
+			freq = 1_090_000_000 // 1090 MHz default
+		}
+		spec := adsbPPMSpec{serial: ac.Serial, freq: freq}
+		if ac.Serial == "" {
+			d.addWarning("adsb.channels: entry missing serial — skipped")
+			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
+			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
+			continue
+		}
+		rcv, err := adsbppm.New(adsbppm.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  ac.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("adsb.channels[%s]: %v — skipped", ac.Serial, err))
+			d.adsbPPMReceivers = append(d.adsbPPMReceivers, nil)
+			d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
+			continue
+		}
+		d.adsbPPMReceivers = append(d.adsbPPMReceivers, rcv)
+		d.adsbPPMSpecs = append(d.adsbPPMSpecs, spec)
 	}
 
 	// Storage / call log / retention — optional.
@@ -1591,6 +1713,38 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return rcv.Process(ctx, sub.C)
 		})
 	}
+	// DSC receivers — same shape as AIS above. Each subscribes to its
+	// assigned SDR's iqtap broker and runs the FFSK pipeline (FM demod
+	// → FFSK discriminator at 1300/2100 Hz → symbol-timing recovery →
+	// direct-FSK slicer → BCH character sync → ITU-R M.493 parser),
+	// publishing sequences onto the events bus where the DSCLog
+	// subscriber persists them and the /dsc panel renders them.
+	// Non-essential: a missing SDR or misconfigured frequency is
+	// logged but doesn't bring down the trunking pipeline.
+	for i, rcv := range d.dscReceivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.dscSpecs[i]
+		name := fmt.Sprintf("dsc-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("dsc: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("dsc: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			sub := br.Subscribe()
+			defer sub.Close()
+			return rcv.Process(ctx, sub.C)
+		})
+	}
 	// MDC1200 receivers — same shape as APRS / AIS above. Each
 	// subscribes to its assigned SDR's iqtap broker and runs the FFSK
 	// pipeline (FM demod → FFSK discriminator → symbol-timing recovery
@@ -1634,6 +1788,35 @@ func (d *Daemon) Run(ctx context.Context) error {
 		name := fmt.Sprintf("adsb-beast-%s", d.adsbBeastNames[i])
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
 			return client.Run(ctx)
+		})
+	}
+	// ADS-B native PPM receivers — same shape as the AIS receivers.
+	// Each subscribes to its assigned SDR's iqtap broker (pinned to
+	// 1090 MHz) and demodulates Mode-S frames off the air, publishing
+	// KindAircraftReport. Non-essential: a missing SDR is logged but
+	// doesn't bring down the pipeline.
+	for i, rcv := range d.adsbPPMReceivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.adsbPPMSpecs[i]
+		name := fmt.Sprintf("adsb-ppm-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("adsb/ppm: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("adsb/ppm: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			sub := br.Subscribe()
+			defer sub.Close()
+			return rcv.Process(ctx, sub.C)
 		})
 	}
 	if d.pool != nil {
@@ -2587,6 +2770,23 @@ type aprsSpec struct {
 // loop can spawn each receiver without re-walking the YAML. Mirrors
 // aprsSpec / pocsagSpec.
 type aisSpec struct {
+	serial string
+	freq   uint32
+}
+
+// dscSpec captures the broker-side wiring info for one configured DSC
+// channel. Index-aligned with Daemon.dscReceivers so the Run loop can
+// spawn each receiver without re-walking the YAML. Mirrors aisSpec /
+// mdc1200Spec.
+type dscSpec struct {
+	serial string
+	freq   uint32
+}
+
+// adsbPPMSpec captures the broker-side wiring info for one configured
+// native ADS-B PPM channel. Index-aligned with Daemon.adsbPPMReceivers
+// so the Run loop can spawn each receiver without re-walking the YAML.
+type adsbPPMSpec struct {
 	serial string
 	freq   uint32
 }

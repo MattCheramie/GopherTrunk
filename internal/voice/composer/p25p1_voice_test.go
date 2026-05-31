@@ -411,6 +411,74 @@ func TestComposerP25Phase1VoiceChainLogsDemodMode(t *testing.T) {
 	}
 }
 
+// TestComposerP25Phase1VoiceChainLogsDecodeQuality drives enough live
+// LDUs through the chain to trip the rolling decode-quality summary and
+// asserts the line is emitted with the per-call counters. This is the
+// metric a field operator watches to tell whether raising the voice SDR
+// gain reduces uncorrectable subframes behind garbled audio — issue
+// #356 follow-up.
+func TestComposerP25Phase1VoiceChainLogsDecodeQuality(t *testing.T) {
+	const (
+		sampleRate = 48_000.0
+		deviation  = 1800.0
+		ldus       = 40 // well past the 25-LDU summary threshold
+	)
+	dibits, _ := buildP25P1VoiceStream(t, ldus)
+	iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
+
+	buf := &syncBuffer{}
+	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Log:           logger,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "P25P1Site", Protocol: "p25",
+				GroupID: 42, FrequencyHz: 851_000_000,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 6*time.Second, func() bool {
+		return strings.Contains(buf.String(), "composer: p25p1 decode quality")
+	})
+	out := buf.String()
+	if !strings.Contains(out, "composer: p25p1 decode quality") {
+		t.Fatalf("expected p25p1 decode quality log; got:\n%s", out)
+	}
+	if !strings.Contains(out, "ldus=") || !strings.Contains(out, "uncorrectable_ldus=") {
+		t.Errorf("expected ldus= and uncorrectable_ldus= fields in decode quality log; got:\n%s", out)
+	}
+}
+
 // syncBuffer is a bytes.Buffer guarded by a mutex so the test
 // goroutine can read the captured log output while the composer
 // chain goroutine concurrently writes to it via slog's handler.

@@ -123,7 +123,9 @@ sdr:
     - serial: "00000001"   # match `gophertrunk sdr list`; first-found wins when blank
       role: control        # control | voice | auto
       ppm: 0               # 0 is fine for TCXO-equipped units like the NESDR Smart v5
-      gain: "auto"         # "auto" or a tenths-of-dB string ("496" = 49.6 dB)
+      gain: "auto"         # TENTHS of a dB — NOT dB. "496" = 49.6 dB. SDRTrunk/
+                           # OP25/gqrx users: multiply your dB figure by 10
+                           # (32 dB → "320"). "auto" (AGC) is the safe default.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
     - serial: "00000002"
       role: voice
@@ -324,13 +326,15 @@ sdr:
 #                                     #  bursts instead of publishing them
 #                                     #  with crc_ok=false
 
-# DSC marine distress / safety / routine calls. The DSP frontend
-# (1200 Bd FSK on channel 70 = 156.525 MHz, mark 1300 Hz / space
-# 2100 Hz) ships in a follow-up PR; the protocol parser + bus +
-# storage + REST + panel scaffolding is live now. Operators
-# subscribing to the events.KindDSCMessage bus topic (e.g. a
-# custom CL replay tool) get decoded messages as soon as they
-# feed symbols into dsc.Decode.
+# DSC marine distress / safety / routine calls. Each entry pins one
+# SDR to a DSC channel and decodes the calls. Pipeline: FM demod →
+# FFSK discriminator (DSC tones, mark 1300 Hz / space 2100 Hz,
+# 1200 baud) → symbol-timing recovery → direct-FSK slicer →
+# BCH(10,7) character sync → ITU-R M.493 sequence parser. Decoded
+# sequences publish on events.KindDSCMessage; storage.DSCLog
+# persists them to the dsc_log SQLite table, the REST endpoint at
+# /api/v1/dsc/messages returns the most recent N, and the /dsc web
+# panel renders them live (distress alerts, MMSIs, positions).
 #
 # dsc:
 #   channels:
@@ -339,16 +343,22 @@ sdr:
 #       frequency_hz: 156_525_000     # marine VHF channel 70 (or one of
 #                                     #  the HF DSC channels: 2_187_500,
 #                                     #  8_414_500, 12_577_000, 16_804_500)
-#       drop_non_distress: false      # true to drop routine / safety
-#                                     #  chatter and keep only distress
-#                                     #  + urgency alerts
+#       drop_bad_fcs: false           # true to silently drop sequences
+#                                     #  with a BCH-failed character instead
+#                                     #  of publishing them flagged
 
-# ADS-B / aviation. Most 1090 MHz receive chains already run
-# dump1090 / readsb / BeastSplitter against a dedicated RTL-SDR
-# (with a 1090 MHz filter + LNA); GopherTrunk consumes its BEAST
-# output over TCP. The native 1 Msps PPM DSP frontend is a
-# planned follow-up — once it ships, this same panel + storage
-# table accepts frames from either source.
+# ADS-B / aviation. Two ways to feed the aircraft panel; mix freely,
+# their frames merge into one stream.
+#
+#  1. beast_upstreams — consume a separately-running dump1090 / readsb /
+#     BeastSplitter / commercial hub over the BEAST TCP protocol. Most
+#     existing 1090 MHz chains already run one against a dedicated
+#     RTL-SDR (with a 1090 MHz filter + LNA).
+#  2. channels — native PPM demod: pin one of GopherTrunk's own SDRs to
+#     1090 MHz and decode Mode-S straight off the air, no external
+#     decoder. A 1090 MHz SAW filter + LNA ahead of the SDR is strongly
+#     recommended, and the SDR must sample at >= 2 Msps (the receiver
+#     resamples to 2 Msps internally).
 #
 # adsb:
 #   beast_upstreams:
@@ -356,6 +366,10 @@ sdr:
 #       name: "local-dump1090"        # logged on every reconnect
 #     - addr: "antenna-pi.lan:30005"  # remote pi-at-the-antenna setup
 #       name: "rooftop"
+#   channels:
+#     - serial: "1090-antenna"        # SDR serial (must be in sdr.devices
+#                                     #  or sdr.rtl_tcp), sampling >= 2 Msps
+#       frequency_hz: 1_090_000_000   # 1090 MHz (the default when omitted)
 
 trunking:
   # call_timeout_ms: inactivity window after which the engine's
@@ -698,4 +712,24 @@ broadcast:
 #       serial: "replay-01"
 #       role: "control"
 #       loop: true
+
+# User-interface tabs. Every navigation tab shows by default in both the
+# web UI and the terminal TUI. If you run GopherTrunk for one main task
+# (just trunking, just pagers, …) you can declutter the nav by switching
+# the tabs you don't use off here. Setting a tab to false removes it from
+# the nav strip only — the panel is still reachable directly by URL. Omit
+# this section (or leave it empty) to show everything.
+#
+# Valid tab keys: dashboard, active, scanner, settings, systems,
+# talkgroups, rids, history, events, cc, tones, pagers, aprs, ais, dsc,
+# adsb, mdc1200, spectrum, constellation, bookmarks, metrics, devices,
+# import. (The feature tabs pagers/aprs/ais/dsc/adsb/mdc1200 are web-only,
+# so hiding them is a no-op in the TUI.)
+# web:
+#   tabs:
+#     aprs: false
+#     ais: false
+#     dsc: false
+#     adsb: false
+#     mdc1200: false
 

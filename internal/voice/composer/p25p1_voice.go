@@ -115,6 +115,17 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 	// tick. Without this gate, a stalled decoder still kept the call
 	// alive forever via an unconditional 1 s heartbeat (issue #356).
 	var frames atomic.Uint64
+	// Decode-quality telemetry. An LDU whose IMBE FEC could not fully
+	// correct a subframe still yields (degraded) audio, so a high
+	// uncorrectable rate is the measurable signature of weak signal /
+	// wrong gain — exactly the "multiple uncorrectable errors" an
+	// operator sees when audio is garbled. Surfacing a rolling summary
+	// lets them watch the rate fall as they raise gain (issue #356
+	// follow-up). corrErrBits sums the bit errors the FEC *did* correct.
+	var (
+		uncorrectableLDUs atomic.Uint64
+		corrErrBits       atomic.Uint64
+	)
 	rx := p25p1rx.New(p25p1rx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
@@ -126,9 +137,13 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 			if rs == nil {
 				return
 			}
-			fs, _, err := phase1.ExtractVoiceFrames(ldu)
+			fs, errBits, err := phase1.ExtractVoiceFrames(ldu)
+			if errBits > 0 {
+				corrErrBits.Add(uint64(errBits))
+			}
 			if err != nil {
-				c.log.Warn("composer: p25p1 voice extract failed",
+				uncorrectableLDUs.Add(1)
+				c.log.Debug("composer: p25p1 voice extract uncorrectable subframe",
 					"serial", serial, "err", err)
 			}
 			for _, f := range fs {
@@ -217,10 +232,27 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 	var lastFrames uint64
+	// logDecodeQuality emits a rolling decode-quality summary. Gated to
+	// fire only after a burst of LDUs (~4.5 s of voice at 9 frames /
+	// 180 ms per LDU) so it does not spam the log every touch tick.
+	var lastQualityLogLDUs uint64
+	const qualityLogEveryLDUs = 25
+	logDecodeQuality := func(final bool) {
+		n := frames.Load()
+		if n == 0 || (!final && n-lastQualityLogLDUs < qualityLogEveryLDUs) {
+			return
+		}
+		lastQualityLogLDUs = n
+		c.log.Info("composer: p25p1 decode quality",
+			"serial", serial, "demod_mode", mode,
+			"ldus", n, "uncorrectable_ldus", uncorrectableLDUs.Load(),
+			"corrected_bit_errs", corrErrBits.Load())
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
+			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
 			n := frames.Load()
@@ -228,8 +260,10 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 				c.engine.Touch(serial)
 				lastFrames = n
 			}
+			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {
+				logDecodeQuality(true)
 				return
 			}
 			samples := iq

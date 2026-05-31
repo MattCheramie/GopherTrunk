@@ -49,6 +49,48 @@ func TestDownconverterPassthrough(t *testing.T) {
 	}
 }
 
+// TestDownconverterTuningOffset: with a tuning offset and no decimation
+// (rate == target), a tone at +offsetHz is shifted to DC — it becomes a
+// constant phasor — and the caller's input slice is never mutated.
+func TestDownconverterTuningOffset(t *testing.T) {
+	const fs, offset = 48_000.0, 750.0
+	d := NewDownconverterWithOffset(fs, fs, offset)
+	if d.nco == nil {
+		t.Fatalf("expected an NCO for a non-zero offset")
+	}
+	in := complexTone(offset, fs, 4096, 0.8)
+	cpy := append([]complex64(nil), in...)
+	out := d.Process(nil, in)
+
+	// raw must be untouched.
+	for i := range in {
+		if in[i] != cpy[i] {
+			t.Fatalf("Process mutated raw at %d: %v != %v", i, in[i], cpy[i])
+		}
+	}
+	// The shifted tone is DC: imaginary energy collapses relative to a
+	// reference real axis. Measure residual frequency via mean phase step.
+	if len(out) != len(in) {
+		t.Fatalf("len(out) = %d, want %d", len(out), len(in))
+	}
+	var sumStep float64
+	for i := 1; i < len(out); i++ {
+		a := math.Atan2(float64(imag(out[i])), float64(real(out[i])))
+		b := math.Atan2(float64(imag(out[i-1])), float64(real(out[i-1])))
+		d := a - b
+		if d > math.Pi {
+			d -= 2 * math.Pi
+		} else if d < -math.Pi {
+			d += 2 * math.Pi
+		}
+		sumStep += d
+	}
+	meanStep := sumStep / float64(len(out)-1) // rad/sample residual
+	if math.Abs(meanStep) > 1e-3 {
+		t.Errorf("residual phase step %.2e rad/sample after tuning, want ~0", meanStep)
+	}
+}
+
 // TestDownconverterDecimationRate: a 2.048 MHz SDR rate must land
 // exactly on the 48 kHz target, and the output chunk length must
 // follow the L/M ratio.

@@ -5,7 +5,7 @@ package equalizer
 //
 //	y[n]   = sum_k w_k(n) * x[n-k]              // FIR output
 //	e[n]   = d[n] - y[n]                        // training error
-//	w[n+1] = w[n] + μ · x[n] · conj(e[n])       // weight update
+//	w[n+1] = w[n] + μ · e[n] · conj(x[n-k])     // weight update
 //
 // Notes:
 //
@@ -101,18 +101,29 @@ func (e *LMS) Process(x, desired complex64) (complex64, complex64) {
 	// Error e = d - y.
 	err := complex(real(desired)-yr, imag(desired)-yi)
 
-	// Weight update: w_k += μ * x[n-k] * conj(e).
+	// Weight update: w_k += μ · e · conj(x[n-k]).
+	//
+	// For the non-Hermitian filter y = Σ_k w_k·x_k, Wirtinger calculus
+	// gives ∂J/∂w_k* = −e·conj(x_k) with J = |d−y|², so steepest descent
+	// is w_k += μ·e·conj(x_k). The conjugate is on x, NOT on e: the two
+	// differ only in the sign of the imaginary cross-term, so a real-only
+	// channel can't tell them apart — but on a COMPLEX channel the wrong
+	// sign turns the update into ascent on the imaginary axis and the taps
+	// diverge. (The earlier code computed x·conj(e), which is that wrong
+	// sign; it survived only because the package tests used a real-valued
+	// channel coefficient. See TestLMSConvergesOnComplexChannel.)
 	mu := e.stepSize
-	er, ei := real(err), imag(err) // conj(err) = (er, -ei)
+	er, ei := real(err), imag(err)
 	idx = e.histPos - 1
 	if idx < 0 {
 		idx = len(e.hist) - 1
 	}
 	for i := 0; i < len(e.taps); i++ {
 		xr, xi := real(e.hist[idx]), imag(e.hist[idx])
-		// (xr + j*xi) * (er - j*ei) = (xr*er + xi*ei) + j*(xi*er - xr*ei)
-		ur := xr*er + xi*ei
-		ui := xi*er - xr*ei
+		// e · conj(x) = (er + j*ei)(xr - j*xi)
+		//             = (er*xr + ei*xi) + j*(ei*xr - er*xi)
+		ur := er*xr + ei*xi
+		ui := ei*xr - er*xi
 		tr, ti := real(e.taps[i]), imag(e.taps[i])
 		e.taps[i] = complex(tr+mu*ur, ti+mu*ui)
 		idx--

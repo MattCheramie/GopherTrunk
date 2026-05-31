@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -138,6 +139,11 @@ type Options struct {
 	// low-power debug log in place — operators without Prometheus
 	// still get a hint when the dongle goes silent.
 	Metrics IQPowerObserver
+	// IQCorrect enables blind I/Q-imbalance correction on the raw IQ
+	// before decimation (issue #402). Off by default; opt-in per device
+	// via config. Validate with `replay -iq-correct -diag` on a capture
+	// before enabling in production.
+	IQCorrect bool
 }
 
 // Decoder is the long-lived component that converts the control
@@ -190,6 +196,11 @@ type Decoder struct {
 	pwLowLogAt   time.Time
 	pwDCLogAt    time.Time // throttle for the "DC bin dominant" debug line (issue #402)
 	pwLastSystem string
+
+	// iqCorrector, when non-nil (Options.IQCorrect), blindly removes the
+	// front-end I/Q imbalance from the raw IQ in pump before decimation
+	// (issue #402). Owned by pump.
+	iqCorrector *rtlsdr.IQImbalanceCorrector
 }
 
 // New constructs a Decoder. Returns an error when required Options
@@ -216,6 +227,9 @@ func New(opts Options) (*Decoder, error) {
 		systems:      make(map[string]trunking.System, len(opts.Systems)),
 		sub:          opts.Bus.Subscribe(),
 		metrics:      opts.Metrics,
+	}
+	if opts.IQCorrect {
+		d.iqCorrector = rtlsdr.NewIQImbalanceCorrector()
 	}
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
@@ -390,7 +404,10 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 func (d *Decoder) pump(iq []complex64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.observeIQPowerLocked(iq)
+	d.observeIQPowerLocked(iq) // measures the raw IQ (before correction)
+	if d.iqCorrector != nil {
+		d.iqCorrector.Process(iq) // blind I/Q-imbalance correction, in place (issue #402)
+	}
 	if d.active == nil {
 		return
 	}

@@ -342,7 +342,7 @@ func TestC4FMSymbolAGCRescuesCollapsedSlicer(t *testing.T) {
 // no-regression guard for the issue #402 adaptive slicer. It captures the
 // receiver's post-AGC soft symbols from a clean, symmetric spec-P25 stream
 // (via SoftSink) and slices that identical stream both ways. The adaptive
-// slicer (default-on for the DeviationHz path) must decode at least as
+// slicer (opt-in via EnableAdaptiveC4FMSlicer) must decode at least as
 // faithfully as the fixed slicer it replaces — i.e. it adds no skew of its
 // own when there's no asymmetry to correct. Comparing the two slicers on
 // the same soft stream isolates the slicer from sps-dependent matched-
@@ -369,10 +369,11 @@ func TestAdaptiveSlicerNoRegressionOnCleanC4FMStream(t *testing.T) {
 
 	var soft []float32
 	r := New(Options{
-		SampleRateHz: sr,
-		DeviationHz:  dev,
-		SoftSink:     func(s []float32) { soft = append(soft, s...) },
-		DibitSink:    func([]uint8, int) {}, // required; the soft stream is what we score
+		SampleRateHz:             sr,
+		DeviationHz:              dev,
+		EnableAdaptiveC4FMSlicer: true, // this test is the adaptive-slicer guard
+		SoftSink:                 func(s []float32) { soft = append(soft, s...) },
+		DibitSink:                func([]uint8, int) {}, // required; the soft stream is what we score
 	})
 	r.Process(iq)
 	if len(soft) == 0 {

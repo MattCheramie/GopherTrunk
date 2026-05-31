@@ -200,6 +200,20 @@ type Options struct {
 	// cause is pinned and the handoff is gated on a real lock signal.
 	// Ignored when DemodMode == DemodCQPSK (no AFC stage). Issue #402.
 	EnableDecisionDirectedAFC bool
+	// EnableAdaptiveC4FMSlicer opts the C4FM path into the adaptive
+	// 4-level slicer (issue #402) that tracks the observed per-symbol
+	// eye instead of slicing at fixed nominal thresholds. Default false:
+	// the receiver uses the fixed-threshold slicer. The adaptive slicer
+	// is OFF by default because on the issue #402 capture (a closed,
+	// asymmetric +3 eye whose outer population is spread low) every
+	// adaptive threshold that rose above the fixed nominal decoded worse,
+	// and the fixed slicer was the best performer (the asymmetry is an
+	// RF-domain effect — see the I/Q-imbalance investigation — not
+	// something the slicer can fix). Kept available behind this flag for
+	// sites with a genuinely DC-shifted or compressed (not stretched) eye
+	// and for A/B experimentation. Ignored when DeviationHz <= 0 or when
+	// DemodMode == DemodCQPSK.
+	EnableAdaptiveC4FMSlicer bool
 	// SoftSink, when non-nil, receives the per-symbol soft samples
 	// produced by the matched filter + symbol-clock recovery, just
 	// before slicing. The C4FM path emits the FM-discriminator +
@@ -316,19 +330,17 @@ func New(opts Options) *Receiver {
 		// with an inverse-sinc, so the matched filter is the spec C4FM
 		// receive filter (a sinc), not an RRC — issue #275.
 		r.mf = demod.NewC4FMP25(opts.SampleRateHz, slicerScale)
-		// Adaptive 4-level slicer (issue #402). Default-on for the
-		// real, DeviationHz-calibrated path: it tracks the observed
-		// per-symbol levels and slices at their midpoints, so an
-		// asymmetric / off-nominal eye that the fixed C4FM.Slice
-		// mis-decides (the MMR Site 9 +3-rail skew) decodes correctly.
-		// Skipped on the legacy pre-scaled-fixture path (slicerScale==1,
-		// DeviationHz unset), which keeps the fixed slicer so existing
-		// fixtures are byte-for-byte unchanged. The slicer warms up at,
-		// and is bounded + leak-regularized toward, the fixed nominal
-		// thresholds (see AdaptiveC4FMSlicer), so on a decodable (open)
-		// eye it matches or beats the fixed slicer and on a clean
-		// symmetric eye reproduces its decisions exactly.
-		if opts.DeviationHz > 0 {
+		// Adaptive 4-level slicer (issue #402), OPT-IN via
+		// EnableAdaptiveC4FMSlicer. It tracks the observed per-symbol eye
+		// and slices at variance-aware, inward-capped boundaries, so a
+		// DC-shifted or compressed eye that the fixed C4FM.Slice mis-decides
+		// can decode correctly. Off by default: on the MMR Site 9 capture
+		// (a closed, +3-stretched eye whose outer population is spread low)
+		// the fixed slicer outperformed every adaptive variant, and the
+		// asymmetry is an RF-domain effect, not a slicing problem. Also
+		// requires DeviationHz>0 (the legacy pre-scaled-fixture path keeps
+		// the fixed slicer so fixtures stay byte-for-byte unchanged).
+		if opts.EnableAdaptiveC4FMSlicer && opts.DeviationHz > 0 {
 			r.slicer = demod.NewAdaptiveC4FMSlicer(slicerScale)
 		}
 		r.afc = demod.NewCoarseAFC(sps)
@@ -661,6 +673,20 @@ func (r *Receiver) SlicerLevels() [4]float64 {
 	}
 	lv := r.slicer.Levels()
 	return [4]float64{float64(lv[0]), float64(lv[1]), float64(lv[2]), float64(lv[3])}
+}
+
+// SlicerThresholds returns the adaptive slicer's three live decision
+// boundaries (negative-outer, zero, positive-outer) — the values the slicer
+// actually decides on, which on an asymmetric/spread eye differ from the
+// midpoints of the tracked levels (issue #402: the OP asked to see the
+// per-second thresholds, not just the levels). Returns the zero array on the
+// CQPSK path or when no adaptive slicer is allocated (the fixed-slicer path).
+func (r *Receiver) SlicerThresholds() [3]float64 {
+	if r.slicer == nil {
+		return [3]float64{}
+	}
+	th := r.slicer.Thresholds()
+	return [3]float64{float64(th[0]), float64(th[1]), float64(th[2])}
 }
 
 // MMClockMu returns the Mueller-Müller symbol clock's current

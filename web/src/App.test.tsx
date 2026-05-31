@@ -19,6 +19,7 @@ vi.mock("./api/client", () => ({
   api: {
     mutations: vi.fn().mockResolvedValue({ allow_mutations: false }),
     health: vi.fn().mockResolvedValue({ status: "ok" }),
+    runtime: vi.fn().mockResolvedValue({ hidden_tabs: [] }),
   },
   HTTPError: class HTTPError extends Error {
     status: number;

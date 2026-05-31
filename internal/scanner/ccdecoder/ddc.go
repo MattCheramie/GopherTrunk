@@ -87,6 +87,8 @@ const ddcKaiserBeta = 7.0
 // time constants for 2.4 MHz instead of 48 kHz, so a replayed
 // capture decodes nothing like its live counterpart.
 type Downconverter struct {
+	nco       *dsp.NCO       // nil ⇒ no tuning shift (channel already at DC)
+	mixBuf    []complex64    // scratch for the NCO mix, so raw is never mutated
 	resampler *dsp.Resampler // nil ⇒ pass-through (no decimation)
 	outRateHz float64
 }
@@ -96,11 +98,25 @@ type Downconverter struct {
 // OutRateHz (it equals targetHz for every SDR rate that reduces to
 // a sane L/M, and equals inRateHz in pass-through mode).
 func NewDownconverter(inRateHz, targetHz float64) *Downconverter {
+	return NewDownconverterWithOffset(inRateHz, targetHz, 0)
+}
+
+// NewDownconverterWithOffset is NewDownconverter plus a tuning offset: the
+// stream is first frequency-shifted so a channel sitting at +offsetHz lands
+// at 0 Hz, then decimated to ~targetHz. This is the "deliberate tuning
+// offset" the package doc describes — needed to replay a wideband capture
+// whose control channel is not centred (the live pipeline gets this for
+// free from the SDR tuner). A zero offset is identical to NewDownconverter
+// (no NCO is built, so existing centred-capture behaviour is byte-exact).
+func NewDownconverterWithOffset(inRateHz, targetHz, offsetHz float64) *Downconverter {
 	d := &Downconverter{outRateHz: inRateHz}
+	if offsetHz != 0 && inRateHz > 0 {
+		d.nco = dsp.NewNCO(offsetHz, inRateHz)
+	}
 	in := int(math.Round(inRateHz))
 	target := int(math.Round(targetHz))
 	if in <= 0 || target <= 0 || in <= target {
-		return d // pass-through: nothing to decimate
+		return d // pass-through decimation: the NCO mix (if any) still runs
 	}
 	l, m := ddcRatio(target, in)
 	tapsPerBranch := (ddcStopbandTaps*m + l - 1) / l
@@ -124,16 +140,26 @@ func (d *Downconverter) OutRateHz() float64 { return d.outRateHz }
 // output (len ≈ len(raw)·outRateHz/inRateHz). In pass-through mode
 // raw is returned unchanged. raw is never mutated.
 func (d *Downconverter) Process(dst, raw []complex64) []complex64 {
-	if d.resampler == nil {
-		return raw
+	src := raw
+	if d.nco != nil {
+		// Tune the channel to DC first. Mix into our own scratch buffer
+		// so the caller's raw slice is never mutated (the doc contract).
+		d.mixBuf = d.nco.Mix(d.mixBuf, raw)
+		src = d.mixBuf
 	}
-	return d.resampler.Process(dst, raw)
+	if d.resampler == nil {
+		return src
+	}
+	return d.resampler.Process(dst, src)
 }
 
 // Reset clears the decimation filter history. Called on every
 // pipeline swap so a retune doesn't bleed the previous channel's
 // filter state into the new one.
 func (d *Downconverter) Reset() {
+	if d.nco != nil {
+		d.nco.Reset()
+	}
 	if d.resampler != nil {
 		d.resampler.Reset()
 	}

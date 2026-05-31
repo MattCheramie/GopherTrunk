@@ -101,3 +101,61 @@ func TestPanelSwitch_DigitAndTab(t *testing.T) {
 		t.Errorf("Tab from Import: active=%v, want Dashboard", m.active)
 	}
 }
+
+func TestHiddenTabs_FilterNav(t *testing.T) {
+	m := newTestModel(t)
+	// Wide terminal so the strip renders full labels (not the compact
+	// numeric fallback) and we can assert on tab names.
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 300, Height: 40})
+	m = updated.(*Model)
+	// Operator turned off Systems + Talkgroups via web.tabs; the daemon
+	// surfaces that on the runtime snapshot.
+	updated, _ = m.Update(pollRuntimeMsg{r: client.RuntimeDTO{
+		HiddenTabs: []string{"systems", "talkgroups"},
+	}})
+	m = updated.(*Model)
+
+	// Hidden panels drop out of the tab strip entirely.
+	tabs := m.renderTabs()
+	if strings.Contains(tabs, "Systems") || strings.Contains(tabs, "Talkgroups") {
+		t.Errorf("hidden tabs still rendered: %q", tabs)
+	}
+	if !strings.Contains(tabs, "Dashboard") || !strings.Contains(tabs, "Active") {
+		t.Errorf("visible tabs missing from strip: %q", tabs)
+	}
+
+	// Jump keys address the Nth *visible* tab: 1=Dashboard, 2=Active
+	// (Systems/Talkgroups skipped).
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	m = updated.(*Model)
+	if m.active != state.PanelActive {
+		t.Errorf("jump 2 with Systems/Talkgroups hidden: active=%v, want Active", m.active)
+	}
+
+	// Tab cycling skips hidden panels: Dashboard → Active.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = updated.(*Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(*Model)
+	if m.active != state.PanelActive {
+		t.Errorf("Tab from Dashboard with Systems/Talkgroups hidden: active=%v, want Active", m.active)
+	}
+}
+
+func TestHiddenTabs_ClampActive(t *testing.T) {
+	m := newTestModel(t)
+	// Park on Settings, then hide it via a runtime update — the active
+	// tab must snap back to a visible one rather than strand the user.
+	updated, _ := m.Update(pollRuntimeMsg{r: client.RuntimeDTO{
+		HiddenTabs: []string{"settings"},
+	}})
+	m = updated.(*Model)
+	m.active = state.PanelSettings
+	updated, _ = m.Update(pollRuntimeMsg{r: client.RuntimeDTO{
+		HiddenTabs: []string{"settings"},
+	}})
+	m = updated.(*Model)
+	if m.active == state.PanelSettings {
+		t.Errorf("active stayed on hidden Settings tab")
+	}
+}

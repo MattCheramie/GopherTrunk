@@ -173,12 +173,26 @@ func (c *ControlChannel) Stats() CCStats {
 	}
 }
 
-// pendingHit is an FSW match awaiting enough buffered dibits to decode
-// its NID + TSBK. end is the absolute dibit index of the FSW's last
-// dibit; rot is the cyclic rotation the sync detector matched under.
+// pendingHit is an FSW match awaiting enough buffered dibits to decode.
+// end is the absolute dibit index of the FSW's last dibit; rot is the
+// cyclic rotation the sync detector matched under.
+//
+// A hit also serves as the resume token for a frame whose trailing TSBK
+// blocks have not all buffered yet (issue #402 multi-block decode). Once
+// the NID has decoded, cont is set and the alignment the search settled
+// on is cached so later Process calls finish the data unit's remaining
+// blocks without re-running the FSW/NID search. nextStart and fswStart
+// are absolute dibit indices so they survive buffer trimming.
 type pendingHit struct {
 	end int
 	rot uint8
+
+	cont       bool   // true ⇒ resume trailing TSBK blocks (NID already decoded)
+	blocksDone int    // TSBK blocks already dispatched for this data unit
+	nextStart  int    // absolute index of the next TSBK block to decode
+	fswStart   int    // absolute index of the frame's first FSW dibit
+	strip      bool   // status-symbol stripping the alignment search chose
+	nac        uint16 // NAC the NID decoded to (for dispatch)
 }
 
 // Options configure a ControlChannel.
@@ -322,13 +336,34 @@ const noHitsThrottle = 2 * time.Second
 const p25StatusStride = 36
 
 // frameLookahead is the number of on-air dibits that must follow the
-// FSW for a full frame to decode: the 32-dibit NID plus the 98-dibit
+// FSW for a frame to decode: the 32-dibit NID plus the FIRST 98-dibit
 // TSBK channel block — 130 data dibits — plus the 4 status symbols
 // interleaved into that span at the p25StatusStride cadence. Process
 // defers an FSW hit until this many dibits (plus NIDSearchSpan, so the
 // +delta end of the alignment search stays in-buffer) have
 // accumulated, so frame assembly no longer depends on the IQ chunking.
+//
+// The gate covers only the first TSBK block on purpose: a P25 data unit
+// carries up to maxTSBKBlocks blocks (see parseFrame), but their count
+// varies frame-to-frame, and waiting for the worst case would strand a
+// short or stream-final frame that never accumulates that many dibits.
+// parseFrame instead decodes the trailing blocks opportunistically,
+// from whatever is already buffered past the first.
 const frameLookahead = 130 + 4
+
+// maxTSBKBlocks bounds how many 98-dibit TSBK channel blocks parseFrame
+// will pull from a single FSW+NID. A P25 trunking data unit (TSDU)
+// packs up to three TSBKs after the NID, the last flagged LB=1; a busy
+// site fills all three, so decoding only the first (the pre-#402
+// behaviour) dropped roughly two-thirds of the signalling.
+const maxTSBKBlocks = 3
+
+// tsbkBlockSpan is a safe upper bound on the buffered dibits one 98-dibit
+// TSBK block occupies once the status symbols interleaved at the
+// p25StatusStride cadence are counted (≈98·36/35); parseFrame requires
+// this many dibits past a block's start before gathering it so a
+// stream-final frame never indexes past the buffer.
+const tsbkBlockSpan = 98 + 6
 
 // NIDSearchSpan bounds the parseFrame NID-alignment search: the NID is
 // probed at the FSW-derived start index plus a delta in
@@ -401,6 +436,17 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	// Accumulate the new dibits. The receiver hands them over in
 	// contiguous, in-order batches, so buf stays a faithful copy of
 	// the dibit stream from bufBase onward.
+	//
+	// A non-contiguous baseIdx means the dibit stream jumped (a resync or
+	// capture gap): the buffered partial frame and any pending hits —
+	// including a multi-block continuation waiting on its next TSBK block
+	// — belong to the old stream and cannot be continued across the gap,
+	// so drop them and rebase. The receiver otherwise hands dibits over in
+	// contiguous, in-order batches, so this fires only on a real break.
+	if len(c.buf) > 0 && baseIdx != c.bufBase+len(c.buf) {
+		c.buf = c.buf[:0]
+		c.pending = c.pending[:0]
+	}
 	if len(c.buf) == 0 {
 		c.bufBase = baseIdx
 	}
@@ -409,10 +455,18 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		c.pending = append(c.pending, pendingHit{end: h, rot: rots[i]})
 	}
 
-	// Parse every pending FSW hit whose full frame has now been
-	// buffered; keep the rest for a later call once more dibits land.
+	// Parse every pending FSW hit whose first block has now been buffered,
+	// and resume any frame still waiting on its trailing TSBK blocks; keep
+	// the rest for a later call once more dibits land.
 	kept := c.pending[:0]
 	for _, ph := range c.pending {
+		if ph.cont {
+			// Resume the data unit's remaining TSBK blocks (issue #402).
+			if c.resumeTSBKBlocks(&ph) {
+				kept = append(kept, ph)
+			}
+			continue
+		}
 		// FSW ends at absolute index ph.end; the 32-dibit NID
 		// immediately follows.
 		nidStart := ph.end + 1 - c.bufBase
@@ -423,7 +477,9 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			kept = append(kept, ph) // not enough buffered yet
 			continue
 		}
-		c.parseFrame(c.buf, nidStart, ph.rot)
+		if cont, more := c.parseFrame(c.buf, nidStart, ph.rot); more {
+			kept = append(kept, cont)
+		}
 	}
 	c.pending = kept
 	c.trimBuffer()
@@ -447,7 +503,11 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // clears that gate cleanly, a marginal NID whose frame TSBK also
 // decodes. Either way the accepted alignment is validated, not
 // guessed, so a wrong alignment cannot realistically be locked on.
-func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) {
+//
+// parseFrame returns a continuation pendingHit (and more=true) when the
+// data unit's trailing TSBK blocks have not all buffered yet, so the
+// caller can resume them on a later Process call without re-searching.
+func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) (cont pendingHit, more bool) {
 	best, found, diag := c.searchNID(buf, nidStart, fswRot)
 	if !found {
 		atomic.AddInt64(&c.stats.NIDFailed, 1)
@@ -457,7 +517,7 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) {
 			Kind:    events.KindDecodeError,
 			Payload: events.DecodeError{Protocol: "p25", Stage: events.StageNIDBCH},
 		})
-		return
+		return pendingHit{}, false
 	}
 	// Trusted vs. marginal tier discrimination matches the
 	// "corroborated" log field below: a NID with more than
@@ -478,7 +538,7 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) {
 	if best.nid.DUID != DUIDTrunkingSignaling {
 		// Some non-control DUID — record but don't lock.
 		c.log.Debug("non-control DUID", "duid", best.nid.DUID, "nac", best.nid.NAC)
-		return
+		return pendingHit{}, false
 	}
 	if !c.locked || c.lastNAC != best.nid.NAC {
 		c.locked = true
@@ -491,29 +551,71 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) {
 			"rot", best.rot, "delta", best.delta)
 	}
 
-	// The channel TSBK occupies the 98 data dibits after the NID,
-	// gathered under the same alignment the NID search settled on.
-	fswStart := nidStart + best.delta - len(FrameSyncWord)
-	tsbkChannel, _ := gatherFrameDibits(buf, best.tsbkStart, 98, fswStart, best.strip)
-	tsbk, metric, err := DecodeTSBKChannel(rotateDibits(tsbkChannel, best.rot))
-	if err != nil {
-		if errors.Is(err, CRCError) {
-			atomic.AddInt64(&c.stats.TSBKCRCFailed, 1)
-		} else {
-			atomic.AddInt64(&c.stats.TSBKTrellisFailed, 1)
-		}
-		c.log.Debug("tsbk decode failed", "err", err, "metric", metric, "nac", best.nid.NAC)
-		stage := events.StageTSBKTrellis
-		if errors.Is(err, CRCError) {
-			stage = events.StageTSBKCRC
-		}
-		c.bus.Publish(events.Event{
-			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "p25", Stage: stage},
-		})
-		return
+	// Decode the data unit's TSBK blocks (issue #402: a TSDU packs up to
+	// maxTSBKBlocks 98-dibit blocks after the NID, not just one). The
+	// frame's first FSW dibit and the first block start are converted to
+	// absolute indices so a frame whose later blocks span Process calls
+	// resumes cleanly via resumeTSBKBlocks.
+	ph := pendingHit{
+		cont:      true,
+		rot:       best.rot,
+		strip:     best.strip,
+		nac:       best.nid.NAC,
+		fswStart:  (nidStart + best.delta - len(FrameSyncWord)) + c.bufBase,
+		nextStart: best.tsbkStart + c.bufBase,
 	}
-	c.dispatchTSBK(tsbk, best.nid.NAC, metric)
+	if c.resumeTSBKBlocks(&ph) {
+		return ph, true
+	}
+	return pendingHit{}, false
+}
+
+// resumeTSBKBlocks decodes the TSBK blocks of a data unit that are fully
+// buffered now, advancing ph through the sequence. It dispatches each
+// block under the cached frame alignment, stops at the last block (LB),
+// a decode error, or maxTSBKBlocks, and returns true when blocks remain
+// undecoded for want of buffered dibits — i.e. the caller should keep ph
+// pending and call again once more dibits land. Issue #402: this is what
+// lets blocks 2 and 3 decode even when the receiver hands the dibit
+// stream over in batches smaller than a frame.
+func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
+	for ph.blocksDone < maxTSBKBlocks {
+		start := ph.nextStart - c.bufBase
+		if start < 0 {
+			return false // buffer trimmed past it (shouldn't happen) — drop
+		}
+		if start+tsbkBlockSpan > len(c.buf) {
+			return true // next block not buffered yet — resume later
+		}
+		fswStart := ph.fswStart - c.bufBase
+		tsbkChannel, next := gatherFrameDibits(c.buf, start, 98, fswStart, ph.strip)
+		tsbk, metric, err := DecodeTSBKChannel(rotateDibits(tsbkChannel, ph.rot))
+		if err != nil {
+			if errors.Is(err, CRCError) {
+				atomic.AddInt64(&c.stats.TSBKCRCFailed, 1)
+			} else {
+				atomic.AddInt64(&c.stats.TSBKTrellisFailed, 1)
+			}
+			c.log.Debug("tsbk decode failed", "err", err, "metric", metric,
+				"nac", ph.nac, "block", ph.blocksDone)
+			stage := events.StageTSBKTrellis
+			if errors.Is(err, CRCError) {
+				stage = events.StageTSBKCRC
+			}
+			c.bus.Publish(events.Event{
+				Kind:    events.KindDecodeError,
+				Payload: events.DecodeError{Protocol: "p25", Stage: stage},
+			})
+			return false // a failed block leaves the next block's alignment unknown
+		}
+		c.dispatchTSBK(tsbk, ph.nac, metric)
+		ph.blocksDone++
+		ph.nextStart = next + c.bufBase
+		if tsbk.LB {
+			return false // last block in the data unit
+		}
+	}
+	return false // reached maxTSBKBlocks
 }
 
 // nidGuess is one evaluated NID-alignment hypothesis: the NID read from
@@ -735,7 +837,13 @@ func nidRank(g nidGuess, fswRot uint8) int {
 func (c *ControlChannel) trimBuffer() {
 	keep := len(c.buf)
 	for _, ph := range c.pending {
-		if s := ph.end + 1 - c.bufBase; s >= 0 && s < keep {
+		// A continuation must keep the buffer back to its next undecoded
+		// TSBK block; a fresh hit, back to its NID start.
+		s := ph.end + 1 - c.bufBase
+		if ph.cont {
+			s = ph.nextStart - c.bufBase
+		}
+		if s >= 0 && s < keep {
 			keep = s
 		}
 	}

@@ -324,13 +324,50 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		return
 	}
 	base := r.basenameFor(cs)
+	s := &recordingSession{startedAt: cs.StartedAt}
+	// Instantiate a vocoder for the protocol if one is mapped. This must
+	// happen before the WAV is opened so the header rate can track the
+	// vocoder's native output rate (below). Construction failure (unknown
+	// registry name) logs a warning and proceeds with no auto-decode —
+	// the sidecar (if any) is still the safety net.
+	if name, ok := r.vocoderForProtocol[cs.Grant.Protocol]; ok && name != "" {
+		v, err := DefaultRegistry.New(name)
+		if err != nil {
+			r.log.Warn("recorder: cannot instantiate vocoder; auto-decode disabled for this call",
+				"device", cs.DeviceSerial, "protocol", cs.Grant.Protocol,
+				"vocoder", name, "err", err)
+		} else {
+			s.vocoder = v
+			s.vocoderName = name
+		}
+	}
+	// Pick the WAV header rate. Vocoder output is always 8 kHz (see the
+	// Vocoder interface contract) and WriteRawFrame appends those samples
+	// to the WAV without resampling, so a decoded call's header MUST be
+	// 8 kHz regardless of recordings.sample_rate — otherwise clean audio
+	// plays back at the wrong speed (garbled). recordings.sample_rate
+	// only applies to analog/NBFM calls fed via WritePCM. Issue #356
+	// follow-up.
+	s.sampleRate = r.sampleRate
+	if s.vocoder != nil {
+		s.sampleRate = pcmHzDefault
+		if r.sampleRate != pcmHzDefault {
+			r.log.Warn("recorder: forcing WAV rate to vocoder-native 8000; recordings.sample_rate applies to analog/NBFM only",
+				"device", cs.DeviceSerial, "protocol", cs.Grant.Protocol,
+				"recordings_sample_rate", r.sampleRate)
+		}
+	}
 	wavPath := filepath.Join(dir, base+".wav")
-	wav, err := NewWavFile(wavPath, r.sampleRate)
+	wav, err := NewWavFile(wavPath, s.sampleRate)
 	if err != nil {
 		r.log.Error("recorder: open wav", "path", wavPath, "err", err)
+		if s.vocoder != nil {
+			_ = s.vocoder.Close()
+		}
 		return
 	}
-	s := &recordingSession{wav: wav, wavPath: wavPath, startedAt: cs.StartedAt}
+	s.wav = wav
+	s.wavPath = wavPath
 	// ProVoice and DMR voice grants always get a sidecar — neither has
 	// an in-process vocoder, so the .raw file is the only capture of
 	// the call.
@@ -342,21 +379,6 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		} else {
 			s.raw = raw
 			s.rawPath = rawPath
-		}
-	}
-	// Instantiate a vocoder for the protocol if one is mapped.
-	// Construction failure (unknown registry name) logs a warning and
-	// proceeds with no auto-decode — the sidecar (if any) is still the
-	// safety net.
-	if name, ok := r.vocoderForProtocol[cs.Grant.Protocol]; ok && name != "" {
-		v, err := DefaultRegistry.New(name)
-		if err != nil {
-			r.log.Warn("recorder: cannot instantiate vocoder; auto-decode disabled for this call",
-				"device", cs.DeviceSerial, "protocol", cs.Grant.Protocol,
-				"vocoder", name, "err", err)
-		} else {
-			s.vocoder = v
-			s.vocoderName = name
 		}
 	}
 	r.sessions[cs.DeviceSerial] = s
@@ -400,7 +422,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 				EndedAt:      ce.EndedAt,
 				Reason:       ce.Reason,
 				AudioPath:    s.wavPath,
-				SampleRate:   r.sampleRate,
+				SampleRate:   s.sampleRate,
 			},
 		})
 	}
@@ -457,6 +479,7 @@ type recordingSession struct {
 	rawPath     string
 	vocoder     Vocoder
 	vocoderName string
+	sampleRate  uint32
 	startedAt   time.Time
 }
 

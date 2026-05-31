@@ -45,7 +45,6 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/adsb"
-	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
 
 // Frame is one decoded BEAST envelope. The Payload bytes hold the
@@ -239,50 +238,11 @@ func (c *Client) handleFrame(f Frame) {
 		// Mode-AC frames carry no useful ADS-B data; skip.
 		return
 	}
-	m := adsb.Decode(f.Payload)
-	if !m.CRCValid && m.Kind != adsb.KindAllCall {
-		// CRC-failed extended squitters can't be trusted — skip.
-		// All-call replies (DF 11) only carry the ICAO and no
-		// payload, but they're still useful for "this aircraft
-		// is in range" tracking.
+	rep, ok := adsb.ProcessFrame(f.Payload, c.tracker, time.Now())
+	if !ok {
 		return
 	}
 	c.framesDecoded.Add(1)
-
-	m, _ = c.tracker.Update(m, time.Now().UnixNano())
-
-	rep := storage.AircraftReport{
-		ReceivedAt: time.Now(),
-		ICAO:       m.ICAO,
-		ICAOHex:    fmt.Sprintf("%06X", m.ICAO),
-		Kind:       adsb.KindString(m.Kind),
-		Body:       m.String(),
-		CRCValid:   m.CRCValid,
-		RawHex:     m.RawHex,
-	}
-	if m.Identification != nil {
-		rep.Callsign = m.Identification.Callsign
-		rep.Category = m.Identification.Category
-	}
-	if m.Position != nil {
-		rep.HasAltitude = m.Position.HasAltitude
-		rep.Altitude = m.Position.Altitude
-		if m.Position.HasGlobalPosition {
-			rep.HasPosition = true
-			rep.Latitude = m.Position.Latitude
-			rep.Longitude = m.Position.Longitude
-		}
-	}
-	if m.Velocity != nil {
-		if m.Velocity.HasGroundSpeed {
-			rep.GroundSpeedKn = m.Velocity.GroundSpeedKn
-			rep.TrackDeg = m.Velocity.TrackDeg
-		}
-		if m.Velocity.HasVerticalRate {
-			rep.VerticalRateFPM = m.Velocity.VerticalRateFPM
-		}
-	}
-
 	c.bus.Publish(events.Event{Kind: events.KindAircraftReport, Payload: rep})
 	c.framesEmitted.Add(1)
 }
