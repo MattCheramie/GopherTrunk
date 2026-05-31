@@ -7,6 +7,45 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.2.8] — 2026-05-31
+
+Mostly an issue #402 deep-dive plus a P25 control-channel throughput win
+and a UI-decluttering option. The headline change roughly **triples** the
+signalling recovered from a busy P25 site by decoding every TSBK in a
+control-channel data unit instead of only the first (#470). `replay` gains
+off-centre channel tuning so a capture whose control channel wasn't at the
+recording centre decodes the way it does live (#470), and a channelised
+slice of the real MMR Site 9 control channel now ships as a decode
+regression fixture (#469 plus the capture PRs). The #402 RTL-SDR DC-spike /
+asymmetric-eye investigation continues: #459 corrects the complex-LMS
+equalizer weight-update conjugation, and #453 adds diagnostics localizing
+the outer-rail symbol spread to multipath inter-symbol interference.
+Operators can now hide unused navigation tabs via `web.tabs` (#474, closes
+#455).
+
+### Added
+
+- **`replay` channel tuning for off-centre captures** (#402) — the
+  `gophertrunk replay` subcommand can now frequency-shift a recorded
+  wideband IQ file so an off-centre control channel lands at 0 Hz before
+  the demodulator, the way the SDR tuner does on a live device. `-tune-hz`
+  applies a fixed offset; `-auto-tune` estimates the dominant carrier from
+  the start of the file. This lets a captured file whose channel was not at
+  the recording centre (e.g. MMR Site 9, ~+37 kHz off) be replayed the same
+  way it decodes live. Backed by a reusable `dsp.NCO` frequency shifter, a
+  `dsp.EstimateCarrierOffsetHz` carrier estimator, and a tuning-offset mode
+  on the `ccdecoder` down-converter. A channelised slice of the real Site 9
+  control channel ships as a decode regression fixture.
+- **`web.tabs` — hide unused navigation tabs** (#474, closes #455).
+  Operators running GopherTrunk for a single task can declutter the
+  navigation by switching off tabs they don't use. Every tab shows by
+  default; setting a key to `false` under `web.tabs` hides it from the
+  nav strip in both the web SPA and the terminal TUI. New `WebConfig.Tabs`
+  map with a `KnownUITabs` canonical set (`Validate()` rejects unknown
+  keys); the hidden list rides on the read-only `/api/v1/runtime` snapshot
+  so both clients filter from one source of truth. Routes stay mounted —
+  this is nav-only hiding.
+
 ### Fixed
 
 - **P25 control channel: decode every TSBK in a data unit, not just the
@@ -22,35 +61,31 @@ for tagged releases.
   ~1 s, all CRC-clean). A non-contiguous dibit stream (a resync or capture
   gap) now also flushes the partial-frame buffer instead of trying to
   stitch a frame across the break.
+- **Complex-LMS equalizer weight-update conjugation** (#402, #459) —
+  corrected the conjugation in the adaptive equalizer's complex-LMS
+  weight update so the error-gradient term is applied with the right
+  sign. Part of the ongoing #402 outer-rail-spread investigation.
 
-### Changed
+## [v0.2.7] — 2026-05-30
 
-- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
-  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
-  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value
-  like `"32"`, which parses to 3.2 dB and snaps to the bottom of the
-  tuner ladder, leaving the radio effectively deaf (no control-channel
-  lock, no decodes) with no feedback. The daemon now WARNs at startup
-  when a bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
-  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs
-  the applied gain in dB on every device (`sdr: gain set … gain_db=…`)
-  so a units mistake is visible without enabling debug. No behaviour
-  change for valid configs; decimal forms like `"32.0"` are still taken
-  as whole dB. Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+Phase 5 closes its last DSP gaps and the P25 #402 investigation deepens.
+Both DSC and ADS-B now reach end-to-end live on a native SDR: #448 adds
+the DSC FFSK frontend — the last "no DSP" hole in Phase 5 — and #449 a
+native 1090 MHz PPM Mode-S receiver alongside the #440 BEAST-upstream path
+(which also lands the per-ICAO CPR pair-tracker that plots aircraft on the
+map). #441 brings MDC1200 Motorola signaling end-to-end. Audio fidelity
+and operability: #444 forces decoded calls to the vocoder-native 8 kHz WAV
+rate (fixing garbled clear-channel playback) and adds rolling
+decode-quality telemetry (#356); #445 warns when a `gain` value looks like
+whole-dB instead of tenths. Issue #402 (RTL-SDR DC-spike on P25 control)
+continues with a run of C4FM-slicer experiments (#439, #447, #450) that
+conclude the plain fixed slicer wins on the MMR Site 9 eye — so the
+adaptive slicer is now off by default behind a flag — plus an
+I/Q-imbalance investigation and FSW-keyed true-symbol eye diagnostics
+(#452).
 
 ### Added
 
-- **`replay` channel tuning for off-centre captures** (#402) — the
-  `gophertrunk replay` subcommand can now frequency-shift a recorded
-  wideband IQ file so an off-centre control channel lands at 0 Hz before
-  the demodulator, the way the SDR tuner does on a live device. `-tune-hz`
-  applies a fixed offset; `-auto-tune` estimates the dominant carrier from
-  the start of the file. This lets a captured file whose channel was not at
-  the recording centre (e.g. MMR Site 9, ~+37 kHz off) be replayed the same
-  way it decodes live. Backed by a reusable `dsp.NCO` frequency shifter, a
-  `dsp.EstimateCarrierOffsetHz` carrier estimator, and a tuning-offset mode
-  on the `ccdecoder` down-converter. A channelised slice of the real Site 9
-  control channel ships as a decode regression fixture.
 - **MDC1200 Motorola signaling decode** (#438) — end-to-end pipeline
   for the analog FFSK data burst Motorola radios key at the head /
   tail of a transmission on conventional VHF / UHF voice channels.
@@ -111,6 +146,86 @@ for tagged releases.
   CPR pair through a loopback TCP server and asserting the
   bus event carries the right ICAO + globally-decoded
   lat/lon). All passing.
+- **ADS-B native 1090 MHz PPM Mode-S receiver** (#449) — the alternative
+  to running a separate dump1090 / readsb and consuming its BEAST output.
+  New `internal/radio/adsb/ppm`: IQ → resample to 2 Msps → magnitude²
+  envelope → dump1090-style 8 µs preamble correlation (pulses at
+  0 / 1 / 3.5 / 4.5 µs) → PPM bit slice → DF frame-length (56 / 112-bit)
+  → frame bytes, with a magnitude carry buffer so a preamble split across
+  two IQ chunks still decodes. The `decode → CRC gate → CPR track →
+  AircraftReport` mapping is factored into a shared `adsb.ProcessFrame`,
+  so the native receiver and the #440 BEAST upstream emit byte-for-byte
+  identical reports — frames from both sources merge into the same
+  `KindAircraftReport` stream, storage, tracker, panel, and map.
+  `ADSBConfig` gains a `channels` list (default 1090 MHz) separate from
+  `beast_upstreams`. Closes the Phase 5 ADS-B DSP gap; validated
+  end-to-end on a real DF17 identification burst (ICAO 4840D6), including
+  the chunk-boundary split case.
+- **DSC FFSK DSP frontend + bit-stream receiver** (#448) — closes the
+  last "no DSP" hole in Phase 5: DSC already had a protocol parser,
+  BCH(10,7), storage, REST, and a panel, but no way to turn IQ into
+  decoded sequences. New `internal/radio/dsc/ffsk` (IQ → FM demod →
+  resample to 9600 sps → 1300 / 2100 Hz FFSK discriminator →
+  Mueller-Müller symbol timing → direct-FSK slicer, mirroring the MDC1200
+  frontend; no NRZI since DSC is direct FSK) and
+  `internal/radio/dsc/receiver` (slides a 10-bit window, BCH-syncs on the
+  repeating phasing DX character with dual-polarity detection, samples the
+  DX grid to recover 7-bit symbols, detects EOS, publishes
+  `KindDSCMessage` via `dsc.Decode` — the "drop RX, use DX only" path).
+  `DSCConfig` / `DSCChannelConfig` wired into config + the example; daemon
+  construct + spawn loops mirror the AIS receivers. Pinning an SDR to
+  channel 70 (156.525 MHz) now lights up live DSC. Tested end-to-end on a
+  modulated distress sequence plus inverted-polarity and no-EOS guard
+  cases.
+- **Per-call voice decode-quality telemetry** (#356, #444) — all three
+  voice chains (P25 Phase 1 / Phase 2, DMR) previously discarded the FEC
+  corrected-error count and only warned per-LDU on an uncorrectable
+  subframe. They now aggregate per-call counters and emit a rolling
+  `composer: … decode quality` summary (rate-limited to a burst of LDUs /
+  subframes, plus a final summary at chain shutdown) so an operator can
+  watch the uncorrectable rate fall as they raise gain; the per-LDU
+  warning is demoted to Debug.
+
+### Changed
+
+- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
+  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
+  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value
+  like `"32"`, which parses to 3.2 dB and snaps to the bottom of the
+  tuner ladder, leaving the radio effectively deaf (no control-channel
+  lock, no decodes) with no feedback. The daemon now WARNs at startup
+  when a bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
+  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs
+  the applied gain in dB on every device (`sdr: gain set … gain_db=…`)
+  so a units mistake is visible without enabling debug. No behaviour
+  change for valid configs; decimal forms like `"32.0"` are still taken
+  as whole dB. Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+- **P25 C4FM slicer: fixed by default, adaptive behind a flag**
+  (#402, #450) — a series of slicer experiments on the original MMR
+  Site 9 capture (#439, #447, #450) concluded that the plain fixed slicer
+  is the best performer on that eye: the `+3` outer rail is spread *low*,
+  so a threshold derived from its centroid abandons the low `+3` symbols
+  the outer-heavy FSW needs. The adaptive 4-level slicer (#432) is now
+  gated off by default behind `Options.EnableAdaptiveC4FMSlicer` /
+  `replay -adaptive-slicer` (mirroring the #430 DDA precedent), and
+  improved when enabled (inward-only threshold cap so the boundary can
+  never rise above the fixed nominal, plus variance-aware per-rail
+  boundaries). A full RX-chain audit showed the receive path is
+  symmetric, pointing the residual asymmetry at RF-domain RTL-SDR I/Q
+  imbalance; opt-in `replay -iq-correct` / `iq_correct` blind
+  I/Q-imbalance correction and `replay -diag` imbalance + per-rail eye
+  diagnostics were added to chase the hypothesis.
+
+### Fixed
+
+- **Decoded-voice WAV sample rate forced to the vocoder-native 8 kHz**
+  (#356, #444) — the IMBE / AMBE vocoders always emit 8 kHz PCM, but the
+  recorder wrote the WAV header from `recordings.sample_rate`, so a
+  non-default rate played decoded P25 / DMR calls back at the wrong speed
+  (garbled clear-channel audio). The recorder now instantiates the
+  vocoder before opening the WAV and forces the header to 8 kHz for
+  decoded calls; analog / NBFM audio fed via `WritePCM` still honours the
+  configured rate, and `CallComplete` reports the session's actual rate.
 
 ## [v0.2.6] — 2026-05-29
 
