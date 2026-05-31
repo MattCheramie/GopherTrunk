@@ -83,6 +83,11 @@ type RuntimeDTO struct {
 	// failed to open, etc.). Surfaced so the SPA Dashboard can pin
 	// them until the operator dismisses them.
 	StartupWarnings []string `json:"startup_warnings,omitempty"`
+
+	// HiddenTabs lists the navigation tab keys the operator switched
+	// off via web.tabs in config. Both the web SPA and the TUI filter
+	// these out of their nav. Empty/omitted means every tab is shown.
+	HiddenTabs []string `json:"hidden_tabs,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —

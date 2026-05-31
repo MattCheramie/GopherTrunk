@@ -287,6 +287,10 @@ func TestValidate(t *testing.T) {
 			}}},
 			Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr-tier2"}}},
 		}, true},
+		// web.tabs: turn off nav items. Known keys (in any state) are
+		// fine; an unknown key is rejected so typos surface at load.
+		{"web tabs known ok", Config{Web: WebConfig{Tabs: map[string]bool{"pagers": false, "metrics": true}}}, false},
+		{"web tabs unknown key", Config{Web: WebConfig{Tabs: map[string]bool{"pagerz": false}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -295,6 +299,28 @@ func TestValidate(t *testing.T) {
 				t.Errorf("err = %v, wantErr = %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestWebConfigHiddenTabs(t *testing.T) {
+	w := WebConfig{Tabs: map[string]bool{
+		"pagers":  false,
+		"metrics": false,
+		"aprs":    true, // explicitly visible — not hidden
+	}}
+	got := w.HiddenTabs()
+	want := []string{"metrics", "pagers"} // sorted, value==false only
+	if len(got) != len(want) {
+		t.Fatalf("HiddenTabs() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("HiddenTabs() = %v, want %v", got, want)
+		}
+	}
+	// Nil/empty map hides nothing.
+	if h := (WebConfig{}).HiddenTabs(); len(h) != 0 {
+		t.Fatalf("empty WebConfig.HiddenTabs() = %v, want none", h)
 	}
 }
 

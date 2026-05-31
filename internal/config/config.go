@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,65 @@ type Config struct {
 	DSC        DSCConfig        `yaml:"dsc"`
 	MDC1200    MDC1200Config    `yaml:"mdc1200"`
 	ADSB       ADSBConfig       `yaml:"adsb"`
+	Web        WebConfig        `yaml:"web"`
+}
+
+// WebConfig configures the bundled user interfaces (the embedded web SPA
+// and the terminal TUI). Tabs maps a tab key (e.g. "pagers", "metrics")
+// to whether it is shown in the navigation. Absent keys default to
+// visible, so an empty/omitted section shows everything. Set a key to
+// false to turn that tab off — operators running GopherTrunk for a single
+// task can declutter the UI to just the panels they care about. Hiding a
+// tab only removes it from the nav strip; the route/panel is still
+// reachable directly.
+type WebConfig struct {
+	Tabs map[string]bool `yaml:"tabs"`
+}
+
+// KnownUITabs is the canonical set of navigation tab keys both UIs
+// understand. The key is the web route path minus its leading slash; the
+// TUI maps the same keys onto its panels via state.PanelKind.Key(). The
+// web SPA owns the full set; the TUI owns only the core subset, so hiding
+// a web-only tab (pagers/aprs/…) is simply a no-op there. Keep this in
+// sync with web/src/App.tsx (TABS + EXTRA_TABS).
+var KnownUITabs = map[string]bool{
+	"dashboard":     true,
+	"active":        true,
+	"scanner":       true,
+	"settings":      true,
+	"systems":       true,
+	"talkgroups":    true,
+	"rids":          true,
+	"history":       true,
+	"events":        true,
+	"cc":            true,
+	"tones":         true,
+	"pagers":        true,
+	"aprs":          true,
+	"ais":           true,
+	"dsc":           true,
+	"adsb":          true,
+	"mdc1200":       true,
+	"spectrum":      true,
+	"constellation": true,
+	"bookmarks":     true,
+	"metrics":       true,
+	"devices":       true,
+	"import":        true,
+}
+
+// HiddenTabs returns the sorted list of tab keys explicitly switched off
+// (mapped to false). The result feeds /api/v1/runtime so both UIs can
+// filter their navigation from a single source of truth.
+func (w WebConfig) HiddenTabs() []string {
+	var hidden []string
+	for key, visible := range w.Tabs {
+		if !visible {
+			hidden = append(hidden, key)
+		}
+	}
+	sort.Strings(hidden)
+	return hidden
 }
 
 // ADSBConfig configures the ADS-B aircraft-tracking input. The
@@ -1150,6 +1210,16 @@ func (c Config) Validate() error {
 		case "", "control", "voice", "auto":
 		default:
 			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+		}
+	}
+	for key := range c.Web.Tabs {
+		if !KnownUITabs[key] {
+			valid := make([]string, 0, len(KnownUITabs))
+			for k := range KnownUITabs {
+				valid = append(valid, k)
+			}
+			sort.Strings(valid)
+			return fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))
 		}
 	}
 	return nil
