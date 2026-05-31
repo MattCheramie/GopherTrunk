@@ -19,6 +19,7 @@ type PagerProvider interface {
 type PagerMessageDTO struct {
 	ID         int64     `json:"id"`
 	ReceivedAt time.Time `json:"received_at"`
+	Protocol   string    `json:"protocol"`
 	RIC        uint32    `json:"ric"`
 	Func       uint8     `json:"func"`
 	Encoding   string    `json:"encoding"`
@@ -27,9 +28,14 @@ type PagerMessageDTO struct {
 }
 
 func pagerMessageToDTO(m storage.PagerMessage) PagerMessageDTO {
+	proto := m.Protocol
+	if proto == "" {
+		proto = "pocsag"
+	}
 	return PagerMessageDTO{
 		ID:         m.ID,
 		ReceivedAt: m.ReceivedAt,
+		Protocol:   proto,
 		RIC:        m.RIC,
 		Func:       m.Func,
 		Encoding:   m.Encoding,

@@ -136,12 +136,13 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_group ON bookmarks(grouping, name);
 -- alphanumeric.
 CREATE TABLE IF NOT EXISTS pager_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    received_at INTEGER NOT NULL,            -- unix nanoseconds
-    ric         INTEGER NOT NULL,            -- 21-bit address
-    func        INTEGER NOT NULL,            -- 0..3 (A..D)
-    encoding    TEXT    NOT NULL DEFAULT '', -- "numeric" | "alpha"
+    received_at INTEGER NOT NULL,                  -- unix nanoseconds
+    protocol    TEXT    NOT NULL DEFAULT 'pocsag', -- "pocsag" | "flex"
+    ric         INTEGER NOT NULL,                  -- 21-bit address / capcode
+    func        INTEGER NOT NULL,                  -- 0..3 (A..D); 0 for FLEX
+    encoding    TEXT    NOT NULL DEFAULT '',        -- "numeric" | "alpha" | "tone"
     body        TEXT    NOT NULL DEFAULT '',
-    corrected   INTEGER NOT NULL DEFAULT 0   -- total BCH bit-error count
+    corrected   INTEGER NOT NULL DEFAULT 0          -- total BCH bit-error count
 );
 
 CREATE INDEX IF NOT EXISTS idx_pager_log_time ON pager_log(received_at);
@@ -279,6 +280,11 @@ func (d *DB) migrate() error {
 	if err := d.ensureCallLogColumns(); err != nil {
 		return err
 	}
+	if err := d.ensureColumns("pager_log", []columnAdd{
+		{"protocol", `ALTER TABLE pager_log ADD COLUMN protocol TEXT NOT NULL DEFAULT 'pocsag'`},
+	}); err != nil {
+		return err
+	}
 	// Stamp the current schema version; future migrations check this
 	// row before running.
 	_, _ = d.sql.Exec(`INSERT OR IGNORE INTO schema_version(version) VALUES (2)`)
@@ -325,6 +331,49 @@ func (d *DB) ensureCallLogColumns() error {
 		}
 		if _, err := d.sql.Exec(a.ddl); err != nil {
 			return fmt.Errorf("storage: add call_log.%s: %w", a.name, err)
+		}
+	}
+	return nil
+}
+
+// columnAdd pairs a column name with the ALTER TABLE that introduces
+// it, for ensureColumns.
+type columnAdd struct{ name, ddl string }
+
+// ensureColumns brings an existing table forward with columns added
+// after its initial schema. CREATE TABLE IF NOT EXISTS never alters an
+// existing table, so a database created by an earlier GopherTrunk
+// keeps the old column set; this adds any missing columns. Idempotent
+// — present columns are skipped — so it needs no schema-version gate.
+func (d *DB) ensureColumns(table string, adds []columnAdd) error {
+	rows, err := d.sql.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("storage: inspect %s: %w", table, err)
+	}
+	have := make(map[string]bool)
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("storage: inspect %s: %w", table, err)
+		}
+		have[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("storage: inspect %s: %w", table, err)
+	}
+	rows.Close()
+	for _, a := range adds {
+		if have[a.name] {
+			continue
+		}
+		if _, err := d.sql.Exec(a.ddl); err != nil {
+			return fmt.Errorf("storage: add %s.%s: %w", table, a.name, err)
 		}
 	}
 	return nil

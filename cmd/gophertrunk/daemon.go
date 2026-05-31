@@ -29,6 +29,7 @@ import (
 	aprsafsk "github.com/MattCheramie/GopherTrunk/internal/radio/aprs/afsk"
 	dscffsk "github.com/MattCheramie/GopherTrunk/internal/radio/dsc/ffsk"
 	mdc1200afsk "github.com/MattCheramie/GopherTrunk/internal/radio/mdc1200/afsk"
+	flexrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/flex/receiver"
 	pocsagrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
@@ -190,6 +191,11 @@ type Daemon struct {
 	// is a planned follow-up.
 	pocsagReceivers []*pocsagrx.Receiver
 	pocsagSpecs     []pocsagSpec // index-aligned with pocsagReceivers
+	// flexReceivers holds one FLEX receiver per configured paging.flex
+	// entry. Same shape as the POCSAG receivers; decoded pages share
+	// the pager_log table / panel, tagged protocol="flex".
+	flexReceivers []*flexrx.Receiver
+	flexSpecs     []flexSpec // index-aligned with flexReceivers
 	// aprsReceivers holds one APRS AFSK receiver per configured
 	// aprs.channels entry. Each subscribes to the iqtap broker
 	// for its assigned SDR and publishes packets onto the events
@@ -1026,6 +1032,35 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.pocsagSpecs = append(d.pocsagSpecs, spec)
 	}
 
+	// FLEX paging receivers — one per configured paging.flex entry.
+	// Same construction shape as POCSAG above; decoded pages share the
+	// pager_log table / panel, tagged protocol="flex".
+	for _, fc := range cfg.Paging.FLEX {
+		spec := flexSpec{serial: fc.Serial, freq: fc.FrequencyHz}
+		if fc.Serial == "" || fc.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"paging.flex: entry missing serial or frequency_hz (serial=%q freq=%d) — skipped",
+				fc.Serial, fc.FrequencyHz))
+			d.flexReceivers = append(d.flexReceivers, nil)
+			d.flexSpecs = append(d.flexSpecs, spec)
+			continue
+		}
+		rcv, err := flexrx.New(flexrx.Options{
+			InputRateHz: cfg.SDR.SampleRate,
+			SourceName:  fc.Serial,
+			Bus:         d.bus,
+			Log:         log,
+		})
+		if err != nil {
+			d.addWarning(fmt.Sprintf("paging.flex[%s]: %v — skipped", fc.Serial, err))
+			d.flexReceivers = append(d.flexReceivers, nil)
+			d.flexSpecs = append(d.flexSpecs, spec)
+			continue
+		}
+		d.flexReceivers = append(d.flexReceivers, rcv)
+		d.flexSpecs = append(d.flexSpecs, spec)
+	}
+
 	// APRS / AX.25 Bell-202 AFSK receivers — one per configured
 	// aprs.channels entry. Same construction shape as POCSAG above:
 	// per-entry validation in the receiver, failures surface as a
@@ -1640,6 +1675,34 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 			if err := br.SetCenterFreq(spec.freq); err != nil {
 				d.log.Warn("pocsag: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			sub := br.Subscribe()
+			defer sub.Close()
+			return rcv.Process(ctx, sub.C)
+		})
+	}
+	// FLEX paging receivers — same shape as POCSAG above. Each
+	// subscribes to its assigned SDR's iqtap broker and runs the FLEX
+	// pipeline (FM demod → resample → slicer → sync/FIW/de-interleave
+	// → BCH → page assembly), publishing pages on KindPagerMessage.
+	for i, rcv := range d.flexReceivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.flexSpecs[i]
+		name := fmt.Sprintf("flex-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("flex: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("flex: SetCenterFreq failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
@@ -2707,6 +2770,14 @@ func (p pagerProvider) RecentPagerMessages(limit int) ([]storage.PagerMessage, e
 // POCSAG paging channel. Index-aligned with Daemon.pocsagReceivers so
 // the Run loop can spawn each receiver without re-walking the YAML.
 type pocsagSpec struct {
+	serial string
+	freq   uint32
+}
+
+// flexSpec captures the broker-side wiring info for one configured
+// FLEX paging channel. Index-aligned with Daemon.flexReceivers so the
+// Run loop can spawn each receiver without re-walking the YAML.
+type flexSpec struct {
 	serial string
 	freq   uint32
 }

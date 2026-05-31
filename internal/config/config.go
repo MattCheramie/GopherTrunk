@@ -245,6 +245,18 @@ type MDC1200ChannelConfig struct {
 // runs the per-protocol receiver against its IQ stream.
 type PagingConfig struct {
 	POCSAG []PagingPOCSAGConfig `yaml:"pocsag"`
+	FLEX   []PagingFLEXConfig   `yaml:"flex"`
+}
+
+// PagingFLEXConfig describes one FLEX paging channel to decode. Serial
+// picks the SDR; the daemon tunes it to FrequencyHz and runs the FLEX
+// receiver against its full IQ stream. The frontend handles the
+// 1600 bps / 2-level mode. Decoded pages publish on
+// events.KindPagerMessage with protocol="flex" and share the pager_log
+// table / web panel with POCSAG.
+type PagingFLEXConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
 }
 
 // PagingPOCSAGConfig describes one POCSAG paging channel to
