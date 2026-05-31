@@ -16,7 +16,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 
 | Family | Driver | USB IDs | Status |
 | --- | --- | --- | --- |
-| **RTL-SDR** (RTL2832U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
+| **RTL-SDR** (RTL2832U / RTL2838U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
 | **HackRF One / Jawbreaker / Rad1o** | `hackrf` | `0x1d50:0x6089` · `0x1d50:0x604b` · `0x1d50:0xcc15` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
 | **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). On-air validation against attached hardware is the documented follow-up. |
@@ -51,6 +51,14 @@ detected. The HF+ driver appends its firmware version the same way.
 | NooElec NESDR Smart (v4 and earlier) | R820T2 | TCXO; no bias-tee on early units. |
 | Generic RTL-SDR Blog v3 / v4 | R820T2 / R828D | Bias-tee on most units. |
 | Plain RTL2832U DVB-T sticks | R820T | No TCXO; expect a few ppm offset — set `ppm:` in config after measuring. |
+
+> **"RTL2838U" dongles are already supported.** Many economy SDRs are
+> marketed or labelled by their demodulator/USB-bridge chip — the
+> **RTL2838U** — which is a variant of the RTL2832U, *not* a tuner.
+> These units enumerate as `0x0bda:0x2838` (and usually report
+> `RTL2838UHIDIR` in `gophertrunk sdr list`); the actual tuner inside is
+> an R820T2 or R828D, both supported above. If your dongle says "RTL2838",
+> it works out of the box — no extra driver needed.
 
 If you have a v5 (or any modern dongle with a bias-tee) and want to
 power an LNA, the config snippet looks like:
