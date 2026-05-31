@@ -13,6 +13,9 @@ import (
 // substitute a fake.
 type ADSBProvider interface {
 	RecentAircraftReports(limit int) ([]storage.AircraftReport, error)
+	// CurrentAircraft returns the coalesced latest state per ICAO seen
+	// within maxAge (≤ 0 → provider default).
+	CurrentAircraft(maxAge time.Duration) ([]storage.AircraftReport, error)
 }
 
 // AircraftReportDTO is the JSON wire shape for the adsb endpoint.

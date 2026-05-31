@@ -13,6 +13,7 @@ import (
 
 type fakeADSBProvider struct {
 	reports []storage.AircraftReport
+	current []storage.AircraftReport
 }
 
 func (f *fakeADSBProvider) RecentAircraftReports(limit int) ([]storage.AircraftReport, error) {
@@ -20,6 +21,10 @@ func (f *fakeADSBProvider) RecentAircraftReports(limit int) ([]storage.AircraftR
 		return f.reports[:limit], nil
 	}
 	return f.reports, nil
+}
+
+func (f *fakeADSBProvider) CurrentAircraft(maxAge time.Duration) ([]storage.AircraftReport, error) {
+	return f.current, nil
 }
 
 func newADSBTestServer(t *testing.T, prov ADSBProvider) *httptest.Server {
@@ -121,5 +126,37 @@ func TestADSBAircraftRespectsLimit(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&got)
 	if len(got) != 3 {
 		t.Errorf("limit=3 len = %d, want 3", len(got))
+	}
+}
+
+func TestADSBAircraftCurrentReturns503WhenNotWired(t *testing.T) {
+	ts := newADSBTestServer(t, nil)
+	resp, err := http.Get(ts.URL + "/api/v1/adsb/aircraft/current")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestADSBAircraftCurrentReturnsList(t *testing.T) {
+	prov := &fakeADSBProvider{current: []storage.AircraftReport{
+		{ICAOHex: "DEF456", Callsign: "UAL1", HasPosition: true, Latitude: 37.5},
+	}}
+	ts := newADSBTestServer(t, prov)
+	resp, err := http.Get(ts.URL + "/api/v1/adsb/aircraft/current?max_age_s=120")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var got []AircraftReportDTO
+	_ = json.NewDecoder(resp.Body).Decode(&got)
+	if len(got) != 1 || got[0].Callsign != "UAL1" {
+		t.Errorf("unexpected body: %+v", got)
 	}
 }

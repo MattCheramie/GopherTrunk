@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -209,7 +210,7 @@ func (a *AircraftLog) CurrentAircraft(maxAge time.Duration) ([]AircraftReport, e
 	cutoff := time.Now().Add(-maxAge).UnixNano()
 	rows, err := a.db.SQL().Query(
 		`SELECT received_at, icao, icao_hex, kind, callsign, category,
-		        has_position, latitude, longitude, has_altitude, altitude,
+		        has_position, latitude, longitude, has_altitude, altitude_ft,
 		        ground_speed_kn, track_deg, vertical_rate_fpm
 		 FROM aircraft_log WHERE received_at >= ? ORDER BY received_at ASC`,
 		cutoff)
@@ -249,7 +250,7 @@ func (a *AircraftLog) CurrentAircraft(maxAge time.Duration) ([]AircraftReport, e
 		if r.Callsign != "" {
 			c.Callsign = r.Callsign
 		}
-		if r.Category != "" {
+		if r.Category != 0 {
 			c.Category = r.Category
 		}
 		if hasPos != 0 {

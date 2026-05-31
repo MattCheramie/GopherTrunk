@@ -14,7 +14,8 @@ import (
 // decoderLogTables are the append-only decoder log tables keyed by a
 // received_at (unix-nanosecond) column. The sweeper deletes rows older
 // than LogRowMaxAge from each. call_log is swept separately because its
-// timestamp column is started_at.
+// timestamp column is started_at; location_log is swept separately
+// because its timestamp column is reported_at.
 var decoderLogTables = []string{
 	"pager_log",
 	"aprs_log",
@@ -23,7 +24,6 @@ var decoderLogTables = []string{
 	"aircraft_log",
 	"mdc1200_log",
 	"m17_log",
-	"location_log",
 }
 
 // Retention deletes old data on a schedule:
@@ -145,13 +145,20 @@ func (r *Retention) deleteOldRows(ctx context.Context) (int64, error) {
 }
 
 // deleteOldLogRows deletes rows older than logAge from one decoder log
-// table (keyed by its received_at column). The table name comes from
-// the fixed decoderLogTables allow-list, never from user input, so the
-// string interpolation is safe.
+// table keyed by received_at.
 func (r *Retention) deleteOldLogRows(ctx context.Context, table string) (int64, error) {
+	return r.deleteOldByColumn(ctx, table, "received_at")
+}
+
+// deleteOldByColumn deletes rows older than logAge from table, keyed by
+// the named unix-nanosecond timestamp column. Both table and column
+// come from fixed in-code constants (the decoderLogTables allow-list or
+// a literal), never from user input, so the string interpolation is
+// safe.
+func (r *Retention) deleteOldByColumn(ctx context.Context, table, col string) (int64, error) {
 	cutoff := time.Now().Add(-r.logAge).UnixNano()
 	res, err := r.db.sql.ExecContext(ctx,
-		`DELETE FROM `+table+` WHERE received_at < ?`, cutoff)
+		`DELETE FROM `+table+` WHERE `+col+` < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}

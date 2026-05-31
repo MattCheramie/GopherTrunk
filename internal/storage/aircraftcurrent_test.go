@@ -21,14 +21,14 @@ func TestCurrentAircraftCoalesces(t *testing.T) {
 	defer al.Close()
 
 	now := time.Now().UTC()
-	ins := func(ageSec int, icao uint32, kind, callsign string, hasPos int, lat, lon float64, gs float64) {
+	ins := func(ageSec int, icao uint32, kind, callsign string, hasPos int, lat, lon float64, gs int) {
 		t.Helper()
 		_, err := db.sql.Exec(
 			`INSERT INTO aircraft_log
 			 (received_at, icao, icao_hex, kind, callsign, category,
-			  has_position, latitude, longitude, has_altitude, altitude,
+			  has_position, latitude, longitude, has_altitude, altitude_ft,
 			  ground_speed_kn, track_deg, vertical_rate_fpm, crc_valid, raw_hex, body)
-			 VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 0, 0, ?, 0, 0, 1, '', '')`,
+			 VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 0, 0, ?, 0, 0, 1, '', '')`,
 			now.Add(-time.Duration(ageSec)*time.Second).UnixNano(),
 			icao, "ABC123", kind, callsign, hasPos, lat, lon, gs)
 		if err != nil {
@@ -37,11 +37,11 @@ func TestCurrentAircraftCoalesces(t *testing.T) {
 	}
 
 	// ICAO 0xABC123: identification (oldest), then position, then velocity.
-	ins(120, 0xABC123, "identification", "UAL1", 0, 0, 0, 0)
-	ins(60, 0xABC123, "airborne-position", "", 1, 37.5, -122.0, 0)
-	ins(10, 0xABC123, "velocity", "", 0, 0, 0, 420.0)
+	ins(120, 0xABC123, "ident", "UAL1", 0, 0, 0, 0)
+	ins(60, 0xABC123, "airborne-pos", "", 1, 37.5, -122.0, 0)
+	ins(10, 0xABC123, "velocity", "", 0, 0, 0, 420)
 	// A second, stale aircraft outside the 5-min horizon.
-	ins(1000, 0xDEAD01, "identification", "STALE", 0, 0, 0, 0)
+	ins(1000, 0xDEAD01, "ident", "STALE", 0, 0, 0, 0)
 
 	cur, err := al.CurrentAircraft(5 * time.Minute)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestCurrentAircraftCoalesces(t *testing.T) {
 	if !a.HasPosition || a.Latitude != 37.5 || a.Longitude != -122.0 {
 		t.Errorf("position not coalesced: %+v", a)
 	}
-	if a.GroundSpeedKn != 420.0 {
+	if a.GroundSpeedKn != 420 {
 		t.Errorf("GroundSpeedKn = %v, want 420 (from velocity msg)", a.GroundSpeedKn)
 	}
 }

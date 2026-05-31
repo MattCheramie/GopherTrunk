@@ -57,10 +57,10 @@ func TestRetentionDeletesOldRows(t *testing.T) {
 }
 
 // TestRetentionLogSweepEveryTable verifies the received_at delete path
-// is valid SQL for every table in decoderLogTables — a typo or a table
-// missing its received_at column would surface here as an error. Run
-// against empty tables so it doesn't depend on each table's NOT NULL
-// column set.
+// is valid SQL for every table in decoderLogTables plus the special
+// location_log (reported_at) path — a typo or a table missing its
+// timestamp column would surface here. Run against empty tables so it
+// doesn't depend on each table's NOT NULL column set.
 func TestRetentionLogSweepEveryTable(t *testing.T) {
 	db := openTestDB(t)
 	r, err := NewRetention(RetentionOptions{DB: db, LogRowMaxAge: 24 * time.Hour})
@@ -72,10 +72,13 @@ func TestRetentionLogSweepEveryTable(t *testing.T) {
 			t.Errorf("deleteOldLogRows(%q): %v", table, err)
 		}
 	}
+	if _, err := r.deleteOldByColumn(context.Background(), "location_log", "reported_at"); err != nil {
+		t.Errorf("deleteOldByColumn(location_log, reported_at): %v", err)
+	}
 }
 
-// TestRetentionDeletesOldLogRows checks the age cutoff on a
-// representative table (m17_log) end-to-end through SweepOnce.
+// TestRetentionDeletesOldLogRows checks the age cutoff end-to-end
+// through SweepOnce on a representative table (m17_log).
 func TestRetentionDeletesOldLogRows(t *testing.T) {
 	db := openTestDB(t)
 	now := time.Now().UTC()
@@ -97,8 +100,8 @@ func TestRetentionDeletesOldLogRows(t *testing.T) {
 	}
 	r.SweepOnce(context.Background())
 
-	var src string
 	var n int
+	var src string
 	if err := db.sql.QueryRow(`SELECT COUNT(*), COALESCE(MIN(src), '') FROM m17_log`).Scan(&n, &src); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +111,7 @@ func TestRetentionDeletesOldLogRows(t *testing.T) {
 }
 
 // TestRetentionLogSweepDisabledByDefault confirms a zero LogRowMaxAge
-// leaves the decoder-log rows untouched.
+// leaves decoder-log rows untouched even when CallRowMaxAge is set.
 func TestRetentionLogSweepDisabledByDefault(t *testing.T) {
 	db := openTestDB(t)
 	old := time.Now().Add(-100 * 24 * time.Hour).UnixNano()
@@ -116,7 +119,6 @@ func TestRetentionLogSweepDisabledByDefault(t *testing.T) {
 		old, "AB1CDE", "M17-USA"); err != nil {
 		t.Fatal(err)
 	}
-	// Only CallRowMaxAge set — the log sweep must not run.
 	r, _ := NewRetention(RetentionOptions{DB: db, CallRowMaxAge: time.Hour})
 	r.SweepOnce(context.Background())
 	var n int
