@@ -189,21 +189,20 @@ func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
 	}
 	debugLogf("winusb", "Open WinUsb_Initialize ok iface=0x%x", ifaceHandle)
 	t := &winTransport{
-	// Match libusb's WinUSB backend: explicitly disable the per-pipe
-	// transfer timeout on the control endpoint at open time
-	// (winusbx_configure_endpoints in libusb/os/windows_winusb.c sets
-	// PIPE_TRANSFER_TIMEOUT=0 on pipe 0 as part of claim_interface).
-	// WinUSB's documented default is 5000 ms — without this call the
-	// brief window between open and the first ControlOut would inherit
-	// that default. The lazy applyControlTimeout still overrides this
-	// to CtrlTimeoutMs on the first user-level transfer; this call is
-	// pure parity / hardening, not the issue #395 fix.
-	setControlPipeTimeout(ifaceHandle, 0)
-	return &winTransport{
 		fileHandle:  handle,
 		ifaceHandle: ifaceHandle,
 		desc:        d,
 	}
+	// Match libusb's WinUSB backend: explicitly disable the per-pipe
+	// transfer timeout on the control endpoint at open time
+	// (winusbx_configure_endpoints in libusb/os/windows_winusb.c sets
+	// PIPE_TRANSFER_TIMEOUT=0 on pipe 0 as part of claim_interface).
+	// WinUSB's documented default is 5000 ms; without this call, the
+	// brief window between open and the first ControlOut would inherit
+	// that default. The lazy applyControlTimeout still overrides this
+	// to CtrlTimeoutMs on the first user-level transfer; this call is
+	// parity/hardening, not the issue #395 fix.
+	setControlPipeTimeout(ifaceHandle, 0)
 	return MaybeWrapDebug(t, d), nil
 }
 
