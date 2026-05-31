@@ -472,7 +472,7 @@ func fecSummary(s client.SystemDTO) string {
 	case "p25-phase2":
 		parts = append(parts, "trellis: "+orDefault(s.P25Phase2TrellisMode, "on"))
 		parts = append(parts, "rs: "+orDefault(s.P25Phase2RSMode, "off"))
-		parts = append(parts, "scrambler: "+orDefault(s.P25Phase2ScramblerMode, "off"))
+		parts = append(parts, "scrambler: "+orDefault(s.P25Phase2ScramblerMode, "on"))
 	case "nxdn":
 		parts = append(parts, "viterbi: "+orDefault(s.NXDNViterbiMode, "spec"))
 		if s.NXDNDeviationHz > 0 {
