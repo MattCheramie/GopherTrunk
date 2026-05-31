@@ -2916,6 +2916,10 @@ func (a adsbProvider) RecentAircraftReports(limit int) ([]storage.AircraftReport
 	return a.log.Recent(limit)
 }
 
+func (a adsbProvider) CurrentAircraft(maxAge time.Duration) ([]storage.AircraftReport, error) {
+	return a.log.CurrentAircraft(maxAge)
+}
+
 // mdc1200Provider adapts storage.MDC1200Log into api.MDC1200Provider
 // so the api package stays free of the storage import dependency.
 // Read-only — the decoder writes via the events bus.

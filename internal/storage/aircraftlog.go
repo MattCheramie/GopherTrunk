@@ -192,6 +192,95 @@ func (a *AircraftLog) Recent(limit int) ([]AircraftReport, error) {
 	return out, rows.Err()
 }
 
+// CurrentAircraft returns the latest known state of each aircraft seen
+// within maxAge, one row per ICAO. Because aircraft_log stores one
+// message type per row (identification, position, and velocity arrive
+// as separate Mode-S messages), this coalesces the most recent
+// non-empty value of each field group — callsign, position, altitude,
+// velocity — into a single live-state record. ReceivedAt is the
+// aircraft's last-seen time. Rows are newest-last-seen first.
+//
+// maxAge ≤ 0 defaults to 5 minutes. This powers the "currently visible
+// aircraft" panel, distinct from the raw message log Recent returns.
+func (a *AircraftLog) CurrentAircraft(maxAge time.Duration) ([]AircraftReport, error) {
+	if maxAge <= 0 {
+		maxAge = 5 * time.Minute
+	}
+	cutoff := time.Now().Add(-maxAge).UnixNano()
+	rows, err := a.db.SQL().Query(
+		`SELECT received_at, icao, icao_hex, kind, callsign, category,
+		        has_position, latitude, longitude, has_altitude, altitude,
+		        ground_speed_kn, track_deg, vertical_rate_fpm
+		 FROM aircraft_log WHERE received_at >= ? ORDER BY received_at ASC`,
+		cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("storage/aircraftlog: current query: %w", err)
+	}
+	defer rows.Close()
+
+	// Fold rows in ascending time order so the last write of each field
+	// group wins. cur keys by ICAO; order preserves first-seen sequence
+	// for a stable sort tiebreak.
+	cur := make(map[uint32]*AircraftReport)
+	var order []uint32
+	for rows.Next() {
+		var (
+			r      AircraftReport
+			ns     int64
+			hasPos int
+			hasAlt int
+		)
+		if err := rows.Scan(&ns, &r.ICAO, &r.ICAOHex, &r.Kind, &r.Callsign,
+			&r.Category, &hasPos, &r.Latitude, &r.Longitude, &hasAlt,
+			&r.Altitude, &r.GroundSpeedKn, &r.TrackDeg, &r.VerticalRateFPM); err != nil {
+			return nil, fmt.Errorf("storage/aircraftlog: current scan: %w", err)
+		}
+		at := time.Unix(0, ns)
+		c := cur[r.ICAO]
+		if c == nil {
+			c = &AircraftReport{ICAO: r.ICAO}
+			cur[r.ICAO] = c
+			order = append(order, r.ICAO)
+		}
+		c.ReceivedAt = at // ASC order → final assignment is last-seen
+		if r.ICAOHex != "" {
+			c.ICAOHex = r.ICAOHex
+		}
+		if r.Callsign != "" {
+			c.Callsign = r.Callsign
+		}
+		if r.Category != "" {
+			c.Category = r.Category
+		}
+		if hasPos != 0 {
+			c.HasPosition = true
+			c.Latitude = r.Latitude
+			c.Longitude = r.Longitude
+		}
+		if hasAlt != 0 {
+			c.HasAltitude = true
+			c.Altitude = r.Altitude
+		}
+		if r.Kind == "velocity" {
+			c.GroundSpeedKn = r.GroundSpeedKn
+			c.TrackDeg = r.TrackDeg
+			c.VerticalRateFPM = r.VerticalRateFPM
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]AircraftReport, 0, len(order))
+	for _, icao := range order {
+		out = append(out, *cur[icao])
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ReceivedAt.After(out[j].ReceivedAt)
+	})
+	return out, nil
+}
+
 // Close releases the bus subscription and waits for Run to drain.
 func (a *AircraftLog) Close() error {
 	a.closeOnce.Do(func() {
