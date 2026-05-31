@@ -70,6 +70,8 @@ export function App() {
   const setConnected = useShared((s) => s.setConnected);
   const setMutations = useShared((s) => s.setMutations);
   const setWSStatus = useShared((s) => s.setWSStatus);
+  const hiddenTabs = useShared((s) => s.hiddenTabs);
+  const setHiddenTabs = useShared((s) => s.setHiddenTabs);
   const appendEvents = useShared((s) => s.appendEvents);
   const lastError = useShared((s) => s.lastError);
   const setError = useShared((s) => s.setError);
@@ -111,6 +113,14 @@ export function App() {
       .then(setMutations)
       .catch(() => setMutations(null));
 
+    // Pull the runtime snapshot once to learn which nav tabs the
+    // operator turned off via web.tabs in config. On failure we leave
+    // the nav untouched (everything visible) rather than blank it.
+    api
+      .runtime(cfg)
+      .then((rt) => setHiddenTabs(rt.hidden_tabs ?? []))
+      .catch(() => setHiddenTabs([]));
+
     const stream = openEventStream(cfg, {
       onEvents: appendEvents,
       onStatus: setWSStatus,
@@ -118,9 +128,30 @@ export function App() {
     return () => {
       stream.close();
     };
-  }, [connected, baseURL, token, appendEvents, setMutations, setWSStatus]);
+  }, [
+    connected,
+    baseURL,
+    token,
+    appendEvents,
+    setMutations,
+    setWSStatus,
+    setHiddenTabs,
+  ]);
 
-  const visibleTabs = useMemo(() => TABS, []);
+  // A hidden tab is dropped from both the main strip and the desktop
+  // overflow row. The key is the route path minus its leading slash —
+  // the same key the daemon emits in hidden_tabs. Routes stay mounted
+  // (nav-only hiding), so a hidden panel is still reachable by URL.
+  const hidden = useMemo(() => new Set(hiddenTabs), [hiddenTabs]);
+  const tabKey = (t: Tab) => String(t.to).replace(/^\//, "");
+  const visibleTabs = useMemo(
+    () => TABS.filter((t) => !hidden.has(tabKey(t))),
+    [hidden],
+  );
+  const visibleExtraTabs = useMemo(
+    () => EXTRA_TABS.filter((t) => !hidden.has(tabKey(t))),
+    [hidden],
+  );
 
   if (!baseURL || !connected) {
     return <ConnectScreen />;
@@ -134,7 +165,7 @@ export function App() {
           bottom-nav-friendly four-tab limit still leaves room for
           everything else. */}
       <div className="hidden sm:flex gap-1 px-3 py-1 border-b border-panel text-xs overflow-x-auto">
-        {EXTRA_TABS.map((t) => (
+        {visibleExtraTabs.map((t) => (
           <button
             key={String(t.to)}
             onClick={() => navigate(t.to)}

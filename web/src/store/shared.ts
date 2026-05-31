@@ -43,6 +43,10 @@ interface SharedState {
   /** Cap the event ring at this many entries to mirror the TUI. */
   eventCap: number;
 
+  /** Tab keys the operator switched off via web.tabs in config. The
+   *  nav bar filters these out. Sourced from /api/v1/runtime. */
+  hiddenTabs: string[];
+
   /** Last error surfaced from any request, for the toast strip. */
   lastError: string | null;
 
@@ -59,6 +63,7 @@ interface SharedState {
   setActiveCalls(a: ActiveCallDTO[]): void;
   setDevices(d: DeviceDTO[]): void;
   setScanner(s: ScannerStatusDTO | null): void;
+  setHiddenTabs(tabs: string[]): void;
   appendEvents(evs: EventDTO[]): void;
   setError(msg: string | null): void;
   reset(): void;
@@ -83,6 +88,7 @@ export const useShared = create<SharedState>((set, get) => ({
   scanner: null,
   events: [],
   eventCap: 500,
+  hiddenTabs: [],
 
   lastError: null,
 
@@ -127,6 +133,9 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setScanner(s) {
     set({ scanner: s });
+  },
+  setHiddenTabs(tabs) {
+    set({ hiddenTabs: tabs });
   },
   appendEvents(evs) {
     if (evs.length === 0) return;
@@ -181,6 +190,7 @@ export const useShared = create<SharedState>((set, get) => ({
       scanner: null,
       events: [],
       mutations: null,
+      hiddenTabs: [],
       lastError: null,
     });
   },

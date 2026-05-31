@@ -713,3 +713,23 @@ broadcast:
 #       role: "control"
 #       loop: true
 
+# User-interface tabs. Every navigation tab shows by default in both the
+# web UI and the terminal TUI. If you run GopherTrunk for one main task
+# (just trunking, just pagers, …) you can declutter the nav by switching
+# the tabs you don't use off here. Setting a tab to false removes it from
+# the nav strip only — the panel is still reachable directly by URL. Omit
+# this section (or leave it empty) to show everything.
+#
+# Valid tab keys: dashboard, active, scanner, settings, systems,
+# talkgroups, rids, history, events, cc, tones, pagers, aprs, ais, dsc,
+# adsb, mdc1200, spectrum, constellation, bookmarks, metrics, devices,
+# import. (The feature tabs pagers/aprs/ais/dsc/adsb/mdc1200 are web-only,
+# so hiding them is a no-op in the TUI.)
+# web:
+#   tabs:
+#     aprs: false
+#     ais: false
+#     dsc: false
+#     adsb: false
+#     mdc1200: false
+

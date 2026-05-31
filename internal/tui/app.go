@@ -191,40 +191,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ToggleTheme):
 			return m, m.toggleTheme()
 		case key.Matches(msg, m.keys.NextPanel):
-			m.active = (m.active + 1) % state.PanelCount
+			m.cyclePanel(1)
 			return m, nil
 		case key.Matches(msg, m.keys.PrevPanel):
-			m.active = (m.active + state.PanelCount - 1) % state.PanelCount
+			m.cyclePanel(-1)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel1):
-			m.active = state.PanelDashboard
+			m.jumpToVisible(0)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel2):
-			m.active = state.PanelSystems
+			m.jumpToVisible(1)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel3):
-			m.active = state.PanelTalkgroups
+			m.jumpToVisible(2)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel4):
-			m.active = state.PanelActive
+			m.jumpToVisible(3)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel5):
-			m.active = state.PanelHistory
+			m.jumpToVisible(4)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel6):
-			m.active = state.PanelEvents
+			m.jumpToVisible(5)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel7):
-			m.active = state.PanelTones
+			m.jumpToVisible(6)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel8):
-			m.active = state.PanelMetrics
+			m.jumpToVisible(7)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel9):
-			m.active = state.PanelDevices
+			m.jumpToVisible(8)
 			return m, nil
 		case key.Matches(msg, m.keys.JumpPanel0):
-			m.active = state.PanelScanner
+			m.jumpToVisible(9)
 			return m, nil
 		}
 
@@ -294,6 +294,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pollRuntimeMsg:
 		if msg.err == nil {
 			m.shared.Runtime = msg.r
+			// web.tabs may now hide the active panel — snap to the
+			// first visible tab so the operator isn't stranded on a
+			// hidden one.
+			m.clampActive()
 		}
 		m.shared.RuntimeErr = msg.err
 		cmds = append(cmds, scheduleAfter(pollRuntimeEvery, cmdPollRuntime(m.cli)))
@@ -464,12 +468,75 @@ func (m *Model) View() string {
 	return full
 }
 
+// visiblePanels returns the panels in display order with any switched
+// off via web.tabs (carried on the runtime snapshot) filtered out. The
+// nav bar, tab cycling, jump keys and mouse hit-testing all key off this
+// list so a hidden tab disappears everywhere consistently. At least one
+// panel is always kept so navigation can never strand the operator.
+func (m *Model) visiblePanels() []state.PanelKind {
+	hidden := make(map[string]bool, len(m.shared.Runtime.HiddenTabs))
+	for _, k := range m.shared.Runtime.HiddenTabs {
+		hidden[k] = true
+	}
+	vis := make([]state.PanelKind, 0, len(m.panels))
+	for i := range m.panels {
+		kind := state.PanelKind(i)
+		if hidden[kind.Key()] {
+			continue
+		}
+		vis = append(vis, kind)
+	}
+	if len(vis) == 0 {
+		vis = append(vis, state.PanelDashboard)
+	}
+	return vis
+}
+
+// jumpToVisible activates the n-th (0-based) visible tab, ignoring
+// out-of-range jumps so a number key bound past the end of a trimmed
+// nav is a no-op.
+func (m *Model) jumpToVisible(n int) {
+	vis := m.visiblePanels()
+	if n >= 0 && n < len(vis) {
+		m.active = vis[n]
+	}
+}
+
+// cyclePanel advances the active tab by delta within the visible list,
+// wrapping at both ends.
+func (m *Model) cyclePanel(delta int) {
+	vis := m.visiblePanels()
+	cur := 0
+	for i, k := range vis {
+		if k == m.active {
+			cur = i
+			break
+		}
+	}
+	n := len(vis)
+	m.active = vis[((cur+delta)%n+n)%n]
+}
+
+// clampActive snaps the active tab to the first visible one when the
+// current selection has been hidden (e.g. config changed under us).
+func (m *Model) clampActive() {
+	vis := m.visiblePanels()
+	for _, k := range vis {
+		if k == m.active {
+			return
+		}
+	}
+	m.active = vis[0]
+}
+
 func (m *Model) renderTabs() string {
-	// Build the full label set first so we can decide if we need to
-	// collapse for narrow terminals.
-	labels := make([]string, state.PanelCount)
-	for i := state.PanelKind(0); i < state.PanelCount; i++ {
-		labels[i] = fmt.Sprintf("%d %s", int(i)+1, m.panels[i].Title())
+	// Build the visible label set first so we can decide if we need to
+	// collapse for narrow terminals. Display numbers track visible
+	// position so they match the 1-9/0 jump keys.
+	vis := m.visiblePanels()
+	labels := make([]string, len(vis))
+	for i, kind := range vis {
+		labels[i] = fmt.Sprintf("%d %s", i+1, m.panels[kind].Title())
 	}
 	// Estimate width: each tab gets 2 padding cells + label runes + 1 separator.
 	full := 0
@@ -481,21 +548,21 @@ func (m *Model) renderTabs() string {
 	// active index inverted, plus a "more" pill that opens the
 	// palette filtered to panel jumps.
 	if m.width > 0 && full > m.width {
-		return m.renderCompactTabs(labels)
+		return m.renderCompactTabs(vis, labels)
 	}
-	parts := make([]string, 0, state.PanelCount)
-	rects := make([]tabRect, 0, state.PanelCount)
+	parts := make([]string, 0, len(vis))
+	rects := make([]tabRect, 0, len(vis))
 	x := 0
-	for i := state.PanelKind(0); i < state.PanelCount; i++ {
+	for i, kind := range vis {
 		var rendered string
-		if i == m.active {
+		if kind == m.active {
 			rendered = m.styles.activeTab.Render(labels[i])
 		} else {
 			rendered = m.styles.tab.Render(labels[i])
 		}
 		parts = append(parts, rendered)
 		w := lipgloss.Width(rendered)
-		rects = append(rects, tabRect{kind: i, xStart: x, xEnd: x + w})
+		rects = append(rects, tabRect{kind: kind, xStart: x, xEnd: x + w})
 		x += w + 1 // +1 for the separator space
 	}
 	m.tabRects = rects
@@ -505,20 +572,20 @@ func (m *Model) renderTabs() string {
 // renderCompactTabs is the narrow-terminal fallback: a strip of
 // numeric indices ("1 2 3 …") with the active one labelled fully, and
 // a trailing "more" pill that points the operator at ctrl+p.
-func (m *Model) renderCompactTabs(labels []string) string {
-	parts := make([]string, 0, state.PanelCount+1)
-	rects := make([]tabRect, 0, state.PanelCount)
+func (m *Model) renderCompactTabs(vis []state.PanelKind, labels []string) string {
+	parts := make([]string, 0, len(vis)+1)
+	rects := make([]tabRect, 0, len(vis))
 	x := 0
-	for i := state.PanelKind(0); i < state.PanelCount; i++ {
+	for i, kind := range vis {
 		var rendered string
-		if i == m.active {
+		if kind == m.active {
 			rendered = m.styles.activeTab.Render(labels[i])
 		} else {
-			rendered = m.styles.tab.Render(fmt.Sprintf("%d", int(i)+1))
+			rendered = m.styles.tab.Render(fmt.Sprintf("%d", i+1))
 		}
 		parts = append(parts, rendered)
 		w := lipgloss.Width(rendered)
-		rects = append(rects, tabRect{kind: i, xStart: x, xEnd: x + w})
+		rects = append(rects, tabRect{kind: kind, xStart: x, xEnd: x + w})
 		x += w + 1
 	}
 	m.tabRects = rects

@@ -212,6 +212,9 @@ export interface RuntimeDTO {
   // collected during NewDaemon. The Dashboard pins them until the
   // operator dismisses them.
   startup_warnings?: string[];
+  // HiddenTabs lists the navigation tab keys switched off via
+  // web.tabs in config. The App filters them out of the nav strip.
+  hidden_tabs?: string[];
   // RuntimeDTO is large and changes shape as the daemon grows. Read
   // unknown fields lazily.
   [key: string]: unknown;

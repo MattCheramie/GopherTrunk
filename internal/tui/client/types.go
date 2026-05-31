@@ -288,6 +288,11 @@ type RuntimeDTO struct {
 	// collected during NewDaemon. The Dashboard pins them as a
 	// one-shot banner.
 	StartupWarnings []string `json:"startup_warnings,omitempty"`
+
+	// HiddenTabs lists the navigation tab keys the operator switched
+	// off via web.tabs in config. The TUI filters these out of its tab
+	// bar. Empty means every tab is shown.
+	HiddenTabs []string `json:"hidden_tabs,omitempty"`
 }
 
 // ToneProfileDTO mirrors api.ToneProfileDTO.
