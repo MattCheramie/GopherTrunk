@@ -56,6 +56,78 @@ func TestRetentionDeletesOldRows(t *testing.T) {
 	}
 }
 
+// TestRetentionLogSweepEveryTable verifies the received_at delete path
+// is valid SQL for every table in decoderLogTables — a typo or a table
+// missing its received_at column would surface here as an error. Run
+// against empty tables so it doesn't depend on each table's NOT NULL
+// column set.
+func TestRetentionLogSweepEveryTable(t *testing.T) {
+	db := openTestDB(t)
+	r, err := NewRetention(RetentionOptions{DB: db, LogRowMaxAge: 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range decoderLogTables {
+		if _, err := r.deleteOldLogRows(context.Background(), table); err != nil {
+			t.Errorf("deleteOldLogRows(%q): %v", table, err)
+		}
+	}
+}
+
+// TestRetentionDeletesOldLogRows checks the age cutoff on a
+// representative table (m17_log) end-to-end through SweepOnce.
+func TestRetentionDeletesOldLogRows(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC()
+	insert := func(ageHours int, src string) {
+		t.Helper()
+		_, err := db.sql.Exec(
+			`INSERT INTO m17_log (received_at, src, dst) VALUES (?, ?, ?)`,
+			now.Add(-time.Duration(ageHours)*time.Hour).UnixNano(), src, "M17-USA")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert(48, "OLD")
+	insert(1, "FRESH")
+
+	r, err := NewRetention(RetentionOptions{DB: db, LogRowMaxAge: 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SweepOnce(context.Background())
+
+	var src string
+	var n int
+	if err := db.sql.QueryRow(`SELECT COUNT(*), COALESCE(MIN(src), '') FROM m17_log`).Scan(&n, &src); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || src != "FRESH" {
+		t.Errorf("after sweep: %d rows (src=%q), want 1 (FRESH)", n, src)
+	}
+}
+
+// TestRetentionLogSweepDisabledByDefault confirms a zero LogRowMaxAge
+// leaves the decoder-log rows untouched.
+func TestRetentionLogSweepDisabledByDefault(t *testing.T) {
+	db := openTestDB(t)
+	old := time.Now().Add(-100 * 24 * time.Hour).UnixNano()
+	if _, err := db.sql.Exec(`INSERT INTO m17_log (received_at, src, dst) VALUES (?, ?, ?)`,
+		old, "AB1CDE", "M17-USA"); err != nil {
+		t.Fatal(err)
+	}
+	// Only CallRowMaxAge set — the log sweep must not run.
+	r, _ := NewRetention(RetentionOptions{DB: db, CallRowMaxAge: time.Hour})
+	r.SweepOnce(context.Background())
+	var n int
+	if err := db.sql.QueryRow(`SELECT COUNT(*) FROM m17_log`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("m17_log: %d rows, want 1 (log sweep should be disabled)", n)
+	}
+}
+
 func TestRetentionDeletesOldFiles(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
