@@ -15,7 +15,7 @@ func TestParseScramblerMode(t *testing.T) {
 		want ScramblerMode
 		ok   bool
 	}{
-		{"", ScramblerOff, true},
+		{"", ScramblerOn, true},
 		{"off", ScramblerOff, true},
 		{"false", ScramblerOff, true},
 		{"0", ScramblerOff, true},
@@ -26,8 +26,8 @@ func TestParseScramblerMode(t *testing.T) {
 		{"probe", ScramblerProbe, true},
 		{"PROBE", ScramblerProbe, true},
 		{"auto", ScramblerProbe, true},
-		{"yes", ScramblerOff, false},
-		{"scramble", ScramblerOff, false},
+		{"yes", ScramblerOn, false},
+		{"scramble", ScramblerOn, false},
 	}
 	for _, c := range cases {
 		got, ok := ParseScramblerMode(c.in)

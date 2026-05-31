@@ -452,7 +452,7 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 	cc.SetInterleaveMode(interleaveMode)
 	scramblerMode, scrOK := p25phase2.ParseScramblerMode(sys.P25Phase2ScramblerMode)
 	if !scrOK {
-		log.Warn("widebandt2: unrecognised p25_phase2_scrambler_mode; falling back to off",
+		log.Warn("widebandt2: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", sys.Name, "value", sys.P25Phase2ScramblerMode)
 	}
 	if scramblerMode == p25phase2.ScramblerProbe && rsMode != p25phase2.RSOn {

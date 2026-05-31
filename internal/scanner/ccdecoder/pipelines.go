@@ -206,7 +206,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	}
 	p2Scrambler, p2ScrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
 	if !p2ScrOK {
-		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",
+		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
 	cc := p25phase1.New(p25phase1.Options{
@@ -329,7 +329,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc.SetInterleaveMode(interleaveMode)
 	scramblerMode, scrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
 	if !scrOK {
-		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
 	if scramblerMode == p25phase2.ScramblerProbe && rsMode != p25phase2.RSOn {
