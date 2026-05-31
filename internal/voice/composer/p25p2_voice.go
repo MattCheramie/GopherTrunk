@@ -57,10 +57,23 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		"trellis", macCfg.Trellis, "rs", macCfg.RS,
 		"interleave", macCfg.Interleave, "scrambler", macCfg.Scrambler,
 		"seed", macCfg.Seed)
-	if macCfg.Scrambler == p25p2.ScramblerOff || macCfg.Seed == 0 {
-		c.log.Warn("composer: p25p2 macCfg suggests live MAC PDU decode will fail",
+	// Surface the specific reason live MAC PDU decode would fail so the
+	// operator knows which knob to turn, rather than one opaque catch-all
+	// (issue #451). With the live-decode defaults (ScramblerOn + an
+	// identity-derived seed) none of these fire.
+	switch {
+	case macCfg.Seed == 0:
+		c.log.Warn("composer: p25p2 macCfg has no scrambler seed; live MAC PDU decode will fail until the system identity is known (set WACN/SystemID/site, or wait for a Network Status Broadcast on Phase 2 control channels)",
 			"serial", serial, "system", system,
 			"scrambler", macCfg.Scrambler, "seed", macCfg.Seed)
+	case macCfg.Scrambler == p25p2.ScramblerOff:
+		c.log.Warn("composer: p25p2 scrambler is off; live P25 Phase 2 MAC PDUs are always PN44-scrambled, so MAC decode will fail (set p25_phase2_scrambler_mode=on)",
+			"serial", serial, "system", system,
+			"scrambler", macCfg.Scrambler, "seed", macCfg.Seed)
+	case macCfg.Scrambler == p25p2.ScramblerProbe && macCfg.RS != p25p2.RSOn:
+		c.log.Warn("composer: p25p2 scrambler=probe requires p25_phase2_rs_mode=on to verify the slot offset; it will degrade to offset 0 and likely fail",
+			"serial", serial, "system", system,
+			"scrambler", macCfg.Scrambler, "rs", macCfg.RS, "seed", macCfg.Seed)
 	}
 
 	decim := int(iqHz) / p25p2VoiceIntermediateHz
