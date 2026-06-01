@@ -210,7 +210,7 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 			break
 		}
 		if attempt == maxAttempts-1 || !isBringupResetable(err) {
-			return nil, err
+			return nil, withTransportDiagnostics(transport, err)
 		}
 		if resetErr := transport.Reset(); resetErr != nil {
 			return nil, fmt.Errorf("rtlsdr: bring-up hit %w; reset failed: %w", err, resetErr)
@@ -370,6 +370,27 @@ func isBringupResetable(err error) bool {
 		errors.Is(err, usb.ErrDeviceGone) ||
 		errors.Is(err, usb.ErrTimeout) ||
 		errors.Is(err, usb.ErrPipeStalled)
+}
+
+// withTransportDiagnostics appends a USB diagnostic dump to err when the
+// transport can produce one (the Windows WinUSB transport today, via
+// usb.Diagnoser). Gathered once, on the final bring-up failure, so a
+// single `gophertrunk sdr list --probe` run captures the bound driver,
+// the device + configuration descriptors, and a control-IN read probe —
+// the data needed to triage a dongle that rejects control transfers even
+// with WinUSB reportedly bound. No-op on transports that don't implement
+// Diagnoser or that return an empty dump, so non-Windows error messages
+// stay unchanged.
+func withTransportDiagnostics(transport usb.Transport, err error) error {
+	dg, ok := transport.(usb.Diagnoser)
+	if !ok {
+		return err
+	}
+	diag := dg.Diagnostics()
+	if diag == "" {
+		return err
+	}
+	return fmt.Errorf("%w\n--- USB diagnostics (gophertrunk; attach this to the issue) ---\n%s------------------------------------------------------------", err, diag)
 }
 
 // claimBusyHint returns a parenthesized, space-prefixed remediation

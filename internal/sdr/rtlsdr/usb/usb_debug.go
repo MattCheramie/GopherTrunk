@@ -13,6 +13,17 @@ import (
 // transport wrapper. Anything non-empty enables it.
 const debugUSBEnv = "RTLSDR_DEBUG_USB"
 
+// Diagnoser is an optional Transport capability. Implementations that
+// can describe the underlying device — the bound driver, USB descriptors,
+// a control-IN read probe — expose Diagnostics. The bring-up path
+// (purego/driver.go) appends this to a failed Open so a single probe run
+// captures everything needed to triage a dongle that rejects control
+// transfers. The Windows transport implements it; transports that don't
+// simply contribute no extra diagnostics.
+type Diagnoser interface {
+	Diagnostics() string
+}
+
 // debugMaxDataBytes caps how many payload bytes the debug log dumps
 // per ControlOut. 64 bytes is enough to capture the R820T 27-byte
 // init burst (and the chunked variant) in full while keeping log
@@ -186,6 +197,16 @@ func (d *debugTransport) Reset() error {
 func (d *debugTransport) Close() error {
 	d.logf("Close")
 	return d.inner.Close()
+}
+
+// Diagnostics forwards to the wrapped transport's Diagnostics when it
+// implements Diagnoser, so the RTLSDR_DEBUG_USB wrapper doesn't hide the
+// rich device dump the bring-up path appends on failure.
+func (d *debugTransport) Diagnostics() string {
+	if dg, ok := d.inner.(Diagnoser); ok {
+		return dg.Diagnostics()
+	}
+	return ""
 }
 
 // hexBytes returns a space-separated lowercase hex dump of the first
