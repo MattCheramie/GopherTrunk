@@ -95,6 +95,22 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	return nil
 }
 
+// ActualSampleRate returns the exact IQ rate the RTL2832U is delivering.
+// The demod quantizes a requested rate to its 28.4 fixed-point resampler
+// divisor, so the streamed rate can differ from the value passed to
+// SetSampleRate (e.g. 2.4/0.96 MS/s land exactly, but 2.048/1.024 MS/s and
+// odd custom rates do not). The down-converter's decimation ratio must be
+// derived from THIS rate, not the requested one — otherwise the symbol
+// clock drifts on the live stream while offline replay (which reads a file
+// at exactly the configured rate) stays correct (issue #402). Optional
+// sdr.Device extension; callers type-assert for it.
+func (d *Device) ActualSampleRate() (uint32, error) {
+	if d.closed.Load() {
+		return 0, ErrClosed
+	}
+	return d.demod.GetSampleRate(), nil
+}
+
 // SetGain takes the [sdr.Device] convention: tenthDB < 0 selects AGC,
 // tenthDB ≥ 0 switches to manual mode and applies the closest
 // quantized gain on the chip's ladder. Mirrors librtlsdr's

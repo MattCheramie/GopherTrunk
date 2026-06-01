@@ -770,6 +770,30 @@ func TestR82xx_PPMCorrectionShiftsPLLReference(t *testing.T) {
 	}
 }
 
+// TestR82xx_SetFreqCorrectionZeroIsNoOpRetune pins the issue-#402 ppm:0
+// path: the reporter runs ppm: 0, so the daemon pushes SetPPM(0) ->
+// SetFreqCorrection(0) at startup. With ppmCorr already at its 0 default,
+// this must return before any SetFreq — a spurious LO re-tune mid-
+// acquisition would disturb FSW lock on the live stream — even after a
+// frequency has been tuned. The nil transport here makes an accidental
+// SetFreq panic, so reaching the retune path fails the test loudly rather
+// than silently re-tuning.
+func TestR82xx_SetFreqCorrectionZeroIsNoOpRetune(t *testing.T) {
+	r := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+	r.initDone = true
+	r.freqHz = 420_087_500 // pretend Mt Anakie is already tuned
+
+	if err := r.SetFreqCorrection(0); err != nil {
+		t.Fatalf("SetFreqCorrection(0) = %v, want nil no-op (must not retune)", err)
+	}
+	if r.ppmCorr != 0 {
+		t.Errorf("ppmCorr = %d after SetFreqCorrection(0), want 0", r.ppmCorr)
+	}
+	if got := r.effectiveXtalHz(); got != r828dXtalHz {
+		t.Errorf("effectiveXtalHz = %d after ppm 0, want raw crystal %d", got, r828dXtalHz)
+	}
+}
+
 // Detect orchestrator tests moved to detect_test.go (it walks every
 // candidate tuner, not just R820T, so the scripts that pin its
 // behavior live with the orchestrator).

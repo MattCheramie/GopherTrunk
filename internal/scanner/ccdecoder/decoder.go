@@ -178,6 +178,14 @@ type Decoder struct {
 	mu       sync.Mutex
 	active   ProtocolPipeline
 	activeAt string // system name the active pipeline is bound to
+	// activeFreqHz is the frequency the active pipeline is tuned to. A
+	// HuntProgress that repeats the same (system, frequency) — e.g. the
+	// supervisor re-hunting a single-candidate system every dwell —
+	// must NOT tear the pipeline down and flush the DDC + symbol clock,
+	// or acquisition restarts from scratch every few seconds and never
+	// converges on a live stream (issue #402: "no FSW hits in chunk"
+	// cycling with "pipeline configured"). Zero until the first build.
+	activeFreqHz uint32
 
 	// ddcOut is the reusable down-converter output buffer — pump
 	// hands it to Downconverter.Process each chunk so the decimated
@@ -306,6 +314,18 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 		return
 	}
 	d.mu.Lock()
+	// Idempotent retune: if the supervisor is re-attempting the same
+	// (system, frequency) the active pipeline is already decoding, leave
+	// it running. Rebuilding here would Close the pipeline and Reset the
+	// DDC + symbol clock, discarding partial sync — and on a single-
+	// candidate system the hunter re-attempts every dwell (~3s), so a
+	// rebuild-on-every-attempt loop never lets a live stream acquire FSW
+	// (issue #402). A genuine retune (different freq or protocol) still
+	// rebuilds below.
+	if d.active != nil && d.activeAt == sys.Name && d.activeFreqHz == p.AttemptedFreqHz {
+		d.mu.Unlock()
+		return
+	}
 	// Close the previous pipeline before constructing a new one so
 	// resources don't accumulate on rapid retune storms.
 	if d.active != nil {
@@ -335,6 +355,7 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	d.mu.Lock()
 	d.active = p2
 	d.activeAt = sys.Name
+	d.activeFreqHz = p.AttemptedFreqHz
 	// Flush the down-converter so decimation-filter state from the
 	// previous channel doesn't bleed into the freshly-tuned one.
 	d.ddc.Reset()
@@ -360,6 +381,7 @@ func (d *Decoder) clearActiveLocked() {
 		d.metrics.ClearIQDCRatioDb(d.activeAt)
 	}
 	d.activeAt = ""
+	d.activeFreqHz = 0
 	d.pwSumSq = 0
 	d.pwSumI = 0
 	d.pwSumQ = 0
