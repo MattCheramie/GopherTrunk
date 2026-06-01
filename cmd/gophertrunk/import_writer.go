@@ -87,6 +87,11 @@ func mergeIntoConfig(systems []parsedSystem, opts mergeOptions) (mergeResult, er
 	// Build the new SystemConfig entries + CSVs.
 	newSystems := make([]config.SystemConfig, 0, len(systems))
 	for _, sys := range systems {
+		// RadioReference occasionally yields a name whose last word is
+		// repeated (e.g. "Cobb Regional Radio System System"), which then
+		// shows up doubled in logs and recording folders. Collapse an exact
+		// trailing duplicate before it is committed to config.
+		sys.Name = collapseTrailingDuplicateWord(sys.Name)
 		slug := buildSlug(sys.Name, sys.SysID)
 		csvPath := filepath.Join(csvDir, "talkgroups-"+slug+".csv")
 		entry := config.SystemConfig{
@@ -202,6 +207,32 @@ func buildSlug(name, sysid string) string {
 		slug += "-" + strings.ToLower(sysid)
 	}
 	return slug
+}
+
+// collapseTrailingDuplicateWord removes the final whitespace-separated
+// word of name when it is an exact, case-insensitive repeat of the word
+// before it (e.g. "Cobb Regional Radio System System" → "Cobb Regional
+// Radio System"). It is deliberately strict — only an identical trailing
+// duplicate is collapsed — so legitimate names are left untouched. The
+// original spacing of the kept portion is preserved.
+func collapseTrailingDuplicateWord(name string) string {
+	fields := strings.Fields(name)
+	if len(fields) < 2 {
+		return name
+	}
+	last := fields[len(fields)-1]
+	prev := fields[len(fields)-2]
+	if !strings.EqualFold(last, prev) {
+		return name
+	}
+	// Trim the trailing duplicate by cutting the original string at the
+	// last occurrence of the repeated word, preserving leading spacing.
+	trimmed := strings.TrimRight(name, " \t")
+	cut := strings.LastIndex(trimmed, last)
+	if cut <= 0 {
+		return name
+	}
+	return strings.TrimRight(trimmed[:cut], " \t")
 }
 
 // buildTalkgroupCSV produces the Trunk-Recorder-style CSV that the

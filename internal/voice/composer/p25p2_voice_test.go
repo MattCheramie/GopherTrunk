@@ -3,7 +3,9 @@ package composer
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -471,5 +473,47 @@ func TestComposerP25Phase2InCallMetadataFires(t *testing.T) {
 			t.Fatalf("missing events after 6s: source=%v enc=%v alias=%v",
 				gotSource, gotEnc, gotAlias)
 		}
+	}
+}
+
+// TestComposerP25Phase2VoiceChainWarnsTrellisOff confirms the chain-entry
+// diagnostic fires a warning when the grant carries TrellisOff — the
+// inconsistent FEC profile (trellis off while RS/interleave/scrambler are
+// on) that surfaced in a field report and silently fails live decode.
+func TestComposerP25Phase2VoiceChainWarnsTrellisOff(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	c, err := New(Options{
+		Bus:           events.NewBus(8),
+		Devices:       &fakeDevices{src: map[string]IQSource{}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  48_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		Log:           logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A closed IQ channel makes the chain log its entry diagnostics and
+	// then return immediately (no IQ to process).
+	iqCh := make(chan []complex64)
+	close(iqCh)
+	done := make(chan struct{})
+	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
+		p25p2.MACDecodeConfig{
+			Trellis:    p25p2.TrellisOff,
+			RS:         p25p2.RSOn,
+			Interleave: p25p2.InterleaveOn,
+			Scrambler:  p25p2.ScramblerProbe,
+			Seed:       12345,
+		}, iqCh, 48_000, done)
+	<-done
+
+	if out := buf.String(); !strings.Contains(out, "trellis is off") {
+		t.Fatalf("expected trellis-off warning, got:\n%s", out)
 	}
 }

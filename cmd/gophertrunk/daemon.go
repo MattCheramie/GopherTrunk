@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -111,6 +112,48 @@ func warnGainUnits(log *slog.Logger, serial, raw string, tenthDB int) {
 		"parsed_db", float64(tenthDB)/10.0,
 		"did_you_mean", strconv.Itoa(tenthDB*10),
 		"hint", "gain: is in TENTHS of a dB (\"320\" = 32 dB). SDRTrunk/OP25/gqrx users multiply dB by 10. Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder.")
+}
+
+// looksDriveRootedOnWindows reports whether p, when used on Windows,
+// would resolve to the root of the *current* drive (e.g. the Unix-style
+// default "/var/lib/gophertrunk/recordings" becomes "C:\var\lib\...")
+// because it is rooted but carries no drive letter and is not a UNC
+// path. Pure string logic so it is testable on any host OS — Go's
+// filepath.VolumeName/Clean use the build OS's rules and cannot be
+// exercised from Linux CI.
+func looksDriveRootedOnWindows(p string) bool {
+	if p == "" {
+		return false
+	}
+	if p[0] != '/' && p[0] != '\\' {
+		return false // relative, or "C:\..." with a drive letter — fine
+	}
+	if len(p) >= 2 && (p[1] == '/' || p[1] == '\\') {
+		return false // UNC path: \\server\share
+	}
+	return true
+}
+
+// warnWindowsDriveRootPaths surfaces config paths that will silently
+// land on the current drive's root on Windows because they were written
+// Unix-style (the hardcoded defaults are "/var/lib/gophertrunk/..."). It
+// is a no-op off Windows and never fails startup — operators on a
+// drive-root path are still functional, just in a surprising location.
+func warnWindowsDriveRootPaths(log *slog.Logger, cfg config.Config) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	for _, e := range []struct{ key, path string }{
+		{"recordings.dir", cfg.Recordings.Dir},
+		{"storage.path", cfg.Storage.Path},
+		{"storage.cc_cache_file", cfg.Storage.CCCacheFile},
+	} {
+		if looksDriveRootedOnWindows(e.path) {
+			log.Warn("daemon: config path has no drive letter; on Windows it resolves to the current drive's root (e.g. C:\\) and may be hard to find or write — use a drive-qualified path",
+				"key", e.key, "path", e.path,
+				"did_you_mean", "C:\\Users\\<you>\\Documents\\GopherTrunk\\"+filepath.Base(e.path))
+		}
+	}
 }
 
 // Daemon owns the lifecycle of every long-lived component the
@@ -358,6 +401,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.writer = w
 	}
+
+	// Surface Unix-style paths that lose their drive letter on Windows
+	// (the shipped defaults are "/var/lib/gophertrunk/...").
+	warnWindowsDriveRootPaths(log, cfg)
 
 	// Talkgroup DB — populated below from per-system CSVs.
 	d.talkgroups = trunking.NewTalkgroupDB()
