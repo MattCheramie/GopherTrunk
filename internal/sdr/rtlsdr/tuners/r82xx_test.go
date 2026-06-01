@@ -842,7 +842,7 @@ func TestR82xx_InitBurst_ChunkSizeFallback_8Succeeds(t *testing.T) {
 // TestR82xx_InitBurst_ChunkSizeFallback_AllSizesFail: chunk1 EPIPEs
 // at every size in the halving walk (16/8/4) with both inner retries
 // failing too. writeBurstRaw wraps the final error as "tried chunk
-// sizes 16,8,4; all EPIPE'd: ..." so reporters see attribution.
+// sizes 16,8,4; all stalled: ..." so reporters see attribution.
 // errors.Is(err, syscall.EPIPE) still holds — the outer openDevice
 // envelope keys off that for its reset+retry. The defer in R82xx.Init
 // still emits the trailing repeater-off so the chip state is clean.
@@ -928,11 +928,96 @@ func TestR82xx_InitBurst_NonEPIPENoRetry(t *testing.T) {
 	if !errors.Is(err, usb.ErrTimeout) {
 		t.Errorf("err = %v, want errors.Is(err, usb.ErrTimeout)", err)
 	}
-	if strings.Contains(err.Error(), "after 1 retry on EPIPE") {
-		t.Errorf("err = %q, must NOT contain retry attribution (non-EPIPE errors skip the retry)", err.Error())
+	if strings.Contains(err.Error(), "after 1 retry on stall") {
+		t.Errorf("err = %q, must NOT contain retry attribution (non-stall errors skip the retry)", err.Error())
 	}
 	if m.Remaining() != 0 {
 		t.Errorf("remaining=%d, want 0 (script must have exactly one chunk1 attempt)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledRetrySucceeds is the Windows analog
+// of TestR82xx_InitBurst_EPIPERetrySucceeds: the NESDR v5 cold-boot I²C
+// stall surfaces as usb.ErrPipeStalled (mapped from ERROR_GEN_FAILURE)
+// rather than syscall.EPIPE. The per-chunk retry must fire for it too —
+// before the isI2CBurstStall fix this stall propagated straight out as
+// the `tuner init: r82xx init: burst write: ... ERROR_GEN_FAILURE`
+// reported on Windows hardware.
+func TestR82xx_InitBurst_ErrPipeStalledRetrySucceeds(t *testing.T) {
+	chunk1, chunk2 := expectR82xxInitBurstChunks()
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1, usb.ErrPipeStalled)) // first attempt: stall
+	script = append(script, r82xxChunkExchange(chunk1, nil))                // retry: succeeds
+	script = append(script, r82xxChunkExchange(chunk2, nil))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (the ErrPipeStalled retry should have absorbed the failure)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (retry must consume exactly two chunk1 steps)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledChunkSizeFallback_8Succeeds is the
+// Windows analog of the size-8 halving fallback: chunk1 at size 16
+// stalls with ErrPipeStalled on both attempts, the halving fallback
+// re-runs the burst at size 8 and succeeds. Proves the chunk-size
+// halving (the real librtlsdr-parity NESDR v5 fix) fires on Windows.
+func TestR82xx_InitBurst_ErrPipeStalledChunkSizeFallback_8Succeeds(t *testing.T) {
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, burstScriptAtSize(8)...)
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (size-8 fallback should have succeeded on ErrPipeStalled)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledAllSizesFail mirrors the all-sizes
+// EPIPE walk for the Windows stall class: the surfaced error must keep
+// errors.Is(err, usb.ErrPipeStalled) so the outer openDevice envelope
+// still keys its reset+retry off it, and carry the all-sizes wrap.
+func TestR82xx_InitBurst_ErrPipeStalledAllSizesFail(t *testing.T) {
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	chunk1at8 := burstChunkAt(0, 8)
+	script = append(script, r82xxChunkExchange(chunk1at8, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at8, usb.ErrPipeStalled))
+	chunk1at4 := burstChunkAt(0, 4)
+	script = append(script, r82xxChunkExchange(chunk1at4, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at4, usb.ErrPipeStalled))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	err := r.Init()
+	if err == nil {
+		t.Fatal("Init succeeded; expected wrapped ErrPipeStalled after all sizes failed")
+	}
+	if !errors.Is(err, usb.ErrPipeStalled) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrPipeStalled) (outer envelope keys off this)", err)
+	}
+	if !strings.Contains(err.Error(), "tried chunk sizes 16,8,4") {
+		t.Errorf("err = %q, want the all-sizes wrap (proves fallback walked all sizes for the stall class)", err.Error())
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (deferred repeater-off must still fire)", m.Remaining())
 	}
 }
 
