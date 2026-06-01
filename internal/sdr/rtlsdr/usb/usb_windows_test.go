@@ -90,6 +90,36 @@ func TestSetupPacketSize(t *testing.T) {
 	}
 }
 
+func TestSetupPacketPack_MatchesByValueLayout(t *testing.T) {
+	// WinUsb_ControlTransfer takes WINUSB_SETUP_PACKET BY VALUE; the
+	// x64/arm64 ABI passes the 8-byte struct in one integer register, so
+	// pack() must produce exactly the bytes a by-value struct push would
+	// place there. Compare pack() against the struct's own little-endian
+	// in-memory image — the ground truth for the register contents.
+	pkt := winusbSetupPacket{
+		RequestType: VendorIn, // 0xC0
+		Request:     0x02,
+		Value:       0x3000,
+		Index:       0x0110,
+		Length:      0x0001,
+	}
+	want := *(*uint64)(unsafe.Pointer(&pkt))
+	if got := uint64(pkt.pack()); got != want {
+		t.Errorf("pack() = 0x%016x, want 0x%016x (must equal the by-value register image)", got, want)
+	}
+
+	// Spot-check the field placement explicitly so a future struct
+	// reorder can't silently pass via the layout-equality check alone.
+	const wantExplicit = uint64(0xC0) |
+		uint64(0x02)<<8 |
+		uint64(0x3000)<<16 |
+		uint64(0x0110)<<32 |
+		uint64(0x0001)<<48
+	if got := uint64(pkt.pack()); got != wantExplicit {
+		t.Errorf("pack() = 0x%016x, want 0x%016x (explicit field placement)", got, wantExplicit)
+	}
+}
+
 func TestDeviceInterfaceDataSize(t *testing.T) {
 	// SP_DEVICE_INTERFACE_DATA on x64 must be 32 bytes for
 	// SetupDiEnumDeviceInterfaces to accept the input.
