@@ -25,17 +25,20 @@ import (
 //     total  144            88
 //
 //  2. A pseudo-random scrambler keyed off u_0 — XOR'd onto the
-//     channel bits of u_1..u_6 to whiten the spectrum (§7.4).
+//     channel bits of u_1..u_6 to whiten the spectrum (§7.4). See
+//     scrambler.go.
 //
 //  3. A 144-bit interleaver permutation that scatters adjacent
 //     codeword bits across the frame so a localised burst error
-//     spreads across vectors (§7.5).
+//     spreads across vectors (§7.5). See interleave.go.
 //
 // This file ships layer 1 — the per-vector FEC encode/decode plus
-// the bit-position constants. Layers 2 and 3 are a self-contained
-// follow-up; the public DecodeChannel / EncodeChannel functions
-// here operate on already-deinterleaved + already-descrambled
-// channel bits so the per-vector FEC can be reviewed in isolation.
+// the bit-position constants. DecodeChannel / EncodeChannel here
+// operate on channel bits in vector order — i.e. already
+// deinterleaved (§7.5) and descrambled (§7.4) — so the per-vector
+// FEC can be reviewed in isolation. The DecodeChannelToFrame /
+// EncodeFrameToChannel helpers wrap those two layers around the
+// per-vector FEC to consume / produce raw on-air bursts.
 
 // Per-vector geometry. Offsets are measured in bits from the start
 // of the (already-deinterleaved + already-descrambled) 144-bit
@@ -166,23 +169,27 @@ func PackInfoBitsToFrame(info []byte) ([]byte, error) {
 }
 
 // DecodeChannelToFrame is the convenience pipeline that bridges
-// "144 channel bits, post-deinterleave" → "FrameBytes-byte
-// recorder-ready IMBE frame". It runs the §7.4 PRBS descrambler,
-// then the per-vector Golay+Hamming FEC inverse, then packs the
-// 88 recovered information bits MSB-first.
+// "144 raw on-air channel bits" → "FrameBytes-byte recorder-ready
+// IMBE frame". It runs the §7.5 deinterleaver, then the §7.4 PRBS
+// descrambler (whose u_0 seed is only valid once the bits are in
+// vector order), then the per-vector Golay+Hamming FEC inverse,
+// then packs the 88 recovered information bits MSB-first.
 //
-// Used by upstream protocol decoders (P25 Phase 1 LDU extraction,
-// future) that hand off post-deinterleave channel bursts: each
-// LDU carries 9 IMBE voice frames, each 144 bits — call this
-// helper for each slot and forward the resulting frame to
-// voice.Recorder.WriteRawFrame.
+// Used by upstream protocol decoders (P25 Phase 1 LDU extraction)
+// that hand off raw on-air channel bursts: each LDU carries 9 IMBE
+// voice frames, each 144 bits — call this helper for each slot and
+// forward the resulting frame to voice.Recorder.WriteRawFrame.
 //
 // Returns the total bit-errors corrected across all FEC vectors.
 // Uncorrectable codewords surface as ErrUncorrectable from
 // DecodeChannel; the partially-recovered frame is still returned
 // so callers can log + frame-repeat upstream.
 func DecodeChannelToFrame(channel []byte) (frame []byte, errs int, err error) {
-	descrambled, err := Descramble(channel)
+	deinterleaved, err := Deinterleave(channel)
+	if err != nil {
+		return nil, 0, err
+	}
+	descrambled, err := Descramble(deinterleaved)
 	if err != nil {
 		return nil, 0, err
 	}

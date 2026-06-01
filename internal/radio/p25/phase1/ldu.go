@@ -28,9 +28,10 @@ import (
 //	FS  — frame sync, fixed pattern marking the LDU start.
 //	NID — network ID + DUID (already parsed by the existing
 //	      ParseNID / NIDFromDibits in nid.go).
-//	Voice — 9 IMBE subframes, each 144 post-deinterleave bits.
-//	        Hand each to imbe.DecodeChannelToFrame to get the
-//	        11-byte recorder-ready frame.
+//	Voice — 9 IMBE subframes, each 144 on-air channel bits.
+//	        Hand each to imbe.DecodeChannelToFrame, which §7.5
+//	        deinterleaves + §7.4 descrambles + FEC-decodes them
+//	        into the 11-byte recorder-ready frame.
 //	LC  — 240 bits = 24 short Hamming(10,6,3) codewords for the
 //	      Link Control word (24-bit source unit ID, 16/24-bit
 //	      destination, etc.). LDU1 only.
@@ -277,8 +278,9 @@ func InjectStatusSymbols(payload []byte, status [LDUStatusSymbolCount]uint8) ([]
 //
 //	1728-bit on-air ldu
 //	  → StripStatusSymbols     (1680-bit payload)
-//	  → slice u_0..u_8 at lduVoiceOffsets   (9 × 144 bits)
-//	  → imbe.DecodeChannelToFrame for each  (descramble, FEC,
+//	  → slice u_0..u_8 at lduVoiceOffsets   (9 × 144 on-air bits)
+//	  → imbe.DecodeChannelToFrame for each  (deinterleave,
+//	                                         descramble, FEC,
 //	                                         bit-pack → 11 bytes)
 //	  → [9] recorder-ready frames
 //

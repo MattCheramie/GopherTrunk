@@ -15,18 +15,21 @@ func TestAssembleLDURoundTrip(t *testing.T) {
 		for i := range info {
 			info[i] = byte((s*7 + i*3) & 1)
 		}
-		ch, err := imbe.EncodeChannel(info)
+		// Build the real on-air burst (FEC + §7.4 scramble + §7.5
+		// interleave) so the round-trip exercises the deinterleave
+		// in ExtractVoiceFrames → DecodeChannelToFrame.
+		onAir, err := imbe.EncodeFrameToChannel(info)
 		if err != nil {
-			t.Fatalf("EncodeChannel: %v", err)
+			t.Fatalf("EncodeFrameToChannel: %v", err)
 		}
-		onAir, err := imbe.Scramble(ch)
+		voice[s] = onAir
+		// The recovered frame must equal the original info bits packed
+		// MSB-first — not a re-decode of the same bits, so a no-op
+		// permutation can't make the test pass against itself.
+		want[s], err = imbe.PackInfoBitsToFrame(info)
 		if err != nil {
-			t.Fatalf("Scramble: %v", err)
+			t.Fatalf("PackInfoBitsToFrame: %v", err)
 		}
-		// Scramble/Descramble mutate in place — keep an independent copy
-		// for the LDU so the want computation below cannot corrupt it.
-		voice[s] = append([]byte(nil), onAir...)
-		want[s], _, _ = imbe.DecodeChannelToFrame(onAir)
 	}
 	var lces [LDULCESBlockCount][]byte
 	var lsd [LDULSDBlockCount][]byte
@@ -39,13 +42,16 @@ func TestAssembleLDURoundTrip(t *testing.T) {
 		t.Fatalf("AssembleLDU len = %d, want %d", len(ldu), LDUTotalBits)
 	}
 
-	frames, _, err := ExtractVoiceFrames(ldu)
+	frames, errs, err := ExtractVoiceFrames(ldu)
 	if err != nil {
 		t.Fatalf("ExtractVoiceFrames: %v", err)
 	}
+	if errs != 0 {
+		t.Errorf("ExtractVoiceFrames corrected %d bits on a clean LDU, want 0", errs)
+	}
 	for i := range frames {
 		if !bytes.Equal(frames[i], want[i]) {
-			t.Errorf("subframe %d: extracted frame != assembled frame", i)
+			t.Errorf("subframe %d: extracted frame %x != original info frame %x", i, frames[i], want[i])
 		}
 	}
 }

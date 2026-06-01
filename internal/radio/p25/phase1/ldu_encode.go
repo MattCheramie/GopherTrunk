@@ -10,9 +10,12 @@ import "fmt"
 // payload at their TIA-102.BAAA offsets, then interleaves zero-valued
 // status symbols via InjectStatusSymbols.
 //
-// Each voice subframe must be LDUVoiceSubframeBits channel bits — the
-// IMBE-encoded channel form, e.g. from imbe.EncodeChannel. A nil LC/ES
-// or LSD block is written as zeros. This is synthesized-fixture
+// Each voice subframe must be LDUVoiceSubframeBits on-air channel bits
+// — the fully-encoded IMBE wire form (per-vector FEC + §7.4 scramble +
+// §7.5 interleave), e.g. from imbe.EncodeFrameToChannel. This is the
+// transmission order ExtractVoiceFrames + imbe.DecodeChannelToFrame
+// consume, so the round-trip exercises the real deinterleave. A nil
+// LC/ES or LSD block is written as zeros. This is synthesized-fixture
 // scaffolding (GopherTrunk is receive-only); it is the encoder the
 // round-trip tests pair with the extractors.
 func AssembleLDU(nac uint16, duid DUID, voice [LDUVoiceSubframeCount][]byte, lces [LDULCESBlockCount][]byte, lsd [LDULSDBlockCount][]byte) ([]byte, error) {
