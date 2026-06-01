@@ -242,6 +242,30 @@ type winusbSetupPacket struct {
 	Length      uint16
 }
 
+// pack folds the setup packet into a single uintptr. This is load-bearing
+// and the reason vendor control transfers never worked on real Windows
+// hardware before: the WinUsb_ControlTransfer prototype takes the
+// WINUSB_SETUP_PACKET **by value**, and the x64/arm64 calling convention
+// passes an 8-byte struct in one integer register. Go's
+// syscall.proc.Call(...uintptr) marshals each argument as exactly one
+// register, so the setup packet must arrive as the 8 bytes packed into a
+// uintptr — NOT as a pointer to the struct. Passing a pointer made WinUSB
+// interpret the pointer's low bytes as bmRequestType/bRequest/wValue/...,
+// i.e. a garbage vendor request the device timed out on or rejected with
+// ERROR_GEN_FAILURE, while standard descriptor requests (which go through
+// WinUsb_GetDescriptor, a different prototype) kept working — exactly the
+// split the field diagnostics showed. The byte order below matches the
+// struct's little-endian in-memory layout on every supported target
+// (amd64, arm64), so it is identical to what a by-value struct push would
+// place in the register.
+func (p winusbSetupPacket) pack() uintptr {
+	return uintptr(uint64(p.RequestType) |
+		uint64(p.Request)<<8 |
+		uint64(p.Value)<<16 |
+		uint64(p.Index)<<32 |
+		uint64(p.Length)<<48)
+}
+
 func (t *winTransport) applyControlTimeout(timeoutMs int) {
 	if timeoutMs <= 0 {
 		return
@@ -281,7 +305,7 @@ func (t *winTransport) ControlIn(bRequest uint8, wValue, wIndex uint16, n int, t
 	var transferred uint32
 	ret, _, errno := procWinUsbControlTransfer.Call(
 		t.ifaceHandle,
-		uintptr(unsafe.Pointer(&pkt)),
+		pkt.pack(), // WINUSB_SETUP_PACKET is passed BY VALUE (see pack)
 		bufPtr,
 		uintptr(n),
 		uintptr(unsafe.Pointer(&transferred)),
@@ -315,7 +339,7 @@ func (t *winTransport) ControlOut(bRequest uint8, wValue, wIndex uint16, data []
 	var transferred uint32
 	ret, _, errno := procWinUsbControlTransfer.Call(
 		t.ifaceHandle,
-		uintptr(unsafe.Pointer(&pkt)),
+		pkt.pack(), // WINUSB_SETUP_PACKET is passed BY VALUE (see pack)
 		dataPtr,
 		uintptr(len(data)),
 		uintptr(unsafe.Pointer(&transferred)),
@@ -338,7 +362,7 @@ func (t *winTransport) ControlOut(bRequest uint8, wValue, wIndex uint16, data []
 			procWinUsbResetPipe.Call(t.ifaceHandle, 0)
 			ret, _, errno = procWinUsbControlTransfer.Call(
 				t.ifaceHandle,
-				uintptr(unsafe.Pointer(&pkt)),
+				pkt.pack(), // WINUSB_SETUP_PACKET is passed BY VALUE (see pack)
 				dataPtr,
 				uintptr(len(data)),
 				uintptr(unsafe.Pointer(&transferred)),
