@@ -7,6 +7,38 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **iqtap broker `send on closed channel` panic** (#402) — closing an IQ
+  subscriber (live spectrum, `--iq-capture`, diagnostics) concurrently
+  with an in-flight fan-out could crash the daemon: `fanout` checked the
+  closed flag and then sent after dropping `subsMu`, while `Subscriber.Close`
+  closed the channel under the lock, leaving a window where the send
+  raced the close. Per-subscriber send and close now share a `sendMu` so a
+  fan-out send can never land on a closed channel. Covered by a new
+  `-race` regression test in `internal/sdr/iqtap`.
+
+### Added
+
+- **Live IQ-drop telemetry** (#402) — IQ chunks dropped on overrun by an
+  SDR backend (the consumer falling behind) were silent, making live IQ
+  loss indistinguishable from RF problems. Drops now bump the existing
+  `iq_underruns_total` Prometheus counter (labelled by driver + serial)
+  and emit a warning throttled to one line per second per device, via a
+  process-wide `sdr.SetIQDropObserver` hook the daemon installs at
+  start-up. A rising counter during decode confirms a live-path overrun
+  (offline replay never drops) and explains downstream TSBK CRC failures.
+
+### Changed
+
+- **iqtap broker primary handoff is now lightly buffered** (#402) — the
+  broker's primary IQ channel gained a small (2-chunk) buffer so the
+  fan-out goroutine isn't stalled by a momentarily-busy primary consumer
+  (the per-chunk copy plus a brief decode hiccup), which previously could
+  back up the SDR reaper and force whole-chunk drops. The inner driver's
+  buffer still bounds latency, so sustained back-pressure still drops as
+  before.
+
 ## [v0.2.9] — 2026-06-01
 
 Phase 3 paging completes and M17 joins the digital lineup, while the

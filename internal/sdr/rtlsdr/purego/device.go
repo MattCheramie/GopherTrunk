@@ -42,8 +42,19 @@ type Device struct {
 	out      chan []complex64
 	stopOnce sync.Once
 
+	// dropped counts IQ chunks discarded by deliver's overrun branch
+	// over this device's lifetime. Exposed via DroppedChunks for tests
+	// and as the per-drop signal behind the dropObserver hook.
+	dropped atomic.Uint64
+
 	closed atomic.Bool
 }
+
+// DroppedChunks returns the cumulative number of IQ chunks deliver has
+// discarded because the consumer fell behind. A rising value is the
+// device-level signal behind the iq_underruns_total metric — deliver
+// also reports each drop via [sdr.NotifyIQDrop].
+func (d *Device) DroppedChunks() uint64 { return d.dropped.Load() }
 
 // Info returns the descriptor populated by [Driver.Open] — driver
 // name, USB index, serial / manufacturer / product strings, tuner
