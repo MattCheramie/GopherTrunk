@@ -218,33 +218,32 @@ func TestPackInfoBitsToFrameRejectsWrongLength(t *testing.T) {
 
 // TestDecodeChannelToFrameRoundTrip: the full channel-decode
 // pipeline must recover the original 88 information bits when
-// fed clean (zero-error) channel bits. The on-air shape is:
+// fed clean (zero-error) on-air channel bits. The on-air shape is:
 //
 //	info → EncodeChannel → 144 channel bits
-//	     → Scramble       → 144 scrambled channel bits  (transmitted)
-//	     → Descramble     → 144 channel bits             (after RX)
+//	     → Scramble       → 144 scrambled channel bits
+//	     → Interleave     → 144 on-air channel bits      (transmitted)
+//	     → Deinterleave   → 144 scrambled channel bits   (after RX)
+//	     → Descramble     → 144 channel bits
 //	     → DecodeChannel  → 88 info bits
 //	     → PackInfoBitsToFrame → 11-byte frame
 //
-// DecodeChannelToFrame collapses the last three steps, so feeding
-// it post-Scramble bits should reproduce the original info inside
-// the packed frame.
+// EncodeFrameToChannel collapses the first three steps and
+// DecodeChannelToFrame the last four, so feeding the helper an
+// on-air burst should reproduce the original info inside the
+// packed frame.
 func TestDecodeChannelToFrameRoundTrip(t *testing.T) {
 	original := make([]byte, InfoBits)
 	for i := range original {
 		// Pseudo-random 0/1 pattern that exercises every vector.
 		original[i] = byte((i*13 + 7) % 2)
 	}
-	encoded, err := EncodeChannel(original)
+	onAir, err := EncodeFrameToChannel(original)
 	if err != nil {
-		t.Fatalf("EncodeChannel: %v", err)
-	}
-	scrambled, err := Scramble(encoded)
-	if err != nil {
-		t.Fatalf("Scramble: %v", err)
+		t.Fatalf("EncodeFrameToChannel: %v", err)
 	}
 
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}
@@ -282,15 +281,11 @@ func TestDecodeChannelToFrameWiresIntoDecoder(t *testing.T) {
 	info[4] = 1
 	info[5] = 0
 
-	encoded, err := EncodeChannel(info)
+	onAir, err := EncodeFrameToChannel(info)
 	if err != nil {
-		t.Fatalf("EncodeChannel: %v", err)
+		t.Fatalf("EncodeFrameToChannel: %v", err)
 	}
-	scrambled, err := Scramble(encoded)
-	if err != nil {
-		t.Fatalf("Scramble: %v", err)
-	}
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}
@@ -331,13 +326,20 @@ func TestDecodeChannelToFrameSurvivesRecoverableError(t *testing.T) {
 		t.Fatalf("Scramble: %v", err)
 	}
 	// Flip a single bit inside u_1 (a Golay(23,12) vector,
-	// correction radius 3). Bits 0..11 of the channel double as
-	// the seed for the §7.4 PRBS scrambler — a flip in that range
+	// correction radius 3). Bits 0..11 of the vector buffer double
+	// as the seed for the §7.4 PRBS scrambler — a flip in that range
 	// would cascade through descrambling of u_1..u_6 and isn't
-	// straightforwardly recoverable. u_1 spans bits 23..45, so
-	// bit 25 sits comfortably past the seed region.
+	// straightforwardly recoverable. u_1 spans vector bits 23..45,
+	// so bit 25 sits comfortably past the seed region. The flip is
+	// applied in vector order then interleaved, so it becomes a
+	// single-bit on-air error the deinterleave scatters back into
+	// u_1 — exactly one correctable Golay error.
 	scrambled[25] ^= 1
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	onAir, err := Interleave(scrambled)
+	if err != nil {
+		t.Fatalf("Interleave: %v", err)
+	}
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}

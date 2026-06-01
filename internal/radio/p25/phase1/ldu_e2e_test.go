@@ -27,7 +27,8 @@ import (
 // The pipeline under test:
 //
 //	[synth 9 IMBE info bits]
-//	  → imbe.EncodeChannel + Scramble → 144 ch bits per subframe
+//	  → imbe.EncodeFrameToChannel → 144 on-air ch bits per subframe
+//	    (per-vector FEC + §7.4 scramble + §7.5 interleave)
 //	  → place at lduVoiceOffsets in LDU payload
 //	  → phase1.InjectStatusSymbols → 1728-bit on-air LDU
 //	  ↓
@@ -55,19 +56,15 @@ func TestLDUEndToEndIntoRecorder(t *testing.T) {
 
 	payload := make([]byte, phase1.LDUPayloadBits)
 	for i := 0; i < phase1.LDUVoiceSubframeCount; i++ {
-		encoded, err := imbe.EncodeChannel(infos[i])
+		onAir, err := imbe.EncodeFrameToChannel(infos[i])
 		if err != nil {
-			t.Fatalf("EncodeChannel u_%d: %v", i, err)
-		}
-		scrambled, err := imbe.Scramble(encoded)
-		if err != nil {
-			t.Fatalf("Scramble u_%d: %v", i, err)
+			t.Fatalf("EncodeFrameToChannel u_%d: %v", i, err)
 		}
 		// LDU voice slot offset comes from the package's
 		// internal table; we use the public sequence-builder
 		// approach below to avoid exposing the array.
 		off := lduVoiceOffsetForTest(i)
-		copy(payload[off:off+phase1.LDUVoiceSubframeBits], scrambled)
+		copy(payload[off:off+phase1.LDUVoiceSubframeBits], onAir)
 	}
 	var status [phase1.LDUStatusSymbolCount]uint8
 	ldu, err := phase1.InjectStatusSymbols(payload, status)

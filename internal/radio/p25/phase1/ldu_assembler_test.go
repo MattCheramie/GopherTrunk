@@ -195,22 +195,19 @@ func TestLDUAssemblerEmitsLDUConsumableByExtractVoiceFrames(t *testing.T) {
 	// so the assembler latches.
 	copy(payload, FrameSyncBits())
 	// Encode 9 synthetic IMBE subframes through the full channel
-	// path: info → EncodeChannel → Scramble → place at the voice
-	// offsets in the payload.
+	// path: info → EncodeFrameToChannel (per-vector FEC + §7.4
+	// scramble + §7.5 interleave) → place at the voice offsets in
+	// the payload.
 	for i := 0; i < LDUVoiceSubframeCount; i++ {
 		info := make([]byte, 88)
 		for k := range info {
 			info[k] = byte((i*7 + k*3) % 2)
 		}
-		encoded, err := imbe.EncodeChannel(info)
+		onAir, err := imbe.EncodeFrameToChannel(info)
 		if err != nil {
-			t.Fatalf("EncodeChannel u_%d: %v", i, err)
+			t.Fatalf("EncodeFrameToChannel u_%d: %v", i, err)
 		}
-		scrambled, err := imbe.Scramble(encoded)
-		if err != nil {
-			t.Fatalf("Scramble u_%d: %v", i, err)
-		}
-		copy(payload[lduVoiceOffsets[i]:lduVoiceOffsets[i]+LDUVoiceSubframeBits], scrambled)
+		copy(payload[lduVoiceOffsets[i]:lduVoiceOffsets[i]+LDUVoiceSubframeBits], onAir)
 	}
 
 	var status [LDUStatusSymbolCount]uint8

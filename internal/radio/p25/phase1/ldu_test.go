@@ -252,10 +252,11 @@ func TestLDUFieldsCoverPayloadWithoutOverlap(t *testing.T) {
 
 // TestExtractVoiceFramesRoundTrip: build a synthetic LDU by
 // encoding 9 distinct IMBE info-bit patterns through
-// EncodeChannel + Scramble, placing them at the documented voice
-// offsets, injecting status symbols, then calling
-// ExtractVoiceFrames and confirming each returned frame
-// round-trips back to its original info bits.
+// EncodeFrameToChannel (per-vector FEC + §7.4 scramble + §7.5
+// interleave), placing them at the documented voice offsets,
+// injecting status symbols, then calling ExtractVoiceFrames and
+// confirming each returned frame round-trips back to its original
+// info bits through the deinterleave.
 //
 // This is the load-bearing test for the LDU layout: a single
 // wrong offset in lduVoiceOffsets would surface as a mismatched
@@ -275,15 +276,11 @@ func TestExtractVoiceFramesRoundTrip(t *testing.T) {
 
 	payload := make([]byte, LDUPayloadBits)
 	for i, info := range originals {
-		encoded, err := imbe.EncodeChannel(info)
+		onAir, err := imbe.EncodeFrameToChannel(info)
 		if err != nil {
-			t.Fatalf("EncodeChannel u_%d: %v", i, err)
+			t.Fatalf("EncodeFrameToChannel u_%d: %v", i, err)
 		}
-		scrambled, err := imbe.Scramble(encoded)
-		if err != nil {
-			t.Fatalf("Scramble u_%d: %v", i, err)
-		}
-		copy(payload[lduVoiceOffsets[i]:lduVoiceOffsets[i]+LDUVoiceSubframeBits], scrambled)
+		copy(payload[lduVoiceOffsets[i]:lduVoiceOffsets[i]+LDUVoiceSubframeBits], onAir)
 	}
 	var status [LDUStatusSymbolCount]uint8
 	ldu, err := InjectStatusSymbols(payload, status)
