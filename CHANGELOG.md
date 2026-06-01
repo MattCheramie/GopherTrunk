@@ -7,36 +7,131 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Fixed
+## [v0.2.9] — 2026-06-01
 
-- **P25 control channel: decode every TSBK in a data unit, not just the
-  first** (#402). A P25 trunking data unit packs up to three 98-dibit
-  TSBK blocks after one FSW + NID, the last flagged LB=1; the
-  control-channel decoder only ever decoded the first, silently dropping
-  the ~2/3 of a busy site's signalling (grants, affiliations, status
-  broadcasts) carried in the second and third blocks. It now decodes
-  every block in the unit, stopping at the last-block flag, and resumes
-  blocks that span receive batches — so the yield is the same whether the
-  dibit stream arrives a frame at a time or in tiny USB transfers. On the
-  MMR Site 9 capture this roughly triples the TSBKs recovered (14 → 41 in
-  ~1 s, all CRC-clean). A non-contiguous dibit stream (a resync or capture
-  gap) now also flushes the partial-frame buffer instead of trying to
-  stitch a frame across the break.
+Phase 3 paging completes and M17 joins the digital lineup, while the
+Windows RTL-SDR control path finally works on real hardware. #478 lands a
+FLEX paging decoder (1600 bps / 2-level) that decodes off the air
+alongside POCSAG, both sharing the `pager_log` table and `/pager` panel;
+#479 decodes M17 link-setup metadata (who's calling whom, in what mode)
+off the LICH without touching audio. #476 flips the P25 Phase 2 MAC-PDU
+scrambler default to on so live systems actually decode (issue #451), and
+#458 documents that RTL2838U dongles are already supported. The headline
+is a four-PR chain (#481–#484) that makes RTL-SDR control transfers work
+under WinUSB: #483 is the root cause — the `WINUSB_SETUP_PACKET` was
+passed by pointer instead of by value, so every vendor control transfer
+sent garbage — backed by #481 (warmup write non-fatal), #482 (clear-halt
++ retry + a USB diagnostics dump), and #484 (NESDR v5 R82xx burst
+recovery now fires on Windows pipe stalls too).
+
+### Added
+
+- **FLEX paging decoder (1600/2 mode)** (#478) — completes Phase 3: FLEX
+  now decodes off the air alongside POCSAG, both sharing the `pager_log`
+  table and `/pager` web panel, tagged by protocol. New
+  `internal/radio/pager/flex` carries the logical layer (sync marker +
+  mode code → frame-info word → block de-interleave → BCH(31,21) → BIW /
+  address / vector / message-word walk) and a streaming decoder for the
+  1600 bps / 2-level mode (alphanumeric / numeric / tone vectors). The
+  FLEX BCH(31,21)+parity primitive (`internal/radio/framing/bch_flex.go`)
+  reuses the tested POCSAG codeword via bit-reversal (info-low layout),
+  with round-trip + 2-bit-correction coverage. The receiver mirrors the
+  POCSAG DSP frontend (FM demod → resample → slicer → decoder) and
+  publishes `KindPagerMessage` with `Protocol="flex"`; `pager_log` gains
+  a `protocol` column (default `pocsag`).
+- **M17 link-layer metadata decoder** (#479) — Milestone 4 of the
+  roadmap: recover M17 link-setup metadata (caller, callee, mode) without
+  decoding audio (Codec2 voice is a later milestone). New
+  `internal/radio/m17` parses the LSF (base-40 callsigns, TYPE mode/CAN,
+  CRC-16 poly 0x5935), reassembles the LICH (Golay(24,12), six chunks →
+  240-bit LSF), and runs a streaming decoder that hunts the 0xFF5D stream
+  sync → LICH → LSF, so an in-progress transmission is picked up within
+  ~240 ms with no convolutional machinery. The receiver adds a C4FM DSP
+  frontend (FM demod → resample → matched filter → Mueller-Müller timing
+  → 4FSK slice → dibit) and publishes `events.KindM17LinkSetup`; new
+  `m17_log` table, `GET /api/v1/m17/linksetups`, and an `m17.channels`
+  config block. Spec constants are validated against a synthetic encoder;
+  real-capture calibration and the Codec2 payload are documented
+  follow-ups. See [docs/m17.md](docs/m17.md).
 
 ### Changed
 
-- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
-  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
-  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value
-  like `"32"`, which parses to 3.2 dB and snaps to the bottom of the
-  tuner ladder, leaving the radio effectively deaf (no control-channel
-  lock, no decodes) with no feedback. The daemon now WARNs at startup
-  when a bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
-  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs
-  the applied gain in dB on every device (`sdr: gain set … gain_db=…`)
-  so a units mistake is visible without enabling debug. No behaviour
-  change for valid configs; decimal forms like `"32.0"` are still taken
-  as whole dB. Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+- **RTL2838U dongles documented as supported** (#458) — the RTL2838U is
+  the Realtek demodulator / USB-bridge chip (a variant of the RTL2832U),
+  not a tuner; dongles labelled "RTL2838U" enumerate as `0x0bda:0x2838`
+  and are already fully supported (the real R820T2 / R828D tuner inside
+  is handled by the tuners package). The device-whitelist friendly name
+  and `docs/hardware.md` now say so, so users searching for "RTL2838U"
+  find confirmation their hardware works out of the box.
+
+### Fixed
+
+- **P25 Phase 2: default the MAC-PDU scrambler to on** (#476, issue
+  #451). A live Phase 2 system logged `composer: p25p2 macCfg suggests
+  live MAC PDU decode will fail` with a valid identity-derived seed but
+  `scrambler=0`. Every on-air P25 Phase 2 MAC PDU is PN44-scrambled per
+  TIA-102.BBAC-1 §7.2.5, so with descrambling off, MAC decode (source ID,
+  talker alias, encryption sync) can never succeed. `ParseScramblerMode("")`
+  now defaults to `ScramblerOn` (was `ScramblerOff`, which only suited the
+  synthesized unscrambled test fixtures), mirroring `ParseTrellisMode`.
+  `ScramblerOn` (not `Probe`) is correct because both production MAC paths
+  already feed the spec per-slot PN44 offset from superframe sync, so no RS
+  verification is needed to pick the offset.
+- **Windows RTL-SDR: pass `WINUSB_SETUP_PACKET` by value** (#483) — the
+  actual reason RTL-SDR control transfers never worked on real Windows
+  hardware. `WinUsb_ControlTransfer` takes the setup packet *by value* and
+  the x64/arm64 calling convention passes the 8-byte struct in a single
+  integer register; GopherTrunk passed a *pointer*, so WinUSB read the
+  pointer's low bytes as `bmRequestType/bRequest/wValue/wIndex/wLength` — a
+  garbage vendor request the device timed out on (`ERROR_SEM_TIMEOUT`) or
+  rejected (`ERROR_GEN_FAILURE`). Descriptor reads went through a different
+  prototype and succeeded, which is why the dongle reported
+  `winusb-bound=true` while every vendor transfer failed. The setup packet
+  is now folded into the `uintptr` argument (little-endian, matching its
+  in-memory image) at all three call sites, with a golden test pinning the
+  packing.
+- **Windows RTL-SDR: clear-halt + retry stalled control writes, append USB
+  diagnostics** (#482). `winTransport.ControlOut` now clears the
+  control-pipe halt (`WinUsb_ResetPipe` pipe 0) and retries the write once
+  when it stalls with `ERROR_GEN_FAILURE`, since some clone RTL2832U
+  firmwares need the explicit `CLEAR_FEATURE` the USB spec says a SETUP
+  should auto-clear. When bring-up still fails, `openDevice` now appends a
+  full USB diagnostics dump (bound driver — WinUSB / libusbK / DVB / none —
+  device + config descriptors, and a control-IN read probe), so a single
+  `gophertrunk sdr list --probe` captures everything needed to triage a
+  dongle that rejects control transfers.
+- **Windows RTL-SDR: make the USB warmup write non-fatal** (#481). The
+  warmup write is librtlsdr's sacrificial "dummy write" that absorbs the
+  first control-transfer NAK some clone dongles emit right after the
+  interface is claimed; librtlsdr never checks its result. GopherTrunk had
+  treated it as a must-succeed gate, and each retry re-opened the device
+  and re-armed the same NAK, so the dongle never reached `InitBaseband` and
+  `Open` failed with `ERROR_GEN_FAILURE`. `runBringup` now swallows any
+  warmup error (logging it under `RTLSDR_DEBUG_USB`) and proceeds to
+  `InitBaseband` step 0, whose byte-identical transfer is the one that
+  actually needs to land; genuine stalls are still caught by the outer
+  reset+retry envelope. Stale troubleshooting URLs in the bring-up hints
+  now point at `gophertrunk.org` / `install-windows.html`.
+- **Windows RTL-SDR: fire NESDR v5 R82xx burst recovery on Windows pipe
+  stalls** (#484, issue #248). The R82xx tuner-init burst-write recovery
+  (per-chunk retry + 16→8→4 chunk-size halving — the librtlsdr-parity fix
+  for the NESDR v5 cold-boot I²C stall) keyed its retry guards solely on
+  `syscall.EPIPE`. On Windows the identical I²C-bridge stall surfaces as
+  `usb.ErrPipeStalled` (`ERROR_GEN_FAILURE`), so every layer of recovery
+  was skipped and the first chunk failure propagated straight out. The
+  guards are now a shared `isI2CBurstStall` predicate matching both
+  classes, so per-chunk retry and the halving fallback fire on Windows
+  exactly as on Linux.
+
+## [v0.2.8] — 2026-05-31
+
+The issue #402 control-channel decode-quality push lands its first real
+win: #470 makes the P25 decoder read every TSBK in a data unit (not just
+the first) and adds `replay` channel tuning for off-centre captures,
+roughly tripling the TSBKs recovered on the MMR Site 9 capture. #455 lets
+operators declutter the UI by switching off navigation tabs they don't
+use, and #459 corrects a complex-LMS equalizer weight update while
+evaluating an IQ-domain equalizer for the #402 multipath.
 
 ### Added
 
@@ -51,66 +146,150 @@ for tagged releases.
   `dsp.EstimateCarrierOffsetHz` carrier estimator, and a tuning-offset mode
   on the `ccdecoder` down-converter. A channelised slice of the real Site 9
   control channel ships as a decode regression fixture.
-- **MDC1200 Motorola signaling decode** (#438) — end-to-end pipeline
-  for the analog FFSK data burst Motorola radios key at the head /
-  tail of a transmission on conventional VHF / UHF voice channels.
-  1200-baud CCIR FFSK DSP frontend (FM demod → FFSK discriminator at
-  1200 / 1800 Hz → Mueller-Müller timing → NRZ slicer, reusing the
-  existing `demod.FFSK`), a 40-bit sync framer with inverted-polarity
-  tolerance, 16×7 de-interleave, op / arg / unit-ID decode with a
-  CRC-16-CCITT check, and an op/arg label table (PTT ANI, emergency,
-  status, radio check, call alert, selective call, radio inhibit /
-  enable, remote monitor). Plus `events.KindMDC1200Message`, SQLite
-  `mdc1200_log`, `GET /api/v1/mdc1200/messages`, the `/mdc1200` web
-  panel, and an `mdc1200.channels` config block. Clean-room
-  implementation under Apache-2.0. See [docs/mdc1200.md](docs/mdc1200.md).
-- **ADS-B end-to-end via BEAST upstreams + per-ICAO CPR pair-
-  tracker.** Most 1090 MHz receive chains already run
-  dump1090 / readsb / BeastSplitter against a dedicated
-  RTL-SDR; GopherTrunk now consumes their BEAST binary output
-  over TCP and feeds the frames into the same
+- **UI navigation tabs are now configurable** (#455) — operators running
+  GopherTrunk for a single task can declutter the nav by switching off tabs
+  they don't use. Every tab shows by default; setting a key to `false` under
+  `web.tabs` hides it from the nav strip in both the web SPA and the
+  terminal TUI (routes stay mounted — nav-only hiding). New `WebConfig.Tabs`
+  map with a `KnownUITabs` canonical set (`Validate()` rejects unknown
+  keys); the read-only `/api/v1/runtime` snapshot carries the hidden list so
+  both clients filter from one source of truth.
+
+### Fixed
+
+- **P25 control channel: decode every TSBK in a data unit, not just the
+  first** (#402). A P25 trunking data unit packs up to three 98-dibit TSBK
+  blocks after one FSW + NID, the last flagged LB=1; the control-channel
+  decoder only ever decoded the first, silently dropping the ~2/3 of a busy
+  site's signalling (grants, affiliations, status broadcasts) carried in the
+  second and third blocks. It now decodes every block in the unit, stopping
+  at the last-block flag, and resumes blocks that span receive batches — so
+  the yield is the same whether the dibit stream arrives a frame at a time
+  or in tiny USB transfers. On the MMR Site 9 capture this roughly triples
+  the TSBKs recovered (14 → 41 in ~1 s, all CRC-clean). A non-contiguous
+  dibit stream (a resync or capture gap) now also flushes the partial-frame
+  buffer instead of trying to stitch a frame across the break.
+- **Equalizer: correct complex-LMS weight-update conjugation** (#402). The
+  complex LMS update computed `w_k += μ·x·conj(e)` instead of the correct
+  `w_k += μ·e·conj(x)`; for the non-Hermitian FIR the two differ only in the
+  sign of the imaginary cross-term (identical on a real channel, which is
+  why the existing real-coefficient test missed it). A genie-trained
+  equalizer using the corrected update fully recovers a two-ray echo (dibit
+  SER 0.086 → 0.000 through the real receiver) and is a no-op on clean
+  signal. No production code calls LMS yet, so no behaviour change ships
+  beyond the equalizer package; a new complex-channel regression guards it.
+
+## [v0.2.7] — 2026-05-30
+
+Phase 5 finishes its DSP frontends and the analog side fills in. ADS-B
+reaches end-to-end both ways — #440 consumes BEAST output from an existing
+dump1090 / readsb with a per-ICAO CPR pair-tracker, and #449 adds a native
+1090 MHz PPM Mode-S receiver so aircraft decode straight off the air; #448
+gives DSC its FFSK frontend (the last "no DSP" hole in Phase 5); and #441
+lands MDC1200 Motorola signaling. #445 adds a gain-units guardrail for the
+common tenths-vs-dB mistake, #444 forces decoded calls to the
+vocoder-native 8 kHz WAV rate (fixing garbled playback), and the #402
+slicer work settles on the fixed C4FM slicer as the default (#450) with the
+adaptive slicer behind a flag and its outer-rail tracking corrected (#447).
+
+### Added
+
+- **ADS-B end-to-end via BEAST upstreams + per-ICAO CPR pair-tracker.**
+  Most 1090 MHz receive chains already run dump1090 / readsb / BeastSplitter
+  against a dedicated RTL-SDR; GopherTrunk now consumes their BEAST binary
+  output over TCP and feeds the frames into the same
   `events.KindAircraftReport` bus / `aircraft_log` SQLite /
-  `/api/v1/adsb/aircraft` REST / `/adsb` web panel stack that
-  shipped in #434. Operators add an `adsb.beast_upstreams`
-  entry (typically `127.0.0.1:30005` — the standard
-  dump1090 / readsb BEAST port) and aircraft start landing on
-  the live map immediately. Reconnect-with-backoff on
-  upstream drops; the embedded CPR tracker resets between
-  reconnects so stale even/odd halves don't pair across the
-  gap. No native 1 Msps PPM DSP frontend yet — that's the
-  next slice — but for the operator workflow this PR is the
-  one that makes ADS-B *useful*.
-  New `internal/radio/adsb.Tracker` is the per-ICAO state
-  machine that buffers the most-recent CPR half and calls
-  `CPRDecodeGlobal` when both halves arrive within the spec's
-  10 s window (DO-260B §2.2.3.2.3.7). Thread-safe;
-  `Prune(now)` evicts ICAOs that haven't transmitted in > 10 s
-  so the state map doesn't grow with every aircraft ever
-  seen. Extends the existing `adsb.Position` struct with
-  `Latitude` / `Longitude` / `HasGlobalPosition` fields the
-  tracker populates on a successful pair-decode.
-  New `internal/radio/adsb/beast` package — BEAST frame
-  parser (`ReadFrame` handles the 0x1A byte-stuffing
-  transparently, hunts for sync after a torn TCP segment) +
-  TCP client (`Client.Run` reconnects on drop, applies a
-  per-read deadline so a silent upstream re-dials instead of
-  hanging forever, pipes each Mode-S frame through
-  `adsb.Decode` → `Tracker.Update` → `bus.Publish`).
-  New `internal/config.ADSBBeastConfig` schema + daemon
-  wiring (`d.adsbBeastClients` slice, spawn in the run loop
-  via the standard `spawn` closure).
-  Tests: 7 new tracker tests (canonical dump1090 CPR pair
-  globally decodes to 52.2572 N / 3.91937 E; rejects pairs
-  older than 10 s; passes non-position messages through;
-  ignores CRC-failed frames with ICAO 0; tracks multiple
-  ICAOs independently; `Prune` drops stale; `Reset` clears).
-  8 new BEAST tests (long-frame round-trip, short-frame
-  round-trip, byte-stuffing unstuff, clean-EOF, garbage-
-  before-sync recovery, options validation, end-to-end
-  client test driving the gpsd canonical identification +
-  CPR pair through a loopback TCP server and asserting the
-  bus event carries the right ICAO + globally-decoded
-  lat/lon). All passing.
+  `/api/v1/adsb/aircraft` REST / `/adsb` web panel stack that shipped in
+  #434. Operators add an `adsb.beast_upstreams` entry (typically
+  `127.0.0.1:30005` — the standard dump1090 / readsb BEAST port) and
+  aircraft start landing on the live map immediately. Reconnect-with-backoff
+  on upstream drops; the embedded CPR tracker resets between reconnects so
+  stale even/odd halves don't pair across the gap. New
+  `internal/radio/adsb.Tracker` is the per-ICAO state machine that buffers
+  the most-recent CPR half and calls `CPRDecodeGlobal` when both halves
+  arrive within the spec's 10 s window (DO-260B §2.2.3.2.3.7); `Prune(now)`
+  evicts ICAOs idle > 10 s. New `internal/radio/adsb/beast` package — frame
+  parser (`ReadFrame` handles the 0x1A byte-stuffing, hunts for sync after a
+  torn TCP segment) + reconnecting TCP client (`Client.Run`) that pipes each
+  Mode-S frame through `adsb.Decode` → `Tracker.Update` → `bus.Publish`.
+- **ADS-B native 1090 MHz PPM Mode-S receiver** (#449) — ADS-B now decodes
+  straight off the air as an alternative to running a separate dump1090 /
+  readsb. New `internal/radio/adsb/ppm` takes IQ → resample to 2 Msps →
+  magnitude envelope → dump1090-style 8 µs preamble correlation → PPM bit
+  slice → DF frame-length (56/112) → frame bytes, with a magnitude carry
+  buffer so a preamble split across two IQ chunks still decodes. The decode
+  → CRC gate → CPR track → `AircraftReport` mapping is factored into a
+  shared `adsb.ProcessFrame` so the PPM and BEAST paths produce identical
+  reports. `ADSBConfig` gains a `channels` list (default 1090 MHz) and the
+  daemon pins the SDR off its iqtap broker, mirroring the AIS receivers.
+- **DSC FFSK DSP frontend + bit-stream receiver** (#448) — closes the last
+  "no DSP" hole in Phase 5: DSC had a parser, BCH(10,7), storage, REST, and
+  panel scaffolding but no way to turn IQ into sequences. New
+  `internal/radio/dsc/ffsk` takes IQ → FM demod → resample to 9600 sps →
+  FFSK discriminator (1300/2100 Hz) → Mueller-Müller timing → direct-FSK
+  slicer; the receiver slides a 10-bit window, BCH-syncs on the repeating
+  phasing DX character (dual-polarity), samples the DX grid to recover 7-bit
+  symbols, detects EOS, and publishes `KindDSCMessage`. New `DSCConfig` /
+  channel config and daemon spawn loops, mirroring the AIS receivers.
+- **MDC1200 Motorola signaling decode** (#438) — end-to-end pipeline for the
+  analog FFSK data burst Motorola radios key at the head / tail of a
+  transmission on conventional VHF / UHF voice channels. 1200-baud CCIR FFSK
+  DSP frontend (FM demod → FFSK discriminator at 1200 / 1800 Hz →
+  Mueller-Müller timing → NRZ slicer, reusing the existing `demod.FFSK`), a
+  40-bit sync framer with inverted-polarity tolerance, 16×7 de-interleave,
+  op / arg / unit-ID decode with a CRC-16-CCITT check, and an op/arg label
+  table (PTT ANI, emergency, status, radio check, call alert, selective
+  call, radio inhibit / enable, remote monitor). Plus
+  `events.KindMDC1200Message`, SQLite `mdc1200_log`, `GET
+  /api/v1/mdc1200/messages`, the `/mdc1200` web panel, and an
+  `mdc1200.channels` config block. Clean-room implementation under
+  Apache-2.0. See [docs/mdc1200.md](docs/mdc1200.md).
+
+### Changed
+
+- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
+  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
+  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value like
+  `"32"`, which parses to 3.2 dB and snaps to the bottom of the tuner
+  ladder, leaving the radio effectively deaf (no control-channel lock, no
+  decodes) with no feedback. The daemon now WARNs at startup when a
+  bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
+  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs the
+  applied gain in dB on every device (`sdr: gain set … gain_db=…`) so a
+  units mistake is visible without enabling debug. No behaviour change for
+  valid configs; decimal forms like `"32.0"` are still taken as whole dB.
+  Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+- **P25 Phase 1: fixed C4FM slicer is the default; adaptive slicer behind a
+  flag** (#402). On the MMR Site 9 capture the fixed-threshold slicer is the
+  best performer; every adaptive variant that moved the +1/+3 threshold
+  above the fixed nominal decoded worse, because the +3 eye is spread low by
+  an RF-domain asymmetry the slicer can't fix. Mirroring the #430 DDA
+  precedent, the adaptive C4FM slicer is now opt-in
+  (`Options.EnableAdaptiveC4FMSlicer`, default off; `replay
+  -adaptive-slicer` for A/B); production pipelines (`ccdecoder`,
+  `widebandt2`) revert to the fixed slicer. The adaptive slicer's threshold
+  model was also improved (inward-only cap + variance-aware boundaries) so
+  it is no worse than fixed on a stretched eye.
+- **Voice: force vocoder-native WAV rate + decode-quality telemetry**
+  (#356). The IMBE/AMBE vocoders always emit 8 kHz PCM and the recorder
+  appended those samples without resampling, but the WAV header used the
+  configured `recordings.sample_rate` — so a non-default rate played decoded
+  P25/DMR calls back at the wrong speed (garbled). `handleStart` now
+  instantiates the vocoder before opening the WAV and forces the header to
+  8 kHz for decoded calls (analog/NBFM fed via `WritePCM` still honour the
+  configured rate), and `CallComplete` publishes the session's actual rate,
+  matching the offline decoder.
+
+### Fixed
+
+- **Adaptive C4FM slicer outer-rail under-tracking** (#402). The
+  soft-responsibility level update scaled the data-directed pull by the
+  per-symbol responsibility but leaked toward nominal at full weight every
+  sample, halving the intended 0.8 mix toward the observed centroid — so a
+  stretched +3 rail under-tracked and held the +1/+3 threshold below
+  optimal. Scaling the leak by responsibility too restores a true
+  responsibility-weighted EMA, landing the threshold at the ~0.22 optimal
+  midpoint. (Behind the now-opt-in adaptive slicer flag.)
 
 ## [v0.2.6] — 2026-05-29
 
