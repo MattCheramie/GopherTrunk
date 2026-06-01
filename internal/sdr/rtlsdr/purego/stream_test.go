@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -339,5 +340,59 @@ func TestStreamConstants_MatchCGOGeometry(t *testing.T) {
 	}
 	if bulkInEndpoint != 0x81 {
 		t.Errorf("bulkInEndpoint = 0x%02x, want 0x81", bulkInEndpoint)
+	}
+}
+
+// TestDeliver_DropsAndNotifiesObserverOnOverrun is the issue-#402
+// regression: a chunk dropped because the consumer is behind must bump
+// the device drop counter AND fire sdr.NotifyIQDrop with the device's
+// Info, so the daemon can surface it as iq_underruns_total + a warning.
+// Before #402 the overrun branch was silent.
+func TestDeliver_DropsAndNotifiesObserverOnOverrun(t *testing.T) {
+	d := newDeviceWithFakeTuner(usb.NewMockTransport(), &fakeTuner{})
+	d.info = sdr.Info{Driver: DriverName, Serial: "drop-test"}
+
+	// Unbuffered channel with no reader: every non-blocking send takes
+	// the default (drop) branch.
+	d.out = make(chan []complex64)
+
+	var observed atomic.Int64
+	var mu sync.Mutex
+	var gotInfo sdr.Info
+	sdr.SetIQDropObserver(func(info sdr.Info) {
+		observed.Add(1)
+		mu.Lock()
+		gotInfo = info
+		mu.Unlock()
+	})
+	t.Cleanup(func() { sdr.SetIQDropObserver(nil) })
+
+	const n = 3
+	for i := 0; i < n; i++ {
+		d.deliver([]byte{127, 128, 127, 128})
+	}
+
+	if got := d.DroppedChunks(); got != n {
+		t.Errorf("DroppedChunks = %d, want %d", got, n)
+	}
+	if got := observed.Load(); got != int64(n) {
+		t.Errorf("observer invoked %d times, want %d", got, n)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotInfo.Serial != "drop-test" || gotInfo.Driver != DriverName {
+		t.Errorf("observer info = %+v, want Driver=%q Serial=drop-test", gotInfo, DriverName)
+	}
+}
+
+// TestDeliver_NoObserverIsSafe ensures the overrun branch still counts
+// drops and never panics when no observer is installed (tools, tests).
+func TestDeliver_NoObserverIsSafe(t *testing.T) {
+	sdr.SetIQDropObserver(nil)
+	d := newDeviceWithFakeTuner(usb.NewMockTransport(), &fakeTuner{})
+	d.out = make(chan []complex64)
+	d.deliver([]byte{127, 128})
+	if got := d.DroppedChunks(); got != 1 {
+		t.Errorf("DroppedChunks = %d, want 1", got)
 	}
 }

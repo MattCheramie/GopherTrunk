@@ -532,3 +532,66 @@ func TestBrokerSeedZeroLeavesFieldsUnchanged(t *testing.T) {
 		t.Errorf("SampleRateHz after Seed(0, 1_024_000) = %d, want 1_024_000", got)
 	}
 }
+
+// TestBrokerFanoutCloseRace exercises the concurrent-Close-vs-fanout path
+// that previously panicked with "send on closed channel": fanout snapshots
+// the subscriber set and sends after dropping subsMu, so a Close that ran
+// close(s.ch) between the closed-flag check and the send would crash. With
+// trySend / Close sharing s.sendMu the send can never land on a closed
+// channel. Run under `go test -race` to also surface data races.
+func TestBrokerFanoutCloseRace(t *testing.T) {
+	dev := newFakeDevice("dev-race")
+	b := New(dev, 1, nil) // tiny buffer so fanout frequently hits the send
+
+	chunk := []complex64{complex(1, 0), complex(2, 0)}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Fanout hammer: repeatedly fan the same chunk out to whatever
+	// subscribers currently exist. This is the goroutine that used to
+	// panic.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				b.fanout(chunk)
+			}
+		}
+	}()
+
+	// Churn: continuously Subscribe, (maybe) read, and Close so a Close
+	// races concurrent fanout sends. A second goroutine drains some
+	// subscribers to keep buffers cycling.
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deadline := time.Now().Add(200 * time.Millisecond)
+			for time.Now().Before(deadline) {
+				s := b.Subscribe()
+				// Drain a few chunks then close; also exercise the
+				// drop path by sometimes not draining at all.
+				done := make(chan struct{})
+				go func() {
+					for range s.C {
+					}
+					close(done)
+				}()
+				time.Sleep(time.Millisecond)
+				s.Close()
+				<-done
+				// Close again to assert idempotency under concurrency.
+				s.Close()
+			}
+		}()
+	}
+
+	time.Sleep(220 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}

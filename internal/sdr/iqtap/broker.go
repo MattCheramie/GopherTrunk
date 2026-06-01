@@ -47,6 +47,17 @@ import (
 // fast enough to be visible in the drop counter.
 const DefaultSubBuffer = 16
 
+// primaryHandoffDepth is the buffer depth (in IQ chunks) of the broker's
+// primary handoff channel returned by StreamIQ. A small buffer lets the
+// fan-out goroutine stay ahead of a momentarily-busy primary consumer (the
+// per-chunk fanout copy plus a brief decode hiccup) without stalling its
+// drain of the inner device's bounded reaper buffer — which would otherwise
+// force the driver to drop whole IQ chunks mid-frame (issue #402). It stays
+// small so the inner driver's buffer remains the dominant latency bound and
+// a wedged consumer still falls behind fast enough to surface in the drop
+// counter.
+const primaryHandoffDepth = 2
+
 // Broker wraps an sdr.Device, exposing the same Device interface
 // while internally fanning each IQ chunk out to any registered
 // Subscribers. The primary consumer that calls StreamIQ sees no
@@ -85,6 +96,13 @@ type Subscriber struct {
 	dropped atomic.Uint64
 	b       *Broker
 	closed  atomic.Bool
+
+	// sendMu serialises a non-blocking send (trySend) against Close so a
+	// fanout send can never race the close(ch): Close holds sendMu while
+	// it closes the channel, and trySend re-checks closed under sendMu
+	// before sending. The atomic closed flag remains the cheap, lock-free
+	// pre-check used by fanout and Stats.
+	sendMu sync.Mutex
 }
 
 // Stats reports broker-level counters. Useful for /metrics and for
@@ -216,10 +234,11 @@ func (b *Broker) Close() error {
 // primary channel, matching the contract every real driver
 // implementation honours.
 //
-// The primary's channel is unbuffered so back-pressure from a slow
-// primary propagates upstream exactly as it does today (i.e. the
-// underlying driver's USB reaper buffer absorbs jitter; if it fills,
-// the driver drops). Secondaries are decoupled via their own bounded
+// The primary's channel has a small buffer (primaryHandoffDepth) so the
+// fan-out goroutine isn't stalled by a momentarily-busy primary consumer;
+// sustained back-pressure from a slow primary still propagates upstream
+// (i.e. the underlying driver's USB reaper buffer absorbs jitter; if it
+// fills, the driver drops). Secondaries are decoupled via their own bounded
 // channels and never block the primary.
 func (b *Broker) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	b.innerMu.RLock()
@@ -234,7 +253,7 @@ func (b *Broker) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}
 	b.streamActive.Store(true)
 
-	out := make(chan []complex64)
+	out := make(chan []complex64, primaryHandoffDepth)
 	go func() {
 		defer close(out)
 		defer b.streamActive.Store(false)
@@ -258,10 +277,10 @@ func (b *Broker) fanout(chunk []complex64) {
 		b.subsMu.Unlock()
 		return
 	}
-	// Snapshot the subscriber set so we can drop the lock before
-	// allocating + sending — a concurrent Subscribe / Close can't
-	// race a send into a closed channel because Close transitions
-	// the closed flag under the same lock we just dropped.
+	// Snapshot the subscriber set so we can drop subsMu before allocating
+	// + sending. The closed-vs-send race is handled per subscriber by
+	// trySend / Close sharing s.sendMu — not by subsMu — so a concurrent
+	// Subscribe / Close here is safe.
 	subs := make([]*Subscriber, 0, len(b.subs))
 	for s := range b.subs {
 		subs = append(subs, s)
@@ -269,17 +288,34 @@ func (b *Broker) fanout(chunk []complex64) {
 	b.subsMu.Unlock()
 
 	for _, s := range subs {
+		// Cheap lock-free early-out: skip the allocation for a
+		// subscriber that's already closed. trySend re-checks under
+		// s.sendMu for correctness.
 		if s.closed.Load() {
 			continue
 		}
 		cp := make([]complex64, len(chunk))
 		copy(cp, chunk)
-		select {
-		case s.ch <- cp:
-		default:
-			s.dropped.Add(1)
-			b.subsDropped.Add(1)
-		}
+		s.trySend(cp)
+	}
+}
+
+// trySend delivers a pre-copied chunk to the subscriber's channel without
+// blocking. s.sendMu serialises the non-blocking send against Close: Close
+// holds the same mutex while it closes the channel, so re-checking closed
+// under the lock here guarantees the send can never land on a closed
+// channel. Drops (full buffer) are counted, never blocking.
+func (s *Subscriber) trySend(cp []complex64) {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	if s.closed.Load() {
+		return
+	}
+	select {
+	case s.ch <- cp:
+	default:
+		s.dropped.Add(1)
+		s.b.subsDropped.Add(1)
 	}
 }
 
@@ -315,11 +351,15 @@ func (s *Subscriber) Close() {
 	if s.closed.Swap(true) {
 		return
 	}
-	s.b.subsMu.Lock()
-	if _, ok := s.b.subs[s]; ok {
-		delete(s.b.subs, s)
-	}
+	// Close the channel under sendMu so it can't interleave a concurrent
+	// trySend. closed is already true (set above), so any trySend that
+	// acquires sendMu after this returns without sending.
+	s.sendMu.Lock()
 	close(s.ch)
+	s.sendMu.Unlock()
+
+	s.b.subsMu.Lock()
+	delete(s.b.subs, s)
 	s.b.subsMu.Unlock()
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
 // Async-bulk geometry copied verbatim from the CGO driver
@@ -99,9 +101,16 @@ func (d *Device) deliver(buf []byte) {
 	select {
 	case out <- samples:
 	default:
-		// Consumer can't keep up. Drop. The application's
-		// `iq-underrun` Prometheus counter is the operator-facing
-		// telemetry for this — see internal/metrics.
+		// Consumer can't keep up. Drop the whole chunk and record it:
+		// this was silent before issue #402, which is why live IQ loss
+		// could not be distinguished from RF problems. A non-zero
+		// iq_underruns_total / drop count during decode points at a
+		// live-path overrun rather than the air. The dropObserver hook
+		// drives the operator-facing Prometheus counter + a
+		// rate-limited warning — see internal/metrics and
+		// sdr.SetIQDropObserver.
+		d.dropped.Add(1)
+		sdr.NotifyIQDrop(d.info)
 	}
 }
 

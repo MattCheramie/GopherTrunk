@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
@@ -581,6 +582,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.metrics = m
 	}
+
+	// Surface live IQ chunk drops (silent before issue #402): wire the
+	// process-wide drop observer so an overrunning SDR reaper bumps
+	// iq_underruns_total and logs a rate-limited warning. This is the
+	// signal that distinguishes a live-path overrun (replay never drops)
+	// from an RF problem.
+	d.installIQDropObserver(log)
 
 	// Voice device list from the pool; empty when no SDRs.
 	d.voicePool = trunking.NewVoicePool(d.collectVoiceDevices())
@@ -2158,6 +2166,42 @@ func (d *Daemon) HTTPListenAddr() string {
 // Bus returns the daemon's events bus. Tests use it to inject
 // synthetic events.
 func (d *Daemon) Bus() *events.Bus { return d.bus }
+
+// installIQDropObserver wires the process-wide SDR drop observer
+// (sdr.SetIQDropObserver) so every IQ chunk a backend discards on overrun
+// bumps the iq_underruns_total metric and emits a rate-limited warning.
+// Before issue #402 these drops were silent, leaving live IQ loss
+// indistinguishable from RF problems; the metric/log let an operator
+// confirm a live-path overrun (replay never drops) and correlate it with
+// downstream TSBK CRC failures. The warning is throttled to one line per
+// second per dropping device, carrying the count accumulated since the
+// last line so a steady overrun doesn't flood the log.
+func (d *Daemon) installIQDropObserver(log *slog.Logger) {
+	type dropState struct {
+		lastLogNanos atomic.Int64
+		sinceLog     atomic.Uint64
+	}
+	var states sync.Map // serial -> *dropState
+	sdr.SetIQDropObserver(func(info sdr.Info) {
+		if d.metrics != nil {
+			d.metrics.RecordIQUnderrun(info.Driver, info.Serial)
+		}
+		v, _ := states.LoadOrStore(info.Serial, &dropState{})
+		st := v.(*dropState)
+		st.sinceLog.Add(1)
+		now := time.Now().UnixNano()
+		prev := st.lastLogNanos.Load()
+		if now-prev < int64(time.Second) {
+			return
+		}
+		if !st.lastLogNanos.CompareAndSwap(prev, now) {
+			return // another drop won this second's log slot
+		}
+		log.Warn("sdr: dropping live IQ chunks; consumer can't keep up",
+			"driver", info.Driver, "serial", info.Serial,
+			"dropped_since_last", st.sinceLog.Swap(0))
+	})
+}
 
 // IQBroker returns the iqtap.Broker for the SDR with the given serial,
 // or nil when no such SDR is in the pool. Used by the --iq-capture
