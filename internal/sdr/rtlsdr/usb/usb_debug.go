@@ -58,6 +58,17 @@ func debugLogf(component, format string, args ...interface{}) {
 	fmt.Fprintln(w, "rtlsdr-usb ["+component+"]: "+fmt.Sprintf(format, args...))
 }
 
+// DebugLogf is the exported entry point to the gated debug sink for
+// callers outside this package (e.g. the rtlsdr bring-up path in
+// purego/driver.go, which logs the swallowed sacrificial-warmup
+// failure). Like debugLogf it only emits when RTLSDR_DEBUG_USB is set,
+// writes to the same sink (so SetDebugSink works in tests), and uses
+// the same "rtlsdr-usb [component]" line prefix — keeping every USB
+// diagnostic on one diffable channel.
+func DebugLogf(component, format string, args ...interface{}) {
+	debugLogf(component, format, args...)
+}
+
 // MaybeWrapDebug returns t wrapped in a debug-logging Transport when
 // RTLSDR_DEBUG_USB is set in the environment; otherwise it returns t
 // unchanged. Wrapping is gated at Open time so the rest of the code
