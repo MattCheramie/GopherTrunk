@@ -847,6 +847,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/dsc/messages", s.handleDSCMessages)
 	mux.HandleFunc("GET /api/v1/m17/linksetups", s.handleM17LinkSetups)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft", s.handleADSBAircraft)
+	mux.HandleFunc("GET /api/v1/adsb/aircraft/current", s.handleADSBAircraftCurrent)
 	mux.HandleFunc("GET /api/v1/mdc1200/messages", s.handleMDC1200Messages)
 
 	// Embedded SPA at "/" — served only when the daemon was linked

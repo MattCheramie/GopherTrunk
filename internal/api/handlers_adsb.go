@@ -13,6 +13,9 @@ import (
 // substitute a fake.
 type ADSBProvider interface {
 	RecentAircraftReports(limit int) ([]storage.AircraftReport, error)
+	// CurrentAircraft returns the coalesced latest state per ICAO seen
+	// within maxAge (≤ 0 → provider default).
+	CurrentAircraft(maxAge time.Duration) ([]storage.AircraftReport, error)
 }
 
 // AircraftReportDTO is the JSON wire shape for the adsb endpoint.
@@ -90,6 +93,38 @@ func (s *Server) handleADSBAircraft(w http.ResponseWriter, r *http.Request) {
 	out := make([]AircraftReportDTO, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, aircraftReportToDTO(r))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleADSBAircraftCurrent answers GET /api/v1/adsb/aircraft/current —
+// the coalesced latest state of each aircraft seen recently, one row
+// per ICAO (the "currently visible aircraft" view). Optional
+// ?max_age_s= bounds how long since last-seen an aircraft stays listed
+// (default 300 s, max 3600 s).
+func (s *Server) handleADSBAircraftCurrent(w http.ResponseWriter, r *http.Request) {
+	if s.adsb == nil {
+		writeError(w, http.StatusServiceUnavailable, "adsb subsystem not enabled")
+		return
+	}
+	maxAge := 300 * time.Second
+	if v := r.URL.Query().Get("max_age_s"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 3600 {
+				n = 3600
+			}
+			maxAge = time.Duration(n) * time.Second
+		}
+	}
+	rows, err := s.adsb.CurrentAircraft(maxAge)
+	if err != nil {
+		s.log.Error("api: adsb aircraft current", "err", err)
+		writeError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	out := make([]AircraftReportDTO, 0, len(rows))
+	for _, rr := range rows {
+		out = append(out, aircraftReportToDTO(rr))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

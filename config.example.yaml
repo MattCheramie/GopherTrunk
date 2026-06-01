@@ -106,6 +106,9 @@ recordings:
 
 retention:
   call_log_days: 30   # 0 disables call-log row sweep
+  log_days: 30        # 0 disables decoder-log sweep (pager / aprs /
+                      #  vessel / dsc / aircraft / mdc1200 / m17 /
+                      #  location logs, aged by received_at)
   files_days: 14      # 0 disables filesystem sweep
   interval: "1h"      # how often the sweeper runs
 

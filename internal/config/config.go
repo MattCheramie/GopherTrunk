@@ -1005,9 +1005,14 @@ type MetricsConfig struct {
 // log rows and recorded files. Zero values disable the corresponding
 // sweep; both can be active independently.
 type RetentionConfig struct {
-	CallLogDays int    `yaml:"call_log_days"`
-	FilesDays   int    `yaml:"files_days"`
-	Interval    string `yaml:"interval"` // Go duration string; default 1h
+	CallLogDays int `yaml:"call_log_days"`
+	// LogDays sweeps the decoder log tables (pager_log, aprs_log,
+	// vessel_log, dsc_log, aircraft_log, mdc1200_log, m17_log,
+	// location_log): rows older than this many days are deleted. Zero
+	// (the default) disables the decoder-log sweep.
+	LogDays   int    `yaml:"log_days"`
+	FilesDays int    `yaml:"files_days"`
+	Interval  string `yaml:"interval"` // Go duration string; default 1h
 }
 
 // ToneOutConfig describes paging-tone profiles to monitor. Empty

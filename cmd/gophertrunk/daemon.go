@@ -1367,7 +1367,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.mdc1200Log = mdl
 
-		if cfg.Retention.CallLogDays > 0 || cfg.Retention.FilesDays > 0 {
+		if cfg.Retention.CallLogDays > 0 || cfg.Retention.LogDays > 0 || cfg.Retention.FilesDays > 0 {
 			interval, err := retentionInterval(cfg.Retention.Interval)
 			if err != nil {
 				return nil, fmt.Errorf("daemon: retention.interval: %w", err)
@@ -2914,6 +2914,10 @@ type adsbProvider struct{ log *storage.AircraftLog }
 
 func (a adsbProvider) RecentAircraftReports(limit int) ([]storage.AircraftReport, error) {
 	return a.log.Recent(limit)
+}
+
+func (a adsbProvider) CurrentAircraft(maxAge time.Duration) ([]storage.AircraftReport, error) {
+	return a.log.CurrentAircraft(maxAge)
 }
 
 // mdc1200Provider adapts storage.MDC1200Log into api.MDC1200Provider
