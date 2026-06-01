@@ -114,6 +114,74 @@ func warnGainUnits(log *slog.Logger, serial, raw string, tenthDB int) {
 		"hint", "gain: is in TENTHS of a dB (\"320\" = 32 dB). SDRTrunk/OP25/gqrx users multiply dB by 10. Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder.")
 }
 
+// lowManualGainTenthDB is the floor below which a manual gain is suspiciously
+// low for digital decode on an RTL-SDR. Real manual P25/C4FM gains run
+// ~150-496 tenths (15-49.6 dB); below ~15 dB the tuner front-end rarely lifts
+// the on-channel signal far enough above the noise floor to acquire sync,
+// even when a hot wideband input keeps the aggregate IQ power gauge healthy
+// (issue #402: 8.7 dB applied vs the 49 dB the same site decoded at, no FSW).
+const lowManualGainTenthDB = 150
+
+// gainLooksTooLow reports whether a manual (non-auto) gain is below the
+// digital-decode floor but above the tenths-of-dB-mistake band that
+// gainLooksLikeDBMistake already covers. The two checks partition the
+// suspicious range so an operator sees exactly one warning: <=50 tenths reads
+// as a forgotten 10x (warnGainUnits); (50,150) tenths reads as a real-but-too-
+// low manual gain (warnLowGain).
+func gainLooksTooLow(raw string, tenthDB int) bool {
+	if gainLooksLikeDBMistake(raw, tenthDB) {
+		return false
+	}
+	return tenthDB > 0 && tenthDB < lowManualGainTenthDB
+}
+
+// warnLowGain emits a WARN when a manual gain parses cleanly but is too low
+// for reliable digital decode (see gainLooksTooLow). Surfaces the role so a
+// control/voice dongle that won't lock points the operator straight at the
+// front-end gain. No-op for auto, plausible, or already-dB-mistake gains.
+func warnLowGain(log *slog.Logger, serial string, role sdr.Role, raw string, tenthDB int) {
+	if !gainLooksTooLow(raw, tenthDB) {
+		return
+	}
+	log.Warn("daemon: manual gain is unusually low for digital decode — the on-channel signal may be too weak to acquire sync even if the IQ power gauge looks healthy",
+		"serial", serial,
+		"role", role.String(),
+		"configured", raw,
+		"applied_db", float64(tenthDB)/10.0,
+		"hint", "manual P25/C4FM gains typically run 150-496 tenths (15-49.6 dB). gain: is in TENTHS of a dB; a reference 'gain 49' means ~49 dB -> gain: \"490\". Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder.")
+}
+
+// effectiveControlRate returns the IQ sample rate the control-channel
+// down-converter should be built from. The RTL2832U quantizes a requested
+// rate to its resampler divisor, so a requested rate that isn't an exact
+// divisor of the crystal streams at a slightly different rate; deriving the
+// decimation ratio from the requested value (rather than the delivered one)
+// drifts the symbol clock on the live path while offline replay — which reads
+// a file at exactly the configured rate — stays correct (issue #402).
+//
+// Backends that model the quantization expose the optional
+// ActualSampleRate() extension; those that don't (file replay, rtl_tcp)
+// deliver exactly the configured rate, so the requested value is returned
+// unchanged. A WARN fires only when the delivered rate actually differs, so a
+// correct exact-divisor config (2.4 / 0.96 MS/s) stays quiet.
+func effectiveControlRate(log *slog.Logger, dev sdr.Device, serial string, requested uint32) uint32 {
+	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
+	if !ok {
+		return requested
+	}
+	actual, err := ar.ActualSampleRate()
+	if err != nil || actual == 0 {
+		return requested
+	}
+	if actual != requested {
+		log.Warn("daemon: control SDR streams a different sample rate than requested; building the down-converter from the actual hardware rate so the symbol clock stays aligned (issue #402)",
+			"serial", serial,
+			"requested_hz", requested,
+			"actual_hz", actual)
+	}
+	return actual
+}
+
 // looksDriveRootedOnWindows reports whether p, when used on Windows,
 // would resolve to the root of the *current* drive (e.g. the Unix-style
 // default "/var/lib/gophertrunk/recordings" becomes "C:\var\lib\...")
@@ -510,6 +578,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 						"serial", dev.Serial, "gain", dev.Gain)
 				} else {
 					warnGainUnits(log, dev.Serial, dev.Gain, gain)
+					warnLowGain(log, dev.Serial, h.Role, dev.Gain, gain)
 					h = h.WithGain(gain)
 				}
 			}
@@ -567,6 +636,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 								"serial", r.Serial, "gain", r.Gain)
 						} else {
 							warnGainUnits(log, r.Serial, r.Gain, gain)
+							warnLowGain(log, r.Serial, h.Role, r.Gain, gain)
 							h = h.WithGain(gain)
 						}
 					}
@@ -915,17 +985,23 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 						break
 					}
 				}
+				// Build the down-converter from the rate the hardware
+				// actually delivers, not the requested one (issue #402).
+				effectiveRate := effectiveControlRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
 				d.ccDecoderOpts = ccdecoder.Options{
 					Bus:          d.bus,
 					Log:          log,
 					Tuner:        tuner,
 					IQ:           iqSrc,
 					Systems:      d.systems,
-					SampleRateHz: float64(cfg.SDR.SampleRate),
+					SampleRateHz: float64(effectiveRate),
 					Metrics:      iqObs,
 					IQCorrect:    iqCorrect,
 				}
 				d.controlSerial = controlEntry.Info.Serial
+				// Reacquire re-requests the configured rate (and re-quantizes
+				// on the fresh handle); the decoder, by contrast, is built from
+				// the delivered effectiveRate above.
 				d.controlSampleRate = cfg.SDR.SampleRate
 				dec, err := ccdecoder.New(d.ccDecoderOpts)
 				if err != nil {

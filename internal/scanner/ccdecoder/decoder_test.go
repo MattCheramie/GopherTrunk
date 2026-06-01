@@ -343,6 +343,67 @@ func TestHandleProgressUnknownProtocolClearsActive(t *testing.T) {
 	}
 }
 
+// TestHandleProgressRepeatedSameFreqIsIdempotent pins the issue-#402
+// live-acquisition fix: a HuntProgress that repeats the same (system,
+// frequency) the active pipeline is already decoding must NOT rebuild
+// the pipeline or flush the DDC. On a single-candidate system the
+// supervisor re-attempts every dwell (~3s); a rebuild-on-every-attempt
+// loop flushed the symbol clock + decimation filter each time and the
+// live stream never acquired FSW ("no FSW hits in chunk" cycling with
+// "pipeline configured"). Replay never exercised this because it never
+// re-hunts.
+func TestHandleProgressRepeatedSameFreqIsIdempotent(t *testing.T) {
+	saved := factories
+	builds := 0
+	var rec *recordingPipeline
+	factories = map[trunking.Protocol]PipelineFactory{
+		trunking.ProtocolP25: func(PipelineOptions) (ProtocolPipeline, error) {
+			builds++
+			rec = &recordingPipeline{}
+			return rec, nil
+		},
+	}
+	t.Cleanup(func() { factories = saved })
+
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	prog := trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500}
+	d.handleProgress(prog) // first attempt: builds
+	first := rec
+	d.handleProgress(prog) // re-hunt same freq: must be a no-op
+	d.handleProgress(prog)
+
+	if builds != 1 {
+		t.Errorf("pipeline builds = %d, want 1 (repeated same-freq retune must not rebuild)", builds)
+	}
+	if d.active != first {
+		t.Errorf("active pipeline was swapped on a repeated same-freq retune")
+	}
+	if first.closes != 0 {
+		t.Errorf("active pipeline Close calls = %d, want 0 (must not tear down on same-freq retune)", first.closes)
+	}
+
+	// A genuine retune to a different frequency must still rebuild.
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_025_000})
+	if builds != 2 {
+		t.Errorf("pipeline builds = %d after a real retune, want 2", builds)
+	}
+	if first.closes != 1 {
+		t.Errorf("previous pipeline Close calls = %d after a real retune, want 1", first.closes)
+	}
+}
+
 // TestP25Phase1FactoryConstructs: smoke test that the wired
 // P25 P1 factory builds without error and returns a pipeline whose
 // Process / Reset / Close run cleanly on a small IQ chunk.
