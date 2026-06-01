@@ -62,6 +62,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// (issue #451). With the live-decode defaults (ScramblerOn + an
 	// identity-derived seed) none of these fire.
 	switch {
+	case macCfg.Trellis == p25p2.TrellisOff:
+		c.log.Warn("composer: p25p2 trellis is off; live P25 Phase 2 MAC PDUs are trellis-encoded (TIA-102.AABF), so voice/MAC decode will fail — TrellisOff is only for pre-stripped fixtures (set p25_phase2_trellis_mode=on)",
+			"serial", serial, "system", system,
+			"trellis", macCfg.Trellis, "rs", macCfg.RS,
+			"interleave", macCfg.Interleave, "scrambler", macCfg.Scrambler)
 	case macCfg.Seed == 0:
 		c.log.Warn("composer: p25p2 macCfg has no scrambler seed; live MAC PDU decode will fail until the system identity is known (set WACN/SystemID/site, or wait for a Network Status Broadcast on Phase 2 control channels)",
 			"serial", serial, "system", system,
