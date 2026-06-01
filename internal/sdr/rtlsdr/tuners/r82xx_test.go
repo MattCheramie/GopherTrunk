@@ -722,6 +722,54 @@ func TestR82xx_PLLNintWithinEncoding_R828D(t *testing.T) {
 	}
 }
 
+// TestR82xx_PPMCorrectionShiftsPLLReference pins the issue #264 PPM fix:
+// SetPPM now reaches the tuner LO (not just the resampler) by biasing
+// setPLL's reference crystal. ppm == 0 must reproduce the raw crystal
+// exactly so all existing register-write scripts stay byte-identical.
+func TestR82xx_PPMCorrectionShiftsPLLReference(t *testing.T) {
+	r := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+
+	// ppm == 0 reproduces the raw crystal exactly — the byte-for-byte
+	// guarantee for the existing setPLL scripts.
+	if got := r.effectiveXtalHz(); got != r828dXtalHz {
+		t.Errorf("effectiveXtalHz(ppm=0) = %d, want %d", got, r828dXtalHz)
+	}
+
+	// With no frequency tuned yet, SetFreqCorrection just stores the
+	// value (no retune that would deref the nil demod).
+	if err := r.SetFreqCorrection(50); err != nil {
+		t.Fatalf("SetFreqCorrection(50): %v", err)
+	}
+	want := uint32(int64(r828dXtalHz) + int64(r828dXtalHz)*50/1_000_000)
+	if got := r.effectiveXtalHz(); got != want {
+		t.Errorf("effectiveXtalHz(ppm=50) = %d, want %d (xtal·(1+ppm·1e-6))", got, want)
+	}
+
+	// A positive ppm raises the effective reference; a negative one
+	// lowers it. (A larger reference yields a smaller nint for the same
+	// LO, which is how the correction nudges the carrier.)
+	if err := r.SetFreqCorrection(-50); err != nil {
+		t.Fatalf("SetFreqCorrection(-50): %v", err)
+	}
+	if got := r.effectiveXtalHz(); got >= r828dXtalHz {
+		t.Errorf("effectiveXtalHz(ppm=-50) = %d, want < %d", got, r828dXtalHz)
+	}
+
+	// Idempotent: re-setting the same ppm is a no-op (returns before any
+	// retune), so it's safe to call on every SetPPM even with nil demod.
+	if err := r.SetFreqCorrection(-50); err != nil {
+		t.Fatalf("idempotent SetFreqCorrection(-50): %v", err)
+	}
+
+	// R820T/R820T2 share the mechanism off the 28.8 MHz crystal.
+	r2 := NewR82xx(nil, r82xxI2CAddr, TypeR820T2)
+	_ = r2.SetFreqCorrection(100)
+	want2 := uint32(int64(r82xxXtalHz) + int64(r82xxXtalHz)*100/1_000_000)
+	if got := r2.effectiveXtalHz(); got != want2 {
+		t.Errorf("R820T2 effectiveXtalHz(ppm=100) = %d, want %d", got, want2)
+	}
+}
+
 // Detect orchestrator tests moved to detect_test.go (it walks every
 // candidate tuner, not just R820T, so the scripts that pin its
 // behavior live with the orchestrator).

@@ -41,6 +41,7 @@ type R82xx struct {
 	manual   bool   // gain mode: true = manual, false = AGC
 	bwHz     uint32 // last requested bandwidth
 	freqHz   uint32 // last requested center frequency
+	ppmCorr  int    // tuner-LO frequency correction, parts-per-million
 }
 
 // NewR82xx constructs a driver bound to the given RTL2832U demod and
@@ -69,6 +70,44 @@ func NewR82xx(d *rtl2832u.Demod, i2cAddr uint8, chip Type) *R82xx {
 // defaults are set by [NewR82xx] (28.8 MHz for R820T/R820T2, 16 MHz
 // for R828D); SetXtal exists for boards that deviate from those.
 func (r *R82xx) SetXtal(hz uint32) { r.xtalHz = hz }
+
+// SetFreqCorrection applies a parts-per-million correction to the
+// tuner LO, mirroring the tuner half of librtlsdr's
+// rtlsdr_set_freq_correction. The RTL2832U sample-clock half is
+// applied separately via the demod's SetSampleFreqCorrection; without
+// this method a configured ppm only retimed the resampler and never
+// moved the carrier, so a real crystal offset stayed in the signal
+// (issue #264: the reporter's `ppm: -4` was "not adopted"). A static
+// carrier offset that survives here pushes the C4FM eye off the
+// fixed-threshold slicer and breaks digital decode.
+//
+// The correction biases the PLL reference in setPLL; if a frequency
+// has already been tuned it re-tunes so the change takes effect
+// immediately, otherwise the next SetFreq picks it up. No-op when the
+// value is unchanged.
+func (r *R82xx) SetFreqCorrection(ppm int) error {
+	if r.ppmCorr == ppm {
+		return nil
+	}
+	r.ppmCorr = ppm
+	if r.initDone && r.freqHz != 0 {
+		return r.SetFreq(r.freqHz)
+	}
+	return nil
+}
+
+// effectiveXtalHz returns the reference-crystal frequency adjusted for
+// the configured ppm correction, mirroring librtlsdr's APPLY_PPM_CORR
+// (xtal · (1 + ppm·1e-6)). A positive ppm raises the effective
+// reference so setPLL's registers target a slightly lower nominal LO,
+// compensating a fast crystal. ppm == 0 returns the raw crystal
+// unchanged, so the integer-divider math reproduces byte-for-byte.
+func (r *R82xx) effectiveXtalHz() uint32 {
+	if r.ppmCorr == 0 {
+		return r.xtalHz
+	}
+	return uint32(int64(r.xtalHz) + int64(r.xtalHz)*int64(r.ppmCorr)/1_000_000)
+}
 
 // Type returns the detected chip family.
 func (r *R82xx) Type() Type { return r.chipType }
@@ -430,7 +469,8 @@ func (r *R82xx) setPLL(freqHz uint32) error {
 		return err
 	}
 	vcoFreq := uint64(freqHz) * uint64(mixDiv)
-	pllRef := uint64(r.xtalHz)
+	effXtal := r.effectiveXtalHz()
+	pllRef := uint64(effXtal)
 	nint := uint32(vcoFreq / (2 * pllRef))
 	vcoFra := uint32((vcoFreq - 2*pllRef*uint64(nint)) / 1000)
 	if nint > r82xxMaxNint {
@@ -454,7 +494,7 @@ func (r *R82xx) setPLL(freqHz uint32) error {
 	// converges in ≤16 iterations because n_sdm doubles each step.
 	var sdm uint16
 	nSDM := uint32(2)
-	pllRefkHz := r.xtalHz / 1000
+	pllRefkHz := effXtal / 1000
 	for vcoFra > 1 {
 		if vcoFra > (2 * pllRefkHz / nSDM) {
 			sdm += 32768 / uint16(nSDM/2)
