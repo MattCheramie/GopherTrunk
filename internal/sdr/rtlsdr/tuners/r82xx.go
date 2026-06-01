@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
 // R82xx implements [Tuner] for the R820T / R820T2 / R828D chips, which
@@ -567,7 +568,7 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, syscall.EPIPE) {
+		if !isI2CBurstStall(err) {
 			return err
 		}
 		lastErr = err
@@ -576,7 +577,22 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 			time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
 		}
 	}
-	return fmt.Errorf("tried chunk sizes 16,8,4; all EPIPE'd: %w", lastErr)
+	return fmt.Errorf("tried chunk sizes 16,8,4; all stalled: %w", lastErr)
+}
+
+// isI2CBurstStall reports whether err is the recoverable I²C-bridge
+// stall the NESDR v5 cold-boot path retries (per-chunk retry + chunk-size
+// halving). The same logical stall surfaces differently per OS: Linux's
+// USBDEVFS returns a raw syscall.EPIPE, while Windows/WinUSB maps the
+// equivalent ERROR_GEN_FAILURE to usb.ErrPipeStalled (see winErr in
+// usb_windows.go). Both must drive the recovery — checking only EPIPE
+// meant the entire NESDR v5 burst recovery (issue #248) silently never
+// fired on Windows, so the first chunk failure propagated straight out
+// as `tuner init: r82xx init: burst write: ... ERROR_GEN_FAILURE`.
+// Timeouts / ErrDeviceGone / ErrClosed are deliberately excluded — the
+// outer openDevice envelope owns full-reset recovery for those.
+func isI2CBurstStall(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrPipeStalled)
 }
 
 // writeBurstAtSize emits the burst with a specific chunk size cap.
@@ -604,11 +620,12 @@ func (r *R82xx) writeBurstAtSize(addr uint8, data []byte, chunkSize int) error {
 // the SetI2CRepeater bracket open across the call — writeBurstChunk
 // never touches the repeater (PR #262's wire-toggle contract).
 //
-// On EPIPE the chip's USB firmware NACK'd this specific request; the
-// post-PR-#262 trace on issue #248 confirms the EP0 endpoint stays
-// healthy (subsequent control transfers succeed without
-// USBDEVFS_CLEAR_HALT). After a short settle delay we retry the same
-// wire bytes once. Non-EPIPE errors (timeout, ErrDeviceGone, ErrClosed)
+// On a recoverable I²C-bridge stall (Linux EPIPE / Windows
+// ErrPipeStalled, see isI2CBurstStall) the chip's USB firmware NACK'd
+// this specific request; the post-PR-#262 trace on issue #248 confirms
+// the EP0 endpoint stays healthy (subsequent control transfers succeed
+// without USBDEVFS_CLEAR_HALT). After a short settle delay we retry the
+// same wire bytes once. Other errors (timeout, ErrDeviceGone, ErrClosed)
 // return immediately — the outer openDevice envelope owns reset
 // recovery for those.
 func (r *R82xx) writeBurstChunk(addr uint8, chunk []byte) error {
@@ -619,12 +636,12 @@ func (r *R82xx) writeBurstChunk(addr uint8, chunk []byte) error {
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, syscall.EPIPE) {
+	if !isI2CBurstStall(err) {
 		return err
 	}
 	time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
 	if retryErr := r.demod.I2CWrite(r.i2cAddr, buf); retryErr != nil {
-		return fmt.Errorf("after 1 retry on EPIPE: %w", retryErr)
+		return fmt.Errorf("after 1 retry on stall: %w", retryErr)
 	}
 	return nil
 }
