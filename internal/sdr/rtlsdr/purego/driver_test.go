@@ -771,3 +771,58 @@ func TestOpenDevice_InitBasebandNonResetableErrorDoesNotReset(t *testing.T) {
 		t.Errorf("ResetCalls = %d, want 0 (non-resetable error must not trigger reset)", m.ResetCalls)
 	}
 }
+
+// Regression for the Windows ERROR_GEN_FAILURE triage path: when
+// bring-up ultimately fails, openDevice must append the transport's
+// Diagnostics (bound driver, descriptors, control-IN read probe) to the
+// error so one `gophertrunk sdr list --probe` run captures everything
+// needed to diagnose a dongle that rejects control transfers even with
+// WinUSB reportedly bound. The mock stands in for the WinUSB transport
+// via the usb.Diagnoser interface.
+func TestOpenDevice_AppendsTransportDiagnosticsOnFailure(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Diag = "bound driver: service=\"libusbK\" (winusb-bound=false)\n"
+	// Persistent stall on every InitBaseband step 0 (warmup swallowed),
+	// across all five attempts: 2 transfers per attempt × 5 attempts.
+	m.Script = make([]usb.CtrlExchange, 0, 10)
+	for i := 0; i < 5; i++ {
+		m.Script = append(m.Script,
+			warmupUSBSysctlExchange(usb.ErrPipeStalled), // warmup (swallowed)
+			warmupUSBSysctlExchange(usb.ErrPipeStalled), // InitBaseband step 0 (resetable)
+		)
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-diag"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected persistent stall to fail open")
+	}
+	if !strings.Contains(err.Error(), "USB diagnostics") {
+		t.Errorf("err = %v, want the diagnostics block appended", err)
+	}
+	if !strings.Contains(err.Error(), "libusbK") {
+		t.Errorf("err = %v, want the bound-driver diagnostic included", err)
+	}
+	// The underlying cause must still be inspectable through the wrap.
+	if !errors.Is(err, usb.ErrPipeStalled) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrPipeStalled) after diagnostics wrap", err)
+	}
+}
+
+// A transport that produces no diagnostics (the non-Windows case, Diag
+// empty) must leave the error message unchanged — no stray diagnostics
+// header.
+func TestOpenDevice_NoDiagnosticsWhenTransportSilent(t *testing.T) {
+	m := usb.NewMockTransport()
+	m.Script = []usb.CtrlExchange{
+		warmupUSBSysctlExchange(nil),           // warmup OK
+		warmupUSBSysctlExchange(usb.ErrClosed), // InitBaseband step 0: non-resetable
+	}
+	desc := usb.Descriptor{VID: 0x0bda, PID: 0x2838, Serial: "test-no-diag"}
+	_, err := openDevice(m, desc, 0)
+	if err == nil {
+		t.Fatal("openDevice succeeded; expected ErrClosed to fail open")
+	}
+	if strings.Contains(err.Error(), "USB diagnostics") {
+		t.Errorf("err = %v, must NOT contain the diagnostics header when the transport is silent", err)
+	}
+}

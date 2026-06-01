@@ -85,6 +85,11 @@ type MockTransport struct {
 	// (e.g. an EBUSY that survives kernel-driver auto-detach).
 	ClaimErr error
 
+	// Diag, when non-empty, is returned by Diagnostics so tests can
+	// assert the bring-up path appends transport diagnostics to a failed
+	// Open. Mirrors the real winTransport.Diagnostics capability.
+	Diag string
+
 	BulkPackets  [][]byte
 	BulkInterval time.Duration
 	// BulkSimulateDeath, when true, makes the bulk-IN goroutine fire
@@ -310,6 +315,11 @@ func (m *MockTransport) Close() error {
 // Remaining returns the number of unconsumed [CtrlExchange] entries in
 // the script. Tests typically assert it is zero after the SUT runs.
 func (m *MockTransport) Remaining() int { return len(m.Script) - m.Step }
+
+// Diagnostics implements the usb.Diagnoser optional interface, returning
+// the canned Diag string. Lets tests assert the bring-up path appends
+// transport diagnostics on a failed Open.
+func (m *MockTransport) Diagnostics() string { return m.Diag }
 
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
