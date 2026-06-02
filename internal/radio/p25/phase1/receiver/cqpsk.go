@@ -97,7 +97,9 @@ type cqpskDemod struct {
 // newCQPSKDemod builds a CQPSK / LSM demod for the supplied sample
 // rate and RRC parameters. sps must already be the integer samples-
 // per-symbol; span / alpha are the standard P25 RRC parameters
-// (span=8 symbols half-width, α=0.20).
+// (span=8 symbols half-width, α=0.20). gardnerGain ≤ 0 selects
+// defaultGardnerGain, whose value is tuned for this path's 10 sps so the
+// timing loop pulls in from any sub-symbol phase (issue #492).
 func newCQPSKDemod(sps int, span int, alpha float64, gardnerGain float64) *cqpskDemod {
 	if gardnerGain <= 0 {
 		gardnerGain = defaultGardnerGain
