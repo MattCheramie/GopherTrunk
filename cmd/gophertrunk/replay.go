@@ -182,23 +182,28 @@ FLAGS:`)
 		NIDSearchSpan: *nidSearchSpan,
 	})
 
-	// Mirror the production ccdecoder DDC for the C4FM path (issue
-	// #402 Phase 2): the daemon decimates raw SDR IQ down to ~48 kHz
-	// before the receiver sees it; without the same step here replay
-	// feeds the receiver wideband IQ (e.g. 2.4 MHz), the matched
-	// filter sizes for ~500 samples per symbol, and AFC / AGC time
-	// constants are off by ~50× compared to what runs in production.
-	// A capture that fails in the daemon would then decode (or fail)
-	// differently in replay, defeating the whole point of using
-	// replay as a reproducer. The DDC is only enabled when the demod
-	// is C4FM and the supplied -sample-rate exceeds the production
-	// target — CQPSK and already-channelized captures are unchanged.
-	// Decimate only on the C4FM path when the input exceeds the production
-	// target; CQPSK and already-channelised captures keep their rate. The
-	// tuning shift (if any) applies on either path — it just centres the
-	// channel and never changes the rate.
+	// Mirror the production ccdecoder DDC (issue #402 Phase 2): the
+	// daemon decimates raw SDR IQ down to ~48 kHz before the receiver
+	// sees it; without the same step here replay feeds the receiver
+	// wideband IQ (e.g. 2.4 MHz), the matched filter sizes for ~500
+	// samples per symbol, and AFC / AGC / timing time constants are off
+	// by ~50× compared to what runs in production. A capture that fails
+	// in the daemon would then decode (or fail) differently in replay,
+	// defeating the whole point of using replay as a reproducer.
+	//
+	// The daemon decimates by *protocol*, not demod mode — it channelizes
+	// every P25 stream to the C4FM-family target regardless of whether the
+	// receiver runs the C4FM or CQPSK path (ccdecoder/decoder.go calls
+	// ensureDownconverterLocked(ddcTargetForProtocol(sys.Protocol))). So
+	// replay must do the same for both modes: decimate whenever the input
+	// exceeds the production target. Gating this on demod==C4FM (the
+	// earlier behaviour, issue #492) ran replayed CQPSK at the full SDR
+	// rate — ~417 samples/symbol at 2 MHz, an ~8× slower run that no
+	// longer matches the live pipeline. The tuning shift (if any) applies
+	// on either path — it just centres the channel and never changes the
+	// rate. Already-channelised captures (rate ≤ target) stay untouched.
 	ddcTarget := *sampleRate
-	if demodMode == p25phase1rx.DemodC4FM && *sampleRate > ccdecoder.DDCTargetRateHz {
+	if *sampleRate > ccdecoder.DDCTargetRateHz {
 		ddcTarget = ccdecoder.DDCTargetRateHz
 	}
 	var ddc *ccdecoder.Downconverter
@@ -218,7 +223,7 @@ FLAGS:`)
 		fmt.Fprintf(os.Stderr, "replay: ddc enabled  sdr_rate_hz=%g  pipeline_rate_hz=%g\n",
 			*sampleRate, receiverRate)
 	} else {
-		fmt.Fprintf(os.Stderr, "replay: ddc bypassed  pipeline_rate_hz=%g  (sample rate already at or below the C4FM target, or demod=cqpsk)\n",
+		fmt.Fprintf(os.Stderr, "replay: ddc bypassed  pipeline_rate_hz=%g  (sample rate already at or below the channel target)\n",
 			receiverRate)
 	}
 
