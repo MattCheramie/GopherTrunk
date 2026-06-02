@@ -45,13 +45,13 @@ type DiagProvider interface {
 // the client disconnects or the device disappears.
 func (s *Server) handleDiagStream(w http.ResponseWriter, r *http.Request) {
 	if s.diag == nil {
-		writeError(w, http.StatusServiceUnavailable, "diag subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "diag subsystem not enabled")
 		return
 	}
 	q := r.URL.Query()
 	serial := q.Get("device")
 	if serial == "" {
-		writeError(w, http.StatusBadRequest, "device query parameter is required")
+		s.writeError(w, http.StatusBadRequest, "device query parameter is required")
 		return
 	}
 	rate := uint32(parseIntQuery(q, "rate", 2000, 100, 20000))

@@ -75,7 +75,7 @@ func aircraftReportToDTO(r storage.AircraftReport) AircraftReportDTO {
 // isn't wired.
 func (s *Server) handleADSBAircraft(w http.ResponseWriter, r *http.Request) {
 	if s.adsb == nil {
-		writeError(w, http.StatusServiceUnavailable, "adsb subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "adsb subsystem not enabled")
 		return
 	}
 	limit := 200
@@ -87,7 +87,7 @@ func (s *Server) handleADSBAircraft(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.adsb.RecentAircraftReports(limit)
 	if err != nil {
 		s.log.Error("api: adsb aircraft", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]AircraftReportDTO, 0, len(rows))
@@ -104,7 +104,7 @@ func (s *Server) handleADSBAircraft(w http.ResponseWriter, r *http.Request) {
 // (default 300 s, max 3600 s).
 func (s *Server) handleADSBAircraftCurrent(w http.ResponseWriter, r *http.Request) {
 	if s.adsb == nil {
-		writeError(w, http.StatusServiceUnavailable, "adsb subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "adsb subsystem not enabled")
 		return
 	}
 	maxAge := 300 * time.Second
@@ -119,7 +119,7 @@ func (s *Server) handleADSBAircraftCurrent(w http.ResponseWriter, r *http.Reques
 	rows, err := s.adsb.CurrentAircraft(maxAge)
 	if err != nil {
 		s.log.Error("api: adsb aircraft current", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]AircraftReportDTO, 0, len(rows))

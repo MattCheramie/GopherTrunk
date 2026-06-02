@@ -15,6 +15,18 @@ log:
   #   path: "logs/messages.log"
   #   max_size_mb: 16          # rotates to messages.log.1 past this
 
+# diagnostics — error-reporting verbosity. Every error is prefixed with
+# a diagnostics banner (version, OS, system specs, detected dongles).
+diagnostics:
+  # When true, errors print the full wrapped chain + a goroutine stack
+  # dump (no interactive prompt), and HTTP/gRPC error responses include
+  # the banner + trace. That exposes host + dongle info (hostname,
+  # kernel, serials) to API clients, so only enable it on trusted
+  # networks. When false (default), the CLI instead offers the full
+  # trace interactively on a terminal. Override at runtime with
+  # -verbose-errors or GOPHERTRUNK_VERBOSE_ERRORS=1.
+  verbose_errors: false
+
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
   grpc_addr: "127.0.0.1:50051"  # gRPC

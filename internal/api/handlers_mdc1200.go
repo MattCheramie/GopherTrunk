@@ -49,7 +49,7 @@ func mdc1200MessageToDTO(m storage.MDC1200Message) MDC1200MessageDTO {
 // wired (daemon started without storage.path).
 func (s *Server) handleMDC1200Messages(w http.ResponseWriter, r *http.Request) {
 	if s.mdc1200 == nil {
-		writeError(w, http.StatusServiceUnavailable, "mdc1200 subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "mdc1200 subsystem not enabled")
 		return
 	}
 	limit := 200
@@ -61,7 +61,7 @@ func (s *Server) handleMDC1200Messages(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.mdc1200.RecentMDC1200Messages(limit)
 	if err != nil {
 		s.log.Error("api: mdc1200 messages", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]MDC1200MessageDTO, 0, len(rows))

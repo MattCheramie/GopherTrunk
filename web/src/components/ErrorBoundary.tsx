@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { HTTPError } from "../api/client";
 
 interface Props {
   children: ReactNode;
@@ -87,6 +88,20 @@ export class ErrorBoundary extends Component<Props, State> {
           <pre className="text-xs text-err whitespace-pre-wrap break-words">
             {error.message}
           </pre>
+          {error instanceof HTTPError && error.diag ? (
+            <details className="text-xs text-muted">
+              <summary className="cursor-pointer">
+                Show diagnostics
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words">
+                {error.diag.banner}
+                {error.diag.trace?.length
+                  ? "\n\n" + error.diag.trace.join("\n")
+                  : ""}
+                {error.diag.stack ? "\n\n" + error.diag.stack : ""}
+              </pre>
+            </details>
+          ) : null}
           <button
             className="btn-primary w-full"
             onClick={() => window.location.reload()}

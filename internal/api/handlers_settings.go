@@ -131,27 +131,27 @@ type ConfigWriter interface {
 // 409 → config.yaml was edited externally; daemon refuses to clobber
 func (s *Server) handleSettingsPatch(w http.ResponseWriter, r *http.Request) {
 	if s.configWriter == nil {
-		writeError(w, http.StatusServiceUnavailable, "settings: no config file backs this daemon (start with -config to enable live edits)")
+		s.writeError(w, http.StatusServiceUnavailable, "settings: no config file backs this daemon (start with -config to enable live edits)")
 		return
 	}
 	var req SettingsPatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "settings: "+err.Error())
+		s.writeError(w, http.StatusBadRequest, "settings: "+err.Error())
 		return
 	}
 	patch := req.toPatch()
 	if patch.IsEmpty() {
-		writeError(w, http.StatusBadRequest, "settings: patch has no fields")
+		s.writeError(w, http.StatusBadRequest, "settings: patch has no fields")
 		return
 	}
 	if _, err := s.configWriter.WritePatch(patch); err != nil {
 		// Distinguish external-edit conflict from a generic write
 		// failure so the UI can present a clearer toast.
 		if isExternalEditConflict(err) {
-			writeError(w, http.StatusConflict, err.Error())
+			s.writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

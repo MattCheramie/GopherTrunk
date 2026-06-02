@@ -28,14 +28,16 @@ func runTUI(args []string) {
 	write := fs.Bool("write", false, "enable mutation keybindings (end call, set priority/lockout, retention sweep, tone reset). Daemon must also accept mutations (api.auth.mode or legacy api.allow_mutations).")
 	token := fs.String("token", "", "API bearer token (sent as Authorization: Bearer <token>); falls back to GOPHERTRUNK_API_TOKEN")
 	tokenFile := fs.String("token-file", "", "path to a file containing the API bearer token; re-read on every request so daemon-side rotation works without a restart")
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	_ = fs.Parse(args)
+	resolveVerbose(*verboseFlag, false)
+	rep := newReporter("tui")
 
 	cli := client.New(*server, *timeout, *insecure)
 	// Resolve token: -token-file > -token > GOPHERTRUNK_API_TOKEN
 	if *tokenFile != "" {
 		if err := cli.SetTokenFile(*tokenFile); err != nil {
-			fmt.Fprintf(os.Stderr, "tui: -token-file: %v\n", err)
-			os.Exit(1)
+			rep.Fatal(1, fmt.Errorf("-token-file: %w", err))
 		}
 	} else if *token != "" {
 		cli.SetToken(*token)
@@ -46,7 +48,6 @@ func runTUI(args []string) {
 	m := tui.New(cli, tui.Options{NoColor: *noColor, Write: *write})
 	prog := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := prog.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
-		os.Exit(1)
+		rep.Fatal(1, err)
 	}
 }

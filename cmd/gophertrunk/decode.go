@@ -34,6 +34,7 @@ func runDecode(args []string) {
 	out := fs.String("out", "", "WAV output path (required; must be a regular file for the WAV header to be patched)")
 	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk decode — decode a captured raw vocoder-frame stream into a WAV.
 
@@ -54,6 +55,8 @@ FLAGS:`)
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	resolveVerbose(*verboseFlag, false)
+	rep := newReporter("decode")
 
 	if *listVocoders {
 		fmt.Println(strings.Join(voice.DefaultRegistry.Names(), "\n"))
@@ -61,22 +64,19 @@ FLAGS:`)
 	}
 
 	if *out == "" {
-		fmt.Fprintln(os.Stderr, "decode: -out is required")
 		fs.Usage()
-		os.Exit(2)
+		rep.Fatalf(2, "-out is required")
 	}
 
 	reader, closer, err := openInput(*in)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "decode: open input: %v\n", err)
-		os.Exit(1)
+		rep.Fatal(1, fmt.Errorf("open input: %w", err))
 	}
 	defer closer()
 
 	outFile, err := os.Create(*out)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "decode: create output: %v\n", err)
-		os.Exit(1)
+		rep.Fatal(1, fmt.Errorf("create output: %w", err))
 	}
 	defer outFile.Close()
 
@@ -86,8 +86,7 @@ FLAGS:`)
 		// Don't exit non-zero — the WAV is playable up to the
 		// partial trailer, which is the operator-friendly outcome.
 	} else if decodeErr != nil {
-		fmt.Fprintf(os.Stderr, "decode: %v\n", decodeErr)
-		os.Exit(1)
+		rep.Fatal(1, decodeErr)
 	}
 	fmt.Printf("decoded %d frame(s) → %s (%d ms of audio)\n",
 		frames, *out, frames*20)

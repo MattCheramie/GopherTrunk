@@ -71,13 +71,13 @@ func dtoToBookmark(d BookmarkDTO) storage.Bookmark {
 // handleListBookmarks answers GET /api/v1/bookmarks. Open route.
 func (s *Server) handleListBookmarks(w http.ResponseWriter, _ *http.Request) {
 	if s.bookmarks == nil {
-		writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
 		return
 	}
 	rows, err := s.bookmarks.ListBookmarks()
 	if err != nil {
 		s.log.Error("api: list bookmarks", "err", err)
-		writeError(w, http.StatusInternalServerError, "list failed")
+		s.writeError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
 	out := make([]BookmarkDTO, 0, len(rows))
@@ -90,17 +90,17 @@ func (s *Server) handleListBookmarks(w http.ResponseWriter, _ *http.Request) {
 // handleCreateBookmark answers POST /api/v1/bookmarks. Gated.
 func (s *Server) handleCreateBookmark(w http.ResponseWriter, r *http.Request) {
 	if s.bookmarks == nil {
-		writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
 		return
 	}
 	var body BookmarkDTO
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		s.writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	created, err := s.bookmarks.CreateBookmark(dtoToBookmark(body))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, bookmarkToDTO(created))
@@ -109,27 +109,27 @@ func (s *Server) handleCreateBookmark(w http.ResponseWriter, r *http.Request) {
 // handleUpdateBookmark answers PATCH /api/v1/bookmarks/{id}. Gated.
 func (s *Server) handleUpdateBookmark(w http.ResponseWriter, r *http.Request) {
 	if s.bookmarks == nil {
-		writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad id")
+		s.writeError(w, http.StatusBadRequest, "bad id")
 		return
 	}
 	var body BookmarkDTO
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		s.writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	body.ID = id
 	updated, err := s.bookmarks.UpdateBookmark(dtoToBookmark(body))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "bookmark not found")
+			s.writeError(w, http.StatusNotFound, "bookmark not found")
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, bookmarkToDTO(updated))
@@ -138,21 +138,21 @@ func (s *Server) handleUpdateBookmark(w http.ResponseWriter, r *http.Request) {
 // handleDeleteBookmark answers DELETE /api/v1/bookmarks/{id}. Gated.
 func (s *Server) handleDeleteBookmark(w http.ResponseWriter, r *http.Request) {
 	if s.bookmarks == nil {
-		writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "bookmarks store not enabled")
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad id")
+		s.writeError(w, http.StatusBadRequest, "bad id")
 		return
 	}
 	if err := s.bookmarks.DeleteBookmark(id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "bookmark not found")
+			s.writeError(w, http.StatusNotFound, "bookmark not found")
 			return
 		}
 		s.log.Error("api: delete bookmark", "err", err)
-		writeError(w, http.StatusInternalServerError, "delete failed")
+		s.writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

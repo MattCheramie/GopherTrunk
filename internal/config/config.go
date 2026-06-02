@@ -14,27 +14,41 @@ import (
 )
 
 type Config struct {
-	Log        LogConfig        `yaml:"log"`
-	SDR        SDRConfig        `yaml:"sdr"`
-	Trunking   TrunkingConfig   `yaml:"trunking"`
-	API        APIConfig        `yaml:"api"`
-	Storage    StorageConfig    `yaml:"storage"`
-	Recordings RecordingsConfig `yaml:"recordings"`
-	Metrics    MetricsConfig    `yaml:"metrics"`
-	Retention  RetentionConfig  `yaml:"retention"`
-	ToneOut    ToneOutConfig    `yaml:"tone_out"`
-	Scanner    ScannerConfig    `yaml:"scanner"`
-	Audio      AudioConfig      `yaml:"audio"`
-	Broadcast  BroadcastConfig  `yaml:"broadcast"`
-	Baseband   BasebandConfig   `yaml:"baseband"`
-	Paging     PagingConfig     `yaml:"paging"`
-	APRS       APRSConfig       `yaml:"aprs"`
-	AIS        AISConfig        `yaml:"ais"`
-	DSC        DSCConfig        `yaml:"dsc"`
-	MDC1200    MDC1200Config    `yaml:"mdc1200"`
-	ADSB       ADSBConfig       `yaml:"adsb"`
-	M17        M17Config        `yaml:"m17"`
-	Web        WebConfig        `yaml:"web"`
+	Log         LogConfig         `yaml:"log"`
+	SDR         SDRConfig         `yaml:"sdr"`
+	Trunking    TrunkingConfig    `yaml:"trunking"`
+	API         APIConfig         `yaml:"api"`
+	Storage     StorageConfig     `yaml:"storage"`
+	Recordings  RecordingsConfig  `yaml:"recordings"`
+	Metrics     MetricsConfig     `yaml:"metrics"`
+	Retention   RetentionConfig   `yaml:"retention"`
+	ToneOut     ToneOutConfig     `yaml:"tone_out"`
+	Scanner     ScannerConfig     `yaml:"scanner"`
+	Audio       AudioConfig       `yaml:"audio"`
+	Broadcast   BroadcastConfig   `yaml:"broadcast"`
+	Baseband    BasebandConfig    `yaml:"baseband"`
+	Paging      PagingConfig      `yaml:"paging"`
+	APRS        APRSConfig        `yaml:"aprs"`
+	AIS         AISConfig         `yaml:"ais"`
+	DSC         DSCConfig         `yaml:"dsc"`
+	MDC1200     MDC1200Config     `yaml:"mdc1200"`
+	ADSB        ADSBConfig        `yaml:"adsb"`
+	M17         M17Config         `yaml:"m17"`
+	Web         WebConfig         `yaml:"web"`
+	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
+}
+
+// DiagnosticsConfig controls error-reporting verbosity. When
+// VerboseErrors is true, every error surface (CLI, daemon log,
+// HTTP/gRPC API) prints the full wrapped error chain plus a goroutine
+// stack dump under the diagnostics banner, with no interactive prompt;
+// the API also expands its error envelopes to include the banner +
+// trace (which exposes host/dongle info — enable only on trusted
+// networks). When false (the default) the CLI instead offers the trace
+// interactively on a TTY. Overridable at runtime by the -verbose-errors
+// flag and the GOPHERTRUNK_VERBOSE_ERRORS env var.
+type DiagnosticsConfig struct {
+	VerboseErrors bool `yaml:"verbose_errors"`
 }
 
 // WebConfig configures the bundled user interfaces (the embedded web SPA

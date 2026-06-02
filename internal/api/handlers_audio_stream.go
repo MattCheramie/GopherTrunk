@@ -28,12 +28,12 @@ import (
 // torn down mid-call.
 func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 	if s.audioPub == nil {
-		writeError(w, http.StatusServiceUnavailable, "audio stream not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "audio stream not wired")
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		s.writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})

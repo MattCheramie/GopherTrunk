@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -309,6 +310,14 @@ type Server struct {
 	// storage.MDC1200Log.
 	mdc1200 MDC1200Provider
 
+	// diagnostics is the shared error-diagnostics collector (banner +
+	// system info). nil disables banner enrichment of error responses
+	// and the GET /api/v1/diag/banner route.
+	diagnostics *gtdiag.Collector
+	// verboseErrors mirrors diagnostics.verbose_errors; see
+	// ServerOptions.VerboseErrors.
+	verboseErrors bool
+
 	mu     sync.Mutex
 	srv    *http.Server
 	closed bool
@@ -503,6 +512,17 @@ type ServerOptions struct {
 	// the iqtap broker + internal/dsp/diag; nil keeps the route
 	// returning 503.
 	Diag DiagProvider
+	// Diagnostics is the shared error-diagnostics collector (banner +
+	// system info). The daemon injects one seeded with its SDR pool
+	// snapshot so the error path never re-enumerates USB. Optional; nil
+	// disables banner enrichment and the GET /api/v1/diag/banner route.
+	Diagnostics *gtdiag.Collector
+	// VerboseErrors mirrors diagnostics.verbose_errors. When true, every
+	// JSON error envelope includes the diagnostics banner (exposing host
+	// + dongle info), and GET /api/v1/diag/banner is served to any
+	// caller; when false the banner is only attached on ?verbose=1 from
+	// a trusted (authorized) request.
+	VerboseErrors bool
 	// Pager, when non-nil, enables the
 	// GET /api/v1/pager/messages route serving recent decoded
 	// POCSAG (and eventually FLEX) pager messages. Wired by the
@@ -636,6 +656,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		spectrum:       opts.Spectrum,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
+		diagnostics:    opts.Diagnostics,
+		verboseErrors:  opts.VerboseErrors,
 		pager:          opts.Pager,
 		aprs:           opts.APRS,
 		ais:            opts.AIS,
@@ -745,6 +767,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/runtime", s.handleRuntime)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
+	mux.HandleFunc("GET /api/v1/diag/banner", s.handleDiagBanner)
 	mux.HandleFunc("GET /api/v1/systems", s.handleListSystems)
 	mux.HandleFunc("GET /api/v1/systems/{name}", s.handleGetSystem)
 	mux.HandleFunc("GET /api/v1/talkgroups", s.handleListTalkgroups)
@@ -962,7 +985,7 @@ const spaMissingBody = `<!doctype html>
 func (s *Server) gate(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if status, reason := s.auth.authorize(r); status != 0 {
-			writeError(w, status, reason)
+			s.writeError(w, status, reason)
 			return
 		}
 		h(w, r)
@@ -978,6 +1001,22 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+// writeError emits the standard {"error": "..."} JSON envelope. When
+// diagnostics.verbose_errors is enabled and a collector is wired, it
+// also attaches a "diag" object carrying the diagnostics banner
+// (version, OS, system specs, detected dongles) so an API consumer
+// triaging a failure gets the same macro context the CLI banner shows.
+// The banner exposes host + dongle info, so it is only included when
+// verbose is explicitly enabled (see ServerOptions.VerboseErrors).
+func (s *Server) writeError(w http.ResponseWriter, status int, msg string) {
+	if s.verboseErrors && s.diagnostics != nil {
+		writeJSON(w, status, map[string]any{
+			"error": msg,
+			"diag": map[string]any{
+				"banner": gtdiag.FormatBannerPlain(s.diagnostics.SysInfo()),
+			},
+		})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": msg})
 }
