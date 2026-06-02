@@ -88,6 +88,10 @@ type cqpskDemod struct {
 	agc     *dsp.AGC
 	cma     *equalizer.CMA
 
+	// cmaErr is the CMA's most recent |y|²−R² convergence proxy,
+	// retained for the replay receiver-state diagnostic (issue #492).
+	cmaErr float32
+
 	// Scratch buffers reused across calls.
 	matched []complex64
 	symbols []complex64
@@ -134,8 +138,9 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	// Blind equalizer: CMA pulls the symbols back to constant modulus,
 	// undoing the simulcast-multipath ISI that closes the constellation.
 	for i, s := range c.symbols {
-		y, _ := c.cma.Process(s)
+		y, e := c.cma.Process(s)
 		c.symbols[i] = y
+		c.cmaErr = e
 	}
 	c.dibits = c.dq.Decode(c.dibits, c.symbols)
 	for i, d := range c.dibits {
@@ -143,6 +148,12 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	}
 	return c.dibits
 }
+
+// carrierOffsetHz reports the carrier-recovery loop's current estimate
+// of the residual carrier-frequency offset in Hz. Phase A has no carrier
+// recovery on this path, so it reports 0; issue #492 Phase B adds the
+// loop and returns its estimate here.
+func (c *cqpskDemod) carrierOffsetHz() float64 { return 0 }
 
 // reset clears the matched-filter history, the Gardner loop state and
 // the differential reference sample so the next process call starts

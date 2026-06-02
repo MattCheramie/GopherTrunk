@@ -147,6 +147,17 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 	return dst
 }
 
+// Mu returns the loop's current sub-sample phase accumulator (it counts
+// down from sps toward 0 each input sample and resets by +sps at every
+// emitted symbol). Read-only; exposed for diagnostics so a CQPSK replay
+// can render the timing-loop state the way the C4FM path renders its
+// Mueller-Müller mu (issue #492).
+func (g *Gardner) Mu() float64 { return g.mu }
+
+// SPS returns the loop's nominal samples per symbol. Paired with Mu so a
+// diagnostic can render mu as a fraction of the symbol period.
+func (g *Gardner) SPS() float64 { return g.sps }
+
 // Reset clears the loop state. Call on stream re-tune so the next
 // chunk doesn't carry a stale timing estimate.
 func (g *Gardner) Reset() {
