@@ -94,19 +94,29 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			continue
 		}
 		offset := burstStart - p.bufStart
-		var b dmr.Burst
-		copy(b.Dibits[:], p.buf[offset:offset+dmr.BurstDibits])
+		// Decode the burst at both discriminator polarities. DMR's sync
+		// alphabet is closed under the spectrum-inversion flip (issue
+		// #264, RTL-SDR Blog V4 / R828D), so the sync match can't tell a
+		// clean burst from an inverted one — we hand IngestBurst a
+		// candidate at each polarity and let its slot-type Hamming(20,8)
+		// + BPTC + CSBK CRC pick the real one (the wrong polarity is
+		// dropped with no state change). Identity (k=0) is tried first
+		// so clean R820T2 streams behave exactly as before.
+		for _, k := range dmr.CandidatePolarities {
+			var b dmr.Burst
+			copy(b.Dibits[:], p.buf[offset:offset+dmr.BurstDibits])
+			dmr.RotateBurstDibits(&b, k)
 
-		// Decode slot type (Hamming(20,8) over the 20 bits of the
-		// slot-type field surrounding the sync). ParseSlotType
-		// returns the slot type + error count; we accept partially-
-		// corrected slot types (positive errs) but drop hard
-		// failures (slot.DataType won't match DTCSBK anyway).
-		slot, _, err := dmr.ParseSlotType(b.SlotTypeBitsAll())
-		if err != nil {
-			continue
+			// ParseSlotType returns the slot type + error count; we
+			// accept partially-corrected slot types (positive errs) but
+			// drop hard failures (slot.DataType won't match DTCSBK
+			// anyway).
+			slot, _, err := dmr.ParseSlotType(b.SlotTypeBitsAll())
+			if err != nil {
+				continue
+			}
+			c.IngestBurst(&b, slot)
 		}
-		c.IngestBurst(&b, slot)
 	}
 	p.pending = keep
 

@@ -32,6 +32,39 @@ type Burst struct {
 	Dibits [BurstDibits]uint8
 }
 
+// PolarityFlip is the dibit rotation a spectrum-inverted / I-Q-swapped
+// front-end imprints on a C4FM stream (issue #264, the RTL-SDR Blog V4
+// / R828D path). Conjugated IQ negates the FM-discriminator output, so
+// the slicer maps +3↔-3 and +1↔-1, which in dibit space is exactly
+// (dibit + 2) mod 4. The flip is its own inverse (2 + 2 ≡ 0 mod 4), so
+// the same value both models the corruption and undoes it.
+const PolarityFlip uint8 = 2
+
+// CandidatePolarities are the two discriminator polarities a DMR burst
+// can present after C4FM demod: identity (0) and the polarity flip (2).
+// DMR's 9 sync words are closed under the flip — an inverted data sync
+// is byte-identical to a clean voice sync — so the sync match alone
+// cannot resolve the polarity. The Tier II / III Process adapters hand
+// IngestBurst a candidate at each polarity; the slot-type Hamming(20,8)
+// + BPTC(196,96) + CSBK CRC there is the arbiter, dropping the wrong
+// one with no state change. Identity is first so clean R820T2 streams
+// take the same path they always have.
+var CandidatePolarities = [...]uint8{0, PolarityFlip}
+
+// RotateBurstDibits rotates every dibit of the burst in place by k
+// (mod 4): b.Dibits[i] = (b.Dibits[i] + k) & 3. Applied with
+// PolarityFlip it both simulates and undoes a spectrum-inverted
+// front-end (the rotation is self-inverse), recovering the canonical
+// slot-type, BPTC payload, and voice dibits. k=0 short-circuits.
+func RotateBurstDibits(b *Burst, k uint8) {
+	if k == 0 {
+		return
+	}
+	for i := range b.Dibits {
+		b.Dibits[i] = (b.Dibits[i] + k) & 3
+	}
+}
+
 // FirstHalf returns the 49 dibits of the first payload half.
 func (b *Burst) FirstHalf() []uint8 { return b.Dibits[0:HalfPayloadDibits] }
 
