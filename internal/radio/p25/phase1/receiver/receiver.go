@@ -340,7 +340,7 @@ func New(opts Options) *Receiver {
 	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
-		r.cq = newCQPSKDemod(int(sps+0.5), span, alpha, opts.GardnerGain)
+		r.cq = newCQPSKDemod(opts.SampleRateHz, int(sps+0.5), span, alpha, opts.GardnerGain)
 	default:
 		r.fm = demod.NewFM()
 		// P25 Phase 1 C4FM is not a root-raised-cosine matched-pair
