@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/MattCheramie/GopherTrunk/internal/diag"
 )
 
 // runImport is the entry point for `gophertrunk import-pdf`. Parses
@@ -28,6 +31,7 @@ func runImport(args []string) {
 	extractOnly := fs.Bool("extract-only", false, "dump positioned-text rows from a -pdf as JSON to stdout and exit (for parser bug reports)")
 	nameOverride := fs.String("name", "", "system name for native RadioReference CSV imports (bundle CSVs ignore this — use the metadata section)")
 	sysidOverride := fs.String("sysid", "", "system ID for native RadioReference CSV imports")
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	var pdfPaths repeatedString
 	var csvPaths repeatedString
 	fs.Var(&pdfPaths, "pdf", "path to a RadioReference PDF system export (repeatable)")
@@ -83,6 +87,8 @@ Flags:
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	resolveVerbose(*verboseFlag, false)
+	importRep = newReporter("import-pdf")
 
 	if !*wizard && len(pdfPaths) == 0 && len(csvPaths) == 0 {
 		fs.Usage()
@@ -101,10 +107,10 @@ Flags:
 		}
 		rows, err := extractPDFRows(pdfPaths[0])
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		if err := dumpParseRowsJSON(os.Stdout, rows); err != nil {
-			fail("write rows: " + err.Error())
+			failErr(fmt.Errorf("write rows: %w", err))
 		}
 		return
 	}
@@ -118,7 +124,7 @@ Flags:
 		keep := len(pdfPaths) > 0 || len(csvPaths) > 0
 		answers, wrote, err := runConfigWizard(seed, keep)
 		if err != nil {
-			fail("wizard: " + err.Error())
+			failErr(fmt.Errorf("wizard: %w", err))
 		}
 		if !keep {
 			if wrote {
@@ -132,10 +138,10 @@ Flags:
 		// has something to layer trunking.systems on top of.
 		body, err := renderConfigYAML(answers)
 		if err != nil {
-			fail("wizard render: " + err.Error())
+			failErr(fmt.Errorf("wizard render: %w", err))
 		}
 		if err := os.WriteFile(answers.ConfigPath, body, 0o644); err != nil {
-			fail("wizard write: " + err.Error())
+			failErr(fmt.Errorf("wizard write: %w", err))
 		}
 		fmt.Fprintf(os.Stderr, "import-pdf: wizard scaffold written to %s\n", answers.ConfigPath)
 		*cfgPath = answers.ConfigPath
@@ -152,7 +158,7 @@ Flags:
 	for _, p := range pdfPaths {
 		sys, err := parsePDFFile(p)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		parsed = append(parsed, sys)
 		fmt.Fprintf(os.Stderr, "import-pdf: parsed PDF %s: %s (%d sites, %d talkgroups)\n",
@@ -162,7 +168,7 @@ Flags:
 	for _, p := range csvPaths {
 		sys, err := parseCSVFile(p, csvOpts)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		parsed = append(parsed, sys)
 		fmt.Fprintf(os.Stderr, "import-pdf: parsed CSV %s: %s (%d sites, %d talkgroups)\n",
@@ -183,7 +189,7 @@ Flags:
 	if *noTUI || *dryRun {
 		res, err := writeFn(parsed)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		if *dryRun {
 			renderDryRun(os.Stdout, res, *cfgPath)
@@ -198,7 +204,7 @@ Flags:
 
 	wrote, err := runImportTUI(parsed, writeFn)
 	if err != nil {
-		fail(err.Error())
+		failErr(err)
 	}
 	if !wrote {
 		fmt.Fprintln(os.Stderr, "import-pdf: no changes written")
@@ -215,7 +221,21 @@ func (r *repeatedString) Set(v string) error {
 	return nil
 }
 
+// importRep is the diagnostics reporter for the import-pdf command,
+// set at the top of runImport. Both fail and failErr route through it
+// so import errors get the same banner + verbose treatment as the rest
+// of the CLI.
+var importRep *diag.Reporter
+
 func fail(msg string) {
-	fmt.Fprintln(os.Stderr, "import-pdf: "+msg)
-	os.Exit(1)
+	failErr(errors.New(msg))
+}
+
+// failErr reports a real error (preserving its %w chain for verbose
+// mode) and exits 1.
+func failErr(err error) {
+	if importRep == nil {
+		importRep = newReporter("import-pdf")
+	}
+	importRep.Fatal(1, err)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/api/rigctld"
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
@@ -432,6 +433,29 @@ func (d *Daemon) StartupWarnings() []string {
 // surface.
 func (d *Daemon) addWarning(msg string) {
 	d.startupWarnings = append(d.startupWarnings, msg)
+}
+
+// newDiagCollector builds the error-diagnostics collector handed to the
+// API/gRPC servers. When the SDR pool is up, it seeds the collector
+// from the live pool snapshot so a banner never triggers a fresh USB
+// enumeration that would race the running pool's device claim. With no
+// pool it falls back to a lazy enumerator (used only if a banner is
+// actually rendered).
+func (d *Daemon) newDiagCollector() *gtdiag.Collector {
+	if d.pool == nil {
+		return gtdiag.NewCollector()
+	}
+	snap := d.pool.Snapshot()
+	dongles := make([]gtdiag.DongleInfo, 0, len(snap))
+	for _, st := range snap {
+		dongles = append(dongles, gtdiag.DongleInfo{
+			Driver:  st.Driver,
+			Serial:  st.Serial,
+			Product: st.Product,
+			Tuner:   st.TunerName,
+		})
+	}
+	return gtdiag.NewCollectorWithDongles(dongles, nil)
 }
 
 // NewDaemon constructs the daemon from the loaded config. Components
@@ -1541,6 +1565,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Systems:        d.systems,
 			Log:            log,
 			Version:        version,
+			Diagnostics:    d.newDiagCollector(),
+			VerboseErrors:  cfg.Diagnostics.VerboseErrors,
 			AllowMutations: cfg.API.AllowMutations,
 			Auth: api.AuthConfig{
 				Mode:            authMode,
@@ -1672,15 +1698,17 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// gRPC — optional.
 	if cfg.API.GRPCAddr != "" {
 		grpcOpts := api.GRPCServerOptions{
-			Addr:       cfg.API.GRPCAddr,
-			Systems:    d.systems,
-			Talkgroups: d.talkgroups,
-			RIDs:       d.rids,
-			Engine:     d.engine,
-			Audio:      d.audioPub,
-			Log:        log,
-			TLSCert:    cfg.API.TLSCert,
-			TLSKey:     cfg.API.TLSKey,
+			Addr:          cfg.API.GRPCAddr,
+			Systems:       d.systems,
+			Talkgroups:    d.talkgroups,
+			RIDs:          d.rids,
+			Engine:        d.engine,
+			Audio:         d.audioPub,
+			Log:           log,
+			Diagnostics:   d.newDiagCollector(),
+			VerboseErrors: cfg.Diagnostics.VerboseErrors,
+			TLSCert:       cfg.API.TLSCert,
+			TLSKey:        cfg.API.TLSKey,
 		}
 		if d.affiliations != nil {
 			grpcOpts.Affiliations = affiliationProvider{d.affiliations}

@@ -44,6 +44,7 @@ import (
 // reproducible test fixture.
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	in := fs.String("in", "", "raw IQ input file (required)")
 	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
@@ -108,36 +109,32 @@ FLAGS:`)
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	resolveVerbose(*verboseFlag, false)
+	rep := newReporter("replay")
 
 	if *in == "" {
-		fmt.Fprintln(os.Stderr, "replay: -in is required")
 		fs.Usage()
-		os.Exit(2)
+		rep.Fatalf(2, "-in is required")
 	}
 	if *sampleRate <= 0 {
-		fmt.Fprintln(os.Stderr, "replay: -sample-rate must be > 0")
-		os.Exit(2)
+		rep.Fatalf(2, "-sample-rate must be > 0")
 	}
 	demodMode, ok := p25phase1rx.ParseDemodMode(*demod)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "replay: unknown -demod %q (want c4fm or cqpsk)\n", *demod)
-		os.Exit(2)
+		rep.Fatalf(2, "unknown -demod %q (want c4fm or cqpsk)", *demod)
 	}
 	if *nidSearchSpan <= 0 {
-		fmt.Fprintln(os.Stderr, "replay: -nid-search-span must be > 0")
-		os.Exit(2)
+		rep.Fatalf(2, "-nid-search-span must be > 0")
 	}
 
 	decode, bytesPerSample, err := pickSampleDecoder(*format)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "replay:", err)
-		os.Exit(2)
+		rep.Fatal(2, err)
 	}
 
 	f, err := os.Open(*in)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "replay: open %s: %v\n", *in, err)
-		os.Exit(1)
+		rep.Fatal(1, fmt.Errorf("open %s: %w", *in, err))
 	}
 	defer f.Close()
 
@@ -149,8 +146,7 @@ FLAGS:`)
 	if *autoTune {
 		est, err := estimateCaptureCarrierHz(f, decode, bytesPerSample, *sampleRate)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "replay: auto-tune failed: %v\n", err)
-			os.Exit(1)
+			rep.Fatal(1, fmt.Errorf("auto-tune failed: %w", err))
 		}
 		tuneHz = est
 		fmt.Fprintf(os.Stderr, "replay: auto-tune  carrier_offset_hz=%.1f\n", tuneHz)
@@ -373,8 +369,7 @@ FLAGS:`)
 			break
 		}
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "replay: read %s: %v\n", *in, rerr)
-			os.Exit(1)
+			rep.Fatal(1, fmt.Errorf("read %s: %w", *in, rerr))
 		}
 	}
 

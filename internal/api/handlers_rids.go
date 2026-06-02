@@ -30,7 +30,7 @@ func (s *Server) handleGetRID(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id64, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid rid")
+		s.writeError(w, http.StatusBadRequest, "invalid rid")
 		return
 	}
 	id := uint32(id64)
@@ -47,7 +47,7 @@ func (s *Server) handleGetRID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if dto == nil {
-		writeError(w, http.StatusNotFound, "rid not found")
+		s.writeError(w, http.StatusNotFound, "rid not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, dto)
@@ -60,13 +60,13 @@ func (s *Server) handleGetRID(w http.ResponseWriter, r *http.Request) {
 //	GET /api/v1/rids/{id}/history?limit=50
 func (s *Server) handleRIDHistory(w http.ResponseWriter, r *http.Request) {
 	if s.history == nil {
-		writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
 		return
 	}
 	idStr := r.PathValue("id")
 	id64, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid rid")
+		s.writeError(w, http.StatusBadRequest, "invalid rid")
 		return
 	}
 	f := HistoryFilter{
@@ -77,7 +77,7 @@ func (s *Server) handleRIDHistory(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeError(w, http.StatusBadRequest, "invalid limit")
+			s.writeError(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
 		if n > 1000 {
@@ -91,7 +91,7 @@ func (s *Server) handleRIDHistory(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.history.History(r.Context(), f)
 	if err != nil {
 		s.log.Warn("api: rid history query failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "history query failed")
+		s.writeError(w, http.StatusInternalServerError, "history query failed")
 		return
 	}
 	if rows == nil {
@@ -129,24 +129,24 @@ type updateRIDRequest struct {
 // return 404 — operators must add the radio to the alias file first.
 func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 	if s.rids == nil {
-		writeError(w, http.StatusServiceUnavailable, "rid catalogue not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "rid catalogue not wired")
 		return
 	}
 	idStr := r.PathValue("id")
 	id64, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid rid")
+		s.writeError(w, http.StatusBadRequest, "invalid rid")
 		return
 	}
 	var req updateRIDRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		s.writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	if req.Alias == nil && req.Description == nil && req.Tag == nil &&
 		req.Group == nil && req.Owner == nil && req.Priority == nil &&
 		req.Lockout == nil && req.Watch == nil && req.Icon == nil {
-		writeError(w, http.StatusBadRequest,
+		s.writeError(w, http.StatusBadRequest,
 			"supply at least one of alias, description, tag, group, owner, priority, lockout, watch, icon")
 		return
 	}
@@ -181,7 +181,7 @@ func (s *Server) handleUpdateRID(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	if !ok {
-		writeError(w, http.StatusNotFound, "rid not found in static catalogue (add to rid_alias_file first)")
+		s.writeError(w, http.StatusNotFound, "rid not found in static catalogue (add to rid_alias_file first)")
 		return
 	}
 	dto := ridToDTO(s.rids.Lookup(id))
