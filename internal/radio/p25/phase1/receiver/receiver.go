@@ -48,10 +48,28 @@ import (
 )
 
 // defaultGardnerGain is the Gardner step the CQPSK path uses when the
-// caller leaves Options.GardnerGain at zero. Matches the value Phase 2
-// and TETRA settled on after live-capture tuning (internal/scanner/
-// ccdecoder/pipelines.go).
-const defaultGardnerGain = 0.03
+// caller leaves Options.GardnerGain at zero.
+//
+// The Gardner loop applies its correction as a phase step in *samples*
+// (mu += sps + gain·err), so the effective per-symbol loop gain is
+// gain/sps and the right value depends on the samples-per-symbol the path
+// runs at. The original 0.03 here was the loop's generic default; at this
+// path's 48 kHz channel rate (10 sps) that left the loop ~5× over-gained,
+// so it overshot the timing null instead of settling into it and only
+// "locked" when the input happened to already be symbol-aligned (sample
+// phase 0). Synthetic fixtures start aligned and decoded; real captures,
+// whose symbol clock has no relationship to sample 0, almost never
+// acquired the control channel (issue #492).
+//
+// 0.005 is the same step the sibling π/4-DQPSK Gardner paths already run
+// in production — the P25 Phase 2 and TETRA control-channel pipelines
+// both tuned down to it after hitting this exact over-correction ("the
+// standard gain over-corrects on clean signals and slips", see
+// internal/scanner/ccdecoder/pipelines.go). The Phase 1 CQPSK path was
+// the one π/4-DQPSK consumer left on the generic default. At 10 sps this
+// puts the per-symbol gain back in the loop's stable pull-in range, so it
+// acquires from any sub-symbol phase.
+const defaultGardnerGain = 0.005
 
 // maxAFCOffsetHz caps the DDA's integrator. Sized at ~25 kHz so a
 // 420 MHz / 50 ppm RTL-SDR (~21 kHz worst case) clears it

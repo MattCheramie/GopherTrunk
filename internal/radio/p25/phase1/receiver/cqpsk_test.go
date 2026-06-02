@@ -96,16 +96,16 @@ func TestCQPSKDemodRoundTripStableTail(t *testing.T) {
 // one. This is the issue #492 regression guard.
 //
 // A real capture's symbol clock has no relationship to sample 0, so the
-// demod must lock from an arbitrary sub-symbol phase. The earlier code
-// fed the Gardner timing loop at the native 10 sps, where its linear-
-// interpolation error detector pulls in for only ~1 of the 10 sample
-// phases and false-locks on the rest — so a live control channel almost
-// never acquired (the bug had hidden because every fixture here started
-// at phase 0, the one that happened to work). Upsampling the matched-
-// filter output ahead of the loop (see cqpskTimingSps) widens pull-in to
-// the large majority of phases. Closing the last gap to a 100% lock rate
-// needs a better interpolator inside sync.Gardner — a tracked follow-up —
-// so this asserts a strong-majority pull-in rather than every phase.
+// demod must lock from an arbitrary sub-symbol phase. The Gardner loop
+// applies its timing correction in samples, so the effective per-symbol
+// gain is gain/sps; at this path's 10 sps the inherited 0.03 step left
+// the loop ~5× over-gained, overshooting the timing null so it only
+// "locked" when the input was already aligned at sample phase 0 — the one
+// phase every fixture here used to start on, which is why the bug hid
+// behind green tests (issue #492). With the gain corrected
+// (defaultGardnerGain) the loop pulls in from essentially any phase. A
+// couple of phases still land on a residual false lock, so this asserts a
+// strong-majority pull-in rather than every phase.
 func TestCQPSKDemodRecoversFSW(t *testing.T) {
 	const sampleRate = 48_000.0
 	const sps = 10
