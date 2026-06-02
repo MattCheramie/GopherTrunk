@@ -279,6 +279,24 @@ FLAGS:`)
 	const stateLogIntervalSec = 1.0
 	var nextStateLogAt float64 = stateLogIntervalSec
 	logReceiverState := func(at float64) {
+		// The CQPSK path shares none of the C4FM receiver state: it uses a
+		// Gardner timing loop (not Mueller-Müller), its own matched-filter
+		// AGC, a CMA equalizer, and a carrier-recovery loop — none of which
+		// the C4FM accessors below report (they all return 0 on CQPSK). Print
+		// a CQPSK-specific line so the diagnostic reflects what the path
+		// actually does, instead of the all-zero Mueller-Müller fields that
+		// misdirected issue #492 toward a phantom timing-loop flat-line.
+		if demodMode == p25phase1rx.DemodCQPSK {
+			fmt.Fprintf(os.Stderr,
+				"replay: receiver state  t=%.2fs  carrier_hz_est=%.3f  gardner_mu=%.4f  gardner_sps=%.2f  agc_gain=%.4g  cma_err=%.4g\n",
+				at,
+				rx.CQPSKCarrierOffsetHz(),
+				rx.GardnerMu(),
+				rx.GardnerSPS(),
+				rx.CQPSKAGCGain(),
+				rx.CMAError())
+			return
+		}
 		// afc_hz_est is the TRUE carrier offset (rx.AFCOffsetHz), which
 		// divides out the matched filter's sps DC-gain. The earlier
 		// AFCBias·Fs/(2π) form over-reported by ≈sps (≈10× at 48 kHz /

@@ -340,7 +340,7 @@ func New(opts Options) *Receiver {
 	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
-		r.cq = newCQPSKDemod(int(sps+0.5), span, alpha, opts.GardnerGain)
+		r.cq = newCQPSKDemod(opts.SampleRateHz, int(sps+0.5), span, alpha, opts.GardnerGain)
 	default:
 		r.fm = demod.NewFM()
 		// P25 Phase 1 C4FM is not a root-raised-cosine matched-pair
@@ -728,6 +728,64 @@ func (r *Receiver) MMClockSPS() float64 {
 		return 0
 	}
 	return r.clock.SPS()
+}
+
+// GardnerMu returns the CQPSK Gardner timing loop's current sub-sample
+// phase accumulator. It is the CQPSK analogue of MMClockMu (the C4FM
+// path uses Mueller-Müller; CQPSK uses Gardner), so a replay diagnostic
+// can render the actual timing-loop state instead of the all-zero
+// Mueller-Müller fields that misdirected issue #492. Returns 0 on the
+// C4FM path (no Gardner loop).
+func (r *Receiver) GardnerMu() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.gardner.Mu()
+}
+
+// GardnerSPS returns the CQPSK Gardner loop's nominal samples per
+// symbol. Paired with GardnerMu so a diagnostic can render mu as a
+// fraction of the symbol period. Returns 0 on the C4FM path.
+func (r *Receiver) GardnerSPS() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.gardner.SPS()
+}
+
+// CQPSKAGCGain returns the CQPSK path's matched-filter AGC gain (the
+// scale it currently applies to normalise the symbol amplitude the
+// Gardner/CMA loops are tuned against). A gain pinned at 1.0 means the
+// AGC never saw signal energy to seed on. Returns 0 on the C4FM path
+// (which has its own symbol-AGC reported via AGCLevel/AGCTarget).
+func (r *Receiver) CQPSKAGCGain() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return float64(r.cq.agc.Gain())
+}
+
+// CMAError returns the CQPSK blind equalizer's most recent |y|²−R²
+// convergence proxy. It trends toward 0 as the CMA opens the
+// constellation; a value stuck large means the equalizer has not
+// converged. Returns 0 on the C4FM path (no CMA stage).
+func (r *Receiver) CMAError() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return float64(r.cq.cmaErr)
+}
+
+// CQPSKCarrierOffsetHz returns the CQPSK carrier-recovery loop's current
+// estimate of the residual carrier-frequency offset in Hz (the coarse
+// block seed plus the tracking loop's residual). A static tuner error of
+// Δf Hz reads back as ≈Δf here once the loop settles. Returns 0 on the
+// C4FM path (which reports its carrier estimate via AFCOffsetHz).
+func (r *Receiver) CQPSKCarrierOffsetHz() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.carrierOffsetHz()
 }
 
 // Reset returns the receiver to its initial state. Call on stream
