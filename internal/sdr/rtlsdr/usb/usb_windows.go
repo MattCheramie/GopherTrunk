@@ -144,13 +144,22 @@ func (w *winEnumerator) List(vid, pid uint16) ([]Descriptor, error) {
 	return out, nil
 }
 
-func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
-	if d.Path == "" {
-		return nil, errors.New("winusb: Descriptor.Path empty (re-enumerate)")
-	}
-	wpath, err := windows.UTF16PtrFromString(d.Path)
+// errWinUSBCreateFile tags failures from the CreateFile stage of
+// createAndInitWinUSB (as opposed to the WinUsb_Initialize stage). Open keys on
+// it to keep CreateFile-level failures — most importantly ERROR_ACCESS_DENIED
+// when another process already holds the dongle (issue #333) — surfacing
+// verbatim, instead of misattributing them to a driver-binding problem and
+// uselessly triggering the composite-child fallback.
+var errWinUSBCreateFile = errors.New("winusb: CreateFile")
+
+// createAndInitWinUSB opens a device-interface path and binds it to WinUSB,
+// returning the file + WinUSB interface handles on success. A CreateFile-stage
+// failure is wrapped with errWinUSBCreateFile; a WinUsb_Initialize-stage
+// failure returns winErr(errno) directly, so Open can tell the two apart.
+func createAndInitWinUSB(path string) (windows.Handle, uintptr, error) {
+	wpath, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return nil, fmt.Errorf("winusb: bad path %q: %w", d.Path, err)
+		return 0, 0, fmt.Errorf("%w %q: %w", errWinUSBCreateFile, path, err)
 	}
 	handle, err := windows.CreateFile(
 		wpath,
@@ -162,16 +171,13 @@ func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
 		0,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("winusb: CreateFile %q: %w", d.Path, err)
+		return 0, 0, fmt.Errorf("%w %q: %w", errWinUSBCreateFile, path, err)
 	}
 	var ifaceHandle uintptr
 	ret, _, errno := procWinUsbInitialize.Call(uintptr(handle), uintptr(unsafe.Pointer(&ifaceHandle)))
 	if ret == 0 {
 		windows.CloseHandle(handle)
-		svc, descr := lookupBoundDriver(d.Path)
-		return nil, fmt.Errorf(
-			"winusb: WinUsb_Initialize failed for VID_%04X&PID_%04X (current driver: %s%s — expected WinUSB; run Zadig and rebind Interface 0, see `gophertrunk sdr doctor`): %w",
-			d.VID, d.PID, fallbackString(svc, "unknown"), parens(descr), winErr(errno))
+		return 0, 0, winErr(errno)
 	}
 	// Match libusb's WinUSB backend: explicitly disable the per-pipe
 	// transfer timeout on the control endpoint at open time
@@ -183,11 +189,42 @@ func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
 	// to CtrlTimeoutMs on the first user-level transfer; this call is
 	// pure parity / hardening, not the issue #395 fix.
 	setControlPipeTimeout(ifaceHandle, 0)
-	return &winTransport{
-		fileHandle:  handle,
-		ifaceHandle: ifaceHandle,
-		desc:        d,
-	}, nil
+	return handle, ifaceHandle, nil
+}
+
+func (w *winEnumerator) Open(d Descriptor) (Transport, error) {
+	if d.Path == "" {
+		return nil, errors.New("winusb: Descriptor.Path empty (re-enumerate)")
+	}
+	handle, ifaceHandle, err := createAndInitWinUSB(d.Path)
+	if err == nil {
+		return &winTransport{fileHandle: handle, ifaceHandle: ifaceHandle, desc: d}, nil
+	}
+	// A CreateFile-stage failure (e.g. ERROR_ACCESS_DENIED — another process
+	// holds the dongle, issue #333) is not a driver-binding problem; surface it
+	// verbatim so openUSBHint / isAccessDenied upstream still fire.
+	if errors.Is(err, errWinUSBCreateFile) {
+		return nil, err
+	}
+	// WinUsb_Initialize failed. The GUID_DEVINTERFACE_USB_DEVICE node we
+	// enumerated may be a USB composite parent (bound to usbccgp), whose
+	// WinUSB-capable SDR lives on the Interface 0 (&MI_00) child function node.
+	// Find and open that child before surfacing the bind failure — this lets a
+	// correctly-bound RTL-SDR V4 (and other composite dongles) open without the
+	// user having to chase the right entry in Zadig. Store the child path in the
+	// returned transport's descriptor so Reset() re-opens the child, not the
+	// parent.
+	if _, childPath, derr := findInterfaceZeroChild(d.VID, d.PID); derr == nil && childPath != "" {
+		if ch, cif, cerr := createAndInitWinUSB(childPath); cerr == nil {
+			cd := d
+			cd.Path = childPath
+			return &winTransport{fileHandle: ch, ifaceHandle: cif, desc: cd}, nil
+		}
+	}
+	svc, descr := lookupBoundDriver(d.Path)
+	return nil, fmt.Errorf(
+		"winusb: WinUsb_Initialize failed for VID_%04X&PID_%04X (current driver: %s%s — expected WinUSB; run Zadig and rebind Interface 0, see `gophertrunk sdr doctor`): %w",
+		d.VID, d.PID, fallbackString(svc, "unknown"), parens(descr), err)
 }
 
 // setControlPipeTimeout pushes a PIPE_TRANSFER_TIMEOUT policy on the
