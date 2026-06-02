@@ -119,31 +119,41 @@ const _ = uintptr(LDUTotalBits - (LDUFrameSyncBits + LDUNIDBits +
 var ErrLDULength = errors.New("p25/phase1: LDU input must be exactly 1728 bits (one bit per byte, 0/1)")
 
 // LDU payload-bit offsets for each field inside the 1680-bit
-// post-status-strip payload. Source: TIA-102.BAAA-A § 8
-// (Logical Link Data Unit 1 / 2 voice-frame layout). The 9 IMBE
-// voice subframes are interleaved with 6 × 40-bit LC (LDU1) or
-// ES (LDU2) blocks and 2 × 16-bit LSD blocks per the table:
+// post-status-strip payload.
+//
+// Field interleaving order is sourced from dsd-neo's
+// p25p1_ldu1.c collect_voice_and_data(): a Link Control (LDU1) /
+// Encryption Sync (LDU2) block is interposed *between every* voice
+// subframe from u_0 through u_6, then both 16-bit Low-Speed Data
+// blocks sit together between u_6 and u_7, and u_7 / u_8 are
+// adjacent at the tail:
+//
+//	u_0, LC1, u_1, LC2, u_2, LC3, u_3, LC4, u_4, LC5,
+//	u_5, LC6, u_6, LSD1, LSD2, u_7, u_8
+//
+// The 9 IMBE voice subframes are 144 bits each, the 6 LC/ES blocks
+// 40 bits each (240 total), and the 2 LSD blocks 16 bits each:
 //
 //	Field                   Length   Cumulative
 //	Frame Sync (FS)             48       48
 //	Network ID (NID)            64      112
 //	Voice Frame 1 (u_0)        144      256
-//	Voice Frame 2 (u_1)        144      400
-//	LC / ES Block 1             40      440
-//	Voice Frame 3 (u_2)        144      584
-//	LC / ES Block 2             40      624
-//	Voice Frame 4 (u_3)        144      768
-//	LC / ES Block 3             40      808
-//	Voice Frame 5 (u_4)        144      952
-//	LC / ES Block 4             40      992
-//	Voice Frame 6 (u_5)        144     1136
-//	LC / ES Block 5             40     1176
-//	Voice Frame 7 (u_6)        144     1320
-//	LC / ES Block 6             40     1360
-//	Voice Frame 8 (u_7)        144     1504
-//	LSD Block 1                 16     1520
-//	Voice Frame 9 (u_8)        144     1664
-//	LSD Block 2                 16     1680
+//	LC / ES Block 1             40      296
+//	Voice Frame 2 (u_1)        144      440
+//	LC / ES Block 2             40      480
+//	Voice Frame 3 (u_2)        144      624
+//	LC / ES Block 3             40      664
+//	Voice Frame 4 (u_3)        144      808
+//	LC / ES Block 4             40      848
+//	Voice Frame 5 (u_4)        144      992
+//	LC / ES Block 5             40     1032
+//	Voice Frame 6 (u_5)        144     1176
+//	LC / ES Block 6             40     1216
+//	Voice Frame 7 (u_6)        144     1360
+//	LSD Block 1                 16     1376
+//	LSD Block 2                 16     1392
+//	Voice Frame 8 (u_7)        144     1536
+//	Voice Frame 9 (u_8)        144     1680
 //
 // (LDU1 carries Link Control bits in the LC/ES slots; LDU2
 // carries Encryption Sync bits at the identical positions.)
@@ -158,33 +168,33 @@ var (
 	// subframe is LDUVoiceSubframeBits = 144 bits long.
 	lduVoiceOffsets = [LDUVoiceSubframeCount]int{
 		112,  // u_0 → ends at 256
-		256,  // u_1 → ends at 400
-		440,  // u_2 → ends at 584  (post LC/ES Block 1)
-		624,  // u_3 → ends at 768  (post LC/ES Block 2)
-		808,  // u_4 → ends at 952  (post LC/ES Block 3)
-		992,  // u_5 → ends at 1136 (post LC/ES Block 4)
-		1176, // u_6 → ends at 1320 (post LC/ES Block 5)
-		1360, // u_7 → ends at 1504 (post LC/ES Block 6)
-		1520, // u_8 → ends at 1664 (post LSD Block 1)
+		296,  // u_1 → ends at 440  (post LC/ES Block 1)
+		480,  // u_2 → ends at 624  (post LC/ES Block 2)
+		664,  // u_3 → ends at 808  (post LC/ES Block 3)
+		848,  // u_4 → ends at 992  (post LC/ES Block 4)
+		1032, // u_5 → ends at 1176 (post LC/ES Block 5)
+		1216, // u_6 → ends at 1360 (post LC/ES Block 6)
+		1392, // u_7 → ends at 1536 (post LSD Blocks 1 & 2)
+		1536, // u_8 → ends at 1680
 	}
 
 	// lduLCESBlockOffsets[j] is the bit offset of LC/ES block j
 	// (0 ≤ j < 6) inside the 1680-bit payload. Each block is
 	// 40 bits = 4 × Hamming(10,6,3) short codewords.
 	lduLCESBlockOffsets = [6]int{
-		400,  // Block 1
-		584,  // Block 2 (post u_2)
-		768,  // Block 3 (post u_3)
-		952,  // Block 4 (post u_4)
-		1136, // Block 5 (post u_5)
-		1320, // Block 6 (post u_6)
+		256,  // Block 1 (post u_0)
+		440,  // Block 2 (post u_1)
+		624,  // Block 3 (post u_2)
+		808,  // Block 4 (post u_3)
+		992,  // Block 5 (post u_4)
+		1176, // Block 6 (post u_5)
 	}
 
 	// lduLSDBlockOffsets[k] is the bit offset of LSD block k
 	// (0 ≤ k < 2). Each block is 16 bits = 1 cyclic codeword.
 	lduLSDBlockOffsets = [2]int{
-		1504, // Block 1 (post u_7)
-		1664, // Block 2 (post u_8)
+		1360, // Block 1 (post u_6)
+		1376, // Block 2 (contiguous with Block 1, before u_7)
 	}
 )
 

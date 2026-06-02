@@ -250,6 +250,61 @@ func TestLDUFieldsCoverPayloadWithoutOverlap(t *testing.T) {
 	}
 }
 
+// TestLDUVoiceLayoutMatchesDSDOrder pins the exact field
+// *interleaving sequence* inside the 1680-bit payload. The
+// coverage test above only proves the offsets tile the payload
+// with no gaps/overlaps — but many tilings do that, including the
+// pre-issue-#489 one that placed u_0 and u_1 back-to-back and
+// caused ~100% uncorrectable LDUs. This test walks the payload
+// from the end of the NID and asserts the order matches dsd-neo's
+// p25p1_ldu1.c collect_voice_and_data():
+//
+//	u_0, LC1, u_1, LC2, u_2, LC3, u_3, LC4, u_4, LC5,
+//	u_5, LC6, u_6, LSD1, LSD2, u_7, u_8
+//
+// A change that reverts to a different interleaving (or shifts a
+// single field) fails here, forcing it to be deliberate.
+func TestLDUVoiceLayoutMatchesDSDOrder(t *testing.T) {
+	type field struct {
+		name string
+		off  int
+		ln   int
+	}
+	// The expected sequence with each field's width, in order.
+	want := []field{
+		{"u_0", lduVoiceOffsets[0], LDUVoiceSubframeBits},
+		{"LC1", lduLCESBlockOffsets[0], LDULCESBlockBits},
+		{"u_1", lduVoiceOffsets[1], LDUVoiceSubframeBits},
+		{"LC2", lduLCESBlockOffsets[1], LDULCESBlockBits},
+		{"u_2", lduVoiceOffsets[2], LDUVoiceSubframeBits},
+		{"LC3", lduLCESBlockOffsets[2], LDULCESBlockBits},
+		{"u_3", lduVoiceOffsets[3], LDUVoiceSubframeBits},
+		{"LC4", lduLCESBlockOffsets[3], LDULCESBlockBits},
+		{"u_4", lduVoiceOffsets[4], LDUVoiceSubframeBits},
+		{"LC5", lduLCESBlockOffsets[4], LDULCESBlockBits},
+		{"u_5", lduVoiceOffsets[5], LDUVoiceSubframeBits},
+		{"LC6", lduLCESBlockOffsets[5], LDULCESBlockBits},
+		{"u_6", lduVoiceOffsets[6], LDUVoiceSubframeBits},
+		{"LSD1", lduLSDBlockOffsets[0], LDULSDBlockBits},
+		{"LSD2", lduLSDBlockOffsets[1], LDULSDBlockBits},
+		{"u_7", lduVoiceOffsets[7], LDUVoiceSubframeBits},
+		{"u_8", lduVoiceOffsets[8], LDUVoiceSubframeBits},
+	}
+
+	// The sequence must begin right after FS+NID and run
+	// contiguously to the end of the payload.
+	pos := lduNIDOffset + LDUNIDBits // 112
+	for _, f := range want {
+		if f.off != pos {
+			t.Errorf("%s at offset %d, want %d (field order/interleave wrong)", f.name, f.off, pos)
+		}
+		pos += f.ln
+	}
+	if pos != LDUPayloadBits {
+		t.Errorf("fields end at %d, want %d (LDUPayloadBits)", pos, LDUPayloadBits)
+	}
+}
+
 // TestExtractVoiceFramesRoundTrip: build a synthetic LDU by
 // encoding 9 distinct IMBE info-bit patterns through
 // EncodeFrameToChannel (per-vector FEC + §7.4 scramble + §7.5
