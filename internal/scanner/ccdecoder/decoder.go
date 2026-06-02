@@ -233,6 +233,22 @@ type Decoder struct {
 	// front-end I/Q imbalance from the raw IQ in pump before decimation
 	// (issue #402). Owned by pump.
 	iqCorrector *rtlsdr.IQImbalanceCorrector
+
+	// Persisted last-window IQ-health snapshot. Unlike the pw* window
+	// accumulators above (reset every iqPowerWindow), these are kept so
+	// IQHealth can answer the cchunt supervisor at hunt-failure time —
+	// the supervisor attaches the result to the cchunt.failed event/log
+	// so a field report explains itself. lastHealthSystem labels which
+	// system the snapshot belongs to; totalSamples is cumulative since
+	// that system became the active pipeline (reset on system change /
+	// clearActive). Guarded by mu (read/written under pump's lock and by
+	// IQHealth).
+	lastHealthSystem string
+	lastHealthAt     time.Time
+	lastDbfs         float64
+	lastClipRatio    float64
+	lastDCRatioDb    float64
+	totalSamples     int64
 }
 
 // New constructs a Decoder. Returns an error when required Options
@@ -413,6 +429,11 @@ func (d *Decoder) clearActiveLocked() {
 	d.pwClipped = 0
 	d.pwSamples = 0
 	d.pwLastSystem = ""
+	// Drop the persisted health snapshot so a torn-down system's IQ
+	// health can't answer a later IQHealth query for a different one.
+	d.lastHealthSystem = ""
+	d.lastHealthAt = time.Time{}
+	d.totalSamples = 0
 }
 
 // ensureDownconverterLocked (re)builds the down-converter when the
@@ -477,7 +498,12 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 		d.pwClipped = 0
 		d.pwSamples = 0
 		d.pwLastSystem = d.activeAt
+		d.totalSamples = 0
 	}
+	// Cumulative sample count for the active system (reset above on a
+	// system change). Distinguishes "SDR delivered nothing" from "IQ
+	// flowed but never locked" in the cchunt.failed diagnosis.
+	d.totalSamples += int64(len(iq))
 	for _, c := range iq {
 		r := float64(real(c))
 		i := float64(imag(c))
@@ -530,6 +556,13 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 	// clips on peaks; this is the signal that distinguishes the two and
 	// the smoking gun for the issue #402 overload failure mode.
 	clipRatio := float64(d.pwClipped) / n
+	// Persist this window so IQHealth can report it at hunt-failure
+	// time (the pw* accumulators reset below every window).
+	d.lastHealthSystem = d.activeAt
+	d.lastHealthAt = now
+	d.lastDbfs = dbfs
+	d.lastClipRatio = clipRatio
+	d.lastDCRatioDb = ratioDb
 	if d.activeAt != "" && d.metrics != nil {
 		d.metrics.RecordIQPowerDbFS(d.activeAt, dbfs)
 		d.metrics.RecordIQDCRatioDb(d.activeAt, ratioDb)
@@ -565,6 +598,62 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 	d.pwClipped = 0
 	d.pwSamples = 0
 	d.pwWindowAt = now
+}
+
+// IQHealth returns a best-effort snapshot of the control SDR's IQ
+// health for the named system, for the cchunt supervisor to attach to
+// a cchunt.failed event/log. ok is false when the decoder has no
+// observations for that system — most often because the SDR delivered
+// no IQ at all, or a different system is currently being decoded — and
+// the supervisor then publishes its own "no IQ observed" diagnosis.
+//
+// Satisfies the cchunt.IQHealthProvider interface (structurally; the
+// supervisor decouples via that interface so it doesn't import this
+// package).
+func (d *Decoder) IQHealth(system string) (trunking.HuntDiagnostics, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	pipelineActive := d.active != nil && d.activeAt == system
+	haveWindow := d.lastHealthSystem == system && !d.lastHealthAt.IsZero()
+	haveSamples := d.activeAt == system && d.totalSamples > 0
+	if !haveWindow && !haveSamples {
+		return trunking.HuntDiagnostics{}, false
+	}
+	diag := trunking.HuntDiagnostics{
+		IQObserved:     true,
+		IQSamples:      d.totalSamples,
+		PipelineActive: pipelineActive,
+	}
+	if haveWindow {
+		diag.IQPowerDbFS = d.lastDbfs
+		diag.IQClipRatio = d.lastClipRatio
+		diag.IQDCRatioDb = d.lastDCRatioDb
+	}
+	diag.Diagnosis = diagnoseIQ(diag, haveWindow)
+	return diag, true
+}
+
+// diagnoseIQ turns an IQ-health snapshot into a one-line operator hint,
+// reusing the same thresholds the live pump logs fire on so the two
+// never disagree. haveWindow is false when only a partial (sub-window)
+// sample count is available, so we can't yet judge signal level.
+func diagnoseIQ(d trunking.HuntDiagnostics, haveWindow bool) string {
+	if !d.PipelineActive {
+		return "no live decode pipeline for this protocol — check the system's `protocol` setting"
+	}
+	if !haveWindow {
+		return "IQ is flowing but the dwell was too short to gauge signal level — let it run, or raise scanner.cc_hunt.dwell_ms"
+	}
+	switch {
+	case d.IQPowerDbFS <= iqLowPowerThresholdDbFS:
+		return "IQ level very low — check the antenna is connected, raise gain, and confirm the dongle is streaming (`sdr list --probe`)"
+	case d.IQClipRatio > iqClipWarnRatio:
+		return "front-end overload (ADC clipping) — reduce gain or add attenuation; do NOT raise gain (issue #402)"
+	case d.IQDCRatioDb > iqDCRatioWarnDb:
+		return "an on-channel DC spike dominates the passband (RTL-SDR zero-IF) — offset the tuned frequency slightly or use a different dongle (issue #402)"
+	default:
+		return "signal present but no control-channel lock — verify the control-channel frequency is correct and current, set the right ppm, and confirm the system is active"
+	}
 }
 
 // Close releases the active pipeline. Safe to call from outside Run;

@@ -19,6 +19,22 @@ type Tuner interface {
 	SetCenterFreq(hz uint32) error
 }
 
+// IQHealthProvider is the optional hook the supervisor queries when a
+// hunt round fails, so the cchunt.failed event/log can explain why
+// rather than just reporting the symptom. internal/scanner/ccdecoder's
+// Decoder satisfies it. Decoupled via an interface so the supervisor
+// doesn't import the decoder (avoids a cycle) and tests can substitute
+// a fake or omit it entirely.
+type IQHealthProvider interface {
+	IQHealth(system string) (trunking.HuntDiagnostics, bool)
+}
+
+// noIQDiagnosis is published when the decoder reports no observations
+// for a failed system — the strongest single hint that the control SDR
+// isn't delivering IQ at all (USB/driver binding, a dead handle, or
+// nothing tuned).
+const noIQDiagnosis = "no IQ observed from the control SDR during the hunt — confirm the dongle is streaming (`sdr list --probe`), the driver is bound (`sdr doctor`), and the antenna is connected"
+
 // Options configure a new Supervisor.
 type Options struct {
 	Bus     *events.Bus
@@ -51,6 +67,10 @@ type Supervisor struct {
 	mu     sync.RWMutex
 	states map[string]*systemRuntime
 	order  []string // stable iteration order for round-robin + Snapshot
+	// iqHealth is the optional decoder hook queried on hunt failure to
+	// enrich the cchunt.failed event/log. Set once before Run via
+	// SetIQHealthProvider; guarded by mu. Nil disables enrichment.
+	iqHealth IQHealthProvider
 }
 
 // systemRuntime is the per-system mutable state the supervisor owns.
@@ -273,6 +293,16 @@ func (s *Supervisor) startRound(name string) {
 	}
 }
 
+// SetIQHealthProvider wires an optional IQ-health source the supervisor
+// queries on hunt failure to enrich the cchunt.failed event/log. Call
+// before Run (the daemon does, right after building the ccdecoder).
+// Safe to call with nil to clear it.
+func (s *Supervisor) SetIQHealthProvider(p IQHealthProvider) {
+	s.mu.Lock()
+	s.iqHealth = p
+	s.mu.Unlock()
+}
+
 func (s *Supervisor) markFailed(name string) {
 	s.mu.Lock()
 	rt := s.states[name]
@@ -292,16 +322,52 @@ func (s *Supervisor) markFailed(name string) {
 	if rt.backoffWindow > s.maxBO {
 		rt.backoffWindow = s.maxBO
 	}
+	provider := s.iqHealth
 	s.mu.Unlock()
+
+	// Capture the control SDR's IQ health *outside* s.mu — the provider
+	// (the ccdecoder) takes its own lock, and we must not hold ours
+	// across a foreign call.
+	diag := diagnoseFailure(provider, name)
+
+	// A WARN here is the channel operators actually paste in bug
+	// reports; the structured fields + one-line diagnosis turn a
+	// "constantly getting cchunt.failed" report into a self-triaging
+	// log entry. Fires once per failed hunt round, then backs off.
+	s.log.Warn("cchunt: hunt failed — no control-channel lock",
+		"system", name,
+		"backoff_ms", int(wait/time.Millisecond),
+		"iq_observed", diag.IQObserved,
+		"iq_samples", diag.IQSamples,
+		"iq_power_dbfs", diag.IQPowerDbFS,
+		"iq_clip_ratio", diag.IQClipRatio,
+		"iq_dc_ratio_db", diag.IQDCRatioDb,
+		"pipeline_active", diag.PipelineActive,
+		"diagnosis", diag.Diagnosis)
 
 	s.bus.Publish(events.Event{
 		Kind: events.KindHuntFailed,
 		Payload: trunking.HuntFailed{
-			System:    name,
-			At:        now,
-			BackoffMs: int(wait / time.Millisecond),
+			System:      name,
+			At:          now,
+			BackoffMs:   int(wait / time.Millisecond),
+			Diagnostics: diag,
 		},
 	})
+}
+
+// diagnoseFailure queries the IQ-health provider (if wired) for a
+// failed system. When the provider has no observations for it, that
+// absence is itself the diagnosis (noIQDiagnosis). With no provider at
+// all (unit tests) the zero value is returned and Diagnosis stays empty.
+func diagnoseFailure(p IQHealthProvider, name string) trunking.HuntDiagnostics {
+	if p == nil {
+		return trunking.HuntDiagnostics{}
+	}
+	if d, ok := p.IQHealth(name); ok {
+		return d
+	}
+	return trunking.HuntDiagnostics{Diagnosis: noIQDiagnosis}
 }
 
 func (s *Supervisor) backoffRemaining(name string) time.Duration {

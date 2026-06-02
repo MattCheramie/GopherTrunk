@@ -3,6 +3,7 @@ package ccdecoder
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1444,5 +1445,108 @@ func TestClearActiveClearsIQPowerSeries(t *testing.T) {
 	d.clearActive()
 	if len(pwr.cleared) != 1 || pwr.cleared[0] != "TestSys" {
 		t.Errorf("cleared = %v, want [TestSys]", pwr.cleared)
+	}
+}
+
+// TestDiagnoseIQ exercises every branch of the cchunt.failed cause
+// classifier so the one-line hint stays in lock-step with the live
+// pump's thresholds.
+func TestDiagnoseIQ(t *testing.T) {
+	cases := []struct {
+		name       string
+		diag       trunking.HuntDiagnostics
+		haveWindow bool
+		wantSubstr string
+	}{
+		{
+			name:       "no pipeline",
+			diag:       trunking.HuntDiagnostics{PipelineActive: false},
+			haveWindow: true,
+			wantSubstr: "no live decode pipeline",
+		},
+		{
+			name:       "partial window",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true},
+			haveWindow: false,
+			wantSubstr: "too short to gauge",
+		},
+		{
+			name:       "low power",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: iqLowPowerThresholdDbFS - 1},
+			haveWindow: true,
+			wantSubstr: "IQ level very low",
+		},
+		{
+			name:       "clipping",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -10, IQClipRatio: iqClipWarnRatio + 0.01},
+			haveWindow: true,
+			wantSubstr: "front-end overload",
+		},
+		{
+			name:       "dc spike",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -10, IQDCRatioDb: iqDCRatioWarnDb + 1},
+			haveWindow: true,
+			wantSubstr: "DC spike",
+		},
+		{
+			name:       "healthy but no lock",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -30, IQClipRatio: 0, IQDCRatioDb: -25},
+			haveWindow: true,
+			wantSubstr: "no control-channel lock",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := diagnoseIQ(tc.diag, tc.haveWindow)
+			if !strings.Contains(got, tc.wantSubstr) {
+				t.Errorf("diagnoseIQ(%s) = %q, want substring %q", tc.name, got, tc.wantSubstr)
+			}
+		})
+	}
+}
+
+// TestIQHealthUnknownSystem: with no observations for a system, IQHealth
+// reports ok=false so the supervisor falls back to its "no IQ observed"
+// diagnosis.
+func TestIQHealthUnknownSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, ok := d.IQHealth("Nope"); ok {
+		t.Fatal("IQHealth(unknown) ok = true, want false")
+	}
+}
+
+// TestIQHealthPartialSamples: once IQ has flowed for the active system
+// but no full power window has elapsed, IQHealth reports the sample
+// count with the "dwell too short" hint.
+func TestIQHealthPartialSamples(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Stand up an active pipeline for "Sys" and fold one chunk of IQ
+	// through the power observer without letting a window elapse.
+	d.active = &recordingPipeline{}
+	d.activeAt = "Sys"
+	d.observeIQPowerLocked(make([]complex64, 1024))
+
+	diag, ok := d.IQHealth("Sys")
+	if !ok {
+		t.Fatal("IQHealth(Sys) ok = false, want true")
+	}
+	if !diag.IQObserved || diag.IQSamples != 1024 {
+		t.Errorf("diag = %+v, want IQObserved with 1024 samples", diag)
+	}
+	if !diag.PipelineActive {
+		t.Errorf("diag.PipelineActive = false, want true")
+	}
+	if !strings.Contains(diag.Diagnosis, "too short to gauge") {
+		t.Errorf("diag.Diagnosis = %q, want 'too short to gauge'", diag.Diagnosis)
 	}
 }

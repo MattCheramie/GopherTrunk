@@ -909,11 +909,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// CC hunter supervisor — opt-in via scanner.cc_hunt.enabled OR
 	// by default when at least one trunked system is configured.
 	// Constructs an IQ → CC decoder connector alongside (below) so
-	// the supervisor's retunes drive a live demod pipeline. P25
-	// Phase 1 and YSF have wired pipelines today; other protocols
-	// stay in `state=hunting` until their per-protocol
-	// ControlChannel.Process(stream, baseIdx) adapters ship — see
-	// internal/scanner/ccdecoder/pipelines.go for the factory map.
+	// the supervisor's retunes drive a live demod pipeline. Every
+	// trunked protocol the config accepts now has a wired live
+	// pipeline (P25 Phase 1/2, DMR Tier II/III, NXDN, EDACS, Motorola,
+	// LTR, MPT 1327, dPMR, TETRA, D-STAR, YSF) — see the factory map in
+	// internal/scanner/ccdecoder/pipelines.go. A protocol with no
+	// registered factory would leave its system in `state=hunting`
+	// (the connector skips the retune) rather than emitting
+	// `cchunt.failed`.
 	if d.pool != nil && len(d.systems) > 0 {
 		cchEnabled := cfg.Scanner.CCHunt.Enabled || cfg.Scanner.CCHunt == (config.CCHuntConfig{})
 		if cchEnabled {
@@ -950,13 +953,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				// frequency the supervisor is currently attempting,
 				// and pumps IQ through the matching per-protocol
 				// pipeline so the CC state machine publishes
-				// cc.locked / grant events on the bus. Only P25
-				// Phase 1 and YSF have wired pipelines today —
-				// other protocols log a "no factory" debug message
-				// when their HuntProgress lands and the supervisor
-				// stays in `state=hunting`. See README for the
-				// per-protocol Process(stream, baseIdx) adapter
-				// follow-ups.
+				// cc.locked / grant events on the bus. All trunked
+				// protocols the config accepts are wired (see the
+				// factory map in ccdecoder/pipelines.go); a protocol
+				// with no factory logs a "no factory" debug message
+				// when its HuntProgress lands and the supervisor
+				// stays in `state=hunting`.
 				// Avoid the typed-nil trap: a nil *metrics.Metrics
 				// wrapped in IQPowerObserver still tests as non-nil
 				// inside the decoder. Hand the interface only when
@@ -1008,6 +1010,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					return nil, fmt.Errorf("daemon: ccdecoder: %w", err)
 				}
 				d.ccDecoder = dec
+				// Let the supervisor enrich cchunt.failed with the
+				// decoder's live IQ-health snapshot so field reports
+				// of "constantly getting cchunt.failed" carry the
+				// signal level / sample count / one-line cause.
+				sup.SetIQHealthProvider(dec)
 			} else {
 				log.Warn("daemon: scanner.cc_hunt enabled but no control SDR in pool; skipping")
 			}
