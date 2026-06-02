@@ -192,6 +192,26 @@ func TestCQPSKDemodRecoversFSW(t *testing.T) {
 // both signs, and one case with additive noise so a too-tight loop that
 // can only acquire on a perfectly clean fixture is caught.
 func TestCQPSKDemodRecoversFSWWithCarrierOffset(t *testing.T) {
+	// Single-buffer path: one chunk larger than the whole fixture.
+	runCQPSKCarrierOffsetSweep(t, 4096)
+}
+
+// TestCQPSKDemodRecoversFSWWithCarrierOffsetStreaming is the same sweep fed
+// in production-realistic small chunks. The live SDR + replay both hand the
+// receiver only ~160–200 samples per Process() call (8192 SDR samples ÷ the
+// ~42× DDC ratio), far below cqpskSeedMinSamples. The earlier 4096-chunk
+// test fired the coarse seed on its first chunk and so never exercised the
+// streamed path — where the per-call length gate never tripped, the NCO
+// stayed identity, the carrier was never removed, and the post-Gardner
+// Costas railed at its ±baud/8 clamp (issue #492 round 2). This guards that
+// the accumulated seed fires across many tiny chunks, including the >600 Hz
+// offsets the Costas clamp alone cannot reach.
+func TestCQPSKDemodRecoversFSWWithCarrierOffsetStreaming(t *testing.T) {
+	runCQPSKCarrierOffsetSweep(t, 192)
+}
+
+func runCQPSKCarrierOffsetSweep(t *testing.T, chunk int) {
+	t.Helper()
 	const sampleRate = 48_000.0
 	const sps = 10
 
@@ -245,7 +265,6 @@ func TestCQPSKDemodRecoversFSWWithCarrierOffset(t *testing.T) {
 				DibitSink:    func(d []uint8, _ int) { captured = append(captured, d...) },
 			})
 			shifted := base[k:]
-			const chunk = 4096
 			for i := 0; i < len(shifted); i += chunk {
 				end := i + chunk
 				if end > len(shifted) {
@@ -259,8 +278,8 @@ func TestCQPSKDemodRecoversFSWWithCarrierOffset(t *testing.T) {
 			}
 		}
 		if locked < 6 {
-			t.Errorf("offset=%.0f Hz snr=%.0f dB: recovered FSW from only %d/%d starting phases; want >= 6 (issue #492 carrier recovery)",
-				tc.offsetHz, tc.snrDB, locked, sps)
+			t.Errorf("chunk=%d offset=%.0f Hz snr=%.0f dB: recovered FSW from only %d/%d starting phases; want >= 6 (issue #492 carrier recovery)",
+				chunk, tc.offsetHz, tc.snrDB, locked, sps)
 		}
 	}
 }

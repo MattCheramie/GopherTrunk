@@ -107,6 +107,14 @@ func seedCarrierOffsetHz(x []complex64, fs float64) float64 {
 		accR += ar*br + ai*bi
 		accI += ai*br - ar*bi
 	}
+	return seedHzFromAcc(accR, accI, fs)
+}
+
+// seedHzFromAcc converts running lag-1 autocorrelation accumulators
+// (Σ x[n]·conj(x[n−1])) to a clamped coarse carrier estimate in Hz. Shared
+// by seedCarrierOffsetHz (slice) and the streaming seed that accumulates
+// across process() calls, so both use identical math.
+func seedHzFromAcc(accR, accI, fs float64) float64 {
 	hz := math.Atan2(accI, accR) * fs / (2 * math.Pi)
 	if hz > cqpskSeedClampHz {
 		hz = cqpskSeedClampHz
@@ -145,6 +153,19 @@ type cqpskDemod struct {
 	fs     float64 // IQ sample rate, for the NCO seed and Hz reporting
 	seeded bool    // coarse carrier seed applied
 	seedHz float64 // coarse carrier offset the NCO removes (Hz)
+
+	// Coarse-seed accumulators. Production feeds the receiver only
+	// ~160–200 complex samples per process() call (the ccdecoder DDC
+	// output), far below cqpskSeedMinSamples, so the seed cannot key off a
+	// single chunk's length — it must accumulate the lag-1 autocorrelation
+	// Σ x[n]·conj(x[n−1]) across calls until it has seen enough raw samples,
+	// then fire once. Without this the per-call gate never trips on a
+	// streamed input and the NCO stays an identity mix (issue #492).
+	seedAccR     float64   // running Re Σ x[n]·conj(x[n−1])
+	seedAccI     float64   // running Im Σ x[n]·conj(x[n−1])
+	seedCount    int       // lag-1 products folded into the accumulators
+	seedHavePrev bool      // seedPrev holds a valid cross-call boundary sample
+	seedPrev     complex64 // last raw IQ sample of the previous chunk
 
 	// cmaErr is the CMA's most recent |y|²−R² convergence proxy,
 	// retained for the replay receiver-state diagnostic (issue #492).
@@ -185,18 +206,46 @@ func newCQPSKDemod(sampleRateHz float64, sps int, span int, alpha float64, gardn
 // not corrupt the stream.
 func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	// Carrier recovery, coarse stage: a real tuner's residual offset is
-	// far outside the fine loop's ±baud/8 pull-in, so estimate it once
-	// from the raw IQ and tune it out with the NCO. Estimate on the raw
+	// far outside the fine loop's ±baud/8 pull-in, so estimate it from the
+	// raw IQ and tune it out with the NCO. Estimate on the raw
 	// (pre-matched-filter) stream: the RRC matched filter is a lowpass
 	// centred at DC, so it clips the high sideband of an offset signal and
 	// would bias the estimate toward zero. De-rotating before the matched
-	// filter also presents the filter a centred channel. Until seeded the
-	// NCO is an identity mix, so a centred/zero-offset stream is unaffected;
-	// the fine Costas loop then cleans up the residual and tracks drift.
-	if !c.seeded && len(iq) >= cqpskSeedMinSamples {
-		c.seedHz = seedCarrierOffsetHz(iq, c.fs)
-		c.nco.SetOffset(c.seedHz, c.fs)
-		c.seeded = true
+	// filter also presents the filter a centred channel.
+	//
+	// Production delivers only ~160–200 samples per call, so the seed must
+	// accumulate the lag-1 autocorrelation across calls (carrying the
+	// boundary sample) until it has enough, rather than keying off one
+	// chunk's length — otherwise the gate never trips on a streamed input
+	// and the NCO stays an identity mix (issue #492). Until seeded the NCO
+	// is identity, so a centred/zero-offset stream is unaffected; the fine
+	// Costas loop then cleans up the residual and tracks drift.
+	if !c.seeded {
+		for n := 0; n < len(iq); n++ {
+			if c.seedHavePrev {
+				ar, ai := float64(real(iq[n])), float64(imag(iq[n]))
+				br, bi := float64(real(c.seedPrev)), float64(imag(c.seedPrev))
+				c.seedAccR += ar*br + ai*bi // Re x[n]·conj(x[n−1])
+				c.seedAccI += ai*br - ar*bi // Im x[n]·conj(x[n−1])
+				c.seedCount++
+			}
+			c.seedPrev = iq[n]
+			c.seedHavePrev = true
+		}
+		if c.seedCount >= cqpskSeedMinSamples {
+			c.seedHz = seedHzFromAcc(c.seedAccR, c.seedAccI, c.fs)
+			c.nco.SetOffset(c.seedHz, c.fs)
+			c.seeded = true
+			// The pre-seed samples ran through with an identity NCO, so the
+			// Costas frequency integrator wound toward the uncorrected offset
+			// (railing at its ±baud/8 clamp) and the CMA adapted to a spinning
+			// constellation. Reset both so they re-acquire on the now-centred
+			// signal instead of over-de-rotating. Gardner is left running — it
+			// re-locks on clean input within a few symbols, and leaving it
+			// preserves symbol timing/alignment.
+			c.costas.Reset()
+			c.cma.Reset()
+		}
 	}
 	c.rotated = c.nco.Mix(c.rotated, iq)
 	c.matched = c.dq.MatchedFilter(c.matched, c.rotated)
@@ -248,4 +297,9 @@ func (c *cqpskDemod) reset() {
 	c.costas.Reset()
 	c.seeded = false
 	c.seedHz = 0
+	c.seedAccR = 0
+	c.seedAccI = 0
+	c.seedCount = 0
+	c.seedHavePrev = false
+	c.seedPrev = 0
 }
