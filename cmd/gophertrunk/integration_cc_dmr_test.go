@@ -139,6 +139,101 @@ WaitLoop:
 	}
 }
 
+// TestDaemonCCDecodesDMRTier3SpectrumInverted is the issue #264
+// regression: an RTL-SDR Blog V4 (R828D) that presents conjugated /
+// spectrum-inverted IQ — "are I and Q reversed?" — must still decode
+// DMR. We replay the exact same synthesized Tier III burst as
+// TestDaemonCCDecodesDMRTier3 but conjugate the IQ (negate Q) before
+// handing it to the mock SDR. Conjugation negates the FM-discriminator
+// output, flipping every symbol (+3↔-3, +1↔-1) — the dibit-domain
+// `+2 mod 4` polarity flip the dual-polarity burst decode recovers.
+// Without the fix the slot-type Hamming decode lands on an
+// ever-changing color code and the daemon never locks.
+func TestDaemonCCDecodesDMRTier3SpectrumInverted(t *testing.T) {
+	const (
+		controlFreqHz = 460_000_000
+		sampleRateHz  = 48_000
+		sps           = 10
+		span          = 8
+		alpha         = 0.20
+		deviationHz   = 1944.0
+		colorCode     = 0xA
+		systemID      = 0x1234
+		burstRepeats  = 80
+	)
+
+	dibits := buildDMRTier3CSBKDibits(burstRepeats, colorCode, systemID)
+	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRateHz, deviationHz)
+	// Simulate the R828D's reversed I/Q: conjugate every sample.
+	for i := range iq {
+		iq[i] = complex(real(iq[i]), -imag(iq[i]))
+	}
+
+	dir := t.TempDir()
+	iqPath := filepath.Join(dir, "dmr-cc-inverted.cfile")
+	if err := writeIQToU8File(iqPath, iq); err != nil {
+		t.Fatalf("write IQ: %v", err)
+	}
+	sdr.Register(&sdr.MockDriver{Files: []string{iqPath}})
+
+	cfg := config.Default()
+	cfg.SDR.SampleRate = sampleRateHz
+	cfg.SDR.Devices = []config.DeviceConfig{
+		{Serial: "mock-00", Role: "control"},
+	}
+	cfg.Trunking.Systems = []config.SystemConfig{
+		{Name: "DMRSite", Protocol: "dmr", ControlChannels: []uint32{controlFreqHz}},
+	}
+	cfg.API.HTTPAddr = freeAddr(t)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	d, err := NewDaemon(cfg, "integration-cc-dmr-inverted", logger)
+	if err != nil {
+		t.Fatalf("NewDaemon: %v", err)
+	}
+
+	sub := d.Bus().Subscribe()
+	defer sub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runErrCh := make(chan error, 1)
+	go func() { runErrCh <- d.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-runErrCh:
+		case <-time.After(3 * time.Second):
+		}
+	})
+
+	base := "http://" + cfg.API.HTTPAddr
+	waitReachable(t, base+"/api/v1/health", 3*time.Second)
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindCCLocked {
+				continue
+			}
+			ls, ok := ev.Payload.(tier3.LockState)
+			if !ok {
+				t.Errorf("CCLocked payload type = %T, want tier3.LockState", ev.Payload)
+				continue
+			}
+			if ls.SystemID != systemID {
+				t.Errorf("LockState.SystemID = %#x, want %#x", ls.SystemID, systemID)
+			}
+			if ls.ColorCode != colorCode {
+				t.Errorf("LockState.ColorCode = %d, want %d", ls.ColorCode, colorCode)
+			}
+			return
+		case <-deadline:
+			t.Fatalf("no cc.locked event arrived within 5s on spectrum-inverted IQ")
+		}
+	}
+}
+
 // buildDMRTier3CSBKDibits assembles a DMR Tier III dibit stream
 // for the C4FM modulator + receiver chain:
 //

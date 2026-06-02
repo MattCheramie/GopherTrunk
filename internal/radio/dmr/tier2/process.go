@@ -76,14 +76,22 @@ func (c *ConventionalChannel) Process(dibits []uint8, baseIdx int) int {
 			continue
 		}
 		offset := burstStart - p.bufStart
-		var b dmr.Burst
-		copy(b.Dibits[:], p.buf[offset:offset+dmr.BurstDibits])
+		// Decode the burst at both discriminator polarities to recover
+		// spectrum-inverted reception (issue #264, RTL-SDR Blog V4 /
+		// R828D); IngestBurst's FEC drops the wrong polarity with no
+		// state change. Identity (k=0) is tried first. Same as the Tier
+		// III adapter.
+		for _, k := range dmr.CandidatePolarities {
+			var b dmr.Burst
+			copy(b.Dibits[:], p.buf[offset:offset+dmr.BurstDibits])
+			dmr.RotateBurstDibits(&b, k)
 
-		slot, _, err := dmr.ParseSlotType(b.SlotTypeBitsAll())
-		if err != nil {
-			continue
+			slot, _, err := dmr.ParseSlotType(b.SlotTypeBitsAll())
+			if err != nil {
+				continue
+			}
+			c.IngestBurst(&b, slot)
 		}
-		c.IngestBurst(&b, slot)
 	}
 	p.pending = keep
 

@@ -37,6 +37,62 @@ func TestSyncDetectorMatchesCleanSync(t *testing.T) {
 	}
 }
 
+// TestSyncPairsClosedUnderPolarityFlip documents the property the issue
+// #264 fix relies on: applying the discriminator-polarity flip (every
+// dibit + 2 mod 4) to a downlink voice/data sync word yields its
+// data/voice twin. This is why a spectrum-inverted stream still
+// produces sync hits (so the detector needs no change) AND why the
+// sync match alone can't resolve the polarity (so the burst is decoded
+// at both polarities downstream). MS-RC (the mobile reverse-channel
+// sync) is the lone pattern with no twin and is not used on the
+// downlink control channel.
+func TestSyncPairsClosedUnderPolarityFlip(t *testing.T) {
+	pairs := [][2]SyncPattern{
+		{BSVoice, BSData},
+		{MSVoice, MSData},
+		{DMVoice1, DMData1},
+		{DMVoice2, DMData2},
+	}
+	for _, pr := range pairs {
+		var flipped [24]uint8
+		for i, d := range pr[0].Dibits {
+			flipped[i] = (d + PolarityFlip) & 3
+		}
+		if flipped != pr[1].Dibits {
+			t.Errorf("%s flipped != %s", pr[0].Name, pr[1].Name)
+		}
+		// The flip is symmetric: flipping the twin recovers the first.
+		for i, d := range pr[1].Dibits {
+			flipped[i] = (d + PolarityFlip) & 3
+		}
+		if flipped != pr[0].Dibits {
+			t.Errorf("%s flipped != %s", pr[1].Name, pr[0].Name)
+		}
+	}
+}
+
+// TestRotateBurstDibits pins the de-rotation helper: the polarity flip
+// is self-inverse (applying it twice round-trips), and k=0 is a no-op.
+func TestRotateBurstDibits(t *testing.T) {
+	var orig Burst
+	for i := range orig.Dibits {
+		orig.Dibits[i] = uint8(i) & 3
+	}
+	// Flip then recover.
+	flipped := orig
+	RotateBurstDibits(&flipped, PolarityFlip)
+	RotateBurstDibits(&flipped, PolarityFlip)
+	if flipped.Dibits != orig.Dibits {
+		t.Errorf("double polarity-flip did not round-trip")
+	}
+	// Rotation 0 is a no-op.
+	noop := orig
+	RotateBurstDibits(&noop, 0)
+	if noop.Dibits != orig.Dibits {
+		t.Errorf("rotate-0 mutated the burst")
+	}
+}
+
 func TestSyncDetectorTolerates2Errors(t *testing.T) {
 	det := NewSyncDetector(nil, 2) // all patterns
 	stream := make([]uint8, 50)

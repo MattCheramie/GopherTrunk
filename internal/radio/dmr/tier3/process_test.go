@@ -106,6 +106,64 @@ func TestProcessLocksOnAlohaBurst(t *testing.T) {
 	}
 }
 
+// TestProcessLocksOnPolarityFlippedBurst is the issue #264 regression:
+// an RTL-SDR Blog V4 / R828D presenting conjugated (spectrum-inverted)
+// IQ flips the FM-discriminator sign, so every dibit arrives as
+// (dibit + 2) mod 4. The adapter must detect the rotation-2 sync and
+// de-rotate the burst so the same ColorCode + SystemID are recovered
+// as from the canonical burst — i.e. the color code is stable, not
+// "changing constantly".
+func TestProcessLocksOnPolarityFlippedBurst(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		Log:         slog.Default(),
+		SystemName:  "Sys",
+		FrequencyHz: 460_000_000,
+	})
+
+	burst := buildAlohaBurst(t, 0xA, 0x1234)
+
+	stream := make([]uint8, 200)
+	stream = append(stream, burst...)
+	stream = append(stream, make([]uint8, 64)...)
+	// Simulate I/Q-reversed / spectrum-inverted reception: every dibit
+	// rotated by +2 mod 4 (the discriminator-polarity-flip rotation).
+	for i := range stream {
+		stream[i] = (stream[i] + 2) & 3
+	}
+
+	cc.Process(stream, 0)
+
+	var sawLock bool
+	var ls LockState
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCCLocked {
+				ls, _ = ev.Payload.(LockState)
+				sawLock = true
+			}
+		default:
+			if !sawLock {
+				t.Errorf("Process did not lock on a polarity-flipped burst")
+				return
+			}
+			if ls.ColorCode != 0xA {
+				t.Errorf("LockState.ColorCode = %d, want 10", ls.ColorCode)
+			}
+			if ls.SystemID != 0x1234 {
+				t.Errorf("LockState.SystemID = %#x, want 0x1234", ls.SystemID)
+			}
+			return
+		}
+	}
+}
+
 // TestProcessHandlesBurstSpanningCalls: a burst whose dibits
 // arrive across two Process calls still drives IngestBurst.
 func TestProcessHandlesBurstSpanningCalls(t *testing.T) {
