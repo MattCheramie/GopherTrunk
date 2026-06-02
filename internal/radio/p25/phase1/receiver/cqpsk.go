@@ -64,6 +64,27 @@ const (
 	cqpskAGCMaxGain   = 1e4
 )
 
+// cqpskTimingSps is the samples-per-symbol the Gardner timing-recovery
+// loop is fed. The loop's linear-interpolation timing-error detector has
+// a pull-in range that scales with oversampling: at the production
+// channel rate (48 kHz ⇒ 10 sps) it locks for only ~10% of arbitrary
+// starting symbol phases and false-locks on the rest, so a real capture —
+// whose symbol clock is never aligned to sample 0 — almost never acquires
+// the control channel (issue #492; the C4FM path is unaffected because
+// its Mueller-Müller loop is decision-directed). Synthetic test fixtures
+// start perfectly symbol-aligned, which is why this hid behind green
+// tests. Upsampling the matched-filter output to ~50 sps before the loop
+// widens pull-in to ~80% of phases — matching the lock rate the demod
+// already showed when fed an un-decimated 2 MHz capture (~417 sps).
+//
+// The matched filter and AGC still run at the native rate (cheap); only
+// the post-AGC interpolation and the Gardner walk run oversampled, and on
+// a single control-channel stream that cost is negligible. Closing the
+// remaining pull-in gap to the C4FM path's reliability needs a better
+// timing interpolator in sync.Gardner itself — a follow-up that benefits
+// every Gardner consumer (TETRA, P25 Phase 2).
+const cqpskTimingSps = 50
+
 // cqpskDemod is the LSM / linear-CQPSK symbol recovery chain for P25
 // Phase 1. It wraps the shared PiOver4DQPSK primitive at rotation π/4
 // and applies lsmDibitRemap so the dibits it emits are interchangeable
@@ -84,12 +105,14 @@ const (
 // timing offset). The receiver enforces this in New.
 type cqpskDemod struct {
 	dq      *demod.PiOver4DQPSK
+	up      *dsp.Resampler // nil ⇒ already ≥ cqpskTimingSps; no upsampling
 	gardner *sync.Gardner
 	agc     *dsp.AGC
 	cma     *equalizer.CMA
 
 	// Scratch buffers reused across calls.
 	matched []complex64
+	upBuf   []complex64
 	symbols []complex64
 	dibits  []uint8
 }
@@ -98,16 +121,33 @@ type cqpskDemod struct {
 // rate and RRC parameters. sps must already be the integer samples-
 // per-symbol; span / alpha are the standard P25 RRC parameters
 // (span=8 symbols half-width, α=0.20).
+//
+// The matched filter runs at the native sps; its output is then
+// interpolated up to ≥ cqpskTimingSps so the Gardner timing loop has the
+// oversampling it needs to pull in from an arbitrary symbol phase (issue
+// #492). A stream already at or above that rate skips the interpolator.
 func newCQPSKDemod(sps int, span int, alpha float64, gardnerGain float64) *cqpskDemod {
 	if gardnerGain <= 0 {
 		gardnerGain = defaultGardnerGain
 	}
-	return &cqpskDemod{
+	up := 1
+	if sps < cqpskTimingSps {
+		up = (cqpskTimingSps + sps - 1) / sps // ceil(target/sps)
+	}
+	c := &cqpskDemod{
 		dq:      demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
-		gardner: sync.NewGardner(float64(sps), gardnerGain),
+		gardner: sync.NewGardner(float64(sps*up), gardnerGain),
 		agc:     dsp.NewAGC(cqpskAGCReference, cqpskAGCRate, cqpskAGCMaxGain),
 		cma:     equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
 	}
+	if up > 1 {
+		// Polyphase interpolation by `up` (Kaiser-windowed LPF, the same
+		// primitive the down-converter uses). The matched-filter output is
+		// already band-limited well inside the native Nyquist, so a modest
+		// per-branch length suffices to suppress the interpolation images.
+		c.up = dsp.NewResampler(up, 1, 8, 7.0)
+	}
+	return c
 }
 
 // process pushes one chunk of complex IQ through the chain and returns
@@ -123,8 +163,16 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	// gain-sensitive and only locks in a narrow RTL-SDR gain window
 	// (issue #275 regression).
 	c.matched = c.agc.Process(c.matched, c.matched)
+	// Interpolate up to the timing loop's oversampling target so Gardner
+	// can pull in from an arbitrary symbol phase (issue #492). At the
+	// native rate skip straight to the loop.
+	timing := c.matched
+	if c.up != nil {
+		c.upBuf = c.up.Process(c.upBuf, c.matched)
+		timing = c.upBuf
+	}
 	c.symbols = c.symbols[:0]
-	c.symbols = c.gardner.Process(c.symbols, c.matched)
+	c.symbols = c.gardner.Process(c.symbols, timing)
 	if len(c.symbols) == 0 {
 		c.dibits = c.dibits[:0]
 		return c.dibits
@@ -147,6 +195,9 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 // from a fresh stream.
 func (c *cqpskDemod) reset() {
 	c.dq.Reset()
+	if c.up != nil {
+		c.up.Reset()
+	}
 	c.gardner.Reset()
 	c.agc.Reset()
 	c.cma.Reset()

@@ -90,41 +90,67 @@ func TestCQPSKDemodRoundTripStableTail(t *testing.T) {
 	}
 }
 
-// TestCQPSKDemodRecoversFSW: synthesise an LSM stream that embeds
-// the canonical P25 FSW at a known position and confirm the receiver
-// produces a dibit stream containing the FSW pattern. This is the
-// proof point that the simulcast path will lock — the same FSW the
-// SyncDetector consumes downstream of the receiver.
+// TestCQPSKDemodRecoversFSW: synthesise an LSM stream that embeds the
+// canonical P25 FSW and confirm the receiver recovers it — across the
+// full range of starting symbol phases, not just the perfectly-aligned
+// one. This is the issue #492 regression guard.
+//
+// A real capture's symbol clock has no relationship to sample 0, so the
+// demod must lock from an arbitrary sub-symbol phase. The earlier code
+// fed the Gardner timing loop at the native 10 sps, where its linear-
+// interpolation error detector pulls in for only ~1 of the 10 sample
+// phases and false-locks on the rest — so a live control channel almost
+// never acquired (the bug had hidden because every fixture here started
+// at phase 0, the one that happened to work). Upsampling the matched-
+// filter output ahead of the loop (see cqpskTimingSps) widens pull-in to
+// the large majority of phases. Closing the last gap to a 100% lock rate
+// needs a better interpolator inside sync.Gardner — a tracked follow-up —
+// so this asserts a strong-majority pull-in rather than every phase.
 func TestCQPSKDemodRecoversFSW(t *testing.T) {
 	const sampleRate = 48_000.0
 	const sps = 10
 
-	// 64 dibits of filler + 24-dibit FSW + 64 dibits trailer.
-	in := make([]uint8, 0, 64+24+64)
-	for i := 0; i < 64; i++ {
+	// Long lead-in (loop convergence) + FSW + trailer.
+	in := make([]uint8, 0)
+	for i := 0; i < 256; i++ {
 		in = append(in, uint8(i&3))
 	}
 	in = append(in, phase1.FrameSyncWord[:]...)
 	for i := 0; i < 64; i++ {
 		in = append(in, uint8((i+2)&3))
 	}
+	base := dibitsToLSMIQ(t, in, sps, PulseSpanSymbols, RolloffAlpha)
 
-	iq := dibitsToLSMIQ(t, in, sps, PulseSpanSymbols, RolloffAlpha)
-
-	var captured []uint8
-	r := New(Options{
-		SampleRateHz: sampleRate,
-		DemodMode:    DemodCQPSK,
-		DibitSink: func(d []uint8, _ int) {
-			captured = append(captured, d...)
-		},
-	})
-	r.Process(iq)
-
-	det := phase1.NewSyncDetector(2)
-	hits, _ := det.Process(nil, captured, 0)
-	if len(hits) == 0 {
-		t.Fatalf("FSW never detected in CQPSK output (captured %d dibits)", len(captured))
+	locked := 0
+	for k := 0; k < sps; k++ {
+		var captured []uint8
+		r := New(Options{
+			SampleRateHz: sampleRate,
+			DemodMode:    DemodCQPSK,
+			DibitSink:    func(d []uint8, _ int) { captured = append(captured, d...) },
+		})
+		// Drop k leading samples to start the stream at sub-symbol phase k,
+		// and feed in chunks to exercise the cross-call timing state.
+		shifted := base[k:]
+		const chunk = 4096
+		for i := 0; i < len(shifted); i += chunk {
+			end := i + chunk
+			if end > len(shifted) {
+				end = len(shifted)
+			}
+			r.Process(shifted[i:end])
+		}
+		det := phase1.NewSyncDetector(2)
+		if hits, _ := det.Process(nil, captured, 0); len(hits) > 0 {
+			locked++
+		}
+	}
+	// Pre-fix this was 1/10; the upsampling fix takes it to a strong
+	// majority. Require well over half so a regression that narrows the
+	// timing pull-in is caught, without pinning the exact (interpolator-
+	// dependent) count.
+	if locked < 6 {
+		t.Fatalf("CQPSK recovered FSW from only %d/%d starting phases; want >= 6 (issue #492 timing pull-in)", locked, sps)
 	}
 }
 
