@@ -204,6 +204,31 @@ func TestRecordIQDCRatioDb(t *testing.T) {
 	}
 }
 
+func TestRecordIQClipRatio(t *testing.T) {
+	m, _ := New(nil, nil, "test")
+	defer m.Close()
+
+	m.RecordIQClipRatio("MMR", 0.0)
+	if got := testutil.ToFloat64(m.iqClipRatio.WithLabelValues("MMR")); got != 0.0 {
+		t.Errorf("iq clip ratio = %v, want 0.0", got)
+	}
+
+	m.RecordIQClipRatio("MMR", 0.25) // front end overloaded
+	if got := testutil.ToFloat64(m.iqClipRatio.WithLabelValues("MMR")); got != 0.25 {
+		t.Errorf("iq clip ratio after update = %v, want 0.25", got)
+	}
+
+	m.ClearIQClipRatio("MMR")
+	if testutil.CollectAndCount(m.iqClipRatio) != 0 {
+		t.Errorf("iq clip ratio series count after clear != 0")
+	}
+
+	m.RecordIQClipRatio("", 0.1)
+	if got := testutil.ToFloat64(m.iqClipRatio.WithLabelValues("unknown")); got != 0.1 {
+		t.Errorf("iq clip ratio unknown = %v, want 0.1", got)
+	}
+}
+
 func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
 	m, _ := New(nil, nil, "v1.2.3")
 	defer m.Close()

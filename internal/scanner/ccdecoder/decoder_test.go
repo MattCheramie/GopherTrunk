@@ -1047,10 +1047,12 @@ func TestMPT1327FactoryAppliesBCHFromSystem(t *testing.T) {
 // tests can assert the decoder's pump-side observation pipeline
 // without depending on the real Prometheus collector.
 type recordingPower struct {
-	sets      []powerSample
-	cleared   []string
-	dcSets    []dcSample
-	dcCleared []string
+	sets        []powerSample
+	cleared     []string
+	dcSets      []dcSample
+	dcCleared   []string
+	clipSets    []clipSample
+	clipCleared []string
 }
 
 type powerSample struct {
@@ -1061,6 +1063,11 @@ type powerSample struct {
 type dcSample struct {
 	system  string
 	ratioDb float64
+}
+
+type clipSample struct {
+	system string
+	ratio  float64
 }
 
 func (r *recordingPower) RecordIQPowerDbFS(system string, dbfs float64) {
@@ -1074,6 +1081,12 @@ func (r *recordingPower) RecordIQDCRatioDb(system string, ratioDb float64) {
 }
 func (r *recordingPower) ClearIQDCRatioDb(system string) {
 	r.dcCleared = append(r.dcCleared, system)
+}
+func (r *recordingPower) RecordIQClipRatio(system string, ratio float64) {
+	r.clipSets = append(r.clipSets, clipSample{system, ratio})
+}
+func (r *recordingPower) ClearIQClipRatio(system string) {
+	r.clipCleared = append(r.clipCleared, system)
 }
 
 // TestPumpRecordsIQPowerOnceWindowElapses feeds a known signal level
@@ -1121,6 +1134,51 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 	// |0.5+0.5i|^2 = 0.5 → 10*log10(0.5) = -3.01 dBFS
 	if got.dbfs < -3.5 || got.dbfs > -2.5 {
 		t.Errorf("dbfs = %v, want roughly -3", got.dbfs)
+	}
+	// A mid-scale chunk is nowhere near the ADC rail → no clipping.
+	if len(pwr.clipSets) != 1 {
+		t.Fatalf("after window, clipSets = %d, want 1", len(pwr.clipSets))
+	}
+	if r := pwr.clipSets[0].ratio; r != 0 {
+		t.Errorf("clip_ratio = %v, want 0 for a mid-scale chunk", r)
+	}
+}
+
+// TestPumpRecordsIQClipRatioWhenRailed feeds a window of rail-pinned
+// samples and asserts the new clip-ratio gauge reports ~1.0 — the
+// front-end overload failure mode behind issue #402 that the RMS
+// iq_power_dbfs gauge averages away.
+func TestPumpRecordsIQClipRatioWhenRailed(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.activeAt = "TestSys"
+
+	// Both components at full scale (the ADC rail) on every sample.
+	chunk := make([]complex64, 128)
+	for i := range chunk {
+		chunk[i] = complex(1.0, 1.0)
+	}
+
+	d.pump(chunk) // primes pwWindowAt, no record yet
+	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
+	d.pump(chunk)
+
+	if len(pwr.clipSets) != 1 {
+		t.Fatalf("after window, clipSets = %d, want 1", len(pwr.clipSets))
+	}
+	got := pwr.clipSets[0]
+	if got.system != "TestSys" {
+		t.Errorf("system = %q, want TestSys", got.system)
+	}
+	if got.ratio < 0.999 {
+		t.Errorf("clip_ratio = %v, want ~1.0 for a fully-railed window", got.ratio)
 	}
 }
 
