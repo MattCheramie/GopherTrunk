@@ -148,7 +148,7 @@ func warnLowGain(log *slog.Logger, serial string, role sdr.Role, raw string, ten
 		"role", role.String(),
 		"configured", raw,
 		"applied_db", float64(tenthDB)/10.0,
-		"hint", "manual P25/C4FM gains typically run 150-496 tenths (15-49.6 dB). gain: is in TENTHS of a dB; a reference 'gain 49' means ~49 dB -> gain: \"490\". Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder.")
+		"hint", "manual P25/C4FM gains typically run 150-496 tenths (15-49.6 dB). gain: is in TENTHS of a dB; a reference 'gain 49' means ~49 dB -> gain: \"490\". Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder. NOTE: this assumes the front end is not overloaded — if the iq_clip_ratio metric is non-zero (or iq_power_dbfs sits near 0), the radio is clipping and gain is already too HIGH for this site; reduce it or add attenuation instead of raising it (issue #402).")
 }
 
 // effectiveControlRate returns the IQ sample rate the control-channel

@@ -47,6 +47,7 @@ type Metrics struct {
 	iqUnderruns   *prometheus.CounterVec
 	iqPowerDbFS   *prometheus.GaugeVec // by system; mean IQ power on the control SDR
 	iqDCRatioDb   *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
+	iqClipRatio   *prometheus.GaugeVec // by system; fraction of IQ samples pinned to the ADC rail (issue #402)
 	usbReconnects *prometheus.CounterVec
 	decodeErrors  *prometheus.CounterVec
 	sdrAttached   *prometheus.GaugeVec
@@ -131,7 +132,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Namespace: namespace,
 		Subsystem: "sdr",
 		Name:      "iq_power_dbfs",
-		Help:      "Mean IQ power on the control SDR in dBFS (window ~= 1 s). Idle ≈ -45; healthy signal ≈ -25; > -3 indicates clipping.",
+		Help:      "Mean IQ power on the control SDR in dBFS (window ~= 1 s). Idle ≈ -45; healthy signal ≈ -25. This is RMS and averages away peak clipping — watch iq_clip_ratio for the authoritative overload signal (issue #402).",
 	}, []string{"system"})
 
 	// Diagnostic for the RTL-SDR R820T2 zero-IF DC-spike-on-channel
@@ -146,6 +147,20 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Subsystem: "sdr",
 		Name:      "iq_dc_ratio_db",
 		Help:      "DC-bin power relative to total IQ power, in dB (window ~= 1 s). 0 = all power is DC; -20 or lower = clean. > -10 on a tuned-on-channel control SDR hints at the R820T2 DC-spike failure mode tracked in issue #402.",
+	}, []string{"system"})
+
+	// Fraction of IQ samples whose I or Q component hit the ADC rail over
+	// the same window iq_power_dbfs is computed over (issue #402). The
+	// power gauge is RMS, so a high-crest signal can clip on peaks while
+	// the average still reads merely "hot" (~ -5 dBFS); this gauge is the
+	// authoritative overload signal. 0 = no clipping; a sustained value
+	// above ~0.002 means the front end is overloaded — reduce gain or add
+	// attenuation (raising gain makes it worse).
+	m.iqClipRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "sdr",
+		Name:      "iq_clip_ratio",
+		Help:      "Fraction of control-SDR IQ samples pinned to the ADC rail (window ~= 1 s). 0 = no clipping; a sustained value above ~0.002 means front-end overload — reduce gain or add attenuation, do not raise gain (issue #402).",
 	}, []string{"system"})
 
 	m.usbReconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -190,6 +205,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.iqUnderruns,
 		m.iqPowerDbFS,
 		m.iqDCRatioDb,
+		m.iqClipRatio,
 		m.usbReconnects,
 		m.decodeErrors,
 		m.sdrAttached,
@@ -352,6 +368,26 @@ func (m *Metrics) ClearIQDCRatioDb(system string) {
 		return
 	}
 	m.iqDCRatioDb.DeleteLabelValues(system)
+}
+
+// RecordIQClipRatio sets the rail-clipping-fraction gauge for system.
+// The decoder computes this once per IQ-power window; the metrics package
+// just stores it. See iqClipRatio's Help text for interpretation (issue
+// #402).
+func (m *Metrics) RecordIQClipRatio(system string, ratio float64) {
+	if system == "" {
+		system = "unknown"
+	}
+	m.iqClipRatio.WithLabelValues(system).Set(ratio)
+}
+
+// ClearIQClipRatio drops the clip-ratio gauge series for system. Called
+// alongside ClearIQPowerDbFS when a decoder pipeline tears down.
+func (m *Metrics) ClearIQClipRatio(system string) {
+	if system == "" {
+		return
+	}
+	m.iqClipRatio.DeleteLabelValues(system)
 }
 
 // RecordUSBReconnect increments the reconnect counter for the supplied SDR.

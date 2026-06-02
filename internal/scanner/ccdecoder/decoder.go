@@ -68,11 +68,18 @@ import (
 // DC bin dominates the 48 kHz pipeline passband and the C4FM eye
 // collapses. Healthy off-channel signals show ≤ -20 dB; a
 // DC-dominated capture shows within ~5 dB of 0.
+// RecordIQClipRatio reports the per-window fraction of IQ samples with
+// an I or Q component pinned to the ADC rail (0 = none). Sustained
+// non-zero values mean front-end overload/clipping — the average
+// iq_power_dbfs gauge is RMS and hides peak clipping, so this is the
+// authoritative clipping signal behind issue #402.
 type IQPowerObserver interface {
 	RecordIQPowerDbFS(system string, dbfs float64)
 	ClearIQPowerDbFS(system string)
 	RecordIQDCRatioDb(system string, ratioDb float64)
 	ClearIQDCRatioDb(system string)
+	RecordIQClipRatio(system string, ratio float64)
+	ClearIQClipRatio(system string)
 }
 
 // ErrIQStreamClosed is returned by Run whenever the SDR's IQ stream is
@@ -105,6 +112,21 @@ const iqLowPowerThresholdDbFS = -55.0
 // ~5 dB of total channel power) without firing on benign captures
 // of a tone-rich broadcast channel. Issue #402.
 const iqDCRatioWarnDb = -10.0
+
+// iqClipThreshold is the normalized magnitude at or above which an I or
+// Q component is treated as ADC rail-clipping. convertU8IQ maps u8 0 ->
+// -1.0 and u8 255 -> +1.0 (rtlsdr/purego/stream.go convertU8IQ), so the
+// rail samples u8 in {0,1,254,255} land at |x| >= ~0.992; 0.98 catches
+// them without flagging healthy signal peaks. A front end driven into
+// the rail distorts the C4FM eye and fails TSBK CRC continuously even
+// while NID's stronger BCH still locks (issue #402).
+const iqClipThreshold = 0.98
+
+// iqClipWarnRatio is the per-window fraction of clipped samples above
+// which observeIQPowerLocked emits a throttled WARN. A clean front end
+// rarely rails on P25 C4FM, so a sustained fraction at this level means
+// front-end overload — reduce gain or add attenuation (issue #402).
+const iqClipWarnRatio = 0.002
 
 // Tuner is the subset of sdr.Device the decoder uses for retuning.
 // Matches the same interface cchunt + conventional consume so the
@@ -199,10 +221,12 @@ type Decoder struct {
 	pwSumSq      float64
 	pwSumI       float64 // running sum of I samples → DC-bin mean (issue #402)
 	pwSumQ       float64 // running sum of Q samples → DC-bin mean (issue #402)
+	pwClipped    int     // count of rail-clipped samples in the window (issue #402)
 	pwSamples    int
 	pwWindowAt   time.Time
 	pwLowLogAt   time.Time
 	pwDCLogAt    time.Time // throttle for the "DC bin dominant" debug line (issue #402)
+	pwClipLogAt  time.Time // throttle for the "front-end clipping" warn line (issue #402)
 	pwLastSystem string
 
 	// iqCorrector, when non-nil (Options.IQCorrect), blindly removes the
@@ -379,12 +403,14 @@ func (d *Decoder) clearActiveLocked() {
 	if d.activeAt != "" && d.metrics != nil {
 		d.metrics.ClearIQPowerDbFS(d.activeAt)
 		d.metrics.ClearIQDCRatioDb(d.activeAt)
+		d.metrics.ClearIQClipRatio(d.activeAt)
 	}
 	d.activeAt = ""
 	d.activeFreqHz = 0
 	d.pwSumSq = 0
 	d.pwSumI = 0
 	d.pwSumQ = 0
+	d.pwClipped = 0
 	d.pwSamples = 0
 	d.pwLastSystem = ""
 }
@@ -448,6 +474,7 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 		d.pwSumSq = 0
 		d.pwSumI = 0
 		d.pwSumQ = 0
+		d.pwClipped = 0
 		d.pwSamples = 0
 		d.pwLastSystem = d.activeAt
 	}
@@ -457,6 +484,12 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 		d.pwSumSq += r*r + i*i
 		d.pwSumI += r
 		d.pwSumQ += i
+		// Count samples pinned to the ADC rail (issue #402): either
+		// component at full scale means the 8-bit RTL ADC clipped, which
+		// the RMS power gauge below averages away.
+		if r >= iqClipThreshold || r <= -iqClipThreshold || i >= iqClipThreshold || i <= -iqClipThreshold {
+			d.pwClipped++
+		}
 	}
 	d.pwSamples += len(iq)
 
@@ -492,14 +525,30 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 	}
 	dcDbfs := 10 * math.Log10(dcPower)
 	ratioDb := dcDbfs - dbfs
+	// Fraction of samples that hit the ADC rail this window. RMS dbfs can
+	// read merely "hot" (e.g. -5 dBFS) while a high-crest signal still
+	// clips on peaks; this is the signal that distinguishes the two and
+	// the smoking gun for the issue #402 overload failure mode.
+	clipRatio := float64(d.pwClipped) / n
 	if d.activeAt != "" && d.metrics != nil {
 		d.metrics.RecordIQPowerDbFS(d.activeAt, dbfs)
 		d.metrics.RecordIQDCRatioDb(d.activeAt, ratioDb)
+		d.metrics.RecordIQClipRatio(d.activeAt, clipRatio)
 	}
 	if dbfs < iqLowPowerThresholdDbFS && now.Sub(d.pwLowLogAt) >= 5*time.Second {
 		d.log.Debug("ccdecoder: iq power very low — check antenna, gain, USB",
 			"system", d.activeAt, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
 		d.pwLowLogAt = now
+	} else if clipRatio > iqClipWarnRatio && now.Sub(d.pwClipLogAt) >= 30*time.Second {
+		// Front end is pinning the ADC rail — overload/clipping. This
+		// shreds the C4FM eye and fails TSBK CRC continuously even while
+		// the channel stays locked (issue #402). The fix is less RF, not
+		// more: reduce gain or add attenuation/filtering. Warned (not
+		// debug) because it silently defeats decode and the startup
+		// low-gain hint points the wrong way for an overloaded front end.
+		d.log.Warn("ccdecoder: iq clipping — front end overloaded; reduce gain or add attenuation (do NOT raise gain). issue #402",
+			"system", d.activeAt, "clip_ratio", clipRatio, "dbfs", dbfs)
+		d.pwClipLogAt = now
 	} else if ratioDb > iqDCRatioWarnDb && now.Sub(d.pwDCLogAt) >= 30*time.Second {
 		// DC bin within iqDCRatioWarnDb of total — the channel of
 		// interest sits on top of the tuner zero. Logged at debug so
@@ -513,6 +562,7 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 	d.pwSumSq = 0
 	d.pwSumI = 0
 	d.pwSumQ = 0
+	d.pwClipped = 0
 	d.pwSamples = 0
 	d.pwWindowAt = now
 }
