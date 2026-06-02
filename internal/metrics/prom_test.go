@@ -92,7 +92,19 @@ func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 	if got := testutil.ToFloat64(active); got != 1 {
 		t.Errorf("active after end = %v, want 1", got)
 	}
-	if got := testutil.ToFloat64(m.callsTotal.WithLabelValues("Alpha", "unknown", "false", "normal")); got != 1 {
+	// callsTotal is incremented on the same CallEnd event that decrements
+	// active, but as a separate operation — so reaching active==1 above does
+	// not guarantee callsTotal has been bumped yet. Poll it the same way
+	// rather than reading once, which raced under the full -race suite.
+	callsTotal := m.callsTotal.WithLabelValues("Alpha", "unknown", "false", "normal")
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(callsTotal) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(callsTotal); got != 1 {
 		t.Errorf("calls_total{Alpha,unknown,false,normal} = %v, want 1", got)
 	}
 }
