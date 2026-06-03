@@ -119,7 +119,19 @@ func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 func (c *ConventionalChannel) maybeLock(s LockState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.locked && c.last == s {
+	// The lock is to the repeater *frequency*; the color code is metadata
+	// read from the slot-type field. A single Golay(20,8)-miscorrected
+	// burst can flip the decoded color code (e.g. CC 0x7 → 0x5) on
+	// otherwise-identical traffic, so deduping on the full {freq, CC}
+	// LockState let an occasional slot-type FEC miss republish cc.locked
+	// on every flip — churning the event bus and the
+	// control_channel_transitions metric, and making the Tier II
+	// integration test flaky on slow runners (the /metrics scrape lands
+	// after several spurious re-locks). Dedup on frequency so a transient
+	// color-code flicker leaves the established lock — and the color code
+	// it first reported — untouched. A genuine retune to a different
+	// frequency still (re)locks.
+	if c.locked && c.last.FrequencyHz == s.FrequencyHz {
 		return
 	}
 	c.locked = true
