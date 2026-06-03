@@ -13,6 +13,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -41,6 +42,7 @@ type Metrics struct {
 	callsTotal     *prometheus.CounterVec // by system,protocol,encrypted,reason
 	callsStarted   *prometheus.CounterVec // by system,protocol,encrypted
 	activeCalls    *prometheus.GaugeVec   // by system,protocol
+	dmrSlotCalls   *prometheus.CounterVec // DMR voice calls by system,timeslot (ts1/ts2)
 	ccLockedGauge  *prometheus.GaugeVec   // by system (1 when CC locked)
 	ccFrequencyHz  *prometheus.GaugeVec   // by system; deleted on CC loss
 	ccTransitions  *prometheus.CounterVec // by system,event (locked|lost)
@@ -96,6 +98,18 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Name:      "calls_active",
 		Help:      "Active calls currently being followed, by system and protocol. Use sum() for the daemon-wide total.",
 	}, []string{"system", "protocol"})
+
+	// DMR carriers are 2-slot TDMA, so a single repeater runs two
+	// independent calls (TS1 + TS2). This counter splits DMR voice
+	// calls by timeslot so an operator can see the per-slot load and
+	// spot a slot that never produces traffic (a routing/decode gap).
+	// Only emitted for grants that carry a timeslot (DMR); the label is
+	// "ts1" / "ts2".
+	m.dmrSlotCalls = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "dmr_voice_calls_total",
+		Help:      "DMR voice calls started, split by TDMA timeslot (ts1/ts2), by system.",
+	}, []string{"system", "timeslot"})
 
 	m.ccLockedGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -214,6 +228,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.callsTotal,
 		m.callsStarted,
 		m.activeCalls,
+		m.dmrSlotCalls,
 		m.ccLockedGauge,
 		m.ccFrequencyHz,
 		m.ccTransitions,
@@ -300,6 +315,9 @@ func (m *Metrics) observeEvent(ev events.Event) {
 			sys, proto, enc := callLabels(cs.Grant)
 			m.activeCalls.WithLabelValues(sys, proto).Inc()
 			m.callsStarted.WithLabelValues(sys, proto, enc).Inc()
+			if cs.Grant.Timeslot != 0 {
+				m.dmrSlotCalls.WithLabelValues(sys, fmt.Sprintf("ts%d", cs.Grant.Timeslot)).Inc()
+			}
 		}
 	case events.KindCallEnd:
 		if ce, ok := ev.Payload.(trunking.CallEnd); ok {

@@ -75,6 +75,7 @@ type GrantDTO struct {
 	FrequencyHz   uint32 `json:"frequency_hz"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	Timeslot      uint8  `json:"timeslot,omitempty"`
 	Encrypted     bool   `json:"encrypted,omitempty"`
 	Emergency     bool   `json:"emergency,omitempty"`
 	DataCall      bool   `json:"data_call,omitempty"`

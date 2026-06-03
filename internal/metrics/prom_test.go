@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -106,6 +107,49 @@ func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(callsTotal); got != 1 {
 		t.Errorf("calls_total{Alpha,unknown,false,normal} = %v, want 1", got)
+	}
+}
+
+func TestDMRSlotCallsCounter(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	m, _ := New(bus, nil, "test")
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	// One TS1 call and two TS2 calls on a DMR system; plus a non-slotted
+	// (P25) call that must not touch the DMR slot counter.
+	starts := []trunking.Grant{
+		{System: "DMR3", Protocol: "dmr-tier3", GroupID: 1, FrequencyHz: 1, Timeslot: 1},
+		{System: "DMR3", Protocol: "dmr-tier3", GroupID: 2, FrequencyHz: 1, Timeslot: 2},
+		{System: "DMR3", Protocol: "dmr-tier3", GroupID: 3, FrequencyHz: 1, Timeslot: 2},
+		{System: "P25Sys", Protocol: "p25", GroupID: 4, FrequencyHz: 2}, // Timeslot 0
+	}
+	for i, g := range starts {
+		bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+			Grant: g, DeviceSerial: fmt.Sprintf("D%d", i), StartedAt: time.Now(),
+		}})
+	}
+
+	ts2 := m.dmrSlotCalls.WithLabelValues("DMR3", "ts2")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if testutil.ToFloat64(ts2) == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(m.dmrSlotCalls.WithLabelValues("DMR3", "ts1")); got != 1 {
+		t.Errorf("dmr_voice_calls_total{DMR3,ts1} = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(ts2); got != 2 {
+		t.Errorf("dmr_voice_calls_total{DMR3,ts2} = %v, want 2", got)
+	}
+	// The non-slotted P25 call must not have created any DMR-slot series.
+	if got := testutil.CollectAndCount(m.dmrSlotCalls); got != 2 {
+		t.Errorf("dmr_voice_calls_total series count = %d, want 2 (ts1+ts2 only)", got)
 	}
 }
 

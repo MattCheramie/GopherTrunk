@@ -50,7 +50,7 @@ gophertrunk tui -server https://radio.example.com -insecure
 | 1 | Dashboard | At-a-glance health, active call count, recent events, recent tone alerts. Default landing panel. |
 | 2 | Systems | Configured trunking systems: name, protocol, control channels, IDs (WACN / SystemID / RFSS-Site). |
 | 3 | Talkgroups | Full talkgroup table from the daemon. Substring filter (`/`) and a sort cycle (`s`: ID → Alpha → Priority). |
-| 4 | Active calls | Calls currently being followed. Driven by a 1 s poll plus live `call.start` / `call.end` events for instant updates. |
+| 4 | Active calls | Calls currently being followed. Driven by a 1 s poll plus live `call.start` / `call.end` events for instant updates. The Flags column shows encryption (`E`), emergency (`!`), and — for DMR — the TDMA timeslot (`TS1` / `TS2`), so a carrier's two concurrent calls are distinguishable. |
 | 5 | Call history | Ended calls from `/api/v1/calls/history`. On-demand reload (`r`); the panel does not poll continuously. Row formatting runs off the Update goroutine so the reducer never blocks on history rebuilds. |
 | 6 | Events | The full SSE feed in chronological order. Substring filter (`/`), pause auto-scroll (`p`), clear filter (`c`). 500-entry ring buffer. |
 | 7 | Tone alerts | Just `tone.alert` events with profile / device / matched frequencies. 100-entry ring buffer. |

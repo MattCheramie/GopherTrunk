@@ -9,6 +9,15 @@ for tagged releases.
 
 ### Added
 
+- **Per-timeslot observability for DMR calls.** A DMR carrier's two
+  concurrent calls are now distinguishable in the live views and
+  metrics: the TUI active-call Flags column shows `TS1` / `TS2`
+  (alongside `E` / `!`), the web active-call detail surfaces a
+  Timeslot field, and a new
+  `gophertrunk_dmr_voice_calls_total{system,timeslot}` Prometheus
+  counter splits DMR voice starts by slot so an operator can spot a
+  slot that never carries traffic (a routing/decode gap). Non-slotted
+  protocols are unaffected (no slot shown, counter not touched).
 - **DMR 2-slot interleaved voice wired into the composer (opt-in).** The
   interleaved decoder + embedded-LC labelling from the previous changes
   are now reachable end-to-end on the production voice path behind a new

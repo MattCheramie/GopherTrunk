@@ -182,6 +182,13 @@ export function Active() {
               mono
               value={formatHz(selected.grant.frequency_hz)}
             />
+            {selected.grant.timeslot ? (
+              <DetailField
+                label="Timeslot"
+                mono
+                value={`TS${selected.grant.timeslot}`}
+              />
+            ) : null}
             <DetailField
               label="Channel"
               mono
