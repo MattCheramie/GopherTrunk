@@ -49,6 +49,7 @@ import (
 	"log/slog"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -219,7 +220,12 @@ type Decoder struct {
 
 	mu       sync.Mutex
 	active   ProtocolPipeline
-	activeAt string // system name the active pipeline is bound to
+	activeAt string // system name the active pipeline is bound to (guarded by mu)
+	// activeSystem mirrors activeAt as the gauge label the forwarder
+	// goroutine uses, so observeIQPower can label its metrics without taking
+	// mu (issue #402). Written under mu wherever activeAt is; read lock-free
+	// by the forwarder. Never nil after New.
+	activeSystem atomic.Pointer[string]
 	// activeFreqHz is the frequency the active pipeline is tuned to. A
 	// HuntProgress that repeats the same (system, frequency) — e.g. the
 	// supervisor re-hunting a single-candidate system every dwell —
@@ -234,9 +240,11 @@ type Decoder struct {
 	// stream doesn't allocate per call.
 	ddcOut []complex64
 
-	// IQ-power tracking — see observeIQPowerLocked for the math. Owned by
-	// the decode goroutine via pump; not protected by mu beyond pump's own
-	// lock because no other goroutine reads it.
+	// IQ-power tracking — see observeIQPower for the math. Owned solely by
+	// the forwarder goroutine, which observes every delivered chunk before
+	// queueing it for decode (issue #402), so these need no lock. The
+	// cross-goroutine IQHealth snapshot it derives is the separate,
+	// healthMu-guarded block below.
 	metrics      IQPowerObserver
 	pwSumSq      float64
 	pwSumI       float64 // running sum of I samples → DC-bin mean (issue #402)
@@ -248,6 +256,14 @@ type Decoder struct {
 	pwDCLogAt    time.Time // throttle for the "DC bin dominant" debug line (issue #402)
 	pwClipLogAt  time.Time // throttle for the "front-end clipping" warn line (issue #402)
 	pwLastSystem string
+
+	// iqPool recycles the decode-queue buffers (issue #402). The forwarder
+	// copies each raw driver chunk into a pooled buffer before queueing it,
+	// so a buffer sitting in the deep decode queue is owned by the decoder,
+	// never the SDR driver's small reuse ring — without the copy a backlog
+	// longer than that ring (issue #489) would let the driver overwrite a
+	// chunk still awaiting decode. pump returns the buffer here when done.
+	iqPool sync.Pool
 
 	// iqCorrector, when non-nil (Options.IQCorrect), blindly removes the
 	// front-end I/Q imbalance from the raw IQ in pump before decimation
@@ -261,14 +277,33 @@ type Decoder struct {
 	// so a field report explains itself. lastHealthSystem labels which
 	// system the snapshot belongs to; totalSamples is cumulative since
 	// that system became the active pipeline (reset on system change /
-	// clearActive). Guarded by mu (read/written under pump's lock and by
-	// IQHealth).
+	// clearActive). Guarded by healthMu: written by the forwarder's
+	// observeIQPower, read by IQHealth from the cchunt supervisor's
+	// goroutine, reset by clearActive on the decode goroutine.
+	healthMu         sync.Mutex
 	lastHealthSystem string
 	lastHealthAt     time.Time
 	lastDbfs         float64
 	lastClipRatio    float64
 	lastDCRatioDb    float64
 	totalSamples     int64
+}
+
+// getIQBuf returns a recycled []complex64 of length n for the decode
+// queue, or allocates one when the pool is empty or holds a too-small
+// buffer. putIQBuf returns it after pump is done. See the iqPool field.
+func (d *Decoder) getIQBuf(n int) []complex64 {
+	if v := d.iqPool.Get(); v != nil {
+		s := v.(*[]complex64)
+		if cap(*s) >= n {
+			return (*s)[:n]
+		}
+	}
+	return make([]complex64, n)
+}
+
+func (d *Decoder) putIQBuf(buf []complex64) {
+	d.iqPool.Put(&buf)
 }
 
 // New constructs a Decoder. Returns an error when required Options
@@ -296,6 +331,8 @@ func New(opts Options) (*Decoder, error) {
 		sub:          opts.Bus.Subscribe(),
 		metrics:      opts.Metrics,
 	}
+	empty := ""
+	d.activeSystem.Store(&empty)
 	if opts.IQCorrect {
 		d.iqCorrector = rtlsdr.NewIQImbalanceCorrector()
 	}
@@ -371,14 +408,24 @@ func (d *Decoder) Run(ctx context.Context) error {
 				return ErrIQStreamClosed
 			}
 			d.pump(iq)
+			d.putIQBuf(iq) // decode done — recycle the queue buffer
 		}
 	}
 }
 
 // forwardIQ drains the SDR delivery channel into the decode queue (issue
-// #402). Kept deliberately cheap — just a non-blocking enqueue — so it
-// always out-drains the driver's small channel; the larger decodeCh then
-// absorbs transient decode stalls. Under *sustained* overload the queue
+// #402). For each delivered chunk it (1) folds the raw IQ into the
+// power/clip/health window via observeIQPower, so the gauges reflect every
+// chunk the SDR delivered even when decode is dropping, and (2) copies the
+// chunk into a pooled, decoder-owned buffer before the non-blocking
+// enqueue. The copy is essential: the SDR driver hands out slices from a
+// small fixed reuse ring (issue #489) sized for its own delivery channel,
+// so a chunk left sitting in the deep decodeCh would be overwritten by a
+// later delivery once the ring wrapped — corrupting IQ still awaiting
+// decode under exactly the backlog this queue exists to absorb. Copying
+// hands the driver's ring slot straight back; only the pooled copy lives
+// in the queue. Kept cheap (an O(n) observe + memcpy) so it always
+// out-drains the driver channel. Under *sustained* overload the queue
 // fills and chunks are dropped here, attributably (RecordDecodeOverrun +
 // a throttled WARN), rather than silently in the driver. Closing out on
 // return propagates stream EOF / ctx cancellation to Run.
@@ -396,14 +443,18 @@ func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan
 			if !ok {
 				return
 			}
+			d.observeIQPower(iq) // measures the raw driver chunk (every delivery)
+			buf := d.getIQBuf(len(iq))
+			copy(buf, iq) // decouple from the driver's reuse ring before queueing
 			select {
-			case out <- iq:
+			case out <- buf:
 			default:
 				// Decode is sustainedly behind real time: the queue is full.
-				// Drop the freshly-arrived chunk (caps latency at the queue
-				// depth) and surface it as a decode overrun, distinct from the
-				// driver's iq_underruns_total, so "CPU can't keep up" is
-				// attributable rather than looking like an RF fault.
+				// Return the copy to the pool and drop the chunk (caps latency
+				// at the queue depth). Surface it as a decode overrun, distinct
+				// from the driver's iq_underruns_total, so "CPU can't keep up"
+				// is attributable rather than looking like an RF fault.
+				d.putIQBuf(buf)
 				dropped++
 				if d.metrics != nil {
 					d.metrics.RecordDecodeOverrun()
@@ -479,6 +530,8 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	d.mu.Lock()
 	d.active = p2
 	d.activeAt = sys.Name
+	name := sys.Name
+	d.activeSystem.Store(&name) // gauge label for the forwarder goroutine
 	d.activeFreqHz = p.AttemptedFreqHz
 	// Flush the down-converter so decimation-filter state from the
 	// previous channel doesn't bleed into the freshly-tuned one.
@@ -506,18 +559,20 @@ func (d *Decoder) clearActiveLocked() {
 		d.metrics.ClearIQClipRatio(d.activeAt)
 	}
 	d.activeAt = ""
+	empty := ""
+	d.activeSystem.Store(&empty)
 	d.activeFreqHz = 0
-	d.pwSumSq = 0
-	d.pwSumI = 0
-	d.pwSumQ = 0
-	d.pwClipped = 0
-	d.pwSamples = 0
-	d.pwLastSystem = ""
-	// Drop the persisted health snapshot so a torn-down system's IQ
-	// health can't answer a later IQHealth query for a different one.
+	// The pw* window accumulators are owned by the forwarder's
+	// observeIQPower, which re-zeros them when it next sees the system
+	// label change — touching them here would race that goroutine.
+	// Drop the persisted health snapshot (under healthMu, since the
+	// forwarder writes it) so a torn-down system's IQ health can't answer
+	// a later IQHealth query for a different one.
+	d.healthMu.Lock()
 	d.lastHealthSystem = ""
 	d.lastHealthAt = time.Time{}
 	d.totalSamples = 0
+	d.healthMu.Unlock()
 }
 
 // ensureDownconverterLocked (re)builds the down-converter when the
@@ -544,16 +599,13 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 // against handleProgress's pipeline swap so we never call Process on
 // a half-constructed pipeline.
 //
-// While we have the lock, also fold the chunk into the IQ-power window
-// (observeIQPowerLocked). Observation runs here, on the decode goroutine,
-// rather than on the lightweight IQ forwarder so it stays serialised with
-// IQHealth's reads under d.mu (issue #489). The forwarder (issue #402)
-// only decouples ingestion from this decode path; chunks dropped at the
-// decode queue under sustained overload are simply not observed.
+// IQ-power observation is NOT done here: the forwarder folds every
+// delivered chunk into the window via observeIQPower before queueing it,
+// so the gauges stay accurate even for chunks this decode path never sees
+// because the queue was full (issue #402).
 func (d *Decoder) pump(iq []complex64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.observeIQPowerLocked(iq) // measures the raw IQ (before correction)
 	if d.iqCorrector != nil {
 		d.iqCorrector.Process(iq) // blind I/Q-imbalance correction, in place (issue #402)
 	}
@@ -564,26 +616,38 @@ func (d *Decoder) pump(iq []complex64) {
 	d.active.Process(d.ddcOut)
 }
 
-func (d *Decoder) observeIQPowerLocked(iq []complex64) {
+// observeIQPower folds one raw IQ chunk into the per-second power / DC /
+// clip window and, once a window elapses, publishes the gauges and the
+// IQHealth snapshot and fires the throttled diagnostic logs. Runs only on
+// the forwarder goroutine, so the pw* accumulators need no lock; the
+// cross-goroutine IQHealth snapshot it derives (lastHealth*, totalSamples)
+// is written under healthMu. The gauge label comes from activeSystem (an
+// atomic) so this never takes d.mu.
+func (d *Decoder) observeIQPower(iq []complex64) {
 	if len(iq) == 0 || d.sampleRateHz <= 0 {
 		return
 	}
+	system := *d.activeSystem.Load()
 	// Reset window state if the system the gauge is labelled with
 	// just changed — different system means different gauge label;
 	// don't fold old samples into the new one's average.
-	if d.activeAt != d.pwLastSystem {
+	if system != d.pwLastSystem {
 		d.pwSumSq = 0
 		d.pwSumI = 0
 		d.pwSumQ = 0
 		d.pwClipped = 0
 		d.pwSamples = 0
-		d.pwLastSystem = d.activeAt
+		d.pwLastSystem = system
+		d.healthMu.Lock()
 		d.totalSamples = 0
+		d.healthMu.Unlock()
 	}
 	// Cumulative sample count for the active system (reset above on a
 	// system change). Distinguishes "SDR delivered nothing" from "IQ
 	// flowed but never locked" in the cchunt.failed diagnosis.
+	d.healthMu.Lock()
 	d.totalSamples += int64(len(iq))
+	d.healthMu.Unlock()
 	for _, c := range iq {
 		r := float64(real(c))
 		i := float64(imag(c))
@@ -636,21 +700,24 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 	// clips on peaks; this is the signal that distinguishes the two and
 	// the smoking gun for the issue #402 overload failure mode.
 	clipRatio := float64(d.pwClipped) / n
-	// Persist this window so IQHealth can report it at hunt-failure
-	// time (the pw* accumulators reset below every window).
-	d.lastHealthSystem = d.activeAt
+	// Persist this window under healthMu so IQHealth (cchunt supervisor
+	// goroutine) can report it at hunt-failure time; the pw* accumulators
+	// reset below every window.
+	d.healthMu.Lock()
+	d.lastHealthSystem = system
 	d.lastHealthAt = now
 	d.lastDbfs = dbfs
 	d.lastClipRatio = clipRatio
 	d.lastDCRatioDb = ratioDb
-	if d.activeAt != "" && d.metrics != nil {
-		d.metrics.RecordIQPowerDbFS(d.activeAt, dbfs)
-		d.metrics.RecordIQDCRatioDb(d.activeAt, ratioDb)
-		d.metrics.RecordIQClipRatio(d.activeAt, clipRatio)
+	d.healthMu.Unlock()
+	if system != "" && d.metrics != nil {
+		d.metrics.RecordIQPowerDbFS(system, dbfs)
+		d.metrics.RecordIQDCRatioDb(system, ratioDb)
+		d.metrics.RecordIQClipRatio(system, clipRatio)
 	}
 	if dbfs < iqLowPowerThresholdDbFS && now.Sub(d.pwLowLogAt) >= 5*time.Second {
 		d.log.Debug("ccdecoder: iq power very low — check antenna, gain, USB",
-			"system", d.activeAt, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
+			"system", system, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
 		d.pwLowLogAt = now
 	} else if clipRatio > iqClipWarnRatio && now.Sub(d.pwClipLogAt) >= 30*time.Second {
 		// Front end is pinning the ADC rail — overload/clipping. This
@@ -660,7 +727,7 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 		// debug) because it silently defeats decode and the startup
 		// low-gain hint points the wrong way for an overloaded front end.
 		d.log.Warn("ccdecoder: iq clipping — front end overloaded; reduce gain or add attenuation (do NOT raise gain). issue #402",
-			"system", d.activeAt, "clip_ratio", clipRatio, "dbfs", dbfs)
+			"system", system, "clip_ratio", clipRatio, "dbfs", dbfs)
 		d.pwClipLogAt = now
 	} else if ratioDb > iqDCRatioWarnDb && now.Sub(d.pwDCLogAt) >= 30*time.Second {
 		// DC bin within iqDCRatioWarnDb of total — the channel of
@@ -669,7 +736,7 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 		// operators without Prometheus a hint of the failure mode (issue
 		// #402).
 		d.log.Debug("ccdecoder: iq DC bin dominant — RTL-SDR DC spike on channel? see issue #402",
-			"system", d.activeAt, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
+			"system", system, "dbfs", dbfs, "dc_dbfs", dcDbfs, "dc_ratio_db", ratioDb)
 		d.pwDCLogAt = now
 	}
 	d.pwSumSq = 0
@@ -691,23 +758,34 @@ func (d *Decoder) observeIQPowerLocked(iq []complex64) {
 // supervisor decouples via that interface so it doesn't import this
 // package).
 func (d *Decoder) IQHealth(system string) (trunking.HuntDiagnostics, bool) {
+	// Pipeline state is guarded by mu (decode goroutine); the IQ-health
+	// snapshot is guarded by healthMu (forwarder goroutine). Take mu then
+	// healthMu — the same order clearActiveLocked uses — so the two never
+	// deadlock. The forwarder only ever takes healthMu, never mu.
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	pipelineActive := d.active != nil && d.activeAt == system
+	activeMatches := d.activeAt == system
+	d.mu.Unlock()
+
+	d.healthMu.Lock()
 	haveWindow := d.lastHealthSystem == system && !d.lastHealthAt.IsZero()
-	haveSamples := d.activeAt == system && d.totalSamples > 0
+	samples := d.totalSamples
+	dbfs, clip, dc := d.lastDbfs, d.lastClipRatio, d.lastDCRatioDb
+	d.healthMu.Unlock()
+
+	haveSamples := activeMatches && samples > 0
 	if !haveWindow && !haveSamples {
 		return trunking.HuntDiagnostics{}, false
 	}
 	diag := trunking.HuntDiagnostics{
 		IQObserved:     true,
-		IQSamples:      d.totalSamples,
+		IQSamples:      samples,
 		PipelineActive: pipelineActive,
 	}
 	if haveWindow {
-		diag.IQPowerDbFS = d.lastDbfs
-		diag.IQClipRatio = d.lastClipRatio
-		diag.IQDCRatioDb = d.lastDCRatioDb
+		diag.IQPowerDbFS = dbfs
+		diag.IQClipRatio = clip
+		diag.IQDCRatioDb = dc
 	}
 	diag.Diagnosis = diagnoseIQ(diag, haveWindow)
 	return diag, true
