@@ -826,3 +826,30 @@ func TestOpenDevice_NoDiagnosticsWhenTransportSilent(t *testing.T) {
 		t.Errorf("err = %v, must NOT contain the diagnostics header when the transport is silent", err)
 	}
 }
+
+// TestBlogV4Variant covers V4 detection from the USB descriptor strings
+// (issue #264): "RTLSDRBlog"/"Blog V4" is the three-band V4, "Blog V4L"
+// is the two-band Lite, and everything else (incl. generic R828D and
+// R820T2 dongles) is neither. Matching is case-insensitive and
+// whitespace-trimmed; "Blog V4L" must win over the "Blog V4" prefix.
+func TestBlogV4Variant(t *testing.T) {
+	cases := []struct {
+		manufacturer, product string
+		wantLite, wantV4      bool
+	}{
+		{"RTLSDRBlog", "Blog V4", false, true},
+		{"RTLSDRBlog", "Blog V4L", true, true},
+		{"  rtlsdrblog ", "  Blog V4 ", false, true}, // trimmed + case-insensitive
+		{"RTLSDRBlog", "Blog V3", false, false},
+		{"Realtek", "RTL2838UHIDIR", false, false},  // generic dongle
+		{"NooElec", "NESDR SMArt v5", false, false}, // R820T2
+		{"", "", false, false},
+	}
+	for _, c := range cases {
+		lite, v4 := blogV4Variant(c.manufacturer, c.product)
+		if v4 != c.wantV4 || lite != c.wantLite {
+			t.Errorf("blogV4Variant(%q,%q) = (lite=%v,v4=%v), want (lite=%v,v4=%v)",
+				c.manufacturer, c.product, lite, v4, c.wantLite, c.wantV4)
+		}
+	}
+}

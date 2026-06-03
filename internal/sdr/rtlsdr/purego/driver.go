@@ -3,6 +3,7 @@ package purego
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -222,6 +223,17 @@ func openDevice(transport usb.Transport, desc usb.Descriptor, idx int) (*Device,
 		}
 	}
 
+	// RTL-SDR Blog V4: the R828D needs its 28.8 MHz crystal and per-band
+	// input switching (issue #264). Detect it from the USB descriptor
+	// strings (the V4 sources these from EEPROM) and arm the V4 path on
+	// the tuner before any tune. Gated entirely on this match, so
+	// non-V4 R828D / R820T2 dongles are untouched.
+	if r82, ok := tuner.(*tuners.R82xx); ok {
+		if lite, isV4 := blogV4Variant(desc.Manufacturer, desc.Product); isV4 {
+			r82.SetBlogV4(lite)
+		}
+	}
+
 	kd := lookupKnown(desc.VID, desc.PID)
 	product := desc.Product
 	biasTeeGPIO := defaultBiasTeeGPIO
@@ -276,6 +288,28 @@ const defaultOpenSampleRateHz uint32 = 2_048_000
 // It's a var rather than a const so tests can override it; production
 // callers must treat it as read-only.
 var warmupSettleDuration = 10 * time.Millisecond
+
+// blogV4Variant reports whether the USB iManufacturer/iProduct strings
+// identify an RTL-SDR Blog V4 and, if so, whether it's the two-band
+// "Lite" variant. Mirrors the rtlsdr-blog fork's
+// rtlsdr_check_dongle_model("RTLSDRBlog", "Blog V4"); the V4 carries
+// these strings in its EEPROM, which the OS surfaces as the USB
+// descriptor strings. "Blog V4L" must be tested before "Blog V4"
+// because it shares the prefix.
+func blogV4Variant(manufacturer, product string) (lite, isV4 bool) {
+	if !strings.EqualFold(strings.TrimSpace(manufacturer), "RTLSDRBlog") {
+		return false, false
+	}
+	p := strings.TrimSpace(product)
+	switch {
+	case strings.HasPrefix(p, "Blog V4L"):
+		return true, true
+	case strings.HasPrefix(p, "Blog V4"):
+		return false, true
+	default:
+		return false, false
+	}
+}
 
 // runBringup executes the librtlsdr-parity init sequence on a fresh
 // Demod: USB-sysctl warmup probe → warmupSettleDuration sleep →
