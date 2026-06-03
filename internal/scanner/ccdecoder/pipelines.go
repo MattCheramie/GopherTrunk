@@ -2,6 +2,7 @@ package ccdecoder
 
 import (
 	"log/slog"
+	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -63,6 +64,34 @@ type PipelineOptions struct {
 	FrequencyHz  uint32
 	SampleRateHz float64
 	System       trunking.System
+
+	// SymbolTap, when non-nil, is invoked with every chunk of recovered
+	// symbols a pipeline's receiver emits, just before they enter the
+	// control-channel state machine. symbols holds dibits (values 0..3,
+	// isBits=false) for the 4-level protocols and bits (values 0..1,
+	// isBits=true) for the 2-level protocols; baseIdx is the absolute
+	// symbol index the chunk starts at. It is a pure observation hook —
+	// production never sets it. The offline siglab toolkit uses it to
+	// count symbols and feed its protocol-agnostic signal-quality
+	// analyzer for *every* protocol, without re-duplicating receiver
+	// construction outside this factory. nil ⇒ zero overhead.
+	SymbolTap func(symbols []uint8, isBits bool, baseIdx int)
+}
+
+// tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when
+// one is wired, normalising the dibit ([]uint8) and bit ([]byte) sink
+// shapes onto the single SymbolTap signature. byte and uint8 are the same
+// underlying type, so the bit slice passes through without a copy.
+func (o PipelineOptions) tapDibits(dibits []uint8, baseIdx int) {
+	if o.SymbolTap != nil {
+		o.SymbolTap(dibits, false, baseIdx)
+	}
+}
+
+func (o PipelineOptions) tapBits(bits []byte, baseIdx int) {
+	if o.SymbolTap != nil {
+		o.SymbolTap(bits, true, baseIdx)
+	}
 }
 
 // PipelineFactory constructs a fresh ProtocolPipeline for one tuned
@@ -112,6 +141,43 @@ func SetTestFactory(protocol trunking.Protocol, f PipelineFactory) (restore func
 			delete(factories, protocol)
 		}
 	}
+}
+
+// NewPipeline constructs the registered pipeline for protocol p with the
+// given options. ok is false (and the pipeline nil) when no factory is
+// registered for p — callers should treat that as "this protocol cannot
+// be driven offline yet" rather than an error. err propagates a factory's
+// own construction failure (e.g. incomplete per-system wiring).
+//
+// This is the out-of-package entry point the offline siglab toolkit uses
+// to drive any protocol through the same production pipelines the daemon
+// runs; the daemon itself keeps using the internal factory map directly.
+func NewPipeline(p trunking.Protocol, opts PipelineOptions) (pipe ProtocolPipeline, ok bool, err error) {
+	f, ok := factories[p]
+	if !ok {
+		return nil, false, nil
+	}
+	pipe, err = f(opts)
+	return pipe, true, err
+}
+
+// HasFactory reports whether a pipeline factory is registered for p.
+func HasFactory(p trunking.Protocol) bool {
+	_, ok := factories[p]
+	return ok
+}
+
+// RegisteredProtocols returns the protocols with a registered pipeline
+// factory, in a stable (ascending Protocol-value) order so callers — the
+// siglab TUI's protocol picker, a gen→test sweep — render a deterministic
+// list.
+func RegisteredProtocols() []trunking.Protocol {
+	out := make([]trunking.Protocol, 0, len(factories))
+	for p := range factories {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 var factories = map[trunking.Protocol]PipelineFactory{
@@ -241,6 +307,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// it and was a net regression on the issue #402 capture; keep
 		// it off here until the eye-skew root cause is pinned.
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -362,6 +429,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			for _, sf := range sfDec.Process(dibits, baseIdx) {
 				cc.IngestSuperframe(sf)
 			}
@@ -446,6 +514,7 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 		ClockMode: tetraClockMode,
@@ -489,6 +558,7 @@ func newYSFPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// captures slice correctly out of the box.
 		DeviationHz: 1800.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -525,6 +595,7 @@ func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// level so live captures slice correctly.
 		DeviationHz: 900.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -574,6 +645,7 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// live captures.
 		ClockGain: 0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -632,6 +704,7 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// margin per the MM stability bound.
 		ClockGain: 0.015,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -677,6 +750,7 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  deviationHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -716,6 +790,7 @@ func newEDACSPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := edacsrx.New(edacsrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -760,6 +835,7 @@ func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := motorolarx.New(motorolarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -814,6 +890,7 @@ func newLTRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := ltrrx.New(ltrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -860,6 +937,7 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -907,6 +985,7 @@ func newDStarPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := dstarrx.New(dstarrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})

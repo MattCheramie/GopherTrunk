@@ -152,6 +152,59 @@ output is fine for "does the decoder not crash" smoke tests but
 isn't enough to **validate** correctness — the schema each subfolder
 documents is what unblocks the corresponding follow-up.
 
+## Signal Lab: replay / analyze / gen / test
+
+The `gophertrunk` binary ships an offline signal toolkit (the `internal/siglab`
+engine) that drives **any** protocol GopherTrunk decodes through the same
+production pipelines the daemon runs, with clean structured output:
+
+```
+gophertrunk replay  -in cap.cfile -format f32 -sample-rate 2400000 -protocol tetra -auto-tune
+gophertrunk analyze -in cap.cfile -format f32 -sample-rate 2400000 -protocol p25p1 -out-format json -out cap.json
+gophertrunk gen     -protocol dmr  -out dmr.cfile -snr 20 -freq-offset 300
+gophertrunk test    -capture dmr.cfile          # grades against the sidecar metadata; exit 0/1
+gophertrunk siglab  -in cap.cfile -protocol p25p1 -format f32 -sample-rate 2400000   # standalone TUI
+```
+
+- **`analyze`** emits `text` / `json` / `jsonl` / `yaml` / `csv` / `csv-events`
+  over a protocol-agnostic result model (lock state, grants, per-event records,
+  symbol histogram, IQ imbalance, decode-error rate; plus a P25-Phase-1
+  FSW/NID deep dive).
+- **`gen`** synthesizes a known-good (optionally impaired) capture plus a
+  `*.metadata.json` sidecar, using the production modulators.
+- **`test`** decodes a capture (real-air or synthesized) and grades it against
+  the sidecar's acceptance criteria — a CI-ready regression gate.
+
+### Unified metadata schema
+
+A capture is graded via a sidecar (`<stem>.metadata.json` or `.yaml`,
+auto-discovered by `test`). Minimal example:
+
+```json
+{
+  "protocol": "dmr",
+  "source": "real-air, Site 4",
+  "sample_rate_hz": 2400000,
+  "center_freq_hz": 460000000,
+  "format": "f32",
+  "auto_tune": true,
+  "system": { "tetra_colour_code": "1", "tetra_channel": "bsch" },
+  "expected": {
+    "lock": true,
+    "lock_latency_max_sec": 5.0,
+    "lock_fields": { "color_code": 10, "system_id": "0x1234" },
+    "min_grants": 0,
+    "baud_tolerance_pct": 5,
+    "max_decode_error_rate": 50
+  }
+}
+```
+
+`lock_fields` values may be decimal or hex strings; matching is hex-tolerant.
+`system` keys are the YAML config-key names from `config.example.yaml`
+(`p25_phase1_demod_mode`, `tetra_colour_code`, `edacs_bch_mode`, …). This is
+the schema the per-protocol acceptance criteria above map onto.
+
 ## Wiring captures into tests
 
 Captures dropped here aren't auto-loaded. To exercise one through a
