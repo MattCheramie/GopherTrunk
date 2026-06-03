@@ -220,7 +220,11 @@ Silicon and Intel. Full per-OS recipes at
   already hosting the control channel — no separate `role: voice`
   dongle needed for grants inside the wideband window. Out-of-
   window grants spill over to a physical voice SDR when present.
-  See [docs/hardware.md](docs/hardware.md) and
+  DMR Tier III is **2-slot TDMA**, so a single carrier can run two
+  simultaneous calls — TS1 and TS2 are tracked, recorded (with a
+  `_ts1` / `_ts2` filename suffix), and logged as distinct calls,
+  each binding its own voice tap. See
+  [docs/hardware.md](docs/hardware.md) and
   [samples/dmr-tier2-multichannel/](samples/dmr-tier2-multichannel/).
 - **DSP** — Polyphase channelizer, Kaiser / RRC / Gaussian FIRs,
   FM / C4FM / GFSK / FFSK / DQPSK / π/4-DQPSK / π/8-H-DQPSK

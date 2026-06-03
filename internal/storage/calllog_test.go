@@ -107,6 +107,48 @@ func TestCallLogRecordsStartAndEnd(t *testing.T) {
 	}
 }
 
+// TestCallLogPersistsTimeslot verifies the DMR TDMA slot survives the
+// CallStart → call_log round-trip, so a carrier's two concurrent calls
+// (TS1 + TS2) are distinguishable in history.
+func TestCallLogPersistsTimeslot(t *testing.T) {
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cl.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cl.Run(ctx)
+
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "DMR3", Protocol: "dmr-tier3",
+			GroupID: 100, SourceID: 7, FrequencyHz: 460_000_000, Timeslot: 2,
+		},
+		DeviceSerial: "VOICE-2",
+		StartedAt:    time.Now().UTC(),
+	}})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+		if len(rows) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	rows, _ := db.History(context.Background(), HistoryFilter{Limit: 1})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].Timeslot != 2 {
+		t.Errorf("Timeslot = %d, want 2 (TS2)", rows[0].Timeslot)
+	}
+}
+
 func TestCallLogIdempotentStart(t *testing.T) {
 	db := openTestDB(t)
 	bus := events.NewBus(8)
@@ -307,6 +349,9 @@ CREATE TABLE call_log (
 	if rows[0].AlgorithmID != 0 || rows[0].KeyID != 0 {
 		t.Errorf("migrated row: algorithm_id=%d key_id=%d, want 0/0",
 			rows[0].AlgorithmID, rows[0].KeyID)
+	}
+	if rows[0].Timeslot != 0 {
+		t.Errorf("migrated row: timeslot=%d, want 0 (column added with default)", rows[0].Timeslot)
 	}
 
 	// Reopening must be idempotent — the columns now exist.

@@ -380,6 +380,8 @@ type CallRow struct {
 	Encrypted      bool      `json:"encrypted"`
 	Emergency      bool      `json:"emergency"`
 	DataCall       bool      `json:"data_call"`
+	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	Timeslot       uint8     `json:"timeslot,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at,omitempty"`

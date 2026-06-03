@@ -414,6 +414,19 @@ on one dongle" above): the voice composer can only follow a grant once
 the decoder has resolved its LCN to a frequency, so a T3 system without
 a band plan emits no voice grants for the taps to serve.
 
+**Timeslots count as separate calls.** A DMR carrier is 2-slot TDMA, so
+one 12.5 kHz repeater can run *two* independent voice calls at once —
+one on TS1, one on TS2. GopherTrunk treats `(frequency, timeslot)` as
+the call identity: each slot's grant binds its own voice tap (or
+`role: voice` SDR) and is tracked, recorded, and logged as a distinct
+call. To follow both slots of a carrier simultaneously you therefore
+need at least **two** voice taps/devices that cover the frequency; with
+only one, the engine serves whichever slot it bound first and the other
+slot waits for a free tap (or preempts by priority). Per-slot recordings
+are disambiguated by a `_ts1` / `_ts2` suffix on the WAV filename, and
+the slot is carried through the call log (`timeslot` column) and the
+REST/SSE/gRPC call APIs.
+
 How spillover works: when a grant's frequency lands *outside* the
 wideband IQ window (more common on geographically spread P25 systems
 than on a single-site DMR T3 cluster), the virtual tuner returns

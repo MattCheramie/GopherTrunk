@@ -446,7 +446,16 @@ func (r *Recorder) basenameFor(cs trunking.CallStart) string {
 		t = time.Now().UTC()
 	}
 	stamp := t.Format("20060102T150405Z")
-	return fmt.Sprintf("%s_src%d", stamp, cs.Grant.SourceID)
+	base := fmt.Sprintf("%s_src%d", stamp, cs.Grant.SourceID)
+	// A DMR Tier III carrier runs two concurrent calls (TS1 + TS2); when
+	// they share a talkgroup (same directory) and a start second, the
+	// stamp+src basename would collide. Tag the slot so each slot's WAV
+	// is distinct on disk and self-labelling. Omitted for non-slotted
+	// protocols (Timeslot 0).
+	if cs.Grant.Timeslot != 0 {
+		base = fmt.Sprintf("%s_ts%d", base, cs.Grant.Timeslot)
+	}
+	return base
 }
 
 // sanitize strips characters that are awkward in file paths across OSes.

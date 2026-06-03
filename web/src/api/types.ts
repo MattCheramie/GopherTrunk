@@ -172,6 +172,8 @@ export interface CallRow {
   key_id?: number;
   emergency?: boolean;
   data_call?: boolean;
+  // TDMA timeslot, 1-based (1 = TS1, 2 = TS2; absent for non-slotted).
+  timeslot?: number;
   device_serial?: string;
   started_at: string;
   ended_at?: string;

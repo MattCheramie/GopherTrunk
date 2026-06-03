@@ -589,6 +589,65 @@ func TestEngineHandleGrantDeduplicatesDuplicateGrant(t *testing.T) {
 	}
 }
 
+// TestEngineHandleGrantSeparatesTimeslots is the DMR Tier III guard:
+// two grants on the same carrier but different TDMA slots are two
+// independent calls and must each bind a device, while a repeat of a
+// slot's own grant still dedups to the existing call. Without the
+// timeslot dimension in the dedup the TS2 grant would be folded into
+// the active TS1 call and the second call would be silently dropped.
+func TestEngineHandleGrantSeparatesTimeslots(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, _ := mkPool(2)
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+		Now:         clock.Now,
+	})
+
+	const freq = 460_000_000
+	ts1 := Grant{System: "X", Protocol: "dmr-tier3", GroupID: 100, FrequencyHz: freq, Timeslot: 1}
+	ts2 := Grant{System: "X", Protocol: "dmr-tier3", GroupID: 100, FrequencyHz: freq, Timeslot: 2}
+
+	e.HandleGrant(ts1)
+	if got := len(e.ActiveCalls()); got != 1 {
+		t.Fatalf("after TS1 grant: active calls = %d, want 1", got)
+	}
+
+	// Same TG + frequency, other slot → a distinct call on a second
+	// device, NOT a dedup of the TS1 call.
+	e.HandleGrant(ts2)
+	if got := len(e.ActiveCalls()); got != 2 {
+		t.Fatalf("after TS2 grant: active calls = %d, want 2 (one per slot)", got)
+	}
+
+	// Confirm both slots are represented exactly once on distinct devices.
+	slots := map[uint8]string{}
+	for _, ac := range e.ActiveCalls() {
+		if prev, dup := slots[ac.Grant.Timeslot]; dup {
+			t.Fatalf("timeslot %d bound twice (devices %q, %q)", ac.Grant.Timeslot, prev, ac.Device.Serial)
+		}
+		slots[ac.Grant.Timeslot] = ac.Device.Serial
+	}
+	if slots[1] == "" || slots[2] == "" {
+		t.Fatalf("expected both TS1 and TS2 active, got slots=%v", slots)
+	}
+	if slots[1] == slots[2] {
+		t.Errorf("both slots bound to the same device %q", slots[1])
+	}
+
+	// A repeat of the TS1 grant must still dedup (refresh), not allocate
+	// a third call — proving the slot dimension didn't disable dedup.
+	clock.t = clock.t.Add(20 * time.Millisecond)
+	e.HandleGrant(ts1)
+	if got := len(e.ActiveCalls()); got != 2 {
+		t.Fatalf("after TS1 repeat: active calls = %d, want 2 (refresh, not a new call)", got)
+	}
+}
+
 // TestEngineHandleGrantAllowsDifferentFrequencyGrants is the
 // complement guard for the dedup: a same-TG grant on a different
 // frequency (rare but legitimate — e.g. site rebind on multi-site
