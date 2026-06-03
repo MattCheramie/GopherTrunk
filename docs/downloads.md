@@ -28,7 +28,7 @@ release state looks like:
 {%- elsif site.github.releases and site.github.releases[0] and site.github.releases[0].tag_name -%}
   {%- assign ver = site.github.releases[0].tag_name -%}
 {%- else -%}
-  {%- assign ver = "v0.2.9" -%}
+  {%- assign ver = "v0.3.1" -%}
 {%- endif -%}
 {%- assign rel_url = "https://github.com/MattCheramie/GopherTrunk/releases/download/" | append: ver -%}
 
@@ -184,7 +184,7 @@ make test                # unit tests
 make integration         # daemon end-to-end (no SDR required)
 ```
 
-Requires Go 1.25+ — the project's `go.mod` pins the toolchain to 1.25.10 (closes the 23 stdlib CVEs in the bare 1.25.0). See **[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)** for the full dev setup.
+Requires Go 1.25+ — the project's `go.mod` pins the toolchain to 1.25.11 (closes the stdlib CVEs in the bare 1.25.0). See **[`CONTRIBUTING.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/CONTRIBUTING.md)** for the full dev setup.
 
 ## Docker
 

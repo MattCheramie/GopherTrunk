@@ -7,37 +7,252 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Fixed
+## [v0.3.1] — 2026-06-03
 
-- **iqtap broker `send on closed channel` panic** (#402) — closing an IQ
-  subscriber (live spectrum, `--iq-capture`, diagnostics) concurrently
-  with an in-flight fan-out could crash the daemon: `fanout` checked the
-  closed flag and then sent after dropping `subsMu`, while `Subscriber.Close`
-  closed the channel under the lock, leaving a window where the send
-  raced the close. Per-subscriber send and close now share a `sendMu` so a
-  fan-out send can never land on a closed channel. Covered by a new
-  `-race` regression test in `internal/sdr/iqtap`.
+RTL-SDR Blog V4 reception finally works and the issue #402 live-decode
+push lands its structural fix. #506 cures V4 deafness (the V4 runs a
+28.8 MHz crystal and a switched HF/VHF/UHF input bank the stock driver
+never handled), #501 opens the WinUSB child interface of composite
+(usbccgp) dongles on Windows, and #499 decodes spectrum-inverted DMR
+bursts on the R828D. On the #402 front, #507 decouples live IQ ingest
+from decode (a forwarder goroutine + a deeper bounded decode queue) and
+#508 pools the queued buffers to fix the aliasing that introduced, while
+#496 surfaces ADC clipping and #505 stops the driver shedding live IQ.
+#497/#503 add CQPSK carrier recovery so a real tuner offset no longer
+kills control-channel lock, #498 corrects the P25 Phase 1 LDU
+voice-frame interleaving, and #502 adds a diagnostic banner plus verbose
+error reporting across every surface. #504 bumps the Go toolchain to
+1.25.11 to clear two stdlib advisories.
 
 ### Added
 
-- **Live IQ-drop telemetry** (#402) — IQ chunks dropped on overrun by an
-  SDR backend (the consumer falling behind) were silent, making live IQ
-  loss indistinguishable from RF problems. Drops now bump the existing
-  `iq_underruns_total` Prometheus counter (labelled by driver + serial)
-  and emit a warning throttled to one line per second per device, via a
-  process-wide `sdr.SetIQDropObserver` hook the daemon installs at
+- **Diagnostic banner + verbose error reporting across all surfaces**
+  (#502) — a new `internal/diag` package prepends a banner (build
+  version, OS / kernel, host specs, detected dongles) to every error
+  surface and offers a full verbose trace (unwrapped `%w` chain + a
+  goroutine stack dump). CLI / launcher error exits route through a
+  shared reporter (banner + concise error, then the trace on a verbose
+  build or on demand on a TTY); the daemon emits a one-time banner to the
+  log at start-up. New top-level `diagnostics.verbose_errors`
+  (overridable by `-verbose-errors` / `GOPHERTRUNK_VERBOSE_ERRORS`); the
+  HTTP API attaches the banner to the JSON error envelope when enabled
+  and exposes `GET /api/v1/diag/banner`; gRPC interceptors decorate
+  failing RPCs (config flag or `gophertrunk-verbose` metadata); the web
+  `ErrorBoundary` surfaces the diag block in a collapsible panel.
+- **ADC-clipping detection** (#496, #402) — a hot, strong-signal site can
+  pin the 8-bit RTL ADC rail and shred TSBK CRC while the RMS
+  `iq_power_dbfs` gauge averages the peak clipping away. The `ccdecoder`
+  now counts rail-pinned IQ samples in the existing power window (no
+  extra pass) and exposes an `iq_clip_ratio` gauge plus a throttled WARN
+  advising to *reduce* gain / add attenuation; the startup low-gain hint
+  is caveated so it no longer points operators the wrong way on an
+  overloaded front end.
+- **`cchunt.failed` now explains *why*** (#500) — the control-channel
+  hunter only ever reported the symptom (retuned everywhere, no lock).
+  It now carries the control SDR's live IQ health (dBFS power, DC-bin
+  ratio, clip ratio — the #402 signals) with a one-line diagnosis on the
+  `cchunt.failed` event payload and a new WARN line; when the decoder saw
+  no IQ at all, that absence becomes the diagnosis (check `sdr list
+  --probe` / `sdr doctor` / antenna).
+
+### Changed
+
+- **Go toolchain bumped 1.25.10 → 1.25.11** (#504) — clears two stdlib
+  advisories `govulncheck` flags (`GO-2026-5037` crypto/x509,
+  `GO-2026-5039` net/textproto); both are toolchain-version issues fixed
+  only by building against the patched standard library. `go.mod` and the
+  `setup-go` version across CI / release / installer workflows updated.
+- **Live IQ ingest is decoupled from decode** (#507, #402) — the
+  control-channel decoder previously decoded inline on the same goroutine
+  that drained the SDR's delivery channel, so any stall (pipeline
+  rebuild, GC pause, host contention) made the driver silently drop
+  real-time IQ and splice the C4FM stream — the live-fails / replay-green
+  signature. A lightweight forwarder now drains the SDR channel into a
+  larger bounded decode queue, so a transient stall backs up instead of
+  dropping RF. New `ccdecoder_decode_overruns_total` (distinct from
+  `sdr_iq_underruns_total`) makes a CPU/host overload provable.
+- **Queued IQ buffers are pooled; power/clip/DC observed on the
+  forwarder** (#508, #402) — the deep decode queue from #507 could hold
+  more driver buffers than the #489 reuse ring allows in flight, so a
+  recycled ring slot could corrupt IQ already queued for decode. The
+  forwarder now copies each chunk into a pooled, decoder-owned buffer
+  before queueing and releases the driver slot immediately, restoring the
+  ring invariant; IQ power / clip / DC observation moves onto the
+  forwarder so the gauges reflect every chunk the SDR delivered,
+  including those dropped at the queue under overload.
+
+### Fixed
+
+- **RTL-SDR Blog V4 deafness** (#506, #264) — the V4 received only noise
+  (a raw capture was pure complex white noise across the band), so the
+  earlier "color code changes constantly" was the decoder false-locking
+  on noise. Two V4-specific gaps versus the rtlsdr-blog librtlsdr fork:
+  the V4 runs a **28.8 MHz** reference crystal (PR #266 had keyed every
+  R828D to 16 MHz by chip type, mis-tuning every V4 LO by ~1.8×), and the
+  V4's switched HF/VHF/UHF input bank was never routed (stock R828D init
+  leaves both Cable-1 and Air-In off, so no RF reaches the tuner). The
+  fix detects the V4 from its USB strings and, gated entirely on that,
+  restores the crystal and ports the fork's per-band input switching,
+  notch windows, GPIO5 upconverter relay, and HF tracking-filter bypass —
+  R820T2 / non-V4 R828D paths are byte-for-byte unchanged.
+- **WinUSB composite (usbccgp) dongles on Windows** (#501) — a composite
+  RTL-SDR (e.g. the V4) presents its parent bound to `usbccgp` and the
+  real SDR driver on the Interface 0 (`&MI_00`) child node that Zadig
+  binds to WinUSB. GopherTrunk only walked the parent-registered device
+  interface, so `Open` initialised the wrong node and `sdr doctor` read
+  the parent's `usbccgp` service and reported a false BAD. New
+  Windows-only discovery walks the USB device-node tree, matches VID/PID +
+  `&MI_00`, and opens / inspects the WinUSB child; the parsing logic is
+  factored into platform-independent helpers with table tests.
+- **DMR spectrum-inverted (I/Q-reversed) bursts on R828D / V4** (#264) —
+  a conjugated IQ stream negates the FM discriminator, flipping the
+  slicer by `(dibit + 2) mod 4`; P25 Phase 1 already tolerated this but
+  DMR did not, and DMR's sync words are closed under the flip so sync
+  alone can't resolve polarity. The Tier II / III adapters now decode
+  each matched burst at both polarities and let the slot-type Hamming +
+  BPTC + CSBK CRC drop the wrong one — identity is tried first, so clean
+  R820T2 streams take exactly the same path as before.
+- **CQPSK carrier recovery** (#497, #492) — the CQPSK / LSM path had no
+  carrier-frequency recovery, so a residual tuner offset spun the whole
+  differential constellation and the Frame Sync Word never correlated
+  (the synthetic fixtures injected zero offset, hiding it). A two-stage
+  recovery now runs: a one-shot lag-1 (Kay) coarse estimate on the raw IQ
+  feeding an NCO, then a decision-free second-order `QPSKCostas` loop that
+  tracks slow drift. Replay's `carrier_hz_est` diag now shows the loop
+  converging to the tuner offset.
+- **CQPSK carrier seed under streaming chunk sizes** (#503, #492) — the
+  #497 coarse seed only fired when a single `process()` call carried
+  ≥ 2048 samples, but production hands the decoder only ~160–200 complex
+  samples per call, so the seed never tripped and the full offset reached
+  Gardner. The lag-1 autocorrelation is now accumulated across calls
+  until the threshold is met, then seeded once (resetting Costas + CMA,
+  which had wound up against the uncorrected signal).
+- **P25 Phase 1 LDU voice-frame interleaving offsets** (#498, #489) —
+  even after the §7.5 IMBE deinterleaver landed, voice decode stayed
+  ~100% uncorrectable because the LDU voice-frame slice offsets were
+  wrong: the on-air LDU interleaves an LC/ES block between every voice
+  subframe with both LSD blocks between u_6 and u_7, so only u_0 sliced
+  correctly. The offset tables are corrected to the real interleaving
+  (also fixing LC/ES and LSD extraction), pinned by a new field-sequence
+  test.
+- **Control-channel SDR shedding live IQ** (#505, #489) — a control SDR
+  was dropping 25–48% of live IQ chunks/sec (`consumer can't keep up`),
+  corrupting the dibit stream into uncorrectable LDUs / TSBK CRC
+  failures: the pure-Go deliver path allocated a fresh ~64 KiB buffer per
+  chunk and the consumer channel was only 8 deep. A per-stream reuse ring
+  (allocation-free hot path), a `u8→complex64` lookup table (bit-identical
+  output), and a deeper (8 → 32) stream channel give the resample loop
+  jitter headroom; drop-on-overrun stays real.
+
+## [v0.3.0] — 2026-06-02
+
+The issue #402 live-decode investigation drives this release. #486 fixes
+a broker close-race panic and surfaces previously-silent live IQ drops
+(the live-fails / replay-green tell), #491 hardens the live
+control-channel acquisition path and pins the reverted AFC /
+adaptive-slicer experiments so they can't silently return, and #493
+fixes live CQPSK control-channel lock (an over-gained Gardner timing loop
+that only locked on sample-aligned fixtures). #490 corrects P25 Phase 1
+voice decode with the IMBE §7.5 deinterleave, #487 applies PPM correction
+to the tuner LO rather than only the resampler (#264), #480 extends log
+retention to every decoder table and adds a currently-visible aircraft
+endpoint, and #488 surfaces silent recorder / composer misconfigs.
+
+### Added
+
+- **Retention sweep across all decoder log tables** (#480) — the sweeper
+  only ever deleted `call_log` rows (+ recording files), so `pager_log`,
+  `aprs_log`, `vessel_log`, `dsc_log`, `aircraft_log`, `mdc1200_log`,
+  `m17_log`, and `location_log` grew unbounded. A new `LogRowMaxAge` knob
+  (driven by `retention.log_days`; zero = disabled) deletes rows older
+  than the cutoff from each table via a fixed allow-list of table names
+  (no user input in the SQL). `config.example.yaml` + `docs/hardening.md`
+  updated.
+- **Currently-visible aircraft endpoint** (#480) — `aircraft_log` stores
+  one Mode-S message type per row, so the raw log can't answer "what's
+  flying right now". `GET /api/v1/adsb/aircraft/current` (`?max_age_s=`,
+  default 300, max 3600) coalesces the latest non-empty value of each
+  field group (callsign / position / altitude / velocity) per ICAO over a
+  horizon, newest-last-seen first.
+- **Live IQ-drop telemetry** (#486, #402) — IQ chunks dropped on overrun
+  by an SDR backend (the consumer falling behind) were silent, making
+  live IQ loss indistinguishable from RF problems. Drops now bump the
+  existing `iq_underruns_total` Prometheus counter (labelled by driver +
+  serial) and emit a warning throttled to one line per second per device,
+  via a process-wide `sdr.SetIQDropObserver` hook the daemon installs at
   start-up. A rising counter during decode confirms a live-path overrun
   (offline replay never drops) and explains downstream TSBK CRC failures.
 
 ### Changed
 
-- **iqtap broker primary handoff is now lightly buffered** (#402) — the
-  broker's primary IQ channel gained a small (2-chunk) buffer so the
+- **iqtap broker primary handoff is now lightly buffered** (#486, #402) —
+  the broker's primary IQ channel gained a small (2-chunk) buffer so the
   fan-out goroutine isn't stalled by a momentarily-busy primary consumer
   (the per-chunk copy plus a brief decode hiccup), which previously could
   back up the SDR reaper and force whole-chunk drops. The inner driver's
   buffer still bounds latency, so sustained back-pressure still drops as
   before.
+- **RTL-SDR PPM correction now re-tunes the tuner LO** (#487, #264) —
+  `Device.SetPPM` only wrote the RTL2832U resampler-ratio registers, so a
+  configured `ppm` corrected the sample clock but left the tuner carrier
+  offset in the signal (a V4's `ppm: -4` had no visible effect and broke
+  digital decode). The R82xx tuner now biases its reference crystal by
+  `xtal·(1 + ppm·1e-6)` (librtlsdr's `APPLY_PPM_CORR`) and re-tunes;
+  `ppm == 0` reproduces the existing register math byte-for-byte, and only
+  R82xx-family tuners participate.
+- **Live control-channel acquisition path hardened** (#491, #402) — the
+  remaining #402 failure was live-only (replay decoded the reporter's
+  captures cleanly), isolating it to the acquisition chain replay never
+  exercises. A same-`(system, frequency)` `HuntProgress` retune is now
+  idempotent (a single-candidate system re-hunting every dwell never
+  converged before); the down-converter is built from the SDR's
+  *actual* delivered sample rate so a non-exact-divisor rate doesn't
+  drift the symbol clock; a too-low-gain warning covers the 51–149 tenths
+  band the dB-mistake check missed; and the reverted DDA / adaptive-C4FM
+  experiments are pinned off so they can't return.
+- **Surface silent recorder / composer misconfigs** (#488) — three
+  defensive diagnostics for issues that previously produced only
+  INFO-level output: a WARN at P25 Phase 2 chain start when trellis
+  decoding is off (live MAC PDUs are trellis-encoded), a Windows WARN when
+  `recordings.dir` / `storage.path` / `storage.cc_cache_file` are rooted
+  but carry no drive letter (the Unix-style defaults normalise to a
+  surprising drive root), and collapse of an exact trailing duplicate word
+  in imported system names.
+
+### Fixed
+
+- **iqtap broker `send on closed channel` panic** (#486, #402) — closing
+  an IQ subscriber (live spectrum, `--iq-capture`, diagnostics)
+  concurrently with an in-flight fan-out could crash the daemon: `fanout`
+  checked the closed flag and then sent after dropping `subsMu`, while
+  `Subscriber.Close` closed the channel under the lock, leaving a window
+  where the send raced the close. Per-subscriber send and close now share
+  a `sendMu` so a fan-out send can never land on a closed channel.
+  Covered by a new `-race` regression test in `internal/sdr/iqtap`.
+- **P25 Phase 1 voice: apply IMBE §7.5 deinterleave** (#490, #489) — voice
+  decode reported ~100% uncorrectable LDUs on real signals because
+  `DecodeChannelToFrame` ran descramble + per-vector Golay/Hamming FEC on
+  the raw on-air bits without first undoing the TIA-102.BABA §7.5 144-bit
+  interleaver, so every codeword exceeded its correction radius. The
+  symmetric non-interleaved encode/fixture path kept round-trip tests
+  green while live air failed. The deinterleave now runs before
+  descramble + FEC, with a bijection guard and on-air fixture tests.
+- **Live CQPSK control-channel lock: over-gained Gardner loop** (#493,
+  #492) — live CQPSK control-channel decode was ~0% while the same
+  capture decoded when replayed un-decimated. The Gardner loop's
+  effective per-symbol gain is `gain/sps`, and the CQPSK path inherited
+  the generic 0.03 default — ~5× too hot at the 48 kHz channel rate — so
+  it overshot the timing null and only locked when the input was already
+  symbol-aligned (the one phase every synthetic fixture starts on). The
+  default drops to 0.005, matching the sibling π/4-DQPSK Phase 2 / TETRA
+  pipelines; a starting-phase sweep guards it.
+- **replay: decimate CQPSK like production** (#493, #492) — `replay` gated
+  its production-matching decimation on `demod == c4fm`, so a wideband
+  capture replayed with `-demod cqpsk` ran the whole receiver at the raw
+  SDR rate (~417 samples/symbol instead of ~10), invalidating the
+  replay-vs-live comparison. The DDC target is now chosen by sample rate
+  alone, so both demod modes decimate when the input exceeds the
+  production target.
 
 ## [v0.2.9] — 2026-06-01
 
