@@ -37,22 +37,23 @@ type Snapshotter interface {
 type Metrics struct {
 	reg *prometheus.Registry
 
-	eventsTotal   *prometheus.CounterVec
-	callsTotal    *prometheus.CounterVec // by system,protocol,encrypted,reason
-	callsStarted  *prometheus.CounterVec // by system,protocol,encrypted
-	activeCalls   *prometheus.GaugeVec   // by system,protocol
-	ccLockedGauge *prometheus.GaugeVec   // by system (1 when CC locked)
-	ccFrequencyHz *prometheus.GaugeVec   // by system; deleted on CC loss
-	ccTransitions *prometheus.CounterVec // by system,event (locked|lost)
-	iqUnderruns   *prometheus.CounterVec
-	iqPowerDbFS   *prometheus.GaugeVec // by system; mean IQ power on the control SDR
-	iqDCRatioDb   *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
-	iqClipRatio   *prometheus.GaugeVec // by system; fraction of IQ samples pinned to the ADC rail (issue #402)
-	usbReconnects *prometheus.CounterVec
-	decodeErrors  *prometheus.CounterVec
-	sdrAttached   *prometheus.GaugeVec
-	versionInfo   *prometheus.GaugeVec
-	sdrSnap       *sdrSnapshotCollector
+	eventsTotal    *prometheus.CounterVec
+	callsTotal     *prometheus.CounterVec // by system,protocol,encrypted,reason
+	callsStarted   *prometheus.CounterVec // by system,protocol,encrypted
+	activeCalls    *prometheus.GaugeVec   // by system,protocol
+	ccLockedGauge  *prometheus.GaugeVec   // by system (1 when CC locked)
+	ccFrequencyHz  *prometheus.GaugeVec   // by system; deleted on CC loss
+	ccTransitions  *prometheus.CounterVec // by system,event (locked|lost)
+	iqUnderruns    *prometheus.CounterVec
+	decodeOverruns prometheus.Counter   // chunks dropped at the decode queue (issue #402)
+	iqPowerDbFS    *prometheus.GaugeVec // by system; mean IQ power on the control SDR
+	iqDCRatioDb    *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
+	iqClipRatio    *prometheus.GaugeVec // by system; fraction of IQ samples pinned to the ADC rail (issue #402)
+	usbReconnects  *prometheus.CounterVec
+	decodeErrors   *prometheus.CounterVec
+	sdrAttached    *prometheus.GaugeVec
+	versionInfo    *prometheus.GaugeVec
+	sdrSnap        *sdrSnapshotCollector
 
 	bus       *events.Bus
 	sub       *events.Subscription
@@ -120,6 +121,20 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Name:      "iq_underruns_total",
 		Help:      "Times the IQ stream pipeline dropped samples because a downstream stage was too slow.",
 	}, []string{"driver", "serial"})
+
+	// Chunks the live decoder dropped at its internal decode queue because
+	// decode could not keep up with real time (issue #402). Distinct from
+	// sdr_iq_underruns_total: that counts the SDR driver's own delivery
+	// channel overrunning, while this counts the decode goroutine being the
+	// bottleneck (CPU-starved host, contention). A climbing value here, with
+	// iq_underruns_total flat, says "the machine can't sustain this decode"
+	// rather than "the USB transport hiccuped".
+	m.decodeOverruns = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "ccdecoder",
+		Name:      "decode_overruns_total",
+		Help:      "Live IQ chunks dropped at the decode queue because decode can't keep up with real time (issue #402). Distinct from sdr_iq_underruns_total (driver-delivery overruns).",
+	})
 
 	// Mean IQ power on the control SDR, expressed in dBFS (0 dBFS = ±1.0
 	// full-scale per the convertU8IQ normalization). Surfaces silent
@@ -203,6 +218,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.ccFrequencyHz,
 		m.ccTransitions,
 		m.iqUnderruns,
+		m.decodeOverruns,
 		m.iqPowerDbFS,
 		m.iqDCRatioDb,
 		m.iqClipRatio,
@@ -329,6 +345,14 @@ func (m *Metrics) observeEvent(ev events.Event) {
 // RecordIQUnderrun increments the underrun counter for the supplied SDR.
 func (m *Metrics) RecordIQUnderrun(driver, serial string) {
 	m.iqUnderruns.WithLabelValues(driver, serial).Inc()
+}
+
+// RecordDecodeOverrun increments the decode-overrun counter: one live IQ
+// chunk dropped at the decode queue because decode can't keep up with
+// real time (issue #402). Distinct from RecordIQUnderrun, which is the
+// SDR driver's own delivery-channel overrun.
+func (m *Metrics) RecordDecodeOverrun() {
+	m.decodeOverruns.Inc()
 }
 
 // RecordIQPowerDbFS sets the mean-IQ-power gauge for system. Caller

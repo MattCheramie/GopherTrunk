@@ -161,6 +161,17 @@ func TestRecordHooks(t *testing.T) {
 	}
 }
 
+func TestRecordDecodeOverrun(t *testing.T) {
+	m, _ := New(nil, nil, "test")
+	defer m.Close()
+
+	m.RecordDecodeOverrun()
+	m.RecordDecodeOverrun()
+	if got := testutil.ToFloat64(m.decodeOverruns); got != 2 {
+		t.Errorf("decode overruns = %v, want 2", got)
+	}
+}
+
 func TestRecordIQPowerDbFS(t *testing.T) {
 	m, _ := New(nil, nil, "test")
 	defer m.Close()
