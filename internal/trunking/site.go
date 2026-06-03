@@ -112,6 +112,37 @@ type P25BandPlanEntry struct {
 	BandwidthHz uint32 // informational; not consulted by BandPlan.Frequency
 }
 
+// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried in a
+// DMR Tier III voice-grant CSBK to its downlink frequency. T3 grants
+// reference a channel by LCN, never an absolute frequency, so the
+// decoder cannot follow a voice call without this plan — see
+// internal/radio/dmr/tier3 (Resolver / tier3.ResolverFromPlan). The
+// trunking package keeps its own LCN→Hz shape (rather than importing
+// tier3) the same way P25BandPlanEntry mirrors phase1.IdentifierUpdate.
+// Exactly one of Linear or Table is populated (enforced by config
+// validation).
+type DMRBandPlan struct {
+	Linear *DMRLinearBandPlan      // regular base+spacing grid
+	Table  []DMRBandPlanTableEntry // irregular hand-coded LCN→Hz map
+}
+
+// DMRLinearBandPlan lays channels out on a regular grid:
+// freq = BaseHz + (LCN - Offset) × SpacingHz. Offset lets sites that
+// number LCNs from 1 (the common case) pin BaseHz to the channel-1
+// downlink — set Offset=1 there.
+type DMRLinearBandPlan struct {
+	BaseHz    uint32
+	SpacingHz uint32
+	Offset    int8
+}
+
+// DMRBandPlanTableEntry is one explicit LCN→downlink-frequency mapping
+// for sites whose channels don't fall on a regular grid.
+type DMRBandPlanTableEntry struct {
+	LCN    uint8
+	FreqHz uint32
+}
+
 // System describes one trunked radio system the engine should track.
 type System struct {
 	Name            string
@@ -183,6 +214,12 @@ type System struct {
 	// BandPlan.Apply path; entries here are the floor, not the ceiling.
 	// Ignored for non-P25-Phase-1 protocols.
 	P25BandPlan []P25BandPlanEntry
+
+	// DMRBandPlan resolves the LCN in DMR Tier III voice grants to a
+	// downlink frequency. Required for T3 voice — without it every
+	// grant is dropped with decode.error stage=no-bandplan. Ignored
+	// for non-DMR-Tier-III protocols.
+	DMRBandPlan *DMRBandPlan
 
 	// P25Phase1DemodMode selects the symbol-recovery path for the
 	// P25 Phase 1 receiver. Recognised values (case-insensitive):
