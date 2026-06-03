@@ -25,6 +25,14 @@ type VoiceSuperframe struct {
 	// binding a phase to a talkgroup is the embedded-LC decoder's job.
 	// Always 0 for a single-slot (stride 1) Decoder.
 	Phase uint8
+	// HasLC reports that a Full Link Control was reassembled from the
+	// embedded signalling carried by bursts B–E of this superframe and
+	// passed its BPTC + CRC check. When true, LC holds the decoded PDU —
+	// its destination/source addresses identify the call's talkgroup and
+	// radio, which a consumer binds to the superframe's Phase to label
+	// the timeslot (the BS-sourced burst-A sync alone cannot).
+	HasLC bool
+	LC    dmr.FLC
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -169,6 +177,9 @@ func (d *Decoder) sliceSuperframe(start int, syncName string) VoiceSuperframe {
 	off := start - d.bufStart
 	step := d.stride * dmr.BurstDibits
 	frame := 0
+	// fragIdx maps the four embedded-LC-bearing bursts B,C,D,E (burst
+	// indices 1..4) to their fragment slot 0..3; A and F carry none.
+	var frags [4][]byte
 	for b := 0; b < BurstsPerSuperframe; b++ {
 		var burst dmr.Burst
 		copy(burst.Dibits[:], d.buf[off+b*step:off+b*step+dmr.BurstDibits])
@@ -176,6 +187,23 @@ func (d *Decoder) sliceSuperframe(start int, syncName string) VoiceSuperframe {
 			sf.Frames[frame] = f
 			frame++
 		}
+		if b >= 1 && b <= 4 {
+			_, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
+			frags[b-1] = frag
+		}
+	}
+	if lc, ok := dmr.ReassembleEmbeddedLC(frags); ok {
+		sf.HasLC = true
+		sf.LC = lc
 	}
 	return sf
+}
+
+// dibitsToBits expands dibits to bits, two per dibit, MSB-first.
+func dibitsToBits(dibits []uint8) []byte {
+	out := make([]byte, 0, len(dibits)*2)
+	for _, d := range dibits {
+		out = append(out, (d>>1)&1, d&1)
+	}
+	return out
 }
