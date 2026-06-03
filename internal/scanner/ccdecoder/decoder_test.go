@@ -1048,12 +1048,13 @@ func TestMPT1327FactoryAppliesBCHFromSystem(t *testing.T) {
 // tests can assert the decoder's pump-side observation pipeline
 // without depending on the real Prometheus collector.
 type recordingPower struct {
-	sets        []powerSample
-	cleared     []string
-	dcSets      []dcSample
-	dcCleared   []string
-	clipSets    []clipSample
-	clipCleared []string
+	sets         []powerSample
+	cleared      []string
+	dcSets       []dcSample
+	dcCleared    []string
+	clipSets     []clipSample
+	clipCleared  []string
+	decodeOverru int
 }
 
 type powerSample struct {
@@ -1089,10 +1090,13 @@ func (r *recordingPower) RecordIQClipRatio(system string, ratio float64) {
 func (r *recordingPower) ClearIQClipRatio(system string) {
 	r.clipCleared = append(r.clipCleared, system)
 }
+func (r *recordingPower) RecordDecodeOverrun() {
+	r.decodeOverru++
+}
 
 // TestPumpRecordsIQPowerOnceWindowElapses feeds a known signal level
-// through Process and checks the Metrics observer sees the expected
-// dBFS once iqPowerWindow worth of samples have been folded in.
+// through observeIQPowerLocked and checks the Metrics observer sees the
+// expected dBFS once iqPowerWindow worth of samples have been folded in.
 func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -1115,15 +1119,15 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 		chunk[i] = complex(0.5, 0.5)
 	}
 
-	// First pump primes pwWindowAt — no record yet.
-	d.pump(chunk)
+	// First observation primes pwWindowAt — no record yet.
+	d.observeIQPowerLocked(chunk)
 	if len(pwr.sets) != 0 {
-		t.Fatalf("first pump should not record, got %v", pwr.sets)
+		t.Fatalf("first observation should not record, got %v", pwr.sets)
 	}
 
 	// Force the window timer past iqPowerWindow.
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 
 	if len(pwr.sets) != 1 {
 		t.Fatalf("after window, sets = %d, want 1", len(pwr.sets))
@@ -1167,9 +1171,9 @@ func TestPumpRecordsIQClipRatioWhenRailed(t *testing.T) {
 		chunk[i] = complex(1.0, 1.0)
 	}
 
-	d.pump(chunk) // primes pwWindowAt, no record yet
+	d.observeIQPowerLocked(chunk) // primes pwWindowAt, no record yet
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 
 	if len(pwr.clipSets) != 1 {
 		t.Fatalf("after window, clipSets = %d, want 1", len(pwr.clipSets))
@@ -1204,9 +1208,9 @@ func TestPumpRecordsIQDCRatioPureDC(t *testing.T) {
 		chunk[i] = complex(0.3, 0.4) // constant ⇒ mean(IQ) = sample, |mean|² = |sample|²
 	}
 
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 
 	if len(pwr.dcSets) != 1 {
 		t.Fatalf("dcSets = %d, want 1", len(pwr.dcSets))
@@ -1248,9 +1252,9 @@ func TestPumpRecordsIQDCRatioCleanSignal(t *testing.T) {
 		}
 	}
 
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPowerLocked(chunk)
 
 	if len(pwr.dcSets) != 1 {
 		t.Fatalf("dcSets = %d, want 1", len(pwr.dcSets))
@@ -1548,5 +1552,51 @@ func TestIQHealthPartialSamples(t *testing.T) {
 	}
 	if !strings.Contains(diag.Diagnosis, "too short to gauge") {
 		t.Errorf("diag.Diagnosis = %q, want 'too short to gauge'", diag.Diagnosis)
+	}
+}
+
+// TestForwardIQDecouplesIngestFromDecode pins the issue-#402 live-path
+// fix: the forwarder drains the SDR channel into the decode queue,
+// preserves order, drops only when the queue is full (and counts each
+// drop as a decode overrun, distinct from a driver underrun), and closes
+// the queue when the source ends.
+func TestForwardIQDecouplesIngestFromDecode(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Pre-load every chunk and close the source. The forwarder's enqueue is
+	// non-blocking (it drops on a full queue), so it runs to completion with
+	// no consumer: the first two chunks land in the cap-2 queue and the next
+	// three are dropped. Waiting for it to finish before draining keeps the
+	// queued set and drop count deterministic (a concurrent drain would race
+	// the last enqueue). Tag each chunk by its first sample to check order.
+	in := make(chan []complex64, 5)
+	out := make(chan []complex64, 2)
+	mk := func(tag float32) []complex64 { return []complex64{complex(tag, 0)} }
+	for i := 0; i < 5; i++ {
+		in <- mk(float32(i))
+	}
+	close(in)
+
+	done := make(chan struct{})
+	go func() { d.forwardIQ(context.Background(), in, out); close(done) }()
+	<-done // forwarder has processed all 5 chunks and closed out
+
+	var got []float32
+	for c := range out {
+		got = append(got, real(c[0]))
+	}
+	if len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("queued = %v, want [0 1] (first two, in order)", got)
+	}
+	if pwr.decodeOverru != 3 {
+		t.Errorf("decode overruns = %d, want 3", pwr.decodeOverru)
 	}
 }

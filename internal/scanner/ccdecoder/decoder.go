@@ -80,6 +80,12 @@ type IQPowerObserver interface {
 	ClearIQDCRatioDb(system string)
 	RecordIQClipRatio(system string, ratio float64)
 	ClearIQClipRatio(system string)
+	// RecordDecodeOverrun counts one IQ chunk dropped at the decode queue
+	// because decode could not keep up with real time (issue #402). It is
+	// distinct from the SDR driver's iq_underruns_total: a non-zero value
+	// here means the CPU/host can't sustain the decode, not that the USB
+	// delivery channel overran.
+	RecordDecodeOverrun()
 }
 
 // ErrIQStreamClosed is returned by Run whenever the SDR's IQ stream is
@@ -127,6 +133,20 @@ const iqClipThreshold = 0.98
 // rarely rails on P25 C4FM, so a sustained fraction at this level means
 // front-end overload — reduce gain or add attenuation (issue #402).
 const iqClipWarnRatio = 0.002
+
+// decodeQueueDepth is the size of the internal queue between the
+// lightweight IQ forwarder and the decode goroutine (issue #402). The
+// SDR driver drops the instant its own small delivery channel backs up
+// (~27 ms at 2.4 MS/s, ~68 ms at 960 kS/s), so any decode/retune/GC
+// stall longer than that on a single combined goroutine corrupts the
+// continuous symbol stream. The forwarder drains the driver channel into
+// this larger queue so a transient stall backs up here instead of
+// dropping RF; at 65 KB/chunk this is ~8 MB and buys ≈0.44 s of slack at
+// 2.4 MS/s (≈1.1 s at 960 kS/s). Deeper would absorb longer stalls at the
+// cost of higher decode latency under a sustained backlog; 128 balances
+// the two. Sustained overload still drops here — attributably, via
+// RecordDecodeOverrun — rather than silently in the driver.
+const decodeQueueDepth = 128
 
 // Tuner is the subset of sdr.Device the decoder uses for retuning.
 // Matches the same interface cchunt + conventional consume so the
@@ -214,9 +234,9 @@ type Decoder struct {
 	// stream doesn't allocate per call.
 	ddcOut []complex64
 
-	// IQ-power tracking — see pump for the math. Owned by Run's
-	// goroutine via pump; not protected by mu because no other
-	// goroutine reads it.
+	// IQ-power tracking — see observeIQPowerLocked for the math. Owned by
+	// the decode goroutine via pump; not protected by mu beyond pump's own
+	// lock because no other goroutine reads it.
 	metrics      IQPowerObserver
 	pwSumSq      float64
 	pwSumI       float64 // running sum of I samples → DC-bin mean (issue #402)
@@ -310,6 +330,19 @@ func (d *Decoder) Run(ctx context.Context) error {
 
 	defer d.sub.Close()
 
+	// Decouple real-time IQ ingestion from decode (issue #402). The SDR
+	// driver drops a chunk the instant its small delivery channel backs up,
+	// so running decode + retune inline on the goroutine that drains that
+	// channel means any stall longer than a few tens of ms (a pipeline
+	// rebuild, a GC pause, the OS scheduling away under host contention)
+	// silently drops live IQ and splices the continuous symbol stream,
+	// triggering the TSBK/NID CRC cascade. A dedicated lightweight forwarder
+	// keeps the driver channel drained into a larger queue; decode and
+	// retune run here, off the ingestion path, so a stall backs up in the
+	// queue instead of dropping RF.
+	decodeCh := make(chan []complex64, decodeQueueDepth)
+	go d.forwardIQ(ctx, stream, decodeCh)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -326,11 +359,62 @@ func (d *Decoder) Run(ctx context.Context) error {
 				continue
 			}
 			d.handleProgress(p)
-		case iq, ok := <-stream:
+		case iq, ok := <-decodeCh:
 			if !ok {
+				// forwardIQ closed the queue: either the SDR stream ended
+				// (surface as ErrIQStreamClosed for the daemon's #345 retry
+				// loop) or ctx was cancelled (a clean shutdown, not a stream
+				// death — return ctx.Err() so it isn't retried).
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				return ErrIQStreamClosed
 			}
 			d.pump(iq)
+		}
+	}
+}
+
+// forwardIQ drains the SDR delivery channel into the decode queue (issue
+// #402). Kept deliberately cheap — just a non-blocking enqueue — so it
+// always out-drains the driver's small channel; the larger decodeCh then
+// absorbs transient decode stalls. Under *sustained* overload the queue
+// fills and chunks are dropped here, attributably (RecordDecodeOverrun +
+// a throttled WARN), rather than silently in the driver. Closing out on
+// return propagates stream EOF / ctx cancellation to Run.
+func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan<- []complex64) {
+	defer close(out)
+	var (
+		dropped   uint64
+		lastLogAt time.Time
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case iq, ok := <-in:
+			if !ok {
+				return
+			}
+			select {
+			case out <- iq:
+			default:
+				// Decode is sustainedly behind real time: the queue is full.
+				// Drop the freshly-arrived chunk (caps latency at the queue
+				// depth) and surface it as a decode overrun, distinct from the
+				// driver's iq_underruns_total, so "CPU can't keep up" is
+				// attributable rather than looking like an RF fault.
+				dropped++
+				if d.metrics != nil {
+					d.metrics.RecordDecodeOverrun()
+				}
+				if now := time.Now(); now.Sub(lastLogAt) >= time.Second {
+					d.log.Warn("ccdecoder: decode can't keep up with real time; dropping IQ at the decode queue (raise CPU / lower sample rate / shed load) — issue #402",
+						"dropped_since_last", dropped)
+					dropped = 0
+					lastLogAt = now
+				}
+			}
 		}
 	}
 }
@@ -460,16 +544,12 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 // against handleProgress's pipeline swap so we never call Process on
 // a half-constructed pipeline.
 //
-// The chunk is decimated to the pipeline's narrowband rate by the
-// down-converter before Process; the IQ-power window below still
-// measures the *raw* chunk so the gauge reflects the SDR's actual
-// input level, not the post-decimation level.
-//
-// While we have the lock, also fold the chunk into the IQ-power
-// window. The window aggregates |IQ|^2 across chunks; once a second
-// of samples has been seen, the mean is converted to dBFS and pushed
-// to the Metrics observer + a throttled debug log fires if the level
-// looks dead. See iqLowPowerThresholdDbFS.
+// While we have the lock, also fold the chunk into the IQ-power window
+// (observeIQPowerLocked). Observation runs here, on the decode goroutine,
+// rather than on the lightweight IQ forwarder so it stays serialised with
+// IQHealth's reads under d.mu (issue #489). The forwarder (issue #402)
+// only decouples ingestion from this decode path; chunks dropped at the
+// decode queue under sustained overload are simply not observed.
 func (d *Decoder) pump(iq []complex64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
