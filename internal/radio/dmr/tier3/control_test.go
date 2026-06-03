@@ -156,6 +156,38 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 	}
 }
 
+func TestControlChannelGrantCarriesInterleavedFlag(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:              bus,
+		SystemName:       "TestSys",
+		Resolver:         TableBandPlan{8: 866_175_000},
+		InterleavedVoice: true,
+	})
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88}}
+	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			if g := ev.Payload.(trunking.Grant); !g.DMRInterleavedVoice {
+				t.Errorf("DMRInterleavedVoice = false, want true when Options.InterleavedVoice is set")
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event published")
+		}
+	}
+}
+
 func TestControlChannelPublishesPVGrant(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

@@ -106,9 +106,17 @@ The inner FEC layers still pending real-air validation:
   order, the EMB QR(16,7) FEC (read systematically for now), and the
   5-bit CRC polynomial — all currently internally consistent
   (encode↔decode round-trip) but not yet cross-checked against
-  captured traffic. Until then the production composer keeps the
-  single-slot decoder and the interleaved + LC path is opt-in at the
-  library level.
+  captured traffic. The interleaved + LC path is now wired through the
+  production composer behind a per-system opt-in,
+  `dmr_interleaved_voice: true`: when set, each DMR voice grant is
+  tagged so the composer runs `NewInterleavedDecoder` and routes each
+  call to its timeslot by matching the embedded LC's talkgroup (a
+  `slotRouter`). It defaults off, so untouched configs keep the
+  single-slot decoder. The skip-gated harness
+  `internal/voice/composer/dmr_2slot_realair_test.go` (run with
+  `-tags integration` and `GOPHERTRUNK_DMR_2SLOT_CFILE`) is where a
+  contributor drops a real capture to confirm the on-air constants
+  and, once green, promote the interleaved decoder to the default.
 
 ### Digital-voice level calibration
 

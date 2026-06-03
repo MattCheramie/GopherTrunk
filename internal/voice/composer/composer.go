@@ -418,7 +418,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 				"device", cs.DeviceSerial, "system", cs.Grant.System,
 				"group", cs.Grant.GroupID)
 		}
-		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, ch.done)
+		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
 	case isP25P2Voice:
 		macCfg := p25p2.MACDecodeConfig{
 			Trellis:    p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),

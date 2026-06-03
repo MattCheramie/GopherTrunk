@@ -470,6 +470,16 @@ trunking:
         #   - { lcn: 1, freq_hz: 851_012_500 }
         #   - { lcn: 2, freq_hz: 851_037_500 }
         #   - { lcn: 9, freq_hz: 851_225_000 }
+      # EXPERIMENTAL: opt into the 2-slot interleaved voice decoder. A
+      # DMR carrier runs two calls at once (TS1 + TS2); with this on,
+      # each voice grant decodes its own timeslot from the carrier's
+      # interleaved burst stream and is routed to its call by matching
+      # the embedded Link Control's talkgroup. Default false keeps the
+      # single-slot decoder. The on-air same-slot cadence and the
+      # embedded-signalling FEC constants are still pending a real-
+      # capture cross-check (see docs/status.md), so leave this off
+      # unless you are validating against a known capture.
+      # dmr_interleaved_voice: true
 
   # Per-protocol FEC is on by default — every protocol the daemon
   # supports (TETRA, LTR, P25 Phase 2, NXDN, EDACS, MPT 1327,
