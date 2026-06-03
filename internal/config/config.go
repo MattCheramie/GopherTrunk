@@ -527,6 +527,16 @@ type MessageLogConfig struct {
 }
 
 type SDRConfig struct {
+	// SampleRate is the IQ rate (Hz) every tuner is programmed to.
+	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..3_200_000; the
+	// RTL2832U quantizes to its 28.4 fixed-point divisor so the streamed
+	// rate may differ slightly (see Device.ActualSampleRate). This is
+	// also the primary load lever on CPU-bound hosts: convert + resample
+	// cost scales with it, so if the daemon logs "sdr: dropping live IQ
+	// chunks; consumer can't keep up" (iq_underruns_total climbing),
+	// lowering it — e.g. to 1_024_000 — roughly halves per-chunk decode
+	// work. Running fewer simultaneous dongles on a weak CPU has the same
+	// effect.
 	SampleRate uint32         `yaml:"sample_rate"`
 	Devices    []DeviceConfig `yaml:"devices"`
 	// RTLTCP lists remote rtl_tcp endpoints (host:port + optional

@@ -42,6 +42,16 @@ type Device struct {
 	out      chan []complex64
 	stopOnce sync.Once
 
+	// ring is a small pool of preallocated complex64 buffers that
+	// [Device.deliver] cycles through so the hot IQ path allocates
+	// nothing per chunk (issue #489). It is provisioned by StreamIQ
+	// (sized streamChanDepth+2 so the producer never overwrites a
+	// buffer still queued on out or being processed by the consumer)
+	// and read/advanced only under streamMu. nil outside an active
+	// stream — deliver then falls back to a fresh allocation.
+	ring    [][]complex64
+	ringIdx int
+
 	// dropped counts IQ chunks discarded by deliver's overrun branch
 	// over this device's lifetime. Exposed via DroppedChunks for tests
 	// and as the per-drop signal behind the dropObserver hook.

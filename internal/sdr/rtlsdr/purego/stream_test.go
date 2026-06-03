@@ -326,7 +326,7 @@ func TestDevice_CloseIdempotent(t *testing.T) {
 }
 
 func TestStreamConstants_MatchCGOGeometry(t *testing.T) {
-	// Pin the buffer geometry so any drift from the CGO driver
+	// Pin the USB-side buffer geometry so any drift from the CGO driver
 	// (which still ships in rtlsdr_cgo.go until PR-09) shows up
 	// as a test failure.
 	if asyncBufCount != 32 {
@@ -335,11 +335,80 @@ func TestStreamConstants_MatchCGOGeometry(t *testing.T) {
 	if asyncBufLen != 16*1024 {
 		t.Errorf("asyncBufLen = %d, want 16384 (matches rtlsdr_cgo.go:44)", asyncBufLen)
 	}
-	if streamChanDepth != 8 {
-		t.Errorf("streamChanDepth = %d, want 8 (matches rtlsdr_cgo.go:190)", streamChanDepth)
-	}
 	if bulkInEndpoint != 0x81 {
 		t.Errorf("bulkInEndpoint = 0x%02x, want 0x81", bulkInEndpoint)
+	}
+	// streamChanDepth deliberately diverges from the CGO driver's 8 — the
+	// pure-Go backend runs deeper (32) to absorb consumer jitter without
+	// shedding live IQ (issue #489). Pin the new value, and keep it
+	// non-zero so [Device.deliver]'s drop-on-overrun select is real.
+	if streamChanDepth != 32 {
+		t.Errorf("streamChanDepth = %d, want 32 (issue #489 headroom)", streamChanDepth)
+	}
+	if streamChanDepth < 1 {
+		t.Errorf("streamChanDepth must be >= 1 for drop-on-overrun semantics")
+	}
+}
+
+// TestConvertU8IQInto_ZeroAllocMatchesAllocating proves the hot-path
+// conversion (issue #489) writes into a caller buffer with no allocation
+// and produces exactly the same samples as the allocating wrapper.
+func TestConvertU8IQInto_ZeroAllocMatchesAllocating(t *testing.T) {
+	buf := []byte{127, 128, 0, 0, 255, 255, 64, 192}
+	want := convertU8IQ(buf)
+	dst := make([]complex64, len(buf)/2)
+	allocs := testing.AllocsPerRun(100, func() { convertU8IQInto(dst, buf) })
+	if allocs != 0 {
+		t.Errorf("convertU8IQInto allocated %.0f times/run, want 0", allocs)
+	}
+	for i := range want {
+		if dst[i] != want[i] {
+			t.Errorf("convertU8IQInto[%d] = %v, want %v", i, dst[i], want[i])
+		}
+	}
+}
+
+// TestDeliver_RingReusesBuffers is the issue-#489 regression: once a
+// stream's reuse ring is provisioned, the steady-state deliver path must
+// recycle a bounded set of buffers rather than allocating a fresh ~64 KiB
+// slice per chunk. Drive many chunks through a consumer that always keeps
+// up and assert the number of distinct backing arrays never exceeds the
+// ring size.
+func TestDeliver_RingReusesBuffers(t *testing.T) {
+	d := newDeviceWithFakeTuner(usb.NewMockTransport(), &fakeTuner{})
+	const ringSize = streamChanDepth + 2
+	d.ring = make([][]complex64, ringSize)
+	for i := range d.ring {
+		d.ring[i] = make([]complex64, asyncBufLen/2)
+	}
+	// Capacity 1 plus draining after every deliver means a send never
+	// hits the drop branch, so the ring advances on every chunk.
+	d.out = make(chan []complex64, 1)
+
+	seen := make(map[*complex64]struct{})
+	buf := []byte{127, 128}
+	for k := 0; k < 5*ringSize; k++ {
+		d.deliver(buf)
+		got := <-d.out
+		seen[&got[0]] = struct{}{}
+	}
+	if len(seen) > ringSize {
+		t.Errorf("observed %d distinct backing buffers over %d chunks, want <= ring size %d (buffers must be reused)",
+			len(seen), 5*ringSize, ringSize)
+	}
+}
+
+func BenchmarkConvertU8IQ(b *testing.B) {
+	buf := make([]byte, asyncBufLen)
+	for i := range buf {
+		buf[i] = byte(i)
+	}
+	dst := make([]complex64, len(buf)/2)
+	b.SetBytes(int64(len(buf)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		convertU8IQInto(dst, buf)
 	}
 }
 
