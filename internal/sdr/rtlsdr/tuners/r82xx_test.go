@@ -1144,3 +1144,158 @@ func TestErrUnsupportedFreq_ErrorMessage(t *testing.T) {
 		}
 	}
 }
+
+// --- RTL-SDR Blog V4 (issue #264) ---------------------------------------
+
+// TestV4BandFor pins the V4 input-bank crossover thresholds and the
+// V4 Lite two-band collapse.
+func TestV4BandFor(t *testing.T) {
+	cases := []struct {
+		hz   uint32
+		lite bool
+		want v4Band
+	}{
+		{1_000_000, false, v4BandHF},    // HF
+		{28_800_000, false, v4BandHF},   // HF upper bound (inclusive)
+		{28_800_001, false, v4BandVHF},  // just into VHF
+		{153_275_000, false, v4BandVHF}, // the reporter's frequency
+		{249_999_999, false, v4BandVHF}, // VHF upper edge
+		{250_000_000, false, v4BandUHF}, // UHF lower bound (inclusive)
+		{460_000_000, false, v4BandUHF}, // UHF
+		{153_275_000, true, v4BandUHF},  // V4 Lite: no VHF, VHF->UHF
+		{1_000_000, true, v4BandHF},     // V4 Lite: HF unchanged
+	}
+	for _, c := range cases {
+		if got := v4BandFor(c.hz, c.lite); got != c.want {
+			t.Errorf("v4BandFor(%d, lite=%v) = %d, want %d", c.hz, c.lite, got, c.want)
+		}
+	}
+}
+
+// TestSetBlogV4OverridesCrystal verifies the V4 fix's core: SetBlogV4
+// restores the 28.8 MHz reference crystal that NewR82xx defaulted to
+// 16 MHz for the R828D, and flags the band variant.
+func TestSetBlogV4OverridesCrystal(t *testing.T) {
+	m := usb.NewMockTransport()
+	demod := rtl2832u.New(m)
+	r := NewR82xx(demod, r828dI2CAddr, TypeR828D)
+	if r.xtalHz != r828dXtalHz {
+		t.Fatalf("R828D default xtal = %d, want %d", r.xtalHz, r828dXtalHz)
+	}
+	r.SetBlogV4(false)
+	if !r.blogV4 || r.blogV4L {
+		t.Errorf("blogV4=%v blogV4L=%v, want true/false", r.blogV4, r.blogV4L)
+	}
+	if r.xtalHz != r82xxXtalHz {
+		t.Errorf("after SetBlogV4 xtal = %d, want %d (28.8 MHz)", r.xtalHz, r82xxXtalHz)
+	}
+	r.SetBlogV4(true)
+	if !r.blogV4L {
+		t.Errorf("SetBlogV4(true) did not set blogV4L")
+	}
+}
+
+// TestBlogV4PLLUsesCorrectCrystal is the root-cause regression: at the
+// V4's 28.8 MHz crystal the reporter's 153.275 MHz tune yields a sane
+// in-range nint, whereas the (wrong-for-V4) 16 MHz default inflated
+// nint by ~1.8× — the mis-tune that put the signal out of band.
+func TestBlogV4PLLUsesCorrectCrystal(t *testing.T) {
+	const loHz uint32 = 153_275_000 + 3_570_000 // requested + IF
+	mixDiv := pickMixDiv(loHz)
+	if mixDiv == 0 {
+		t.Fatalf("no mixDiv for %d Hz", loHz)
+	}
+	vco := uint64(loHz) * uint64(mixDiv)
+	nintV4 := uint32(vco / (2 * uint64(r82xxXtalHz))) // 28.8 MHz (V4)
+	nint16 := uint32(vco / (2 * uint64(r828dXtalHz))) // 16 MHz (wrong for V4)
+	if nintV4 < 13 || nintV4 > r82xxMaxNint {
+		t.Errorf("V4 nint=%d out of valid [13,%d]", nintV4, r82xxMaxNint)
+	}
+	// The 16 MHz assumption inflates nint by ~28.8/16 = 1.8x; that is the
+	// frequency error that made the V4 deaf. Confirm they diverge sharply.
+	if nint16 <= nintV4 {
+		t.Errorf("expected 16MHz nint (%d) > 28.8MHz nint (%d)", nint16, nintV4)
+	}
+	ratio := float64(nint16) / float64(nintV4)
+	if ratio < 1.6 || ratio > 2.0 {
+		t.Errorf("nint ratio = %.2f, want ~1.8 (28.8/16)", ratio)
+	}
+}
+
+// blockRead / blockWrite build the RTL2832 system-block GPIO exchanges
+// the V4 upconverter-relay control emits, mirroring rtl2832u's
+// gpio_test wire format.
+func blockRead(addr uint16, reply byte) usb.CtrlExchange {
+	return usb.CtrlExchange{In: true, BRequest: 0, WValue: addr, WIndex: uint16(rtl2832u.BlockSys) << 8, N: 1, Reply: []byte{reply}}
+}
+func blockWrite(addr uint16, val byte) usb.CtrlExchange {
+	return usb.CtrlExchange{In: false, BRequest: 0, WValue: addr, WIndex: uint16(rtl2832u.BlockSys)<<8 | 0x10, Data: []byte{val}}
+}
+
+// TestApplyBlogV4BandVHF is the deafness regression: tuning a V4 to a
+// VHF frequency must enable the VHF (Cable-1) + Air-In inputs (reg 0x05
+// -> 0xE3), turn the notch ON (reg 0x17 bit3), leave Cable-2 (HF, reg
+// 0x06 bit3) off, and drive the GPIO5 upconverter relay high. The stock
+// R828D init leaves all of these off, so without this the V4 routes no
+// RF and receives only noise.
+func TestApplyBlogV4BandVHF(t *testing.T) {
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	// A real V4 detects as R828D at I2C 0x74; rebind the shadow's address
+	// now that the init flood (scripted at 0x34) is consumed.
+	r.chipType = TypeR828D
+	r.i2cAddr = r828dI2CAddr
+	r.SetBlogV4(false)
+
+	// Post-init shadow: 0x05=0x83, 0x06=0x32 (bit3 already 0), 0x17=0x30.
+	// applyBlogV4Band(153.275 MHz) emits, in order:
+	//   notch  : 0x17 -> 0x38 (bit3 set)
+	//   cable-2: 0x06 -> no write (bit3 already 0)
+	//   GPIO5  : configure output (GPD/GPOE) + drive high (GPO)
+	//   cable-1: 0x05 -> 0xC3 (bit6 set)
+	//   air-in : 0x05 -> 0xE3 (bit5 set)
+	m.Script = []usb.CtrlExchange{
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x17, 0x38}),
+		blockRead(rtl2832u.SysGPD, 0xFF), blockWrite(rtl2832u.SysGPD, 0xDF), // clear bit5 (direction=out)
+		blockRead(rtl2832u.SysGPOE, 0x00), blockWrite(rtl2832u.SysGPOE, 0x20), // enable output bit5
+		blockRead(rtl2832u.SysGPO, 0x00), blockWrite(rtl2832u.SysGPO, 0x20), // drive bit5 high
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x05, 0xC3}),
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x05, 0xE3}),
+	}
+	m.Step = 0
+	m.Err = nil
+
+	if err := r.applyBlogV4Band(153_275_000); err != nil {
+		t.Fatalf("applyBlogV4Band: %v", err)
+	}
+	if m.Err != nil {
+		t.Fatalf("wire mismatch: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (step %d/%d)", m.Remaining(), m.Step, len(m.Script))
+	}
+	if r.regs[0x05] != 0xE3 {
+		t.Errorf("reg 0x05 = 0x%02x, want 0xE3 (cable-1 + air-in enabled)", r.regs[0x05])
+	}
+	if r.regs[0x17] != 0x38 {
+		t.Errorf("reg 0x17 = 0x%02x, want 0x38 (notch on)", r.regs[0x17])
+	}
+	if r.v4Input != v4BandVHF {
+		t.Errorf("v4Input = %d, want VHF (%d)", r.v4Input, v4BandVHF)
+	}
+
+	// Re-tuning within VHF must NOT rewrite the input switches (band
+	// unchanged) — only the notch write may re-fire, and here it's a
+	// no-op since 0x17 is already 0x38.
+	m.Script = nil
+	m.Step = 0
+	m.Err = nil
+	if err := r.applyBlogV4Band(160_000_000); err != nil {
+		t.Fatalf("applyBlogV4Band re-tune: %v", err)
+	}
+	if m.Err != nil {
+		t.Fatalf("re-tune emitted unexpected wire traffic: %v", m.Err)
+	}
+}

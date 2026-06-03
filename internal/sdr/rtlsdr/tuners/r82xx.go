@@ -42,7 +42,29 @@ type R82xx struct {
 	bwHz     uint32 // last requested bandwidth
 	freqHz   uint32 // last requested center frequency
 	ppmCorr  int    // tuner-LO frequency correction, parts-per-million
+
+	// blogV4 marks an RTL-SDR Blog V4 (R828D) dongle, which needs the
+	// 28.8 MHz reference crystal (NOT the 16 MHz generic-R828D default)
+	// and per-band switching of its HF/VHF/UHF input bank in SetFreq.
+	// blogV4L is the two-band "Lite" variant (no separate VHF input).
+	// v4Input caches the last-selected input bank so SetFreq only
+	// rewrites the switch registers on a band change. See SetBlogV4.
+	blogV4  bool
+	blogV4L bool
+	v4Input v4Band
 }
+
+// v4Band identifies the RTL-SDR Blog V4's switched input bank. The
+// zero value (v4BandNone) means "no band selected yet", so the first
+// SetFreq always writes the switch registers.
+type v4Band uint8
+
+const (
+	v4BandNone v4Band = iota
+	v4BandHF
+	v4BandVHF
+	v4BandUHF
+)
 
 // NewR82xx constructs a driver bound to the given RTL2832U demod and
 // I2C address. Callers normally obtain the right address via the
@@ -70,6 +92,20 @@ func NewR82xx(d *rtl2832u.Demod, i2cAddr uint8, chip Type) *R82xx {
 // defaults are set by [NewR82xx] (28.8 MHz for R820T/R820T2, 16 MHz
 // for R828D); SetXtal exists for boards that deviate from those.
 func (r *R82xx) SetXtal(hz uint32) { r.xtalHz = hz }
+
+// SetBlogV4 marks this tuner as an RTL-SDR Blog V4 (lite=false) or V4
+// Lite (lite=true) so SetFreq drives the V4's switched HF/VHF/UHF input
+// bank. It also restores the 28.8 MHz reference crystal: the V4 runs
+// its R828D from 28.8 MHz, but NewR82xx defaults every R828D to the
+// 16 MHz generic crystal, which would mis-tune the V4 by ~28.8/16 =
+// 1.8× (issue #264). Detection keys off the V4's USB iManufacturer/
+// iProduct strings; mirrors the rtlsdr-blog fork's per-V4 handling
+// (tuner_r82xx.c). Call once after detection, before the first SetFreq.
+func (r *R82xx) SetBlogV4(lite bool) {
+	r.blogV4 = true
+	r.blogV4L = lite
+	r.xtalHz = r82xxXtalHz // 28.8 MHz, overriding the R828D 16 MHz default
+}
 
 // SetFreqCorrection applies a parts-per-million correction to the
 // tuner LO, mirroring the tuner half of librtlsdr's
@@ -255,7 +291,15 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
 	}
-	if hz < 24_000_000 || hz > 1_766_000_000 {
+	// On the Blog V4, HF (≤ 28.8 MHz) is reached through the on-board
+	// upconverter, so the R828D mixer/PLL actually sees hz + 28.8 MHz.
+	// VHF/UHF tune directly (target == hz), so this is a no-op outside
+	// HF and leaves every non-V4 path byte-for-byte unchanged.
+	target := hz
+	if r.blogV4 && hz <= r82xxV4HFCrossHz {
+		target = hz + r82xxXtalHz
+	}
+	if target < 24_000_000 || target > 1_766_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: r.chipType.String()}
 	}
 	if err := r.demod.SetI2CRepeater(true); err != nil {
@@ -263,14 +307,112 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	}
 	defer r.demod.SetI2CRepeater(false)
 	r.freqHz = hz
-	if err := r.setMux(hz); err != nil {
+	if err := r.setMux(target); err != nil {
 		return fmt.Errorf("r82xx SetFreq: setMux: %w", err)
 	}
-	loHz := hz + r82xxIFFreqHz
+	// V4 front-end: select the HF/VHF/UHF input bank and notch for the
+	// *requested* RF frequency (not the upconverted target). Must run
+	// after setMux because the HF tracking-filter bypass overrides the
+	// mux's 0x1A/0x1B writes.
+	if r.blogV4 {
+		if err := r.applyBlogV4Band(hz); err != nil {
+			return fmt.Errorf("r82xx SetFreq: v4 band: %w", err)
+		}
+	}
+	loHz := target + r82xxIFFreqHz
 	if err := r.setPLL(loHz); err != nil {
 		return fmt.Errorf("r82xx SetFreq: setPLL(%d): %w", loHz, err)
 	}
 	return nil
+}
+
+// v4BandFor maps a requested RF frequency to the RTL-SDR Blog V4 input
+// bank: HF ≤ 28.8 MHz (upconverter), VHF (28.8, 250) MHz, UHF ≥ 250 MHz.
+// The two-band V4 Lite has no separate VHF input — everything above HF
+// is UHF. Thresholds match the rtlsdr-blog fork.
+func v4BandFor(hz uint32, lite bool) v4Band {
+	switch {
+	case hz <= r82xxV4HFCrossHz:
+		return v4BandHF
+	case !lite && hz < r82xxV4UHFCrossHz:
+		return v4BandVHF
+	default:
+		return v4BandUHF
+	}
+}
+
+// applyBlogV4Band drives the RTL-SDR Blog V4's switched input bank,
+// notch filter, and (for HF) tracking-filter bypass for the requested
+// RF frequency. Ported verbatim from the rtlsdr-blog fork's
+// r82xx_set_freq V4 block; the stock R828D init leaves every V4 input
+// off, so without these writes the V4 routes no RF and receives only
+// noise (issue #264). hz is the original requested frequency (the band
+// decision is on the antenna-plane frequency, not the upconverted IF
+// target). Caller holds the I2C repeater.
+func (r *R82xx) applyBlogV4Band(hz uint32) error {
+	// Notch ON (0x08) except when tuned inside one of the V4's notch
+	// windows (≤2.2 MHz, 85–112 MHz, 172–242 MHz), where it's OFF.
+	openD := byte(0x08)
+	if hz <= 2_200_000 ||
+		(hz >= 85_000_000 && hz <= 112_000_000) ||
+		(hz >= 172_000_000 && hz <= 242_000_000) {
+		openD = 0x00
+	}
+	if err := r.writeRegMask(0x17, openD, 0x08); err != nil {
+		return err
+	}
+
+	// Band: HF ≤ 28.8 MHz; VHF (28.8, 250) MHz; UHF ≥ 250 MHz. The V4
+	// Lite has no separate VHF input — everything above HF is UHF.
+	band := v4BandFor(hz, r.blogV4L)
+
+	// HF: bypass the tracking filter to cut upconverter insertion loss.
+	// Re-applied every tune since setMux rewrites 0x1A/0x1B above.
+	if band == v4BandHF {
+		if err := r.writeRegMask(0x1A, 0x40, 0xC3); err != nil {
+			return err
+		}
+		if err := r.writeReg(0x1B, 0x00); err != nil {
+			return err
+		}
+	}
+
+	// Only rewrite the input switches on a band change.
+	if band == r.v4Input {
+		return nil
+	}
+	r.v4Input = band
+
+	// Cable 2 = HF input (reg 0x06 bit 3).
+	cable2 := byte(0x00)
+	if band == v4BandHF {
+		cable2 = 0x08
+	}
+	if err := r.writeRegMask(0x06, cable2, 0x08); err != nil {
+		return err
+	}
+	// Upconverter relay on RTL2832 GPIO5: driven high for every band
+	// except HF (the fork's !cable_2_in).
+	if err := r.demod.SetGPIOOutput(5); err != nil {
+		return err
+	}
+	if err := r.demod.SetGPIOBit(5, cable2 == 0x00); err != nil {
+		return err
+	}
+	// Cable 1 = VHF input (reg 0x05 bit 6).
+	cable1 := byte(0x00)
+	if band == v4BandVHF {
+		cable1 = 0x40
+	}
+	if err := r.writeRegMask(0x05, cable1, 0x40); err != nil {
+		return err
+	}
+	// Air-in = UHF input (reg 0x05 bit 5): on for HF/VHF, off for UHF.
+	air := byte(0x20)
+	if band == v4BandUHF {
+		air = 0x00
+	}
+	return r.writeRegMask(0x05, air, 0x20)
 }
 
 // SetBandwidth picks the filter that matches the requested occupied
