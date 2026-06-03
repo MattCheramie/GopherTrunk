@@ -9,6 +9,19 @@ for tagged releases.
 
 ### Added
 
+- **Offline DMR decode in `gophertrunk replay`.** The `replay` subcommand
+  now decodes DMR Tier III / Tier II captures, not just P25 Phase 1: pass
+  `-protocol dmr-tier3` (or `dmr-tier2`) to run a raw IQ file through the
+  same production `dmr/receiver` + `tier3`/`tier2` control-channel chain
+  the daemon uses, printing the locked color code / system ID. A new
+  `-conjugate` flag negates Q **before** channelization to decode a
+  spectrum-inverted / I-Q-swapped front-end (the RTL-SDR Blog V4 / R828D
+  "are I and Q reversed?" case, issue #264) — applied at the source so an
+  off-DC channel is no longer pulled from the mirror offset, which the
+  post-channelization dual-polarity burst decode cannot recover on its
+  own. Combined with `-tune-hz` / `-auto-tune` this makes a captured
+  `.cfile` a reproducible DMR test fixture and the primary tool for
+  confirming whether a dongle is actually receiving the intended signal.
 - **Per-timeslot observability for DMR calls.** A DMR carrier's two
   concurrent calls are now distinguishable in the live views and
   metrics: the TUI active-call Flags column shows `TS1` / `TS2`
