@@ -77,6 +77,10 @@ export interface GrantDTO {
   frequency_hz: number;
   channel_id?: number;
   channel_number?: number;
+  // TDMA timeslot, 1-based: 1 = TS1, 2 = TS2 (DMR Tier III). Absent /
+  // 0 for non-slotted protocols, where frequency alone identifies the
+  // call.
+  timeslot?: number;
   encrypted?: boolean;
   emergency?: boolean;
   data_call?: boolean;

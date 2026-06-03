@@ -92,22 +92,22 @@ func (c *ControlChannel) handleVendorCSBK(vendor Vendor, cc uint8, csbk CSBK) {
 // layer, not the voice codec, so the engine / recorder / vocoder paths
 // are unaffected.
 func (c *ControlChannel) publishVendorTVGrant(vendor Vendor, cc uint8, g TVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.GroupAddress, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID, g.ServiceOptions)
 	if !ok {
 		return
 	}
 	c.log.Debug("dmr/tier3: vendor tv-grant",
 		"vendor", vendor.String(), "system", c.systemName, "cc", cc,
-		"tg", g.GroupAddress, "src", g.SourceID, "lcn", g.LCN, "freq_hz", freq)
+		"tg", g.GroupAddress, "src", g.SourceID, "lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
 }
 
 // publishVendorPVGrant emits a private voice grant from a vendor CSBK.
 func (c *ControlChannel) publishVendorPVGrant(vendor Vendor, cc uint8, g PVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.DestinationID, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID, g.ServiceOptions)
 	if !ok {
 		return
 	}
 	c.log.Debug("dmr/tier3: vendor pv-grant",
 		"vendor", vendor.String(), "system", c.systemName, "cc", cc,
-		"dst", g.DestinationID, "src", g.SourceID, "lcn", g.LCN, "freq_hz", freq)
+		"dst", g.DestinationID, "src", g.SourceID, "lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
 }

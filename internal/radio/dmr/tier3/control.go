@@ -145,7 +145,13 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 // voice grant on the bus. Shared by the standard and vendor CSBK
 // paths. Returns the resolved frequency and false when the LCN has no
 // band-plan entry (resolveLCN has already published the decode error).
-func (c *ControlChannel) publishGrant(cc, lcn uint8, group, source uint32, serviceOptions uint8) (uint32, bool) {
+//
+// slot is the CSBK's 0-based timeslot bit (0 = TS1, 1 = TS2); it is
+// mapped to trunking.Grant's 1-based Timeslot (1 = TS1, 2 = TS2) so a
+// DMR call's slot becomes part of the engine's (frequency, timeslot)
+// call identity — both slots of a 12.5 kHz carrier carry independent
+// calls.
+func (c *ControlChannel) publishGrant(cc, lcn, slot uint8, group, source uint32, serviceOptions uint8) (uint32, bool) {
 	freq, ok := c.resolveLCN(lcn)
 	if !ok {
 		return 0, false
@@ -160,6 +166,7 @@ func (c *ControlChannel) publishGrant(cc, lcn uint8, group, source uint32, servi
 			FrequencyHz: freq,
 			ChannelID:   cc,
 			ChannelNum:  uint16(lcn),
+			Timeslot:    slot + 1,
 			Encrypted:   serviceOptions&0x40 != 0,
 			Emergency:   serviceOptions&0x80 != 0,
 			At:          c.now(),
@@ -169,7 +176,7 @@ func (c *ControlChannel) publishGrant(cc, lcn uint8, group, source uint32, servi
 }
 
 func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.GroupAddress, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID, g.ServiceOptions)
 	if !ok {
 		return
 	}
@@ -179,7 +186,7 @@ func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
 }
 
 func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.DestinationID, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID, g.ServiceOptions)
 	if !ok {
 		return
 	}

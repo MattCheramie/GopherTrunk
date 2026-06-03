@@ -67,6 +67,12 @@ message Grant {
   // backfills the values via KindCallEncryption).
   uint32 algorithm_id    = 11;
   uint32 key_id          = 12;
+  // TDMA timeslot the call occupies on its carrier, 1-based:
+  // 0 = not applicable / unknown (P25 Phase 1, NXDN, analog),
+  // 1 = TS1, 2 = TS2. DMR Tier III carries two independent calls on
+  // one 12.5 kHz carrier, so (frequency_hz, timeslot) identifies a
+  // call rather than frequency alone.
+  uint32 timeslot        = 13;
 }
 
 message CallStart {
