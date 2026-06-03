@@ -7,6 +7,25 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **DMR Tier III band plan → T3 voice on the wideband dongle.** A
+  Tier III voice-grant CSBK references its traffic channel by a 7-bit
+  Logical Channel Number (LCN), not an absolute frequency, so the
+  decoder needs an LCN→frequency map to follow a call. That resolver
+  was never wired from config — both the wideband (`widebandt2`) and
+  dedicated-dongle (`ccdecoder`) decode paths built the Tier III
+  `ControlChannel` with a nil resolver, so every T3 voice grant was
+  dropped with `decode.error stage=no-bandplan` before it reached the
+  voice pool. New per-system `dmr_band_plan` config (`linear`
+  base/spacing/offset grid **or** an explicit `table` of `{lcn,
+  freq_hz}`) is converted to a `tier3.Resolver` and threaded into both
+  paths via `tier3.ResolverFromPlan`. Resolved grants are served by the
+  existing virtual voice pool (`voice_taps` DDC taps on the wideband
+  dongle) or a physical `role: voice` SDR. A `protocol: dmr` system with
+  no band plan warns at start-up and keeps decoding the control channel.
+  See [`docs/hardware.md`](docs/hardware.md) and `config.example.yaml`.
+
 ## [v0.3.1] — 2026-06-03
 
 RTL-SDR Blog V4 reception finally works and the issue #402 live-decode
