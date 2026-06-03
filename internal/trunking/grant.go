@@ -33,6 +33,14 @@ type Grant struct {
 	Timeslot  uint8
 	Encrypted bool
 	Emergency bool
+	// DMRInterleavedVoice mirrors the system-level
+	// trunking.System.DMRInterleavedVoice opt-in onto the grant so the
+	// voice composer selects the 2-slot interleaved decoder and routes
+	// this call to its timeslot by matching the embedded Link Control's
+	// talkgroup to GroupID. Set by the DMR Tier III control channel;
+	// false (the default) keeps the single-slot decoder. Ignored for
+	// non-DMR grants.
+	DMRInterleavedVoice bool
 	// AlgorithmID and KeyID carry the encryption parameters the
 	// protocol's privacy header advertises (the DMR PI header, etc.).
 	// They are meaningful only when Encrypted is true and stay zero

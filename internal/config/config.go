@@ -753,6 +753,16 @@ type SystemConfig struct {
 	// call (issue #356 follow-up). Ignored for non-P25-Phase-1
 	// protocols.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
+	// DMRInterleavedVoice opts a DMR system into the experimental
+	// 2-slot interleaved voice decoder: each voice grant decodes its
+	// timeslot from the carrier's interleaved burst stream and is
+	// routed to its call by matching the embedded Link Control's
+	// talkgroup. Default false keeps the single-slot decoder. The
+	// on-air same-slot cadence (CACH/guard) and the embedded-signalling
+	// FEC constants are still pending a real-capture cross-check (see
+	// docs/status.md), so this is opt-in until validated. Ignored for
+	// non-DMR systems.
+	DMRInterleavedVoice bool `yaml:"dmr_interleaved_voice"`
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values:
 	// "" / "on" / "true" / "1" (the new default — 146 channel

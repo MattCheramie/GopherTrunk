@@ -221,6 +221,16 @@ type System struct {
 	// for non-DMR-Tier-III protocols.
 	DMRBandPlan *DMRBandPlan
 
+	// DMRInterleavedVoice opts the system into the experimental 2-slot
+	// interleaved voice decoder (mirrors config.System.DMRInterleavedVoice).
+	// When true the DMR Tier III control channel tags its voice grants
+	// so the composer decodes each timeslot from the carrier's
+	// interleaved burst stream and routes it to the call by embedded-LC
+	// talkgroup. Default false keeps the single-slot decoder. Pending a
+	// real-capture cross-check of the on-air constants — see
+	// docs/status.md. Ignored for non-DMR protocols.
+	DMRInterleavedVoice bool
+
 	// P25Phase1DemodMode selects the symbol-recovery path for the
 	// P25 Phase 1 receiver. Recognised values (case-insensitive):
 	// "" / "c4fm" / "fm" → DemodC4FM (the default — FM

@@ -427,6 +427,14 @@ are disambiguated by a `_ts1` / `_ts2` suffix on the WAV filename, and
 the slot is carried through the call log (`timeslot` column) and the
 REST/SSE/gRPC call APIs.
 
+An experimental per-system `dmr_interleaved_voice: true` additionally
+turns on a 2-slot interleaved voice decoder: rather than relying on the
+tap to isolate one slot, each call decodes its own timeslot from the
+carrier's interleaved burst stream and is routed by the embedded Link
+Control's talkgroup. It defaults off and its on-air constants are still
+pending a real-capture cross-check (see
+[docs/status.md](status.md)) — leave it off for normal operation.
+
 How spillover works: when a grant's frequency lands *outside* the
 wideband IQ window (more common on geographically spread P25 systems
 than on a single-site DMR T3 cluster), the virtual tuner returns

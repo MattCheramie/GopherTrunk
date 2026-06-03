@@ -313,8 +313,9 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			// dmr_band_plan. Without it every T3 voice grant drops with
 			// decode.error stage=no-bandplan; the daemon already warns
 			// at load time. See internal/radio/dmr/tier3.ResolverFromPlan.
-			Resolver: tier3.ResolverFromPlan(sys.DMRBandPlan),
-			Now:      now,
+			Resolver:         tier3.ResolverFromPlan(sys.DMRBandPlan),
+			Now:              now,
+			InterleavedVoice: sys.DMRInterleavedVoice,
 		})
 		rx := dmrrx.New(dmrrx.Options{
 			SampleRateHz: narrowbandRateHz,

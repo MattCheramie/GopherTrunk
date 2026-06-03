@@ -40,14 +40,15 @@ func (s LockState) LockedNAC() uint16         { return s.SystemID }
 // logged at debug and ignored — they're noise from the hunter's
 // perspective.
 type ControlChannel struct {
-	bus        *events.Bus
-	log        *slog.Logger
-	systemName string
-	freqHz     uint32
-	resolver   Resolver
-	now        func() time.Time
-	locked     bool
-	last       LockState
+	bus              *events.Bus
+	log              *slog.Logger
+	systemName       string
+	freqHz           uint32
+	resolver         Resolver
+	now              func() time.Time
+	interleavedVoice bool
+	locked           bool
+	last             LockState
 
 	// restChannel tracks the LCN a Capacity Plus system currently
 	// advertises as its rest (control) channel. Zero until a
@@ -69,6 +70,10 @@ type Options struct {
 	FrequencyHz uint32
 	Resolver    Resolver
 	Now         func() time.Time
+	// InterleavedVoice tags published voice grants with
+	// Grant.DMRInterleavedVoice so the composer uses the 2-slot
+	// interleaved decoder. Mirrors System.DMRInterleavedVoice.
+	InterleavedVoice bool
 }
 
 // New constructs a ControlChannel from Options.
@@ -82,12 +87,13 @@ func New(opts Options) *ControlChannel {
 		now = time.Now
 	}
 	return &ControlChannel{
-		bus:        opts.Bus,
-		log:        log,
-		systemName: opts.SystemName,
-		freqHz:     opts.FrequencyHz,
-		resolver:   opts.Resolver,
-		now:        now,
+		bus:              opts.Bus,
+		log:              log,
+		systemName:       opts.SystemName,
+		freqHz:           opts.FrequencyHz,
+		resolver:         opts.Resolver,
+		now:              now,
+		interleavedVoice: opts.InterleavedVoice,
 	}
 }
 
@@ -159,17 +165,18 @@ func (c *ControlChannel) publishGrant(cc, lcn, slot uint8, group, source uint32,
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
-			System:      c.systemName,
-			Protocol:    "dmr-tier3",
-			GroupID:     group,
-			SourceID:    source,
-			FrequencyHz: freq,
-			ChannelID:   cc,
-			ChannelNum:  uint16(lcn),
-			Timeslot:    slot + 1,
-			Encrypted:   serviceOptions&0x40 != 0,
-			Emergency:   serviceOptions&0x80 != 0,
-			At:          c.now(),
+			System:              c.systemName,
+			Protocol:            "dmr-tier3",
+			GroupID:             group,
+			SourceID:            source,
+			FrequencyHz:         freq,
+			ChannelID:           cc,
+			ChannelNum:          uint16(lcn),
+			Timeslot:            slot + 1,
+			DMRInterleavedVoice: c.interleavedVoice,
+			Encrypted:           serviceOptions&0x40 != 0,
+			Emergency:           serviceOptions&0x80 != 0,
+			At:                  c.now(),
 		},
 	})
 	return freq, true

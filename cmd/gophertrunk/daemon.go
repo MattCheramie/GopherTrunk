@@ -556,6 +556,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			ControlChannels:         sys.ControlChannels,
 			P25BandPlan:             p25BandPlan,
 			DMRBandPlan:             dmrBandPlan,
+			DMRInterleavedVoice:     sys.DMRInterleavedVoice,
 			TETRAColourCode:         sys.TETRAColourCode,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,

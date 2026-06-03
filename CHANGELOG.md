@@ -9,6 +9,22 @@ for tagged releases.
 
 ### Added
 
+- **DMR 2-slot interleaved voice wired into the composer (opt-in).** The
+  interleaved decoder + embedded-LC labelling from the previous changes
+  are now reachable end-to-end on the production voice path behind a new
+  per-system `dmr_interleaved_voice: true`. When set, the DMR Tier III
+  control channel tags its voice grants (`Grant.DMRInterleavedVoice`),
+  and the composer runs `voice.NewInterleavedDecoder` and routes each
+  call to its timeslot with a `slotRouter` — it keeps only the
+  superframes whose embedded Link Control names the grant's talkgroup,
+  binding that slot's phase so subsequent LC-less superframes still
+  route correctly. Defaults off (untouched configs keep the single-slot
+  decoder). Verified end-to-end against synthetic modulated 2-slot IQ
+  (one talkgroup per slot → only the granted talkgroup's audio reaches
+  the recorder). A skip-gated `-tags integration` harness
+  (`GOPHERTRUNK_DMR_2SLOT_CFILE`) is the place to validate the on-air
+  constants against a real capture before promoting it to the default —
+  see [docs/status.md](docs/status.md) and `config.example.yaml`.
 - **DMR embedded Link Control decode → per-timeslot talkgroup labelling.**
   On a BS-sourced carrier both timeslots use the identical burst-A voice
   sync, so the sync alone cannot say which slot (and which talkgroup) a
