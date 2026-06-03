@@ -9,6 +9,21 @@ for tagged releases.
 
 ### Added
 
+- **DMR 2-slot interleaved voice decoder.** The DMR voice superframe
+  decoder previously assumed a single-slot stream — bursts A–F at a
+  contiguous 132-dibit cadence — which only holds for synthetic
+  single-slot vectors. A real DMR carrier is 2-slot TDMA: the two
+  timeslots' bursts interleave, so a call's own bursts are 264 dibits
+  apart. New `voice.NewInterleavedDecoder` (stride 2) handles that — it
+  locks each slot's burst A on its own voice sync, gathers that slot's
+  B–F by striding over the interleaved other-slot burst, and emits one
+  superframe per slot, told apart by the new `VoiceSuperframe.Phase`
+  field. `NewDecoder` (stride 1) is unchanged for single-slot streams.
+  The exact same-slot cadence on live BS-sourced air (CACH/guard
+  handling) still needs a real IQ capture before the interleaved path
+  replaces the single-slot decoder on the production composer, so it
+  stays opt-in at the library level for now — see
+  [docs/status.md](docs/status.md).
 - **DMR timeslot is now a first-class call attribute (TS1/TS2).** A DMR
   Tier III carrier interleaves two independent calls — one per TDMA
   timeslot — but the slot was parsed from the grant CSBK and then

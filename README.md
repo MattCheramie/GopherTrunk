@@ -276,6 +276,14 @@ log, per-talkgroup policy) all ship.
 - **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2 decode
   to audio. NXDN, dPMR, TETRA, YSF, D-STAR voice (plus EDACS
   ProVoice) are followed and logged but not yet turned into PCM.
+- **DMR 2-slot interleaved voice cadence.** Both timeslots of a
+  carrier are tracked, recorded, and logged as separate calls, and a
+  stride-2 interleaved superframe decoder
+  (`voice.NewInterleavedDecoder`) that separates the two slots is
+  implemented and unit-tested against synthetic vectors. Confirming
+  the exact same-slot burst cadence on live BS-sourced air (CACH /
+  guard handling) before it becomes the production default needs a
+  real IQ capture — see [docs/status.md](docs/status.md).
 - **Additional SDR validation.** HackRF / Airspy / HF+ drivers
   exercise the documented USB vendor protocols under unit tests
   against a mock transport; on-air validation against attached
