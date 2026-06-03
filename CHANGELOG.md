@@ -19,6 +19,20 @@ for tagged releases.
   through the JSON/SSE API, the gRPC `Grant` message, and the web DTO.
   This is the foundation for separating concurrent same-carrier calls;
   engine/recorder routing and per-slot voice decode land in follow-ups.
+- **DMR timeslot routing: TS1 + TS2 are now followed as concurrent
+  calls.** Building on the grant attribute above, the trunking engine
+  treats `(frequency, timeslot)` as the call identity: a TS2 grant on a
+  carrier already running a TS1 call is no longer folded into it by the
+  duplicate-grant guard (which previously matched on talkgroup +
+  frequency only), so both slots bind their own voice tap / `role: voice`
+  SDR and run simultaneously. Each slot is recorded as a distinct WAV
+  (`…_ts1.wav` / `…_ts2.wav`, so same-talkgroup slots no longer collide
+  on disk), persisted to the call log's new `timeslot` column (added by
+  an idempotent migration on existing databases), and surfaced through
+  the REST/SSE/gRPC call-history APIs and the web DTO. Following both
+  slots of one carrier at once requires at least two voice taps/devices
+  that cover the frequency — see
+  [docs/hardware.md](docs/hardware.md).
 
 - **DMR Tier III band plan → T3 voice on the wideband dongle.** A
   Tier III voice-grant CSBK references its traffic channel by a 7-bit

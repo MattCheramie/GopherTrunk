@@ -371,15 +371,17 @@ type HistoryFilter struct {
 // CallRow mirrors storage.CallRow as a JSON-friendly row. Lives in the
 // api package so the storage package can stay free of API concerns.
 type CallRow struct {
-	ID             int64     `json:"id"`
-	System         string    `json:"system"`
-	Protocol       string    `json:"protocol"`
-	GroupID        uint32    `json:"group_id"`
-	SourceID       uint32    `json:"source_id"`
-	FrequencyHz    uint32    `json:"frequency_hz"`
-	Encrypted      bool      `json:"encrypted"`
-	Emergency      bool      `json:"emergency"`
-	DataCall       bool      `json:"data_call"`
+	ID          int64  `json:"id"`
+	System      string `json:"system"`
+	Protocol    string `json:"protocol"`
+	GroupID     uint32 `json:"group_id"`
+	SourceID    uint32 `json:"source_id"`
+	FrequencyHz uint32 `json:"frequency_hz"`
+	Encrypted   bool   `json:"encrypted"`
+	Emergency   bool   `json:"emergency"`
+	DataCall    bool   `json:"data_call"`
+	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	Timeslot       uint8     `json:"timeslot,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at,omitempty"`

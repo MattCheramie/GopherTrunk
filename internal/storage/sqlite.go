@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS call_log (
     key_id          INTEGER NOT NULL DEFAULT 0,
     emergency       INTEGER NOT NULL DEFAULT 0,
     data_call       INTEGER NOT NULL DEFAULT 0,
+    timeslot        INTEGER NOT NULL DEFAULT 0,  -- DMR TDMA slot: 0=n/a, 1=TS1, 2=TS2
     device_serial   TEXT    NOT NULL,
     started_at      INTEGER NOT NULL,  -- unix nanoseconds
     ended_at        INTEGER,
@@ -343,6 +344,7 @@ func (d *DB) ensureCallLogColumns() error {
 	adds := []struct{ name, ddl string }{
 		{"algorithm_id", `ALTER TABLE call_log ADD COLUMN algorithm_id INTEGER NOT NULL DEFAULT 0`},
 		{"key_id", `ALTER TABLE call_log ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0`},
+		{"timeslot", `ALTER TABLE call_log ADD COLUMN timeslot INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range adds {
 		if have[a.name] {

@@ -219,9 +219,17 @@ func (e *Engine) HandleGrant(g Grant) {
 	// still going" and refresh the existing bind's LastHeardAt. Skip
 	// when GroupID is zero (grants without a TG can legitimately
 	// share a frequency).
+	//
+	// Timeslot is part of the match: a DMR Tier III carrier runs two
+	// independent calls, one per TDMA slot, so a TS2 grant must NOT be
+	// folded into an active TS1 call on the same frequency (even when
+	// both slots happen to carry the same talkgroup) — that would drop
+	// the second call. For non-slotted protocols Timeslot is 0 on both
+	// sides, so the comparison is a no-op.
 	if g.GroupID != 0 {
 		for _, ac := range e.pool.Active() {
-			if ac.Grant.GroupID == g.GroupID && ac.Grant.FrequencyHz == g.FrequencyHz {
+			if ac.Grant.GroupID == g.GroupID && ac.Grant.FrequencyHz == g.FrequencyHz &&
+				ac.Grant.Timeslot == g.Timeslot {
 				e.pool.Touch(ac.Device.Serial, e.now())
 				e.log.Debug("grant already active; refreshed",
 					"grant", g.String(), "device", ac.Device.Serial)
