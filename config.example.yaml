@@ -224,7 +224,10 @@ sdr:
     # gets its own per-call DDC tap on this dongle's IQ stream.
     # Out-of-window grants spill over to a physical voice SDR
     # when one is configured, or drop with the standard
-    # "no voice device available" log otherwise.
+    # "no voice device available" log otherwise. This works for
+    # P25 Phase 1/2 and DMR Tier III alike — but a DMR Tier III
+    # system needs a `dmr_band_plan` (see the systems section) so
+    # the decoder can turn each grant's LCN into a frequency.
     # - serial: "00000005"
     #   role: wideband
     #   center_freq_hz: 851_500_000
@@ -232,6 +235,18 @@ sdr:
     #   channels:
     #     - frequency_hz: 851_037_500
     #       system: "regional-p25"
+    #
+    # DMR Tier III voice on a wideband dongle: identical wiring,
+    # just point the channel at a `protocol: dmr` system that
+    # carries a `dmr_band_plan`. The CC tap decodes the CSBK chain
+    # and each voice grant lands on a voice_taps DDC tap.
+    # - serial: "00000007"
+    #   role: wideband
+    #   center_freq_hz: 851_500_000
+    #   voice_taps: 4
+    #   channels:
+    #     - frequency_hz: 851_037_500
+    #       system: "regional-dmr-t3"
     #
     # P25 Phase 2 control channel on a wideband dongle. The
     # referenced system carries `protocol: p25-phase2`; the
@@ -429,6 +444,32 @@ trunking:
       # to let the affiliation tracker surface RIDs live without any
       # operator-configured aliases.
       # rid_alias_file: "/etc/gophertrunk/rids-p25.csv"
+
+    # DMR Tier III trunked system. A T3 voice-grant CSBK references its
+    # traffic channel by a 7-bit Logical Channel Number (LCN), never an
+    # absolute frequency, so the decoder needs a `dmr_band_plan` to map
+    # LCN → downlink Hz. WITHOUT it every voice grant is dropped with
+    # decode.error stage=no-bandplan (control-channel monitoring still
+    # works). Provide exactly one of `linear` or `table`.
+    - name: "Example-DMR-T3"
+      protocol: dmr
+      control_channels:
+        - 851_037_500
+      talkgroup_file: "/etc/gophertrunk/talkgroups-dmr.csv"
+      dmr_band_plan:
+        # Linear grid: freq = base_hz + (lcn - offset) * spacing_hz.
+        # offset: 1 matches the common case of sites that number LCNs
+        # from 1 (so LCN 1 == base_hz). Use offset: 0 for 0-indexed sites.
+        linear:
+          base_hz: 851_012_500
+          spacing_hz: 25_000
+          offset: 1
+        # --- OR, for sites whose channels aren't on a regular grid,
+        # an explicit LCN → frequency table (omit `linear` if used): ---
+        # table:
+        #   - { lcn: 1, freq_hz: 851_012_500 }
+        #   - { lcn: 2, freq_hz: 851_037_500 }
+        #   - { lcn: 9, freq_hz: 851_225_000 }
 
   # Per-protocol FEC is on by default — every protocol the daemon
   # supports (TETRA, LTR, P25 Phase 2, NXDN, EDACS, MPT 1327,

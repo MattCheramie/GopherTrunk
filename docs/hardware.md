@@ -316,6 +316,8 @@ trunking:
     - name: "regional-dmr-t3"
       protocol: dmr                    # Tier III trunked
       control_channels: [851_037_500]  # MUST include the wideband channel above
+      dmr_band_plan:                   # REQUIRED for T3 voice (LCN → Hz)
+        linear: { base_hz: 851_012_500, spacing_hz: 25_000, offset: 1 }
     - name: "neighbour-dmr-t2"
       protocol: dmr-tier2              # Tier II conventional
       control_channels: [852_125_000]
@@ -324,6 +326,21 @@ trunking:
 The engine picks the right state machine per channel (Tier III's
 `ControlChannel` for `protocol: dmr`, Tier II's `ConventionalChannel`
 for `protocol: dmr-tier2`).
+
+A DMR Tier III voice-grant CSBK identifies its traffic channel by a
+7-bit Logical Channel Number (LCN), not an absolute frequency, so the
+T3 system **must** carry a `dmr_band_plan` to resolve LCN → downlink
+Hz. Provide exactly one of:
+
+- `linear` — a regular grid: `freq = base_hz + (lcn - offset) × spacing_hz`.
+  Set `offset: 1` for sites that number LCNs from 1 (the common case).
+- `table` — an explicit list of `{ lcn, freq_hz }` pairs for irregular
+  sites.
+
+Without it, T3 control-channel monitoring still works but every voice
+grant is dropped with `decode.error stage=no-bandplan` (and the daemon
+logs a warning at startup). Tier II carries its repeater frequency
+directly and needs no band plan.
 
 ### P25 trunked control channel on a wideband dongle
 
@@ -390,6 +407,13 @@ trunking:
       control_channels: [851_037_500]
 ```
 
+This works identically for **DMR Tier III** — point the channel at a
+`protocol: dmr` system instead. The only extra requirement is that the
+T3 system carry a `dmr_band_plan` (see "Mixing DMR Tier II and Tier III
+on one dongle" above): the voice composer can only follow a grant once
+the decoder has resolved its LCN to a frequency, so a T3 system without
+a band plan emits no voice grants for the taps to serve.
+
 How spillover works: when a grant's frequency lands *outside* the
 wideband IQ window (more common on geographically spread P25 systems
 than on a single-site DMR T3 cluster), the virtual tuner returns
@@ -447,7 +471,9 @@ message that names the offending entry.
   single backup voice dongle covers the edge cases on
   geographically spread systems. Setups with `voice_taps: 0` (or
   unset) keep the legacy behaviour where every voice grant routes
-  to the physical pool.
+  to the physical pool. DMR Tier III additionally requires the
+  system's `dmr_band_plan` (LCN → frequency) before any voice grant
+  — virtual or physical — can be followed.
 - **DDC-with-real-signal RX limits.** The wideband engine's per-tap
   DDC (when the SDR sample rate is higher than 48 kHz) uses the same
   Kaiser anti-alias prototype as the single-channel ccdecoder path,

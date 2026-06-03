@@ -525,11 +525,37 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				})
 			}
 		}
+		var dmrBandPlan *trunking.DMRBandPlan
+		if bp := sys.DMRBandPlan; bp != nil {
+			dmrBandPlan = &trunking.DMRBandPlan{}
+			if bp.Linear != nil {
+				dmrBandPlan.Linear = &trunking.DMRLinearBandPlan{
+					BaseHz:    bp.Linear.BaseHz,
+					SpacingHz: bp.Linear.SpacingHz,
+					Offset:    bp.Linear.Offset,
+				}
+			}
+			for _, e := range bp.Table {
+				dmrBandPlan.Table = append(dmrBandPlan.Table, trunking.DMRBandPlanTableEntry{
+					LCN:    e.LCN,
+					FreqHz: e.FreqHz,
+				})
+			}
+		} else if proto == trunking.ProtocolDMR {
+			// Tier III grants reference channels by LCN; without a band
+			// plan the decoder cannot resolve a downlink frequency and
+			// every voice grant is dropped (decode.error stage=
+			// no-bandplan). CC monitoring still works, so warn rather
+			// than fail the load.
+			log.Warn("daemon: dmr Tier III system has no dmr_band_plan; voice grants will be dropped (no-bandplan)",
+				"system", sys.Name)
+		}
 		s := trunking.System{
 			Name:                    sys.Name,
 			Protocol:                proto,
 			ControlChannels:         sys.ControlChannels,
 			P25BandPlan:             p25BandPlan,
+			DMRBandPlan:             dmrBandPlan,
 			TETRAColourCode:         sys.TETRAColourCode,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,

@@ -29,9 +29,15 @@
 //     receiver and emits grants from the MAC PDU chain.
 //
 // Published grants flow through the trunking engine's existing
-// voice-pool allocator, which binds them to a physical role: voice
-// dongle. Voice grants are not (yet) decoded by the wideband dongle
-// itself — that's the "virtual voice pool" follow-up.
+// voice-pool allocator, which binds each to either a physical
+// role: voice dongle or a virtual voice tap (a per-grant DDC on this
+// same wideband IQ stream — see internal/sdr/wbvoice, enabled per
+// dongle via voice_taps). So a wideband dongle can decode its own
+// voice grants without a separate voice SDR, and falls back to a
+// physical voice SDR when the grant lands outside its IQ window or
+// every tap is busy. DMR Tier III grants reference channels by LCN,
+// so the system needs a dmr_band_plan to resolve LCN → frequency;
+// without it those grants are dropped (decode.error stage=no-bandplan).
 //
 // One Engine owns one wideband SDR. Multiple wideband dongles each
 // get their own Engine; they run independently and share only the
@@ -303,7 +309,12 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			Log:         log.With("system", sys.Name, "freq_hz", freqHz, "tier", 3),
 			SystemName:  sys.Name,
 			FrequencyHz: freqHz,
-			Now:         now,
+			// The LCN→downlink resolver comes from the system's
+			// dmr_band_plan. Without it every T3 voice grant drops with
+			// decode.error stage=no-bandplan; the daemon already warns
+			// at load time. See internal/radio/dmr/tier3.ResolverFromPlan.
+			Resolver: tier3.ResolverFromPlan(sys.DMRBandPlan),
+			Now:      now,
 		})
 		rx := dmrrx.New(dmrrx.Options{
 			SampleRateHz: narrowbandRateHz,

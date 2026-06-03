@@ -3,6 +3,8 @@ package tier3
 import (
 	"errors"
 	"fmt"
+
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // Resolver maps a 7-bit DMR Tier III LCN to its downlink frequency
@@ -54,4 +56,32 @@ func (t TableBandPlan) Frequency(lcn uint8) (uint32, error) {
 		return 0, fmt.Errorf("%w: lcn=%d", ErrUnknownLCN, lcn)
 	}
 	return hz, nil
+}
+
+// ResolverFromPlan builds a Resolver from the operator-supplied band
+// plan carried on a trunking.System. It returns nil when p is nil or
+// empty so callers can pass the result straight into Options.Resolver
+// and preserve the existing "no band plan ⇒ drop grant with
+// stage=no-bandplan" behaviour. Config validation guarantees exactly
+// one of Linear / Table is set; if both are somehow present Linear
+// wins.
+func ResolverFromPlan(p *trunking.DMRBandPlan) Resolver {
+	if p == nil {
+		return nil
+	}
+	if p.Linear != nil {
+		return LinearBandPlan{
+			BaseHz:    p.Linear.BaseHz,
+			SpacingHz: p.Linear.SpacingHz,
+			Offset:    p.Linear.Offset,
+		}
+	}
+	if len(p.Table) > 0 {
+		t := make(TableBandPlan, len(p.Table))
+		for _, e := range p.Table {
+			t[e.LCN] = e.FreqHz
+		}
+		return t
+	}
+	return nil
 }

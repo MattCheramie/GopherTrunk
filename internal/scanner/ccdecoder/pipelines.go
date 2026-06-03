@@ -552,6 +552,10 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		Log:         opts.Log,
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
+		// LCN→downlink resolver from the system's dmr_band_plan; nil
+		// when unconfigured, in which case T3 voice grants drop with
+		// decode.error stage=no-bandplan (the daemon warns at load).
+		Resolver: tier3.ResolverFromPlan(opts.System.DMRBandPlan),
 	})
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,

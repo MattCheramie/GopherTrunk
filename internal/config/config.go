@@ -865,6 +865,15 @@ type SystemConfig struct {
 	// Ignored for non-P25-Phase-1 protocols.
 	P25BandPlan []P25BandPlanEntryConfig `yaml:"p25_band_plan"`
 
+	// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried
+	// in each DMR Tier III voice-grant CSBK to a downlink frequency.
+	// REQUIRED for T3 voice — T3 grants reference a channel by LCN, not
+	// an absolute frequency, so without this plan every grant is
+	// dropped with decode.error stage=no-bandplan. Provide exactly one
+	// of `linear` (regular base+spacing grid) or `table` (explicit
+	// LCN→Hz list). Ignored for non-dmr protocols.
+	DMRBandPlan *DMRBandPlanConfig `yaml:"dmr_band_plan"`
+
 	// EncryptionKeys lists operator-supplied decryption keys for this
 	// system. GopherTrunk decrypts only with keys the operator
 	// already holds and is authorized to use — it performs no key
@@ -889,6 +898,31 @@ type P25BandPlanEntryConfig struct {
 	SpacingHz   uint32 `yaml:"spacing_hz"`
 	TxOffsetHz  int64  `yaml:"tx_offset_hz"`
 	BandwidthHz uint32 `yaml:"bandwidth_hz"`
+}
+
+// DMRBandPlanConfig is the operator-supplied DMR Tier III LCN→frequency
+// band plan for a system. Exactly one of Linear or Table must be set
+// (enforced by Config.Validate). See internal/radio/dmr/tier3/bandplan.go
+// for the resolution math.
+type DMRBandPlanConfig struct {
+	Linear *DMRLinearBandPlanConfig      `yaml:"linear"`
+	Table  []DMRBandPlanTableEntryConfig `yaml:"table"`
+}
+
+// DMRLinearBandPlanConfig lays channels out on a regular grid:
+// freq = base_hz + (lcn - offset) × spacing_hz. Set offset=1 for the
+// common case of sites that number LCNs from 1.
+type DMRLinearBandPlanConfig struct {
+	BaseHz    uint32 `yaml:"base_hz"`
+	SpacingHz uint32 `yaml:"spacing_hz"`
+	Offset    int8   `yaml:"offset"`
+}
+
+// DMRBandPlanTableEntryConfig is one explicit LCN→downlink-frequency
+// mapping for sites whose channels don't fall on a regular grid.
+type DMRBandPlanTableEntryConfig struct {
+	LCN    uint8  `yaml:"lcn"`
+	FreqHz uint32 `yaml:"freq_hz"`
 }
 
 // EncryptionKeyConfig is one operator-supplied decryption key for a
@@ -1178,6 +1212,36 @@ func (c Config) Validate() error {
 			}
 			if e.BaseHz == 0 {
 				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
+			}
+		}
+		if bp := s.DMRBandPlan; bp != nil {
+			hasLinear := bp.Linear != nil
+			hasTable := len(bp.Table) > 0
+			switch {
+			case hasLinear && hasTable:
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan: set either linear or table, not both", i)
+			case !hasLinear && !hasTable:
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan: one of linear or table is required", i)
+			}
+			if hasLinear {
+				if bp.Linear.SpacingHz == 0 {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: spacing_hz required (nonzero)", i)
+				}
+				if bp.Linear.BaseHz == 0 {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: base_hz required (nonzero)", i)
+				}
+			}
+			if hasTable {
+				seenLCN := make(map[uint8]int, len(bp.Table))
+				for k, e := range bp.Table {
+					if e.FreqHz == 0 {
+						return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: freq_hz required (nonzero)", i, k)
+					}
+					if prev, dup := seenLCN[e.LCN]; dup {
+						return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: duplicate lcn %d (also at table[%d])", i, k, e.LCN, prev)
+					}
+					seenLCN[e.LCN] = k
+				}
 			}
 		}
 		seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
