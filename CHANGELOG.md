@@ -9,6 +9,23 @@ for tagged releases.
 
 ### Added
 
+- **DMR embedded Link Control decode → per-timeslot talkgroup labelling.**
+  On a BS-sourced carrier both timeslots use the identical burst-A voice
+  sync, so the sync alone cannot say which slot (and which talkgroup) a
+  superframe belongs to. The voice decoder now reassembles the embedded
+  Link Control carried by the sync field of bursts B–E — EMB split →
+  the new variable `framing` BPTC(128,72) (Hamming(16,11,4) rows + a
+  5-bit CRC) → the existing `dmr.FLC` parser — and, on a clean CRC,
+  surfaces the call's talkgroup + source on `VoiceSuperframe.LC`.
+  Combined with the interleaved decoder's `Phase`, that lets a consumer
+  bind each timeslot to a concrete talkgroup. New FEC primitives
+  (`framing.HammingEncode/Decode16_11`, `framing.Encode/DecodeEmbeddedLC`,
+  `dmr.SplitEmbeddedField` / `dmr.ReassembleEmbeddedLC`) are round-trip
+  + single-error-correction tested. The exact ETSI embedded-signalling
+  de-interleave order, EMB QR(16,7) FEC, and 5-bit CRC polynomial are
+  internally consistent but still pending a real-capture cross-check, so
+  the path stays opt-in at the library level — see
+  [docs/status.md](docs/status.md).
 - **DMR 2-slot interleaved voice decoder.** The DMR voice superframe
   decoder previously assumed a single-slot stream — bursts A–F at a
   contiguous 132-dibit cadence — which only holds for synthetic

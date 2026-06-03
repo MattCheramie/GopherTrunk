@@ -17,6 +17,14 @@
 // bursts 264 dibits apart and emitting one superframe per slot, told
 // apart by VoiceSuperframe.Phase.
 //
+// Alongside the AMBE frames, the decoder reassembles the embedded Link
+// Control carried by the sync field of bursts B–E (EMB + four BPTC
+// fragments → framing.DecodeEmbeddedLC → dmr.FLC) and, when it passes
+// its CRC, exposes the call's talkgroup + source on
+// VoiceSuperframe.LC. Combined with Phase, that lets a consumer label
+// which timeslot a superframe belongs to (the BS-sourced burst-A sync
+// is identical on both slots and cannot).
+//
 // This package produces the *on-air* AMBE frames (72 bits each, FEC
 // still applied). Decoding the AMBE forward-error-correction down to
 // the 49-bit vocoder payload, the ARC4 descramble for encrypted

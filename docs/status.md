@@ -85,19 +85,30 @@ The inner FEC layers still pending real-air validation:
   fixtures end-to-end; on-air recovery margins (Viterbi
   correction depth vs. real co-channel + adjacent-channel
   interference) need a live capture to characterise.
-- **DMR 2-slot interleaved voice cadence.** A DMR carrier is
-  2-slot TDMA, so a real outbound stream interleaves both
-  timeslots' bursts. `voice.NewInterleavedDecoder` (stride 2)
-  decodes that: it locks each slot's burst A on its own voice
-  sync and gathers that slot's B–F 264 dibits apart, emitting one
-  superframe per slot tagged by `VoiceSuperframe.Phase`. It is
-  unit-tested against synthetic interleaved vectors. Before it
-  replaces the single-slot `NewDecoder` on the production voice
-  path, the exact same-slot dibit cadence on live BS-sourced air
-  — where a CACH may precede each burst, making the stride 288
-  rather than 264 dibits — needs a real IQ capture to confirm.
-  Until then the production composer keeps the single-slot
-  decoder and the interleaved path is opt-in at the library level.
+- **DMR 2-slot interleaved voice cadence + embedded-LC labelling.**
+  A DMR carrier is 2-slot TDMA, so a real outbound stream
+  interleaves both timeslots' bursts. `voice.NewInterleavedDecoder`
+  (stride 2) decodes that: it locks each slot's burst A on its own
+  voice sync and gathers that slot's B–F 264 dibits apart, emitting
+  one superframe per slot tagged by `VoiceSuperframe.Phase`. The
+  decoder also reassembles the embedded Link Control carried by
+  bursts B–E (EMB split → variable BPTC(128,72) + Hamming(16,11,4)
+  rows + 5-bit CRC → `dmr.FLC`) and, on a clean CRC, surfaces the
+  call's talkgroup + source on `VoiceSuperframe.LC`, so a phase can
+  be bound to a concrete talkgroup — the absolute TS1/TS2 label the
+  identical BS-sourced burst-A sync cannot give. The whole chain is
+  unit-tested against synthetic interleaved + embedded-LC vectors.
+  Two pieces still need a real IQ capture before this replaces the
+  single-slot `NewDecoder` on the production voice path: (1) the
+  exact same-slot dibit cadence on live BS-sourced air — where a
+  CACH may precede each burst, making the stride 288 rather than 264
+  dibits; and (2) the exact ETSI embedded-signalling de-interleave
+  order, the EMB QR(16,7) FEC (read systematically for now), and the
+  5-bit CRC polynomial — all currently internally consistent
+  (encode↔decode round-trip) but not yet cross-checked against
+  captured traffic. Until then the production composer keeps the
+  single-slot decoder and the interleaved + LC path is opt-in at the
+  library level.
 
 ### Digital-voice level calibration
 
