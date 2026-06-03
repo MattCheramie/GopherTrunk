@@ -49,6 +49,17 @@ func ddcTargetForProtocol(p trunking.Protocol) float64 {
 	return ddcTargetRateHz
 }
 
+// DDCTargetForProtocol is the exported wrapper over ddcTargetForProtocol.
+// The offline siglab toolkit (and the replay subcommand) call it to size
+// their own Downconverter to the SAME per-protocol channel rate the daemon
+// uses — critical for TETRA, whose 18000-baud π/4-DQPSK needs the 144 kHz
+// target rather than the 48 kHz C4FM-family default. Sizing replay's DDC
+// to the C4FM target for a TETRA capture would leave under 3 samples per
+// symbol and the Gardner loop would never lock.
+func DDCTargetForProtocol(p trunking.Protocol) float64 {
+	return ddcTargetForProtocol(p)
+}
+
 // ddcStopbandTaps sets the anti-alias prototype length as a multiple
 // of the decimation factor M (total taps ≈ ddcStopbandTaps·M). The
 // polyphase resampler runs its multiply-accumulates at the output
