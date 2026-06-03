@@ -284,7 +284,10 @@ log, per-talkgroup policy) all ship.
   BPTC(128,72) → talkgroup/source) so a slot is routed to its call by
   talkgroup. The whole path is wired through the voice composer behind
   a per-system opt-in (`dmr_interleaved_voice: true`) and unit-tested
-  end-to-end against synthetic modulated IQ. It defaults off:
+  end-to-end against synthetic modulated IQ. Each slot's calls are
+  visible per-timeslot in the TUI / web active-call views and in the
+  `gophertrunk_dmr_voice_calls_total{system,timeslot}` metric. It
+  defaults off:
   confirming the exact on-air dibit cadence (CACH/guard) and the ETSI
   embedded-signalling interleave / EMB FEC / CRC against a real IQ
   capture is what's needed before it becomes the production default —
