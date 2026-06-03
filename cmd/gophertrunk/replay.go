@@ -152,6 +152,20 @@ FLAGS:`)
 		rep.Fatalf(2, "-nid-search-span must be > 0")
 	}
 
+	// replay keeps three native deep-diagnostic paths (p25p1, dmr-tier3,
+	// dmr-tier2) with their receiver-state + soft-eye instrumentation. Every
+	// other protocol GopherTrunk decodes routes through the shared siglab
+	// engine, so `replay -protocol <any>` works across all 13 protocols
+	// while the headline P25/DMR debugging depth is preserved here.
+	switch protocol {
+	case "p25p1", "dmr-tier3", "dmr-tier2":
+		// fall through to the native paths below
+	default:
+		runReplayViaSiglab(protocol, *in, *format, *sampleRate, uint32(*freq),
+			*tuneHzFlag, *autoTune, *conjugate, *iqCorrect, *diag, rep)
+		return
+	}
+
 	decode, bytesPerSample, err := pickSampleDecoder(*format)
 	if err != nil {
 		rep.Fatal(2, err)

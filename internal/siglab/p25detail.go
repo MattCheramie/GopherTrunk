@@ -87,9 +87,15 @@ func buildP25Detail(dibits []uint8) *P25P1Detail {
 	}
 	d.WinningHits = d.Rotations[d.WinningRotation].Hits
 
-	// Decode the NID at the cleanest (distance-0) hits under the winner.
+	// Decode the NID at the cleanest (distance-0) hits under the winner. A
+	// real transmitter interleaves a status symbol every 36 on-air dibits,
+	// so the 32-dibit NID carries one extra symbol (at window index 11 when
+	// the FSW sits at frame position 0). Try the direct 32-dibit window and
+	// the status-stripped variant (skip index 11 of a 33-dibit window), and
+	// keep whichever BCH-decodes — mirroring the original iqdiag dual-mode
+	// probe so a status-bearing stream still resolves a NAC.
 	win := uint8(d.WinningRotation)
-	for pos := 0; pos+p25FSWLen+32 <= len(dibits) && len(d.NIDDecodes) < maxNIDDecodes; pos++ {
+	for pos := 0; pos+p25FSWLen+33 <= len(dibits) && len(d.NIDDecodes) < maxNIDDecodes; pos++ {
 		mismatch := 0
 		for kk := 0; kk < p25FSWLen; kk++ {
 			if ((dibits[pos+kk] + win) & 3) != p25phase1.FrameSyncWord[kk] {
@@ -99,18 +105,37 @@ func buildP25Detail(dibits []uint8) *P25P1Detail {
 		if mismatch != 0 {
 			continue
 		}
-		nid := make([]uint8, 32)
-		for j := 0; j < 32; j++ {
-			nid[j] = (dibits[pos+p25FSWLen+j] + win) & 3
+		raw := make([]uint8, 33)
+		for j := 0; j < 33; j++ {
+			raw[j] = (dibits[pos+p25FSWLen+j] + win) & 3
 		}
-		n, errs, _, err := p25phase1.NIDFromDibitsWithErrors(nid)
-		d.NIDDecodes = append(d.NIDDecodes, NIDDecode{
-			Pos:  pos,
-			Errs: errs,
-			NAC:  n.NAC,
-			DUID: uint8(n.DUID),
-			OK:   err == nil,
-		})
+		nd := decodeNIDBoth(raw)
+		nd.Pos = pos
+		d.NIDDecodes = append(d.NIDDecodes, nd)
 	}
 	return d
+}
+
+// decodeNIDBoth tries the direct 32-dibit NID and the status-stripped variant
+// (skip index 11), returning the better outcome (a clean decode wins; else
+// the lower error count).
+func decodeNIDBoth(raw []uint8) NIDDecode {
+	n0, e0, _, err0 := p25phase1.NIDFromDibitsWithErrors(raw[:32])
+	stripped := make([]uint8, 0, 32)
+	stripped = append(stripped, raw[:11]...)
+	stripped = append(stripped, raw[12:33]...)
+	n1, e1, _, err1 := p25phase1.NIDFromDibitsWithErrors(stripped)
+
+	direct := NIDDecode{Errs: e0, NAC: n0.NAC, DUID: uint8(n0.DUID), OK: err0 == nil}
+	strip := NIDDecode{Errs: e1, NAC: n1.NAC, DUID: uint8(n1.DUID), OK: err1 == nil}
+	switch {
+	case strip.OK && !direct.OK:
+		return strip
+	case direct.OK && !strip.OK:
+		return direct
+	case e1 >= 0 && (e0 < 0 || e1 < e0):
+		return strip
+	default:
+		return direct
+	}
 }
