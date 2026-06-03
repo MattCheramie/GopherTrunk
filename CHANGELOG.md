@@ -9,6 +9,17 @@ for tagged releases.
 
 ### Added
 
+- **DMR timeslot is now a first-class call attribute (TS1/TS2).** A DMR
+  Tier III carrier interleaves two independent calls — one per TDMA
+  timeslot — but the slot was parsed from the grant CSBK and then
+  thrown away, so the two calls could not be told apart downstream. The
+  grant now carries a 1-based `Timeslot` (0 = not applicable, 1 = TS1,
+  2 = TS2), mapped from the CSBK's slot bit on both the standard and
+  vendor (Capacity Plus / Connect Plus) grant paths, and surfaced
+  through the JSON/SSE API, the gRPC `Grant` message, and the web DTO.
+  This is the foundation for separating concurrent same-carrier calls;
+  engine/recorder routing and per-slot voice decode land in follow-ups.
+
 - **DMR Tier III band plan → T3 voice on the wideband dongle.** A
   Tier III voice-grant CSBK references its traffic channel by a 7-bit
   Logical Channel Number (LCN), not an absolute frequency, so the

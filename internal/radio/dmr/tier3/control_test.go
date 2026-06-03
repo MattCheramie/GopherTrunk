@@ -142,6 +142,10 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 			if !g.Encrypted || !g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
 			}
+			// byte 7 bit 7 set → CSBK TS2 (0-based 1) → 1-based Timeslot 2.
+			if g.Timeslot != 2 {
+				t.Errorf("Timeslot = %d, want 2 (TS2)", g.Timeslot)
+			}
 			if g.At.Unix() != 1_700_000_000 {
 				t.Errorf("At = %v, want injected Now", g.At)
 			}
@@ -184,6 +188,10 @@ func TestControlChannelPublishesPVGrant(t *testing.T) {
 			}
 			if g.FrequencyHz != 462_550_000 {
 				t.Errorf("freq = %d, want 462_550_000", g.FrequencyHz)
+			}
+			// byte 7 bit 7 clear → CSBK TS1 (0-based 0) → 1-based Timeslot 1.
+			if g.Timeslot != 1 {
+				t.Errorf("Timeslot = %d, want 1 (TS1)", g.Timeslot)
 			}
 			return
 		case <-deadline:

@@ -195,9 +195,13 @@ type GrantDTO struct {
 	FrequencyHz   uint32 `json:"frequency_hz"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
-	Encrypted     bool   `json:"encrypted,omitempty"`
-	Emergency     bool   `json:"emergency,omitempty"`
-	DataCall      bool   `json:"data_call,omitempty"`
+	// Timeslot is the 1-based TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	// Non-zero only for slotted protocols (DMR Tier III); identifies
+	// which of a carrier's two calls this is.
+	Timeslot  uint8 `json:"timeslot,omitempty"`
+	Encrypted bool  `json:"encrypted,omitempty"`
+	Emergency bool  `json:"emergency,omitempty"`
+	DataCall  bool  `json:"data_call,omitempty"`
 	// AlgorithmID / KeyID surface the P25 encryption parameters
 	// recovered from the in-call signalling. Zero when Encrypted is
 	// false; also zero on a Phase 1 grant until the LDU2 Encryption
@@ -213,6 +217,7 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 		GroupID: g.GroupID, SourceID: g.SourceID,
 		FrequencyHz: g.FrequencyHz,
 		ChannelID:   g.ChannelID, ChannelNumber: g.ChannelNum,
+		Timeslot:  g.Timeslot,
 		Encrypted: g.Encrypted, Emergency: g.Emergency,
 		DataCall:    g.DataCall,
 		AlgorithmID: g.AlgorithmID, KeyID: g.KeyID,

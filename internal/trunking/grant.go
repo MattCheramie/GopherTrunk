@@ -21,8 +21,18 @@ type Grant struct {
 	FrequencyHz uint32 // voice channel frequency
 	ChannelID   uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
 	ChannelNum  uint16 // raw channel number within the ID
-	Encrypted   bool
-	Emergency   bool
+	// Timeslot identifies the TDMA logical channel a call occupies on
+	// its carrier, 1-based: 0 = not applicable / unknown (P25 Phase 1,
+	// NXDN, analog — frequency alone identifies the call), 1 = TS1,
+	// 2 = TS2. DMR Tier III carries two independent calls on one
+	// 12.5 kHz carrier (TS1 + TS2), so the engine treats
+	// (FrequencyHz, Timeslot) as the call identity rather than
+	// frequency alone. Populated by the protocol layer; the DMR CSBK
+	// parser maps its 0-based slot bit (0 = TS1, 1 = TS2) onto this
+	// 1-based convention so 0 stays reserved for "no slot".
+	Timeslot  uint8
+	Encrypted bool
+	Emergency bool
 	// AlgorithmID and KeyID carry the encryption parameters the
 	// protocol's privacy header advertises (the DMR PI header, etc.).
 	// They are meaningful only when Encrypted is true and stay zero
@@ -100,7 +110,11 @@ func (g Grant) String() string {
 	if g.ProVoice {
 		flags += "P"
 	}
-	return fmt.Sprintf("%s/%s tg=%d src=%d freq=%d %s", g.System, g.Protocol, g.GroupID, g.SourceID, g.FrequencyHz, flags)
+	ts := ""
+	if g.Timeslot != 0 {
+		ts = fmt.Sprintf(" ts%d", g.Timeslot)
+	}
+	return fmt.Sprintf("%s/%s tg=%d src=%d freq=%d%s %s", g.System, g.Protocol, g.GroupID, g.SourceID, g.FrequencyHz, ts, flags)
 }
 
 // EndReason classifies why a call ended; carried in CallEnd events so the
