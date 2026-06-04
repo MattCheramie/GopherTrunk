@@ -73,6 +73,21 @@ type Config struct {
 	// ChunkSamples is the read-loop chunk size in IQ samples; 0 ⇒ default.
 	ChunkSamples int
 
+	// CaptureIQ enables buffering a stride-decimated copy of the
+	// post-DDC (channelized) IQ and the pre-slicer soft samples into
+	// Result.IQTaps, so a web/visualization consumer can render the
+	// constellation, spectrogram, PSD and eye diagram client-side. Off
+	// by default since it is O(captured points) memory. The capture is
+	// always decimated and hard-capped (see CaptureIQMaxPoints), so it
+	// never ships full-rate IQ.
+	CaptureIQ bool
+	// CaptureIQMaxPoints caps the number of decimated IQ points (and,
+	// separately, soft samples) retained when CaptureIQ is set. 0 ⇒
+	// defaultCaptureIQMaxPoints. The read loop strides the channelized
+	// stream so the retained density targets visualization fidelity
+	// rather than faithful reconstruction.
+	CaptureIQMaxPoints int
+
 	// MaxSamples caps the number of input IQ samples processed (0 ⇒ whole
 	// file). The signal identifier sets this to scan only a prefix of a
 	// capture, bounding per-candidate cost regardless of capture length.
@@ -89,6 +104,24 @@ type Config struct {
 }
 
 const defaultChunkSamples = 8192
+
+// defaultCaptureIQMaxPoints is the hard ceiling on retained decimated IQ
+// points (and soft samples) when CaptureIQ is set but CaptureIQMaxPoints
+// is not. ~200k float32 IQ pairs is ~1.6 MB on the wire — enough density
+// for a spectrogram/PSD/constellation without unbounded memory growth.
+const defaultCaptureIQMaxPoints = 200_000
+
+// captureIQTargetRateHz is the post-decimation rate the IQ tap aims for.
+// Higher than the live-constellation 2 ksps default (internal/dsp/diag)
+// because offline FFTs want spectral fidelity, not just a lively canvas.
+const captureIQTargetRateHz = 96_000
+
+func (c Config) captureIQMaxPoints() int {
+	if c.CaptureIQMaxPoints > 0 {
+		return c.CaptureIQMaxPoints
+	}
+	return defaultCaptureIQMaxPoints
+}
 
 func (c Config) logger() *slog.Logger {
 	if c.Log != nil {
