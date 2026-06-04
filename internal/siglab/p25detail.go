@@ -21,6 +21,53 @@ type P25P1Detail struct {
 	// successes and failures points at signal quality; zero successes
 	// despite perfect FSW alignment points at framing.
 	NIDDecodes []NIDDecode `json:"nid_decodes" yaml:"nid_decodes"`
+
+	// CCStats is the per-frame NID/TSBK outcome breakdown the control channel
+	// accumulates (the replay EOF summary's "nid trusted/marginal/…" lines).
+	// Non-nil only on the deep path.
+	CCStats *CCStatsBreakdown `json:"cc_stats,omitempty" yaml:"cc_stats,omitempty"`
+	// SoftEye is the pre-slicer soft-sample analysis (DC, per-rail
+	// distribution, true-symbol outer-rail eye + mechanism verdict). Non-nil
+	// only when soft samples were captured (the deep C4FM path).
+	SoftEye *SoftEye `json:"soft_eye,omitempty" yaml:"soft_eye,omitempty"`
+	// ReceiverStates is the per-(stream-)second receiver-state series the
+	// deep path captures when Config.CollectReceiverState is set.
+	ReceiverStates []ReceiverState `json:"receiver_states,omitempty" yaml:"receiver_states,omitempty"`
+}
+
+// CCStatsBreakdown mirrors p25phase1.CCStats: the per-frame decode outcomes.
+type CCStatsBreakdown struct {
+	NIDTrusted        int64 `json:"nid_trusted" yaml:"nid_trusted"`
+	NIDMarginal       int64 `json:"nid_marginal" yaml:"nid_marginal"`
+	NIDFailed         int64 `json:"nid_failed" yaml:"nid_failed"`
+	TSBKDecoded       int64 `json:"tsbk_decoded" yaml:"tsbk_decoded"`
+	TSBKTrellisFailed int64 `json:"tsbk_trellis_failed" yaml:"tsbk_trellis_failed"`
+	TSBKCRCFailed     int64 `json:"tsbk_crc_failed" yaml:"tsbk_crc_failed"`
+}
+
+// ReceiverState is one snapshot of the P25 receiver's internal loops at a
+// point in stream time. C4FM and CQPSK populate disjoint field sets (the
+// other path's fields read zero); CQPSK is true on the CQPSK path.
+type ReceiverState struct {
+	TimeSec float64 `json:"time_sec" yaml:"time_sec"`
+	CQPSK   bool    `json:"cqpsk" yaml:"cqpsk"`
+
+	// C4FM path.
+	AFCHzEst         float64    `json:"afc_hz_est" yaml:"afc_hz_est"`
+	AGCLevel         float64    `json:"agc_level" yaml:"agc_level"`
+	AGCTarget        float64    `json:"agc_target" yaml:"agc_target"`
+	MMMu             float64    `json:"mm_mu" yaml:"mm_mu"`
+	MMSPS            float64    `json:"mm_sps" yaml:"mm_sps"`
+	DDAActive        bool       `json:"dda_active" yaml:"dda_active"`
+	SlicerLevels     [4]float64 `json:"slicer_levels" yaml:"slicer_levels"`
+	SlicerThresholds [3]float64 `json:"slicer_thresholds" yaml:"slicer_thresholds"`
+
+	// CQPSK path.
+	CarrierHzEst float64 `json:"carrier_hz_est,omitempty" yaml:"carrier_hz_est,omitempty"`
+	GardnerMu    float64 `json:"gardner_mu,omitempty" yaml:"gardner_mu,omitempty"`
+	GardnerSPS   float64 `json:"gardner_sps,omitempty" yaml:"gardner_sps,omitempty"`
+	CQPSKAGCGain float64 `json:"cqpsk_agc_gain,omitempty" yaml:"cqpsk_agc_gain,omitempty"`
+	CMAError     float64 `json:"cma_error,omitempty" yaml:"cma_error,omitempty"`
 }
 
 // RotationStat summarizes the FSW Hamming-distance landscape for one of the
@@ -46,9 +93,10 @@ const (
 	maxNIDDecodes = 5
 )
 
-// buildP25Detail walks a recovered dibit stream and produces the P25 deep
-// dive. Returns nil when there are too few dibits to analyze.
-func buildP25Detail(dibits []uint8) *P25P1Detail {
+// buildP25Detail walks a recovered dibit stream (and the aligned pre-slicer
+// soft samples, when present) and produces the P25 deep dive. Returns nil when
+// there are too few dibits to analyze.
+func buildP25Detail(dibits []uint8, soft []float32) *P25P1Detail {
 	if len(dibits) < p25FSWLen {
 		return nil
 	}
@@ -112,6 +160,26 @@ func buildP25Detail(dibits []uint8) *P25P1Detail {
 		nd := decodeNIDBoth(raw)
 		nd.Pos = pos
 		d.NIDDecodes = append(d.NIDDecodes, nd)
+	}
+
+	// True-symbol outer-rail eye, when soft samples align with the dibit
+	// stream (deep C4FM path). The FSW symbols are all known and all outer
+	// (±3), so this measures the real outer-rail spread free of slicer
+	// misclassification and localizes its mechanism (issue #402).
+	if len(soft) == len(dibits) {
+		var positions []int
+		for pos := 0; pos+p25FSWLen <= len(dibits); pos++ {
+			mismatch := 0
+			for kk := 0; kk < p25FSWLen; kk++ {
+				if ((dibits[pos+kk] + win) & 3) != p25phase1.FrameSyncWord[kk] {
+					mismatch++
+				}
+			}
+			if mismatch <= p25FSWTol {
+				positions = append(positions, pos)
+			}
+		}
+		d.SoftEye = buildSoftEye(soft, dibits, d.WinningRotation, positions)
 	}
 	return d
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 // TestReplayMMRSite9DecodesRealP25 is a real-capture regression guard.
@@ -49,7 +50,8 @@ func TestReplayMMRSite9DecodesRealP25(t *testing.T) {
 		t.Fatalf("fixture %s has no samples", path)
 	}
 	iq := make([]complex64, pairs)
-	decodeF32Replay(raw[:pairs*8], iq)
+	dec, _ := siglab.FormatF32.Decoder()
+	dec(raw[:pairs*8], iq)
 
 	bus := events.NewBus(1024)
 	sub := bus.Subscribe()

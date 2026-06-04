@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
 func TestParseIQCaptureSpec(t *testing.T) {
@@ -117,7 +119,8 @@ func TestEncodeF32RoundTripsThroughReplay(t *testing.T) {
 	encodeF32(buf, in)
 
 	out := make([]complex64, len(in))
-	decodeF32Replay(buf, out)
+	decF32, _ := siglab.FormatF32.Decoder()
+	decF32(buf, out)
 	for i := range in {
 		if out[i] != in[i] {
 			t.Errorf("[%d] decoded %v, want %v", i, out[i], in[i])
@@ -139,7 +142,8 @@ func TestEncodeU8RoundTripsThroughReplay(t *testing.T) {
 	encodeU8(buf, in)
 
 	out := make([]complex64, len(in))
-	decodeU8Replay(buf, out)
+	decU8, _ := siglab.FormatU8.Decoder()
+	decU8(buf, out)
 	const tol = 1.0 / 127.5 // one quantisation step
 	for i := range in {
 		dR := math.Abs(float64(real(out[i]) - real(in[i])))
