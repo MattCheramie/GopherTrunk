@@ -194,6 +194,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolYSF:       newYSFPipeline,
 	trunking.ProtocolDStar:     newDStarPipeline,
 	trunking.ProtocolDMRTier2:  newDMRTier2Pipeline,
+	trunking.ProtocolDMRTier1:  newDMRTier1Pipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -719,6 +720,47 @@ type dmrTier2Pipeline struct {
 func (p *dmrTier2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrTier2Pipeline) Reset()                 { p.rx.Reset() }
 func (p *dmrTier2Pipeline) Close() error           { return nil }
+
+// newDMRTier1Pipeline wires the shared DMR receiver into the
+// tier2.ConventionalChannel state machine in *direct-mode* configuration:
+// the same wire format as Tier II (C4FM dibits → burst → slot-type
+// Hamming → Voice LC Header BPTC(196,96) + RS(12,9,4) → grant), but the
+// burst-sync detector is restricted to the four ETSI direct-mode sync
+// words (DM-Voice/Data, TS1/TS2) and grants/decode-errors are tagged
+// "dmr-tier1". DMR Tier I is license-free simplex (PMR446); it has no
+// repeater or control channel, so a Voice LC Header marks each
+// transmission start exactly as in Tier II conventional.
+func newDMRTier1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := tier2.New(tier2.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+		ProtocolTag: "dmr-tier1",
+		SyncPatterns: []dmr.SyncPattern{
+			dmr.DMVoice1, dmr.DMVoice2, dmr.DMData1, dmr.DMData2,
+		},
+	})
+	rx := dmrrx.New(dmrrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DeviationHz:  1944.0,
+		ClockGain:    0.015, // same as Tier II (identical burst symbol statistics)
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &dmrTier1Pipeline{rx: rx, cc: cc}, nil
+}
+
+type dmrTier1Pipeline struct {
+	rx *dmrrx.Receiver
+	cc *tier2.ConventionalChannel
+}
+
+func (p *dmrTier1Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *dmrTier1Pipeline) Reset()                 { p.rx.Reset() }
+func (p *dmrTier1Pipeline) Close() error           { return nil }
 
 // newNXDNPipeline wires internal/radio/nxdn/receiver into
 // nxdn.ControlChannel.Process. The receiver's DibitSink forwards

@@ -1421,9 +1421,11 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 			return fmt.Errorf("sdr.devices[%d].channels[%d]: system %q is not declared in trunking.systems", idx, j, ch.System)
 		}
 		switch sys.Protocol {
-		case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2":
-			// Tier II conventional - channel freq is a repeater carrier,
-			// no relationship to system.ControlChannels required.
+		case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2",
+			"dmr-tier1", "dmr_tier1", "dmr-t1", "dmrtier1":
+			// Tier II conventional / Tier I direct-mode — channel freq is a
+			// repeater or simplex carrier, no relationship to
+			// system.ControlChannels required.
 		case "dmr", "p25", "p25-phase2", "p25_phase2", "p25p2":
 			// Trunked control-channel protocols — the wideband channel
 			// MUST be one of the system's declared control channels.

@@ -74,7 +74,20 @@ var fixtures = map[trunking.Protocol]fixture{
 		expected:    Acceptance{Lock: boolPtr(true)},
 	},
 	trunking.ProtocolDMRTier2: {
-		build:      func() []uint8 { return buildDMRTier2VoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789) },
+		build: func() []uint8 {
+			return buildDMRConventionalVoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789, dmr.BSData.Dibits[:])
+		},
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1944.0) },
+		sampleRate: 48_000,
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"color_code": 0x7},
+		},
+	},
+	trunking.ProtocolDMRTier1: {
+		build: func() []uint8 {
+			return buildDMRConventionalVoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789, dmr.DMVoice1.Dibits[:])
+		},
 		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1944.0) },
 		sampleRate: 48_000,
 		expected: Acceptance{
@@ -249,7 +262,11 @@ func buildP25Phase2MACPTTStream(repeats int) []uint8 {
 
 // buildDMRTier2VoiceLCHeaderDibits builds a DMR Tier II conventional stream of
 // repeated Voice LC Header bursts. Lifted from integration_cc_dmr_tier2_test.go.
-func buildDMRTier2VoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sourceID uint32) []uint8 {
+// buildDMRConventionalVoiceLCHeaderDibits builds a DMR conventional /
+// direct-mode Voice LC Header stream. The sync word distinguishes Tier II
+// (base-station, dmr.BSData) from Tier I (direct-mode, dmr.DMVoice1); the rest
+// of the wire format is identical. Lifted from integration_cc_dmr_tier2_test.go.
+func buildDMRConventionalVoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sourceID uint32, sync []uint8) []uint8 {
 	flc := dmr.FLC{
 		FLCO:    dmr.FLCOGroupVoiceUser,
 		DstAddr: groupID,
@@ -276,7 +293,7 @@ func buildDMRTier2VoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sou
 	burst := make([]uint8, 0, dmr.BurstDibits)
 	burst = append(burst, payloadDibits[:dmr.HalfPayloadDibits]...)
 	burst = append(burst, slotDibits[:dmr.SlotTypeDibits]...)
-	burst = append(burst, dmr.BSData.Dibits[:]...)
+	burst = append(burst, sync...)
 	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
 	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
 

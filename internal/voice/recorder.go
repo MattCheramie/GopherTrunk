@@ -109,6 +109,7 @@ func DefaultVocoderForProtocol() map[string]string {
 	return map[string]string{
 		"p25":        "imbe",      // P25 Phase 1 — IMBE 4400
 		"p25-phase2": "ambe2",     // P25 Phase 2 — AMBE+2 3600x2400
+		"dmr-tier1":  "ambe2-dmr", // DMR Tier I direct-mode — AMBE+2 3600x2450
 		"dmr-tier2":  "ambe2-dmr", // DMR Tier II — AMBE+2 3600x2450
 		"dmr-tier3":  "ambe2-dmr", // DMR Tier III — AMBE+2 3600x2450
 		"nxdn":       "ambe2",
@@ -122,7 +123,7 @@ func DefaultVocoderForProtocol() map[string]string {
 // WAV) so the on-air AMBE frames remain available for out-of-band
 // tools even though the in-process vocoder now renders them.
 func dmrVoiceProtocol(protocol string) bool {
-	return protocol == "dmr-tier2" || protocol == "dmr-tier3"
+	return protocol == "dmr-tier1" || protocol == "dmr-tier2" || protocol == "dmr-tier3"
 }
 
 // NewRecorder validates options and returns a recorder ready to Run.

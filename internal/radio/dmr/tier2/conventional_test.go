@@ -41,6 +41,44 @@ func burstWithFLC(f dmr.FLC) *dmr.Burst {
 	return &b
 }
 
+// TestConventionalProtocolTagDirectMode pins the Tier I direct-mode
+// parameterization: a ConventionalChannel constructed with
+// ProtocolTag="dmr-tier1" must publish grants tagged "dmr-tier1" (the wire
+// decode is identical to Tier II — only the tag + sync set differ).
+func TestConventionalProtocolTagDirectMode(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "DirectMode",
+		FrequencyHz: 446_006_250,
+		ProtocolTag: "dmr-tier1",
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x000064, SrcAddr: 0x100200}
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 7, DataType: dmr.DTVoiceLCHeader})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			g := ev.Payload.(trunking.Grant)
+			if g.Protocol != "dmr-tier1" {
+				t.Errorf("grant Protocol = %q, want dmr-tier1", g.Protocol)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event")
+		}
+	}
+}
+
 func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

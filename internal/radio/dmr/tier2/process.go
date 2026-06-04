@@ -50,7 +50,7 @@ type processState struct {
 func (c *ConventionalChannel) Process(dibits []uint8, baseIdx int) int {
 	if c.proc == nil {
 		c.proc = &processState{
-			det: dmr.NewSyncDetector(nil, 2),
+			det: dmr.NewSyncDetector(c.syncPatterns, 2),
 		}
 	}
 	p := c.proc

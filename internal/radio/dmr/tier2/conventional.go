@@ -54,6 +54,17 @@ type ConventionalChannel struct {
 	freqHz     uint32
 	now        func() time.Time
 
+	// protocolTag is the grant / decode-error Protocol string. It is
+	// "dmr-tier2" for base-station conventional decode and "dmr-tier1" for
+	// direct-mode decode — the wire format is identical, so the same state
+	// machine serves both, distinguished by tag + sync-word set.
+	protocolTag string
+	// syncPatterns restricts the burst-sync detector to a subset of the 9
+	// ETSI sync words. nil ⇒ all syncs (Tier II default). Tier I passes the
+	// direct-mode syncs (DM-Voice/Data) so it doesn't false-lock on
+	// base-station traffic.
+	syncPatterns []dmr.SyncPattern
+
 	// proc is the cross-call dibit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call.
@@ -75,6 +86,12 @@ type Options struct {
 	SystemName  string
 	FrequencyHz uint32
 	Now         func() time.Time
+	// ProtocolTag overrides the grant / decode-error Protocol string.
+	// Empty ⇒ "dmr-tier2". Set to "dmr-tier1" for direct-mode decode.
+	ProtocolTag string
+	// SyncPatterns restricts the burst-sync detector to these sync words.
+	// nil ⇒ all 9 ETSI syncs (Tier II). Tier I passes the direct-mode set.
+	SyncPatterns []dmr.SyncPattern
 }
 
 // New constructs a ConventionalChannel.
@@ -87,12 +104,18 @@ func New(opts Options) *ConventionalChannel {
 	if now == nil {
 		now = time.Now
 	}
+	tag := opts.ProtocolTag
+	if tag == "" {
+		tag = "dmr-tier2"
+	}
 	return &ConventionalChannel{
-		bus:        opts.Bus,
-		log:        log,
-		systemName: opts.SystemName,
-		freqHz:     opts.FrequencyHz,
-		now:        now,
+		bus:          opts.Bus,
+		log:          log,
+		systemName:   opts.SystemName,
+		freqHz:       opts.FrequencyHz,
+		now:          now,
+		protocolTag:  tag,
+		syncPatterns: opts.SyncPatterns,
 	}
 }
 
@@ -159,7 +182,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: voice header BPTC uncorrectable")
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: events.StageVoiceHeaderBPTC},
+			Payload: events.DecodeError{Protocol: c.protocolTag, Stage: events.StageVoiceHeaderBPTC},
 		})
 		return
 	}
@@ -173,7 +196,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch")
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
-			Payload: events.DecodeError{Protocol: "dmr-tier2", Stage: events.StageVoiceHeaderRS},
+			Payload: events.DecodeError{Protocol: c.protocolTag, Stage: events.StageVoiceHeaderRS},
 		})
 		return
 	}
@@ -200,7 +223,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
 			System:      c.systemName,
-			Protocol:    "dmr-tier2",
+			Protocol:    c.protocolTag,
 			GroupID:     gv.GroupAddress,
 			SourceID:    gv.SourceID,
 			FrequencyHz: c.freqHz,
