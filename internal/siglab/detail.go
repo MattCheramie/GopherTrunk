@@ -58,10 +58,10 @@ type detailSpec struct {
 // absent — it uses the dedicated deep path (P25P1Detail).
 var detailSpecs = map[trunking.Protocol]detailSpec{
 	trunking.ProtocolDMR: {
-		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants,
+		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants, fec: dmrSlotTypeFEC,
 	},
 	trunking.ProtocolDMRTier2: {
-		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants,
+		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants, fec: dmrSlotTypeFEC,
 		notes: "DMR Tier II is voice-only; sync + slot-type only (no CSBK path).",
 	},
 	trunking.ProtocolP25Phase2: {
@@ -72,6 +72,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "inbound", Pattern: p25phase2.InboundSyncDibits()},
 			}
 		},
+		notes: "ISCH Golay / MAC trellis tallies are a follow-up (need superframe re-framing).",
 	},
 	trunking.ProtocolNXDN: {
 		cardinality: 4, tolerance: 1,
@@ -81,6 +82,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "inbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsInbound...)},
 			}
 		},
+		notes: "LICH Hamming / CAC Viterbi tallies are a follow-up (need CAC de-interleave).",
 	},
 	trunking.ProtocolDPMR: {
 		cardinality: 4, tolerance: 4,
@@ -96,6 +98,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 	trunking.ProtocolYSF: {
 		cardinality: 4, tolerance: 3,
 		syncFn: func() []SyncVariant { return oneVariant("fsw", append([]uint8(nil), ysf.FSWPattern...)) },
+		notes:  "FICH Viterbi / CRC tally is a follow-up (need FICH depuncture).",
 	},
 	trunking.ProtocolTETRA: {
 		cardinality: 4, tolerance: 6,
@@ -105,18 +108,22 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "extended", Pattern: tetra.ExtendedSyncDibits()},
 			}
 		},
+		notes: "RCPC/RM/Viterbi tallies are a follow-up (need per-channel de-interleave).",
 	},
 	trunking.ProtocolEDACS: {
 		cardinality: 2, tolerance: 3,
 		syncFn: func() []SyncVariant { return oneVariant("outbound", edacs.OutboundSyncBits()) },
+		fec:    edacsBCHFEC,
 	},
 	trunking.ProtocolMotorola: {
 		cardinality: 2, tolerance: 3,
 		syncFn: func() []SyncVariant { return oneVariant("outbound", motorola.OutboundSyncBits()) },
+		fec:    motorolaBCHFEC,
 	},
 	trunking.ProtocolDStar: {
 		cardinality: 2, tolerance: 2,
 		syncFn: func() []SyncVariant { return oneVariant("framesync", dstar.FrameSyncBitsSlice()) },
+		fec:    dstarCRCFEC,
 	},
 	trunking.ProtocolMPT1327: {
 		cardinality: 2, tolerance: 2,
