@@ -50,7 +50,7 @@ type detailSpec struct {
 	cardinality int
 	tolerance   int
 	syncFn      func() []SyncVariant
-	fec         func(stream []uint8, land *SyncLandscape) []FECStat
+	fec         func(stream []uint8, land *SyncLandscape, sys trunking.System) []FECStat
 	notes       string
 }
 
@@ -72,7 +72,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "inbound", Pattern: p25phase2.InboundSyncDibits()},
 			}
 		},
-		notes: "ISCH Golay / MAC trellis tallies are a follow-up (need superframe re-framing).",
+		fec: p25p2FEC,
 	},
 	trunking.ProtocolNXDN: {
 		cardinality: 4, tolerance: 1,
@@ -82,7 +82,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "inbound", Pattern: append([]uint8(nil), nxdn.FSWDibitsInbound...)},
 			}
 		},
-		notes: "LICH Hamming / CAC Viterbi tallies are a follow-up (need CAC de-interleave).",
+		fec: nxdnFEC,
 	},
 	trunking.ProtocolDPMR: {
 		cardinality: 4, tolerance: 4,
@@ -98,7 +98,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 	trunking.ProtocolYSF: {
 		cardinality: 4, tolerance: 3,
 		syncFn: func() []SyncVariant { return oneVariant("fsw", append([]uint8(nil), ysf.FSWPattern...)) },
-		notes:  "FICH Viterbi / CRC tally is a follow-up (need FICH depuncture).",
+		notes:  "FICH decode is not yet integrated in the YSF decoder (FICH-region symbol mapping undefined); sync landscape + histogram only.",
 	},
 	trunking.ProtocolTETRA: {
 		cardinality: 4, tolerance: 6,
@@ -108,7 +108,7 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 				{Name: "extended", Pattern: tetra.ExtendedSyncDibits()},
 			}
 		},
-		notes: "RCPC/RM/Viterbi tallies are a follow-up (need per-channel de-interleave).",
+		fec: tetraFEC,
 	},
 	trunking.ProtocolEDACS: {
 		cardinality: 2, tolerance: 3,
@@ -144,7 +144,7 @@ func hasDetailSpec(p trunking.Protocol) bool {
 
 // buildProtocolDetail computes the ProtocolDetail for p from the buffered
 // symbol stream. Returns nil when no spec is registered or the stream is empty.
-func buildProtocolDetail(p trunking.Protocol, symbols []uint8, isBits bool) any {
+func buildProtocolDetail(p trunking.Protocol, symbols []uint8, isBits bool, sys trunking.System) any {
 	spec, ok := detailSpecs[p]
 	if !ok || len(symbols) == 0 {
 		return nil
@@ -169,7 +169,7 @@ func buildProtocolDetail(p trunking.Protocol, symbols []uint8, isBits bool) any 
 	if spec.syncFn != nil {
 		d.Sync = computeSyncLandscape(symbols, spec.syncFn(), card, spec.tolerance)
 		if d.Sync != nil && spec.fec != nil {
-			d.FEC = spec.fec(symbols, d.Sync)
+			d.FEC = spec.fec(symbols, d.Sync, sys)
 		}
 	}
 	return d
