@@ -360,7 +360,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	isAnalogTrunk := proto == "motorola" || proto == "ltr" || proto == "mpt1327" ||
 		(proto == "edacs" && !cs.Grant.ProVoice)
 	isFM := proto == "" || proto == "fm" || proto == "analog" || isAnalogTrunk
-	isDMRVoice := proto == "dmr-tier2" || proto == "dmr-tier3"
+	isDMRVoice := proto == "dmr-tier1" || proto == "dmr-tier2" || proto == "dmr-tier3"
 	isP25P2Voice := proto == "p25-phase2"
 	isP25P1Voice := proto == "p25"
 	if !isFM && !isDMRVoice && !isP25P2Voice && !isP25P1Voice {

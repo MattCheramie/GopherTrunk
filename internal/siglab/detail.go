@@ -64,6 +64,10 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants, fec: dmrSlotTypeFEC,
 		notes: "DMR Tier II is voice-only; sync + slot-type only (no CSBK path).",
 	},
+	trunking.ProtocolDMRTier1: {
+		cardinality: 4, tolerance: 4, syncFn: dmrSyncVariants, fec: dmrSlotTypeFEC,
+		notes: "DMR Tier I direct-mode; sync + slot-type only (no CSBK path).",
+	},
 	trunking.ProtocolP25Phase2: {
 		cardinality: 4, tolerance: 3,
 		syncFn: func() []SyncVariant {
