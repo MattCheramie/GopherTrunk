@@ -1693,6 +1693,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if gtweb.HasAssets() {
 			opts.WebAssets = gtweb.Assets()
 		}
+		// Offline signal-analysis API (the siglab web console talks to
+		// these routes). Enabled on the daemon too so an operator can
+		// analyze captures without spinning up a separate `siglab serve`.
+		opts.Siglab = api.SiglabOptions{Enabled: true}
 		srv, err := api.NewServer(opts)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: http api: %w", err)

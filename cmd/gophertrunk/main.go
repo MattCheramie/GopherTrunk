@@ -67,7 +67,13 @@ func main() {
 	case "test":
 		runSiglabTest(os.Args[2:])
 	case "siglab":
-		runSiglabTUI(os.Args[2:])
+		// `siglab serve` launches the standalone web console; bare
+		// `siglab` (and any other subarg) stays the offline TUI.
+		if len(os.Args) > 2 && os.Args[2] == "serve" {
+			runSiglabServe(os.Args[3:])
+		} else {
+			runSiglabTUI(os.Args[2:])
+		}
 	case "import-pdf":
 		runImport(os.Args[2:])
 	case "daemon", "run":
@@ -98,6 +104,7 @@ USAGE:
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI
+  gophertrunk siglab serve [flags]    offline signal-analysis web console (browser UI)
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)

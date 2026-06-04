@@ -310,6 +310,14 @@ type Server struct {
 	// storage.MDC1200Log.
 	mdc1200 MDC1200Provider
 
+	// siglab is the optional offline signal-analysis subsystem backing
+	// the /api/v1/siglab/* routes (capture upload, engine run + SSE,
+	// identify, synthesize, export, decimated-IQ retrieval). nil disables
+	// the routes. Constructed by NewServer when ServerOptions.Siglab.Enabled.
+	siglab *siglabService
+	// siglabStop signals the siglab TTL sweeper to exit on shutdown.
+	siglabStop chan struct{}
+
 	// diagnostics is the shared error-diagnostics collector (banner +
 	// system info). nil disables banner enrichment of error responses
 	// and the GET /api/v1/diag/banner route.
@@ -514,6 +522,10 @@ type ServerOptions struct {
 	// the iqtap broker + internal/dsp/diag; nil keeps the route
 	// returning 503.
 	Diag DiagProvider
+	// Siglab, when Enabled, mounts the offline signal-analysis routes
+	// (/api/v1/siglab/*) and constructs the in-memory job/capture store.
+	// The daemon and the standalone `siglab serve` command both set it.
+	Siglab SiglabOptions
 	// Diagnostics is the shared error-diagnostics collector (banner +
 	// system info). The daemon injects one seeded with its SDR pool
 	// snapshot so the error path never re-enumerates USB. Optional; nil
@@ -623,6 +635,17 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if (opts.TLSCert == "") != (opts.TLSKey == "") {
 		return nil, errors.New("api: tls_cert and tls_key must both be set or both be empty")
 	}
+	var siglabSvc *siglabService
+	var siglabStop chan struct{}
+	if opts.Siglab.Enabled {
+		svc, serr := newSiglabService(opts.Siglab)
+		if serr != nil {
+			return nil, serr
+		}
+		siglabSvc = svc
+		siglabStop = make(chan struct{})
+		go svc.runSweeper(siglabStop)
+	}
 	return &Server{
 		addr:           opts.Addr,
 		bus:            opts.Bus,
@@ -658,6 +681,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		spectrum:       opts.Spectrum,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
+		siglab:         siglabSvc,
+		siglabStop:     siglabStop,
 		diagnostics:    opts.Diagnostics,
 		verboseErrors:  opts.VerboseErrors,
 		pager:          opts.Pager,
@@ -754,6 +779,15 @@ func (s *Server) shutdown(ctx context.Context) error {
 		return nil
 	}
 	s.closed = true
+	// Tear down the siglab subsystem: stop the TTL sweeper and remove the
+	// temp directory (and any staged captures) the service owns.
+	if s.siglab != nil {
+		if s.siglabStop != nil {
+			close(s.siglabStop)
+			s.siglabStop = nil
+		}
+		s.siglab.close()
+	}
 	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
 	// get up to 30 s to drain rather than the 5 s the old bound gave
 	// them. Cuts user-visible connection drops on a clean restart.
@@ -860,6 +894,24 @@ func (s *Server) routes() *http.ServeMux {
 	// Read-only; the daemon doesn't expose any way to inject IQ
 	// via this path. Returns 503 when no SDR is in the pool.
 	mux.HandleFunc("GET /api/v1/diag/iq", s.handleDiagStream)
+
+	// Siglab — offline signal-analysis console. Read routes (protocols,
+	// job result/stream/iq, export) are open; routes that stage data or
+	// spend CPU (upload, run, identify, synthesize, delete) are gated like
+	// every other write route. Mounted only when the subsystem is enabled
+	// (the daemon and the standalone `siglab serve` command).
+	if s.siglab != nil {
+		mux.HandleFunc("GET /api/v1/siglab/protocols", s.handleSiglabProtocols)
+		mux.HandleFunc("POST /api/v1/siglab/captures", s.gate(s.handleSiglabUpload))
+		mux.HandleFunc("DELETE /api/v1/siglab/captures/{id}", s.gate(s.handleSiglabDeleteCapture))
+		mux.HandleFunc("POST /api/v1/siglab/run", s.gate(s.handleSiglabRun))
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}", s.handleSiglabJobResult)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/events", s.handleSiglabJobStream)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/iq", s.handleSiglabJobIQ)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
+		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
+		mux.HandleFunc("POST /api/v1/siglab/synthesize", s.gate(s.handleSiglabSynthesize))
+	}
 
 	// Pager log — recent POCSAG (and eventually FLEX) messages.
 	// Read-only; the decoder writes via the events bus → PagerLog.
