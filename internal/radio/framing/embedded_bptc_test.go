@@ -78,6 +78,16 @@ func TestEmbeddedLCCorrectsSingleBit(t *testing.T) {
 		ch := append([]byte(nil), clean...)
 		ch[bit] ^= 1
 		got, corrected := DecodeEmbeddedLC(ch)
+		if bit%8 == 7 {
+			// On-air bits a ≡ 7 (mod 8) deinterleave into the column-parity
+			// row, which the product code detects but does not correct
+			// (matching the reference MMDVM decoder). The block is safely
+			// rejected rather than mis-decoded.
+			if corrected >= 0 {
+				t.Errorf("parity-row bit %d flip: expected rejection, got corrected=%d", bit, corrected)
+			}
+			continue
+		}
 		if corrected < 0 {
 			t.Errorf("single bit %d flip: decode failed", bit)
 			continue
@@ -95,10 +105,11 @@ func TestEmbeddedLCRejectsHeavyCorruption(t *testing.T) {
 	r := rand.New(rand.NewSource(3))
 	lc := randomLC(r)
 	ch := EncodeEmbeddedLC(lc)
-	// Put TWO errors in the same payload row (row 0 = on-air indices
-	// c*8+0): columns 0 and 1 → indices 0 and 8. That exceeds the row
-	// Hamming(16,11,4) single-error correction, so the SEC-DED row
-	// decode flags it uncorrectable and the block is rejected.
+	// Put TWO errors in the same payload row. The on-air → matrix
+	// deinterleave maps on-air bits 0 and 8 to matrix cells data[0] and
+	// data[1] (both in row 0). Two errors in one row exceed the row
+	// Hamming(16,11,4) single-error correction, so the SEC-DED row decode
+	// flags it uncorrectable and the block is rejected.
 	ch[0] ^= 1
 	ch[8] ^= 1
 	if _, corrected := DecodeEmbeddedLC(ch); corrected >= 0 {

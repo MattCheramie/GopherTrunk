@@ -1,36 +1,34 @@
 package framing
 
 // Hamming(13,9,3): a single-error-correcting linear block code used by
-// DMR's BPTC(196,96) column code (ETSI TS 102 361-1 Annex B). 9 information
-// bits become a 13-bit codeword via four parity bits.
+// DMR's BPTC(196,96) column code (ETSI TS 102 361-1 Annex B.1.2). 9
+// information bits become a 13-bit codeword via four parity bits.
 //
-// The parity-check matrix uses the 9 nonzero, non-unit 4-bit vectors of
-// weight ≥ 2 as data-column patterns, guaranteeing minimum distance 3:
+// The parity equations are the canonical DMR ones (matching the reference
+// MMDVM CHamming::encode1393 / decode1393, which is the de-facto on-air
+// implementation used by DMR hotspots). In the spec the codeword cells are
+// d[0..8] = data, d[9..12] = parity, with:
 //
-//   data bit  pattern (bit3 bit2 bit1 bit0)
-//   d0        0011        d4        1001
-//   d1        0101        d5        1010
-//   d2        0110        d6        1011
-//   d3        0111        d7        1100
-//                         d8        1101
+//   d[9]  = d0 ^ d1 ^ d3 ^ d5 ^ d6
+//   d[10] = d0 ^ d1 ^ d2 ^ d4 ^ d6 ^ d7
+//   d[11] = d0 ^ d1 ^ d2 ^ d3 ^ d5 ^ d7 ^ d8
+//   d[12] = d0 ^ d2 ^ d4 ^ d5 ^ d8
 //
-// Parity equations (LSB-indexed information bits d0..d8):
-//   p0 = d0 ^ d1 ^ d3 ^ d4 ^ d6 ^ d8
-//   p1 = d0 ^ d2 ^ d3 ^ d5 ^ d6
-//   p2 = d1 ^ d2 ^ d3 ^ d7 ^ d8
-//   p3 = d4 ^ d5 ^ d6 ^ d7 ^ d8
-//
-// Codeword layout: bits 12..4 = d8..d0, bits 3..0 = p3..p0.
+// This file packs the same code into a uint16 codeword: bits 12..4 hold
+// d8..d0 (data, d0 at bit 4), and bits 3..0 hold the parity in the order
+// p0=d[9], p1=d[10], p2=d[11], p3=d[12]. The BPTC column pass in bptc.go
+// relies on that p0..p3 == d[9]..d[12] ordering so the column cells
+// m[9..12][c] map straight onto the spec parity cells.
 
 // HammingEncode13_9 encodes 9 data bits (in the low 9 bits of input) into
 // a 13-bit codeword.
 func HammingEncode13_9(data uint16) uint16 {
 	d := data & 0x01FF
 	bit := func(i int) uint16 { return (d >> i) & 1 }
-	p0 := bit(0) ^ bit(1) ^ bit(3) ^ bit(4) ^ bit(6) ^ bit(8)
-	p1 := bit(0) ^ bit(2) ^ bit(3) ^ bit(5) ^ bit(6)
-	p2 := bit(1) ^ bit(2) ^ bit(3) ^ bit(7) ^ bit(8)
-	p3 := bit(4) ^ bit(5) ^ bit(6) ^ bit(7) ^ bit(8)
+	p0 := bit(0) ^ bit(1) ^ bit(3) ^ bit(5) ^ bit(6)
+	p1 := bit(0) ^ bit(1) ^ bit(2) ^ bit(4) ^ bit(6) ^ bit(7)
+	p2 := bit(0) ^ bit(1) ^ bit(2) ^ bit(3) ^ bit(5) ^ bit(7) ^ bit(8)
+	p3 := bit(0) ^ bit(2) ^ bit(4) ^ bit(5) ^ bit(8)
 	return d<<4 | p3<<3 | p2<<2 | p1<<1 | p0
 }
 

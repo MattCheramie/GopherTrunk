@@ -8,14 +8,16 @@ package framing
 // successful (BPTC reports its own success but doesn't catch
 // systematic FEC misses).
 //
-// Parameters per ETSI TS 102 361-1 Annex B.3.12:
+// Parameters per ETSI TS 102 361-1 Annex B.3.12, matching the de-facto
+// on-air reference implementation (HBLink dmr_utils rs129):
 //
 //	Field generator: GF(2^8) with primitive polynomial
-//	  p(x) = x^8 + x^6 + x^5 + x + 1   (= 0x163, low 8 bits 0x63)
+//	  p(x) = x^8 + x^4 + x^3 + x^2 + 1   (= 0x11D, low 8 bits 0x1D)
 //	Field primitive: α = 2
-//	Generator polynomial:
-//	  g(x) = (x + α^0)(x + α^1)(x + α^2)
-//	       = x^3 ⊕ (1 ⊕ α ⊕ α²)x² ⊕ (α ⊕ α² ⊕ α³)x ⊕ α³
+//	Generator polynomial (first consecutive root α^1):
+//	  g(x) = (x + α^1)(x + α^2)(x + α^3)
+//	       = x^3 + 14·x^2 + 56·x + 64
+//	A valid codeword therefore satisfies c(α^1) = c(α^2) = c(α^3) = 0.
 //
 // For the three DMR contexts the encoder XORs each parity octet with
 // a context-specific seed before transmission, so the verifier has
@@ -65,23 +67,23 @@ func init() {
 	f.exp[255] = f.exp[0]
 	rs129 = f
 
-	// Generator g(x) = (x + α^0)(x + α^1)(x + α^2). For α = 2:
-	//   α^0 = 1, α^1 = 2, α^2 = 4, α^3 = 8 (no reduction yet at these powers).
-	// Coefficients (low to high):
-	//   g[0] = α^3                = 8
-	//   g[1] = α + α² + α³        = 2 ⊕ 4 ⊕ 8 = 14
-	//   g[2] = 1 ⊕ α ⊕ α²         = 1 ⊕ 2 ⊕ 4 = 7
-	rs129Gen = [3]byte{8, 14, 7}
+	// Generator g(x) = (x + α^1)(x + α^2)(x + α^3) = x^3 + 14·x^2 + 56·x + 64
+	// (first consecutive root α^1, the DMR convention). The LFSR uses the
+	// non-leading coefficients low-to-high:
+	//   g[0] = constant term = 64
+	//   g[1] = x^1 coeff      = 56
+	//   g[2] = x^2 coeff      = 14
+	rs129Gen = [3]byte{64, 56, 14}
 }
 
 // gfMul2 multiplies a GF(2^8) element by α = 2: shift left, then
-// reduce modulo the primitive polynomial 0x163 (low 8 bits 0x63) if
+// reduce modulo the primitive polynomial 0x11D (low 8 bits 0x1D) if
 // the result overflowed bit 7.
 func gfMul2(x byte) byte {
 	high := x & 0x80
 	out := x << 1
 	if high != 0 {
-		out ^= 0x63
+		out ^= 0x1D
 	}
 	return out
 }
@@ -143,8 +145,9 @@ func VerifyRS12_9(cw []byte, seed [3]byte) bool {
 	// Syndromes via forward Horner.
 	// Convention: c[0] is the leading (x^11) coefficient and c[11] is
 	// the constant term, so c(x) = c[0]*x^11 + c[1]*x^10 + ... + c[11].
-	// A valid codeword satisfies c(α^j) = 0 for j = 0, 1, 2.
-	for j := 0; j < 3; j++ {
+	// DMR uses first consecutive root α^1, so a valid codeword satisfies
+	// c(α^j) = 0 for j = 1, 2, 3.
+	for j := 1; j <= 3; j++ {
 		alphaJ := rs129.exp[j] // α^j
 		var s byte
 		for i := 0; i < 12; i++ {
