@@ -59,11 +59,48 @@ func renderResultText(w io.Writer, r *siglab.Result) {
 	if r.Signal != nil {
 		renderSignal(w, r.Signal)
 	}
-	if r.P25P1 != nil {
-		renderP25Detail(w, r.P25P1)
+	switch d := r.Detail.(type) {
+	case *siglab.P25P1Detail:
+		renderP25Detail(w, d)
+	case *siglab.ProtocolDetail:
+		renderProtocolDetail(w, d)
 	}
 	if r.Verdict != nil {
 		renderVerdict(w, r.Verdict)
+	}
+}
+
+// renderProtocolDetail prints the symbol-domain deep dive (histogram + sync
+// landscape + FEC tally) for the non-P25-P1 protocols.
+func renderProtocolDetail(w io.Writer, d *siglab.ProtocolDetail) {
+	fmt.Fprintf(w, "siglab: %s detail  symbols=%d  cardinality=%d\n", d.Protocol, d.SymbolsBuffered, d.SymbolCardinality)
+	for i, n := range d.SymbolHistogram {
+		pct := 0.0
+		if i < len(d.SymbolHistogramPct) {
+			pct = d.SymbolHistogramPct[i]
+		}
+		fmt.Fprintf(w, "siglab:   symbol %d: %d (%.1f%%)\n", i, n, pct)
+	}
+	if s := d.Sync; s != nil {
+		fmt.Fprintf(w, "siglab:   sync landscape (len=%d, tol=%d): winner=%s rot=%d hits=%d modal_spacing=%d\n",
+			s.SyncLen, s.Tolerance, s.WinnerVariant, s.WinnerRotation, s.WinnerHits, s.ModalSpacing)
+		for _, st := range s.Stats {
+			if st.Hits > 0 || st.BestDist <= s.Tolerance {
+				fmt.Fprintf(w, "siglab:     %s rot %d: best_dist=%d (@%d) hits=%d\n",
+					st.Variant, st.Rotation, st.BestDist, st.BestPos, st.Hits)
+			}
+		}
+	}
+	for _, f := range d.FEC {
+		fmt.Fprintf(w, "siglab:   fec %s: frames=%d clean=%d corrected=%d uncorrectable=%d",
+			f.Stage, f.Frames, f.Clean, f.Corrected, f.Uncorrectable)
+		if f.CRCPass+f.CRCFail > 0 {
+			fmt.Fprintf(w, " crc_pass=%d crc_fail=%d", f.CRCPass, f.CRCFail)
+		}
+		fmt.Fprintln(w)
+	}
+	if d.Notes != "" {
+		fmt.Fprintf(w, "siglab:   note: %s\n", d.Notes)
 	}
 }
 

@@ -1,11 +1,24 @@
 package siglab
 
 import (
+	"encoding/binary"
+	"math"
+
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/mpt1327"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
+	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/ysf"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -52,6 +65,105 @@ var fixtures = map[trunking.Protocol]fixture{
 			LockFields:       map[string]any{"color_code": 0xA},
 			BaudTolerancePct: 5,
 		},
+	},
+	trunking.ProtocolP25Phase2: {
+		build:       func() []uint8 { return buildP25Phase2MACPTTStream(8) },
+		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulatePiOver4DQPSK(d, 8, 8, 0.20, math.Pi/8) },
+		sampleRate:  48_000,
+		systemKnobs: map[string]string{"p25_phase2_trellis_mode": "on"},
+		expected:    Acceptance{Lock: boolPtr(true)},
+	},
+	trunking.ProtocolDMRTier2: {
+		build:      func() []uint8 { return buildDMRTier2VoiceLCHeaderDibits(80, 0x7, 0x123, 0x456789) },
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1944.0) },
+		sampleRate: 48_000,
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"color_code": 0x7},
+		},
+	},
+	trunking.ProtocolNXDN: {
+		build:       func() []uint8 { return buildNXDNSpecEncodedDibits(20, 0xBEEF, 0x0042) },
+		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1800.0) },
+		sampleRate:  48_000,
+		systemKnobs: map[string]string{"nxdn_viterbi_mode": "spec"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"site_id": "0xBEEF", "system_id": "0x0042"},
+		},
+	},
+	trunking.ProtocolDPMR: {
+		build:      func() []uint8 { return buildDPMRSiteBroadcastDibits(30, 0x123456) },
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 20, 8, 0.20, sr, 900.0) },
+		sampleRate: 48_000,
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"system_id": "0x123456"},
+		},
+	},
+	trunking.ProtocolYSF: {
+		build:      func() []uint8 { return buildYSFFSWStream(30) },
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 10, 8, 0.20, sr, 1800.0) },
+		sampleRate: 48_000,
+		expected:   Acceptance{Lock: boolPtr(true)},
+	},
+	trunking.ProtocolTETRA: {
+		build:       func() []uint8 { return buildTETRASCHHDStream(100, 0x12345, 0x42) },
+		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulatePiOver4DQPSK(d, 4, 8, 0.35, math.Pi/4) },
+		sampleRate:  72_000,
+		systemKnobs: map[string]string{"tetra_colour_code": "0x12345", "tetra_channel": "sch/hd"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"location_area": "0x42"},
+		},
+	},
+	trunking.ProtocolEDACS: {
+		build:       func() []uint8 { return buildEDACSSystemIDStream(30, 0x7B) },
+		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateGFSK(d, 10, 4, 0.3, sr, 2400.0) },
+		sampleRate:  96_000,
+		systemKnobs: map[string]string{"edacs_bch_mode": "on"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"system_id": "0x7B"},
+		},
+	},
+	trunking.ProtocolMotorola: {
+		build:       func() []uint8 { return buildMotorolaSystemIDStream(30, 0x4567) },
+		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateGFSK(d, 27, 4, 0.5, sr, 1500.0) },
+		sampleRate:  97_200,
+		systemKnobs: map[string]string{"motorola_bch_mode": "on"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"system_id": "0x4567"},
+		},
+	},
+	trunking.ProtocolLTR: {
+		build:       func() []uint8 { return buildLTRStatusStream(80, 7, 4) },
+		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateSubAudibleNRZ(d, sr, 300.0, 0.05) },
+		sampleRate:  48_000,
+		systemKnobs: map[string]string{"ltr_manchester_mode": "off", "ltr_fcs_mode": "off"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"area": 7, "repeater": 4},
+		},
+	},
+	trunking.ProtocolMPT1327: {
+		build:       func() []uint8 { return buildMPT1327AlohaStream(100, 0x5) },
+		modulate:    func(d []uint8, sr float64) []complex64 { return demod.ModulateFFSK(d, sr, 1200.0, 1200.0, 1800.0) },
+		sampleRate:  48_000,
+		systemKnobs: map[string]string{"mpt1327_bch_mode": "on"},
+		expected: Acceptance{
+			Lock:       boolPtr(true),
+			LockFields: map[string]any{"prefix": 0x5},
+		},
+	},
+	trunking.ProtocolDStar: {
+		build: func() []uint8 {
+			return buildDStarHeaderStream(30, "CQCQCQ  ", "WB7XYZ  ", "KD0AAA B", "KD0AAA G")
+		},
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateGFSK(d, 10, 4, 0.5, sr, 1200.0) },
+		sampleRate: 48_000,
+		expected:   Acceptance{Lock: boolPtr(true)},
 	},
 }
 
@@ -106,6 +218,397 @@ func buildP25LockedDibits(nac uint16, repeats int) []uint8 {
 	}
 	for i := 0; i < 100; i++ {
 		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildP25Phase2MACPTTStream builds a P25 Phase 2 superframe stream of
+// MAC-signaling subframes. Lifted from integration_cc_p25p2_test.go.
+func buildP25Phase2MACPTTStream(repeats int) []uint8 {
+	pdu := p25phase2.MACPDU{Opcode: p25phase2.OpGroupVoiceChannelUserAbbreviated, Payload: make([]byte, 17)}
+	var subs [p25phase2.SubframesPerSuperframe][]uint8
+	for i := range subs {
+		subs[i] = p25phase2.EncodeMACSubframe(
+			p25phase2.SlotTypeMACSignaling, uint8(i), pdu,
+			p25phase2.TrellisOn, p25phase2.InterleaveOff)
+	}
+	superframe := p25phase2.EncodeSuperframe(subs)
+
+	out := make([]uint8, 0, 400+repeats*len(superframe)+100)
+	for i := 0; i < 400; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, superframe...)
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildDMRTier2VoiceLCHeaderDibits builds a DMR Tier II conventional stream of
+// repeated Voice LC Header bursts. Lifted from integration_cc_dmr_tier2_test.go.
+func buildDMRTier2VoiceLCHeaderDibits(repeats int, colorCode uint8, groupID, sourceID uint32) []uint8 {
+	flc := dmr.FLC{
+		FLCO:    dmr.FLCOGroupVoiceUser,
+		DstAddr: groupID,
+		SrcAddr: sourceID,
+	}
+	flcBytes := dmr.AssembleFLC(flc)
+	var data [9]byte
+	copy(data[:], flcBytes)
+	cw := framing.EncodeRS12_9(data)
+	for i := 0; i < 3; i++ {
+		cw[9+i] ^= framing.RS129SeedVoiceLCHeader[i]
+	}
+	info := cw[:]
+	bits := make([]byte, 96)
+	for i := 0; i < 96; i++ {
+		bits[i] = (info[i>>3] >> uint(7-(i&7))) & 1
+	}
+	channelBits := framing.EncodeBPTC196_96(bits)
+	payloadDibits := framing.BitsToDibits(channelBits)
+
+	slotBits := dmr.AssembleSlotType(dmr.SlotType{ColorCode: colorCode, DataType: dmr.DTVoiceLCHeader})
+	slotDibits := framing.BitsToDibits(slotBits)
+
+	burst := make([]uint8, 0, dmr.BurstDibits)
+	burst = append(burst, payloadDibits[:dmr.HalfPayloadDibits]...)
+	burst = append(burst, slotDibits[:dmr.SlotTypeDibits]...)
+	burst = append(burst, dmr.BSData.Dibits[:]...)
+	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
+	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
+
+	out := make([]uint8, 0, 800+repeats*(len(burst)+32)+100)
+	for i := 0; i < 800; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, burst...)
+		for i := 0; i < 32; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildNXDNSpecEncodedDibits builds an NXDN RCCH outbound control-channel
+// stream (FSW + LICH + spec-encoded CAC SITE_INFO). Lifted from
+// integration_cc_nxdn_test.go.
+func buildNXDNSpecEncodedDibits(repeats int, siteID, systemID uint16) []uint8 {
+	lichInfo := nxdn.AssembleLICH(nxdn.LICH{RFCh: nxdn.RFChControl})
+	lichWire := nxdn.EncodeLICHWire(lichInfo)
+	lichDibits := framing.BitsToDibits(lichWire)
+
+	var payload [8]byte
+	binary.BigEndian.PutUint16(payload[0:2], 0xAAAA)
+	binary.BigEndian.PutUint16(payload[2:4], siteID)
+	binary.BigEndian.PutUint16(payload[4:6], systemID)
+	l3 := make([]byte, 9)
+	l3[0] = byte(nxdn.RCCHSITEINFO)
+	copy(l3[1:9], payload[:])
+
+	info := make([]byte, nxdn.CACInfoBits)
+	l3Bits := framing.UnpackBitsMSB(l3, 72)
+	copy(info[8:8+72], l3Bits)
+
+	channel := nxdn.EncodeCACChannel(info)
+	cacDibits := framing.BitsToDibits(channel)
+
+	frame := make([]uint8, 0, 8+len(lichDibits)+len(cacDibits))
+	frame = append(frame, nxdn.FSWDibitsOutbound...)
+	frame = append(frame, lichDibits...)
+	frame = append(frame, cacDibits...)
+
+	out := make([]uint8, 0, 300+repeats*(len(frame)+50)+100)
+	for i := 0; i < 300; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 50; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildDPMRSiteBroadcastDibits builds a dPMR control-channel stream (FS3 +
+// CSBK standing-service-status). Lifted from integration_cc_dpmr_test.go.
+func buildDPMRSiteBroadcastDibits(repeats int, systemID uint32) []uint8 {
+	csbk := dpmr.CSBK{Type: dpmr.MsgStandingServiceStatus, DestID: systemID, Extra: 0x42}
+	csbkBits := dpmr.CSBKBits(csbk)
+	csbkDibits := framing.BitsToDibits(csbkBits)
+
+	frame := make([]uint8, 0, 24+len(csbkDibits))
+	frame = append(frame, dpmr.FS3Dibits()...)
+	frame = append(frame, csbkDibits...)
+
+	out := make([]uint8, 0, 400+repeats*(len(frame)+16)+100)
+	for i := 0; i < 400; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 16; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildYSFFSWStream builds a YSF stream of FSW-bearing frames. Lifted from
+// integration_cc_ysf_test.go.
+func buildYSFFSWStream(repeats int) []uint8 {
+	frame := make([]uint8, ysf.FrameDibits)
+	copy(frame[ysf.FSWOffset:], ysf.FSWPattern)
+
+	out := make([]uint8, 0, 400+repeats*len(frame)+100)
+	for i := 0; i < 400; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// buildTETRASCHHDStream builds a TETRA SCH/HD broadcast stream (normal sync +
+// channel-coded MLE SYSINFO). Lifted from integration_cc_tetra_test.go.
+func buildTETRASCHHDStream(repeats int, colourCode uint32, locationArea uint16) []uint8 {
+	payload := []byte{0x00, 0x00, 0x00, 0, 0}
+	payload[3] = byte((locationArea >> 6) & 0xFF)
+	payload[4] = byte((locationArea & 0x3F) << 2)
+
+	pdu := tetra.PDU{
+		Disc:    tetra.DiscMLE,
+		Type:    uint8(tetra.MLESystemInfo),
+		Payload: payload,
+	}
+	info := pduToType1BitsTETRA(pdu, 124)
+	type5 := tetra.EncodeSCHHD(info, colourCode)
+	burstDibits := framing.BitsToDibits(type5)
+
+	frame := make([]uint8, 0, 38+len(burstDibits))
+	frame = append(frame, tetra.NormalSyncDibits()...)
+	frame = append(frame, burstDibits...)
+
+	out := make([]uint8, 0, 400+repeats*(len(frame)+50)+100)
+	for i := 0; i < 400; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 50; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
+}
+
+// pduToType1BitsTETRA pads a PDU's header + bytes into exactly k1 bits,
+// MSB-first per byte, zero-padded. Lifted from integration_cc_tetra_test.go.
+func pduToType1BitsTETRA(pdu tetra.PDU, k1 int) []byte {
+	bytes := tetra.AssemblePDU(pdu)
+	if len(bytes)*8 > k1 {
+		return nil
+	}
+	out := make([]byte, k1)
+	for i, b := range bytes {
+		for j := 0; j < 8; j++ {
+			out[i*8+j] = (b >> uint(7-j)) & 1
+		}
+	}
+	return out
+}
+
+// buildEDACSSystemIDStream builds an EDACS control-channel stream (outbound
+// sync + BCH-encoded SystemID CCW). Lifted from integration_cc_edacs_test.go.
+func buildEDACSSystemIDStream(repeats int, systemID uint16) []byte {
+	info := uint32(edacs.CmdSystemID&0xF)<<24 |
+		uint32(systemID&0xFFFF)<<4
+	cw := framing.BCHEncodeEDACS(info)
+	wire := make([]byte, 40)
+	for i := 0; i < 40; i++ {
+		if cw&(uint64(1)<<uint(39-i)) != 0 {
+			wire[i] = 1
+		}
+	}
+
+	frame := make([]byte, 0, 24+40)
+	frame = append(frame, edacs.OutboundSyncBits()...)
+	frame = append(frame, wire...)
+
+	out := make([]byte, 0, 200+repeats*(len(frame)+16)+100)
+	for i := 0; i < 200; i++ {
+		out = append(out, byte(i&1))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 16; i++ {
+			out = append(out, byte(i&1))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, byte(i&1))
+	}
+	return out
+}
+
+// buildMotorolaSystemIDStream builds a Motorola Type II control-channel stream
+// (outbound sync + two BCH(64,16) OSW halves). Lifted from
+// integration_cc_motorola_test.go.
+func buildMotorolaSystemIDStream(repeats int, systemID uint16) []byte {
+	command := uint16(motorola.OpSystemIDExtended) << 4
+
+	cw1 := framing.BCHEncode64_16(systemID)
+	cw2 := framing.BCHEncode64_16(command)
+	encoded := make([]byte, 128)
+	for i := 0; i < 64; i++ {
+		if cw1&(uint64(1)<<uint(63-i)) != 0 {
+			encoded[i] = 1
+		}
+	}
+	for i := 0; i < 64; i++ {
+		if cw2&(uint64(1)<<uint(63-i)) != 0 {
+			encoded[64+i] = 1
+		}
+	}
+
+	frame := make([]byte, 0, 24+128)
+	frame = append(frame, motorola.OutboundSyncBits()...)
+	frame = append(frame, encoded...)
+
+	out := make([]byte, 0, 200+repeats*(len(frame)+16)+100)
+	for i := 0; i < 200; i++ {
+		out = append(out, byte(i&1))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 16; i++ {
+			out = append(out, byte(i&1))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, byte(i&1))
+	}
+	return out
+}
+
+// buildLTRStatusStream builds an LTR sub-audible Status stream. Lifted from
+// integration_cc_ltr_test.go.
+func buildLTRStatusStream(repeats int, area, repeater uint8) []byte {
+	status := ltr.Status{
+		Sync:    true,
+		Area:    area,
+		Channel: 3,
+		Home:    repeater,
+		Free:    5,
+	}
+	frame := ltr.StatusBits(status)
+
+	out := make([]byte, 0, 200+repeats*len(frame)+100)
+	out = append(out, make([]byte, 200)...)
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+	}
+	out = append(out, make([]byte, 100)...)
+	return out
+}
+
+// buildMPT1327AlohaStream builds an MPT 1327 control-channel stream of
+// BCH-encoded Aloha codewords. Lifted from integration_cc_mpt1327_test.go.
+func buildMPT1327AlohaStream(repeats int, prefix uint8) []byte {
+	aloha := mpt1327.Codeword{
+		Type:     mpt1327.TypeAddress,
+		Prefix:   prefix,
+		Function: uint32(mpt1327.KindAloha) << 13,
+	}
+	wire48 := mpt1327.CodewordBits48(aloha)
+	var info48 uint64
+	for i := 0; i < 48; i++ {
+		if wire48[i]&1 != 0 {
+			info48 |= uint64(1) << uint(i)
+		}
+	}
+	cw := framing.BCHEncodeMPT1327(info48)
+	codeword := make([]byte, 64)
+	for i := 0; i < 64; i++ {
+		codeword[i] = byte((cw >> uint(i)) & 1)
+	}
+
+	out := make([]byte, 0, 200+repeats*(len(codeword)+16)+100)
+	for i := 0; i < 200; i++ {
+		out = append(out, byte(i&1))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, codeword...)
+		for i := 0; i < 16; i++ {
+			out = append(out, byte(i&1))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, byte(i&1))
+	}
+	return out
+}
+
+// buildDStarHeaderStream builds a D-STAR header stream (frame sync + 41-byte
+// header with CRC, FEC-off). Lifted from integration_cc_dstar_test.go.
+func buildDStarHeaderStream(repeats int, ur, my1, rpt2, rpt1 string) []byte {
+	hdr := dstar.Header{
+		Flag1: 0,
+		Flag2: 0,
+		Flag3: 0,
+		RPT2:  rpt2,
+		RPT1:  rpt1,
+		UR:    ur,
+		MY1:   my1,
+		MY2:   "SUFX",
+	}
+	asm := dstar.AssembleHeader(hdr)
+	hdr.CRC = dstar.ComputeCRC(asm[:39])
+	asm = dstar.AssembleHeader(hdr)
+
+	headerBits := make([]byte, 0, 328)
+	for _, b := range asm {
+		for i := 0; i < 8; i++ {
+			headerBits = append(headerBits, (b>>uint(7-i))&1)
+		}
+	}
+
+	frame := make([]byte, 0, 32+328)
+	frame = append(frame, dstar.FrameSyncBitsSlice()...)
+	frame = append(frame, headerBits...)
+
+	out := make([]byte, 0, 256+repeats*(len(frame)+32)+100)
+	for i := 0; i < 256; i++ {
+		out = append(out, 1)
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, frame...)
+		for i := 0; i < 32; i++ {
+			out = append(out, 1)
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, 1)
 	}
 	return out
 }
