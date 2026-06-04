@@ -85,11 +85,12 @@ func TestEngineThroughputAndAnalysis(t *testing.T) {
 		t.Error("expected IQ imbalance to be observed")
 	}
 	// The dibit-domain P25 detail should have been built from the buffered
-	// symbols.
-	if res.P25P1 == nil {
-		t.Fatal("P25P1 detail not built for a P25 run with CollectIQDiag")
+	// symbols and surfaced via the unified Detail field.
+	p25, ok := res.Detail.(*P25P1Detail)
+	if !ok || p25 == nil {
+		t.Fatalf("P25 detail not built for a P25 run with CollectIQDiag; Detail=%T", res.Detail)
 	}
-	if res.P25P1.DibitsBuffered == 0 {
+	if p25.DibitsBuffered == 0 {
 		t.Error("P25P1.DibitsBuffered = 0")
 	}
 }

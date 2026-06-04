@@ -91,7 +91,10 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	var an *analyzer
 	if cfg.CollectIQDiag {
 		an = newAnalyzer()
-		an.bufferSymbols = cfg.Protocol == trunking.ProtocolP25
+		// Buffer the recovered symbols when a protocol-specific detail builder
+		// needs the full stream: P25 (its deep path) or any protocol with a
+		// registered symbol-domain detail spec.
+		an.bufferSymbols = cfg.Protocol == trunking.ProtocolP25 || hasDetailSpec(cfg.Protocol)
 	}
 	var iqCorrector *rtlsdr.IQImbalanceCorrector
 	if cfg.IQCorrect {
@@ -203,11 +206,16 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 
 	res := assembleResult(source, cfg, totalSamples, symbolCount, receiverRate, tuneHz, coll, an)
 
-	// Attach the P25 Phase 1 deep detail when the deep path ran. CCStats and
-	// the receiver-state series are captured whenever the deep path is active
-	// (so `replay -protocol p25p1` shows them); the dibit/soft landscape is
-	// added only when the analyzer buffered symbols (CollectIQDiag).
-	if deep {
+	// Attach the protocol-specific deep dive. P25 Phase 1 uses its dedicated
+	// deep path (soft eye + receiver-state + native CCStats); every other
+	// protocol with a registered builder gets a symbol-domain detail (sync
+	// landscape + FEC tally) computed from the buffered recovered symbols.
+	switch {
+	case deep:
+		// CCStats and the receiver-state series are captured whenever the deep
+		// path is active (so `replay -protocol p25p1` shows them); the
+		// dibit/soft landscape is added only when the analyzer buffered
+		// symbols (CollectIQDiag).
 		var d *P25P1Detail
 		if an != nil {
 			d = buildP25Detail(an.symBuf, an.softBuf)
@@ -219,7 +227,11 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			d.CCStats = bundle.ccStats()
 		}
 		d.ReceiverStates = states
-		res.P25P1 = d
+		res.Detail = d
+	case an != nil && hasDetailSpec(cfg.Protocol):
+		if d := buildProtocolDetail(cfg.Protocol, an.symBuf, an.cardinality == 2); d != nil {
+			res.Detail = d
+		}
 	}
 	return res, nil
 }

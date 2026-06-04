@@ -40,7 +40,10 @@ type Result struct {
 
 	// Analysis (nil unless CollectIQDiag).
 	Signal *SignalQuality `json:"signal,omitempty" yaml:"signal,omitempty"`
-	P25P1  *P25P1Detail   `json:"p25p1,omitempty" yaml:"p25p1,omitempty"`
+	// Detail is the protocol-specific deep dive (a *P25P1Detail, *DMRDetail,
+	// *NXDNDetail, …) populated when CollectIQDiag is set and a per-protocol
+	// detail builder exists. Consumers type-switch on it (keyed by Protocol).
+	Detail any `json:"detail,omitempty" yaml:"detail,omitempty"`
 
 	// Verdict (nil unless Config.Acceptance supplied).
 	Verdict *Verdict `json:"verdict,omitempty" yaml:"verdict,omitempty"`
