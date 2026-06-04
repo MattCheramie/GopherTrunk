@@ -20,6 +20,11 @@ type SynthOptions struct {
 	// Impairments applied to the ideal IQ (SNR, carrier offset, DC spike,
 	// I/Q imbalance, multipath). The zero value is a clean capture.
 	Impairments demod.Impairments
+	// Modulation optionally overrides the fixture's default modulator. Empty
+	// uses the per-protocol default. For P25 Phase 1, "lsm" (or "cqpsk")
+	// selects the linear π/4-DQPSK (LSM) waveform instead of C4FM, so a
+	// capture can exercise the linear CQPSK demod path (issue #492).
+	Modulation string
 }
 
 // Synthesize builds a known-good (optionally impaired) capture for a
@@ -31,8 +36,16 @@ func Synthesize(opts SynthOptions) ([]complex64, *Metadata, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("siglab: no synthesis fixture for protocol %s (have: %v)", opts.Protocol, Fixtures())
 	}
+	modulate := fx.modulate
+	if opts.Modulation != "" {
+		m, err := modulatorFor(opts.Protocol, opts.Modulation)
+		if err != nil {
+			return nil, nil, err
+		}
+		modulate = m
+	}
 	symbols := fx.build()
-	iq := fx.modulate(symbols, fx.sampleRate)
+	iq := modulate(symbols, fx.sampleRate)
 	iq = demod.ApplyImpairments(iq, fx.sampleRate, opts.Impairments)
 
 	meta := &Metadata{
@@ -44,6 +57,27 @@ func Synthesize(opts SynthOptions) ([]complex64, *Metadata, error) {
 		Expected:     fx.expected,
 	}
 	return iq, meta, nil
+}
+
+// modulatorFor resolves a SynthOptions.Modulation override to a modulator.
+// Only the combinations a fixture can sensibly re-shape are supported; an
+// unknown protocol/modulation pair is an error rather than a silent default.
+func modulatorFor(proto trunking.Protocol, mod string) (func([]uint8, float64) []complex64, error) {
+	switch proto {
+	case trunking.ProtocolP25:
+		switch mod {
+		case "c4fm":
+			return func(d []uint8, sr float64) []complex64 { return demod.ModulateP25C4FM(d, sr, 1800.0) }, nil
+		case "lsm", "cqpsk":
+			// Linear simulcast modulation: π/4-DQPSK at 10 sps / 48 kHz with the
+			// P25 RRC (span 8, α=0.20) and the LSM π/4 constellation rotation —
+			// the waveform the linear CQPSK demod is designed for (issue #492).
+			return func(d []uint8, _ float64) []complex64 {
+				return demod.ModulatePiOver4DQPSK(d, 10, 8, 0.20, math.Pi/4)
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("siglab: no %q modulation for protocol %s", mod, proto)
 }
 
 // WriteCapture writes IQ to path in the given format (u8 or f32).

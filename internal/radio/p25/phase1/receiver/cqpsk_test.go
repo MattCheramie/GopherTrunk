@@ -302,15 +302,12 @@ func runCQPSKCarrierOffsetSweep(t *testing.T, chunk int) {
 // CMA→Costas ordering and pass once carrier recovery runs ahead of the
 // equalizer (and the CMA's phase null is pinned).
 func TestCQPSKDemodRecoversFSWWithMultipathAndOffset(t *testing.T) {
-	// Skipped pending the carrier-seed fix. This reproduces the confirmed
-	// issue #492 failure mode — a near-spectral-null simulcast channel biases
-	// the raw-IQ lag-1 coarse seed into a spurious ~750 Hz "offset" that
-	// mis-tunes the NCO and rails the loop, even though the CMA→Costas loop
-	// alone (no seed) recovers this same signal. The robust seed fix is being
-	// validated against a real capture (issue #492) before landing; un-skip
-	// this test as its regression guard once that fix is in.
-	t.Skip("issue #492: coarse-seed multipath robustness fix pending real-capture validation")
-
+	// Reproduces the confirmed issue #492 failure mode — a near-spectral-null
+	// simulcast channel biases the raw-IQ lag-1 coarse seed into a spurious
+	// ~750 Hz "offset" that mis-tunes the NCO and rails the Costas loop, even
+	// though the CMA→Costas loop alone (no seed) recovers this same signal.
+	// This is a fully synthetic stand-in for the live captures on #492, so the
+	// seed-robustness fix can be validated without a private recording.
 	const sampleRate = 48_000.0
 	const sps = 10
 
