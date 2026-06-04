@@ -284,6 +284,121 @@ func runCQPSKCarrierOffsetSweep(t *testing.T, chunk int) {
 	}
 }
 
+// TestCQPSKDemodRecoversFSWWithMultipathAndOffset is the issue #492
+// "carrier loop rails" regression guard. The earlier offset-sweep fixtures
+// inject only a frequency offset into a perfect RRC round-trip (zero ISI),
+// so the blind CMA equalizer never adapts — its taps stay at the identity
+// centre spike and it injects no phase. On a real DDC-channelised simulcast
+// capture the channel carries multipath ISI, so the CMA *does* adapt; being
+// phase-blind (its constant-modulus cost is rotation-invariant) its taps
+// random-walk in phase, and the downstream Costas loop reads that drift as a
+// carrier frequency and rails at its ±baud/8 clamp — control channel never
+// locks, every frame lost, exactly as reported on the live captures.
+//
+// This drives a simulcast-like multipath channel *and* a residual offset in
+// production-realistic 192-sample streaming chunks and asserts both that the
+// FSW still correlates and that the reported carrier estimate converges near
+// the injected offset instead of railing. It must fail on the pre-fix
+// CMA→Costas ordering and pass once carrier recovery runs ahead of the
+// equalizer (and the CMA's phase null is pinned).
+func TestCQPSKDemodRecoversFSWWithMultipathAndOffset(t *testing.T) {
+	// Skipped pending the carrier-seed fix. This reproduces the confirmed
+	// issue #492 failure mode — a near-spectral-null simulcast channel biases
+	// the raw-IQ lag-1 coarse seed into a spurious ~750 Hz "offset" that
+	// mis-tunes the NCO and rails the loop, even though the CMA→Costas loop
+	// alone (no seed) recovers this same signal. The robust seed fix is being
+	// validated against a real capture (issue #492) before landing; un-skip
+	// this test as its regression guard once that fix is in.
+	t.Skip("issue #492: coarse-seed multipath robustness fix pending real-capture validation")
+
+	const sampleRate = 48_000.0
+	const sps = 10
+
+	// Scrambled lead-in + FSW + trailer, as in the offset sweep.
+	rng := uint32(0x2c1f00d)
+	nextDibit := func() uint8 {
+		rng = rng*1664525 + 1013904223
+		return uint8((rng >> 16) & 3)
+	}
+	in := make([]uint8, 0)
+	for i := 0; i < 2000; i++ {
+		in = append(in, nextDibit())
+	}
+	in = append(in, phase1.FrameSyncWord[:]...)
+	for i := 0; i < 2000; i++ {
+		in = append(in, nextDibit())
+	}
+	clean := dibitsToLSMIQ(t, in, sps, PulseSpanSymbols, RolloffAlpha)
+
+	// A near-spectral-null simulcast channel at 10 sps: main path plus a
+	// half-symbol (5-sample) echo at ~0.95 amplitude, rotated 70°. Two
+	// near-equal-power overlapping transmitters (the simulcast case LSM
+	// exists for) produce exactly this deep fade. The strong echo (a) forces
+	// the CMA to adapt hard and (b) badly biases the lag-1 coarse seed, which
+	// reads the channel's autocorrelation phase as a spurious carrier offset.
+	multipath := []complex64{
+		complex(1, 0),
+		0, 0, 0, 0,
+		complex(float32(0.95*math.Cos(70*math.Pi/180)), float32(0.95*math.Sin(70*math.Pi/180))),
+	}
+
+	cases := []struct {
+		offsetHz float64
+		snrDB    float64
+	}{
+		{offsetHz: 0},
+		{offsetHz: 100}, // the reporter's ~100 Hz drift, post-DDC residual
+		{offsetHz: -300, snrDB: 20},
+	}
+
+	for _, tc := range cases {
+		base := demod.ApplyImpairments(clean, sampleRate, demod.Impairments{
+			Multipath:    multipath,
+			FreqOffsetHz: tc.offsetHz,
+			SNRdB:        tc.snrDB,
+			Seed:         1,
+		})
+		locked := 0
+		for k := 0; k < sps; k++ {
+			var captured []uint8
+			r := New(Options{
+				SampleRateHz: sampleRate,
+				DemodMode:    DemodCQPSK,
+				DibitSink:    func(d []uint8, _ int) { captured = append(captured, d...) },
+			})
+			shifted := base[k:]
+			const chunk = 192
+			maxCarrier := 0.0
+			for i := 0; i < len(shifted); i += chunk {
+				end := i + chunk
+				if end > len(shifted) {
+					end = len(shifted)
+				}
+				r.Process(shifted[i:end])
+				if c := math.Abs(r.CQPSKCarrierOffsetHz()); c > maxCarrier {
+					maxCarrier = c
+				}
+			}
+			det := phase1.NewSyncDetector(2)
+			hits, _ := det.Process(nil, captured, 0)
+			lastCarrier := r.CQPSKCarrierOffsetHz()
+			// The fine loop rails at ±baud/8 (±600 Hz at 4800 baud) on top of
+			// the coarse seed; a converged loop settles near the injected
+			// offset. Treat a starting phase as locked only when the FSW
+			// correlated AND the carrier estimate tracked the true offset
+			// rather than running away to the clamp.
+			converged := math.Abs(lastCarrier-tc.offsetHz) <= 300 && maxCarrier <= math.Abs(tc.offsetHz)+550
+			if len(hits) > 0 && converged {
+				locked++
+			}
+		}
+		if locked < 6 {
+			t.Errorf("offset=%.0f Hz snr=%.0f dB multipath: recovered+converged from only %d/%d starting phases; want >= 6 (issue #492 carrier rails before equalizer)",
+				tc.offsetHz, tc.snrDB, locked, sps)
+		}
+	}
+}
+
 // TestParseDemodMode locks down the YAML-string → DemodMode mapping
 // shipped via the ccdecoder connector.
 func TestParseDemodMode(t *testing.T) {
