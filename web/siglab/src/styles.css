@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gt-bg: 15 23 42; /* slate-900 */
+  --gt-panel: 30 41 59; /* slate-800 */
+  --gt-muted: 100 116 139; /* slate-500 */
+  --gt-fg: 226 232 240; /* slate-200 */
+  --gt-accent: 56 189 248; /* sky-400 */
+  --gt-ok: 34 197 94; /* green-500 */
+  --gt-warn: 234 179 8; /* yellow-500 */
+  --gt-err: 239 68 68; /* red-500 */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.card {
+  @apply rounded-lg border border-white/10 bg-panel p-4;
+}
+
+.btn {
+  @apply rounded-md bg-accent/90 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-accent disabled:opacity-40;
+}
+
+.btn-ghost {
+  @apply rounded-md border border-white/15 px-3 py-1.5 text-sm hover:bg-white/5 disabled:opacity-40;
+}
+
+.input {
+  @apply w-full rounded-md border border-white/15 bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none;
+}
+
+.label {
+  @apply mb-1 block text-xs uppercase tracking-wide text-muted;
+}
