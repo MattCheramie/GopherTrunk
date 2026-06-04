@@ -273,6 +273,7 @@ sdr:
   #     ppm: 0                 # 0 is fine for TCXO-equipped units (NESDR Smart v5)
   #     gain: "auto"           # "auto" or tenths-of-dB ("496" = 49.6 dB)
   #     bias_tee: false
+  #     blog_v4: false         # force RTL-SDR Blog V4 mode if auto-detect misses it (issue #264)
 {{- end}}
 
 trunking:

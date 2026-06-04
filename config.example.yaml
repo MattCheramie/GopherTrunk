@@ -142,6 +142,10 @@ sdr:
                            # OP25/gqrx users: multiply your dB figure by 10
                            # (32 dB → "320"). "auto" (AGC) is the safe default.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # blog_v4: true      # force RTL-SDR Blog V4 mode (28.8 MHz xtal + input
+                           # routing) if the V4's USB strings don't auto-identify
+                           # it and every frequency mistunes by ~1.8× (issue #264).
+                           # Add `blog_v4_lite: true` instead on a V4L.
     - serial: "00000002"
       role: voice
       ppm: 0
