@@ -7,6 +7,28 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.2] — 2026-06-04
+
+DMR grows up — multi-slot, Tier III band-plan voice, and license-free
+direct mode — and a new offline signal toolkit (`siglab`) lands. The DMR
+Tier III control channel now resolves voice grants through a configurable
+LCN→frequency band plan (#510) and follows both TDMA timeslots of a
+carrier as concurrent, separately-recorded calls (#512, #513), backed by
+a stride-aware 2-slot voice decoder (#514), embedded Link Control
+timeslot→talkgroup labelling (#515), opt-in composer wiring (#516), and
+per-slot metrics / active-call views (#517). DMR Tier I (PMR446 simplex
+direct mode) decodes too (#523), and `replay` now runs DMR Tier III / II
+captures offline with a `-conjugate` flag for spectrum-inverted
+front-ends (#518). The headline addition is **siglab** (#519–#523): a
+protocol-agnostic offline replay / test / analysis toolkit that drives
+all 14 protocols through the production decode pipelines —
+`gen` / `test` / `analyze` / `replay` / `identify` subcommands, a
+standalone TUI, structured exporters, synthesis fixtures for every
+protocol, per-protocol FEC-outcome tallies, and an auto-detecting signal
+identifier. On the P25 side, #524 pins the CQPSK equaliser's centre-tap
+phase so the constant-modulus taps stop random-walking into a false
+carrier offset.
+
 ### Added
 
 - **Offline DMR decode in `gophertrunk replay`.** The `replay` subcommand
@@ -120,6 +142,68 @@ for tagged releases.
   dongle) or a physical `role: voice` SDR. A `protocol: dmr` system with
   no band plan warns at start-up and keeps decoding the control channel.
   See [`docs/hardware.md`](docs/hardware.md) and `config.example.yaml`.
+
+- **`siglab` — an offline signal replay / test / analysis toolkit**
+  (#519–#523). A new protocol-agnostic engine (`internal/siglab`) drives
+  any of the 14 protocols GopherTrunk decodes through the same production
+  `ccdecoder` pipelines the daemon uses, collecting a structured `Result`
+  with exporters and a metadata-driven acceptance harness. It is surfaced
+  through five `gophertrunk` subcommands and a standalone (daemon-free)
+  Bubbletea TUI:
+  - `replay` now routes every protocol — not just the three native
+    deep-diagnostic paths (`p25p1`, `dmr-tier3`, `dmr-tier2`) — through
+    the shared engine, so `replay -protocol <any>` covers all protocols
+    while preserving the P25/DMR receiver-state + soft-eye
+    instrumentation.
+  - `analyze` decodes a capture and exports a structured signal-quality
+    report (`text` / `json` / `jsonl` / `yaml` / `csv` / `csv-events`).
+  - `gen` synthesises a test capture + metadata sidecar for a protocol
+    with impairment knobs (SNR, carrier offset, DC, I/Q imbalance);
+    `test` decodes a capture and grades it against the sidecar's
+    acceptance criteria, exiting 0/1 for CI gating. Synthesis fixtures
+    now cover every protocol (P25 Phase 1/2, DMR Tier I/II/III, NXDN,
+    dPMR, YSF, TETRA, EDACS, Motorola Type II, LTR, MPT 1327, D-STAR).
+  - `identify` auto-detects the protocol in a capture — it scans a
+    bounded prefix of each registered protocol and scores lock + frame
+    sync-cadence + FEC evidence, then runs and renders the full analysis
+    of the winner (low-confidence results are flagged inconclusive rather
+    than asserted).
+  - Per-protocol **deep analysis**: a symbol histogram, a sync-correlation
+    landscape against each protocol's own sync word(s), and FEC-outcome
+    tallies (clean / corrected / uncorrectable, or CRC pass/fail) — DMR
+    slot-type Hamming, EDACS BCH(40,28,2), Motorola BCH(64,16,11),
+    D-STAR header CRC-16, NXDN LICH + CAC Viterbi, P25 Phase 2 ISCH
+    Golay + MAC trellis, and TETRA SCH/HD RCPC Viterbi.
+
+  The hard-won P25/DMR replay diagnostics that previously lived as
+  text-only code in `cmd/` are now consolidated in the engine, so they
+  are structured and exportable (`analyze -out-format json|yaml|csv`),
+  not just stderr text. See [`samples/README.md`](samples/README.md) for
+  the toolkit walkthrough and the unified metadata schema.
+- **DMR Tier I (license-free direct mode).** GopherTrunk now decodes DMR
+  Tier I — the PMR446 / simplex direct-mode tier. Tier I is wire-identical
+  to conventional Tier II (132-dibit burst, BPTC(196,96) + RS(12,9,4)
+  Voice LC Header, slot-type Hamming); only the direct-mode sync words and
+  the protocol tag differ, so the Tier II conventional channel is
+  parameterised by sync word + protocol tag rather than duplicated. The
+  new `dmr-tier1` protocol restricts to the four ETSI direct-mode syncs
+  (DM-Voice/Data TS1/TS2) so it won't false-lock on base-station traffic,
+  and is wired through trunking config, the `ccdecoder` factory, wideband
+  validation, and the voice recorder/composer (#523).
+
+### Fixed
+
+- **P25 CQPSK equaliser centre-tap phase pinned** (#524, #492) — the
+  constant-modulus equaliser's cost is invariant to a global rotation of
+  its tap vector, so the taps random-walked in phase along that null. The
+  drift looked like a frequency offset to the downstream Costas loop,
+  which integrated it. The centre tap is now anchored to the positive real
+  axis after each update, removing the ambiguity without changing `|y|` and
+  stabilising the equaliser output phase. A new skip-gated
+  `TestCQPSKDemodRecoversFSWWithMultipathAndOffset` reproduces the
+  near-spectral-null simulcast case that biases the raw-IQ lag-1 coarse
+  seed into a spurious offset; it becomes the regression guard once the
+  robust seed fix is validated against a real capture.
 
 ## [v0.3.1] — 2026-06-03
 
