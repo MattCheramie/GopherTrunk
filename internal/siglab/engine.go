@@ -27,6 +27,27 @@ func Run(path string, cfg Config) (*Result, error) {
 // It backs the JSONL exporter and the TUI's live event feed. The full
 // Result is still returned at EOF.
 func RunStream(path string, cfg Config, onEvent func(EventRecord)) (*Result, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	return RunReaderStream(f, path, cfg, onEvent)
+}
+
+// RunReader decodes the capture read from r through the production pipeline
+// for cfg.Protocol and returns the structured Result. source is recorded as
+// the Result's provenance (its base name). It is the in-memory sibling of
+// Run: a synthesized signal, an uploaded HTTP body, or any io.Reader can be
+// analyzed without a disk round-trip. AutoTune requires r to also satisfy
+// io.ReadSeeker (an *os.File or *bytes.Reader does).
+func RunReader(r io.Reader, source string, cfg Config) (*Result, error) {
+	return RunReaderStream(r, source, cfg, nil)
+}
+
+// RunReaderStream is RunReader with a live per-event sink (see RunStream).
+// It is the single decode path RunStream and the in-memory callers share.
+func RunReaderStream(r io.Reader, source string, cfg Config, onEvent func(EventRecord)) (*Result, error) {
 	if cfg.SampleRateHz <= 0 {
 		return nil, fmt.Errorf("siglab: sample rate must be > 0")
 	}
@@ -36,28 +57,23 @@ func RunStream(path string, cfg Config, onEvent func(EventRecord)) (*Result, err
 
 	decode, bytesPerSample := cfg.Format.Decoder()
 
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
-	}
-	defer f.Close()
-
 	// Resolve the tuning offset (auto-tune estimates from a prefix then
-	// rewinds; manual TuneHz is the override).
+	// rewinds; manual TuneHz is the override). Auto-tune needs to seek the
+	// source back to the start after reading its prefix.
 	tuneHz := cfg.TuneHz
 	if cfg.AutoTune {
-		est, terr := estimateCaptureCarrierHz(f, decode, bytesPerSample, cfg.SampleRateHz)
+		rs, ok := r.(io.ReadSeeker)
+		if !ok {
+			return nil, fmt.Errorf("siglab: auto-tune requires a seekable source")
+		}
+		est, terr := estimateCaptureCarrierHz(rs, decode, bytesPerSample, cfg.SampleRateHz)
 		if terr != nil {
 			return nil, fmt.Errorf("auto-tune failed: %w", terr)
 		}
 		tuneHz = est
 	}
 
-	res, err := runReader(f, path, decode, bytesPerSample, tuneHz, cfg, onEvent)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+	return runReader(r, source, decode, bytesPerSample, tuneHz, cfg, onEvent)
 }
 
 // runReader is the format-agnostic core: it mirrors the daemon's DDC →
@@ -101,6 +117,15 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		iqCorrector = rtlsdr.NewIQImbalanceCorrector()
 	}
 
+	// Optional decimated-IQ + soft-sample capture for the visualization
+	// consumers (constellation / spectrogram / PSD / eye). Strided off the
+	// channelized stream and hard-capped, so it is bounded and never
+	// full-rate.
+	var iqTap *iqTapBuffer
+	if cfg.CaptureIQ {
+		iqTap = newIQTapBuffer(receiverRate, cfg.captureIQMaxPoints())
+	}
+
 	var symbolCount int64
 	symbolTap := func(symbols []uint8, isBits bool, _ int) {
 		symbolCount += int64(len(symbols))
@@ -111,6 +136,9 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	softTap := func(soft []float32) {
 		if an != nil {
 			an.observeSoft(soft)
+		}
+		if iqTap != nil {
+			iqTap.observeSoft(soft)
 		}
 	}
 
@@ -173,6 +201,9 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			if ddc != nil {
 				ddcOut = ddc.Process(ddcOut, feed)
 				feed = ddcOut
+			}
+			if iqTap != nil {
+				iqTap.observeIQ(feed)
 			}
 			bundle.proc.Process(feed)
 			totalSamples += int64(pairs)
@@ -238,6 +269,10 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		if d := buildProtocolDetail(cfg.Protocol, an.symBuf, an.cardinality == 2, cfg.System); d != nil {
 			res.Detail = d
 		}
+	}
+
+	if iqTap != nil {
+		res.IQTaps = iqTap.result(receiverRate)
 	}
 	return res, nil
 }

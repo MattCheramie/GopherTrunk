@@ -4,24 +4,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 )
 
-// estimateCaptureCarrierHz reads a prefix of f, estimates the dominant
-// carrier offset across the full band, then rewinds f to the start so the
+// estimateCaptureCarrierHz reads a prefix of rs, estimates the dominant
+// carrier offset across the full band, then rewinds rs to the start so the
 // prefix is still decoded by the main read loop. It is the shared
 // implementation behind -auto-tune (lifted verbatim from replay.go so the
-// replay subcommand and the engine share one estimator).
-func estimateCaptureCarrierHz(f *os.File, decode SampleDecoder, bytesPerSample int, sampleRateHz float64) (float64, error) {
+// replay subcommand and the engine share one estimator). It takes an
+// io.ReadSeeker so it works equally over an *os.File capture and an
+// in-memory *bytes.Reader (the synthesized-signal path).
+func estimateCaptureCarrierHz(rs io.ReadSeeker, decode SampleDecoder, bytesPerSample int, sampleRateHz float64) (float64, error) {
 	const prefixSamples = 262144
 	buf := make([]byte, prefixSamples*bytesPerSample)
-	n, err := io.ReadFull(f, buf)
+	n, err := io.ReadFull(rs, buf)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return 0, err
 	}
-	if _, serr := f.Seek(0, io.SeekStart); serr != nil {
+	if _, serr := rs.Seek(0, io.SeekStart); serr != nil {
 		return 0, serr
 	}
 	pairs := n / bytesPerSample

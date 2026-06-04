@@ -82,11 +82,19 @@ func modulatorFor(proto trunking.Protocol, mod string) (func([]uint8, float64) [
 
 // WriteCapture writes IQ to path in the given format (u8 or f32).
 func WriteCapture(path string, iq []complex64, format SampleFormat) error {
+	return os.WriteFile(path, EncodeCapture(iq, format), 0o644)
+}
+
+// EncodeCapture returns IQ encoded in the given on-disk format (u8 or f32).
+// It is the pure (no-I/O) core shared by WriteCapture and the in-memory
+// synth→decode bridge (SynthesizeAndAnalyze), so a synthesized signal can be
+// fed straight back into the engine via a bytes.Reader without touching disk.
+func EncodeCapture(iq []complex64, format SampleFormat) []byte {
 	switch format {
 	case FormatF32:
-		return writeCaptureF32(path, iq)
+		return encodeF32(iq)
 	default:
-		return writeCaptureU8(path, iq)
+		return encodeU8(iq)
 	}
 }
 
@@ -99,26 +107,26 @@ func WriteMetadata(path string, m *Metadata) error {
 	return os.WriteFile(path, append(raw, '\n'), 0o644)
 }
 
-// writeCaptureF32 writes interleaved little-endian float32 IQ (GNU Radio
-// cfile). Inverse of decodeF32.
-func writeCaptureF32(path string, iq []complex64) error {
+// encodeF32 encodes interleaved little-endian float32 IQ (GNU Radio cfile).
+// Inverse of decodeF32.
+func encodeF32(iq []complex64) []byte {
 	buf := make([]byte, len(iq)*8)
 	for i, s := range iq {
 		binary.LittleEndian.PutUint32(buf[8*i:], math.Float32bits(real(s)))
 		binary.LittleEndian.PutUint32(buf[8*i+4:], math.Float32bits(imag(s)))
 	}
-	return os.WriteFile(path, buf, 0o644)
+	return buf
 }
 
-// writeCaptureU8 writes rtl_sdr 8-bit unsigned interleaved IQ. Inverse of
+// encodeU8 encodes rtl_sdr 8-bit unsigned interleaved IQ. Inverse of
 // decodeU8: maps [-1,+1] back to [0,255] centred on 127.5, clamped.
-func writeCaptureU8(path string, iq []complex64) error {
+func encodeU8(iq []complex64) []byte {
 	buf := make([]byte, len(iq)*2)
 	for i, s := range iq {
 		buf[2*i] = floatToU8(real(s))
 		buf[2*i+1] = floatToU8(imag(s))
 	}
-	return os.WriteFile(path, buf, 0o644)
+	return buf
 }
 
 func floatToU8(v float32) byte {

@@ -47,6 +47,14 @@ type Result struct {
 
 	// Verdict (nil unless Config.Acceptance supplied).
 	Verdict *Verdict `json:"verdict,omitempty" yaml:"verdict,omitempty"`
+
+	// IQTaps is the optional decimated signal capture (channelized IQ +
+	// pre-slicer soft samples) populated when Config.CaptureIQ is set. It
+	// backs the web visualization views (constellation, spectrogram, PSD,
+	// eye diagram). It can be large, so the API/export layer strips it
+	// before serializing the summary or running the exporters and serves
+	// it from a dedicated endpoint instead.
+	IQTaps *IQTaps `json:"iq_taps,omitempty" yaml:"iq_taps,omitempty"`
 }
 
 // LockInfo is the flattened, protocol-agnostic view of a KindCCLocked
