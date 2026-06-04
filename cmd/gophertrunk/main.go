@@ -60,6 +60,8 @@ func main() {
 		runReplay(os.Args[2:])
 	case "analyze":
 		runAnalyze(os.Args[2:])
+	case "identify":
+		runIdentify(os.Args[2:])
 	case "gen":
 		runGen(os.Args[2:])
 	case "test":
@@ -92,6 +94,7 @@ USAGE:
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
   gophertrunk replay [flags]          decode a raw IQ capture file offline (any protocol)
   gophertrunk analyze [flags]         decode + analyze a capture with structured export (json/yaml/csv)
+  gophertrunk identify [flags]        auto-detect the protocol in a capture, then analyze it
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI

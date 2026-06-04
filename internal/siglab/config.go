@@ -73,6 +73,11 @@ type Config struct {
 	// ChunkSamples is the read-loop chunk size in IQ samples; 0 ⇒ default.
 	ChunkSamples int
 
+	// MaxSamples caps the number of input IQ samples processed (0 ⇒ whole
+	// file). The signal identifier sets this to scan only a prefix of a
+	// capture, bounding per-candidate cost regardless of capture length.
+	MaxSamples int64
+
 	// Acceptance, when non-nil, is evaluated against the Result to produce a
 	// pass/fail Verdict (the `test` harness sets it).
 	Acceptance *Acceptance

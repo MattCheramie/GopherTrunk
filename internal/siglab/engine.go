@@ -194,6 +194,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			readErr = fmt.Errorf("read %s: %w", source, rerr)
 			break
 		}
+		// Prefix cap (identifier fast scan): stop once enough input samples
+		// have been processed. Checked after a whole chunk, so it may
+		// overshoot by up to one chunk — fine for a bounded scan.
+		if cfg.MaxSamples > 0 && totalSamples >= cfg.MaxSamples {
+			break
+		}
 	}
 
 	// Release the drainer and wait for it so totals are complete.
