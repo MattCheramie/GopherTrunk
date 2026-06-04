@@ -65,7 +65,7 @@ func TestComputeSyncLandscapeDetectsPolarityFlip(t *testing.T) {
 func TestBuildProtocolDetailHistogram(t *testing.T) {
 	// Bit protocol (cardinality 2).
 	bits := []uint8{0, 1, 0, 1, 1, 1}
-	d, ok := buildProtocolDetail(trunking.ProtocolEDACS, bits, true).(*ProtocolDetail)
+	d, ok := buildProtocolDetail(trunking.ProtocolEDACS, bits, true, trunking.System{}).(*ProtocolDetail)
 	if !ok || d == nil {
 		t.Fatal("EDACS detail not built")
 	}
@@ -77,7 +77,7 @@ func TestBuildProtocolDetailHistogram(t *testing.T) {
 	}
 
 	// Unregistered protocol (P25 P1 uses the deep path, not a spec) → nil.
-	if got := buildProtocolDetail(trunking.ProtocolP25, []uint8{0, 1, 2, 3}, false); got != nil {
+	if got := buildProtocolDetail(trunking.ProtocolP25, []uint8{0, 1, 2, 3}, false, trunking.System{}); got != nil {
 		t.Errorf("expected nil for P25 (no spec), got %T", got)
 	}
 }

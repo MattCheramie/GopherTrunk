@@ -2,6 +2,7 @@ package siglab
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -80,5 +81,66 @@ func TestFECTallyDMR(t *testing.T) {
 	f := d.FEC[0]
 	if f.Clean+f.Corrected == 0 {
 		t.Errorf("DMR: no recoverable slot-type frames (frames=%d uncorrectable=%d)", f.Frames, f.Uncorrectable)
+	}
+}
+
+// findFEC returns the FECStat whose Stage contains sub, or nil.
+func findFEC(d *ProtocolDetail, sub string) *FECStat {
+	for i := range d.FEC {
+		if strings.Contains(d.FEC[i].Stage, sub) {
+			return &d.FEC[i]
+		}
+	}
+	return nil
+}
+
+// TestFECTallyP25P2 asserts the P25 Phase 2 ISCH Golay and MAC trellis tallies
+// decode every frame clean on the synth (a strong check that the ISCH/MAC
+// offsets + dibit packing are correct).
+func TestFECTallyP25P2(t *testing.T) {
+	d := runSynthDetail(t, trunking.ProtocolP25Phase2)
+	for _, stage := range []string{"ISCH", "MAC trellis"} {
+		f := findFEC(d, stage)
+		if f == nil || f.Frames == 0 {
+			t.Fatalf("P25P2 %s tally missing/empty", stage)
+		}
+		if f.Clean != f.Frames || f.Uncorrectable != 0 {
+			t.Errorf("P25P2 %s: clean=%d uncorrectable=%d, want all %d clean", stage, f.Clean, f.Uncorrectable, f.Frames)
+		}
+	}
+}
+
+// TestFECTallyNXDN asserts the NXDN LICH decodes clean on the synth and the CAC
+// CRC passes for at least some frames (the CAC is long; C4FM symbol errors fail
+// some frames, which is itself the diagnostic).
+func TestFECTallyNXDN(t *testing.T) {
+	d := runSynthDetail(t, trunking.ProtocolNXDN)
+	lich := findFEC(d, "LICH")
+	if lich == nil || lich.Frames == 0 {
+		t.Fatal("NXDN LICH tally missing")
+	}
+	if lich.Uncorrectable != 0 {
+		t.Errorf("NXDN LICH: %d uncorrectable on a clean capture", lich.Uncorrectable)
+	}
+	cac := findFEC(d, "CAC")
+	if cac == nil || cac.Frames == 0 {
+		t.Fatal("NXDN CAC tally missing")
+	}
+	if cac.CRCPass == 0 {
+		t.Errorf("NXDN CAC: no frames passed CRC (frames=%d)", cac.Frames)
+	}
+}
+
+// TestFECTallyTETRA asserts the TETRA SCH/HD decode passes CRC for most frames
+// on the synth (the colour code from the fixture metadata seeds the
+// descrambler; a couple of in-tolerance false-positive sync hits may fail).
+func TestFECTallyTETRA(t *testing.T) {
+	d := runSynthDetail(t, trunking.ProtocolTETRA)
+	f := findFEC(d, "SCH/HD")
+	if f == nil || f.Frames == 0 {
+		t.Fatal("TETRA SCH/HD tally missing")
+	}
+	if f.CRCPass <= f.Frames/2 {
+		t.Errorf("TETRA: crc_pass=%d of %d frames, want a clear majority", f.CRCPass, f.Frames)
 	}
 }

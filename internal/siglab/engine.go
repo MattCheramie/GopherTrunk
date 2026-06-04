@@ -229,7 +229,7 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		d.ReceiverStates = states
 		res.Detail = d
 	case an != nil && hasDetailSpec(cfg.Protocol):
-		if d := buildProtocolDetail(cfg.Protocol, an.symBuf, an.cardinality == 2); d != nil {
+		if d := buildProtocolDetail(cfg.Protocol, an.symBuf, an.cardinality == 2, cfg.System); d != nil {
 			res.Detail = d
 		}
 	}
