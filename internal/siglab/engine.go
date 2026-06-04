@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -86,6 +87,7 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	sub := bus.Subscribe()
 
 	// Optional protocol-agnostic analyzer + raw-IQ imbalance corrector.
+	deep := cfg.wantP25Deep()
 	var an *analyzer
 	if cfg.CollectIQDiag {
 		an = newAnalyzer()
@@ -97,31 +99,30 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	}
 
 	var symbolCount int64
-	pipe, ok, err := ccdecoder.NewPipeline(cfg.Protocol, ccdecoder.PipelineOptions{
-		Bus:          bus,
-		Log:          logger,
-		SystemName:   cfg.SystemName,
-		FrequencyHz:  cfg.FrequencyHz,
-		SampleRateHz: receiverRate,
-		System:       cfg.System,
-		SymbolTap: func(symbols []uint8, isBits bool, _ int) {
-			symbolCount += int64(len(symbols))
-			if an != nil {
-				an.observeSymbols(symbols, isBits)
-			}
-		},
-	})
+	symbolTap := func(symbols []uint8, isBits bool, _ int) {
+		symbolCount += int64(len(symbols))
+		if an != nil {
+			an.observeSymbols(symbols, isBits)
+		}
+	}
+	softTap := func(soft []float32) {
+		if an != nil {
+			an.observeSoft(soft)
+		}
+	}
+
+	// Build the run bundle: either a generic factory pipeline (any protocol)
+	// or the P25 Phase 1 deep path (direct receiver + control channel with
+	// soft/state capture and the experimental bisect knobs).
+	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap)
 	if err != nil {
 		sub.Close()
 		bus.Close()
-		return nil, fmt.Errorf("construct %s pipeline: %w", cfg.Protocol, err)
+		return nil, err
 	}
-	if !ok { // guarded above, but keep the invariant explicit
-		sub.Close()
-		bus.Close()
-		return nil, fmt.Errorf("siglab: no pipeline registered for protocol %s", cfg.Protocol)
+	if bundle.closeFn != nil {
+		defer bundle.closeFn()
 	}
-	defer pipe.Close()
 
 	// Drain the bus in the background so events are collected as they fire.
 	start := time.Now()
@@ -133,6 +134,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			coll.observe(ev)
 		}
 	}()
+
+	// Per-(stream-)second receiver-state capture (deep P25 path only).
+	const stateLogIntervalSec = 1.0
+	var nextStateLogAt = stateLogIntervalSec
+	var states []ReceiverState
+	captureState := bundle.stateAt != nil && cfg.CollectReceiverState
 
 	chunk := cfg.chunkSamples()
 	buf := make([]byte, chunk*bytesPerSample)
@@ -164,8 +171,18 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 				ddcOut = ddc.Process(ddcOut, feed)
 				feed = ddcOut
 			}
-			pipe.Process(feed)
+			bundle.proc.Process(feed)
 			totalSamples += int64(pairs)
+
+			// State snapshots are throttled on IQ-stream time (totalSamples /
+			// input rate), so a given capture yields the same series however
+			// fast replay chews through it.
+			if captureState {
+				if t := float64(totalSamples) / cfg.SampleRateHz; t >= nextStateLogAt {
+					states = append(states, bundle.stateAt(t))
+					nextStateLogAt = t + stateLogIntervalSec
+				}
+			}
 		}
 		if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
 			break
@@ -185,6 +202,25 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	}
 
 	res := assembleResult(source, cfg, totalSamples, symbolCount, receiverRate, tuneHz, coll, an)
+
+	// Attach the P25 Phase 1 deep detail when the deep path ran. CCStats and
+	// the receiver-state series are captured whenever the deep path is active
+	// (so `replay -protocol p25p1` shows them); the dibit/soft landscape is
+	// added only when the analyzer buffered symbols (CollectIQDiag).
+	if deep {
+		var d *P25P1Detail
+		if an != nil {
+			d = buildP25Detail(an.symBuf, an.softBuf)
+		}
+		if d == nil {
+			d = &P25P1Detail{}
+		}
+		if bundle.ccStats != nil {
+			d.CCStats = bundle.ccStats()
+		}
+		d.ReceiverStates = states
+		res.P25P1 = d
+	}
 	return res, nil
 }
 
@@ -235,13 +271,52 @@ func assembleResult(source string, cfg Config, totalSamples, symbols int64, rece
 	}
 	if an != nil {
 		res.Signal = an.result(decodeErrTotal)
-		if cfg.Protocol == trunking.ProtocolP25 {
-			res.P25P1 = buildP25Detail(an.symBuf)
-		}
 	}
 
 	if cfg.Acceptance != nil {
 		res.Verdict = evaluateAcceptance(res, cfg.Acceptance)
 	}
 	return res
+}
+
+// processor is the minimal surface the read loop drives: push a chunk of
+// channelized IQ. Both ccdecoder.ProtocolPipeline and the directly-built P25
+// receiver satisfy it.
+type processor interface {
+	Process(iq []complex64)
+}
+
+// runBundle is what the read loop drives plus the optional deep-path hooks.
+// stateAt/ccStats are nil for the generic factory path.
+type runBundle struct {
+	proc    processor
+	closeFn func()
+	stateAt func(t float64) ReceiverState
+	ccStats func() *CCStatsBreakdown
+}
+
+// buildBundle constructs the run bundle for cfg: the P25 Phase 1 deep path
+// when requested, otherwise the generic factory pipeline (any protocol). Both
+// publish lock/grant/decode-error events to bus and feed symbolTap; only the
+// deep path feeds softTap and exposes state/ccStats.
+func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32)) (*runBundle, error) {
+	if cfg.wantP25Deep() {
+		return buildP25DeepBundle(cfg, bus, logger, receiverRate, symbolTap, softTap)
+	}
+	pipe, ok, err := ccdecoder.NewPipeline(cfg.Protocol, ccdecoder.PipelineOptions{
+		Bus:          bus,
+		Log:          logger,
+		SystemName:   cfg.SystemName,
+		FrequencyHz:  cfg.FrequencyHz,
+		SampleRateHz: receiverRate,
+		System:       cfg.System,
+		SymbolTap:    symbolTap,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct %s pipeline: %w", cfg.Protocol, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("siglab: no pipeline registered for protocol %s", cfg.Protocol)
+	}
+	return &runBundle{proc: pipe, closeFn: func() { _ = pipe.Close() }}, nil
 }

@@ -84,16 +84,61 @@ func renderSignal(w io.Writer, s *siglab.SignalQuality) {
 }
 
 func renderP25Detail(w io.Writer, d *siglab.P25P1Detail) {
+	if cc := d.CCStats; cc != nil {
+		nidAttempts := cc.NIDTrusted + cc.NIDMarginal + cc.NIDFailed
+		tsbkAttempts := cc.TSBKDecoded + cc.TSBKTrellisFailed + cc.TSBKCRCFailed
+		fmt.Fprintf(w, "siglab: nid   trusted=%d  marginal=%d  uncorrectable=%d  (of %d FSW-hit attempts)\n",
+			cc.NIDTrusted, cc.NIDMarginal, cc.NIDFailed, nidAttempts)
+		fmt.Fprintf(w, "siglab: tsbk  decoded=%d  trellis_failed=%d  crc_failed=%d  (of %d NID-passed frames)\n",
+			cc.TSBKDecoded, cc.TSBKTrellisFailed, cc.TSBKCRCFailed, tsbkAttempts)
+	}
+	if d.DibitsBuffered == 0 && d.SoftEye == nil {
+		// No -diag landscape collected; CCStats/state already printed above.
+		renderReceiverStates(w, d.ReceiverStates)
+		return
+	}
 	fmt.Fprintf(w, "siglab: p25 detail  dibits=%d  winning_rotation=%d  hits=%d\n",
 		d.DibitsBuffered, d.WinningRotation, d.WinningHits)
-	fmt.Fprintf(w, "siglab:   dibit histogram: %d/%d/%d/%d\n",
-		d.DibitHistogram[0], d.DibitHistogram[1], d.DibitHistogram[2], d.DibitHistogram[3])
-	for rot := 0; rot < 4; rot++ {
-		rs := d.Rotations[rot]
-		fmt.Fprintf(w, "siglab:   rot %d: best_dist=%d (@%d) hits≤4=%d\n", rot, rs.BestDist, rs.BestPos, rs.Hits)
+	if d.DibitsBuffered > 0 {
+		fmt.Fprintf(w, "siglab:   dibit histogram: %d/%d/%d/%d\n",
+			d.DibitHistogram[0], d.DibitHistogram[1], d.DibitHistogram[2], d.DibitHistogram[3])
+		for rot := 0; rot < 4; rot++ {
+			rs := d.Rotations[rot]
+			fmt.Fprintf(w, "siglab:   rot %d: best_dist=%d (@%d) hits≤4=%d\n", rot, rs.BestDist, rs.BestPos, rs.Hits)
+		}
+		for _, nd := range d.NIDDecodes {
+			fmt.Fprintf(w, "siglab:   nid@%d errs=%d nac=%#x duid=%d ok=%v\n", nd.Pos, nd.Errs, nd.NAC, nd.DUID, nd.OK)
+		}
 	}
-	for _, nd := range d.NIDDecodes {
-		fmt.Fprintf(w, "siglab:   nid@%d errs=%d nac=%#x duid=%d ok=%v\n", nd.Pos, nd.Errs, nd.NAC, nd.DUID, nd.OK)
+	if e := d.SoftEye; e != nil {
+		fmt.Fprintf(w, "siglab: soft eye  dc=%+.5f  std=%.5f  mean|x|=%.5f  max|x|=%.5f\n",
+			e.SignedMeanDC, e.StdDev, e.MeanAbs, e.MaxAbs)
+		for _, r := range e.PerDecidedSymbol {
+			fmt.Fprintf(w, "siglab:   rail %s: n=%d centroid=%+.4f std=%.4f p10/50/90=%+.4f/%+.4f/%+.4f\n",
+				r.Label, r.N, r.Mean, r.Std, r.P10, r.P50, r.P90)
+		}
+		for _, s := range e.OuterSpread {
+			fmt.Fprintf(w, "siglab:   %s spread: steady=%.4f (n=%d) post-transition=%.4f (n=%d) ratio=%.2f\n",
+				s.Label, s.SteadyStd, s.SteadyN, s.TransStd, s.TransN, s.Ratio)
+		}
+		if e.Verdict != "" {
+			fmt.Fprintf(w, "siglab:   → %s\n", e.Verdict)
+		}
+	}
+	renderReceiverStates(w, d.ReceiverStates)
+}
+
+// renderReceiverStates prints the per-second receiver-state series (deep P25
+// path). Kept compact — one line per snapshot — to mirror replay's old log.
+func renderReceiverStates(w io.Writer, states []siglab.ReceiverState) {
+	for _, s := range states {
+		if s.CQPSK {
+			fmt.Fprintf(w, "siglab: rx state  t=%.2fs  carrier_hz=%.3f  gardner_mu=%.4f  gardner_sps=%.2f  agc_gain=%.4g  cma_err=%.4g\n",
+				s.TimeSec, s.CarrierHzEst, s.GardnerMu, s.GardnerSPS, s.CQPSKAGCGain, s.CMAError)
+			continue
+		}
+		fmt.Fprintf(w, "siglab: rx state  t=%.2fs  afc_hz=%.3f  agc_level=%.6g  agc_target=%.6g  mm_mu=%.4f  mm_sps=%.2f  dda=%v\n",
+			s.TimeSec, s.AFCHzEst, s.AGCLevel, s.AGCTarget, s.MMMu, s.MMSPS, s.DDAActive)
 	}
 }
 

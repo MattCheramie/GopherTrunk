@@ -45,6 +45,31 @@ type Config struct {
 	// available). Off by default since it buffers per-symbol observations.
 	CollectIQDiag bool
 
+	// --- P25 Phase 1 deep-diagnostic knobs ---
+	// These drive the engine's P25 "deep" construction path (a directly-built
+	// receiver + control channel that exposes soft samples, receiver state,
+	// and the experimental bisect knobs from issues #275/#402). They are
+	// ignored for every other protocol. The deep path engages when the
+	// protocol is P25 Phase 1 and any of CollectIQDiag / CollectReceiverState
+	// / a non-default knob below is set.
+
+	// DemodMode is the P25 Phase 1 symbol-recovery path: "c4fm" (default) or
+	// "cqpsk". Empty ⇒ c4fm.
+	DemodMode string
+	// NIDSearchSpan overrides the NID-alignment search radius in dibits
+	// (issue #275 bisect knob). 0 ⇒ the production default.
+	NIDSearchSpan int
+	// EnableDDA opts the C4FM path into the experimental decision-directed
+	// AFC (issue #402; off in production).
+	EnableDDA bool
+	// EnableAdaptiveSlicer opts the C4FM path into the adaptive slicer
+	// (issue #402; off in production).
+	EnableAdaptiveSlicer bool
+	// CollectReceiverState captures a per-(stream-)second snapshot of the P25
+	// receiver's AFC/AGC/clock/slicer state into the Result (the per-second
+	// state log replay emitted to stderr, now structured + exportable).
+	CollectReceiverState bool
+
 	// ChunkSamples is the read-loop chunk size in IQ samples; 0 ⇒ default.
 	ChunkSamples int
 
@@ -72,6 +97,20 @@ func (c Config) chunkSamples() int {
 		return c.ChunkSamples
 	}
 	return defaultChunkSamples
+}
+
+// wantP25Deep reports whether the engine should drive the P25 Phase 1 deep
+// path (direct receiver + control-channel build with soft/state capture and
+// the experimental bisect knobs) rather than the generic factory path. It
+// engages for P25 Phase 1 whenever deep analysis or any non-default deep knob
+// is requested.
+func (c Config) wantP25Deep() bool {
+	if c.Protocol != trunking.ProtocolP25 {
+		return false
+	}
+	return c.CollectIQDiag || c.CollectReceiverState ||
+		c.NIDSearchSpan > 0 || c.EnableDDA || c.EnableAdaptiveSlicer ||
+		c.DemodMode != ""
 }
 
 // ParseProtocolCLI maps a command-line protocol name to a trunking.Protocol.

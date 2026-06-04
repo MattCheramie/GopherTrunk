@@ -49,6 +49,17 @@ type analyzer struct {
 	// default since it is O(symbols) memory.
 	bufferSymbols bool
 	symBuf        []uint8
+	// softBuf retains the pre-slicer per-symbol soft samples (deep P25 C4FM
+	// path, fed from the receiver's SoftSink), aligned index-for-index with
+	// symBuf, for the true-symbol eye analysis.
+	softBuf []float32
+}
+
+// observeSoft appends a chunk of pre-slicer soft samples to the rolling
+// buffer (deep P25 path only). Aligned with the dibit stream when the
+// receiver emits one soft sample per recovered symbol.
+func (a *analyzer) observeSoft(soft []float32) {
+	a.softBuf = append(a.softBuf, soft...)
 }
 
 func newAnalyzer() *analyzer { return &analyzer{} }

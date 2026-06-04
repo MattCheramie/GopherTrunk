@@ -1,51 +1,32 @@
 package main
 
 import (
-	"encoding/binary"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
-	"math"
 	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/MattCheramie/GopherTrunk/internal/dsp"
-	"github.com/MattCheramie/GopherTrunk/internal/events"
-	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
-	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
-	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
-	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
-	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
-	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 )
 
-// runReplay is the entry point for `gophertrunk replay`. It runs an
-// offline raw IQ capture file through a real production receiver +
-// control-channel chain — P25 Phase 1 by default, or DMR Tier III /
-// Tier II via -protocol — and prints lock / grant / decode-error events
-// plus the per-frame NID-decoder diagnostics — including the
-// at_boundary flag the bounded-search fix emits (issue #275). The
-// effective-baud summary at EOF self-diagnoses a mislabeled capture
-// (the symptom that made anakie_short.zip unusable as ground truth):
-// if numDibits / (numSamples / sampleRate) ≠ ~4800, the file's true
-// sample rate is not what the operator passed via -sample-rate.
+// runReplay is the entry point for `gophertrunk replay`. It runs an offline
+// raw IQ capture through the production receiver + control-channel chain for
+// any protocol GopherTrunk decodes and prints lock / grant / decode-error
+// results plus — for P25 Phase 1 — the deep demod diagnostics (per-frame NID
+// breakdown, FSW-correlation landscape, true-symbol eye, receiver-state
+// series) that issues #275/#402 produced.
+//
+// All decode/analysis logic lives in the shared internal/siglab engine; this
+// command is a thin front-end that maps flags onto a siglab.Config and renders
+// the structured Result. What it decodes is what the daemon would decode, so a
+// replay lock implies an on-air lock and a replay failure makes the offline
+// capture a reproducible fixture.
 //
 // Usage:
 //
 //	gophertrunk replay -in <path> [-format u8|f32] [-sample-rate Hz]
-//	                  [-demod c4fm|cqpsk] [-freq Hz]
-//
-// The decoder runs at debug log level so `nid corrected`, `nid parse
-// failed`, and the new `at_boundary` field all surface in the output.
-// Reuses the production receiver + control-channel constructors — what
-// it decodes is what the daemon would decode, so a replay-lock
-// implies an on-air lock and a replay-fail makes the offline capture a
-// reproducible test fixture.
+//	                  [-protocol p25p1|dmr-tier3|tetra|…] [-demod c4fm|cqpsk]
+//	                  [-tune-hz Hz | -auto-tune] [-conjugate] [-diag]
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
@@ -53,81 +34,38 @@ func runReplay(args []string) {
 	format := fs.String("format", "u8", "sample format: u8 (rtl_sdr 8-bit unsigned interleaved IQ) | f32 (GNU Radio cfile, interleaved float32)")
 	sampleRate := fs.Float64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	demod := fs.String("demod", "c4fm", "P25 Phase 1 demod mode: c4fm | cqpsk")
-	protocolFlag := fs.String("protocol", "p25p1", "decoder to run: p25p1 | dmr-tier3 | dmr-tier2")
-	// Issue #264 (RTL-SDR Blog V4 / R828D): conjugate the IQ (negate Q)
-	// BEFORE the channelizer to decode a spectrum-inverted / I-Q-swapped
-	// front-end. This must precede the DDC — the prior DMR dibit-flip fix
-	// only re-maps symbols after channelization, so it cannot recover a
-	// channel sitting off DC on an inverted stream (the channelizer pulls
-	// it from the mirror offset). Conjugating at the source fixes the
-	// whole pipeline.
+	protocolFlag := fs.String("protocol", "p25p1", "decoder to run: p25p1 | p25-phase2 | dmr | dmr-tier2 | nxdn | dpmr | edacs | motorola | ltr | mpt1327 | tetra | ysf | dstar (aliases: dmr-tier3)")
 	conjugate := fs.Bool("conjugate", false, "conjugate IQ (negate Q) before channelization, to decode a spectrum-inverted / I-Q-swapped front-end (issue #264)")
 	freq := fs.Uint64("freq", 0, "informational only: the capture's nominal centre frequency in Hz")
-	// Issue #275 bisect knob. The default ±6 grid is the production
-	// value; widening to ±12/±18/±36 on a stubborn capture tells a
-	// span-bounded failure (errs drop at the new optimum) from a
-	// demod-quality-bounded one (errs stay at the BCH(63,16,11)
-	// correction ceiling regardless of alignment). Both acceptance
-	// tiers (BCH+parity + TSBK CRC) reject wrong alignments at any
-	// span, so widening cannot manufacture a false lock.
-	nidSearchSpan := fs.Int("nid-search-span", p25phase1.NIDSearchSpan, "NID-alignment search radius in dibits (default matches the production ccdecoder; widen to bisect a stubborn capture per issue #275)")
-	// Issue #275 Phase B knob — after Phase A's widening ruled out
-	// alignment, this surfaces what the NID-failure diag cannot: the
-	// dibit-value histogram and the per-rotation FSW-correlation
-	// landscape across the whole capture. Off by default since it
-	// allocates an O(numDibits) buffer.
-	diag := fs.Bool("diag", false, "print a demod-quality diagnostic report (dibit histogram + per-rotation FSW correlation landscape) at EOF")
-	// Issue #402: the decision-directed AFC is off by default (it can
-	// stably false-lock and broke CC lock on the original capture), so
-	// the daemon and replay run CoarseAFC-alone. This knob re-enables it
-	// for A/B experimentation on a capture without turning it on in
-	// production. C4FM only.
-	enableDDA := fs.Bool("dda", false, "enable the experimental decision-directed AFC on the C4FM path (off by default; see issue #402)")
-	// Issue #402: the adaptive C4FM slicer is off by default (the fixed
-	// slicer outperformed it on the original capture's closed/asymmetric
-	// eye). This knob enables it for A/B experimentation. C4FM only.
-	enableAdaptiveSlicer := fs.Bool("adaptive-slicer", false, "enable the adaptive C4FM slicer on the C4FM path (off by default; see issue #402)")
-	// Issue #402: blind I/Q-imbalance correction on the raw IQ before the DDC.
-	// Off by default; the chain audit found an uncorrected RTL-SDR imbalance is
-	// the leading explanation for the asymmetric demodulated eye on MMR Site 9.
+	nidSearchSpan := fs.Int("nid-search-span", 0, "P25 NID-alignment search radius in dibits (0 = production default; widen to bisect a stubborn capture per issue #275)")
+	diag := fs.Bool("diag", false, "collect the demod-quality diagnostic report (symbol histogram + P25 FSW landscape + soft-sample eye) and print it at EOF")
+	enableDDA := fs.Bool("dda", false, "enable the experimental decision-directed AFC on the P25 C4FM path (off by default; see issue #402)")
+	enableAdaptiveSlicer := fs.Bool("adaptive-slicer", false, "enable the adaptive C4FM slicer on the P25 C4FM path (off by default; see issue #402)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation (off by default; see issue #402)")
-	// Channel tuning for an off-centre capture. The live pipeline gets a
-	// channel centred at 0 Hz from the SDR tuner; a wideband file replay
-	// must shift the channel down itself. -tune-hz applies a fixed offset;
-	// -auto-tune estimates the dominant carrier from a prefix of the file.
-	// Needed for captures (e.g. MMR Site 9) whose control channel sits a
-	// few hundred Hz off centre — at 4800 baud even ~50 Hz is several
-	// degrees of differential rotation per symbol, enough to break lock.
 	tuneHzFlag := fs.Float64("tune-hz", 0, "frequency-shift the capture so a channel at +tune-hz lands at 0 Hz before demod (0 = no shift)")
 	autoTune := fs.Bool("auto-tune", false, "estimate the dominant carrier offset from the start of the file and tune it to 0 Hz (overrides -tune-hz)")
+	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
+	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), `gophertrunk replay — decode a raw IQ capture file offline.
+		fmt.Fprintln(fs.Output(), `gophertrunk replay — decode a raw IQ capture file offline (any protocol).
 
 USAGE:
   gophertrunk replay -in <path> [-format u8|f32] [-sample-rate Hz]
-                    [-protocol p25p1|dmr-tier3|dmr-tier2] [-demod c4fm|cqpsk]
-                    [-tune-hz Hz | -auto-tune] [-conjugate]
+                    [-protocol p25p1|dmr|tetra|…] [-demod c4fm|cqpsk]
+                    [-tune-hz Hz | -auto-tune] [-conjugate] [-diag]
 
 EXAMPLES:
-  # rtl_sdr capture of a P25 control channel
-  gophertrunk replay -in mt_anakie.bin -sample-rate 2048000 -demod c4fm
+  # rtl_sdr capture of a P25 control channel, with the deep demod report
+  gophertrunk replay -in mt_anakie.bin -sample-rate 2048000 -demod c4fm -diag
 
-  # GNU Radio float32 cfile of an LSM simulcast site
-  gophertrunk replay -in cbd.cfile -format f32 -sample-rate 960000 -demod cqpsk
+  # Wideband cfile whose control channel is off-centre: auto-tune to 0 Hz
+  gophertrunk replay -in mmr-s9.cfile -format f32 -sample-rate 2400000 -auto-tune
 
-  # Wideband capture whose control channel is off-centre: auto-estimate the
-  # carrier and tune it to 0 Hz before the down-converter (the SDR tuner does
-  # this live; a recorded file does not). MMR Site 9 sits ~+37 kHz off centre.
-  gophertrunk replay -in mmr-s9.cfile -format f32 -sample-rate 2400000 -demod c4fm -auto-tune
+  # DMR Tier III control channel from a wideband cfile
+  gophertrunk replay -in dmr.cfile -format f32 -sample-rate 2400000 -protocol dmr -auto-tune
 
-  # DMR Tier III control channel from a wideband cfile. Sweep -tune-hz to find
-  # the channel (DMR has no AFC, so tune to within ~1 kHz of the carrier).
-  gophertrunk replay -in dmr.cfile -format f32 -sample-rate 2400000 -protocol dmr-tier3 -auto-tune
-
-  # Suspected spectrum-inverted / I-Q-swapped front-end (RTL-SDR Blog V4 /
-  # R828D, issue #264): -conjugate negates Q BEFORE channelization so an
-  # off-DC channel is no longer pulled from the mirror offset.
-  gophertrunk replay -in v4.cfile -format f32 -sample-rate 2400000 -protocol dmr-tier3 -auto-tune -conjugate
+  # Any other protocol GopherTrunk decodes (e.g. TETRA), with structured export
+  gophertrunk replay -in tetra.cfile -format f32 -sample-rate 2400000 -protocol tetra -out-format json -out out.json
 
 FLAGS:`)
 		fs.PrintDefaults()
@@ -143,569 +81,56 @@ FLAGS:`)
 	if *sampleRate <= 0 {
 		rep.Fatalf(2, "-sample-rate must be > 0")
 	}
-	demodMode, ok := p25phase1rx.ParseDemodMode(*demod)
-	if !ok {
-		rep.Fatalf(2, "unknown -demod %q (want c4fm or cqpsk)", *demod)
+	if *nidSearchSpan < 0 {
+		rep.Fatalf(2, "-nid-search-span must be >= 0")
 	}
-	protocol := strings.ToLower(strings.TrimSpace(*protocolFlag))
-	if *nidSearchSpan <= 0 {
-		rep.Fatalf(2, "-nid-search-span must be > 0")
+	proto, err := siglab.ParseProtocolCLI(*protocolFlag)
+	if err != nil {
+		rep.Fatal(2, err)
 	}
-
-	// replay keeps three native deep-diagnostic paths (p25p1, dmr-tier3,
-	// dmr-tier2) with their receiver-state + soft-eye instrumentation. Every
-	// other protocol GopherTrunk decodes routes through the shared siglab
-	// engine, so `replay -protocol <any>` works across all 13 protocols
-	// while the headline P25/DMR debugging depth is preserved here.
-	switch protocol {
-	case "p25p1", "dmr-tier3", "dmr-tier2":
-		// fall through to the native paths below
-	default:
-		runReplayViaSiglab(protocol, *in, *format, *sampleRate, uint32(*freq),
-			*tuneHzFlag, *autoTune, *conjugate, *iqCorrect, *diag, rep)
-		return
+	sampleFormat, err := siglab.ParseSampleFormat(*format)
+	if err != nil {
+		rep.Fatal(2, err)
 	}
-
-	decode, bytesPerSample, err := pickSampleDecoder(*format)
+	of, err := siglab.ParseFormat(*outFormat)
 	if err != nil {
 		rep.Fatal(2, err)
 	}
 
-	f, err := os.Open(*in)
-	if err != nil {
-		rep.Fatal(1, fmt.Errorf("open %s: %w", *in, err))
-	}
-	defer f.Close()
-
-	// Resolve the tuning offset. -auto-tune estimates the dominant carrier
-	// from a prefix of the file (then rewinds so the prefix is still
-	// decoded); -tune-hz is the manual override. Estimation runs on the
-	// raw IQ, before any decimation, so the offset is in input-rate Hz.
-	tuneHz := *tuneHzFlag
-	if *autoTune {
-		est, err := estimateCaptureCarrierHz(f, decode, bytesPerSample, *sampleRate)
-		if err != nil {
-			rep.Fatal(1, fmt.Errorf("auto-tune failed: %w", err))
-		}
-		tuneHz = est
-		fmt.Fprintf(os.Stderr, "replay: auto-tune  carrier_offset_hz=%.1f\n", tuneHz)
-	}
-
-	// Logger at debug so `nid corrected` (with at_boundary), `nid
-	// parse failed` (with diag), and the FSW miss throttle all
-	// surface — the diagnostic value the operator is here for.
+	// Run the production decoder at debug log level so the receiver's internal
+	// diagnostics (`nid corrected` / `nid parse failed` / `at_boundary`, the
+	// FSW-miss throttle) still surface live on stderr — the value the operator
+	// is here for. The structured analysis is collected into the Result.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	bus := events.NewBus(1024)
-	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	// Mirror the production ccdecoder DDC (issue #402 Phase 2): the
-	// daemon decimates raw SDR IQ down to ~48 kHz before the receiver
-	// sees it; without the same step here replay feeds the receiver
-	// wideband IQ (e.g. 2.4 MHz), the matched filter sizes for ~500
-	// samples per symbol, and AFC / AGC / timing time constants are off
-	// by ~50× compared to what runs in production. A capture that fails
-	// in the daemon would then decode (or fail) differently in replay,
-	// defeating the whole point of using replay as a reproducer.
-	//
-	// The daemon decimates by *protocol*, not demod mode — it channelizes
-	// every P25 stream to the C4FM-family target regardless of whether the
-	// receiver runs the C4FM or CQPSK path (ccdecoder/decoder.go calls
-	// ensureDownconverterLocked(ddcTargetForProtocol(sys.Protocol))). So
-	// replay must do the same for both modes: decimate whenever the input
-	// exceeds the production target. Gating this on demod==C4FM (the
-	// earlier behaviour, issue #492) ran replayed CQPSK at the full SDR
-	// rate — ~417 samples/symbol at 2 MHz, an ~8× slower run that no
-	// longer matches the live pipeline. The tuning shift (if any) applies
-	// on either path — it just centres the channel and never changes the
-	// rate. Already-channelised captures (rate ≤ target) stay untouched.
-	ddcTarget := *sampleRate
-	if *sampleRate > ccdecoder.DDCTargetRateHz {
-		ddcTarget = ccdecoder.DDCTargetRateHz
-	}
-	var ddc *ccdecoder.Downconverter
-	receiverRate := *sampleRate
-	if tuneHz != 0 || ddcTarget < *sampleRate {
-		ddc = ccdecoder.NewDownconverterWithOffset(*sampleRate, ddcTarget, tuneHz)
-		receiverRate = ddc.OutRateHz()
+	cfg := siglab.Config{
+		Protocol:             proto,
+		SystemName:           "replay",
+		FrequencyHz:          uint32(*freq),
+		SampleRateHz:         *sampleRate,
+		Format:               sampleFormat,
+		TuneHz:               *tuneHzFlag,
+		AutoTune:             *autoTune,
+		Conjugate:            *conjugate,
+		IQCorrect:            *iqCorrect,
+		CollectIQDiag:        *diag,
+		DemodMode:            *demod,
+		NIDSearchSpan:        *nidSearchSpan,
+		EnableDDA:            *enableDDA,
+		EnableAdaptiveSlicer: *enableAdaptiveSlicer,
+		// P25 replay always wants the per-frame CCStats + receiver-state series
+		// (the historical EOF summary + per-second state log); -diag adds the
+		// dibit/soft-eye landscape on top.
+		CollectReceiverState: true,
+		Log:                  logger,
 	}
 
-	var dibitCount int64
-	var diagAcc *iqDiag
-	if *diag {
-		diagAcc = &iqDiag{}
-	}
-	// Blind I/Q-imbalance correction on the raw IQ (issue #402), opt-in.
-	var iqCorrector *rtlsdr.IQImbalanceCorrector
-	if *iqCorrect {
-		iqCorrector = rtlsdr.NewIQImbalanceCorrector()
+	res, err := siglab.Run(*in, cfg)
+	if err != nil {
+		rep.Fatal(1, err)
 	}
 
-	// makeDibitSink builds the count + optional-diag + forward-to-control
-	// closure shared by every protocol's receiver. The control channels'
-	// Process returns a consumed-dibit count we don't need here.
-	makeDibitSink := func(forward func(dibits []uint8, baseIdx int) int) func([]uint8, int) {
-		return func(dibits []uint8, baseIdx int) {
-			dibitCount += int64(len(dibits))
-			if diagAcc != nil {
-				diagAcc.observe(dibits)
-			}
-			forward(dibits, baseIdx)
-		}
-	}
-
-	// Build the decoder for the requested protocol. All three expose
-	// Process([]complex64). Only the P25 P1 path surfaces the CCStats
-	// summary and the per-second receiver-state log — its AFC / AGC /
-	// Mueller-Müller accessors are C4FM-receiver-specific; ccStatsFn and
-	// p25rx stay nil on the DMR paths and the EOF report degrades to the
-	// shared lock / grant / baud lines.
-	var (
-		dec       replayDecoder
-		p25rx     *p25phase1rx.Receiver
-		ccStatsFn func() p25phase1.CCStats
-	)
-	switch protocol {
-	case "p25p1":
-		// Mirror ccdecoder/pipelines.go: restrict the rotation set on the
-		// C4FM path so the search cannot converge on a non-physical
-		// rot 1 / rot 3 miscorrection (issue #275 post-#321).
-		rotations := p25phase1.RotationsAll
-		if demodMode == p25phase1rx.DemodC4FM {
-			rotations = p25phase1.RotationsC4FM
-		}
-		cc := p25phase1.New(p25phase1.Options{
-			Bus:           bus,
-			Log:           logger,
-			SystemName:    "replay",
-			FrequencyHz:   uint32(*freq),
-			Rotations:     rotations,
-			NIDSearchSpan: *nidSearchSpan,
-		})
-		ccStatsFn = cc.Stats
-		rxOpts := p25phase1rx.Options{
-			SampleRateHz:              receiverRate,
-			DeviationHz:               1800.0,
-			DemodMode:                 demodMode,
-			EnableDecisionDirectedAFC: *enableDDA,
-			EnableAdaptiveC4FMSlicer:  *enableAdaptiveSlicer,
-			DibitSink:                 makeDibitSink(cc.Process),
-		}
-		if diagAcc != nil {
-			rxOpts.SoftSink = diagAcc.observeSoft
-		}
-		p25rx = p25phase1rx.New(rxOpts)
-		dec = p25rx
-		// Surface the active configuration the same way the ccdecoder
-		// pipeline does, so the replay log line is directly comparable
-		// to a daemon's startup line.
-		fmt.Fprintf(os.Stderr, "replay: p25/phase1 configured  demod=%s  rotations=%v  nid_search_span=%d  nid_accept_errs=%d  nid_marginal_max=%d  dda=%t  adaptive_slicer=%t  iq_correct=%t  conjugate=%t\n",
-			*demod, rotations, *nidSearchSpan, p25phase1.NIDAcceptErrs, p25phase1.NIDMarginalMaxErrs, *enableDDA, *enableAdaptiveSlicer, *iqCorrect, *conjugate)
-	case "dmr-tier3":
-		// Mirror newDMRTier3Pipeline in ccdecoder/pipelines.go — the
-		// production constructors, so a replay lock implies a daemon lock.
-		cc := tier3.New(tier3.Options{Bus: bus, Log: logger, SystemName: "replay", FrequencyHz: uint32(*freq)})
-		dec = dmrrx.New(dmrrx.Options{
-			SampleRateHz: receiverRate,
-			DeviationHz:  1944.0,
-			ClockGain:    0.025,
-			DibitSink:    makeDibitSink(cc.Process),
-		})
-		fmt.Fprintf(os.Stderr, "replay: dmr/tier3 configured  deviation_hz=1944  clock_gain=0.025  iq_correct=%t  conjugate=%t\n", *iqCorrect, *conjugate)
-	case "dmr-tier2":
-		// Mirror newDMRTier2Pipeline in ccdecoder/pipelines.go.
-		cc := tier2.New(tier2.Options{Bus: bus, Log: logger, SystemName: "replay", FrequencyHz: uint32(*freq)})
-		dec = dmrrx.New(dmrrx.Options{
-			SampleRateHz: receiverRate,
-			DeviationHz:  1944.0,
-			ClockGain:    0.015,
-			DibitSink:    makeDibitSink(cc.Process),
-		})
-		fmt.Fprintf(os.Stderr, "replay: dmr/tier2 configured  deviation_hz=1944  clock_gain=0.015  iq_correct=%t  conjugate=%t\n", *iqCorrect, *conjugate)
-	default:
-		rep.Fatalf(2, "unknown -protocol %q (want p25p1, dmr-tier3, or dmr-tier2)", protocol)
-	}
-
-	if ddc != nil {
-		fmt.Fprintf(os.Stderr, "replay: ddc enabled  sdr_rate_hz=%g  pipeline_rate_hz=%g\n",
-			*sampleRate, receiverRate)
-	} else {
-		fmt.Fprintf(os.Stderr, "replay: ddc bypassed  pipeline_rate_hz=%g  (sample rate already at or below the channel target)\n",
-			receiverRate)
-	}
-
-	// Drain bus events to stdout in the background so they print
-	// interleaved with the decoder log going to stderr.
-	doneEvents := make(chan struct{})
-	var stats replayStats
-	go func() {
-		defer close(doneEvents)
-		for ev := range sub.C {
-			handleEvent(ev, &stats)
-		}
-	}()
-
-	// Per-second receiver-state observer (issue #402 Phase 2): after
-	// every secondsPerStateLog seconds of wall-clock IQ have flowed
-	// through the receiver, log the AFC bias, symbol-AGC level/target,
-	// and Mueller-Müller clock state. Lets the reporter (and us) see
-	// whether one stage's internal state slowly drifts after the CC
-	// locks, which is what the disproven-DC-spike-hypothesis pivot now
-	// points at. The cadence is measured in IQ-stream seconds (totalSamples
-	// / sampleRate), not wall clock — so the same capture produces the
-	// same log lines regardless of how fast replay can chew through it.
-	const stateLogIntervalSec = 1.0
-	var nextStateLogAt float64 = stateLogIntervalSec
-	logReceiverState := func(at float64) {
-		rx := p25rx // only invoked on the P25 P1 path (p25rx != nil)
-		// The CQPSK path shares none of the C4FM receiver state: it uses a
-		// Gardner timing loop (not Mueller-Müller), its own matched-filter
-		// AGC, a CMA equalizer, and a carrier-recovery loop — none of which
-		// the C4FM accessors below report (they all return 0 on CQPSK). Print
-		// a CQPSK-specific line so the diagnostic reflects what the path
-		// actually does, instead of the all-zero Mueller-Müller fields that
-		// misdirected issue #492 toward a phantom timing-loop flat-line.
-		if demodMode == p25phase1rx.DemodCQPSK {
-			fmt.Fprintf(os.Stderr,
-				"replay: receiver state  t=%.2fs  carrier_hz_est=%.3f  gardner_mu=%.4f  gardner_sps=%.2f  agc_gain=%.4g  cma_err=%.4g\n",
-				at,
-				rx.CQPSKCarrierOffsetHz(),
-				rx.GardnerMu(),
-				rx.GardnerSPS(),
-				rx.CQPSKAGCGain(),
-				rx.CMAError())
-			return
-		}
-		// afc_hz_est is the TRUE carrier offset (rx.AFCOffsetHz), which
-		// divides out the matched filter's sps DC-gain. The earlier
-		// AFCBias·Fs/(2π) form over-reported by ≈sps (≈10× at 48 kHz /
-		// 4800 baud) and sent issue #402 chasing a phantom ~10 kHz
-		// offset that was really ~1 kHz. afc_bias_rad_per_sample is the
-		// raw matched-output-unit value behind it.
-		//
-		// slicer_levels are the adaptive slicer's tracked −3/−1/+1/+3
-		// levels; slicer_thresholds are the actual decision boundaries
-		// (neg-outer/zero/pos-outer) the slicer decides on (issue #402: the
-		// OP asked to see the thresholds, not just the levels — on a spread
-		// eye the variance-aware boundary sits below the level midpoint).
-		// Both read zero on the fixed-slicer path (no -adaptive-slicer).
-		lv := rx.SlicerLevels()
-		th := rx.SlicerThresholds()
-		fmt.Fprintf(os.Stderr,
-			"replay: receiver state  t=%.2fs  afc_bias_rad_per_sample=%.6g  afc_hz_est=%.3f  agc_level=%.6g  agc_target=%.6g  agc_gain=%.4g  mm_mu=%.4f  mm_sps=%.2f  dda_active=%t  dda_rearms=%d  slicer_levels=[%.4f %.4f %.4f %.4f]  slicer_thresholds=[%.4f %.4f %.4f]\n",
-			at,
-			rx.AFCBiasRadPerSample(),
-			rx.AFCOffsetHz(),
-			rx.AGCLevel(),
-			rx.AGCTarget(),
-			ratioOrZero(rx.AGCTarget(), rx.AGCLevel()),
-			rx.MMClockMu(),
-			rx.MMClockSPS(),
-			rx.DDAActive(),
-			rx.DDARearms(),
-			lv[0], lv[1], lv[2], lv[3],
-			th[0], th[1], th[2])
-	}
-
-	const chunkSamples = 8192
-	buf := make([]byte, chunkSamples*bytesPerSample)
-	samples := make([]complex64, chunkSamples)
-	var ddcOut []complex64 // reused across the read loop
-	var totalSamples int64
-	for {
-		n, rerr := io.ReadFull(f, buf)
-		if n > 0 {
-			pairBytes := bytesPerSample
-			pairs := n / pairBytes
-			if pairs*pairBytes != n {
-				fmt.Fprintf(os.Stderr, "replay: trailing %d bytes ignored (not a whole IQ pair at %d bytes/sample)\n", n-pairs*pairBytes, pairBytes)
-			}
-			if pairs > len(samples) {
-				samples = make([]complex64, pairs)
-			}
-			decode(buf[:pairs*pairBytes], samples[:pairs])
-			feed := samples[:pairs]
-			// Conjugate the IQ (negate Q) BEFORE the channelizer to decode a
-			// spectrum-inverted / I-Q-swapped front-end (issue #264). This
-			// must precede the DDC: a conjugated channel sitting off DC lands
-			// at the mirror offset, so the downconverter has to see corrected
-			// orientation to extract it at all.
-			if *conjugate {
-				for i, s := range feed {
-					feed[i] = complex(real(s), -imag(s))
-				}
-			}
-			// Measure the raw I/Q imbalance for the diag report, then (opt-in)
-			// correct it — both on the raw IQ, before the DDC (issue #402).
-			if diagAcc != nil {
-				diagAcc.observeIQ(feed)
-			}
-			if iqCorrector != nil {
-				iqCorrector.Process(feed)
-			}
-			if ddc != nil {
-				ddcOut = ddc.Process(ddcOut, feed)
-				feed = ddcOut
-			}
-			dec.Process(feed)
-			totalSamples += int64(pairs)
-
-			// Throttle the state log on IQ-stream time, not wall
-			// clock. *sampleRate is the input rate even when the
-			// DDC is active — that's the rate totalSamples counts.
-			// P25-only: the DMR receiver exposes no equivalent state.
-			if p25rx != nil {
-				if t := float64(totalSamples) / *sampleRate; t >= nextStateLogAt {
-					logReceiverState(t)
-					nextStateLogAt = t + stateLogIntervalSec
-				}
-			}
-		}
-		if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
-			break
-		}
-		if rerr != nil {
-			rep.Fatal(1, fmt.Errorf("read %s: %w", *in, rerr))
-		}
-	}
-
-	// Close the bus to release the event-drainer goroutine, then
-	// wait for it to finish so the final stats are accurate.
-	bus.Close()
-	<-doneEvents
-
-	var ccStats p25phase1.CCStats
-	if ccStatsFn != nil {
-		ccStats = ccStatsFn()
-	}
-	printSummary(filepath.Base(*in), totalSamples, *sampleRate, dibitCount, stats, ccStats, ccStatsFn != nil)
-	if diagAcc != nil {
-		diagAcc.printReport(os.Stdout)
-	}
-}
-
-// ratioOrZero returns num / den, or 0 if den is too small to divide
-// safely. Used by the state log so a not-yet-seeded AGC level
-// (level=0) renders as gain=0 rather than panicking on divide-by-zero
-// or printing +Inf.
-func ratioOrZero(num, den float64) float64 {
-	if den < 1e-12 && den > -1e-12 {
-		return 0
-	}
-	return num / den
-}
-
-// replayDecoder is the common surface every protocol receiver exposes:
-// push a chunk of channelized IQ, get bus events out the side. P25 P1
-// (p25phase1rx.Receiver) and DMR (dmr/receiver.Receiver) both satisfy it.
-type replayDecoder interface {
-	Process(iq []complex64)
-}
-
-// replayStats accumulates bus events seen during the replay so the
-// EOF summary can render lock / grant / decode-error totals.
-type replayStats struct {
-	locked         bool
-	nac            uint16
-	dmr            bool  // lock came from a DMR control channel
-	colorCode      uint8 // DMR color code at lock
-	systemID       uint16
-	grants         int
-	grantFreqs     map[uint32]int
-	decodeErrors   map[events.Stage]int
-	otherEventKind map[events.Kind]int
-}
-
-func handleEvent(ev events.Event, s *replayStats) {
-	switch ev.Kind {
-	case events.KindCCLocked:
-		switch ls := ev.Payload.(type) {
-		case p25phase1.LockState:
-			s.locked = true
-			s.nac = ls.NAC
-			fmt.Printf("replay: cc.locked  nac=%#x  freq=%d  duid=%s\n", ls.NAC, ls.FrequencyHz, ls.DUID)
-		case tier3.LockState:
-			s.locked = true
-			s.dmr = true
-			s.colorCode = ls.ColorCode
-			s.systemID = ls.SystemID
-			fmt.Printf("replay: cc.locked  dmr-tier3  color_code=%d  system_id=%#x  freq=%d\n", ls.ColorCode, ls.SystemID, ls.FrequencyHz)
-		case tier2.LockState:
-			s.locked = true
-			s.dmr = true
-			s.colorCode = ls.ColorCode
-			fmt.Printf("replay: cc.locked  dmr-tier2  color_code=%d  freq=%d\n", ls.ColorCode, ls.FrequencyHz)
-		}
-	case events.KindGrant:
-		if g, ok := ev.Payload.(trunking.Grant); ok {
-			s.grants++
-			if s.grantFreqs == nil {
-				s.grantFreqs = make(map[uint32]int)
-			}
-			s.grantFreqs[g.FrequencyHz]++
-			fmt.Printf("replay: grant      tg=%d  src=%d  ch=%d/%d  freq=%d  enc=%v  emer=%v\n",
-				g.GroupID, g.SourceID, g.ChannelID, g.ChannelNum, g.FrequencyHz, g.Encrypted, g.Emergency)
-		}
-	case events.KindDecodeError:
-		if de, ok := ev.Payload.(events.DecodeError); ok {
-			if s.decodeErrors == nil {
-				s.decodeErrors = make(map[events.Stage]int)
-			}
-			s.decodeErrors[de.Stage]++
-		}
-	default:
-		if s.otherEventKind == nil {
-			s.otherEventKind = make(map[events.Kind]int)
-		}
-		s.otherEventKind[ev.Kind]++
-	}
-}
-
-// printSummary writes the EOF report — what the operator pastes into
-// the GitHub issue alongside the live log. Includes the effective-baud
-// self-diagnostic the anakie_short.zip mislabel taught us we need, plus
-// the per-frame outcome breakdown the ControlChannel keeps in CCStats
-// (issue #402 Phase 2: lets the reporter answer "did anything decode?"
-// without scrolling through every debug line).
-func printSummary(name string, samples int64, sampleRate float64, dibits int64, s replayStats, cc p25phase1.CCStats, withCCStats bool) {
-	fmt.Fprintln(os.Stdout, "----")
-	duration := float64(samples) / sampleRate
-	fmt.Fprintf(os.Stdout, "replay: %s — %d samples (%.2fs at %.0f Hz), %d dibits emitted\n",
-		name, samples, duration, sampleRate, dibits)
-
-	const expectedBaud = 4800.0
-	if duration > 0 && dibits > 0 {
-		effective := float64(dibits) / duration
-		dev := (effective - expectedBaud) / expectedBaud * 100
-		warning := ""
-		if math.Abs(dev) > 2 {
-			warning = "  (>2% — capture sample rate may not match -sample-rate)"
-		}
-		fmt.Fprintf(os.Stdout, "replay: effective baud %.1f (expected %.0f, deviation %+.1f%%)%s\n",
-			effective, expectedBaud, dev, warning)
-	}
-
-	if s.locked {
-		switch {
-		case s.dmr:
-			fmt.Fprintf(os.Stdout, "replay: locked  color_code=%d  system_id=%#x\n", s.colorCode, s.systemID)
-		default:
-			fmt.Fprintf(os.Stdout, "replay: locked  nac=%#x\n", s.nac)
-		}
-	} else {
-		fmt.Fprintln(os.Stdout, "replay: did NOT lock the control channel")
-	}
-	if s.grants > 0 {
-		fmt.Fprintf(os.Stdout, "replay: %d grant(s) across %d frequencies\n", s.grants, len(s.grantFreqs))
-	}
-
-	// The NID / TSBK breakdown below is P25-Phase-1-specific (CCStats has
-	// no DMR analogue); skip it on the DMR paths.
-	if !withCCStats {
-		if len(s.decodeErrors) > 0 {
-			parts := make([]string, 0, len(s.decodeErrors))
-			for stage, n := range s.decodeErrors {
-				parts = append(parts, fmt.Sprintf("%s=%d", stage, n))
-			}
-			fmt.Fprintf(os.Stdout, "replay: decode errors (from bus): %s\n", strings.Join(parts, " "))
-		}
-		return
-	}
-
-	// Per-frame outcome breakdown from CCStats. NID-tier counts split
-	// "passed BCH+parity cleanly" from "needed TSBK corroboration",
-	// and TSBK counts split the failure mode (trellis vs CRC). On a
-	// healthy site every FSW hit becomes NIDTrusted + TSBKDecoded;
-	// the issue-#402 shape is high NIDFailed + high TSBKCRCFailed
-	// (gross dibit corruption that BCH can't recover and Viterbi
-	// barely can).
-	nidAttempts := cc.NIDTrusted + cc.NIDMarginal + cc.NIDFailed
-	tsbkAttempts := cc.TSBKDecoded + cc.TSBKTrellisFailed + cc.TSBKCRCFailed
-	fmt.Fprintf(os.Stdout, "replay: nid   trusted=%d  marginal=%d  uncorrectable=%d  (of %d FSW-hit attempts; %s ok)\n",
-		cc.NIDTrusted, cc.NIDMarginal, cc.NIDFailed, nidAttempts,
-		pctOf(cc.NIDTrusted+cc.NIDMarginal, nidAttempts))
-	fmt.Fprintf(os.Stdout, "replay: tsbk  decoded=%d  trellis_failed=%d  crc_failed=%d  (of %d NID-passed frames; %s ok)\n",
-		cc.TSBKDecoded, cc.TSBKTrellisFailed, cc.TSBKCRCFailed, tsbkAttempts,
-		pctOf(cc.TSBKDecoded, tsbkAttempts))
-
-	if len(s.decodeErrors) > 0 {
-		parts := make([]string, 0, len(s.decodeErrors))
-		for stage, n := range s.decodeErrors {
-			parts = append(parts, fmt.Sprintf("%s=%d", stage, n))
-		}
-		fmt.Fprintf(os.Stdout, "replay: decode errors (from bus): %s\n", strings.Join(parts, " "))
-	}
-}
-
-// pctOf renders num/den as a percentage string, or "n/a" when den is
-// zero. Used by the EOF summary so "0 / 0 = NaN%" doesn't appear in
-// the operator's pasted output.
-func pctOf(num, den int64) string {
-	if den <= 0 {
-		return "n/a"
-	}
-	return fmt.Sprintf("%.1f%%", 100*float64(num)/float64(den))
-}
-
-// pickSampleDecoder maps the -format flag to a (decoder, bytes-per-IQ-pair)
-// pair the read loop drives. u8 is the rtl_sdr default; f32 is GNU Radio's
-// interleaved float32 cfile.
-// estimateCaptureCarrierHz reads a prefix of f, estimates the dominant
-// carrier offset across the full band, then rewinds f to the start so the
-// prefix is still decoded by the main read loop. Used by -auto-tune.
-func estimateCaptureCarrierHz(f *os.File, decode func([]byte, []complex64), bytesPerSample int, sampleRateHz float64) (float64, error) {
-	const prefixSamples = 262144
-	buf := make([]byte, prefixSamples*bytesPerSample)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return 0, err
-	}
-	if _, serr := f.Seek(0, io.SeekStart); serr != nil {
-		return 0, serr
-	}
-	pairs := n / bytesPerSample
-	if pairs == 0 {
-		return 0, fmt.Errorf("capture has no samples to estimate from")
-	}
-	iq := make([]complex64, pairs)
-	decode(buf[:pairs*bytesPerSample], iq)
-	return dsp.EstimateCarrierOffsetHz(iq, sampleRateHz, sampleRateHz*0.5), nil
-}
-
-func pickSampleDecoder(format string) (func([]byte, []complex64), int, error) {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "u8", "":
-		return decodeU8Replay, 2, nil
-	case "f32", "float32", "cfile":
-		return decodeF32Replay, 8, nil
-	default:
-		return nil, 0, fmt.Errorf("unknown -format %q (want u8 or f32)", format)
-	}
-}
-
-// decodeU8Replay converts rtl_sdr 8-bit unsigned interleaved IQ to
-// complex64 in [-1, +1]. Mirrors internal/sdr/mock.go's decodeU8 but
-// kept package-local so replay has no dependency on the mock SDR
-// driver layer.
-func decodeU8Replay(buf []byte, out []complex64) {
-	n := len(buf) / 2
-	for i := 0; i < n; i++ {
-		ir := float32(buf[2*i]) - 127.5
-		qr := float32(buf[2*i+1]) - 127.5
-		out[i] = complex(ir/127.5, qr/127.5)
-	}
-}
-
-// decodeF32Replay converts an interleaved-float32 GNU Radio cfile to
-// complex64. The file is read as little-endian, matching the format
-// gnuradio-companion emits on every platform GopherTrunk supports.
-func decodeF32Replay(buf []byte, out []complex64) {
-	n := len(buf) / 8
-	for i := 0; i < n; i++ {
-		ir := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i:]))
-		qr := math.Float32frombits(binary.LittleEndian.Uint32(buf[8*i+4:]))
-		out[i] = complex(ir, qr)
+	if err := emitResult(res, of, *out); err != nil {
+		rep.Fatal(1, err)
 	}
 }
