@@ -148,6 +148,18 @@ func (r *R82xx) effectiveXtalHz() uint32 {
 // Type returns the detected chip family.
 func (r *R82xx) Type() Type { return r.chipType }
 
+// XtalHz returns the reference-crystal frequency currently in effect
+// (before any ppm correction). It exists for boot-time diagnostics:
+// 16 MHz on an R828D means the RTL-SDR Blog V4 path did NOT arm, so the
+// LO mistunes by ~28.8/16 = 1.8× (issue #264); 28.8 MHz means SetBlogV4
+// ran. See [R82xx.IsBlogV4].
+func (r *R82xx) XtalHz() uint32 { return r.xtalHz }
+
+// IsBlogV4 reports whether the RTL-SDR Blog V4 path is armed and, if so,
+// whether it's the two-band "Lite" variant. Surfaced for the pool's
+// per-device "sdr tuner detected" diagnostic line (issue #264).
+func (r *R82xx) IsBlogV4() (enabled, lite bool) { return r.blogV4, r.blogV4L }
+
 // IFFreqHz returns the 3.57 MHz intermediate frequency the R820T
 // emits.
 func (r *R82xx) IFFreqHz() uint32 { return r82xxIFFreqHz }

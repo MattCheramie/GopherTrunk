@@ -617,10 +617,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		var hints []sdr.Hint
 		for _, dev := range cfg.SDR.Devices {
 			h := sdr.Hint{
-				Serial:  dev.Serial,
-				Role:    sdr.ParseRole(dev.Role),
-				PPM:     dev.PPM,
-				BiasTee: dev.BiasTee,
+				Serial:          dev.Serial,
+				Role:            sdr.ParseRole(dev.Role),
+				PPM:             dev.PPM,
+				BiasTee:         dev.BiasTee,
+				ForceBlogV4:     dev.BlogV4,
+				ForceBlogV4Lite: dev.BlogV4Lite,
 			}
 			if dev.Gain != "" {
 				gain, ok := parseGain(dev.Gain)

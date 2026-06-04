@@ -607,6 +607,17 @@ type DeviceConfig struct {
 	// either way.
 	BiasTee bool `yaml:"bias_tee"`
 
+	// BlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz reference crystal +
+	// per-band HF/VHF/UHF input routing) regardless of the dongle's USB
+	// iManufacturer/iProduct strings. Use it when a V4's EEPROM strings
+	// are blank or non-standard so auto-detection misses it and the
+	// R828D mistunes every frequency by ~1.8× (issue #264). Off by
+	// default; leave false for any non-V4 dongle. BlogV4Lite selects the
+	// two-band "Lite" variant — set it only on a V4L. When set, the
+	// config value wins over auto-detection (it is applied after open).
+	BlogV4     bool `yaml:"blog_v4"`
+	BlogV4Lite bool `yaml:"blog_v4_lite"`
+
 	// CenterFreqHz pins a `role: wideband` dongle to the centre of
 	// the IQ band it should cover. Every Channels[].FrequencyHz must
 	// fall within ±sample_rate/2 of this value, with a 5 % guard.

@@ -75,6 +75,25 @@ type Device interface {
 	Close() error
 }
 
+// TunerDiagnoser is an optional Device extension that surfaces tuner
+// detection state for boot-time diagnostics. Callers type-assert for it
+// (like ActualSampleRate / SettleAfterRetune) so backends that don't
+// model a tuner crystal need not implement it. xtalHz of 16 MHz on an
+// R828D is the signature that RTL-SDR Blog V4 auto-detection missed and
+// the LO is mistuned by ~1.8× (issue #264).
+type TunerDiagnoser interface {
+	TunerDiag() (tunerName string, blogV4, blogV4Lite bool, xtalHz uint32)
+}
+
+// BlogV4Forcer is an optional Device extension that forces RTL-SDR Blog
+// V4 mode (28.8 MHz reference crystal + switched HF/VHF/UHF input bank)
+// regardless of USB-string auto-detection. Callers type-assert for it.
+// Used when a V4's EEPROM strings are blank/non-standard so the R828D
+// otherwise stays on the 16 MHz crystal and mistunes (issue #264).
+type BlogV4Forcer interface {
+	SetBlogV4(lite bool) error
+}
+
 // Driver is the factory each backend exposes.
 type Driver interface {
 	Name() string

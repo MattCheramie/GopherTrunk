@@ -184,6 +184,36 @@ func (d *Device) SetBiasTee(enable bool) error {
 	return nil
 }
 
+// SetBlogV4 forces the R82xx tuner into RTL-SDR Blog V4 mode (28.8 MHz
+// reference crystal + switched input bank) when USB-string auto-detection
+// misses a V4 — e.g. a unit whose EEPROM iManufacturer/iProduct strings
+// are blank or non-standard, which otherwise leaves the R828D on the
+// 16 MHz crystal and mistunes the LO by ~1.8× (issue #264). No-op on
+// non-R82xx tuners. Must run before the first SetCenterFreq; the pool
+// applies it from applyHintSettings, which runs before any tune.
+// Implements sdr.BlogV4Forcer.
+func (d *Device) SetBlogV4(lite bool) error {
+	if d.closed.Load() {
+		return ErrClosed
+	}
+	if r82, ok := d.tuner.(*tuners.R82xx); ok {
+		r82.SetBlogV4(lite)
+	}
+	return nil
+}
+
+// TunerDiag surfaces tuner detection state for the pool's boot-time
+// diagnostic line (issue #264). For the R82xx family it reports the
+// effective reference crystal and whether the Blog V4 path armed; other
+// tuners report just the chip name. Implements sdr.TunerDiagnoser.
+func (d *Device) TunerDiag() (tunerName string, blogV4, blogV4Lite bool, xtalHz uint32) {
+	if r82, ok := d.tuner.(*tuners.R82xx); ok {
+		v4, lite := r82.IsBlogV4()
+		return r82.Type().String(), v4, lite, r82.XtalHz()
+	}
+	return d.tuner.Type().String(), false, false, 0
+}
+
 // Close releases the tuner, powers off the demod, and closes the USB
 // transport. Idempotent; safe to call from any goroutine.
 func (d *Device) Close() error {
@@ -226,5 +256,10 @@ func (d *Device) cancelStream() {
 // StreamIQ is implemented in stream.go (kept separate so the IQ
 // conversion math sits next to its unit test).
 //
-// Compile-time assertion that Device satisfies sdr.Device.
-var _ sdr.Device = (*Device)(nil)
+// Compile-time assertion that Device satisfies sdr.Device and the
+// optional tuner-diagnostic / Blog-V4-force extensions (issue #264).
+var (
+	_ sdr.Device         = (*Device)(nil)
+	_ sdr.TunerDiagnoser = (*Device)(nil)
+	_ sdr.BlogV4Forcer   = (*Device)(nil)
+)
