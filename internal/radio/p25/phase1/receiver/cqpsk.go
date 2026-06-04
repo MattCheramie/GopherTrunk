@@ -76,52 +76,151 @@ const (
 // cqpskSeedClampHz bounds the one-shot coarse seed; a residual that needs
 // more than this is an un-channelised / mis-tuned stream the upstream DDC
 // + PPM correction should have handled (the channel would not even fit the
-// 48 kHz passband otherwise). cqpskSeedMinSamples is the matched-filter
-// sample count the coarse estimate needs to be usable. cqpskCostasLoopBWHz
-// / cqpskCostasDamping tune the fine tracking loop: ~2.5% of baud gives a
-// few-hundred-symbol acquisition, well inside the control-channel warmup.
+// 48 kHz passband otherwise). cqpskSeedMinSamples is the sample count the
+// coarse estimate needs to be usable. cqpskCostasLoopBWHz / cqpskCostasDamping
+// tune the fine tracking loop: ~2.5% of baud gives a few-hundred-symbol
+// acquisition, well inside the control-channel warmup.
+//
+// cqpskSeedMaxLag / cqpskSeedMinCoherence / cqpskSeedMaxModulusCV gate the
+// coarse estimate (issue #492). The bare lag-1 (Kay) estimate reads a
+// multipath / simulcast channel's autocorrelation phase as a spurious carrier
+// offset (~650–750 Hz on the reported captures) because a deep simulcast null
+// shifts the spectral centroid — a bias an autocorrelation estimator cannot
+// tell from a real offset. robustSeedHz therefore (a) sharpens the estimate
+// with a short multi-lag phase-ramp fit and (b) *gates* it: de-rotate by the
+// estimate, run the matched filter, and measure the coefficient of variation
+// of the symbol modulus. A pure carrier offset only rotates the constant-
+// modulus π/4-DQPSK symbols (low CV); multipath ISI blurs the modulus (high
+// CV). When the CV is high the offset is multipath bias, not a carrier offset,
+// so the estimate is rejected and the NCO left identity — the CMA→Costas loop
+// then acquires the (necessarily in-range) true offset on its own.
 const (
-	cqpskSeedClampHz    = 6000.0
-	cqpskSeedMinSamples = 2048
-	cqpskCostasLoopBWHz = 120.0
-	cqpskCostasDamping  = 0.707
+	cqpskSeedClampHz      = 6000.0
+	cqpskSeedMinSamples   = 2048
+	cqpskSeedMaxLag       = 4
+	cqpskSeedMinCoherence = 0.30
+	cqpskSeedMaxModulusCV = 0.24
+	cqpskCostasLoopBWHz   = 120.0
+	cqpskCostasDamping    = 0.707
 )
 
-// seedCarrierOffsetHz returns a coarse estimate of the residual carrier
-// offset (Hz) of an oversampled complex stream, via the lag-1
-// autocorrelation (Kay) frequency estimator: the angle of Σ x[n]·conj(x[n−1])
-// is the mean per-sample phase increment, which for a suppressed-carrier
-// symmetric modulation is the carrier rotation (the data's phase changes
-// are symmetric and average out). Unlike peak-picking the PSD, this is
-// unbiased on the flat-topped RRC spectrum of an already-channelised
-// signal, and unambiguous to ±Fs/2 rather than ±baud/8.
-func seedCarrierOffsetHz(x []complex64, fs float64) float64 {
-	if len(x) < 2 || fs <= 0 {
-		return 0
+// robustSeedHz estimates the residual carrier offset (Hz) of an oversampled
+// complex stream and reports whether the estimate is trustworthy. A pure
+// carrier offset Δf rotates the stream by a constant kΔω at autocorrelation
+// lag k, so angle(R_k) = k·Δω is linear in k; fitting a least-squares slope
+// through lags 1..cqpskSeedMaxLag is a lower-variance estimate than the
+// single-lag (Kay) angle. The estimate is then validated against the failure
+// mode behind issue #492 (modulusCV): a multipath / simulcast channel shifts
+// the spectral centroid so the angle reads as a spurious offset, but de-
+// rotating by it and matched-filtering leaves the symbol modulus blurred by
+// ISI, which a clean offset never does. Weak lag-1 coherence (noise) or a
+// high modulus CV (multipath) marks the seed untrustworthy; the caller then
+// leaves the NCO identity rather than de-rotating by a spurious offset.
+func (c *cqpskDemod) robustSeedHz(x []complex64) (hz float64, ok bool) {
+	fs := c.fs
+	if len(x) <= cqpskSeedMaxLag || fs <= 0 {
+		return 0, false
 	}
-	var accR, accI float64
-	for n := 1; n < len(x); n++ {
-		ar, ai := float64(real(x[n])), float64(imag(x[n]))
-		br, bi := float64(real(x[n-1])), float64(imag(x[n-1]))
-		// x[n] · conj(x[n-1])
-		accR += ar*br + ai*bi
-		accI += ai*br - ar*bi
+	var energy float64
+	for _, s := range x {
+		energy += float64(real(s))*float64(real(s)) + float64(imag(s))*float64(imag(s))
 	}
-	return seedHzFromAcc(accR, accI, fs)
-}
-
-// seedHzFromAcc converts running lag-1 autocorrelation accumulators
-// (Σ x[n]·conj(x[n−1])) to a clamped coarse carrier estimate in Hz. Shared
-// by seedCarrierOffsetHz (slice) and the streaming seed that accumulates
-// across process() calls, so both use identical math.
-func seedHzFromAcc(accR, accI, fs float64) float64 {
-	hz := math.Atan2(accI, accR) * fs / (2 * math.Pi)
+	if energy == 0 {
+		return 0, false
+	}
+	// Autocorrelation angle at each lag: R_k = Σ x[n]·conj(x[n−k]).
+	var ang [cqpskSeedMaxLag + 1]float64
+	var coh float64
+	for k := 1; k <= cqpskSeedMaxLag; k++ {
+		var accR, accI float64
+		for n := k; n < len(x); n++ {
+			ar, ai := float64(real(x[n])), float64(imag(x[n]))
+			br, bi := float64(real(x[n-k])), float64(imag(x[n-k]))
+			accR += ar*br + ai*bi
+			accI += ai*br - ar*bi
+		}
+		if k == 1 {
+			coh = math.Hypot(accR, accI) / energy
+		}
+		ang[k] = math.Atan2(accI, accR)
+	}
+	if coh < cqpskSeedMinCoherence {
+		return 0, false // too weak / noisy to seed from — let the fine loop acquire
+	}
+	// Unwrap each lag around k·(lag-1 angle), then least-squares fit a slope
+	// θ (rad/sample) through (k, angle_k) constrained through the origin.
+	a1 := ang[1]
+	var num, den float64
+	for k := 1; k <= cqpskSeedMaxLag; k++ {
+		ak := float64(k)*a1 + math.Remainder(ang[k]-float64(k)*a1, 2*math.Pi)
+		num += float64(k) * ak
+		den += float64(k * k)
+	}
+	slope := num / den
+	if c.seedModulusCV(x, slope) > cqpskSeedMaxModulusCV {
+		return 0, false // ISI after de-rotation ⇒ multipath bias, not a carrier offset
+	}
+	hz = slope * fs / (2 * math.Pi)
 	if hz > cqpskSeedClampHz {
 		hz = cqpskSeedClampHz
 	} else if hz < -cqpskSeedClampHz {
 		hz = -cqpskSeedClampHz
 	}
-	return hz
+	return hz, true
+}
+
+// seedModulusCV de-rotates x by the candidate per-sample carrier rotation
+// slopeRadPerSample, runs the RRC matched filter, decimates at the best of
+// sps timing phases (max mean modulus), and returns the coefficient of
+// variation (std/mean) of the symbol modulus. It is the multipath gate for
+// robustSeedHz: a correct carrier estimate centres the channel and leaves the
+// π/4-DQPSK symbols at constant modulus (low CV), whereas a multipath-biased
+// estimate leaves the ISI that blurs the modulus (high CV).
+func (c *cqpskDemod) seedModulusCV(x []complex64, slopeRadPerSample float64) float64 {
+	der := make([]complex64, len(x))
+	for n := range x {
+		ph := -slopeRadPerSample * float64(n)
+		cs, sn := math.Cos(ph), math.Sin(ph)
+		xr, xi := float64(real(x[n])), float64(imag(x[n]))
+		der[n] = complex(float32(xr*cs-xi*sn), float32(xr*sn+xi*cs))
+	}
+	mf := demod.NewPiOver4DQPSK(c.seedSps, c.seedSpan, c.seedAlpha, lsmRotation)
+	y := mf.MatchedFilter(nil, der)
+	if len(y) < c.seedSps {
+		return 0
+	}
+	bestPhase, bestMean := 0, -1.0
+	for ph := 0; ph < c.seedSps; ph++ {
+		var sum float64
+		var n int
+		for i := ph; i < len(y); i += c.seedSps {
+			sum += math.Hypot(float64(real(y[i])), float64(imag(y[i])))
+			n++
+		}
+		if n > 0 && sum/float64(n) > bestMean {
+			bestMean, bestPhase = sum/float64(n), ph
+		}
+	}
+	var sum, sum2 float64
+	var n int
+	for i := bestPhase; i < len(y); i += c.seedSps {
+		m := math.Hypot(float64(real(y[i])), float64(imag(y[i])))
+		sum += m
+		sum2 += m * m
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	mean := sum / float64(n)
+	if mean == 0 {
+		return 0
+	}
+	varr := sum2/float64(n) - mean*mean
+	if varr < 0 {
+		varr = 0
+	}
+	return math.Sqrt(varr) / mean
 }
 
 // cqpskDemod is the LSM / linear-CQPSK symbol recovery chain for P25
@@ -154,18 +253,22 @@ type cqpskDemod struct {
 	seeded bool    // coarse carrier seed applied
 	seedHz float64 // coarse carrier offset the NCO removes (Hz)
 
-	// Coarse-seed accumulators. Production feeds the receiver only
-	// ~160–200 complex samples per process() call (the ccdecoder DDC
-	// output), far below cqpskSeedMinSamples, so the seed cannot key off a
-	// single chunk's length — it must accumulate the lag-1 autocorrelation
-	// Σ x[n]·conj(x[n−1]) across calls until it has seen enough raw samples,
-	// then fire once. Without this the per-call gate never trips on a
-	// streamed input and the NCO stays an identity mix (issue #492).
-	seedAccR     float64   // running Re Σ x[n]·conj(x[n−1])
-	seedAccI     float64   // running Im Σ x[n]·conj(x[n−1])
-	seedCount    int       // lag-1 products folded into the accumulators
-	seedHavePrev bool      // seedPrev holds a valid cross-call boundary sample
-	seedPrev     complex64 // last raw IQ sample of the previous chunk
+	// RRC parameters, retained so the seed's multipath gate can build a
+	// throwaway matched filter to measure post-de-rotation ISI (issue #492).
+	seedSps   int
+	seedSpan  int
+	seedAlpha float64
+
+	// seedBuf collects raw IQ until cqpskSeedMinSamples are available for the
+	// one-shot coarse carrier estimate. Production feeds the receiver only
+	// ~160–200 complex samples per process() call (the ccdecoder DDC output),
+	// far below cqpskSeedMinSamples, so the estimate cannot key off a single
+	// chunk's length — it must accumulate across calls, then fire once. Without
+	// this the per-call gate never trips on a streamed input and the NCO stays
+	// an identity mix (issue #492). The buffer is an estimation tap only: the
+	// live stream is still de-rotated and demodulated chunk by chunk below, and
+	// the buffer is released once the seed fires.
+	seedBuf []complex64
 
 	// cmaErr is the CMA's most recent |y|²−R² convergence proxy,
 	// retained for the replay receiver-state diagnostic (issue #492).
@@ -190,13 +293,16 @@ func newCQPSKDemod(sampleRateHz float64, sps int, span int, alpha float64, gardn
 		gardnerGain = defaultGardnerGain
 	}
 	return &cqpskDemod{
-		dq:      demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
-		gardner: sync.NewGardner(float64(sps), gardnerGain),
-		agc:     dsp.NewAGC(cqpskAGCReference, cqpskAGCRate, cqpskAGCMaxGain),
-		cma:     equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
-		nco:     dsp.NewNCO(0, sampleRateHz),
-		costas:  sync.NewQPSKCostas(SymbolRate, cqpskCostasLoopBWHz, cqpskCostasDamping),
-		fs:      sampleRateHz,
+		dq:        demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
+		gardner:   sync.NewGardner(float64(sps), gardnerGain),
+		agc:       dsp.NewAGC(cqpskAGCReference, cqpskAGCRate, cqpskAGCMaxGain),
+		cma:       equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
+		nco:       dsp.NewNCO(0, sampleRateHz),
+		costas:    sync.NewQPSKCostas(SymbolRate, cqpskCostasLoopBWHz, cqpskCostasDamping),
+		fs:        sampleRateHz,
+		seedSps:   sps,
+		seedSpan:  span,
+		seedAlpha: alpha,
 	}
 }
 
@@ -213,29 +319,25 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	// would bias the estimate toward zero. De-rotating before the matched
 	// filter also presents the filter a centred channel.
 	//
-	// Production delivers only ~160–200 samples per call, so the seed must
-	// accumulate the lag-1 autocorrelation across calls (carrying the
-	// boundary sample) until it has enough, rather than keying off one
-	// chunk's length — otherwise the gate never trips on a streamed input
-	// and the NCO stays an identity mix (issue #492). Until seeded the NCO
-	// is identity, so a centred/zero-offset stream is unaffected; the fine
-	// Costas loop then cleans up the residual and tracks drift.
+	// Production delivers only ~160–200 samples per call, so the estimate must
+	// accumulate across calls until it has enough, rather than keying off one
+	// chunk's length — otherwise the gate never trips on a streamed input and
+	// the NCO stays an identity mix (issue #492). Until seeded the NCO is
+	// identity, so a centred/zero-offset stream is unaffected; the fine Costas
+	// loop then cleans up the residual and tracks drift. robustSeedHz only
+	// trusts the estimate when its multi-lag phase fit is clean — a multipath /
+	// simulcast channel biases the bare lag-1 angle into a spurious offset that
+	// would mis-tune the NCO and rail the loop (issue #492), so on that signal
+	// the NCO is left identity and the in-range offset is recovered by the loop.
 	if !c.seeded {
-		for n := 0; n < len(iq); n++ {
-			if c.seedHavePrev {
-				ar, ai := float64(real(iq[n])), float64(imag(iq[n]))
-				br, bi := float64(real(c.seedPrev)), float64(imag(c.seedPrev))
-				c.seedAccR += ar*br + ai*bi // Re x[n]·conj(x[n−1])
-				c.seedAccI += ai*br - ar*bi // Im x[n]·conj(x[n−1])
-				c.seedCount++
+		c.seedBuf = append(c.seedBuf, iq...)
+		if len(c.seedBuf) >= cqpskSeedMinSamples {
+			if hz, ok := c.robustSeedHz(c.seedBuf); ok {
+				c.seedHz = hz
+				c.nco.SetOffset(c.seedHz, c.fs)
 			}
-			c.seedPrev = iq[n]
-			c.seedHavePrev = true
-		}
-		if c.seedCount >= cqpskSeedMinSamples {
-			c.seedHz = seedHzFromAcc(c.seedAccR, c.seedAccI, c.fs)
-			c.nco.SetOffset(c.seedHz, c.fs)
 			c.seeded = true
+			c.seedBuf = nil
 			// The pre-seed samples ran through with an identity NCO, so the
 			// Costas frequency integrator wound toward the uncorrected offset
 			// (railing at its ±baud/8 clamp) and the CMA adapted to a spinning
@@ -297,9 +399,5 @@ func (c *cqpskDemod) reset() {
 	c.costas.Reset()
 	c.seeded = false
 	c.seedHz = 0
-	c.seedAccR = 0
-	c.seedAccI = 0
-	c.seedCount = 0
-	c.seedHavePrev = false
-	c.seedPrev = 0
+	c.seedBuf = nil
 }

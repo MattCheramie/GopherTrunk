@@ -32,9 +32,19 @@ type QPSKCostas struct {
 	freq    float64 // integrator state: estimated offset, rad/symbol
 	phase   float64 // running de-rotation phase, rad
 	maxFreq float64 // clamp on |freq| (rad/symbol) — keeps a noisy start bounded
+	rail    int     // consecutive symbols pinned at ±maxFreq pushing further in
 	prev    complex64
 	have    bool
 }
+
+// costasRailReacquire is how many consecutive symbols the integrator may sit
+// pinned at its ±maxFreq clamp — with the error still driving it further into
+// the rail — before the loop gives up that estimate and re-acquires from zero.
+// A coarse carrier mis-seed (e.g. a multipath-biased estimate, issue #492) can
+// otherwise drive the integrator into the clamp and hold it there, stuck, so
+// the FSW never correlates. Genuine acquisition settles in tens of symbols,
+// well under this, so a converging loop is never disturbed.
+const costasRailReacquire = 256
 
 // NewQPSKCostas builds a loop tuned to loopBWHz (the loop's noise
 // bandwidth) at the given symbol rate, with the supplied damping
@@ -94,6 +104,19 @@ func (c *QPSKCostas) Update(y complex64) complex64 {
 		} else if c.freq < -c.maxFreq {
 			c.freq = -c.maxFreq
 		}
+		// Anti-windup / re-acquire: if the integrator stays pinned at the clamp
+		// with the error still pushing it further in, the estimate is wrong, not
+		// merely large — collapse it back toward zero so the loop re-acquires
+		// instead of staying railed for the whole capture (issue #492).
+		if (c.freq == c.maxFreq && e > 0) || (c.freq == -c.maxFreq && e < 0) {
+			c.rail++
+			if c.rail >= costasRailReacquire {
+				c.freq = 0
+				c.rail = 0
+			}
+		} else {
+			c.rail = 0
+		}
 		c.phase += c.freq + c.kp*e
 	} else {
 		c.phase += c.freq
@@ -113,6 +136,7 @@ func (c *QPSKCostas) OffsetHz() float64 { return c.freq * c.baud / (2 * math.Pi)
 func (c *QPSKCostas) Reset() {
 	c.freq = 0
 	c.phase = 0
+	c.rail = 0
 	c.prev = 0
 	c.have = false
 }
