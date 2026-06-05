@@ -535,10 +535,18 @@ func (r *R82xx) SetGain(tenthDB int) error {
 
 // SetGainMode flips between AGC (auto) and manual.
 //
-// AGC = bit 4 of register 0x05 and 0x07 set; manual = both clear.
-// LNA + Mixer in librtlsdr enable AGC by setting LNA_AGC_EN = 0
-// and MIXER_AGC_EN = 0 — register-bit semantics are inverted from
-// what you'd naively expect.
+// The LNA and mixer AGC-enable bits have OPPOSITE polarity in
+// librtlsdr's r82xx_set_gain, which is easy to get backwards:
+//
+//	             reg 0x05 bit4 (LNA)   reg 0x07 bit4 (mixer)
+//	manual:      1 (auto off)          0 (auto off)
+//	AGC:         0 (auto on)           1 (auto on)
+//
+// In AGC mode librtlsdr also pins the VGA at a fixed value (reg 0x0C =
+// 0x0B). SetGain handles the VGA in manual mode, but it is a no-op in
+// AGC mode, so the AGC branch must write it here — otherwise the VGA is
+// left at the init default and the front end runs ~17 dB low, deafening
+// marginal-signal dongles like the RTL-SDR Blog V4 (issue #264).
 func (r *R82xx) SetGainMode(manual bool) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
@@ -548,7 +556,7 @@ func (r *R82xx) SetGainMode(manual bool) error {
 	}
 	defer r.demod.SetI2CRepeater(false)
 	r.manual = manual
-	// LNA gain mode: reg 0x05 bit 4 clear = AGC; set = manual.
+	// LNA gain mode: reg 0x05 bit 4 set = manual; clear = AGC.
 	lnaBit := byte(0x00)
 	if manual {
 		lnaBit = 0x10
@@ -556,13 +564,20 @@ func (r *R82xx) SetGainMode(manual bool) error {
 	if err := r.writeRegMask(0x05, lnaBit, 0x10); err != nil {
 		return err
 	}
-	// Mixer gain mode: reg 0x07 bit 4. Same polarity as LNA.
-	mixBit := byte(0x00)
+	// Mixer gain mode: reg 0x07 bit 4 — inverted from the LNA bit.
+	// set = AGC; clear = manual.
+	mixBit := byte(0x10)
 	if manual {
-		mixBit = 0x10
+		mixBit = 0x00
 	}
 	if err := r.writeRegMask(0x07, mixBit, 0x10); err != nil {
 		return err
+	}
+	// AGC mode: pin the VGA at librtlsdr's fixed default (+16.3 dB).
+	if !manual {
+		if err := r.writeRegMask(0x0C, 0x0B, 0x9F); err != nil {
+			return err
+		}
 	}
 	return nil
 }
