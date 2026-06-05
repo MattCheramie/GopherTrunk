@@ -259,6 +259,12 @@ type Server struct {
 	// over its iqtap broker map.
 	spectrum SpectrumProvider
 
+	// capture is the optional provider backing the runtime
+	// POST /api/v1/siglab/capture route (record raw IQ off a live
+	// tuner). nil keeps the route returning 503. Implemented by the
+	// daemon over the same iqtap broker map as spectrum.
+	capture CaptureProvider
+
 	// bookmarks is the optional provider backing /api/v1/bookmarks/...
 	// routes. nil disables the routes (503). Implemented by the
 	// daemon over storage.BookmarkStore.
@@ -510,6 +516,13 @@ type ServerOptions struct {
 	// routes returning 503 so a build without SDRs doesn't pretend
 	// to have a waterfall.
 	Spectrum SpectrumProvider
+	// Capture, when non-nil, enables the runtime
+	// POST /api/v1/siglab/capture route and its GET
+	// /api/v1/siglab/capture/devices picker — record a fixed-length
+	// raw-IQ capture off a live tuner, stage it into siglab, and hand
+	// back a .cfile download URL. The daemon implements this over its
+	// iqtap.Broker map; nil keeps the routes returning 503.
+	Capture CaptureProvider
 	// Bookmarks, when non-nil, enables the
 	// GET/POST/PATCH/DELETE /api/v1/bookmarks routes for operator-
 	// managed conventional channel bookmarks. nil keeps the routes
@@ -679,6 +692,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		cors:           opts.CORS,
 		audioPub:       opts.AudioPublisher,
 		spectrum:       opts.Spectrum,
+		capture:        opts.Capture,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
 		siglab:         siglabSvc,
@@ -911,6 +925,13 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
 		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
 		mux.HandleFunc("POST /api/v1/siglab/synthesize", s.gate(s.handleSiglabSynthesize))
+		// Live raw-IQ capture off a tuner: list devices (read), record a
+		// fixed-length capture (gated mutation — it spends an SDR + CPU),
+		// and download a staged capture's raw bytes. 503 when no
+		// CaptureProvider is wired (offline `siglab serve`, or no SDRs).
+		mux.HandleFunc("GET /api/v1/siglab/capture/devices", s.handleSiglabCaptureDevices)
+		mux.HandleFunc("POST /api/v1/siglab/capture", s.gate(s.handleSiglabCapture))
+		mux.HandleFunc("GET /api/v1/siglab/captures/{id}/download", s.handleSiglabCaptureDownload)
 	}
 
 	// Pager log — recent POCSAG (and eventually FLEX) messages.

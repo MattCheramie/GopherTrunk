@@ -7,6 +7,28 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **`gophertrunk capture` — record raw IQ off a live SDR to a `.cfile`.**
+  A first-class subcommand that opens a dongle directly (no daemon),
+  records the requested number of seconds of raw IQ to a GNU Radio cfile
+  (interleaved little-endian float32) or rtl_sdr-native `u8`, and writes a
+  siglab `.metadata.json` sidecar so the capture is a drop-in fixture for
+  `replay` / `analyze` / `test` and the `samples/` acceptance harness:
+  `gophertrunk capture -freq 460000000 -sample-rate 2400000 -seconds 30
+  -protocol p25 -out cc.cfile` (`gophertrunk capture -list` enumerates
+  SDRs). Complements the daemon's existing `--iq-capture` diagnostic,
+  which taps a control SDR already in the running pool.
+- **Capture-and-export from the SigLab web console.** A new "Capture from
+  tuner" control on the Captures panel records a fixed-length raw-IQ
+  capture off a live tuner through the daemon, stages it for immediate
+  analysis, and offers the raw `.cfile` as a browser download. Backed by
+  new HTTP routes `GET /api/v1/siglab/capture/devices`,
+  `POST /api/v1/siglab/capture`, and
+  `GET /api/v1/siglab/captures/{id}/download`. The routes return 503 when
+  the console is offline (`siglab serve`) or the daemon has no SDR, so a
+  build without a tuner doesn't pretend it can record.
+
 ## [v0.3.2] — 2026-06-04
 
 DMR grows up — multi-slot, Tier III band-plan voice, and license-free

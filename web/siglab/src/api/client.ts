@@ -5,6 +5,9 @@
 
 import type {
   CaptureDTO,
+  CaptureDevice,
+  CaptureRequest,
+  CaptureResponse,
   IQTaps,
   IdentifyResult,
   JobDTO,
@@ -133,6 +136,16 @@ export const api = {
       body,
     ),
 
+  // captureDevices lists the SDRs available to record from. 503 (HTTPError)
+  // when the console is offline (`siglab serve`) or the daemon has no SDR.
+  captureDevices: (c: ClientConfig) =>
+    req<CaptureDevice[]>(c, "GET", "/api/v1/siglab/capture/devices"),
+
+  // capture records a fixed-length raw-IQ capture off a live tuner, stages it,
+  // and returns the staged capture + a download URL for the raw .cfile.
+  capture: (c: ClientConfig, body: CaptureRequest) =>
+    req<CaptureResponse>(c, "POST", "/api/v1/siglab/capture", body),
+
   // URLs for browser-native consumers (EventSource, <a download>).
   jobEventsURL: (c: ClientConfig, id: string) =>
     joinURL(c.baseURL, `/api/v1/siglab/jobs/${id}/events`),
@@ -140,4 +153,6 @@ export const api = {
     joinURL(c.baseURL, `/api/v1/siglab/jobs/${id}/export?format=${format}`),
   synthDownloadURL: (c: ClientConfig) =>
     joinURL(c.baseURL, "/api/v1/siglab/synthesize?download=1"),
+  captureDownloadURL: (c: ClientConfig, id: string) =>
+    joinURL(c.baseURL, `/api/v1/siglab/captures/${id}/download`),
 };
