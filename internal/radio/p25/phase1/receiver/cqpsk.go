@@ -31,20 +31,29 @@ const lsmRotation = math.Pi / 4
 // demodulation — no rotation search needed for the CQPSK path itself.
 var lsmDibitRemap = [4]uint8{0, 1, 3, 2}
 
-// cqpskEqualizerTaps / cqpskEqualizerStep configure the CMA blind
-// equalizer on the CQPSK symbol stream. The post-Gardner LSM symbols
-// are unit-modulus QPSK points, so the Constant Modulus Algorithm
-// applies: simulcast multipath blurs that constant magnitude and CMA
-// drives it back, opening the constellation so the FSW correlates.
+// cqpskFSE* configure the T/2 fractionally-spaced blind equalizer on the CQPSK
+// symbol stream. The post-Gardner symbols are unit-modulus π/4-DQPSK points, so
+// the Constant Modulus Algorithm applies. A *fractionally*-spaced equalizer (two
+// taps per symbol, fed the on-time and half-symbol interpolants from Gardner)
+// synthesizes the receive matched filter implicitly, so it opens both simulcast
+// multipath ISI AND the C4FM-transmit-vs-RRC-receive pulse mismatch that a
+// symbol-spaced equalizer cannot — the latter is what left a real C4FM signal's
+// constellation closed through the linear path (issue #492).
 //
-// cqpskEqualizerStep is tuned for the AGC-normalised symbol amplitude.
-// CMA convergence speed scales with the input power, so before the AGC
-// the equalizer leaned on the power a multipath echo itself adds; with
-// the level now fixed the step is set to converge at that normalised
-// amplitude instead.
+// cqpskFSESymbolSpan is the equalizer length in symbols (2*span T/2 taps; even,
+// so the centre tap aligns with an on-time sample). cqpskFSEStep is the CMA
+// step: brisk because real control-channel captures are short, so the blind
+// equalizer must open the constellation within a few hundred symbols of lead-in
+// before the FSW arrives; the leakage keeps that brisk step from over-adapting
+// at steady state. cqpskFSELeak pulls the equalizer's larger (fractionally-
+// spaced) null space toward identity so the taps do not wander on clean,
+// ISI-free input (where noise alone, with no ISI gradient, would drift them).
+// Tuned against real P25 C4FM captures (issue #492) while keeping the synthetic
+// offset-sweep, multipath and round-trip guards green.
 const (
-	cqpskEqualizerTaps = 11
-	cqpskEqualizerStep = 0.008
+	cqpskFSESymbolSpan = 6
+	cqpskFSEStep       = 0.025
+	cqpskFSELeak       = 5e-4
 )
 
 // cqpskAGC* configure the AGC that normalises the matched-filter output
@@ -245,7 +254,7 @@ type cqpskDemod struct {
 	dq      *demod.PiOver4DQPSK
 	gardner *sync.Gardner
 	agc     *dsp.AGC
-	cma     *equalizer.CMA
+	fse     *equalizer.FSE   // T/2 fractionally-spaced blind equalizer
 	nco     *dsp.NCO         // removes the coarse carrier seed from the raw IQ
 	costas  *sync.QPSKCostas // fine carrier tracking on the symbol stream
 
@@ -270,13 +279,14 @@ type cqpskDemod struct {
 	// the buffer is released once the seed fires.
 	seedBuf []complex64
 
-	// cmaErr is the CMA's most recent |y|²−R² convergence proxy,
+	// cmaErr is the equalizer's most recent |y|²−R² convergence proxy,
 	// retained for the replay receiver-state diagnostic (issue #492).
 	cmaErr float32
 
 	// Scratch buffers reused across calls.
 	rotated []complex64 // NCO-de-rotated IQ, fed to the matched filter
 	matched []complex64
+	twoSps  []complex64 // Gardner T/2 output: [mid, on-time] pairs, len = 2*nSymbols
 	symbols []complex64
 	dibits  []uint8
 }
@@ -296,7 +306,7 @@ func newCQPSKDemod(sampleRateHz float64, sps int, span int, alpha float64, gardn
 		dq:        demod.NewPiOver4DQPSK(sps, span, alpha, lsmRotation),
 		gardner:   sync.NewGardner(float64(sps), gardnerGain),
 		agc:       dsp.NewAGC(cqpskAGCReference, cqpskAGCRate, cqpskAGCMaxGain),
-		cma:       equalizer.NewCMA(cqpskEqualizerTaps, cqpskEqualizerStep, 1.0),
+		fse:       equalizer.NewFSE(cqpskFSESymbolSpan, cqpskFSEStep, 1.0, cqpskFSELeak),
 		nco:       dsp.NewNCO(0, sampleRateHz),
 		costas:    sync.NewQPSKCostas(SymbolRate, cqpskCostasLoopBWHz, cqpskCostasDamping),
 		fs:        sampleRateHz,
@@ -340,13 +350,13 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 			c.seedBuf = nil
 			// The pre-seed samples ran through with an identity NCO, so the
 			// Costas frequency integrator wound toward the uncorrected offset
-			// (railing at its ±baud/8 clamp) and the CMA adapted to a spinning
-			// constellation. Reset both so they re-acquire on the now-centred
-			// signal instead of over-de-rotating. Gardner is left running — it
-			// re-locks on clean input within a few symbols, and leaving it
-			// preserves symbol timing/alignment.
+			// (railing at its ±baud/8 clamp) and the equalizer adapted to a
+			// spinning constellation. Reset both so they re-acquire on the
+			// now-centred signal instead of over-de-rotating. Gardner is left
+			// running — it re-locks on clean input within a few symbols, and
+			// leaving it preserves symbol timing/alignment.
 			c.costas.Reset()
-			c.cma.Reset()
+			c.fse.Reset()
 		}
 	}
 	c.rotated = c.nco.Mix(c.rotated, iq)
@@ -359,21 +369,25 @@ func (c *cqpskDemod) process(iq []complex64) []uint8 {
 	// gain-sensitive and only locks in a narrow RTL-SDR gain window
 	// (issue #275 regression).
 	c.matched = c.agc.Process(c.matched, c.matched)
-	c.symbols = c.symbols[:0]
-	c.symbols = c.gardner.Process(c.symbols, c.matched)
-	if len(c.symbols) == 0 {
+	// Gardner emits the T/2 pair [mid, on-time] per symbol so the
+	// fractionally-spaced equalizer sees both sub-symbol phases.
+	c.twoSps = c.twoSps[:0]
+	c.twoSps = c.gardner.Process2x(c.twoSps, c.matched)
+	nSym := len(c.twoSps) / 2
+	if nSym == 0 {
 		c.dibits = c.dibits[:0]
 		return c.dibits
 	}
-	// Blind equalizer + fine carrier recovery. CMA pulls the symbols back
-	// to constant modulus, undoing the simulcast-multipath ISI that closes
-	// the constellation; the Costas loop then de-rotates each symbol to
-	// remove the residual per-symbol carrier rotation the coarse seed left
-	// behind, so the differential phases land on their nominal grid.
-	for i, s := range c.symbols {
-		y, e := c.cma.Process(s)
+	// Blind T/2 equalizer + fine carrier recovery. The FSE synthesizes the
+	// matched filter and undoes ISI (simulcast multipath and the C4FM-vs-RRC
+	// pulse mismatch) so the constellation opens; the Costas loop then
+	// de-rotates each symbol to remove the residual per-symbol carrier rotation
+	// the coarse seed left behind, so the differential phases land on grid.
+	c.symbols = c.symbols[:0]
+	for i := 0; i < nSym; i++ {
+		y, e := c.fse.Process(c.twoSps[2*i], c.twoSps[2*i+1])
 		c.cmaErr = e
-		c.symbols[i] = c.costas.Update(y)
+		c.symbols = append(c.symbols, c.costas.Update(y))
 	}
 	c.dibits = c.dq.Decode(c.dibits, c.symbols)
 	for i, d := range c.dibits {
@@ -394,7 +408,7 @@ func (c *cqpskDemod) reset() {
 	c.dq.Reset()
 	c.gardner.Reset()
 	c.agc.Reset()
-	c.cma.Reset()
+	c.fse.Reset()
 	c.nco.Reset()
 	c.costas.Reset()
 	c.seeded = false
