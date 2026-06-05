@@ -754,6 +754,43 @@ func TestR82xx_PLLNintWithinEncoding_R828D(t *testing.T) {
 	}
 }
 
+// TestR82xx_VCOPowerRefPerChip pins the issue #264 V4-deafness fix:
+// rtlsdr-blog's r82xx_set_pll lowers vco_power_ref from osmocom's stock
+// 2 to 1 for the R828D (rafael_chip == CHIP_R828D, incl. the Blog V4).
+// With the stock 2 the V4's mixer divider is nudged the wrong way and
+// the LO mistunes, so it receives only noise while an R820T2 decodes.
+// The R820T/R820T2 path must stay on 2 so working dongles are unchanged.
+func TestR82xx_VCOPowerRefPerChip(t *testing.T) {
+	cases := []struct {
+		chip Type
+		want byte
+	}{
+		{TypeR820T, r82xxVCOPowerRef},
+		{TypeR820T2, r82xxVCOPowerRef},
+		{TypeR828D, 1},
+	}
+	for _, c := range cases {
+		r := NewR82xx(nil, r82xxI2CAddr, c.chip)
+		if got := r.vcoPowerRef(); got != c.want {
+			t.Errorf("%v vcoPowerRef() = %d, want %d", c.chip, got, c.want)
+		}
+	}
+
+	// The threshold actually changes setPLL's divider decision: at the
+	// chip's VCO fine-tune value of 2, R828D (ref 1) decrements divNum
+	// (2 > 1) — the correction the V4 needs — while R820T2 (ref 2) leaves
+	// it unchanged (2 is neither > nor < 2), preserving the working path.
+	const vcoFineTune byte = 2
+	r828d := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+	if !(vcoFineTune > r828d.vcoPowerRef()) {
+		t.Errorf("R828D: vcoFineTune(%d) > vcoPowerRef(%d) must hold so divNum decrements", vcoFineTune, r828d.vcoPowerRef())
+	}
+	r820t2 := NewR82xx(nil, r82xxI2CAddr, TypeR820T2)
+	if vcoFineTune != r820t2.vcoPowerRef() {
+		t.Errorf("R820T2: vcoFineTune(%d) must equal vcoPowerRef(%d) so divNum is unchanged", vcoFineTune, r820t2.vcoPowerRef())
+	}
+}
+
 // TestR82xx_PPMCorrectionShiftsPLLReference pins the issue #264 PPM fix:
 // SetPPM now reaches the tuner LO (not just the resampler) by biasing
 // setPLL's reference crystal. ppm == 0 must reproduce the raw crystal

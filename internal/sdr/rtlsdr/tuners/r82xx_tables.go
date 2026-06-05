@@ -52,7 +52,9 @@ const (
 	r82xxVCOMax uint64 = 3_900_000_000
 
 	// vcoPowerRef is the comparison threshold for fine-tuning
-	// divNum based on the chip's VCO fine-tune status bits.
+	// divNum based on the chip's VCO fine-tune status bits. This is
+	// osmocom's stock value for R820T/R820T2; setPLL overrides it to 1
+	// for the R828D (incl. the Blog V4), matching the rtlsdr-blog fork.
 	r82xxVCOPowerRef = 2
 
 	// r82xxMaxNint is the largest nint value that fits the chip's PLL
