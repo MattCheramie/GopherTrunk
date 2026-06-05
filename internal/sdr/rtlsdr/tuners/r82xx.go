@@ -585,6 +585,19 @@ func (r *R82xx) SetGainMode(manual bool) error {
 // ----------------------------------------------------------------------
 // PLL synthesis
 
+// vcoPowerRef is the VCO fine-tune comparison threshold setPLL uses to
+// nudge the mixer divider. osmocom librtlsdr uses r82xxVCOPowerRef (2)
+// for every chip; the rtlsdr-blog fork's r82xx_set_pll lowers it to 1
+// for the R828D (rafael_chip == CHIP_R828D, which includes the Blog V4).
+// Without it the V4's LO mistunes and the front end receives only noise
+// while an R820T2 on the same signal decodes cleanly. See issue #264.
+func (r *R82xx) vcoPowerRef() byte {
+	if r.chipType == TypeR828D {
+		return 1
+	}
+	return r82xxVCOPowerRef
+}
+
 // setPLL programs the R820T's frequency synthesizer to land on the
 // requested LO frequency. Faithful port of osmocom r82xx_set_pll —
 // integer / sigma-delta fractional path, mixer divider sweep, VCO
@@ -629,9 +642,10 @@ func (r *R82xx) setPLL(freqHz uint32) error {
 		return fmt.Errorf("r82xx setPLL: read status: %w", err)
 	}
 	vcoFineTune := (rd[4] & 0x30) >> 4
-	if vcoFineTune > r82xxVCOPowerRef && divNum > 0 {
+	vcoPowerRef := r.vcoPowerRef()
+	if vcoFineTune > vcoPowerRef && divNum > 0 {
 		divNum--
-	} else if vcoFineTune < r82xxVCOPowerRef {
+	} else if vcoFineTune < vcoPowerRef {
 		divNum++
 	}
 	if err := r.writeRegMask(0x10, divNum<<5, 0xE0); err != nil {
