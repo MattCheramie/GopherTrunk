@@ -7,6 +7,118 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.3] — 2026-06-05
+
+The P25 linear/CQPSK control-channel path finally decodes real C4FM
+signals, and DMR Tier II Voice LC Headers decode off-air. On the P25
+side, the issue #492 fix chain completes: the coarse carrier seed is now
+gated on multipath so a simulcast spectral null no longer reads as a
+spurious offset (#529), and the symbol-spaced CMA is replaced with a T/2
+fractionally-spaced blind equalizer that opens both the simulcast ISI and
+the C4FM-vs-RRC pulse-shape mismatch — locking and decoding all 8 real
+P25 C4FM captures where the linear path previously decoded none (#532).
+DMR Tier II's BPTC(196,96) / RS(12,9) / embedded-LC FEC layers are
+reworked to the canonical ETSI layout (cross-checked against the MMDVM /
+dmr_utils references) so real Voice LC Headers stop streaming
+`decode.error` (#527). The RTL-SDR Blog V4 (R828D) LO-mistune failure is
+now observable and recoverable — a `sdr tuner detected` diagnostic plus
+per-device `blog_v4` / `blog_v4_lite` overrides force the 28.8 MHz crystal
+path when USB-string auto-detection misses the unit (#528). And `siglab`
+grows a browser front-end: a standalone Signal Lab SPA backed by an
+offline `/api/v1/siglab/*` HTTP API and a daemon-free `siglab serve`
+command, with an in-memory decode path so an uploaded or synthesized
+capture is analyzed without a disk round-trip (#530).
+
+### Added
+
+- **Signal Lab web UI + offline analysis API (`siglab serve`).** The
+  offline signal toolkit gains a browser front-end: `web/siglab`, a
+  standalone React/Vite SPA that uploads or synthesizes a capture, runs
+  the engine with a live SSE event stream, identifies the protocol, and
+  renders a results dashboard — symbol histogram and receiver-state
+  series, constellation and eye diagram, power-spectral-density and
+  spectrogram/waterfall, and a sync-landscape heatmap — plus a compare
+  workspace that overlays multiple captures' spectra and diffs their
+  metrics against each other or a synthesized idealized reference. It is
+  served by new `/api/v1/siglab/*` daemon routes (protocol listing,
+  streamed capture upload, async run with SSE, result, decimated-IQ
+  retrieval, identify, synthesize, export) and a standalone
+  `gophertrunk siglab serve` command that runs the API offline with the
+  embedded SPA and no SDR/daemon. Underneath, `RunReader` /
+  `RunReaderStream` analyze a capture from any `io.Reader` without a disk
+  round-trip, an opt-in bounded IQ tap (`Config.CaptureIQ`) buffers a
+  stride-decimated copy of the channelized IQ plus pre-slicer soft
+  samples for the visualizations, and `SynthesizeAndAnalyze` synthesizes
+  and decodes an impaired signal in one in-memory call for the compare
+  feature (#530).
+- **RTL-SDR Blog V4 detection diagnostics + manual override.** A
+  `sdr tuner detected` log line at device open (and on watchdog
+  reacquire) reports the USB manufacturer/product strings, tuner chip,
+  Blog V4 state, and effective reference crystal — `ref_xtal_hz` of
+  16 MHz on an R828D means V4 auto-detection missed the unit (LO
+  mistuned, carrier at the noise floor), 28.8 MHz means the V4 path is
+  armed. New per-device `blog_v4` / `blog_v4_lite` config keys force V4
+  mode regardless of EEPROM strings, applied before PPM and any tune and
+  idempotent with auto-detection, so a misidentified V4 can be recovered
+  from config without code changes (#528, issue #264). See
+  `config.example.yaml`.
+
+### Fixed
+
+- **DMR Tier II Voice LC Headers now decode off-air** (#527). Real Tier II
+  signals produced a constant stream of `decode.error` at the
+  `voiceheader-bptc` and `voiceheader-rs` stages while synthetic fixtures
+  passed, because the BPTC(196,96) and RS(12,9) layers were
+  self-consistent placeholders whose on-air bit layout never matched ETSI
+  TS 102 361-1 Annex B — and the fixtures encoded with the same
+  non-standard codecs, so encode↔decode round-tripped and hid the
+  divergence. The FEC layers are reworked to the canonical DMR layout
+  (cross-checked against the MMDVM / dmr_utils references): BPTC(196,96)
+  deinterleave and info-bit ordering, the Hamming(13,9) column-code parity
+  equations, RS(12,9) over GF(2⁸) with primitive polynomial 0x11D and
+  first root α¹, and the embedded-LC BPTC(128,72) interleave + (16,11,4)
+  row code + mod-31 5-bit checksum. The public `Encode`/`Decode`
+  signatures are unchanged so every synthetic fixture still round-trips,
+  and a new `TestBPTCCanonicalLayoutGolden` pins the on-air layout against
+  a spec-literal reference encoder so a future bit-ordering regression
+  fails loudly instead of silently round-tripping.
+- **P25 CQPSK carrier seed gated on multipath** (#529, issue #492). After
+  the centre-tap pin (#524) the linear control-channel demod still railed
+  on the simulcast captures: a deep spectral null shifts the lag-1 (Kay)
+  autocorrelation centroid, which the coarse seed reads as a spurious
+  ~650–750 Hz offset, mis-tunes the NCO, and pins the Costas integrator at
+  its clamp. The seed is now gated — de-rotate by the candidate estimate,
+  matched-filter, and measure the coefficient of variation of the symbol
+  modulus: a pure carrier offset only rotates the constant-modulus
+  π/4-DQPSK symbols (low CV) while multipath ISI blurs the modulus (high
+  CV), so a high-CV estimate is treated as multipath bias and the NCO is
+  left identity for the CMA→Costas loop to acquire the true offset itself.
+  Adds a short multi-lag phase-ramp fit to sharpen a trusted estimate and
+  Costas anti-windup so a pinned loop re-acquires. The previously
+  skip-gated `TestCQPSKDemodRecoversFSWWithMultipathAndOffset` is un-skipped
+  as the regression guard, and `gophertrunk gen` gains `-multipath`,
+  `-drift`, and `-modulation lsm` so the linear stress capture is
+  reproducible without a private file.
+- **P25 linear path decodes real C4FM: T/2 fractionally-spaced equalizer**
+  (#532, issue #492). The carrier-rail fixes stopped the loop from railing
+  but live C4FM signals still failed — the dibit histogram collapsed onto
+  one symbol and the FSW never correlated — because the linear/CQPSK path
+  matched-filters a C4FM (FM/CPM) waveform with a fixed RRC, but the C4FM
+  transmit pulse is not RRC, so the constellation closes and a
+  symbol-spaced CMA (one sample per symbol) cannot correct a sub-symbol
+  pulse-shape mismatch. The symbol-spaced CMA is replaced with a T/2
+  fractionally-spaced blind equalizer fed two samples per symbol (Gardner
+  on-time + mid-symbol interpolants via a new `Process2x`); a
+  fractionally-spaced equalizer synthesizes the receive matched filter
+  implicitly, so it opens both the simulcast multipath ISI and the
+  C4FM-vs-RRC pulse mismatch and is insensitive to residual timing phase.
+  It stays blind and rotation-invariant ahead of the Costas loop, keeps
+  the centre-tap phase pin, and adds small leakage so the larger
+  fractionally-spaced null space cannot let the taps wander on clean
+  input. Validated on 8 real P25 C4FM captures: CQPSK now locks and
+  decodes all 8 (0/8 before any fix, 3/8 after the carrier fix), several at
+  or above C4FM-demod parity.
+
 ## [v0.3.2] — 2026-06-04
 
 DMR grows up — multi-slot, Tier III band-plan voice, and license-free
