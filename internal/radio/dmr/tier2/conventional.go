@@ -12,7 +12,9 @@
 package tier2
 
 import (
+	"encoding/hex"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -177,9 +179,20 @@ func (c *ConventionalChannel) MarkLost() {
 }
 
 func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType) {
-	bits, errs := framing.DecodeBPTC196_96(b.PayloadBits())
+	payload := b.PayloadBits()
+	bits, errs := framing.DecodeBPTC196_96(payload)
 	if errs < 0 {
-		c.log.Debug("dmr/tier2: voice header BPTC uncorrectable")
+		// Dump the exact on-air bits so a single real failing burst can
+		// be replayed through a reference decoder (DSD-FME / MMDVMHost)
+		// offline. RS(12,9) and BPTC/Hamming match the MMDVM reference,
+		// so an off-air-only BPTC failure points at the receiver's dibit
+		// recovery or a bit-ordering detail a real capture would expose —
+		// see docs/decoder-capture-needs.md. Debug level keeps it
+		// opt-in.
+		c.log.Debug("dmr/tier2: voice header BPTC uncorrectable",
+			"cc", slot.ColorCode,
+			"burst_dibits", dibitDigits(b.Dibits[:]),
+			"payload_hex", hex.EncodeToString(packBitsMSB(payload)))
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
 			Payload: events.DecodeError{Protocol: c.protocolTag, Stage: events.StageVoiceHeaderBPTC},
@@ -193,7 +206,16 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	// confidence. ETSI applies a per-context XOR seed to the parity
 	// before transmission; for Voice LC Header it's 0x96 0x96 0x96.
 	if !framing.VerifyRS12_9(infoBytes, framing.RS129SeedVoiceLCHeader) {
-		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch")
+		// BPTC succeeded but the RS(12,9) parity disagrees: the recovered
+		// 12 octets (9 FLC + 3 seeded parity) are dumped so the exact
+		// bytes can be checked against a reference decoder. Our RS(12,9)
+		// is verified equal to MMDVMHost CRS129 (generator {64,56,14},
+		// roots alpha^1..3, seed 0x96) by TestRS129MatchesIndependent-
+		// ReferenceEncoder, so a real mismatch here implicates the BPTC
+		// info-bit recovery feeding it rather than the RS field itself.
+		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch",
+			"cc", slot.ColorCode,
+			"info_hex", hex.EncodeToString(infoBytes))
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
 			Payload: events.DecodeError{Protocol: c.protocolTag, Stage: events.StageVoiceHeaderRS},
@@ -264,4 +286,29 @@ func infoBitsToBytes(bits []byte) []byte {
 		}
 	}
 	return out
+}
+
+// packBitsMSB packs a 0/1 bit slice MSB-first into bytes (the final byte
+// is zero-padded if len(bits) isn't a multiple of 8). Used only to render
+// a failing burst's payload bits as hex for the diagnostic Debug log.
+func packBitsMSB(bits []byte) []byte {
+	out := make([]byte, (len(bits)+7)/8)
+	for i, b := range bits {
+		if b&1 != 0 {
+			out[i>>3] |= 1 << uint(7-(i&7))
+		}
+	}
+	return out
+}
+
+// dibitDigits renders a dibit slice as a compact base-4 digit string
+// (e.g. "0312...") so a failing burst's exact 132 symbols can be copied
+// out of the Debug log and replayed through a reference decoder.
+func dibitDigits(dibits []uint8) string {
+	var sb strings.Builder
+	sb.Grow(len(dibits))
+	for _, d := range dibits {
+		sb.WriteByte('0' + (d & 3))
+	}
+	return sb.String()
 }
