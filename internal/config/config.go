@@ -276,12 +276,39 @@ type MDC1200ChannelConfig struct {
 	DropBadCRC  bool   `yaml:"drop_bad_crc"`
 }
 
-// PagingConfig configures pager decoders (POCSAG today, FLEX
-// follow-up). Each entry pins an SDR to a paging frequency and
-// runs the per-protocol receiver against its IQ stream.
+// PagingConfig configures pager decoders. POCSAG and FLEX each pin an
+// SDR to a single paging frequency and run the per-protocol receiver
+// against its full IQ stream. Wideband groups several paging channels
+// (any mix of POCSAG / FLEX) onto one dongle: the daemon tunes the SDR
+// to a center frequency and a digital down-converter splits out each
+// channel, so two pagers a few hundred kHz apart fit on one stick.
 type PagingConfig struct {
-	POCSAG []PagingPOCSAGConfig `yaml:"pocsag"`
-	FLEX   []PagingFLEXConfig   `yaml:"flex"`
+	POCSAG   []PagingPOCSAGConfig   `yaml:"pocsag"`
+	FLEX     []PagingFLEXConfig     `yaml:"flex"`
+	Wideband []PagingWidebandConfig `yaml:"wideband"`
+}
+
+// PagingWidebandConfig groups multiple paging channels onto a single
+// SDR. The daemon tunes the dongle to CenterFreqHz (auto-computed as the
+// midpoint of the channel frequencies when left 0), then runs an
+// internal/dsp/tuner DDC bank with one tap per channel — each tap feeds
+// the matching POCSAG / FLEX receiver. Every channel frequency must fall
+// within CenterFreqHz ± sample_rate/2 (with a small guard band); channels
+// outside the usable IQ window are skipped with a startup warning.
+type PagingWidebandConfig struct {
+	Serial       string                  `yaml:"serial"`
+	CenterFreqHz uint32                  `yaml:"center_freq_hz"`
+	Channels     []PagingWidebandChannel `yaml:"channels"`
+}
+
+// PagingWidebandChannel is one paging channel inside a wideband group.
+// Protocol selects the decoder ("pocsag" or "flex"). BaudHz applies to
+// POCSAG only (defaults to 1200); FLEX is fixed at 1600 bps and ignores
+// it.
+type PagingWidebandChannel struct {
+	Protocol    string `yaml:"protocol"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
+	BaudHz      uint32 `yaml:"baud_hz"`
 }
 
 // PagingFLEXConfig describes one FLEX paging channel to decode. Serial

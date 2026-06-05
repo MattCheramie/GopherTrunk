@@ -38,6 +38,8 @@ export function Spectrum() {
   const [error, setError] = useState<string | null>(null);
   const [bookmarkList, setBookmarkList] = useState<Bookmark[]>([]);
 
+  const [hover, setHover] = useState<{ hz: number; db: number } | null>(null);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rowsRef = useRef<Float32Array[]>([]);
   const latestRef = useRef<SpectrumFrame | null>(null);
@@ -136,14 +138,9 @@ export function Spectrum() {
     const canvas = canvasRef.current;
     const frame = latestRef.current;
     if (!canvas || !frame || !selected) return;
-    const rect = canvas.getBoundingClientRect();
-    const xRatio = (e.clientX - rect.left) / rect.width;
+    const xRatio = cursorXRatio(canvas, e.clientX);
     if (xRatio < 0 || xRatio > 1) return;
-    const sampleRate = frame.sample_rate_hz;
-    const halfBand = sampleRate / 2;
-    const targetHz = Math.round(
-      frame.center_hz - halfBand + sampleRate * xRatio,
-    );
+    const targetHz = Math.round(xRatioToHz(frame, xRatio));
     if (targetHz <= 0) return;
     try {
       await tuneSpectrumDevice(cfg, selected, targetHz);
@@ -151,6 +148,33 @@ export function Spectrum() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  // Track the cursor over the waterfall and surface the frequency it
+  // sits over plus the signal level of the underlying bin. Reuses the
+  // same FFT-shifted X→frequency mapping as click-to-tune; the dBFS
+  // value comes from the newest waterfall row (rowsRef.current[0])
+  // using the same nearest-neighbor bin index renderWaterfall draws.
+  const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    const frame = latestRef.current;
+    if (!canvas || !frame) {
+      setHover(null);
+      return;
+    }
+    const xRatio = cursorXRatio(canvas, e.clientX);
+    if (xRatio < 0 || xRatio > 1) {
+      setHover(null);
+      return;
+    }
+    const hz = xRatioToHz(frame, xRatio);
+    const row = rowsRef.current[0];
+    let db = NaN;
+    if (row && row.length > 0) {
+      const idx = Math.min(row.length - 1, Math.floor(xRatio * row.length));
+      db = row[idx];
+    }
+    setHover({ hz, db });
   };
 
   const tuningLabel = useMemo(() => {
@@ -187,7 +211,16 @@ export function Spectrum() {
         </div>
       )}
 
-      <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>
+      <div className="flex items-center justify-between gap-3 font-mono text-xs">
+        <span className="text-muted">{tuningLabel || "—"}</span>
+        <span className="text-accent">
+          {hover
+            ? `${formatHz(hover.hz)}${
+                Number.isFinite(hover.db) ? ` · ${hover.db.toFixed(1)} dBFS` : ""
+              }`
+            : ""}
+        </span>
+      </div>
 
       <div className="rounded border border-border bg-black overflow-hidden">
         <canvas
@@ -197,19 +230,47 @@ export function Spectrum() {
           className="block w-full cursor-crosshair"
           style={{ imageRendering: "pixelated", height: 320 }}
           onClick={handleCanvasClick}
-          aria-label="Spectrum waterfall — click to tune the SDR to that frequency"
+          onMouseMove={handleCanvasMove}
+          onMouseLeave={() => setHover(null)}
+          aria-label="Spectrum waterfall — hover to read the frequency and signal level, click to tune the SDR to that frequency"
         />
       </div>
 
       <div className="text-[11px] text-muted">
         {DB_FLOOR} dBFS (cold) → {DB_CEIL} dBFS (hot). New frames render at
-        the top; the canvas scrolls down as history accumulates.
-        Click anywhere on the waterfall to retune the SDR to that
-        frequency. Bookmark markers ({bookmarkList.length} visible)
-        appear as cyan ticks along the top.
+        the top; the canvas scrolls down as history accumulates. Hover the
+        waterfall to read the frequency and signal level under the cursor;
+        click anywhere to retune the SDR to that frequency. Bookmark markers
+        ({bookmarkList.length} visible) appear as cyan ticks along the top.
       </div>
     </div>
   );
+}
+
+// cursorXRatio maps a pointer's clientX to a 0..1 position across the
+// canvas. Values outside [0, 1] mean the pointer is off the canvas edge.
+function cursorXRatio(canvas: HTMLCanvasElement, clientX: number): number {
+  const rect = canvas.getBoundingClientRect();
+  return (clientX - rect.left) / rect.width;
+}
+
+// xRatioToHz maps a 0..1 X position across the waterfall back through the
+// FFT-shifted bin layout to a frequency in Hz: leftmost edge =
+// (center - sampleRate/2), rightmost edge = (center + sampleRate/2).
+// Shared by click-to-tune and the hover readout so both agree.
+function xRatioToHz(frame: SpectrumFrame, xRatio: number): number {
+  const sampleRate = frame.sample_rate_hz;
+  return frame.center_hz - sampleRate / 2 + sampleRate * xRatio;
+}
+
+// formatHz renders a frequency for the hover readout. Mirrors the
+// formatter used by the scanner panels (MHz with 4 decimals in the
+// VHF/UHF range operators care about here).
+function formatHz(hz: number): string {
+  if (!Number.isFinite(hz)) return "—";
+  if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(4)} MHz`;
+  if (hz >= 1_000) return `${(hz / 1_000).toFixed(3)} kHz`;
+  return `${Math.round(hz)} Hz`;
 }
 
 function ConnPill({ state }: { state: ConnState }) {
