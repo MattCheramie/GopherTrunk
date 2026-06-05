@@ -165,6 +165,7 @@ export const useShared = create<SharedState>((set, get) => ({
         ...ac,
         grant: {
           ...ac.grant,
+          encrypted: true,
           algorithm_id: p.algorithm_id,
           key_id: p.key_id,
         },

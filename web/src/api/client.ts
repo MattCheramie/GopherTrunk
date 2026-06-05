@@ -183,11 +183,14 @@ export const api = {
     if (opts.system) q.set("system", opts.system);
     if (opts.group_id != null) q.set("group_id", String(opts.group_id));
     const qs = q.toString();
-    return request<{ rows: CallRow[] }>(
+    // The Go handler currently emits `calls`. Accept `rows` as a temporary
+    // compatibility alias for older/local daemon builds that used the table
+    // naming; remove the fallback after those builds age out.
+    return request<{ rows?: CallRow[]; calls?: CallRow[] }>(
       c,
       "GET",
       `/api/v1/calls/history${qs ? `?${qs}` : ""}`,
-    ).then((r) => r.rows ?? []);
+    ).then((r) => r.rows ?? r.calls ?? []);
   },
   devices: (c: ClientConfig) =>
     request<{ devices: DeviceDTO[] }>(c, "GET", "/api/v1/devices").then(
