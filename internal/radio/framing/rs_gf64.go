@@ -83,6 +83,12 @@ func gf64Pow(n int) byte {
 	return rsGF64.exp[n]
 }
 
+// gf64Inv returns the multiplicative inverse of a in GF(2^6). Since
+// α^63 = 1, a^-1 = α^(63 - log a). a must be nonzero.
+func gf64Inv(a byte) byte {
+	return rsGF64.exp[63-int(rsGF64.log[a])]
+}
+
 // rsParity24_12 is the right-hand 12 × 12 parity sub-matrix of the
 // GLC generator matrix for the shortened RS(24, 12, 13) code per
 // TIA-102.BAAA-A §5.9 (Table "GLC matrix"). Entries are in the
