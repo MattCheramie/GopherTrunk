@@ -1,17 +1,25 @@
 # DMR Tier II (conventional) captures
 
-`TestDaemonCCDecodesDMRTier2` is **no longer skipped** — the
-synthesized-fixture path was fixed by lowering the Tier II
-pipeline's Mueller-Müller `ClockGain` from 0.025 to 0.015 (see
+> ⚠️ **Real-air decode is unconfirmed and currently failing (issue #527
+> follow-up).** A field report shows a constant stream of `decode.error`
+> at the `voiceheader-bptc` and `voiceheader-rs` stages on a live signal,
+> even though the synthesized fixture passes. Sync + slot-type decode on
+> air, and the BPTC(196,96) / Hamming / RS(12,9) layers are verified equal
+> to the de-facto MMDVM reference (`TestRS129MatchesIndependentReference-
+> Encoder`, `TestBPTCCanonicalLayoutGolden`) — so the open question is the
+> receiver's real-air dibit recovery and end-to-end bit ordering, which
+> only a labelled capture can settle. **A capture here is now blocking, not
+> optional.** `handleVoiceHeader` Debug-logs the failing burst's dibits +
+> payload hex so the exact bits can be replayed through a reference decoder.
+
+`TestDaemonCCDecodesDMRTier2` (the **synthesized** fixture) is no longer
+skipped — that path was fixed by lowering the Tier II pipeline's
+Mueller-Müller `ClockGain` from 0.025 to 0.015 (see
 [`internal/scanner/ccdecoder/pipelines.go`](../../internal/scanner/ccdecoder/pipelines.go)'s
 `newDMRTier2Pipeline` + the diagnostic test at
 [`cmd/gophertrunk/dmr_tier2_diagnostic_test.go`](../../cmd/gophertrunk/dmr_tier2_diagnostic_test.go)).
-
-Real-air **DMR Tier II repeater** captures are still useful for
-secondary validation — the synthesized fixture confirms the
-pipeline plumbs IQ → C4FM → state-machine end-to-end, but
-real RF exercises the burst-error structure that synthesized IQ
-doesn't model.
+But that fixture round-trips our own encoder, so it cannot catch an
+on-air-only divergence — which is exactly what the field report shows.
 
 ## Capture format
 

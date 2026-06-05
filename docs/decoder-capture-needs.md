@@ -95,6 +95,33 @@ real-air confirmation**. A single labeled capture closes each one.
 - **Pass bar:** the followed talkgroup's embedded LC is recovered and its
   (and only its) audio is routed to the sidecar.
 
+### DMR Tier II Voice LC Header (conventional repeater)
+- **What to capture:** A live conventional DMR repeater carrying voice —
+  key-up to un-key, so the capture spans a **Voice LC Header** and the
+  **Terminator-with-LC** that bracket a transmission.
+- **Format:** complex int16 `.bin` or GNU Radio float32 `.cfile` under
+  `samples/dmr-tier2/`. **Not** demodulated audio.
+- **Sample rate:** ≥ 48 kHz. C4FM @ 4800 sym/s, ~1944 Hz deviation, 12.5 kHz.
+- **Duration / size:** ≥ 5 s (~1 MB int16) — one call is enough.
+- **Why this is blocking (field report, issue #527 follow-up):** off-air
+  decode emits a constant stream of `decode.error` at the
+  `voiceheader-bptc` and `voiceheader-rs` stages even though the synthetic
+  fixture passes end to end. Sync + slot-type Hamming(20,8) succeed on air
+  (the pipeline reaches the Voice LC Header handler), and the BPTC(196,96),
+  Hamming(13,9)/(15,11) and RS(12,9) layers are verified equal to the
+  de-facto MMDVM reference (see `TestRS129MatchesIndependentReferenceEncoder`
+  and `TestBPTCCanonicalLayoutGolden`). What is **not** proven on air is the
+  receiver's dibit recovery on a real BPTC-heavy payload and the
+  end-to-end bit ordering — every existing test round-trips our own
+  encoder, so a real-air-only mismatch passes CI and fails on the air. A
+  single labelled capture closes that gap. `handleVoiceHeader` now Debug-logs
+  the failing burst's dibits + payload hex so the exact bits can be replayed
+  through DSD-FME / MMDVMHost.
+- **Cross-check:** MMDVMHost log / DSD-FME / radio display.
+- **Pass bar:** the captured Voice LC Header decodes to the expected
+  talkgroup + source ID + color code, with no decode.error stream on a
+  clean-SNR call.
+
 ---
 
 ## 🟡 Tier 2 — Calibration: works on synthetic, needs real to lock constants
@@ -179,11 +206,6 @@ calibrates timing/deviation/level constants or confirms bit order.
 Already validated end-to-end (synthetic fixture passes through the
 production pipeline). Real captures are *welcome* for burst-error /
 false-positive coverage but **not blocking**.
-
-### DMR Tier II (conventional repeater)
-- complex int16 `.bin` / `.cfile`, 48 kHz, C4FM @ 4800 sym/s,
-  1944 Hz deviation, 12.5 kHz. ≥ 5 s (~1 MB) — captures a Voice LC
-  Header + Terminator-with-LC pair. Adds real burst-error structure.
 
 ### MPT 1327 (control channel)
 - 48 kHz IQ `.cfile` **or** 8 kHz demod-audio `.wav` (FFSK is audio-band,

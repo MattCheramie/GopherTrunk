@@ -19,7 +19,7 @@ protocol subfolder has a `README.md` that describes:
 | [`nxdn/`](nxdn/) | NXDN (NXDN-TS-1-A) | ⏳ Real-air capture pending (harness ready: [`integration_cc_nxdn_realair_test.go`](../cmd/gophertrunk/integration_cc_nxdn_realair_test.go)) | ≥ 80% CRC-verified CAC bursts + SystemID match + 3 s lock latency |
 | [`ysf/`](ysf/) | Yaesu System Fusion | ⏳ Real-air capture pending | Validates MMDVMHost schedule choice for `EncodeFICHOnAir` / `DecodeFICHOnAir`; swap to DSDcc alternate if CRC fails |
 | [`tetra/`](tetra/) | ETSI TETRA | ⏳ Real-air capture pending | 5 s lock latency + ≥ 90% frame recovery + Viterbi correction-depth histogram |
-| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | ✅ Pipeline closed (PR-C); captures optional | Burst-error structure validation + per-call payload diversity |
+| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | ⏳ Real-air capture **blocking** — off-air decode fails at `voiceheader-bptc`/`voiceheader-rs` (issue #527 follow-up) despite the synthetic fixture passing | Confirms real-air dibit recovery + end-to-end bit ordering; decodes to expected TG/source/CC |
 | [`mpt1327/`](mpt1327/) | MPT 1327 | ✅ CWSC tolerance closed (PR-A); captures optional | Empirical false-positive count + per-vendor sync bit-error patterns |
 
 Each subfolder's README documents the capture format, metadata
