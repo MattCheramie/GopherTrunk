@@ -9,6 +9,19 @@ for tagged releases.
 
 ### Added
 
+- **SoapySDRServer remote SDRs — high-bit-depth network streaming + control
+  from professional hardware (issue #536).** A new pure-Go (zero-CGO)
+  `soapyremote` SDR backend connects to a remote `SoapySDRServer` (from
+  pothosware/SoapyRemote) and mounts it as a virtual tuner alongside local
+  USB dongles and `rtl_tcp` endpoints. Unlike `rtl_tcp`'s hardcoded 8-bit
+  stream, it carries the full dynamic range of high-end radios — USRP,
+  LimeSDR, bladeRF, HackRF, Airspy, RTL-SDR, SDRplay — as 16-bit (`CS16`) or
+  32-bit float (`CF32`) IQ, with native frequency / sample-rate / gain
+  control over SoapyRemote's RPC protocol. Configure under `sdr.soapy_remote`
+  (addr/driver/serial/role/format/gain/…); the IQ stream uses the in-order
+  TCP transport. Chosen over the originally-proposed VITA 49.2 (VRT) because
+  SoapyRemote reaches the same professional hardware with a real,
+  interoperable control plane and a single maintained server binary.
 - **`gophertrunk capture` — record raw IQ off a live SDR to a `.cfile`.**
   A first-class subcommand that opens a dongle directly (no daemon),
   records the requested number of seconds of raw IQ to a GNU Radio cfile

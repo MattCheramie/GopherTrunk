@@ -279,6 +279,30 @@ sdr:
   #     bias_tee: false
   #     connect_timeout_ms: 3000
 
+  # SoapySDRServer remote SDRs. Each entry mounts a host:port
+  # SoapySDRServer (from pothosware/SoapyRemote) as a virtual tuner.
+  # Unlike rtl_tcp's hardcoded 8-bit stream, SoapyRemote carries the
+  # full dynamic range of high-end hardware — USRP, LimeSDR, bladeRF,
+  # HackRF, Airspy, RTL-SDR, SDRplay — as 16-bit (CS16) or 32-bit
+  # float (CF32) IQ, with native frequency / sample-rate / gain
+  # control. Run `SoapySDRServer --bind` on the host with the radio.
+  # Plaintext like rtl_tcp — keep it on trusted networks or behind a
+  # tunnel.
+  #
+  # soapy_remote:
+  #   - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
+  #     driver: "uhd"               # SoapySDR device key: uhd | lime |
+  #                                 #  bladerf | hackrf | airspy | rtlsdr
+  #                                 #  (blank = server's first device)
+  #     serial: "usrp-roof"         # generator fills this from addr if blank
+  #     role: control               # control | voice | auto
+  #     format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
+  #     stream_protocol: "tcp"      # tcp (default/only for now)
+  #     ppm: 0                      # best-effort (driver-dependent)
+  #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
+  #     bias_tee: false             # best-effort (driver-dependent)
+  #     connect_timeout_ms: 3000
+
 # Paging decoders. Each entry dedicates one SDR to a paging
 # frequency and runs the per-protocol receiver. The SDR is tuned
 # directly to FrequencyHz (full sample-rate IQ, no DDC) — multi-
