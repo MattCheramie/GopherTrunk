@@ -1613,6 +1613,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if len(d.iqBrokers) > 0 {
 			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, log)
 			opts.Diag = newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
+			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)
 		}
 		if d.bookmarks != nil {
 			opts.Bookmarks = bookmarkProvider{store: d.bookmarks}

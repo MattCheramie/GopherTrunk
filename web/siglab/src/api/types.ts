@@ -216,6 +216,32 @@ export interface ProtocolsDTO {
   formats: string[];
 }
 
+// CaptureDevice mirrors api.SpectrumDevice — an SDR available to record from.
+export interface CaptureDevice {
+  serial: string;
+  driver: string;
+  product?: string;
+  role: string;
+  center_hz: number;
+  sample_rate_hz: number;
+}
+
+// CaptureRequest is the body of POST /api/v1/siglab/capture.
+export interface CaptureRequest {
+  serial: string;
+  seconds: number;
+  format: string;
+  protocol?: string;
+  source?: string;
+}
+
+// CaptureResponse is returned by a successful live capture.
+export interface CaptureResponse {
+  capture: CaptureDTO;
+  metadata: unknown;
+  download_url: string;
+}
+
 // RunConfig mirrors siglabRunConfig (the engine knobs).
 export interface RunConfig {
   protocol: string;

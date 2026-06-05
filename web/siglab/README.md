@@ -13,8 +13,11 @@ browser — no Node.js at runtime. The built bundle is embedded into the
 
 Parity with the siglab CLI/TUI plus visualization and comparison:
 
-- Upload a raw IQ capture (u8/f32) or **synthesize** an idealized/impaired one
-  (the `gen` surface: SNR, carrier offset/drift, multipath, DC, I/Q imbalance).
+- Upload a raw IQ capture (u8/f32), **synthesize** an idealized/impaired one
+  (the `gen` surface: SNR, carrier offset/drift, multipath, DC, I/Q imbalance),
+  or **capture from a live tuner** when the console is served by a running
+  daemon with an SDR — record a fixed-length raw-IQ capture, stage it for
+  immediate analysis, and download the raw `.cfile` (the `capture` surface).
 - Configure and **run** the engine (protocol, sample rate, tune, auto-tune,
   conjugate, IQ-correct, P25 deep knobs) with a **live SSE event stream**.
 - **Identify** the protocol of an unknown capture (ranked candidates).

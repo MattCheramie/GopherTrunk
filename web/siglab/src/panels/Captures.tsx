@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/shared";
-import type { CaptureDTO, RunConfig } from "../api/types";
+import { api } from "../api/client";
+import type { CaptureDTO, CaptureDevice, RunConfig } from "../api/types";
 
 export function Captures() {
   const captures = useStore((s) => s.captures);
@@ -16,6 +17,7 @@ export function Captures() {
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
       <div className="space-y-4">
         <UploadForm />
+        <CaptureForm />
         <div className="card">
           <h3 className="mb-2 text-sm font-semibold">Captures ({captures.length})</h3>
           {captures.length === 0 ? (
@@ -122,6 +124,136 @@ function UploadForm() {
       </button>
       {err && <p className="text-xs text-err">{err}</p>}
     </form>
+  );
+}
+
+// CaptureForm records a fixed-length raw-IQ capture off a live tuner, stages
+// it (so it appears in the capture list and is immediately runnable), and
+// surfaces a .cfile download link. Only functional when the SigLab console is
+// served by a running daemon with an SDR; the offline `siglab serve` host (and
+// a daemon with no SDR) returns 503, which we render as a disabled hint.
+function CaptureForm() {
+  const config = useStore((s) => s.config);
+  const captureFromTuner = useStore((s) => s.captureFromTuner);
+  const formats = useStore((s) => s.formats);
+  const protocols = useStore((s) => s.protocols);
+
+  const [devices, setDevices] = useState<CaptureDevice[] | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [serial, setSerial] = useState("");
+  const [seconds, setSeconds] = useState("10");
+  const [format, setFormat] = useState("f32");
+  const [protocol, setProtocol] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [downloadID, setDownloadID] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .captureDevices(config)
+      .then((d) => {
+        if (cancelled) return;
+        setDevices(d);
+        if (d.length > 0) setSerial((s) => s || d[0].serial);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setUnavailable(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
+  async function onCapture() {
+    setBusy(true);
+    setErr(null);
+    setDownloadID(null);
+    try {
+      const res = await captureFromTuner({
+        serial,
+        seconds: Number(seconds) || 1,
+        format,
+        protocol: protocol || undefined,
+      });
+      setDownloadID(res.capture.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (unavailable) {
+    return (
+      <div className="card space-y-1">
+        <h3 className="text-sm font-semibold">Capture from tuner</h3>
+        <p className="text-xs text-muted">
+          Live capture is unavailable — connect the console to a running daemon with an SDR.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card space-y-2">
+      <h3 className="text-sm font-semibold">Capture from tuner</h3>
+      <div>
+        <label className="label">SDR</label>
+        <select className="input" value={serial} onChange={(e) => setSerial(e.target.value)}>
+          {(devices ?? []).map((d) => (
+            <option key={d.serial} value={d.serial}>
+              {d.serial} · {d.driver}
+              {d.center_hz ? ` · ${(d.center_hz / 1e6).toFixed(3)} MHz` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="label">Seconds</label>
+          <input className="input" value={seconds} onChange={(e) => setSeconds(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Format</label>
+          <select className="input" value={format} onChange={(e) => setFormat(e.target.value)}>
+            {formats.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Protocol</label>
+          <select
+            className="input"
+            value={protocol}
+            onChange={(e) => setProtocol(e.target.value)}
+          >
+            <option value="">(none)</option>
+            {protocols.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <button className="btn" disabled={busy || !serial} onClick={onCapture}>
+        {busy ? "Capturing…" : "Capture"}
+      </button>
+      {downloadID && (
+        <a
+          className="btn-ghost block text-center"
+          href={api.captureDownloadURL(config, downloadID)}
+        >
+          Download .cfile
+        </a>
+      )}
+      {err && <p className="text-xs text-err">{err}</p>}
+    </div>
   );
 }
 

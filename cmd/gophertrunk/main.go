@@ -64,6 +64,8 @@ func main() {
 		runIdentify(os.Args[2:])
 	case "gen":
 		runGen(os.Args[2:])
+	case "capture":
+		runCapture(os.Args[2:])
 	case "test":
 		runSiglabTest(os.Args[2:])
 	case "siglab":
@@ -102,6 +104,7 @@ USAGE:
   gophertrunk analyze [flags]         decode + analyze a capture with structured export (json/yaml/csv)
   gophertrunk identify [flags]        auto-detect the protocol in a capture, then analyze it
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
+  gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI
   gophertrunk siglab serve [flags]    offline signal-analysis web console (browser UI)

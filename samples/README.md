@@ -49,7 +49,14 @@ information:
 - **DMR Tier II** is C4FM at 4800 sym/s; same caveat as NXDN.
 
 For the protocols that need IQ, drop a `*.cfile` / `*.bin` / `*.iq`
-recording rather than an MP3.
+recording rather than an MP3. To grab a fresh IQ capture (plus a
+matching `.metadata.json` sidecar) straight off a dongle, use
+`gophertrunk capture`:
+
+```
+gophertrunk capture -freq 460000000 -sample-rate 2400000 -seconds 30 \
+  -protocol p25 -out samples/p25/cc.cfile
+```
 
 ## Smoke-test harness
 

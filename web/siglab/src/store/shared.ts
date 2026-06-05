@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { api, type ClientConfig } from "../api/client";
 import type {
   CaptureDTO,
+  CaptureRequest,
+  CaptureResponse,
   EventRecord,
   IQTaps,
   IdentifyResult,
@@ -41,6 +43,7 @@ interface Store {
   addCapture: (c: CaptureDTO) => void;
   uploadCapture: (file: File, format: string, sampleRateHz?: number) => Promise<CaptureDTO>;
   synthesize: (body: SynthRequest) => Promise<CaptureDTO>;
+  captureFromTuner: (req: CaptureRequest) => Promise<CaptureResponse>;
   removeCapture: (id: string) => Promise<void>;
   select: (id: string) => void;
   toggleCompare: (id: string) => void;
@@ -87,6 +90,12 @@ export const useStore = create<Store>((set, get) => ({
     const res = await api.synthesize(get().config, body);
     get().addCapture(res.capture);
     return res.capture;
+  },
+
+  captureFromTuner: async (req) => {
+    const res = await api.capture(get().config, req);
+    get().addCapture(res.capture);
+    return res;
   },
 
   removeCapture: async (id) => {
