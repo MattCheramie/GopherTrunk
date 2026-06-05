@@ -1,5 +1,7 @@
 package framing
 
+import "sync"
+
 // BCH(63,16,11) is the binary BCH code that protects the P25 Phase 1
 // Network ID (NID) field on every transmitted frame. The code carries 16
 // information bits in a 63-bit codeword (47 parity bits) and corrects up
@@ -44,6 +46,30 @@ func BCHEncode63_16(data uint16) uint64 {
 	return (info << 47) | (rem & ((uint64(1) << 47) - 1))
 }
 
+// bch6316Codewords lazily builds (once) and returns the table of all
+// 2^16 valid BCH(63,16,11) codewords, indexed by their 16-bit info
+// word. BCHDecode63_16's fallback search popcounts against this table
+// rather than re-encoding every candidate on each call — the encode is
+// a 16-iteration polynomial division, so caching the codewords turns
+// the search from ~65k encodes into ~65k popcounts (issue #492: the NID
+// decoder is called across searchNID's full alignment grid on every FSW
+// hit, so this is squarely on the hot path).
+var (
+	bch6316TableOnce sync.Once
+	bch6316Table     []uint64
+)
+
+func bch6316Codewords() []uint64 {
+	bch6316TableOnce.Do(func() {
+		t := make([]uint64, 1<<16)
+		for d := range t {
+			t[d] = BCHEncode63_16(uint16(d))
+		}
+		bch6316Table = t
+	})
+	return bch6316Table
+}
+
 // BCHDecode63_16 decodes a 63-bit BCH codeword by minimum-Hamming-
 // distance search across all 2^16 valid codewords. Returns (data,
 // errors) where errors is the bit-error count corrected, or -1 if the
@@ -51,23 +77,38 @@ func BCHEncode63_16(data uint16) uint64 {
 // is the best guess but should not be trusted).
 func BCHDecode63_16(cw uint64) (uint16, int) {
 	cw &= (uint64(1) << 63) - 1
+
+	// Fast path: a zero-error codeword. The code is systematic with the
+	// 16 info bits in positions 62..47, so a clean codeword decodes to
+	// its own high bits — re-encode those and compare. This is the
+	// dominant case on a locked signal and skips the table search.
+	info := uint16(cw >> 47)
+	if BCHEncode63_16(info) == cw {
+		return info, 0
+	}
+
+	// Minimum-Hamming-distance search over the precomputed codeword
+	// table. BCH(63,16) has minimum distance 23, so the radius-11 balls
+	// around codewords are disjoint: at most one codeword lies within 11
+	// bits of cw. The first one found inside the t=11 correction radius
+	// is therefore THE unique answer — return it immediately. This yields
+	// the same (data, errs) as a full scan; only the uncorrectable case
+	// (no codeword within 11) needs to walk the whole table to report the
+	// closest best-guess.
+	table := bch6316Codewords()
 	var bestData uint16
 	bestDist := 64
-	for d := uint32(0); d < 1<<16; d++ {
-		c := BCHEncode63_16(uint16(d))
+	for d, c := range table {
 		dist := PopCount64(c ^ cw)
+		if dist <= 11 {
+			return uint16(d), dist
+		}
 		if dist < bestDist {
 			bestDist = dist
 			bestData = uint16(d)
-			if dist == 0 {
-				return bestData, 0
-			}
 		}
 	}
-	if bestDist > 11 {
-		return bestData, -1
-	}
-	return bestData, bestDist
+	return bestData, -1
 }
 
 // BCH6316ParityBit returns the even-parity bit over the 63 codeword
