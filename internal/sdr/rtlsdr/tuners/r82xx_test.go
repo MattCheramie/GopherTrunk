@@ -333,14 +333,18 @@ func TestR82xx_WriteRegMaskOnlyChangesMaskedBits(t *testing.T) {
 }
 
 func TestR82xx_SetGainModeManual(t *testing.T) {
-	// Manual mode sets bit 4 on regs 0x05 and 0x07.
-	// regs[0x05] = 0x83 post-init → 0x93 after set.
-	// regs[0x07] = 0x75 post-init → 0x75 (bit 4 already set!). Wait, 0x75 = 0111_0101, bit 4 = 1. Hmm.
-	// So writing manual mode (bit 4 = 1) to 0x07 is a no-op. We skip that write.
+	// Manual mode: LNA bit (0x05 bit4) set, mixer bit (0x07 bit4)
+	// CLEARED — the two AGC-enable bits have opposite polarity in
+	// librtlsdr's r82xx_set_gain.
+	//   regs[0x05] = 0x83 post-init → (0x83 &^ 0x10) | 0x10 = 0x93.
+	//   regs[0x07] = 0x75 post-init → (0x75 &^ 0x10)        = 0x65.
+	// Both land inside one repeater bracket; no VGA write in manual mode.
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	// Only the 0x05 write should land (0x07's bit 4 is already 1 post-init).
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x93})...)
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x93}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x65}))
+	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -350,6 +354,33 @@ func TestR82xx_SetGainModeManual(t *testing.T) {
 	}
 	if !r.manual {
 		t.Error("manual flag not set")
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 — script: %d steps consumed of %d", m.Remaining(), m.Step, len(script))
+	}
+}
+
+func TestR82xx_SetGainModeAGC(t *testing.T) {
+	// AGC mode is the daemon default. Post-init the LNA/mixer AGC bits
+	// are already in the auto state (0x05 bit4=0, 0x07 bit4=1), so those
+	// writes elide; the only write that lands is the fixed VGA, which
+	// librtlsdr pins at reg 0x0C = 0x0B and pre-fix GopherTrunk never set
+	// in AGC mode (leaving the front end ~17 dB low — issue #264).
+	//   regs[0x0C] = 0xF5 post-init → (0xF5 &^ 0x9F) | 0x0B = 0x6B.
+	var script []usb.CtrlExchange
+	script = append(script, expectR82xxInitBurst()...)
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0C, 0x6B}))
+	script = append(script, expectRepeaterToggle(false)...)
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := r.SetGainMode(false); err != nil {
+		t.Fatalf("SetGainMode(false): %v", err)
+	}
+	if r.manual {
+		t.Error("manual flag set after AGC mode")
 	}
 	if m.Remaining() != 0 {
 		t.Errorf("remaining=%d, want 0 — script: %d steps consumed of %d", m.Remaining(), m.Step, len(script))
@@ -440,28 +471,29 @@ func TestR82xx_AlternatingGainWalk(t *testing.T) {
 //
 // Post-init shadow values (from r82xxInitArray):
 //
-//	regs[0x05] = 0x83 → SetGainMode(true) writes 0x93 (bit 4 set)
-//	regs[0x07] = 0x75 (bit 4 already set, SetGainMode emits no write)
+//	regs[0x05] = 0x83 → SetGainMode(true) writes 0x93 (LNA bit 4 set)
+//	regs[0x07] = 0x75 → SetGainMode(true) writes 0x65 (mixer bit 4 cleared)
 //	regs[0x0C] = 0xF5
 //
 // SetGain(144) then writes (with shadow elision):
 //
 //	0x05: 0x93 → (0x93 &^ 0x0F) | 4 = 0x94
-//	0x07: 0x75 → (0x75 &^ 0x0F) | 4 = 0x74
+//	0x07: 0x65 → (0x65 &^ 0x0F) | 4 = 0x64
 //	0x0C: 0xF5 → (0xF5 &^ 0x9F) | 0x0B = 0x6B
 func TestR82xx_SetGain_BalancedSplit(t *testing.T) {
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	// SetGainMode(true): one repeater on/off pair around the single
-	// 0x05 write (0x07 elided — bit 4 already set post-init).
+	// SetGainMode(true): one repeater on/off pair around the LNA (0x05)
+	// and mixer (0x07) AGC-bit writes (opposite polarity).
 	script = append(script, expectRepeaterToggle(true)...)
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x93}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x65}))
 	script = append(script, expectRepeaterToggle(false)...)
 	// SetGain(144): one repeater on/off pair around three writes
 	// (LNA 0x05, Mixer 0x07, VGA 0x0C).
 	script = append(script, expectRepeaterToggle(true)...)
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x94}))
-	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x74}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x64}))
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0C, 0x6B}))
 	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
