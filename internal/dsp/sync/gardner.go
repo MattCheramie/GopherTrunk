@@ -147,6 +147,74 @@ func (g *Gardner) Process(dst, src []complex64) []complex64 {
 	return dst
 }
 
+// Process2x is identical to Process — same timing loop, error detector and
+// cross-call stash — but emits TWO samples per recovered symbol: the
+// half-symbol-earlier midpoint interpolant followed by the on-time symbol
+// sample, i.e. dst grows by [mid, sym] each symbol. This is the T/2 feed for
+// the fractionally-spaced equalizer (issue #492). When the midpoint look-back
+// is not yet available (stream start / chunk head) the pair is emitted with
+// mid = sym, a degenerate pre-lock symbol the equalizer's adaptation tolerates.
+// The symbol cadence is bit-for-bit the same as Process, so chunked consumers
+// stay in sync.
+func (g *Gardner) Process2x(dst, src []complex64) []complex64 {
+	if cap(dst) < 2*(len(src)/int(g.sps)+1) {
+		dst = make([]complex64, 0, 2*(len(src)/int(g.sps)+1))
+	} else {
+		dst = dst[:0]
+	}
+	var buf []complex64
+	if len(g.stashed) > 0 {
+		buf = make([]complex64, 0, len(g.stashed)+len(src))
+		buf = append(buf, g.stashed...)
+		buf = append(buf, src...)
+	} else {
+		buf = src
+	}
+
+	half := g.sps / 2
+
+	i := len(g.stashed)
+	if i < 1 {
+		i = 1
+	}
+	for i < len(buf) {
+		g.mu -= 1.0
+		if g.mu > 0 {
+			i++
+			continue
+		}
+		frac := 1.0 + g.mu
+		sym := interpComplex(buf[i-1], buf[i], frac)
+		midPos := float64(i) - 1.0 + frac - half
+		midSym, midOK := interpAt(buf, midPos)
+
+		if g.have && midOK {
+			diff := complex64(sym - g.prevSym)
+			err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
+			g.mu += g.sps + g.gain*err
+		} else {
+			g.mu += g.sps
+			g.have = true
+		}
+		g.prevSym = sym
+		g.prevMid = midSym
+		emitMid := midSym
+		if !midOK {
+			emitMid = sym // degenerate pre-lock pair
+		}
+		dst = append(dst, emitMid, sym) // [mid, on-time]
+		i++
+	}
+	keep := int(g.sps) + 1
+	if keep > len(buf) {
+		keep = len(buf)
+	}
+	stash := make([]complex64, keep)
+	copy(stash, buf[len(buf)-keep:])
+	g.stashed = stash
+	return dst
+}
+
 // Mu returns the loop's current sub-sample phase accumulator (it counts
 // down from sps toward 0 each input sample and resets by +sps at every
 // emitted symbol). Read-only; exposed for diagnostics so a CQPSK replay
