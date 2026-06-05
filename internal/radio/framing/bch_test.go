@@ -31,29 +31,46 @@ func bchDecode63_16Reference(cw uint64) (uint16, int) {
 	return bestData, bestDist
 }
 
-// TestBCH6316MatchesReference: the optimized decoder must agree with the
-// brute-force oracle bit-for-bit. Sweep clean codewords plus randomized
-// error patterns of weight 0..13 (covering correctable, the t=11
-// boundary, and uncorrectable words) across random info values.
+// TestBCH6316MatchesReference: the algebraic decoder must agree with the
+// brute-force oracle. errs must match for every input; the decoded data
+// must match whenever the word is correctable (errs >= 0) — on the
+// uncorrectable path data is unspecified by contract. Covers clean
+// codewords, exhaustive 1- and 2-bit error patterns, and randomized
+// weight 3..13 patterns (the t=11 boundary and beyond).
 func TestBCH6316MatchesReference(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x12345678))
 	check := func(cw uint64) {
 		t.Helper()
 		gotData, gotErrs := BCHDecode63_16(cw)
 		wantData, wantErrs := bchDecode63_16Reference(cw)
-		if gotErrs != wantErrs || gotData != wantData {
-			t.Fatalf("cw=%016x: got (%04x, %d), want (%04x, %d)",
-				cw, gotData, gotErrs, wantData, wantErrs)
+		if gotErrs != wantErrs {
+			t.Fatalf("cw=%016x: errs got %d want %d", cw, gotErrs, wantErrs)
+		}
+		if wantErrs >= 0 && gotData != wantData {
+			t.Fatalf("cw=%016x: data got %04x want %04x (errs=%d)",
+				cw, gotData, wantData, wantErrs)
 		}
 	}
 	// Sparse clean sweep (full would be 65536 oracle calls per check).
 	for d := uint32(0); d < 1<<16; d += 521 {
 		check(BCHEncode63_16(uint16(d)))
 	}
-	// Random data with random-weight error patterns.
-	for i := 0; i < 2000; i++ {
+	// Exhaustive single- and double-bit error patterns over a few info
+	// words — every position pair, deterministic, the strongest guard
+	// against a syndrome/Chien indexing slip.
+	for _, d := range []uint16{0x0000, 0x1234, 0xABCD, 0xFFFF} {
+		cw := BCHEncode63_16(d)
+		for a := 0; a < 63; a++ {
+			check(cw ^ (uint64(1) << uint(a)))
+			for b := a + 1; b < 63; b++ {
+				check(cw ^ (uint64(1) << uint(a)) ^ (uint64(1) << uint(b)))
+			}
+		}
+	}
+	// Random data with random higher-weight error patterns.
+	for i := 0; i < 3000; i++ {
 		cw := BCHEncode63_16(uint16(rng.Intn(1 << 16)))
-		weight := rng.Intn(14) // 0..13 bit flips
+		weight := 3 + rng.Intn(11) // 3..13 bit flips
 		flipped := map[int]bool{}
 		for len(flipped) < weight {
 			bit := rng.Intn(63)

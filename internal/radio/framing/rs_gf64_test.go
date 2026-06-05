@@ -46,6 +46,19 @@ func TestRSGF64MulIdentity(t *testing.T) {
 	}
 }
 
+// TestRSGF64Inverse checks gf64Inv: a · a^-1 = 1 for every non-zero
+// element, and the inverse of 1 is 1.
+func TestRSGF64Inverse(t *testing.T) {
+	if gf64Inv(1) != 1 {
+		t.Fatalf("gf64Inv(1) = %d, want 1", gf64Inv(1))
+	}
+	for a := byte(1); a < 64; a++ {
+		if got := gf64Mul(a, gf64Inv(a)); got != 1 {
+			t.Fatalf("a=%d: a * a^-1 = %d, want 1", a, got)
+		}
+	}
+}
+
 // TestEncodeRS24_12_RoundTrip verifies the encoder produces a
 // codeword that satisfies the verifier for every information vector
 // in a small sample plus a stress sweep.
