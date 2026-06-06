@@ -148,8 +148,9 @@ to force it off even when a key is configured.
   | `POST /api/v1/hunt/commit` | Merge the discovery into `config.yaml` (`{force, dry_run}`) |
 
   Progress streams over the event bus (`hunt.progress` / `hunt.candidate` /
-  `hunt.done`) via `GET /api/v1/events`. Dedicated TUI and web-console panels
-  are the remaining phase.
+  `hunt.done`) via `GET /api/v1/events`. The **web console** has a *Hunt* tab
+  (start a run, watch progress, download/commit the result) and the **TUI** has
+  a *Hunt* panel that monitors the run and can stop it.
 - **Topology depth.** For **P25** the hunt now recovers full topology —
   WACN/SYSID, the camped RFSS/Site, advertised neighbor (adjacent) sites, and
   the over-the-air band plan (IDEN_UP) — all surfaced in the exports. For other

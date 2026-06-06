@@ -24,6 +24,7 @@ const (
 	PanelMetrics
 	PanelDevices
 	PanelScanner
+	PanelHunt
 	PanelSettings
 	PanelImport
 	PanelCount
@@ -51,6 +52,8 @@ func (p PanelKind) String() string {
 		return "Devices"
 	case PanelScanner:
 		return "Scanner"
+	case PanelHunt:
+		return "Hunt"
 	case PanelSettings:
 		return "Settings"
 	case PanelImport:
@@ -85,6 +88,8 @@ func (p PanelKind) Key() string {
 		return "devices"
 	case PanelScanner:
 		return "scanner"
+	case PanelHunt:
+		return "hunt"
 	case PanelSettings:
 		return "settings"
 	case PanelImport:
@@ -118,6 +123,8 @@ type SharedState struct {
 	DevicesErr  error
 	Scanner     client.ScannerStatusDTO
 	ScannerErr  error
+	Hunt        client.HuntStatusDTO
+	HuntErr     error
 	Audio       client.AudioStatusDTO
 	AudioErr    error
 	Runtime     client.RuntimeDTO
@@ -188,6 +195,7 @@ const (
 	WriteKindAudio
 	WriteKindScannerManualTune
 	WriteKindSettings
+	WriteKindHuntStop
 )
 
 // ScannerManualTuneReq adds a temp VFO channel and forces dwell.

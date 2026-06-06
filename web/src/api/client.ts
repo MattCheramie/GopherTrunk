@@ -10,6 +10,7 @@ import type {
   CallRow,
   DeviceDTO,
   Health,
+  HuntStatus,
   Mutations,
   RIDDTO,
   RuntimeDTO,
@@ -195,6 +196,7 @@ export const api = {
     ),
   scanner: (c: ClientConfig) =>
     request<ScannerStatusDTO>(c, "GET", "/api/v1/scanner"),
+  hunt: (c: ClientConfig) => request<HuntStatus>(c, "GET", "/api/v1/hunt"),
   audio: (c: ClientConfig) =>
     request<AudioStatusDTO>(c, "GET", "/api/v1/audio"),
   metricsText: (c: ClientConfig) =>
