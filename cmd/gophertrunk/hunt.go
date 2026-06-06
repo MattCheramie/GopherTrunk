@@ -18,14 +18,14 @@ import (
 )
 
 // runHunt is the entry point for `gophertrunk hunt`. It maps a previously
-// unknown/undocumented trunked system from one or more IQ captures (each
-// centered on a suspected control channel), then exports the discovered system
-// to standardized files plus a RadioReference.com submission package.
+// unknown/undocumented trunked system, then exports the discovered system to
+// standardized files plus a RadioReference.com submission package.
 //
-// This is the offline path: each -in capture is identified, decoded, and
-// accumulated into one DiscoveredSystem. A live spectrum-sweep front-end that
-// finds the candidate control channels on the air is the planned follow-on;
-// today the operator supplies the captures (e.g. from `gophertrunk capture`).
+// Two modes share the same identify→decode→map→export pipeline:
+//   - Offline (-in): each capture is identified, decoded, and accumulated.
+//   - Live (-serial): a wideband spectrum sweep across operator-given -band(s)
+//     (or an explicit -candidates list) finds carriers on the air, then each is
+//     identified, decoded, and accumulated.
 func runHunt(args []string) {
 	fs := flag.NewFlagSet("hunt", flag.ExitOnError)
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
@@ -41,6 +41,21 @@ func runHunt(args []string) {
 	conjugate := fs.Bool("conjugate", false, "conjugate IQ (negate Q) before channelization (spectrum-inverted front-end)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation")
 	minConfidence := fs.Float64("min-confidence", 0.40, "skip auto-identified captures below this confidence (0..1)")
+
+	// Live-mode flags (no -in): sweep an SDR across operator-given band(s) or
+	// probe an explicit candidate list.
+	serial := fs.String("serial", "", "SDR serial to sweep for a live hunt (omit -in). Empty + no -in ⇒ error")
+	var bands repeatedString
+	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
+	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
+	noSweep := fs.Bool("no-sweep", false, "with -candidates, probe only the listed frequencies (no spectrum sweep)")
+	sweepDwell := fs.Duration("sweep-dwell", 0, "accumulation time per sweep step (e.g. 200ms; 0 ⇒ one frame)")
+	peakThresholdDb := fs.Float64("peak-threshold-db", 10, "minimum dB above the noise floor for a carrier to count (live sweep)")
+	minSpacingHz := fs.Uint("min-spacing", 6250, "minimum Hz between detected carriers (live sweep)")
+	fftSize := fs.Int("fft-size", 4096, "FFT size per sweep step (power of two)")
+	dwellSeconds := fs.Float64("dwell-seconds", 3, "IQ seconds captured per candidate for identify+decode (live mode)")
+	gain := fs.Int("gain", -1, "SDR gain in tenths of dB for live mode (-1 = automatic)")
+	ppm := fs.Int("ppm", 0, "SDR frequency correction in PPM for live mode")
 
 	name := fs.String("name", "", "system name (default: synthesized from identity)")
 	state := fs.String("state", "", "US state (2-letter) — used in the RR submission package")
@@ -81,6 +96,12 @@ EXAMPLES:
   # Discover and merge straight into config.yaml
   gophertrunk hunt -in cc.u8 -sample-rate 2400000 -commit -config ./config.yaml
 
+  # LIVE: sweep the 851-869 MHz band on an SDR and map whatever it finds
+  gophertrunk hunt -serial 00000001 -sample-rate 2400000 -band 851:869 -state AZ
+
+  # LIVE: probe a known control-channel list directly (no sweep)
+  gophertrunk hunt -serial 00000001 -sample-rate 2400000 -no-sweep -candidates 851.0125,853.5125
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -88,9 +109,10 @@ FLAGS:`)
 	resolveVerbose(*verboseFlag, false)
 	rep := newReporter("hunt")
 
-	if len(inPaths) == 0 {
+	live := len(inPaths) == 0
+	if live && *serial == "" {
 		fs.Usage()
-		rep.Fatalf(2, "at least one -in capture is required")
+		rep.Fatalf(2, "supply -in <capture> for an offline hunt, or -serial <sdr> with -band/-candidates for a live hunt")
 	}
 	if *sampleRate <= 0 {
 		rep.Fatalf(2, "-sample-rate must be > 0")
@@ -99,7 +121,7 @@ FLAGS:`)
 	if err != nil {
 		rep.Fatal(2, err)
 	}
-	if len(freqs) != 0 && len(freqs) != len(inPaths) {
+	if !live && len(freqs) != 0 && len(freqs) != len(inPaths) {
 		rep.Fatalf(2, "-freq given %d times but -in given %d times — supply one -freq per -in or none", len(freqs), len(inPaths))
 	}
 
@@ -128,41 +150,100 @@ FLAGS:`)
 		rep.Fatalf(2, "-formats listed no valid formats")
 	}
 
-	// Build the capture inputs.
-	captures := make([]hunt.CaptureInput, 0, len(inPaths))
-	for i, p := range inPaths {
-		ci := hunt.CaptureInput{
-			Path:         p,
-			Format:       sampleFormat,
-			SampleRateHz: *sampleRate,
-			AutoTune:     *autoTune,
-			Conjugate:    *conjugate,
-			IQCorrect:    *iqCorrect,
-			Protocol:     proto,
-		}
-		if len(freqs) == len(inPaths) {
-			hz, perr := strconv.ParseUint(strings.TrimSpace(freqs[i]), 10, 32)
-			if perr != nil {
-				rep.Fatalf(2, "-freq[%d] %q: %v", i, freqs[i], perr)
+	var (
+		sys     *hunt.DiscoveredSystem
+		reports []hunt.CaptureReport
+	)
+	if live {
+		sys, reports = runHuntLive(rep, huntLiveParams{
+			serial:          *serial,
+			bands:           []string(bands),
+			candidatesMHz:   *candidatesFlag,
+			noSweep:         *noSweep,
+			sampleRateHz:    *sampleRate,
+			protocol:        proto,
+			fftSize:         *fftSize,
+			sweepDwell:      *sweepDwell,
+			peakThresholdDb: *peakThresholdDb,
+			minSpacingHz:    uint32(*minSpacingHz),
+			dwellSeconds:    *dwellSeconds,
+			autoTune:        *autoTune,
+			gain:            *gain,
+			ppm:             *ppm,
+			name:            *name,
+			state:           *state,
+			county:          *county,
+			location:        *location,
+			minConfidence:   *minConfidence,
+		})
+	} else {
+		// Build the capture inputs.
+		captures := make([]hunt.CaptureInput, 0, len(inPaths))
+		for i, p := range inPaths {
+			ci := hunt.CaptureInput{
+				Path:         p,
+				Format:       sampleFormat,
+				SampleRateHz: *sampleRate,
+				AutoTune:     *autoTune,
+				Conjugate:    *conjugate,
+				IQCorrect:    *iqCorrect,
+				Protocol:     proto,
 			}
-			ci.FrequencyHz = uint32(hz)
+			if len(freqs) == len(inPaths) {
+				hz, perr := strconv.ParseUint(strings.TrimSpace(freqs[i]), 10, 32)
+				if perr != nil {
+					rep.Fatalf(2, "-freq[%d] %q: %v", i, freqs[i], perr)
+				}
+				ci.FrequencyHz = uint32(hz)
+			}
+			captures = append(captures, ci)
 		}
-		captures = append(captures, ci)
+
+		fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
+		var derr error
+		sys, reports, derr = hunt.Discover(captures, hunt.DiscoverConfig{
+			Name:          *name,
+			State:         *state,
+			County:        *county,
+			Location:      *location,
+			MinConfidence: *minConfidence,
+		})
+		if derr != nil {
+			rep.Fatal(1, derr)
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
-	sys, reports, derr := hunt.Discover(captures, hunt.DiscoverConfig{
-		Name:          *name,
-		State:         *state,
-		County:        *county,
-		Location:      *location,
-		MinConfidence: *minConfidence,
+	finishHunt(rep, sys, reports, huntExportParams{
+		outFormats: outFormats,
+		outDir:     *out,
+		noRR:       *noRR,
+		rr:         rrOptions{key: *rrKey, countyID: *rrCountyID, checkSIDs: rrCheckSIDs},
+		commit:     *commit,
+		configPath: *configPath,
+		csvDir:     *csvDir,
+		force:      *force,
+		dryRun:     *dryRun,
 	})
-	if derr != nil {
-		rep.Fatal(1, derr)
-	}
+}
 
-	// Per-capture progress so the operator sees what locked vs. was skipped.
+// huntExportParams carries the post-discovery export/RR/commit options shared
+// by the offline and live hunt paths.
+type huntExportParams struct {
+	outFormats []hunt.Format
+	outDir     string
+	noRR       bool
+	rr         rrOptions
+	commit     bool
+	configPath string
+	csvDir     string
+	force      bool
+	dryRun     bool
+}
+
+// finishHunt prints the per-candidate reports, runs the optional RadioReference
+// duplicate check, writes the export files, and optionally commits the
+// discovery into config.yaml. Shared by offline and live hunts.
+func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.CaptureReport, p huntExportParams) {
 	for _, r := range reports {
 		switch {
 		case r.Error != "":
@@ -175,24 +256,19 @@ FLAGS:`)
 		}
 	}
 	if len(sys.Sites) == 0 && len(sys.Talkgroups) == 0 {
-		rep.Fatalf(1, "no trunked control channel was decoded from the supplied capture(s)")
+		rep.Fatalf(1, "no trunked control channel was decoded")
 	}
 	fmt.Fprintf(os.Stderr, "hunt: discovered %q — %d site(s), %d talkgroup(s)\n",
 		sys.DisplayName(), len(sys.Sites), len(sys.Talkgroups))
 
-	// Optional read-only RadioReference duplicate check. Failures here are
-	// non-fatal: the export still happens, just without hints.
+	// Optional read-only RadioReference duplicate check. Non-fatal: the export
+	// still happens, just without hints.
 	var hints []hunt.DuplicateHint
-	if !*noRR {
-		hints = gatherRRHints(sys, rrOptions{
-			key:       *rrKey,
-			countyID:  *rrCountyID,
-			checkSIDs: rrCheckSIDs,
-		})
+	if !p.noRR {
+		hints = gatherRRHints(sys, p.rr)
 	}
 
-	// Write the export files.
-	outDir := *out
+	outDir := p.outDir
 	if outDir == "" {
 		outDir = fmt.Sprintf("hunt-%s", time.Now().Format("20060102-150405"))
 	}
@@ -200,7 +276,7 @@ FLAGS:`)
 		rep.Fatal(1, fmt.Errorf("create out dir %s: %w", outDir, err))
 	}
 	base := slugName(sys.DisplayName())
-	for _, hf := range outFormats {
+	for _, hf := range p.outFormats {
 		fname := filepath.Join(outDir, fmt.Sprintf("%s.%s", base, hf.FileExtension()))
 		if hf == hunt.FormatRR {
 			fname = filepath.Join(outDir, fmt.Sprintf("%s-radioreference.%s", base, hf.FileExtension()))
@@ -220,10 +296,8 @@ FLAGS:`)
 		fmt.Fprintf(os.Stderr, "hunt: wrote %s (%s)\n", fname, hf)
 	}
 
-	// Optional: merge straight into config.yaml, reusing the importer's writer
-	// so a discovery lands exactly like a PDF/CSV import would.
-	if *commit {
-		commitDiscovery(rep, sys, *configPath, *csvDir, *force, *dryRun)
+	if p.commit {
+		commitDiscovery(rep, sys, p.configPath, p.csvDir, p.force, p.dryRun)
 	}
 }
 
