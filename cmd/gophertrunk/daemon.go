@@ -19,6 +19,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -275,6 +276,7 @@ type Daemon struct {
 	retention    *storage.Retention
 	ccCache      *trunking.Cache
 	cchuntSup    *cchunt.Supervisor
+	huntMgr      *hunt.Manager
 	ccDecoder    *ccdecoder.Decoder
 	// ccDecoderOpts is captured at construction so the spawn closure
 	// can rebuild the decoder after an IQ-stream death — Decoder.Run
@@ -1741,6 +1743,21 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			conv:       d.convScan,
 			engine:     d.engine,
 			talkgroups: d.talkgroups,
+		}
+		// Live system-discovery ("hunt") manager: operator-triggered blind
+		// spectrum sweep that shares the radio via spare-SDR-else-borrow
+		// acquisition. Constructed whenever an IQ broker exists so a live hunt
+		// is possible; the REST/TUI/web cockpit drives it.
+		if d.pool != nil && len(d.iqBrokers) > 0 {
+			if mgr, err := hunt.NewManager(hunt.ManagerOptions{
+				Acquire: d.buildHuntAcquirer(),
+				Bus:     d.bus,
+				Log:     log,
+			}); err != nil {
+				log.Warn("daemon: hunt manager not started", "err", err)
+			} else {
+				d.huntMgr = mgr
+			}
 		}
 		if d.player != nil || d.recorder != nil {
 			opts.Audio = audioCockpit{player: d.player, recorder: d.recorder}

@@ -11,7 +11,6 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
-	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -157,63 +156,4 @@ func parseBandsMHz(rep *diag.Reporter, specs []string) []hunt.Band {
 		out = append(out, hunt.Band{LowHz: uint32(loMHz*1e6 + 0.5), HighHz: uint32(hiMHz*1e6 + 0.5)})
 	}
 	return out
-}
-
-// deviceIQSource adapts a live sdr.Device to hunt.IQSource. A background
-// goroutine drains the device's IQ stream into a channel; Capture pulls from a
-// rolling buffer and Tune retunes the device, flushing the transient.
-type deviceIQSource struct {
-	dev     sdr.Device
-	rate    uint32
-	ch      <-chan []complex64
-	pending []complex64
-	settle  time.Duration
-}
-
-func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32) (*deviceIQSource, error) {
-	ch, err := dev.StreamIQ(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &deviceIQSource{dev: dev, rate: rate, ch: ch, settle: 50 * time.Millisecond}, nil
-}
-
-func (s *deviceIQSource) SampleRateHz() uint32 { return s.rate }
-
-func (s *deviceIQSource) Tune(centerHz uint32) error {
-	if err := s.dev.SetCenterFreq(centerHz); err != nil {
-		return err
-	}
-	// Discard buffered + in-flight samples captured before/at the retune so the
-	// next Capture sees only settled IQ at the new center.
-	s.pending = nil
-	deadline := time.NewTimer(s.settle)
-	defer deadline.Stop()
-	for {
-		select {
-		case <-s.ch:
-			// drain
-		case <-deadline.C:
-			return nil
-		}
-	}
-}
-
-func (s *deviceIQSource) Capture(ctx context.Context, n int) ([]complex64, error) {
-	for len(s.pending) < n {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case chunk, ok := <-s.ch:
-			if !ok {
-				out := s.pending
-				s.pending = nil
-				return out, nil // stream ended
-			}
-			s.pending = append(s.pending, chunk...)
-		}
-	}
-	out := s.pending[:n:n]
-	s.pending = s.pending[n:]
-	return out, nil
 }

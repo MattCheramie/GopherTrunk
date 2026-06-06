@@ -547,6 +547,51 @@ func (s *Supervisor) isHeld(name string) bool {
 
 // --- operator mutation surface ---
 
+// PauseAll holds every configured system and bails any in-flight hunt, so the
+// supervisor stops retuning the control SDR. It is used by the live hunt's
+// "borrow the control SDR" path (when no spare SDR is available) to quiesce
+// cchunt before sweeping, then ResumeAll restores normal scanning. Idempotent.
+func (s *Supervisor) PauseAll() {
+	s.mu.Lock()
+	var toCancel []chan struct{}
+	for _, rt := range s.states {
+		if rt == nil {
+			continue
+		}
+		rt.heldByOp = true
+		rt.state = StateHeld
+		if rt.retuneCh != nil {
+			toCancel = append(toCancel, rt.retuneCh)
+			rt.retuneCh = nil
+		}
+	}
+	s.mu.Unlock()
+	// Cancel in-flight hunts outside the lock so they bail promptly; the next
+	// Run round then skips every (held) system and stops touching the tuner.
+	for _, ch := range toCancel {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+	}
+}
+
+// ResumeAll undoes PauseAll, returning every system to the round-robin with a
+// fresh backoff. Idempotent.
+func (s *Supervisor) ResumeAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rt := range s.states {
+		if rt == nil {
+			continue
+		}
+		rt.heldByOp = false
+		rt.state = StateIdle
+		rt.backoffWindow = s.initBO
+	}
+}
+
 // Hold pins the supervisor on the named system's current state — no
 // further retunes happen until Resume. Returns false if the system
 // isn't configured.
