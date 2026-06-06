@@ -36,6 +36,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
@@ -257,6 +258,10 @@ func (b *Broker) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	go func() {
 		defer close(out)
 		defer b.streamActive.Store(false)
+		// A panic in fanout would otherwise crash the daemon silently
+		// (issue #492); recover into a logged close so the primary
+		// consumer sees a clean stream end instead.
+		defer gtlog.Recover(b.log, "iqtap-fanout", nil)
 		for chunk := range in {
 			b.fanout(chunk)
 			select {

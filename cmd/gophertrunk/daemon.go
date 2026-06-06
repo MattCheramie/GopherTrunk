@@ -2500,6 +2500,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 		})
 	}
 
+	// Periodic runtime health log so a stop is never silent and a leak /
+	// hang / pre-kill footprint is visible in the timeline (issue #492).
+	if hb := heartbeatInterval(d.cfg.Diagnostics.HeartbeatSeconds); hb > 0 {
+		d.spawn(runCtx, "heartbeat", false, func(ctx context.Context) error {
+			return d.runHeartbeat(ctx, hb)
+		})
+	}
+
 	// Conservative readiness: give every spawn a brief grace window
 	// so the HTTP listener has time to bind. Components without an
 	// explicit "ready" hook share this same gate.
@@ -2842,6 +2850,12 @@ func (d *Daemon) spawn(ctx context.Context, name string, essential bool, fn func
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
+		// A panic in any component goroutine would otherwise crash the
+		// whole process with only a stderr stack — the silent "log just
+		// stops" failure mode in issue #492. Recover it into a logged
+		// fatal + clean shutdown instead (a panic is never expected, so
+		// it escalates regardless of the essential flag).
+		defer gtlog.Recover(d.log, "spawn:"+name, d.recordFatal)
 		err := fn(ctx)
 		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return

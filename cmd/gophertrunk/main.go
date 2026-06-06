@@ -216,6 +216,10 @@ func runDaemon(args []string) {
 
 	logger.Info("gophertrunk starting", "version", version.String())
 
+	// Bound the resident footprint so a long live run isn't SIGKILLed by
+	// the OS memory-pressure killer with no in-process trace (issue #492).
+	applyMemoryLimit(cfg, logger)
+
 	// Launcher pre-checks before we burn time spinning up the
 	// daemon: an operator who passed -tui or -web with no HTTP API
 	// in config should hear about it now, not after engine init.
@@ -285,6 +289,9 @@ func runDaemon(args []string) {
 	// to wait on once the launcher has decided what to do.
 	runErr := make(chan error, 1)
 	go func() {
+		// Convert a panic in the daemon run path into a logged error +
+		// clean main-goroutine exit rather than a silent crash (#492).
+		defer gtlog.Recover(logger, "daemon-run", func(err error) { runErr <- err })
 		runErr <- d.Run(ctx)
 	}()
 
@@ -320,6 +327,7 @@ func runDaemon(args []string) {
 				captureSpec.Serial, d.IQBrokerSerials())
 		}
 		go func() {
+			defer gtlog.Recover(logger, "iq-capture", nil)
 			if err := runIQCapture(ctx, br, captureSpec, logger); err != nil &&
 				!errors.Is(err, context.Canceled) {
 				logger.Warn("iq-capture: failed", "err", err)

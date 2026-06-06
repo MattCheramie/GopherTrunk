@@ -46,6 +46,7 @@ import (
 	"sync"
 	"time"
 
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
@@ -288,6 +289,10 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 
 	go func() {
 		defer close(out)
+		// Guard the reader against a panic so it surfaces as a logged
+		// stream close (→ ccdecoder retry) instead of crashing the
+		// whole daemon with no log line (issue #492).
+		defer gtlog.Recover(d.log, "rtltcp-stream", nil)
 		buf := make([]byte, chunkSamples*2)
 		for {
 			// Allow ctx to interrupt a stalled read.

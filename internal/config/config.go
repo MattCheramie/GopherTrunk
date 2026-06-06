@@ -67,6 +67,24 @@ type RadioReferenceConfig struct {
 // flag and the GOPHERTRUNK_VERBOSE_ERRORS env var.
 type DiagnosticsConfig struct {
 	VerboseErrors bool `yaml:"verbose_errors"`
+
+	// MemoryLimitMB sets a soft heap limit (Go runtime/debug.SetMemoryLimit)
+	// so the GC keeps the resident footprint bounded instead of letting it
+	// balloon under sustained high-allocation load — the mitigation for a
+	// daemon being SIGKILLed by the OS memory-pressure killer / macOS jetsam
+	// after a few minutes with no in-process trace (issue #492). 0 (the
+	// default) auto-derives ~70% of physical RAM when that is known, or
+	// leaves the runtime unbounded when it is not. The GOMEMLIMIT env var,
+	// if set, always wins (the runtime applies it before this).
+	MemoryLimitMB int `yaml:"memory_limit_mb"`
+
+	// HeartbeatSeconds controls a periodic runtime health log (uptime,
+	// goroutine count, heap/sys bytes). It turns a silent stop into a
+	// timeline: a climbing goroutine/heap curve points at a leak, a frozen
+	// heartbeat on a live process points at a hang, and the last line before
+	// a cut pins the pre-kill footprint (issue #492). 0 uses the 60 s
+	// default; negative disables it.
+	HeartbeatSeconds int `yaml:"heartbeat_seconds"`
 }
 
 // WebConfig configures the bundled user interfaces (the embedded web SPA
