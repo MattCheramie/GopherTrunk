@@ -45,6 +45,14 @@ type Result struct {
 	// detail builder exists. Consumers type-switch on it (keyed by Protocol).
 	Detail any `json:"detail,omitempty" yaml:"detail,omitempty"`
 
+	// Topology is the protocol-neutral system topology accumulated from the
+	// control channel during the run — identity (WACN/SYSID/RFSS/Site or the
+	// per-protocol equivalent), neighbor sites, and band plan. It is the only
+	// path by which a caller learns WACN/SYSID/RFSS/Site, which never appear in
+	// event payloads (they live in the decoder's network model). nil when the
+	// protocol's pipeline does not implement TopologyProvider.
+	Topology *TopologySnapshot `json:"topology,omitempty" yaml:"topology,omitempty"`
+
 	// Verdict (nil unless Config.Acceptance supplied).
 	Verdict *Verdict `json:"verdict,omitempty" yaml:"verdict,omitempty"`
 

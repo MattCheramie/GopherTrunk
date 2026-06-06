@@ -115,10 +115,13 @@ to force it off even when a key is configured.
   that finds the candidate control channels on the air automatically — using
   the existing FFT spectrum producer for peak detection — is the planned
   follow-on, along with a live cockpit/TUI/web panel.
-- **Topology depth.** Full multi-site topology (WACN/SYSID/RFSS/Site,
-  neighbor/adjacent sites, band plan) is richest on **P25**; for other
-  protocols the map carries the identity the decoder surfaces plus the single
-  observed site and its talkgroups — enough to export and submit.
+- **Topology depth.** For **P25** the hunt now recovers full topology —
+  WACN/SYSID, the camped RFSS/Site, advertised neighbor (adjacent) sites, and
+  the over-the-air band plan (IDEN_UP) — all surfaced in the exports. For other
+  protocols the map carries the identity the decoder surfaces (DMR ColorCode/
+  SystemID, NXDN Site/System, TETRA MCC/MNC/LA, …) plus the observed site and
+  talkgroups; neighbor accumulation for those protocols lands incrementally.
+  Band-plan-from-air is P25-only (others resolve channels via configured plans).
 - **Talkgroup names.** A blind discovery can only record talkgroup *numbers*
   and activity; names/descriptions are filled in during RadioReference
   submission.

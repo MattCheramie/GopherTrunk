@@ -191,6 +191,17 @@ func (s *DiscoveredSystem) addNeighbor(rfss, siteID uint8, n NeighborRef) {
 	site.Neighbors = append(site.Neighbors, n)
 }
 
+// addBandPlanEntry records a band-plan slot, de-duplicating by channel ID
+// (the first observation of a channel ID wins).
+func (s *DiscoveredSystem) addBandPlanEntry(e BandPlanEntry) {
+	for _, existing := range s.BandPlan {
+		if existing.ChannelID == e.ChannelID {
+			return
+		}
+	}
+	s.BandPlan = append(s.BandPlan, e)
+}
+
 // sortAll puts sites, channels and talkgroups in a deterministic order so the
 // exporters produce stable output (important for golden tests and diffs).
 func (s *DiscoveredSystem) sortAll() {
