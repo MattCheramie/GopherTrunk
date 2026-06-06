@@ -111,44 +111,57 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			return
 		}
 		rec := recordedCall{id: id}
-		// doActivate is signalled to the data goroutine only AFTER the
-		// call is recorded below; otherwise the client can receive IQ and
-		// the test can check sawCall(ACTIVATE) before this loop records it.
 		var doActivate bool
+		// Parse the request args and pick the reply, but DON'T send it yet.
+		// The call is recorded BEFORE the response is written so a client call
+		// that has already returned is always visible via recorded() — sending
+		// first and recording afterwards raced the test's assertions.
+		reply := func(p *packer) { p.raw8(tVoid) }
+		twoPhaseSetup := false
 		switch id {
 		case callSetFrequency:
 			_, _ = u.char()
 			_, _ = u.i32()
 			rec.freqHz, _ = u.f64()
-			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
 		case callSetSampleRate:
 			_, _ = u.char()
 			_, _ = u.i32()
 			rec.freqHz, _ = u.f64()
-			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
 		case callSetGain:
 			_, _ = u.char()
 			_, _ = u.i32()
 			rec.gainDB, _ = u.f64()
-			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
 		case callSetGainMode:
 			_, _ = u.char()
 			_, _ = u.i32()
 			rec.gainAuto, _ = u.boolean()
 			if s.failGainMode {
-				s.respond(conn, func(p *packer) {
+				reply = func(p *packer) {
 					p.raw8(tException)
 					p.str("RuntimeError: NotImplementedError: set_rx_agc() is not supported on this radio!")
-				})
-			} else {
-				s.respond(conn, func(p *packer) { p.raw8(tVoid) })
+				}
 			}
 		case callGetNativeStreamFormat:
-			s.respond(conn, func(p *packer) {
+			reply = func(p *packer) {
 				p.str("CS16")
 				p.f64(1.0)
-			})
+			}
 		case callSetupStream:
+			twoPhaseSetup = true
+		case callActivateStream:
+			_, _ = u.i32() // streamId (int)
+			doActivate = true
+		default:
+			// MAKE, DEACTIVATE, CLOSE, WRITE_SETTING, FREQ_CORRECTION, ...
+		}
+
+		// Record before responding (and before signalling activate) so the
+		// client never observes a returned call that the server hasn't logged.
+		s.mu.Lock()
+		s.calls = append(s.calls, rec)
+		s.mu.Unlock()
+
+		if twoPhaseSetup {
 			// Real SoapyRemote TCP setup is two-phase: reply #1 is the bound
 			// data port, the server then accepts two client sockets (stream +
 			// status), and reply #2 carries the int stream id. Issue #542.
@@ -159,17 +172,9 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 				p.i32(0) // streamId (int)
 				p.str(dataPort)
 			})
-		case callActivateStream:
-			_, _ = u.i32() // streamId (int)
-			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
-			doActivate = true
-		default:
-			// MAKE, DEACTIVATE, CLOSE, WRITE_SETTING, FREQ_CORRECTION, ...
-			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
+		} else {
+			s.respond(conn, reply)
 		}
-		s.mu.Lock()
-		s.calls = append(s.calls, rec)
-		s.mu.Unlock()
 		if doActivate {
 			select {
 			case activate <- struct{}{}:
