@@ -25,6 +25,10 @@ type fakeSoapyServer struct {
 
 	mu    sync.Mutex
 	calls []recordedCall
+	// acks records the flow-control ACK datagrams received from the client on
+	// the stream socket (issue #542 follow-up). The first is the gratuitous
+	// initial ACK the server's waitSend() blocks on before streaming.
+	acks []streamHeader
 
 	// samples streamed per datagram once activated.
 	streamSamples []complex64
@@ -60,6 +64,20 @@ func (s *fakeSoapyServer) recorded() []recordedCall {
 	defer s.mu.Unlock()
 	out := make([]recordedCall, len(s.calls))
 	copy(out, s.calls)
+	return out
+}
+
+func (s *fakeSoapyServer) recordACK(h streamHeader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.acks = append(s.acks, h)
+}
+
+func (s *fakeSoapyServer) recordedACKs() []streamHeader {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]streamHeader, len(s.acks))
+	copy(out, s.acks)
 	return out
 }
 
@@ -195,6 +213,28 @@ func (s *fakeSoapyServer) startDataServer(activate <-chan struct{}) (string, <-c
 		defer statusConn.Close()
 		close(bothConnected)
 		<-activate // wait until ACTIVATE_STREAM
+
+		// Real SoapyRemote blocks in waitSend() until the receiver sends an
+		// initial flow-control ACK; model that so the test fails if the client
+		// never ACKs (issue #542 follow-up). Subsequent ACKs are drained in the
+		// background so the client's writes never block.
+		ackHdr := make([]byte, streamHeaderSize)
+		_ = streamConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := io.ReadFull(streamConn, ackHdr); err != nil {
+			return
+		}
+		_ = streamConn.SetReadDeadline(time.Time{})
+		s.recordACK(decodeStreamHeader(ackHdr))
+		go func() {
+			buf := make([]byte, streamHeaderSize)
+			for {
+				if _, err := io.ReadFull(streamConn, buf); err != nil {
+					return
+				}
+				s.recordACK(decodeStreamHeader(buf))
+			}
+		}()
+
 		seq := uint32(0)
 		for {
 			payload := encodeCS16(s.streamSamples)
@@ -366,6 +406,17 @@ func TestStreamIQ(t *testing.T) {
 	}
 	if !srv.sawCall(callActivateStream) {
 		t.Error("server did not see ACTIVATE_STREAM")
+	}
+
+	// The client must have sent the initial flow-control ACK (issue #542
+	// follow-up); without it a real server streams nothing. The ACK advertises
+	// the in-flight credit window in its elems field.
+	acks := srv.recordedACKs()
+	if len(acks) == 0 {
+		t.Fatal("server did not receive any flow-control ACK from client")
+	}
+	if acks[0].elems != int32(maxInFlightSeqs) {
+		t.Errorf("initial ACK elems = %d, want %d (advertised window)", acks[0].elems, maxInFlightSeqs)
 	}
 
 	// Cancelling the context must close the channel.

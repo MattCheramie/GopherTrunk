@@ -346,6 +346,15 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, err
 	}
 
+	// Prime the server's sender with an initial flow-control ACK. The server
+	// blocks in waitSend() until it receives one and would otherwise never
+	// stream a sample (see encodeStreamACK / issue #542 follow-up). Sent before
+	// ACTIVATE, mirroring the upstream receiver constructor.
+	if err := d.sendStreamACK(dataConn, 0); err != nil {
+		d.clearStreamConns()
+		return nil, fmt.Errorf("soapyremote: initial stream ack: %w", err)
+	}
+
 	// ACTIVATE_STREAM (streamId, flags=0, timeNs=0, numElems=0).
 	if err := d.rpcVoid(func(p *packer) {
 		p.call(callActivateStream)
@@ -460,6 +469,14 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	return streamID, dataConn, statusConn, nil
 }
 
+// sendStreamACK writes a flow-control ACK for seq to the stream/data socket.
+// SoapyRemote requires these or the server never streams (see encodeStreamACK).
+func (d *device) sendStreamACK(conn net.Conn, seq uint32) error {
+	_ = conn.SetWriteDeadline(time.Now().Add(d.timeout))
+	_, err := conn.Write(encodeStreamACK(seq))
+	return err
+}
+
 // drainStatus reads and discards the stream's status socket. SoapyRemote's
 // server status thread may emit messages over it; leaving it unread can
 // back-pressure the server. It returns when the socket is closed (on teardown).
@@ -492,6 +509,10 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 	defer d.teardownStream(streamID)
 
 	hdr := make([]byte, streamHeaderSize)
+	// Flow-control state: lastRecv tracks the next sequence we expect; lastAck
+	// is the sequence carried by our most recent ACK. The initial ACK (seq 0)
+	// was already sent in StreamIQ. uint32 wrap arithmetic matches upstream.
+	var lastRecv, lastAck uint32
 	for {
 		select {
 		case <-ctx.Done():
@@ -521,6 +542,17 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 				}
 				return
 			}
+		}
+		// Flow control: advance the acked sequence and send a gratuitous ACK
+		// every triggerAckWindow datagrams so the server keeps streaming. Done
+		// for every datagram (including status codes), matching acquireRecv.
+		lastRecv = h.sequence + 1
+		if lastRecv-lastAck >= triggerAckWindow {
+			if err := d.sendStreamACK(dataConn, lastRecv); err != nil {
+				d.log.Debug("soapyremote: stream ack", "addr", d.addr, "err", err)
+				return
+			}
+			lastAck = lastRecv
 		}
 		if h.elems < 0 {
 			// Negative elems is a SoapySDR status/error code, not samples.
