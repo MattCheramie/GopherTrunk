@@ -294,6 +294,9 @@ sdr:
   #     driver: "uhd"               # SoapySDR device key: uhd | lime |
   #                                 #  bladerf | hackrf | airspy | rtlsdr
   #                                 #  (blank = server's first device)
+  #     args: ""                    # extra make() kwargs, "k=v,k=v" (merged
+  #                                 #  with driver); e.g. for a USRP TwinRX:
+  #                                 #  "rx_subdev_spec=A:0,antenna=RX1"
   #     serial: "usrp-roof"         # generator fills this from addr if blank
   #     role: control               # control | voice | auto
   #     format: "CS16"              # CS16 (16-bit, default) or CF32 (float)

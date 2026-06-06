@@ -584,6 +584,7 @@ sdr:
   soapy_remote:
     - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
       driver: "uhd"               # SoapySDR device key (blank = first device)
+      args: ""                    # extra make() kwargs "k=v,k=v" (see below)
       serial: "usrp-roof"         # generator fills this from addr when blank
       role: control               # control | voice | auto
       format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
@@ -605,6 +606,12 @@ broker / fan-out path.
   (`stream_protocol: tcp`), which opens two sockets to the server (a stream
   socket and a status socket, matching `SoapySDRServer`'s setup). UDP
   streaming with the windowed flow-control is a planned follow-up.
+- `args` passes extra SoapySDR device kwargs to the remote `make()` as a
+  `"key=value,key2=value2"` string, merged with `driver` (an explicit
+  `driver=` in `args` wins). Use it for server-side device selection and
+  configuration that `driver` alone can't express — e.g. a USRP TwinRX needs
+  `args: "rx_subdev_spec=A:0,antenna=RX1"`. This is distinct from the top-level
+  `serial`, which only names the virtual pool device locally.
 - `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
   `setFrequencyCorrection` / `writeSetting` and silently no-op on
   drivers that don't implement them.
@@ -622,6 +629,15 @@ broker / fan-out path.
 format=... proto=...` on each successful Open, `make device:` with the
 remote exception text when the server can't open the requested device,
 and `dial: connection refused` if the server isn't listening.
+
+> **Note — upstream server crashes.** Some radios were observed crashing
+> `SoapySDRServer` itself (a `zsh: segmentation fault` inside `libuhd`) when the
+> client mis-spoke the stream protocol. A server should never crash on a client
+> RPC, so that is an upstream UHD / `SoapySDRServer` robustness bug. GopherTrunk
+> no longer provokes it now that the TCP `SETUP_STREAM` handshake and stream
+> flow-control ACKs are byte-matched to SoapyRemote (issue #542). If you can
+> still reproduce a server crash, please report it upstream at
+> <https://github.com/pothosware/SoapyRemote/issues> with the server-side log.
 
 ## USB disconnect recovery
 
