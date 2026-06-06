@@ -14,28 +14,44 @@ import (
 )
 
 type Config struct {
-	Log         LogConfig         `yaml:"log"`
-	SDR         SDRConfig         `yaml:"sdr"`
-	Trunking    TrunkingConfig    `yaml:"trunking"`
-	API         APIConfig         `yaml:"api"`
-	Storage     StorageConfig     `yaml:"storage"`
-	Recordings  RecordingsConfig  `yaml:"recordings"`
-	Metrics     MetricsConfig     `yaml:"metrics"`
-	Retention   RetentionConfig   `yaml:"retention"`
-	ToneOut     ToneOutConfig     `yaml:"tone_out"`
-	Scanner     ScannerConfig     `yaml:"scanner"`
-	Audio       AudioConfig       `yaml:"audio"`
-	Broadcast   BroadcastConfig   `yaml:"broadcast"`
-	Baseband    BasebandConfig    `yaml:"baseband"`
-	Paging      PagingConfig      `yaml:"paging"`
-	APRS        APRSConfig        `yaml:"aprs"`
-	AIS         AISConfig         `yaml:"ais"`
-	DSC         DSCConfig         `yaml:"dsc"`
-	MDC1200     MDC1200Config     `yaml:"mdc1200"`
-	ADSB        ADSBConfig        `yaml:"adsb"`
-	M17         M17Config         `yaml:"m17"`
-	Web         WebConfig         `yaml:"web"`
-	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
+	Log            LogConfig            `yaml:"log"`
+	SDR            SDRConfig            `yaml:"sdr"`
+	Trunking       TrunkingConfig       `yaml:"trunking"`
+	API            APIConfig            `yaml:"api"`
+	Storage        StorageConfig        `yaml:"storage"`
+	Recordings     RecordingsConfig     `yaml:"recordings"`
+	Metrics        MetricsConfig        `yaml:"metrics"`
+	Retention      RetentionConfig      `yaml:"retention"`
+	ToneOut        ToneOutConfig        `yaml:"tone_out"`
+	Scanner        ScannerConfig        `yaml:"scanner"`
+	Audio          AudioConfig          `yaml:"audio"`
+	Broadcast      BroadcastConfig      `yaml:"broadcast"`
+	Baseband       BasebandConfig       `yaml:"baseband"`
+	Paging         PagingConfig         `yaml:"paging"`
+	APRS           APRSConfig           `yaml:"aprs"`
+	AIS            AISConfig            `yaml:"ais"`
+	DSC            DSCConfig            `yaml:"dsc"`
+	MDC1200        MDC1200Config        `yaml:"mdc1200"`
+	ADSB           ADSBConfig           `yaml:"adsb"`
+	M17            M17Config            `yaml:"m17"`
+	Web            WebConfig            `yaml:"web"`
+	Diagnostics    DiagnosticsConfig    `yaml:"diagnostics"`
+	RadioReference RadioReferenceConfig `yaml:"radioreference"`
+}
+
+// RadioReferenceConfig holds credentials for RadioReference.com's read-only
+// SOAP web service. It is consumed by `gophertrunk hunt` to check whether a
+// discovered system already exists in RadioReference before producing a
+// submission package (RadioReference has no public write API, so nothing is
+// ever posted — this is a read-only duplicate check). All fields are optional;
+// when APIKey is empty the duplicate check is skipped and the hunt still
+// exports its files. The values are also overridable by the GOPHERTRUNK_RR_KEY
+// / GOPHERTRUNK_RR_USER / GOPHERTRUNK_RR_PASS environment variables and the
+// hunt -rr-key flag, so the secret need not live in config.yaml.
+type RadioReferenceConfig struct {
+	APIKey   string `yaml:"api_key"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // DiagnosticsConfig controls error-reporting verbosity. When

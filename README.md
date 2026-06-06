@@ -256,6 +256,15 @@ Silicon and Intel. Full per-OS recipes at
   pure-browser React SPA web console, runtime config editing via
   `PATCH /api/v1/settings`, RadioReference PDF / CSV importer with
   a config-builder wizard.
+- **Site/system hunting** — `gophertrunk hunt` maps a previously
+  undocumented trunked system from one or more control-channel IQ
+  captures: auto-identifies the protocol, accumulates identity
+  (P25 NAC / WACN / SYSID / RFSS / Site, and per-protocol ids),
+  per-site control channels and observed talkgroups, then exports a
+  GopherTrunk import bundle, a trunk-recorder config stanza, and a
+  ready-to-paste RadioReference submission package — with an
+  optional read-only RadioReference duplicate check so you don't
+  submit a system that already exists. See [docs/hunt.md](docs/hunt.md).
 - **Location + affiliation** — NMEA-0183 GGA / RMC over the air
   decoded into a SQLite `location_log`; protocol-agnostic
   affiliation tracker fed from grants / registrations / affiliation
@@ -361,6 +370,7 @@ Operator-facing docs live at **[gophertrunk.org](https://gophertrunk.org)**
   [Web console](docs/web.md) ·
   [Live config editing](docs/live-edits.md) ·
   [Import (PDF / CSV)](docs/import.md) ·
+  [Hunt (discover unknown systems)](docs/hunt.md) ·
   [Hardening](docs/hardening.md)
 - **Reference** — [Architecture](docs/architecture.md) ·
   [Vocoders](docs/vocoders.md) ·

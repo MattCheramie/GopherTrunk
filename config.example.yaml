@@ -27,6 +27,21 @@ diagnostics:
   # -verbose-errors or GOPHERTRUNK_VERBOSE_ERRORS=1.
   verbose_errors: false
 
+# radioreference — read-only credentials for RadioReference.com's SOAP web
+# service, used by `gophertrunk hunt` to check whether a discovered system
+# already exists in RadioReference before you submit it. RadioReference has
+# NO public write API — new systems go through a manual web Submit form
+# reviewed by administrators — so nothing is ever posted; this is purely a
+# read-only duplicate check. All fields are optional: with no api_key the
+# check is simply skipped and the hunt still exports its files. The values
+# are also overridable by GOPHERTRUNK_RR_KEY / GOPHERTRUNK_RR_USER /
+# GOPHERTRUNK_RR_PASS and the `hunt -rr-key` flag, so the secret need not
+# live in this file. Request an API key at https://www.radioreference.com/account/api
+# radioreference:
+#   api_key: ""
+#   username: ""
+#   password: ""
+
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
   grpc_addr: "127.0.0.1:50051"  # gRPC
