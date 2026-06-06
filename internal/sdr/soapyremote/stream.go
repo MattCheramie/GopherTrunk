@@ -22,6 +22,52 @@ type streamHeader struct {
 	time     int64  // timestamp (ns)
 }
 
+// SoapyRemote stream flow control (common/SoapyStreamEndpoint.cpp). On an RX
+// stream the *receiver* (this client) must send flow-control ACK datagrams back
+// to the server over the stream/data socket, or the server streams nothing:
+//
+//   - The server's sender thread blocks in waitSend() while
+//     "not _receiveInitial", so it will not transmit a single sample until it
+//     has received an initial ACK from us.
+//   - Thereafter it may only run _maxInFlightSeqs datagrams ahead of the last
+//     sequence we have ACKed, so we must keep ACKing as data arrives.
+//
+// The receiver normally sends the initial ACK in its constructor and a
+// gratuitous ACK every _triggerAckWindow = _maxInFlightSeqs/_numBuffs received
+// datagrams (acquireRecv). We mirror that cadence here. Without these ACKs the
+// server never sends, our reads time out with zero bytes, and the radio's RX
+// path overruns (issue #542 follow-up).
+const (
+	// streamMTU matches SoapyRemote's default endpoint MTU.
+	streamMTU = 1500
+	// streamNumBuffs mirrors SOAPY_REMOTE_ENDPOINT_NUM_BUFFS.
+	streamNumBuffs = 8
+	// streamWindowBytes is the receiver window we advertise as the in-flight
+	// credit ceiling. The server gates its sender on the value we send, not on
+	// any local buffer, so this only needs to be comfortably large.
+	streamWindowBytes = 8 * 1024 * 1024
+	// maxInFlightSeqs is the credit window advertised to the server (the ACK's
+	// elems field); it gates how far ahead the server may stream (window/mtu).
+	maxInFlightSeqs = streamWindowBytes / streamMTU // ≈5592
+	// triggerAckWindow is how many received datagrams elapse between ACKs
+	// (_maxInFlightSeqs/_numBuffs), matching upstream's gratuitous-ACK cadence.
+	triggerAckWindow = maxInFlightSeqs / streamNumBuffs // ≈699
+)
+
+// encodeStreamACK builds the 24-byte flow-control ACK datagram: a bare,
+// payload-less header whose sequence is the last received sequence and whose
+// elems carries the advertised in-flight window. Big-endian, byte-matching
+// SoapyStreamEndpoint::sendACK.
+func encodeStreamACK(seq uint32) []byte {
+	b := make([]byte, streamHeaderSize)
+	binary.BigEndian.PutUint32(b[0:4], streamHeaderSize)
+	binary.BigEndian.PutUint32(b[4:8], seq)
+	binary.BigEndian.PutUint32(b[8:12], maxInFlightSeqs)
+	binary.BigEndian.PutUint32(b[12:16], 0)
+	binary.BigEndian.PutUint64(b[16:24], 0)
+	return b
+}
+
 func decodeStreamHeader(b []byte) streamHeader {
 	return streamHeader{
 		bytes:    binary.BigEndian.Uint32(b[0:4]),
