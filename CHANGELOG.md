@@ -7,6 +7,26 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.4] — 2026-06-06
+
+High-bit-depth network SDRs, first-class raw-IQ capture, and the
+RTL-SDR Blog V4 finally hears. A new pure-Go `soapyremote` backend
+mounts any remote `SoapySDRServer` — USRP, LimeSDR, bladeRF, HackRF,
+Airspy, SDRplay — as a virtual tuner carrying the radio's full 16-bit
+(`CS16`) or 32-bit-float (`CF32`) IQ instead of `rtl_tcp`'s hardcoded 8
+bits (#541, #543). `gophertrunk capture` records raw IQ straight off a
+live dongle to a `.cfile` (with a siglab metadata sidecar, so the
+capture is a drop-in fixture), and the SigLab web console gains a
+capture-and-download control (#540). On the hardware side, three
+independent R828D (RTL-SDR Blog V4) bugs that left the V4 deaf where an
+R820T2 decoded cleanly are fixed — an inverted mixer-AGC bit + unwritten
+VGA in `SetGainMode` (#535) and the wrong PLL VCO power reference (#538),
+both diagnosed from issue #264 captures. And the P25 pipeline no longer
+stalls for seconds correcting NID CRCs now that the fractionally-spaced
+equaliser lets CQPSK actually lock: the BCH(63,16) NID decoder is
+rewritten from a 65,536-codeword brute-force search into an algebraic
+Berlekamp-Massey / Chien decoder (#534, #537, issue #492).
+
 ### Added
 
 - **SoapySDRServer remote SDRs — high-bit-depth network streaming + control
@@ -61,6 +81,155 @@ for tagged releases.
   `set_rx_agc() is not supported on this radio` and used to abort the whole
   gain set, leaving the device at its default. Disabling AGC is now best-effort,
   so the manual gain value is still applied.
+- **RTL-SDR Blog V4 (R828D) deafness: inverted mixer-AGC bit + missing
+  VGA write in `SetGainMode` (#535, issue #264).** `R82xx.SetGainMode`
+  programmed the mixer AGC-enable bit (reg 0x07 bit 4) with the same
+  polarity as the LNA bit, but in librtlsdr's `r82xx_set_gain` the two are
+  opposite (manual = LNA 1 / mixer 0, AGC = LNA 0 / mixer 1). The AGC path
+  also never wrote the VGA (librtlsdr pins it at reg 0x0C = 0x0B). Together
+  the front end ran well below its intended gain in AGC mode — the daemon
+  default — which a strong-signal R820T2 tolerates but a marginal R828D
+  (Blog V4) doesn't: it fell below an intermod-elevated noise floor and
+  decoded nothing. The mixer bit now uses the correct inverted polarity and
+  the AGC branch writes the fixed VGA, mirroring librtlsdr.
+- **RTL-SDR Blog V4 (R828D) PLL fine-tune: VCO power reference of 1 (#538,
+  issue #264).** `setPLL` ported osmocom librtlsdr's fixed `vco_power_ref`
+  of 2 for every chip, but the rtlsdr-blog fork (the V4's official driver)
+  lowers it to 1 for the R828D; with the stock 2 the V4's mixer divider is
+  nudged the wrong way and the LO mistunes, so the V4 received only noise
+  while an R820T2 on the same signal decoded cleanly. A per-chip
+  `vcoPowerRef()` now returns 1 for the R828D and the stock 2 otherwise;
+  the R820T / R820T2 path is byte-for-byte unchanged.
+- **P25 decode no longer stalls correcting NID CRCs (#534, #537, issue
+  #492).** Once the new fractionally-spaced equaliser (#532) let the CQPSK
+  control-channel path lock, a previously-dormant hot path started running
+  on every frame and froze the single-goroutine decode pipeline for seconds
+  at a time (bursty, laggy output with 10–15 s silences). The cause was the
+  BCH(63,16) NID error-corrector, which brute-forced a minimum-Hamming-
+  distance search by re-encoding all 65,536 codewords on every call —
+  104 decodes per FSW hit on the CQPSK path. It is replaced by an algebraic
+  Berlekamp-Massey / Chien decoder over the existing GF(2⁶) field (binary
+  BCH, so Chien gives the error positions directly — no Forney), with a
+  re-encode self-check so any convention slip degrades to a safe
+  "uncorrectable" rather than a wrong decode. Decode *outcomes* are
+  unchanged (proven bit-for-bit against a brute-force oracle over all 1- and
+  2-bit error patterns); the uncorrectable false-FSW-hit case that drove the
+  stalls drops from ~1 ms to ~4.6 µs. `BCHDecode64_16` (Motorola Type II
+  OSW) rides the same decoder and speeds up for free.
+- **DMR Tier II Voice LC Header FEC verified against MMDVM; off-air
+  diagnostics added (#539, follow-up to #527).** A field report still
+  showed constant `voiceheader-bptc` / `voiceheader-rs` decode errors on
+  real off-air signals while the synthetic fixture passed. Because every
+  test round-trips our own encoder, a real-air-only mismatch passes CI and
+  fails on air. The RS(12,9) layer is now cross-checked against an
+  independent reference encoder (russian-peasant GF(2⁸) multiply, canonical
+  generator `{64,56,14}`), confirming it matches the de-facto MMDVMHost
+  CRS129 convention — so RS is *not* the bug; BPTC/Hamming already match
+  MMDVM. `handleVoiceHeader` now Debug-logs the failing burst's 132 dibits,
+  the 196-bit payload, and the recovered octets so a single real failing
+  burst can be replayed through DSD-FME / MMDVMHost to localise the on-air
+  divergence. The remaining unknown is real-air-only and needs a labelled
+  off-air capture; the docs now flag DMR Tier II as capture-blocking rather
+  than validated.
+
+## [v0.3.3] — 2026-06-05
+
+The Signal Lab grows a browser, and the long RTL-SDR Blog V4 hunt gets
+its diagnostics and its first real fix. `siglab` gains an in-memory
+decode path (analyse a capture straight from any `io.Reader` — a
+synthesised signal or an HTTP upload — with no disk round-trip), bounded
+decimated-IQ taps for visualisation, and a standalone single-page Signal
+Lab web app served by a new offline-analysis HTTP API (#530). A new
+"sdr tuner detected" diagnostic line plus per-device `blog_v4` /
+`blog_v4_lite` override keys make the V4's silent LO-mistune observable
+and recoverable without code churn (#528, issue #264). On the decode
+side, the DMR Tier II Voice LC Header FEC is reworked to the canonical
+ETSI / MMDVM bit layout so real off-air headers decode (#527), and the
+P25 CQPSK path takes two more steps on issue #492: a multipath-gated
+carrier seed that stops a simulcast spectral null from faking a carrier
+offset (#529), and a T/2 fractionally-spaced blind equaliser that finally
+locks the linear path on real C4FM captures — 0/8 → 8/8 across the
+reporter's stress set (#532). A new decoder live-capture requirements
+summary (#526) catalogues which decoders still need real over-the-air
+captures to be fully validated.
+
+### Added
+
+- **SigLab in the browser — standalone web app + offline-analysis HTTP
+  API (#530).** A new daemon-free single-page Signal Lab app visualises
+  one or more captures, served by an offline signal-analysis HTTP API
+  (`siglab serve`). Backing it, the siglab engine gains `RunReader` /
+  `RunReaderStream` so a capture can be analysed from any `io.Reader`
+  (synthesised signal, HTTP upload) without a disk round-trip; an opt-in,
+  bounded IQ tap (`Config.CaptureIQ`) that buffers a stride-decimated copy
+  of the channelised IQ plus pre-slicer soft samples into `Result.IQTaps`;
+  and `SynthesizeAndAnalyze`, which synthesises an idealised or impaired
+  signal and decodes it in memory in one call for the web compare feature.
+- **RTL-SDR Blog V4 detection diagnostics + manual override (#528, issue
+  #264).** A "sdr tuner detected" log line at device open (and on watchdog
+  reacquire) reports the USB manufacturer/product strings, tuner chip,
+  `blog_v4` state, and effective reference crystal — an `ref_xtal_hz` of
+  16 MHz on an R828D means auto-detection missed the unit (it's running the
+  generic crystal instead of 28.8 MHz), 28.8 MHz means the V4 path is armed.
+  New per-device `blog_v4` / `blog_v4_lite` config keys force V4 mode
+  regardless of EEPROM strings, plumbed config → Hint → pool →
+  `Device.SetBlogV4` and applied before PPM and any tune. Backed by new
+  optional `sdr.Device` extensions (`TunerDiagnoser`, `BlogV4Forcer`).
+
+### Fixed
+
+- **DMR Tier II Voice LC Headers now decode off-air: BPTC/RS bit layout
+  reworked to the canonical DMR convention (#527).** Tier II decode
+  produced a constant stream of `voiceheader-bptc` / `voiceheader-rs`
+  decode errors on real signals while synthetic fixtures passed — because
+  the fixtures encoded with the same non-standard codecs, so encode↔decode
+  round-tripped and nothing caught the divergence. The FEC layers are
+  reworked to the canonical layout cross-checked against the de-facto MMDVM
+  / dmr_utils references: BPTC(196,96) deinterleave + matrix read order,
+  corrected Hamming(13,9) column-parity equations, RS(12,9) over GF(2⁸)
+  with primitive polynomial 0x11D and generator `{64,56,14}` (was 0x163 —
+  what kept `voiceheader-rs` failing even once BPTC was correct), and the
+  embedded-LC BPTC(128,72) interleave + mod-31 checksum. Public
+  `Encode`/`Decode` signatures are unchanged, so every synthetic fixture
+  still round-trips, and a new spec-literal golden test pins the on-air
+  layout so a future bit-ordering regression fails loudly.
+- **P25 CQPSK carrier seed gated on multipath (#529, issue #492).** After
+  the CMA centre-tap pin, the control-channel demod still railed on the
+  simulcast captures: a deep spectral null shifts the lag-1 (Kay)
+  autocorrelation centroid, which the coarse seed reads as a spurious
+  ~650–750 Hz offset, mis-tunes the NCO, and pins the Costas integrator at
+  its clamp. The seed is now gated — de-rotate by the candidate estimate,
+  matched-filter, and measure the coefficient of variation of the symbol
+  modulus: a pure offset only rotates the constant-modulus symbols (low CV)
+  while multipath ISI blurs the modulus (high CV), so a high-CV estimate is
+  treated as multipath bias and the NCO is left identity for the CMA→Costas
+  loop to acquire the true offset on its own. Costas anti-windup lets a loop
+  left pinned at the clamp re-acquire. The synthetic
+  `TestCQPSKDemodRecoversFSWWithMultipathAndOffset` repro is un-skipped as
+  the regression guard, and `gophertrunk gen` gains `-multipath`, `-drift`,
+  and `-modulation lsm` to regenerate the stress capture.
+- **P25 linear/CQPSK path now decodes real C4FM: T/2 fractionally-spaced
+  equaliser (#532, issue #492).** The carrier-rail fix (#529) was
+  incomplete — live captures still failed (dibit histogram collapsed onto
+  one symbol, FSW never correlated) while C4FM decoded perfectly. Root
+  cause: the linear path matched-filters a real P25 **C4FM** waveform with a
+  fixed RRC, but the C4FM transmit pulse isn't RRC, so the outer ±1800 Hz
+  rails arrive under-shot and the symbol-spaced CMA (one sample/symbol)
+  can't correct a sub-symbol pulse-shape mismatch. The symbol-spaced CMA is
+  replaced with a leaky **T/2 fractionally-spaced blind equaliser** fed two
+  samples per symbol (Gardner's on-time + mid-symbol interpolants); a
+  fractionally-spaced equaliser synthesises the receive matched filter
+  implicitly, opening both simulcast multipath ISI and the C4FM-vs-RRC
+  mismatch while staying blind (rotation-invariant) ahead of the Costas
+  loop. Validated on 8 real P25 C4FM captures: CQPSK lock went 0/8
+  (pre-fix) → 3/8 (#529) → **8/8**, several at or above C4FM-demod parity.
+
+### Docs
+
+- **Decoder live-capture requirements summary (#526).** A per-decoder
+  walkthrough listing which decoders still need real over-the-air captures
+  to be fully validated, with the capture format, sample rate, modulation,
+  duration/size, and per-protocol acceptance criteria for each.
 
 ## [v0.3.2] — 2026-06-04
 
