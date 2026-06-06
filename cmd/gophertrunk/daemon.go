@@ -364,10 +364,22 @@ type Daemon struct {
 	// the broker wraps the recorder when baseband recording is on
 	// for the same dongle.
 	iqBrokers map[string]*iqtap.Broker
-	metrics   *metrics.Metrics
-	httpAPI   *api.Server
-	grpcAPI   *api.GRPCServer
-	rigctld   *rigctld.Server
+	// iqPrimary is the set of SDR serials whose iqtap broker already has
+	// a primary StreamIQ pump driving fan-out — the CC decoder and each
+	// wideband engine (seeded at construction), plus the first
+	// single-channel decoder claimed per serial at run time. A broker
+	// only fans IQ to Subscribe() consumers while a primary stream runs,
+	// so a dongle dedicated to paging / AIS / ADS-B needs one of its
+	// decoders to own StreamIQ; otherwise every subscriber (the decoder
+	// itself, plus capture / spectrum / diagnostics) silently starves.
+	// See issue #547. Guarded by iqPrimaryMu — single-channel decoders
+	// claim concurrently from their spawn goroutines.
+	iqPrimaryMu sync.Mutex
+	iqPrimary   map[string]bool
+	metrics     *metrics.Metrics
+	httpAPI     *api.Server
+	grpcAPI     *api.GRPCServer
+	rigctld     *rigctld.Server
 
 	// startupWarnings collects non-fatal observations from
 	// NewDaemon / preflight (missing talkgroup CSV, SDR enumeration
@@ -481,11 +493,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	}
 
 	d := &Daemon{
-		cfg:     cfg,
-		cfgPath: cfgPath,
-		log:     log,
-		bus:     events.NewBus(64),
-		ready:   make(chan struct{}),
+		cfg:       cfg,
+		cfgPath:   cfgPath,
+		log:       log,
+		bus:       events.NewBus(64),
+		ready:     make(chan struct{}),
+		iqPrimary: make(map[string]bool),
 	}
 	if cfgPath != "" {
 		w, err := config.NewWriter(cfgPath)
@@ -1109,6 +1122,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					IQCorrect:    iqCorrect,
 				}
 				d.controlSerial = controlEntry.Info.Serial
+				// The CC decoder owns StreamIQ on this dongle's broker,
+				// so single-channel decoders that share it must Subscribe
+				// rather than open a conflicting second stream (#547).
+				d.iqPrimary[controlEntry.Info.Serial] = true
 				// Reacquire re-requests the configured rate (and re-quantizes
 				// on the fresh handle); the decoder, by contrast, is built from
 				// the delivered effectiveRate above.
@@ -1245,6 +1262,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				return nil, fmt.Errorf("daemon: widebandt2 %q: %w", devCfg.Serial, err)
 			}
 			d.widebandT2 = append(d.widebandT2, eng)
+			// This engine owns StreamIQ on the dongle's broker; mark the
+			// serial so a single-channel decoder pinned to the same dongle
+			// Subscribes instead of opening a second stream (#547).
+			d.iqPrimary[entry.Info.Serial] = true
 			// Virtual voice taps for this dongle are built earlier by
 			// buildVirtualVoiceTuners (before the voice pool and composer
 			// are constructed) so trunked grants inside the IQ window have
@@ -1984,9 +2005,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("pocsag: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// FLEX paging receivers — same shape as POCSAG above. Each
@@ -2012,9 +2038,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("flex: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// M17 link-layer receivers — same shape as the paging receivers
@@ -2039,9 +2070,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("m17: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// APRS receivers — same shape as POCSAG above. Each subscribes
@@ -2071,9 +2107,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("aprs: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// AIS receivers — same shape as APRS / POCSAG above. Each
@@ -2104,9 +2145,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("ais: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// DSC receivers — same shape as AIS above. Each subscribes to its
@@ -2136,9 +2182,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("dsc: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// MDC1200 receivers — same shape as APRS / AIS above. Each
@@ -2168,9 +2219,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("mdc1200: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	// ADS-B BEAST upstream clients — each consumes Mode-S
@@ -2210,9 +2266,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			sub := br.Subscribe()
-			defer sub.Close()
-			return rcv.Process(ctx, sub.C)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("adsb/ppm: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
 		})
 	}
 	if d.pool != nil {
@@ -2914,6 +2975,45 @@ func (d *Daemon) wrapIQBrokers(cfg config.Config, log *slog.Logger) {
 		br.Seed(0, rate)
 		d.iqBrokers[e.Info.Serial] = br
 	}
+}
+
+// openSingleChannelIQ returns an IQ channel for a single-channel decoder
+// (POCSAG, FLEX, M17, APRS, AIS, DSC, MDC1200, ADS-B/PPM) pinned to serial.
+//
+// An iqtap.Broker only fans IQ out to Subscribe() consumers while a primary
+// StreamIQ session is running. Trunking / wideband dongles get that primary
+// from the CC decoder or wideband engine, but a dongle dedicated to a
+// single-channel decoder has none — so the first such decoder per serial must
+// drive StreamIQ itself. Doing so also feeds every other Subscribe() consumer
+// on that dongle (capture / spectrum / diagnostics), which previously starved
+// too (issue #547).
+//
+// The first caller per serial (when no trunking/wideband primary already owns
+// the broker) becomes the primary and gets StreamIQ; later callers on the same
+// serial Subscribe. The returned cleanup must be deferred. StreamIQ
+// self-terminates on ctx cancel, so the primary's cleanup is a no-op.
+func (d *Daemon) openSingleChannelIQ(ctx context.Context, br *iqtap.Broker, serial string) (<-chan []complex64, func(), error) {
+	d.iqPrimaryMu.Lock()
+	primary := !d.iqPrimary[serial]
+	if primary {
+		d.iqPrimary[serial] = true
+	}
+	d.iqPrimaryMu.Unlock()
+
+	if primary {
+		ch, err := br.StreamIQ(ctx)
+		if err != nil {
+			// Release the claim so a retry (or another decoder) can drive
+			// the pump instead of wedging the serial on a dead primary.
+			d.iqPrimaryMu.Lock()
+			delete(d.iqPrimary, serial)
+			d.iqPrimaryMu.Unlock()
+			return nil, func() {}, err
+		}
+		return ch, func() {}, nil
+	}
+	sub := br.Subscribe()
+	return sub.C, sub.Close, nil
 }
 
 // convFanoutRecorder lets the conventional scanner drive both the
