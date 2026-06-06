@@ -21,6 +21,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). On-air validation against attached hardware is the documented follow-up. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
+| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Wire-protocol-complete; on-air validation against a live `SoapySDRServer` is the documented follow-up. See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
 libhackrf, libairspy, and libairspyhf USB vendor protocols directly
@@ -557,6 +558,65 @@ decoder all work against remote sources.
 on each successful Open, `dial: connection refused` if the remote
 isn't listening, and `header magic = "..."` if the address points
 at something that isn't an `rtl_tcp` server.
+
+## Remote SoapySDRServer SDRs
+
+`rtl_tcp` is hardcoded to 8-bit unsigned IQ, so it throws away the
+dynamic range of professional hardware. For high-bit-depth radios —
+Ettus USRP, LimeSDR, bladeRF, HackRF, Airspy, RTL-SDR, SDRplay, and
+anything else with a SoapySDR driver — GopherTrunk's `soapyremote`
+driver speaks the [SoapyRemote](https://github.com/pothosware/SoapyRemote)
+wire protocol directly, in pure Go with no CGO and no SoapySDR C
+libraries. It carries 16-bit (`CS16`) or 32-bit float (`CF32`) IQ and
+controls frequency, sample rate, and gain over SoapyRemote's RPC.
+
+Typical layout:
+
+- **Antenna host**: install SoapySDR + the device's Soapy module and
+  run `SoapySDRServer --bind` against the local radio (default port
+  55132).
+- **Daemon host**: list the endpoint under `sdr.soapy_remote` in
+  `config.yaml`.
+
+```yaml
+sdr:
+  sample_rate: 2_400_000
+  soapy_remote:
+    - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
+      driver: "uhd"               # SoapySDR device key (blank = first device)
+      serial: "usrp-roof"         # generator fills this from addr when blank
+      role: control               # control | voice | auto
+      format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
+      stream_protocol: "tcp"      # tcp (default/only for now)
+      ppm: 0                      # best-effort (driver-dependent)
+      gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
+      bias_tee: false             # best-effort (driver-dependent)
+      connect_timeout_ms: 3000
+```
+
+Each entry becomes a pool device alongside any local USB dongles and
+`rtl_tcp` endpoints, roled through the same hint matcher, with the same
+broker / fan-out path.
+
+**Limitations:**
+
+- Receive only, single channel (channel 0).
+- The IQ stream uses SoapyRemote's in-order **TCP** transport
+  (`stream_protocol: tcp`). UDP streaming with the windowed flow-control
+  is a planned follow-up.
+- `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
+  `setFrequencyCorrection` / `writeSetting` and silently no-op on
+  drivers that don't implement them.
+- Plaintext over TCP. Keep it on a trusted network, or tunnel it
+  through SSH / WireGuard / Tailscale.
+- The RPC and stream framing are byte-verified against SoapyRemote's
+  source; the TCP stream connection choreography should be validated
+  against a live `SoapySDRServer` before production use.
+
+**Diagnostics:** the daemon logs `soapyremote: connected addr=...
+format=... proto=...` on each successful Open, `make device:` with the
+remote exception text when the server can't open the requested device,
+and `dial: connection refused` if the server isn't listening.
 
 ## USB disconnect recovery
 

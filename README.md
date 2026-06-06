@@ -171,6 +171,12 @@ Silicon and Intel. Full per-OS recipes at
   endpoints as virtual tuners alongside local USB dongles. The
   SDR can live on a Raspberry Pi at the antenna while the daemon
   runs on a beefier host; one entry per remote in `sdr.rtl_tcp`.
+- **Remote SoapySDRServer SDRs** — Mount professional / high-bit-depth
+  hardware (USRP, LimeSDR, bladeRF, HackRF, Airspy, SDRplay, …) over the
+  network via the [SoapyRemote](https://github.com/pothosware/SoapyRemote)
+  protocol, in pure Go with no CGO. Carries 16/32-bit IQ with native
+  frequency / sample-rate / gain control; one entry per remote in
+  `sdr.soapy_remote`. See [docs/hardware.md](docs/hardware.md).
 - **Live spectrum / waterfall** — In-browser FFT waterfall served
   off the same IQ stream the trunking decoder consumes. New
   `internal/sdr/iqtap` multi-consumer fan-out lets future

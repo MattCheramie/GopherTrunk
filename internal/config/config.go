@@ -547,6 +547,15 @@ type SDRConfig struct {
 	// a beefier machine for decode). rtl_tcp is plaintext — use it
 	// on trusted networks only or through an SSH/wireguard tunnel.
 	RTLTCP []RTLTCPConfig `yaml:"rtl_tcp"`
+	// SoapyRemote lists remote SoapySDRServer endpoints to mount as
+	// virtual tuners. SoapySDRServer (from pothosware/SoapyRemote)
+	// exposes any SoapySDR-supported radio — USRP, LimeSDR, bladeRF,
+	// HackRF, Airspy, RTL-SDR, SDRplay — over the network with a real
+	// control plane and high bit depth (16-bit CS16 / 32-bit CF32),
+	// unlike rtl_tcp's hardcoded 8-bit stream. Each entry becomes one
+	// pool device. Plaintext like rtl_tcp — use on trusted networks
+	// only or through an SSH/wireguard tunnel.
+	SoapyRemote []SoapyRemoteConfig `yaml:"soapy_remote"`
 	// WatchdogIntervalMs governs the periodic USB-disconnect
 	// watchdog that the SDR pool runs while the daemon is up. It
 	// polls the registered drivers, surfaces serials that vanish
@@ -586,6 +595,43 @@ type RTLTCPConfig struct {
 	BiasTee bool `yaml:"bias_tee"`
 	// ConnectTimeoutMs caps the TCP dial in milliseconds. Zero
 	// picks the driver default (3000).
+	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
+}
+
+// SoapyRemoteConfig describes one remote SoapySDRServer endpoint to expose
+// as a virtual tuner. Addr is required; Serial / Role / PPM / Gain / BiasTee
+// follow the same semantics as the local SDR devices and rtl_tcp blocks.
+type SoapyRemoteConfig struct {
+	// Addr is the SoapySDRServer host:port, e.g. "192.168.1.60:55132".
+	// A bare host gets the default port (55132) appended. Required.
+	Addr string `yaml:"addr"`
+	// Driver is the SoapySDR device key used to select the radio on the
+	// server (e.g. "uhd", "lime", "bladerf", "hackrf", "airspy",
+	// "rtlsdr"). Empty selects the server's first/only device.
+	Driver string `yaml:"driver"`
+	// Serial is the virtual device serial reported on the pool's
+	// /api/v1/devices snapshot. Empty generates one from Addr.
+	Serial string `yaml:"serial"`
+	// Role hints the pool's role assignment: control|voice|auto.
+	Role string `yaml:"role"`
+	// Format is the requested wire sample format: "CS16" (16-bit, the
+	// default) or "CF32" (32-bit float). The server converts from the
+	// device's native format as needed.
+	Format string `yaml:"format"`
+	// StreamProtocol selects the stream transport. Only "tcp" (the
+	// default) is currently implemented.
+	StreamProtocol string `yaml:"stream_protocol"`
+	// PPM is the frequency-correction tuning applied on open (best-effort;
+	// ignored by SoapySDR drivers without frequency-correction support).
+	PPM int `yaml:"ppm"`
+	// Gain follows the same rule as DeviceConfig.Gain — "auto"/"" selects
+	// AGC, any other value parses as tenths of dB.
+	Gain string `yaml:"gain"`
+	// BiasTee toggles the remote device's bias-tee (best-effort; mapped to
+	// a SoapySDR writeSetting and ignored by drivers without the knob).
+	BiasTee bool `yaml:"bias_tee"`
+	// ConnectTimeoutMs caps the TCP dial in milliseconds. Zero picks the
+	// driver default (3000).
 	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
 }
 
@@ -1208,6 +1254,37 @@ func (c Config) Validate() error {
 				i, r.Serial, prev)
 		}
 		seenSerials[r.Serial] = i
+	}
+	// Validate SoapySDRServer endpoints. Same rules as rtl_tcp, plus the
+	// stream protocol and sample format must be ones the driver supports.
+	for i, s := range c.SDR.SoapyRemote {
+		if s.Addr == "" {
+			return fmt.Errorf("sdr.soapy_remote[%d]: addr is required (host:port)", i)
+		}
+		switch s.Role {
+		case "", "control", "voice", "auto":
+		default:
+			return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto", i)
+		}
+		switch s.Format {
+		case "", "CS16", "cs16", "CF32", "cf32":
+		default:
+			return fmt.Errorf("sdr.soapy_remote[%d]: format must be CS16 or CF32", i)
+		}
+		switch s.StreamProtocol {
+		case "", "tcp":
+		default:
+			return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
+		}
+		if s.Serial == "" {
+			continue
+		}
+		if prev, dup := seenSerials[s.Serial]; dup {
+			return fmt.Errorf(
+				"sdr.soapy_remote[%d]: serial %q collides with sdr.devices[%d]",
+				i, s.Serial, prev)
+		}
+		seenSerials[s.Serial] = i
 	}
 	if c.Trunking.CallTimeoutMs < 0 {
 		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)

@@ -39,6 +39,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -699,6 +700,57 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(rspecs) > 0 {
 				sdr.Register(rtltcp.New(rspecs, log))
 				log.Info("rtl_tcp endpoints mounted", "count", len(rspecs))
+			}
+		}
+		// Mount SoapySDRServer endpoints as virtual tuners. Same lazy
+		// pattern as rtl_tcp: the driver dials inside Pool.Open, so a
+		// down/misconfigured server surfaces as a warning rather than
+		// blocking startup. Per-endpoint Hint carries role / ppm / gain /
+		// bias-tee through the shared hint matcher.
+		if len(cfg.SDR.SoapyRemote) > 0 {
+			sspecs := make([]soapyremote.Spec, 0, len(cfg.SDR.SoapyRemote))
+			for _, s := range cfg.SDR.SoapyRemote {
+				if s.Addr == "" {
+					log.Warn("daemon: soapy_remote entry missing addr; skipping")
+					continue
+				}
+				var args map[string]string
+				if s.Driver != "" {
+					args = map[string]string{"driver": s.Driver}
+				}
+				sspecs = append(sspecs, soapyremote.Spec{
+					Addr:           s.Addr,
+					Serial:         s.Serial,
+					Role:           s.Role,
+					DeviceArgs:     args,
+					Format:         s.Format,
+					StreamProtocol: s.StreamProtocol,
+					ConnectTimeout: time.Duration(s.ConnectTimeoutMs) * time.Millisecond,
+				})
+				if s.Serial != "" {
+					h := sdr.Hint{
+						Serial:  s.Serial,
+						Role:    sdr.ParseRole(s.Role),
+						PPM:     s.PPM,
+						BiasTee: s.BiasTee,
+					}
+					if s.Gain != "" {
+						gain, ok := parseGain(s.Gain)
+						if !ok {
+							log.Warn("daemon: ignoring unparseable soapy_remote gain",
+								"serial", s.Serial, "gain", s.Gain)
+						} else {
+							warnGainUnits(log, s.Serial, s.Gain, gain)
+							warnLowGain(log, s.Serial, h.Role, s.Gain, gain)
+							h = h.WithGain(gain)
+						}
+					}
+					hints = append(hints, h)
+				}
+			}
+			if len(sspecs) > 0 {
+				sdr.Register(soapyremote.New(sspecs, log))
+				log.Info("soapy_remote endpoints mounted", "count", len(sspecs))
 			}
 		}
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{
