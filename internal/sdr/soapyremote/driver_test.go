@@ -89,6 +89,11 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			return
 		}
 		rec := recordedCall{id: id}
+		// activateSID is signalled to the data goroutine only AFTER the
+		// call is recorded below; otherwise the client can receive IQ and
+		// the test can check sawCall(ACTIVATE) before this loop records it.
+		var activateSID string
+		var doActivate bool
 		switch id {
 		case callSetFrequency:
 			_, _ = u.char()
@@ -124,10 +129,8 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 		case callActivateStream:
 			sid, _ := u.str()
 			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
-			select {
-			case activate <- sid:
-			default:
-			}
+			activateSID = sid
+			doActivate = true
 		default:
 			// MAKE, DEACTIVATE, CLOSE, WRITE_SETTING, FREQ_CORRECTION, ...
 			s.respond(conn, func(p *packer) { p.raw8(tVoid) })
@@ -135,6 +138,12 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 		s.mu.Lock()
 		s.calls = append(s.calls, rec)
 		s.mu.Unlock()
+		if doActivate {
+			select {
+			case activate <- activateSID:
+			default:
+			}
+		}
 	}
 }
 
