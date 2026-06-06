@@ -12,15 +12,16 @@
 //     tuning, gain and stream setup as length-framed, type-tagged packets
 //     (see rpc.go).
 //   - A separate stream socket carries 24-byte-framed IQ datagrams (see
-//     stream.go). This driver implements the TCP stream transport, which is
-//     in-order and needs no UDP flow-control; the operator selects it with
+//     stream.go), plus a second "status" socket the server requires alongside
+//     it. This driver implements the TCP stream transport, which is in-order
+//     and needs no UDP flow-control; the operator selects it with
 //     `stream_protocol: tcp` (the default). UDP streaming is a future
 //     addition (issue #536 phase 2).
 //
-// The wire format was reverse-engineered from SoapyRemote@master. The RPC and
-// datagram framing are byte-verified against the source; the TCP stream
-// connection choreography should be validated against a live SoapySDRServer
-// before relying on it in production.
+// The wire format was reverse-engineered from SoapyRemote@master and the RPC,
+// datagram framing, and TCP stream setup choreography are byte-matched to the
+// source (client/Streaming.cpp + server/ClientHandler.cpp). It is exercised by
+// a fake server in the tests; validate against live hardware before release.
 //
 // Limitations:
 //   - Single channel (channel 0), receive only.
@@ -51,6 +52,12 @@ const DefaultServicePort = "55132"
 
 // DefaultConnectTimeout caps RPC dials and per-call round-trips.
 const DefaultConnectTimeout = 3 * time.Second
+
+// streamSetupTimeout bounds the per-frame reads during TCP stream setup. It is
+// deliberately longer than the per-call RPC timeout because a cold high-end
+// device (e.g. a USRP X310) spends several seconds compiling its RFNoC graph
+// inside the server's setupStream before it replies (issue #542).
+const streamSetupTimeout = 30 * time.Second
 
 // maxTransfer bounds a single stream transfer so a corrupt length field can't
 // trigger a huge allocation.
@@ -193,11 +200,12 @@ type device struct {
 	log     *slog.Logger
 	info    sdr.Info
 
-	mu       sync.Mutex
-	conn     net.Conn // RPC control socket
-	dataConn net.Conn // stream data socket (set in StreamIQ)
-	streamID string
-	closed   bool
+	mu         sync.Mutex
+	conn       net.Conn // RPC control socket
+	dataConn   net.Conn // stream data socket (set in StreamIQ)
+	statusConn net.Conn // stream status socket (the server requires it; we drain it)
+	streamID   int32
+	closed     bool
 }
 
 func (d *device) Info() sdr.Info { return d.info }
@@ -267,15 +275,18 @@ func (d *device) SetGain(tenthDB int) error {
 			p.boolean(true)
 		})
 	}
-	// Manual gain: disable AGC, then set the overall gain in dB.
-	if err := d.rpcVoid(func(p *packer) {
+	// Manual gain: best-effort disable AGC, then set the overall gain in dB.
+	// Disabling AGC maps to setGainMode(false); on front-ends with no AGC at
+	// all (e.g. a USRP TwinRX) the server rejects it with "set_rx_agc() is not
+	// supported on this radio". That must not abort the manual setGain that
+	// follows — setGain is the call that actually applies the configured gain
+	// (issue #542).
+	_ = d.rpcBestEffort("disable agc", func(p *packer) {
 		p.call(callSetGainMode)
 		p.char(dirRX)
 		p.i32(0)
 		p.boolean(false)
-	}); err != nil {
-		return err
-	}
+	})
 	return d.rpcVoid(func(p *packer) {
 		p.call(callSetGain)
 		p.char(dirRX)
@@ -330,70 +341,153 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	if d.proto != "tcp" {
 		return nil, fmt.Errorf("soapyremote: stream_protocol %q not supported", d.proto)
 	}
-	// SETUP_STREAM. clientBindPort/statusBindPort are unused in TCP mode
-	// (the client dials the server), so "0" is sent for both.
-	u, err := d.rpc(func(p *packer) {
-		p.call(callSetupStream)
-		p.char(dirRX)
-		p.str(d.format.soapyName())
-		p.sizeList([]int{0})
-		p.kwargs(map[string]string{"remote:prot": "tcp"})
-		p.str("0")
-		p.str("0")
-	})
+	streamID, dataConn, statusConn, err := d.setupStreamTCP()
 	if err != nil {
 		return nil, err
 	}
-	if err := u.checkException(); err != nil {
-		return nil, err
-	}
-	streamID, err := u.str()
-	if err != nil {
-		return nil, fmt.Errorf("soapyremote: setup stream id: %w", err)
-	}
-	serverPort, err := u.str()
-	if err != nil {
-		return nil, fmt.Errorf("soapyremote: setup stream port: %w", err)
-	}
 
-	host, _, err := net.SplitHostPort(d.addr)
-	if err != nil {
-		return nil, fmt.Errorf("soapyremote: split addr %q: %w", d.addr, err)
-	}
-	dataAddr := net.JoinHostPort(host, serverPort)
-	dataConn, err := net.DialTimeout("tcp", dataAddr, d.timeout)
-	if err != nil {
-		return nil, fmt.Errorf("soapyremote: dial stream %s: %w", dataAddr, err)
-	}
-
-	d.mu.Lock()
-	if d.closed {
-		d.mu.Unlock()
-		dataConn.Close()
-		return nil, errClosed
-	}
-	d.dataConn = dataConn
-	d.streamID = streamID
-	d.mu.Unlock()
-
-	// ACTIVATE_STREAM (flags=0, timeNs=0, numElems=0).
+	// ACTIVATE_STREAM (streamId, flags=0, timeNs=0, numElems=0).
 	if err := d.rpcVoid(func(p *packer) {
 		p.call(callActivateStream)
-		p.str(streamID)
+		p.i32(streamID)
 		p.i32(0)
 		p.i64(0)
 		p.i32(0)
 	}); err != nil {
-		dataConn.Close()
+		d.clearStreamConns()
 		return nil, err
 	}
 
+	go d.drainStatus(statusConn)
 	out := make(chan []complex64, 8)
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
 }
 
-func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID string, out chan<- []complex64) {
+// setupStreamTCP performs SoapyRemote's two-phase TCP stream setup. The wire
+// choreography is byte-matched to upstream (client/Streaming.cpp +
+// server/ClientHandler.cpp):
+//
+//  1. send SETUP_STREAM;
+//  2. read reply #1 — the server's bound data port (a single string);
+//  3. dial TWO sockets to that port, the data socket then the status socket:
+//     the server does listen(2) and blocks accepting both, in that order;
+//  4. read reply #2 — the int stream id (plus a repeated port string we
+//     discard).
+//
+// The whole exchange holds d.mu so no other RPC interleaves on the control
+// socket between the two reply frames. On success the data/status sockets and
+// stream id are stored on the device for teardown.
+func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.conn == nil {
+		return 0, nil, nil, errClosed
+	}
+
+	// (1) SETUP_STREAM. clientBindPort/statusBindPort are unused in TCP mode
+	// (the client dials the server), so "0" is sent for both.
+	p := newPacker()
+	p.call(callSetupStream)
+	p.char(dirRX)
+	p.str(d.format.soapyName())
+	p.sizeList([]int{0})
+	p.kwargs(map[string]string{"remote:prot": "tcp"})
+	p.str("0")
+	p.str("0")
+	if err := p.writeTo(d.conn, streamSetupTimeout); err != nil {
+		return 0, nil, nil, err
+	}
+
+	// (2) Reply #1: the server's bound data port.
+	u, err := readResponse(d.conn, streamSetupTimeout)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	if err := u.checkException(); err != nil {
+		return 0, nil, nil, err
+	}
+	serverPort, err := u.str()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("soapyremote: setup stream port: %w", err)
+	}
+
+	host, _, err := net.SplitHostPort(d.addr)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("soapyremote: split addr %q: %w", d.addr, err)
+	}
+	dataAddr := net.JoinHostPort(host, serverPort)
+
+	// (3) Dial the data socket then the status socket. The server's two accepts
+	// are ordered: first connection is the stream, second is the status channel.
+	dataConn, err = net.DialTimeout("tcp", dataAddr, d.timeout)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("soapyremote: dial stream %s: %w", dataAddr, err)
+	}
+	statusConn, err = net.DialTimeout("tcp", dataAddr, d.timeout)
+	if err != nil {
+		dataConn.Close()
+		return 0, nil, nil, fmt.Errorf("soapyremote: dial status %s: %w", dataAddr, err)
+	}
+
+	// (4) Reply #2: the int stream id (and a repeated port string we ignore).
+	u2, err := readResponse(d.conn, streamSetupTimeout)
+	if err != nil {
+		dataConn.Close()
+		statusConn.Close()
+		return 0, nil, nil, err
+	}
+	if err := u2.checkException(); err != nil {
+		dataConn.Close()
+		statusConn.Close()
+		return 0, nil, nil, err
+	}
+	streamID, err = u2.i32()
+	if err != nil {
+		dataConn.Close()
+		statusConn.Close()
+		return 0, nil, nil, fmt.Errorf("soapyremote: setup stream id: %w", err)
+	}
+
+	if d.closed {
+		dataConn.Close()
+		statusConn.Close()
+		return 0, nil, nil, errClosed
+	}
+	d.dataConn = dataConn
+	d.statusConn = statusConn
+	d.streamID = streamID
+	return streamID, dataConn, statusConn, nil
+}
+
+// drainStatus reads and discards the stream's status socket. SoapyRemote's
+// server status thread may emit messages over it; leaving it unread can
+// back-pressure the server. It returns when the socket is closed (on teardown).
+func (d *device) drainStatus(statusConn net.Conn) {
+	buf := make([]byte, 256)
+	for {
+		if _, err := statusConn.Read(buf); err != nil {
+			return
+		}
+	}
+}
+
+// clearStreamConns closes and forgets the data/status sockets. Used when
+// activation fails after setup; teardownStream handles the normal path.
+func (d *device) clearStreamConns() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.dataConn != nil {
+		d.dataConn.Close()
+		d.dataConn = nil
+	}
+	if d.statusConn != nil {
+		d.statusConn.Close()
+		d.statusConn = nil
+	}
+}
+
+func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int32, out chan<- []complex64) {
 	defer close(out)
 	defer d.teardownStream(streamID)
 
@@ -449,24 +543,20 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID str
 }
 
 // teardownStream best-effort deactivates and closes the remote stream and the
-// local data socket. Errors are ignored — the connection may already be gone.
-func (d *device) teardownStream(streamID string) {
+// local data/status sockets. Errors are ignored — the connection may already be
+// gone.
+func (d *device) teardownStream(streamID int32) {
 	_ = d.rpcVoid(func(p *packer) {
 		p.call(callDeactivateStream)
-		p.str(streamID)
+		p.i32(streamID)
 		p.i32(0)
 		p.i64(0)
 	})
 	_ = d.rpcVoid(func(p *packer) {
 		p.call(callCloseStream)
-		p.str(streamID)
+		p.i32(streamID)
 	})
-	d.mu.Lock()
-	if d.dataConn != nil {
-		d.dataConn.Close()
-		d.dataConn = nil
-	}
-	d.mu.Unlock()
+	d.clearStreamConns()
 }
 
 func (d *device) Close() error {
@@ -479,6 +569,10 @@ func (d *device) Close() error {
 	if d.dataConn != nil {
 		d.dataConn.Close()
 		d.dataConn = nil
+	}
+	if d.statusConn != nil {
+		d.statusConn.Close()
+		d.statusConn = nil
 	}
 	if d.conn != nil {
 		return d.conn.Close()
