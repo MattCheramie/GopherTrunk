@@ -1,8 +1,11 @@
 package siglab
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -61,7 +64,34 @@ const identifyConfidenceFloor = 0.40
 // Each candidate is run through the engine — over a bounded prefix when
 // MaxSamples is set — and scored on lock + sync-landscape evidence + FEC pass
 // rate. The winner's run result is retained for WinnerResult.
+//
+// It is a thin wrapper over IdentifyReader: the file is opened once and each
+// candidate seeks back to the start, so the capture is read from disk a single
+// time rather than re-opened per protocol.
 func Identify(path string, cfg IdentifyConfig) (*IdentifyResult, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	return IdentifyReader(f, path, cfg)
+}
+
+// IdentifyIQ identifies an in-memory IQ buffer without any disk round-trip. It
+// encodes the samples once in cfg.Format and delegates to IdentifyReader. This
+// is the path the live hunt sweeper uses: capture a short slice off the SDR at
+// a candidate frequency, then identify it in memory.
+func IdentifyIQ(iq []complex64, source string, cfg IdentifyConfig) (*IdentifyResult, error) {
+	buf := EncodeCapture(iq, cfg.Format)
+	return IdentifyReader(bytes.NewReader(buf), source, cfg)
+}
+
+// IdentifyReader scans the capture read from r against candidate protocols and
+// returns a ranked result. r is read once per candidate and rewound between
+// candidates via Seek, so the underlying bytes are materialized a single time
+// (an *os.File or *bytes.Reader both satisfy io.ReadSeeker, and the seek keeps
+// AutoTune working). It is the shared core behind Identify and IdentifyIQ.
+func IdentifyReader(r io.ReadSeeker, source string, cfg IdentifyConfig) (*IdentifyResult, error) {
 	if cfg.SampleRateHz <= 0 {
 		return nil, fmt.Errorf("siglab: identify sample rate must be > 0")
 	}
@@ -75,9 +105,12 @@ func Identify(path string, cfg IdentifyConfig) (*IdentifyResult, error) {
 		candidates = ccdecoder.RegisteredProtocols()
 	}
 
-	out := &IdentifyResult{Source: filepath.Base(path), SampleRateHz: cfg.SampleRateHz}
+	out := &IdentifyResult{Source: filepath.Base(source), SampleRateHz: cfg.SampleRateHz}
 	for _, p := range candidates {
-		r, err := Run(path, Config{
+		if _, err := r.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("siglab: identify rewind: %w", err)
+		}
+		res, err := RunReader(r, source, Config{
 			Protocol:      p,
 			SystemName:    "identify",
 			SampleRateHz:  cfg.SampleRateHz,
@@ -92,7 +125,7 @@ func Identify(path string, cfg IdentifyConfig) (*IdentifyResult, error) {
 		if err != nil {
 			continue // a candidate that errors out is simply dropped
 		}
-		out.Candidates = append(out.Candidates, scoreCandidate(p, r))
+		out.Candidates = append(out.Candidates, scoreCandidate(p, res))
 	}
 	if len(out.Candidates) == 0 {
 		return nil, fmt.Errorf("siglab: identify produced no candidate scores")

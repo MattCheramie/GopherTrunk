@@ -271,6 +271,15 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}
 	}
 
+	// Attach accumulated system topology (identity / neighbors / band plan).
+	// This is the only path that surfaces WACN/SYSID/RFSS/Site etc., which
+	// never ride on event payloads.
+	if bundle.topology != nil {
+		if t := bundle.topology(); !t.Empty() {
+			res.Topology = t
+		}
+	}
+
 	if iqTap != nil {
 		res.IQTaps = iqTap.result(receiverRate)
 	}
@@ -340,12 +349,15 @@ type processor interface {
 }
 
 // runBundle is what the read loop drives plus the optional deep-path hooks.
-// stateAt/ccStats are nil for the generic factory path.
+// stateAt/ccStats are nil for the generic factory path. topology is set when
+// the pipeline can report accumulated system topology (P25 deep path always;
+// any factory pipeline implementing TopologyProvider).
 type runBundle struct {
-	proc    processor
-	closeFn func()
-	stateAt func(t float64) ReceiverState
-	ccStats func() *CCStatsBreakdown
+	proc     processor
+	closeFn  func()
+	stateAt  func(t float64) ReceiverState
+	ccStats  func() *CCStatsBreakdown
+	topology func() *TopologySnapshot
 }
 
 // buildBundle constructs the run bundle for cfg: the P25 Phase 1 deep path
@@ -371,5 +383,11 @@ func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate 
 	if !ok {
 		return nil, fmt.Errorf("siglab: no pipeline registered for protocol %s", cfg.Protocol)
 	}
-	return &runBundle{proc: pipe, closeFn: func() { _ = pipe.Close() }}, nil
+	rb := &runBundle{proc: pipe, closeFn: func() { _ = pipe.Close() }}
+	// Any factory pipeline may expose accumulated topology (identity / neighbor
+	// sites). Snapshot it at EOF when the protocol implements the hook.
+	if tp, ok := pipe.(TopologyProvider); ok {
+		rb.topology = tp.TopologySnapshot
+	}
+	return rb, nil
 }

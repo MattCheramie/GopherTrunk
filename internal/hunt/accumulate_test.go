@@ -96,6 +96,71 @@ func TestAccumulate_Idempotent_DedupesSites(t *testing.T) {
 	}
 }
 
+func TestAccumulate_FoldsTopology(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	r := fakeResult(851012500, map[string]any{"NAC": uint16(0x293)}, 1000)
+	r.Topology = &siglab.TopologySnapshot{
+		WACN:     0xBEE99,
+		SystemID: 0x49A,
+		RFSS:     1,
+		Site:     2,
+		Neighbors: []siglab.NeighborRef{
+			{RFSS: 1, Site: 3},
+			{RFSS: 1, Site: 4},
+		},
+		BandPlan: []siglab.BandPlanSlot{
+			{ChannelID: 1, BaseHz: 851_000_000, SpacingHz: 12_500},
+		},
+	}
+	Accumulate(sys, Observation{Protocol: "p25", Confidence: 0.9, Result: r})
+
+	if sys.WACN != 0xBEE99 || sys.SystemID != 0x49A {
+		t.Errorf("identity = %X/%X, want BEE99/49A", sys.WACN, sys.SystemID)
+	}
+	if len(sys.Sites) != 1 {
+		t.Fatalf("len(Sites) = %d, want 1", len(sys.Sites))
+	}
+	st := sys.Sites[0]
+	if st.RFSS != 1 || st.SiteID != 2 {
+		t.Errorf("camped site = %d/%d, want 1/2", st.RFSS, st.SiteID)
+	}
+	if len(st.ControlChannels) != 1 || st.ControlChannels[0].FrequencyHz != 851012500 {
+		t.Errorf("control channels = %+v", st.ControlChannels)
+	}
+	if len(st.Neighbors) != 2 {
+		t.Errorf("neighbors = %+v, want 2", st.Neighbors)
+	}
+	if len(sys.BandPlan) != 1 || sys.BandPlan[0].BaseHz != 851_000_000 {
+		t.Errorf("band plan = %+v, want one entry base 851M", sys.BandPlan)
+	}
+	// Talkgroup from the grant still lands alongside the topology.
+	if len(sys.Talkgroups) != 1 || sys.Talkgroups[0].Dec != 1000 {
+		t.Errorf("talkgroups = %+v, want [1000]", sys.Talkgroups)
+	}
+}
+
+func TestAccumulate_TopologyDedupesAcrossObservations(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	mk := func() Observation {
+		r := fakeResult(851012500, nil)
+		r.Topology = &siglab.TopologySnapshot{
+			RFSS: 1, Site: 1,
+			Neighbors: []siglab.NeighborRef{{RFSS: 1, Site: 2}},
+			BandPlan:  []siglab.BandPlanSlot{{ChannelID: 1, BaseHz: 851_000_000, SpacingHz: 12_500}},
+		}
+		return Observation{Protocol: "p25", Confidence: 0.8, Result: r}
+	}
+	Accumulate(sys, mk())
+	Accumulate(sys, mk())
+
+	if len(sys.Sites) != 1 || len(sys.Sites[0].Neighbors) != 1 {
+		t.Errorf("neighbors should dedupe: %+v", sys.Sites)
+	}
+	if len(sys.BandPlan) != 1 {
+		t.Errorf("band plan should dedupe by channel id: %+v", sys.BandPlan)
+	}
+}
+
 func TestAccumulate_ConfidenceTakesMinimum(t *testing.T) {
 	sys := &DiscoveredSystem{}
 	Accumulate(sys, Observation{Protocol: "p25", Confidence: 0.9, Result: fakeResult(1, nil)})

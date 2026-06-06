@@ -76,6 +76,11 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 	for _, ev := range obs.Result.Events {
 		harvestIdentity(dst, ev.Fields)
 	}
+	// Fold the decoder's accumulated topology (the only source of
+	// WACN/SYSID/RFSS/Site + neighbors + band plan — these never ride on
+	// events). This runs before site placement so RFSS/Site are authoritative.
+	foldTopology(dst, obs.Result.Topology)
+
 	// Fall back to the capture's nominal center when the lock didn't carry an
 	// absolute frequency (baseband captures lock at 0 Hz).
 	if ccFreq == 0 {
@@ -92,8 +97,29 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 	switch {
 	case ccFreq != 0:
 		dst.addControlChannel(rfss, site, ccFreq, obs.Confidence)
-	case obs.Result.Locked:
+	case obs.Result.Locked || obs.Result.Topology != nil:
 		dst.site(rfss, site) // ensure the site exists for identity/talkgroups
+	}
+
+	// Attach neighbor (adjacent) sites + secondary control channels advertised
+	// for the camped site, now that the site exists.
+	if t := obs.Result.Topology; t != nil {
+		for _, n := range t.Neighbors {
+			dst.addNeighbor(rfss, site, NeighborRef{
+				RFSS:          n.RFSS,
+				Site:          n.Site,
+				ChannelID:     n.ChannelID,
+				ChannelNumber: n.ChannelNumber,
+			})
+		}
+		if len(t.Secondary) > 0 {
+			st := dst.site(rfss, site)
+			for _, s := range t.Secondary {
+				if s.FrequencyHz != 0 {
+					st.Secondary = appendUniqueFreq(st.Secondary, s.FrequencyHz)
+				}
+			}
+		}
 	}
 
 	// Talkgroups: every grant's destination group is an observed talkgroup.
@@ -103,6 +129,58 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 		}
 		dst.addTalkgroup(g.GroupID, g.Encrypted, at)
 	}
+}
+
+// foldTopology merges a siglab TopologySnapshot into the discovered system:
+// typed identity (WACN/SystemID), the Identity map (RFSS/Site/LRA + the
+// per-protocol fields used for display and site placement), and the band plan.
+// First non-zero value wins, mirroring harvestIdentity.
+func foldTopology(dst *DiscoveredSystem, t *siglab.TopologySnapshot) {
+	if t == nil {
+		return
+	}
+	if dst.WACN == 0 && t.WACN != 0 {
+		dst.WACN = t.WACN
+	}
+	if dst.SystemID == 0 && t.SystemID != 0 {
+		dst.SystemID = uint16(t.SystemID)
+	}
+	setIdentity := func(key string, v uint64) {
+		if v == 0 {
+			return
+		}
+		if _, present := dst.Identity[key]; !present {
+			dst.Identity[key] = v
+		}
+	}
+	setIdentity("RFSS", uint64(t.RFSS))
+	setIdentity("Site", uint64(t.Site))
+	setIdentity("LRA", uint64(t.LRA))
+	setIdentity("ColorCode", uint64(t.ColorCode))
+	setIdentity("RAN", uint64(t.RAN))
+	setIdentity("MCC", uint64(t.MCC))
+	setIdentity("MNC", uint64(t.MNC))
+	setIdentity("LocationArea", uint64(t.LocationArea))
+
+	for _, e := range t.BandPlan {
+		dst.addBandPlanEntry(BandPlanEntry{
+			ChannelID:   e.ChannelID,
+			BaseHz:      e.BaseHz,
+			SpacingHz:   e.SpacingHz,
+			BandwidthHz: e.BandwidthHz,
+			TxOffsetHz:  e.TxOffsetHz,
+		})
+	}
+}
+
+// appendUniqueFreq appends hz to s unless already present.
+func appendUniqueFreq(s []uint32, hz uint32) []uint32 {
+	for _, e := range s {
+		if e == hz {
+			return s
+		}
+	}
+	return append(s, hz)
 }
 
 // harvestIdentity copies recognised identity fields from a flattened payload

@@ -127,7 +127,13 @@ func Discover(captures []CaptureInput, cfg DiscoverConfig) (*DiscoveredSystem, [
 			AutoTune:     cap.AutoTune,
 			Conjugate:    cap.Conjugate,
 			IQCorrect:    cap.IQCorrect,
-			Log:          log,
+			// CollectIQDiag engages P25 Phase 1's deep decode path, which is
+			// what accumulates and snapshots the system topology
+			// (WACN/SYSID/RFSS/Site + neighbors + band plan) onto Result.Topology.
+			// Without it P25 runs the generic factory pipeline and the map would
+			// be NAC-only.
+			CollectIQDiag: true,
+			Log:           log,
 		})
 		if err != nil {
 			rep.Error = fmt.Sprintf("decode: %v", err)
