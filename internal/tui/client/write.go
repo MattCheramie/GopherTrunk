@@ -85,6 +85,11 @@ func (c *Client) ScannerSetMode(ctx context.Context, mode string) error {
 		map[string]string{"scan_mode": mode}, nil)
 }
 
+// HuntStop cancels the active live system-discovery run.
+func (c *Client) HuntStop(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/hunt/stop", nil, nil)
+}
+
 // ScannerHuntHold / ScannerHuntResume / ScannerHuntRetune call the
 // per-system hunt mutation endpoints. system must match a configured
 // trunked system name.

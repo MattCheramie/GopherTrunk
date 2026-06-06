@@ -24,6 +24,7 @@ import { Metrics } from "./panels/Metrics";
 import { Pagers } from "./panels/Pagers";
 import { RadioIDs } from "./panels/RadioIDs";
 import { Scanner } from "./panels/Scanner";
+import { Hunt } from "./panels/Hunt";
 import { Settings } from "./panels/Settings";
 import { Spectrum } from "./panels/Spectrum";
 import { Systems } from "./panels/Systems";
@@ -38,6 +39,7 @@ const TABS: Tab[] = [
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
 const EXTRA_TABS: Tab[] = [
+  { to: "/hunt", label: "Hunt", icon: "🔍" },
   { to: "/systems", label: "Systems", icon: "❖" },
   { to: "/talkgroups", label: "Talkgroups", icon: "☷" },
   { to: "/rids", label: "Radio IDs", icon: "⌖" },
@@ -182,6 +184,7 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/active" element={<Active />} />
           <Route path="/scanner" element={<Scanner />} />
+          <Route path="/hunt" element={<Hunt />} />
           <Route path="/spectrum" element={<Spectrum />} />
           <Route path="/constellation" element={<Constellation />} />
           <Route path="/bookmarks" element={<Bookmarks />} />

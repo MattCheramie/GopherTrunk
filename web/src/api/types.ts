@@ -119,6 +119,35 @@ export interface AudioStatusDTO {
   drops_total: number;
 }
 
+// HuntStatus mirrors api.HuntStatus — the live system-discovery run snapshot
+// from GET /api/v1/hunt. `system` carries the full discovered map when ready.
+export interface HuntStatus {
+  run_id: number;
+  state: string;
+  running: boolean;
+  phase?: string;
+  detail?: string;
+  sites: number;
+  talkgroups: number;
+  system_name?: string;
+  error?: string;
+  system?: unknown;
+}
+
+// HuntStartRequest mirrors api.HuntStartRequest (frequencies in MHz).
+export interface HuntStartRequest {
+  serial?: string;
+  bands?: string[];
+  candidates?: number[];
+  no_sweep?: boolean;
+  protocol?: string;
+  dwell_seconds?: number;
+  name?: string;
+  state?: string;
+  county?: string;
+  location?: string;
+}
+
 export interface ScannerStatusDTO {
   scan_mode: string;
   systems: SystemHuntStatusDTO[];

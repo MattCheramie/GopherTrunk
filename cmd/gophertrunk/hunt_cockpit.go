@@ -1,0 +1,151 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/MattCheramie/GopherTrunk/internal/api"
+	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+)
+
+// huntCockpit adapts the daemon's hunt.Manager to the api.HuntCockpit surface
+// (GET /api/v1/hunt + start/stop/export/commit). It mirrors scannerCockpit.
+type huntCockpit struct {
+	mgr     *hunt.Manager
+	cfgPath string
+}
+
+// Status builds the REST snapshot from the manager's run state + latest map.
+func (c huntCockpit) Status() api.HuntStatus {
+	st := c.mgr.Status()
+	out := api.HuntStatus{
+		RunID:      st.RunID,
+		State:      string(st.State),
+		Running:    st.Running,
+		Phase:      string(st.Progress.Phase),
+		Detail:     st.Progress.Detail,
+		Sites:      st.Sites,
+		Talkgroups: st.Talkgroups,
+		SystemName: st.SystemName,
+		Error:      st.Error,
+	}
+	if sys, reports, ok := c.mgr.Current(); ok {
+		out.System = sys
+		out.Reports = reports
+	}
+	return out
+}
+
+// Start translates the REST request into hunt.LiveHuntOptions and launches a run.
+func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
+	bands, err := parseBandSpecs(req.Bands)
+	if err != nil {
+		return 0, err
+	}
+	var candidates []uint32
+	for _, mhz := range req.Candidates {
+		candidates = append(candidates, uint32(mhz*1e6+0.5))
+	}
+	if len(bands) == 0 && len(candidates) == 0 {
+		return 0, fmt.Errorf("hunt: provide bands to sweep or candidates to probe")
+	}
+	if req.NoSweep {
+		bands = nil
+	}
+
+	var proto trunking.Protocol
+	if req.Protocol != "" {
+		proto, err = siglab.ParseProtocolCLI(req.Protocol)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	opts := hunt.LiveHuntOptions{
+		Bands:         bands,
+		Candidates:    candidates,
+		Protocol:      proto,
+		FFTSize:       req.FFTSize,
+		DwellSeconds:  req.DwellSeconds,
+		MinConfidence: req.MinConfidence,
+		Name:          req.Name,
+		State:         req.State,
+		County:        req.County,
+		Location:      req.Location,
+		PeakOpts: hunt.PeakOptions{
+			ThresholdDb:  float32(req.PeakThresholdDb),
+			MinSpacingHz: req.MinSpacingHz,
+		},
+	}
+	if req.SweepDwellMs > 0 {
+		opts.SweepDwell = msToDuration(req.SweepDwellMs, 0)
+	}
+	return c.mgr.Start(opts)
+}
+
+func (c huntCockpit) Stop() bool { return c.mgr.Stop() }
+
+// Export serializes the latest discovered system in the requested format.
+func (c huntCockpit) Export(format string) ([]byte, string, error) {
+	hf, err := hunt.ParseFormat(format)
+	if err != nil {
+		return nil, "", err
+	}
+	sys, _, ok := c.mgr.Current()
+	if !ok {
+		return nil, "", fmt.Errorf("hunt: no discovered system to export yet")
+	}
+	var buf bytes.Buffer
+	if err := hunt.Write(&buf, sys, hf, nil); err != nil {
+		return nil, "", err
+	}
+	base := slugName(sys.DisplayName())
+	name := base + "." + hf.FileExtension()
+	if hf == hunt.FormatRR {
+		name = base + "-radioreference." + hf.FileExtension()
+	}
+	return buf.Bytes(), name, nil
+}
+
+// Commit merges the latest discovered system into config.yaml via the shared
+// importer writer.
+func (c huntCockpit) Commit(force, dryRun bool) ([]string, error) {
+	sys, _, ok := c.mgr.Current()
+	if !ok {
+		return nil, fmt.Errorf("hunt: no discovered system to commit yet")
+	}
+	if c.cfgPath == "" {
+		return nil, fmt.Errorf("hunt: daemon started without -config; nothing to merge into")
+	}
+	res, err := mergeIntoConfig([]parsedSystem{discoveredToParsed(sys)}, mergeOptions{
+		ConfigPath: c.cfgPath,
+		Force:      force,
+		DryRun:     dryRun,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.Changes, nil
+}
+
+// parseBandSpecs parses "low:high" MHz band strings into hunt.Band (Hz).
+func parseBandSpecs(specs []string) ([]hunt.Band, error) {
+	var out []hunt.Band
+	for _, sp := range specs {
+		lo, hi, ok := strings.Cut(sp, ":")
+		if !ok {
+			return nil, fmt.Errorf("hunt: band %q: want low:high in MHz", sp)
+		}
+		loMHz, e1 := strconv.ParseFloat(strings.TrimSpace(lo), 64)
+		hiMHz, e2 := strconv.ParseFloat(strings.TrimSpace(hi), 64)
+		if e1 != nil || e2 != nil || hiMHz <= loMHz {
+			return nil, fmt.Errorf("hunt: band %q: invalid range", sp)
+		}
+		out = append(out, hunt.Band{LowHz: uint32(loMHz*1e6 + 0.5), HighHz: uint32(hiMHz*1e6 + 0.5)})
+	}
+	return out, nil
+}

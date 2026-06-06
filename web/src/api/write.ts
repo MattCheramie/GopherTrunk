@@ -3,6 +3,7 @@
 import { type ClientConfig, joinURL, HTTPError, request } from "./client";
 import type {
   AudioStatusDTO,
+  HuntStartRequest,
   ImportPreview,
   ImportResult,
   RIDDTO,
@@ -60,6 +61,11 @@ export const writes = {
 
   setScanMode: (c: ClientConfig, mode: "all" | "list") =>
     request<void>(c, "PATCH", "/api/v1/scanner", { scan_mode: mode }),
+
+  // Live system-discovery (hunt) controls.
+  huntStart: (c: ClientConfig, req: HuntStartRequest) =>
+    request<{ run_id: number }>(c, "POST", "/api/v1/hunt/start", req),
+  huntStop: (c: ClientConfig) => request<void>(c, "POST", "/api/v1/hunt/stop"),
 
   huntHold: (c: ClientConfig, system: string) =>
     request<void>(

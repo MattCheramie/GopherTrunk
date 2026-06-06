@@ -47,6 +47,10 @@ type pollScannerMsg struct {
 	s   client.ScannerStatusDTO
 	err error
 }
+type pollHuntMsg struct {
+	s   client.HuntStatusDTO
+	err error
+}
 type pollAudioMsg struct {
 	a   client.AudioStatusDTO
 	err error

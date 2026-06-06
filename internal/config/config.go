@@ -89,6 +89,7 @@ var KnownUITabs = map[string]bool{
 	"dashboard":     true,
 	"active":        true,
 	"scanner":       true,
+	"hunt":          true,
 	"settings":      true,
 	"systems":       true,
 	"talkgroups":    true,
