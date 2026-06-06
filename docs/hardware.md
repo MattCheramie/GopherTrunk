@@ -602,15 +602,20 @@ broker / fan-out path.
 
 - Receive only, single channel (channel 0).
 - The IQ stream uses SoapyRemote's in-order **TCP** transport
-  (`stream_protocol: tcp`). UDP streaming with the windowed flow-control
-  is a planned follow-up.
+  (`stream_protocol: tcp`), which opens two sockets to the server (a stream
+  socket and a status socket, matching `SoapySDRServer`'s setup). UDP
+  streaming with the windowed flow-control is a planned follow-up.
 - `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
   `setFrequencyCorrection` / `writeSetting` and silently no-op on
   drivers that don't implement them.
+- `gain` is applied as a manual overall gain. AGC is disabled first on a
+  best-effort basis, so a numeric gain still applies on front-ends that have
+  no AGC at all (e.g. a USRP TwinRX, which rejects `set_rx_agc()`); use
+  `gain: "auto"` to request AGC where the radio supports it.
 - Plaintext over TCP. Keep it on a trusted network, or tunnel it
   through SSH / WireGuard / Tailscale.
-- The RPC and stream framing are byte-verified against SoapyRemote's
-  source; the TCP stream connection choreography should be validated
+- The RPC, stream framing, and TCP stream-setup choreography are byte-matched
+  to SoapyRemote's source and exercised by the driver's tests; validate
   against a live `SoapySDRServer` before production use.
 
 **Diagnostics:** the daemon logs `soapyremote: connected addr=...

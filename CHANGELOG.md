@@ -42,6 +42,26 @@ for tagged releases.
   the console is offline (`siglab serve`) or the daemon has no SDR, so a
   build without a tuner doesn't pretend it can record.
 
+### Fixed
+
+- **`soapyremote`: stream setup now follows SoapyRemote's real TCP
+  handshake, fixing a crash against live `SoapySDRServer` hardware (issue
+  #542).** The TCP stream setup was a single-reply, single-socket guess; real
+  SoapyRemote is a two-phase, two-socket exchange (the server replies with the
+  data port, accepts both a stream **and** a status socket, then replies with
+  the integer stream id). The old code misread the first reply (`setup stream
+  port: short rpc response`), which kicked the daemon into a reconnect storm
+  that could segfault the remote UHD/USRP server. Setup now opens both sockets,
+  reads the stream id as an int, and allows a longer deadline for cold high-end
+  devices that spend seconds compiling their RFNoC graph. Verified against the
+  upstream source; smoke-test against live hardware before relying on it.
+- **`soapyremote`: a manual `gain` now applies on front-ends without AGC
+  (issue #542).** Setting a numeric gain first disabled automatic gain control;
+  on radios with no AGC at all (e.g. a USRP TwinRX) that call fails with
+  `set_rx_agc() is not supported on this radio` and used to abort the whole
+  gain set, leaving the device at its default. Disabling AGC is now best-effort,
+  so the manual gain value is still applied.
+
 ## [v0.3.2] — 2026-06-04
 
 DMR grows up — multi-slot, Tier III band-plan voice, and license-free
