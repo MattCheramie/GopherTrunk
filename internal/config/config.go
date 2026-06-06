@@ -609,6 +609,13 @@ type SoapyRemoteConfig struct {
 	// server (e.g. "uhd", "lime", "bladerf", "hackrf", "airspy",
 	// "rtlsdr"). Empty selects the server's first/only device.
 	Driver string `yaml:"driver"`
+	// Args are extra SoapySDR device kwargs passed to the remote make(),
+	// as a "key=value,key2=value2" string (e.g.
+	// "rx_subdev_spec=A:0,antenna=RX1" for a USRP TwinRX). They are merged
+	// with Driver; an explicit "driver=" here wins over the Driver field.
+	// This is server-side device selection/configuration and is distinct
+	// from the top-level Serial, which is the local virtual pool name.
+	Args string `yaml:"args"`
 	// Serial is the virtual device serial reported on the pool's
 	// /api/v1/devices snapshot. Empty generates one from Addr.
 	Serial string `yaml:"serial"`
@@ -633,6 +640,49 @@ type SoapyRemoteConfig struct {
 	// ConnectTimeoutMs caps the TCP dial in milliseconds. Zero picks the
 	// driver default (3000).
 	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
+}
+
+// parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument
+// string into a map. Empty input yields an empty map. Whitespace around keys
+// and values is trimmed and empty segments are skipped. A segment with no "="
+// or an empty key is an error.
+func parseDeviceArgs(s string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, seg := range strings.Split(s, ",") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(seg, "=")
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("invalid arg %q (want key=value)", seg)
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// DeviceArgs returns the SoapySDR make() kwargs for this endpoint: any
+// key=value pairs from Args, merged with the Driver shorthand. An explicit
+// "driver=" in Args wins over the Driver field. It returns nil when no args
+// apply (matching the driver's "select the server's first device" default),
+// or an error when Args is malformed.
+func (s SoapyRemoteConfig) DeviceArgs() (map[string]string, error) {
+	args, err := parseDeviceArgs(s.Args)
+	if err != nil {
+		return nil, err
+	}
+	if s.Driver != "" {
+		if _, ok := args["driver"]; !ok {
+			args["driver"] = s.Driver
+		}
+	}
+	if len(args) == 0 {
+		return nil, nil
+	}
+	return args, nil
 }
 
 type DeviceConfig struct {
@@ -1275,6 +1325,9 @@ func (c Config) Validate() error {
 		case "", "tcp":
 		default:
 			return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
+		}
+		if _, err := s.DeviceArgs(); err != nil {
+			return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
 		}
 		if s.Serial == "" {
 			continue

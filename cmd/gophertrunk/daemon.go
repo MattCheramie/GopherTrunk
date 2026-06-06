@@ -714,9 +714,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					log.Warn("daemon: soapy_remote entry missing addr; skipping")
 					continue
 				}
-				var args map[string]string
-				if s.Driver != "" {
-					args = map[string]string{"driver": s.Driver}
+				args, err := s.DeviceArgs()
+				if err != nil {
+					// Validated at config load; guard defensively.
+					log.Warn("daemon: soapy_remote entry has invalid args; skipping",
+						"addr", s.Addr, "err", err)
+					continue
 				}
 				sspecs = append(sspecs, soapyremote.Spec{
 					Addr:           s.Addr,

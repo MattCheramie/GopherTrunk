@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -301,12 +302,64 @@ func TestValidate(t *testing.T) {
 		// fine; an unknown key is rejected so typos surface at load.
 		{"web tabs known ok", Config{Web: WebConfig{Tabs: map[string]bool{"pagers": false, "metrics": true}}}, false},
 		{"web tabs unknown key", Config{Web: WebConfig{Tabs: map[string]bool{"pagerz": false}}}, true},
+		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
+		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
+		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.Validate()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestSoapyRemoteDeviceArgs covers the device-args config block (issue #542):
+// the "k=v,k=v" Args string merges with the Driver shorthand into make() kwargs.
+func TestSoapyRemoteDeviceArgs(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     SoapyRemoteConfig
+		want    map[string]string
+		wantErr bool
+	}{
+		{"empty", SoapyRemoteConfig{}, nil, false},
+		{"driver only", SoapyRemoteConfig{Driver: "uhd"}, map[string]string{"driver": "uhd"}, false},
+		{"args only", SoapyRemoteConfig{Args: "antenna=RX1"}, map[string]string{"antenna": "RX1"}, false},
+		{
+			"driver and args merge",
+			SoapyRemoteConfig{Driver: "uhd", Args: "rx_subdev_spec=A:0,antenna=RX1"},
+			map[string]string{"driver": "uhd", "rx_subdev_spec": "A:0", "antenna": "RX1"},
+			false,
+		},
+		{
+			"explicit driver in args wins",
+			SoapyRemoteConfig{Driver: "uhd", Args: "driver=lime"},
+			map[string]string{"driver": "lime"},
+			false,
+		},
+		{
+			"whitespace trimmed and empty segments skipped",
+			SoapyRemoteConfig{Args: " antenna = RX1 , , gain = 30 "},
+			map[string]string{"antenna": "RX1", "gain": "30"},
+			false,
+		},
+		{"malformed missing equals", SoapyRemoteConfig{Args: "rx_subdev_spec"}, nil, true},
+		{"malformed empty key", SoapyRemoteConfig{Args: "=value"}, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.cfg.DeviceArgs()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("DeviceArgs() = %v, want %v", got, tc.want)
 			}
 		})
 	}
