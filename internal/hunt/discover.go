@@ -3,7 +3,7 @@ package hunt
 import (
 	"fmt"
 	"log/slog"
-	"time"
+	"os"
 
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -79,81 +79,24 @@ func Discover(captures []CaptureInput, cfg DiscoverConfig) (*DiscoveredSystem, [
 	reports := make([]CaptureReport, 0, len(captures))
 
 	for _, cap := range captures {
-		rep := CaptureReport{Path: cap.Path}
-
-		proto := cap.Protocol
-		conf := 1.0 // operator-supplied protocol ⇒ full confidence
-		if proto == trunking.ProtocolUnknown {
-			idr, err := siglab.Identify(cap.Path, siglab.IdentifyConfig{
-				SampleRateHz: cap.SampleRateHz,
-				Format:       cap.Format,
-				AutoTune:     cap.AutoTune,
-				Conjugate:    cap.Conjugate,
-				IQCorrect:    cap.IQCorrect,
-				MaxSamples:   cap.IdentifyMaxSamples,
-				Log:          log,
-			})
-			if err != nil {
-				rep.Error = fmt.Sprintf("identify: %v", err)
-				reports = append(reports, rep)
-				continue
-			}
-			conf = idr.Confidence
-			if idr.Inconclusive || idr.Confidence < minConf {
-				rep.Protocol = idr.Winner
-				rep.Confidence = idr.Confidence
-				rep.Skipped = true
-				rep.SkipReason = fmt.Sprintf("no trunked control channel above confidence %.2f (best: %s @ %.2f)",
-					minConf, idr.Winner, idr.Confidence)
-				reports = append(reports, rep)
-				continue
-			}
-			p, err := idr.WinnerProtocol()
-			if err != nil {
-				rep.Error = fmt.Sprintf("winner protocol: %v", err)
-				reports = append(reports, rep)
-				continue
-			}
-			proto = p
-		}
-		rep.Protocol = proto.String()
-		rep.Confidence = conf
-
-		res, err := siglab.Run(cap.Path, siglab.Config{
-			Protocol:     proto,
-			FrequencyHz:  cap.FrequencyHz,
-			SampleRateHz: cap.SampleRateHz,
-			Format:       cap.Format,
-			AutoTune:     cap.AutoTune,
-			Conjugate:    cap.Conjugate,
-			IQCorrect:    cap.IQCorrect,
-			// CollectIQDiag engages P25 Phase 1's deep decode path, which is
-			// what accumulates and snapshots the system topology
-			// (WACN/SYSID/RFSS/Site + neighbors + band plan) onto Result.Topology.
-			// Without it P25 runs the generic factory pipeline and the map would
-			// be NAC-only.
-			CollectIQDiag: true,
-			Log:           log,
-		})
+		f, err := os.Open(cap.Path)
 		if err != nil {
-			rep.Error = fmt.Sprintf("decode: %v", err)
-			reports = append(reports, rep)
+			reports = append(reports, CaptureReport{Path: cap.Path, Error: fmt.Sprintf("open: %v", err)})
 			continue
 		}
-
-		before := len(sys.Talkgroups)
-		Accumulate(sys, Observation{
-			Protocol:       proto.String(),
-			Confidence:     conf,
-			Result:         res,
-			FallbackFreqHz: cap.FrequencyHz,
-			At:             time.Now(),
+		rep := decodeAndAccumulate(sys, f, cap.Path, decodeParams{
+			Protocol:           cap.Protocol,
+			Format:             cap.Format,
+			SampleRateHz:       cap.SampleRateHz,
+			FrequencyHz:        cap.FrequencyHz,
+			AutoTune:           cap.AutoTune,
+			Conjugate:          cap.Conjugate,
+			IQCorrect:          cap.IQCorrect,
+			IdentifyMaxSamples: cap.IdentifyMaxSamples,
+			MinConfidence:      minConf,
+			Log:                log,
 		})
-		rep.Locked = res.Locked
-		if res.Lock != nil {
-			rep.ControlHz = res.Lock.FrequencyHz
-		}
-		rep.Talkgroups = len(sys.Talkgroups) - before
+		f.Close()
 		reports = append(reports, rep)
 	}
 

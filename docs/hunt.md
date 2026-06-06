@@ -57,6 +57,31 @@ gophertrunk hunt -in cc.cfile -freq 851012500 -sample-rate 2400000 \
 > Without it, a baseband capture locks at 0 Hz and the channel can't be
 > exported.
 
+## Live mode (spectrum sweep)
+
+Instead of supplying captures, point `hunt` at an SDR and let it find the
+control channels on the air. It sweeps the band(s) you give with an FFT,
+detects candidate carriers above the noise floor, then identifies, decodes,
+and maps each one through the same pipeline as the offline path.
+
+```sh
+# Sweep 851-869 MHz on an SDR and map whatever trunked systems it finds
+gophertrunk hunt -serial 00000001 -sample-rate 2400000 -band 851:869 \
+  -state AZ -county Maricopa -out ./hunt-live
+
+# Probe a known control-channel list directly (skip the sweep)
+gophertrunk hunt -serial 00000001 -sample-rate 2400000 \
+  -no-sweep -candidates 851.0125,853.5125
+```
+
+Live sweep tuning flags: `-band low:high` (MHz, repeatable), `-sweep-dwell`
+(accumulation per step), `-peak-threshold-db` (carrier detection threshold over
+the noise floor), `-min-spacing` (Hz between carriers), `-fft-size`,
+`-dwell-seconds` (IQ captured per candidate for identify+decode), plus
+`-gain`/`-ppm` for the SDR. This standalone CLI path opens the SDR directly; a
+daemon-integrated live hunt (spare-SDR-else-borrow acquisition, with a
+REST/TUI/web cockpit) is the next phase.
+
 ## Export formats
 
 Select with `-formats` (comma-separated; default is all three):
@@ -110,11 +135,10 @@ to force it off even when a key is configured.
 
 ## Limitations & roadmap
 
-- **Operator-supplied captures.** Today you supply the captures (one per
-  suspected control channel). A live wideband **spectrum-sweep** front-end
-  that finds the candidate control channels on the air automatically — using
-  the existing FFT spectrum producer for peak detection — is the planned
-  follow-on, along with a live cockpit/TUI/web panel.
+- **Live cockpit.** The standalone CLI live sweep (`-serial`) opens the SDR
+  directly. A daemon-integrated live hunt — sharing the running radio via
+  spare-SDR-else-borrow acquisition, driven from a REST API and the TUI/web
+  cockpit — is the next phase.
 - **Topology depth.** For **P25** the hunt now recovers full topology —
   WACN/SYSID, the camped RFSS/Site, advertised neighbor (adjacent) sites, and
   the over-the-air band plan (IDEN_UP) — all surfaced in the exports. For other
