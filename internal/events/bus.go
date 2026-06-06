@@ -42,6 +42,16 @@ const (
 	//     so operators can see "retry in 5 s".
 	KindHuntProgress Kind = "cchunt.progress"
 	KindHuntFailed   Kind = "cchunt.failed"
+	// Live system-discovery ("hunt") events, published by the daemon's hunt
+	// Manager (internal/hunt). Distinct from the cchunt.* control-channel
+	// hunter above: these track a blind discovery run (spectrum sweep →
+	// identify → map). Payloads are hunt package types carried as `any`.
+	//   KindHuntLiveProgress fires as the sweep/identify phases advance.
+	//   KindHuntLiveCandidate fires once per candidate carrier mapped.
+	//   KindHuntLiveDone fires when a run finishes (or is stopped).
+	KindHuntLiveProgress  Kind = "hunt.progress"
+	KindHuntLiveCandidate Kind = "hunt.candidate"
+	KindHuntLiveDone      Kind = "hunt.done"
 	// KindAffiliation fires when a radio unit affiliates with a
 	// talkgroup. P25 control-channel publishes one per Group
 	// Affiliation Response TSBK (opcode 0x28); the payload identifies

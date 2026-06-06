@@ -178,6 +178,43 @@ func TestSupervisorHoldAndResume(t *testing.T) {
 	}
 }
 
+func TestSupervisorPauseAllResumeAll(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:   bus,
+		Tuner: &fakeTuner{},
+		Systems: []trunking.System{
+			{Name: "A", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}},
+			{Name: "B", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{2}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sup.PauseAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateHeld {
+			t.Errorf("system %s state after PauseAll = %q, want held", st.Name, st.State)
+		}
+	}
+	// Idempotent.
+	sup.PauseAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateHeld {
+			t.Errorf("system %s not held after second PauseAll", st.Name)
+		}
+	}
+
+	sup.ResumeAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateIdle {
+			t.Errorf("system %s state after ResumeAll = %q, want idle", st.Name, st.State)
+		}
+	}
+}
+
 func TestSupervisorForceRetuneClearsBackoff(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
