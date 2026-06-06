@@ -99,6 +99,26 @@ type BroadcastStatusProvider interface {
 	BroadcastStats() any
 }
 
+// HuntCockpit is the API surface for the live system-discovery ("hunt")
+// subsystem: read the current run state + discovered map, start/stop a blind
+// spectrum-sweep run, and export or commit the result. The daemon supplies a
+// single implementation wrapping the hunt.Manager; tests can stub it.
+type HuntCockpit interface {
+	// Status returns the current run snapshot (+ discovered system when ready).
+	Status() HuntStatus
+	// Start launches a live hunt; returns the new run id, or an error (e.g. a
+	// run is already active, or no SDR is available).
+	Start(req HuntStartRequest) (runID int, err error)
+	// Stop cancels the active run; false when nothing is running.
+	Stop() bool
+	// Export serializes the latest discovered system in the named format
+	// (bundle|trunk-recorder|rr), returning the bytes + a suggested filename.
+	Export(format string) (data []byte, filename string, err error)
+	// Commit merges the latest discovered system into config.yaml, returning a
+	// human-readable list of changes.
+	Commit(force, dryRun bool) (changes []string, err error)
+}
+
 // ScannerCockpit is the API surface for the police-scanner subsystem:
 // reads the current state (per-system CC hunt, conventional channel
 // list, talkgroup-scan stats) and applies operator mutations from
@@ -218,6 +238,7 @@ type Server struct {
 	tones        ToneDetectorReset
 	devices      DevicesProvider
 	scanner      ScannerCockpit
+	hunt         HuntCockpit
 	audio        AudioController
 	broadcast    BroadcastStatusProvider
 	runtime      RuntimeProvider
@@ -465,6 +486,10 @@ type ServerOptions struct {
 	// /api/v1/scanner and the related mutation routes. Optional;
 	// when nil, the routes return 503.
 	Scanner ScannerCockpit
+	// Hunt exposes the live system-discovery cockpit for GET /api/v1/hunt and
+	// its start/stop/export/commit routes. Optional; when nil, the routes
+	// return 503 (or an empty idle status for the read).
+	Hunt HuntCockpit
 	// Audio exposes the live-audio player + recorder gate for
 	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
 	// return 503.
@@ -668,6 +693,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		tones:          opts.Tones,
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
+		hunt:           opts.Hunt,
 		audio:          opts.Audio,
 		broadcast:      opts.Broadcast,
 		runtime:        opts.Runtime,
@@ -850,6 +876,13 @@ func (s *Server) routes() *http.ServeMux {
 	// Scanner cockpit — read endpoint is always open; mutations are
 	// gated behind allow_mutations like every other write route.
 	mux.HandleFunc("GET /api/v1/broadcast", s.handleBroadcastStatus)
+	// Live system-discovery (hunt) cockpit — read is open; mutations gated.
+	mux.HandleFunc("GET /api/v1/hunt", s.handleHuntStatus)
+	mux.HandleFunc("POST /api/v1/hunt/start", s.gate(s.handleHuntStart))
+	mux.HandleFunc("POST /api/v1/hunt/stop", s.gate(s.handleHuntStop))
+	mux.HandleFunc("GET /api/v1/hunt/export", s.handleHuntExport)
+	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
+
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
 	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))
 	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/hold", s.gate(s.handleHuntHold))

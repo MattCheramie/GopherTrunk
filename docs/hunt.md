@@ -135,10 +135,21 @@ to force it off even when a key is configured.
 
 ## Limitations & roadmap
 
-- **Live cockpit.** The standalone CLI live sweep (`-serial`) opens the SDR
-  directly. A daemon-integrated live hunt — sharing the running radio via
-  spare-SDR-else-borrow acquisition, driven from a REST API and the TUI/web
-  cockpit — is the next phase.
+- **Live cockpit.** Besides the standalone CLI live sweep (`-serial`), the
+  daemon exposes a live hunt over REST that shares the running radio via
+  spare-SDR-else-borrow acquisition:
+
+  | Method & path | Purpose |
+  |---|---|
+  | `GET /api/v1/hunt` | Run status + the discovered system map |
+  | `POST /api/v1/hunt/start` | Start a run (`{bands, candidates, no_sweep, protocol, name, …}`) |
+  | `POST /api/v1/hunt/stop` | Cancel the active run |
+  | `GET /api/v1/hunt/export?format=bundle\|trunk-recorder\|rr` | Download the discovery |
+  | `POST /api/v1/hunt/commit` | Merge the discovery into `config.yaml` (`{force, dry_run}`) |
+
+  Progress streams over the event bus (`hunt.progress` / `hunt.candidate` /
+  `hunt.done`) via `GET /api/v1/events`. Dedicated TUI and web-console panels
+  are the remaining phase.
 - **Topology depth.** For **P25** the hunt now recovers full topology —
   WACN/SYSID, the camped RFSS/Site, advertised neighbor (adjacent) sites, and
   the over-the-air band plan (IDEN_UP) — all surfaced in the exports. For other

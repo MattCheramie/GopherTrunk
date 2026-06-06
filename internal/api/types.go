@@ -3,8 +3,46 @@ package api
 import (
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// HuntStatus is the JSON shape returned by GET /api/v1/hunt — the live
+// system-discovery run state plus the discovered system map once available.
+type HuntStatus struct {
+	RunID      int                    `json:"run_id"`
+	State      string                 `json:"state"`
+	Running    bool                   `json:"running"`
+	Phase      string                 `json:"phase,omitempty"`
+	Detail     string                 `json:"detail,omitempty"`
+	Sites      int                    `json:"sites"`
+	Talkgroups int                    `json:"talkgroups"`
+	SystemName string                 `json:"system_name,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+	System     *hunt.DiscoveredSystem `json:"system,omitempty"`
+	Reports    []hunt.CaptureReport   `json:"reports,omitempty"`
+}
+
+// HuntStartRequest is the POST /api/v1/hunt/start body. Frequencies are in MHz
+// for operator convenience. With Bands set the hunt sweeps; with Candidates +
+// NoSweep it probes the listed control channels directly.
+type HuntStartRequest struct {
+	Serial          string    `json:"serial,omitempty"`
+	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
+	Candidates      []float64 `json:"candidates,omitempty"` // MHz
+	NoSweep         bool      `json:"no_sweep,omitempty"`
+	Protocol        string    `json:"protocol,omitempty"`
+	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`
+	SweepDwellMs    int       `json:"sweep_dwell_ms,omitempty"`
+	PeakThresholdDb float64   `json:"peak_threshold_db,omitempty"`
+	MinSpacingHz    uint32    `json:"min_spacing_hz,omitempty"`
+	FFTSize         int       `json:"fft_size,omitempty"`
+	MinConfidence   float64   `json:"min_confidence,omitempty"`
+	Name            string    `json:"name,omitempty"`
+	State           string    `json:"state,omitempty"`
+	County          string    `json:"county,omitempty"`
+	Location        string    `json:"location,omitempty"`
+}
 
 // EventDTO is the JSON envelope for every event streamed to clients.
 // Kind matches the events.Kind constant; Payload is the kind-specific

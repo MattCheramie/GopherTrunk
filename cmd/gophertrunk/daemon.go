@@ -1757,6 +1757,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				log.Warn("daemon: hunt manager not started", "err", err)
 			} else {
 				d.huntMgr = mgr
+				opts.Hunt = huntCockpit{mgr: mgr, cfgPath: d.cfgPath}
 			}
 		}
 		if d.player != nil || d.recorder != nil {
