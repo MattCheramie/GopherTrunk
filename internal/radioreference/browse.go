@@ -213,6 +213,12 @@ func (c *Client) getTrsTalkgroups(ctx context.Context, sid int) ([]TalkgroupDeta
 // parseSites extracts every <siteList> entry and its frequencies. A
 // frequency whose "use" flag marks it a control/data channel lands in
 // ControlChannels; all frequencies (control + voice) land in Frequencies.
+//
+// RadioReference's XML is namespaced SOAP; firstLeaves/blocks are
+// intentionally tolerant first-match scanners (not schema-validated), so a
+// renamed/missing element degrades to a zero value rather than an error.
+// Site entries that yield no usable frequency are dropped so an empty or
+// metadata-only <siteList> doesn't surface as a zero-channel site.
 func parseSites(raw []byte) []SiteDetail {
 	var sites []SiteDetail
 	for _, block := range blocks(raw, "siteList") {
@@ -233,6 +239,9 @@ func parseSites(raw []byte) []SiteDetail {
 			if isControlUse(fl["use"]) {
 				site.ControlChannels = append(site.ControlChannels, hz)
 			}
+		}
+		if len(site.Frequencies) == 0 {
+			continue
 		}
 		sites = append(sites, site)
 	}
@@ -323,7 +332,9 @@ func protocolFromType(sType, flavor string) string {
 
 // mhzToHz parses a decimal-MHz string (RadioReference's frequency format,
 // e.g. "851.0125") and returns the rounded value in Hz. Returns 0 for
-// empty / unparseable input.
+// empty / unparseable / non-positive input, and for values that would
+// overflow the uint32 Hz field the config schema uses (≈4294.97 MHz) so a
+// garbage MHz string can't wrap to a plausible-looking frequency.
 func mhzToHz(s string) uint32 {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -333,7 +344,11 @@ func mhzToHz(s string) uint32 {
 	if err != nil || f <= 0 {
 		return 0
 	}
-	return uint32(math.Round(f * 1e6))
+	hz := math.Round(f * 1e6)
+	if hz > math.MaxUint32 {
+		return 0
+	}
+	return uint32(hz)
 }
 
 // firstNonEmpty returns the first non-empty string of its arguments.
