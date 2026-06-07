@@ -59,7 +59,27 @@ type Manager struct {
 	startedAt  time.Time
 	finishedAt time.Time
 	cancel     context.CancelFunc
+
+	// history retains the last maxRunHistory finished runs that produced a
+	// system, keyed implicitly by id, so /api/v1/hunt/{id}/export|commit can
+	// reach a prior run after a newer one starts.
+	history []runRecord
 }
+
+// maxRunHistory bounds the retained finished-run records.
+const maxRunHistory = 10
+
+// runRecord is one finished run's discovered system + reports, kept in the
+// Manager's bounded history.
+type runRecord struct {
+	id      int
+	sys     *DiscoveredSystem
+	reports []CaptureReport
+}
+
+// ErrNoSuchRun is returned by id-addressed lookups when the run id is unknown
+// or has been evicted from the bounded history.
+var ErrNoSuchRun = errors.New("hunt: no such run id")
 
 // NewManager builds a Manager. Acquire is required.
 func NewManager(opts ManagerOptions) (*Manager, error) {
@@ -156,6 +176,11 @@ func (m *Manager) finish(id int, sys *DiscoveredSystem, reports []CaptureReport,
 	if sys != nil {
 		m.sys = sys
 		m.reports = reports
+		// Retain in the bounded history (newest last; drop oldest over cap).
+		m.history = append(m.history, runRecord{id: id, sys: sys, reports: reports})
+		if len(m.history) > maxRunHistory {
+			m.history = m.history[len(m.history)-maxRunHistory:]
+		}
 	}
 	st := m.statusLocked()
 	m.mu.Unlock()
@@ -212,11 +237,60 @@ func (m *Manager) Current() (*DiscoveredSystem, []CaptureReport, bool) {
 	return m.sys, m.reports, true
 }
 
+// Run returns a specific run's discovered system + reports. id 0 means the
+// latest (same as Current). Returns ok=false for an unknown/evicted id, or for
+// a run that produced no system.
+func (m *Manager) Run(id int) (*DiscoveredSystem, []CaptureReport, bool) {
+	if id == 0 {
+		return m.Current()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// The live current run may not be in history yet (still in flight, or it's
+	// the most recent finished one) — check it first.
+	if id == m.runID && m.sys != nil {
+		return m.sys, m.reports, true
+	}
+	for i := len(m.history) - 1; i >= 0; i-- {
+		if m.history[i].id == id {
+			return m.history[i].sys, m.history[i].reports, true
+		}
+	}
+	return nil, nil, false
+}
+
+// KnownRun reports whether id refers to any run the Manager has seen (active or
+// in history), so callers can distinguish "unknown id" (404) from "run exists
+// but produced nothing" (409).
+func (m *Manager) KnownRun(id int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id == 0 || id == m.runID {
+		return m.runID > 0
+	}
+	for _, r := range m.history {
+		if r.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 // Export writes the latest discovered system to w in the given format. Returns
 // an error when no system has been discovered yet.
 func (m *Manager) Export(w io.Writer, f Format, hints []DuplicateHint) error {
-	sys, _, ok := m.Current()
+	return m.ExportRun(0, w, f, hints)
+}
+
+// ExportRun writes a specific run's discovered system (id 0 = latest). Returns
+// ErrNoSuchRun for an unknown/evicted id, or a "no system" error when the run
+// exists but produced nothing.
+func (m *Manager) ExportRun(id int, w io.Writer, f Format, hints []DuplicateHint) error {
+	sys, _, ok := m.Run(id)
 	if !ok {
+		if id != 0 && !m.KnownRun(id) {
+			return ErrNoSuchRun
+		}
 		return errors.New("hunt: no discovered system to export yet")
 	}
 	return Write(w, sys, f, hints)

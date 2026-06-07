@@ -111,12 +111,13 @@ type HuntCockpit interface {
 	Start(req HuntStartRequest) (runID int, err error)
 	// Stop cancels the active run; false when nothing is running.
 	Stop() bool
-	// Export serializes the latest discovered system in the named format
+	// Export serializes a run's discovered system in the named format
 	// (bundle|trunk-recorder|rr), returning the bytes + a suggested filename.
-	Export(format string) (data []byte, filename string, err error)
-	// Commit merges the latest discovered system into config.yaml, returning a
-	// human-readable list of changes.
-	Commit(force, dryRun bool) (changes []string, err error)
+	// id 0 = the latest run. Returns ErrHuntNoSuchRun for an unknown id.
+	Export(id int, format string) (data []byte, filename string, err error)
+	// Commit merges a run's discovered system into config.yaml (id 0 = latest),
+	// returning a human-readable list of changes.
+	Commit(id int, force, dryRun bool) (changes []string, err error)
 }
 
 // ScannerCockpit is the API surface for the police-scanner subsystem:
@@ -881,7 +882,9 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/hunt/start", s.gate(s.handleHuntStart))
 	mux.HandleFunc("POST /api/v1/hunt/stop", s.gate(s.handleHuntStop))
 	mux.HandleFunc("GET /api/v1/hunt/export", s.handleHuntExport)
+	mux.HandleFunc("GET /api/v1/hunt/{id}/export", s.handleHuntExport)
 	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
+	mux.HandleFunc("POST /api/v1/hunt/{id}/commit", s.gate(s.handleHuntCommit))
 
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
 	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))

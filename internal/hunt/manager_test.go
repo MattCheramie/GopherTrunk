@@ -3,6 +3,7 @@ package hunt
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -167,6 +168,46 @@ func TestManager_PassesOptionsToAcquirer(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Acquirer was not called")
+	}
+}
+
+// TestManager_RunHistoryAndExportRun covers the bounded run history: a finished
+// run is reachable by id, an unknown id yields ErrNoSuchRun, and the oldest is
+// evicted past the cap.
+func TestManager_RunHistoryAndExportRun(t *testing.T) {
+	src, dwell := p25Source(t)
+	mgr, _ := NewManager(ManagerOptions{
+		Acquire: func(context.Context, LiveHuntOptions) (IQSource, func(), error) {
+			return src, func() {}, nil
+		},
+	})
+	runOnce := func() int {
+		id, err := mgr.Start(LiveHuntOptions{Candidates: []uint32{851_000_000}, DwellSeconds: dwell, MinConfidence: 0.3})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+		return id
+	}
+
+	first := runOnce()
+	if _, _, ok := mgr.Run(first); !ok {
+		t.Fatalf("run %d not in history", first)
+	}
+	// Unknown id → ExportRun returns ErrNoSuchRun.
+	if err := mgr.ExportRun(99999, io.Discard, FormatBundle, nil); !errors.Is(err, ErrNoSuchRun) {
+		t.Errorf("ExportRun(unknown) = %v, want ErrNoSuchRun", err)
+	}
+	if err := mgr.ExportRun(first, io.Discard, FormatBundle, nil); err != nil {
+		t.Errorf("ExportRun(first) = %v, want nil", err)
+	}
+
+	// Exceed the cap → the first run is evicted.
+	for i := 0; i < maxRunHistory; i++ {
+		runOnce()
+	}
+	if mgr.KnownRun(first) {
+		t.Errorf("run %d should have been evicted past cap %d", first, maxRunHistory)
 	}
 }
 
