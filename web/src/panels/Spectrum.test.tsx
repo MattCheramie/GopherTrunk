@@ -120,6 +120,7 @@ describe("Spectrum panel", () => {
     // and a waterfall row to read the bin power from.
     vi.mocked(openSpectrumStream).mockImplementation((_cfg, opts) => {
       opts.onFrame?.({
+        ts_ns: 0,
         center_hz: 153_000_000,
         sample_rate_hz: 2_048_000,
         bins: [-80, -70, -60, -50, -40, -30, -20, -10],
