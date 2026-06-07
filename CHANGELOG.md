@@ -9,6 +9,21 @@ for tagged releases.
 
 ### Fixed
 
+- **P25 Phase 1 voice still garbled after the IMBE channel-decode fix —
+  wrong LDU voice-frame positions** (#489 follow-up). With the channel
+  decoder corrected, real-air voice was still noise: the LDU1/LDU2 field
+  layout in `ldu.go` placed a Link Control block between voice frames u_0 and
+  u_1 (`u0, LC1, u1, LC2, …`), but real P25 (per szechyjs/dsd `p25p1_ldu1.c`,
+  which reads IMBE frames 1 and 2 back-to-back) is `u0, u1, LC1, u2, LC2, …,
+  u7, LSD, u8`. This shifted voice subframes u_1..u_7 by one 40-bit block, so
+  only u_0 and u_8 landed on the right bits and the other seven decoded to
+  random pitch. `lduVoiceOffsets`, `lduLCESBlockOffsets`, and
+  `lduLSDBlockOffsets` are corrected to the real layout (also repairing
+  voice-channel Link Control / Encryption Sync / talker-alias metadata, which
+  read the same tables). The pre-existing layout test had the DSD order
+  inverted and is fixed; a new independent fixture
+  (`ldu_realair_test.go`), built from the mbelib/DSD reference with voice
+  frames at hard-coded canonical positions, now guards the layout end-to-end.
 - **P25 Phase 1 voice decoded to garbled noise** (#489). The IMBE 4400
   channel decoder was self-consistent (its own encode/decode round-tripped)
   but did not match the on-air convention real P25 transmitters use, so every

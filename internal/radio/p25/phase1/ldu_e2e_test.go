@@ -174,5 +174,5 @@ func TestLDUEndToEndIntoRecorder(t *testing.T) {
 // package and the internal table is unexported. Keep in sync
 // with ldu.go's lduVoiceOffsets.
 func lduVoiceOffsetForTest(i int) int {
-	return []int{112, 296, 480, 664, 848, 1032, 1216, 1392, 1536}[i]
+	return []int{112, 256, 440, 624, 808, 992, 1176, 1360, 1536}[i]
 }
