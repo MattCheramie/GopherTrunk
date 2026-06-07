@@ -94,6 +94,49 @@ func TestRunReaderCaptureIQ(t *testing.T) {
 	}
 }
 
+// TestRunReaderCaptureSymbolSeries confirms the aligned symbol series
+// (dibits + soft) that backs the offline Symbol-scope viz is populated,
+// aligned, bounded by the cap, and reports cardinality 4 for P25 C4FM.
+func TestRunReaderCaptureSymbolSeries(t *testing.T) {
+	iq, meta, err := Synthesize(SynthOptions{Protocol: trunking.ProtocolP25, Format: FormatF32})
+	if err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	cfg, err := meta.Config(true)
+	if err != nil {
+		t.Fatalf("meta.Config: %v", err)
+	}
+	cfg.CollectIQDiag = true
+	cfg.CaptureIQ = true
+	cfg.CaptureIQMaxPoints = 4000
+
+	data := EncodeCapture(iq, FormatF32)
+	res, err := RunReader(bytes.NewReader(data), "p25.cfile", cfg)
+	if err != nil {
+		t.Fatalf("RunReader: %v", err)
+	}
+	if res.IQTaps == nil {
+		t.Fatal("expected IQTaps when CaptureIQ is set")
+	}
+	if len(res.IQTaps.SymbolDibits) == 0 {
+		t.Fatal("expected a symbol series when CollectIQDiag + CaptureIQ are set on P25")
+	}
+	if res.IQTaps.SymbolCardinality != 4 {
+		t.Errorf("SymbolCardinality = %d, want 4 for P25 C4FM", res.IQTaps.SymbolCardinality)
+	}
+	if len(res.IQTaps.SymbolDibits) > cfg.CaptureIQMaxPoints {
+		t.Errorf("symbol series exceeds cap: %d > %d", len(res.IQTaps.SymbolDibits), cfg.CaptureIQMaxPoints)
+	}
+	if n := len(res.IQTaps.SymbolSoft); n != 0 && n != len(res.IQTaps.SymbolDibits) {
+		t.Errorf("soft track len %d not aligned with dibits len %d", n, len(res.IQTaps.SymbolDibits))
+	}
+	for i, d := range res.IQTaps.SymbolDibits {
+		if d > 3 {
+			t.Fatalf("dibit %d at %d out of range", d, i)
+		}
+	}
+}
+
 // TestRunReaderAutoTuneNonSeekable confirms auto-tune over a non-seekable
 // reader fails with a clear error rather than silently mis-decoding.
 func TestRunReaderAutoTuneNonSeekable(t *testing.T) {

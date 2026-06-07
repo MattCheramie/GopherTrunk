@@ -7,6 +7,7 @@ import { Constellation } from "../viz/Constellation";
 import { PSD } from "../viz/PSD";
 import { Spectrogram } from "../viz/Spectrogram";
 import { EyeDiagram } from "../viz/EyeDiagram";
+import { SymbolScope } from "../viz/SymbolScope";
 import { SyncLandscape } from "../viz/SyncLandscape";
 import { ReceiverStates } from "../viz/ReceiverStates";
 import { GrantsTable, EventTimeline } from "../viz/Tables";
@@ -132,6 +133,13 @@ function VizGrid({ r, iq }: { r: Result; iq?: Result["iq_taps"] }) {
       )}
       {(soft.length > 1 || detail.soft_eye) && (
         <EyeDiagram soft={soft} eye={detail.soft_eye} />
+      )}
+      {iq && (iq.symbol_dibits?.length ?? 0) > 0 && (
+        <SymbolScope
+          soft={iq.symbol_soft ?? []}
+          dibits={iq.symbol_dibits ?? []}
+          cardinality={iq.symbol_cardinality}
+        />
       )}
       {detail.sync && <SyncLandscape sync={detail.sync} />}
       {detail.receiver_states && detail.receiver_states.length > 0 && (

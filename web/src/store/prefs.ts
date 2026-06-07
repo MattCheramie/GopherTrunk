@@ -19,6 +19,9 @@ const LS_KEYS = {
   constellationHold: "gt.constellation.hold",
   constellationDcBlock: "gt.constellation.dcBlock",
   constellationAutoScale: "gt.constellation.autoScale",
+  symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
+  symbolScopeHold: "gt.symbolScope.hold",
+  symbolScopeProto: "gt.symbolScope.proto",
 } as const;
 
 const SS_KEYS = {
@@ -160,6 +163,31 @@ export const prefs = {
   },
   setConstellationAutoScale(on: boolean) {
     writeLS(LS_KEYS.constellationAutoScale, on ? "1" : "0");
+  },
+
+  // Symbol-scope panel view options. Offset (kHz, relative to the SDR
+  // centre) tunes a locked channel under the scope; Hold pins it (off =
+  // follow the newest active call). Proto selects the receiver.
+  symbolScopeOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.symbolScopeOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setSymbolScopeOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.symbolScopeOffsetKHz, String(khz));
+  },
+  symbolScopeHold(): boolean {
+    return readLS(LS_KEYS.symbolScopeHold) === "1";
+  },
+  setSymbolScopeHold(on: boolean) {
+    writeLS(LS_KEYS.symbolScopeHold, on ? "1" : "0");
+  },
+  symbolScopeProto(): string {
+    return readLS(LS_KEYS.symbolScopeProto) ?? "p25-c4fm";
+  },
+  setSymbolScopeProto(p: string) {
+    writeLS(LS_KEYS.symbolScopeProto, p);
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */
