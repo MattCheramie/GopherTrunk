@@ -50,7 +50,7 @@ func aprsPacketToDTO(p storage.APRSPacket) APRSPacketDTO {
 // ?limit= (default 200, max 5000).
 func (s *Server) handleAPRSPackets(w http.ResponseWriter, r *http.Request) {
 	if s.aprs == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "aprs subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "aprs subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200

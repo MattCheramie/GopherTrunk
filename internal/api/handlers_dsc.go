@@ -59,7 +59,7 @@ func dscMessageToDTO(m storage.DSCMessage) DSCMessageDTO {
 // isn't wired (daemon started without storage.path).
 func (s *Server) handleDSCMessages(w http.ResponseWriter, r *http.Request) {
 	if s.dsc == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "dsc subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "dsc subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200

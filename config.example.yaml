@@ -329,6 +329,12 @@ sdr:
 # directly to FrequencyHz (full sample-rate IQ, no DDC) — multi-
 # channel-from-one-SDR is a planned follow-up.
 #
+# NOTE: paging (and the other message decoders: aprs, ais, dsc,
+# mdc1200, m17) surface decoded messages only through the SQLite
+# log. You must set a `storage:` section (see the storage example
+# above) — without it the decoder runs but /api/v1/pager/messages
+# returns 503 and the web panel stays empty.
+#
 # paging:
 #   pocsag:
 #     - serial: "antenna-pi"       # SDR serial (must be in sdr.devices

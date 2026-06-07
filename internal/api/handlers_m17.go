@@ -47,7 +47,7 @@ func m17LinkSetupToDTO(l storage.M17LinkSetup) M17LinkSetupDTO {
 // wired (daemon started without storage.path).
 func (s *Server) handleM17LinkSetups(w http.ResponseWriter, r *http.Request) {
 	if s.m17 == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "m17 subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "m17 subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200
