@@ -10,8 +10,10 @@ export function FileBar() {
   const load = useStore((s) => s.load);
   const newConfig = useStore((s) => s.newConfig);
   const save = useStore((s) => s.save);
+  const revert = useStore((s) => s.revert);
   const validateAll = useStore((s) => s.validateAll);
   const setError = useStore((s) => s.setError);
+  const busy = useStore((s) => s.busy);
 
   const [files, setFiles] = useState<ConfigFileInfo[]>([]);
   const [dirs, setDirs] = useState<string[]>([]);
@@ -31,15 +33,23 @@ export function FileBar() {
     refresh();
   }, []);
 
+  // Ctrl+S on an untitled config asks us to open Save As (App dispatches it).
+  useEffect(() => {
+    const h = () => setSaveOpen(true);
+    window.addEventListener("configbuilder:saveas", h);
+    return () => window.removeEventListener("configbuilder:saveas", h);
+  }, []);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button className="btn-ghost" onClick={() => newConfig()}>
+      <button className="btn-ghost" disabled={busy} onClick={() => newConfig()}>
         New
       </button>
 
       <div className="relative">
         <button
           className="btn-ghost"
+          disabled={busy}
           onClick={() => {
             setOpenMenu((o) => !o);
             if (!openMenu) refresh();
@@ -76,6 +86,7 @@ export function FileBar() {
 
       <button
         className="btn"
+        disabled={busy}
         onClick={async () => {
           if (!path) {
             setSaveOpen(true);
@@ -86,9 +97,21 @@ export function FileBar() {
       >
         Save
       </button>
-      <button className="btn-ghost" onClick={() => setSaveOpen(true)}>
+      <button className="btn-ghost" disabled={busy} onClick={() => setSaveOpen(true)}>
         Save As…
       </button>
+      {dirty ? (
+        <button
+          className="btn-ghost"
+          disabled={busy}
+          title="Discard unsaved changes and reload from disk"
+          onClick={() => {
+            if (window.confirm("Discard unsaved changes?")) void revert();
+          }}
+        >
+          Revert
+        </button>
+      ) : null}
       <button className="btn-ghost" onClick={() => validateAll()}>
         Validate all
       </button>
@@ -145,7 +168,7 @@ function SaveDialog(props: {
   onClose: () => void;
   onSave: (path: string, overwrite: boolean) => void;
 }) {
-  const lastError = useStore((s) => s.lastError);
+  const lastError = useStore((s) => s.errors[s.errors.length - 1] ?? null);
   const [dir, setDir] = useState(props.dirs[0] ?? "");
   const [name, setName] = useState(
     props.defaultPath ? props.defaultPath.split(/[/\\]/).pop()! : "config.yaml",
