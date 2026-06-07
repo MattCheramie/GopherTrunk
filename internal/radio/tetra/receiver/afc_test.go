@@ -15,10 +15,10 @@ import (
 // without AFC does not.
 func TestAFCRecoversDibitsUnderCarrierOffset(t *testing.T) {
 	const (
-		sps      = 8
-		span     = 8
-		alpha    = 0.35
-		rate     = 144_000.0
+		sps   = 8
+		span  = 8
+		alpha = 0.35
+		rate  = 144_000.0
 		// 3500 Hz ≈ 70° per-symbol differential rotation — well past the
 		// ±45° decision margin, so the plain differential decoder produces
 		// garbage. (Below ~45° the plain decoder copes without AFC.)

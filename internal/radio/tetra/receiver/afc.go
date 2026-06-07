@@ -32,7 +32,7 @@ type carrierAFC struct {
 	acqBuf  []complex64 // acquisition window (raw symbols)
 	acqWant int
 
-	prev    complex64 // previous derotated symbol
+	prev     complex64 // previous derotated symbol
 	havePrev bool
 }
 
