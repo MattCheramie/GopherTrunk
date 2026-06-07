@@ -90,6 +90,47 @@ func TestPreflightTalkgroupEmptyWarning(t *testing.T) {
 	}
 }
 
+func TestPreflightStorageDecoderWarning(t *testing.T) {
+	// A message decoder (POCSAG here) configured without storage.path
+	// must surface a preflight warning naming the storage dependency —
+	// otherwise the decoder runs but pager/messages returns 503 with no
+	// hint why (issue #565).
+	cfg := config.Config{
+		Paging: config.PagingConfig{
+			POCSAG: []config.PagingPOCSAGConfig{{
+				Serial:      "antenna-pi",
+				FrequencyHz: 152_007_500,
+			}},
+		},
+	}
+	warnings, err := preflight(cfg)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected a warning for paging configured without storage.path")
+	}
+	w := warnings[0]
+	if !strings.Contains(w, "storage.path") {
+		t.Errorf("warning %q missing 'storage.path' tag", w)
+	}
+	if !strings.Contains(w, "paging") {
+		t.Errorf("warning %q should name the 'paging' decoder", w)
+	}
+
+	// With storage.path set, the warning must not fire.
+	cfg.Storage = config.StorageConfig{Path: filepath.Join(t.TempDir(), "calls.db")}
+	warnings, err = preflight(cfg)
+	if err != nil {
+		t.Fatalf("preflight (with storage): %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "storage.path is empty") {
+			t.Errorf("unexpected storage warning when storage.path is set: %q", w)
+		}
+	}
+}
+
 func TestPreflightTLSMissing(t *testing.T) {
 	cfg := config.Config{
 		API: config.APIConfig{

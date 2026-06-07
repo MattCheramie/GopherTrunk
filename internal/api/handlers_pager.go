@@ -48,7 +48,7 @@ func pagerMessageToDTO(m storage.PagerMessage) PagerMessageDTO {
 // Optional ?limit= (default 200, max 5000).
 func (s *Server) handlePagerMessages(w http.ResponseWriter, r *http.Request) {
 	if s.pager == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "pager subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "pager subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200

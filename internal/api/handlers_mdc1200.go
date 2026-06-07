@@ -49,7 +49,7 @@ func mdc1200MessageToDTO(m storage.MDC1200Message) MDC1200MessageDTO {
 // wired (daemon started without storage.path).
 func (s *Server) handleMDC1200Messages(w http.ResponseWriter, r *http.Request) {
 	if s.mdc1200 == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "mdc1200 subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "mdc1200 subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200

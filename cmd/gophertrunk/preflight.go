@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 )
@@ -107,6 +108,43 @@ func preflight(cfg config.Config) ([]string, error) {
 			warnings = append(warnings,
 				fmt.Sprintf("trunking.systems[%s].rid_alias_file: %q is empty — radios on this system will have no operator aliases",
 					sys.Name, sys.RIDAliasFile))
+		}
+	}
+
+	// Message decoders that only surface their output through the
+	// SQLite-backed logs (pager / aprs / ais / dsc / mdc1200 / m17). With
+	// storage.path empty the daemon skips storage init entirely, so these
+	// decoders still run but their logs are never wired: the REST endpoints
+	// return 503 and the web panels stay empty. Operators hit this as a
+	// silent failure (see issue #565 — POCSAG configured, pager/messages 503
+	// until storage.path was added), so name the dependency loudly here.
+	if cfg.Storage.Path == "" {
+		var needs []string
+		if len(cfg.Paging.POCSAG) > 0 || len(cfg.Paging.FLEX) > 0 {
+			needs = append(needs, "paging")
+		}
+		if len(cfg.APRS.Channels) > 0 {
+			needs = append(needs, "aprs")
+		}
+		if len(cfg.AIS.Channels) > 0 {
+			needs = append(needs, "ais")
+		}
+		if len(cfg.DSC.Channels) > 0 {
+			needs = append(needs, "dsc")
+		}
+		if len(cfg.MDC1200.Channels) > 0 {
+			needs = append(needs, "mdc1200")
+		}
+		if len(cfg.M17.Channels) > 0 {
+			needs = append(needs, "m17")
+		}
+		if len(needs) > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"storage.path is empty but these decoders need it to surface decoded "+
+					"messages: %s — they will run, but their REST endpoints (e.g. "+
+					"/api/v1/pager/messages) return 503 and the web panels stay empty. "+
+					"Set storage.path to enable persistence.",
+				strings.Join(needs, ", ")))
 		}
 	}
 
