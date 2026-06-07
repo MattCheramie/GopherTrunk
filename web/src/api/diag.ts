@@ -27,6 +27,10 @@ export interface IQStream {
 export interface IQOptions {
   serial: string;
   rate?: number; // target sample rate (sps), 100..20000, default 2000
+  // Frequency offset in Hz, relative to the SDR centre, mixed down to
+  // baseband before decimation. Lets the operator pull an off-centre
+  // locked channel out from under the centre DC spike. Default 0.
+  offset?: number;
   onFrame: FrameHandler;
   onStatus?: StatusHandler;
 }
@@ -37,6 +41,8 @@ const MAX_BACKOFF = 30_000;
 export function diagWebSocketURL(cfg: ClientConfig, opts: IQOptions): string {
   const params = new URLSearchParams({ device: opts.serial });
   if (opts.rate != null) params.set("rate", String(opts.rate));
+  if (opts.offset != null && opts.offset !== 0)
+    params.set("offset", String(Math.round(opts.offset)));
   const u = new URL(
     `/api/v1/diag/iq?${params.toString()}`,
     cfg.baseURL || window.location.href,

@@ -9,6 +9,21 @@ for tagged releases.
 
 ### Added
 
+- **Constellation panel — frequency-offset view + cleaner render (issue
+  #557).** A centre-tuned constellation is dominated by the SDR's DC spike
+  (the DDC's residual carrier leakage at 0 Hz), which sits on top of any
+  signal in the middle of the band and reduces the plot to one fat blob. The
+  panel now offers an **Offset** control that mixes an off-centre control or
+  voice channel down to baseband *server-side, before decimation* (a new
+  `offset` parameter on `WS /api/v1/diag/iq`), pulling its symbols out from
+  under the spike — the same approach OP25 takes. With **Hold** off the
+  offset automatically follows the newest active call on the selected SDR
+  (the "last locked channel"); Hold pins it. Decimation now box-averages
+  each stride window as a crude anti-alias low-pass, and the render gains a
+  phosphor-green additive scatter with labelled ±1 axes, a **DC-block**
+  (subtract the rolling mean), and an **Auto-scale** that fills the unit
+  circle.
+
 - **SoapySDRServer remote SDRs — high-bit-depth network streaming + control
   from professional hardware (issue #536).** A new pure-Go (zero-CGO)
   `soapyremote` SDR backend connects to a remote `SoapySDRServer` (from

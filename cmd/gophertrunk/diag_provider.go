@@ -43,7 +43,7 @@ func newDiagProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, sampleRat
 // OpenIQStream is api.DiagProvider's only method. See its docstring
 // for the wire-side contract; this implementation builds a decimator
 // over the broker subscription and runs it on a goroutine.
-func (p *diagProvider) OpenIQStream(ctx context.Context, serial string, targetRateSPS uint32) (<-chan api.IQFrame, func(), error) {
+func (p *diagProvider) OpenIQStream(ctx context.Context, serial string, targetRateSPS uint32, offsetHz int32) (<-chan api.IQFrame, func(), error) {
 	if p == nil {
 		return nil, nil, errors.New("diag: provider not wired")
 	}
@@ -64,10 +64,19 @@ func (p *diagProvider) OpenIQStream(ctx context.Context, serial string, targetRa
 	if targetRateSPS > inputRate {
 		targetRateSPS = inputRate
 	}
+	// Clamp the requested view offset to the device's Nyquist; a mix
+	// beyond +/- Fs/2 just aliases back into the band.
+	half := int32(inputRate / 2)
+	if offsetHz > half {
+		offsetHz = half
+	} else if offsetHz < -half {
+		offsetHz = -half
+	}
 
 	dec, err := diag.New(diag.Options{
 		InputRateSPS:   inputRate,
 		TargetRateSPS:  targetRateSPS,
+		OffsetHz:       offsetHz,
 		ChunksPerFrame: 4,
 	})
 	if err != nil {

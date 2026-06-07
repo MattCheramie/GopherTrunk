@@ -18,7 +18,7 @@ type fakeDiagProvider struct {
 	frames  []IQFrame
 }
 
-func (f *fakeDiagProvider) OpenIQStream(ctx context.Context, _ string, _ uint32) (<-chan IQFrame, func(), error) {
+func (f *fakeDiagProvider) OpenIQStream(ctx context.Context, _ string, _ uint32, _ int32) (<-chan IQFrame, func(), error) {
 	if f.openErr != nil {
 		return nil, nil, f.openErr
 	}
