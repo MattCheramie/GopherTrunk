@@ -153,7 +153,7 @@ function paint(
       y = y0 + plotH * (1 - (dibits[i] + 0.5) / rows);
     }
     ctx.fillStyle = `rgba(${TRACE_RGB}, 0.55)`;
-    ctx.fillRect(x - 1, y - 1, 2, 2);
+    ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
   }
   ctx.globalCompositeOperation = "source-over";
 }

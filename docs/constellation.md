@@ -35,7 +35,10 @@ collapses into one fat blob. Three controls work around this:
   down to baseband *server-side, before decimation*, so an off-centre
   control or voice channel is pulled out from under the DC spike and
   rendered as a clean constellation. This is the same trick OP25 uses.
-  Drag the slider or type a kHz value.
+  Drag the slider for a coarse sweep, or type an exact value: the
+  **kHz** field takes 1 Hz resolution (so channel grids like 6.25 /
+  12.5 kHz land precisely), and the **MHz** field lets you type the
+  channel's absolute frequency — the two stay in sync.
 - **Hold** — when off, the Offset automatically follows the newest
   active call on the selected SDR (the "last locked channel"). Turn
   Hold on to pin the view on a specific offset and stop it from
@@ -43,7 +46,11 @@ collapses into one fat blob. Three controls work around this:
   **Centre** pins it too.
 - **DC block** / **Auto scale** — DC-block subtracts the rolling mean
   to remove any residual offset; auto-scale eases a gain so the cloud
-  fills the unit circle regardless of input amplitude. Both default on.
+  fills the unit circle (targeting the ~95th-percentile radius, so a
+  stray outlier doesn't shrink the whole cloud). Both default on.
+- **Zoom** — magnifies the plotted cloud and the dot size together, so
+  the scatter reads as dots rather than pin-pricks; dial it to taste.
+  The setting persists across visits.
 
 Common shapes:
 
@@ -104,7 +111,8 @@ Common shapes:
 | `internal/api/diag.go` | `DiagProvider` interface + `WS /api/v1/diag/iq` handler |
 | `cmd/gophertrunk/diag_provider.go` | Daemon-side `diagProvider` — wires the decimator to the iqtap broker for each WS subscriber |
 | `web/src/api/diag.ts` | Typed client with auto-reconnect / backoff |
-| `web/src/panels/Constellation.tsx` | Canvas scatter renderer |
+| `web/src/panels/Constellation.tsx` | Canvas scatter renderer + zoom |
+| `web/src/components/TuningControls.tsx` | Shared offset / frequency / Hold / Centre controls (also used by the Symbol scope) |
 
 The decimator runs on top of the iqtap broker (PR #365), so it
 fans out from the same IQ source the trunking decoder is reading

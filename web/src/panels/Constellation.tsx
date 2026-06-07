@@ -10,6 +10,7 @@ import {
 } from "../api/diag";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
+import { TuningControls } from "../components/TuningControls";
 
 // Constellation panel — 2D scatter of decimated IQ samples. Useful
 // for spotting the symbol-domain shape of whatever the SDR is tuned
@@ -41,6 +42,9 @@ const TARGET_RATE_SPS = 2000;
 const POINT_BUFFER = 2000;       // how many recent points to render
 const CANVAS_PX = 420;           // square canvas; CSS scales to width
 const MARGIN = { top: 12, right: 12, bottom: 24, left: 34 };
+// Base dot edge in CSS px at zoom 1; scaled by the Zoom control so the
+// scatter reads clearly instead of as pin-pricks (issue #557 follow-up).
+const BASE_DOT_PX = 2;
 
 // GopherTrunk's sky-400 accent (matches --gt-accent and the Spectrum
 // waterfall's blue→cyan ramp), deliberately not OP25's phosphor green.
@@ -56,6 +60,7 @@ type ConnState = "connecting" | "open" | "closed";
 interface RenderOpts {
   dcBlock: boolean;
   autoScale: boolean;
+  zoom: number;
   scaleRef: { current: number };
 }
 
@@ -78,18 +83,19 @@ export function Constellation() {
   const [autoScale, setAutoScale] = useState<boolean>(() =>
     prefs.constellationAutoScale(),
   );
+  const [zoom, setZoom] = useState<number>(() => prefs.constellationZoom());
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<IQPoint[]>([]);
   const scaleRef = useRef<number>(1);
-  const optsRef = useRef<RenderOpts>({ dcBlock, autoScale, scaleRef });
+  const optsRef = useRef<RenderOpts>({ dcBlock, autoScale, zoom, scaleRef });
 
   // Keep the render-time options the WS callback reads in sync without
   // re-subscribing the stream when a toggle flips.
   useEffect(() => {
-    optsRef.current = { dcBlock, autoScale, scaleRef };
+    optsRef.current = { dcBlock, autoScale, zoom, scaleRef };
     renderConstellation(canvasRef.current, bufferRef.current, optsRef.current);
-  }, [dcBlock, autoScale]);
+  }, [dcBlock, autoScale, zoom]);
 
   // Reuse the spectrum devices endpoint — same broker pool.
   useEffect(() => {
@@ -160,6 +166,9 @@ export function Constellation() {
   useEffect(() => {
     prefs.setConstellationAutoScale(autoScale);
   }, [autoScale]);
+  useEffect(() => {
+    prefs.setConstellationZoom(zoom);
+  }, [zoom]);
 
   useEffect(() => {
     if (!selected) return;
@@ -190,15 +199,17 @@ export function Constellation() {
     // Re-subscribe when the offset changes so the server re-mixes.
   }, [cfg, selected, clampedOffsetKHz]);
 
-  const viewHz = useMemo(() => {
-    if (!latest) return null;
-    return latest.center_hz + clampedOffsetKHz * 1000;
-  }, [latest, clampedOffsetKHz]);
+  // Prefer the device centre so the frequency view shows before the first
+  // frame; fall back to the frame's stamped centre.
+  const centerHz = device?.center_hz ?? latest?.center_hz ?? null;
+  const viewHz = centerHz != null ? centerHz + clampedOffsetKHz * 1000 : null;
 
   const tuningLabel = useMemo(() => {
-    if (!latest) return "";
-    const off = clampedOffsetKHz === 0 ? "centre" : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(1)} kHz`;
-    return `${((viewHz ?? latest.center_hz) / 1e6).toFixed(4)} MHz (${off}) · ${latest.sample_rate} sps · ${latest.energy_dbfs.toFixed(1)} dBFS`;
+    if (viewHz == null) return "";
+    const off = clampedOffsetKHz === 0 ? "centre" : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(3).replace(/\.?0+$/, "")} kHz`;
+    const head = `${(viewHz / 1e6).toFixed(4)} MHz (${off})`;
+    if (!latest) return `${head} · waiting for samples…`;
+    return `${head} · ${latest.sample_rate} sps · ${latest.energy_dbfs.toFixed(1)} dBFS`;
   }, [latest, viewHz, clampedOffsetKHz]);
 
   return (
@@ -232,68 +243,22 @@ export function Constellation() {
 
       {/* View controls — offset / follow-locked-channel / cleanup. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        <label className="flex items-center gap-2">
-          <span className="text-muted">Offset</span>
-          <input
-            type="range"
-            min={-maxOffsetKHz}
-            max={maxOffsetKHz}
-            step={Math.max(1, Math.round(maxOffsetKHz / 300))}
-            value={clampedOffsetKHz}
-            onChange={(e) => {
-              setHold(true);
-              setOffsetKHz(Number(e.target.value));
-            }}
-            className="w-40 accent-sky-400"
-            aria-label="View offset from SDR centre, kHz"
-          />
-          <input
-            type="number"
-            value={Number(clampedOffsetKHz.toFixed(1))}
-            onChange={(e) => {
-              setHold(true);
-              setOffsetKHz(Number(e.target.value));
-            }}
-            className="w-20 bg-surface border border-border rounded px-2 py-1 text-right font-mono"
-            aria-label="View offset from SDR centre in kHz (numeric)"
-          />
-          <span className="text-muted">kHz</span>
-        </label>
-
-        <button
-          type="button"
-          className="rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-40"
-          disabled={offsetKHz === 0}
-          onClick={() => {
+        <TuningControls
+          centerHz={centerHz}
+          maxOffsetKHz={maxOffsetKHz}
+          offsetKHz={clampedOffsetKHz}
+          onOffsetChange={(khz) => {
+            setHold(true);
+            setOffsetKHz(khz);
+          }}
+          hold={hold}
+          onHoldChange={setHold}
+          followingActive={followOffsetKHz != null}
+          onCentre={() => {
             setHold(true);
             setOffsetKHz(0);
           }}
-          title="Recentre the view on the SDR centre frequency"
-        >
-          Centre
-        </button>
-
-        <label
-          className="flex items-center gap-1.5"
-          title={
-            followOffsetKHz != null
-              ? `Follow the active call at ${(((viewHz ?? 0) || 0) / 1e6).toFixed(4)} MHz when off`
-              : "When off, the view follows the newest active call on this SDR"
-          }
-        >
-          <input
-            type="checkbox"
-            checked={hold}
-            onChange={(e) => setHold(e.target.checked)}
-            className="accent-sky-400"
-          />
-          <span>
-            Hold
-            {!hold && followOffsetKHz != null && (
-              <span className="text-accent"> · following call</span>
-            )}
-          </span>
-        </label>
+        />
 
         <label className="flex items-center gap-1.5">
           <input
@@ -313,6 +278,23 @@ export function Constellation() {
             className="accent-sky-400"
           />
           <span>Auto&nbsp;scale</span>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="text-muted">Zoom</span>
+          <input
+            type="range"
+            min={0.5}
+            max={4}
+            step={0.1}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="w-28 accent-sky-400"
+            aria-label="Constellation zoom"
+          />
+          <span className="w-10 text-right font-mono text-muted">
+            {zoom.toFixed(1)}×
+          </span>
         </label>
       </div>
 
@@ -423,18 +405,21 @@ function renderConstellation(
     mq /= n;
   }
 
-  // Auto-scale: target gain so the 95th-percentile radius reaches ~0.9
-  // of the unit circle. Eased toward the target to avoid frame jitter.
+  // Auto-scale: target gain so the ~95th-percentile radius reaches ~0.9
+  // of the unit circle. Using a percentile (not the absolute max) keeps a
+  // stray outlier from shrinking the whole cloud, so the scatter fills the
+  // circle like OP25's plot. Eased toward the target to avoid frame jitter.
   let gain = opts.scaleRef.current || 1;
   if (opts.autoScale) {
-    let maxR = 1e-6;
+    const radii = new Float64Array(n);
     for (let k = 0; k < n; k++) {
       const di = points[k].i - mi;
       const dq = points[k].q - mq;
-      const r = Math.hypot(di, dq);
-      if (r > maxR) maxR = r;
+      radii[k] = Math.hypot(di, dq);
     }
-    const target = Math.max(0.2, Math.min(8, 0.9 / maxR));
+    radii.sort();
+    const refR = Math.max(1e-6, radii[Math.min(n - 1, Math.floor(0.95 * n))]);
+    const target = Math.max(0.2, Math.min(8, 0.9 / refR));
     gain = gain + (target - gain) * 0.1;
     opts.scaleRef.current = gain;
   } else {
@@ -442,19 +427,26 @@ function renderConstellation(
     opts.scaleRef.current = 1;
   }
 
+  // Zoom magnifies both the cloud and the dot size so the scatter reads as
+  // dots, not pin-pricks, and can be dialled to taste (issue #557 follow-up).
+  const zoom = opts.zoom > 0 ? opts.zoom : 1;
+  const finalGain = gain * zoom;
+  const dotPx = Math.max(2, Math.min(8, Math.round(BASE_DOT_PX * zoom)));
+  const dotHalf = dotPx / 2;
+
   // Additive blending so overlapping symbols accumulate brightness.
   ctx.globalCompositeOperation = "lighter";
   for (let idx = 0; idx < n; idx++) {
     const p = points[idx];
-    const i = (p.i - mi) * gain;
-    const q = (p.q - mq) * gain;
+    const i = (p.i - mi) * finalGain;
+    const q = (p.q - mq) * finalGain;
     const x = cx + i * radius;
     const y = cy - q * radius; // canvas Y grows downward
     // Fade: oldest samples are dim, newest are bright.
     const age = idx / n; // 0..1
     const alpha = 0.05 + 0.5 * age * age;
     ctx.fillStyle = `rgba(${POINT_RGB}, ${alpha})`;
-    ctx.fillRect(x - 1, y - 1, 2, 2);
+    ctx.fillRect(x - dotHalf, y - dotHalf, dotPx, dotPx);
   }
   ctx.globalCompositeOperation = "source-over";
 }

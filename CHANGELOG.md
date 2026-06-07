@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **Constellation & Symbol scope tuning refinements** (#557 follow-up). The
+  Symbol scope now shows the tuned frequency as soon as an SDR is selected,
+  instead of staying blank until symbols decode. Both panels gain precise
+  channel entry: the **kHz** offset field takes 1 Hz resolution (so 6.25 /
+  12.5 kHz channel grids land exactly) plus an absolute **MHz** frequency
+  field that stays in sync. The Constellation gains an adjustable **Zoom**
+  control (and a larger default dot size), and its auto-scale now targets the
+  ~95th-percentile radius so a stray outlier no longer shrinks the cloud.
+
 ## [v0.3.5] — 2026-06-07
 
 Site/system **hunting** grows up — `gophertrunk hunt` turns from a one-shot

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 vi.mock("../api/spectrum", () => ({
   fetchSpectrumDevices: vi.fn(),
@@ -37,6 +37,7 @@ describe("Constellation panel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    window.localStorage.clear();
   });
 
   it("renders an empty-state when no SDRs are available", async () => {
@@ -131,6 +132,52 @@ describe("Constellation panel", () => {
       const calls = vi.mocked(openIQStream).mock.calls;
       const last = calls[calls.length - 1]?.[1];
       expect(last?.offset).toBe(25_000);
+    });
+  });
+
+  it("exposes a zoom control and an absolute-frequency (MHz) input", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+      },
+    ]);
+    vi.mocked(openIQStream).mockReturnValue({ close: vi.fn() });
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openIQStream).toHaveBeenCalled();
+    });
+    expect(screen.getByLabelText("Constellation zoom")).toBeInTheDocument();
+    expect(screen.getByLabelText("Tuned frequency, MHz")).toBeInTheDocument();
+  });
+
+  it("re-tunes when the operator enters a precise kHz offset", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+      },
+    ]);
+    vi.mocked(openIQStream).mockReturnValue({ close: vi.fn() });
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openIQStream).toHaveBeenCalled();
+    });
+    const input = screen.getByLabelText(
+      "View offset from SDR centre in kHz (numeric)",
+    );
+    fireEvent.change(input, { target: { value: "12.5" } });
+    await waitFor(() => {
+      const last = vi.mocked(openIQStream).mock.calls.at(-1)?.[1];
+      expect(last?.offset).toBe(12_500);
     });
   });
 

@@ -19,6 +19,7 @@ const LS_KEYS = {
   constellationHold: "gt.constellation.hold",
   constellationDcBlock: "gt.constellation.dcBlock",
   constellationAutoScale: "gt.constellation.autoScale",
+  constellationZoom: "gt.constellation.zoom",
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
@@ -163,6 +164,19 @@ export const prefs = {
   },
   setConstellationAutoScale(on: boolean) {
     writeLS(LS_KEYS.constellationAutoScale, on ? "1" : "0");
+  },
+  // Zoom magnifies the plotted cloud and dot size so the scatter fills the
+  // unit circle like OP25's plot. Clamped 0.5..4; defaults a touch above 1
+  // so the out-of-the-box view is already larger than 1:1.
+  constellationZoom(): number {
+    const raw = readLS(LS_KEYS.constellationZoom);
+    if (raw === null) return 1.5;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 1.5;
+    return Math.max(0.5, Math.min(4, n));
+  },
+  setConstellationZoom(z: number) {
+    writeLS(LS_KEYS.constellationZoom, String(Math.max(0.5, Math.min(4, z))));
   },
 
   // Symbol-scope panel view options. Offset (kHz, relative to the SDR
