@@ -704,6 +704,18 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 		return cmdScannerHuntRetune(m.cli, r.ScannerHunt.System, r.Label)
 	case state.WriteKindHuntStop:
 		return cmdHuntStop(m.cli, r.Label)
+	case state.WriteKindHuntStart:
+		if r.Hunt == nil {
+			return nil
+		}
+		return cmdHuntStart(m.cli, client.HuntStartRequest{
+			Bands:      r.Hunt.Bands,
+			Candidates: r.Hunt.Candidates,
+			NoSweep:    len(r.Hunt.Candidates) > 0 && len(r.Hunt.Bands) == 0,
+			Name:       r.Hunt.Name,
+			Serial:     r.Hunt.Serial,
+			Protocol:   r.Hunt.Protocol,
+		}, r.Label)
 	case state.WriteKindScannerConvHold:
 		return cmdScannerConvHold(m.cli, r.Label)
 	case state.WriteKindScannerConvResume:

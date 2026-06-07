@@ -90,6 +90,13 @@ func cmdPollHunt(cli *client.Client) tea.Cmd {
 	}
 }
 
+func cmdHuntStart(cli *client.Client, req client.HuntStartRequest, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.HuntStart(context.Background(), req)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
 func cmdHuntStop(cli *client.Client, label string) tea.Cmd {
 	return func() tea.Msg {
 		err := cli.HuntStop(context.Background())
