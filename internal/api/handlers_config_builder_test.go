@@ -119,6 +119,86 @@ func TestConfigBuilder_ValidateAndSave(t *testing.T) {
 	}
 }
 
+func TestConfigBuilder_TalkgroupRoundTrip(t *testing.T) {
+	base, dir, teardown := cbServer(t)
+	defer teardown()
+
+	// Save a config with a system that references a talkgroup sidecar.
+	cfg := config.Default()
+	cfg.Trunking.Systems = []config.SystemConfig{{
+		Name: "Metro", Protocol: "p25", ControlChannels: []uint32{851_037_500},
+		TalkgroupFile: "metro-tgs.csv",
+	}}
+	path := filepath.Join(dir, "config.yaml")
+	code := postJSONStatus(t, base+"/api/v1/config/file", ConfigSaveRequest{
+		Path:   path,
+		Config: cfg,
+		Talkgroups: map[string][]TalkgroupCSVRow{
+			"metro-tgs.csv": {
+				{Decimal: 101, AlphaTag: "PD Disp", Tag: "Law Dispatch", Mode: "D"},
+				{Decimal: 202, AlphaTag: "FD Ops"},
+			},
+		},
+	}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("save status=%d", code)
+	}
+
+	// Read the talkgroups back for that config.
+	var resp struct {
+		Talkgroups map[string][]TalkgroupCSVRow `json:"talkgroups"`
+	}
+	getJSON(t, base+"/api/v1/config/file/talkgroups?path="+path, &resp)
+	rows := resp.Talkgroups["metro-tgs.csv"]
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 talkgroups, got %+v", resp.Talkgroups)
+	}
+	if rows[0].Decimal != 101 || rows[0].AlphaTag != "PD Disp" || rows[0].Mode != "D" {
+		t.Fatalf("row0 mismatch: %+v", rows[0])
+	}
+}
+
+func TestConfigBuilder_FileManagement(t *testing.T) {
+	base, dir, teardown := cbServer(t)
+	defer teardown()
+
+	// mkdir a subdir, save into it, rename, then delete.
+	sub := filepath.Join(dir, "sites")
+	if postJSONStatus(t, base+"/api/v1/config/dir", map[string]string{"path": sub}, nil) != http.StatusOK {
+		t.Fatalf("mkdir failed")
+	}
+	if _, err := os.Stat(sub); err != nil {
+		t.Fatalf("subdir not created: %v", err)
+	}
+
+	src := filepath.Join(sub, "a.yaml")
+	if postJSONStatus(t, base+"/api/v1/config/file", ConfigSaveRequest{Path: src, Config: config.Default()}, nil) != http.StatusOK {
+		t.Fatalf("save into subdir failed")
+	}
+
+	dst := filepath.Join(sub, "b.yaml")
+	if postJSONStatus(t, base+"/api/v1/config/file/rename", map[string]string{"from": src, "to": dst}, nil) != http.StatusOK {
+		t.Fatalf("rename failed")
+	}
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("renamed file missing: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("old name should be gone")
+	}
+
+	// Delete via DELETE.
+	reqDelete(t, base+"/api/v1/config/file?path="+dst)
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Fatalf("file should be deleted")
+	}
+
+	// mkdir / rename outside the root are rejected.
+	if postJSONStatus(t, base+"/api/v1/config/dir", map[string]string{"path": "/etc/evil"}, nil) != http.StatusBadRequest {
+		t.Fatalf("mkdir outside root should be 400")
+	}
+}
+
 func TestConfigBuilder_PathTraversalRejected(t *testing.T) {
 	base, _, teardown := cbServer(t)
 	defer teardown()
@@ -220,6 +300,23 @@ func postJSON(t *testing.T, url string, body, out any) {
 	t.Helper()
 	if code := postJSONStatus(t, url, body, out); code != http.StatusOK {
 		t.Fatalf("POST %s: status=%d", url, code)
+	}
+}
+
+func reqDelete(t *testing.T, url string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("DELETE %s: status=%d body=%s", url, resp.StatusCode, b)
 	}
 }
 

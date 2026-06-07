@@ -107,6 +107,22 @@ func (svc *configBuilderService) resolveAllowed(reqPath string, exts ...string) 
 	return "", errPathOutsideRoots
 }
 
+// resolveDir validates a directory path for mkdir: symlink-resolved, it
+// must sit inside (or equal) an allowed root. No extension check.
+func (svc *configBuilderService) resolveDir(reqPath string) (string, error) {
+	reqPath = strings.TrimSpace(reqPath)
+	if reqPath == "" {
+		return "", errors.New("path is required")
+	}
+	canon := evalSymlinksBestEffort(reqPath)
+	for _, root := range svc.dirs {
+		if withinRoot(root, canon) {
+			return canon, nil
+		}
+	}
+	return "", errPathOutsideRoots
+}
+
 // withinRoot reports whether abs is root itself or nested beneath it,
 // using filepath.Rel so ".." escapes are rejected portably.
 func withinRoot(root, abs string) bool {

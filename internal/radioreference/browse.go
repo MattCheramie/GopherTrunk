@@ -134,6 +134,58 @@ func (c *Client) SearchByState(ctx context.Context, stid int) ([]SearchHit, erro
 	return hits, nil
 }
 
+// GeoRef is a RadioReference geography entry (a state or county) used to
+// back name-based pickers so operators don't have to know numeric ctid/stid.
+type GeoRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetStateList returns the states RadioReference knows (stid + name) for a
+// name dropdown. Element names are matched tolerantly (the SOAP schema
+// labels vary); an unrecognised response yields an empty list.
+func (c *Client) GetStateList(ctx context.Context) ([]GeoRef, error) {
+	body := fmt.Sprintf(`<ns1:getStateList>%s</ns1:getStateList>`, c.authXML())
+	raw, err := c.call(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	var out []GeoRef
+	for _, block := range blocks(raw, "stateList") {
+		l := firstLeaves(block, "stateId", "stid", "stateName", "stateCode")
+		id := atoiDefault(firstNonEmpty(l["stateId"], l["stid"]), 0)
+		if id == 0 {
+			continue
+		}
+		out = append(out, GeoRef{ID: id, Name: firstNonEmpty(l["stateName"], l["stateCode"])})
+	}
+	return out, nil
+}
+
+// GetCountyList returns the counties in a state (ctid + name) via
+// getStateInfo (the same call SearchByState walks), so the UI can offer a
+// county dropdown after a state is chosen.
+func (c *Client) GetCountyList(ctx context.Context, stid int) ([]GeoRef, error) {
+	body := fmt.Sprintf(`<ns1:getStateInfo>`+
+		`<stid xsi:type="xsd:int">%d</stid>`+
+		`%s`+
+		`</ns1:getStateInfo>`, stid, c.authXML())
+	raw, err := c.call(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	var out []GeoRef
+	for _, block := range blocks(raw, "countyList") {
+		l := firstLeaves(block, "ctid", "countyName", "name")
+		id := atoiDefault(l["ctid"], 0)
+		if id == 0 {
+			continue
+		}
+		out = append(out, GeoRef{ID: id, Name: firstNonEmpty(l["countyName"], l["name"])})
+	}
+	return out, nil
+}
+
 // GetFullSystem fetches a system's identity, sites, and talkgroups and
 // returns an import-ready FullSystem with a mapped GopherTrunk protocol.
 func (c *Client) GetFullSystem(ctx context.Context, sid int) (FullSystem, error) {

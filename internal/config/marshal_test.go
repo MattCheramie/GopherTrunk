@@ -106,20 +106,47 @@ func TestValidateSection(t *testing.T) {
 	cfg := Default()
 	cfg.SDR.SampleRate = 100 // invalid
 
-	if err := cfg.ValidateSection("sdr"); err == nil {
+	if errs := cfg.ValidateSection("sdr"); len(errs) == 0 {
 		t.Fatalf("expected sdr section error")
 	}
 	// A section with no bearing on the sample-rate error is clean.
-	if err := cfg.ValidateSection("web"); err != nil {
-		t.Fatalf("web section should be valid: %v", err)
+	if errs := cfg.ValidateSection("web"); len(errs) != 0 {
+		t.Fatalf("web section should be valid: %v", errs)
 	}
 	// Unknown section names are treated as valid (nil).
-	if err := cfg.ValidateSection("nonexistent"); err != nil {
-		t.Fatalf("unknown section should be nil: %v", err)
+	if errs := cfg.ValidateSection("nonexistent"); len(errs) != 0 {
+		t.Fatalf("unknown section should be nil: %v", errs)
 	}
 	// ValidateAll surfaces the sdr error.
 	all := cfg.ValidateAll()
 	if len(all) == 0 {
 		t.Fatalf("expected ValidateAll to report the sdr error")
+	}
+}
+
+// TestValidateAllAccumulates confirms ValidateAll reports every problem at
+// once: one error per failing list item, across multiple sections.
+func TestValidateAllAccumulates(t *testing.T) {
+	cfg := Default()
+	cfg.SDR.SampleRate = 100 // sdr error #1
+	cfg.Trunking.Systems = []SystemConfig{
+		{Name: "", Protocol: "p25"},     // trunking systems[0]: name required
+		{Name: "ok", Protocol: "bogus"}, // trunking systems[1]: bad protocol
+	}
+	cfg.Scanner.Conventional = []ConvChannelConfig{
+		{FrequencyHz: 0}, // scanner conventional[0]: freq required
+		{FrequencyHz: 460_000_000, Mode: "weird"}, // scanner conventional[1]: bad mode
+	}
+	all := cfg.ValidateAll()
+	if len(all) < 5 {
+		t.Fatalf("expected ≥5 accumulated errors (1 sdr + 2 trunking + 2 scanner), got %d: %v", len(all), all)
+	}
+	// ValidateSection returns just that section's multiple errors.
+	if got := cfg.ValidateSection("scanner"); len(got) != 2 {
+		t.Fatalf("expected 2 scanner errors, got %d: %v", len(got), got)
+	}
+	// Validate() keeps its first-error contract (the sdr error, first section).
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("Validate should still return the first error")
 	}
 }
