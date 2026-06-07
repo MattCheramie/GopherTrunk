@@ -63,21 +63,56 @@ export function FileBar() {
               <div className="help p-2">No config files found in the discovery directories.</div>
             ) : (
               files.map((f) => (
-                <button
+                <div
                   key={f.path}
-                  className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/5"
-                  onClick={() => {
-                    setOpenMenu(false);
-                    load(f.path);
-                  }}
-                  title={f.path}
+                  className="group flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-white/5"
                 >
-                  <span className={f.valid ? "" : "text-warn"}>
-                    {f.valid ? "" : "⚠ "}
-                    {f.name}
-                  </span>
-                  <span className="help block truncate">{f.dir}</span>
-                </button>
+                  <button
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => {
+                      setOpenMenu(false);
+                      load(f.path);
+                    }}
+                    title={f.path}
+                  >
+                    <span className={f.valid ? "" : "text-warn"}>
+                      {f.valid ? "" : "⚠ "}
+                      {f.name}
+                    </span>
+                    <span className="help block truncate">{f.dir}</span>
+                  </button>
+                  <button
+                    className="hidden text-xs text-muted hover:text-fg group-hover:block"
+                    title="Rename"
+                    onClick={async () => {
+                      const to = window.prompt("Rename to (filename):", f.name);
+                      if (!to || to === f.name) return;
+                      try {
+                        await api.renameFile(f.path, joinPath(f.dir, to.trim()));
+                        refresh();
+                      } catch (e) {
+                        setError(`Rename failed: ${(e as Error).message}`);
+                      }
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="hidden text-xs text-err/80 hover:text-err group-hover:block"
+                    title="Delete"
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${f.path}?`)) return;
+                      try {
+                        await api.deleteFile(f.path);
+                        refresh();
+                      } catch (e) {
+                        setError(`Delete failed: ${(e as Error).message}`);
+                      }
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
               ))
             )}
           </div>
