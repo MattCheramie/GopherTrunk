@@ -115,46 +115,59 @@ func TestChannelU7HasNoFEC(t *testing.T) {
 		corrupt := append([]byte(nil), clean...)
 		corrupt[u7Offset+offset] ^= 1
 		got, _, _ := DecodeChannel(corrupt)
-		if got[u7InfoStart+offset] != 1 {
-			t.Errorf("u_7 bit %d: corruption did not propagate (got %d)", offset, got[u7InfoStart+offset])
+		// u_7's on-air column order is the reverse of the info-bit
+		// order: column c maps to info bit (u7Bits-1-c).
+		infoBit := u7InfoStart + (u7Bits - 1 - offset)
+		if got[infoBit] != 1 {
+			t.Errorf("u_7 col %d: corruption did not propagate to info bit %d (got %d)", offset, infoBit, got[infoBit])
 		}
 	}
 }
 
-func TestChannelFlagsUncorrectableVector(t *testing.T) {
-	// Heavy random corruption inside u_0 pushes past Golay's 3-error
-	// correction radius. Some patterns happen to land inside another
-	// codeword's t-ball and silently mis-decode (a property of any
-	// minimum-distance decoder, not unique to this implementation),
-	// so we sample a handful of seeds and assert that at least one
-	// trips ErrUncorrectable. The test guards the shape of the API
-	// — that the error is surfaceable — not the per-pattern
-	// behaviour.
+func TestChannelPerfectGolaySilentlyMisdecodesBeyondRadius(t *testing.T) {
+	// P25 IMBE u_0..u_3 use the *perfect* Golay(23,12,7) code and
+	// u_4..u_6 the perfect Hamming(15,11,3) — every received word is
+	// within the correction radius of exactly one codeword, so the
+	// decoder always "corrects" and can never surface ErrUncorrectable
+	// from a single 23/15-bit codeword. mbelib behaves identically.
+	// Beyond t errors the word silently mis-decodes to the wrong
+	// codeword; the real garbage guard is the b_0 fundamental-frequency
+	// validity check in UnpackParams, not the per-vector FEC. This test
+	// pins that property so a future change to the FEC layer can't
+	// quietly assume FEC-level error detection that isn't there.
 	info := make([]byte, InfoBits)
 	for i := range info {
 		info[i] = byte(i % 3 & 1)
 	}
 	clean, _ := EncodeChannel(info)
-	saw := false
-	for seed := int64(1); seed < 32 && !saw; seed++ {
+	misdecoded := false
+	for seed := int64(1); seed < 32; seed++ {
 		rng := rand.New(rand.NewSource(seed))
 		corrupt := append([]byte(nil), clean...)
-		// Flip 12 bits scattered across u_0 (way past t = 3).
+		// Flip 8 bits scattered across u_0 (well past t = 3).
 		flipped := map[int]bool{}
-		for len(flipped) < 12 {
+		for len(flipped) < 8 {
 			pos := u0Offset + rng.Intn(u0Bits)
 			if !flipped[pos] {
 				flipped[pos] = true
 				corrupt[pos] ^= 1
 			}
 		}
-		_, _, err := DecodeChannel(corrupt)
+		got, errs, err := DecodeChannel(corrupt)
 		if errors.Is(err, ErrUncorrectable) {
-			saw = true
+			t.Errorf("seed %d: perfect Golay unexpectedly flagged ErrUncorrectable", seed)
+		}
+		if errs < 0 {
+			t.Errorf("seed %d: errs = %d, want >= 0", seed, errs)
+		}
+		for i := 0; i < 12; i++ { // u_0 info bits
+			if got[i] != info[i] {
+				misdecoded = true
+			}
 		}
 	}
-	if !saw {
-		t.Error("no random 12-error pattern across 32 seeds tripped ErrUncorrectable")
+	if !misdecoded {
+		t.Error("expected at least one heavy-corruption pattern to mis-decode u_0")
 	}
 }
 
