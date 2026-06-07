@@ -202,7 +202,7 @@ func New(opts Options) *Receiver {
 		r.gardner = sync.NewGardner(float64(r.sps), gain)
 	}
 	if opts.EnableAFC {
-		r.afc = newCarrierAFC(0)
+		r.afc = newCarrierAFC(r.sps)
 	}
 	if opts.EnableChannelFilter {
 		fc := ChannelCutoffHz / opts.SampleRateHz
@@ -229,10 +229,23 @@ func (r *Receiver) Process(iq []complex64) {
 	r.dibits = r.dibits[:0]
 	r.symbols = r.symbols[:0]
 
+	// Remove the residual carrier offset BEFORE timing recovery: a
+	// spinning constellation corrupts the Gardner timing metric (issue
+	// #553). The AFC buffers into fixed blocks, so it may emit fewer
+	// matched samples than it consumed.
+	matched := r.matched
+	if r.afc != nil {
+		r.derotated = r.afc.Process(r.derotated, r.matched)
+		matched = r.derotated
+		if len(matched) == 0 {
+			return
+		}
+	}
+
 	if r.clockMode == ClockGardner {
-		r.symbols = r.gardner.Process(r.symbols, r.matched)
+		r.symbols = r.gardner.Process(r.symbols, matched)
 	} else {
-		r.pending = append(r.pending, r.matched...)
+		r.pending = append(r.pending, matched...)
 		for r.rxOffset < len(r.pending) {
 			r.symbols = append(r.symbols, r.pending[r.rxOffset])
 			r.rxOffset += r.sps
@@ -255,10 +268,6 @@ func (r *Receiver) Process(iq []complex64) {
 	}
 	if len(r.symbols) == 0 {
 		return
-	}
-	if r.afc != nil {
-		r.derotated = r.afc.Process(r.derotated, r.symbols)
-		r.symbols = r.derotated
 	}
 	r.dibits = r.dq.Decode(r.dibits, r.symbols)
 	r.dibitSink(r.dibits, r.dibitBase)

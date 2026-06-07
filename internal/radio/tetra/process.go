@@ -11,7 +11,32 @@ type processState struct {
 	remaining    int
 	pduDibits    []uint8
 	matchScratch []int
+
+	// SB-burst (synchronisation burst) path: a separate detector for
+	// the synchronisation training sequence plus a rolling dibit buffer
+	// with look-back (to the BSCH before the STS) and look-ahead (to the
+	// BNCH after it). See processSB.
+	stsDet     *SyncDetector
+	stsScratch []int
+	buf        []uint8 // rolling dibit window
+	bufBase    int     // absolute dibit index of buf[0]
+	pendingSTS []int   // STS leading indices awaiting look-ahead
 }
+
+// Synchronisation downlink burst (SB) geometry in dibits, per ETSI
+// EN 300 392-2 §9.4.4 / osmo-tetra: the burst lays out
+// freq-correction → BSCH(60) → STS(19) → broadcast(15) → BNCH(108).
+// Relative to the STS leading dibit L: the BSCH block is [L-60, L) and
+// the BNCH (SYSINFO) block is [L+34, L+142).
+const (
+	stsDibits         = 19  // SyncTrainingDibits length
+	sbBSCHDibits      = 60  // BSCH block 1 (120 type-5 bits)
+	sbBroadcastDibits = 15  // broadcast block between STS and BNCH
+	sbBNCHDibits      = 108 // BNCH block 2 (216 type-5 bits, SCH/HD-coded)
+	// sbTrimMargin is how many trailing dibits the rolling buffer keeps
+	// so a future STS hit near the end still has its 60-dibit look-back.
+	sbTrimMargin = 256
+)
 
 // pduDibitCount is the count of dibits the adapter collects after
 // each 38-dibit training-sequence match under ChannelCodingOff —
@@ -65,10 +90,18 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	if c.proc == nil {
 		c.proc = &processState{
 			det:       NewSyncDetector(NormalSyncDibits(), 3),
+			stsDet:    NewSyncDetector(SyncTrainingDibits(), 3),
 			pduDibits: make([]uint8, 0, channelDibitCount(ChannelSCHF)),
 		}
 	}
 	p := c.proc
+
+	// SB-burst path: auto-learn the colour code from the BSCH and decode
+	// the BNCH SYSINFO. Only meaningful with channel coding on (real
+	// bursts); skipped for the synthetic raw-PDU fixtures.
+	if mode == ChannelCodingOn {
+		c.processSB(p, dibits, baseIdx)
+	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
 	matchIdx := 0
@@ -95,6 +128,127 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 		}
 	}
 	return baseIdx + len(dibits)
+}
+
+// rotateDibits returns dibits cyclically rotated by rot (mod 4) — the
+// π/4-DQPSK differential decode has a constant 90°/dibit ambiguity, so
+// each block is tried under all four rotations.
+func rotateDibits(dibits []uint8, rot uint8) []uint8 {
+	out := make([]uint8, len(dibits))
+	for i, d := range dibits {
+		out[i] = (d + rot) & 3
+	}
+	return out
+}
+
+// processSB maintains the rolling dibit buffer, detects the
+// synchronisation training sequence (STS), and once a buffer covers the
+// whole synchronisation burst around an STS hit, decodes the BSCH (to
+// learn the colour code) and the BNCH SYSINFO. The BSCH is scrambled
+// with colour code 0, so this works on a cold receiver with no
+// configured colour code (issue #553).
+func (c *ControlChannel) processSB(p *processState, dibits []uint8, baseIdx int) {
+	// Align the buffer base on the first call.
+	if len(p.buf) == 0 {
+		p.bufBase = baseIdx
+	}
+	p.buf = append(p.buf, dibits...)
+
+	var hits []int
+	hits, _ = p.stsDet.Process(p.stsScratch[:0], dibits, baseIdx)
+	for _, trailing := range hits {
+		p.pendingSTS = append(p.pendingSTS, trailing-(stsDibits-1)) // leading index L
+	}
+
+	bufEnd := p.bufBase + len(p.buf)
+	kept := make([]int, 0, len(p.pendingSTS))
+	for _, L := range p.pendingSTS {
+		needStart := L - sbBSCHDibits
+		needEnd := L + stsDibits + sbBroadcastDibits + sbBNCHDibits
+		if needStart < p.bufBase {
+			continue // look-back already trimmed; give up on this hit
+		}
+		if needEnd > bufEnd {
+			kept = append(kept, L) // not enough look-ahead yet
+			continue
+		}
+		c.decodeSB(p, L)
+	}
+	p.pendingSTS = kept
+
+	// Trim the buffer, keeping the trailing margin (so future STS hits
+	// retain look-back) and any unresolved pending hit's look-back.
+	keepFrom := bufEnd - sbTrimMargin
+	for _, L := range p.pendingSTS {
+		if ns := L - sbBSCHDibits; ns < keepFrom {
+			keepFrom = ns
+		}
+	}
+	if keepFrom > p.bufBase {
+		drop := keepFrom - p.bufBase
+		if drop > len(p.buf) {
+			drop = len(p.buf)
+		}
+		p.buf = append(p.buf[:0], p.buf[drop:]...)
+		p.bufBase += drop
+	}
+}
+
+// decodeSB decodes the BSCH and BNCH of the synchronisation burst whose
+// STS leads at absolute dibit index L. It learns the colour code from
+// the BSCH SYNC PDU, locks on the cell identity, then descrambles the
+// BNCH SYSINFO with the learned code to fill the location area.
+func (c *ControlChannel) decodeSB(p *processState, L int) {
+	block := func(start, n int) []uint8 {
+		s := start - p.bufBase
+		return p.buf[s : s+n]
+	}
+
+	// BSCH (block 1), scrambled with colour code 0. Try all rotations.
+	bsch := block(L-sbBSCHDibits, sbBSCHDibits)
+	var sync SyncPDU
+	found := false
+	for rot := uint8(0); rot < 4 && !found; rot++ {
+		bits := TetraDibitsToBits(rotateDibits(bsch, rot))
+		if recovered, ok := DecodeBSCH(bits); ok {
+			if s, ok := ParseSyncPDU(recovered); ok {
+				sync, found = s, true
+			}
+		}
+	}
+	if !found {
+		return
+	}
+	c.LearnColourCode(sync.ExtendedColourCode())
+
+	// Build a single lock state: cell identity (MCC/MNC) from the BSCH
+	// SYNC, location area from the BNCH SYSINFO. Firing one maybeLock
+	// with MCC/MNC always populated avoids the "preserve learned
+	// MCC/MNC" merge in maybeLock clobbering the location area.
+	ls := LockState{FrequencyHz: c.freqHz, MCC: sync.MCC, MNC: sync.MNC}
+
+	// BNCH (block 2): SCH/HD-coded SYSINFO scrambled with the learned
+	// colour code. Fills the location area (and MCC/MNC if it carries
+	// them).
+	colour := c.ColourCode()
+	bnch := block(L+stsDibits+sbBroadcastDibits, sbBNCHDibits)
+	for rot := uint8(0); rot < 4; rot++ {
+		bits := TetraDibitsToBits(rotateDibits(bnch, rot))
+		recovered, ok := DecodeSCHHD(bits, colour)
+		if !ok {
+			continue
+		}
+		if pdu, err := ParsePDU(framing.PackBitsMSB(recovered)); err == nil {
+			if sb, ok := pdu.AsSystemBroadcast(); ok {
+				ls.LocationArea = sb.LocationArea
+				if sb.MCC != 0 {
+					ls.MCC, ls.MNC = sb.MCC, sb.MNC
+				}
+			}
+			break
+		}
+	}
+	c.maybeLock(ls)
 }
 
 // dispatchSlice turns the collected post-sync dibit slice into a
