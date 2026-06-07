@@ -927,6 +927,20 @@ func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *motorolaPipeline) Reset()                 { p.rx.Reset() }
 func (p *motorolaPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the Motorola system identity + adjacent sites the
+// control channel accumulated. Motorola has no RFSS; only SystemID + neighbors.
+func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
+
 // newLTRPipeline wires internal/radio/ltr/receiver into
 // ltr.ControlChannel.Process. The receiver's BitSink forwards
 // sub-audible bits into the state machine, which slides a 41-bit
