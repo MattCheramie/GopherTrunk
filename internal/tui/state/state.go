@@ -172,6 +172,18 @@ type WriteRequest struct {
 	ScannerManualTune *ScannerManualTuneReq
 	Audio             *AudioReq
 	Settings          *SettingsReq
+	Hunt              *HuntStartReq
+}
+
+// HuntStartReq is the payload for WriteKindHuntStart — a live system-discovery
+// run started from the TUI. Frequencies are in MHz (matching the operator's
+// input); the client converts to the wire shape.
+type HuntStartReq struct {
+	Bands      []string  // "low:high" MHz
+	Candidates []float64 // MHz
+	Name       string
+	Serial     string
+	Protocol   string
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -196,6 +208,7 @@ const (
 	WriteKindScannerManualTune
 	WriteKindSettings
 	WriteKindHuntStop
+	WriteKindHuntStart
 )
 
 // ScannerManualTuneReq adds a temp VFO channel and forces dwell.

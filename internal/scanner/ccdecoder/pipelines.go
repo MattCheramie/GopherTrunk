@@ -540,6 +540,18 @@ func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *tetraPipeline) Reset()                 { p.rx.Reset() }
 func (p *tetraPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
+// code) the control channel learned. No adjacent cells for TETRA.
+func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		MCC:          t.MCC,
+		MNC:          t.MNC,
+		LocationArea: t.LocationArea,
+		ColorCode:    uint8(t.ColourCode & 0xFF),
+	}
+}
+
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
 // into ysf.ControlChannel.Process. YSF is the System Fusion
 // (Yaesu) C4FM amateur trunked variant — same 4800-baud
@@ -665,6 +677,26 @@ var _ = dmr.BurstDibits
 func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrPipeline) Reset()                 { p.rx.Reset() }
 func (p *dmrPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the DMR Tier III system topology (identity +
+// adjacent sites) the control channel accumulated, mapped to the neutral
+// trunking shape so the signal-lab engine attaches it to the decode Result.
+func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{
+		SystemID:  uint32(t.SystemID),
+		RFSS:      t.RFSS,
+		Site:      t.Site,
+		ColorCode: t.ColorCode,
+	}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
 
 // newDMRTier2Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier2.ConventionalChannel.Process. DMR Tier II is conventional
@@ -809,6 +841,17 @@ func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *nxdnPipeline) Reset()                 { p.rx.Reset() }
 func (p *nxdnPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the NXDN single-site identity (System/Site/Location)
+// the control channel accumulated. No adjacent sites for NXDN.
+func (p *nxdnPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		SystemID:     uint32(t.SystemID),
+		Site:         uint8(t.SiteID),
+		LocationArea: t.LocationID,
+	}
+}
+
 // newEDACSPipeline wires internal/radio/edacs/receiver into
 // edacs.ControlChannel.Process. The receiver's BitSink forwards
 // bits + baseIdx into the state machine (24-bit sync detect →
@@ -847,6 +890,20 @@ type edacsPipeline struct {
 func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *edacsPipeline) Reset()                 { p.rx.Reset() }
 func (p *edacsPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the EDACS system identity + adjacent sites the
+// control channel accumulated. EDACS has no RFSS; only SystemID + neighbors.
+func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: uint16(n.LCN),
+		})
+	}
+	return snap
+}
 
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
@@ -892,6 +949,20 @@ type motorolaPipeline struct {
 func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *motorolaPipeline) Reset()                 { p.rx.Reset() }
 func (p *motorolaPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the Motorola system identity + adjacent sites the
+// control channel accumulated. Motorola has no RFSS; only SystemID + neighbors.
+func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
 
 // newLTRPipeline wires internal/radio/ltr/receiver into
 // ltr.ControlChannel.Process. The receiver's BitSink forwards

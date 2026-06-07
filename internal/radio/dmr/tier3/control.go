@@ -50,6 +50,10 @@ type ControlChannel struct {
 	locked           bool
 	last             LockState
 
+	// topo accumulates the system topology (identity + adjacent sites) for the
+	// hunt/discovery layer; read via Topology().
+	topo topologyModel
+
 	// restChannel tracks the LCN a Capacity Plus system currently
 	// advertises as its rest (control) channel. Zero until a
 	// Motorola vendor system-info CSBK has been seen.
@@ -134,10 +138,16 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 	}
 	switch csbk.Opcode {
 	case OpAloha:
-		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: ParseAloha(csbk.Payload).SystemID})
+		sysID := ParseAloha(csbk.Payload).SystemID
+		c.topo.applyIdentity(sysID, cc)
+		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: sysID})
 	case OpSysInfo:
 		si := ParseSystemInfoBroadcast(csbk.Payload)
+		c.topo.applySystemInfo(si)
+		c.topo.applyIdentity(si.SystemID, cc)
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: si.SystemID})
+	case OpAdjStatus:
+		c.topo.applyAdjacent(ParseAdjacentSiteStatus(csbk.Payload))
 	case OpTVGrant:
 		c.publishTVGrant(cc, ParseTVGrant(csbk.Payload))
 	case OpPVGrant:
@@ -241,3 +251,8 @@ func (c *ControlChannel) MarkLost() {
 	c.locked = false
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
 }
+
+// Topology returns a snapshot of the system topology accumulated from the
+// site's Aloha / System-Info / Adjacent-Site CSBKs. Used by the signal-lab /
+// hunt layers to document a discovered DMR Tier III system.
+func (c *ControlChannel) Topology() TopologyConfig { return c.topo.snapshot() }

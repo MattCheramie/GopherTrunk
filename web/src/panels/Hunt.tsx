@@ -21,6 +21,8 @@ export function Hunt() {
   const [name, setName] = useState("");
   const [stateCode, setStateCode] = useState("");
   const [county, setCounty] = useState("");
+  const [serial, setSerial] = useState("");
+  const [protocol, setProtocol] = useState("");
 
   useEffect(() => {
     let cancel = false;
@@ -57,6 +59,8 @@ export function Hunt() {
         name: name || undefined,
         state: stateCode || undefined,
         county: county || undefined,
+        serial: serial || undefined,
+        protocol: protocol || undefined,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? `start hunt failed: ${e.message}` : "start hunt failed");
@@ -124,6 +128,14 @@ export function Hunt() {
         <label>
           County
           <input value={county} onChange={(e) => setCounty(e.target.value)} placeholder="Maricopa" />
+        </label>
+        <label>
+          SDR serial (optional — auto-selects a spare, else borrows control)
+          <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="00000001" />
+        </label>
+        <label>
+          Protocol (optional — default auto-identifies)
+          <input value={protocol} onChange={(e) => setProtocol(e.target.value)} placeholder="p25" />
         </label>
         <div className="hunt-buttons">
           <button onClick={start} disabled={!canMutate || running}>

@@ -69,6 +69,7 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		Bands:         bands,
 		Candidates:    candidates,
 		Protocol:      proto,
+		Serial:        req.Serial,
 		FFTSize:       req.FFTSize,
 		DwellSeconds:  req.DwellSeconds,
 		MinConfidence: req.MinConfidence,
@@ -90,12 +91,15 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 func (c huntCockpit) Stop() bool { return c.mgr.Stop() }
 
 // Export serializes the latest discovered system in the requested format.
-func (c huntCockpit) Export(format string) ([]byte, string, error) {
+func (c huntCockpit) Export(id int, format string) ([]byte, string, error) {
 	hf, err := hunt.ParseFormat(format)
 	if err != nil {
 		return nil, "", err
 	}
-	sys, _, ok := c.mgr.Current()
+	sys, ok, err := c.runSystem(id)
+	if err != nil {
+		return nil, "", err
+	}
 	if !ok {
 		return nil, "", fmt.Errorf("hunt: no discovered system to export yet")
 	}
@@ -113,8 +117,25 @@ func (c huntCockpit) Export(format string) ([]byte, string, error) {
 
 // Commit merges the latest discovered system into config.yaml via the shared
 // importer writer.
-func (c huntCockpit) Commit(force, dryRun bool) ([]string, error) {
-	sys, _, ok := c.mgr.Current()
+// runSystem resolves a run id (0 = latest) to its discovered system. It returns
+// hunt.ErrNoSuchRun for an unknown/evicted id, and ok=false when the run is
+// known but produced no system yet.
+func (c huntCockpit) runSystem(id int) (*hunt.DiscoveredSystem, bool, error) {
+	sys, _, ok := c.mgr.Run(id)
+	if ok {
+		return sys, true, nil
+	}
+	if id != 0 && !c.mgr.KnownRun(id) {
+		return nil, false, hunt.ErrNoSuchRun
+	}
+	return nil, false, nil
+}
+
+func (c huntCockpit) Commit(id int, force, dryRun bool) ([]string, error) {
+	sys, ok, err := c.runSystem(id)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, fmt.Errorf("hunt: no discovered system to commit yet")
 	}

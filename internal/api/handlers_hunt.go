@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 )
 
 // handleHuntStatus returns the live system-discovery snapshot. Always 200 —
@@ -63,11 +64,19 @@ func (s *Server) handleHuntExport(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "bundle"
 	}
-	data, filename, err := s.hunt.Export(format)
+	id, ok := huntRunID(r)
+	if !ok {
+		s.writeError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	data, filename, err := s.hunt.Export(id, format)
 	if err != nil {
-		// No discovered system yet → 409; a bad format → 400.
+		// Unknown id → 404; bad format → 400; otherwise no-system → 409.
 		status := http.StatusConflict
-		if isHuntBadFormat(err) {
+		switch {
+		case isHuntNoSuchRun(err):
+			status = http.StatusNotFound
+		case isHuntBadFormat(err):
 			status = http.StatusBadRequest
 		}
 		s.writeError(w, status, err.Error())
@@ -98,12 +107,35 @@ func (s *Server) handleHuntCommit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	changes, err := s.hunt.Commit(req.Force, req.DryRun)
+	id, ok := huntRunID(r)
+	if !ok {
+		s.writeError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	changes, err := s.hunt.Commit(id, req.Force, req.DryRun)
 	if err != nil {
-		s.writeError(w, http.StatusConflict, err.Error())
+		status := http.StatusConflict
+		if isHuntNoSuchRun(err) {
+			status = http.StatusNotFound
+		}
+		s.writeError(w, status, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dry_run": req.DryRun, "changes": changes})
+}
+
+// huntRunID parses the optional {id} path value; empty ⇒ 0 (current). ok=false
+// for a non-numeric id so the handler can return 400.
+func huntRunID(r *http.Request) (int, bool) {
+	raw := r.PathValue("id")
+	if raw == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func contentTypeForExport(format string) string {
@@ -125,6 +157,10 @@ func isHuntConflict(err error) bool {
 
 func isHuntBadFormat(err error) bool {
 	return err != nil && containsAny(err.Error(), "unknown export format", "unknown format")
+}
+
+func isHuntNoSuchRun(err error) bool {
+	return err != nil && containsAny(err.Error(), "no such run")
 }
 
 func containsAny(s string, subs ...string) bool {

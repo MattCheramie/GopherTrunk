@@ -151,13 +151,22 @@ to force it off even when a key is configured.
   `hunt.done`) via `GET /api/v1/events`. The **web console** has a *Hunt* tab
   (start a run, watch progress, download/commit the result) and the **TUI** has
   a *Hunt* panel that monitors the run and can stop it.
-- **Topology depth.** For **P25** the hunt now recovers full topology —
-  WACN/SYSID, the camped RFSS/Site, advertised neighbor (adjacent) sites, and
-  the over-the-air band plan (IDEN_UP) — all surfaced in the exports. For other
-  protocols the map carries the identity the decoder surfaces (DMR ColorCode/
-  SystemID, NXDN Site/System, TETRA MCC/MNC/LA, …) plus the observed site and
-  talkgroups; neighbor accumulation for those protocols lands incrementally.
-  Band-plan-from-air is P25-only (others resolve channels via configured plans).
+- **Topology depth.** What the hunt recovers per protocol:
+
+  | Protocol | Identity | Neighbor sites | Band plan |
+  |---|---|---|---|
+  | P25 | WACN/SYSID/RFSS/Site/LRA | yes (adjacent-site) | yes (IDEN_UP, over-the-air) |
+  | DMR Tier III | SystemID/RFSS/Site/ColorCode | yes (adjacent-site CSBK) | configured plan |
+  | EDACS | SystemID | yes (adjacent-site CCW) | configured plan |
+  | Motorola Type II | SystemID | yes (adjacent-site OSW) | configured plan |
+  | NXDN | SystemID/Site/Location | — | configured plan |
+  | TETRA | MCC/MNC/LA/colour code | — | configured plan |
+  | MPT1327 / dPMR | SystemID | — | configured plan |
+  | LTR / YSF / D-STAR | — (no system identity broadcast) | — | — |
+
+  Band-plan-from-air is P25-only; the others resolve channels via the
+  configured band plan. Neighbor accumulation beyond the protocols above (e.g.
+  TETRA neighbour cells) lands incrementally.
 - **Talkgroup names.** A blind discovery can only record talkgroup *numbers*
   and activity; names/descriptions are filled in during RadioReference
   submission.

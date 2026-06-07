@@ -225,6 +225,29 @@ func (c *ControlChannel) ColourCode() uint32 {
 	return c.colourCode
 }
 
+// TopologyConfig is a snapshot of the TETRA single-cell identity for the hunt
+// layer: the MCC/MNC/Location Area learned from MLE-SYSINFO plus the colour
+// code. Neighbor-cell broadcasts are not accumulated, so identity only.
+type TopologyConfig struct {
+	MCC          uint16
+	MNC          uint16
+	LocationArea uint16
+	ColourCode   uint32
+}
+
+// Topology returns the accumulated single-cell identity. Safe for concurrent
+// use (reads the lock state + colour code under the control-channel mutex).
+func (c *ControlChannel) Topology() TopologyConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return TopologyConfig{
+		MCC:          c.last.MCC,
+		MNC:          c.last.MNC,
+		LocationArea: c.last.LocationArea,
+		ColourCode:   c.colourCode,
+	}
+}
+
 // Options configure a ControlChannel.
 type Options struct {
 	Bus         *events.Bus
