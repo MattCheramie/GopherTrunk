@@ -1,3 +1,10 @@
+---
+layout: page
+title: Hunting & mapping unknown systems
+description: Discover, identify, map, and export undocumented trunked radio systems from live SDRs or IQ captures with gophertrunk hunt
+nav_group: Operate
+---
+
 # Hunting & mapping unknown systems
 
 Many states and counties run trunked radio systems that are **not documented
