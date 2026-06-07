@@ -868,6 +868,20 @@ func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *edacsPipeline) Reset()                 { p.rx.Reset() }
 func (p *edacsPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the EDACS system identity + adjacent sites the
+// control channel accumulated. EDACS has no RFSS; only SystemID + neighbors.
+func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: uint16(n.LCN),
+		})
+	}
+	return snap
+}
+
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
 // bits + baseIdx into the state machine (24-bit sync detect →
