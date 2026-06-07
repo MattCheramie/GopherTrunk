@@ -304,6 +304,23 @@ func (s *Server) handleConfigDocs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, configDocs)
 }
 
+// handleConfigMarshal answers POST /api/v1/config/marshal — render the
+// posted config to YAML so the builder can show a live file preview. It
+// does not validate or write anything.
+func (s *Server) handleConfigMarshal(w http.ResponseWriter, r *http.Request) {
+	var cfg config.Config
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	data, err := config.Marshal(cfg)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "config: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"yaml": string(data)})
+}
+
 // writeTalkgroupCSV writes a Trunk Recorder–style talkgroup CSV that
 // trunking.TalkGroup loads (header columns it recognises).
 func writeTalkgroupCSV(path string, rows []TalkgroupCSVRow) error {

@@ -178,6 +178,16 @@ export function App() {
             {t.icon} {t.label}
           </button>
         ))}
+        {/* The Config Builder is a separate SPA the daemon serves at
+            /config/. Open it in a new tab so editing config doesn't tear
+            down the live operator session. */}
+        <button
+          onClick={() => window.open("/config/", "_blank", "noopener")}
+          className="px-2 py-1 rounded text-muted hover:text-fg hover:bg-panel"
+          title="Open the Config Builder/Editor in a new tab"
+        >
+          🛠 Config Builder ↗
+        </button>
       </div>
 
       <main className="flex-1 p-3 sm:p-4 pb-20 sm:pb-4">

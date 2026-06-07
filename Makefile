@@ -27,7 +27,7 @@ build:
 # with the daemon. Use this when you want a single binary that serves
 # the web UI at `/`. Pure-Go contributors who don't need the UI can
 # keep using `make build`.
-dist: web-build siglab-web-build build
+dist: web-build siglab-web-build configbuilder-web-build build
 
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
@@ -326,6 +326,33 @@ siglab-web-test:
 	@command -v npm >/dev/null || { echo "npm not installed; see web/siglab/README.md"; exit 1; }
 	cd web/siglab && npm install --no-audit --no-fund
 	cd web/siglab && npm test
+
+# --- Config Builder standalone SPA (web/configbuilder) --------------------
+# The web Config Builder/Editor. Built into web/configbuilder/dist and
+# embedded via web/configbuilder/embed.go; served by `gophertrunk config
+# serve` and the daemon at /config/.
+
+# configbuilder-web-build produces the shippable bundle in
+# web/configbuilder/dist/.
+configbuilder-web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm ci --no-audit --no-fund
+	cd web/configbuilder && npm run build
+
+# configbuilder-web-dev runs the Vite dev server (proxies /api to
+# 127.0.0.1:8077, the default `config serve` address).
+configbuilder-web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm install --no-audit --no-fund
+	cd web/configbuilder && npm run dev
+
+configbuilder-web-clean:
+	rm -rf web/configbuilder/dist web/configbuilder/node_modules web/configbuilder/dev-dist
+
+configbuilder-web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm install --no-audit --no-fund
+	cd web/configbuilder && npm test
 
 
 # Regenerate Go bindings under internal/api/pb/v1 from proto/*.proto.

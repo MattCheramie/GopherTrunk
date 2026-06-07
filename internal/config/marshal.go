@@ -39,6 +39,16 @@ func Marshal(cfg Config) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Unmarshal parses YAML into a Config without validating it. The web
+// Config Builder uses this to load a possibly-invalid file so the operator
+// can fix it in the editor (Load, by contrast, rejects invalid files).
+func Unmarshal(data []byte, out *Config) error {
+	if err := yaml.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("config: parse: %w", err)
+	}
+	return nil
+}
+
 // WriteConfigFile validates cfg, marshals it to YAML, and atomically
 // writes it to path. It is the whole-file counterpart to
 // Writer.WritePatch and backs the Config Builder's save endpoint.
