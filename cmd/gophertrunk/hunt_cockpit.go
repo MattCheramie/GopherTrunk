@@ -69,6 +69,7 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		Bands:         bands,
 		Candidates:    candidates,
 		Protocol:      proto,
+		Serial:        req.Serial,
 		FFTSize:       req.FFTSize,
 		DwellSeconds:  req.DwellSeconds,
 		MinConfidence: req.MinConfidence,

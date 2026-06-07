@@ -40,6 +40,11 @@ type LiveHuntOptions struct {
 	Candidates []uint32
 	// Protocol forces a decoder; trunking.ProtocolUnknown auto-identifies.
 	Protocol trunking.Protocol
+	// Serial requests a specific SDR for the run. Empty ⇒ the daemon
+	// auto-selects (spare SDR, else borrow the control SDR). Consumed by the
+	// daemon Acquirer; RunLiveHunt itself ignores it (the IQSource is already
+	// resolved by the time RunLiveHunt runs).
+	Serial string
 
 	FFTSize    int
 	SweepDwell time.Duration

@@ -50,14 +50,14 @@ func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials []string,
 // hunter while the sweep runs; the release (deferred by the Manager) always
 // restores it.
 func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
-	return func(ctx context.Context) (hunt.IQSource, func(), error) {
+	return func(ctx context.Context, opts hunt.LiveHuntOptions) (hunt.IQSource, func(), error) {
 		var voiceSerials []string
 		if d.pool != nil {
 			for _, e := range d.pool.AllByRole(sdr.RoleVoice) {
 				voiceSerials = append(voiceSerials, e.Info.Serial)
 			}
 		}
-		serial, borrow, err := chooseHuntSDR("", d.controlSerial, voiceSerials, func(s string) bool {
+		serial, borrow, err := chooseHuntSDR(opts.Serial, d.controlSerial, voiceSerials, func(s string) bool {
 			return d.iqBrokers[s] != nil
 		})
 		if err != nil {

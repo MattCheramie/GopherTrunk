@@ -27,7 +27,10 @@ const (
 // control-channel hunter, close the SDR subscription, …). The daemon supplies
 // this so the hunt package stays free of SDR/pool dependencies; release is
 // invoked exactly once when the run ends (success, error, or stop).
-type Acquirer func(ctx context.Context) (src IQSource, release func(), err error)
+// Acquirer obtains an IQSource for one run plus a release callback. opts
+// carries the run's parameters — notably opts.Serial, so the daemon can honor
+// an operator-requested SDR — and is passed by the Manager when a run starts.
+type Acquirer func(ctx context.Context, opts LiveHuntOptions) (src IQSource, release func(), err error)
 
 // ManagerOptions configure a Manager.
 type ManagerOptions struct {
@@ -120,7 +123,7 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 }
 
 func (m *Manager) run(ctx context.Context, id int, opts LiveHuntOptions) {
-	src, release, err := m.acquire(ctx)
+	src, release, err := m.acquire(ctx, opts)
 	if err != nil {
 		m.finish(id, nil, nil, fmt.Errorf("acquire SDR: %w", err))
 		return
