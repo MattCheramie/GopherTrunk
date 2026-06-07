@@ -33,9 +33,13 @@ type IQFrame struct {
 type DiagProvider interface {
 	// OpenIQStream starts a per-request decimator on the named
 	// device. TargetRateSPS clamps the output rate (≤ device
-	// sample_rate). Returns the wire-frame channel and a cleanup
-	// func the caller MUST invoke on disconnect.
-	OpenIQStream(ctx context.Context, serial string, targetRateSPS uint32) (<-chan IQFrame, func(), error)
+	// sample_rate). offsetHz mixes a frequency offset (relative to
+	// the device centre) down to baseband before decimation so an
+	// off-centre channel can be viewed clear of the centre DC spike;
+	// zero keeps the centre-tuned view. The provider clamps the
+	// magnitude to the device's Nyquist. Returns the wire-frame
+	// channel and a cleanup func the caller MUST invoke on disconnect.
+	OpenIQStream(ctx context.Context, serial string, targetRateSPS uint32, offsetHz int32) (<-chan IQFrame, func(), error)
 }
 
 // handleDiagStream answers WS /api/v1/diag/iq?device=...&rate=....
@@ -55,6 +59,11 @@ func (s *Server) handleDiagStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rate := uint32(parseIntQuery(q, "rate", 2000, 100, 20000))
+	// offset is the view shift in Hz relative to the SDR centre. The
+	// provider re-clamps to the device's actual Nyquist; the wide
+	// bound here just rejects nonsense. Signed: negative selects a
+	// channel below centre.
+	offset := int32(parseIntQuery(q, "offset", 0, -30_000_000, 30_000_000))
 
 	upgrader := wsUpgrader
 	if s.cors.enabled() {
@@ -78,7 +87,7 @@ func (s *Server) handleDiagStream(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	frames, cleanup, err := s.diag.OpenIQStream(ctx, serial, rate)
+	frames, cleanup, err := s.diag.OpenIQStream(ctx, serial, rate, offset)
 	if err != nil {
 		s.log.Debug("api: diag OpenIQStream failed", "serial", serial, "err", err)
 		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(

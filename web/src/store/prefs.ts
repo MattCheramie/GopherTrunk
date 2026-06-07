@@ -15,6 +15,10 @@ const LS_KEYS = {
   writeMode: "gt.ui.writeMode",
   audioVolume: "gt.audio.volume",
   installPromptDismissed: "gt.pwa.installDismissed",
+  constellationOffsetKHz: "gt.constellation.offsetKHz",
+  constellationHold: "gt.constellation.hold",
+  constellationDcBlock: "gt.constellation.dcBlock",
+  constellationAutoScale: "gt.constellation.autoScale",
 } as const;
 
 const SS_KEYS = {
@@ -123,6 +127,39 @@ export const prefs = {
   },
   setInstallPromptDismissed(dismissed: boolean) {
     writeLS(LS_KEYS.installPromptDismissed, dismissed ? "1" : "0");
+  },
+
+  // Constellation panel view options. The offset (in kHz, relative to
+  // the SDR centre) pulls an off-centre locked channel out from under
+  // the centre DC spike; "hold" keeps that offset pinned across panel
+  // visits. DC-block and auto-scale default on for a clean scatter.
+  constellationOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.constellationOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setConstellationOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.constellationOffsetKHz, String(khz));
+  },
+  constellationHold(): boolean {
+    return readLS(LS_KEYS.constellationHold) === "1";
+  },
+  setConstellationHold(on: boolean) {
+    writeLS(LS_KEYS.constellationHold, on ? "1" : "0");
+  },
+  constellationDcBlock(): boolean {
+    // Default on — the whole point is to suppress the DC spike.
+    return readLS(LS_KEYS.constellationDcBlock) !== "0";
+  },
+  setConstellationDcBlock(on: boolean) {
+    writeLS(LS_KEYS.constellationDcBlock, on ? "1" : "0");
+  },
+  constellationAutoScale(): boolean {
+    return readLS(LS_KEYS.constellationAutoScale) !== "0";
+  },
+  setConstellationAutoScale(on: boolean) {
+    writeLS(LS_KEYS.constellationAutoScale, on ? "1" : "0");
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */

@@ -53,15 +53,26 @@ type IQFrame struct {
 }
 
 // Decimator consumes a stream of full-rate IQ chunks and emits IQ
-// frames at a controlled output rate. The output rate is achieved by
-// taking every Nth sample (where N = input_rate / target_rate),
-// matching what the spectrum producer's rate-cap loop does at the
-// FFT layer — simple, deterministic, no anti-alias filter needed
-// because the target rate is a tiny fraction of the input and the
-// goal is visualization, not faithful spectral reconstruction.
+// frames at a controlled output rate.
+//
+// Two knobs shape the output, both motivated by the fact that an
+// SDR's centre frequency carries a DC spike (the DDC's residual
+// carrier leakage) that lands right on top of anything tuned to the
+// middle of the band — making a centre-tuned constellation useless:
+//
+//   - OffsetHz mixes a frequency offset down to baseband with an NCO
+//     *before* decimation, so an off-centre locked control/voice
+//     channel can be pulled out from under the DC spike and rendered
+//     as a clean constellation (the same trick OP25 uses).
+//   - Decimation is a box average over each stride window rather than
+//     a bare every-Nth pick. The running mean is a crude anti-alias
+//     low-pass that keeps wideband noise from folding on top of the
+//     symbol cloud — the scatter reads much cleaner for a few extra
+//     adds per sample we already touch for the energy estimate.
 type Decimator struct {
 	inputRateSPS   uint32
 	targetRateSPS  uint32
+	offsetHz       int32
 	stride         int
 	chunksPerFrame int
 
@@ -78,6 +89,12 @@ type Options struct {
 	// TargetRateSPS is the post-decimation sample rate emitted to
 	// the WS client. Zero picks DefaultDecimatedRateSPS.
 	TargetRateSPS uint32
+	// OffsetHz shifts the view by mixing this frequency (relative to
+	// the SDR centre) down to baseband before decimation. Positive
+	// values select a channel above centre, negative below. Zero
+	// leaves the centre-tuned view unchanged. Magnitude must be
+	// <= InputRateSPS/2; the caller is expected to clamp.
+	OffsetHz int32
 	// ChunksPerFrame batches multiple downsampled chunks into one
 	// IQFrame so the WS write cost stays reasonable. Zero defaults
 	// to 4 (about 50 ms of audio at 2 ksps with 1024-sample input
@@ -98,6 +115,10 @@ func New(opts Options) (*Decimator, error) {
 	if target > opts.InputRateSPS {
 		return nil, errors.New("diag: TargetRateSPS must be <= InputRateSPS")
 	}
+	half := int32(opts.InputRateSPS / 2)
+	if opts.OffsetHz > half || opts.OffsetHz < -half {
+		return nil, errors.New("diag: OffsetHz must be within +/- InputRateSPS/2")
+	}
 	stride := int(opts.InputRateSPS / target)
 	if stride < 1 {
 		stride = 1
@@ -109,6 +130,7 @@ func New(opts Options) (*Decimator, error) {
 	return &Decimator{
 		inputRateSPS:   opts.InputRateSPS,
 		targetRateSPS:  target,
+		offsetHz:       opts.OffsetHz,
 		stride:         stride,
 		chunksPerFrame: chunksPerFrame,
 	}, nil
@@ -139,6 +161,20 @@ func (d *Decimator) Run(
 	var energySum float64
 	var energyCount int
 
+	// NCO state for the offset mix. dphi is the per-sample phase step
+	// for shifting OffsetHz down to baseband; zero offset means no
+	// rotation and the centre-tuned view is preserved bit-for-bit.
+	// Phase persists across chunks so the mix stays continuous.
+	dphi := -2 * math.Pi * float64(d.offsetHz) / float64(d.inputRateSPS)
+	mixing := d.offsetHz != 0
+	var phase float64
+
+	// Box-average accumulator for the current stride window. Persists
+	// across chunks so a window that straddles a chunk boundary still
+	// averages the right count.
+	var boxI, boxQ float64
+	var boxN int
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -147,22 +183,41 @@ func (d *Decimator) Run(
 			if !ok {
 				return nil
 			}
-			// Compute pre-decimation energy for the diagnostic banner.
 			for _, s := range chunk {
 				re := float64(real(s))
 				im := float64(imag(s))
+				// Pre-decimation energy for the diagnostic banner. The
+				// NCO is a pure rotation, so |mixed| == |s|; measure
+				// before mixing to keep it cheap.
 				energySum += re*re + im*im
+
+				if mixing {
+					c := math.Cos(phase)
+					sn := math.Sin(phase)
+					re, im = re*c-im*sn, re*sn+im*c
+					phase += dphi
+					if phase > math.Pi {
+						phase -= 2 * math.Pi
+					} else if phase < -math.Pi {
+						phase += 2 * math.Pi
+					}
+				}
+
+				// Box-average decimation: accumulate stride samples,
+				// emit their mean as one output point.
+				boxI += re
+				boxQ += im
+				boxN++
+				if boxN >= d.stride {
+					inv := 1.0 / float64(boxN)
+					d.pending = append(d.pending, IQPoint{
+						I: float32(boxI * inv),
+						Q: float32(boxQ * inv),
+					})
+					boxI, boxQ, boxN = 0, 0, 0
+				}
 			}
 			energyCount += len(chunk)
-
-			// Downsample by stride.
-			for i := 0; i < len(chunk); i += d.stride {
-				s := chunk[i]
-				d.pending = append(d.pending, IQPoint{
-					I: real(s),
-					Q: imag(s),
-				})
-			}
 
 			chunksSeen++
 			if chunksSeen < d.chunksPerFrame {
@@ -206,6 +261,9 @@ func (d *Decimator) TargetRateSPS() uint32 { return d.targetRateSPS }
 
 // Stride reports the input-to-output downsample ratio.
 func (d *Decimator) Stride() int { return d.stride }
+
+// OffsetHz reports the NCO mix offset applied before decimation.
+func (d *Decimator) OffsetHz() int32 { return d.offsetHz }
 
 // Dropped reports the cumulative frames dropped because a downstream
 // subscriber's channel was full. Non-zero is expected in practice on

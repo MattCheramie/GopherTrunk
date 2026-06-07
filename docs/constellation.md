@@ -17,9 +17,33 @@ care about before committing to a deeper decode pipeline.
 ## What you see
 
 The X axis is the in-phase (I) component, the Y axis is the
-quadrature (Q) component, both normalized to ±1. Brighter dots are
-more recent. Reference rings show |z| = 0.5 and |z| = 1.0 so you
-can eyeball amplitude.
+quadrature (Q) component, both normalized to ±1, with labelled ticks
+at ±0.5 and ±1. Points are drawn additively in GopherTrunk's sky-blue
+accent (the same blue→cyan family as the Spectrum waterfall), so a
+dense symbol cluster blooms toward cyan-white while the noise floor
+stays dim; the newest samples are brightest. Reference rings show
+|z| = 0.5 and |z| = 1.0 so you can eyeball amplitude.
+
+## Getting a usable picture (the DC-spike problem)
+
+An SDR's digital down-converter leaks a residual carrier at 0 Hz — a
+**DC spike** that sits exactly at the centre of the band. Anything you
+tune to the middle lands right on top of it, and the constellation
+collapses into one fat blob. Three controls work around this:
+
+- **Offset** — mixes a frequency offset (relative to the SDR centre)
+  down to baseband *server-side, before decimation*, so an off-centre
+  control or voice channel is pulled out from under the DC spike and
+  rendered as a clean constellation. This is the same trick OP25 uses.
+  Drag the slider or type a kHz value.
+- **Hold** — when off, the Offset automatically follows the newest
+  active call on the selected SDR (the "last locked channel"). Turn
+  Hold on to pin the view on a specific offset and stop it from
+  jumping as calls come and go. Editing the Offset or pressing
+  **Centre** pins it too.
+- **DC block** / **Auto scale** — DC-block subtracts the rolling mean
+  to remove any residual offset; auto-scale eases a gain so the cloud
+  fills the unit circle regardless of input amplitude. Both default on.
 
 Common shapes:
 
@@ -36,9 +60,16 @@ Common shapes:
 
 ## How it works
 
-- The panel opens a WebSocket to `WS /api/v1/diag/iq?device=...&rate=2000`.
+- The panel opens a WebSocket to
+  `WS /api/v1/diag/iq?device=...&rate=2000&offset=<hz>`.
+- When `offset` is non-zero the daemon mixes that frequency down to
+  baseband with an NCO before decimating, so the requested off-centre
+  channel ends up at the origin. The magnitude is clamped to the
+  device's Nyquist (`±sample_rate/2`).
 - The daemon decimates the SDR's full-rate IQ stream by a stride
-  (`input_rate / target_rate`) — no anti-alias filter; the goal is
+  (`input_rate / target_rate`), taking a **box average** over each
+  stride window — a crude anti-alias low-pass that keeps wideband
+  noise from folding on top of the symbol cloud. The goal is
   visualization, not faithful spectral reconstruction.
 - Frames arrive every ~50 ms with ~100 points each; the panel
   keeps a rolling buffer of the last 2000 points and repaints the
