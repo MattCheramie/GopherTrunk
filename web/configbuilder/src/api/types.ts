@@ -4,10 +4,16 @@
 // Sections without a bespoke editor are typed as unknown and round-trip
 // untouched (seeded from GET /api/v1/config/defaults).
 
+export interface MessageLogConfig {
+  Enabled: boolean;
+  Path: string;
+  MaxSizeMB: number;
+}
+
 export interface LogConfig {
   Level: string;
   Format: string;
-  MessageLog?: unknown;
+  MessageLog: MessageLogConfig;
 }
 
 export interface DiagnosticsConfig {
@@ -20,13 +26,24 @@ export interface RadioReferenceConfig {
   Password: string;
 }
 
+export interface APIAuthConfig {
+  Mode: string;
+  Token: string;
+  TokenFile: string;
+  TrustedNetworks: string[] | null;
+}
+
+export interface APICORSConfig {
+  AllowedOrigins: string[] | null;
+}
+
 export interface APIConfig {
   HTTPAddr: string;
   GRPCAddr: string;
   AllowMutations: boolean;
   Rigctld: string;
-  Auth?: unknown;
-  CORS?: unknown;
+  Auth: APIAuthConfig;
+  CORS: APICORSConfig;
   TLSCert: string;
   TLSKey: string;
 }
@@ -88,11 +105,17 @@ export interface StorageConfig {
   CCCacheFile: string;
 }
 
+export interface EqualizerConfig {
+  Enabled: boolean;
+  Taps: number;
+  StepSize: number;
+}
+
 export interface RecordingsConfig {
   Dir: string;
   SampleRate: number;
   WriteRaw: boolean;
-  Equalizer?: unknown;
+  Equalizer: EqualizerConfig;
 }
 
 export interface MetricsConfig {
@@ -106,11 +129,35 @@ export interface RetentionConfig {
   Interval: string;
 }
 
+export interface CCHuntConfig {
+  Enabled: boolean;
+  DwellMs: number;
+  BackoffMs: number;
+  MaxBackoffMs: number;
+}
+
+export interface ConvToneConfig {
+  Mode: string; // "" | none | ctcss | dcs
+  CTCSSHz: number;
+  DCSCode: string;
+}
+
+export interface ConvChannelConfig {
+  Label: string;
+  FrequencyHz: number;
+  Mode: string; // "" | fm | nfm
+  SquelchDbFS: number;
+  HangtimeMs: number;
+  Priority: number;
+  Tone: ConvToneConfig;
+}
+
 export interface ScannerConfig {
   ScanMode: string;
-  CCHunt?: unknown;
-  Conventional?: unknown;
-  [k: string]: unknown;
+  CCHunt: CCHuntConfig;
+  Conventional: ConvChannelConfig[] | null;
+  ManualTuneEnabled: boolean;
+  ManualTuneDisabled: boolean;
 }
 
 export interface AudioConfig {
@@ -407,6 +454,11 @@ export interface DocLink {
   title: string;
   url: string;
   description: string;
+}
+
+export interface RRGeoRef {
+  id: number;
+  name: string;
 }
 
 export interface RRSearchHit {

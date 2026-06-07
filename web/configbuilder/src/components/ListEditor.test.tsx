@@ -46,11 +46,13 @@ describe("ListEditor", () => {
     expect(onChange).toHaveBeenCalledWith([{ name: "a" }, { name: "new" }]);
   });
 
-  it("removes the right index", () => {
+  it("removes the right index after confirmation", () => {
     const onChange = renderEditor([{ name: "a" }, { name: "b" }, { name: "c" }]);
-    // Three Remove buttons; click the middle one.
-    const removes = screen.getAllByText("Remove");
-    fireEvent.click(removes[1]);
+    // First click arms the confirm; nothing removed yet.
+    fireEvent.click(screen.getAllByText("Remove")[1]);
+    expect(onChange).not.toHaveBeenCalled();
+    // Confirm actually removes the middle item.
+    fireEvent.click(screen.getByText("Confirm remove"));
     expect(onChange).toHaveBeenCalledWith([{ name: "a" }, { name: "c" }]);
   });
 

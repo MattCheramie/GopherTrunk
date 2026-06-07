@@ -28,6 +28,8 @@ func runConfigServe(args []string) {
 	addr := fs.String("addr", "127.0.0.1:8077", "listen address")
 	open := fs.Bool("open", false, "open the builder in the system browser once it is up")
 	configDir := fs.String("config-dir", "", "directory to browse and save configs in (default: the standard discovery locations)")
+	token := fs.String("token", "", "bearer token required for save/mutations (needed on non-loopback binds)")
+	tokenFile := fs.String("token-file", "", "path to a file holding the bearer token (reloaded per request)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk config serve — standalone web Config Builder/Editor.
@@ -61,10 +63,11 @@ FLAGS:`)
 		Addr:    *addr,
 		Bus:     bus,
 		Version: version.String(),
-		// No explicit auth/AllowMutations: the default auth mode trusts
-		// loopback, so saves work on the default 127.0.0.1 bind. On a
-		// non-loopback -addr the save endpoint requires a bearer token
-		// (the SPA has a token field); reads stay open.
+		// Auth: default mode trusts loopback (saves work on 127.0.0.1
+		// out of the box). A -token / -token-file makes the save endpoint
+		// require that bearer token on non-loopback binds (the SPA has a
+		// token field); reads stay open either way.
+		Auth: api.AuthConfig{Token: strings.TrimSpace(*token), TokenFile: strings.TrimSpace(*tokenFile)},
 		// Parse-only importer: daemonImporter.Parse never touches the
 		// (nil) Daemon, so POST /api/v1/config/parse works standalone.
 		Importer: &daemonImporter{},

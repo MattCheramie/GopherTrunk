@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
@@ -95,8 +96,8 @@ func (s *Server) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 	var errs []error
 	if req.Section == "" {
 		errs = req.Config.ValidateAll()
-	} else if e := req.Config.ValidateSection(req.Section); e != nil {
-		errs = []error{e}
+	} else {
+		errs = req.Config.ValidateSection(req.Section)
 	}
 	writeJSON(w, http.StatusOK, validationErrorsFrom(errs))
 }
@@ -240,6 +241,45 @@ func (s *Server) handleConfigRRSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": hits})
 }
 
+// handleConfigRRStates answers GET /api/v1/config/rr/states — the state
+// list (id+name) backing the name-based browse picker.
+func (s *Server) handleConfigRRStates(w http.ResponseWriter, r *http.Request) {
+	client, err := s.configBuilder.rrClient()
+	if err != nil {
+		s.writeError(w, http.StatusServiceUnavailable,
+			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
+		return
+	}
+	states, err := client.GetStateList(r.Context())
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, "config: RadioReference: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": states})
+}
+
+// handleConfigRRCounties answers GET /api/v1/config/rr/counties?state=<stid>
+// — the counties in a state (id+name) for the browse picker.
+func (s *Server) handleConfigRRCounties(w http.ResponseWriter, r *http.Request) {
+	client, err := s.configBuilder.rrClient()
+	if err != nil {
+		s.writeError(w, http.StatusServiceUnavailable,
+			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
+		return
+	}
+	stid, serr := strconv.Atoi(r.URL.Query().Get("state"))
+	if serr != nil {
+		s.writeError(w, http.StatusBadRequest, "config: state must be a numeric RadioReference stid")
+		return
+	}
+	counties, err := client.GetCountyList(r.Context(), stid)
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, "config: RadioReference: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": counties})
+}
+
 // handleConfigRRSystem answers GET /api/v1/config/rr/system/{sid} —
 // full system detail plus a config-ready projection.
 func (s *Server) handleConfigRRSystem(w http.ResponseWriter, r *http.Request) {
@@ -319,6 +359,171 @@ func (s *Server) handleConfigMarshal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"yaml": string(data)})
+}
+
+// handleConfigTalkgroups answers GET /api/v1/config/file/talkgroups?path=...
+// returning the rows of each system's TalkgroupFile sidecar so the builder
+// can view/edit the talkgroups of an existing config. Sidecars that are
+// missing, unreadable, or reference a path outside the allowed roots are
+// skipped silently (the system simply has no editable rows yet).
+func (s *Server) handleConfigTalkgroups(w http.ResponseWriter, r *http.Request) {
+	path, err := s.configBuilder.resolvePath(r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "config: "+err.Error())
+		return
+	}
+	var cfg config.Config
+	if err := config.Unmarshal(data, &cfg); err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: parse: "+err.Error())
+		return
+	}
+	dir := filepath.Dir(path)
+	out := map[string][]TalkgroupCSVRow{}
+	for _, sysm := range cfg.Trunking.Systems {
+		rel := strings.TrimSpace(sysm.TalkgroupFile)
+		if rel == "" {
+			continue
+		}
+		csvPath, perr := s.configBuilder.resolveSidecarPath(filepath.Join(dir, rel))
+		if perr != nil {
+			continue
+		}
+		rows, rerr := readTalkgroupCSV(csvPath)
+		if rerr != nil {
+			continue
+		}
+		out[rel] = rows
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"talkgroups": out})
+}
+
+// handleConfigDelete answers DELETE /api/v1/config/file?path=... (gated).
+func (s *Server) handleConfigDelete(w http.ResponseWriter, r *http.Request) {
+	path, err := s.configBuilder.resolvePath(r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "config: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": path})
+}
+
+// handleConfigRename answers POST /api/v1/config/file/rename (gated). Both
+// paths are allow-list validated; refuses to clobber an existing target.
+func (s *Server) handleConfigRename(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	from, err := s.configBuilder.resolvePath(req.From)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: from: "+err.Error())
+		return
+	}
+	to, err := s.configBuilder.resolvePath(req.To)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: to: "+err.Error())
+		return
+	}
+	if _, statErr := os.Stat(to); statErr == nil {
+		s.writeError(w, http.StatusConflict, "config: target already exists: "+to)
+		return
+	}
+	if err := os.Rename(from, to); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "config: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"from": from, "to": to})
+}
+
+// handleConfigMkdir answers POST /api/v1/config/dir (gated) — create a
+// subdirectory inside an allowed root so the operator can organize configs.
+func (s *Server) handleConfigMkdir(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	dir, err := s.configBuilder.resolveDir(req.Path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "config: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": dir})
+}
+
+// readTalkgroupCSV parses a Trunk Recorder–style talkgroup CSV into rows,
+// mapping columns by (case/space-insensitive) header name so column order
+// and extra columns are tolerated. Rows without a numeric Decimal are
+// skipped.
+func readTalkgroupCSV(path string) ([]TalkgroupCSVRow, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	cr := csv.NewReader(f)
+	cr.FieldsPerRecord = -1
+	cr.TrimLeadingSpace = true
+	records, err := cr.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	idx := make(map[string]int, len(records[0]))
+	for i, h := range records[0] {
+		idx[normalizeHeader(h)] = i
+	}
+	col := func(rec []string, key string) string {
+		if j, ok := idx[key]; ok && j < len(rec) {
+			return strings.TrimSpace(rec[j])
+		}
+		return ""
+	}
+	var rows []TalkgroupCSVRow
+	for _, rec := range records[1:] {
+		decStr := col(rec, "decimal")
+		if decStr == "" {
+			continue
+		}
+		dec, err := strconv.ParseUint(decStr, 10, 32)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, TalkgroupCSVRow{
+			Decimal:     uint32(dec),
+			AlphaTag:    col(rec, "alphatag"),
+			Description: col(rec, "description"),
+			Tag:         col(rec, "tag"),
+			Group:       col(rec, "group"),
+			Mode:        col(rec, "mode"),
+		})
+	}
+	return rows, nil
+}
+
+func normalizeHeader(h string) string {
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(h)), " ", "")
 }
 
 // writeTalkgroupCSV writes a Trunk Recorder–style talkgroup CSV that

@@ -1290,9 +1290,12 @@ func Load(path string) (Config, error) {
 
 // sectionValidator pairs a config section's logical name (matching the
 // keys the web Config Builder uses) with the helper that validates it.
+// Each helper returns every error it finds in its section (one per failing
+// list item plus any section-level checks) so the builder can surface them
+// all at once.
 type sectionValidator struct {
 	name string
-	fn   func(Config) error
+	fn   func(Config) []error
 }
 
 // sectionValidators returns the per-section validators in the same order
@@ -1318,37 +1321,35 @@ func sectionValidators() []sectionValidator {
 // (e.g. "trunking.systems[0]: name required"). It is the authoritative
 // gate run by Load and the config Writer. The checks are organised into
 // per-section helpers so the web Config Builder can validate one section
-// at a time (ValidateSection) or collect one error per section
-// (ValidateAll); Validate preserves the original first-error contract.
+// at a time (ValidateSection) or collect every error (ValidateAll);
+// Validate preserves the original first-error contract.
 func (c Config) Validate() error {
 	for _, v := range sectionValidators() {
-		if err := v.fn(c); err != nil {
-			return err
+		if errs := v.fn(c); len(errs) > 0 {
+			return errs[0]
 		}
 	}
 	return nil
 }
 
-// ValidateAll runs every section validator and returns one error per
-// failing section (the first error within each). An empty slice means the
-// whole config is valid. The web Config Builder uses this to light up
-// every section that needs attention in a single pass.
+// ValidateAll runs every section validator and returns every error found
+// across the whole config. An empty slice means the config is valid. The
+// web Config Builder uses this to light up every problem in one pass.
 func (c Config) ValidateAll() []error {
 	var errs []error
 	for _, v := range sectionValidators() {
-		if err := v.fn(c); err != nil {
-			errs = append(errs, err)
-		}
+		errs = append(errs, v.fn(c)...)
 	}
 	return errs
 }
 
 // ValidateSection validates a single section by name (the keys returned by
-// sectionValidators / used by the web Config Builder). An unknown or
-// rule-free section name yields nil (treated as valid). Cross-section
-// checks (e.g. wideband channels referencing trunking.systems) run against
-// the whole Config, so the caller should pass a fully-populated draft.
-func (c Config) ValidateSection(section string) error {
+// sectionValidators / used by the web Config Builder) and returns all of
+// that section's errors. An unknown or rule-free section name yields nil
+// (treated as valid). Cross-section checks (e.g. wideband channels
+// referencing trunking.systems) run against the whole Config, so the
+// caller should pass a fully-populated draft.
+func (c Config) ValidateSection(section string) []error {
 	for _, v := range sectionValidators() {
 		if v.name == section {
 			return v.fn(c)
@@ -1357,31 +1358,35 @@ func (c Config) ValidateSection(section string) error {
 	return nil
 }
 
-func (c Config) validateSDR() error {
+func (c Config) validateSDR() []error {
+	var errs []error
 	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 20_000_000) {
-		return errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz")
+		errs = append(errs, errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz"))
 	}
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {
 		switch d.Role {
 		case "", "control", "voice", "auto", "wideband":
 		default:
-			return fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband", i)
+			errs = append(errs, fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband", i))
+			continue
 		}
 		if d.Role == "wideband" {
 			if err := validateWidebandDevice(i, d, c.SDR.SampleRate, c.Trunking.Systems); err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
 		}
 		if d.Serial == "" {
 			continue
 		}
 		if prev, dup := seenSerials[d.Serial]; dup {
-			return fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"sdr.devices[%d]: duplicate serial %q (also at sdr.devices[%d]) — "+
 					"one physical SDR cannot serve multiple roles; P25 trunking needs "+
 					"separate dongles for control and voice",
-				i, d.Serial, prev)
+				i, d.Serial, prev))
+			continue
 		}
 		seenSerials[d.Serial] = i
 	}
@@ -1389,238 +1394,282 @@ func (c Config) validateSDR() error {
 	// the standard set; serial collisions with local devices are
 	// rejected for the same reason serial dedup runs above.
 	for i, r := range c.SDR.RTLTCP {
-		if r.Addr == "" {
-			return fmt.Errorf("sdr.rtl_tcp[%d]: addr is required (host:port)", i)
-		}
-		switch r.Role {
-		case "", "control", "voice", "auto":
-		default:
-			return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto", i)
+		if err := validateRTLTCPFields(i, r); err != nil {
+			errs = append(errs, err)
+			continue
 		}
 		if r.Serial == "" {
 			continue
 		}
 		if prev, dup := seenSerials[r.Serial]; dup {
-			return fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"sdr.rtl_tcp[%d]: serial %q collides with sdr.devices[%d]",
-				i, r.Serial, prev)
+				i, r.Serial, prev))
+			continue
 		}
 		seenSerials[r.Serial] = i
 	}
 	// Validate SoapySDRServer endpoints. Same rules as rtl_tcp, plus the
 	// stream protocol and sample format must be ones the driver supports.
 	for i, s := range c.SDR.SoapyRemote {
-		if s.Addr == "" {
-			return fmt.Errorf("sdr.soapy_remote[%d]: addr is required (host:port)", i)
-		}
-		switch s.Role {
-		case "", "control", "voice", "auto":
-		default:
-			return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto", i)
-		}
-		switch s.Format {
-		case "", "CS16", "cs16", "CF32", "cf32":
-		default:
-			return fmt.Errorf("sdr.soapy_remote[%d]: format must be CS16 or CF32", i)
-		}
-		switch s.StreamProtocol {
-		case "", "tcp":
-		default:
-			return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
-		}
-		if _, err := s.DeviceArgs(); err != nil {
-			return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
+		if err := validateSoapyFields(i, s); err != nil {
+			errs = append(errs, err)
+			continue
 		}
 		if s.Serial == "" {
 			continue
 		}
 		if prev, dup := seenSerials[s.Serial]; dup {
-			return fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"sdr.soapy_remote[%d]: serial %q collides with sdr.devices[%d]",
-				i, s.Serial, prev)
+				i, s.Serial, prev))
+			continue
 		}
 		seenSerials[s.Serial] = i
 	}
+	return errs
+}
+
+func validateRTLTCPFields(i int, r RTLTCPConfig) error {
+	if r.Addr == "" {
+		return fmt.Errorf("sdr.rtl_tcp[%d]: addr is required (host:port)", i)
+	}
+	switch r.Role {
+	case "", "control", "voice", "auto":
+	default:
+		return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto", i)
+	}
 	return nil
 }
 
-func (c Config) validateTrunking() error {
+func validateSoapyFields(i int, s SoapyRemoteConfig) error {
+	if s.Addr == "" {
+		return fmt.Errorf("sdr.soapy_remote[%d]: addr is required (host:port)", i)
+	}
+	switch s.Role {
+	case "", "control", "voice", "auto":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto", i)
+	}
+	switch s.Format {
+	case "", "CS16", "cs16", "CF32", "cf32":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: format must be CS16 or CF32", i)
+	}
+	switch s.StreamProtocol {
+	case "", "tcp":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
+	}
+	if _, err := s.DeviceArgs(); err != nil {
+		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
+	}
+	return nil
+}
+
+func (c Config) validateTrunking() []error {
+	var errs []error
 	if c.Trunking.CallTimeoutMs < 0 {
-		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)
+		errs = append(errs, fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs))
 	}
 	for i, s := range c.Trunking.Systems {
-		if s.Name == "" {
-			return fmt.Errorf("trunking.systems[%d]: name required", i)
+		if err := validateSystem(i, s); err != nil {
+			errs = append(errs, err)
 		}
-		if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
-			return fmt.Errorf("trunking.systems[%d]: %w", i, err)
+	}
+	return errs
+}
+
+// validateSystem returns the first error in one trunking system (the
+// builder reports one error per system; fix-and-revalidate surfaces the
+// next).
+func validateSystem(i int, s SystemConfig) error {
+	if s.Name == "" {
+		return fmt.Errorf("trunking.systems[%d]: name required", i)
+	}
+	if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
+		return fmt.Errorf("trunking.systems[%d]: %w", i, err)
+	}
+	seenBandPlanIDs := make(map[uint8]int, len(s.P25BandPlan))
+	for k, e := range s.P25BandPlan {
+		if e.ChannelID > 15 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: channel_id %d outside 0..15", i, k, e.ChannelID)
 		}
-		seenBandPlanIDs := make(map[uint8]int, len(s.P25BandPlan))
-		for k, e := range s.P25BandPlan {
-			if e.ChannelID > 15 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: channel_id %d outside 0..15", i, k, e.ChannelID)
+		if prev, dup := seenBandPlanIDs[e.ChannelID]; dup {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: duplicate channel_id %d (also at p25_band_plan[%d])", i, k, e.ChannelID, prev)
+		}
+		seenBandPlanIDs[e.ChannelID] = k
+		if e.SpacingHz == 0 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: spacing_hz required (nonzero)", i, k)
+		}
+		if e.BaseHz == 0 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
+		}
+	}
+	if bp := s.DMRBandPlan; bp != nil {
+		hasLinear := bp.Linear != nil
+		hasTable := len(bp.Table) > 0
+		switch {
+		case hasLinear && hasTable:
+			return fmt.Errorf("trunking.systems[%d].dmr_band_plan: set either linear or table, not both", i)
+		case !hasLinear && !hasTable:
+			return fmt.Errorf("trunking.systems[%d].dmr_band_plan: one of linear or table is required", i)
+		}
+		if hasLinear {
+			if bp.Linear.SpacingHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: spacing_hz required (nonzero)", i)
 			}
-			if prev, dup := seenBandPlanIDs[e.ChannelID]; dup {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: duplicate channel_id %d (also at p25_band_plan[%d])", i, k, e.ChannelID, prev)
-			}
-			seenBandPlanIDs[e.ChannelID] = k
-			if e.SpacingHz == 0 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: spacing_hz required (nonzero)", i, k)
-			}
-			if e.BaseHz == 0 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
+			if bp.Linear.BaseHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: base_hz required (nonzero)", i)
 			}
 		}
-		if bp := s.DMRBandPlan; bp != nil {
-			hasLinear := bp.Linear != nil
-			hasTable := len(bp.Table) > 0
-			switch {
-			case hasLinear && hasTable:
-				return fmt.Errorf("trunking.systems[%d].dmr_band_plan: set either linear or table, not both", i)
-			case !hasLinear && !hasTable:
-				return fmt.Errorf("trunking.systems[%d].dmr_band_plan: one of linear or table is required", i)
-			}
-			if hasLinear {
-				if bp.Linear.SpacingHz == 0 {
-					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: spacing_hz required (nonzero)", i)
+		if hasTable {
+			seenLCN := make(map[uint8]int, len(bp.Table))
+			for k, e := range bp.Table {
+				if e.FreqHz == 0 {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: freq_hz required (nonzero)", i, k)
 				}
-				if bp.Linear.BaseHz == 0 {
-					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: base_hz required (nonzero)", i)
+				if prev, dup := seenLCN[e.LCN]; dup {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: duplicate lcn %d (also at table[%d])", i, k, e.LCN, prev)
 				}
-			}
-			if hasTable {
-				seenLCN := make(map[uint8]int, len(bp.Table))
-				for k, e := range bp.Table {
-					if e.FreqHz == 0 {
-						return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: freq_hz required (nonzero)", i, k)
-					}
-					if prev, dup := seenLCN[e.LCN]; dup {
-						return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: duplicate lcn %d (also at table[%d])", i, k, e.LCN, prev)
-					}
-					seenLCN[e.LCN] = k
-				}
+				seenLCN[e.LCN] = k
 			}
 		}
-		seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
-		for k, ek := range s.EncryptionKeys {
-			switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
-			case "rc4", "arc4":
-				// supported
-			case "":
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
-			case "aes", "des":
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
-			default:
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
-			}
-			if _, dup := seenKeyIDs[ek.KeyID]; dup {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
-			}
-			seenKeyIDs[ek.KeyID] = struct{}{}
-			b, err := decodeHexKey(ek.Key)
-			if err != nil {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
-			}
-			if len(b) > 32 {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
-			}
+	}
+	seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
+	for k, ek := range s.EncryptionKeys {
+		switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
+		case "rc4", "arc4":
+			// supported
+		case "":
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
+		case "aes", "des":
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
+		default:
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
+		}
+		if _, dup := seenKeyIDs[ek.KeyID]; dup {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
+		}
+		seenKeyIDs[ek.KeyID] = struct{}{}
+		b, err := decodeHexKey(ek.Key)
+		if err != nil {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
+		}
+		if len(b) > 32 {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
 		}
 	}
 	return nil
 }
 
-func (c Config) validateRecordings() error {
+func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
-		return fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)
+		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
 	}
 	return nil
 }
 
-func (c Config) validateRetention() error {
+func (c Config) validateRetention() []error {
 	if c.Retention.Interval != "" {
 		if _, err := parseDurationFlexible(c.Retention.Interval); err != nil {
-			return fmt.Errorf("retention.interval: %w", err)
+			return []error{fmt.Errorf("retention.interval: %w", err)}
 		}
 	}
 	return nil
 }
 
-func (c Config) validateAudio() error {
+func (c Config) validateAudio() []error {
+	var errs []error
 	if c.Audio.SampleRate != 0 && (c.Audio.SampleRate < 4000 || c.Audio.SampleRate > 48_000) {
-		return fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate)
+		errs = append(errs, fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate))
 	}
 	if c.Audio.Volume != 0 && (c.Audio.Volume < 0 || c.Audio.Volume > 1) {
-		return fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume)
+		errs = append(errs, fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume))
 	}
-	return nil
+	return errs
 }
 
-func (c Config) validateScanner() error {
+func (c Config) validateScanner() []error {
+	var errs []error
 	switch c.Scanner.ScanMode {
 	case "", "all", "list":
 	default:
-		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
+		errs = append(errs, fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\""))
 	}
 	for i, ch := range c.Scanner.Conventional {
-		if ch.FrequencyHz == 0 {
-			return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
+		if err := validateConvChannel(i, ch); err != nil {
+			errs = append(errs, err)
 		}
-		switch ch.Mode {
-		case "", "fm", "nfm":
-		default:
-			return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
+	}
+	return errs
+}
+
+func validateConvChannel(i int, ch ConvChannelConfig) error {
+	if ch.FrequencyHz == 0 {
+		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
+	}
+	switch ch.Mode {
+	case "", "fm", "nfm":
+	default:
+		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
+	}
+	switch ch.Tone.Mode {
+	case "", "none":
+	case "ctcss":
+		if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
+			return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
+				i, ch.Tone.CTCSSHz)
 		}
-		switch ch.Tone.Mode {
-		case "", "none":
-		case "ctcss":
-			if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
-				return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
-					i, ch.Tone.CTCSSHz)
-			}
-		case "dcs":
-			if len(ch.Tone.DCSCode) != 3 {
-				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
-			}
-			for _, r := range ch.Tone.DCSCode {
-				if r < '0' || r > '7' {
-					return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
-						i, ch.Tone.DCSCode)
-				}
-			}
-		default:
-			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+	case "dcs":
+		if len(ch.Tone.DCSCode) != 3 {
+			return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
 		}
+		for _, r := range ch.Tone.DCSCode {
+			if r < '0' || r > '7' {
+				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
+					i, ch.Tone.DCSCode)
+			}
+		}
+	default:
+		return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
 	}
 	return nil
 }
 
-func (c Config) validateBroadcast() error {
-	return c.Broadcast.validate()
+func (c Config) validateBroadcast() []error {
+	if err := c.Broadcast.validate(); err != nil {
+		return []error{err}
+	}
+	return nil
 }
 
-func (c Config) validateBaseband() error {
+func (c Config) validateBaseband() []error {
+	var errs []error
 	for i, r := range c.Baseband.Record {
 		if r.Serial == "" {
-			return fmt.Errorf("baseband.record[%d]: serial required", i)
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: serial required", i))
+			continue
 		}
 		if r.Dir == "" {
-			return fmt.Errorf("baseband.record[%d]: dir required", i)
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: dir required", i))
 		}
 	}
 	for i, r := range c.Baseband.Replay {
 		if r.File == "" {
-			return fmt.Errorf("baseband.replay[%d]: file required", i)
+			errs = append(errs, fmt.Errorf("baseband.replay[%d]: file required", i))
+			continue
 		}
 		switch r.Role {
 		case "", "control", "voice", "auto":
 		default:
-			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+			errs = append(errs, fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i))
 		}
 	}
-	return nil
+	return errs
 }
 
-func (c Config) validateWeb() error {
+func (c Config) validateWeb() []error {
 	for key := range c.Web.Tabs {
 		if !KnownUITabs[key] {
 			valid := make([]string, 0, len(KnownUITabs))
@@ -1628,7 +1677,7 @@ func (c Config) validateWeb() error {
 				valid = append(valid, k)
 			}
 			sort.Strings(valid)
-			return fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))
+			return []error{fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))}
 		}
 	}
 	return nil

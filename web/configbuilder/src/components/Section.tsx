@@ -12,7 +12,7 @@ export function Section(props: {
 }) {
   const docs = useStore((s) => s.docs[props.sectionKey]);
   const validation = useStore((s) => s.validation);
-  const err = validation?.errors?.find((e) => e.section === props.sectionKey);
+  const errs = (validation?.errors ?? []).filter((e) => e.section === props.sectionKey);
 
   return (
     <div className="space-y-4">
@@ -34,9 +34,11 @@ export function Section(props: {
         ) : null}
       </div>
 
-      {err ? (
-        <div className="rounded-md border border-err/40 bg-err/10 px-3 py-2 text-sm text-err">
-          ✗ {err.message}
+      {errs.length > 0 ? (
+        <div className="space-y-1 rounded-md border border-err/40 bg-err/10 px-3 py-2 text-sm text-err">
+          {errs.map((e, i) => (
+            <div key={i}>✗ {e.message}</div>
+          ))}
         </div>
       ) : validation ? (
         <div className="rounded-md border border-ok/30 bg-ok/10 px-3 py-2 text-sm text-ok">
