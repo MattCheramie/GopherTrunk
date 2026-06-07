@@ -456,6 +456,11 @@ export interface DocLink {
   description: string;
 }
 
+export interface RRGeoRef {
+  id: number;
+  name: string;
+}
+
 export interface RRSearchHit {
   sid: number;
   name: string;

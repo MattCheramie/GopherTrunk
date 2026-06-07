@@ -91,6 +91,14 @@ export const useStore = create<State>((set, get) => ({
         validation: resp.validation,
         lastSaved: null,
       });
+      // Pull in the talkgroup sidecars so the per-system editor can show
+      // and edit them (best-effort — a config with none just stays empty).
+      try {
+        const tg = await api.talkgroups(resp.path);
+        if (tg.talkgroups) set({ talkgroups: tg.talkgroups });
+      } catch {
+        /* sidecars optional */
+      }
     } catch (e) {
       set({ lastError: `Load failed: ${(e as Error).message}` });
     }
@@ -143,6 +151,15 @@ export const useStore = create<State>((set, get) => ({
         lastSaved: `Saved to ${resp.path}`,
         lastError: null,
       });
+      // Resync staged talkgroups with what's now on disk so the editor
+      // reflects the persisted state (and a later unrelated save doesn't
+      // re-stage stale rows).
+      try {
+        const tg = await api.talkgroups(resp.path);
+        set({ talkgroups: tg.talkgroups ?? {} });
+      } catch {
+        /* best-effort */
+      }
       return true;
     } catch (e) {
       set({ lastError: `Save failed: ${(e as Error).message}` });

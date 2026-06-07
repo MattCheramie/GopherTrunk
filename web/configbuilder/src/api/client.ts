@@ -5,6 +5,7 @@ import type {
   DocLink,
   GTConfig,
   ParsedSystemDTO,
+  RRGeoRef,
   RRSearchHit,
   RRSystemResponse,
   TalkgroupCSVRow,
@@ -59,6 +60,16 @@ export const api = {
   listFiles: () => req<ConfigListResponse>("GET", "/config/files"),
   loadFile: (path: string) =>
     req<ConfigLoadResponse>("GET", `/config/file?path=${encodeURIComponent(path)}`),
+  talkgroups: (path: string) =>
+    req<{ talkgroups: Record<string, TalkgroupCSVRow[]> }>(
+      "GET",
+      `/config/file/talkgroups?path=${encodeURIComponent(path)}`,
+    ),
+  deleteFile: (path: string) =>
+    req<{ deleted: string }>("DELETE", `/config/file?path=${encodeURIComponent(path)}`),
+  renameFile: (from: string, to: string) =>
+    req<{ from: string; to: string }>("POST", "/config/file/rename", { from, to }),
+  mkdir: (path: string) => req<{ path: string }>("POST", "/config/dir", { path }),
   defaults: () => req<GTConfig>("GET", "/config/defaults"),
   docs: () => req<Record<string, DocLink>>("GET", "/config/docs"),
   validate: (config: GTConfig, section?: string) =>
@@ -82,6 +93,9 @@ export const api = {
       "GET",
       `/config/rr/search?${kind}=${encodeURIComponent(value)}`,
     ),
+  rrStates: () => req<{ results: RRGeoRef[] | null }>("GET", "/config/rr/states"),
+  rrCounties: (stid: number) =>
+    req<{ results: RRGeoRef[] | null }>("GET", `/config/rr/counties?state=${stid}`),
   rrSystem: (sid: number) =>
     req<RRSystemResponse>("GET", `/config/rr/system/${sid}`),
 };

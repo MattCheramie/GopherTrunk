@@ -249,6 +249,8 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
         />
       </Fieldset>
 
+      <TalkgroupsField sys={sys} onChange={onChange} />
+
       <AdvancedJSON<SystemConfig>
         label="Advanced protocol knobs (JSON)"
         value={sys}
@@ -257,6 +259,127 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
         help="Protocol-specific decoder settings (TETRA/LTR/P25 Phase 1+2/NXDN/EDACS/MPT1327/Motorola/D-STAR). See the Trunking docs for accepted values; only set the keys you need."
       />
     </div>
+  );
+}
+
+// TalkgroupsField shows the per-system talkgroup count and opens an editor
+// modal. Rows are staged in the store keyed by the system's TalkgroupFile
+// (defaulted from the name) and written as a CSV sidecar on save.
+function TalkgroupsField(props: { sys: SystemConfig; onChange: (next: SystemConfig) => void }) {
+  const { sys, onChange } = props;
+  const talkgroups = useStore((s) => s.talkgroups);
+  const stage = useStore((s) => s.stageTalkgroups);
+  const [open, setOpen] = useState(false);
+  const rel = sys.TalkgroupFile || `${slug(sys.Name)}-talkgroups.csv`;
+  const rows = talkgroups[rel] ?? [];
+  return (
+    <Fieldset legend={`Talkgroups (${rows.length})`}>
+      <p className="help">Alias list written to the sidecar CSV <code>{rel}</code>.</p>
+      <button className="btn-ghost" onClick={() => setOpen(true)}>
+        Edit talkgroups
+      </button>
+      {open ? (
+        <TalkgroupModal
+          rel={rel}
+          rows={rows}
+          onClose={() => setOpen(false)}
+          onChange={(next) => {
+            stage(rel, next);
+            if (!sys.TalkgroupFile) onChange({ ...sys, TalkgroupFile: rel });
+          }}
+        />
+      ) : null}
+    </Fieldset>
+  );
+}
+
+function tgMatches(r: TalkgroupCSVRow, f: string): boolean {
+  if (!f) return true;
+  return (
+    String(r.decimal).includes(f) ||
+    (r.alpha_tag ?? "").toLowerCase().includes(f) ||
+    (r.tag ?? "").toLowerCase().includes(f) ||
+    (r.description ?? "").toLowerCase().includes(f)
+  );
+}
+
+function TalkgroupModal(props: {
+  rel: string;
+  rows: TalkgroupCSVRow[];
+  onClose: () => void;
+  onChange: (rows: TalkgroupCSVRow[]) => void;
+}) {
+  const { rows, onChange } = props;
+  const [filter, setFilter] = useState("");
+  const f = filter.trim().toLowerCase();
+  const set = (i: number, row: TalkgroupCSVRow) => {
+    const next = rows.slice();
+    next[i] = row;
+    onChange(next);
+  };
+  const remove = (i: number) => onChange(rows.filter((_, k) => k !== i));
+  const add = () => onChange([{ decimal: 0 }, ...rows]);
+
+  return (
+    <Modal title={`Talkgroups — ${props.rel}`} onClose={props.onClose}>
+      <div className="flex items-center gap-2">
+        <input
+          className="input"
+          placeholder="filter by decimal / alpha tag / tag / description"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <button className="btn" onClick={add}>
+          + Add
+        </button>
+      </div>
+      <p className="help">
+        {rows.length} talkgroup{rows.length === 1 ? "" : "s"}
+        {f ? ` (filtered)` : ""}.
+      </p>
+      <div className="max-h-96 space-y-1 overflow-y-auto">
+        {rows.map((r, i) =>
+          tgMatches(r, f) ? (
+            <div key={i} className="grid grid-cols-12 items-center gap-1 text-sm">
+              <input
+                className="input col-span-2"
+                type="number"
+                value={r.decimal}
+                onChange={(e) => set(i, { ...r, decimal: Number(e.target.value) })}
+                placeholder="dec"
+              />
+              <input
+                className="input col-span-3"
+                value={r.alpha_tag ?? ""}
+                onChange={(e) => set(i, { ...r, alpha_tag: e.target.value })}
+                placeholder="alpha tag"
+              />
+              <input
+                className="input col-span-3"
+                value={r.description ?? ""}
+                onChange={(e) => set(i, { ...r, description: e.target.value })}
+                placeholder="description"
+              />
+              <input
+                className="input col-span-2"
+                value={r.tag ?? ""}
+                onChange={(e) => set(i, { ...r, tag: e.target.value })}
+                placeholder="tag"
+              />
+              <input
+                className="input col-span-1"
+                value={r.mode ?? ""}
+                onChange={(e) => set(i, { ...r, mode: e.target.value })}
+                placeholder="mode"
+              />
+              <button className="btn-danger col-span-1" onClick={() => remove(i)}>
+                ✕
+              </button>
+            </div>
+          ) : null,
+        )}
+      </div>
+    </Modal>
   );
 }
 
