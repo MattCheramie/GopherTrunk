@@ -19,8 +19,9 @@ for tagged releases.
   under the spike — the same approach OP25 takes. With **Hold** off the
   offset automatically follows the newest active call on the selected SDR
   (the "last locked channel"); Hold pins it. Decimation now box-averages
-  each stride window as a crude anti-alias low-pass, and the render gains a
-  phosphor-green additive scatter with labelled ±1 axes, a **DC-block**
+  each stride window as a crude anti-alias low-pass, and the render gains an
+  additive scatter in GopherTrunk's sky-blue accent (distinct from OP25's
+  phosphor green) with labelled ±1 axes, a **DC-block**
   (subtract the rolling mean), and an **Auto-scale** that fills the unit
   circle.
 

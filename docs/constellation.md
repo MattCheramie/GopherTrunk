@@ -18,10 +18,11 @@ care about before committing to a deeper decode pipeline.
 
 The X axis is the in-phase (I) component, the Y axis is the
 quadrature (Q) component, both normalized to ±1, with labelled ticks
-at ±0.5 and ±1. Points are drawn as additively-blended phosphor green,
-so a dense symbol cluster blooms bright while the noise floor stays
-dim; the newest samples are brightest. Reference rings show |z| = 0.5
-and |z| = 1.0 so you can eyeball amplitude.
+at ±0.5 and ±1. Points are drawn additively in GopherTrunk's sky-blue
+accent (the same blue→cyan family as the Spectrum waterfall), so a
+dense symbol cluster blooms toward cyan-white while the noise floor
+stays dim; the newest samples are brightest. Reference rings show
+|z| = 0.5 and |z| = 1.0 so you can eyeball amplitude.
 
 ## Getting a usable picture (the DC-spike problem)
 

@@ -42,9 +42,14 @@ const POINT_BUFFER = 2000;       // how many recent points to render
 const CANVAS_PX = 420;           // square canvas; CSS scales to width
 const MARGIN = { top: 12, right: 12, bottom: 24, left: 34 };
 
-// Phosphor green, à la a vector scope. Drawn additively so dense
-// clusters bloom brighter than the diffuse noise floor.
-const POINT_RGB = "120, 255, 140";
+// GopherTrunk's sky-400 accent (matches --gt-accent and the Spectrum
+// waterfall's blue→cyan ramp), deliberately not OP25's phosphor green.
+// Drawn additively so dense clusters bloom toward cyan-white while the
+// diffuse noise floor stays dim.
+const POINT_RGB = "56, 189, 248";
+// Neutral slate-400 for the grid / axis labels, on-brand with the
+// muted slate tokens used elsewhere.
+const GRID_RGB = "148, 163, 184";
 
 type ConnState = "connecting" | "open" | "closed";
 
@@ -239,7 +244,7 @@ export function Constellation() {
               setHold(true);
               setOffsetKHz(Number(e.target.value));
             }}
-            className="w-40 accent-emerald-400"
+            className="w-40 accent-sky-400"
             aria-label="View offset from SDR centre, kHz"
           />
           <input
@@ -280,12 +285,12 @@ export function Constellation() {
             type="checkbox"
             checked={hold}
             onChange={(e) => setHold(e.target.checked)}
-            className="accent-emerald-400"
+            className="accent-sky-400"
           />
           <span>
             Hold
             {!hold && followOffsetKHz != null && (
-              <span className="text-emerald-400"> · following call</span>
+              <span className="text-accent"> · following call</span>
             )}
           </span>
         </label>
@@ -295,7 +300,7 @@ export function Constellation() {
             type="checkbox"
             checked={dcBlock}
             onChange={(e) => setDcBlock(e.target.checked)}
-            className="accent-emerald-400"
+            className="accent-sky-400"
           />
           <span>DC&nbsp;block</span>
         </label>
@@ -305,7 +310,7 @@ export function Constellation() {
             type="checkbox"
             checked={autoScale}
             onChange={(e) => setAutoScale(e.target.checked)}
-            className="accent-emerald-400"
+            className="accent-sky-400"
           />
           <span>Auto&nbsp;scale</span>
         </label>
@@ -373,14 +378,14 @@ function renderConstellation(
 
   // Grid: crosshair axes + 0.5 / 1.0 reference rings.
   ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(120, 140, 130, 0.30)";
+  ctx.strokeStyle = `rgba(${GRID_RGB}, 0.30)`;
   ctx.beginPath();
   ctx.moveTo(cx, cy - radius);
   ctx.lineTo(cx, cy + radius);
   ctx.moveTo(cx - radius, cy);
   ctx.lineTo(cx + radius, cy);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(120, 140, 130, 0.18)";
+  ctx.strokeStyle = `rgba(${GRID_RGB}, 0.18)`;
   for (const r of [0.5, 1.0]) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius * r, 0, Math.PI * 2);
@@ -388,7 +393,7 @@ function renderConstellation(
   }
 
   // Axis tick labels (I on the bottom, Q on the left).
-  ctx.fillStyle = "rgba(150, 170, 160, 0.75)";
+  ctx.fillStyle = `rgba(${GRID_RGB}, 0.80)`;
   ctx.font = "10px ui-monospace, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
