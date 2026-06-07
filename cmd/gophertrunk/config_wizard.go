@@ -323,7 +323,7 @@ func wizardSteps() []wizardStep {
 			fields: []wizardField{
 				{
 					label: "SDR sample rate (Hz)",
-					help:  "225000–3200000. 2_400_000 is the sweet spot for RTL-SDR.",
+					help:  "225000–20000000. 2_400_000 is the sweet spot for RTL-SDR (which caps at 3.2 MHz); higher rates need a wideband source like soapy_remote.",
 					kind:  fieldInt,
 					get:   func(a *wizardAnswers) string { return strconv.Itoa(a.SDRSampleHz) },
 					set:   func(a *wizardAnswers, v string) { a.SDRSampleHz, _ = strconv.Atoi(v) },
