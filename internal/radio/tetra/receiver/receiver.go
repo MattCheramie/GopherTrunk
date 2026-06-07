@@ -67,6 +67,14 @@ type Options struct {
 	// GardnerGain overrides the Gardner loop step (default 0.03,
 	// applied only when ClockMode is ClockGardner).
 	GardnerGain float64
+	// EnableAFC turns on the residual-carrier AFC (carrierAFC) between
+	// symbol-timing recovery and differential decode. The live DDC has
+	// no AFC, so a channel that is not perfectly centred leaves a
+	// constant per-symbol phase offset that biases every dibit; the AFC
+	// removes it. Off by default so sample-aligned synthesized fixtures
+	// (zero offset) are byte-unchanged. Recommended for live / replayed
+	// captures.
+	EnableAFC bool
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -115,11 +123,13 @@ type Receiver struct {
 
 	clockMode ClockMode
 	gardner   *sync.Gardner
+	afc       *carrierAFC
 
-	matched []complex64
-	dibits  []uint8
-	symbols []complex64
-	pending []complex64
+	matched   []complex64
+	dibits    []uint8
+	symbols   []complex64
+	derotated []complex64
+	pending   []complex64
 }
 
 // New constructs a Receiver. Panics if SampleRateHz or DibitSink are
@@ -155,6 +165,9 @@ func New(opts Options) *Receiver {
 			gain = 0.03
 		}
 		r.gardner = sync.NewGardner(float64(r.sps), gain)
+	}
+	if opts.EnableAFC {
+		r.afc = newCarrierAFC(0)
 	}
 	return r
 }
@@ -197,6 +210,10 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
+	if r.afc != nil {
+		r.derotated = r.afc.Process(r.derotated, r.symbols)
+		r.symbols = r.derotated
+	}
 	r.dibits = r.dq.Decode(r.dibits, r.symbols)
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
@@ -213,5 +230,8 @@ func (r *Receiver) Reset() {
 	r.rxOffset = 0
 	if r.gardner != nil {
 		r.gardner.Reset()
+	}
+	if r.afc != nil {
+		r.afc.Reset()
 	}
 }

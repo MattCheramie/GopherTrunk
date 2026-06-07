@@ -47,7 +47,7 @@ func TestProcessLocksOnSystemBroadcastAfterSync(t *testing.T) {
 	}
 	pduBytes := AssemblePDU(pdu)
 	pduBits := framing.UnpackBitsMSB(pduBytes, 96)
-	pduDibits := framing.BitsToDibits(pduBits)
+	pduDibits := TetraBitsToDibits(pduBits)
 	if len(pduDibits) != 48 {
 		t.Fatalf("PDU dibits = %d, want 48", len(pduDibits))
 	}
@@ -101,7 +101,7 @@ func TestProcessHandlesPDUSpanningCalls(t *testing.T) {
 	payload[0] = 0x40 // MCC bits — anything non-zero so SystemBroadcast parses
 	pdu := PDU{Disc: DiscMLE, Type: uint8(MLESystemInfo), Payload: payload}
 	pduBits := framing.UnpackBitsMSB(AssemblePDU(pdu), 96)
-	pduDibits := framing.BitsToDibits(pduBits)
+	pduDibits := TetraBitsToDibits(pduBits)
 
 	chunk1 := make([]uint8, 50)
 	chunk1 = append(chunk1, NormalSyncDibits()...)

@@ -255,7 +255,11 @@ func tetraFEC(stream []uint8, land *SyncLandscape, sys trunking.System) []FECSta
 		}
 		pass := false
 		for rot := uint8(0); rot < 4; rot++ {
-			if _, ok := tetra.DecodeSCHHD(dibitsToBitsRot(stream[start:start+schDibits], rot), cc); ok {
+			// TETRA uses the π/4-DQPSK Gray bit↔dibit convention; the
+			// rotation covers the differential decoder's constant-phase
+			// ambiguity.
+			bits := tetra.TetraDibitsToBits(rotateDibits(stream[start:start+schDibits], rot))
+			if _, ok := tetra.DecodeSCHHD(bits, cc); ok {
 				pass = true
 				break
 			}

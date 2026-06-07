@@ -105,11 +105,16 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		notes:  "FICH decode is not yet integrated in the YSF decoder (FICH-region symbol mapping undefined); sync landscape + histogram only.",
 	},
 	trunking.ProtocolTETRA: {
-		cardinality: 4, tolerance: 6,
+		// Training sequences are short (11–19 dibits), so the tolerance
+		// is tight to avoid chance correlations; the winner reports its
+		// own length via SyncLandscape.SyncLen.
+		cardinality: 4, tolerance: 2,
 		syncFn: func() []SyncVariant {
 			return []SyncVariant{
-				{Name: "normal", Pattern: tetra.NormalSyncDibits()},
+				{Name: "nts1", Pattern: tetra.NormalSyncDibits()},
+				{Name: "nts2", Pattern: tetra.NormalSyncDibits2()},
 				{Name: "extended", Pattern: tetra.ExtendedSyncDibits()},
+				{Name: "sync", Pattern: tetra.SyncTrainingDibits()},
 			}
 		},
 		fec: tetraFEC,

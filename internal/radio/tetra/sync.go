@@ -11,54 +11,91 @@ package tetra
 // can drive the TETRA CC state machine on live IQ.
 type DibitSink func(dibits []uint8, baseIdx int)
 
-// TETRA synchronisation burst sync words per ETSI EN 300 392-2 §9.4.
-// The synchronisation training sequences are 38-symbol patterns
-// (76 bits / dibits) used to lock onto the BSCH burst at slot 1 of
-// frame 18 in each multiframe. We carry the canonical hex of the
-// 38 dibits MSB-first; the tolerant SyncDetector accepts a leading
-// pattern and reports the position of the trailing dibit.
+// TETRA training sequences per ETSI EN 300 392-2 §9.4.4.3, as
+// MSB-first on-air BIT arrays. These are the real over-the-air
+// sequences — validated against live captures for issue #553. The
+// previous uint64 "hex" constants were placeholders that (a) were
+// truncated (a uint64 holds 64 bits but the values were declared as
+// 76) and (b) matched no spec value, so the control channel could
+// never lock on real air.
 //
-// Two pattern variants are defined:
+// Lengths, in on-air bits and recovered dibits (1 dibit / symbol):
 //
-//	NormalSync     normal-burst training sequence (downlink + uplink)
-//	ExtendedSync   extended training sequence used on the broadcast
-//	               burst — gives the receiver more energy to lock the
-//	               initial frame timing on cold start.
+//	NormalTrainingSeq1/2   22 bits / 11 dibits  (§9.4.4.3.2)
+//	ExtendedTrainingSeq    30 bits / 15 dibits  (§9.4.4.3.3)
+//	SyncTrainingSeq        38 bits / 19 dibits  (§9.4.4.3.4)
 //
-// Both are 38 dibits long. Stored as the full hex constant; the
-// per-dibit unpacker materialises them on demand.
-const (
-	// NormalSyncHex packs 38 dibits (76 bits) MSB-first into the low 76
-	// bits of a uint128-equivalent. The constant below is the public
-	// reference value documented for the normal training sequence.
-	NormalSyncHex   uint64 = 0x4B65EE679D4D6F7F
-	ExtendedSyncHex uint64 = 0x96B1D4A5DC34E13F
-
-	SyncDibits = 38
+// Bit↔dibit convention: on-air TETRA is π/4-DQPSK; a transmitted bit
+// pair (b1,b2) modulates to a differential phase the demodulator
+// recovers as a dibit VALUE 0..3 per the TETRA Gray mapping
+// (b1,b2) → (b1<<1)|(b1^b2): 00→0, 01→1, 11→2, 10→3. TetraBitsToDibits
+// / TetraDibitsToBits are the single source of truth for this and are
+// deliberately distinct from the linear framing.DibitsToBits used by
+// the C4FM family (P25/DMR/NXDN/dPMR).
+var (
+	// NormalTrainingSeq1 — normal training sequence 1 (§9.4.4.3.2),
+	// carried by the normal continuous downlink burst.
+	NormalTrainingSeq1 = []uint8{1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0}
+	// NormalTrainingSeq2 — normal training sequence 2 (§9.4.4.3.2).
+	NormalTrainingSeq2 = []uint8{0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0}
+	// ExtendedTrainingSeq — extended training sequence (§9.4.4.3.3).
+	ExtendedTrainingSeq = []uint8{1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0}
+	// SyncTrainingSeq — synchronisation training sequence (§9.4.4.3.4),
+	// carried by the synchronisation downlink burst (SB) at slot 1 of
+	// frame 18 in each multiframe.
+	SyncTrainingSeq = []uint8{1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1}
 )
 
-// NormalSyncDibits returns the 38 dibits of the normal training
-// sequence, MSB-first. Lower-order dibits beyond bit 64 of the hex
-// constant zero-fill — TETRA receivers practically use the high-order
-// portion of the burst for sync detection.
-func NormalSyncDibits() []uint8 { return hexToDibits(NormalSyncHex, SyncDibits) }
+// On-air bit lengths of the training sequences (each = 2× its dibit
+// count).
+const (
+	NormalTrainingBits   = 22
+	ExtendedTrainingBits = 30
+	SyncTrainingBits     = 38
+)
 
-// ExtendedSyncDibits returns the 38 dibits of the extended training
-// sequence, MSB-first.
-func ExtendedSyncDibits() []uint8 { return hexToDibits(ExtendedSyncHex, SyncDibits) }
-
-func hexToDibits(hex uint64, n int) []uint8 {
+// TetraBitsToDibits maps an MSB-first on-air bit stream to the dibit
+// VALUE sequence the π/4-DQPSK demodulator (internal/dsp/demod) emits
+// for it, using the TETRA Gray mapping (see the package note above). A
+// trailing odd bit, if any, is dropped.
+func TetraBitsToDibits(bits []uint8) []uint8 {
+	n := len(bits) / 2
 	out := make([]uint8, n)
 	for i := 0; i < n; i++ {
-		shift := 2 * (n - 1 - i)
-		if shift >= 64 {
-			out[i] = 0
-			continue
-		}
-		out[i] = uint8((hex >> uint(shift)) & 0x3)
+		b1 := bits[2*i] & 1
+		b2 := bits[2*i+1] & 1
+		out[i] = (b1 << 1) | (b1 ^ b2)
 	}
 	return out
 }
+
+// TetraDibitsToBits is the inverse of TetraBitsToDibits: it expands a
+// demodulated dibit-value stream back to MSB-first on-air bit pairs.
+// Use this — not framing.DibitsToBits (the linear C4FM convention) —
+// for TETRA channel decoding.
+func TetraDibitsToBits(dibits []uint8) []byte {
+	out := make([]byte, len(dibits)*2)
+	for i, d := range dibits {
+		b1 := (d >> 1) & 1
+		out[2*i] = b1
+		out[2*i+1] = b1 ^ (d & 1)
+	}
+	return out
+}
+
+// NormalSyncDibits returns normal training sequence 1 as the 11-dibit
+// pattern the demodulator emits for it. NormalSyncDibits2,
+// ExtendedSyncDibits and SyncTrainingDibits expose the others.
+func NormalSyncDibits() []uint8 { return TetraBitsToDibits(NormalTrainingSeq1) }
+
+// NormalSyncDibits2 returns normal training sequence 2 as a dibit pattern.
+func NormalSyncDibits2() []uint8 { return TetraBitsToDibits(NormalTrainingSeq2) }
+
+// ExtendedSyncDibits returns the extended training sequence (15 dibits).
+func ExtendedSyncDibits() []uint8 { return TetraBitsToDibits(ExtendedTrainingSeq) }
+
+// SyncTrainingDibits returns the synchronisation training sequence (19 dibits).
+func SyncTrainingDibits() []uint8 { return TetraBitsToDibits(SyncTrainingSeq) }
 
 // SyncDetector slides a window over a dibit stream and reports
 // indices where the configured pattern matches within `tolerance`

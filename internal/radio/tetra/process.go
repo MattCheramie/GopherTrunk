@@ -103,7 +103,9 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // the configured ChannelType drives a full type-5 → type-1 decode
 // chain via the per-channel helpers in channel_coding.go.
 func (c *ControlChannel) dispatchSlice(slice []uint8, mode ChannelCodingMode, channel ChannelType, colour uint32) {
-	bits := framing.DibitsToBits(slice)
+	// TETRA uses the π/4-DQPSK Gray bit↔dibit convention, not the
+	// linear framing.DibitsToBits used by the C4FM protocols.
+	bits := TetraDibitsToBits(slice)
 	var info []byte
 	switch {
 	case mode != ChannelCodingOn:

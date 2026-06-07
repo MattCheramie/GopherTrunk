@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
 // pduToType1Bits converts a PDU (header byte + payload bytes)
@@ -65,7 +64,7 @@ func TestProcessChannelCodingOnSCHHDRoundTrip(t *testing.T) {
 	if len(type5) != 216 {
 		t.Fatalf("EncodeSCHHD produced %d bits, want 216", len(type5))
 	}
-	dibits := framing.BitsToDibits(type5)
+	dibits := TetraBitsToDibits(type5)
 	if len(dibits) != 108 {
 		t.Fatalf("type-5 → dibits = %d, want 108", len(dibits))
 	}
@@ -127,7 +126,7 @@ func TestProcessChannelCodingOnSCHFRoundTrip(t *testing.T) {
 		t.Fatalf("PDU too large for SCH/F 268 type-1 bits")
 	}
 	type5 := EncodeSCHF(info, 0xAAAA)
-	dibits := framing.BitsToDibits(type5)
+	dibits := TetraBitsToDibits(type5)
 	if len(dibits) != 216 {
 		t.Fatalf("type-5 → dibits = %d, want 216", len(dibits))
 	}
@@ -184,7 +183,7 @@ func TestProcessChannelCodingOnRejectsCRCFailure(t *testing.T) {
 	for i := 50; i < 80; i++ {
 		type5[i] ^= 1
 	}
-	dibits := framing.BitsToDibits(type5)
+	dibits := TetraBitsToDibits(type5)
 
 	stream := make([]uint8, 30)
 	stream = append(stream, NormalSyncDibits()...)
@@ -229,7 +228,7 @@ func TestProcessChannelCodingOnRejectsWrongColourCode(t *testing.T) {
 	}
 	info := pduToType1Bits(pdu, 124)
 	type5 := EncodeSCHHD(info, 0xAAAA) // encoded with different colour
-	dibits := framing.BitsToDibits(type5)
+	dibits := TetraBitsToDibits(type5)
 
 	stream := make([]uint8, 30)
 	stream = append(stream, NormalSyncDibits()...)
