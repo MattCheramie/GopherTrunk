@@ -140,6 +140,9 @@ retention:
   interval: "1h"      # how often the sweeper runs
 
 sdr:
+  # 225000–20000000 Hz. 2_400_000 is the RTL-SDR sweet spot; RTL dongles
+  # cap at 3.2 MHz. Higher rates (e.g. 10_000_000 / 20_000_000) are only
+  # usable with a wideband source like soapy_remote (USRP, LimeSDR, …).
   sample_rate: 2_400_000
   # watchdog_interval_ms: periodic USB-disconnect watchdog cadence
   # (default 30000 = 30 s). Catches dongles that vanish from the bus

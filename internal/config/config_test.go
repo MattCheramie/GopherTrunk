@@ -65,6 +65,11 @@ func TestValidate(t *testing.T) {
 	}{
 		{"ok", Default(), false},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
+		// Wideband soapy_remote sources (issue #550): rates above the RTL
+		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.
+		{"wideband sample rate 10M", Config{SDR: SDRConfig{SampleRate: 10_000_000}}, false},
+		{"wideband sample rate 20M", Config{SDR: SDRConfig{SampleRate: 20_000_000}}, false},
+		{"sample rate above 20M", Config{SDR: SDRConfig{SampleRate: 20_000_001}}, true},
 		{"bad role", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Role: "bogus"}}}}, true},
 		{"bad protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "lte"}}}}, true},
 		{"tetra protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "tetra"}}}}, false},

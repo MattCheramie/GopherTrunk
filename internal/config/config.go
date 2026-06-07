@@ -545,9 +545,14 @@ type MessageLogConfig struct {
 
 type SDRConfig struct {
 	// SampleRate is the IQ rate (Hz) every tuner is programmed to.
-	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..3_200_000; the
+	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..20_000_000; the
 	// RTL2832U quantizes to its 28.4 fixed-point divisor so the streamed
-	// rate may differ slightly (see Device.ActualSampleRate). This is
+	// rate may differ slightly (see Device.ActualSampleRate). Note that
+	// RTL2832U hardware still caps at 3.2 MHz at the device level (the
+	// resampler produces garbage above that), so rates beyond 3.2 MHz are
+	// only usable with wideband sources such as soapy_remote (USRP, Lime,
+	// bladeRF, …) that can stream them — an RTL dongle handed a higher
+	// rate is rejected at open and skipped. This is
 	// also the primary load lever on CPU-bound hosts: convert + resample
 	// cost scales with it, so if the daemon logs "sdr: dropping live IQ
 	// chunks; consumer can't keep up" (iq_underruns_total climbing),
@@ -1273,8 +1278,8 @@ func Load(path string) (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 3_200_000) {
-		return errors.New("sdr.sample_rate must be between 225 kHz and 3.2 MHz")
+	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 20_000_000) {
+		return errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz")
 	}
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {
