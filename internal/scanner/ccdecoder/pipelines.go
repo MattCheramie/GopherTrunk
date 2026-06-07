@@ -527,6 +527,13 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// DMR Tier III ClockGain tweak in PR #150. Only applied
 		// when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
+		// The live DDC has no AFC; a control channel that is not
+		// perfectly centred (a coarse tuning offset, or a tuner a few
+		// hundred Hz off) leaves a constant per-symbol phase offset
+		// that biases every dibit and stops the training sequence
+		// correlating (issue #553). The AFC acquires ~0 on a centred
+		// signal, so it is a near-noop there.
+		EnableAFC: true,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil
 }
