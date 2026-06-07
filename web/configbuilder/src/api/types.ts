@@ -31,6 +31,11 @@ export interface APIConfig {
   TLSKey: string;
 }
 
+export interface DeviceChannelConfig {
+  FrequencyHz: number;
+  System: string;
+}
+
 export interface DeviceConfig {
   Serial: string;
   Role: string;
@@ -38,12 +43,43 @@ export interface DeviceConfig {
   Gain: string;
   BiasTee: boolean;
   CenterFreqHz: number;
+  Channels?: DeviceChannelConfig[] | null;
+  TunerStrategy?: string;
+  VoiceTaps?: number;
+  // Other device flags (BlogV4, IQCorrect, IQInvert, …) round-trip via the
+  // index signature and are reachable through AdvancedJSON.
   [k: string]: unknown;
+}
+
+export interface RTLTCPConfig {
+  Addr: string;
+  Serial: string;
+  Role: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
+}
+
+export interface SoapyRemoteConfig {
+  Addr: string;
+  Driver: string;
+  Args: string;
+  Serial: string;
+  Role: string;
+  Format: string;
+  StreamProtocol: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
 }
 
 export interface SDRConfig {
   SampleRate: number;
   Devices: DeviceConfig[];
+  RTLTCP?: RTLTCPConfig[] | null;
+  SoapyRemote?: SoapyRemoteConfig[] | null;
   [k: string]: unknown;
 }
 
