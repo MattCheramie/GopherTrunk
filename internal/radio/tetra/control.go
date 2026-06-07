@@ -57,6 +57,45 @@ type ControlChannel struct {
 	channelType      ChannelType
 	colourCode       uint32
 	colourLearned    bool
+
+	// pendingSoft holds the per-symbol complex differential (soft
+	// information) for the next Process call, stashed by StashSoft
+	// immediately before the matching dibit chunk arrives (see
+	// receiver SoftSink). Process consumes it via takeStashSoft.
+	pendingSoft     []complex64
+	pendingSoftBase int
+	pendingSoftSet  bool
+}
+
+// StashSoft records the soft per-symbol differentials for the dibit
+// chunk that arrives next at Process (same baseIdx). The receiver's
+// SoftSink calls this just before DibitSink → Process. diffs is copied
+// since the caller reuses its buffer.
+func (c *ControlChannel) StashSoft(diffs []complex64, baseIdx int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cap(c.pendingSoft) < len(diffs) {
+		c.pendingSoft = make([]complex64, len(diffs))
+	} else {
+		c.pendingSoft = c.pendingSoft[:len(diffs)]
+	}
+	copy(c.pendingSoft, diffs)
+	c.pendingSoftBase = baseIdx
+	c.pendingSoftSet = true
+}
+
+// takeStashSoft returns the stashed soft differentials if they match the
+// chunk at baseIdx with length n, then clears the stash. Returns nil
+// when no matching soft data was stashed (hard-only path).
+func (c *ControlChannel) takeStashSoft(baseIdx, n int) []complex64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.pendingSoftSet || c.pendingSoftBase != baseIdx || len(c.pendingSoft) != n {
+		c.pendingSoftSet = false
+		return nil
+	}
+	c.pendingSoftSet = false
+	return c.pendingSoft
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the

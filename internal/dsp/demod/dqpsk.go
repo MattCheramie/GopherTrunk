@@ -59,3 +59,47 @@ func (d *DQPSK) Decode(dst []uint8, src []complex64) []uint8 {
 	}
 	return dst
 }
+
+// DecodeBoth is Decode plus the complex differential d = s·conj(last)
+// per symbol, emitted into dstDiff. It is a single pass with one `last`
+// update, so the hard dibit and the soft differential stay consistent.
+// The differential carries the soft information: for π/4-DQPSK the two
+// on-air bits' reliabilities are Im(d) and Re(d). Callers that want
+// soft-decision decoding use dstDiff; the dibits remain identical to
+// Decode.
+func (d *DQPSK) DecodeBoth(dstDibits []uint8, dstDiff []complex64, src []complex64) ([]uint8, []complex64) {
+	if cap(dstDibits) < len(src) {
+		dstDibits = make([]uint8, len(src))
+	} else {
+		dstDibits = dstDibits[:len(src)]
+	}
+	if cap(dstDiff) < len(src) {
+		dstDiff = make([]complex64, len(src))
+	} else {
+		dstDiff = dstDiff[:len(src)]
+	}
+	for i, s := range src {
+		ar := real(s)*real(d.last) + imag(s)*imag(d.last)
+		ai := imag(s)*real(d.last) - real(s)*imag(d.last)
+		dstDiff[i] = complex(ar, ai)
+		phi := math.Atan2(float64(ai), float64(ar)) - d.rotation
+		for phi < -math.Pi {
+			phi += 2 * math.Pi
+		}
+		for phi >= math.Pi {
+			phi -= 2 * math.Pi
+		}
+		switch {
+		case phi >= -math.Pi/4 && phi < math.Pi/4:
+			dstDibits[i] = 0b00
+		case phi >= math.Pi/4 && phi < 3*math.Pi/4:
+			dstDibits[i] = 0b01
+		case phi >= -3*math.Pi/4 && phi < -math.Pi/4:
+			dstDibits[i] = 0b11
+		default:
+			dstDibits[i] = 0b10
+		}
+		d.last = s
+	}
+	return dstDibits, dstDiff
+}

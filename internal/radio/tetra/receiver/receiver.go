@@ -108,6 +108,13 @@ type Options struct {
 	// near-noop on a clean single-carrier synth); recommended for live /
 	// replayed captures. See ChannelCutoffHz.
 	EnableChannelFilter bool
+	// SoftSink, when non-nil, receives the complex π/4-DQPSK differential
+	// (s·conj(last)) for each symbol, aligned 1:1 with the dibits emitted
+	// to DibitSink and carrying the same baseIdx. It is the soft
+	// information for soft-decision channel decoding (the two on-air bits'
+	// LLRs are Im and Re of the differential). Emitted just before the
+	// matching DibitSink call. nil ⇒ no soft emission, zero overhead.
+	SoftSink func(diffs []complex64, baseIdx int)
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -158,10 +165,12 @@ type Receiver struct {
 	gardner   *sync.Gardner
 	afc       *carrierAFC
 	chanFilt  *filter.FIR
+	softSink  func(diffs []complex64, baseIdx int)
 
 	matched   []complex64
 	filtered  []complex64
 	dibits    []uint8
+	diffs     []complex64
 	symbols   []complex64
 	derotated []complex64
 	pending   []complex64
@@ -192,6 +201,7 @@ func New(opts Options) *Receiver {
 		dq:        demod.NewPiOver4DQPSK(int(sps+0.5), span, alpha, Rotation),
 		sps:       int(sps + 0.5),
 		dibitSink: opts.DibitSink,
+		softSink:  opts.SoftSink,
 		clockMode: opts.ClockMode,
 	}
 	if r.clockMode == ClockGardner {
@@ -269,7 +279,14 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
-	r.dibits = r.dq.Decode(r.dibits, r.symbols)
+	if r.softSink != nil {
+		// Emit the complex differential (soft info) just before the
+		// matching dibits, both keyed by r.dibitBase.
+		r.dibits, r.diffs = r.dq.DecodeBoth(r.dibits, r.diffs, r.symbols)
+		r.softSink(r.diffs, r.dibitBase)
+	} else {
+		r.dibits = r.dq.Decode(r.dibits, r.symbols)
+	}
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
 }
