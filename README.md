@@ -40,7 +40,7 @@ this exist? Read **[The Story of GopherTrunk](https://gophertrunk.org/story.html
 
 ```sh
 # Linux x86_64 — see https://gophertrunk.org/downloads.html for macOS, Windows, ARM64.
-VERSION=v0.3.2
+VERSION=v0.3.5
 curl -L -o gophertrunk.tar.gz \
   https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
 tar xzf gophertrunk.tar.gz && cd gophertrunk-${VERSION}-linux-amd64
@@ -207,6 +207,12 @@ Silicon and Intel. Full per-OS recipes at
   noise), spotting frequency offset, and checking demod /
   equalizer health. Decimated to 2 ksps for the wire; canvas
   scatter with energy banner. Web panel at `/constellation`.
+- **Symbol scope** — live oscilloscope of the demodulated symbol
+  stream (OP25's "Symbol" plot): the pre-slicer soft waveform for
+  P25 C4FM and the sliced dibit decisions for CQPSK, driven off the
+  production receiver. Shares the constellation's offset / Hold /
+  follow-active-call controls. Web panel at `/symbols`; offline view
+  in SigLab. See [docs/symbol-scope.md](docs/symbol-scope.md).
 - **Bookmarks / frequency manager** — UI-managed conventional
   channel list (marine VHF, NOAA weather, FRS/GMRS, repeater
   outputs, public-safety fall-back channels) stored in the
@@ -371,6 +377,8 @@ Operator-facing docs live at **[gophertrunk.org](https://gophertrunk.org)**
   [Live config editing](docs/live-edits.md) ·
   [Import (PDF / CSV)](docs/import.md) ·
   [Hunt (discover unknown systems)](docs/hunt.md) ·
+  [Constellation](docs/constellation.md) ·
+  [Symbol scope](docs/symbol-scope.md) ·
   [Hardening](docs/hardening.md)
 - **Reference** — [Architecture](docs/architecture.md) ·
   [Vocoders](docs/vocoders.md) ·

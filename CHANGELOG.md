@@ -7,30 +7,56 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.5] — 2026-06-07
+
+Site/system **hunting** grows up — `gophertrunk hunt` turns from a one-shot
+capture mapper into a live, daemon-integrated discovery engine driven from the
+CLI, the TUI, and a web panel with a REST cockpit (#549–#558) — alongside a
+live **Symbol scope** oscilloscope (#563) and a much-improved
+**Constellation** panel with a server-side frequency-offset view (#559). On
+the SDR side, `soapyremote` finally streams reliably (flow-control ACKs,
+#545), wideband sources can run up to 20 MHz (#560), and a per-device
+`iq_invert` lets spectrum-inverted front-ends lock TETRA (#562).
+
 ### Added
 
+- **Site/system hunting — live, daemon-integrated discovery of undocumented
+  trunked systems** (#549–#558). `gophertrunk hunt` now does far more than map
+  a pre-recorded capture: a live spectrum-sweep discovery engine scans for
+  control channels off a live SDR, with a CLI live mode driving it (#552); a
+  daemon-integrated hunt manager acquires a spare SDR — else borrows one from
+  the pool — to run the sweep inside the running daemon (#554); and the run is
+  surfaced through TUI + web-console panels (#556) backed by a REST cockpit
+  (#555). Each run honours a requested SDR serial (#558), exports by run id
+  with a bounded run history (#558), and can be started straight from the TUI
+  panel (#558). Discovery auto-identifies the protocol, accumulates a
+  `DiscoveredSystem` map, and resolves per-protocol **site topology** —
+  system id + adjacent sites — for P25 (#551), DMR Tier III, EDACS, Motorola
+  Type II, NXDN, and TETRA single-site identity (#558), exporting standardized
+  files plus a ready-to-paste RadioReference submission. See
+  [`docs/hunt.md`](docs/hunt.md).
 - **Symbol scope — live demodulated-symbol oscilloscope (OP25-style "Symbol"
-  plot).** A new web panel (`/symbols`) renders the demodulated symbol stream
-  off a live SDR: for **P25 C4FM** it shows the pre-slicer soft waveform (~4
-  noisy bands for a healthy channel, with rails at each decided level), and
-  for **P25 CQPSK** the sliced dibit decisions. It reuses the **production**
-  DSP — the same down-converter and P25 Phase 1 receiver the live decoder
-  uses, run as a *parallel* decode on the iqtap broker so production
-  control-channel decode is never touched — exposed through the receiver's
-  existing soft/dibit taps. The panel shares the Constellation panel's
-  offset / Hold / follow-active-call controls, so you can dial the scope onto
-  a locked control/voice channel and lift it clear of the SDR centre DC
-  spike. Backed by a new `WS /api/v1/diag/symbols?device=&proto=&offset=`
-  endpoint and the `internal/scanner/symbolscope` engine. The offline
-  **SigLab** analyzer gains the matching view: a capture run with
-  `collect IQ diag` + `capture IQ` now carries an aligned symbol series on
-  its `IQTaps`, rendered by a new SigLab Symbol-scope viz alongside the eye
-  diagram. TETRA and the rest of the C4FM family (DMR/NXDN/YSF/D-STAR) — and
-  a soft waveform for them — follow as per-receiver soft taps ship.
-
+  plot)** (#563). A new web panel (`/symbols`) renders the demodulated symbol
+  stream off a live SDR: for **P25 C4FM** it shows the pre-slicer soft
+  waveform (~4 noisy bands for a healthy channel, with rails at each decided
+  level), and for **P25 CQPSK** the sliced dibit decisions. It reuses the
+  **production** DSP — the same down-converter and P25 Phase 1 receiver the
+  live decoder uses, run as a *parallel* decode on the iqtap broker so
+  production control-channel decode is never touched — exposed through the
+  receiver's existing soft/dibit taps. The panel shares the Constellation
+  panel's offset / Hold / follow-active-call controls, so you can dial the
+  scope onto a locked control/voice channel and lift it clear of the SDR
+  centre DC spike. Backed by a new
+  `WS /api/v1/diag/symbols?device=&proto=&offset=` endpoint and the
+  `internal/scanner/symbolscope` engine. The offline **SigLab** analyzer gains
+  the matching view: a capture run with `collect IQ diag` + `capture IQ` now
+  carries an aligned symbol series on its `IQTaps`, rendered by a new SigLab
+  Symbol-scope viz alongside the eye diagram. TETRA and the rest of the C4FM
+  family (DMR/NXDN/YSF/D-STAR) — and a soft waveform for them — follow as
+  per-receiver soft taps ship. See [`docs/symbol-scope.md`](docs/symbol-scope.md).
 - **Constellation panel — frequency-offset view + cleaner render (issue
-  #557).** A centre-tuned constellation is dominated by the SDR's DC spike
-  (the DDC's residual carrier leakage at 0 Hz), which sits on top of any
+  #557)** (#559). A centre-tuned constellation is dominated by the SDR's DC
+  spike (the DDC's residual carrier leakage at 0 Hz), which sits on top of any
   signal in the middle of the band and reduces the plot to one fat blob. The
   panel now offers an **Offset** control that mixes an off-centre control or
   voice channel down to baseband *server-side, before decimation* (a new
@@ -43,9 +69,45 @@ for tagged releases.
   phosphor green) with labelled ±1 axes, a **DC-block**
   (subtract the rolling mean), and an **Auto-scale** that fills the unit
   circle.
+- **`soapyremote`: free-form device-args config block (issue #542)** (#546). A
+  `sdr.soapy_remote.device_args` map passes arbitrary key/value pairs straight
+  to SoapyRemote's device factory, so a remote front-end that needs
+  driver-specific arguments (antenna path, reference clock, channel) can be
+  configured without a code change.
+- **`ccdecoder`: per-device spectrum-inversion (`iq_invert`) option** (#562).
+  A new per-device `iq_invert` flips I/Q at the source so a spectrum-inverted
+  front-end (R828D / RTL-SDR Blog V4) locks TETRA and the other control
+  channels; shipped with a production-rate (144 kHz / 8 sps) TETRA
+  control-channel lock test (#561, #553).
+
+### Changed
+
+- **`sdr.sample_rate` config ceiling raised to 20 MHz** (#560) for wideband
+  sources (HackRF, Airspy, or a SoapyRemote-fronted USRP / LimeSDR) that can
+  feed a wider span than the previous cap allowed.
+
+### Fixed
+
+- **`soapyremote`: send stream flow-control ACKs so RX actually streams (issue
+  #542)** (#545). SoapyRemote's data stream is flow-controlled; without the
+  periodic ACKs the server throttled itself to a stop after the initial burst,
+  so the tuner appeared to connect but delivered no samples.
+- **Drive the IQ pump for single-channel decoders on dedicated dongles (issue
+  #547)** (#548). A single-channel decoder bound to its own dongle was not
+  pumping IQ through the channelizer, so a dedicated-dongle conventional /
+  single-system setup never produced samples; the pump now runs on that path.
+
+## [v0.3.4] — 2026-06-06
+
+High-bit-depth **SoapyRemote** network SDRs and a first-class raw-IQ
+**capture** toolchain land (#540, #541), plus a fast algebraic BCH(63,16) NID
+decoder that clears the P25 decode-lag (#492) and a batch of RTL-SDR R82xx /
+R828D gain and PLL fixes.
+
+### Added
 
 - **SoapySDRServer remote SDRs — high-bit-depth network streaming + control
-  from professional hardware (issue #536).** A new pure-Go (zero-CGO)
+  from professional hardware (issue #536)** (#541). A new pure-Go (zero-CGO)
   `soapyremote` SDR backend connects to a remote `SoapySDRServer` (from
   pothosware/SoapyRemote) and mounts it as a virtual tuner alongside local
   USB dongles and `rtl_tcp` endpoints. Unlike `rtl_tcp`'s hardcoded 8-bit
@@ -57,8 +119,8 @@ for tagged releases.
   TCP transport. Chosen over the originally-proposed VITA 49.2 (VRT) because
   SoapyRemote reaches the same professional hardware with a real,
   interoperable control plane and a single maintained server binary.
-- **`gophertrunk capture` — record raw IQ off a live SDR to a `.cfile`.**
-  A first-class subcommand that opens a dongle directly (no daemon),
+- **`gophertrunk capture` — record raw IQ off a live SDR to a `.cfile`**
+  (#540). A first-class subcommand that opens a dongle directly (no daemon),
   records the requested number of seconds of raw IQ to a GNU Radio cfile
   (interleaved little-endian float32) or rtl_sdr-native `u8`, and writes a
   siglab `.metadata.json` sidecar so the capture is a drop-in fixture for
@@ -67,8 +129,8 @@ for tagged releases.
   -protocol p25 -out cc.cfile` (`gophertrunk capture -list` enumerates
   SDRs). Complements the daemon's existing `--iq-capture` diagnostic,
   which taps a control SDR already in the running pool.
-- **Capture-and-export from the SigLab web console.** A new "Capture from
-  tuner" control on the Captures panel records a fixed-length raw-IQ
+- **Capture-and-export from the SigLab web console** (#540). A new "Capture
+  from tuner" control on the Captures panel records a fixed-length raw-IQ
   capture off a live tuner through the daemon, stages it for immediate
   analysis, and offers the raw `.cfile` as a browser download. Backed by
   new HTTP routes `GET /api/v1/siglab/capture/devices`,
@@ -76,12 +138,27 @@ for tagged releases.
   `GET /api/v1/siglab/captures/{id}/download`. The routes return 503 when
   the console is offline (`siglab serve`) or the daemon has no SDR, so a
   build without a tuner doesn't pretend it can record.
+- **DMR Tier II Voice LC Header FEC verified against MMDVM + off-air
+  diagnostics** (#539). The Tier II Voice LC Header decode path is now
+  cross-checked against MMDVM's reference FEC and gains off-air diagnostics so
+  a failing real-capture header reports where in the BPTC / RS chain it broke.
 
 ### Fixed
 
-- **`soapyremote`: stream setup now follows SoapyRemote's real TCP
-  handshake, fixing a crash against live `SoapySDRServer` hardware (issue
-  #542).** The TCP stream setup was a single-reply, single-socket guess; real
+- **framing: fast algebraic BCH(63,16) NID decoder clears the P25 decode lag
+  (issue #492)** (#534, #537). The NID decode is replaced with an algebraic
+  Berlekamp–Massey / Chien BCH(63,16) decoder, removing the per-frame latency
+  that was starving the P25 control-channel decoder.
+- **rtlsdr: fix inverted mixer-AGC bit and missing VGA in R82xx
+  `SetGainMode`** (#535). The R82xx gain-mode path inverted the mixer-AGC
+  control bit and never set the VGA, leaving manual-gain dongles deaf; both
+  are corrected.
+- **rtlsdr: use a VCO power reference of 1 for R828D (Blog V4) PLL fine-tune**
+  (#538). The R828D / RTL-SDR Blog V4 PLL fine-tune used the wrong VCO power
+  reference, hurting fine-tune accuracy on that tuner.
+- **`soapyremote`: stream setup now follows SoapyRemote's real TCP handshake,
+  fixing a crash against live `SoapySDRServer` hardware (issue #542)** (#543).
+  The TCP stream setup was a single-reply, single-socket guess; real
   SoapyRemote is a two-phase, two-socket exchange (the server replies with the
   data port, accepts both a stream **and** a status socket, then replies with
   the integer stream id). The old code misread the first reply (`setup stream
@@ -91,11 +168,48 @@ for tagged releases.
   devices that spend seconds compiling their RFNoC graph. Verified against the
   upstream source; smoke-test against live hardware before relying on it.
 - **`soapyremote`: a manual `gain` now applies on front-ends without AGC
-  (issue #542).** Setting a numeric gain first disabled automatic gain control;
-  on radios with no AGC at all (e.g. a USRP TwinRX) that call fails with
-  `set_rx_agc() is not supported on this radio` and used to abort the whole
-  gain set, leaving the device at its default. Disabling AGC is now best-effort,
-  so the manual gain value is still applied.
+  (issue #542)** (#543). Setting a numeric gain first disabled automatic gain
+  control; on radios with no AGC at all (e.g. a USRP TwinRX) that call fails
+  with `set_rx_agc() is not supported on this radio` and used to abort the
+  whole gain set, leaving the device at its default. Disabling AGC is now
+  best-effort, so the manual gain value is still applied.
+
+## [v0.3.3] — 2026-06-05
+
+The P25 CQPSK **linear path** now decodes C4FM — a T/2 fractionally-spaced
+equalizer (#532, #492) plus a multipath-gated carrier seed (#529) — and
+**SigLab** grows a standalone web SPA over an offline HTTP API (#530). Plus
+RTL-SDR Blog V4 detection diagnostics (#528) and a DMR Tier II BPTC/RS
+bit-layout fix (#527).
+
+### Added
+
+- **SigLab: standalone web SPA + offline HTTP API** (#530). `siglab serve`
+  exposes the offline signal-analysis engine over HTTP and ships a standalone
+  Signal Lab single-page app with multi-capture visualization, backed by a new
+  in-memory decode path and decimated-IQ taps so a capture can be analysed
+  without writing intermediate files.
+- **RTL-SDR Blog V4 detection diagnostics + manual override (issue #264)**
+  (#528). The tuner-detection path now reports why it did (or didn't) classify
+  a dongle as a Blog V4, with a manual override for the ambiguous R828D case.
+- **Docs: decoder live-capture requirements summary** (#526). A new summary of
+  what each decoder needs from a live capture (sample rate, span, SNR) to lock.
+  See [`docs/decoder-capture-needs.md`](docs/decoder-capture-needs.md).
+
+### Fixed
+
+- **DMR: BPTC/RS bit layout corrected so real Tier II Voice LC Headers decode**
+  (#527). The BPTC(196,96) + RS(12,9,4) bit ordering didn't match on-air Tier
+  II Voice LC Headers, so real captures failed FEC; the layout now matches
+  MMDVM and decodes live headers.
+- **p25/cqpsk: T/2 fractionally-spaced equalizer so the linear path decodes
+  C4FM (issue #492)** (#532). A symbol-spaced equalizer can't correct the
+  timing error a C4FM signal carries on the linear (CQPSK) path; the new T/2
+  fractionally-spaced equalizer does, so the linear demodulator recovers C4FM.
+- **p25/cqpsk: gate the carrier seed on multipath; un-skip the #492 repro**
+  (#529). The coarse carrier seed only helps under multipath, so it is now
+  gated on a multipath estimate (it was biasing clean-signal locks), and the
+  #492 reproduction test is un-skipped.
 
 ## [v0.3.2] — 2026-06-04
 

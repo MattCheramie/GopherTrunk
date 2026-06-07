@@ -49,6 +49,10 @@ groups:
         url: /radio-ids.html
       - title: Constellation
         url: /constellation.html
+      - title: Symbol scope
+        url: /symbol-scope.html
+      - title: Hunt (discover systems)
+        url: /hunt.html
       - title: rigctld integration
         url: /rigctld.html
       - title: Hardening
