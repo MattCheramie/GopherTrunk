@@ -1692,3 +1692,74 @@ func TestIQHealthConcurrentWithForwarder(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+// TestPumpConjugatesWhenConfigured verifies the per-device spectrum-
+// inversion option (Options.Conjugate / config iq_invert): pump must
+// negate Q on every raw IQ sample before handing it to the pipeline, so
+// a spectrum-inverted / I-Q-swapped front end decodes (issue #264 /
+// #553). At SampleRateHz == the P25 channel rate the DDC is pass-through,
+// so the recording pipeline sees exactly the conjugated input.
+func TestPumpConjugatesWhenConfigured(t *testing.T) {
+	rec := withRecordingFactory(t, trunking.ProtocolP25)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, Tuner: fakeTuner{},
+		SampleRateHz: DDCTargetRateHz, Conjugate: true,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500})
+
+	in := []complex64{complex(1, 2), complex(-3, 4), complex(0.5, -0.25)}
+	d.pump(append([]complex64(nil), in...))
+
+	if len(rec.processChunks) == 0 {
+		t.Fatalf("recording pipeline received no chunk")
+	}
+	got := rec.processChunks[0]
+	if len(got) != len(in) {
+		t.Fatalf("chunk len = %d, want %d", len(got), len(in))
+	}
+	for i := range in {
+		want := complex(real(in[i]), -imag(in[i]))
+		if got[i] != want {
+			t.Errorf("sample %d = %v, want conjugated %v", i, got[i], want)
+		}
+	}
+}
+
+// TestPumpNoConjugateByDefault: without Conjugate, pump must pass raw IQ
+// through unchanged (pass-through DDC at the channel rate).
+func TestPumpNoConjugateByDefault(t *testing.T) {
+	rec := withRecordingFactory(t, trunking.ProtocolP25)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, Tuner: fakeTuner{},
+		SampleRateHz: DDCTargetRateHz,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500})
+	in := []complex64{complex(1, 2), complex(-3, 4)}
+	d.pump(append([]complex64(nil), in...))
+	if len(rec.processChunks) == 0 {
+		t.Fatalf("recording pipeline received no chunk")
+	}
+	for i, got := range rec.processChunks[0] {
+		if got != in[i] {
+			t.Errorf("sample %d = %v, want unchanged %v", i, got, in[i])
+		}
+	}
+}

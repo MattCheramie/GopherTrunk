@@ -1104,9 +1104,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					tuner = br
 				}
 				iqCorrect := false
+				iqInvert := false
 				for _, dev := range cfg.SDR.Devices {
 					if dev.Serial == controlEntry.Info.Serial {
 						iqCorrect = dev.IQCorrect
+						iqInvert = dev.IQInvert
 						break
 					}
 				}
@@ -1122,6 +1124,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					SampleRateHz: float64(effectiveRate),
 					Metrics:      iqObs,
 					IQCorrect:    iqCorrect,
+					Conjugate:    iqInvert,
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,
