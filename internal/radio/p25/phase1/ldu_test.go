@@ -254,13 +254,14 @@ func TestLDUFieldsCoverPayloadWithoutOverlap(t *testing.T) {
 // *interleaving sequence* inside the 1680-bit payload. The
 // coverage test above only proves the offsets tile the payload
 // with no gaps/overlaps — but many tilings do that, including the
-// pre-issue-#489 one that placed u_0 and u_1 back-to-back and
-// caused ~100% uncorrectable LDUs. This test walks the payload
-// from the end of the NID and asserts the order matches dsd-neo's
-// p25p1_ldu1.c collect_voice_and_data():
+// pre-fix one that placed an LC block between u_0 and u_1 and
+// shifted u_1..u_7, so only u_0 and u_8 decoded. This test walks the
+// payload from the end of the NID and asserts the order matches
+// szechyjs/dsd's p25p1_ldu1.c (process_p25_ldu1), which reads u_0
+// and u_1 back-to-back before the first LC block:
 //
-//	u_0, LC1, u_1, LC2, u_2, LC3, u_3, LC4, u_4, LC5,
-//	u_5, LC6, u_6, LSD1, LSD2, u_7, u_8
+//	u_0, u_1, LC1, u_2, LC2, u_3, LC3, u_4, LC4,
+//	u_5, LC5, u_6, LC6, u_7, LSD1, LSD2, u_8
 //
 // A change that reverts to a different interleaving (or shifts a
 // single field) fails here, forcing it to be deliberate.
@@ -273,21 +274,21 @@ func TestLDUVoiceLayoutMatchesDSDOrder(t *testing.T) {
 	// The expected sequence with each field's width, in order.
 	want := []field{
 		{"u_0", lduVoiceOffsets[0], LDUVoiceSubframeBits},
-		{"LC1", lduLCESBlockOffsets[0], LDULCESBlockBits},
 		{"u_1", lduVoiceOffsets[1], LDUVoiceSubframeBits},
-		{"LC2", lduLCESBlockOffsets[1], LDULCESBlockBits},
+		{"LC1", lduLCESBlockOffsets[0], LDULCESBlockBits},
 		{"u_2", lduVoiceOffsets[2], LDUVoiceSubframeBits},
-		{"LC3", lduLCESBlockOffsets[2], LDULCESBlockBits},
+		{"LC2", lduLCESBlockOffsets[1], LDULCESBlockBits},
 		{"u_3", lduVoiceOffsets[3], LDUVoiceSubframeBits},
-		{"LC4", lduLCESBlockOffsets[3], LDULCESBlockBits},
+		{"LC3", lduLCESBlockOffsets[2], LDULCESBlockBits},
 		{"u_4", lduVoiceOffsets[4], LDUVoiceSubframeBits},
-		{"LC5", lduLCESBlockOffsets[4], LDULCESBlockBits},
+		{"LC4", lduLCESBlockOffsets[3], LDULCESBlockBits},
 		{"u_5", lduVoiceOffsets[5], LDUVoiceSubframeBits},
-		{"LC6", lduLCESBlockOffsets[5], LDULCESBlockBits},
+		{"LC5", lduLCESBlockOffsets[4], LDULCESBlockBits},
 		{"u_6", lduVoiceOffsets[6], LDUVoiceSubframeBits},
+		{"LC6", lduLCESBlockOffsets[5], LDULCESBlockBits},
+		{"u_7", lduVoiceOffsets[7], LDUVoiceSubframeBits},
 		{"LSD1", lduLSDBlockOffsets[0], LDULSDBlockBits},
 		{"LSD2", lduLSDBlockOffsets[1], LDULSDBlockBits},
-		{"u_7", lduVoiceOffsets[7], LDUVoiceSubframeBits},
 		{"u_8", lduVoiceOffsets[8], LDUVoiceSubframeBits},
 	}
 
