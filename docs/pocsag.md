@@ -52,11 +52,27 @@ section below.
   swapping the running-mean slicer for a proper Mueller-Müller +
   matched-filter combination once we have signal to calibrate
   against.
-- **Multi-channel POCSAG from one wideband SDR.** Today each
-  paging.pocsag entry pins one SDR to one frequency. A follow-up
-  will add a DDC tap so several narrow POCSAG channels inside
-  one wideband SDR's bandwidth decode concurrently — the same
-  primitive `role: wideband` uses for DMR Tier II.
+  Multi-channel POCSAG / FLEX from one wideband SDR is now shipped —
+  see **Multi-channel (wideband) paging** below.
+
+## Multi-channel (wideband) paging
+
+A `paging.wideband` group puts several paging channels — any mix of
+POCSAG and FLEX — on a **single** SDR. The daemon tunes the dongle to
+a center frequency and runs an `internal/dsp/tuner.DDCBank`: one NCO
+mixer + decimating resampler per channel pulls each narrow paging
+channel down to a 48 kHz baseband stream, which feeds the same
+per-protocol receiver the single-frequency path uses. This is the
+same DDC primitive `role: wideband` uses for DMR Tier II.
+
+So two pagers a few hundred kHz apart (e.g. FLEX on 153.0250 MHz and
+POCSAG on 153.3500 MHz, 325 kHz apart) share one stick instead of
+needing two. Each channel frequency must sit inside the dongle's IQ
+window (`center ± sample_rate/2`, minus a 5% guard); a channel outside
+the window is logged and skipped without disturbing its siblings. When
+`center_freq_hz` is omitted (or 0) the daemon centers on the midpoint
+of the channel frequencies.
+
 ## FLEX
 
 FLEX is the higher-rate Motorola pager protocol that shares POCSAG's
@@ -99,12 +115,24 @@ paging:
   flex:
     - serial: "antenna-pi2"      # SDR serial
       frequency_hz: 929_612_500  # local FLEX paging channel
+  wideband:                      # two pagers on one dongle via DDC
+    - serial: "pager-sdr"
+      center_freq_hz: 153_187_500 # optional; auto = midpoint when 0
+      channels:
+        - protocol: flex
+          frequency_hz: 153_025_000
+        - protocol: pocsag
+          frequency_hz: 153_350_000
+          baud_hz: 1200
 ```
 
-The daemon retunes the named SDR to `frequency_hz` on startup and
-runs the receiver against its IQ stream via the iqtap broker.
-Pages flow onto `events.KindPagerMessage`, land in the SQLite
-`pager_log` table, and render on the web `/pagers` panel.
+For `pocsag` / `flex` entries the daemon retunes the named SDR to
+`frequency_hz` on startup and runs the receiver against its full IQ
+stream via the iqtap broker. For a `wideband` group the SDR is tuned
+to the group center and a DDC tap feeds each channel's receiver (see
+**Multi-channel (wideband) paging** above). Either way, pages flow
+onto `events.KindPagerMessage`, land in the SQLite `pager_log` table,
+and render on the web `/pagers` panel tagged by protocol.
 
 ## What's shipped now
 
@@ -128,8 +156,10 @@ Pages flow onto `events.KindPagerMessage`, land in the SQLite
   returns the most recent N pages (default 200, max 5000),
   newest first.
 - **Web panel** — `/pagers` renders the live page list:
-  Received / RIC / Function / Encoding / Body / BER columns,
-  polled every 5 s. Non-zero BER is highlighted yellow.
+  Received / Type / RIC / Function / Encoding / Body / BER columns,
+  polled every 5 s. The Type column shows a POCSAG / FLEX badge so
+  mixed traffic (including a wideband group) is distinguishable at a
+  glance. Non-zero BER is highlighted yellow.
 
 ## Testing
 

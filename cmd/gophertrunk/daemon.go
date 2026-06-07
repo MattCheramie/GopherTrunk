@@ -19,6 +19,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
@@ -329,6 +330,13 @@ type Daemon struct {
 	// the pager_log table / panel, tagged protocol="flex".
 	flexReceivers []*flexrx.Receiver
 	flexSpecs     []flexSpec // index-aligned with flexReceivers
+	// pagingGroups holds one entry per configured paging.wideband group.
+	// Each group tunes a single SDR to a center frequency and fans its
+	// IQ through a DDC bank (internal/dsp/tuner) into one POCSAG / FLEX
+	// receiver per channel — letting two pagers a few hundred kHz apart
+	// share one dongle. Single-frequency paging.pocsag / paging.flex use
+	// the direct-tune path above and are unaffected.
+	pagingGroups []widebandPagingGroup
 	// m17Receivers holds one M17 link-layer receiver per configured
 	// m17.channels entry. Each subscribes to its SDR's iqtap broker and
 	// publishes link-setup metadata on KindM17LinkSetup.
@@ -1355,6 +1363,19 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.flexSpecs = append(d.flexSpecs, spec)
 	}
 
+	// Wideband paging groups — one DDC bank per configured
+	// paging.wideband entry sharing a single SDR across several paging
+	// channels. Constructed here; the Run loop tunes the dongle to the
+	// group's center, builds the tuner.DDCBank, and feeds each tap into
+	// the receiver built below. Same skip-with-warning policy as the
+	// single-frequency paging loops: a bad group is logged and dropped
+	// without disturbing the rest of the pipeline.
+	for _, wg := range cfg.Paging.Wideband {
+		if group := d.buildWidebandPagingGroup(wg, cfg.SDR.SampleRate, log); group != nil {
+			d.pagingGroups = append(d.pagingGroups, *group)
+		}
+	}
+
 	// M17 link-layer receivers — one per configured m17.channels entry.
 	// Same construction shape as the paging receivers above; decoded
 	// link metadata publishes on KindM17LinkSetup.
@@ -2103,6 +2124,109 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 			defer cleanup()
 			return rcv.Process(ctx, iqCh)
+		})
+	}
+	// Wideband paging groups — one DDC bank per configured
+	// paging.wideband group. The group's SDR tunes once to the group
+	// center; a tuner.DDCBank splits its IQ into one narrow-band tap per
+	// channel, each feeding the matching POCSAG / FLEX receiver. This is
+	// what lets two pagers a few hundred kHz apart share one dongle.
+	// Non-essential: a missing SDR or an out-of-band channel is logged
+	// and skipped without bringing down the rest of the pipeline.
+	for _, g := range d.pagingGroups {
+		g := g
+		name := fmt.Sprintf("pager-wideband-%s-%d", g.serial, g.centerFreq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[g.serial]
+			if br == nil {
+				d.log.Warn("paging.wideband: SDR not found, skipping group",
+					"serial", g.serial)
+				return nil
+			}
+			if err := br.SetCenterFreq(g.centerFreq); err != nil {
+				d.log.Warn("paging.wideband: SetCenterFreq failed",
+					"serial", g.serial, "center_hz", g.centerFreq, "err", err)
+				return nil
+			}
+			bank := tuner.NewDDCBank(
+				float64(d.cfg.SDR.SampleRate), pagingWidebandRateHz, 0.05)
+
+			// One buffered IQ channel per registered tap. The DDC sink
+			// copies each narrow-band chunk into the feed (the bank
+			// reuses its output slice across taps); a full feed drops the
+			// chunk rather than back-pressuring the shared bank and
+			// stalling the sibling taps. Paging is low-rate, so the
+			// 64-deep buffer is effectively never exhausted.
+			var (
+				wg    sync.WaitGroup
+				feeds []chan []complex64
+			)
+			for i := range g.channels {
+				ch := g.channels[i]
+				feed := make(chan []complex64, 64)
+				if err := bank.AddTap(ch.offsetHz, func(out []complex64) {
+					if len(out) == 0 {
+						return
+					}
+					cp := make([]complex64, len(out))
+					copy(cp, out)
+					select {
+					case feed <- cp:
+					default:
+					}
+				}); err != nil {
+					d.log.Warn("paging.wideband: channel offset out of band, skipping",
+						"serial", g.serial, "freq_hz", ch.freq,
+						"offset_hz", ch.offsetHz, "err", err)
+					close(feed)
+					continue
+				}
+				feeds = append(feeds, feed)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var perr error
+					switch {
+					case ch.pocsag != nil:
+						perr = ch.pocsag.Process(ctx, feed)
+					case ch.flex != nil:
+						perr = ch.flex.Process(ctx, feed)
+					}
+					if perr != nil && !errors.Is(perr, context.Canceled) {
+						d.log.Warn("paging.wideband: receiver exited with error",
+							"serial", g.serial, "freq_hz", ch.freq, "err", perr)
+					}
+				}()
+			}
+			if len(feeds) == 0 {
+				return nil // every channel fell outside the IQ window
+			}
+			closeFeeds := func() {
+				for _, f := range feeds {
+					close(f)
+				}
+			}
+
+			sub := br.Subscribe()
+			defer sub.Close()
+			// Pump wide-band IQ through the bank until the stream or
+			// context ends, then close the feeds so the per-channel
+			// receivers drain and exit.
+			for {
+				select {
+				case <-ctx.Done():
+					closeFeeds()
+					wg.Wait()
+					return ctx.Err()
+				case chunk, ok := <-sub.C:
+					if !ok {
+						closeFeeds()
+						wg.Wait()
+						return nil
+					}
+					bank.Process(chunk)
+				}
+			}
 		})
 	}
 	// M17 link-layer receivers — same shape as the paging receivers
@@ -3317,6 +3441,125 @@ type flexSpec struct {
 type m17Spec struct {
 	serial string
 	freq   uint32
+}
+
+// widebandPagingGroup captures the broker-side wiring for one configured
+// paging.wideband group: a single SDR tuned to centerFreq, fanned through
+// a DDC bank into per-channel receivers. The Run loop builds the bank,
+// adds one tap per channel at (freq - centerFreq), and pumps the SDR's
+// iqtap subscription through it.
+type widebandPagingGroup struct {
+	serial     string
+	centerFreq uint32
+	channels   []widebandPagingChannel
+}
+
+// widebandPagingChannel binds one DDC tap to its decoder. Exactly one of
+// pocsag / flex is non-nil; the offset is the channel frequency relative
+// to the group's center.
+type widebandPagingChannel struct {
+	freq     uint32
+	offsetHz float64
+	pocsag   *pocsagrx.Receiver
+	flex     *flexrx.Receiver
+}
+
+// pagingWidebandRateHz is the per-tap narrow-band IQ rate the DDC bank
+// produces for wideband paging groups. 48 kHz matches the rest of the
+// tuner conventions and comfortably covers a paging channel's bandwidth;
+// each receiver resamples from here down to baud × oversample.
+const pagingWidebandRateHz = 48_000
+
+// buildWidebandPagingGroup constructs the receiver set for one
+// paging.wideband config entry. It resolves the group center (auto-
+// computed as the channel-frequency midpoint when CenterFreqHz is 0),
+// builds one POCSAG / FLEX receiver per channel at the DDC output rate,
+// and records each channel's offset from center. Invalid groups /
+// channels are logged via addWarning and dropped; returns nil when no
+// usable channel remains.
+func (d *Daemon) buildWidebandPagingGroup(wg config.PagingWidebandConfig, sampleRateHz uint32, log *slog.Logger) *widebandPagingGroup {
+	if wg.Serial == "" || len(wg.Channels) == 0 {
+		d.addWarning(fmt.Sprintf(
+			"paging.wideband: entry missing serial or channels (serial=%q channels=%d) — skipped",
+			wg.Serial, len(wg.Channels)))
+		return nil
+	}
+
+	// Resolve the center frequency. When unset, center on the midpoint
+	// of the channel frequencies so the taps sit symmetrically in the
+	// IQ window.
+	center := wg.CenterFreqHz
+	if center == 0 {
+		var min, max uint32
+		for i, ch := range wg.Channels {
+			if ch.FrequencyHz == 0 {
+				continue
+			}
+			if i == 0 || ch.FrequencyHz < min {
+				min = ch.FrequencyHz
+			}
+			if ch.FrequencyHz > max {
+				max = ch.FrequencyHz
+			}
+		}
+		if max == 0 {
+			d.addWarning(fmt.Sprintf(
+				"paging.wideband[%s]: no channel has frequency_hz — skipped", wg.Serial))
+			return nil
+		}
+		center = min + (max-min)/2
+	}
+
+	group := &widebandPagingGroup{serial: wg.Serial, centerFreq: center}
+	for _, ch := range wg.Channels {
+		if ch.FrequencyHz == 0 {
+			d.addWarning(fmt.Sprintf(
+				"paging.wideband[%s]: channel missing frequency_hz — skipped", wg.Serial))
+			continue
+		}
+		offset := float64(ch.FrequencyHz) - float64(center)
+		wbc := widebandPagingChannel{freq: ch.FrequencyHz, offsetHz: offset}
+		switch strings.ToLower(ch.Protocol) {
+		case "pocsag":
+			rcv, err := pocsagrx.New(pocsagrx.Options{
+				InputRateHz: pagingWidebandRateHz,
+				BaudHz:      ch.BaudHz,
+				SourceName:  wg.Serial,
+				Bus:         d.bus,
+				Log:         log,
+			})
+			if err != nil {
+				d.addWarning(fmt.Sprintf(
+					"paging.wideband[%s] pocsag %d Hz: %v — skipped", wg.Serial, ch.FrequencyHz, err))
+				continue
+			}
+			wbc.pocsag = rcv
+		case "flex":
+			rcv, err := flexrx.New(flexrx.Options{
+				InputRateHz: pagingWidebandRateHz,
+				SourceName:  wg.Serial,
+				Bus:         d.bus,
+				Log:         log,
+			})
+			if err != nil {
+				d.addWarning(fmt.Sprintf(
+					"paging.wideband[%s] flex %d Hz: %v — skipped", wg.Serial, ch.FrequencyHz, err))
+				continue
+			}
+			wbc.flex = rcv
+		default:
+			d.addWarning(fmt.Sprintf(
+				"paging.wideband[%s]: channel %d Hz has unknown protocol %q (want pocsag|flex) — skipped",
+				wg.Serial, ch.FrequencyHz, ch.Protocol))
+			continue
+		}
+		group.channels = append(group.channels, wbc)
+	}
+
+	if len(group.channels) == 0 {
+		return nil
+	}
+	return group
 }
 
 // aprsProvider adapts storage.APRSLog into api.APRSProvider so the
