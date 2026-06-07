@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -142,6 +143,58 @@ func TestConfigBuilder_RRWithoutCreds(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 without RR creds, got %d", resp.StatusCode)
+	}
+}
+
+func TestConfigBuilder_SecondSPAMount(t *testing.T) {
+	dir := t.TempDir()
+	bus := events.NewBus(8)
+	defer bus.Close()
+	// Daemon-style: main SPA at /, builder SPA at /config/.
+	base, teardown := mkServer(t, ServerOptions{
+		Bus:       bus,
+		WebAssets: fakeSPAFS(),
+		ConfigBuilder: ConfigBuilderOptions{
+			Enabled:   true,
+			ConfigDir: dir,
+			Assets: fstest.MapFS{
+				"index.html": &fstest.MapFile{Data: []byte("<html>config-builder-root</html>")},
+			},
+		},
+	})
+	defer teardown()
+
+	// /config/ serves the builder index.
+	resp, err := http.Get(base + "/config/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !bytes.Contains(body, []byte("config-builder-root")) {
+		t.Fatalf("/config/ status=%d body=%q", resp.StatusCode, body)
+	}
+
+	// A deep builder route falls back to the builder index.
+	resp2, err := http.Get(base + "/config/anything")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if !bytes.Contains(body2, []byte("config-builder-root")) {
+		t.Fatalf("/config/anything did not fall back to builder index: %q", body2)
+	}
+
+	// The main SPA still owns /.
+	resp3, err := http.Get(base + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body3, _ := io.ReadAll(resp3.Body)
+	resp3.Body.Close()
+	if !bytes.Contains(body3, []byte("spa-root")) {
+		t.Fatalf("/ did not serve the main SPA: %q", body3)
 	}
 }
 
