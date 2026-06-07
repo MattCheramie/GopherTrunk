@@ -42,6 +42,11 @@ RadioReference.com, import PDF/CSV, and save — no SDR or daemon required.
 RadioReference browse/import uses GOPHERTRUNK_RR_KEY / GOPHERTRUNK_RR_USER
 / GOPHERTRUNK_RR_PASS when set.
 
+The default loopback bind (127.0.0.1) trusts local requests, so saving
+works out of the box. Binding to a non-loopback -addr requires a bearer
+token on the save endpoint (api.auth) — reads, validate, and Download YAML
+still work, but writes will be rejected until auth is configured.
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -56,6 +61,10 @@ FLAGS:`)
 		Addr:    *addr,
 		Bus:     bus,
 		Version: version.String(),
+		// No explicit auth/AllowMutations: the default auth mode trusts
+		// loopback, so saves work on the default 127.0.0.1 bind. On a
+		// non-loopback -addr the save endpoint requires a bearer token
+		// (the SPA has a token field); reads stay open.
 		// Parse-only importer: daemonImporter.Parse never touches the
 		// (nil) Daemon, so POST /api/v1/config/parse works standalone.
 		Importer: &daemonImporter{},

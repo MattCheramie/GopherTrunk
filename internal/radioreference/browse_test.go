@@ -10,11 +10,32 @@ func TestMhzToHz(t *testing.T) {
 		"":         0,
 		"abc":      0,
 		"-5":       0,
+		// Overflow guard: a value beyond the uint32 Hz ceiling (~4294.97
+		// MHz) returns 0 rather than wrapping to a bogus frequency.
+		"99999999": 0,
 	}
 	for in, want := range cases {
 		if got := mhzToHz(in); got != want {
 			t.Errorf("mhzToHz(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+// TestParseSitesSkipsEmpty confirms a metadata-only <siteList> with no
+// usable frequency is dropped rather than surfaced as a zero-channel site.
+func TestParseSitesSkipsEmpty(t *testing.T) {
+	raw := []byte(`
+	<siteList><rfss>1</rfss><siteNumber>1</siteNumber><siteDescr>NoFreqs</siteDescr></siteList>
+	<siteList>
+	  <rfss>1</rfss><siteNumber>2</siteNumber><siteDescr>Good</siteDescr>
+	  <siteFreq><freq>851.0125</freq><use>d</use></siteFreq>
+	</siteList>`)
+	sites := parseSites(raw)
+	if len(sites) != 1 {
+		t.Fatalf("expected 1 site (empty dropped), got %d", len(sites))
+	}
+	if sites[0].Description != "Good" {
+		t.Fatalf("kept the wrong site: %+v", sites[0])
 	}
 }
 

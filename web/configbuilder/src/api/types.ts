@@ -31,6 +31,11 @@ export interface APIConfig {
   TLSKey: string;
 }
 
+export interface DeviceChannelConfig {
+  FrequencyHz: number;
+  System: string;
+}
+
 export interface DeviceConfig {
   Serial: string;
   Role: string;
@@ -38,12 +43,43 @@ export interface DeviceConfig {
   Gain: string;
   BiasTee: boolean;
   CenterFreqHz: number;
+  Channels?: DeviceChannelConfig[] | null;
+  TunerStrategy?: string;
+  VoiceTaps?: number;
+  // Other device flags (BlogV4, IQCorrect, IQInvert, …) round-trip via the
+  // index signature and are reachable through AdvancedJSON.
   [k: string]: unknown;
+}
+
+export interface RTLTCPConfig {
+  Addr: string;
+  Serial: string;
+  Role: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
+}
+
+export interface SoapyRemoteConfig {
+  Addr: string;
+  Driver: string;
+  Args: string;
+  Serial: string;
+  Role: string;
+  Format: string;
+  StreamProtocol: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
 }
 
 export interface SDRConfig {
   SampleRate: number;
   Devices: DeviceConfig[];
+  RTLTCP?: RTLTCPConfig[] | null;
+  SoapyRemote?: SoapyRemoteConfig[] | null;
   [k: string]: unknown;
 }
 
@@ -90,11 +126,48 @@ export interface WebConfig {
   Tabs: Record<string, boolean> | null;
 }
 
+export interface P25BandPlanEntry {
+  ChannelID: number;
+  BaseHz: number;
+  SpacingHz: number;
+  TxOffsetHz: number;
+  BandwidthHz: number;
+}
+
+export interface DMRLinearBandPlan {
+  BaseHz: number;
+  SpacingHz: number;
+  Offset: number;
+}
+
+export interface DMRBandPlanTableEntry {
+  LCN: number;
+  FreqHz: number;
+}
+
+export interface DMRBandPlan {
+  Linear: DMRLinearBandPlan | null;
+  Table: DMRBandPlanTableEntry[] | null;
+}
+
+export interface EncryptionKey {
+  KeyID: number;
+  Algorithm: string;
+  Key: string;
+}
+
 export interface SystemConfig {
   Name: string;
   Protocol: string;
   ControlChannels: number[] | null;
   TalkgroupFile: string;
+  RIDAliasFile?: string;
+  P25BandPlan?: P25BandPlanEntry[] | null;
+  DMRBandPlan?: DMRBandPlan | null;
+  EncryptionKeys?: EncryptionKey[] | null;
+  // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,
+  // EDACS*, MPT1327*, Motorola*, DStarFEC, DMRInterleavedVoice) round-trip
+  // through this index signature and are edited via AdvancedJSON.
   [k: string]: unknown;
 }
 
@@ -102,6 +175,156 @@ export interface TrunkingConfig {
   CallTimeoutMs: number;
   Systems: SystemConfig[] | null;
   [k: string]: unknown;
+}
+
+export interface ToneOutToneConfig {
+  FrequencyHz: number;
+  MinDuration: string;
+  MaxDuration: string;
+}
+export interface ToneProfileConfig {
+  Name: string;
+  AlphaTag: string;
+  Tones: ToneOutToneConfig[] | null;
+  ToleranceHz: number;
+  MagnitudeThreshold: number;
+  MaxGap: string;
+  Cooldown: string;
+  System: string;
+  GroupID: number;
+}
+export interface ToneOutConfig {
+  Profiles: ToneProfileConfig[] | null;
+}
+
+export interface BroadcastifyFeed {
+  Enabled: boolean;
+  Name: string;
+  APIKey: string;
+  SystemID: number;
+  Systems: string[] | null;
+}
+export interface RdioScannerFeed {
+  Enabled: boolean;
+  Name: string;
+  URL: string;
+  APIKey: string;
+  SystemID: number;
+  Systems: string[] | null;
+}
+export interface OpenMHzFeed {
+  Enabled: boolean;
+  Name: string;
+  APIKey: string;
+  ShortName: string;
+  Systems: string[] | null;
+}
+export interface IcecastFeed {
+  Enabled: boolean;
+  Name: string;
+  Host: string;
+  Port: number;
+  Mount: string;
+  Username: string;
+  Password: string;
+  StreamName: string;
+  Systems: string[] | null;
+}
+export interface BroadcastConfig {
+  MinDurationMs: number;
+  Workers: number;
+  Broadcastify: BroadcastifyFeed[] | null;
+  RdioScanner: RdioScannerFeed[] | null;
+  OpenMHz: OpenMHzFeed[] | null;
+  Icecast: IcecastFeed[] | null;
+}
+
+export interface BasebandRecordConfig {
+  Serial: string;
+  Dir: string;
+}
+export interface BasebandReplayConfig {
+  File: string;
+  Serial: string;
+  Role: string;
+  Loop: boolean | null;
+}
+export interface BasebandConfig {
+  Record: BasebandRecordConfig[] | null;
+  Replay: BasebandReplayConfig[] | null;
+}
+
+export interface PagingPOCSAGConfig {
+  Serial: string;
+  FrequencyHz: number;
+  BaudHz: number;
+}
+export interface PagingFLEXConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface PagingConfig {
+  POCSAG: PagingPOCSAGConfig[] | null;
+  FLEX: PagingFLEXConfig[] | null;
+}
+
+export interface APRSChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+  DropNonUI: boolean;
+}
+export interface APRSConfig {
+  Channels: APRSChannelConfig[] | null;
+}
+
+export interface AISChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+  DropNonPosition: boolean;
+}
+export interface AISConfig {
+  Channels: AISChannelConfig[] | null;
+}
+
+export interface DSCChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+}
+export interface DSCConfig {
+  Channels: DSCChannelConfig[] | null;
+}
+
+export interface MDC1200ChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadCRC: boolean;
+}
+export interface MDC1200Config {
+  Channels: MDC1200ChannelConfig[] | null;
+}
+
+export interface ADSBBeastConfig {
+  Addr: string;
+  Name: string;
+}
+export interface ADSBChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface ADSBConfig {
+  BeastUpstreams: ADSBBeastConfig[] | null;
+  Channels: ADSBChannelConfig[] | null;
+}
+
+export interface M17ChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface M17Config {
+  Channels: M17ChannelConfig[] | null;
 }
 
 export interface GTConfig {
@@ -113,18 +336,18 @@ export interface GTConfig {
   Recordings: RecordingsConfig;
   Metrics: MetricsConfig;
   Retention: RetentionConfig;
-  ToneOut: unknown;
+  ToneOut: ToneOutConfig;
   Scanner: ScannerConfig;
   Audio: AudioConfig;
-  Broadcast: unknown;
-  Baseband: unknown;
-  Paging: unknown;
-  APRS: unknown;
-  AIS: unknown;
-  DSC: unknown;
-  MDC1200: unknown;
-  ADSB: unknown;
-  M17: unknown;
+  Broadcast: BroadcastConfig;
+  Baseband: BasebandConfig;
+  Paging: PagingConfig;
+  APRS: APRSConfig;
+  AIS: AISConfig;
+  DSC: DSCConfig;
+  MDC1200: MDC1200Config;
+  ADSB: ADSBConfig;
+  M17: M17Config;
   Web: WebConfig;
   Diagnostics: DiagnosticsConfig;
   RadioReference: RadioReferenceConfig;

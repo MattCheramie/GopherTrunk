@@ -44,11 +44,11 @@ func newConfigBuilderService(opts ConfigBuilderOptions) (*configBuilderService, 
 		if err != nil {
 			return nil, fmt.Errorf("config builder: resolve config dir: %w", err)
 		}
-		dirs = []string{abs}
+		dirs = []string{canonicalDir(abs)}
 	} else {
 		for _, d := range config.CandidateDirs() {
 			if abs, err := filepath.Abs(d); err == nil {
-				dirs = append(dirs, abs)
+				dirs = append(dirs, canonicalDir(abs))
 			}
 		}
 	}
@@ -67,53 +67,91 @@ func newConfigBuilderService(opts ConfigBuilderOptions) (*configBuilderService, 
 var errPathOutsideRoots = errors.New("path is outside the allowed config directories")
 
 // resolvePath validates a client-supplied config path against the
-// allow-list: it must clean to an absolute path inside one of the service
-// dirs and carry a .yaml/.yml extension. It returns the cleaned absolute
-// path. mustExist is advisory — existence is checked by the caller — but
-// the directory containing a new file must itself be an allowed root.
+// allow-list: after symlink resolution it must sit inside one of the
+// service dirs (or a nested subdirectory) and carry a .yaml/.yml extension.
+// Returns the canonical absolute path.
 func (svc *configBuilderService) resolvePath(reqPath string) (string, error) {
+	return svc.resolveAllowed(reqPath, ".yaml", ".yml")
+}
+
+// resolveSidecarPath is resolvePath for talkgroup/RID CSV (or JSON) sidecars
+// written next to the config file.
+func (svc *configBuilderService) resolveSidecarPath(p string) (string, error) {
+	return svc.resolveAllowed(p, ".csv", ".json")
+}
+
+// resolveAllowed checks the extension, symlink-resolves the path, and
+// confirms it lands inside an allowed (already-canonical) root.
+func (svc *configBuilderService) resolveAllowed(reqPath string, exts ...string) (string, error) {
 	reqPath = strings.TrimSpace(reqPath)
 	if reqPath == "" {
 		return "", errors.New("path is required")
 	}
-	switch strings.ToLower(filepath.Ext(reqPath)) {
-	case ".yaml", ".yml":
-	default:
-		return "", errors.New("path must end in .yaml or .yml")
+	ext := strings.ToLower(filepath.Ext(reqPath))
+	allowed := false
+	for _, e := range exts {
+		if ext == e {
+			allowed = true
+			break
+		}
 	}
-	abs, err := filepath.Abs(filepath.Clean(reqPath))
-	if err != nil {
-		return "", err
+	if !allowed {
+		return "", fmt.Errorf("path must end in %s", strings.Join(exts, " or "))
 	}
-	dir := filepath.Dir(abs)
+	canon := evalSymlinksBestEffort(reqPath)
 	for _, root := range svc.dirs {
-		if dir == root {
-			return abs, nil
+		if withinRoot(root, canon) {
+			return canon, nil
 		}
 	}
 	return "", errPathOutsideRoots
 }
 
-// resolveSidecarPath validates a talkgroup/RID CSV (or JSON) sidecar path
-// against the allow-list: it must live directly in one of the service dirs
-// and carry a .csv/.json extension. Returns the cleaned absolute path.
-func (svc *configBuilderService) resolveSidecarPath(p string) (string, error) {
-	abs, err := filepath.Abs(filepath.Clean(p))
+// withinRoot reports whether abs is root itself or nested beneath it,
+// using filepath.Rel so ".." escapes are rejected portably.
+func withinRoot(root, abs string) bool {
+	rel, err := filepath.Rel(root, abs)
 	if err != nil {
-		return "", err
+		return false
 	}
-	switch strings.ToLower(filepath.Ext(abs)) {
-	case ".csv", ".json":
-	default:
-		return "", errors.New("sidecar must be .csv or .json")
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+// canonicalDir resolves symlinks in an allow-list root, falling back to the
+// cleaned absolute path when the directory doesn't exist yet (so a not-yet-
+// created discovery dir still serves as a stable root).
+func canonicalDir(abs string) string {
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
 	}
-	dir := filepath.Dir(abs)
-	for _, root := range svc.dirs {
-		if dir == root {
-			return abs, nil
+	return abs
+}
+
+// evalSymlinksBestEffort resolves symlinks in the deepest existing ancestor
+// of a (possibly not-yet-created) path and re-joins the non-existent
+// remainder, so a symlinked file or parent that escapes the allow-list is
+// caught while a brand-new file still resolves to its real parent dir.
+func evalSymlinksBestEffort(path string) string {
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	remainder := ""
+	cur := abs
+	for {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			if remainder == "" {
+				return resolved
+			}
+			return filepath.Join(resolved, remainder)
 		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return abs // reached the FS root without resolving
+		}
+		remainder = filepath.Join(filepath.Base(cur), remainder)
+		cur = parent
 	}
-	return "", errPathOutsideRoots
 }
 
 // rrClient builds a RadioReference client from the configured credentials.

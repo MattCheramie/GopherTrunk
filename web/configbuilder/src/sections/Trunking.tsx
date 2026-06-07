@@ -1,9 +1,22 @@
 import { useState } from "react";
 import { Section } from "../components/Section";
-import { FreqListField, NumberField, SelectField, TextField } from "../components/fields";
+import {
+  Fieldset,
+  FreqListField,
+  HzField,
+  NumberField,
+  SelectField,
+  TextField,
+} from "../components/fields";
+import { ListEditor } from "../components/ListEditor";
+import { AdvancedJSON } from "../components/AdvancedJSON";
+import { dmrBandPlanForMode, dmrBandPlanMode } from "../lib/dmrBandPlan";
 import { useStore } from "../store/shared";
 import { api } from "../api/client";
 import type {
+  DMRBandPlanTableEntry,
+  EncryptionKey,
+  P25BandPlanEntry,
   ParsedSystemDTO,
   RRSearchHit,
   SystemConfig,
@@ -14,6 +27,17 @@ import type {
 const PROTOCOLS = [
   "p25", "p25-phase2", "dmr", "dmr-tier2", "dmr-tier1", "nxdn", "dpmr",
   "edacs", "motorola", "ltr", "mpt1327", "tetra", "ysf", "dstar",
+];
+
+// Long-tail protocol decoder knobs surfaced via AdvancedJSON. None are
+// enforced by config.Validate, so a free JSON editor is lossless.
+const PROTOCOL_KNOBS: (keyof SystemConfig)[] = [
+  "TETRAColourCode", "TETRAChannel", "TETRAChannelCoding", "TETRAClockMode",
+  "LTRFCSMode", "LTRManchesterMode", "P25Phase1DemodMode", "DMRInterleavedVoice",
+  "P25Phase2TrellisMode", "P25Phase2RSMode", "P25Phase2InterleaveMode",
+  "P25Phase2ScramblerMode", "P25Phase2ClockMode", "NXDNViterbiMode",
+  "NXDNDeviationHz", "EDACSBCHMode", "MPT1327BCHMode", "MPT1327CWSCTolerance",
+  "MotorolaBCHMode", "DStarFECMode",
 ];
 
 function slug(name: string): string {
@@ -77,33 +101,162 @@ export function TrunkingSection() {
             <span className="text-sm font-medium">{sys.Name || `System ${i + 1}`}</span>
             <button className="btn-danger" onClick={() => removeSystem(i)}>Remove</button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <TextField label="Name" value={sys.Name} onChange={(x) => setSystem(i, { ...sys, Name: x })} />
-            <SelectField
-              label="Protocol"
-              value={sys.Protocol}
-              onChange={(x) => setSystem(i, { ...sys, Protocol: x })}
-              options={PROTOCOLS.map((p) => ({ value: p, label: p }))}
-            />
-          </div>
-          <FreqListField
-            label="Control channels"
-            value={sys.ControlChannels}
-            onChange={(x) => setSystem(i, { ...sys, ControlChannels: x })}
-          />
-          <TextField
-            label="Talkgroup file"
-            value={sys.TalkgroupFile}
-            onChange={(x) => setSystem(i, { ...sys, TalkgroupFile: x })}
-            placeholder="(optional) talkgroups.csv"
-            help="CSV/JSON of talkgroup aliases, relative to the config file."
-          />
+          <SystemEditor sys={sys} onChange={(next) => setSystem(i, next)} />
         </div>
       ))}
 
       {rrOpen ? <RRBrowseModal onClose={() => setRROpen(false)} onAdd={addSystem} /> : null}
       {importOpen ? <ImportModal onClose={() => setImportOpen(false)} onAdd={addSystem} /> : null}
     </Section>
+  );
+}
+
+// SystemEditor renders all fields of one trunking system: the common
+// fields inline, plus advanced fields (band plans, encryption keys,
+// protocol knobs) grouped in collapsible Fieldsets.
+function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig) => void }) {
+  const { sys, onChange } = props;
+  const dmrMode = dmrBandPlanMode(sys.DMRBandPlan);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField label="Name" value={sys.Name} onChange={(x) => onChange({ ...sys, Name: x })} />
+        <SelectField
+          label="Protocol"
+          value={sys.Protocol}
+          onChange={(x) => onChange({ ...sys, Protocol: x })}
+          options={PROTOCOLS.map((p) => ({ value: p, label: p }))}
+        />
+      </div>
+      <FreqListField
+        label="Control channels"
+        value={sys.ControlChannels}
+        onChange={(x) => onChange({ ...sys, ControlChannels: x })}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          label="Talkgroup file"
+          value={sys.TalkgroupFile}
+          onChange={(x) => onChange({ ...sys, TalkgroupFile: x })}
+          placeholder="(optional) talkgroups.csv"
+          help="CSV/JSON of talkgroup aliases, relative to the config file."
+        />
+        <TextField
+          label="RID alias file"
+          value={sys.RIDAliasFile ?? ""}
+          onChange={(x) => onChange({ ...sys, RIDAliasFile: x })}
+          placeholder="(optional) rids.csv"
+          help="CSV/JSON of radio-ID aliases, relative to the config file."
+        />
+      </div>
+
+      <Fieldset legend="P25 band plan (manual IDEN_UP override)">
+        <ListEditor<P25BandPlanEntry>
+          label="Channels"
+          items={sys.P25BandPlan}
+          onChange={(x) => onChange({ ...sys, P25BandPlan: x })}
+          makeNew={() => ({ ChannelID: 0, BaseHz: 0, SpacingHz: 0, TxOffsetHz: 0, BandwidthHz: 0 })}
+          itemTitle={(e) => `Channel ID ${e.ChannelID}`}
+          emptyHint="Only needed when a site never broadcasts IDEN_UP for a channel id."
+          renderItem={(e, set) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <NumberField label="Channel ID (0–15)" value={e.ChannelID} onChange={(v) => set({ ...e, ChannelID: v })} />
+              <HzField label="Base freq" value={e.BaseHz} onChange={(v) => set({ ...e, BaseHz: v })} />
+              <HzField label="Spacing" value={e.SpacingHz} onChange={(v) => set({ ...e, SpacingHz: v })} />
+              <NumberField label="Tx offset (Hz, signed)" value={e.TxOffsetHz} onChange={(v) => set({ ...e, TxOffsetHz: v })} />
+              <HzField label="Bandwidth" value={e.BandwidthHz} onChange={(v) => set({ ...e, BandwidthHz: v })} />
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="DMR band plan (required for DMR Tier III voice)">
+        <SelectField
+          label="Mode"
+          value={dmrMode}
+          onChange={(m) =>
+            onChange({ ...sys, DMRBandPlan: dmrBandPlanForMode(m as "none" | "linear" | "table", sys.DMRBandPlan) })
+          }
+          options={[
+            { value: "none", label: "none" },
+            { value: "linear", label: "linear (regular grid)" },
+            { value: "table", label: "table (explicit LCN→freq)" },
+          ]}
+        />
+        {dmrMode === "linear" && sys.DMRBandPlan?.Linear ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <HzField
+              label="Base freq"
+              value={sys.DMRBandPlan.Linear.BaseHz}
+              onChange={(v) =>
+                onChange({ ...sys, DMRBandPlan: { Linear: { ...sys.DMRBandPlan!.Linear!, BaseHz: v }, Table: null } })
+              }
+            />
+            <HzField
+              label="Spacing"
+              value={sys.DMRBandPlan.Linear.SpacingHz}
+              onChange={(v) =>
+                onChange({ ...sys, DMRBandPlan: { Linear: { ...sys.DMRBandPlan!.Linear!, SpacingHz: v }, Table: null } })
+              }
+            />
+            <NumberField
+              label="Offset"
+              value={sys.DMRBandPlan.Linear.Offset}
+              onChange={(v) =>
+                onChange({ ...sys, DMRBandPlan: { Linear: { ...sys.DMRBandPlan!.Linear!, Offset: v }, Table: null } })
+              }
+            />
+          </div>
+        ) : null}
+        {dmrMode === "table" ? (
+          <ListEditor<DMRBandPlanTableEntry>
+            label="LCN → frequency"
+            items={sys.DMRBandPlan?.Table}
+            onChange={(x) => onChange({ ...sys, DMRBandPlan: { Linear: null, Table: x } })}
+            makeNew={() => ({ LCN: 0, FreqHz: 0 })}
+            itemTitle={(e) => `LCN ${e.LCN}`}
+            renderItem={(e, set) => (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField label="LCN" value={e.LCN} onChange={(v) => set({ ...e, LCN: v })} />
+                <HzField label="Frequency" value={e.FreqHz} onChange={(v) => set({ ...e, FreqHz: v })} />
+              </div>
+            )}
+          />
+        ) : null}
+      </Fieldset>
+
+      <Fieldset legend="Encryption keys">
+        <ListEditor<EncryptionKey>
+          label="Keys"
+          items={sys.EncryptionKeys}
+          onChange={(x) => onChange({ ...sys, EncryptionKeys: x })}
+          makeNew={() => ({ KeyID: 0, Algorithm: "rc4", Key: "" })}
+          itemTitle={(e) => `Key ID ${e.KeyID}`}
+          emptyHint="Operator-supplied decryption keys (DMR RC4 / Enhanced Privacy)."
+          renderItem={(e, set) => (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <NumberField label="Key ID" value={e.KeyID} onChange={(v) => set({ ...e, KeyID: v })} />
+              <SelectField
+                label="Algorithm"
+                value={e.Algorithm}
+                onChange={(v) => set({ ...e, Algorithm: v })}
+                options={[{ value: "rc4", label: "rc4 (DMR Enhanced Privacy)" }]}
+              />
+              <TextField label="Key (hex)" value={e.Key} onChange={(v) => set({ ...e, Key: v })} />
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <AdvancedJSON<SystemConfig>
+        label="Advanced protocol knobs (JSON)"
+        value={sys}
+        onChange={onChange}
+        pick={PROTOCOL_KNOBS}
+        help="Protocol-specific decoder settings (TETRA/LTR/P25 Phase 1+2/NXDN/EDACS/MPT1327/Motorola/D-STAR). See the Trunking docs for accepted values; only set the keys you need."
+      />
+    </div>
   );
 }
 

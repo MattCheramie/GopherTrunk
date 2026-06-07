@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import type { GTConfig } from "../api/types";
-import { GenericSection } from "./Generic";
 import { SDRSection } from "./SDR";
 import { TrunkingSection } from "./Trunking";
 import {
@@ -16,17 +14,24 @@ import {
   StorageSection,
   WebSection,
 } from "./simple";
+import { ToneOutSection } from "./ToneOut";
+import { BroadcastSection } from "./Broadcast";
+import { BasebandSection } from "./Baseband";
+import { PagingSection } from "./Paging";
+import { APRSSection } from "./APRS";
+import { AISSection } from "./AIS";
+import { DSCSection } from "./DSC";
+import { MDC1200Section } from "./MDC1200";
+import { ADSBSection } from "./ADSB";
+import { M17Section } from "./M17";
 
 export interface SectionDef {
+  // key is the snake/lowercase section id used by the nav, the docs map,
+  // and the validator (so the badge + Docs link resolve). Components patch
+  // the draft with the capitalized Go field name internally.
   key: string;
   label: string;
   render: () => ReactNode;
-}
-
-// Advanced sections without a bespoke form yet fall back to the JSON
-// editor (still with instructions + docs + validation).
-function generic(key: keyof GTConfig, label: string, instructions: string): SectionDef {
-  return { key: String(key), label, render: () => <GenericSection sectionKey={key} title={label} instructions={instructions} /> };
 }
 
 export const SECTIONS: SectionDef[] = [
@@ -43,14 +48,14 @@ export const SECTIONS: SectionDef[] = [
   { key: "diagnostics", label: "Diagnostics", render: () => <DiagnosticsSection /> },
   { key: "radioreference", label: "RadioReference", render: () => <RadioReferenceSection /> },
   { key: "web", label: "Web UI", render: () => <WebSection /> },
-  generic("ToneOut", "Tone-out", "Two-tone / single-tone paging detection profiles."),
-  generic("Broadcast", "Broadcast", "Outbound call streaming: Broadcastify, RdioScanner, OpenMHz, Icecast."),
-  generic("Baseband", "Baseband", "IQ capture and replay for offline analysis."),
-  generic("Paging", "Paging", "POCSAG / FLEX pager decoders."),
-  generic("APRS", "APRS", "APRS / AX.25 AFSK receiver channels."),
-  generic("AIS", "AIS", "Marine AIS GMSK receiver channels."),
-  generic("DSC", "DSC", "Marine Digital Selective Calling receiver."),
-  generic("MDC1200", "MDC1200", "Motorola MDC1200 FFSK signaling decoder."),
-  generic("ADSB", "ADS-B", "ADS-B aircraft tracking."),
-  generic("M17", "M17", "M17 digital-voice link-setup decoder."),
+  { key: "tone_out", label: "Tone-out", render: () => <ToneOutSection /> },
+  { key: "broadcast", label: "Broadcast", render: () => <BroadcastSection /> },
+  { key: "baseband", label: "Baseband", render: () => <BasebandSection /> },
+  { key: "paging", label: "Paging", render: () => <PagingSection /> },
+  { key: "aprs", label: "APRS", render: () => <APRSSection /> },
+  { key: "ais", label: "AIS", render: () => <AISSection /> },
+  { key: "dsc", label: "DSC", render: () => <DSCSection /> },
+  { key: "mdc1200", label: "MDC1200", render: () => <MDC1200Section /> },
+  { key: "adsb", label: "ADS-B", render: () => <ADSBSection /> },
+  { key: "m17", label: "M17", render: () => <M17Section /> },
 ];

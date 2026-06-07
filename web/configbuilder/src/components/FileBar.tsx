@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useStore } from "../store/shared";
+import { downloadName, joinPath, pathCollides } from "../lib/fileName";
 import type { ConfigFileInfo } from "../api/types";
-
-function joinPath(dir: string, name: string): string {
-  if (!dir) return name;
-  return dir.replace(/[/\\]+$/, "") + "/" + name;
-}
 
 export function FileBar() {
   const path = useStore((s) => s.path);
@@ -96,6 +92,27 @@ export function FileBar() {
       <button className="btn-ghost" onClick={() => validateAll()}>
         Validate all
       </button>
+      <button
+        className="btn-ghost"
+        title="Download the current config as a YAML file (no server write)"
+        onClick={async () => {
+          const cfg = useStore.getState().config;
+          if (!cfg) return;
+          try {
+            const { yaml } = await api.marshal(cfg);
+            const url = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = downloadName(path);
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            setError(`Download failed: ${(e as Error).message}`);
+          }
+        }}
+      >
+        Download YAML
+      </button>
 
       <span className="help ml-2 truncate">
         {path ? path : "untitled (new config)"}
@@ -105,6 +122,7 @@ export function FileBar() {
       {saveOpen ? (
         <SaveDialog
           dirs={dirs}
+          files={files}
           defaultPath={path}
           onClose={() => setSaveOpen(false)}
           onSave={async (target, overwrite) => {
@@ -122,6 +140,7 @@ export function FileBar() {
 
 function SaveDialog(props: {
   dirs: string[];
+  files: ConfigFileInfo[];
   defaultPath: string;
   onClose: () => void;
   onSave: (path: string, overwrite: boolean) => void;
@@ -132,6 +151,8 @@ function SaveDialog(props: {
     props.defaultPath ? props.defaultPath.split(/[/\\]/).pop()! : "config.yaml",
   );
   const [overwrite, setOverwrite] = useState(false);
+  const target = joinPath(dir, name.trim());
+  const collides = !!name.trim() && pathCollides(props.files, target);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4">
@@ -168,6 +189,13 @@ function SaveDialog(props: {
           <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
           Overwrite if the file already exists
         </label>
+        {collides ? (
+          <p className="text-xs text-warn">
+            ⚠ {target} already exists. Saving re-marshals the whole file and
+            <strong> strips any YAML comments</strong> it had. Tick “Overwrite”
+            to proceed.
+          </p>
+        ) : null}
         {lastError ? <p className="text-xs text-err">{lastError}</p> : null}
         <div className="flex justify-end gap-2">
           <button className="btn-ghost" onClick={props.onClose}>
@@ -175,8 +203,8 @@ function SaveDialog(props: {
           </button>
           <button
             className="btn"
-            disabled={!name.trim() || !dir}
-            onClick={() => props.onSave(joinPath(dir, name.trim()), overwrite)}
+            disabled={!name.trim() || !dir || (collides && !overwrite)}
+            onClick={() => props.onSave(target, overwrite)}
           >
             Save
           </button>
