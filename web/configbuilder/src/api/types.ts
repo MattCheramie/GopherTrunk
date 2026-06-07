@@ -310,9 +310,20 @@ export interface PagingFLEXConfig {
   Serial: string;
   FrequencyHz: number;
 }
+export interface PagingWidebandChannel {
+  Protocol: string;
+  FrequencyHz: number;
+  BaudHz: number;
+}
+export interface PagingWidebandConfig {
+  Serial: string;
+  CenterFreqHz: number;
+  Channels: PagingWidebandChannel[] | null;
+}
 export interface PagingConfig {
   POCSAG: PagingPOCSAGConfig[] | null;
   FLEX: PagingFLEXConfig[] | null;
+  Wideband: PagingWidebandConfig[] | null;
 }
 
 export interface APRSChannelConfig {
