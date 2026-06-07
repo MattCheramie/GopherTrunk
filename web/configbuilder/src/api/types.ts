@@ -90,11 +90,48 @@ export interface WebConfig {
   Tabs: Record<string, boolean> | null;
 }
 
+export interface P25BandPlanEntry {
+  ChannelID: number;
+  BaseHz: number;
+  SpacingHz: number;
+  TxOffsetHz: number;
+  BandwidthHz: number;
+}
+
+export interface DMRLinearBandPlan {
+  BaseHz: number;
+  SpacingHz: number;
+  Offset: number;
+}
+
+export interface DMRBandPlanTableEntry {
+  LCN: number;
+  FreqHz: number;
+}
+
+export interface DMRBandPlan {
+  Linear: DMRLinearBandPlan | null;
+  Table: DMRBandPlanTableEntry[] | null;
+}
+
+export interface EncryptionKey {
+  KeyID: number;
+  Algorithm: string;
+  Key: string;
+}
+
 export interface SystemConfig {
   Name: string;
   Protocol: string;
   ControlChannels: number[] | null;
   TalkgroupFile: string;
+  RIDAliasFile?: string;
+  P25BandPlan?: P25BandPlanEntry[] | null;
+  DMRBandPlan?: DMRBandPlan | null;
+  EncryptionKeys?: EncryptionKey[] | null;
+  // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,
+  // EDACS*, MPT1327*, Motorola*, DStarFEC, DMRInterleavedVoice) round-trip
+  // through this index signature and are edited via AdvancedJSON.
   [k: string]: unknown;
 }
 
