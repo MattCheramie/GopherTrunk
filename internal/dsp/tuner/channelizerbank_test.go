@@ -35,6 +35,37 @@ func TestChannelizerBankSingleTapLandsAtDC(t *testing.T) {
 	}
 }
 
+// TestChannelizerBankWidebandRateLandsAtDC is a regression test for issue #550.
+// The report singled out the polyphase channelizer path as breaking on wideband
+// rates; this confirms a tone is cleanly extracted to baseband at 10 MHz (binRate
+// = 625 kHz, which reduces to an exact 48/625 resampler ratio).
+func TestChannelizerBankWidebandRateLandsAtDC(t *testing.T) {
+	const (
+		inRate  = 10_000_000.0
+		outRate = 48_000.0
+		M       = 16
+		toneAt  = 625_000.0 // bin 1 centre at this rate (binRate = 625 kHz)
+	)
+	b := NewChannelizerBank(inRate, outRate, 0.05, M, 16, 9.0)
+	var got []complex64
+	if err := b.AddTap(toneAt, func(out []complex64) {
+		got = append(got, out...)
+	}); err != nil {
+		t.Fatalf("AddTap: %v", err)
+	}
+	gen := newToneGen(inRate, 0.5, toneAt)
+	for i := 0; i < 8192 && len(got) < 2200; i++ {
+		b.Process(gen.Next(4096))
+	}
+	if len(got) < 1024 {
+		t.Fatalf("not enough output samples: %d", len(got))
+	}
+	settled := got[len(got)/2:]
+	if frac := powerNearDC(settled, outRate, 500); frac < 0.95 {
+		t.Errorf("wideband %.0f Hz: only %.1f%% of power within ±500 Hz of DC", inRate, frac*100)
+	}
+}
+
 func TestChannelizerBankResidualOffsetIsCorrected(t *testing.T) {
 	const (
 		inRate  = 2_400_000.0
