@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export function TextField(props: {
   label: string;
@@ -119,6 +119,64 @@ export function FreqListField(props: {
         {props.help ? <> {props.help}</> : null}
       </p>
     </label>
+  );
+}
+
+// HzField edits a single integer-Hz value as text, accepting MHz or Hz
+// (the scalar analogue of FreqListField, reusing parseFreqList/hzToDisplay).
+// It keeps a local text buffer so mid-edit values like "851." aren't
+// reformatted on every keystroke, and resyncs when the bound value changes
+// out-of-band (e.g. switching between items in a ListEditor).
+export function HzField(props: {
+  label: string;
+  value: number;
+  onChange: (hz: number) => void;
+  placeholder?: string;
+  help?: ReactNode;
+}) {
+  const [text, setText] = useState(props.value ? hzToDisplay(props.value) : "");
+  const emitted = useRef(props.value);
+  useEffect(() => {
+    if (props.value !== emitted.current) {
+      emitted.current = props.value;
+      setText(props.value ? hzToDisplay(props.value) : "");
+    }
+  }, [props.value]);
+  const onText = (raw: string) => {
+    setText(raw);
+    const hz = parseFreqList(raw)[0] ?? 0;
+    emitted.current = hz;
+    props.onChange(hz);
+  };
+  return (
+    <label className="block">
+      <span className="label">{props.label}</span>
+      <input
+        className="input font-mono"
+        value={text}
+        placeholder={props.placeholder ?? "MHz or Hz"}
+        onChange={(e) => onText(e.target.value)}
+      />
+      {props.help ? <p className="help mt-1">{props.help}</p> : null}
+    </label>
+  );
+}
+
+// Fieldset is a styled <details> accordion for grouping related controls
+// (band plans, encryption keys, remote sources) so large cards stay
+// scannable. Collapsed by default unless defaultOpen.
+export function Fieldset(props: {
+  legend: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details open={props.defaultOpen} className="rounded-md border border-white/10">
+      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+        {props.legend}
+      </summary>
+      <div className="space-y-3 p-3 pt-0">{props.children}</div>
+    </details>
   );
 }
 
