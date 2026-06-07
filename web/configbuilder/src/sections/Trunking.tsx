@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Section } from "../components/Section";
 import {
   Fieldset,
@@ -18,6 +18,7 @@ import type {
   EncryptionKey,
   P25BandPlanEntry,
   ParsedSystemDTO,
+  RRGeoRef,
   RRSearchHit,
   SystemConfig,
   TalkgroupCSVRow,
@@ -402,16 +403,55 @@ function RRBrowseModal(props: {
   onAdd: (sys: SystemConfig, tgs?: TalkgroupCSVRow[]) => void;
 }) {
   const setError = useStore((s) => s.setError);
-  const [kind, setKind] = useState<"zip" | "county" | "state">("zip");
+  const [mode, setMode] = useState<"name" | "zip" | "advanced">("name");
+
+  // name mode: state → county dropdowns.
+  const [states, setStates] = useState<RRGeoRef[] | null>(null);
+  const [counties, setCounties] = useState<RRGeoRef[] | null>(null);
+  const [stid, setStid] = useState("");
+  const [ctid, setCtid] = useState("");
+
+  // zip + advanced modes.
+  const [zip, setZip] = useState("");
+  const [kind, setKind] = useState<"county" | "state">("county");
   const [value, setValue] = useState("");
+
   const [hits, setHits] = useState<RRSearchHit[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const search = async () => {
+  // Lazy-load the state list when name mode is first shown.
+  useEffect(() => {
+    if (mode !== "name" || states !== null) return;
+    setBusy(true);
+    api
+      .rrStates()
+      .then((r) => setStates(r.results ?? []))
+      .catch((e) => setError(`RadioReference: ${(e as Error).message}`))
+      .finally(() => setBusy(false));
+  }, [mode, states, setError]);
+
+  const onStateChange = async (v: string) => {
+    setStid(v);
+    setCtid("");
+    setCounties(null);
+    setHits(null);
+    if (!v) return;
+    setBusy(true);
+    try {
+      const r = await api.rrCounties(Number(v));
+      setCounties(r.results ?? []);
+    } catch (e) {
+      setError(`RadioReference: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runSearch = async (fn: () => Promise<{ results: RRSearchHit[] | null }>) => {
     setBusy(true);
     setHits(null);
     try {
-      const r = await api.rrSearch(kind, value.trim());
+      const r = await fn();
       setHits(r.results ?? []);
     } catch (e) {
       setError(`RadioReference: ${(e as Error).message}`);
@@ -436,27 +476,92 @@ function RRBrowseModal(props: {
   return (
     <Modal title="Browse RadioReference.com" onClose={props.onClose}>
       <p className="help">
-        Search by ZIP code, county id (ctid), or state id (stid), then import a
-        system with its control channels and talkgroups. Requires RadioReference
-        credentials configured on the server.
+        Find a trunked system and import it with its control channels and
+        talkgroups. Requires RadioReference credentials configured on the server.
       </p>
-      <div className="flex gap-2">
-        <select className="input w-32" value={kind} onChange={(e) => setKind(e.target.value as "zip" | "county" | "state")}>
-          <option value="zip">ZIP</option>
-          <option value="county">County id</option>
-          <option value="state">State id</option>
-        </select>
-        <input
-          className="input"
-          value={value}
-          placeholder={kind === "zip" ? "78701" : "numeric id"}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && search()}
-        />
-        <button className="btn" disabled={busy || !value.trim()} onClick={search}>
-          Search
-        </button>
+      <div className="flex gap-2 text-sm">
+        {(["name", "zip", "advanced"] as const).map((m) => (
+          <button
+            key={m}
+            className={mode === m ? "btn" : "btn-ghost"}
+            onClick={() => {
+              setMode(m);
+              setHits(null);
+            }}
+          >
+            {m === "name" ? "By state/county" : m === "zip" ? "By ZIP" : "By ID"}
+          </button>
+        ))}
       </div>
+
+      {mode === "name" ? (
+        <div className="flex flex-wrap gap-2">
+          <select className="input w-44" value={stid} onChange={(e) => onStateChange(e.target.value)}>
+            <option value="">Select state…</option>
+            {(states ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-48"
+            value={ctid}
+            disabled={!counties}
+            onChange={(e) => {
+              setCtid(e.target.value);
+              if (e.target.value) runSearch(() => api.rrSearch("county", e.target.value));
+            }}
+          >
+            <option value="">Select county…</option>
+            {(counties ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          {stid ? (
+            <button className="btn-ghost" disabled={busy} onClick={() => runSearch(() => api.rrSearch("state", stid))}>
+              All systems in state
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {mode === "zip" ? (
+        <div className="flex gap-2">
+          <input
+            className="input"
+            value={zip}
+            placeholder="78701"
+            onChange={(e) => setZip(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch("zip", zip.trim()))}
+          />
+          <button className="btn" disabled={busy || !zip.trim()} onClick={() => runSearch(() => api.rrSearch("zip", zip.trim()))}>
+            Search
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "advanced" ? (
+        <div className="flex gap-2">
+          <select className="input w-32" value={kind} onChange={(e) => setKind(e.target.value as "county" | "state")}>
+            <option value="county">County id</option>
+            <option value="state">State id</option>
+          </select>
+          <input
+            className="input"
+            value={value}
+            placeholder="numeric ctid / stid"
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch(kind, value.trim()))}
+          />
+          <button className="btn" disabled={busy || !value.trim()} onClick={() => runSearch(() => api.rrSearch(kind, value.trim()))}>
+            Search
+          </button>
+        </div>
+      ) : null}
+
       {busy ? <p className="help">Working…</p> : null}
       {hits ? (
         hits.length === 0 ? (

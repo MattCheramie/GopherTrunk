@@ -63,6 +63,21 @@ export function App() {
     for (const e of errList) m[e.section] = (m[e.section] ?? 0) + 1;
     return m;
   }, [errList]);
+
+  // Flag sections whose draft differs from a blank config so a from-scratch
+  // build shows at a glance what's been touched.
+  const defaults = useStore((s) => s.defaults);
+  const configured = useMemo(() => {
+    const set = new Set<string>();
+    if (!config || !defaults) return set;
+    for (const s of SECTIONS) {
+      if (JSON.stringify(config[s.cfgKey]) !== JSON.stringify(defaults[s.cfgKey])) {
+        set.add(s.key);
+      }
+    }
+    return set;
+  }, [config, defaults]);
+
   const current = SECTIONS.find((s) => s.key === active) ?? SECTIONS[0];
 
   const jumpToFirstError = () => {
@@ -125,24 +140,35 @@ export function App() {
                   active === s.key ? "bg-accent/20 text-fg" : "text-muted hover:bg-white/5"
                 }`}
               >
-                <span>{s.label}</span>
+                <span className="flex items-center gap-1.5">
+                  {configured.has(s.key) ? (
+                    <span className="text-accent" title="Configured (differs from defaults)">
+                      ●
+                    </span>
+                  ) : (
+                    <span className="text-white/20" title="Empty (defaults)">
+                      ○
+                    </span>
+                  )}
+                  {s.label}
+                </span>
                 {n > 0 ? <span className="text-xs text-err">{n}</span> : null}
               </button>
             );
           })}
         </nav>
 
-        {/* Editor */}
-        <main className="min-w-0 flex-1 overflow-y-auto p-4">
-          {config ? current.render() : <p className="help">Loading defaults…</p>}
-        </main>
-
-        {/* Preview */}
-        {showPreview ? (
-          <aside className="hidden w-96 shrink-0 overflow-hidden border-l border-white/10 p-4 lg:block">
-            <YamlPreview />
-          </aside>
-        ) : null}
+        {/* Editor + preview — side by side on lg, stacked on small screens */}
+        <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+          <main className="min-w-0 flex-1 overflow-y-auto p-4">
+            {config ? current.render() : <p className="help">Loading defaults…</p>}
+          </main>
+          {showPreview ? (
+            <aside className="max-h-72 w-full shrink-0 overflow-hidden border-t border-white/10 p-4 lg:max-h-none lg:w-96 lg:border-l lg:border-t-0">
+              <YamlPreview />
+            </aside>
+          ) : null}
+        </div>
       </div>
 
       {/* Toasts */}

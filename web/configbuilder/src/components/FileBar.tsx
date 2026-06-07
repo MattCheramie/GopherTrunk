@@ -168,14 +168,32 @@ function SaveDialog(props: {
   onClose: () => void;
   onSave: (path: string, overwrite: boolean) => void;
 }) {
+  const setError = useStore((s) => s.setError);
   const lastError = useStore((s) => s.errors[s.errors.length - 1] ?? null);
-  const [dir, setDir] = useState(props.dirs[0] ?? "");
+  const [extraDirs, setExtraDirs] = useState<string[]>([]);
+  const allDirs = [...props.dirs, ...extraDirs];
+  const [dir, setDir] = useState(allDirs[0] ?? "");
   const [name, setName] = useState(
     props.defaultPath ? props.defaultPath.split(/[/\\]/).pop()! : "config.yaml",
   );
+  const [newFolder, setNewFolder] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const target = joinPath(dir, name.trim());
   const collides = !!name.trim() && pathCollides(props.files, target);
+
+  const createFolder = async () => {
+    const folder = newFolder.trim();
+    if (!folder || !dir) return;
+    const full = joinPath(dir, folder);
+    try {
+      const r = await api.mkdir(full);
+      setExtraDirs((d) => (d.includes(r.path) ? d : [...d, r.path]));
+      setDir(r.path);
+      setNewFolder("");
+    } catch (e) {
+      setError(`Create folder failed: ${(e as Error).message}`);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4">
@@ -189,16 +207,32 @@ function SaveDialog(props: {
         <label className="block">
           <span className="label">Directory</span>
           <select className="input" value={dir} onChange={(e) => setDir(e.target.value)}>
-            {props.dirs.map((d) => (
+            {allDirs.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
           </select>
           <p className="help mt-1">
-            Saves are restricted to the server's config discovery directories.
+            Saves are restricted to the server's config directories (and
+            subfolders you create below).
           </p>
         </label>
+        <div className="flex items-end gap-2">
+          <label className="block flex-1">
+            <span className="label">New subfolder</span>
+            <input
+              className="input"
+              value={newFolder}
+              placeholder="e.g. clients/acme"
+              onChange={(e) => setNewFolder(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), createFolder())}
+            />
+          </label>
+          <button className="btn-ghost" disabled={!newFolder.trim()} onClick={createFolder}>
+            Create
+          </button>
+        </div>
         <label className="block">
           <span className="label">Filename</span>
           <input

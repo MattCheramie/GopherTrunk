@@ -30,6 +30,18 @@ export function ListEditor<T>(props: {
     props.onChange(items.filter((_, k) => k !== i));
   };
   const add = () => props.onChange([...items, props.makeNew()]);
+  const duplicate = (i: number) => {
+    const copy = items.slice();
+    copy.splice(i + 1, 0, structuredClone(items[i]));
+    props.onChange(copy);
+  };
+  const move = (i: number, delta: number) => {
+    const j = i + delta;
+    if (j < 0 || j >= items.length) return;
+    const copy = items.slice();
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+    props.onChange(copy);
+  };
 
   return (
     <div className="space-y-3">
@@ -60,9 +72,30 @@ export function ListEditor<T>(props: {
                 </button>
               </span>
             ) : (
-              <button className="btn-danger" onClick={() => setConfirm(i)}>
-                Remove
-              </button>
+              <span className="flex items-center gap-1">
+                <button
+                  className="btn-ghost"
+                  title="Move up"
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  className="btn-ghost"
+                  title="Move down"
+                  disabled={i === items.length - 1}
+                  onClick={() => move(i, 1)}
+                >
+                  ↓
+                </button>
+                <button className="btn-ghost" title="Duplicate" onClick={() => duplicate(i)}>
+                  Duplicate
+                </button>
+                <button className="btn-danger" onClick={() => setConfirm(i)}>
+                  Remove
+                </button>
+              </span>
             )}
           </div>
           {props.renderItem(item, (next) => setItem(i, next), i)}
