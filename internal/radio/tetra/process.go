@@ -18,9 +18,10 @@ type processState struct {
 	// BNCH after it). See processSB.
 	stsDet     *SyncDetector
 	stsScratch []int
-	buf        []uint8 // rolling dibit window
-	bufBase    int     // absolute dibit index of buf[0]
-	pendingSTS []int   // STS leading indices awaiting look-ahead
+	buf        []uint8     // rolling dibit window
+	softBuf    []complex64 // per-dibit soft differential, parallel to buf (nil ⇒ hard-only)
+	bufBase    int         // absolute dibit index of buf[0] / softBuf[0]
+	pendingSTS []int       // STS leading indices awaiting look-ahead
 }
 
 // Synchronisation downlink burst (SB) geometry in dibits, per ETSI
@@ -98,9 +99,12 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 
 	// SB-burst path: auto-learn the colour code from the BSCH and decode
 	// the BNCH SYSINFO. Only meaningful with channel coding on (real
-	// bursts); skipped for the synthetic raw-PDU fixtures.
+	// bursts); skipped for the synthetic raw-PDU fixtures. The soft
+	// differentials (when the receiver supplies them via StashSoft) ride
+	// alongside for soft-decision decoding.
 	if mode == ChannelCodingOn {
-		c.processSB(p, dibits, baseIdx)
+		diffs := c.takeStashSoft(baseIdx, len(dibits))
+		c.processSB(p, dibits, diffs, baseIdx)
 	}
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], dibits, baseIdx)
@@ -141,18 +145,52 @@ func rotateDibits(dibits []uint8, rot uint8) []uint8 {
 	return out
 }
 
+// softType5FromDiffs converts a block of per-symbol complex differentials
+// into the soft type-5 LLR stream the soft channel decoders expect, under
+// constellation rotation rot. For the demod differential d, the two
+// on-air bits' LLRs are Im(d) (b1) and Re(d) (b2) (positive ⇒ bit 0);
+// rotating the constellation by rot·90° is d·e^{j·rot·π/2}. The output
+// hard-slices to exactly TetraDibitsToBits(rotateDibits(dibits, rot)).
+func softType5FromDiffs(diffs []complex64, rot uint8) []float32 {
+	out := make([]float32, len(diffs)*2)
+	for i, d := range diffs {
+		var dr complex64
+		switch rot & 3 {
+		case 0:
+			dr = d
+		case 1: // ×j
+			dr = complex(-imag(d), real(d))
+		case 2: // ×-1
+			dr = complex(-real(d), -imag(d))
+		case 3: // ×-j
+			dr = complex(imag(d), -real(d))
+		}
+		out[2*i] = imag(dr)   // b1 LLR
+		out[2*i+1] = real(dr) // b2 LLR
+	}
+	return out
+}
+
 // processSB maintains the rolling dibit buffer, detects the
 // synchronisation training sequence (STS), and once a buffer covers the
 // whole synchronisation burst around an STS hit, decodes the BSCH (to
 // learn the colour code) and the BNCH SYSINFO. The BSCH is scrambled
 // with colour code 0, so this works on a cold receiver with no
 // configured colour code (issue #553).
-func (c *ControlChannel) processSB(p *processState, dibits []uint8, baseIdx int) {
+func (c *ControlChannel) processSB(p *processState, dibits []uint8, diffs []complex64, baseIdx int) {
 	// Align the buffer base on the first call.
 	if len(p.buf) == 0 {
 		p.bufBase = baseIdx
 	}
 	p.buf = append(p.buf, dibits...)
+	// Keep the soft buffer strictly parallel to buf. It stays in lockstep
+	// only while soft data is supplied every call; if a call lacks it
+	// (len mismatch), drop the soft path rather than misalign.
+	if diffs != nil && len(diffs) == len(dibits) && len(p.softBuf) == len(p.buf)-len(dibits) {
+		p.softBuf = append(p.softBuf, diffs...)
+	} else if len(p.softBuf) != len(p.buf) {
+		p.softBuf = p.softBuf[:0]
+	}
 
 	var hits []int
 	hits, _ = p.stsDet.Process(p.stsScratch[:0], dibits, baseIdx)
@@ -190,6 +228,9 @@ func (c *ControlChannel) processSB(p *processState, dibits []uint8, baseIdx int)
 			drop = len(p.buf)
 		}
 		p.buf = append(p.buf[:0], p.buf[drop:]...)
+		if len(p.softBuf) >= drop {
+			p.softBuf = append(p.softBuf[:0], p.softBuf[drop:]...)
+		}
 		p.bufBase += drop
 	}
 }
@@ -203,14 +244,31 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		s := start - p.bufBase
 		return p.buf[s : s+n]
 	}
+	// softBlock returns the per-dibit soft differentials for a block, or
+	// nil when the receiver supplied no soft data (hard-only path).
+	softBlock := func(start, n int) []complex64 {
+		if len(p.softBuf) != len(p.buf) {
+			return nil
+		}
+		s := start - p.bufBase
+		return p.softBuf[s : s+n]
+	}
 
-	// BSCH (block 1), scrambled with colour code 0. Try all rotations.
+	// BSCH (block 1), scrambled with colour code 0. Try all rotations,
+	// soft-decision when soft differentials are available.
 	bsch := block(L-sbBSCHDibits, sbBSCHDibits)
+	bschSoft := softBlock(L-sbBSCHDibits, sbBSCHDibits)
 	var sync SyncPDU
 	found := false
 	for rot := uint8(0); rot < 4 && !found; rot++ {
-		bits := TetraDibitsToBits(rotateDibits(bsch, rot))
-		if recovered, ok := DecodeBSCH(bits); ok {
+		var recovered []byte
+		var ok bool
+		if bschSoft != nil {
+			recovered, ok = DecodeBSCHSoft(softType5FromDiffs(bschSoft, rot))
+		} else {
+			recovered, ok = DecodeBSCH(TetraDibitsToBits(rotateDibits(bsch, rot)))
+		}
+		if ok {
 			if s, ok := ParseSyncPDU(recovered); ok {
 				sync, found = s, true
 			}
@@ -232,9 +290,15 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 	// them).
 	colour := c.ColourCode()
 	bnch := block(L+stsDibits+sbBroadcastDibits, sbBNCHDibits)
+	bnchSoft := softBlock(L+stsDibits+sbBroadcastDibits, sbBNCHDibits)
 	for rot := uint8(0); rot < 4; rot++ {
-		bits := TetraDibitsToBits(rotateDibits(bnch, rot))
-		recovered, ok := DecodeSCHHD(bits, colour)
+		var recovered []byte
+		var ok bool
+		if bnchSoft != nil {
+			recovered, ok = DecodeSCHHDSoft(softType5FromDiffs(bnchSoft, rot), colour)
+		} else {
+			recovered, ok = DecodeSCHHD(TetraDibitsToBits(rotateDibits(bnch, rot)), colour)
+		}
 		if !ok {
 			continue
 		}

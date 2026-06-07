@@ -125,6 +125,55 @@ func signalingDecode(type5 []byte, interleaverK, interleaverA int, colourCode ui
 	return info, true
 }
 
+// decodeRCPCRate23Soft is the soft-decision analog of decodeRCPCRate23:
+// soft depuncture (erasures at punctured positions) + soft Viterbi over
+// len(type3LLR)*2/3 stages.
+func decodeRCPCRate23Soft(type3LLR []float32) []byte {
+	stages := (2 * len(type3LLR)) / 3
+	motherLen := 4 * stages
+	mother := framing.DepunctureRCPCTetraSigSoft(type3LLR, framing.RCPCTetraSigPuncture23, motherLen, nil)
+	out, _ := framing.DecodeRCPCTetraSigMotherSoft(mother, stages)
+	return out
+}
+
+// signalingDecodeSoft is the soft-decision analog of signalingDecode:
+// it runs the same descramble → deinterleave → depuncture → Viterbi
+// chain on per-bit LLRs (LLR > 0 ⇒ bit 0), then strips the tail and
+// verifies the CRC on the hard Viterbi output. type5LLR holds K3 LLRs.
+func signalingDecodeSoft(type5LLR []float32, interleaverK, interleaverA int, colourCode uint32, k1 int) ([]byte, bool) {
+	if len(type5LLR) != interleaverK {
+		return nil, false
+	}
+	type4 := framing.DescrambleTetraSoft(type5LLR, colourCode)
+	type3 := framing.BlockDeinterleaveTetraSoft(type4, interleaverK, interleaverA)
+	type2 := decodeRCPCRate23Soft(type3) // K1 + 20 hard bits
+	if len(type2) < k1+20 {
+		return nil, false
+	}
+	blockEncoded := type2[:k1+16]
+	info := blockEncoded[:k1]
+	receivedCRC := uint16(0)
+	for i := 0; i < 16; i++ {
+		receivedCRC = (receivedCRC << 1) | uint16(blockEncoded[k1+i]&1)
+	}
+	if crcTetraK1Plus16(info) != receivedCRC {
+		return info, false
+	}
+	return info, true
+}
+
+// DecodeSCHHDSoft is the soft-decision analog of DecodeSCHHD: 216 type-5
+// LLRs → 124 type-1 bits + CRC-pass flag.
+func DecodeSCHHDSoft(type5LLR []float32, colourCode uint32) ([]byte, bool) {
+	return signalingDecodeSoft(type5LLR, framing.InterleaveKSCHHD, framing.InterleaveASCHHD, colourCode, 124)
+}
+
+// DecodeBSCHSoft is the soft-decision analog of DecodeBSCH: 120 type-5
+// LLRs → 60 type-1 bits + CRC-pass flag. Colour code is 0 for BSCH.
+func DecodeBSCHSoft(type5LLR []float32) ([]byte, bool) {
+	return signalingDecodeSoft(type5LLR, framing.InterleaveKBSCH, framing.InterleaveABSCH, 0, 60)
+}
+
 // EncodeSCHHD runs 124 type-1 bits through the SCH/HD chain per
 // §8.3.1.4.1 — also valid for BNCH and STCH which share the same
 // coding. Returns 216 type-5 bits.
