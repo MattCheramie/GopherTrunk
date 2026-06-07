@@ -48,9 +48,15 @@ collapses into one fat blob. Three controls work around this:
   to remove any residual offset; auto-scale eases a gain so the cloud
   fills the unit circle (targeting the ~95th-percentile radius, so a
   stray outlier doesn't shrink the whole cloud). Both default on.
-- **Zoom** — magnifies the plotted cloud and the dot size together, so
-  the scatter reads as dots rather than pin-pricks; dial it to taste.
-  The setting persists across visits.
+- **Zoom** — magnifies the plotted cloud and the dot size together (up to
+  8×), so the scatter reads as dots rather than pin-pricks; dial it to
+  taste to punch in on the symbol structure. The setting persists across
+  visits.
+
+The plot itself is a responsive square that fills the panel column (up to
+880 px) rather than a fixed thumbnail, so it renders as large as OP25's —
+and it stays crisp at any size because the canvas is drawn at the display's
+device-pixel ratio.
 
 Common shapes:
 
