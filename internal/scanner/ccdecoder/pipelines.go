@@ -534,6 +534,11 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// correlating (issue #553). The AFC acquires ~0 on a centred
 		// signal, so it is a near-noop there.
 		EnableAFC: true,
+		// The channelised stream is far wider than a 25 kHz TETRA
+		// channel, so adjacent carriers leak through to the matched
+		// filter. The channel-select filter rejects them — measured to
+		// cut the on-air symbol error rate by ~10x (issue #553).
+		EnableChannelFilter: true,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil
 }

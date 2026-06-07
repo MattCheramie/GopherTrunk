@@ -121,9 +121,12 @@ var fixtures = map[trunking.Protocol]fixture{
 		expected:   Acceptance{Lock: boolPtr(true)},
 	},
 	trunking.ProtocolTETRA: {
-		build:       func() []uint8 { return buildTETRASCHHDStream(100, 0x12345, 0x42) },
-		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulatePiOver4DQPSK(d, 4, 8, 0.35, math.Pi/4) },
-		sampleRate:  72_000,
+		build: func() []uint8 { return buildTETRASCHHDStream(100, 0x12345, 0x42) },
+		// 144 kHz / 8 sps matches the production DDC target (the live
+		// path channelises to 144 kHz), so the synth exercises the same
+		// receiver configuration — including the channel-select filter.
+		modulate:    func(d []uint8, _ float64) []complex64 { return demod.ModulatePiOver4DQPSK(d, 8, 8, 0.35, math.Pi/4) },
+		sampleRate:  144_000,
 		systemKnobs: map[string]string{"tetra_colour_code": "0x12345", "tetra_channel": "sch/hd"},
 		expected: Acceptance{
 			Lock:       boolPtr(true),
