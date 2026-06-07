@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/metrics"
+	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
@@ -49,7 +51,20 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 	gtweb "github.com/MattCheramie/GopherTrunk/web"
+	configbuilderweb "github.com/MattCheramie/GopherTrunk/web/configbuilder"
 )
+
+// firstNonEmptyStr returns the first non-empty (after trimming) string of
+// its arguments, or "" when all are blank. Used to layer env-var RR
+// credentials over the config file values.
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // parseGain converts a config.DeviceConfig.Gain value to a tenths-
 // of-dB integer suitable for sdr.Device.SetGain. Accepts:
@@ -1796,6 +1811,26 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// these routes). Enabled on the daemon too so an operator can
 		// analyze captures without spinning up a separate `siglab serve`.
 		opts.Siglab = api.SiglabOptions{Enabled: true}
+		// Web Config Builder/Editor — link the editor SPA at /config/ and
+		// the /api/v1/config/* routes so the operator can edit config from
+		// the main web UI in a new tab. Saves are constrained to the live
+		// config's directory (or the standard discovery dirs when started
+		// without -config). RR credentials: env overrides config.
+		cbOpts := api.ConfigBuilderOptions{
+			Enabled: true,
+			RadioReference: radioreference.Auth{
+				AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
+				Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
+				Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
+			},
+		}
+		if d.cfgPath != "" {
+			cbOpts.ConfigDir = filepath.Dir(d.cfgPath)
+		}
+		if configbuilderweb.HasAssets() {
+			cbOpts.Assets = configbuilderweb.Assets()
+		}
+		opts.ConfigBuilder = cbOpts
 		srv, err := api.NewServer(opts)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: http api: %w", err)

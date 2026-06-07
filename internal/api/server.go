@@ -352,6 +352,13 @@ type Server struct {
 	// siglabStop signals the siglab TTL sweeper to exit on shutdown.
 	siglabStop chan struct{}
 
+	// configBuilder backs the standalone web Config Builder/Editor:
+	// the /api/v1/config/* routes (browse / load / validate / save /
+	// RadioReference browse) and, when assets are wired, the builder SPA
+	// mounted at /config/. nil disables all of it. Set by the daemon and
+	// the standalone `gophertrunk config serve` command.
+	configBuilder *configBuilderService
+
 	// diagnostics is the shared error-diagnostics collector (banner +
 	// system info). nil disables banner enrichment of error responses
 	// and the GET /api/v1/diag/banner route.
@@ -576,6 +583,12 @@ type ServerOptions struct {
 	// (/api/v1/siglab/*) and constructs the in-memory job/capture store.
 	// The daemon and the standalone `siglab serve` command both set it.
 	Siglab SiglabOptions
+	// ConfigBuilder, when Enabled, mounts the web Config Builder/Editor
+	// routes (/api/v1/config/*) and — when Assets is non-nil — the builder
+	// SPA at /config/. The daemon sets it so the operator can edit config
+	// from the main UI in a new tab; the standalone `gophertrunk config
+	// serve` command sets it (with the SPA in WebAssets, served at /).
+	ConfigBuilder ConfigBuilderOptions
 	// Diagnostics is the shared error-diagnostics collector (banner +
 	// system info). The daemon injects one seeded with its SDR pool
 	// snapshot so the error path never re-enumerates USB. Optional; nil
@@ -696,6 +709,14 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		siglabStop = make(chan struct{})
 		go svc.runSweeper(siglabStop)
 	}
+	var configBuilderSvc *configBuilderService
+	if opts.ConfigBuilder.Enabled {
+		svc, cberr := newConfigBuilderService(opts.ConfigBuilder)
+		if cberr != nil {
+			return nil, cberr
+		}
+		configBuilderSvc = svc
+	}
 	return &Server{
 		addr:           opts.Addr,
 		bus:            opts.Bus,
@@ -736,6 +757,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		symbols:        opts.Symbols,
 		siglab:         siglabSvc,
 		siglabStop:     siglabStop,
+		configBuilder:  configBuilderSvc,
 		diagnostics:    opts.Diagnostics,
 		verboseErrors:  opts.VerboseErrors,
 		pager:          opts.Pager,
@@ -983,6 +1005,37 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/captures/{id}/download", s.handleSiglabCaptureDownload)
 	}
 
+	// Config Builder/Editor — browse/load/validate/save config files,
+	// browse RadioReference, and parse PDF/CSV into a draft. Reads are
+	// open (like siglab); save is gated behind allow_mutations. Mounted
+	// only when the subsystem is enabled (the daemon and the standalone
+	// `gophertrunk config serve` command).
+	if s.configBuilder != nil {
+		mux.HandleFunc("GET /api/v1/config/files", s.handleConfigList)
+		mux.HandleFunc("GET /api/v1/config/file", s.handleConfigLoad)
+		mux.HandleFunc("GET /api/v1/config/defaults", s.handleConfigDefaults)
+		mux.HandleFunc("GET /api/v1/config/docs", s.handleConfigDocs)
+		mux.HandleFunc("POST /api/v1/config/validate", s.handleConfigValidate)
+		mux.HandleFunc("POST /api/v1/config/marshal", s.handleConfigMarshal)
+		mux.HandleFunc("POST /api/v1/config/file", s.gate(s.handleConfigSave))
+		mux.HandleFunc("POST /api/v1/config/parse", s.gate(s.handleConfigParse))
+		mux.HandleFunc("GET /api/v1/config/rr/search", s.handleConfigRRSearch)
+		mux.HandleFunc("GET /api/v1/config/rr/system/{sid}", s.handleConfigRRSystem)
+
+		// Secondary SPA at /config/ (daemon path). The standalone
+		// `config serve` puts the SPA in WebAssets (served at /) instead,
+		// so this only fires on the daemon. The /config/ matcher is more
+		// specific than the GET / catch-all, so both trees coexist.
+		if s.configBuilder.assets != nil {
+			if _, err := fs.Stat(s.configBuilder.assets, "index.html"); err == nil {
+				mux.Handle("GET /config/", s.configSpaHandler())
+				mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, "/config/", http.StatusMovedPermanently)
+				})
+			}
+		}
+	}
+
 	// Pager log — recent POCSAG (and eventually FLEX) messages.
 	// Read-only; the decoder writes via the events bus → PagerLog.
 	mux.HandleFunc("GET /api/v1/pager/messages", s.handlePagerMessages)
@@ -1042,6 +1095,36 @@ func (s *Server) spaHandler() http.Handler {
 		}
 		// Fallback to index.html so the SPA's router resolves
 		// /scanner, /settings, /import, ... on the client.
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/"
+		fileSrv.ServeHTTP(w, r2)
+	})
+}
+
+// configSpaHandler serves the Config Builder SPA mounted under /config/
+// on the daemon (the standalone `config serve` serves it at / via
+// spaHandler). It strips the /config/ prefix before hitting the embedded
+// file tree and falls back to the builder's index.html for client-side
+// routes, mirroring spaHandler but rooted one level down.
+func (s *Server) configSpaHandler() http.Handler {
+	assets := s.configBuilder.assets
+	fileSrv := http.FileServerFS(assets)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rel := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/config/"), "/")
+		if rel == "" {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			fileSrv.ServeHTTP(w, r2)
+			return
+		}
+		if _, err := fs.Stat(assets, rel); err == nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + rel
+			fileSrv.ServeHTTP(w, r2)
+			return
+		}
+		// Unknown sub-path → serve index.html so the builder's client
+		// router can resolve it.
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"
 		fileSrv.ServeHTTP(w, r2)

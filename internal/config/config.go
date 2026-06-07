@@ -1288,7 +1288,76 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+// sectionValidator pairs a config section's logical name (matching the
+// keys the web Config Builder uses) with the helper that validates it.
+type sectionValidator struct {
+	name string
+	fn   func(Config) error
+}
+
+// sectionValidators returns the per-section validators in the same order
+// the monolithic Validate() used to run them, so the first error reported
+// by Validate() is unchanged. Sections with no rules (log, api, storage,
+// metrics, …) are intentionally absent — ValidateSection treats an unknown
+// or rule-free section as valid.
+func sectionValidators() []sectionValidator {
+	return []sectionValidator{
+		{"sdr", Config.validateSDR},
+		{"trunking", Config.validateTrunking},
+		{"recordings", Config.validateRecordings},
+		{"retention", Config.validateRetention},
+		{"scanner", Config.validateScanner},
+		{"audio", Config.validateAudio},
+		{"broadcast", Config.validateBroadcast},
+		{"baseband", Config.validateBaseband},
+		{"web", Config.validateWeb},
+	}
+}
+
+// Validate reports the first configuration error, keyed by section path
+// (e.g. "trunking.systems[0]: name required"). It is the authoritative
+// gate run by Load and the config Writer. The checks are organised into
+// per-section helpers so the web Config Builder can validate one section
+// at a time (ValidateSection) or collect one error per section
+// (ValidateAll); Validate preserves the original first-error contract.
 func (c Config) Validate() error {
+	for _, v := range sectionValidators() {
+		if err := v.fn(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateAll runs every section validator and returns one error per
+// failing section (the first error within each). An empty slice means the
+// whole config is valid. The web Config Builder uses this to light up
+// every section that needs attention in a single pass.
+func (c Config) ValidateAll() []error {
+	var errs []error
+	for _, v := range sectionValidators() {
+		if err := v.fn(c); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+// ValidateSection validates a single section by name (the keys returned by
+// sectionValidators / used by the web Config Builder). An unknown or
+// rule-free section name yields nil (treated as valid). Cross-section
+// checks (e.g. wideband channels referencing trunking.systems) run against
+// the whole Config, so the caller should pass a fully-populated draft.
+func (c Config) ValidateSection(section string) error {
+	for _, v := range sectionValidators() {
+		if v.name == section {
+			return v.fn(c)
+		}
+	}
+	return nil
+}
+
+func (c Config) validateSDR() error {
 	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 20_000_000) {
 		return errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz")
 	}
@@ -1372,6 +1441,10 @@ func (c Config) Validate() error {
 		}
 		seenSerials[s.Serial] = i
 	}
+	return nil
+}
+
+func (c Config) validateTrunking() error {
 	if c.Trunking.CallTimeoutMs < 0 {
 		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)
 	}
@@ -1453,24 +1526,40 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	return nil
+}
+
+func (c Config) validateRecordings() error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)
 	}
+	return nil
+}
+
+func (c Config) validateRetention() error {
 	if c.Retention.Interval != "" {
 		if _, err := parseDurationFlexible(c.Retention.Interval); err != nil {
 			return fmt.Errorf("retention.interval: %w", err)
 		}
 	}
-	switch c.Scanner.ScanMode {
-	case "", "all", "list":
-	default:
-		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
-	}
+	return nil
+}
+
+func (c Config) validateAudio() error {
 	if c.Audio.SampleRate != 0 && (c.Audio.SampleRate < 4000 || c.Audio.SampleRate > 48_000) {
 		return fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate)
 	}
 	if c.Audio.Volume != 0 && (c.Audio.Volume < 0 || c.Audio.Volume > 1) {
 		return fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume)
+	}
+	return nil
+}
+
+func (c Config) validateScanner() error {
+	switch c.Scanner.ScanMode {
+	case "", "all", "list":
+	default:
+		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
 	}
 	for i, ch := range c.Scanner.Conventional {
 		if ch.FrequencyHz == 0 {
@@ -1502,9 +1591,14 @@ func (c Config) Validate() error {
 			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
 		}
 	}
-	if err := c.Broadcast.validate(); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (c Config) validateBroadcast() error {
+	return c.Broadcast.validate()
+}
+
+func (c Config) validateBaseband() error {
 	for i, r := range c.Baseband.Record {
 		if r.Serial == "" {
 			return fmt.Errorf("baseband.record[%d]: serial required", i)
@@ -1523,6 +1617,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
 		}
 	}
+	return nil
+}
+
+func (c Config) validateWeb() error {
 	for key := range c.Web.Tabs {
 		if !KnownUITabs[key] {
 			valid := make([]string, 0, len(KnownUITabs))

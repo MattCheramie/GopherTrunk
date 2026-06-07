@@ -1,0 +1,187 @@
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import { useStore } from "../store/shared";
+import type { ConfigFileInfo } from "../api/types";
+
+function joinPath(dir: string, name: string): string {
+  if (!dir) return name;
+  return dir.replace(/[/\\]+$/, "") + "/" + name;
+}
+
+export function FileBar() {
+  const path = useStore((s) => s.path);
+  const dirty = useStore((s) => s.dirty);
+  const load = useStore((s) => s.load);
+  const newConfig = useStore((s) => s.newConfig);
+  const save = useStore((s) => s.save);
+  const validateAll = useStore((s) => s.validateAll);
+  const setError = useStore((s) => s.setError);
+
+  const [files, setFiles] = useState<ConfigFileInfo[]>([]);
+  const [dirs, setDirs] = useState<string[]>([]);
+  const [openMenu, setOpenMenu] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const r = await api.listFiles();
+      setFiles(r.files ?? []);
+      setDirs(r.dirs ?? []);
+    } catch (e) {
+      setError(`List failed: ${(e as Error).message}`);
+    }
+  };
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button className="btn-ghost" onClick={() => newConfig()}>
+        New
+      </button>
+
+      <div className="relative">
+        <button
+          className="btn-ghost"
+          onClick={() => {
+            setOpenMenu((o) => !o);
+            if (!openMenu) refresh();
+          }}
+        >
+          Open ▾
+        </button>
+        {openMenu ? (
+          <div className="absolute z-30 mt-1 max-h-80 w-80 overflow-y-auto rounded-md border border-white/15 bg-panel p-1 shadow-lg">
+            {files.length === 0 ? (
+              <div className="help p-2">No config files found in the discovery directories.</div>
+            ) : (
+              files.map((f) => (
+                <button
+                  key={f.path}
+                  className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/5"
+                  onClick={() => {
+                    setOpenMenu(false);
+                    load(f.path);
+                  }}
+                  title={f.path}
+                >
+                  <span className={f.valid ? "" : "text-warn"}>
+                    {f.valid ? "" : "⚠ "}
+                    {f.name}
+                  </span>
+                  <span className="help block truncate">{f.dir}</span>
+                </button>
+              ))
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <button
+        className="btn"
+        onClick={async () => {
+          if (!path) {
+            setSaveOpen(true);
+            return;
+          }
+          if (await save(path, true)) refresh();
+        }}
+      >
+        Save
+      </button>
+      <button className="btn-ghost" onClick={() => setSaveOpen(true)}>
+        Save As…
+      </button>
+      <button className="btn-ghost" onClick={() => validateAll()}>
+        Validate all
+      </button>
+
+      <span className="help ml-2 truncate">
+        {path ? path : "untitled (new config)"}
+        {dirty ? " — unsaved changes" : ""}
+      </span>
+
+      {saveOpen ? (
+        <SaveDialog
+          dirs={dirs}
+          defaultPath={path}
+          onClose={() => setSaveOpen(false)}
+          onSave={async (target, overwrite) => {
+            const ok = await save(target, overwrite);
+            if (ok) {
+              setSaveOpen(false);
+              refresh();
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SaveDialog(props: {
+  dirs: string[];
+  defaultPath: string;
+  onClose: () => void;
+  onSave: (path: string, overwrite: boolean) => void;
+}) {
+  const lastError = useStore((s) => s.lastError);
+  const [dir, setDir] = useState(props.dirs[0] ?? "");
+  const [name, setName] = useState(
+    props.defaultPath ? props.defaultPath.split(/[/\\]/).pop()! : "config.yaml",
+  );
+  const [overwrite, setOverwrite] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4">
+      <div className="card w-full max-w-lg space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold">Save config</h3>
+          <button className="btn-ghost" onClick={props.onClose}>
+            Close
+          </button>
+        </div>
+        <label className="block">
+          <span className="label">Directory</span>
+          <select className="input" value={dir} onChange={(e) => setDir(e.target.value)}>
+            {props.dirs.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <p className="help mt-1">
+            Saves are restricted to the server's config discovery directories.
+          </p>
+        </label>
+        <label className="block">
+          <span className="label">Filename</span>
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="config.yaml"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
+          Overwrite if the file already exists
+        </label>
+        {lastError ? <p className="text-xs text-err">{lastError}</p> : null}
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={props.onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn"
+            disabled={!name.trim() || !dir}
+            onClick={() => props.onSave(joinPath(dir, name.trim()), overwrite)}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -46,6 +46,26 @@ type ParsedSystemDTO struct {
 	TalkgroupCt int                    `json:"talkgroup_count"`
 	SourcePath  string                 `json:"source_path,omitempty"`
 	Extra       map[string]interface{} `json:"extra,omitempty"`
+
+	// ControlChannels and Talkgroups carry the parsed detail the web
+	// Config Builder folds into its draft (control channels collapsed
+	// across sites, matching the flat config schema). The legacy
+	// /api/v1/import preview ignores them; they are populated for the
+	// builder's POST /api/v1/config/parse path.
+	ControlChannels []uint32             `json:"control_channels,omitempty"`
+	Talkgroups      []ImportTalkgroupDTO `json:"talkgroups,omitempty"`
+}
+
+// ImportTalkgroupDTO is one parsed talkgroup, shaped to match the columns
+// trunking.TalkGroup loads from a Trunk Recorder–style CSV.
+type ImportTalkgroupDTO struct {
+	Decimal     uint32 `json:"decimal"`
+	AlphaTag    string `json:"alpha_tag,omitempty"`
+	Description string `json:"description,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Encrypted   bool   `json:"encrypted,omitempty"`
 }
 
 // Importer is the daemon-side import surface. Decoupled via interface
