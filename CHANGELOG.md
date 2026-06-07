@@ -7,6 +7,27 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **P25 Phase 1 voice decoded to garbled noise** (#489). The IMBE 4400
+  channel decoder was self-consistent (its own encode/decode round-tripped)
+  but did not match the on-air convention real P25 transmitters use, so every
+  recovered voice frame was effectively random — audible as warbling noise.
+  Three coupled faults, all invisible to the synthetic round-trip tests and
+  surfacing only on real signals: (1) each Golay/Hamming vector's channel bits
+  were read in reversed column order; (2) the §7.4 PRBS descrambler took its
+  seed from the wrong end of u_0 and applied the keystream in reversed order;
+  and (3) the per-vector FEC used `internal/radio/framing`'s Golay(24,12),
+  which is a *different* code from the P25 IMBE Golay(23,12,7) and corrupted
+  clean codewords. The IMBE path now uses a P25-faithful Golay(23,12,7) +
+  Hamming(15,11,3) (transcribed from the mbelib/DSD reference) with the
+  correct column order, descrambler seed (taken from the Golay-corrected u_0,
+  matching mbelib's `eccC0`-before-`demodulate` order), and keystream
+  direction. A real-air-faithful reference-vector test
+  (`internal/voice/imbe/p25fec_refvec_test.go`) now pins the decode against
+  mbelib/DSD-derived on-air frames, closing the long-standing "no real P25
+  voice fixture" gap.
+
 ### Changed
 
 - **Constellation & Symbol scope tuning refinements** (#557 follow-up). The

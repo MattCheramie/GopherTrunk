@@ -34,11 +34,11 @@ import "fmt"
 // init guard and TestInterleavePermutationIsBijection); regenerating
 // it from the DSD tables reproduces these exact values.
 //
-// NOTE on real-air validation: this table reproduces the same
-// permutation every open-source P25 decoder uses, but the project
-// ships no real P25 Phase 1 voice fixture, so end-to-end correctness
-// is ultimately confirmed by the live "p25p1 decode quality"
-// uncorrectable-LDU rate dropping on a real capture (issue #489).
+// Real-air validation: this table reproduces the same permutation
+// every open-source P25 decoder uses, and the full channel decode is
+// now pinned against mbelib/DSD-faithful reference vectors in
+// p25fec_refvec_test.go — a real P25 voice subframe decodes to the
+// expected information frame bit-for-bit (issue #489 resolved).
 var imbeDeinterleave = [ChannelBits]int{
 	132, 127, 120, 115, 108, 103, 96, 91, 84, 79, 72, 67,
 	60, 55, 48, 43, 36, 31, 24, 19, 12, 7, 0, 126,

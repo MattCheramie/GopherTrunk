@@ -27,17 +27,19 @@ import "fmt"
 // Plus pr[0] = seed, total 115 LCG iterations.
 const PRBSLength = 114
 
-// PRBSSeedFromU0 reads the 12 information bits of u_0 from a
-// 144-bit channel buffer and returns the 16-bit PRBS seed
-// (u_0_info × 16). The info bits are the first 12 bits of the u_0
-// region — the systematic data bits that GolayEncode23_12 places at
-// the high end of the codeword.
+// PRBSSeedFromU0 reads the 12 Golay data bits of u_0 from a 144-bit
+// channel buffer (in vector order) and returns the 16-bit PRBS seed
+// (u_0_data × 16). The data bits occupy the high columns (22..11) of
+// the u_0 vector, MSB-first.
 func PRBSSeedFromU0(channel []byte) uint16 {
-	var info uint16
-	for i := 0; i < u0InfoBits; i++ {
-		info = (info << 1) | uint16(channel[u0Offset+i]&1)
-	}
-	return info << 4
+	// The seed is 16 × the 12 Golay data bits of u_0 — columns 22..11
+	// of the vector (the high columns where golay23 places the data),
+	// MSB-first — matching mbelib's `pr[0] = 16 * foo`. u_0 is
+	// transmitted unscrambled. On decode the caller corrects u_0's
+	// Golay first (see DecodeChannelToFrame); here we read whatever the
+	// vector currently holds.
+	data := uint16(vectorToBlock(channel[u0Offset:u0Offset+u0Bits]) >> 11)
+	return data << 4
 }
 
 // PRBS expands the 16-bit seed into PRBSLength scrambling bits.
@@ -70,7 +72,17 @@ func Scramble(channel []byte) ([]byte, error) {
 	if len(channel) != ChannelBits {
 		return nil, fmt.Errorf("%w: got %d channel bits", ErrChannelLength, len(channel))
 	}
-	prbs := PRBS(PRBSSeedFromU0(channel))
+	descrambleWithSeed(channel, PRBSSeedFromU0(channel))
+	return channel, nil
+}
+
+// descrambleWithSeed XORs the PRBS expansion of seed onto the channel
+// bits of u_1..u_6 in place. Within each vector the PRBS is applied
+// from the highest column down to column 0 (mbelib walks
+// imbe_fr[i][22..0]); u_0 and u_7 are left untouched. XOR is
+// self-inverse, so this is both the scramble and the descramble.
+func descrambleWithSeed(channel []byte, seed uint16) {
+	prbs := PRBS(seed)
 	k := 0
 	for _, region := range [][2]int{
 		{u1Offset, u1Bits},
@@ -81,12 +93,11 @@ func Scramble(channel []byte) ([]byte, error) {
 		{u6Offset, u6Bits},
 	} {
 		off, n := region[0], region[1]
-		for i := 0; i < n; i++ {
-			channel[off+i] ^= prbs[k]
+		for col := n - 1; col >= 0; col-- {
+			channel[off+col] ^= prbs[k]
 			k++
 		}
 	}
-	return channel, nil
 }
 
 // Descramble is an alias for Scramble. Both names are exported so
