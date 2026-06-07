@@ -324,10 +324,14 @@ sdr:
   #     bias_tee: false             # best-effort (driver-dependent)
   #     connect_timeout_ms: 3000
 
-# Paging decoders. Each entry dedicates one SDR to a paging
-# frequency and runs the per-protocol receiver. The SDR is tuned
-# directly to FrequencyHz (full sample-rate IQ, no DDC) — multi-
-# channel-from-one-SDR is a planned follow-up.
+# Paging decoders. The pocsag / flex lists each dedicate one SDR to a
+# single paging frequency: the SDR is tuned directly to FrequencyHz
+# (full sample-rate IQ, no DDC). The wideband list groups several
+# paging channels (any mix of POCSAG / FLEX) onto ONE SDR — the daemon
+# tunes the dongle to a center frequency and a digital down-converter
+# splits out each channel, so two pagers a few hundred kHz apart fit on
+# one stick. All three share the pager_log table / panel; rows are
+# tagged protocol=pocsag or protocol=flex.
 #
 # NOTE: paging (and the other message decoders: aprs, ais, dsc,
 # mdc1200, m17) surface decoded messages only through the SQLite
@@ -346,6 +350,18 @@ sdr:
 #     - serial: "antenna-pi2"      # SDR serial; shares the pager_log
 #                                  #  table / panel, tagged protocol=flex
 #       frequency_hz: 929_612_500  # local FLEX paging channel
+#   wideband:                      # two pagers on one dongle via DDC
+#     - serial: "pager-sdr"        # single SDR for the whole group
+#       center_freq_hz: 153_187_500 # optional; auto = midpoint of the
+#                                  #  channel freqs when omitted / 0
+#       channels:                  # each freq must sit within the
+#                                  #  dongle's IQ window (center ±
+#                                  #  sample_rate/2, minus a 5% guard)
+#         - protocol: flex
+#           frequency_hz: 153_025_000
+#         - protocol: pocsag
+#           frequency_hz: 153_350_000
+#           baud_hz: 1200
 
 # APRS / AX.25 Bell-202 AFSK receiver. Each entry pins one SDR to
 # an APRS frequency and runs the full DSP pipeline (FM demod →
