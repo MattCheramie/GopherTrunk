@@ -784,6 +784,17 @@ type DeviceConfig struct {
 	// validate the benefit with `gophertrunk replay -iq-correct -diag`
 	// on a capture from this device before enabling it here.
 	IQCorrect bool `yaml:"iq_correct"`
+
+	// IQInvert conjugates this device's raw IQ (negates Q) before
+	// channelization, undoing a spectrum-inverted / I-Q-swapped front
+	// end. Some SoapySDR / soapy_remote front-ends (and a few USRP /
+	// upconverter chains) deliver an inverted spectrum; on a π/4-DQPSK
+	// protocol like TETRA an inverted spectrum reverses every phase
+	// transition, so the constellation collapses and nothing locks even
+	// though the signal looks clean. Off by default. Confirm against a
+	// capture with `gophertrunk replay -conjugate -diag` before enabling.
+	// Equivalent to the replay subcommand's -conjugate flag (issue #264).
+	IQInvert bool `yaml:"iq_invert"`
 }
 
 // DeviceChannelConfig is one repeater carrier carried by a

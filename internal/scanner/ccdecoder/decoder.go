@@ -187,6 +187,13 @@ type Options struct {
 	// via config. Validate with `replay -iq-correct -diag` on a capture
 	// before enabling in production.
 	IQCorrect bool
+	// Conjugate negates the imaginary part of every raw IQ sample before
+	// channelization, undoing a spectrum-inverted / I-Q-swapped front end
+	// (issue #264, the same correction as `replay -conjugate`). Off by
+	// default; opt-in per device via config (iq_invert). A π/4-DQPSK
+	// protocol such as TETRA cannot lock an inverted spectrum because the
+	// inversion reverses every differential phase transition.
+	Conjugate bool
 }
 
 // Decoder is the long-lived component that converts the control
@@ -270,6 +277,11 @@ type Decoder struct {
 	// (issue #402). Owned by pump.
 	iqCorrector *rtlsdr.IQImbalanceCorrector
 
+	// conjugate, when true (Options.Conjugate), negates Q on every raw IQ
+	// chunk in pump before the I/Q-imbalance correction and decimation, to
+	// undo a spectrum-inverted front end (issue #264). Owned by pump.
+	conjugate bool
+
 	// Persisted last-window IQ-health snapshot. Unlike the pw* window
 	// accumulators above (reset every iqPowerWindow), these are kept so
 	// IQHealth can answer the cchunt supervisor at hunt-failure time —
@@ -336,6 +348,7 @@ func New(opts Options) (*Decoder, error) {
 	if opts.IQCorrect {
 		d.iqCorrector = rtlsdr.NewIQImbalanceCorrector()
 	}
+	d.conjugate = opts.Conjugate
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
 	}
@@ -606,6 +619,13 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 func (d *Decoder) pump(iq []complex64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.conjugate {
+		// Undo a spectrum-inverted / I-Q-swapped front end, in place,
+		// before any other correction (issue #264).
+		for i, s := range iq {
+			iq[i] = complex(real(s), -imag(s))
+		}
+	}
 	if d.iqCorrector != nil {
 		d.iqCorrector.Process(iq) // blind I/Q-imbalance correction, in place (issue #402)
 	}
