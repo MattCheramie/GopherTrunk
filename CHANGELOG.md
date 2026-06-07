@@ -14,9 +14,12 @@ for tagged releases.
   instead of staying blank until symbols decode. Both panels gain precise
   channel entry: the **kHz** offset field takes 1 Hz resolution (so 6.25 /
   12.5 kHz channel grids land exactly) plus an absolute **MHz** frequency
-  field that stays in sync. The Constellation gains an adjustable **Zoom**
-  control (and a larger default dot size), and its auto-scale now targets the
-  ~95th-percentile radius so a stray outlier no longer shrinks the cloud.
+  field that stays in sync. The Constellation plot is now a responsive square
+  that fills the panel column (up to 880 px, drawn at device-pixel ratio for
+  crispness) instead of a fixed thumbnail, so it renders as large as OP25's,
+  and gains an adjustable **Zoom** control (up to 8×; dots scale with both
+  zoom and plot size); its auto-scale now targets the ~95th-percentile radius
+  so a stray outlier no longer shrinks the cloud.
 
 ## [v0.3.5] — 2026-06-07
 
