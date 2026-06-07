@@ -666,6 +666,26 @@ func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrPipeline) Reset()                 { p.rx.Reset() }
 func (p *dmrPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the DMR Tier III system topology (identity +
+// adjacent sites) the control channel accumulated, mapped to the neutral
+// trunking shape so the signal-lab engine attaches it to the decode Result.
+func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{
+		SystemID:  uint32(t.SystemID),
+		RFSS:      t.RFSS,
+		Site:      t.Site,
+		ColorCode: t.ColorCode,
+	}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
+
 // newDMRTier2Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier2.ConventionalChannel.Process. DMR Tier II is conventional
 // (per-repeater) rather than trunked — there's no dedicated control

@@ -1,11 +1,49 @@
 package siglab
 
 import (
+	"bytes"
 	"testing"
 
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// fakeTopoPipeline is a no-op pipeline that reports a fixed topology, used to
+// guard the generic factory path's pipe.(TopologyProvider) hook in engine.go
+// (the P25 path uses the deep-bundle closure instead).
+type fakeTopoPipeline struct{}
+
+func (fakeTopoPipeline) Process([]complex64) {}
+func (fakeTopoPipeline) Reset()              {}
+func (fakeTopoPipeline) Close() error        { return nil }
+func (fakeTopoPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	return &trunking.TopologySnapshot{SystemID: 0x49A, ColorCode: 5}
+}
+
+func TestGenericPipelineTopologyAttached(t *testing.T) {
+	restore := ccdecoder.SetTestFactory(trunking.ProtocolNXDN,
+		func(ccdecoder.PipelineOptions) (ccdecoder.ProtocolPipeline, error) {
+			return fakeTopoPipeline{}, nil
+		})
+	defer restore()
+
+	buf := EncodeCapture(make([]complex64, 4096), FormatF32)
+	res, err := RunReader(bytes.NewReader(buf), "fake", Config{
+		Protocol:     trunking.ProtocolNXDN,
+		SampleRateHz: 48_000,
+		Format:       FormatF32,
+	})
+	if err != nil {
+		t.Fatalf("RunReader: %v", err)
+	}
+	if res.Topology == nil {
+		t.Fatal("Result.Topology not attached from the generic TopologyProvider hook")
+	}
+	if res.Topology.SystemID != 0x49A || res.Topology.ColorCode != 5 {
+		t.Errorf("topology = %+v, want SystemID 49A ColorCode 5", res.Topology)
+	}
+}
 
 func TestP25TopologyMapping(t *testing.T) {
 	net := p25phase1.NetworkConfig{
