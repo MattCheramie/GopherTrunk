@@ -56,6 +56,7 @@ type ControlChannel struct {
 	channelCoding    ChannelCodingMode
 	channelType      ChannelType
 	colourCode       uint32
+	colourLearned    bool
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the
@@ -199,6 +200,33 @@ func (c *ControlChannel) SetColourCode(colourCode uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.colourCode = colourCode & 0x3FFFFFFF
+	c.colourLearned = true
+}
+
+// LearnColourCode records a colour code recovered at runtime from a
+// decoded BSCH SYNC PDU (see process.go). It overrides the configured
+// colour code only when none was configured (or it changed), so an
+// operator-set colour code still wins on the first burst but a cold
+// receiver auto-acquires the cell's scrambling code and every
+// subsequent BNCH/SCH burst descrambles. Returns true if the stored
+// value changed.
+func (c *ControlChannel) LearnColourCode(ext uint32) bool {
+	ext &= 0x3FFFFFFF
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.colourLearned && c.colourCode == ext {
+		return false
+	}
+	// A configured (non-zero) colour code is authoritative; don't let a
+	// marginal BSCH decode clobber it, but do fill an unset one.
+	if c.colourLearned && c.colourCode != 0 {
+		return false
+	}
+	c.colourCode = ext
+	c.colourLearned = true
+	c.log.Info("tetra cc learned colour code from BSCH",
+		"colour_ext", ext, "system", c.systemName)
+	return true
 }
 
 // ChannelCoding returns the current ChannelCodingMode. Mirrors the

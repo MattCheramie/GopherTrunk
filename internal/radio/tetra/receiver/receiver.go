@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 )
@@ -45,7 +46,33 @@ const (
 	// each phase delta before quadrant classification, so a clean
 	// +π/4 phase delta lands squarely in the 0b00 quadrant.
 	Rotation = math.Pi / 4
+	// ChannelCutoffHz is the one-sided cutoff of the optional channel-
+	// select filter. A TETRA channel is 25 kHz wide (occupied ≈ ±12 kHz
+	// at α = 0.35), but the channelised stream is much wider (the live
+	// DDC decimates to 144 kHz, a ±72 kHz passband), so adjacent
+	// carriers leak in and the RRC matched filter alone does not reject
+	// them. A ≈±12.5 kHz channel filter ahead of the matched filter
+	// removes them — measured to cut the on-air symbol error rate by an
+	// order of magnitude (issue #553). 15 kHz keeps the passband flat
+	// across the wanted signal's ±12.15 kHz occupied band (so it is a
+	// noop on a clean single-carrier capture) while its sharp skirt
+	// rejects a neighbour ≥~20 kHz away; the on-air win is flat from
+	// ~12.5–16.5 kHz, so the exact cutoff is not critical.
+	ChannelCutoffHz = 15_000.0
 )
+
+// channelFilterSpanSymbols sets the channel-select FIR length to
+// 2*span*sps+1 taps so its group delay (span*sps samples) is a whole
+// number of symbols — the same trick the RRC matched filter uses. A
+// fractional-symbol delay would shift the naive decimator off the
+// symbol centres and disrupt Gardner acquisition. 9 symbols gives a
+// ~145-tap filter at the 8-sps production rate: a sharp enough skirt to
+// reject a neighbour ~20 kHz away.
+const channelFilterSpanSymbols = 9
+
+// channelFilterBeta is the Kaiser shape for the channel-select FIR
+// (matches the halfband design's ~70 dB stopband).
+const channelFilterBeta = 8.6
 
 // Options configures a Receiver.
 type Options struct {
@@ -75,6 +102,12 @@ type Options struct {
 	// (zero offset) are byte-unchanged. Recommended for live / replayed
 	// captures.
 	EnableAFC bool
+	// EnableChannelFilter inserts a ≈±ChannelCutoffHz channel-select
+	// low-pass ahead of the matched filter, rejecting adjacent carriers
+	// that the wide channelised passband admits. Off by default (a
+	// near-noop on a clean single-carrier synth); recommended for live /
+	// replayed captures. See ChannelCutoffHz.
+	EnableChannelFilter bool
 }
 
 // ClockMode selects how the receiver decimates the matched-filter
@@ -124,8 +157,10 @@ type Receiver struct {
 	clockMode ClockMode
 	gardner   *sync.Gardner
 	afc       *carrierAFC
+	chanFilt  *filter.FIR
 
 	matched   []complex64
+	filtered  []complex64
 	dibits    []uint8
 	symbols   []complex64
 	derotated []complex64
@@ -167,7 +202,12 @@ func New(opts Options) *Receiver {
 		r.gardner = sync.NewGardner(float64(r.sps), gain)
 	}
 	if opts.EnableAFC {
-		r.afc = newCarrierAFC(0)
+		r.afc = newCarrierAFC(r.sps)
+	}
+	if opts.EnableChannelFilter {
+		fc := ChannelCutoffHz / opts.SampleRateHz
+		taps := 2*channelFilterSpanSymbols*r.sps + 1 // delay = span*sps = whole symbols
+		r.chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc, channelFilterBeta))
 	}
 	return r
 }
@@ -179,14 +219,33 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
+	if r.chanFilt != nil {
+		// Reject adjacent carriers in the wide channelised passband
+		// before matched filtering (issue #553).
+		r.filtered = r.chanFilt.Process(r.filtered, iq)
+		iq = r.filtered
+	}
 	r.matched = r.dq.MatchedFilter(r.matched, iq)
 	r.dibits = r.dibits[:0]
 	r.symbols = r.symbols[:0]
 
+	// Remove the residual carrier offset BEFORE timing recovery: a
+	// spinning constellation corrupts the Gardner timing metric (issue
+	// #553). The AFC buffers into fixed blocks, so it may emit fewer
+	// matched samples than it consumed.
+	matched := r.matched
+	if r.afc != nil {
+		r.derotated = r.afc.Process(r.derotated, r.matched)
+		matched = r.derotated
+		if len(matched) == 0 {
+			return
+		}
+	}
+
 	if r.clockMode == ClockGardner {
-		r.symbols = r.gardner.Process(r.symbols, r.matched)
+		r.symbols = r.gardner.Process(r.symbols, matched)
 	} else {
-		r.pending = append(r.pending, r.matched...)
+		r.pending = append(r.pending, matched...)
 		for r.rxOffset < len(r.pending) {
 			r.symbols = append(r.symbols, r.pending[r.rxOffset])
 			r.rxOffset += r.sps
@@ -210,10 +269,6 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(r.symbols) == 0 {
 		return
 	}
-	if r.afc != nil {
-		r.derotated = r.afc.Process(r.derotated, r.symbols)
-		r.symbols = r.derotated
-	}
 	r.dibits = r.dq.Decode(r.dibits, r.symbols)
 	r.dibitSink(r.dibits, r.dibitBase)
 	r.dibitBase += len(r.dibits)
@@ -233,5 +288,8 @@ func (r *Receiver) Reset() {
 	}
 	if r.afc != nil {
 		r.afc.Reset()
+	}
+	if r.chanFilt != nil {
+		r.chanFilt.Reset()
 	}
 }

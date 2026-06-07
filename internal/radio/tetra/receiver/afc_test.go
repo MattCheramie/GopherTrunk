@@ -33,7 +33,7 @@ func TestAFCRecoversDibitsUnderCarrierOffset(t *testing.T) {
 	}
 	sync := tetra.NormalSyncDibits()
 	lcg := uint32(12345)
-	for r := 0; r < 30; r++ {
+	for r := 0; r < 200; r++ {
 		want = append(want, sync...)
 		for i := 0; i < 100; i++ {
 			lcg = lcg*1664525 + 1013904223
@@ -97,8 +97,8 @@ func TestAFCRecoversDibitsUnderCarrierOffset(t *testing.T) {
 
 	withAFC := hits(run(true))
 	without := hits(run(false))
-	if withAFC < 20 {
-		t.Errorf("AFC: exact sync hits = %d under %g Hz offset, want >=20", withAFC, offsetHz)
+	if withAFC < 80 {
+		t.Errorf("AFC: exact sync hits = %d under %g Hz offset, want >=80", withAFC, offsetHz)
 	}
 	if without >= withAFC {
 		t.Errorf("AFC made no difference: with=%d without=%d (AFC should rescue an offset that defeats the plain decoder)", withAFC, without)
@@ -120,10 +120,12 @@ func TestAFCNoopWithoutOffset(t *testing.T) {
 	for i := 0; i < 600; i++ {
 		want = append(want, uint8(i&3))
 	}
-	for r := 0; r < 20; r++ {
+	lcg := uint32(98765)
+	for r := 0; r < 200; r++ {
 		want = append(want, sync...)
 		for i := 0; i < 100; i++ {
-			want = append(want, uint8((i*7+r)&3))
+			lcg = lcg*1664525 + 1013904223
+			want = append(want, uint8((lcg>>16)&3))
 		}
 	}
 	iq := demod.ModulatePiOver4DQPSK(want, sps, span, alpha, math.Pi/4)
@@ -152,7 +154,7 @@ func TestAFCNoopWithoutOffset(t *testing.T) {
 			n++
 		}
 	}
-	if n < 15 {
-		t.Errorf("AFC noop: exact sync hits on centred stream = %d, want >=15", n)
+	if n < 80 {
+		t.Errorf("AFC noop: exact sync hits on centred stream = %d, want >=80", n)
 	}
 }
