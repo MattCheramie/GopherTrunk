@@ -7,6 +7,7 @@ import { openSymbolStream, type SymbolFrame } from "../api/symbols";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { SymbolScopeChart } from "../components/SymbolScopeChart";
+import { TuningControls } from "../components/TuningControls";
 
 // Symbol scope panel — a live oscilloscope of the demodulated symbol
 // stream, GopherTrunk's take on OP25's "Symbol" plot. The daemon runs a
@@ -145,16 +146,22 @@ export function SymbolScope() {
     return () => stream.close();
   }, [cfg, selected, proto, clampedOffsetKHz]);
 
-  const viewHz = latest ? latest.center_hz + clampedOffsetKHz * 1000 : null;
+  // Centre comes from the selected device so the frequency view renders
+  // immediately — symbol frames only arrive once the receiver decodes, so
+  // gating the label on `latest` would leave it blank on a quiet channel.
+  const centerHz = device?.center_hz ?? latest?.center_hz ?? null;
+  const viewHz = centerHz != null ? centerHz + clampedOffsetKHz * 1000 : null;
 
   const tuningLabel = useMemo(() => {
-    if (!latest) return "";
+    if (viewHz == null) return "";
     const off =
       clampedOffsetKHz === 0
         ? "centre"
-        : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(1)} kHz`;
+        : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(3).replace(/\.?0+$/, "")} kHz`;
+    const head = `${(viewHz / 1e6).toFixed(4)} MHz (${off})`;
+    if (!latest) return `${head} · waiting for symbols…`;
     const soft = latest.soft && latest.soft.length > 0 ? "soft+dibits" : "dibits";
-    return `${((viewHz ?? latest.center_hz) / 1e6).toFixed(4)} MHz (${off}) · ${latest.symbol_rate_hz.toFixed(0)} sym/s · ${soft}`;
+    return `${head} · ${latest.symbol_rate_hz.toFixed(0)} sym/s · ${soft}`;
   }, [latest, viewHz, clampedOffsetKHz]);
 
   return (
@@ -203,64 +210,22 @@ export function SymbolScope() {
           </select>
         </label>
 
-        <label className="flex items-center gap-2">
-          <span className="text-muted">Offset</span>
-          <input
-            type="range"
-            min={-maxOffsetKHz}
-            max={maxOffsetKHz}
-            step={Math.max(1, Math.round(maxOffsetKHz / 300))}
-            value={clampedOffsetKHz}
-            onChange={(e) => {
-              setHold(true);
-              setOffsetKHz(Number(e.target.value));
-            }}
-            className="w-40 accent-sky-400"
-            aria-label="View offset from SDR centre, kHz"
-          />
-          <input
-            type="number"
-            value={Number(clampedOffsetKHz.toFixed(1))}
-            onChange={(e) => {
-              setHold(true);
-              setOffsetKHz(Number(e.target.value));
-            }}
-            className="w-20 bg-surface border border-border rounded px-2 py-1 text-right font-mono"
-            aria-label="View offset from SDR centre in kHz (numeric)"
-          />
-          <span className="text-muted">kHz</span>
-        </label>
-
-        <button
-          type="button"
-          className="rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-40"
-          disabled={offsetKHz === 0}
-          onClick={() => {
+        <TuningControls
+          centerHz={centerHz}
+          maxOffsetKHz={maxOffsetKHz}
+          offsetKHz={clampedOffsetKHz}
+          onOffsetChange={(khz) => {
+            setHold(true);
+            setOffsetKHz(khz);
+          }}
+          hold={hold}
+          onHoldChange={setHold}
+          followingActive={followOffsetKHz != null}
+          onCentre={() => {
             setHold(true);
             setOffsetKHz(0);
           }}
-          title="Recentre the view on the SDR centre frequency"
-        >
-          Centre
-        </button>
-
-        <label
-          className="flex items-center gap-1.5"
-          title="When off, the view follows the newest active call on this SDR"
-        >
-          <input
-            type="checkbox"
-            checked={hold}
-            onChange={(e) => setHold(e.target.checked)}
-            className="accent-sky-400"
-          />
-          <span>
-            Hold
-            {!hold && followOffsetKHz != null && (
-              <span className="text-accent"> · following call</span>
-            )}
-          </span>
-        </label>
+        />
       </div>
 
       <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>

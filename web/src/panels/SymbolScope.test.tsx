@@ -119,6 +119,22 @@ describe("Symbol scope panel", () => {
     });
   });
 
+  it("shows the tuned frequency before any symbol frame arrives", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(oneDevice);
+    // Open the stream but never deliver a frame — a quiet channel.
+    vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });
+
+    render(<SymbolScope />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    // The frequency view is derived from the device centre, not from a
+    // decoded frame, so it renders immediately. (851.000 MHz centre.)
+    expect(screen.getByText(/851\.0000 MHz/)).toBeInTheDocument();
+    const freq = screen.getByLabelText("Tuned frequency, MHz") as HTMLInputElement;
+    expect(Number(freq.value)).toBeCloseTo(851, 6);
+  });
+
   it("exposes the mode select and Hold / Centre controls", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(oneDevice);
     vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });

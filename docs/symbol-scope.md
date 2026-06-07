@@ -35,9 +35,13 @@ a channel sitting on the SDR centre is buried under the DC spike. The
 same controls work around it:
 
 - **Mode** — the receiver / demod path (P25 C4FM or P25 CQPSK).
-- **Offset** — tunes a channel sitting at this offset (kHz, relative to
-  the SDR centre) down to baseband before the receiver channelizes it,
-  lifting an off-centre control/voice channel clear of the DC spike.
+- **Offset / Freq** — tunes a channel sitting at this offset (kHz,
+  relative to the SDR centre) down to baseband before the receiver
+  channelizes it, lifting an off-centre control/voice channel clear of
+  the DC spike. Type the **kHz** offset (1 Hz resolution, so 6.25 /
+  12.5 kHz grids land exactly) or the channel's absolute **MHz**
+  frequency — the two stay in sync. The tuned frequency is shown as soon
+  as an SDR is selected, before any symbols decode.
 - **Hold** — when off, the Offset automatically follows the newest
   active call on the selected SDR (the "last locked channel"); turn
   Hold on (or edit the Offset / press **Centre**) to pin it.
@@ -89,4 +93,5 @@ contract, so they read identically.
 | `cmd/gophertrunk/symbol_provider.go` | Daemon provider — wires the engine to the iqtap broker per subscriber |
 | `web/src/api/symbols.ts` | Typed client with auto-reconnect / backoff |
 | `web/src/components/SymbolScopeChart.tsx` | Canvas scope renderer (shared contract with the SigLab viz) |
+| `web/src/components/TuningControls.tsx` | Shared offset / frequency / Hold / Centre controls (also used by the Constellation) |
 | `web/src/panels/SymbolScope.tsx` | Panel: SDR + mode + offset/Hold/follow controls |
