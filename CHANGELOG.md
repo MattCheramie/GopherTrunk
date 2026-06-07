@@ -21,9 +21,12 @@ for tagged releases.
   offset / Hold / follow-active-call controls, so you can dial the scope onto
   a locked control/voice channel and lift it clear of the SDR centre DC
   spike. Backed by a new `WS /api/v1/diag/symbols?device=&proto=&offset=`
-  endpoint and the `internal/scanner/symbolscope` engine. TETRA and the rest
-  of the C4FM family (DMR/NXDN/YSF/D-STAR) — and a soft waveform for them —
-  follow as per-receiver soft taps ship.
+  endpoint and the `internal/scanner/symbolscope` engine. The offline
+  **SigLab** analyzer gains the matching view: a capture run with
+  `collect IQ diag` + `capture IQ` now carries an aligned symbol series on
+  its `IQTaps`, rendered by a new SigLab Symbol-scope viz alongside the eye
+  diagram. TETRA and the rest of the C4FM family (DMR/NXDN/YSF/D-STAR) — and
+  a soft waveform for them — follow as per-receiver soft taps ship.
 
 - **Constellation panel — frequency-offset view + cleaner render (issue
   #557).** A centre-tuned constellation is dominated by the SDR's DC spike

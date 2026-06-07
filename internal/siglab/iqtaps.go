@@ -32,6 +32,43 @@ type IQTaps struct {
 	// Stride is the input-to-output downsample ratio applied to the
 	// channelized stream.
 	Stride int `json:"stride" yaml:"stride"`
+
+	// SymbolDibits is the recovered-symbol decision stream (values
+	// 0..SymbolCardinality-1), decimated to the same cap as the IQ. It
+	// backs the offline Symbol-scope viz (the OP25-style time series).
+	// Empty for protocols/paths that buffer no symbols.
+	SymbolDibits []uint8 `json:"symbol_dibits,omitempty" yaml:"symbol_dibits,omitempty"`
+	// SymbolSoft is the pre-slicer soft waveform aligned index-for-index
+	// with SymbolDibits (deep P25 C4FM path). Empty when the demod path
+	// emits no soft samples (e.g. CQPSK); the viz then shows the dibit
+	// rows only.
+	SymbolSoft []float32 `json:"symbol_soft,omitempty" yaml:"symbol_soft,omitempty"`
+	// SymbolCardinality is 4 for the dibit (4-level) protocols, 2 for the
+	// bit (2-level) protocols.
+	SymbolCardinality int `json:"symbol_cardinality,omitempty" yaml:"symbol_cardinality,omitempty"`
+}
+
+// decimateSymbolSeries stride-decimates an aligned dibit + soft stream
+// down to at most maxPoints points, preserving alignment. The soft track
+// is carried only when it matches the dibit length (a soft-less path
+// returns dibits with a nil soft slice).
+func decimateSymbolSeries(dibits []uint8, soft []float32, maxPoints int) (outD []uint8, outS []float32) {
+	n := len(dibits)
+	if n == 0 || maxPoints <= 0 {
+		return nil, nil
+	}
+	hasSoft := len(soft) == n
+	stride := 1
+	if n > maxPoints {
+		stride = (n + maxPoints - 1) / maxPoints
+	}
+	for i := 0; i < n; i += stride {
+		outD = append(outD, dibits[i])
+		if hasSoft {
+			outS = append(outS, soft[i])
+		}
+	}
+	return outD, outS
 }
 
 // iqTapBuffer accumulates the decimated channelized IQ and soft samples for

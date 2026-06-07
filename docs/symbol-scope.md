@@ -57,6 +57,15 @@ same controls work around it:
   ~256 symbols per frame and ships them over the WS. Soft and dibit are
   aligned index-for-index on the C4FM path.
 
+## Offline (SigLab)
+
+The offline [SigLab](siglab) analyzer has the same view. Run a capture
+with **collect IQ diag** + **capture IQ** enabled and the Result carries
+an aligned symbol series (`IQTaps.symbol_dibits` / `symbol_soft`); the
+SigLab Results page renders it as a **Symbol scope** card next to the eye
+diagram. The live panel and the offline viz share the same props
+contract, so they read identically.
+
 ## Limitations
 
 - **P25 Phase 1 only, today.** C4FM gets the soft waveform + dibits;

@@ -282,6 +282,15 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 
 	if iqTap != nil {
 		res.IQTaps = iqTap.result(receiverRate)
+		// Attach the aligned symbol series (dibits + pre-slicer soft) for
+		// the Symbol-scope viz, decimated to the same cap as the IQ. The
+		// analyzer already buffers them in lockstep on the deep P25 path.
+		if an != nil && len(an.symBuf) > 0 {
+			d, s := decimateSymbolSeries(an.symBuf, an.softBuf, cfg.captureIQMaxPoints())
+			res.IQTaps.SymbolDibits = d
+			res.IQTaps.SymbolSoft = s
+			res.IQTaps.SymbolCardinality = an.cardinality
+		}
 	}
 	return res, nil
 }

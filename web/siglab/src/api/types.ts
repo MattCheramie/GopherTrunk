@@ -12,6 +12,11 @@ export interface IQTaps {
   soft_samples: number[];
   decimated_rate_hz: number;
   stride: number;
+  // Aligned symbol series for the Symbol-scope viz. soft is aligned
+  // index-for-index with dibits (empty on soft-less paths, e.g. CQPSK).
+  symbol_dibits?: number[];
+  symbol_soft?: number[];
+  symbol_cardinality?: number;
 }
 
 export interface LockInfo {
