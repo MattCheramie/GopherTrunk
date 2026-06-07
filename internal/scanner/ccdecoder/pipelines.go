@@ -540,6 +540,18 @@ func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *tetraPipeline) Reset()                 { p.rx.Reset() }
 func (p *tetraPipeline) Close() error           { return nil }
 
+// TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
+// code) the control channel learned. No adjacent cells for TETRA.
+func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		MCC:          t.MCC,
+		MNC:          t.MNC,
+		LocationArea: t.LocationArea,
+		ColorCode:    uint8(t.ColourCode & 0xFF),
+	}
+}
+
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
 // into ysf.ControlChannel.Process. YSF is the System Fusion
 // (Yaesu) C4FM amateur trunked variant — same 4800-baud
@@ -828,6 +840,17 @@ type nxdnPipeline struct {
 func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *nxdnPipeline) Reset()                 { p.rx.Reset() }
 func (p *nxdnPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the NXDN single-site identity (System/Site/Location)
+// the control channel accumulated. No adjacent sites for NXDN.
+func (p *nxdnPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		SystemID:     uint32(t.SystemID),
+		Site:         uint8(t.SiteID),
+		LocationArea: t.LocationID,
+	}
+}
 
 // newEDACSPipeline wires internal/radio/edacs/receiver into
 // edacs.ControlChannel.Process. The receiver's BitSink forwards
