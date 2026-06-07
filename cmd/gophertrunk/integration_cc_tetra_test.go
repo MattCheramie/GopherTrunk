@@ -15,7 +15,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/tetra"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
@@ -175,7 +174,7 @@ func buildTETRASCHHDStream(repeats int, colourCode uint32, locationArea uint16) 
 	}
 	info := pduToType1BitsTETRA(pdu, 124)
 	type5 := tetra.EncodeSCHHD(info, colourCode)
-	burstDibits := framing.BitsToDibits(type5)
+	burstDibits := tetra.TetraBitsToDibits(type5)
 
 	frame := make([]uint8, 0, 38+len(burstDibits))
 	frame = append(frame, tetra.NormalSyncDibits()...)

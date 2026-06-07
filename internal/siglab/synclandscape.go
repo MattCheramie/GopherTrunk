@@ -52,16 +52,17 @@ func computeSyncLandscape(stream []uint8, variants []SyncVariant, cardinality, t
 	if len(variants) == 0 || cardinality < 2 {
 		return nil
 	}
-	syncLen := len(variants[0].Pattern)
-	if syncLen == 0 || len(stream) < syncLen {
-		return nil
-	}
+	// Variants may differ in length (e.g. TETRA's 11/15/19-dibit training
+	// sequences). Each is correlated at its own length; SyncLen reports the
+	// winning variant's length.
 	mask := uint8(cardinality - 1)
-	land := &SyncLandscape{SyncLen: syncLen, Tolerance: tolerance}
+	land := &SyncLandscape{SyncLen: len(variants[0].Pattern), Tolerance: tolerance}
 
-	bestHits, bestDist := -1, syncLen+1
+	bestHits, bestDist := -1, 1<<30
+	var winLen int
 	for _, v := range variants {
-		if len(v.Pattern) != syncLen {
+		syncLen := len(v.Pattern)
+		if syncLen == 0 || len(stream) < syncLen {
 			continue
 		}
 		for rot := 0; rot < cardinality; rot++ {
@@ -89,6 +90,7 @@ func computeSyncLandscape(stream []uint8, variants []SyncVariant, cardinality, t
 			if st.Hits > bestHits || (st.Hits == bestHits && st.BestDist < bestDist) {
 				bestHits, bestDist = st.Hits, st.BestDist
 				land.WinnerVariant, land.WinnerRotation, land.WinnerHits = st.Variant, st.Rotation, st.Hits
+				winLen = syncLen
 			}
 		}
 	}
@@ -102,10 +104,11 @@ func computeSyncLandscape(stream []uint8, variants []SyncVariant, cardinality, t
 				break
 			}
 		}
+		land.SyncLen = winLen
 		rot := uint8(land.WinnerRotation)
-		for pos := 0; pos+syncLen <= len(stream); pos++ {
+		for pos := 0; pos+winLen <= len(stream); pos++ {
 			mismatch := 0
-			for k := 0; k < syncLen; k++ {
+			for k := 0; k < winLen; k++ {
 				if (stream[pos+k]+rot)&mask != win.Pattern[k] {
 					mismatch++
 				}

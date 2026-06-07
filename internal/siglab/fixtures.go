@@ -403,35 +403,35 @@ func buildYSFFSWStream(repeats int) []uint8 {
 	return out
 }
 
-// buildTETRASCHHDStream builds a TETRA SCH/HD broadcast stream (normal sync +
-// channel-coded MLE SYSINFO). Lifted from integration_cc_tetra_test.go.
+// buildTETRASCHHDStream builds a TETRA SCH/HD broadcast stream: a 400-dibit
+// warmup so the matched filter + Gardner loop converge, then `repeats`
+// back-to-back bursts of (11-dibit NTS1 + 108-dibit SCH/HD-coded MLE SYSINFO),
+// then a 100-dibit flush. The MLE SYSINFO's LocationArea is varied per burst so
+// the 108-dibit payload differs frame to frame — otherwise an identical payload
+// makes any chance sync-alias inside the burst recur at the exact frame cadence
+// and shadow the real training sequence. Bursts are continuous (no idle gap) so
+// the matched filter stays in steady state, mirroring real TETRA's continuous
+// downlink and keeping the short 11-dibit NTS1 free of inter-burst ISI.
 func buildTETRASCHHDStream(repeats int, colourCode uint32, locationArea uint16) []uint8 {
-	payload := []byte{0x00, 0x00, 0x00, 0, 0}
-	payload[3] = byte((locationArea >> 6) & 0xFF)
-	payload[4] = byte((locationArea & 0x3F) << 2)
-
-	pdu := tetra.PDU{
-		Disc:    tetra.DiscMLE,
-		Type:    uint8(tetra.MLESystemInfo),
-		Payload: payload,
-	}
-	info := pduToType1BitsTETRA(pdu, 124)
-	type5 := tetra.EncodeSCHHD(info, colourCode)
-	burstDibits := framing.BitsToDibits(type5)
-
-	frame := make([]uint8, 0, 38+len(burstDibits))
-	frame = append(frame, tetra.NormalSyncDibits()...)
-	frame = append(frame, burstDibits...)
-
-	out := make([]uint8, 0, 400+repeats*(len(frame)+50)+100)
+	sync := tetra.NormalSyncDibits()
+	out := make([]uint8, 0, 400+repeats*(len(sync)+108)+100)
 	for i := 0; i < 400; i++ {
 		out = append(out, uint8(i&3))
 	}
 	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 50; i++ {
-			out = append(out, uint8(i&3))
+		la := locationArea + uint16(r)
+		payload := []byte{0x00, 0x00, 0x00, 0, 0}
+		payload[3] = byte((la >> 6) & 0xFF)
+		payload[4] = byte((la & 0x3F) << 2)
+		pdu := tetra.PDU{
+			Disc:    tetra.DiscMLE,
+			Type:    uint8(tetra.MLESystemInfo),
+			Payload: payload,
 		}
+		info := pduToType1BitsTETRA(pdu, 124)
+		type5 := tetra.EncodeSCHHD(info, colourCode)
+		out = append(out, sync...)
+		out = append(out, tetra.TetraBitsToDibits(type5)...)
 	}
 	for i := 0; i < 100; i++ {
 		out = append(out, uint8(i&3))
