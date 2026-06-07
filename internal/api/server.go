@@ -298,6 +298,12 @@ type Server struct {
 	// over the iqtap broker + internal/dsp/diag.
 	diag DiagProvider
 
+	// symbols is the optional provider backing the
+	// WS /api/v1/diag/symbols recovered-symbol stream for the Symbol
+	// scope panel. nil disables the route (503). Implemented by the
+	// daemon over the iqtap broker + internal/scanner/symbolscope.
+	symbols SymbolProvider
+
 	// pager is the optional provider backing /api/v1/pager/...
 	// routes (pager log). nil disables the routes. Implemented
 	// by the daemon over the SQLite-backed storage.PagerLog.
@@ -561,6 +567,11 @@ type ServerOptions struct {
 	// the iqtap broker + internal/dsp/diag; nil keeps the route
 	// returning 503.
 	Diag DiagProvider
+	// Symbols, when non-nil, enables the WS /api/v1/diag/symbols
+	// recovered-symbol live stream that backs the web Symbol scope
+	// panel. The daemon implements this over the iqtap broker +
+	// internal/scanner/symbolscope; nil keeps the route returning 503.
+	Symbols SymbolProvider
 	// Siglab, when Enabled, mounts the offline signal-analysis routes
 	// (/api/v1/siglab/*) and constructs the in-memory job/capture store.
 	// The daemon and the standalone `siglab serve` command both set it.
@@ -722,6 +733,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		capture:        opts.Capture,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
+		symbols:        opts.Symbols,
 		siglab:         siglabSvc,
 		siglabStop:     siglabStop,
 		diagnostics:    opts.Diagnostics,
@@ -944,6 +956,7 @@ func (s *Server) routes() *http.ServeMux {
 	// Read-only; the daemon doesn't expose any way to inject IQ
 	// via this path. Returns 503 when no SDR is in the pool.
 	mux.HandleFunc("GET /api/v1/diag/iq", s.handleDiagStream)
+	mux.HandleFunc("GET /api/v1/diag/symbols", s.handleSymbolStream)
 
 	// Siglab — offline signal-analysis console. Read routes (protocols,
 	// job result/stream/iq, export) are open; routes that stage data or

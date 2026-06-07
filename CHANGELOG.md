@@ -9,6 +9,22 @@ for tagged releases.
 
 ### Added
 
+- **Symbol scope — live demodulated-symbol oscilloscope (OP25-style "Symbol"
+  plot).** A new web panel (`/symbols`) renders the demodulated symbol stream
+  off a live SDR: for **P25 C4FM** it shows the pre-slicer soft waveform (~4
+  noisy bands for a healthy channel, with rails at each decided level), and
+  for **P25 CQPSK** the sliced dibit decisions. It reuses the **production**
+  DSP — the same down-converter and P25 Phase 1 receiver the live decoder
+  uses, run as a *parallel* decode on the iqtap broker so production
+  control-channel decode is never touched — exposed through the receiver's
+  existing soft/dibit taps. The panel shares the Constellation panel's
+  offset / Hold / follow-active-call controls, so you can dial the scope onto
+  a locked control/voice channel and lift it clear of the SDR centre DC
+  spike. Backed by a new `WS /api/v1/diag/symbols?device=&proto=&offset=`
+  endpoint and the `internal/scanner/symbolscope` engine. TETRA and the rest
+  of the C4FM family (DMR/NXDN/YSF/D-STAR) — and a soft waveform for them —
+  follow as per-receiver soft taps ship.
+
 - **Constellation panel — frequency-offset view + cleaner render (issue
   #557).** A centre-tuned constellation is dominated by the SDR's DC spike
   (the DDC's residual carrier leakage at 0 Hz), which sits on top of any
