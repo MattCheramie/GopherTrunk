@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -186,6 +187,78 @@ func TestDDCBankResetClearsState(t *testing.T) {
 	// occurs and at least some output is produced.
 	if len(got) == 0 {
 		t.Errorf("no output after reset")
+	}
+}
+
+// TestRationalRatioWidebandExact is a regression test for issue #550.
+// A bug report claimed the polyphase resampler produces "fractional filter
+// coefficients" on "non-power-of-two/fractional" wideband rates (singling out
+// 5.0, 6.25 and 16.0 MHz as failing). In fact every wideband rate the report
+// named reduces to an exact L/M ratio against the 48 kHz tap rate, so the
+// resampler reproduces 48 kHz with zero rate error and the Kaiser coefficients
+// (which depend only on L and M) are well-defined. This test locks that in.
+func TestRationalRatioWidebandExact(t *testing.T) {
+	const out = 48_000.0
+	cases := []struct {
+		in           float64
+		wantL, wantM int
+	}{
+		{4_000_000, 3, 250},
+		{5_000_000, 6, 625},
+		{6_250_000, 24, 3125},
+		{8_000_000, 3, 500},
+		{10_000_000, 3, 625},
+		{16_000_000, 3, 1000},
+		{20_000_000, 3, 1250},
+	}
+	for _, c := range cases {
+		l, m := rationalRatio(out, c.in)
+		if l != c.wantL || m != c.wantM {
+			t.Errorf("rationalRatio(%v, %v) = %d/%d, want %d/%d (exact ratio expected, no integer-decimation fallback)",
+				out, c.in, l, m, c.wantL, c.wantM)
+		}
+		if gotOut := c.in * float64(l) / float64(m); gotOut != out {
+			t.Errorf("rate %.0f Hz: output rate %.4f Hz != %.0f Hz (err %.6f%%)",
+				c.in, gotOut, out, (gotOut-out)/out*100)
+		}
+	}
+}
+
+// TestDDCBankWidebandRatesLandAtDC is the empirical companion to
+// TestRationalRatioWidebandExact (issue #550): it pushes a tone through a real
+// DDCBank at each reported wideband rate and confirms it is cleanly extracted
+// to baseband — directly refuting the report's "deaf / constellation collapse"
+// claim for 5.0, 6.25 and 16.0 MHz.
+func TestDDCBankWidebandRatesLandAtDC(t *testing.T) {
+	const (
+		outRate = 48_000.0
+		toneAt  = 200_000.0 // comfortably in-band for every rate below
+	)
+	rates := []float64{4e6, 5e6, 6.25e6, 8e6, 10e6, 16e6, 20e6}
+	for _, inRate := range rates {
+		inRate := inRate
+		t.Run(fmt.Sprintf("%gMHz", inRate/1e6), func(t *testing.T) {
+			b := NewDDCBank(inRate, outRate, 0.05)
+			var got []complex64
+			if err := b.AddTap(toneAt, func(out []complex64) {
+				got = append(got, out...)
+			}); err != nil {
+				t.Fatalf("AddTap: %v", err)
+			}
+			gen := newToneGen(inRate, 0.5, toneAt)
+			// Feed until the resampler has emitted enough settled output for
+			// the DFT-based power check (chunk yield shrinks as the rate rises).
+			for i := 0; i < 8192 && len(got) < 2200; i++ {
+				b.Process(gen.Next(4096))
+			}
+			if len(got) < 1024 {
+				t.Fatalf("not enough output samples: %d", len(got))
+			}
+			settled := got[len(got)/2:]
+			if frac := powerNearDC(settled, outRate, 500); frac < 0.95 {
+				t.Errorf("rate %.0f Hz: only %.1f%% of power within ±500 Hz of DC", inRate, frac*100)
+			}
+		})
 	}
 }
 
