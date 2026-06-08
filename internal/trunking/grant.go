@@ -184,6 +184,17 @@ type CallStart struct {
 	StartedAt    time.Time
 }
 
+// CallSegment is the payload of an events.KindCallSegment event. The
+// voice composer publishes it at an end-of-transmission boundary when
+// per-transmission recording is enabled, so the recorder closes the
+// current file and starts a fresh one for the next over. At marks the
+// boundary instant; the recorder uses it as the new segment's start
+// timestamp.
+type CallSegment struct {
+	DeviceSerial string
+	At           time.Time
+}
+
 // CallEnd is the payload of an events.KindCallEnd event.
 type CallEnd struct {
 	Grant        Grant

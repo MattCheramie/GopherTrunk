@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Universal voice recording boundaries — hangtime + per-transmission
+  splitting + talkgroup gating** (applies to every voice protocol: FM, DMR,
+  P25 Phase 1/2). A new shared boundary controller in the composer ends a call
+  promptly once voice stops (configurable `trunking.voice_hangtime_ms`, default
+  3.5 s) instead of waiting out the 30 s engine watchdog, so recordings are
+  tightly bounded to the actual transmission. `trunking.voice_call_grouping`
+  selects `"transmission"` (default — one WAV per over, rolled at each
+  end-of-transmission boundary) or `"conversation"` (consecutive same-talkgroup
+  overs in one file). On shared voice frequencies, audio from a *different*
+  talkgroup is no longer appended to the wrong recording: the P25 Phase 1 chain
+  gates each LDU on its decoded Link Control talkgroup and ends the call when
+  another talkgroup takes the channel. Recording filenames now carry the RF
+  voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+
 ### Fixed
 
 - **P25 Phase 1 voice still garbled after the IMBE channel-decode fix —

@@ -78,12 +78,32 @@ export function TrunkingSection() {
       title="Trunking Systems"
       instructions="The trunked radio networks to follow. Each system needs a unique name, a protocol, and at least one control-channel frequency. Add systems by hand, by browsing RadioReference.com, or by importing a RadioReference PDF/CSV."
     >
-      <NumberField
-        label="Call timeout (ms)"
-        value={cfg.CallTimeoutMs}
-        onChange={(x) => set({ ...cfg, CallTimeoutMs: x })}
-        placeholder="30000"
-        help="Inactivity window before the engine ends a call."
+      <div className="grid gap-3 sm:grid-cols-2">
+        <NumberField
+          label="Call timeout (ms)"
+          value={cfg.CallTimeoutMs}
+          onChange={(x) => set({ ...cfg, CallTimeoutMs: x })}
+          placeholder="30000"
+          help="Inactivity window before the engine ends a call."
+        />
+        <NumberField
+          label="Voice hangtime (ms)"
+          value={cfg.VoiceHangtimeMs}
+          onChange={(x) => set({ ...cfg, VoiceHangtimeMs: x })}
+          placeholder="3500"
+          help="End-of-transmission window applied to every voice protocol: the composer ends a call this long after the last decoded voice frame."
+        />
+      </div>
+
+      <SelectField
+        label="Voice call grouping"
+        value={cfg.VoiceCallGrouping || "transmission"}
+        onChange={(x) => set({ ...cfg, VoiceCallGrouping: x })}
+        options={[
+          { value: "transmission", label: "transmission — one file per over/PTT" },
+          { value: "conversation", label: "conversation — group consecutive overs of a talkgroup" },
+        ]}
+        help="How voice recordings are split, for every voice protocol."
       />
 
       <div className="flex flex-wrap gap-2">

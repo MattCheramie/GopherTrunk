@@ -500,6 +500,27 @@ trunking:
   # transmission pauses. Issue #356.
   call_timeout_ms: 30000
 
+  # voice_hangtime_ms: universal "end of transmission" window applied to
+  # EVERY voice protocol (FM, DMR, P25 Phase 1 / 2). Once a call has
+  # decoded voice, the recording is ended this long after the last voice
+  # frame — keeping recordings tightly bounded to the actual
+  # transmission instead of waiting out call_timeout_ms. Default 3500
+  # (3.5 s) when omitted or zero.
+  voice_hangtime_ms: 3500
+
+  # voice_call_grouping: how voice recordings are split, for every
+  # protocol.
+  #   "transmission" (default) — one file per over/PTT; the recording
+  #     rolls to a fresh file at each end-of-transmission boundary
+  #     (e.g. a P25 terminator). Best when voice frequencies are shared
+  #     between talkgroups.
+  #   "conversation" — keep consecutive overs of the same talkgroup in
+  #     one file; split only when a different talkgroup takes the
+  #     frequency or the channel goes idle past voice_hangtime_ms.
+  # In both modes, audio from a different talkgroup on a shared voice
+  # frequency is never appended to the wrong recording.
+  voice_call_grouping: "transmission"
+
   systems:
     - name: "Example-P25"
       protocol: p25

@@ -28,10 +28,21 @@ const (
 	// from KindCallEnd because KindCallEnd fires the instant the engine
 	// releases the voice channel, before the WAV is flushed.
 	KindCallComplete Kind = "call.complete"
-	KindGrant        Kind = "grant"
-	KindToneAlert    Kind = "tone.alert"
-	KindDecodeError  Kind = "decode.error"
-	KindError        Kind = "error"
+	// KindCallSegment fires when the voice composer detects an
+	// end-of-transmission boundary (a P25 terminator, a DMR voice
+	// terminator, an FM squelch gap, …) within an active call and the
+	// system is configured to split recordings per transmission
+	// (trunking.voice_call_grouping = "transmission"). The recorder
+	// finalizes the current WAV/.raw (and emits KindCallComplete for it)
+	// and rolls to a fresh file for the next over — without ending the
+	// engine call, so a same-talkgroup re-key that doesn't re-grant is
+	// still captured. Payload is trunking.CallSegment. No-op in
+	// "conversation" grouping (the composer never emits it).
+	KindCallSegment Kind = "call.segment"
+	KindGrant       Kind = "grant"
+	KindToneAlert   Kind = "tone.alert"
+	KindDecodeError Kind = "decode.error"
+	KindError       Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):
 	//   KindHuntProgress fires once per CC candidate the hunter
 	//     tries — payload identifies which system + frequency +

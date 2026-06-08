@@ -220,6 +220,8 @@ export interface SystemConfig {
 
 export interface TrunkingConfig {
   CallTimeoutMs: number;
+  VoiceHangtimeMs: number;
+  VoiceCallGrouping: string;
   Systems: SystemConfig[] | null;
   [k: string]: unknown;
 }
