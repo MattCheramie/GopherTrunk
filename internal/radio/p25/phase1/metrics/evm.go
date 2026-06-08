@@ -81,36 +81,67 @@ func EstimateOuterRailC4FM(soft []float32) float64 {
 	return a
 }
 
-// EVMConstellation returns the RMS error-vector magnitude of a complex symbol
-// constellation (the CQPSK / π/4-DQPSK path's post-carrier-recovery points) as
-// a percentage. Each point is normalized by the stream's RMS modulus to unit
-// reference, assigned to the nearest ideal QPSK position (±45°, ±135° on the
-// unit circle), and EVM is the RMS distance to that position in percent:
+// dqpskPhases is the number of distinct phase positions a π/4-DQPSK symbol
+// stream visits: the modulation alternates between two QPSK constellations
+// offset by 45°, so its pre-differential-decode points land on one of eight
+// evenly-spaced phases on the unit circle (0, 45, …, 315°). Assigning EVM
+// against only the four QPSK positions would charge a clean π/4-DQPSK signal
+// ~40% EVM for the symbols sitting on the *other* ring.
+const dqpskPhases = 8
+
+// EVMConstellation returns the RMS error-vector magnitude of a π/4-DQPSK
+// complex symbol constellation (the CQPSK path's post-carrier-recovery points,
+// pre differential decode) as a percentage. Each point is normalized by the
+// stream's RMS modulus to unit reference, assigned to the nearest of the eight
+// ideal π/4-DQPSK phases on the unit circle, and EVM is the RMS distance to
+// that position in percent:
 //
 //	EVM% = 100 · √(mean(|r̂ − ideal|²)),
 //
 // where r̂ is the point scaled so the reference radius is 1. Returns 0 for an
 // empty input. The reference is the RMS radius rather than a fixed scale, so
-// the estimate is independent of the AGC gain the points arrive at.
+// the estimate is independent of the AGC gain the points arrive at. (A plain
+// 4-point QPSK stream is a subset of the eight phases, so this stays correct
+// for it too.)
 func EVMConstellation(points []complex64) float64 {
 	if len(points) == 0 {
 		return 0
 	}
 	var sumSq float64
+	// 8th-power phase estimator: Σ exp(j·8·θ) concentrates the eight-phase
+	// modulation onto one tone, so its argument /8 is the common carrier-phase
+	// offset the recovery loop happened to lock at. Removing it makes the EVM
+	// invariant to that offset — without it a loop locked a few degrees off the
+	// grid would be charged sin(offset) of bogus dispersion (the clean signal
+	// reading tens of percent EVM that *fell* when noise was added).
+	var pwrReal, pwrImag float64
 	for _, p := range points {
-		sumSq += float64(real(p))*float64(real(p)) + float64(imag(p))*float64(imag(p))
+		i, q := float64(real(p)), float64(imag(p))
+		sumSq += i*i + q*q
+		ang := dqpskPhases * math.Atan2(q, i)
+		pwrReal += math.Cos(ang)
+		pwrImag += math.Sin(ang)
 	}
 	rms := math.Sqrt(sumSq / float64(len(points)))
 	if rms <= 0 {
 		return 0
 	}
-	// Ideal π/4-DQPSK / QPSK positions on the unit circle.
-	const s = math.Sqrt2 / 2 // sin(45°)=cos(45°)
-	ideal := [4][2]float64{{s, s}, {-s, s}, {-s, -s}, {s, -s}}
+	offset := math.Atan2(pwrImag, pwrReal) / dqpskPhases
+	cosO, sinO := math.Cos(-offset), math.Sin(-offset)
+
+	// Ideal π/4-DQPSK phase positions on the unit circle.
+	var ideal [dqpskPhases][2]float64
+	for k := range ideal {
+		ang := float64(k) * 2 * math.Pi / dqpskPhases
+		ideal[k] = [2]float64{math.Cos(ang), math.Sin(ang)}
+	}
 	var errSq float64
 	for _, p := range points {
-		i := float64(real(p)) / rms
-		q := float64(imag(p)) / rms
+		// Normalize to unit reference and derotate by the recovered offset.
+		ri := float64(real(p)) / rms
+		rq := float64(imag(p)) / rms
+		i := ri*cosO - rq*sinO
+		q := ri*sinO + rq*cosO
 		best := math.Inf(1)
 		for _, id := range ideal {
 			di := i - id[0]

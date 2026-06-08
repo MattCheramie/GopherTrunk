@@ -334,6 +334,10 @@ func (m siglabTUIModel) viewDashboard() string {
 				r.Signal.IQGainImbalanceDB, r.Signal.IQPhaseImbalanceDeg, r.Signal.IQImageRejectionDB))
 		}
 		b.WriteString(fmt.Sprintf("Decode-error rate: %.2f / 1000 symbols\n", r.Signal.DecodeErrorRate))
+		if d := r.Signal.Demod; d != nil {
+			b.WriteString(fmt.Sprintf("Demod (%s): EVM %.1f%%  SNR≈%.1f dB\n",
+				d.Modulation, d.EVMPct, d.SNREstimateDB))
+		}
 	}
 	b.WriteString("\n" + siglabDim.Render(m.status))
 	return b.String()

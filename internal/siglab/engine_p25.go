@@ -22,7 +22,7 @@ const p25DeviationHz = 1800.0
 // the production newP25Phase1Pipeline construction so a deep replay lock still
 // implies an on-air lock, while surfacing the diagnostics the factory path
 // cannot.
-func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32)) (*runBundle, error) {
+func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64)) (*runBundle, error) {
 	demodMode := p25phase1rx.DemodC4FM
 	if cfg.DemodMode != "" {
 		m, ok := p25phase1rx.ParseDemodMode(cfg.DemodMode)
@@ -57,6 +57,12 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 		EnableDecisionDirectedAFC: cfg.EnableDDA,
 		EnableAdaptiveC4FMSlicer:  cfg.EnableAdaptiveSlicer,
 		SoftSink:                  softTap,
+		// The CQPSK path fires SymbolSink with the post-carrier-recovery
+		// complex constellation points; the C4FM path leaves it uncalled
+		// (its quality view is the real soft eye via SoftSink). Feeding it to
+		// the analyzer lets the demod-quality metrics use the constellation
+		// EVM/SNR estimators on the linear path.
+		SymbolSink: constTap,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			symbolTap(dibits, false, baseIdx)
 			cc.Process(dibits, baseIdx)
