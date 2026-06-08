@@ -69,6 +69,8 @@ func displayValue(fv reflect.Value, r formRow) string {
 		return "set  →"
 	case kindMap:
 		return fmt.Sprintf("%d set  →", nonDefaultMapCount(fv))
+	case kindUnsupported:
+		return "(unsupported — edit in file)"
 	}
 	return ""
 }
