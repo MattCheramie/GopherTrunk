@@ -103,6 +103,32 @@ func BER4PAM(ebN0dB float64) float64 {
 	return 0.75 * QFunc(math.Sqrt(0.8*g))
 }
 
+// SERCoherentQPSK is the symbol-error probability of ideal coherent QPSK in
+// AWGN, the symbol-domain companion to BERCoherentQPSK:
+//
+//	Ps = 2·Q(√(Es/N0)) − Q(√(Es/N0))²  ≈  2·Q(√(Es/N0)),
+//
+// expressed in Es/N0 (= 2·Eb/N0). The exact two-term form is used so the
+// reference stays accurate at low Es/N0 where the union-bound approximation
+// over-counts. This is the symbol-domain reference for the CQPSK sweep, whose
+// measured quantity is the recovered dibit (symbol) error rate.
+func SERCoherentQPSK(esN0dB float64) float64 {
+	q := QFunc(math.Sqrt(dBToLinear(esN0dB)))
+	return 2*q - q*q
+}
+
+// SER4PAM is the symbol-error probability of ideal coherent 4-PAM in AWGN,
+// the symbol-domain companion to BER4PAM:
+//
+//	Ps = 2(M−1)/M · Q(√(6/(M²−1)·Es/N0)) = 1.5·Q(√(0.4·Es/N0))  for M=4,
+//
+// in Es/N0. The C4FM sweep measures the recovered dibit (symbol) error rate,
+// so this — not the bit-domain BER4PAM — is the curve its loss budget is taken
+// against.
+func SER4PAM(esN0dB float64) float64 {
+	return 1.5 * QFunc(math.Sqrt(0.4*dBToLinear(esN0dB)))
+}
+
 // C4FMReferenceLossDB is the nominal Eb/N0 gap a non-coherent FM-discriminator
 // detector of C4FM carries over the coherent 4-PAM bound (BER4PAM). It is a
 // documentation/centering constant only — the actual CI loss budget is taken
