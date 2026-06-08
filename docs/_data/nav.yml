@@ -1,4 +1,10 @@
 groups:
+  - label: Getting Started
+    items:
+      - title: What is GopherTrunk?
+        url: /getting-started.html
+      - title: Get started
+        url: /getting-started-setup.html
   - label: About
     items:
       - title: The Story of GopherTrunk
