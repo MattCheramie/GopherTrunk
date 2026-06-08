@@ -11,7 +11,6 @@ export function APRSSection() {
     <Section
       sectionKey="aprs"
       title="APRS"
-      instructions="APRS / AX.25 Bell-202 AFSK receiver. Each channel pins an SDR to an APRS frequency (144.39 MHz is the North-America primary)."
     >
       <ListEditor<APRSChannelConfig>
         label="Channels"

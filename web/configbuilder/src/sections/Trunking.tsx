@@ -76,7 +76,6 @@ export function TrunkingSection() {
     <Section
       sectionKey="trunking"
       title="Trunking Systems"
-      instructions="The trunked radio networks to follow. Each system needs a unique name, a protocol, and at least one control-channel frequency. Add systems by hand, by browsing RadioReference.com, or by importing a RadioReference PDF/CSV."
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField

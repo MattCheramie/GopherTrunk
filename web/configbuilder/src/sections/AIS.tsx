@@ -11,7 +11,6 @@ export function AISSection() {
     <Section
       sectionKey="ais"
       title="AIS"
-      instructions="Marine AIS GMSK receiver. Class-A vessels alternate between 161.975 MHz (87B) and 162.025 MHz (88B); pin one SDR to each to catch both."
     >
       <ListEditor<AISChannelConfig>
         label="Channels"

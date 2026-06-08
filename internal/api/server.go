@@ -1016,6 +1016,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/config/file/talkgroups", s.handleConfigTalkgroups)
 		mux.HandleFunc("GET /api/v1/config/defaults", s.handleConfigDefaults)
 		mux.HandleFunc("GET /api/v1/config/docs", s.handleConfigDocs)
+		mux.HandleFunc("GET /api/v1/config/fieldmeta", s.handleConfigFieldMeta)
 		mux.HandleFunc("POST /api/v1/config/validate", s.handleConfigValidate)
 		mux.HandleFunc("POST /api/v1/config/marshal", s.handleConfigMarshal)
 		mux.HandleFunc("POST /api/v1/config/file", s.gate(s.handleConfigSave))

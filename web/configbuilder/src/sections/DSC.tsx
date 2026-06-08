@@ -11,7 +11,6 @@ export function DSCSection() {
     <Section
       sectionKey="dsc"
       title="DSC"
-      instructions="Marine Digital Selective Calling receiver. VHF channel 70 (156.525 MHz) carries distress/urgency/safety alerts and routine call-ups."
     >
       <ListEditor<DSCChannelConfig>
         label="Channels"

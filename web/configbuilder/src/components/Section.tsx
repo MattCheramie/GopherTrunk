@@ -4,22 +4,28 @@ import { useStore } from "../store/shared";
 // Section wraps a config section editor with its title, instructions, a
 // "Docs ↗" link (opens in a new tab), and a live validation badge driven
 // by the section's entry in the whole-config validation result.
+//
+// Instructions come from the shared docs registry (Go configbuilder.Sections,
+// served over /config/docs) so the web and terminal builders show identical
+// section help from one source. The optional `instructions` prop is only a
+// fallback for before the registry has loaded.
 export function Section(props: {
   sectionKey: string;
   title: string;
-  instructions: ReactNode;
+  instructions?: ReactNode;
   children: ReactNode;
 }) {
   const docs = useStore((s) => s.docs[props.sectionKey]);
   const validation = useStore((s) => s.validation);
   const errs = (validation?.errors ?? []).filter((e) => e.section === props.sectionKey);
+  const instructions = docs?.instructions ?? props.instructions;
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{props.title}</h2>
-          <p className="help mt-1 max-w-2xl">{props.instructions}</p>
+          {instructions ? <p className="help mt-1 max-w-2xl">{instructions}</p> : null}
         </div>
         {docs ? (
           <a

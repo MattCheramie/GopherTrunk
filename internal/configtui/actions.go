@@ -67,6 +67,12 @@ func (m Model) startSave() (tea.Model, tea.Cmd) {
 // comment-preserving on overwrite). Errors are surfaced as toasts.
 func (m *Model) doSave(path string) {
 	dir := dirOf(path)
+	// Create missing parent folders so saving to a new subdirectory just
+	// works (the web builder has an explicit create-folder dialog).
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		m.pushErr("create dir: " + err.Error())
+		return
+	}
 	for rel, rows := range m.talkgroups {
 		if err := configbuilder.WriteTalkgroupCSV(joinPath(dir, rel), rows); err != nil {
 			m.pushErr("talkgroup " + rel + ": " + err.Error())

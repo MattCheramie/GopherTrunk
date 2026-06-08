@@ -11,7 +11,6 @@ export function MDC1200Section() {
     <Section
       sectionKey="mdc1200"
       title="MDC1200"
-      instructions="Motorola MDC1200 FFSK signaling receiver. Target the conventional analog voice channels you monitor — bursts ride at the head/tail of each transmission."
     >
       <ListEditor<MDC1200ChannelConfig>
         label="Channels"

@@ -11,7 +11,6 @@ export function M17Section() {
     <Section
       sectionKey="m17"
       title="M17"
-      instructions="M17 digital-voice link-layer receiver (decodes link-setup metadata). Simplex calling is commonly 144.975 MHz (2 m) / 433.475 MHz (70 cm)."
     >
       <ListEditor<M17ChannelConfig>
         label="Channels"

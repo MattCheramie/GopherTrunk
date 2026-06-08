@@ -17,10 +17,11 @@ const (
 	kindBoolPtr // *bool tri-state (default/true/false)
 	kindStringList
 	kindFreqList
-	kindList   // []struct → drill into a list view
-	kindStruct // nested struct → drill into a sub-form
-	kindPtr    // *struct → enable/clear + drill
-	kindMap    // map[string]bool → drill into a toggle list
+	kindList        // []struct → drill into a list view
+	kindStruct      // nested struct → drill into a sub-form
+	kindPtr         // *struct → enable/clear + drill
+	kindMap         // map[string]bool → drill into a toggle list
+	kindUnsupported // a kind the engine can't edit (guarded by a test)
 )
 
 // formRow describes one editable row in a struct form view.
@@ -117,7 +118,10 @@ func kindOf(f reflect.StructField, m fieldMeta) rowKind {
 		if el.Kind() == reflect.Struct {
 			return kindList
 		}
-		return kindStringList
+		if el.Kind() == reflect.String {
+			return kindStringList
+		}
+		return kindUnsupported // e.g. []int — would corrupt on commit
 	case reflect.Ptr:
 		if ft.Elem().Kind() == reflect.Bool {
 			return kindBoolPtr
@@ -125,13 +129,17 @@ func kindOf(f reflect.StructField, m fieldMeta) rowKind {
 		if ft.Elem().Kind() == reflect.Struct {
 			return kindPtr
 		}
-		return kindText
+		return kindUnsupported
 	case reflect.Struct:
 		return kindStruct
 	case reflect.Map:
-		return kindMap
+		// Only map[string]bool (web.tabs) has a real editor today.
+		if ft.Key().Kind() == reflect.String && ft.Elem().Kind() == reflect.Bool {
+			return kindMap
+		}
+		return kindUnsupported
 	}
-	return kindText
+	return kindUnsupported
 }
 
 // structNameOf returns the element struct type name of a value (deref ptr).

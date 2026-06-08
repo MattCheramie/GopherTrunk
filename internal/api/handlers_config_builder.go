@@ -309,10 +309,21 @@ func rrToResponse(full radioreference.FullSystem) RRSystemResponse {
 	return RRSystemResponse{System: full, Config: sys, Talkgroups: rows}
 }
 
-// handleConfigDocs answers GET /api/v1/config/docs — a static map of
-// config section → documentation link the builder opens in a new tab.
+// handleConfigDocs answers GET /api/v1/config/docs — a map of config section →
+// {instructions + documentation link} the builder renders and opens in a new
+// tab. Sourced from the shared configbuilder.Sections() registry so the web and
+// terminal builders show identical section help.
 func (s *Server) handleConfigDocs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, configDocs)
+	writeJSON(w, http.StatusOK, configDocs())
+}
+
+// handleConfigFieldMeta answers GET /api/v1/config/fieldmeta — the shared
+// per-field metadata registry keyed "StructName.FieldName" (comprehensive help
+// plus select options / Hz / freq-list flags). The web builder feeds the help
+// into its field widgets so its per-field help is sourced from the same Go
+// registry the terminal builder uses.
+func (s *Server) handleConfigFieldMeta(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, configbuilder.FieldMetas())
 }
 
 // handleConfigMarshal answers POST /api/v1/config/marshal — render the

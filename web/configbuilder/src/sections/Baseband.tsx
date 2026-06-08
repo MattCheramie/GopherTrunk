@@ -28,7 +28,6 @@ export function BasebandSection() {
     <Section
       sectionKey="baseband"
       title="Baseband"
-      instructions="Wideband IQ recording and offline replay. 'Record' taps live tuners to WAV; 'Replay' mounts recorded WAVs as virtual tuners (record at sdr.sample_rate for real-time-correct playback)."
     >
       <Fieldset legend="Record (tap live tuners to WAV)" defaultOpen>
         <ListEditor<BasebandRecordConfig>
