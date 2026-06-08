@@ -114,6 +114,13 @@ EXAMPLES:
   # SURVEY: sweep a band and classify+decode every signal (analog, paging, trunking)
   gophertrunk hunt -survey -serial 00000001 -sample-rate 2400000 -band 460:470
 
+  # SURVEY: with WAV clips of active analog channels + a fast classify-only pass
+  gophertrunk hunt -survey -survey-audio ./clips -serial 00000001 -band 150:154
+  gophertrunk hunt -survey -classify-only -serial 00000001 -band 460:470
+
+  # SURVEY (offline): classify + decode a recorded wideband capture, no SDR
+  gophertrunk hunt -survey -in wideband.cfile -format f32 -sample-rate 2400000
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
