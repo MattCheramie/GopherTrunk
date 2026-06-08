@@ -12,6 +12,11 @@ export interface SpectrumDevice {
   role: string;
   center_hz: number;
   sample_rate_hz: number;
+  // Configured P25 Phase 1 demod mode of the system this SDR is
+  // decoding ("c4fm" | "cqpsk"), or absent when no P25 Phase 1 system
+  // applies. The symbol/constellation panels' "Auto" mode reads this to
+  // pick the receiver without operator input.
+  p25_modulation?: string;
 }
 
 export interface SpectrumFrame {

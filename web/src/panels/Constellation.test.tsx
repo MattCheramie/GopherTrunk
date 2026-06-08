@@ -9,9 +9,10 @@ vi.mock("../api/diag", () => ({
   openIQStream: vi.fn(),
 }));
 
-vi.mock("../api/symbols", () => ({
-  openSymbolStream: vi.fn(),
-}));
+vi.mock("../api/symbols", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/symbols")>();
+  return { ...actual, openSymbolStream: vi.fn() };
+});
 
 import { fetchSpectrumDevices } from "../api/spectrum";
 import { openIQStream } from "../api/diag";
@@ -79,6 +80,21 @@ describe("Constellation panel", () => {
     expect(callArgs?.proto).toBeTruthy();
     // The raw IQ stream stays closed until the operator switches View.
     expect(openIQStream).not.toHaveBeenCalled();
+  });
+
+  it("auto-selects CQPSK from the device's reported modulation", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      { ...ONE_DEVICE[0], p25_modulation: "cqpsk" },
+    ] as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    // Default Mode is Auto; it follows the device's reported modulation.
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.proto).toBe(
+      "p25-cqpsk",
+    );
   });
 
   it("switches to the vector scope and opens a raw IQ stream", async () => {

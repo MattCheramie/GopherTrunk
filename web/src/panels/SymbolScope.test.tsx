@@ -5,9 +5,10 @@ vi.mock("../api/spectrum", () => ({
   fetchSpectrumDevices: vi.fn(),
 }));
 
-vi.mock("../api/symbols", () => ({
-  openSymbolStream: vi.fn(),
-}));
+vi.mock("../api/symbols", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/symbols")>();
+  return { ...actual, openSymbolStream: vi.fn() };
+});
 
 import { fetchSpectrumDevices } from "../api/spectrum";
 import { openSymbolStream } from "../api/symbols";
@@ -69,7 +70,24 @@ describe("Symbol scope panel", () => {
     });
     const callArgs = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
     expect(callArgs?.serial).toBe("rtl-1");
+    // Default Mode is Auto; with no reported modulation it resolves to C4FM.
     expect(callArgs?.proto).toBe("p25-c4fm");
+  });
+
+  it("auto-selects CQPSK when the device reports an LSM system", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      { ...oneDevice[0], p25_modulation: "cqpsk" },
+    ]);
+    vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });
+
+    render(<SymbolScope />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    // Auto (default) follows the device's reported modulation.
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.proto).toBe(
+      "p25-cqpsk",
+    );
   });
 
   it("shows the live status pill when the WS reports open", async () => {

@@ -40,6 +40,23 @@ export interface SymbolFrame {
   cma_error: number;
 }
 
+// Map a device's reported P25 demod mode (from SpectrumDevice
+// .p25_modulation — the daemon's canonical "c4fm"/"cqpsk", with the
+// other ParseDemodMode spellings tolerated) to the symbol-stream proto
+// selector. Unknown / empty falls back to C4FM, matching the receiver's
+// default. Used by the panels' "Auto" mode to pick the receiver from the
+// system the SDR is actually decoding.
+export function demodModeToProto(mod: string | undefined | null): string {
+  switch ((mod ?? "").toLowerCase()) {
+    case "cqpsk":
+    case "lsm":
+    case "linear":
+      return "p25-cqpsk";
+    default:
+      return "p25-c4fm";
+  }
+}
+
 export type SymbolFrameHandler = (f: SymbolFrame) => void;
 export type StatusHandler = (s: "connecting" | "open" | "closed") => void;
 

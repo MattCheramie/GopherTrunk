@@ -20,6 +20,13 @@ type SpectrumDevice struct {
 	Role         string `json:"role"`
 	CenterHz     uint32 `json:"center_hz"`
 	SampleRateHz uint32 `json:"sample_rate_hz"`
+	// P25Modulation is the configured P25 Phase 1 demod mode of the
+	// system this SDR is decoding ("c4fm" or "cqpsk"), resolved by
+	// matching the device's tuning against the configured systems. Lets
+	// the web symbol/constellation panels auto-select the right mode
+	// instead of asking the operator to pick it. Empty when no P25
+	// Phase 1 system matches (e.g. a DMR-only device).
+	P25Modulation string `json:"p25_modulation,omitempty"`
 }
 
 // SpectrumFrame is the wire shape of one frame on the WS stream.
