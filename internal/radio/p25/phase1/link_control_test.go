@@ -105,3 +105,80 @@ func TestIsTalkerAliasLCO(t *testing.T) {
 		}
 	}
 }
+
+// injectRSSymbolErrors replaces whole inner Hamming(10,6,3) codewords in
+// the assembled LC/ES field with valid codewords carrying a *different*
+// 6-bit value, so the inner layer decodes cleanly (0 inner errors) while
+// exactly len(positions) outer RS symbols are wrong. This isolates the
+// outer RS layer's correction behaviour from the inner Hamming layer.
+func injectRSSymbolErrors(blocks [LDULCESBlockCount][]byte, positions []int) [LDULCESBlockCount][]byte {
+	var field []byte
+	for _, b := range blocks {
+		field = append(field, b...)
+	}
+	for _, p := range positions {
+		cur, _ := decodeHamming10_6(field[p*10 : p*10+10])
+		var v byte
+		for _, bit := range cur {
+			v = v<<1 | bit&1
+		}
+		v = (v + 1) & 0x3F // a guaranteed-different 6-bit value
+		nd := make([]byte, 6)
+		for j := 0; j < 6; j++ {
+			nd[j] = (v >> uint(5-j)) & 1
+		}
+		copy(field[p*10:p*10+10], encodeHamming10_6(nd))
+	}
+	var out [LDULCESBlockCount][]byte
+	for j := range out {
+		out[j] = append([]byte(nil), field[j*LDULCESBlockBits:(j+1)*LDULCESBlockBits]...)
+	}
+	return out
+}
+
+// TestLinkControlRSCorrection confirms the outer RS(24,12,13) layer
+// recovers the correct talkgroup/source after up to t=6 symbol errors —
+// the residual corruption that, before the RS layer, produced bogus
+// talkgroups and false foreign-TG gating in the field capture.
+func TestLinkControlRSCorrection(t *testing.T) {
+	lc := LinkControl{
+		LCFormat:       LCOGroupVoiceChannelUser,
+		ServiceOptions: 0x00,
+		TalkgroupID:    1234,
+		SourceID:       567890,
+	}
+	clean := AssembleLinkControl(lc)
+	for nerr := 0; nerr <= 6; nerr++ {
+		positions := make([]int, nerr)
+		for i := range positions {
+			positions[i] = i * 3 // spread across distinct symbols
+		}
+		got, _, err := ParseLinkControl(injectRSSymbolErrors(clean, positions))
+		if err != nil {
+			t.Fatalf("nerr %d: unexpected error %v", nerr, err)
+		}
+		if got.TalkgroupID != lc.TalkgroupID || got.SourceID != lc.SourceID || got.LCFormat != lc.LCFormat {
+			t.Fatalf("nerr %d: recovered %+v, want %+v", nerr, got, lc)
+		}
+	}
+}
+
+// TestLinkControlRSUncorrectable confirms a >t error burst is flagged
+// rather than yielding a plausible-but-wrong talkgroup.
+func TestLinkControlRSUncorrectable(t *testing.T) {
+	lc := LinkControl{LCFormat: LCOGroupVoiceChannelUser, TalkgroupID: 4321, SourceID: 99}
+	clean := AssembleLinkControl(lc)
+	// 7 distinct symbol errors > t=6.
+	got, _, err := ParseLinkControl(injectRSSymbolErrors(clean, []int{0, 2, 4, 6, 8, 10, 12}))
+	if err == nil {
+		// Aliasing onto another codeword is acceptable only if it does not
+		// masquerade as the original.
+		if got.TalkgroupID == lc.TalkgroupID && got.SourceID == lc.SourceID {
+			t.Fatalf("7 symbol errors 'recovered' the original — impossible within t=6")
+		}
+		return
+	}
+	if err != ErrLinkControlUncorrectable {
+		t.Fatalf("unexpected error %v, want ErrLinkControlUncorrectable", err)
+	}
+}

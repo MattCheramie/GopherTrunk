@@ -53,3 +53,45 @@ func TestEncryptionSyncCorrectsBitError(t *testing.T) {
 		t.Errorf("ES after correction = %+v, want %+v", got, in)
 	}
 }
+
+// TestEncryptionSyncRSCorrection confirms the outer RS(24,16,9) layer
+// recovers the correct algorithm/key after up to t=4 symbol errors — the
+// residual corruption that, before the RS layer, produced the scatter of
+// garbage Algorithm IDs seen in the field capture.
+func TestEncryptionSyncRSCorrection(t *testing.T) {
+	es := EncryptionSync{
+		MessageIndicator: [9]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99},
+		AlgorithmID:      0x84, // AES-256
+		KeyID:            0xBEEF,
+	}
+	clean := AssembleEncryptionSync(es)
+	for nerr := 0; nerr <= 4; nerr++ {
+		positions := make([]int, nerr)
+		for i := range positions {
+			positions[i] = i * 3
+		}
+		got, _, err := ParseEncryptionSync(injectRSSymbolErrors(clean, positions))
+		if err != nil {
+			t.Fatalf("nerr %d: unexpected error %v", nerr, err)
+		}
+		if got != es {
+			t.Fatalf("nerr %d: recovered %+v, want %+v", nerr, got, es)
+		}
+	}
+}
+
+// TestEncryptionSyncRSUncorrectable confirms a >t=4 burst is flagged.
+func TestEncryptionSyncRSUncorrectable(t *testing.T) {
+	es := EncryptionSync{AlgorithmID: 0x81, KeyID: 0x1234}
+	clean := AssembleEncryptionSync(es)
+	got, _, err := ParseEncryptionSync(injectRSSymbolErrors(clean, []int{0, 2, 4, 6, 8}))
+	if err == nil {
+		if got == es {
+			t.Fatalf("5 symbol errors 'recovered' the original — impossible within t=4")
+		}
+		return
+	}
+	if err != ErrEncryptionSyncUncorrectable {
+		t.Fatalf("unexpected error %v, want ErrEncryptionSyncUncorrectable", err)
+	}
+}
