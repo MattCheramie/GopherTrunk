@@ -14,6 +14,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -46,6 +47,13 @@ func runHunt(args []string) {
 	// probe an explicit candidate list.
 	serial := fs.String("serial", "", "SDR serial to sweep for a live hunt (omit -in). Empty + no -in ⇒ error")
 	surveyMode := fs.Bool("survey", false, "signal-survey mode: classify every detected carrier (analog/digital/paging/trunking) and decode the conventional ones, not just trunking control channels (live only)")
+	classifyOnly := fs.Bool("classify-only", false, "survey: classify carriers only, skip all decoding (fast inventory)")
+	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
+	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
+	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
+	classSNRGate := fs.Float64("class-snr-gate", 0, "survey classifier: min SNR (dB) to classify a carrier (0 = default 3)")
+	classDigitalProm := fs.Float64("class-digital-prominence", 0, "survey classifier: min baud-line prominence for a digital call (0 = default 15)")
+	classAMCV := fs.Float64("class-am-cv", 0, "survey classifier: envelope coefficient-of-variation above which a carrier reads as AM (0 = default 0.15)")
 	var bands repeatedString
 	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
 	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
@@ -161,26 +169,33 @@ FLAGS:`)
 	)
 	if live {
 		sys, surveyResult, reports = runHuntLive(rep, huntLiveParams{
-			serial:          *serial,
-			survey:          *surveyMode,
-			bands:           []string(bands),
-			candidatesMHz:   *candidatesFlag,
-			noSweep:         *noSweep,
-			sampleRateHz:    *sampleRate,
-			protocol:        proto,
-			fftSize:         *fftSize,
-			sweepDwell:      *sweepDwell,
-			peakThresholdDb: *peakThresholdDb,
-			minSpacingHz:    uint32(*minSpacingHz),
-			dwellSeconds:    *dwellSeconds,
-			autoTune:        *autoTune,
-			gain:            *gain,
-			ppm:             *ppm,
-			name:            *name,
-			state:           *state,
-			county:          *county,
-			location:        *location,
-			minConfidence:   *minConfidence,
+			serial:           *serial,
+			survey:           *surveyMode,
+			classifyOnly:     *classifyOnly,
+			surveyAudioDir:   *surveyAudio,
+			maxDwellSeconds:  *maxDwellSeconds,
+			identifyMinConf:  *identifyMinConf,
+			classSNRGate:     *classSNRGate,
+			classDigitalProm: *classDigitalProm,
+			classAMCV:        *classAMCV,
+			bands:            []string(bands),
+			candidatesMHz:    *candidatesFlag,
+			noSweep:          *noSweep,
+			sampleRateHz:     *sampleRate,
+			protocol:         proto,
+			fftSize:          *fftSize,
+			sweepDwell:       *sweepDwell,
+			peakThresholdDb:  *peakThresholdDb,
+			minSpacingHz:     uint32(*minSpacingHz),
+			dwellSeconds:     *dwellSeconds,
+			autoTune:         *autoTune,
+			gain:             *gain,
+			ppm:              *ppm,
+			name:             *name,
+			state:            *state,
+			county:           *county,
+			location:         *location,
+			minConfidence:    *minConfidence,
 		})
 	} else {
 		// Build the capture inputs.
@@ -205,17 +220,37 @@ FLAGS:`)
 			captures = append(captures, ci)
 		}
 
-		fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
-		var derr error
-		sys, reports, derr = hunt.Discover(captures, hunt.DiscoverConfig{
-			Name:          *name,
-			State:         *state,
-			County:        *county,
-			Location:      *location,
-			MinConfidence: *minConfidence,
-		})
-		if derr != nil {
-			rep.Fatal(1, derr)
+		if *surveyMode {
+			// Offline survey: classify + route every capture, not just trunking.
+			fmt.Fprintf(os.Stderr, "survey: classifying %d capture(s)…\n", len(captures))
+			sv, sreports, serr := hunt.RunOfflineSurvey(captures, hunt.LiveHuntOptions{
+				Name: *name, State: *state, County: *county, Location: *location,
+				Protocol: proto, MinConfidence: *minConfidence,
+				ClassifyOnly:          *classifyOnly,
+				SurveyAudioDir:        *surveyAudio,
+				IdentifyMinConfidence: *identifyMinConf,
+				ClassifyConfig: survey.ClassifyConfig{
+					SNRGateDb: *classSNRGate, DigitalProminence: *classDigitalProm, AMEnvelopeCV: *classAMCV,
+				},
+			})
+			if serr != nil {
+				rep.Fatal(1, serr)
+			}
+			printSurvey(sv)
+			sys, surveyResult, reports = sv.System, sv, sreports
+		} else {
+			fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
+			var derr error
+			sys, reports, derr = hunt.Discover(captures, hunt.DiscoverConfig{
+				Name:          *name,
+				State:         *state,
+				County:        *county,
+				Location:      *location,
+				MinConfidence: *minConfidence,
+			})
+			if derr != nil {
+				rep.Fatal(1, derr)
+			}
 		}
 	}
 

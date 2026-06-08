@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -44,6 +45,17 @@ type LiveHuntOptions struct {
 	// decode every detected carrier, not just trunking control channels. The
 	// daemon Manager reads this to dispatch the right run.
 	Survey bool
+	// ClassifyConfig tunes the survey classifier thresholds. The zero value
+	// uses survey.DefaultClassifyConfig.
+	ClassifyConfig survey.ClassifyConfig
+	// IdentifyMinConfidence, when > 0, skips the (expensive) trunking identify
+	// for a digital carrier whose classifier confidence is below it — unless it
+	// is at a paging baud. 0 ⇒ always identify (never drop a possible CC).
+	IdentifyMinConfidence float64
+	// ClassifyOnly records the classifier verdict for every carrier and skips
+	// all decoding (trunking identify, paging, analog tone scan) for a fast
+	// inventory.
+	ClassifyOnly bool
 	// Serial requests a specific SDR for the run. Empty ⇒ the daemon
 	// auto-selects (spare SDR, else borrow the control SDR). Consumed by the
 	// daemon Acquirer; RunLiveHunt itself ignores it (the IQSource is already
@@ -57,9 +69,17 @@ type LiveHuntOptions struct {
 
 	// DwellSeconds is how much IQ to capture per candidate for identify+decode.
 	// 0 ⇒ 3 s.
-	DwellSeconds  float64
-	MinConfidence float64
-	AutoTune      bool
+	DwellSeconds float64
+	// MaxDwellSeconds, when > DwellSeconds, lets a survey candidate extend its
+	// capture (in DwellSeconds chunks) until carrier activity is seen or this
+	// ceiling is reached — useful for bursty paging. 0 ⇒ a single fixed dwell.
+	MaxDwellSeconds float64
+	MinConfidence   float64
+	AutoTune        bool
+
+	// SurveyAudioDir, when set, makes a survey write a WAV clip per active
+	// analog-FM carrier into this directory.
+	SurveyAudioDir string
 
 	// System metadata for the resulting map.
 	Name, State, County, Location string

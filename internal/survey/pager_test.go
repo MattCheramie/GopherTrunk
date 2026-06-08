@@ -4,7 +4,76 @@ import (
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag"
 )
+
+// pocsagIQ builds a clean POCSAG transmission as FM IQ: a 576-bit preamble, a
+// sync codeword, then one batch carrying one numeric page for addr18, at
+// baud × Oversample × 10 sample rate (an exact resampler ratio) and POCSAG's
+// 4500 Hz deviation.
+func pocsagIQ(addr18 uint32, fn pocsag.Function, baud uint32) ([]complex64, uint32) {
+	rate := baud * oversample * 10
+	cws := []uint32{pocsag.SyncCodeword}
+	for i := 0; i < pocsag.BatchCodewords; i++ {
+		switch i {
+		case 0:
+			cws = append(cws, pocsag.EncodeAddress(addr18, fn))
+		case 1:
+			cws = append(cws, pocsag.EncodeMessage(0))
+		default:
+			cws = append(cws, pocsag.IdleCodeword)
+		}
+	}
+	bits := make([]byte, 0, 576+len(cws)*32)
+	for i := 0; i < 576; i++ {
+		bits = append(bits, byte((i+1)%2)) // 1010… preamble
+	}
+	for _, cw := range cws {
+		for b := 31; b >= 0; b-- {
+			bits = append(bits, byte((cw>>uint(b))&1))
+		}
+	}
+	sps := int(rate / baud)
+	msg := make([]float64, 0, len(bits)*sps)
+	for _, b := range bits {
+		v := -1.0
+		if b == 1 {
+			v = 1.0
+		}
+		for j := 0; j < sps; j++ {
+			msg = append(msg, v)
+		}
+	}
+	return fmModulate(msg, float64(rate), 4500), rate
+}
+
+// TestDecodePOCSAGEndToEnd builds a clean POCSAG transmission as IQ and asserts
+// the buffer-mode adapter recovers the page (RIC + encoding), exercising the
+// full FM→resample→slice→syncer→batch→message chain.
+func TestDecodePOCSAGEndToEnd(t *testing.T) {
+	const addr18 uint32 = 0x12345
+	iq, rate := pocsagIQ(addr18, 1 /* numeric */, 1200)
+	pages := DecodePOCSAG(iq, rate)
+	if len(pages) == 0 {
+		t.Fatalf("no pages decoded")
+	}
+	wantRIC := addr18 << 3 // address occupies bits 3..20; function is separate
+	found := false
+	for _, p := range pages {
+		if p.Capcode == wantRIC {
+			found = true
+			if p.Encoding != "numeric" {
+				t.Errorf("encoding = %q, want numeric", p.Encoding)
+			}
+			if p.Protocol != "pocsag" || p.BaudHz != 1200 {
+				t.Errorf("got protocol=%q baud=%d, want pocsag 1200", p.Protocol, p.BaudHz)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("RIC 0x%x not among decoded pages %+v", wantRIC, pages)
+	}
+}
 
 // TestDemodBitsRoundTrip checks the buffer-mode FM→resample→slice adapter
 // recovers a known bit pattern from a GFSK-modulated carrier. It validates the

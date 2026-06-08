@@ -157,6 +157,8 @@ export interface HuntStartRequest {
   candidates?: number[];
   no_sweep?: boolean;
   survey?: boolean;
+  classify_only?: boolean;
+  max_dwell_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;
   name?: string;
