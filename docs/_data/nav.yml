@@ -57,6 +57,8 @@ groups:
         url: /constellation.html
       - title: Symbol scope
         url: /symbol-scope.html
+      - title: Eye diagram
+        url: /eye-diagram.html
       - title: Hunt (discover systems)
         url: /hunt.html
       - title: rigctld integration

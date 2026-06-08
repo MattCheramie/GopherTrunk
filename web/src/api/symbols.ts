@@ -18,6 +18,11 @@ export interface SymbolFrame {
   // aligned index-for-index with dibits.
   sym_i: number[];
   sym_q: number[];
+  // Bounded window of oversampled, AGC-scaled matched-filter output
+  // (eye_sps samples per symbol) for the C4FM eye diagram; empty on
+  // CQPSK. Fold over eye_sps to render the 4-level eye.
+  eye_soft: number[];
+  eye_sps: number;
   // Sliced decisions: 0..3 when is_bits is false, 0..1 when true.
   dibits: number[];
   is_bits: boolean;

@@ -41,6 +41,12 @@ const p25DeviationHz = 1800.0
 // matching the diag stream's ~50 ms cadence.
 const defaultFrameSymbols = 256
 
+// maxEyeSamples bounds the oversampled eye window carried per frame. At
+// 10 sps that is ~150 symbols of overlay — ample to render a stable eye —
+// while keeping the WS payload modest (the oversampled stream is sps×
+// the soft rate, so it is capped rather than sent in full).
+const maxEyeSamples = 1536
+
 // Frame is one batch of recovered symbols. Soft is the pre-slicer soft
 // waveform (empty when the demod path exposes no soft tap, e.g. P25
 // CQPSK); Dibits are the sliced decisions (values 0..3 when IsBits is
@@ -63,9 +69,17 @@ type Frame struct {
 	Soft         []float32 `json:"soft"`
 	SymI         []float32 `json:"sym_i"`
 	SymQ         []float32 `json:"sym_q"`
-	Dibits       []uint8   `json:"dibits"`
-	IsBits       bool      `json:"is_bits"`
-	BaseIdx      int       `json:"base_idx"`
+	// EyeSoft is a window of the oversampled, AGC-scaled matched-filter
+	// output (EyeSPS samples per symbol) on the C4FM path — fold it over
+	// the symbol period for the 4-level eye diagram. Empty on paths
+	// without an eye tap (CQPSK). It is NOT aligned with Dibits (it runs
+	// EyeSPS× faster) and is a bounded recent window, not the full
+	// stream. EyeSPS is the integer samples-per-symbol to fold on.
+	EyeSoft []float32 `json:"eye_soft"`
+	EyeSPS  int       `json:"eye_sps"`
+	Dibits  []uint8   `json:"dibits"`
+	IsBits  bool      `json:"is_bits"`
+	BaseIdx int       `json:"base_idx"`
 }
 
 // Options configures an Engine.
@@ -121,9 +135,14 @@ type Engine struct {
 	pendSoft   []float32
 	pendSym    []complex64
 	pendDibits []uint8
-	isBits     bool
-	baseIdx    int // absolute symbol index of pendDibits[0]
-	totalSyms  int // symbols seen across the whole stream
+	// pendEye accumulates oversampled eye samples (C4FM); it runs faster
+	// than the symbol stream and is a bounded recent window, attached to
+	// each flushed frame and cleared. eyeSPS is the fold period.
+	pendEye   []float32
+	eyeSPS    int
+	isBits    bool
+	baseIdx   int // absolute symbol index of pendDibits[0]
+	totalSyms int // symbols seen across the whole stream
 }
 
 // New constructs an Engine. Returns an error for an unsupported
@@ -175,6 +194,7 @@ func New(opts Options) (*Engine, error) {
 		DemodMode:    demodMode,
 		SoftSink:     e.onSoft,
 		SymbolSink:   e.onSymbols,
+		EyeSink:      e.onEye,
 		DibitSink:    e.onDibits,
 	})
 	return e, nil
@@ -201,6 +221,16 @@ func (e *Engine) onSoft(soft []float32) {
 // for the C4FM soft track.
 func (e *Engine) onSymbols(syms []complex64) {
 	e.pendSym = append(e.pendSym, syms...)
+}
+
+// onEye accumulates the oversampled eye samples (C4FM), keeping only the
+// most recent maxEyeSamples so the per-frame window stays bounded.
+func (e *Engine) onEye(samples []float32, sps int) {
+	e.eyeSPS = sps
+	e.pendEye = append(e.pendEye, samples...)
+	if len(e.pendEye) > maxEyeSamples {
+		e.pendEye = e.pendEye[len(e.pendEye)-maxEyeSamples:]
+	}
 }
 
 func (e *Engine) onDibits(dibits []uint8, _ int) {
@@ -254,6 +284,15 @@ func (e *Engine) flush(n int) {
 		e.pendSym = e.pendSym[:0]
 	}
 
+	// Eye window (C4FM): hand the current bounded window to this frame and
+	// clear it, so a later flush in the same drain doesn't duplicate it.
+	var eye []float32
+	if len(e.pendEye) > 0 {
+		eye = make([]float32, len(e.pendEye))
+		copy(eye, e.pendEye)
+		e.pendEye = e.pendEye[:0]
+	}
+
 	frame := Frame{
 		TimestampNs:  e.nowNs(),
 		SymbolRateHz: e.symbolRateHz,
@@ -262,6 +301,8 @@ func (e *Engine) flush(n int) {
 		Soft:         soft,
 		SymI:         symI,
 		SymQ:         symQ,
+		EyeSoft:      eye,
+		EyeSPS:       e.eyeSPS,
 		Dibits:       dibits,
 		IsBits:       e.isBits,
 		BaseIdx:      e.baseIdx,
@@ -275,6 +316,7 @@ func (e *Engine) flush(n int) {
 func (e *Engine) Close() error {
 	e.pendSoft = nil
 	e.pendSym = nil
+	e.pendEye = nil
 	e.pendDibits = nil
 	return nil
 }

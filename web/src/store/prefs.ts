@@ -25,6 +25,8 @@ const LS_KEYS = {
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
+  eyeOffsetKHz: "gt.eye.offsetKHz",
+  eyeHold: "gt.eye.hold",
 } as const;
 
 const SS_KEYS = {
@@ -222,6 +224,24 @@ export const prefs = {
   },
   setSymbolScopeProto(p: string) {
     writeLS(LS_KEYS.symbolScopeProto, p);
+  },
+
+  // Eye-diagram panel view options (C4FM datascope). Same offset/Hold
+  // semantics as the Symbol scope.
+  eyeOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.eyeOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setEyeOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.eyeOffsetKHz, String(khz));
+  },
+  eyeHold(): boolean {
+    return readLS(LS_KEYS.eyeHold) === "1";
+  },
+  setEyeHold(on: boolean) {
+    writeLS(LS_KEYS.eyeHold, on ? "1" : "0");
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */

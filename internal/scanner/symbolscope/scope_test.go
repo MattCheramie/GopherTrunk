@@ -71,8 +71,18 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 	// Per-dibit soft accumulators across all frames.
 	var sum [4]float64
 	var cnt [4]int
+	var sawEye bool
 	wantBase := 0
 	for fi, f := range frames {
+		if len(f.EyeSoft) > 0 {
+			sawEye = true
+			if f.EyeSPS < 2 {
+				t.Errorf("frame %d: EyeSPS = %d, want >= 2 (oversampled fold period)", fi, f.EyeSPS)
+			}
+			if len(f.EyeSoft) > maxEyeSamples {
+				t.Errorf("frame %d: EyeSoft len %d exceeds cap %d", fi, len(f.EyeSoft), maxEyeSamples)
+			}
+		}
 		if f.IsBits {
 			t.Errorf("frame %d: IsBits = true, want false for C4FM dibits", fi)
 		}
@@ -101,6 +111,12 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 			sum[d] += float64(f.Soft[i])
 			cnt[d]++
 		}
+	}
+
+	// The C4FM path must surface the oversampled eye window for the
+	// datascope — the open 4-level eye view a 1/symbol soft track can't give.
+	if !sawEye {
+		t.Error("C4FM path emitted no eye window (EyeSoft empty on every frame)")
 	}
 
 	// All four levels should be populated, and their mean soft values
@@ -153,6 +169,9 @@ func TestCQPSKEmitsComplexSymbolsWithoutSoft(t *testing.T) {
 	for fi, f := range frames {
 		if len(f.Soft) != 0 {
 			t.Errorf("frame %d: CQPSK soft track should be empty, got %d", fi, len(f.Soft))
+		}
+		if len(f.EyeSoft) != 0 {
+			t.Errorf("frame %d: CQPSK eye track should be empty (C4FM-only), got %d", fi, len(f.EyeSoft))
 		}
 		// The complex symbol track, when present, must be aligned with the
 		// dibits on both axes — that pairing is what lets a client colour

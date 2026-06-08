@@ -257,6 +257,17 @@ type Options struct {
 	// batch fired on the same Process call. Nil by default — meant for
 	// the web "Constellation" scope's symbol-domain view.
 	SymbolSink func(symbols []complex64)
+	// EyeSink, when non-nil, receives the *oversampled* matched-filter
+	// output (sps samples per symbol) on the C4FM path, scaled to the
+	// same soft units as SoftSink, together with the integer samples-
+	// per-symbol. Folding this stream over the symbol period yields the
+	// 4-level eye diagram (OP25's "datascope") — the open-eye view that
+	// reveals symbol-timing and SNR health a 1-sample-per-symbol soft
+	// track cannot. Only the C4FM path produces it; the CQPSK path leaves
+	// it uncalled (its quality view is the complex constellation). Nil by
+	// default — meant for the web eye-diagram scope. The slice is reused
+	// across calls; the callee must copy what it needs synchronously.
+	EyeSink func(oversampled []float32, sps int)
 }
 
 // Receiver is the composed IQ → dibit → LDU pipeline. Process is the
@@ -298,6 +309,9 @@ type Receiver struct {
 	dibitSink  phase1.DibitSink
 	softSink   func([]float32)
 	symbolSink func([]complex64)
+	eyeSink    func([]float32, int)
+	eyeSPS     int       // integer samples/symbol for the eye fold (C4FM)
+	eyeBuf     []float32 // scratch for the AGC-scaled oversampled eye output
 	dibitBase  int
 
 	// Reusable scratch slices so Process doesn't allocate per call
@@ -353,11 +367,16 @@ func New(opts Options) *Receiver {
 		dibitSink:  opts.DibitSink,
 		softSink:   opts.SoftSink,
 		symbolSink: opts.SymbolSink,
+		eyeSink:    opts.EyeSink,
 	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
 		r.cq = newCQPSKDemod(opts.SampleRateHz, int(sps+0.5), span, alpha, opts.GardnerGain)
 	default:
+		// Integer samples/symbol for the eye-diagram fold. sps is
+		// SampleRateHz/SymbolRate (10 at the 48 kHz channel rate); the
+		// New guard above already ensured sps >= 2.
+		r.eyeSPS = int(sps + 0.5)
 		r.fm = demod.NewFM()
 		// P25 Phase 1 C4FM is not a root-raised-cosine matched-pair
 		// system: the transmitter shapes with a raised-cosine cascaded
@@ -522,6 +541,27 @@ func (r *Receiver) Process(iq []complex64) {
 		agcLevel := r.agc.process(r.symbols)
 		if r.softSink != nil {
 			r.softSink(r.symbols)
+		}
+		// Eye-diagram tap: emit the oversampled matched-filter output
+		// (which the clock loop read but did not consume), scaled by the
+		// batch's AGC gain so its rails line up with the soft levels the
+		// slicer decides on. Folding sps samples per symbol reconstructs
+		// the 4-level eye. r.matched is still the post-AFC/DDA oversampled
+		// buffer here — MuellerMuller.Process reads it read-only.
+		if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
+			g := float32(1)
+			if r.agc.target > 0 && agcLevel > 0 {
+				g = r.agc.target / float32(agcLevel)
+			}
+			if cap(r.eyeBuf) < len(r.matched) {
+				r.eyeBuf = make([]float32, len(r.matched))
+			} else {
+				r.eyeBuf = r.eyeBuf[:len(r.matched)]
+			}
+			for i, x := range r.matched {
+				r.eyeBuf[i] = x * g
+			}
+			r.eyeSink(r.eyeBuf, r.eyeSPS)
 		}
 		// Slice to the 4-level alphabet. The adaptive slicer (when
 		// allocated — the calibrated path) tracks the observed eye and

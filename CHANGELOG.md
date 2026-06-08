@@ -22,6 +22,13 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Eye diagram panel** (`/eye`) — GopherTrunk's take on OP25's datascope
+  (#557 follow-up). The daemon's C4FM receiver gains an oversampled,
+  AGC-scaled eye tap; the panel folds it over the symbol period and
+  overlays the windows so the four-level eye is visible. A healthy channel
+  shows four open bands with clear gaps at the decision instant; a closed
+  eye flags symbol-timing or SNR trouble. C4FM only (CQPSK's quality view
+  is the constellation).
 - **True symbol constellation** on the Constellation panel (#557 follow-up).
   The panel gains a **View** toggle: **Symbols** (new default) plots the
   receiver's actual symbol-decision points — for **P25 CQPSK/LSM** a real

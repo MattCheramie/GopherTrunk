@@ -102,6 +102,8 @@ func (p *symbolProvider) OpenSymbolStream(ctx context.Context, serial, proto str
 				Soft:         f.Soft,
 				SymI:         f.SymI,
 				SymQ:         f.SymQ,
+				EyeSoft:      f.EyeSoft,
+				EyeSPS:       f.EyeSPS,
 				Dibits:       f.Dibits,
 				IsBits:       f.IsBits,
 				BaseIdx:      f.BaseIdx,

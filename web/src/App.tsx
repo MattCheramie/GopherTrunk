@@ -11,6 +11,7 @@ import { Bookmarks } from "./panels/Bookmarks";
 import { CCActivity } from "./panels/CCActivity";
 import { Constellation } from "./panels/Constellation";
 import { SymbolScope } from "./panels/SymbolScope";
+import { EyeDiagram } from "./panels/EyeDiagram";
 import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
@@ -57,6 +58,7 @@ const EXTRA_TABS: Tab[] = [
   { to: "/spectrum", label: "Spectrum", icon: "≈" },
   { to: "/constellation", label: "Constellation", icon: "✦" },
   { to: "/symbols", label: "Symbol scope", icon: "⩘" },
+  { to: "/eye", label: "Eye diagram", icon: "◉" },
   { to: "/bookmarks", label: "Bookmarks", icon: "★" },
   { to: "/metrics", label: "Metrics", icon: "▰" },
   { to: "/devices", label: "Devices", icon: "⌗" },
@@ -200,6 +202,7 @@ export function App() {
           <Route path="/spectrum" element={<Spectrum />} />
           <Route path="/constellation" element={<Constellation />} />
           <Route path="/symbols" element={<SymbolScope />} />
+          <Route path="/eye" element={<EyeDiagram />} />
           <Route path="/bookmarks" element={<Bookmarks />} />
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />

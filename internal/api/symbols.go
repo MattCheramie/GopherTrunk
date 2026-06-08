@@ -30,9 +30,14 @@ type SymbolFrame struct {
 	Soft         []float32 `json:"soft"`
 	SymI         []float32 `json:"sym_i"`
 	SymQ         []float32 `json:"sym_q"`
-	Dibits       []uint8   `json:"dibits"`
-	IsBits       bool      `json:"is_bits"`
-	BaseIdx      int       `json:"base_idx"`
+	// EyeSoft is a bounded window of oversampled, AGC-scaled matched-
+	// filter output (EyeSPS samples per symbol) for the C4FM eye diagram;
+	// empty on CQPSK. Fold it over EyeSPS to render the 4-level eye.
+	EyeSoft []float32 `json:"eye_soft"`
+	EyeSPS  int       `json:"eye_sps"`
+	Dibits  []uint8   `json:"dibits"`
+	IsBits  bool      `json:"is_bits"`
+	BaseIdx int       `json:"base_idx"`
 }
 
 // SymbolProvider is the daemon-side abstraction the symbol endpoint
