@@ -105,6 +105,8 @@ func TestSymbolStreamDeliversFrames(t *testing.T) {
 				CenterHz:     851_012_500,
 				OffsetHz:     12_500,
 				Soft:         []float32{0.9, -0.3, -0.95, 0.31},
+				SymI:         []float32{0.7, -0.7, -0.7, 0.7},
+				SymQ:         []float32{0.7, 0.7, -0.7, -0.7},
 				Dibits:       []uint8{1, 0, 3, 2},
 				BaseIdx:      0,
 			},
@@ -142,6 +144,13 @@ func TestSymbolStreamDeliversFrames(t *testing.T) {
 		}
 		if i == 0 && len(f.Dibits) != 4 {
 			t.Errorf("frame #%d dibits len = %d, want 4", i, len(f.Dibits))
+		}
+		if i == 0 {
+			if len(f.SymI) != 4 || len(f.SymQ) != 4 {
+				t.Errorf("frame #0 symbol track len = (%d,%d), want (4,4)", len(f.SymI), len(f.SymQ))
+			} else if f.SymI[0] != 0.7 || f.SymQ[2] != -0.7 {
+				t.Errorf("frame #0 symbol track not round-tripped: SymI[0]=%v SymQ[2]=%v", f.SymI[0], f.SymQ[2])
+			}
 		}
 	}
 

@@ -243,6 +243,20 @@ type Options struct {
 	// output level distribution when the slicer collapses to outer
 	// symbols only).
 	SoftSink func(softSamples []float32)
+	// SymbolSink, when non-nil, receives the per-symbol *complex*
+	// constellation points sampled at the symbol-decision instants — the
+	// true symbol-domain constellation (post matched-filter, timing
+	// recovery and carrier recovery, pre differential-decode). Only the
+	// CQPSK / linear path produces these: c.symbols, the post-Costas
+	// π/4-DQPSK points, which on a clean signal cluster at the four
+	// ±45°/±135° constellation positions and degrade to a smeared X as
+	// the eye closes. The C4FM path leaves it uncalled — its symbol
+	// domain is the real 4-level soft waveform, surfaced via SoftSink
+	// (a complex constellation there is just the 4 levels on the real
+	// axis). When called it is aligned index-for-index with the dibit
+	// batch fired on the same Process call. Nil by default — meant for
+	// the web "Constellation" scope's symbol-domain view.
+	SymbolSink func(symbols []complex64)
 }
 
 // Receiver is the composed IQ → dibit → LDU pipeline. Process is the
@@ -280,10 +294,11 @@ type Receiver struct {
 	// DemodCQPSK.
 	cq *cqpskDemod
 
-	assembler *phase1.LDUAssembler
-	dibitSink phase1.DibitSink
-	softSink  func([]float32)
-	dibitBase int
+	assembler  *phase1.LDUAssembler
+	dibitSink  phase1.DibitSink
+	softSink   func([]float32)
+	symbolSink func([]complex64)
+	dibitBase  int
 
 	// Reusable scratch slices so Process doesn't allocate per call
 	// on the C4FM path.
@@ -334,9 +349,10 @@ func New(opts Options) *Receiver {
 	}
 
 	r := &Receiver{
-		demodMode: opts.DemodMode,
-		dibitSink: opts.DibitSink,
-		softSink:  opts.SoftSink,
+		demodMode:  opts.DemodMode,
+		dibitSink:  opts.DibitSink,
+		softSink:   opts.SoftSink,
+		symbolSink: opts.SymbolSink,
 	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
@@ -457,6 +473,15 @@ func (r *Receiver) Process(iq []complex64) {
 		// it directly to the sinks below — both consume
 		// synchronously before the next Process call.
 		r.dibits = r.cq.process(iq)
+		// Surface the complex symbol-decision points for the
+		// constellation scope. cq.symbols is the post-Costas
+		// π/4-DQPSK stream the dibits were decoded from, so it is
+		// aligned index-for-index with r.dibits (DQPSK.Decode emits
+		// one dibit per symbol). Fired before the dibit sinks so a
+		// consumer that pairs the two sees them on the same batch.
+		if r.symbolSink != nil && len(r.cq.symbols) > 0 {
+			r.symbolSink(r.cq.symbols)
+		}
 	} else {
 		r.disc = r.fm.Process(r.disc, iq)
 		r.matched = r.mf.MatchedFilter(r.matched, r.disc)

@@ -422,3 +422,109 @@ func TestParseDemodMode(t *testing.T) {
 		}
 	}
 }
+
+// TestCQPSKSymbolSinkAlignedAndClustered verifies the constellation tap:
+// the CQPSK path delivers one complex symbol per emitted dibit (aligned
+// for client colour-by-dibit), and on a clean LSM stream those symbols
+// settle into the four π/4-DQPSK constellation quadrants rather than a
+// blob at the origin.
+func TestCQPSKSymbolSinkAlignedAndClustered(t *testing.T) {
+	const sampleRate = 48_000.0
+	const sps = 10
+	const symbols = 1200
+
+	rng := uint32(0x1234abcd)
+	in := make([]uint8, symbols)
+	for i := range in {
+		rng = rng*1664525 + 1013904223
+		in[i] = uint8((rng >> 16) & 3)
+	}
+	iq := dibitsToLSMIQ(t, in, sps, PulseSpanSymbols, RolloffAlpha)
+
+	var dibits int
+	var syms []complex64
+	r := New(Options{
+		SampleRateHz: sampleRate,
+		DemodMode:    DemodCQPSK,
+		DibitSink:    func(d []uint8, _ int) { dibits += len(d) },
+		SymbolSink:   func(s []complex64) { syms = append(syms, s...) },
+	})
+	chunk := 4096
+	for i := 0; i < len(iq); i += chunk {
+		end := i + chunk
+		if end > len(iq) {
+			end = len(iq)
+		}
+		r.Process(iq[i:end])
+	}
+
+	if len(syms) == 0 {
+		t.Fatal("SymbolSink never fired on the CQPSK path")
+	}
+	// One symbol per dibit — the alignment a client relies on to colour
+	// each constellation point by its decided dibit.
+	if len(syms) != dibits {
+		t.Fatalf("symbol/dibit count mismatch: %d symbols, %d dibits", len(syms), dibits)
+	}
+
+	// After loop acquisition the points should populate all four
+	// quadrants (a real constellation), not collapse to the origin.
+	const settle = 200
+	var quad [4]int
+	var nonTrivial int
+	for _, s := range syms[min(settle, len(syms)):] {
+		if math.Hypot(float64(real(s)), float64(imag(s))) < 0.2 {
+			continue
+		}
+		nonTrivial++
+		q := 0
+		if real(s) < 0 {
+			q |= 1
+		}
+		if imag(s) < 0 {
+			q |= 2
+		}
+		quad[q]++
+	}
+	if nonTrivial < symbols/4 {
+		t.Fatalf("too few non-trivial symbol points: %d (constellation collapsed to origin)", nonTrivial)
+	}
+	for q := 0; q < 4; q++ {
+		if quad[q] == 0 {
+			t.Errorf("constellation quadrant %d empty — symbols did not form 4 clusters (quads=%v)", q, quad)
+		}
+	}
+}
+
+// TestC4FMSymbolSinkNeverFires confirms the complex symbol tap is a
+// CQPSK-only contract: the C4FM path's symbol domain is the real soft
+// waveform, so SymbolSink must stay uncalled there.
+func TestC4FMSymbolSinkNeverFires(t *testing.T) {
+	const sampleRate = 48_000.0
+	dibits := make([]uint8, 600)
+	for i := range dibits {
+		dibits[i] = uint8((i*7 + 3) & 3)
+	}
+	iq := demod.ModulateP25C4FM(dibits, sampleRate, 1800.0)
+	for i := range iq {
+		iq[i] *= 100
+	}
+
+	symbolCalls := 0
+	dibitCalls := 0
+	r := New(Options{
+		SampleRateHz: sampleRate,
+		DeviationHz:  1800.0,
+		DemodMode:    DemodC4FM,
+		DibitSink:    func(d []uint8, _ int) { dibitCalls += len(d) },
+		SymbolSink:   func(s []complex64) { symbolCalls += len(s) },
+	})
+	r.Process(iq)
+
+	if dibitCalls == 0 {
+		t.Fatal("C4FM path produced no dibits — fixture or path broken")
+	}
+	if symbolCalls != 0 {
+		t.Errorf("C4FM SymbolSink fired %d times, want 0 (C4FM has no complex symbol domain)", symbolCalls)
+	}
+}

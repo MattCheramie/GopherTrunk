@@ -20,6 +20,8 @@ const LS_KEYS = {
   constellationDcBlock: "gt.constellation.dcBlock",
   constellationAutoScale: "gt.constellation.autoScale",
   constellationZoom: "gt.constellation.zoom",
+  constellationView: "gt.constellation.view",
+  constellationProto: "gt.constellation.proto",
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
@@ -178,6 +180,23 @@ export const prefs = {
   },
   setConstellationZoom(z: number) {
     writeLS(LS_KEYS.constellationZoom, String(Math.max(0.5, Math.min(8, z))));
+  },
+  // Constellation render source: "symbols" plots the receiver's
+  // symbol-decision points (the true constellation — tight clusters for
+  // CQPSK, the 4 soft levels for C4FM); "raw" plots the wideband
+  // decimated IQ trajectory (a vector scope). Default "symbols".
+  constellationView(): "symbols" | "raw" {
+    return readLS(LS_KEYS.constellationView) === "raw" ? "raw" : "symbols";
+  },
+  setConstellationView(v: "symbols" | "raw") {
+    writeLS(LS_KEYS.constellationView, v);
+  },
+  // Receiver selector for the symbols view ("p25-c4fm" / "p25-cqpsk").
+  constellationProto(): string {
+    return readLS(LS_KEYS.constellationProto) ?? "p25-cqpsk";
+  },
+  setConstellationProto(p: string) {
+    writeLS(LS_KEYS.constellationProto, p);
   },
 
   // Symbol-scope panel view options. Offset (kHz, relative to the SDR

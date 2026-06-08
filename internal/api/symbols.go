@@ -18,12 +18,18 @@ import (
 // soft tap, e.g. P25 CQPSK); Dibits are the sliced decisions (0..3 when
 // IsBits is false, 0..1 when true). When Soft is non-empty it is aligned
 // index-for-index with Dibits.
+//
+// SymI/SymQ carry the complex symbol-decision points (the true
+// constellation) on the linear/CQPSK path; empty on C4FM. When non-empty
+// they are aligned index-for-index with Dibits.
 type SymbolFrame struct {
 	TimestampNs  int64     `json:"ts_ns"`
 	SymbolRateHz float64   `json:"symbol_rate_hz"`
 	CenterHz     uint32    `json:"center_hz"`
 	OffsetHz     int32     `json:"offset_hz"`
 	Soft         []float32 `json:"soft"`
+	SymI         []float32 `json:"sym_i"`
+	SymQ         []float32 `json:"sym_q"`
 	Dibits       []uint8   `json:"dibits"`
 	IsBits       bool      `json:"is_bits"`
 	BaseIdx      int       `json:"base_idx"`

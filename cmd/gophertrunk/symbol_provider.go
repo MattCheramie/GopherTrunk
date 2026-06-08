@@ -100,6 +100,8 @@ func (p *symbolProvider) OpenSymbolStream(ctx context.Context, serial, proto str
 				CenterHz:     f.CenterHz,
 				OffsetHz:     f.OffsetHz,
 				Soft:         f.Soft,
+				SymI:         f.SymI,
+				SymQ:         f.SymQ,
 				Dibits:       f.Dibits,
 				IsBits:       f.IsBits,
 				BaseIdx:      f.BaseIdx,

@@ -8,37 +8,66 @@ import {
   type IQFrame,
   type IQPoint,
 } from "../api/diag";
+import { openSymbolStream, type SymbolFrame } from "../api/symbols";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { TuningControls } from "../components/TuningControls";
 
-// Constellation panel — 2D scatter of decimated IQ samples. Useful
-// for spotting the symbol-domain shape of whatever the SDR is tuned
-// to without launching a separate SDR receiver.
+// Constellation panel — a 2D scatter of the signal in the complex
+// plane. Two sources, switchable via the View control:
 //
-//   - DC bias / unmodulated carrier   →  one bright dot off-centre
-//   - PSK / QPSK                       →  two or four clusters at
-//                                         ±0.5+0i etc.
-//   - C4FM / FSK                       →  two or four arcs
-//   - AM voice                          →  rotating cluster, modulated
-//                                         in amplitude
-//   - Wideband noise                    →  diffuse circle around the
-//                                         origin
+//   • Symbols (default) — the receiver's symbol-decision points, the
+//     *true* constellation: post matched-filter, timing recovery and
+//     carrier recovery, sampled once per symbol. P25 CQPSK reads as four
+//     tight clusters at ±45°/±135° (degrading to a smeared X as the eye
+//     closes); P25 C4FM has no complex symbol domain, so its four soft
+//     levels are plotted on the real axis (the open 4-level eye/symbol
+//     scope is C4FM's natural quality view). This is the modulation-
+//     quality picture OP25 shows on its Constellation tab.
+//
+//   • Vector scope (raw IQ) — the wideband decimated IQ trajectory,
+//     every sample including the transitions between symbols (no matched
+//     filter, no symbol clock). Useful as a general what-is-this-signal
+//     view: a DC/unmodulated carrier is one off-centre dot, PSK draws
+//     clusters joined by transition arcs, C4FM/FSK draws concentric
+//     arcs, noise a diffuse circle.
 //
 // The catch with a centre-tuned view is the DC spike: an SDR's DDC
 // leaks a residual carrier at 0 Hz that lands on top of anything in
-// the middle of the band, so the constellation reads as one fat blob.
-// The offset control mixes an off-centre locked channel down to
-// baseband (server-side, before decimation) so its symbols can be
-// seen clear of the spike — the same approach OP25's plot takes. With
-// Hold off the offset follows the newest active call on the selected
-// SDR; Hold pins it. DC-block (subtract the residual mean) and
-// auto-scale (fill the unit circle) clean up the render further.
-//
-// 2 ksps decimated stream → ~50 ms / frame at 4 chunks per frame → a
-// canvas redraw every 50 ms is responsive without burning CPU.
+// the middle of the band. The offset control mixes an off-centre locked
+// channel down to baseband (server-side) so its symbols can be seen
+// clear of the spike — the same approach OP25's plot takes. With Hold
+// off the offset follows the newest active call on the selected SDR;
+// Hold pins it. DC-block (subtract the residual mean) and auto-scale
+// (fill the unit circle) clean up the render further.
 
 const TARGET_RATE_SPS = 2000;
+
+// View source for the scatter (persisted in prefs).
+type View = "symbols" | "raw";
+
+const PROTOS: { value: string; label: string }[] = [
+  { value: "p25-cqpsk", label: "P25 CQPSK" },
+  { value: "p25-c4fm", label: "P25 C4FM" },
+];
+
+// Reference markers (ideal post-normalisation cluster centres) drawn as
+// hollow rings to guide the eye. Coordinates are in unit-plot space
+// (1.0 = plot radius), placed where auto-scale lands a clean signal: the
+// CQPSK clusters sit at the auto-scale fill radius on the 45° diagonals;
+// the C4FM soft levels sit on the real axis at the 1:3 inner/outer ratio.
+const CQPSK_MARKERS: IQPoint[] = [
+  { i: 0.6, q: 0.6 },
+  { i: -0.6, q: 0.6 },
+  { i: -0.6, q: -0.6 },
+  { i: 0.6, q: -0.6 },
+].map((p) => ({ i: p.i / Math.SQRT2, q: p.q / Math.SQRT2 }));
+const C4FM_MARKERS: IQPoint[] = [
+  { i: -0.6, q: 0 },
+  { i: -0.2, q: 0 },
+  { i: 0.2, q: 0 },
+  { i: 0.6, q: 0 },
+];
 const POINT_BUFFER = 2000;       // how many recent points to render
 // The plot is a responsive square: it fills the panel column (so it's as
 // large as OP25's, not a fixed postage stamp) but stays bounded so it
@@ -73,6 +102,8 @@ interface RenderOpts {
   autoScale: boolean;
   zoom: number;
   scaleRef: { current: number };
+  // Ideal cluster-centre rings, in unit-plot space (not gain-scaled).
+  markers: IQPoint[];
 }
 
 export function Constellation() {
@@ -82,8 +113,11 @@ export function Constellation() {
   const [selected, setSelected] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>("closed");
   const [latest, setLatest] = useState<IQFrame | null>(null);
+  const [symLatest, setSymLatest] = useState<SymbolFrame | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [view, setView] = useState<View>(() => prefs.constellationView());
+  const [proto, setProto] = useState<string>(() => prefs.constellationProto());
   const [offsetKHz, setOffsetKHz] = useState<number>(() =>
     prefs.constellationOffsetKHz(),
   );
@@ -100,7 +134,20 @@ export function Constellation() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<IQPoint[]>([]);
   const scaleRef = useRef<number>(1);
-  const optsRef = useRef<RenderOpts>({ dcBlock, autoScale, zoom, scaleRef });
+  // Ideal cluster markers depend on the active source: clusters on the
+  // diagonals for CQPSK symbols, levels on the real axis for C4FM
+  // symbols, none for the raw vector scope.
+  const markers = useMemo<IQPoint[]>(() => {
+    if (view !== "symbols") return [];
+    return proto === "p25-c4fm" ? C4FM_MARKERS : CQPSK_MARKERS;
+  }, [view, proto]);
+  const optsRef = useRef<RenderOpts>({
+    dcBlock,
+    autoScale,
+    zoom,
+    scaleRef,
+    markers,
+  });
   // Live square edge of the plot in CSS px, tracked from the container.
   const [size, setSize] = useState<number>(MIN_CANVAS_PX);
 
@@ -141,9 +188,9 @@ export function Constellation() {
   // Keep the render-time options the WS callback reads in sync without
   // re-subscribing the stream when a toggle flips.
   useEffect(() => {
-    optsRef.current = { dcBlock, autoScale, zoom, scaleRef };
+    optsRef.current = { dcBlock, autoScale, zoom, scaleRef, markers };
     renderConstellation(canvasRef.current, bufferRef.current, optsRef.current);
-  }, [dcBlock, autoScale, zoom]);
+  }, [dcBlock, autoScale, zoom, markers]);
 
   // Reuse the spectrum devices endpoint — same broker pool.
   useEffect(() => {
@@ -217,9 +264,26 @@ export function Constellation() {
   useEffect(() => {
     prefs.setConstellationZoom(zoom);
   }, [zoom]);
-
   useEffect(() => {
-    if (!selected) return;
+    prefs.setConstellationView(view);
+  }, [view]);
+  useEffect(() => {
+    prefs.setConstellationProto(proto);
+  }, [proto]);
+
+  // Push a fresh batch of points into the rolling buffer and repaint.
+  const pushPoints = (pts: IQPoint[]) => {
+    const buf = bufferRef.current;
+    for (const p of pts) buf.push(p);
+    if (buf.length > POINT_BUFFER) {
+      bufferRef.current = buf.slice(buf.length - POINT_BUFFER);
+    }
+    renderConstellation(canvasRef.current, bufferRef.current, optsRef.current);
+  };
+
+  // Raw vector-scope stream: wideband decimated IQ trajectory.
+  useEffect(() => {
+    if (!selected || view !== "raw") return;
     bufferRef.current = [];
     scaleRef.current = 1;
     setLatest(null);
@@ -230,35 +294,67 @@ export function Constellation() {
       offset: Math.round(clampedOffsetKHz * 1000),
       onFrame: (f) => {
         setLatest(f);
-        const buf = bufferRef.current;
-        for (const p of f.points) buf.push(p);
-        if (buf.length > POINT_BUFFER) {
-          bufferRef.current = buf.slice(buf.length - POINT_BUFFER);
-        }
-        renderConstellation(
-          canvasRef.current,
-          bufferRef.current,
-          optsRef.current,
-        );
+        pushPoints(f.points);
       },
       onStatus: setConn,
     });
     return () => stream.close();
     // Re-subscribe when the offset changes so the server re-mixes.
-  }, [cfg, selected, clampedOffsetKHz]);
+  }, [cfg, selected, view, clampedOffsetKHz]);
+
+  // Symbols stream: the receiver's symbol-decision points (true
+  // constellation). CQPSK carries complex points (sym_i/sym_q); C4FM has
+  // none, so its 4 soft levels are plotted on the real axis.
+  useEffect(() => {
+    if (!selected || view !== "symbols") return;
+    bufferRef.current = [];
+    scaleRef.current = 1;
+    setSymLatest(null);
+
+    const stream = openSymbolStream(cfg, {
+      serial: selected,
+      proto,
+      offset: Math.round(clampedOffsetKHz * 1000),
+      onFrame: (f) => {
+        setSymLatest(f);
+        const pts: IQPoint[] = [];
+        if (f.sym_i && f.sym_i.length > 0) {
+          const n = Math.min(f.sym_i.length, f.sym_q?.length ?? 0);
+          for (let k = 0; k < n; k++) pts.push({ i: f.sym_i[k], q: f.sym_q[k] });
+        } else if (f.soft && f.soft.length > 0) {
+          for (const s of f.soft) pts.push({ i: s, q: 0 });
+        }
+        pushPoints(pts);
+      },
+      onStatus: setConn,
+    });
+    return () => stream.close();
+  }, [cfg, selected, view, proto, clampedOffsetKHz]);
 
   // Prefer the device centre so the frequency view shows before the first
   // frame; fall back to the frame's stamped centre.
-  const centerHz = device?.center_hz ?? latest?.center_hz ?? null;
+  const centerHz =
+    device?.center_hz ?? latest?.center_hz ?? symLatest?.center_hz ?? null;
   const viewHz = centerHz != null ? centerHz + clampedOffsetKHz * 1000 : null;
 
   const tuningLabel = useMemo(() => {
     if (viewHz == null) return "";
-    const off = clampedOffsetKHz === 0 ? "centre" : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(3).replace(/\.?0+$/, "")} kHz`;
+    const off =
+      clampedOffsetKHz === 0
+        ? "centre"
+        : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(3).replace(/\.?0+$/, "")} kHz`;
     const head = `${(viewHz / 1e6).toFixed(4)} MHz (${off})`;
+    if (view === "symbols") {
+      if (!symLatest) return `${head} · waiting for symbols…`;
+      const kind =
+        symLatest.sym_i && symLatest.sym_i.length > 0
+          ? "symbols"
+          : "soft levels";
+      return `${head} · ${symLatest.symbol_rate_hz.toFixed(0)} sym/s · ${kind}`;
+    }
     if (!latest) return `${head} · waiting for samples…`;
     return `${head} · ${latest.sample_rate} sps · ${latest.energy_dbfs.toFixed(1)} dBFS`;
-  }, [latest, viewHz, clampedOffsetKHz]);
+  }, [view, latest, symLatest, viewHz, clampedOffsetKHz]);
 
   return (
     <div className="space-y-3">
@@ -289,8 +385,39 @@ export function Constellation() {
         </div>
       )}
 
-      {/* View controls — offset / follow-locked-channel / cleanup. */}
+      {/* View controls — source / offset / follow-locked-channel / cleanup. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+        <label className="flex items-center gap-2">
+          <span className="text-muted">View</span>
+          <select
+            className="bg-surface border border-border rounded px-2 py-1"
+            value={view}
+            onChange={(e) => setView(e.target.value as View)}
+            aria-label="Constellation source"
+          >
+            <option value="symbols">Symbols</option>
+            <option value="raw">Vector scope (raw IQ)</option>
+          </select>
+        </label>
+
+        {view === "symbols" && (
+          <label className="flex items-center gap-2">
+            <span className="text-muted">Mode</span>
+            <select
+              className="bg-surface border border-border rounded px-2 py-1"
+              value={proto}
+              onChange={(e) => setProto(e.target.value)}
+              aria-label="Demodulation mode"
+            >
+              {PROTOS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <TuningControls
           centerHz={centerHz}
           maxOffsetKHz={maxOffsetKHz}
@@ -360,11 +487,36 @@ export function Constellation() {
       </div>
 
       <div className="text-[11px] text-muted">
-        Plots decimated IQ samples ({TARGET_RATE_SPS} sps), brightest =
-        most recent. Tune the <em>Offset</em> onto a locked voice/control
-        channel to lift its symbols off the centre DC spike; clusters at
-        ±0.5 suggest PSK, concentric arcs suggest C4FM/FSK, a diffuse
-        circle is noise.
+        {view === "symbols" ? (
+          proto === "p25-c4fm" ? (
+            <>
+              Plots the receiver's recovered C4FM symbols. C4FM has no
+              complex constellation, so its four soft levels appear on the
+              real axis (rings mark the ideal ±1/±3 positions) — the open
+              4-level eye on the <em>Symbol scope</em> is C4FM's natural
+              quality view. Switch <em>Mode</em> to CQPSK for a 2D
+              constellation, or <em>View</em> to the vector scope for the
+              raw IQ trajectory.
+            </>
+          ) : (
+            <>
+              Plots the receiver's symbol-decision points — the true
+              constellation. A clean CQPSK/LSM signal forms four tight
+              clusters on the ±45° diagonals (rings); a closing eye smears
+              them into an X. Tune the <em>Offset</em> onto a locked
+              channel; brightest = most recent.
+            </>
+          )
+        ) : (
+          <>
+            Vector scope: plots decimated IQ samples ({TARGET_RATE_SPS} sps,
+            transitions included), brightest = most recent. Tune the{" "}
+            <em>Offset</em> onto a locked channel to lift it off the centre
+            DC spike; clusters suggest PSK, concentric arcs suggest C4FM/FSK,
+            a diffuse circle is noise. Switch <em>View</em> to Symbols for
+            the symbol-timed constellation.
+          </>
+        )}
       </div>
     </div>
   );
@@ -376,11 +528,11 @@ function ConnPill({ state }: { state: ConnState }) {
   return <span className="pill-err">offline</span>;
 }
 
-// renderConstellation paints the rolling IQ buffer as a phosphor-green
-// vector scope: labelled ±1 axes, reference rings at 0.5 and 1.0, and
-// additively-blended points so dense symbol clusters bloom while the
-// noise floor stays dim. DC-block subtracts the buffer mean to kill
-// any residual centre offset; auto-scale eases a gain so the cloud
+// renderConstellation paints the rolling IQ buffer: labelled ±1 axes,
+// reference rings at 0.5 and 1.0, optional ideal-cluster markers (symbols
+// view), and additively-blended points so dense symbol clusters bloom
+// while the noise floor stays dim. DC-block subtracts the buffer mean to
+// kill any residual centre offset; auto-scale eases a gain so the cloud
 // fills the unit circle regardless of input amplitude.
 function renderConstellation(
   canvas: HTMLCanvasElement | null,
@@ -439,6 +591,24 @@ function renderConstellation(
   ctx.textBaseline = "middle";
   for (const t of [-1, -0.5, 0.5, 1]) {
     ctx.fillText(String(t), MARGIN.left - 6, cy - t * radius);
+  }
+
+  // Ideal cluster-centre markers (symbols view): hollow amber rings at
+  // the positions a clean signal settles on after auto-scale. Drawn in
+  // unit-plot space so they don't move with the data gain, giving the
+  // operator a fixed target to judge cluster tightness / rotation
+  // against. Drawn before the points so the live scatter sits on top.
+  if (opts.markers.length > 0) {
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.55)"; // amber-400
+    ctx.lineWidth = 1.5;
+    const mr = Math.max(4, radius * 0.05);
+    for (const m of opts.markers) {
+      const x = cx + m.i * radius;
+      const y = cy - m.q * radius;
+      ctx.beginPath();
+      ctx.arc(x, y, mr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   const n = points.length;

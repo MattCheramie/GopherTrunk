@@ -13,10 +13,12 @@
 //
 // Phase 1 supports P25 Phase 1: C4FM emits the FM-discriminator soft
 // waveform aligned index-for-index with the sliced dibits; CQPSK emits
-// the dibits only (the receiver has no soft tap on that path yet). Other
-// protocols — and a soft waveform for them — are a follow-up that adds a
-// uniform soft tap to the remaining receivers; the Frame shape and this
-// API are designed to absorb that without change.
+// the complex symbol-decision points (SymI/SymQ) — the true
+// constellation — alongside the dibits, but no real soft track (its
+// quality view is the constellation, not a 4-level eye). Other protocols
+// — and a soft waveform for them — are a follow-up that adds a uniform
+// soft tap to the remaining receivers; the Frame shape and this API are
+// designed to absorb that without change.
 package symbolscope
 
 import (
@@ -45,12 +47,22 @@ const defaultFrameSymbols = 256
 // false, 0..1 when true). When Soft is non-empty it is aligned
 // index-for-index with Dibits. BaseIdx is the absolute symbol index the
 // batch starts at, so a client can detect gaps.
+//
+// SymI/SymQ are the complex symbol-decision points — the true
+// symbol-domain constellation sampled at each recovered symbol instant.
+// They are populated only on the linear/CQPSK path (the post-Costas
+// π/4-DQPSK points, which cluster at the four ±45°/±135° positions on a
+// clean signal); the C4FM path leaves them empty because its symbol
+// domain is the real 4-level soft already carried in Soft. When
+// non-empty they are aligned index-for-index with Dibits.
 type Frame struct {
 	TimestampNs  int64     `json:"ts_ns"`
 	SymbolRateHz float64   `json:"symbol_rate_hz"`
 	CenterHz     uint32    `json:"center_hz"`
 	OffsetHz     int32     `json:"offset_hz"`
 	Soft         []float32 `json:"soft"`
+	SymI         []float32 `json:"sym_i"`
+	SymQ         []float32 `json:"sym_q"`
 	Dibits       []uint8   `json:"dibits"`
 	IsBits       bool      `json:"is_bits"`
 	BaseIdx      int       `json:"base_idx"`
@@ -103,8 +115,11 @@ type Engine struct {
 	chanBuf []complex64
 
 	// Per-frame accumulators. soft grows in lockstep with dibits on the
-	// C4FM path; it stays empty on paths without a soft tap.
+	// C4FM path; it stays empty on paths without a soft tap. pendSym
+	// grows in lockstep with dibits on the CQPSK path (the complex
+	// constellation points); it stays empty on the C4FM path.
 	pendSoft   []float32
+	pendSym    []complex64
 	pendDibits []uint8
 	isBits     bool
 	baseIdx    int // absolute symbol index of pendDibits[0]
@@ -159,6 +174,7 @@ func New(opts Options) (*Engine, error) {
 		DeviationHz:  p25DeviationHz,
 		DemodMode:    demodMode,
 		SoftSink:     e.onSoft,
+		SymbolSink:   e.onSymbols,
 		DibitSink:    e.onDibits,
 	})
 	return e, nil
@@ -178,6 +194,13 @@ func (e *Engine) Process(iq []complex64) {
 // the same batch, pairs them with the sliced decisions.
 func (e *Engine) onSoft(soft []float32) {
 	e.pendSoft = append(e.pendSoft, soft...)
+}
+
+// onSymbols stashes the complex symbol-decision points (CQPSK path);
+// onDibits pairs them with the sliced decisions, exactly as onSoft does
+// for the C4FM soft track.
+func (e *Engine) onSymbols(syms []complex64) {
+	e.pendSym = append(e.pendSym, syms...)
 }
 
 func (e *Engine) onDibits(dibits []uint8, _ int) {
@@ -216,12 +239,29 @@ func (e *Engine) flush(n int) {
 		e.pendSoft = e.pendSoft[:0]
 	}
 
+	// Complex symbol track (CQPSK), carried only when it stayed aligned
+	// with the dibit stream — the same guard the soft track uses.
+	var symI, symQ []float32
+	if len(e.pendSym) == len(e.pendDibits) {
+		symI = make([]float32, n)
+		symQ = make([]float32, n)
+		for i, s := range e.pendSym[:n] {
+			symI[i] = real(s)
+			symQ[i] = imag(s)
+		}
+		e.pendSym = e.pendSym[n:]
+	} else {
+		e.pendSym = e.pendSym[:0]
+	}
+
 	frame := Frame{
 		TimestampNs:  e.nowNs(),
 		SymbolRateHz: e.symbolRateHz,
 		CenterHz:     e.centerHz,
 		OffsetHz:     e.offsetHz,
 		Soft:         soft,
+		SymI:         symI,
+		SymQ:         symQ,
 		Dibits:       dibits,
 		IsBits:       e.isBits,
 		BaseIdx:      e.baseIdx,
@@ -234,6 +274,7 @@ func (e *Engine) flush(n int) {
 // Close releases the engine. Idempotent.
 func (e *Engine) Close() error {
 	e.pendSoft = nil
+	e.pendSym = nil
 	e.pendDibits = nil
 	return nil
 }

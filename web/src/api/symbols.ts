@@ -12,6 +12,12 @@ export interface SymbolFrame {
   // (e.g. P25 CQPSK). When present it is aligned index-for-index with
   // dibits.
   soft: number[];
+  // Complex symbol-decision points (the true constellation): in-phase /
+  // quadrature components sampled at each symbol instant. Populated only
+  // on the linear/CQPSK path; empty on C4FM. When present they are
+  // aligned index-for-index with dibits.
+  sym_i: number[];
+  sym_q: number[];
   // Sliced decisions: 0..3 when is_bits is false, 0..1 when true.
   dibits: number[];
   is_bits: boolean;

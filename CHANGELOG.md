@@ -22,6 +22,17 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **True symbol constellation** on the Constellation panel (#557 follow-up).
+  The panel gains a **View** toggle: **Symbols** (new default) plots the
+  receiver's actual symbol-decision points — for **P25 CQPSK/LSM** a real
+  complex constellation that forms four tight clusters on the ±45°/±135°
+  diagonals on a clean signal and smears to an X as the eye closes; for
+  **P25 C4FM** the four recovered soft levels on the real axis (its open
+  4-level eye remains the Symbol scope's job). Amber rings mark the ideal
+  cluster centres. The previous wideband-IQ scatter is still available as
+  **Vector scope (raw IQ)** for identifying unknown signals. The symbols
+  stream reuses the live receiver (`WS /api/v1/diag/symbols`), so it shows
+  exactly what the production demod sees.
 
 ### Fixed
 
