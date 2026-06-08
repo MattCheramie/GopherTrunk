@@ -30,6 +30,9 @@ const LS_KEYS = {
   tuningOffsetKHz: "gt.tuning.offsetKHz",
   tuningHold: "gt.tuning.hold",
   tuningProto: "gt.tuning.proto",
+  histogramOffsetKHz: "gt.histogram.offsetKHz",
+  histogramHold: "gt.histogram.hold",
+  histogramProto: "gt.histogram.proto",
 } as const;
 
 const SS_KEYS = {
@@ -268,6 +271,29 @@ export const prefs = {
   },
   setTuningProto(p: string) {
     writeLS(LS_KEYS.tuningProto, p);
+  },
+
+  // Symbol-histogram panel view options.
+  histogramOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.histogramOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setHistogramOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.histogramOffsetKHz, String(khz));
+  },
+  histogramHold(): boolean {
+    return readLS(LS_KEYS.histogramHold) === "1";
+  },
+  setHistogramHold(on: boolean) {
+    writeLS(LS_KEYS.histogramHold, on ? "1" : "0");
+  },
+  histogramProto(): string {
+    return readLS(LS_KEYS.histogramProto) ?? "p25-c4fm";
+  },
+  setHistogramProto(p: string) {
+    writeLS(LS_KEYS.histogramProto, p);
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */

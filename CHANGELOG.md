@@ -22,6 +22,13 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Symbol histogram panel** (`/histogram`) — the recovered-symbol
+  distribution plus a derived signal-quality readout (#557 follow-up). A
+  scrambled P25 channel spreads evenly, so each of the four bins should
+  sit near 25%; a **Balance** meter flags a skewed (collapsed-eye)
+  distribution, and for C4FM an **SNR (MER)** estimate is derived from the
+  soft-level separation vs within-level spread. Computed client-side off
+  the existing symbol stream.
 - **Tuning panel** (`/tuning`) — live receiver-state meters, GopherTrunk's
   take on OP25's Mixer / Tuner (FLL) tabs (#557 follow-up). Trends the
   demod's residual carrier-frequency-offset estimate (should converge to

@@ -13,6 +13,7 @@ import { Constellation } from "./panels/Constellation";
 import { SymbolScope } from "./panels/SymbolScope";
 import { EyeDiagram } from "./panels/EyeDiagram";
 import { Tuning } from "./panels/Tuning";
+import { Histogram } from "./panels/Histogram";
 import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
@@ -61,6 +62,7 @@ const EXTRA_TABS: Tab[] = [
   { to: "/symbols", label: "Symbol scope", icon: "⩘" },
   { to: "/eye", label: "Eye diagram", icon: "◉" },
   { to: "/tuning", label: "Tuning", icon: "⊹" },
+  { to: "/histogram", label: "Histogram", icon: "▥" },
   { to: "/bookmarks", label: "Bookmarks", icon: "★" },
   { to: "/metrics", label: "Metrics", icon: "▰" },
   { to: "/devices", label: "Devices", icon: "⌗" },
@@ -206,6 +208,7 @@ export function App() {
           <Route path="/symbols" element={<SymbolScope />} />
           <Route path="/eye" element={<EyeDiagram />} />
           <Route path="/tuning" element={<Tuning />} />
+          <Route path="/histogram" element={<Histogram />} />
           <Route path="/bookmarks" element={<Bookmarks />} />
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />

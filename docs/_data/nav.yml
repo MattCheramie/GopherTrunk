@@ -61,6 +61,8 @@ groups:
         url: /eye-diagram.html
       - title: Tuning (receiver meters)
         url: /tuning.html
+      - title: Symbol histogram
+        url: /histogram.html
       - title: Hunt (discover systems)
         url: /hunt.html
       - title: rigctld integration
