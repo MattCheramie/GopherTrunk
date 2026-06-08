@@ -60,20 +60,29 @@ console, where everything from here on happens with clicks.
 The program keeps running in the background while you use the browser. To stop
 it later, close the GopherTrunk window (or press `Ctrl-C` in its window).
 
-## 5. Add a system to listen to — from the browser
+## 5. Add a system to listen to — with the Config Builder
 
-GopherTrunk needs to know *which* radio system to follow. You don't have to edit
-any files — set this up right in the web interface:
+GopherTrunk needs to know *which* radio system to follow. The friendliest way to
+set this up is the **Config Builder** — a guided, browser-based editor. You never
+touch a config file.
 
-- **Easiest: import it.** Find your area's system on
-  [RadioReference](https://www.radioreference.com/) and download its PDF, then
-  use the console's **Import** page to load it. GopherTrunk fills in the
-  frequencies and talkgroups for you. See [Import](import.html).
-- **Or add it by hand** on the **Settings** page: add a system, choose its
-  protocol (for example P25 or DMR), and enter its control-channel frequency.
+Open it from the web console by clicking the **🛠 Config Builder** button (top of
+the page) — it opens in a new tab. Inside, you can:
 
-Changes you make in the browser are saved automatically, and most take effect
-without restarting. See [Live edits](live-edits.html).
+- **Browse RadioReference** for your county/agency and pull a system straight in,
+  or **import a PDF/CSV** you downloaded from
+  [RadioReference](https://www.radioreference.com/) — the builder fills in the
+  frequencies and talkgroups for you.
+- **Build a system by hand** — add a system, pick its protocol (for example P25
+  or DMR), and type in its control-channel frequency.
+
+The builder checks your settings as you go and **saves** them when you're done.
+More detail is in the [Import guide](import.html).
+
+> Quick alternative: the web console's own **Settings** page can also add a
+> system inline, and small tweaks made anywhere in the console save
+> automatically and mostly apply without a restart — see
+> [Live edits](live-edits.html).
 
 ## 6. Watch your first call
 
