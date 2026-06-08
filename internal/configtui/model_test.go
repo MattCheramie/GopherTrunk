@@ -1,6 +1,7 @@
 package configtui
 
 import (
+	"os"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -172,5 +173,39 @@ func TestRRModalNoCreds(t *testing.T) {
 	m = send(m, "esc")
 	if m.modal != nil {
 		t.Fatalf("expected modal closed on esc")
+	}
+}
+
+func TestSaveReloadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	m := New([]string{dir}, radioreference.Auth{}, nil, "")
+	m.width, m.height = 120, 40
+	m.cfg.Trunking.Systems = []config.SystemConfig{{
+		Name: "Metro", Protocol: "p25", ControlChannels: []uint32{851_037_500},
+		TalkgroupFile: "metro.csv",
+	}}
+	m.talkgroups["metro.csv"] = []configbuilder.TalkgroupCSVRow{{Decimal: 101, AlphaTag: "PD"}}
+
+	path := dir + "/config.yaml"
+	(&m).doSave(path)
+	if len(m.errs) != 0 {
+		t.Fatalf("save errors: %v", m.errs)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config not written: %v", err)
+	}
+	if _, err := os.Stat(dir + "/metro.csv"); err != nil {
+		t.Fatalf("talkgroup sidecar not written: %v", err)
+	}
+
+	// Reload into a fresh model and confirm the system + talkgroups survive.
+	m2 := New([]string{dir}, radioreference.Auth{}, nil, "")
+	(&m2).loadPath(path)
+	if len(m2.cfg.Trunking.Systems) != 1 || m2.cfg.Trunking.Systems[0].Name != "Metro" {
+		t.Fatalf("system did not round-trip: %+v", m2.cfg.Trunking.Systems)
+	}
+	rows := m2.talkgroups["metro.csv"]
+	if len(rows) != 1 || rows[0].Decimal != 101 || rows[0].AlphaTag != "PD" {
+		t.Fatalf("talkgroups did not round-trip: %+v", rows)
 	}
 }
