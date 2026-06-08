@@ -73,6 +73,22 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Build config builder (/config)
+        shell: bash
+        run: |
+          set -eu
+          cd web/configbuilder
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build siglab console (/siglab)
+        shell: bash
+        run: |
+          set -eu
+          cd web/siglab
+          npm ci --no-audit --no-fund
+          npm run build
+
       - name: Build gophertrunk.exe
         shell: bash
         env:
