@@ -79,12 +79,15 @@ func main() {
 			runSiglabTUI(os.Args[2:])
 		}
 	case "config":
-		// `config serve` launches the standalone web Config Builder.
-		if len(os.Args) > 2 && os.Args[2] == "serve" {
+		// `config serve` launches the web Config Builder; `config tui` (and
+		// bare `config`) launch the terminal Config Builder.
+		switch {
+		case len(os.Args) > 2 && os.Args[2] == "serve":
 			runConfigServe(os.Args[3:])
-		} else {
-			fmt.Fprintln(os.Stderr, "usage: gophertrunk config serve [-addr host:port] [-open] [-config-dir dir]")
-			os.Exit(2)
+		case len(os.Args) > 2 && os.Args[2] == "tui":
+			runConfigTUI(os.Args[3:])
+		default:
+			runConfigTUI(os.Args[2:])
 		}
 	case "import-pdf":
 		runImport(os.Args[2:])
@@ -120,6 +123,7 @@ USAGE:
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI
   gophertrunk siglab serve [flags]    offline signal-analysis web console (browser UI)
   gophertrunk config serve [flags]    standalone web Config Builder/Editor (browser UI)
+  gophertrunk config [tui] [flags]    standalone terminal Config Builder/Editor (no browser)
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)

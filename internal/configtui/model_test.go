@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 )
@@ -111,5 +112,65 @@ func TestModelQuitGuard(t *testing.T) {
 	m = tm.(Model)
 	if m.modal == nil {
 		t.Fatalf("expected an unsaved-changes confirm modal on quit")
+	}
+}
+
+func TestTalkgroupModal(t *testing.T) {
+	m := newTestModel()
+	m.cfg.Trunking.Systems = []config.SystemConfig{{Name: "Metro", Protocol: "p25"}}
+	m = gotoSection(m, "trunking")
+	m = send(m, "enter") // drill into Systems list
+	m = send(m, "enter") // drill into system[0] form
+	m = send(m, "t")     // open talkgroup editor
+	if m.modal == nil {
+		t.Fatalf("expected talkgroup modal")
+	}
+	m = send(m, "a")             // add a row
+	m = send(m, "enter")         // edit Decimal cell (seeded "0")
+	m = send(m, "1", "0", "1")   // → "0101"
+	m = send(m, "enter")         // commit cell
+	m = send(m, "esc")           // close modal
+	rows := m.talkgroups["metro-talkgroups.csv"]
+	if len(rows) != 1 || rows[0].Decimal != 101 {
+		t.Fatalf("expected 1 talkgroup decimal 101, got %+v", rows)
+	}
+	if m.cfg.Trunking.Systems[0].TalkgroupFile != "metro-talkgroups.csv" {
+		t.Fatalf("expected TalkgroupFile set, got %q", m.cfg.Trunking.Systems[0].TalkgroupFile)
+	}
+}
+
+func TestImportModal(t *testing.T) {
+	parse := func(path, kind string) (config.SystemConfig, []configbuilder.TalkgroupCSVRow, error) {
+		return config.SystemConfig{Name: "Imp", Protocol: "p25", ControlChannels: []uint32{851_000_000}},
+			[]configbuilder.TalkgroupCSVRow{{Decimal: 7}}, nil
+	}
+	m := New([]string{"/tmp"}, radioreference.Auth{}, parse, "")
+	m.width, m.height = 120, 40
+	m = gotoSection(m, "trunking")
+	m = send(m, "enter") // Systems list
+	m = send(m, "i")     // import modal
+	if m.modal == nil {
+		t.Fatalf("expected import modal")
+	}
+	m = send(m, "x", ".", "c", "s", "v") // path "x.csv"
+	m = send(m, "enter")                 // parse
+	m = send(m, "enter")                 // add parsed system
+	if len(m.cfg.Trunking.Systems) != 1 || m.cfg.Trunking.Systems[0].Name != "Imp" {
+		t.Fatalf("expected imported system Imp, got %+v", m.cfg.Trunking.Systems)
+	}
+}
+
+func TestRRModalNoCreds(t *testing.T) {
+	m := newTestModel() // empty RR auth
+	m = gotoSection(m, "trunking")
+	m = send(m, "enter") // Systems list
+	m = send(m, "r")     // RR browse
+	if m.modal == nil {
+		t.Fatalf("expected RR modal (error step) without creds")
+	}
+	// Esc closes without panic.
+	m = send(m, "esc")
+	if m.modal != nil {
+		t.Fatalf("expected modal closed on esc")
 	}
 }

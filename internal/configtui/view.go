@@ -116,6 +116,9 @@ func (m Model) viewStruct(cur reflect.Value) string {
 		return stMuted.Render("(no editable fields)")
 	}
 	var b strings.Builder
+	if structNameOf(cur) == "SystemConfig" {
+		b.WriteString(stMuted.Render("[t] edit talkgroups") + "\n")
+	}
 	lastAdvanced := false
 	for i, r := range rows {
 		if r.advanced && !lastAdvanced {
@@ -154,7 +157,11 @@ func (m Model) viewList(slice reflect.Value) string {
 		}
 		b.WriteString(cursor + itemTitle(slice.Index(i), i) + "\n")
 	}
-	b.WriteString("\n" + stMuted.Render("[a] add  [enter] edit  [d] remove  [D] duplicate  [J/K] move  [esc] back"))
+	hint := "[a] add  [enter] edit  [d] remove  [D] duplicate  [J/K] move  [esc] back"
+	if slice.Type().Elem().Name() == "SystemConfig" {
+		hint += "\n[r] add from RadioReference   [i] import PDF/CSV"
+	}
+	b.WriteString("\n" + stMuted.Render(hint))
 	return b.String()
 }
 

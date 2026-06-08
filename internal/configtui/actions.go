@@ -89,6 +89,56 @@ func (m *Model) doSave(path string) {
 	m.talkgroups = m.readTalkgroups(path)
 }
 
+// addSystem appends a trunking system to the draft, staging its talkgroup
+// sidecar (deriving a TalkgroupFile from the name when rows are present).
+// Used by the RadioReference and PDF/CSV import modals.
+func (m *Model) addSystem(sys config.SystemConfig, rows []configbuilder.TalkgroupCSVRow) {
+	if len(rows) > 0 {
+		rel := slug(sys.Name) + "-talkgroups.csv"
+		sys.TalkgroupFile = rel
+		m.talkgroups[rel] = rows
+	}
+	m.cfg.Trunking.Systems = append(m.cfg.Trunking.Systems, sys)
+	m.status = "Added system " + sys.Name
+	m.dirty = true
+	m.revalidate()
+}
+
+// slug turns a system name into a filename-safe stem (mirrors the web's slug).
+func slug(name string) string {
+	if name == "" {
+		name = "system"
+	}
+	var b []rune
+	prevDash := false
+	for _, r := range name {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b = append(b, r)
+			prevDash = false
+		case r >= 'A' && r <= 'Z':
+			b = append(b, r+32)
+			prevDash = false
+		default:
+			if !prevDash {
+				b = append(b, '-')
+				prevDash = true
+			}
+		}
+	}
+	s := string(b)
+	for len(s) > 0 && s[0] == '-' {
+		s = s[1:]
+	}
+	for len(s) > 0 && s[len(s)-1] == '-' {
+		s = s[:len(s)-1]
+	}
+	if s == "" {
+		s = "system"
+	}
+	return s
+}
+
 // readOriginal returns the on-disk bytes of the current file (for comment-
 // preserving YAML preview), or nil.
 func (m *Model) readOriginal() []byte {

@@ -137,6 +137,11 @@ func (m Model) updateStructForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+	// Per-system talkgroup editor.
+	if structNameOf(cur) == "SystemConfig" && msg.String() == "t" {
+		m.modal = newTalkgroupModal(&m)
+		return m, nil
+	}
 	switch msg.String() {
 	case "up", "k":
 		if m.cursor > 0 {
@@ -198,6 +203,17 @@ func (m Model) activateRow(r formRow, key string) (tea.Model, tea.Cmd) {
 
 func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	slice := m.cur()
+	isSystems := slice.Type().Elem().Name() == "SystemConfig"
+	if isSystems {
+		switch msg.String() {
+		case "r":
+			m.modal = newRRModal(&m)
+			return m, nil
+		case "i":
+			m.modal = newImportModal(&m)
+			return m, nil
+		}
+	}
 	n := slice.Len()
 	if m.cursor >= n {
 		m.cursor = n - 1
