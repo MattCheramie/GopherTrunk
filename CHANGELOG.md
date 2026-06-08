@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Constellation / signal scopes stuck on "waiting for symbols"** (#557,
+  #583). The `WS /api/v1/diag/symbols` frame encoded its `dibits` field as a
+  Go `[]uint8`, which `encoding/json` serialises as a base64 string rather than
+  a JSON number array. The web console drops any frame whose `dibits` isn't an
+  array, so every frame was silently discarded and the Constellation, Symbol
+  scope, Eye, Tuning, and Histogram panels never rendered. `dibits` now goes
+  out as a number array, with a regression test asserting the wire shape.
+
 ## [v0.3.6] — 2026-06-08
 
 This release is about **seeing the signal**. A new **Plots hub** (`/plots`)

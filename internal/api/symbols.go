@@ -4,10 +4,36 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// DibitArray marshals a dibit stream as a JSON number array. Go's
+// encoding/json renders []byte/[]uint8 as a base64 string, which the web
+// client (expecting number[]) silently drops — this forces the array
+// form. Unmarshal uses the default []uint8 path (which accepts a JSON
+// number array), so round-trips still work.
+type DibitArray []uint8
+
+// MarshalJSON emits the dibits as [n,n,...]; a nil/empty slice becomes []
+// so the field is always an array, never null, on the wire.
+func (d DibitArray) MarshalJSON() ([]byte, error) {
+	if len(d) == 0 {
+		return []byte("[]"), nil
+	}
+	buf := make([]byte, 0, len(d)*3+1)
+	buf = append(buf, '[')
+	for i, v := range d {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = strconv.AppendUint(buf, uint64(v), 10)
+	}
+	buf = append(buf, ']')
+	return buf, nil
+}
 
 // SymbolFrame is the wire shape of one batch of recovered symbols for
 // the web "Symbol" scope. It mirrors symbolscope.Frame so the api
@@ -33,11 +59,11 @@ type SymbolFrame struct {
 	// EyeSoft is a bounded window of oversampled, AGC-scaled matched-
 	// filter output (EyeSPS samples per symbol) for the C4FM eye diagram;
 	// empty on CQPSK. Fold it over EyeSPS to render the 4-level eye.
-	EyeSoft []float32 `json:"eye_soft"`
-	EyeSPS  int       `json:"eye_sps"`
-	Dibits  []uint8   `json:"dibits"`
-	IsBits  bool      `json:"is_bits"`
-	BaseIdx int       `json:"base_idx"`
+	EyeSoft []float32  `json:"eye_soft"`
+	EyeSPS  int        `json:"eye_sps"`
+	Dibits  DibitArray `json:"dibits"`
+	IsBits  bool       `json:"is_bits"`
+	BaseIdx int        `json:"base_idx"`
 
 	// Receiver-state metrics for the Tuning panel (see symbolscope.Frame).
 	CarrierOffsetHz float64 `json:"carrier_offset_hz"`

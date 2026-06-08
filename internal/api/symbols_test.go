@@ -107,14 +107,14 @@ func TestSymbolStreamDeliversFrames(t *testing.T) {
 				Soft:         []float32{0.9, -0.3, -0.95, 0.31},
 				SymI:         []float32{0.7, -0.7, -0.7, 0.7},
 				SymQ:         []float32{0.7, 0.7, -0.7, -0.7},
-				Dibits:       []uint8{1, 0, 3, 2},
+				Dibits:       DibitArray{1, 0, 3, 2},
 				BaseIdx:      0,
 			},
 			{
 				TimestampNs:  2,
 				SymbolRateHz: 4800,
 				CenterHz:     851_012_500,
-				Dibits:       []uint8{2, 2},
+				Dibits:       DibitArray{2, 2},
 				BaseIdx:      4,
 			},
 		},
@@ -144,6 +144,31 @@ func TestSymbolStreamDeliversFrames(t *testing.T) {
 		}
 		if i == 0 && len(f.Dibits) != 4 {
 			t.Errorf("frame #%d dibits len = %d, want 4", i, len(f.Dibits))
+		}
+		// Regression guard for the "waiting for symbols" bug: dibits must be
+		// a JSON *number array* on the wire, not Go's default base64 string
+		// for []byte/[]uint8 — the web client drops any frame whose dibits
+		// isn't an array (Array.isArray). Inspect the raw JSON, not the
+		// re-unmarshalled struct (Go unmarshal would accept either form).
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(msg, &raw); err != nil {
+			t.Fatalf("raw unmarshal #%d: %v", i, err)
+		}
+		if got := string(raw["dibits"]); len(got) == 0 || got[0] != '[' {
+			t.Errorf("frame #%d dibits wire form = %s, want a JSON array", i, got)
+		}
+		if i == 0 {
+			var dibits []int
+			if err := json.Unmarshal(raw["dibits"], &dibits); err != nil {
+				t.Fatalf("dibits not an int array: %v (raw=%s)", err, raw["dibits"])
+			}
+			want := []int{1, 0, 3, 2}
+			for k, v := range want {
+				if dibits[k] != v {
+					t.Errorf("dibits = %v, want %v", dibits, want)
+					break
+				}
+			}
 		}
 		if i == 0 {
 			if len(f.SymI) != 4 || len(f.SymQ) != 4 {

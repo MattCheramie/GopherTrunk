@@ -104,7 +104,7 @@ func (p *symbolProvider) OpenSymbolStream(ctx context.Context, serial, proto str
 				SymQ:         f.SymQ,
 				EyeSoft:      f.EyeSoft,
 				EyeSPS:       f.EyeSPS,
-				Dibits:       f.Dibits,
+				Dibits:       api.DibitArray(f.Dibits),
 				IsBits:       f.IsBits,
 				BaseIdx:      f.BaseIdx,
 
