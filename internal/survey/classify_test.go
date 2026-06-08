@@ -90,9 +90,9 @@ func TestClassify(t *testing.T) {
 	tests := []struct {
 		name    string
 		iq      []complex64
-		want    SignalClass     // exact class, or "" to skip the exact check
-		digital bool            // assert IsDigital(class) == digital
-		baud    float64         // if > 0, assert detected baud within 8%
+		want    SignalClass // exact class, or "" to skip the exact check
+		digital bool        // assert IsDigital(class) == digital
+		baud    float64     // if > 0, assert detected baud within 8%
 	}{
 		{
 			// 4-level C4FM reads as a digital FM-family carrier; siglab makes

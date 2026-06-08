@@ -10,10 +10,10 @@ import (
 // IQ-power squelch and CTCSS/DCS detectors that gate the live analog scanner —
 // so the survey's analog verdict matches what the scanner would do.
 type AnalogReport struct {
-	Active   bool    `json:"active"`            // carrier power above squelch
-	PowerDbFS float64 `json:"power_dbfs"`        // measured RMS power
-	CTCSSHz  float64 `json:"ctcss_hz,omitempty"` // detected CTCSS tone, 0 if none
-	DCSCode  string  `json:"dcs_code,omitempty"` // detected DCS code, "" if none
+	Active    bool    `json:"active"`             // carrier power above squelch
+	PowerDbFS float64 `json:"power_dbfs"`         // measured RMS power
+	CTCSSHz   float64 `json:"ctcss_hz,omitempty"` // detected CTCSS tone, 0 if none
+	DCSCode   string  `json:"dcs_code,omitempty"` // detected DCS code, "" if none
 }
 
 // analogSquelchDbFS is the carrier-present threshold (dBFS) for the survey. It

@@ -31,17 +31,17 @@ import (
 type SignalClass string
 
 const (
-	ClassUnknown        SignalClass = "unknown"        // no carrier / too weak to classify
-	ClassAM             SignalClass = "am"             // amplitude modulation (non-constant envelope)
-	ClassNBFM           SignalClass = "nbfm"           // narrowband analog FM (≤ ~16 kHz)
-	ClassWideFM         SignalClass = "wfm"            // wideband analog FM (broadcast / ~150–200 kHz)
-	ClassFSK            SignalClass = "fsk"            // 2-level frequency-shift keying
-	ClassC4FM           SignalClass = "c4fm"           // 4-level FSK (P25 C4FM / YSF family)
-	ClassPSK            SignalClass = "psk"            // phase-shift keying (π/4-DQPSK and friends)
-	ClassContinuousData SignalClass = "data"           // continuous digital carrier, family unresolved
-	ClassPaging         SignalClass = "paging"         // FSK at a paging baud (512/1200/1600/2400)
-	ClassTrunkControl   SignalClass = "trunk-control"  // assigned by the router after a CC lock
-	ClassTrunkVoice     SignalClass = "trunk-voice"    // assigned by the router: decoded, no CC lock
+	ClassUnknown        SignalClass = "unknown"       // no carrier / too weak to classify
+	ClassAM             SignalClass = "am"            // amplitude modulation (non-constant envelope)
+	ClassNBFM           SignalClass = "nbfm"          // narrowband analog FM (≤ ~16 kHz)
+	ClassWideFM         SignalClass = "wfm"           // wideband analog FM (broadcast / ~150–200 kHz)
+	ClassFSK            SignalClass = "fsk"           // 2-level frequency-shift keying
+	ClassC4FM           SignalClass = "c4fm"          // 4-level FSK (P25 C4FM / YSF family)
+	ClassPSK            SignalClass = "psk"           // phase-shift keying (π/4-DQPSK and friends)
+	ClassContinuousData SignalClass = "data"          // continuous digital carrier, family unresolved
+	ClassPaging         SignalClass = "paging"        // FSK at a paging baud (512/1200/1600/2400)
+	ClassTrunkControl   SignalClass = "trunk-control" // assigned by the router after a CC lock
+	ClassTrunkVoice     SignalClass = "trunk-voice"   // assigned by the router: decoded, no CC lock
 )
 
 // ClassFeatures are the raw DSP measurements behind a classification. They are

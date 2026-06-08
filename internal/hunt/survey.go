@@ -34,9 +34,9 @@ type DetectedSignal struct {
 	BaudHz       float64            `json:"baud_hz,omitempty"`
 
 	// Decode summary — set by the router for the carriers it could decode.
-	Trunking *TrunkingRef        `json:"trunking,omitempty"`
+	Trunking *TrunkingRef         `json:"trunking,omitempty"`
 	Analog   *survey.AnalogReport `json:"analog,omitempty"`
-	Pages    []survey.PageRef    `json:"pages,omitempty"`
+	Pages    []survey.PageRef     `json:"pages,omitempty"`
 
 	// Features carries the raw classifier measurements for diagnostics.
 	Features survey.ClassFeatures `json:"features"`
