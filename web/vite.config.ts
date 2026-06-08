@@ -53,8 +53,11 @@ export default defineConfig({
         // works without a network round-trip for the assets).
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
         // API responses are always fetched live; the SW never caches
-        // /api/* or /metrics responses.
-        navigateFallbackDenylist: [/^\/api\//, /^\/metrics/],
+        // /api/* or /metrics responses. The Config Builder SPA mounted at
+        // /config/ on the daemon is also denied so this console's SW
+        // (scope "/") doesn't shadow its navigations with our own
+        // index.html — otherwise the Config Builder tab opens blank.
+        navigateFallbackDenylist: [/^\/api\//, /^\/metrics/, /^\/config\//],
       },
       devOptions: { enabled: false },
     }),
