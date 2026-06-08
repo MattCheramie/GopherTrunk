@@ -1020,6 +1020,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
 			PCMSampleRate: cfg.Recordings.SampleRate,
+			VoiceHangtime: time.Duration(cfg.Trunking.VoiceHangtimeMs) * time.Millisecond,
+			// Default ("" / "transmission") splits one file per over;
+			// "conversation" keeps same-talkgroup overs together.
+			SplitPerTransmission: cfg.Trunking.VoiceCallGrouping != "conversation",
 			Equalizer: composer.EqualizerConfig{
 				Enabled:  cfg.Recordings.Equalizer.Enabled,
 				Taps:     cfg.Recordings.Equalizer.Taps,

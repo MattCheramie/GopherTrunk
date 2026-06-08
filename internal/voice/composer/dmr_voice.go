@@ -79,6 +79,12 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, groupID uint32, interleaved bool, done chan<- struct{}) {
 	defer close(done)
 
+	// Shared boundary controller: universal hangtime end-of-call + Touch
+	// heartbeat. Talkgroup gating is left disabled (grantTG 0) until the
+	// DMR chain surfaces a per-superframe embedded-LC talkgroup.
+	bt := c.newBoundaryTracker(serial, 0, nil)
+	go bt.run(ctx)
+
 	decim := int(iqHz) / dmrVoiceIntermediateHz
 	if decim < 1 {
 		decim = 1
@@ -130,6 +136,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 					continue
 				}
 				superframes.Add(1)
+				bt.onVoice(0)
 				if rs == nil {
 					continue
 				}
@@ -155,7 +162,6 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
-	var lastSuperframes uint64
 	// logDecodeQuality emits a rolling decode-quality summary, gated to a
 	// burst of superframes so it does not spam the log every touch tick
 	// (issue #356 follow-up). See runP25Phase1VoiceChain.
@@ -179,11 +185,8 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
-			n := superframes.Load()
-			if n != lastSuperframes && c.engine != nil {
-				c.engine.Touch(serial)
-				lastSuperframes = n
-			}
+			// Touch + hangtime end-of-call handled by the shared boundary
+			// tracker; this ticker only drives the decode-quality summary.
 			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {

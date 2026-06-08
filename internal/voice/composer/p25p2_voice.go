@@ -46,6 +46,12 @@ const p25p2VoiceGardnerGain = 0.005
 func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, iqCh <-chan []complex64, iqHz uint32, done chan<- struct{}) {
 	defer close(done)
 
+	// Shared boundary controller: universal hangtime end-of-call + Touch
+	// heartbeat. Talkgroup gating is left disabled (grantTG 0) until the
+	// Phase 2 chain surfaces a per-voice-frame MAC talkgroup.
+	bt := c.newBoundaryTracker(serial, 0, nil)
+	go bt.run(ctx)
+
 	// Issue #376 field-diagnostic: the existing "composer: p25p2 mac
 	// pdu" log fires only after a successful FEC decode, so every
 	// failure mode (zero macCfg, ScramblerOff against scrambled
@@ -130,6 +136,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 						continue
 					}
 					voiceSubframes.Add(1)
+					bt.onVoice(0)
 					if rs == nil {
 						continue
 					}
@@ -189,7 +196,6 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
-	var lastSubframes uint64
 	// logDecodeQuality emits a rolling decode-quality summary, gated to a
 	// burst of voice subframes so it does not spam the log every touch
 	// tick (issue #356 follow-up). See runP25Phase1VoiceChain.
@@ -213,11 +219,8 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
-			n := voiceSubframes.Load()
-			if n != lastSubframes && c.engine != nil {
-				c.engine.Touch(serial)
-				lastSubframes = n
-			}
+			// Touch + hangtime end-of-call handled by the shared boundary
+			// tracker; this ticker only drives the decode-quality summary.
 			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {

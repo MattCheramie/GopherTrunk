@@ -149,7 +149,7 @@ func TestRecorderTimeslotInWavName(t *testing.T) {
 
 	for _, slot := range []int{1, 2} {
 		want := filepath.Join(dir, "TestSystem", "FIRE-DISP",
-			fmt.Sprintf("20260505T123045Z_src56789_ts%d.wav", slot))
+			fmt.Sprintf("20260505T123045Z_freq460000000_src56789_ts%d.wav", slot))
 		if _, err := os.Stat(want); err != nil {
 			t.Errorf("expected per-slot wav at %s: %v", want, err)
 		}

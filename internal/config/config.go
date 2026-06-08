@@ -820,6 +820,25 @@ type TrunkingConfig struct {
 	// teardown on systems whose signaling is consistently clean
 	// (lower) or chatty with long pauses (higher). Issue #356.
 	CallTimeoutMs int `yaml:"call_timeout_ms"`
+
+	// VoiceHangtimeMs is the universal "end of transmission" window
+	// applied to EVERY voice protocol (FM, DMR, P25 Phase 1 / 2): once a
+	// call has been decoding voice, the composer ends it this long after
+	// the last decoded voice frame, instead of waiting out the much
+	// longer CallTimeoutMs watchdog. Keeps recordings tightly bounded to
+	// the actual transmission. Defaults to 3500 (3.5 s) when zero;
+	// negative values are rejected by Validate.
+	VoiceHangtimeMs int `yaml:"voice_hangtime_ms"`
+
+	// VoiceCallGrouping controls how voice recordings are split, for
+	// EVERY voice protocol. "transmission" (default) writes one file per
+	// over/PTT — the recording rolls to a fresh file at each
+	// end-of-transmission boundary. "conversation" keeps consecutive
+	// overs of the same talkgroup in one file, splitting only when a
+	// different talkgroup takes the (shared) frequency or the channel
+	// goes idle past VoiceHangtimeMs. Empty defaults to "transmission";
+	// any other value is rejected by Validate.
+	VoiceCallGrouping string `yaml:"voice_call_grouping"`
 }
 
 type SystemConfig struct {
@@ -1447,6 +1466,14 @@ func (c Config) validateSDR() error {
 func (c Config) validateTrunking() error {
 	if c.Trunking.CallTimeoutMs < 0 {
 		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)
+	}
+	if c.Trunking.VoiceHangtimeMs < 0 {
+		return fmt.Errorf("trunking.voice_hangtime_ms: %d ms must be ≥ 0", c.Trunking.VoiceHangtimeMs)
+	}
+	switch c.Trunking.VoiceCallGrouping {
+	case "", "transmission", "conversation":
+	default:
+		return fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping)
 	}
 	for i, s := range c.Trunking.Systems {
 		if s.Name == "" {
