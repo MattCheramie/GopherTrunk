@@ -59,7 +59,11 @@ FLAGS:`)
 		Password: strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_PASS")),
 	}
 
-	m := configtui.New(dirs, rrAuth, importParseFunc(), strings.TrimSpace(*cfgFile))
+	initial := ""
+	if f := strings.TrimSpace(*cfgFile); f != "" {
+		initial = configbuilder.ExpandConfigPath(f)
+	}
+	m := configtui.New(dirs, rrAuth, importParseFunc(), initial)
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "config tui: %v\n", err)
 		os.Exit(1)

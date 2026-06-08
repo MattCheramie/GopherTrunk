@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
 )
 
 // modal is an overlay that owns all key input while open. Returning a nil
@@ -128,7 +129,7 @@ type saveModal struct {
 func newSaveModal(m *Model) modal {
 	ti := textinput.New()
 	ti.Prompt = "path: "
-	def := "config.yaml"
+	def := configbuilder.DefaultConfigPath()
 	if len(m.dirs) > 0 {
 		def = joinPath(m.dirs[0], "config.yaml")
 	}
@@ -145,7 +146,7 @@ func (s *saveModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 	case "enter":
 		p := strings.TrimSpace(s.input.Value())
 		if p != "" {
-			m.doSave(p)
+			m.doSave(configbuilder.ExpandConfigPath(p))
 		}
 		return nil, nil
 	}

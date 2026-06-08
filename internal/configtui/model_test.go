@@ -125,11 +125,11 @@ func TestTalkgroupModal(t *testing.T) {
 	if m.modal == nil {
 		t.Fatalf("expected talkgroup modal")
 	}
-	m = send(m, "a")             // add a row
-	m = send(m, "enter")         // edit Decimal cell (seeded "0")
-	m = send(m, "1", "0", "1")   // → "0101"
-	m = send(m, "enter")         // commit cell
-	m = send(m, "esc")           // close modal
+	m = send(m, "a")           // add a row
+	m = send(m, "enter")       // edit Decimal cell (seeded "0")
+	m = send(m, "1", "0", "1") // → "0101"
+	m = send(m, "enter")       // commit cell
+	m = send(m, "esc")         // close modal
 	rows := m.talkgroups["metro-talkgroups.csv"]
 	if len(rows) != 1 || rows[0].Decimal != 101 {
 		t.Fatalf("expected 1 talkgroup decimal 101, got %+v", rows)
