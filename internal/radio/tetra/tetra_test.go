@@ -234,21 +234,67 @@ func TestPDUIsIdle(t *testing.T) {
 }
 
 func TestSyncDibits(t *testing.T) {
-	for name, dibits := range map[string][]uint8{
-		"normal":   NormalSyncDibits(),
-		"extended": ExtendedSyncDibits(),
+	for _, tc := range []struct {
+		name   string
+		dibits []uint8
+		want   int
+	}{
+		{"nts1", NormalSyncDibits(), NormalTrainingBits / 2},
+		{"nts2", NormalSyncDibits2(), NormalTrainingBits / 2},
+		{"extended", ExtendedSyncDibits(), ExtendedTrainingBits / 2},
+		{"sync", SyncTrainingDibits(), SyncTrainingBits / 2},
 	} {
-		if len(dibits) != SyncDibits {
-			t.Errorf("%s len = %d, want %d", name, len(dibits), SyncDibits)
+		if len(tc.dibits) != tc.want {
+			t.Errorf("%s len = %d, want %d", tc.name, len(tc.dibits), tc.want)
 		}
-		for _, d := range dibits {
+		for _, d := range tc.dibits {
 			if d > 3 {
-				t.Errorf("%s contains dibit %d", name, d)
+				t.Errorf("%s contains dibit %d", tc.name, d)
 			}
 		}
 	}
 	if reflect.DeepEqual(NormalSyncDibits(), ExtendedSyncDibits()) {
 		t.Error("normal and extended sync patterns are equal")
+	}
+}
+
+// TestTrainingSequencesMatchETSI guards the literal training-sequence
+// bit values against the ETSI EN 300 392-2 §9.4.4.3 reference (the
+// same values used by osmo-tetra). It is the regression that fails if
+// anyone re-introduces a placeholder constant: the bytes are checked
+// against an independent literal, not derived from the package vars.
+func TestTrainingSequencesMatchETSI(t *testing.T) {
+	want := map[string][]uint8{
+		"NTS1": {1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0},
+		"NTS2": {0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0},
+		"ETS":  {1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0},
+		"STS":  {1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1},
+	}
+	got := map[string][]uint8{
+		"NTS1": NormalTrainingSeq1, "NTS2": NormalTrainingSeq2,
+		"ETS": ExtendedTrainingSeq, "STS": SyncTrainingSeq,
+	}
+	for name, w := range want {
+		if !reflect.DeepEqual(got[name], w) {
+			t.Errorf("%s = %v, want %v", name, got[name], w)
+		}
+	}
+}
+
+// TestTetraBitDibitRoundTrip checks the TETRA Gray bit↔dibit
+// convention is self-inverse and matches the demod's labeling
+// (00→0, 01→1, 11→2, 10→3).
+func TestTetraBitDibitRoundTrip(t *testing.T) {
+	cases := map[[2]uint8]uint8{{0, 0}: 0, {0, 1}: 1, {1, 1}: 2, {1, 0}: 3}
+	for bits, want := range cases {
+		got := TetraBitsToDibits([]uint8{bits[0], bits[1]})
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("TetraBitsToDibits(%v) = %v, want [%d]", bits, got, want)
+		}
+		back := TetraDibitsToBits([]uint8{want})
+		if back[0] != bits[0] || back[1] != bits[1] {
+			t.Errorf("TetraDibitsToBits([%d]) = %v, want %v", want, back, bits)
+		}
 	}
 }
 

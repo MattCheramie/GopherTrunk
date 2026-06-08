@@ -26,16 +26,18 @@ func TestPRBSDifferentSeedsDifferentSequences(t *testing.T) {
 	}
 }
 
-func TestPRBSSeedFromU0ReadsFirstTwelveBits(t *testing.T) {
+func TestPRBSSeedFromU0ReadsDataColumns(t *testing.T) {
 	channel := make([]byte, ChannelBits)
-	// Stamp a recognisable 12-bit pattern into u_0's info bits.
+	// The seed is 16 × u_0's 12 Golay data bits, which live in the
+	// high columns (22..11) of the vector, MSB-first (col 22 = data
+	// MSB). Stamp a recognisable pattern there.
 	want := uint16(0x9AB) // 0b100110101011
 	for i := 0; i < u0InfoBits; i++ {
-		channel[u0Offset+i] = byte((want >> uint(u0InfoBits-1-i)) & 1)
+		channel[u0Offset+(u0Bits-1-i)] = byte((want >> uint(u0InfoBits-1-i)) & 1)
 	}
 	got := PRBSSeedFromU0(channel)
 	if got != want<<4 {
-		t.Errorf("seed = %#x, want %#x (info bits << 4)", got, want<<4)
+		t.Errorf("seed = %#x, want %#x (data bits << 4)", got, want<<4)
 	}
 }
 

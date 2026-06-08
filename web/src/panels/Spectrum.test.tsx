@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 vi.mock("../api/spectrum", () => ({
   fetchSpectrumDevices: vi.fn(),
@@ -103,6 +103,48 @@ describe("Spectrum panel", () => {
     render(<Spectrum />);
     await waitFor(() => {
       expect(screen.getByText("live")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the frequency and signal level under the cursor on hover", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 153_000_000,
+        sample_rate_hz: 2_048_000,
+      },
+    ]);
+    // Push one frame so the panel has a center/sample-rate to map against
+    // and a waterfall row to read the bin power from.
+    vi.mocked(openSpectrumStream).mockImplementation((_cfg, opts) => {
+      opts.onFrame?.({
+        ts_ns: 0,
+        center_hz: 153_000_000,
+        sample_rate_hz: 2_048_000,
+        bins: [-80, -70, -60, -50, -40, -30, -20, -10],
+      });
+      return { close: vi.fn() };
+    });
+
+    render(<Spectrum />);
+
+    const canvas = await screen.findByLabelText(/hover to read the frequency/i);
+    // Map cursor → frequency: at the canvas midpoint (xRatio 0.5) the
+    // frequency equals the center, and the matching bin (index 4) is -40.
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 320 }) as DOMRect;
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 10 });
+
+    await waitFor(() => {
+      expect(screen.getByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeInTheDocument();
+    });
+
+    // Leaving the canvas clears the readout.
+    fireEvent.mouseLeave(canvas);
+    await waitFor(() => {
+      expect(screen.queryByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeNull();
     });
   });
 

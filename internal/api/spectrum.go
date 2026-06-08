@@ -20,6 +20,13 @@ type SpectrumDevice struct {
 	Role         string `json:"role"`
 	CenterHz     uint32 `json:"center_hz"`
 	SampleRateHz uint32 `json:"sample_rate_hz"`
+	// P25Modulation is the configured P25 Phase 1 demod mode of the
+	// system this SDR is decoding ("c4fm" or "cqpsk"), resolved by
+	// matching the device's tuning against the configured systems. Lets
+	// the web symbol/constellation panels auto-select the right mode
+	// instead of asking the operator to pick it. Empty when no P25
+	// Phase 1 system matches (e.g. a DMR-only device).
+	P25Modulation string `json:"p25_modulation,omitempty"`
 }
 
 // SpectrumFrame is the wire shape of one frame on the WS stream.
@@ -57,7 +64,7 @@ type TuneRequest struct {
 // handleSpectrumDevices answers GET /api/v1/spectrum/devices.
 func (s *Server) handleSpectrumDevices(w http.ResponseWriter, r *http.Request) {
 	if s.spectrum == nil {
-		writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.spectrum.Devices())
@@ -73,26 +80,26 @@ func (s *Server) handleSpectrumDevices(w http.ResponseWriter, r *http.Request) {
 // protocol against the same broker.
 func (s *Server) handleSpectrumTune(w http.ResponseWriter, r *http.Request) {
 	if s.spectrum == nil {
-		writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
 		return
 	}
 	serial := r.PathValue("serial")
 	if serial == "" {
-		writeError(w, http.StatusBadRequest, "serial path parameter is required")
+		s.writeError(w, http.StatusBadRequest, "serial path parameter is required")
 		return
 	}
 	var body TuneRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		s.writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if body.CenterHz == 0 {
-		writeError(w, http.StatusBadRequest, "center_hz is required and must be > 0")
+		s.writeError(w, http.StatusBadRequest, "center_hz is required and must be > 0")
 		return
 	}
 	if err := s.spectrum.Tune(serial, body.CenterHz); err != nil {
 		s.log.Debug("api: spectrum tune", "serial", serial, "hz", body.CenterHz, "err", err)
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -106,19 +113,19 @@ func (s *Server) handleSpectrumTune(w http.ResponseWriter, r *http.Request) {
 // reaping the socket — same pattern as handleWS.
 func (s *Server) handleSpectrumStream(w http.ResponseWriter, r *http.Request) {
 	if s.spectrum == nil {
-		writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
 		return
 	}
 
 	q := r.URL.Query()
 	serial := q.Get("device")
 	if serial == "" {
-		writeError(w, http.StatusBadRequest, "device query parameter is required")
+		s.writeError(w, http.StatusBadRequest, "device query parameter is required")
 		return
 	}
 	bins := parseIntQuery(q, "bins", 4096, 64, 16384)
 	if bins&(bins-1) != 0 {
-		writeError(w, http.StatusBadRequest, "bins must be a power of two")
+		s.writeError(w, http.StatusBadRequest, "bins must be a power of two")
 		return
 	}
 	fps := parseFloatQuery(q, "fps", 10, 1, 30)

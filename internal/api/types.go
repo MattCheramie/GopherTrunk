@@ -3,8 +3,53 @@ package api
 import (
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// HuntStatus is the JSON shape returned by GET /api/v1/hunt — the live
+// system-discovery run state plus the discovered system map once available.
+type HuntStatus struct {
+	RunID      int    `json:"run_id"`
+	State      string `json:"state"`
+	Running    bool   `json:"running"`
+	Mode       string `json:"mode,omitempty"` // "hunt" | "survey"
+	Phase      string `json:"phase,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	Sites      int    `json:"sites"`
+	Talkgroups int    `json:"talkgroups"`
+	SystemName string `json:"system_name,omitempty"`
+	// Signals is the classified-carrier inventory of a survey run (empty for a
+	// plain hunt) — the survey's primary result.
+	Signals []hunt.DetectedSignal  `json:"signals,omitempty"`
+	Error   string                 `json:"error,omitempty"`
+	System  *hunt.DiscoveredSystem `json:"system,omitempty"`
+	Reports []hunt.CaptureReport   `json:"reports,omitempty"`
+}
+
+// HuntStartRequest is the POST /api/v1/hunt/start body. Frequencies are in MHz
+// for operator convenience. With Bands set the hunt sweeps; with Candidates +
+// NoSweep it probes the listed control channels directly.
+type HuntStartRequest struct {
+	Serial          string    `json:"serial,omitempty"`
+	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
+	Candidates      []float64 `json:"candidates,omitempty"` // MHz
+	NoSweep         bool      `json:"no_sweep,omitempty"`
+	Survey          bool      `json:"survey,omitempty"`        // classify+decode every carrier, not just trunking CCs
+	ClassifyOnly    bool      `json:"classify_only,omitempty"` // survey: classify, skip decoding
+	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
+	Protocol        string    `json:"protocol,omitempty"`
+	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`
+	SweepDwellMs    int       `json:"sweep_dwell_ms,omitempty"`
+	PeakThresholdDb float64   `json:"peak_threshold_db,omitempty"`
+	MinSpacingHz    uint32    `json:"min_spacing_hz,omitempty"`
+	FFTSize         int       `json:"fft_size,omitempty"`
+	MinConfidence   float64   `json:"min_confidence,omitempty"`
+	Name            string    `json:"name,omitempty"`
+	State           string    `json:"state,omitempty"`
+	County          string    `json:"county,omitempty"`
+	Location        string    `json:"location,omitempty"`
+}
 
 // EventDTO is the JSON envelope for every event streamed to clients.
 // Kind matches the events.Kind constant; Payload is the kind-specific
@@ -195,9 +240,13 @@ type GrantDTO struct {
 	FrequencyHz   uint32 `json:"frequency_hz"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
-	Encrypted     bool   `json:"encrypted,omitempty"`
-	Emergency     bool   `json:"emergency,omitempty"`
-	DataCall      bool   `json:"data_call,omitempty"`
+	// Timeslot is the 1-based TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	// Non-zero only for slotted protocols (DMR Tier III); identifies
+	// which of a carrier's two calls this is.
+	Timeslot  uint8 `json:"timeslot,omitempty"`
+	Encrypted bool  `json:"encrypted,omitempty"`
+	Emergency bool  `json:"emergency,omitempty"`
+	DataCall  bool  `json:"data_call,omitempty"`
 	// AlgorithmID / KeyID surface the P25 encryption parameters
 	// recovered from the in-call signalling. Zero when Encrypted is
 	// false; also zero on a Phase 1 grant until the LDU2 Encryption
@@ -213,6 +262,7 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 		GroupID: g.GroupID, SourceID: g.SourceID,
 		FrequencyHz: g.FrequencyHz,
 		ChannelID:   g.ChannelID, ChannelNumber: g.ChannelNum,
+		Timeslot:  g.Timeslot,
 		Encrypted: g.Encrypted, Emergency: g.Emergency,
 		DataCall:    g.DataCall,
 		AlgorithmID: g.AlgorithmID, KeyID: g.KeyID,

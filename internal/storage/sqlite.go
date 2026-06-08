@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS call_log (
     key_id          INTEGER NOT NULL DEFAULT 0,
     emergency       INTEGER NOT NULL DEFAULT 0,
     data_call       INTEGER NOT NULL DEFAULT 0,
+    timeslot        INTEGER NOT NULL DEFAULT 0,  -- DMR TDMA slot: 0=n/a, 1=TS1, 2=TS2
     device_serial   TEXT    NOT NULL,
     started_at      INTEGER NOT NULL,  -- unix nanoseconds
     ended_at        INTEGER,
@@ -136,12 +137,13 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_group ON bookmarks(grouping, name);
 -- alphanumeric.
 CREATE TABLE IF NOT EXISTS pager_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    received_at INTEGER NOT NULL,            -- unix nanoseconds
-    ric         INTEGER NOT NULL,            -- 21-bit address
-    func        INTEGER NOT NULL,            -- 0..3 (A..D)
-    encoding    TEXT    NOT NULL DEFAULT '', -- "numeric" | "alpha"
+    received_at INTEGER NOT NULL,                  -- unix nanoseconds
+    protocol    TEXT    NOT NULL DEFAULT 'pocsag', -- "pocsag" | "flex"
+    ric         INTEGER NOT NULL,                  -- 21-bit address / capcode
+    func        INTEGER NOT NULL,                  -- 0..3 (A..D); 0 for FLEX
+    encoding    TEXT    NOT NULL DEFAULT '',        -- "numeric" | "alpha" | "tone"
     body        TEXT    NOT NULL DEFAULT '',
-    corrected   INTEGER NOT NULL DEFAULT 0   -- total BCH bit-error count
+    corrected   INTEGER NOT NULL DEFAULT 0          -- total BCH bit-error count
 );
 
 CREATE INDEX IF NOT EXISTS idx_pager_log_time ON pager_log(received_at);
@@ -221,6 +223,25 @@ CREATE TABLE IF NOT EXISTS dsc_log (
 CREATE INDEX IF NOT EXISTS idx_dsc_log_time      ON dsc_log(received_at);
 CREATE INDEX IF NOT EXISTS idx_dsc_log_self_mmsi ON dsc_log(self_mmsi, received_at);
 
+-- M17 link-setup frames persisted from the decoder pipeline. One row
+-- per reassembled Link Setup Frame: source / destination callsigns,
+-- the mode (voice / data / packet), channel-access number, hex META
+-- block, and the CRC-valid flag.
+CREATE TABLE IF NOT EXISTS m17_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at INTEGER NOT NULL,            -- unix nanoseconds
+    src         TEXT    NOT NULL DEFAULT '', -- source callsign
+    dst         TEXT    NOT NULL DEFAULT '', -- destination / "BROADCAST"
+    mode        TEXT    NOT NULL DEFAULT '', -- "voice" | "data" | "packet" | ...
+    can         INTEGER NOT NULL DEFAULT 0,  -- channel-access number
+    meta        TEXT    NOT NULL DEFAULT '', -- hex-encoded META block
+    crc_ok      INTEGER NOT NULL DEFAULT 0,
+    body        TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_m17_log_time ON m17_log(received_at);
+CREATE INDEX IF NOT EXISTS idx_m17_log_src  ON m17_log(src, received_at);
+
 -- ADS-B / Mode-S frames persisted from the decoder pipeline. One
 -- row per decoded extended-squitter message: ICAO 24-bit address +
 -- kind (identification / airborne-pos / velocity / ...) + kind-
@@ -279,6 +300,11 @@ func (d *DB) migrate() error {
 	if err := d.ensureCallLogColumns(); err != nil {
 		return err
 	}
+	if err := d.ensureColumns("pager_log", []columnAdd{
+		{"protocol", `ALTER TABLE pager_log ADD COLUMN protocol TEXT NOT NULL DEFAULT 'pocsag'`},
+	}); err != nil {
+		return err
+	}
 	// Stamp the current schema version; future migrations check this
 	// row before running.
 	_, _ = d.sql.Exec(`INSERT OR IGNORE INTO schema_version(version) VALUES (2)`)
@@ -318,6 +344,7 @@ func (d *DB) ensureCallLogColumns() error {
 	adds := []struct{ name, ddl string }{
 		{"algorithm_id", `ALTER TABLE call_log ADD COLUMN algorithm_id INTEGER NOT NULL DEFAULT 0`},
 		{"key_id", `ALTER TABLE call_log ADD COLUMN key_id INTEGER NOT NULL DEFAULT 0`},
+		{"timeslot", `ALTER TABLE call_log ADD COLUMN timeslot INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range adds {
 		if have[a.name] {
@@ -325,6 +352,49 @@ func (d *DB) ensureCallLogColumns() error {
 		}
 		if _, err := d.sql.Exec(a.ddl); err != nil {
 			return fmt.Errorf("storage: add call_log.%s: %w", a.name, err)
+		}
+	}
+	return nil
+}
+
+// columnAdd pairs a column name with the ALTER TABLE that introduces
+// it, for ensureColumns.
+type columnAdd struct{ name, ddl string }
+
+// ensureColumns brings an existing table forward with columns added
+// after its initial schema. CREATE TABLE IF NOT EXISTS never alters an
+// existing table, so a database created by an earlier GopherTrunk
+// keeps the old column set; this adds any missing columns. Idempotent
+// — present columns are skipped — so it needs no schema-version gate.
+func (d *DB) ensureColumns(table string, adds []columnAdd) error {
+	rows, err := d.sql.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("storage: inspect %s: %w", table, err)
+	}
+	have := make(map[string]bool)
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("storage: inspect %s: %w", table, err)
+		}
+		have[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("storage: inspect %s: %w", table, err)
+	}
+	rows.Close()
+	for _, a := range adds {
+		if have[a.name] {
+			continue
+		}
+		if _, err := d.sql.Exec(a.ddl); err != nil {
+			return fmt.Errorf("storage: add %s.%s: %w", table, a.name, err)
 		}
 	}
 	return nil

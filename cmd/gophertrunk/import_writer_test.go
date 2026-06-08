@@ -238,3 +238,21 @@ func sampleParsedSystem() parsedSystem {
 		},
 	}
 }
+
+func TestCollapseTrailingDuplicateWord(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Cobb Regional Radio System System", "Cobb Regional Radio System"},
+		{"Cobb Regional Radio System", "Cobb Regional Radio System"},
+		{"System System", "System"},
+		{"system System", "system"}, // case-insensitive match, keeps first
+		{"Foo Bar", "Foo Bar"},
+		{"Foo", "Foo"},
+		{"", ""},
+		{"  Padded  System System  ", "  Padded  System"},
+	}
+	for _, c := range cases {
+		if got := collapseTrailingDuplicateWord(c.in); got != c.want {
+			t.Errorf("collapseTrailingDuplicateWord(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

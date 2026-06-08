@@ -468,6 +468,93 @@ func TestControlChannelLocksAndGrantsAcrossSmallChunks(t *testing.T) {
 	}
 }
 
+// buildControlFrameMultiTSBK builds one FSW + NID followed by several
+// back-to-back 98-dibit TSBK channel blocks — the P25 TSDU layout that packs
+// up to maxTSBKBlocks signalling blocks after a single sync/NID. buildControl-
+// Frame only carries one block; this exercises the multi-block path.
+func buildControlFrameMultiTSBK(nac uint16, duid DUID, tsbks ...TSBK) []uint8 {
+	frame := make([]uint8, 0, 24+32+len(tsbks)*98)
+	frame = append(frame, FrameSyncWord[:]...)
+	bits := EncodeNIDBits(nac, duid)
+	for i := 0; i < 32; i++ {
+		frame = append(frame, (bits[2*i]<<1)|bits[2*i+1])
+	}
+	for _, tsbk := range tsbks {
+		frame = append(frame, EncodeTSBKChannel(AssembleTSBK(tsbk))...)
+	}
+	return frame
+}
+
+// TestControlChannelDecodesAllThreeTSBKBlocksAcrossChunks pins the issue
+// #402 / PR #470 multi-block decode under chunk boundaries: a single TSDU
+// carries three TSBK blocks after one FSW+NID, and parseFrame must decode all
+// three — resuming the trailing blocks across Process() calls — even when the
+// IQ chunk boundary falls mid-TSDU. The live "block=2 fails first" report was
+// a dropped IQ chunk corrupting the last block; this test proves the decode
+// path itself stays continuous when the dibits do, so a future refactor of the
+// resume/continuation bookkeeping can't silently drop blocks 2-3 again (the
+// pre-#470 behaviour that dropped ~2/3 of site signalling).
+func TestControlChannelDecodesAllThreeTSBKBlocksAcrossChunks(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const nac = 0x293
+	// Block 0: identifier update so the grants in blocks 1-2 resolve a freq.
+	ident := TSBK{LB: false, Opcode: OpIdentifierUpdate}
+	ident.Payload = AssembleIdentifierUpdate(IdentifierUpdate{
+		ChannelID: 1, SpacingHz: 12_500, BaseHz: 851_000_000,
+	})
+	// Block 1: grant on channel number 16 -> 851_200_000.
+	grantA := TSBK{LB: false, Opcode: OpGroupVoiceChannelGrant, Payload: [8]byte{
+		0x00, (1 << 4) | 0x00, 0x10, 0x12, 0x34, 0xAB, 0xCD, 0xEF,
+	}}
+	// Block 2 (last): grant on channel number 32 -> 851_400_000. This is the
+	// "block=2" the live report saw fail first.
+	grantB := TSBK{LB: true, Opcode: OpGroupVoiceChannelGrant, Payload: [8]byte{
+		0x00, (1 << 4) | 0x00, 0x20, 0x56, 0x78, 0x11, 0x22, 0x33,
+	}}
+
+	onAir := InjectControlStatusSymbols(buildControlFrameMultiTSBK(nac, DUIDTrunkingSignaling, ident, grantA, grantB))
+	stream := make([]uint8, 10+len(onAir)+16)
+	copy(stream[10:], onAir)
+
+	cc := New(Options{
+		Bus: bus, SystemName: "TestSys", FrequencyHz: 851_000_000,
+		Now: func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+
+	// An odd batch splits the TSDU mid-block so the trailing TSBKs land on a
+	// later Process() call and must be resumed.
+	const batch = 17
+	for off := 0; off < len(stream); off += batch {
+		end := off + batch
+		if end > len(stream) {
+			end = len(stream)
+		}
+		cc.Process(stream[off:end], off)
+	}
+
+	gotFreqs := map[uint32]bool{}
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				gotFreqs[ev.Payload.(trunking.Grant).FrequencyHz] = true
+			}
+		default:
+			drained = true
+		}
+	}
+	if !gotFreqs[851_200_000] {
+		t.Error("block 1 grant did not decode — second TSBK block dropped")
+	}
+	if !gotFreqs[851_400_000] {
+		t.Error("block 2 grant did not decode — last (block=2) TSBK dropped; multi-block resume regressed")
+	}
+}
+
 func TestControlChannelPublishesAffiliation(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

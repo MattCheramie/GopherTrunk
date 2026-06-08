@@ -185,6 +185,47 @@ type HuntFailed struct {
 	System    string    `json:"system"`
 	At        time.Time `json:"at"`
 	BackoffMs int       `json:"backoff_ms"`
+	// Diagnostics is a best-effort IQ-health snapshot captured when the
+	// hunt failed, so a `cchunt.failed` event/log explains *why* without
+	// a round-trip to the operator. Zero value (and an empty Diagnosis)
+	// when no decoder is wired to the supervisor — e.g. in unit tests.
+	Diagnostics HuntDiagnostics `json:"diagnostics"`
+}
+
+// HuntDiagnostics is an optional snapshot of the control SDR's IQ
+// health at the moment a hunt round failed. The cchunt supervisor
+// fills it from the live ccdecoder (internal/scanner/ccdecoder) so
+// `cchunt.failed` answers the operator's first question — distinguishing
+// a silent SDR (USB/driver binding, dead handle, no antenna) from
+// front-end overload, an on-channel DC spike, or a clean signal that
+// simply never carried a decodable control channel. All fields are
+// best-effort; the zero value means "no decoder wired".
+type HuntDiagnostics struct {
+	// IQObserved is true when the decoder saw at least one IQ sample
+	// for this system during the hunt. False is the strongest single
+	// signal that the SDR isn't streaming at all.
+	IQObserved bool `json:"iq_observed"`
+	// IQSamples is the cumulative raw IQ sample count the decoder
+	// processed for this system since it became the active pipeline.
+	IQSamples int64 `json:"iq_samples"`
+	// IQPowerDbFS is the last window-averaged IQ power in dBFS. Very
+	// low (≲ -55) points at antenna / gain / USB; near 0 with a high
+	// clip ratio is front-end overload.
+	IQPowerDbFS float64 `json:"iq_power_dbfs"`
+	// IQClipRatio is the last window's fraction of ADC-rail-clipped
+	// samples — front-end overload when sustained (≳ 0.002).
+	IQClipRatio float64 `json:"iq_clip_ratio"`
+	// IQDCRatioDb is the last window's DC-bin power relative to total
+	// channel power, in dB — an on-channel DC spike when ≳ -10.
+	IQDCRatioDb float64 `json:"iq_dc_ratio_db"`
+	// PipelineActive is true when a live decode pipeline for the
+	// system's protocol was running during the hunt. (A protocol with
+	// no wired pipeline sits in state=hunting rather than failing, so
+	// this is rarely false on a real failure.)
+	PipelineActive bool `json:"pipeline_active"`
+	// Diagnosis is a one-line, human-readable best guess at the cause,
+	// derived from the fields above. Empty when no decoder is wired.
+	Diagnosis string `json:"diagnosis,omitempty"`
 }
 
 // ErrNoControlChannel is returned when every candidate frequency exhausts

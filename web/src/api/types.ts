@@ -77,6 +77,10 @@ export interface GrantDTO {
   frequency_hz: number;
   channel_id?: number;
   channel_number?: number;
+  // TDMA timeslot, 1-based: 1 = TS1, 2 = TS2 (DMR Tier III). Absent /
+  // 0 for non-slotted protocols, where frequency alone identifies the
+  // call.
+  timeslot?: number;
   encrypted?: boolean;
   emergency?: boolean;
   data_call?: boolean;
@@ -113,6 +117,54 @@ export interface AudioStatusDTO {
   muted: boolean;
   recording_enabled: boolean;
   drops_total: number;
+}
+
+// HuntStatus mirrors api.HuntStatus — the live system-discovery run snapshot
+// from GET /api/v1/hunt. `system` carries the full discovered map when ready.
+export interface HuntStatus {
+  run_id: number;
+  state: string;
+  running: boolean;
+  mode?: string; // "hunt" | "survey"
+  phase?: string;
+  detail?: string;
+  sites: number;
+  talkgroups: number;
+  system_name?: string;
+  signals?: DetectedSignal[];
+  error?: string;
+  system?: unknown;
+}
+
+// DetectedSignal mirrors hunt.DetectedSignal — one classified carrier in a
+// survey run.
+export interface DetectedSignal {
+  freq_hz: number;
+  snr_db: number;
+  occupied_bw_hz: number;
+  class: string;
+  confidence: number;
+  baud_hz?: number;
+  trunking?: { protocol: string; locked: boolean; control_hz?: number };
+  analog?: { active: boolean; ctcss_hz?: number; dcs_code?: string };
+  pages?: { protocol: string; capcode: number; text: string }[];
+}
+
+// HuntStartRequest mirrors api.HuntStartRequest (frequencies in MHz).
+export interface HuntStartRequest {
+  serial?: string;
+  bands?: string[];
+  candidates?: number[];
+  no_sweep?: boolean;
+  survey?: boolean;
+  classify_only?: boolean;
+  max_dwell_seconds?: number;
+  protocol?: string;
+  dwell_seconds?: number;
+  name?: string;
+  state?: string;
+  county?: string;
+  location?: string;
 }
 
 export interface ScannerStatusDTO {
@@ -168,6 +220,8 @@ export interface CallRow {
   key_id?: number;
   emergency?: boolean;
   data_call?: boolean;
+  // TDMA timeslot, 1-based (1 = TS1, 2 = TS2; absent for non-slotted).
+  timeslot?: number;
   device_serial?: string;
   started_at: string;
   ended_at?: string;

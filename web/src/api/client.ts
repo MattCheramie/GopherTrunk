@@ -10,6 +10,7 @@ import type {
   CallRow,
   DeviceDTO,
   Health,
+  HuntStatus,
   Mutations,
   RIDDTO,
   RuntimeDTO,
@@ -24,15 +25,43 @@ export interface ClientConfig {
   token: string | null;
 }
 
+// DiagInfo is the optional diagnostics payload the daemon attaches to
+// an error envelope when diagnostics.verbose_errors is enabled. The
+// banner carries version/OS/system/dongle context useful for triage.
+export interface DiagInfo {
+  banner: string;
+  trace?: string[];
+  stack?: string;
+}
+
 export class HTTPError extends Error {
   constructor(
     public readonly status: number,
     public readonly body: string,
     message: string,
+    // diag is populated when the daemon returned a verbose error
+    // envelope ({"error":..., "diag":{"banner":...}}). undefined when
+    // verbose errors are off or the body wasn't the JSON envelope.
+    public readonly diag?: DiagInfo,
   ) {
     super(message);
     this.name = "HTTPError";
   }
+}
+
+// parseErrorBody extracts the {"error", "diag"} envelope from a JSON
+// error body. Returns the concise message and the optional diag block;
+// falls back to the raw text for non-JSON bodies.
+function parseErrorBody(text: string): { message: string; diag?: DiagInfo } {
+  try {
+    const obj = JSON.parse(text) as { error?: string; diag?: DiagInfo };
+    if (obj && typeof obj === "object" && (obj.error || obj.diag)) {
+      return { message: obj.error ?? text, diag: obj.diag };
+    }
+  } catch {
+    // not JSON — fall through to raw text
+  }
+  return { message: text };
 }
 
 /** Default per-request timeout. Long enough for a slow Pi, short enough
@@ -74,10 +103,12 @@ async function request<T>(
 
   if (!res.ok) {
     const text = await safeReadText(res);
+    const { message, diag } = parseErrorBody(text);
     throw new HTTPError(
       res.status,
       text,
-      `${method} ${path} → ${res.status}: ${text || res.statusText}`,
+      `${method} ${path} → ${res.status}: ${message || res.statusText}`,
+      diag,
     );
   }
 
@@ -165,6 +196,7 @@ export const api = {
     ),
   scanner: (c: ClientConfig) =>
     request<ScannerStatusDTO>(c, "GET", "/api/v1/scanner"),
+  hunt: (c: ClientConfig) => request<HuntStatus>(c, "GET", "/api/v1/hunt"),
   audio: (c: ClientConfig) =>
     request<AudioStatusDTO>(c, "GET", "/api/v1/audio"),
   metricsText: (c: ClientConfig) =>

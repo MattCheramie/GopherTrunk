@@ -188,6 +188,16 @@ func (c *Client) Scanner(ctx context.Context) (ScannerStatusDTO, error) {
 	return s, nil
 }
 
+// Hunt calls GET /api/v1/hunt and returns the live system-discovery snapshot.
+// Always succeeds with an empty (idle) status when no hunt subsystem is wired.
+func (c *Client) Hunt(ctx context.Context) (HuntStatusDTO, error) {
+	var s HuntStatusDTO
+	if err := c.getJSON(ctx, "/api/v1/hunt", &s); err != nil {
+		return HuntStatusDTO{}, err
+	}
+	return s, nil
+}
+
 // Devices calls GET /api/v1/devices.
 func (c *Client) Devices(ctx context.Context) ([]SDRStatus, error) {
 	var r devicesResp

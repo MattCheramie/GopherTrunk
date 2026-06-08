@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 )
@@ -14,16 +13,15 @@ import (
 // short by design. Kept as a subcommand so future backends can
 // add real enumeration without breaking the CLI shape.
 func runAudio(args []string) {
+	rep := newReporter("audio")
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: gophertrunk audio list")
-		os.Exit(2)
+		rep.Fatalf(2, "usage: gophertrunk audio list")
 	}
 	switch args[0] {
 	case "list":
 		listAudio()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown audio subcommand: %s\n", args[0])
-		os.Exit(2)
+		rep.Fatalf(2, "unknown audio subcommand: %s", args[0])
 	}
 }
 

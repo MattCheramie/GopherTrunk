@@ -87,6 +87,7 @@ func New(cli *client.Client, opts Options) *Model {
 			panels.NewMetrics(),
 			panels.NewDevices(),
 			panels.NewScanner(),
+			panels.NewHunt(),
 			panels.NewSettings(),
 			panels.NewImport(),
 		},
@@ -106,6 +107,7 @@ func (m *Model) Init() tea.Cmd {
 		cmdPollHistory(m.cli, client.HistoryFilter{Limit: 100}),
 		cmdPollDevices(m.cli),
 		cmdPollScanner(m.cli),
+		cmdPollHunt(m.cli),
 		cmdPollAudio(m.cli),
 		cmdPollRuntime(m.cli),
 		cmdMutationStatus(m.cli),
@@ -283,6 +285,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.shared.ScannerErr = msg.err
 		cmds = append(cmds, scheduleAfter(pollScannerEvery, cmdPollScanner(m.cli)))
+
+	case pollHuntMsg:
+		if msg.err == nil {
+			m.shared.Hunt = msg.s
+		}
+		m.shared.HuntErr = msg.err
+		cmds = append(cmds, scheduleAfter(pollHuntEvery, cmdPollHunt(m.cli)))
 
 	case pollAudioMsg:
 		if msg.err == nil {
@@ -693,6 +702,21 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			return nil
 		}
 		return cmdScannerHuntRetune(m.cli, r.ScannerHunt.System, r.Label)
+	case state.WriteKindHuntStop:
+		return cmdHuntStop(m.cli, r.Label)
+	case state.WriteKindHuntStart:
+		if r.Hunt == nil {
+			return nil
+		}
+		return cmdHuntStart(m.cli, client.HuntStartRequest{
+			Bands:      r.Hunt.Bands,
+			Candidates: r.Hunt.Candidates,
+			NoSweep:    len(r.Hunt.Candidates) > 0 && len(r.Hunt.Bands) == 0,
+			Survey:     r.Hunt.Survey,
+			Name:       r.Hunt.Name,
+			Serial:     r.Hunt.Serial,
+			Protocol:   r.Hunt.Protocol,
+		}, r.Label)
 	case state.WriteKindScannerConvHold:
 		return cmdScannerConvHold(m.cli, r.Label)
 	case state.WriteKindScannerConvResume:

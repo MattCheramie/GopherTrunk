@@ -3,8 +3,6 @@ package imbe
 import (
 	"errors"
 	"fmt"
-
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
 // IMBE 4400 channel coding (TIA-102.BABA §7) maps 88 information
@@ -25,17 +23,20 @@ import (
 //     total  144            88
 //
 //  2. A pseudo-random scrambler keyed off u_0 — XOR'd onto the
-//     channel bits of u_1..u_6 to whiten the spectrum (§7.4).
+//     channel bits of u_1..u_6 to whiten the spectrum (§7.4). See
+//     scrambler.go.
 //
 //  3. A 144-bit interleaver permutation that scatters adjacent
 //     codeword bits across the frame so a localised burst error
-//     spreads across vectors (§7.5).
+//     spreads across vectors (§7.5). See interleave.go.
 //
 // This file ships layer 1 — the per-vector FEC encode/decode plus
-// the bit-position constants. Layers 2 and 3 are a self-contained
-// follow-up; the public DecodeChannel / EncodeChannel functions
-// here operate on already-deinterleaved + already-descrambled
-// channel bits so the per-vector FEC can be reviewed in isolation.
+// the bit-position constants. DecodeChannel / EncodeChannel here
+// operate on channel bits in vector order — i.e. already
+// deinterleaved (§7.5) and descrambled (§7.4) — so the per-vector
+// FEC can be reviewed in isolation. The DecodeChannelToFrame /
+// EncodeFrameToChannel helpers wrap those two layers around the
+// per-vector FEC to consume / produce raw on-air bursts.
 
 // Per-vector geometry. Offsets are measured in bits from the start
 // of the (already-deinterleaved + already-descrambled) 144-bit
@@ -79,34 +80,37 @@ func DecodeChannel(channel []byte) ([]byte, int, error) {
 	totalErrs := 0
 	uncorrectable := false
 
-	// Golay(23,12) vectors u_0..u_3 — 12 info bits each.
+	// Golay(23,12) vectors u_0..u_3 — 12 info bits each, data in the
+	// high columns (col 22..11), MSB-first.
 	for vi, off := range []int{u0Offset, u1Offset, u2Offset, u3Offset} {
-		cw := bitsToUint32(channel[off : off+23])
-		data, errs := framing.GolayDecode23_12(cw)
+		data, errs := golay23Decode(vectorToBlock(channel[off : off+23]))
 		if errs < 0 {
 			uncorrectable = true
 		} else {
 			totalErrs += errs
 		}
-		uint16ToBits(data, 12, info[vi*12:vi*12+12])
+		dataToInfo(data, 12, info[vi*12:vi*12+12])
 	}
 
 	// Hamming(15,11) vectors u_4..u_6 — 11 info bits each, packed
 	// after the 48 Golay info bits.
 	const hOffset = 48
 	for vi, off := range []int{u4Offset, u5Offset, u6Offset} {
-		cw := uint16(bitsToUint32(channel[off : off+15]))
-		data, errs := framing.HammingDecode15_11(cw)
+		data, errs := hamming1511Decode(uint16(vectorToBlock(channel[off : off+15])))
 		if errs < 0 {
 			uncorrectable = true
 		} else {
 			totalErrs += errs
 		}
-		uint16ToBits(data, 11, info[hOffset+vi*11:hOffset+vi*11+11])
+		dataToInfo(data, 11, info[hOffset+vi*11:hOffset+vi*11+11])
 	}
 
-	// u_7 — 7 info bits, no FEC, copied through.
-	copy(info[hOffset+33:hOffset+33+7], channel[u7Offset:u7Offset+7])
+	// u_7 — 7 info bits, no FEC. The on-air column order is the
+	// reverse of the info-bit order: info[0] of this group is the
+	// highest column (col 6).
+	for i := 0; i < u7InfoBits; i++ {
+		info[hOffset+33+i] = channel[u7Offset+(u7Bits-1-i)] & 1
+	}
 
 	if uncorrectable {
 		return info, totalErrs, ErrUncorrectable
@@ -125,19 +129,19 @@ func EncodeChannel(info []byte) ([]byte, error) {
 	channel := make([]byte, ChannelBits)
 
 	for vi, off := range []int{u0Offset, u1Offset, u2Offset, u3Offset} {
-		data := uint16(bitsToUint32(info[vi*12 : vi*12+12]))
-		cw := framing.GolayEncode23_12(data)
-		uint32ToBits(cw, 23, channel[off:off+23])
+		cw := golay23Encode(infoToData(info[vi*12:vi*12+12], 12))
+		blockToVector(cw, channel[off:off+23])
 	}
 
 	const hOffset = 48
 	for vi, off := range []int{u4Offset, u5Offset, u6Offset} {
-		data := bitsToUint32(info[hOffset+vi*11 : hOffset+vi*11+11])
-		cw := framing.HammingEncode15_11(uint16(data))
-		uint32ToBits(uint32(cw), 15, channel[off:off+15])
+		cw := hamming1511Encode(infoToData(info[hOffset+vi*11:hOffset+vi*11+11], 11))
+		blockToVector(uint32(cw), channel[off:off+15])
 	}
 
-	copy(channel[u7Offset:u7Offset+7], info[hOffset+33:hOffset+33+7])
+	for i := 0; i < u7InfoBits; i++ {
+		channel[u7Offset+(u7Bits-1-i)] = info[hOffset+33+i] & 1
+	}
 
 	return channel, nil
 }
@@ -166,27 +170,35 @@ func PackInfoBitsToFrame(info []byte) ([]byte, error) {
 }
 
 // DecodeChannelToFrame is the convenience pipeline that bridges
-// "144 channel bits, post-deinterleave" → "FrameBytes-byte
-// recorder-ready IMBE frame". It runs the §7.4 PRBS descrambler,
-// then the per-vector Golay+Hamming FEC inverse, then packs the
-// 88 recovered information bits MSB-first.
+// "144 raw on-air channel bits" → "FrameBytes-byte recorder-ready
+// IMBE frame". It runs the §7.5 deinterleaver, then the §7.4 PRBS
+// descrambler (whose u_0 seed is only valid once the bits are in
+// vector order), then the per-vector Golay+Hamming FEC inverse,
+// then packs the 88 recovered information bits MSB-first.
 //
-// Used by upstream protocol decoders (P25 Phase 1 LDU extraction,
-// future) that hand off post-deinterleave channel bursts: each
-// LDU carries 9 IMBE voice frames, each 144 bits — call this
-// helper for each slot and forward the resulting frame to
-// voice.Recorder.WriteRawFrame.
+// Used by upstream protocol decoders (P25 Phase 1 LDU extraction)
+// that hand off raw on-air channel bursts: each LDU carries 9 IMBE
+// voice frames, each 144 bits — call this helper for each slot and
+// forward the resulting frame to voice.Recorder.WriteRawFrame.
 //
 // Returns the total bit-errors corrected across all FEC vectors.
 // Uncorrectable codewords surface as ErrUncorrectable from
 // DecodeChannel; the partially-recovered frame is still returned
 // so callers can log + frame-repeat upstream.
 func DecodeChannelToFrame(channel []byte) (frame []byte, errs int, err error) {
-	descrambled, err := Descramble(channel)
+	deinterleaved, err := Deinterleave(channel)
 	if err != nil {
 		return nil, 0, err
 	}
-	info, errs, decErr := DecodeChannel(descrambled)
+	// Correct u_0's Golay before deriving the descrambler seed, so a
+	// channel-bit error in u_0 doesn't desync the entire u_1..u_6
+	// descramble. mbelib runs eccImbe7200x4400C0 before
+	// mbe_demodulateImbe7200x4400Data for the same reason. DecodeChannel
+	// re-decodes u_0 from the unmodified bits afterwards, so its error
+	// telemetry still reflects the real u_0 error count.
+	u0Data, _ := golay23Decode(vectorToBlock(deinterleaved[u0Offset : u0Offset+u0Bits]))
+	descrambleWithSeed(deinterleaved, u0Data<<4)
+	info, errs, decErr := DecodeChannel(deinterleaved)
 	frame, packErr := PackInfoBitsToFrame(info)
 	if decErr != nil {
 		return frame, errs, decErr
@@ -194,27 +206,39 @@ func DecodeChannelToFrame(channel []byte) (frame []byte, errs int, err error) {
 	return frame, errs, packErr
 }
 
-// bitsToUint32 packs up to 32 bits (MSB-first) from src into the
-// low bits of a uint32. Used for codewords of any width that fits.
-func bitsToUint32(src []byte) uint32 {
-	var out uint32
-	for _, b := range src {
-		out = (out << 1) | uint32(b&1)
+// vectorToBlock packs a vector's channel bits into an integer with
+// column c at bit c (LSB-first by column). The IMBE per-vector FEC
+// (p25fec.go) addresses codewords this way: column index == codeword
+// bit index, data in the high columns.
+func vectorToBlock(v []byte) uint32 {
+	var b uint32
+	for c, bit := range v {
+		b |= uint32(bit&1) << uint(c)
 	}
-	return out
+	return b
 }
 
-// uint32ToBits writes the low n bits of v to dst MSB-first. dst
-// must already be the right length.
-func uint32ToBits(v uint32, n int, dst []byte) {
+// blockToVector writes an integer back into a vector's channel bits,
+// column c taking bit c. Inverse of vectorToBlock.
+func blockToVector(b uint32, dst []byte) {
+	for c := range dst {
+		dst[c] = byte((b >> uint(c)) & 1)
+	}
+}
+
+// dataToInfo writes an n-bit data value MSB-first into dst (dst[0] is
+// the most-significant data bit).
+func dataToInfo(data uint16, n int, dst []byte) {
 	for i := 0; i < n; i++ {
-		dst[i] = byte((v >> uint(n-1-i)) & 1)
+		dst[i] = byte((data >> uint(n-1-i)) & 1)
 	}
 }
 
-// uint16ToBits is shorthand for uint32ToBits when callers already
-// hold a uint16 (Hamming-decoded data). Keeps the call site
-// clean without an extra cast at the use site.
-func uint16ToBits(v uint16, n int, dst []byte) {
-	uint32ToBits(uint32(v), n, dst)
+// infoToData reads n MSB-first info bits into a data value.
+func infoToData(src []byte, n int) uint16 {
+	var d uint16
+	for i := 0; i < n; i++ {
+		d = d<<1 | uint16(src[i]&1)
+	}
+	return d
 }

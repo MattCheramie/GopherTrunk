@@ -13,6 +13,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -37,21 +38,24 @@ type Snapshotter interface {
 type Metrics struct {
 	reg *prometheus.Registry
 
-	eventsTotal   *prometheus.CounterVec
-	callsTotal    *prometheus.CounterVec // by system,protocol,encrypted,reason
-	callsStarted  *prometheus.CounterVec // by system,protocol,encrypted
-	activeCalls   *prometheus.GaugeVec   // by system,protocol
-	ccLockedGauge *prometheus.GaugeVec   // by system (1 when CC locked)
-	ccFrequencyHz *prometheus.GaugeVec   // by system; deleted on CC loss
-	ccTransitions *prometheus.CounterVec // by system,event (locked|lost)
-	iqUnderruns   *prometheus.CounterVec
-	iqPowerDbFS   *prometheus.GaugeVec // by system; mean IQ power on the control SDR
-	iqDCRatioDb   *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
-	usbReconnects *prometheus.CounterVec
-	decodeErrors  *prometheus.CounterVec
-	sdrAttached   *prometheus.GaugeVec
-	versionInfo   *prometheus.GaugeVec
-	sdrSnap       *sdrSnapshotCollector
+	eventsTotal    *prometheus.CounterVec
+	callsTotal     *prometheus.CounterVec // by system,protocol,encrypted,reason
+	callsStarted   *prometheus.CounterVec // by system,protocol,encrypted
+	activeCalls    *prometheus.GaugeVec   // by system,protocol
+	dmrSlotCalls   *prometheus.CounterVec // DMR voice calls by system,timeslot (ts1/ts2)
+	ccLockedGauge  *prometheus.GaugeVec   // by system (1 when CC locked)
+	ccFrequencyHz  *prometheus.GaugeVec   // by system; deleted on CC loss
+	ccTransitions  *prometheus.CounterVec // by system,event (locked|lost)
+	iqUnderruns    *prometheus.CounterVec
+	decodeOverruns prometheus.Counter   // chunks dropped at the decode queue (issue #402)
+	iqPowerDbFS    *prometheus.GaugeVec // by system; mean IQ power on the control SDR
+	iqDCRatioDb    *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
+	iqClipRatio    *prometheus.GaugeVec // by system; fraction of IQ samples pinned to the ADC rail (issue #402)
+	usbReconnects  *prometheus.CounterVec
+	decodeErrors   *prometheus.CounterVec
+	sdrAttached    *prometheus.GaugeVec
+	versionInfo    *prometheus.GaugeVec
+	sdrSnap        *sdrSnapshotCollector
 
 	bus       *events.Bus
 	sub       *events.Subscription
@@ -95,6 +99,18 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Help:      "Active calls currently being followed, by system and protocol. Use sum() for the daemon-wide total.",
 	}, []string{"system", "protocol"})
 
+	// DMR carriers are 2-slot TDMA, so a single repeater runs two
+	// independent calls (TS1 + TS2). This counter splits DMR voice
+	// calls by timeslot so an operator can see the per-slot load and
+	// spot a slot that never produces traffic (a routing/decode gap).
+	// Only emitted for grants that carry a timeslot (DMR); the label is
+	// "ts1" / "ts2".
+	m.dmrSlotCalls = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "dmr_voice_calls_total",
+		Help:      "DMR voice calls started, split by TDMA timeslot (ts1/ts2), by system.",
+	}, []string{"system", "timeslot"})
+
 	m.ccLockedGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "control_channel_locked",
@@ -120,6 +136,20 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Help:      "Times the IQ stream pipeline dropped samples because a downstream stage was too slow.",
 	}, []string{"driver", "serial"})
 
+	// Chunks the live decoder dropped at its internal decode queue because
+	// decode could not keep up with real time (issue #402). Distinct from
+	// sdr_iq_underruns_total: that counts the SDR driver's own delivery
+	// channel overrunning, while this counts the decode goroutine being the
+	// bottleneck (CPU-starved host, contention). A climbing value here, with
+	// iq_underruns_total flat, says "the machine can't sustain this decode"
+	// rather than "the USB transport hiccuped".
+	m.decodeOverruns = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "ccdecoder",
+		Name:      "decode_overruns_total",
+		Help:      "Live IQ chunks dropped at the decode queue because decode can't keep up with real time (issue #402). Distinct from sdr_iq_underruns_total (driver-delivery overruns).",
+	})
+
 	// Mean IQ power on the control SDR, expressed in dBFS (0 dBFS = ±1.0
 	// full-scale per the convertU8IQ normalization). Surfaces silent
 	// failure modes that issue #275 was the first instance of: cc-hunt
@@ -131,7 +161,7 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Namespace: namespace,
 		Subsystem: "sdr",
 		Name:      "iq_power_dbfs",
-		Help:      "Mean IQ power on the control SDR in dBFS (window ~= 1 s). Idle ≈ -45; healthy signal ≈ -25; > -3 indicates clipping.",
+		Help:      "Mean IQ power on the control SDR in dBFS (window ~= 1 s). Idle ≈ -45; healthy signal ≈ -25. This is RMS and averages away peak clipping — watch iq_clip_ratio for the authoritative overload signal (issue #402).",
 	}, []string{"system"})
 
 	// Diagnostic for the RTL-SDR R820T2 zero-IF DC-spike-on-channel
@@ -146,6 +176,20 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Subsystem: "sdr",
 		Name:      "iq_dc_ratio_db",
 		Help:      "DC-bin power relative to total IQ power, in dB (window ~= 1 s). 0 = all power is DC; -20 or lower = clean. > -10 on a tuned-on-channel control SDR hints at the R820T2 DC-spike failure mode tracked in issue #402.",
+	}, []string{"system"})
+
+	// Fraction of IQ samples whose I or Q component hit the ADC rail over
+	// the same window iq_power_dbfs is computed over (issue #402). The
+	// power gauge is RMS, so a high-crest signal can clip on peaks while
+	// the average still reads merely "hot" (~ -5 dBFS); this gauge is the
+	// authoritative overload signal. 0 = no clipping; a sustained value
+	// above ~0.002 means the front end is overloaded — reduce gain or add
+	// attenuation (raising gain makes it worse).
+	m.iqClipRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "sdr",
+		Name:      "iq_clip_ratio",
+		Help:      "Fraction of control-SDR IQ samples pinned to the ADC rail (window ~= 1 s). 0 = no clipping; a sustained value above ~0.002 means front-end overload — reduce gain or add attenuation, do not raise gain (issue #402).",
 	}, []string{"system"})
 
 	m.usbReconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -184,12 +228,15 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.callsTotal,
 		m.callsStarted,
 		m.activeCalls,
+		m.dmrSlotCalls,
 		m.ccLockedGauge,
 		m.ccFrequencyHz,
 		m.ccTransitions,
 		m.iqUnderruns,
+		m.decodeOverruns,
 		m.iqPowerDbFS,
 		m.iqDCRatioDb,
+		m.iqClipRatio,
 		m.usbReconnects,
 		m.decodeErrors,
 		m.sdrAttached,
@@ -268,6 +315,9 @@ func (m *Metrics) observeEvent(ev events.Event) {
 			sys, proto, enc := callLabels(cs.Grant)
 			m.activeCalls.WithLabelValues(sys, proto).Inc()
 			m.callsStarted.WithLabelValues(sys, proto, enc).Inc()
+			if cs.Grant.Timeslot != 0 {
+				m.dmrSlotCalls.WithLabelValues(sys, fmt.Sprintf("ts%d", cs.Grant.Timeslot)).Inc()
+			}
 		}
 	case events.KindCallEnd:
 		if ce, ok := ev.Payload.(trunking.CallEnd); ok {
@@ -315,6 +365,14 @@ func (m *Metrics) RecordIQUnderrun(driver, serial string) {
 	m.iqUnderruns.WithLabelValues(driver, serial).Inc()
 }
 
+// RecordDecodeOverrun increments the decode-overrun counter: one live IQ
+// chunk dropped at the decode queue because decode can't keep up with
+// real time (issue #402). Distinct from RecordIQUnderrun, which is the
+// SDR driver's own delivery-channel overrun.
+func (m *Metrics) RecordDecodeOverrun() {
+	m.decodeOverruns.Inc()
+}
+
 // RecordIQPowerDbFS sets the mean-IQ-power gauge for system. Caller
 // computes the window mean; the metrics package just stores it.
 func (m *Metrics) RecordIQPowerDbFS(system string, dbfs float64) {
@@ -352,6 +410,26 @@ func (m *Metrics) ClearIQDCRatioDb(system string) {
 		return
 	}
 	m.iqDCRatioDb.DeleteLabelValues(system)
+}
+
+// RecordIQClipRatio sets the rail-clipping-fraction gauge for system.
+// The decoder computes this once per IQ-power window; the metrics package
+// just stores it. See iqClipRatio's Help text for interpretation (issue
+// #402).
+func (m *Metrics) RecordIQClipRatio(system string, ratio float64) {
+	if system == "" {
+		system = "unknown"
+	}
+	m.iqClipRatio.WithLabelValues(system).Set(ratio)
+}
+
+// ClearIQClipRatio drops the clip-ratio gauge series for system. Called
+// alongside ClearIQPowerDbFS when a decoder pipeline tears down.
+func (m *Metrics) ClearIQClipRatio(system string) {
+	if system == "" {
+		return
+	}
+	m.iqClipRatio.DeleteLabelValues(system)
 }
 
 // RecordUSBReconnect increments the reconnect counter for the supplied SDR.

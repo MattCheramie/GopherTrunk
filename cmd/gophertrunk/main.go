@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	// Pure-Go SDR drivers. Each registers itself under its canonical
@@ -57,6 +58,41 @@ func main() {
 		runDecode(os.Args[2:])
 	case "replay":
 		runReplay(os.Args[2:])
+	case "analyze":
+		runAnalyze(os.Args[2:])
+	case "identify":
+		runIdentify(os.Args[2:])
+	case "hunt":
+		runHunt(os.Args[2:])
+	case "gen":
+		runGen(os.Args[2:])
+	case "capture":
+		runCapture(os.Args[2:])
+	case "test":
+		runSiglabTest(os.Args[2:])
+	case "siglab":
+		// `siglab serve` launches the standalone web console; `siglab sweep`
+		// runs the demod EVM/SNR-vs-SNR benchmark; bare `siglab` (and any
+		// other subarg) stays the offline TUI.
+		switch {
+		case len(os.Args) > 2 && os.Args[2] == "serve":
+			runSiglabServe(os.Args[3:])
+		case len(os.Args) > 2 && os.Args[2] == "sweep":
+			runSiglabSweep(os.Args[3:])
+		default:
+			runSiglabTUI(os.Args[2:])
+		}
+	case "config":
+		// `config serve` launches the web Config Builder; `config tui` (and
+		// bare `config`) launch the terminal Config Builder.
+		switch {
+		case len(os.Args) > 2 && os.Args[2] == "serve":
+			runConfigServe(os.Args[3:])
+		case len(os.Args) > 2 && os.Args[2] == "tui":
+			runConfigTUI(os.Args[3:])
+		default:
+			runConfigTUI(os.Args[2:])
+		}
 	case "import-pdf":
 		runImport(os.Args[2:])
 	case "daemon", "run":
@@ -81,7 +117,17 @@ USAGE:
   gophertrunk audio list              list audio output devices
   gophertrunk tui [-server URL]       open the operator TUI against a remote daemon
   gophertrunk decode [flags]          decode a captured .raw frame stream into a WAV
-  gophertrunk replay [flags]          decode a raw IQ capture file offline through the P25 chain
+  gophertrunk replay [flags]          decode a raw IQ capture file offline (any protocol)
+  gophertrunk analyze [flags]         decode + analyze a capture with structured export (json/yaml/csv)
+  gophertrunk identify [flags]        auto-detect the protocol in a capture, then analyze it
+  gophertrunk hunt [flags]            discover & map an unknown trunked system, export it + an RR submission package
+  gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
+  gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
+  gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
+  gophertrunk siglab [flags]          standalone replay/test/analysis TUI
+  gophertrunk siglab serve [flags]    offline signal-analysis web console (browser UI)
+  gophertrunk config serve [flags]    standalone web Config Builder/Editor (browser UI)
+  gophertrunk config [tui] [flags]    standalone terminal Config Builder/Editor (no browser)
   gophertrunk import-pdf [flags]      import a RadioReference PDF into config.yaml
   gophertrunk version                 print build version
   gophertrunk help                    show this message`)
@@ -98,24 +144,29 @@ func runDaemon(args []string) {
 	wantTUI := fs.Bool("tui", false, "launch the in-process operator TUI after the daemon comes up")
 	wantWeb := fs.Bool("web", false, "open the bundled web UI in the system browser after the daemon comes up")
 	wantHL := fs.Bool("headless", false, "skip the launcher prompt; daemon runs silent (default for non-TTY stdin)")
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures (also set via diagnostics.verbose_errors or GOPHERTRUNK_VERBOSE_ERRORS)")
 	// IQ capture diagnostic — taps a live SDR's iqtap broker and writes
 	// raw IQ samples to a file for offline analysis. Used to capture a
 	// reproducible fixture for replay (issue #402).
 	iqCapture := fs.String("iq-capture", "", "capture raw IQ from a live SDR for offline analysis (issue #402). Format: serial=<s>,path=<file>,seconds=<n>[,format=u8|f32] (default format=f32, GNU Radio cfile)")
 	_ = fs.Parse(args)
 
+	// Resolve verbose-error reporting from the flag now (config folds in
+	// below, env was already picked up at package init) so every error
+	// site in runDaemon routes through the shared diagnostics reporter.
+	resolveVerbose(*verboseFlag, false)
+	rep := newReporter("")
+
 	// Parse the iq-capture spec early so a typo doesn't blow up after
 	// the daemon's been running for 10 seconds.
 	captureSpec, err := parseIQCaptureSpec(*iqCapture)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(2)
+		rep.Fatal(2, err)
 	}
 
 	mode, err := pickLaunchMode(*wantTUI, *wantWeb, *wantHL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "launcher: %v\n", err)
-		os.Exit(2)
+		rep.Fatalf(2, "launcher: %v", err)
 	}
 
 	// No -config passed: walk the standard discovery precedence
@@ -128,8 +179,7 @@ func runDaemon(args []string) {
 	if *cfgPath == "" {
 		discovered, err := config.DiscoverWith(config.DiscoverOptions{Pick: pickConfigInteractive})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "config: %v\n", err)
-			os.Exit(2)
+			rep.Fatalf(2, "config: %v", err)
 		}
 		if discovered != "" {
 			fmt.Fprintf(os.Stderr, "config: loaded %s\n", discovered)
@@ -142,16 +192,20 @@ func runDaemon(args []string) {
 	// daemon to run. Exit with EX_CONFIG so service managers can
 	// distinguish "missing config" from generic failures.
 	if *cfgPath == "" && !stdinIsTerminal() && os.Getenv("GOPHERTRUNK_CONFIG") == "" {
-		fmt.Fprintln(os.Stderr,
+		rep.Fatalf(78,
 			"gophertrunk: no config found and stdin is not a TTY; pass -config or set GOPHERTRUNK_CONFIG (see docs/quickstart.md)")
-		os.Exit(78)
 	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
-		os.Exit(2)
+		rep.Fatalf(2, "config: %v", err)
 	}
+	// Fold the config's verbose-error setting into the resolved value so
+	// the flag/env still win but config.diagnostics.verbose_errors takes
+	// effect for everything from here on (daemon, API, gRPC).
+	resolveVerbose(*verboseFlag, cfg.Diagnostics.VerboseErrors)
+	cfg.Diagnostics.VerboseErrors = verboseErrors
+	rep.Verbose = verboseErrors
 	if *logLevel != "" {
 		cfg.Log.Level = *logLevel
 	}
@@ -166,21 +220,18 @@ func runDaemon(args []string) {
 	// daemon: an operator who passed -tui or -web with no HTTP API
 	// in config should hear about it now, not after engine init.
 	if (mode == launchTUI || mode == launchWeb) && cfg.API.HTTPAddr == "" {
-		fmt.Fprintf(os.Stderr,
-			"launcher: -%s requires api.http_addr in config (current value is empty)\n",
+		rep.Fatalf(2,
+			"launcher: -%s requires api.http_addr in config (current value is empty)",
 			launchModeFlag(mode))
-		os.Exit(2)
 	}
 	if mode == launchTUI && (!stdinIsTerminal() || !stdoutIsTerminal()) {
-		fmt.Fprintln(os.Stderr,
+		rep.Fatalf(2,
 			"launcher: -tui requires an interactive terminal (stdin + stdout TTY); use -web or -headless")
-		os.Exit(2)
 	}
 
 	preflightWarnings, err := preflight(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(2)
+		rep.Fatal(2, err)
 	}
 
 	// Single-instance lock. Two daemons aimed at the same config
@@ -189,8 +240,7 @@ func runDaemon(args []string) {
 	// touches the radio.
 	releaseLock, err := acquireInstanceLock(*cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
+		rep.Fatal(1, err)
 	}
 	defer releaseLock()
 
@@ -215,8 +265,14 @@ func runDaemon(args []string) {
 
 	d, err := NewDaemonWithPath(cfg, *cfgPath, version.String(), logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "daemon init: %v\n", err)
-		os.Exit(1)
+		rep.Fatal(1, fmt.Errorf("daemon init: %w", err))
+	}
+	// One-time diagnostics banner in the daemon log so a captured log
+	// carries the same macro context an error banner would — including
+	// the dongles the now-open pool actually claimed. Suppressed by
+	// GOPHERTRUNK_QUIET_BANNER (CI/tests).
+	if banner := diag.FormatBannerPlain(d.newDiagCollector().SysInfo()); banner != "" {
+		logger.Info("diagnostics", "banner", banner)
 	}
 	for _, w := range preflightWarnings {
 		d.addWarning(w)
@@ -246,8 +302,7 @@ func runDaemon(args []string) {
 	case <-d.Ready():
 	case err := <-runErr:
 		if err != nil && !errors.Is(err, context.Canceled) {
-			fmt.Fprintf(os.Stderr, "daemon: %v\n", err)
-			os.Exit(1)
+			rep.Fatal(1, fmt.Errorf("daemon: %w", err))
 		}
 		return
 	}
@@ -260,10 +315,9 @@ func runDaemon(args []string) {
 	if captureSpec.Serial != "" {
 		br := d.IQBroker(captureSpec.Serial)
 		if br == nil {
-			fmt.Fprintf(os.Stderr,
-				"iq-capture: no SDR with serial %q in pool (have: %v)\n",
+			rep.Fatalf(2,
+				"iq-capture: no SDR with serial %q in pool (have: %v)",
 				captureSpec.Serial, d.IQBrokerSerials())
-			os.Exit(2)
 		}
 		go func() {
 			if err := runIQCapture(ctx, br, captureSpec, logger); err != nil &&
@@ -279,7 +333,7 @@ func runDaemon(args []string) {
 	// Wait for the daemon goroutine to finish (SIGINT/SIGTERM →
 	// ctx cancels → Run unwinds → returns).
 	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
-		logger.Warn("daemon exited", "err", err)
+		logErr(logger, verboseErrors, "daemon exited", err)
 		os.Exit(1)
 	}
 }

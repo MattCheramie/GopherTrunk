@@ -40,7 +40,7 @@ this exist? Read **[The Story of GopherTrunk](https://gophertrunk.org/story.html
 
 ```sh
 # Linux x86_64 — see https://gophertrunk.org/downloads.html for macOS, Windows, ARM64.
-VERSION=v0.2.6
+VERSION=v0.3.6
 curl -L -o gophertrunk.tar.gz \
   https://github.com/MattCheramie/GopherTrunk/releases/download/${VERSION}/gophertrunk-${VERSION}-linux-amd64.tar.gz
 tar xzf gophertrunk.tar.gz && cd gophertrunk-${VERSION}-linux-amd64
@@ -65,12 +65,17 @@ Silicon and Intel. Full per-OS recipes at
   Motorola Type II / SmartZone, EDACS / GE-Marc, LTR, MPT 1327,
   dPMR Mode 3, TETRA TMO. Amateur-radio: D-STAR and Yaesu System
   Fusion.
-- **POCSAG paging** — protocol layer for the dominant wireline
-  FSK pager protocol (CCIR 584): BCH(31,21) FEC, batch carve-up,
-  numeric (5 BCD/codeword) + alphanumeric (7-bit packed ASCII)
-  decoders. Foundation for fire / EMS dispatch text alongside
-  the trunked-voice pipeline; DSP wiring follows in the next PR.
-  See [docs/pocsag.md](docs/pocsag.md).
+- **POCSAG + FLEX paging** — protocol + DSP for the two dominant
+  pager protocols, both decoding straight off the air and sharing
+  the `pager_log` table / `/pager` panel (tagged by `protocol`).
+  POCSAG (CCIR 584): BCH(31,21) FEC, batch carve-up, numeric
+  (5 BCD/codeword) + alphanumeric (7-bit packed ASCII), 512 /
+  1200 / 2400 bps. FLEX: 1600 bps / 2-level mode — 32-bit sync +
+  mode code → frame-info word → block de-interleave → BCH(31,21)
+  → BIW / address / vector / message-word walk → alphanumeric /
+  numeric pages. Pin SDRs via `paging.pocsag` / `paging.flex`.
+  Foundation for fire / EMS dispatch text alongside the
+  trunked-voice pipeline. See [docs/pocsag.md](docs/pocsag.md).
 - **APRS / AX.25 packet** — end-to-end pipeline for the
   amateur-radio APRS metadata bus (position beacons, messages,
   bulletins, status, Mic-E mobile-tracker compressed format).
@@ -136,6 +141,16 @@ Silicon and Intel. Full per-OS recipes at
   the BEAST upstream uses. Plus `events.KindAircraftReport` bus
   event, SQLite `aircraft_log`, `GET /api/v1/adsb/aircraft`,
   and `/adsb` web panel. See [docs/adsb.md](docs/adsb.md).
+- **M17 link layer** — metadata decoder for the open, Codec2-based
+  M17 digital voice mode (4FSK, 4800 sym/s). C4FM demod → symbol
+  timing → 4FSK slice → sync hunt → LICH reassembly (Golay(24,12),
+  six chunks) → Link Setup Frame parse: source / destination
+  base-40 callsigns, mode (voice / data / packet), channel-access
+  number, CRC-16. Recovers "who's talking to whom" from an
+  in-progress transmission without decoding audio (Codec2 voice is
+  a planned follow-up). `events.KindM17LinkSetup` bus event, SQLite
+  `m17_log`, `GET /api/v1/m17/linksetups`. Pin an SDR via
+  `m17.channels`. See [docs/m17.md](docs/m17.md).
 - **Live map** — Shared Leaflet map at the top of each
   position-bearing panel (APRS / AIS / DSC / ADS-B) renders
   decoded positions over OpenStreetMap tiles, colour-coded per
@@ -156,6 +171,12 @@ Silicon and Intel. Full per-OS recipes at
   endpoints as virtual tuners alongside local USB dongles. The
   SDR can live on a Raspberry Pi at the antenna while the daemon
   runs on a beefier host; one entry per remote in `sdr.rtl_tcp`.
+- **Remote SoapySDRServer SDRs** — Mount professional / high-bit-depth
+  hardware (USRP, LimeSDR, bladeRF, HackRF, Airspy, SDRplay, …) over the
+  network via the [SoapyRemote](https://github.com/pothosware/SoapyRemote)
+  protocol, in pure Go with no CGO. Carries 16/32-bit IQ with native
+  frequency / sample-rate / gain control; one entry per remote in
+  `sdr.soapy_remote`. See [docs/hardware.md](docs/hardware.md).
 - **Live spectrum / waterfall** — In-browser FFT waterfall served
   off the same IQ stream the trunking decoder consumes. New
   `internal/sdr/iqtap` multi-consumer fan-out lets future
@@ -186,6 +207,12 @@ Silicon and Intel. Full per-OS recipes at
   noise), spotting frequency offset, and checking demod /
   equalizer health. Decimated to 2 ksps for the wire; canvas
   scatter with energy banner. Web panel at `/constellation`.
+- **Symbol scope** — live oscilloscope of the demodulated symbol
+  stream (OP25's "Symbol" plot): the pre-slicer soft waveform for
+  P25 C4FM and the sliced dibit decisions for CQPSK, driven off the
+  production receiver. Shares the constellation's offset / Hold /
+  follow-active-call controls. Web panel at `/symbols`; offline view
+  in SigLab. See [docs/symbol-scope.md](docs/symbol-scope.md).
 - **Bookmarks / frequency manager** — UI-managed conventional
   channel list (marine VHF, NOAA weather, FRS/GMRS, repeater
   outputs, public-safety fall-back channels) stored in the
@@ -205,7 +232,11 @@ Silicon and Intel. Full per-OS recipes at
   already hosting the control channel — no separate `role: voice`
   dongle needed for grants inside the wideband window. Out-of-
   window grants spill over to a physical voice SDR when present.
-  See [docs/hardware.md](docs/hardware.md) and
+  DMR Tier III is **2-slot TDMA**, so a single carrier can run two
+  simultaneous calls — TS1 and TS2 are tracked, recorded (with a
+  `_ts1` / `_ts2` filename suffix), and logged as distinct calls,
+  each binding its own voice tap. See
+  [docs/hardware.md](docs/hardware.md) and
   [samples/dmr-tier2-multichannel/](samples/dmr-tier2-multichannel/).
 - **DSP** — Polyphase channelizer, Kaiser / RRC / Gaussian FIRs,
   FM / C4FM / GFSK / FFSK / DQPSK / π/4-DQPSK / π/8-H-DQPSK
@@ -231,6 +262,15 @@ Silicon and Intel. Full per-OS recipes at
   pure-browser React SPA web console, runtime config editing via
   `PATCH /api/v1/settings`, RadioReference PDF / CSV importer with
   a config-builder wizard.
+- **Site/system hunting** — `gophertrunk hunt` maps a previously
+  undocumented trunked system from one or more control-channel IQ
+  captures: auto-identifies the protocol, accumulates identity
+  (P25 NAC / WACN / SYSID / RFSS / Site, and per-protocol ids),
+  per-site control channels and observed talkgroups, then exports a
+  GopherTrunk import bundle, a trunk-recorder config stanza, and a
+  ready-to-paste RadioReference submission package — with an
+  optional read-only RadioReference duplicate check so you don't
+  submit a system that already exists. See [docs/hunt.md](docs/hunt.md).
 - **Location + affiliation** — NMEA-0183 GGA / RMC over the air
   decoded into a SQLite `location_log`; protocol-agnostic
   affiliation tracker fed from grants / registrations / affiliation
@@ -257,6 +297,22 @@ log, per-talkgroup policy) all ship.
 - **Digital-voice composer chains.** FM, DMR, P25 Phase 1 / 2 decode
   to audio. NXDN, dPMR, TETRA, YSF, D-STAR voice (plus EDACS
   ProVoice) are followed and logged but not yet turned into PCM.
+- **DMR 2-slot interleaved voice + embedded-LC labelling.** Both
+  timeslots of a carrier are tracked, recorded, and logged as separate
+  calls; a stride-2 interleaved superframe decoder
+  (`voice.NewInterleavedDecoder`) separates the two slots and
+  reassembles each slot's embedded Link Control (EMB → variable
+  BPTC(128,72) → talkgroup/source) so a slot is routed to its call by
+  talkgroup. The whole path is wired through the voice composer behind
+  a per-system opt-in (`dmr_interleaved_voice: true`) and unit-tested
+  end-to-end against synthetic modulated IQ. Each slot's calls are
+  visible per-timeslot in the TUI / web active-call views and in the
+  `gophertrunk_dmr_voice_calls_total{system,timeslot}` metric. It
+  defaults off:
+  confirming the exact on-air dibit cadence (CACH/guard) and the ETSI
+  embedded-signalling interleave / EMB FEC / CRC against a real IQ
+  capture is what's needed before it becomes the production default —
+  see [docs/status.md](docs/status.md).
 - **Additional SDR validation.** HackRF / Airspy / HF+ drivers
   exercise the documented USB vendor protocols under unit tests
   against a mock transport; on-air validation against attached
@@ -320,6 +376,9 @@ Operator-facing docs live at **[gophertrunk.org](https://gophertrunk.org)**
   [Web console](docs/web.md) ·
   [Live config editing](docs/live-edits.md) ·
   [Import (PDF / CSV)](docs/import.md) ·
+  [Hunt (discover unknown systems)](docs/hunt.md) ·
+  [Constellation](docs/constellation.md) ·
+  [Symbol scope](docs/symbol-scope.md) ·
   [Hardening](docs/hardening.md)
 - **Reference** — [Architecture](docs/architecture.md) ·
   [Vocoders](docs/vocoders.md) ·

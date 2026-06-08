@@ -256,13 +256,15 @@ func ParseInterleaveMode(s string) (InterleaveMode, bool) {
 // PN44 descrambler per TIA-102.BBAC-1 §7.2.5 to the trellis-decoded
 // MAC PDU.
 //
-//   - ScramblerOff (default): the trellis-decoded 144-bit MAC PDU
-//     is parsed straight into the state machine. Matches every
-//     shipped capture fixture in the test suite (the fixtures
-//     synthesize MAC PDUs without applying scrambling) and the
-//     historical decoder output.
+//   - ScramblerOff: the trellis-decoded 144-bit MAC PDU is parsed
+//     straight into the state machine. Matches every shipped capture
+//     fixture in the test suite (the fixtures synthesize MAC PDUs
+//     without applying scrambling) and the historical decoder output.
+//     Available as an explicit opt-out; live on-air traffic is always
+//     scrambled, so the config default (ParseScramblerMode) is
+//     ScramblerOn.
 //
-//   - ScramblerOn: the trellis-decoded 144-bit MAC PDU is XORed
+//   - ScramblerOn (config default): the trellis-decoded 144-bit MAC PDU is XORed
 //     with the leading 144 bits of the PN44 scrambling sequence
 //     derived from the configured (WACN_ID, System_ID, Color_Code)
 //     seed before ParseMACPDU runs. SetScramblerSeed must be
@@ -355,30 +357,38 @@ func (c *ControlChannel) ScramblerOffset() int {
 }
 
 // ParseScramblerMode maps a config / user-facing string into a
-// ScramblerMode. Recognised values (case-insensitive): "" / "off" /
-// "false" / "0" → ScramblerOff (the default — no PN44 descrambling);
-// "on" / "true" / "1" → ScramblerOn (XOR the trellis-decoded MAC
-// PDU bits with the PN44 sequence starting at the configured
-// per-burst offset); "probe" / "auto" → ScramblerProbe (try each
-// of the 12 spec-defined slot offsets and accept the first that
-// passes RS verification).
+// ScramblerMode. Recognised values (case-insensitive): "" →
+// ScramblerOn (the default — every on-air P25 Phase 2 MAC PDU is
+// PN44 scrambled per TIA-102.BBAC-1 §7.2.5, and the production MAC
+// paths supply the correct per-slot offset from superframe sync, so
+// descrambling decodes live traffic out of the box); "off" /
+// "false" / "0" → ScramblerOff (opt-out for the synthesized,
+// unscrambled test fixtures); "on" / "true" / "1" → ScramblerOn
+// (XOR the trellis-decoded MAC PDU bits with the PN44 sequence
+// starting at the configured per-burst offset); "probe" / "auto" →
+// ScramblerProbe (try each of the 12 spec-defined slot offsets and
+// accept the first that passes RS verification).
 //
 // ScramblerProbe is only meaningful when RSMode is RSOn — without
 // RS verification there's no way to tell which offset produced the
 // real PDU; the connector emits a warning if probe is selected
 // without RSOn and degrades to ScramblerOn behaviour.
 //
-// Unknown strings return ScramblerOff with `ok = false`.
+// Unknown strings return ScramblerOn with `ok = false` so callers
+// can surface the misconfiguration while still defaulting to the
+// live-decode behaviour.
 func ParseScramblerMode(s string) (ScramblerMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "off", "false", "0":
+	case "":
+		return ScramblerOn, true
+	case "off", "false", "0":
 		return ScramblerOff, true
 	case "on", "true", "1":
 		return ScramblerOn, true
 	case "probe", "auto":
 		return ScramblerProbe, true
 	default:
-		return ScramblerOff, false
+		return ScramblerOn, false
 	}
 }
 

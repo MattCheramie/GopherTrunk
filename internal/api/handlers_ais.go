@@ -71,7 +71,7 @@ func aisMessageToDTO(m storage.AISMessage) AISMessageDTO {
 // isn't wired (daemon started without storage.path).
 func (s *Server) handleAISMessages(w http.ResponseWriter, r *http.Request) {
 	if s.ais == nil {
-		writeError(w, http.StatusServiceUnavailable, "ais subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "ais subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200
@@ -83,7 +83,7 @@ func (s *Server) handleAISMessages(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.ais.RecentAISMessages(limit)
 	if err != nil {
 		s.log.Error("api: ais messages", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]AISMessageDTO, 0, len(rows))

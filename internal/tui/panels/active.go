@@ -95,6 +95,15 @@ func (p *ActivePanel) refresh(calls []client.ActiveCallDTO) {
 		if ac.Grant.Emergency {
 			flags += "!"
 		}
+		// DMR runs two calls per carrier; show which timeslot this one
+		// occupies so concurrent TS1/TS2 calls are distinguishable at a
+		// glance. Blank for non-slotted protocols.
+		if ac.Grant.Timeslot != 0 {
+			if flags != "" {
+				flags += " "
+			}
+			flags += fmt.Sprintf("TS%d", ac.Grant.Timeslot)
+		}
 		rows = append(rows, table.Row{
 			since(ac.StartedAt),
 			fmt.Sprintf("%d", ac.Grant.GroupID),

@@ -44,30 +44,54 @@ func BCHEncode63_16(data uint16) uint64 {
 	return (info << 47) | (rem & ((uint64(1) << 47) - 1))
 }
 
-// BCHDecode63_16 decodes a 63-bit BCH codeword by minimum-Hamming-
-// distance search across all 2^16 valid codewords. Returns (data,
-// errors) where errors is the bit-error count corrected, or -1 if the
-// closest valid codeword is more than 11 bits away (uncorrectable; data
-// is the best guess but should not be trusted).
+// BCHDecode63_16 decodes a 63-bit BCH codeword via the algebraic
+// syndrome → Berlekamp-Massey → Chien decoder (see bch_decode.go).
+// Returns (data, errors) where errors is the bit-error count corrected,
+// or -1 if the word is more than 11 bit errors from any codeword
+// (uncorrectable). On the -1 path data is unspecified (zero) — callers
+// must treat the result as trustworthy only when errors >= 0.
 func BCHDecode63_16(cw uint64) (uint16, int) {
 	cw &= (uint64(1) << 63) - 1
-	var bestData uint16
-	bestDist := 64
-	for d := uint32(0); d < 1<<16; d++ {
-		c := BCHEncode63_16(uint16(d))
-		dist := PopCount64(c ^ cw)
-		if dist < bestDist {
-			bestDist = dist
-			bestData = uint16(d)
-			if dist == 0 {
-				return bestData, 0
-			}
-		}
+
+	// Fast path: a zero-error codeword. The code is systematic with the
+	// 16 info bits in positions 62..47, so a clean codeword decodes to
+	// its own high bits — re-encode those and compare. This is the
+	// dominant case on a locked signal and skips the syndrome work.
+	info := uint16(cw >> 47)
+	if BCHEncode63_16(info) == cw {
+		return info, 0
 	}
-	if bestDist > 11 {
-		return bestData, -1
+
+	synd, allZero := bchSyndromes6316(cw)
+	if allZero {
+		// No syndrome error but the fast path missed it — defensive; a
+		// zero-syndrome word is a valid codeword, so trust its info bits.
+		return info, 0
 	}
-	return bestData, bestDist
+
+	lambda, L := bchBerlekampMassey(synd)
+	if L < 1 || L > bch6316T {
+		return 0, -1
+	}
+	pos := bchChienSearch(lambda, L)
+	if len(pos) != L {
+		// Fewer roots than the locator degree ⇒ the error pattern is not
+		// genuinely correctable (more than t errors).
+		return 0, -1
+	}
+
+	corrected := cw
+	for _, p := range pos {
+		corrected ^= uint64(1) << uint(p)
+	}
+	// Self-check: the corrected word must be a valid codeword. This guards
+	// against any convention slip in the algebraic stages — a mismatch
+	// degrades safely to "uncorrectable" rather than a wrong trusted decode.
+	data := uint16(corrected >> 47)
+	if BCHEncode63_16(data) != corrected {
+		return 0, -1
+	}
+	return data, L
 }
 
 // BCH6316ParityBit returns the even-parity bit over the 63 codeword

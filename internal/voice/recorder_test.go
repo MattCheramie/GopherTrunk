@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,6 +89,70 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 	}
 	if st.Size() < int64(wavHeaderSize+1600*2) {
 		t.Errorf("wav size = %d, want at least %d", st.Size(), wavHeaderSize+1600*2)
+	}
+}
+
+// TestRecorderTimeslotInWavName confirms a DMR Tier III carrier's two
+// concurrent calls (same system + talkgroup, one per TDMA slot, served
+// by two voice devices) land in the same directory as distinct WAVs
+// tagged by slot — so the stamp+src basenames don't collide and each
+// file is self-labelling.
+func TestRecorderTimeslotInWavName(t *testing.T) {
+	r, bus, dir := mkRecorder(t, false)
+	defer r.Close()
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	started := time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC)
+	tg := &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP", Record: true}
+	// Same TG, same start second, same source — only the slot (and the
+	// serving device) differ. Without the slot tag the basenames collide.
+	for _, c := range []struct {
+		serial string
+		slot   uint8
+	}{{"VOICE-1", 1}, {"VOICE-2", 2}} {
+		cs := trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "TestSystem", Protocol: "dmr-tier3",
+				GroupID: 1234, SourceID: 56789, FrequencyHz: 460_000_000, Timeslot: c.slot,
+			},
+			Talkgroup:    tg,
+			DeviceSerial: c.serial,
+			StartedAt:    started,
+		}
+		bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if r.HasSession(c.serial) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if err := r.WritePCM(c.serial, make([]int16, 1600)); err != nil {
+			t.Fatal(err)
+		}
+		bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+			Grant: cs.Grant, Talkgroup: tg, DeviceSerial: c.serial,
+			StartedAt: started, EndedAt: started.Add(time.Second), Reason: trunking.EndReasonNormal,
+		}})
+		deadline = time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if !r.HasSession(c.serial) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	for _, slot := range []int{1, 2} {
+		want := filepath.Join(dir, "TestSystem", "FIRE-DISP",
+			fmt.Sprintf("20260505T123045Z_freq460000000_src56789_ts%d.wav", slot))
+		if _, err := os.Stat(want); err != nil {
+			t.Errorf("expected per-slot wav at %s: %v", want, err)
+		}
 	}
 }
 
@@ -664,6 +729,7 @@ func TestDefaultVocoderForProtocolMappings(t *testing.T) {
 	want := map[string]string{
 		"p25":        "imbe",
 		"p25-phase2": "ambe2",
+		"dmr-tier1":  "ambe2-dmr",
 		"dmr-tier2":  "ambe2-dmr",
 		"dmr-tier3":  "ambe2-dmr",
 		"nxdn":       "ambe2",

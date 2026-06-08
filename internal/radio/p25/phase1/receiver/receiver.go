@@ -48,10 +48,28 @@ import (
 )
 
 // defaultGardnerGain is the Gardner step the CQPSK path uses when the
-// caller leaves Options.GardnerGain at zero. Matches the value Phase 2
-// and TETRA settled on after live-capture tuning (internal/scanner/
-// ccdecoder/pipelines.go).
-const defaultGardnerGain = 0.03
+// caller leaves Options.GardnerGain at zero.
+//
+// The Gardner loop applies its correction as a phase step in *samples*
+// (mu += sps + gain·err), so the effective per-symbol loop gain is
+// gain/sps and the right value depends on the samples-per-symbol the path
+// runs at. The original 0.03 here was the loop's generic default; at this
+// path's 48 kHz channel rate (10 sps) that left the loop ~5× over-gained,
+// so it overshot the timing null instead of settling into it and only
+// "locked" when the input happened to already be symbol-aligned (sample
+// phase 0). Synthetic fixtures start aligned and decoded; real captures,
+// whose symbol clock has no relationship to sample 0, almost never
+// acquired the control channel (issue #492).
+//
+// 0.005 is the same step the sibling π/4-DQPSK Gardner paths already run
+// in production — the P25 Phase 2 and TETRA control-channel pipelines
+// both tuned down to it after hitting this exact over-correction ("the
+// standard gain over-corrects on clean signals and slips", see
+// internal/scanner/ccdecoder/pipelines.go). The Phase 1 CQPSK path was
+// the one π/4-DQPSK consumer left on the generic default. At 10 sps this
+// puts the per-symbol gain back in the loop's stable pull-in range, so it
+// acquires from any sub-symbol phase.
+const defaultGardnerGain = 0.005
 
 // maxAFCOffsetHz caps the DDA's integrator. Sized at ~25 kHz so a
 // 420 MHz / 50 ppm RTL-SDR (~21 kHz worst case) clears it
@@ -225,6 +243,31 @@ type Options struct {
 	// output level distribution when the slicer collapses to outer
 	// symbols only).
 	SoftSink func(softSamples []float32)
+	// SymbolSink, when non-nil, receives the per-symbol *complex*
+	// constellation points sampled at the symbol-decision instants — the
+	// true symbol-domain constellation (post matched-filter, timing
+	// recovery and carrier recovery, pre differential-decode). Only the
+	// CQPSK / linear path produces these: c.symbols, the post-Costas
+	// π/4-DQPSK points, which on a clean signal cluster at the four
+	// ±45°/±135° constellation positions and degrade to a smeared X as
+	// the eye closes. The C4FM path leaves it uncalled — its symbol
+	// domain is the real 4-level soft waveform, surfaced via SoftSink
+	// (a complex constellation there is just the 4 levels on the real
+	// axis). When called it is aligned index-for-index with the dibit
+	// batch fired on the same Process call. Nil by default — meant for
+	// the web "Constellation" scope's symbol-domain view.
+	SymbolSink func(symbols []complex64)
+	// EyeSink, when non-nil, receives the *oversampled* matched-filter
+	// output (sps samples per symbol) on the C4FM path, scaled to the
+	// same soft units as SoftSink, together with the integer samples-
+	// per-symbol. Folding this stream over the symbol period yields the
+	// 4-level eye diagram (OP25's "datascope") — the open-eye view that
+	// reveals symbol-timing and SNR health a 1-sample-per-symbol soft
+	// track cannot. Only the C4FM path produces it; the CQPSK path leaves
+	// it uncalled (its quality view is the complex constellation). Nil by
+	// default — meant for the web eye-diagram scope. The slice is reused
+	// across calls; the callee must copy what it needs synchronously.
+	EyeSink func(oversampled []float32, sps int)
 }
 
 // Receiver is the composed IQ → dibit → LDU pipeline. Process is the
@@ -262,10 +305,14 @@ type Receiver struct {
 	// DemodCQPSK.
 	cq *cqpskDemod
 
-	assembler *phase1.LDUAssembler
-	dibitSink phase1.DibitSink
-	softSink  func([]float32)
-	dibitBase int
+	assembler  *phase1.LDUAssembler
+	dibitSink  phase1.DibitSink
+	softSink   func([]float32)
+	symbolSink func([]complex64)
+	eyeSink    func([]float32, int)
+	eyeSPS     int       // integer samples/symbol for the eye fold (C4FM)
+	eyeBuf     []float32 // scratch for the AGC-scaled oversampled eye output
+	dibitBase  int
 
 	// Reusable scratch slices so Process doesn't allocate per call
 	// on the C4FM path.
@@ -316,14 +363,20 @@ func New(opts Options) *Receiver {
 	}
 
 	r := &Receiver{
-		demodMode: opts.DemodMode,
-		dibitSink: opts.DibitSink,
-		softSink:  opts.SoftSink,
+		demodMode:  opts.DemodMode,
+		dibitSink:  opts.DibitSink,
+		softSink:   opts.SoftSink,
+		symbolSink: opts.SymbolSink,
+		eyeSink:    opts.EyeSink,
 	}
 	switch opts.DemodMode {
 	case DemodCQPSK:
-		r.cq = newCQPSKDemod(int(sps+0.5), span, alpha, opts.GardnerGain)
+		r.cq = newCQPSKDemod(opts.SampleRateHz, int(sps+0.5), span, alpha, opts.GardnerGain)
 	default:
+		// Integer samples/symbol for the eye-diagram fold. sps is
+		// SampleRateHz/SymbolRate (10 at the 48 kHz channel rate); the
+		// New guard above already ensured sps >= 2.
+		r.eyeSPS = int(sps + 0.5)
 		r.fm = demod.NewFM()
 		// P25 Phase 1 C4FM is not a root-raised-cosine matched-pair
 		// system: the transmitter shapes with a raised-cosine cascaded
@@ -439,6 +492,15 @@ func (r *Receiver) Process(iq []complex64) {
 		// it directly to the sinks below — both consume
 		// synchronously before the next Process call.
 		r.dibits = r.cq.process(iq)
+		// Surface the complex symbol-decision points for the
+		// constellation scope. cq.symbols is the post-Costas
+		// π/4-DQPSK stream the dibits were decoded from, so it is
+		// aligned index-for-index with r.dibits (DQPSK.Decode emits
+		// one dibit per symbol). Fired before the dibit sinks so a
+		// consumer that pairs the two sees them on the same batch.
+		if r.symbolSink != nil && len(r.cq.symbols) > 0 {
+			r.symbolSink(r.cq.symbols)
+		}
 	} else {
 		r.disc = r.fm.Process(r.disc, iq)
 		r.matched = r.mf.MatchedFilter(r.matched, r.disc)
@@ -479,6 +541,27 @@ func (r *Receiver) Process(iq []complex64) {
 		agcLevel := r.agc.process(r.symbols)
 		if r.softSink != nil {
 			r.softSink(r.symbols)
+		}
+		// Eye-diagram tap: emit the oversampled matched-filter output
+		// (which the clock loop read but did not consume), scaled by the
+		// batch's AGC gain so its rails line up with the soft levels the
+		// slicer decides on. Folding sps samples per symbol reconstructs
+		// the 4-level eye. r.matched is still the post-AFC/DDA oversampled
+		// buffer here — MuellerMuller.Process reads it read-only.
+		if r.eyeSink != nil && r.eyeSPS > 0 && len(r.matched) > 0 {
+			g := float32(1)
+			if r.agc.target > 0 && agcLevel > 0 {
+				g = r.agc.target / float32(agcLevel)
+			}
+			if cap(r.eyeBuf) < len(r.matched) {
+				r.eyeBuf = make([]float32, len(r.matched))
+			} else {
+				r.eyeBuf = r.eyeBuf[:len(r.matched)]
+			}
+			for i, x := range r.matched {
+				r.eyeBuf[i] = x * g
+			}
+			r.eyeSink(r.eyeBuf, r.eyeSPS)
 		}
 		// Slice to the 4-level alphabet. The adaptive slicer (when
 		// allocated — the calibrated path) tracks the observed eye and
@@ -710,6 +793,64 @@ func (r *Receiver) MMClockSPS() float64 {
 		return 0
 	}
 	return r.clock.SPS()
+}
+
+// GardnerMu returns the CQPSK Gardner timing loop's current sub-sample
+// phase accumulator. It is the CQPSK analogue of MMClockMu (the C4FM
+// path uses Mueller-Müller; CQPSK uses Gardner), so a replay diagnostic
+// can render the actual timing-loop state instead of the all-zero
+// Mueller-Müller fields that misdirected issue #492. Returns 0 on the
+// C4FM path (no Gardner loop).
+func (r *Receiver) GardnerMu() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.gardner.Mu()
+}
+
+// GardnerSPS returns the CQPSK Gardner loop's nominal samples per
+// symbol. Paired with GardnerMu so a diagnostic can render mu as a
+// fraction of the symbol period. Returns 0 on the C4FM path.
+func (r *Receiver) GardnerSPS() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.gardner.SPS()
+}
+
+// CQPSKAGCGain returns the CQPSK path's matched-filter AGC gain (the
+// scale it currently applies to normalise the symbol amplitude the
+// Gardner/CMA loops are tuned against). A gain pinned at 1.0 means the
+// AGC never saw signal energy to seed on. Returns 0 on the C4FM path
+// (which has its own symbol-AGC reported via AGCLevel/AGCTarget).
+func (r *Receiver) CQPSKAGCGain() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return float64(r.cq.agc.Gain())
+}
+
+// CMAError returns the CQPSK blind equalizer's most recent |y|²−R²
+// convergence proxy. It trends toward 0 as the CMA opens the
+// constellation; a value stuck large means the equalizer has not
+// converged. Returns 0 on the C4FM path (no CMA stage).
+func (r *Receiver) CMAError() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return float64(r.cq.cmaErr)
+}
+
+// CQPSKCarrierOffsetHz returns the CQPSK carrier-recovery loop's current
+// estimate of the residual carrier-frequency offset in Hz (the coarse
+// block seed plus the tracking loop's residual). A static tuner error of
+// Δf Hz reads back as ≈Δf here once the loop settles. Returns 0 on the
+// C4FM path (which reports its carrier estimate via AFCOffsetHz).
+func (r *Receiver) CQPSKCarrierOffsetHz() float64 {
+	if r.cq == nil {
+		return 0
+	}
+	return r.cq.carrierOffsetHz()
 }
 
 // Reset returns the receiver to its initial state. Call on stream

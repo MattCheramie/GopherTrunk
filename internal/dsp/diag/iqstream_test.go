@@ -119,6 +119,99 @@ func TestRunPropagatesEnergyForDC(t *testing.T) {
 	}
 }
 
+func TestNewRejectsOutOfRangeOffset(t *testing.T) {
+	if _, err := New(Options{InputRateSPS: 1000, TargetRateSPS: 100, OffsetHz: 600}); err == nil {
+		t.Error("OffsetHz beyond +Nyquist: want error")
+	}
+	if _, err := New(Options{InputRateSPS: 1000, TargetRateSPS: 100, OffsetHz: -600}); err == nil {
+		t.Error("OffsetHz beyond -Nyquist: want error")
+	}
+	if _, err := New(Options{InputRateSPS: 1000, TargetRateSPS: 100, OffsetHz: 500}); err != nil {
+		t.Errorf("OffsetHz at +Nyquist: unexpected error %v", err)
+	}
+}
+
+// TestRunBoxAveragesWindow checks that each output point is the mean
+// of its stride window rather than a single picked sample, so a
+// stride window that ramps averages to its midpoint.
+func TestRunBoxAveragesWindow(t *testing.T) {
+	d, _ := New(Options{InputRateSPS: 1000, TargetRateSPS: 100, ChunksPerFrame: 1})
+
+	in := make(chan []complex64, 1)
+	out := make(chan IQFrame, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = d.Run(ctx, in, out, func() uint32 { return 0 }, func() int64 { return 0 }) }()
+
+	// Stride is 10. Build one 10-sample window ramping I from 0..0.9;
+	// its mean is 0.45. Q held at 1.0 so the mean stays 1.0.
+	chunk := make([]complex64, 10)
+	for i := range chunk {
+		chunk[i] = complex(float32(i)/10, 1)
+	}
+	in <- chunk
+
+	select {
+	case f := <-out:
+		if len(f.Points) != 1 {
+			t.Fatalf("Points len = %d, want 1", len(f.Points))
+		}
+		if math.Abs(float64(f.Points[0].I)-0.45) > 1e-5 {
+			t.Errorf("I = %f, want 0.45 (box mean)", f.Points[0].I)
+		}
+		if math.Abs(float64(f.Points[0].Q)-1.0) > 1e-5 {
+			t.Errorf("Q = %f, want 1.0", f.Points[0].Q)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no frame")
+	}
+}
+
+// TestRunOffsetMixDownconvertsTone verifies the NCO: a complex tone
+// at exactly +OffsetHz mixes down to a constant DC point. Without the
+// offset the same tone would smear around the unit circle.
+func TestRunOffsetMixDownconvertsTone(t *testing.T) {
+	const fs = 1000
+	const tone = 100 // Hz, a clean 1/10 of fs so it divides the stride
+	d, _ := New(Options{
+		InputRateSPS:   fs,
+		TargetRateSPS:  100, // stride 10 == one tone period: window mean is the carrier
+		OffsetHz:       tone,
+		ChunksPerFrame: 1,
+	})
+
+	in := make(chan []complex64, 1)
+	out := make(chan IQFrame, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = d.Run(ctx, in, out, func() uint32 { return 0 }, func() int64 { return 0 }) }()
+
+	// One full second of e^{j2*pi*tone*n/fs}.
+	chunk := make([]complex64, fs)
+	for n := range chunk {
+		theta := 2 * math.Pi * float64(tone) * float64(n) / float64(fs)
+		chunk[n] = complex(float32(math.Cos(theta)), float32(math.Sin(theta)))
+	}
+	in <- chunk
+
+	select {
+	case f := <-out:
+		if len(f.Points) == 0 {
+			t.Fatal("no points")
+		}
+		// After mixing the tone to DC, every box-averaged point should
+		// sit at unit magnitude with a stable phase — not smeared. Check
+		// the last point (NCO fully settled) has |z| ~ 1.
+		p := f.Points[len(f.Points)-1]
+		mag := math.Hypot(float64(p.I), float64(p.Q))
+		if math.Abs(mag-1.0) > 0.05 {
+			t.Errorf("downconverted magnitude = %f, want ~1.0", mag)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no frame")
+	}
+}
+
 func TestRunStopsOnContextCancel(t *testing.T) {
 	d, _ := New(Options{InputRateSPS: 1000, TargetRateSPS: 100})
 

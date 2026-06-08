@@ -51,25 +51,25 @@ type endCallRequest struct {
 //	503 if the daemon doesn't have an EngineMutator wired
 func (s *Server) handleEndCall(w http.ResponseWriter, r *http.Request) {
 	if s.mutator == nil {
-		writeError(w, http.StatusServiceUnavailable, "engine not wired for mutations")
+		s.writeError(w, http.StatusServiceUnavailable, "engine not wired for mutations")
 		return
 	}
 	serial := r.PathValue("deviceSerial")
 	if serial == "" {
-		writeError(w, http.StatusBadRequest, "deviceSerial required")
+		s.writeError(w, http.StatusBadRequest, "deviceSerial required")
 		return
 	}
 	var req endCallRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			writeError(w, http.StatusBadRequest, "invalid json body")
+			s.writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
 	}
 	reason := parseEndReason(req.Reason)
 	ok := s.mutator.EndCall(serial, reason)
 	if !ok {
-		writeError(w, http.StatusNotFound, "no active call on that device")
+		s.writeError(w, http.StatusNotFound, "no active call on that device")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -126,17 +126,17 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid talkgroup id")
+		s.writeError(w, http.StatusBadRequest, "invalid talkgroup id")
 		return
 	}
 	var req updateTalkgroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+		s.writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	if req.Priority == nil && req.Lockout == nil && req.Scan == nil &&
 		req.Stream == nil && req.Record == nil && req.Mute == nil && req.Icon == nil {
-		writeError(w, http.StatusBadRequest, "supply at least one of priority, lockout, scan, stream, record, mute, icon")
+		s.writeError(w, http.StatusBadRequest, "supply at least one of priority, lockout, scan, stream, record, mute, icon")
 		return
 	}
 	ok := s.talkgroups.UpdateFields(uint32(id), func(tg *trunking.TalkGroup) {
@@ -163,7 +163,7 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	if !ok {
-		writeError(w, http.StatusNotFound, "talkgroup not found")
+		s.writeError(w, http.StatusNotFound, "talkgroup not found")
 		return
 	}
 	tg := s.talkgroups.Lookup(uint32(id))
@@ -185,7 +185,7 @@ func (s *Server) handleUpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 //	    call-log persistence configured)
 func (s *Server) handleRetentionSweep(w http.ResponseWriter, r *http.Request) {
 	if s.retention == nil {
-		writeError(w, http.StatusServiceUnavailable, "retention not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "retention not wired")
 		return
 	}
 	s.retention.SweepOnce(r.Context())
@@ -204,12 +204,12 @@ func (s *Server) handleRetentionSweep(w http.ResponseWriter, r *http.Request) {
 //	503 if the daemon doesn't have a tone detector wired
 func (s *Server) handleToneReset(w http.ResponseWriter, r *http.Request) {
 	if s.tones == nil {
-		writeError(w, http.StatusServiceUnavailable, "tone detector not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "tone detector not wired")
 		return
 	}
 	serial := r.PathValue("serial")
 	if serial == "" {
-		writeError(w, http.StatusBadRequest, "serial required")
+		s.writeError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	s.tones.ResetDevice(serial)

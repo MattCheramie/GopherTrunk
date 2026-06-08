@@ -333,14 +333,18 @@ func TestR82xx_WriteRegMaskOnlyChangesMaskedBits(t *testing.T) {
 }
 
 func TestR82xx_SetGainModeManual(t *testing.T) {
-	// Manual mode sets bit 4 on regs 0x05 and 0x07.
-	// regs[0x05] = 0x83 post-init → 0x93 after set.
-	// regs[0x07] = 0x75 post-init → 0x75 (bit 4 already set!). Wait, 0x75 = 0111_0101, bit 4 = 1. Hmm.
-	// So writing manual mode (bit 4 = 1) to 0x07 is a no-op. We skip that write.
+	// Manual mode: LNA bit (0x05 bit4) set, mixer bit (0x07 bit4)
+	// CLEARED — the two AGC-enable bits have opposite polarity in
+	// librtlsdr's r82xx_set_gain.
+	//   regs[0x05] = 0x83 post-init → (0x83 &^ 0x10) | 0x10 = 0x93.
+	//   regs[0x07] = 0x75 post-init → (0x75 &^ 0x10)        = 0x65.
+	// Both land inside one repeater bracket; no VGA write in manual mode.
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	// Only the 0x05 write should land (0x07's bit 4 is already 1 post-init).
-	script = append(script, expectI2CWrite(r82xxI2CAddr, []byte{0x05, 0x93})...)
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x93}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x65}))
+	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
 	if err := r.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -350,6 +354,33 @@ func TestR82xx_SetGainModeManual(t *testing.T) {
 	}
 	if !r.manual {
 		t.Error("manual flag not set")
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 — script: %d steps consumed of %d", m.Remaining(), m.Step, len(script))
+	}
+}
+
+func TestR82xx_SetGainModeAGC(t *testing.T) {
+	// AGC mode is the daemon default. Post-init the LNA/mixer AGC bits
+	// are already in the auto state (0x05 bit4=0, 0x07 bit4=1), so those
+	// writes elide; the only write that lands is the fixed VGA, which
+	// librtlsdr pins at reg 0x0C = 0x0B and pre-fix GopherTrunk never set
+	// in AGC mode (leaving the front end ~17 dB low — issue #264).
+	//   regs[0x0C] = 0xF5 post-init → (0xF5 &^ 0x9F) | 0x0B = 0x6B.
+	var script []usb.CtrlExchange
+	script = append(script, expectR82xxInitBurst()...)
+	script = append(script, expectRepeaterToggle(true)...)
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0C, 0x6B}))
+	script = append(script, expectRepeaterToggle(false)...)
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := r.SetGainMode(false); err != nil {
+		t.Fatalf("SetGainMode(false): %v", err)
+	}
+	if r.manual {
+		t.Error("manual flag set after AGC mode")
 	}
 	if m.Remaining() != 0 {
 		t.Errorf("remaining=%d, want 0 — script: %d steps consumed of %d", m.Remaining(), m.Step, len(script))
@@ -440,28 +471,29 @@ func TestR82xx_AlternatingGainWalk(t *testing.T) {
 //
 // Post-init shadow values (from r82xxInitArray):
 //
-//	regs[0x05] = 0x83 → SetGainMode(true) writes 0x93 (bit 4 set)
-//	regs[0x07] = 0x75 (bit 4 already set, SetGainMode emits no write)
+//	regs[0x05] = 0x83 → SetGainMode(true) writes 0x93 (LNA bit 4 set)
+//	regs[0x07] = 0x75 → SetGainMode(true) writes 0x65 (mixer bit 4 cleared)
 //	regs[0x0C] = 0xF5
 //
 // SetGain(144) then writes (with shadow elision):
 //
 //	0x05: 0x93 → (0x93 &^ 0x0F) | 4 = 0x94
-//	0x07: 0x75 → (0x75 &^ 0x0F) | 4 = 0x74
+//	0x07: 0x65 → (0x65 &^ 0x0F) | 4 = 0x64
 //	0x0C: 0xF5 → (0xF5 &^ 0x9F) | 0x0B = 0x6B
 func TestR82xx_SetGain_BalancedSplit(t *testing.T) {
 	var script []usb.CtrlExchange
 	script = append(script, expectR82xxInitBurst()...)
-	// SetGainMode(true): one repeater on/off pair around the single
-	// 0x05 write (0x07 elided — bit 4 already set post-init).
+	// SetGainMode(true): one repeater on/off pair around the LNA (0x05)
+	// and mixer (0x07) AGC-bit writes (opposite polarity).
 	script = append(script, expectRepeaterToggle(true)...)
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x93}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x65}))
 	script = append(script, expectRepeaterToggle(false)...)
 	// SetGain(144): one repeater on/off pair around three writes
 	// (LNA 0x05, Mixer 0x07, VGA 0x0C).
 	script = append(script, expectRepeaterToggle(true)...)
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x05, 0x94}))
-	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x74}))
+	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x07, 0x64}))
 	script = append(script, expectI2CWriteRaw(r82xxI2CAddr, []byte{0x0C, 0x6B}))
 	script = append(script, expectRepeaterToggle(false)...)
 	r, m := newR82xxForTest(t, script)
@@ -722,6 +754,115 @@ func TestR82xx_PLLNintWithinEncoding_R828D(t *testing.T) {
 	}
 }
 
+// TestR82xx_VCOPowerRefPerChip pins the issue #264 V4-deafness fix:
+// rtlsdr-blog's r82xx_set_pll lowers vco_power_ref from osmocom's stock
+// 2 to 1 for the R828D (rafael_chip == CHIP_R828D, incl. the Blog V4).
+// With the stock 2 the V4's mixer divider is nudged the wrong way and
+// the LO mistunes, so it receives only noise while an R820T2 decodes.
+// The R820T/R820T2 path must stay on 2 so working dongles are unchanged.
+func TestR82xx_VCOPowerRefPerChip(t *testing.T) {
+	cases := []struct {
+		chip Type
+		want byte
+	}{
+		{TypeR820T, r82xxVCOPowerRef},
+		{TypeR820T2, r82xxVCOPowerRef},
+		{TypeR828D, 1},
+	}
+	for _, c := range cases {
+		r := NewR82xx(nil, r82xxI2CAddr, c.chip)
+		if got := r.vcoPowerRef(); got != c.want {
+			t.Errorf("%v vcoPowerRef() = %d, want %d", c.chip, got, c.want)
+		}
+	}
+
+	// The threshold actually changes setPLL's divider decision: at the
+	// chip's VCO fine-tune value of 2, R828D (ref 1) decrements divNum
+	// (2 > 1) — the correction the V4 needs — while R820T2 (ref 2) leaves
+	// it unchanged (2 is neither > nor < 2), preserving the working path.
+	const vcoFineTune byte = 2
+	r828d := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+	if !(vcoFineTune > r828d.vcoPowerRef()) {
+		t.Errorf("R828D: vcoFineTune(%d) > vcoPowerRef(%d) must hold so divNum decrements", vcoFineTune, r828d.vcoPowerRef())
+	}
+	r820t2 := NewR82xx(nil, r82xxI2CAddr, TypeR820T2)
+	if vcoFineTune != r820t2.vcoPowerRef() {
+		t.Errorf("R820T2: vcoFineTune(%d) must equal vcoPowerRef(%d) so divNum is unchanged", vcoFineTune, r820t2.vcoPowerRef())
+	}
+}
+
+// TestR82xx_PPMCorrectionShiftsPLLReference pins the issue #264 PPM fix:
+// SetPPM now reaches the tuner LO (not just the resampler) by biasing
+// setPLL's reference crystal. ppm == 0 must reproduce the raw crystal
+// exactly so all existing register-write scripts stay byte-identical.
+func TestR82xx_PPMCorrectionShiftsPLLReference(t *testing.T) {
+	r := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+
+	// ppm == 0 reproduces the raw crystal exactly — the byte-for-byte
+	// guarantee for the existing setPLL scripts.
+	if got := r.effectiveXtalHz(); got != r828dXtalHz {
+		t.Errorf("effectiveXtalHz(ppm=0) = %d, want %d", got, r828dXtalHz)
+	}
+
+	// With no frequency tuned yet, SetFreqCorrection just stores the
+	// value (no retune that would deref the nil demod).
+	if err := r.SetFreqCorrection(50); err != nil {
+		t.Fatalf("SetFreqCorrection(50): %v", err)
+	}
+	want := uint32(int64(r828dXtalHz) + int64(r828dXtalHz)*50/1_000_000)
+	if got := r.effectiveXtalHz(); got != want {
+		t.Errorf("effectiveXtalHz(ppm=50) = %d, want %d (xtal·(1+ppm·1e-6))", got, want)
+	}
+
+	// A positive ppm raises the effective reference; a negative one
+	// lowers it. (A larger reference yields a smaller nint for the same
+	// LO, which is how the correction nudges the carrier.)
+	if err := r.SetFreqCorrection(-50); err != nil {
+		t.Fatalf("SetFreqCorrection(-50): %v", err)
+	}
+	if got := r.effectiveXtalHz(); got >= r828dXtalHz {
+		t.Errorf("effectiveXtalHz(ppm=-50) = %d, want < %d", got, r828dXtalHz)
+	}
+
+	// Idempotent: re-setting the same ppm is a no-op (returns before any
+	// retune), so it's safe to call on every SetPPM even with nil demod.
+	if err := r.SetFreqCorrection(-50); err != nil {
+		t.Fatalf("idempotent SetFreqCorrection(-50): %v", err)
+	}
+
+	// R820T/R820T2 share the mechanism off the 28.8 MHz crystal.
+	r2 := NewR82xx(nil, r82xxI2CAddr, TypeR820T2)
+	_ = r2.SetFreqCorrection(100)
+	want2 := uint32(int64(r82xxXtalHz) + int64(r82xxXtalHz)*100/1_000_000)
+	if got := r2.effectiveXtalHz(); got != want2 {
+		t.Errorf("R820T2 effectiveXtalHz(ppm=100) = %d, want %d", got, want2)
+	}
+}
+
+// TestR82xx_SetFreqCorrectionZeroIsNoOpRetune pins the issue-#402 ppm:0
+// path: the reporter runs ppm: 0, so the daemon pushes SetPPM(0) ->
+// SetFreqCorrection(0) at startup. With ppmCorr already at its 0 default,
+// this must return before any SetFreq — a spurious LO re-tune mid-
+// acquisition would disturb FSW lock on the live stream — even after a
+// frequency has been tuned. The nil transport here makes an accidental
+// SetFreq panic, so reaching the retune path fails the test loudly rather
+// than silently re-tuning.
+func TestR82xx_SetFreqCorrectionZeroIsNoOpRetune(t *testing.T) {
+	r := NewR82xx(nil, r828dI2CAddr, TypeR828D)
+	r.initDone = true
+	r.freqHz = 420_087_500 // pretend Mt Anakie is already tuned
+
+	if err := r.SetFreqCorrection(0); err != nil {
+		t.Fatalf("SetFreqCorrection(0) = %v, want nil no-op (must not retune)", err)
+	}
+	if r.ppmCorr != 0 {
+		t.Errorf("ppmCorr = %d after SetFreqCorrection(0), want 0", r.ppmCorr)
+	}
+	if got := r.effectiveXtalHz(); got != r828dXtalHz {
+		t.Errorf("effectiveXtalHz = %d after ppm 0, want raw crystal %d", got, r828dXtalHz)
+	}
+}
+
 // Detect orchestrator tests moved to detect_test.go (it walks every
 // candidate tuner, not just R820T, so the scripts that pin its
 // behavior live with the orchestrator).
@@ -842,7 +983,7 @@ func TestR82xx_InitBurst_ChunkSizeFallback_8Succeeds(t *testing.T) {
 // TestR82xx_InitBurst_ChunkSizeFallback_AllSizesFail: chunk1 EPIPEs
 // at every size in the halving walk (16/8/4) with both inner retries
 // failing too. writeBurstRaw wraps the final error as "tried chunk
-// sizes 16,8,4; all EPIPE'd: ..." so reporters see attribution.
+// sizes 16,8,4; all stalled: ..." so reporters see attribution.
 // errors.Is(err, syscall.EPIPE) still holds — the outer openDevice
 // envelope keys off that for its reset+retry. The defer in R82xx.Init
 // still emits the trailing repeater-off so the chip state is clean.
@@ -928,11 +1069,96 @@ func TestR82xx_InitBurst_NonEPIPENoRetry(t *testing.T) {
 	if !errors.Is(err, usb.ErrTimeout) {
 		t.Errorf("err = %v, want errors.Is(err, usb.ErrTimeout)", err)
 	}
-	if strings.Contains(err.Error(), "after 1 retry on EPIPE") {
-		t.Errorf("err = %q, must NOT contain retry attribution (non-EPIPE errors skip the retry)", err.Error())
+	if strings.Contains(err.Error(), "after 1 retry on stall") {
+		t.Errorf("err = %q, must NOT contain retry attribution (non-stall errors skip the retry)", err.Error())
 	}
 	if m.Remaining() != 0 {
 		t.Errorf("remaining=%d, want 0 (script must have exactly one chunk1 attempt)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledRetrySucceeds is the Windows analog
+// of TestR82xx_InitBurst_EPIPERetrySucceeds: the NESDR v5 cold-boot I²C
+// stall surfaces as usb.ErrPipeStalled (mapped from ERROR_GEN_FAILURE)
+// rather than syscall.EPIPE. The per-chunk retry must fire for it too —
+// before the isI2CBurstStall fix this stall propagated straight out as
+// the `tuner init: r82xx init: burst write: ... ERROR_GEN_FAILURE`
+// reported on Windows hardware.
+func TestR82xx_InitBurst_ErrPipeStalledRetrySucceeds(t *testing.T) {
+	chunk1, chunk2 := expectR82xxInitBurstChunks()
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1, usb.ErrPipeStalled)) // first attempt: stall
+	script = append(script, r82xxChunkExchange(chunk1, nil))                // retry: succeeds
+	script = append(script, r82xxChunkExchange(chunk2, nil))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (the ErrPipeStalled retry should have absorbed the failure)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (retry must consume exactly two chunk1 steps)", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledChunkSizeFallback_8Succeeds is the
+// Windows analog of the size-8 halving fallback: chunk1 at size 16
+// stalls with ErrPipeStalled on both attempts, the halving fallback
+// re-runs the burst at size 8 and succeeds. Proves the chunk-size
+// halving (the real librtlsdr-parity NESDR v5 fix) fires on Windows.
+func TestR82xx_InitBurst_ErrPipeStalledChunkSizeFallback_8Succeeds(t *testing.T) {
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, burstScriptAtSize(8)...)
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v (size-8 fallback should have succeeded on ErrPipeStalled)", err)
+	}
+	if m.Err != nil {
+		t.Errorf("mock err: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0", m.Remaining())
+	}
+}
+
+// TestR82xx_InitBurst_ErrPipeStalledAllSizesFail mirrors the all-sizes
+// EPIPE walk for the Windows stall class: the surfaced error must keep
+// errors.Is(err, usb.ErrPipeStalled) so the outer openDevice envelope
+// still keys its reset+retry off it, and carry the all-sizes wrap.
+func TestR82xx_InitBurst_ErrPipeStalledAllSizesFail(t *testing.T) {
+	script := append([]usb.CtrlExchange{}, expectRepeaterToggle(true)...)
+	chunk1at16 := burstChunkAt(0, r82xxBurstMaxData)
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at16, usb.ErrPipeStalled))
+	chunk1at8 := burstChunkAt(0, 8)
+	script = append(script, r82xxChunkExchange(chunk1at8, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at8, usb.ErrPipeStalled))
+	chunk1at4 := burstChunkAt(0, 4)
+	script = append(script, r82xxChunkExchange(chunk1at4, usb.ErrPipeStalled))
+	script = append(script, r82xxChunkExchange(chunk1at4, usb.ErrPipeStalled))
+	script = append(script, expectRepeaterToggle(false)...)
+
+	r, m := newR82xxForTest(t, script)
+	err := r.Init()
+	if err == nil {
+		t.Fatal("Init succeeded; expected wrapped ErrPipeStalled after all sizes failed")
+	}
+	if !errors.Is(err, usb.ErrPipeStalled) {
+		t.Errorf("err = %v, want errors.Is(err, usb.ErrPipeStalled) (outer envelope keys off this)", err)
+	}
+	if !strings.Contains(err.Error(), "tried chunk sizes 16,8,4") {
+		t.Errorf("err = %q, want the all-sizes wrap (proves fallback walked all sizes for the stall class)", err.Error())
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (deferred repeater-off must still fire)", m.Remaining())
 	}
 }
 
@@ -985,5 +1211,160 @@ func TestErrUnsupportedFreq_ErrorMessage(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q missing %q", msg, want)
 		}
+	}
+}
+
+// --- RTL-SDR Blog V4 (issue #264) ---------------------------------------
+
+// TestV4BandFor pins the V4 input-bank crossover thresholds and the
+// V4 Lite two-band collapse.
+func TestV4BandFor(t *testing.T) {
+	cases := []struct {
+		hz   uint32
+		lite bool
+		want v4Band
+	}{
+		{1_000_000, false, v4BandHF},    // HF
+		{28_800_000, false, v4BandHF},   // HF upper bound (inclusive)
+		{28_800_001, false, v4BandVHF},  // just into VHF
+		{153_275_000, false, v4BandVHF}, // the reporter's frequency
+		{249_999_999, false, v4BandVHF}, // VHF upper edge
+		{250_000_000, false, v4BandUHF}, // UHF lower bound (inclusive)
+		{460_000_000, false, v4BandUHF}, // UHF
+		{153_275_000, true, v4BandUHF},  // V4 Lite: no VHF, VHF->UHF
+		{1_000_000, true, v4BandHF},     // V4 Lite: HF unchanged
+	}
+	for _, c := range cases {
+		if got := v4BandFor(c.hz, c.lite); got != c.want {
+			t.Errorf("v4BandFor(%d, lite=%v) = %d, want %d", c.hz, c.lite, got, c.want)
+		}
+	}
+}
+
+// TestSetBlogV4OverridesCrystal verifies the V4 fix's core: SetBlogV4
+// restores the 28.8 MHz reference crystal that NewR82xx defaulted to
+// 16 MHz for the R828D, and flags the band variant.
+func TestSetBlogV4OverridesCrystal(t *testing.T) {
+	m := usb.NewMockTransport()
+	demod := rtl2832u.New(m)
+	r := NewR82xx(demod, r828dI2CAddr, TypeR828D)
+	if r.xtalHz != r828dXtalHz {
+		t.Fatalf("R828D default xtal = %d, want %d", r.xtalHz, r828dXtalHz)
+	}
+	r.SetBlogV4(false)
+	if !r.blogV4 || r.blogV4L {
+		t.Errorf("blogV4=%v blogV4L=%v, want true/false", r.blogV4, r.blogV4L)
+	}
+	if r.xtalHz != r82xxXtalHz {
+		t.Errorf("after SetBlogV4 xtal = %d, want %d (28.8 MHz)", r.xtalHz, r82xxXtalHz)
+	}
+	r.SetBlogV4(true)
+	if !r.blogV4L {
+		t.Errorf("SetBlogV4(true) did not set blogV4L")
+	}
+}
+
+// TestBlogV4PLLUsesCorrectCrystal is the root-cause regression: at the
+// V4's 28.8 MHz crystal the reporter's 153.275 MHz tune yields a sane
+// in-range nint, whereas the (wrong-for-V4) 16 MHz default inflated
+// nint by ~1.8× — the mis-tune that put the signal out of band.
+func TestBlogV4PLLUsesCorrectCrystal(t *testing.T) {
+	const loHz uint32 = 153_275_000 + 3_570_000 // requested + IF
+	mixDiv := pickMixDiv(loHz)
+	if mixDiv == 0 {
+		t.Fatalf("no mixDiv for %d Hz", loHz)
+	}
+	vco := uint64(loHz) * uint64(mixDiv)
+	nintV4 := uint32(vco / (2 * uint64(r82xxXtalHz))) // 28.8 MHz (V4)
+	nint16 := uint32(vco / (2 * uint64(r828dXtalHz))) // 16 MHz (wrong for V4)
+	if nintV4 < 13 || nintV4 > r82xxMaxNint {
+		t.Errorf("V4 nint=%d out of valid [13,%d]", nintV4, r82xxMaxNint)
+	}
+	// The 16 MHz assumption inflates nint by ~28.8/16 = 1.8x; that is the
+	// frequency error that made the V4 deaf. Confirm they diverge sharply.
+	if nint16 <= nintV4 {
+		t.Errorf("expected 16MHz nint (%d) > 28.8MHz nint (%d)", nint16, nintV4)
+	}
+	ratio := float64(nint16) / float64(nintV4)
+	if ratio < 1.6 || ratio > 2.0 {
+		t.Errorf("nint ratio = %.2f, want ~1.8 (28.8/16)", ratio)
+	}
+}
+
+// blockRead / blockWrite build the RTL2832 system-block GPIO exchanges
+// the V4 upconverter-relay control emits, mirroring rtl2832u's
+// gpio_test wire format.
+func blockRead(addr uint16, reply byte) usb.CtrlExchange {
+	return usb.CtrlExchange{In: true, BRequest: 0, WValue: addr, WIndex: uint16(rtl2832u.BlockSys) << 8, N: 1, Reply: []byte{reply}}
+}
+func blockWrite(addr uint16, val byte) usb.CtrlExchange {
+	return usb.CtrlExchange{In: false, BRequest: 0, WValue: addr, WIndex: uint16(rtl2832u.BlockSys)<<8 | 0x10, Data: []byte{val}}
+}
+
+// TestApplyBlogV4BandVHF is the deafness regression: tuning a V4 to a
+// VHF frequency must enable the VHF (Cable-1) + Air-In inputs (reg 0x05
+// -> 0xE3), turn the notch ON (reg 0x17 bit3), leave Cable-2 (HF, reg
+// 0x06 bit3) off, and drive the GPIO5 upconverter relay high. The stock
+// R828D init leaves all of these off, so without this the V4 routes no
+// RF and receives only noise.
+func TestApplyBlogV4BandVHF(t *testing.T) {
+	r, m := newR82xxForTest(t, expectR82xxInitBurst())
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	// A real V4 detects as R828D at I2C 0x74; rebind the shadow's address
+	// now that the init flood (scripted at 0x34) is consumed.
+	r.chipType = TypeR828D
+	r.i2cAddr = r828dI2CAddr
+	r.SetBlogV4(false)
+
+	// Post-init shadow: 0x05=0x83, 0x06=0x32 (bit3 already 0), 0x17=0x30.
+	// applyBlogV4Band(153.275 MHz) emits, in order:
+	//   notch  : 0x17 -> 0x38 (bit3 set)
+	//   cable-2: 0x06 -> no write (bit3 already 0)
+	//   GPIO5  : configure output (GPD/GPOE) + drive high (GPO)
+	//   cable-1: 0x05 -> 0xC3 (bit6 set)
+	//   air-in : 0x05 -> 0xE3 (bit5 set)
+	m.Script = []usb.CtrlExchange{
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x17, 0x38}),
+		blockRead(rtl2832u.SysGPD, 0xFF), blockWrite(rtl2832u.SysGPD, 0xDF), // clear bit5 (direction=out)
+		blockRead(rtl2832u.SysGPOE, 0x00), blockWrite(rtl2832u.SysGPOE, 0x20), // enable output bit5
+		blockRead(rtl2832u.SysGPO, 0x00), blockWrite(rtl2832u.SysGPO, 0x20), // drive bit5 high
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x05, 0xC3}),
+		expectI2CWriteRaw(r828dI2CAddr, []byte{0x05, 0xE3}),
+	}
+	m.Step = 0
+	m.Err = nil
+
+	if err := r.applyBlogV4Band(153_275_000); err != nil {
+		t.Fatalf("applyBlogV4Band: %v", err)
+	}
+	if m.Err != nil {
+		t.Fatalf("wire mismatch: %v", m.Err)
+	}
+	if m.Remaining() != 0 {
+		t.Errorf("remaining=%d, want 0 (step %d/%d)", m.Remaining(), m.Step, len(m.Script))
+	}
+	if r.regs[0x05] != 0xE3 {
+		t.Errorf("reg 0x05 = 0x%02x, want 0xE3 (cable-1 + air-in enabled)", r.regs[0x05])
+	}
+	if r.regs[0x17] != 0x38 {
+		t.Errorf("reg 0x17 = 0x%02x, want 0x38 (notch on)", r.regs[0x17])
+	}
+	if r.v4Input != v4BandVHF {
+		t.Errorf("v4Input = %d, want VHF (%d)", r.v4Input, v4BandVHF)
+	}
+
+	// Re-tuning within VHF must NOT rewrite the input switches (band
+	// unchanged) — only the notch write may re-fire, and here it's a
+	// no-op since 0x17 is already 0x38.
+	m.Script = nil
+	m.Step = 0
+	m.Err = nil
+	if err := r.applyBlogV4Band(160_000_000); err != nil {
+		t.Fatalf("applyBlogV4Band re-tune: %v", err)
+	}
+	if m.Err != nil {
+		t.Fatalf("re-tune emitted unexpected wire traffic: %v", m.Err)
 	}
 }

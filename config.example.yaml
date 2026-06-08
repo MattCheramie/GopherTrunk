@@ -15,6 +15,33 @@ log:
   #   path: "logs/messages.log"
   #   max_size_mb: 16          # rotates to messages.log.1 past this
 
+# diagnostics — error-reporting verbosity. Every error is prefixed with
+# a diagnostics banner (version, OS, system specs, detected dongles).
+diagnostics:
+  # When true, errors print the full wrapped chain + a goroutine stack
+  # dump (no interactive prompt), and HTTP/gRPC error responses include
+  # the banner + trace. That exposes host + dongle info (hostname,
+  # kernel, serials) to API clients, so only enable it on trusted
+  # networks. When false (default), the CLI instead offers the full
+  # trace interactively on a terminal. Override at runtime with
+  # -verbose-errors or GOPHERTRUNK_VERBOSE_ERRORS=1.
+  verbose_errors: false
+
+# radioreference — read-only credentials for RadioReference.com's SOAP web
+# service, used by `gophertrunk hunt` to check whether a discovered system
+# already exists in RadioReference before you submit it. RadioReference has
+# NO public write API — new systems go through a manual web Submit form
+# reviewed by administrators — so nothing is ever posted; this is purely a
+# read-only duplicate check. All fields are optional: with no api_key the
+# check is simply skipped and the hunt still exports its files. The values
+# are also overridable by GOPHERTRUNK_RR_KEY / GOPHERTRUNK_RR_USER /
+# GOPHERTRUNK_RR_PASS and the `hunt -rr-key` flag, so the secret need not
+# live in this file. Request an API key at https://www.radioreference.com/account/api
+# radioreference:
+#   api_key: ""
+#   username: ""
+#   password: ""
+
 api:
   http_addr: "127.0.0.1:8080"   # HTTP REST + SSE + WebSocket
   grpc_addr: "127.0.0.1:50051"  # gRPC
@@ -106,10 +133,16 @@ recordings:
 
 retention:
   call_log_days: 30   # 0 disables call-log row sweep
+  log_days: 30        # 0 disables decoder-log sweep (pager / aprs /
+                      #  vessel / dsc / aircraft / mdc1200 / m17 /
+                      #  location logs, aged by received_at)
   files_days: 14      # 0 disables filesystem sweep
   interval: "1h"      # how often the sweeper runs
 
 sdr:
+  # 225000–20000000 Hz. 2_400_000 is the RTL-SDR sweet spot; RTL dongles
+  # cap at 3.2 MHz. Higher rates (e.g. 10_000_000 / 20_000_000) are only
+  # usable with a wideband source like soapy_remote (USRP, LimeSDR, …).
   sample_rate: 2_400_000
   # watchdog_interval_ms: periodic USB-disconnect watchdog cadence
   # (default 30000 = 30 s). Catches dongles that vanish from the bus
@@ -127,6 +160,10 @@ sdr:
                            # OP25/gqrx users: multiply your dB figure by 10
                            # (32 dB → "320"). "auto" (AGC) is the safe default.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # blog_v4: true      # force RTL-SDR Blog V4 mode (28.8 MHz xtal + input
+                           # routing) if the V4's USB strings don't auto-identify
+                           # it and every frequency mistunes by ~1.8× (issue #264).
+                           # Add `blog_v4_lite: true` instead on a V4L.
     - serial: "00000002"
       role: voice
       ppm: 0
@@ -209,7 +246,10 @@ sdr:
     # gets its own per-call DDC tap on this dongle's IQ stream.
     # Out-of-window grants spill over to a physical voice SDR
     # when one is configured, or drop with the standard
-    # "no voice device available" log otherwise.
+    # "no voice device available" log otherwise. This works for
+    # P25 Phase 1/2 and DMR Tier III alike — but a DMR Tier III
+    # system needs a `dmr_band_plan` (see the systems section) so
+    # the decoder can turn each grant's LCN into a frequency.
     # - serial: "00000005"
     #   role: wideband
     #   center_freq_hz: 851_500_000
@@ -217,6 +257,18 @@ sdr:
     #   channels:
     #     - frequency_hz: 851_037_500
     #       system: "regional-p25"
+    #
+    # DMR Tier III voice on a wideband dongle: identical wiring,
+    # just point the channel at a `protocol: dmr` system that
+    # carries a `dmr_band_plan`. The CC tap decodes the CSBK chain
+    # and each voice grant lands on a voice_taps DDC tap.
+    # - serial: "00000007"
+    #   role: wideband
+    #   center_freq_hz: 851_500_000
+    #   voice_taps: 4
+    #   channels:
+    #     - frequency_hz: 851_037_500
+    #       system: "regional-dmr-t3"
     #
     # P25 Phase 2 control channel on a wideband dongle. The
     # referenced system carries `protocol: p25-phase2`; the
@@ -245,10 +297,47 @@ sdr:
   #     bias_tee: false
   #     connect_timeout_ms: 3000
 
-# Paging decoders. Each entry dedicates one SDR to a paging
-# frequency and runs the per-protocol receiver. The SDR is tuned
-# directly to FrequencyHz (full sample-rate IQ, no DDC) — multi-
-# channel-from-one-SDR is a planned follow-up.
+  # SoapySDRServer remote SDRs. Each entry mounts a host:port
+  # SoapySDRServer (from pothosware/SoapyRemote) as a virtual tuner.
+  # Unlike rtl_tcp's hardcoded 8-bit stream, SoapyRemote carries the
+  # full dynamic range of high-end hardware — USRP, LimeSDR, bladeRF,
+  # HackRF, Airspy, RTL-SDR, SDRplay — as 16-bit (CS16) or 32-bit
+  # float (CF32) IQ, with native frequency / sample-rate / gain
+  # control. Run `SoapySDRServer --bind` on the host with the radio.
+  # Plaintext like rtl_tcp — keep it on trusted networks or behind a
+  # tunnel.
+  #
+  # soapy_remote:
+  #   - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
+  #     driver: "uhd"               # SoapySDR device key: uhd | lime |
+  #                                 #  bladerf | hackrf | airspy | rtlsdr
+  #                                 #  (blank = server's first device)
+  #     args: ""                    # extra make() kwargs, "k=v,k=v" (merged
+  #                                 #  with driver); e.g. for a USRP TwinRX:
+  #                                 #  "rx_subdev_spec=A:0,antenna=RX1"
+  #     serial: "usrp-roof"         # generator fills this from addr if blank
+  #     role: control               # control | voice | auto
+  #     format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
+  #     stream_protocol: "tcp"      # tcp (default/only for now)
+  #     ppm: 0                      # best-effort (driver-dependent)
+  #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
+  #     bias_tee: false             # best-effort (driver-dependent)
+  #     connect_timeout_ms: 3000
+
+# Paging decoders. The pocsag / flex lists each dedicate one SDR to a
+# single paging frequency: the SDR is tuned directly to FrequencyHz
+# (full sample-rate IQ, no DDC). The wideband list groups several
+# paging channels (any mix of POCSAG / FLEX) onto ONE SDR — the daemon
+# tunes the dongle to a center frequency and a digital down-converter
+# splits out each channel, so two pagers a few hundred kHz apart fit on
+# one stick. All three share the pager_log table / panel; rows are
+# tagged protocol=pocsag or protocol=flex.
+#
+# NOTE: paging (and the other message decoders: aprs, ais, dsc,
+# mdc1200, m17) surface decoded messages only through the SQLite
+# log. You must set a `storage:` section (see the storage example
+# above) — without it the decoder runs but /api/v1/pager/messages
+# returns 503 and the web panel stays empty.
 #
 # paging:
 #   pocsag:
@@ -257,6 +346,22 @@ sdr:
 #       frequency_hz: 152_007_500  # local commercial paging / fire
 #                                  #  dispatch / DAPNET / etc.
 #       baud_hz: 1200              # 512 / 1200 / 2400; default 1200
+#   flex:                          # Motorola FLEX (1600 bps / 2-level)
+#     - serial: "antenna-pi2"      # SDR serial; shares the pager_log
+#                                  #  table / panel, tagged protocol=flex
+#       frequency_hz: 929_612_500  # local FLEX paging channel
+#   wideband:                      # two pagers on one dongle via DDC
+#     - serial: "pager-sdr"        # single SDR for the whole group
+#       center_freq_hz: 153_187_500 # optional; auto = midpoint of the
+#                                  #  channel freqs when omitted / 0
+#       channels:                  # each freq must sit within the
+#                                  #  dongle's IQ window (center ±
+#                                  #  sample_rate/2, minus a 5% guard)
+#         - protocol: flex
+#           frequency_hz: 153_025_000
+#         - protocol: pocsag
+#           frequency_hz: 153_350_000
+#           baud_hz: 1200
 
 # APRS / AX.25 Bell-202 AFSK receiver. Each entry pins one SDR to
 # an APRS frequency and runs the full DSP pipeline (FM demod →
@@ -371,6 +476,20 @@ sdr:
 #                                     #  or sdr.rtl_tcp), sampling >= 2 Msps
 #       frequency_hz: 1_090_000_000   # 1090 MHz (the default when omitted)
 
+# M17 digital voice (link-layer metadata). Each entry pins one SDR to
+# an M17 frequency and decodes the link setup — source / destination
+# callsigns and mode — via the stream-frame LICH path. Publishes on
+# events.KindM17LinkSetup; storage.M17Log persists to the m17_log
+# table, GET /api/v1/m17/linksetups returns recent rows. Codec2 voice
+# decode is a planned follow-up.
+#
+# m17:
+#   channels:
+#     - serial: "vhf-antenna"         # SDR serial (must be in sdr.devices
+#                                     #  or sdr.rtl_tcp)
+#       frequency_hz: 144_975_000     # 2 m M17 simplex calling
+#                                     #  (region-dependent; 433_475_000 on 70 cm)
+
 trunking:
   # call_timeout_ms: inactivity window after which the engine's
   # watchdog ends a call (publishes CallEnd with EndReasonTimeout
@@ -380,6 +499,27 @@ trunking:
   # for snappier teardown; raise it on chatty systems with long
   # transmission pauses. Issue #356.
   call_timeout_ms: 30000
+
+  # voice_hangtime_ms: universal "end of transmission" window applied to
+  # EVERY voice protocol (FM, DMR, P25 Phase 1 / 2). Once a call has
+  # decoded voice, the recording is ended this long after the last voice
+  # frame — keeping recordings tightly bounded to the actual
+  # transmission instead of waiting out call_timeout_ms. Default 3500
+  # (3.5 s) when omitted or zero.
+  voice_hangtime_ms: 3500
+
+  # voice_call_grouping: how voice recordings are split, for every
+  # protocol.
+  #   "transmission" (default) — one file per over/PTT; the recording
+  #     rolls to a fresh file at each end-of-transmission boundary
+  #     (e.g. a P25 terminator). Best when voice frequencies are shared
+  #     between talkgroups.
+  #   "conversation" — keep consecutive overs of the same talkgroup in
+  #     one file; split only when a different talkgroup takes the
+  #     frequency or the channel goes idle past voice_hangtime_ms.
+  # In both modes, audio from a different talkgroup on a shared voice
+  # frequency is never appended to the wrong recording.
+  voice_call_grouping: "transmission"
 
   systems:
     - name: "Example-P25"
@@ -396,6 +536,42 @@ trunking:
       # to let the affiliation tracker surface RIDs live without any
       # operator-configured aliases.
       # rid_alias_file: "/etc/gophertrunk/rids-p25.csv"
+
+    # DMR Tier III trunked system. A T3 voice-grant CSBK references its
+    # traffic channel by a 7-bit Logical Channel Number (LCN), never an
+    # absolute frequency, so the decoder needs a `dmr_band_plan` to map
+    # LCN → downlink Hz. WITHOUT it every voice grant is dropped with
+    # decode.error stage=no-bandplan (control-channel monitoring still
+    # works). Provide exactly one of `linear` or `table`.
+    - name: "Example-DMR-T3"
+      protocol: dmr
+      control_channels:
+        - 851_037_500
+      talkgroup_file: "/etc/gophertrunk/talkgroups-dmr.csv"
+      dmr_band_plan:
+        # Linear grid: freq = base_hz + (lcn - offset) * spacing_hz.
+        # offset: 1 matches the common case of sites that number LCNs
+        # from 1 (so LCN 1 == base_hz). Use offset: 0 for 0-indexed sites.
+        linear:
+          base_hz: 851_012_500
+          spacing_hz: 25_000
+          offset: 1
+        # --- OR, for sites whose channels aren't on a regular grid,
+        # an explicit LCN → frequency table (omit `linear` if used): ---
+        # table:
+        #   - { lcn: 1, freq_hz: 851_012_500 }
+        #   - { lcn: 2, freq_hz: 851_037_500 }
+        #   - { lcn: 9, freq_hz: 851_225_000 }
+      # EXPERIMENTAL: opt into the 2-slot interleaved voice decoder. A
+      # DMR carrier runs two calls at once (TS1 + TS2); with this on,
+      # each voice grant decodes its own timeslot from the carrier's
+      # interleaved burst stream and is routed to its call by matching
+      # the embedded Link Control's talkgroup. Default false keeps the
+      # single-slot decoder. The on-air same-slot cadence and the
+      # embedded-signalling FEC constants are still pending a real-
+      # capture cross-check (see docs/status.md), so leave this off
+      # unless you are validating against a known capture.
+      # dmr_interleaved_voice: true
 
   # Per-protocol FEC is on by default — every protocol the daemon
   # supports (TETRA, LTR, P25 Phase 2, NXDN, EDACS, MPT 1327,

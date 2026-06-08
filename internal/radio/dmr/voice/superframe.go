@@ -15,6 +15,24 @@ type VoiceSuperframe struct {
 	SyncName string
 	// StartDibit is the absolute dibit index of burst A's first dibit.
 	StartDibit int
+	// Phase distinguishes the two interleaved calls on a 2-slot TDMA
+	// carrier: it is the burst-A start's parity in burst units
+	// ((StartDibit / BurstDibits) mod stride), so the two timeslots —
+	// whose burst-A anchors sit exactly one physical burst (132 dibits)
+	// apart — always carry different, stable phases for the life of a
+	// call. It is a relative discriminator, NOT an absolute TS1/TS2
+	// label (the BS-sourced sync word is identical on both slots);
+	// binding a phase to a talkgroup is the embedded-LC decoder's job.
+	// Always 0 for a single-slot (stride 1) Decoder.
+	Phase uint8
+	// HasLC reports that a Full Link Control was reassembled from the
+	// embedded signalling carried by bursts B–E of this superframe and
+	// passed its BPTC + CRC check. When true, LC holds the decoded PDU —
+	// its destination/source addresses identify the call's talkgroup and
+	// radio, which a consumer binds to the superframe's Phase to label
+	// the timeslot (the BS-sourced burst-A sync alone cannot).
+	HasLC bool
+	LC    dmr.FLC
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -29,20 +47,29 @@ var voiceSyncs = []dmr.SyncPattern{
 // dibits + 24 sync dibits − 1.
 const burstLookback = VoiceHalfDibits + 24 - 1 // 77
 
-// superframeDibits is the dibit span of a full A–F superframe.
+// superframeDibits is the dibit span of a full A–F superframe on a
+// single-slot (stride 1) stream — six contiguous 132-dibit bursts.
 const superframeDibits = dmr.BurstDibits * BurstsPerSuperframe // 792
-
-// bufKeep retains enough dibits that two pending burst-A anchors can
-// each still slice a complete superframe once their trailing bursts
-// arrive. Dibits are one byte each, so the buffer cost is trivial.
-const bufKeep = 2*superframeDibits + dmr.BurstDibits
 
 // Decoder extracts DMR voice superframes from a dibit stream. It is
 // the voice-burst counterpart of the tier2 / tier3 control-channel
 // Process adapters: those slice a burst on every sync match, but
 // voice bursts B–F carry no sync, so the Decoder locks onto burst A
-// via its voice sync word and slices B–F at the fixed 132-dibit TDMA
-// cadence.
+// via its voice sync word and slices B–F at a fixed TDMA cadence.
+//
+// stride is the number of physical 132-dibit bursts between two
+// consecutive bursts of the SAME logical call:
+//
+//   - stride 1 — a single-slot / direct stream where a call's bursts
+//     A–F are contiguous (132-dibit cadence). This is NewDecoder and
+//     matches synthetic single-slot vectors.
+//   - stride 2 — a real 2-slot TDMA carrier (NewInterleavedDecoder),
+//     where the other timeslot's burst sits between each of a call's
+//     bursts, so same-slot bursts are 264 dibits apart. One such
+//     Decoder transparently emits superframes for BOTH slots: it locks
+//     each slot's burst A on its own voice sync and gathers that slot's
+//     B–F by striding over the interleaved burst. The two slots' output
+//     is told apart by VoiceSuperframe.Phase.
 //
 // A Decoder is stateful and not safe for concurrent use; construct
 // one per voice-call decode chain.
@@ -51,15 +78,46 @@ type Decoder struct {
 	buf      []uint8
 	bufStart int // absolute dibit index of buf[0]
 	pending  []dmr.Match
+	stride   int // physical bursts between consecutive same-slot bursts
+	span     int // dibit span of a full A–F superframe at this stride
+	bufKeep  int // dibits retained so two in-flight anchors can complete
 }
 
-// NewDecoder returns a Decoder ready to consume dibits.
-func NewDecoder() *Decoder {
-	return &Decoder{det: dmr.NewSyncDetector(voiceSyncs, 2)}
+func newDecoder(stride int) *Decoder {
+	// Bursts sit at start + b*stride*BurstDibits for b in 0..5, so the
+	// span runs from burst A's first dibit to burst F's last.
+	span := ((BurstsPerSuperframe-1)*stride + 1) * dmr.BurstDibits
+	return &Decoder{
+		det:    dmr.NewSyncDetector(voiceSyncs, 2),
+		stride: stride,
+		span:   span,
+		// Retain two full superframe spans plus a burst so the two
+		// interleaved slots' anchors can each complete without the
+		// trailing bursts being trimmed out from under them.
+		bufKeep: 2*span + dmr.BurstDibits,
+	}
 }
+
+// NewDecoder returns a single-slot Decoder (stride 1): a call's bursts
+// A–F are expected back-to-back at the 132-dibit cadence.
+func NewDecoder() *Decoder { return newDecoder(1) }
+
+// NewInterleavedDecoder returns a Decoder for a real 2-slot DMR TDMA
+// carrier (stride 2): a call's bursts are 264 dibits apart because the
+// other timeslot's burst is interleaved between them. It emits
+// superframes for both slots, tagged by VoiceSuperframe.Phase.
+//
+// NOTE: stride 2 assumes the two slots' bursts are adjacent 132-dibit
+// units with no inter-burst CACH / guard dibits in the demodulated
+// stream. The exact same-slot cadence on live BS-sourced outbound air
+// (where a CACH may precede each burst) should be confirmed against a
+// real IQ capture before this replaces NewDecoder on the production
+// voice path; see docs/status.md.
+func NewInterleavedDecoder() *Decoder { return newDecoder(2) }
 
 // Reset clears all buffered state. Call on a stream re-sync so a stale
-// burst-A anchor does not slice across the discontinuity.
+// burst-A anchor does not slice across the discontinuity. The stride
+// the Decoder was constructed with is preserved.
 func (d *Decoder) Reset() {
 	d.buf = d.buf[:0]
 	d.bufStart = 0
@@ -85,7 +143,7 @@ func (d *Decoder) Process(dibits []uint8, baseIdx int) []VoiceSuperframe {
 	keep := d.pending[:0]
 	for _, m := range d.pending {
 		start := m.Index - burstLookback
-		if start+superframeDibits > bufEnd {
+		if start+d.span > bufEnd {
 			keep = append(keep, m) // trailing bursts not buffered yet
 			continue
 		}
@@ -96,29 +154,56 @@ func (d *Decoder) Process(dibits []uint8, baseIdx int) []VoiceSuperframe {
 	}
 	d.pending = keep
 
-	if len(d.buf) > bufKeep {
-		drop := len(d.buf) - bufKeep
+	if len(d.buf) > d.bufKeep {
+		drop := len(d.buf) - d.bufKeep
 		copy(d.buf, d.buf[drop:])
-		d.buf = d.buf[:bufKeep]
+		d.buf = d.buf[:d.bufKeep]
 		d.bufStart += drop
 	}
 	return out
 }
 
-// sliceSuperframe cuts the six 132-dibit bursts starting at absolute
-// dibit index start and extracts their 18 AMBE frames. The caller has
-// already confirmed the full span is buffered.
+// sliceSuperframe cuts the six 132-dibit bursts of one logical call
+// starting at absolute dibit index start and extracts their 18 AMBE
+// frames. Consecutive bursts are stride*132 dibits apart, so on a
+// 2-slot stream the interleaved other-slot burst is skipped. The caller
+// has already confirmed the full span is buffered.
 func (d *Decoder) sliceSuperframe(start int, syncName string) VoiceSuperframe {
-	sf := VoiceSuperframe{SyncName: syncName, StartDibit: start}
+	sf := VoiceSuperframe{
+		SyncName:   syncName,
+		StartDibit: start,
+		Phase:      uint8((start / dmr.BurstDibits) % d.stride),
+	}
 	off := start - d.bufStart
+	step := d.stride * dmr.BurstDibits
 	frame := 0
+	// fragIdx maps the four embedded-LC-bearing bursts B,C,D,E (burst
+	// indices 1..4) to their fragment slot 0..3; A and F carry none.
+	var frags [4][]byte
 	for b := 0; b < BurstsPerSuperframe; b++ {
 		var burst dmr.Burst
-		copy(burst.Dibits[:], d.buf[off+b*dmr.BurstDibits:off+(b+1)*dmr.BurstDibits])
+		copy(burst.Dibits[:], d.buf[off+b*step:off+b*step+dmr.BurstDibits])
 		for _, f := range AMBEFrames(&burst) {
 			sf.Frames[frame] = f
 			frame++
 		}
+		if b >= 1 && b <= 4 {
+			_, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
+			frags[b-1] = frag
+		}
+	}
+	if lc, ok := dmr.ReassembleEmbeddedLC(frags); ok {
+		sf.HasLC = true
+		sf.LC = lc
 	}
 	return sf
+}
+
+// dibitsToBits expands dibits to bits, two per dibit, MSB-first.
+func dibitsToBits(dibits []uint8) []byte {
+	out := make([]byte, 0, len(dibits)*2)
+	for _, d := range dibits {
+		out = append(out, (d>>1)&1, d&1)
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package ccdecoder
 
 import (
 	"log/slog"
+	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -63,6 +64,34 @@ type PipelineOptions struct {
 	FrequencyHz  uint32
 	SampleRateHz float64
 	System       trunking.System
+
+	// SymbolTap, when non-nil, is invoked with every chunk of recovered
+	// symbols a pipeline's receiver emits, just before they enter the
+	// control-channel state machine. symbols holds dibits (values 0..3,
+	// isBits=false) for the 4-level protocols and bits (values 0..1,
+	// isBits=true) for the 2-level protocols; baseIdx is the absolute
+	// symbol index the chunk starts at. It is a pure observation hook —
+	// production never sets it. The offline siglab toolkit uses it to
+	// count symbols and feed its protocol-agnostic signal-quality
+	// analyzer for *every* protocol, without re-duplicating receiver
+	// construction outside this factory. nil ⇒ zero overhead.
+	SymbolTap func(symbols []uint8, isBits bool, baseIdx int)
+}
+
+// tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when
+// one is wired, normalising the dibit ([]uint8) and bit ([]byte) sink
+// shapes onto the single SymbolTap signature. byte and uint8 are the same
+// underlying type, so the bit slice passes through without a copy.
+func (o PipelineOptions) tapDibits(dibits []uint8, baseIdx int) {
+	if o.SymbolTap != nil {
+		o.SymbolTap(dibits, false, baseIdx)
+	}
+}
+
+func (o PipelineOptions) tapBits(bits []byte, baseIdx int) {
+	if o.SymbolTap != nil {
+		o.SymbolTap(bits, true, baseIdx)
+	}
 }
 
 // PipelineFactory constructs a fresh ProtocolPipeline for one tuned
@@ -114,6 +143,43 @@ func SetTestFactory(protocol trunking.Protocol, f PipelineFactory) (restore func
 	}
 }
 
+// NewPipeline constructs the registered pipeline for protocol p with the
+// given options. ok is false (and the pipeline nil) when no factory is
+// registered for p — callers should treat that as "this protocol cannot
+// be driven offline yet" rather than an error. err propagates a factory's
+// own construction failure (e.g. incomplete per-system wiring).
+//
+// This is the out-of-package entry point the offline siglab toolkit uses
+// to drive any protocol through the same production pipelines the daemon
+// runs; the daemon itself keeps using the internal factory map directly.
+func NewPipeline(p trunking.Protocol, opts PipelineOptions) (pipe ProtocolPipeline, ok bool, err error) {
+	f, ok := factories[p]
+	if !ok {
+		return nil, false, nil
+	}
+	pipe, err = f(opts)
+	return pipe, true, err
+}
+
+// HasFactory reports whether a pipeline factory is registered for p.
+func HasFactory(p trunking.Protocol) bool {
+	_, ok := factories[p]
+	return ok
+}
+
+// RegisteredProtocols returns the protocols with a registered pipeline
+// factory, in a stable (ascending Protocol-value) order so callers — the
+// siglab TUI's protocol picker, a gen→test sweep — render a deterministic
+// list.
+func RegisteredProtocols() []trunking.Protocol {
+	out := make([]trunking.Protocol, 0, len(factories))
+	for p := range factories {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolP25:       newP25Phase1Pipeline,
 	trunking.ProtocolP25Phase2: newP25Phase2Pipeline,
@@ -128,6 +194,7 @@ var factories = map[trunking.Protocol]PipelineFactory{
 	trunking.ProtocolYSF:       newYSFPipeline,
 	trunking.ProtocolDStar:     newDStarPipeline,
 	trunking.ProtocolDMRTier2:  newDMRTier2Pipeline,
+	trunking.ProtocolDMRTier1:  newDMRTier1Pipeline,
 }
 
 // newP25Phase1Pipeline wires the existing
@@ -206,7 +273,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	}
 	p2Scrambler, p2ScrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
 	if !p2ScrOK {
-		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",
+		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
 	cc := p25phase1.New(p25phase1.Options{
@@ -241,6 +308,7 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// it and was a net regression on the issue #402 capture; keep
 		// it off here until the eye-skew root cause is pinned.
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -329,7 +397,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc.SetInterleaveMode(interleaveMode)
 	scramblerMode, scrOK := p25phase2.ParseScramblerMode(opts.System.P25Phase2ScramblerMode)
 	if !scrOK {
-		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to off",
+		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
 	if scramblerMode == p25phase2.ScramblerProbe && rsMode != p25phase2.RSOn {
@@ -362,6 +430,7 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			for _, sf := range sfDec.Process(dibits, baseIdx) {
 				cc.IngestSuperframe(sf)
 			}
@@ -446,7 +515,13 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := tetrarx.New(tetrarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
+		},
+		// Soft differentials for soft-decision channel decoding, stashed
+		// just before the matching DibitSink → Process call (issue #553).
+		SoftSink: func(diffs []complex64, baseIdx int) {
+			cc.StashSoft(diffs, baseIdx)
 		},
 		ClockMode: tetraClockMode,
 		// Tuned smaller than the 0.03 default — at TETRA's 18000
@@ -457,6 +532,18 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// DMR Tier III ClockGain tweak in PR #150. Only applied
 		// when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
+		// The live DDC has no AFC; a control channel that is not
+		// perfectly centred (a coarse tuning offset, or a tuner a few
+		// hundred Hz off) leaves a constant per-symbol phase offset
+		// that biases every dibit and stops the training sequence
+		// correlating (issue #553). The AFC acquires ~0 on a centred
+		// signal, so it is a near-noop there.
+		EnableAFC: true,
+		// The channelised stream is far wider than a 25 kHz TETRA
+		// channel, so adjacent carriers leak through to the matched
+		// filter. The channel-select filter rejects them — measured to
+		// cut the on-air symbol error rate by ~10x (issue #553).
+		EnableChannelFilter: true,
 	})
 	return &tetraPipeline{rx: rx, cc: cc}, nil
 }
@@ -469,6 +556,18 @@ type tetraPipeline struct {
 func (p *tetraPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *tetraPipeline) Reset()                 { p.rx.Reset() }
 func (p *tetraPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the TETRA single-cell identity (MCC/MNC/LA + colour
+// code) the control channel learned. No adjacent cells for TETRA.
+func (p *tetraPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		MCC:          t.MCC,
+		MNC:          t.MNC,
+		LocationArea: t.LocationArea,
+		ColorCode:    uint8(t.ColourCode & 0xFF),
+	}
+}
 
 // newYSFPipeline wires the existing internal/radio/ysf/receiver
 // into ysf.ControlChannel.Process. YSF is the System Fusion
@@ -489,6 +588,7 @@ func newYSFPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// captures slice correctly out of the box.
 		DeviationHz: 1800.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -525,6 +625,7 @@ func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// level so live captures slice correctly.
 		DeviationHz: 900.0,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -552,6 +653,11 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		Log:         opts.Log,
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
+		// LCN→downlink resolver from the system's dmr_band_plan; nil
+		// when unconfigured, in which case T3 voice grants drop with
+		// decode.error stage=no-bandplan (the daemon warns at load).
+		Resolver:         tier3.ResolverFromPlan(opts.System.DMRBandPlan),
+		InterleavedVoice: opts.System.DMRInterleavedVoice,
 	})
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
@@ -569,6 +675,7 @@ func newDMRTier3Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// live captures.
 		ClockGain: 0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -587,6 +694,26 @@ var _ = dmr.BurstDibits
 func (p *dmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrPipeline) Reset()                 { p.rx.Reset() }
 func (p *dmrPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the DMR Tier III system topology (identity +
+// adjacent sites) the control channel accumulated, mapped to the neutral
+// trunking shape so the signal-lab engine attaches it to the decode Result.
+func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{
+		SystemID:  uint32(t.SystemID),
+		RFSS:      t.RFSS,
+		Site:      t.Site,
+		ColorCode: t.ColorCode,
+	}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
 
 // newDMRTier2Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier2.ConventionalChannel.Process. DMR Tier II is conventional
@@ -627,6 +754,7 @@ func newDMRTier2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// margin per the MM stability bound.
 		ClockGain: 0.015,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -641,6 +769,47 @@ type dmrTier2Pipeline struct {
 func (p *dmrTier2Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *dmrTier2Pipeline) Reset()                 { p.rx.Reset() }
 func (p *dmrTier2Pipeline) Close() error           { return nil }
+
+// newDMRTier1Pipeline wires the shared DMR receiver into the
+// tier2.ConventionalChannel state machine in *direct-mode* configuration:
+// the same wire format as Tier II (C4FM dibits → burst → slot-type
+// Hamming → Voice LC Header BPTC(196,96) + RS(12,9,4) → grant), but the
+// burst-sync detector is restricted to the four ETSI direct-mode sync
+// words (DM-Voice/Data, TS1/TS2) and grants/decode-errors are tagged
+// "dmr-tier1". DMR Tier I is license-free simplex (PMR446); it has no
+// repeater or control channel, so a Voice LC Header marks each
+// transmission start exactly as in Tier II conventional.
+func newDMRTier1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
+	cc := tier2.New(tier2.Options{
+		Bus:         opts.Bus,
+		Log:         opts.Log,
+		SystemName:  opts.SystemName,
+		FrequencyHz: opts.FrequencyHz,
+		ProtocolTag: "dmr-tier1",
+		SyncPatterns: []dmr.SyncPattern{
+			dmr.DMVoice1, dmr.DMVoice2, dmr.DMData1, dmr.DMData2,
+		},
+	})
+	rx := dmrrx.New(dmrrx.Options{
+		SampleRateHz: opts.SampleRateHz,
+		DeviationHz:  1944.0,
+		ClockGain:    0.015, // same as Tier II (identical burst symbol statistics)
+		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
+			cc.Process(dibits, baseIdx)
+		},
+	})
+	return &dmrTier1Pipeline{rx: rx, cc: cc}, nil
+}
+
+type dmrTier1Pipeline struct {
+	rx *dmrrx.Receiver
+	cc *tier2.ConventionalChannel
+}
+
+func (p *dmrTier1Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
+func (p *dmrTier1Pipeline) Reset()                 { p.rx.Reset() }
+func (p *dmrTier1Pipeline) Close() error           { return nil }
 
 // newNXDNPipeline wires internal/radio/nxdn/receiver into
 // nxdn.ControlChannel.Process. The receiver's DibitSink forwards
@@ -672,6 +841,7 @@ func newNXDNPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SampleRateHz: opts.SampleRateHz,
 		DeviationHz:  deviationHz,
 		DibitSink: func(dibits []uint8, baseIdx int) {
+			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
@@ -687,6 +857,17 @@ type nxdnPipeline struct {
 func (p *nxdnPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *nxdnPipeline) Reset()                 { p.rx.Reset() }
 func (p *nxdnPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the NXDN single-site identity (System/Site/Location)
+// the control channel accumulated. No adjacent sites for NXDN.
+func (p *nxdnPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	return &trunking.TopologySnapshot{
+		SystemID:     uint32(t.SystemID),
+		Site:         uint8(t.SiteID),
+		LocationArea: t.LocationID,
+	}
+}
 
 // newEDACSPipeline wires internal/radio/edacs/receiver into
 // edacs.ControlChannel.Process. The receiver's BitSink forwards
@@ -711,6 +892,7 @@ func newEDACSPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := edacsrx.New(edacsrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -725,6 +907,20 @@ type edacsPipeline struct {
 func (p *edacsPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *edacsPipeline) Reset()                 { p.rx.Reset() }
 func (p *edacsPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the EDACS system identity + adjacent sites the
+// control channel accumulated. EDACS has no RFSS; only SystemID + neighbors.
+func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: uint16(n.LCN),
+		})
+	}
+	return snap
+}
 
 // newMotorolaPipeline wires internal/radio/motorola/receiver into
 // motorola.ControlChannel.Process. The receiver's BitSink forwards
@@ -755,6 +951,7 @@ func newMotorolaPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := motorolarx.New(motorolarx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -769,6 +966,20 @@ type motorolaPipeline struct {
 func (p *motorolaPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *motorolaPipeline) Reset()                 { p.rx.Reset() }
 func (p *motorolaPipeline) Close() error           { return nil }
+
+// TopologySnapshot surfaces the Motorola system identity + adjacent sites the
+// control channel accumulated. Motorola has no RFSS; only SystemID + neighbors.
+func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	t := p.cc.Topology()
+	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
+	for _, n := range t.Neighbors {
+		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+			Site:          uint8(n.SiteID),
+			ChannelNumber: n.LCN,
+		})
+	}
+	return snap
+}
 
 // newLTRPipeline wires internal/radio/ltr/receiver into
 // ltr.ControlChannel.Process. The receiver's BitSink forwards
@@ -809,6 +1020,7 @@ func newLTRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := ltrrx.New(ltrrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -855,6 +1067,7 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})
@@ -902,6 +1115,7 @@ func newDStarPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	rx := dstarrx.New(dstarrx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
+			opts.tapBits(bits, baseIdx)
 			cc.Process(bits, baseIdx)
 		},
 	})

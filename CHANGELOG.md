@@ -7,36 +7,985 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Signal survey — save it, decode it, run it offline.** Follow-up to the live
+  signal survey: the classified inventory is now a real artifact, written to
+  `survey.json`/`survey.csv` by the CLI, served by `GET /api/v1/hunt/survey`
+  (`?format=json|csv`, `+ /{id}/survey`), and downloadable from the web Hunt
+  panel. Pages a survey decodes are published to the events bus and the pager
+  log like a live receiver's, and each classified carrier emits a
+  `hunt.candidate` event. New depth: an **offline survey** (`hunt -survey -in
+  <capture>`) classifies recorded IQ with no SDR; **`-survey-audio <dir>`**
+  writes a WAV clip per active analog-FM carrier; **`-classify-only`** skips
+  decoding for a fast inventory; **`-max-dwell-seconds`** listens until carrier
+  activity for bursty paging. The classifier's thresholds are now configurable
+  (CLI `-class-*` flags / REST fields), occupied bandwidth is measured on the
+  full-rate capture so wideband FM isn't mis-sized, and the digital-vs-AM order
+  was fixed so pulse-shaped PSK isn't mislabeled AM. The web panel gains a
+  classify-only toggle and a sortable signals table.
+
+- **Live signal survey — `gophertrunk hunt -survey`.** The hunt sweep now does
+  more than chase trunking control channels: in survey mode it classifies
+  *every* detected carrier by modulation family (analog NBFM/WFM, AM, digital
+  FSK/C4FM/PSK, paging, trunking) plus an occupied-bandwidth estimate, then
+  decodes the conventional ones — POCSAG/FLEX paging and analog-FM activity
+  (carrier + CTCSS/DCS) — while still folding any trunking control channel into
+  the discovered-system map. The classifier is blind and cheap (FFT
+  occupied-bandwidth, envelope coefficient-of-variation, FM-discriminator
+  features, and a cyclostationary baud-line detector), reusing the existing dsp
+  primitives and the POCSAG/FLEX/conventional decoders rather than duplicating
+  them. The result is a `SignalSurvey` inventory surfaced across the CLI
+  (printed table), the daemon REST API (`hunt.survey` request flag, `mode` +
+  `signals` in `GET /api/v1/hunt`), the web Hunt panel (a Survey-mode checkbox
+  and a signals table), and the TUI Hunt panel (a `v` survey-start key and a
+  signal list).
+- **Constellation / Symbol scope auto-detect the demod mode** (#557). The
+  panels' **Mode** selector gains an **Auto** option (now the default) that
+  follows the modulation the selected SDR's system is configured to decode —
+  C4FM or CQPSK/LSM — instead of asking the operator to pick it. The daemon
+  reports this per device on `GET /api/v1/spectrum/devices` as `p25_modulation`,
+  resolved by matching the device's tuning against the configured P25 Phase 1
+  systems (with a single-system fallback). An explicit C4FM/CQPSK choice still
+  overrides Auto and persists.
+- **Channel-step nudge in the shared tuning controls** (#557). The
+  Constellation and Symbol scope offset field gains a **Step** selector
+  (6.25 / 12.5 / 25 kHz) with −/+ buttons and ArrowUp/ArrowDown stepping that
+  snap to the channel grid, so walking between adjacent channels no longer
+  needs manual kHz entry. The chosen step is shared across panels.
+
 ### Fixed
 
-- **P25 control channel: decode every TSBK in a data unit, not just the
-  first** (#402). A P25 trunking data unit packs up to three 98-dibit
-  TSBK blocks after one FSW + NID, the last flagged LB=1; the
-  control-channel decoder only ever decoded the first, silently dropping
-  the ~2/3 of a busy site's signalling (grants, affiliations, status
-  broadcasts) carried in the second and third blocks. It now decodes
-  every block in the unit, stopping at the last-block flag, and resumes
-  blocks that span receive batches — so the yield is the same whether the
-  dibit stream arrives a frame at a time or in tiny USB transfers. On the
-  MMR Site 9 capture this roughly triples the TSBKs recovered (14 → 41 in
-  ~1 s, all CRC-clean). A non-contiguous dibit stream (a resync or capture
-  gap) now also flushes the partial-frame buffer instead of trying to
-  stitch a frame across the break.
+- **Constellation / signal scopes stuck on "waiting for symbols"** (#557,
+  #583). The `WS /api/v1/diag/symbols` frame encoded its `dibits` field as a
+  Go `[]uint8`, which `encoding/json` serialises as a base64 string rather than
+  a JSON number array. The web console drops any frame whose `dibits` isn't an
+  array, so every frame was silently discarded and the Constellation, Symbol
+  scope, Eye, Tuning, and Histogram panels never rendered. `dibits` now goes
+  out as a number array, with a regression test asserting the wire shape.
+
+## [v0.3.6] — 2026-06-08
+
+This release is about **seeing the signal**. A new **Plots hub** (`/plots`)
+gathers the per-channel scopes — Constellation, Symbol scope, Eye diagram,
+Tuning, Histogram — into one tabbed home that mirrors OP25's Plots tabs (#557,
+#583), now with a true symbol constellation, an open four-level eye, live
+receiver-state meters, and a symbol-distribution histogram. Underneath, **P25
+Phase 1 voice finally decodes** after the IMBE channel-convention and LDU
+voice-frame-offset fixes (#574, #578); **TETRA** gains real ETSI training
+sequences, a corrected control-channel sync layer with auto-learned colour
+code, and soft-decision SB-burst FEC (#569, #571, #573); and a shared
+**voice-recording boundary** controller tightly bounds every call by hangtime
+and talkgroup (#579). On the operator side, the web **Config Builder** reaches
+dual-editor parity with the TUI (#570–#582), the **spectrum** panel gains a
+hover readout and dual-pager DDC (#577), and a two-page **Getting Started**
+guide lands for non-technical users (#581).
+
+### Added
+
+- **Universal voice recording boundaries — hangtime + per-transmission
+  splitting + talkgroup gating** (applies to every voice protocol: FM, DMR,
+  P25 Phase 1/2). A new shared boundary controller in the composer ends a call
+  promptly once voice stops (configurable `trunking.voice_hangtime_ms`, default
+  3.5 s) instead of waiting out the 30 s engine watchdog, so recordings are
+  tightly bounded to the actual transmission. `trunking.voice_call_grouping`
+  selects `"transmission"` (default — one WAV per over, rolled at each
+  end-of-transmission boundary) or `"conversation"` (consecutive same-talkgroup
+  overs in one file). On shared voice frequencies, audio from a *different*
+  talkgroup is no longer appended to the wrong recording: the P25 Phase 1 chain
+  gates each LDU on its decoded Link Control talkgroup and ends the call when
+  another talkgroup takes the channel. Recording filenames now carry the RF
+  voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Plots hub** (`/plots`) — one tabbed home for the per-channel signal
+  scopes (Constellation, Symbol scope, Eye diagram, Tuning, Histogram),
+  mirroring OP25's Plots tabs (#557 follow-up). The chosen sub-tab is
+  reflected in the URL (`/plots/<tab>`); the individual routes still work
+  for deep links, and the wideband Spectrum waterfall stays its own tab.
+  This replaces the five separate scope entries in the nav with one.
+- **Symbol histogram panel** (`/histogram`) — the recovered-symbol
+  distribution plus a derived signal-quality readout (#557 follow-up). A
+  scrambled P25 channel spreads evenly, so each of the four bins should
+  sit near 25%; a **Balance** meter flags a skewed (collapsed-eye)
+  distribution, and for C4FM an **SNR (MER)** estimate is derived from the
+  soft-level separation vs within-level spread. Computed client-side off
+  the existing symbol stream.
+- **Tuning panel** (`/tuning`) — live receiver-state meters, GopherTrunk's
+  take on OP25's Mixer / Tuner (FLL) tabs (#557 follow-up). Trends the
+  demod's residual carrier-frequency-offset estimate (should converge to
+  0 Hz on lock) and surfaces AGC level/target, symbol-clock μ/sps and (on
+  CQPSK) the equalizer's CMA-error convergence proxy — all read live from
+  the production receiver and carried on the existing symbol stream.
+- **Eye diagram panel** (`/eye`) — GopherTrunk's take on OP25's datascope
+  (#557 follow-up). The daemon's C4FM receiver gains an oversampled,
+  AGC-scaled eye tap; the panel folds it over the symbol period and
+  overlays the windows so the four-level eye is visible. A healthy channel
+  shows four open bands with clear gaps at the decision instant; a closed
+  eye flags symbol-timing or SNR trouble. C4FM only (CQPSK's quality view
+  is the constellation).
+- **True symbol constellation** on the Constellation panel (#557 follow-up).
+  The panel gains a **View** toggle: **Symbols** (new default) plots the
+  receiver's actual symbol-decision points — for **P25 CQPSK/LSM** a real
+  complex constellation that forms four tight clusters on the ±45°/±135°
+  diagonals on a clean signal and smears to an X as the eye closes; for
+  **P25 C4FM** the four recovered soft levels on the real axis (its open
+  4-level eye remains the Symbol scope's job). Amber rings mark the ideal
+  cluster centres. The previous wideband-IQ scatter is still available as
+  **Vector scope (raw IQ)** for identifying unknown signals. The symbols
+  stream reuses the live receiver (`WS /api/v1/diag/symbols`), so it shows
+  exactly what the production demod sees.
+- **Web Config Builder — dual-editor parity with the TUI** (#570, #572, #576,
+  #580, #582). The browser-based Config Builder gains the editor primitives it
+  was missing (ListEditor, AdvancedJSON, Fieldset, HzField), a shared
+  HTTP-free config core with whole-file marshal/write and per-section
+  validation, and backend gap-fill (multi-error reporting, comment-preserving
+  merge, file management, RadioReference name lookup). A dual-editor
+  schema-drift test now fails CI if any config field is editable in one editor
+  but not the other, so the web and TUI builders stay in lockstep.
+- **Two-page Getting Started guide** (#581) — a non-technical walkthrough
+  (`/getting-started-setup.html`) that takes a new user from download to a
+  running scan, featuring the Config Builder, plus refreshed interfaces and
+  source-section help sourced from the shared field registry.
+- **Spectrum hover readout + dual-pager DDC** (#577). The wideband Spectrum
+  waterfall now shows a live frequency/power readout under the cursor, the
+  paging DDC can run two channels at once, and decoded pages carry a
+  human-readable pager-type label.
+
+### Fixed
+
+- **TETRA control channel would not lock on real signals** (#569, #571, #573).
+  The SB-burst lock chain used placeholder sync constants instead of the real
+  ETSI training sequences, the control-channel sync layer mis-framed bursts,
+  and the FEC was hard-decision only. The decoder now uses the ETSI normal/
+  synchronisation training sequences, a corrected sync layer that auto-learns
+  the colour code, and soft-decision FEC for the SB-burst, so a production
+  144 kHz / 8 sps TETRA control channel locks.
+
+- **P25 Phase 1 voice still garbled after the IMBE channel-decode fix —
+  wrong LDU voice-frame positions** (#489 follow-up). With the channel
+  decoder corrected, real-air voice was still noise: the LDU1/LDU2 field
+  layout in `ldu.go` placed a Link Control block between voice frames u_0 and
+  u_1 (`u0, LC1, u1, LC2, …`), but real P25 (per szechyjs/dsd `p25p1_ldu1.c`,
+  which reads IMBE frames 1 and 2 back-to-back) is `u0, u1, LC1, u2, LC2, …,
+  u7, LSD, u8`. This shifted voice subframes u_1..u_7 by one 40-bit block, so
+  only u_0 and u_8 landed on the right bits and the other seven decoded to
+  random pitch. `lduVoiceOffsets`, `lduLCESBlockOffsets`, and
+  `lduLSDBlockOffsets` are corrected to the real layout (also repairing
+  voice-channel Link Control / Encryption Sync / talker-alias metadata, which
+  read the same tables). The pre-existing layout test had the DSD order
+  inverted and is fixed; a new independent fixture
+  (`ldu_realair_test.go`), built from the mbelib/DSD reference with voice
+  frames at hard-coded canonical positions, now guards the layout end-to-end.
+- **P25 Phase 1 voice decoded to garbled noise** (#489). The IMBE 4400
+  channel decoder was self-consistent (its own encode/decode round-tripped)
+  but did not match the on-air convention real P25 transmitters use, so every
+  recovered voice frame was effectively random — audible as warbling noise.
+  Three coupled faults, all invisible to the synthetic round-trip tests and
+  surfacing only on real signals: (1) each Golay/Hamming vector's channel bits
+  were read in reversed column order; (2) the §7.4 PRBS descrambler took its
+  seed from the wrong end of u_0 and applied the keystream in reversed order;
+  and (3) the per-vector FEC used `internal/radio/framing`'s Golay(24,12),
+  which is a *different* code from the P25 IMBE Golay(23,12,7) and corrupted
+  clean codewords. The IMBE path now uses a P25-faithful Golay(23,12,7) +
+  Hamming(15,11,3) (transcribed from the mbelib/DSD reference) with the
+  correct column order, descrambler seed (taken from the Golay-corrected u_0,
+  matching mbelib's `eccC0`-before-`demodulate` order), and keystream
+  direction. A real-air-faithful reference-vector test
+  (`internal/voice/imbe/p25fec_refvec_test.go`) now pins the decode against
+  mbelib/DSD-derived on-air frames, closing the long-standing "no real P25
+  voice fixture" gap.
 
 ### Changed
 
-- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
-  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
-  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value
-  like `"32"`, which parses to 3.2 dB and snaps to the bottom of the
-  tuner ladder, leaving the radio effectively deaf (no control-channel
-  lock, no decodes) with no feedback. The daemon now WARNs at startup
-  when a bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
-  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs
-  the applied gain in dB on every device (`sdr: gain set … gain_db=…`)
-  so a units mistake is visible without enabling debug. No behaviour
-  change for valid configs; decimal forms like `"32.0"` are still taken
-  as whole dB. Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+- **Constellation & Symbol scope tuning refinements** (#557 follow-up). The
+  Symbol scope now shows the tuned frequency as soon as an SDR is selected,
+  instead of staying blank until symbols decode. Both panels gain precise
+  channel entry: the **kHz** offset field takes 1 Hz resolution (so 6.25 /
+  12.5 kHz channel grids land exactly) plus an absolute **MHz** frequency
+  field that stays in sync. The Constellation plot is now a responsive square
+  that fills the panel column (up to 880 px, drawn at device-pixel ratio for
+  crispness) instead of a fixed thumbnail, so it renders as large as OP25's,
+  and gains an adjustable **Zoom** control (up to 8×; dots scale with both
+  zoom and plot size); its auto-scale now targets the ~95th-percentile radius
+  so a stray outlier no longer shrinks the cloud.
+- **Warn when message decoders are configured without storage** (#568). A
+  decoder that produces messages (paging, MDC, DSC, …) but has no storage
+  backend configured silently dropped everything; the daemon now logs a
+  startup warning so the misconfiguration is visible.
+
+## [v0.3.5] — 2026-06-07
+
+Site/system **hunting** grows up — `gophertrunk hunt` turns from a one-shot
+capture mapper into a live, daemon-integrated discovery engine driven from the
+CLI, the TUI, and a web panel with a REST cockpit (#549–#558) — alongside a
+live **Symbol scope** oscilloscope (#563) and a much-improved
+**Constellation** panel with a server-side frequency-offset view (#559). On
+the SDR side, `soapyremote` finally streams reliably (flow-control ACKs,
+#545), wideband sources can run up to 20 MHz (#560), and a per-device
+`iq_invert` lets spectrum-inverted front-ends lock TETRA (#562).
+
+### Added
+
+- **Site/system hunting — live, daemon-integrated discovery of undocumented
+  trunked systems** (#549–#558). `gophertrunk hunt` now does far more than map
+  a pre-recorded capture: a live spectrum-sweep discovery engine scans for
+  control channels off a live SDR, with a CLI live mode driving it (#552); a
+  daemon-integrated hunt manager acquires a spare SDR — else borrows one from
+  the pool — to run the sweep inside the running daemon (#554); and the run is
+  surfaced through TUI + web-console panels (#556) backed by a REST cockpit
+  (#555). Each run honours a requested SDR serial (#558), exports by run id
+  with a bounded run history (#558), and can be started straight from the TUI
+  panel (#558). Discovery auto-identifies the protocol, accumulates a
+  `DiscoveredSystem` map, and resolves per-protocol **site topology** —
+  system id + adjacent sites — for P25 (#551), DMR Tier III, EDACS, Motorola
+  Type II, NXDN, and TETRA single-site identity (#558), exporting standardized
+  files plus a ready-to-paste RadioReference submission. See
+  [`docs/hunt.md`](docs/hunt.md).
+- **Symbol scope — live demodulated-symbol oscilloscope (OP25-style "Symbol"
+  plot)** (#563). A new web panel (`/symbols`) renders the demodulated symbol
+  stream off a live SDR: for **P25 C4FM** it shows the pre-slicer soft
+  waveform (~4 noisy bands for a healthy channel, with rails at each decided
+  level), and for **P25 CQPSK** the sliced dibit decisions. It reuses the
+  **production** DSP — the same down-converter and P25 Phase 1 receiver the
+  live decoder uses, run as a *parallel* decode on the iqtap broker so
+  production control-channel decode is never touched — exposed through the
+  receiver's existing soft/dibit taps. The panel shares the Constellation
+  panel's offset / Hold / follow-active-call controls, so you can dial the
+  scope onto a locked control/voice channel and lift it clear of the SDR
+  centre DC spike. Backed by a new
+  `WS /api/v1/diag/symbols?device=&proto=&offset=` endpoint and the
+  `internal/scanner/symbolscope` engine. The offline **SigLab** analyzer gains
+  the matching view: a capture run with `collect IQ diag` + `capture IQ` now
+  carries an aligned symbol series on its `IQTaps`, rendered by a new SigLab
+  Symbol-scope viz alongside the eye diagram. TETRA and the rest of the C4FM
+  family (DMR/NXDN/YSF/D-STAR) — and a soft waveform for them — follow as
+  per-receiver soft taps ship. See [`docs/symbol-scope.md`](docs/symbol-scope.md).
+- **Constellation panel — frequency-offset view + cleaner render (issue
+  #557)** (#559). A centre-tuned constellation is dominated by the SDR's DC
+  spike (the DDC's residual carrier leakage at 0 Hz), which sits on top of any
+  signal in the middle of the band and reduces the plot to one fat blob. The
+  panel now offers an **Offset** control that mixes an off-centre control or
+  voice channel down to baseband *server-side, before decimation* (a new
+  `offset` parameter on `WS /api/v1/diag/iq`), pulling its symbols out from
+  under the spike — the same approach OP25 takes. With **Hold** off the
+  offset automatically follows the newest active call on the selected SDR
+  (the "last locked channel"); Hold pins it. Decimation now box-averages
+  each stride window as a crude anti-alias low-pass, and the render gains an
+  additive scatter in GopherTrunk's sky-blue accent (distinct from OP25's
+  phosphor green) with labelled ±1 axes, a **DC-block**
+  (subtract the rolling mean), and an **Auto-scale** that fills the unit
+  circle.
+- **`soapyremote`: free-form device-args config block (issue #542)** (#546). A
+  `sdr.soapy_remote.device_args` map passes arbitrary key/value pairs straight
+  to SoapyRemote's device factory, so a remote front-end that needs
+  driver-specific arguments (antenna path, reference clock, channel) can be
+  configured without a code change.
+- **`ccdecoder`: per-device spectrum-inversion (`iq_invert`) option** (#562).
+  A new per-device `iq_invert` flips I/Q at the source so a spectrum-inverted
+  front-end (R828D / RTL-SDR Blog V4) locks TETRA and the other control
+  channels; shipped with a production-rate (144 kHz / 8 sps) TETRA
+  control-channel lock test (#561, #553).
+
+### Changed
+
+- **`sdr.sample_rate` config ceiling raised to 20 MHz** (#560) for wideband
+  sources (HackRF, Airspy, or a SoapyRemote-fronted USRP / LimeSDR) that can
+  feed a wider span than the previous cap allowed.
+
+### Fixed
+
+- **`soapyremote`: send stream flow-control ACKs so RX actually streams (issue
+  #542)** (#545). SoapyRemote's data stream is flow-controlled; without the
+  periodic ACKs the server throttled itself to a stop after the initial burst,
+  so the tuner appeared to connect but delivered no samples.
+- **Drive the IQ pump for single-channel decoders on dedicated dongles (issue
+  #547)** (#548). A single-channel decoder bound to its own dongle was not
+  pumping IQ through the channelizer, so a dedicated-dongle conventional /
+  single-system setup never produced samples; the pump now runs on that path.
+
+## [v0.3.4] — 2026-06-06
+
+High-bit-depth **SoapyRemote** network SDRs and a first-class raw-IQ
+**capture** toolchain land (#540, #541), plus a fast algebraic BCH(63,16) NID
+decoder that clears the P25 decode-lag (#492) and a batch of RTL-SDR R82xx /
+R828D gain and PLL fixes.
+
+### Added
+
+- **SoapySDRServer remote SDRs — high-bit-depth network streaming + control
+  from professional hardware (issue #536)** (#541). A new pure-Go (zero-CGO)
+  `soapyremote` SDR backend connects to a remote `SoapySDRServer` (from
+  pothosware/SoapyRemote) and mounts it as a virtual tuner alongside local
+  USB dongles and `rtl_tcp` endpoints. Unlike `rtl_tcp`'s hardcoded 8-bit
+  stream, it carries the full dynamic range of high-end radios — USRP,
+  LimeSDR, bladeRF, HackRF, Airspy, RTL-SDR, SDRplay — as 16-bit (`CS16`) or
+  32-bit float (`CF32`) IQ, with native frequency / sample-rate / gain
+  control over SoapyRemote's RPC protocol. Configure under `sdr.soapy_remote`
+  (addr/driver/serial/role/format/gain/…); the IQ stream uses the in-order
+  TCP transport. Chosen over the originally-proposed VITA 49.2 (VRT) because
+  SoapyRemote reaches the same professional hardware with a real,
+  interoperable control plane and a single maintained server binary.
+- **`gophertrunk capture` — record raw IQ off a live SDR to a `.cfile`**
+  (#540). A first-class subcommand that opens a dongle directly (no daemon),
+  records the requested number of seconds of raw IQ to a GNU Radio cfile
+  (interleaved little-endian float32) or rtl_sdr-native `u8`, and writes a
+  siglab `.metadata.json` sidecar so the capture is a drop-in fixture for
+  `replay` / `analyze` / `test` and the `samples/` acceptance harness:
+  `gophertrunk capture -freq 460000000 -sample-rate 2400000 -seconds 30
+  -protocol p25 -out cc.cfile` (`gophertrunk capture -list` enumerates
+  SDRs). Complements the daemon's existing `--iq-capture` diagnostic,
+  which taps a control SDR already in the running pool.
+- **Capture-and-export from the SigLab web console** (#540). A new "Capture
+  from tuner" control on the Captures panel records a fixed-length raw-IQ
+  capture off a live tuner through the daemon, stages it for immediate
+  analysis, and offers the raw `.cfile` as a browser download. Backed by
+  new HTTP routes `GET /api/v1/siglab/capture/devices`,
+  `POST /api/v1/siglab/capture`, and
+  `GET /api/v1/siglab/captures/{id}/download`. The routes return 503 when
+  the console is offline (`siglab serve`) or the daemon has no SDR, so a
+  build without a tuner doesn't pretend it can record.
+- **DMR Tier II Voice LC Header FEC verified against MMDVM + off-air
+  diagnostics** (#539). The Tier II Voice LC Header decode path is now
+  cross-checked against MMDVM's reference FEC and gains off-air diagnostics so
+  a failing real-capture header reports where in the BPTC / RS chain it broke.
+
+### Fixed
+
+- **framing: fast algebraic BCH(63,16) NID decoder clears the P25 decode lag
+  (issue #492)** (#534, #537). The NID decode is replaced with an algebraic
+  Berlekamp–Massey / Chien BCH(63,16) decoder, removing the per-frame latency
+  that was starving the P25 control-channel decoder.
+- **rtlsdr: fix inverted mixer-AGC bit and missing VGA in R82xx
+  `SetGainMode`** (#535). The R82xx gain-mode path inverted the mixer-AGC
+  control bit and never set the VGA, leaving manual-gain dongles deaf; both
+  are corrected.
+- **rtlsdr: use a VCO power reference of 1 for R828D (Blog V4) PLL fine-tune**
+  (#538). The R828D / RTL-SDR Blog V4 PLL fine-tune used the wrong VCO power
+  reference, hurting fine-tune accuracy on that tuner.
+- **`soapyremote`: stream setup now follows SoapyRemote's real TCP handshake,
+  fixing a crash against live `SoapySDRServer` hardware (issue #542)** (#543).
+  The TCP stream setup was a single-reply, single-socket guess; real
+  SoapyRemote is a two-phase, two-socket exchange (the server replies with the
+  data port, accepts both a stream **and** a status socket, then replies with
+  the integer stream id). The old code misread the first reply (`setup stream
+  port: short rpc response`), which kicked the daemon into a reconnect storm
+  that could segfault the remote UHD/USRP server. Setup now opens both sockets,
+  reads the stream id as an int, and allows a longer deadline for cold high-end
+  devices that spend seconds compiling their RFNoC graph. Verified against the
+  upstream source; smoke-test against live hardware before relying on it.
+- **`soapyremote`: a manual `gain` now applies on front-ends without AGC
+  (issue #542)** (#543). Setting a numeric gain first disabled automatic gain
+  control; on radios with no AGC at all (e.g. a USRP TwinRX) that call fails
+  with `set_rx_agc() is not supported on this radio` and used to abort the
+  whole gain set, leaving the device at its default. Disabling AGC is now
+  best-effort, so the manual gain value is still applied.
+
+## [v0.3.3] — 2026-06-05
+
+The P25 CQPSK **linear path** now decodes C4FM — a T/2 fractionally-spaced
+equalizer (#532, #492) plus a multipath-gated carrier seed (#529) — and
+**SigLab** grows a standalone web SPA over an offline HTTP API (#530). Plus
+RTL-SDR Blog V4 detection diagnostics (#528) and a DMR Tier II BPTC/RS
+bit-layout fix (#527).
+
+### Added
+
+- **SigLab: standalone web SPA + offline HTTP API** (#530). `siglab serve`
+  exposes the offline signal-analysis engine over HTTP and ships a standalone
+  Signal Lab single-page app with multi-capture visualization, backed by a new
+  in-memory decode path and decimated-IQ taps so a capture can be analysed
+  without writing intermediate files.
+- **RTL-SDR Blog V4 detection diagnostics + manual override (issue #264)**
+  (#528). The tuner-detection path now reports why it did (or didn't) classify
+  a dongle as a Blog V4, with a manual override for the ambiguous R828D case.
+- **Docs: decoder live-capture requirements summary** (#526). A new summary of
+  what each decoder needs from a live capture (sample rate, span, SNR) to lock.
+  See [`docs/decoder-capture-needs.md`](docs/decoder-capture-needs.md).
+
+### Fixed
+
+- **DMR: BPTC/RS bit layout corrected so real Tier II Voice LC Headers decode**
+  (#527). The BPTC(196,96) + RS(12,9,4) bit ordering didn't match on-air Tier
+  II Voice LC Headers, so real captures failed FEC; the layout now matches
+  MMDVM and decodes live headers.
+- **p25/cqpsk: T/2 fractionally-spaced equalizer so the linear path decodes
+  C4FM (issue #492)** (#532). A symbol-spaced equalizer can't correct the
+  timing error a C4FM signal carries on the linear (CQPSK) path; the new T/2
+  fractionally-spaced equalizer does, so the linear demodulator recovers C4FM.
+- **p25/cqpsk: gate the carrier seed on multipath; un-skip the #492 repro**
+  (#529). The coarse carrier seed only helps under multipath, so it is now
+  gated on a multipath estimate (it was biasing clean-signal locks), and the
+  #492 reproduction test is un-skipped.
+
+## [v0.3.2] — 2026-06-04
+
+DMR grows up — multi-slot, Tier III band-plan voice, and license-free
+direct mode — and a new offline signal toolkit (`siglab`) lands. The DMR
+Tier III control channel now resolves voice grants through a configurable
+LCN→frequency band plan (#510) and follows both TDMA timeslots of a
+carrier as concurrent, separately-recorded calls (#512, #513), backed by
+a stride-aware 2-slot voice decoder (#514), embedded Link Control
+timeslot→talkgroup labelling (#515), opt-in composer wiring (#516), and
+per-slot metrics / active-call views (#517). DMR Tier I (PMR446 simplex
+direct mode) decodes too (#523), and `replay` now runs DMR Tier III / II
+captures offline with a `-conjugate` flag for spectrum-inverted
+front-ends (#518). The headline addition is **siglab** (#519–#523): a
+protocol-agnostic offline replay / test / analysis toolkit that drives
+all 14 protocols through the production decode pipelines —
+`gen` / `test` / `analyze` / `replay` / `identify` subcommands, a
+standalone TUI, structured exporters, synthesis fixtures for every
+protocol, per-protocol FEC-outcome tallies, and an auto-detecting signal
+identifier. On the P25 side, #524 pins the CQPSK equaliser's centre-tap
+phase so the constant-modulus taps stop random-walking into a false
+carrier offset.
+
+### Added
+
+- **Offline DMR decode in `gophertrunk replay`.** The `replay` subcommand
+  now decodes DMR Tier III / Tier II captures, not just P25 Phase 1: pass
+  `-protocol dmr-tier3` (or `dmr-tier2`) to run a raw IQ file through the
+  same production `dmr/receiver` + `tier3`/`tier2` control-channel chain
+  the daemon uses, printing the locked color code / system ID. A new
+  `-conjugate` flag negates Q **before** channelization to decode a
+  spectrum-inverted / I-Q-swapped front-end (the RTL-SDR Blog V4 / R828D
+  "are I and Q reversed?" case, issue #264) — applied at the source so an
+  off-DC channel is no longer pulled from the mirror offset, which the
+  post-channelization dual-polarity burst decode cannot recover on its
+  own. Combined with `-tune-hz` / `-auto-tune` this makes a captured
+  `.cfile` a reproducible DMR test fixture and the primary tool for
+  confirming whether a dongle is actually receiving the intended signal.
+- **Per-timeslot observability for DMR calls.** A DMR carrier's two
+  concurrent calls are now distinguishable in the live views and
+  metrics: the TUI active-call Flags column shows `TS1` / `TS2`
+  (alongside `E` / `!`), the web active-call detail surfaces a
+  Timeslot field, and a new
+  `gophertrunk_dmr_voice_calls_total{system,timeslot}` Prometheus
+  counter splits DMR voice starts by slot so an operator can spot a
+  slot that never carries traffic (a routing/decode gap). Non-slotted
+  protocols are unaffected (no slot shown, counter not touched).
+- **DMR 2-slot interleaved voice wired into the composer (opt-in).** The
+  interleaved decoder + embedded-LC labelling from the previous changes
+  are now reachable end-to-end on the production voice path behind a new
+  per-system `dmr_interleaved_voice: true`. When set, the DMR Tier III
+  control channel tags its voice grants (`Grant.DMRInterleavedVoice`),
+  and the composer runs `voice.NewInterleavedDecoder` and routes each
+  call to its timeslot with a `slotRouter` — it keeps only the
+  superframes whose embedded Link Control names the grant's talkgroup,
+  binding that slot's phase so subsequent LC-less superframes still
+  route correctly. Defaults off (untouched configs keep the single-slot
+  decoder). Verified end-to-end against synthetic modulated 2-slot IQ
+  (one talkgroup per slot → only the granted talkgroup's audio reaches
+  the recorder). A skip-gated `-tags integration` harness
+  (`GOPHERTRUNK_DMR_2SLOT_CFILE`) is the place to validate the on-air
+  constants against a real capture before promoting it to the default —
+  see [docs/status.md](docs/status.md) and `config.example.yaml`.
+- **DMR embedded Link Control decode → per-timeslot talkgroup labelling.**
+  On a BS-sourced carrier both timeslots use the identical burst-A voice
+  sync, so the sync alone cannot say which slot (and which talkgroup) a
+  superframe belongs to. The voice decoder now reassembles the embedded
+  Link Control carried by the sync field of bursts B–E — EMB split →
+  the new variable `framing` BPTC(128,72) (Hamming(16,11,4) rows + a
+  5-bit CRC) → the existing `dmr.FLC` parser — and, on a clean CRC,
+  surfaces the call's talkgroup + source on `VoiceSuperframe.LC`.
+  Combined with the interleaved decoder's `Phase`, that lets a consumer
+  bind each timeslot to a concrete talkgroup. New FEC primitives
+  (`framing.HammingEncode/Decode16_11`, `framing.Encode/DecodeEmbeddedLC`,
+  `dmr.SplitEmbeddedField` / `dmr.ReassembleEmbeddedLC`) are round-trip
+  + single-error-correction tested. The exact ETSI embedded-signalling
+  de-interleave order, EMB QR(16,7) FEC, and 5-bit CRC polynomial are
+  internally consistent but still pending a real-capture cross-check, so
+  the path stays opt-in at the library level — see
+  [docs/status.md](docs/status.md).
+- **DMR 2-slot interleaved voice decoder.** The DMR voice superframe
+  decoder previously assumed a single-slot stream — bursts A–F at a
+  contiguous 132-dibit cadence — which only holds for synthetic
+  single-slot vectors. A real DMR carrier is 2-slot TDMA: the two
+  timeslots' bursts interleave, so a call's own bursts are 264 dibits
+  apart. New `voice.NewInterleavedDecoder` (stride 2) handles that — it
+  locks each slot's burst A on its own voice sync, gathers that slot's
+  B–F by striding over the interleaved other-slot burst, and emits one
+  superframe per slot, told apart by the new `VoiceSuperframe.Phase`
+  field. `NewDecoder` (stride 1) is unchanged for single-slot streams.
+  The exact same-slot cadence on live BS-sourced air (CACH/guard
+  handling) still needs a real IQ capture before the interleaved path
+  replaces the single-slot decoder on the production composer, so it
+  stays opt-in at the library level for now — see
+  [docs/status.md](docs/status.md).
+- **DMR timeslot is now a first-class call attribute (TS1/TS2).** A DMR
+  Tier III carrier interleaves two independent calls — one per TDMA
+  timeslot — but the slot was parsed from the grant CSBK and then
+  thrown away, so the two calls could not be told apart downstream. The
+  grant now carries a 1-based `Timeslot` (0 = not applicable, 1 = TS1,
+  2 = TS2), mapped from the CSBK's slot bit on both the standard and
+  vendor (Capacity Plus / Connect Plus) grant paths, and surfaced
+  through the JSON/SSE API, the gRPC `Grant` message, and the web DTO.
+  This is the foundation for separating concurrent same-carrier calls;
+  engine/recorder routing and per-slot voice decode land in follow-ups.
+- **DMR timeslot routing: TS1 + TS2 are now followed as concurrent
+  calls.** Building on the grant attribute above, the trunking engine
+  treats `(frequency, timeslot)` as the call identity: a TS2 grant on a
+  carrier already running a TS1 call is no longer folded into it by the
+  duplicate-grant guard (which previously matched on talkgroup +
+  frequency only), so both slots bind their own voice tap / `role: voice`
+  SDR and run simultaneously. Each slot is recorded as a distinct WAV
+  (`…_ts1.wav` / `…_ts2.wav`, so same-talkgroup slots no longer collide
+  on disk), persisted to the call log's new `timeslot` column (added by
+  an idempotent migration on existing databases), and surfaced through
+  the REST/SSE/gRPC call-history APIs and the web DTO. Following both
+  slots of one carrier at once requires at least two voice taps/devices
+  that cover the frequency — see
+  [docs/hardware.md](docs/hardware.md).
+
+- **DMR Tier III band plan → T3 voice on the wideband dongle.** A
+  Tier III voice-grant CSBK references its traffic channel by a 7-bit
+  Logical Channel Number (LCN), not an absolute frequency, so the
+  decoder needs an LCN→frequency map to follow a call. That resolver
+  was never wired from config — both the wideband (`widebandt2`) and
+  dedicated-dongle (`ccdecoder`) decode paths built the Tier III
+  `ControlChannel` with a nil resolver, so every T3 voice grant was
+  dropped with `decode.error stage=no-bandplan` before it reached the
+  voice pool. New per-system `dmr_band_plan` config (`linear`
+  base/spacing/offset grid **or** an explicit `table` of `{lcn,
+  freq_hz}`) is converted to a `tier3.Resolver` and threaded into both
+  paths via `tier3.ResolverFromPlan`. Resolved grants are served by the
+  existing virtual voice pool (`voice_taps` DDC taps on the wideband
+  dongle) or a physical `role: voice` SDR. A `protocol: dmr` system with
+  no band plan warns at start-up and keeps decoding the control channel.
+  See [`docs/hardware.md`](docs/hardware.md) and `config.example.yaml`.
+
+- **`siglab` — an offline signal replay / test / analysis toolkit**
+  (#519–#523). A new protocol-agnostic engine (`internal/siglab`) drives
+  any of the 14 protocols GopherTrunk decodes through the same production
+  `ccdecoder` pipelines the daemon uses, collecting a structured `Result`
+  with exporters and a metadata-driven acceptance harness. It is surfaced
+  through five `gophertrunk` subcommands and a standalone (daemon-free)
+  Bubbletea TUI:
+  - `replay` now routes every protocol — not just the three native
+    deep-diagnostic paths (`p25p1`, `dmr-tier3`, `dmr-tier2`) — through
+    the shared engine, so `replay -protocol <any>` covers all protocols
+    while preserving the P25/DMR receiver-state + soft-eye
+    instrumentation.
+  - `analyze` decodes a capture and exports a structured signal-quality
+    report (`text` / `json` / `jsonl` / `yaml` / `csv` / `csv-events`).
+  - `gen` synthesises a test capture + metadata sidecar for a protocol
+    with impairment knobs (SNR, carrier offset, DC, I/Q imbalance);
+    `test` decodes a capture and grades it against the sidecar's
+    acceptance criteria, exiting 0/1 for CI gating. Synthesis fixtures
+    now cover every protocol (P25 Phase 1/2, DMR Tier I/II/III, NXDN,
+    dPMR, YSF, TETRA, EDACS, Motorola Type II, LTR, MPT 1327, D-STAR).
+  - `identify` auto-detects the protocol in a capture — it scans a
+    bounded prefix of each registered protocol and scores lock + frame
+    sync-cadence + FEC evidence, then runs and renders the full analysis
+    of the winner (low-confidence results are flagged inconclusive rather
+    than asserted).
+  - Per-protocol **deep analysis**: a symbol histogram, a sync-correlation
+    landscape against each protocol's own sync word(s), and FEC-outcome
+    tallies (clean / corrected / uncorrectable, or CRC pass/fail) — DMR
+    slot-type Hamming, EDACS BCH(40,28,2), Motorola BCH(64,16,11),
+    D-STAR header CRC-16, NXDN LICH + CAC Viterbi, P25 Phase 2 ISCH
+    Golay + MAC trellis, and TETRA SCH/HD RCPC Viterbi.
+
+  The hard-won P25/DMR replay diagnostics that previously lived as
+  text-only code in `cmd/` are now consolidated in the engine, so they
+  are structured and exportable (`analyze -out-format json|yaml|csv`),
+  not just stderr text. See [`samples/README.md`](samples/README.md) for
+  the toolkit walkthrough and the unified metadata schema.
+- **DMR Tier I (license-free direct mode).** GopherTrunk now decodes DMR
+  Tier I — the PMR446 / simplex direct-mode tier. Tier I is wire-identical
+  to conventional Tier II (132-dibit burst, BPTC(196,96) + RS(12,9,4)
+  Voice LC Header, slot-type Hamming); only the direct-mode sync words and
+  the protocol tag differ, so the Tier II conventional channel is
+  parameterised by sync word + protocol tag rather than duplicated. The
+  new `dmr-tier1` protocol restricts to the four ETSI direct-mode syncs
+  (DM-Voice/Data TS1/TS2) so it won't false-lock on base-station traffic,
+  and is wired through trunking config, the `ccdecoder` factory, wideband
+  validation, and the voice recorder/composer (#523).
+
+### Fixed
+
+- **P25 CQPSK equaliser centre-tap phase pinned** (#524, #492) — the
+  constant-modulus equaliser's cost is invariant to a global rotation of
+  its tap vector, so the taps random-walked in phase along that null. The
+  drift looked like a frequency offset to the downstream Costas loop,
+  which integrated it. The centre tap is now anchored to the positive real
+  axis after each update, removing the ambiguity without changing `|y|` and
+  stabilising the equaliser output phase. A new skip-gated
+  `TestCQPSKDemodRecoversFSWWithMultipathAndOffset` reproduces the
+  near-spectral-null simulcast case that biases the raw-IQ lag-1 coarse
+  seed into a spurious offset; it becomes the regression guard once the
+  robust seed fix is validated against a real capture.
+
+## [v0.3.1] — 2026-06-03
+
+RTL-SDR Blog V4 reception finally works and the issue #402 live-decode
+push lands its structural fix. #506 cures V4 deafness (the V4 runs a
+28.8 MHz crystal and a switched HF/VHF/UHF input bank the stock driver
+never handled), #501 opens the WinUSB child interface of composite
+(usbccgp) dongles on Windows, and #499 decodes spectrum-inverted DMR
+bursts on the R828D. On the #402 front, #507 decouples live IQ ingest
+from decode (a forwarder goroutine + a deeper bounded decode queue) and
+#508 pools the queued buffers to fix the aliasing that introduced, while
+#496 surfaces ADC clipping and #505 stops the driver shedding live IQ.
+#497/#503 add CQPSK carrier recovery so a real tuner offset no longer
+kills control-channel lock, #498 corrects the P25 Phase 1 LDU
+voice-frame interleaving, and #502 adds a diagnostic banner plus verbose
+error reporting across every surface. #504 bumps the Go toolchain to
+1.25.11 to clear two stdlib advisories.
+
+### Added
+
+- **Diagnostic banner + verbose error reporting across all surfaces**
+  (#502) — a new `internal/diag` package prepends a banner (build
+  version, OS / kernel, host specs, detected dongles) to every error
+  surface and offers a full verbose trace (unwrapped `%w` chain + a
+  goroutine stack dump). CLI / launcher error exits route through a
+  shared reporter (banner + concise error, then the trace on a verbose
+  build or on demand on a TTY); the daemon emits a one-time banner to the
+  log at start-up. New top-level `diagnostics.verbose_errors`
+  (overridable by `-verbose-errors` / `GOPHERTRUNK_VERBOSE_ERRORS`); the
+  HTTP API attaches the banner to the JSON error envelope when enabled
+  and exposes `GET /api/v1/diag/banner`; gRPC interceptors decorate
+  failing RPCs (config flag or `gophertrunk-verbose` metadata); the web
+  `ErrorBoundary` surfaces the diag block in a collapsible panel.
+- **ADC-clipping detection** (#496, #402) — a hot, strong-signal site can
+  pin the 8-bit RTL ADC rail and shred TSBK CRC while the RMS
+  `iq_power_dbfs` gauge averages the peak clipping away. The `ccdecoder`
+  now counts rail-pinned IQ samples in the existing power window (no
+  extra pass) and exposes an `iq_clip_ratio` gauge plus a throttled WARN
+  advising to *reduce* gain / add attenuation; the startup low-gain hint
+  is caveated so it no longer points operators the wrong way on an
+  overloaded front end.
+- **`cchunt.failed` now explains *why*** (#500) — the control-channel
+  hunter only ever reported the symptom (retuned everywhere, no lock).
+  It now carries the control SDR's live IQ health (dBFS power, DC-bin
+  ratio, clip ratio — the #402 signals) with a one-line diagnosis on the
+  `cchunt.failed` event payload and a new WARN line; when the decoder saw
+  no IQ at all, that absence becomes the diagnosis (check `sdr list
+  --probe` / `sdr doctor` / antenna).
+
+### Changed
+
+- **Go toolchain bumped 1.25.10 → 1.25.11** (#504) — clears two stdlib
+  advisories `govulncheck` flags (`GO-2026-5037` crypto/x509,
+  `GO-2026-5039` net/textproto); both are toolchain-version issues fixed
+  only by building against the patched standard library. `go.mod` and the
+  `setup-go` version across CI / release / installer workflows updated.
+- **Live IQ ingest is decoupled from decode** (#507, #402) — the
+  control-channel decoder previously decoded inline on the same goroutine
+  that drained the SDR's delivery channel, so any stall (pipeline
+  rebuild, GC pause, host contention) made the driver silently drop
+  real-time IQ and splice the C4FM stream — the live-fails / replay-green
+  signature. A lightweight forwarder now drains the SDR channel into a
+  larger bounded decode queue, so a transient stall backs up instead of
+  dropping RF. New `ccdecoder_decode_overruns_total` (distinct from
+  `sdr_iq_underruns_total`) makes a CPU/host overload provable.
+- **Queued IQ buffers are pooled; power/clip/DC observed on the
+  forwarder** (#508, #402) — the deep decode queue from #507 could hold
+  more driver buffers than the #489 reuse ring allows in flight, so a
+  recycled ring slot could corrupt IQ already queued for decode. The
+  forwarder now copies each chunk into a pooled, decoder-owned buffer
+  before queueing and releases the driver slot immediately, restoring the
+  ring invariant; IQ power / clip / DC observation moves onto the
+  forwarder so the gauges reflect every chunk the SDR delivered,
+  including those dropped at the queue under overload.
+
+### Fixed
+
+- **RTL-SDR Blog V4 deafness** (#506, #264) — the V4 received only noise
+  (a raw capture was pure complex white noise across the band), so the
+  earlier "color code changes constantly" was the decoder false-locking
+  on noise. Two V4-specific gaps versus the rtlsdr-blog librtlsdr fork:
+  the V4 runs a **28.8 MHz** reference crystal (PR #266 had keyed every
+  R828D to 16 MHz by chip type, mis-tuning every V4 LO by ~1.8×), and the
+  V4's switched HF/VHF/UHF input bank was never routed (stock R828D init
+  leaves both Cable-1 and Air-In off, so no RF reaches the tuner). The
+  fix detects the V4 from its USB strings and, gated entirely on that,
+  restores the crystal and ports the fork's per-band input switching,
+  notch windows, GPIO5 upconverter relay, and HF tracking-filter bypass —
+  R820T2 / non-V4 R828D paths are byte-for-byte unchanged.
+- **WinUSB composite (usbccgp) dongles on Windows** (#501) — a composite
+  RTL-SDR (e.g. the V4) presents its parent bound to `usbccgp` and the
+  real SDR driver on the Interface 0 (`&MI_00`) child node that Zadig
+  binds to WinUSB. GopherTrunk only walked the parent-registered device
+  interface, so `Open` initialised the wrong node and `sdr doctor` read
+  the parent's `usbccgp` service and reported a false BAD. New
+  Windows-only discovery walks the USB device-node tree, matches VID/PID +
+  `&MI_00`, and opens / inspects the WinUSB child; the parsing logic is
+  factored into platform-independent helpers with table tests.
+- **DMR spectrum-inverted (I/Q-reversed) bursts on R828D / V4** (#264) —
+  a conjugated IQ stream negates the FM discriminator, flipping the
+  slicer by `(dibit + 2) mod 4`; P25 Phase 1 already tolerated this but
+  DMR did not, and DMR's sync words are closed under the flip so sync
+  alone can't resolve polarity. The Tier II / III adapters now decode
+  each matched burst at both polarities and let the slot-type Hamming +
+  BPTC + CSBK CRC drop the wrong one — identity is tried first, so clean
+  R820T2 streams take exactly the same path as before.
+- **CQPSK carrier recovery** (#497, #492) — the CQPSK / LSM path had no
+  carrier-frequency recovery, so a residual tuner offset spun the whole
+  differential constellation and the Frame Sync Word never correlated
+  (the synthetic fixtures injected zero offset, hiding it). A two-stage
+  recovery now runs: a one-shot lag-1 (Kay) coarse estimate on the raw IQ
+  feeding an NCO, then a decision-free second-order `QPSKCostas` loop that
+  tracks slow drift. Replay's `carrier_hz_est` diag now shows the loop
+  converging to the tuner offset.
+- **CQPSK carrier seed under streaming chunk sizes** (#503, #492) — the
+  #497 coarse seed only fired when a single `process()` call carried
+  ≥ 2048 samples, but production hands the decoder only ~160–200 complex
+  samples per call, so the seed never tripped and the full offset reached
+  Gardner. The lag-1 autocorrelation is now accumulated across calls
+  until the threshold is met, then seeded once (resetting Costas + CMA,
+  which had wound up against the uncorrected signal).
+- **P25 Phase 1 LDU voice-frame interleaving offsets** (#498, #489) —
+  even after the §7.5 IMBE deinterleaver landed, voice decode stayed
+  ~100% uncorrectable because the LDU voice-frame slice offsets were
+  wrong: the on-air LDU interleaves an LC/ES block between every voice
+  subframe with both LSD blocks between u_6 and u_7, so only u_0 sliced
+  correctly. The offset tables are corrected to the real interleaving
+  (also fixing LC/ES and LSD extraction), pinned by a new field-sequence
+  test.
+- **Control-channel SDR shedding live IQ** (#505, #489) — a control SDR
+  was dropping 25–48% of live IQ chunks/sec (`consumer can't keep up`),
+  corrupting the dibit stream into uncorrectable LDUs / TSBK CRC
+  failures: the pure-Go deliver path allocated a fresh ~64 KiB buffer per
+  chunk and the consumer channel was only 8 deep. A per-stream reuse ring
+  (allocation-free hot path), a `u8→complex64` lookup table (bit-identical
+  output), and a deeper (8 → 32) stream channel give the resample loop
+  jitter headroom; drop-on-overrun stays real.
+
+## [v0.3.0] — 2026-06-02
+
+The issue #402 live-decode investigation drives this release. #486 fixes
+a broker close-race panic and surfaces previously-silent live IQ drops
+(the live-fails / replay-green tell), #491 hardens the live
+control-channel acquisition path and pins the reverted AFC /
+adaptive-slicer experiments so they can't silently return, and #493
+fixes live CQPSK control-channel lock (an over-gained Gardner timing loop
+that only locked on sample-aligned fixtures). #490 corrects P25 Phase 1
+voice decode with the IMBE §7.5 deinterleave, #487 applies PPM correction
+to the tuner LO rather than only the resampler (#264), #480 extends log
+retention to every decoder table and adds a currently-visible aircraft
+endpoint, and #488 surfaces silent recorder / composer misconfigs.
+
+### Added
+
+- **Retention sweep across all decoder log tables** (#480) — the sweeper
+  only ever deleted `call_log` rows (+ recording files), so `pager_log`,
+  `aprs_log`, `vessel_log`, `dsc_log`, `aircraft_log`, `mdc1200_log`,
+  `m17_log`, and `location_log` grew unbounded. A new `LogRowMaxAge` knob
+  (driven by `retention.log_days`; zero = disabled) deletes rows older
+  than the cutoff from each table via a fixed allow-list of table names
+  (no user input in the SQL). `config.example.yaml` + `docs/hardening.md`
+  updated.
+- **Currently-visible aircraft endpoint** (#480) — `aircraft_log` stores
+  one Mode-S message type per row, so the raw log can't answer "what's
+  flying right now". `GET /api/v1/adsb/aircraft/current` (`?max_age_s=`,
+  default 300, max 3600) coalesces the latest non-empty value of each
+  field group (callsign / position / altitude / velocity) per ICAO over a
+  horizon, newest-last-seen first.
+- **Live IQ-drop telemetry** (#486, #402) — IQ chunks dropped on overrun
+  by an SDR backend (the consumer falling behind) were silent, making
+  live IQ loss indistinguishable from RF problems. Drops now bump the
+  existing `iq_underruns_total` Prometheus counter (labelled by driver +
+  serial) and emit a warning throttled to one line per second per device,
+  via a process-wide `sdr.SetIQDropObserver` hook the daemon installs at
+  start-up. A rising counter during decode confirms a live-path overrun
+  (offline replay never drops) and explains downstream TSBK CRC failures.
+
+### Changed
+
+- **iqtap broker primary handoff is now lightly buffered** (#486, #402) —
+  the broker's primary IQ channel gained a small (2-chunk) buffer so the
+  fan-out goroutine isn't stalled by a momentarily-busy primary consumer
+  (the per-chunk copy plus a brief decode hiccup), which previously could
+  back up the SDR reaper and force whole-chunk drops. The inner driver's
+  buffer still bounds latency, so sustained back-pressure still drops as
+  before.
+- **RTL-SDR PPM correction now re-tunes the tuner LO** (#487, #264) —
+  `Device.SetPPM` only wrote the RTL2832U resampler-ratio registers, so a
+  configured `ppm` corrected the sample clock but left the tuner carrier
+  offset in the signal (a V4's `ppm: -4` had no visible effect and broke
+  digital decode). The R82xx tuner now biases its reference crystal by
+  `xtal·(1 + ppm·1e-6)` (librtlsdr's `APPLY_PPM_CORR`) and re-tunes;
+  `ppm == 0` reproduces the existing register math byte-for-byte, and only
+  R82xx-family tuners participate.
+- **Live control-channel acquisition path hardened** (#491, #402) — the
+  remaining #402 failure was live-only (replay decoded the reporter's
+  captures cleanly), isolating it to the acquisition chain replay never
+  exercises. A same-`(system, frequency)` `HuntProgress` retune is now
+  idempotent (a single-candidate system re-hunting every dwell never
+  converged before); the down-converter is built from the SDR's
+  *actual* delivered sample rate so a non-exact-divisor rate doesn't
+  drift the symbol clock; a too-low-gain warning covers the 51–149 tenths
+  band the dB-mistake check missed; and the reverted DDA / adaptive-C4FM
+  experiments are pinned off so they can't return.
+- **Surface silent recorder / composer misconfigs** (#488) — three
+  defensive diagnostics for issues that previously produced only
+  INFO-level output: a WARN at P25 Phase 2 chain start when trellis
+  decoding is off (live MAC PDUs are trellis-encoded), a Windows WARN when
+  `recordings.dir` / `storage.path` / `storage.cc_cache_file` are rooted
+  but carry no drive letter (the Unix-style defaults normalise to a
+  surprising drive root), and collapse of an exact trailing duplicate word
+  in imported system names.
+
+### Fixed
+
+- **iqtap broker `send on closed channel` panic** (#486, #402) — closing
+  an IQ subscriber (live spectrum, `--iq-capture`, diagnostics)
+  concurrently with an in-flight fan-out could crash the daemon: `fanout`
+  checked the closed flag and then sent after dropping `subsMu`, while
+  `Subscriber.Close` closed the channel under the lock, leaving a window
+  where the send raced the close. Per-subscriber send and close now share
+  a `sendMu` so a fan-out send can never land on a closed channel.
+  Covered by a new `-race` regression test in `internal/sdr/iqtap`.
+- **P25 Phase 1 voice: apply IMBE §7.5 deinterleave** (#490, #489) — voice
+  decode reported ~100% uncorrectable LDUs on real signals because
+  `DecodeChannelToFrame` ran descramble + per-vector Golay/Hamming FEC on
+  the raw on-air bits without first undoing the TIA-102.BABA §7.5 144-bit
+  interleaver, so every codeword exceeded its correction radius. The
+  symmetric non-interleaved encode/fixture path kept round-trip tests
+  green while live air failed. The deinterleave now runs before
+  descramble + FEC, with a bijection guard and on-air fixture tests.
+- **Live CQPSK control-channel lock: over-gained Gardner loop** (#493,
+  #492) — live CQPSK control-channel decode was ~0% while the same
+  capture decoded when replayed un-decimated. The Gardner loop's
+  effective per-symbol gain is `gain/sps`, and the CQPSK path inherited
+  the generic 0.03 default — ~5× too hot at the 48 kHz channel rate — so
+  it overshot the timing null and only locked when the input was already
+  symbol-aligned (the one phase every synthetic fixture starts on). The
+  default drops to 0.005, matching the sibling π/4-DQPSK Phase 2 / TETRA
+  pipelines; a starting-phase sweep guards it.
+- **replay: decimate CQPSK like production** (#493, #492) — `replay` gated
+  its production-matching decimation on `demod == c4fm`, so a wideband
+  capture replayed with `-demod cqpsk` ran the whole receiver at the raw
+  SDR rate (~417 samples/symbol instead of ~10), invalidating the
+  replay-vs-live comparison. The DDC target is now chosen by sample rate
+  alone, so both demod modes decimate when the input exceeds the
+  production target.
+
+## [v0.2.9] — 2026-06-01
+
+Phase 3 paging completes and M17 joins the digital lineup, while the
+Windows RTL-SDR control path finally works on real hardware. #478 lands a
+FLEX paging decoder (1600 bps / 2-level) that decodes off the air
+alongside POCSAG, both sharing the `pager_log` table and `/pager` panel;
+#479 decodes M17 link-setup metadata (who's calling whom, in what mode)
+off the LICH without touching audio. #476 flips the P25 Phase 2 MAC-PDU
+scrambler default to on so live systems actually decode (issue #451), and
+#458 documents that RTL2838U dongles are already supported. The headline
+is a four-PR chain (#481–#484) that makes RTL-SDR control transfers work
+under WinUSB: #483 is the root cause — the `WINUSB_SETUP_PACKET` was
+passed by pointer instead of by value, so every vendor control transfer
+sent garbage — backed by #481 (warmup write non-fatal), #482 (clear-halt
++ retry + a USB diagnostics dump), and #484 (NESDR v5 R82xx burst
+recovery now fires on Windows pipe stalls too).
+
+### Added
+
+- **FLEX paging decoder (1600/2 mode)** (#478) — completes Phase 3: FLEX
+  now decodes off the air alongside POCSAG, both sharing the `pager_log`
+  table and `/pager` web panel, tagged by protocol. New
+  `internal/radio/pager/flex` carries the logical layer (sync marker +
+  mode code → frame-info word → block de-interleave → BCH(31,21) → BIW /
+  address / vector / message-word walk) and a streaming decoder for the
+  1600 bps / 2-level mode (alphanumeric / numeric / tone vectors). The
+  FLEX BCH(31,21)+parity primitive (`internal/radio/framing/bch_flex.go`)
+  reuses the tested POCSAG codeword via bit-reversal (info-low layout),
+  with round-trip + 2-bit-correction coverage. The receiver mirrors the
+  POCSAG DSP frontend (FM demod → resample → slicer → decoder) and
+  publishes `KindPagerMessage` with `Protocol="flex"`; `pager_log` gains
+  a `protocol` column (default `pocsag`).
+- **M17 link-layer metadata decoder** (#479) — Milestone 4 of the
+  roadmap: recover M17 link-setup metadata (caller, callee, mode) without
+  decoding audio (Codec2 voice is a later milestone). New
+  `internal/radio/m17` parses the LSF (base-40 callsigns, TYPE mode/CAN,
+  CRC-16 poly 0x5935), reassembles the LICH (Golay(24,12), six chunks →
+  240-bit LSF), and runs a streaming decoder that hunts the 0xFF5D stream
+  sync → LICH → LSF, so an in-progress transmission is picked up within
+  ~240 ms with no convolutional machinery. The receiver adds a C4FM DSP
+  frontend (FM demod → resample → matched filter → Mueller-Müller timing
+  → 4FSK slice → dibit) and publishes `events.KindM17LinkSetup`; new
+  `m17_log` table, `GET /api/v1/m17/linksetups`, and an `m17.channels`
+  config block. Spec constants are validated against a synthetic encoder;
+  real-capture calibration and the Codec2 payload are documented
+  follow-ups. See [docs/m17.md](docs/m17.md).
+
+### Changed
+
+- **RTL2838U dongles documented as supported** (#458) — the RTL2838U is
+  the Realtek demodulator / USB-bridge chip (a variant of the RTL2832U),
+  not a tuner; dongles labelled "RTL2838U" enumerate as `0x0bda:0x2838`
+  and are already fully supported (the real R820T2 / R828D tuner inside
+  is handled by the tuners package). The device-whitelist friendly name
+  and `docs/hardware.md` now say so, so users searching for "RTL2838U"
+  find confirmation their hardware works out of the box.
+
+### Fixed
+
+- **P25 Phase 2: default the MAC-PDU scrambler to on** (#476, issue
+  #451). A live Phase 2 system logged `composer: p25p2 macCfg suggests
+  live MAC PDU decode will fail` with a valid identity-derived seed but
+  `scrambler=0`. Every on-air P25 Phase 2 MAC PDU is PN44-scrambled per
+  TIA-102.BBAC-1 §7.2.5, so with descrambling off, MAC decode (source ID,
+  talker alias, encryption sync) can never succeed. `ParseScramblerMode("")`
+  now defaults to `ScramblerOn` (was `ScramblerOff`, which only suited the
+  synthesized unscrambled test fixtures), mirroring `ParseTrellisMode`.
+  `ScramblerOn` (not `Probe`) is correct because both production MAC paths
+  already feed the spec per-slot PN44 offset from superframe sync, so no RS
+  verification is needed to pick the offset.
+- **Windows RTL-SDR: pass `WINUSB_SETUP_PACKET` by value** (#483) — the
+  actual reason RTL-SDR control transfers never worked on real Windows
+  hardware. `WinUsb_ControlTransfer` takes the setup packet *by value* and
+  the x64/arm64 calling convention passes the 8-byte struct in a single
+  integer register; GopherTrunk passed a *pointer*, so WinUSB read the
+  pointer's low bytes as `bmRequestType/bRequest/wValue/wIndex/wLength` — a
+  garbage vendor request the device timed out on (`ERROR_SEM_TIMEOUT`) or
+  rejected (`ERROR_GEN_FAILURE`). Descriptor reads went through a different
+  prototype and succeeded, which is why the dongle reported
+  `winusb-bound=true` while every vendor transfer failed. The setup packet
+  is now folded into the `uintptr` argument (little-endian, matching its
+  in-memory image) at all three call sites, with a golden test pinning the
+  packing.
+- **Windows RTL-SDR: clear-halt + retry stalled control writes, append USB
+  diagnostics** (#482). `winTransport.ControlOut` now clears the
+  control-pipe halt (`WinUsb_ResetPipe` pipe 0) and retries the write once
+  when it stalls with `ERROR_GEN_FAILURE`, since some clone RTL2832U
+  firmwares need the explicit `CLEAR_FEATURE` the USB spec says a SETUP
+  should auto-clear. When bring-up still fails, `openDevice` now appends a
+  full USB diagnostics dump (bound driver — WinUSB / libusbK / DVB / none —
+  device + config descriptors, and a control-IN read probe), so a single
+  `gophertrunk sdr list --probe` captures everything needed to triage a
+  dongle that rejects control transfers.
+- **Windows RTL-SDR: make the USB warmup write non-fatal** (#481). The
+  warmup write is librtlsdr's sacrificial "dummy write" that absorbs the
+  first control-transfer NAK some clone dongles emit right after the
+  interface is claimed; librtlsdr never checks its result. GopherTrunk had
+  treated it as a must-succeed gate, and each retry re-opened the device
+  and re-armed the same NAK, so the dongle never reached `InitBaseband` and
+  `Open` failed with `ERROR_GEN_FAILURE`. `runBringup` now swallows any
+  warmup error (logging it under `RTLSDR_DEBUG_USB`) and proceeds to
+  `InitBaseband` step 0, whose byte-identical transfer is the one that
+  actually needs to land; genuine stalls are still caught by the outer
+  reset+retry envelope. Stale troubleshooting URLs in the bring-up hints
+  now point at `gophertrunk.org` / `install-windows.html`.
+- **Windows RTL-SDR: fire NESDR v5 R82xx burst recovery on Windows pipe
+  stalls** (#484, issue #248). The R82xx tuner-init burst-write recovery
+  (per-chunk retry + 16→8→4 chunk-size halving — the librtlsdr-parity fix
+  for the NESDR v5 cold-boot I²C stall) keyed its retry guards solely on
+  `syscall.EPIPE`. On Windows the identical I²C-bridge stall surfaces as
+  `usb.ErrPipeStalled` (`ERROR_GEN_FAILURE`), so every layer of recovery
+  was skipped and the first chunk failure propagated straight out. The
+  guards are now a shared `isI2CBurstStall` predicate matching both
+  classes, so per-chunk retry and the halving fallback fire on Windows
+  exactly as on Linux.
+
+## [v0.2.8] — 2026-05-31
+
+The issue #402 control-channel decode-quality push lands its first real
+win: #470 makes the P25 decoder read every TSBK in a data unit (not just
+the first) and adds `replay` channel tuning for off-centre captures,
+roughly tripling the TSBKs recovered on the MMR Site 9 capture. #455 lets
+operators declutter the UI by switching off navigation tabs they don't
+use, and #459 corrects a complex-LMS equalizer weight update while
+evaluating an IQ-domain equalizer for the #402 multipath.
 
 ### Added
 
@@ -51,66 +1000,150 @@ for tagged releases.
   `dsp.EstimateCarrierOffsetHz` carrier estimator, and a tuning-offset mode
   on the `ccdecoder` down-converter. A channelised slice of the real Site 9
   control channel ships as a decode regression fixture.
-- **MDC1200 Motorola signaling decode** (#438) — end-to-end pipeline
-  for the analog FFSK data burst Motorola radios key at the head /
-  tail of a transmission on conventional VHF / UHF voice channels.
-  1200-baud CCIR FFSK DSP frontend (FM demod → FFSK discriminator at
-  1200 / 1800 Hz → Mueller-Müller timing → NRZ slicer, reusing the
-  existing `demod.FFSK`), a 40-bit sync framer with inverted-polarity
-  tolerance, 16×7 de-interleave, op / arg / unit-ID decode with a
-  CRC-16-CCITT check, and an op/arg label table (PTT ANI, emergency,
-  status, radio check, call alert, selective call, radio inhibit /
-  enable, remote monitor). Plus `events.KindMDC1200Message`, SQLite
-  `mdc1200_log`, `GET /api/v1/mdc1200/messages`, the `/mdc1200` web
-  panel, and an `mdc1200.channels` config block. Clean-room
-  implementation under Apache-2.0. See [docs/mdc1200.md](docs/mdc1200.md).
-- **ADS-B end-to-end via BEAST upstreams + per-ICAO CPR pair-
-  tracker.** Most 1090 MHz receive chains already run
-  dump1090 / readsb / BeastSplitter against a dedicated
-  RTL-SDR; GopherTrunk now consumes their BEAST binary output
-  over TCP and feeds the frames into the same
+- **UI navigation tabs are now configurable** (#455) — operators running
+  GopherTrunk for a single task can declutter the nav by switching off tabs
+  they don't use. Every tab shows by default; setting a key to `false` under
+  `web.tabs` hides it from the nav strip in both the web SPA and the
+  terminal TUI (routes stay mounted — nav-only hiding). New `WebConfig.Tabs`
+  map with a `KnownUITabs` canonical set (`Validate()` rejects unknown
+  keys); the read-only `/api/v1/runtime` snapshot carries the hidden list so
+  both clients filter from one source of truth.
+
+### Fixed
+
+- **P25 control channel: decode every TSBK in a data unit, not just the
+  first** (#402). A P25 trunking data unit packs up to three 98-dibit TSBK
+  blocks after one FSW + NID, the last flagged LB=1; the control-channel
+  decoder only ever decoded the first, silently dropping the ~2/3 of a busy
+  site's signalling (grants, affiliations, status broadcasts) carried in the
+  second and third blocks. It now decodes every block in the unit, stopping
+  at the last-block flag, and resumes blocks that span receive batches — so
+  the yield is the same whether the dibit stream arrives a frame at a time
+  or in tiny USB transfers. On the MMR Site 9 capture this roughly triples
+  the TSBKs recovered (14 → 41 in ~1 s, all CRC-clean). A non-contiguous
+  dibit stream (a resync or capture gap) now also flushes the partial-frame
+  buffer instead of trying to stitch a frame across the break.
+- **Equalizer: correct complex-LMS weight-update conjugation** (#402). The
+  complex LMS update computed `w_k += μ·x·conj(e)` instead of the correct
+  `w_k += μ·e·conj(x)`; for the non-Hermitian FIR the two differ only in the
+  sign of the imaginary cross-term (identical on a real channel, which is
+  why the existing real-coefficient test missed it). A genie-trained
+  equalizer using the corrected update fully recovers a two-ray echo (dibit
+  SER 0.086 → 0.000 through the real receiver) and is a no-op on clean
+  signal. No production code calls LMS yet, so no behaviour change ships
+  beyond the equalizer package; a new complex-channel regression guards it.
+
+## [v0.2.7] — 2026-05-30
+
+Phase 5 finishes its DSP frontends and the analog side fills in. ADS-B
+reaches end-to-end both ways — #440 consumes BEAST output from an existing
+dump1090 / readsb with a per-ICAO CPR pair-tracker, and #449 adds a native
+1090 MHz PPM Mode-S receiver so aircraft decode straight off the air; #448
+gives DSC its FFSK frontend (the last "no DSP" hole in Phase 5); and #441
+lands MDC1200 Motorola signaling. #445 adds a gain-units guardrail for the
+common tenths-vs-dB mistake, #444 forces decoded calls to the
+vocoder-native 8 kHz WAV rate (fixing garbled playback), and the #402
+slicer work settles on the fixed C4FM slicer as the default (#450) with the
+adaptive slicer behind a flag and its outer-rail tracking corrected (#447).
+
+### Added
+
+- **ADS-B end-to-end via BEAST upstreams + per-ICAO CPR pair-tracker.**
+  Most 1090 MHz receive chains already run dump1090 / readsb / BeastSplitter
+  against a dedicated RTL-SDR; GopherTrunk now consumes their BEAST binary
+  output over TCP and feeds the frames into the same
   `events.KindAircraftReport` bus / `aircraft_log` SQLite /
-  `/api/v1/adsb/aircraft` REST / `/adsb` web panel stack that
-  shipped in #434. Operators add an `adsb.beast_upstreams`
-  entry (typically `127.0.0.1:30005` — the standard
-  dump1090 / readsb BEAST port) and aircraft start landing on
-  the live map immediately. Reconnect-with-backoff on
-  upstream drops; the embedded CPR tracker resets between
-  reconnects so stale even/odd halves don't pair across the
-  gap. No native 1 Msps PPM DSP frontend yet — that's the
-  next slice — but for the operator workflow this PR is the
-  one that makes ADS-B *useful*.
-  New `internal/radio/adsb.Tracker` is the per-ICAO state
-  machine that buffers the most-recent CPR half and calls
-  `CPRDecodeGlobal` when both halves arrive within the spec's
-  10 s window (DO-260B §2.2.3.2.3.7). Thread-safe;
-  `Prune(now)` evicts ICAOs that haven't transmitted in > 10 s
-  so the state map doesn't grow with every aircraft ever
-  seen. Extends the existing `adsb.Position` struct with
-  `Latitude` / `Longitude` / `HasGlobalPosition` fields the
-  tracker populates on a successful pair-decode.
-  New `internal/radio/adsb/beast` package — BEAST frame
-  parser (`ReadFrame` handles the 0x1A byte-stuffing
-  transparently, hunts for sync after a torn TCP segment) +
-  TCP client (`Client.Run` reconnects on drop, applies a
-  per-read deadline so a silent upstream re-dials instead of
-  hanging forever, pipes each Mode-S frame through
-  `adsb.Decode` → `Tracker.Update` → `bus.Publish`).
-  New `internal/config.ADSBBeastConfig` schema + daemon
-  wiring (`d.adsbBeastClients` slice, spawn in the run loop
-  via the standard `spawn` closure).
-  Tests: 7 new tracker tests (canonical dump1090 CPR pair
-  globally decodes to 52.2572 N / 3.91937 E; rejects pairs
-  older than 10 s; passes non-position messages through;
-  ignores CRC-failed frames with ICAO 0; tracks multiple
-  ICAOs independently; `Prune` drops stale; `Reset` clears).
-  8 new BEAST tests (long-frame round-trip, short-frame
-  round-trip, byte-stuffing unstuff, clean-EOF, garbage-
-  before-sync recovery, options validation, end-to-end
-  client test driving the gpsd canonical identification +
-  CPR pair through a loopback TCP server and asserting the
-  bus event carries the right ICAO + globally-decoded
-  lat/lon). All passing.
+  `/api/v1/adsb/aircraft` REST / `/adsb` web panel stack that shipped in
+  #434. Operators add an `adsb.beast_upstreams` entry (typically
+  `127.0.0.1:30005` — the standard dump1090 / readsb BEAST port) and
+  aircraft start landing on the live map immediately. Reconnect-with-backoff
+  on upstream drops; the embedded CPR tracker resets between reconnects so
+  stale even/odd halves don't pair across the gap. New
+  `internal/radio/adsb.Tracker` is the per-ICAO state machine that buffers
+  the most-recent CPR half and calls `CPRDecodeGlobal` when both halves
+  arrive within the spec's 10 s window (DO-260B §2.2.3.2.3.7); `Prune(now)`
+  evicts ICAOs idle > 10 s. New `internal/radio/adsb/beast` package — frame
+  parser (`ReadFrame` handles the 0x1A byte-stuffing, hunts for sync after a
+  torn TCP segment) + reconnecting TCP client (`Client.Run`) that pipes each
+  Mode-S frame through `adsb.Decode` → `Tracker.Update` → `bus.Publish`.
+- **ADS-B native 1090 MHz PPM Mode-S receiver** (#449) — ADS-B now decodes
+  straight off the air as an alternative to running a separate dump1090 /
+  readsb. New `internal/radio/adsb/ppm` takes IQ → resample to 2 Msps →
+  magnitude envelope → dump1090-style 8 µs preamble correlation → PPM bit
+  slice → DF frame-length (56/112) → frame bytes, with a magnitude carry
+  buffer so a preamble split across two IQ chunks still decodes. The decode
+  → CRC gate → CPR track → `AircraftReport` mapping is factored into a
+  shared `adsb.ProcessFrame` so the PPM and BEAST paths produce identical
+  reports. `ADSBConfig` gains a `channels` list (default 1090 MHz) and the
+  daemon pins the SDR off its iqtap broker, mirroring the AIS receivers.
+- **DSC FFSK DSP frontend + bit-stream receiver** (#448) — closes the last
+  "no DSP" hole in Phase 5: DSC had a parser, BCH(10,7), storage, REST, and
+  panel scaffolding but no way to turn IQ into sequences. New
+  `internal/radio/dsc/ffsk` takes IQ → FM demod → resample to 9600 sps →
+  FFSK discriminator (1300/2100 Hz) → Mueller-Müller timing → direct-FSK
+  slicer; the receiver slides a 10-bit window, BCH-syncs on the repeating
+  phasing DX character (dual-polarity), samples the DX grid to recover 7-bit
+  symbols, detects EOS, and publishes `KindDSCMessage`. New `DSCConfig` /
+  channel config and daemon spawn loops, mirroring the AIS receivers.
+- **MDC1200 Motorola signaling decode** (#438) — end-to-end pipeline for the
+  analog FFSK data burst Motorola radios key at the head / tail of a
+  transmission on conventional VHF / UHF voice channels. 1200-baud CCIR FFSK
+  DSP frontend (FM demod → FFSK discriminator at 1200 / 1800 Hz →
+  Mueller-Müller timing → NRZ slicer, reusing the existing `demod.FFSK`), a
+  40-bit sync framer with inverted-polarity tolerance, 16×7 de-interleave,
+  op / arg / unit-ID decode with a CRC-16-CCITT check, and an op/arg label
+  table (PTT ANI, emergency, status, radio check, call alert, selective
+  call, radio inhibit / enable, remote monitor). Plus
+  `events.KindMDC1200Message`, SQLite `mdc1200_log`, `GET
+  /api/v1/mdc1200/messages`, the `/mdc1200` web panel, and an
+  `mdc1200.channels` config block. Clean-room implementation under
+  Apache-2.0. See [docs/mdc1200.md](docs/mdc1200.md).
+
+### Changed
+
+- **Gain-units guardrail.** `sdr.devices[].gain` (and the rtl_tcp
+  equivalent) is in *tenths* of a dB — `"320"` = 32 dB — but operators
+  coming from SDRTrunk / OP25 / gqrx routinely paste a whole-dB value like
+  `"32"`, which parses to 3.2 dB and snaps to the bottom of the tuner
+  ladder, leaving the radio effectively deaf (no control-channel lock, no
+  decodes) with no feedback. The daemon now WARNs at startup when a
+  bare-integer gain parses to ≤ 5.0 dB (`gain looks like dB, not
+  tenths-of-dB …`, suggesting the ×10 value), and the SDR pool now logs the
+  applied gain in dB on every device (`sdr: gain set … gain_db=…`) so a
+  units mistake is visible without enabling debug. No behaviour change for
+  valid configs; decimal forms like `"32.0"` are still taken as whole dB.
+  Docs (`config.example.yaml`, `docs/hardware.md`) updated.
+- **P25 Phase 1: fixed C4FM slicer is the default; adaptive slicer behind a
+  flag** (#402). On the MMR Site 9 capture the fixed-threshold slicer is the
+  best performer; every adaptive variant that moved the +1/+3 threshold
+  above the fixed nominal decoded worse, because the +3 eye is spread low by
+  an RF-domain asymmetry the slicer can't fix. Mirroring the #430 DDA
+  precedent, the adaptive C4FM slicer is now opt-in
+  (`Options.EnableAdaptiveC4FMSlicer`, default off; `replay
+  -adaptive-slicer` for A/B); production pipelines (`ccdecoder`,
+  `widebandt2`) revert to the fixed slicer. The adaptive slicer's threshold
+  model was also improved (inward-only cap + variance-aware boundaries) so
+  it is no worse than fixed on a stretched eye.
+- **Voice: force vocoder-native WAV rate + decode-quality telemetry**
+  (#356). The IMBE/AMBE vocoders always emit 8 kHz PCM and the recorder
+  appended those samples without resampling, but the WAV header used the
+  configured `recordings.sample_rate` — so a non-default rate played decoded
+  P25/DMR calls back at the wrong speed (garbled). `handleStart` now
+  instantiates the vocoder before opening the WAV and forces the header to
+  8 kHz for decoded calls (analog/NBFM fed via `WritePCM` still honour the
+  configured rate), and `CallComplete` publishes the session's actual rate,
+  matching the offline decoder.
+
+### Fixed
+
+- **Adaptive C4FM slicer outer-rail under-tracking** (#402). The
+  soft-responsibility level update scaled the data-directed pull by the
+  per-symbol responsibility but leaked toward nominal at full weight every
+  sample, halving the intended 0.8 mix toward the observed centroid — so a
+  stretched +3 rail under-tracked and held the +1/+3 threshold below
+  optimal. Scaling the leak by responsibility too restores a true
+  responsibility-weighted EMA, landing the threshold at the ~0.22 optimal
+  midpoint. (Behind the now-opt-in adaptive slicer flag.)
 
 ## [v0.2.6] — 2026-05-29
 

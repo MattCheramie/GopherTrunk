@@ -112,11 +112,12 @@ vi.mock("./api/client", () => {
 
 // Metrics renders a Chart.js line chart; stub the chart libs so the
 // panel mounts under jsdom without a real <canvas> backend.
-vi.mock("react-chartjs-2", () => ({ Line: () => null }));
+vi.mock("react-chartjs-2", () => ({ Line: () => null, Bar: () => null }));
 vi.mock("chart.js", () => {
   const noop = class {};
   return {
     Chart: { register: () => {} },
+    BarElement: noop,
     CategoryScale: noop,
     Filler: noop,
     Legend: noop,

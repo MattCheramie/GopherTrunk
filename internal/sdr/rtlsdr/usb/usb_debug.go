@@ -39,6 +39,17 @@ const debugUSBCSVEnv = "RTLSDR_DEBUG_USB_CSV"
 // 16) duration        elapsed op duration string or empty
 const debugUSBCSVHeader = "tx_id,ts_utc,rel,phase,dir,bmReqType,bRequest,wValue,wIndex,wLength,timeoutMs,status,dataLen,payloadHex,err,duration"
 
+// Diagnoser is an optional Transport capability. Implementations that
+// can describe the underlying device — the bound driver, USB descriptors,
+// a control-IN read probe — expose Diagnostics. The bring-up path
+// (purego/driver.go) appends this to a failed Open so a single probe run
+// captures everything needed to triage a dongle that rejects control
+// transfers. The Windows transport implements it; transports that don't
+// simply contribute no extra diagnostics.
+type Diagnoser interface {
+	Diagnostics() string
+}
+
 // debugMaxDataBytes caps how many payload bytes the debug log dumps
 // per ControlOut. 64 bytes is enough to capture the R820T 27-byte
 // init burst (and the chunked variant) in full while keeping log
@@ -87,6 +98,17 @@ func debugLogf(component, format string, args ...interface{}) {
 	w := debugSink
 	debugSinkMu.Unlock()
 	fmt.Fprintln(w, "rtlsdr-usb ["+component+"]: "+fmt.Sprintf(format, args...))
+}
+
+// DebugLogf is the exported entry point to the gated debug sink for
+// callers outside this package (e.g. the rtlsdr bring-up path in
+// purego/driver.go, which logs the swallowed sacrificial-warmup
+// failure). Like debugLogf it only emits when RTLSDR_DEBUG_USB is set,
+// writes to the same sink (so SetDebugSink works in tests), and uses
+// the same "rtlsdr-usb [component]" line prefix — keeping every USB
+// diagnostic on one diffable channel.
+func DebugLogf(component, format string, args ...interface{}) {
+	debugLogf(component, format, args...)
 }
 
 // MaybeWrapDebug returns t wrapped in a debug-logging Transport when
@@ -234,6 +256,16 @@ func (d *debugTransport) Reset() error {
 func (d *debugTransport) Close() error {
 	d.logf("Close")
 	return d.inner.Close()
+}
+
+// Diagnostics forwards to the wrapped transport's Diagnostics when it
+// implements Diagnoser, so the RTLSDR_DEBUG_USB wrapper doesn't hide the
+// rich device dump the bring-up path appends on failure.
+func (d *debugTransport) Diagnostics() string {
+	if dg, ok := d.inner.(Diagnoser); ok {
+		return dg.Diagnostics()
+	}
+	return ""
 }
 
 // hexBytes returns a space-separated lowercase hex dump of the first

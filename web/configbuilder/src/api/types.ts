@@ -1,0 +1,553 @@
+// GopherTrunk config types. The daemon marshals config.Config to JSON
+// using Go field names (the config structs carry yaml tags, not json
+// tags), so these keys are the Go exported field names, NOT snake_case.
+// Sections without a bespoke editor are typed as unknown and round-trip
+// untouched (seeded from GET /api/v1/config/defaults).
+
+export interface MessageLogConfig {
+  Enabled: boolean;
+  Path: string;
+  MaxSizeMB: number;
+}
+
+export interface LogConfig {
+  Level: string;
+  Format: string;
+  MessageLog: MessageLogConfig;
+}
+
+export interface DiagnosticsConfig {
+  VerboseErrors: boolean;
+}
+
+export interface RadioReferenceConfig {
+  APIKey: string;
+  Username: string;
+  Password: string;
+}
+
+export interface APIAuthConfig {
+  Mode: string;
+  Token: string;
+  TokenFile: string;
+  TrustedNetworks: string[] | null;
+}
+
+export interface APICORSConfig {
+  AllowedOrigins: string[] | null;
+}
+
+export interface APIConfig {
+  HTTPAddr: string;
+  GRPCAddr: string;
+  AllowMutations: boolean;
+  Rigctld: string;
+  Auth: APIAuthConfig;
+  CORS: APICORSConfig;
+  TLSCert: string;
+  TLSKey: string;
+}
+
+export interface DeviceChannelConfig {
+  FrequencyHz: number;
+  System: string;
+}
+
+export interface DeviceConfig {
+  Serial: string;
+  Role: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  CenterFreqHz: number;
+  Channels?: DeviceChannelConfig[] | null;
+  TunerStrategy?: string;
+  VoiceTaps?: number;
+  // Other device flags (BlogV4, IQCorrect, IQInvert, …) round-trip via the
+  // index signature and are reachable through AdvancedJSON.
+  [k: string]: unknown;
+}
+
+export interface RTLTCPConfig {
+  Addr: string;
+  Serial: string;
+  Role: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
+}
+
+export interface SoapyRemoteConfig {
+  Addr: string;
+  Driver: string;
+  Args: string;
+  Serial: string;
+  Role: string;
+  Format: string;
+  StreamProtocol: string;
+  PPM: number;
+  Gain: string;
+  BiasTee: boolean;
+  ConnectTimeoutMs: number;
+}
+
+export interface SDRConfig {
+  SampleRate: number;
+  Devices: DeviceConfig[];
+  RTLTCP?: RTLTCPConfig[] | null;
+  SoapyRemote?: SoapyRemoteConfig[] | null;
+  [k: string]: unknown;
+}
+
+export interface StorageConfig {
+  Path: string;
+  CCCacheFile: string;
+}
+
+export interface EqualizerConfig {
+  Enabled: boolean;
+  Taps: number;
+  StepSize: number;
+}
+
+export interface RecordingsConfig {
+  Dir: string;
+  SampleRate: number;
+  WriteRaw: boolean;
+  Equalizer: EqualizerConfig;
+}
+
+export interface MetricsConfig {
+  Enabled: boolean;
+}
+
+export interface RetentionConfig {
+  CallLogDays: number;
+  LogDays: number;
+  FilesDays: number;
+  Interval: string;
+}
+
+export interface CCHuntConfig {
+  Enabled: boolean;
+  DwellMs: number;
+  BackoffMs: number;
+  MaxBackoffMs: number;
+}
+
+export interface ConvToneConfig {
+  Mode: string; // "" | none | ctcss | dcs
+  CTCSSHz: number;
+  DCSCode: string;
+}
+
+export interface ConvChannelConfig {
+  Label: string;
+  FrequencyHz: number;
+  Mode: string; // "" | fm | nfm
+  SquelchDbFS: number;
+  HangtimeMs: number;
+  Priority: number;
+  Tone: ConvToneConfig;
+}
+
+export interface ScannerConfig {
+  ScanMode: string;
+  CCHunt: CCHuntConfig;
+  Conventional: ConvChannelConfig[] | null;
+  ManualTuneEnabled: boolean;
+  ManualTuneDisabled: boolean;
+}
+
+export interface AudioConfig {
+  Enabled: boolean;
+  Device: string;
+  SampleRate: number;
+  BufferMs: number;
+  Volume: number;
+  Muted: boolean;
+}
+
+export interface WebConfig {
+  Tabs: Record<string, boolean> | null;
+}
+
+export interface P25BandPlanEntry {
+  ChannelID: number;
+  BaseHz: number;
+  SpacingHz: number;
+  TxOffsetHz: number;
+  BandwidthHz: number;
+}
+
+export interface DMRLinearBandPlan {
+  BaseHz: number;
+  SpacingHz: number;
+  Offset: number;
+}
+
+export interface DMRBandPlanTableEntry {
+  LCN: number;
+  FreqHz: number;
+}
+
+export interface DMRBandPlan {
+  Linear: DMRLinearBandPlan | null;
+  Table: DMRBandPlanTableEntry[] | null;
+}
+
+export interface EncryptionKey {
+  KeyID: number;
+  Algorithm: string;
+  Key: string;
+}
+
+export interface SystemConfig {
+  Name: string;
+  Protocol: string;
+  ControlChannels: number[] | null;
+  TalkgroupFile: string;
+  RIDAliasFile?: string;
+  P25BandPlan?: P25BandPlanEntry[] | null;
+  DMRBandPlan?: DMRBandPlan | null;
+  EncryptionKeys?: EncryptionKey[] | null;
+  // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,
+  // EDACS*, MPT1327*, Motorola*, DStarFEC, DMRInterleavedVoice) round-trip
+  // through this index signature and are edited via AdvancedJSON.
+  [k: string]: unknown;
+}
+
+export interface TrunkingConfig {
+  CallTimeoutMs: number;
+  VoiceHangtimeMs: number;
+  VoiceCallGrouping: string;
+  Systems: SystemConfig[] | null;
+  [k: string]: unknown;
+}
+
+export interface ToneOutToneConfig {
+  FrequencyHz: number;
+  MinDuration: string;
+  MaxDuration: string;
+}
+export interface ToneProfileConfig {
+  Name: string;
+  AlphaTag: string;
+  Tones: ToneOutToneConfig[] | null;
+  ToleranceHz: number;
+  MagnitudeThreshold: number;
+  MaxGap: string;
+  Cooldown: string;
+  System: string;
+  GroupID: number;
+}
+export interface ToneOutConfig {
+  Profiles: ToneProfileConfig[] | null;
+}
+
+export interface BroadcastifyFeed {
+  Enabled: boolean;
+  Name: string;
+  APIKey: string;
+  SystemID: number;
+  Systems: string[] | null;
+}
+export interface RdioScannerFeed {
+  Enabled: boolean;
+  Name: string;
+  URL: string;
+  APIKey: string;
+  SystemID: number;
+  Systems: string[] | null;
+}
+export interface OpenMHzFeed {
+  Enabled: boolean;
+  Name: string;
+  APIKey: string;
+  ShortName: string;
+  Systems: string[] | null;
+}
+export interface IcecastFeed {
+  Enabled: boolean;
+  Name: string;
+  Host: string;
+  Port: number;
+  Mount: string;
+  Username: string;
+  Password: string;
+  StreamName: string;
+  Systems: string[] | null;
+}
+export interface BroadcastConfig {
+  MinDurationMs: number;
+  Workers: number;
+  Broadcastify: BroadcastifyFeed[] | null;
+  RdioScanner: RdioScannerFeed[] | null;
+  OpenMHz: OpenMHzFeed[] | null;
+  Icecast: IcecastFeed[] | null;
+}
+
+export interface BasebandRecordConfig {
+  Serial: string;
+  Dir: string;
+}
+export interface BasebandReplayConfig {
+  File: string;
+  Serial: string;
+  Role: string;
+  Loop: boolean | null;
+}
+export interface BasebandConfig {
+  Record: BasebandRecordConfig[] | null;
+  Replay: BasebandReplayConfig[] | null;
+}
+
+export interface PagingPOCSAGConfig {
+  Serial: string;
+  FrequencyHz: number;
+  BaudHz: number;
+}
+export interface PagingFLEXConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface PagingWidebandChannel {
+  Protocol: string;
+  FrequencyHz: number;
+  BaudHz: number;
+}
+export interface PagingWidebandConfig {
+  Serial: string;
+  CenterFreqHz: number;
+  Channels: PagingWidebandChannel[] | null;
+}
+export interface PagingConfig {
+  POCSAG: PagingPOCSAGConfig[] | null;
+  FLEX: PagingFLEXConfig[] | null;
+  Wideband: PagingWidebandConfig[] | null;
+}
+
+export interface APRSChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+  DropNonUI: boolean;
+}
+export interface APRSConfig {
+  Channels: APRSChannelConfig[] | null;
+}
+
+export interface AISChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+  DropNonPosition: boolean;
+}
+export interface AISConfig {
+  Channels: AISChannelConfig[] | null;
+}
+
+export interface DSCChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadFCS: boolean;
+}
+export interface DSCConfig {
+  Channels: DSCChannelConfig[] | null;
+}
+
+export interface MDC1200ChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+  DropBadCRC: boolean;
+}
+export interface MDC1200Config {
+  Channels: MDC1200ChannelConfig[] | null;
+}
+
+export interface ADSBBeastConfig {
+  Addr: string;
+  Name: string;
+}
+export interface ADSBChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface ADSBConfig {
+  BeastUpstreams: ADSBBeastConfig[] | null;
+  Channels: ADSBChannelConfig[] | null;
+}
+
+export interface M17ChannelConfig {
+  Serial: string;
+  FrequencyHz: number;
+}
+export interface M17Config {
+  Channels: M17ChannelConfig[] | null;
+}
+
+export interface GTConfig {
+  Log: LogConfig;
+  SDR: SDRConfig;
+  Trunking: TrunkingConfig;
+  API: APIConfig;
+  Storage: StorageConfig;
+  Recordings: RecordingsConfig;
+  Metrics: MetricsConfig;
+  Retention: RetentionConfig;
+  ToneOut: ToneOutConfig;
+  Scanner: ScannerConfig;
+  Audio: AudioConfig;
+  Broadcast: BroadcastConfig;
+  Baseband: BasebandConfig;
+  Paging: PagingConfig;
+  APRS: APRSConfig;
+  AIS: AISConfig;
+  DSC: DSCConfig;
+  MDC1200: MDC1200Config;
+  ADSB: ADSBConfig;
+  M17: M17Config;
+  Web: WebConfig;
+  Diagnostics: DiagnosticsConfig;
+  RadioReference: RadioReferenceConfig;
+  [k: string]: unknown;
+}
+
+// ---- API wire shapes -----------------------------------------------------
+
+export interface ConfigFileInfo {
+  path: string;
+  dir: string;
+  name: string;
+  size: number;
+  modified: string;
+  valid: boolean;
+  error?: string;
+}
+
+export interface ConfigListResponse {
+  dirs: string[];
+  files: ConfigFileInfo[] | null;
+}
+
+export interface ValidationError {
+  section: string;
+  message: string;
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  errors: ValidationError[] | null;
+}
+
+export interface ConfigLoadResponse {
+  path: string;
+  config: GTConfig;
+  validation: ValidationResult;
+  mtime: number;
+}
+
+export interface ConfigSaveResponse {
+  path: string;
+  mtime: number;
+  talkgroup_csvs?: string[];
+}
+
+export interface TalkgroupCSVRow {
+  decimal: number;
+  alpha_tag?: string;
+  description?: string;
+  tag?: string;
+  group?: string;
+  mode?: string;
+}
+
+export interface DocLink {
+  title: string;
+  url: string;
+  description: string;
+  // instructions is the shared section help text, sourced from the Go
+  // configbuilder.Sections() registry so the web and terminal builders show
+  // identical section help. (description mirrors it for the Docs-link tooltip.)
+  instructions: string;
+}
+
+// FieldMeta is one entry of the shared per-field metadata registry served by
+// GET /api/v1/config/fieldmeta, keyed "StructName.FieldName". The web feeds
+// its help into the field widgets so per-field help comes from the same Go
+// source the terminal builder uses.
+export interface FieldMeta {
+  label?: string;
+  help?: string;
+  options?: { value: string; label: string }[];
+  hz?: boolean;
+  freqList?: boolean;
+}
+
+export interface RRGeoRef {
+  id: number;
+  name: string;
+}
+
+export interface RRSearchHit {
+  sid: number;
+  name: string;
+  type: string;
+  county?: string;
+  state?: string;
+}
+
+export interface RRSiteDetail {
+  rfss?: number;
+  site_number?: number;
+  description?: string;
+  county?: string;
+  control_channels: number[] | null;
+  frequencies: number[] | null;
+}
+
+export interface RRTalkgroupDetail {
+  dec: number;
+  alpha_tag?: string;
+  description?: string;
+  tag?: string;
+  group?: string;
+  mode?: string;
+  encrypted?: boolean;
+}
+
+export interface RRFullSystem {
+  sid: number;
+  name: string;
+  type: string;
+  flavor?: string;
+  protocol: string;
+  system_id?: number;
+  wacn?: number;
+  nac?: number;
+  city?: string;
+  county?: string;
+  state?: string;
+  sites: RRSiteDetail[] | null;
+  talkgroups: RRTalkgroupDetail[] | null;
+}
+
+export interface RRSystemResponse {
+  system: RRFullSystem;
+  config: SystemConfig;
+  talkgroups: TalkgroupCSVRow[] | null;
+}
+
+export interface ParsedSystemDTO {
+  name: string;
+  protocol: string;
+  sysid?: string;
+  wacn?: string;
+  system_type?: string;
+  site_count: number;
+  talkgroup_count: number;
+  source_path?: string;
+  control_channels?: number[];
+  talkgroups?: RRTalkgroupDetail[];
+}

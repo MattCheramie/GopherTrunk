@@ -24,18 +24,25 @@
 //     11-byte frame from a 144-bit post-deinterleave channel
 //     burst.
 //
-//     2b. Channel coding inverse — pseudo-random scrambler. ← THIS PR.
+//     2b. Channel coding inverse — pseudo-random scrambler.
 //     XORs a 114-bit u_0-keyed LCG PRBS (TIA-102.BABA §7.4) over
 //     the channel bits of u_1..u_6 to whiten the spectrum. u_0
 //     stays unscrambled because it carries the seed; u_7 stays
 //     unscrambled per the spec. See scrambler.go.
 //
-//     Note: there is no separate "bit interleaver" inside the IMBE
-//     codec — the §7.5 ordering is satisfied by how the upstream
-//     P25 LDU1 / LDU2 frame decoder extracts the 144 bits from a
-//     voice frame (a P25 phase1 layer concern, not an IMBE one).
-//     channel.go's per-vector layout already matches the order the
-//     upstream extractor will hand it.
+//     2c. Channel coding inverse — §7.5 bit interleaver.
+//     A 144-bit permutation scatters each vector's codeword bits
+//     across the on-air burst so a localised channel-error burst
+//     spreads over several Golay/Hamming codewords instead of
+//     destroying one vector. Deinterleave / Interleave in
+//     interleave.go undo / apply it; DecodeChannelToFrame runs the
+//     deinterleave FIRST (the descrambler's u_0 seed is only valid
+//     in vector order), so the full receive order is
+//     deinterleave → descramble → per-vector FEC. The permutation
+//     is the standard P25 Phase 1 IMBE schedule (see interleave.go
+//     for the DSD-sourced derivation). Omitting this step made the
+//     per-vector FEC decode interleaved garbage and reported ~100%
+//     uncorrectable LDUs on real signals (issue #489).
 //
 //  3. Parameter unpacking — header.
 //     88 information bits → IMBE Header { W0, L, K, Silent }. The

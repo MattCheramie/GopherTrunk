@@ -5,6 +5,7 @@ import { type ClientConfig, joinURL } from "./client";
 export interface PagerMessage {
   id: number;
   received_at: string;
+  protocol: string;
   ric: number;
   func: number;
   encoding: string;

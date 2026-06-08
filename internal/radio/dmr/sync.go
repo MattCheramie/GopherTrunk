@@ -55,6 +55,15 @@ func mkSync(name string, hex uint64) SyncPattern {
 
 // SyncDetector slides a 24-dibit window over a stream and emits matches
 // against any of the supplied patterns within the configured tolerance.
+//
+// Note on spectral inversion / I-Q swap (issue #264): the 9 DMR sync
+// words are closed under the discriminator-polarity flip (every dibit
+// + 2 mod 4, i.e. XOR 0xAAAA…) — an inverted data sync is byte-
+// identical to a clean voice sync and vice versa. So this detector
+// already fires on a spectrum-inverted stream (it just reports the
+// flipped twin pattern); the polarity is resolved downstream by
+// decoding the burst at both polarities — see the Tier II / III
+// Process adapters and dmr.RotateBurstDibits.
 type SyncDetector struct {
 	patterns  []SyncPattern
 	tolerance int

@@ -59,6 +59,12 @@ func (p *PiOver4DQPSK) Decode(dst []uint8, src []complex64) []uint8 {
 	return p.dqpsk.Decode(dst, src)
 }
 
+// DecodeBoth emits one hard dibit and the complex differential
+// (soft information) per symbol in a single pass. See DQPSK.DecodeBoth.
+func (p *PiOver4DQPSK) DecodeBoth(dstDibits []uint8, dstDiff []complex64, src []complex64) ([]uint8, []complex64) {
+	return p.dqpsk.DecodeBoth(dstDibits, dstDiff, src)
+}
+
 // Reset clears the matched-filter history and the differential
 // reference sample. Call on stream re-sync.
 func (p *PiOver4DQPSK) Reset() {

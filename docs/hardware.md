@@ -16,11 +16,12 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 
 | Family | Driver | USB IDs | Status |
 | --- | --- | --- | --- |
-| **RTL-SDR** (RTL2832U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
+| **RTL-SDR** (RTL2832U / RTL2838U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
 | **HackRF One / Jawbreaker / Rad1o** | `hackrf` | `0x1d50:0x6089` · `0x1d50:0x604b` · `0x1d50:0xcc15` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
 | **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; on-air validation against attached hardware is the documented follow-up. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). On-air validation against attached hardware is the documented follow-up. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
+| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Wire-protocol-complete; on-air validation against a live `SoapySDRServer` is the documented follow-up. See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
 libhackrf, libairspy, and libairspyhf USB vendor protocols directly
@@ -51,6 +52,14 @@ detected. The HF+ driver appends its firmware version the same way.
 | NooElec NESDR Smart (v4 and earlier) | R820T2 | TCXO; no bias-tee on early units. |
 | Generic RTL-SDR Blog v3 / v4 | R820T2 / R828D | Bias-tee on most units. |
 | Plain RTL2832U DVB-T sticks | R820T | No TCXO; expect a few ppm offset — set `ppm:` in config after measuring. |
+
+> **"RTL2838U" dongles are already supported.** Many economy SDRs are
+> marketed or labelled by their demodulator/USB-bridge chip — the
+> **RTL2838U** — which is a variant of the RTL2832U, *not* a tuner.
+> These units enumerate as `0x0bda:0x2838` (and usually report
+> `RTL2838UHIDIR` in `gophertrunk sdr list`); the actual tuner inside is
+> an R820T2 or R828D, both supported above. If your dongle says "RTL2838",
+> it works out of the box — no extra driver needed.
 
 If you have a v5 (or any modern dongle with a bias-tee) and want to
 power an LNA, the config snippet looks like:
@@ -308,6 +317,8 @@ trunking:
     - name: "regional-dmr-t3"
       protocol: dmr                    # Tier III trunked
       control_channels: [851_037_500]  # MUST include the wideband channel above
+      dmr_band_plan:                   # REQUIRED for T3 voice (LCN → Hz)
+        linear: { base_hz: 851_012_500, spacing_hz: 25_000, offset: 1 }
     - name: "neighbour-dmr-t2"
       protocol: dmr-tier2              # Tier II conventional
       control_channels: [852_125_000]
@@ -316,6 +327,21 @@ trunking:
 The engine picks the right state machine per channel (Tier III's
 `ControlChannel` for `protocol: dmr`, Tier II's `ConventionalChannel`
 for `protocol: dmr-tier2`).
+
+A DMR Tier III voice-grant CSBK identifies its traffic channel by a
+7-bit Logical Channel Number (LCN), not an absolute frequency, so the
+T3 system **must** carry a `dmr_band_plan` to resolve LCN → downlink
+Hz. Provide exactly one of:
+
+- `linear` — a regular grid: `freq = base_hz + (lcn - offset) × spacing_hz`.
+  Set `offset: 1` for sites that number LCNs from 1 (the common case).
+- `table` — an explicit list of `{ lcn, freq_hz }` pairs for irregular
+  sites.
+
+Without it, T3 control-channel monitoring still works but every voice
+grant is dropped with `decode.error stage=no-bandplan` (and the daemon
+logs a warning at startup). Tier II carries its repeater frequency
+directly and needs no band plan.
 
 ### P25 trunked control channel on a wideband dongle
 
@@ -382,6 +408,34 @@ trunking:
       control_channels: [851_037_500]
 ```
 
+This works identically for **DMR Tier III** — point the channel at a
+`protocol: dmr` system instead. The only extra requirement is that the
+T3 system carry a `dmr_band_plan` (see "Mixing DMR Tier II and Tier III
+on one dongle" above): the voice composer can only follow a grant once
+the decoder has resolved its LCN to a frequency, so a T3 system without
+a band plan emits no voice grants for the taps to serve.
+
+**Timeslots count as separate calls.** A DMR carrier is 2-slot TDMA, so
+one 12.5 kHz repeater can run *two* independent voice calls at once —
+one on TS1, one on TS2. GopherTrunk treats `(frequency, timeslot)` as
+the call identity: each slot's grant binds its own voice tap (or
+`role: voice` SDR) and is tracked, recorded, and logged as a distinct
+call. To follow both slots of a carrier simultaneously you therefore
+need at least **two** voice taps/devices that cover the frequency; with
+only one, the engine serves whichever slot it bound first and the other
+slot waits for a free tap (or preempts by priority). Per-slot recordings
+are disambiguated by a `_ts1` / `_ts2` suffix on the WAV filename, and
+the slot is carried through the call log (`timeslot` column) and the
+REST/SSE/gRPC call APIs.
+
+An experimental per-system `dmr_interleaved_voice: true` additionally
+turns on a 2-slot interleaved voice decoder: rather than relying on the
+tap to isolate one slot, each call decodes its own timeslot from the
+carrier's interleaved burst stream and is routed by the embedded Link
+Control's talkgroup. It defaults off and its on-air constants are still
+pending a real-capture cross-check (see
+[docs/status.md](status.md)) — leave it off for normal operation.
+
 How spillover works: when a grant's frequency lands *outside* the
 wideband IQ window (more common on geographically spread P25 systems
 than on a single-site DMR T3 cluster), the virtual tuner returns
@@ -439,7 +493,9 @@ message that names the offending entry.
   single backup voice dongle covers the edge cases on
   geographically spread systems. Setups with `voice_taps: 0` (or
   unset) keep the legacy behaviour where every voice grant routes
-  to the physical pool.
+  to the physical pool. DMR Tier III additionally requires the
+  system's `dmr_band_plan` (LCN → frequency) before any voice grant
+  — virtual or physical — can be followed.
 - **DDC-with-real-signal RX limits.** The wideband engine's per-tap
   DDC (when the SDR sample rate is higher than 48 kHz) uses the same
   Kaiser anti-alias prototype as the single-channel ccdecoder path,
@@ -502,6 +558,86 @@ decoder all work against remote sources.
 on each successful Open, `dial: connection refused` if the remote
 isn't listening, and `header magic = "..."` if the address points
 at something that isn't an `rtl_tcp` server.
+
+## Remote SoapySDRServer SDRs
+
+`rtl_tcp` is hardcoded to 8-bit unsigned IQ, so it throws away the
+dynamic range of professional hardware. For high-bit-depth radios —
+Ettus USRP, LimeSDR, bladeRF, HackRF, Airspy, RTL-SDR, SDRplay, and
+anything else with a SoapySDR driver — GopherTrunk's `soapyremote`
+driver speaks the [SoapyRemote](https://github.com/pothosware/SoapyRemote)
+wire protocol directly, in pure Go with no CGO and no SoapySDR C
+libraries. It carries 16-bit (`CS16`) or 32-bit float (`CF32`) IQ and
+controls frequency, sample rate, and gain over SoapyRemote's RPC.
+
+Typical layout:
+
+- **Antenna host**: install SoapySDR + the device's Soapy module and
+  run `SoapySDRServer --bind` against the local radio (default port
+  55132).
+- **Daemon host**: list the endpoint under `sdr.soapy_remote` in
+  `config.yaml`.
+
+```yaml
+sdr:
+  sample_rate: 2_400_000
+  soapy_remote:
+    - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
+      driver: "uhd"               # SoapySDR device key (blank = first device)
+      args: ""                    # extra make() kwargs "k=v,k=v" (see below)
+      serial: "usrp-roof"         # generator fills this from addr when blank
+      role: control               # control | voice | auto
+      format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
+      stream_protocol: "tcp"      # tcp (default/only for now)
+      ppm: 0                      # best-effort (driver-dependent)
+      gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
+      bias_tee: false             # best-effort (driver-dependent)
+      connect_timeout_ms: 3000
+```
+
+Each entry becomes a pool device alongside any local USB dongles and
+`rtl_tcp` endpoints, roled through the same hint matcher, with the same
+broker / fan-out path.
+
+**Limitations:**
+
+- Receive only, single channel (channel 0).
+- The IQ stream uses SoapyRemote's in-order **TCP** transport
+  (`stream_protocol: tcp`), which opens two sockets to the server (a stream
+  socket and a status socket, matching `SoapySDRServer`'s setup). UDP
+  streaming with the windowed flow-control is a planned follow-up.
+- `args` passes extra SoapySDR device kwargs to the remote `make()` as a
+  `"key=value,key2=value2"` string, merged with `driver` (an explicit
+  `driver=` in `args` wins). Use it for server-side device selection and
+  configuration that `driver` alone can't express — e.g. a USRP TwinRX needs
+  `args: "rx_subdev_spec=A:0,antenna=RX1"`. This is distinct from the top-level
+  `serial`, which only names the virtual pool device locally.
+- `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
+  `setFrequencyCorrection` / `writeSetting` and silently no-op on
+  drivers that don't implement them.
+- `gain` is applied as a manual overall gain. AGC is disabled first on a
+  best-effort basis, so a numeric gain still applies on front-ends that have
+  no AGC at all (e.g. a USRP TwinRX, which rejects `set_rx_agc()`); use
+  `gain: "auto"` to request AGC where the radio supports it.
+- Plaintext over TCP. Keep it on a trusted network, or tunnel it
+  through SSH / WireGuard / Tailscale.
+- The RPC, stream framing, and TCP stream-setup choreography are byte-matched
+  to SoapyRemote's source and exercised by the driver's tests; validate
+  against a live `SoapySDRServer` before production use.
+
+**Diagnostics:** the daemon logs `soapyremote: connected addr=...
+format=... proto=...` on each successful Open, `make device:` with the
+remote exception text when the server can't open the requested device,
+and `dial: connection refused` if the server isn't listening.
+
+> **Note — upstream server crashes.** Some radios were observed crashing
+> `SoapySDRServer` itself (a `zsh: segmentation fault` inside `libuhd`) when the
+> client mis-spoke the stream protocol. A server should never crash on a client
+> RPC, so that is an upstream UHD / `SoapySDRServer` robustness bug. GopherTrunk
+> no longer provokes it now that the TCP `SETUP_STREAM` handshake and stream
+> flow-control ACKs are byte-matched to SoapyRemote (issue #542). If you can
+> still reproduce a server crash, please report it upstream at
+> <https://github.com/pothosware/SoapyRemote/issues> with the server-side log.
 
 ## USB disconnect recovery
 

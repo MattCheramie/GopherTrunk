@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/rtl2832u"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
 // R82xx implements [Tuner] for the R820T / R820T2 / R828D chips, which
@@ -40,7 +41,30 @@ type R82xx struct {
 	manual   bool   // gain mode: true = manual, false = AGC
 	bwHz     uint32 // last requested bandwidth
 	freqHz   uint32 // last requested center frequency
+	ppmCorr  int    // tuner-LO frequency correction, parts-per-million
+
+	// blogV4 marks an RTL-SDR Blog V4 (R828D) dongle, which needs the
+	// 28.8 MHz reference crystal (NOT the 16 MHz generic-R828D default)
+	// and per-band switching of its HF/VHF/UHF input bank in SetFreq.
+	// blogV4L is the two-band "Lite" variant (no separate VHF input).
+	// v4Input caches the last-selected input bank so SetFreq only
+	// rewrites the switch registers on a band change. See SetBlogV4.
+	blogV4  bool
+	blogV4L bool
+	v4Input v4Band
 }
+
+// v4Band identifies the RTL-SDR Blog V4's switched input bank. The
+// zero value (v4BandNone) means "no band selected yet", so the first
+// SetFreq always writes the switch registers.
+type v4Band uint8
+
+const (
+	v4BandNone v4Band = iota
+	v4BandHF
+	v4BandVHF
+	v4BandUHF
+)
 
 // NewR82xx constructs a driver bound to the given RTL2832U demod and
 // I2C address. Callers normally obtain the right address via the
@@ -69,8 +93,72 @@ func NewR82xx(d *rtl2832u.Demod, i2cAddr uint8, chip Type) *R82xx {
 // for R828D); SetXtal exists for boards that deviate from those.
 func (r *R82xx) SetXtal(hz uint32) { r.xtalHz = hz }
 
+// SetBlogV4 marks this tuner as an RTL-SDR Blog V4 (lite=false) or V4
+// Lite (lite=true) so SetFreq drives the V4's switched HF/VHF/UHF input
+// bank. It also restores the 28.8 MHz reference crystal: the V4 runs
+// its R828D from 28.8 MHz, but NewR82xx defaults every R828D to the
+// 16 MHz generic crystal, which would mis-tune the V4 by ~28.8/16 =
+// 1.8× (issue #264). Detection keys off the V4's USB iManufacturer/
+// iProduct strings; mirrors the rtlsdr-blog fork's per-V4 handling
+// (tuner_r82xx.c). Call once after detection, before the first SetFreq.
+func (r *R82xx) SetBlogV4(lite bool) {
+	r.blogV4 = true
+	r.blogV4L = lite
+	r.xtalHz = r82xxXtalHz // 28.8 MHz, overriding the R828D 16 MHz default
+}
+
+// SetFreqCorrection applies a parts-per-million correction to the
+// tuner LO, mirroring the tuner half of librtlsdr's
+// rtlsdr_set_freq_correction. The RTL2832U sample-clock half is
+// applied separately via the demod's SetSampleFreqCorrection; without
+// this method a configured ppm only retimed the resampler and never
+// moved the carrier, so a real crystal offset stayed in the signal
+// (issue #264: the reporter's `ppm: -4` was "not adopted"). A static
+// carrier offset that survives here pushes the C4FM eye off the
+// fixed-threshold slicer and breaks digital decode.
+//
+// The correction biases the PLL reference in setPLL; if a frequency
+// has already been tuned it re-tunes so the change takes effect
+// immediately, otherwise the next SetFreq picks it up. No-op when the
+// value is unchanged.
+func (r *R82xx) SetFreqCorrection(ppm int) error {
+	if r.ppmCorr == ppm {
+		return nil
+	}
+	r.ppmCorr = ppm
+	if r.initDone && r.freqHz != 0 {
+		return r.SetFreq(r.freqHz)
+	}
+	return nil
+}
+
+// effectiveXtalHz returns the reference-crystal frequency adjusted for
+// the configured ppm correction, mirroring librtlsdr's APPLY_PPM_CORR
+// (xtal · (1 + ppm·1e-6)). A positive ppm raises the effective
+// reference so setPLL's registers target a slightly lower nominal LO,
+// compensating a fast crystal. ppm == 0 returns the raw crystal
+// unchanged, so the integer-divider math reproduces byte-for-byte.
+func (r *R82xx) effectiveXtalHz() uint32 {
+	if r.ppmCorr == 0 {
+		return r.xtalHz
+	}
+	return uint32(int64(r.xtalHz) + int64(r.xtalHz)*int64(r.ppmCorr)/1_000_000)
+}
+
 // Type returns the detected chip family.
 func (r *R82xx) Type() Type { return r.chipType }
+
+// XtalHz returns the reference-crystal frequency currently in effect
+// (before any ppm correction). It exists for boot-time diagnostics:
+// 16 MHz on an R828D means the RTL-SDR Blog V4 path did NOT arm, so the
+// LO mistunes by ~28.8/16 = 1.8× (issue #264); 28.8 MHz means SetBlogV4
+// ran. See [R82xx.IsBlogV4].
+func (r *R82xx) XtalHz() uint32 { return r.xtalHz }
+
+// IsBlogV4 reports whether the RTL-SDR Blog V4 path is armed and, if so,
+// whether it's the two-band "Lite" variant. Surfaced for the pool's
+// per-device "sdr tuner detected" diagnostic line (issue #264).
+func (r *R82xx) IsBlogV4() (enabled, lite bool) { return r.blogV4, r.blogV4L }
 
 // IFFreqHz returns the 3.57 MHz intermediate frequency the R820T
 // emits.
@@ -215,7 +303,15 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
 	}
-	if hz < 24_000_000 || hz > 1_766_000_000 {
+	// On the Blog V4, HF (≤ 28.8 MHz) is reached through the on-board
+	// upconverter, so the R828D mixer/PLL actually sees hz + 28.8 MHz.
+	// VHF/UHF tune directly (target == hz), so this is a no-op outside
+	// HF and leaves every non-V4 path byte-for-byte unchanged.
+	target := hz
+	if r.blogV4 && hz <= r82xxV4HFCrossHz {
+		target = hz + r82xxXtalHz
+	}
+	if target < 24_000_000 || target > 1_766_000_000 {
 		return &ErrUnsupportedFreq{Hz: hz, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: r.chipType.String()}
 	}
 	if err := r.demod.SetI2CRepeater(true); err != nil {
@@ -223,14 +319,112 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	}
 	defer r.demod.SetI2CRepeater(false)
 	r.freqHz = hz
-	if err := r.setMux(hz); err != nil {
+	if err := r.setMux(target); err != nil {
 		return fmt.Errorf("r82xx SetFreq: setMux: %w", err)
 	}
-	loHz := hz + r82xxIFFreqHz
+	// V4 front-end: select the HF/VHF/UHF input bank and notch for the
+	// *requested* RF frequency (not the upconverted target). Must run
+	// after setMux because the HF tracking-filter bypass overrides the
+	// mux's 0x1A/0x1B writes.
+	if r.blogV4 {
+		if err := r.applyBlogV4Band(hz); err != nil {
+			return fmt.Errorf("r82xx SetFreq: v4 band: %w", err)
+		}
+	}
+	loHz := target + r82xxIFFreqHz
 	if err := r.setPLL(loHz); err != nil {
 		return fmt.Errorf("r82xx SetFreq: setPLL(%d): %w", loHz, err)
 	}
 	return nil
+}
+
+// v4BandFor maps a requested RF frequency to the RTL-SDR Blog V4 input
+// bank: HF ≤ 28.8 MHz (upconverter), VHF (28.8, 250) MHz, UHF ≥ 250 MHz.
+// The two-band V4 Lite has no separate VHF input — everything above HF
+// is UHF. Thresholds match the rtlsdr-blog fork.
+func v4BandFor(hz uint32, lite bool) v4Band {
+	switch {
+	case hz <= r82xxV4HFCrossHz:
+		return v4BandHF
+	case !lite && hz < r82xxV4UHFCrossHz:
+		return v4BandVHF
+	default:
+		return v4BandUHF
+	}
+}
+
+// applyBlogV4Band drives the RTL-SDR Blog V4's switched input bank,
+// notch filter, and (for HF) tracking-filter bypass for the requested
+// RF frequency. Ported verbatim from the rtlsdr-blog fork's
+// r82xx_set_freq V4 block; the stock R828D init leaves every V4 input
+// off, so without these writes the V4 routes no RF and receives only
+// noise (issue #264). hz is the original requested frequency (the band
+// decision is on the antenna-plane frequency, not the upconverted IF
+// target). Caller holds the I2C repeater.
+func (r *R82xx) applyBlogV4Band(hz uint32) error {
+	// Notch ON (0x08) except when tuned inside one of the V4's notch
+	// windows (≤2.2 MHz, 85–112 MHz, 172–242 MHz), where it's OFF.
+	openD := byte(0x08)
+	if hz <= 2_200_000 ||
+		(hz >= 85_000_000 && hz <= 112_000_000) ||
+		(hz >= 172_000_000 && hz <= 242_000_000) {
+		openD = 0x00
+	}
+	if err := r.writeRegMask(0x17, openD, 0x08); err != nil {
+		return err
+	}
+
+	// Band: HF ≤ 28.8 MHz; VHF (28.8, 250) MHz; UHF ≥ 250 MHz. The V4
+	// Lite has no separate VHF input — everything above HF is UHF.
+	band := v4BandFor(hz, r.blogV4L)
+
+	// HF: bypass the tracking filter to cut upconverter insertion loss.
+	// Re-applied every tune since setMux rewrites 0x1A/0x1B above.
+	if band == v4BandHF {
+		if err := r.writeRegMask(0x1A, 0x40, 0xC3); err != nil {
+			return err
+		}
+		if err := r.writeReg(0x1B, 0x00); err != nil {
+			return err
+		}
+	}
+
+	// Only rewrite the input switches on a band change.
+	if band == r.v4Input {
+		return nil
+	}
+	r.v4Input = band
+
+	// Cable 2 = HF input (reg 0x06 bit 3).
+	cable2 := byte(0x00)
+	if band == v4BandHF {
+		cable2 = 0x08
+	}
+	if err := r.writeRegMask(0x06, cable2, 0x08); err != nil {
+		return err
+	}
+	// Upconverter relay on RTL2832 GPIO5: driven high for every band
+	// except HF (the fork's !cable_2_in).
+	if err := r.demod.SetGPIOOutput(5); err != nil {
+		return err
+	}
+	if err := r.demod.SetGPIOBit(5, cable2 == 0x00); err != nil {
+		return err
+	}
+	// Cable 1 = VHF input (reg 0x05 bit 6).
+	cable1 := byte(0x00)
+	if band == v4BandVHF {
+		cable1 = 0x40
+	}
+	if err := r.writeRegMask(0x05, cable1, 0x40); err != nil {
+		return err
+	}
+	// Air-in = UHF input (reg 0x05 bit 5): on for HF/VHF, off for UHF.
+	air := byte(0x20)
+	if band == v4BandUHF {
+		air = 0x00
+	}
+	return r.writeRegMask(0x05, air, 0x20)
 }
 
 // SetBandwidth picks the filter that matches the requested occupied
@@ -341,10 +535,18 @@ func (r *R82xx) SetGain(tenthDB int) error {
 
 // SetGainMode flips between AGC (auto) and manual.
 //
-// AGC = bit 4 of register 0x05 and 0x07 set; manual = both clear.
-// LNA + Mixer in librtlsdr enable AGC by setting LNA_AGC_EN = 0
-// and MIXER_AGC_EN = 0 — register-bit semantics are inverted from
-// what you'd naively expect.
+// The LNA and mixer AGC-enable bits have OPPOSITE polarity in
+// librtlsdr's r82xx_set_gain, which is easy to get backwards:
+//
+//	             reg 0x05 bit4 (LNA)   reg 0x07 bit4 (mixer)
+//	manual:      1 (auto off)          0 (auto off)
+//	AGC:         0 (auto on)           1 (auto on)
+//
+// In AGC mode librtlsdr also pins the VGA at a fixed value (reg 0x0C =
+// 0x0B). SetGain handles the VGA in manual mode, but it is a no-op in
+// AGC mode, so the AGC branch must write it here — otherwise the VGA is
+// left at the init default and the front end runs ~17 dB low, deafening
+// marginal-signal dongles like the RTL-SDR Blog V4 (issue #264).
 func (r *R82xx) SetGainMode(manual bool) error {
 	if !r.initDone {
 		return errors.New("r82xx: Init not called")
@@ -354,7 +556,7 @@ func (r *R82xx) SetGainMode(manual bool) error {
 	}
 	defer r.demod.SetI2CRepeater(false)
 	r.manual = manual
-	// LNA gain mode: reg 0x05 bit 4 clear = AGC; set = manual.
+	// LNA gain mode: reg 0x05 bit 4 set = manual; clear = AGC.
 	lnaBit := byte(0x00)
 	if manual {
 		lnaBit = 0x10
@@ -362,19 +564,39 @@ func (r *R82xx) SetGainMode(manual bool) error {
 	if err := r.writeRegMask(0x05, lnaBit, 0x10); err != nil {
 		return err
 	}
-	// Mixer gain mode: reg 0x07 bit 4. Same polarity as LNA.
-	mixBit := byte(0x00)
+	// Mixer gain mode: reg 0x07 bit 4 — inverted from the LNA bit.
+	// set = AGC; clear = manual.
+	mixBit := byte(0x10)
 	if manual {
-		mixBit = 0x10
+		mixBit = 0x00
 	}
 	if err := r.writeRegMask(0x07, mixBit, 0x10); err != nil {
 		return err
+	}
+	// AGC mode: pin the VGA at librtlsdr's fixed default (+16.3 dB).
+	if !manual {
+		if err := r.writeRegMask(0x0C, 0x0B, 0x9F); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // ----------------------------------------------------------------------
 // PLL synthesis
+
+// vcoPowerRef is the VCO fine-tune comparison threshold setPLL uses to
+// nudge the mixer divider. osmocom librtlsdr uses r82xxVCOPowerRef (2)
+// for every chip; the rtlsdr-blog fork's r82xx_set_pll lowers it to 1
+// for the R828D (rafael_chip == CHIP_R828D, which includes the Blog V4).
+// Without it the V4's LO mistunes and the front end receives only noise
+// while an R820T2 on the same signal decodes cleanly. See issue #264.
+func (r *R82xx) vcoPowerRef() byte {
+	if r.chipType == TypeR828D {
+		return 1
+	}
+	return r82xxVCOPowerRef
+}
 
 // setPLL programs the R820T's frequency synthesizer to land on the
 // requested LO frequency. Faithful port of osmocom r82xx_set_pll —
@@ -420,16 +642,18 @@ func (r *R82xx) setPLL(freqHz uint32) error {
 		return fmt.Errorf("r82xx setPLL: read status: %w", err)
 	}
 	vcoFineTune := (rd[4] & 0x30) >> 4
-	if vcoFineTune > r82xxVCOPowerRef && divNum > 0 {
+	vcoPowerRef := r.vcoPowerRef()
+	if vcoFineTune > vcoPowerRef && divNum > 0 {
 		divNum--
-	} else if vcoFineTune < r82xxVCOPowerRef {
+	} else if vcoFineTune < vcoPowerRef {
 		divNum++
 	}
 	if err := r.writeRegMask(0x10, divNum<<5, 0xE0); err != nil {
 		return err
 	}
 	vcoFreq := uint64(freqHz) * uint64(mixDiv)
-	pllRef := uint64(r.xtalHz)
+	effXtal := r.effectiveXtalHz()
+	pllRef := uint64(effXtal)
 	nint := uint32(vcoFreq / (2 * pllRef))
 	vcoFra := uint32((vcoFreq - 2*pllRef*uint64(nint)) / 1000)
 	if nint > r82xxMaxNint {
@@ -453,7 +677,7 @@ func (r *R82xx) setPLL(freqHz uint32) error {
 	// converges in ≤16 iterations because n_sdm doubles each step.
 	var sdm uint16
 	nSDM := uint32(2)
-	pllRefkHz := r.xtalHz / 1000
+	pllRefkHz := effXtal / 1000
 	for vcoFra > 1 {
 		if vcoFra > (2 * pllRefkHz / nSDM) {
 			sdm += 32768 / uint16(nSDM/2)
@@ -567,7 +791,7 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, syscall.EPIPE) {
+		if !isI2CBurstStall(err) {
 			return err
 		}
 		lastErr = err
@@ -576,7 +800,22 @@ func (r *R82xx) writeBurstRaw(addr uint8, data []byte) error {
 			time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
 		}
 	}
-	return fmt.Errorf("tried chunk sizes 16,8,4; all EPIPE'd: %w", lastErr)
+	return fmt.Errorf("tried chunk sizes 16,8,4; all stalled: %w", lastErr)
+}
+
+// isI2CBurstStall reports whether err is the recoverable I²C-bridge
+// stall the NESDR v5 cold-boot path retries (per-chunk retry + chunk-size
+// halving). The same logical stall surfaces differently per OS: Linux's
+// USBDEVFS returns a raw syscall.EPIPE, while Windows/WinUSB maps the
+// equivalent ERROR_GEN_FAILURE to usb.ErrPipeStalled (see winErr in
+// usb_windows.go). Both must drive the recovery — checking only EPIPE
+// meant the entire NESDR v5 burst recovery (issue #248) silently never
+// fired on Windows, so the first chunk failure propagated straight out
+// as `tuner init: r82xx init: burst write: ... ERROR_GEN_FAILURE`.
+// Timeouts / ErrDeviceGone / ErrClosed are deliberately excluded — the
+// outer openDevice envelope owns full-reset recovery for those.
+func isI2CBurstStall(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrPipeStalled)
 }
 
 // writeBurstAtSize emits the burst with a specific chunk size cap.
@@ -604,11 +843,12 @@ func (r *R82xx) writeBurstAtSize(addr uint8, data []byte, chunkSize int) error {
 // the SetI2CRepeater bracket open across the call — writeBurstChunk
 // never touches the repeater (PR #262's wire-toggle contract).
 //
-// On EPIPE the chip's USB firmware NACK'd this specific request; the
-// post-PR-#262 trace on issue #248 confirms the EP0 endpoint stays
-// healthy (subsequent control transfers succeed without
-// USBDEVFS_CLEAR_HALT). After a short settle delay we retry the same
-// wire bytes once. Non-EPIPE errors (timeout, ErrDeviceGone, ErrClosed)
+// On a recoverable I²C-bridge stall (Linux EPIPE / Windows
+// ErrPipeStalled, see isI2CBurstStall) the chip's USB firmware NACK'd
+// this specific request; the post-PR-#262 trace on issue #248 confirms
+// the EP0 endpoint stays healthy (subsequent control transfers succeed
+// without USBDEVFS_CLEAR_HALT). After a short settle delay we retry the
+// same wire bytes once. Other errors (timeout, ErrDeviceGone, ErrClosed)
 // return immediately — the outer openDevice envelope owns reset
 // recovery for those.
 func (r *R82xx) writeBurstChunk(addr uint8, chunk []byte) error {
@@ -619,12 +859,12 @@ func (r *R82xx) writeBurstChunk(addr uint8, chunk []byte) error {
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, syscall.EPIPE) {
+	if !isI2CBurstStall(err) {
 		return err
 	}
 	time.Sleep(r82xxBurstRetryDelayMillis * time.Millisecond)
 	if retryErr := r.demod.I2CWrite(r.i2cAddr, buf); retryErr != nil {
-		return fmt.Errorf("after 1 retry on EPIPE: %w", retryErr)
+		return fmt.Errorf("after 1 retry on stall: %w", retryErr)
 	}
 	return nil
 }

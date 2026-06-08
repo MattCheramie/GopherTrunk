@@ -23,7 +23,7 @@ func (s *Server) handleLocations(w http.ResponseWriter, r *http.Request) {
 	}
 	fixes, err := s.locations.RecentLocations(limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query locations: "+err.Error())
+		s.writeError(w, http.StatusInternalServerError, "query locations: "+err.Error())
 		return
 	}
 	if fixes == nil {

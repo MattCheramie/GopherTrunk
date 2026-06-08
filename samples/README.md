@@ -19,7 +19,7 @@ protocol subfolder has a `README.md` that describes:
 | [`nxdn/`](nxdn/) | NXDN (NXDN-TS-1-A) | ⏳ Real-air capture pending (harness ready: [`integration_cc_nxdn_realair_test.go`](../cmd/gophertrunk/integration_cc_nxdn_realair_test.go)) | ≥ 80% CRC-verified CAC bursts + SystemID match + 3 s lock latency |
 | [`ysf/`](ysf/) | Yaesu System Fusion | ⏳ Real-air capture pending | Validates MMDVMHost schedule choice for `EncodeFICHOnAir` / `DecodeFICHOnAir`; swap to DSDcc alternate if CRC fails |
 | [`tetra/`](tetra/) | ETSI TETRA | ⏳ Real-air capture pending | 5 s lock latency + ≥ 90% frame recovery + Viterbi correction-depth histogram |
-| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | ✅ Pipeline closed (PR-C); captures optional | Burst-error structure validation + per-call payload diversity |
+| [`dmr-tier2/`](dmr-tier2/) | DMR Tier II (conventional) | ⏳ Real-air capture **blocking** — off-air decode fails at `voiceheader-bptc`/`voiceheader-rs` (issue #527 follow-up) despite the synthetic fixture passing | Confirms real-air dibit recovery + end-to-end bit ordering; decodes to expected TG/source/CC |
 | [`mpt1327/`](mpt1327/) | MPT 1327 | ✅ CWSC tolerance closed (PR-A); captures optional | Empirical false-positive count + per-vendor sync bit-error patterns |
 
 Each subfolder's README documents the capture format, metadata
@@ -49,7 +49,14 @@ information:
 - **DMR Tier II** is C4FM at 4800 sym/s; same caveat as NXDN.
 
 For the protocols that need IQ, drop a `*.cfile` / `*.bin` / `*.iq`
-recording rather than an MP3.
+recording rather than an MP3. To grab a fresh IQ capture (plus a
+matching `.metadata.json` sidecar) straight off a dongle, use
+`gophertrunk capture`:
+
+```
+gophertrunk capture -freq 460000000 -sample-rate 2400000 -seconds 30 \
+  -protocol p25 -out samples/p25/cc.cfile
+```
 
 ## Smoke-test harness
 
@@ -151,6 +158,59 @@ A capture without a `metadata.json` describing the expected decode
 output is fine for "does the decoder not crash" smoke tests but
 isn't enough to **validate** correctness — the schema each subfolder
 documents is what unblocks the corresponding follow-up.
+
+## Signal Lab: replay / analyze / gen / test
+
+The `gophertrunk` binary ships an offline signal toolkit (the `internal/siglab`
+engine) that drives **any** protocol GopherTrunk decodes through the same
+production pipelines the daemon runs, with clean structured output:
+
+```
+gophertrunk replay  -in cap.cfile -format f32 -sample-rate 2400000 -protocol tetra -auto-tune
+gophertrunk analyze -in cap.cfile -format f32 -sample-rate 2400000 -protocol p25p1 -out-format json -out cap.json
+gophertrunk gen     -protocol dmr  -out dmr.cfile -snr 20 -freq-offset 300
+gophertrunk test    -capture dmr.cfile          # grades against the sidecar metadata; exit 0/1
+gophertrunk siglab  -in cap.cfile -protocol p25p1 -format f32 -sample-rate 2400000   # standalone TUI
+```
+
+- **`analyze`** emits `text` / `json` / `jsonl` / `yaml` / `csv` / `csv-events`
+  over a protocol-agnostic result model (lock state, grants, per-event records,
+  symbol histogram, IQ imbalance, decode-error rate; plus a P25-Phase-1
+  FSW/NID deep dive).
+- **`gen`** synthesizes a known-good (optionally impaired) capture plus a
+  `*.metadata.json` sidecar, using the production modulators.
+- **`test`** decodes a capture (real-air or synthesized) and grades it against
+  the sidecar's acceptance criteria — a CI-ready regression gate.
+
+### Unified metadata schema
+
+A capture is graded via a sidecar (`<stem>.metadata.json` or `.yaml`,
+auto-discovered by `test`). Minimal example:
+
+```json
+{
+  "protocol": "dmr",
+  "source": "real-air, Site 4",
+  "sample_rate_hz": 2400000,
+  "center_freq_hz": 460000000,
+  "format": "f32",
+  "auto_tune": true,
+  "system": { "tetra_colour_code": "1", "tetra_channel": "bsch" },
+  "expected": {
+    "lock": true,
+    "lock_latency_max_sec": 5.0,
+    "lock_fields": { "color_code": 10, "system_id": "0x1234" },
+    "min_grants": 0,
+    "baud_tolerance_pct": 5,
+    "max_decode_error_rate": 50
+  }
+}
+```
+
+`lock_fields` values may be decimal or hex strings; matching is hex-tolerant.
+`system` keys are the YAML config-key names from `config.example.yaml`
+(`p25_phase1_demod_mode`, `tetra_colour_code`, `edacs_bch_mode`, …). This is
+the schema the per-protocol acceptance criteria above map onto.
 
 ## Wiring captures into tests
 

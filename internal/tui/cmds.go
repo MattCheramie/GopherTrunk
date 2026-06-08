@@ -22,6 +22,7 @@ const (
 	pollMetricsEvery    = 5 * time.Second
 	pollDevicesEvery    = 10 * time.Second
 	pollScannerEvery    = 2 * time.Second
+	pollHuntEvery       = 2 * time.Second
 	pollAudioEvery      = 3 * time.Second
 	pollRuntimeEvery    = 30 * time.Second
 )
@@ -79,6 +80,27 @@ func cmdPollScanner(cli *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		s, err := cli.Scanner(context.Background())
 		return pollScannerMsg{s: s, err: err}
+	}
+}
+
+func cmdPollHunt(cli *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		s, err := cli.Hunt(context.Background())
+		return pollHuntMsg{s: s, err: err}
+	}
+}
+
+func cmdHuntStart(cli *client.Client, req client.HuntStartRequest, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.HuntStart(context.Background(), req)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
+func cmdHuntStop(cli *client.Client, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.HuntStop(context.Background())
+		return writeResultMsg{Label: label, Err: err}
 	}
 }
 

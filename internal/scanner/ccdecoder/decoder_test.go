@@ -3,6 +3,8 @@ package ccdecoder
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -330,7 +332,7 @@ func TestHandleProgressUnknownProtocolClearsActive(t *testing.T) {
 	// Seed an active pipeline.
 	rec := &recordingPipeline{}
 	d.active = rec
-	d.activeAt = "Sys"
+	setActiveSystem(d, "Sys")
 
 	d.handleProgress(trunking.HuntProgress{
 		System: "Sys", AttemptedFreqHz: 460_000_000,
@@ -340,6 +342,67 @@ func TestHandleProgressUnknownProtocolClearsActive(t *testing.T) {
 	}
 	if rec.closes != 1 {
 		t.Errorf("recording pipeline Close calls = %d, want 1", rec.closes)
+	}
+}
+
+// TestHandleProgressRepeatedSameFreqIsIdempotent pins the issue-#402
+// live-acquisition fix: a HuntProgress that repeats the same (system,
+// frequency) the active pipeline is already decoding must NOT rebuild
+// the pipeline or flush the DDC. On a single-candidate system the
+// supervisor re-attempts every dwell (~3s); a rebuild-on-every-attempt
+// loop flushed the symbol clock + decimation filter each time and the
+// live stream never acquired FSW ("no FSW hits in chunk" cycling with
+// "pipeline configured"). Replay never exercised this because it never
+// re-hunts.
+func TestHandleProgressRepeatedSameFreqIsIdempotent(t *testing.T) {
+	saved := factories
+	builds := 0
+	var rec *recordingPipeline
+	factories = map[trunking.Protocol]PipelineFactory{
+		trunking.ProtocolP25: func(PipelineOptions) (ProtocolPipeline, error) {
+			builds++
+			rec = &recordingPipeline{}
+			return rec, nil
+		},
+	}
+	t.Cleanup(func() { factories = saved })
+
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	prog := trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500}
+	d.handleProgress(prog) // first attempt: builds
+	first := rec
+	d.handleProgress(prog) // re-hunt same freq: must be a no-op
+	d.handleProgress(prog)
+
+	if builds != 1 {
+		t.Errorf("pipeline builds = %d, want 1 (repeated same-freq retune must not rebuild)", builds)
+	}
+	if d.active != first {
+		t.Errorf("active pipeline was swapped on a repeated same-freq retune")
+	}
+	if first.closes != 0 {
+		t.Errorf("active pipeline Close calls = %d, want 0 (must not tear down on same-freq retune)", first.closes)
+	}
+
+	// A genuine retune to a different frequency must still rebuild.
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_025_000})
+	if builds != 2 {
+		t.Errorf("pipeline builds = %d after a real retune, want 2", builds)
+	}
+	if first.closes != 1 {
+		t.Errorf("previous pipeline Close calls = %d after a real retune, want 1", first.closes)
 	}
 }
 
@@ -986,10 +1049,13 @@ func TestMPT1327FactoryAppliesBCHFromSystem(t *testing.T) {
 // tests can assert the decoder's pump-side observation pipeline
 // without depending on the real Prometheus collector.
 type recordingPower struct {
-	sets      []powerSample
-	cleared   []string
-	dcSets    []dcSample
-	dcCleared []string
+	sets         []powerSample
+	cleared      []string
+	dcSets       []dcSample
+	dcCleared    []string
+	clipSets     []clipSample
+	clipCleared  []string
+	decodeOverru int
 }
 
 type powerSample struct {
@@ -1000,6 +1066,11 @@ type powerSample struct {
 type dcSample struct {
 	system  string
 	ratioDb float64
+}
+
+type clipSample struct {
+	system string
+	ratio  float64
 }
 
 func (r *recordingPower) RecordIQPowerDbFS(system string, dbfs float64) {
@@ -1014,10 +1085,28 @@ func (r *recordingPower) RecordIQDCRatioDb(system string, ratioDb float64) {
 func (r *recordingPower) ClearIQDCRatioDb(system string) {
 	r.dcCleared = append(r.dcCleared, system)
 }
+func (r *recordingPower) RecordIQClipRatio(system string, ratio float64) {
+	r.clipSets = append(r.clipSets, clipSample{system, ratio})
+}
+func (r *recordingPower) ClearIQClipRatio(system string) {
+	r.clipCleared = append(r.clipCleared, system)
+}
+func (r *recordingPower) RecordDecodeOverrun() {
+	r.decodeOverru++
+}
+
+// setActiveSystem stands in for a pipeline swap in tests: it sets both the
+// mu-guarded activeAt (read by clearActive/IQHealth) and the atomic
+// activeSystem gauge label that the forwarder's observeIQPower reads,
+// exactly as handleProgress does in production (issue #402).
+func setActiveSystem(d *Decoder, name string) {
+	d.activeAt = name
+	d.activeSystem.Store(&name)
+}
 
 // TestPumpRecordsIQPowerOnceWindowElapses feeds a known signal level
-// through Process and checks the Metrics observer sees the expected
-// dBFS once iqPowerWindow worth of samples have been folded in.
+// through observeIQPower and checks the Metrics observer sees the
+// expected dBFS once iqPowerWindow worth of samples have been folded in.
 func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -1029,7 +1118,7 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	// Pretend the swap has happened so the gauge has a system label.
-	d.activeAt = "TestSys"
+	setActiveSystem(d, "TestSys")
 
 	// 0.1 amplitude → |c|^2 = 0.02 mean → -16.99 dBFS, but we're
 	// computing -16.99 dBFS = 10*log10(0.02). Use a chunk of 0.5
@@ -1040,15 +1129,15 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 		chunk[i] = complex(0.5, 0.5)
 	}
 
-	// First pump primes pwWindowAt — no record yet.
-	d.pump(chunk)
+	// First observation primes pwWindowAt — no record yet.
+	d.observeIQPower(chunk)
 	if len(pwr.sets) != 0 {
-		t.Fatalf("first pump should not record, got %v", pwr.sets)
+		t.Fatalf("first observation should not record, got %v", pwr.sets)
 	}
 
 	// Force the window timer past iqPowerWindow.
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPower(chunk)
 
 	if len(pwr.sets) != 1 {
 		t.Fatalf("after window, sets = %d, want 1", len(pwr.sets))
@@ -1061,9 +1150,54 @@ func TestPumpRecordsIQPowerOnceWindowElapses(t *testing.T) {
 	if got.dbfs < -3.5 || got.dbfs > -2.5 {
 		t.Errorf("dbfs = %v, want roughly -3", got.dbfs)
 	}
+	// A mid-scale chunk is nowhere near the ADC rail → no clipping.
+	if len(pwr.clipSets) != 1 {
+		t.Fatalf("after window, clipSets = %d, want 1", len(pwr.clipSets))
+	}
+	if r := pwr.clipSets[0].ratio; r != 0 {
+		t.Errorf("clip_ratio = %v, want 0 for a mid-scale chunk", r)
+	}
 }
 
-// TestPumpRecordsIQDCRatioPureDC drives observeIQPowerLocked with a
+// TestPumpRecordsIQClipRatioWhenRailed feeds a window of rail-pinned
+// samples and asserts the new clip-ratio gauge reports ~1.0 — the
+// front-end overload failure mode behind issue #402 that the RMS
+// iq_power_dbfs gauge averages away.
+func TestPumpRecordsIQClipRatioWhenRailed(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	setActiveSystem(d, "TestSys")
+
+	// Both components at full scale (the ADC rail) on every sample.
+	chunk := make([]complex64, 128)
+	for i := range chunk {
+		chunk[i] = complex(1.0, 1.0)
+	}
+
+	d.observeIQPower(chunk) // primes pwWindowAt, no record yet
+	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
+	d.observeIQPower(chunk)
+
+	if len(pwr.clipSets) != 1 {
+		t.Fatalf("after window, clipSets = %d, want 1", len(pwr.clipSets))
+	}
+	got := pwr.clipSets[0]
+	if got.system != "TestSys" {
+		t.Errorf("system = %q, want TestSys", got.system)
+	}
+	if got.ratio < 0.999 {
+		t.Errorf("clip_ratio = %v, want ~1.0 for a fully-railed window", got.ratio)
+	}
+}
+
+// TestPumpRecordsIQDCRatioPureDC drives observeIQPower with a
 // constant-IQ chunk (all energy in the DC bin) and asserts the new
 // DC-ratio gauge reports ~0 dB — the smoking-gun shape of the RTL-SDR
 // R820T2 DC-spike-on-channel failure mode behind issue #402.
@@ -1077,16 +1211,16 @@ func TestPumpRecordsIQDCRatioPureDC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	d.activeAt = "TestSys"
+	setActiveSystem(d, "TestSys")
 
 	chunk := make([]complex64, 128)
 	for i := range chunk {
 		chunk[i] = complex(0.3, 0.4) // constant ⇒ mean(IQ) = sample, |mean|² = |sample|²
 	}
 
-	d.pump(chunk)
+	d.observeIQPower(chunk)
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPower(chunk)
 
 	if len(pwr.dcSets) != 1 {
 		t.Fatalf("dcSets = %d, want 1", len(pwr.dcSets))
@@ -1116,7 +1250,7 @@ func TestPumpRecordsIQDCRatioCleanSignal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	d.activeAt = "TestSys"
+	setActiveSystem(d, "TestSys")
 
 	chunk := make([]complex64, 128)
 	for i := range chunk {
@@ -1128,9 +1262,9 @@ func TestPumpRecordsIQDCRatioCleanSignal(t *testing.T) {
 		}
 	}
 
-	d.pump(chunk)
+	d.observeIQPower(chunk)
 	d.pwWindowAt = d.pwWindowAt.Add(-2 * iqPowerWindow)
-	d.pump(chunk)
+	d.observeIQPower(chunk)
 
 	if len(pwr.dcSets) != 1 {
 		t.Fatalf("dcSets = %d, want 1", len(pwr.dcSets))
@@ -1159,7 +1293,7 @@ func TestClearActiveClearsDCRatio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	d.activeAt = "TestSys"
+	setActiveSystem(d, "TestSys")
 
 	d.mu.Lock()
 	d.clearActiveLocked()
@@ -1321,9 +1455,311 @@ func TestClearActiveClearsIQPowerSeries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	d.activeAt = "TestSys"
+	setActiveSystem(d, "TestSys")
 	d.clearActive()
 	if len(pwr.cleared) != 1 || pwr.cleared[0] != "TestSys" {
 		t.Errorf("cleared = %v, want [TestSys]", pwr.cleared)
+	}
+}
+
+// TestDiagnoseIQ exercises every branch of the cchunt.failed cause
+// classifier so the one-line hint stays in lock-step with the live
+// pump's thresholds.
+func TestDiagnoseIQ(t *testing.T) {
+	cases := []struct {
+		name       string
+		diag       trunking.HuntDiagnostics
+		haveWindow bool
+		wantSubstr string
+	}{
+		{
+			name:       "no pipeline",
+			diag:       trunking.HuntDiagnostics{PipelineActive: false},
+			haveWindow: true,
+			wantSubstr: "no live decode pipeline",
+		},
+		{
+			name:       "partial window",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true},
+			haveWindow: false,
+			wantSubstr: "too short to gauge",
+		},
+		{
+			name:       "low power",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: iqLowPowerThresholdDbFS - 1},
+			haveWindow: true,
+			wantSubstr: "IQ level very low",
+		},
+		{
+			name:       "clipping",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -10, IQClipRatio: iqClipWarnRatio + 0.01},
+			haveWindow: true,
+			wantSubstr: "front-end overload",
+		},
+		{
+			name:       "dc spike",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -10, IQDCRatioDb: iqDCRatioWarnDb + 1},
+			haveWindow: true,
+			wantSubstr: "DC spike",
+		},
+		{
+			name:       "healthy but no lock",
+			diag:       trunking.HuntDiagnostics{PipelineActive: true, IQPowerDbFS: -30, IQClipRatio: 0, IQDCRatioDb: -25},
+			haveWindow: true,
+			wantSubstr: "no control-channel lock",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := diagnoseIQ(tc.diag, tc.haveWindow)
+			if !strings.Contains(got, tc.wantSubstr) {
+				t.Errorf("diagnoseIQ(%s) = %q, want substring %q", tc.name, got, tc.wantSubstr)
+			}
+		})
+	}
+}
+
+// TestIQHealthUnknownSystem: with no observations for a system, IQHealth
+// reports ok=false so the supervisor falls back to its "no IQ observed"
+// diagnosis.
+func TestIQHealthUnknownSystem(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, ok := d.IQHealth("Nope"); ok {
+		t.Fatal("IQHealth(unknown) ok = true, want false")
+	}
+}
+
+// TestIQHealthPartialSamples: once IQ has flowed for the active system
+// but no full power window has elapsed, IQHealth reports the sample
+// count with the "dwell too short" hint.
+func TestIQHealthPartialSamples(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Stand up an active pipeline for "Sys" and fold one chunk of IQ
+	// through the power observer without letting a window elapse.
+	d.active = &recordingPipeline{}
+	setActiveSystem(d, "Sys")
+	d.observeIQPower(make([]complex64, 1024))
+
+	diag, ok := d.IQHealth("Sys")
+	if !ok {
+		t.Fatal("IQHealth(Sys) ok = false, want true")
+	}
+	if !diag.IQObserved || diag.IQSamples != 1024 {
+		t.Errorf("diag = %+v, want IQObserved with 1024 samples", diag)
+	}
+	if !diag.PipelineActive {
+		t.Errorf("diag.PipelineActive = false, want true")
+	}
+	if !strings.Contains(diag.Diagnosis, "too short to gauge") {
+		t.Errorf("diag.Diagnosis = %q, want 'too short to gauge'", diag.Diagnosis)
+	}
+}
+
+// TestForwardIQDecouplesIngestFromDecode pins the issue-#402 live-path
+// fix: the forwarder drains the SDR channel into the decode queue,
+// preserves order, drops only when the queue is full (and counts each
+// drop as a decode overrun, distinct from a driver underrun), and closes
+// the queue when the source ends.
+func TestForwardIQDecouplesIngestFromDecode(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Pre-load every chunk and close the source. The forwarder's enqueue is
+	// non-blocking (it drops on a full queue), so it runs to completion with
+	// no consumer: the first two chunks land in the cap-2 queue and the next
+	// three are dropped. Waiting for it to finish before draining keeps the
+	// queued set and drop count deterministic (a concurrent drain would race
+	// the last enqueue). Tag each chunk by its first sample to check order.
+	in := make(chan []complex64, 5)
+	out := make(chan []complex64, 2)
+	mk := func(tag float32) []complex64 { return []complex64{complex(tag, 0)} }
+	for i := 0; i < 5; i++ {
+		in <- mk(float32(i))
+	}
+	close(in)
+
+	done := make(chan struct{})
+	go func() { d.forwardIQ(context.Background(), in, out); close(done) }()
+	<-done // forwarder has processed all 5 chunks and closed out
+
+	var got []float32
+	for c := range out {
+		got = append(got, real(c[0]))
+	}
+	if len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("queued = %v, want [0 1] (first two, in order)", got)
+	}
+	if pwr.decodeOverru != 3 {
+		t.Errorf("decode overruns = %d, want 3", pwr.decodeOverru)
+	}
+}
+
+// TestForwardIQCopiesDriverBuffer pins the correctness fix for the
+// interaction between the decode queue (issue #402) and the SDR driver's
+// small reuse ring (issue #489): the forwarder must copy each chunk into a
+// decoder-owned buffer before queueing it, so a later driver delivery that
+// recycles the ring slot cannot overwrite a chunk still awaiting decode.
+func TestForwardIQCopiesDriverBuffer(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	src := []complex64{complex(1, 2), complex(3, 4)}
+	in := make(chan []complex64, 1)
+	out := make(chan []complex64, 1)
+	in <- src
+	close(in)
+
+	done := make(chan struct{})
+	go func() { d.forwardIQ(context.Background(), in, out); close(done) }()
+	<-done
+
+	queued := <-out
+	if len(queued) != len(src) {
+		t.Fatalf("queued len = %d, want %d", len(queued), len(src))
+	}
+	if &queued[0] == &src[0] {
+		t.Fatal("forwarder queued the driver's slice itself, not a copy — driver-ring reuse (#489) could corrupt IQ still queued for decode (#402)")
+	}
+	// Simulate the driver overwriting its ring slot after the buffer was
+	// handed back; the queued copy must be unaffected.
+	src[0] = complex(99, 99)
+	if queued[0] != complex(1, 2) {
+		t.Errorf("queued chunk changed when the source ring slot was overwritten: got %v, want (1+2i)", queued[0])
+	}
+}
+
+// TestIQHealthConcurrentWithForwarder exercises observeIQPower (forwarder
+// goroutine) and IQHealth (cchunt-supervisor goroutine) concurrently so
+// the race detector pins the healthMu/activeSystem synchronisation that
+// keeps the issue-#489 IQ-health snapshot safe now that observation runs
+// off the decode goroutine (issue #402).
+func TestIQHealthConcurrentWithForwarder(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pwr := &recordingPower{}
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000, Metrics: pwr})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	setActiveSystem(d, "Sys")
+	d.active = &recordingPipeline{}
+	// Force the first observed chunk to publish a window snapshot so the
+	// lastHealth* write path runs concurrently with IQHealth's reads.
+	d.pwWindowAt = time.Now().Add(-2 * iqPowerWindow)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan []complex64, 8)
+	out := make(chan []complex64, 8)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); d.forwardIQ(ctx, in, out) }()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 2000; i++ {
+			select {
+			case in <- make([]complex64, 256):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	for i := 0; i < 2000; i++ {
+		_, _ = d.IQHealth("Sys")
+	}
+	cancel()
+	wg.Wait()
+}
+
+// TestPumpConjugatesWhenConfigured verifies the per-device spectrum-
+// inversion option (Options.Conjugate / config iq_invert): pump must
+// negate Q on every raw IQ sample before handing it to the pipeline, so
+// a spectrum-inverted / I-Q-swapped front end decodes (issue #264 /
+// #553). At SampleRateHz == the P25 channel rate the DDC is pass-through,
+// so the recording pipeline sees exactly the conjugated input.
+func TestPumpConjugatesWhenConfigured(t *testing.T) {
+	rec := withRecordingFactory(t, trunking.ProtocolP25)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, Tuner: fakeTuner{},
+		SampleRateHz: DDCTargetRateHz, Conjugate: true,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500})
+
+	in := []complex64{complex(1, 2), complex(-3, 4), complex(0.5, -0.25)}
+	d.pump(append([]complex64(nil), in...))
+
+	if len(rec.processChunks) == 0 {
+		t.Fatalf("recording pipeline received no chunk")
+	}
+	got := rec.processChunks[0]
+	if len(got) != len(in) {
+		t.Fatalf("chunk len = %d, want %d", len(got), len(in))
+	}
+	for i := range in {
+		want := complex(real(in[i]), -imag(in[i]))
+		if got[i] != want {
+			t.Errorf("sample %d = %v, want conjugated %v", i, got[i], want)
+		}
+	}
+}
+
+// TestPumpNoConjugateByDefault: without Conjugate, pump must pass raw IQ
+// through unchanged (pass-through DDC at the channel rate).
+func TestPumpNoConjugateByDefault(t *testing.T) {
+	rec := withRecordingFactory(t, trunking.ProtocolP25)
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, Tuner: fakeTuner{},
+		SampleRateHz: DDCTargetRateHz,
+		Systems: []trunking.System{{
+			Name: "Sys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{851_012_500},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.handleProgress(trunking.HuntProgress{System: "Sys", AttemptedFreqHz: 851_012_500})
+	in := []complex64{complex(1, 2), complex(-3, 4)}
+	d.pump(append([]complex64(nil), in...))
+	if len(rec.processChunks) == 0 {
+		t.Fatalf("recording pipeline received no chunk")
+	}
+	for i, got := range rec.processChunks[0] {
+		if got != in[i] {
+			t.Errorf("sample %d = %v, want unchanged %v", i, got, in[i])
+		}
 	}
 }

@@ -199,14 +199,26 @@ the pair completes. `Prune()` evicts ICAOs that haven't
 transmitted in > 10 s so the state map doesn't grow with every
 aircraft ever seen.
 
+## Currently-visible aircraft
+
+`GET /api/v1/adsb/aircraft/current` returns the coalesced latest
+state of each aircraft seen recently — one row per ICAO, distinct
+from the raw per-message log at `/adsb/aircraft`. Because
+identification, position, and velocity arrive as separate Mode-S
+messages, `AircraftLog.CurrentAircraft(maxAge)` folds the most
+recent non-empty value of each field group (callsign, position,
+altitude, velocity) per ICAO over the horizon; `received_at` is the
+aircraft's last-seen time, rows are newest-last-seen first. Optional
+`?max_age_s=` bounds the horizon (default 300 s, max 3600 s). Powers
+a "currently visible aircraft" panel distinct from the raw message
+log.
+
 ## What's pending
 
-- **Aircraft tracker.** An `aircraft_current` SQL view (or a
-  separate live-state table indexed by ICAO) showing the
-  latest known position / altitude / callsign per aircraft,
-  joining identification + position + velocity rows over the
-  last few minutes. Powers a "currently visible aircraft"
-  panel distinct from the raw message log.
+- **Locally-referenced CPR.** Single-message position decode against
+  a configured receiver location, useful for the first seconds before
+  an even+odd CPR pair completes.
+
 ## Live map
 
 Aircraft positions (once the per-ICAO CPR pairing lands) render

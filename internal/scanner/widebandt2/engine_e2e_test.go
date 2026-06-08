@@ -10,6 +10,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -143,6 +144,222 @@ WaitLoop:
 	if grantFreq != repeaterHz {
 		t.Errorf("grant.FrequencyHz = %d, want %d", grantFreq, repeaterHz)
 	}
+}
+
+// TestEngineEndToEndT3GrantFromSynthesizedIQ proves the wideband
+// engine resolves a DMR Tier III voice grant's LCN to a downlink
+// frequency via the system's dmr_band_plan and publishes it on the
+// bus. Same synthesized-IQ path as the Tier II test, but the bursts
+// carry an OpTVGrant CSBK (DTCSBK) instead of a Voice LC Header, and
+// the system is given a LinearBandPlan so resolveLCN succeeds.
+//
+// LCN 8 on {base 866 MHz, spacing 25 kHz, offset 1} resolves to
+// 866.175 MHz — the same vector asserted by tier3's own
+// control_test.go, so this test pins the *wiring* (Options.Resolver
+// reaching the decoder), not the resolver math.
+func TestEngineEndToEndT3GrantFromSynthesizedIQ(t *testing.T) {
+	const (
+		widebandRateHz = 48_000.0
+		centerHz       = 851_000_000
+		ccFreqHz       = centerHz
+		spsWideband    = 10
+		spanSymbols    = 8
+		alpha          = 0.20
+		colorCode      = uint8(0x3)
+		burstRepeats   = 200
+		chunkSamples   = 4800
+		wantLCN        = uint16(8)
+		wantFreqHz     = uint32(866_175_000) // 866M + (8-1)×25k
+		wantGroup      = uint32(0x123456)
+		wantSource     = uint32(0xABCDEF)
+	)
+
+	sys := t3System("regional-t3", ccFreqHz)
+	sys.DMRBandPlan = &trunking.DMRBandPlan{
+		Linear: &trunking.DMRLinearBandPlan{BaseHz: 866_000_000, SpacingHz: 25_000, Offset: 1},
+	}
+
+	dibits := buildT3TVGrantDibits(burstRepeats, colorCode)
+	baseband := demod.ModulateC4FM(dibits, spsWideband, spanSymbols, alpha, widebandRateHz, dmrDeviationHz)
+	chunks := chunkComplex(baseband, chunkSamples)
+	dev := newMockDevice(chunks)
+
+	bus := events.NewBus(64)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e, err := New(Options{
+		Log:          slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		Device:       dev,
+		Bus:          bus,
+		SampleRateHz: uint32(widebandRateHz),
+		CenterFreqHz: centerHz,
+		Channels:     []ChannelConfig{{FrequencyHz: ccFreqHz, SystemName: sys.Name}},
+		Systems:      []trunking.System{sys},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	runDone := make(chan error, 1)
+	go func() { runDone <- e.Run(ctx) }()
+
+	deadline := time.After(8 * time.Second)
+	var g trunking.Grant
+	var sawGrant bool
+WaitLoop:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			gg, ok := ev.Payload.(trunking.Grant)
+			if !ok {
+				t.Errorf("KindGrant payload type = %T", ev.Payload)
+				continue
+			}
+			g = gg
+			sawGrant = true
+			break WaitLoop
+		case <-deadline:
+			break WaitLoop
+		}
+	}
+	cancel()
+	<-runDone
+
+	if !sawGrant {
+		t.Fatal("no grant event observed within deadline")
+	}
+	if g.Protocol != "dmr-tier3" {
+		t.Errorf("grant.Protocol = %q, want dmr-tier3", g.Protocol)
+	}
+	if g.ChannelNum != wantLCN {
+		t.Errorf("grant.ChannelNum (LCN) = %d, want %d", g.ChannelNum, wantLCN)
+	}
+	if g.FrequencyHz != wantFreqHz {
+		t.Errorf("grant.FrequencyHz = %d, want %d (LCN→Hz resolver not wired?)", g.FrequencyHz, wantFreqHz)
+	}
+	if g.GroupID != wantGroup || g.SourceID != wantSource {
+		t.Errorf("grant group/source = %X/%X, want %X/%X", g.GroupID, g.SourceID, wantGroup, wantSource)
+	}
+}
+
+// TestEngineEndToEndT3GrantDroppedWithoutBandPlan is the negative
+// control for the test above: with no dmr_band_plan the decoder has no
+// resolver, so the same TVGrant CSBK must produce a decode.error with
+// stage=no-bandplan and NO grant event. This proves the band plan is
+// the load-bearing piece, not an incidental one.
+func TestEngineEndToEndT3GrantDroppedWithoutBandPlan(t *testing.T) {
+	const (
+		widebandRateHz = 48_000.0
+		centerHz       = 851_000_000
+		colorCode      = uint8(0x3)
+		burstRepeats   = 200
+		chunkSamples   = 4800
+	)
+
+	sys := t3System("regional-t3", centerHz) // no DMRBandPlan
+	dibits := buildT3TVGrantDibits(burstRepeats, colorCode)
+	baseband := demod.ModulateC4FM(dibits, 10, 8, 0.20, widebandRateHz, dmrDeviationHz)
+	dev := newMockDevice(chunkComplex(baseband, chunkSamples))
+
+	bus := events.NewBus(64)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	e, err := New(Options{
+		Log:          slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		Device:       dev,
+		Bus:          bus,
+		SampleRateHz: uint32(widebandRateHz),
+		CenterFreqHz: centerHz,
+		Channels:     []ChannelConfig{{FrequencyHz: centerHz, SystemName: sys.Name}},
+		Systems:      []trunking.System{sys},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	runDone := make(chan error, 1)
+	go func() { runDone <- e.Run(ctx) }()
+
+	deadline := time.After(8 * time.Second)
+	var sawNoBandPlan bool
+WaitLoop:
+	for {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindGrant:
+				t.Fatalf("unexpected grant without a band plan: %+v", ev.Payload)
+			case events.KindDecodeError:
+				if de, ok := ev.Payload.(events.DecodeError); ok && de.Stage == events.StageNoBandPlan {
+					sawNoBandPlan = true
+					break WaitLoop
+				}
+			}
+		case <-deadline:
+			break WaitLoop
+		}
+	}
+	cancel()
+	<-runDone
+
+	if !sawNoBandPlan {
+		t.Fatal("expected a decode.error stage=no-bandplan event, got none")
+	}
+}
+
+// buildT3TVGrantDibits builds a dibit stream of repeated OpTVGrant CSBK
+// bursts (DTCSBK) for the synthesized-IQ end-to-end tests. The CSBK
+// payload mirrors tier3/control_test.go's TVGrant vector: service
+// options 0xC0, dst 0x123456, src 0xABCDEF, timeslot/LCN byte 0x88
+// (TS2, LCN 8). Burst framing matches buildT2VoiceLCHeaderDibits.
+func buildT3TVGrantDibits(repeats int, colorCode uint8) []uint8 {
+	info := tier3.AssembleCSBK(tier3.CSBK{
+		LB:      true,
+		Opcode:  tier3.OpTVGrant,
+		Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88},
+	})
+	bits := make([]byte, 96)
+	for i := 0; i < 96; i++ {
+		bits[i] = (info[i>>3] >> uint(7-(i&7))) & 1
+	}
+	channelBits := framing.EncodeBPTC196_96(bits)
+	payloadDibits := framing.BitsToDibits(channelBits)
+
+	slotBits := dmr.AssembleSlotType(dmr.SlotType{ColorCode: colorCode, DataType: dmr.DTCSBK})
+	slotDibits := framing.BitsToDibits(slotBits)
+
+	burst := make([]uint8, 0, dmr.BurstDibits)
+	burst = append(burst, payloadDibits[:dmr.HalfPayloadDibits]...)
+	burst = append(burst, slotDibits[:dmr.SlotTypeDibits]...)
+	burst = append(burst, dmr.BSData.Dibits[:]...)
+	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
+	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
+
+	out := make([]uint8, 0, 800+repeats*(len(burst)+32)+100)
+	for i := 0; i < 800; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, burst...)
+		for i := 0; i < 32; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
 }
 
 // buildT2VoiceLCHeaderDibits is a local copy of the

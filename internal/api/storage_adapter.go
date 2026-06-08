@@ -82,6 +82,7 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			Encrypted:      r.Encrypted,
 			Emergency:      r.Emergency,
 			DataCall:       r.DataCall,
+			Timeslot:       r.Timeslot,
 			DeviceSerial:   r.DeviceSerial,
 			StartedAt:      r.StartedAt,
 			EndedAt:        r.EndedAt,

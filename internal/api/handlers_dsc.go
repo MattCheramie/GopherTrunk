@@ -59,7 +59,7 @@ func dscMessageToDTO(m storage.DSCMessage) DSCMessageDTO {
 // isn't wired (daemon started without storage.path).
 func (s *Server) handleDSCMessages(w http.ResponseWriter, r *http.Request) {
 	if s.dsc == nil {
-		writeError(w, http.StatusServiceUnavailable, "dsc subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "dsc subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200
@@ -71,7 +71,7 @@ func (s *Server) handleDSCMessages(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.dsc.RecentDSCMessages(limit)
 	if err != nil {
 		s.log.Error("api: dsc messages", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]DSCMessageDTO, 0, len(rows))

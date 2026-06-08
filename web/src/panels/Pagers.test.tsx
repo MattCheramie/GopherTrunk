@@ -44,11 +44,12 @@ describe("Pagers panel", () => {
     });
   });
 
-  it("renders rows with RIC, function, and body", async () => {
+  it("renders rows with type, RIC, function, and body", async () => {
     vi.mocked(fetchPagerMessages).mockResolvedValue([
       {
         id: 1,
         received_at: "2026-05-26T12:34:56Z",
+        protocol: "pocsag",
         ric: 1234567,
         func: 2,
         encoding: "alpha",
@@ -58,6 +59,7 @@ describe("Pagers panel", () => {
       {
         id: 2,
         received_at: "2026-05-26T12:35:00Z",
+        protocol: "flex",
         ric: 7654321,
         func: 1,
         encoding: "numeric",
@@ -72,6 +74,8 @@ describe("Pagers panel", () => {
       expect(screen.getByText("1234567")).toBeInTheDocument();
       expect(screen.getByText("C")).toBeInTheDocument(); // function 2 = C
       expect(screen.getByText("B")).toBeInTheDocument(); // function 1 = B
+      expect(screen.getByText("POCSAG")).toBeInTheDocument();
+      expect(screen.getByText("FLEX")).toBeInTheDocument();
     });
   });
 

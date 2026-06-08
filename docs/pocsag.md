@@ -11,11 +11,12 @@ GopherTrunk now decodes the **POCSAG** (Post Office Code
 Standardisation Advisory Group, CCIR Recommendation 584) wireline
 FSK pager protocol — the dominant pager protocol globally and the
 one most fire / EMS departments use for tone-out dispatch
-forwarding. The first PR lands the protocol layer (codeword parsing,
-BCH(31,21), batch carve-up, numeric + alphanumeric message
-reassembly) with thorough unit tests. The DSP wiring (FM demod →
-bit slicer → sync detector → batch decoder → bus event) is a
-focused follow-up PR.
+forwarding. The protocol layer (codeword parsing, BCH(31,21), batch
+carve-up, numeric + alphanumeric message reassembly) and the DSP
+wiring (FM demod → bit slicer → sync detector → batch decoder → bus
+event) are both shipped. The higher-rate Motorola **FLEX** protocol
+shares this page's bus event, storage, and panel — see the FLEX
+section below.
 
 ## What's here today
 
@@ -51,16 +52,55 @@ focused follow-up PR.
   swapping the running-mean slicer for a proper Mueller-Müller +
   matched-filter combination once we have signal to calibrate
   against.
-- **Multi-channel POCSAG from one wideband SDR.** Today each
-  paging.pocsag entry pins one SDR to one frequency. A follow-up
-  will add a DDC tap so several narrow POCSAG channels inside
-  one wideband SDR's bandwidth decode concurrently — the same
-  primitive `role: wideband` uses for DMR Tier II.
-- **FLEX.** A separate, higher-rate (1600 / 3200 / 6400 sps)
-  Motorola pager protocol that shares the operator workflow but
-  needs its own FEC (Reed-Muller + two-of-three majority decoder)
-  and frame structure. Documented as a planned follow-up; the
-  framework added here is the foundation.
+  Multi-channel POCSAG / FLEX from one wideband SDR is now shipped —
+  see **Multi-channel (wideband) paging** below.
+
+## Multi-channel (wideband) paging
+
+A `paging.wideband` group puts several paging channels — any mix of
+POCSAG and FLEX — on a **single** SDR. The daemon tunes the dongle to
+a center frequency and runs an `internal/dsp/tuner.DDCBank`: one NCO
+mixer + decimating resampler per channel pulls each narrow paging
+channel down to a 48 kHz baseband stream, which feeds the same
+per-protocol receiver the single-frequency path uses. This is the
+same DDC primitive `role: wideband` uses for DMR Tier II.
+
+So two pagers a few hundred kHz apart (e.g. FLEX on 153.0250 MHz and
+POCSAG on 153.3500 MHz, 325 kHz apart) share one stick instead of
+needing two. Each channel frequency must sit inside the dongle's IQ
+window (`center ± sample_rate/2`, minus a 5% guard); a channel outside
+the window is logged and skipped without disturbing its siblings. When
+`center_freq_hz` is omitted (or 0) the daemon centers on the midpoint
+of the channel frequencies.
+
+## FLEX
+
+FLEX is the higher-rate Motorola pager protocol that shares POCSAG's
+operator workflow, bus event, `pager_log` table, and `/pager` panel —
+rows are tagged with `protocol = "flex"`. The decoder
+(`internal/radio/pager/flex`) handles the **1600 bps / 2-level** mode:
+
+```
+IQ → FM demod → resample → slicer → flex.Decoder.Push
+   → 32-bit sync marker (0xA6C6AAAA) + 16-bit mode code (0x870C)
+   → frame-info word → block de-interleave (88 codewords)
+   → BCH(31,21)+parity → BIW → address / vector / message words
+   → KindPagerMessage (Protocol="flex")
+```
+
+- **FEC:** FLEX BCH(31,21) reuses the tested POCSAG primitive via a
+  codeword bit-reversal (`framing.FLEXBCHEncode21` /
+  `FLEXBCHDecode32`), correcting up to 2 bit errors.
+- **De-interleave:** the block transpose `idx = ((c>>5)&0xFFF8)|(c&7)`,
+  bit `(c>>3)&31` per the reference decoders.
+- **Polarity** auto-resolves (the sync hunt accepts the inverted
+  marker), like POCSAG.
+- **Scope / pending:** 3200 / 6400 bps and 4-level multi-phase modes,
+  long (2-word) addresses, and multi-frame message reassembly are
+  follow-ups. The sync framing, BCH bit order, and capcode mapping are
+  validated end-to-end against a synthetic encoder; confirming them
+  against a captured FLEX signal is the remaining real-world
+  calibration step (shared caveat with the DSC frontend).
 
 ## Configuration
 
@@ -72,12 +112,27 @@ paging:
       frequency_hz: 152_007_500  # local commercial paging / fire
                                  # dispatch / DAPNET / etc.
       baud_hz: 1200              # 512 / 1200 / 2400; default 1200
+  flex:
+    - serial: "antenna-pi2"      # SDR serial
+      frequency_hz: 929_612_500  # local FLEX paging channel
+  wideband:                      # two pagers on one dongle via DDC
+    - serial: "pager-sdr"
+      center_freq_hz: 153_187_500 # optional; auto = midpoint when 0
+      channels:
+        - protocol: flex
+          frequency_hz: 153_025_000
+        - protocol: pocsag
+          frequency_hz: 153_350_000
+          baud_hz: 1200
 ```
 
-The daemon retunes the named SDR to `frequency_hz` on startup and
-runs the receiver against its IQ stream via the iqtap broker.
-Pages flow onto `events.KindPagerMessage`, land in the SQLite
-`pager_log` table, and render on the web `/pagers` panel.
+For `pocsag` / `flex` entries the daemon retunes the named SDR to
+`frequency_hz` on startup and runs the receiver against its full IQ
+stream via the iqtap broker. For a `wideband` group the SDR is tuned
+to the group center and a DDC tap feeds each channel's receiver (see
+**Multi-channel (wideband) paging** above). Either way, pages flow
+onto `events.KindPagerMessage`, land in the SQLite `pager_log` table,
+and render on the web `/pagers` panel tagged by protocol.
 
 ## What's shipped now
 
@@ -90,9 +145,9 @@ Pages flow onto `events.KindPagerMessage`, land in the SQLite
   uncorrectable codewords + the next address terminate an
   in-progress page.
 - **Bus event** — `events.KindPagerMessage` payload is a
-  `storage.PagerMessage` carrying RIC, function code, encoding
-  ("numeric" | "alpha"), decoded text, and total BCH bit-error
-  count.
+  `storage.PagerMessage` carrying protocol ("pocsag" | "flex"), RIC /
+  capcode, function code, encoding ("numeric" | "alpha" | "tone"),
+  decoded text, and total BCH bit-error count.
 - **SQLite persistence** — `storage.PagerLog` subscribes to the
   bus event and writes to a new `pager_log` table (mirrors
   `call_log` / `location_log`). Retention sweeper can be extended
@@ -101,8 +156,10 @@ Pages flow onto `events.KindPagerMessage`, land in the SQLite
   returns the most recent N pages (default 200, max 5000),
   newest first.
 - **Web panel** — `/pagers` renders the live page list:
-  Received / RIC / Function / Encoding / Body / BER columns,
-  polled every 5 s. Non-zero BER is highlighted yellow.
+  Received / Type / RIC / Function / Encoding / Body / BER columns,
+  polled every 5 s. The Type column shows a POCSAG / FLEX badge so
+  mixed traffic (including a wideband group) is distinguishable at a
+  glance. Non-zero BER is highlighted yellow.
 
 ## Testing
 

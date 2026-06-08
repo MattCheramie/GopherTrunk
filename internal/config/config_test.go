@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,11 @@ func TestValidate(t *testing.T) {
 	}{
 		{"ok", Default(), false},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
+		// Wideband soapy_remote sources (issue #550): rates above the RTL
+		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.
+		{"wideband sample rate 10M", Config{SDR: SDRConfig{SampleRate: 10_000_000}}, false},
+		{"wideband sample rate 20M", Config{SDR: SDRConfig{SampleRate: 20_000_000}}, false},
+		{"sample rate above 20M", Config{SDR: SDRConfig{SampleRate: 20_000_001}}, true},
 		{"bad role", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Role: "bogus"}}}}, true},
 		{"bad protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "lte"}}}}, true},
 		{"tetra protocol", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "tetra"}}}}, false},
@@ -88,6 +94,16 @@ func TestValidate(t *testing.T) {
 		{"band_plan duplicate channel_id", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 1, SpacingHz: 1}, {ChannelID: 3, BaseHz: 2, SpacingHz: 2}}}}}}, true},
 		{"band_plan zero spacing", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 1, SpacingHz: 0}}}}}}, true},
 		{"band_plan zero base", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "p25", P25BandPlan: []P25BandPlanEntryConfig{{ChannelID: 3, BaseHz: 0, SpacingHz: 1}}}}}}, true},
+		// dmr_band_plan: DMR Tier III LCN→frequency resolver. Exactly one
+		// of linear / table is required; without it T3 voice grants drop.
+		{"dmr band_plan linear ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 866_000_000, SpacingHz: 25_000, Offset: 1}}}}}}, false},
+		{"dmr band_plan table ok", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 866_000_000}, {LCN: 2, FreqHz: 866_025_000}}}}}}}, false},
+		{"dmr band_plan both linear and table", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 1, SpacingHz: 1}, Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 1}}}}}}}, true},
+		{"dmr band_plan empty", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{}}}}}, true},
+		{"dmr band_plan linear zero spacing", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 1, SpacingHz: 0}}}}}}, true},
+		{"dmr band_plan linear zero base", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Linear: &DMRLinearBandPlanConfig{BaseHz: 0, SpacingHz: 1}}}}}}, true},
+		{"dmr band_plan table zero freq", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 0}}}}}}}, true},
+		{"dmr band_plan table duplicate lcn", Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "dmr", DMRBandPlan: &DMRBandPlanConfig{Table: []DMRBandPlanTableEntryConfig{{LCN: 1, FreqHz: 1}, {LCN: 1, FreqHz: 2}}}}}}}, true},
 		// wideband role: pin a dongle to a centre frequency and list
 		// per-repeater carriers inside its IQ bandwidth. Stage 2 added
 		// DMR Tier II conventional; Stage 3 added DMR Tier III trunked
@@ -291,12 +307,64 @@ func TestValidate(t *testing.T) {
 		// fine; an unknown key is rejected so typos surface at load.
 		{"web tabs known ok", Config{Web: WebConfig{Tabs: map[string]bool{"pagers": false, "metrics": true}}}, false},
 		{"web tabs unknown key", Config{Web: WebConfig{Tabs: map[string]bool{"pagerz": false}}}, true},
+		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
+		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
+		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.Validate()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestSoapyRemoteDeviceArgs covers the device-args config block (issue #542):
+// the "k=v,k=v" Args string merges with the Driver shorthand into make() kwargs.
+func TestSoapyRemoteDeviceArgs(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     SoapyRemoteConfig
+		want    map[string]string
+		wantErr bool
+	}{
+		{"empty", SoapyRemoteConfig{}, nil, false},
+		{"driver only", SoapyRemoteConfig{Driver: "uhd"}, map[string]string{"driver": "uhd"}, false},
+		{"args only", SoapyRemoteConfig{Args: "antenna=RX1"}, map[string]string{"antenna": "RX1"}, false},
+		{
+			"driver and args merge",
+			SoapyRemoteConfig{Driver: "uhd", Args: "rx_subdev_spec=A:0,antenna=RX1"},
+			map[string]string{"driver": "uhd", "rx_subdev_spec": "A:0", "antenna": "RX1"},
+			false,
+		},
+		{
+			"explicit driver in args wins",
+			SoapyRemoteConfig{Driver: "uhd", Args: "driver=lime"},
+			map[string]string{"driver": "lime"},
+			false,
+		},
+		{
+			"whitespace trimmed and empty segments skipped",
+			SoapyRemoteConfig{Args: " antenna = RX1 , , gain = 30 "},
+			map[string]string{"antenna": "RX1", "gain": "30"},
+			false,
+		},
+		{"malformed missing equals", SoapyRemoteConfig{Args: "rx_subdev_spec"}, nil, true},
+		{"malformed empty key", SoapyRemoteConfig{Args: "=value"}, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.cfg.DeviceArgs()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("DeviceArgs() = %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -9,7 +9,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test
+.PHONY: all build dist test test-dvsi test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test
 
 all: build
 
@@ -27,7 +27,7 @@ build:
 # with the daemon. Use this when you want a single binary that serves
 # the web UI at `/`. Pure-Go contributors who don't need the UI can
 # keep using `make build`.
-dist: web-build build
+dist: web-build siglab-web-build configbuilder-web-build build
 
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
@@ -318,6 +318,59 @@ web-test:
 	@command -v npm >/dev/null || { echo "npm not installed; see web/README.md"; exit 1; }
 	cd web && npm install --no-audit --no-fund
 	cd web && npm test
+
+# --- Signal Lab standalone SPA (web/siglab) -------------------------------
+# The offline signal-analysis console. Built into web/siglab/dist and embedded
+# via web/siglab/embed.go; served by `gophertrunk siglab serve` and the daemon.
+# Heavy viz libs (Plotly, TensorFlow.js) are code-split and lazy-loaded.
+
+# siglab-web-build produces the shippable bundle in web/siglab/dist/.
+siglab-web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/siglab/README.md"; exit 1; }
+	cd web/siglab && npm ci --no-audit --no-fund
+	cd web/siglab && npm run build
+
+# siglab-web-dev runs the Vite dev server (proxies /api to 127.0.0.1:8099,
+# the default `siglab serve` address).
+siglab-web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/siglab/README.md"; exit 1; }
+	cd web/siglab && npm install --no-audit --no-fund
+	cd web/siglab && npm run dev
+
+siglab-web-clean:
+	rm -rf web/siglab/dist web/siglab/node_modules web/siglab/dev-dist
+
+siglab-web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/siglab/README.md"; exit 1; }
+	cd web/siglab && npm install --no-audit --no-fund
+	cd web/siglab && npm test
+
+# --- Config Builder standalone SPA (web/configbuilder) --------------------
+# The web Config Builder/Editor. Built into web/configbuilder/dist and
+# embedded via web/configbuilder/embed.go; served by `gophertrunk config
+# serve` and the daemon at /config/.
+
+# configbuilder-web-build produces the shippable bundle in
+# web/configbuilder/dist/.
+configbuilder-web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm ci --no-audit --no-fund
+	cd web/configbuilder && npm run build
+
+# configbuilder-web-dev runs the Vite dev server (proxies /api to
+# 127.0.0.1:8077, the default `config serve` address).
+configbuilder-web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm install --no-audit --no-fund
+	cd web/configbuilder && npm run dev
+
+configbuilder-web-clean:
+	rm -rf web/configbuilder/dist web/configbuilder/node_modules web/configbuilder/dev-dist
+
+configbuilder-web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
+	cd web/configbuilder && npm install --no-audit --no-fund
+	cd web/configbuilder && npm test
 
 
 # Regenerate Go bindings under internal/api/pb/v1 from proto/*.proto.

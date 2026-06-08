@@ -27,16 +27,12 @@ func buildP25P1EncryptedLDU2Stream(t *testing.T, ldus int, es phase1.EncryptionS
 	for l := 0; l < ldus; l++ {
 		var voice [phase1.LDUVoiceSubframeCount][]byte
 		for s := range voice {
-			ch, err := imbe.EncodeChannel(p25p1VoiceInfo(frame))
+			onAir, err := imbe.EncodeFrameToChannel(p25p1VoiceInfo(frame))
 			frame++
 			if err != nil {
-				t.Fatalf("EncodeChannel: %v", err)
+				t.Fatalf("EncodeFrameToChannel: %v", err)
 			}
-			onAir, err := imbe.Scramble(ch)
-			if err != nil {
-				t.Fatalf("Scramble: %v", err)
-			}
-			voice[s] = append([]byte(nil), onAir...)
+			voice[s] = onAir
 		}
 		lces := phase1.AssembleEncryptionSync(es)
 		var lsd [phase1.LDULSDBlockCount][]byte

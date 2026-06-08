@@ -19,6 +19,7 @@ type PagerProvider interface {
 type PagerMessageDTO struct {
 	ID         int64     `json:"id"`
 	ReceivedAt time.Time `json:"received_at"`
+	Protocol   string    `json:"protocol"`
 	RIC        uint32    `json:"ric"`
 	Func       uint8     `json:"func"`
 	Encoding   string    `json:"encoding"`
@@ -27,9 +28,14 @@ type PagerMessageDTO struct {
 }
 
 func pagerMessageToDTO(m storage.PagerMessage) PagerMessageDTO {
+	proto := m.Protocol
+	if proto == "" {
+		proto = "pocsag"
+	}
 	return PagerMessageDTO{
 		ID:         m.ID,
 		ReceivedAt: m.ReceivedAt,
+		Protocol:   proto,
 		RIC:        m.RIC,
 		Func:       m.Func,
 		Encoding:   m.Encoding,
@@ -42,7 +48,7 @@ func pagerMessageToDTO(m storage.PagerMessage) PagerMessageDTO {
 // Optional ?limit= (default 200, max 5000).
 func (s *Server) handlePagerMessages(w http.ResponseWriter, r *http.Request) {
 	if s.pager == nil {
-		writeError(w, http.StatusServiceUnavailable, "pager subsystem not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "pager subsystem not enabled (set storage.path in config to persist and view decoded messages)")
 		return
 	}
 	limit := 200
@@ -54,7 +60,7 @@ func (s *Server) handlePagerMessages(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.pager.RecentPagerMessages(limit)
 	if err != nil {
 		s.log.Error("api: pager messages", "err", err)
-		writeError(w, http.StatusInternalServerError, "query failed")
+		s.writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	out := make([]PagerMessageDTO, 0, len(rows))

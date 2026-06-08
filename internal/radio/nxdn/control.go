@@ -44,6 +44,7 @@ type ControlChannel struct {
 	rate   BaudRate
 	locked bool
 	last   LockState
+	topo   topologyModel
 
 	// proc is the cross-call dibit / sync state the Process
 	// adapter uses (see process.go). Lazily constructed on the
@@ -163,6 +164,7 @@ func (c *ControlChannel) IngestFrame(lich LICH, cac *CACMessage) {
 	switch cac.Type {
 	case RCCHSITEINFO:
 		s := ParseSiteInfo(cac.Payload)
+		c.topo.applySiteInfo(s.SystemID, s.SiteID, s.LocationID)
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate, SiteID: s.SiteID, SystemID: s.SystemID})
 	case RCCHCCH:
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, BaudRate: c.rate})
@@ -177,6 +179,9 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		c.log.Info("nxdn cc locked", "freq", s.FrequencyHz, "rate", s.BaudRate.String(), "site", s.SiteID, "sys", s.SystemID)
 	}
 }
+
+// Topology returns the accumulated single-site identity for the hunt layer.
+func (c *ControlChannel) Topology() TopologyConfig { return c.topo.snapshot() }
 
 // MarkLost publishes cc.lost and resets the locked flag.
 func (c *ControlChannel) MarkLost() {

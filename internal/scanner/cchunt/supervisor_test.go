@@ -178,6 +178,43 @@ func TestSupervisorHoldAndResume(t *testing.T) {
 	}
 }
 
+func TestSupervisorPauseAllResumeAll(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:   bus,
+		Tuner: &fakeTuner{},
+		Systems: []trunking.System{
+			{Name: "A", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}},
+			{Name: "B", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{2}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sup.PauseAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateHeld {
+			t.Errorf("system %s state after PauseAll = %q, want held", st.Name, st.State)
+		}
+	}
+	// Idempotent.
+	sup.PauseAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateHeld {
+			t.Errorf("system %s not held after second PauseAll", st.Name)
+		}
+	}
+
+	sup.ResumeAll()
+	for _, st := range sup.Snapshot() {
+		if st.State != StateIdle {
+			t.Errorf("system %s state after ResumeAll = %q, want idle", st.Name, st.State)
+		}
+	}
+}
+
 func TestSupervisorForceRetuneClearsBackoff(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -281,5 +318,77 @@ func TestSupervisorRunReturnsCtxErr(t *testing.T) {
 	got := sup.Run(ctx)
 	if got != context.DeadlineExceeded {
 		t.Errorf("Run() = %v, want context.DeadlineExceeded", got)
+	}
+}
+
+// fakeIQHealth is a stub IQHealthProvider for the markFailed enrichment
+// tests. When ok is false it models a decoder that saw no IQ for the
+// system, so the supervisor must fall back to noIQDiagnosis.
+type fakeIQHealth struct {
+	diag trunking.HuntDiagnostics
+	ok   bool
+}
+
+func (f fakeIQHealth) IQHealth(string) (trunking.HuntDiagnostics, bool) {
+	return f.diag, f.ok
+}
+
+// TestMarkFailedAttachesDiagnostics: a wired provider's snapshot rides
+// along on the cchunt.failed event.
+func TestMarkFailedAttachesDiagnostics(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sup, err := New(Options{
+		Bus:     bus,
+		Tuner:   &fakeTuner{},
+		Systems: []trunking.System{{Name: "R", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{1}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := trunking.HuntDiagnostics{
+		IQObserved: true, IQSamples: 4096, IQPowerDbFS: -42,
+		PipelineActive: true, Diagnosis: "signal present but no control-channel lock — verify the control-channel",
+	}
+	sup.SetIQHealthProvider(fakeIQHealth{diag: want, ok: true})
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+	sup.markFailed("R")
+
+	select {
+	case ev := <-sub.C:
+		f, ok := ev.Payload.(trunking.HuntFailed)
+		if !ok {
+			t.Fatalf("payload type = %T, want HuntFailed", ev.Payload)
+		}
+		if f.Diagnostics != want {
+			t.Errorf("Diagnostics = %+v, want %+v", f.Diagnostics, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("never saw cchunt.failed event")
+	}
+}
+
+// TestMarkFailedNoIQDiagnosis: a provider reporting no observations
+// (ok=false) means the SDR likely isn't streaming — the supervisor
+// substitutes noIQDiagnosis.
+func TestMarkFailedNoIQDiagnosis(t *testing.T) {
+	got := diagnoseFailure(fakeIQHealth{ok: false}, "R")
+	if got.Diagnosis != noIQDiagnosis {
+		t.Errorf("Diagnosis = %q, want noIQDiagnosis", got.Diagnosis)
+	}
+	if got.IQObserved {
+		t.Errorf("IQObserved = true, want false when no IQ seen")
+	}
+}
+
+// TestMarkFailedNoProvider: with no provider wired (the default) the
+// event still publishes with an empty diagnosis — no panic, no change
+// for existing consumers.
+func TestMarkFailedNoProvider(t *testing.T) {
+	got := diagnoseFailure(nil, "R")
+	if got != (trunking.HuntDiagnostics{}) {
+		t.Errorf("diagnoseFailure(nil) = %+v, want zero value", got)
 	}
 }

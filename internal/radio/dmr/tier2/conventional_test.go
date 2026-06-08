@@ -41,6 +41,44 @@ func burstWithFLC(f dmr.FLC) *dmr.Burst {
 	return &b
 }
 
+// TestConventionalProtocolTagDirectMode pins the Tier I direct-mode
+// parameterization: a ConventionalChannel constructed with
+// ProtocolTag="dmr-tier1" must publish grants tagged "dmr-tier1" (the wire
+// decode is identical to Tier II — only the tag + sync set differ).
+func TestConventionalProtocolTagDirectMode(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "DirectMode",
+		FrequencyHz: 446_006_250,
+		ProtocolTag: "dmr-tier1",
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x000064, SrcAddr: 0x100200}
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 7, DataType: dmr.DTVoiceLCHeader})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			g := ev.Payload.(trunking.Grant)
+			if g.Protocol != "dmr-tier1" {
+				t.Errorf("grant Protocol = %q, want dmr-tier1", g.Protocol)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event")
+		}
+	}
+}
+
 func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -93,6 +131,59 @@ func TestConventionalPublishesGrantOnVoiceLCHeader(t *testing.T) {
 		case <-deadline:
 			t.Fatal("no grant event")
 		}
+	}
+}
+
+// TestConventionalDoesNotRelockOnColorCodeFlicker pins the fix for the
+// flaky TestDaemonCCDecodesDMRTier2: a single Golay(20,8)-miscorrected
+// slot type can flip the decoded color code (e.g. 0x7 → 0x5) on
+// otherwise-identical traffic. The lock is to the repeater frequency,
+// so a transient color-code change must not republish cc.locked — doing
+// so churned the event bus / control_channel_transitions metric and made
+// the integration test's exact-one-lock assertion timing-dependent.
+func TestConventionalDoesNotRelockOnColorCodeFlicker(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "FlickerRepeater",
+		FrequencyHz: 460_500_000,
+		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	})
+	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x123, SrcAddr: 0x456789}
+
+	// First burst locks at color code 0x7; a later burst on the same
+	// frequency decodes 0x5 (the FEC-miss flicker) and must NOT re-lock.
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 0x7, DataType: dmr.DTVoiceLCHeader})
+	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 0x5, DataType: dmr.DTVoiceLCHeader})
+
+	var locks []LockState
+	deadline := time.After(300 * time.Millisecond)
+drain:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindCCLocked {
+				continue
+			}
+			ls, ok := ev.Payload.(LockState)
+			if !ok {
+				t.Fatalf("CCLocked payload type = %T, want LockState", ev.Payload)
+			}
+			locks = append(locks, ls)
+		case <-deadline:
+			break drain
+		}
+	}
+
+	if len(locks) != 1 {
+		t.Fatalf("cc.locked fired %d times, want 1 (color-code flicker must not re-lock): %+v", len(locks), locks)
+	}
+	if locks[0].ColorCode != 0x7 {
+		t.Errorf("locked color code = %#x, want 0x7 (the first decode, not the flicker)", locks[0].ColorCode)
 	}
 }
 

@@ -28,9 +28,10 @@ import (
 //	FS  — frame sync, fixed pattern marking the LDU start.
 //	NID — network ID + DUID (already parsed by the existing
 //	      ParseNID / NIDFromDibits in nid.go).
-//	Voice — 9 IMBE subframes, each 144 post-deinterleave bits.
-//	        Hand each to imbe.DecodeChannelToFrame to get the
-//	        11-byte recorder-ready frame.
+//	Voice — 9 IMBE subframes, each 144 on-air channel bits.
+//	        Hand each to imbe.DecodeChannelToFrame, which §7.5
+//	        deinterleaves + §7.4 descrambles + FEC-decodes them
+//	        into the 11-byte recorder-ready frame.
 //	LC  — 240 bits = 24 short Hamming(10,6,3) codewords for the
 //	      Link Control word (24-bit source unit ID, 16/24-bit
 //	      destination, etc.). LDU1 only.
@@ -118,10 +119,20 @@ const _ = uintptr(LDUTotalBits - (LDUFrameSyncBits + LDUNIDBits +
 var ErrLDULength = errors.New("p25/phase1: LDU input must be exactly 1728 bits (one bit per byte, 0/1)")
 
 // LDU payload-bit offsets for each field inside the 1680-bit
-// post-status-strip payload. Source: TIA-102.BAAA-A § 8
-// (Logical Link Data Unit 1 / 2 voice-frame layout). The 9 IMBE
-// voice subframes are interleaved with 6 × 40-bit LC (LDU1) or
-// ES (LDU2) blocks and 2 × 16-bit LSD blocks per the table:
+// post-status-strip payload.
+//
+// Field interleaving order is sourced from szechyjs/dsd's
+// p25p1_ldu1.c (process_p25_ldu1): the decoder reads IMBE voice
+// frames 1 and 2 (u_0, u_1) back-to-back, THEN a Link Control (LDU1)
+// / Encryption Sync (LDU2) block after each of u_1 through u_6, with
+// both 16-bit Low-Speed Data blocks sitting together between u_7 and
+// u_8:
+//
+//	u_0, u_1, LC1, u_2, LC2, u_3, LC3, u_4, LC4,
+//	u_5, LC5, u_6, LC6, u_7, LSD1, LSD2, u_8
+//
+// The 9 IMBE voice subframes are 144 bits each, the 6 LC/ES blocks
+// 40 bits each (240 total), and the 2 LSD blocks 16 bits each:
 //
 //	Field                   Length   Cumulative
 //	Frame Sync (FS)             48       48
@@ -141,11 +152,18 @@ var ErrLDULength = errors.New("p25/phase1: LDU input must be exactly 1728 bits (
 //	LC / ES Block 6             40     1360
 //	Voice Frame 8 (u_7)        144     1504
 //	LSD Block 1                 16     1520
-//	Voice Frame 9 (u_8)        144     1664
-//	LSD Block 2                 16     1680
+//	LSD Block 2                 16     1536
+//	Voice Frame 9 (u_8)        144     1680
 //
 // (LDU1 carries Link Control bits in the LC/ES slots; LDU2
 // carries Encryption Sync bits at the identical positions.)
+//
+// NOTE: the previous table placed an LC/ES block between u_0 and u_1
+// (and the LSD between u_6 and u_7), which shifted u_1..u_7 by one
+// 40-bit block. It round-tripped against InjectStatusSymbols but did
+// not match real on-air P25, so only u_0 and u_8 decoded — every
+// other voice subframe was read from the wrong bits (issue #489
+// follow-up).
 var (
 	// lduFSOffset, lduNIDOffset locate the two fixed-position
 	// fields at the start of every LDU.
@@ -157,21 +175,21 @@ var (
 	// subframe is LDUVoiceSubframeBits = 144 bits long.
 	lduVoiceOffsets = [LDUVoiceSubframeCount]int{
 		112,  // u_0 → ends at 256
-		256,  // u_1 → ends at 400
+		256,  // u_1 → ends at 400  (u_0 and u_1 are adjacent)
 		440,  // u_2 → ends at 584  (post LC/ES Block 1)
 		624,  // u_3 → ends at 768  (post LC/ES Block 2)
 		808,  // u_4 → ends at 952  (post LC/ES Block 3)
 		992,  // u_5 → ends at 1136 (post LC/ES Block 4)
 		1176, // u_6 → ends at 1320 (post LC/ES Block 5)
 		1360, // u_7 → ends at 1504 (post LC/ES Block 6)
-		1520, // u_8 → ends at 1664 (post LSD Block 1)
+		1536, // u_8 → ends at 1680 (post LSD Blocks 1 & 2)
 	}
 
 	// lduLCESBlockOffsets[j] is the bit offset of LC/ES block j
 	// (0 ≤ j < 6) inside the 1680-bit payload. Each block is
 	// 40 bits = 4 × Hamming(10,6,3) short codewords.
 	lduLCESBlockOffsets = [6]int{
-		400,  // Block 1
+		400,  // Block 1 (post u_1)
 		584,  // Block 2 (post u_2)
 		768,  // Block 3 (post u_3)
 		952,  // Block 4 (post u_4)
@@ -183,7 +201,7 @@ var (
 	// (0 ≤ k < 2). Each block is 16 bits = 1 cyclic codeword.
 	lduLSDBlockOffsets = [2]int{
 		1504, // Block 1 (post u_7)
-		1664, // Block 2 (post u_8)
+		1520, // Block 2 (contiguous with Block 1, before u_8)
 	}
 )
 
@@ -277,8 +295,9 @@ func InjectStatusSymbols(payload []byte, status [LDUStatusSymbolCount]uint8) ([]
 //
 //	1728-bit on-air ldu
 //	  → StripStatusSymbols     (1680-bit payload)
-//	  → slice u_0..u_8 at lduVoiceOffsets   (9 × 144 bits)
-//	  → imbe.DecodeChannelToFrame for each  (descramble, FEC,
+//	  → slice u_0..u_8 at lduVoiceOffsets   (9 × 144 on-air bits)
+//	  → imbe.DecodeChannelToFrame for each  (deinterleave,
+//	                                         descramble, FEC,
 //	                                         bit-pack → 11 bytes)
 //	  → [9] recorder-ready frames
 //

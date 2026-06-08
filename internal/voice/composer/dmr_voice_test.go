@@ -10,6 +10,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -200,4 +201,165 @@ func matchesAnySuperframe(got [][]byte, infos [][]byte) bool {
 		}
 	}
 	return false
+}
+
+// flcFragments encodes a Full Link Control into the four 32-bit embedded
+// fragments carried by a superframe's bursts B–E.
+func flcFragments(t *testing.T, f dmr.FLC) [4][]byte {
+	t.Helper()
+	info := dmr.AssembleFLC(f)
+	lc := make([]byte, framing.EmbLCBits)
+	for i := 0; i < framing.EmbLCBits; i++ {
+		lc[i] = (info[i/8] >> uint(7-(i%8))) & 1
+	}
+	ch := framing.EncodeEmbeddedLC(lc)
+	var frags [4][]byte
+	for i := range frags {
+		frags[i] = ch[i*framing.EmbeddedFragmentBits : (i+1)*framing.EmbeddedFragmentBits]
+	}
+	return frags
+}
+
+// embeddedSyncDibits packs an EMB header + fragment into a burst's
+// 24-dibit centre field.
+func embeddedSyncDibits(emb dmr.EMB, frag []byte) [24]uint8 {
+	field := dmr.AssembleEmbeddedField(emb, frag)
+	var d [24]uint8
+	for i := 0; i < 24; i++ {
+		d[i] = field[2*i]<<1 | field[2*i+1]
+	}
+	return d
+}
+
+// buildInterleavedVoiceStreamLC builds a 2-slot interleaved DMR voice
+// dibit stream: each superframe's bursts weave slot A and slot B
+// (A.b, B.b), burst A of each carries BS-Voice sync, bursts B–E carry
+// that slot's own embedded Link Control (talkgroup aTG / bTG). Returns
+// the dibits plus each slot's ordered 49-bit AMBE payloads.
+func buildInterleavedVoiceStreamLC(t *testing.T, n int, aTG, bTG uint32) (dibits []uint8, aInfos, bInfos [][]byte) {
+	t.Helper()
+	dibits = make([]uint8, 240) // clock-settling lead
+	for i := range dibits {
+		dibits[i] = uint8(i % 4)
+	}
+	aFrags := flcFragments(t, dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: aTG, SrcAddr: 11})
+	bFrags := flcFragments(t, dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: bTG, SrcAddr: 22})
+
+	var aOnair, bOnair [][]byte
+	for f := 0; f < n*dmrvoice.FramesPerSuperframe; f++ {
+		ai, bi := mkInfo(f), mkInfo(f+100000)
+		aInfos = append(aInfos, ai)
+		bInfos = append(bInfos, bi)
+		af, err := dmrvoice.EncodeAMBEFrame(ai)
+		if err != nil {
+			t.Fatalf("EncodeAMBEFrame A: %v", err)
+		}
+		bf, err := dmrvoice.EncodeAMBEFrame(bi)
+		if err != nil {
+			t.Fatalf("EncodeAMBEFrame B: %v", err)
+		}
+		aOnair = append(aOnair, af)
+		bOnair = append(bOnair, bf)
+	}
+
+	lcss := func(b int) dmr.LCSS {
+		switch b {
+		case 1:
+			return dmr.LCSSFirst
+		case 4:
+			return dmr.LCSSLast
+		default:
+			return dmr.LCSSCont
+		}
+	}
+	for s := 0; s < n; s++ {
+		for b := 0; b < dmrvoice.BurstsPerSuperframe; b++ {
+			aSync, bSync := dmr.BSData.Dibits, dmr.BSData.Dibits
+			switch {
+			case b == 0:
+				aSync, bSync = dmr.BSVoice.Dibits, dmr.BSVoice.Dibits
+			case b >= 1 && b <= 4:
+				aSync = embeddedSyncDibits(dmr.EMB{ColorCode: 1, LCSS: lcss(b)}, aFrags[b-1])
+				bSync = embeddedSyncDibits(dmr.EMB{ColorCode: 1, LCSS: lcss(b)}, bFrags[b-1])
+			}
+			base := s*dmrvoice.FramesPerSuperframe + b*dmrvoice.FramesPerBurst
+			dibits = append(dibits, voiceBurstDibits(aOnair[base:base+dmrvoice.FramesPerBurst], aSync)...)
+			dibits = append(dibits, voiceBurstDibits(bOnair[base:base+dmrvoice.FramesPerBurst], bSync)...)
+		}
+	}
+	return dibits, aInfos, bInfos
+}
+
+// TestComposerDMRInterleavedRoutesBySlot drives the full opt-in 2-slot
+// path: a carrier with two concurrent calls (talkgroups 100 and 200,
+// each with its own embedded LC) is decoded for the call granted on
+// talkgroup 100. Only that slot's AMBE payloads must reach the sidecar;
+// the other slot's must not leak in.
+func TestComposerDMRInterleavedRoutesBySlot(t *testing.T) {
+	const (
+		sampleRate  = 48_000.0
+		sps         = 10
+		span        = 8
+		alpha       = 0.20
+		deviation   = 1944.0
+		superframes = 12
+		ourTG       = 100
+		otherTG     = 200
+	)
+	dibits, aInfos, bInfos := buildInterleavedVoiceStreamLC(t, superframes, ourTG, otherTG)
+	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRate, deviation)
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "DMRSite", Protocol: "dmr-tier3",
+				GroupID: ourTG, FrequencyHz: 460_000_000,
+				Timeslot: 1, DMRInterleavedVoice: true,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 4*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= dmrvoice.FramesPerSuperframe
+	})
+
+	got := sink.rawFrames("VOICE-1")
+	got = got[:len(got)-len(got)%dmrvoice.FramesPerSuperframe]
+	if len(got) == 0 {
+		t.Fatal("no complete superframe routed to the sidecar")
+	}
+	if !matchesAnySuperframe(got, aInfos) {
+		t.Errorf("our talkgroup's (TG %d) audio did not reach the sidecar", ourTG)
+	}
+	if matchesAnySuperframe(got, bInfos) {
+		t.Errorf("the other timeslot's (TG %d) audio leaked into our call", otherTG)
+	}
 }

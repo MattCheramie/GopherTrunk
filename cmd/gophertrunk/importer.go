@@ -146,16 +146,48 @@ func parseImportFile(path string, kind api.ImportSourceKind) (parsedSystem, erro
 }
 
 func parsedToDTO(p parsedSystem, filename string) api.ParsedSystemDTO {
+	// Collapse every site's control-channel frequencies into one ordered,
+	// de-duplicated list (the config schema is flat — one system carries
+	// all its control channels). Voice frequencies are left to the
+	// committed talkgroup/band-plan flow.
+	var ccs []uint32
+	seen := make(map[uint32]struct{})
+	for _, site := range p.Sites {
+		for _, f := range site.Frequencies {
+			if !f.ControlChannel {
+				continue
+			}
+			if _, dup := seen[f.Hz]; dup {
+				continue
+			}
+			seen[f.Hz] = struct{}{}
+			ccs = append(ccs, f.Hz)
+		}
+	}
+	tgs := make([]api.ImportTalkgroupDTO, 0, len(p.Talkgroups))
+	for _, tg := range p.Talkgroups {
+		tgs = append(tgs, api.ImportTalkgroupDTO{
+			Decimal:     tg.Dec,
+			AlphaTag:    tg.AlphaTag,
+			Description: tg.Description,
+			Tag:         tg.Tag,
+			Group:       tg.Group,
+			Mode:        tg.Mode,
+			Encrypted:   tg.Encrypted,
+		})
+	}
 	return api.ParsedSystemDTO{
-		Name:        p.Name,
-		Location:    p.Location,
-		County:      p.County,
-		SysID:       p.SysID,
-		WACN:        p.WACN,
-		SystemType:  p.SystemType,
-		Protocol:    p.Protocol,
-		SiteCount:   len(p.Sites),
-		TalkgroupCt: len(p.Talkgroups),
-		SourcePath:  filename,
+		Name:            p.Name,
+		Location:        p.Location,
+		County:          p.County,
+		SysID:           p.SysID,
+		WACN:            p.WACN,
+		SystemType:      p.SystemType,
+		Protocol:        p.Protocol,
+		SiteCount:       len(p.Sites),
+		TalkgroupCt:     len(p.Talkgroups),
+		SourcePath:      filename,
+		ControlChannels: ccs,
+		Talkgroups:      tgs,
 	}
 }

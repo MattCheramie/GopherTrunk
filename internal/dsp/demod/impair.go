@@ -30,6 +30,12 @@ type Impairments struct {
 	// crystal ppm error, or a channel that is not exactly centred in
 	// the SDR passband. Applied as a per-sample phase ramp.
 	FreqOffsetHz float64
+	// FreqDriftHzPerSec is a linear carrier-frequency drift in Hz per
+	// second, added on top of FreqOffsetHz: the instantaneous offset is
+	// FreqOffsetHz + FreqDriftHzPerSec·t. It models a tuner whose LO
+	// wanders as it warms up — the slow drift a fixed coarse seed cannot
+	// track and a fine carrier loop must follow (issue #492). Zero = none.
+	FreqDriftHzPerSec float64
 	// DCOffset is a constant complex term added to every sample: the
 	// R820T2 / E4000 "DC spike". Magnitude is relative to the
 	// unit-scale modulator output (0.1 ≈ -20 dBFS).
@@ -110,11 +116,14 @@ func ApplyImpairments(iq []complex64, sampleRateHz float64, imp Impairments) []c
 		}
 	}
 
-	// Carrier frequency offset: a per-sample phase ramp.
-	if imp.FreqOffsetHz != 0 && sampleRateHz > 0 {
-		w := 2 * math.Pi * imp.FreqOffsetHz / sampleRateHz
+	// Carrier frequency offset (+ optional linear drift). A constant offset
+	// is a per-sample phase ramp; a drift d (Hz/s) makes the instantaneous
+	// frequency FreqOffsetHz + d·t, whose integral adds a quadratic phase
+	// term ½·(2π·d)·t² (t = i/sampleRateHz).
+	if (imp.FreqOffsetHz != 0 || imp.FreqDriftHzPerSec != 0) && sampleRateHz > 0 {
 		for i := range out {
-			ph := w * float64(i)
+			t := float64(i) / sampleRateHz
+			ph := 2 * math.Pi * (imp.FreqOffsetHz*t + 0.5*imp.FreqDriftHzPerSec*t*t)
 			out[i] *= complex(float32(math.Cos(ph)), float32(math.Sin(ph)))
 		}
 	}

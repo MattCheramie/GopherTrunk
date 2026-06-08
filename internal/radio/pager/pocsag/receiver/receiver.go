@@ -214,6 +214,7 @@ func (r *Receiver) publishPage(p pocsag.Page) {
 		enc = "numeric"
 	}
 	msg := storage.PagerMessage{
+		Protocol:  "pocsag",
 		RIC:       p.RIC,
 		Func:      uint8(p.Func),
 		Encoding:  enc,

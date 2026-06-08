@@ -46,6 +46,26 @@ type ParsedSystemDTO struct {
 	TalkgroupCt int                    `json:"talkgroup_count"`
 	SourcePath  string                 `json:"source_path,omitempty"`
 	Extra       map[string]interface{} `json:"extra,omitempty"`
+
+	// ControlChannels and Talkgroups carry the parsed detail the web
+	// Config Builder folds into its draft (control channels collapsed
+	// across sites, matching the flat config schema). The legacy
+	// /api/v1/import preview ignores them; they are populated for the
+	// builder's POST /api/v1/config/parse path.
+	ControlChannels []uint32             `json:"control_channels,omitempty"`
+	Talkgroups      []ImportTalkgroupDTO `json:"talkgroups,omitempty"`
+}
+
+// ImportTalkgroupDTO is one parsed talkgroup, shaped to match the columns
+// trunking.TalkGroup loads from a Trunk Recorder–style CSV.
+type ImportTalkgroupDTO struct {
+	Decimal     uint32 `json:"decimal"`
+	AlphaTag    string `json:"alpha_tag,omitempty"`
+	Description string `json:"description,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Encrypted   bool   `json:"encrypted,omitempty"`
 }
 
 // Importer is the daemon-side import surface. Decoupled via interface
@@ -167,19 +187,19 @@ func randomID(n int) string {
 // /api/v1/import/{id}/commit to finalise.
 func (s *Server) handleImportUpload(w http.ResponseWriter, r *http.Request) {
 	if s.importer == nil {
-		writeError(w, http.StatusServiceUnavailable, "import: not wired (daemon started without a -config file)")
+		s.writeError(w, http.StatusServiceUnavailable, "import: not wired (daemon started without a -config file)")
 		return
 	}
 	// 20 MiB max — generous for the largest RadioReference PDFs and
 	// a CSV bundle, while bounded enough that an accidental upload
 	// can't OOM the daemon.
 	if err := r.ParseMultipartForm(20 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "import: "+err.Error())
+		s.writeError(w, http.StatusBadRequest, "import: "+err.Error())
 		return
 	}
 	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
-		writeError(w, http.StatusBadRequest, "import: at least one `files` part is required")
+		s.writeError(w, http.StatusBadRequest, "import: at least one `files` part is required")
 		return
 	}
 
@@ -188,27 +208,27 @@ func (s *Server) handleImportUpload(w http.ResponseWriter, r *http.Request) {
 	for _, fh := range files {
 		kind := classifyImportFile(fh.Filename)
 		if kind == "" {
-			writeError(w, http.StatusBadRequest,
+			s.writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("import: %q: unsupported extension (need .pdf or .csv)", fh.Filename))
 			return
 		}
 		f, err := fh.Open()
 		if err != nil {
-			writeError(w, http.StatusBadRequest,
+			s.writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("import: %q: %v", fh.Filename, err))
 			return
 		}
 		body, err := io.ReadAll(f)
 		_ = f.Close()
 		if err != nil {
-			writeError(w, http.StatusBadRequest,
+			s.writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("import: %q: %v", fh.Filename, err))
 			return
 		}
 		src := ImportSource{Filename: fh.Filename, Kind: kind, Data: body}
 		preview, err := s.importer.Parse(src)
 		if err != nil {
-			writeError(w, http.StatusBadRequest,
+			s.writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("import: %q: %v", fh.Filename, err))
 			return
 		}
@@ -224,13 +244,13 @@ func (s *Server) handleImportUpload(w http.ResponseWriter, r *http.Request) {
 // staging entry is consumed on success.
 func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	if s.importer == nil {
-		writeError(w, http.StatusServiceUnavailable, "import: not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "import: not wired")
 		return
 	}
 	id := r.PathValue("id")
 	entry, ok := s.imports.take(id)
 	if !ok {
-		writeError(w, http.StatusNotFound, "import: staging id not found (expired or already committed)")
+		s.writeError(w, http.StatusNotFound, "import: staging id not found (expired or already committed)")
 		return
 	}
 	force := r.URL.Query().Get("force") == "true"
@@ -240,7 +260,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		s.imports.mu.Lock()
 		s.imports.entries[id] = entry
 		s.imports.mu.Unlock()
-		writeError(w, http.StatusBadRequest, "import: "+err.Error())
+		s.writeError(w, http.StatusBadRequest, "import: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -249,12 +269,12 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 // handleImportDiscard drops a staged upload without committing.
 func (s *Server) handleImportDiscard(w http.ResponseWriter, r *http.Request) {
 	if s.importer == nil {
-		writeError(w, http.StatusServiceUnavailable, "import: not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "import: not wired")
 		return
 	}
 	id := r.PathValue("id")
 	if _, ok := s.imports.take(id); !ok {
-		writeError(w, http.StatusNotFound, "import: staging id not found")
+		s.writeError(w, http.StatusNotFound, "import: staging id not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

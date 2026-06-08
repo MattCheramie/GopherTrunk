@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
+	"github.com/MattCheramie/GopherTrunk/internal/diag"
 )
 
 // runImport is the entry point for `gophertrunk import-pdf`. Parses
@@ -19,7 +23,7 @@ import (
 //	-force             overwrite an existing system block with the same name
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import-pdf", flag.ExitOnError)
-	cfgPath := fs.String("config", defaultConfigPath(), "path to existing config.yaml (merged in place)")
+	cfgPath := fs.String("config", configbuilder.DefaultConfigPath(), "path to existing config.yaml (merged in place)")
 	csvDir := fs.String("csv-dir", "", "directory to write talkgroup CSVs (default: directory of -config)")
 	noTUI := fs.Bool("no-tui", false, "skip the review TUI and write straight from parsed defaults")
 	dryRun := fs.Bool("dry-run", false, "print the planned changes and exit without writing")
@@ -28,6 +32,7 @@ func runImport(args []string) {
 	extractOnly := fs.Bool("extract-only", false, "dump positioned-text rows from a -pdf as JSON to stdout and exit (for parser bug reports)")
 	nameOverride := fs.String("name", "", "system name for native RadioReference CSV imports (bundle CSVs ignore this — use the metadata section)")
 	sysidOverride := fs.String("sysid", "", "system ID for native RadioReference CSV imports")
+	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	var pdfPaths repeatedString
 	var csvPaths repeatedString
 	fs.Var(&pdfPaths, "pdf", "path to a RadioReference PDF system export (repeatable)")
@@ -75,14 +80,16 @@ Config-file builder:
 
 Usage:
   gophertrunk import-pdf -pdf <file.pdf> [-pdf <file.pdf>...] [-csv <file.csv>...] [flags]
-  gophertrunk import-pdf -wizard                              (build a fresh config)
-  gophertrunk import-pdf -wizard -pdf <file.pdf>              (wizard then import)
+  gophertrunk import-pdf -wizard                              (opens the Config Builder TUI)
+  gophertrunk config                                          (build/edit config in the terminal)
 
 Flags:
 `)
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	resolveVerbose(*verboseFlag, false)
+	importRep = newReporter("import-pdf")
 
 	if !*wizard && len(pdfPaths) == 0 && len(csvPaths) == 0 {
 		fs.Usage()
@@ -101,44 +108,25 @@ Flags:
 		}
 		rows, err := extractPDFRows(pdfPaths[0])
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		if err := dumpParseRowsJSON(os.Stdout, rows); err != nil {
-			fail("write rows: " + err.Error())
+			failErr(fmt.Errorf("write rows: %w", err))
 		}
 		return
 	}
 
-	// Wizard mode: run the interactive config builder first. The
-	// resulting answers feed both the standalone "build a fresh
-	// config" path and the "wizard then merge" path below.
+	// Wizard mode is now the full terminal Config Builder. The old 13-step
+	// wizard has been superseded by `gophertrunk config tui` (a complete
+	// editor that can also import PDF/CSV from inside), so -wizard launches
+	// it. PDF/CSV passed alongside can be imported in the builder's Import
+	// dialog.
 	if *wizard {
-		seed := defaultWizardAnswers()
-		seed.ConfigPath = *cfgPath
-		keep := len(pdfPaths) > 0 || len(csvPaths) > 0
-		answers, wrote, err := runConfigWizard(seed, keep)
-		if err != nil {
-			fail("wizard: " + err.Error())
+		if len(pdfPaths) > 0 || len(csvPaths) > 0 {
+			fmt.Fprintln(os.Stderr, "import-pdf: -wizard now opens the Config Builder; use its Import dialog to add the PDF/CSV.")
 		}
-		if !keep {
-			if wrote {
-				fmt.Fprintf(os.Stderr, "import-pdf: wrote %s\n", answers.ConfigPath)
-			} else {
-				fmt.Fprintln(os.Stderr, "import-pdf: wizard cancelled, no file written")
-			}
-			return
-		}
-		// Wizard + import: write the scaffold first so the merge path
-		// has something to layer trunking.systems on top of.
-		body, err := renderConfigYAML(answers)
-		if err != nil {
-			fail("wizard render: " + err.Error())
-		}
-		if err := os.WriteFile(answers.ConfigPath, body, 0o644); err != nil {
-			fail("wizard write: " + err.Error())
-		}
-		fmt.Fprintf(os.Stderr, "import-pdf: wizard scaffold written to %s\n", answers.ConfigPath)
-		*cfgPath = answers.ConfigPath
+		runConfigTUI(nil)
+		return
 	}
 
 	if len(pdfPaths) == 0 && len(csvPaths) == 0 {
@@ -152,7 +140,7 @@ Flags:
 	for _, p := range pdfPaths {
 		sys, err := parsePDFFile(p)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		parsed = append(parsed, sys)
 		fmt.Fprintf(os.Stderr, "import-pdf: parsed PDF %s: %s (%d sites, %d talkgroups)\n",
@@ -162,7 +150,7 @@ Flags:
 	for _, p := range csvPaths {
 		sys, err := parseCSVFile(p, csvOpts)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		parsed = append(parsed, sys)
 		fmt.Fprintf(os.Stderr, "import-pdf: parsed CSV %s: %s (%d sites, %d talkgroups)\n",
@@ -183,7 +171,7 @@ Flags:
 	if *noTUI || *dryRun {
 		res, err := writeFn(parsed)
 		if err != nil {
-			fail(err.Error())
+			failErr(err)
 		}
 		if *dryRun {
 			renderDryRun(os.Stdout, res, *cfgPath)
@@ -198,7 +186,7 @@ Flags:
 
 	wrote, err := runImportTUI(parsed, writeFn)
 	if err != nil {
-		fail(err.Error())
+		failErr(err)
 	}
 	if !wrote {
 		fmt.Fprintln(os.Stderr, "import-pdf: no changes written")
@@ -215,7 +203,21 @@ func (r *repeatedString) Set(v string) error {
 	return nil
 }
 
+// importRep is the diagnostics reporter for the import-pdf command,
+// set at the top of runImport. Both fail and failErr route through it
+// so import errors get the same banner + verbose treatment as the rest
+// of the CLI.
+var importRep *diag.Reporter
+
 func fail(msg string) {
-	fmt.Fprintln(os.Stderr, "import-pdf: "+msg)
-	os.Exit(1)
+	failErr(errors.New(msg))
+}
+
+// failErr reports a real error (preserving its %w chain for verbose
+// mode) and exits 1.
+func failErr(err error) {
+	if importRep == nil {
+		importRep = newReporter("import-pdf")
+	}
+	importRep.Fatal(1, err)
 }

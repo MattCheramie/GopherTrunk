@@ -41,6 +41,9 @@ type ControlChannel struct {
 	resolver   Resolver
 	now        func() time.Time
 
+	// topo accumulates system identity + adjacent sites for the hunt layer.
+	topo topologyModel
+
 	// proc is the cross-call bit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call.
@@ -185,7 +188,12 @@ func (c *ControlChannel) Ingest(w CCW) {
 		return
 	}
 	if sys, ok := w.AsSystemID(); ok {
+		c.topo.applySystemID(sys.ID)
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, SystemID: sys.ID})
+		return
+	}
+	if adj, ok := w.AsAdjacentSite(); ok {
+		c.topo.applyAdjacent(adj)
 		return
 	}
 	if grant, ok := w.AsGroupVoiceGrant(); ok {
@@ -193,6 +201,10 @@ func (c *ControlChannel) Ingest(w CCW) {
 		return
 	}
 }
+
+// Topology returns a snapshot of the system topology (identity + adjacent
+// sites) accumulated from the control channel, for the hunt/discovery layer.
+func (c *ControlChannel) Topology() TopologyConfig { return c.topo.snapshot() }
 
 func (c *ControlChannel) publishGrant(g GroupVoiceGrant) {
 	if c.bus == nil {

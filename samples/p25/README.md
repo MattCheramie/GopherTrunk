@@ -1,0 +1,68 @@
+# P25 Phase 1 captures (demod-quality measurement)
+
+Drop **P25 Phase 1** control-channel IQ recordings here to feed the
+demodulator measurement harness
+([`internal/radio/p25/phase1/metrics`](../../internal/radio/p25/phase1/metrics/)).
+The synthetic sweep
+([`internal/radio/p25/phase1/receiver/sweep_test.go`](../../internal/radio/p25/phase1/receiver/sweep_test.go))
+benchmarks the demod against the theoretical limit; a capture dropped here is
+the **field truth** — it runs the real signal through the receiver and reports
+the pre-FEC error rate, EVM, estimated SNR, and FSW sync-margin so a weak-decode
+report becomes a number you can act on.
+
+Two captures are most valuable, and you can drop either or both:
+
+- a **C4FM** site (the FM-discriminator path — the one the harness shows is the
+  most noise-fragile), and
+- an **LSM / CQPSK simulcast** site (the linear path).
+
+## Capture format
+
+| Property | Expected value |
+| --- | --- |
+| File format | Complex float32 IQ (`*.cfile`, GNU Radio interleaved little-endian) |
+| Sample rate | Any rate ≥ 48 kHz; channelise to 48 kHz nominal so it decodes standalone |
+| Modulation | C4FM (4-level FSK, 4800 sym/s) **or** LSM/CQPSK (π/4-DQPSK) |
+| Centre | Tuned on the control-channel carrier (small DC offset OK; the AFC re-tunes) |
+| Duration | ≥ 1 second — enough for several FSW+NID+TSBK frames |
+
+Keep it small enough to commit (a ~1 s 48 kHz slice is ~400 KB), like the
+existing `cmd/gophertrunk/testdata/mmr-s9-cc.cfile` regression fixture.
+
+## Metadata schema
+
+Alongside each `*.cfile`, place a `*.metadata.json`:
+
+```json
+{
+  "source": "RTL-SDR @ <site>, channelised to 48 kHz",
+  "tool_cross_check": "OP25 / DSD-FME (optional, for the cross-check)",
+  "sample_rate_hz": 48000,
+  "center_freq_hz": 420050000,
+  "expected": {
+    "demod_mode": "c4fm",
+    "nac": "0x167",
+    "min_nid_trusted": 8,
+    "min_tsbk": 24,
+    "max_evm_pct": 30.0,
+    "min_snr_db": 12.0,
+    "min_sync_margin": 2
+  },
+  "notes": "Optional: capture conditions, antenna, observed RF SNR, etc."
+}
+```
+
+- `demod_mode` selects the receiver path: `"c4fm"` (default) or `"cqpsk"`.
+- `nac` (hex) is asserted against the locked NAC when present.
+- `min_nid_trusted` / `min_tsbk` are decode-yield floors (see the
+  `mmr-s9-cc.cfile` regression test for the shape).
+- `max_evm_pct` / `min_snr_db` / `min_sync_margin` are the **demod-quality**
+  bounds the harness grades — leave them out to only *report* the metrics
+  without asserting. As the demod improves, tighten them (they are floors,
+  not targets).
+
+The metrics are always logged by
+`TestReplayP25RealCaptureMetrics`
+([`cmd/gophertrunk/p25_realcapture_metrics_test.go`](../../cmd/gophertrunk/p25_realcapture_metrics_test.go));
+the bounds above turn the log lines into a pass/fail gate. With no capture
+present the test skips.

@@ -16,7 +16,7 @@ import (
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		s.writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 	// Disable the server-level WriteTimeout for this connection — the

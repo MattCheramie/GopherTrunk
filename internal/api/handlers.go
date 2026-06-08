@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
@@ -78,6 +79,36 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": v})
 }
 
+// handleDiagBanner serves the diagnostics banner + system snapshot on
+// demand so the web UI can show the same macro context (version, OS,
+// system specs, detected dongles) the CLI error banner shows. The
+// banner exposes host + dongle info, so it is gated: served to any
+// caller when diagnostics.verbose_errors is on, otherwise only when
+// the request opts in with ?verbose=1 AND is authorized (the same
+// trust level the mutation gate grants). Returns 404 when no
+// diagnostics collector is wired.
+func (s *Server) handleDiagBanner(w http.ResponseWriter, r *http.Request) {
+	if s.diagnostics == nil {
+		s.writeError(w, http.StatusNotFound, "diagnostics not available")
+		return
+	}
+	if !s.verboseErrors {
+		if r.URL.Query().Get("verbose") != "1" {
+			s.writeError(w, http.StatusForbidden, "diagnostics banner is restricted; pass ?verbose=1 or enable diagnostics.verbose_errors")
+			return
+		}
+		if status, reason := s.auth.authorize(r); status != 0 {
+			s.writeError(w, status, reason)
+			return
+		}
+	}
+	si := s.diagnostics.SysInfo()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"banner":  gtdiag.FormatBannerPlain(si),
+		"sysinfo": si,
+	})
+}
+
 func (s *Server) handleListSystems(w http.ResponseWriter, _ *http.Request) {
 	out := make([]SystemDTO, 0, len(s.systems))
 	for _, sys := range s.systems {
@@ -94,7 +125,7 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "system not found")
+	s.writeError(w, http.StatusNotFound, "system not found")
 }
 
 func (s *Server) handleListTalkgroups(w http.ResponseWriter, _ *http.Request) {
@@ -110,12 +141,12 @@ func (s *Server) handleGetTalkgroup(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid talkgroup id")
+		s.writeError(w, http.StatusBadRequest, "invalid talkgroup id")
 		return
 	}
 	tg := s.talkgroups.Lookup(uint32(id))
 	if tg == nil {
-		writeError(w, http.StatusNotFound, "talkgroup not found")
+		s.writeError(w, http.StatusNotFound, "talkgroup not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, talkgroupToDTO(tg))
@@ -144,7 +175,7 @@ func (s *Server) handleActiveCalls(w http.ResponseWriter, _ *http.Request) {
 //	?only_ended=true    skip calls that haven't ended
 func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if s.history == nil {
-		writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
+		s.writeError(w, http.StatusServiceUnavailable, "call log persistence is not enabled")
 		return
 	}
 	q := r.URL.Query()
@@ -155,7 +186,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("group_id"); v != "" {
 		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid group_id")
+			s.writeError(w, http.StatusBadRequest, "invalid group_id")
 			return
 		}
 		f.GroupID = uint32(n)
@@ -163,7 +194,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid since (want RFC3339)")
+			s.writeError(w, http.StatusBadRequest, "invalid since (want RFC3339)")
 			return
 		}
 		f.Since = t
@@ -171,7 +202,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("until"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid until (want RFC3339)")
+			s.writeError(w, http.StatusBadRequest, "invalid until (want RFC3339)")
 			return
 		}
 		f.Until = t
@@ -179,7 +210,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeError(w, http.StatusBadRequest, "invalid limit")
+			s.writeError(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
 		if n > 1000 {
@@ -193,7 +224,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.history.History(r.Context(), f)
 	if err != nil {
 		s.log.Warn("api: history query failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "history query failed")
+		s.writeError(w, http.StatusInternalServerError, "history query failed")
 		return
 	}
 	if rows == nil {

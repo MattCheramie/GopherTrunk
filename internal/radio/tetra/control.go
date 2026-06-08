@@ -56,6 +56,46 @@ type ControlChannel struct {
 	channelCoding    ChannelCodingMode
 	channelType      ChannelType
 	colourCode       uint32
+	colourLearned    bool
+
+	// pendingSoft holds the per-symbol complex differential (soft
+	// information) for the next Process call, stashed by StashSoft
+	// immediately before the matching dibit chunk arrives (see
+	// receiver SoftSink). Process consumes it via takeStashSoft.
+	pendingSoft     []complex64
+	pendingSoftBase int
+	pendingSoftSet  bool
+}
+
+// StashSoft records the soft per-symbol differentials for the dibit
+// chunk that arrives next at Process (same baseIdx). The receiver's
+// SoftSink calls this just before DibitSink → Process. diffs is copied
+// since the caller reuses its buffer.
+func (c *ControlChannel) StashSoft(diffs []complex64, baseIdx int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cap(c.pendingSoft) < len(diffs) {
+		c.pendingSoft = make([]complex64, len(diffs))
+	} else {
+		c.pendingSoft = c.pendingSoft[:len(diffs)]
+	}
+	copy(c.pendingSoft, diffs)
+	c.pendingSoftBase = baseIdx
+	c.pendingSoftSet = true
+}
+
+// takeStashSoft returns the stashed soft differentials if they match the
+// chunk at baseIdx with length n, then clears the stash. Returns nil
+// when no matching soft data was stashed (hard-only path).
+func (c *ControlChannel) takeStashSoft(baseIdx, n int) []complex64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.pendingSoftSet || c.pendingSoftBase != baseIdx || len(c.pendingSoft) != n {
+		c.pendingSoftSet = false
+		return nil
+	}
+	c.pendingSoftSet = false
+	return c.pendingSoft
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on the
@@ -199,6 +239,33 @@ func (c *ControlChannel) SetColourCode(colourCode uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.colourCode = colourCode & 0x3FFFFFFF
+	c.colourLearned = true
+}
+
+// LearnColourCode records a colour code recovered at runtime from a
+// decoded BSCH SYNC PDU (see process.go). It overrides the configured
+// colour code only when none was configured (or it changed), so an
+// operator-set colour code still wins on the first burst but a cold
+// receiver auto-acquires the cell's scrambling code and every
+// subsequent BNCH/SCH burst descrambles. Returns true if the stored
+// value changed.
+func (c *ControlChannel) LearnColourCode(ext uint32) bool {
+	ext &= 0x3FFFFFFF
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.colourLearned && c.colourCode == ext {
+		return false
+	}
+	// A configured (non-zero) colour code is authoritative; don't let a
+	// marginal BSCH decode clobber it, but do fill an unset one.
+	if c.colourLearned && c.colourCode != 0 {
+		return false
+	}
+	c.colourCode = ext
+	c.colourLearned = true
+	c.log.Info("tetra cc learned colour code from BSCH",
+		"colour_ext", ext, "system", c.systemName)
+	return true
 }
 
 // ChannelCoding returns the current ChannelCodingMode. Mirrors the
@@ -223,6 +290,29 @@ func (c *ControlChannel) ColourCode() uint32 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.colourCode
+}
+
+// TopologyConfig is a snapshot of the TETRA single-cell identity for the hunt
+// layer: the MCC/MNC/Location Area learned from MLE-SYSINFO plus the colour
+// code. Neighbor-cell broadcasts are not accumulated, so identity only.
+type TopologyConfig struct {
+	MCC          uint16
+	MNC          uint16
+	LocationArea uint16
+	ColourCode   uint32
+}
+
+// Topology returns the accumulated single-cell identity. Safe for concurrent
+// use (reads the lock state + colour code under the control-channel mutex).
+func (c *ControlChannel) Topology() TopologyConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return TopologyConfig{
+		MCC:          c.last.MCC,
+		MNC:          c.last.MNC,
+		LocationArea: c.last.LocationArea,
+		ColourCode:   c.colourCode,
+	}
 }
 
 // Options configure a ControlChannel.

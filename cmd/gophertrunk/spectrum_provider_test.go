@@ -11,6 +11,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // streamingFakeDevice loops a synthetic IQ pattern on the StreamIQ
@@ -222,5 +223,96 @@ func TestSpectrumProviderOpenStreamBadFFTSize(t *testing.T) {
 	}
 	if !errors.Is(err, err) { // sanity placeholder
 		t.Fail()
+	}
+}
+
+// TestP25ModulationFor covers the per-device modulation resolution that
+// lets the web symbol/constellation panels auto-select C4FM vs CQPSK.
+func TestP25ModulationFor(t *testing.T) {
+	c4fm := trunking.System{
+		Name:               "C4FM-sys",
+		Protocol:           trunking.ProtocolP25,
+		ControlChannels:    []uint32{851_000_000},
+		P25Phase1DemodMode: "c4fm",
+	}
+	lsm := trunking.System{
+		Name:               "LSM-sys",
+		Protocol:           trunking.ProtocolP25,
+		ControlChannels:    []uint32{770_000_000},
+		P25Phase1DemodMode: "cqpsk",
+	}
+	dmr := trunking.System{
+		Name:            "DMR-sys",
+		Protocol:        trunking.ProtocolDMR,
+		ControlChannels: []uint32{451_000_000},
+	}
+
+	const sr = 2_048_000 // ±1.024 MHz passband
+
+	tests := []struct {
+		name       string
+		systems    []trunking.System
+		centerHz   uint32
+		sampleRate uint32
+		want       string
+	}{
+		{
+			name:       "control SDR parked on the C4FM control channel",
+			systems:    []trunking.System{c4fm, lsm},
+			centerHz:   851_000_000,
+			sampleRate: sr,
+			want:       "c4fm",
+		},
+		{
+			name:       "control SDR parked on the LSM control channel",
+			systems:    []trunking.System{c4fm, lsm},
+			centerHz:   770_000_000,
+			sampleRate: sr,
+			want:       "cqpsk",
+		},
+		{
+			name:       "voice channel inside the LSM passband matches by band",
+			systems:    []trunking.System{c4fm, lsm},
+			centerHz:   770_500_000, // 500 kHz off the CC, still < Nyquist
+			sampleRate: sr,
+			want:       "cqpsk",
+		},
+		{
+			name:       "single system falls back even when off-band",
+			systems:    []trunking.System{lsm},
+			centerHz:   900_000_000,
+			sampleRate: sr,
+			want:       "cqpsk",
+		},
+		{
+			name:       "multiple systems, none in band, is unknown",
+			systems:    []trunking.System{c4fm, lsm},
+			centerHz:   900_000_000,
+			sampleRate: sr,
+			want:       "",
+		},
+		{
+			name:       "no P25 systems configured is unknown",
+			systems:    []trunking.System{dmr},
+			centerHz:   451_000_000,
+			sampleRate: sr,
+			want:       "",
+		},
+		{
+			name:       "empty config mode normalises to c4fm",
+			systems:    []trunking.System{{Name: "S", Protocol: trunking.ProtocolP25, ControlChannels: []uint32{851_000_000}}},
+			centerHz:   851_000_000,
+			sampleRate: sr,
+			want:       "c4fm",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := p25ModulationFor(tc.systems, tc.centerHz, tc.sampleRate)
+			if got != tc.want {
+				t.Fatalf("p25ModulationFor() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

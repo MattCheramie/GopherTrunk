@@ -159,6 +159,13 @@ func (c *ControlChannel) NetworkSnapshot() NetworkConfig {
 	return c.netModel.Snapshot()
 }
 
+// BandPlanSnapshot returns the IDEN_UP band-plan entries the control channel
+// accumulated, in ascending channel-ID order. Combined with NetworkSnapshot it
+// lets the signal-lab / hunt layers fully document a discovered P25 system.
+func (c *ControlChannel) BandPlanSnapshot() []IdentifierUpdate {
+	return c.bandPlan.Snapshot()
+}
+
 // Stats returns a snapshot of the per-frame outcome counters. Safe
 // for concurrent calls — each counter is read with atomic.LoadInt64.
 // See CCStats for the meaning of each field. Issue #402.

@@ -6,10 +6,10 @@ import {
 } from "../api/pagers";
 import { selectClientConfig, useShared } from "../store/shared";
 
-// Pagers panel — list of recent POCSAG (and eventually FLEX) pages
-// decoded by the daemon. Each row carries RIC, function code (A/B/C/D),
-// numeric / alphanumeric encoding, decoded body, and the BCH bit-error
-// count (a non-zero value indicates the page was marginal).
+// Pagers panel — list of recent POCSAG and FLEX pages decoded by the
+// daemon. Each row carries its protocol (POCSAG / FLEX), RIC, function
+// code (A/B/C/D), numeric / alphanumeric encoding, decoded body, and the
+// BCH bit-error count (a non-zero value indicates the page was marginal).
 //
 // Live updates piggyback on the events bus once SSE delivery is wired;
 // for v1 the panel polls /api/v1/pager/messages every 5 s.
@@ -62,6 +62,7 @@ export function Pagers() {
           <thead className="bg-surface text-muted">
             <tr>
               <th className="text-left px-3 py-1 font-normal w-32">Received</th>
+              <th className="text-left px-3 py-1 font-normal w-20">Type</th>
               <th className="text-right px-3 py-1 font-normal w-24">RIC</th>
               <th className="text-left px-3 py-1 font-normal w-12">Fn</th>
               <th className="text-left px-3 py-1 font-normal w-16">Enc</th>
@@ -72,7 +73,7 @@ export function Pagers() {
           <tbody>
             {messages.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-muted">
+                <td colSpan={7} className="px-3 py-4 text-center text-muted">
                   No pager messages yet. POCSAG pages decoded by the
                   daemon will appear here as they arrive — typical
                   workflow is to point one SDR at the local paging
@@ -86,6 +87,9 @@ export function Pagers() {
                 <tr key={m.id} className="border-t border-border/60">
                   <td className="px-3 py-1 font-mono text-muted">
                     {formatTime(m.received_at)}
+                  </td>
+                  <td className="px-3 py-1">
+                    <ProtocolBadge protocol={m.protocol} />
                   </td>
                   <td className="px-3 py-1 text-right font-mono text-accent">
                     {m.ric}
@@ -109,6 +113,24 @@ export function Pagers() {
         </table>
       </div>
     </div>
+  );
+}
+
+// ProtocolBadge renders the page's signalling protocol as a small colored
+// pill so POCSAG and FLEX rows are distinguishable at a glance. Falls back
+// to "POCSAG" when the backend left the field empty (older rows persisted
+// before the protocol column was populated default to POCSAG server-side).
+function ProtocolBadge({ protocol }: { protocol: string }) {
+  const proto = (protocol || "pocsag").toLowerCase();
+  const label = proto.toUpperCase();
+  const cls =
+    proto === "flex"
+      ? "bg-purple-900/40 text-purple-200 border-purple-700/40"
+      : "bg-sky-900/40 text-sky-200 border-sky-700/40";
+  return (
+    <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+      {label}
+    </span>
   );
 }
 

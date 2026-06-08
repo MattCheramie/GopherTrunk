@@ -105,6 +105,16 @@ func (w *winDriverInspector) Inspect(vid, pid uint16) ([]DriverBinding, error) {
 		}
 		service := readDevRegistryString(devSet, &devInfo, spdrpService)
 		descr := readDevRegistryString(devSet, &devInfo, spdrpDeviceDesc)
+		// A "usbccgp" service means this GUID_DEVINTERFACE_USB_DEVICE node is a
+		// USB composite parent — the SDR's real driver lives on its Interface 0
+		// (&MI_00) child. Report the child's binding so a correctly
+		// WinUSB-bound composite dongle reads OK instead of a false BAD (and a
+		// wrong-driver child still gets an accurate hint).
+		if strings.EqualFold(service, "usbccgp") {
+			if childSvc, _, derr := findInterfaceZeroChild(v, p); derr == nil && childSvc != "" {
+				service = effectiveCompositeService(service, childSvc, true)
+			}
+		}
 		out = append(out, classifyWindows(desc, service, descr))
 	}
 	return out, nil

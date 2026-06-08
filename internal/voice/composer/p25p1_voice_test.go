@@ -51,18 +51,16 @@ func buildP25P1VoiceStream(t *testing.T, ldus int) (dibits []uint8, want [][]byt
 	for l := 0; l < ldus; l++ {
 		var voice [phase1.LDUVoiceSubframeCount][]byte
 		for s := range voice {
-			ch, err := imbe.EncodeChannel(p25p1VoiceInfo(frame))
+			// Build the real on-air burst (per-vector FEC + §7.4
+			// scramble + §7.5 interleave) so the composer's voice
+			// chain decodes it through the deinterleave just like a
+			// real LDU off the air.
+			onAir, err := imbe.EncodeFrameToChannel(p25p1VoiceInfo(frame))
 			frame++
 			if err != nil {
-				t.Fatalf("EncodeChannel: %v", err)
+				t.Fatalf("EncodeFrameToChannel: %v", err)
 			}
-			onAir, err := imbe.Scramble(ch)
-			if err != nil {
-				t.Fatalf("Scramble: %v", err)
-			}
-			// Scramble/Descramble mutate in place — keep an independent
-			// copy for the LDU so the want computation cannot corrupt it.
-			voice[s] = append([]byte(nil), onAir...)
+			voice[s] = onAir
 			wf, _, _ := imbe.DecodeChannelToFrame(onAir)
 			want = append(want, wf)
 		}

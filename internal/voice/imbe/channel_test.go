@@ -115,46 +115,59 @@ func TestChannelU7HasNoFEC(t *testing.T) {
 		corrupt := append([]byte(nil), clean...)
 		corrupt[u7Offset+offset] ^= 1
 		got, _, _ := DecodeChannel(corrupt)
-		if got[u7InfoStart+offset] != 1 {
-			t.Errorf("u_7 bit %d: corruption did not propagate (got %d)", offset, got[u7InfoStart+offset])
+		// u_7's on-air column order is the reverse of the info-bit
+		// order: column c maps to info bit (u7Bits-1-c).
+		infoBit := u7InfoStart + (u7Bits - 1 - offset)
+		if got[infoBit] != 1 {
+			t.Errorf("u_7 col %d: corruption did not propagate to info bit %d (got %d)", offset, infoBit, got[infoBit])
 		}
 	}
 }
 
-func TestChannelFlagsUncorrectableVector(t *testing.T) {
-	// Heavy random corruption inside u_0 pushes past Golay's 3-error
-	// correction radius. Some patterns happen to land inside another
-	// codeword's t-ball and silently mis-decode (a property of any
-	// minimum-distance decoder, not unique to this implementation),
-	// so we sample a handful of seeds and assert that at least one
-	// trips ErrUncorrectable. The test guards the shape of the API
-	// — that the error is surfaceable — not the per-pattern
-	// behaviour.
+func TestChannelPerfectGolaySilentlyMisdecodesBeyondRadius(t *testing.T) {
+	// P25 IMBE u_0..u_3 use the *perfect* Golay(23,12,7) code and
+	// u_4..u_6 the perfect Hamming(15,11,3) — every received word is
+	// within the correction radius of exactly one codeword, so the
+	// decoder always "corrects" and can never surface ErrUncorrectable
+	// from a single 23/15-bit codeword. mbelib behaves identically.
+	// Beyond t errors the word silently mis-decodes to the wrong
+	// codeword; the real garbage guard is the b_0 fundamental-frequency
+	// validity check in UnpackParams, not the per-vector FEC. This test
+	// pins that property so a future change to the FEC layer can't
+	// quietly assume FEC-level error detection that isn't there.
 	info := make([]byte, InfoBits)
 	for i := range info {
 		info[i] = byte(i % 3 & 1)
 	}
 	clean, _ := EncodeChannel(info)
-	saw := false
-	for seed := int64(1); seed < 32 && !saw; seed++ {
+	misdecoded := false
+	for seed := int64(1); seed < 32; seed++ {
 		rng := rand.New(rand.NewSource(seed))
 		corrupt := append([]byte(nil), clean...)
-		// Flip 12 bits scattered across u_0 (way past t = 3).
+		// Flip 8 bits scattered across u_0 (well past t = 3).
 		flipped := map[int]bool{}
-		for len(flipped) < 12 {
+		for len(flipped) < 8 {
 			pos := u0Offset + rng.Intn(u0Bits)
 			if !flipped[pos] {
 				flipped[pos] = true
 				corrupt[pos] ^= 1
 			}
 		}
-		_, _, err := DecodeChannel(corrupt)
+		got, errs, err := DecodeChannel(corrupt)
 		if errors.Is(err, ErrUncorrectable) {
-			saw = true
+			t.Errorf("seed %d: perfect Golay unexpectedly flagged ErrUncorrectable", seed)
+		}
+		if errs < 0 {
+			t.Errorf("seed %d: errs = %d, want >= 0", seed, errs)
+		}
+		for i := 0; i < 12; i++ { // u_0 info bits
+			if got[i] != info[i] {
+				misdecoded = true
+			}
 		}
 	}
-	if !saw {
-		t.Error("no random 12-error pattern across 32 seeds tripped ErrUncorrectable")
+	if !misdecoded {
+		t.Error("expected at least one heavy-corruption pattern to mis-decode u_0")
 	}
 }
 
@@ -218,33 +231,32 @@ func TestPackInfoBitsToFrameRejectsWrongLength(t *testing.T) {
 
 // TestDecodeChannelToFrameRoundTrip: the full channel-decode
 // pipeline must recover the original 88 information bits when
-// fed clean (zero-error) channel bits. The on-air shape is:
+// fed clean (zero-error) on-air channel bits. The on-air shape is:
 //
 //	info → EncodeChannel → 144 channel bits
-//	     → Scramble       → 144 scrambled channel bits  (transmitted)
-//	     → Descramble     → 144 channel bits             (after RX)
+//	     → Scramble       → 144 scrambled channel bits
+//	     → Interleave     → 144 on-air channel bits      (transmitted)
+//	     → Deinterleave   → 144 scrambled channel bits   (after RX)
+//	     → Descramble     → 144 channel bits
 //	     → DecodeChannel  → 88 info bits
 //	     → PackInfoBitsToFrame → 11-byte frame
 //
-// DecodeChannelToFrame collapses the last three steps, so feeding
-// it post-Scramble bits should reproduce the original info inside
-// the packed frame.
+// EncodeFrameToChannel collapses the first three steps and
+// DecodeChannelToFrame the last four, so feeding the helper an
+// on-air burst should reproduce the original info inside the
+// packed frame.
 func TestDecodeChannelToFrameRoundTrip(t *testing.T) {
 	original := make([]byte, InfoBits)
 	for i := range original {
 		// Pseudo-random 0/1 pattern that exercises every vector.
 		original[i] = byte((i*13 + 7) % 2)
 	}
-	encoded, err := EncodeChannel(original)
+	onAir, err := EncodeFrameToChannel(original)
 	if err != nil {
-		t.Fatalf("EncodeChannel: %v", err)
-	}
-	scrambled, err := Scramble(encoded)
-	if err != nil {
-		t.Fatalf("Scramble: %v", err)
+		t.Fatalf("EncodeFrameToChannel: %v", err)
 	}
 
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}
@@ -282,15 +294,11 @@ func TestDecodeChannelToFrameWiresIntoDecoder(t *testing.T) {
 	info[4] = 1
 	info[5] = 0
 
-	encoded, err := EncodeChannel(info)
+	onAir, err := EncodeFrameToChannel(info)
 	if err != nil {
-		t.Fatalf("EncodeChannel: %v", err)
+		t.Fatalf("EncodeFrameToChannel: %v", err)
 	}
-	scrambled, err := Scramble(encoded)
-	if err != nil {
-		t.Fatalf("Scramble: %v", err)
-	}
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}
@@ -331,13 +339,20 @@ func TestDecodeChannelToFrameSurvivesRecoverableError(t *testing.T) {
 		t.Fatalf("Scramble: %v", err)
 	}
 	// Flip a single bit inside u_1 (a Golay(23,12) vector,
-	// correction radius 3). Bits 0..11 of the channel double as
-	// the seed for the §7.4 PRBS scrambler — a flip in that range
+	// correction radius 3). Bits 0..11 of the vector buffer double
+	// as the seed for the §7.4 PRBS scrambler — a flip in that range
 	// would cascade through descrambling of u_1..u_6 and isn't
-	// straightforwardly recoverable. u_1 spans bits 23..45, so
-	// bit 25 sits comfortably past the seed region.
+	// straightforwardly recoverable. u_1 spans vector bits 23..45,
+	// so bit 25 sits comfortably past the seed region. The flip is
+	// applied in vector order then interleaved, so it becomes a
+	// single-bit on-air error the deinterleave scatters back into
+	// u_1 — exactly one correctable Golay error.
 	scrambled[25] ^= 1
-	frame, errs, err := DecodeChannelToFrame(scrambled)
+	onAir, err := Interleave(scrambled)
+	if err != nil {
+		t.Fatalf("Interleave: %v", err)
+	}
+	frame, errs, err := DecodeChannelToFrame(onAir)
 	if err != nil {
 		t.Fatalf("DecodeChannelToFrame: %v", err)
 	}

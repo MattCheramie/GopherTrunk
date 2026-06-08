@@ -25,8 +25,13 @@ import (
 //
 // Layout under OutDir (Trunk-Recorder-style):
 //
-//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.wav
-//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_src<src>.raw
+//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_freq<Hz>_src<src>.wav
+//	<OutDir>/<system>/<talkgroup-or-decimal-id>/<UTC-RFC3339>_freq<Hz>_src<src>.raw
+//
+// (The _freq<Hz> tag carries the RF voice-channel frequency; it is
+// omitted when the grant frequency is unknown. A _ts<slot> tag is
+// appended for slotted protocols. When per-transmission recording is
+// enabled, each over rolls to a new file with a fresh timestamp.)
 //
 // The raw sidecar is appended once per WriteRawFrame call. It is
 // intentionally a flat concatenation of frames so users can BYO decoder
@@ -109,6 +114,7 @@ func DefaultVocoderForProtocol() map[string]string {
 	return map[string]string{
 		"p25":        "imbe",      // P25 Phase 1 — IMBE 4400
 		"p25-phase2": "ambe2",     // P25 Phase 2 — AMBE+2 3600x2400
+		"dmr-tier1":  "ambe2-dmr", // DMR Tier I direct-mode — AMBE+2 3600x2450
 		"dmr-tier2":  "ambe2-dmr", // DMR Tier II — AMBE+2 3600x2450
 		"dmr-tier3":  "ambe2-dmr", // DMR Tier III — AMBE+2 3600x2450
 		"nxdn":       "ambe2",
@@ -122,7 +128,7 @@ func DefaultVocoderForProtocol() map[string]string {
 // WAV) so the on-air AMBE frames remain available for out-of-band
 // tools even though the in-process vocoder now renders them.
 func dmrVoiceProtocol(protocol string) bool {
-	return protocol == "dmr-tier2" || protocol == "dmr-tier3"
+	return protocol == "dmr-tier1" || protocol == "dmr-tier2" || protocol == "dmr-tier3"
 }
 
 // NewRecorder validates options and returns a recorder ready to Run.
@@ -238,6 +244,10 @@ func (r *Recorder) Run(ctx context.Context) error {
 				if ce, ok := ev.Payload.(trunking.CallEnd); ok {
 					r.handleEnd(ce)
 				}
+			case events.KindCallSegment:
+				if seg, ok := ev.Payload.(trunking.CallSegment); ok {
+					r.handleSegment(seg)
+				}
 			}
 		}
 	}
@@ -247,13 +257,33 @@ func (r *Recorder) Run(ctx context.Context) error {
 // session is open for that device the samples are dropped (the demod
 // pipeline can race ahead of the CallStart event).
 func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
-	r.mu.Lock()
-	s, ok := r.sessions[deviceSerial]
-	r.mu.Unlock()
-	if !ok {
+	s := r.sessionForWrite(deviceSerial)
+	if s == nil {
 		return nil
 	}
 	return s.wav.WriteSamples(samples)
+}
+
+// sessionForWrite returns the live session for serial, lazily opening
+// the next per-transmission segment file when the session is dormant
+// (parked after a KindCallSegment roll). Returns nil when no session is
+// open for the device.
+func (r *Recorder) sessionForWrite(serial string) *recordingSession {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.sessions[serial]
+	if !ok {
+		return nil
+	}
+	if s.wav == nil {
+		ns := r.buildSession(s.cs, time.Now().UTC())
+		if ns == nil {
+			return nil
+		}
+		r.sessions[serial] = ns
+		s = ns
+	}
+	return s
 }
 
 // WriteRawFrame consumes a raw vocoder frame for the named device
@@ -271,10 +301,8 @@ func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
 // Frames for a session without either output (no sidecar, no
 // vocoder) are dropped silently.
 func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
-	r.mu.Lock()
-	s, ok := r.sessions[deviceSerial]
-	r.mu.Unlock()
-	if !ok {
+	s := r.sessionForWrite(deviceSerial)
+	if s == nil {
 		return nil
 	}
 	if s.raw != nil {
@@ -318,13 +346,32 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		_ = r.sessions[cs.DeviceSerial].close()
 		delete(r.sessions, cs.DeviceSerial)
 	}
+	s := r.buildSession(cs, cs.StartedAt)
+	if s == nil {
+		return
+	}
+	r.sessions[cs.DeviceSerial] = s
+	r.log.Info("recorder: call started",
+		"device", cs.DeviceSerial, "wav", s.wavPath,
+		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice,
+		"vocoder", s.vocoderName)
+}
+
+// buildSession opens the WAV (+ optional .raw sidecar + vocoder) for a
+// call, naming the files from cs but timestamped at startedAt (which
+// differs from cs.StartedAt for a per-transmission segment roll).
+// Returns nil on a fatal open error (already logged). The caller holds
+// r.mu and registers the returned session.
+func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *recordingSession {
 	dir := r.directoryFor(cs)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		r.log.Error("recorder: mkdir", "dir", dir, "err", err)
-		return
+		return nil
 	}
-	base := r.basenameFor(cs)
-	s := &recordingSession{startedAt: cs.StartedAt}
+	nameCS := cs
+	nameCS.StartedAt = startedAt
+	base := r.basenameFor(nameCS)
+	s := &recordingSession{startedAt: startedAt, cs: cs}
 	// Instantiate a vocoder for the protocol if one is mapped. This must
 	// happen before the WAV is opened so the header rate can track the
 	// vocoder's native output rate (below). Construction failure (unknown
@@ -364,7 +411,7 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		if s.vocoder != nil {
 			_ = s.vocoder.Close()
 		}
-		return
+		return nil
 	}
 	s.wav = wav
 	s.wavPath = wavPath
@@ -381,11 +428,56 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 			s.rawPath = rawPath
 		}
 	}
-	r.sessions[cs.DeviceSerial] = s
-	r.log.Info("recorder: call started",
-		"device", cs.DeviceSerial, "wav", wavPath,
-		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice,
-		"vocoder", s.vocoderName)
+	return s
+}
+
+// handleSegment finalizes the current recording at a per-transmission
+// boundary and parks the session as dormant so the next over opens a
+// fresh file. Published by the composer only in "transmission" grouping.
+func (r *Recorder) handleSegment(seg trunking.CallSegment) {
+	r.mu.Lock()
+	s, ok := r.sessions[seg.DeviceSerial]
+	if !ok || s.wav == nil {
+		r.mu.Unlock()
+		return // no active file to roll (already dormant or unknown)
+	}
+	cc := r.finalizeLocked(s, seg.DeviceSerial, seg.At, trunking.EndReasonNormal)
+	// Park a dormant session: keeps the call's identity so the next write
+	// opens the next segment file, without creating an empty trailing
+	// file if no further audio arrives before the call ends.
+	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs}
+	r.mu.Unlock()
+	if cc != nil {
+		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
+	}
+}
+
+// finalizeLocked closes a session's files and returns a CallComplete to
+// publish when audio was written; an empty file (no PCM) is removed and
+// nil returned. Caller holds r.mu and publishes after releasing it.
+func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) *trunking.CallComplete {
+	dataBytes := s.wav.DataBytes()
+	if err := s.close(); err != nil {
+		r.log.Error("recorder: close session", "err", err)
+	}
+	// No PCM decoded into the WAV — nothing to stream. The files are left
+	// in place: a digital call (ProVoice / DMR / pre-vocoder) keeps its
+	// .raw sidecar as the only capture even when the WAV is empty.
+	// Per-transmission segment rolls never reach here empty because the
+	// next file is opened lazily on the first write.
+	if dataBytes == 0 {
+		return nil
+	}
+	return &trunking.CallComplete{
+		Grant:        s.cs.Grant,
+		Talkgroup:    s.cs.Talkgroup,
+		DeviceSerial: serial,
+		StartedAt:    s.startedAt,
+		EndedAt:      endedAt,
+		Reason:       reason,
+		AudioPath:    s.wavPath,
+		SampleRate:   s.sampleRate,
+	}
 }
 
 func (r *Recorder) handleEnd(ce trunking.CallEnd) {
@@ -394,37 +486,24 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	if ok {
 		delete(r.sessions, ce.DeviceSerial)
 	}
-	r.mu.Unlock()
-	if !ok {
+	if !ok || s.wav == nil {
+		// No session, or a dormant post-segment session whose next over
+		// never arrived — nothing to finalize.
+		r.mu.Unlock()
 		return
 	}
-	dataBytes := s.wav.DataBytes()
-	if err := s.close(); err != nil {
-		r.log.Error("recorder: close session", "err", err)
-	}
+	wavPath := s.wavPath
+	// Announce the finished WAV so the outbound-streaming subsystem can
+	// upload it. Skip (and delete) calls that captured no PCM.
+	cc := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
+	r.mu.Unlock()
 	r.log.Info("recorder: call ended",
 		"device", ce.DeviceSerial,
-		"wav", s.wavPath,
+		"wav", wavPath,
 		"duration", ce.Duration().Round(time.Millisecond),
 		"reason", ce.Reason)
-	// Announce the finished WAV so the outbound-streaming subsystem
-	// can upload it. Skip calls that captured no PCM (digital voice
-	// whose vocoder produced nothing, or an instantly-preempted
-	// grant) — there is nothing to stream.
-	if dataBytes > 0 {
-		r.bus.Publish(events.Event{
-			Kind: events.KindCallComplete,
-			Payload: trunking.CallComplete{
-				Grant:        ce.Grant,
-				Talkgroup:    ce.Talkgroup,
-				DeviceSerial: ce.DeviceSerial,
-				StartedAt:    ce.StartedAt,
-				EndedAt:      ce.EndedAt,
-				Reason:       ce.Reason,
-				AudioPath:    s.wavPath,
-				SampleRate:   s.sampleRate,
-			},
-		})
+	if cc != nil {
+		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
 	}
 }
 
@@ -446,7 +525,24 @@ func (r *Recorder) basenameFor(cs trunking.CallStart) string {
 		t = time.Now().UTC()
 	}
 	stamp := t.Format("20060102T150405Z")
-	return fmt.Sprintf("%s_src%d", stamp, cs.Grant.SourceID)
+	// Tag the RF voice-channel frequency (Hz) into the name. Voice
+	// frequencies are shared across talkgroups on a trunked system, so
+	// having the frequency on each file makes it easy to tell which
+	// physical channel a recording came from. Omitted when unknown (0).
+	base := stamp
+	if cs.Grant.FrequencyHz != 0 {
+		base = fmt.Sprintf("%s_freq%d", base, cs.Grant.FrequencyHz)
+	}
+	base = fmt.Sprintf("%s_src%d", base, cs.Grant.SourceID)
+	// A DMR Tier III carrier runs two concurrent calls (TS1 + TS2); when
+	// they share a talkgroup (same directory) and a start second, the
+	// stamp+src basename would collide. Tag the slot so each slot's WAV
+	// is distinct on disk and self-labelling. Omitted for non-slotted
+	// protocols (Timeslot 0).
+	if cs.Grant.Timeslot != 0 {
+		base = fmt.Sprintf("%s_ts%d", base, cs.Grant.Timeslot)
+	}
+	return base
 }
 
 // sanitize strips characters that are awkward in file paths across OSes.
@@ -481,6 +577,13 @@ type recordingSession struct {
 	vocoderName string
 	sampleRate  uint32
 	startedAt   time.Time
+	// cs is the originating CallStart, retained so a per-transmission
+	// segment roll (KindCallSegment) can open the next file with the same
+	// grant/talkgroup under a new timestamp. A session with wav == nil is
+	// "dormant" — finalized at a segment boundary and waiting to open its
+	// next file lazily on the first write, so an over with no following
+	// audio never leaves an empty trailing file.
+	cs trunking.CallStart
 }
 
 func (s *recordingSession) close() error {

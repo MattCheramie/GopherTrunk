@@ -42,8 +42,29 @@ type Device struct {
 	out      chan []complex64
 	stopOnce sync.Once
 
+	// ring is a small pool of preallocated complex64 buffers that
+	// [Device.deliver] cycles through so the hot IQ path allocates
+	// nothing per chunk (issue #489). It is provisioned by StreamIQ
+	// (sized streamChanDepth+2 so the producer never overwrites a
+	// buffer still queued on out or being processed by the consumer)
+	// and read/advanced only under streamMu. nil outside an active
+	// stream — deliver then falls back to a fresh allocation.
+	ring    [][]complex64
+	ringIdx int
+
+	// dropped counts IQ chunks discarded by deliver's overrun branch
+	// over this device's lifetime. Exposed via DroppedChunks for tests
+	// and as the per-drop signal behind the dropObserver hook.
+	dropped atomic.Uint64
+
 	closed atomic.Bool
 }
+
+// DroppedChunks returns the cumulative number of IQ chunks deliver has
+// discarded because the consumer fell behind. A rising value is the
+// device-level signal behind the iq_underruns_total metric — deliver
+// also reports each drop via [sdr.NotifyIQDrop].
+func (d *Device) DroppedChunks() uint64 { return d.dropped.Load() }
 
 // Info returns the descriptor populated by [Driver.Open] — driver
 // name, USB index, serial / manufacturer / product strings, tuner
@@ -84,6 +105,22 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	return nil
 }
 
+// ActualSampleRate returns the exact IQ rate the RTL2832U is delivering.
+// The demod quantizes a requested rate to its 28.4 fixed-point resampler
+// divisor, so the streamed rate can differ from the value passed to
+// SetSampleRate (e.g. 2.4/0.96 MS/s land exactly, but 2.048/1.024 MS/s and
+// odd custom rates do not). The down-converter's decimation ratio must be
+// derived from THIS rate, not the requested one — otherwise the symbol
+// clock drifts on the live stream while offline replay (which reads a file
+// at exactly the configured rate) stays correct (issue #402). Optional
+// sdr.Device extension; callers type-assert for it.
+func (d *Device) ActualSampleRate() (uint32, error) {
+	if d.closed.Load() {
+		return 0, ErrClosed
+	}
+	return d.demod.GetSampleRate(), nil
+}
+
 // SetGain takes the [sdr.Device] convention: tenthDB < 0 selects AGC,
 // tenthDB ≥ 0 switches to manual mode and applies the closest
 // quantized gain on the chip's ladder. Mirrors librtlsdr's
@@ -107,7 +144,13 @@ func (d *Device) SetGain(tenthDB int) error {
 	return nil
 }
 
-// SetPPM applies a parts-per-million correction to the resampler.
+// SetPPM applies a parts-per-million correction to both the RTL2832U
+// resampler clock and the tuner LO, mirroring librtlsdr's
+// rtlsdr_set_freq_correction (which corrects the sample clock and
+// re-tunes the LO). Correcting only the resampler — as this did before
+// issue #264 — left the tuner carrier offset in the signal, so a
+// configured ppm appeared to have no effect and digital decode broke on
+// dongles whose crystal sits far enough off nominal (the R828D V4).
 // Negative slows the chip; positive speeds it up.
 func (d *Device) SetPPM(ppm int) error {
 	if d.closed.Load() {
@@ -115,6 +158,14 @@ func (d *Device) SetPPM(ppm int) error {
 	}
 	if err := d.demod.SetSampleFreqCorrection(ppm); err != nil {
 		return fmt.Errorf("rtlsdr: SetPPM(%d): %w", ppm, err)
+	}
+	// Push the same correction to the tuner LO. Optional interface so
+	// only tuners that model a reference crystal (the R82xx family)
+	// participate; others inherit the resampler-only behaviour.
+	if t, ok := d.tuner.(interface{ SetFreqCorrection(int) error }); ok {
+		if err := t.SetFreqCorrection(ppm); err != nil {
+			return fmt.Errorf("rtlsdr: SetPPM(%d): tuner LO: %w", ppm, err)
+		}
 	}
 	return nil
 }
@@ -131,6 +182,36 @@ func (d *Device) SetBiasTee(enable bool) error {
 		return fmt.Errorf("rtlsdr: SetBiasTee(%v): %w", enable, err)
 	}
 	return nil
+}
+
+// SetBlogV4 forces the R82xx tuner into RTL-SDR Blog V4 mode (28.8 MHz
+// reference crystal + switched input bank) when USB-string auto-detection
+// misses a V4 — e.g. a unit whose EEPROM iManufacturer/iProduct strings
+// are blank or non-standard, which otherwise leaves the R828D on the
+// 16 MHz crystal and mistunes the LO by ~1.8× (issue #264). No-op on
+// non-R82xx tuners. Must run before the first SetCenterFreq; the pool
+// applies it from applyHintSettings, which runs before any tune.
+// Implements sdr.BlogV4Forcer.
+func (d *Device) SetBlogV4(lite bool) error {
+	if d.closed.Load() {
+		return ErrClosed
+	}
+	if r82, ok := d.tuner.(*tuners.R82xx); ok {
+		r82.SetBlogV4(lite)
+	}
+	return nil
+}
+
+// TunerDiag surfaces tuner detection state for the pool's boot-time
+// diagnostic line (issue #264). For the R82xx family it reports the
+// effective reference crystal and whether the Blog V4 path armed; other
+// tuners report just the chip name. Implements sdr.TunerDiagnoser.
+func (d *Device) TunerDiag() (tunerName string, blogV4, blogV4Lite bool, xtalHz uint32) {
+	if r82, ok := d.tuner.(*tuners.R82xx); ok {
+		v4, lite := r82.IsBlogV4()
+		return r82.Type().String(), v4, lite, r82.XtalHz()
+	}
+	return d.tuner.Type().String(), false, false, 0
 }
 
 // Close releases the tuner, powers off the demod, and closes the USB
@@ -175,5 +256,10 @@ func (d *Device) cancelStream() {
 // StreamIQ is implemented in stream.go (kept separate so the IQ
 // conversion math sits next to its unit test).
 //
-// Compile-time assertion that Device satisfies sdr.Device.
-var _ sdr.Device = (*Device)(nil)
+// Compile-time assertion that Device satisfies sdr.Device and the
+// optional tuner-diagnostic / Blog-V4-force extensions (issue #264).
+var (
+	_ sdr.Device         = (*Device)(nil)
+	_ sdr.TunerDiagnoser = (*Device)(nil)
+	_ sdr.BlogV4Forcer   = (*Device)(nil)
+)

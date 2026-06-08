@@ -101,13 +101,13 @@ func (c *CallLog) recordStart(cs trunking.CallStart) error {
 	const q = `
 INSERT OR REPLACE INTO call_log (
     system, protocol, group_id, source_id, frequency_hz,
-    encrypted, algorithm_id, key_id, emergency, data_call,
+    encrypted, algorithm_id, key_id, emergency, data_call, timeslot,
     device_serial, started_at, talkgroup_alpha
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := c.db.sql.Exec(q,
 		cs.Grant.System, cs.Grant.Protocol, cs.Grant.GroupID, cs.Grant.SourceID, cs.Grant.FrequencyHz,
 		boolToInt(cs.Grant.Encrypted), cs.Grant.AlgorithmID, cs.Grant.KeyID,
-		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall),
+		boolToInt(cs.Grant.Emergency), boolToInt(cs.Grant.DataCall), cs.Grant.Timeslot,
 		cs.DeviceSerial, cs.StartedAt.UnixNano(),
 		alpha,
 	)
@@ -143,17 +143,19 @@ type HistoryFilter struct {
 
 // CallRow is one row from the call_log table.
 type CallRow struct {
-	ID             int64     `json:"id"`
-	System         string    `json:"system"`
-	Protocol       string    `json:"protocol"`
-	GroupID        uint32    `json:"group_id"`
-	SourceID       uint32    `json:"source_id"`
-	FrequencyHz    uint32    `json:"frequency_hz"`
-	Encrypted      bool      `json:"encrypted"`
-	AlgorithmID    uint8     `json:"algorithm_id"`
-	KeyID          uint16    `json:"key_id"`
-	Emergency      bool      `json:"emergency"`
-	DataCall       bool      `json:"data_call"`
+	ID          int64  `json:"id"`
+	System      string `json:"system"`
+	Protocol    string `json:"protocol"`
+	GroupID     uint32 `json:"group_id"`
+	SourceID    uint32 `json:"source_id"`
+	FrequencyHz uint32 `json:"frequency_hz"`
+	Encrypted   bool   `json:"encrypted"`
+	AlgorithmID uint8  `json:"algorithm_id"`
+	KeyID       uint16 `json:"key_id"`
+	Emergency   bool   `json:"emergency"`
+	DataCall    bool   `json:"data_call"`
+	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	Timeslot       uint8     `json:"timeslot,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at,omitempty"` // zero if call still active
@@ -165,7 +167,7 @@ type CallRow struct {
 // History queries the call_log with the supplied filter, newest-first.
 func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 	q := `SELECT id, system, protocol, group_id, source_id, frequency_hz,
-	             encrypted, algorithm_id, key_id, emergency, data_call,
+	             encrypted, algorithm_id, key_id, emergency, data_call, timeslot,
 	             device_serial, started_at, ended_at, duration_ms,
 	             end_reason, talkgroup_alpha
 	      FROM call_log WHERE 1=1`
@@ -211,10 +213,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		var durMs sql.NullInt64
 		var reason sql.NullString
 		var alpha sql.NullString
-		var enc, emer, data, algID, keyID int
+		var enc, emer, data, algID, keyID, slot int
 		if err := rows.Scan(
 			&r.ID, &r.System, &r.Protocol, &r.GroupID, &r.SourceID, &r.FrequencyHz,
-			&enc, &algID, &keyID, &emer, &data, &r.DeviceSerial,
+			&enc, &algID, &keyID, &emer, &data, &slot, &r.DeviceSerial,
 			&startNs, &endNs, &durMs, &reason, &alpha,
 		); err != nil {
 			return nil, err
@@ -224,6 +226,7 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		r.KeyID = uint16(keyID)
 		r.Emergency = emer != 0
 		r.DataCall = data != 0
+		r.Timeslot = uint8(slot)
 		r.StartedAt = time.Unix(0, startNs).UTC()
 		if endNs.Valid {
 			r.EndedAt = time.Unix(0, endNs.Int64).UTC()

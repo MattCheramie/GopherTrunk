@@ -74,6 +74,11 @@ func TestMotorolaVendorGrantEmitted(t *testing.T) {
 		if g.Protocol != "dmr-tier3" {
 			t.Errorf("grant protocol = %q", g.Protocol)
 		}
+		// tvGrantPayload masks byte 7 to lcn&0x7F, so the slot bit is
+		// clear → CSBK TS1 → 1-based Timeslot 1.
+		if g.Timeslot != 1 {
+			t.Errorf("grant Timeslot = %d, want 1 (TS1)", g.Timeslot)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("no grant event from a Motorola vendor CSBK")
 	}

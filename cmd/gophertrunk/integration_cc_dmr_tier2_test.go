@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -139,13 +138,11 @@ WaitLoop:
 
 	waitForScannerLock(t, base, "DMRTier2Repeater", 2*time.Second)
 
-	body := scrape(t, base+"/metrics")
-	if !strings.Contains(body, "gophertrunk_control_channel_locked{") {
-		t.Errorf("/metrics missing gophertrunk_control_channel_locked gauge family:\n%s", body)
-	}
-	if !strings.Contains(body, `gophertrunk_events_total{kind="cc.locked"} 1`) {
-		t.Errorf("/metrics did not count one cc.locked event:\n%s", body)
-	}
+	// Poll rather than scrape once: the metrics collector updates its
+	// counters from a separate events-bus subscription and can lag a beat
+	// behind this test's subscriber seeing cc.locked.
+	waitForMetric(t, base, "gophertrunk_control_channel_locked{", 2*time.Second)
+	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 }
 
 // buildDMRTier2VoiceLCHeaderDibits builds a DMR Tier II Voice LC

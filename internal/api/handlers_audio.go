@@ -51,7 +51,7 @@ type audioPatchRequest struct {
 //	503 if the daemon doesn't have an AudioController wired
 func (s *Server) handleAudioStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.audio == nil {
-		writeError(w, http.StatusServiceUnavailable, "audio not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "audio not wired")
 		return
 	}
 	writeJSON(w, http.StatusOK, audioStatusDTO(s.audio))
@@ -72,23 +72,23 @@ func (s *Server) handleAudioStatus(w http.ResponseWriter, _ *http.Request) {
 //	503 if the daemon doesn't have an AudioController wired
 func (s *Server) handleAudioPatch(w http.ResponseWriter, r *http.Request) {
 	if s.audio == nil {
-		writeError(w, http.StatusServiceUnavailable, "audio not wired")
+		s.writeError(w, http.StatusServiceUnavailable, "audio not wired")
 		return
 	}
 	var req audioPatchRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			writeError(w, http.StatusBadRequest, "invalid json body")
+			s.writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
 	}
 	if req.Volume == nil && req.Muted == nil && req.Recording == nil {
-		writeError(w, http.StatusBadRequest, "supply volume, muted, and/or recording_enabled")
+		s.writeError(w, http.StatusBadRequest, "supply volume, muted, and/or recording_enabled")
 		return
 	}
 	if req.Volume != nil {
 		if *req.Volume < 0 || *req.Volume > 1 {
-			writeError(w, http.StatusBadRequest, "volume must be between 0.0 and 1.0")
+			s.writeError(w, http.StatusBadRequest, "volume must be between 0.0 and 1.0")
 			return
 		}
 		s.audio.SetVolume(*req.Volume)

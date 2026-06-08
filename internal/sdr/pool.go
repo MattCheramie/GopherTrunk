@@ -92,6 +92,12 @@ type Hint struct {
 	PPM     int
 	Gain    int // tenths of dB; negative = auto
 	BiasTee bool
+	// ForceBlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz crystal +
+	// HF/VHF/UHF input routing) on a device whose USB strings don't
+	// auto-identify it as a V4, so the R828D stops mistuning by ~1.8×
+	// (issue #264). ForceBlogV4Lite selects the two-band Lite variant.
+	ForceBlogV4     bool
+	ForceBlogV4Lite bool
 	// gainSet distinguishes "Gain not configured" (apply auto) from
 	// the explicit "auto" choice. The daemon sets this when it parses
 	// the YAML; tests that don't care can leave Hint zero-valued and
@@ -276,6 +282,7 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			"rate_hz", rate,
 			"ppm", hint.PPM,
 			"bias_tee", hint.BiasTee)
+		p.logTunerDiag(dev, d.info)
 		p.publish(events.KindSDRAttached, entry.Snapshot(true))
 	}
 	for serial := range hintBySerial {
@@ -366,6 +373,24 @@ func serialKey(s string) string {
 // applyHintSettings runs the per-device tuners after Open. Caller
 // holds p.mu.
 func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
+	// Force RTL-SDR Blog V4 mode first: it swaps the reference crystal
+	// that the PPM correction below biases, and it must land before any
+	// SetCenterFreq (the pool tunes later, when decoders bind). Idempotent
+	// with the driver's USB-string auto-detect — config wins, since it
+	// runs after open (issue #264).
+	if h.ForceBlogV4 {
+		if bf, ok := dev.(BlogV4Forcer); ok {
+			if err := bf.SetBlogV4(h.ForceBlogV4Lite); err != nil {
+				p.log.Warn("force blog_v4 failed", "serial", info.Serial, "err", err)
+			} else {
+				p.log.Info("sdr: forced RTL-SDR Blog V4 mode from config",
+					"serial", info.Serial, "lite", h.ForceBlogV4Lite)
+			}
+		} else {
+			p.log.Warn("blog_v4 override set but this driver does not support it; ignoring",
+				"serial", info.Serial)
+		}
+	}
 	if h.PPM != 0 {
 		if err := dev.SetPPM(h.PPM); err != nil {
 			p.log.Warn("set ppm failed", "serial", info.Serial, "ppm", h.PPM, "err", err)
@@ -406,6 +431,29 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 			p.log.Warn("set bias_tee failed", "serial", info.Serial, "err", err)
 		}
 	}
+}
+
+// logTunerDiag emits a per-device tuner-detection line when the driver
+// supports the optional TunerDiagnoser extension. The point is to make
+// the issue #264 failure self-diagnosing: ref_xtal_hz=16000000 on an
+// R828D means RTL-SDR Blog V4 auto-detection missed (so the LO mistunes
+// ~1.8×), while 28800000 means the V4 path armed. Manufacturer/Product
+// are echoed so a blank/non-standard EEPROM string — the reason auto-
+// detect misses — is visible in the same line.
+func (p *Pool) logTunerDiag(dev Device, info Info) {
+	td, ok := dev.(TunerDiagnoser)
+	if !ok {
+		return
+	}
+	name, v4, v4lite, xtal := td.TunerDiag()
+	p.log.Info("sdr tuner detected",
+		"serial", info.Serial,
+		"manufacturer", info.Manufacturer,
+		"product", info.Product,
+		"tuner", name,
+		"blog_v4", v4,
+		"blog_v4_lite", v4lite,
+		"ref_xtal_hz", xtal)
 }
 
 // publish is a non-blocking helper that fans an event to the optional
@@ -529,6 +577,7 @@ func (p *Pool) Reacquire(serial string, sampleRateHz uint32) (*PoolEntry, error)
 	// only logs failures — it is non-fatal in the original Open path and
 	// stays non-fatal here for the same reason.
 	p.applyHintSettings(dev, freshInfo, hint)
+	p.logTunerDiag(dev, freshInfo)
 
 	// Carry forward identity-stable Info fields (Serial, Driver,
 	// Manufacturer/Product/TunerName, Gains list) but accept the

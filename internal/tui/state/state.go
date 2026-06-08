@@ -24,6 +24,7 @@ const (
 	PanelMetrics
 	PanelDevices
 	PanelScanner
+	PanelHunt
 	PanelSettings
 	PanelImport
 	PanelCount
@@ -51,6 +52,8 @@ func (p PanelKind) String() string {
 		return "Devices"
 	case PanelScanner:
 		return "Scanner"
+	case PanelHunt:
+		return "Hunt"
 	case PanelSettings:
 		return "Settings"
 	case PanelImport:
@@ -85,6 +88,8 @@ func (p PanelKind) Key() string {
 		return "devices"
 	case PanelScanner:
 		return "scanner"
+	case PanelHunt:
+		return "hunt"
 	case PanelSettings:
 		return "settings"
 	case PanelImport:
@@ -118,6 +123,8 @@ type SharedState struct {
 	DevicesErr  error
 	Scanner     client.ScannerStatusDTO
 	ScannerErr  error
+	Hunt        client.HuntStatusDTO
+	HuntErr     error
 	Audio       client.AudioStatusDTO
 	AudioErr    error
 	Runtime     client.RuntimeDTO
@@ -165,6 +172,19 @@ type WriteRequest struct {
 	ScannerManualTune *ScannerManualTuneReq
 	Audio             *AudioReq
 	Settings          *SettingsReq
+	Hunt              *HuntStartReq
+}
+
+// HuntStartReq is the payload for WriteKindHuntStart — a live system-discovery
+// run started from the TUI. Frequencies are in MHz (matching the operator's
+// input); the client converts to the wire shape.
+type HuntStartReq struct {
+	Bands      []string  // "low:high" MHz
+	Candidates []float64 // MHz
+	Survey     bool      // classify+decode every carrier, not just trunking CCs
+	Name       string
+	Serial     string
+	Protocol   string
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -188,6 +208,8 @@ const (
 	WriteKindAudio
 	WriteKindScannerManualTune
 	WriteKindSettings
+	WriteKindHuntStop
+	WriteKindHuntStart
 )
 
 // ScannerManualTuneReq adds a temp VFO channel and forces dwell.

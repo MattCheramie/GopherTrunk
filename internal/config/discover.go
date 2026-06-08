@@ -68,6 +68,17 @@ func DiscoverWith(opts DiscoverOptions) (string, error) {
 	return "", nil
 }
 
+// CandidateDirs returns the directories config discovery scans, in
+// precedence order (see DiscoverWith). Exported so the web Config
+// Builder can list and constrain saves to the same set of locations the
+// daemon auto-discovers from.
+func CandidateDirs() []string { return candidateDirs() }
+
+// DirConfigFiles returns the *.yaml + *.yml files in dir, sorted
+// lexically. Exported for the web Config Builder's file browser; an
+// unreadable / missing dir yields an empty slice.
+func DirConfigFiles(dir string) []string { return dirConfigFiles(dir) }
+
 // candidateDirs returns the directories DiscoverWith will scan, in
 // precedence order. Factored out so tests can assert the order
 // without touching the filesystem.

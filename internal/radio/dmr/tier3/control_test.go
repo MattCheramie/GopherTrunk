@@ -142,8 +142,44 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 			if !g.Encrypted || !g.Emergency {
 				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
 			}
+			// byte 7 bit 7 set → CSBK TS2 (0-based 1) → 1-based Timeslot 2.
+			if g.Timeslot != 2 {
+				t.Errorf("Timeslot = %d, want 2 (TS2)", g.Timeslot)
+			}
 			if g.At.Unix() != 1_700_000_000 {
 				t.Errorf("At = %v, want injected Now", g.At)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event published")
+		}
+	}
+}
+
+func TestControlChannelGrantCarriesInterleavedFlag(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:              bus,
+		SystemName:       "TestSys",
+		Resolver:         TableBandPlan{8: 866_175_000},
+		InterleavedVoice: true,
+	})
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88}}
+	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			if g := ev.Payload.(trunking.Grant); !g.DMRInterleavedVoice {
+				t.Errorf("DMRInterleavedVoice = false, want true when Options.InterleavedVoice is set")
 			}
 			return
 		case <-deadline:
@@ -184,6 +220,10 @@ func TestControlChannelPublishesPVGrant(t *testing.T) {
 			}
 			if g.FrequencyHz != 462_550_000 {
 				t.Errorf("freq = %d, want 462_550_000", g.FrequencyHz)
+			}
+			// byte 7 bit 7 clear → CSBK TS1 (0-based 0) → 1-based Timeslot 1.
+			if g.Timeslot != 1 {
+				t.Errorf("Timeslot = %d, want 1 (TS1)", g.Timeslot)
 			}
 			return
 		case <-deadline:

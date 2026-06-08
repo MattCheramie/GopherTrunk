@@ -1,5 +1,7 @@
 package framing
 
+import "errors"
+
 // Reed-Solomon codes over GF(2^6) per TIA-102.BAAA-A §5.9 — the
 // three shortened RS codes Project 25 uses for voice information
 // and link control protection, which P25 Phase 2 also reuses on
@@ -27,11 +29,14 @@ package framing
 //	                 |    |    |    |     | Phase 2 FACCH outer FEC
 //	RS(36, 20, 17)   | 20 | 36 | 17 | 8   | Header Data Unit (HDU)
 //
-// This pass implements encoder + syndrome verifier for all three
-// codes. Single-symbol error correction via Berlekamp-Massey +
-// Chien + Forney is a future follow-up — verification alone tells
-// the higher layer whether the inner trellis/Golay correction was
-// successful, which is the primary use of the outer RS layer.
+// This file implements the encoder, syndrome verifier, AND a
+// bounded-distance error corrector (Berlekamp-Massey for the error
+// locator, Chien search for the error positions, Forney for the error
+// magnitudes) for all three codes. The corrector cleans up the residual
+// symbol errors the inner Hamming/Golay/trellis layer leaves behind —
+// notably the P25 Link Control talkgroup and Encryption Sync algorithm
+// fields, whose inner-only decode is otherwise corrupted under marginal
+// SNR.
 
 // rsGF64 is the singleton GF(2^6) field. Built at init time.
 var rsGF64 *rsField64
@@ -81,6 +86,12 @@ func gf64Pow(n int) byte {
 		n += 63
 	}
 	return rsGF64.exp[n]
+}
+
+// gf64Inv returns the multiplicative inverse of a in GF(2^6). Since
+// α^63 = 1, a^-1 = α^(63 - log a). a must be nonzero.
+func gf64Inv(a byte) byte {
+	return rsGF64.exp[63-int(rsGF64.log[a])]
 }
 
 // rsParity24_12 is the right-hand 12 × 12 parity sub-matrix of the
@@ -239,17 +250,252 @@ func verifyRSGF64(cw []byte, n, r int) bool {
 			return false
 		}
 	}
-	// Syndromes s_j = c(α^j) for j = 1..r. The spec defines
-	// g(x) = (x + α^1)(x + α^2)...(x + α^r), so roots start at α^1.
-	for j := 1; j <= r; j++ {
-		alphaJ := gf64Pow(j)
-		var s byte
-		for i := 0; i < n; i++ {
-			s = gf64Mul(s, alphaJ) ^ cw[i]
-		}
+	for _, s := range syndromesGF64(cw, n, r) {
 		if s != 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// ErrRSUncorrectable is returned by the RS decoders when the received
+// codeword carries more symbol errors than the code can correct
+// (t = (n-k)/2), so the original information cannot be recovered. The
+// caller should treat the inner-decoded content as low-confidence.
+var ErrRSUncorrectable = errors.New("framing: Reed-Solomon codeword exceeds error-correction radius")
+
+// DecodeRS24_12 corrects up to t=6 symbol errors in a received
+// RS(24,12,13) codeword and returns the 12 recovered information
+// symbols, the number of symbol errors corrected, and ErrRSUncorrectable
+// when the codeword is beyond the correction radius. The codeword
+// convention matches EncodeRS24_12 / VerifyRS24_12 (roots α^1..α^12,
+// cw[0] highest degree). This protects P25 Link Control words.
+func DecodeRS24_12(cw []byte) ([12]byte, int, error) {
+	var info [12]byte
+	corrected, nErr, err := decodeRSGF64(cw, 24, 12)
+	if err != nil {
+		return info, 0, err
+	}
+	copy(info[:], corrected[:12])
+	return info, nErr, nil
+}
+
+// DecodeRS24_16 corrects up to t=4 symbol errors in a received
+// RS(24,16,9) codeword and returns the 16 recovered information symbols.
+// This protects P25 Encryption Sync words.
+func DecodeRS24_16(cw []byte) ([16]byte, int, error) {
+	var info [16]byte
+	corrected, nErr, err := decodeRSGF64(cw, 24, 16)
+	if err != nil {
+		return info, 0, err
+	}
+	copy(info[:], corrected[:16])
+	return info, nErr, nil
+}
+
+// DecodeRS36_20 corrects up to t=8 symbol errors in a received
+// RS(36,20,17) codeword and returns the 20 recovered information
+// symbols. This protects the P25 Header Data Unit.
+func DecodeRS36_20(cw []byte) ([20]byte, int, error) {
+	var info [20]byte
+	corrected, nErr, err := decodeRSGF64(cw, 36, 20)
+	if err != nil {
+		return info, 0, err
+	}
+	copy(info[:], corrected[:20])
+	return info, nErr, nil
+}
+
+// syndromesGF64 returns the r = n-k syndromes S_1..S_r of cw, where
+// S_j = c(α^j) evaluated by Horner from the leading coefficient (cw[0]
+// is the x^(n-1) term). The slice is indexed 0..r-1 holding S_1..S_r.
+func syndromesGF64(cw []byte, n, r int) []byte {
+	s := make([]byte, r)
+	for j := 1; j <= r; j++ {
+		alphaJ := gf64Pow(j)
+		var acc byte
+		for i := 0; i < n; i++ {
+			acc = gf64Mul(acc, alphaJ) ^ cw[i]
+		}
+		s[j-1] = acc
+	}
+	return s
+}
+
+// decodeRSGF64 performs bounded-distance decoding of a shortened RS code
+// over GF(2^6) with generator roots α^1..α^r (r = n-k). It returns the
+// corrected n-symbol codeword, the number of symbol errors corrected, and
+// ErrRSUncorrectable if the error count exceeds t = r/2. A defensive
+// re-syndrome after correction guarantees a returned codeword is always a
+// valid member of the code (so a >t error pattern fails cleanly rather
+// than silently miscorrecting).
+func decodeRSGF64(cw []byte, n, k int) ([]byte, int, error) {
+	if len(cw) != n {
+		return nil, 0, ErrRSUncorrectable
+	}
+	for _, s := range cw {
+		if s&^0x3F != 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+	}
+	r := n - k
+	t := r / 2
+	synd := syndromesGF64(cw, n, r)
+
+	allZero := true
+	for _, s := range synd {
+		if s != 0 {
+			allZero = false
+			break
+		}
+	}
+	out := append([]byte(nil), cw...)
+	if allZero {
+		return out, 0, nil
+	}
+
+	// Berlekamp-Massey: synthesise the shortest LFSR (error-locator
+	// polynomial Λ) that generates the syndrome sequence.
+	lambda := []byte{1}
+	bPoly := []byte{1}
+	L := 0
+	m := 1
+	b := byte(1)
+	for i := 0; i < r; i++ {
+		// Discrepancy delta = S_{i+1} + Σ_{j=1..L} Λ_j · S_{i+1-j}.
+		delta := synd[i]
+		for j := 1; j <= L; j++ {
+			if j < len(lambda) {
+				delta ^= gf64Mul(lambda[j], synd[i-j])
+			}
+		}
+		switch {
+		case delta == 0:
+			m++
+		case 2*L <= i:
+			tmp := append([]byte(nil), lambda...)
+			coef := gf64Mul(delta, gf64Inv(b))
+			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
+			L = i + 1 - L
+			bPoly = tmp
+			b = delta
+			m = 1
+		default:
+			coef := gf64Mul(delta, gf64Inv(b))
+			lambda = polyAddShiftScaledGF64(lambda, bPoly, m, coef)
+			m++
+		}
+	}
+
+	if L > t {
+		return nil, 0, ErrRSUncorrectable
+	}
+
+	// Chien search: a symbol at codeword index i (polynomial degree
+	// p = n-1-i) is in error iff Λ(α^-p) = 0. Collect roots → positions.
+	type errPos struct {
+		idx int  // codeword index
+		x   byte // error locator X_l = α^p
+	}
+	var positions []errPos
+	for p := 0; p < n; p++ {
+		root := gf64Pow(-p) // α^-p
+		if polyEvalGF64(lambda, root) == 0 {
+			positions = append(positions, errPos{idx: n - 1 - p, x: gf64Pow(p)})
+		}
+	}
+	if len(positions) != L {
+		// Roots fell outside the transmitted positions, or fewer roots
+		// than the locator degree → more than t errors.
+		return nil, 0, ErrRSUncorrectable
+	}
+
+	// Forney: error magnitude e_l = Ω(X_l^-1) / Λ'(X_l^-1) for roots
+	// starting at α^1 (b=1, so the X_l^(1-b) factor is unity). Ω is the
+	// error-evaluator Ω(x) = S(x)·Λ(x) mod x^r.
+	omega := polyMulModGF64(syndromePolyGF64(synd), lambda, r)
+	lambdaPrime := formalDerivativeGF64(lambda)
+	for _, ep := range positions {
+		xInv := gf64Inv(ep.x)
+		num := polyEvalGF64(omega, xInv)
+		den := polyEvalGF64(lambdaPrime, xInv)
+		if den == 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+		out[ep.idx] ^= gf64Mul(num, gf64Inv(den))
+	}
+
+	// Defensive re-syndrome: a genuine >t error pattern that happened to
+	// produce a degree-≤t locator is rejected here rather than returned
+	// as a plausible-but-wrong codeword.
+	for _, s := range syndromesGF64(out, n, r) {
+		if s != 0 {
+			return nil, 0, ErrRSUncorrectable
+		}
+	}
+	return out, len(positions), nil
+}
+
+// syndromePolyGF64 builds S(x) = Σ_{j=1..r} S_j x^(j-1) from the syndrome
+// slice (synd[j-1] = S_j).
+func syndromePolyGF64(synd []byte) []byte {
+	return append([]byte(nil), synd...)
+}
+
+// polyAddShiftScaledGF64 returns a(x) + coef·x^shift·b(x) over GF(2^6).
+func polyAddShiftScaledGF64(a, b []byte, shift int, coef byte) []byte {
+	size := len(a)
+	if len(b)+shift > size {
+		size = len(b) + shift
+	}
+	out := make([]byte, size)
+	copy(out, a)
+	for i, bi := range b {
+		out[i+shift] ^= gf64Mul(coef, bi)
+	}
+	return out
+}
+
+// polyEvalGF64 evaluates poly (poly[i] = coefficient of x^i) at x.
+func polyEvalGF64(poly []byte, x byte) byte {
+	var acc byte
+	var xp byte = 1
+	for _, c := range poly {
+		acc ^= gf64Mul(c, xp)
+		xp = gf64Mul(xp, x)
+	}
+	return acc
+}
+
+// polyMulModGF64 returns a(x)·b(x) mod x^deg over GF(2^6).
+func polyMulModGF64(a, b []byte, deg int) []byte {
+	out := make([]byte, deg)
+	for i, ai := range a {
+		if ai == 0 || i >= deg {
+			continue
+		}
+		for j, bj := range b {
+			if i+j >= deg {
+				break
+			}
+			out[i+j] ^= gf64Mul(ai, bj)
+		}
+	}
+	return out
+}
+
+// formalDerivativeGF64 returns Λ'(x): over GF(2^m) the even-degree terms
+// vanish (multiplied by an even integer ≡ 0), leaving the odd-degree
+// coefficients shifted down by one.
+func formalDerivativeGF64(poly []byte) []byte {
+	if len(poly) <= 1 {
+		return []byte{0}
+	}
+	out := make([]byte, len(poly)-1)
+	for i := 1; i < len(poly); i++ {
+		if i%2 == 1 {
+			out[i-1] = poly[i]
+		}
+	}
+	return out
 }

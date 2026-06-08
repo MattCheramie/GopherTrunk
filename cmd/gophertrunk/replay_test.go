@@ -1,12 +1,17 @@
 package main
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
@@ -120,6 +125,138 @@ func TestReplayDDCCompositionLocks(t *testing.T) {
 	if got.NIDTrusted == 0 && got.NIDMarginal == 0 {
 		t.Errorf("Stats after lock = %+v, want at least one NID-accept", got)
 	}
+}
+
+// TestReplayDMRConjugateDDCLocks guards the DMR + `-conjugate` wiring
+// the `gophertrunk replay -protocol dmr-tier3` path adds (issue #264).
+// It mirrors what runReplay does at runtime for an off-centre,
+// spectrum-inverted DMR control channel — the RTL-SDR Blog V4 / R828D
+// case "are I and Q reversed?":
+//
+//   - Synthesize a Tier III CSBK stream at the 48 kHz channel rate
+//     (correct ±1944 Hz deviation at sps=10), upsample to a wideband
+//     SDR rate, NCO-shift it off DC, then conjugate every sample to
+//     model the inverted front-end.
+//   - Decode it back through the SAME ccdecoder.Downconverter +
+//     dmr/receiver + tier3.ControlChannel runReplay uses.
+//
+// Two facts this pins, both observed on the real issue-#264 capture
+// analysis: (1) a conjugated stream's channel lands at the MIRROR
+// offset, so the down-converter must tune to -offset to recover it —
+// the dual-polarity burst decode alone cannot, because it only re-maps
+// dibits after channelization; (2) once tuned to the mirror, the lock
+// is clean and the SystemID is correct (not the ever-changing color
+// code a noise false-lock produces). If this breaks, the operator's
+// offline DMR reproducer has drifted from the production decode path.
+func TestReplayDMRConjugateDDCLocks(t *testing.T) {
+	const (
+		systemID     = 0x1234
+		colorCode    = 0xA
+		narrowRateHz = ccdecoder.DDCTargetRateHz // 48 kHz, sps=10
+		sdrRateHz    = 240_000.0                 // ×5 wideband
+		deviationHz  = 1944.0
+		offsetHz     = 24_000.0 // channel placed off DC
+		burstRepeats = 80
+	)
+
+	dibits := buildReplayDMRTier3Dibits(colorCode, systemID, burstRepeats)
+	narrow := demod.ModulateC4FM(dibits, int(narrowRateHz)/4800, 8, 0.20, narrowRateHz, deviationHz)
+	wide := dsp.NewResampler(5, 1, 8, 8.0).Process(nil, narrow)
+
+	// NCO-shift to +offsetHz, then conjugate to model the R828D's
+	// reversed I/Q. After conjugation the channel sits at -offsetHz.
+	for i := range wide {
+		ph := 2 * math.Pi * offsetHz * float64(i) / sdrRateHz
+		s := wide[i] * complex(float32(math.Cos(ph)), float32(math.Sin(ph)))
+		wide[i] = complex(real(s), -imag(s)) // conjugate
+	}
+
+	decode := func(tuneHz float64) (tier3.LockState, bool) {
+		bus := events.NewBus(256)
+		defer bus.Close()
+		sub := bus.Subscribe()
+		defer sub.Close()
+		cc := tier3.New(tier3.Options{Bus: bus, SystemName: "replay-test"})
+		rx := dmrrx.New(dmrrx.Options{
+			SampleRateHz: narrowRateHz,
+			DeviationHz:  deviationHz,
+			ClockGain:    0.025,
+			DibitSink:    func(d []uint8, base int) { cc.Process(d, base) },
+		})
+		ddc := ccdecoder.NewDownconverterWithOffset(sdrRateHz, narrowRateHz, tuneHz)
+		const chunk = 8_192
+		var ddcOut []complex64
+		for off := 0; off < len(wide); off += chunk {
+			end := off + chunk
+			if end > len(wide) {
+				end = len(wide)
+			}
+			ddcOut = ddc.Process(ddcOut, wide[off:end])
+			rx.Process(ddcOut)
+			for drained := false; !drained; {
+				select {
+				case ev := <-sub.C:
+					if ev.Kind == events.KindCCLocked {
+						if ls, ok := ev.Payload.(tier3.LockState); ok {
+							return ls, true
+						}
+					}
+				default:
+					drained = true
+				}
+			}
+		}
+		return tier3.LockState{}, false
+	}
+
+	// Tuning to the mirror offset (-offsetHz) recovers the inverted
+	// channel; the SystemID must come back correct.
+	if ls, ok := decode(-offsetHz); !ok {
+		t.Fatalf("conjugated DMR did NOT lock when tuned to the mirror offset %g Hz", -offsetHz)
+	} else if ls.SystemID != systemID {
+		t.Errorf("locked SystemID = %#x, want %#x", ls.SystemID, systemID)
+	}
+
+	// Tuning to the (wrong) original offset extracts noise on an
+	// inverted stream — the gap the source-level fix would close.
+	if _, ok := decode(offsetHz); ok {
+		t.Errorf("conjugated DMR unexpectedly locked at the non-mirrored offset %g Hz", offsetHz)
+	}
+}
+
+// buildReplayDMRTier3Dibits assembles a DMR Tier III CSBK (Aloha)
+// control-channel dibit stream — warmup + repeats × (burst + idle) —
+// duplicated here (cf. buildReplayCCDibits) so this test stays
+// self-contained and out of the //go:build integration set.
+func buildReplayDMRTier3Dibits(colorCode uint8, systemID uint16, repeats int) []uint8 {
+	csbk := tier3.CSBK{Opcode: tier3.OpAloha, LB: true}
+	csbk.Payload[2] = byte(systemID >> 8)
+	csbk.Payload[3] = byte(systemID & 0xFF)
+	csbkBytes := tier3.AssembleCSBK(csbk)
+	payloadDibits := framing.BitsToDibits(framing.EncodeBPTC196_96(framing.UnpackBitsMSB(csbkBytes, 96)))
+	slotDibits := framing.BitsToDibits(dmr.AssembleSlotType(dmr.SlotType{ColorCode: colorCode, DataType: dmr.DTCSBK}))
+
+	burst := make([]uint8, 0, dmr.BurstDibits)
+	burst = append(burst, payloadDibits[:dmr.HalfPayloadDibits]...)
+	burst = append(burst, slotDibits[:dmr.SlotTypeDibits]...)
+	burst = append(burst, dmr.BSData.Dibits[:]...)
+	burst = append(burst, slotDibits[dmr.SlotTypeDibits:]...)
+	burst = append(burst, payloadDibits[dmr.HalfPayloadDibits:]...)
+
+	out := make([]uint8, 0, 800+repeats*(len(burst)+32)+100)
+	for i := 0; i < 800; i++ {
+		out = append(out, uint8(i&3))
+	}
+	for r := 0; r < repeats; r++ {
+		out = append(out, burst...)
+		for i := 0; i < 32; i++ {
+			out = append(out, uint8(i&3))
+		}
+	}
+	for i := 0; i < 100; i++ {
+		out = append(out, uint8(i&3))
+	}
+	return out
 }
 
 // buildReplayCCDibits assembles a P25 Phase 1 control-channel dibit

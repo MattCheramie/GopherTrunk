@@ -31,9 +31,16 @@ type knownDevice struct {
 // cover OEM rebrands of the Realtek RTL2832U reference board (Terratec,
 // Compro, NooElec, etc.) — modern dongles from RTL-SDR.com / NooElec
 // use 0x0bda:0x2832 or 0x0bda:0x2838.
+//
+// Note on "RTL2838U": economy dongles (RTL-SDR Blog v3/v4, NESDR Smart)
+// are often labelled by their demodulator/USB-bridge chip, the RTL2838U
+// — a variant of the RTL2832U, not a tuner. They enumerate as the
+// 0x0bda:0x2838 row below (iProduct "RTL2838UHIDIR") and are already
+// fully supported; the real tuner inside (R820T2/R828D) is handled by
+// internal/sdr/rtlsdr/tuners. See issue #458.
 var knownDevices = []knownDevice{
 	{VID: 0x0bda, PID: 0x2832, Name: "Generic RTL2832U"},
-	{VID: 0x0bda, PID: 0x2838, Name: "Generic RTL2832U OEM"},
+	{VID: 0x0bda, PID: 0x2838, Name: "Generic RTL2832U OEM (RTL2838U)"},
 	{VID: 0x0413, PID: 0x6680, Name: "DigitalNow Quad DVB-T PCI-E"},
 	{VID: 0x0413, PID: 0x6f0f, Name: "Leadtek WinFast DTV Dongle Mini D"},
 	{VID: 0x0458, PID: 0x707f, Name: "Genius TVGo DVB-T03 USB"},

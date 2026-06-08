@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -54,8 +55,14 @@ func (c *Composer) resolveP25Phase1DemodMode(serial, mode string) p25p1rx.DemodM
 // The recorder maps protocol "p25" to the pure-Go IMBE vocoder
 // (voice.DefaultVocoderForProtocol), so WriteRawFrame here decodes each
 // 11-byte frame to PCM and into the call's WAV.
-func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, demodMode string, done chan<- struct{}) {
+func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, demodMode string, grantTG uint32, patched []uint32, done chan<- struct{}) {
 	defer close(done)
+
+	// Shared boundary controller: universal hangtime end-of-call,
+	// talkgroup gating (so a different talkgroup on a shared voice
+	// frequency is never appended), and per-transmission file splitting.
+	bt := c.newBoundaryTracker(serial, grantTG, patched)
+	go bt.run(ctx)
 
 	decim := int(iqHz) / p25p1VoiceIntermediateHz
 	if decim < 1 {
@@ -126,43 +133,88 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 		uncorrectableLDUs atomic.Uint64
 		corrErrBits       atomic.Uint64
 	)
+	// Outer-RS telemetry for the Link Control (LDU1) and Encryption Sync
+	// (LDU2) words. A rising RS-uncorrectable rate is the measurable
+	// signature of marginal signal at the FEC layer that drives the
+	// talkgroup-gating decision — high values mean talkgroups can't be
+	// trusted and the operator should improve gain/antenna.
+	var (
+		lcRSUncorrectable  atomic.Uint64
+		essRSUncorrectable atomic.Uint64
+	)
 	rx := p25p1rx.New(p25p1rx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
 		DemodMode:    mode,
 		Sink: func(ldu []byte) {
-			// Bump first so the watchdog gate accounts for LDU
-			// delivery even when there's no raw-frame sink.
-			frames.Add(1)
-			if rs == nil {
-				return
-			}
-			fs, errBits, err := phase1.ExtractVoiceFrames(ldu)
-			if errBits > 0 {
-				corrErrBits.Add(uint64(errBits))
-			}
-			if err != nil {
-				uncorrectableLDUs.Add(1)
-				c.log.Debug("composer: p25p1 voice extract uncorrectable subframe",
-					"serial", serial, "err", err)
-			}
-			for _, f := range fs {
-				if f == nil {
-					continue
-				}
-				if werr := rs.WriteRawFrame(serial, f); werr != nil {
-					c.log.Warn("composer: p25p1 raw-frame write failed",
-						"serial", serial, "err", werr)
-				}
-			}
-			// LDU1 carries a Link Control word, LDU2 an Encryption
-			// Sync — surface the call metadata each identifies.
 			duid, derr := phase1.LDUDuid(ldu)
-			if derr != nil {
+			// A Terminator Data Unit (with or without LC) marks the end
+			// of a transmission (talker released PTT). In split mode this
+			// rolls the recording to a fresh file for the next over; it
+			// is not voice, so don't write or count it.
+			if derr == nil && (duid == phase1.DUIDTerminator || duid == phase1.DUIDTerminatorWithLC) {
+				bt.onTransmissionEnd()
 				return
 			}
-			blocks, berr := phase1.ExtractLCESBlocks(ldu)
-			if berr != nil {
+			// Count LDU delivery for the decode-quality telemetry.
+			frames.Add(1)
+
+			var blocks [phase1.LDULCESBlockCount][]byte
+			haveBlocks := false
+			if derr == nil {
+				if b, berr := phase1.ExtractLCESBlocks(ldu); berr == nil {
+					blocks = b
+					haveBlocks = true
+				}
+			}
+			// Talkgroup gating: LDU1 carries the talkgroup in its Link
+			// Control; LDU2 (and any LDU whose LC didn't decode) passes 0
+			// so the tracker inherits the last decision. The tracker
+			// returns false when the talkgroup doesn't match the grant —
+			// i.e. another talkgroup has taken this shared frequency —
+			// and we drop that audio rather than append it.
+			tg := uint32(0)
+			if duid == phase1.DUIDLogicalLink1 && haveBlocks {
+				lc, _, lerr := phase1.ParseLinkControl(blocks)
+				switch {
+				case errors.Is(lerr, phase1.ErrLinkControlUncorrectable):
+					// The outer RS layer could not recover the LC, so its
+					// talkgroup is untrustworthy. Leave tg=0 so the boundary
+					// tracker INHERITS the last match instead of gating audio
+					// (or ending the call) on a garbage talkgroup — the
+					// dominant cause of dropped/fragmented recordings in the
+					// field capture.
+					lcRSUncorrectable.Add(1)
+				case lerr == nil && lc.LCFormat == phase1.LCOGroupVoiceChannelUser:
+					tg = uint32(lc.TalkgroupID)
+				}
+			}
+			write := bt.onVoice(tg)
+
+			if write && rs != nil {
+				fs, errBits, err := phase1.ExtractVoiceFrames(ldu)
+				if errBits > 0 {
+					corrErrBits.Add(uint64(errBits))
+				}
+				if err != nil {
+					uncorrectableLDUs.Add(1)
+					c.log.Debug("composer: p25p1 voice extract uncorrectable subframe",
+						"serial", serial, "err", err)
+				}
+				for _, f := range fs {
+					if f == nil {
+						continue
+					}
+					if werr := rs.WriteRawFrame(serial, f); werr != nil {
+						c.log.Warn("composer: p25p1 raw-frame write failed",
+							"serial", serial, "err", werr)
+					}
+				}
+			}
+
+			// Call metadata (talker alias, source ID, encryption sync) is
+			// surfaced regardless of the audio gating decision.
+			if !haveBlocks {
 				return
 			}
 			switch duid {
@@ -203,7 +255,13 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 					}
 				}
 			case phase1.DUIDLogicalLink2:
-				if es, _, lerr := phase1.ParseEncryptionSync(blocks); lerr == nil && es.Encrypted() {
+				es, _, lerr := phase1.ParseEncryptionSync(blocks)
+				if errors.Is(lerr, phase1.ErrEncryptionSyncUncorrectable) {
+					// Outer RS could not recover the ES; do not surface a
+					// garbage algorithm/key as a real encryption change.
+					essRSUncorrectable.Add(1)
+				}
+				if lerr == nil && es.Encrypted() {
 					c.log.Debug("composer: p25p1 encryption sync",
 						"serial", serial, "alg", es.AlgorithmID, "key", es.KeyID)
 					// Publish on the bus so the trunking engine
@@ -231,7 +289,6 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
-	var lastFrames uint64
 	// logDecodeQuality emits a rolling decode-quality summary. Gated to
 	// fire only after a burst of LDUs (~4.5 s of voice at 9 frames /
 	// 180 ms per LDU) so it does not spam the log every touch tick.
@@ -246,7 +303,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 		c.log.Info("composer: p25p1 decode quality",
 			"serial", serial, "demod_mode", mode,
 			"ldus", n, "uncorrectable_ldus", uncorrectableLDUs.Load(),
-			"corrected_bit_errs", corrErrBits.Load())
+			"corrected_bit_errs", corrErrBits.Load(),
+			"lc_rs_uncorrectable", lcRSUncorrectable.Load(),
+			"ess_rs_uncorrectable", essRSUncorrectable.Load())
 	}
 
 	for {
@@ -255,11 +314,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
-			n := frames.Load()
-			if n != lastFrames && c.engine != nil {
-				c.engine.Touch(serial)
-				lastFrames = n
-			}
+			// Engine Touch + hangtime end-of-call are handled by the
+			// shared boundary tracker (bt.run); this ticker only drives
+			// the rolling decode-quality summary.
 			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {

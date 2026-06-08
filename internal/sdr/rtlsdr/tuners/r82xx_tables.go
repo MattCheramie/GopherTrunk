@@ -29,12 +29,21 @@ const (
 	// via [R82xx.SetXtal].
 	r82xxXtalHz uint32 = 28_800_000
 
-	// r828dXtalHz is the reference crystal frequency for R828D-family
-	// tuners (RTL-SDR Blog V4 and similar). librtlsdr exposes this as
-	// R828D_XTAL_FREQ in tuner_r82xx.c. NewR82xx selects this default
-	// when chipType == TypeR828D so SetFreq's PLL math matches what
-	// librtlsdr would compute against the same hardware.
+	// r828dXtalHz is the reference crystal frequency for generic
+	// (non-V4) R828D tuners. librtlsdr exposes this as R828D_XTAL_FREQ
+	// in tuner_r82xx.c. NewR82xx selects this default when chipType ==
+	// TypeR828D; the RTL-SDR Blog V4 overrides it back to 28.8 MHz via
+	// SetBlogV4 because the V4's R828D runs from the 28.8 MHz crystal,
+	// not 16 MHz (issue #264 — the blog fork keeps the V4 at 28.8 MHz
+	// and only applies R828D_XTAL_FREQ to non-V4 R828D dongles).
 	r828dXtalHz uint32 = 16_000_000
+
+	// r82xxV4HFCrossHz / r82xxV4UHFCrossHz are the RTL-SDR Blog V4's
+	// input-bank crossover frequencies: ≤ HF-cross → HF (upconverter),
+	// (HF, UHF) → VHF, ≥ UHF-cross → UHF. Match the rtlsdr-blog fork's
+	// MHZ(28.8) / MHZ(250) thresholds in r82xx_set_freq.
+	r82xxV4HFCrossHz  uint32 = 28_800_000
+	r82xxV4UHFCrossHz uint32 = 250_000_000
 
 	// vcoMin / vcoMax bound the R820T VCO range. The PLL math
 	// picks a mixer divider (2/4/8/16/32/64) so freq*div lands
@@ -43,7 +52,9 @@ const (
 	r82xxVCOMax uint64 = 3_900_000_000
 
 	// vcoPowerRef is the comparison threshold for fine-tuning
-	// divNum based on the chip's VCO fine-tune status bits.
+	// divNum based on the chip's VCO fine-tune status bits. This is
+	// osmocom's stock value for R820T/R820T2; setPLL overrides it to 1
+	// for the R828D (incl. the Blog V4), matching the rtlsdr-blog fork.
 	r82xxVCOPowerRef = 2
 
 	// r82xxMaxNint is the largest nint value that fits the chip's PLL

@@ -14,26 +14,57 @@ import (
 )
 
 type Config struct {
-	Log        LogConfig        `yaml:"log"`
-	SDR        SDRConfig        `yaml:"sdr"`
-	Trunking   TrunkingConfig   `yaml:"trunking"`
-	API        APIConfig        `yaml:"api"`
-	Storage    StorageConfig    `yaml:"storage"`
-	Recordings RecordingsConfig `yaml:"recordings"`
-	Metrics    MetricsConfig    `yaml:"metrics"`
-	Retention  RetentionConfig  `yaml:"retention"`
-	ToneOut    ToneOutConfig    `yaml:"tone_out"`
-	Scanner    ScannerConfig    `yaml:"scanner"`
-	Audio      AudioConfig      `yaml:"audio"`
-	Broadcast  BroadcastConfig  `yaml:"broadcast"`
-	Baseband   BasebandConfig   `yaml:"baseband"`
-	Paging     PagingConfig     `yaml:"paging"`
-	APRS       APRSConfig       `yaml:"aprs"`
-	AIS        AISConfig        `yaml:"ais"`
-	DSC        DSCConfig        `yaml:"dsc"`
-	MDC1200    MDC1200Config    `yaml:"mdc1200"`
-	ADSB       ADSBConfig       `yaml:"adsb"`
-	Web        WebConfig        `yaml:"web"`
+	Log            LogConfig            `yaml:"log"`
+	SDR            SDRConfig            `yaml:"sdr"`
+	Trunking       TrunkingConfig       `yaml:"trunking"`
+	API            APIConfig            `yaml:"api"`
+	Storage        StorageConfig        `yaml:"storage"`
+	Recordings     RecordingsConfig     `yaml:"recordings"`
+	Metrics        MetricsConfig        `yaml:"metrics"`
+	Retention      RetentionConfig      `yaml:"retention"`
+	ToneOut        ToneOutConfig        `yaml:"tone_out"`
+	Scanner        ScannerConfig        `yaml:"scanner"`
+	Audio          AudioConfig          `yaml:"audio"`
+	Broadcast      BroadcastConfig      `yaml:"broadcast"`
+	Baseband       BasebandConfig       `yaml:"baseband"`
+	Paging         PagingConfig         `yaml:"paging"`
+	APRS           APRSConfig           `yaml:"aprs"`
+	AIS            AISConfig            `yaml:"ais"`
+	DSC            DSCConfig            `yaml:"dsc"`
+	MDC1200        MDC1200Config        `yaml:"mdc1200"`
+	ADSB           ADSBConfig           `yaml:"adsb"`
+	M17            M17Config            `yaml:"m17"`
+	Web            WebConfig            `yaml:"web"`
+	Diagnostics    DiagnosticsConfig    `yaml:"diagnostics"`
+	RadioReference RadioReferenceConfig `yaml:"radioreference"`
+}
+
+// RadioReferenceConfig holds credentials for RadioReference.com's read-only
+// SOAP web service. It is consumed by `gophertrunk hunt` to check whether a
+// discovered system already exists in RadioReference before producing a
+// submission package (RadioReference has no public write API, so nothing is
+// ever posted — this is a read-only duplicate check). All fields are optional;
+// when APIKey is empty the duplicate check is skipped and the hunt still
+// exports its files. The values are also overridable by the GOPHERTRUNK_RR_KEY
+// / GOPHERTRUNK_RR_USER / GOPHERTRUNK_RR_PASS environment variables and the
+// hunt -rr-key flag, so the secret need not live in config.yaml.
+type RadioReferenceConfig struct {
+	APIKey   string `yaml:"api_key"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+// DiagnosticsConfig controls error-reporting verbosity. When
+// VerboseErrors is true, every error surface (CLI, daemon log,
+// HTTP/gRPC API) prints the full wrapped error chain plus a goroutine
+// stack dump under the diagnostics banner, with no interactive prompt;
+// the API also expands its error envelopes to include the banner +
+// trace (which exposes host/dongle info — enable only on trusted
+// networks). When false (the default) the CLI instead offers the trace
+// interactively on a TTY. Overridable at runtime by the -verbose-errors
+// flag and the GOPHERTRUNK_VERBOSE_ERRORS env var.
+type DiagnosticsConfig struct {
+	VerboseErrors bool `yaml:"verbose_errors"`
 }
 
 // WebConfig configures the bundled user interfaces (the embedded web SPA
@@ -58,6 +89,7 @@ var KnownUITabs = map[string]bool{
 	"dashboard":     true,
 	"active":        true,
 	"scanner":       true,
+	"hunt":          true,
 	"settings":      true,
 	"systems":       true,
 	"talkgroups":    true,
@@ -130,6 +162,27 @@ type ADSBChannelConfig struct {
 type ADSBBeastConfig struct {
 	Addr string `yaml:"addr"`
 	Name string `yaml:"name"` // log + metrics label
+}
+
+// M17Config configures the M17 digital-voice link-layer receiver.
+// Each entry pins an SDR to an M17 frequency and runs the DSP frontend
+// (FM demod → C4FM matched filter → symbol-timing recovery → 4FSK
+// slice → sync hunt → LICH reassembly → Link Setup Frame parse).
+// Decoded link metadata (source / destination callsigns, mode)
+// publishes on events.KindM17LinkSetup; storage.M17Log persists it to
+// the m17_log table and the REST endpoint at /api/v1/m17/linksetups
+// returns the recent rows. Voice (Codec2) decode is a later milestone.
+type M17Config struct {
+	Channels []M17ChannelConfig `yaml:"channels"`
+}
+
+// M17ChannelConfig describes one M17 channel to decode. Serial picks
+// the SDR; the daemon tunes it to FrequencyHz and runs the receiver
+// against its full IQ stream. M17 simplex calling is commonly
+// 144.975 MHz (2 m) / 433.475 MHz (70 cm) in many regions.
+type M17ChannelConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
 }
 
 // APRSConfig configures the APRS / AX.25 Bell-202 AFSK receiver.
@@ -240,11 +293,50 @@ type MDC1200ChannelConfig struct {
 	DropBadCRC  bool   `yaml:"drop_bad_crc"`
 }
 
-// PagingConfig configures pager decoders (POCSAG today, FLEX
-// follow-up). Each entry pins an SDR to a paging frequency and
-// runs the per-protocol receiver against its IQ stream.
+// PagingConfig configures pager decoders. POCSAG and FLEX each pin an
+// SDR to a single paging frequency and run the per-protocol receiver
+// against its full IQ stream. Wideband groups several paging channels
+// (any mix of POCSAG / FLEX) onto one dongle: the daemon tunes the SDR
+// to a center frequency and a digital down-converter splits out each
+// channel, so two pagers a few hundred kHz apart fit on one stick.
 type PagingConfig struct {
-	POCSAG []PagingPOCSAGConfig `yaml:"pocsag"`
+	POCSAG   []PagingPOCSAGConfig   `yaml:"pocsag"`
+	FLEX     []PagingFLEXConfig     `yaml:"flex"`
+	Wideband []PagingWidebandConfig `yaml:"wideband"`
+}
+
+// PagingWidebandConfig groups multiple paging channels onto a single
+// SDR. The daemon tunes the dongle to CenterFreqHz (auto-computed as the
+// midpoint of the channel frequencies when left 0), then runs an
+// internal/dsp/tuner DDC bank with one tap per channel — each tap feeds
+// the matching POCSAG / FLEX receiver. Every channel frequency must fall
+// within CenterFreqHz ± sample_rate/2 (with a small guard band); channels
+// outside the usable IQ window are skipped with a startup warning.
+type PagingWidebandConfig struct {
+	Serial       string                  `yaml:"serial"`
+	CenterFreqHz uint32                  `yaml:"center_freq_hz"`
+	Channels     []PagingWidebandChannel `yaml:"channels"`
+}
+
+// PagingWidebandChannel is one paging channel inside a wideband group.
+// Protocol selects the decoder ("pocsag" or "flex"). BaudHz applies to
+// POCSAG only (defaults to 1200); FLEX is fixed at 1600 bps and ignores
+// it.
+type PagingWidebandChannel struct {
+	Protocol    string `yaml:"protocol"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
+	BaudHz      uint32 `yaml:"baud_hz"`
+}
+
+// PagingFLEXConfig describes one FLEX paging channel to decode. Serial
+// picks the SDR; the daemon tunes it to FrequencyHz and runs the FLEX
+// receiver against its full IQ stream. The frontend handles the
+// 1600 bps / 2-level mode. Decoded pages publish on
+// events.KindPagerMessage with protocol="flex" and share the pager_log
+// table / web panel with POCSAG.
+type PagingFLEXConfig struct {
+	Serial      string `yaml:"serial"`
+	FrequencyHz uint32 `yaml:"frequency_hz"`
 }
 
 // PagingPOCSAGConfig describes one POCSAG paging channel to
@@ -479,6 +571,21 @@ type MessageLogConfig struct {
 }
 
 type SDRConfig struct {
+	// SampleRate is the IQ rate (Hz) every tuner is programmed to.
+	// Default 2_400_000 (2.4 MS/s). Valid range 225_000..20_000_000; the
+	// RTL2832U quantizes to its 28.4 fixed-point divisor so the streamed
+	// rate may differ slightly (see Device.ActualSampleRate). Note that
+	// RTL2832U hardware still caps at 3.2 MHz at the device level (the
+	// resampler produces garbage above that), so rates beyond 3.2 MHz are
+	// only usable with wideband sources such as soapy_remote (USRP, Lime,
+	// bladeRF, …) that can stream them — an RTL dongle handed a higher
+	// rate is rejected at open and skipped. This is
+	// also the primary load lever on CPU-bound hosts: convert + resample
+	// cost scales with it, so if the daemon logs "sdr: dropping live IQ
+	// chunks; consumer can't keep up" (iq_underruns_total climbing),
+	// lowering it — e.g. to 1_024_000 — roughly halves per-chunk decode
+	// work. Running fewer simultaneous dongles on a weak CPU has the same
+	// effect.
 	SampleRate uint32         `yaml:"sample_rate"`
 	Devices    []DeviceConfig `yaml:"devices"`
 	// RTLTCP lists remote rtl_tcp endpoints (host:port + optional
@@ -489,6 +596,15 @@ type SDRConfig struct {
 	// a beefier machine for decode). rtl_tcp is plaintext — use it
 	// on trusted networks only or through an SSH/wireguard tunnel.
 	RTLTCP []RTLTCPConfig `yaml:"rtl_tcp"`
+	// SoapyRemote lists remote SoapySDRServer endpoints to mount as
+	// virtual tuners. SoapySDRServer (from pothosware/SoapyRemote)
+	// exposes any SoapySDR-supported radio — USRP, LimeSDR, bladeRF,
+	// HackRF, Airspy, RTL-SDR, SDRplay — over the network with a real
+	// control plane and high bit depth (16-bit CS16 / 32-bit CF32),
+	// unlike rtl_tcp's hardcoded 8-bit stream. Each entry becomes one
+	// pool device. Plaintext like rtl_tcp — use on trusted networks
+	// only or through an SSH/wireguard tunnel.
+	SoapyRemote []SoapyRemoteConfig `yaml:"soapy_remote"`
 	// WatchdogIntervalMs governs the periodic USB-disconnect
 	// watchdog that the SDR pool runs while the daemon is up. It
 	// polls the registered drivers, surfaces serials that vanish
@@ -531,6 +647,93 @@ type RTLTCPConfig struct {
 	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
 }
 
+// SoapyRemoteConfig describes one remote SoapySDRServer endpoint to expose
+// as a virtual tuner. Addr is required; Serial / Role / PPM / Gain / BiasTee
+// follow the same semantics as the local SDR devices and rtl_tcp blocks.
+type SoapyRemoteConfig struct {
+	// Addr is the SoapySDRServer host:port, e.g. "192.168.1.60:55132".
+	// A bare host gets the default port (55132) appended. Required.
+	Addr string `yaml:"addr"`
+	// Driver is the SoapySDR device key used to select the radio on the
+	// server (e.g. "uhd", "lime", "bladerf", "hackrf", "airspy",
+	// "rtlsdr"). Empty selects the server's first/only device.
+	Driver string `yaml:"driver"`
+	// Args are extra SoapySDR device kwargs passed to the remote make(),
+	// as a "key=value,key2=value2" string (e.g.
+	// "rx_subdev_spec=A:0,antenna=RX1" for a USRP TwinRX). They are merged
+	// with Driver; an explicit "driver=" here wins over the Driver field.
+	// This is server-side device selection/configuration and is distinct
+	// from the top-level Serial, which is the local virtual pool name.
+	Args string `yaml:"args"`
+	// Serial is the virtual device serial reported on the pool's
+	// /api/v1/devices snapshot. Empty generates one from Addr.
+	Serial string `yaml:"serial"`
+	// Role hints the pool's role assignment: control|voice|auto.
+	Role string `yaml:"role"`
+	// Format is the requested wire sample format: "CS16" (16-bit, the
+	// default) or "CF32" (32-bit float). The server converts from the
+	// device's native format as needed.
+	Format string `yaml:"format"`
+	// StreamProtocol selects the stream transport. Only "tcp" (the
+	// default) is currently implemented.
+	StreamProtocol string `yaml:"stream_protocol"`
+	// PPM is the frequency-correction tuning applied on open (best-effort;
+	// ignored by SoapySDR drivers without frequency-correction support).
+	PPM int `yaml:"ppm"`
+	// Gain follows the same rule as DeviceConfig.Gain — "auto"/"" selects
+	// AGC, any other value parses as tenths of dB.
+	Gain string `yaml:"gain"`
+	// BiasTee toggles the remote device's bias-tee (best-effort; mapped to
+	// a SoapySDR writeSetting and ignored by drivers without the knob).
+	BiasTee bool `yaml:"bias_tee"`
+	// ConnectTimeoutMs caps the TCP dial in milliseconds. Zero picks the
+	// driver default (3000).
+	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
+}
+
+// parseDeviceArgs parses a SoapySDR-style "key=value,key2=value2" argument
+// string into a map. Empty input yields an empty map. Whitespace around keys
+// and values is trimmed and empty segments are skipped. A segment with no "="
+// or an empty key is an error.
+func parseDeviceArgs(s string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, seg := range strings.Split(s, ",") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(seg, "=")
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("invalid arg %q (want key=value)", seg)
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// DeviceArgs returns the SoapySDR make() kwargs for this endpoint: any
+// key=value pairs from Args, merged with the Driver shorthand. An explicit
+// "driver=" in Args wins over the Driver field. It returns nil when no args
+// apply (matching the driver's "select the server's first device" default),
+// or an error when Args is malformed.
+func (s SoapyRemoteConfig) DeviceArgs() (map[string]string, error) {
+	args, err := parseDeviceArgs(s.Args)
+	if err != nil {
+		return nil, err
+	}
+	if s.Driver != "" {
+		if _, ok := args["driver"]; !ok {
+			args["driver"] = s.Driver
+		}
+	}
+	if len(args) == 0 {
+		return nil, nil
+	}
+	return args, nil
+}
+
 type DeviceConfig struct {
 	Serial string `yaml:"serial"`
 	Role   string `yaml:"role"`
@@ -548,6 +751,17 @@ type DeviceConfig struct {
 	// GPIO bit that goes nowhere — librtlsdr accepts the call
 	// either way.
 	BiasTee bool `yaml:"bias_tee"`
+
+	// BlogV4 forces RTL-SDR Blog V4 mode (28.8 MHz reference crystal +
+	// per-band HF/VHF/UHF input routing) regardless of the dongle's USB
+	// iManufacturer/iProduct strings. Use it when a V4's EEPROM strings
+	// are blank or non-standard so auto-detection misses it and the
+	// R828D mistunes every frequency by ~1.8× (issue #264). Off by
+	// default; leave false for any non-V4 dongle. BlogV4Lite selects the
+	// two-band "Lite" variant — set it only on a V4L. When set, the
+	// config value wins over auto-detection (it is applied after open).
+	BlogV4     bool `yaml:"blog_v4"`
+	BlogV4Lite bool `yaml:"blog_v4_lite"`
 
 	// CenterFreqHz pins a `role: wideband` dongle to the centre of
 	// the IQ band it should cover. Every Channels[].FrequencyHz must
@@ -597,6 +811,17 @@ type DeviceConfig struct {
 	// validate the benefit with `gophertrunk replay -iq-correct -diag`
 	// on a capture from this device before enabling it here.
 	IQCorrect bool `yaml:"iq_correct"`
+
+	// IQInvert conjugates this device's raw IQ (negates Q) before
+	// channelization, undoing a spectrum-inverted / I-Q-swapped front
+	// end. Some SoapySDR / soapy_remote front-ends (and a few USRP /
+	// upconverter chains) deliver an inverted spectrum; on a π/4-DQPSK
+	// protocol like TETRA an inverted spectrum reverses every phase
+	// transition, so the constellation collapses and nothing locks even
+	// though the signal looks clean. Off by default. Confirm against a
+	// capture with `gophertrunk replay -conjugate -diag` before enabling.
+	// Equivalent to the replay subcommand's -conjugate flag (issue #264).
+	IQInvert bool `yaml:"iq_invert"`
 }
 
 // DeviceChannelConfig is one repeater carrier carried by a
@@ -622,6 +847,25 @@ type TrunkingConfig struct {
 	// teardown on systems whose signaling is consistently clean
 	// (lower) or chatty with long pauses (higher). Issue #356.
 	CallTimeoutMs int `yaml:"call_timeout_ms"`
+
+	// VoiceHangtimeMs is the universal "end of transmission" window
+	// applied to EVERY voice protocol (FM, DMR, P25 Phase 1 / 2): once a
+	// call has been decoding voice, the composer ends it this long after
+	// the last decoded voice frame, instead of waiting out the much
+	// longer CallTimeoutMs watchdog. Keeps recordings tightly bounded to
+	// the actual transmission. Defaults to 3500 (3.5 s) when zero;
+	// negative values are rejected by Validate.
+	VoiceHangtimeMs int `yaml:"voice_hangtime_ms"`
+
+	// VoiceCallGrouping controls how voice recordings are split, for
+	// EVERY voice protocol. "transmission" (default) writes one file per
+	// over/PTT — the recording rolls to a fresh file at each
+	// end-of-transmission boundary. "conversation" keeps consecutive
+	// overs of the same talkgroup in one file, splitting only when a
+	// different talkgroup takes the (shared) frequency or the channel
+	// goes idle past VoiceHangtimeMs. Empty defaults to "transmission";
+	// any other value is rejected by Validate.
+	VoiceCallGrouping string `yaml:"voice_call_grouping"`
 }
 
 type SystemConfig struct {
@@ -695,6 +939,16 @@ type SystemConfig struct {
 	// call (issue #356 follow-up). Ignored for non-P25-Phase-1
 	// protocols.
 	P25Phase1DemodMode string `yaml:"p25_phase1_demod_mode"`
+	// DMRInterleavedVoice opts a DMR system into the experimental
+	// 2-slot interleaved voice decoder: each voice grant decodes its
+	// timeslot from the carrier's interleaved burst stream and is
+	// routed to its call by matching the embedded Link Control's
+	// talkgroup. Default false keeps the single-slot decoder. The
+	// on-air same-slot cadence (CACH/guard) and the embedded-signalling
+	// FEC constants are still pending a real-capture cross-check (see
+	// docs/status.md), so this is opt-in until validated. Ignored for
+	// non-DMR systems.
+	DMRInterleavedVoice bool `yaml:"dmr_interleaved_voice"`
 	// P25Phase2TrellisMode enables the 4-state ½-rate trellis FEC
 	// decoder on the P25 Phase 2 MAC PDU window. Recognised values:
 	// "" / "on" / "true" / "1" (the new default — 146 channel
@@ -720,15 +974,15 @@ type SystemConfig struct {
 	P25Phase2InterleaveMode string `yaml:"p25_phase2_interleave_mode"`
 	// P25Phase2ScramblerMode enables the PN44 descrambling layer
 	// per TIA-102.BBAC-1 §7.2.5 on top of the trellis-decoded MAC
-	// PDU. Recognised values: "" / "off" / "false" / "0" (the
-	// default — no PN44 descrambling; matches historical decoder
-	// behaviour and synthesized-fixture expectations) or "on" /
-	// "true" / "1" (XOR the trellis-decoded 144-bit MAC PDU with
-	// the leading 144 bits of the PN44 sequence). The scrambler
-	// seed is derived from (WACN, SystemID, Color Code = NAC) per
-	// spec equation (5); the zero-seed edge case maps to (2^44 - 1).
-	// Full superframe-aware per-burst offset tracking is a
-	// follow-up. Ignored for non-P25-Phase-2 protocols.
+	// PDU. Recognised values: "" / "on" / "true" / "1" (the
+	// default — every on-air P25 Phase 2 MAC PDU is PN44 scrambled,
+	// so descrambling is required for live decode; XOR the
+	// trellis-decoded 144-bit MAC PDU with the leading 144 bits of
+	// the PN44 sequence) or "off" / "false" / "0" (no PN44
+	// descrambling; the opt-out for synthesized, unscrambled
+	// fixtures). The scrambler seed is derived from (WACN, SystemID,
+	// Color Code = NAC) per spec equation (5); the zero-seed edge
+	// case maps to (2^44 - 1). Ignored for non-P25-Phase-2 protocols.
 	P25Phase2ScramblerMode string `yaml:"p25_phase2_scrambler_mode"`
 	// P25Phase2ClockMode selects the symbol-timing-recovery strategy
 	// for the P25 Phase 2 receiver. Recognised values: "" /
@@ -807,6 +1061,15 @@ type SystemConfig struct {
 	// Ignored for non-P25-Phase-1 protocols.
 	P25BandPlan []P25BandPlanEntryConfig `yaml:"p25_band_plan"`
 
+	// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried
+	// in each DMR Tier III voice-grant CSBK to a downlink frequency.
+	// REQUIRED for T3 voice — T3 grants reference a channel by LCN, not
+	// an absolute frequency, so without this plan every grant is
+	// dropped with decode.error stage=no-bandplan. Provide exactly one
+	// of `linear` (regular base+spacing grid) or `table` (explicit
+	// LCN→Hz list). Ignored for non-dmr protocols.
+	DMRBandPlan *DMRBandPlanConfig `yaml:"dmr_band_plan"`
+
 	// EncryptionKeys lists operator-supplied decryption keys for this
 	// system. GopherTrunk decrypts only with keys the operator
 	// already holds and is authorized to use — it performs no key
@@ -831,6 +1094,31 @@ type P25BandPlanEntryConfig struct {
 	SpacingHz   uint32 `yaml:"spacing_hz"`
 	TxOffsetHz  int64  `yaml:"tx_offset_hz"`
 	BandwidthHz uint32 `yaml:"bandwidth_hz"`
+}
+
+// DMRBandPlanConfig is the operator-supplied DMR Tier III LCN→frequency
+// band plan for a system. Exactly one of Linear or Table must be set
+// (enforced by Config.Validate). See internal/radio/dmr/tier3/bandplan.go
+// for the resolution math.
+type DMRBandPlanConfig struct {
+	Linear *DMRLinearBandPlanConfig      `yaml:"linear"`
+	Table  []DMRBandPlanTableEntryConfig `yaml:"table"`
+}
+
+// DMRLinearBandPlanConfig lays channels out on a regular grid:
+// freq = base_hz + (lcn - offset) × spacing_hz. Set offset=1 for the
+// common case of sites that number LCNs from 1.
+type DMRLinearBandPlanConfig struct {
+	BaseHz    uint32 `yaml:"base_hz"`
+	SpacingHz uint32 `yaml:"spacing_hz"`
+	Offset    int8   `yaml:"offset"`
+}
+
+// DMRBandPlanTableEntryConfig is one explicit LCN→downlink-frequency
+// mapping for sites whose channels don't fall on a regular grid.
+type DMRBandPlanTableEntryConfig struct {
+	LCN    uint8  `yaml:"lcn"`
+	FreqHz uint32 `yaml:"freq_hz"`
 }
 
 // EncryptionKeyConfig is one operator-supplied decryption key for a
@@ -971,9 +1259,14 @@ type MetricsConfig struct {
 // log rows and recorded files. Zero values disable the corresponding
 // sweep; both can be active independently.
 type RetentionConfig struct {
-	CallLogDays int    `yaml:"call_log_days"`
-	FilesDays   int    `yaml:"files_days"`
-	Interval    string `yaml:"interval"` // Go duration string; default 1h
+	CallLogDays int `yaml:"call_log_days"`
+	// LogDays sweeps the decoder log tables (pager_log, aprs_log,
+	// vessel_log, dsc_log, aircraft_log, mdc1200_log, m17_log,
+	// location_log): rows older than this many days are deleted. Zero
+	// (the default) disables the decoder-log sweep.
+	LogDays   int    `yaml:"log_days"`
+	FilesDays int    `yaml:"files_days"`
+	Interval  string `yaml:"interval"` // Go duration string; default 1h
 }
 
 // ToneOutConfig describes paging-tone profiles to monitor. Empty
@@ -1033,7 +1326,7 @@ func Load(path string) (Config, error) {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("config %s: %w\n  hint: check YAML syntax (indentation must be spaces, keys end with ':'). Run `gophertrunk import-pdf -wizard` to regenerate a fresh scaffold.", path, err)
+		return cfg, fmt.Errorf("config %s: %w\n  hint: check YAML syntax (indentation must be spaces, keys end with ':'). Run `gophertrunk config` to build/repair a config interactively.", path, err)
 	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -1041,31 +1334,105 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+// sectionValidator pairs a config section's logical name (matching the
+// keys the web Config Builder uses) with the helper that validates it.
+// Each helper returns every error it finds in its section (one per failing
+// list item plus any section-level checks) so the builder can surface them
+// all at once.
+type sectionValidator struct {
+	name string
+	fn   func(Config) []error
+}
+
+// sectionValidators returns the per-section validators in the same order
+// the monolithic Validate() used to run them, so the first error reported
+// by Validate() is unchanged. Sections with no rules (log, api, storage,
+// metrics, …) are intentionally absent — ValidateSection treats an unknown
+// or rule-free section as valid.
+func sectionValidators() []sectionValidator {
+	return []sectionValidator{
+		{"sdr", Config.validateSDR},
+		{"trunking", Config.validateTrunking},
+		{"recordings", Config.validateRecordings},
+		{"retention", Config.validateRetention},
+		{"scanner", Config.validateScanner},
+		{"audio", Config.validateAudio},
+		{"broadcast", Config.validateBroadcast},
+		{"baseband", Config.validateBaseband},
+		{"web", Config.validateWeb},
+	}
+}
+
+// Validate reports the first configuration error, keyed by section path
+// (e.g. "trunking.systems[0]: name required"). It is the authoritative
+// gate run by Load and the config Writer. The checks are organised into
+// per-section helpers so the web Config Builder can validate one section
+// at a time (ValidateSection) or collect every error (ValidateAll);
+// Validate preserves the original first-error contract.
 func (c Config) Validate() error {
-	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 3_200_000) {
-		return errors.New("sdr.sample_rate must be between 225 kHz and 3.2 MHz")
+	for _, v := range sectionValidators() {
+		if errs := v.fn(c); len(errs) > 0 {
+			return errs[0]
+		}
+	}
+	return nil
+}
+
+// ValidateAll runs every section validator and returns every error found
+// across the whole config. An empty slice means the config is valid. The
+// web Config Builder uses this to light up every problem in one pass.
+func (c Config) ValidateAll() []error {
+	var errs []error
+	for _, v := range sectionValidators() {
+		errs = append(errs, v.fn(c)...)
+	}
+	return errs
+}
+
+// ValidateSection validates a single section by name (the keys returned by
+// sectionValidators / used by the web Config Builder) and returns all of
+// that section's errors. An unknown or rule-free section name yields nil
+// (treated as valid). Cross-section checks (e.g. wideband channels
+// referencing trunking.systems) run against the whole Config, so the
+// caller should pass a fully-populated draft.
+func (c Config) ValidateSection(section string) []error {
+	for _, v := range sectionValidators() {
+		if v.name == section {
+			return v.fn(c)
+		}
+	}
+	return nil
+}
+
+func (c Config) validateSDR() []error {
+	var errs []error
+	if c.SDR.SampleRate != 0 && (c.SDR.SampleRate < 225_000 || c.SDR.SampleRate > 20_000_000) {
+		errs = append(errs, errors.New("sdr.sample_rate must be between 225 kHz and 20 MHz"))
 	}
 	seenSerials := make(map[string]int, len(c.SDR.Devices))
 	for i, d := range c.SDR.Devices {
 		switch d.Role {
 		case "", "control", "voice", "auto", "wideband":
 		default:
-			return fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband", i)
+			errs = append(errs, fmt.Errorf("sdr.devices[%d]: role must be control|voice|auto|wideband", i))
+			continue
 		}
 		if d.Role == "wideband" {
 			if err := validateWidebandDevice(i, d, c.SDR.SampleRate, c.Trunking.Systems); err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
 		}
 		if d.Serial == "" {
 			continue
 		}
 		if prev, dup := seenSerials[d.Serial]; dup {
-			return fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"sdr.devices[%d]: duplicate serial %q (also at sdr.devices[%d]) — "+
 					"one physical SDR cannot serve multiple roles; P25 trunking needs "+
 					"separate dongles for control and voice",
-				i, d.Serial, prev)
+				i, d.Serial, prev))
+			continue
 		}
 		seenSerials[d.Serial] = i
 	}
@@ -1073,145 +1440,290 @@ func (c Config) Validate() error {
 	// the standard set; serial collisions with local devices are
 	// rejected for the same reason serial dedup runs above.
 	for i, r := range c.SDR.RTLTCP {
-		if r.Addr == "" {
-			return fmt.Errorf("sdr.rtl_tcp[%d]: addr is required (host:port)", i)
-		}
-		switch r.Role {
-		case "", "control", "voice", "auto":
-		default:
-			return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto", i)
+		if err := validateRTLTCPFields(i, r); err != nil {
+			errs = append(errs, err)
+			continue
 		}
 		if r.Serial == "" {
 			continue
 		}
 		if prev, dup := seenSerials[r.Serial]; dup {
-			return fmt.Errorf(
+			errs = append(errs, fmt.Errorf(
 				"sdr.rtl_tcp[%d]: serial %q collides with sdr.devices[%d]",
-				i, r.Serial, prev)
+				i, r.Serial, prev))
+			continue
 		}
 		seenSerials[r.Serial] = i
 	}
+	// Validate SoapySDRServer endpoints. Same rules as rtl_tcp, plus the
+	// stream protocol and sample format must be ones the driver supports.
+	for i, s := range c.SDR.SoapyRemote {
+		if err := validateSoapyFields(i, s); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if s.Serial == "" {
+			continue
+		}
+		if prev, dup := seenSerials[s.Serial]; dup {
+			errs = append(errs, fmt.Errorf(
+				"sdr.soapy_remote[%d]: serial %q collides with sdr.devices[%d]",
+				i, s.Serial, prev))
+			continue
+		}
+		seenSerials[s.Serial] = i
+	}
+	return errs
+}
+
+func validateRTLTCPFields(i int, r RTLTCPConfig) error {
+	if r.Addr == "" {
+		return fmt.Errorf("sdr.rtl_tcp[%d]: addr is required (host:port)", i)
+	}
+	switch r.Role {
+	case "", "control", "voice", "auto":
+	default:
+		return fmt.Errorf("sdr.rtl_tcp[%d]: role must be control|voice|auto", i)
+	}
+	return nil
+}
+
+func validateSoapyFields(i int, s SoapyRemoteConfig) error {
+	if s.Addr == "" {
+		return fmt.Errorf("sdr.soapy_remote[%d]: addr is required (host:port)", i)
+	}
+	switch s.Role {
+	case "", "control", "voice", "auto":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: role must be control|voice|auto", i)
+	}
+	switch s.Format {
+	case "", "CS16", "cs16", "CF32", "cf32":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: format must be CS16 or CF32", i)
+	}
+	switch s.StreamProtocol {
+	case "", "tcp":
+	default:
+		return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
+	}
+	if _, err := s.DeviceArgs(); err != nil {
+		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
+	}
+	return nil
+}
+
+func (c Config) validateTrunking() []error {
+	var errs []error
 	if c.Trunking.CallTimeoutMs < 0 {
-		return fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs)
+		errs = append(errs, fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs))
+	}
+	if c.Trunking.VoiceHangtimeMs < 0 {
+		errs = append(errs, fmt.Errorf("trunking.voice_hangtime_ms: %d ms must be ≥ 0", c.Trunking.VoiceHangtimeMs))
+	}
+	switch c.Trunking.VoiceCallGrouping {
+	case "", "transmission", "conversation":
+	default:
+		errs = append(errs, fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping))
 	}
 	for i, s := range c.Trunking.Systems {
-		if s.Name == "" {
-			return fmt.Errorf("trunking.systems[%d]: name required", i)
+		if err := validateSystem(i, s); err != nil {
+			errs = append(errs, err)
 		}
-		if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
-			return fmt.Errorf("trunking.systems[%d]: %w", i, err)
+	}
+	return errs
+}
+
+// validateSystem returns the first error in one trunking system (the
+// builder reports one error per system; fix-and-revalidate surfaces the
+// next).
+func validateSystem(i int, s SystemConfig) error {
+	if s.Name == "" {
+		return fmt.Errorf("trunking.systems[%d]: name required", i)
+	}
+	if _, err := trunking.ParseProtocol(s.Protocol); err != nil {
+		return fmt.Errorf("trunking.systems[%d]: %w", i, err)
+	}
+	seenBandPlanIDs := make(map[uint8]int, len(s.P25BandPlan))
+	for k, e := range s.P25BandPlan {
+		if e.ChannelID > 15 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: channel_id %d outside 0..15", i, k, e.ChannelID)
 		}
-		seenBandPlanIDs := make(map[uint8]int, len(s.P25BandPlan))
-		for k, e := range s.P25BandPlan {
-			if e.ChannelID > 15 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: channel_id %d outside 0..15", i, k, e.ChannelID)
+		if prev, dup := seenBandPlanIDs[e.ChannelID]; dup {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: duplicate channel_id %d (also at p25_band_plan[%d])", i, k, e.ChannelID, prev)
+		}
+		seenBandPlanIDs[e.ChannelID] = k
+		if e.SpacingHz == 0 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: spacing_hz required (nonzero)", i, k)
+		}
+		if e.BaseHz == 0 {
+			return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
+		}
+	}
+	if bp := s.DMRBandPlan; bp != nil {
+		hasLinear := bp.Linear != nil
+		hasTable := len(bp.Table) > 0
+		switch {
+		case hasLinear && hasTable:
+			return fmt.Errorf("trunking.systems[%d].dmr_band_plan: set either linear or table, not both", i)
+		case !hasLinear && !hasTable:
+			return fmt.Errorf("trunking.systems[%d].dmr_band_plan: one of linear or table is required", i)
+		}
+		if hasLinear {
+			if bp.Linear.SpacingHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: spacing_hz required (nonzero)", i)
 			}
-			if prev, dup := seenBandPlanIDs[e.ChannelID]; dup {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: duplicate channel_id %d (also at p25_band_plan[%d])", i, k, e.ChannelID, prev)
-			}
-			seenBandPlanIDs[e.ChannelID] = k
-			if e.SpacingHz == 0 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: spacing_hz required (nonzero)", i, k)
-			}
-			if e.BaseHz == 0 {
-				return fmt.Errorf("trunking.systems[%d].p25_band_plan[%d]: base_hz required (nonzero)", i, k)
+			if bp.Linear.BaseHz == 0 {
+				return fmt.Errorf("trunking.systems[%d].dmr_band_plan.linear: base_hz required (nonzero)", i)
 			}
 		}
-		seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
-		for k, ek := range s.EncryptionKeys {
-			switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
-			case "rc4", "arc4":
-				// supported
-			case "":
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
-			case "aes", "des":
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
-			default:
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
-			}
-			if _, dup := seenKeyIDs[ek.KeyID]; dup {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
-			}
-			seenKeyIDs[ek.KeyID] = struct{}{}
-			b, err := decodeHexKey(ek.Key)
-			if err != nil {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
-			}
-			if len(b) > 32 {
-				return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
+		if hasTable {
+			seenLCN := make(map[uint8]int, len(bp.Table))
+			for k, e := range bp.Table {
+				if e.FreqHz == 0 {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: freq_hz required (nonzero)", i, k)
+				}
+				if prev, dup := seenLCN[e.LCN]; dup {
+					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: duplicate lcn %d (also at table[%d])", i, k, e.LCN, prev)
+				}
+				seenLCN[e.LCN] = k
 			}
 		}
 	}
+	seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
+	for k, ek := range s.EncryptionKeys {
+		switch strings.ToLower(strings.TrimSpace(ek.Algorithm)) {
+		case "rc4", "arc4":
+			// supported
+		case "":
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm is required (use \"rc4\")", i, k)
+		case "aes", "des":
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: algorithm %q is not supported yet (only \"rc4\")", i, k, ek.Algorithm)
+		default:
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: unknown algorithm %q (use \"rc4\")", i, k, ek.Algorithm)
+		}
+		if _, dup := seenKeyIDs[ek.KeyID]; dup {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
+		}
+		seenKeyIDs[ek.KeyID] = struct{}{}
+		b, err := decodeHexKey(ek.Key)
+		if err != nil {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
+		}
+		if len(b) > 32 {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
+		}
+	}
+	return nil
+}
+
+func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
-		return fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)
+		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
 	}
+	return nil
+}
+
+func (c Config) validateRetention() []error {
 	if c.Retention.Interval != "" {
 		if _, err := parseDurationFlexible(c.Retention.Interval); err != nil {
-			return fmt.Errorf("retention.interval: %w", err)
+			return []error{fmt.Errorf("retention.interval: %w", err)}
 		}
 	}
+	return nil
+}
+
+func (c Config) validateAudio() []error {
+	var errs []error
+	if c.Audio.SampleRate != 0 && (c.Audio.SampleRate < 4000 || c.Audio.SampleRate > 48_000) {
+		errs = append(errs, fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate))
+	}
+	if c.Audio.Volume != 0 && (c.Audio.Volume < 0 || c.Audio.Volume > 1) {
+		errs = append(errs, fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume))
+	}
+	return errs
+}
+
+func (c Config) validateScanner() []error {
+	var errs []error
 	switch c.Scanner.ScanMode {
 	case "", "all", "list":
 	default:
-		return fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\"")
-	}
-	if c.Audio.SampleRate != 0 && (c.Audio.SampleRate < 4000 || c.Audio.SampleRate > 48_000) {
-		return fmt.Errorf("audio.sample_rate %d outside 4000..48000", c.Audio.SampleRate)
-	}
-	if c.Audio.Volume != 0 && (c.Audio.Volume < 0 || c.Audio.Volume > 1) {
-		return fmt.Errorf("audio.volume %f outside 0..1", c.Audio.Volume)
+		errs = append(errs, fmt.Errorf("scanner.scan_mode must be \"all\" or \"list\""))
 	}
 	for i, ch := range c.Scanner.Conventional {
-		if ch.FrequencyHz == 0 {
-			return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
-		}
-		switch ch.Mode {
-		case "", "fm", "nfm":
-		default:
-			return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
-		}
-		switch ch.Tone.Mode {
-		case "", "none":
-		case "ctcss":
-			if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
-				return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
-					i, ch.Tone.CTCSSHz)
-			}
-		case "dcs":
-			if len(ch.Tone.DCSCode) != 3 {
-				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
-			}
-			for _, r := range ch.Tone.DCSCode {
-				if r < '0' || r > '7' {
-					return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
-						i, ch.Tone.DCSCode)
-				}
-			}
-		default:
-			return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+		if err := validateConvChannel(i, ch); err != nil {
+			errs = append(errs, err)
 		}
 	}
+	return errs
+}
+
+func validateConvChannel(i int, ch ConvChannelConfig) error {
+	if ch.FrequencyHz == 0 {
+		return fmt.Errorf("scanner.conventional[%d]: frequency_hz required", i)
+	}
+	switch ch.Mode {
+	case "", "fm", "nfm":
+	default:
+		return fmt.Errorf("scanner.conventional[%d]: mode must be fm|nfm", i)
+	}
+	switch ch.Tone.Mode {
+	case "", "none":
+	case "ctcss":
+		if ch.Tone.CTCSSHz < 50 || ch.Tone.CTCSSHz > 300 {
+			return fmt.Errorf("scanner.conventional[%d].tone.ctcss_hz %v outside 50..300 Hz",
+				i, ch.Tone.CTCSSHz)
+		}
+	case "dcs":
+		if len(ch.Tone.DCSCode) != 3 {
+			return fmt.Errorf("scanner.conventional[%d].tone.dcs_code must be 3 octal digits", i)
+		}
+		for _, r := range ch.Tone.DCSCode {
+			if r < '0' || r > '7' {
+				return fmt.Errorf("scanner.conventional[%d].tone.dcs_code %q must be octal 0..7",
+					i, ch.Tone.DCSCode)
+			}
+		}
+	default:
+		return fmt.Errorf("scanner.conventional[%d].tone.mode must be ctcss|dcs|none", i)
+	}
+	return nil
+}
+
+func (c Config) validateBroadcast() []error {
 	if err := c.Broadcast.validate(); err != nil {
-		return err
+		return []error{err}
 	}
+	return nil
+}
+
+func (c Config) validateBaseband() []error {
+	var errs []error
 	for i, r := range c.Baseband.Record {
 		if r.Serial == "" {
-			return fmt.Errorf("baseband.record[%d]: serial required", i)
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: serial required", i))
+			continue
 		}
 		if r.Dir == "" {
-			return fmt.Errorf("baseband.record[%d]: dir required", i)
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: dir required", i))
 		}
 	}
 	for i, r := range c.Baseband.Replay {
 		if r.File == "" {
-			return fmt.Errorf("baseband.replay[%d]: file required", i)
+			errs = append(errs, fmt.Errorf("baseband.replay[%d]: file required", i))
+			continue
 		}
 		switch r.Role {
 		case "", "control", "voice", "auto":
 		default:
-			return fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i)
+			errs = append(errs, fmt.Errorf("baseband.replay[%d]: role must be control|voice|auto", i))
 		}
 	}
+	return errs
+}
+
+func (c Config) validateWeb() []error {
 	for key := range c.Web.Tabs {
 		if !KnownUITabs[key] {
 			valid := make([]string, 0, len(KnownUITabs))
@@ -1219,7 +1731,7 @@ func (c Config) Validate() error {
 				valid = append(valid, k)
 			}
 			sort.Strings(valid)
-			return fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))
+			return []error{fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))}
 		}
 	}
 	return nil
@@ -1284,9 +1796,11 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 			return fmt.Errorf("sdr.devices[%d].channels[%d]: system %q is not declared in trunking.systems", idx, j, ch.System)
 		}
 		switch sys.Protocol {
-		case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2":
-			// Tier II conventional - channel freq is a repeater carrier,
-			// no relationship to system.ControlChannels required.
+		case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2",
+			"dmr-tier1", "dmr_tier1", "dmr-t1", "dmrtier1":
+			// Tier II conventional / Tier I direct-mode — channel freq is a
+			// repeater or simplex carrier, no relationship to
+			// system.ControlChannels required.
 		case "dmr", "p25", "p25-phase2", "p25_phase2", "p25p2":
 			// Trunked control-channel protocols — the wideband channel
 			// MUST be one of the system's declared control channels.

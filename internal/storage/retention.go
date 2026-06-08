@@ -11,19 +11,38 @@ import (
 	"time"
 )
 
+// decoderLogTables are the append-only decoder log tables keyed by a
+// received_at (unix-nanosecond) column. The sweeper deletes rows older
+// than LogRowMaxAge from each. call_log is swept separately because its
+// timestamp column is started_at; location_log is swept separately
+// because its timestamp column is reported_at.
+var decoderLogTables = []string{
+	"pager_log",
+	"aprs_log",
+	"vessel_log",
+	"dsc_log",
+	"aircraft_log",
+	"mdc1200_log",
+	"m17_log",
+}
+
 // Retention deletes old data on a schedule:
 //  1. call_log rows with started_at older than CallRowMaxAge.
-//  2. WAV / raw files under FilesRoot whose modification time is older
+//  2. decoder log-table rows (pager_log, aprs_log, vessel_log, dsc_log,
+//     aircraft_log, mdc1200_log, m17_log, location_log) with
+//     received_at older than LogRowMaxAge.
+//  3. WAV / raw files under FilesRoot whose modification time is older
 //     than FilesMaxAge.
 //
 // File deletion is opt-in by setting FilesRoot; an empty value skips
 // the filesystem sweep. The sweeper is idempotent and safe to run
-// concurrently with the call-log writer (SQLite serialises).
+// concurrently with the log writers (SQLite serialises).
 type Retention struct {
 	db       *DB
 	log      *slog.Logger
 	files    string
 	dbAge    time.Duration
+	logAge   time.Duration
 	filesAge time.Duration
 	interval time.Duration
 }
@@ -34,9 +53,14 @@ type RetentionOptions struct {
 	// FilesRoot is the directory the voice recorder writes WAV / raw
 	// files under. Empty disables the filesystem sweep.
 	FilesRoot string
-	// CallRowMaxAge: rows with started_at older than this are deleted.
-	// Zero (the default) disables row deletion.
+	// CallRowMaxAge: call_log rows with started_at older than this are
+	// deleted. Zero (the default) disables call-row deletion.
 	CallRowMaxAge time.Duration
+	// LogRowMaxAge: decoder log-table rows (pager_log, aprs_log,
+	// vessel_log, dsc_log, aircraft_log, mdc1200_log, m17_log,
+	// location_log) with received_at older than this are deleted. Zero
+	// (the default) disables decoder-log deletion.
+	LogRowMaxAge time.Duration
 	// FilesMaxAge: files older than this (mtime) are deleted. Zero
 	// disables file deletion.
 	FilesMaxAge time.Duration
@@ -61,6 +85,7 @@ func NewRetention(opts RetentionOptions) (*Retention, error) {
 		log:      log,
 		files:    opts.FilesRoot,
 		dbAge:    opts.CallRowMaxAge,
+		logAge:   opts.LogRowMaxAge,
 		filesAge: opts.FilesMaxAge,
 		interval: opts.Interval,
 	}, nil
@@ -91,6 +116,16 @@ func (r *Retention) SweepOnce(ctx context.Context) {
 			r.log.Info("retention: deleted call rows", "count", n)
 		}
 	}
+	if r.db != nil && r.logAge > 0 {
+		for _, table := range decoderLogTables {
+			n, err := r.deleteOldLogRows(ctx, table)
+			if err != nil {
+				r.log.Warn("retention: log sweep failed", "table", table, "err", err)
+			} else if n > 0 {
+				r.log.Info("retention: deleted log rows", "table", table, "count", n)
+			}
+		}
+	}
 	if r.files != "" && r.filesAge > 0 {
 		if n, err := r.deleteOldFiles(); err != nil {
 			r.log.Warn("retention: file sweep failed", "err", err)
@@ -103,6 +138,27 @@ func (r *Retention) SweepOnce(ctx context.Context) {
 func (r *Retention) deleteOldRows(ctx context.Context) (int64, error) {
 	cutoff := time.Now().Add(-r.dbAge).UnixNano()
 	res, err := r.db.sql.ExecContext(ctx, `DELETE FROM call_log WHERE started_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// deleteOldLogRows deletes rows older than logAge from one decoder log
+// table keyed by received_at.
+func (r *Retention) deleteOldLogRows(ctx context.Context, table string) (int64, error) {
+	return r.deleteOldByColumn(ctx, table, "received_at")
+}
+
+// deleteOldByColumn deletes rows older than logAge from table, keyed by
+// the named unix-nanosecond timestamp column. Both table and column
+// come from fixed in-code constants (the decoderLogTables allow-list or
+// a literal), never from user input, so the string interpolation is
+// safe.
+func (r *Retention) deleteOldByColumn(ctx context.Context, table, col string) (int64, error) {
+	cutoff := time.Now().Add(-r.logAge).UnixNano()
+	res, err := r.db.sql.ExecContext(ctx,
+		`DELETE FROM `+table+` WHERE `+col+` < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}

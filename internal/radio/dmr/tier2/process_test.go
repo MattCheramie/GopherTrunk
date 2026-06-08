@@ -70,6 +70,65 @@ DrainLoop:
 
 // buildVoiceLCHeaderBurstDibits builds a 132-dibit Voice LC Header
 // burst for the Tier II Process adapter.
+// TestProcess_DecodesPolarityFlippedVoiceLCHeader is the issue #264
+// regression for Tier II: a spectrum-inverted (I/Q-reversed) front-end
+// rotates every dibit by +2 mod 4. The adapter's dual-polarity decode
+// must still recover the Voice LC Header and publish lock + grant.
+func TestProcess_DecodesPolarityFlippedVoiceLCHeader(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		Log:         slog.Default(),
+		SystemName:  "TestRepeater",
+		FrequencyHz: 460_500_000,
+	})
+
+	dibits := buildVoiceLCHeaderBurstDibits(0x7, 0x123, 0x456789)
+	stream := make([]uint8, 0, 50+len(dibits)+50)
+	for i := 0; i < 50; i++ {
+		stream = append(stream, uint8(i&3))
+	}
+	stream = append(stream, dibits...)
+	for i := 0; i < 50; i++ {
+		stream = append(stream, uint8(i&3))
+	}
+	// Spectrum inversion: every dibit + 2 mod 4.
+	for i := range stream {
+		stream[i] = (stream[i] + dmr.PolarityFlip) & 3
+	}
+	cc.Process(stream, 0)
+
+	var sawLock, sawGrant bool
+	deadline := time.After(300 * time.Millisecond)
+DrainLoop:
+	for {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindCCLocked:
+				sawLock = true
+			case events.KindGrant:
+				sawGrant = true
+			}
+			if sawLock && sawGrant {
+				break DrainLoop
+			}
+		case <-deadline:
+			break DrainLoop
+		}
+	}
+	if !sawLock {
+		t.Errorf("no KindCCLocked event observed on polarity-flipped stream")
+	}
+	if !sawGrant {
+		t.Errorf("no KindGrant event observed on polarity-flipped stream")
+	}
+}
+
 func buildVoiceLCHeaderBurstDibits(colorCode uint8, groupID, sourceID uint32) []uint8 {
 	flc := dmr.FLC{
 		FLCO:    dmr.FLCOGroupVoiceUser,

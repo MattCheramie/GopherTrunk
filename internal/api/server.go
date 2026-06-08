@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -96,6 +97,31 @@ type AudioController interface {
 // keeps no compile-time dependency on internal/broadcast.
 type BroadcastStatusProvider interface {
 	BroadcastStats() any
+}
+
+// HuntCockpit is the API surface for the live system-discovery ("hunt")
+// subsystem: read the current run state + discovered map, start/stop a blind
+// spectrum-sweep run, and export or commit the result. The daemon supplies a
+// single implementation wrapping the hunt.Manager; tests can stub it.
+type HuntCockpit interface {
+	// Status returns the current run snapshot (+ discovered system when ready).
+	Status() HuntStatus
+	// Start launches a live hunt; returns the new run id, or an error (e.g. a
+	// run is already active, or no SDR is available).
+	Start(req HuntStartRequest) (runID int, err error)
+	// Stop cancels the active run; false when nothing is running.
+	Stop() bool
+	// Export serializes a run's discovered system in the named format
+	// (bundle|trunk-recorder|rr), returning the bytes + a suggested filename.
+	// id 0 = the latest run. Returns ErrHuntNoSuchRun for an unknown id.
+	Export(id int, format string) (data []byte, filename string, err error)
+	// ExportSurvey serializes a run's classified signal inventory in the named
+	// format (json|csv). id 0 = the latest run. Returns ErrHuntNoSuchRun for an
+	// unknown id, or an error when the run was a plain hunt (no survey).
+	ExportSurvey(id int, format string) (data []byte, filename string, err error)
+	// Commit merges a run's discovered system into config.yaml (id 0 = latest),
+	// returning a human-readable list of changes.
+	Commit(id int, force, dryRun bool) (changes []string, err error)
 }
 
 // ScannerCockpit is the API surface for the police-scanner subsystem:
@@ -217,6 +243,7 @@ type Server struct {
 	tones        ToneDetectorReset
 	devices      DevicesProvider
 	scanner      ScannerCockpit
+	hunt         HuntCockpit
 	audio        AudioController
 	broadcast    BroadcastStatusProvider
 	runtime      RuntimeProvider
@@ -258,6 +285,12 @@ type Server struct {
 	// over its iqtap broker map.
 	spectrum SpectrumProvider
 
+	// capture is the optional provider backing the runtime
+	// POST /api/v1/siglab/capture route (record raw IQ off a live
+	// tuner). nil keeps the route returning 503. Implemented by the
+	// daemon over the same iqtap broker map as spectrum.
+	capture CaptureProvider
+
 	// bookmarks is the optional provider backing /api/v1/bookmarks/...
 	// routes. nil disables the routes (503). Implemented by the
 	// daemon over storage.BookmarkStore.
@@ -268,6 +301,12 @@ type Server struct {
 	// nil disables the routes (503). Implemented by the daemon
 	// over the iqtap broker + internal/dsp/diag.
 	diag DiagProvider
+
+	// symbols is the optional provider backing the
+	// WS /api/v1/diag/symbols recovered-symbol stream for the Symbol
+	// scope panel. nil disables the route (503). Implemented by the
+	// daemon over the iqtap broker + internal/scanner/symbolscope.
+	symbols SymbolProvider
 
 	// pager is the optional provider backing /api/v1/pager/...
 	// routes (pager log). nil disables the routes. Implemented
@@ -292,6 +331,11 @@ type Server struct {
 	// storage.DSCLog.
 	dsc DSCProvider
 
+	// m17 is the optional provider backing /api/v1/m17/... routes
+	// (M17 link-setup log). nil disables the routes. Implemented by
+	// the daemon over the SQLite-backed storage.M17Log.
+	m17 M17Provider
+
 	// adsb is the optional provider backing /api/v1/adsb/...
 	// routes (ADS-B aircraft report log). nil disables the
 	// routes. Implemented by the daemon over the SQLite-backed
@@ -303,6 +347,29 @@ type Server struct {
 	// Implemented by the daemon over the SQLite-backed
 	// storage.MDC1200Log.
 	mdc1200 MDC1200Provider
+
+	// siglab is the optional offline signal-analysis subsystem backing
+	// the /api/v1/siglab/* routes (capture upload, engine run + SSE,
+	// identify, synthesize, export, decimated-IQ retrieval). nil disables
+	// the routes. Constructed by NewServer when ServerOptions.Siglab.Enabled.
+	siglab *siglabService
+	// siglabStop signals the siglab TTL sweeper to exit on shutdown.
+	siglabStop chan struct{}
+
+	// configBuilder backs the standalone web Config Builder/Editor:
+	// the /api/v1/config/* routes (browse / load / validate / save /
+	// RadioReference browse) and, when assets are wired, the builder SPA
+	// mounted at /config/. nil disables all of it. Set by the daemon and
+	// the standalone `gophertrunk config serve` command.
+	configBuilder *configBuilderService
+
+	// diagnostics is the shared error-diagnostics collector (banner +
+	// system info). nil disables banner enrichment of error responses
+	// and the GET /api/v1/diag/banner route.
+	diagnostics *gtdiag.Collector
+	// verboseErrors mirrors diagnostics.verbose_errors; see
+	// ServerOptions.VerboseErrors.
+	verboseErrors bool
 
 	mu     sync.Mutex
 	srv    *http.Server
@@ -357,15 +424,17 @@ type HistoryFilter struct {
 // CallRow mirrors storage.CallRow as a JSON-friendly row. Lives in the
 // api package so the storage package can stay free of API concerns.
 type CallRow struct {
-	ID             int64     `json:"id"`
-	System         string    `json:"system"`
-	Protocol       string    `json:"protocol"`
-	GroupID        uint32    `json:"group_id"`
-	SourceID       uint32    `json:"source_id"`
-	FrequencyHz    uint32    `json:"frequency_hz"`
-	Encrypted      bool      `json:"encrypted"`
-	Emergency      bool      `json:"emergency"`
-	DataCall       bool      `json:"data_call"`
+	ID          int64  `json:"id"`
+	System      string `json:"system"`
+	Protocol    string `json:"protocol"`
+	GroupID     uint32 `json:"group_id"`
+	SourceID    uint32 `json:"source_id"`
+	FrequencyHz uint32 `json:"frequency_hz"`
+	Encrypted   bool   `json:"encrypted"`
+	Emergency   bool   `json:"emergency"`
+	DataCall    bool   `json:"data_call"`
+	// Timeslot is the 1-based DMR TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
+	Timeslot       uint8     `json:"timeslot,omitempty"`
 	DeviceSerial   string    `json:"device_serial"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at,omitempty"`
@@ -435,6 +504,10 @@ type ServerOptions struct {
 	// /api/v1/scanner and the related mutation routes. Optional;
 	// when nil, the routes return 503.
 	Scanner ScannerCockpit
+	// Hunt exposes the live system-discovery cockpit for GET /api/v1/hunt and
+	// its start/stop/export/commit routes. Optional; when nil, the routes
+	// return 503 (or an empty idle status for the read).
+	Hunt HuntCockpit
 	// Audio exposes the live-audio player + recorder gate for
 	// GET + PATCH /api/v1/audio. Optional; when nil, the routes
 	// return 503.
@@ -486,6 +559,13 @@ type ServerOptions struct {
 	// routes returning 503 so a build without SDRs doesn't pretend
 	// to have a waterfall.
 	Spectrum SpectrumProvider
+	// Capture, when non-nil, enables the runtime
+	// POST /api/v1/siglab/capture route and its GET
+	// /api/v1/siglab/capture/devices picker — record a fixed-length
+	// raw-IQ capture off a live tuner, stage it into siglab, and hand
+	// back a .cfile download URL. The daemon implements this over its
+	// iqtap.Broker map; nil keeps the routes returning 503.
+	Capture CaptureProvider
 	// Bookmarks, when non-nil, enables the
 	// GET/POST/PATCH/DELETE /api/v1/bookmarks routes for operator-
 	// managed conventional channel bookmarks. nil keeps the routes
@@ -498,6 +578,32 @@ type ServerOptions struct {
 	// the iqtap broker + internal/dsp/diag; nil keeps the route
 	// returning 503.
 	Diag DiagProvider
+	// Symbols, when non-nil, enables the WS /api/v1/diag/symbols
+	// recovered-symbol live stream that backs the web Symbol scope
+	// panel. The daemon implements this over the iqtap broker +
+	// internal/scanner/symbolscope; nil keeps the route returning 503.
+	Symbols SymbolProvider
+	// Siglab, when Enabled, mounts the offline signal-analysis routes
+	// (/api/v1/siglab/*) and constructs the in-memory job/capture store.
+	// The daemon and the standalone `siglab serve` command both set it.
+	Siglab SiglabOptions
+	// ConfigBuilder, when Enabled, mounts the web Config Builder/Editor
+	// routes (/api/v1/config/*) and — when Assets is non-nil — the builder
+	// SPA at /config/. The daemon sets it so the operator can edit config
+	// from the main UI in a new tab; the standalone `gophertrunk config
+	// serve` command sets it (with the SPA in WebAssets, served at /).
+	ConfigBuilder ConfigBuilderOptions
+	// Diagnostics is the shared error-diagnostics collector (banner +
+	// system info). The daemon injects one seeded with its SDR pool
+	// snapshot so the error path never re-enumerates USB. Optional; nil
+	// disables banner enrichment and the GET /api/v1/diag/banner route.
+	Diagnostics *gtdiag.Collector
+	// VerboseErrors mirrors diagnostics.verbose_errors. When true, every
+	// JSON error envelope includes the diagnostics banner (exposing host
+	// + dongle info), and GET /api/v1/diag/banner is served to any
+	// caller; when false the banner is only attached on ?verbose=1 from
+	// a trusted (authorized) request.
+	VerboseErrors bool
 	// Pager, when non-nil, enables the
 	// GET /api/v1/pager/messages route serving recent decoded
 	// POCSAG (and eventually FLEX) pager messages. Wired by the
@@ -518,6 +624,11 @@ type ServerOptions struct {
 	// marine DSC sequences. Wired by the daemon over the
 	// SQLite-backed storage.DSCLog.
 	DSC DSCProvider
+	// M17, when non-nil, enables the
+	// GET /api/v1/m17/linksetups route serving recent decoded M17
+	// link-setup frames. Wired by the daemon over the SQLite-backed
+	// storage.M17Log.
+	M17 M17Provider
 	// ADSB, when non-nil, enables the
 	// GET /api/v1/adsb/aircraft route serving recent decoded
 	// Mode-S frames. Wired by the daemon over the SQLite-backed
@@ -591,6 +702,25 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if (opts.TLSCert == "") != (opts.TLSKey == "") {
 		return nil, errors.New("api: tls_cert and tls_key must both be set or both be empty")
 	}
+	var siglabSvc *siglabService
+	var siglabStop chan struct{}
+	if opts.Siglab.Enabled {
+		svc, serr := newSiglabService(opts.Siglab)
+		if serr != nil {
+			return nil, serr
+		}
+		siglabSvc = svc
+		siglabStop = make(chan struct{})
+		go svc.runSweeper(siglabStop)
+	}
+	var configBuilderSvc *configBuilderService
+	if opts.ConfigBuilder.Enabled {
+		svc, cberr := newConfigBuilderService(opts.ConfigBuilder)
+		if cberr != nil {
+			return nil, cberr
+		}
+		configBuilderSvc = svc
+	}
 	return &Server{
 		addr:           opts.Addr,
 		bus:            opts.Bus,
@@ -600,6 +730,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		tones:          opts.Tones,
 		devices:        opts.Devices,
 		scanner:        opts.Scanner,
+		hunt:           opts.Hunt,
 		audio:          opts.Audio,
 		broadcast:      opts.Broadcast,
 		runtime:        opts.Runtime,
@@ -624,12 +755,20 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		cors:           opts.CORS,
 		audioPub:       opts.AudioPublisher,
 		spectrum:       opts.Spectrum,
+		capture:        opts.Capture,
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
+		symbols:        opts.Symbols,
+		siglab:         siglabSvc,
+		siglabStop:     siglabStop,
+		configBuilder:  configBuilderSvc,
+		diagnostics:    opts.Diagnostics,
+		verboseErrors:  opts.VerboseErrors,
 		pager:          opts.Pager,
 		aprs:           opts.APRS,
 		ais:            opts.AIS,
 		dsc:            opts.DSC,
+		m17:            opts.M17,
 		adsb:           opts.ADSB,
 		mdc1200:        opts.MDC1200,
 	}, nil
@@ -719,6 +858,15 @@ func (s *Server) shutdown(ctx context.Context) error {
 		return nil
 	}
 	s.closed = true
+	// Tear down the siglab subsystem: stop the TTL sweeper and remove the
+	// temp directory (and any staged captures) the service owns.
+	if s.siglab != nil {
+		if s.siglabStop != nil {
+			close(s.siglabStop)
+			s.siglabStop = nil
+		}
+		s.siglab.close()
+	}
 	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
 	// get up to 30 s to drain rather than the 5 s the old bound gave
 	// them. Cuts user-visible connection drops on a clean restart.
@@ -734,6 +882,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	mux.HandleFunc("GET /api/v1/runtime", s.handleRuntime)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
+	mux.HandleFunc("GET /api/v1/diag/banner", s.handleDiagBanner)
 	mux.HandleFunc("GET /api/v1/systems", s.handleListSystems)
 	mux.HandleFunc("GET /api/v1/systems/{name}", s.handleGetSystem)
 	mux.HandleFunc("GET /api/v1/talkgroups", s.handleListTalkgroups)
@@ -766,6 +915,17 @@ func (s *Server) routes() *http.ServeMux {
 	// Scanner cockpit — read endpoint is always open; mutations are
 	// gated behind allow_mutations like every other write route.
 	mux.HandleFunc("GET /api/v1/broadcast", s.handleBroadcastStatus)
+	// Live system-discovery (hunt) cockpit — read is open; mutations gated.
+	mux.HandleFunc("GET /api/v1/hunt", s.handleHuntStatus)
+	mux.HandleFunc("POST /api/v1/hunt/start", s.gate(s.handleHuntStart))
+	mux.HandleFunc("POST /api/v1/hunt/stop", s.gate(s.handleHuntStop))
+	mux.HandleFunc("GET /api/v1/hunt/export", s.handleHuntExport)
+	mux.HandleFunc("GET /api/v1/hunt/{id}/export", s.handleHuntExport)
+	mux.HandleFunc("GET /api/v1/hunt/survey", s.handleHuntSurveyExport)
+	mux.HandleFunc("GET /api/v1/hunt/{id}/survey", s.handleHuntSurveyExport)
+	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
+	mux.HandleFunc("POST /api/v1/hunt/{id}/commit", s.gate(s.handleHuntCommit))
+
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
 	mux.HandleFunc("PATCH /api/v1/scanner", s.gate(s.handleScannerSetMode))
 	mux.HandleFunc("POST /api/v1/scanner/hunt/{system}/hold", s.gate(s.handleHuntHold))
@@ -824,6 +984,70 @@ func (s *Server) routes() *http.ServeMux {
 	// Read-only; the daemon doesn't expose any way to inject IQ
 	// via this path. Returns 503 when no SDR is in the pool.
 	mux.HandleFunc("GET /api/v1/diag/iq", s.handleDiagStream)
+	mux.HandleFunc("GET /api/v1/diag/symbols", s.handleSymbolStream)
+
+	// Siglab — offline signal-analysis console. Read routes (protocols,
+	// job result/stream/iq, export) are open; routes that stage data or
+	// spend CPU (upload, run, identify, synthesize, delete) are gated like
+	// every other write route. Mounted only when the subsystem is enabled
+	// (the daemon and the standalone `siglab serve` command).
+	if s.siglab != nil {
+		mux.HandleFunc("GET /api/v1/siglab/protocols", s.handleSiglabProtocols)
+		mux.HandleFunc("POST /api/v1/siglab/captures", s.gate(s.handleSiglabUpload))
+		mux.HandleFunc("DELETE /api/v1/siglab/captures/{id}", s.gate(s.handleSiglabDeleteCapture))
+		mux.HandleFunc("POST /api/v1/siglab/run", s.gate(s.handleSiglabRun))
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}", s.handleSiglabJobResult)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/events", s.handleSiglabJobStream)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/iq", s.handleSiglabJobIQ)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
+		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
+		mux.HandleFunc("POST /api/v1/siglab/synthesize", s.gate(s.handleSiglabSynthesize))
+		// Live raw-IQ capture off a tuner: list devices (read), record a
+		// fixed-length capture (gated mutation — it spends an SDR + CPU),
+		// and download a staged capture's raw bytes. 503 when no
+		// CaptureProvider is wired (offline `siglab serve`, or no SDRs).
+		mux.HandleFunc("GET /api/v1/siglab/capture/devices", s.handleSiglabCaptureDevices)
+		mux.HandleFunc("POST /api/v1/siglab/capture", s.gate(s.handleSiglabCapture))
+		mux.HandleFunc("GET /api/v1/siglab/captures/{id}/download", s.handleSiglabCaptureDownload)
+	}
+
+	// Config Builder/Editor — browse/load/validate/save config files,
+	// browse RadioReference, and parse PDF/CSV into a draft. Reads are
+	// open (like siglab); save is gated behind allow_mutations. Mounted
+	// only when the subsystem is enabled (the daemon and the standalone
+	// `gophertrunk config serve` command).
+	if s.configBuilder != nil {
+		mux.HandleFunc("GET /api/v1/config/files", s.handleConfigList)
+		mux.HandleFunc("GET /api/v1/config/file", s.handleConfigLoad)
+		mux.HandleFunc("GET /api/v1/config/file/talkgroups", s.handleConfigTalkgroups)
+		mux.HandleFunc("GET /api/v1/config/defaults", s.handleConfigDefaults)
+		mux.HandleFunc("GET /api/v1/config/docs", s.handleConfigDocs)
+		mux.HandleFunc("GET /api/v1/config/fieldmeta", s.handleConfigFieldMeta)
+		mux.HandleFunc("POST /api/v1/config/validate", s.handleConfigValidate)
+		mux.HandleFunc("POST /api/v1/config/marshal", s.handleConfigMarshal)
+		mux.HandleFunc("POST /api/v1/config/file", s.gate(s.handleConfigSave))
+		mux.HandleFunc("DELETE /api/v1/config/file", s.gate(s.handleConfigDelete))
+		mux.HandleFunc("POST /api/v1/config/file/rename", s.gate(s.handleConfigRename))
+		mux.HandleFunc("POST /api/v1/config/dir", s.gate(s.handleConfigMkdir))
+		mux.HandleFunc("POST /api/v1/config/parse", s.gate(s.handleConfigParse))
+		mux.HandleFunc("GET /api/v1/config/rr/search", s.handleConfigRRSearch)
+		mux.HandleFunc("GET /api/v1/config/rr/states", s.handleConfigRRStates)
+		mux.HandleFunc("GET /api/v1/config/rr/counties", s.handleConfigRRCounties)
+		mux.HandleFunc("GET /api/v1/config/rr/system/{sid}", s.handleConfigRRSystem)
+
+		// Secondary SPA at /config/ (daemon path). The standalone
+		// `config serve` puts the SPA in WebAssets (served at /) instead,
+		// so this only fires on the daemon. The /config/ matcher is more
+		// specific than the GET / catch-all, so both trees coexist.
+		if s.configBuilder.assets != nil {
+			if _, err := fs.Stat(s.configBuilder.assets, "index.html"); err == nil {
+				mux.Handle("GET /config/", s.configSpaHandler())
+				mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, "/config/", http.StatusMovedPermanently)
+				})
+			}
+		}
+	}
 
 	// Pager log — recent POCSAG (and eventually FLEX) messages.
 	// Read-only; the decoder writes via the events bus → PagerLog.
@@ -834,7 +1058,9 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/aprs/packets", s.handleAPRSPackets)
 	mux.HandleFunc("GET /api/v1/ais/vessels", s.handleAISMessages)
 	mux.HandleFunc("GET /api/v1/dsc/messages", s.handleDSCMessages)
+	mux.HandleFunc("GET /api/v1/m17/linksetups", s.handleM17LinkSetups)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft", s.handleADSBAircraft)
+	mux.HandleFunc("GET /api/v1/adsb/aircraft/current", s.handleADSBAircraftCurrent)
 	mux.HandleFunc("GET /api/v1/mdc1200/messages", s.handleMDC1200Messages)
 
 	// Embedded SPA at "/" — served only when the daemon was linked
@@ -882,6 +1108,36 @@ func (s *Server) spaHandler() http.Handler {
 		}
 		// Fallback to index.html so the SPA's router resolves
 		// /scanner, /settings, /import, ... on the client.
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/"
+		fileSrv.ServeHTTP(w, r2)
+	})
+}
+
+// configSpaHandler serves the Config Builder SPA mounted under /config/
+// on the daemon (the standalone `config serve` serves it at / via
+// spaHandler). It strips the /config/ prefix before hitting the embedded
+// file tree and falls back to the builder's index.html for client-side
+// routes, mirroring spaHandler but rooted one level down.
+func (s *Server) configSpaHandler() http.Handler {
+	assets := s.configBuilder.assets
+	fileSrv := http.FileServerFS(assets)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rel := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/config/"), "/")
+		if rel == "" {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			fileSrv.ServeHTTP(w, r2)
+			return
+		}
+		if _, err := fs.Stat(assets, rel); err == nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + rel
+			fileSrv.ServeHTTP(w, r2)
+			return
+		}
+		// Unknown sub-path → serve index.html so the builder's client
+		// router can resolve it.
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"
 		fileSrv.ServeHTTP(w, r2)
@@ -949,7 +1205,7 @@ const spaMissingBody = `<!doctype html>
 func (s *Server) gate(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if status, reason := s.auth.authorize(r); status != 0 {
-			writeError(w, status, reason)
+			s.writeError(w, status, reason)
 			return
 		}
 		h(w, r)
@@ -965,6 +1221,22 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
+// writeError emits the standard {"error": "..."} JSON envelope. When
+// diagnostics.verbose_errors is enabled and a collector is wired, it
+// also attaches a "diag" object carrying the diagnostics banner
+// (version, OS, system specs, detected dongles) so an API consumer
+// triaging a failure gets the same macro context the CLI banner shows.
+// The banner exposes host + dongle info, so it is only included when
+// verbose is explicitly enabled (see ServerOptions.VerboseErrors).
+func (s *Server) writeError(w http.ResponseWriter, status int, msg string) {
+	if s.verboseErrors && s.diagnostics != nil {
+		writeJSON(w, status, map[string]any{
+			"error": msg,
+			"diag": map[string]any{
+				"banner": gtdiag.FormatBannerPlain(s.diagnostics.SysInfo()),
+			},
+		})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": msg})
 }

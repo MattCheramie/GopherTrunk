@@ -28,10 +28,21 @@ const (
 	// from KindCallEnd because KindCallEnd fires the instant the engine
 	// releases the voice channel, before the WAV is flushed.
 	KindCallComplete Kind = "call.complete"
-	KindGrant        Kind = "grant"
-	KindToneAlert    Kind = "tone.alert"
-	KindDecodeError  Kind = "decode.error"
-	KindError        Kind = "error"
+	// KindCallSegment fires when the voice composer detects an
+	// end-of-transmission boundary (a P25 terminator, a DMR voice
+	// terminator, an FM squelch gap, …) within an active call and the
+	// system is configured to split recordings per transmission
+	// (trunking.voice_call_grouping = "transmission"). The recorder
+	// finalizes the current WAV/.raw (and emits KindCallComplete for it)
+	// and rolls to a fresh file for the next over — without ending the
+	// engine call, so a same-talkgroup re-key that doesn't re-grant is
+	// still captured. Payload is trunking.CallSegment. No-op in
+	// "conversation" grouping (the composer never emits it).
+	KindCallSegment Kind = "call.segment"
+	KindGrant       Kind = "grant"
+	KindToneAlert   Kind = "tone.alert"
+	KindDecodeError Kind = "decode.error"
+	KindError       Kind = "error"
 	// Scanner subsystem (internal/scanner/cchunt):
 	//   KindHuntProgress fires once per CC candidate the hunter
 	//     tries — payload identifies which system + frequency +
@@ -42,6 +53,16 @@ const (
 	//     so operators can see "retry in 5 s".
 	KindHuntProgress Kind = "cchunt.progress"
 	KindHuntFailed   Kind = "cchunt.failed"
+	// Live system-discovery ("hunt") events, published by the daemon's hunt
+	// Manager (internal/hunt). Distinct from the cchunt.* control-channel
+	// hunter above: these track a blind discovery run (spectrum sweep →
+	// identify → map). Payloads are hunt package types carried as `any`.
+	//   KindHuntLiveProgress fires as the sweep/identify phases advance.
+	//   KindHuntLiveCandidate fires once per candidate carrier mapped.
+	//   KindHuntLiveDone fires when a run finishes (or is stopped).
+	KindHuntLiveProgress  Kind = "hunt.progress"
+	KindHuntLiveCandidate Kind = "hunt.candidate"
+	KindHuntLiveDone      Kind = "hunt.done"
 	// KindAffiliation fires when a radio unit affiliates with a
 	// talkgroup. P25 control-channel publishes one per Group
 	// Affiliation Response TSBK (opcode 0x28); the payload identifies
@@ -163,6 +184,13 @@ const (
 	// radio check, ...) and the CRC-valid flag. Surfaced over SSE / WS
 	// for the live MDC1200 panel.
 	KindMDC1200Message Kind = "mdc1200.message"
+
+	// KindM17LinkSetup fires when the M17 decoder reassembles a Link
+	// Setup Frame (via the stream-frame LICH path). Payload is a
+	// storage.M17LinkSetup carrying source / destination callsigns, the
+	// mode (voice / data / packet), channel-access number, and the
+	// CRC-valid flag. Surfaced over SSE / WS for the live M17 panel.
+	KindM17LinkSetup Kind = "m17.linksetup"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

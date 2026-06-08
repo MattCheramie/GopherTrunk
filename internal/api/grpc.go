@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"time"
 
 	apiv1 "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1"
+	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -40,6 +43,9 @@ type GRPCServer struct {
 	audio        *AudioPublisher
 	log          *slog.Logger
 
+	diagnostics   *gtdiag.Collector
+	verboseErrors bool
+
 	srv *grpc.Server
 }
 
@@ -65,6 +71,13 @@ type GRPCServerOptions struct {
 	// returns Unavailable rather than streaming frames.
 	Audio *AudioPublisher
 	Log   *slog.Logger
+	// Diagnostics is the shared error-diagnostics collector. When set
+	// with VerboseErrors (or a request carrying the gophertrunk-verbose
+	// metadata key), returned errors are decorated with the diagnostics
+	// banner + wrapped chain via a server interceptor.
+	Diagnostics *gtdiag.Collector
+	// VerboseErrors mirrors diagnostics.verbose_errors.
+	VerboseErrors bool
 	// TLSCert and TLSKey, when both non-empty, switch the gRPC
 	// server to TLS using credentials.NewServerTLSFromFile. Same
 	// disk-loaded-once semantics as the HTTP server's TLS support.
@@ -90,15 +103,17 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		opts.RIDs = trunking.NewRIDDB()
 	}
 	g := &GRPCServer{
-		addr:         opts.Addr,
-		systems:      append([]trunking.System(nil), opts.Systems...),
-		talkgroups:   opts.Talkgroups,
-		rids:         opts.RIDs,
-		affiliations: opts.Affiliations,
-		history:      opts.History,
-		engine:       opts.Engine,
-		audio:        opts.Audio,
-		log:          log,
+		addr:          opts.Addr,
+		systems:       append([]trunking.System(nil), opts.Systems...),
+		talkgroups:    opts.Talkgroups,
+		rids:          opts.RIDs,
+		affiliations:  opts.Affiliations,
+		history:       opts.History,
+		engine:        opts.Engine,
+		audio:         opts.Audio,
+		log:           log,
+		diagnostics:   opts.Diagnostics,
+		verboseErrors: opts.VerboseErrors,
 	}
 	// Keep-alive guards long-lived RPCs (StreamAudio in particular)
 	// against silently-dead peers — without server-side pings, a
@@ -119,6 +134,8 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 	srvOpts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepaliveParams),
 		grpc.KeepaliveEnforcementPolicy(keepaliveEnforcement),
+		grpc.UnaryInterceptor(g.diagUnaryInterceptor),
+		grpc.StreamInterceptor(g.diagStreamInterceptor),
 	}
 	// TLS: same all-or-nothing semantics as the HTTP server.
 	if (opts.TLSCert == "") != (opts.TLSKey == "") {
@@ -137,6 +154,68 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 	apiv1.RegisterRIDServiceServer(g.srv, g)
 	apiv1.RegisterAudioServiceServer(g.srv, g)
 	return g, nil
+}
+
+// diagUnaryInterceptor decorates a failing unary RPC's error with the
+// diagnostics banner + wrapped chain when verbose reporting is enabled
+// (config) or the caller opted in via the gophertrunk-verbose metadata
+// key. The status code is always preserved; only the message text is
+// extended, so existing clients that don't parse the suffix are
+// unaffected.
+func (g *GRPCServer) diagUnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	resp, err := handler(ctx, req)
+	if err != nil {
+		return resp, g.decorateErr(ctx, err)
+	}
+	return resp, nil
+}
+
+// diagStreamInterceptor is the streaming-RPC analogue of
+// diagUnaryInterceptor.
+func (g *GRPCServer) diagStreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := handler(srv, ss); err != nil {
+		return g.decorateErr(ss.Context(), err)
+	}
+	return nil
+}
+
+// decorateErr appends the diagnostics banner + error chain to a gRPC
+// status message when verbose is on (or requested via metadata) and a
+// collector is wired. The original status code is retained.
+func (g *GRPCServer) decorateErr(ctx context.Context, err error) error {
+	if g.diagnostics == nil || !g.verboseRequested(ctx) {
+		return err
+	}
+	st, _ := status.FromError(err)
+	banner := gtdiag.FormatBannerPlain(g.diagnostics.SysInfo())
+	chain := gtdiag.Chain(err)
+	msg := st.Message()
+	if banner != "" {
+		msg += "\n\n" + banner
+	}
+	if len(chain) > 1 {
+		msg += "\n\nerror chain: " + strings.Join(chain, " <- ")
+	}
+	return status.Error(st.Code(), msg)
+}
+
+// verboseRequested reports whether verbose diagnostics should be
+// attached: either the daemon enabled them globally, or the caller set
+// the gophertrunk-verbose metadata key to a truthy value.
+func (g *GRPCServer) verboseRequested(ctx context.Context) bool {
+	if g.verboseErrors {
+		return true
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	for _, v := range md.Get("gophertrunk-verbose") {
+		if v == "1" || strings.EqualFold(v, "true") {
+			return true
+		}
+	}
+	return false
 }
 
 // Run binds the listener and serves until ctx cancels.
@@ -427,6 +506,7 @@ func grantToPB(g trunking.Grant) *apiv1.Grant {
 		GroupId: g.GroupID, SourceId: g.SourceID,
 		FrequencyHz: g.FrequencyHz,
 		ChannelId:   uint32(g.ChannelID), ChannelNumber: uint32(g.ChannelNum),
+		Timeslot:  uint32(g.Timeslot),
 		Encrypted: g.Encrypted, Emergency: g.Emergency, DataCall: g.DataCall,
 		AlgorithmId: uint32(g.AlgorithmID), KeyId: uint32(g.KeyID),
 	}

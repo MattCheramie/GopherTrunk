@@ -37,8 +37,53 @@ type rawFrameSink interface {
 // to its 49-bit vocoder payload before being written. Vocoder decode
 // to PCM is still out of scope — the .raw sidecar carries the
 // post-FEC frames for out-of-band decode (issue #276).
-func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, done chan<- struct{}) {
+//
+// When interleaved is true (System.DMRInterleavedVoice), the carrier is
+// decoded as 2-slot TDMA: the interleaved decoder emits a superframe per
+// timeslot and a slotRouter keeps only the ones belonging to this call's
+// groupID (by embedded-LC talkgroup, then by bound phase). Otherwise the
+// single-slot decoder runs and every superframe is written.
+//
+// slotRouter decides which superframes of a 2-slot interleaved DMR
+// carrier belong to this call. A carrier runs two calls (one per
+// timeslot) whose burst-A voice sync is identical, so the only reliable
+// discriminator is the embedded Link Control: once a superframe's LC
+// names this call's talkgroup, its Phase is bound and subsequent
+// superframes are routed by Phase even when their LC is absent or fails
+// CRC. Superframes whose LC names a different talkgroup are dropped.
+type slotRouter struct {
+	groupID uint32
+	bound   int // -1 until a matching LC binds this call's phase
+}
+
+func newSlotRouter(groupID uint32) *slotRouter {
+	return &slotRouter{groupID: groupID, bound: -1}
+}
+
+// accept reports whether sf belongs to this call's timeslot.
+func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
+	if sf.HasLC {
+		if gv, ok := sf.LC.AsGroupVoiceUser(); ok {
+			if gv.GroupAddress == r.groupID {
+				r.bound = int(sf.Phase)
+				return true
+			}
+			return false // LC names a different talkgroup — the other slot
+		}
+	}
+	// No usable group LC this superframe: accept only once our phase is
+	// known, and only for that phase.
+	return r.bound >= 0 && int(sf.Phase) == r.bound
+}
+
+func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, groupID uint32, interleaved bool, done chan<- struct{}) {
 	defer close(done)
+
+	// Shared boundary controller: universal hangtime end-of-call + Touch
+	// heartbeat. Talkgroup gating is left disabled (grantTG 0) until the
+	// DMR chain surfaces a per-superframe embedded-LC talkgroup.
+	bt := c.newBoundaryTracker(serial, 0, nil)
+	go bt.run(ctx)
 
 	decim := int(iqHz) / dmrVoiceIntermediateHz
 	if decim < 1 {
@@ -58,6 +103,11 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 
 	rs, _ := c.sink.(rawFrameSink)
 	voiceDec := dmrvoice.NewDecoder()
+	var router *slotRouter
+	if interleaved {
+		voiceDec = dmrvoice.NewInterleavedDecoder()
+		router = newSlotRouter(groupID)
+	}
 	// superframes counts DMR voice superframes the receiver delivered —
 	// i.e. real voice activity. The touch ticker (below) only refreshes
 	// the engine's LastHeardAt when this counter has advanced since the
@@ -80,7 +130,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 		ClockGain:   0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
+				if router != nil && !router.accept(sf) {
+					// A superframe from the other timeslot (or an
+					// as-yet-unbound phase) — not this call's audio.
+					continue
+				}
 				superframes.Add(1)
+				bt.onVoice(0)
 				if rs == nil {
 					continue
 				}
@@ -106,7 +162,6 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
-	var lastSuperframes uint64
 	// logDecodeQuality emits a rolling decode-quality summary, gated to a
 	// burst of superframes so it does not spam the log every touch tick
 	// (issue #356 follow-up). See runP25Phase1VoiceChain.
@@ -130,11 +185,8 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 			logDecodeQuality(true)
 			return
 		case <-touchTicker.C:
-			n := superframes.Load()
-			if n != lastSuperframes && c.engine != nil {
-				c.engine.Touch(serial)
-				lastSuperframes = n
-			}
+			// Touch + hangtime end-of-call handled by the shared boundary
+			// tracker; this ticker only drives the decode-quality summary.
 			logDecodeQuality(false)
 		case iq, ok := <-iqCh:
 			if !ok {

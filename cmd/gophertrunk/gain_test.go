@@ -67,3 +67,42 @@ func TestGainLooksLikeDBMistake(t *testing.T) {
 		}
 	}
 }
+
+func TestGainLooksTooLow(t *testing.T) {
+	cases := []struct {
+		raw     string
+		tenthDB int
+		want    bool
+	}{
+		// The (50,150)-tenths band: a real, cleanly-parsed manual gain that
+		// is still too low for digital decode (issue #402: 8.7 dB applied).
+		{"87", 87, true},   // the reported case: 8.7 dB, no FSW
+		{"51", 51, true},   // just above the dB-mistake band
+		{"149", 149, true}, // just below the floor
+		// The dB-mistake band (<=50 tenths) is owned by gainLooksLikeDBMistake,
+		// so gainLooksTooLow must not double-fire there.
+		{"32", 32, false},
+		{"50", 50, false},
+		{"1", 1, false},
+		// Plausible manual gains at or above the floor never warn.
+		{"150", 150, false},
+		{"229", 229, false},
+		{"496", 496, false},
+		// Decimal forms are an explicit dB choice; a low one is taken at face
+		// value here (warnGainUnits already skips decimals), so still flagged
+		// as too-low when below the floor since it's a real applied gain.
+		{"8.7", 87, true},
+		{"15.0", 150, false},
+		// auto / disabled / zero gain must never warn.
+		{"auto", -1, false},
+		{"", -1, false},
+		{"0", 0, false},
+		{"-1", -1, false},
+	}
+	for _, c := range cases {
+		if got := gainLooksTooLow(c.raw, c.tenthDB); got != c.want {
+			t.Errorf("gainLooksTooLow(%q, %d) = %v, want %v",
+				c.raw, c.tenthDB, got, c.want)
+		}
+	}
+}

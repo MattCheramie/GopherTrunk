@@ -27,6 +27,7 @@ const (
 	ProtocolYSF                // System Fusion (C4FM, amateur trunked variant — config "ysf")
 	ProtocolDStar              // D-STAR (GMSK 4800 bps, amateur — header-only repeater protocol; config "dstar")
 	ProtocolDMRTier2           // DMR Tier II conventional (per-repeater; config "dmr-tier2")
+	ProtocolDMRTier1           // DMR Tier I direct-mode (license-free simplex; config "dmr-tier1")
 )
 
 func (p Protocol) String() string {
@@ -57,6 +58,8 @@ func (p Protocol) String() string {
 		return "dstar"
 	case ProtocolDMRTier2:
 		return "dmr-tier2"
+	case ProtocolDMRTier1:
+		return "dmr-tier1"
 	default:
 		return "unknown"
 	}
@@ -93,9 +96,11 @@ func ParseProtocol(s string) (Protocol, error) {
 		return ProtocolDStar, nil
 	case "dmr-tier2", "dmr_tier2", "dmr-t2", "dmrtier2":
 		return ProtocolDMRTier2, nil
+	case "dmr-tier1", "dmr_tier1", "dmr-t1", "dmrtier1":
+		return ProtocolDMRTier1, nil
 	default:
 		return ProtocolUnknown, fmt.Errorf("trunking: unknown protocol %q "+
-			"(want p25|p25-phase2|dmr|dmr-tier2|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar)", s)
+			"(want p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar)", s)
 	}
 }
 
@@ -110,6 +115,37 @@ type P25BandPlanEntry struct {
 	SpacingHz   uint32 // channel-to-channel step, Hz
 	TxOffsetHz  int64  // signed uplink offset (uplink = downlink + offset), Hz
 	BandwidthHz uint32 // informational; not consulted by BandPlan.Frequency
+}
+
+// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried in a
+// DMR Tier III voice-grant CSBK to its downlink frequency. T3 grants
+// reference a channel by LCN, never an absolute frequency, so the
+// decoder cannot follow a voice call without this plan — see
+// internal/radio/dmr/tier3 (Resolver / tier3.ResolverFromPlan). The
+// trunking package keeps its own LCN→Hz shape (rather than importing
+// tier3) the same way P25BandPlanEntry mirrors phase1.IdentifierUpdate.
+// Exactly one of Linear or Table is populated (enforced by config
+// validation).
+type DMRBandPlan struct {
+	Linear *DMRLinearBandPlan      // regular base+spacing grid
+	Table  []DMRBandPlanTableEntry // irregular hand-coded LCN→Hz map
+}
+
+// DMRLinearBandPlan lays channels out on a regular grid:
+// freq = BaseHz + (LCN - Offset) × SpacingHz. Offset lets sites that
+// number LCNs from 1 (the common case) pin BaseHz to the channel-1
+// downlink — set Offset=1 there.
+type DMRLinearBandPlan struct {
+	BaseHz    uint32
+	SpacingHz uint32
+	Offset    int8
+}
+
+// DMRBandPlanTableEntry is one explicit LCN→downlink-frequency mapping
+// for sites whose channels don't fall on a regular grid.
+type DMRBandPlanTableEntry struct {
+	LCN    uint8
+	FreqHz uint32
 }
 
 // System describes one trunked radio system the engine should track.
@@ -184,6 +220,22 @@ type System struct {
 	// Ignored for non-P25-Phase-1 protocols.
 	P25BandPlan []P25BandPlanEntry
 
+	// DMRBandPlan resolves the LCN in DMR Tier III voice grants to a
+	// downlink frequency. Required for T3 voice — without it every
+	// grant is dropped with decode.error stage=no-bandplan. Ignored
+	// for non-DMR-Tier-III protocols.
+	DMRBandPlan *DMRBandPlan
+
+	// DMRInterleavedVoice opts the system into the experimental 2-slot
+	// interleaved voice decoder (mirrors config.System.DMRInterleavedVoice).
+	// When true the DMR Tier III control channel tags its voice grants
+	// so the composer decodes each timeslot from the carrier's
+	// interleaved burst stream and routes it to the call by embedded-LC
+	// talkgroup. Default false keeps the single-slot decoder. Pending a
+	// real-capture cross-check of the on-air constants — see
+	// docs/status.md. Ignored for non-DMR protocols.
+	DMRInterleavedVoice bool
+
 	// P25Phase1DemodMode selects the symbol-recovery path for the
 	// P25 Phase 1 receiver. Recognised values (case-insensitive):
 	// "" / "c4fm" / "fm" → DemodC4FM (the default — FM
@@ -227,9 +279,10 @@ type System struct {
 	P25Phase2InterleaveMode string
 	// P25Phase2ScramblerMode enables the PN44 descrambler per
 	// TIA-102.BBAC-1 §7.2.5 on the trellis-decoded MAC PDU bits.
-	// Recognised values (case-insensitive): "" / "off" / "false" /
-	// "0" → ScramblerOff (the default — no PN44 descrambling);
-	// "on" / "true" / "1" → ScramblerOn. The seed is computed from
+	// Recognised values (case-insensitive): "" / "on" / "true" /
+	// "1" → ScramblerOn (the default — live Phase 2 traffic is
+	// always scrambled); "off" / "false" / "0" → ScramblerOff
+	// (opt-out for unscrambled fixtures). The seed is computed from
 	// (WACN, SystemID, low 12 bits of Site as the spec's Color
 	// Code = NAC) per spec equation (5). Forwarded into
 	// p25phase2.ControlChannel.SetScramblerMode +
@@ -327,7 +380,7 @@ func (s System) Validate() error {
 		return errors.New("trunking: system name is required")
 	}
 	if s.Protocol == ProtocolUnknown {
-		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|dmr-tier2|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar")
+		return errors.New("trunking: protocol must be p25|p25-phase2|dmr|dmr-tier2|dmr-tier1|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar")
 	}
 	if len(s.ControlChannels) == 0 {
 		return errors.New("trunking: at least one control_channel frequency is required")

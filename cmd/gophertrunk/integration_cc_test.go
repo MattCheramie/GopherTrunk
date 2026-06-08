@@ -430,15 +430,14 @@ WaitLoop:
 
 	waitForScannerLock(t, base, "Alpha", 2*time.Second)
 
-	body := scrape(t, base+"/metrics")
-	if !strings.Contains(body, `gophertrunk_events_total{kind="cc.locked"} 1`) {
-		t.Errorf("/metrics did not count one cc.locked event:\n%s", body)
-	}
+	// The metrics collector consumes the events bus on its own
+	// subscription, so its counters can lag a beat behind this test's
+	// subscriber observing the grant — poll rather than scrape once (the
+	// single-scrape race flaked this test on loaded CI runners).
+	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 	// At least one grant event — the stub fires every grant frame
 	// in `Repeats` rounds, so the counter sits at >=1.
-	if !strings.Contains(body, `gophertrunk_events_total{kind="grant"}`) {
-		t.Errorf("/metrics missing gophertrunk_events_total grant counter:\n%s", body)
-	}
+	waitForMetric(t, base, `gophertrunk_events_total{kind="grant"}`, 2*time.Second)
 }
 
 // p25Phase1StubPipeline implements ccdecoder.ProtocolPipeline by
@@ -636,4 +635,23 @@ func waitForScannerLock(t *testing.T, base, system string, timeout time.Duration
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Errorf("/api/v1/scanner did not report state=locked for %q within %v", system, timeout)
+}
+
+// waitForMetric polls /metrics until the scraped body contains want,
+// failing after timeout. The metrics collector updates its counters from a
+// separate events-bus subscription, so a counter can lag slightly behind
+// the test's own subscriber observing the event — a single scrape is racy
+// under load.
+func waitForMetric(t *testing.T, base, want string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var body string
+	for time.Now().Before(deadline) {
+		body = scrape(t, base+"/metrics")
+		if strings.Contains(body, want) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("/metrics did not contain %q within %v:\n%s", want, timeout, body)
 }

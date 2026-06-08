@@ -10,6 +10,11 @@ import { Active } from "./panels/Active";
 import { Bookmarks } from "./panels/Bookmarks";
 import { CCActivity } from "./panels/CCActivity";
 import { Constellation } from "./panels/Constellation";
+import { SymbolScope } from "./panels/SymbolScope";
+import { EyeDiagram } from "./panels/EyeDiagram";
+import { Tuning } from "./panels/Tuning";
+import { Histogram } from "./panels/Histogram";
+import { Plots } from "./panels/Plots";
 import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
@@ -24,6 +29,7 @@ import { Metrics } from "./panels/Metrics";
 import { Pagers } from "./panels/Pagers";
 import { RadioIDs } from "./panels/RadioIDs";
 import { Scanner } from "./panels/Scanner";
+import { Hunt } from "./panels/Hunt";
 import { Settings } from "./panels/Settings";
 import { Spectrum } from "./panels/Spectrum";
 import { Systems } from "./panels/Systems";
@@ -38,6 +44,7 @@ const TABS: Tab[] = [
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
 const EXTRA_TABS: Tab[] = [
+  { to: "/hunt", label: "Hunt", icon: "🔍" },
   { to: "/systems", label: "Systems", icon: "❖" },
   { to: "/talkgroups", label: "Talkgroups", icon: "☷" },
   { to: "/rids", label: "Radio IDs", icon: "⌖" },
@@ -52,7 +59,7 @@ const EXTRA_TABS: Tab[] = [
   { to: "/adsb", label: "ADS-B", icon: "✈" },
   { to: "/mdc1200", label: "MDC1200", icon: "📻" },
   { to: "/spectrum", label: "Spectrum", icon: "≈" },
-  { to: "/constellation", label: "Constellation", icon: "✦" },
+  { to: "/plots", label: "Plots", icon: "✦" },
   { to: "/bookmarks", label: "Bookmarks", icon: "★" },
   { to: "/metrics", label: "Metrics", icon: "▰" },
   { to: "/devices", label: "Devices", icon: "⌗" },
@@ -174,6 +181,16 @@ export function App() {
             {t.icon} {t.label}
           </button>
         ))}
+        {/* The Config Builder is a separate SPA the daemon serves at
+            /config/. Open it in a new tab so editing config doesn't tear
+            down the live operator session. */}
+        <button
+          onClick={() => window.open("/config/", "_blank", "noopener")}
+          className="px-2 py-1 rounded text-muted hover:text-fg hover:bg-panel"
+          title="Open the Config Builder/Editor in a new tab"
+        >
+          🛠 Config Builder ↗
+        </button>
       </div>
 
       <main className="flex-1 p-3 sm:p-4 pb-20 sm:pb-4">
@@ -182,8 +199,15 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/active" element={<Active />} />
           <Route path="/scanner" element={<Scanner />} />
+          <Route path="/hunt" element={<Hunt />} />
           <Route path="/spectrum" element={<Spectrum />} />
+          <Route path="/plots" element={<Plots />} />
+          <Route path="/plots/:tab" element={<Plots />} />
           <Route path="/constellation" element={<Constellation />} />
+          <Route path="/symbols" element={<SymbolScope />} />
+          <Route path="/eye" element={<EyeDiagram />} />
+          <Route path="/tuning" element={<Tuning />} />
+          <Route path="/histogram" element={<Histogram />} />
           <Route path="/bookmarks" element={<Bookmarks />} />
           <Route path="/systems" element={<Systems />} />
           <Route path="/talkgroups" element={<Talkgroups />} />

@@ -403,3 +403,17 @@ func (b *BandPlan) IsTDMA(channelID uint8) bool {
 	}
 	return b.slots[channelID].AccessTDMA
 }
+
+// Snapshot returns the IdentifierUpdate entries for every known channel ID,
+// in ascending channel-ID order. Used by the signal-lab / hunt layers to
+// surface the band plan a control channel advertised so a discovered system
+// can be documented and exported.
+func (b *BandPlan) Snapshot() []IdentifierUpdate {
+	var out []IdentifierUpdate
+	for id := 0; id < len(b.slots); id++ {
+		if b.known[id] {
+			out = append(out, b.slots[id])
+		}
+	}
+	return out
+}

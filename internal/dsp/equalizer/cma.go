@@ -1,5 +1,7 @@
 package equalizer
 
+import "math"
+
 // CMA is the Constant Modulus Algorithm — a blind adaptive equaliser
 // that requires no training sequence. It exploits the fact that
 // PSK-family signals (BPSK / QPSK / π/4-DQPSK / 8PSK) have a constant
@@ -119,6 +121,24 @@ func (c *CMA) Process(x complex64) (complex64, float32) {
 		idx--
 		if idx < 0 {
 			idx = len(c.hist) - 1
+		}
+	}
+
+	// Pin the phase null. The constant-modulus cost J=E[(|y|²−R²)²] is
+	// invariant to a global rotation of the tap vector (rotating every tap
+	// by e^{jθ} leaves |y| unchanged), so the gradient has a null direction
+	// along that rotation and the taps random-walk in phase, driven by ISI
+	// and noise. That walk imposes a slowly-drifting rotation on the output —
+	// harmless to a differential decoder on its own, but a downstream carrier
+	// loop reads the drift as a frequency offset and integrates it to its
+	// clamp (issue #492). Anchoring the centre tap to the positive real axis
+	// after each update removes the ambiguity without changing |y|, so the
+	// equaliser's output phase is stable.
+	if ct := c.taps[len(c.taps)/2]; ct != 0 {
+		mag := float32(math.Hypot(float64(real(ct)), float64(imag(ct))))
+		derot := complex(real(ct)/mag, -imag(ct)/mag)
+		for i := range c.taps {
+			c.taps[i] *= derot
 		}
 	}
 	return y, err
