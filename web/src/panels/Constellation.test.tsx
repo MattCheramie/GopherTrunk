@@ -99,15 +99,47 @@ describe("Constellation panel", () => {
     expect(callArgs?.rate).toBeGreaterThan(0);
   });
 
-  it("re-subscribes the symbol stream when the demod mode changes", async () => {
+  it("re-subscribes the symbol stream when switching to CQPSK", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
 
     render(<Constellation />);
     await waitFor(() => {
       expect(openSymbolStream).toHaveBeenCalledTimes(1);
     });
+    // Default Mode is CQPSK, so the symbol stream is already CQPSK; flip to
+    // C4FM and back to confirm CQPSK re-subscribes the symbol stream.
     fireEvent.change(screen.getByLabelText("Demodulation mode"), {
       target: { value: "p25-c4fm" },
+    });
+    fireEvent.change(screen.getByLabelText("Demodulation mode"), {
+      target: { value: "p25-cqpsk" },
+    });
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      expect(last?.proto).toBe("p25-cqpsk");
+    });
+  });
+
+  it("shows the C4FM IQ ring by default and can switch to soft levels", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalledTimes(1);
+    });
+
+    // Switching Mode to C4FM (default Display = IQ ring) opens the raw IQ
+    // stream, not the symbol stream — C4FM has no symbol constellation.
+    fireEvent.change(screen.getByLabelText("Demodulation mode"), {
+      target: { value: "p25-c4fm" },
+    });
+    await waitFor(() => {
+      expect(openIQStream).toHaveBeenCalledTimes(1);
+    });
+
+    // Choosing "Soft levels" falls back to the symbol stream with C4FM.
+    fireEvent.change(screen.getByLabelText("C4FM display"), {
+      target: { value: "soft" },
     });
     await waitFor(() => {
       const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];

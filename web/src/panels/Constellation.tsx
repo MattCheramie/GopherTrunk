@@ -20,10 +20,12 @@ import { TuningControls } from "../components/TuningControls";
 //     *true* constellation: post matched-filter, timing recovery and
 //     carrier recovery, sampled once per symbol. P25 CQPSK reads as four
 //     tight clusters at ±45°/±135° (degrading to a smeared X as the eye
-//     closes); P25 C4FM has no complex symbol domain, so its four soft
-//     levels are plotted on the real axis (the open 4-level eye/symbol
-//     scope is C4FM's natural quality view). This is the modulation-
-//     quality picture OP25 shows on its Constellation tab.
+//     closes). P25 C4FM has no complex symbol domain, so the Display
+//     control picks how to show it: "IQ ring" (default) draws the raw
+//     constant-envelope circle the operator expects, while "Soft levels"
+//     plots the four soft decisions on the real axis (the open 4-level
+//     eye/symbol scope is C4FM's natural quality view). This is the
+//     modulation-quality picture OP25 shows on its Constellation tab.
 //
 //   • Vector scope (raw IQ) — the wideband decimated IQ trajectory,
 //     every sample including the transitions between symbols (no matched
@@ -45,6 +47,9 @@ const TARGET_RATE_SPS = 2000;
 
 // View source for the scatter (persisted in prefs).
 type View = "symbols" | "raw";
+// How the C4FM constellation is drawn (persisted in prefs): the raw IQ
+// "ring" (constant-envelope circle) or the four soft-decision "levels".
+type C4fmDisplay = "ring" | "soft";
 
 const PROTOS: { value: string; label: string }[] = [
   { value: "p25-cqpsk", label: "P25 CQPSK" },
@@ -118,6 +123,9 @@ export function Constellation() {
 
   const [view, setView] = useState<View>(() => prefs.constellationView());
   const [proto, setProto] = useState<string>(() => prefs.constellationProto());
+  const [c4fmDisplay, setC4fmDisplay] = useState<C4fmDisplay>(() =>
+    prefs.constellationC4fmDisplay(),
+  );
   const [offsetKHz, setOffsetKHz] = useState<number>(() =>
     prefs.constellationOffsetKHz(),
   );
@@ -134,13 +142,25 @@ export function Constellation() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<IQPoint[]>([]);
   const scaleRef = useRef<number>(1);
+  // Which stream feeds the scatter. The raw View always uses the wideband
+  // IQ trajectory. In the symbols View, CQPSK uses the symbol-decision
+  // stream; C4FM has no symbol constellation, so it shows the raw IQ ring
+  // by default (the constant-envelope circle the operator expects) unless
+  // they pick "Soft levels" for the legacy real-axis decision points.
+  const source: "iq" | "symbols" =
+    view === "raw"
+      ? "iq"
+      : proto === "p25-c4fm" && c4fmDisplay === "ring"
+        ? "iq"
+        : "symbols";
+
   // Ideal cluster markers depend on the active source: clusters on the
-  // diagonals for CQPSK symbols, levels on the real axis for C4FM
-  // symbols, none for the raw vector scope.
+  // diagonals for CQPSK symbols, levels on the real axis for the C4FM
+  // soft-level view, none for the raw vector scope / IQ ring.
   const markers = useMemo<IQPoint[]>(() => {
-    if (view !== "symbols") return [];
+    if (source !== "symbols") return [];
     return proto === "p25-c4fm" ? C4FM_MARKERS : CQPSK_MARKERS;
-  }, [view, proto]);
+  }, [source, proto]);
   const optsRef = useRef<RenderOpts>({
     dcBlock,
     autoScale,
@@ -270,6 +290,9 @@ export function Constellation() {
   useEffect(() => {
     prefs.setConstellationProto(proto);
   }, [proto]);
+  useEffect(() => {
+    prefs.setConstellationC4fmDisplay(c4fmDisplay);
+  }, [c4fmDisplay]);
 
   // Push a fresh batch of points into the rolling buffer and repaint.
   const pushPoints = (pts: IQPoint[]) => {
@@ -281,9 +304,10 @@ export function Constellation() {
     renderConstellation(canvasRef.current, bufferRef.current, optsRef.current);
   };
 
-  // Raw vector-scope stream: wideband decimated IQ trajectory.
+  // Raw IQ stream: the wideband decimated IQ trajectory (vector scope, and
+  // the C4FM constant-envelope ring).
   useEffect(() => {
-    if (!selected || view !== "raw") return;
+    if (!selected || source !== "iq") return;
     bufferRef.current = [];
     scaleRef.current = 1;
     setLatest(null);
@@ -300,13 +324,13 @@ export function Constellation() {
     });
     return () => stream.close();
     // Re-subscribe when the offset changes so the server re-mixes.
-  }, [cfg, selected, view, clampedOffsetKHz]);
+  }, [cfg, selected, source, clampedOffsetKHz]);
 
   // Symbols stream: the receiver's symbol-decision points (true
   // constellation). CQPSK carries complex points (sym_i/sym_q); C4FM has
   // none, so its 4 soft levels are plotted on the real axis.
   useEffect(() => {
-    if (!selected || view !== "symbols") return;
+    if (!selected || source !== "symbols") return;
     bufferRef.current = [];
     scaleRef.current = 1;
     setSymLatest(null);
@@ -329,7 +353,7 @@ export function Constellation() {
       onStatus: setConn,
     });
     return () => stream.close();
-  }, [cfg, selected, view, proto, clampedOffsetKHz]);
+  }, [cfg, selected, source, proto, clampedOffsetKHz]);
 
   // Prefer the device centre so the frequency view shows before the first
   // frame; fall back to the frame's stamped centre.
@@ -344,7 +368,7 @@ export function Constellation() {
         ? "centre"
         : `${clampedOffsetKHz >= 0 ? "+" : ""}${clampedOffsetKHz.toFixed(3).replace(/\.?0+$/, "")} kHz`;
     const head = `${(viewHz / 1e6).toFixed(4)} MHz (${off})`;
-    if (view === "symbols") {
+    if (source === "symbols") {
       if (!symLatest) return `${head} · waiting for symbols…`;
       const kind =
         symLatest.sym_i && symLatest.sym_i.length > 0
@@ -354,7 +378,7 @@ export function Constellation() {
     }
     if (!latest) return `${head} · waiting for samples…`;
     return `${head} · ${latest.sample_rate} sps · ${latest.energy_dbfs.toFixed(1)} dBFS`;
-  }, [view, latest, symLatest, viewHz, clampedOffsetKHz]);
+  }, [source, latest, symLatest, viewHz, clampedOffsetKHz]);
 
   return (
     <div className="space-y-3">
@@ -414,6 +438,21 @@ export function Constellation() {
                   {p.label}
                 </option>
               ))}
+            </select>
+          </label>
+        )}
+
+        {view === "symbols" && proto === "p25-c4fm" && (
+          <label className="flex items-center gap-2">
+            <span className="text-muted">Display</span>
+            <select
+              className="bg-surface border border-border rounded px-2 py-1"
+              value={c4fmDisplay}
+              onChange={(e) => setC4fmDisplay(e.target.value as C4fmDisplay)}
+              aria-label="C4FM display"
+            >
+              <option value="ring">IQ ring (circle)</option>
+              <option value="soft">Soft levels (line)</option>
             </select>
           </label>
         )}
@@ -487,26 +526,36 @@ export function Constellation() {
       </div>
 
       <div className="text-[11px] text-muted">
-        {view === "symbols" ? (
-          proto === "p25-c4fm" ? (
+        {view === "symbols" && proto === "p25-c4fm" ? (
+          c4fmDisplay === "ring" ? (
+            <>
+              C4FM is constant-envelope FM with no symbol constellation, so
+              this shows the raw IQ vector scope — the constant-envelope
+              ring / concentric arcs the signal traces. Tune the{" "}
+              <em>Offset</em> onto a locked channel to lift it off the centre
+              DC spike. Switch <em>Display</em> to <em>Soft levels</em> for
+              the 4-level decision points, or use the <em>Eye</em> /{" "}
+              <em>Symbol scope</em> panel for C4FM modulation quality.
+            </>
+          ) : (
             <>
               Plots the receiver's recovered C4FM symbols. C4FM has no
               complex constellation, so its four soft levels appear on the
               real axis (rings mark the ideal ±1/±3 positions) — the open
               4-level eye on the <em>Symbol scope</em> is C4FM's natural
-              quality view. Switch <em>Mode</em> to CQPSK for a 2D
-              constellation, or <em>View</em> to the vector scope for the
-              raw IQ trajectory.
-            </>
-          ) : (
-            <>
-              Plots the receiver's symbol-decision points — the true
-              constellation. A clean CQPSK/LSM signal forms four tight
-              clusters on the ±45° diagonals (rings); a closing eye smears
-              them into an X. Tune the <em>Offset</em> onto a locked
-              channel; brightest = most recent.
+              quality view. Switch <em>Display</em> to <em>IQ ring</em> for
+              the constant-envelope circle, or <em>Mode</em> to CQPSK for a
+              2D constellation.
             </>
           )
+        ) : view === "symbols" ? (
+          <>
+            Plots the receiver's symbol-decision points — the true
+            constellation. A clean CQPSK/LSM signal forms four tight
+            clusters on the ±45° diagonals (rings); a closing eye smears
+            them into an X. Tune the <em>Offset</em> onto a locked
+            channel; brightest = most recent.
+          </>
         ) : (
           <>
             Vector scope: plots decimated IQ samples ({TARGET_RATE_SPS} sps,
