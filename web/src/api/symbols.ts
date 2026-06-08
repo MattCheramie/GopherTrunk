@@ -27,6 +27,17 @@ export interface SymbolFrame {
   dibits: number[];
   is_bits: boolean;
   base_idx: number;
+  // Receiver-state metrics for the Tuning panel. carrier_offset_hz is the
+  // AFC estimate (C4FM) or carrier-recovery estimate (CQPSK); agc_level
+  // the C4FM symbol-AGC mean|x| or CQPSK matched-filter gain; agc_target
+  // the C4FM AGC target (0 on CQPSK); clock_mu/clock_sps the symbol-clock
+  // loop state; cma_error the CQPSK equalizer convergence proxy (0 on C4FM).
+  carrier_offset_hz: number;
+  agc_level: number;
+  agc_target: number;
+  clock_mu: number;
+  clock_sps: number;
+  cma_error: number;
 }
 
 export type SymbolFrameHandler = (f: SymbolFrame) => void;

@@ -27,6 +27,9 @@ const LS_KEYS = {
   symbolScopeProto: "gt.symbolScope.proto",
   eyeOffsetKHz: "gt.eye.offsetKHz",
   eyeHold: "gt.eye.hold",
+  tuningOffsetKHz: "gt.tuning.offsetKHz",
+  tuningHold: "gt.tuning.hold",
+  tuningProto: "gt.tuning.proto",
 } as const;
 
 const SS_KEYS = {
@@ -242,6 +245,29 @@ export const prefs = {
   },
   setEyeHold(on: boolean) {
     writeLS(LS_KEYS.eyeHold, on ? "1" : "0");
+  },
+
+  // Tuning panel view options (receiver-state meters).
+  tuningOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.tuningOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setTuningOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.tuningOffsetKHz, String(khz));
+  },
+  tuningHold(): boolean {
+    return readLS(LS_KEYS.tuningHold) === "1";
+  },
+  setTuningHold(on: boolean) {
+    writeLS(LS_KEYS.tuningHold, on ? "1" : "0");
+  },
+  tuningProto(): string {
+    return readLS(LS_KEYS.tuningProto) ?? "p25-c4fm";
+  },
+  setTuningProto(p: string) {
+    writeLS(LS_KEYS.tuningProto, p);
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */

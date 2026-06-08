@@ -80,6 +80,21 @@ type Frame struct {
 	Dibits  []uint8   `json:"dibits"`
 	IsBits  bool      `json:"is_bits"`
 	BaseIdx int       `json:"base_idx"`
+
+	// Receiver-state metrics, read from the live receiver each frame —
+	// the data behind the Tuning panel (OP25's Mixer / Tuner-FLL). The
+	// getters are demod-specific: CarrierOffsetHz is the AFC estimate on
+	// C4FM and the carrier-recovery estimate on CQPSK; ClockMu/ClockSPS
+	// come from Mueller-Müller (C4FM) or Gardner (CQPSK); AGCLevel is the
+	// C4FM symbol-AGC mean|x| or the CQPSK matched-filter AGC gain, with
+	// AGCTarget set only on C4FM; CMAError is the CQPSK equalizer
+	// convergence proxy (0 on C4FM).
+	CarrierOffsetHz float64 `json:"carrier_offset_hz"`
+	AGCLevel        float64 `json:"agc_level"`
+	AGCTarget       float64 `json:"agc_target"`
+	ClockMu         float64 `json:"clock_mu"`
+	ClockSPS        float64 `json:"clock_sps"`
+	CMAError        float64 `json:"cma_error"`
 }
 
 // Options configures an Engine.
@@ -140,6 +155,7 @@ type Engine struct {
 	// each flushed frame and cleared. eyeSPS is the fold period.
 	pendEye   []float32
 	eyeSPS    int
+	isCQPSK   bool // selects which receiver getters to read for metrics
 	isBits    bool
 	baseIdx   int // absolute symbol index of pendDibits[0]
 	totalSyms int // symbols seen across the whole stream
@@ -180,6 +196,7 @@ func New(opts Options) (*Engine, error) {
 		centerHz:     opts.CenterHz,
 		offsetHz:     opts.OffsetHz,
 		frameSymbols: frameSymbols,
+		isCQPSK:      demodMode == p25phase1rx.DemodCQPSK,
 		nowNs:        nowNs,
 		emit:         opts.Emit,
 	}
@@ -307,9 +324,32 @@ func (e *Engine) flush(n int) {
 		IsBits:       e.isBits,
 		BaseIdx:      e.baseIdx,
 	}
+	e.stampMetrics(&frame)
 	e.pendDibits = e.pendDibits[n:]
 	e.baseIdx += n
 	e.emit(frame)
+}
+
+// stampMetrics reads the live receiver's state getters into the frame.
+// The getters are demod-specific (Mueller-Müller vs Gardner, AFC vs
+// carrier-recovery), so this routes by the configured demod mode.
+func (e *Engine) stampMetrics(f *Frame) {
+	if e.rx == nil {
+		return
+	}
+	if e.isCQPSK {
+		f.CarrierOffsetHz = e.rx.CQPSKCarrierOffsetHz()
+		f.AGCLevel = e.rx.CQPSKAGCGain()
+		f.ClockMu = e.rx.GardnerMu()
+		f.ClockSPS = e.rx.GardnerSPS()
+		f.CMAError = e.rx.CMAError()
+		return
+	}
+	f.CarrierOffsetHz = e.rx.AFCOffsetHz()
+	f.AGCLevel = e.rx.AGCLevel()
+	f.AGCTarget = e.rx.AGCTarget()
+	f.ClockMu = e.rx.MMClockMu()
+	f.ClockSPS = e.rx.MMClockSPS()
 }
 
 // Close releases the engine. Idempotent.

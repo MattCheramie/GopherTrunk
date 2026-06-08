@@ -119,6 +119,20 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 		t.Error("C4FM path emitted no eye window (EyeSoft empty on every frame)")
 	}
 
+	// Receiver-state metrics for the Tuning panel: the C4FM path reports a
+	// Mueller-Müller clock (ClockSPS > 0) and a calibrated symbol-AGC
+	// target (DeviationHz was set), but never a CMA error (CQPSK-only).
+	last := frames[len(frames)-1]
+	if last.ClockSPS <= 0 {
+		t.Errorf("C4FM ClockSPS = %v, want > 0 (Mueller-Müller nominal sps)", last.ClockSPS)
+	}
+	if last.AGCTarget <= 0 {
+		t.Errorf("C4FM AGCTarget = %v, want > 0 (calibrated from DeviationHz)", last.AGCTarget)
+	}
+	if last.CMAError != 0 {
+		t.Errorf("C4FM CMAError = %v, want 0 (no CMA stage on C4FM)", last.CMAError)
+	}
+
 	// All four levels should be populated, and their mean soft values
 	// must be mutually separated — the 4-band structure of the scope.
 	means := make([]float64, 0, 4)
@@ -193,6 +207,16 @@ func TestCQPSKEmitsComplexSymbolsWithoutSoft(t *testing.T) {
 	}
 	if !sawSymbols {
 		t.Fatal("CQPSK path emitted no complex symbol points")
+	}
+
+	// Tuning metrics on the CQPSK path: a Gardner clock (ClockSPS > 0) and
+	// no C4FM symbol-AGC target (that getter is C4FM-only).
+	last := frames[len(frames)-1]
+	if last.ClockSPS <= 0 {
+		t.Errorf("CQPSK ClockSPS = %v, want > 0 (Gardner nominal sps)", last.ClockSPS)
+	}
+	if last.AGCTarget != 0 {
+		t.Errorf("CQPSK AGCTarget = %v, want 0 (C4FM-only getter)", last.AGCTarget)
 	}
 }
 

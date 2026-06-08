@@ -22,6 +22,12 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Tuning panel** (`/tuning`) — live receiver-state meters, GopherTrunk's
+  take on OP25's Mixer / Tuner (FLL) tabs (#557 follow-up). Trends the
+  demod's residual carrier-frequency-offset estimate (should converge to
+  0 Hz on lock) and surfaces AGC level/target, symbol-clock μ/sps and (on
+  CQPSK) the equalizer's CMA-error convergence proxy — all read live from
+  the production receiver and carried on the existing symbol stream.
 - **Eye diagram panel** (`/eye`) — GopherTrunk's take on OP25's datascope
   (#557 follow-up). The daemon's C4FM receiver gains an oversampled,
   AGC-scaled eye tap; the panel folds it over the symbol period and

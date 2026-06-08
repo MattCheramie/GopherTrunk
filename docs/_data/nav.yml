@@ -59,6 +59,8 @@ groups:
         url: /symbol-scope.html
       - title: Eye diagram
         url: /eye-diagram.html
+      - title: Tuning (receiver meters)
+        url: /tuning.html
       - title: Hunt (discover systems)
         url: /hunt.html
       - title: rigctld integration

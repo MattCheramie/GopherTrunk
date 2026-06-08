@@ -38,6 +38,14 @@ type SymbolFrame struct {
 	Dibits  []uint8   `json:"dibits"`
 	IsBits  bool      `json:"is_bits"`
 	BaseIdx int       `json:"base_idx"`
+
+	// Receiver-state metrics for the Tuning panel (see symbolscope.Frame).
+	CarrierOffsetHz float64 `json:"carrier_offset_hz"`
+	AGCLevel        float64 `json:"agc_level"`
+	AGCTarget       float64 `json:"agc_target"`
+	ClockMu         float64 `json:"clock_mu"`
+	ClockSPS        float64 `json:"clock_sps"`
+	CMAError        float64 `json:"cma_error"`
 }
 
 // SymbolProvider is the daemon-side abstraction the symbol endpoint
