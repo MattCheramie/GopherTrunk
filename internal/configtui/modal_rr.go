@@ -3,6 +3,7 @@ package configtui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,6 +20,7 @@ const (
 	rrStates
 	rrCounties
 	rrZip
+	rrID
 	rrSystems
 	rrError
 )
@@ -32,6 +34,8 @@ type rrModal struct {
 
 	modeIdx int
 	zip     textinput.Model
+	idInput textinput.Model
+	idState bool // by-ID: true = state id (stid), false = county id (ctid)
 
 	geos []radioreference.GeoRef // states or counties
 	hits []radioreference.SearchHit
@@ -47,7 +51,9 @@ func newRRModal(m *Model) modal {
 	}
 	zi := textinput.New()
 	zi.Prompt = "ZIP: "
-	return &rrModal{client: c, step: rrMode, zip: zi}
+	ii := textinput.New()
+	ii.Prompt = "ID: "
+	return &rrModal{client: c, step: rrMode, zip: zi, idInput: ii}
 }
 
 func (r *rrModal) ctx() context.Context { return context.Background() }
@@ -59,7 +65,7 @@ func (r *rrModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 		case rrCounties:
 			r.step, r.idx = rrStates, 0
 			return r, nil
-		case rrSystems:
+		case rrZip, rrID, rrSystems:
 			r.step, r.idx = rrMode, 0
 			return r, nil
 		default:
@@ -73,6 +79,8 @@ func (r *rrModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 		return r.updateMode(msg, m)
 	case rrZip:
 		return r.updateZip(msg, m)
+	case rrID:
+		return r.updateID(msg, m)
 	case rrStates, rrCounties, rrSystems:
 		return r.updateList(msg, m)
 	}
@@ -86,23 +94,56 @@ func (r *rrModal) updateMode(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 			r.modeIdx--
 		}
 	case "down", "j":
-		if r.modeIdx < 1 {
+		if r.modeIdx < 2 {
 			r.modeIdx++
 		}
 	case "enter":
-		if r.modeIdx == 0 { // by state/county
+		switch r.modeIdx {
+		case 0: // by state/county
 			geos, err := r.client.GetStateList(r.ctx())
 			if err != nil {
 				r.err = err.Error()
 				return r, nil
 			}
 			r.geos, r.idx, r.step = geos, 0, rrStates
-		} else { // by ZIP
+		case 1: // by ZIP
 			r.zip.Focus()
 			r.step = rrZip
+		case 2: // by numeric ID
+			r.idInput.Focus()
+			r.step = rrID
 		}
 	}
 	return r, nil
+}
+
+func (r *rrModal) updateID(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
+	switch msg.String() {
+	case "tab":
+		r.idState = !r.idState
+		return r, nil
+	case "enter":
+		n, err := strconv.Atoi(strings.TrimSpace(r.idInput.Value()))
+		if err != nil {
+			r.err = "id must be numeric"
+			return r, nil
+		}
+		var hits []radioreference.SearchHit
+		if r.idState {
+			hits, err = r.client.SearchByState(r.ctx(), n)
+		} else {
+			hits, err = r.client.SearchByCounty(r.ctx(), n)
+		}
+		if err != nil {
+			r.err = err.Error()
+			return r, nil
+		}
+		r.hits, r.idx, r.step = hits, 0, rrSystems
+		return r, nil
+	}
+	var cmd tea.Cmd
+	r.idInput, cmd = r.idInput.Update(msg)
+	return r, cmd
 }
 
 func (r *rrModal) updateZip(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
@@ -177,7 +218,7 @@ func (r *rrModal) View(w, h int) string {
 	case rrError:
 		return boxTitle("RadioReference", stErr.Render(r.err)+"\n\n[esc] close")
 	case rrMode:
-		opts := []string{"By state / county", "By ZIP code"}
+		opts := []string{"By state / county", "By ZIP code", "By ID (county/state)"}
 		var b strings.Builder
 		for i, o := range opts {
 			cur := "  "
@@ -190,6 +231,13 @@ func (r *rrModal) View(w, h int) string {
 		return boxTitle("Browse RadioReference", b.String())
 	case rrZip:
 		return boxTitle("Browse RadioReference — ZIP", r.zip.View()+r.errLine()+"\n\n[enter] search  [esc] cancel")
+	case rrID:
+		kind := "county id (ctid)"
+		if r.idState {
+			kind = "state id (stid)"
+		}
+		return boxTitle("Browse RadioReference — ID",
+			r.idInput.View()+"\nlooking up: "+kind+r.errLine()+"\n\n[tab] county/state  [enter] search  [esc] back")
 	default:
 		return boxTitle("Browse RadioReference — "+r.stepLabel(), r.listView()+r.errLine())
 	}

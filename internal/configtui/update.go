@@ -57,7 +57,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focus == zoneSections {
 			return m.requestQuit()
 		}
-	case "s":
+	case "s", "ctrl+s":
 		return m.startSave()
 	case "n":
 		return m.requestNew()
@@ -236,8 +236,12 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.markDirty()
 	case "d":
 		if n > 0 {
-			removeItem(slice, m.cursor)
-			m.markDirty()
+			idx := m.cursor
+			m.modal = newConfirmModal("Remove this item?", func(mm *Model) tea.Cmd {
+				removeItem(mm.cur(), idx)
+				mm.markDirty()
+				return nil
+			})
 		}
 	case "D":
 		if n > 0 {

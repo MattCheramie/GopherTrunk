@@ -31,6 +31,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "space":
 		return tea.KeyMsg{Type: tea.KeySpace}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -207,5 +209,72 @@ func TestSaveReloadRoundTrip(t *testing.T) {
 	rows := m2.talkgroups["metro.csv"]
 	if len(rows) != 1 || rows[0].Decimal != 101 || rows[0].AlphaTag != "PD" {
 		t.Fatalf("talkgroups did not round-trip: %+v", rows)
+	}
+}
+
+func TestOpenModalFileOps(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := config.WriteConfigFile(dir+"/a.yaml", config.Default(), 0, true); err != nil {
+		t.Fatal(err)
+	}
+	m := New([]string{dir}, radioreference.Auth{}, nil, "")
+	m.width, m.height = 120, 40
+
+	m = send(m, "o") // open modal lists a.yaml
+	if m.modal == nil {
+		t.Fatalf("expected open modal")
+	}
+	// Rename a.yaml -> b.yaml.
+	m = send(m, "r")
+	for i := 0; i < len("a.yaml"); i++ {
+		m = send(m, "backspace")
+	}
+	m = send(m, "b", ".", "y", "a", "m", "l")
+	m = send(m, "enter")
+	if _, err := os.Stat(dir + "/b.yaml"); err != nil {
+		t.Fatalf("rename target missing: %v", err)
+	}
+	if _, err := os.Stat(dir + "/a.yaml"); !os.IsNotExist(err) {
+		t.Fatalf("old name should be gone")
+	}
+	// Delete b.yaml.
+	m = send(m, "d", "y")
+	if _, err := os.Stat(dir + "/b.yaml"); !os.IsNotExist(err) {
+		t.Fatalf("file should be deleted")
+	}
+}
+
+func TestListConfirmRemove(t *testing.T) {
+	m := newTestModel()
+	m.cfg.Trunking.Systems = []config.SystemConfig{
+		{Name: "A", Protocol: "p25"}, {Name: "B", Protocol: "p25"},
+	}
+	m = gotoSection(m, "trunking")
+	m = send(m, "enter") // drill into Systems list
+	m = send(m, "d")     // request remove of item 0
+	if m.modal == nil {
+		t.Fatalf("expected confirm modal before removal")
+	}
+	if len(m.cfg.Trunking.Systems) != 2 {
+		t.Fatalf("nothing should be removed before confirm")
+	}
+	m = send(m, "y") // confirm
+	if len(m.cfg.Trunking.Systems) != 1 || m.cfg.Trunking.Systems[0].Name != "B" {
+		t.Fatalf("expected only B to remain, got %+v", m.cfg.Trunking.Systems)
+	}
+}
+
+func TestRRModalByIDMode(t *testing.T) {
+	m := newTestModel() // empty RR auth → error step, but mode nav still safe
+	m = gotoSection(m, "trunking")
+	m = send(m, "enter") // Systems list
+	m = send(m, "r")     // RR modal
+	if m.modal == nil {
+		t.Fatalf("expected RR modal")
+	}
+	// Without creds the modal is in the error step; esc closes without panic.
+	m = send(m, "esc")
+	if m.modal != nil {
+		t.Fatalf("expected modal closed")
 	}
 }

@@ -1,6 +1,8 @@
 package configtui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -60,26 +62,80 @@ type fileEntry struct {
 	valid bool
 }
 
+type openMode int
+
+const (
+	openBrowse openMode = iota
+	openRename
+	openConfirmDelete
+)
+
 type openModal struct {
+	dirs  []string
 	files []fileEntry
 	idx   int
+	mode  openMode
+	input textinput.Model
+	err   string
 }
 
 func newOpenModal(m *Model) modal {
-	var files []fileEntry
-	for _, d := range m.dirs {
+	o := &openModal{dirs: m.dirs, input: textinput.New()}
+	o.refresh()
+	return o
+}
+
+func (o *openModal) refresh() {
+	o.files = nil
+	for _, d := range o.dirs {
 		for _, p := range config.DirConfigFiles(d) {
 			valid := true
 			if _, err := config.Load(p); err != nil {
 				valid = false
 			}
-			files = append(files, fileEntry{path: p, valid: valid})
+			o.files = append(o.files, fileEntry{path: p, valid: valid})
 		}
 	}
-	return &openModal{files: files}
+	if o.idx >= len(o.files) {
+		o.idx = max(0, len(o.files)-1)
+	}
 }
 
 func (o *openModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
+	switch o.mode {
+	case openRename:
+		switch msg.String() {
+		case "esc":
+			o.mode = openBrowse
+		case "enter":
+			from := o.files[o.idx].path
+			to := joinPath(dirOf(from), strings.TrimSpace(o.input.Value()))
+			if err := os.Rename(from, to); err != nil {
+				o.err = err.Error()
+			}
+			o.mode = openBrowse
+			o.refresh()
+		default:
+			var cmd tea.Cmd
+			o.input, cmd = o.input.Update(msg)
+			return o, cmd
+		}
+		return o, nil
+	case openConfirmDelete:
+		switch msg.String() {
+		case "y", "enter":
+			if err := os.Remove(o.files[o.idx].path); err != nil {
+				o.err = err.Error()
+			}
+			o.mode = openBrowse
+			o.refresh()
+		case "n", "esc":
+			o.mode = openBrowse
+		}
+		return o, nil
+	}
+
+	// browse
 	switch msg.String() {
 	case "esc", "q":
 		return nil, nil
@@ -94,13 +150,30 @@ func (o *openModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 	case "enter":
 		if len(o.files) > 0 {
 			m.loadPath(o.files[o.idx].path)
+			return nil, nil
 		}
-		return nil, nil
+	case "r":
+		if len(o.files) > 0 {
+			o.mode = openRename
+			o.input.SetValue(filepath.Base(o.files[o.idx].path))
+			o.input.CursorEnd()
+			o.input.Focus()
+		}
+	case "d":
+		if len(o.files) > 0 {
+			o.mode = openConfirmDelete
+		}
 	}
 	return o, nil
 }
 
 func (o *openModal) View(w, h int) string {
+	if o.mode == openRename {
+		return boxTitle("Rename file", "rename: "+o.input.View()+"\n\n[enter] rename   [esc] cancel")
+	}
+	if o.mode == openConfirmDelete {
+		return boxTitle("Delete file", "Delete "+o.files[o.idx].path+" ?\n\n[y] yes   [n] no")
+	}
 	if len(o.files) == 0 {
 		return boxTitle("Open config", "No config files found in the discovery directories.\n\n[esc] cancel")
 	}
@@ -116,7 +189,11 @@ func (o *openModal) View(w, h int) string {
 		}
 		b.WriteString(cursor + f.path + flag + "\n")
 	}
-	b.WriteString("\n[↑↓] move   [enter] open   [esc] cancel")
+	if o.err != "" {
+		b.WriteString(stErr.Render("! " + o.err))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n[↑↓] move   [enter] open   [r] rename   [d] delete   [esc] cancel")
 	return boxTitle("Open config", b.String())
 }
 
@@ -156,7 +233,8 @@ func (s *saveModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 }
 
 func (s *saveModal) View(w, h int) string {
-	return boxTitle("Save config as", s.input.View()+"\n\n[enter] save   [esc] cancel")
+	return boxTitle("Save config as",
+		s.input.View()+"\n\nMissing parent folders are created automatically.\n[enter] save   [esc] cancel")
 }
 
 // ---- yaml preview ----
