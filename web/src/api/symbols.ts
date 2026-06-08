@@ -12,10 +12,32 @@ export interface SymbolFrame {
   // (e.g. P25 CQPSK). When present it is aligned index-for-index with
   // dibits.
   soft: number[];
+  // Complex symbol-decision points (the true constellation): in-phase /
+  // quadrature components sampled at each symbol instant. Populated only
+  // on the linear/CQPSK path; empty on C4FM. When present they are
+  // aligned index-for-index with dibits.
+  sym_i: number[];
+  sym_q: number[];
+  // Bounded window of oversampled, AGC-scaled matched-filter output
+  // (eye_sps samples per symbol) for the C4FM eye diagram; empty on
+  // CQPSK. Fold over eye_sps to render the 4-level eye.
+  eye_soft: number[];
+  eye_sps: number;
   // Sliced decisions: 0..3 when is_bits is false, 0..1 when true.
   dibits: number[];
   is_bits: boolean;
   base_idx: number;
+  // Receiver-state metrics for the Tuning panel. carrier_offset_hz is the
+  // AFC estimate (C4FM) or carrier-recovery estimate (CQPSK); agc_level
+  // the C4FM symbol-AGC mean|x| or CQPSK matched-filter gain; agc_target
+  // the C4FM AGC target (0 on CQPSK); clock_mu/clock_sps the symbol-clock
+  // loop state; cma_error the CQPSK equalizer convergence proxy (0 on C4FM).
+  carrier_offset_hz: number;
+  agc_level: number;
+  agc_target: number;
+  clock_mu: number;
+  clock_sps: number;
+  cma_error: number;
 }
 
 export type SymbolFrameHandler = (f: SymbolFrame) => void;

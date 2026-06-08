@@ -22,6 +22,43 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Plots hub** (`/plots`) — one tabbed home for the per-channel signal
+  scopes (Constellation, Symbol scope, Eye diagram, Tuning, Histogram),
+  mirroring OP25's Plots tabs (#557 follow-up). The chosen sub-tab is
+  reflected in the URL (`/plots/<tab>`); the individual routes still work
+  for deep links, and the wideband Spectrum waterfall stays its own tab.
+  This replaces the five separate scope entries in the nav with one.
+- **Symbol histogram panel** (`/histogram`) — the recovered-symbol
+  distribution plus a derived signal-quality readout (#557 follow-up). A
+  scrambled P25 channel spreads evenly, so each of the four bins should
+  sit near 25%; a **Balance** meter flags a skewed (collapsed-eye)
+  distribution, and for C4FM an **SNR (MER)** estimate is derived from the
+  soft-level separation vs within-level spread. Computed client-side off
+  the existing symbol stream.
+- **Tuning panel** (`/tuning`) — live receiver-state meters, GopherTrunk's
+  take on OP25's Mixer / Tuner (FLL) tabs (#557 follow-up). Trends the
+  demod's residual carrier-frequency-offset estimate (should converge to
+  0 Hz on lock) and surfaces AGC level/target, symbol-clock μ/sps and (on
+  CQPSK) the equalizer's CMA-error convergence proxy — all read live from
+  the production receiver and carried on the existing symbol stream.
+- **Eye diagram panel** (`/eye`) — GopherTrunk's take on OP25's datascope
+  (#557 follow-up). The daemon's C4FM receiver gains an oversampled,
+  AGC-scaled eye tap; the panel folds it over the symbol period and
+  overlays the windows so the four-level eye is visible. A healthy channel
+  shows four open bands with clear gaps at the decision instant; a closed
+  eye flags symbol-timing or SNR trouble. C4FM only (CQPSK's quality view
+  is the constellation).
+- **True symbol constellation** on the Constellation panel (#557 follow-up).
+  The panel gains a **View** toggle: **Symbols** (new default) plots the
+  receiver's actual symbol-decision points — for **P25 CQPSK/LSM** a real
+  complex constellation that forms four tight clusters on the ±45°/±135°
+  diagonals on a clean signal and smears to an X as the eye closes; for
+  **P25 C4FM** the four recovered soft levels on the real axis (its open
+  4-level eye remains the Symbol scope's job). Amber rings mark the ideal
+  cluster centres. The previous wideband-IQ scatter is still available as
+  **Vector scope (raw IQ)** for identifying unknown signals. The symbols
+  stream reuses the live receiver (`WS /api/v1/diag/symbols`), so it shows
+  exactly what the production demod sees.
 
 ### Fixed
 

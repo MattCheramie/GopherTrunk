@@ -13,10 +13,12 @@
 //
 // Phase 1 supports P25 Phase 1: C4FM emits the FM-discriminator soft
 // waveform aligned index-for-index with the sliced dibits; CQPSK emits
-// the dibits only (the receiver has no soft tap on that path yet). Other
-// protocols — and a soft waveform for them — are a follow-up that adds a
-// uniform soft tap to the remaining receivers; the Frame shape and this
-// API are designed to absorb that without change.
+// the complex symbol-decision points (SymI/SymQ) — the true
+// constellation — alongside the dibits, but no real soft track (its
+// quality view is the constellation, not a 4-level eye). Other protocols
+// — and a soft waveform for them — are a follow-up that adds a uniform
+// soft tap to the remaining receivers; the Frame shape and this API are
+// designed to absorb that without change.
 package symbolscope
 
 import (
@@ -39,21 +41,60 @@ const p25DeviationHz = 1800.0
 // matching the diag stream's ~50 ms cadence.
 const defaultFrameSymbols = 256
 
+// maxEyeSamples bounds the oversampled eye window carried per frame. At
+// 10 sps that is ~150 symbols of overlay — ample to render a stable eye —
+// while keeping the WS payload modest (the oversampled stream is sps×
+// the soft rate, so it is capped rather than sent in full).
+const maxEyeSamples = 1536
+
 // Frame is one batch of recovered symbols. Soft is the pre-slicer soft
 // waveform (empty when the demod path exposes no soft tap, e.g. P25
 // CQPSK); Dibits are the sliced decisions (values 0..3 when IsBits is
 // false, 0..1 when true). When Soft is non-empty it is aligned
 // index-for-index with Dibits. BaseIdx is the absolute symbol index the
 // batch starts at, so a client can detect gaps.
+//
+// SymI/SymQ are the complex symbol-decision points — the true
+// symbol-domain constellation sampled at each recovered symbol instant.
+// They are populated only on the linear/CQPSK path (the post-Costas
+// π/4-DQPSK points, which cluster at the four ±45°/±135° positions on a
+// clean signal); the C4FM path leaves them empty because its symbol
+// domain is the real 4-level soft already carried in Soft. When
+// non-empty they are aligned index-for-index with Dibits.
 type Frame struct {
 	TimestampNs  int64     `json:"ts_ns"`
 	SymbolRateHz float64   `json:"symbol_rate_hz"`
 	CenterHz     uint32    `json:"center_hz"`
 	OffsetHz     int32     `json:"offset_hz"`
 	Soft         []float32 `json:"soft"`
-	Dibits       []uint8   `json:"dibits"`
-	IsBits       bool      `json:"is_bits"`
-	BaseIdx      int       `json:"base_idx"`
+	SymI         []float32 `json:"sym_i"`
+	SymQ         []float32 `json:"sym_q"`
+	// EyeSoft is a window of the oversampled, AGC-scaled matched-filter
+	// output (EyeSPS samples per symbol) on the C4FM path — fold it over
+	// the symbol period for the 4-level eye diagram. Empty on paths
+	// without an eye tap (CQPSK). It is NOT aligned with Dibits (it runs
+	// EyeSPS× faster) and is a bounded recent window, not the full
+	// stream. EyeSPS is the integer samples-per-symbol to fold on.
+	EyeSoft []float32 `json:"eye_soft"`
+	EyeSPS  int       `json:"eye_sps"`
+	Dibits  []uint8   `json:"dibits"`
+	IsBits  bool      `json:"is_bits"`
+	BaseIdx int       `json:"base_idx"`
+
+	// Receiver-state metrics, read from the live receiver each frame —
+	// the data behind the Tuning panel (OP25's Mixer / Tuner-FLL). The
+	// getters are demod-specific: CarrierOffsetHz is the AFC estimate on
+	// C4FM and the carrier-recovery estimate on CQPSK; ClockMu/ClockSPS
+	// come from Mueller-Müller (C4FM) or Gardner (CQPSK); AGCLevel is the
+	// C4FM symbol-AGC mean|x| or the CQPSK matched-filter AGC gain, with
+	// AGCTarget set only on C4FM; CMAError is the CQPSK equalizer
+	// convergence proxy (0 on C4FM).
+	CarrierOffsetHz float64 `json:"carrier_offset_hz"`
+	AGCLevel        float64 `json:"agc_level"`
+	AGCTarget       float64 `json:"agc_target"`
+	ClockMu         float64 `json:"clock_mu"`
+	ClockSPS        float64 `json:"clock_sps"`
+	CMAError        float64 `json:"cma_error"`
 }
 
 // Options configures an Engine.
@@ -103,12 +144,21 @@ type Engine struct {
 	chanBuf []complex64
 
 	// Per-frame accumulators. soft grows in lockstep with dibits on the
-	// C4FM path; it stays empty on paths without a soft tap.
+	// C4FM path; it stays empty on paths without a soft tap. pendSym
+	// grows in lockstep with dibits on the CQPSK path (the complex
+	// constellation points); it stays empty on the C4FM path.
 	pendSoft   []float32
+	pendSym    []complex64
 	pendDibits []uint8
-	isBits     bool
-	baseIdx    int // absolute symbol index of pendDibits[0]
-	totalSyms  int // symbols seen across the whole stream
+	// pendEye accumulates oversampled eye samples (C4FM); it runs faster
+	// than the symbol stream and is a bounded recent window, attached to
+	// each flushed frame and cleared. eyeSPS is the fold period.
+	pendEye   []float32
+	eyeSPS    int
+	isCQPSK   bool // selects which receiver getters to read for metrics
+	isBits    bool
+	baseIdx   int // absolute symbol index of pendDibits[0]
+	totalSyms int // symbols seen across the whole stream
 }
 
 // New constructs an Engine. Returns an error for an unsupported
@@ -146,6 +196,7 @@ func New(opts Options) (*Engine, error) {
 		centerHz:     opts.CenterHz,
 		offsetHz:     opts.OffsetHz,
 		frameSymbols: frameSymbols,
+		isCQPSK:      demodMode == p25phase1rx.DemodCQPSK,
 		nowNs:        nowNs,
 		emit:         opts.Emit,
 	}
@@ -159,6 +210,8 @@ func New(opts Options) (*Engine, error) {
 		DeviationHz:  p25DeviationHz,
 		DemodMode:    demodMode,
 		SoftSink:     e.onSoft,
+		SymbolSink:   e.onSymbols,
+		EyeSink:      e.onEye,
 		DibitSink:    e.onDibits,
 	})
 	return e, nil
@@ -178,6 +231,23 @@ func (e *Engine) Process(iq []complex64) {
 // the same batch, pairs them with the sliced decisions.
 func (e *Engine) onSoft(soft []float32) {
 	e.pendSoft = append(e.pendSoft, soft...)
+}
+
+// onSymbols stashes the complex symbol-decision points (CQPSK path);
+// onDibits pairs them with the sliced decisions, exactly as onSoft does
+// for the C4FM soft track.
+func (e *Engine) onSymbols(syms []complex64) {
+	e.pendSym = append(e.pendSym, syms...)
+}
+
+// onEye accumulates the oversampled eye samples (C4FM), keeping only the
+// most recent maxEyeSamples so the per-frame window stays bounded.
+func (e *Engine) onEye(samples []float32, sps int) {
+	e.eyeSPS = sps
+	e.pendEye = append(e.pendEye, samples...)
+	if len(e.pendEye) > maxEyeSamples {
+		e.pendEye = e.pendEye[len(e.pendEye)-maxEyeSamples:]
+	}
 }
 
 func (e *Engine) onDibits(dibits []uint8, _ int) {
@@ -216,24 +286,77 @@ func (e *Engine) flush(n int) {
 		e.pendSoft = e.pendSoft[:0]
 	}
 
+	// Complex symbol track (CQPSK), carried only when it stayed aligned
+	// with the dibit stream — the same guard the soft track uses.
+	var symI, symQ []float32
+	if len(e.pendSym) == len(e.pendDibits) {
+		symI = make([]float32, n)
+		symQ = make([]float32, n)
+		for i, s := range e.pendSym[:n] {
+			symI[i] = real(s)
+			symQ[i] = imag(s)
+		}
+		e.pendSym = e.pendSym[n:]
+	} else {
+		e.pendSym = e.pendSym[:0]
+	}
+
+	// Eye window (C4FM): hand the current bounded window to this frame and
+	// clear it, so a later flush in the same drain doesn't duplicate it.
+	var eye []float32
+	if len(e.pendEye) > 0 {
+		eye = make([]float32, len(e.pendEye))
+		copy(eye, e.pendEye)
+		e.pendEye = e.pendEye[:0]
+	}
+
 	frame := Frame{
 		TimestampNs:  e.nowNs(),
 		SymbolRateHz: e.symbolRateHz,
 		CenterHz:     e.centerHz,
 		OffsetHz:     e.offsetHz,
 		Soft:         soft,
+		SymI:         symI,
+		SymQ:         symQ,
+		EyeSoft:      eye,
+		EyeSPS:       e.eyeSPS,
 		Dibits:       dibits,
 		IsBits:       e.isBits,
 		BaseIdx:      e.baseIdx,
 	}
+	e.stampMetrics(&frame)
 	e.pendDibits = e.pendDibits[n:]
 	e.baseIdx += n
 	e.emit(frame)
 }
 
+// stampMetrics reads the live receiver's state getters into the frame.
+// The getters are demod-specific (Mueller-Müller vs Gardner, AFC vs
+// carrier-recovery), so this routes by the configured demod mode.
+func (e *Engine) stampMetrics(f *Frame) {
+	if e.rx == nil {
+		return
+	}
+	if e.isCQPSK {
+		f.CarrierOffsetHz = e.rx.CQPSKCarrierOffsetHz()
+		f.AGCLevel = e.rx.CQPSKAGCGain()
+		f.ClockMu = e.rx.GardnerMu()
+		f.ClockSPS = e.rx.GardnerSPS()
+		f.CMAError = e.rx.CMAError()
+		return
+	}
+	f.CarrierOffsetHz = e.rx.AFCOffsetHz()
+	f.AGCLevel = e.rx.AGCLevel()
+	f.AGCTarget = e.rx.AGCTarget()
+	f.ClockMu = e.rx.MMClockMu()
+	f.ClockSPS = e.rx.MMClockSPS()
+}
+
 // Close releases the engine. Idempotent.
 func (e *Engine) Close() error {
 	e.pendSoft = nil
+	e.pendSym = nil
+	e.pendEye = nil
 	e.pendDibits = nil
 	return nil
 }

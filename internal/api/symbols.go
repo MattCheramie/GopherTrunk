@@ -18,15 +18,34 @@ import (
 // soft tap, e.g. P25 CQPSK); Dibits are the sliced decisions (0..3 when
 // IsBits is false, 0..1 when true). When Soft is non-empty it is aligned
 // index-for-index with Dibits.
+//
+// SymI/SymQ carry the complex symbol-decision points (the true
+// constellation) on the linear/CQPSK path; empty on C4FM. When non-empty
+// they are aligned index-for-index with Dibits.
 type SymbolFrame struct {
 	TimestampNs  int64     `json:"ts_ns"`
 	SymbolRateHz float64   `json:"symbol_rate_hz"`
 	CenterHz     uint32    `json:"center_hz"`
 	OffsetHz     int32     `json:"offset_hz"`
 	Soft         []float32 `json:"soft"`
-	Dibits       []uint8   `json:"dibits"`
-	IsBits       bool      `json:"is_bits"`
-	BaseIdx      int       `json:"base_idx"`
+	SymI         []float32 `json:"sym_i"`
+	SymQ         []float32 `json:"sym_q"`
+	// EyeSoft is a bounded window of oversampled, AGC-scaled matched-
+	// filter output (EyeSPS samples per symbol) for the C4FM eye diagram;
+	// empty on CQPSK. Fold it over EyeSPS to render the 4-level eye.
+	EyeSoft []float32 `json:"eye_soft"`
+	EyeSPS  int       `json:"eye_sps"`
+	Dibits  []uint8   `json:"dibits"`
+	IsBits  bool      `json:"is_bits"`
+	BaseIdx int       `json:"base_idx"`
+
+	// Receiver-state metrics for the Tuning panel (see symbolscope.Frame).
+	CarrierOffsetHz float64 `json:"carrier_offset_hz"`
+	AGCLevel        float64 `json:"agc_level"`
+	AGCTarget       float64 `json:"agc_target"`
+	ClockMu         float64 `json:"clock_mu"`
+	ClockSPS        float64 `json:"clock_sps"`
+	CMAError        float64 `json:"cma_error"`
 }
 
 // SymbolProvider is the daemon-side abstraction the symbol endpoint

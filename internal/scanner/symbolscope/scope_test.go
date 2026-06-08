@@ -71,8 +71,18 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 	// Per-dibit soft accumulators across all frames.
 	var sum [4]float64
 	var cnt [4]int
+	var sawEye bool
 	wantBase := 0
 	for fi, f := range frames {
+		if len(f.EyeSoft) > 0 {
+			sawEye = true
+			if f.EyeSPS < 2 {
+				t.Errorf("frame %d: EyeSPS = %d, want >= 2 (oversampled fold period)", fi, f.EyeSPS)
+			}
+			if len(f.EyeSoft) > maxEyeSamples {
+				t.Errorf("frame %d: EyeSoft len %d exceeds cap %d", fi, len(f.EyeSoft), maxEyeSamples)
+			}
+		}
 		if f.IsBits {
 			t.Errorf("frame %d: IsBits = true, want false for C4FM dibits", fi)
 		}
@@ -89,6 +99,11 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 		if f.TimestampNs != 42 {
 			t.Errorf("frame %d: TimestampNs = %d, want 42 (injected clock)", fi, f.TimestampNs)
 		}
+		// C4FM's symbol domain is the real 4-level soft, not a complex
+		// constellation — the SymI/SymQ track stays empty on this path.
+		if len(f.SymI) != 0 || len(f.SymQ) != 0 {
+			t.Errorf("frame %d: C4FM should carry no complex symbol track, got SymI=%d SymQ=%d", fi, len(f.SymI), len(f.SymQ))
+		}
 		for i, d := range f.Dibits {
 			if d > 3 {
 				t.Fatalf("frame %d: dibit %d out of range", fi, d)
@@ -96,6 +111,26 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 			sum[d] += float64(f.Soft[i])
 			cnt[d]++
 		}
+	}
+
+	// The C4FM path must surface the oversampled eye window for the
+	// datascope — the open 4-level eye view a 1/symbol soft track can't give.
+	if !sawEye {
+		t.Error("C4FM path emitted no eye window (EyeSoft empty on every frame)")
+	}
+
+	// Receiver-state metrics for the Tuning panel: the C4FM path reports a
+	// Mueller-Müller clock (ClockSPS > 0) and a calibrated symbol-AGC
+	// target (DeviationHz was set), but never a CMA error (CQPSK-only).
+	last := frames[len(frames)-1]
+	if last.ClockSPS <= 0 {
+		t.Errorf("C4FM ClockSPS = %v, want > 0 (Mueller-Müller nominal sps)", last.ClockSPS)
+	}
+	if last.AGCTarget <= 0 {
+		t.Errorf("C4FM AGCTarget = %v, want > 0 (calibrated from DeviationHz)", last.AGCTarget)
+	}
+	if last.CMAError != 0 {
+		t.Errorf("C4FM CMAError = %v, want 0 (no CMA stage on C4FM)", last.CMAError)
 	}
 
 	// All four levels should be populated, and their mean soft values
@@ -120,10 +155,12 @@ func TestC4FMRecoversSoftAndDibits(t *testing.T) {
 	}
 }
 
-// TestCQPSKEmitsDibitsWithoutSoft locks in the honest Phase-1 contract:
-// the CQPSK path has no soft tap, so frames carry dibits but an empty
-// soft track.
-func TestCQPSKEmitsDibitsWithoutSoft(t *testing.T) {
+// TestCQPSKEmitsComplexSymbolsWithoutSoft locks in the Phase-1 contract
+// for the linear path: CQPSK has no real soft tap (its quality view is
+// the constellation), so frames carry an empty Soft track but a complex
+// symbol-decision track (SymI/SymQ) aligned index-for-index with the
+// dibits.
+func TestCQPSKEmitsComplexSymbolsWithoutSoft(t *testing.T) {
 	iq, _ := makeC4FMIQ(960_000, 4000) // any IQ drives the Gardner loop
 
 	var frames []Frame
@@ -142,15 +179,44 @@ func TestCQPSKEmitsDibitsWithoutSoft(t *testing.T) {
 	if len(frames) == 0 {
 		t.Fatal("no frames emitted on CQPSK path")
 	}
+	sawSymbols := false
 	for fi, f := range frames {
 		if len(f.Soft) != 0 {
 			t.Errorf("frame %d: CQPSK soft track should be empty, got %d", fi, len(f.Soft))
+		}
+		if len(f.EyeSoft) != 0 {
+			t.Errorf("frame %d: CQPSK eye track should be empty (C4FM-only), got %d", fi, len(f.EyeSoft))
+		}
+		// The complex symbol track, when present, must be aligned with the
+		// dibits on both axes — that pairing is what lets a client colour
+		// constellation points by their decided dibit.
+		if len(f.SymI) != len(f.SymQ) {
+			t.Fatalf("frame %d: SymI len %d != SymQ len %d", fi, len(f.SymI), len(f.SymQ))
+		}
+		if len(f.SymI) != 0 {
+			if len(f.SymI) != len(f.Dibits) {
+				t.Fatalf("frame %d: symbol track len %d != dibit len %d", fi, len(f.SymI), len(f.Dibits))
+			}
+			sawSymbols = true
 		}
 		for _, d := range f.Dibits {
 			if d > 3 {
 				t.Fatalf("frame %d: dibit %d out of range", fi, d)
 			}
 		}
+	}
+	if !sawSymbols {
+		t.Fatal("CQPSK path emitted no complex symbol points")
+	}
+
+	// Tuning metrics on the CQPSK path: a Gardner clock (ClockSPS > 0) and
+	// no C4FM symbol-AGC target (that getter is C4FM-only).
+	last := frames[len(frames)-1]
+	if last.ClockSPS <= 0 {
+		t.Errorf("CQPSK ClockSPS = %v, want > 0 (Gardner nominal sps)", last.ClockSPS)
+	}
+	if last.AGCTarget != 0 {
+		t.Errorf("CQPSK AGCTarget = %v, want 0 (C4FM-only getter)", last.AGCTarget)
 	}
 }
 

@@ -20,9 +20,19 @@ const LS_KEYS = {
   constellationDcBlock: "gt.constellation.dcBlock",
   constellationAutoScale: "gt.constellation.autoScale",
   constellationZoom: "gt.constellation.zoom",
+  constellationView: "gt.constellation.view",
+  constellationProto: "gt.constellation.proto",
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
+  eyeOffsetKHz: "gt.eye.offsetKHz",
+  eyeHold: "gt.eye.hold",
+  tuningOffsetKHz: "gt.tuning.offsetKHz",
+  tuningHold: "gt.tuning.hold",
+  tuningProto: "gt.tuning.proto",
+  histogramOffsetKHz: "gt.histogram.offsetKHz",
+  histogramHold: "gt.histogram.hold",
+  histogramProto: "gt.histogram.proto",
 } as const;
 
 const SS_KEYS = {
@@ -179,6 +189,23 @@ export const prefs = {
   setConstellationZoom(z: number) {
     writeLS(LS_KEYS.constellationZoom, String(Math.max(0.5, Math.min(8, z))));
   },
+  // Constellation render source: "symbols" plots the receiver's
+  // symbol-decision points (the true constellation — tight clusters for
+  // CQPSK, the 4 soft levels for C4FM); "raw" plots the wideband
+  // decimated IQ trajectory (a vector scope). Default "symbols".
+  constellationView(): "symbols" | "raw" {
+    return readLS(LS_KEYS.constellationView) === "raw" ? "raw" : "symbols";
+  },
+  setConstellationView(v: "symbols" | "raw") {
+    writeLS(LS_KEYS.constellationView, v);
+  },
+  // Receiver selector for the symbols view ("p25-c4fm" / "p25-cqpsk").
+  constellationProto(): string {
+    return readLS(LS_KEYS.constellationProto) ?? "p25-cqpsk";
+  },
+  setConstellationProto(p: string) {
+    writeLS(LS_KEYS.constellationProto, p);
+  },
 
   // Symbol-scope panel view options. Offset (kHz, relative to the SDR
   // centre) tunes a locked channel under the scope; Hold pins it (off =
@@ -203,6 +230,70 @@ export const prefs = {
   },
   setSymbolScopeProto(p: string) {
     writeLS(LS_KEYS.symbolScopeProto, p);
+  },
+
+  // Eye-diagram panel view options (C4FM datascope). Same offset/Hold
+  // semantics as the Symbol scope.
+  eyeOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.eyeOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setEyeOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.eyeOffsetKHz, String(khz));
+  },
+  eyeHold(): boolean {
+    return readLS(LS_KEYS.eyeHold) === "1";
+  },
+  setEyeHold(on: boolean) {
+    writeLS(LS_KEYS.eyeHold, on ? "1" : "0");
+  },
+
+  // Tuning panel view options (receiver-state meters).
+  tuningOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.tuningOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setTuningOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.tuningOffsetKHz, String(khz));
+  },
+  tuningHold(): boolean {
+    return readLS(LS_KEYS.tuningHold) === "1";
+  },
+  setTuningHold(on: boolean) {
+    writeLS(LS_KEYS.tuningHold, on ? "1" : "0");
+  },
+  tuningProto(): string {
+    return readLS(LS_KEYS.tuningProto) ?? "p25-c4fm";
+  },
+  setTuningProto(p: string) {
+    writeLS(LS_KEYS.tuningProto, p);
+  },
+
+  // Symbol-histogram panel view options.
+  histogramOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.histogramOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setHistogramOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.histogramOffsetKHz, String(khz));
+  },
+  histogramHold(): boolean {
+    return readLS(LS_KEYS.histogramHold) === "1";
+  },
+  setHistogramHold(on: boolean) {
+    writeLS(LS_KEYS.histogramHold, on ? "1" : "0");
+  },
+  histogramProto(): string {
+    return readLS(LS_KEYS.histogramProto) ?? "p25-c4fm";
+  },
+  setHistogramProto(p: string) {
+    writeLS(LS_KEYS.histogramProto, p);
   },
 
   /** Clear all GopherTrunk-owned keys. Used by Settings → "forget this device". */

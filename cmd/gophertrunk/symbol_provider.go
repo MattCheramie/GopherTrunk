@@ -100,9 +100,20 @@ func (p *symbolProvider) OpenSymbolStream(ctx context.Context, serial, proto str
 				CenterHz:     f.CenterHz,
 				OffsetHz:     f.OffsetHz,
 				Soft:         f.Soft,
+				SymI:         f.SymI,
+				SymQ:         f.SymQ,
+				EyeSoft:      f.EyeSoft,
+				EyeSPS:       f.EyeSPS,
 				Dibits:       f.Dibits,
 				IsBits:       f.IsBits,
 				BaseIdx:      f.BaseIdx,
+
+				CarrierOffsetHz: f.CarrierOffsetHz,
+				AGCLevel:        f.AGCLevel,
+				AGCTarget:       f.AGCTarget,
+				ClockMu:         f.ClockMu,
+				ClockSPS:        f.ClockSPS,
+				CMAError:        f.CMAError,
 			}
 			// Non-blocking: drop on a wedged WS client rather than
 			// stalling the broker drain goroutine.
