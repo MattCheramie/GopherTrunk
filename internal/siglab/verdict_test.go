@@ -57,3 +57,23 @@ func TestEvaluateAcceptance(t *testing.T) {
 		t.Errorf("expected 2 failures, got %d: %v", len(fail.Failures), fail.Failures)
 	}
 }
+
+func TestEvaluateAcceptanceDemodBounds(t *testing.T) {
+	r := &Result{
+		Signal: &SignalQuality{Demod: &DemodMetrics{Modulation: "c4fm", EVMPct: 12.0, SNREstimateDB: 18.0}},
+	}
+	if v := evaluateAcceptance(r, &Acceptance{MaxEVMPct: 15, MinSNRdB: 15}); !v.Pass {
+		t.Errorf("expected pass within EVM/SNR bounds, got %v", v.Failures)
+	}
+	if v := evaluateAcceptance(r, &Acceptance{MaxEVMPct: 10}); v.Pass {
+		t.Error("expected EVM failure (12%% > 10%%)")
+	}
+	if v := evaluateAcceptance(r, &Acceptance{MinSNRdB: 20}); v.Pass {
+		t.Error("expected SNR failure (18 dB < 20 dB)")
+	}
+	// Missing demod metrics fails a required bound rather than silently passing.
+	bare := &Result{Signal: &SignalQuality{}}
+	if v := evaluateAcceptance(bare, &Acceptance{MaxEVMPct: 15}); v.Pass {
+		t.Error("expected failure when demod metrics absent but EVM bound set")
+	}
+}

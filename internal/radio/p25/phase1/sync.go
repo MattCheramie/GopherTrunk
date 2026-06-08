@@ -131,6 +131,20 @@ func (s *SyncDetector) Process(dst []int, src []uint8, baseIndex int) ([]int, in
 // Pass nil for rots to let the detector allocate; the returned rots
 // slice is non-nil whenever dst is non-empty after this call.
 func (s *SyncDetector) ProcessWithRotation(dst []int, rots []uint8, src []uint8, baseIndex int) ([]int, []uint8, int) {
+	dst, rots, _, next := s.ProcessWithMargin(dst, rots, nil, src, baseIndex)
+	return dst, rots, next
+}
+
+// ProcessWithMargin behaves like ProcessWithRotation but additionally returns,
+// per emitted hit, the correlation margin: tolerance+1 − bestMismatch, where
+// bestMismatch is the fewest dibit-symbol mismatches the FSW matched at across
+// the tried rotations. A perfect 24/24 hit at tolerance 4 has margin 5; a hit
+// that only just cleared tolerance has margin 1. The distribution of this
+// number over a capture is the sync-health metric the measurement harness
+// reports — a margin pressed against 1 means sync is barely holding and a
+// little more noise would drop the lock. dst, rots and margins stay in
+// lockstep; pass nil for any to let the detector allocate.
+func (s *SyncDetector) ProcessWithMargin(dst []int, rots []uint8, margins []int, src []uint8, baseIndex int) ([]int, []uint8, []int, int) {
 	rotations := resolveRotations(s.rotations)
 	for i, d := range src {
 		s.hist[s.pos] = d
@@ -164,7 +178,8 @@ func (s *SyncDetector) ProcessWithRotation(dst []int, rots []uint8, src []uint8,
 		if bestMis <= s.tolerance {
 			dst = append(dst, baseIndex+i)
 			rots = append(rots, bestRot)
+			margins = append(margins, s.tolerance+1-bestMis)
 		}
 	}
-	return dst, rots, baseIndex + len(src)
+	return dst, rots, margins, baseIndex + len(src)
 }

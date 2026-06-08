@@ -141,11 +141,19 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			iqTap.observeSoft(soft)
 		}
 	}
+	// constTap carries the complex symbol-decision points (CQPSK / linear
+	// path) into the analyzer so the demod-quality metrics can use the
+	// constellation estimators. Only the P25 deep path's CQPSK mode fires it.
+	constTap := func(pts []complex64) {
+		if an != nil {
+			an.observeConstellation(pts)
+		}
+	}
 
 	// Build the run bundle: either a generic factory pipeline (any protocol)
 	// or the P25 Phase 1 deep path (direct receiver + control channel with
 	// soft/state capture and the experimental bisect knobs).
-	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap)
+	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap)
 	if err != nil {
 		sub.Close()
 		bus.Close()
@@ -373,9 +381,9 @@ type runBundle struct {
 // when requested, otherwise the generic factory pipeline (any protocol). Both
 // publish lock/grant/decode-error events to bus and feed symbolTap; only the
 // deep path feeds softTap and exposes state/ccStats.
-func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32)) (*runBundle, error) {
+func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64)) (*runBundle, error) {
 	if cfg.wantP25Deep() {
-		return buildP25DeepBundle(cfg, bus, logger, receiverRate, symbolTap, softTap)
+		return buildP25DeepBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap)
 	}
 	pipe, ok, err := ccdecoder.NewPipeline(cfg.Protocol, ccdecoder.PipelineOptions{
 		Bus:          bus,

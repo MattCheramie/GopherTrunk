@@ -52,6 +52,17 @@ export interface SignalQuality {
   iq_image_rejection_db: number;
   iq_observed: boolean;
   decode_error_rate_per_ksym: number;
+  demod?: DemodMetrics;
+}
+
+// DemodMetrics is the demodulator-quality summary (EVM + estimated SNR) the
+// P25 deep path derives from the recovered soft symbols. Mirrors
+// siglab.DemodMetrics.
+export interface DemodMetrics {
+  modulation: string;
+  evm_pct: number;
+  snr_estimate_db: number;
+  symbols_analyzed: number;
 }
 
 export interface RailStat {
