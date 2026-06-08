@@ -589,6 +589,124 @@ func TestEngineHandleGrantDeduplicatesDuplicateGrant(t *testing.T) {
 	}
 }
 
+// TestEngineHandleGrantFollowsFrequencyChange covers the duplicate-call bug:
+// a re-grant for an already-active talkgroup arriving on a NEW frequency (a
+// band-plan IdentifierUpdate re-mapped the channel, or the call was handed to
+// a new channel). The old code keyed the call on frequency, so the re-grant
+// missed the dedup and bound a SECOND tuner — two "Active calls" rows for the
+// same TG. Now the call is keyed on (System, GroupID, Timeslot) and the bound
+// device follows the call to the new frequency in place.
+func TestEngineHandleGrantFollowsFrequencyChange(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	pool, tuners := mkPool(2) // universal tuners (no FrequencyChecker)
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+		Now:         clock.Now,
+	})
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const f1, f2 = uint32(773_431_250), uint32(773_456_250)
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 1412, FrequencyHz: f1})
+	if got := len(e.ActiveCalls()); got != 1 {
+		t.Fatalf("first grant: active calls = %d, want 1", got)
+	}
+	firstDevice := e.ActiveCalls()[0].Device.Serial
+	firstStarted := e.ActiveCalls()[0].StartedAt
+
+	// Same logical call, new frequency, 20 ms later.
+	clock.t = clock.t.Add(20 * time.Millisecond)
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 1412, FrequencyHz: f2})
+
+	if got := len(e.ActiveCalls()); got != 1 {
+		t.Fatalf("after frequency change: active calls = %d, want 1 (duplicate-call bug)", got)
+	}
+	ac := e.ActiveCalls()[0]
+	if ac.Device.Serial != firstDevice {
+		t.Errorf("call moved devices: got %q, want %q (should follow in place)", ac.Device.Serial, firstDevice)
+	}
+	if ac.Grant.FrequencyHz != f2 {
+		t.Errorf("stored grant frequency = %d, want %d (retune did not update grant)", ac.Grant.FrequencyHz, f2)
+	}
+	if !ac.StartedAt.Equal(firstStarted) {
+		t.Errorf("StartedAt changed on follow: got %v, want %v (call continuity broken)", ac.StartedAt, firstStarted)
+	}
+	if got := tuners[0].tuned(); len(got) != 2 || got[0] != f1 || got[1] != f2 {
+		t.Errorf("device 0 tune sequence = %v, want [%d %d]", got, f1, f2)
+	}
+	if got := tuners[1].tuned(); len(got) != 0 {
+		t.Errorf("device 1 was bound on a frequency change: tuned=%v (should never happen)", got)
+	}
+
+	// Exactly one CallStart — following a call must not emit a new start.
+	deadline := time.Now().Add(200 * time.Millisecond)
+	starts := 0
+	for time.Now().Before(deadline) {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallStart {
+				starts++
+			}
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if starts != 1 {
+		t.Errorf("CallStart events = %d, want 1", starts)
+	}
+}
+
+// TestEngineHandleGrantFollowsToCapableDevice covers the follow path when the
+// bound device CANNOT reach the new frequency (the call moved outside a
+// wideband tap's window). The stale bind is released and a capable device is
+// bound to the new frequency — still exactly one active call for the TG.
+func TestEngineHandleGrantFollowsToCapableDevice(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	// Device order: a band-limited tap first, an unconstrained SDR second.
+	tap := &constrainedTuner{lo: 773_000_000, hi: 774_000_000}
+	universal := &fakeVoiceTuner{}
+	pool := NewVoicePool([]*VoiceDevice{
+		{Tuner: tap, Serial: "wb:dev:tap-0"},
+		{Tuner: universal, Serial: "phys"},
+	})
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	e, _ := NewEngine(EngineOptions{
+		Bus:         bus,
+		VoicePool:   pool,
+		Talkgroups:  NewTalkgroupDB(),
+		CallTimeout: 5 * time.Second,
+		Now:         clock.Now,
+	})
+
+	const fIn, fOut = uint32(773_431_250), uint32(850_000_000)
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 1412, FrequencyHz: fIn})
+	if got := e.ActiveCalls(); len(got) != 1 || got[0].Device.Serial != "wb:dev:tap-0" {
+		t.Fatalf("first grant should bind the tap; got %+v", got)
+	}
+
+	clock.t = clock.t.Add(20 * time.Millisecond)
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 1412, FrequencyHz: fOut})
+
+	got := e.ActiveCalls()
+	if len(got) != 1 {
+		t.Fatalf("after out-of-window move: active calls = %d, want 1", len(got))
+	}
+	if got[0].Device.Serial != "phys" {
+		t.Errorf("call did not rebind to a capable device: on %q, want phys", got[0].Device.Serial)
+	}
+	if got[0].Grant.FrequencyHz != fOut {
+		t.Errorf("rebound grant frequency = %d, want %d", got[0].Grant.FrequencyHz, fOut)
+	}
+	if len(universal.freqs) != 1 || universal.freqs[0] != fOut {
+		t.Errorf("universal device tune = %v, want [%d]", universal.freqs, fOut)
+	}
+}
+
 // TestEngineHandleGrantSeparatesTimeslots is the DMR Tier III guard:
 // two grants on the same carrier but different TDMA slots are two
 // independent calls and must each bind a device, while a repeat of a
@@ -648,19 +766,31 @@ func TestEngineHandleGrantSeparatesTimeslots(t *testing.T) {
 	}
 }
 
-// TestEngineHandleGrantAllowsDifferentFrequencyGrants is the
-// complement guard for the dedup: a same-TG grant on a different
-// frequency (rare but legitimate — e.g. site rebind on multi-site
-// systems) must NOT be suppressed.
-func TestEngineHandleGrantAllowsDifferentFrequencyGrants(t *testing.T) {
+// TestEngineHandleGrantSameTGNewFrequencyFollowsOneCall asserts the
+// logical-call identity: a same-system, same-TG (same-timeslot) grant on a
+// DIFFERENT frequency is the SAME call that moved channels — it must follow on
+// one device, NOT spawn a second active call. This previously asserted two
+// calls ("rare but legitimate site rebind"), which was exactly the duplicate-
+// "Active calls" bug operators reported (the same TG shown twice on two taps).
+func TestEngineHandleGrantSameTGNewFrequencyFollowsOneCall(t *testing.T) {
 	e, _, bus, _ := mkEngine(t, 2)
 	defer bus.Close()
 
 	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 100, FrequencyHz: 851_000_000})
 	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 100, FrequencyHz: 852_000_000})
 
+	if got := len(e.ActiveCalls()); got != 1 {
+		t.Errorf("active calls = %d, want 1 (one call followed to the new frequency)", got)
+	}
+	if got := e.ActiveCalls()[0].Grant.FrequencyHz; got != 852_000_000 {
+		t.Errorf("followed-call frequency = %d, want 852000000", got)
+	}
+
+	// A grant for the same TG on a DIFFERENT system is a distinct call and
+	// must still bind its own device.
+	e.HandleGrant(Grant{System: "Y", Protocol: "p25", GroupID: 100, FrequencyHz: 853_000_000})
 	if got := len(e.ActiveCalls()); got != 2 {
-		t.Errorf("active calls = %d, want 2 (different frequencies)", got)
+		t.Errorf("active calls = %d, want 2 (different systems are distinct calls)", got)
 	}
 }
 

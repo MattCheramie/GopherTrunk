@@ -181,6 +181,7 @@ type WriteRequest struct {
 type HuntStartReq struct {
 	Bands      []string  // "low:high" MHz
 	Candidates []float64 // MHz
+	Survey     bool      // classify+decode every carrier, not just trunking CCs
 	Name       string
 	Serial     string
 	Protocol   string

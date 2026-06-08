@@ -26,11 +26,13 @@ func (c huntCockpit) Status() api.HuntStatus {
 		RunID:      st.RunID,
 		State:      string(st.State),
 		Running:    st.Running,
+		Mode:       st.Mode,
 		Phase:      string(st.Progress.Phase),
 		Detail:     st.Progress.Detail,
 		Sites:      st.Sites,
 		Talkgroups: st.Talkgroups,
 		SystemName: st.SystemName,
+		Signals:    st.Signals,
 		Error:      st.Error,
 	}
 	if sys, reports, ok := c.mgr.Current(); ok {
@@ -66,17 +68,20 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 	}
 
 	opts := hunt.LiveHuntOptions{
-		Bands:         bands,
-		Candidates:    candidates,
-		Protocol:      proto,
-		Serial:        req.Serial,
-		FFTSize:       req.FFTSize,
-		DwellSeconds:  req.DwellSeconds,
-		MinConfidence: req.MinConfidence,
-		Name:          req.Name,
-		State:         req.State,
-		County:        req.County,
-		Location:      req.Location,
+		Bands:           bands,
+		Candidates:      candidates,
+		Protocol:        proto,
+		Survey:          req.Survey,
+		ClassifyOnly:    req.ClassifyOnly,
+		MaxDwellSeconds: req.MaxDwellSeconds,
+		Serial:          req.Serial,
+		FFTSize:         req.FFTSize,
+		DwellSeconds:    req.DwellSeconds,
+		MinConfidence:   req.MinConfidence,
+		Name:            req.Name,
+		State:           req.State,
+		County:          req.County,
+		Location:        req.Location,
 		PeakOpts: hunt.PeakOptions{
 			ThresholdDb:  float32(req.PeakThresholdDb),
 			MinSpacingHz: req.MinSpacingHz,
@@ -89,6 +94,20 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 }
 
 func (c huntCockpit) Stop() bool { return c.mgr.Stop() }
+
+// ExportSurvey serializes a run's classified signal inventory in the requested
+// format (json|csv).
+func (c huntCockpit) ExportSurvey(id int, format string) ([]byte, string, error) {
+	sf, err := hunt.ParseSurveyFormat(format)
+	if err != nil {
+		return nil, "", err
+	}
+	var buf bytes.Buffer
+	if err := c.mgr.ExportSurvey(id, &buf, sf); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), "survey." + sf.FileExtension(), nil
+}
 
 // Export serializes the latest discovered system in the requested format.
 func (c huntCockpit) Export(id int, format string) ([]byte, string, error) {

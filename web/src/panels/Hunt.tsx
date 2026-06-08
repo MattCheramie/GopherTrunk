@@ -1,10 +1,46 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
-import type { HuntStatus } from "../api/types";
+import type { DetectedSignal, HuntStatus } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
 
 const POLL_INTERVAL_MS = 2_000;
+
+// sortSignals returns a copy of the inventory sorted by the chosen column
+// (frequency ascending, class alphabetical, or SNR descending).
+function sortSignals(signals: DetectedSignal[], by: "freq" | "class" | "snr"): DetectedSignal[] {
+  const out = [...signals];
+  out.sort((a, b) => {
+    switch (by) {
+      case "class":
+        return a.class.localeCompare(b.class) || a.freq_hz - b.freq_hz;
+      case "snr":
+        return b.snr_db - a.snr_db;
+      default:
+        return a.freq_hz - b.freq_hz;
+    }
+  });
+  return out;
+}
+
+// signalDetail renders the per-class decode summary for one surveyed carrier.
+function signalDetail(sig: DetectedSignal): string {
+  if (sig.trunking) {
+    return `${sig.trunking.protocol}${sig.trunking.locked ? " (locked)" : ""}`;
+  }
+  if (sig.pages && sig.pages.length > 0) {
+    return `${sig.pages.length} page(s)`;
+  }
+  if (sig.analog?.active) {
+    const tone = sig.analog.ctcss_hz
+      ? ` CTCSS ${sig.analog.ctcss_hz.toFixed(1)}`
+      : sig.analog.dcs_code
+        ? ` DCS ${sig.analog.dcs_code}`
+        : "";
+    return `active${tone}`;
+  }
+  return "—";
+}
 
 // Hunt drives the live system-discovery (blind spectrum-sweep) cockpit: start a
 // run over operator-given bands (or a candidate list), watch its progress, and
@@ -23,6 +59,9 @@ export function Hunt() {
   const [county, setCounty] = useState("");
   const [serial, setSerial] = useState("");
   const [protocol, setProtocol] = useState("");
+  const [survey, setSurvey] = useState(false);
+  const [classifyOnly, setClassifyOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<"freq" | "class" | "snr">("freq");
 
   useEffect(() => {
     let cancel = false;
@@ -56,6 +95,8 @@ export function Hunt() {
         bands: bandList.length ? bandList : undefined,
         candidates: candList.length ? candList : undefined,
         no_sweep: candList.length > 0 && bandList.length === 0,
+        survey: survey || undefined,
+        classify_only: (survey && classifyOnly) || undefined,
         name: name || undefined,
         state: stateCode || undefined,
         county: county || undefined,
@@ -94,15 +135,54 @@ export function Hunt() {
           </div>
         ) : null}
         {status?.error ? <div className="error">Error: {status.error}</div> : null}
+        {status?.mode ? (
+          <div>
+            Mode: <strong>{status.mode}</strong>
+          </div>
+        ) : null}
         {status?.system_name ? (
           <div>
             Discovered: <strong>{status.system_name}</strong> — {status.sites} site(s),{" "}
             {status.talkgroups} talkgroup(s)
           </div>
-        ) : (
+        ) : status?.mode === "survey" ? null : (
           <div>No system discovered yet.</div>
         )}
       </section>
+
+      {status?.signals && status.signals.length > 0 ? (
+        <section className="hunt-signals">
+          <h3>Signals ({status.signals.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th onClick={() => setSortBy("freq")} style={{ cursor: "pointer" }}>
+                  Frequency{sortBy === "freq" ? " ▾" : ""}
+                </th>
+                <th onClick={() => setSortBy("class")} style={{ cursor: "pointer" }}>
+                  Class{sortBy === "class" ? " ▾" : ""}
+                </th>
+                <th>BW (kHz)</th>
+                <th onClick={() => setSortBy("snr")} style={{ cursor: "pointer" }}>
+                  SNR (dB){sortBy === "snr" ? " ▾" : ""}
+                </th>
+                <th>Decode</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortSignals(status.signals, sortBy).map((sig) => (
+                <tr key={sig.freq_hz}>
+                  <td>{(sig.freq_hz / 1e6).toFixed(4)} MHz</td>
+                  <td>{sig.class}</td>
+                  <td>{(sig.occupied_bw_hz / 1e3).toFixed(1)}</td>
+                  <td>{sig.snr_db.toFixed(1)}</td>
+                  <td>{signalDetail(sig)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section className="hunt-controls">
         <label>
@@ -137,6 +217,20 @@ export function Hunt() {
           Protocol (optional — default auto-identifies)
           <input value={protocol} onChange={(e) => setProtocol(e.target.value)} placeholder="p25" />
         </label>
+        <label className="hunt-survey-toggle">
+          <input type="checkbox" checked={survey} onChange={(e) => setSurvey(e.target.checked)} />
+          Survey mode — classify &amp; decode every signal (analog, paging, trunking)
+        </label>
+        {survey ? (
+          <label className="hunt-survey-toggle">
+            <input
+              type="checkbox"
+              checked={classifyOnly}
+              onChange={(e) => setClassifyOnly(e.target.checked)}
+            />
+            Classify only — skip decoding (fast inventory)
+          </label>
+        ) : null}
         <div className="hunt-buttons">
           <button onClick={start} disabled={!canMutate || running}>
             Start hunt
@@ -153,6 +247,14 @@ export function Hunt() {
           <a href={`${exportBase}?format=bundle`}>GopherTrunk bundle</a>
           <a href={`${exportBase}?format=trunk-recorder`}>trunk-recorder</a>
           <a href={`${exportBase}?format=rr`}>RadioReference package</a>
+        </section>
+      ) : null}
+
+      {status?.signals && status.signals.length > 0 ? (
+        <section className="hunt-export">
+          <span>Survey:</span>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>signals JSON</a>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>signals CSV</a>
         </section>
       ) : null}
 

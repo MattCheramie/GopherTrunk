@@ -9,9 +9,10 @@ vi.mock("../api/diag", () => ({
   openIQStream: vi.fn(),
 }));
 
-vi.mock("../api/symbols", () => ({
-  openSymbolStream: vi.fn(),
-}));
+vi.mock("../api/symbols", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/symbols")>();
+  return { ...actual, openSymbolStream: vi.fn() };
+});
 
 import { fetchSpectrumDevices } from "../api/spectrum";
 import { openIQStream } from "../api/diag";
@@ -45,6 +46,9 @@ const ONE_DEVICE = [
     role: "control",
     center_hz: 851_012_500,
     sample_rate_hz: 2_048_000,
+    // Report CQPSK so Auto resolves to the symbol-decision stream (C4FM has
+    // no symbol constellation and now defaults to the raw IQ ring).
+    p25_modulation: "cqpsk",
   },
 ];
 
@@ -81,6 +85,21 @@ describe("Constellation panel", () => {
     expect(openIQStream).not.toHaveBeenCalled();
   });
 
+  it("auto-selects CQPSK from the device's reported modulation", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      { ...ONE_DEVICE[0], p25_modulation: "cqpsk" },
+    ] as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    // Default Mode is Auto; it follows the device's reported modulation.
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.proto).toBe(
+      "p25-cqpsk",
+    );
+  });
+
   it("switches to the vector scope and opens a raw IQ stream", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
 
@@ -106,8 +125,8 @@ describe("Constellation panel", () => {
     await waitFor(() => {
       expect(openSymbolStream).toHaveBeenCalledTimes(1);
     });
-    // Default Mode is CQPSK, so the symbol stream is already CQPSK; flip to
-    // C4FM and back to confirm CQPSK re-subscribes the symbol stream.
+    // Default Mode is Auto, resolving to CQPSK here; flip to C4FM (raw IQ
+    // ring) and back to confirm CQPSK re-subscribes the symbol stream.
     fireEvent.change(screen.getByLabelText("Demodulation mode"), {
       target: { value: "p25-c4fm" },
     });
@@ -176,6 +195,7 @@ describe("Constellation panel", () => {
         role: "control",
         center_hz: 851_000_000,
         sample_rate_hz: 2_048_000,
+        p25_modulation: "cqpsk",
       },
     ] as never);
 

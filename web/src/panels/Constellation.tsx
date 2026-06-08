@@ -8,7 +8,11 @@ import {
   type IQFrame,
   type IQPoint,
 } from "../api/diag";
-import { openSymbolStream, type SymbolFrame } from "../api/symbols";
+import {
+  demodModeToProto,
+  openSymbolStream,
+  type SymbolFrame,
+} from "../api/symbols";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { TuningControls } from "../components/TuningControls";
@@ -52,6 +56,7 @@ type View = "symbols" | "raw";
 type C4fmDisplay = "ring" | "soft";
 
 const PROTOS: { value: string; label: string }[] = [
+  { value: "auto", label: "Auto" },
   { value: "p25-cqpsk", label: "P25 CQPSK" },
   { value: "p25-c4fm", label: "P25 C4FM" },
 ];
@@ -142,6 +147,21 @@ export function Constellation() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<IQPoint[]>([]);
   const scaleRef = useRef<number>(1);
+
+  const device = useMemo(
+    () => devices.find((d) => d.serial === selected) ?? null,
+    [devices, selected],
+  );
+
+  // Resolve the Mode selection to a concrete receiver. "auto" follows the
+  // modulation the selected SDR's system is decoding (device.p25_modulation),
+  // falling back to C4FM when unknown; an explicit choice is used as-is.
+  // The symbol stream and ideal-cluster markers both key off this.
+  const effectiveProto = useMemo(
+    () => (proto === "auto" ? demodModeToProto(device?.p25_modulation) : proto),
+    [proto, device],
+  );
+
   // Which stream feeds the scatter. The raw View always uses the wideband
   // IQ trajectory. In the symbols View, CQPSK uses the symbol-decision
   // stream; C4FM has no symbol constellation, so it shows the raw IQ ring
@@ -150,7 +170,7 @@ export function Constellation() {
   const source: "iq" | "symbols" =
     view === "raw"
       ? "iq"
-      : proto === "p25-c4fm" && c4fmDisplay === "ring"
+      : effectiveProto === "p25-c4fm" && c4fmDisplay === "ring"
         ? "iq"
         : "symbols";
 
@@ -159,8 +179,8 @@ export function Constellation() {
   // soft-level view, none for the raw vector scope / IQ ring.
   const markers = useMemo<IQPoint[]>(() => {
     if (source !== "symbols") return [];
-    return proto === "p25-c4fm" ? C4FM_MARKERS : CQPSK_MARKERS;
-  }, [source, proto]);
+    return effectiveProto === "p25-c4fm" ? C4FM_MARKERS : CQPSK_MARKERS;
+  }, [source, effectiveProto]);
   const optsRef = useRef<RenderOpts>({
     dcBlock,
     autoScale,
@@ -231,11 +251,6 @@ export function Constellation() {
       cancel = true;
     };
   }, [cfg, selected]);
-
-  const device = useMemo(
-    () => devices.find((d) => d.serial === selected) ?? null,
-    [devices, selected],
-  );
 
   // Newest active call on the selected SDR, and the view offset (kHz)
   // that would centre it. This is the "last locked channel" the issue
@@ -337,7 +352,7 @@ export function Constellation() {
 
     const stream = openSymbolStream(cfg, {
       serial: selected,
-      proto,
+      proto: effectiveProto,
       offset: Math.round(clampedOffsetKHz * 1000),
       onFrame: (f) => {
         setSymLatest(f);
@@ -353,7 +368,7 @@ export function Constellation() {
       onStatus: setConn,
     });
     return () => stream.close();
-  }, [cfg, selected, source, proto, clampedOffsetKHz]);
+  }, [cfg, selected, source, effectiveProto, clampedOffsetKHz]);
 
   // Prefer the device centre so the frequency view shows before the first
   // frame; fall back to the frame's stamped centre.
@@ -439,10 +454,15 @@ export function Constellation() {
                 </option>
               ))}
             </select>
+            {proto === "auto" && (
+              <span className="text-muted">
+                ·&nbsp;{effectiveProto === "p25-c4fm" ? "C4FM" : "CQPSK"}
+              </span>
+            )}
           </label>
         )}
 
-        {view === "symbols" && proto === "p25-c4fm" && (
+        {view === "symbols" && effectiveProto === "p25-c4fm" && (
           <label className="flex items-center gap-2">
             <span className="text-muted">Display</span>
             <select
@@ -526,7 +546,7 @@ export function Constellation() {
       </div>
 
       <div className="text-[11px] text-muted">
-        {view === "symbols" && proto === "p25-c4fm" ? (
+        {view === "symbols" && effectiveProto === "p25-c4fm" ? (
           c4fmDisplay === "ring" ? (
             <>
               C4FM is constant-envelope FM with no symbol constellation, so

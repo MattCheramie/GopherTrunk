@@ -8,8 +8,10 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/spectrum"
+	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // spectrumProvider implements api.SpectrumProvider on top of the
@@ -31,14 +33,18 @@ import (
 type spectrumProvider struct {
 	pool    *sdr.Pool
 	brokers map[string]*iqtap.Broker
+	// systems is the configured trunking systems, consulted to label
+	// each device with the P25 Phase 1 modulation it is decoding so the
+	// web panels can auto-select C4FM vs CQPSK.
+	systems []trunking.System
 	log     *slog.Logger
 }
 
-func newSpectrumProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, log *slog.Logger) *spectrumProvider {
+func newSpectrumProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, systems []trunking.System, log *slog.Logger) *spectrumProvider {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &spectrumProvider{pool: pool, brokers: brokers, log: log}
+	return &spectrumProvider{pool: pool, brokers: brokers, systems: systems, log: log}
 }
 
 // Devices walks the broker map and reports each device's current
@@ -56,16 +62,66 @@ func (p *spectrumProvider) Devices() []api.SpectrumDevice {
 		if !ok {
 			continue
 		}
+		centerHz := br.CenterHz()
+		sampleRateHz := br.SampleRateHz()
 		out = append(out, api.SpectrumDevice{
-			Serial:       e.Info.Serial,
-			Driver:       e.Info.Driver,
-			Product:      e.Info.Product,
-			Role:         e.Role.String(),
-			CenterHz:     br.CenterHz(),
-			SampleRateHz: br.SampleRateHz(),
+			Serial:        e.Info.Serial,
+			Driver:        e.Info.Driver,
+			Product:       e.Info.Product,
+			Role:          e.Role.String(),
+			CenterHz:      centerHz,
+			SampleRateHz:  sampleRateHz,
+			P25Modulation: p25ModulationFor(p.systems, centerHz, sampleRateHz),
 		})
 	}
 	return out
+}
+
+// p25ModulationFor reports the P25 Phase 1 demod mode ("c4fm"/"cqpsk")
+// of the system the device at (centerHz, sampleRateHz) is decoding, or
+// "" when no P25 Phase 1 system applies. A system matches when one of
+// its control channels falls inside the device passband
+// (|cc - centre| <= sample_rate/2) — the control SDR's centre sits on a
+// CC exactly, and a voice SDR's wideband front end usually still spans
+// it. For P25 Phase 1 the voice channels share the control channel's
+// modulation, so one per-device value is correct for both the CC and any
+// followed voice call. When no CC matches but exactly one P25 Phase 1
+// system is configured (the common single-system deployment), fall back
+// to it.
+func p25ModulationFor(systems []trunking.System, centerHz, sampleRateHz uint32) string {
+	var only *trunking.System
+	count := 0
+	for i := range systems {
+		if systems[i].Protocol != trunking.ProtocolP25 {
+			continue
+		}
+		count++
+		only = &systems[i]
+		half := int64(sampleRateHz) / 2
+		for _, cc := range systems[i].ControlChannels {
+			delta := int64(cc) - int64(centerHz)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= half {
+				return demodModeName(systems[i].P25Phase1DemodMode)
+			}
+		}
+	}
+	if count == 1 {
+		return demodModeName(only.P25Phase1DemodMode)
+	}
+	return ""
+}
+
+// demodModeName canonicalises a configured demod-mode string to the
+// receiver's lowercase name ("c4fm"/"cqpsk"), reusing the same parser
+// the decode pipeline applies so the panel sees exactly what the
+// receiver runs. Unknown values fall back to C4FM (ParseDemodMode's
+// default), matching the receiver's behaviour.
+func demodModeName(cfg string) string {
+	mode, _ := p25phase1rx.ParseDemodMode(cfg)
+	return mode.String()
 }
 
 // Tune programs the named SDR's centre frequency. Routes through

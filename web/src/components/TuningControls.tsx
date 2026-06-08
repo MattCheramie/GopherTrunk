@@ -12,8 +12,19 @@
 //     sync.
 //
 // The slider is for coarse dragging; the numeric fields are the precise
-// path. Editing any control pins the view (Hold on) via onOffsetChange —
-// the caller owns that side effect.
+// path. For walking the channel grid there's a Step selector (6.25 /
+// 12.5 / 25 kHz) with −/+ buttons and ArrowUp/ArrowDown on the offset
+// field: each nudge snaps to the nearest grid point then steps, so it
+// lands on the grid even when starting off it (e.g. after following a
+// call). The chosen step is shared across panels via prefs.
+//
+// Editing any control pins the view (Hold on) via onOffsetChange — the
+// caller owns that side effect.
+
+import { useState } from "react";
+import { prefs } from "../store/prefs";
+
+const STEP_CHOICES = [6.25, 12.5, 25] as const;
 
 interface TuningControlsProps {
   // SDR centre in Hz, or null until the device is known. Gates the MHz
@@ -52,6 +63,19 @@ export function TuningControls({
 }: TuningControlsProps) {
   const freqMHz = centerHz != null ? (centerHz + offsetKHz * 1000) / 1e6 : null;
 
+  const [stepKHz, setStepKHz] = useState<number>(() =>
+    prefs.tuningControlsStepKHz(),
+  );
+
+  // Snap to the nearest grid point, step one grid cell in `dir`, clamp to
+  // the Nyquist bound, then commit (the parent pins Hold). Snapping first
+  // means a nudge lands on the channel grid even from an off-grid offset.
+  const nudge = (dir: -1 | 1) => {
+    const stepped = (Math.round(offsetKHz / stepKHz) + dir) * stepKHz;
+    const clamped = Math.max(-maxOffsetKHz, Math.min(maxOffsetKHz, stepped));
+    onOffsetChange(trim(clamped, 3));
+  };
+
   return (
     <>
       <label className="flex items-center gap-2">
@@ -66,15 +90,62 @@ export function TuningControls({
           className="w-40 accent-sky-400"
           aria-label="View offset from SDR centre, kHz"
         />
+        <button
+          type="button"
+          className="rounded border border-border px-2 py-1 font-mono hover:bg-surface"
+          onClick={() => nudge(-1)}
+          title={`Step down ${stepKHz} kHz`}
+          aria-label={`Step offset down by ${stepKHz} kHz`}
+        >
+          −
+        </button>
         <input
           type="number"
           step={0.001}
           value={trim(offsetKHz, 3)}
           onChange={(e) => onOffsetChange(Number(e.target.value))}
+          onKeyDown={(e) => {
+            // Arrow keys walk the channel grid (snap-then-step) rather
+            // than the input's native 1 Hz step, while typing still
+            // allows fine values.
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              nudge(1);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              nudge(-1);
+            }
+          }}
           className="w-24 bg-surface border border-border rounded px-2 py-1 text-right font-mono"
           aria-label="View offset from SDR centre in kHz (numeric)"
         />
+        <button
+          type="button"
+          className="rounded border border-border px-2 py-1 font-mono hover:bg-surface"
+          onClick={() => nudge(1)}
+          title={`Step up ${stepKHz} kHz`}
+          aria-label={`Step offset up by ${stepKHz} kHz`}
+        >
+          +
+        </button>
         <span className="text-muted">kHz</span>
+        <select
+          className="bg-surface border border-border rounded px-1 py-1 font-mono"
+          value={stepKHz}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            setStepKHz(next);
+            prefs.setTuningControlsStepKHz(next);
+          }}
+          aria-label="Channel step size, kHz"
+          title="Channel grid for the ± / arrow-key nudge"
+        >
+          {STEP_CHOICES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
       </label>
 
       <label className="flex items-center gap-2">

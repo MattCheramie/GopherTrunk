@@ -125,13 +125,29 @@ export interface HuntStatus {
   run_id: number;
   state: string;
   running: boolean;
+  mode?: string; // "hunt" | "survey"
   phase?: string;
   detail?: string;
   sites: number;
   talkgroups: number;
   system_name?: string;
+  signals?: DetectedSignal[];
   error?: string;
   system?: unknown;
+}
+
+// DetectedSignal mirrors hunt.DetectedSignal — one classified carrier in a
+// survey run.
+export interface DetectedSignal {
+  freq_hz: number;
+  snr_db: number;
+  occupied_bw_hz: number;
+  class: string;
+  confidence: number;
+  baud_hz?: number;
+  trunking?: { protocol: string; locked: boolean; control_hz?: number };
+  analog?: { active: boolean; ctcss_hz?: number; dcs_code?: string };
+  pages?: { protocol: string; capcode: number; text: string }[];
 }
 
 // HuntStartRequest mirrors api.HuntStartRequest (frequencies in MHz).
@@ -140,6 +156,9 @@ export interface HuntStartRequest {
   bands?: string[];
   candidates?: number[];
   no_sweep?: boolean;
+  survey?: boolean;
+  classify_only?: boolean;
+  max_dwell_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;
   name?: string;

@@ -88,6 +88,44 @@ func (s *Server) handleHuntExport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// handleHuntSurveyExport streams a run's classified signal inventory in the
+// requested format (json|csv).
+func (s *Server) handleHuntSurveyExport(w http.ResponseWriter, r *http.Request) {
+	if s.hunt == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "hunt not wired")
+		return
+	}
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "json"
+	}
+	id, ok := huntRunID(r)
+	if !ok {
+		s.writeError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	data, filename, err := s.hunt.ExportSurvey(id, format)
+	if err != nil {
+		status := http.StatusConflict
+		switch {
+		case isHuntNoSuchRun(err):
+			status = http.StatusNotFound
+		case isHuntBadFormat(err):
+			status = http.StatusBadRequest
+		}
+		s.writeError(w, status, err.Error())
+		return
+	}
+	ct := "application/json"
+	if format == "csv" {
+		ct = "text/csv; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 // huntCommitRequest is the optional POST /api/v1/hunt/commit body.
 type huntCommitRequest struct {
 	Force  bool `json:"force,omitempty"`
@@ -156,7 +194,7 @@ func isHuntConflict(err error) bool {
 }
 
 func isHuntBadFormat(err error) bool {
-	return err != nil && containsAny(err.Error(), "unknown export format", "unknown format")
+	return err != nil && containsAny(err.Error(), "unknown export format", "unknown format", "unknown survey format")
 }
 
 func isHuntNoSuchRun(err error) bool {

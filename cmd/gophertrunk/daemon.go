@@ -1732,7 +1732,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			TLSKey:         cfg.API.TLSKey,
 		}
 		if len(d.iqBrokers) > 0 {
-			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, log)
+			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
 			opts.Diag = newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			opts.Symbols = newSymbolProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)

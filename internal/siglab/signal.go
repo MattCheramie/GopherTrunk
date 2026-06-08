@@ -1,6 +1,11 @@
 package siglab
 
-import "github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
+import (
+	"math"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/metrics"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
+)
 
 // SignalQuality is the protocol-agnostic demod-quality summary the analyzer
 // produces when Config.CollectIQDiag is set. It generalizes the parts of the
@@ -32,7 +37,46 @@ type SignalQuality struct {
 	// DecodeErrorRate is decode-error events per recovered 1000 symbols — a
 	// protocol-neutral proxy for FEC stress.
 	DecodeErrorRate float64 `json:"decode_error_rate_per_ksym" yaml:"decode_error_rate_per_ksym"`
+
+	// Demod is the demodulator-quality measurement (EVM + estimated SNR)
+	// derived from the per-symbol soft samples on the P25 deep path. Nil for
+	// protocols / runs that do not surface the soft stream. It is what turns
+	// "the audio sounds bad" into "the eye is N% open / the demod is M dB from
+	// the noise floor."
+	Demod *DemodMetrics `json:"demod,omitempty" yaml:"demod,omitempty"`
 }
+
+// DemodMetrics is the demodulator-quality summary computed from the recovered
+// soft symbols: error-vector magnitude (constellation dispersion) and the SNR
+// implied by the residual about the ideal symbol positions. It is the
+// siglab-surfaced face of internal/radio/p25/phase1/metrics.
+type DemodMetrics struct {
+	// Modulation names the estimator that produced these numbers: "c4fm" (the
+	// 4-level soft eye) or "cqpsk" (the complex π/4-DQPSK constellation).
+	Modulation string `json:"modulation" yaml:"modulation"`
+	// EVMPct is the RMS error-vector magnitude as a percentage of the ideal
+	// symbol level. A clean lock sits at a few percent; it climbs toward the
+	// inter-rail half-spacing (~33% for C4FM) as the eye closes.
+	EVMPct float64 `json:"evm_pct" yaml:"evm_pct"`
+	// SNREstimateDB is the symbol SNR implied by the residual, in dB. For
+	// C4FM this is the post-discriminator soft-axis SNR (lower than the input
+	// Es/N0 by the FM detection loss); for CQPSK it is the constellation SNR.
+	// Capped at demodSNRCapDB for a noise-free synthetic input.
+	SNREstimateDB float64 `json:"snr_estimate_db" yaml:"snr_estimate_db"`
+	// SymbolsAnalyzed is the soft-sample count the estimate was formed over
+	// (after the warmup skip).
+	SymbolsAnalyzed int64 `json:"symbols_analyzed" yaml:"symbols_analyzed"`
+}
+
+// demodWarmupSkip drops the leading soft samples so the AGC/clock/AFC
+// acquisition transient does not bias the EVM/SNR estimate toward the closed
+// eye it starts from. Matches the sweep harness's warmup skip.
+const demodWarmupSkip = 256
+
+// demodSNRCapDB bounds the reported SNR so a noise-free synthetic input (whose
+// residual is ~0 → SNR → +Inf) yields a finite, JSON-marshalable number rather
+// than an infinity encoding/json refuses to emit.
+const demodSNRCapDB = 99.0
 
 // analyzer accumulates the observations behind a SignalQuality. It is fed
 // from the engine's SymbolTap (symbols) and read loop (raw IQ), so it works
@@ -53,6 +97,17 @@ type analyzer struct {
 	// path, fed from the receiver's SoftSink), aligned index-for-index with
 	// symBuf, for the true-symbol eye analysis.
 	softBuf []float32
+	// constBuf retains the per-symbol complex constellation points (deep P25
+	// CQPSK path, fed from the receiver's SymbolSink). Populated only on the
+	// linear path; its presence is what tells result() to use the
+	// constellation estimators rather than the C4FM soft-axis ones.
+	constBuf []complex64
+}
+
+// observeConstellation appends a chunk of complex symbol-decision points to
+// the rolling buffer (deep P25 CQPSK path only).
+func (a *analyzer) observeConstellation(pts []complex64) {
+	a.constBuf = append(a.constBuf, pts...)
 }
 
 // observeSoft appends a chunk of pre-slicer soft samples to the rolling
@@ -112,5 +167,49 @@ func (a *analyzer) result(decodeErrors int64) *SignalQuality {
 		sq.IQPhaseImbalanceDeg = a.iqStats.PhaseImbalanceDeg()
 		sq.IQImageRejectionDB = a.iqStats.ImageRejectionDB()
 	}
+	sq.Demod = a.demodMetrics()
 	return sq
+}
+
+// demodMetrics computes the EVM + estimated SNR from the buffered soft symbols,
+// choosing the estimator by which buffer the receiver populated: the complex
+// constellation (CQPSK / linear path) when present, otherwise the 4-level soft
+// eye (C4FM). Returns nil when neither buffer holds enough post-warmup samples
+// to form a stable estimate.
+func (a *analyzer) demodMetrics() *DemodMetrics {
+	if len(a.constBuf) > demodWarmupSkip {
+		pts := a.constBuf[demodWarmupSkip:]
+		return &DemodMetrics{
+			Modulation:      "cqpsk",
+			EVMPct:          metrics.EVMConstellation(pts),
+			SNREstimateDB:   capSNR(metrics.SNRM2M4Constellation(pts)),
+			SymbolsAnalyzed: int64(len(pts)),
+		}
+	}
+	if len(a.softBuf) > demodWarmupSkip {
+		soft := a.softBuf[demodWarmupSkip:]
+		outer := metrics.EstimateOuterRailC4FM(soft)
+		if outer <= 0 {
+			return nil
+		}
+		return &DemodMetrics{
+			Modulation:      "c4fm",
+			EVMPct:          metrics.EVMC4FM(soft, outer),
+			SNREstimateDB:   capSNR(metrics.SNRResidualC4FM(soft, outer)),
+			SymbolsAnalyzed: int64(len(soft)),
+		}
+	}
+	return nil
+}
+
+// capSNR clamps a possibly-infinite SNR estimate (noise-free input) to a
+// finite, JSON-safe value.
+func capSNR(db float64) float64 {
+	if math.IsInf(db, 1) || db > demodSNRCapDB {
+		return demodSNRCapDB
+	}
+	if math.IsInf(db, -1) {
+		return -demodSNRCapDB
+	}
+	return db
 }

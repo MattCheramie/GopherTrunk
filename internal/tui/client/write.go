@@ -91,6 +91,7 @@ type HuntStartRequest struct {
 	Bands      []string  `json:"bands,omitempty"`
 	Candidates []float64 `json:"candidates,omitempty"`
 	NoSweep    bool      `json:"no_sweep,omitempty"`
+	Survey     bool      `json:"survey,omitempty"`
 	Name       string    `json:"name,omitempty"`
 	Serial     string    `json:"serial,omitempty"`
 	Protocol   string    `json:"protocol,omitempty"`

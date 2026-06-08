@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -132,6 +133,15 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 		uncorrectableLDUs atomic.Uint64
 		corrErrBits       atomic.Uint64
 	)
+	// Outer-RS telemetry for the Link Control (LDU1) and Encryption Sync
+	// (LDU2) words. A rising RS-uncorrectable rate is the measurable
+	// signature of marginal signal at the FEC layer that drives the
+	// talkgroup-gating decision — high values mean talkgroups can't be
+	// trusted and the operator should improve gain/antenna.
+	var (
+		lcRSUncorrectable  atomic.Uint64
+		essRSUncorrectable atomic.Uint64
+	)
 	rx := p25p1rx.New(p25p1rx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
@@ -165,7 +175,17 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 			// and we drop that audio rather than append it.
 			tg := uint32(0)
 			if duid == phase1.DUIDLogicalLink1 && haveBlocks {
-				if lc, _, lerr := phase1.ParseLinkControl(blocks); lerr == nil && lc.LCFormat == phase1.LCOGroupVoiceChannelUser {
+				lc, _, lerr := phase1.ParseLinkControl(blocks)
+				switch {
+				case errors.Is(lerr, phase1.ErrLinkControlUncorrectable):
+					// The outer RS layer could not recover the LC, so its
+					// talkgroup is untrustworthy. Leave tg=0 so the boundary
+					// tracker INHERITS the last match instead of gating audio
+					// (or ending the call) on a garbage talkgroup — the
+					// dominant cause of dropped/fragmented recordings in the
+					// field capture.
+					lcRSUncorrectable.Add(1)
+				case lerr == nil && lc.LCFormat == phase1.LCOGroupVoiceChannelUser:
 					tg = uint32(lc.TalkgroupID)
 				}
 			}
@@ -235,7 +255,13 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 					}
 				}
 			case phase1.DUIDLogicalLink2:
-				if es, _, lerr := phase1.ParseEncryptionSync(blocks); lerr == nil && es.Encrypted() {
+				es, _, lerr := phase1.ParseEncryptionSync(blocks)
+				if errors.Is(lerr, phase1.ErrEncryptionSyncUncorrectable) {
+					// Outer RS could not recover the ES; do not surface a
+					// garbage algorithm/key as a real encryption change.
+					essRSUncorrectable.Add(1)
+				}
+				if lerr == nil && es.Encrypted() {
 					c.log.Debug("composer: p25p1 encryption sync",
 						"serial", serial, "alg", es.AlgorithmID, "key", es.KeyID)
 					// Publish on the bus so the trunking engine
@@ -277,7 +303,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 		c.log.Info("composer: p25p1 decode quality",
 			"serial", serial, "demod_mode", mode,
 			"ldus", n, "uncorrectable_ldus", uncorrectableLDUs.Load(),
-			"corrected_bit_errs", corrErrBits.Load())
+			"corrected_bit_errs", corrErrBits.Load(),
+			"lc_rs_uncorrectable", lcRSUncorrectable.Load(),
+			"ess_rs_uncorrectable", essRSUncorrectable.Load())
 	}
 
 	for {

@@ -144,6 +144,16 @@ function MetricsTable({ items }: { items: Item[] }) {
         a?.result?.signal ? a.result.signal.decode_error_rate_per_ksym.toFixed(2) : "—",
     },
     {
+      label: "Demod EVM (%)",
+      get: (a) =>
+        a?.result?.signal?.demod ? a.result.signal.demod.evm_pct.toFixed(1) : "—",
+    },
+    {
+      label: "Demod SNR (dB)",
+      get: (a) =>
+        a?.result?.signal?.demod ? a.result.signal.demod.snr_estimate_db.toFixed(1) : "—",
+    },
+    {
       label: "IQ gain imb (dB)",
       get: (a) =>
         a?.result?.signal?.iq_observed

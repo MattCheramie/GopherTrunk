@@ -71,11 +71,15 @@ func main() {
 	case "test":
 		runSiglabTest(os.Args[2:])
 	case "siglab":
-		// `siglab serve` launches the standalone web console; bare
-		// `siglab` (and any other subarg) stays the offline TUI.
-		if len(os.Args) > 2 && os.Args[2] == "serve" {
+		// `siglab serve` launches the standalone web console; `siglab sweep`
+		// runs the demod EVM/SNR-vs-SNR benchmark; bare `siglab` (and any
+		// other subarg) stays the offline TUI.
+		switch {
+		case len(os.Args) > 2 && os.Args[2] == "serve":
 			runSiglabServe(os.Args[3:])
-		} else {
+		case len(os.Args) > 2 && os.Args[2] == "sweep":
+			runSiglabSweep(os.Args[3:])
+		default:
 			runSiglabTUI(os.Args[2:])
 		}
 	case "config":

@@ -118,6 +118,10 @@ func renderSignal(w io.Writer, s *siglab.SignalQuality) {
 			s.IQGainImbalanceDB, s.IQPhaseImbalanceDeg, s.IQImageRejectionDB)
 	}
 	fmt.Fprintf(w, "siglab: decode-error rate: %.2f per 1000 symbols\n", s.DecodeErrorRate)
+	if d := s.Demod; d != nil {
+		fmt.Fprintf(w, "siglab: demod (%s): EVM=%.1f%%  SNR≈%.1f dB  (n=%d symbols)\n",
+			d.Modulation, d.EVMPct, d.SNREstimateDB, d.SymbolsAnalyzed)
+	}
 }
 
 func renderP25Detail(w io.Writer, d *siglab.P25P1Detail) {

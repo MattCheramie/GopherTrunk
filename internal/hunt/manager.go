@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
 
 // RunState is the lifecycle of a live hunt run, surfaced to the cockpit/REST.
@@ -52,8 +53,10 @@ type Manager struct {
 	mu         sync.Mutex
 	runID      int
 	state      RunState
+	runSurvey  bool // the active/last run is a survey (drives RunStatus.Mode)
 	progress   LiveHuntProgress
 	sys        *DiscoveredSystem
+	survey     *SignalSurvey
 	reports    []CaptureReport
 	err        string
 	startedAt  time.Time
@@ -74,6 +77,7 @@ const maxRunHistory = 10
 type runRecord struct {
 	id      int
 	sys     *DiscoveredSystem
+	survey  *SignalSurvey
 	reports []CaptureReport
 }
 
@@ -98,13 +102,18 @@ type RunStatus struct {
 	RunID      int              `json:"run_id"`
 	State      RunState         `json:"state"`
 	Running    bool             `json:"running"`
+	Mode       string           `json:"mode"` // "hunt" | "survey"
 	Progress   LiveHuntProgress `json:"progress"`
 	Sites      int              `json:"sites"`
 	Talkgroups int              `json:"talkgroups"`
 	SystemName string           `json:"system_name,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	StartedAt  time.Time        `json:"started_at,omitempty"`
-	FinishedAt time.Time        `json:"finished_at,omitempty"`
+	// Signals is the classified-carrier inventory of a survey run (nil for a
+	// plain hunt). It is the survey's primary result, rendered by the cockpit.
+	Signals []DetectedSignal `json:"signals,omitempty"`
+	Error   string           `json:"error,omitempty"`
+
+	StartedAt  time.Time `json:"started_at,omitempty"`
+	FinishedAt time.Time `json:"finished_at,omitempty"`
 }
 
 // Start launches a live hunt with opts. It returns the new run id, or an error
@@ -122,7 +131,9 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 	m.cancel = cancel
 	m.state = StateRunActive
 	m.progress = LiveHuntProgress{Phase: PhaseSweeping}
+	m.runSurvey = opts.Survey
 	m.sys = nil
+	m.survey = nil
 	m.reports = nil
 	m.err = ""
 	m.startedAt = time.Now()
@@ -137,6 +148,23 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 		m.mu.Unlock()
 		m.publish(events.KindHuntLiveProgress, p)
 	}
+	// Publish each classified carrier as it is found, and persist any pages the
+	// survey decoded onto the same bus the live pager receivers use — so a
+	// survey's POCSAG/FLEX catches land in the pager log and stream to clients
+	// exactly like a dedicated paging receiver's.
+	opts.OnSignal = func(ds DetectedSignal) {
+		m.publish(events.KindHuntLiveCandidate, ds)
+		for _, pg := range ds.Pages {
+			m.publish(events.KindPagerMessage, storage.PagerMessage{
+				ReceivedAt: time.Now(),
+				Protocol:   pg.Protocol,
+				RIC:        pg.Capcode,
+				Encoding:   pg.Encoding,
+				Body:       pg.Text,
+				Corrected:  pg.Corrected,
+			})
+		}
+	}
 
 	go m.run(ctx, id, opts)
 	return id, nil
@@ -145,18 +173,33 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 func (m *Manager) run(ctx context.Context, id int, opts LiveHuntOptions) {
 	src, release, err := m.acquire(ctx, opts)
 	if err != nil {
-		m.finish(id, nil, nil, fmt.Errorf("acquire SDR: %w", err))
+		m.finish(id, nil, nil, nil, fmt.Errorf("acquire SDR: %w", err))
 		return
 	}
 	defer release()
 	opts.Source = src
 
+	if opts.Survey {
+		sv, reports, serr := RunLiveSurvey(ctx, opts)
+		m.finish(id, surveySystem(sv), sv, reports, serr)
+		return
+	}
 	sys, reports, err := RunLiveHunt(ctx, opts)
-	m.finish(id, sys, reports, err)
+	m.finish(id, sys, nil, reports, err)
+}
+
+// surveySystem safely extracts the discovered system from a (possibly nil)
+// survey, so the export/commit tail sees the same *DiscoveredSystem a hunt run
+// produces.
+func surveySystem(sv *SignalSurvey) *DiscoveredSystem {
+	if sv == nil {
+		return nil
+	}
+	return sv.System
 }
 
 // finish records the terminal state of a run and publishes hunt.done.
-func (m *Manager) finish(id int, sys *DiscoveredSystem, reports []CaptureReport, err error) {
+func (m *Manager) finish(id int, sys *DiscoveredSystem, sv *SignalSurvey, reports []CaptureReport, err error) {
 	m.mu.Lock()
 	if id != m.runID {
 		m.mu.Unlock()
@@ -173,11 +216,12 @@ func (m *Manager) finish(id int, sys *DiscoveredSystem, reports []CaptureReport,
 	default:
 		m.state = StateRunDone
 	}
-	if sys != nil {
+	m.survey = sv
+	if sys != nil || sv != nil {
 		m.sys = sys
 		m.reports = reports
 		// Retain in the bounded history (newest last; drop oldest over cap).
-		m.history = append(m.history, runRecord{id: id, sys: sys, reports: reports})
+		m.history = append(m.history, runRecord{id: id, sys: sys, survey: sv, reports: reports})
 		if len(m.history) > maxRunHistory {
 			m.history = m.history[len(m.history)-maxRunHistory:]
 		}
@@ -212,6 +256,7 @@ func (m *Manager) statusLocked() RunStatus {
 		RunID:      m.runID,
 		State:      m.state,
 		Running:    m.state == StateRunActive,
+		Mode:       "hunt",
 		Progress:   m.progress,
 		Error:      m.err,
 		StartedAt:  m.startedAt,
@@ -222,7 +267,57 @@ func (m *Manager) statusLocked() RunStatus {
 		st.Talkgroups = len(m.sys.Talkgroups)
 		st.SystemName = m.sys.DisplayName()
 	}
+	if m.runSurvey {
+		st.Mode = "survey"
+	}
+	if m.survey != nil {
+		st.Signals = m.survey.Signals
+	}
 	return st
+}
+
+// CurrentSurvey returns the latest run's signal inventory, or (nil, false) when
+// the latest run was a plain hunt or none has produced one yet.
+func (m *Manager) CurrentSurvey() (*SignalSurvey, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.survey == nil {
+		return nil, false
+	}
+	return m.survey, true
+}
+
+// SurveyRun returns a specific run's signal inventory (id 0 = latest). ok=false
+// for an unknown/evicted id or a run that produced no survey (a plain hunt).
+func (m *Manager) SurveyRun(id int) (*SignalSurvey, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id == 0 || id == m.runID {
+		if m.survey == nil {
+			return nil, false
+		}
+		return m.survey, true
+	}
+	for i := len(m.history) - 1; i >= 0; i-- {
+		if m.history[i].id == id {
+			return m.history[i].survey, m.history[i].survey != nil
+		}
+	}
+	return nil, false
+}
+
+// ExportSurvey writes a run's signal inventory to w in the given format (id 0 =
+// latest). Returns ErrNoSuchRun for an unknown/evicted id, or a "no survey"
+// error when the run exists but was a plain hunt.
+func (m *Manager) ExportSurvey(id int, w io.Writer, f SurveyFormat) error {
+	sv, ok := m.SurveyRun(id)
+	if !ok {
+		if id != 0 && !m.KnownRun(id) {
+			return ErrNoSuchRun
+		}
+		return errors.New("hunt: no signal survey for this run")
+	}
+	return WriteSurvey(w, sv, f)
 }
 
 // Current returns the latest discovered system and its per-candidate reports,

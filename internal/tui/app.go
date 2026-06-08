@@ -712,6 +712,7 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			Bands:      r.Hunt.Bands,
 			Candidates: r.Hunt.Candidates,
 			NoSweep:    len(r.Hunt.Candidates) > 0 && len(r.Hunt.Bands) == 0,
+			Survey:     r.Hunt.Survey,
 			Name:       r.Hunt.Name,
 			Serial:     r.Hunt.Serial,
 			Protocol:   r.Hunt.Protocol,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -37,6 +38,65 @@ func waitUntil(t *testing.T, d time.Duration, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not met within deadline")
+}
+
+func TestManager_SurveyModeReportsSignals(t *testing.T) {
+	bus := events.NewBus(256)
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	src, dwell := p25Source(t)
+	mgr, err := NewManager(ManagerOptions{
+		Acquire: func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src, func() {}, nil },
+		Bus:     bus,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, err := mgr.Start(LiveHuntOptions{
+		Survey:        true,
+		Candidates:    []uint32{851_000_000},
+		DwellSeconds:  dwell,
+		MinConfidence: 0.3,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+
+	st := mgr.Status()
+	if st.State != StateRunDone {
+		t.Fatalf("state = %q, want done", st.State)
+	}
+	if st.Mode != "survey" {
+		t.Errorf("mode = %q, want survey", st.Mode)
+	}
+	if len(st.Signals) != 1 {
+		t.Fatalf("len(Signals) = %d, want 1", len(st.Signals))
+	}
+	// The single P25 candidate should be mapped as a trunk-control carrier.
+	if st.Signals[0].Class != survey.ClassTrunkControl {
+		t.Errorf("signal class = %q, want trunk-control", st.Signals[0].Class)
+	}
+	if sv, ok := mgr.CurrentSurvey(); !ok || sv.System == nil {
+		t.Error("CurrentSurvey() returned no survey/system")
+	}
+
+	// A per-signal candidate event should have been published to the bus.
+	sawCandidate := false
+	for drain := true; drain; {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindHuntLiveCandidate {
+				sawCandidate = true
+			}
+		default:
+			drain = false
+		}
+	}
+	if !sawCandidate {
+		t.Error("expected a KindHuntLiveCandidate event on the bus")
+	}
 }
 
 func TestManager_StartRunsAndMapsSystem(t *testing.T) {

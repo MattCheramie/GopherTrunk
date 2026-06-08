@@ -1,5 +1,11 @@
 package phase1
 
+import (
+	"errors"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+)
+
 // P25 LDU2 Encryption Sync word.
 //
 // An LDU2 carries an Encryption Sync (ES) word in the same 6 × 40-bit
@@ -17,8 +23,11 @@ package phase1
 // algorithm and key — but does not decrypt.
 //
 // The 96-bit ES content layout is the project's working model (the
-// 144-bit Hamming-recovered field's first 12 octets); the RS(24,12,13)
-// outer verification is a documented follow-up, as for Link Control.
+// 144-bit Hamming-recovered field's first 12 octets). As for Link
+// Control, the inner Hamming layer is followed by an outer RS code —
+// here RS(24,16,9) (framing.DecodeRS24_16, t=4) — which ParseEncryptionSync
+// runs to correct the residual symbol errors that otherwise produce
+// garbage Algorithm IDs under marginal SNR.
 //
 //	octets 0-8 : Message Indicator (72 bits)
 //	octet 9    : Algorithm ID
@@ -40,32 +49,45 @@ const AlgorithmClear uint8 = 0x80
 // Algorithm ID other than the clear-voice value).
 func (e EncryptionSync) Encrypted() bool { return e.AlgorithmID != AlgorithmClear }
 
+// ErrEncryptionSyncUncorrectable is returned when the outer RS(24,16,9)
+// layer cannot correct the Encryption Sync word — more than t=4 symbol
+// errors survived the inner Hamming layer. The decoded algorithm/key are
+// then low-confidence and should not be surfaced as a real encryption
+// change.
+var ErrEncryptionSyncUncorrectable = errors.New("p25/phase1: Encryption Sync RS-uncorrectable")
+
 // ParseEncryptionSync decodes the 6 LC/ES blocks of an LDU2 into a
-// structured EncryptionSync, returning the inner-FEC corrected-error
-// count.
+// structured EncryptionSync. The inner Hamming(10,6,3) layer is decoded
+// first, then the outer RS(24,16,9) layer corrects the residual symbol
+// errors that otherwise produce garbage Algorithm IDs under marginal
+// SNR. It returns the total corrected-error count and
+// ErrEncryptionSyncUncorrectable when the RS layer cannot recover the word.
 func ParseEncryptionSync(blocks [LDULCESBlockCount][]byte) (EncryptionSync, int, error) {
-	data, errs, err := lcInnerDecode(blocks)
+	data, innerErrs, err := lcInnerDecode(blocks)
 	if err != nil {
 		return EncryptionSync{}, 0, err
 	}
-	oct := bitsToOctets(data[:esContentOctets*8])
+	cw := bitsToRSSymbols(data)
+	info, rsErrs, rerr := framing.DecodeRS24_16(cw[:])
+	if rerr != nil {
+		return EncryptionSync{}, innerErrs, ErrEncryptionSyncUncorrectable
+	}
+	oct := bitsToOctets(rsSymbolsToBits(info[:]))
 	var es EncryptionSync
 	copy(es.MessageIndicator[:], oct[0:9])
 	es.AlgorithmID = oct[9]
 	es.KeyID = uint16(oct[10])<<8 | uint16(oct[11])
-	return es, errs, nil
+	return es, innerErrs + rsErrs, nil
 }
 
 // AssembleEncryptionSync is the inverse of ParseEncryptionSync; it
-// builds the 6 on-wire ES blocks. The RS-parity half of the 144-bit
-// data field is left zero (see the package note above).
+// builds the 6 on-wire ES blocks, computing the outer RS(24,16,9) parity
+// so the word round-trips through the RS-correcting parser.
 func AssembleEncryptionSync(es EncryptionSync) [LDULCESBlockCount][]byte {
 	oct := make([]byte, esContentOctets)
 	copy(oct[0:9], es.MessageIndicator[:])
 	oct[9] = es.AlgorithmID
 	oct[10], oct[11] = byte(es.KeyID>>8), byte(es.KeyID)
 
-	data := make([]byte, 144)
-	copy(data, octetsToBits(oct))
-	return lcInnerEncode(data)
+	return lcInnerEncode(rsEncodeContentBits(octetsToBits(oct), 16))
 }

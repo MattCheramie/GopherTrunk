@@ -18,6 +18,71 @@ for tagged releases.
 
 ### Fixed
 
+- **P25 Phase 1 voice recordings no longer fragment into tiny per-LDU files.**
+  A single continuous transmission was being chopped into many ~1-second
+  recordings (each `.raw` an exact multiple of one LDU), because the embedded
+  LDU1 Link Control was reading the talkgroup from the wrong content octets.
+  For the Group Voice Channel User LCO (0x00) the talkgroup lives at octets 4-5
+  and the source at 6-8 (TIA-102.AABF); the decoder was reading the talkgroup
+  from octets 2-3, so it always came back as the constant service-options byte
+  (0x0400 = 1024) while the real talkgroup landed inside the misread source
+  field. With the in-band talkgroup never matching the granted talkgroup, the
+  voice composer's foreign-talkgroup gate ended every call after ~2 LDU1s and
+  the control channel immediately re-granted, spawning a fresh file each time.
+  The Link Control octet layout is corrected (the FEC was always fine) and a
+  regression test now pins the absolute octet positions. As defense-in-depth,
+  the foreign-talkgroup gate now requires the *same* foreign talkgroup across
+  its debounce window so a lone RS-aliased mis-decode can't end a call.
+
+### Added
+
+- **Signal survey — save it, decode it, run it offline.** Follow-up to the live
+  signal survey: the classified inventory is now a real artifact, written to
+  `survey.json`/`survey.csv` by the CLI, served by `GET /api/v1/hunt/survey`
+  (`?format=json|csv`, `+ /{id}/survey`), and downloadable from the web Hunt
+  panel. Pages a survey decodes are published to the events bus and the pager
+  log like a live receiver's, and each classified carrier emits a
+  `hunt.candidate` event. New depth: an **offline survey** (`hunt -survey -in
+  <capture>`) classifies recorded IQ with no SDR; **`-survey-audio <dir>`**
+  writes a WAV clip per active analog-FM carrier; **`-classify-only`** skips
+  decoding for a fast inventory; **`-max-dwell-seconds`** listens until carrier
+  activity for bursty paging. The classifier's thresholds are now configurable
+  (CLI `-class-*` flags / REST fields), occupied bandwidth is measured on the
+  full-rate capture so wideband FM isn't mis-sized, and the digital-vs-AM order
+  was fixed so pulse-shaped PSK isn't mislabeled AM. The web panel gains a
+  classify-only toggle and a sortable signals table.
+
+- **Live signal survey — `gophertrunk hunt -survey`.** The hunt sweep now does
+  more than chase trunking control channels: in survey mode it classifies
+  *every* detected carrier by modulation family (analog NBFM/WFM, AM, digital
+  FSK/C4FM/PSK, paging, trunking) plus an occupied-bandwidth estimate, then
+  decodes the conventional ones — POCSAG/FLEX paging and analog-FM activity
+  (carrier + CTCSS/DCS) — while still folding any trunking control channel into
+  the discovered-system map. The classifier is blind and cheap (FFT
+  occupied-bandwidth, envelope coefficient-of-variation, FM-discriminator
+  features, and a cyclostationary baud-line detector), reusing the existing dsp
+  primitives and the POCSAG/FLEX/conventional decoders rather than duplicating
+  them. The result is a `SignalSurvey` inventory surfaced across the CLI
+  (printed table), the daemon REST API (`hunt.survey` request flag, `mode` +
+  `signals` in `GET /api/v1/hunt`), the web Hunt panel (a Survey-mode checkbox
+  and a signals table), and the TUI Hunt panel (a `v` survey-start key and a
+  signal list).
+- **Constellation / Symbol scope auto-detect the demod mode** (#557). The
+  panels' **Mode** selector gains an **Auto** option (now the default) that
+  follows the modulation the selected SDR's system is configured to decode —
+  C4FM or CQPSK/LSM — instead of asking the operator to pick it. The daemon
+  reports this per device on `GET /api/v1/spectrum/devices` as `p25_modulation`,
+  resolved by matching the device's tuning against the configured P25 Phase 1
+  systems (with a single-system fallback). An explicit C4FM/CQPSK choice still
+  overrides Auto and persists.
+- **Channel-step nudge in the shared tuning controls** (#557). The
+  Constellation and Symbol scope offset field gains a **Step** selector
+  (6.25 / 12.5 / 25 kHz) with −/+ buttons and ArrowUp/ArrowDown stepping that
+  snap to the channel grid, so walking between adjacent channels no longer
+  needs manual kHz entry. The chosen step is shared across panels.
+
+### Fixed
+
 - **Constellation / signal scopes stuck on "waiting for symbols"** (#557,
   #583). The `WS /api/v1/diag/symbols` frame encoded its `dibits` field as a
   Go `[]uint8`, which `encoding/json` serialises as a base64 string rather than
