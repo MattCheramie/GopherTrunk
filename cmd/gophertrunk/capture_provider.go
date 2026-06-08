@@ -28,7 +28,9 @@ type captureProvider struct {
 }
 
 func newCaptureProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, log *slog.Logger) *captureProvider {
-	return &captureProvider{sp: newSpectrumProvider(pool, brokers, log), brokers: brokers}
+	// The capture picker doesn't use per-device modulation, so it omits
+	// the systems list (P25Modulation stays empty on its device list).
+	return &captureProvider{sp: newSpectrumProvider(pool, brokers, nil, log), brokers: brokers}
 }
 
 // Devices reuses the spectrum provider's broker walk.

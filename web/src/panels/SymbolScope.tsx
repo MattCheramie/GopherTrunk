@@ -3,7 +3,11 @@ import {
   fetchSpectrumDevices,
   type SpectrumDevice,
 } from "../api/spectrum";
-import { openSymbolStream, type SymbolFrame } from "../api/symbols";
+import {
+  demodModeToProto,
+  openSymbolStream,
+  type SymbolFrame,
+} from "../api/symbols";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 import { SymbolScopeChart } from "../components/SymbolScopeChart";
@@ -23,9 +27,10 @@ import { TuningControls } from "../components/TuningControls";
 
 const WINDOW_SYMBOLS = 2400; // rolling scope width
 
-const PROTOS: { value: string; label: string; soft: boolean }[] = [
-  { value: "p25-c4fm", label: "P25 C4FM", soft: true },
-  { value: "p25-cqpsk", label: "P25 CQPSK", soft: false },
+const PROTOS: { value: string; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "p25-c4fm", label: "P25 C4FM" },
+  { value: "p25-cqpsk", label: "P25 CQPSK" },
 ];
 
 type ConnState = "connecting" | "open" | "closed";
@@ -79,6 +84,14 @@ export function SymbolScope() {
     [devices, selected],
   );
 
+  // Resolve the Mode selection: "auto" follows the modulation the
+  // selected SDR's system is decoding (device.p25_modulation, C4FM when
+  // unknown); an explicit choice is used verbatim.
+  const effectiveProto = useMemo(
+    () => (proto === "auto" ? demodModeToProto(device?.p25_modulation) : proto),
+    [proto, device],
+  );
+
   // Newest active call on the selected SDR → the offset (kHz) that
   // centres it. Followed live when Hold is off.
   const followOffsetKHz = useMemo(() => {
@@ -126,7 +139,7 @@ export function SymbolScope() {
 
     const stream = openSymbolStream(cfg, {
       serial: selected,
-      proto,
+      proto: effectiveProto,
       offset: Math.round(clampedOffsetKHz * 1000),
       onFrame: (f) => {
         setLatest(f);
@@ -144,7 +157,7 @@ export function SymbolScope() {
       onStatus: setConn,
     });
     return () => stream.close();
-  }, [cfg, selected, proto, clampedOffsetKHz]);
+  }, [cfg, selected, effectiveProto, clampedOffsetKHz]);
 
   // Centre comes from the selected device so the frequency view renders
   // immediately — symbol frames only arrive once the receiver decodes, so
@@ -208,6 +221,11 @@ export function SymbolScope() {
               </option>
             ))}
           </select>
+          {proto === "auto" && (
+            <span className="text-muted">
+              ·&nbsp;{effectiveProto === "p25-c4fm" ? "C4FM" : "CQPSK"}
+            </span>
+          )}
         </label>
 
         <TuningControls
