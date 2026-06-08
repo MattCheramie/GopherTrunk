@@ -43,15 +43,15 @@ func collectConfigFields() map[string]map[string]bool {
 	return out
 }
 
-// TestMetaTableFieldsExist fails if a metadata override references a config
-// field that no longer exists (renamed/removed) — keeping the TUI's polish in
-// sync with the schema.
-func TestMetaTableFieldsExist(t *testing.T) {
+// TestFieldMetaKeysExist fails if the shared field-metadata registry references
+// a config field that no longer exists (renamed/removed) — keeping the builders'
+// polish in sync with the schema.
+func TestFieldMetaKeysExist(t *testing.T) {
 	fields := collectConfigFields()
-	for key := range metaTable {
+	for key := range configbuilder.FieldMetas() {
 		parts := strings.SplitN(key, ".", 2)
 		if len(parts) != 2 || !fields[parts[0]][parts[1]] {
-			t.Errorf("metaTable key %q does not match any config field", key)
+			t.Errorf("FieldMetas key %q does not match any config field", key)
 		}
 	}
 }

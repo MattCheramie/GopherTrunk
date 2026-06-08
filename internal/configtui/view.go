@@ -70,6 +70,18 @@ func (m Model) viewForm() string {
 	var b strings.Builder
 	b.WriteString(stTitle.Render(m.breadcrumb(sec)) + "\n")
 
+	// Section instructions + docs link (only at the section root, so drilling
+	// into a sub-form doesn't repeat the banner). Sourced from the shared
+	// configbuilder registry, identical to the web builder.
+	if len(m.navpath) == 0 {
+		if sec.Instructions != "" {
+			b.WriteString(stMuted.Render(sec.Instructions) + "\n")
+		}
+		if sec.DocURL != "" {
+			b.WriteString(stMuted.Render("docs: "+sec.DocURL) + "\n")
+		}
+	}
+
 	// Per-section validation banner.
 	if errs := m.validation[sec.Key]; len(errs) > 0 {
 		for _, e := range errs {
