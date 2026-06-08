@@ -40,6 +40,13 @@ export function SymbolHistogram({ signal }: { signal: SignalQuality }) {
             {signal.iq_image_rejection_db.toFixed(1)} dB
           </>
         )}
+        {signal.demod && (
+          <>
+            {" "}· demod ({signal.demod.modulation}) EVM{" "}
+            {signal.demod.evm_pct.toFixed(1)}% · SNR≈{" "}
+            {signal.demod.snr_estimate_db.toFixed(1)} dB
+          </>
+        )}
       </p>
     </div>
   );
