@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 )
 
@@ -235,14 +236,9 @@ type ConfigSaveRequest struct {
 }
 
 // TalkgroupCSVRow is one row of a talkgroup CSV sidecar written on save.
-type TalkgroupCSVRow struct {
-	Decimal     uint32 `json:"decimal"`
-	AlphaTag    string `json:"alpha_tag,omitempty"`
-	Description string `json:"description,omitempty"`
-	Tag         string `json:"tag,omitempty"`
-	Group       string `json:"group,omitempty"`
-	Mode        string `json:"mode,omitempty"`
-}
+// Aliased to the shared configbuilder type so the TUI and web builder use
+// one definition and the JSON wire shape is identical.
+type TalkgroupCSVRow = configbuilder.TalkgroupCSVRow
 
 // ConfigSaveResponse is the body returned after a successful save.
 type ConfigSaveResponse struct {
@@ -265,16 +261,5 @@ func validationErrorsFrom(errs []error) ValidationResult {
 	return ValidationResult{OK: false, Errors: out}
 }
 
-// sectionOf extracts the top-level config section from a validation error
-// message (everything before the first '.', ':', or '[' in the leading
-// token). E.g. "trunking.systems[0]: name required" → "trunking".
-func sectionOf(msg string) string {
-	end := len(msg)
-	for i, r := range msg {
-		if r == '.' || r == ':' || r == '[' || r == ' ' {
-			end = i
-			break
-		}
-	}
-	return msg[:end]
-}
+// sectionOf delegates to the shared configbuilder helper.
+func sectionOf(msg string) string { return configbuilder.SectionOf(msg) }
