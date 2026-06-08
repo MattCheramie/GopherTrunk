@@ -7,6 +7,11 @@ import type {
   ValidationResult,
 } from "../api/types";
 
+// pushErr appends a message to the error toast stack.
+function pushErr(set: (fn: (s: State) => Partial<State>) => void, msg: string) {
+  set((s) => ({ errors: [...s.errors, msg] }));
+}
+
 interface State {
   // The config being edited, plus where it came from.
   config: GTConfig | null;
@@ -19,8 +24,10 @@ interface State {
   talkgroups: Record<string, TalkgroupCSVRow[]>;
 
   docs: Record<string, DocLink>;
+  defaults: GTConfig | null; // config.Default() seed, for "configured" nav cues
   token: string;
-  lastError: string | null;
+  errors: string[]; // toast stack
+  busy: boolean; // an async op (load/save/validate) is in flight
   lastSaved: string | null;
   validation: ValidationResult | null;
 
@@ -28,11 +35,13 @@ interface State {
   init: () => Promise<void>;
   newConfig: () => Promise<void>;
   load: (path: string) => Promise<void>;
+  revert: () => Promise<void>;
   setConfig: (c: GTConfig) => void;
   patchSection: <K extends keyof GTConfig>(key: K, value: GTConfig[K]) => void;
   stageTalkgroups: (rel: string, rows: TalkgroupCSVRow[]) => void;
   setToken: (t: string) => void;
-  setError: (e: string | null) => void;
+  setError: (e: string | null) => void; // null clears all; string pushes
+  dismissError: (i: number) => void;
   validateAll: () => Promise<void>;
   save: (path: string, overwrite: boolean) => Promise<boolean>;
 }
@@ -44,8 +53,10 @@ export const useStore = create<State>((set, get) => ({
   dirty: false,
   talkgroups: {},
   docs: {},
+  defaults: null,
   token: "",
-  lastError: null,
+  errors: [],
+  busy: false,
   lastSaved: null,
   validation: null,
 
@@ -56,12 +67,29 @@ export const useStore = create<State>((set, get) => ({
     } catch {
       /* docs are best-effort */
     }
+    // Cache the defaults once so the nav can flag which sections differ
+    // from a blank config ("configured" cues).
+    try {
+      set({ defaults: await api.defaults() });
+    } catch {
+      /* best-effort */
+    }
     if (!get().config) {
       await get().newConfig();
     }
   },
 
+  revert: async () => {
+    const p = get().path;
+    if (p) {
+      await get().load(p);
+    } else {
+      await get().newConfig();
+    }
+  },
+
   newConfig: async () => {
+    set({ busy: true });
     try {
       const cfg = await api.defaults();
       set({
@@ -75,11 +103,14 @@ export const useStore = create<State>((set, get) => ({
       });
       await get().validateAll();
     } catch (e) {
-      set({ lastError: `Could not load defaults: ${(e as Error).message}` });
+      pushErr(set, `Could not load defaults: ${(e as Error).message}`);
+    } finally {
+      set({ busy: false });
     }
   },
 
   load: async (path) => {
+    set({ busy: true });
     try {
       const resp = await api.loadFile(path);
       set({
@@ -91,8 +122,18 @@ export const useStore = create<State>((set, get) => ({
         validation: resp.validation,
         lastSaved: null,
       });
+      // Pull in the talkgroup sidecars so the per-system editor can show
+      // and edit them (best-effort — a config with none just stays empty).
+      try {
+        const tg = await api.talkgroups(resp.path);
+        if (tg.talkgroups) set({ talkgroups: tg.talkgroups });
+      } catch {
+        /* sidecars optional */
+      }
     } catch (e) {
-      set({ lastError: `Load failed: ${(e as Error).message}` });
+      pushErr(set, `Load failed: ${(e as Error).message}`);
+    } finally {
+      set({ busy: false });
     }
   },
 
@@ -112,7 +153,9 @@ export const useStore = create<State>((set, get) => ({
     set({ token: t });
   },
 
-  setError: (e) => set({ lastError: e }),
+  setError: (e) =>
+    set((s) => (e === null ? { errors: [] } : { errors: [...s.errors, e] })),
+  dismissError: (i) => set((s) => ({ errors: s.errors.filter((_, k) => k !== i) })),
 
   validateAll: async () => {
     const cfg = get().config;
@@ -121,13 +164,14 @@ export const useStore = create<State>((set, get) => ({
       const v = await api.validate(cfg);
       set({ validation: v });
     } catch (e) {
-      set({ lastError: `Validate failed: ${(e as Error).message}` });
+      pushErr(set, `Validate failed: ${(e as Error).message}`);
     }
   },
 
   save: async (path, overwrite) => {
     const cfg = get().config;
     if (!cfg) return false;
+    set({ busy: true });
     try {
       const resp = await api.save({
         path,
@@ -141,12 +185,23 @@ export const useStore = create<State>((set, get) => ({
         mtime: resp.mtime,
         dirty: false,
         lastSaved: `Saved to ${resp.path}`,
-        lastError: null,
+        errors: [],
       });
+      // Resync staged talkgroups with what's now on disk so the editor
+      // reflects the persisted state (and a later unrelated save doesn't
+      // re-stage stale rows).
+      try {
+        const tg = await api.talkgroups(resp.path);
+        set({ talkgroups: tg.talkgroups ?? {} });
+      } catch {
+        /* best-effort */
+      }
       return true;
     } catch (e) {
-      set({ lastError: `Save failed: ${(e as Error).message}` });
+      pushErr(set, `Save failed: ${(e as Error).message}`);
       return false;
+    } finally {
+      set({ busy: false });
     }
   },
 }));

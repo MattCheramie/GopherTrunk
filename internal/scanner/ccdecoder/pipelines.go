@@ -518,6 +518,11 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
+		// Soft differentials for soft-decision channel decoding, stashed
+		// just before the matching DibitSink → Process call (issue #553).
+		SoftSink: func(diffs []complex64, baseIdx int) {
+			cc.StashSoft(diffs, baseIdx)
+		},
 		ClockMode: tetraClockMode,
 		// Tuned smaller than the 0.03 default — at TETRA's 18000
 		// sym/s the standard gain over-corrects on clean signals

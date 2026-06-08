@@ -67,10 +67,12 @@ func WriteConfigFile(path string, cfg Config, guardMtime int64, overwrite bool) 
 		return 0, fmt.Errorf("config: refusing to write invalid config: %w", err)
 	}
 
+	exists := false
 	info, statErr := os.Stat(path)
 	switch {
 	case statErr == nil:
 		// File exists.
+		exists = true
 		if !overwrite {
 			return 0, fmt.Errorf("%w: %s", ErrFileExists, path)
 		}
@@ -81,7 +83,22 @@ func WriteConfigFile(path string, cfg Config, guardMtime int64, overwrite bool) 
 		return 0, fmt.Errorf("config: stat %s: %w", path, statErr)
 	}
 
-	data, err := Marshal(cfg)
+	// Overwriting an existing file merges onto its YAML node tree so
+	// hand-written comments + key order survive; a new file is a fresh
+	// marshal.
+	var (
+		data []byte
+		err  error
+	)
+	if exists {
+		original, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return 0, fmt.Errorf("config: read %s: %w", path, readErr)
+		}
+		data, err = MarshalMerge(original, cfg)
+	} else {
+		data, err = Marshal(cfg)
+	}
 	if err != nil {
 		return 0, err
 	}

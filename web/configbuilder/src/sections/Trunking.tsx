@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Section } from "../components/Section";
 import {
   Fieldset,
@@ -18,6 +18,7 @@ import type {
   EncryptionKey,
   P25BandPlanEntry,
   ParsedSystemDTO,
+  RRGeoRef,
   RRSearchHit,
   SystemConfig,
   TalkgroupCSVRow,
@@ -269,6 +270,8 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
         />
       </Fieldset>
 
+      <TalkgroupsField sys={sys} onChange={onChange} />
+
       <AdvancedJSON<SystemConfig>
         label="Advanced protocol knobs (JSON)"
         value={sys}
@@ -277,6 +280,127 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
         help="Protocol-specific decoder settings (TETRA/LTR/P25 Phase 1+2/NXDN/EDACS/MPT1327/Motorola/D-STAR). See the Trunking docs for accepted values; only set the keys you need."
       />
     </div>
+  );
+}
+
+// TalkgroupsField shows the per-system talkgroup count and opens an editor
+// modal. Rows are staged in the store keyed by the system's TalkgroupFile
+// (defaulted from the name) and written as a CSV sidecar on save.
+function TalkgroupsField(props: { sys: SystemConfig; onChange: (next: SystemConfig) => void }) {
+  const { sys, onChange } = props;
+  const talkgroups = useStore((s) => s.talkgroups);
+  const stage = useStore((s) => s.stageTalkgroups);
+  const [open, setOpen] = useState(false);
+  const rel = sys.TalkgroupFile || `${slug(sys.Name)}-talkgroups.csv`;
+  const rows = talkgroups[rel] ?? [];
+  return (
+    <Fieldset legend={`Talkgroups (${rows.length})`}>
+      <p className="help">Alias list written to the sidecar CSV <code>{rel}</code>.</p>
+      <button className="btn-ghost" onClick={() => setOpen(true)}>
+        Edit talkgroups
+      </button>
+      {open ? (
+        <TalkgroupModal
+          rel={rel}
+          rows={rows}
+          onClose={() => setOpen(false)}
+          onChange={(next) => {
+            stage(rel, next);
+            if (!sys.TalkgroupFile) onChange({ ...sys, TalkgroupFile: rel });
+          }}
+        />
+      ) : null}
+    </Fieldset>
+  );
+}
+
+function tgMatches(r: TalkgroupCSVRow, f: string): boolean {
+  if (!f) return true;
+  return (
+    String(r.decimal).includes(f) ||
+    (r.alpha_tag ?? "").toLowerCase().includes(f) ||
+    (r.tag ?? "").toLowerCase().includes(f) ||
+    (r.description ?? "").toLowerCase().includes(f)
+  );
+}
+
+function TalkgroupModal(props: {
+  rel: string;
+  rows: TalkgroupCSVRow[];
+  onClose: () => void;
+  onChange: (rows: TalkgroupCSVRow[]) => void;
+}) {
+  const { rows, onChange } = props;
+  const [filter, setFilter] = useState("");
+  const f = filter.trim().toLowerCase();
+  const set = (i: number, row: TalkgroupCSVRow) => {
+    const next = rows.slice();
+    next[i] = row;
+    onChange(next);
+  };
+  const remove = (i: number) => onChange(rows.filter((_, k) => k !== i));
+  const add = () => onChange([{ decimal: 0 }, ...rows]);
+
+  return (
+    <Modal title={`Talkgroups — ${props.rel}`} onClose={props.onClose}>
+      <div className="flex items-center gap-2">
+        <input
+          className="input"
+          placeholder="filter by decimal / alpha tag / tag / description"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <button className="btn" onClick={add}>
+          + Add
+        </button>
+      </div>
+      <p className="help">
+        {rows.length} talkgroup{rows.length === 1 ? "" : "s"}
+        {f ? ` (filtered)` : ""}.
+      </p>
+      <div className="max-h-96 space-y-1 overflow-y-auto">
+        {rows.map((r, i) =>
+          tgMatches(r, f) ? (
+            <div key={i} className="grid grid-cols-12 items-center gap-1 text-sm">
+              <input
+                className="input col-span-2"
+                type="number"
+                value={r.decimal}
+                onChange={(e) => set(i, { ...r, decimal: Number(e.target.value) })}
+                placeholder="dec"
+              />
+              <input
+                className="input col-span-3"
+                value={r.alpha_tag ?? ""}
+                onChange={(e) => set(i, { ...r, alpha_tag: e.target.value })}
+                placeholder="alpha tag"
+              />
+              <input
+                className="input col-span-3"
+                value={r.description ?? ""}
+                onChange={(e) => set(i, { ...r, description: e.target.value })}
+                placeholder="description"
+              />
+              <input
+                className="input col-span-2"
+                value={r.tag ?? ""}
+                onChange={(e) => set(i, { ...r, tag: e.target.value })}
+                placeholder="tag"
+              />
+              <input
+                className="input col-span-1"
+                value={r.mode ?? ""}
+                onChange={(e) => set(i, { ...r, mode: e.target.value })}
+                placeholder="mode"
+              />
+              <button className="btn-danger col-span-1" onClick={() => remove(i)}>
+                ✕
+              </button>
+            </div>
+          ) : null,
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -299,16 +423,55 @@ function RRBrowseModal(props: {
   onAdd: (sys: SystemConfig, tgs?: TalkgroupCSVRow[]) => void;
 }) {
   const setError = useStore((s) => s.setError);
-  const [kind, setKind] = useState<"zip" | "county" | "state">("zip");
+  const [mode, setMode] = useState<"name" | "zip" | "advanced">("name");
+
+  // name mode: state → county dropdowns.
+  const [states, setStates] = useState<RRGeoRef[] | null>(null);
+  const [counties, setCounties] = useState<RRGeoRef[] | null>(null);
+  const [stid, setStid] = useState("");
+  const [ctid, setCtid] = useState("");
+
+  // zip + advanced modes.
+  const [zip, setZip] = useState("");
+  const [kind, setKind] = useState<"county" | "state">("county");
   const [value, setValue] = useState("");
+
   const [hits, setHits] = useState<RRSearchHit[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const search = async () => {
+  // Lazy-load the state list when name mode is first shown.
+  useEffect(() => {
+    if (mode !== "name" || states !== null) return;
+    setBusy(true);
+    api
+      .rrStates()
+      .then((r) => setStates(r.results ?? []))
+      .catch((e) => setError(`RadioReference: ${(e as Error).message}`))
+      .finally(() => setBusy(false));
+  }, [mode, states, setError]);
+
+  const onStateChange = async (v: string) => {
+    setStid(v);
+    setCtid("");
+    setCounties(null);
+    setHits(null);
+    if (!v) return;
+    setBusy(true);
+    try {
+      const r = await api.rrCounties(Number(v));
+      setCounties(r.results ?? []);
+    } catch (e) {
+      setError(`RadioReference: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runSearch = async (fn: () => Promise<{ results: RRSearchHit[] | null }>) => {
     setBusy(true);
     setHits(null);
     try {
-      const r = await api.rrSearch(kind, value.trim());
+      const r = await fn();
       setHits(r.results ?? []);
     } catch (e) {
       setError(`RadioReference: ${(e as Error).message}`);
@@ -333,27 +496,92 @@ function RRBrowseModal(props: {
   return (
     <Modal title="Browse RadioReference.com" onClose={props.onClose}>
       <p className="help">
-        Search by ZIP code, county id (ctid), or state id (stid), then import a
-        system with its control channels and talkgroups. Requires RadioReference
-        credentials configured on the server.
+        Find a trunked system and import it with its control channels and
+        talkgroups. Requires RadioReference credentials configured on the server.
       </p>
-      <div className="flex gap-2">
-        <select className="input w-32" value={kind} onChange={(e) => setKind(e.target.value as "zip" | "county" | "state")}>
-          <option value="zip">ZIP</option>
-          <option value="county">County id</option>
-          <option value="state">State id</option>
-        </select>
-        <input
-          className="input"
-          value={value}
-          placeholder={kind === "zip" ? "78701" : "numeric id"}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && search()}
-        />
-        <button className="btn" disabled={busy || !value.trim()} onClick={search}>
-          Search
-        </button>
+      <div className="flex gap-2 text-sm">
+        {(["name", "zip", "advanced"] as const).map((m) => (
+          <button
+            key={m}
+            className={mode === m ? "btn" : "btn-ghost"}
+            onClick={() => {
+              setMode(m);
+              setHits(null);
+            }}
+          >
+            {m === "name" ? "By state/county" : m === "zip" ? "By ZIP" : "By ID"}
+          </button>
+        ))}
       </div>
+
+      {mode === "name" ? (
+        <div className="flex flex-wrap gap-2">
+          <select className="input w-44" value={stid} onChange={(e) => onStateChange(e.target.value)}>
+            <option value="">Select state…</option>
+            {(states ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-48"
+            value={ctid}
+            disabled={!counties}
+            onChange={(e) => {
+              setCtid(e.target.value);
+              if (e.target.value) runSearch(() => api.rrSearch("county", e.target.value));
+            }}
+          >
+            <option value="">Select county…</option>
+            {(counties ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          {stid ? (
+            <button className="btn-ghost" disabled={busy} onClick={() => runSearch(() => api.rrSearch("state", stid))}>
+              All systems in state
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {mode === "zip" ? (
+        <div className="flex gap-2">
+          <input
+            className="input"
+            value={zip}
+            placeholder="78701"
+            onChange={(e) => setZip(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch("zip", zip.trim()))}
+          />
+          <button className="btn" disabled={busy || !zip.trim()} onClick={() => runSearch(() => api.rrSearch("zip", zip.trim()))}>
+            Search
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "advanced" ? (
+        <div className="flex gap-2">
+          <select className="input w-32" value={kind} onChange={(e) => setKind(e.target.value as "county" | "state")}>
+            <option value="county">County id</option>
+            <option value="state">State id</option>
+          </select>
+          <input
+            className="input"
+            value={value}
+            placeholder="numeric ctid / stid"
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch(kind, value.trim()))}
+          />
+          <button className="btn" disabled={busy || !value.trim()} onClick={() => runSearch(() => api.rrSearch(kind, value.trim()))}>
+            Search
+          </button>
+        </div>
+      ) : null}
+
       {busy ? <p className="help">Working…</p> : null}
       {hits ? (
         hits.length === 0 ? (

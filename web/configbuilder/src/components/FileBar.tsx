@@ -10,8 +10,10 @@ export function FileBar() {
   const load = useStore((s) => s.load);
   const newConfig = useStore((s) => s.newConfig);
   const save = useStore((s) => s.save);
+  const revert = useStore((s) => s.revert);
   const validateAll = useStore((s) => s.validateAll);
   const setError = useStore((s) => s.setError);
+  const busy = useStore((s) => s.busy);
 
   const [files, setFiles] = useState<ConfigFileInfo[]>([]);
   const [dirs, setDirs] = useState<string[]>([]);
@@ -31,15 +33,23 @@ export function FileBar() {
     refresh();
   }, []);
 
+  // Ctrl+S on an untitled config asks us to open Save As (App dispatches it).
+  useEffect(() => {
+    const h = () => setSaveOpen(true);
+    window.addEventListener("configbuilder:saveas", h);
+    return () => window.removeEventListener("configbuilder:saveas", h);
+  }, []);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button className="btn-ghost" onClick={() => newConfig()}>
+      <button className="btn-ghost" disabled={busy} onClick={() => newConfig()}>
         New
       </button>
 
       <div className="relative">
         <button
           className="btn-ghost"
+          disabled={busy}
           onClick={() => {
             setOpenMenu((o) => !o);
             if (!openMenu) refresh();
@@ -53,21 +63,56 @@ export function FileBar() {
               <div className="help p-2">No config files found in the discovery directories.</div>
             ) : (
               files.map((f) => (
-                <button
+                <div
                   key={f.path}
-                  className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-white/5"
-                  onClick={() => {
-                    setOpenMenu(false);
-                    load(f.path);
-                  }}
-                  title={f.path}
+                  className="group flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-white/5"
                 >
-                  <span className={f.valid ? "" : "text-warn"}>
-                    {f.valid ? "" : "⚠ "}
-                    {f.name}
-                  </span>
-                  <span className="help block truncate">{f.dir}</span>
-                </button>
+                  <button
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => {
+                      setOpenMenu(false);
+                      load(f.path);
+                    }}
+                    title={f.path}
+                  >
+                    <span className={f.valid ? "" : "text-warn"}>
+                      {f.valid ? "" : "⚠ "}
+                      {f.name}
+                    </span>
+                    <span className="help block truncate">{f.dir}</span>
+                  </button>
+                  <button
+                    className="hidden text-xs text-muted hover:text-fg group-hover:block"
+                    title="Rename"
+                    onClick={async () => {
+                      const to = window.prompt("Rename to (filename):", f.name);
+                      if (!to || to === f.name) return;
+                      try {
+                        await api.renameFile(f.path, joinPath(f.dir, to.trim()));
+                        refresh();
+                      } catch (e) {
+                        setError(`Rename failed: ${(e as Error).message}`);
+                      }
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="hidden text-xs text-err/80 hover:text-err group-hover:block"
+                    title="Delete"
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${f.path}?`)) return;
+                      try {
+                        await api.deleteFile(f.path);
+                        refresh();
+                      } catch (e) {
+                        setError(`Delete failed: ${(e as Error).message}`);
+                      }
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -76,6 +121,7 @@ export function FileBar() {
 
       <button
         className="btn"
+        disabled={busy}
         onClick={async () => {
           if (!path) {
             setSaveOpen(true);
@@ -86,9 +132,21 @@ export function FileBar() {
       >
         Save
       </button>
-      <button className="btn-ghost" onClick={() => setSaveOpen(true)}>
+      <button className="btn-ghost" disabled={busy} onClick={() => setSaveOpen(true)}>
         Save As…
       </button>
+      {dirty ? (
+        <button
+          className="btn-ghost"
+          disabled={busy}
+          title="Discard unsaved changes and reload from disk"
+          onClick={() => {
+            if (window.confirm("Discard unsaved changes?")) void revert();
+          }}
+        >
+          Revert
+        </button>
+      ) : null}
       <button className="btn-ghost" onClick={() => validateAll()}>
         Validate all
       </button>
@@ -145,14 +203,32 @@ function SaveDialog(props: {
   onClose: () => void;
   onSave: (path: string, overwrite: boolean) => void;
 }) {
-  const lastError = useStore((s) => s.lastError);
-  const [dir, setDir] = useState(props.dirs[0] ?? "");
+  const setError = useStore((s) => s.setError);
+  const lastError = useStore((s) => s.errors[s.errors.length - 1] ?? null);
+  const [extraDirs, setExtraDirs] = useState<string[]>([]);
+  const allDirs = [...props.dirs, ...extraDirs];
+  const [dir, setDir] = useState(allDirs[0] ?? "");
   const [name, setName] = useState(
     props.defaultPath ? props.defaultPath.split(/[/\\]/).pop()! : "config.yaml",
   );
+  const [newFolder, setNewFolder] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const target = joinPath(dir, name.trim());
   const collides = !!name.trim() && pathCollides(props.files, target);
+
+  const createFolder = async () => {
+    const folder = newFolder.trim();
+    if (!folder || !dir) return;
+    const full = joinPath(dir, folder);
+    try {
+      const r = await api.mkdir(full);
+      setExtraDirs((d) => (d.includes(r.path) ? d : [...d, r.path]));
+      setDir(r.path);
+      setNewFolder("");
+    } catch (e) {
+      setError(`Create folder failed: ${(e as Error).message}`);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4">
@@ -166,16 +242,32 @@ function SaveDialog(props: {
         <label className="block">
           <span className="label">Directory</span>
           <select className="input" value={dir} onChange={(e) => setDir(e.target.value)}>
-            {props.dirs.map((d) => (
+            {allDirs.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
           </select>
           <p className="help mt-1">
-            Saves are restricted to the server's config discovery directories.
+            Saves are restricted to the server's config directories (and
+            subfolders you create below).
           </p>
         </label>
+        <div className="flex items-end gap-2">
+          <label className="block flex-1">
+            <span className="label">New subfolder</span>
+            <input
+              className="input"
+              value={newFolder}
+              placeholder="e.g. clients/acme"
+              onChange={(e) => setNewFolder(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), createFolder())}
+            />
+          </label>
+          <button className="btn-ghost" disabled={!newFolder.trim()} onClick={createFolder}>
+            Create
+          </button>
+        </div>
         <label className="block">
           <span className="label">Filename</span>
           <input

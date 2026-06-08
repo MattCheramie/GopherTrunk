@@ -1,14 +1,19 @@
 import { Section } from "../components/Section";
 import {
   BoolField,
+  Fieldset,
+  HzField,
   NumberField,
   SelectField,
   TextField,
 } from "../components/fields";
+import { ListEditor } from "../components/ListEditor";
+import { formatCommaList, parseCommaList } from "../lib/csvList";
 import { useStore } from "../store/shared";
 import type {
   APIConfig,
   AudioConfig,
+  ConvChannelConfig,
   DiagnosticsConfig,
   GTConfig,
   LogConfig,
@@ -60,6 +65,26 @@ export function LogSection() {
           { value: "json", label: "json" },
         ]}
       />
+      <Fieldset legend="Decoded-message log">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.MessageLog?.Enabled}
+          onChange={(x) => set({ ...cfg, MessageLog: { ...cfg.MessageLog, Enabled: x } })}
+          help="Human-readable per-event log of trunking activity (grants, lock/loss, affiliations)."
+        />
+        <TextField
+          label="Path"
+          value={cfg.MessageLog?.Path ?? ""}
+          onChange={(x) => set({ ...cfg, MessageLog: { ...cfg.MessageLog, Path: x } })}
+          placeholder="/var/log/gophertrunk/messages.log"
+        />
+        <NumberField
+          label="Max size (MB)"
+          value={cfg.MessageLog?.MaxSizeMB ?? 0}
+          onChange={(x) => set({ ...cfg, MessageLog: { ...cfg.MessageLog, MaxSizeMB: x } })}
+          placeholder="16"
+        />
+      </Fieldset>
     </Section>
   );
 }
@@ -138,6 +163,66 @@ export function APISection() {
         placeholder="127.0.0.1:4532 (optional)"
         help="Expose the control SDR over the Hamlib rigctld protocol. Leave empty to disable."
       />
+
+      <Fieldset legend="Authentication">
+        <SelectField
+          label="Mode"
+          value={cfg.Auth?.Mode ?? ""}
+          onChange={(x) => set({ ...cfg, Auth: { ...cfg.Auth, Mode: x } })}
+          options={[
+            { value: "", label: "(auto)" },
+            { value: "auto", label: "auto (loopback trusted, token on public binds)" },
+            { value: "required", label: "required (always need a token)" },
+            { value: "disabled", label: "disabled (wide open)" },
+          ]}
+        />
+        <TextField
+          label="Token"
+          type="password"
+          value={cfg.Auth?.Token ?? ""}
+          onChange={(x) => set({ ...cfg, Auth: { ...cfg.Auth, Token: x } })}
+          help="Inline bearer token. Prefer Token file so the secret stays out of config.yaml."
+        />
+        <TextField
+          label="Token file"
+          value={cfg.Auth?.TokenFile ?? ""}
+          onChange={(x) => set({ ...cfg, Auth: { ...cfg.Auth, TokenFile: x } })}
+          placeholder="/etc/gophertrunk/token"
+        />
+        <TextField
+          label="Trusted networks"
+          value={formatCommaList(cfg.Auth?.TrustedNetworks)}
+          onChange={(x) => set({ ...cfg, Auth: { ...cfg.Auth, TrustedNetworks: parseCommaList(x) } })}
+          placeholder="10.0.0.0/8, 192.168.1.0/24"
+          help="Comma-separated CIDRs that bypass the token in auto mode."
+        />
+      </Fieldset>
+
+      <Fieldset legend="CORS">
+        <TextField
+          label="Allowed origins"
+          value={formatCommaList(cfg.CORS?.AllowedOrigins)}
+          onChange={(x) => set({ ...cfg, CORS: { ...cfg.CORS, AllowedOrigins: parseCommaList(x) } })}
+          placeholder='null, http://laptop.local:8000, *'
+          help="Comma-separated origins echoed in Access-Control-Allow-Origin. Empty disables CORS."
+        />
+      </Fieldset>
+
+      <Fieldset legend="TLS">
+        <TextField
+          label="TLS cert (PEM path)"
+          value={cfg.TLSCert}
+          onChange={(x) => set({ ...cfg, TLSCert: x })}
+          placeholder="(optional) /etc/gophertrunk/cert.pem"
+        />
+        <TextField
+          label="TLS key (PEM path)"
+          value={cfg.TLSKey}
+          onChange={(x) => set({ ...cfg, TLSKey: x })}
+          placeholder="(optional) /etc/gophertrunk/key.pem"
+          help="Both cert and key must be set to enable TLS."
+        />
+      </Fieldset>
     </Section>
   );
 }
@@ -194,6 +279,27 @@ export function RecordingsSection() {
         value={cfg.WriteRaw}
         onChange={(x) => set({ ...cfg, WriteRaw: x })}
       />
+      <Fieldset legend="Equalizer (CMA blind equalizer)">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.Equalizer?.Enabled}
+          onChange={(x) => set({ ...cfg, Equalizer: { ...cfg.Equalizer, Enabled: x } })}
+          help="Per-call CMA equalizer for simulcast systems (multiple TX at slightly different delays)."
+        />
+        <NumberField
+          label="Taps"
+          value={cfg.Equalizer?.Taps ?? 0}
+          onChange={(x) => set({ ...cfg, Equalizer: { ...cfg.Equalizer, Taps: x } })}
+          placeholder="8"
+        />
+        <NumberField
+          label="Step size"
+          step={0.0001}
+          value={cfg.Equalizer?.StepSize ?? 0}
+          onChange={(x) => set({ ...cfg, Equalizer: { ...cfg.Equalizer, StepSize: x } })}
+          placeholder="0.0001"
+        />
+      </Fieldset>
     </Section>
   );
 }
@@ -265,6 +371,102 @@ export function ScannerSection() {
           { value: "all", label: "all" },
           { value: "list", label: "list" },
         ]}
+      />
+
+      <Fieldset legend="Control-channel hunter">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.CCHunt?.Enabled}
+          onChange={(x) => set({ ...cfg, CCHunt: { ...cfg.CCHunt, Enabled: x } })}
+          help="Multi-system control-channel hunter (cycles candidate CCs until one locks)."
+        />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NumberField label="Dwell (ms)" value={cfg.CCHunt?.DwellMs ?? 0} onChange={(x) => set({ ...cfg, CCHunt: { ...cfg.CCHunt, DwellMs: x } })} />
+          <NumberField label="Backoff (ms)" value={cfg.CCHunt?.BackoffMs ?? 0} onChange={(x) => set({ ...cfg, CCHunt: { ...cfg.CCHunt, BackoffMs: x } })} />
+          <NumberField label="Max backoff (ms)" value={cfg.CCHunt?.MaxBackoffMs ?? 0} onChange={(x) => set({ ...cfg, CCHunt: { ...cfg.CCHunt, MaxBackoffMs: x } })} />
+        </div>
+      </Fieldset>
+
+      <Fieldset legend="Conventional channels (analog FM scan list)">
+        <ListEditor<ConvChannelConfig>
+          label="Channels"
+          items={cfg.Conventional}
+          onChange={(x) => set({ ...cfg, Conventional: x })}
+          makeNew={() => ({
+            Label: "",
+            FrequencyHz: 0,
+            Mode: "nfm",
+            SquelchDbFS: 0,
+            HangtimeMs: 0,
+            Priority: 0,
+            Tone: { Mode: "", CTCSSHz: 0, DCSCode: "" },
+          })}
+          itemTitle={(ch) => ch.Label || "channel"}
+          emptyHint="Fixed-frequency analog channels the scanner sweeps alongside trunking."
+          renderItem={(ch, setCh) => (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField label="Label" value={ch.Label} onChange={(x) => setCh({ ...ch, Label: x })} />
+                <HzField label="Frequency" value={ch.FrequencyHz} onChange={(x) => setCh({ ...ch, FrequencyHz: x })} />
+                <SelectField
+                  label="Mode"
+                  value={ch.Mode}
+                  onChange={(x) => setCh({ ...ch, Mode: x })}
+                  options={[
+                    { value: "", label: "(fm)" },
+                    { value: "fm", label: "fm" },
+                    { value: "nfm", label: "nfm" },
+                  ]}
+                />
+                <NumberField label="Squelch (dBFS)" value={ch.SquelchDbFS} onChange={(x) => setCh({ ...ch, SquelchDbFS: x })} />
+                <NumberField label="Hangtime (ms)" value={ch.HangtimeMs} onChange={(x) => setCh({ ...ch, HangtimeMs: x })} />
+                <NumberField label="Priority" value={ch.Priority} onChange={(x) => setCh({ ...ch, Priority: x })} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SelectField
+                  label="Tone mode"
+                  value={ch.Tone?.Mode ?? ""}
+                  onChange={(x) => setCh({ ...ch, Tone: { ...ch.Tone, Mode: x } })}
+                  options={[
+                    { value: "", label: "none" },
+                    { value: "none", label: "none" },
+                    { value: "ctcss", label: "CTCSS" },
+                    { value: "dcs", label: "DCS" },
+                  ]}
+                />
+                {ch.Tone?.Mode === "ctcss" ? (
+                  <NumberField
+                    label="CTCSS (Hz, 50–300)"
+                    step={0.1}
+                    value={ch.Tone?.CTCSSHz ?? 0}
+                    onChange={(x) => setCh({ ...ch, Tone: { ...ch.Tone, CTCSSHz: x } })}
+                  />
+                ) : null}
+                {ch.Tone?.Mode === "dcs" ? (
+                  <TextField
+                    label="DCS code (3 octal digits)"
+                    value={ch.Tone?.DCSCode ?? ""}
+                    onChange={(x) => setCh({ ...ch, Tone: { ...ch.Tone, DCSCode: x } })}
+                    placeholder="023"
+                  />
+                ) : null}
+              </div>
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <BoolField
+        label="Manual tune enabled"
+        value={!!cfg.ManualTuneEnabled}
+        onChange={(x) => set({ ...cfg, ManualTuneEnabled: x })}
+        help="Force a VFO tuner so the TUI 'f' key / manual-tune API works even with no static channels (steals one Voice SDR)."
+      />
+      <BoolField
+        label="Manual tune disabled"
+        value={!!cfg.ManualTuneDisabled}
+        onChange={(x) => set({ ...cfg, ManualTuneDisabled: x })}
+        help="Opt out of the auto-detect rule that builds the scanner when ≥2 Voice SDRs are present."
       />
     </Section>
   );

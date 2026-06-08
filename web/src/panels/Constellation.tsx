@@ -40,11 +40,22 @@ import { TuningControls } from "../components/TuningControls";
 
 const TARGET_RATE_SPS = 2000;
 const POINT_BUFFER = 2000;       // how many recent points to render
-const CANVAS_PX = 420;           // square canvas; CSS scales to width
+// The plot is a responsive square: it fills the panel column (so it's as
+// large as OP25's, not a fixed postage stamp) but stays bounded so it
+// can't run away on ultrawide layouts. Measured at runtime via
+// ResizeObserver; rendered at devicePixelRatio for crispness.
+const MIN_CANVAS_PX = 320;
+const MAX_CANVAS_PX = 880;
+const LEGACY_RADIUS_PX = 187;    // old 420px plot radius — dot-scale baseline
 const MARGIN = { top: 12, right: 12, bottom: 24, left: 34 };
-// Base dot edge in CSS px at zoom 1; scaled by the Zoom control so the
-// scatter reads clearly instead of as pin-pricks (issue #557 follow-up).
+// Base dot edge in CSS px at zoom 1 and the legacy plot size; scaled by
+// the Zoom control and the live plot size so the scatter reads clearly
+// instead of as pin-pricks (issue #557 follow-up).
 const BASE_DOT_PX = 2;
+// Auto-scale fills the ~95th-percentile radius to this fraction of the
+// unit circle at zoom 1 (a touch under OP25's ~0.75 so Zoom has headroom
+// to punch in without immediately clipping the cloud).
+const FILL_TARGET = 0.6;
 
 // GopherTrunk's sky-400 accent (matches --gt-accent and the Spectrum
 // waterfall's blue→cyan ramp), deliberately not OP25's phosphor green.
@@ -85,10 +96,47 @@ export function Constellation() {
   );
   const [zoom, setZoom] = useState<number>(() => prefs.constellationZoom());
 
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<IQPoint[]>([]);
   const scaleRef = useRef<number>(1);
   const optsRef = useRef<RenderOpts>({ dcBlock, autoScale, zoom, scaleRef });
+  // Live square edge of the plot in CSS px, tracked from the container.
+  const [size, setSize] = useState<number>(MIN_CANVAS_PX);
+
+  // Track the available width and keep the plot a square that fills it
+  // (bounded). Falls back to a one-shot measure where ResizeObserver is
+  // absent (e.g. jsdom under test).
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const inner = el.clientWidth - 16; // minus the p-2 padding
+      const next = Math.max(
+        MIN_CANVAS_PX,
+        Math.min(MAX_CANVAS_PX, Math.floor(inner)),
+      );
+      if (next > 0) setSize(next);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Size the canvas buffer to the displayed square × devicePixelRatio so
+  // the scatter stays crisp at any size, then repaint.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+    renderConstellation(canvas, bufferRef.current, optsRef.current);
+  }, [size]);
 
   // Keep the render-time options the WS callback reads in sync without
   // re-subscribing the stream when a toggle flips.
@@ -285,7 +333,7 @@ export function Constellation() {
           <input
             type="range"
             min={0.5}
-            max={4}
+            max={8}
             step={0.1}
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}
@@ -300,13 +348,13 @@ export function Constellation() {
 
       <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>
 
-      <div className="rounded border border-border bg-black flex items-center justify-center p-2">
+      <div
+        ref={wrapRef}
+        className="rounded border border-border bg-black flex items-center justify-center p-2"
+      >
         <canvas
           ref={canvasRef}
-          width={CANVAS_PX}
-          height={CANVAS_PX}
-          className="block max-w-full"
-          style={{ width: CANVAS_PX, height: CANVAS_PX }}
+          className="block"
           aria-label="IQ constellation scatter"
         />
       </div>
@@ -342,8 +390,12 @@ function renderConstellation(
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
+  // The buffer is sized at devicePixelRatio; draw in logical (CSS) px so
+  // margins, fonts and dot sizes stay consistent at any zoom/DPI.
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
 
   // Square plot region inside the label margins.
   const plot = Math.min(
@@ -419,7 +471,7 @@ function renderConstellation(
     }
     radii.sort();
     const refR = Math.max(1e-6, radii[Math.min(n - 1, Math.floor(0.95 * n))]);
-    const target = Math.max(0.2, Math.min(8, 0.9 / refR));
+    const target = Math.max(0.2, Math.min(8, FILL_TARGET / refR));
     gain = gain + (target - gain) * 0.1;
     opts.scaleRef.current = gain;
   } else {
@@ -429,9 +481,15 @@ function renderConstellation(
 
   // Zoom magnifies both the cloud and the dot size so the scatter reads as
   // dots, not pin-pricks, and can be dialled to taste (issue #557 follow-up).
+  // Dots also grow with the plot size so a large canvas keeps proportionate,
+  // OP25-sized points rather than the same few pixels on a much bigger ring.
   const zoom = opts.zoom > 0 ? opts.zoom : 1;
   const finalGain = gain * zoom;
-  const dotPx = Math.max(2, Math.min(8, Math.round(BASE_DOT_PX * zoom)));
+  const sizeScale = radius / LEGACY_RADIUS_PX;
+  const dotPx = Math.max(
+    2,
+    Math.min(14, Math.round(BASE_DOT_PX * zoom * sizeScale)),
+  );
   const dotHalf = dotPx / 2;
 
   // Additive blending so overlapping symbols accumulate brightness.

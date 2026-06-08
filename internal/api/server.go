@@ -1013,13 +1013,19 @@ func (s *Server) routes() *http.ServeMux {
 	if s.configBuilder != nil {
 		mux.HandleFunc("GET /api/v1/config/files", s.handleConfigList)
 		mux.HandleFunc("GET /api/v1/config/file", s.handleConfigLoad)
+		mux.HandleFunc("GET /api/v1/config/file/talkgroups", s.handleConfigTalkgroups)
 		mux.HandleFunc("GET /api/v1/config/defaults", s.handleConfigDefaults)
 		mux.HandleFunc("GET /api/v1/config/docs", s.handleConfigDocs)
 		mux.HandleFunc("POST /api/v1/config/validate", s.handleConfigValidate)
 		mux.HandleFunc("POST /api/v1/config/marshal", s.handleConfigMarshal)
 		mux.HandleFunc("POST /api/v1/config/file", s.gate(s.handleConfigSave))
+		mux.HandleFunc("DELETE /api/v1/config/file", s.gate(s.handleConfigDelete))
+		mux.HandleFunc("POST /api/v1/config/file/rename", s.gate(s.handleConfigRename))
+		mux.HandleFunc("POST /api/v1/config/dir", s.gate(s.handleConfigMkdir))
 		mux.HandleFunc("POST /api/v1/config/parse", s.gate(s.handleConfigParse))
 		mux.HandleFunc("GET /api/v1/config/rr/search", s.handleConfigRRSearch)
+		mux.HandleFunc("GET /api/v1/config/rr/states", s.handleConfigRRStates)
+		mux.HandleFunc("GET /api/v1/config/rr/counties", s.handleConfigRRCounties)
 		mux.HandleFunc("GET /api/v1/config/rr/system/{sid}", s.handleConfigRRSystem)
 
 		// Secondary SPA at /config/ (daemon path). The standalone
