@@ -45,6 +45,7 @@ func runHunt(args []string) {
 	// Live-mode flags (no -in): sweep an SDR across operator-given band(s) or
 	// probe an explicit candidate list.
 	serial := fs.String("serial", "", "SDR serial to sweep for a live hunt (omit -in). Empty + no -in ⇒ error")
+	surveyMode := fs.Bool("survey", false, "signal-survey mode: classify every detected carrier (analog/digital/paging/trunking) and decode the conventional ones, not just trunking control channels (live only)")
 	var bands repeatedString
 	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
 	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
@@ -102,6 +103,9 @@ EXAMPLES:
   # LIVE: probe a known control-channel list directly (no sweep)
   gophertrunk hunt -serial 00000001 -sample-rate 2400000 -no-sweep -candidates 851.0125,853.5125
 
+  # SURVEY: sweep a band and classify+decode every signal (analog, paging, trunking)
+  gophertrunk hunt -survey -serial 00000001 -sample-rate 2400000 -band 460:470
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -157,6 +161,7 @@ FLAGS:`)
 	if live {
 		sys, reports = runHuntLive(rep, huntLiveParams{
 			serial:          *serial,
+			survey:          *surveyMode,
 			bands:           []string(bands),
 			candidatesMHz:   *candidatesFlag,
 			noSweep:         *noSweep,
@@ -214,6 +219,7 @@ FLAGS:`)
 	}
 
 	finishHunt(rep, sys, reports, huntExportParams{
+		surveyMode: *surveyMode,
 		outFormats: outFormats,
 		outDir:     *out,
 		noRR:       *noRR,
@@ -229,6 +235,7 @@ FLAGS:`)
 // huntExportParams carries the post-discovery export/RR/commit options shared
 // by the offline and live hunt paths.
 type huntExportParams struct {
+	surveyMode bool
 	outFormats []hunt.Format
 	outDir     string
 	noRR       bool
@@ -255,7 +262,14 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 				r.Path, r.Protocol, r.Locked, r.Talkgroups)
 		}
 	}
-	if len(sys.Sites) == 0 && len(sys.Talkgroups) == 0 {
+	if sys == nil || (len(sys.Sites) == 0 && len(sys.Talkgroups) == 0) {
+		// A survey can legitimately find no trunked system (only analog/paging/
+		// unclassified carriers); the inventory was already printed, so exit
+		// cleanly rather than treating "no system" as a hunt failure.
+		if p.surveyMode {
+			fmt.Fprintln(os.Stderr, "hunt: survey complete — no trunked system to export")
+			return
+		}
 		rep.Fatalf(1, "no trunked control channel was decoded")
 	}
 	fmt.Fprintf(os.Stderr, "hunt: discovered %q — %d site(s), %d talkgroup(s)\n",

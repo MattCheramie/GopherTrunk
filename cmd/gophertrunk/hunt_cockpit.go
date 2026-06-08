@@ -26,11 +26,13 @@ func (c huntCockpit) Status() api.HuntStatus {
 		RunID:      st.RunID,
 		State:      string(st.State),
 		Running:    st.Running,
+		Mode:       st.Mode,
 		Phase:      string(st.Progress.Phase),
 		Detail:     st.Progress.Detail,
 		Sites:      st.Sites,
 		Talkgroups: st.Talkgroups,
 		SystemName: st.SystemName,
+		Signals:    st.Signals,
 		Error:      st.Error,
 	}
 	if sys, reports, ok := c.mgr.Current(); ok {
@@ -69,6 +71,7 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		Bands:         bands,
 		Candidates:    candidates,
 		Protocol:      proto,
+		Survey:        req.Survey,
 		Serial:        req.Serial,
 		FFTSize:       req.FFTSize,
 		DwellSeconds:  req.DwellSeconds,

@@ -9,6 +9,21 @@ for tagged releases.
 
 ### Added
 
+- **Live signal survey — `gophertrunk hunt -survey`.** The hunt sweep now does
+  more than chase trunking control channels: in survey mode it classifies
+  *every* detected carrier by modulation family (analog NBFM/WFM, AM, digital
+  FSK/C4FM/PSK, paging, trunking) plus an occupied-bandwidth estimate, then
+  decodes the conventional ones — POCSAG/FLEX paging and analog-FM activity
+  (carrier + CTCSS/DCS) — while still folding any trunking control channel into
+  the discovered-system map. The classifier is blind and cheap (FFT
+  occupied-bandwidth, envelope coefficient-of-variation, FM-discriminator
+  features, and a cyclostationary baud-line detector), reusing the existing dsp
+  primitives and the POCSAG/FLEX/conventional decoders rather than duplicating
+  them. The result is a `SignalSurvey` inventory surfaced across the CLI
+  (printed table), the daemon REST API (`hunt.survey` request flag, `mode` +
+  `signals` in `GET /api/v1/hunt`), the web Hunt panel (a Survey-mode checkbox
+  and a signals table), and the TUI Hunt panel (a `v` survey-start key and a
+  signal list).
 - **Constellation / Symbol scope auto-detect the demod mode** (#557). The
   panels' **Mode** selector gains an **Auto** option (now the default) that
   follows the modulation the selected SDR's system is configured to decode —
