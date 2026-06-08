@@ -19,17 +19,27 @@ import (
 // errors that survive the single-error Hamming layer corrupt the
 // talkgroup/source under marginal SNR.
 //
-// LC content layout is the project's working model — TIA-102.BAAA's
-// per-LCO field tables are not in the repo. It is confined here with a
-// symmetric encoder so a spec correction stays local.
+// LC content layout for the Group Voice Channel User LCO (0x00), per
+// TIA-102.AABF. A symmetric encoder (AssembleLinkControl) keeps the
+// on-wire mapping in one place:
 //
 //	octet 0   : Link Control Format (the LCO opcode)
-//	octet 1   : service options
-//	octets 2-3: talkgroup / destination group
-//	octets 4-6: source unit ID (24 bits)
-//	octets 7-8: reserved
+//	octet 1   : manufacturer's ID (MFID)
+//	octet 2   : service options
+//	octet 3   : reserved
+//	octets 4-5: talkgroup / destination group address (16 bits)
+//	octets 6-8: source unit ID (24 bits)
+//
+// NOTE: a previous working model placed the talkgroup at octets 2-3 and
+// the source at octets 4-6. That shifted both fields: the talkgroup
+// decoded to the (constant) service-options byte — e.g. 0x0400 = 1024 —
+// while the real talkgroup landed inside the misread source field. With
+// the on-air talkgroup never matching the granted talkgroup, the voice
+// composer's foreign-TG gate ended every call after ~2 LDU1s, fragmenting
+// a single transmission into many tiny recordings (the field capture).
 type LinkControl struct {
 	LCFormat       uint8
+	MFID           uint8
 	ServiceOptions uint8
 	TalkgroupID    uint16
 	SourceID       uint32
@@ -176,9 +186,10 @@ func ParseLinkControl(blocks [LDULCESBlockCount][]byte) (LinkControl, int, error
 	oct := bitsToOctets(content)
 	return LinkControl{
 		LCFormat:       oct[0],
-		ServiceOptions: oct[1],
-		TalkgroupID:    uint16(oct[2])<<8 | uint16(oct[3]),
-		SourceID:       uint32(oct[4])<<16 | uint32(oct[5])<<8 | uint32(oct[6]),
+		MFID:           oct[1],
+		ServiceOptions: oct[2],
+		TalkgroupID:    uint16(oct[4])<<8 | uint16(oct[5]),
+		SourceID:       uint32(oct[6])<<16 | uint32(oct[7])<<8 | uint32(oct[8]),
 	}, innerErrs + rsErrs, nil
 }
 
@@ -209,9 +220,11 @@ func ParseLinkControlContent(blocks [LDULCESBlockCount][]byte) ([lcContentOctets
 func AssembleLinkControl(lc LinkControl) [LDULCESBlockCount][]byte {
 	oct := make([]byte, lcContentOctets)
 	oct[0] = lc.LCFormat
-	oct[1] = lc.ServiceOptions
-	oct[2], oct[3] = byte(lc.TalkgroupID>>8), byte(lc.TalkgroupID)
-	oct[4], oct[5], oct[6] = byte(lc.SourceID>>16), byte(lc.SourceID>>8), byte(lc.SourceID)
+	oct[1] = lc.MFID
+	oct[2] = lc.ServiceOptions
+	// oct[3] reserved (0)
+	oct[4], oct[5] = byte(lc.TalkgroupID>>8), byte(lc.TalkgroupID)
+	oct[6], oct[7], oct[8] = byte(lc.SourceID>>16), byte(lc.SourceID>>8), byte(lc.SourceID)
 
 	return lcInnerEncode(rsEncodeContentBits(octetsToBits(oct), 12))
 }

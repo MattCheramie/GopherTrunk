@@ -48,18 +48,20 @@ type boundaryTracker struct {
 	sawVoice      atomic.Bool
 
 	// Chain-goroutine-only state.
-	lastMatch      bool // most recent talkgroup-match decision (LDU2 etc. inherit it)
-	foreignRun     int  // consecutive frames with a known foreign talkgroup
-	voiceSinceRoll bool // wrote audio since the last segment roll / start
+	lastMatch      bool   // most recent talkgroup-match decision (LDU2 etc. inherit it)
+	foreignRun     int    // consecutive frames carrying the SAME foreign talkgroup
+	lastForeignTG  uint32 // the foreign talkgroup foreignRun is counting
+	voiceSinceRoll bool   // wrote audio since the last segment roll / start
 	lastTouchNano  int64
 	endOnce        sync.Once
 }
 
-// foreignRunToEnd is how many consecutive frames carrying a known
+// foreignRunToEnd is how many consecutive frames carrying the SAME known
 // foreign talkgroup end the call. A couple of frames debounces a single
 // mis-decoded Link Control word without letting a real foreign
 // transmission append more than ~one LDU of audio (which is gated out
-// anyway).
+// anyway). Requiring the same value across the run guards against a
+// one-off RS-aliased mis-decode (a garbage-but-valid LC) ending a call.
 const foreignRunToEnd = 2
 
 func (c *Composer) newBoundaryTracker(serial string, grantTG uint32, patched []uint32) *boundaryTracker {
@@ -94,6 +96,13 @@ func (bt *boundaryTracker) onVoice(tg uint32) bool {
 		if bt.lastMatch {
 			bt.foreignRun = 0
 		} else {
+			// Only count a sustained run of the SAME foreign talkgroup;
+			// a different value restarts the debounce so a lone mis-decode
+			// can't tip the count over the edge.
+			if tg != bt.lastForeignTG {
+				bt.lastForeignTG = tg
+				bt.foreignRun = 0
+			}
 			bt.foreignRun++
 			if bt.foreignRun >= foreignRunToEnd {
 				// A different talkgroup has taken this (shared) frequency;

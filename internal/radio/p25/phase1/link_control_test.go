@@ -45,6 +45,7 @@ func TestHamming10_6CorrectsSingleError(t *testing.T) {
 func TestLinkControlRoundTrip(t *testing.T) {
 	in := LinkControl{
 		LCFormat:       0x44,
+		MFID:           0x90,
 		ServiceOptions: 0xC0,
 		TalkgroupID:    0x1234,
 		SourceID:       0x00ABCD,
@@ -58,6 +59,43 @@ func TestLinkControlRoundTrip(t *testing.T) {
 	}
 	if got != in {
 		t.Errorf("round-trip = %+v, want %+v", got, in)
+	}
+}
+
+// TestLinkControlOctetLayout pins the absolute TIA-102.AABF Group Voice
+// Channel User (LCO 0x00) octet positions: TG at octets 4-5, source at
+// octets 6-8, service options at octet 2, MFID at octet 1. It builds the
+// 9 content octets DIRECTLY (not via AssembleLinkControl) so a symmetric
+// encoder/decoder swap can't mask a wrong layout — exactly the failure
+// that fragmented field recordings, where the on-air TG (e.g. 0x086A =
+// 2154) was misread out of octets 4-5 and the decoded talkgroup came back
+// as the constant service-options byte (0x0400 = 1024).
+func TestLinkControlOctetLayout(t *testing.T) {
+	oct := make([]byte, lcContentOctets)
+	oct[0] = LCOGroupVoiceChannelUser         // LCF
+	oct[1] = 0x90                             // MFID
+	oct[2] = 0x04                             // service options
+	oct[3] = 0x00                             // reserved
+	oct[4], oct[5] = 0x08, 0x6A               // talkgroup 0x086A = 2154
+	oct[6], oct[7], oct[8] = 0x12, 0x34, 0x56 // source 0x123456
+
+	// Encode the content bits through the layout-agnostic outer RS +
+	// inner Hamming layers to produce valid on-wire blocks.
+	blocks := lcInnerEncode(rsEncodeContentBits(octetsToBits(oct), 12))
+
+	got, _, err := ParseLinkControl(blocks)
+	if err != nil {
+		t.Fatalf("ParseLinkControl: %v", err)
+	}
+	want := LinkControl{
+		LCFormat:       LCOGroupVoiceChannelUser,
+		MFID:           0x90,
+		ServiceOptions: 0x04,
+		TalkgroupID:    2154,
+		SourceID:       0x123456,
+	}
+	if got != want {
+		t.Errorf("parsed %+v, want %+v", got, want)
 	}
 }
 

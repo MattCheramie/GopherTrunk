@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **P25 Phase 1 voice recordings no longer fragment into tiny per-LDU files.**
+  A single continuous transmission was being chopped into many ~1-second
+  recordings (each `.raw` an exact multiple of one LDU), because the embedded
+  LDU1 Link Control was reading the talkgroup from the wrong content octets.
+  For the Group Voice Channel User LCO (0x00) the talkgroup lives at octets 4-5
+  and the source at 6-8 (TIA-102.AABF); the decoder was reading the talkgroup
+  from octets 2-3, so it always came back as the constant service-options byte
+  (0x0400 = 1024) while the real talkgroup landed inside the misread source
+  field. With the in-band talkgroup never matching the granted talkgroup, the
+  voice composer's foreign-talkgroup gate ended every call after ~2 LDU1s and
+  the control channel immediately re-granted, spawning a fresh file each time.
+  The Link Control octet layout is corrected (the FEC was always fine) and a
+  regression test now pins the absolute octet positions. As defense-in-depth,
+  the foreign-talkgroup gate now requires the *same* foreign talkgroup across
+  its debounce window so a lone RS-aliased mis-decode can't end a call.
+
 ### Added
 
 - **Signal survey — save it, decode it, run it offline.** Follow-up to the live
