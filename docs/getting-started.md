@@ -54,10 +54,15 @@ everything else is a view onto the same running daemon.
 | **TUI cockpit** | In-process [Bubbletea](tui.html) terminal console with 12 panels (dashboard, active calls, scanner, history, …). | `gophertrunk -tui` |
 | **Web console** | Bundled browser SPA served by the daemon — the same panels in a browser. | `gophertrunk -web` |
 | **Interactive launcher** | What plain `gophertrunk` shows on a TTY: pick **[1] TUI**, **[2] Web**, or **[3] Headless**. | `gophertrunk` |
+| **Config Builder** | Standalone guided editor for `config.yaml` — add systems, talkgroups, and feeds without hand-writing YAML. Comes as both a terminal app and a browser app. | `gophertrunk config` / `config serve` |
+| **SigLab** | Standalone signal workbench for offline captures — replay, analyze, identify, and grade decodes. Also a terminal app and a browser console. | `gophertrunk siglab` / `siglab serve` |
 
-Quitting the TUI or closing the browser does **not** stop the daemon — it keeps
-running in the same process until you send `Ctrl-C` / `SIGTERM`. See the
-[Launcher](launcher.html) page for the details.
+The first four surfaces are *views onto a running daemon*: quitting the TUI or
+closing the browser does **not** stop the daemon — it keeps running in the same
+process until you send `Ctrl-C` / `SIGTERM` (see the [Launcher](launcher.html)).
+**Config Builder** and **SigLab** are standalone — they run on their own,
+without a live daemon, each available as a terminal interface and a browser
+interface.
 
 ## APIs & integrations
 
@@ -80,10 +85,11 @@ captures and discovery:
   offline, auto-detect its protocol, export JSON/YAML/CSV.
 - `gophertrunk hunt` — discover and map an unknown trunked system
   ([Hunt](hunt.html)).
-- `gophertrunk siglab` — standalone signal-analysis TUI / web console.
-- `gophertrunk config` — terminal or browser **Config Builder**.
 - `gophertrunk import-pdf` — pull a RadioReference PDF straight into your config
   ([Import](import.html)).
+
+The **SigLab** and **Config Builder** interfaces above wrap this workbench in
+terminal and browser front-ends.
 
 ## How the parts fit together
 
