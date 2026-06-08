@@ -24,6 +24,19 @@ for tagged releases.
   `signals` in `GET /api/v1/hunt`), the web Hunt panel (a Survey-mode checkbox
   and a signals table), and the TUI Hunt panel (a `v` survey-start key and a
   signal list).
+- **Constellation / Symbol scope auto-detect the demod mode** (#557). The
+  panels' **Mode** selector gains an **Auto** option (now the default) that
+  follows the modulation the selected SDR's system is configured to decode —
+  C4FM or CQPSK/LSM — instead of asking the operator to pick it. The daemon
+  reports this per device on `GET /api/v1/spectrum/devices` as `p25_modulation`,
+  resolved by matching the device's tuning against the configured P25 Phase 1
+  systems (with a single-system fallback). An explicit C4FM/CQPSK choice still
+  overrides Auto and persists.
+- **Channel-step nudge in the shared tuning controls** (#557). The
+  Constellation and Symbol scope offset field gains a **Step** selector
+  (6.25 / 12.5 / 25 kHz) with −/+ buttons and ArrowUp/ArrowDown stepping that
+  snap to the channel grid, so walking between adjacent channels no longer
+  needs manual kHz entry. The chosen step is shared across panels.
 
 ### Fixed
 

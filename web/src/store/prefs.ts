@@ -25,6 +25,9 @@ const LS_KEYS = {
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
+  // Channel-step grid for the shared TuningControls ±/arrow-key nudge,
+  // shared across every panel that embeds it.
+  tuningControlsStepKHz: "gt.tuningControls.stepKHz",
   eyeOffsetKHz: "gt.eye.offsetKHz",
   eyeHold: "gt.eye.hold",
   tuningOffsetKHz: "gt.tuning.offsetKHz",
@@ -199,9 +202,11 @@ export const prefs = {
   setConstellationView(v: "symbols" | "raw") {
     writeLS(LS_KEYS.constellationView, v);
   },
-  // Receiver selector for the symbols view ("p25-c4fm" / "p25-cqpsk").
+  // Receiver selector for the symbols view: "auto" (default — follow the
+  // modulation the selected SDR's system is decoding), or an explicit
+  // "p25-c4fm" / "p25-cqpsk" override.
   constellationProto(): string {
-    return readLS(LS_KEYS.constellationProto) ?? "p25-cqpsk";
+    return readLS(LS_KEYS.constellationProto) ?? "auto";
   },
   setConstellationProto(p: string) {
     writeLS(LS_KEYS.constellationProto, p);
@@ -225,11 +230,24 @@ export const prefs = {
   setSymbolScopeHold(on: boolean) {
     writeLS(LS_KEYS.symbolScopeHold, on ? "1" : "0");
   },
+  // "auto" (default — follow the SDR's decoded modulation) or an
+  // explicit "p25-c4fm" / "p25-cqpsk" override.
   symbolScopeProto(): string {
-    return readLS(LS_KEYS.symbolScopeProto) ?? "p25-c4fm";
+    return readLS(LS_KEYS.symbolScopeProto) ?? "auto";
   },
   setSymbolScopeProto(p: string) {
     writeLS(LS_KEYS.symbolScopeProto, p);
+  },
+
+  // Channel-step grid (kHz) for the shared TuningControls ± / arrow-key
+  // nudge. Constrained to the common P25 grids; defaults to 12.5 kHz.
+  tuningControlsStepKHz(): number {
+    const raw = readLS(LS_KEYS.tuningControlsStepKHz);
+    const n = raw === null ? NaN : Number(raw);
+    return n === 6.25 || n === 12.5 || n === 25 ? n : 12.5;
+  },
+  setTuningControlsStepKHz(khz: number) {
+    writeLS(LS_KEYS.tuningControlsStepKHz, String(khz));
   },
 
   // Eye-diagram panel view options (C4FM datascope). Same offset/Hold

@@ -6,9 +6,10 @@ vi.mock("../api/spectrum", () => ({
   fetchSpectrumDevices: vi.fn(),
 }));
 
-vi.mock("../api/symbols", () => ({
-  openSymbolStream: vi.fn(),
-}));
+vi.mock("../api/symbols", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/symbols")>();
+  return { ...actual, openSymbolStream: vi.fn() };
+});
 
 vi.mock("../api/diag", () => ({
   openIQStream: vi.fn(),
