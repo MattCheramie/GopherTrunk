@@ -14,6 +14,7 @@ import { SymbolScope } from "./panels/SymbolScope";
 import { EyeDiagram } from "./panels/EyeDiagram";
 import { Tuning } from "./panels/Tuning";
 import { Histogram } from "./panels/Histogram";
+import { Plots } from "./panels/Plots";
 import { Dashboard } from "./panels/Dashboard";
 import { Devices } from "./panels/Devices";
 import { Events } from "./panels/Events";
@@ -58,11 +59,7 @@ const EXTRA_TABS: Tab[] = [
   { to: "/adsb", label: "ADS-B", icon: "✈" },
   { to: "/mdc1200", label: "MDC1200", icon: "📻" },
   { to: "/spectrum", label: "Spectrum", icon: "≈" },
-  { to: "/constellation", label: "Constellation", icon: "✦" },
-  { to: "/symbols", label: "Symbol scope", icon: "⩘" },
-  { to: "/eye", label: "Eye diagram", icon: "◉" },
-  { to: "/tuning", label: "Tuning", icon: "⊹" },
-  { to: "/histogram", label: "Histogram", icon: "▥" },
+  { to: "/plots", label: "Plots", icon: "✦" },
   { to: "/bookmarks", label: "Bookmarks", icon: "★" },
   { to: "/metrics", label: "Metrics", icon: "▰" },
   { to: "/devices", label: "Devices", icon: "⌗" },
@@ -204,6 +201,8 @@ export function App() {
           <Route path="/scanner" element={<Scanner />} />
           <Route path="/hunt" element={<Hunt />} />
           <Route path="/spectrum" element={<Spectrum />} />
+          <Route path="/plots" element={<Plots />} />
+          <Route path="/plots/:tab" element={<Plots />} />
           <Route path="/constellation" element={<Constellation />} />
           <Route path="/symbols" element={<SymbolScope />} />
           <Route path="/eye" element={<EyeDiagram />} />

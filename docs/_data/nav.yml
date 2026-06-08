@@ -53,6 +53,8 @@ groups:
         url: /cc-activity.html
       - title: Radio IDs
         url: /radio-ids.html
+      - title: Plots (signal scopes)
+        url: /plots.html
       - title: Constellation
         url: /constellation.html
       - title: Symbol scope

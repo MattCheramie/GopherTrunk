@@ -22,6 +22,12 @@ for tagged releases.
   gates each LDU on its decoded Link Control talkgroup and ends the call when
   another talkgroup takes the channel. Recording filenames now carry the RF
   voice-channel frequency (`<stamp>_freq<Hz>_src<src>…`).
+- **Plots hub** (`/plots`) — one tabbed home for the per-channel signal
+  scopes (Constellation, Symbol scope, Eye diagram, Tuning, Histogram),
+  mirroring OP25's Plots tabs (#557 follow-up). The chosen sub-tab is
+  reflected in the URL (`/plots/<tab>`); the individual routes still work
+  for deep links, and the wideband Spectrum waterfall stays its own tab.
+  This replaces the five separate scope entries in the nav with one.
 - **Symbol histogram panel** (`/histogram`) — the recovered-symbol
   distribution plus a derived signal-quality readout (#557 follow-up). A
   scrambled P25 channel spreads evenly, so each of the four bins should
