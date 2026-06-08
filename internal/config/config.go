@@ -1519,12 +1519,12 @@ func (c Config) validateTrunking() []error {
 		errs = append(errs, fmt.Errorf("trunking.call_timeout_ms: %d ms must be ≥ 0", c.Trunking.CallTimeoutMs))
 	}
 	if c.Trunking.VoiceHangtimeMs < 0 {
-		return fmt.Errorf("trunking.voice_hangtime_ms: %d ms must be ≥ 0", c.Trunking.VoiceHangtimeMs)
+		errs = append(errs, fmt.Errorf("trunking.voice_hangtime_ms: %d ms must be ≥ 0", c.Trunking.VoiceHangtimeMs))
 	}
 	switch c.Trunking.VoiceCallGrouping {
 	case "", "transmission", "conversation":
 	default:
-		return fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping)
+		errs = append(errs, fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping))
 	}
 	for i, s := range c.Trunking.Systems {
 		if err := validateSystem(i, s); err != nil {
