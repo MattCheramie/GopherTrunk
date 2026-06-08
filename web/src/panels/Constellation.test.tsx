@@ -46,6 +46,9 @@ const ONE_DEVICE = [
     role: "control",
     center_hz: 851_012_500,
     sample_rate_hz: 2_048_000,
+    // Report CQPSK so Auto resolves to the symbol-decision stream (C4FM has
+    // no symbol constellation and now defaults to the raw IQ ring).
+    p25_modulation: "cqpsk",
   },
 ];
 
@@ -115,15 +118,47 @@ describe("Constellation panel", () => {
     expect(callArgs?.rate).toBeGreaterThan(0);
   });
 
-  it("re-subscribes the symbol stream when the demod mode changes", async () => {
+  it("re-subscribes the symbol stream when switching to CQPSK", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
 
     render(<Constellation />);
     await waitFor(() => {
       expect(openSymbolStream).toHaveBeenCalledTimes(1);
     });
+    // Default Mode is Auto, resolving to CQPSK here; flip to C4FM (raw IQ
+    // ring) and back to confirm CQPSK re-subscribes the symbol stream.
     fireEvent.change(screen.getByLabelText("Demodulation mode"), {
       target: { value: "p25-c4fm" },
+    });
+    fireEvent.change(screen.getByLabelText("Demodulation mode"), {
+      target: { value: "p25-cqpsk" },
+    });
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      expect(last?.proto).toBe("p25-cqpsk");
+    });
+  });
+
+  it("shows the C4FM IQ ring by default and can switch to soft levels", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalledTimes(1);
+    });
+
+    // Switching Mode to C4FM (default Display = IQ ring) opens the raw IQ
+    // stream, not the symbol stream — C4FM has no symbol constellation.
+    fireEvent.change(screen.getByLabelText("Demodulation mode"), {
+      target: { value: "p25-c4fm" },
+    });
+    await waitFor(() => {
+      expect(openIQStream).toHaveBeenCalledTimes(1);
+    });
+
+    // Choosing "Soft levels" falls back to the symbol stream with C4FM.
+    fireEvent.change(screen.getByLabelText("C4FM display"), {
+      target: { value: "soft" },
     });
     await waitFor(() => {
       const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
@@ -160,6 +195,7 @@ describe("Constellation panel", () => {
         role: "control",
         center_hz: 851_000_000,
         sample_rate_hz: 2_048_000,
+        p25_modulation: "cqpsk",
       },
     ] as never);
 

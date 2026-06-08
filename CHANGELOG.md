@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Constellation: selectable C4FM display (IQ ring vs. soft levels)** (#557).
+  C4FM is constant-envelope FM with no complex symbol constellation, so the
+  Symbols view previously plotted its soft decisions as a thin horizontal line
+  on the real axis. A new **Display** control (shown for C4FM) chooses between
+  the **IQ ring** — the raw constant-envelope circle most operators expect,
+  now the default — and the legacy **Soft levels** line. CQPSK is unchanged.
+
 ### Fixed
 
 - **P25 Phase 1 voice recordings no longer fragment into tiny per-LDU files.**

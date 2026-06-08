@@ -22,6 +22,7 @@ const LS_KEYS = {
   constellationZoom: "gt.constellation.zoom",
   constellationView: "gt.constellation.view",
   constellationProto: "gt.constellation.proto",
+  constellationC4fmDisplay: "gt.constellation.c4fmDisplay",
   symbolScopeOffsetKHz: "gt.symbolScope.offsetKHz",
   symbolScopeHold: "gt.symbolScope.hold",
   symbolScopeProto: "gt.symbolScope.proto",
@@ -210,6 +211,15 @@ export const prefs = {
   },
   setConstellationProto(p: string) {
     writeLS(LS_KEYS.constellationProto, p);
+  },
+  // How the C4FM constellation is drawn: "ring" shows the constant-envelope
+  // raw IQ circle (C4FM has no symbol constellation), "soft" shows the four
+  // soft-decision levels on the real axis. Default "ring".
+  constellationC4fmDisplay(): "ring" | "soft" {
+    return readLS(LS_KEYS.constellationC4fmDisplay) === "soft" ? "soft" : "ring";
+  },
+  setConstellationC4fmDisplay(v: "ring" | "soft") {
+    writeLS(LS_KEYS.constellationC4fmDisplay, v);
   },
 
   // Symbol-scope panel view options. Offset (kHz, relative to the SDR
