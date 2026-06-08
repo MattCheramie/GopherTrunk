@@ -28,6 +28,13 @@ type Acceptance struct {
 	BaudTolerancePct float64 `json:"baud_tolerance_pct,omitempty" yaml:"baud_tolerance_pct,omitempty"`
 	// MaxDecodeErrorRate caps decode errors per 1000 symbols (0 ⇒ unchecked).
 	MaxDecodeErrorRate float64 `json:"max_decode_error_rate,omitempty" yaml:"max_decode_error_rate,omitempty"`
+	// MaxEVMPct caps the demod error-vector magnitude percentage (0 ⇒
+	// unchecked). Grades demod quality directly — a capture whose eye is too
+	// closed fails even if it happens to lock.
+	MaxEVMPct float64 `json:"max_evm_pct,omitempty" yaml:"max_evm_pct,omitempty"`
+	// MinSNRdB requires the estimated demod SNR to be at least this many dB
+	// (0 ⇒ unchecked).
+	MinSNRdB float64 `json:"min_snr_db,omitempty" yaml:"min_snr_db,omitempty"`
 }
 
 // Verdict is the pass/fail outcome of grading a Result against an Acceptance.
@@ -103,6 +110,26 @@ func evaluateAcceptance(r *Result, a *Acceptance) *Verdict {
 			fail(fmt.Sprintf("decode-error rate: %.2f/ksym > %.2f/ksym", rate, a.MaxDecodeErrorRate))
 		} else {
 			pass(fmt.Sprintf("decode-error rate %.2f/ksym ≤ %.2f/ksym", rate, a.MaxDecodeErrorRate))
+		}
+	}
+	if a.MaxEVMPct > 0 {
+		switch {
+		case r.Signal == nil || r.Signal.Demod == nil:
+			fail(fmt.Sprintf("EVM: required ≤ %.1f%% but no demod metrics were produced", a.MaxEVMPct))
+		case r.Signal.Demod.EVMPct > a.MaxEVMPct:
+			fail(fmt.Sprintf("EVM: %.1f%% > %.1f%%", r.Signal.Demod.EVMPct, a.MaxEVMPct))
+		default:
+			pass(fmt.Sprintf("EVM %.1f%% ≤ %.1f%%", r.Signal.Demod.EVMPct, a.MaxEVMPct))
+		}
+	}
+	if a.MinSNRdB > 0 {
+		switch {
+		case r.Signal == nil || r.Signal.Demod == nil:
+			fail(fmt.Sprintf("SNR: required ≥ %.1f dB but no demod metrics were produced", a.MinSNRdB))
+		case r.Signal.Demod.SNREstimateDB < a.MinSNRdB:
+			fail(fmt.Sprintf("SNR: %.1f dB < %.1f dB", r.Signal.Demod.SNREstimateDB, a.MinSNRdB))
+		default:
+			pass(fmt.Sprintf("SNR %.1f dB ≥ %.1f dB", r.Signal.Demod.SNREstimateDB, a.MinSNRdB))
 		}
 	}
 	return v

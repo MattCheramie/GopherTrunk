@@ -22,6 +22,30 @@ func TestSyncDetectorMatchesCleanFSW(t *testing.T) {
 	}
 }
 
+func TestSyncDetectorProcessWithMargin(t *testing.T) {
+	// A perfect FSW at tolerance 4 has margin = tolerance+1 − 0 = 5; a
+	// 2-error FSW has margin = 5 − 2 = 3.
+	det := NewSyncDetector(4)
+	stream := make([]uint8, 120)
+	copy(stream[10:], FrameSyncWord[:]) // clean → margin 5
+	var two [24]uint8
+	copy(two[:], FrameSyncWord[:])
+	two[3] = (two[3] + 1) % 4
+	two[7] = (two[7] + 1) % 4
+	copy(stream[60:], two[:]) // 2 errors → margin 3
+
+	hits, _, margins, _ := det.ProcessWithMargin(nil, nil, nil, stream, 0)
+	if len(hits) != 2 || len(margins) != 2 {
+		t.Fatalf("hits=%v margins=%v, want 2 each", hits, margins)
+	}
+	if margins[0] != 5 {
+		t.Errorf("clean FSW margin = %d, want 5", margins[0])
+	}
+	if margins[1] != 3 {
+		t.Errorf("2-error FSW margin = %d, want 3", margins[1])
+	}
+}
+
 func TestSyncDetectorTolerates2Errors(t *testing.T) {
 	det := NewSyncDetector(2)
 	stream := make([]uint8, 100)
