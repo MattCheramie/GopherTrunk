@@ -122,6 +122,24 @@ gain knob — check the spectral envelope decoder
 ([`internal/voice/mbe/synth.go`](../internal/voice/mbe/synth.go))
 and the prediction-residual gain path.
 
+## Reading P25 Phase 1 decode quality
+
+Each P25 voice chain logs a rolling `composer: p25p1 decode quality`
+line. Beyond `corrected_bit_errs` (IMBE FEC) it now reports the outer
+Reed-Solomon health of the signalling words:
+
+- `lc_rs_uncorrectable` — LDU1 Link Control words the RS(24,12,13) layer
+  could not recover. The talkgroup is read from the LC, so a high count
+  means talkgroups can't be trusted and the recorder's talkgroup gating
+  may drop or split audio.
+- `ess_rs_uncorrectable` — LDU2 Encryption Sync words the RS(24,16,9)
+  layer could not recover (would otherwise surface garbage algorithm IDs).
+
+Both rising together is the FEC-layer signature of marginal RF: raise or
+lower the voice SDR gain and re-check. Note some SDRs (e.g. UHD/SoapyRemote
+front-ends) reject `set_rx_agc` — the daemon logs `disable agc not
+applied` and the gain must then be set manually rather than relying on AGC.
+
 ## Knox / call-alert tones
 
 If your captured call contains AMBE+2 knox tones (b1 ∈ [144, 163]),
