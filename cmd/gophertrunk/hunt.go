@@ -155,11 +155,12 @@ FLAGS:`)
 	}
 
 	var (
-		sys     *hunt.DiscoveredSystem
-		reports []hunt.CaptureReport
+		sys          *hunt.DiscoveredSystem
+		surveyResult *hunt.SignalSurvey
+		reports      []hunt.CaptureReport
 	)
 	if live {
-		sys, reports = runHuntLive(rep, huntLiveParams{
+		sys, surveyResult, reports = runHuntLive(rep, huntLiveParams{
 			serial:          *serial,
 			survey:          *surveyMode,
 			bands:           []string(bands),
@@ -220,6 +221,7 @@ FLAGS:`)
 
 	finishHunt(rep, sys, reports, huntExportParams{
 		surveyMode: *surveyMode,
+		survey:     surveyResult,
 		outFormats: outFormats,
 		outDir:     *out,
 		noRR:       *noRR,
@@ -236,6 +238,7 @@ FLAGS:`)
 // by the offline and live hunt paths.
 type huntExportParams struct {
 	surveyMode bool
+	survey     *hunt.SignalSurvey
 	outFormats []hunt.Format
 	outDir     string
 	noRR       bool
@@ -262,9 +265,25 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 				r.Path, r.Protocol, r.Locked, r.Talkgroups)
 		}
 	}
+	// Resolve the output directory up front so the survey inventory and any
+	// trunking exports land together.
+	outDir := p.outDir
+	if outDir == "" {
+		outDir = fmt.Sprintf("hunt-%s", time.Now().Format("20060102-150405"))
+	}
+
+	// Always export the survey inventory when present — it is the survey's
+	// primary deliverable, independent of whether a trunked system was found.
+	if p.survey != nil {
+		if err := os.MkdirAll(outDir, 0o755); err != nil {
+			rep.Fatal(1, fmt.Errorf("create out dir %s: %w", outDir, err))
+		}
+		writeSurveyFiles(rep, outDir, p.survey)
+	}
+
 	if sys == nil || (len(sys.Sites) == 0 && len(sys.Talkgroups) == 0) {
 		// A survey can legitimately find no trunked system (only analog/paging/
-		// unclassified carriers); the inventory was already printed, so exit
+		// unclassified carriers); the inventory was already written, so exit
 		// cleanly rather than treating "no system" as a hunt failure.
 		if p.surveyMode {
 			fmt.Fprintln(os.Stderr, "hunt: survey complete — no trunked system to export")
@@ -282,10 +301,6 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		hints = gatherRRHints(sys, p.rr)
 	}
 
-	outDir := p.outDir
-	if outDir == "" {
-		outDir = fmt.Sprintf("hunt-%s", time.Now().Format("20060102-150405"))
-	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		rep.Fatal(1, fmt.Errorf("create out dir %s: %w", outDir, err))
 	}
@@ -312,6 +327,28 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 
 	if p.commit {
 		commitDiscovery(rep, sys, p.configPath, p.csvDir, p.force, p.dryRun)
+	}
+}
+
+// writeSurveyFiles writes the classified signal inventory to <outDir>/
+// survey.json and survey.csv. Failures are fatal (the inventory is the survey's
+// main deliverable).
+func writeSurveyFiles(rep *diag.Reporter, outDir string, sv *hunt.SignalSurvey) {
+	for _, sf := range []hunt.SurveyFormat{hunt.SurveyJSON, hunt.SurveyCSV} {
+		fname := filepath.Join(outDir, "survey."+sf.FileExtension())
+		f, cerr := os.Create(fname)
+		if cerr != nil {
+			rep.Fatal(1, fmt.Errorf("create %s: %w", fname, cerr))
+		}
+		werr := hunt.WriteSurvey(f, sv, sf)
+		cerr = f.Close()
+		if werr != nil {
+			rep.Fatal(1, fmt.Errorf("write %s: %w", fname, werr))
+		}
+		if cerr != nil {
+			rep.Fatal(1, fmt.Errorf("close %s: %w", fname, cerr))
+		}
+		fmt.Fprintf(os.Stderr, "hunt: wrote %s\n", fname)
 	}
 }
 

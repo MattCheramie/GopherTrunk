@@ -93,6 +93,20 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 
 func (c huntCockpit) Stop() bool { return c.mgr.Stop() }
 
+// ExportSurvey serializes a run's classified signal inventory in the requested
+// format (json|csv).
+func (c huntCockpit) ExportSurvey(id int, format string) ([]byte, string, error) {
+	sf, err := hunt.ParseSurveyFormat(format)
+	if err != nil {
+		return nil, "", err
+	}
+	var buf bytes.Buffer
+	if err := c.mgr.ExportSurvey(id, &buf, sf); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), "survey." + sf.FileExtension(), nil
+}
+
 // Export serializes the latest discovered system in the requested format.
 func (c huntCockpit) Export(id int, format string) ([]byte, string, error) {
 	hf, err := hunt.ParseFormat(format)

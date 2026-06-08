@@ -214,6 +214,14 @@ export function Hunt() {
         </section>
       ) : null}
 
+      {status?.signals && status.signals.length > 0 ? (
+        <section className="hunt-export">
+          <span>Survey:</span>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>signals JSON</a>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>signals CSV</a>
+        </section>
+      ) : null}
+
       {!canMutate ? (
         <p className="hint">Mutations are read-only on this connection (no auth token).</p>
       ) : null}

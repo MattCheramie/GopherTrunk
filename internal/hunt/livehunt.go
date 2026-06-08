@@ -65,7 +65,12 @@ type LiveHuntOptions struct {
 	Name, State, County, Location string
 
 	OnProgress func(LiveHuntProgress)
-	Log        *slog.Logger
+	// OnSignal, when set, is called once per classified carrier during a survey
+	// run (RunLiveSurvey), after its decode summary is filled in. The daemon
+	// uses it to publish per-signal events and to persist decoded pages; the CLI
+	// leaves it nil. Ignored by RunLiveHunt.
+	OnSignal func(DetectedSignal)
+	Log      *slog.Logger
 }
 
 // RunLiveHunt sweeps (or probes a candidate list) on a live IQSource, then

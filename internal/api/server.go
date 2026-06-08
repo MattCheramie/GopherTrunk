@@ -115,6 +115,10 @@ type HuntCockpit interface {
 	// (bundle|trunk-recorder|rr), returning the bytes + a suggested filename.
 	// id 0 = the latest run. Returns ErrHuntNoSuchRun for an unknown id.
 	Export(id int, format string) (data []byte, filename string, err error)
+	// ExportSurvey serializes a run's classified signal inventory in the named
+	// format (json|csv). id 0 = the latest run. Returns ErrHuntNoSuchRun for an
+	// unknown id, or an error when the run was a plain hunt (no survey).
+	ExportSurvey(id int, format string) (data []byte, filename string, err error)
 	// Commit merges a run's discovered system into config.yaml (id 0 = latest),
 	// returning a human-readable list of changes.
 	Commit(id int, force, dryRun bool) (changes []string, err error)
@@ -917,6 +921,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/hunt/stop", s.gate(s.handleHuntStop))
 	mux.HandleFunc("GET /api/v1/hunt/export", s.handleHuntExport)
 	mux.HandleFunc("GET /api/v1/hunt/{id}/export", s.handleHuntExport)
+	mux.HandleFunc("GET /api/v1/hunt/survey", s.handleHuntSurveyExport)
+	mux.HandleFunc("GET /api/v1/hunt/{id}/survey", s.handleHuntSurveyExport)
 	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
 	mux.HandleFunc("POST /api/v1/hunt/{id}/commit", s.gate(s.handleHuntCommit))
 

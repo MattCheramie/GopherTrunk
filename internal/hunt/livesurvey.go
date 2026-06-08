@@ -107,6 +107,9 @@ func RunLiveSurvey(ctx context.Context, opts LiveHuntOptions) (*SignalSurvey, []
 			reports = append(reports, *rep)
 		}
 		sv.Signals = append(sv.Signals, ds)
+		if opts.OnSignal != nil {
+			opts.OnSignal(ds)
+		}
 	}
 
 	return finishSurvey(sv), reports, nil

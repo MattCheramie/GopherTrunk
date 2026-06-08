@@ -44,7 +44,7 @@ type huntLiveParams struct {
 // export tail. The daemon-integrated live hunt (with spare-SDR-else-borrow
 // acquisition and a REST/TUI/web cockpit) is a later phase; this is the
 // one-shot CLI path.
-func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, []hunt.CaptureReport) {
+func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, *hunt.SignalSurvey, []hunt.CaptureReport) {
 	candidates := parseFreqListMHz(rep, p.candidatesMHz)
 	bands := parseBandsMHz(rep, p.bands)
 	if len(candidates) == 0 && len(bands) == 0 {
@@ -125,14 +125,14 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 			rep.Fatal(1, fmt.Errorf("live survey: %w", err))
 		}
 		printSurvey(sv)
-		return sv.System, reports
+		return sv.System, sv, reports
 	}
 
 	sys, reports, err := hunt.RunLiveHunt(ctx, opts)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("live hunt: %w", err))
 	}
-	return sys, reports
+	return sys, nil, reports
 }
 
 // printSurvey writes the classified signal inventory to stderr — the survey's
