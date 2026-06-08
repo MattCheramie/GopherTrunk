@@ -9,6 +9,22 @@ for tagged releases.
 
 ### Added
 
+- **Signal survey — save it, decode it, run it offline.** Follow-up to the live
+  signal survey: the classified inventory is now a real artifact, written to
+  `survey.json`/`survey.csv` by the CLI, served by `GET /api/v1/hunt/survey`
+  (`?format=json|csv`, `+ /{id}/survey`), and downloadable from the web Hunt
+  panel. Pages a survey decodes are published to the events bus and the pager
+  log like a live receiver's, and each classified carrier emits a
+  `hunt.candidate` event. New depth: an **offline survey** (`hunt -survey -in
+  <capture>`) classifies recorded IQ with no SDR; **`-survey-audio <dir>`**
+  writes a WAV clip per active analog-FM carrier; **`-classify-only`** skips
+  decoding for a fast inventory; **`-max-dwell-seconds`** listens until carrier
+  activity for bursty paging. The classifier's thresholds are now configurable
+  (CLI `-class-*` flags / REST fields), occupied bandwidth is measured on the
+  full-rate capture so wideband FM isn't mis-sized, and the digital-vs-AM order
+  was fixed so pulse-shaped PSK isn't mislabeled AM. The web panel gains a
+  classify-only toggle and a sortable signals table.
+
 - **Live signal survey — `gophertrunk hunt -survey`.** The hunt sweep now does
   more than chase trunking control channels: in survey mode it classifies
   *every* detected carrier by modulation family (analog NBFM/WFM, AM, digital

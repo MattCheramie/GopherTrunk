@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
 
 // RunState is the lifecycle of a live hunt run, surfaced to the cockpit/REST.
@@ -147,6 +148,23 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 		m.mu.Unlock()
 		m.publish(events.KindHuntLiveProgress, p)
 	}
+	// Publish each classified carrier as it is found, and persist any pages the
+	// survey decoded onto the same bus the live pager receivers use — so a
+	// survey's POCSAG/FLEX catches land in the pager log and stream to clients
+	// exactly like a dedicated paging receiver's.
+	opts.OnSignal = func(ds DetectedSignal) {
+		m.publish(events.KindHuntLiveCandidate, ds)
+		for _, pg := range ds.Pages {
+			m.publish(events.KindPagerMessage, storage.PagerMessage{
+				ReceivedAt: time.Now(),
+				Protocol:   pg.Protocol,
+				RIC:        pg.Capcode,
+				Encoding:   pg.Encoding,
+				Body:       pg.Text,
+				Corrected:  pg.Corrected,
+			})
+		}
+	}
 
 	go m.run(ctx, id, opts)
 	return id, nil
@@ -267,6 +285,39 @@ func (m *Manager) CurrentSurvey() (*SignalSurvey, bool) {
 		return nil, false
 	}
 	return m.survey, true
+}
+
+// SurveyRun returns a specific run's signal inventory (id 0 = latest). ok=false
+// for an unknown/evicted id or a run that produced no survey (a plain hunt).
+func (m *Manager) SurveyRun(id int) (*SignalSurvey, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id == 0 || id == m.runID {
+		if m.survey == nil {
+			return nil, false
+		}
+		return m.survey, true
+	}
+	for i := len(m.history) - 1; i >= 0; i-- {
+		if m.history[i].id == id {
+			return m.history[i].survey, m.history[i].survey != nil
+		}
+	}
+	return nil, false
+}
+
+// ExportSurvey writes a run's signal inventory to w in the given format (id 0 =
+// latest). Returns ErrNoSuchRun for an unknown/evicted id, or a "no survey"
+// error when the run exists but was a plain hunt.
+func (m *Manager) ExportSurvey(id int, w io.Writer, f SurveyFormat) error {
+	sv, ok := m.SurveyRun(id)
+	if !ok {
+		if id != 0 && !m.KnownRun(id) {
+			return ErrNoSuchRun
+		}
+		return errors.New("hunt: no signal survey for this run")
+	}
+	return WriteSurvey(w, sv, f)
 }
 
 // Current returns the latest discovered system and its per-candidate reports,

@@ -41,9 +41,14 @@ func waitUntil(t *testing.T, d time.Duration, cond func() bool) {
 }
 
 func TestManager_SurveyModeReportsSignals(t *testing.T) {
+	bus := events.NewBus(256)
+	sub := bus.Subscribe()
+	defer sub.Close()
+
 	src, dwell := p25Source(t)
 	mgr, err := NewManager(ManagerOptions{
 		Acquire: func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src, func() {}, nil },
+		Bus:     bus,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -75,6 +80,22 @@ func TestManager_SurveyModeReportsSignals(t *testing.T) {
 	}
 	if sv, ok := mgr.CurrentSurvey(); !ok || sv.System == nil {
 		t.Error("CurrentSurvey() returned no survey/system")
+	}
+
+	// A per-signal candidate event should have been published to the bus.
+	sawCandidate := false
+	for drain := true; drain; {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindHuntLiveCandidate {
+				sawCandidate = true
+			}
+		default:
+			drain = false
+		}
+	}
+	if !sawCandidate {
+		t.Error("expected a KindHuntLiveCandidate event on the bus")
 	}
 }
 

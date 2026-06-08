@@ -11,31 +11,39 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // huntLiveParams are the resolved inputs for a live (on-air) hunt.
 type huntLiveParams struct {
-	serial          string
-	survey          bool     // classify+decode every carrier, not just trunking CCs
-	bands           []string // "low:high" in MHz
-	candidatesMHz   string   // comma-separated MHz
-	noSweep         bool
-	sampleRateHz    float64
-	protocol        trunking.Protocol
-	fftSize         int
-	sweepDwell      time.Duration
-	peakThresholdDb float64
-	minSpacingHz    uint32
-	dwellSeconds    float64
-	autoTune        bool
-	gain            int
-	ppm             int
-	name            string
-	state           string
-	county          string
-	location        string
-	minConfidence   float64
+	serial           string
+	survey           bool // classify+decode every carrier, not just trunking CCs
+	classifyOnly     bool
+	surveyAudioDir   string
+	maxDwellSeconds  float64
+	identifyMinConf  float64
+	classSNRGate     float64
+	classDigitalProm float64
+	classAMCV        float64
+	bands            []string // "low:high" in MHz
+	candidatesMHz    string   // comma-separated MHz
+	noSweep          bool
+	sampleRateHz     float64
+	protocol         trunking.Protocol
+	fftSize          int
+	sweepDwell       time.Duration
+	peakThresholdDb  float64
+	minSpacingHz     uint32
+	dwellSeconds     float64
+	autoTune         bool
+	gain             int
+	ppm              int
+	name             string
+	state            string
+	county           string
+	location         string
+	minConfidence    float64
 }
 
 // runHuntLive opens the SDR directly (standalone, not through the daemon pool),
@@ -44,7 +52,7 @@ type huntLiveParams struct {
 // export tail. The daemon-integrated live hunt (with spare-SDR-else-borrow
 // acquisition and a REST/TUI/web cockpit) is a later phase; this is the
 // one-shot CLI path.
-func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, []hunt.CaptureReport) {
+func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, *hunt.SignalSurvey, []hunt.CaptureReport) {
 	candidates := parseFreqListMHz(rep, p.candidatesMHz)
 	bands := parseBandsMHz(rep, p.bands)
 	if len(candidates) == 0 && len(bands) == 0 {
@@ -95,20 +103,29 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 	}
 
 	opts := hunt.LiveHuntOptions{
-		Source:        src,
-		Bands:         bands,
-		Candidates:    candidates,
-		Protocol:      p.protocol,
-		FFTSize:       p.fftSize,
-		SweepDwell:    p.sweepDwell,
-		PeakOpts:      hunt.PeakOptions{ThresholdDb: float32(p.peakThresholdDb), MinSpacingHz: p.minSpacingHz},
-		DwellSeconds:  p.dwellSeconds,
-		MinConfidence: p.minConfidence,
-		AutoTune:      p.autoTune,
-		Name:          p.name,
-		State:         p.state,
-		County:        p.county,
-		Location:      p.location,
+		Source:                src,
+		Bands:                 bands,
+		Candidates:            candidates,
+		Protocol:              p.protocol,
+		FFTSize:               p.fftSize,
+		SweepDwell:            p.sweepDwell,
+		PeakOpts:              hunt.PeakOptions{ThresholdDb: float32(p.peakThresholdDb), MinSpacingHz: p.minSpacingHz},
+		DwellSeconds:          p.dwellSeconds,
+		MaxDwellSeconds:       p.maxDwellSeconds,
+		MinConfidence:         p.minConfidence,
+		AutoTune:              p.autoTune,
+		Name:                  p.name,
+		State:                 p.state,
+		County:                p.county,
+		Location:              p.location,
+		ClassifyOnly:          p.classifyOnly,
+		SurveyAudioDir:        p.surveyAudioDir,
+		IdentifyMinConfidence: p.identifyMinConf,
+		ClassifyConfig: survey.ClassifyConfig{
+			SNRGateDb:         p.classSNRGate,
+			DigitalProminence: p.classDigitalProm,
+			AMEnvelopeCV:      p.classAMCV,
+		},
 		OnProgress: func(pr hunt.LiveHuntProgress) {
 			switch pr.Phase {
 			case hunt.PhaseSweeping:
@@ -125,14 +142,14 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 			rep.Fatal(1, fmt.Errorf("live survey: %w", err))
 		}
 		printSurvey(sv)
-		return sv.System, reports
+		return sv.System, sv, reports
 	}
 
 	sys, reports, err := hunt.RunLiveHunt(ctx, opts)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("live hunt: %w", err))
 	}
-	return sys, reports
+	return sys, nil, reports
 }
 
 // printSurvey writes the classified signal inventory to stderr — the survey's

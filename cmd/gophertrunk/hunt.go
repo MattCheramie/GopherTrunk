@@ -14,6 +14,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -46,6 +47,13 @@ func runHunt(args []string) {
 	// probe an explicit candidate list.
 	serial := fs.String("serial", "", "SDR serial to sweep for a live hunt (omit -in). Empty + no -in ⇒ error")
 	surveyMode := fs.Bool("survey", false, "signal-survey mode: classify every detected carrier (analog/digital/paging/trunking) and decode the conventional ones, not just trunking control channels (live only)")
+	classifyOnly := fs.Bool("classify-only", false, "survey: classify carriers only, skip all decoding (fast inventory)")
+	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
+	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
+	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
+	classSNRGate := fs.Float64("class-snr-gate", 0, "survey classifier: min SNR (dB) to classify a carrier (0 = default 3)")
+	classDigitalProm := fs.Float64("class-digital-prominence", 0, "survey classifier: min baud-line prominence for a digital call (0 = default 15)")
+	classAMCV := fs.Float64("class-am-cv", 0, "survey classifier: envelope coefficient-of-variation above which a carrier reads as AM (0 = default 0.15)")
 	var bands repeatedString
 	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
 	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
@@ -106,6 +114,13 @@ EXAMPLES:
   # SURVEY: sweep a band and classify+decode every signal (analog, paging, trunking)
   gophertrunk hunt -survey -serial 00000001 -sample-rate 2400000 -band 460:470
 
+  # SURVEY: with WAV clips of active analog channels + a fast classify-only pass
+  gophertrunk hunt -survey -survey-audio ./clips -serial 00000001 -band 150:154
+  gophertrunk hunt -survey -classify-only -serial 00000001 -band 460:470
+
+  # SURVEY (offline): classify + decode a recorded wideband capture, no SDR
+  gophertrunk hunt -survey -in wideband.cfile -format f32 -sample-rate 2400000
+
 FLAGS:`)
 		fs.PrintDefaults()
 	}
@@ -155,31 +170,39 @@ FLAGS:`)
 	}
 
 	var (
-		sys     *hunt.DiscoveredSystem
-		reports []hunt.CaptureReport
+		sys          *hunt.DiscoveredSystem
+		surveyResult *hunt.SignalSurvey
+		reports      []hunt.CaptureReport
 	)
 	if live {
-		sys, reports = runHuntLive(rep, huntLiveParams{
-			serial:          *serial,
-			survey:          *surveyMode,
-			bands:           []string(bands),
-			candidatesMHz:   *candidatesFlag,
-			noSweep:         *noSweep,
-			sampleRateHz:    *sampleRate,
-			protocol:        proto,
-			fftSize:         *fftSize,
-			sweepDwell:      *sweepDwell,
-			peakThresholdDb: *peakThresholdDb,
-			minSpacingHz:    uint32(*minSpacingHz),
-			dwellSeconds:    *dwellSeconds,
-			autoTune:        *autoTune,
-			gain:            *gain,
-			ppm:             *ppm,
-			name:            *name,
-			state:           *state,
-			county:          *county,
-			location:        *location,
-			minConfidence:   *minConfidence,
+		sys, surveyResult, reports = runHuntLive(rep, huntLiveParams{
+			serial:           *serial,
+			survey:           *surveyMode,
+			classifyOnly:     *classifyOnly,
+			surveyAudioDir:   *surveyAudio,
+			maxDwellSeconds:  *maxDwellSeconds,
+			identifyMinConf:  *identifyMinConf,
+			classSNRGate:     *classSNRGate,
+			classDigitalProm: *classDigitalProm,
+			classAMCV:        *classAMCV,
+			bands:            []string(bands),
+			candidatesMHz:    *candidatesFlag,
+			noSweep:          *noSweep,
+			sampleRateHz:     *sampleRate,
+			protocol:         proto,
+			fftSize:          *fftSize,
+			sweepDwell:       *sweepDwell,
+			peakThresholdDb:  *peakThresholdDb,
+			minSpacingHz:     uint32(*minSpacingHz),
+			dwellSeconds:     *dwellSeconds,
+			autoTune:         *autoTune,
+			gain:             *gain,
+			ppm:              *ppm,
+			name:             *name,
+			state:            *state,
+			county:           *county,
+			location:         *location,
+			minConfidence:    *minConfidence,
 		})
 	} else {
 		// Build the capture inputs.
@@ -204,22 +227,43 @@ FLAGS:`)
 			captures = append(captures, ci)
 		}
 
-		fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
-		var derr error
-		sys, reports, derr = hunt.Discover(captures, hunt.DiscoverConfig{
-			Name:          *name,
-			State:         *state,
-			County:        *county,
-			Location:      *location,
-			MinConfidence: *minConfidence,
-		})
-		if derr != nil {
-			rep.Fatal(1, derr)
+		if *surveyMode {
+			// Offline survey: classify + route every capture, not just trunking.
+			fmt.Fprintf(os.Stderr, "survey: classifying %d capture(s)…\n", len(captures))
+			sv, sreports, serr := hunt.RunOfflineSurvey(captures, hunt.LiveHuntOptions{
+				Name: *name, State: *state, County: *county, Location: *location,
+				Protocol: proto, MinConfidence: *minConfidence,
+				ClassifyOnly:          *classifyOnly,
+				SurveyAudioDir:        *surveyAudio,
+				IdentifyMinConfidence: *identifyMinConf,
+				ClassifyConfig: survey.ClassifyConfig{
+					SNRGateDb: *classSNRGate, DigitalProminence: *classDigitalProm, AMEnvelopeCV: *classAMCV,
+				},
+			})
+			if serr != nil {
+				rep.Fatal(1, serr)
+			}
+			printSurvey(sv)
+			sys, surveyResult, reports = sv.System, sv, sreports
+		} else {
+			fmt.Fprintf(os.Stderr, "hunt: mapping %d capture(s)…\n", len(captures))
+			var derr error
+			sys, reports, derr = hunt.Discover(captures, hunt.DiscoverConfig{
+				Name:          *name,
+				State:         *state,
+				County:        *county,
+				Location:      *location,
+				MinConfidence: *minConfidence,
+			})
+			if derr != nil {
+				rep.Fatal(1, derr)
+			}
 		}
 	}
 
 	finishHunt(rep, sys, reports, huntExportParams{
 		surveyMode: *surveyMode,
+		survey:     surveyResult,
 		outFormats: outFormats,
 		outDir:     *out,
 		noRR:       *noRR,
@@ -236,6 +280,7 @@ FLAGS:`)
 // by the offline and live hunt paths.
 type huntExportParams struct {
 	surveyMode bool
+	survey     *hunt.SignalSurvey
 	outFormats []hunt.Format
 	outDir     string
 	noRR       bool
@@ -262,9 +307,25 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 				r.Path, r.Protocol, r.Locked, r.Talkgroups)
 		}
 	}
+	// Resolve the output directory up front so the survey inventory and any
+	// trunking exports land together.
+	outDir := p.outDir
+	if outDir == "" {
+		outDir = fmt.Sprintf("hunt-%s", time.Now().Format("20060102-150405"))
+	}
+
+	// Always export the survey inventory when present — it is the survey's
+	// primary deliverable, independent of whether a trunked system was found.
+	if p.survey != nil {
+		if err := os.MkdirAll(outDir, 0o755); err != nil {
+			rep.Fatal(1, fmt.Errorf("create out dir %s: %w", outDir, err))
+		}
+		writeSurveyFiles(rep, outDir, p.survey)
+	}
+
 	if sys == nil || (len(sys.Sites) == 0 && len(sys.Talkgroups) == 0) {
 		// A survey can legitimately find no trunked system (only analog/paging/
-		// unclassified carriers); the inventory was already printed, so exit
+		// unclassified carriers); the inventory was already written, so exit
 		// cleanly rather than treating "no system" as a hunt failure.
 		if p.surveyMode {
 			fmt.Fprintln(os.Stderr, "hunt: survey complete — no trunked system to export")
@@ -282,10 +343,6 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		hints = gatherRRHints(sys, p.rr)
 	}
 
-	outDir := p.outDir
-	if outDir == "" {
-		outDir = fmt.Sprintf("hunt-%s", time.Now().Format("20060102-150405"))
-	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		rep.Fatal(1, fmt.Errorf("create out dir %s: %w", outDir, err))
 	}
@@ -312,6 +369,28 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 
 	if p.commit {
 		commitDiscovery(rep, sys, p.configPath, p.csvDir, p.force, p.dryRun)
+	}
+}
+
+// writeSurveyFiles writes the classified signal inventory to <outDir>/
+// survey.json and survey.csv. Failures are fatal (the inventory is the survey's
+// main deliverable).
+func writeSurveyFiles(rep *diag.Reporter, outDir string, sv *hunt.SignalSurvey) {
+	for _, sf := range []hunt.SurveyFormat{hunt.SurveyJSON, hunt.SurveyCSV} {
+		fname := filepath.Join(outDir, "survey."+sf.FileExtension())
+		f, cerr := os.Create(fname)
+		if cerr != nil {
+			rep.Fatal(1, fmt.Errorf("create %s: %w", fname, cerr))
+		}
+		werr := hunt.WriteSurvey(f, sv, sf)
+		cerr = f.Close()
+		if werr != nil {
+			rep.Fatal(1, fmt.Errorf("write %s: %w", fname, werr))
+		}
+		if cerr != nil {
+			rep.Fatal(1, fmt.Errorf("close %s: %w", fname, cerr))
+		}
+		fmt.Fprintf(os.Stderr, "hunt: wrote %s\n", fname)
 	}
 }
 

@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
@@ -65,6 +68,10 @@ func RunLiveSurvey(ctx context.Context, opts LiveHuntOptions) (*SignalSurvey, []
 	}
 	reports := make([]CaptureReport, 0, len(candidates))
 	nSamples := int(dwell * float64(rate))
+	maxSamples := nSamples
+	if opts.MaxDwellSeconds > dwell {
+		maxSamples = int(opts.MaxDwellSeconds * float64(rate))
+	}
 
 	for i, cand := range candidates {
 		if err := ctx.Err(); err != nil {
@@ -76,40 +83,114 @@ func RunLiveSurvey(ctx context.Context, opts LiveHuntOptions) (*SignalSurvey, []
 			Detail: fmt.Sprintf("%.4f MHz", float64(cand.FreqHz)/1e6),
 		})
 
-		ds := DetectedSignal{FreqHz: cand.FreqHz, SNRDb: cand.SNRDb}
 		if err := opts.Source.Tune(cand.FreqHz); err != nil {
-			ds.Error = fmt.Sprintf("tune: %v", err)
-			ds.Class = survey.ClassUnknown
+			ds := DetectedSignal{FreqHz: cand.FreqHz, SNRDb: cand.SNRDb,
+				Class: survey.ClassUnknown, Error: fmt.Sprintf("tune: %v", err)}
 			sv.Signals = append(sv.Signals, ds)
+			if opts.OnSignal != nil {
+				opts.OnSignal(ds)
+			}
 			continue
 		}
-		iq, err := captureN(ctx, opts.Source, nSamples)
+		iq, err := captureCandidate(ctx, opts.Source, nSamples, maxSamples, rate)
 		if err != nil {
 			return finishSurvey(sv), reports, err
 		}
 
-		// Channelise to a narrow baseband stream for classification + the
-		// conventional (analog/paging) decoders.
-		chIQ, chRate := channelize(iq, rate, surveyChannelRateHz)
-		cls := survey.Classify(chIQ, float64(chRate))
-		ds.Class = cls.Class
-		ds.Confidence = cls.Confidence
-		ds.OccupiedBwHz = cls.OccupiedBwHz
-		ds.BaudHz = cls.Features.BaudHz
-		ds.Features = cls.Features
-
-		rep := routeSignal(sv.System, &ds, routeInputs{
-			fullIQ: iq, fullRate: float64(rate),
-			chIQ: chIQ, chRate: chRate,
-			cand: cand, opts: opts, log: log,
-		})
+		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, opts, log)
 		if rep != nil {
 			reports = append(reports, *rep)
 		}
 		sv.Signals = append(sv.Signals, ds)
+		if opts.OnSignal != nil {
+			opts.OnSignal(ds)
+		}
 	}
 
 	return finishSurvey(sv), reports, nil
+}
+
+// RunOfflineSurvey classifies and routes a set of capture files without an SDR
+// — the offline sibling of RunLiveSurvey, mirroring how Discover is the offline
+// sibling of RunLiveHunt. Each capture is loaded, treated as one baseband
+// candidate (at its CaptureInput.FrequencyHz), classified, and routed through
+// the same body the live survey uses, so an operator can survey recorded IQ
+// (e.g. a wideband grab) the same way they survey on the air.
+func RunOfflineSurvey(captures []CaptureInput, opts LiveHuntOptions) (*SignalSurvey, []CaptureReport, error) {
+	log := opts.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	sv := &SignalSurvey{
+		StartedAt: time.Now(),
+		System: &DiscoveredSystem{
+			Name: opts.Name, State: opts.State, County: opts.County, Location: opts.Location,
+		},
+	}
+	reports := make([]CaptureReport, 0, len(captures))
+	for _, ci := range captures {
+		iq, rate, err := loadCapture(ci)
+		if err != nil {
+			sv.Signals = append(sv.Signals, DetectedSignal{
+				FreqHz: ci.FrequencyHz, Class: survey.ClassUnknown,
+				Error: fmt.Sprintf("load %s: %v", ci.Path, err),
+			})
+			continue
+		}
+		cand := Candidate{FreqHz: ci.FrequencyHz}
+		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, opts, log)
+		if rep != nil {
+			reports = append(reports, *rep)
+		}
+		sv.Signals = append(sv.Signals, ds)
+		if opts.OnSignal != nil {
+			opts.OnSignal(ds)
+		}
+	}
+	return finishSurvey(sv), reports, nil
+}
+
+// classifyAndRoute is the shared per-candidate body of the live and offline
+// surveys: measure occupied bandwidth on the full-rate capture, channelise to a
+// narrow baseband stream, classify, and route to the matching decoder.
+func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32, cand Candidate, opts LiveHuntOptions, log *slog.Logger) (DetectedSignal, *CaptureReport) {
+	ds := DetectedSignal{FreqHz: cand.FreqHz, SNRDb: cand.SNRDb}
+
+	// Occupied bandwidth from the full-rate capture (a wideband signal isn't
+	// truncated by the channel decimation); modulation features + conventional
+	// decoders run on the narrow channel.
+	wideBw, wideSnr := survey.OccupiedBandwidth(fullIQ, float64(fullRate), opts.ClassifyConfig)
+	chIQ, chRate := channelize(fullIQ, fullRate, surveyChannelRateHz)
+	cls := survey.ClassifyWith(chIQ, float64(chRate), wideBw, wideSnr, opts.ClassifyConfig)
+	ds.Class = cls.Class
+	ds.Confidence = cls.Confidence
+	ds.OccupiedBwHz = cls.OccupiedBwHz
+	ds.BaudHz = cls.Features.BaudHz
+	ds.Features = cls.Features
+
+	rep := routeSignal(sys, &ds, routeInputs{
+		fullIQ: fullIQ, fullRate: float64(fullRate),
+		chIQ: chIQ, chRate: chRate,
+		cand: cand, opts: opts, log: log,
+	})
+	return ds, rep
+}
+
+// loadCapture reads an IQ capture file into complex64 using the format's shared
+// decoder (siglab.SampleFormat.Decoder).
+func loadCapture(ci CaptureInput) ([]complex64, uint32, error) {
+	raw, err := os.ReadFile(ci.Path)
+	if err != nil {
+		return nil, 0, err
+	}
+	dec, bytesPerPair := ci.Format.Decoder()
+	n := len(raw) / bytesPerPair
+	if n == 0 {
+		return nil, 0, fmt.Errorf("capture too short (%d bytes)", len(raw))
+	}
+	iq := make([]complex64, n)
+	dec(raw[:n*bytesPerPair], iq)
+	return iq, uint32(ci.SampleRateHz), nil
 }
 
 // routeInputs bundles the per-candidate buffers and config the router needs.
@@ -131,6 +212,11 @@ type routeInputs struct {
 func routeSignal(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs) *CaptureReport {
 	source := fmt.Sprintf("%.4f MHz", float64(in.cand.FreqHz)/1e6)
 
+	// Classify-only: record the verdict, decode nothing.
+	if in.opts.ClassifyOnly {
+		return nil
+	}
+
 	// Paging: a digital carrier at a POCSAG/FLEX baud — prove it by decoding.
 	if survey.IsDigital(ds.Class) && survey.IsPagingBaud(ds.Features.BaudHz) {
 		pages := survey.DecodePOCSAG(in.chIQ, in.chRate)
@@ -147,7 +233,14 @@ func routeSignal(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs) *Cap
 
 	// Trunking: hand digital carriers to the authoritative siglab identify on
 	// the full-rate capture (siglab channelises and auto-tunes internally).
+	// Skip the (expensive) identify for a low-confidence digital carrier when an
+	// operator opts into the gate — but never for a paging-baud carrier (already
+	// handled above) and never when the gate is 0 (default), so a real control
+	// channel is never dropped.
 	if survey.IsDigital(ds.Class) {
+		if in.opts.IdentifyMinConfidence > 0 && ds.Confidence < in.opts.IdentifyMinConfidence {
+			return nil
+		}
 		buf := siglab.EncodeCapture(in.fullIQ, siglab.FormatF32)
 		rep := decodeAndAccumulate(sys, bytes.NewReader(buf), source, decodeParams{
 			Protocol:      in.opts.Protocol,
@@ -170,10 +263,20 @@ func routeSignal(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs) *Cap
 		return &rep
 	}
 
-	// Analog FM / AM: carrier activity + sub-audible squelch identification.
+	// Analog FM / AM: carrier activity + sub-audible squelch identification,
+	// plus an optional WAV clip when -survey-audio is set.
 	switch ds.Class {
 	case survey.ClassNBFM, survey.ClassWideFM, survey.ClassAM:
 		ds.Analog = survey.AnalyzeAnalogFM(in.chIQ, in.chRate)
+		if in.opts.SurveyAudioDir != "" && ds.Analog.Active {
+			path := filepath.Join(in.opts.SurveyAudioDir,
+				fmt.Sprintf("%.4fMHz.wav", float64(in.cand.FreqHz)/1e6))
+			if err := survey.WriteAnalogClip(path, in.chIQ, in.chRate); err != nil {
+				ds.Error = fmt.Sprintf("audio clip: %v", err)
+			} else {
+				ds.Analog.AudioClipPath = path
+			}
+		}
 	}
 	return nil
 }
@@ -219,6 +322,43 @@ func finishSurvey(sv *SignalSurvey) *SignalSurvey {
 		}
 	}
 	return sv
+}
+
+// surveyActivityDbFS is the carrier-present threshold for the activity-dwell
+// loop: a chunk whose channelised power clears it is treated as containing
+// traffic and ends the dwell early.
+const surveyActivityDbFS = -30
+
+// captureCandidate gathers IQ for one candidate. With maxSamples == chunk it is
+// a single fixed-dwell grab. When maxSamples is larger (MaxDwellSeconds set), it
+// captures in chunk-sized windows up to maxSamples, returning as soon as a
+// window shows carrier activity (so bursty paging/voice isn't missed in a
+// blind window), else the strongest window seen.
+func captureCandidate(ctx context.Context, src IQSource, chunk, maxSamples int, rate uint32) ([]complex64, error) {
+	if maxSamples <= chunk {
+		return captureN(ctx, src, chunk)
+	}
+	var best []complex64
+	bestPwr := math.Inf(-1)
+	for got := 0; got < maxSamples; got += chunk {
+		iq, err := captureN(ctx, src, chunk)
+		if err != nil {
+			return nil, err
+		}
+		if len(iq) == 0 {
+			break
+		}
+		chIQ, _ := channelize(iq, rate, surveyChannelRateHz)
+		if pwr := survey.CarrierPowerDbFS(chIQ); pwr >= surveyActivityDbFS {
+			return iq, nil // activity — use this window
+		} else if pwr > bestPwr {
+			bestPwr, best = pwr, iq
+		}
+	}
+	if best == nil {
+		return captureN(ctx, src, chunk)
+	}
+	return best, nil
 }
 
 // channelize decimates wideband IQ to ~targetHz by an integer factor, band-

@@ -6,6 +6,23 @@ import { selectCanMutate, selectClientConfig, useShared } from "../store/shared"
 
 const POLL_INTERVAL_MS = 2_000;
 
+// sortSignals returns a copy of the inventory sorted by the chosen column
+// (frequency ascending, class alphabetical, or SNR descending).
+function sortSignals(signals: DetectedSignal[], by: "freq" | "class" | "snr"): DetectedSignal[] {
+  const out = [...signals];
+  out.sort((a, b) => {
+    switch (by) {
+      case "class":
+        return a.class.localeCompare(b.class) || a.freq_hz - b.freq_hz;
+      case "snr":
+        return b.snr_db - a.snr_db;
+      default:
+        return a.freq_hz - b.freq_hz;
+    }
+  });
+  return out;
+}
+
 // signalDetail renders the per-class decode summary for one surveyed carrier.
 function signalDetail(sig: DetectedSignal): string {
   if (sig.trunking) {
@@ -43,6 +60,8 @@ export function Hunt() {
   const [serial, setSerial] = useState("");
   const [protocol, setProtocol] = useState("");
   const [survey, setSurvey] = useState(false);
+  const [classifyOnly, setClassifyOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<"freq" | "class" | "snr">("freq");
 
   useEffect(() => {
     let cancel = false;
@@ -77,6 +96,7 @@ export function Hunt() {
         candidates: candList.length ? candList : undefined,
         no_sweep: candList.length > 0 && bandList.length === 0,
         survey: survey || undefined,
+        classify_only: (survey && classifyOnly) || undefined,
         name: name || undefined,
         state: stateCode || undefined,
         county: county || undefined,
@@ -136,15 +156,21 @@ export function Hunt() {
           <table>
             <thead>
               <tr>
-                <th>Frequency</th>
-                <th>Class</th>
+                <th onClick={() => setSortBy("freq")} style={{ cursor: "pointer" }}>
+                  Frequency{sortBy === "freq" ? " ▾" : ""}
+                </th>
+                <th onClick={() => setSortBy("class")} style={{ cursor: "pointer" }}>
+                  Class{sortBy === "class" ? " ▾" : ""}
+                </th>
                 <th>BW (kHz)</th>
-                <th>SNR (dB)</th>
+                <th onClick={() => setSortBy("snr")} style={{ cursor: "pointer" }}>
+                  SNR (dB){sortBy === "snr" ? " ▾" : ""}
+                </th>
                 <th>Decode</th>
               </tr>
             </thead>
             <tbody>
-              {status.signals.map((sig) => (
+              {sortSignals(status.signals, sortBy).map((sig) => (
                 <tr key={sig.freq_hz}>
                   <td>{(sig.freq_hz / 1e6).toFixed(4)} MHz</td>
                   <td>{sig.class}</td>
@@ -195,6 +221,16 @@ export function Hunt() {
           <input type="checkbox" checked={survey} onChange={(e) => setSurvey(e.target.checked)} />
           Survey mode — classify &amp; decode every signal (analog, paging, trunking)
         </label>
+        {survey ? (
+          <label className="hunt-survey-toggle">
+            <input
+              type="checkbox"
+              checked={classifyOnly}
+              onChange={(e) => setClassifyOnly(e.target.checked)}
+            />
+            Classify only — skip decoding (fast inventory)
+          </label>
+        ) : null}
         <div className="hunt-buttons">
           <button onClick={start} disabled={!canMutate || running}>
             Start hunt
@@ -211,6 +247,14 @@ export function Hunt() {
           <a href={`${exportBase}?format=bundle`}>GopherTrunk bundle</a>
           <a href={`${exportBase}?format=trunk-recorder`}>trunk-recorder</a>
           <a href={`${exportBase}?format=rr`}>RadioReference package</a>
+        </section>
+      ) : null}
+
+      {status?.signals && status.signals.length > 0 ? (
+        <section className="hunt-export">
+          <span>Survey:</span>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>signals JSON</a>
+          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>signals CSV</a>
         </section>
       ) : null}
 

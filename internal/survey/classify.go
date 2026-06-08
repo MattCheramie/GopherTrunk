@@ -86,28 +86,93 @@ type Classification struct {
 // this the spectral estimates are too noisy to trust.
 const minClassifySamples = 4096
 
-// nbfmMaxBwHz splits narrowband from wideband analog FM. 25 kHz channels (and
-// the ~16 kHz occupied bandwidth of 5 kHz-deviation voice) stay NBFM; broadcast
-// FM and other wide deviations land in WideFM.
-const nbfmMaxBwHz = 25_000
+// ClassifyConfig holds the decision thresholds the classifier uses. The zero
+// value is invalid; callers either use Classify (which applies
+// DefaultClassifyConfig) or pass a config whose zero fields are filled in by
+// withDefaults. Exposing these lets operators tune for a noisy SDR front-end or
+// a non-standard channel plan without recompiling.
+type ClassifyConfig struct {
+	// SNRGateDb is the minimum peak-over-noise-floor (dB) for a carrier to be
+	// classified at all; below it the carrier reads as unknown.
+	SNRGateDb float64
+	// OccupiedThreshDb is how far above the noise floor a bin must stand to
+	// count toward the occupied bandwidth.
+	OccupiedThreshDb float64
+	// AMEnvelopeCV is the envelope coefficient-of-variation above which a
+	// carrier reads as AM (non-constant envelope).
+	AMEnvelopeCV float64
+	// DigitalProminence is the minimum rectified-discriminator baud-line
+	// prominence for a carrier to read as digital.
+	DigitalProminence float64
+	// NBFMMaxBwHz is the occupied-bandwidth boundary between narrowband and
+	// wideband analog FM.
+	NBFMMaxBwHz uint32
+	// PSKKurtosis is the discriminator excess-kurtosis above which a digital
+	// carrier with no level structure reads as phase modulation.
+	PSKKurtosis float64
+}
 
-// digitalProminence is the minimum rectified-discriminator baud-line prominence
-// (peak over band median) for a carrier to read as digital. Synthesised
-// FSK/C4FM lines run from the tens into the hundreds; analog voice stays in the
-// single digits, so the gap is wide.
-const digitalProminence = 15
+// DefaultClassifyConfig returns the tuned defaults (validated against the
+// synthesized fixtures in classify_test.go).
+func DefaultClassifyConfig() ClassifyConfig {
+	return ClassifyConfig{
+		SNRGateDb:         3,
+		OccupiedThreshDb:  6,
+		AMEnvelopeCV:      0.20,
+		DigitalProminence: 15,
+		NBFMMaxBwHz:       25_000,
+		PSKKurtosis:       2,
+	}
+}
+
+// withDefaults fills any zero field from DefaultClassifyConfig so a partially
+// specified config (e.g. only DigitalProminence set from a CLI flag) still has
+// sensible values everywhere.
+func (c ClassifyConfig) withDefaults() ClassifyConfig {
+	d := DefaultClassifyConfig()
+	if c.SNRGateDb == 0 {
+		c.SNRGateDb = d.SNRGateDb
+	}
+	if c.OccupiedThreshDb == 0 {
+		c.OccupiedThreshDb = d.OccupiedThreshDb
+	}
+	if c.AMEnvelopeCV == 0 {
+		c.AMEnvelopeCV = d.AMEnvelopeCV
+	}
+	if c.DigitalProminence == 0 {
+		c.DigitalProminence = d.DigitalProminence
+	}
+	if c.NBFMMaxBwHz == 0 {
+		c.NBFMMaxBwHz = d.NBFMMaxBwHz
+	}
+	if c.PSKKurtosis == 0 {
+		c.PSKKurtosis = d.PSKKurtosis
+	}
+	return c
+}
 
 // pagingBauds are the symbol rates that route a 2-level FSK carrier to the
 // paging decoders. POCSAG runs at 512/1200/2400, FLEX at 1600.
 var pagingBauds = []float64{512, 1200, 1600, 2400}
 
-// Classify measures the baseband carrier in iq (already tuned to DC) and
-// returns its modulation family plus the features behind the call. It performs
-// no decoding and is cheap relative to a full siglab identify, so the router
-// can run it on every candidate and only pay for identify on the digital ones.
+// Classify measures the baseband carrier in iq (already tuned to DC) with the
+// default config, measuring occupied bandwidth from iq itself.
 func Classify(iq []complex64, rateHz float64) Classification {
-	feat := extractFeatures(iq, rateHz)
-	class, conf := decide(feat)
+	return ClassifyWith(iq, rateHz, 0, 0, DefaultClassifyConfig())
+}
+
+// ClassifyWith classifies a baseband carrier with an explicit config. When
+// occBwHz > 0 it is used as the occupied bandwidth (and snrDb as the SNR)
+// instead of measuring from iq — the survey router passes a measurement taken
+// on a wider, un-decimated view so a wideband signal isn't mis-measured by the
+// narrow channel iq is decimated to. occBwHz == 0 measures from iq.
+func ClassifyWith(iq []complex64, rateHz float64, occBwHz uint32, snrDb float64, cfg ClassifyConfig) Classification {
+	cfg = cfg.withDefaults()
+	feat := extractFeatures(iq, rateHz, cfg)
+	if occBwHz > 0 {
+		feat.OccupiedBwHz, feat.SNRDb = occBwHz, snrDb
+	}
+	class, conf := decide(feat, cfg)
 	return Classification{
 		Class:        class,
 		Confidence:   conf,
@@ -117,14 +182,14 @@ func Classify(iq []complex64, rateHz float64) Classification {
 }
 
 // extractFeatures computes the full feature vector for a baseband capture.
-func extractFeatures(iq []complex64, rateHz float64) ClassFeatures {
+func extractFeatures(iq []complex64, rateHz float64, cfg ClassifyConfig) ClassFeatures {
 	var f ClassFeatures
 	if len(iq) < minClassifySamples || rateHz <= 0 {
 		return f
 	}
 
 	// 1. Occupied bandwidth + SNR from the windowed IQ power spectrum.
-	f.OccupiedBwHz, f.SNRDb = occupiedBandwidth(iq, rateHz)
+	f.OccupiedBwHz, f.SNRDb = OccupiedBandwidth(iq, rateHz, cfg)
 
 	// 2. Envelope coefficient of variation (AM vs constant-envelope).
 	f.EnvelopeCV = envelopeCV(iq)
@@ -149,31 +214,28 @@ func extractFeatures(iq []complex64, rateHz float64) ClassFeatures {
 // decide maps the feature vector to a class and a 0..1 confidence. The cascade
 // mirrors siglab's weighted-evidence style: each branch reports how cleanly its
 // gate was met so a marginal call reads as low confidence and a clear one high.
-func decide(f ClassFeatures) (SignalClass, float64) {
+func decide(f ClassFeatures, cfg ClassifyConfig) (SignalClass, float64) {
 	// No usable carrier.
-	if f.OccupiedBwHz == 0 || f.SNRDb < 3 {
+	if f.OccupiedBwHz == 0 || f.SNRDb < cfg.SNRGateDb {
 		return ClassUnknown, 0
 	}
 
-	// AM: a non-constant envelope is the defining trait. Constant-envelope
-	// angle modulations sit near CV≈0; voice AM runs well above 0.15.
-	if f.EnvelopeCV > 0.15 {
-		conf := clamp01((f.EnvelopeCV - 0.15) / 0.3)
-		return ClassAM, 0.5 + 0.5*conf
-	}
-
-	// Digital: a strong cyclostationary baud line in the rectified
-	// discriminator is the key-independent marker of symbol transitions.
-	// Analog voice (continuous, speech-shaped) produces only a smooth
-	// roll-off whose largest bin barely clears the median. The classifier is
-	// the coarse router here — it names the family (PSK vs FSK) and carries the
-	// baud/level features; the authoritative fine call (which trunking protocol,
-	// 2-level vs C4FM) is made downstream by the paging decoders and the siglab
-	// identify the router hands a digital carrier to.
-	if f.BaudHz > 0 && f.BaudProminence >= digitalProminence {
-		conf := 0.5 + 0.5*clamp01((f.BaudProminence-digitalProminence)/30)
-		if f.IFKurtosis > 2 && f.IFModality <= 1 {
-			// Impulsive discriminator, energy piled at zero ⇒ phase modulation.
+	// Digital first: a strong cyclostationary baud line in the rectified
+	// discriminator is the key-independent marker of symbol transitions, and it
+	// is checked before AM because a linearly-modulated digital carrier
+	// (π/4-DQPSK and friends) has real envelope variation from pulse shaping
+	// that would otherwise trip the AM gate. Analog voice (continuous,
+	// speech-shaped) produces only a smooth roll-off whose largest bin barely
+	// clears the median, so it won't reach the prominence gate. The classifier
+	// is the coarse router here — it names the family (PSK vs FSK vs C4FM); the
+	// authoritative fine call is made downstream by the paging decoders and the
+	// siglab identify the router hands a digital carrier to.
+	if f.BaudHz > 0 && f.BaudProminence >= cfg.DigitalProminence {
+		conf := 0.5 + 0.5*clamp01((f.BaudProminence-cfg.DigitalProminence)/30)
+		// An impulsive discriminator (spikes at phase transitions) marks phase
+		// modulation — including π/4-DQPSK, whose phase-change values also show
+		// four levels, so kurtosis is checked before the 4-level C4FM branch.
+		if f.IFKurtosis > cfg.PSKKurtosis {
 			return ClassPSK, conf
 		}
 		if f.IFModality >= 4 {
@@ -182,18 +244,28 @@ func decide(f ClassFeatures) (SignalClass, float64) {
 		return ClassFSK, conf
 	}
 
+	// AM: a non-constant envelope with no symbol structure. Constant-envelope
+	// angle modulations sit near CV≈0; voice AM runs well above the gate.
+	if f.EnvelopeCV > cfg.AMEnvelopeCV {
+		conf := clamp01((f.EnvelopeCV - cfg.AMEnvelopeCV) / 0.3)
+		return ClassAM, 0.5 + 0.5*conf
+	}
+
 	// Analog FM: constant envelope, no baud line. Split by occupied bandwidth.
-	if f.OccupiedBwHz <= nbfmMaxBwHz {
+	if f.OccupiedBwHz <= cfg.NBFMMaxBwHz {
 		return ClassNBFM, 0.6
 	}
 	return ClassWideFM, 0.6
 }
 
-// occupiedBandwidth returns the contiguous bandwidth around DC that stands
+// OccupiedBandwidth returns the contiguous bandwidth around DC that stands
 // above the noise floor, and the carrier SNR. The capture is baseband (carrier
 // at DC), so the occupied span is the run of above-threshold bins bridging the
-// centre bin. Returns (0, 0) when no carrier stands out.
-func occupiedBandwidth(iq []complex64, rateHz float64) (uint32, float64) {
+// centre bin. Returns (0, 0) when no carrier stands out. The survey router
+// calls this on the full-rate (un-decimated) capture so a wideband signal's
+// bandwidth isn't truncated by the narrow channel decimation.
+func OccupiedBandwidth(iq []complex64, rateHz float64, cfg ClassifyConfig) (uint32, float64) {
+	cfg = cfg.withDefaults()
 	n := pow2Floor(len(iq))
 	if n > 8192 {
 		n = 8192
@@ -206,20 +278,37 @@ func occupiedBandwidth(iq []complex64, rateHz float64) (uint32, float64) {
 	peak := maxF32(pwr)
 	snr := float64(peak - floor)
 
-	const occThreshDb = 6
-	thresh := floor + occThreshDb
+	thresh := floor + float32(cfg.OccupiedThreshDb)
 	binHz := rateHz / float64(n)
 	dc := n / 2
 
-	// Walk outward from DC while bins stay above threshold.
+	// Walk outward from DC to the carrier edges, tolerating a few sub-threshold
+	// bins (a DC notch, or a single noise dip inside the signal) so the measured
+	// width isn't truncated to a sliver. The gap is kept small — a handful of
+	// bins — so it bridges a narrow notch without chaining across the wide noise
+	// field beyond the carrier's real edge.
+	maxGap := n / 1024
+	if maxGap < 3 {
+		maxGap = 3
+	}
 	lo, hi := dc, dc
-	for lo > 0 && pwr[lo-1] >= thresh {
-		lo--
+	for i, gap := dc-1, 0; i >= 0; i-- {
+		if pwr[i] >= thresh {
+			lo, gap = i, 0
+		} else if gap++; gap > maxGap {
+			break
+		}
 	}
-	for hi < n-1 && pwr[hi+1] >= thresh {
-		hi++
+	for i, gap := dc+1, 0; i < n; i++ {
+		if pwr[i] >= thresh {
+			hi, gap = i, 0
+		} else if gap++; gap > maxGap {
+			break
+		}
 	}
-	if pwr[dc] < thresh {
+	// No carrier near DC at all (centre and its immediate neighbourhood are all
+	// noise) ⇒ nothing occupies this channel.
+	if lo == dc && hi == dc && pwr[dc] < thresh {
 		return 0, snr
 	}
 	bw := float64(hi-lo+1) * binHz

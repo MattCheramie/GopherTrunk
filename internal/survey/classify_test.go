@@ -117,13 +117,31 @@ func TestClassify(t *testing.T) {
 			baud:    1200,
 		},
 		{
+			// FSK degraded by AWGN + IQ imbalance still reads as digital — its
+			// cyclostationary baud line survives noise, and the IQ-imbalance
+			// envelope wobble doesn't trip the AM gate (digital is checked first).
+			name: "gfsk impaired",
+			iq: demod.ApplyImpairments(
+				demod.ModulateGFSK(randBits(nSamples/10, 6), 10, 4, 0.5, testRateHz, 2400),
+				testRateHz,
+				demod.Impairments{SNRdB: 30, IQGainImbalance: 1.05, IQPhaseSkewRad: 0.03, Seed: 9},
+			),
+			digital: true,
+		},
+		{
+			// π/4-DQPSK (the dominant PSK in this domain) reads as digital.
+			name:    "pi/4-dqpsk",
+			iq:      demod.ModulatePiOver4DQPSK(randDibits(nSamples/10, 7), 10, 8, 0.2, math.Pi/4),
+			digital: true,
+		},
+		{
 			name: "analog fm voice",
 			iq:   fmModulate(lowpassNoise(nSamples, 4), testRateHz, 3000),
 			want: ClassNBFM,
 		},
 		{
 			name: "am voice",
-			iq:   amModulate(lowpassNoise(nSamples, 5), 0.9),
+			iq:   amModulate(lowpassNoise(nSamples, 5), 0.95),
 			want: ClassAM,
 		},
 		{
@@ -150,6 +168,23 @@ func TestClassify(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestClassifyDegradesGracefully checks that a heavily-impaired C4FM carrier
+// (whose fragile 4-level baud line the blind classifier can lose under noise)
+// is never confidently mis-fired as AM — it falls back to analog FM or unknown,
+// the safe outcome, leaving the authoritative call to siglab.
+func TestClassifyDegradesGracefully(t *testing.T) {
+	const nSamples = 24_000
+	iq := demod.ApplyImpairments(
+		demod.ModulateP25C4FM(randDibits(nSamples/10, 11), testRateHz, 1800),
+		testRateHz,
+		demod.Impairments{SNRdB: 12, IQGainImbalance: 1.08, IQPhaseSkewRad: 0.05, Seed: 3},
+	)
+	got := Classify(iq, testRateHz)
+	if got.Class == ClassAM {
+		t.Errorf("heavily-impaired C4FM mis-fired as AM; features: %+v", got.Features)
 	}
 }
 

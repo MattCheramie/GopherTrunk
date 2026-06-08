@@ -1,8 +1,18 @@
 package survey
 
 import (
+	"math"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
+	"github.com/MattCheramie/GopherTrunk/internal/voice"
 )
+
+// AudioClipRateHz is the PCM rate of survey analog-FM audio clips. 8 kHz is the
+// conventional voice rate the WAV writer and recorder use.
+const AudioClipRateHz = 8000
 
 // AnalogReport summarises a conventional analog carrier: whether it is keyed up
 // (carrier present) and any sub-audible squelch tone/code identifying the
@@ -10,10 +20,11 @@ import (
 // IQ-power squelch and CTCSS/DCS detectors that gate the live analog scanner —
 // so the survey's analog verdict matches what the scanner would do.
 type AnalogReport struct {
-	Active    bool    `json:"active"`             // carrier power above squelch
-	PowerDbFS float64 `json:"power_dbfs"`         // measured RMS power
-	CTCSSHz   float64 `json:"ctcss_hz,omitempty"` // detected CTCSS tone, 0 if none
-	DCSCode   string  `json:"dcs_code,omitempty"` // detected DCS code, "" if none
+	Active        bool    `json:"active"`                    // carrier power above squelch
+	PowerDbFS     float64 `json:"power_dbfs"`                // measured RMS power
+	CTCSSHz       float64 `json:"ctcss_hz,omitempty"`        // detected CTCSS tone, 0 if none
+	DCSCode       string  `json:"dcs_code,omitempty"`        // detected DCS code, "" if none
+	AudioClipPath string  `json:"audio_clip_path,omitempty"` // WAV clip, when -survey-audio is set
 }
 
 // analogSquelchDbFS is the carrier-present threshold (dBFS) for the survey. It
@@ -89,4 +100,51 @@ func scanDCS(iq []complex64, rateHz float64) string {
 		}
 	}
 	return ""
+}
+
+// CarrierPowerDbFS reports the RMS power of an IQ buffer in dBFS, reusing the
+// conventional scanner's squelch primitive. Survey uses it to detect carrier
+// activity (a keyed FM carrier sits well above the noise floor).
+func CarrierPowerDbFS(iq []complex64) float64 { return conventional.PowerDbFS(iq) }
+
+// CaptureAnalogAudio demodulates an analog-FM baseband capture into 8 kHz PCM,
+// reusing the standard voice chain: FM discriminator → 75 µs de-emphasis →
+// audio AGC → rational resample to AudioClipRateHz → int16. inRateHz is the
+// channelised input sample rate.
+func CaptureAnalogAudio(iq []complex64, inRateHz uint32) []int16 {
+	if len(iq) == 0 || inRateHz == 0 {
+		return nil
+	}
+	audio := demod.NewFM().Process(nil, iq)
+	audio = filter.NewDeEmphasisUS(float64(inRateHz)).Process(audio, audio)
+	audio = dsp.NewAudioAGC(dsp.AudioAGCConfig{SampleRate: float64(inRateHz)}).Process(audio, audio)
+
+	g := gcdU32(AudioClipRateHz, inRateHz)
+	audio = dsp.NewRealResampler(int(AudioClipRateHz/g), int(inRateHz/g), 16, 7.0).Process(nil, audio)
+
+	out := make([]int16, len(audio))
+	for i, s := range audio {
+		v := math.Round(float64(s) * 32767)
+		if v > 32767 {
+			v = 32767
+		} else if v < -32768 {
+			v = -32768
+		}
+		out[i] = int16(v)
+	}
+	return out
+}
+
+// WriteAnalogClip captures the analog audio (CaptureAnalogAudio) and writes it
+// to path as a mono 16-bit WAV at AudioClipRateHz.
+func WriteAnalogClip(path string, iq []complex64, inRateHz uint32) error {
+	w, err := voice.NewWavFile(path, AudioClipRateHz)
+	if err != nil {
+		return err
+	}
+	if werr := w.WriteSamples(CaptureAnalogAudio(iq, inRateHz)); werr != nil {
+		_ = w.Close()
+		return werr
+	}
+	return w.Close()
 }

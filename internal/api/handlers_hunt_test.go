@@ -37,6 +37,11 @@ func (f *fakeHuntCockpit) Export(id int, format string) ([]byte, string, error) 
 	f.lastFormat = format
 	return f.exportData, f.exportName, f.exportErr
 }
+func (f *fakeHuntCockpit) ExportSurvey(id int, format string) ([]byte, string, error) {
+	f.lastID = id
+	f.lastFormat = format
+	return f.exportData, f.exportName, f.exportErr
+}
 func (f *fakeHuntCockpit) Commit(id int, force, dryRun bool) ([]string, error) {
 	f.lastID = id
 	return f.commitChg, f.commitErr
