@@ -7,6 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.6] — 2026-06-08
+
+This release is about **seeing the signal**. A new **Plots hub** (`/plots`)
+gathers the per-channel scopes — Constellation, Symbol scope, Eye diagram,
+Tuning, Histogram — into one tabbed home that mirrors OP25's Plots tabs (#557,
+#583), now with a true symbol constellation, an open four-level eye, live
+receiver-state meters, and a symbol-distribution histogram. Underneath, **P25
+Phase 1 voice finally decodes** after the IMBE channel-convention and LDU
+voice-frame-offset fixes (#574, #578); **TETRA** gains real ETSI training
+sequences, a corrected control-channel sync layer with auto-learned colour
+code, and soft-decision SB-burst FEC (#569, #571, #573); and a shared
+**voice-recording boundary** controller tightly bounds every call by hangtime
+and talkgroup (#579). On the operator side, the web **Config Builder** reaches
+dual-editor parity with the TUI (#570–#582), the **spectrum** panel gains a
+hover readout and dual-pager DDC (#577), and a two-page **Getting Started**
+guide lands for non-technical users (#581).
+
 ### Added
 
 - **Universal voice recording boundaries — hangtime + per-transmission
@@ -59,8 +76,32 @@ for tagged releases.
   **Vector scope (raw IQ)** for identifying unknown signals. The symbols
   stream reuses the live receiver (`WS /api/v1/diag/symbols`), so it shows
   exactly what the production demod sees.
+- **Web Config Builder — dual-editor parity with the TUI** (#570, #572, #576,
+  #580, #582). The browser-based Config Builder gains the editor primitives it
+  was missing (ListEditor, AdvancedJSON, Fieldset, HzField), a shared
+  HTTP-free config core with whole-file marshal/write and per-section
+  validation, and backend gap-fill (multi-error reporting, comment-preserving
+  merge, file management, RadioReference name lookup). A dual-editor
+  schema-drift test now fails CI if any config field is editable in one editor
+  but not the other, so the web and TUI builders stay in lockstep.
+- **Two-page Getting Started guide** (#581) — a non-technical walkthrough
+  (`/getting-started-setup.html`) that takes a new user from download to a
+  running scan, featuring the Config Builder, plus refreshed interfaces and
+  source-section help sourced from the shared field registry.
+- **Spectrum hover readout + dual-pager DDC** (#577). The wideband Spectrum
+  waterfall now shows a live frequency/power readout under the cursor, the
+  paging DDC can run two channels at once, and decoded pages carry a
+  human-readable pager-type label.
 
 ### Fixed
+
+- **TETRA control channel would not lock on real signals** (#569, #571, #573).
+  The SB-burst lock chain used placeholder sync constants instead of the real
+  ETSI training sequences, the control-channel sync layer mis-framed bursts,
+  and the FEC was hard-decision only. The decoder now uses the ETSI normal/
+  synchronisation training sequences, a corrected sync layer that auto-learns
+  the colour code, and soft-decision FEC for the SB-burst, so a production
+  144 kHz / 8 sps TETRA control channel locks.
 
 - **P25 Phase 1 voice still garbled after the IMBE channel-decode fix —
   wrong LDU voice-frame positions** (#489 follow-up). With the channel
@@ -109,6 +150,10 @@ for tagged releases.
   and gains an adjustable **Zoom** control (up to 8×; dots scale with both
   zoom and plot size); its auto-scale now targets the ~95th-percentile radius
   so a stray outlier no longer shrinks the cloud.
+- **Warn when message decoders are configured without storage** (#568). A
+  decoder that produces messages (paging, MDC, DSC, …) but has no storage
+  backend configured silently dropped everything; the daemon now logs a
+  startup warning so the misconfiguration is visible.
 
 ## [v0.3.5] — 2026-06-07
 
