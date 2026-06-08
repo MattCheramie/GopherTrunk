@@ -17,7 +17,6 @@ export function PagingSection() {
     <Section
       sectionKey="paging"
       title="Paging"
-      instructions="POCSAG and FLEX pager decoders. The POCSAG / FLEX lists each pin one SDR to a single paging frequency; a Wideband group fans several channels off one SDR via a DDC bank."
     >
       <Fieldset legend="POCSAG channels" defaultOpen>
         <ListEditor<PagingPOCSAGConfig>

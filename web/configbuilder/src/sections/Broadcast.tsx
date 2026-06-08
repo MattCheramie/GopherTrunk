@@ -22,7 +22,6 @@ export function BroadcastSection() {
     <Section
       sectionKey="broadcast"
       title="Broadcast"
-      instructions="Stream completed calls out to aggregators (Broadcastify, RdioScanner, OpenMHz) or a live Icecast/ShoutCast mount. A feed with enabled=false is kept but skipped."
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField

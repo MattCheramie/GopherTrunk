@@ -11,7 +11,6 @@ export function ADSBSection() {
     <Section
       sectionKey="adsb"
       title="ADS-B"
-      instructions="Aircraft tracking. Consume Mode-S frames from a BEAST upstream (dump1090 / readsb, typically host:30005), or pin an SDR to 1090 MHz for the native PPM receiver."
     >
       <Fieldset legend="BEAST upstreams" defaultOpen>
         <ListEditor<ADSBBeastConfig>

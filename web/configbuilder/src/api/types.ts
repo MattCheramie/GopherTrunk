@@ -467,6 +467,22 @@ export interface DocLink {
   title: string;
   url: string;
   description: string;
+  // instructions is the shared section help text, sourced from the Go
+  // configbuilder.Sections() registry so the web and terminal builders show
+  // identical section help. (description mirrors it for the Docs-link tooltip.)
+  instructions: string;
+}
+
+// FieldMeta is one entry of the shared per-field metadata registry served by
+// GET /api/v1/config/fieldmeta, keyed "StructName.FieldName". The web feeds
+// its help into the field widgets so per-field help comes from the same Go
+// source the terminal builder uses.
+export interface FieldMeta {
+  label?: string;
+  help?: string;
+  options?: { value: string; label: string }[];
+  hz?: boolean;
+  freqList?: boolean;
 }
 
 export interface RRGeoRef {

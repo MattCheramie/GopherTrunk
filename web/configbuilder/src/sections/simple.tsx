@@ -41,7 +41,6 @@ export function LogSection() {
     <Section
       sectionKey="log"
       title="Logging"
-      instructions="Controls daemon log verbosity and output format."
     >
       <SelectField
         label="Level"
@@ -96,7 +95,6 @@ export function DiagnosticsSection() {
     <Section
       sectionKey="diagnostics"
       title="Diagnostics"
-      instructions="Verbose errors print full error chains + stack traces and expand API error envelopes (which expose host/dongle info). Enable only on trusted networks."
     >
       <BoolField
         label="Verbose errors"
@@ -114,7 +112,6 @@ export function RadioReferenceSection() {
     <Section
       sectionKey="radioreference"
       title="RadioReference"
-      instructions="Read-only RadioReference.com API credentials. Used by the hunt duplicate check and by this builder's RadioReference browse/import. Can also be supplied via GOPHERTRUNK_RR_KEY / _USER / _PASS env vars instead of storing the secret here."
     >
       <TextField label="API key" value={cfg.APIKey} onChange={(x) => set({ ...cfg, APIKey: x })} />
       <TextField label="Username" value={cfg.Username} onChange={(x) => set({ ...cfg, Username: x })} />
@@ -135,7 +132,6 @@ export function APISection() {
     <Section
       sectionKey="api"
       title="API & Web"
-      instructions="HTTP/gRPC listen addresses and access control. allow_mutations lets the web UI write changes (talkgroup edits, settings, this builder's saves)."
     >
       <TextField
         label="HTTP address"
@@ -234,7 +230,6 @@ export function StorageSection() {
     <Section
       sectionKey="storage"
       title="Storage"
-      instructions="Where the call-log database and the control-channel cache live."
     >
       <TextField
         label="Database path"
@@ -260,7 +255,6 @@ export function RecordingsSection() {
     <Section
       sectionKey="recordings"
       title="Recordings"
-      instructions="Per-call WAV recorder output directory and sample rate (4000–48000 Hz)."
     >
       <TextField
         label="Directory"
@@ -311,7 +305,6 @@ export function MetricsSection() {
     <Section
       sectionKey="metrics"
       title="Metrics"
-      instructions="Mount a Prometheus /metrics endpoint on the API HTTP server."
     >
       <BoolField label="Enabled" value={cfg.Enabled} onChange={(x) => set({ ...cfg, Enabled: x })} />
     </Section>
@@ -325,7 +318,6 @@ export function RetentionSection() {
     <Section
       sectionKey="retention"
       title="Retention"
-      instructions="Background sweeper that ages out call-log rows and recorded files. Zero days disables the corresponding sweep."
     >
       <NumberField
         label="Call-log days"
@@ -360,7 +352,6 @@ export function ScannerSection() {
     <Section
       sectionKey="scanner"
       title="Scanner"
-      instructions="Scan-list mode for the trunking engine. 'all' follows every non-locked-out grant; 'list' follows only talkgroups marked Scan=true."
     >
       <SelectField
         label="Scan mode"
@@ -479,7 +470,6 @@ export function AudioSection() {
     <Section
       sectionKey="audio"
       title="Audio"
-      instructions="Live playback of decoded voice. Sample rate (4000–48000 Hz) should match recordings.sample_rate. Volume is 0–1."
     >
       <BoolField label="Enabled" value={cfg.Enabled} onChange={(x) => set({ ...cfg, Enabled: x })} />
       <TextField
@@ -532,7 +522,6 @@ export function WebSection() {
     <Section
       sectionKey="web"
       title="Web UI"
-      instructions="Show or hide navigation tabs in the operator console. Unchecked tabs are hidden from the nav (the route stays reachable by URL)."
     >
       <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
         {KNOWN_TABS.map((tab) => {

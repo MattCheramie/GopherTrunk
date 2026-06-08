@@ -10,7 +10,7 @@ import type { GTConfig } from "../api/types";
 export function GenericSection(props: {
   sectionKey: keyof GTConfig;
   title: string;
-  instructions: string;
+  instructions?: string;
 }) {
   const value = useStore((s) => (s.config ? s.config[props.sectionKey] : null));
   const patch = useStore((s) => s.patchSection);

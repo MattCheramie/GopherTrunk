@@ -3,6 +3,7 @@ import type {
   ConfigLoadResponse,
   ConfigSaveResponse,
   DocLink,
+  FieldMeta,
   GTConfig,
   ParsedSystemDTO,
   RRGeoRef,
@@ -72,6 +73,7 @@ export const api = {
   mkdir: (path: string) => req<{ path: string }>("POST", "/config/dir", { path }),
   defaults: () => req<GTConfig>("GET", "/config/defaults"),
   docs: () => req<Record<string, DocLink>>("GET", "/config/docs"),
+  fieldmeta: () => req<Record<string, FieldMeta>>("GET", "/config/fieldmeta"),
   validate: (config: GTConfig, section?: string) =>
     req<ValidationResult>("POST", "/config/validate", { config, section: section ?? "" }),
   marshal: (config: GTConfig) =>

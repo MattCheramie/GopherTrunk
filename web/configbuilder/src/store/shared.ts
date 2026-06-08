@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api, setToken } from "../api/client";
 import type {
   DocLink,
+  FieldMeta,
   GTConfig,
   TalkgroupCSVRow,
   ValidationResult,
@@ -24,6 +25,10 @@ interface State {
   talkgroups: Record<string, TalkgroupCSVRow[]>;
 
   docs: Record<string, DocLink>;
+  // fieldmeta is the shared per-field registry (keyed "StructName.FieldName")
+  // fetched from /config/fieldmeta; fieldHelp() reads it so web field help is
+  // sourced from the same Go registry the terminal builder uses.
+  fieldmeta: Record<string, FieldMeta>;
   defaults: GTConfig | null; // config.Default() seed, for "configured" nav cues
   token: string;
   errors: string[]; // toast stack
@@ -53,6 +58,7 @@ export const useStore = create<State>((set, get) => ({
   dirty: false,
   talkgroups: {},
   docs: {},
+  fieldmeta: {},
   defaults: null,
   token: "",
   errors: [],
@@ -66,6 +72,12 @@ export const useStore = create<State>((set, get) => ({
       set({ docs });
     } catch {
       /* docs are best-effort */
+    }
+    try {
+      const fieldmeta = await api.fieldmeta();
+      set({ fieldmeta });
+    } catch {
+      /* field help is best-effort */
     }
     // Cache the defaults once so the nav can flag which sections differ
     // from a blank config ("configured" cues).
@@ -205,3 +217,12 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 }));
+
+// fieldHelp returns the shared per-field help for a "StructName"+"FieldName"
+// pair from the fieldmeta registry (fetched once at init), or undefined when
+// the registry hasn't loaded / has no entry. Non-reactive on purpose — the
+// registry is static for the session — so it can feed widget `help` props
+// inline. The Go side guarantees every config leaf has help (TestFieldHelpCoverage).
+export function fieldHelp(struct: string, field: string): string | undefined {
+  return useStore.getState().fieldmeta[`${struct}.${field}`]?.help || undefined;
+}

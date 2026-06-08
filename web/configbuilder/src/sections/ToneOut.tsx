@@ -15,7 +15,6 @@ export function ToneOutSection() {
     <Section
       sectionKey="tone_out"
       title="Tone-out"
-      instructions="Two-tone / single-tone paging detection. Supply two tones (A then B) for sequential paging, or one for single-tone supervision. Durations are Go duration strings (e.g. 250ms, 1.5s)."
     >
       <ListEditor<ToneProfileConfig>
         label="Profiles"

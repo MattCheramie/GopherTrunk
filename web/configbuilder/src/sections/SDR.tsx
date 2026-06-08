@@ -62,7 +62,6 @@ export function SDRSection() {
     <Section
       sectionKey="sdr"
       title="SDR Hardware"
-      instructions="Sample rate (225 kHz–20 MHz) every tuner is programmed to, plus local devices and remote (rtl_tcp / SoapySDR) sources. P25 trunking needs separate control and voice dongles (distinct serials)."
     >
       <NumberField
         label="Sample rate (Hz)"
