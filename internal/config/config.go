@@ -1326,7 +1326,7 @@ func Load(path string) (Config, error) {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("config %s: %w\n  hint: check YAML syntax (indentation must be spaces, keys end with ':'). Run `gophertrunk import-pdf -wizard` to regenerate a fresh scaffold.", path, err)
+		return cfg, fmt.Errorf("config %s: %w\n  hint: check YAML syntax (indentation must be spaces, keys end with ':'). Run `gophertrunk config` to build/repair a config interactively.", path, err)
 	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)

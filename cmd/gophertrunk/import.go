@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 )
 
@@ -22,7 +23,7 @@ import (
 //	-force             overwrite an existing system block with the same name
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import-pdf", flag.ExitOnError)
-	cfgPath := fs.String("config", defaultConfigPath(), "path to existing config.yaml (merged in place)")
+	cfgPath := fs.String("config", configbuilder.DefaultConfigPath(), "path to existing config.yaml (merged in place)")
 	csvDir := fs.String("csv-dir", "", "directory to write talkgroup CSVs (default: directory of -config)")
 	noTUI := fs.Bool("no-tui", false, "skip the review TUI and write straight from parsed defaults")
 	dryRun := fs.Bool("dry-run", false, "print the planned changes and exit without writing")
@@ -79,8 +80,8 @@ Config-file builder:
 
 Usage:
   gophertrunk import-pdf -pdf <file.pdf> [-pdf <file.pdf>...] [-csv <file.csv>...] [flags]
-  gophertrunk import-pdf -wizard                              (build a fresh config)
-  gophertrunk import-pdf -wizard -pdf <file.pdf>              (wizard then import)
+  gophertrunk import-pdf -wizard                              (opens the Config Builder TUI)
+  gophertrunk config                                          (build/edit config in the terminal)
 
 Flags:
 `)
@@ -115,36 +116,17 @@ Flags:
 		return
 	}
 
-	// Wizard mode: run the interactive config builder first. The
-	// resulting answers feed both the standalone "build a fresh
-	// config" path and the "wizard then merge" path below.
+	// Wizard mode is now the full terminal Config Builder. The old 13-step
+	// wizard has been superseded by `gophertrunk config tui` (a complete
+	// editor that can also import PDF/CSV from inside), so -wizard launches
+	// it. PDF/CSV passed alongside can be imported in the builder's Import
+	// dialog.
 	if *wizard {
-		seed := defaultWizardAnswers()
-		seed.ConfigPath = *cfgPath
-		keep := len(pdfPaths) > 0 || len(csvPaths) > 0
-		answers, wrote, err := runConfigWizard(seed, keep)
-		if err != nil {
-			failErr(fmt.Errorf("wizard: %w", err))
+		if len(pdfPaths) > 0 || len(csvPaths) > 0 {
+			fmt.Fprintln(os.Stderr, "import-pdf: -wizard now opens the Config Builder; use its Import dialog to add the PDF/CSV.")
 		}
-		if !keep {
-			if wrote {
-				fmt.Fprintf(os.Stderr, "import-pdf: wrote %s\n", answers.ConfigPath)
-			} else {
-				fmt.Fprintln(os.Stderr, "import-pdf: wizard cancelled, no file written")
-			}
-			return
-		}
-		// Wizard + import: write the scaffold first so the merge path
-		// has something to layer trunking.systems on top of.
-		body, err := renderConfigYAML(answers)
-		if err != nil {
-			failErr(fmt.Errorf("wizard render: %w", err))
-		}
-		if err := os.WriteFile(answers.ConfigPath, body, 0o644); err != nil {
-			failErr(fmt.Errorf("wizard write: %w", err))
-		}
-		fmt.Fprintf(os.Stderr, "import-pdf: wizard scaffold written to %s\n", answers.ConfigPath)
-		*cfgPath = answers.ConfigPath
+		runConfigTUI(nil)
+		return
 	}
 
 	if len(pdfPaths) == 0 && len(csvPaths) == 0 {
