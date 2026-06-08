@@ -224,6 +224,50 @@ func (p *VoicePool) Bind(d *VoiceDevice, g Grant, tg *TalkGroup, now time.Time) 
 	return ac, nil
 }
 
+// Retune follows an already-bound call to a new frequency without ending it:
+// it retunes the device to g.FrequencyHz and replaces the stored Grant and
+// LastHeardAt, preserving StartedAt so the call's duration and identity stay
+// continuous. The engine calls this when a control channel moves an
+// in-progress call to a new channel (a real handoff, or a P25 band-plan
+// IdentifierUpdate re-mapping the channel) — the call is matched by
+// (System, GroupID, Timeslot), so following it here is what stops a second
+// tuner being bound for the same talkgroup.
+//
+// The SetReacquire retry applies exactly as in Bind. Returns an error if the
+// device isn't currently bound or the tune fails after the retry; on error the
+// caller should end the call and rebind a capable device. Note the returned
+// ActiveCall pointer is the same instance Bind handed out, so the engine's
+// mirror sees the updated Grant without any extra bookkeeping.
+func (p *VoicePool) Retune(serial string, g Grant, now time.Time) error {
+	p.mu.Lock()
+	ac, ok := p.active[serial]
+	if !ok {
+		p.mu.Unlock()
+		return errors.New("trunking: device not bound")
+	}
+	d := ac.Device
+	reacquire := p.reacquire
+	p.mu.Unlock()
+	if err := d.Tuner.SetCenterFreq(g.FrequencyHz); err != nil {
+		if reacquire == nil {
+			return err
+		}
+		newTuner, rerr := reacquire(serial)
+		if rerr != nil {
+			return errors.Join(err, rerr)
+		}
+		d.Tuner = newTuner
+		if err2 := d.Tuner.SetCenterFreq(g.FrequencyHz); err2 != nil {
+			return err2
+		}
+	}
+	p.mu.Lock()
+	ac.Grant = g
+	ac.LastHeardAt = now
+	p.mu.Unlock()
+	return nil
+}
+
 // Release marks the device free. Returns the freed ActiveCall (or nil if
 // the device wasn't busy).
 func (p *VoicePool) Release(serial string) *ActiveCall {
