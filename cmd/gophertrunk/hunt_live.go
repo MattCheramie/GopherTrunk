@@ -17,6 +17,7 @@ import (
 // huntLiveParams are the resolved inputs for a live (on-air) hunt.
 type huntLiveParams struct {
 	serial          string
+	survey          bool     // classify+decode every carrier, not just trunking CCs
 	bands           []string // "low:high" in MHz
 	candidatesMHz   string   // comma-separated MHz
 	noSweep         bool
@@ -81,15 +82,19 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		rep.Fatal(1, fmt.Errorf("start IQ stream: %w", err))
 	}
 
+	mode := "hunt"
+	if p.survey {
+		mode = "survey"
+	}
 	if len(bands) > 0 {
-		fmt.Fprintf(os.Stderr, "hunt: live sweep on %s[%s] @ %g MS/s across %d band(s)…\n",
-			info.Driver, info.Serial, p.sampleRateHz/1e6, len(bands))
+		fmt.Fprintf(os.Stderr, "%s: live sweep on %s[%s] @ %g MS/s across %d band(s)…\n",
+			mode, info.Driver, info.Serial, p.sampleRateHz/1e6, len(bands))
 	} else {
-		fmt.Fprintf(os.Stderr, "hunt: live probe on %s[%s] of %d candidate(s)…\n",
-			info.Driver, info.Serial, len(candidates))
+		fmt.Fprintf(os.Stderr, "%s: live probe on %s[%s] of %d candidate(s)…\n",
+			mode, info.Driver, info.Serial, len(candidates))
 	}
 
-	sys, reports, err := hunt.RunLiveHunt(ctx, hunt.LiveHuntOptions{
+	opts := hunt.LiveHuntOptions{
 		Source:        src,
 		Bands:         bands,
 		Candidates:    candidates,
@@ -107,16 +112,63 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		OnProgress: func(pr hunt.LiveHuntProgress) {
 			switch pr.Phase {
 			case hunt.PhaseSweeping:
-				fmt.Fprintf(os.Stderr, "hunt: sweeping %.4f MHz — %s\n", float64(pr.CenterHz)/1e6, pr.Detail)
+				fmt.Fprintf(os.Stderr, "%s: sweeping %.4f MHz — %s\n", mode, float64(pr.CenterHz)/1e6, pr.Detail)
 			case hunt.PhaseIdentifying:
-				fmt.Fprintf(os.Stderr, "hunt: probing candidate %d/%d @ %s\n", pr.CandidateN, pr.Candidates, pr.Detail)
+				fmt.Fprintf(os.Stderr, "%s: probing candidate %d/%d @ %s\n", mode, pr.CandidateN, pr.Candidates, pr.Detail)
 			}
 		},
-	})
+	}
+
+	if p.survey {
+		sv, reports, err := hunt.RunLiveSurvey(ctx, opts)
+		if err != nil {
+			rep.Fatal(1, fmt.Errorf("live survey: %w", err))
+		}
+		printSurvey(sv)
+		return sv.System, reports
+	}
+
+	sys, reports, err := hunt.RunLiveHunt(ctx, opts)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("live hunt: %w", err))
 	}
 	return sys, reports
+}
+
+// printSurvey writes the classified signal inventory to stderr — the survey's
+// primary deliverable. The trunking export tail (finishHunt) runs afterwards on
+// sv.System when a trunked system was found.
+func printSurvey(sv *hunt.SignalSurvey) {
+	trunking, analog, paging, other := sv.Counts()
+	fmt.Fprintf(os.Stderr, "survey: %d signal(s) — %d trunking, %d analog, %d paging, %d other\n",
+		len(sv.Signals), trunking, analog, paging, other)
+	for _, s := range sv.Signals {
+		line := fmt.Sprintf("  %10.4f MHz  %-13s  bw %5.1f kHz  snr %4.1f dB",
+			float64(s.FreqHz)/1e6, s.Class, float64(s.OccupiedBwHz)/1e3, s.SNRDb)
+		switch {
+		case s.Trunking != nil:
+			line += fmt.Sprintf("  [%s", s.Trunking.Protocol)
+			if s.Trunking.Locked {
+				line += " locked"
+			}
+			line += "]"
+		case len(s.Pages) > 0:
+			line += fmt.Sprintf("  [%d page(s), %s]", len(s.Pages), s.Pages[0].Protocol)
+		case s.Analog != nil && s.Analog.Active:
+			line += "  [active"
+			if s.Analog.CTCSSHz > 0 {
+				line += fmt.Sprintf(", CTCSS %.1f Hz", s.Analog.CTCSSHz)
+			}
+			if s.Analog.DCSCode != "" {
+				line += fmt.Sprintf(", DCS %s", s.Analog.DCSCode)
+			}
+			line += "]"
+		}
+		if s.Error != "" {
+			line += "  ERROR: " + s.Error
+		}
+		fmt.Fprintln(os.Stderr, line)
+	}
 }
 
 // parseFreqListMHz parses a comma-separated MHz list into Hz. Empty ⇒ nil.

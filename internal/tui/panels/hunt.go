@@ -18,6 +18,7 @@ type HuntPanel struct {
 	bandsInput textinput.Model
 	nameInput  textinput.Model
 	editing    bool
+	survey     bool // the open form will start a survey rather than a hunt
 	focusName  bool // false ⇒ bands input focused, true ⇒ name input
 	inputErr   string
 }
@@ -39,12 +40,15 @@ func NewHunt() *HuntPanel {
 func (HuntPanel) Title() string { return "Hunt" }
 
 var (
-	huntStartKey = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start run"))
-	huntStopKey  = key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop run"))
-	huntEscKey   = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+	huntStartKey  = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start hunt"))
+	huntSurveyKey = key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "start survey"))
+	huntStopKey   = key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop run"))
+	huntEscKey    = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
 )
 
-func (HuntPanel) Keys() []key.Binding { return []key.Binding{huntStartKey, huntStopKey} }
+func (HuntPanel) Keys() []key.Binding {
+	return []key.Binding{huntStartKey, huntSurveyKey, huntStopKey}
+}
 
 func (p *HuntPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)
@@ -76,15 +80,24 @@ func (p *HuntPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
 
 	switch {
 	case key.Matches(km, huntStartKey) && !s.Hunt.Running:
-		p.editing = true
-		p.focusName = false
-		p.inputErr = ""
-		p.bandsInput.Focus()
+		p.openForm(false)
+		return p, textinput.Blink
+	case key.Matches(km, huntSurveyKey) && !s.Hunt.Running:
+		p.openForm(true)
 		return p, textinput.Blink
 	case key.Matches(km, huntStopKey) && s.Hunt.Running:
 		return p, Emit(state.WriteRequest{Label: "stop hunt run", Kind: state.WriteKindHuntStop})
 	}
 	return p, nil
+}
+
+// openForm opens the start form for either a hunt or a survey run.
+func (p *HuntPanel) openForm(survey bool) {
+	p.editing = true
+	p.survey = survey
+	p.focusName = false
+	p.inputErr = ""
+	p.bandsInput.Focus()
 }
 
 func (p *HuntPanel) toggleFocus() {
@@ -115,11 +128,16 @@ func (p *HuntPanel) submit() tea.Cmd {
 		return nil
 	}
 	name := strings.TrimSpace(p.nameInput.Value())
+	survey := p.survey
+	label := "start hunt"
+	if survey {
+		label = "start survey"
+	}
 	p.closeForm()
 	return Emit(state.WriteRequest{
-		Label: "start hunt",
+		Label: label,
 		Kind:  state.WriteKindHuntStart,
-		Hunt:  &state.HuntStartReq{Bands: bands, Name: name},
+		Hunt:  &state.HuntStartReq{Bands: bands, Name: name, Survey: survey},
 	})
 }
 
@@ -175,17 +193,44 @@ func (p *HuntPanel) View(width, height int, focused bool, s *state.SharedState) 
 		fmt.Fprintf(&b, "Error:   %s\n", h.Error)
 	}
 
+	if h.Mode != "" {
+		fmt.Fprintf(&b, "Mode:    %s\n", h.Mode)
+	}
+
 	b.WriteString("\n")
 	if h.SystemName != "" {
 		fmt.Fprintf(&b, "Discovered: %s\n", h.SystemName)
 		fmt.Fprintf(&b, "  sites: %d   talkgroups: %d\n", h.Sites, h.Talkgroups)
-	} else {
+	} else if h.Mode != "survey" {
 		b.WriteString("No system discovered yet.\n")
+	}
+
+	// Survey inventory: list the classified carriers (most recent first up to
+	// a height-bounded cap so the panel doesn't overflow).
+	if len(h.Signals) > 0 {
+		fmt.Fprintf(&b, "Signals (%d):\n", len(h.Signals))
+		max := height - 12
+		if max < 1 {
+			max = 1
+		}
+		for i, sig := range h.Signals {
+			if i >= max {
+				fmt.Fprintf(&b, "  … %d more\n", len(h.Signals)-i)
+				break
+			}
+			fmt.Fprintf(&b, "  %9.4f MHz  %-13s  %4.1f kHz\n",
+				float64(sig.FreqHz)/1e6, sig.Class, float64(sig.OccupiedBwHz)/1e3)
+		}
 	}
 
 	b.WriteString("\n")
 	switch {
 	case p.editing:
+		mode := "hunt"
+		if p.survey {
+			mode = "survey"
+		}
+		fmt.Fprintf(&b, "(%s) ", mode)
 		b.WriteString(p.bandsInput.View() + "\n")
 		b.WriteString(p.nameInput.View() + "\n")
 		b.WriteString("[enter] start   [tab] next field   [esc] cancel\n")
@@ -195,7 +240,7 @@ func (p *HuntPanel) View(width, height int, focused bool, s *state.SharedState) 
 	case h.Running:
 		b.WriteString("[x] stop run\n")
 	default:
-		b.WriteString("[s] start a sweep   (or POST /api/v1/hunt/start)\n")
+		b.WriteString("[s] hunt   [v] survey\n")
 	}
 	if s.HuntErr != nil {
 		fmt.Fprintf(&b, "\n(status unavailable: %v)\n", s.HuntErr)

@@ -40,6 +40,10 @@ type LiveHuntOptions struct {
 	Candidates []uint32
 	// Protocol forces a decoder; trunking.ProtocolUnknown auto-identifies.
 	Protocol trunking.Protocol
+	// Survey selects the signal-survey pipeline (RunLiveSurvey): classify and
+	// decode every detected carrier, not just trunking control channels. The
+	// daemon Manager reads this to dispatch the right run.
+	Survey bool
 	// Serial requests a specific SDR for the run. Empty ⇒ the daemon
 	// auto-selects (spare SDR, else borrow the control SDR). Consumed by the
 	// daemon Acquirer; RunLiveHunt itself ignores it (the IQSource is already

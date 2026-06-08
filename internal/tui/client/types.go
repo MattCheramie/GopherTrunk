@@ -144,12 +144,25 @@ type HuntStatusDTO struct {
 	RunID      int    `json:"run_id"`
 	State      string `json:"state"`
 	Running    bool   `json:"running"`
+	Mode       string `json:"mode"` // "hunt" | "survey"
 	Phase      string `json:"phase"`
 	Detail     string `json:"detail"`
 	Sites      int    `json:"sites"`
 	Talkgroups int    `json:"talkgroups"`
 	SystemName string `json:"system_name"`
-	Error      string `json:"error"`
+	// Signals is the survey inventory (empty for a plain hunt). Only the
+	// fields the panel renders are decoded.
+	Signals []HuntSignalDTO `json:"signals"`
+	Error   string          `json:"error"`
+}
+
+// HuntSignalDTO mirrors the scalar fields of hunt.DetectedSignal the panel
+// renders — one classified carrier from a survey run.
+type HuntSignalDTO struct {
+	FreqHz       uint32  `json:"freq_hz"`
+	SNRDb        float32 `json:"snr_db"`
+	OccupiedBwHz uint32  `json:"occupied_bw_hz"`
+	Class        string  `json:"class"`
 }
 
 // ScannerStatusDTO mirrors api.ScannerStatus — the unified scanner

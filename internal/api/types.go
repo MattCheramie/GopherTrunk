@@ -13,11 +13,15 @@ type HuntStatus struct {
 	RunID      int                    `json:"run_id"`
 	State      string                 `json:"state"`
 	Running    bool                   `json:"running"`
+	Mode       string                 `json:"mode,omitempty"` // "hunt" | "survey"
 	Phase      string                 `json:"phase,omitempty"`
 	Detail     string                 `json:"detail,omitempty"`
 	Sites      int                    `json:"sites"`
 	Talkgroups int                    `json:"talkgroups"`
 	SystemName string                 `json:"system_name,omitempty"`
+	// Signals is the classified-carrier inventory of a survey run (empty for a
+	// plain hunt) — the survey's primary result.
+	Signals    []hunt.DetectedSignal  `json:"signals,omitempty"`
 	Error      string                 `json:"error,omitempty"`
 	System     *hunt.DiscoveredSystem `json:"system,omitempty"`
 	Reports    []hunt.CaptureReport   `json:"reports,omitempty"`
@@ -31,6 +35,7 @@ type HuntStartRequest struct {
 	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
 	Candidates      []float64 `json:"candidates,omitempty"` // MHz
 	NoSweep         bool      `json:"no_sweep,omitempty"`
+	Survey          bool      `json:"survey,omitempty"` // classify+decode every carrier, not just trunking CCs
 	Protocol        string    `json:"protocol,omitempty"`
 	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`
 	SweepDwellMs    int       `json:"sweep_dwell_ms,omitempty"`
