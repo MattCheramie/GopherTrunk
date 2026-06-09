@@ -37,11 +37,13 @@ func Discover() string {
 //     - 1 file → use it.
 //     - 2+ files → call opts.Pick; if nil, take the first.
 //
-// Candidate directories (in order):
-//   - <os.UserConfigDir()>/GopherTrunk
+// Candidate directories (in order). Each GopherTrunk root is scanned
+// at its top level AND in its config/ subfolder (the data-root layout
+// the installer lays down, config.yaml at <DataRoot>/config/config.yaml):
+//   - <os.UserConfigDir()>/GopherTrunk and .../GopherTrunk/config
 //     (%APPDATA%\GopherTrunk on Windows, ~/.config/GopherTrunk on
 //     Linux, ~/Library/Application Support/GopherTrunk on macOS).
-//   - <UserHomeDir>/Documents/GopherTrunk
+//   - <UserHomeDir>/Documents/GopherTrunk and .../GopherTrunk/config
 //     (the Windows installer's default — operators who accept it
 //     get auto-discovery without setting any env var).
 //   - the current working directory.
@@ -82,13 +84,23 @@ func DirConfigFiles(dir string) []string { return dirConfigFiles(dir) }
 // candidateDirs returns the directories DiscoverWith will scan, in
 // precedence order. Factored out so tests can assert the order
 // without touching the filesystem.
+//
+// Each GopherTrunk root is scanned both at its top level (the legacy
+// layout, config.yaml directly in the root) and in its config/
+// subfolder (the data-root layout the installer lays down, where
+// config.yaml lives at <DataRoot>/config/config.yaml). The top-level
+// entry is listed first so an old-style config still wins if both
+// exist.
 func candidateDirs() []string {
 	var out []string
+	add := func(root string) {
+		out = append(out, root, filepath.Join(root, "config"))
+	}
 	if dir, err := os.UserConfigDir(); err == nil {
-		out = append(out, filepath.Join(dir, "GopherTrunk"))
+		add(filepath.Join(dir, "GopherTrunk"))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		out = append(out, filepath.Join(home, "Documents", "GopherTrunk"))
+		add(filepath.Join(home, "Documents", "GopherTrunk"))
 	}
 	out = append(out, ".")
 	return out
