@@ -91,17 +91,21 @@ The condensed version:
    does the following:
 
    - Copies `gophertrunk.exe` to `C:\Program Files\GopherTrunk\`
-     (single static binary, no DLLs).
+     (single static binary, no DLLs). That is the *only* thing in
+     Program Files.
+   - Asks for **one data folder** (default
+     `%USERPROFILE%\Documents\GopherTrunk`) that holds everything
+     else, in subfolders Setup creates — `config\`, `recordings\`,
+     `iq\`, `exports\`, `data\`, `logs\`, and `web\` (the three
+     browser consoles). Setup seeds a starter `config.yaml` into
+     `config\` (an existing one is never overwritten). Point it
+     anywhere you can write to.
    - Bundles **Zadig** next to the daemon and adds a Start Menu
      shortcut "Install RTL-SDR driver (Zadig)" so you don't have
      to chase a separate download.
    - Adds Start Menu entries for the daemon, the config template,
+     the three web consoles (standard, Signal Lab, Config Builder),
      and the install walkthrough.
-   - Offers to install the **browser-based web operator console** to
-     a folder of your choice (default
-     `%USERPROFILE%\Documents\GopherTrunk Web Console`). Untick the
-     "Install the web operator console" task on the Tasks page for
-     a headless install.
    - Optionally adds `C:\Program Files\GopherTrunk` to your **system
      PATH** so `gophertrunk` is reachable from any PowerShell window
      (off by default — tick the "Add GopherTrunk to my PATH" option
@@ -398,15 +402,23 @@ gophertrunk audio list
 
 ## 5. Build your first config
 
-The installer asked you for an "editable files folder" (default
-`Documents\GopherTrunk`), seeded a `config.yaml` there, and pinned
-the path in `HKCU\Environment\GOPHERTRUNK_CONFIG` so the daemon
-discovers it automatically. Open it from the Start Menu shortcut
-"Edit my config.yaml (Notepad)" or directly:
+The installer asked you for a data folder (default
+`Documents\GopherTrunk`), seeded a `config.yaml` in its `config\`
+subfolder, and pinned the path in `HKCU\Environment\GOPHERTRUNK_CONFIG`
+so the daemon discovers it automatically. Open it from the Start Menu
+shortcut "Edit my config.yaml (Notepad)" or directly:
 
 ```powershell
-notepad "$env:USERPROFILE\Documents\GopherTrunk\config.yaml"
+notepad "$env:USERPROFILE\Documents\GopherTrunk\config\config.yaml"
 ```
+
+The seeded config uses **config-relative paths** — `recordings.dir:
+../recordings`, `storage.path: ../data/calls.db`, `../iq`, `../logs`
+— which the daemon resolves against the folder holding `config.yaml`.
+So recordings, the database, IQ captures, and logs land in the
+sibling folders under your data root with nothing to edit. Absolute
+paths and `%GOPHERTRUNK_HOME%\...` references still work if you want
+files elsewhere.
 
 A read-only reference copy of the full annotated template stays at
 `C:\Program Files\GopherTrunk\config.example.yaml` (Start Menu →
@@ -455,16 +467,15 @@ Full reference: [`import.md`]({{ '/import.html' | relative_url }}).
 gophertrunk run
 ```
 
-The daemon walks `$GOPHERTRUNK_CONFIG` →
-`%APPDATA%\GopherTrunk\config.yaml` →
-`%USERPROFILE%\Documents\GopherTrunk\config.yaml` → `.\config.yaml`
-and loads the first one it finds, printing `config: loaded <path>`
-on startup so you can confirm the choice. If you keep multiple
-configs in the editable-files folder (e.g. `config.yaml` plus a
-`prod.yaml`), the daemon prints a numbered menu and asks which to
-load — Enter alone picks #1. A non-interactive launch (Windows
-service, Scheduled Task) auto-selects the first match with a
-stderr warning instead of hanging.
+The daemon walks `$GOPHERTRUNK_CONFIG` → `%APPDATA%\GopherTrunk` →
+`%USERPROFILE%\Documents\GopherTrunk` (each scanned at its top level
+and in its `config\` subfolder) → `.\config.yaml` and loads the first
+one it finds, printing `config: loaded <path>` on startup so you can
+confirm the choice. If you keep multiple configs in the `config\`
+folder (e.g. `config.yaml` plus a `prod.yaml`), the daemon prints a
+numbered menu and asks which to load — Enter alone picks #1. A
+non-interactive launch (Windows service, Scheduled Task) auto-selects
+the first match with a stderr warning instead of hanging.
 
 Override discovery any time:
 
@@ -482,7 +493,7 @@ exit.
 
 | Flag | Description |
 | --- | --- |
-| `-config <path>` | Path to `config.yaml`. Optional — when omitted the daemon walks `$GOPHERTRUNK_CONFIG` → `%APPDATA%\GopherTrunk` → `Documents\GopherTrunk` → cwd and loads the first match (built-in defaults if nothing found). |
+| `-config <path>` | Path to `config.yaml`. Optional — when omitted the daemon walks `$GOPHERTRUNK_CONFIG` → `%APPDATA%\GopherTrunk` → `Documents\GopherTrunk` (each at its top level and its `config\` subfolder) → cwd and loads the first match (built-in defaults if nothing found). |
 | `-log-level <lvl>` | Override `log.level` (`debug` / `info` / `warn` / `error`). |
 | `-log-format <fmt>` | Override `log.format` (`text` / `json`). |
 
@@ -500,7 +511,7 @@ until a native service manifest ships.
 ```powershell
 # Download and extract nssm from https://nssm.cc
 nssm install GopherTrunk "C:\Program Files\GopherTrunk\gophertrunk.exe" `
-  run -config "C:\ProgramData\GopherTrunk\config.yaml"
+  run -config "%USERPROFILE%\Documents\GopherTrunk\config\config.yaml"
 nssm set GopherTrunk AppDirectory "C:\Program Files\GopherTrunk"
 nssm set GopherTrunk DisplayName "GopherTrunk Trunking Daemon"
 nssm set GopherTrunk Start SERVICE_AUTO_START
@@ -636,10 +647,12 @@ server in the daemon). Every TUI panel has a browser counterpart.
 
 ### Launch on the same machine as the daemon
 
-Open File Explorer to the folder you picked during install
-(default `%USERPROFILE%\Documents\GopherTrunk Web Console`) and
-double-click `index.html`. The Start Menu shortcut points at the
-same file. On the connect screen, enter:
+Open File Explorer to the `web\` subfolder of your data root
+(default `%USERPROFILE%\Documents\GopherTrunk\web`) and double-click
+`index.html`. The Start Menu shortcut "Web operator console" points
+at the same file; "Signal Lab console" and "Config Builder console"
+open the `web\siglab\` and `web\configbuilder\` consoles alongside
+it. On the connect screen, enter:
 
 - **Server URL:** `http://127.0.0.1:8080`
 - **Bearer token:** the contents of `api.auth.token_file` (or empty
@@ -666,9 +679,9 @@ Canonical "headless box, operate from the couch" scenario.
 
 2. Restart the daemon.
 
-3. Copy the `GopherTrunk Web Console` folder to the operating device
-   (USB stick, file share, or download the matching release archive
-   on that device and use its `gophertrunk-web/` directory).
+3. Copy your data root's `web\` folder to the operating device (USB
+   stick, file share, or download the matching release archive on that
+   device and use its `gophertrunk-web/` directory).
 
 4. Double-click `index.html`, enter the daemon's LAN URL and the
    bearer token on the connect screen.
@@ -1427,17 +1440,19 @@ gophertrunk version
 ### Uninstall
 
 **Settings → Apps → Installed apps → GopherTrunk → Uninstall.**
-The uninstaller removes the install folder, every Start Menu
-entry, and undoes the PATH change if you opted in.
+The uninstaller removes the install folder, every Start Menu entry,
+undoes the PATH change if you opted in, and clears the
+`GOPHERTRUNK_CONFIG` / `GOPHERTRUNK_HOME` env vars.
 
-Recordings under your `recordings.dir`, the SQLite call log, and
-the CC cache file are **not** removed — they live under
-`ProgramData` or your home directory and remain on disk. Delete
-them manually if you want a clean slate:
+It then asks whether to also delete the Setup-managed parts of your
+data folder — the `config`, `data`, `logs`, and `web` subfolders
+(default **No**). Your **captures** — `recordings`, `iq`, and
+`exports` — are **always kept** so an uninstall never destroys
+recordings. Delete the whole data folder by hand if you want a
+clean slate:
 
 ```powershell
-Remove-Item -Recurse "C:\ProgramData\GopherTrunk"
-Remove-Item "$HOME\gophertrunk.yaml"
+Remove-Item -Recurse "$env:USERPROFILE\Documents\GopherTrunk"
 ```
 
 If you registered an NSSM service, remove it before uninstall:
