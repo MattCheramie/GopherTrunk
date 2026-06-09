@@ -16,10 +16,9 @@ func withDevice(t *testing.T) (*Device, *usb.MockTransport) {
 	return &Device{t: mt, info: sdr.Info{Driver: driverName, Serial: "test"}}, mt
 }
 
-func TestDriverOpenReadsSamplerates(t *testing.T) {
-	// On Open the driver reads the samplerate table (count first,
-	// then list) and does NOT issue SET_SAMPLE_TYPE — that's deferred
-	// to StreamIQ, matching libairspy's ordering (issue #270).
+func TestDriverEnumerateOpenReadsSamplerates(t *testing.T) {
+	// On Open the driver reads the samplerate table (count first, then
+	// list). SET_SAMPLE_TYPE is deferred until StreamIQ starts.
 	openCalled := false
 	enum := &usb.MockEnumerator{
 		Devices: []usb.Descriptor{
@@ -34,6 +33,7 @@ func TestDriverOpenReadsSamplerates(t *testing.T) {
 			binary.LittleEndian.PutUint32(list[0:4], 10_000_000)
 			binary.LittleEndian.PutUint32(list[4:8], 2_500_000)
 			mt.Script = []usb.CtrlExchange{
+				{BRequest: reqReceiverMode, WValue: receiverModeOff},
 				{In: true, BRequest: reqGetSamplerates, WValue: 0, WIndex: 0, Reply: count, N: 4},
 				{In: true, BRequest: reqGetSamplerates, WValue: 0, WIndex: 2, Reply: list, N: 8},
 			}
@@ -59,11 +59,63 @@ func TestDriverOpenReadsSamplerates(t *testing.T) {
 	if len(asDev.rates) != 2 || asDev.rates[0] != 10_000_000 {
 		t.Fatalf("samplerate table = %v", asDev.rates)
 	}
-	if asDev.sampleTypeSet {
-		t.Error("Open issued SET_SAMPLE_TYPE; expected it deferred to StreamIQ (#270)")
-	}
 	if err := dev.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestDriverOpenRetriesTransientDeviceGoneOnOpen(t *testing.T) {
+	prevBackoff := openRetryBackoff
+	openRetryBackoff = 0
+	t.Cleanup(func() { openRetryBackoff = prevBackoff })
+
+	openCalls := 0
+	var second *usb.MockTransport
+
+	enum := &usb.MockEnumerator{
+		Devices: []usb.Descriptor{
+			{Bus: 1, Address: 4, VID: vidAirspy, PID: pidAirspy, Serial: "AS1", Product: "Airspy R2", Path: "mock/1"},
+		},
+		OpenFunc: func(d usb.Descriptor) (*usb.MockTransport, error) {
+			openCalls++
+			switch openCalls {
+			case 1:
+				return nil, usb.ErrDeviceGone
+			case 2:
+				mt := usb.NewMockTransport()
+				count := make([]byte, 4)
+				binary.LittleEndian.PutUint32(count, 1)
+				list := make([]byte, 4)
+				binary.LittleEndian.PutUint32(list, 10_000_000)
+				mt.Script = []usb.CtrlExchange{
+					{BRequest: reqReceiverMode, WValue: receiverModeOff},
+					{In: true, BRequest: reqGetSamplerates, WValue: 0, WIndex: 0, Reply: count, N: 4},
+					{In: true, BRequest: reqGetSamplerates, WValue: 0, WIndex: 1, Reply: list, N: 4},
+				}
+				second = mt
+				return mt, nil
+			default:
+				t.Fatalf("unexpected OpenFunc call #%d", openCalls)
+			}
+			return nil, nil
+		},
+	}
+
+	drv := New(enum)
+	if _, err := drv.Enumerate(); err != nil {
+		t.Fatalf("Enumerate: %v", err)
+	}
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open after transient ErrDeviceGone: %v", err)
+	}
+	defer dev.Close()
+
+	if openCalls < 2 {
+		t.Fatalf("OpenFunc calls = %d, want at least 2", openCalls)
+	}
+	if second == nil {
+		t.Fatalf("second transport not captured")
 	}
 }
 
@@ -139,15 +191,30 @@ func TestClosestRateIndex(t *testing.T) {
 	}
 }
 
-func TestSetSampleRateSelectsClosest(t *testing.T) {
+func TestSetSampleRateEncodesByValueWhenNotIndexed(t *testing.T) {
 	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
 	mt := usb.NewMockTransport()
 	dev.t = mt
 	mt.Script = []usb.CtrlExchange{
-		{BRequest: reqSetSamplerate, WValue: 1}, // 4M is closer to 2.5M than 10M
+		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 8000, Reply: []byte{0}, N: 1},
 	}
 	if err := dev.SetSampleRate(4_000_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
+func TestSetSampleRateUsesIndexWhenExactMatch(t *testing.T) {
+	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
+	mt := usb.NewMockTransport()
+	dev.t = mt
+	mt.Script = []usb.CtrlExchange{
+		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 1, Reply: []byte{0}, N: 1},
+	}
+	if err := dev.SetSampleRate(2_500_000); err != nil {
+		t.Fatalf("SetSampleRate exact: %v", err)
 	}
 	if mt.Err != nil {
 		t.Fatalf("transport: %v", mt.Err)
@@ -208,9 +275,10 @@ func TestSetGainManualDisablesAGC(t *testing.T) {
 
 func TestSetBiasTeeRoundTrips(t *testing.T) {
 	dev, mt := withDevice(t)
+	portPin := (biasTeeGPIOPort << 5) | biasTeeGPIOPin
 	mt.Script = []usb.CtrlExchange{
-		{BRequest: reqSetRFBiasCmd, WValue: 1},
-		{BRequest: reqSetRFBiasCmd, WValue: 0},
+		{BRequest: reqGPIOWrite, WValue: 1, WIndex: portPin},
+		{BRequest: reqGPIOWrite, WValue: 0, WIndex: portPin},
 	}
 	if err := dev.SetBiasTee(true); err != nil {
 		t.Fatalf("SetBiasTee(on): %v", err)
@@ -246,8 +314,6 @@ func TestDecodeInt16IQ(t *testing.T) {
 func TestStreamIQFlipsReceiverAndStops(t *testing.T) {
 	dev, mt := withDevice(t)
 	mt.Script = []usb.CtrlExchange{
-		// SET_SAMPLE_TYPE moved out of Open; first StreamIQ pins it.
-		{BRequest: reqSetSampleType, WValue: sampleTypeInt16IQ},
 		{BRequest: reqReceiverMode, WValue: receiverModeOn},
 		{BRequest: reqReceiverMode, WValue: receiverModeOff},
 	}
@@ -255,9 +321,6 @@ func TestStreamIQFlipsReceiverAndStops(t *testing.T) {
 	ch, err := dev.StreamIQ(ctx)
 	if err != nil {
 		t.Fatalf("StreamIQ: %v", err)
-	}
-	if !dev.sampleTypeSet {
-		t.Error("StreamIQ did not record sampleTypeSet")
 	}
 	cancel()
 	deadline := time.Now().Add(time.Second)
