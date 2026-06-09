@@ -72,7 +72,9 @@ var fieldMetas = map[string]FieldMeta{
 	"MessageLogConfig.MaxSizeMB": {Help: "Rotate the message log at this size in MB. Default 16."},
 
 	// ---- Diagnostics -------------------------------------------------------
-	"DiagnosticsConfig.VerboseErrors": {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
+	"DiagnosticsConfig.VerboseErrors":    {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
+	"DiagnosticsConfig.MemoryLimitMB":    {Help: "Soft heap limit (MiB) so the GC keeps the resident footprint bounded, guarding against an OS memory-pressure kill (Linux OOM / macOS jetsam). 0 auto-derives ~70% of physical RAM when known, else unbounded. GOMEMLIMIT always wins."},
+	"DiagnosticsConfig.HeartbeatSeconds": {Help: "Period (seconds) of the runtime health log: uptime, goroutine count, and heap/sys bytes — turns a silent stop into a timeline. 0 uses the 60 s default; negative disables it."},
 
 	// ---- RadioReference ----------------------------------------------------
 	"RadioReferenceConfig.APIKey":   {Label: "API key", Help: "RadioReference.com SOAP app key. Optional — GopherTrunk ships with a built-in app key, so leave this blank unless you want to use your own (or set GOPHERTRUNK_RR_KEY)."},

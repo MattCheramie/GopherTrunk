@@ -34,6 +34,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -486,6 +487,7 @@ func (c *Composer) cancelAll() {
 // the wiring end-to-end and to land the operator-visible plumbing.
 func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, done chan<- struct{}) {
 	defer close(done)
+	defer gtlog.Recover(c.log, "voice-chain-fm:"+serial, nil)
 
 	// Shared boundary controller: Touch heartbeat + hangtime end-of-call,
 	// uniform with the digital chains. Analog FM has no in-band talkgroup
@@ -615,6 +617,12 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 		_ = c.sink.WritePCM(serial, tail)
 	}
 
+	// Reusable equalizer scratch — the equalized slice is fully consumed by
+	// fm.Process within the same iteration, so a single grow-and-reslice
+	// buffer per chain avoids a per-chunk allocation for the whole call
+	// (issue #492 footprint reduction).
+	var eqScratch []complex64
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -631,12 +639,15 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 			filtered := lpf.Process(nil, iq)
 			decimated := decimateComplex(filtered, decim1)
 			if eq != nil {
-				equalized := make([]complex64, len(decimated))
+				if cap(eqScratch) < len(decimated) {
+					eqScratch = make([]complex64, len(decimated))
+				}
+				eqScratch = eqScratch[:len(decimated)]
 				for i, x := range decimated {
 					y, _ := eq.Process(x)
-					equalized[i] = y
+					eqScratch[i] = y
 				}
-				decimated = equalized
+				decimated = eqScratch
 			}
 			audio := fm.Process(nil, decimated)
 			if deemph != nil {

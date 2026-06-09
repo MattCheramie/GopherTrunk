@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	httppprof "net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -899,6 +901,20 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/events/ws", s.handleWS)
 	if s.metrics != nil {
 		mux.Handle("GET /metrics", s.metrics)
+	}
+
+	// Opt-in live profiling for diagnosing leaks / hangs / footprint growth
+	// (issue #492). Off by default — it exposes profiling and host detail —
+	// and gated behind GOPHERTRUNK_PPROF so an operator can scrape
+	// /debug/pprof/{heap,goroutine,allocs,profile} during a repro without a
+	// rebuild. Bind the API to loopback when enabling.
+	if os.Getenv("GOPHERTRUNK_PPROF") != "" {
+		mux.HandleFunc("GET /debug/pprof/", httppprof.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", httppprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", httppprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", httppprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", httppprof.Trace)
+		s.log.Warn("api: pprof debug endpoints enabled (GOPHERTRUNK_PPROF) — exposes profiling/host detail; bind to loopback only")
 	}
 
 	// Mutation routes — wrapped in s.gate so a non-AllowMutations

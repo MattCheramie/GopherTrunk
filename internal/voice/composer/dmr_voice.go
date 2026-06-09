@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 )
@@ -78,6 +79,7 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 
 func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, groupID uint32, interleaved bool, done chan<- struct{}) {
 	defer close(done)
+	defer gtlog.Recover(c.log, "voice-chain-dmr:"+serial, nil)
 
 	// Shared boundary controller: universal hangtime end-of-call + Touch
 	// heartbeat. Talkgroup gating is left disabled (grantTG 0) until the

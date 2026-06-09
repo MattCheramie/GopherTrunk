@@ -37,6 +37,20 @@ diagnostics:
   # -verbose-errors or GOPHERTRUNK_VERBOSE_ERRORS=1.
   verbose_errors: false
 
+  # Soft heap limit (MiB) so the GC keeps the resident footprint bounded
+  # instead of letting it balloon under sustained high-allocation load — the
+  # guard against the daemon being SIGKILLed by the OS memory-pressure killer
+  # (Linux OOM-killer / macOS jetsam) after minutes with no log line. 0
+  # (default) auto-derives ~70% of physical RAM when known, else stays
+  # unbounded. The GOMEMLIMIT env var, if set, always wins.
+  memory_limit_mb: 0
+
+  # Period (seconds) of the runtime health log: uptime, goroutine count, and
+  # heap/sys bytes. Turns a silent stop into a timeline (a climbing curve =
+  # leak, a frozen line on a live process = hang, the last line before a cut =
+  # pre-kill footprint). 0 uses the 60 s default; negative disables it.
+  heartbeat_seconds: 0
+
 # radioreference — read-only credentials for RadioReference.com's SOAP web
 # service, used by `gophertrunk hunt` to check whether a discovered system
 # already exists in RadioReference before you submit it. RadioReference has

@@ -18,6 +18,8 @@ export interface LogConfig {
 
 export interface DiagnosticsConfig {
   VerboseErrors: boolean;
+  MemoryLimitMB: number;
+  HeartbeatSeconds: number;
 }
 
 export interface RadioReferenceConfig {
