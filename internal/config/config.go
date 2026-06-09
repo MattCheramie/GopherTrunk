@@ -1235,6 +1235,12 @@ type RecordingsConfig struct {
 	Dir        string `yaml:"dir"`
 	SampleRate uint32 `yaml:"sample_rate"`
 	WriteRaw   bool   `yaml:"write_raw"`
+	// SkipEncrypted, when true, suppresses recording of calls flagged
+	// encrypted. A call whose grant already signals encryption is never
+	// opened; a call whose encryption is only discovered mid-stream has
+	// its in-progress WAV/raw files closed and deleted. Live follow /
+	// playback is unaffected. Default false (record everything).
+	SkipEncrypted bool `yaml:"skip_encrypted"`
 	// Equalizer enables the per-call CMA blind equalizer that the FM
 	// composer chain runs between the front-end LPF and the FM demod.
 	// Off by default; useful when receiving simulcast systems with

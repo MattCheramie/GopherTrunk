@@ -115,6 +115,7 @@ export interface RecordingsConfig {
   Dir: string;
   SampleRate: number;
   WriteRaw: boolean;
+  SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
 }
 

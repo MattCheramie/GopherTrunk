@@ -81,6 +81,8 @@ func editableFieldsForTab(t settingsTab) []editableField {
 				Value: func(r client.RuntimeDTO) string { return fmt.Sprintf("%d", r.RecordingSampleRate) }},
 			{Label: "Write raw vocoder frames", Field: "recordings.write_raw",
 				Value: func(r client.RuntimeDTO) string { return boolStr(r.RecordingWriteRaw) }},
+			{Label: "Skip encrypted calls", Field: "recordings.skip_encrypted", Restart: true,
+				Value: func(r client.RuntimeDTO) string { return boolStr(r.RecordingSkipEncrypted) }},
 		}
 	case tabAPI:
 		return []editableField{

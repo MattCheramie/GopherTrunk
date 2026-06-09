@@ -199,13 +199,14 @@ var fieldMetas = map[string]FieldMeta{
 	"StorageConfig.CCCacheFile": {Label: "CC cache file", Help: "JSON cache the control-channel hunter uses to skip dead frequencies. Empty disables it."},
 
 	// ---- Recordings --------------------------------------------------------
-	"RecordingsConfig.Dir":        {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
-	"RecordingsConfig.SampleRate": {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
-	"RecordingsConfig.WriteRaw":   {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
-	"RecordingsConfig.Equalizer":  {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
-	"EqualizerConfig.Enabled":     {Help: "Turn the blind equalizer on."},
-	"EqualizerConfig.Taps":        {Help: "Equalizer FIR length. Default 8 when enabled."},
-	"EqualizerConfig.StepSize":    {Help: "CMA adaptation step size. Default 1e-4 when enabled."},
+	"RecordingsConfig.Dir":           {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
+	"RecordingsConfig.SampleRate":    {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
+	"RecordingsConfig.WriteRaw":      {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
+	"RecordingsConfig.SkipEncrypted": {Label: "Skip encrypted", Help: "Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."},
+	"RecordingsConfig.Equalizer":     {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
+	"EqualizerConfig.Enabled":        {Help: "Turn the blind equalizer on."},
+	"EqualizerConfig.Taps":           {Help: "Equalizer FIR length. Default 8 when enabled."},
+	"EqualizerConfig.StepSize":       {Help: "CMA adaptation step size. Default 1e-4 when enabled."},
 
 	// ---- Metrics -----------------------------------------------------------
 	"MetricsConfig.Enabled": {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},

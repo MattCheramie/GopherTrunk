@@ -888,11 +888,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// Recorder is optional; needs a target directory.
 	if cfg.Recordings.Dir != "" {
 		rec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:        d.bus,
-			Log:        log,
-			OutDir:     cfg.Recordings.Dir,
-			SampleRate: cfg.Recordings.SampleRate,
-			WriteRaw:   cfg.Recordings.WriteRaw,
+			Bus:           d.bus,
+			Log:           log,
+			OutDir:        cfg.Recordings.Dir,
+			SampleRate:    cfg.Recordings.SampleRate,
+			WriteRaw:      cfg.Recordings.WriteRaw,
+			SkipEncrypted: cfg.Recordings.SkipEncrypted,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
