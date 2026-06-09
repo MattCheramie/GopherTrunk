@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/pathutil"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"gopkg.in/yaml.v3"
 )
@@ -1328,10 +1330,54 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("config %s: %w\n  hint: check YAML syntax (indentation must be spaces, keys end with ':'). Run `gophertrunk config` to build/repair a config interactively.", path, err)
 	}
+	// Resolve every filesystem path the config carries against the
+	// directory holding config.yaml, so a portable config can ship with
+	// config-relative defaults (../recordings, ../data/calls.db, …) that
+	// land under the operator's chosen data root regardless of platform
+	// or current working directory. Absolute and env-expanded-to-absolute
+	// paths pass through untouched (see resolvePaths).
+	cfg.resolvePaths(filepath.Dir(path))
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// resolvePaths expands ~/$VAR/%VAR% references in every filesystem-path
+// field and, when the result is still relative, anchors it to base (the
+// directory containing the loaded config.yaml). Empty fields are left
+// empty — they are "feature disabled" sentinels (storage.path,
+// cc_cache_file, token_file, message_log.path) — and already-absolute
+// paths are preserved, so existing absolute-path configs are unaffected.
+func (c *Config) resolvePaths(base string) {
+	resolve := func(p string) string {
+		if p == "" {
+			return ""
+		}
+		// Expand first, THEN test IsAbs: an expanded ${HOME}/x or
+		// %USERPROFILE%\x is absolute and must not be re-anchored.
+		p = pathutil.Expand(p)
+		if p == "" || filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(base, p)
+	}
+
+	c.Storage.Path = resolve(c.Storage.Path)
+	c.Storage.CCCacheFile = resolve(c.Storage.CCCacheFile)
+	c.Recordings.Dir = resolve(c.Recordings.Dir)
+	c.Log.MessageLog.Path = resolve(c.Log.MessageLog.Path)
+	c.API.Auth.TokenFile = resolve(c.API.Auth.TokenFile)
+	for i := range c.Baseband.Record {
+		c.Baseband.Record[i].Dir = resolve(c.Baseband.Record[i].Dir)
+	}
+	for i := range c.Baseband.Replay {
+		c.Baseband.Replay[i].File = resolve(c.Baseband.Replay[i].File)
+	}
+	for i := range c.Trunking.Systems {
+		c.Trunking.Systems[i].TalkgroupFile = resolve(c.Trunking.Systems[i].TalkgroupFile)
+		c.Trunking.Systems[i].RIDAliasFile = resolve(c.Trunking.Systems[i].RIDAliasFile)
+	}
 }
 
 // sectionValidator pairs a config section's logical name (matching the
