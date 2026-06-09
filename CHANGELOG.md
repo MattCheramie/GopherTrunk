@@ -7,8 +7,47 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.7] — 2026-06-09
+
+This release sharpens **P25 Phase 1 voice** and consolidates the **install
+layout**. The decoder now error-corrects the outer Reed-Solomon layer on the
+LDU1 Link Control and LDU2 Encryption Sync (#589), so a real-air capture's
+talkgroup gating stops fragmenting calls into ~1 s files; on top of that the
+IMBE vocoder gets TIA-102.BABA §6.3 voiced-phase regeneration to kill the
+"robotic" buzz (#600), idle-carrier dead keys are muted (#599), and the LDU1
+Link Control octet layout is corrected (#596). The Windows installer now
+prompts for **one data folder** that holds config, recordings, IQ, exports,
+the database, logs, and all three browser consoles, with config path fields
+resolved relative to the config directory so a single portable config works on
+any OS (#602). The **Plots** scopes gain a selectable C4FM constellation (IQ
+ring vs. soft levels), an auto-detected demod mode, and a channel-step nudge
+(#557, #583); the **signal survey** becomes a saved, offline-decodable artifact
+(#590, #592); RadioReference picks up a built-in app key and a "verify
+subscription" check (#603); browser audio now seeks on Safari (#598); and the
+same talkgroup is no longer shown as two duplicate "Active calls" (#593).
+
+### Changed
+
+- **Single data root for installed builds** (#602). The Windows installer now
+  asks for one data folder (default `Documents\GopherTrunk`) instead of two,
+  and lays out `config/ recordings/ iq/ exports/ data/ logs/ web/` beneath it;
+  the executable still installs to Program Files. `config.example.yaml` ships
+  config-relative paths (`../recordings`, `../data`, …) and `config.Load` now
+  anchors every relative path field to the directory holding `config.yaml`
+  (absolute and empty paths are unchanged), so one portable config lands under
+  the operator's chosen root on any OS. `gophertrunk run -web` resolves the
+  bundled consoles under `<DataRoot>/web` via `GOPHERTRUNK_HOME` /
+  `GOPHERTRUNK_CONFIG`.
+
 ### Added
 
+- **RadioReference built-in app key + subscription verify** (#603). A developer
+  app key can be injected at build time (`-ldflags`, kept out of source) and is
+  resolved explicit > env > built-in, so browse/import works without each user
+  supplying a key; the subscriber's username/password (which gate premium) are
+  sent per request from the edited config in both the web and TUI Config
+  Builders. A new **Verify subscription** action (web button / TUI `[V]`,
+  `POST /api/v1/config/rr/verify`) reports premium status and expiry inline.
 - **Constellation: selectable C4FM display (IQ ring vs. soft levels)** (#557).
   C4FM is constant-envelope FM with no complex symbol constellation, so the
   Symbols view previously plotted its soft decisions as a thin horizontal line
@@ -18,6 +57,17 @@ for tagged releases.
 
 ### Fixed
 
+- **P25 Phase 1 calls no longer fragment from un-error-corrected control
+  words** (#589). LDU1 Link Control (talkgroup/source) and LDU2 Encryption Sync
+  (ALGID/KID) were decoded with only the inner Hamming(10,6,3) layer; the outer
+  Reed-Solomon codes were never corrected, so residual bit errors corrupted the
+  talkgroup the recorder's gating relies on — dropping ~71% of voice frames,
+  splitting calls into ~1 s files, and producing garbage ALGIDs. The framing
+  layer now does bounded-distance RS decoding over GF(2⁶) (Berlekamp-Massey +
+  Chien + Forney) for RS(24,12,13), RS(24,16,9) and RS(36,20,17), run as the
+  outer layer in `ParseLinkControl` / `ParseEncryptionSync`; when a word is
+  RS-uncorrectable the composer leaves `tg=0` so the boundary tracker inherits
+  the last match instead of ending the call on a mis-decode.
 - **P25 voice no longer sounds robotic / "wrongly pitched."** The pure-Go IMBE
   synthesizer generated every voiced harmonic with a fully phase-coherent
   model (each harmonic locked to an exact multiple of the fundamental, frame
@@ -123,6 +173,30 @@ for tagged releases.
   array, so every frame was silently discarded and the Constellation, Symbol
   scope, Eye, Tuning, and Histogram panels never rendered. `dibits` now goes
   out as a number array, with a regression test asserting the wire shape.
+- **Same talkgroup no longer shows as two duplicate "Active calls"** (#593).
+  The duplicate-grant guard keyed an in-progress call on frequency, but a call's
+  frequency can change mid-call (a P25 band-plan IdentifierUpdate re-maps the
+  channel, or the system hands the call to a new channel), so the guard missed
+  and a second `ActiveCall` was bound for the same talkgroup. A logical call is
+  now identified by (System, GroupID, Timeslot); on a same-call grant with a
+  changed frequency the engine retunes the bound device in place (preserving
+  `StartedAt`, no spurious CallStart), or releases it and binds a capable one —
+  still exactly one call.
+- **Browser audio now plays/seeks on Safari (macOS/iOS)** (#598). Safari's media
+  element refuses to play unless the server honors Range requests, but
+  `/api/v1/audio/stream` only ever returned a plain open-ended 200 WAV body, so
+  "Tap to enable audio" silently failed on macOS while Chrome/Firefox tolerated
+  it. The endpoint now answers Safari's bounded probe and open-ended
+  `bytes=N-` request with `206` + `Accept-Ranges` + `Content-Range`; requests
+  with no Range header keep the existing 200 path. The web player also logs
+  `play()` failures instead of swallowing them.
+- **Config Builder no longer opens a blank tab** (#595). Two independent defects
+  blanked `/config/`: release/installer CI only built the main console before
+  `go build`, so the binary embedded an empty `web/configbuilder/dist` and the
+  route was never mounted; and the main console's PWA service worker intercepted
+  `/config/` navigations via `navigateFallback`. CI now builds the Config
+  Builder (and siglab) in every release/installer job, and `/config/` is added
+  to the service worker's `navigateFallbackDenylist`.
 
 ## [v0.3.6] — 2026-06-08
 
