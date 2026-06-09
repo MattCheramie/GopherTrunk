@@ -21,6 +21,37 @@ func NewDemodulator(sf, osf int, bw Bandwidth) *Demodulator {
 // SF reports the spreading factor this demodulator is tuned to.
 func (m *Demodulator) SF() int { return m.d.sf }
 
+// SymbolLen reports the number of samples in one symbol (sps).
+func (m *Demodulator) SymbolLen() int { return m.d.sps }
+
+// DecodeFrom finds and decodes the first frame at or after start. It
+// returns the decoded frame (when ok), the sample index just past the
+// region it consumed (so a streaming caller can advance), and ok. When no
+// preamble is found, end == len(buf) and ok is false.
+func (m *Demodulator) DecodeFrom(buf []complex64, start int) (f Frame, end int, ok bool) {
+	sync := m.d.syncFrame(buf, start)
+	if !sync.ok {
+		return Frame{}, len(buf), false
+	}
+	f, ok = m.decodeFrameAt(buf, sync.dataStart, sync.cfoBins)
+	// Always advance at least one symbol past the located preamble. The
+	// realignment can place dataStart at or behind the cursor; without this
+	// floor a failed (or behind-cursor) lock would stall the caller, which
+	// re-scans the same region indefinitely.
+	minNext := sync.lockPos + m.d.sps
+	if minNext <= start {
+		minNext = start + m.d.sps
+	}
+	if !ok {
+		return f, minNext, false
+	}
+	end = sync.dataStart + len(f.RawSymbols)*m.d.sps
+	if end < minNext {
+		end = minNext
+	}
+	return f, end, true
+}
+
 // DecodeFirst finds and decodes the first frame in buf, returning ok=false
 // if no valid frame is present.
 func (m *Demodulator) DecodeFirst(buf []complex64) (Frame, bool) {

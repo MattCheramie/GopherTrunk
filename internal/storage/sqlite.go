@@ -199,6 +199,36 @@ CREATE TABLE IF NOT EXISTS vessel_log (
 CREATE INDEX IF NOT EXISTS idx_vessel_log_time ON vessel_log(received_at);
 CREATE INDEX IF NOT EXISTS idx_vessel_log_mmsi ON vessel_log(mmsi, received_at);
 
+-- LoRa frames persisted from the decoder pipeline. One row per decoded
+-- PHY frame: the physical parameters (spreading factor, coding rate,
+-- bandwidth), link metrics (RSSI / SNR / carrier offset), the CRC flag and
+-- the de-whitened payload (hex), plus any LoRaWAN MAC fields recovered from
+-- it (message type, DevAddr, frame counter, port, MIC-valid, decrypted).
+CREATE TABLE IF NOT EXISTS lora_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at  INTEGER NOT NULL,             -- unix nanoseconds
+    frequency_hz INTEGER NOT NULL DEFAULT 0,   -- sub-channel centre frequency
+    sf           INTEGER NOT NULL DEFAULT 0,   -- spreading factor 7..12
+    cr           INTEGER NOT NULL DEFAULT 0,   -- coding rate 1..4 (4/5..4/8)
+    bandwidth_hz INTEGER NOT NULL DEFAULT 0,
+    rssi         REAL    NOT NULL DEFAULT 0,
+    snr          REAL    NOT NULL DEFAULT 0,
+    cfo_hz       REAL    NOT NULL DEFAULT 0,   -- estimated carrier offset
+    crc_ok       INTEGER NOT NULL DEFAULT 0,
+    payload_hex  TEXT    NOT NULL DEFAULT '',  -- de-whitened PHY payload
+    is_lorawan   INTEGER NOT NULL DEFAULT 0,
+    mtype        TEXT    NOT NULL DEFAULT '',  -- LoRaWAN message type
+    dev_addr     TEXT    NOT NULL DEFAULT '',  -- LoRaWAN device address (hex)
+    fcnt         INTEGER NOT NULL DEFAULT 0,   -- LoRaWAN frame counter
+    fport        INTEGER NOT NULL DEFAULT -1,  -- LoRaWAN port (-1 = absent)
+    mic_ok       INTEGER NOT NULL DEFAULT 0,   -- MIC verified against a key
+    decrypted    INTEGER NOT NULL DEFAULT 0,   -- FRMPayload was decrypted
+    decoded      TEXT    NOT NULL DEFAULT ''   -- decoded payload summary
+);
+
+CREATE INDEX IF NOT EXISTS idx_lora_log_time ON lora_log(received_at);
+CREATE INDEX IF NOT EXISTS idx_lora_log_devaddr ON lora_log(dev_addr, received_at);
+
 -- DSC (Digital Selective Calling) sequences persisted from the
 -- decoder pipeline. One row per decoded sequence: format
 -- (distress / all-ships / individual / ...), category, source +
