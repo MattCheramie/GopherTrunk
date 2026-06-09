@@ -1843,11 +1843,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// without -config). RR credentials: env overrides config.
 		cbOpts := api.ConfigBuilderOptions{
 			Enabled: true,
-			RadioReference: radioreference.Auth{
+			RadioReference: radioreference.ResolveAuth(radioreference.Auth{
 				AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
 				Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
 				Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
-			},
+			}),
 		}
 		if d.cfgPath != "" {
 			cbOpts.ConfigDir = filepath.Dir(d.cfgPath)

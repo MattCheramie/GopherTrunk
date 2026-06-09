@@ -204,7 +204,7 @@ type RRSystemResponse struct {
 
 // handleConfigRRSearch answers GET /api/v1/config/rr/search?zip=|county=|state=.
 func (s *Server) handleConfigRRSearch(w http.ResponseWriter, r *http.Request) {
-	client, err := s.configBuilder.rrClient()
+	client, err := s.configBuilder.rrClientFor(r)
 	if err != nil {
 		s.writeError(w, http.StatusServiceUnavailable,
 			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
@@ -243,7 +243,7 @@ func (s *Server) handleConfigRRSearch(w http.ResponseWriter, r *http.Request) {
 // handleConfigRRStates answers GET /api/v1/config/rr/states — the state
 // list (id+name) backing the name-based browse picker.
 func (s *Server) handleConfigRRStates(w http.ResponseWriter, r *http.Request) {
-	client, err := s.configBuilder.rrClient()
+	client, err := s.configBuilder.rrClientFor(r)
 	if err != nil {
 		s.writeError(w, http.StatusServiceUnavailable,
 			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
@@ -260,7 +260,7 @@ func (s *Server) handleConfigRRStates(w http.ResponseWriter, r *http.Request) {
 // handleConfigRRCounties answers GET /api/v1/config/rr/counties?state=<stid>
 // — the counties in a state (id+name) for the browse picker.
 func (s *Server) handleConfigRRCounties(w http.ResponseWriter, r *http.Request) {
-	client, err := s.configBuilder.rrClient()
+	client, err := s.configBuilder.rrClientFor(r)
 	if err != nil {
 		s.writeError(w, http.StatusServiceUnavailable,
 			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
@@ -282,7 +282,7 @@ func (s *Server) handleConfigRRCounties(w http.ResponseWriter, r *http.Request) 
 // handleConfigRRSystem answers GET /api/v1/config/rr/system/{sid} —
 // full system detail plus a config-ready projection.
 func (s *Server) handleConfigRRSystem(w http.ResponseWriter, r *http.Request) {
-	client, err := s.configBuilder.rrClient()
+	client, err := s.configBuilder.rrClientFor(r)
 	if err != nil {
 		s.writeError(w, http.StatusServiceUnavailable,
 			"config: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS)")
@@ -307,6 +307,43 @@ func (s *Server) handleConfigRRSystem(w http.ResponseWriter, r *http.Request) {
 func rrToResponse(full radioreference.FullSystem) RRSystemResponse {
 	sys, rows := configbuilder.RRToSystemConfig(full)
 	return RRSystemResponse{System: full, Config: sys, Talkgroups: rows}
+}
+
+// RRVerifyResponse is the result of POST /api/v1/config/rr/verify. OK reports
+// that the supplied username/password authenticated; Premium reports whether
+// the account's subscription is currently active. Fault carries the RR error
+// message (bad login / expired) when OK is false.
+type RRVerifyResponse struct {
+	OK       bool   `json:"ok"`
+	Premium  bool   `json:"premium"`
+	Username string `json:"username,omitempty"`
+	Expires  string `json:"expires,omitempty"`
+	Fault    string `json:"fault,omitempty"`
+}
+
+// handleConfigRRVerify answers POST /api/v1/config/rr/verify — confirm the
+// edited RadioReference username/password (carried in the X-RR-* headers) and
+// report whether the subscription is premium. A bad login / expired membership
+// returns 200 with ok=false + a fault message so the builder shows it inline;
+// only a completely missing app key (built-in included) yields 503.
+func (s *Server) handleConfigRRVerify(w http.ResponseWriter, r *http.Request) {
+	client, err := s.configBuilder.rrClientFor(r)
+	if err != nil {
+		s.writeError(w, http.StatusServiceUnavailable,
+			"config: RadioReference app key not configured")
+		return
+	}
+	acct, err := client.VerifyCredentials(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, RRVerifyResponse{OK: false, Fault: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, RRVerifyResponse{
+		OK:       true,
+		Premium:  acct.Premium,
+		Username: acct.Username,
+		Expires:  acct.Expires,
+	})
 }
 
 // handleConfigDocs answers GET /api/v1/config/docs — a map of config section →

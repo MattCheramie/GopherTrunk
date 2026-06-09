@@ -75,9 +75,9 @@ var fieldMetas = map[string]FieldMeta{
 	"DiagnosticsConfig.VerboseErrors": {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
 
 	// ---- RadioReference ----------------------------------------------------
-	"RadioReferenceConfig.APIKey":   {Label: "API key", Help: "RadioReference.com SOAP API key (read-only). Used by the hunt duplicate check and this builder's browse/import. Can come from GOPHERTRUNK_RR_KEY instead."},
-	"RadioReferenceConfig.Username": {Help: "RadioReference.com account username. Can come from GOPHERTRUNK_RR_USER instead."},
-	"RadioReferenceConfig.Password": {Help: "RadioReference.com account password. Can come from GOPHERTRUNK_RR_PASS instead — prefer the env var to keeping the secret in config.yaml."},
+	"RadioReferenceConfig.APIKey":   {Label: "API key", Help: "RadioReference.com SOAP app key. Optional — GopherTrunk ships with a built-in app key, so leave this blank unless you want to use your own (or set GOPHERTRUNK_RR_KEY)."},
+	"RadioReferenceConfig.Username": {Help: "Your RadioReference.com account username. This and the password are what browse/import and 'Verify subscription' use to confirm your premium membership. Can come from GOPHERTRUNK_RR_USER instead."},
+	"RadioReferenceConfig.Password": {Help: "Your RadioReference.com account password (required with username for premium browse/import/verify). Can come from GOPHERTRUNK_RR_PASS instead — prefer the env var to keeping the secret in config.yaml."},
 
 	// ---- SDR ---------------------------------------------------------------
 	"SDRConfig.SampleRate":         {Label: "Sample rate", Hz: true, Help: "IQ rate every tuner is programmed to (225 kHz–20 MHz). RTL dongles cap ~3.2 MHz; higher needs a wideband soapy_remote source. Primary CPU-load lever."},

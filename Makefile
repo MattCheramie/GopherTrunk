@@ -1,9 +1,16 @@
 VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+# RR_APP_KEY is the built-in RadioReference app key, injected at link time so it
+# never lives in source. Supply it via the environment (CI secret / local env);
+# when unset the binary ships with no built-in key and RR falls back to
+# env/config, exactly as before. Never echo it.
+RR_APP_KEY ?=
+RR_LDFLAGS := $(if $(RR_APP_KEY),-X github.com/MattCheramie/GopherTrunk/internal/radioreference.DefaultAppKey=$(RR_APP_KEY),)
 LDFLAGS := -X github.com/MattCheramie/GopherTrunk/internal/version.Version=$(VERSION) \
            -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=$(COMMIT) \
-           -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=$(BUILD_TIME)
+           -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=$(BUILD_TIME) \
+           $(RR_LDFLAGS)
 TAGS    ?=
 
 GO      ?= go

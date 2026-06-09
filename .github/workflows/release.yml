@@ -88,14 +88,17 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: "0"
+          RR_APP_KEY: ${{ secrets.RR_APP_KEY }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RR_LDFLAGS=""
+          [ -n "${RR_APP_KEY:-}" ] && RR_LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/radioreference.DefaultAppKey=${RR_APP_KEY}"
           mkdir -p dist/staging
           go build \
             -trimpath \
-            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME} ${RR_LDFLAGS}" \
             -o dist/staging/gophertrunk.exe \
             ./cmd/gophertrunk
 
@@ -163,16 +166,19 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: windows
           GOARCH: arm64
+          RR_APP_KEY: ${{ secrets.RR_APP_KEY }}
         run: |
           set -eu
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RR_LDFLAGS=""
+          [ -n "${RR_APP_KEY:-}" ] && RR_LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/radioreference.DefaultAppKey=${RR_APP_KEY}"
           NAME="gophertrunk-${VERSION}-windows-arm64"
           mkdir -p "dist/${NAME}"
           go build \
             -trimpath \
-            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}" \
+            -ldflags "-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME} ${RR_LDFLAGS}" \
             -o "dist/${NAME}/gophertrunk.exe" \
             ./cmd/gophertrunk
           cp README.md LICENSE config.example.yaml "dist/${NAME}/"
@@ -240,12 +246,15 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOOS: linux
+          RR_APP_KEY: ${{ secrets.RR_APP_KEY }}
         run: |
           set -eu
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}"
+          RR_LDFLAGS=""
+          [ -n "${RR_APP_KEY:-}" ] && RR_LDFLAGS=" -X github.com/MattCheramie/GopherTrunk/internal/radioreference.DefaultAppKey=${RR_APP_KEY}"
+          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}${RR_LDFLAGS}"
           for ARCH in amd64 arm64; do
             NAME="gophertrunk-${VERSION}-linux-${ARCH}"
             mkdir -p "dist/${NAME}"
@@ -317,12 +326,15 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOOS: darwin
+          RR_APP_KEY: ${{ secrets.RR_APP_KEY }}
         run: |
           set -eu
           VERSION="${{ steps.version.outputs.version }}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}"
+          RR_LDFLAGS=""
+          [ -n "${RR_APP_KEY:-}" ] && RR_LDFLAGS=" -X github.com/MattCheramie/GopherTrunk/internal/radioreference.DefaultAppKey=${RR_APP_KEY}"
+          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}${RR_LDFLAGS}"
           for ARCH in amd64 arm64; do
             NAME="gophertrunk-${VERSION}-darwin-${ARCH}"
             mkdir -p "dist/${NAME}"

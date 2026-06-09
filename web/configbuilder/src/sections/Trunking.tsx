@@ -422,6 +422,11 @@ function RRBrowseModal(props: {
   onAdd: (sys: SystemConfig, tgs?: TalkgroupCSVRow[]) => void;
 }) {
   const setError = useStore((s) => s.setError);
+  // The RadioReference creds the user is editing — sent with every RR call so
+  // their premium login is what reaches the API (not just the server's startup
+  // creds).
+  const rr = useStore((s) => s.config?.RadioReference);
+  const creds = { key: rr?.APIKey, user: rr?.Username, pass: rr?.Password };
   const [mode, setMode] = useState<"name" | "zip" | "advanced">("name");
 
   // name mode: state → county dropdowns.
@@ -457,7 +462,7 @@ function RRBrowseModal(props: {
     if (!v) return;
     setBusy(true);
     try {
-      const r = await api.rrCounties(Number(v));
+      const r = await api.rrCounties(Number(v), creds);
       setCounties(r.results ?? []);
     } catch (e) {
       setError(`RadioReference: ${(e as Error).message}`);
@@ -482,7 +487,7 @@ function RRBrowseModal(props: {
   const importSystem = async (sid: number) => {
     setBusy(true);
     try {
-      const r = await api.rrSystem(sid);
+      const r = await api.rrSystem(sid, creds);
       props.onAdd(r.config, r.talkgroups ?? []);
       props.onClose();
     } catch (e) {
@@ -529,7 +534,7 @@ function RRBrowseModal(props: {
             disabled={!counties}
             onChange={(e) => {
               setCtid(e.target.value);
-              if (e.target.value) runSearch(() => api.rrSearch("county", e.target.value));
+              if (e.target.value) runSearch(() => api.rrSearch("county", e.target.value, creds));
             }}
           >
             <option value="">Select county…</option>
@@ -540,7 +545,7 @@ function RRBrowseModal(props: {
             ))}
           </select>
           {stid ? (
-            <button className="btn-ghost" disabled={busy} onClick={() => runSearch(() => api.rrSearch("state", stid))}>
+            <button className="btn-ghost" disabled={busy} onClick={() => runSearch(() => api.rrSearch("state", stid, creds))}>
               All systems in state
             </button>
           ) : null}
@@ -554,9 +559,9 @@ function RRBrowseModal(props: {
             value={zip}
             placeholder="78701"
             onChange={(e) => setZip(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch("zip", zip.trim()))}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch("zip", zip.trim(), creds))}
           />
-          <button className="btn" disabled={busy || !zip.trim()} onClick={() => runSearch(() => api.rrSearch("zip", zip.trim()))}>
+          <button className="btn" disabled={busy || !zip.trim()} onClick={() => runSearch(() => api.rrSearch("zip", zip.trim(), creds))}>
             Search
           </button>
         </div>
@@ -573,9 +578,9 @@ function RRBrowseModal(props: {
             value={value}
             placeholder="numeric ctid / stid"
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch(kind, value.trim()))}
+            onKeyDown={(e) => e.key === "Enter" && runSearch(() => api.rrSearch(kind, value.trim(), creds))}
           />
-          <button className="btn" disabled={busy || !value.trim()} onClick={() => runSearch(() => api.rrSearch(kind, value.trim()))}>
+          <button className="btn" disabled={busy || !value.trim()} onClick={() => runSearch(() => api.rrSearch(kind, value.trim(), creds))}>
             Search
           </button>
         </div>

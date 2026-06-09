@@ -9,6 +9,7 @@ import type {
   RRGeoRef,
   RRSearchHit,
   RRSystemResponse,
+  RRVerifyResponse,
   TalkgroupCSVRow,
   ValidationResult,
 } from "./types";
@@ -32,8 +33,13 @@ export class HTTPError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
+async function req<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
+  const headers: Record<string, string> = { ...(extraHeaders ?? {}) };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
   let payload: BodyInit | undefined;
   if (body instanceof FormData) {
@@ -90,14 +96,37 @@ export const api = {
     for (const f of files) fd.append("files", f);
     return req<{ systems: ParsedSystemDTO[] }>("POST", "/config/parse", fd);
   },
-  rrSearch: (kind: "zip" | "county" | "state", value: string) =>
+  rrSearch: (kind: "zip" | "county" | "state", value: string, creds?: RRCreds) =>
     req<{ results: RRSearchHit[] | null }>(
       "GET",
       `/config/rr/search?${kind}=${encodeURIComponent(value)}`,
+      undefined,
+      rrHeaders(creds),
     ),
-  rrStates: () => req<{ results: RRGeoRef[] | null }>("GET", "/config/rr/states"),
-  rrCounties: (stid: number) =>
-    req<{ results: RRGeoRef[] | null }>("GET", `/config/rr/counties?state=${stid}`),
-  rrSystem: (sid: number) =>
-    req<RRSystemResponse>("GET", `/config/rr/system/${sid}`),
+  rrStates: (creds?: RRCreds) =>
+    req<{ results: RRGeoRef[] | null }>("GET", "/config/rr/states", undefined, rrHeaders(creds)),
+  rrCounties: (stid: number, creds?: RRCreds) =>
+    req<{ results: RRGeoRef[] | null }>(
+      "GET",
+      `/config/rr/counties?state=${stid}`,
+      undefined,
+      rrHeaders(creds),
+    ),
+  rrSystem: (sid: number, creds?: RRCreds) =>
+    req<RRSystemResponse>("GET", `/config/rr/system/${sid}`, undefined, rrHeaders(creds)),
+  rrVerify: (creds?: RRCreds) =>
+    req<RRVerifyResponse>("POST", "/config/rr/verify", undefined, rrHeaders(creds)),
 };
+
+// RRCreds are the RadioReference credentials the user is editing, sent on the
+// browse/verify calls as X-RR-* headers so what they type is what reaches RR
+// (and verifies their premium subscription) — kept out of the URL/query.
+export type RRCreds = { key?: string; user?: string; pass?: string };
+
+function rrHeaders(c?: RRCreds): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (c?.key?.trim()) h["X-RR-Key"] = c.key.trim();
+  if (c?.user?.trim()) h["X-RR-User"] = c.user.trim();
+  if (c?.pass?.trim()) h["X-RR-Pass"] = c.pass.trim();
+  return h;
+}

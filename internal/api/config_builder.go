@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +12,11 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/configbuilder"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 )
+
+// newRRClient builds a RadioReference client. It's a package var so tests can
+// stub a client pointed at a fake SOAP server (the handlers build clients
+// internally, so there's otherwise no endpoint-injection seam).
+var newRRClient = radioreference.NewClient
 
 // ConfigBuilderOptions configure the web Config Builder/Editor subsystem.
 type ConfigBuilderOptions struct {
@@ -171,11 +177,30 @@ func evalSymlinksBestEffort(path string) string {
 	}
 }
 
-// rrClient builds a RadioReference client from the configured credentials.
-// Returns radioreference.ErrNoCredentials when no key is set so the caller
-// can answer 503.
-func (svc *configBuilderService) rrClient() (*radioreference.Client, error) {
-	return radioreference.NewClient(svc.rrAuth)
+// rrAuthFromRequest overlays the per-request RR credentials carried in the
+// X-RR-Key / X-RR-User / X-RR-Pass headers (the username/password the operator
+// is editing in the builder) over the server's startup auth, then applies the
+// built-in default app key. Header values win so what the user types is what
+// gets sent to RadioReference and verifies their subscription.
+func (svc *configBuilderService) rrAuthFromRequest(r *http.Request) radioreference.Auth {
+	auth := svc.rrAuth
+	if v := strings.TrimSpace(r.Header.Get("X-RR-Key")); v != "" {
+		auth.AppKey = v
+	}
+	if v := strings.TrimSpace(r.Header.Get("X-RR-User")); v != "" {
+		auth.Username = v
+	}
+	if v := strings.TrimSpace(r.Header.Get("X-RR-Pass")); v != "" {
+		auth.Password = v
+	}
+	return radioreference.ResolveAuth(auth) // backstop the key with env/built-in
+}
+
+// rrClientFor builds a RadioReference client from the request-merged
+// credentials. Returns radioreference.ErrNoCredentials when no key is set
+// (built-in included) so the caller can answer 503.
+func (svc *configBuilderService) rrClientFor(r *http.Request) (*radioreference.Client, error) {
+	return newRRClient(svc.rrAuthFromRequest(r))
 }
 
 // ---- Wire DTOs -----------------------------------------------------------

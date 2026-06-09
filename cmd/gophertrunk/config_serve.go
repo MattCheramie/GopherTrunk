@@ -74,11 +74,11 @@ FLAGS:`)
 		ConfigBuilder: api.ConfigBuilderOptions{
 			Enabled:   true,
 			ConfigDir: *configDir,
-			RadioReference: radioreference.Auth{
+			RadioReference: radioreference.ResolveAuth(radioreference.Auth{
 				AppKey:   strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_KEY")),
 				Username: strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_USER")),
 				Password: strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_PASS")),
-			},
+			}),
 		},
 	}
 	// Standalone: serve the builder SPA at / (like `siglab serve`).

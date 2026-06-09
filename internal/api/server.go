@@ -1034,6 +1034,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/config/rr/states", s.handleConfigRRStates)
 		mux.HandleFunc("GET /api/v1/config/rr/counties", s.handleConfigRRCounties)
 		mux.HandleFunc("GET /api/v1/config/rr/system/{sid}", s.handleConfigRRSystem)
+		mux.HandleFunc("POST /api/v1/config/rr/verify", s.handleConfigRRVerify)
 
 		// Secondary SPA at /config/ (daemon path). The standalone
 		// `config serve` puts the SPA in WebAssets (served at /) instead,
