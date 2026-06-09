@@ -15,7 +15,7 @@ import (
 // saturated).
 func TestDecodeOutputChangesWithEnhancement(t *testing.T) {
 	d := New()
-	frame := make([]byte, FrameBytes) // valid b_0 = 0 frame
+	frame := goodVoiceFrame() // valid non-idle voice frame
 	out, err := d.Decode(frame)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)

@@ -9,6 +9,25 @@ for tagged releases.
 
 ### Fixed
 
+- **P25 IMBE female-voice intelligibility + high-pitched recording onset.**
+  Follow-up to the §6.3 voiced-phase regeneration (#600). Two corrections to
+  match the reference imbe_vocoder/mbelib so female (high-pitch, mostly-voiced)
+  speech is no longer rendered as noise:
+  - The dispersion is now a **bounded per-frame offset on a coherent phase
+    memory** (`PHIl = PSIl + offset`) instead of a full `[−π,π)` step
+    *accumulated* into the phase memory every frame. The old random walk
+    decorrelated the upper harmonics into noise within a few frames; a
+    confound-free A/B on a sustained 220 Hz vowel shows the reference model is
+    ~12 % more periodic/harmonic.
+  - The offset magnitude is **scaled by the unvoiced-harmonic fraction**
+    (`numUv/L`), so a mostly-voiced frame gets near-zero dispersion (stays
+    intelligible) while noise-dominated frames still de-buzz. Fully-voiced
+    frames are now synthesized coherently, as in the reference.
+  - The **idle-carrier mute now engages on the first frame at a transmission
+    onset** instead of leaking one ~352 Hz buzz frame. ~60 % of field calls
+    opened with that leaked frame — the "highly pitched beginning" a user
+    reported (worse on CQPSK, whose warm-up is longer). The run-threshold guard
+    that protects a lone idle frame *inside* speech is unchanged.
 - **Airspy device initialisation** (#454). The pure-Go Airspy driver's USB
   vendor request opcodes were systematically wrong; they now match libairspy's
   `airspy_commands` enum (`SET_SAMPLERATE`=12, `GET_SAMPLERATES`=25, gain/freq
