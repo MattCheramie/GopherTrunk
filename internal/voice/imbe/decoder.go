@@ -48,6 +48,32 @@ const (
 // naturally.
 var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
 
+// IdleToneRunThreshold drives idle-tone suppression. An unmodulated/idle
+// voice-channel carrier (or the demod warm-up/decay transient at the very
+// start/end of a transmission) produces a dibit stream the per-vector FEC
+// resolves to a degenerate low-b_0 frame (see UnpackHeader /
+// Header.IdleTone) — one the synthesizer would otherwise render as an
+// audible ~350 Hz buzz. Field captures show this as runs of low-b_0
+// frames bracketing real speech, and whole dead-key "calls" that are 100%
+// this frame; real speech never sustains the b_0 ≤ IdleToneMaxB0 corner
+// across frames (a 344–405 Hz fundamental held flat is not speech), so a
+// *run* of them is an unambiguous idle signature.
+//
+// IdleToneRunThreshold is how many consecutive low-b_0 frames must be
+// seen before muting kicks in. 2 means a lone low-b_0 frame inside speech
+// is never muted (its run is broken by the surrounding ordinary frames);
+// at most one 20 ms buzz leaks at a tone-run onset before the mute
+// engages. The run is broken only by a genuine non-idle frame (an
+// ordinary b_0, a silence-window frame, or a hard FEC error) — NOT by
+// intra-run variation in the idle frame's parameter bits, since a noisy
+// idle carrier can resolve to differing b_0 ≤ IdleToneMaxB0 frames.
+const IdleToneRunThreshold = 2
+
+// phaseRngSeedOffset offsets the §6.3 voiced-phase-dispersion source from
+// the unvoiced-noise source so the two deterministic streams don't march
+// in lockstep. Any fixed non-zero value works; this one is arbitrary.
+const phaseRngSeedOffset = 0x5DEECE66D
+
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one
 // mbe.SynthState (cross-frame log2(Ml) prediction memory + voiced
 // phase + amp memory + §6.4 OA tail), one math/rand source for
@@ -81,7 +107,13 @@ var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
 type Decoder struct {
 	state mbe.SynthState
 	rng   *rand.Rand
-	agc   *mbe.AGC
+	// phaseRng is a SEPARATE seeded source for the §6.3 voiced-phase
+	// dispersion draws. Keeping it independent of rng means the unvoiced
+	// excitation noise stream is byte-identical with or without the phase
+	// dispersion, so callers + tests that pin noise-driven output are
+	// unaffected. Both are deterministic for a given constructor seed.
+	phaseRng *rand.Rand
+	agc      *mbe.AGC
 
 	// One-frame cache for the frame-repeat path. Holds the shared
 	// mbe.Params shape since the synthesis path consumes only that
@@ -103,6 +135,12 @@ type Decoder struct {
 	// recoveryFramesRemaining so the first recovery frame uses the
 	// smallest factor and the last uses 1.0 (full amplitude).
 	recoveryFramesRemaining int
+
+	// lowB0RunCount is the number of consecutive low-b_0 idle-tone
+	// frames seen so far (see IdleToneRunThreshold). Managed solely in
+	// Decode's pre-switch accounting block — NOT in clearLastGood — so
+	// the mute path doesn't reset its own run mid-stream.
+	lowB0RunCount int
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -132,7 +170,10 @@ func NewWithSeed(seed int64) *Decoder {
 func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 	return &Decoder{
 		rng: rand.New(rand.NewSource(seed)),
-		agc: mbe.NewAGC(cfg),
+		// Offset the phase source so it does not march in lockstep with the
+		// noise source while staying deterministic for a given seed.
+		phaseRng: rand.New(rand.NewSource(seed + phaseRngSeedOffset)),
+		agc:      mbe.NewAGC(cfg),
 	}
 }
 
@@ -173,6 +214,21 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 
 	p, err := UnpackParams(info)
 
+	// Idle-tone run accounting. Done before the switch (a Go switch
+	// can't fall through to the post-switch good-frame block) so a
+	// below-threshold tone frame still synthesizes while the run count
+	// advances. Kept here only — see clearLastGood — so the mute case
+	// below doesn't reset the run it just acted on.
+	tone := err == nil && !p.Silent && p.IdleTone
+	if tone {
+		d.lowB0RunCount++
+	} else {
+		// Any non-idle frame (ordinary b_0, silence, or hard error)
+		// breaks the run.
+		d.lowB0RunCount = 0
+	}
+	muteTone := tone && d.lowB0RunCount >= IdleToneRunThreshold
+
 	switch {
 	case err != nil && d.lastGoodParams.L > 0 && d.badFrameCount < mbe.MaxBadFrames:
 		// Frame repeat: replay the last-good params with progressive
@@ -209,6 +265,19 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// tail still fades into pcm[0..95] (no click on the silence
 		// boundary), then reset SynthState + last-good cache so the
 		// next non-silent frame starts from a clean baseline.
+		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
+		d.state.Reset()
+		d.clearLastGood()
+		d.agc.Apply(pcm, out, true)
+		return out, nil
+
+	case muteTone:
+		// Sustained idle-carrier tone: mute exactly like the silence
+		// window so the ~350 Hz buzz never reaches the WAV / live
+		// audio. The prev-frame unvoiced tail still fades into
+		// pcm[0..95] (no click), then state + last-good cache reset so
+		// the next real frame starts clean. lowB0RunCount is preserved
+		// (managed above) so the rest of the run keeps muting.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
 		d.state.Reset()
 		d.clearLastGood()
@@ -275,15 +344,16 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	mbe.SynthUnvoicedOverlapAdd(&d.state, p, M, noise, pcm)
 	d.state.UpdateLog2Ml(p, log2M)
 	// §6.3 voiced-phase regeneration: draw a per-harmonic uniform random
-	// phase step in [−π, π) from the decoder's seeded source. The
-	// dispersed UpdateVoicedState applies it only to the upper harmonics
-	// (l > L/4) to break the fully-coherent harmonic lock that makes
-	// synthesis sound robotic. The draw runs for every harmonic so the
-	// rng sequence — and thus the deterministic output for a given seed —
-	// stays independent of the frame's L.
+	// phase offset in [−π, π) from the decoder's separate phase source.
+	// UpdateVoicedStateDispersed applies it only to upper harmonics
+	// (l > L/4) at their voiced onset, breaking the fully-coherent harmonic
+	// lock that makes synthesis sound robotic. The draw runs for every
+	// harmonic each frame so the phase stream advances at a fixed rate
+	// regardless of L (and, being a separate source, never perturbs the
+	// unvoiced-noise stream above).
 	var phaseDisp [mbe.MaxL + 1]float64
 	for l := 1; l <= mbe.MaxL; l++ {
-		phaseDisp[l] = (d.rng.Float64()*2 - 1) * math.Pi
+		phaseDisp[l] = (d.phaseRng.Float64()*2 - 1) * math.Pi
 	}
 	d.state.UpdateVoicedStateDispersed(p, M, &phaseDisp)
 }
@@ -322,6 +392,7 @@ func (d *Decoder) Reset() {
 	d.agc.Reset()
 	d.clearLastGood()
 	d.recoveryFramesRemaining = 0
+	d.lowB0RunCount = 0
 }
 
 // Close releases any resources held by the decoder. The pure-Go

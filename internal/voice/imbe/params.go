@@ -40,6 +40,18 @@ type Header struct {
 	L      int     // number of harmonics (9..56)
 	K      int     // voicing-decision count (= ⌈(L+2)/3⌉ for L < 37, else 12)
 	Silent bool    // true when b_0 ∈ [216, 219] (silence-frame indicator)
+	// IdleTone is true when b_0 lands in the degenerate low corner
+	// [0, IdleToneMaxB0] — the L = 9/10, ~340–405 Hz end of the
+	// codebook. A *sustained run* of these frames is the signature of
+	// an unmodulated/idle voice-channel carrier or a demod warm-up/
+	// decay transient, NOT speech: a C4FM discriminator sitting on a
+	// flat (or settling) carrier produces a dibit stream the
+	// Golay/Hamming FEC resolves to a low-b_0 frame the synthesizer
+	// would otherwise render as an audible ~350 Hz buzz. The decoder
+	// uses this — gated on a consecutive run (IdleToneRunThreshold) —
+	// to mute the buzz instead of voicing it. A lone IdleTone frame
+	// inside real speech is left alone — see imbe.Decoder.Decode.
+	IdleTone bool
 }
 
 // Params is the complete IMBE 4400 model-parameter unpack: Header
@@ -90,6 +102,12 @@ var ErrInfoLength = errors.New("imbe: info buffer must be 88 bits")
 // upstream.
 var ErrInvalidFundamental = errors.New("imbe: invalid fundamental-frequency parameter")
 
+// IdleToneMaxB0 is the inclusive upper bound of the degenerate "idle
+// tone" b_0 corner. b_0 ∈ [0, 7] maps to L = 9/10 (the fewest-harmonic,
+// highest-fundamental end of the codebook, ~340–405 Hz); b_0 = 8 is the
+// first value that escapes it. See Header.IdleTone.
+const IdleToneMaxB0 = 7
+
 // UnpackHeader reads b_0 from its scattered positions in the 88-bit
 // info buffer and derives ω₀ + L + K per TIA-102.BABA §5.3.
 // Returns ErrInvalidFundamental for unusable b_0 values; returns
@@ -128,7 +146,7 @@ func UnpackHeader(info []byte) (Header, error) {
 	if L < 37 {
 		K = (L + 2) / 3
 	}
-	return Header{W0: w0, L: L, K: K}, nil
+	return Header{W0: w0, L: L, K: K, IdleTone: b0 <= IdleToneMaxB0}, nil
 }
 
 // UnpackParams reads the full 88-bit info buffer into a Params

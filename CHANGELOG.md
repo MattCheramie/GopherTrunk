@@ -26,14 +26,31 @@ for tagged releases.
   made decoded voice sound markedly worse than the reference imbe_vocoder (e.g.
   OP25), affecting both the C4FM and CQPSK demod paths since they share the
   vocoder. The decoder now applies TIA-102.BABA §6.3 voiced-phase regeneration:
-  the upper harmonics (l > L/4) accumulate a per-frame random phase step (drawn
-  from the decoder's existing seeded source, so output stays deterministic),
-  matching the reference's `if (i > num_harms_max/4) ph_mem[i] += rand()`. Low
-  harmonics stay coherent so pitch and formant structure are preserved.
+  the voiced upper harmonics (l > L/4) accumulate a per-frame random phase step
+  (drawn from a separate seeded source so the unvoiced-noise stream — and any
+  output that depends on it — is byte-identical, and the decode stays
+  deterministic), matching the reference's
+  `if (i > num_harms_max/4) ph_mem[i] += rand()`. Low harmonics stay coherent
+  so pitch and formant structure are preserved.
   Measured on the reported real capture, the mean voiced-frame crest factor
   dropped from ~3.2-3.4 to ~2.4 — the impulse-train peakiness behind the buzz.
   AMBE+2 (Phase 2) is unchanged.
 
+- **P25 Phase 1 voice no longer plays a buzzy tone at the start/end of
+  recordings (and on dead keys).** An unmodulated/idle voice-channel carrier —
+  the brief moment before a talker actually speaks, the tail after they release,
+  and whole carrier-only "kerchunk" grants — produces a near-constant C4FM dibit
+  stream that the IMBE FEC resolves to a degenerate low-`b_0` frame (fundamental
+  ~350 Hz, the highest-pitch / fewest-harmonic corner of the codebook). The
+  vocoder was synthesizing that as an audible ~350 Hz buzz, so recordings opened
+  with a tone "before the voice started" and dead-key grants were pure buzz.
+  Field captures confirmed real speech never sustains that `b_0` corner across
+  frames, so the IMBE decoder now mutes a *run* of these idle-tone frames to
+  silence (reusing the existing silence-frame fade), while leaving an isolated
+  low-`b_0` voiced frame untouched. The fix is in the decoder, so both recorded
+  WAVs and live audio benefit. Regression tests decode real captured `.raw`
+  sidecars (an all-tone dead key, and a call whose voice is bracketed by tone
+  runs) to pin the behavior.
 - **P25 Phase 1 voice recordings no longer fragment into tiny per-LDU files.**
   A single continuous transmission was being chopped into many ~1-second
   recordings (each `.raw` an exact multiple of one LDU), because the embedded

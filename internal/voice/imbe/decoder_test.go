@@ -8,6 +8,34 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
 
+// packInfoBits is the inverse of unpackInfoBits: it packs an 88-element
+// 0/1 info slice (the shape putB0 builds) MSB-first into 11 bytes — the
+// FrameBytes form Decode consumes.
+func packInfoBits(info []byte) []byte {
+	frame := make([]byte, FrameBytes)
+	for i := 0; i < InfoBits; i++ {
+		if info[i]&1 == 1 {
+			frame[i/8] |= 1 << (7 - uint(i)%8)
+		}
+	}
+	return frame
+}
+
+// frameB0 returns an 11-byte packed frame carrying b_0 with all other
+// info bits zero. Decode-ready (unlike putB0, which returns the 88-bit
+// info form).
+func frameB0(b0 uint) []byte { return packInfoBits(putB0(b0)) }
+
+// goodVoiceFrame returns a valid, non-degenerate voice frame just
+// outside the idle-tone corner (b_0 = IdleToneMaxB0 + 1), so a repeated
+// feed synthesizes every frame instead of muting. Tests that feed a
+// "good frame" repeatedly or after a bad streak use this instead of the
+// all-zero (b_0 = 0) frame, which now reads as an idle tone and gets
+// muted on a sustained run — see Decode's muteTone path. b_0 just above
+// the threshold keeps the synthesized energy close to the historical
+// all-zero frame these tests were tuned against.
+func goodVoiceFrame() []byte { return frameB0(IdleToneMaxB0 + 1) }
+
 func TestDecoderRegistered(t *testing.T) {
 	v, err := voice.DefaultRegistry.New(VocoderName)
 	if err != nil {
@@ -385,7 +413,7 @@ func agcPeak(out []int16) int {
 // constant gain).
 func TestAGCConvergesTowardTarget(t *testing.T) {
 	d := New()
-	frame := make([]byte, FrameBytes) // valid b_0=0 frame
+	frame := goodVoiceFrame() // non-degenerate; a repeated b_0=0 frame mutes as idle tone
 	var lastPeak int
 	for i := 0; i < 30; i++ {
 		out, err := d.Decode(frame)
@@ -915,7 +943,7 @@ func TestRecoveryRampDecrementsOverGoodFrames(t *testing.T) {
 			t.Errorf("before good frame %d: recoveryFramesRemaining = %d, want %d",
 				len(recoveryRampFactors)-i+1, d.recoveryFramesRemaining, i)
 		}
-		if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+		if _, err := d.Decode(goodVoiceFrame()); err != nil {
 			t.Fatalf("good frame: %v", err)
 		}
 	}
@@ -924,7 +952,7 @@ func TestRecoveryRampDecrementsOverGoodFrames(t *testing.T) {
 			len(recoveryRampFactors), d.recoveryFramesRemaining)
 	}
 	// Subsequent good frames don't underflow the counter.
-	if _, err := d.Decode(make([]byte, FrameBytes)); err != nil {
+	if _, err := d.Decode(goodVoiceFrame()); err != nil {
 		t.Fatalf("post-recovery good frame: %v", err)
 	}
 	if d.recoveryFramesRemaining != 0 {
