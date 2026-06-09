@@ -155,6 +155,43 @@ func TestCandidateDirs_OrderIncludesCwdLast(t *testing.T) {
 	}
 }
 
+// TestCandidateDirs_ScansConfigSubfolder asserts every GopherTrunk
+// root is paired with its config/ subfolder (the data-root layout),
+// with the root listed first.
+func TestCandidateDirs_ScansConfigSubfolder(t *testing.T) {
+	got := candidateDirs()
+	var sawPair bool
+	for i := 0; i+1 < len(got); i++ {
+		if filepath.Base(got[i]) == "GopherTrunk" &&
+			got[i+1] == filepath.Join(got[i], "config") {
+			sawPair = true
+			break
+		}
+	}
+	if !sawPair {
+		t.Errorf("candidateDirs() = %v, want a <root>/GopherTrunk entry immediately followed by its config/ subfolder", got)
+	}
+}
+
+// TestDiscover_ConfigSubfolder finds a config.yaml seeded in the
+// data-root config/ subfolder (the installer's layout) when no env
+// var is set and the root itself holds no *.yaml.
+func TestDiscover_ConfigSubfolder(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_CONFIG", "")
+	redirectUserDirs(t)
+	cfgDir, _ := os.UserConfigDir()
+	target := filepath.Join(cfgDir, "GopherTrunk", "config", "config.yaml")
+	mustWrite(t, target, "log:\n")
+
+	got, err := DiscoverWith(DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("DiscoverWith: %v", err)
+	}
+	if got != target {
+		t.Errorf("Discover() = %q, want %q", got, target)
+	}
+}
+
 // redirectUserDirs points os.UserConfigDir / os.UserHomeDir at a
 // fresh tempdir for the duration of the test, returning the
 // tempdir for path-building. Sets every relevant env var so the

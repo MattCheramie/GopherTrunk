@@ -80,12 +80,14 @@ archive — same archive that contains the `gophertrunk` binary:
 ```
 gophertrunk-<version>-<os>-<arch>/
 ├── gophertrunk              # the daemon / CLI binary
-├── gophertrunk-web/         # standalone web console
-│   ├── index.html
+├── gophertrunk-web/         # standalone web consoles
+│   ├── index.html           # standard operator console
 │   ├── assets/…             # bundled React / Tailwind / Chart.js
 │   ├── favicon.svg
 │   ├── manifest.webmanifest
-│   └── sw.js                # PWA service worker
+│   ├── sw.js                # PWA service worker
+│   ├── siglab/              # Signal Lab (offline RF analysis) console
+│   └── configbuilder/       # Config Builder / editor console
 ├── config.example.yaml
 └── samples/…
 ```
@@ -94,6 +96,13 @@ Download the matching release archive from the
 **[Downloads page]({{ '/downloads.html' | relative_url }})** and unpack
 it. That's the only file you need on the device that will run the
 browser; nothing else is installed.
+
+> **Windows installer:** Setup copies this same tree into the `web\`
+> subfolder of your chosen data folder (default
+> `%USERPROFILE%\Documents\GopherTrunk\web`), and adds Start Menu
+> shortcuts for all three consoles. The paths below that say
+> `gophertrunk-web/` map to `…\GopherTrunk\web\` on an installed
+> Windows box.
 
 ## 2. Configure the daemon for browser access
 

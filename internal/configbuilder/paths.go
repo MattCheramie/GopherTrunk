@@ -3,55 +3,17 @@ package configbuilder
 import (
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/MattCheramie/GopherTrunk/internal/pathutil"
 )
 
 // ExpandConfigPath resolves ~, $VAR/${VAR}, and %VAR% references in a
 // config-file path (relocated from the old CLI wizard so the terminal Config
 // Builder accepts the same operator-typed paths). Unknown vars are preserved.
+// It delegates to pathutil.Expand, the shared leaf helper the daemon's config
+// loader uses for the same resolution.
 func ExpandConfigPath(p string) string {
-	switch {
-	case p == "~":
-		if home, err := os.UserHomeDir(); err == nil {
-			p = home
-		}
-	case strings.HasPrefix(p, "~/"), strings.HasPrefix(p, `~\`):
-		if home, err := os.UserHomeDir(); err == nil {
-			p = filepath.Join(home, p[2:])
-		}
-	}
-	p = os.ExpandEnv(p) // $VAR, ${VAR}
-	return expandWindowsEnv(p)
-}
-
-// expandWindowsEnv replaces %VAR% references with their env values (Go's
-// os.ExpandEnv only handles POSIX-style $VAR). Unknown vars are preserved.
-func expandWindowsEnv(p string) string {
-	var b strings.Builder
-	for {
-		i := strings.IndexByte(p, '%')
-		if i < 0 {
-			b.WriteString(p)
-			return b.String()
-		}
-		b.WriteString(p[:i])
-		rest := p[i+1:]
-		j := strings.IndexByte(rest, '%')
-		if j < 0 {
-			b.WriteByte('%')
-			b.WriteString(rest)
-			return b.String()
-		}
-		name := rest[:j]
-		if val, ok := os.LookupEnv(name); ok {
-			b.WriteString(val)
-		} else {
-			b.WriteByte('%')
-			b.WriteString(name)
-			b.WriteByte('%')
-		}
-		p = rest[j+1:]
-	}
+	return pathutil.Expand(p)
 }
 
 // DefaultConfigPath picks a sensible default config.yaml location:

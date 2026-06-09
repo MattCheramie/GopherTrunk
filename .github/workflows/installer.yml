@@ -109,8 +109,12 @@ jobs:
           STAGE=dist/staging
           cp README.md LICENSE config.example.yaml "$STAGE/"
           cp docs/install-windows.md "$STAGE/INSTALL-WINDOWS.md"
-          mkdir -p "$STAGE/gophertrunk-web"
+          # All three consoles nest under gophertrunk-web/; the Inno
+          # Setup script copies the whole tree into <DataRoot>\web.
+          mkdir -p "$STAGE/gophertrunk-web/siglab" "$STAGE/gophertrunk-web/configbuilder"
           cp -r web/dist/. "$STAGE/gophertrunk-web/"
+          cp -r web/siglab/dist/. "$STAGE/gophertrunk-web/siglab/"
+          cp -r web/configbuilder/dist/. "$STAGE/gophertrunk-web/configbuilder/"
 
       - name: Download Zadig (pinned + SHA256-verified)
         shell: pwsh

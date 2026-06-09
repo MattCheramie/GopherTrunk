@@ -2,6 +2,16 @@
 # whatever path you pass to `gophertrunk run -config`) and adjust to
 # match your hardware + systems.
 #
+# PATHS: every filesystem path below (storage, recordings, IQ, logs,
+# talkgroup/RID files, …) is resolved by the daemon RELATIVE TO THE
+# FOLDER CONTAINING THIS FILE. The Windows installer drops this file at
+# <DataRoot>\config\config.yaml, so the "../recordings", "../data",
+# "../iq", "../logs" defaults land in sibling folders under one data
+# root. You can still use an absolute path (/var/lib/gophertrunk/...,
+# C:\Data\..., \\server\share\...) or an environment variable
+# (${GOPHERTRUNK_HOME}/recordings, %USERPROFILE%\GopherTrunk\...) — those
+# are taken as-is.
+#
 # See internal/config/config.go for the authoritative list of accepted
 # keys and their defaults.
 
@@ -12,7 +22,7 @@ log:
   # event (grants, CC lock/loss, affiliations, patches, locations).
   # message_log:
   #   enabled: true
-  #   path: "logs/messages.log"
+  #   path: "../logs/messages.log"
   #   max_size_mb: 16          # rotates to messages.log.1 past this
 
 # diagnostics — error-reporting verbosity. Every error is prefixed with
@@ -73,7 +83,7 @@ api:
   auth:
     mode: "auto"
     # token: "inline-token-here"   # discouraged; use token_file
-    # token_file: "/etc/gophertrunk/api-token"
+    # token_file: "../config/api-token"
     # trusted_networks:
     #   - "10.0.0.0/8"
     #   - "192.168.0.0/16"
@@ -86,8 +96,8 @@ api:
   # Cross-origin browser access. Off by default — the daemon emits
   # no Access-Control-* headers and rejects WebSocket upgrades whose
   # Origin header isn't on the allow-list. Enable when serving the
-  # bundled web UI (gophertrunk-web/) from a different origin than
-  # the daemon. Common values:
+  # standalone web UI (the web\ folder under your data root) from a
+  # different origin than the daemon. Common values:
   #
   #   - "null"                          allow web UI opened via file://
   #   - "http://laptop.local:8000"      allow a specific static host
@@ -119,11 +129,11 @@ metrics:
   enabled: true     # mounts /metrics on the HTTP API
 
 storage:
-  path: "/var/lib/gophertrunk/calls.db"
-  cc_cache_file: "/var/lib/gophertrunk/cc-cache.json"
+  path: "../data/calls.db"
+  cc_cache_file: "../data/cc-cache.json"
 
 recordings:
-  dir: "/var/lib/gophertrunk/recordings"
+  dir: "../recordings"
   sample_rate: 8000
   write_raw: true   # also append a .raw sidecar with the vocoder frames
   equalizer:
@@ -527,7 +537,7 @@ trunking:
       control_channels:
         - 851_000_000
         - 852_000_000
-      talkgroup_file: "/etc/gophertrunk/talkgroups-p25.csv"
+      talkgroup_file: "../config/talkgroups-p25.csv"
       # Optional per-system radio-ID alias catalogue — the per-RID
       # equivalent of talkgroup_file. CSV (Decimal/DEC/ID column +
       # optional Alias/Description/Tag/Group/Owner/Priority/Lockout/
@@ -535,7 +545,7 @@ trunking:
       # accepted, dispatched by file extension. Leave commented out
       # to let the affiliation tracker surface RIDs live without any
       # operator-configured aliases.
-      # rid_alias_file: "/etc/gophertrunk/rids-p25.csv"
+      # rid_alias_file: "../config/rids-p25.csv"
 
     # DMR Tier III trunked system. A T3 voice-grant CSBK references its
     # traffic channel by a 7-bit Logical Channel Number (LCN), never an
@@ -547,7 +557,7 @@ trunking:
       protocol: dmr
       control_channels:
         - 851_037_500
-      talkgroup_file: "/etc/gophertrunk/talkgroups-dmr.csv"
+      talkgroup_file: "../config/talkgroups-dmr.csv"
       dmr_band_plan:
         # Linear grid: freq = base_hz + (lcn - offset) * spacing_hz.
         # offset: 1 matches the common case of sites that number LCNs
@@ -668,7 +678,7 @@ trunking:
   #   - name: "Example-DMR-Encrypted"
   #     protocol: dmr
   #     control_channels: [451_000_000]
-  #     talkgroup_file: "/etc/gophertrunk/talkgroups-dmr.csv"
+  #     talkgroup_file: "../config/talkgroups-dmr.csv"
   #     encryption_keys:
   #       - key_id: 1
   #         algorithm: rc4              # only "rc4" is supported today
@@ -882,9 +892,9 @@ broadcast:
 # baseband:
 #   record:
 #     - serial: "00000001"
-#       dir: "baseband/"
+#       dir: "../iq/"
 #   replay:
-#     - file: "baseband/00000001_20260521T120000Z.wav"
+#     - file: "../iq/00000001_20260521T120000Z.wav"
 #       serial: "replay-01"
 #       role: "control"
 #       loop: true

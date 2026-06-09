@@ -67,8 +67,9 @@ tag. Anything failing means the tag isn't ready.
    - builds `gophertrunk.exe` (amd64 + arm64) and the Windows
      installer (Zadig-bundled, Inno Setup),
    - builds Linux + macOS tarballs for amd64 and arm64,
-   - builds the web console (`gophertrunk-web/`) and stages it
-     alongside every artifact,
+   - builds all three web consoles (standard + Signal Lab + Config
+     Builder) and stages them under `gophertrunk-web/` alongside
+     every artifact,
    - computes `SHA256SUMS` over every file,
    - attaches everything to a new GitHub Release with notes
      auto-extracted from the matching `CHANGELOG.md` section.
