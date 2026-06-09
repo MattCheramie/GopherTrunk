@@ -69,6 +69,11 @@ var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
 // idle carrier can resolve to differing b_0 ≤ IdleToneMaxB0 frames.
 const IdleToneRunThreshold = 2
 
+// phaseRngSeedOffset offsets the §6.3 voiced-phase-dispersion source from
+// the unvoiced-noise source so the two deterministic streams don't march
+// in lockstep. Any fixed non-zero value works; this one is arbitrary.
+const phaseRngSeedOffset = 0x5DEECE66D
+
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one
 // mbe.SynthState (cross-frame log2(Ml) prediction memory + voiced
 // phase + amp memory + §6.4 OA tail), one math/rand source for
@@ -102,7 +107,13 @@ const IdleToneRunThreshold = 2
 type Decoder struct {
 	state mbe.SynthState
 	rng   *rand.Rand
-	agc   *mbe.AGC
+	// phaseRng is a SEPARATE seeded source for the §6.3 voiced-phase
+	// dispersion draws. Keeping it independent of rng means the unvoiced
+	// excitation noise stream is byte-identical with or without the phase
+	// dispersion, so callers + tests that pin noise-driven output are
+	// unaffected. Both are deterministic for a given constructor seed.
+	phaseRng *rand.Rand
+	agc      *mbe.AGC
 
 	// One-frame cache for the frame-repeat path. Holds the shared
 	// mbe.Params shape since the synthesis path consumes only that
@@ -159,7 +170,10 @@ func NewWithSeed(seed int64) *Decoder {
 func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 	return &Decoder{
 		rng: rand.New(rand.NewSource(seed)),
-		agc: mbe.NewAGC(cfg),
+		// Offset the phase source so it does not march in lockstep with the
+		// noise source while staying deterministic for a given seed.
+		phaseRng: rand.New(rand.NewSource(seed + phaseRngSeedOffset)),
+		agc:      mbe.NewAGC(cfg),
 	}
 }
 
@@ -329,7 +343,19 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	}
 	mbe.SynthUnvoicedOverlapAdd(&d.state, p, M, noise, pcm)
 	d.state.UpdateLog2Ml(p, log2M)
-	d.state.UpdateVoicedState(p, M)
+	// §6.3 voiced-phase regeneration: draw a per-harmonic uniform random
+	// phase offset in [−π, π) from the decoder's separate phase source.
+	// UpdateVoicedStateDispersed applies it only to upper harmonics
+	// (l > L/4) at their voiced onset, breaking the fully-coherent harmonic
+	// lock that makes synthesis sound robotic. The draw runs for every
+	// harmonic each frame so the phase stream advances at a fixed rate
+	// regardless of L (and, being a separate source, never perturbs the
+	// unvoiced-noise stream above).
+	var phaseDisp [mbe.MaxL + 1]float64
+	for l := 1; l <= mbe.MaxL; l++ {
+		phaseDisp[l] = (d.phaseRng.Float64()*2 - 1) * math.Pi
+	}
+	d.state.UpdateVoicedStateDispersed(p, M, &phaseDisp)
 }
 
 // clearLastGood resets the frame-repeat cache + bad-frame counter.

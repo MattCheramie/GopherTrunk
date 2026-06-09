@@ -116,8 +116,40 @@ func SynthVoiced(s *SynthState, p Params, M *[57]float64, dst []float64) {
 // clean zero baseline).
 //
 // Silence + zero-L frames are a no-op so callers can invoke this
-// unconditionally on the synthesis path.
+// unconditionally on the synthesis path. This is the coherent-phase
+// variant (every harmonic stays phase-locked frame to frame) — see
+// UpdateVoicedStateDispersed for the §6.3 phase-regeneration path that
+// the IMBE decoder uses to avoid the robotic "buzz" of fully coherent
+// synthesis.
 func (s *SynthState) UpdateVoicedState(p Params, M *[57]float64) {
+	s.updateVoicedState(p, M, nil)
+}
+
+// UpdateVoicedStateDispersed is UpdateVoicedState plus TIA-102.BABA
+// §6.3 voiced-phase regeneration. Fully phase-coherent voiced synthesis
+// re-aligns every harmonic once per pitch period, which radiates a
+// buzzy impulse train — the "robotic" artifact that makes a from-scratch
+// MBE decoder sound markedly worse than the reference imbe_vocoder. The
+// reference disperses the upper harmonics' phase every frame
+// (`if (i > num_harms_max/4) ph_mem[i] += rand()`); this does the same:
+// each voiced upper harmonic (l > L/4) accumulates a per-frame random
+// phase step phaseDisp[l] on top of the coherent average-frequency
+// increment, so the upper harmonics drift out of strict harmonic lock
+// and the excitation regains the natural phase spread of voiced speech.
+// Low harmonics (l ≤ L/4) stay coherent so pitch + formant structure are
+// preserved.
+//
+// phaseDisp[l] is the random phase step (radians) for harmonic l. The
+// caller supplies it (from a seeded source — and, in the IMBE decoder,
+// one independent of the unvoiced-noise source) so output stays
+// deterministic and unit tests can pin it. Indices l ≤ L/4, harmonics
+// not voiced this frame, and (with a nil phaseDisp) every harmonic are
+// left at the coherent increment.
+func (s *SynthState) UpdateVoicedStateDispersed(p Params, M *[57]float64, phaseDisp *[57]float64) {
+	s.updateVoicedState(p, M, phaseDisp)
+}
+
+func (s *SynthState) updateVoicedState(p Params, M *[57]float64, phaseDisp *[57]float64) {
 	if p.Silent || p.L == 0 {
 		return
 	}
@@ -141,12 +173,21 @@ func (s *SynthState) UpdateVoicedState(p Params, M *[57]float64) {
 	for l := 1; l <= Lmax; l++ {
 		lf := float64(l)
 		delta := lf * (prevW0 + p.W0) * halfN
-		ph := math.Mod(s.PrevPhase[l]+delta, twoPi)
+		ph := s.PrevPhase[l] + delta
+		voicedNow := l <= p.L && p.Vl[l] == 1
+		// §6.3 upper-harmonic phase regeneration: a voiced upper harmonic
+		// (l > L/4) accumulates a per-frame random phase step so it does
+		// not sit in strict harmonic lock with the fundamental (de-buzz).
+		// Low harmonics stay coherent.
+		if phaseDisp != nil && voicedNow && 4*l > p.L {
+			ph += phaseDisp[l]
+		}
+		ph = math.Mod(ph, twoPi)
 		if ph < 0 {
 			ph += twoPi
 		}
 		newPrevPhase[l] = ph
-		if l <= p.L && p.Vl[l] == 1 {
+		if voicedNow {
 			newPrevMl[l] = M[l]
 		}
 	}

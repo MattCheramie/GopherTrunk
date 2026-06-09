@@ -18,6 +18,24 @@ for tagged releases.
 
 ### Fixed
 
+- **P25 voice no longer sounds robotic / "wrongly pitched."** The pure-Go IMBE
+  synthesizer generated every voiced harmonic with a fully phase-coherent
+  model (each harmonic locked to an exact multiple of the fundamental, frame
+  after frame). Perfectly coherent harmonics re-align once per pitch period and
+  radiate a buzzy impulse train — the classic "robotic" vocoder artifact that
+  made decoded voice sound markedly worse than the reference imbe_vocoder (e.g.
+  OP25), affecting both the C4FM and CQPSK demod paths since they share the
+  vocoder. The decoder now applies TIA-102.BABA §6.3 voiced-phase regeneration:
+  the voiced upper harmonics (l > L/4) accumulate a per-frame random phase step
+  (drawn from a separate seeded source so the unvoiced-noise stream — and any
+  output that depends on it — is byte-identical, and the decode stays
+  deterministic), matching the reference's
+  `if (i > num_harms_max/4) ph_mem[i] += rand()`. Low harmonics stay coherent
+  so pitch and formant structure are preserved.
+  Measured on the reported real capture, the mean voiced-frame crest factor
+  dropped from ~3.2-3.4 to ~2.4 — the impulse-train peakiness behind the buzz.
+  AMBE+2 (Phase 2) is unchanged.
+
 - **P25 Phase 1 voice no longer plays a buzzy tone at the start/end of
   recordings (and on dead keys).** An unmodulated/idle voice-channel carrier —
   the brief moment before a talker actually speaks, the tail after they release,
