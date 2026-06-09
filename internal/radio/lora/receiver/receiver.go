@@ -30,6 +30,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/lora"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/lora/lorawan"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
 
@@ -54,6 +55,10 @@ type Options struct {
 	Channels    []ChannelConfig // sub-channels to decode
 	Bus         *events.Bus     // frames publish on KindLoRaFrame
 	Log         *slog.Logger
+	// Keys, when set, enables LoRaWAN MAC decoding: the MIC is verified and
+	// the FRMPayload decrypted for any frame whose DevAddr has session keys.
+	// A nil store still parses the cleartext MAC header of LoRaWAN frames.
+	Keys *lorawan.KeyStore
 }
 
 // Receiver runs the wide-band LoRa decode pipeline against a stream of IQ
@@ -62,6 +67,7 @@ type Receiver struct {
 	bank tuner.Bank
 	bus  *events.Bus
 	log  *slog.Logger
+	keys *lorawan.KeyStore
 	chs  []*subChannel
 
 	framesEmitted atomic.Uint64
@@ -99,7 +105,7 @@ func New(opts Options) (*Receiver, error) {
 		return nil, fmt.Errorf("lora/receiver: output rate %.0f >= input rate %.0f", outRate, inRate)
 	}
 
-	r := &Receiver{bus: opts.Bus, log: log}
+	r := &Receiver{bus: opts.Bus, log: log, keys: opts.Keys}
 	r.bank = newBank(inRate, outRate, len(opts.Channels))
 
 	for _, cc := range opts.Channels {
@@ -146,7 +152,12 @@ func (r *Receiver) Process(ctx context.Context, in <-chan []complex64) error {
 	}
 }
 
-// emit publishes one decoded frame on the bus.
+// loRaWANSyncWord is the public sync word that marks a frame as LoRaWAN.
+const loRaWANSyncWord = 0x34
+
+// emit publishes one decoded frame on the bus, attempting LoRaWAN MAC
+// decoding (and, with keys, MIC verification + decryption) when the
+// sub-channel carries the LoRaWAN public sync word.
 func (r *Receiver) emit(cc ChannelConfig, f lora.Frame) {
 	out := storage.LoRaFrame{
 		FrequencyHz: cc.FrequencyHz,
@@ -159,8 +170,36 @@ func (r *Receiver) emit(cc ChannelConfig, f lora.Frame) {
 		PayloadHex:  hex.EncodeToString(f.Payload),
 		FPort:       -1,
 	}
+	if cc.SyncWord == loRaWANSyncWord {
+		r.fillLoRaWAN(&out, f.Payload)
+	}
 	r.bus.Publish(events.Event{Kind: events.KindLoRaFrame, Payload: out})
 	r.framesEmitted.Add(1)
+}
+
+// fillLoRaWAN parses payload as a LoRaWAN frame and populates the MAC fields
+// of out. It tolerates a nil key store (header-only parse).
+func (r *Receiver) fillLoRaWAN(out *storage.LoRaFrame, payload []byte) {
+	ks := r.keys
+	if ks == nil {
+		ks = lorawan.NewKeyStore()
+	}
+	d, err := ks.Decode(payload)
+	if err != nil {
+		return // not a well-formed LoRaWAN frame
+	}
+	out.IsLoRaWAN = true
+	out.MType = d.MType.String()
+	if d.MType.IsData() {
+		out.DevAddr = fmt.Sprintf("%08X", d.DevAddr)
+		out.FCnt = d.FCnt32()
+		out.FPort = d.FPort
+		out.MICOK = d.MICOK
+		out.Decrypted = d.Decrypted
+		if d.Decrypted {
+			out.DecodedJS = hex.EncodeToString(d.Plaintext)
+		}
+	}
 }
 
 // Stats reports cumulative counters for /metrics + debugging.
