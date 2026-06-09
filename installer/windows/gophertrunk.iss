@@ -44,9 +44,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "addtopath"; Description: "Add GopherTrunk to my PATH (so I can run ""gophertrunk"" from any terminal)"; GroupDescription: "PATH"; Flags: unchecked
-Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "webui"; Description: "Install the &web operator console (a static HTML / JS folder you open in any browser)"; GroupDescription: "Web operator console:"
-Name: "webui\desktopicon"; Description: "Create a desktop shortcut for the web console"; GroupDescription: "Web operator console:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create &desktop shortcuts (GopherTrunk console + web operator console)"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
 Source: "..\..\dist\staging\gophertrunk.exe";  DestDir: "{app}"; Flags: ignoreversion
@@ -59,22 +57,42 @@ Source: "..\..\dist\staging\INSTALL-WINDOWS.md"; DestDir: "{app}"; Flags: ignore
 ; https://github.com/pbatard/libwdi (see THIRD_PARTY_LICENSES.md).
 ; Zadig's embedded manifest requests admin elevation on its own.
 Source: "..\..\dist\staging\zadig.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Seed the operator's chosen editable-files folder with a starter
-; config.yaml the first time they install. onlyifdoesntexist
-; preserves any edits across re-installs; uninsneveruninstall
-; leaves the file behind on uninstall so the operator doesn't lose
-; the config (and any per-system trunking data alongside it).
+; Seed the config subfolder of the operator's chosen data root with a
+; starter config.yaml the first time they install. The shipped
+; config.example.yaml uses config-relative paths (../recordings,
+; ../data, ../iq, ../logs), so once it lands in <DataRoot>\config the
+; daemon writes every other file into the sibling folders created by
+; the [Dirs] section below. onlyifdoesntexist preserves any edits
+; across re-installs; uninsneveruninstall leaves the file behind on
+; uninstall so the operator doesn't lose their config.
 Source: "..\..\dist\staging\config.example.yaml"; \
   DestDir: "{code:ConfigDir}"; \
   DestName: "config.yaml"; \
   Flags: onlyifdoesntexist uninsneveruninstall
-; The web console is a standalone static folder — index.html plus the
-; bundled JS/CSS/manifest. The user picks the destination on the
-; custom WebUIPage below; {code:WebUIDir} resolves to that choice.
+; The web operator consoles are standalone static folders — index.html
+; plus bundled JS/CSS/manifest. The release staging nests all three
+; UIs under gophertrunk-web\ (standard console at the top,
+; gophertrunk-web\siglab\ and gophertrunk-web\configbuilder\
+; alongside), so this one recursive copy reproduces the whole tree
+; under <DataRoot>\web (web\index.html, web\siglab\, web\configbuilder\).
+; {code:WebDir} resolves to <DataRoot>\web.
 Source: "..\..\dist\staging\gophertrunk-web\*"; \
-  DestDir: "{code:WebUIDir}"; \
-  Flags: ignoreversion recursesubdirs createallsubdirs; \
-  Tasks: webui
+  DestDir: "{code:WebDir}"; \
+  Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Dirs]
+; Logical subfolder tree under the operator's chosen data root. The
+; config-relative defaults in config.yaml resolve into these siblings,
+; so all of the operator's files live under one parent: config files,
+; voice-call recordings, raw IQ baseband captures, CSV/PDF exports, the
+; SQLite database + caches, decoded-message logs, and the web consoles.
+Name: "{code:DataDir}\config"
+Name: "{code:DataDir}\recordings"
+Name: "{code:DataDir}\iq"
+Name: "{code:DataDir}\exports"
+Name: "{code:DataDir}\data"
+Name: "{code:DataDir}\logs"
+Name: "{code:DataDir}\web"
 
 [Icons]
 Name: "{group}\GopherTrunk (PowerShell)"; Filename: "{cmd}"; \
@@ -101,17 +119,22 @@ Name: "{autodesktop}\GopherTrunk"; Filename: "{cmd}"; \
   Parameters: "/k cd /d ""{app}"" && gophertrunk help"; \
   WorkingDir: "{app}"; \
   Tasks: desktopicon
-; Web operator console shortcuts. shellexec opens the file in the
-; user's default browser; the entry resolves to whatever path the
-; user picked on the WebUIPage.
+; Web operator console shortcuts. The web\ folder under the data root
+; holds all three consoles; opening these index.html files launches
+; them in the user's default browser.
 Name: "{group}\Web operator console"; \
-  Filename: "{code:WebUIDir}\index.html"; \
-  Comment: "Open the GopherTrunk web operator console in your default browser"; \
-  Tasks: webui
+  Filename: "{code:WebDir}\index.html"; \
+  Comment: "Open the GopherTrunk web operator console in your default browser"
+Name: "{group}\Signal Lab console"; \
+  Filename: "{code:WebDir}\siglab\index.html"; \
+  Comment: "Open the GopherTrunk Signal Lab (offline RF analysis) console"
+Name: "{group}\Config Builder console"; \
+  Filename: "{code:WebDir}\configbuilder\index.html"; \
+  Comment: "Open the GopherTrunk Config Builder / editor in your default browser"
 Name: "{autodesktop}\GopherTrunk Web Console"; \
-  Filename: "{code:WebUIDir}\index.html"; \
+  Filename: "{code:WebDir}\index.html"; \
   Comment: "Open the GopherTrunk web operator console in your default browser"; \
-  Tasks: webui\desktopicon
+  Tasks: desktopicon
 
 [Registry]
 ; Append the install dir to the system PATH if the user opted in. Inno
@@ -133,18 +156,22 @@ Root: HKCU; Subkey: "Environment"; \
   ValueType: expandsz; ValueName: "GOPHERTRUNK_CONFIG"; \
   ValueData: "{code:ConfigDir}\config.yaml"; \
   Flags: uninsdeletevalue
-; Persist install-time ConfigDir / WebUIDir so the uninstaller can
-; find them. Inno's [Code] state from the install run does NOT
-; survive into the uninstall run, so the registry is the only
-; durable bridge. uninsdeletekeyifempty on the last entry sweeps
-; the parent Install subkey once both values are gone.
-Root: HKLM; Subkey: "Software\GopherTrunk\Install"; \
-  ValueType: string; ValueName: "ConfigDir"; \
-  ValueData: "{code:ConfigDir}"; \
+; Per-user env var pointing at the data root itself. Operators who
+; prefer env-var-based config paths can reference ${GOPHERTRUNK_HOME}
+; / %GOPHERTRUNK_HOME% in config.yaml, and external tooling can locate
+; the data folder without parsing config.yaml.
+Root: HKCU; Subkey: "Environment"; \
+  ValueType: expandsz; ValueName: "GOPHERTRUNK_HOME"; \
+  ValueData: "{code:DataDir}"; \
   Flags: uninsdeletevalue
+; Persist the install-time data root so the uninstaller can find it.
+; Inno's [Code] state from the install run does NOT survive into the
+; uninstall run, so the registry is the only durable bridge.
+; uninsdeletekeyifempty sweeps the parent Install subkey once the
+; value is gone.
 Root: HKLM; Subkey: "Software\GopherTrunk\Install"; \
-  ValueType: string; ValueName: "WebUIDir"; \
-  ValueData: "{code:WebUIDir}"; \
+  ValueType: string; ValueName: "DataDir"; \
+  ValueData: "{code:DataDir}"; \
   Flags: uninsdeletevalue uninsdeletekeyifempty
 
 [Run]
@@ -159,80 +186,61 @@ Filename: "{app}\zadig.exe"; \
   WorkingDir: "{app}"; \
   Description: "Run Zadig now to bind the WinUSB driver to your RTL-SDR"; \
   Flags: postinstall shellexec skipifsilent unchecked
-Filename: "{code:WebUIDir}\index.html"; \
+Filename: "{code:WebDir}\index.html"; \
   Description: "Open the web operator console now"; \
-  Flags: postinstall shellexec skipifsilent; \
-  Tasks: webui
+  Flags: postinstall shellexec skipifsilent
 
 [Code]
 var
-  ConfigPage: TInputDirWizardPage;
-  WebUIPage:  TInputDirWizardPage;
+  DataDirPage: TInputDirWizardPage;
 
 procedure InitializeWizard;
 begin
-  // Editable-files folder: where the operator's config.yaml (and
-  // any per-system data that lands next to it) lives. We default
-  // to Documents\GopherTrunk because it's the spot non-Admin
-  // Windows users can always write to without surprises — and the
-  // [Files] step seeds a starter config.yaml there. The path is
-  // also written to HKCU\Environment\GOPHERTRUNK_CONFIG so the
-  // daemon discovers it without needing -config on the command
-  // line. Placed first so the operator sees the most important
-  // path choice before anything else.
-  ConfigPage := CreateInputDirPage(
+  // Single data-folder choice. The executable always installs to
+  // {app} (Program Files); this page picks the SEPARATE, user-owned
+  // data root that holds everything else — config files, voice-call
+  // recordings, raw IQ baseband captures, CSV/PDF exports, the SQLite
+  // database + caches, decoded-message logs, and the web consoles —
+  // each in its own subfolder (created by the [Dirs] section). We
+  // default to Documents\GopherTrunk because it's the spot non-Admin
+  // Windows users can always write to without surprises. The chosen
+  // path is written to HKCU\Environment\GOPHERTRUNK_HOME, and
+  // GOPHERTRUNK_CONFIG points at <DataRoot>\config\config.yaml so the
+  // daemon discovers the seeded config without a -config flag.
+  DataDirPage := CreateInputDirPage(
     wpSelectTasks,
-    'Select your editable-files folder',
-    'Where should your config.yaml and per-system data live?',
-    'Pick a folder Setup can drop a starter config.yaml in. The ' +
-    'GopherTrunk daemon will look for config.yaml in this folder ' +
-    'automatically — no -config flag needed. The default is your ' +
-    'Documents folder so it''s easy to find and back up; you can ' +
-    'choose anywhere you can write to. If a config.yaml already ' +
-    'exists in the folder it will NOT be overwritten.',
+    'Select your GopherTrunk data folder',
+    'Where should GopherTrunk keep your files?',
+    'GopherTrunk installs its program to Program Files, but keeps all ' +
+    'of YOUR files in a separate data folder you choose here. Setup ' +
+    'creates config, recordings, iq, exports, data, logs, and web ' +
+    'subfolders under it and seeds a starter config.yaml. The default ' +
+    'is your Documents folder so it''s easy to find and back up; you ' +
+    'can choose anywhere you can write to — a USB stick, a network ' +
+    'drive, or your desktop. An existing config.yaml is never ' +
+    'overwritten.',
     False, '');
-  ConfigPage.Add('Editable files folder:');
-  ConfigPage.Values[0] :=
+  DataDirPage.Add('Data folder:');
+  DataDirPage.Values[0] :=
     ExpandConstant('{userdocs}\GopherTrunk');
-
-  // CreateInputDirPage gives us a "pick a folder" wizard step with a
-  // Browse button. Placed AFTER ConfigPage so the page order matches
-  // the order of importance — config first, web UI second. ShouldSkipPage
-  // hides this one entirely when the webui task is unchecked.
-  WebUIPage := CreateInputDirPage(
-    ConfigPage.ID,
-    'Select web operator console location',
-    'Where should Setup put the GopherTrunk web console?',
-    'Pick a folder for the standalone web UI. Setup will copy a ' +
-    'gophertrunk-web folder there containing an index.html you open ' +
-    'in any browser. The default is your Documents folder so it''s ' +
-    'easy to find later; you can choose anywhere — a USB stick, a ' +
-    'network drive, or your desktop. Use Browse to pick a different ' +
-    'folder.',
-    False, '');
-  WebUIPage.Add('Web console folder:');
-  WebUIPage.Values[0] :=
-    ExpandConstant('{userdocs}\GopherTrunk Web Console');
 end;
 
-function ShouldSkipPage(PageID: Integer): Boolean;
+// DataDir is the user-chosen data root. ConfigDir and WebDir return
+// the two subpaths the [Files]/[Icons]/[Registry] sections reference
+// by name ({code:ConfigDir}, {code:WebDir}).
+function DataDir(Param: string): string;
 begin
-  Result := False;
-  // Skip the web-UI directory page when the user unchecked the
-  // "Install the web operator console" task.
-  if PageID = WebUIPage.ID then begin
-    Result := not WizardIsTaskSelected('webui');
-  end;
+  Result := DataDirPage.Values[0];
 end;
 
 function ConfigDir(Param: string): string;
 begin
-  Result := ConfigPage.Values[0];
+  Result := AddBackslash(DataDirPage.Values[0]) + 'config';
 end;
 
-function WebUIDir(Param: string): string;
+function WebDir(Param: string): string;
 begin
-  Result := WebUIPage.Values[0];
+  Result := AddBackslash(DataDirPage.Values[0]) + 'web';
 end;
 
 function NeedsAddPath(Param: string): boolean;
@@ -255,23 +263,15 @@ end;
 // Uninstall helpers.
 //
 // Inno's [Code] state from the install run does NOT survive into
-// the uninstall run, so the install-time ConfigDir / WebUIDir
-// choices are read back from HKLM\Software\GopherTrunk\Install
-// (populated by the [Registry] section).
+// the uninstall run, so the install-time data root is read back from
+// HKLM\Software\GopherTrunk\Install (populated by the [Registry]
+// section).
 // ---------------------------------------------------------------
 
-function ReadInstalledConfigDir(): string;
+function ReadInstalledDataDir(): string;
 begin
   if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
-    'Software\GopherTrunk\Install', 'ConfigDir', Result)
-  then
-    Result := '';
-end;
-
-function ReadInstalledWebUIDir(): string;
-begin
-  if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
-    'Software\GopherTrunk\Install', 'WebUIDir', Result)
+    'Software\GopherTrunk\Install', 'DataDir', Result)
   then
     Result := '';
 end;
@@ -307,31 +307,22 @@ begin
     'Path', NewPath);
 end;
 
-procedure WipeConfig();
+// WipeManagedData deletes the Setup-managed parts of the data root —
+// config, the SQLite database + caches, logs, and the web consoles —
+// while DELIBERATELY preserving the operator's irreplaceable captures
+// (recordings, iq, exports). It never removes the data root itself, so
+// those preserved folders stay put.
+procedure WipeManagedData();
 var
-  Dir, Cfg: string;
+  Root: string;
 begin
-  Dir := ReadInstalledConfigDir();
-  if Dir = '' then exit;
-  Cfg := AddBackslash(Dir) + 'config.yaml';
-  if FileExists(Cfg) then
-    DeleteFile(Cfg);
-  // RemoveDir only succeeds on empty dirs — that's the right
-  // semantics: don't blow away a folder still holding the
-  // operator's call-log database or recordings.
-  if DirExists(Dir) then
-    RemoveDir(Dir);
-end;
-
-procedure WipeWebConsole();
-var
-  Dir, Sub: string;
-begin
-  Dir := ReadInstalledWebUIDir();
-  if Dir = '' then exit;
-  Sub := AddBackslash(Dir) + 'gophertrunk-web';
-  if DirExists(Sub) then
-    DelTree(Sub, True, True, True);
+  Root := ReadInstalledDataDir();
+  if Root = '' then exit;
+  Root := AddBackslash(Root);
+  DelTree(Root + 'config', True, True, True);
+  DelTree(Root + 'data',   True, True, True);
+  DelTree(Root + 'logs',   True, True, True);
+  DelTree(Root + 'web',    True, True, True);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -341,19 +332,19 @@ begin
   if CurUninstallStep = usUninstall then begin
     // Always strip our PATH entry — the [Registry] section never
     // got a cleanup flag, so this is the only place it happens.
-    // The HKCU GOPHERTRUNK_CONFIG value and the
+    // The HKCU GOPHERTRUNK_CONFIG / GOPHERTRUNK_HOME values and the
     // Software\GopherTrunk\Install key clean themselves up via
     // uninsdeletevalue / uninsdeletekeyifempty.
     RemoveAppFromHKLMPath();
 
     WipeAnswer := MsgBox(
-      'Also remove your editable config.yaml and the web console folder?' + #13#10 + #13#10 +
-      'Yes = full wipe (delete config.yaml + the gophertrunk-web folder Setup created).' + #13#10 +
-      'No  = preserve your user data (recommended).',
+      'Also remove your config, database, logs, and web console?' + #13#10 + #13#10 +
+      'Yes = delete the config, data, logs, and web folders under your ' +
+      'data root. Your captures (recordings, iq, exports) are KEPT.' + #13#10 +
+      'No  = preserve everything (recommended).',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2);
     if WipeAnswer = IDYES then begin
-      WipeConfig();
-      WipeWebConsole();
+      WipeManagedData();
     end;
   end;
 end;
