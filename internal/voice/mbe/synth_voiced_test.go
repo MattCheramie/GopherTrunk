@@ -292,6 +292,73 @@ func TestUpdateVoicedStateAdvancesPhase(t *testing.T) {
 	}
 }
 
+// TestUpdateVoicedStateDispersed: §6.3 phase regeneration. Low
+// harmonics (l ≤ L/4) keep the coherent average-frequency increment;
+// upper harmonics (l > L/4) additionally accumulate the caller-supplied
+// random phase step. A nil phaseDisp reproduces the coherent variant.
+func TestUpdateVoicedStateDispersed(t *testing.T) {
+	const wPrev, wCurr = 0.1, 0.1
+	const L = 8 // cutoff L/4 = 2, so l ∈ {1,2} coherent, l ∈ {3..8} dispersed
+	N := float64(SamplesPerFrame)
+	twoPi := 2 * math.Pi
+
+	mkState := func() SynthState {
+		s := SynthState{PrevW0: wPrev, PrevL: L}
+		for l := 1; l <= L; l++ {
+			s.PrevPhase[l] = 0.25 * float64(l)
+		}
+		return s
+	}
+	p := Params{Header: Header{W0: wCurr, L: L}}
+	var M [57]float64
+	for l := 1; l <= L; l++ {
+		p.Vl[l] = 1
+		M[l] = 0.5
+	}
+	var disp [57]float64
+	for l := 1; l <= L; l++ {
+		disp[l] = 1.0 // distinctive non-zero step so the effect is visible
+	}
+
+	coherent := mkState()
+	coherent.UpdateVoicedState(p, &M)
+
+	dispersed := mkState()
+	dispersed.UpdateVoicedStateDispersed(p, &M, &disp)
+
+	for l := 1; l <= L; l++ {
+		base := 0.25*float64(l) + float64(l)*(wPrev+wCurr)*N/2
+		if 4*l > L {
+			base += disp[l] // upper harmonic: dispersion applied
+		}
+		want := math.Mod(base, twoPi)
+		if want < 0 {
+			want += twoPi
+		}
+		if math.Abs(dispersed.PrevPhase[l]-want) > synthEpsilon {
+			t.Errorf("dispersed PrevPhase[%d] = %v, want %v", l, dispersed.PrevPhase[l], want)
+		}
+		// Low harmonics must be identical to the coherent variant;
+		// upper harmonics must differ by exactly the dispersion step.
+		if 4*l <= L {
+			if math.Abs(dispersed.PrevPhase[l]-coherent.PrevPhase[l]) > synthEpsilon {
+				t.Errorf("low harmonic %d should match coherent: %v vs %v", l, dispersed.PrevPhase[l], coherent.PrevPhase[l])
+			}
+		} else if math.Abs(dispersed.PrevPhase[l]-coherent.PrevPhase[l]) < synthEpsilon {
+			t.Errorf("upper harmonic %d should differ from coherent (dispersion not applied)", l)
+		}
+	}
+
+	// nil phaseDisp must reproduce the coherent variant exactly.
+	nilDisp := mkState()
+	nilDisp.UpdateVoicedStateDispersed(p, &M, nil)
+	for l := 1; l <= L; l++ {
+		if nilDisp.PrevPhase[l] != coherent.PrevPhase[l] {
+			t.Errorf("nil dispersion PrevPhase[%d] = %v, want coherent %v", l, nilDisp.PrevPhase[l], coherent.PrevPhase[l])
+		}
+	}
+}
+
 // TestUpdateVoicedStateZeroesUnvoiced: harmonics that are unvoiced
 // this frame get PrevMl = 0 so the next frame's fade-in has a clean
 // zero baseline.

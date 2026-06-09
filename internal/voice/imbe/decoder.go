@@ -274,7 +274,18 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	}
 	mbe.SynthUnvoicedOverlapAdd(&d.state, p, M, noise, pcm)
 	d.state.UpdateLog2Ml(p, log2M)
-	d.state.UpdateVoicedState(p, M)
+	// §6.3 voiced-phase regeneration: draw a per-harmonic uniform random
+	// phase step in [−π, π) from the decoder's seeded source. The
+	// dispersed UpdateVoicedState applies it only to the upper harmonics
+	// (l > L/4) to break the fully-coherent harmonic lock that makes
+	// synthesis sound robotic. The draw runs for every harmonic so the
+	// rng sequence — and thus the deterministic output for a given seed —
+	// stays independent of the frame's L.
+	var phaseDisp [mbe.MaxL + 1]float64
+	for l := 1; l <= mbe.MaxL; l++ {
+		phaseDisp[l] = (d.rng.Float64()*2 - 1) * math.Pi
+	}
+	d.state.UpdateVoicedStateDispersed(p, M, &phaseDisp)
 }
 
 // clearLastGood resets the frame-repeat cache + bad-frame counter.
