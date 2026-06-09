@@ -131,6 +131,9 @@ func (m Model) viewStruct(cur reflect.Value) string {
 	if structNameOf(cur) == "SystemConfig" {
 		b.WriteString(stMuted.Render("[t] edit talkgroups") + "\n")
 	}
+	if structNameOf(cur) == "RadioReferenceConfig" {
+		b.WriteString(stMuted.Render("[V] verify subscription") + "\n")
+	}
 	lastAdvanced := false
 	for i, r := range rows {
 		if r.advanced && !lastAdvanced {

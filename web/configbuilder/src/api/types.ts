@@ -498,6 +498,16 @@ export interface RRSearchHit {
   state?: string;
 }
 
+// RRVerifyResponse is the result of POST /config/rr/verify: whether the edited
+// username/password authenticated (ok) and whether the subscription is premium.
+export interface RRVerifyResponse {
+  ok: boolean;
+  premium: boolean;
+  username?: string;
+  expires?: string;
+  fault?: string;
+}
+
 export interface RRSiteDetail {
   rfss?: number;
   site_number?: number;

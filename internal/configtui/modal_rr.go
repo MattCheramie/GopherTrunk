@@ -44,10 +44,32 @@ type rrModal struct {
 	stid int
 }
 
+// effectiveRRAuth merges the RadioReference credentials being edited
+// (m.cfg.RadioReference) over the startup auth (env), then backstops the app
+// key with the built-in default. The edited config wins, so what the operator
+// types into the RadioReference section is what browse/import and verify send.
+func effectiveRRAuth(m *Model) radioreference.Auth {
+	return radioreference.ResolveAuth(radioreference.Auth{
+		AppKey:   firstNonEmptyStr(m.cfg.RadioReference.APIKey, m.rrAuth.AppKey),
+		Username: firstNonEmptyStr(m.cfg.RadioReference.Username, m.rrAuth.Username),
+		Password: firstNonEmptyStr(m.cfg.RadioReference.Password, m.rrAuth.Password),
+	})
+}
+
+// firstNonEmptyStr returns the first argument that is non-empty after trimming.
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func newRRModal(m *Model) modal {
-	c, err := radioreference.NewClient(m.rrAuth)
+	c, err := radioreference.NewClient(effectiveRRAuth(m))
 	if err != nil {
-		return &rrModal{step: rrError, err: "RadioReference credentials not configured (set GOPHERTRUNK_RR_KEY / _USER / _PASS)"}
+		return &rrModal{step: rrError, err: "RadioReference app key not configured (no built-in key in this build; set GOPHERTRUNK_RR_KEY or the api_key field)"}
 	}
 	zi := textinput.New()
 	zi.Prompt = "ZIP: "
@@ -293,4 +315,48 @@ func (r *rrModal) errLine() string {
 		return ""
 	}
 	return "\n" + stErr.Render("! "+r.err)
+}
+
+// ---- RadioReference verify ----
+
+// infoModal is a dismissable result box (any key closes it). Used to surface
+// the synchronous RadioReference subscription check.
+type infoModal struct {
+	title string
+	body  string
+	bad   bool
+}
+
+func (i *infoModal) Update(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) { return nil, nil }
+
+func (i *infoModal) View(w, h int) string {
+	body := stOK.Render(i.body)
+	if i.bad {
+		body = stErr.Render(i.body)
+	}
+	return boxTitle("RadioReference", body+"\n\n[any key] close")
+}
+
+// newRRVerifyModal verifies the edited RadioReference credentials against the
+// account service and returns a dismissable result box reporting whether the
+// subscription is premium.
+func newRRVerifyModal(m *Model) modal {
+	c, err := radioreference.NewClient(effectiveRRAuth(m))
+	if err != nil {
+		return &infoModal{body: "App key not configured (no built-in key in this build; set GOPHERTRUNK_RR_KEY or the api_key field).", bad: true}
+	}
+	acct, err := c.VerifyCredentials(context.Background())
+	if err != nil {
+		return &infoModal{body: "Not verified: " + err.Error(), bad: true}
+	}
+	switch {
+	case acct.Premium && acct.Expires != "":
+		return &infoModal{body: "✓ Premium subscription active until " + acct.Expires + " (" + acct.Username + ")."}
+	case acct.Premium:
+		return &infoModal{body: "✓ Premium subscription active (" + acct.Username + ")."}
+	case acct.Expires != "":
+		return &infoModal{body: "Logged in as " + acct.Username + ", but the subscription is not active (expired " + acct.Expires + ").", bad: true}
+	default:
+		return &infoModal{body: "Logged in as " + acct.Username + ", but no active premium subscription was found.", bad: true}
+	}
 }

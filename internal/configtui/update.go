@@ -142,6 +142,11 @@ func (m Model) updateStructForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.modal = newTalkgroupModal(&m)
 		return m, nil
 	}
+	// RadioReference subscription check (uses the edited creds).
+	if structNameOf(cur) == "RadioReferenceConfig" && msg.String() == "V" {
+		m.modal = newRRVerifyModal(&m)
+		return m, nil
+	}
 	switch msg.String() {
 	case "up", "k":
 		if m.cursor > 0 {

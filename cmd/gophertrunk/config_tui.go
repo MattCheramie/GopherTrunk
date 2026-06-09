@@ -53,11 +53,11 @@ FLAGS:`)
 		dirs = config.CandidateDirs()
 	}
 
-	rrAuth := radioreference.Auth{
+	rrAuth := radioreference.ResolveAuth(radioreference.Auth{
 		AppKey:   strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_KEY")),
 		Username: strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_USER")),
 		Password: strings.TrimSpace(os.Getenv("GOPHERTRUNK_RR_PASS")),
-	}
+	})
 
 	initial := ""
 	if f := strings.TrimSpace(*cfgFile); f != "" {

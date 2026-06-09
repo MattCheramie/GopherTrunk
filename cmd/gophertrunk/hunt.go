@@ -432,11 +432,11 @@ func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) []hunt.DuplicateH
 	if key == "" {
 		key = os.Getenv("GOPHERTRUNK_RR_KEY")
 	}
-	client, err := radioreference.NewClient(radioreference.Auth{
+	client, err := radioreference.NewClient(radioreference.ResolveAuth(radioreference.Auth{
 		AppKey:   key,
 		Username: os.Getenv("GOPHERTRUNK_RR_USER"),
 		Password: os.Getenv("GOPHERTRUNK_RR_PASS"),
-	})
+	}))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hunt: RadioReference duplicate check skipped (no API key configured — set -rr-key or GOPHERTRUNK_RR_KEY)")
 		return nil

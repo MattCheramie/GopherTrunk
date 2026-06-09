@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 )
 
 // cbServer spins up a Server with the Config Builder enabled, rooted at a
@@ -213,6 +216,9 @@ func TestConfigBuilder_PathTraversalRejected(t *testing.T) {
 }
 
 func TestConfigBuilder_RRWithoutCreds(t *testing.T) {
+	// No env key and no built-in key → the RR routes 503.
+	t.Setenv("GOPHERTRUNK_RR_KEY", "")
+	setDefaultAppKey(t, "")
 	base, _, teardown := cbServer(t)
 	defer teardown()
 
@@ -223,6 +229,122 @@ func TestConfigBuilder_RRWithoutCreds(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 without RR creds, got %d", resp.StatusCode)
+	}
+}
+
+// setDefaultAppKey overrides the build-time radioreference.DefaultAppKey for a
+// test and restores it afterwards.
+func setDefaultAppKey(t *testing.T, key string) {
+	t.Helper()
+	prev := radioreference.DefaultAppKey
+	radioreference.DefaultAppKey = key
+	t.Cleanup(func() { radioreference.DefaultAppKey = prev })
+}
+
+// fakeRRSOAP points the handlers' RR client at a local SOAP server returning
+// the given body, via the newRRClient seam. It returns the captured request
+// body pointer so a test can assert the edited creds reached RR.
+func fakeRRSOAP(t *testing.T, response string) *string {
+	t.Helper()
+	got := new(string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		*got = string(b)
+		w.Header().Set("Content-Type", "text/xml")
+		_, _ = io.WriteString(w, response)
+	}))
+	t.Cleanup(srv.Close)
+	prev := newRRClient
+	newRRClient = func(a radioreference.Auth) (*radioreference.Client, error) {
+		c, err := radioreference.NewClient(a)
+		if err != nil {
+			return nil, err
+		}
+		c.SetEndpoint(srv.URL)
+		return c, nil
+	}
+	t.Cleanup(func() { newRRClient = prev })
+	return got
+}
+
+func TestConfigBuilder_RRVerify(t *testing.T) {
+	got := fakeRRSOAP(t, `<?xml version="1.0"?><E><username>alice</username>`+
+		`<subExpireDate>2999-01-01 00:00:00</subExpireDate></E>`)
+	base, _, teardown := cbServer(t)
+	defer teardown()
+
+	req, _ := http.NewRequest(http.MethodPost, base+"/api/v1/config/rr/verify", nil)
+	req.Header.Set("X-RR-Key", "KEY")
+	req.Header.Set("X-RR-User", "alice")
+	req.Header.Set("X-RR-Pass", "pw")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var out RRVerifyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK || !out.Premium || out.Username != "alice" {
+		t.Fatalf("verify response = %+v, want ok+premium for alice", out)
+	}
+	// The edited username (from the header) must have reached RadioReference.
+	if !strings.Contains(*got, "alice") {
+		t.Errorf("RR request did not carry the edited username:\n%s", *got)
+	}
+}
+
+func TestConfigBuilder_RRVerifyFault(t *testing.T) {
+	fakeRRSOAP(t, `<?xml version="1.0"?><SOAP-ENV:Envelope `+
+		`xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"><SOAP-ENV:Body>`+
+		`<SOAP-ENV:Fault><faultstring>Invalid username or password</faultstring>`+
+		`</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>`)
+	base, _, teardown := cbServer(t)
+	defer teardown()
+
+	req, _ := http.NewRequest(http.MethodPost, base+"/api/v1/config/rr/verify", nil)
+	req.Header.Set("X-RR-Key", "KEY")
+	req.Header.Set("X-RR-User", "alice")
+	req.Header.Set("X-RR-Pass", "bad")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out RRVerifyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.OK || out.Fault == "" {
+		t.Fatalf("verify response = %+v, want ok=false with a fault", out)
+	}
+}
+
+func TestRRAuthFromRequest_HeaderMerge(t *testing.T) {
+	t.Setenv("GOPHERTRUNK_RR_KEY", "")
+	setDefaultAppKey(t, "builtin")
+	svc := &configBuilderService{rrAuth: radioreference.Auth{AppKey: "startup", Username: "startup-user"}}
+
+	// Headers override startup creds; an empty key still backstops to built-in.
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-RR-User", "edited")
+	r.Header.Set("X-RR-Pass", "edited-pw")
+	auth := svc.rrAuthFromRequest(r)
+	if auth.Username != "edited" || auth.Password != "edited-pw" {
+		t.Errorf("user/pass = %q/%q, want edited", auth.Username, auth.Password)
+	}
+	if auth.AppKey != "startup" { // startup key present, so it wins over built-in
+		t.Errorf("AppKey = %q, want startup", auth.AppKey)
+	}
+
+	// With no startup key and no header key, the built-in default fills in.
+	svc.rrAuth = radioreference.Auth{}
+	if auth := svc.rrAuthFromRequest(httptest.NewRequest(http.MethodGet, "/", nil)); auth.AppKey != "builtin" {
+		t.Errorf("AppKey = %q, want builtin", auth.AppKey)
 	}
 }
 
