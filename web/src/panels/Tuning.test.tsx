@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
-vi.mock("../api/spectrum", () => ({
+vi.mock("../api/spectrum", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/spectrum")>()),
   fetchSpectrumDevices: vi.fn(),
 }));
 
