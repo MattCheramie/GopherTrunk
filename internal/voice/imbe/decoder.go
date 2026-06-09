@@ -48,6 +48,27 @@ const (
 // naturally.
 var recoveryRampFactors = [3]float64{0.4, 0.7, 1.0}
 
+// IdleToneRunThreshold drives idle-tone suppression. An unmodulated/idle
+// voice-channel carrier (or the demod warm-up/decay transient at the very
+// start/end of a transmission) produces a dibit stream the per-vector FEC
+// resolves to a degenerate low-b_0 frame (see UnpackHeader /
+// Header.IdleTone) — one the synthesizer would otherwise render as an
+// audible ~350 Hz buzz. Field captures show this as runs of low-b_0
+// frames bracketing real speech, and whole dead-key "calls" that are 100%
+// this frame; real speech never sustains the b_0 ≤ IdleToneMaxB0 corner
+// across frames (a 344–405 Hz fundamental held flat is not speech), so a
+// *run* of them is an unambiguous idle signature.
+//
+// IdleToneRunThreshold is how many consecutive low-b_0 frames must be
+// seen before muting kicks in. 2 means a lone low-b_0 frame inside speech
+// is never muted (its run is broken by the surrounding ordinary frames);
+// at most one 20 ms buzz leaks at a tone-run onset before the mute
+// engages. The run is broken only by a genuine non-idle frame (an
+// ordinary b_0, a silence-window frame, or a hard FEC error) — NOT by
+// intra-run variation in the idle frame's parameter bits, since a noisy
+// idle carrier can resolve to differing b_0 ≤ IdleToneMaxB0 frames.
+const IdleToneRunThreshold = 2
+
 // Decoder is the pure-Go IMBE 4400 decoder. It owns one
 // mbe.SynthState (cross-frame log2(Ml) prediction memory + voiced
 // phase + amp memory + §6.4 OA tail), one math/rand source for
@@ -103,6 +124,12 @@ type Decoder struct {
 	// recoveryFramesRemaining so the first recovery frame uses the
 	// smallest factor and the last uses 1.0 (full amplitude).
 	recoveryFramesRemaining int
+
+	// lowB0RunCount is the number of consecutive low-b_0 idle-tone
+	// frames seen so far (see IdleToneRunThreshold). Managed solely in
+	// Decode's pre-switch accounting block — NOT in clearLastGood — so
+	// the mute path doesn't reset its own run mid-stream.
+	lowB0RunCount int
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -173,6 +200,21 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 
 	p, err := UnpackParams(info)
 
+	// Idle-tone run accounting. Done before the switch (a Go switch
+	// can't fall through to the post-switch good-frame block) so a
+	// below-threshold tone frame still synthesizes while the run count
+	// advances. Kept here only — see clearLastGood — so the mute case
+	// below doesn't reset the run it just acted on.
+	tone := err == nil && !p.Silent && p.IdleTone
+	if tone {
+		d.lowB0RunCount++
+	} else {
+		// Any non-idle frame (ordinary b_0, silence, or hard error)
+		// breaks the run.
+		d.lowB0RunCount = 0
+	}
+	muteTone := tone && d.lowB0RunCount >= IdleToneRunThreshold
+
 	switch {
 	case err != nil && d.lastGoodParams.L > 0 && d.badFrameCount < mbe.MaxBadFrames:
 		// Frame repeat: replay the last-good params with progressive
@@ -209,6 +251,19 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// tail still fades into pcm[0..95] (no click on the silence
 		// boundary), then reset SynthState + last-good cache so the
 		// next non-silent frame starts from a clean baseline.
+		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
+		d.state.Reset()
+		d.clearLastGood()
+		d.agc.Apply(pcm, out, true)
+		return out, nil
+
+	case muteTone:
+		// Sustained idle-carrier tone: mute exactly like the silence
+		// window so the ~350 Hz buzz never reaches the WAV / live
+		// audio. The prev-frame unvoiced tail still fades into
+		// pcm[0..95] (no click), then state + last-good cache reset so
+		// the next real frame starts clean. lowB0RunCount is preserved
+		// (managed above) so the rest of the run keeps muting.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
 		d.state.Reset()
 		d.clearLastGood()
@@ -311,6 +366,7 @@ func (d *Decoder) Reset() {
 	d.agc.Reset()
 	d.clearLastGood()
 	d.recoveryFramesRemaining = 0
+	d.lowB0RunCount = 0
 }
 
 // Close releases any resources held by the decoder. The pure-Go
