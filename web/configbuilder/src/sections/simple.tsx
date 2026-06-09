@@ -103,6 +103,18 @@ export function DiagnosticsSection() {
         value={cfg.VerboseErrors}
         onChange={(x) => set({ ...cfg, VerboseErrors: x })}
       />
+      <NumberField
+        label="Memory limit (MB)"
+        value={cfg.MemoryLimitMB ?? 0}
+        onChange={(x) => set({ ...cfg, MemoryLimitMB: x })}
+        placeholder="0"
+      />
+      <NumberField
+        label="Heartbeat (seconds)"
+        value={cfg.HeartbeatSeconds ?? 0}
+        onChange={(x) => set({ ...cfg, HeartbeatSeconds: x })}
+        placeholder="0"
+      />
     </Section>
   );
 }
