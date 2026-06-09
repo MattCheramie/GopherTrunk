@@ -327,6 +327,21 @@ func openWebUI(d *Daemon, log *slog.Logger) error {
 func findWebAssets() string {
 	candidates := []string{}
 
+	// Data-root layout the installer lays down: the standalone web
+	// consoles live at <DataRoot>\web. Prefer it, since on an installed
+	// box the executable sits in Program Files with no web assets
+	// beside it. GOPHERTRUNK_HOME points straight at the data root;
+	// GOPHERTRUNK_CONFIG points at <DataRoot>\config\config.yaml, so its
+	// grandparent is the data root.
+	if home := os.Getenv("GOPHERTRUNK_HOME"); home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, "web", "index.html"))
+	}
+	if cfg := os.Getenv("GOPHERTRUNK_CONFIG"); cfg != "" {
+		candidates = append(candidates,
+			filepath.Join(filepath.Dir(filepath.Dir(cfg)), "web", "index.html"))
+	}
+
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		candidates = append(candidates,
