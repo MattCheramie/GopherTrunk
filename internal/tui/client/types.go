@@ -280,12 +280,13 @@ type RuntimeDTO struct {
 	RetentionFilesDays   int           `json:"retention_files_days"`
 	RetentionInterval    time.Duration `json:"retention_interval_ns"`
 
-	RecordingDir        string `json:"recording_dir,omitempty"`
-	RecordingSampleRate int    `json:"recording_sample_rate"`
-	RecordingWriteRaw   bool   `json:"recording_write_raw"`
-	RecordingEQEnabled  bool   `json:"recording_eq_enabled"`
-	RecordingEQTaps     int    `json:"recording_eq_taps,omitempty"`
-	RecordingEQStepSize string `json:"recording_eq_step_size,omitempty"`
+	RecordingDir           string `json:"recording_dir,omitempty"`
+	RecordingSampleRate    int    `json:"recording_sample_rate"`
+	RecordingWriteRaw      bool   `json:"recording_write_raw"`
+	RecordingSkipEncrypted bool   `json:"recording_skip_encrypted"`
+	RecordingEQEnabled     bool   `json:"recording_eq_enabled"`
+	RecordingEQTaps        int    `json:"recording_eq_taps,omitempty"`
+	RecordingEQStepSize    string `json:"recording_eq_step_size,omitempty"`
 
 	AudioEnabled       bool     `json:"audio_enabled"`
 	AudioDevice        string   `json:"audio_device,omitempty"`

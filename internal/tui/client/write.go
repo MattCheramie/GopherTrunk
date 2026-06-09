@@ -297,9 +297,10 @@ type SettingsPatch struct {
 	AudioMuted    *bool    `json:"audio_muted,omitempty"`
 	AudioBufferMs *int     `json:"audio_buffer_ms,omitempty"`
 
-	RecordingsDir        *string `json:"recordings_dir,omitempty"`
-	RecordingsSampleRate *uint32 `json:"recordings_sample_rate,omitempty"`
-	RecordingsWriteRaw   *bool   `json:"recordings_write_raw,omitempty"`
+	RecordingsDir           *string `json:"recordings_dir,omitempty"`
+	RecordingsSampleRate    *uint32 `json:"recordings_sample_rate,omitempty"`
+	RecordingsWriteRaw      *bool   `json:"recordings_write_raw,omitempty"`
+	RecordingsSkipEncrypted *bool   `json:"recordings_skip_encrypted,omitempty"`
 
 	RetentionCallLogDays *int    `json:"retention_call_log_days,omitempty"`
 	RetentionFilesDays   *int    `json:"retention_files_days,omitempty"`

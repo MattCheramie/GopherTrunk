@@ -49,6 +49,16 @@ func TestBuildSettingsPatch_BoolField(t *testing.T) {
 	}
 }
 
+func TestBuildSettingsPatch_SkipEncrypted(t *testing.T) {
+	p, err := buildSettingsPatch("recordings.skip_encrypted", "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.RecordingsSkipEncrypted == nil || !*p.RecordingsSkipEncrypted {
+		t.Errorf("RecordingsSkipEncrypted = %v want true", p.RecordingsSkipEncrypted)
+	}
+}
+
 func TestBuildSettingsPatch_BoolBadInput(t *testing.T) {
 	_, err := buildSettingsPatch("audio.muted", "maybe")
 	if err == nil {

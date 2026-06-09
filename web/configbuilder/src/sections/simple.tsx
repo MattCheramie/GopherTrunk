@@ -315,6 +315,12 @@ export function RecordingsSection() {
         value={cfg.WriteRaw}
         onChange={(x) => set({ ...cfg, WriteRaw: x })}
       />
+      <BoolField
+        label="Skip encrypted calls"
+        value={cfg.SkipEncrypted}
+        onChange={(x) => set({ ...cfg, SkipEncrypted: x })}
+        help="Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."
+      />
       <Fieldset legend="Equalizer (CMA blind equalizer)">
         <BoolField
           label="Enabled"

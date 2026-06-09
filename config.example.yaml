@@ -136,6 +136,7 @@ recordings:
   dir: "../recordings"
   sample_rate: 8000
   write_raw: true   # also append a .raw sidecar with the vocoder frames
+  skip_encrypted: false  # don't write files for calls flagged encrypted
   equalizer:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
     taps: 8         # default 8 when enabled
