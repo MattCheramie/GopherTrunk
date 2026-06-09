@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -154,6 +155,134 @@ func TestAudioStream_EmitsWAVHeaderAndPCM(t *testing.T) {
 	}
 	if len(got) < 2 {
 		t.Fatalf("did not receive any PCM bytes after header (got %d)", len(got))
+	}
+}
+
+func TestParseRange(t *testing.T) {
+	cases := []struct {
+		name      string
+		header    string
+		wantStart int64
+		wantEnd   int64
+		wantOK    bool
+	}{
+		{"probe", "bytes=0-1", 0, 1, true},
+		{"open ended", "bytes=0-", 0, -1, true},
+		{"past header", "bytes=44-", 44, -1, true},
+		{"bounded mid", "bytes=10-20", 10, 20, true},
+		{"empty", "", 0, 0, false},
+		{"suffix", "bytes=-100", 0, 0, false},
+		{"multi range", "bytes=0-1,2-3", 0, 0, false},
+		{"bad unit", "items=0-1", 0, 0, false},
+		{"garbage", "bytes=abc", 0, 0, false},
+		{"end before start", "bytes=20-10", 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end, ok := parseRange(tc.header)
+			if ok != tc.wantOK {
+				t.Fatalf("ok=%v want %v", ok, tc.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if start != tc.wantStart || end != tc.wantEnd {
+				t.Errorf("got (%d,%d) want (%d,%d)", start, end, tc.wantStart, tc.wantEnd)
+			}
+		})
+	}
+}
+
+// Safari probes the size with a small bounded Range. The endpoint must
+// answer 206 with Accept-Ranges + Content-Range and the exact header
+// bytes, then close — without a live subscription.
+func TestAudioStream_ProbeRange(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = pub.Run(ctx) }()
+	defer pub.Close()
+
+	fa := newFakeAudio()
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Audio: fa, AudioPublisher: pub})
+	defer teardown()
+
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/v1/audio/stream", nil)
+	req.Header.Set("Range", "bytes=0-1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status=%d want 206", resp.StatusCode)
+	}
+	if ar := resp.Header.Get("Accept-Ranges"); ar != "bytes" {
+		t.Errorf("Accept-Ranges=%q want bytes", ar)
+	}
+	wantCR := "bytes 0-1/" + strconv.FormatInt(wavTotalSize, 10)
+	if cr := resp.Header.Get("Content-Range"); cr != wantCR {
+		t.Errorf("Content-Range=%q want %q", cr, wantCR)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Equal(body, []byte("RI")) {
+		t.Errorf("body=%q want first 2 header bytes %q", body, "RI")
+	}
+}
+
+// Safari's bulk fetch is an open-ended Range. The endpoint must answer
+// 206 with Accept-Ranges and a valid WAV header before live PCM.
+func TestAudioStream_OpenEndedRange(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = pub.Run(ctx) }()
+	defer pub.Close()
+
+	fa := newFakeAudio()
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Audio: fa, AudioPublisher: pub})
+	defer teardown()
+
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer reqCancel()
+	req, _ := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/api/v1/audio/stream", nil)
+	req.Header.Set("Range", "bytes=0-")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status=%d want 206", resp.StatusCode)
+	}
+	if ar := resp.Header.Get("Accept-Ranges"); ar != "bytes" {
+		t.Errorf("Accept-Ranges=%q want bytes", ar)
+	}
+	if cr := resp.Header.Get("Content-Range"); cr == "" {
+		t.Error("Content-Range missing")
+	}
+	header := make([]byte, 44)
+	if _, err := io.ReadFull(resp.Body, header); err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+	if !bytes.Equal(header[0:4], []byte("RIFF")) {
+		t.Errorf("response magic=%q want RIFF", header[0:4])
+	}
+	if !bytes.Equal(header[8:12], []byte("WAVE")) {
+		t.Errorf("response type=%q want WAVE", header[8:12])
 	}
 }
 

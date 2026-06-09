@@ -59,8 +59,11 @@ export function AudioPlayer() {
     try {
       await el.play();
       setEnabled(true);
-    } catch {
-      // Autoplay blocked. The next user gesture will retry.
+    } catch (err) {
+      // Autoplay blocked, or the media failed to load (e.g. a server
+      // without Range support trips Safari). Surface it so the failure
+      // isn't invisible; the next user gesture will retry.
+      console.warn("AudioPlayer: enable failed", err);
       setEnabled(false);
     }
   };
@@ -163,6 +166,12 @@ export function AudioPlayer() {
         ref={audioRef}
         preload="none"
         playsInline
+        onError={(e) => {
+          console.warn(
+            "AudioPlayer: media error",
+            e.currentTarget.error,
+          );
+        }}
         // Keep the player on-screen but visually empty; controls are
         // bespoke above so the lockscreen MediaSession is the only
         // public surface.
