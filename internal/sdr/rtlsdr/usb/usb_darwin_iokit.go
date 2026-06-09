@@ -58,14 +58,21 @@ const (
 // used — VID/PID/serial/etc. live in the IORegistry as 32-bit ints.
 const kCFNumberSInt32Type = 3
 
-// IOUSBDeviceUserClientTypeID, IOCFPlugInInterfaceID,
-// IOUSBDeviceInterfaceID, IOUSBInterfaceInterfaceID — UUIDs Apple
-// publishes as part of the IOKit USB API. Stable across macOS
-// versions. Sourced from Apple's IOUSBLib.h.
+// IOUSBDeviceUserClientTypeID, IOUSBInterfaceUserClientTypeID,
+// IOCFPlugInInterfaceID, IOUSBDeviceInterfaceID,
+// IOUSBInterfaceInterfaceID — UUIDs Apple publishes as part of the
+// IOKit USB API. Stable across macOS versions. Sourced from Apple's
+// IOUSBLib.h.
 var (
 	uuidIOUSBDeviceUserClientType = cfUUIDBytes{
 		0x9D, 0xC7, 0xB7, 0x80, 0x9E, 0xC0, 0x11, 0xD4,
 		0xA5, 0x4F, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61,
+	}
+	// IOUSBInterfaceUserClientTypeID from IOKit/usb/IOUSBLib.h; used
+	// with IOCreatePlugInInterfaceForService for interface services.
+	uuidIOUSBInterfaceUserClientType = cfUUIDBytes{
+		0x2D, 0x97, 0x86, 0xC6, 0x9E, 0xF3, 0x11, 0xD4,
+		0xAD, 0x51, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61,
 	}
 	uuidIOCFPlugInInterface = cfUUIDBytes{
 		0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4,
