@@ -95,6 +95,51 @@ func TestPoolAssignsRoles(t *testing.T) {
 	}
 }
 
+func TestPoolMatchesAirspySerialAliases(t *testing.T) {
+	drv := &fakeDriver{name: "fake-airspy-alias", infos: []Info{
+		{Driver: "fake-airspy-alias", Index: 0, Serial: "35AC63DC2D701C4F"},
+	}}
+	registryMu.Lock()
+	registry["fake-airspy-alias"] = drv
+	registryMu.Unlock()
+	t.Cleanup(func() {
+		registryMu.Lock()
+		delete(registry, "fake-airspy-alias")
+		registryMu.Unlock()
+	})
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	p := NewPool(log)
+	if err := p.OpenWith(PoolOpenOptions{
+		Hints:  []Hint{{Serial: "AIRSPY SN:35ac63dc2d701c4f", Role: RoleVoice}},
+		Strict: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	entries := p.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1; log was: %q", len(entries), buf.String())
+	}
+	if entries[0].Info.Serial != "35AC63DC2D701C4F" {
+		t.Errorf("opened serial = %q, want 35AC63DC2D701C4F", entries[0].Info.Serial)
+	}
+	if got := p.FindBySerial("airspy_sn:35ac63dc2d701c4f"); got == nil {
+		t.Fatalf("FindBySerial(alias) returned nil")
+	} else if got.Info.Serial != "35AC63DC2D701C4F" {
+		t.Errorf("FindBySerial(alias) = %q, want 35AC63DC2D701C4F", got.Info.Serial)
+	}
+	if got := p.FindBySerial("35ac63dc2d701c4f"); got == nil {
+		t.Fatalf("FindBySerial(raw) returned nil")
+	}
+	out := buf.String()
+	if strings.Contains(out, "configured SDR not present on the bus") {
+		t.Errorf("unexpected missing-serial warn; log was: %q", out)
+	}
+}
+
 // TestPoolProgramsSampleRate guards against the bug behind issue #275:
 // without a SetSampleRate call at pool-open time the chip streams at
 // whatever rate its resampler powered up at, the decoder pipeline runs

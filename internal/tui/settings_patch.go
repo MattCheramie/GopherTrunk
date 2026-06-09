@@ -83,6 +83,12 @@ func buildSettingsPatch(field, raw string) (client.SettingsPatch, error) {
 			return p, err
 		}
 		p.RecordingsWriteRaw = &b
+	case "recordings.skip_encrypted":
+		b, err := parseBool(raw)
+		if err != nil {
+			return p, err
+		}
+		p.RecordingsSkipEncrypted = &b
 	case "retention.call_log_days":
 		n, err := strconv.Atoi(raw)
 		if err != nil {

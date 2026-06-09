@@ -57,6 +57,7 @@ type Recorder struct {
 	outDir             string
 	sampleRate         uint32
 	writeRaw           bool
+	skipEncrypted      bool
 	vocoderForProtocol map[string]string
 
 	mu        sync.Mutex
@@ -81,6 +82,15 @@ type RecorderOptions struct {
 	OutDir     string
 	SampleRate uint32 // 8000 typical
 	WriteRaw   bool   // emit a .raw sidecar alongside each .wav
+
+	// SkipEncrypted, when true, makes the recorder refuse to write files
+	// for calls flagged encrypted. A grant that already signals encryption
+	// never opens a session; a call whose encryption is only discovered
+	// mid-stream (P25 Phase 1 LDU2 Encryption Sync, or a Phase 2 compressed
+	// grant resolved in-call) has its in-progress WAV/raw files closed and
+	// deleted, and no CallComplete is published so downstream upload feeds
+	// never see the partial.
+	SkipEncrypted bool
 
 	// VocoderForProtocol maps a Grant.Protocol value to a vocoder
 	// registry name used to decode raw frames into PCM that's
@@ -160,6 +170,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		outDir:             opts.OutDir,
 		sampleRate:         opts.SampleRate,
 		writeRaw:           opts.WriteRaw,
+		skipEncrypted:      opts.SkipEncrypted,
 		vocoderForProtocol: vocoderMap,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
@@ -247,6 +258,19 @@ func (r *Recorder) Run(ctx context.Context) error {
 			case events.KindCallSegment:
 				if seg, ok := ev.Payload.(trunking.CallSegment); ok {
 					r.handleSegment(seg)
+				}
+			case events.KindCallEncryption:
+				// In-call Encryption Sync recovered (P25 Phase 1 LDU2).
+				// AlgorithmID 0x80 is CLEAR; anything else is encrypted.
+				if ce, ok := ev.Payload.(trunking.CallEncryption); ok {
+					r.handleEncryptionUpdate(ce.DeviceSerial, ce.AlgorithmID != algorithmClear)
+				}
+			case events.KindCallSourceUpdate:
+				// In-call source/encryption resolved on the traffic channel
+				// (e.g. a P25 Phase 2 compressed grant). Carries an explicit
+				// encrypted flag.
+				if su, ok := ev.Payload.(trunking.CallSourceUpdate); ok {
+					r.handleEncryptionUpdate(su.DeviceSerial, su.Encrypted)
 				}
 			}
 		}
@@ -337,6 +361,16 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		// call live, but write no WAV/raw files for it.
 		return
 	}
+	if r.skipEncrypted && cs.Grant.Encrypted {
+		// Operator opted out of recording encrypted calls and the grant
+		// already signals encryption — never open a file. Calls whose
+		// encryption only surfaces mid-stream are handled by
+		// handleEncryptionUpdate.
+		r.log.Debug("recorder: skipping encrypted call",
+			"device", cs.DeviceSerial, "tg", cs.Grant.GroupID,
+			"alg", cs.Grant.AlgorithmID, "key", cs.Grant.KeyID)
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, busy := r.sessions[cs.DeviceSerial]; busy {
@@ -355,6 +389,51 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		"device", cs.DeviceSerial, "wav", s.wavPath,
 		"tg", cs.Grant.GroupID, "provoice", cs.Grant.ProVoice,
 		"vocoder", s.vocoderName)
+}
+
+// algorithmClear is the encryption Algorithm ID a clear (unencrypted)
+// call advertises; anything else means the call is encrypted. Mirrors
+// p25.AlgorithmClear, kept local to avoid a radio-package import.
+const algorithmClear uint8 = 0x80
+
+// handleEncryptionUpdate aborts an in-flight recording when SkipEncrypted
+// is set and a call is discovered to be encrypted mid-stream — e.g. a P25
+// Phase 1 LDU2 Encryption Sync or a Phase 2 compressed grant whose
+// encryption flag only resolves on the traffic channel. The open WAV/raw
+// files are closed and removed and the session dropped without publishing
+// a CallComplete, so the partial never reaches the upload feeds. No-op
+// when SkipEncrypted is off, the call is clear, or no session is open.
+func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
+	if !r.skipEncrypted || !encrypted {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.sessions[deviceSerial]
+	if !ok {
+		return
+	}
+	delete(r.sessions, deviceSerial)
+	// A dormant post-segment session (parked between overs) has no open
+	// files; only close when a WAV is actually open, mirroring handleEnd.
+	if s.wav == nil {
+		return
+	}
+	if err := s.close(); err != nil {
+		r.log.Warn("recorder: closing aborted encrypted session",
+			"device", deviceSerial, "err", err)
+	}
+	for _, p := range []string{s.wavPath, s.rawPath} {
+		if p == "" {
+			continue
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			r.log.Warn("recorder: removing aborted encrypted file",
+				"path", p, "err", err)
+		}
+	}
+	r.log.Info("recorder: aborted mid-call encrypted recording",
+		"device", deviceSerial, "wav", s.wavPath)
 }
 
 // buildSession opens the WAV (+ optional .raw sidecar + vocoder) for a

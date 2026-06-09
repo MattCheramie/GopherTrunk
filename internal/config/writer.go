@@ -37,9 +37,10 @@ type Patch struct {
 	AudioBufferMs *int
 
 	// Recordings.
-	RecordingsDir        *string
-	RecordingsSampleRate *uint32
-	RecordingsWriteRaw   *bool
+	RecordingsDir           *string
+	RecordingsSampleRate    *uint32
+	RecordingsWriteRaw      *bool
+	RecordingsSkipEncrypted *bool
 
 	// Retention.
 	RetentionCallLogDays *int
@@ -113,6 +114,9 @@ func (p Patch) Apply(cfg Config) Config {
 	}
 	if p.RecordingsWriteRaw != nil {
 		cfg.Recordings.WriteRaw = *p.RecordingsWriteRaw
+	}
+	if p.RecordingsSkipEncrypted != nil {
+		cfg.Recordings.SkipEncrypted = *p.RecordingsSkipEncrypted
 	}
 	if p.RetentionCallLogDays != nil {
 		cfg.Retention.CallLogDays = *p.RetentionCallLogDays
@@ -226,6 +230,9 @@ func patchEdits(p Patch) []patchPath {
 	}
 	if p.RecordingsWriteRaw != nil {
 		add([]string{"recordings", "write_raw"}, scalarBool(*p.RecordingsWriteRaw))
+	}
+	if p.RecordingsSkipEncrypted != nil {
+		add([]string{"recordings", "skip_encrypted"}, scalarBool(*p.RecordingsSkipEncrypted))
 	}
 	if p.RetentionCallLogDays != nil {
 		add([]string{"retention", "call_log_days"}, scalarInt(int64(*p.RetentionCallLogDays)))

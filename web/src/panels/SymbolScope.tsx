@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchSpectrumDevices,
+  defaultSymbolDevice,
   type SpectrumDevice,
 } from "../api/spectrum";
 import {
@@ -68,7 +69,10 @@ export function SymbolScope() {
         if (cancel) return;
         setDevices(list);
         setError(null);
-        if (list.length > 0 && selected == null) setSelected(list[0].serial);
+        if (selected == null) {
+          const def = defaultSymbolDevice(list);
+          if (def) setSelected(def.serial);
+        }
       } catch (e) {
         if (cancel) return;
         setError(e instanceof Error ? e.message : String(e));

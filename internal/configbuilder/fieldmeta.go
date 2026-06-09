@@ -72,7 +72,9 @@ var fieldMetas = map[string]FieldMeta{
 	"MessageLogConfig.MaxSizeMB": {Help: "Rotate the message log at this size in MB. Default 16."},
 
 	// ---- Diagnostics -------------------------------------------------------
-	"DiagnosticsConfig.VerboseErrors": {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
+	"DiagnosticsConfig.VerboseErrors":    {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
+	"DiagnosticsConfig.MemoryLimitMB":    {Help: "Soft heap limit (MiB) so the GC keeps the resident footprint bounded, guarding against an OS memory-pressure kill (Linux OOM / macOS jetsam). 0 auto-derives ~70% of physical RAM when known, else unbounded. GOMEMLIMIT always wins."},
+	"DiagnosticsConfig.HeartbeatSeconds": {Help: "Period (seconds) of the runtime health log: uptime, goroutine count, and heap/sys bytes — turns a silent stop into a timeline. 0 uses the 60 s default; negative disables it."},
 
 	// ---- RadioReference ----------------------------------------------------
 	"RadioReferenceConfig.APIKey":   {Label: "API key", Help: "RadioReference.com SOAP app key. Optional — GopherTrunk ships with a built-in app key, so leave this blank unless you want to use your own (or set GOPHERTRUNK_RR_KEY)."},
@@ -199,13 +201,14 @@ var fieldMetas = map[string]FieldMeta{
 	"StorageConfig.CCCacheFile": {Label: "CC cache file", Help: "JSON cache the control-channel hunter uses to skip dead frequencies. Empty disables it."},
 
 	// ---- Recordings --------------------------------------------------------
-	"RecordingsConfig.Dir":        {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
-	"RecordingsConfig.SampleRate": {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
-	"RecordingsConfig.WriteRaw":   {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
-	"RecordingsConfig.Equalizer":  {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
-	"EqualizerConfig.Enabled":     {Help: "Turn the blind equalizer on."},
-	"EqualizerConfig.Taps":        {Help: "Equalizer FIR length. Default 8 when enabled."},
-	"EqualizerConfig.StepSize":    {Help: "CMA adaptation step size. Default 1e-4 when enabled."},
+	"RecordingsConfig.Dir":           {Label: "Directory", Help: "Output directory for per-call WAV recordings."},
+	"RecordingsConfig.SampleRate":    {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
+	"RecordingsConfig.WriteRaw":      {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
+	"RecordingsConfig.SkipEncrypted": {Label: "Skip encrypted", Help: "Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."},
+	"RecordingsConfig.Equalizer":     {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
+	"EqualizerConfig.Enabled":        {Help: "Turn the blind equalizer on."},
+	"EqualizerConfig.Taps":           {Help: "Equalizer FIR length. Default 8 when enabled."},
+	"EqualizerConfig.StepSize":       {Help: "CMA adaptation step size. Default 1e-4 when enabled."},
 
 	// ---- Metrics -----------------------------------------------------------
 	"MetricsConfig.Enabled": {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},

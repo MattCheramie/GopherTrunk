@@ -103,6 +103,18 @@ export function DiagnosticsSection() {
         value={cfg.VerboseErrors}
         onChange={(x) => set({ ...cfg, VerboseErrors: x })}
       />
+      <NumberField
+        label="Memory limit (MB)"
+        value={cfg.MemoryLimitMB ?? 0}
+        onChange={(x) => set({ ...cfg, MemoryLimitMB: x })}
+        placeholder="0"
+      />
+      <NumberField
+        label="Heartbeat (seconds)"
+        value={cfg.HeartbeatSeconds ?? 0}
+        onChange={(x) => set({ ...cfg, HeartbeatSeconds: x })}
+        placeholder="0"
+      />
     </Section>
   );
 }
@@ -314,6 +326,12 @@ export function RecordingsSection() {
         label="Write raw"
         value={cfg.WriteRaw}
         onChange={(x) => set({ ...cfg, WriteRaw: x })}
+      />
+      <BoolField
+        label="Skip encrypted calls"
+        value={cfg.SkipEncrypted}
+        onChange={(x) => set({ ...cfg, SkipEncrypted: x })}
+        help="Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."
       />
       <Fieldset legend="Equalizer (CMA blind equalizer)">
         <BoolField

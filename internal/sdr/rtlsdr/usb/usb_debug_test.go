@@ -52,6 +52,9 @@ func TestMaybeWrapDebug_OnLogsControlTransfers(t *testing.T) {
 	logged := buf.String()
 	for _, want := range []string{
 		"bus=1 addr=7 serial=abc", // descriptor label
+		"tx=",
+		"ts=",
+		"rel=",
 		"ControlOut bmReqType=0x40",
 		"wValue=0x2000",
 		"wIndex=0x0110",
@@ -62,6 +65,37 @@ func TestMaybeWrapDebug_OnLogsControlTransfers(t *testing.T) {
 	} {
 		if !strings.Contains(logged, want) {
 			t.Errorf("log missing %q\nlog:\n%s", want, logged)
+		}
+	}
+}
+
+func TestMaybeWrapDebug_CSVMode(t *testing.T) {
+	t.Setenv(debugUSBEnv, "1")
+	t.Setenv(debugUSBCSVEnv, "1")
+	var buf bytes.Buffer
+	prev := SetDebugSink(&buf)
+	t.Cleanup(func() { SetDebugSink(prev) })
+
+	inner := NewMockTransport()
+	inner.Script = []CtrlExchange{{In: false, BRequest: 1, WValue: 0x0002, WIndex: 0x0001, Data: nil}}
+	t1 := MaybeWrapDebug(inner, Descriptor{Bus: 9, Address: 2, Serial: "csv"})
+
+	if err := t1.ControlOut(1, 0x0002, 0x0001, nil, 1000); err != nil {
+		t.Fatalf("ControlOut: %v", err)
+	}
+
+	logged := buf.String()
+	for _, want := range []string{
+		"rtlsdr-usb-csv,",
+		",request,out,",
+		",result,out,",
+		",ok,",
+		"0x01",
+		"0x0002",
+		"0x0001",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("csv log missing %q\nlog:\n%s", want, logged)
 		}
 	}
 }

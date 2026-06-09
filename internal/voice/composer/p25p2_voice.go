@@ -7,6 +7,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	p25p2rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -45,6 +46,7 @@ const p25p2VoiceGardnerGain = 0.005
 // DMR chain, whose pre-FEC frames the vocoder cannot consume.
 func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, iqCh <-chan []complex64, iqHz uint32, done chan<- struct{}) {
 	defer close(done)
+	defer gtlog.Recover(c.log, "voice-chain-p25p2:"+serial, nil)
 
 	// Shared boundary controller: universal hangtime end-of-call + Touch
 	// heartbeat. Talkgroup gating is left disabled (grantTG 0) until the

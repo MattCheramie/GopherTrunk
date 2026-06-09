@@ -28,6 +28,18 @@ for tagged releases.
     opened with that leaked frame — the "highly pitched beginning" a user
     reported (worse on CQPSK, whose warm-up is longer). The run-threshold guard
     that protects a lone idle frame *inside* speech is unchanged.
+- **Airspy device initialisation** (#454). The pure-Go Airspy driver's USB
+  vendor request opcodes were systematically wrong; they now match libairspy's
+  `airspy_commands` enum (`SET_SAMPLERATE`=12, `GET_SAMPLERATES`=25, gain/freq
+  opcodes, …). `SetSampleRate` is now a vendor-IN transfer with the rate carried
+  in `wIndex` (the firmware NAK'd the previous vendor-OUT, surfacing as "set
+  sample rate failed: protocol error"), the bogus host-side `SET_SAMPLE_TYPE`
+  command is gone, and the bias-tee uses a GPIO write. `Open` resets the
+  receiver and retries on transient device-gone errors, and the device pool now
+  normalises `AIRSPY SN:` / `airspy_sn:` serial aliases when matching config
+  hints. Includes opt-in real-hardware tests (`make test-airspy-real`) and a
+  Windows WinUSB interface-recipient/associated-interface control-transfer
+  fallback.
 
 ## [v0.3.7] — 2026-06-09
 

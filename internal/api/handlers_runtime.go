@@ -34,12 +34,13 @@ type RuntimeDTO struct {
 	RetentionInterval    time.Duration `json:"retention_interval_ns"`
 
 	// Recording config.
-	RecordingDir        string `json:"recording_dir,omitempty"`
-	RecordingSampleRate int    `json:"recording_sample_rate"`
-	RecordingWriteRaw   bool   `json:"recording_write_raw"`
-	RecordingEQEnabled  bool   `json:"recording_eq_enabled"`
-	RecordingEQTaps     int    `json:"recording_eq_taps,omitempty"`
-	RecordingEQStepSize string `json:"recording_eq_step_size,omitempty"`
+	RecordingDir           string `json:"recording_dir,omitempty"`
+	RecordingSampleRate    int    `json:"recording_sample_rate"`
+	RecordingWriteRaw      bool   `json:"recording_write_raw"`
+	RecordingSkipEncrypted bool   `json:"recording_skip_encrypted"`
+	RecordingEQEnabled     bool   `json:"recording_eq_enabled"`
+	RecordingEQTaps        int    `json:"recording_eq_taps,omitempty"`
+	RecordingEQStepSize    string `json:"recording_eq_step_size,omitempty"`
 
 	// Audio runtime (mirrors AudioStatus but adds device list +
 	// backend identity so operators can confirm whether the Linux

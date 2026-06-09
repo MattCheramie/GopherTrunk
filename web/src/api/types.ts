@@ -291,6 +291,7 @@ export interface SettingsPatch {
   recordings_dir?: string;
   recordings_sample_rate?: number;
   recordings_write_raw?: boolean;
+  recordings_skip_encrypted?: boolean;
   retention_call_log_days?: number;
   retention_files_days?: number;
   retention_interval?: string;

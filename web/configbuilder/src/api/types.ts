@@ -18,6 +18,8 @@ export interface LogConfig {
 
 export interface DiagnosticsConfig {
   VerboseErrors: boolean;
+  MemoryLimitMB: number;
+  HeartbeatSeconds: number;
 }
 
 export interface RadioReferenceConfig {
@@ -115,6 +117,7 @@ export interface RecordingsConfig {
   Dir: string;
   SampleRate: number;
   WriteRaw: boolean;
+  SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25p1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -57,6 +58,7 @@ func (c *Composer) resolveP25Phase1DemodMode(serial, mode string) p25p1rx.DemodM
 // 11-byte frame to PCM and into the call's WAV.
 func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, demodMode string, grantTG uint32, patched []uint32, done chan<- struct{}) {
 	defer close(done)
+	defer gtlog.Recover(c.log, "voice-chain-p25p1:"+serial, nil)
 
 	// Shared boundary controller: universal hangtime end-of-call,
 	// talkgroup gating (so a different talkgroup on a shared voice

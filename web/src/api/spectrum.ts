@@ -19,6 +19,21 @@ export interface SpectrumDevice {
   p25_modulation?: string;
 }
 
+// defaultSymbolDevice picks the SDR the symbol-domain panels (Eye
+// Diagram, Symbol Scope, Tuning, Histogram) should select on first load.
+// It prefers the control-role device so a panel opened during active
+// control-channel decoding lands on the SDR that is actually carrying a
+// decodable C4FM channel, rather than the enumeration's first entry —
+// which on a multi-SDR rig is often an idle voice/aux dongle, leaving the
+// scope showing nothing (issue #402). Falls back to the first device when
+// no control role is present, and returns null for an empty list.
+export function defaultSymbolDevice(
+  list: SpectrumDevice[],
+): SpectrumDevice | null {
+  if (list.length === 0) return null;
+  return list.find((d) => d.role === "control") ?? list[0];
+}
+
 export interface SpectrumFrame {
   ts_ns: number;
   center_hz: number;
