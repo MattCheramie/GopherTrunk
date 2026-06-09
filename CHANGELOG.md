@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **LoRa decoding** (#586). A new pure-Go, zero-CGO LoRa receiver decodes the
+  LoRa physical layer (chirp dechirp/FFT demodulation, preamble/sync/SFD
+  acquisition with carrier-offset and timing recovery, Gray/de-interleave/
+  Hamming FEC, de-whitening and CRC) with spreading-factor auto-detection
+  across SF7–SF12 and bandwidths 125/250/500 kHz. One SDR is split into
+  several parallel LoRa sub-channels via the tuner channelizer/DDC bank.
+  LoRaWAN 1.0.x frames are MAC-decoded and, when operator session keys are
+  supplied, the MIC is verified and the payload decrypted (no key recovery).
+  Configure under `lora.channels`; decoded frames persist to the `lora_log`
+  table, are served at `GET /api/v1/lora/frames`, and render live on the new
+  `/lora` web panel.
+
 ## [v0.3.7] — 2026-06-09
 
 This release sharpens **P25 Phase 1 voice** and consolidates the **install

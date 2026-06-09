@@ -337,6 +337,10 @@ type Server struct {
 	// (M17 link-setup log). nil disables the routes. Implemented by
 	// the daemon over the SQLite-backed storage.M17Log.
 	m17 M17Provider
+	// lora is the optional provider backing /api/v1/lora/... routes
+	// (LoRa frame log). nil disables the routes. Implemented by the
+	// daemon over the SQLite-backed storage.LoRaLog.
+	lora LoRaProvider
 
 	// adsb is the optional provider backing /api/v1/adsb/...
 	// routes (ADS-B aircraft report log). nil disables the
@@ -631,6 +635,11 @@ type ServerOptions struct {
 	// link-setup frames. Wired by the daemon over the SQLite-backed
 	// storage.M17Log.
 	M17 M17Provider
+	// LoRa, when non-nil, enables the
+	// GET /api/v1/lora/frames route serving recent decoded LoRa
+	// frames. Wired by the daemon over the SQLite-backed
+	// storage.LoRaLog.
+	LoRa LoRaProvider
 	// ADSB, when non-nil, enables the
 	// GET /api/v1/adsb/aircraft route serving recent decoded
 	// Mode-S frames. Wired by the daemon over the SQLite-backed
@@ -771,6 +780,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		ais:            opts.AIS,
 		dsc:            opts.DSC,
 		m17:            opts.M17,
+		lora:           opts.LoRa,
 		adsb:           opts.ADSB,
 		mdc1200:        opts.MDC1200,
 	}, nil
@@ -1076,6 +1086,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/ais/vessels", s.handleAISMessages)
 	mux.HandleFunc("GET /api/v1/dsc/messages", s.handleDSCMessages)
 	mux.HandleFunc("GET /api/v1/m17/linksetups", s.handleM17LinkSetups)
+	mux.HandleFunc("GET /api/v1/lora/frames", s.handleLoRaFrames)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft", s.handleADSBAircraft)
 	mux.HandleFunc("GET /api/v1/adsb/aircraft/current", s.handleADSBAircraftCurrent)
 	mux.HandleFunc("GET /api/v1/mdc1200/messages", s.handleMDC1200Messages)

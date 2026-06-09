@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -35,6 +37,9 @@ import (
 	aisgmsk "github.com/MattCheramie/GopherTrunk/internal/radio/ais/gmsk"
 	aprsafsk "github.com/MattCheramie/GopherTrunk/internal/radio/aprs/afsk"
 	dscffsk "github.com/MattCheramie/GopherTrunk/internal/radio/dsc/ffsk"
+	lorapkg "github.com/MattCheramie/GopherTrunk/internal/radio/lora"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/lora/lorawan"
+	lorarx "github.com/MattCheramie/GopherTrunk/internal/radio/lora/receiver"
 	m17rx "github.com/MattCheramie/GopherTrunk/internal/radio/m17/receiver"
 	mdc1200afsk "github.com/MattCheramie/GopherTrunk/internal/radio/mdc1200/afsk"
 	flexrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/flex/receiver"
@@ -286,6 +291,7 @@ type Daemon struct {
 	vesselLog    *storage.VesselLog
 	dscLog       *storage.DSCLog
 	m17Log       *storage.M17Log
+	loraLog      *storage.LoRaLog
 	aircraftLog  *storage.AircraftLog
 	mdc1200Log   *storage.MDC1200Log
 	messageLog   *gtlog.MessageLog
@@ -355,6 +361,12 @@ type Daemon struct {
 	// publishes decoded vessel messages on KindAISMessage.
 	aisReceivers []*aisgmsk.Receiver
 	aisSpecs     []aisSpec // index-aligned with aisReceivers
+	// loraReceivers holds one wide-band LoRa receiver per configured
+	// lora.channels entry. Each subscribes to its assigned SDR's iqtap
+	// broker, channelizes the IQ band into parallel LoRa sub-channels and
+	// publishes decoded frames on KindLoRaFrame.
+	loraReceivers []*lorarx.Receiver
+	loraSpecs     []loraSpec // index-aligned with loraReceivers
 	// dscReceivers holds one DSC FFSK receiver per configured
 	// dsc.channels entry. Same shape as the AIS receivers above: each
 	// subscribes to its assigned SDR's iqtap broker and publishes
@@ -1476,6 +1488,24 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.aisSpecs = append(d.aisSpecs, spec)
 	}
 
+	// LoRa wide-band receivers — one per configured lora.channels entry.
+	// Each pins an SDR to a centre frequency and channelizes its IQ band
+	// into parallel LoRa sub-channels (the receiver owns the tuner bank).
+	// Per-entry validation: a malformed entry surfaces as a startup warning
+	// and a nil slot keeps indexing stable.
+	for _, lc := range cfg.LoRa.Channels {
+		spec := loraSpec{serial: lc.Serial, freq: lc.CenterHz}
+		rcv, err := buildLoRaReceiver(cfg.SDR.SampleRate, lc, d.bus, log)
+		if err != nil {
+			d.addWarning(fmt.Sprintf("lora.channels[%s]: %v — skipped", lc.Serial, err))
+			d.loraReceivers = append(d.loraReceivers, nil)
+			d.loraSpecs = append(d.loraSpecs, spec)
+			continue
+		}
+		d.loraReceivers = append(d.loraReceivers, rcv)
+		d.loraSpecs = append(d.loraSpecs, spec)
+	}
+
 	// DSC FFSK receivers — one per configured dsc.channels entry.
 	// Same construction shape as AIS / MDC1200 above: per-entry
 	// validation in the receiver, failures surface as a startup
@@ -1666,6 +1696,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		d.m17Log = ml
 
+		lrl, err := storage.NewLoRaLog(db, d.bus, log)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("daemon: lora log: %w", err)
+		}
+		d.loraLog = lrl
+
 		acl, err := storage.NewAircraftLog(db, d.bus, log)
 		if err != nil {
 			db.Close()
@@ -1755,6 +1792,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		if d.m17Log != nil {
 			opts.M17 = m17Provider{log: d.m17Log}
+		}
+		if d.loraLog != nil {
+			opts.LoRa = loraProvider{log: d.loraLog}
 		}
 		if d.aircraftLog != nil {
 			opts.ADSB = adsbProvider{log: d.aircraftLog}
@@ -1989,6 +2029,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.m17Log != nil {
 		d.spawn(runCtx, "m17log", false, func(ctx context.Context) error {
 			return d.m17Log.Run(ctx)
+		})
+	}
+	if d.loraLog != nil {
+		d.spawn(runCtx, "loralog", false, func(ctx context.Context) error {
+			return d.loraLog.Run(ctx)
 		})
 	}
 	if d.aircraftLog != nil {
@@ -2341,6 +2386,38 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return rcv.Process(ctx, iqCh)
 		})
 	}
+	// LoRa receivers — same shape as AIS above, but the receiver owns its
+	// tuner bank: it consumes the full IQ stream and channelizes it into
+	// the configured sub-channels internally, publishing KindLoRaFrame.
+	for i, rcv := range d.loraReceivers {
+		if rcv == nil {
+			continue // skipped at construction; warning already logged
+		}
+		rcv := rcv
+		spec := d.loraSpecs[i]
+		name := fmt.Sprintf("lora-%s-%d", spec.serial, spec.freq)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			br := d.iqBrokers[spec.serial]
+			if br == nil {
+				d.log.Warn("lora: SDR not found, skipping receiver",
+					"serial", spec.serial, "freq_hz", spec.freq)
+				return nil
+			}
+			if err := br.SetCenterFreq(spec.freq); err != nil {
+				d.log.Warn("lora: SetCenterFreq failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			if err != nil {
+				d.log.Warn("lora: open IQ failed",
+					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
+				return nil
+			}
+			defer cleanup()
+			return rcv.Process(ctx, iqCh)
+		})
+	}
 	// DSC receivers — same shape as AIS above. Each subscribes to its
 	// assigned SDR's iqtap broker and runs the FFSK pipeline (FM demod
 	// → FFSK discriminator at 1300/2100 Hz → symbol-timing recovery →
@@ -2610,6 +2687,9 @@ func (d *Daemon) Close() {
 		}
 		if d.m17Log != nil {
 			_ = d.m17Log.Close()
+		}
+		if d.loraLog != nil {
+			_ = d.loraLog.Close()
 		}
 		if d.aircraftLog != nil {
 			_ = d.aircraftLog.Close()
@@ -3617,6 +3697,15 @@ func (m m17Provider) RecentM17LinkSetups(limit int) ([]storage.M17LinkSetup, err
 	return m.log.Recent(limit)
 }
 
+// loraProvider adapts storage.LoRaLog into api.LoRaProvider so the api
+// package stays free of the storage import dependency. Read-only — the
+// decoder writes via the events bus.
+type loraProvider struct{ log *storage.LoRaLog }
+
+func (p loraProvider) RecentLoRaFrames(limit int) ([]storage.LoRaFrame, error) {
+	return p.log.Recent(limit)
+}
+
 // adsbProvider adapts storage.AircraftLog into api.ADSBProvider so
 // the api package stays free of the storage import dependency.
 // Read-only — the decoder writes via the events bus.
@@ -3655,6 +3744,87 @@ type aprsSpec struct {
 type aisSpec struct {
 	serial string
 	freq   uint32
+}
+
+// loraSpec captures the broker-side wiring info for one configured LoRa
+// channel. Index-aligned with Daemon.loraReceivers so the Run loop can
+// spawn each receiver without re-walking the YAML. Mirrors aisSpec.
+type loraSpec struct {
+	serial string
+	freq   uint32
+}
+
+// buildLoRaReceiver validates one lora.channels entry and constructs its
+// wide-band receiver, translating the YAML sub-channels and LoRaWAN keys
+// into the receiver's option types.
+func buildLoRaReceiver(sampleRate uint32, lc config.LoRaChannelConfig, bus *events.Bus, log *slog.Logger) (*lorarx.Receiver, error) {
+	if lc.Serial == "" || lc.CenterHz == 0 {
+		return nil, fmt.Errorf("entry missing serial or center_hz (serial=%q center=%d)", lc.Serial, lc.CenterHz)
+	}
+	if len(lc.SubChannels) == 0 {
+		return nil, fmt.Errorf("no sub_channels configured")
+	}
+	chans := make([]lorarx.ChannelConfig, 0, len(lc.SubChannels))
+	for _, sc := range lc.SubChannels {
+		sw := sc.SyncWord
+		if sw == 0 {
+			sw = 0x12 // default private-network sync word
+		}
+		chans = append(chans, lorarx.ChannelConfig{
+			OffsetHz:    float64(sc.OffsetHz),
+			FrequencyHz: uint32(int64(lc.CenterHz) + int64(sc.OffsetHz)),
+			SF:          sc.SpreadingFactor,
+			SyncWord:    sw,
+		})
+	}
+
+	var keys *lorawan.KeyStore
+	for _, k := range lc.LoRaWANKeys {
+		devAddr, nwk, app, err := parseLoRaWANKey(k)
+		if err != nil {
+			return nil, fmt.Errorf("lorawan_keys: %w", err)
+		}
+		if keys == nil {
+			keys = lorawan.NewKeyStore()
+		}
+		keys.Add(devAddr, lorawan.SessionKeys{NwkSKey: nwk, AppSKey: app})
+	}
+
+	return lorarx.New(lorarx.Options{
+		InputRateHz: sampleRate,
+		BW:          lorapkg.Bandwidth(lc.Bandwidth),
+		Oversample:  lc.Oversample,
+		Channels:    chans,
+		Bus:         bus,
+		Log:         log,
+		Keys:        keys,
+	})
+}
+
+// parseLoRaWANKey parses one hex DevAddr (8 digits) + NwkSKey/AppSKey (32
+// digits each), tolerating "0x" prefixes and internal whitespace.
+func parseLoRaWANKey(k config.LoRaWANKeyConfig) (devAddr uint32, nwk, app [16]byte, err error) {
+	clean := func(s string) string {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "0x")
+		s = strings.TrimPrefix(s, "0X")
+		return strings.ReplaceAll(s, " ", "")
+	}
+	da, err := hex.DecodeString(clean(k.DevAddr))
+	if err != nil || len(da) != 4 {
+		return 0, nwk, app, fmt.Errorf("dev_addr %q: want 8 hex digits", k.DevAddr)
+	}
+	devAddr = binary.BigEndian.Uint32(da)
+	nb, err := hex.DecodeString(clean(k.NwkSKey))
+	if err != nil || len(nb) != 16 {
+		return 0, nwk, app, fmt.Errorf("nwk_skey for %s: want 32 hex digits", k.DevAddr)
+	}
+	ab, err := hex.DecodeString(clean(k.AppSKey))
+	if err != nil || len(ab) != 16 {
+		return 0, nwk, app, fmt.Errorf("app_skey for %s: want 32 hex digits", k.DevAddr)
+	}
+	copy(nwk[:], nb)
+	copy(app[:], ab)
+	return devAddr, nwk, app, nil
 }
 
 // dscSpec captures the broker-side wiring info for one configured DSC
