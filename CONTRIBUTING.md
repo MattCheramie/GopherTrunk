@@ -82,11 +82,87 @@ existing code; a few items worth calling out:
 | `make integration` | Daemon end-to-end test (no SDR) — exercises the full IQ-replay path |
 | `make integration-cc-<proto>` | Per-protocol "lights up live trunked reception" check (P25 P1 / P25 P2 / DMR / NXDN / dPMR / EDACS / Motorola / LTR / MPT 1327 / TETRA / YSF) |
 | `make test-dvsi` | DVSI hardware backend tests under `-tags dvsi` |
+| `make test-airspy-real` | Opt-in Airspy R2/Mini hardware validation (enumerate → open → tune/sample-rate/gain → first IQ packet) |
+| `make test-airspy-real-bias` | Same as `test-airspy-real` plus real-hardware bias-tee on/off validation |
+| `make test-airspy-real-diag` | Real Airspy tests plus raw USB control-transfer probe (isolate transport vs driver failures) |
 | `make vet` | `go vet ./...` |
 | `make cross-build` | Static binaries for Linux / macOS / Windows × amd64 / arm64 |
 
 CI runs `make test`, `make integration`, and `make test-dvsi` on
 every PR. A green CI is required before merge.
+
+Real Airspy validation is intentionally opt-in and never runs in CI.
+The package-level test skips unless `GOPHERTRUNK_AIRSPY_REAL=1` is
+set. Optional overrides:
+
+- `GOPHERTRUNK_AIRSPY_REAL_SERIAL` — match one device by serial.
+- `GOPHERTRUNK_AIRSPY_REAL_CENTER_HZ` — center frequency in Hz
+  (default `144390000`).
+- `GOPHERTRUNK_AIRSPY_REAL_RATE_HZ` — sample rate in Hz
+  (default `2500000`).
+- `GOPHERTRUNK_AIRSPY_REAL_GAIN_TENTH_DB` — gain in 0.1 dB, use
+  `-1` for AGC (default `-1`).
+- `GOPHERTRUNK_AIRSPY_REAL_BIAS_TEE` — set to `1` to also run the
+  real-hardware bias-tee on/off test (leaves bias-tee off on exit).
+- `GOPHERTRUNK_AIRSPY_REAL_DIAG` — set to `1` to also run a lower-level
+  raw USB control-transfer probe (`receiver off` + `set sample type`).
+
+### Capturing Windows USB traces with Wireshark (Airspy)
+
+When a device works in other SDR apps but fails in GopherTrunk, we need
+packet-level USB evidence to diff request order and setup fields.
+
+1. Install **Wireshark** and **USBPcap** (USBPcap is offered during the
+   Wireshark installer). Reboot if prompted.
+
+1. Close SDR apps so only one app talks to the Airspy during each capture.
+
+1. Open Wireshark **as Administrator**.
+
+1. Start capture on the USBPcap interface for the controller/hub where the
+   Airspy is attached (usually `\\.\USBPcap1`, `\\.\USBPcap2`, etc.).
+
+1. In Wireshark, apply a display filter to focus on Airspy traffic:
+
+  ```text
+  usb.idVendor == 0x1d50 && usb.idProduct == 0x60a1
+  ```
+
+1. Record a short known-good capture (about 10-20 seconds): start capture,
+   launch a working SDR app, perform open/init (and one start/stop if
+   possible), then stop capture.
+
+1. Record a short GopherTrunk capture (about 10-20 seconds): start capture,
+   then run either:
+
+    ```powershell
+    $env:RTLSDR_DEBUG_USB='1'
+    $env:RTLSDR_DEBUG_USB_CSV='1'
+    $env:GOPHERTRUNK_AIRSPY_REAL='1'
+    $env:GOPHERTRUNK_AIRSPY_REAL_DIAG='1'
+    go test -count=1 -run TestRealHardware_USBControlTransferProbe ./internal/sdr/airspy -v
+    ```
+
+   or your normal daemon start path that reproduces the failure.
+
+1. Save captures as `.pcapng` files with clear names, for example
+   `airspy-good-app-init.pcapng` and `airspy-gophertrunk-init.pcapng`.
+
+1. Export matching GopherTrunk USB trace lines from terminal output:
+   human-readable lines prefixed `rtlsdr-usb [` and CSV lines prefixed
+   `rtlsdr-usb-csv,`.
+
+1. Attach all artifacts to the issue/PR: both `.pcapng` files, the
+   `rtlsdr-usb-csv` log excerpt, the exact command used, and device serial
+   plus Windows version.
+
+Notes:
+
+USB captures can include other peripherals on the same controller; review
+before sharing and redact unrelated traffic if needed.
+
+Keep captures short and focused on device open/init to simplify
+request-by-request diffing.
 
 ## Sending a pull request
 
