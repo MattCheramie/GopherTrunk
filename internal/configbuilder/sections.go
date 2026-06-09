@@ -90,6 +90,9 @@ func Sections() []SectionMeta {
 		{"m17", "M17", "M17",
 			"M17 digital-voice link-layer receiver (decodes link-setup metadata). Simplex calling is commonly 144.975 MHz (2 m) / 433.475 MHz (70 cm).",
 			"M17", docsBase + "m17.html"},
+		{"lora", "LoRa", "LoRa",
+			"Wide-band LoRa decoder. Pin an SDR to an ISM centre frequency (915 MHz US / 868 MHz EU) and split its IQ band into parallel LoRa sub-channels with spreading-factor auto-detection. LoRaWAN frames are MAC-decoded and, with session keys, decrypted.",
+			"LoRa", docsBase + "lora.html"},
 	}
 }
 

@@ -36,6 +36,7 @@ type Config struct {
 	MDC1200        MDC1200Config        `yaml:"mdc1200"`
 	ADSB           ADSBConfig           `yaml:"adsb"`
 	M17            M17Config            `yaml:"m17"`
+	LoRa           LoRaConfig           `yaml:"lora"`
 	Web            WebConfig            `yaml:"web"`
 	Diagnostics    DiagnosticsConfig    `yaml:"diagnostics"`
 	RadioReference RadioReferenceConfig `yaml:"radioreference"`
@@ -203,6 +204,53 @@ type M17Config struct {
 type M17ChannelConfig struct {
 	Serial      string `yaml:"serial"`
 	FrequencyHz uint32 `yaml:"frequency_hz"`
+}
+
+// LoRaConfig configures the wide-band LoRa decoder. Each entry pins an SDR
+// to a centre frequency and splits its IQ band into one or more parallel
+// LoRa sub-channels (a tuner channelizer/DDC bank), each running a
+// dechirp/FFT demodulator with spreading-factor auto-detection. Decoded
+// frames publish on events.KindLoRaFrame; storage.LoRaLog persists them to
+// the lora_log table, the REST endpoint at /api/v1/lora/frames and the
+// /lora web panel render them. When a sub-channel carries the LoRaWAN
+// public sync word (0x34) and matching session keys are supplied, the MAC
+// layer is parsed, the MIC verified and the payload decrypted.
+type LoRaConfig struct {
+	Channels []LoRaChannelConfig `yaml:"channels"`
+}
+
+// LoRaChannelConfig describes one SDR fanned out into LoRa sub-channels.
+// Serial picks the SDR; the daemon tunes it to CenterHz and runs the
+// wide-band receiver against its full IQ stream. Bandwidth applies to every
+// sub-channel (one bank per bandwidth class). Oversample defaults to 2.
+type LoRaChannelConfig struct {
+	Serial      string                 `yaml:"serial"`
+	CenterHz    uint32                 `yaml:"center_hz"`
+	Bandwidth   uint32                 `yaml:"bandwidth"`  // 125000 | 250000 | 500000
+	Oversample  int                    `yaml:"oversample"` // samples per chip; 0 → 2
+	SubChannels []LoRaSubChannelConfig `yaml:"sub_channels"`
+	LoRaWANKeys []LoRaWANKeyConfig     `yaml:"lorawan_keys"`
+}
+
+// LoRaSubChannelConfig is one LoRa carrier within the dongle's IQ band.
+// OffsetHz is the carrier's offset from CenterHz. SpreadingFactor pins the
+// SF (7..12); 0 auto-detects across SF7..12. SyncWord defaults to 0x12
+// (private); set 0x34 for LoRaWAN.
+type LoRaSubChannelConfig struct {
+	OffsetHz        int32  `yaml:"offset_hz"`
+	SpreadingFactor int    `yaml:"spreading_factor"`
+	SyncWord        uint8  `yaml:"sync_word"`
+	Label           string `yaml:"label"`
+}
+
+// LoRaWANKeyConfig is one operator-supplied LoRaWAN device session-key set,
+// keyed by DevAddr. DevAddr / NwkSKey / AppSKey are hex; an optional "0x"
+// prefix and internal whitespace are tolerated. GopherTrunk decrypts only
+// with keys the operator already holds — it performs no key recovery.
+type LoRaWANKeyConfig struct {
+	DevAddr string `yaml:"dev_addr"`
+	NwkSKey string `yaml:"nwk_skey"`
+	AppSKey string `yaml:"app_skey"`
 }
 
 // APRSConfig configures the APRS / AX.25 Bell-202 AFSK receiver.
