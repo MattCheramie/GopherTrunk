@@ -250,6 +250,7 @@ type Server struct {
 	broadcast    BroadcastStatusProvider
 	runtime      RuntimeProvider
 	configWriter ConfigWriter
+	configActiv  ConfigActivator
 	settings     SettingsApplier
 	importer     Importer
 	imports      *importStaging
@@ -534,6 +535,13 @@ type ServerOptions struct {
 	// (returns 503) so daemons started without a -config file don't
 	// pretend the SPA's edits will persist.
 	ConfigWriter ConfigWriter
+	// ConfigActivator, when supplied, enables POST /api/v1/config/activate:
+	// the daemon loads/hot-swaps the config file the operator picks in the
+	// web Config Builder, either reloading in place (hot-applying what it
+	// can) or re-execing into the new file. nil disables the endpoint
+	// (returns 503) — e.g. the standalone `config serve`, which has no
+	// daemon to reconfigure.
+	ConfigActivator ConfigActivator
 	// SettingsApplier is the in-process hot-reload surface invoked
 	// by handleSettingsPatch after the on-disk write succeeds.
 	// Optional: when nil, every field is reported as
@@ -746,6 +754,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		broadcast:      opts.Broadcast,
 		runtime:        opts.Runtime,
 		configWriter:   opts.ConfigWriter,
+		configActiv:    opts.ConfigActivator,
 		settings:       opts.SettingsApplier,
 		importer:       opts.Importer,
 		imports:        newImportStaging(5 * time.Minute),
@@ -1055,6 +1064,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("DELETE /api/v1/config/file", s.gate(s.handleConfigDelete))
 		mux.HandleFunc("POST /api/v1/config/file/rename", s.gate(s.handleConfigRename))
 		mux.HandleFunc("POST /api/v1/config/dir", s.gate(s.handleConfigMkdir))
+		mux.HandleFunc("POST /api/v1/config/activate", s.gate(s.handleConfigActivate))
 		mux.HandleFunc("POST /api/v1/config/parse", s.gate(s.handleConfigParse))
 		mux.HandleFunc("GET /api/v1/config/rr/search", s.handleConfigRRSearch)
 		mux.HandleFunc("GET /api/v1/config/rr/states", s.handleConfigRRStates)

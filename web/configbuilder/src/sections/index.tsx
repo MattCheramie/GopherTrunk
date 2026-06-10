@@ -40,6 +40,7 @@ export interface SectionDef {
 
 export const SECTIONS: SectionDef[] = [
   { key: "trunking", cfgKey: "Trunking", label: "Trunking", render: () => <TrunkingSection /> },
+  { key: "radioreference", cfgKey: "RadioReference", label: "RadioReference Login", render: () => <RadioReferenceSection /> },
   { key: "sdr", cfgKey: "SDR", label: "SDR", render: () => <SDRSection /> },
   { key: "api", cfgKey: "API", label: "API & Web", render: () => <APISection /> },
   { key: "scanner", cfgKey: "Scanner", label: "Scanner", render: () => <ScannerSection /> },
@@ -50,7 +51,6 @@ export const SECTIONS: SectionDef[] = [
   { key: "metrics", cfgKey: "Metrics", label: "Metrics", render: () => <MetricsSection /> },
   { key: "log", cfgKey: "Log", label: "Logging", render: () => <LogSection /> },
   { key: "diagnostics", cfgKey: "Diagnostics", label: "Diagnostics", render: () => <DiagnosticsSection /> },
-  { key: "radioreference", cfgKey: "RadioReference", label: "RadioReference", render: () => <RadioReferenceSection /> },
   { key: "web", cfgKey: "Web", label: "Web UI", render: () => <WebSection /> },
   { key: "tone_out", cfgKey: "ToneOut", label: "Tone-out", render: () => <ToneOutSection /> },
   { key: "broadcast", cfgKey: "Broadcast", label: "Broadcast", render: () => <BroadcastSection /> },

@@ -42,6 +42,9 @@ const LS_KEYS = {
 const SS_KEYS = {
   tokenSession: "gt.token.session",
   lastTab: "gt.ui.lastTab",
+  // Per-tab dismissal of the "daemon has no config — open the Config
+  // Builder?" banner, so it doesn't nag after the operator waves it off.
+  noConfigDismissed: "gt.ui.noConfigDismissed",
 } as const;
 
 export type Theme = "dark" | "monochrome";
@@ -138,6 +141,13 @@ export const prefs = {
   },
   setLastTab(name: string | null) {
     writeSS(SS_KEYS.lastTab, name);
+  },
+
+  noConfigDismissed(): boolean {
+    return readSS(SS_KEYS.noConfigDismissed) === "1";
+  },
+  setNoConfigDismissed(dismissed: boolean) {
+    writeSS(SS_KEYS.noConfigDismissed, dismissed ? "1" : null);
   },
 
   installPromptDismissed(): boolean {

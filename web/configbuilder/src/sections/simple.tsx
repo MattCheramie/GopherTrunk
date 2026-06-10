@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Section } from "../components/Section";
 import {
   BoolField,
@@ -9,8 +8,8 @@ import {
   TextField,
 } from "../components/fields";
 import { ListEditor } from "../components/ListEditor";
+import { RRCredentials } from "../components/RRCredentials";
 import { formatCommaList, parseCommaList } from "../lib/csvList";
-import { api } from "../api/client";
 import { useStore } from "../store/shared";
 import type {
   APIConfig,
@@ -20,7 +19,6 @@ import type {
   GTConfig,
   LogConfig,
   MetricsConfig,
-  RadioReferenceConfig,
   RecordingsConfig,
   RetentionConfig,
   ScannerConfig,
@@ -120,61 +118,12 @@ export function DiagnosticsSection() {
 }
 
 export function RadioReferenceSection() {
-  const [v, set] = useSection("RadioReference");
-  const cfg = v as RadioReferenceConfig;
-  const [verify, setVerify] = useState<{ busy: boolean; ok?: boolean; msg?: string }>({ busy: false });
-
-  // runVerify sends the edited username/password (+ the built-in/overridden app
-  // key) to the server, which calls RadioReference and reports whether the
-  // subscription is premium.
-  const runVerify = async () => {
-    setVerify({ busy: true });
-    try {
-      const r = await api.rrVerify({ key: cfg.APIKey, user: cfg.Username, pass: cfg.Password });
-      if (!r.ok) {
-        setVerify({ busy: false, ok: false, msg: r.fault || "Could not verify the account." });
-      } else if (r.premium) {
-        setVerify({
-          busy: false,
-          ok: true,
-          msg: `Premium subscription active${r.expires ? ` until ${r.expires}` : ""}${r.username ? ` (${r.username})` : ""}.`,
-        });
-      } else {
-        setVerify({
-          busy: false,
-          ok: false,
-          msg: `Logged in${r.username ? ` as ${r.username}` : ""}, but no active premium subscription was found.`,
-        });
-      }
-    } catch (e) {
-      setVerify({ busy: false, ok: false, msg: (e as Error).message });
-    }
-  };
-
   return (
     <Section
       sectionKey="radioreference"
-      title="RadioReference"
+      title="RadioReference Login"
     >
-      <TextField label="API key" value={cfg.APIKey} onChange={(x) => set({ ...cfg, APIKey: x })} />
-      <TextField label="Username" value={cfg.Username} onChange={(x) => set({ ...cfg, Username: x })} />
-      <TextField
-        label="Password"
-        type="password"
-        value={cfg.Password}
-        onChange={(x) => set({ ...cfg, Password: x })}
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <button className="btn" disabled={verify.busy} onClick={runVerify}>
-          {verify.busy ? "Verifying…" : "Verify subscription"}
-        </button>
-        {verify.msg ? (
-          <span className={verify.ok ? "text-sm text-ok" : "text-sm text-err"}>
-            {verify.ok ? "✓ " : "✗ "}
-            {verify.msg}
-          </span>
-        ) : null}
-      </div>
+      <RRCredentials />
     </Section>
   );
 }

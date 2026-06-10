@@ -14,8 +14,6 @@ export function App() {
   const lastSaved = useStore((s) => s.lastSaved);
   const setError = useStore((s) => s.setError);
   const dismissError = useStore((s) => s.dismissError);
-  const token = useStore((s) => s.token);
-  const setTok = useStore((s) => s.setToken);
 
   const [active, setActive] = useState("trunking");
   const [showPreview, setShowPreview] = useState(true);
@@ -110,13 +108,6 @@ export function App() {
               </span>
             )
           ) : null}
-          <input
-            className="input w-48"
-            type="password"
-            placeholder="API token (if required)"
-            value={token}
-            onChange={(e) => setTok(e.target.value)}
-          />
           <button className="btn-ghost" onClick={() => setShowPreview((p) => !p)}>
             {showPreview ? "Hide preview" : "Show preview"}
           </button>

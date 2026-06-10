@@ -118,14 +118,15 @@ export const api = {
     req<RRVerifyResponse>("POST", "/config/rr/verify", undefined, rrHeaders(creds)),
 };
 
-// RRCreds are the RadioReference credentials the user is editing, sent on the
+// RRCreds is the RadioReference login the user is editing, sent on the
 // browse/verify calls as X-RR-* headers so what they type is what reaches RR
-// (and verifies their premium subscription) — kept out of the URL/query.
-export type RRCreds = { key?: string; user?: string; pass?: string };
+// (and verifies their premium subscription) — kept out of the URL/query. The
+// SOAP app key is baked into the binary at build time, so it is never sent
+// from the browser.
+export type RRCreds = { user?: string; pass?: string };
 
 function rrHeaders(c?: RRCreds): Record<string, string> {
   const h: Record<string, string> = {};
-  if (c?.key?.trim()) h["X-RR-Key"] = c.key.trim();
   if (c?.user?.trim()) h["X-RR-User"] = c.user.trim();
   if (c?.pass?.trim()) h["X-RR-Pass"] = c.pass.trim();
   return h;

@@ -314,6 +314,33 @@ export interface SettingsResponse {
   runtime: RuntimeDTO;
 }
 
+// ConfigFileInfo describes one discovered config file (GET
+// /api/v1/config/files), used by the Settings config-file picker.
+export interface ConfigFileInfo {
+  path: string;
+  dir: string;
+  name: string;
+  size: number;
+  modified: string; // RFC3339
+  valid: boolean;
+  error?: string;
+}
+
+export interface ConfigListResponse {
+  dirs: string[];
+  files: ConfigFileInfo[];
+}
+
+// ConfigActivateResponse is the outcome of loading/hot-swapping the active
+// config file (POST /api/v1/config/activate).
+export interface ConfigActivateResponse {
+  path: string;
+  mode: "reload" | "restart";
+  applied?: string[];
+  restart_required?: string[];
+  restarting?: boolean;
+}
+
 // ParsedSystemDTO is one row in an import preview.
 export interface ParsedSystemDTO {
   name: string;

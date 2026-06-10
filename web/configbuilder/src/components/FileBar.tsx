@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useStore } from "../store/shared";
+import { BrowseConfigs } from "./BrowseConfigs";
 import { downloadName, joinPath, pathCollides } from "../lib/fileName";
 import type { ConfigFileInfo } from "../api/types";
 
@@ -19,6 +20,7 @@ export function FileBar() {
   const [dirs, setDirs] = useState<string[]>([]);
   const [openMenu, setOpenMenu] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
 
   const refresh = async () => {
     try {
@@ -120,6 +122,15 @@ export function FileBar() {
       </div>
 
       <button
+        className="btn-ghost"
+        disabled={busy}
+        title="Browse available and previously-created config files"
+        onClick={() => setBrowseOpen(true)}
+      >
+        Browse…
+      </button>
+
+      <button
         className="btn"
         disabled={busy}
         onClick={async () => {
@@ -176,6 +187,8 @@ export function FileBar() {
         {path ? path : "untitled (new config)"}
         {dirty ? " — unsaved changes" : ""}
       </span>
+
+      {browseOpen ? <BrowseConfigs onClose={() => setBrowseOpen(false)} /> : null}
 
       {saveOpen ? (
         <SaveDialog

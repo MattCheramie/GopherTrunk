@@ -340,8 +340,26 @@ func runDaemon(args []string) {
 
 	// Wait for the daemon goroutine to finish (SIGINT/SIGTERM →
 	// ctx cancels → Run unwinds → returns).
-	if err := <-runErr; err != nil && !errors.Is(err, context.Canceled) {
-		logErr(logger, verboseErrors, "daemon exited", err)
+	runExitErr := <-runErr
+
+	// Config hot-swap with "restart" mode: the operator picked a new
+	// config file in the web Config Builder and asked for a full restart.
+	// Tear the daemon down, free the single-instance lock + SDRs, then
+	// re-exec into the new -config so every field (SDR, systems, …) takes
+	// effect. performRestart replaces the process image on success.
+	if newPath := d.RestartPath(); newPath != "" {
+		d.Close()
+		releaseLock()
+		logger.Info("restarting into new config", "path", newPath)
+		if err := performRestart(newPath); err != nil {
+			logErr(logger, verboseErrors, "config restart failed", err)
+			os.Exit(1)
+		}
+		return // unreachable on success (process image replaced)
+	}
+
+	if runExitErr != nil && !errors.Is(runExitErr, context.Canceled) {
+		logErr(logger, verboseErrors, "daemon exited", runExitErr)
 		os.Exit(1)
 	}
 }

@@ -499,6 +499,11 @@ type Daemon struct {
 	mu       sync.Mutex
 	fatalErr error
 	cancel   context.CancelFunc
+	// restartTo, when non-empty, is the config path the daemon should
+	// re-exec into after Run unwinds — set by ActivateRestart when the
+	// operator hot-swaps the config file with "restart" mode. Guarded
+	// by mu and read by main after the run goroutine returns.
+	restartTo string
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -1955,10 +1960,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// started with a -config (otherwise there's no file to write
 		// back to).
 		if d.writer != nil {
-			opts.ConfigWriter = d.writer
+			// Pass the daemon itself as the writer (not the concrete
+			// d.writer) so a config hot-swap that re-points the writer is
+			// reflected by later settings edits.
+			opts.ConfigWriter = d
 			opts.SettingsApplier = newDaemonSettingsApplier(d, version)
 			opts.Importer = newDaemonImporter(d)
 		}
+		// Config hot-swap (reload/restart) from the web Config Builder.
+		// Wired unconditionally so a daemon started on built-in defaults
+		// can still load a freshly-created config file (restart mode
+		// re-execs with -config; reload mode installs the writer).
+		opts.ConfigActivator = d
 		// Embed the SPA when the build linked in real assets
 		// (see web/embed.go). HasAssets is false for fresh
 		// checkouts without `make web-build` — the launcher falls

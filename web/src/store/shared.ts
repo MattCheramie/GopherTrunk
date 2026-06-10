@@ -47,6 +47,11 @@ interface SharedState {
    *  nav bar filters these out. Sourced from /api/v1/runtime. */
   hiddenTabs: string[];
 
+  /** Absolute path of the config.yaml backing the daemon, or "" when it
+   *  runs on built-in defaults (no -config). null until the runtime
+   *  snapshot has been fetched. Sourced from /api/v1/runtime. */
+  configPath: string | null;
+
   /** Last error surfaced from any request, for the toast strip. */
   lastError: string | null;
 
@@ -64,6 +69,7 @@ interface SharedState {
   setDevices(d: DeviceDTO[]): void;
   setScanner(s: ScannerStatusDTO | null): void;
   setHiddenTabs(tabs: string[]): void;
+  setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
   setError(msg: string | null): void;
   reset(): void;
@@ -89,6 +95,7 @@ export const useShared = create<SharedState>((set, get) => ({
   events: [],
   eventCap: 500,
   hiddenTabs: [],
+  configPath: null,
 
   lastError: null,
 
@@ -136,6 +143,9 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setHiddenTabs(tabs) {
     set({ hiddenTabs: tabs });
+  },
+  setConfigPath(path) {
+    set({ configPath: path });
   },
   appendEvents(evs) {
     if (evs.length === 0) return;
@@ -191,6 +201,7 @@ export const useShared = create<SharedState>((set, get) => ({
       events: [],
       mutations: null,
       hiddenTabs: [],
+      configPath: null,
       lastError: null,
     });
   },

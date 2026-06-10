@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { api, HTTPError } from "./api/client";
 import { openEventStream } from "./api/events";
@@ -37,6 +37,7 @@ import { Systems } from "./panels/Systems";
 import { Talkgroups } from "./panels/Talkgroups";
 import { Tones } from "./panels/Tones";
 import { useShared } from "./store/shared";
+import { prefs } from "./store/prefs";
 
 const TABS: Tab[] = [
   { to: "/dashboard", label: "Dashboard", icon: "▤" },
@@ -81,10 +82,19 @@ export function App() {
   const setWSStatus = useShared((s) => s.setWSStatus);
   const hiddenTabs = useShared((s) => s.hiddenTabs);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
+  const setConfigPath = useShared((s) => s.setConfigPath);
+  const configPath = useShared((s) => s.configPath);
   const appendEvents = useShared((s) => s.appendEvents);
   const lastError = useShared((s) => s.lastError);
   const setError = useShared((s) => s.setError);
   const navigate = useNavigate();
+
+  // No-config nudge: when the daemon runs without a -config file
+  // (config_path === ""), offer the Config Builder. Dismissal is
+  // per-tab so it doesn't nag after the operator waves it off.
+  const [noConfigDismissed, setNoConfigDismissed] = useState(
+    prefs.noConfigDismissed(),
+  );
 
   // On mount, if we already have a server URL stored, try to validate
   // and skip the connect screen.
@@ -123,11 +133,16 @@ export function App() {
       .catch(() => setMutations(null));
 
     // Pull the runtime snapshot once to learn which nav tabs the
-    // operator turned off via web.tabs in config. On failure we leave
-    // the nav untouched (everything visible) rather than blank it.
+    // operator turned off via web.tabs in config, and whether a config
+    // file backs the daemon (empty config_path → offer the Config
+    // Builder). On failure we leave the nav untouched (everything
+    // visible) rather than blank it.
     api
       .runtime(cfg)
-      .then((rt) => setHiddenTabs(rt.hidden_tabs ?? []))
+      .then((rt) => {
+        setHiddenTabs(rt.hidden_tabs ?? []);
+        setConfigPath(rt.config_path ?? "");
+      })
       .catch(() => setHiddenTabs([]));
 
     const stream = openEventStream(cfg, {
@@ -145,6 +160,7 @@ export function App() {
     setMutations,
     setWSStatus,
     setHiddenTabs,
+    setConfigPath,
   ]);
 
   // A hidden tab is dropped from both the main strip and the desktop
@@ -169,6 +185,30 @@ export function App() {
   return (
     <div className="min-h-full flex flex-col">
       <TabBar tabs={visibleTabs} />
+
+      {configPath === "" && !noConfigDismissed && (
+        <div className="flex items-start gap-2 border-b border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
+          <span className="flex-1">
+            No config file is loaded — the daemon is running on built-in
+            defaults. Open the Config Builder to create or load one.
+          </span>
+          <button
+            className="btn-ghost shrink-0 text-xs"
+            onClick={() => window.open("/config/", "_blank", "noopener")}
+          >
+            Open Config Builder ↗
+          </button>
+          <button
+            className="shrink-0 text-xs underline"
+            onClick={() => {
+              prefs.setNoConfigDismissed(true);
+              setNoConfigDismissed(true);
+            }}
+          >
+            dismiss
+          </button>
+        </div>
+      )}
 
       {/* Desktop overflow tabs sit beneath the main strip so the
           bottom-nav-friendly four-tab limit still leaves room for

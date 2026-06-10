@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("../api/client", () => ({
-  api: { runtime: vi.fn() },
+  api: { runtime: vi.fn(), configFiles: vi.fn() },
   HTTPError: class HTTPError extends Error {
     status: number;
     body: string;
@@ -63,6 +63,9 @@ describe("Settings inline-edit (Live config)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    // The config-file picker lists files on mount; default to an empty
+    // list so it stays quiet for the live-config tests.
+    vi.mocked(api.configFiles).mockResolvedValue({ dirs: [], files: [] });
   });
 
   it("hides editable rows and shows the no-config banner when daemon has no -config", async () => {

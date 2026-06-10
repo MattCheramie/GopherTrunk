@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, HTTPError } from "../api/client";
 import { writes } from "../api/write";
-import type { RuntimeDTO, SettingsPatch } from "../api/types";
+import type {
+  ConfigActivateResponse,
+  ConfigFileInfo,
+  RuntimeDTO,
+  SettingsPatch,
+} from "../api/types";
 import { prefs, type Theme } from "../store/prefs";
 import {
   selectCanMutate,
@@ -109,6 +114,8 @@ export function Settings() {
           available.
         </p>
       </section>
+
+      <ConfigFileSection />
 
       <LiveConfigSection />
 
@@ -431,4 +438,206 @@ function parseBool(v: string): boolean {
       return false;
   }
   throw new Error("expected true/false (also accepts on/off, yes/no, 1/0)");
+}
+
+// --- Config file (load / hot-swap) ---
+//
+// ConfigFileSection lists the config files the daemon discovered and lets
+// the operator switch the active one. "Reload" hot-applies what it can and
+// flags the rest as restart-required; "Restart" re-execs the daemon into the
+// new file (every field takes effect) — the connection drops, so we poll
+// health and reload the page once it's back.
+function ConfigFileSection() {
+  const cfg = useShared(selectClientConfig);
+  const canMutate = useShared(selectCanMutate);
+  const currentPath = useShared((s) => s.configPath);
+
+  const [files, setFiles] = useState<ConfigFileInfo[] | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [pending, setPending] = useState<string | null>(null); // path awaiting reload/restart choice
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ConfigActivateResponse | null>(null);
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const r = await api.configFiles(cfg);
+        if (!cancel) setFiles(r.files ?? []);
+      } catch (e) {
+        // 503 → the config-builder subsystem isn't wired (shouldn't happen
+        // on the daemon, but be defensive); hide the section in that case.
+        if (!cancel) {
+          if (e instanceof HTTPError && e.status === 503) setUnavailable(true);
+          else setError((e as Error).message);
+          setFiles([]);
+        }
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [cfg]);
+
+  if (unavailable) return null;
+
+  async function activate(path: string, mode: "reload" | "restart") {
+    setError(null);
+    setResult(null);
+    setBusy(true);
+    try {
+      const r = await writes.activateConfig(cfg, path, mode);
+      setPending(null);
+      if (mode === "restart") {
+        setRestarting(true);
+        void waitForDaemonAndReload(cfg);
+      } else {
+        setResult(r);
+      }
+    } catch (e) {
+      if (e instanceof HTTPError) setError(e.message);
+      else setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel p-4 space-y-3">
+      <h3 className="panel-title">Config file</h3>
+      <p className="text-xs text-muted">
+        {currentPath
+          ? <>Active: <code className="font-mono">{currentPath}</code></>
+          : "The daemon is running on built-in defaults (no config file)."}
+      </p>
+
+      {!canMutate && (
+        <div className="text-sm panel bg-warn/15 border-warn/40 text-warn p-3">
+          Mutations are disabled — daemon auth blocks switching config files.
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="text-sm panel bg-err/15 border-err/40 text-err p-3">
+          {error}
+        </div>
+      )}
+      {restarting && (
+        <div className="text-sm panel bg-accent/15 border-accent/40 p-3">
+          Daemon restarting into the new config… this page will reload once
+          it's back.
+        </div>
+      )}
+      {result && (
+        <div className="text-sm panel bg-ok/15 border-ok/40 p-3 space-y-1">
+          <div>
+            Loaded <code className="font-mono">{result.path}</code>.
+          </div>
+          {result.applied && result.applied.length > 0 && (
+            <div>Applied live: {result.applied.join(", ")}.</div>
+          )}
+          {result.restart_required && result.restart_required.length > 0 && (
+            <div className="text-warn">
+              Restart required for: {result.restart_required.join(", ")} — use
+              “Restart” to apply these.
+            </div>
+          )}
+        </div>
+      )}
+
+      {files === null ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : files.length === 0 ? (
+        <p className="text-sm text-muted">
+          No config files found in the discovery directories.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {files.map((f) => (
+            <li
+              key={f.path}
+              className={`rounded border p-2 text-sm ${
+                f.path === currentPath ? "border-accent/50 bg-accent/10" : "border-panel"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0">
+                  <span className={f.valid ? "" : "text-warn"}>
+                    {f.valid ? "" : "⚠ "}
+                    {f.name}
+                  </span>
+                  {f.path === currentPath && (
+                    <span className="ml-2 text-xs text-accent">active</span>
+                  )}
+                  <span className="block truncate text-xs text-muted">{f.dir}</span>
+                </span>
+                {f.path !== currentPath &&
+                  (pending === f.path ? (
+                    <span className="flex shrink-0 gap-1">
+                      <button
+                        className="btn-ghost text-xs"
+                        disabled={busy || !f.valid}
+                        title={f.valid ? "Reload live (hot-apply what it can)" : "Fix validation errors first"}
+                        onClick={() => activate(f.path, "reload")}
+                      >
+                        Reload
+                      </button>
+                      <button
+                        className="btn-ghost text-xs text-warn"
+                        disabled={busy || !f.valid}
+                        title="Restart the daemon into this config (drops the session briefly)"
+                        onClick={() => activate(f.path, "restart")}
+                      >
+                        Restart
+                      </button>
+                      <button
+                        className="text-xs underline"
+                        disabled={busy}
+                        onClick={() => setPending(null)}
+                      >
+                        cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className="btn-ghost shrink-0 text-xs"
+                      disabled={!canMutate || busy}
+                      onClick={() => {
+                        setResult(null);
+                        setError(null);
+                        setPending(f.path);
+                      }}
+                    >
+                      Load this config
+                    </button>
+                  ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// waitForDaemonAndReload polls /api/v1/health until the restarted daemon is
+// reachable again (or a cap is hit), then reloads the page so the SPA
+// re-bootstraps cleanly against the new config.
+async function waitForDaemonAndReload(cfg: { baseURL: string; token: string | null }) {
+  const deadline = Date.now() + 60_000;
+  // Give the daemon a moment to tear down before we start probing.
+  await new Promise((r) => setTimeout(r, 1_500));
+  while (Date.now() < deadline) {
+    try {
+      await api.health(cfg);
+      window.location.reload();
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1_500));
+    }
+  }
+  // Gave up waiting — reload anyway so the operator sees the connect screen
+  // (or a recovered session) rather than a stuck "restarting…" banner.
+  window.location.reload();
 }
