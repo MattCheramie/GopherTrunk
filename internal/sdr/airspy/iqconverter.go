@@ -50,13 +50,13 @@ var hbKernel = [hbTaps]float32{
 
 // iqConverter holds the running state of the real-to-IQ conversion.
 type iqConverter struct {
-	avg     float32          // leaky DC-blocker accumulator
-	phase   int              // Fs/4 mix phase, 0..3, persists across packets
-	iwin    [hbTaps]float32  // in-phase FIR window (newest written at iwinPos)
-	iwinPos int              // next write position in iwin
-	lastI   float32          // in-phase output awaiting its paired quadrature
-	qline   [hbHalf]float32  // quadrature delay line
-	qpos    int              // delay-line read/write cursor
+	avg     float32         // leaky DC-blocker accumulator
+	phase   int             // Fs/4 mix phase, 0..3, persists across packets
+	iwin    [hbTaps]float32 // in-phase FIR window (newest written at iwinPos)
+	iwinPos int             // next write position in iwin
+	lastI   float32         // in-phase output awaiting its paired quadrature
+	qline   [hbHalf]float32 // quadrature delay line
+	qpos    int             // delay-line read/write cursor
 }
 
 // newIQConverter returns a converter in its reset state. The zero value is a
