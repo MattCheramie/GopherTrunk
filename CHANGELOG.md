@@ -33,6 +33,16 @@ for tagged releases.
 
 ### Added
 
+- **DC-spike-avoidance LO offset on the live control channel** (#402). A new
+  opt-in `dc_avoid` flag (with optional `dc_avoid_offset_hz`) on a control
+  SDR's `sdr.devices` entry tunes the hardware LO a fixed offset *below* the
+  control-channel frequency and mixes the channel back to baseband in the
+  down-converter — so the live decode runs off the front-end DC spur, 1/f
+  noise and its own I/Q-imbalance image, the same offset tuning SDRTrunk/OP25
+  use. This closes the live-vs-replay gap on marginal urban sites where the
+  channel decodes cleanly off-channel (in replay) but accumulates TSBK-CRC /
+  NID-BCH failures live with the channel sitting at zero-IF. Off by default
+  (`dc_avoid: false`); `dc_avoid_offset_hz: 0` auto-selects `sample_rate/4`.
 - **Per-call voice audio-quality telemetry** for diagnosing decode/synthesis
   problems. The IMBE decoder accumulates a `VoiceStats` summary (pitch/f0,
   harmonic count, voiced fraction, AGC gain, output peak/RMS/crest, and

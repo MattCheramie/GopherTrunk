@@ -8,7 +8,7 @@ package configbuilder
 // tests, so adding a protocol knob is a one-line, reviewed decision.
 var AdvancedFields = map[string][]string{
 	"DeviceConfig": {
-		"BlogV4", "BlogV4Lite", "IQCorrect", "IQInvert",
+		"BlogV4", "BlogV4Lite", "IQCorrect", "IQInvert", "DCAvoid", "DCAvoidOffsetHz",
 	},
 	"SystemConfig": {
 		// TETRA

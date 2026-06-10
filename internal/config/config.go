@@ -890,6 +890,22 @@ type DeviceConfig struct {
 	// capture with `gophertrunk replay -conjugate -diag` before enabling.
 	// Equivalent to the replay subcommand's -conjugate flag (issue #264).
 	IQInvert bool `yaml:"iq_invert"`
+
+	// DCAvoid enables live LO-offset (DC-spike-avoidance) tuning on a
+	// control-role SDR (issue #402): the hardware LO is tuned below the
+	// control-channel frequency and the channel is mixed back to baseband in
+	// the down-converter, off the front-end DC spur, 1/f noise and the
+	// channel's own I/Q-imbalance image (all of which corrupt a C4FM channel
+	// sitting at zero-IF on an RTL-SDR). This is the same offset tuning
+	// SDRTrunk/OP25 apply. Off by default; enable per control device and
+	// confirm the tsbk-crc/nid-bch rates drop while the channel stays locked.
+	DCAvoid bool `yaml:"dc_avoid"`
+
+	// DCAvoidOffsetHz pins the LO offset in Hz used when DCAvoid is set.
+	// 0 (the default) auto-selects sample_rate/4. Must be < sample_rate/2;
+	// ignored when DCAvoid is false, for non-control roles, or when the
+	// delivered sample rate is at/below the channel rate (no room to offset).
+	DCAvoidOffsetHz int `yaml:"dc_avoid_offset_hz"`
 }
 
 // DeviceChannelConfig is one repeater carrier carried by a
@@ -1539,6 +1555,15 @@ func (c Config) validateSDR() []error {
 			if err := validateWidebandDevice(i, d, c.SDR.SampleRate, c.Trunking.Systems); err != nil {
 				errs = append(errs, err)
 				continue
+			}
+		}
+		if d.DCAvoidOffsetHz != 0 {
+			if d.DCAvoidOffsetHz < 0 {
+				errs = append(errs, fmt.Errorf("sdr.devices[%d]: dc_avoid_offset_hz must be >= 0 (0 = auto)", i))
+			} else if c.SDR.SampleRate != 0 && d.DCAvoidOffsetHz >= int(c.SDR.SampleRate)/2 {
+				errs = append(errs, fmt.Errorf(
+					"sdr.devices[%d]: dc_avoid_offset_hz (%d) must be < sample_rate/2 (%d)",
+					i, d.DCAvoidOffsetHz, int(c.SDR.SampleRate)/2))
 			}
 		}
 		if d.Serial == "" {
