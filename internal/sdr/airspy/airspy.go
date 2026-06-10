@@ -8,9 +8,12 @@
 // documented follow-up; the in-package tests exercise the wire
 // protocol against a usb.MockTransport.
 //
-// Sample format: this driver pins the device to INT16_IQ — signed
-// 16-bit interleaved IQ pairs (4 bytes per sample) — and converts each
-// pair to a complex64 with components in [-1, 1].
+// Sample format: the Airspy R2 / Mini are real-sampling receivers — the
+// firmware streams bare ADC samples (unpacked little-endian uint16, 12-bit,
+// DC at 2048) at twice the configured IQ rate. This driver converts that real
+// stream to complex64 baseband on the host via the [iqConverter] (an Fs/4
+// translation plus a half-band Hilbert pair, decimating by two), matching what
+// libairspy does in its IQ sample modes.
 package airspy
 
 import (
@@ -44,12 +47,6 @@ const (
 	reqSetMixerAGC    uint8 = 18
 	reqGPIOWrite      uint8 = 21
 	reqGetSamplerates uint8 = 25
-)
-
-// Sample-type values for reqSetSampleType.
-const (
-	sampleTypeFloat32IQ uint16 = 0
-	sampleTypeInt16IQ   uint16 = 2
 )
 
 const (
@@ -212,12 +209,6 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 	return dev, nil
 }
 
-func setSampleTypeInt16(usb.Transport) error {
-	// libairspy no longer issues a USB command here; it keeps sample type
-	// as host-side conversion state.
-	return nil
-}
-
 func (d *Driver) refreshDescriptor(current usb.Descriptor) (usb.Descriptor, bool) {
 	list, err := d.enum.List(vidAirspy, pidAirspy)
 	if err != nil || len(list) == 0 {
@@ -255,7 +246,8 @@ type Device struct {
 	mu        sync.Mutex
 	closed    bool
 	streaming bool
-	rates     []uint32 // supported sample rates, Hz, descending order
+	rates     []uint32     // supported sample rates, Hz, descending order
+	cnv       *iqConverter // real-to-IQ converter, fresh per stream
 }
 
 // Info implements sdr.Device.
@@ -439,15 +431,10 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.streaming = true
 	d.mu.Unlock()
 
-	// Apply INT16_IQ at stream start rather than open time. This keeps
-	// Open resilient on hosts that reject early vendor OUT transfers,
-	// while still pinning the wire format before bulk IQ starts.
-	if err := setSampleTypeInt16(d.t); err != nil {
-		d.mu.Lock()
-		d.streaming = false
-		d.mu.Unlock()
-		return nil, fmt.Errorf("airspy: set sample type: %w", err)
-	}
+	// Fresh real-to-IQ converter per stream so filter memory never carries
+	// over from a previous session. The device streams bare real samples;
+	// the converter turns them into complex baseband (see iqconverter.go).
+	d.cnv = newIQConverter()
 
 	if err := d.setReceiver(receiverModeOn); err != nil {
 		d.mu.Lock()
@@ -458,7 +445,7 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 
 	out := make(chan []complex64, 8)
 	onPacket := func(buf []byte) {
-		samples := decodeInt16IQ(buf)
+		samples := d.cnv.processRaw(buf)
 		select {
 		case out <- samples:
 		case <-ctx.Done():
@@ -552,17 +539,4 @@ func (d *Device) fetchSampleRates() ([]uint32, error) {
 		rates[i] = binary.LittleEndian.Uint32(listBytes[4*i:])
 	}
 	return rates, nil
-}
-
-// decodeInt16IQ converts a libairspy INT16_IQ payload (interleaved
-// little-endian signed 16-bit I,Q) into normalised complex64.
-func decodeInt16IQ(buf []byte) []complex64 {
-	n := len(buf) / 4
-	out := make([]complex64, n)
-	for i := 0; i < n; i++ {
-		iv := int16(binary.LittleEndian.Uint16(buf[4*i:]))
-		qv := int16(binary.LittleEndian.Uint16(buf[4*i+2:]))
-		out[i] = complex(float32(iv)/32768, float32(qv)/32768)
-	}
-	return out
 }
