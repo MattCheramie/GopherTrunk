@@ -140,6 +140,18 @@ type Decoder struct {
 	// resets to 0 on every good non-silent frame.
 	badFrameCount int
 
+	// segFadeRemaining is the number of upcoming good frames to fade in
+	// (post-AGC) at a segment (re)start — stream onset and the first good
+	// frame after a silence-window or idle-mute frame. Without it the first
+	// synthesized frame of a segment starts from reset state (all harmonics
+	// phase-aligned at n=0, a broadband HF impulse) and renders at full AGC
+	// target, producing the reported high-pitched onset squeaks. Armed to
+	// len(recoveryRampFactors) at those restarts; the post-AGC ramp reuses
+	// recoveryRampFactors. Distinct from recoveryFramesRemaining (the
+	// bad-streak recovery, which fades via pre-synth amplitude scaling with
+	// the AGC frozen) so the two never double-apply.
+	segFadeRemaining int
+
 	// recoveryFramesRemaining is the number of upcoming good frames
 	// that should run through the recovery ramp. Set to
 	// len(recoveryRampFactors) by the bad-streak budget-exhaust
@@ -231,6 +243,8 @@ func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 		// noise source while staying deterministic for a given seed.
 		phaseRng: rand.New(rand.NewSource(seed + phaseRngSeedOffset)),
 		agc:      mbe.NewAGC(cfg),
+		// Fade in the first frames of the very first segment (stream onset).
+		segFadeRemaining: len(recoveryRampFactors),
 	}
 }
 
@@ -330,6 +344,9 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.dc.Reset()
 		d.clearLastGood()
 		d.recoveryFramesRemaining = len(recoveryRampFactors)
+		// The bad-streak recovery ramp is this segment's fade-in; don't also
+		// run the post-AGC segment fade (avoid double-fading).
+		d.segFadeRemaining = 0
 		// Bad-streak clear ends the current voiced segment — re-arm the
 		// onset idle-mute so the next over opens without a buzz leak.
 		d.voiceStarted = false
@@ -351,8 +368,11 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.dc.Reset()
 		d.clearLastGood()
 		// Silence window marks a transmission gap — re-arm the onset
-		// idle-mute so the next over opens without a buzz leak.
+		// idle-mute so the next over opens without a buzz leak, and fade the
+		// next segment in so its first frame doesn't blip at full scale.
 		d.voiceStarted = false
+		d.segFadeRemaining = len(recoveryRampFactors)
+		d.recoveryFramesRemaining = 0
 		// Silence/OA-tail frame: bypass the (reset) DC blocker so the tail's
 		// non-overlap region stays clean; go straight to the AGC.
 		d.agc.Apply(pcm, out, true)
@@ -371,6 +391,9 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.state.Reset()
 		d.dc.Reset()
 		d.clearLastGood()
+		// Idle-tone gap — fade the next segment in so it doesn't blip.
+		d.segFadeRemaining = len(recoveryRampFactors)
+		d.recoveryFramesRemaining = 0
 		// Idle-tone mute / OA-tail frame: bypass the (reset) DC blocker.
 		d.agc.Apply(pcm, out, true)
 		d.stats.idleMuted++
@@ -439,6 +462,19 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	d.lastGoodM = M
 
 	d.applyOutput(pcm, out, recoveryFreezeAGC)
+	// Segment-start fade-in (post-AGC): attenuate the first frames of a new
+	// segment so the onset (a phase-aligned, HF-weighted impulse synthesized
+	// from reset state) doesn't blip at full scale — the high-pitched-squeak
+	// fix. Applied post-AGC so it's audible regardless of envelope state and
+	// works at true onset (env==0 still seeds normally). Skipped while the
+	// bad-streak recovery ramp is handling its own fade.
+	if !recoveryFreezeAGC && d.segFadeRemaining > 0 {
+		f := recoveryRampFactors[len(recoveryRampFactors)-d.segFadeRemaining]
+		for i, s := range out {
+			out[i] = int16(float64(s) * f)
+		}
+		d.segFadeRemaining--
+	}
 	d.accumGood(m, d.agc.LastGain())
 	d.accumStats(out)
 	return out, nil
@@ -658,6 +694,7 @@ func (d *Decoder) Reset() {
 	d.frameErrs = 0
 	d.clearLastGood()
 	d.recoveryFramesRemaining = 0
+	d.segFadeRemaining = len(recoveryRampFactors)
 	d.lowB0RunCount = 0
 	d.voiceStarted = false
 }

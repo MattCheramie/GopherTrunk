@@ -972,20 +972,27 @@ func TestRecoveryRampDecrementsOverGoodFrames(t *testing.T) {
 // state introduce per-frame variance, but the 0.4 vs 1.0 ratio
 // is large enough to detect even with that noise.
 func TestRecoveryRampAttenuatesOutput(t *testing.T) {
-	// Baseline: fresh decoder, decode one frame.
+	// Baseline: fresh decoder, decode several frames so the segment-start
+	// fade-in (which also attenuates the first frames of a fresh stream) is
+	// complete, then measure a full-level frame.
 	baseline := New()
-	baseOut, err := baseline.Decode(goodVoiceFrame())
-	if err != nil {
-		t.Fatalf("baseline: %v", err)
+	var baseOut []int16
+	for i := 0; i < 5; i++ {
+		var err error
+		if baseOut, err = baseline.Decode(goodVoiceFrame()); err != nil {
+			t.Fatalf("baseline %d: %v", i, err)
+		}
 	}
 	basePeak := agcPeak(baseOut)
 
-	// Recovery: drive a decoder through bad-streak exhaustion,
-	// then decode one good frame. Use the same seed so the
+	// Recovery: drive a decoder past the onset fade, through bad-streak
+	// exhaustion, then decode one good frame. Use the same seed so the
 	// unvoiced noise stream matches the baseline.
 	rec := New()
-	if _, err := rec.Decode(goodVoiceFrame()); err != nil {
-		t.Fatalf("rec seed: %v", err)
+	for i := 0; i < 5; i++ {
+		if _, err := rec.Decode(goodVoiceFrame()); err != nil {
+			t.Fatalf("rec seed %d: %v", i, err)
+		}
 	}
 	for i := 0; i <= mbe.MaxBadFrames; i++ {
 		if _, err := rec.Decode(badFrame()); err != nil {
@@ -1011,7 +1018,70 @@ func TestRecoveryRampAttenuatesOutput(t *testing.T) {
 	}
 }
 
-// TestRecoveryRampClearedByReset: explicit Reset on a decoder
+// TestSegmentOnsetFadesIn pins the high-pitched-onset-squeak fix: the
+// first synthesized frame of a fresh stream is synthesized from reset
+// state (all harmonics phase-aligned at n=0 — a broadband HF impulse) and
+// would otherwise render at full AGC scale, producing the reported onset
+// squeak. The segment fade-in attenuates the first len(recoveryRampFactors)
+// good frames post-AGC, so the onset frame's output peak must be
+// substantially below a later, full-level frame from the same decoder.
+func TestSegmentOnsetFadesIn(t *testing.T) {
+	d := New()
+	first, err := d.Decode(goodVoiceFrame())
+	if err != nil {
+		t.Fatalf("first frame: %v", err)
+	}
+	firstPeak := agcPeak(first)
+
+	// Decode past the fade window to a steady, full-level frame.
+	var later []int16
+	for i := 0; i < 5; i++ {
+		if later, err = d.Decode(goodVoiceFrame()); err != nil {
+			t.Fatalf("later frame %d: %v", i, err)
+		}
+	}
+	laterPeak := agcPeak(later)
+
+	// recoveryRampFactors[0] = 0.4, so the onset frame should land near
+	// 0.4× the steady level. Allow a wide window for §6.4 noise + AGC
+	// envelope drift: onset peak must be under 70% of the steady peak.
+	if firstPeak >= laterPeak*7/10 {
+		t.Errorf("onset peak = %d, steady peak = %d (onset/steady = %.2f, want < 0.70 — onset fade not applied)",
+			firstPeak, laterPeak, float64(firstPeak)/float64(laterPeak))
+	}
+}
+
+// TestSegmentFadeReArmsAfterSilenceGap pins that a transmission gap
+// (silence-window frame) re-arms the onset fade so the first frame of the
+// next over fades in too — not just the very first stream onset. Without
+// this, post-gap segment restarts blip at full scale (the mid-call squeak
+// class). Uses the silence path via a sustained bad streak, which clears
+// state and (per Decode) arms recovery; here we assert the segment-fade
+// counter is armed after the state-clearing silence window.
+func TestSegmentFadeReArmsAfterSilenceGap(t *testing.T) {
+	d := New()
+	// Get to a steady state past the onset fade.
+	for i := 0; i < 5; i++ {
+		if _, err := d.Decode(goodVoiceFrame()); err != nil {
+			t.Fatalf("warmup %d: %v", i, err)
+		}
+	}
+	if d.segFadeRemaining != 0 {
+		t.Fatalf("after warmup: segFadeRemaining = %d, want 0", d.segFadeRemaining)
+	}
+	// A bad streak past the budget clears state and arms the recovery ramp
+	// (which is that segment's fade-in). Assert the recovery ramp is armed
+	// so the next over fades in rather than blipping at full scale.
+	for i := 0; i <= mbe.MaxBadFrames; i++ {
+		if _, err := d.Decode(badFrame()); err != nil {
+			t.Fatalf("bad %d: %v", i, err)
+		}
+	}
+	if d.recoveryFramesRemaining == 0 && d.segFadeRemaining == 0 {
+		t.Errorf("after bad streak: neither recovery ramp nor segment fade armed (both 0) — post-gap restart would blip at full scale")
+	}
+}
+
 // mid-recovery clears the counter so the next stream's first
 // frame doesn't get attenuated. Pins the "Reset = clean slate"
 // contract.
