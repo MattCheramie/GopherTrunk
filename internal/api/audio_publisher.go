@@ -69,6 +69,13 @@ type audioSubscriber struct {
 	// channel insight that lets clients tell whether they fell
 	// behind vs. the publisher being slow).
 	dropped atomic.Uint64
+	// loggedFan / loggedFull gate one-shot diagnostics so a hot
+	// WritePCM loop logs at most once per subscriber for "first
+	// frame delivered" and "channel full, dropping" — enough to
+	// confirm from the logs whether live audio is flowing without
+	// spamming every chunk.
+	loggedFan  atomic.Bool
+	loggedFull atomic.Bool
 }
 
 // NewAudioPublisher constructs a publisher backed by the supplied
@@ -154,35 +161,77 @@ func (p *AudioPublisher) Stats() AudioPublisherStats {
 	}
 }
 
-// WritePCM satisfies composer.PCMSink. Builds one AudioFrame per
-// call and fans it to every subscriber whose filter matches. A
-// missing Grant (composer wrote PCM before CallStart landed) drops
-// the frame silently — the publisher only emits frames that carry
-// full talkgroup context.
+// WritePCM satisfies composer.PCMSink. It fans live PCM to every
+// subscriber whose filter matches, INDEPENDENT of whether a CallStart
+// grant has been observed for this device.
+//
+// The grant cache is fed by the publisher's own events-bus
+// subscription, which the bus can drop under load (full channel) — and
+// on a busy control channel with multiple voice taps that happens often
+// enough that gating audio on it left the WebUI live stream silent
+// while disk recordings (a separate, grant-free PCM sink) kept working
+// (issue #598). Neither stream consumer reads the frame's Grant for its
+// payload: the HTTP handler writes raw PCM samples and gRPC StreamAudio
+// forwards the frame verbatim. So when the grant is unknown we still
+// emit the PCM with a zero Grant. Unfiltered and device-serial-only
+// subscribers receive it; only talkgroup-filtered subscribers are
+// skipped, since their predicate can't be evaluated without a known
+// GroupID and we must not leak another talkgroup's audio to them.
+//
+// The frame is built lazily on the first matching subscriber so the
+// no-subscriber and no-match paths stay allocation-free.
 func (p *AudioPublisher) WritePCM(deviceSerial string, samples []int16) error {
 	if p == nil || len(samples) == 0 {
 		return nil
 	}
 	p.mu.RLock()
-	grant, ok := p.grants[deviceSerial]
-	if !ok || len(p.subs) == 0 {
-		p.mu.RUnlock()
+	defer p.mu.RUnlock()
+	if len(p.subs) == 0 {
 		return nil
 	}
-	frame := buildPCMFrame(grant, deviceSerial, samples)
+	grant, haveGrant := p.grants[deviceSerial]
+
+	var frame *apiv1.AudioFrame // built on first match
 	for sub := range p.subs {
+		// A talkgroup filter needs a known GroupID to evaluate;
+		// without a grant we can't prove a match, so skip rather than
+		// risk leaking unrelated audio.
+		if len(sub.filter.TalkgroupIDs) > 0 && !haveGrant {
+			continue
+		}
 		if !sub.filter.matches(deviceSerial, grant.GroupID) {
 			continue
 		}
+		if frame == nil {
+			frame = buildPCMFrame(grant, deviceSerial, samples)
+		}
 		select {
 		case sub.ch <- frame:
+			p.markFanned(sub)
 		default:
 			sub.dropped.Add(uint64(len(samples)))
 			p.dropped.Add(uint64(len(samples)))
+			p.markChannelFull(sub)
 		}
 	}
-	p.mu.RUnlock()
 	return nil
+}
+
+// markFanned logs once, the first time a subscriber actually receives a
+// PCM frame — a cheap "live audio is flowing" signal for operators.
+func (p *AudioPublisher) markFanned(sub *audioSubscriber) {
+	if sub.loggedFan.CompareAndSwap(false, true) {
+		p.log.Debug("audio: first PCM frame fanned to subscriber")
+	}
+}
+
+// markChannelFull logs once, the first time a subscriber's bounded
+// channel overflows — surfaces a slow/stalled consumer without spamming
+// a log line per dropped chunk.
+func (p *AudioPublisher) markChannelFull(sub *audioSubscriber) {
+	if sub.loggedFull.CompareAndSwap(false, true) {
+		p.log.Warn("audio: subscriber channel full, dropping PCM (slow consumer)")
+	}
 }
 
 // Subscribe registers a new subscriber and returns its frame
@@ -197,7 +246,12 @@ func (p *AudioPublisher) Subscribe(filter AudioSubFilter) *audioSubscriber {
 	}
 	p.mu.Lock()
 	p.subs[sub] = struct{}{}
+	n := len(p.subs)
 	p.mu.Unlock()
+	p.log.Debug("audio subscriber connected",
+		"device_serials", filter.DeviceSerials,
+		"talkgroup_ids", filter.TalkgroupIDs,
+		"subscribers", n)
 	return sub
 }
 
@@ -209,11 +263,17 @@ func (p *AudioPublisher) Unsubscribe(sub *audioSubscriber) {
 		return
 	}
 	p.mu.Lock()
+	removed := false
 	if _, ok := p.subs[sub]; ok {
 		delete(p.subs, sub)
 		close(sub.ch)
+		removed = true
 	}
+	n := len(p.subs)
 	p.mu.Unlock()
+	if removed {
+		p.log.Debug("audio subscriber disconnected", "subscribers", n)
+	}
 }
 
 // matches reports whether this subscriber wants a frame for the

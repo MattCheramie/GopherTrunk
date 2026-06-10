@@ -158,6 +158,72 @@ func TestAudioStream_EmitsWAVHeaderAndPCM(t *testing.T) {
 	}
 }
 
+// Issue #598 end-to-end: the live HTTP stream must deliver PCM bytes
+// even when no CallStart grant was observed (the WebUI player opens an
+// unfiltered stream and the grant cache rides a lossy bus). Mirrors
+// TestAudioStream_EmitsWAVHeaderAndPCM but deliberately omits the
+// CallStart publish.
+func TestAudioStream_EmitsPCMWithoutCallStart(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = pub.Run(ctx) }()
+	defer pub.Close()
+
+	fa := newFakeAudio()
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Audio: fa, AudioPublisher: pub})
+	defer teardown()
+
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer reqCancel()
+	req, _ := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/api/v1/audio/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", resp.StatusCode)
+	}
+
+	header := make([]byte, 44)
+	if _, err := io.ReadFull(resp.Body, header); err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+
+	// No CallStart — write PCM straight away. Give the open stream a
+	// moment to register its subscription, then drive samples.
+	time.Sleep(50 * time.Millisecond)
+	samples := []int16{1, -1, 2, -2, 3, -3, 4, -4}
+	for i := 0; i < 4; i++ {
+		_ = pub.WritePCM("unmapped-sdr", samples)
+	}
+
+	got := make([]byte, 0, 256)
+	buf := make([]byte, 256)
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			got = append(got, buf[:n]...)
+		}
+		if err != nil {
+			break
+		}
+		if len(got) >= len(samples)*2 {
+			break
+		}
+	}
+	if len(got) < 2 {
+		t.Fatalf("did not receive PCM bytes without a CallStart (got %d)", len(got))
+	}
+}
+
 func TestParseRange(t *testing.T) {
 	cases := []struct {
 		name      string
