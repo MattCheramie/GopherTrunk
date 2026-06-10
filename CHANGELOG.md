@@ -9,6 +9,11 @@ for tagged releases.
 
 ### Changed
 
+- **`voice_taps` is no longer capped at 8.** A wideband dongle can now host any
+  number of concurrent virtual voice DDC taps. Each tap runs its own DDC so CPU
+  scales roughly linearly per tap; the daemon logs a warning above 16 so an
+  accidental large value doesn't quietly peg a core.
+
 - **P25 IMBE voice quality: align the vocoder with the OP25 / JMBE reference
   decoders.** Three changes ported after comparing GopherTrunk's mbelib-lineage
   decoder against OP25's `imbe_vocoder` and DSheirer's JMBE:
@@ -33,6 +38,28 @@ for tagged releases.
 
 ### Fixed
 
+- **Airspy R2 / Mini received nothing — web spectrum showed only the DC spike.**
+  The Airspy is a real-sampling receiver whose host-side converter decimates by
+  two, so the delivered IQ rate is half the programmed device rate. The driver
+  was sending the requested rate straight to firmware, so `sample_rate:
+  3_000_000` ran the device at 3 MSPS (1.5 MHz of IQ) while the rest of the
+  pipeline assumed 3 MHz — a 2× mismatch that mis-tuned every decoder. The
+  driver now programs the device at twice the requested IQ rate, so a 3 MHz IQ
+  rate correctly selects the Airspy's 6 MSPS mode.
+- **`gophertrunk sdr list --probe` reported empty gains `[]` for Airspy and
+  HackRF.** The per-device open path rebuilt `sdr.Info` without copying the gain
+  ladder that `Enumerate` populates, so the probe (which reads the opened
+  device) saw nothing. Both drivers now carry the ladder onto the opened device,
+  matching RTL-SDR. Gain values are in tenths of dB (Airspy 0–500, HackRF
+  0–560); see `config.example.yaml`.
+- **Live audio failed silently.** When `audio.enabled: true` but the sink
+  couldn't open, the player logged a single WARN and ran headless, leaving no
+  signal as to why nothing played. Backend init failure now logs at ERROR with
+  the reason, and the cause is surfaced via `GET /api/v1/audio`
+  (`backend_error`) and `Stats`. The direct-ioctl path (`device:
+  "ioctl:hw:C,D"`) now explains that it pins S16_LE mono at the configured rate
+  — which onboard codecs typically reject — and points at the default libasound
+  device, which resamples.
 - **P25/DMR voice was over-driven into clipping (robotic, "female voices
   especially awful")**. The MBE-family AGC carried a `MinGain` floor of 10,
   forcing at least a 10× gain onto a synthesizer that already emits near-int16

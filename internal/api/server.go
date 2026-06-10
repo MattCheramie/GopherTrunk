@@ -90,6 +90,12 @@ type AudioController interface {
 	// attached. False means audio.enabled was off in config or the
 	// backend failed to init, and writes are silently dropped.
 	BackendEnabled() bool
+	// BackendError returns the reason the backend isn't attached when
+	// audio was enabled but the sink failed to open (e.g. the ioctl
+	// device rejected the pinned format). Empty when audio is healthy
+	// or was intentionally disabled — lets the UI distinguish "off by
+	// config" from "tried to start and failed".
+	BackendError() string
 }
 
 // BroadcastStatusProvider is the read side of the outbound

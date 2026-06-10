@@ -75,6 +75,13 @@ type Player struct {
 	backend    Backend
 	sampleRate uint32
 
+	// initErr records why the real backend isn't attached when audio
+	// was enabled: the device failed to open. Set once at construction
+	// before any goroutine starts (so it needs no synchronisation) and
+	// surfaced via Stats so the API/UI can tell the operator audio is
+	// dead and why, instead of silently dropping every sample.
+	initErr string
+
 	// Software gain stage. Stored as the float32 bit pattern in a
 	// uint32 atomic so SetVolume is lock-free.
 	volume atomic.Uint32 // math.Float32bits
@@ -138,7 +145,14 @@ func New(cfg Config, log *slog.Logger) (*Player, error) {
 
 	be, err := defaultBackendFactory(cfg)
 	if err != nil {
-		log.Warn("player: backend init failed; running headless", "err", err)
+		// audio.enabled was true and a device was requested, but the
+		// sink wouldn't open. Log at ERROR (not WARN) and remember the
+		// reason — a silent WARN-and-headless leaves the operator with
+		// no signal as to why live audio produces nothing. Surfaced via
+		// Stats().BackendError and the GET /api/v1/audio endpoint.
+		log.Error("player: live audio backend failed to initialise; no sound will play",
+			"device", cfg.Device, "err", err)
+		p.initErr = err.Error()
 		close(p.done)
 		return p, nil
 	}
@@ -242,15 +256,21 @@ type Stats struct {
 	Volume     float32
 	Muted      bool
 	DropsTotal uint64
+	// BackendError is non-empty when audio was enabled but the sink
+	// failed to open (e.g. the ioctl device rejected the pinned format,
+	// or libasound2 was missing). Empty when audio is healthy or was
+	// intentionally disabled.
+	BackendError string
 }
 
 func (p *Player) Stats() Stats {
 	return Stats{
-		Enabled:    p.backend != nil,
-		SampleRate: p.sampleRate,
-		Volume:     p.getVolume(),
-		Muted:      p.muted.Load(),
-		DropsTotal: p.drops.Load(),
+		Enabled:      p.backend != nil,
+		SampleRate:   p.sampleRate,
+		Volume:       p.getVolume(),
+		Muted:        p.muted.Load(),
+		DropsTotal:   p.drops.Load(),
+		BackendError: p.initErr,
 	}
 }
 

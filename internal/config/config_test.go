@@ -249,9 +249,11 @@ func TestValidate(t *testing.T) {
 				ControlChannels: []uint32{851_037_500},
 			}}},
 		}, false},
-		{"wideband voice_taps too large", Config{
+		// No hard upper bound on voice_taps: a high count validates
+		// (the daemon warns about CPU above 16 at tap-build time).
+		{"wideband voice_taps high count allowed", Config{
 			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
-				Serial: "00000010", Role: "wideband", CenterFreqHz: 851_500_000, VoiceTaps: 99,
+				Serial: "00000010", Role: "wideband", CenterFreqHz: 851_500_000, VoiceTaps: 28,
 				Channels: []DeviceChannelConfig{
 					{FrequencyHz: 851_037_500, System: "regional-p25"},
 				},
@@ -260,7 +262,7 @@ func TestValidate(t *testing.T) {
 				Name: "regional-p25", Protocol: "p25",
 				ControlChannels: []uint32{851_037_500},
 			}}},
-		}, true},
+		}, false},
 		{"wideband voice_taps negative", Config{
 			SDR: SDRConfig{SampleRate: 2_400_000, Devices: []DeviceConfig{{
 				Serial: "00000010", Role: "wideband", CenterFreqHz: 851_500_000, VoiceTaps: -1,

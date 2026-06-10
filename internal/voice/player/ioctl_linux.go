@@ -300,7 +300,14 @@ func (b *ioctlBackend) setHWParams(rate, periodSize, bufferSize uint32) error {
 	// actually constrained).
 	p.Rmask = 0xFFFFFFFF
 	if err := b.ioctl(ioctlHwParams, uintptr(unsafe.Pointer(&p))); err != nil {
-		return fmt.Errorf("ioctl-alsa: HW_PARAMS: %w", err)
+		// The ioctl backend pins S16_LE / mono / the configured rate
+		// (it can't resample). Onboard codecs typically only expose
+		// 44.1/48 kHz stereo, so an 8 kHz-mono request is rejected here
+		// (errno=22 EINVAL). Point the operator at the default
+		// libasound path, which negotiates + soft-resamples.
+		return fmt.Errorf("ioctl-alsa: HW_PARAMS (S16_LE mono @ %d Hz rejected; "+
+			"onboard codecs usually need 44.1/48 kHz stereo — drop the \"ioctl:\" prefix "+
+			"and use the default libasound device, which resamples): %w", rate, err)
 	}
 	return nil
 }

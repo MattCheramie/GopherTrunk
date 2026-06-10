@@ -1,6 +1,7 @@
 package player
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -130,6 +131,35 @@ func TestPlayerNullBackend(t *testing.T) {
 	}
 	if st := p.Stats(); st.Enabled {
 		t.Fatalf("expected Enabled=false on null player")
+	}
+}
+
+func TestPlayerBackendInitFailureSurfacesError(t *testing.T) {
+	// When audio is enabled but the backend factory fails, the Player
+	// must stay usable (no-op writes) AND report the failure reason via
+	// Stats so the API/UI can tell the operator why nothing plays —
+	// rather than silently dropping every sample.
+	prev := defaultBackendFactory
+	defaultBackendFactory = func(Config) (Backend, error) {
+		return nil, errors.New("boom: device rejected format")
+	}
+	t.Cleanup(func() { defaultBackendFactory = prev })
+
+	p, err := New(Config{Enabled: true, Device: "ioctl:hw:1,0"}, slog.Default())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer p.Close()
+	// Writes are accepted and dropped without error.
+	if err := p.WritePCM("dev", []int16{1, 2, 3}); err != nil {
+		t.Fatalf("WritePCM: %v", err)
+	}
+	st := p.Stats()
+	if st.Enabled {
+		t.Error("Stats.Enabled = true, want false after backend init failure")
+	}
+	if st.BackendError == "" {
+		t.Error("Stats.BackendError is empty; want the init failure reason")
 	}
 }
 

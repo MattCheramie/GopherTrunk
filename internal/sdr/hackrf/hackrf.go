@@ -85,6 +85,14 @@ const (
 	controlTimeoutMs           = 1000
 )
 
+// gainPresetsTenthDB are indicative tenth-dB gain values surfaced in
+// sdr.Info.Gains so `sdr list --probe` and the web UI can offer the
+// operator a ladder to pick from (0–56 dB). SetGain also accepts any
+// free-form tenth-dB value. Shared by Enumerate and Open so a probed
+// (opened) device reports the same ladder an enumerated one does —
+// otherwise `--probe` showed an empty list.
+var gainPresetsTenthDB = []int{0, 80, 160, 240, 320, 400, 480, 560}
+
 // Driver implements sdr.Driver for HackRF.
 type Driver struct {
 	enum usb.Enumerator
@@ -134,9 +142,7 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 			Manufacturer: desc.Manufacturer,
 			Product:      productForPID(desc.PID, desc.Product),
 			TunerName:    "MAX2839+MAX5864",
-			// Tenth-dB presets the operator can pick from in the UI;
-			// the driver also accepts a free-form value via SetGain.
-			Gains: []int{0, 80, 160, 240, 320, 400, 480, 560},
+			Gains:        gainPresetsTenthDB,
 		}
 	}
 	return out, nil
@@ -212,6 +218,9 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 			Manufacturer: desc.Manufacturer,
 			Product:      product,
 			TunerName:    tuner,
+			// Carry the gain ladder onto the opened device so dev.Info()
+			// (used by `sdr list --probe`) reports it, not an empty list.
+			Gains: gainPresetsTenthDB,
 		},
 	}, nil
 }

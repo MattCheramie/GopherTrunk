@@ -62,6 +62,11 @@ func TestDriverEnumerateOpenReadsSamplerates(t *testing.T) {
 	if len(asDev.rates) != 2 || asDev.rates[0] != 10_000_000 {
 		t.Fatalf("samplerate table = %v", asDev.rates)
 	}
+	// The opened device must carry the gain ladder so `sdr list --probe`
+	// (which reads dev.Info() post-open) doesn't report an empty list.
+	if got := dev.Info().Gains; len(got) == 0 {
+		t.Errorf("opened device Info().Gains is empty; want the gain ladder")
+	}
 	if err := dev.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -173,19 +178,21 @@ func TestSetCenterFreqEncoding(t *testing.T) {
 }
 
 func TestClosestRateIndex(t *testing.T) {
+	// Table holds DEVICE rates; closestRateIndex takes an IQ rate and
+	// matches 2×IQ against the table (the converter decimates by two).
 	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
 	cases := []struct {
-		hz   uint32
+		iqHz uint32
 		want int
 	}{
-		{10_000_000, 0},
-		{9_000_000, 0},
-		{4_000_000, 1},
-		{2_500_000, 1},
+		{5_000_000, 0}, // device 10M — exact
+		{4_500_000, 0}, // device 9M — nearer 10M than 2.5M
+		{2_000_000, 1}, // device 4M — nearer 2.5M
+		{1_250_000, 1}, // device 2.5M — exact
 	}
 	for _, c := range cases {
-		if got := dev.closestRateIndex(c.hz); got != c.want {
-			t.Errorf("closestRateIndex(%d) = %d, want %d", c.hz, got, c.want)
+		if got := dev.closestRateIndex(c.iqHz); got != c.want {
+			t.Errorf("closestRateIndex(%d) = %d, want %d", c.iqHz, got, c.want)
 		}
 	}
 	// No table → falls back to index 0.
@@ -194,8 +201,10 @@ func TestClosestRateIndex(t *testing.T) {
 	}
 }
 
-func TestSetSampleRateEncodesByValueWhenNotIndexed(t *testing.T) {
-	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
+func TestSetSampleRateEncodesByValueWhenNoTable(t *testing.T) {
+	// With no device-rate table the param is a by-value encoding of the
+	// device rate (2×IQ) in kHz: IQ 4 MHz → device 8 MHz → 8000.
+	dev := &Device{rates: nil}
 	mt := usb.NewMockTransport()
 	dev.t = mt
 	mt.Script = []usb.CtrlExchange{
@@ -210,17 +219,48 @@ func TestSetSampleRateEncodesByValueWhenNotIndexed(t *testing.T) {
 }
 
 func TestSetSampleRateUsesIndexWhenExactMatch(t *testing.T) {
+	// Device table {10 MSPS, 2.5 MSPS}; requesting IQ 1.25 MHz selects
+	// the 2.5 MSPS device rate (index 1).
 	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
 	mt := usb.NewMockTransport()
 	dev.t = mt
 	mt.Script = []usb.CtrlExchange{
 		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 1, Reply: []byte{0}, N: 1},
 	}
-	if err := dev.SetSampleRate(2_500_000); err != nil {
+	if err := dev.SetSampleRate(1_250_000); err != nil {
 		t.Fatalf("SetSampleRate exact: %v", err)
 	}
 	if mt.Err != nil {
 		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
+// TestSetSampleRateSelectsDeviceRateAtTwiceIQ is the regression gate for
+// the real-sampling 2× rate bug: a requested IQ rate must program the
+// device at twice that rate so the host converter delivers the IQ rate
+// the rest of the pipeline assumes.
+func TestSetSampleRateSelectsDeviceRateAtTwiceIQ(t *testing.T) {
+	// A real Airspy R2/Mini advertises 6 MSPS and 3 MSPS device rates.
+	cases := []struct {
+		iqHz      uint32
+		wantIndex uint16
+	}{
+		{3_000_000, 0}, // → device 6 MSPS (index 0)
+		{1_500_000, 1}, // → device 3 MSPS (index 1)
+	}
+	for _, c := range cases {
+		dev := &Device{rates: []uint32{6_000_000, 3_000_000}}
+		mt := usb.NewMockTransport()
+		dev.t = mt
+		mt.Script = []usb.CtrlExchange{
+			{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: c.wantIndex, Reply: []byte{0}, N: 1},
+		}
+		if err := dev.SetSampleRate(c.iqHz); err != nil {
+			t.Fatalf("SetSampleRate(%d): %v", c.iqHz, err)
+		}
+		if mt.Err != nil {
+			t.Fatalf("SetSampleRate(%d) transport: %v (wanted device index %d)", c.iqHz, mt.Err, c.wantIndex)
+		}
 	}
 }
 

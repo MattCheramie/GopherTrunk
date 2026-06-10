@@ -188,6 +188,12 @@ sdr:
       gain: "auto"         # TENTHS of a dB — NOT dB. "496" = 49.6 dB. SDRTrunk/
                            # OP25/gqrx users: multiply your dB figure by 10
                            # (32 dB → "320"). "auto" (AGC) is the safe default.
+                           # Run `gophertrunk sdr list --probe` to print each
+                           # device's supported gain ladder (tenths of dB).
+                           # Typical ranges: RTL-SDR R820T 0–496; Airspy R2/Mini
+                           # 0–500 (~0–50 dB, spread across LNA/mixer/VGA);
+                           # HackRF One 0–560 (~0–56 dB). HackRF has no true AGC,
+                           # so "auto" maps to a fixed LNA 16 / VGA 20 dB split.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
       # blog_v4: true      # force RTL-SDR Blog V4 mode (28.8 MHz xtal + input
                            # routing) if the V4's USB strings don't auto-identify
@@ -269,10 +275,12 @@ sdr:
     # Honours `p25_phase1_demod_mode` (c4fm vs cqpsk / LSM) on the
     # system entry just like a dedicated CC dongle.
     #
-    # `voice_taps: N` (0-8) lets the same SDR host N concurrent
-    # voice grants without a separate `role: voice` dongle: each
-    # grant whose frequency falls inside the wideband IQ window
-    # gets its own per-call DDC tap on this dongle's IQ stream.
+    # `voice_taps: N` (0 disables; no hard upper bound) lets the
+    # same SDR host N concurrent voice grants without a separate
+    # `role: voice` dongle: each grant whose frequency falls inside
+    # the wideband IQ window gets its own per-call DDC tap on this
+    # dongle's IQ stream. CPU scales ~linearly per tap, so the daemon
+    # logs a warning above 16 to catch an accidental large value.
     # Out-of-window grants spill over to a physical voice SDR
     # when one is configured, or drop with the standard
     # "no voice device available" log otherwise. This works for

@@ -868,8 +868,10 @@ type DeviceConfig struct {
 	// hosting a trunked CC tap (DMR T3, P25 Phase 1, P25 Phase 2)
 	// so one SDR can cover the full system end-to-end. Out-of-
 	// window grants surface ErrOutOfBand and fall back to a
-	// physical voice SDR when one is configured. Capped at 8 to
-	// keep CPU bounded.
+	// physical voice SDR when one is configured. No hard upper
+	// bound, but each tap runs an independent DDC so CPU scales
+	// roughly linearly per tap — the daemon logs a warning above
+	// 16 so a typo doesn't silently peg a core.
 	VoiceTaps int `yaml:"voice_taps"`
 
 	// IQCorrect enables blind I/Q-imbalance correction on this device's
@@ -1902,8 +1904,8 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 	if d.Serial == "" {
 		return fmt.Errorf("sdr.devices[%d]: role: wideband requires serial (the daemon binds the channel list to the device by USB serial)", idx)
 	}
-	if d.VoiceTaps < 0 || d.VoiceTaps > 8 {
-		return fmt.Errorf("sdr.devices[%d]: voice_taps %d out of range; 0 disables, 1-8 allocate that many virtual voice DDC taps on the dongle",
+	if d.VoiceTaps < 0 {
+		return fmt.Errorf("sdr.devices[%d]: voice_taps %d out of range; 0 disables, a positive value allocates that many virtual voice DDC taps on the dongle",
 			idx, d.VoiceTaps)
 	}
 	if d.CenterFreqHz == 0 {
