@@ -24,6 +24,12 @@ for tagged releases.
   session: `WavWriter.Close` dereferenced a nil writer. The session close now
   guards a nil WAV (and `WavWriter.Close` is nil-safe), so Ctrl-C no longer
   panics and the final recording is finalized cleanly.
+- Airspy R2 / Mini now decode correctly (#454). The driver treated the
+  receiver's real ADC stream as interleaved I/Q, producing a huge quadrature
+  imbalance (~78°) and no image rejection (~3 dB) so nothing locked. The Airspy
+  is a real-sampling front end: its samples are now converted to complex
+  baseband on the host (Fs/4 translation + half-band Hilbert, decimate-by-two),
+  matching libairspy's IQ modes and restoring image rejection (~70 dB).
 
 ### Added
 
