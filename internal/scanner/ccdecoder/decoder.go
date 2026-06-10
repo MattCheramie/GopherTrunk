@@ -194,6 +194,16 @@ type Options struct {
 	// protocol such as TETRA cannot lock an inverted spectrum because the
 	// inversion reverses every differential phase transition.
 	Conjugate bool
+	// LOOffsetHz is the live LO-offset (DC-spike-avoidance) tuning the daemon
+	// applies on the control SDR (issue #402). The hardware LO is tuned
+	// LOOffsetHz BELOW the logical control-channel frequency, so the wanted
+	// channel sits at +LOOffsetHz in the delivered baseband; the
+	// down-converter is built with this same offset so the channel is mixed
+	// back to 0 Hz, off the front-end DC spur / 1/f noise / self-image. Zero
+	// (the default) builds no NCO and is byte-exact with the pre-offset
+	// behaviour — used when the path is disabled or at pass-through rates
+	// where there is no room to offset.
+	LOOffsetHz float64
 }
 
 // Decoder is the long-lived component that converts the control
@@ -204,7 +214,11 @@ type Decoder struct {
 	log          *slog.Logger
 	iq           IQSource
 	sampleRateHz float64
-	systems      map[string]trunking.System
+	// loOffsetHz is the DC-spike-avoidance LO offset (issue #402): the
+	// channel sits at +loOffsetHz in the delivered baseband and the DDC is
+	// built with this offset to mix it back to 0 Hz. Zero disables it.
+	loOffsetHz float64
+	systems    map[string]trunking.System
 
 	// ddc decimates the raw SDR IQ stream to pipelineRateHz before
 	// the active pipeline sees a chunk; ddcTarget records the
@@ -339,6 +353,7 @@ func New(opts Options) (*Decoder, error) {
 		log:          log,
 		iq:           opts.IQ,
 		sampleRateHz: opts.SampleRateHz,
+		loOffsetHz:   opts.LOOffsetHz,
 		systems:      make(map[string]trunking.System, len(opts.Systems)),
 		sub:          opts.Bus.Subscribe(),
 		metrics:      opts.Metrics,
@@ -599,12 +614,13 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 	if d.ddc != nil && d.ddcTarget == targetHz {
 		return
 	}
-	d.ddc = NewDownconverter(d.sampleRateHz, targetHz)
+	d.ddc = NewDownconverterWithOffset(d.sampleRateHz, targetHz, d.loOffsetHz)
 	d.ddcTarget = targetHz
 	d.pipelineRateHz = d.ddc.outRateHz
 	d.log.Info("ccdecoder: digital down-converter configured",
 		"sdr_rate_hz", d.sampleRateHz,
-		"pipeline_rate_hz", d.pipelineRateHz)
+		"pipeline_rate_hz", d.pipelineRateHz,
+		"lo_offset_hz", d.loOffsetHz)
 }
 
 // pump down-converts a raw IQ chunk and forwards it to the active

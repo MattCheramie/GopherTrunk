@@ -1442,6 +1442,116 @@ func TestDecoderLocksP25Phase1ThroughWidebandDDC(t *testing.T) {
 	}
 }
 
+// TestDecoderLocksP25Phase1WithLOOffset is the live↔replay parity guard for
+// issue #402: it proves the DC-spike-avoidance LO offset actually recovers a
+// channel the daemon deliberately tuned OFF-centre, and — in the negative
+// sub-case — that without the matching DDC offset the same off-centre channel
+// never locks. This mirrors the production wiring: the daemon tunes the
+// hardware LO `O` Hz below the logical channel (so the wanted channel sits at
+// +O in the delivered baseband) and builds the DDC with Options.LOOffsetHz=O
+// to mix it back to 0. Here we synthesize a wideband stream with the channel
+// shifted up to +O and feed it through a real Decoder.
+func TestDecoderLocksP25Phase1WithLOOffset(t *testing.T) {
+	const (
+		nac          = 0x293
+		controlFreq  = 851_000_000
+		sdrRateHz    = 2_048_000.0
+		narrowRateHz = 48_000.0
+		deviationHz  = 1800.0
+		frameRepeats = 30
+		offsetHz     = sdrRateHz / 4 // 512 kHz — the production auto value
+	)
+
+	// Centred wideband control channel, then frequency-shifted UP to +offsetHz
+	// to simulate an LO tuned offsetHz below the channel. NCO.Mix applies
+	// exp(-j2π·offsetHz·n/Fs), so NewNCO(-offsetHz) multiplies by
+	// exp(+j2π·offsetHz·n/Fs) — i.e. shifts the centred channel up to +offsetHz.
+	dibits := buildP25CCDibits(nac, frameRepeats)
+	narrow := demod.ModulateP25C4FM(dibits, narrowRateHz, deviationHz)
+	centred := dsp.NewResampler(128, 3, 8, 8.0).Process(nil, narrow)
+	offChannel := dsp.NewNCO(-offsetHz, sdrRateHz).Mix(nil, centred)
+
+	// pumpUntilLock builds a Decoder with the given LO offset, installs the real
+	// P25 pipeline, pumps the off-channel stream, and reports whether it locked.
+	pumpUntilLock := func(t *testing.T, loOffsetHz float64) (bool, p25phase1.LockState) {
+		t.Helper()
+		bus := events.NewBus(256)
+		defer bus.Close()
+		d, err := New(Options{
+			Bus: bus, IQ: &fakeIQSource{},
+			Systems: []trunking.System{{
+				Name: "WBSys", Protocol: trunking.ProtocolP25,
+				ControlChannels: []uint32{controlFreq},
+			}},
+			SampleRateHz: sdrRateHz,
+			LOOffsetHz:   loOffsetHz,
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer d.Close()
+		sub := bus.Subscribe()
+		defer sub.Close()
+
+		d.handleProgress(trunking.HuntProgress{System: "WBSys", AttemptedFreqHz: controlFreq})
+		if d.active == nil {
+			t.Fatalf("handleProgress did not install a pipeline")
+		}
+
+		const chunk = 8_192
+		var lockState p25phase1.LockState
+		locked := false
+		for off := 0; off < len(offChannel) && !locked; off += chunk {
+			end := off + chunk
+			if end > len(offChannel) {
+				end = len(offChannel)
+			}
+			d.pump(offChannel[off:end])
+			for drained := false; !drained; {
+				select {
+				case ev := <-sub.C:
+					if ev.Kind != events.KindCCLocked {
+						continue
+					}
+					if ls, ok := ev.Payload.(p25phase1.LockState); ok {
+						lockState = ls
+						locked = true
+					}
+				default:
+					drained = true
+				}
+			}
+		}
+		return locked, lockState
+	}
+
+	// Positive: with the matching DDC offset the off-channel signal is mixed
+	// back to baseband and locks at the LOGICAL frequency (the offset is
+	// invisible above the DDC).
+	t.Run("offset_locks", func(t *testing.T) {
+		locked, ls := pumpUntilLock(t, offsetHz)
+		if !locked {
+			t.Fatalf("no cc.locked with LOOffsetHz=%v — DC-spike-avoidance offset failed to recover the off-channel signal", offsetHz)
+		}
+		if ls.NAC != nac {
+			t.Errorf("LockState.NAC = %#x, want %#x", ls.NAC, nac)
+		}
+		if ls.FrequencyHz != controlFreq {
+			t.Errorf("LockState.FrequencyHz = %d, want %d (logical freq, offset must be invisible above the DDC)", ls.FrequencyHz, controlFreq)
+		}
+	})
+
+	// Negative / regression guard: without the offset the channel stays at
+	// +offsetHz, outside the 48 kHz channel the DDC keeps, and never locks.
+	// This is what proves the offset — not luck — is what fixes issue #402.
+	t.Run("no_offset_does_not_lock", func(t *testing.T) {
+		locked, _ := pumpUntilLock(t, 0)
+		if locked {
+			t.Fatalf("locked with LOOffsetHz=0 on an off-channel signal — the negative control is invalid (the channel should be unrecoverable without the DDC offset)")
+		}
+	})
+}
+
 // TestClearActiveClearsIQPowerSeries: when the decoder swaps pipelines
 // it must drop the gauge series for the system the previous pipeline
 // owned, so stale dBFS doesn't outlive the active system.

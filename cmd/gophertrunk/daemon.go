@@ -206,6 +206,65 @@ func effectiveControlRate(log *slog.Logger, dev sdr.Device, serial string, reque
 	return actual
 }
 
+// minControlDDCTarget returns the narrowest per-protocol down-converter
+// channel rate over the configured control systems (issue #402). The
+// DC-spike-avoidance LO offset is a single fixed shift applied to whatever
+// control system the decoder is currently hunting, so the "is there room to
+// offset?" gate must use the smallest channel rate among them (e.g. a mixed
+// C4FM 48 kHz / TETRA 144 kHz control SDR gates on 48 kHz). Defaults to the
+// 48 kHz C4FM-family rate when no systems are configured.
+func minControlDDCTarget(systems []trunking.System) float64 {
+	min := ccdecoder.DDCTargetRateHz
+	first := true
+	for _, sys := range systems {
+		t := ccdecoder.DDCTargetForProtocol(sys.Protocol)
+		if first || t < min {
+			min, first = t, false
+		}
+	}
+	return min
+}
+
+// controlLOOffsetHz computes the DC-spike-avoidance LO offset for the control
+// SDR (issue #402). The hardware LO is tuned this many Hz BELOW each logical
+// control-channel frequency and the ccdecoder DDC is built with the same
+// +offset so the channel is mixed back to baseband, off the front-end DC
+// spur / 1-f noise / self-image. Returns 0 (disabled, byte-exact pre-#402
+// behaviour) when: DCAvoid is off; the delivered rate is at/below the
+// narrowest channel rate (no room — e.g. the 48 kHz pass-through the
+// integration test uses); or an explicit override exceeds Nyquist. A zero
+// explicitHz auto-selects rate/4, which keeps the channel maximally clear of
+// both DC (at 0) and its image (at -rate/4) while leaving rate/4 of headroom
+// to the Nyquist edge.
+func controlLOOffsetHz(effectiveRate uint32, minDDCTarget float64, dcAvoid bool, explicitHz int) float64 {
+	if !dcAvoid || float64(effectiveRate) <= minDDCTarget {
+		return 0
+	}
+	if explicitHz > 0 {
+		if float64(explicitHz) < float64(effectiveRate)/2 {
+			return float64(explicitHz)
+		}
+		return 0 // override exceeds Nyquist — reject (caller warns)
+	}
+	return float64(effectiveRate) / 4
+}
+
+// offsetTuner wraps a control Tuner so the physical LO lands offsetHz below
+// every logical frequency the cchunt supervisor / hunter request (issue #402
+// DC-spike avoidance). cchunt, the CC state machine, HuntProgress and
+// waitForLock all stay in LOGICAL frequency space; only the hardware
+// SetCenterFreq is shifted. It sits OUTSIDE the iqtap broker, so broker.SetInner
+// and pool.Reacquire keep operating on the broker unchanged. Subtracting on a
+// uint32 is safe: control frequencies are hundreds of MHz, the offset sub-MHz.
+type offsetTuner struct {
+	inner    interface{ SetCenterFreq(uint32) error }
+	offsetHz uint32
+}
+
+func (t offsetTuner) SetCenterFreq(hz uint32) error {
+	return t.inner.SetCenterFreq(hz - t.offsetHz)
+}
+
 // looksDriveRootedOnWindows reports whether p, when used on Windows,
 // would resolve to the root of the *current* drive (e.g. the Unix-style
 // default "/var/lib/gophertrunk/recordings" becomes "C:\var\lib\...")
@@ -311,6 +370,10 @@ type Daemon struct {
 	// against a fresh Device handle (issue #345).
 	controlSerial     string
 	controlSampleRate uint32
+	// controlLOOffsetHz is the DC-spike-avoidance LO offset wrapped around
+	// the control tuner (issue #402); kept so the USB-reacquire path can
+	// re-wrap the fresh tuner handle and preserve the offset. Zero disables.
+	controlLOOffsetHz float64
 	convScan          *conventional.Scanner
 	widebandT2        []*widebandt2.Engine
 	// virtualVoiceTuners holds one VirtualTuner per voice tap on a
@@ -1085,6 +1148,41 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if cchEnabled {
 			controlEntry := d.pool.FirstByRole(sdr.RoleControl)
 			if controlEntry != nil {
+				// Per-device front-end corrections + DC-spike-avoidance
+				// opt-in for this control SDR (matched by serial).
+				iqCorrect := false
+				iqInvert := false
+				dcAvoid := false
+				dcAvoidOffsetHz := 0
+				for _, dev := range cfg.SDR.Devices {
+					if dev.Serial == controlEntry.Info.Serial {
+						iqCorrect = dev.IQCorrect
+						iqInvert = dev.IQInvert
+						dcAvoid = dev.DCAvoid
+						dcAvoidOffsetHz = dev.DCAvoidOffsetHz
+						break
+					}
+				}
+				// Build the down-converter from the rate the hardware
+				// actually delivers, not the requested one (issue #402).
+				effectiveRate := effectiveControlRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
+				// DC-spike-avoidance LO offset (issue #402). The same value
+				// feeds the cchunt tuner wrapper (shifts the physical LO) and
+				// the ccdecoder DDC (mixes the channel back to baseband); the
+				// two MUST match. Zero when disabled / no room.
+				loOffsetHz := controlLOOffsetHz(effectiveRate, minControlDDCTarget(d.systems), dcAvoid, dcAvoidOffsetHz)
+				d.controlLOOffsetHz = loOffsetHz
+				if dcAvoid && loOffsetHz == 0 {
+					log.Warn("daemon: dc_avoid enabled but no LO offset applied — sample rate has no room above the channel rate, or the explicit dc_avoid_offset_hz exceeds Nyquist (issue #402)",
+						"serial", controlEntry.Info.Serial,
+						"effective_rate_hz", effectiveRate,
+						"dc_avoid_offset_hz", dcAvoidOffsetHz)
+				} else if loOffsetHz != 0 {
+					log.Info("daemon: DC-spike-avoidance LO offset enabled on control SDR (issue #402)",
+						"serial", controlEntry.Info.Serial,
+						"lo_offset_hz", int(loOffsetHz))
+				}
+
 				// Route the supervisor's retunes through the broker
 				// (when present) so SetCenterFreq follows the same
 				// broker.SetInner swap path the ccdecoder uses after
@@ -1094,6 +1192,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				var cchTuner cchunt.Tuner = controlEntry.Device
 				if br := d.iqBrokers[controlEntry.Info.Serial]; br != nil {
 					cchTuner = br
+				}
+				// Wrap the tuner so the physical LO lands loOffsetHz below
+				// the logical control-channel frequency (issue #402). cchunt /
+				// HuntProgress / the CC state machine stay in logical Hz.
+				if loOffsetHz != 0 {
+					cchTuner = offsetTuner{inner: cchTuner, offsetHz: uint32(loOffsetHz)}
 				}
 				sup, err := cchunt.New(cchunt.Options{
 					Bus:            d.bus,
@@ -1143,18 +1247,6 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					iqSrc = br
 					tuner = br
 				}
-				iqCorrect := false
-				iqInvert := false
-				for _, dev := range cfg.SDR.Devices {
-					if dev.Serial == controlEntry.Info.Serial {
-						iqCorrect = dev.IQCorrect
-						iqInvert = dev.IQInvert
-						break
-					}
-				}
-				// Build the down-converter from the rate the hardware
-				// actually delivers, not the requested one (issue #402).
-				effectiveRate := effectiveControlRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
 				d.ccDecoderOpts = ccdecoder.Options{
 					Bus:          d.bus,
 					Log:          log,
@@ -1165,6 +1257,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Metrics:      iqObs,
 					IQCorrect:    iqCorrect,
 					Conjugate:    iqInvert,
+					LOOffsetHz:   loOffsetHz,
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,
@@ -2902,7 +2995,15 @@ func (d *Daemon) runCCDecoderWithRetry(ctx context.Context) error {
 				d.ccDecoderOpts.IQ = iqSrc
 				d.ccDecoderOpts.Tuner = tuner
 				if d.cchuntSup != nil {
-					if serr := d.cchuntSup.SwapTuner(tuner); serr != nil {
+					// Re-wrap with the DC-spike-avoidance offset so the
+					// reacquired handle keeps tuning the LO off-channel
+					// (issue #402); the decoder's DDC offset is preserved in
+					// d.ccDecoderOpts.LOOffsetHz, untouched here.
+					var swapTuner cchunt.Tuner = tuner
+					if d.controlLOOffsetHz != 0 {
+						swapTuner = offsetTuner{inner: tuner, offsetHz: uint32(d.controlLOOffsetHz)}
+					}
+					if serr := d.cchuntSup.SwapTuner(swapTuner); serr != nil {
 						d.log.Warn("daemon: cchunt: SwapTuner failed",
 							"err", serr)
 					}

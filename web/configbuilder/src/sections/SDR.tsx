@@ -35,7 +35,7 @@ const REMOTE_ROLES = [
 ];
 
 const DEVICE_ADVANCED: (keyof DeviceConfig)[] = [
-  "BlogV4", "BlogV4Lite", "IQCorrect", "IQInvert",
+  "BlogV4", "BlogV4Lite", "IQCorrect", "IQInvert", "DCAvoid", "DCAvoidOffsetHz",
 ];
 
 export function SDRSection() {

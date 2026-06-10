@@ -64,7 +64,21 @@ are brightest. Reference rings show |z| = 0.5 and |z| = 1.0.
 An SDR's digital down-converter leaks a residual carrier at 0 Hz — a
 **DC spike** that sits exactly at the centre of the band. Anything you
 tune to the middle lands right on top of it, and the constellation
-collapses into one fat blob. Three controls work around this:
+collapses into one fat blob. The same zero-IF region also folds a
+direct-conversion front end's I/Q-imbalance image back onto a channel
+sitting at DC, so even a clean-looking signal can decode with elevated
+TSBK-CRC / NID-BCH failures (issue #402).
+
+For the **live control channel** specifically, set `dc_avoid: true` on the
+control SDR's `sdr.devices` entry: the daemon then tunes the hardware LO a
+fixed offset *below* the control-channel frequency and mixes the channel
+back to baseband in the down-converter — so the live decode runs off the
+DC spike and its image, exactly like an off-channel capture replays
+cleanly. It is off by default; `dc_avoid_offset_hz` pins the offset (0 =
+auto, `sample_rate/4`). This is the same offset tuning SDRTrunk/OP25 use.
+
+For the *panels* (Constellation / Eye / Symbol scope), three controls work
+around the same problem:
 
 - **Offset** — mixes a frequency offset (relative to the SDR centre)
   down to baseband *server-side, before decimation*, so an off-centre

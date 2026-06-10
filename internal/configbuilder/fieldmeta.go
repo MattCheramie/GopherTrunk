@@ -102,6 +102,9 @@ var fieldMetas = map[string]FieldMeta{
 	"DeviceConfig.IQCorrect":     {Label: "I/Q correct", Help: "Blind I/Q-imbalance correction before decimation. Validate with `gophertrunk replay -iq-correct -diag` before enabling."},
 	"DeviceConfig.IQInvert":      {Label: "I/Q invert", Help: "Conjugate raw IQ (negate Q) to undo a spectrum-inverted front end (needed by some Soapy/USRP chains; critical for π/4-DQPSK like TETRA)."},
 
+	"DeviceConfig.DCAvoid":         {Label: "DC-spike avoid", Help: "Tune a control SDR's LO off-channel and mix the channel back to baseband, off the front-end DC spur and its I/Q-image (the offset tuning SDRTrunk/OP25 use). Helps marginal sites; off by default (issue #402)."},
+	"DeviceConfig.DCAvoidOffsetHz": {Label: "DC-avoid offset", Hz: true, Help: "LO offset in Hz when DC-spike avoid is on. 0 = auto (sample_rate/4). Must be < sample_rate/2."},
+
 	"DeviceChannelConfig.FrequencyHz": {Label: "Frequency", Hz: true, Help: "Repeater carrier frequency. Must lie inside the dongle's IQ band."},
 	"DeviceChannelConfig.System":      {Help: "Name of the trunking.systems entry this carrier belongs to."},
 
