@@ -3,10 +3,13 @@ package airspy
 import (
 	"context"
 	"encoding/binary"
+	"math"
+	"math/cmplx"
 	"testing"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
@@ -291,23 +294,81 @@ func TestSetBiasTeeRoundTrips(t *testing.T) {
 	}
 }
 
-func TestDecodeInt16IQ(t *testing.T) {
-	// Two samples: (+32767, -32768) → ~(1,-1); (0,0) → (0,0).
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint16(buf[0:2], uint16(int16(32767)))
-	var minI16 int16 = -32768
-	binary.LittleEndian.PutUint16(buf[2:4], uint16(minI16))
-	binary.LittleEndian.PutUint16(buf[4:6], 0)
-	binary.LittleEndian.PutUint16(buf[6:8], 0)
-	got := decodeInt16IQ(buf)
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2", len(got))
+// realToneBuf renders n real ADC samples (unpacked little-endian uint16,
+// 12-bit, DC at 2048) of a cosine at fHz given sampleHz, as the device would
+// stream them.
+func realToneBuf(n int, fHz, sampleHz float64) []byte {
+	buf := make([]byte, 2*n)
+	for i := 0; i < n; i++ {
+		v := math.Cos(2 * math.Pi * fHz * float64(i) / sampleHz)
+		s := uint16(2048 + 2000*v) // stay inside the 12-bit range
+		binary.LittleEndian.PutUint16(buf[2*i:], s)
 	}
-	if real(got[0]) <= 0.99 || imag(got[0]) > -0.99 {
-		t.Errorf("sample 0 = (%f,%f); want near (1,-1)", real(got[0]), imag(got[0]))
+	return buf
+}
+
+func TestIQConverterDecimatesByTwo(t *testing.T) {
+	// 4096 real samples (8192 bytes) → 2048 complex samples.
+	buf := realToneBuf(4096, 1_000_000, 5_000_000)
+	got := newIQConverter().processRaw(buf)
+	if len(got) != 2048 {
+		t.Fatalf("processRaw len = %d, want 2048", len(got))
 	}
-	if got[1] != 0 {
-		t.Errorf("sample 1 = %v; want 0", got[1])
+}
+
+// TestIQConverterRejectsImage is the regression gate for issue #454: feeding a
+// real tone through the converter must yield a clean analytic (single-sided)
+// complex stream. Before the fix the driver read real samples as interleaved
+// I/Q, which the reporter saw as ~+78° phase imbalance and ~3.3 dB image
+// rejection. We measure the same quantities here and require quadrature.
+func TestIQConverterRejectsImage(t *testing.T) {
+	const (
+		hwRate = 5_000_000 // hardware rate (2× the 2.5 MSPS IQ rate)
+		tone   = 1_000_000 // real tone inside the half-band passband
+		nReal  = 1 << 18
+	)
+	out := newIQConverter().processRaw(realToneBuf(nReal, tone, hwRate))
+
+	// Skip the filter warm-up so transient settling doesn't skew the stats.
+	out = out[hbTaps:]
+
+	var st rtlsdr.IQImbalanceStats
+	st.Observe(out)
+
+	if phase := math.Abs(st.PhaseImbalanceDeg()); phase > 1.0 {
+		t.Errorf("phase imbalance = %.3f°, want < 1° (issue #454 saw +78°)", phase)
+	}
+	if rej := st.ImageRejectionDB(); rej < 40 {
+		t.Errorf("image rejection = %.1f dB, want > 40 dB (issue #454 saw 3.3 dB)", rej)
+	}
+}
+
+// TestIQConverterContinuousAcrossPackets confirms the converter's filter state
+// carries across packet boundaries: streaming a tone in many small packets
+// must match converting it in one shot.
+func TestIQConverterContinuousAcrossPackets(t *testing.T) {
+	buf := realToneBuf(1<<16, 700_000, 5_000_000)
+
+	oneShot := newIQConverter().processRaw(buf)
+
+	split := newIQConverter()
+	var chunked []complex64
+	const step = 1024 // bytes per packet (512 real samples, multiple of 4)
+	for off := 0; off < len(buf); off += step {
+		end := off + step
+		if end > len(buf) {
+			end = len(buf)
+		}
+		chunked = append(chunked, split.processRaw(buf[off:end])...)
+	}
+
+	if len(chunked) != len(oneShot) {
+		t.Fatalf("chunked len = %d, one-shot len = %d", len(chunked), len(oneShot))
+	}
+	for i := range oneShot {
+		if d := cmplx.Abs(complex128(oneShot[i] - chunked[i])); d > 1e-6 {
+			t.Fatalf("sample %d differs by %g: one-shot=%v chunked=%v", i, d, oneShot[i], chunked[i])
+		}
 	}
 }
 

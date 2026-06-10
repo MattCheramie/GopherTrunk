@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -536,6 +537,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 // nil returned. Caller holds r.mu and publishes after releasing it.
 func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) *trunking.CallComplete {
 	dataBytes := s.wav.DataBytes()
+	r.logVoiceStats(serial, s)
 	if err := s.close(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
 	}
@@ -558,6 +560,54 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 		SampleRate:   s.sampleRate,
 	}
 }
+
+// voiceClipWarnPct is the output-clipping rate above which the per-call
+// voice summary escalates to WARN: a non-trivial fraction of samples
+// hitting the limiter means the vocoder gain is too hot (the signature of
+// the over-driven AGC that flattens speech into a robotic, clipped tone).
+const voiceClipWarnPct = 0.5
+
+// logVoiceStats emits the per-call audio-quality summary for a session
+// whose vocoder tracks VoiceStats (currently the pure-Go IMBE decoder).
+// It is the audio-layer complement to the composer's FEC-layer "decode
+// quality" line: pitch, harmonic count, AGC gain, and amplitude health
+// (peak / clip% / crest). Logged at DEBUG; escalated to WARN when the
+// output is clipping. A vocoder that doesn't implement StatProvider, or a
+// call with no frames, produces nothing.
+func (r *Recorder) logVoiceStats(serial string, s *recordingSession) {
+	sp, ok := s.vocoder.(StatProvider)
+	if !ok {
+		return
+	}
+	vs, have := sp.VoiceStats()
+	if !have || vs.Frames == 0 {
+		return
+	}
+	args := []any{
+		"device", serial, "wav", s.wavPath, "vocoder", s.vocoderName,
+		"frames", vs.Frames, "voiced", vs.Voiced, "unvoiced", vs.Unvoiced,
+		"silent", vs.Silent, "idle_muted", vs.IdleMuted,
+		"bad", vs.Bad, "repeated", vs.Repeated,
+		"mean_f0_hz", round1(vs.MeanF0Hz),
+		"f0_range_hz", fmt.Sprintf("%.0f-%.0f", vs.MinF0Hz, vs.MaxF0Hz),
+		"mean_l", round1(vs.MeanL),
+		"voiced_frac", round2(vs.MeanVoicedFrac),
+		"mean_gain", round2(vs.MeanAGCGain),
+		"gain_range", fmt.Sprintf("%.1f-%.1f", vs.MinAGCGain, vs.MaxAGCGain),
+		"peak_preclip", round1(vs.MaxPreClipPeak),
+		"rms", round1(vs.OutputRMS),
+		"crest", round2(vs.CrestFactor),
+		"clip_pct", round2(vs.ClipPct()),
+	}
+	if vs.ClipPct() > voiceClipWarnPct {
+		r.log.Warn("recorder: voice audio quality — output clipping (vocoder gain too hot)", args...)
+		return
+	}
+	r.log.Debug("recorder: voice audio quality", args...)
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
+func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 	r.mu.Lock()
@@ -672,8 +722,12 @@ func (s *recordingSession) close() error {
 			firstErr = err
 		}
 	}
-	if err := s.wav.Close(); err != nil && firstErr == nil {
-		firstErr = err
+	// A dormant post-segment session has wav == nil (see the recordingSession
+	// doc comment) — guard so finalizing it never dereferences a nil writer.
+	if s.wav != nil {
+		if err := s.wav.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	if s.raw != nil {
 		if err := s.raw.Close(); err != nil && firstErr == nil {

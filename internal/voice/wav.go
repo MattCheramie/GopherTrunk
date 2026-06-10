@@ -81,6 +81,11 @@ func (w *WavWriter) DataBytes() uint32 { return w.bytesWritten }
 // Close patches the length fields and closes the underlying file (if the
 // writer owns one).
 func (w *WavWriter) Close() error {
+	// Defensive: a dormant recording session may hold a nil writer; closing
+	// it should be a no-op rather than a nil-pointer panic.
+	if w == nil {
+		return nil
+	}
 	if w.closed {
 		return nil
 	}
