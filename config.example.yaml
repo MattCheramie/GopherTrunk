@@ -17,6 +17,10 @@
 
 log:
   level: info       # debug | info | warn | error
+  # At `debug`, each completed voice call logs a "recorder: voice audio
+  # quality" line (pitch, harmonic count, AGC gain, output peak/RMS/crest,
+  # clip%) for diagnosing robotic/over-driven audio. Output clipping is
+  # surfaced as a WARN even at `info`.
   format: text      # text | json
   # Decoded-message log: a human-readable text log of every trunking
   # event (grants, CC lock/loss, affiliations, patches, locations).

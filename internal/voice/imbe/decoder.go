@@ -152,6 +152,41 @@ type Decoder struct {
 	// boundaries — silence window, bad-streak clear, Reset — so each split
 	// recording opens cleanly. See the muteTone gate in Decode.
 	voiceStarted bool
+
+	// stats accumulates the per-call VoiceStats summary. Cleared only by
+	// ResetStats (the recorder calls it at call/segment boundaries) — NOT
+	// by Reset, so a mid-call re-sync doesn't discard the running totals.
+	stats callStats
+}
+
+// callStats is the decoder's running per-call telemetry, folded into a
+// voice.VoiceStats by VoiceStats(). Pitch/L/voicing/gain means are taken
+// over good non-silent frames (goodFrames); amplitude health (RMS, peak,
+// clip) is taken over every emitted sample.
+type callStats struct {
+	frames    int
+	voiced    int
+	unvoiced  int
+	silent    int
+	idleMuted int
+	bad       int
+	repeated  int
+
+	goodFrames    int
+	f0Sum         float64
+	f0Min         float64
+	f0Max         float64
+	lSum          float64
+	voicedFracSum float64
+	gainSum       float64
+	gainMin       float64
+	gainMax       float64
+
+	sumSq          float64
+	sampleCount    int
+	postPeak       float64
+	maxPreClipPeak float64
+	clipSamples    int
 }
 
 // New returns a fresh Decoder. The unvoiced-excitation noise source
@@ -222,6 +257,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	info := unpackInfoBits(frame)
 	out := make([]int16, mbe.SamplesPerFrame)
 	pcm := make([]float64, mbe.SamplesPerFrame)
+	d.stats.frames++
 
 	p, err := UnpackParams(info)
 
@@ -259,6 +295,8 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		}
 		d.synthFrame(d.lastGoodParams, &d.lastGoodLog2M, &repeatedM, pcm)
 		d.agc.Apply(pcm, out, true)
+		d.stats.repeated++
+		d.accumStats(out)
 		return out, nil
 
 	case err != nil:
@@ -276,6 +314,8 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// onset idle-mute so the next over opens without a buzz leak.
 		d.voiceStarted = false
 		d.agc.Apply(pcm, out, true)
+		d.stats.bad++
+		d.accumStats(out)
 		return out, nil
 
 	case p.Silent:
@@ -291,6 +331,8 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// idle-mute so the next over opens without a buzz leak.
 		d.voiceStarted = false
 		d.agc.Apply(pcm, out, true)
+		d.stats.silent++
+		d.accumStats(out)
 		return out, nil
 
 	case muteTone:
@@ -304,6 +346,8 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.state.Reset()
 		d.clearLastGood()
 		d.agc.Apply(pcm, out, true)
+		d.stats.idleMuted++
+		d.accumStats(out)
 		return out, nil
 	}
 
@@ -356,6 +400,8 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	d.lastGoodM = M
 
 	d.agc.Apply(pcm, out, recoveryFreezeAGC)
+	d.accumGood(m, d.agc.LastGain())
+	d.accumStats(out)
 	return out, nil
 }
 
@@ -403,6 +449,120 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	d.state.UpdateVoicedState(p, M)
 }
 
+// pcmSampleRateHz is the IMBE output PCM rate (8 kHz, 160 samples /
+// 20 ms frame). Used to convert the fundamental W0 (rad/sample) to Hz for
+// the VoiceStats pitch summary.
+const pcmSampleRateHz = 8000
+
+// accumStats folds the just-applied frame's AGC telemetry and output
+// samples into the per-call stats. Call immediately after agc.Apply on
+// every return path so the amplitude-health numbers cover all output.
+func (d *Decoder) accumStats(out []int16) {
+	d.stats.clipSamples += d.agc.LastClipSamples()
+	if p := d.agc.LastMaxPreClipPeak(); p > d.stats.maxPreClipPeak {
+		d.stats.maxPreClipPeak = p
+	}
+	for _, s := range out {
+		f := float64(s)
+		d.stats.sumSq += f * f
+		if a := math.Abs(f); a > d.stats.postPeak {
+			d.stats.postPeak = a
+		}
+	}
+	d.stats.sampleCount += len(out)
+}
+
+// accumGood folds a good non-silent frame's pitch / harmonic count /
+// voicing / applied gain into the per-call stats.
+func (d *Decoder) accumGood(p mbe.Params, gain float64) {
+	numVoiced := 0
+	for l := 1; l <= p.L; l++ {
+		if p.Vl[l] == 1 {
+			numVoiced++
+		}
+	}
+	if p.L > 0 && 2*numVoiced >= p.L {
+		d.stats.voiced++
+	} else {
+		d.stats.unvoiced++
+	}
+	f0 := p.W0 * pcmSampleRateHz / (2 * math.Pi)
+	var vf float64
+	if p.L > 0 {
+		vf = float64(numVoiced) / float64(p.L)
+	}
+	if d.stats.goodFrames == 0 {
+		d.stats.f0Min, d.stats.f0Max = f0, f0
+		d.stats.gainMin, d.stats.gainMax = gain, gain
+	} else {
+		if f0 < d.stats.f0Min {
+			d.stats.f0Min = f0
+		}
+		if f0 > d.stats.f0Max {
+			d.stats.f0Max = f0
+		}
+		if gain < d.stats.gainMin {
+			d.stats.gainMin = gain
+		}
+		if gain > d.stats.gainMax {
+			d.stats.gainMax = gain
+		}
+	}
+	d.stats.goodFrames++
+	d.stats.f0Sum += f0
+	d.stats.lSum += float64(p.L)
+	d.stats.voicedFracSum += vf
+	d.stats.gainSum += gain
+}
+
+// VoiceStats returns the accumulated per-call telemetry and ok == false
+// when no frames have been decoded yet. Implements voice.StatProvider so
+// the recorder + the offline `gophertrunk decode` tool can surface a
+// per-call audio-quality summary.
+func (d *Decoder) VoiceStats() (voice.VoiceStats, bool) {
+	s := d.stats
+	if s.frames == 0 {
+		return voice.VoiceStats{}, false
+	}
+	vs := voice.VoiceStats{
+		Frames:         s.frames,
+		Voiced:         s.voiced,
+		Unvoiced:       s.unvoiced,
+		Silent:         s.silent,
+		IdleMuted:      s.idleMuted,
+		Bad:            s.bad,
+		Repeated:       s.repeated,
+		MaxPreClipPeak: s.maxPreClipPeak,
+		ClipSamples:    s.clipSamples,
+		TotalSamples:   s.sampleCount,
+	}
+	if s.goodFrames > 0 {
+		g := float64(s.goodFrames)
+		vs.MeanF0Hz = s.f0Sum / g
+		vs.MinF0Hz = s.f0Min
+		vs.MaxF0Hz = s.f0Max
+		vs.MeanL = s.lSum / g
+		vs.MeanVoicedFrac = s.voicedFracSum / g
+		vs.MeanAGCGain = s.gainSum / g
+		vs.MinAGCGain = s.gainMin
+		vs.MaxAGCGain = s.gainMax
+	}
+	if s.sampleCount > 0 {
+		rms := math.Sqrt(s.sumSq / float64(s.sampleCount))
+		vs.OutputRMS = rms
+		if rms > 0 {
+			vs.CrestFactor = s.postPeak / rms
+		}
+	}
+	return vs, true
+}
+
+// ResetStats clears the per-call telemetry. The recorder calls it at
+// call / segment boundaries. Kept separate from Reset (which clears
+// synthesis state on mid-call re-sync) so a re-sync doesn't discard the
+// call's running totals.
+func (d *Decoder) ResetStats() { d.stats = callStats{} }
+
 // clearLastGood resets the frame-repeat cache + bad-frame counter.
 // Called on silence-window frames, on the bad-frame budget being
 // exceeded, and from the public Reset.
@@ -445,8 +605,12 @@ func (d *Decoder) Reset() {
 // implementation holds none, so this is always a no-op.
 func (d *Decoder) Close() error { return nil }
 
-// Compile-time check that Decoder satisfies voice.Vocoder.
-var _ voice.Vocoder = (*Decoder)(nil)
+// Compile-time check that Decoder satisfies voice.Vocoder +
+// voice.StatProvider.
+var (
+	_ voice.Vocoder      = (*Decoder)(nil)
+	_ voice.StatProvider = (*Decoder)(nil)
+)
 
 func init() {
 	voice.DefaultRegistry.Register(VocoderName, func() (voice.Vocoder, error) {
