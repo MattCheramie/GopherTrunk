@@ -97,6 +97,9 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 	lpf := filter.NewFIR(filter.LowpassKaiser(81, cutoff, 8.6))
 
 	rs, _ := c.sink.(rawFrameSink)
+	// ers, when the sink supports it, carries the per-frame FEC corrected-bit
+	// count to the IMBE decoder's adaptive smoothing (P25 Phase 1 only).
+	ers, _ := c.sink.(errAwareRawSink)
 	// lastES is the last Encryption Sync this chain published on the
 	// bus. The voice frame stream carries one ES per LDU2 (every ~180
 	// ms), but ALGID/KID rarely change inside a single call — gate the
@@ -194,7 +197,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 			write := bt.onVoice(tg)
 
 			if write && rs != nil {
-				fs, errBits, err := phase1.ExtractVoiceFrames(ldu)
+				fs, frameErrs, errBits, err := phase1.ExtractVoiceFramesDetailed(ldu)
 				if errBits > 0 {
 					corrErrBits.Add(uint64(errBits))
 				}
@@ -203,11 +206,21 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 					c.log.Debug("composer: p25p1 voice extract uncorrectable subframe",
 						"serial", serial, "err", err)
 				}
-				for _, f := range fs {
+				for i, f := range fs {
 					if f == nil {
 						continue
 					}
-					if werr := rs.WriteRawFrame(serial, f); werr != nil {
+					// Hand the per-frame corrected-bit count to the IMBE
+					// decoder (via the recorder) so its adaptive smoothing can
+					// track the channel error rate; fall back to the plain
+					// write for sinks that don't support it.
+					var werr error
+					if ers != nil {
+						werr = ers.WriteRawFrameWithErrors(serial, f, frameErrs[i])
+					} else {
+						werr = rs.WriteRawFrame(serial, f)
+					}
+					if werr != nil {
 						c.log.Warn("composer: p25p1 raw-frame write failed",
 							"serial", serial, "err", werr)
 					}

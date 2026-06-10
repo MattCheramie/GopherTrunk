@@ -422,10 +422,11 @@ func TestAGCConvergesTowardTarget(t *testing.T) {
 		}
 		lastPeak = agcPeak(out)
 	}
-	// After convergence the peak should be within ~30% of the target
-	// (loose because the §6.4 noise draw varies per frame).
+	// After convergence the peak should be within ~35% of the target
+	// (loose because the §6.4 noise draw varies per frame and the DC
+	// blocker trims a little near-DC energy from this synthetic frame).
 	target := mbe.DefaultAGCConfig().TargetPeak
-	const tol = 0.3
+	const tol = 0.35
 	lo := int(target * (1 - tol))
 	hi := int(target * (1 + tol))
 	if lastPeak < lo || lastPeak > hi {

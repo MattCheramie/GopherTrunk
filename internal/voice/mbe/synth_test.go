@@ -32,7 +32,7 @@ func TestPredictLog2MlFirstFrameIsTl(t *testing.T) {
 }
 
 // TestPredictLog2MlConstantPrevCancels: when prev-frame log2(Ml) is
-// constant c, the prediction is 0.65*c at every l and ave = 0.65*c
+// constant c, the prediction is ρ*c at every l and ave = ρ*c
 // — they cancel in eq. 77 and dst = Tl. This pins the eq. 77 mean
 // subtraction (a flat-spectrum prev frame contributes no tilt to
 // the current frame).
@@ -59,8 +59,8 @@ func TestPredictLog2MlConstantPrevCancels(t *testing.T) {
 // TestPredictLog2MlSamePitchExactInterp: when ω₀_curr == ω₀_prev and
 // L_curr == L_prev, the interpolation index pos = l × 1.0 lands on
 // integer l for every harmonic — no fractional blending. Each
-// dst[l] = 0.65 × prev[l] + Tl[l] − mean(0.65 × prev). Checks the
-// integer-index path.
+// dst[l] = ρ × prev[l] + Tl[l] − mean(ρ × prev), where ρ =
+// predictionGain(L). Checks the integer-index path.
 func TestPredictLog2MlSamePitchExactInterp(t *testing.T) {
 	s := SynthState{PrevW0: math.Pi / 30, PrevL: 4}
 	prev := [5]float64{0, 1.0, 2.0, 3.0, 4.0} // 1-indexed
@@ -72,9 +72,10 @@ func TestPredictLog2MlSamePitchExactInterp(t *testing.T) {
 	var dst [57]float64
 	PredictLog2Ml(&s, p, &dst)
 
-	predMean := PredictionGain * (1.0 + 2.0 + 3.0 + 4.0) / 4.0
+	g := predictionGain(p.L)
+	predMean := g * (1.0 + 2.0 + 3.0 + 4.0) / 4.0
 	for l := 1; l <= p.L; l++ {
-		want := PredictionGain*prev[l] - predMean
+		want := g*prev[l] - predMean
 		if !almostEqual(dst[l], want) {
 			t.Errorf("same-pitch dst[%d] = %v, want %v", l, dst[l], want)
 		}
@@ -104,13 +105,14 @@ func TestPredictLog2MlInterpolationFraction(t *testing.T) {
 	//  l=5 → pos=2.5 → 0.5×prev[2] + 0.5×prev[3] = 5
 	//  l=6 → pos=3.0 → prev[3] = 6
 	rawPred := [7]float64{0, 2, 2, 3, 4, 5, 6}
+	g := predictionGain(p.L)
 	var sum float64
 	for l := 1; l <= 6; l++ {
-		sum += PredictionGain * rawPred[l]
+		sum += g * rawPred[l]
 	}
 	mean := sum / 6.0
 	for l := 1; l <= p.L; l++ {
-		want := PredictionGain*rawPred[l] - mean // Tl is zero
+		want := g*rawPred[l] - mean // Tl is zero
 		if !almostEqual(dst[l], want) {
 			t.Errorf("interp dst[%d] = %v, want %v", l, dst[l], want)
 		}
@@ -240,13 +242,14 @@ func TestPredictLog2MlTwoFrameSequence(t *testing.T) {
 	s.UpdateLog2Ml(p1, &dst1)
 
 	// Frame 2: same pitch + L; prev = {1,2,3,4}. With Tl2 = 0,
-	// dst2[l] = 0.65*l - mean(0.65*{1,2,3,4}) = 0.65*l - 0.65*2.5.
+	// dst2[l] = ρ*l - mean(ρ*{1,2,3,4}) = ρ*l - ρ*2.5, ρ=predictionGain(L).
 	p2 := Params{Header: Header{W0: math.Pi / 30, L: 4}}
 	var dst2 [57]float64
 	PredictLog2Ml(&s, p2, &dst2)
-	predMean := PredictionGain * (1.0 + 2.0 + 3.0 + 4.0) / 4.0
+	g := predictionGain(p2.L)
+	predMean := g * (1.0 + 2.0 + 3.0 + 4.0) / 4.0
 	for l := 1; l <= p2.L; l++ {
-		want := PredictionGain*float64(l) - predMean
+		want := g*float64(l) - predMean
 		if !almostEqual(dst2[l], want) {
 			t.Errorf("frame 2 dst[%d] = %v, want %v", l, dst2[l], want)
 		}
@@ -277,5 +280,23 @@ func TestPredictLog2MlMeanCenteredOutput(t *testing.T) {
 	}
 	if !almostEqual(sum, 0) {
 		t.Errorf("mean-centered Tl: sum(dst) = %v, want 0", sum)
+	}
+}
+
+// TestPredictionGainBreakpoints pins the pitch-dependent prediction
+// coefficient ρ(L) against the OP25 / JMBE reference breakpoints.
+func TestPredictionGainBreakpoints(t *testing.T) {
+	cases := []struct {
+		L    int
+		want float64
+	}{
+		{9, 0.4}, {15, 0.4}, // high pitch (e.g. female)
+		{16, 0.43}, {20, 0.55}, {24, 0.67}, // ramp
+		{25, 0.7}, {40, 0.7}, {56, 0.7}, // low pitch
+	}
+	for _, c := range cases {
+		if got := predictionGain(c.L); !almostEqual(got, c.want) {
+			t.Errorf("predictionGain(%d) = %v, want %v", c.L, got, c.want)
+		}
 	}
 }

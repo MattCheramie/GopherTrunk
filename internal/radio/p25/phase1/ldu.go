@@ -317,12 +317,24 @@ func InjectStatusSymbols(payload []byte, status [LDUStatusSymbolCount]uint8) ([]
 // Bit positions sourced from TIA-102.BAAA-A § 8 (Logical Link
 // Data Unit 1 / 2 voice-frame layout).
 func ExtractVoiceFrames(ldu []byte) (frames [LDUVoiceSubframeCount][]byte, totalErrs int, err error) {
+	frames, _, totalErrs, err = ExtractVoiceFramesDetailed(ldu)
+	return frames, totalErrs, err
+}
+
+// ExtractVoiceFramesDetailed is ExtractVoiceFrames plus the per-subframe
+// corrected-bit count. The IMBE adaptive-smoothing path uses the per-frame
+// count to maintain a running channel error-rate estimate (ε_R) that drives
+// amplitude/voicing cleanup and muting on weak signals; the plain
+// ExtractVoiceFrames wrapper is kept for callers that only need the
+// aggregate. frameErrs[i] is the Golay+Hamming corrected-bit count for
+// voice subframe u_i.
+func ExtractVoiceFramesDetailed(ldu []byte) (frames [LDUVoiceSubframeCount][]byte, frameErrs [LDUVoiceSubframeCount]int, totalErrs int, err error) {
 	if len(ldu) != LDUTotalBits {
-		return frames, 0, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
+		return frames, frameErrs, 0, fmt.Errorf("%w: got %d bits", ErrLDULength, len(ldu))
 	}
 	payload, err := StripStatusSymbols(ldu)
 	if err != nil {
-		return frames, 0, err
+		return frames, frameErrs, 0, err
 	}
 
 	var firstErr error
@@ -330,12 +342,13 @@ func ExtractVoiceFrames(ldu []byte) (frames [LDUVoiceSubframeCount][]byte, total
 		channel := payload[off : off+LDUVoiceSubframeBits]
 		frame, errs, decErr := imbe.DecodeChannelToFrame(channel)
 		frames[i] = frame
+		frameErrs[i] = errs
 		totalErrs += errs
 		if decErr != nil && firstErr == nil {
 			firstErr = fmt.Errorf("subframe %d: %w", i, decErr)
 		}
 	}
-	return frames, totalErrs, firstErr
+	return frames, frameErrs, totalErrs, firstErr
 }
 
 // ExtractLCESBlocks returns the 6 LC (LDU1) / ES (LDU2) blocks

@@ -116,6 +116,17 @@ type Decoder struct {
 	// unaffected. Both are deterministic for a given constructor seed.
 	phaseRng *rand.Rand
 	agc      *mbe.AGC
+	// dc is the DC-removal high-pass applied to the synthesized PCM before
+	// the AGC (matches OP25 dc_rmv.cc). Continuous across frames; reset only
+	// on stream re-sync via Reset.
+	dc mbe.DCBlock
+
+	// smoother holds the IMBE adaptive-smoothing memory (running channel
+	// error rate + local energy). frameErrs is the FEC corrected-bit count
+	// for the next Decode, supplied via SetFrameErrors (voice.ErrorAware);
+	// 0 when the caller doesn't track it, leaving smoothing inert.
+	smoother  mbe.Smoother
+	frameErrs int
 
 	// One-frame cache for the frame-repeat path. Holds the shared
 	// mbe.Params shape since the synthesis path consumes only that
@@ -259,6 +270,14 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	pcm := make([]float64, mbe.SamplesPerFrame)
 	d.stats.frames++
 
+	// Consume the corrected-bit count set by SetFrameErrors (0 if the caller
+	// doesn't supply one) and advance the adaptive-smoothing error-rate
+	// estimate. muteByER is true when the channel is so degraded the frame
+	// should be silenced.
+	correctedBits := d.frameErrs
+	d.frameErrs = 0
+	muteByER := d.smoother.UpdateErrorRate(correctedBits)
+
 	p, err := UnpackParams(info)
 
 	// Idle-tone run accounting. Done before the switch (a Go switch
@@ -294,7 +313,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 			repeatedM[l] *= atten
 		}
 		d.synthFrame(d.lastGoodParams, &d.lastGoodLog2M, &repeatedM, pcm)
-		d.agc.Apply(pcm, out, true)
+		d.applyOutput(pcm, out, true)
 		d.stats.repeated++
 		d.accumStats(out)
 		return out, nil
@@ -308,11 +327,14 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// back in at 0.4 → 0.7 → 1.0 amplitude rather than jumping
 		// straight to full level.
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		d.recoveryFramesRemaining = len(recoveryRampFactors)
 		// Bad-streak clear ends the current voiced segment — re-arm the
 		// onset idle-mute so the next over opens without a buzz leak.
 		d.voiceStarted = false
+		// Silence frame: no synthesized speech to DC-filter (the blocker was
+		// reset above so the next over starts clean); go straight to the AGC.
 		d.agc.Apply(pcm, out, true)
 		d.stats.bad++
 		d.accumStats(out)
@@ -326,10 +348,13 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// next non-silent frame starts from a clean baseline.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		// Silence window marks a transmission gap — re-arm the onset
 		// idle-mute so the next over opens without a buzz leak.
 		d.voiceStarted = false
+		// Silence/OA-tail frame: bypass the (reset) DC blocker so the tail's
+		// non-overlap region stays clean; go straight to the AGC.
 		d.agc.Apply(pcm, out, true)
 		d.stats.silent++
 		d.accumStats(out)
@@ -344,7 +369,9 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// (managed above) so the rest of the run keeps muting.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.MBE(), nil, nil, pcm)
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
+		// Idle-tone mute / OA-tail frame: bypass the (reset) DC blocker.
 		d.agc.Apply(pcm, out, true)
 		d.stats.idleMuted++
 		d.accumStats(out)
@@ -367,6 +394,18 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	var M [mbe.MaxL + 1]float64
 	mbe.AmplitudesFromLog2Ml(&log2M, m.L, &M)
 	mbe.EnhanceAmplitudes(m, &M)
+
+	// IMBE adaptive smoothing: on a degraded channel, cap error-induced
+	// amplitude spikes and reclaim obviously-voiced harmonics (modifies M and
+	// m.Vl in place); a clean channel is left untouched. A frame whose error
+	// rate exceeds the mute threshold is silenced by zeroing the amplitudes,
+	// which the voiced generator's amplitude tilt fades out cleanly.
+	d.smoother.Smooth(&m, &M, correctedBits)
+	if muteByER {
+		for l := 1; l <= m.L; l++ {
+			M[l] = 0
+		}
+	}
 
 	// Recovery ramp after a bad-streak state clear: scale the post-
 	// enhancement amplitudes by recoveryRampFactors over the next
@@ -399,7 +438,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	d.lastGoodLog2M = log2M
 	d.lastGoodM = M
 
-	d.agc.Apply(pcm, out, recoveryFreezeAGC)
+	d.applyOutput(pcm, out, recoveryFreezeAGC)
 	d.accumGood(m, d.agc.LastGain())
 	d.accumStats(out)
 	return out, nil
@@ -453,6 +492,18 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 // 20 ms frame). Used to convert the fundamental W0 (rad/sample) to Hz for
 // the VoiceStats pitch summary.
 const pcmSampleRateHz = 8000
+
+// applyOutput runs the DC-removal high-pass over the synthesized PCM and
+// then the AGC into out. Used by the paths that emit real synthesized
+// speech (the good-frame path and the frame-repeat path) so the DC filter
+// runs continuously over voiced audio and the AGC sizes against the DC-free
+// signal. The silence / idle-mute / bad-streak paths bypass it (and Reset
+// the blocker) since they emit no speech. freezeEnvelope is forwarded to
+// the AGC.
+func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
+	d.dc.Process(pcm)
+	d.agc.Apply(pcm, out, freezeEnvelope)
+}
 
 // accumStats folds the just-applied frame's AGC telemetry and output
 // samples into the per-call stats. Call immediately after agc.Apply on
@@ -557,6 +608,13 @@ func (d *Decoder) VoiceStats() (voice.VoiceStats, bool) {
 	return vs, true
 }
 
+// SetFrameErrors supplies the FEC corrected-bit count for the NEXT Decode
+// call, driving the adaptive-smoothing error-rate estimate. Implements
+// voice.ErrorAware; the recorder calls it (for P25 Phase 1) immediately
+// before Decode. Callers that don't track errors simply never call it, and
+// smoothing stays inert.
+func (d *Decoder) SetFrameErrors(correctedBits int) { d.frameErrs = correctedBits }
+
 // ResetStats clears the per-call telemetry. The recorder calls it at
 // call / segment boundaries. Kept separate from Reset (which clears
 // synthesis state on mid-call re-sync) so a re-sync doesn't discard the
@@ -595,6 +653,9 @@ func unpackInfoBits(frame []byte) []byte {
 func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc.Reset()
+	d.dc.Reset()
+	d.smoother.Reset()
+	d.frameErrs = 0
 	d.clearLastGood()
 	d.recoveryFramesRemaining = 0
 	d.lowB0RunCount = 0
@@ -610,6 +671,7 @@ func (d *Decoder) Close() error { return nil }
 var (
 	_ voice.Vocoder      = (*Decoder)(nil)
 	_ voice.StatProvider = (*Decoder)(nil)
+	_ voice.ErrorAware   = (*Decoder)(nil)
 )
 
 func init() {
