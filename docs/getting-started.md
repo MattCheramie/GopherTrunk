@@ -106,3 +106,7 @@ pipeline — read the [Architecture](architecture.html) reference.
 ---
 
 **Ready to run it? → [Get started](getting-started-setup.html)**
+
+Once it's running, the guides continue the tour from your first call all the way
+to the APIs: [Basics](guide-basics.html) →
+[Intermediate](guide-intermediate.html) → [Advanced](guide-advanced.html).
