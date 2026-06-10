@@ -7,8 +7,36 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.8] — 2026-06-10
+
+This release adds a pure-Go **LoRa / LoRaWAN receiver** (#586) and hardens the
+daemon and several hardware paths. One SDR is channelized into parallel LoRa
+sub-channels and decoded through the full PHY (dechirp/FFT, Gray/de-interleave/
+Hamming FEC, de-whitening, CRC) with SF7–SF12 auto-detection; LoRaWAN 1.0.x
+frames are MAC-decoded and, with operator session keys, MIC-verified and
+decrypted, persisted to `lora_log`, served at `GET /api/v1/lora/frames`, and
+rendered on a new `/lora` panel. Recording gains an opt-in
+`recordings.skip_encrypted` flag (#607). The daemon **never stops silently**
+anymore — component panics are recovered and logged, and a soft memory limit
+plus a runtime heartbeat bound and surface the process footprint (#606, #492).
+On the fix side: P25 IMBE female-voice intelligibility and a high-pitched
+recording onset (#605), Airspy USB initialisation (#454), HackRF
+interface-claim on macOS (#511), live-audio playback in Chrome via Web Audio
+(#598), and the symbol-domain scopes now default to the control SDR (#402).
+
 ### Added
 
+- **Skip recording encrypted calls** (#607). A new opt-in
+  `recordings.skip_encrypted` flag suppresses WAV/raw files for calls the
+  operator can't decode (default `false` keeps recording everything; the call
+  log still notes encryption). The recorder gates at call start when a
+  control-channel grant already flags encryption (P25 Phase 1, DMR, NXDN,
+  EDACS, TETRA), and mid-call when encryption only surfaces on the traffic
+  channel (P25 Phase 1 LDU2 Encryption Sync, or a P25 Phase 2 compressed
+  grant) — the in-progress files are closed and deleted and no `CallComplete`
+  is published, so the partial never reaches the upload feeds. Wired through
+  the YAML config, the settings PATCH API + YAML writer, the TUI settings
+  panel, and the web Config Builder.
 - **LoRa decoding** (#586). A new pure-Go, zero-CGO LoRa receiver decodes the
   LoRa physical layer (chirp dechirp/FFT demodulation, preamble/sync/SFD
   acquisition with carrier-offset and timing recovery, Gray/de-interleave/
@@ -20,6 +48,21 @@ for tagged releases.
   Configure under `lora.channels`; decoded frames persist to the `lora_log`
   table, are served at `GET /api/v1/lora/frames`, and render live on the new
   `/lora` web panel.
+
+### Changed
+
+- **Daemon never stops silently + bounded memory footprint** (#606, #492). A
+  live run could halt mid-decode with no shutdown/fatal/panic line — the
+  hallmark of an external SIGKILL (OS memory-pressure killer) or an unrecovered
+  goroutine panic. The daemon now installs a deferred `log.Recover()` panic
+  guard on the component spawn path, the daemon-run and IQ-capture goroutines,
+  the rtltcp reader, the iqtap fanout, and all four composer voice chains, so a
+  panic becomes a logged ERROR + clean shutdown instead of a process kill. A
+  soft memory limit is set at startup (`GOMEMLIMIT` → `diagnostics.memory_limit_mb`
+  → ~70 % of physical RAM), a periodic runtime heartbeat
+  (`diagnostics.heartbeat_seconds`, default 60 s) logs uptime/goroutines/heap so
+  a leak or pre-kill footprint is visible in the timeline, and `net/http/pprof`
+  is available behind `GOPHERTRUNK_PPROF`.
 
 ### Fixed
 
@@ -54,6 +97,30 @@ for tagged releases.
   hints. Includes opt-in real-hardware tests (`make test-airspy-real`) and a
   Windows WinUSB interface-recipient/associated-interface control-transfer
   fallback.
+- **HackRF now claims its USB interface on macOS** (#511). The pure-Go USB
+  backend enumerated a HackRF but failed to claim interface 0, returning
+  `kIOReturnUnsupported` — `ClaimInterface` passed the device user-client type
+  ID, but an interface service requires `kIOUSBInterfaceUserClientTypeID`. The
+  interface path now uses the interface UUID (the device-open path keeps the
+  device UUID).
+- **Live audio plays in Chrome via Web Audio** (#598). The "Tap to enable
+  audio" button did nothing in Chrome on macOS: the hidden `<audio>` element
+  couldn't reliably play the daemon's open-ended chunked "infinite WAV", and
+  the failure was swallowed. The web player now reads the stream with `fetch()`
+  and a Web Audio pipeline (a `PcmFramer` reassembles the WAV header and int16
+  samples across chunk boundaries, scheduling gapless buffers through a jitter
+  buffer with underrun resync), surfaces failures as a visible "Audio failed —
+  tap to retry" chip, reads the sample rate from the WAV header, and sends the
+  bearer token so auth-gated daemons work. No backend change.
+- **Symbol-domain scopes default to the control SDR** (#402). The Eye Diagram,
+  Symbol Scope, Tuning, and Histogram panels each defaulted to the first
+  enumerated device, which on a multi-SDR rig is often an idle voice/aux
+  dongle, so a panel opened during active control-channel decode showed
+  nothing. A new `defaultSymbolDevice()` prefers the control-role device
+  (falling back to the first entry) for the initial selection in all four
+  panels. Also adds an MMR City clean-decode regression fixture
+  (`TestReplayMMRCityDecodesCleanP25`) that guards the C4FM path against
+  future regressions.
 
 ## [v0.3.7] — 2026-06-09
 
