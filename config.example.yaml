@@ -515,6 +515,37 @@ sdr:
 #       frequency_hz: 144_975_000     # 2 m M17 simplex calling
 #                                     #  (region-dependent; 433_475_000 on 70 cm)
 
+# LoRa wide-band decoder. Each entry pins one SDR to an ISM centre
+# frequency and splits its IQ band into parallel LoRa sub-channels, each
+# running a dechirp/FFT demodulator with spreading-factor auto-detection.
+# Publishes on events.KindLoRaFrame; storage.LoRaLog persists to the
+# lora_log table, GET /api/v1/lora/frames returns recent rows, and the
+# /lora web panel renders them live. A sub-channel with sync_word 0x34
+# is treated as LoRaWAN — the MAC layer is parsed and, when matching
+# session keys are supplied below, the MIC is verified and the payload
+# decrypted (GopherTrunk performs no key recovery).
+#
+# lora:
+#   channels:
+#     - serial: "915-antenna"         # SDR serial (must be in sdr.devices
+#                                     #  or sdr.rtl_tcp), sampling >= 2 Msps
+#       center_hz: 915_000_000        # US ISM (868_000_000 in EU)
+#       bandwidth: 125_000            # 125k | 250k | 500k (per BW class)
+#       oversample: 2                 # samples per chip (default 2)
+#       sub_channels:
+#         - offset_hz: -200_000       # carrier offset from center_hz
+#           spreading_factor: 0       # 0 = auto-detect SF7..12; or pin 7..12
+#           sync_word: 0x12           # 0x12 private, 0x34 LoRaWAN
+#           label: "LoRa 914.8"
+#         - offset_hz: 300_000
+#           spreading_factor: 7
+#           sync_word: 0x34           # LoRaWAN public network
+#           label: "LoRaWAN 915.3"
+#       lorawan_keys:                 # optional — enables MIC + decrypt
+#         - dev_addr: "26011BDA"
+#           nwk_skey: "0102030405060708090A0B0C0D0E0F10"
+#           app_skey: "A0A1A2A3A4A5A6A7A8A9AAABACADAEAF"
+
 trunking:
   # call_timeout_ms: inactivity window after which the engine's
   # watchdog ends a call (publishes CallEnd with EndReasonTimeout

@@ -191,6 +191,13 @@ const (
 	// mode (voice / data / packet), channel-access number, and the
 	// CRC-valid flag. Surfaced over SSE / WS for the live M17 panel.
 	KindM17LinkSetup Kind = "m17.linksetup"
+
+	// KindLoRaFrame fires when the LoRa decoder recovers one PHY frame off
+	// a configured sub-channel. Payload is a storage.LoRaFrame carrying the
+	// spreading factor, coding rate, bandwidth, RSSI/SNR, CRC-valid flag and
+	// the (de-whitened) payload bytes, plus any LoRaWAN MAC fields decoded
+	// from it. Surfaced over SSE / WS for the live LoRa panel.
+	KindLoRaFrame Kind = "lora.frame"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol

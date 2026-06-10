@@ -24,6 +24,14 @@ var webRoundTripAllow = map[string][]string{
 	// Rarely-tuned SDR watchdog interval; the web SDR section doesn't render
 	// it (round-trips via the SDRConfig index signature). Editable in the TUI.
 	"SDRConfig": {"WatchdogIntervalMs"},
+
+	// The LoRa section round-trips through the web Config Builder's generic
+	// index-signature editor; a bespoke typed editor in types.ts is a
+	// follow-up. The fields remain fully editable in the TUI and via raw YAML.
+	"Config":               {"LoRa"},
+	"LoRaChannelConfig":    {"CenterHz", "Bandwidth", "Oversample", "SubChannels", "LoRaWANKeys"},
+	"LoRaSubChannelConfig": {"OffsetHz", "SpreadingFactor", "SyncWord"},
+	"LoRaWANKeyConfig":     {"DevAddr", "NwkSKey", "AppSKey"},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no
