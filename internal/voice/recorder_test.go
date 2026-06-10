@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -588,6 +589,101 @@ func TestRecorderWriteRawFrameDecodesIntoWav(t *testing.T) {
 	wantSize := int64(wavHeaderSize + 3*160*2)
 	if st.Size() != wantSize {
 		t.Errorf("wav size = %d, want %d", st.Size(), wantSize)
+	}
+}
+
+// fakeDecodedTap records the PCM the recorder forwards from its
+// digital decode path so a test can confirm live consumers are fed.
+type fakeDecodedTap struct {
+	mu    sync.Mutex
+	calls int
+	total int // total samples forwarded
+	last  string
+}
+
+func (f *fakeDecodedTap) WritePCM(serial string, samples []int16) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.total += len(samples)
+	f.last = serial
+	return nil
+}
+
+func (f *fakeDecodedTap) snapshot() (calls, total int, last string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.total, f.last
+}
+
+// TestRecorderForwardsDecodedPCMToTap: PCM the recorder decodes from
+// digital vocoder frames in WriteRawFrame must be forwarded to the
+// live-audio tap (web stream / player / tone-out). Without this the
+// live audio path is silent for digital calls while recordings play
+// fine — issue #598. Also pins that the analog WritePCM path does NOT
+// re-invoke the tap (those sinks already get analog PCM via the
+// composer fanout; tapping there would double-send).
+func TestRecorderForwardsDecodedPCMToTap(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		VocoderForProtocol: map[string]string{"test-null": "null"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	tap := &fakeDecodedTap{}
+	r.SetDecodedPCMSink(tap)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-null", GroupID: 1, SourceID: 2},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// NullVocoder.FrameSize is 11 and decodes to 160 samples/frame.
+	for i := 0; i < 3; i++ {
+		if err := r.WriteRawFrame("VOICE-1", make([]byte, 11)); err != nil {
+			t.Fatalf("WriteRawFrame: %v", err)
+		}
+	}
+
+	calls, total, last := tap.snapshot()
+	if calls != 3 {
+		t.Errorf("tap WritePCM calls = %d, want 3", calls)
+	}
+	if total != 3*160 {
+		t.Errorf("tap forwarded %d samples, want %d", total, 3*160)
+	}
+	if last != "VOICE-1" {
+		t.Errorf("tap serial = %q, want VOICE-1", last)
+	}
+
+	// The analog WritePCM path must not touch the tap (avoids
+	// double-sending: those sinks get analog PCM via the fanout).
+	if err := r.WritePCM("VOICE-1", []int16{1, 2, 3, 4}); err != nil {
+		t.Fatalf("WritePCM: %v", err)
+	}
+	if calls2, _, _ := tap.snapshot(); calls2 != 3 {
+		t.Errorf("tap calls after analog WritePCM = %d, want 3 (unchanged)", calls2)
 	}
 }
 

@@ -66,6 +66,15 @@ type Recorder struct {
 	runDone   chan struct{}
 	closeOnce sync.Once
 
+	// decodedTap, when set, receives the PCM decoded from digital
+	// vocoder frames in WriteRawFrame — the live consumers (web
+	// stream, host player, tone-out) that only implement WritePCM and
+	// so never see raw frames. Wired once at daemon construction via
+	// SetDecodedPCMSink before Run starts, so the hot path reads it
+	// without locking. nil = no live fan-out (analog-only callers,
+	// tests).
+	decodedTap DecodedPCMSink
+
 	// recordDisabled gates new sessions at runtime. Toggled from
 	// the API by operators who want to stop laying down WAVs
 	// without restarting the daemon. In-flight sessions are NOT
@@ -73,6 +82,25 @@ type Recorder struct {
 	// the head of a call isn't lost when the operator flips the
 	// switch mid-conversation.
 	recordDisabled atomic.Bool
+}
+
+// DecodedPCMSink receives PCM the recorder decodes from digital
+// vocoder frames, so live consumers (web stream, host player,
+// tone-out) hear digital calls — not just analog ones. The composer's
+// digital chains emit only raw vocoder frames, which fan out solely to
+// the recorder (the lone decoder); without this tap that decoded audio
+// never reaches the WritePCM-only live sinks. Mirrors composer.PCMSink's
+// WritePCM but is declared here to avoid a voice → composer import cycle.
+type DecodedPCMSink interface {
+	WritePCM(deviceSerial string, samples []int16) error
+}
+
+// SetDecodedPCMSink wires the live-audio tap that receives PCM decoded
+// from digital vocoder frames. Call once during daemon construction
+// before Run/any calls start; it is not safe to change concurrently
+// with WriteRawFrame.
+func (r *Recorder) SetDecodedPCMSink(s DecodedPCMSink) {
+	r.decodedTap = s
 }
 
 // RecorderOptions configure a new Recorder.
@@ -343,6 +371,16 @@ func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
 		}
 		if err := s.wav.WriteSamples(samples); err != nil {
 			return err
+		}
+		// Fan the freshly-decoded PCM to the live consumers (web
+		// stream, host player, tone-out). For digital protocols this
+		// is the only point where PCM exists — the composer never
+		// calls WritePCM for them — so without this the live audio
+		// path is silent while recordings play fine (issue #598). Runs
+		// outside r.mu (sessionForWrite released it), so the tap is
+		// free to take its own locks.
+		if r.decodedTap != nil {
+			_ = r.decodedTap.WritePCM(deviceSerial, samples)
 		}
 	}
 	return nil
