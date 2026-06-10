@@ -49,14 +49,23 @@ const (
 // Release to fully smooth the envelope).
 type AGCConfig struct {
 	// TargetPeak is the post-AGC peak amplitude target in int16
-	// units. Default 24000 (~3 dB below int16 max for transient
-	// headroom).
+	// units. Default 18000 (~5.2 dB below int16 max) so ordinary
+	// frames land well clear of the soft-limiter knee (26213) and
+	// only true transients ever engage it. Measured across the field
+	// C4FM + CQPSK captures, 18000 holds limited-sample rate ≈0.01%
+	// while keeping a natural crest factor (~9).
 	TargetPeak float64
 
 	// Attack is the per-frame envelope rise coefficient. Standard
 	// IIR coefficient: 1.0 = instant tracking, 0.0 = no update.
-	// Default 0.4 — fast enough to catch loud onsets without
-	// over-shoot.
+	// Default 0.5 — fast-attack / slow-release, the classic envelope
+	// follower. Fast attack catches loud onsets so they don't
+	// overshoot into the limiter; the slow Release preserves
+	// inter-frame dynamics. A confound-free sweep over the field
+	// captures peaks crest factor at attack≈0.5 (~9, matching a
+	// reference decoder); both much slower (0.05, onset overshoot
+	// flattens via the limiter) and instant (1.0, per-frame
+	// renormalisation flattens) give lower crest.
 	Attack float64
 
 	// Release is the per-frame envelope fall coefficient. Smaller
@@ -65,8 +74,13 @@ type AGCConfig struct {
 	// intelligible without pumping. Default 0.02.
 	Release float64
 
-	// MinGain bounds the lowest gain the AGC can apply, preventing
-	// runaway compression on extreme transients. Default 10.
+	// MinGain bounds the lowest gain the AGC can apply (it may
+	// attenuate — the IMBE/AMBE synthesiser already emits near-int16
+	// scale, so a loud frame needs gain ≈1, not amplification).
+	// Default 0.05. NOTE: a too-high floor here is catastrophic — a
+	// floor of 10 forced ≥10× amplification of already-loud frames
+	// straight into the limiter, which was the root cause of the
+	// "robotic"/over-driven field reports.
 	MinGain float64
 
 	// MaxGain bounds the highest gain the AGC can apply, preventing
@@ -88,13 +102,41 @@ type AGCConfig struct {
 // backfill from the defaults via WithDefaults.
 func DefaultAGCConfig() AGCConfig {
 	return AGCConfig{
-		TargetPeak: 24000.0,
-		Attack:     0.4,
+		TargetPeak: 18000.0,
+		Attack:     0.5,
 		Release:    0.02,
-		MinGain:    10.0,
+		MinGain:    0.05,
 		MaxGain:    1e5,
 		NoiseFloor: 1e-3,
 	}
+}
+
+// Soft-limiter geometry. Below softLimitKnee samples pass through
+// linearly (the common case once TargetPeak leaves headroom); above the
+// knee the excess is compressed with tanh so the output approaches — but
+// never reaches — the int16 rail. This replaces the old hard clip at
+// ±32767, whose abrupt corners injected harmonic distortion that read as
+// "robotic" whenever a transient (or the old over-hot gain) exceeded full
+// scale.
+const (
+	softLimitRail = 32767.0
+	softLimitKnee = 0.80 * softLimitRail // 26213
+)
+
+// softLimit maps x into (−32767, 32767), passing |x| ≤ knee through
+// unchanged and tanh-compressing the region above the knee. limited
+// reports whether the knee was engaged (used for clip telemetry).
+func softLimit(x float64) (y float64, limited bool) {
+	a := math.Abs(x)
+	if a <= softLimitKnee {
+		return x, false
+	}
+	over := (a - softLimitKnee) / (softLimitRail - softLimitKnee)
+	comp := softLimitKnee + (softLimitRail-softLimitKnee)*math.Tanh(over)
+	if x < 0 {
+		comp = -comp
+	}
+	return comp, true
 }
 
 // WithDefaults backfills any zero-value fields in cfg from
@@ -125,14 +167,23 @@ func (cfg AGCConfig) WithDefaults() AGCConfig {
 
 // AGC is the per-frame fast-attack / slow-release peak-envelope
 // tracker shared across MBE-family decoders. The smoothed envelope
-// scales each frame's float PCM to AGCConfig.TargetPeak; samples
-// beyond int16 range are hard-clipped at ±32767.
+// scales each frame's float PCM to AGCConfig.TargetPeak; samples that
+// would exceed the int16 range are soft-limited (see softLimit), not
+// hard-clipped.
 //
 // Concurrent calls to Apply on the same AGC are not safe; each
 // decoder owns one AGC instance.
 type AGC struct {
 	cfg AGCConfig
 	env float64 // smoothed peak envelope; 0 = fresh (next frame seeds it)
+
+	// Per-frame telemetry from the most recent Apply call, read by the
+	// IMBE decoder which accumulates its own per-call totals. Kept
+	// per-frame (not cumulative) so a mid-call Reset — which the upstream
+	// decoder triggers on re-sync — never discards a call's running totals.
+	lastGain        float64 // gain applied on the most recent frame
+	lastMaxPreClip  float64 // largest pre-limit sample magnitude this frame
+	lastClipSamples int     // samples that engaged the soft limiter this frame
 }
 
 // NewAGC constructs an AGC with the supplied config. Zero-value
@@ -151,9 +202,22 @@ func (a *AGC) Config() AGCConfig { return a.cfg }
 func (a *AGC) Envelope() float64 { return a.env }
 
 // Reset clears the envelope so the next Apply call seeds from the
-// frame's peak again. Used on stream re-sync (e.g., a frame-loss
-// event from the upstream protocol decoder).
+// frame's peak again. Used on stream re-sync (e.g., a frame-loss event
+// from the upstream protocol decoder). Per-frame telemetry is left as-is
+// (it is overwritten on the next Apply) so a mid-call Reset doesn't lose
+// the caller's running per-call totals.
 func (a *AGC) Reset() { a.env = 0 }
+
+// LastGain returns the gain applied on the most recent Apply call.
+func (a *AGC) LastGain() float64 { return a.lastGain }
+
+// LastMaxPreClipPeak returns the largest pre-limit sample magnitude
+// (int16 units) on the most recent Apply call.
+func (a *AGC) LastMaxPreClipPeak() float64 { return a.lastMaxPreClip }
+
+// LastClipSamples returns how many samples engaged the soft limiter on
+// the most recent Apply call.
+func (a *AGC) LastClipSamples() int { return a.lastClipSamples }
 
 // Apply tracks the per-frame peak with fast-attack / slow-release
 // smoothing and writes pcm scaled to the config's TargetPeak into
@@ -176,8 +240,10 @@ func (a *AGC) Reset() { a.env = 0 }
 //
 // MinGain / MaxGain prevent the envelope from sending silence to
 // full scale or compressing extreme transients to inaudible levels.
-// After the gain multiply, samples beyond int16 range are
-// hard-clipped at ±32767.
+// After the gain multiply, samples are passed through softLimit so the
+// output approaches but never reaches the int16 rail (no hard-clip
+// corners). Per-call telemetry (gain, pre-limit peak, limited-sample
+// count) is accumulated for the VoiceStats summary.
 func (a *AGC) Apply(pcm []float64, out []int16, freezeEnvelope bool) {
 	cfg := a.cfg
 	if !freezeEnvelope {
@@ -209,13 +275,18 @@ func (a *AGC) Apply(pcm []float64, out []int16, freezeEnvelope bool) {
 	} else if gain > cfg.MaxGain {
 		gain = cfg.MaxGain
 	}
+	a.lastGain = gain
+	a.lastMaxPreClip = 0
+	a.lastClipSamples = 0
 	for i, v := range pcm {
 		s := v * gain
-		if s > 32767 {
-			s = 32767
-		} else if s < -32768 {
-			s = -32768
+		if abs := math.Abs(s); abs > a.lastMaxPreClip {
+			a.lastMaxPreClip = abs
 		}
-		out[i] = int16(s)
+		limited, didLimit := softLimit(s)
+		if didLimit {
+			a.lastClipSamples++
+		}
+		out[i] = int16(limited)
 	}
 }

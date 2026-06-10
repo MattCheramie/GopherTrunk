@@ -8,12 +8,38 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+
+- **P25/DMR voice was over-driven into clipping (robotic, "female voices
+  especially awful")**. The MBE-family AGC carried a `MinGain` floor of 10,
+  forcing at least a 10× gain onto a synthesizer that already emits near-int16
+  scale (raw crest factor ≈11). Every loud frame was amplified ~10× straight
+  into the hard clip, flattening speech to a crest factor of ~3 and distorting
+  it — independent of the demod, which decoded cleanly. The floor is now 0.05
+  (the AGC may attenuate), the hard clip at ±32767 is replaced with a tanh soft
+  limiter, and the target/attack were retuned against the field C4FM + CQPSK
+  captures. Decoded female speech now lands at crest ≈7.8 with ~0.02% limited
+  samples — in line with a reference decoder (Trunk Recorder) on the same
+  speaker — instead of crest ≈3.3 railed at full scale.
+- **Daemon panic on shutdown** finalizing a dormant post-segment recording
+  session: `WavWriter.Close` dereferenced a nil writer. The session close now
+  guards a nil WAV (and `WavWriter.Close` is nil-safe), so Ctrl-C no longer
+  panics and the final recording is finalized cleanly.
 - Airspy R2 / Mini now decode correctly (#454). The driver treated the
   receiver's real ADC stream as interleaved I/Q, producing a huge quadrature
   imbalance (~78°) and no image rejection (~3 dB) so nothing locked. The Airspy
   is a real-sampling front end: its samples are now converted to complex
   baseband on the host (Fs/4 translation + half-band Hilbert, decimate-by-two),
   matching libairspy's IQ modes and restoring image rejection (~70 dB).
+
+### Added
+
+- **Per-call voice audio-quality telemetry** for diagnosing decode/synthesis
+  problems. The IMBE decoder accumulates a `VoiceStats` summary (pitch/f0,
+  harmonic count, voiced fraction, AGC gain, output peak/RMS/crest, and
+  limited-sample percentage); the recorder logs it per call at `DEBUG` as
+  `recorder: voice audio quality`, escalating to `WARN` when the output is
+  clipping. `gophertrunk decode` prints the same summary for a captured `.raw`
+  sidecar (`-stats`, default on), so audio quality can be triaged offline.
 
 ## [v0.3.8] — 2026-06-10
 
