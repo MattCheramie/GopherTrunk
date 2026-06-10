@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { audioStreamURL } from "../api/client";
+import { createStreamPlayer, type StreamPlayer } from "../audio/streamPlayer";
 import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
 
 // AudioPlayer is a floating, dismissable mini-player that streams
-// /api/v1/audio/stream into a long-lived <audio> element. iOS and
-// Android both require a user gesture before audio starts playing,
-// so the first activation goes through a "Tap to enable audio"
-// button. Once unlocked the player auto-resumes whenever the SPA
-// regains focus or the daemon reconnects.
+// /api/v1/audio/stream through the Web Audio API. iOS and Android both
+// require a user gesture before audio starts playing, so the first
+// activation goes through a "Tap to enable audio" button.
+//
+// Issue #598: this used to point a hidden <audio> element at the stream
+// URL, which failed silently in Chrome on macOS (an open-ended chunked
+// "infinite WAV" is unreliable for the media element). We now fetch the
+// stream and play the decoded PCM through an AudioContext — see
+// ../audio/streamPlayer.ts — which is robust across browsers and lets us
+// send the Authorization header for auth-gated daemons. Failures surface
+// as a visible chip rather than a swallowed console.warn.
 //
 // Mobile niceties:
 //   - Media Session API lights up the OS lock-screen / control
 //     center with track-style metadata pulled from the active call.
-//   - The audio tag's `preload=none` + manual `src` swap keeps iOS
-//     from auto-starting the stream when the browser is reopened.
 export function AudioPlayer() {
   const cfg = useShared(selectClientConfig);
   const activeCalls = useShared((s) => s.activeCalls);
@@ -23,7 +28,8 @@ export function AudioPlayer() {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(prefs.audioVolume());
   const [recording, setRecording] = useState<boolean | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const playerRef = useRef<StreamPlayer | null>(null);
 
   // Reflect the daemon's current audio state into the local toggles.
   const daemonAudio = useShared((s) => s.audio);
@@ -50,44 +56,56 @@ export function AudioPlayer() {
     });
   }, [activeCalls]);
 
-  const enable = async () => {
-    const el = audioRef.current;
-    if (!el || !cfg.baseURL) return;
-    el.src = audioStreamURL(cfg);
-    el.volume = volume;
-    el.muted = false;
-    try {
-      await el.play();
-      setEnabled(true);
-    } catch (err) {
-      // Autoplay blocked, or the media failed to load (e.g. a server
-      // without Range support trips Safari). Surface it so the failure
-      // isn't invisible; the next user gesture will retry.
-      console.warn("AudioPlayer: enable failed", err);
-      setEnabled(false);
-    }
+  // Tear the player down when the target daemon (URL or token) changes
+  // so a stale stream from the previous server doesn't keep playing.
+  useEffect(() => {
+    return () => {
+      playerRef.current?.stop();
+      playerRef.current = null;
+    };
+  }, [cfg]);
+
+  // enable must stay synchronous: createStreamPlayer().start() resumes
+  // the AudioContext inside this gesture so the autoplay policy doesn't
+  // reject playback.
+  const enable = () => {
+    if (!cfg.baseURL) return;
+    setError(null);
+    playerRef.current?.stop();
+    const player = createStreamPlayer({
+      url: audioStreamURL(cfg),
+      token: cfg.token,
+      onError: (msg) => {
+        setError(msg);
+        setEnabled(false);
+      },
+      onStateChange: (state) => {
+        setEnabled(state === "playing" || state === "connecting");
+      },
+    });
+    playerRef.current = player;
+    player.setVolume(volume);
+    player.setMuted(muted);
+    player.start();
+    setEnabled(true);
   };
 
   const disable = () => {
-    const el = audioRef.current;
-    if (el) {
-      el.pause();
-      el.removeAttribute("src");
-      el.load();
-    }
+    playerRef.current?.stop();
+    playerRef.current = null;
     setEnabled(false);
   };
 
   const onVolume = (v: number) => {
     setVolume(v);
     prefs.setAudioVolume(v);
-    if (audioRef.current) audioRef.current.volume = v;
+    playerRef.current?.setVolume(v);
   };
 
   const toggleMute = async () => {
     const next = !muted;
     setMuted(next);
-    if (audioRef.current) audioRef.current.muted = next;
+    playerRef.current?.setMuted(next);
     try {
       await writes.setAudio(cfg, { muted: next });
     } catch {
@@ -109,14 +127,26 @@ export function AudioPlayer() {
   return (
     <div className="fixed sm:bottom-3 bottom-16 right-3 z-30 panel p-3 flex items-center gap-2 max-w-[calc(100%-1.5rem)]">
       {!enabled ? (
-        <button
-          type="button"
-          onClick={enable}
-          className="btn-primary text-xs"
-          aria-label="Enable audio"
-        >
-          <span aria-hidden>▶</span> Tap to enable audio
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={enable}
+            className="btn-primary text-xs"
+            aria-label="Enable audio"
+          >
+            <span aria-hidden>▶</span>{" "}
+            {error ? "Audio failed — tap to retry" : "Tap to enable audio"}
+          </button>
+          {error && (
+            <span
+              role="alert"
+              title={error}
+              className="text-xs text-red-400 max-w-[12rem] truncate"
+            >
+              ⚠ {error}
+            </span>
+          )}
+        </>
       ) : (
         <>
           <button
@@ -162,21 +192,6 @@ export function AudioPlayer() {
           </button>
         </>
       )}
-      <audio
-        ref={audioRef}
-        preload="none"
-        playsInline
-        onError={(e) => {
-          console.warn(
-            "AudioPlayer: media error",
-            e.currentTarget.error,
-          );
-        }}
-        // Keep the player on-screen but visually empty; controls are
-        // bespoke above so the lockscreen MediaSession is the only
-        // public surface.
-        className="hidden"
-      />
     </div>
   );
 }

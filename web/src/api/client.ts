@@ -213,13 +213,13 @@ export async function probe(cfg: ClientConfig): Promise<Health> {
   return await api.health(cfg);
 }
 
-// audioStreamURL composes the URL of the live PCM stream. Browsers
-// cannot attach an Authorization header to <audio> elements, so we
-// pass the token (if any) as a query parameter is *not* supported by
-// the daemon — instead, deployments that require auth must serve the
-// stream from a trusted-network bind (auto mode) or use the
-// fetch + AudioWorklet path which can supply headers. For the simple
-// <audio> tag path we rely on the daemon's "reads are open" policy.
+// audioStreamURL composes the URL of the live PCM stream. The WebUI
+// player (see ../audio/streamPlayer.ts) fetches this URL and decodes the
+// WAV body through the Web Audio API, so it can attach the
+// Authorization: Bearer header on auth-gated daemons — the old hidden
+// <audio> element could not, which is why the stream had to be served
+// from a trusted-network bind. The token is sent as a header by the
+// fetch, never as a query parameter, so it stays out of access logs.
 export function audioStreamURL(
   cfg: ClientConfig,
   filter: { device?: string; talkgroup?: number } = {},
