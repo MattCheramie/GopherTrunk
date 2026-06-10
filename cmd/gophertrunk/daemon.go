@@ -1087,6 +1087,27 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			sinks = append(sinks, playerSink{p: d.player, engine: d.engine})
 		}
 		sinks = append(sinks, d.audioPub)
+
+		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
+		// raw vocoder frames and fan out only to the recorder — the
+		// lone decoder. The other live sinks here implement WritePCM
+		// only, so they never see digital audio. Tap the PCM the
+		// recorder decodes and forward it to those live consumers, so
+		// the web stream / host player / tone-out hear digital calls
+		// too, not just analog FM (issue #598). The recorder itself is
+		// excluded from this tap (it already wrote the WAV from its own
+		// decode); analog PCM still flows to these sinks via the
+		// composer fanout below, so each sink gets every sample once.
+		var liveSinks []composer.PCMSink
+		if d.toneout != nil {
+			liveSinks = append(liveSinks, d.toneout)
+		}
+		if d.player != nil {
+			liveSinks = append(liveSinks, playerSink{p: d.player, engine: d.engine})
+		}
+		liveSinks = append(liveSinks, d.audioPub)
+		d.recorder.SetDecodedPCMSink(fanoutSink(liveSinks))
+
 		var sink composer.PCMSink = d.recorder
 		if len(sinks) > 1 {
 			sink = fanoutSink(sinks)
