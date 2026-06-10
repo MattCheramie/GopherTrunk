@@ -17,12 +17,32 @@ package mbe
 // Algorithmic reference: szechyjs/mbelib's mbe_spectralAmpDecode
 // (ISC-licensed; attribution preserved at the bottom of tables.go).
 
-// PredictionGain is the inter-frame prediction coefficient γ from
-// eq. 75 (TIA-102.BABA §6.1). The spec fixes it at 0.65: high
-// enough that the harmonic envelope evolves smoothly across frames,
-// low enough that a pathological prev frame can't dominate the
-// current spectrum.
-const PredictionGain = 0.65
+// predictionGain returns the inter-frame log-amplitude prediction
+// coefficient ρ from §6.1, as a function of the harmonic count L. The
+// IMBE algorithm makes ρ pitch-dependent — low for high-pitch / low-L
+// frames so the previous frame's (differently-spaced) spectral envelope
+// is not over-smeared onto the current one, higher for low-pitch / high-L
+// frames where the envelope is more stationary. The breakpoints match the
+// reference decoders (OP25 imbe_vocoder sa_decode.cc and JMBE
+// IMBEFrame.java):
+//
+//	ρ = 0.4               for L ≤ 15   (high pitch, e.g. female voices)
+//	ρ = 0.03·L − 0.05     for 16 ≤ L ≤ 24
+//	ρ = 0.7               for L ≥ 25   (low pitch)
+//
+// GopherTrunk previously hardcoded 0.65 for every frame, which
+// over-predicts high-pitch frames and was the dominant cause of poor
+// female-voice intelligibility versus OP25 / Trunk Recorder.
+func predictionGain(L int) float64 {
+	switch {
+	case L <= 15:
+		return 0.4
+	case L <= 24:
+		return 0.03*float64(L) - 0.05
+	default:
+		return 0.7
+	}
+}
 
 // SynthState carries inter-frame memory needed by the synthesizer.
 // Step 4a uses PrevW0 / PrevL / PrevLog2Ml for the eq. 75-77
@@ -82,6 +102,7 @@ func PredictLog2Ml(s *SynthState, p Params, dst *[57]float64) {
 
 	var pred [57]float64
 	if s.PrevL > 0 && s.PrevW0 > 0 {
+		gain := predictionGain(L)
 		ratio := p.W0 / s.PrevW0
 		for l := 1; l <= L; l++ {
 			pos := float64(l) * ratio
@@ -100,7 +121,7 @@ func PredictLog2Ml(s *SynthState, p Params, dst *[57]float64) {
 			if k1 > s.PrevL {
 				k1 = s.PrevL
 			}
-			pred[l] = PredictionGain *
+			pred[l] = gain *
 				((1-frac)*s.PrevLog2Ml[k] + frac*s.PrevLog2Ml[k1])
 		}
 	}

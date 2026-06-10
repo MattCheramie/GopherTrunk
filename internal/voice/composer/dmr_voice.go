@@ -26,6 +26,14 @@ type rawFrameSink interface {
 	WriteRawFrame(deviceSerial string, frame []byte) error
 }
 
+// errAwareRawSink is the optional richer sink the P25 Phase 1 voice chain
+// uses to pass the per-frame FEC corrected-bit count to the IMBE decoder's
+// adaptive smoothing. The recorder implements it; sinks that don't are
+// handled via the plain rawFrameSink path.
+type errAwareRawSink interface {
+	WriteRawFrameWithErrors(deviceSerial string, frame []byte, correctedBits int) error
+}
+
 // runDMRVoiceChain consumes IQ for one DMR voice call. It decimates
 // the wideband IQ to a DMR-symbol-friendly rate, recovers the dibit
 // stream with the shared DMR receiver, assembles A–F voice

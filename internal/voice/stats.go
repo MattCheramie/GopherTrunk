@@ -67,3 +67,13 @@ type StatProvider interface {
 	VoiceStats() (VoiceStats, bool)
 	ResetStats()
 }
+
+// ErrorAware is implemented by vocoders that can use the channel FEC
+// corrected-bit count for the upcoming frame to drive adaptive smoothing
+// (currently the pure-Go IMBE decoder). The recorder calls SetFrameErrors
+// with the per-frame corrected-bit count immediately before Decode when the
+// caller supplies it (P25 Phase 1); a vocoder that doesn't implement this
+// simply ignores the channel error rate.
+type ErrorAware interface {
+	SetFrameErrors(correctedBits int)
+}

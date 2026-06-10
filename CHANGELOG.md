@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **P25 IMBE voice quality: align the vocoder with the OP25 / JMBE reference
+  decoders.** Three changes ported after comparing GopherTrunk's mbelib-lineage
+  decoder against OP25's `imbe_vocoder` and DSheirer's JMBE:
+  - **Pitch-dependent spectral-amplitude prediction.** The cross-frame
+    log-amplitude prediction coefficient is now a function of the harmonic
+    count L (`ρ = 0.4` for L≤15, `0.03·L−0.05` for 16–24, `0.7` for L≥25),
+    matching both reference decoders, instead of a fixed 0.65. The old constant
+    over-predicted high-pitch / low-L frames and smeared the previous frame's
+    spectral envelope onto them — the main remaining cause of poor female-voice
+    intelligibility. Measured on the field capture, the female call's crest
+    factor rose from ~7.8 to ~9.8 (closer to the raw synthesizer's ~11).
+  - **DC-removal high-pass** on the synthesized PCM (first-order, pole 0.99),
+    matching OP25's `dc_rmv.cc`, so a DC offset no longer wastes AGC headroom.
+  - **Adaptive smoothing** driven by the channel FEC error rate (ported in
+    spirit from JMBE `IMBEModelParameters`): a running ε_R estimate caps
+    error-induced amplitude spikes, reclaims obviously-voiced harmonics, and
+    mutes hopeless frames (ε_R > 0.0875). Thresholds are expressed relative to a
+    running local-energy estimate (vs the reference's fixed-point absolute
+    constants) and are inert on a clean channel, so well-decoded audio is
+    byte-identical. The P25 Phase 1 chain now threads the per-frame corrected-bit
+    count to the decoder (`voice.ErrorAware`); other protocols are unaffected.
+
 ### Fixed
 
 - **P25/DMR voice was over-driven into clipping (robotic, "female voices

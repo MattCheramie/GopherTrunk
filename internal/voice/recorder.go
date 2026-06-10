@@ -326,6 +326,19 @@ func (r *Recorder) sessionForWrite(serial string) *recordingSession {
 // Frames for a session without either output (no sidecar, no
 // vocoder) are dropped silently.
 func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
+	return r.writeRawFrame(deviceSerial, frame, 0, false)
+}
+
+// WriteRawFrameWithErrors is WriteRawFrame plus the channel FEC
+// corrected-bit count for the frame. When the session's vocoder implements
+// voice.ErrorAware (the pure-Go IMBE decoder), the count is handed to it
+// before Decode so adaptive smoothing can estimate the channel error rate.
+// Callers without an error count use WriteRawFrame.
+func (r *Recorder) WriteRawFrameWithErrors(deviceSerial string, frame []byte, correctedBits int) error {
+	return r.writeRawFrame(deviceSerial, frame, correctedBits, true)
+}
+
+func (r *Recorder) writeRawFrame(deviceSerial string, frame []byte, correctedBits int, haveErrs bool) error {
 	s := r.sessionForWrite(deviceSerial)
 	if s == nil {
 		return nil
@@ -336,6 +349,11 @@ func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
 		}
 	}
 	if s.vocoder != nil {
+		if haveErrs {
+			if ea, ok := s.vocoder.(ErrorAware); ok {
+				ea.SetFrameErrors(correctedBits)
+			}
+		}
 		samples, err := s.vocoder.Decode(frame)
 		if err != nil {
 			r.log.Warn("recorder: vocoder decode failed; dropping frame from PCM",
