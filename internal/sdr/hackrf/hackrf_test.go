@@ -60,6 +60,11 @@ func TestDriverEnumerateAndOpen(t *testing.T) {
 	if !strings.Contains(dev.Info().TunerName, "git-2024.02.1") {
 		t.Errorf("Info.TunerName = %q, want firmware suffix", dev.Info().TunerName)
 	}
+	// The opened device must carry the gain ladder so `sdr list --probe`
+	// (which reads dev.Info() post-open) doesn't report an empty list.
+	if got := dev.Info().Gains; len(got) == 0 {
+		t.Errorf("opened device Info().Gains is empty; want the gain ladder")
+	}
 	if err := dev.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}

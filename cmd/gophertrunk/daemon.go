@@ -3100,6 +3100,13 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 				"serial", devCfg.Serial, "voice_taps", taps)
 			taps = 0
 		}
+		// Each tap runs its own DDC, so CPU scales ~linearly per tap.
+		// There's no hard cap, but flag a high count so an accidental
+		// large value doesn't quietly peg a core.
+		if taps > 16 {
+			log.Warn("daemon: wideband: high voice_taps count; CPU scales ~linearly per tap (each is an independent DDC)",
+				"serial", devCfg.Serial, "voice_taps", taps)
+		}
 		for i := 0; i < taps; i++ {
 			vt, err := wbvoice.New(wbvoice.Options{
 				Serial:           fmt.Sprintf("wb:%s:tap-%d", entry.Info.Serial, i),
@@ -3494,6 +3501,13 @@ func (a audioCockpit) BackendEnabled() bool {
 		return false
 	}
 	return a.player.Stats().Enabled
+}
+
+func (a audioCockpit) BackendError() string {
+	if a.player == nil {
+		return ""
+	}
+	return a.player.Stats().BackendError
 }
 
 // poolDevices adapts *sdr.Pool to composer.Devices. The composer

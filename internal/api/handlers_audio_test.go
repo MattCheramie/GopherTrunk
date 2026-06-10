@@ -18,15 +18,16 @@ import (
 // SetMuted / SetRecordingEnabled calls so assertions can confirm
 // the PATCH handler routed each knob correctly.
 type fakeAudio struct {
-	volume   atomic.Uint32 // float32 bits
-	muted    atomic.Bool
-	rec      atomic.Bool
-	drops    uint64
-	rate     uint32
-	backend  bool
-	setVolN  atomic.Int32
-	setMuteN atomic.Int32
-	setRecN  atomic.Int32
+	volume     atomic.Uint32 // float32 bits
+	muted      atomic.Bool
+	rec        atomic.Bool
+	drops      uint64
+	rate       uint32
+	backend    bool
+	backendErr string
+	setVolN    atomic.Int32
+	setMuteN   atomic.Int32
+	setRecN    atomic.Int32
 }
 
 func newFakeAudio() *fakeAudio {
@@ -62,6 +63,7 @@ func (f *fakeAudio) SetRecordingEnabled(enabled bool) {
 func (f *fakeAudio) DropsTotal() uint64   { return f.drops }
 func (f *fakeAudio) SampleRate() uint32   { return f.rate }
 func (f *fakeAudio) BackendEnabled() bool { return f.backend }
+func (f *fakeAudio) BackendError() string { return f.backendErr }
 
 func float32bits32(f float32) uint32     { return math.Float32bits(f) }
 func float32frombits32(u uint32) float32 { return math.Float32frombits(u) }

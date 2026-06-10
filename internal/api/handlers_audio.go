@@ -18,6 +18,11 @@ type AudioStatusDTO struct {
 	// failed to init; PATCH still works but takes effect only on
 	// the recorder gate.
 	BackendEnabled bool `json:"backend_enabled"`
+	// BackendError carries the reason the sink failed to open when
+	// audio was enabled (e.g. the ioctl device rejected S16_LE mono).
+	// Omitted when audio is healthy or intentionally disabled, so a
+	// "Tap to enable audio" that produced no sound can show the cause.
+	BackendError string `json:"backend_error,omitempty"`
 	// SampleRate is the host playback rate in Hz.
 	SampleRate uint32 `json:"sample_rate"`
 	// Volume is the software gain (0..1).
@@ -139,6 +144,7 @@ func (s *Server) handleAudioPatch(w http.ResponseWriter, r *http.Request) {
 func audioStatusDTO(a AudioController) AudioStatusDTO {
 	return AudioStatusDTO{
 		BackendEnabled:   a.BackendEnabled(),
+		BackendError:     a.BackendError(),
 		SampleRate:       a.SampleRate(),
 		Volume:           a.Volume(),
 		Muted:            a.Muted(),

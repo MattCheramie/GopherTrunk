@@ -65,6 +65,15 @@ const (
 
 var openRetryBackoff = 250 * time.Millisecond
 
+// gainPresetsTenthDB are indicative tenth-dB gain values surfaced in
+// sdr.Info.Gains so `sdr list --probe` and the web UI can offer the
+// operator a ladder to pick from (0–50 dB). SetGain also accepts any
+// free-form tenth-dB value between these rungs. Shared by Enumerate
+// and openDevice so a probed (opened) device reports the same ladder
+// an enumerated one does — otherwise `--probe` shows an empty list
+// (issue: airspy/hackrf probe gains came back []).
+var gainPresetsTenthDB = []int{0, 100, 200, 300, 400, 500}
+
 // Driver implements sdr.Driver for Airspy.
 type Driver struct {
 	enum usb.Enumerator
@@ -108,9 +117,7 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 			Manufacturer: desc.Manufacturer,
 			Product:      desc.Product,
 			TunerName:    tunerNameFor(desc.Product),
-			// Indicative tenth-dB presets; the driver also accepts
-			// a free-form SetGain value.
-			Gains: []int{0, 100, 200, 300, 400, 500},
+			Gains:        gainPresetsTenthDB,
 		}
 	}
 	return out, nil
@@ -193,6 +200,10 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 			Manufacturer: desc.Manufacturer,
 			Product:      desc.Product,
 			TunerName:    tunerNameFor(desc.Product),
+			// Carry the gain ladder onto the opened device so
+			// dev.Info() (used by `sdr list --probe`) reports it
+			// instead of an empty list.
+			Gains: gainPresetsTenthDB,
 		},
 	}
 	_ = t.ControlOut(reqReceiverMode, receiverModeOff, 0, nil, controlTimeoutMs)
@@ -263,10 +274,19 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 	return d.t.ControlOut(reqSetFreq, 0, 0, payload, controlTimeoutMs)
 }
 
-// SetSampleRate follows libairspy semantics:
-// - exact known rates are sent by index
-// - otherwise values >= 1 MHz are encoded as (rate_hz*2)/1000 for IQ modes
-// and sent as wIndex on an IN vendor request.
+// SetSampleRate programs the firmware so the host-side IQ stream comes
+// out at the requested IQ rate (hz).
+//
+// The Airspy is a real-sampling receiver: the firmware streams bare ADC
+// samples at the *device* rate, and the host converter (iqconverter.go)
+// translates by Fs/4 and decimates by two, so the delivered complex-IQ
+// rate is HALF the device rate. The firmware's rate table
+// (fetchSampleRates) is therefore in device rates (e.g. 3 MSPS, 6 MSPS).
+// To deliver an IQ rate of hz we must program the device at 2×hz — a
+// requested IQ rate of 3 MHz selects the 6 MSPS device mode, 1.5 MHz
+// selects 3 MSPS. Sending hz directly (the prior behaviour) under-ran
+// the pipeline by 2×, so every downstream decoder mis-tuned and only
+// the DC spike survived.
 func (d *Device) SetSampleRate(hz uint32) error {
 	if d.isClosed() {
 		return usb.ErrClosed
@@ -276,38 +296,50 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	return err
 }
 
-func (d *Device) sampleRateCommandParam(hz uint32) uint16 {
+// sampleRateCommandParam maps a requested IQ rate to the wIndex the
+// firmware expects: an index into the device-rate table when 2×iqHz
+// matches a known device rate, the nearest table index when it doesn't,
+// or a by-value encoding (deviceHz/1000) when no table was read.
+func (d *Device) sampleRateCommandParam(iqHz uint32) uint16 {
 	d.mu.Lock()
 	rates := d.rates
 	d.mu.Unlock()
 
-	if hz >= minSamplerateHz {
+	if iqHz >= minSamplerateHz {
+		deviceHz := iqHz * 2 // converter decimates by two; see SetSampleRate
 		for i, r := range rates {
-			if hz == r {
+			if deviceHz == r {
 				return uint16(i)
 			}
 		}
-		return uint16((hz * 2) / 1000)
+		if len(rates) > 0 {
+			// Snap to the nearest advertised device rate rather than
+			// emitting a by-value encoding the firmware may reject.
+			return uint16(d.closestRateIndex(iqHz))
+		}
+		return uint16(deviceHz / 1000)
 	}
-	return uint16(hz)
+	return uint16(iqHz)
 }
 
-// closestRateIndex returns the index of the supported sample rate
-// nearest hz. If no table is known, it returns 0.
-func (d *Device) closestRateIndex(hz uint32) int {
+// closestRateIndex returns the index of the supported DEVICE sample
+// rate nearest 2×iqHz (the device streams at twice the IQ rate; see
+// SetSampleRate). If no table is known, it returns 0.
+func (d *Device) closestRateIndex(iqHz uint32) int {
 	d.mu.Lock()
 	rates := d.rates
 	d.mu.Unlock()
 	if len(rates) == 0 {
 		return 0
 	}
+	deviceHz := iqHz * 2
 	best, bestDiff := 0, ^uint32(0)
 	for i, r := range rates {
-		diff := r
-		if hz > r {
-			diff = hz - r
+		var diff uint32
+		if deviceHz > r {
+			diff = deviceHz - r
 		} else {
-			diff = r - hz
+			diff = r - deviceHz
 		}
 		if diff < bestDiff {
 			best, bestDiff = i, diff
