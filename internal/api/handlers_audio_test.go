@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"math"
 	"net/http"
 	"sync/atomic"
@@ -94,6 +96,40 @@ func TestAudioStatus_OK(t *testing.T) {
 	}
 	if !body.RecordingEnabled {
 		t.Errorf("recording_enabled = false")
+	}
+}
+
+// GET /api/v1/audio surfaces live-stream publisher health so an
+// operator can confirm consumers are attached (issue #598 diagnostics).
+func TestAudioStatus_ExposesPublisherStats(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = pub.Run(ctx) }()
+	defer pub.Close()
+
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Audio: newFakeAudio(), AudioPublisher: pub})
+	defer teardown()
+
+	sub := pub.Subscribe(AudioSubFilter{})
+	defer pub.Unsubscribe(sub)
+
+	resp, err := http.Get(base + "/api/v1/audio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body AudioStatusDTO
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.StreamSubscribers < 1 {
+		t.Errorf("stream_subscribers = %d, want >= 1", body.StreamSubscribers)
 	}
 }
 

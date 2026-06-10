@@ -80,20 +80,84 @@ func TestAudioPublisher_WritePCMFansToMatchingSubs(t *testing.T) {
 	}
 }
 
-func TestAudioPublisher_DropsWhenNoGrant(t *testing.T) {
+// Issue #598 regression: PCM must reach an unfiltered subscriber even
+// when no CallStart grant has been observed for the device. The grant
+// cache rides a lossy bus subscription; gating audio on it left the
+// WebUI live stream silent while disk recordings worked. The frame
+// carries a zero Grant in that case.
+func TestAudioPublisher_FansUnfilteredWithoutGrant(t *testing.T) {
 	pub, _ := mkPublisher(t)
 	sub := pub.Subscribe(AudioSubFilter{})
 	defer pub.Unsubscribe(sub)
 
 	// No CallStart published — the publisher's grant map is empty.
-	if err := pub.WritePCM("VOICE-1", []int16{1, 2, 3}); err != nil {
+	if err := pub.WritePCM("VOICE-1", []int16{1, -2, 3}); err != nil {
 		t.Fatalf("WritePCM: %v", err)
 	}
 	select {
+	case frame := <-sub.ch:
+		if frame.DeviceSerial != "VOICE-1" {
+			t.Errorf("device_serial = %q, want VOICE-1", frame.DeviceSerial)
+		}
+		if pcm := frame.GetPcm(); pcm == nil || len(pcm.Samples) != 6 {
+			t.Errorf("samples = %v, want 6 bytes (3 int16)", pcm.GetSamples())
+		}
+		if gid := frame.GetGrant().GetGroupId(); gid != 0 {
+			t.Errorf("grant.group_id = %d, want 0 (zero grant)", gid)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("subscriber received no frame despite open stream")
+	}
+}
+
+// A device-serial-only filter still works without a grant: matching
+// serials are delivered, non-matching serials are not.
+func TestAudioPublisher_DeviceFilterFansWithoutGrant(t *testing.T) {
+	pub, _ := mkPublisher(t)
+	sub := pub.Subscribe(AudioSubFilter{DeviceSerials: []string{"VOICE-1"}})
+	defer pub.Unsubscribe(sub)
+
+	pub.WritePCM("VOICE-2", []int16{9, 9}) // filtered out
+	pub.WritePCM("VOICE-1", []int16{1, 2}) // delivered
+
+	select {
+	case frame := <-sub.ch:
+		if frame.DeviceSerial != "VOICE-1" {
+			t.Errorf("got serial %q, want VOICE-1", frame.DeviceSerial)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("device-filtered subscriber received no frame")
+	}
+	select {
 	case f := <-sub.ch:
-		t.Errorf("got frame %v despite no Grant", f)
+		t.Errorf("got unexpected frame for %q", f.DeviceSerial)
 	case <-time.After(50 * time.Millisecond):
 		// pass
+	}
+}
+
+// A talkgroup filter cannot be evaluated without a grant, so frames are
+// withheld until a matching CallStart lands — then they flow.
+func TestAudioPublisher_TalkgroupFilterSkippedWithoutGrant(t *testing.T) {
+	pub, bus := mkPublisher(t)
+	sub := pub.Subscribe(AudioSubFilter{TalkgroupIDs: []uint32{100}})
+	defer pub.Unsubscribe(sub)
+
+	pub.WritePCM("VOICE-1", []int16{1, 2})
+	select {
+	case f := <-sub.ch:
+		t.Fatalf("TG-filtered subscriber got frame %v before any grant", f)
+	case <-time.After(50 * time.Millisecond):
+		// pass — no grant, can't match talkgroup
+	}
+
+	publishCallStart(t, pub, bus, "VOICE-1", trunking.Grant{GroupID: 100})
+	pub.WritePCM("VOICE-1", []int16{3, 4})
+	select {
+	case <-sub.ch:
+		// pass — grant now known, talkgroup matches
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("TG-filtered subscriber got no frame after matching grant")
 	}
 }
 

@@ -30,6 +30,21 @@ type AudioStatusDTO struct {
 	// DropsTotal is a monotonically increasing counter of PCM
 	// samples lost because the playback queue was full.
 	DropsTotal uint64 `json:"drops_total"`
+	// StreamSubscribers is the number of live /audio/stream + gRPC
+	// StreamAudio consumers currently connected. A WebUI "Tap to
+	// enable audio" tap that produced no sound should still show >=1
+	// here while the tab is open — letting an operator tell a wiring
+	// problem apart from "no call is active". Zero when no publisher
+	// is wired.
+	StreamSubscribers int `json:"stream_subscribers"`
+	// StreamDropsTotal is the cumulative PCM samples dropped to slow
+	// stream subscribers (distinct from DropsTotal, which counts the
+	// host playback queue).
+	StreamDropsTotal uint64 `json:"stream_drops_total"`
+	// StreamTrackedGrants is the number of device serials the
+	// publisher currently has call context for. PCM still streams
+	// without a tracked grant (issue #598); this is a diagnostic.
+	StreamTrackedGrants int `json:"stream_tracked_grants"`
 }
 
 // audioPatchRequest is the body of PATCH /api/v1/audio. Every field
@@ -54,7 +69,14 @@ func (s *Server) handleAudioStatus(w http.ResponseWriter, _ *http.Request) {
 		s.writeError(w, http.StatusServiceUnavailable, "audio not wired")
 		return
 	}
-	writeJSON(w, http.StatusOK, audioStatusDTO(s.audio))
+	dto := audioStatusDTO(s.audio)
+	if s.audioPub != nil {
+		st := s.audioPub.Stats()
+		dto.StreamSubscribers = st.Subscribers
+		dto.StreamDropsTotal = st.DroppedTotal
+		dto.StreamTrackedGrants = st.TrackedGrants
+	}
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // handleAudioPatch applies one or more cockpit mutations and returns
