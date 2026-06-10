@@ -3,6 +3,7 @@
 import { type ClientConfig, joinURL, HTTPError, request } from "./client";
 import type {
   AudioStatusDTO,
+  ConfigActivateResponse,
   HuntStartRequest,
   ImportPreview,
   ImportResult,
@@ -119,6 +120,16 @@ export const writes = {
 
   updateSettings: (c: ClientConfig, patch: SettingsPatch) =>
     request<SettingsResponse>(c, "PATCH", "/api/v1/settings", patch),
+
+  // Load / hot-swap the config file the daemon runs on. "reload"
+  // hot-applies what it can and flags the rest as restart-required;
+  // "restart" re-execs the daemon into the new file (the connection
+  // drops and the SPA reconnects).
+  activateConfig: (c: ClientConfig, path: string, mode: "reload" | "restart") =>
+    request<ConfigActivateResponse>(c, "POST", "/api/v1/config/activate", {
+      path,
+      mode,
+    }),
 
   importUpload: (c: ClientConfig, files: File[]) =>
     importMultipart(c, files),

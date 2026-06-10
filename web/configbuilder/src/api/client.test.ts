@@ -16,9 +16,9 @@ function mockFetch(bodyObj: unknown) {
 }
 
 describe("RR client credential headers", () => {
-  it("rrVerify POSTs with the X-RR-* creds the user is editing", async () => {
+  it("rrVerify POSTs with the X-RR-* login the user is editing (no app key)", async () => {
     const fetchMock = mockFetch({ ok: true, premium: true, username: "alice" });
-    const r = await api.rrVerify({ key: "K", user: "alice", pass: "pw" });
+    const r = await api.rrVerify({ user: "alice", pass: "pw" });
     expect(r.ok).toBe(true);
     expect(r.premium).toBe(true);
 
@@ -26,14 +26,15 @@ describe("RR client credential headers", () => {
     expect(url).toBe("/api/v1/config/rr/verify");
     expect(init?.method).toBe("POST");
     const h = init?.headers as Record<string, string>;
-    expect(h["X-RR-Key"]).toBe("K");
+    // The SOAP app key is built into the binary — never sent from the browser.
+    expect(h["X-RR-Key"]).toBeUndefined();
     expect(h["X-RR-User"]).toBe("alice");
     expect(h["X-RR-Pass"]).toBe("pw");
   });
 
   it("omits empty/blank cred headers", async () => {
     const fetchMock = mockFetch({ results: [] });
-    await api.rrStates({ key: "", user: "  ", pass: undefined });
+    await api.rrStates({ user: "  ", pass: undefined });
     const h = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
     expect(h["X-RR-Key"]).toBeUndefined();
     expect(h["X-RR-User"]).toBeUndefined();

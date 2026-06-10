@@ -10,9 +10,10 @@ import {
 } from "../components/fields";
 import { ListEditor } from "../components/ListEditor";
 import { AdvancedJSON } from "../components/AdvancedJSON";
+import { RRCredentials } from "../components/RRCredentials";
 import { dmrBandPlanForMode, dmrBandPlanMode } from "../lib/dmrBandPlan";
 import { useStore } from "../store/shared";
-import { api } from "../api/client";
+import { api, HTTPError } from "../api/client";
 import type {
   DMRBandPlanTableEntry,
   EncryptionKey,
@@ -422,11 +423,28 @@ function RRBrowseModal(props: {
   onAdd: (sys: SystemConfig, tgs?: TalkgroupCSVRow[]) => void;
 }) {
   const setError = useStore((s) => s.setError);
-  // The RadioReference creds the user is editing — sent with every RR call so
-  // their premium login is what reaches the API (not just the server's startup
-  // creds).
+  // The RadioReference login the user is editing — sent with every RR call so
+  // their premium login is what reaches the API (the SOAP app key is built into
+  // the binary, so only username/password travel from here).
   const rr = useStore((s) => s.config?.RadioReference);
-  const creds = { key: rr?.APIKey, user: rr?.Username, pass: rr?.Password };
+  const creds = { user: rr?.Username, pass: rr?.Password };
+  const hasLogin = !!(rr?.Username?.trim() && rr?.Password?.trim());
+  // The credentials block auto-expands when no login is set (or after a 503),
+  // so "Add from RadioReference" asks for a login in place instead of throwing
+  // the bare "credentials not configured" error.
+  const [credsOpen, setCredsOpen] = useState(!hasLogin);
+  const [credsHint, setCredsHint] = useState<string | null>(null);
+  // handleRRError turns a "not configured" 503 into an inline prompt for the
+  // login (expanding the block) instead of a red toast; everything else still
+  // surfaces as a toast.
+  const handleRRError = (e: unknown) => {
+    if (e instanceof HTTPError && e.status === 503) {
+      setCredsOpen(true);
+      setCredsHint("Sign in with your RadioReference.com username and password to browse systems.");
+      return;
+    }
+    setError(`RadioReference: ${(e as Error).message}`);
+  };
   const [mode, setMode] = useState<"name" | "zip" | "advanced">("name");
 
   // name mode: state → county dropdowns.
@@ -448,11 +466,12 @@ function RRBrowseModal(props: {
     if (mode !== "name" || states !== null) return;
     setBusy(true);
     api
-      .rrStates()
+      .rrStates(creds)
       .then((r) => setStates(r.results ?? []))
-      .catch((e) => setError(`RadioReference: ${(e as Error).message}`))
+      .catch(handleRRError)
       .finally(() => setBusy(false));
-  }, [mode, states, setError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, states]);
 
   const onStateChange = async (v: string) => {
     setStid(v);
@@ -465,7 +484,7 @@ function RRBrowseModal(props: {
       const r = await api.rrCounties(Number(v), creds);
       setCounties(r.results ?? []);
     } catch (e) {
-      setError(`RadioReference: ${(e as Error).message}`);
+      handleRRError(e);
     } finally {
       setBusy(false);
     }
@@ -478,7 +497,7 @@ function RRBrowseModal(props: {
       const r = await fn();
       setHits(r.results ?? []);
     } catch (e) {
-      setError(`RadioReference: ${(e as Error).message}`);
+      handleRRError(e);
     } finally {
       setBusy(false);
     }
@@ -491,7 +510,7 @@ function RRBrowseModal(props: {
       props.onAdd(r.config, r.talkgroups ?? []);
       props.onClose();
     } catch (e) {
-      setError(`RadioReference: ${(e as Error).message}`);
+      handleRRError(e);
     } finally {
       setBusy(false);
     }
@@ -501,8 +520,29 @@ function RRBrowseModal(props: {
     <Modal title="Browse RadioReference.com" onClose={props.onClose}>
       <p className="help">
         Find a trunked system and import it with its control channels and
-        talkgroups. Requires RadioReference credentials configured on the server.
+        talkgroups. Sign in with your RadioReference.com account below — a
+        premium subscription is required.
       </p>
+
+      <div className="rounded-md border border-white/10 p-3">
+        <button
+          className="flex w-full items-center justify-between text-left text-sm font-medium"
+          onClick={() => setCredsOpen((o) => !o)}
+        >
+          <span>
+            RadioReference login{hasLogin ? "" : " — required"}
+            {hasLogin ? <span className="ml-2 text-xs text-ok">✓ set</span> : null}
+          </span>
+          <span className="text-muted">{credsOpen ? "▾" : "▸"}</span>
+        </button>
+        {credsHint ? <p className="mt-2 text-sm text-warn">{credsHint}</p> : null}
+        {credsOpen ? (
+          <div className="mt-3">
+            <RRCredentials />
+          </div>
+        ) : null}
+      </div>
+
       <div className="flex gap-2 text-sm">
         {(["name", "zip", "advanced"] as const).map((m) => (
           <button

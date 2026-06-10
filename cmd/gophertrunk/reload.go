@@ -13,15 +13,39 @@ import (
 // has to bounce the daemon to pick them up. Returns a one-line
 // summary suitable for the headless console / events bus.
 //
-// Used by the SIGHUP handler in main and (in the future) by the
-// /api/v1/runtime/reload endpoint when that lands.
+// Used by the SIGHUP handler in main and by the config-builder
+// "load this config" action (via ActivateReload) when the operator
+// switches the active config file from the web UI.
 func (d *Daemon) Reload() (string, error) {
 	if d.cfgPath == "" {
 		return "", fmt.Errorf("reload: no config file backs this daemon")
 	}
-	newCfg, err := config.Load(d.cfgPath)
+	applied, restartRequired, err := d.reloadFrom(d.cfgPath)
 	if err != nil {
 		return "", err
+	}
+	summary := fmt.Sprintf("config reloaded: applied=%d restart_required=%d", len(applied), len(restartRequired))
+	if len(applied) > 0 {
+		summary += " (applied: " + joinComma(applied) + ")"
+	}
+	if len(restartRequired) > 0 {
+		summary += " (restart needed: " + joinComma(restartRequired) + ")"
+	}
+	return summary, nil
+}
+
+// reloadFrom loads the config at path, diff-applies the hot-reloadable
+// fields against the in-memory config, and returns the applied vs
+// restart-required field keys. When path differs from the daemon's
+// current config file the writer + cfgPath are re-pointed so future
+// PATCH /api/v1/settings edits and the runtime DTO's config_path track
+// the now-active file — this is what lets the web UI "hot-swap" the
+// config file the daemon uses. Restart-required fields (SDR, trunking
+// systems, recordings, …) still need a full restart to take effect.
+func (d *Daemon) reloadFrom(path string) (applied, restartRequired []string, err error) {
+	newCfg, err := config.Load(path)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Serialise the diff-apply phase against concurrent Cfg() reads
@@ -29,8 +53,18 @@ func (d *Daemon) Reload() (string, error) {
 	d.cfgMu.Lock()
 	defer d.cfgMu.Unlock()
 
+	// Re-point the writer + path when switching to a different file so
+	// the rest of the daemon (settings writer, ConfigPath) follows.
+	if path != d.cfgPath {
+		w, werr := config.NewWriter(path)
+		if werr != nil {
+			return nil, nil, fmt.Errorf("reload: open writer for %s: %w", path, werr)
+		}
+		d.writer = w
+		d.cfgPath = path
+	}
+
 	app := newDaemonSettingsApplier(d, "")
-	var applied, restartRequired []string
 
 	// Compare hot-reloadable fields against the in-memory config.
 	old := d.cfg
@@ -79,6 +113,10 @@ func (d *Daemon) Reload() (string, error) {
 		"storage.cc_cache_file":   newCfg.Storage.CCCacheFile != old.Storage.CCCacheFile,
 		"metrics.enabled":         newCfg.Metrics.Enabled != old.Metrics.Enabled,
 		"scanner.cc_hunt.enabled": newCfg.Scanner.CCHunt.Enabled != old.Scanner.CCHunt.Enabled,
+		// When switching to a different file, the set of trunking systems
+		// almost always changes — surface it as restart-required so the
+		// operator knows decoding won't repoint without a bounce.
+		"trunking.systems": !sameSystemNames(newCfg, old),
 	}
 	for key, changed := range coldDiffs {
 		if changed {
@@ -92,14 +130,29 @@ func (d *Daemon) Reload() (string, error) {
 
 	sort.Strings(applied)
 	sort.Strings(restartRequired)
-	summary := fmt.Sprintf("config reloaded: applied=%d restart_required=%d", len(applied), len(restartRequired))
-	if len(applied) > 0 {
-		summary += " (applied: " + joinComma(applied) + ")"
+	return applied, restartRequired, nil
+}
+
+// sameSystemNames reports whether the two configs declare the same set of
+// trunking system names, used to flag a system-list change as
+// restart-required when hot-swapping config files.
+func sameSystemNames(a, b config.Config) bool {
+	if len(a.Trunking.Systems) != len(b.Trunking.Systems) {
+		return false
 	}
-	if len(restartRequired) > 0 {
-		summary += " (restart needed: " + joinComma(restartRequired) + ")"
+	seen := make(map[string]int, len(a.Trunking.Systems))
+	for _, s := range a.Trunking.Systems {
+		seen[s.Name]++
 	}
-	return summary, nil
+	for _, s := range b.Trunking.Systems {
+		seen[s.Name]--
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func joinComma(s []string) string {

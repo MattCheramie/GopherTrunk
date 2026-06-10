@@ -14,7 +14,7 @@ export function ConnectScreen() {
   const setConnected = useShared((s) => s.setConnected);
   const rememberDefault = useShared((s) => s.rememberToken);
 
-  const [url, setUrl] = useState(useShared.getState().serverURL ?? "");
+  const [url, setUrl] = useState(useShared.getState().serverURL ?? suggestedServerURL());
   const [token, setToken] = useState(useShared.getState().token ?? "");
   const [remember, setRemember] = useState(rememberDefault);
   const [busy, setBusy] = useState(false);
@@ -93,6 +93,15 @@ export function ConnectScreen() {
             spellCheck={false}
             inputMode="url"
           />
+          {canFillThisDevice() && (
+            <button
+              type="button"
+              className="text-xs text-accent underline"
+              onClick={() => setUrl(window.location.origin)}
+            >
+              Use this device's address ({window.location.origin})
+            </button>
+          )}
         </label>
 
         <label className="block space-y-1">
@@ -141,4 +150,21 @@ export function ConnectScreen() {
       </form>
     </div>
   );
+}
+
+// suggestedServerURL pre-fills the field with this device's origin when the
+// SPA is served over http(s) by the daemon (origin === the daemon's address),
+// so the common "open the daemon URL" case is one click. Opened from a
+// file:// bundle there's no useful origin, so fall back to empty (the
+// #server= hash bootstrap covers that path).
+function suggestedServerURL(): string {
+  return canFillThisDevice() ? window.location.origin : "";
+}
+
+// canFillThisDevice reports whether window.location.origin is a usable daemon
+// address (the page was served over http/https, not file://).
+function canFillThisDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = window.location.protocol;
+  return p === "http:" || p === "https:";
 }

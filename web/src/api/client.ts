@@ -8,6 +8,7 @@ import type {
   ActiveCallDTO,
   AudioStatusDTO,
   CallRow,
+  ConfigListResponse,
   DeviceDTO,
   Health,
   HuntStatus,
@@ -201,6 +202,11 @@ export const api = {
     request<AudioStatusDTO>(c, "GET", "/api/v1/audio"),
   metricsText: (c: ClientConfig) =>
     request<string>(c, "GET", "/metrics", undefined, 5_000),
+  // Config files discovered by the Config Builder subsystem, for the
+  // Settings config-file picker. Returns 503 (caught by the caller) when
+  // the daemon was built/started without the config-builder subsystem.
+  configFiles: (c: ClientConfig) =>
+    request<ConfigListResponse>(c, "GET", "/api/v1/config/files"),
 };
 
 // Re-export the request helper for the write module.
