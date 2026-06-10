@@ -96,13 +96,21 @@ The [Web console guide](web.html) walks through what every panel shows.
 
 ## 7. Where to go next
 
-- **Share your feed** — stream calls to Broadcastify Calls, RdioScanner, or
-  OpenMHz from the Settings page.
-- **[Hunt](hunt.html)** — let GopherTrunk discover an unknown system for you.
-- **[Hardening](hardening.html)** — turn on passwords/encryption if you'll reach
-  the console from other devices on your network.
-- **[Opt-in features](opt-in-features.html)** — paging, aircraft (ADS-B), boats
-  (AIS), and more.
+From here, the guides pick up where this page leaves off and walk you through
+the rest of GopherTrunk, one step at a time:
+
+- **[Everyday basics](guide-basics.html)** — drive the console, listen and play
+  back calls, tidy up your talkgroups, and share a feed. **Start here.**
+- **[Going further](guide-intermediate.html)** — multiple dongles, paging alerts,
+  alias files, discovering unknown systems, and reaching the console from your
+  phone.
+- **[Advanced](guide-advanced.html)** — the terminal cockpit, signal scopes,
+  offline analysis, every receiver, and the APIs.
+
+In a hurry to reach a specific feature? Jump straight to
+**[Hunt](hunt.html)** (discover an unknown system),
+**[Hardening](hardening.html)** (passwords/encryption for network access), or
+**[Opt-in features](opt-in-features.html)** (paging, aircraft, boats, and more).
 
 ## If something's not working
 

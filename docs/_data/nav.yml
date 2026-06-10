@@ -5,6 +5,12 @@ groups:
         url: /getting-started.html
       - title: Get started
         url: /getting-started-setup.html
+      - title: Basics
+        url: /guide-basics.html
+      - title: Intermediate
+        url: /guide-intermediate.html
+      - title: Advanced
+        url: /guide-advanced.html
   - label: About
     items:
       - title: The Story of GopherTrunk
