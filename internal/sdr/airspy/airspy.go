@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
@@ -34,16 +35,15 @@ const (
 // libairspy vendor request opcodes (subset).
 const (
 	reqReceiverMode   uint8 = 1
-	reqSetSampleType  uint8 = 11
-	reqSetFreq        uint8 = 12
-	reqGetSamplerates uint8 = 13
-	reqSetSamplerate  uint8 = 14
-	reqSetLNAGain     uint8 = 19
-	reqSetMixerGain   uint8 = 20
-	reqSetVGAGain     uint8 = 21
-	reqSetLNAAGC      uint8 = 22
-	reqSetMixerAGC    uint8 = 23
-	reqSetRFBiasCmd   uint8 = 24
+	reqSetSamplerate  uint8 = 12
+	reqSetFreq        uint8 = 13
+	reqSetLNAGain     uint8 = 14
+	reqSetMixerGain   uint8 = 15
+	reqSetVGAGain     uint8 = 16
+	reqSetLNAAGC      uint8 = 17
+	reqSetMixerAGC    uint8 = 18
+	reqGPIOWrite      uint8 = 21
+	reqGetSamplerates uint8 = 25
 )
 
 // Sample-type values for reqSetSampleType.
@@ -55,13 +55,18 @@ const (
 const (
 	receiverModeOff uint16 = 0
 	receiverModeOn  uint16 = 1
+	biasTeeGPIOPort uint16 = 1
+	biasTeeGPIOPin  uint16 = 13
 
 	bulkInEP   byte = 0x81
 	driverName      = "airspy"
 
 	defaultVGAGain   = 10
 	controlTimeoutMs = 1000
+	minSamplerateHz  = 1_000_000
 )
+
+var openRetryBackoff = 250 * time.Millisecond
 
 // Driver implements sdr.Driver for Airspy.
 type Driver struct {
@@ -128,9 +133,8 @@ func tunerNameFor(product string) string {
 }
 
 // Open claims the device at idx and returns an sdr.Device. The
-// returned device defaults to INT16_IQ sample mode (applied lazily
-// at StreamIQ time, matching libairspy) and the highest rate the
-// firmware advertises.
+// returned device defaults to INT16_IQ sample mode and the highest
+// rate the firmware advertises.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
 	d.mu.Lock()
 	cached := d.cached
@@ -147,6 +151,34 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		return nil, fmt.Errorf("airspy: index %d out of range", idx)
 	}
 	desc := cached[idx]
+	serial := fallbackSerial(desc.Serial, idx)
+
+	// Windows hosts occasionally surface a transient ErrDeviceGone on early
+	// post-open control transfers even though enumeration + WinUsb_Initialize
+	// just succeeded. Retry with a fresh open (and descriptor refresh by
+	// serial/path) before failing daemon startup.
+	const maxOpenAttempts = 5
+	var lastErr error
+	for attempt := 1; attempt <= maxOpenAttempts; attempt++ {
+		dev, err := d.openDevice(desc, idx, serial)
+		if err == nil {
+			return dev, nil
+		}
+		lastErr = err
+		if !errors.Is(err, usb.ErrDeviceGone) || attempt == maxOpenAttempts {
+			break
+		}
+		if refreshed, ok := d.refreshDescriptor(desc); ok {
+			desc = refreshed
+		}
+		if openRetryBackoff > 0 {
+			time.Sleep(openRetryBackoff)
+		}
+	}
+	return nil, lastErr
+}
+
+func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Device, error) {
 	t, err := d.enum.Open(desc)
 	if err != nil {
 		return nil, fmt.Errorf("airspy: open %s: %w", desc.Path, err)
@@ -160,17 +192,15 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		info: sdr.Info{
 			Driver:       driverName,
 			Index:        idx,
-			Serial:       fallbackSerial(desc.Serial, idx),
+			Serial:       serial,
 			Manufacturer: desc.Manufacturer,
 			Product:      desc.Product,
 			TunerName:    tunerNameFor(desc.Product),
 		},
 	}
-	// Read the supported-samplerate table. This is the first vendor
-	// transfer after claim — matching libairspy's open ordering
-	// (vendor IN first, no SET_SAMPLE_TYPE during open). Some firmware
-	// / Windows driver bindings reject a vendor OUT as the very first
-	// transfer (issue #270).
+	_ = t.ControlOut(reqReceiverMode, receiverModeOff, 0, nil, controlTimeoutMs)
+	// Read the supported-samplerate table so SetSampleRate can match
+	// the requested rate against an index.
 	rates, err := dev.fetchSampleRates()
 	if err != nil {
 		// Non-fatal: keep the device usable; SetSampleRate will fall
@@ -180,6 +210,34 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		dev.rates = rates
 	}
 	return dev, nil
+}
+
+func setSampleTypeInt16(usb.Transport) error {
+	// libairspy no longer issues a USB command here; it keeps sample type
+	// as host-side conversion state.
+	return nil
+}
+
+func (d *Driver) refreshDescriptor(current usb.Descriptor) (usb.Descriptor, bool) {
+	list, err := d.enum.List(vidAirspy, pidAirspy)
+	if err != nil || len(list) == 0 {
+		return current, false
+	}
+	if current.Serial != "" {
+		for _, cand := range list {
+			if cand.Serial == current.Serial {
+				return cand, true
+			}
+		}
+	}
+	if current.Path != "" {
+		for _, cand := range list {
+			if cand.Path == current.Path {
+				return cand, true
+			}
+		}
+	}
+	return list[0], true
 }
 
 func fallbackSerial(s string, idx int) string {
@@ -194,11 +252,10 @@ type Device struct {
 	t    usb.Transport
 	info sdr.Info
 
-	mu            sync.Mutex
-	closed        bool
-	streaming     bool
-	sampleTypeSet bool     // true once SET_SAMPLE_TYPE has been issued
-	rates         []uint32 // supported sample rates, Hz, descending order
+	mu        sync.Mutex
+	closed    bool
+	streaming bool
+	rates     []uint32 // supported sample rates, Hz, descending order
 }
 
 // Info implements sdr.Device.
@@ -214,14 +271,33 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 	return d.t.ControlOut(reqSetFreq, 0, 0, payload, controlTimeoutMs)
 }
 
-// SetSampleRate selects the firmware-advertised rate closest to hz. If
-// the supported-rate table is unavailable, index 0 is used.
+// SetSampleRate follows libairspy semantics:
+// - exact known rates are sent by index
+// - otherwise values >= 1 MHz are encoded as (rate_hz*2)/1000 for IQ modes
+// and sent as wIndex on an IN vendor request.
 func (d *Device) SetSampleRate(hz uint32) error {
 	if d.isClosed() {
 		return usb.ErrClosed
 	}
-	idx := d.closestRateIndex(hz)
-	return d.t.ControlOut(reqSetSamplerate, uint16(idx), 0, nil, controlTimeoutMs)
+	param := d.sampleRateCommandParam(hz)
+	_, err := d.t.ControlIn(reqSetSamplerate, 0, param, 1, controlTimeoutMs)
+	return err
+}
+
+func (d *Device) sampleRateCommandParam(hz uint32) uint16 {
+	d.mu.Lock()
+	rates := d.rates
+	d.mu.Unlock()
+
+	if hz >= minSamplerateHz {
+		for i, r := range rates {
+			if hz == r {
+				return uint16(i)
+			}
+		}
+		return uint16((hz * 2) / 1000)
+	}
+	return uint16(hz)
 }
 
 // closestRateIndex returns the index of the supported sample rate
@@ -344,7 +420,8 @@ func (d *Device) SetBiasTee(enable bool) error {
 	if enable {
 		v = 1
 	}
-	return d.t.ControlOut(reqSetRFBiasCmd, v, 0, nil, controlTimeoutMs)
+	portPin := (biasTeeGPIOPort << 5) | biasTeeGPIOPin
+	return d.t.ControlOut(reqGPIOWrite, v, portPin, nil, controlTimeoutMs)
 }
 
 // StreamIQ flips the receiver on and starts the bulk-IN reaper,
@@ -360,23 +437,16 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, errors.New("airspy: stream already active")
 	}
 	d.streaming = true
-	needSampleType := !d.sampleTypeSet
 	d.mu.Unlock()
 
-	// Pin the device to INT16_IQ — the format the StreamIQ decoder
-	// expects. libairspy issues this inside airspy_start_rx rather
-	// than during open; mirroring that ordering avoids a firmware /
-	// Windows-driver NAK on the first vendor OUT (issue #270).
-	if needSampleType {
-		if err := d.t.ControlOut(reqSetSampleType, sampleTypeInt16IQ, 0, nil, controlTimeoutMs); err != nil {
-			d.mu.Lock()
-			d.streaming = false
-			d.mu.Unlock()
-			return nil, fmt.Errorf("airspy: set sample type: %w", err)
-		}
+	// Apply INT16_IQ at stream start rather than open time. This keeps
+	// Open resilient on hosts that reject early vendor OUT transfers,
+	// while still pinning the wire format before bulk IQ starts.
+	if err := setSampleTypeInt16(d.t); err != nil {
 		d.mu.Lock()
-		d.sampleTypeSet = true
+		d.streaming = false
 		d.mu.Unlock()
+		return nil, fmt.Errorf("airspy: set sample type: %w", err)
 	}
 
 	if err := d.setReceiver(receiverModeOn); err != nil {

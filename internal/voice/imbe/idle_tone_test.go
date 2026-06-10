@@ -146,7 +146,7 @@ func TestDecodeToneRunResetsOnRealFrame(t *testing.T) {
 // the discriminator keys on b_0, not on frame-to-frame similarity.
 func TestDecodeMutesVaryingLowB0Run(t *testing.T) {
 	d := New()
-	if _, err := d.Decode(frameB0(6)); err != nil { // count 1, leaks
+	if _, err := d.Decode(frameB0(6)); err != nil { // count 1, muted at onset
 		t.Fatalf("frame 0: %v", err)
 	}
 	// Same b_0=6 but with a block of parameter bits set — very different
@@ -170,17 +170,21 @@ func TestDecodeMutesVaryingLowB0Run(t *testing.T) {
 	}
 }
 
-// TestDecodeToneRunFirstFrameOfStream: when a fresh decoder's very first
-// frame is a tone (no predecessor), it still synthesizes (run count 1)
-// and the next near-identical tone frame trips the mute.
+// TestDecodeToneRunFirstFrameOfStream: a fresh decoder is at a
+// transmission onset (no real voice synthesized yet), so the very first
+// tone frame is muted immediately — there is no speech to protect and a
+// leaked onset buzz is exactly the high-pitched artifact the onset gate
+// removes. Subsequent tone frames stay muted.
 func TestDecodeToneRunFirstFrameOfStream(t *testing.T) {
 	d := New()
 	out0, err := d.Decode(frameB0(6))
 	if err != nil {
 		t.Fatalf("frame 0: %v", err)
 	}
-	if agcPeak(out0) == 0 {
-		t.Fatal("first frame of stream muted; threshold should let one frame through")
+	for i := range out0 {
+		if out0[i] != 0 {
+			t.Fatalf("onset tone frame sample[%d] = %d, want 0 (muted at onset)", i, out0[i])
+		}
 	}
 	out1, err := d.Decode(frameB0(6))
 	if err != nil {

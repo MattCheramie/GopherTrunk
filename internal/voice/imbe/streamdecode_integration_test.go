@@ -51,7 +51,7 @@ const wavHeaderSize = 44
 // captured frames after a session.
 func TestDecodeStreamThroughImbe(t *testing.T) {
 	const n = 5
-	frame := make([]byte, FrameBytes) // all zero ⇒ b₀=0 voice
+	frame := goodVoiceFrame() // valid non-idle voice frame
 	in := bytes.NewReader(bytes.Repeat(frame, n))
 	var sink memWriteSeeker
 	frames, err := voice.DecodeStream(in, VocoderName, &sink)

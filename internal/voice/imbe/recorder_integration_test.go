@@ -62,11 +62,12 @@ func TestRecorderDecodesP25IntoWav(t *testing.T) {
 		t.Fatal("session never opened")
 	}
 
-	// Feed N IMBE frames. Each frame is 11 bytes; the all-zero
-	// frame decodes to b₀=0, the lowest valid voice fundamental.
+	// Feed N IMBE frames. Each frame is 11 bytes; goodVoiceFrame is a
+	// valid non-idle voice frame (b₀ just outside the idle-tone corner)
+	// so synthesis runs from the first frame instead of the onset mute.
 	const n = 4
 	for i := 0; i < n; i++ {
-		if err := rec.WriteRawFrame("VOICE-1", make([]byte, FrameBytes)); err != nil {
+		if err := rec.WriteRawFrame("VOICE-1", goodVoiceFrame()); err != nil {
 			t.Fatalf("WriteRawFrame: %v", err)
 		}
 	}
