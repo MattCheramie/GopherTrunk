@@ -974,6 +974,13 @@ func TestRecorderNormalizesFinishedWav(t *testing.T) {
 	defer r.Close()
 	defer bus.Close()
 
+	// Subscribe so we can wait for CallComplete, which the recorder
+	// publishes only after the finished WAV has been normalized in place.
+	// Waiting on session removal instead would race the rewrite, since the
+	// session is deleted before normalization runs.
+	watch := bus.Subscribe()
+	defer watch.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go r.Run(ctx)
@@ -988,16 +995,9 @@ func TestRecorderNormalizesFinishedWav(t *testing.T) {
 		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
 	}
 	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "VOICE-1", true)
 
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if r.HasSession("VOICE-1") {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	// ~2.5 s of a quiet 1 kHz tone (~-26 LUFS) that needs boosting toward
+	// ~2.5 s of a quiet 1 kHz tone (~-24 LUFS) that needs boosting toward
 	// the -16 LUFS target.
 	const n = 8000 * 5 / 2
 	pcm := make([]int16, n)
@@ -1015,16 +1015,21 @@ func TestRecorderNormalizesFinishedWav(t *testing.T) {
 		Reason: trunking.EndReasonNormal,
 	}})
 
-	deadline = time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if !r.HasSession("VOICE-1") {
-			break
+	// Block until the call is finalized AND normalized.
+	var donePath string
+	deadline := time.After(2 * time.Second)
+	for donePath == "" {
+		select {
+		case ev := <-watch.C:
+			if ev.Kind == events.KindCallComplete {
+				donePath = ev.Payload.(trunking.CallComplete).AudioPath
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for CallComplete")
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
 
-	want := filepath.Join(dir, "TestSystem", "FIRE-DISP", "20260505T123045Z_src56789.wav")
-	samples, rate, err := ReadWAVSamples(want)
+	samples, rate, err := ReadWAVSamples(donePath)
 	if err != nil {
 		t.Fatalf("read normalized wav: %v", err)
 	}
