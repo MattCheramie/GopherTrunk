@@ -17,6 +17,8 @@
 // internal/api/handlers_audio_stream.go. The byte-framing logic below
 // must match that layout.
 
+import { LinearResampler } from "./resampler";
+
 // ---------------------------------------------------------------------------
 // Pure, testable framing helpers (no DOM / AudioContext).
 // ---------------------------------------------------------------------------
@@ -143,6 +145,10 @@ const MAX_LEAD_SECONDS = 0.6;
 // Backoff before a single reconnect attempt when the stream ends on its
 // own (e.g. the daemon restarted) while the user still wants audio.
 const RECONNECT_DELAY_MS = 1000;
+// Capacity of the AudioWorklet ring buffer, in seconds of audio. The producer
+// and consumer run at the same rate so the ring hovers near the lead cushion;
+// this only bounds the worst case (and the memory the worklet holds).
+const MAX_RING_SECONDS = 2;
 
 type AudioContextCtor = typeof AudioContext;
 
@@ -177,16 +183,105 @@ export function createAudioContext(
   }
 }
 
-// createStreamPlayer wires a fetch reader to a GainNode → destination
-// graph. One instance owns one AudioContext (reused across reconnects)
-// and at most one in-flight fetch.
+// A PcmSink consumes the decoded Float32 stream and renders it. configure() is
+// called once per connection with the stream's sample rate (from the WAV
+// header); push() delivers whole-sample chunks; reset() drops any buffered
+// audio so a stop/reconnect doesn't replay stale frames.
+interface PcmSink {
+  configure(streamRate: number): void;
+  push(samples: Float32Array): void;
+  reset(): void;
+}
+
+// WorkletSink feeds the ring-buffer AudioWorklet (issue #629). It resamples the
+// stream to the context rate with one continuous LinearResampler (so chunk
+// boundaries don't glitch) and hands the samples to the audio thread via a
+// transferred buffer. The worklet emits silence on underrun, so network jitter
+// no longer skips/realigns the playback cursor the way the legacy scheduler did.
+class WorkletSink implements PcmSink {
+  private resampler: LinearResampler | null = null;
+
+  constructor(
+    private readonly node: AudioWorkletNode,
+    private readonly contextRate: number,
+  ) {}
+
+  configure(streamRate: number): void {
+    this.resampler = new LinearResampler(streamRate, this.contextRate);
+    this.node.port.postMessage({ type: "reset" });
+  }
+
+  reset(): void {
+    this.node.port.postMessage({ type: "reset" });
+  }
+
+  push(samples: Float32Array): void {
+    if (samples.length === 0) return;
+    const out = this.resampler ? this.resampler.process(samples) : samples;
+    if (out.length === 0) return;
+    // Transfer ownership to the audio thread — the run loop never reuses the
+    // buffer, and each takeSamples() returns a fresh one, so this is safe.
+    this.node.port.postMessage({ type: "push", samples: out }, [out.buffer]);
+  }
+}
+
+// LegacySink is the original per-chunk AudioBufferSource scheduler, kept as a
+// fallback for browsers without AudioWorklet (or when the worklet module can't
+// load). The context resamples each buffer to the device rate; the 8 kHz
+// context pin keeps that a no-op for the common case.
+class LegacySink implements PcmSink {
+  private nextStartTime = 0;
+  private streamRate = STREAM_SAMPLE_RATE;
+
+  constructor(
+    private readonly ctx: AudioContext,
+    private readonly gain: GainNode,
+  ) {}
+
+  configure(streamRate: number): void {
+    this.streamRate = streamRate;
+    this.nextStartTime = 0;
+  }
+
+  reset(): void {
+    this.nextStartTime = 0;
+  }
+
+  push(samples: Float32Array): void {
+    const { ctx, gain } = this;
+    if (samples.length === 0) return;
+    const buffer = ctx.createBuffer(1, samples.length, this.streamRate);
+    buffer.getChannelData(0).set(samples);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(gain);
+
+    const now = ctx.currentTime;
+    if (this.nextStartTime < now + 0.001) {
+      // Underrun (or first buffer): we've fallen behind real time. Resync
+      // forward with a fresh lead cushion rather than scheduling in the
+      // past (which the API clamps to "now" and stacks).
+      this.nextStartTime = now + LEAD_SECONDS;
+    } else if (this.nextStartTime > now + MAX_LEAD_SECONDS) {
+      // Too far ahead (a burst drained in one tick): pull the cursor back
+      // so latency doesn't grow unbounded for the rest of the call.
+      this.nextStartTime = now + MAX_LEAD_SECONDS;
+    }
+    src.start(this.nextStartTime);
+    this.nextStartTime += buffer.duration;
+  }
+}
+
+// createStreamPlayer wires a fetch reader to a PcmSink → GainNode → destination
+// graph. One instance owns one AudioContext (reused across reconnects), one
+// sink, and at most one in-flight fetch.
 export function createStreamPlayer(
   opts: StreamPlayerOptions,
 ): StreamPlayer {
   let ctx: AudioContext | null = null;
   let gain: GainNode | null = null;
   let abort: AbortController | null = null;
-  let nextStartTime = 0;
+  let sinkPromise: Promise<PcmSink> | null = null;
   let volume = 1;
   let muted = false;
   let userStopped = false;
@@ -216,27 +311,39 @@ export function createStreamPlayer(
     return true;
   };
 
-  const schedule = (samples: Float32Array, sampleRate: number) => {
-    if (ctx === null || gain === null || samples.length === 0) return;
-    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-    buffer.getChannelData(0).set(samples);
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.connect(gain);
-
-    const now = ctx.currentTime;
-    if (nextStartTime < now + 0.001) {
-      // Underrun (or first buffer): we've fallen behind real time. Resync
-      // forward with a fresh lead cushion rather than scheduling in the
-      // past (which the API clamps to "now" and stacks).
-      nextStartTime = now + LEAD_SECONDS;
-    } else if (nextStartTime > now + MAX_LEAD_SECONDS) {
-      // Too far ahead (a burst drained in one tick): pull the cursor back
-      // so latency doesn't grow unbounded for the rest of the call.
-      nextStartTime = now + MAX_LEAD_SECONDS;
-    }
-    src.start(nextStartTime);
-    nextStartTime += buffer.duration;
+  // getSink lazily loads the AudioWorklet module and builds the ring-buffer
+  // sink, caching it for reuse across reconnects. If worklets are unavailable
+  // or the module fails to load (old browser, a CSP that blocks worklets, or a
+  // proxy that mangles the asset) it falls back to per-chunk buffer scheduling
+  // so audio still plays. Either outcome is cached.
+  const getSink = (): Promise<PcmSink> => {
+    if (sinkPromise) return sinkPromise;
+    sinkPromise = (async (): Promise<PcmSink> => {
+      const audioCtx = ctx!;
+      const out = gain!;
+      if (audioCtx.audioWorklet) {
+        try {
+          await audioCtx.audioWorklet.addModule(
+            new URL("./ringBufferProcessor.js", import.meta.url),
+          );
+          const node = new AudioWorkletNode(audioCtx, "ringbuffer-player", {
+            processorOptions: {
+              capacityFrames: Math.ceil(audioCtx.sampleRate * MAX_RING_SECONDS),
+              primeFrames: Math.ceil(audioCtx.sampleRate * LEAD_SECONDS),
+            },
+          });
+          node.connect(out);
+          return new WorkletSink(node, audioCtx.sampleRate);
+        } catch (err) {
+          console.warn(
+            "GopherTrunk: AudioWorklet unavailable, using buffer scheduling:",
+            err,
+          );
+        }
+      }
+      return new LegacySink(audioCtx, out);
+    })();
+    return sinkPromise;
   };
 
   const run = async () => {
@@ -267,20 +374,25 @@ export function createStreamPlayer(
 
     const framer = new PcmFramer();
     const reader = res.body.getReader();
-    nextStartTime = 0;
+    const sink = await getSink();
+    sink.reset();
     let started = false;
+    let configured = false;
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
         if (!value) continue;
         framer.feed(value);
-        const fmt = framer.format;
+        // Configure the sink's resampler as soon as the header's rate is known.
+        if (!configured && framer.format) {
+          sink.configure(framer.format.sampleRate);
+          configured = true;
+        }
         for (;;) {
           const samples = framer.takeSamples();
           if (samples === null) break;
-          const rate = framer.format?.sampleRate ?? fmt?.sampleRate ?? 8000;
-          schedule(samples, rate);
+          sink.push(samples);
           if (!started) {
             started = true;
             opts.onStateChange("playing");
@@ -321,6 +433,9 @@ export function createStreamPlayer(
       // Resume synchronously within the gesture so the autoplay policy
       // doesn't reject playback. fetch() is awaited inside run().
       void ctx.resume();
+      // Warm the worklet module now so it loads alongside the fetch rather
+      // than serially after it; run() awaits the same cached promise.
+      void getSink();
       void run();
     },
     stop() {
@@ -331,6 +446,8 @@ export function createStreamPlayer(
       }
       abort?.abort();
       abort = null;
+      // Drop buffered audio so a later resume doesn't replay stale frames.
+      void sinkPromise?.then((sink) => sink.reset());
       void ctx?.suspend();
       opts.onStateChange("stopped");
     },
