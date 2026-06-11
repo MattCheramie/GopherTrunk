@@ -979,6 +979,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			SampleRate:    cfg.Recordings.SampleRate,
 			WriteRaw:      cfg.Recordings.WriteRaw,
 			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			Normalize: voice.NormalizeConfig{
+				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
+				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
+				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
+				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
@@ -994,7 +1000,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if bcastRate == 0 {
 			bcastRate = 8000
 		}
-		mgr, err := buildBroadcastManager(cfg.Broadcast, bcastRate, d.bus, log)
+		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, log)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: broadcast: %w", err)
 		}

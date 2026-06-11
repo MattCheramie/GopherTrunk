@@ -114,12 +114,21 @@ export interface EqualizerConfig {
   StepSize: number;
 }
 
+export interface NormalizeConfig {
+  Enabled: boolean;
+  ApplyTo: string;
+  TargetLUFS: number;
+  TruePeakDBTP: number;
+  MaxBoostDB: number;
+}
+
 export interface RecordingsConfig {
   Dir: string;
   SampleRate: number;
   WriteRaw: boolean;
   SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
+  Normalize: NormalizeConfig;
 }
 
 export interface MetricsConfig {

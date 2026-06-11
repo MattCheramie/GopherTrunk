@@ -12,12 +12,23 @@ package broadcast
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mp3"
 )
+
+// NormalizeConfig configures optional loudness normalization of the
+// distributed MP3 copy. When Enabled, the WAV on disk is left untouched
+// and the gain is applied in memory before MP3 encoding. Params are
+// assumed to already carry defaults (see loudness.NormalizeParams).
+type NormalizeConfig struct {
+	Enabled bool
+	Params  loudness.NormalizeParams
+}
 
 // Call is a completed call queued for outbound streaming. It carries
 // the call metadata plus a lazy MP3 accessor — the WAV on AudioPath is
@@ -46,6 +57,11 @@ type Call struct {
 	AudioPath     string // .wav on disk written by the recorder
 	SampleRate    int
 
+	// normalize, when Enabled, loudness-normalizes the audio in memory
+	// before MP3 encoding (the on-disk WAV is left pristine). Set by the
+	// Manager from its configuration.
+	normalize NormalizeConfig
+
 	mu      sync.Mutex
 	mp3Data []byte
 	mp3Err  error
@@ -65,8 +81,45 @@ func (c *Call) MP3() ([]byte, error) {
 		return c.mp3Data, c.mp3Err
 	}
 	c.mp3Done = true
-	c.mp3Data, _, c.mp3Err = mp3.EncodeWAVFile(c.AudioPath)
+	if c.normalize.Enabled {
+		c.mp3Data, c.mp3Err = encodeNormalizedMP3(c.AudioPath, c.normalize.Params)
+	} else {
+		c.mp3Data, _, c.mp3Err = mp3.EncodeWAVFile(c.AudioPath)
+	}
 	return c.mp3Data, c.mp3Err
+}
+
+// encodeNormalizedMP3 reads the WAV at path, applies a single linear
+// loudness-normalization gain in memory (leaving the file untouched), and
+// MP3-encodes the result. When the audio is too short or quiet to measure,
+// it encodes the samples unchanged.
+func encodeNormalizedMP3(path string, p loudness.NormalizeParams) ([]byte, error) {
+	samples, rate, err := mp3.ReadWAV(path)
+	if err != nil {
+		return nil, err
+	}
+	fs := make([]float64, len(samples))
+	for i, s := range samples {
+		fs[i] = float64(s) / 32768.0
+	}
+	if gain, ok := loudness.NormalizeGain(fs, rate, p); ok {
+		for i, v := range fs {
+			samples[i] = clampInt16(v * gain * 32768.0)
+		}
+	}
+	return mp3.Encode(samples, rate)
+}
+
+// clampInt16 rounds and saturates a float sample value to int16.
+func clampInt16(v float64) int16 {
+	r := math.Round(v)
+	if r > 32767 {
+		return 32767
+	}
+	if r < -32768 {
+		return -32768
+	}
+	return int16(r)
 }
 
 // callFromEvent builds a *Call from a recorder CallComplete payload.

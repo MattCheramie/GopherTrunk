@@ -64,6 +64,11 @@ func TestValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{"ok", Default(), false},
+		{"normalize apply_to recording ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "recording"}}}, false},
+		{"normalize apply_to distributed ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "distributed"}}}, false},
+		{"normalize apply_to both ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "both"}}}, false},
+		{"normalize apply_to empty ok", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true}}}, false},
+		{"normalize apply_to invalid", Config{Recordings: RecordingsConfig{Normalize: NormalizeConfig{Enabled: true, ApplyTo: "stream"}}}, true},
 		{"bad sample rate", Config{SDR: SDRConfig{SampleRate: 100}}, true},
 		// Wideband soapy_remote sources (issue #550): rates above the RTL
 		// 3.2 MHz hardware cap are valid config, bounded at 20 MHz.
@@ -325,6 +330,30 @@ func TestValidate(t *testing.T) {
 
 // TestSoapyRemoteDeviceArgs covers the device-args config block (issue #542):
 // the "k=v,k=v" Args string merges with the Driver shorthand into make() kwargs.
+func TestNormalizeApplyToRouting(t *testing.T) {
+	cases := []struct {
+		applyTo           string
+		enabled           bool
+		wantRec, wantDist bool
+	}{
+		{"", true, true, false},
+		{"recording", true, true, false},
+		{"distributed", true, false, true},
+		{"both", true, true, true},
+		{"recording", false, false, false}, // disabled overrides
+		{"both", false, false, false},
+	}
+	for _, tc := range cases {
+		n := NormalizeConfig{Enabled: tc.enabled, ApplyTo: tc.applyTo}
+		if got := n.AppliesToRecording(); got != tc.wantRec {
+			t.Errorf("apply_to=%q enabled=%v: AppliesToRecording=%v want %v", tc.applyTo, tc.enabled, got, tc.wantRec)
+		}
+		if got := n.AppliesToDistributed(); got != tc.wantDist {
+			t.Errorf("apply_to=%q enabled=%v: AppliesToDistributed=%v want %v", tc.applyTo, tc.enabled, got, tc.wantDist)
+		}
+	}
+}
+
 func TestSoapyRemoteDeviceArgs(t *testing.T) {
 	cases := []struct {
 		name    string

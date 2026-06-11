@@ -1330,6 +1330,13 @@ type RecordingsConfig struct {
 	// Off by default; useful when receiving simulcast systems with
 	// multiple transmitters at slightly different arrival delays.
 	Equalizer EqualizerConfig `yaml:"equalizer"`
+	// Normalize enables per-call EBU R128 / BS.1770 loudness
+	// normalization. When enabled, each finished recording is measured and
+	// rewritten in place to a perceptual loudness target (true-peak
+	// limited), so calls from different talkgroups/sources play back at a
+	// consistent level. Off by default. This is post-processing of the
+	// recorded WAV only; live monitoring/playback is unaffected.
+	Normalize NormalizeConfig `yaml:"normalize"`
 }
 
 // EqualizerConfig is the YAML shape of the optional CMA equalizer in
@@ -1338,6 +1345,34 @@ type EqualizerConfig struct {
 	Enabled  bool    `yaml:"enabled"`
 	Taps     int     `yaml:"taps"`      // default 8 when enabled
 	StepSize float32 `yaml:"step_size"` // default 1e-4 when enabled
+}
+
+// NormalizeConfig is the YAML shape of the optional per-call loudness
+// normalization. Defaults (applied when enabled and a field is zero):
+// target -16 LUFS, true peak -1.5 dBTP, max gain ±12 dB.
+type NormalizeConfig struct {
+	Enabled      bool    `yaml:"enabled"`
+	TargetLUFS   float64 `yaml:"target_lufs"`    // default -16.0 when enabled
+	TruePeakDBTP float64 `yaml:"true_peak_dbtp"` // default -1.5 when enabled
+	MaxBoostDB   float64 `yaml:"max_boost_db"`   // default 12.0 when enabled
+	// ApplyTo selects which artifacts are normalized:
+	//   "" / "recording" → rewrite the on-disk WAV (the distributed MP3,
+	//                       encoded from that WAV, inherits the result)
+	//   "distributed"    → leave the WAV pristine; normalize only the
+	//                       outbound broadcast/stream MP3 copy
+	//   "both"           → normalize the WAV and the distributed copy
+	ApplyTo string `yaml:"apply_to"`
+}
+
+// AppliesToRecording reports whether the on-disk WAV should be normalized.
+func (n NormalizeConfig) AppliesToRecording() bool {
+	return n.Enabled && (n.ApplyTo == "" || n.ApplyTo == "recording" || n.ApplyTo == "both")
+}
+
+// AppliesToDistributed reports whether the outbound broadcast/stream MP3
+// copy should be normalized in the broadcast subsystem.
+func (n NormalizeConfig) AppliesToDistributed() bool {
+	return n.Enabled && (n.ApplyTo == "distributed" || n.ApplyTo == "both")
 }
 
 // MetricsConfig toggles the Prometheus collector. The /metrics endpoint
@@ -1765,6 +1800,11 @@ func validateSystem(i int, s SystemConfig) error {
 func (c Config) validateRecordings() []error {
 	if c.Recordings.SampleRate != 0 && (c.Recordings.SampleRate < 4000 || c.Recordings.SampleRate > 48_000) {
 		return []error{fmt.Errorf("recordings.sample_rate %d outside 4000..48000", c.Recordings.SampleRate)}
+	}
+	switch c.Recordings.Normalize.ApplyTo {
+	case "", "recording", "distributed", "both":
+	default:
+		return []error{fmt.Errorf("recordings.normalize.apply_to %q invalid (use recording, distributed, or both)", c.Recordings.Normalize.ApplyTo)}
 	}
 	return nil
 }

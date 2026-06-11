@@ -303,6 +303,44 @@ export function RecordingsSection() {
           placeholder="0.0001"
         />
       </Fieldset>
+      <Fieldset legend="Loudness normalization (EBU R128)">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.Normalize?.Enabled}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, Enabled: x } })}
+          help="Normalize each finished call to a consistent perceptual loudness (pure Go, no ffmpeg)."
+        />
+        <SelectField
+          label="Apply to"
+          value={cfg.Normalize?.ApplyTo ?? ""}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, ApplyTo: x } })}
+          options={[
+            { value: "", label: "(default: recording)" },
+            { value: "recording", label: "recording (rewrite WAV)" },
+            { value: "distributed", label: "distributed (outbound MP3 only)" },
+            { value: "both", label: "both" },
+          ]}
+        />
+        <NumberField
+          label="Target LUFS"
+          value={cfg.Normalize?.TargetLUFS ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, TargetLUFS: x } })}
+          placeholder="-16"
+        />
+        <NumberField
+          label="True peak (dBTP)"
+          step={0.1}
+          value={cfg.Normalize?.TruePeakDBTP ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, TruePeakDBTP: x } })}
+          placeholder="-1.5"
+        />
+        <NumberField
+          label="Max gain (dB)"
+          value={cfg.Normalize?.MaxBoostDB ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, MaxBoostDB: x } })}
+          placeholder="12"
+        />
+      </Fieldset>
     </Section>
   );
 }

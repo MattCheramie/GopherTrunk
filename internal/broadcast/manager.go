@@ -38,6 +38,9 @@ type Options struct {
 	// RetryBase is the first backoff delay; it doubles per attempt.
 	// Default 2s.
 	RetryBase time.Duration
+	// Normalize, when Enabled, loudness-normalizes the distributed MP3
+	// copy in memory (the on-disk WAV is left pristine). Off by default.
+	Normalize NormalizeConfig
 }
 
 // Stats is a point-in-time snapshot of a Manager's counters.
@@ -57,6 +60,7 @@ type Manager struct {
 	minDuration time.Duration
 	maxRetries  int
 	retryBase   time.Duration
+	normalize   NormalizeConfig
 
 	sub       *events.Subscription
 	jobs      chan *Call
@@ -97,6 +101,7 @@ func NewManager(opts Options) (*Manager, error) {
 		minDuration: opts.MinDuration,
 		maxRetries:  opts.MaxRetries,
 		retryBase:   opts.RetryBase,
+		normalize:   opts.Normalize,
 		jobs:        make(chan *Call, defaultQueueDepth),
 		runDone:     make(chan struct{}),
 		sent:        make(map[string]int),
@@ -150,6 +155,7 @@ func (m *Manager) dispatch(cc trunking.CallComplete) {
 		return
 	}
 	call := callFromEvent(cc)
+	call.normalize = m.normalize
 	wanted := false
 	for _, b := range m.backends {
 		if b.Accepts(call.System) {

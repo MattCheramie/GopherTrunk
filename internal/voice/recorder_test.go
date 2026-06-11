@@ -3,12 +3,14 @@ package voice
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -1047,5 +1049,95 @@ func assertNoWav(t *testing.T, root string) {
 	t.Helper()
 	if got := wavFiles(t, root); len(got) != 0 {
 		t.Fatalf("expected no wav files, found %v", got)
+	}
+}
+
+// TestRecorderNormalizesFinishedWav confirms that, with Normalize enabled,
+// a finished recording is loudness-normalized in place toward the target
+// before its CallComplete is observable on disk.
+func TestRecorderNormalizesFinishedWav(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:        bus,
+		OutDir:     dir,
+		SampleRate: 8000,
+		Normalize:  NormalizeConfig{Enabled: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	// Subscribe so we can wait for CallComplete, which the recorder
+	// publishes only after the finished WAV has been normalized in place.
+	// Waiting on session removal instead would race the rewrite, since the
+	// session is deleted before normalization runs.
+	watch := bus.Subscribe()
+	defer watch.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TestSystem", Protocol: "motorola",
+			GroupID: 1234, SourceID: 56789,
+		},
+		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP", Record: true},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "VOICE-1", true)
+
+	// ~2.5 s of a quiet 1 kHz tone (~-24 LUFS) that needs boosting toward
+	// the -16 LUFS target.
+	const n = 8000 * 5 / 2
+	pcm := make([]int16, n)
+	for i := range pcm {
+		v := 0.1 * math.Sin(2*math.Pi*1000*float64(i)/8000)
+		pcm[i] = int16(v * 32767)
+	}
+	if err := r.WritePCM("VOICE-1", pcm); err != nil {
+		t.Fatal(err)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, Talkgroup: cs.Talkgroup, DeviceSerial: "VOICE-1",
+		StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(3 * time.Second),
+		Reason: trunking.EndReasonNormal,
+	}})
+
+	// Block until the call is finalized AND normalized.
+	var donePath string
+	deadline := time.After(2 * time.Second)
+	for donePath == "" {
+		select {
+		case ev := <-watch.C:
+			if ev.Kind == events.KindCallComplete {
+				donePath = ev.Payload.(trunking.CallComplete).AudioPath
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for CallComplete")
+		}
+	}
+
+	samples, rate, err := ReadWAVSamples(donePath)
+	if err != nil {
+		t.Fatalf("read normalized wav: %v", err)
+	}
+	fs := make([]float64, len(samples))
+	for i, s := range samples {
+		fs[i] = float64(s) / 32768.0
+	}
+	lufs, ok := loudness.IntegratedLUFS(fs, int(rate))
+	if !ok {
+		t.Fatal("normalized wav not measurable")
+	}
+	if lufs < -17.0 || lufs > -15.0 {
+		t.Fatalf("normalized loudness %.2f LUFS not near -16 target", lufs)
 	}
 }
