@@ -124,6 +124,18 @@ type Options struct {
 	// Emit receives each completed Frame. Required. The slices it
 	// carries are freshly allocated per frame; the callee owns them.
 	Emit func(Frame)
+
+	// MixerEmit, when non-nil, enables the Mixer plot: the engine runs a
+	// rate-limited FFT over the channelized baseband (raw) and over that
+	// baseband re-mixed by the receiver's carrier-offset estimate (tuned),
+	// delivering each pair as a MixerFrame. Nil disables the work entirely.
+	MixerEmit func(MixerFrame)
+	// MixerFFTSize is the FFT length for the Mixer plot (power of two).
+	// Zero picks defaultMixerFFTSize. Ignored when MixerEmit is nil.
+	MixerFFTSize int
+	// MixerFPS caps the Mixer frame rate. Zero picks defaultMixerFPS.
+	// Ignored when MixerEmit is nil.
+	MixerFPS float64
 }
 
 // Engine channelizes a wideband IQ feed and runs a protocol receiver,
@@ -159,6 +171,11 @@ type Engine struct {
 	isBits    bool
 	baseIdx   int // absolute symbol index of pendDibits[0]
 	totalSyms int // symbols seen across the whole stream
+
+	// mixer, when non-nil, accumulates channelized baseband into FFT
+	// windows and emits raw/tuned spectra (the Mixer plot). Built only
+	// when Options.MixerEmit is set.
+	mixer *mixerAccum
 }
 
 // New constructs an Engine. Returns an error for an unsupported
@@ -214,6 +231,22 @@ func New(opts Options) (*Engine, error) {
 		EyeSink:      e.onEye,
 		DibitSink:    e.onDibits,
 	})
+
+	if opts.MixerEmit != nil {
+		mx, err := newMixerAccum(mixerOptions{
+			fftSize:  opts.MixerFFTSize,
+			fps:      opts.MixerFPS,
+			sampleHz: ddc.OutRateHz(),
+			centerHz: opts.CenterHz,
+			offsetHz: opts.OffsetHz,
+			nowNs:    nowNs,
+			emit:     opts.MixerEmit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		e.mixer = mx
+	}
 	return e, nil
 }
 
@@ -225,6 +258,13 @@ func (e *Engine) Process(iq []complex64) {
 	}
 	e.chanBuf = e.ddc.Process(e.chanBuf, iq)
 	e.rx.Process(e.chanBuf)
+	// Feed the Mixer accumulator after the receiver has updated its
+	// carrier-offset estimate, so the "tuned" re-mix uses this chunk's
+	// loop state. chanBuf is consumed synchronously (copied into the
+	// FFT window), so reusing it as scratch next Process is safe.
+	if e.mixer != nil {
+		e.mixer.feed(e.chanBuf, e.carrierOffsetHz())
+	}
 }
 
 // onSoft stashes the pre-slicer soft samples; onDibits, fired next on
@@ -350,6 +390,20 @@ func (e *Engine) stampMetrics(f *Frame) {
 	f.AGCTarget = e.rx.AGCTarget()
 	f.ClockMu = e.rx.MMClockMu()
 	f.ClockSPS = e.rx.MMClockSPS()
+}
+
+// carrierOffsetHz returns the receiver's current residual carrier-offset
+// estimate (the AFC estimate on C4FM, the carrier-recovery estimate on
+// CQPSK). The Mixer plot uses it to re-mix the raw baseband onto centre
+// for the "tuned" view; it mirrors the routing stampMetrics uses.
+func (e *Engine) carrierOffsetHz() float64 {
+	if e.rx == nil {
+		return 0
+	}
+	if e.isCQPSK {
+		return e.rx.CQPSKCarrierOffsetHz()
+	}
+	return e.rx.AFCOffsetHz()
 }
 
 // Close releases the engine. Idempotent.

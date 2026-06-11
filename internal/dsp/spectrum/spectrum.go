@@ -193,39 +193,53 @@ func (p *Producer) Run(ctx context.Context, in <-chan []complex64, out chan<- Fr
 // frame runs one FFT over the accumulated samples, returning a fresh
 // Frame with FFT-shifted dBFS bins.
 func (p *Producer) frame(samples []complex64) Frame {
-	// Window + convert complex64 → complex128.
-	for i := 0; i < p.size; i++ {
-		s := samples[i]
-		w := p.win[i]
-		p.bufIQ[i] = complex(float64(real(s))*w, float64(imag(s))*w)
-	}
-	out := p.plan.Forward(p.bufOut, p.bufIQ)
-
-	// Magnitude (dBFS), FFT-shifted so DC is in the middle.
 	bins := make([]float32, p.size)
-	// Normalization: power per bin = |X|² / (FFTSize · Σ(w²)). For
-	// a unit-amplitude input this gives 0 dBFS at the corresponding
-	// bin.
-	norm := 1.0 / (float64(p.size) * p.winSum)
-	half := p.size / 2
-	for i := 0; i < p.size; i++ {
-		// FFT-shift: bin i in the output maps to index (i + half) mod N
-		// so DC (i=0 in unshifted) lands at index `half`.
-		src := i
-		dst := (i + half) % p.size
-		mag := cmplx.Abs(out[src])
-		power := mag * mag * norm
-		// Clamp before log to avoid -Inf.
-		if power < 1e-30 {
-			power = 1e-30
-		}
-		bins[dst] = float32(10 * math.Log10(power))
-	}
-
+	PowerDB(p.plan, p.win, p.winSum, samples, p.bufIQ, p.bufOut, bins)
 	return Frame{
 		Timestamp:  time.Now(),
 		CenterHz:   p.centerHz.Load(),
 		SampleRate: p.rateHz.Load(),
 		Bins:       bins,
+	}
+}
+
+// PowerDB computes the FFT-shifted dBFS power spectrum of in into dst.
+// It is the single source of truth for the spectrum math, shared by the
+// streaming Producer and one-shot callers (the Mixer plot's per-window
+// FFTs).
+//
+// All of in, dst, win, bufIn and bufOut must have the same length n — a
+// power of two — and plan must be fft.New(n). bufIn/bufOut are caller-
+// owned FFT scratch (reused across calls to stay allocation-free); their
+// contents are overwritten. winSum is Σ(win²), precomputed once.
+//
+// Bins are FFT-shifted so dst[0] is the lowest frequency (-Fs/2) and
+// dst[n/2] is DC, matching Frame's documented layout. Normalization is
+// power = |X|² / (n · Σ(w²)), so a unit-amplitude tone reads ~0 dBFS at
+// its bin.
+func PowerDB(plan fft.Plan, win []float64, winSum float64, in []complex64, bufIn, bufOut []complex128, dst []float32) {
+	n := len(win)
+	// Window + convert complex64 → complex128.
+	for i := 0; i < n; i++ {
+		s := in[i]
+		w := win[i]
+		bufIn[i] = complex(float64(real(s))*w, float64(imag(s))*w)
+	}
+	out := plan.Forward(bufOut, bufIn)
+
+	// Magnitude (dBFS), FFT-shifted so DC is in the middle.
+	norm := 1.0 / (float64(n) * winSum)
+	half := n / 2
+	for i := 0; i < n; i++ {
+		// FFT-shift: bin i in the output maps to index (i + half) mod N
+		// so DC (i=0 in unshifted) lands at index `half`.
+		dstIdx := (i + half) % n
+		mag := cmplx.Abs(out[i])
+		power := mag * mag * norm
+		// Clamp before log to avoid -Inf.
+		if power < 1e-30 {
+			power = 1e-30
+		}
+		dst[dstIdx] = float32(10 * math.Log10(power))
 	}
 }

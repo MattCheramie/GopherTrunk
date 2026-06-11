@@ -12,6 +12,7 @@ import { CCActivity } from "./panels/CCActivity";
 import { Constellation } from "./panels/Constellation";
 import { SymbolScope } from "./panels/SymbolScope";
 import { EyeDiagram } from "./panels/EyeDiagram";
+import { Mixer } from "./panels/Mixer";
 import { Tuning } from "./panels/Tuning";
 import { Histogram } from "./panels/Histogram";
 import { Plots } from "./panels/Plots";
@@ -248,6 +249,7 @@ export function App() {
           <Route path="/constellation" element={<Constellation />} />
           <Route path="/symbols" element={<SymbolScope />} />
           <Route path="/eye" element={<EyeDiagram />} />
+          <Route path="/mixer" element={<Mixer />} />
           <Route path="/tuning" element={<Tuning />} />
           <Route path="/histogram" element={<Histogram />} />
           <Route path="/bookmarks" element={<Bookmarks />} />

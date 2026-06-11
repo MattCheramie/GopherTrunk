@@ -5,6 +5,9 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/fft"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/window"
 )
 
 func TestNewRejectsBadFFTSize(t *testing.T) {
@@ -221,5 +224,53 @@ func TestProducerCounteractsBinTones(t *testing.T) {
 	}
 	if peakBin != 48 {
 		t.Errorf("+Fs/4 peak at bin %d, want 48 (centre + N/4)", peakBin)
+	}
+}
+
+// TestPowerDBPeaksAtTone checks the shared helper: a unit-amplitude
+// complex tone reads ~0 dBFS at its FFT-shifted bin and well below
+// elsewhere, with DC landing at the centre bin.
+func TestPowerDBPeaksAtTone(t *testing.T) {
+	const (
+		size     = 256
+		sampleHz = 48000.0
+		toneHz   = 6000.0
+	)
+	plan := fft.New(size)
+	win := window.Hann(size)
+	var winSum float64
+	for _, v := range win {
+		winSum += v * v
+	}
+
+	in := make([]complex64, size)
+	w := 2 * math.Pi * toneHz / sampleHz
+	for n := 0; n < size; n++ {
+		in[n] = complex64(complex(math.Cos(w*float64(n)), math.Sin(w*float64(n))))
+	}
+
+	bufIn := make([]complex128, size)
+	bufOut := make([]complex128, size)
+	dst := make([]float32, size)
+	PowerDB(plan, win, winSum, in, bufIn, bufOut, dst)
+
+	center := size / 2
+	wantBin := center + int(math.Round(toneHz*size/sampleHz))
+	peak, peakVal := 0, float32(math.Inf(-1))
+	for i, v := range dst {
+		if v > peakVal {
+			peak, peakVal = i, v
+		}
+	}
+	if peak != wantBin {
+		t.Errorf("peak bin = %d, want %d", peak, wantBin)
+	}
+	// A windowed unit tone should peak near 0 dBFS.
+	if peakVal < -3 || peakVal > 1 {
+		t.Errorf("peak level = %.2f dBFS, want ~0", peakVal)
+	}
+	// An off-peak bin should be far down.
+	if dst[center] > -20 {
+		t.Errorf("centre (DC) bin = %.2f dBFS, want well below the +6 kHz peak", dst[center])
 	}
 }
