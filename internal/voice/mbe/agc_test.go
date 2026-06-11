@@ -79,6 +79,45 @@ func TestAGCNeverHardClips(t *testing.T) {
 	}
 }
 
+// TestAGCFrozenFrameGainBounded reproduces the field gain-runaway: a
+// near-silent onset frame seeds a tiny envelope, then a loud frame arrives on
+// a FROZEN path (bad-frame replay / idle-mute / silence — Apply with
+// freezeEnvelope=true does not update the envelope). Before the per-frame
+// output ceiling, the stale-tiny envelope produced a gain near MaxGain and the
+// loud frame's output blew far past the int16 rail (mean_gain≈1e5,
+// peak_preclip≈8e7, clip_pct≈65% in the captures). The ceiling must keep the
+// frozen frame inside the limiter.
+func TestAGCFrozenFrameGainBounded(t *testing.T) {
+	a := NewAGC(DefaultAGCConfig())
+	pcm := make([]float64, SamplesPerFrame)
+	out := make([]int16, SamplesPerFrame)
+	// 1. Near-silent onset frame seeds the envelope very low (peak ≈ 0.5).
+	for i := range pcm {
+		pcm[i] = 0.5 * math.Sin(float64(i))
+	}
+	a.Apply(pcm, out, false)
+	// 2. A loud frame on a frozen path: envelope is NOT updated, so the gain is
+	//    computed from the stale tiny envelope.
+	for i := range pcm {
+		pcm[i] = 8000 * math.Sin(float64(i))
+	}
+	a.Apply(pcm, out, true)
+	// The per-frame ceiling caps gain at softLimitKnee/peak, so the loud
+	// frame's output peaks at the knee — never the rail — and almost no
+	// samples engage the limiter.
+	for _, s := range out {
+		if s == 32767 || s == -32768 {
+			t.Fatalf("frozen loud frame hit the int16 rail (%d) — AGC gain ran away on a stale envelope", s)
+		}
+	}
+	if g := a.LastGain(); g*8000 > softLimitRail {
+		t.Errorf("frozen-frame gain %.1f × peak 8000 = %.0f exceeds the rail %v — per-frame ceiling not applied", g, g*8000, softLimitRail)
+	}
+	if clipFrac := float64(a.LastClipSamples()) / float64(len(out)); clipFrac > 0.05 {
+		t.Errorf("frozen loud frame clip fraction = %.2f, want <= 0.05 (gain runaway into the limiter)", clipFrac)
+	}
+}
+
 // TestAGCAttenuatesLoudFrames confirms the AGC can apply gain < 1 to a
 // frame already louder than TargetPeak — impossible under the old
 // MinGain=10 floor, which forced amplification and clipping.
