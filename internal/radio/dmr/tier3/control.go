@@ -2,6 +2,7 @@ package tier3
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -40,11 +41,18 @@ func (s LockState) LockedNAC() uint16         { return s.SystemID }
 // logged at debug and ignored — they're noise from the hunter's
 // perspective.
 type ControlChannel struct {
-	bus              *events.Bus
-	log              *slog.Logger
-	systemName       string
-	freqHz           uint32
-	resolver         Resolver
+	bus        *events.Bus
+	log        *slog.Logger
+	systemName string
+	freqHz     uint32
+
+	// resolver maps a granted LCN to its downlink frequency. It is read
+	// inline on the IQ-pump goroutine (resolveLCN) and may be swapped at
+	// runtime by the DMR LCN autoconfig learner from another goroutine, so
+	// access is guarded by resolverMu.
+	resolverMu sync.RWMutex
+	resolver   Resolver
+
 	now              func() time.Time
 	interleavedVoice bool
 	locked           bool
@@ -168,6 +176,22 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 // call identity — both slots of a 12.5 kHz carrier carry independent
 // calls.
 func (c *ControlChannel) publishGrant(cc, lcn, slot uint8, group, source uint32, serviceOptions uint8) (uint32, bool) {
+	// Observe the granted LCN before resolution so the autoconfig learner
+	// sees it even when no band plan is configured yet (the very case it
+	// exists to fix). Additive: success/no-bandplan behaviour is unchanged.
+	c.bus.Publish(events.Event{
+		Kind: events.KindDMRGrantObserved,
+		Payload: events.DMRGrantObserved{
+			System:    c.systemName,
+			ColorCode: cc,
+			LCN:       lcn,
+			Timeslot:  slot,
+			GroupID:   group,
+			SourceID:  source,
+			CCFreqHz:  c.freqHz,
+			At:        c.now(),
+		},
+	})
 	freq, ok := c.resolveLCN(lcn)
 	if !ok {
 		return 0, false
@@ -212,8 +236,30 @@ func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
 		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
 }
 
+// SetResolver atomically swaps the LCN→frequency resolver. The DMR
+// Tier III LCN autoconfig learner calls this once it has fit a band
+// plan, so grants that were previously dropped with stage=no-bandplan
+// start resolving immediately. Safe to call from a goroutine other than
+// the one driving Process / IngestBurst.
+func (c *ControlChannel) SetResolver(r Resolver) {
+	c.resolverMu.Lock()
+	c.resolver = r
+	c.resolverMu.Unlock()
+}
+
+// HasResolver reports whether a band-plan resolver is currently set. The
+// autoconfig learner uses it to decide whether learning is still needed.
+func (c *ControlChannel) HasResolver() bool {
+	c.resolverMu.RLock()
+	defer c.resolverMu.RUnlock()
+	return c.resolver != nil
+}
+
 func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
-	if c.resolver == nil {
+	c.resolverMu.RLock()
+	resolver := c.resolver
+	c.resolverMu.RUnlock()
+	if resolver == nil {
 		c.log.Debug("dmr/tier3: grant dropped, no band-plan resolver configured", "lcn", lcn)
 		c.bus.Publish(events.Event{
 			Kind:    events.KindDecodeError,
@@ -221,7 +267,7 @@ func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
 		})
 		return 0, false
 	}
-	freq, err := c.resolver.Frequency(lcn)
+	freq, err := resolver.Frequency(lcn)
 	if err != nil {
 		c.log.Debug("dmr/tier3: band-plan miss", "lcn", lcn, "err", err)
 		c.bus.Publish(events.Event{

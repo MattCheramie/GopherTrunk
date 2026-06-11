@@ -30,6 +30,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/cchunt"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/conventional"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/dmrlcn"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 
 	adsbbeast "github.com/MattCheramie/GopherTrunk/internal/radio/adsb/beast"
@@ -381,6 +382,11 @@ type Daemon struct {
 	controlLOOffsetHz float64
 	convScan          *conventional.Scanner
 	widebandT2        []*widebandt2.Engine
+	// dmrLearners holds one DMR LCN autoconfig learner per wideband DMR
+	// Tier III control channel whose system ships without a dmr_band_plan.
+	// Each watches grants + RF onsets to learn the LCN→frequency plan and
+	// hot-swaps it into the running control channel. See internal/scanner/dmrlcn.
+	dmrLearners []*dmrlcn.Learner
 	// virtualVoiceTuners holds one VirtualTuner per voice tap on a
 	// wideband dongle. Each implements both trunking.Tuner (the voice
 	// pool calls SetCenterFreq on bind) and composer.IQSource (the
@@ -1449,6 +1455,16 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// serial so a single-channel decoder pinned to the same dongle
 			// Subscribes instead of opening a second stream (#547).
 			d.iqPrimary[entry.Info.Serial] = true
+
+			// DMR Tier III trunk autoconfiguration: for any control channel
+			// whose system has no dmr_band_plan, attach a learner that
+			// discovers the LCN→frequency plan from grants + RF onsets and
+			// hot-swaps it into the running control channel. Requires the
+			// dongle's iqtap broker (for onset detection + decode-confirmation
+			// taps); without it the learner can't run.
+			if br := d.iqBrokers[entry.Info.Serial]; br != nil {
+				d.attachDMRLearners(devCfg, channels, eng, br, effectiveRate, log)
+			}
 			// Virtual voice taps for this dongle are built earlier by
 			// buildVirtualVoiceTuners (before the voice pool and composer
 			// are constructed) so trunked grants inside the IQ window have
@@ -2250,6 +2266,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 		name := fmt.Sprintf("widebandt2-%d", i)
 		d.spawn(runCtx, name, false, func(ctx context.Context) error {
 			return eng.Run(ctx)
+		})
+	}
+	// DMR Tier III autoconfig learners — one per wideband DMR control
+	// channel without a configured band plan. Non-essential: a learner
+	// failure must never bring down the trunking pipeline.
+	for i, lr := range d.dmrLearners {
+		lr := lr
+		name := fmt.Sprintf("dmrlcn-%d", i)
+		d.spawn(runCtx, name, false, func(ctx context.Context) error {
+			return lr.Run(ctx)
 		})
 	}
 	// POCSAG paging receivers — one per configured paging.pocsag
@@ -3103,6 +3129,87 @@ func (d *Daemon) spawn(ctx context.Context, name string, essential bool, fn func
 		}
 		d.log.Warn("daemon: component exited with error", "component", name, "err", err)
 	}()
+}
+
+// attachDMRLearners constructs a dmrlcn.Learner for each DMR Tier III
+// control channel on a wideband dongle whose system ships without a
+// dmr_band_plan. Each learner gets the dongle's iqtap broker (onset
+// detection + decode-confirmation taps), the bus, and a hot-swap binding
+// to the running control channel. When the daemon owns a config writer,
+// the learned plan is persisted so it survives a restart. Systems that
+// already carry a band plan are skipped — the operator's plan wins.
+func (d *Daemon) attachDMRLearners(devCfg config.DeviceConfig, channels []widebandt2.ChannelConfig, eng *widebandt2.Engine, br *iqtap.Broker, sampleRate uint32, log *slog.Logger) {
+	systemsByName := make(map[string]trunking.System, len(d.systems))
+	for _, s := range d.systems {
+		systemsByName[s.Name] = s
+	}
+
+	// Control-channel carriers are always on, so exclude them from onset
+	// detection to avoid phantom edges.
+	var exclude []uint32
+	for _, ch := range channels {
+		if sys, ok := systemsByName[ch.SystemName]; ok && isControlChannel(sys, ch.FrequencyHz) {
+			exclude = append(exclude, ch.FrequencyHz)
+		}
+	}
+
+	for _, ch := range channels {
+		sys, ok := systemsByName[ch.SystemName]
+		if !ok || sys.Protocol != trunking.ProtocolDMR {
+			continue
+		}
+		if sys.DMRBandPlan != nil {
+			continue // operator-configured plan is authoritative
+		}
+		if !isControlChannel(sys, ch.FrequencyHz) {
+			continue
+		}
+		cc := eng.DMRTier3ControlChannel(ch.FrequencyHz)
+		if cc == nil {
+			continue
+		}
+		sysName := sys.Name
+		persist := func(res dmrlcn.FitResult) {
+			if res.Linear == nil || d.writer == nil {
+				return
+			}
+			err := d.writer.WriteDMRLearnedBandPlan(sysName, config.DMRLinearBandPlanConfig{
+				BaseHz:    res.Linear.BaseHz,
+				SpacingHz: res.Linear.SpacingHz,
+				Offset:    res.Linear.Offset,
+			})
+			if err != nil {
+				log.Warn("dmrlcn: persisting learned band plan failed", "system", sysName, "err", err)
+				return
+			}
+			log.Info("dmrlcn: learned band plan written to config", "system", sysName)
+		}
+		learner := dmrlcn.New(dmrlcn.Options{
+			Log:          log,
+			Bus:          d.bus,
+			Broker:       br,
+			CenterHz:     devCfg.CenterFreqHz,
+			SampleRateHz: sampleRate,
+			System:       sysName,
+			SetResolver:  cc.SetResolver,
+			Persist:      persist,
+			ExcludeHz:    exclude,
+		})
+		d.dmrLearners = append(d.dmrLearners, learner)
+		log.Info("dmrlcn: DMR Tier III autoconfiguration enabled (no dmr_band_plan configured)",
+			"system", sysName, "cc_freq_hz", ch.FrequencyHz)
+	}
+}
+
+// isControlChannel reports whether freqHz is one of the system's declared
+// control_channels.
+func isControlChannel(sys trunking.System, freqHz uint32) bool {
+	for _, cc := range sys.ControlChannels {
+		if cc == freqHz {
+			return true
+		}
+	}
+	return false
 }
 
 // buildVirtualVoiceTuners spins up one wbvoice.VirtualTuner per voice tap
