@@ -6,6 +6,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
 
@@ -13,7 +14,10 @@ import (
 // from config. It returns (nil, nil) when no feed is enabled, so the
 // daemon simply skips the subsystem. sampleRate is the recorder PCM
 // rate, used to synthesise inter-call silence for live Icecast feeds.
-func buildBroadcastManager(cfg config.BroadcastConfig, sampleRate int, bus *events.Bus, log *slog.Logger) (*broadcast.Manager, error) {
+// normCfg carries the per-call loudness-normalization settings; when it
+// applies to the distributed copy, the Manager normalizes the MP3 in
+// memory (leaving the on-disk WAV untouched).
+func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeConfig, sampleRate int, bus *events.Bus, log *slog.Logger) (*broadcast.Manager, error) {
 	var backends []broadcast.Backend
 
 	for _, f := range cfg.Broadcastify {
@@ -86,11 +90,23 @@ func buildBroadcastManager(cfg config.BroadcastConfig, sampleRate int, bus *even
 	if len(backends) == 0 {
 		return nil, nil
 	}
+	var normalize broadcast.NormalizeConfig
+	if normCfg.AppliesToDistributed() {
+		normalize = broadcast.NormalizeConfig{
+			Enabled: true,
+			Params: loudness.NormalizeParams{
+				TargetLUFS:   normCfg.TargetLUFS,
+				TruePeakDBTP: normCfg.TruePeakDBTP,
+				MaxBoostDB:   normCfg.MaxBoostDB,
+			}.WithDefaults(),
+		}
+	}
 	return broadcast.NewManager(broadcast.Options{
 		Bus:         bus,
 		Log:         log,
 		Backends:    backends,
 		MinDuration: time.Duration(cfg.MinDurationMs) * time.Millisecond,
 		Workers:     cfg.Workers,
+		Normalize:   normalize,
 	})
 }

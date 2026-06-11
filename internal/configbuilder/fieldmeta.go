@@ -211,6 +211,7 @@ var fieldMetas = map[string]FieldMeta{
 	"EqualizerConfig.StepSize":       {Help: "CMA adaptation step size. Default 1e-4 when enabled."},
 	"RecordingsConfig.Normalize":     {Help: "Per-call EBU R128 loudness normalization — rewrites each finished WAV to a consistent perceptual level (pure Go, no ffmpeg)."},
 	"NormalizeConfig.Enabled":        {Help: "Turn loudness normalization on."},
+	"NormalizeConfig.ApplyTo":        {Label: "Apply to", Help: "Which audio to normalize: recording (rewrite WAV), distributed (outbound MP3 only), or both. Default recording.", Options: opts("", "(default: recording)", "recording", "recording", "distributed", "distributed", "both", "both")},
 	"NormalizeConfig.TargetLUFS":     {Label: "Target LUFS", Help: "Integrated-loudness target. Default -16 when enabled."},
 	"NormalizeConfig.TruePeakDBTP":   {Label: "True peak (dBTP)", Help: "True-peak ceiling in dBTP. Default -1.5 when enabled."},
 	"NormalizeConfig.MaxBoostDB":     {Label: "Max gain (dB)", Help: "Cap on applied gain in either direction so quiet calls don't amplify hiss. Default 12 when enabled."},

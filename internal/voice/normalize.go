@@ -27,27 +27,21 @@ type NormalizeConfig struct {
 	MaxBoostDB float64
 }
 
-// Default normalization parameters, matching the rdio-scanner / EBU R128
-// convention. Applied per-field when normalization is enabled but a value
-// is left at zero.
-const (
-	defaultNormalizeTargetLUFS   = -16.0
-	defaultNormalizeTruePeakDBTP = -1.5
-	defaultNormalizeMaxBoostDB   = 12.0
-)
+// params returns the loudness.NormalizeParams for this config, with
+// defaults filled in for any zero field.
+func (c NormalizeConfig) params() loudness.NormalizeParams {
+	return loudness.NormalizeParams{
+		TargetLUFS:   c.TargetLUFS,
+		TruePeakDBTP: c.TruePeakDBTP,
+		MaxBoostDB:   c.MaxBoostDB,
+	}.WithDefaults()
+}
 
-// withDefaults returns a copy of cfg with zero fields replaced by the
-// package defaults. Only meaningful when Enabled.
+// withDefaults returns a copy of cfg with zero numeric fields replaced by
+// the package defaults. Only meaningful when Enabled.
 func (c NormalizeConfig) withDefaults() NormalizeConfig {
-	if c.TargetLUFS == 0 {
-		c.TargetLUFS = defaultNormalizeTargetLUFS
-	}
-	if c.TruePeakDBTP == 0 {
-		c.TruePeakDBTP = defaultNormalizeTruePeakDBTP
-	}
-	if c.MaxBoostDB == 0 {
-		c.MaxBoostDB = defaultNormalizeMaxBoostDB
-	}
+	p := c.params()
+	c.TargetLUFS, c.TruePeakDBTP, c.MaxBoostDB = p.TargetLUFS, p.TruePeakDBTP, p.MaxBoostDB
 	return c
 }
 
@@ -83,28 +77,9 @@ func normalizeWAVFile(path string, cfg NormalizeConfig) error {
 		fs[i] = float64(s) / 32768.0
 	}
 
-	lufs, ok := loudness.IntegratedLUFS(fs, int(sampleRate))
+	gain, ok := loudness.NormalizeGain(fs, int(sampleRate), cfg.params())
 	if !ok {
 		return nil // silent / too short — leave the recording untouched
-	}
-
-	// Linear gain toward target, clamped to ±MaxBoostDB.
-	gainDB := cfg.TargetLUFS - lufs
-	if gainDB > cfg.MaxBoostDB {
-		gainDB = cfg.MaxBoostDB
-	} else if gainDB < -cfg.MaxBoostDB {
-		gainDB = -cfg.MaxBoostDB
-	}
-	gain := loudness.DBToLinear(gainDB)
-
-	// True-peak limiting: if the gained signal would exceed the ceiling,
-	// reduce the gain so the peak lands exactly on it. This keeps the
-	// stage purely linear (no compression / pumping).
-	ceiling := loudness.DBToLinear(cfg.TruePeakDBTP)
-	if peak := loudness.TruePeak(fs, int(sampleRate)); peak > 0 {
-		if peak*gain > ceiling {
-			gain = ceiling / peak
-		}
 	}
 
 	// Apply gain, round to int16 with a hard clamp as a rounding-safety

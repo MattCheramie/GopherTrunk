@@ -86,3 +86,50 @@ func TestGainToTarget(t *testing.T) {
 		t.Fatalf("GainToTarget mismatch: %.6f", g)
 	}
 }
+
+func TestNormalizeGain_QuietTone(t *testing.T) {
+	// A quiet tone (~-22 LUFS) toward -16: gain should be applied and,
+	// after applying it, the signal should re-measure near the target.
+	p := NormalizeParams{}.WithDefaults()
+	s := sine(testRate*3, 1000, 0.2, 0)
+	gain, ok := NormalizeGain(s, testRate, p)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if gain <= 1.0 {
+		t.Fatalf("expected boost >1 for a quiet tone, got %.4f", gain)
+	}
+	gained := make([]float64, len(s))
+	for i, v := range s {
+		gained[i] = v * gain
+	}
+	lufs, _ := IntegratedLUFS(gained, testRate)
+	if math.Abs(lufs-p.TargetLUFS) > 0.5 {
+		t.Fatalf("after gain, loudness %.2f not near target %.2f", lufs, p.TargetLUFS)
+	}
+}
+
+func TestNormalizeGain_TruePeakCeiling(t *testing.T) {
+	// A near-full-scale tone can't be boosted to target without breaching
+	// the ceiling, so the gain must hold the true peak under it.
+	p := NormalizeParams{}.WithDefaults()
+	s := sine(testRate*3, 1000, 0.95, 0)
+	gain, ok := NormalizeGain(s, testRate, p)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	peak := TruePeak(s, testRate) * gain
+	if peak > DBToLinear(p.TruePeakDBTP)+1e-3 {
+		t.Fatalf("gained true peak %.4f exceeds ceiling", peak)
+	}
+}
+
+func TestNormalizeGain_Silence(t *testing.T) {
+	gain, ok := NormalizeGain(make([]float64, testRate*3), testRate, NormalizeParams{}.WithDefaults())
+	if ok {
+		t.Fatal("silence should report ok=false")
+	}
+	if gain != 1.0 {
+		t.Fatalf("silence gain should be unity, got %.4f", gain)
+	}
+}

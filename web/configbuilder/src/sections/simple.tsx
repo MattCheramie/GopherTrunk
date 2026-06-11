@@ -359,7 +359,18 @@ export function RecordingsSection() {
           label="Enabled"
           value={!!cfg.Normalize?.Enabled}
           onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, Enabled: x } })}
-          help="Rewrite each finished recording to a consistent perceptual loudness (pure Go, no ffmpeg)."
+          help="Normalize each finished call to a consistent perceptual loudness (pure Go, no ffmpeg)."
+        />
+        <SelectField
+          label="Apply to"
+          value={cfg.Normalize?.ApplyTo ?? ""}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, ApplyTo: x } })}
+          options={[
+            { value: "", label: "(default: recording)" },
+            { value: "recording", label: "recording (rewrite WAV)" },
+            { value: "distributed", label: "distributed (outbound MP3 only)" },
+            { value: "both", label: "both" },
+          ]}
         />
         <NumberField
           label="Target LUFS"

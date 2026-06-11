@@ -115,6 +115,7 @@ export interface EqualizerConfig {
 
 export interface NormalizeConfig {
   Enabled: boolean;
+  ApplyTo: string;
   TargetLUFS: number;
   TruePeakDBTP: number;
   MaxBoostDB: number;

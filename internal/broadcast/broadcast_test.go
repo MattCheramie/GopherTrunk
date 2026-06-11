@@ -1,6 +1,7 @@
 package broadcast
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -71,6 +73,39 @@ func TestCallMP3CachesEncode(t *testing.T) {
 	// The cache returns the same backing array, not a re-encode.
 	if &first[0] != &second[0] {
 		t.Fatal("MP3() re-encoded instead of caching")
+	}
+}
+
+func TestCallMP3NormalizesDistributed(t *testing.T) {
+	path := writeWAV(t, 1.0) // quiet tone (~-26 dBFS)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plain, err := (&Call{AudioPath: path, SampleRate: 8000}).MP3()
+	if err != nil {
+		t.Fatalf("plain MP3: %v", err)
+	}
+	norm, err := (&Call{
+		AudioPath: path, SampleRate: 8000,
+		normalize: NormalizeConfig{Enabled: true, Params: loudness.NormalizeParams{}.WithDefaults()},
+	}).MP3()
+	if err != nil {
+		t.Fatalf("normalized MP3: %v", err)
+	}
+
+	// The on-disk WAV must be left pristine — normalization is in memory.
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("distributed normalization mutated the on-disk WAV")
+	}
+	// A quiet tone gets boosted, so the normalized MP3 must differ.
+	if bytes.Equal(plain, norm) {
+		t.Fatal("normalized MP3 is identical to the un-normalized encode (no gain applied)")
 	}
 }
 
