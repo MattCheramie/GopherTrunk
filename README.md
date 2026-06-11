@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/MattCheramie/GopherTrunk/actions/workflows/ci.yml"><img src="https://github.com/MattCheramie/GopherTrunk/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/MattCheramie/GopherTrunk/releases"><img src="https://img.shields.io/github/v/release/MattCheramie/GopherTrunk?include_prereleases&sort=semver&color=155799" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/MattCheramie/GopherTrunk?color=155799" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-155799" alt="License"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/MattCheramie/GopherTrunk?color=155799" alt="Go version"></a>
   <a href="https://goreportcard.com/report/github.com/MattCheramie/GopherTrunk"><img src="https://goreportcard.com/badge/github.com/MattCheramie/GopherTrunk" alt="Go Report Card"></a>
   <a href="https://gophertrunk.org"><img src="https://img.shields.io/badge/docs-gophertrunk.org-155799" alt="Docs"></a>
