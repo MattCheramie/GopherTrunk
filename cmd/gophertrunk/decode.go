@@ -35,6 +35,7 @@ func runDecode(args []string) {
 	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
 	statsFlag := fs.Bool("stats", true, "print a per-call voice audio-quality summary to stderr after decoding")
+	normalizeFlag := fs.Bool("normalize", false, "loudness-normalize the output WAV (EBU R128, -16 LUFS / -1.5 dBTP) after decoding")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk decode — decode a captured raw vocoder-frame stream into a WAV.
@@ -100,6 +101,19 @@ FLAGS:`)
 	}
 	fmt.Printf("decoded %d frame(s) → %s (%d ms of audio)\n",
 		frames, *out, frames*20)
+
+	if *normalizeFlag {
+		// Close the WAV first so its length fields are patched and flushed
+		// before we re-read and rewrite it. The deferred Close becomes a
+		// harmless no-op on the already-closed file.
+		if err := outFile.Close(); err != nil {
+			rep.Fatal(1, fmt.Errorf("close output before normalize: %w", err))
+		}
+		if err := voice.NormalizeWAVFile(*out, voice.NormalizeConfig{Enabled: true}); err != nil {
+			rep.Fatal(1, fmt.Errorf("normalize: %w", err))
+		}
+		fmt.Printf("normalized %s to -16 LUFS / -1.5 dBTP\n", *out)
+	}
 
 	if *statsFlag {
 		printVoiceStats(os.Stderr, v)

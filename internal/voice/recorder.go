@@ -59,6 +59,7 @@ type Recorder struct {
 	sampleRate         uint32
 	writeRaw           bool
 	skipEncrypted      bool
+	normalize          NormalizeConfig
 	vocoderForProtocol map[string]string
 
 	mu        sync.Mutex
@@ -92,6 +93,13 @@ type RecorderOptions struct {
 	// deleted, and no CallComplete is published so downstream upload feeds
 	// never see the partial.
 	SkipEncrypted bool
+
+	// Normalize configures optional per-call EBU R128 / BS.1770 loudness
+	// normalization. When Enabled, a finished WAV is measured and rewritten
+	// in place to TargetLUFS (true-peak limited) before CallComplete is
+	// published, so every downstream consumer (web playback, MP3 encode,
+	// uploads) reads the normalized audio. Off by default.
+	Normalize NormalizeConfig
 
 	// VocoderForProtocol maps a Grant.Protocol value to a vocoder
 	// registry name used to decode raw frames into PCM that's
@@ -165,6 +173,9 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if vocoderMap == nil {
 		vocoderMap = DefaultVocoderForProtocol()
 	}
+	if opts.Normalize.Enabled {
+		opts.Normalize = opts.Normalize.withDefaults()
+	}
 	r := &Recorder{
 		bus:                opts.Bus,
 		log:                opts.Log,
@@ -172,6 +183,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		sampleRate:         opts.SampleRate,
 		writeRaw:           opts.WriteRaw,
 		skipEncrypted:      opts.SkipEncrypted,
+		normalize:          opts.Normalize,
 		vocoderForProtocol: vocoderMap,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
@@ -546,7 +558,22 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs}
 	r.mu.Unlock()
 	if cc != nil {
+		r.normalizeIfEnabled(cc.AudioPath)
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
+	}
+}
+
+// normalizeIfEnabled applies per-call loudness normalization to a finished
+// WAV when configured. It runs after r.mu is released (whole-file I/O must
+// not block other sessions) and before CallComplete is published, so the
+// MP3/upload path sees normalized audio. A failure is logged and the
+// original recording is kept — normalization never drops a call.
+func (r *Recorder) normalizeIfEnabled(wavPath string) {
+	if !r.normalize.Enabled || wavPath == "" {
+		return
+	}
+	if err := normalizeWAVFile(wavPath, r.normalize); err != nil {
+		r.log.Warn("recorder: loudness normalize failed", "wav", wavPath, "err", err)
 	}
 }
 
@@ -650,6 +677,7 @@ func (r *Recorder) handleEnd(ce trunking.CallEnd) {
 		"duration", ce.Duration().Round(time.Millisecond),
 		"reason", ce.Reason)
 	if cc != nil {
+		r.normalizeIfEnabled(cc.AudioPath)
 		r.bus.Publish(events.Event{Kind: events.KindCallComplete, Payload: *cc})
 	}
 }

@@ -37,7 +37,7 @@ func Sections() []SectionMeta {
 			"Live playback of decoded voice. Sample rate (4000–48000 Hz) should match recordings.sample_rate. Volume is 0–1.",
 			"Audio", docsBase + "voice-calibration.html"},
 		{"recordings", "Recordings", "Recordings",
-			"Per-call WAV recorder output directory and sample rate (4000–48000 Hz), plus the optional blind equalizer.",
+			"Per-call WAV recorder output directory and sample rate (4000–48000 Hz), plus the optional blind equalizer and loudness normalization.",
 			"Recordings", docsBase + "voice-calibration.html"},
 		{"storage", "Storage", "Storage",
 			"Where the call-log database and the control-channel cache live.",

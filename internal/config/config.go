@@ -1312,6 +1312,13 @@ type RecordingsConfig struct {
 	// Off by default; useful when receiving simulcast systems with
 	// multiple transmitters at slightly different arrival delays.
 	Equalizer EqualizerConfig `yaml:"equalizer"`
+	// Normalize enables per-call EBU R128 / BS.1770 loudness
+	// normalization. When enabled, each finished recording is measured and
+	// rewritten in place to a perceptual loudness target (true-peak
+	// limited), so calls from different talkgroups/sources play back at a
+	// consistent level. Off by default. This is post-processing of the
+	// recorded WAV only; live monitoring/playback is unaffected.
+	Normalize NormalizeConfig `yaml:"normalize"`
 }
 
 // EqualizerConfig is the YAML shape of the optional CMA equalizer in
@@ -1320,6 +1327,16 @@ type EqualizerConfig struct {
 	Enabled  bool    `yaml:"enabled"`
 	Taps     int     `yaml:"taps"`      // default 8 when enabled
 	StepSize float32 `yaml:"step_size"` // default 1e-4 when enabled
+}
+
+// NormalizeConfig is the YAML shape of the optional per-call loudness
+// normalization. Defaults (applied when enabled and a field is zero):
+// target -16 LUFS, true peak -1.5 dBTP, max gain ±12 dB.
+type NormalizeConfig struct {
+	Enabled      bool    `yaml:"enabled"`
+	TargetLUFS   float64 `yaml:"target_lufs"`    // default -16.0 when enabled
+	TruePeakDBTP float64 `yaml:"true_peak_dbtp"` // default -1.5 when enabled
+	MaxBoostDB   float64 `yaml:"max_boost_db"`   // default 12.0 when enabled
 }
 
 // MetricsConfig toggles the Prometheus collector. The /metrics endpoint

@@ -354,6 +354,33 @@ export function RecordingsSection() {
           placeholder="0.0001"
         />
       </Fieldset>
+      <Fieldset legend="Loudness normalization (EBU R128)">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.Normalize?.Enabled}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, Enabled: x } })}
+          help="Rewrite each finished recording to a consistent perceptual loudness (pure Go, no ffmpeg)."
+        />
+        <NumberField
+          label="Target LUFS"
+          value={cfg.Normalize?.TargetLUFS ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, TargetLUFS: x } })}
+          placeholder="-16"
+        />
+        <NumberField
+          label="True peak (dBTP)"
+          step={0.1}
+          value={cfg.Normalize?.TruePeakDBTP ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, TruePeakDBTP: x } })}
+          placeholder="-1.5"
+        />
+        <NumberField
+          label="Max gain (dB)"
+          value={cfg.Normalize?.MaxBoostDB ?? 0}
+          onChange={(x) => set({ ...cfg, Normalize: { ...cfg.Normalize, MaxBoostDB: x } })}
+          placeholder="12"
+        />
+      </Fieldset>
     </Section>
   );
 }

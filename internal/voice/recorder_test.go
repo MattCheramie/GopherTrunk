@@ -3,11 +3,13 @@ package voice
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/loudness"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -951,5 +953,90 @@ func assertNoWav(t *testing.T, root string) {
 	t.Helper()
 	if got := wavFiles(t, root); len(got) != 0 {
 		t.Fatalf("expected no wav files, found %v", got)
+	}
+}
+
+// TestRecorderNormalizesFinishedWav confirms that, with Normalize enabled,
+// a finished recording is loudness-normalized in place toward the target
+// before its CallComplete is observable on disk.
+func TestRecorderNormalizesFinishedWav(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:        bus,
+		OutDir:     dir,
+		SampleRate: 8000,
+		Normalize:  NormalizeConfig{Enabled: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "TestSystem", Protocol: "motorola",
+			GroupID: 1234, SourceID: 56789,
+		},
+		Talkgroup:    &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP", Record: true},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// ~2.5 s of a quiet 1 kHz tone (~-26 LUFS) that needs boosting toward
+	// the -16 LUFS target.
+	const n = 8000 * 5 / 2
+	pcm := make([]int16, n)
+	for i := range pcm {
+		v := 0.1 * math.Sin(2*math.Pi*1000*float64(i)/8000)
+		pcm[i] = int16(v * 32767)
+	}
+	if err := r.WritePCM("VOICE-1", pcm); err != nil {
+		t.Fatal(err)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, Talkgroup: cs.Talkgroup, DeviceSerial: "VOICE-1",
+		StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(3 * time.Second),
+		Reason: trunking.EndReasonNormal,
+	}})
+
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !r.HasSession("VOICE-1") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	want := filepath.Join(dir, "TestSystem", "FIRE-DISP", "20260505T123045Z_src56789.wav")
+	samples, rate, err := ReadWAVSamples(want)
+	if err != nil {
+		t.Fatalf("read normalized wav: %v", err)
+	}
+	fs := make([]float64, len(samples))
+	for i, s := range samples {
+		fs[i] = float64(s) / 32768.0
+	}
+	lufs, ok := loudness.IntegratedLUFS(fs, int(rate))
+	if !ok {
+		t.Fatal("normalized wav not measurable")
+	}
+	if lufs < -17.0 || lufs > -15.0 {
+		t.Fatalf("normalized loudness %.2f LUFS not near -16 target", lufs)
 	}
 }

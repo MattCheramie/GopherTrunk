@@ -126,6 +126,71 @@ func (w *WavWriter) writeHeader() error {
 	return err
 }
 
+// ReadWAVSamples reads a 16-bit PCM mono WAV file written by WavWriter
+// (or any canonical PCM WAV) and returns its samples and sample rate. It
+// walks the RIFF chunks so it tolerates extra chunks before "data", but
+// only accepts 16-bit mono PCM — the recorder's output contract.
+func ReadWAVSamples(path string) (samples []int16, sampleRate uint32, err error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(b) < 12 || string(b[0:4]) != "RIFF" || string(b[8:12]) != "WAVE" {
+		return nil, 0, errors.New("voice: not a RIFF/WAVE file")
+	}
+	var (
+		haveFmt   bool
+		channels  uint16
+		bits      uint16
+		dataStart = -1
+		dataLen   int
+	)
+	for pos := 12; pos+8 <= len(b); {
+		id := string(b[pos : pos+4])
+		size := int(binary.LittleEndian.Uint32(b[pos+4 : pos+8]))
+		body := pos + 8
+		if size < 0 || body+size > len(b) {
+			// Truncated final chunk (e.g. a crash before patchHeader):
+			// clamp to what's actually present.
+			size = len(b) - body
+		}
+		switch id {
+		case "fmt ":
+			if size < 16 {
+				return nil, 0, errors.New("voice: short fmt chunk")
+			}
+			format := binary.LittleEndian.Uint16(b[body : body+2])
+			channels = binary.LittleEndian.Uint16(b[body+2 : body+4])
+			sampleRate = binary.LittleEndian.Uint32(b[body+4 : body+8])
+			bits = binary.LittleEndian.Uint16(b[body+14 : body+16])
+			if format != 1 {
+				return nil, 0, errors.New("voice: not PCM WAV")
+			}
+			haveFmt = true
+		case "data":
+			dataStart = body
+			dataLen = size
+		}
+		// Chunks are word-aligned (padded to even size).
+		pos = body + size + (size & 1)
+	}
+	if !haveFmt {
+		return nil, 0, errors.New("voice: missing fmt chunk")
+	}
+	if channels != wavChannels || bits != wavBitsPerSample {
+		return nil, 0, errors.New("voice: expected 16-bit mono PCM")
+	}
+	if dataStart < 0 {
+		return nil, 0, errors.New("voice: missing data chunk")
+	}
+	n := dataLen / 2
+	samples = make([]int16, n)
+	for i := 0; i < n; i++ {
+		samples[i] = int16(binary.LittleEndian.Uint16(b[dataStart+2*i:]))
+	}
+	return samples, sampleRate, nil
+}
+
 func (w *WavWriter) patchHeader() error {
 	// RIFF size = total file - 8 = 36 + bytesWritten
 	if _, err := w.w.Seek(4, io.SeekStart); err != nil {

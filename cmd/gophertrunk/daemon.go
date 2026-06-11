@@ -906,6 +906,12 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			SampleRate:    cfg.Recordings.SampleRate,
 			WriteRaw:      cfg.Recordings.WriteRaw,
 			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			Normalize: voice.NormalizeConfig{
+				Enabled:      cfg.Recordings.Normalize.Enabled,
+				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,
+				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
+				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
