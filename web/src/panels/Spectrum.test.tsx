@@ -130,7 +130,7 @@ describe("Spectrum panel", () => {
 
     render(<Spectrum />);
 
-    const canvas = await screen.findByLabelText(/hover to read the frequency/i);
+    const canvas = await screen.findByLabelText(/spectrum waterfall — hover/i);
     // Map cursor → frequency: at the canvas midpoint (xRatio 0.5) the
     // frequency equals the center, and the matching bin (index 4) is -40.
     canvas.getBoundingClientRect = () =>
@@ -145,6 +145,40 @@ describe("Spectrum panel", () => {
     fireEvent.mouseLeave(canvas);
     await waitFor(() => {
       expect(screen.queryByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeNull();
+    });
+  });
+
+  it("renders the spectrum analyzer line plot and reads out on hover", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 153_000_000,
+        sample_rate_hz: 2_048_000,
+      },
+    ]);
+    vi.mocked(openSpectrumStream).mockImplementation((_cfg, opts) => {
+      opts.onFrame?.({
+        ts_ns: 0,
+        center_hz: 153_000_000,
+        sample_rate_hz: 2_048_000,
+        bins: [-80, -70, -60, -50, -40, -30, -20, -10],
+      });
+      return { close: vi.fn() };
+    });
+
+    render(<Spectrum />);
+
+    // The analyzer canvas sits above the waterfall and shares the same
+    // X→frequency mapping, so hovering it produces the same readout.
+    const analyzer = await screen.findByLabelText(/spectrum analyzer/i);
+    analyzer.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 160 }) as DOMRect;
+    fireEvent.mouseMove(analyzer, { clientX: 50, clientY: 10 });
+
+    await waitFor(() => {
+      expect(screen.getByText(/153\.0000 MHz · -40\.0 dBFS/)).toBeInTheDocument();
     });
   });
 

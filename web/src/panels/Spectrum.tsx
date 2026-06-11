@@ -26,6 +26,11 @@ const FPS = 15;
 const HISTORY_ROWS = 256;
 const DB_FLOOR = -100;
 const DB_CEIL = 0;
+// Internal pixel height of the spectrum-analyzer line plot drawn above
+// the waterfall. Shares the waterfall's full-width layout and FFT-shifted
+// bin→x mapping so a peak in the analyzer lines up vertically with its
+// streak in the waterfall below.
+const ANALYZER_H = 160;
 
 type ConnState = "connecting" | "open" | "closed";
 
@@ -41,6 +46,7 @@ export function Spectrum() {
   const [hover, setHover] = useState<{ hz: number; db: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analyzerRef = useRef<HTMLCanvasElement | null>(null);
   const rowsRef = useRef<Float32Array[]>([]);
   const latestRef = useRef<SpectrumFrame | null>(null);
   const bookmarksRef = useRef<Bookmark[]>([]);
@@ -106,7 +112,11 @@ export function Spectrum() {
     // Clear history on device change so we don't render bins from a
     // different centre frequency on the same canvas row.
     rowsRef.current = [];
+    latestRef.current = null;
     setLatest(null);
+    // Blank the analyzer trace immediately; it otherwise keeps the last
+    // device's curve painted until the first new frame lands.
+    renderAnalyzer(analyzerRef.current, null);
 
     const stream = openSpectrumStream(cfg, {
       serial: selected,
@@ -117,6 +127,7 @@ export function Spectrum() {
         latestRef.current = f;
         const row = new Float32Array(f.bins);
         rowsRef.current = [row, ...rowsRef.current.slice(0, HISTORY_ROWS - 1)];
+        renderAnalyzer(analyzerRef.current, f);
         renderWaterfall(
           canvasRef.current,
           rowsRef.current,
@@ -135,7 +146,10 @@ export function Spectrum() {
   // sampleRate/2), rightmost = (centerHz + sampleRate/2 -
   // sampleRate/N).
   const handleCanvasClick = async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    // currentTarget is whichever canvas was clicked — the analyzer line
+    // plot or the waterfall. Both share the same full-width X→frequency
+    // mapping, so click-to-tune works identically on either.
+    const canvas = e.currentTarget;
     const frame = latestRef.current;
     if (!canvas || !frame || !selected) return;
     const xRatio = cursorXRatio(canvas, e.clientX);
@@ -156,7 +170,7 @@ export function Spectrum() {
   // value comes from the newest waterfall row (rowsRef.current[0])
   // using the same nearest-neighbor bin index renderWaterfall draws.
   const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = e.currentTarget;
     const frame = latestRef.current;
     if (!canvas || !frame) {
       setHover(null);
@@ -224,6 +238,17 @@ export function Spectrum() {
 
       <div className="rounded border border-border bg-black overflow-hidden">
         <canvas
+          ref={analyzerRef}
+          width={FFT_BINS}
+          height={ANALYZER_H}
+          className="block w-full cursor-crosshair border-b border-border"
+          style={{ height: 160 }}
+          onClick={handleCanvasClick}
+          onMouseMove={handleCanvasMove}
+          onMouseLeave={() => setHover(null)}
+          aria-label="Spectrum analyzer — live signal power across frequency. Hover to read the frequency and signal level, click to tune the SDR to that frequency"
+        />
+        <canvas
           ref={canvasRef}
           width={FFT_BINS}
           height={HISTORY_ROWS}
@@ -237,11 +262,13 @@ export function Spectrum() {
       </div>
 
       <div className="text-[11px] text-muted">
-        {DB_FLOOR} dBFS (cold) → {DB_CEIL} dBFS (hot). New frames render at
-        the top; the canvas scrolls down as history accumulates. Hover the
-        waterfall to read the frequency and signal level under the cursor;
-        click anywhere to retune the SDR to that frequency. Bookmark markers
-        ({bookmarkList.length} visible) appear as cyan ticks along the top.
+        Top: live signal power vs frequency ({DB_FLOOR} to {DB_CEIL} dBFS,
+        grid every 20 dB). Bottom: waterfall history — {DB_FLOOR} dBFS (cold)
+        → {DB_CEIL} dBFS (hot); new frames render at the top and scroll down.
+        Hover either view to read the frequency and signal level under the
+        cursor; click anywhere to retune the SDR to that frequency. Bookmark
+        markers ({bookmarkList.length} visible) appear as cyan ticks along the
+        top of the waterfall.
       </div>
     </div>
   );
@@ -279,6 +306,78 @@ function ConnPill({ state }: { state: ConnState }) {
   if (state === "connecting")
     return <span className="pill-warn">connecting</span>;
   return <span className="pill-err">offline</span>;
+}
+
+// dbToY maps a dBFS magnitude to a canvas Y coordinate for the analyzer
+// line plot: DB_CEIL (0 dBFS, strongest) sits at the top (y=0), DB_FLOOR
+// (weakest) at the bottom (y=height). Out-of-range values clamp to the
+// edges. Same [-100, 0] dB span as the waterfall colormap so the two
+// views read consistently.
+function dbToY(db: number, height: number): number {
+  let t = (db - DB_FLOOR) / (DB_CEIL - DB_FLOOR);
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  return (1 - t) * height;
+}
+
+// renderAnalyzer draws the live power-vs-frequency trace (the "spectrum
+// analyzer" curve, like SDR#'s top panel) for the most recent frame.
+// Horizontal grid lines mark every 20 dB across the [-100, 0] dBFS span;
+// the trace is the frame's dBFS bins resampled to the canvas width with
+// the same nearest-neighbor mapping the waterfall uses, so a peak here
+// lines up vertically with its streak in the waterfall below. A null
+// frame blanks the plot (device change / no data yet).
+function renderAnalyzer(
+  canvas: HTMLCanvasElement | null,
+  frame: SpectrumFrame | null,
+) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const width = canvas.width;
+  const height = canvas.height;
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, width, height);
+
+  // Horizontal dB grid every 20 dB.
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 1;
+  for (let db = DB_CEIL; db >= DB_FLOOR; db -= 20) {
+    const y = Math.round(dbToY(db, height)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  const bins = frame?.bins;
+  if (!bins || bins.length === 0) return;
+
+  // Trace path (reused for the fill and the stroke).
+  const trace = () => {
+    ctx.beginPath();
+    for (let x = 0; x < width; x++) {
+      const srcIdx = Math.floor((x * bins.length) / width);
+      const y = dbToY(bins[srcIdx], height);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  };
+
+  // Subtle fill under the curve.
+  trace();
+  ctx.lineTo(width, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(52, 211, 153, 0.12)";
+  ctx.fill();
+
+  // Trace stroke on top.
+  trace();
+  ctx.strokeStyle = "#34d399";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 // renderWaterfall draws the current history onto the canvas. Newest row
