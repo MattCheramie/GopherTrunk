@@ -3,7 +3,8 @@ package main
 import "testing"
 
 func TestChooseHuntSDR(t *testing.T) {
-	brokers := map[string]bool{"ctrl": true, "voice1": true, "voice2": true}
+	// "" is keyed so the blank-USB-serial fallback case has a broker.
+	brokers := map[string]bool{"ctrl": true, "voice1": true, "voice2": true, "": true}
 	has := func(s string) bool { return brokers[s] }
 
 	cases := []struct {
@@ -11,6 +12,7 @@ func TestChooseHuntSDR(t *testing.T) {
 		requested  string
 		control    string
 		voice      []string
+		pool       []string
 		wantSerial string
 		wantBorrow bool
 		wantErr    bool
@@ -50,10 +52,29 @@ func TestChooseHuntSDR(t *testing.T) {
 			requested: "", control: "", voice: nil,
 			wantErr: true,
 		},
+		{
+			// Discovery use case: an SDR is pooled but no trunked system is
+			// configured, so it has no control role and controlSerial is empty.
+			name:      "auto falls back to any pooled broker (no control)",
+			requested: "", control: "", voice: nil, pool: []string{"ctrl"},
+			wantSerial: "ctrl", wantBorrow: false,
+		},
+		{
+			// Blank USB serial: control SDR is keyed under "", so controlSerial
+			// is "" but the device is still borrowable via the pool fallback.
+			name:      "auto falls back to blank-serial control and borrows",
+			requested: "", control: "", voice: nil, pool: []string{""},
+			wantSerial: "", wantBorrow: true,
+		},
+		{
+			name:      "auto errors when pooled SDR has no broker",
+			requested: "", control: "", voice: nil, pool: []string{"nobroker"},
+			wantErr: true,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			serial, borrow, err := chooseHuntSDR(c.requested, c.control, c.voice, has)
+			serial, borrow, err := chooseHuntSDR(c.requested, c.control, c.voice, c.pool, has)
 			if c.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got serial=%q borrow=%v", serial, borrow)

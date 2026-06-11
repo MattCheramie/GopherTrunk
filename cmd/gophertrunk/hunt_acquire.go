@@ -21,9 +21,11 @@ import (
 //   - Otherwise it borrows the control SDR.
 //
 // hasBroker reports whether an iqtap broker exists for a serial (a live hunt
-// needs one). It returns an error when the chosen SDR has no broker, or when no
-// usable SDR exists at all.
-func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials []string, hasBroker func(string) bool) (serial string, borrow bool, err error) {
+// needs one). poolSerials is every pooled SDR's serial in deterministic order
+// (pool.Entries() insertion order) and backs a last-resort fallback. It returns
+// an error when the chosen SDR has no broker, or when no usable SDR exists at
+// all.
+func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials, poolSerials []string, hasBroker func(string) bool) (serial string, borrow bool, err error) {
 	if requestedSerial != "" {
 		if !hasBroker(requestedSerial) {
 			return "", false, fmt.Errorf("hunt: SDR %q has no IQ broker (not in the pool?)", requestedSerial)
@@ -40,6 +42,17 @@ func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials []string,
 	if controlSerial != "" && hasBroker(controlSerial) {
 		return controlSerial, true, nil
 	}
+	// Last resort: any pooled SDR with a broker. Covers configs with no
+	// trunked system yet (the discovery use case the Hunt feature exists
+	// for), wideband-only rigs, and dongles with a blank USB serial — all of
+	// which leave controlSerial unset even though a usable SDR is sitting
+	// idle. Borrow (pausing the cchunt supervisor) only when the pick is the
+	// control SDR.
+	for _, s := range poolSerials {
+		if hasBroker(s) {
+			return s, s == controlSerial, nil
+		}
+	}
 	return "", false, fmt.Errorf("hunt: no SDR with an IQ broker available for a live hunt")
 }
 
@@ -51,13 +64,16 @@ func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials []string,
 // restores it.
 func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 	return func(ctx context.Context, opts hunt.LiveHuntOptions) (hunt.IQSource, func(), error) {
-		var voiceSerials []string
+		var voiceSerials, poolSerials []string
 		if d.pool != nil {
 			for _, e := range d.pool.AllByRole(sdr.RoleVoice) {
 				voiceSerials = append(voiceSerials, e.Info.Serial)
 			}
+			for _, e := range d.pool.Entries() {
+				poolSerials = append(poolSerials, e.Info.Serial)
+			}
 		}
-		serial, borrow, err := chooseHuntSDR(opts.Serial, d.controlSerial, voiceSerials, func(s string) bool {
+		serial, borrow, err := chooseHuntSDR(opts.Serial, d.controlSerial, voiceSerials, poolSerials, func(s string) bool {
 			return d.iqBrokers[s] != nil
 		})
 		if err != nil {
