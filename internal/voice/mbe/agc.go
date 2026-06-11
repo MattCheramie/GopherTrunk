@@ -85,7 +85,13 @@ type AGCConfig struct {
 
 	// MaxGain bounds the highest gain the AGC can apply, preventing
 	// silence from being amplified to full scale by a stale low
-	// envelope. Default 1e5.
+	// envelope. Default 1e5. NOTE: this is a coarse bound only — a
+	// genuinely quiet (but valid) synthesised frame can have a peak of a
+	// few units and legitimately needs a gain of several thousand to reach
+	// TargetPeak, so this cap cannot be tightened much without starving
+	// quiet speech. The per-frame output ceiling in Apply (not MaxGain) is
+	// what stops a stale low envelope from over-amplifying a *louder*
+	// following frame into the limiter.
 	MaxGain float64
 
 	// NoiseFloor is the per-frame peak threshold below which the
@@ -246,13 +252,16 @@ func (a *AGC) LastClipSamples() int { return a.lastClipSamples }
 // count) is accumulated for the VoiceStats summary.
 func (a *AGC) Apply(pcm []float64, out []int16, freezeEnvelope bool) {
 	cfg := a.cfg
-	if !freezeEnvelope {
-		var peak float64
-		for _, v := range pcm {
-			if abs := math.Abs(v); abs > peak {
-				peak = abs
-			}
+	// The per-frame peak is needed in both modes: to update the envelope
+	// (non-frozen) and to cap the gain so a frozen frame can't be amplified
+	// past the limiter by a stale envelope (the ceiling below).
+	var peak float64
+	for _, v := range pcm {
+		if abs := math.Abs(v); abs > peak {
+			peak = abs
 		}
+	}
+	if !freezeEnvelope {
 		if a.env == 0 && peak > cfg.NoiseFloor {
 			// First-frame seed: skip attack smoothing so the first
 			// frame lands at exactly TargetPeak instead of 1/Attack× over.
@@ -274,6 +283,23 @@ func (a *AGC) Apply(pcm []float64, out []int16, freezeEnvelope bool) {
 		gain = cfg.MinGain
 	} else if gain > cfg.MaxGain {
 		gain = cfg.MaxGain
+	}
+	// Per-frame output ceiling: never amplify THIS frame's own peak past the
+	// soft-limiter knee, regardless of how stale or low the smoothed envelope
+	// is. Without it, a near-silent onset frame seeds/holds a tiny envelope and
+	// the next louder frame — or a frozen bad-frame replay / idle-mute that
+	// reuses the held gain (Apply with freezeEnvelope=true does not update the
+	// envelope) — is multiplied by a gain up to MaxGain, slamming every sample
+	// into the limiter. Field captures showed mean_gain≈1e5, peak_preclip≈8e7,
+	// clip_pct≈65% on short call onsets from exactly this. The ceiling only
+	// engages when the AGC would otherwise push the output past the knee, so
+	// ordinary frames (output ≈ TargetPeak, well under the knee) and the
+	// inter-frame dynamics the fast-attack/slow-release loop produces are
+	// unchanged — it is a one-sided clamp that can only reduce clipping.
+	if peak > 0 {
+		if ceil := softLimitKnee / peak; gain > ceil {
+			gain = ceil
+		}
 	}
 	a.lastGain = gain
 	a.lastMaxPreClip = 0
