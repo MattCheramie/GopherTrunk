@@ -3249,6 +3249,35 @@ func (f fanoutSink) WriteRawFrame(serial string, frame []byte) error {
 	return nil
 }
 
+// WriteRawFrameWithErrors fans a raw frame plus its channel-FEC
+// corrected-bit count out to the contained sinks. Error-aware sinks (the
+// recorder, which forwards the count to the IMBE decoder's adaptive
+// smoothing) get the richer call; sinks that only speak plain
+// WriteRawFrame still get the frame, just without the count.
+//
+// fanoutSink MUST implement this: the P25 Phase 1 / DMR voice chains
+// select the error-aware path via `c.sink.(errAwareRawSink)`, and the
+// daemon hands them a fanoutSink. Without this method that assertion
+// fails, the chains silently fall back to the plain WriteRawFrame, and
+// the decoder's adaptive smoothing never sees a non-zero error rate — so
+// it stays inert in the daemon (high-error frames squeak through) even
+// though the unit tests, which call the recorder directly, exercise it.
+func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correctedBits int) error {
+	for _, s := range f {
+		switch rs := s.(type) {
+		case interface {
+			WriteRawFrameWithErrors(string, []byte, int) error
+		}:
+			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+		case interface {
+			WriteRawFrame(string, []byte) error
+		}:
+			_ = rs.WriteRawFrame(serial, frame)
+		}
+	}
+	return nil
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {
