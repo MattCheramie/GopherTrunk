@@ -1090,20 +1090,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 		// Digital protocols (P25, DMR, NXDN, …) reach the composer as
 		// raw vocoder frames and fan out only to the recorder — the
-		// lone decoder. The other live sinks here implement WritePCM
-		// only, so they never see digital audio. Tap the PCM the
-		// recorder decodes and forward it to those live consumers, so
-		// the web stream / host player / tone-out hear digital calls
-		// too, not just analog FM (issue #598). The recorder itself is
-		// excluded from this tap (it already wrote the WAV from its own
-		// decode); analog PCM still flows to these sinks via the
-		// composer fanout below, so each sink gets every sample once.
+		// lone decoder. Tap the PCM the recorder decodes and forward it
+		// to the live STREAM consumers — the network publisher
+		// (WebUI/gRPC) and the tone-out detector — so digital calls are
+		// heard live, not just analog FM (issue #598).
+		//
+		// The host speaker player is deliberately EXCLUDED from this
+		// tap: routing decoded digital PCM there plays the call on the
+		// local speaker while the WebUI streams the same PCM, and on one
+		// machine the two offset playbacks echo / comb-filter (issue
+		// #598 follow-up). Analog FM still reaches the host player via
+		// the composer's main `sinks` fanout below; digital
+		// host-speaker playback is out of scope. The recorder itself is
+		// also excluded (it already wrote the WAV from its own decode).
 		var liveSinks []composer.PCMSink
 		if d.toneout != nil {
 			liveSinks = append(liveSinks, d.toneout)
-		}
-		if d.player != nil {
-			liveSinks = append(liveSinks, playerSink{p: d.player, engine: d.engine})
 		}
 		liveSinks = append(liveSinks, d.audioPub)
 		d.recorder.SetDecodedPCMSink(fanoutSink(liveSinks))
