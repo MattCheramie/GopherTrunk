@@ -4,6 +4,8 @@ import {
   int16ToFloat32,
   PcmFramer,
   WAV_HEADER_SIZE,
+  createAudioContext,
+  STREAM_SAMPLE_RATE,
 } from "./streamPlayer";
 
 // Build a canonical 44-byte RIFF/WAVE header byte-for-byte the way the
@@ -164,5 +166,42 @@ describe("PcmFramer", () => {
     f.feed(concat(makeHeader(8000), pcmBytes([42])));
     f.feed(new Uint8Array(0));
     expect(Array.from(f.takeSamples()!)).toEqual([42 / 32768]);
+  });
+});
+
+describe("createAudioContext", () => {
+  // Pinning the context to the stream's 8 kHz rate is what lets Web Audio skip
+  // per-chunk resampling (#598); assert the rate is actually requested.
+  it("builds the context at the requested sample rate", () => {
+    const seen: (AudioContextOptions | undefined)[] = [];
+    class FakeCtx {
+      constructor(opts?: AudioContextOptions) {
+        seen.push(opts);
+      }
+    }
+    const ctx = createAudioContext(
+      FakeCtx as unknown as typeof AudioContext,
+      STREAM_SAMPLE_RATE,
+    );
+    expect(ctx).toBeInstanceOf(FakeCtx);
+    expect(seen).toEqual([{ sampleRate: 8000 }]);
+  });
+
+  // Older Safari throws when handed an explicit sampleRate; we must still get a
+  // usable (hardware-default) context rather than failing playback outright.
+  it("falls back to a default context when the rate is rejected", () => {
+    let calls = 0;
+    class PickyCtx {
+      constructor(opts?: AudioContextOptions) {
+        calls++;
+        if (opts) throw new Error("sampleRate not supported");
+      }
+    }
+    const ctx = createAudioContext(
+      PickyCtx as unknown as typeof AudioContext,
+      STREAM_SAMPLE_RATE,
+    );
+    expect(ctx).toBeInstanceOf(PickyCtx);
+    expect(calls).toBe(2); // first (with opts) throws, second (no opts) succeeds
   });
 });
