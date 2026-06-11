@@ -175,20 +175,25 @@ func warnLowGain(log *slog.Logger, serial string, role sdr.Role, raw string, ten
 		"hint", "manual P25/C4FM gains typically run 150-496 tenths (15-49.6 dB). gain: is in TENTHS of a dB; a reference 'gain 49' means ~49 dB -> gain: \"490\". Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder. NOTE: this assumes the front end is not overloaded — if the iq_clip_ratio metric is non-zero (or iq_power_dbfs sits near 0), the radio is clipping and gain is already too HIGH for this site; reduce it or add attenuation instead of raising it (issue #402).")
 }
 
-// effectiveControlRate returns the IQ sample rate the control-channel
-// down-converter should be built from. The RTL2832U quantizes a requested
-// rate to its resampler divisor, so a requested rate that isn't an exact
-// divisor of the crystal streams at a slightly different rate; deriving the
-// decimation ratio from the requested value (rather than the delivered one)
-// drifts the symbol clock on the live path while offline replay — which reads
-// a file at exactly the configured rate — stays correct (issue #402).
+// effectiveStreamRate returns the IQ sample rate a down-converter should be
+// built from. The RTL2832U quantizes a requested rate to its resampler divisor,
+// so a requested rate that isn't an exact divisor of the crystal streams at a
+// slightly different rate; deriving the decimation ratio from the requested
+// value (rather than the delivered one) drifts the symbol clock on the live
+// path while offline replay — which reads a file at exactly the configured
+// rate — stays correct (issue #402).
+//
+// This applies to every symbol-clocked consumer of the dongle's IQ — the
+// control-channel decoder AND the wideband Tier-II/III engine and voice taps,
+// which build per-channel DDCs at a fixed narrowband target and assume the
+// delivered rate matches what was requested.
 //
 // Backends that model the quantization expose the optional
 // ActualSampleRate() extension; those that don't (file replay, rtl_tcp)
 // deliver exactly the configured rate, so the requested value is returned
 // unchanged. A WARN fires only when the delivered rate actually differs, so a
 // correct exact-divisor config (2.4 / 0.96 MS/s) stays quiet.
-func effectiveControlRate(log *slog.Logger, dev sdr.Device, serial string, requested uint32) uint32 {
+func effectiveStreamRate(log *slog.Logger, dev sdr.Device, serial string, requested uint32) uint32 {
 	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
 	if !ok {
 		return requested
@@ -198,7 +203,7 @@ func effectiveControlRate(log *slog.Logger, dev sdr.Device, serial string, reque
 		return requested
 	}
 	if actual != requested {
-		log.Warn("daemon: control SDR streams a different sample rate than requested; building the down-converter from the actual hardware rate so the symbol clock stays aligned (issue #402)",
+		log.Warn("daemon: SDR streams a different sample rate than requested; building the down-converter from the actual hardware rate so the symbol clock stays aligned (issue #402)",
 			"serial", serial,
 			"requested_hz", requested,
 			"actual_hz", actual)
@@ -1193,7 +1198,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				}
 				// Build the down-converter from the rate the hardware
 				// actually delivers, not the requested one (issue #402).
-				effectiveRate := effectiveControlRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
+				effectiveRate := effectiveStreamRate(log, controlEntry.Device, controlEntry.Info.Serial, cfg.SDR.SampleRate)
 				// DC-spike-avoidance LO offset (issue #402). The same value
 				// feeds the cchunt tuner wrapper (shifts the physical LO) and
 				// the ccdecoder DDC (mixes the channel back to baseband); the
@@ -1414,11 +1419,17 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if br := d.iqBrokers[entry.Info.Serial]; br != nil {
 				iqDev = br
 			}
+			// Build the per-channel DDCs from the rate the dongle actually
+			// streams, not the requested rate — otherwise every tap's symbol
+			// clock drifts on non-exact-divisor rates (issue #402). Query the
+			// raw entry.Device: the iqtap broker doesn't forward the optional
+			// ActualSampleRate() extension. Mirrors the CC decoder above.
+			effectiveRate := effectiveStreamRate(log, entry.Device, entry.Info.Serial, cfg.SDR.SampleRate)
 			eng, err := widebandt2.New(widebandt2.Options{
 				Log:           log,
 				Bus:           d.bus,
 				Device:        iqDev,
-				SampleRateHz:  cfg.SDR.SampleRate,
+				SampleRateHz:  effectiveRate,
 				CenterFreqHz:  devCfg.CenterFreqHz,
 				TunerStrategy: devCfg.TunerStrategy,
 				Channels:      channels,
@@ -3130,12 +3141,18 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 			log.Warn("daemon: wideband: high voice_taps count; CPU scales ~linearly per tap (each is an independent DDC)",
 				"serial", devCfg.Serial, "voice_taps", taps)
 		}
+		// Size every tap's DDC from the rate the dongle actually streams, not
+		// the requested rate, so the voice symbol clock stays aligned on
+		// non-exact-divisor rates (issue #402). Same fix as the wideband
+		// engine and CC decoder; query the raw device since the broker doesn't
+		// forward ActualSampleRate().
+		effectiveRate := effectiveStreamRate(log, entry.Device, entry.Info.Serial, cfg.SDR.SampleRate)
 		for i := 0; i < taps; i++ {
 			vt, err := wbvoice.New(wbvoice.Options{
 				Serial:           fmt.Sprintf("wb:%s:tap-%d", entry.Info.Serial, i),
 				Broker:           br,
 				WidebandCenterHz: devCfg.CenterFreqHz,
-				SDRSampleRateHz:  cfg.SDR.SampleRate,
+				SDRSampleRateHz:  effectiveRate,
 				Log:              log,
 			})
 			if err != nil {

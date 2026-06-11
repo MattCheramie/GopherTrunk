@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -37,7 +39,7 @@ type quantizingDevice struct {
 
 func (q quantizingDevice) ActualSampleRate() (uint32, error) { return q.actual, q.err }
 
-func TestEffectiveControlRate(t *testing.T) {
+func TestEffectiveStreamRate(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	const requested = 2_048_000
 
@@ -82,8 +84,35 @@ func TestEffectiveControlRate(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := effectiveControlRate(log, c.dev, "TESTSERIAL", requested); got != c.want {
-				t.Errorf("effectiveControlRate = %d, want %d", got, c.want)
+			if got := effectiveStreamRate(log, c.dev, "TESTSERIAL", requested); got != c.want {
+				t.Errorf("effectiveStreamRate = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// TestEffectiveStreamRateWarnsOnlyOnMismatch pins the operator-facing
+// behaviour: the issue #402 WARN must fire when the dongle streams a rate
+// different from the one requested, and stay silent on an exact-divisor match
+// (so a correct 2.4 / 0.96 MS/s config doesn't spam the log).
+func TestEffectiveStreamRateWarnsOnlyOnMismatch(t *testing.T) {
+	const requested = 2_048_000
+	for _, c := range []struct {
+		name     string
+		dev      sdr.Device
+		wantWarn bool
+	}{
+		{"mismatch warns", quantizingDevice{actual: 2_048_001}, true},
+		{"exact stays quiet", quantizingDevice{actual: requested}, false},
+		{"no extension stays quiet", rateOnlyDevice{}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			effectiveStreamRate(log, c.dev, "TESTSERIAL", requested)
+			gotWarn := strings.Contains(buf.String(), "issue #402")
+			if gotWarn != c.wantWarn {
+				t.Errorf("warn fired = %v, want %v (log: %q)", gotWarn, c.wantWarn, buf.String())
 			}
 		})
 	}
