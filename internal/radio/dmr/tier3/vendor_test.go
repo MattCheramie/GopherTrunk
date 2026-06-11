@@ -59,28 +59,34 @@ func TestMotorolaVendorGrantEmitted(t *testing.T) {
 	}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 
-	select {
-	case ev := <-sub.C:
-		if ev.Kind != events.KindGrant {
-			t.Fatalf("kind = %s, want grant", ev.Kind)
+	// publishGrant emits KindDMRGrantObserved before resolution; skip past
+	// it (and any other noise) to the resolved KindGrant.
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			g := ev.Payload.(trunking.Grant)
+			if g.GroupID != 0x1234 || g.SourceID != 0x5678 {
+				t.Errorf("grant ids = tg %d src %d", g.GroupID, g.SourceID)
+			}
+			if g.FrequencyHz != 462_550_000 {
+				t.Errorf("grant freq = %d, want 462550000", g.FrequencyHz)
+			}
+			if g.Protocol != "dmr-tier3" {
+				t.Errorf("grant protocol = %q", g.Protocol)
+			}
+			// tvGrantPayload masks byte 7 to lcn&0x7F, so the slot bit is
+			// clear → CSBK TS1 → 1-based Timeslot 1.
+			if g.Timeslot != 1 {
+				t.Errorf("grant Timeslot = %d, want 1 (TS1)", g.Timeslot)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no grant event from a Motorola vendor CSBK")
 		}
-		g := ev.Payload.(trunking.Grant)
-		if g.GroupID != 0x1234 || g.SourceID != 0x5678 {
-			t.Errorf("grant ids = tg %d src %d", g.GroupID, g.SourceID)
-		}
-		if g.FrequencyHz != 462_550_000 {
-			t.Errorf("grant freq = %d, want 462550000", g.FrequencyHz)
-		}
-		if g.Protocol != "dmr-tier3" {
-			t.Errorf("grant protocol = %q", g.Protocol)
-		}
-		// tvGrantPayload masks byte 7 to lcn&0x7F, so the slot bit is
-		// clear → CSBK TS1 → 1-based Timeslot 1.
-		if g.Timeslot != 1 {
-			t.Errorf("grant Timeslot = %d, want 1 (TS1)", g.Timeslot)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("no grant event from a Motorola vendor CSBK")
 	}
 }
 

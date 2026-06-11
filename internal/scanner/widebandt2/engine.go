@@ -203,6 +203,10 @@ type engineChannel struct {
 	protoTag  string // e.g. "dmr-tier2", "dmr-tier3", "p25-phase1", "p25-phase2"
 	processor channelProcessor
 	receiver  narrowbandReceiver
+	// dmrTier3 is the typed Tier III control channel for "dmr-tier3"
+	// channels (nil otherwise). Exposed via DMRTier3ControlChannel so the
+	// DMR LCN autoconfig learner can hot-swap a learned band-plan resolver.
+	dmrTier3 *tier3.ControlChannel
 }
 
 // New constructs an Engine. The device is not opened or streamed
@@ -323,7 +327,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rx}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rx, dmrTier3: cc}, nil
 
 	case trunking.ProtocolDMRTier2:
 		cc := tier2.New(tier2.Options{
@@ -504,6 +508,19 @@ func (e *Engine) ChannelProtocolTags() map[uint32]string {
 // construction ("ddc" or "polyphase"). Used for diagnostics /
 // startup logging.
 func (e *Engine) Strategy() string { return e.strategyTag }
+
+// DMRTier3ControlChannel returns the Tier III control channel monitoring
+// the given frequency, or nil if no such "dmr-tier3" channel exists. The
+// daemon uses it to bind a dmrlcn.Learner's resolver hot-swap to the
+// running control channel.
+func (e *Engine) DMRTier3ControlChannel(freqHz uint32) *tier3.ControlChannel {
+	for _, c := range e.channels {
+		if c.freqHz == freqHz && c.dmrTier3 != nil {
+			return c.dmrTier3
+		}
+	}
+	return nil
+}
 
 // Run programs the dongle's centre frequency, opens its IQ stream,
 // and pumps chunks through the tuner bank until ctx cancels. The

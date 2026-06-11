@@ -198,6 +198,23 @@ const (
 	// the (de-whitened) payload bytes, plus any LoRaWAN MAC fields decoded
 	// from it. Surfaced over SSE / WS for the live LoRa panel.
 	KindLoRaFrame Kind = "lora.frame"
+
+	// KindDMRGrantObserved fires for every DMR Tier III voice-grant CSBK
+	// the control channel decodes, published BEFORE the LCN is resolved to
+	// a downlink frequency. It is emitted in addition to (not instead of)
+	// KindGrant on success / the no-bandplan KindDecodeError on failure, so
+	// the DMR LCN autoconfig learner (internal/scanner/dmrlcn) can observe
+	// the granted LCN even when no band plan is configured yet — which is
+	// exactly the case it is trying to fix. Payload is DMRGrantObserved.
+	KindDMRGrantObserved Kind = "dmr.grant.observed"
+
+	// KindDMRBandPlanLearned fires once the DMR LCN autoconfig learner has
+	// fit a band plan for a system from observed (LCN, frequency) pairs.
+	// The learner has already hot-swapped the resolver into the running
+	// control channel by the time this is published; subscribers use it for
+	// logging, operator surfacing, and optional config writeback. Payload is
+	// DMRBandPlanLearned.
+	KindDMRBandPlanLearned Kind = "dmr.bandplan.learned"
 )
 
 // Stage names a particular FEC / parser checkpoint inside a protocol
@@ -227,6 +244,46 @@ const (
 type DecodeError struct {
 	Protocol string
 	Stage    Stage
+}
+
+// DMRGrantObserved is the payload published with KindDMRGrantObserved.
+// It carries the raw fields of a DMR Tier III voice-grant CSBK before
+// the LCN is resolved to a frequency, so the LCN autoconfig learner can
+// correlate the granted LCN with the RF carrier that subsequently keys
+// up. Timeslot uses the raw CSBK encoding (0 = TS1, 1 = TS2).
+type DMRGrantObserved struct {
+	System    string
+	ColorCode uint8
+	LCN       uint8
+	Timeslot  uint8
+	GroupID   uint32
+	SourceID  uint32
+	CCFreqHz  uint32 // control-channel frequency that decoded this grant
+	At        time.Time
+}
+
+// DMRBandPlanLearned is the payload published with KindDMRBandPlanLearned.
+// A linear plan sets BaseHz/SpacingHz/Offset with a nil Table; an
+// irregular plan leaves the linear fields zero and populates Table. The
+// payload mirrors trunking.DMRBandPlan with primitive fields so the
+// events package stays free of a trunking import (the learner translates
+// its trunking-shaped fit result into this on publish).
+type DMRBandPlanLearned struct {
+	System     string
+	BaseHz     uint32
+	SpacingHz  uint32
+	Offset     int8
+	Table      []DMRBandPlanLCN // non-nil only for an irregular (table) plan
+	NumPairs   int
+	Confidence float64
+	ResidualHz uint32
+}
+
+// DMRBandPlanLCN is one explicit LCN→downlink-frequency entry in a
+// learned irregular (table) band plan.
+type DMRBandPlanLCN struct {
+	LCN    uint8
+	FreqHz uint32
 }
 
 type Event struct {

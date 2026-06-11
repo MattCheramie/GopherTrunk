@@ -614,9 +614,21 @@ trunking:
     # DMR Tier III trunked system. A T3 voice-grant CSBK references its
     # traffic channel by a 7-bit Logical Channel Number (LCN), never an
     # absolute frequency, so the decoder needs a `dmr_band_plan` to map
-    # LCN → downlink Hz. WITHOUT it every voice grant is dropped with
-    # decode.error stage=no-bandplan (control-channel monitoring still
-    # works). Provide exactly one of `linear` or `table`.
+    # LCN → downlink Hz. Provide exactly one of `linear` or `table`.
+    #
+    # AUTOCONFIGURATION: if you OMIT `dmr_band_plan` on a `protocol: dmr`
+    # system that is monitored by a `role: wideband` dongle, GopherTrunk
+    # learns the plan automatically — it watches the LCNs the control
+    # channel grants, detects which RF carriers key up in response across
+    # the dongle's IQ band, confirms each is a live DMR burst, and fits
+    # the base frequency + channel spacing for the whole LCN enumeration.
+    # The learned plan is applied live (previously-dropped grants start
+    # following voice) and, when the daemon was started with a -config
+    # file, written back here so it survives a restart. A configured
+    # `dmr_band_plan` disables learning (your plan is authoritative).
+    # Without either a plan or a wideband dongle, T3 voice grants are
+    # dropped with decode.error stage=no-bandplan (CC monitoring still
+    # works).
     - name: "Example-DMR-T3"
       protocol: dmr
       control_channels:
