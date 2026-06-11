@@ -70,10 +70,10 @@ func (c *ControlChannel) handleVendorCSBK(vendor Vendor, cc uint8, csbk CSBK) {
 			c.publishVendorTVGrant(vendor, cc, ParseTVGrant(csbk.Payload))
 		case OpPVGrant:
 			c.publishVendorPVGrant(vendor, cc, ParsePVGrant(csbk.Payload))
-		case OpSysInfo, OpAloha:
+		case OpBcast, OpAloha:
 			// Capacity Plus advertises its current rest channel in
-			// the system-info CSBK; the LCN field doubles as the
-			// rest-channel pointer.
+			// the system-info / broadcast CSBK; the LCN field doubles
+			// as the rest-channel pointer.
 			rest := ParseSystemInfoBroadcast(csbk.Payload)
 			c.restChannel = rest.SiteID // LCN of the rest channel
 			c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: rest.SystemID})

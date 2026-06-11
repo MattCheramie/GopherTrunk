@@ -11,12 +11,14 @@ func TestTopologyAccumulation(t *testing.T) {
 	defer bus.Close()
 	c := New(Options{Bus: bus, FrequencyHz: 851_000_000})
 
-	// System Information Broadcast (0x39): SystemID=0x1234, RFSS=5, Site=7.
-	c.handleCSBK(3, CSBK{Opcode: OpSysInfo, Payload: [8]byte{0x12, 0x34, 0x05, 0x07}})
-	// Two adjacent sites (0x38); the second repeats site 3 → de-duped.
-	c.handleCSBK(3, CSBK{Opcode: OpAdjStatus, Payload: [8]byte{0x12, 0x34, 0x00, 0x03, 0x00, 0x09, 0x10}})
-	c.handleCSBK(3, CSBK{Opcode: OpAdjStatus, Payload: [8]byte{0x12, 0x34, 0x00, 0x04, 0x00, 0x0A, 0x10}})
-	c.handleCSBK(3, CSBK{Opcode: OpAdjStatus, Payload: [8]byte{0x12, 0x34, 0x00, 0x03, 0x00, 0x09, 0x10}})
+	// C_BCAST Gen_Site_Params (anncd_type 7 → payload[0]=0x38):
+	// SystemID=0x1234, RFSS=5, Site=7.
+	c.handleCSBK(3, CSBK{Opcode: OpBcast, Payload: [8]byte{0x38, 0x12, 0x34, 0x05, 0x07}})
+	// Two adjacent sites via C_BCAST Adjacent_Site (anncd_type 6 →
+	// payload[0]=0x30); the second repeats site 3 → de-duped.
+	c.handleCSBK(3, CSBK{Opcode: OpBcast, Payload: [8]byte{0x30, 0x12, 0x34, 0x00, 0x03, 0x00, 0x09, 0x10}})
+	c.handleCSBK(3, CSBK{Opcode: OpBcast, Payload: [8]byte{0x30, 0x12, 0x34, 0x00, 0x04, 0x00, 0x0A, 0x10}})
+	c.handleCSBK(3, CSBK{Opcode: OpBcast, Payload: [8]byte{0x30, 0x12, 0x34, 0x00, 0x03, 0x00, 0x09, 0x10}})
 
 	topo := c.Topology()
 	if topo.SystemID != 0x1234 {

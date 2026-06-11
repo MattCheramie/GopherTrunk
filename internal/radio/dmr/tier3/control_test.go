@@ -55,24 +55,26 @@ func TestControlChannelEmitsLockOnAloha(t *testing.T) {
 	}
 }
 
-func TestControlChannelEmitsLockOnSysInfo(t *testing.T) {
+func TestControlChannelBroadcastPopulatesTopology(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
 
 	cc := NewControlChannel(bus, nil, 851_000_000)
-	c := CSBK{LB: true, Opcode: OpSysInfo, Payload: [8]byte{0xCA, 0xFE, 0x01, 0x05, 0xFF, 0, 0, 0}}
+	// C_BCAST Gen_Site_Params (anncd_type 7 → payload[0] = 7<<3 = 0x38):
+	// SystemID 0xCAFE, RFSS 1, Site 7. Standard-FID broadcasts feed the
+	// topology model; locking stays Aloha-driven.
+	c := CSBK{LB: true, Opcode: OpBcast, Payload: [8]byte{0x38, 0xCA, 0xFE, 0x01, 0x07, 0, 0, 0}}
 	cc.IngestBurst(burstWithCSBK(c), dmr.SlotType{ColorCode: 0xC, DataType: dmr.DTCSBK})
 
-	select {
-	case ev := <-sub.C:
-		ls := ev.Payload.(LockState)
-		if ls.SystemID != 0xCAFE {
-			t.Errorf("sysid = %X, want CAFE", ls.SystemID)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("no event")
+	topo := cc.Topology()
+	if topo.SystemID != 0xCAFE {
+		t.Errorf("SystemID = %X, want CAFE", topo.SystemID)
+	}
+	if topo.RFSS != 1 || topo.Site != 7 {
+		t.Errorf("RFSS/Site = %d/%d, want 1/7", topo.RFSS, topo.Site)
+	}
+	if topo.ColorCode != 0xC {
+		t.Errorf("ColorCode = %d, want 12", topo.ColorCode)
 	}
 }
 
@@ -313,7 +315,7 @@ func TestControlChannelMarkLost(t *testing.T) {
 	defer sub.Close()
 
 	cc := NewControlChannel(bus, nil, 851_000_000)
-	c := CSBK{LB: true, Opcode: OpSysInfo, Payload: [8]byte{0x42, 0x00, 0x01, 0x01, 0, 0, 0, 0}}
+	c := CSBK{LB: true, Opcode: OpAloha, Payload: [8]byte{0x00, 0x00, 0x42, 0x00, 0, 0, 0, 0}}
 	cc.IngestBurst(burstWithCSBK(c), dmr.SlotType{ColorCode: 7, DataType: dmr.DTCSBK})
 	<-sub.C
 

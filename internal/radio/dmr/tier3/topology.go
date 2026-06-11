@@ -2,8 +2,8 @@ package tier3
 
 import "sync"
 
-// NeighborSite is one adjacent site advertised by an Adjacent Site Status CSBK
-// (0x38), de-duplicated by SiteID.
+// NeighborSite is one adjacent site advertised by a C_BCAST Adjacent_Site
+// announcement (CSBKO 0x28, anncd_type 6), de-duplicated by SiteID.
 type NeighborSite struct {
 	SystemID  uint16
 	SiteID    uint16
@@ -32,8 +32,8 @@ type topologyModel struct {
 	cfg TopologyConfig
 }
 
-// applySystemInfo folds a System Information Broadcast (0x39): the camped
-// site's SystemID/RFSS/Site. First non-zero values win.
+// applySystemInfo folds a vendor (Motorola Cap+) System Information CSBK:
+// the camped site's SystemID/RFSS/Site. First non-zero values win.
 func (m *topologyModel) applySystemInfo(si SystemInfoBroadcast) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -48,7 +48,23 @@ func (m *topologyModel) applySystemInfo(si SystemInfoBroadcast) {
 	}
 }
 
-// applyIdentity folds the SystemID + ColorCode seen on an Aloha / SysInfo CSBK.
+// applySiteParams folds the RFSS + Site number from a C_BCAST
+// Gen_Site_Params announcement without disturbing the SystemID established
+// by the Aloha beacon (whose raw identity field is the authoritative lock
+// key). First non-zero values win.
+func (m *topologyModel) applySiteParams(rfss, site uint8) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cfg.RFSS == 0 && rfss != 0 {
+		m.cfg.RFSS = rfss
+	}
+	if m.cfg.Site == 0 && site != 0 {
+		m.cfg.Site = site
+	}
+}
+
+// applyIdentity folds the SystemID + ColorCode seen on an Aloha / C_BCAST
+// Gen_Site_Params CSBK.
 func (m *topologyModel) applyIdentity(systemID uint16, colorCode uint8) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -60,8 +76,8 @@ func (m *topologyModel) applyIdentity(systemID uint16, colorCode uint8) {
 	}
 }
 
-// applyAdjacent folds an Adjacent Site Status CSBK (0x38), de-duplicating by
-// SiteID (last write wins for a given site's details).
+// applyAdjacent folds a C_BCAST Adjacent_Site announcement, de-duplicating
+// by SiteID (last write wins for a given site's details).
 func (m *topologyModel) applyAdjacent(a AdjacentSiteStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
