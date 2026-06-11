@@ -146,12 +146,35 @@ const RECONNECT_DELAY_MS = 1000;
 
 type AudioContextCtor = typeof AudioContext;
 
+// The daemon streams 8 kHz PCM (vocoder-native for digital; the analog
+// default). Creating the AudioContext at this rate makes Web Audio do ZERO
+// per-chunk resampling — every scheduled buffer matches the context rate and
+// plays back-to-back seamlessly, and the OS does one continuous resample to the
+// output device, exactly like a recorded .wav. Without it, every small chunk is
+// resampled 8k->48k independently with no interpolation state across chunk
+// boundaries, the artifacts that make live sound worse than the file (#598).
+export const STREAM_SAMPLE_RATE = 8000;
+
 function resolveAudioContext(): AudioContextCtor | null {
   const w = window as unknown as {
     AudioContext?: AudioContextCtor;
     webkitAudioContext?: AudioContextCtor;
   };
   return w.AudioContext ?? w.webkitAudioContext ?? null;
+}
+
+// createAudioContext pins the context to the stream rate, falling back to the
+// hardware-default context if the browser rejects an explicit sampleRate (older
+// Safari throws). Pure except for the Ctor it is handed, so it is unit-testable.
+export function createAudioContext(
+  Ctor: AudioContextCtor,
+  rate: number,
+): AudioContext {
+  try {
+    return new Ctor({ sampleRate: rate });
+  } catch {
+    return new Ctor();
+  }
 }
 
 // createStreamPlayer wires a fetch reader to a GainNode → destination
@@ -183,7 +206,7 @@ export function createStreamPlayer(
         opts.onStateChange("error");
         return false;
       }
-      ctx = new Ctor();
+      ctx = createAudioContext(Ctor, STREAM_SAMPLE_RATE);
     }
     if (gain === null) {
       gain = ctx.createGain();
