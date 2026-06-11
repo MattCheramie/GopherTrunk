@@ -100,10 +100,13 @@ func TestInfoBitsToBytes(t *testing.T) {
 
 func TestOpcodeString(t *testing.T) {
 	cases := map[CSBKOpcode]string{
-		OpAloha:          "Aloha",
-		OpTVGrant:        "TalkGroupVoiceChannelGrant",
-		OpSysInfo:        "SystemInfoBroadcast",
-		OpAdjStatus:      "AdjacentSiteStatus",
+		OpAloha:          "C_ALOHA",
+		OpAhoy:           "C_AHOY",
+		OpAckD:           "C_ACKD",
+		OpBcast:          "C_BCAST",
+		OpTVGrant:        "TV_GRANT",
+		OpPVGrant:        "PV_GRANT",
+		OpPreamble:       "Preamble",
 		CSBKOpcode(0xFE): "CSBKOpcode(FE)",
 	}
 	for op, want := range cases {

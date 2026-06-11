@@ -26,50 +26,74 @@ import (
 type CSBKOpcode uint8
 
 const (
-	// Standard FID (0x00) opcodes — ETSI TS 102 361-4 §7. Only the most
-	// common opcodes are listed; vendor extensions live behind FID != 0.
-	OpUnknown   CSBKOpcode = 0x00
-	OpAloha     CSBKOpcode = 0x19 // C_ALOHA — periodic TSCC beacon (ETSI TS 102 361-4 §7.2.1)
-	OpRAND      CSBKOpcode = 0x06 // Random access service request
-	OpAckResp   CSBKOpcode = 0x16 // ACK response
-	OpAhoy      CSBKOpcode = 0x18 // AHOY
-	OpProtect   CSBKOpcode = 0x1A // Protect message
-	OpMoveTSCC  CSBKOpcode = 0x1B // Move trunked-system control channel
-	OpPreamble  CSBKOpcode = 0x28 // Preamble CSBK
-	OpTVGrant   CSBKOpcode = 0x30 // TalkGroup voice channel grant
-	OpPVGrant   CSBKOpcode = 0x31 // Private voice channel grant
-	OpTDGrant   CSBKOpcode = 0x32 // TalkGroup data channel grant
-	OpPDGrant   CSBKOpcode = 0x33 // Private data channel grant
-	OpAdjStatus CSBKOpcode = 0x38 // Adjacent site status
-	OpSysInfo   CSBKOpcode = 0x39 // System information broadcast
+	// Standard FID (0x00) CSBKO opcodes — ETSI TS 102 361-4 §7.1.1
+	// (Table 7.1), cross-checked against real off-air decodes and the
+	// IanWraith/DMRDecode opcode map. Names mirror the ETSI / dsd-neo
+	// spelling so logs line up with reference decoders.
+	//
+	// NOTE: the trunking system parameters, general site parameters,
+	// adjacent-site lists, and call-timer values are NOT standalone
+	// opcodes — they are sub-types (anncd_type) carried inside C_BCAST
+	// (OpBcast, 0x28). See payloads.go BroadcastAnnouncement.
+	OpUnknown  CSBKOpcode = 0x00
+	OpAloha    CSBKOpcode = 0x19 // C_ALOHA — periodic TSCC beacon the CC locks on
+	OpAhoy     CSBKOpcode = 0x1C // C_AHOY — outbound poll / service request
+	OpAckVit   CSBKOpcode = 0x1E // C_ACKVIT — acknowledged response (vital)
+	OpRAND     CSBKOpcode = 0x1F // C_RAND — random-access service request
+	OpAckD     CSBKOpcode = 0x20 // C_ACKD — acknowledged downlink response
+	OpAckU     CSBKOpcode = 0x21 // C_ACKU — acknowledged uplink response
+	OpNack     CSBKOpcode = 0x26 // negative-acknowledge response
+	OpBcast    CSBKOpcode = 0x28 // C_BCAST — broadcast/announcement (Gen_Site, CallTimer, Adjacent_Site, …)
+	OpMaint    CSBKOpcode = 0x2A // P_MAINT — maintenance
+	OpClear    CSBKOpcode = 0x2E // P_CLEAR — channel clear
+	OpProtect  CSBKOpcode = 0x2F // P_PROTECT — protect
+	OpPVGrant  CSBKOpcode = 0x30 // Private Voice Channel Grant
+	OpTVGrant  CSBKOpcode = 0x31 // TalkGroup Voice Channel Grant
+	OpBTVGrant CSBKOpcode = 0x32 // Broadcast TalkGroup Voice Channel Grant
+	OpPDGrant  CSBKOpcode = 0x33 // Private Data Channel Grant
+	OpTDGrant  CSBKOpcode = 0x34 // TalkGroup Data Channel Grant
+	OpMove     CSBKOpcode = 0x39 // C_MOVE — move to another control channel
+	OpPreamble CSBKOpcode = 0x3D // Preamble CSBK — precedes a following CSBK/MBC chain
 )
 
 func (o CSBKOpcode) String() string {
 	switch o {
 	case OpAloha:
-		return "Aloha"
-	case OpRAND:
-		return "RAND"
-	case OpAckResp:
-		return "AckResponse"
+		return "C_ALOHA"
 	case OpAhoy:
-		return "Ahoy"
-	case OpMoveTSCC:
-		return "MoveTSCC"
+		return "C_AHOY"
+	case OpAckVit:
+		return "C_ACKVIT"
+	case OpRAND:
+		return "C_RAND"
+	case OpAckD:
+		return "C_ACKD"
+	case OpAckU:
+		return "C_ACKU"
+	case OpNack:
+		return "C_NACK"
+	case OpBcast:
+		return "C_BCAST"
+	case OpMaint:
+		return "P_MAINT"
+	case OpClear:
+		return "P_CLEAR"
+	case OpProtect:
+		return "P_PROTECT"
+	case OpPVGrant:
+		return "PV_GRANT"
+	case OpTVGrant:
+		return "TV_GRANT"
+	case OpBTVGrant:
+		return "BTV_GRANT"
+	case OpPDGrant:
+		return "PD_GRANT"
+	case OpTDGrant:
+		return "TD_GRANT"
+	case OpMove:
+		return "C_MOVE"
 	case OpPreamble:
 		return "Preamble"
-	case OpTVGrant:
-		return "TalkGroupVoiceChannelGrant"
-	case OpPVGrant:
-		return "PrivateVoiceChannelGrant"
-	case OpTDGrant:
-		return "TalkGroupDataChannelGrant"
-	case OpPDGrant:
-		return "PrivateDataChannelGrant"
-	case OpAdjStatus:
-		return "AdjacentSiteStatus"
-	case OpSysInfo:
-		return "SystemInfoBroadcast"
 	default:
 		return fmt.Sprintf("CSBKOpcode(%02X)", uint8(o))
 	}

@@ -107,7 +107,7 @@ func TestVendorCSBKNotMisparsedAsStandard(t *testing.T) {
 	})
 	csbk := CSBK{
 		LB:      true,
-		Opcode:  OpTVGrant, // 0x30 — collides with the standard opcode
+		Opcode:  OpTVGrant, // collides with the standard grant opcode
 		FID:     FIDConnectPlus,
 		Payload: tvGrantPayload(0x1234, 0x5678, 4),
 	}
@@ -131,7 +131,7 @@ func TestMotorolaVendorSysInfoLocks(t *testing.T) {
 	cc := New(Options{Bus: bus, FrequencyHz: 851_000_000})
 	csbk := CSBK{
 		LB:      true,
-		Opcode:  OpSysInfo,
+		Opcode:  OpBcast,
 		FID:     FIDMotorola,
 		Payload: [8]byte{0xCA, 0xFE, 0x01, 0x07, 0xFF, 0, 0, 0},
 	}

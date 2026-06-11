@@ -29,17 +29,19 @@ func (s LockState) LockedNAC() uint16         { return s.SystemID }
 // identifies a CSBK, runs BPTC(196,96) decode + CRC, and dispatches
 // each opcode:
 //
-//   - OpAloha / OpSysInfo announce the trunked system → CCLocked
-//     events fan out the first time we see one.
+//   - OpAloha announces the trunked system → CCLocked events fan out
+//     the first time we see one. OpBcast (C_BCAST) carries the site's
+//     Gen_Site_Params and Adjacent_Site announcements, folded into the
+//     topology model.
 //   - OpTVGrant / OpPVGrant carry voice grants. The LCN is resolved
 //     through the supplied band plan; on success a trunking.Grant is
 //     published with Protocol = "dmr-tier3". A grant whose LCN has no
 //     entry in the band plan publishes a `decode.error` with
 //     stage="no-bandplan" so operators can spot configuration gaps.
 //
-// Every other opcode (preamble, ACK, Ahoy, neighbor lists, …) is
-// logged at debug and ignored — they're noise from the hunter's
-// perspective.
+// Every CSBK is logged at debug (so the control stream is visible the
+// way dsd-neo shows it); opcodes without a dedicated handler (ACK,
+// Ahoy, Move, Preamble, …) are otherwise ignored.
 type ControlChannel struct {
 	bus        *events.Bus
 	log        *slog.Logger
@@ -144,24 +146,38 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 		c.handleVendorCSBK(vendor, cc, csbk)
 		return
 	}
+	// Log every standard CSBK so the control-channel stream is visible
+	// in the debug log the way a reference decoder (dsd-neo) shows it —
+	// the dominant Aloha beacon is otherwise consumed silently once the
+	// CC is locked, which made GopherTrunk look idle.
+	c.log.Debug("dmr/tier3: csbk", "opcode", csbk.Opcode, "fid", csbk.FID, "cc", cc)
 	switch csbk.Opcode {
 	case OpAloha:
 		sysID := ParseAloha(csbk.Payload).SystemID
 		c.topo.applyIdentity(sysID, cc)
 		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: sysID})
-	case OpSysInfo:
-		si := ParseSystemInfoBroadcast(csbk.Payload)
-		c.topo.applySystemInfo(si)
-		c.topo.applyIdentity(si.SystemID, cc)
-		c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: cc, SystemID: si.SystemID})
-	case OpAdjStatus:
-		c.topo.applyAdjacent(ParseAdjacentSiteStatus(csbk.Payload))
+	case OpBcast:
+		c.handleBroadcast(cc, ParseBroadcast(csbk.Payload))
 	case OpTVGrant:
 		c.publishTVGrant(cc, ParseTVGrant(csbk.Payload))
 	case OpPVGrant:
 		c.publishPVGrant(cc, ParsePVGrant(csbk.Payload))
-	default:
-		c.log.Debug("dmr/tier3: csbk", "opcode", csbk.Opcode, "cc", cc)
+	}
+}
+
+// handleBroadcast folds a C_BCAST announcement into the topology model.
+// Gen_Site_Params contributes the camped site's identity + RFSS/Site;
+// Adjacent_Site adds a neighbour. Locking stays Aloha-driven: the
+// Gen_Site_Params identity field differs from the Aloha raw identity, so
+// driving maybeLock from both would churn the lock state every burst.
+func (c *ControlChannel) handleBroadcast(cc uint8, b BroadcastAnnouncement) {
+	switch b.Type {
+	case AnncGenSiteParms:
+		gs := ParseGenSiteParams(b.Payload)
+		c.topo.applyIdentity(gs.SystemID, cc)
+		c.topo.applySiteParams(gs.RFSSID, gs.SiteID)
+	case AnncAdjacentSite:
+		c.topo.applyAdjacent(ParseAdjacentSite(b.Payload))
 	}
 }
 
