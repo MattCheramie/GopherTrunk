@@ -7,6 +7,69 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.3.9] — 2026-06-11
+
+This release is about **live audio you can actually hear** and a friendlier
+config path. Digital voice (P25 Phase 1/2, DMR, NXDN) now reaches the web
+console's live stream — previously only analog FM and disk recordings carried
+sound, because digital frames are decoded to PCM only inside the recorder and
+were never fanned to the live consumers (#598). The browser player is rebuilt
+around an **AudioWorklet ring buffer** with a single continuous resampler, so
+chunk boundaries no longer click and network jitter degrades to brief silence
+instead of audible re-syncs (#629); the live `AudioContext` is pinned to 8 kHz
+to match the recorded WAV quality (#598), and a host-speaker echo from
+double-playing digital audio is gone (#598). The **Config Builder and web UI**
+get a shared RadioReference login (the SOAP app key is built into the binary),
+an in-place config-file browser and hot-swap/reload, and a smoother connect
+screen (#621). On the DSP side: the P25 IMBE vocoder is aligned with the
+OP25/JMBE references (pitch-dependent prediction, DC block, adaptive smoothing),
+over-driven P25/DMR voice clipping is fixed with a soft limiter and per-call
+voice telemetry, `voice_taps` is uncapped, Airspy real-ADC IQ conversion and
+rate/probe-gain bugs are fixed (#454), and a DC-spike-avoidance LO offset lands
+on the live control path (#402). Three new **Basics / Intermediate / Advanced**
+guides extend Getting Started (#620).
+
+### Added
+
+- **Three-level learning path: Basics / Intermediate / Advanced guides** (#620).
+  The Getting Started funnel now continues past your first recorded call with
+  three pages that build level by level and cross-link out to the existing
+  detailed docs rather than duplicating them: `guide-basics` (everyday web-
+  console operation, playback, talkgroup tidy-up, bookmarks/radio IDs, scanning,
+  feed sharing), `guide-intermediate` (`config.yaml`, multi-dongle pools, alias
+  files, paging/tone alerts, Hunt, network access/hardening), and
+  `guide-advanced` (TUI cockpit, signal scopes, SigLab, the other receivers,
+  remote SDRs, and the REST/gRPC/Prometheus/rigctld APIs). Wired into the
+  Getting Started nav group.
+- **Config Builder & web UI: RadioReference login, config browsing/hot-swap,
+  connect UX** (#621). The Config Builder gains a shared RadioReference login
+  block (username + password only — the SOAP app key is built into the binary),
+  surfaced inline in the "Add from RadioReference" modal so browsing prompts for
+  credentials in place, plus a prominent "Browse…" picker that lists available
+  and previously-created configs with folder, modified time, size, and validity.
+  The web console pre-fills the server URL with the device's own origin (with a
+  "Use this device's address" button), offers to open the Config Builder when
+  the daemon has no config file, and adds a Settings config-file picker that
+  hot-swaps the active config via live Reload or full Restart. Backed by a new
+  gated `POST /api/v1/config/activate`.
+- **DC-spike-avoidance LO offset on the live control channel** (#402). A new
+  opt-in `dc_avoid` flag (with optional `dc_avoid_offset_hz`) on a control
+  SDR's `sdr.devices` entry tunes the hardware LO a fixed offset *below* the
+  control-channel frequency and mixes the channel back to baseband in the
+  down-converter — so the live decode runs off the front-end DC spur, 1/f
+  noise and its own I/Q-imbalance image, the same offset tuning SDRTrunk/OP25
+  use. This closes the live-vs-replay gap on marginal urban sites where the
+  channel decodes cleanly off-channel (in replay) but accumulates TSBK-CRC /
+  NID-BCH failures live with the channel sitting at zero-IF. Off by default
+  (`dc_avoid: false`); `dc_avoid_offset_hz: 0` auto-selects `sample_rate/4`.
+- **Per-call voice audio-quality telemetry** for diagnosing decode/synthesis
+  problems. The IMBE decoder accumulates a `VoiceStats` summary (pitch/f0,
+  harmonic count, voiced fraction, AGC gain, output peak/RMS/crest, and
+  limited-sample percentage); the recorder logs it per call at `DEBUG` as
+  `recorder: voice audio quality`, escalating to `WARN` when the output is
+  clipping. `gophertrunk decode` prints the same summary for a captured `.raw`
+  sidecar (`-stats`, default on), so audio quality can be triaged offline.
+
 ### Changed
 
 - **`voice_taps` is no longer capped at 8.** A wideband dongle can now host any
@@ -81,26 +144,35 @@ for tagged releases.
   is a real-sampling front end: its samples are now converted to complex
   baseband on the host (Fs/4 translation + half-band Hilbert, decimate-by-two),
   matching libairspy's IQ modes and restoring image rejection (~70 dB).
-
-### Added
-
-- **DC-spike-avoidance LO offset on the live control channel** (#402). A new
-  opt-in `dc_avoid` flag (with optional `dc_avoid_offset_hz`) on a control
-  SDR's `sdr.devices` entry tunes the hardware LO a fixed offset *below* the
-  control-channel frequency and mixes the channel back to baseband in the
-  down-converter — so the live decode runs off the front-end DC spur, 1/f
-  noise and its own I/Q-imbalance image, the same offset tuning SDRTrunk/OP25
-  use. This closes the live-vs-replay gap on marginal urban sites where the
-  channel decodes cleanly off-channel (in replay) but accumulates TSBK-CRC /
-  NID-BCH failures live with the channel sitting at zero-IF. Off by default
-  (`dc_avoid: false`); `dc_avoid_offset_hz: 0` auto-selects `sample_rate/4`.
-- **Per-call voice audio-quality telemetry** for diagnosing decode/synthesis
-  problems. The IMBE decoder accumulates a `VoiceStats` summary (pitch/f0,
-  harmonic count, voiced fraction, AGC gain, output peak/RMS/crest, and
-  limited-sample percentage); the recorder logs it per call at `DEBUG` as
-  `recorder: voice audio quality`, escalating to `WARN` when the output is
-  clipping. `gophertrunk decode` prints the same summary for a captured `.raw`
-  sidecar (`-stats`, default on), so audio quality can be triaged offline.
+- **Live digital voice was silent in the web console** (#598). P25 Phase 1/2,
+  DMR, and NXDN reach the composer as raw vocoder frames (`WriteRawFrame`),
+  which only the recorder consumes and decodes to PCM; the tone-out detector,
+  live player, and audio publisher implement `WritePCM` only, so they never saw
+  digital audio and the live stream stayed silent even while disk recordings
+  were audible (analog FM worked because its chain calls `WritePCM` directly).
+  The recorder now exposes a decoded-PCM tap that the daemon fans to the live
+  consumers, so every decoded sample is streamed exactly once.
+- **Live stream dropped PCM when the publisher had no cached grant** (#598).
+  `AudioPublisher.WritePCM` discarded all PCM unless it held a cached grant for
+  the device serial, but that cache is fed by an events-bus subscription that
+  drops events into a momentarily-full channel — so on a busy control channel
+  (especially with multiple voice taps) a missed `CallStart` silenced the live
+  stream for the call. Neither stream consumer reads the frame's grant, so the
+  requirement was pure fragility; PCM now fans to unfiltered and serial-only
+  subscribers regardless of grant state (talkgroup-filtered subscribers still
+  need a grant to evaluate their predicate).
+- **Host-speaker echo from double-playing digital audio** (#598). Digital voice
+  was being played on the host speaker twice, producing an echo; the duplicate
+  playback path is removed.
+- **Web audio player rebuilt on an AudioWorklet ring buffer** (#629). The
+  per-chunk `AudioBufferSource` scheduler is replaced with an AudioWorklet that
+  reads from a ring buffer through a single `LinearResampler` spanning the whole
+  stream — so non-default analog rates (and browsers that reject the 8 kHz
+  context) no longer reintroduce per-chunk boundary artifacts, and underruns
+  emit brief silence instead of an audible cursor re-align under network jitter.
+  Falls back to the previous scheduler where AudioWorklet is unavailable.
+- **Live `AudioContext` pinned to 8 kHz** (#598) to match the recorded-WAV
+  quality, so the live stream and recordings sound the same.
 
 ## [v0.3.8] — 2026-06-10
 
