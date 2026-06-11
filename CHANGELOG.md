@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Mixer plot — the last of OP25's Plots tabs.** A new **Mixer** plot
+  (web `/plots/mixer`) renders the channel-baseband power spectrum two
+  ways, completing parity with OP25's six Plots tabs (Spectrum,
+  Constellation, Symbol, Datascope/Eye, Raw Mixer, Tuned Mixer).
+  **Raw mixer** shows the channelized baseband as the receiver first sees
+  it, with an amber marker on the carrier-offset estimate; **Tuned mixer**
+  re-mixes that same window by the estimate so a locked loop pulls the
+  carrier onto the centre line. Comparing the two shows the
+  carrier-recovery correction at a glance. It runs the same parallel P25
+  receiver the other scopes use (`WS /api/v1/diag/mixer`), reuses the
+  wideband Spectrum FFT helper, and needs no new receiver tap — the tuned
+  view is reconstructed from the loop's own `carrier_offset_hz`, so it
+  works for both C4FM and CQPSK. See [docs/mixer.md](docs/mixer.md).
+
 ### Fixed
 
 - **DMR now decodes real over-the-air control channels.** The DMR receiver

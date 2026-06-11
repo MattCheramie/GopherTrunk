@@ -317,6 +317,12 @@ type Server struct {
 	// daemon over the iqtap broker + internal/scanner/symbolscope.
 	symbols SymbolProvider
 
+	// mixer is the optional provider backing the WS /api/v1/diag/mixer
+	// channel-baseband spectrum stream for the Mixer plot (OP25's Raw /
+	// Tuned Mixer tabs). nil disables the route (503). Implemented by the
+	// daemon over the iqtap broker + internal/scanner/symbolscope.
+	mixer MixerProvider
+
 	// pager is the optional provider backing /api/v1/pager/...
 	// routes (pager log). nil disables the routes. Implemented
 	// by the daemon over the SQLite-backed storage.PagerLog.
@@ -603,6 +609,11 @@ type ServerOptions struct {
 	// panel. The daemon implements this over the iqtap broker +
 	// internal/scanner/symbolscope; nil keeps the route returning 503.
 	Symbols SymbolProvider
+	// Mixer, when non-nil, enables the WS /api/v1/diag/mixer
+	// channel-baseband spectrum stream that backs the web Mixer plot.
+	// The daemon implements this over the iqtap broker +
+	// internal/scanner/symbolscope; nil keeps the route returning 503.
+	Mixer MixerProvider
 	// Siglab, when Enabled, mounts the offline signal-analysis routes
 	// (/api/v1/siglab/*) and constructs the in-memory job/capture store.
 	// The daemon and the standalone `siglab serve` command both set it.
@@ -785,6 +796,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		bookmarks:      opts.Bookmarks,
 		diag:           opts.Diag,
 		symbols:        opts.Symbols,
+		mixer:          opts.Mixer,
 		siglab:         siglabSvc,
 		siglabStop:     siglabStop,
 		configBuilder:  configBuilderSvc,
@@ -1026,6 +1038,7 @@ func (s *Server) routes() *http.ServeMux {
 	// via this path. Returns 503 when no SDR is in the pool.
 	mux.HandleFunc("GET /api/v1/diag/iq", s.handleDiagStream)
 	mux.HandleFunc("GET /api/v1/diag/symbols", s.handleSymbolStream)
+	mux.HandleFunc("GET /api/v1/diag/mixer", s.handleMixerStream)
 
 	// Siglab — offline signal-analysis console. Read routes (protocols,
 	// job result/stream/iq, export) are open; routes that stage data or

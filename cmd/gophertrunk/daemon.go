@@ -1911,6 +1911,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			opts.Spectrum = newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
 			opts.Diag = newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			opts.Symbols = newSymbolProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
+			opts.Mixer = newMixerProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			opts.Capture = newCaptureProvider(d.pool, d.iqBrokers, log)
 		}
 		if d.bookmarks != nil {

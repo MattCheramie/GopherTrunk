@@ -19,6 +19,7 @@ production demodulator sees.
 | **Constellation** | How clean is the modulation? (symbol clusters / vector scope) | [Constellation](constellation.html) |
 | **Symbol scope** | What does the symbol waveform look like over time? | [Symbol scope](symbol-scope.html) |
 | **Eye diagram** | Is the C4FM eye open (symbol timing / SNR)? | [Eye diagram](eye-diagram.html) |
+| **Mixer** | Where does the carrier sit — and does the loop centre it? (raw vs tuned baseband FFT) | [Mixer](mixer.html) |
 | **Tuning** | Is the receiver locking — carrier error, AGC, clock? | [Tuning](tuning.html) |
 | **Histogram** | Is the symbol distribution healthy (balance / MER)? | [Histogram](histogram.html) |
 

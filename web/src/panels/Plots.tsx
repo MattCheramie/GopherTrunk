@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Constellation } from "./Constellation";
 import { SymbolScope } from "./SymbolScope";
 import { EyeDiagram } from "./EyeDiagram";
+import { Mixer } from "./Mixer";
 import { Tuning } from "./Tuning";
 import { Histogram } from "./Histogram";
 
@@ -18,6 +19,7 @@ const TABS = [
   { key: "constellation", label: "Constellation", el: <Constellation /> },
   { key: "symbols", label: "Symbol scope", el: <SymbolScope /> },
   { key: "eye", label: "Eye diagram", el: <EyeDiagram /> },
+  { key: "mixer", label: "Mixer", el: <Mixer /> },
   { key: "tuning", label: "Tuning", el: <Tuning /> },
   { key: "histogram", label: "Histogram", el: <Histogram /> },
 ] as const;

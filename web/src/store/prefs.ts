@@ -34,6 +34,9 @@ const LS_KEYS = {
   tuningOffsetKHz: "gt.tuning.offsetKHz",
   tuningHold: "gt.tuning.hold",
   tuningProto: "gt.tuning.proto",
+  mixerOffsetKHz: "gt.mixer.offsetKHz",
+  mixerHold: "gt.mixer.hold",
+  mixerProto: "gt.mixer.proto",
   histogramOffsetKHz: "gt.histogram.offsetKHz",
   histogramHold: "gt.histogram.hold",
   histogramProto: "gt.histogram.proto",
@@ -309,6 +312,29 @@ export const prefs = {
   },
   setTuningProto(p: string) {
     writeLS(LS_KEYS.tuningProto, p);
+  },
+
+  // Mixer plot view options (channel-baseband FFT — raw vs tuned).
+  mixerOffsetKHz(): number {
+    const raw = readLS(LS_KEYS.mixerOffsetKHz);
+    if (raw === null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setMixerOffsetKHz(khz: number) {
+    writeLS(LS_KEYS.mixerOffsetKHz, String(khz));
+  },
+  mixerHold(): boolean {
+    return readLS(LS_KEYS.mixerHold) === "1";
+  },
+  setMixerHold(on: boolean) {
+    writeLS(LS_KEYS.mixerHold, on ? "1" : "0");
+  },
+  mixerProto(): string {
+    return readLS(LS_KEYS.mixerProto) ?? "p25-c4fm";
+  },
+  setMixerProto(p: string) {
+    writeLS(LS_KEYS.mixerProto, p);
   },
 
   // Symbol-histogram panel view options.
