@@ -7,6 +7,38 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **DMR now decodes real over-the-air control channels.** The DMR receiver
+  previously decoded only the zero-offset, level-matched synthesized fixtures;
+  on a real SDR capture every BPTC(196,96) payload came back uncorrectable, so
+  Tier III never locked ("dmr/tier3: BPTC uncorrectable") and Tier II reported a
+  bogus instant lock then nothing. Root cause: the unit-energy RRC matched
+  filter has a DC gain of ~3.1, so the 4-level symbol centres landed far above
+  the slicer's fixed thresholds and the inner symbols collapsed onto the outer
+  rails. A symbol-AGC now normalises the matched-filter level to the slicer's
+  scale (the same calibration the P25 Phase 1 receiver runs, #275), so a real
+  Tier III TSCC decodes cleanly and locks end-to-end through the wideband
+  channelizer.
+- **DMR CSBK CRC was rejecting every real burst.** The CSBK CRC-16 used the
+  wrong convention (init 0xFFFF, stored as the bitwise complement), which only
+  validated the synthesized round-trip fixtures. Real ETSI Tier III CSBKs use
+  CRC-CCITT (init 0x0000) XORed with the mask `0x5A5A` (TS 102 361-1 §B.3.11);
+  cleanly-decoded off-air Aloha and Preamble bursts now pass and are pinned by a
+  regression fixture.
+- **DMR Tier III C_ALOHA opcode corrected** from `0x04` to `0x19` (the value
+  real TSCC beacons carry), so the control channel locks on the Aloha CSBK.
+- **DMR Tier II "instalock".** Tier II declared `cc.locked` on any slot-type
+  Hamming decode, so a false sync match on noise forged an instant lock (often
+  `cc=15`) that then produced nothing. The lock is now gated on a FEC-validated
+  Voice LC Header (BPTC + RS both pass), mirroring Tier III's lock-after-CRC
+  discipline.
+- **`iq-capture` now warns on dropped chunks.** A non-zero `drops` count means
+  the capture writer fell behind the IQ stream (subscriber buffer full) — not an
+  SDR overflow — leaving time gaps that corrupt downstream decode. The finish
+  log now emits a `WARN` explaining the cause and the remedy (faster storage,
+  lower sample rate, fewer concurrent sinks) instead of only printing the count.
+
 ## [v0.3.9] — 2026-06-11
 
 This release is about **live audio you can actually hear** and a friendlier

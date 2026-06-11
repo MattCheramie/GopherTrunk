@@ -27,8 +27,9 @@ import (
 // LockState is the payload of cc.locked / cc.lost events emitted by
 // the Tier II per-repeater state machine. DMR Tier II is conventional
 // (no dedicated control channel), so "locked" here means "we've
-// received at least one burst with a valid slot-type codeword on the
-// tuned frequency."
+// received at least one FEC-validated Voice LC Header (BPTC + RS pass)
+// on the tuned frequency" — proof of a real DMR transmission, not just
+// a slot-type codeword that a noise burst can forge.
 type LockState struct {
 	FrequencyHz uint32
 	ColorCode   uint8 // from the first valid slot-type decode
@@ -122,17 +123,18 @@ func New(opts Options) *ConventionalChannel {
 }
 
 // IngestBurst hands one DMR burst (with its already-decoded slot type)
-// to the state machine. Any burst with a valid slot-type codeword
-// triggers cc.locked the first time it arrives on a freshly-tuned
-// device. Bursts whose data type isn't a Voice LC Header or
-// Terminator-with-LC otherwise only update the lock state: voice
-// payload bursts (B-F) don't carry a fresh FLC, and CSBK bursts
-// belong to Tier III.
+// to the state machine. The lock is NOT declared here on the slot type
+// alone: the slot-type Hamming(20,8) corrects up to 3 bit errors, so a
+// noise burst whose 24-dibit sync false-matched (the detector runs at
+// tolerance 2 against 9 patterns) routinely yields a "valid" slot type
+// — typically with the minimum-distance color code 0xF — and the old
+// unconditional lock here produced the field-reported "instalock cc=15
+// then nothing". Instead the lock is gated on a FEC-validated Voice LC
+// Header inside handleVoiceHeader (BPTC + RS both pass), mirroring Tier
+// III's lock-only-after-CRC discipline. Voice payload bursts (B-F)
+// don't carry a fresh FLC and CSBK bursts belong to Tier III, so they
+// fall through untouched.
 func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
-	c.maybeLock(LockState{
-		FrequencyHz: c.freqHz,
-		ColorCode:   slot.ColorCode,
-	})
 	switch slot.DataType {
 	case dmr.DTVoiceLCHeader:
 		c.handleVoiceHeader(b, slot)
@@ -222,6 +224,10 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		})
 		return
 	}
+	// BPTC + RS both passed: this is a genuine DMR transmission on the
+	// tuned frequency. Declare the lock here (not on the slot type alone)
+	// so a false sync / miscorrected slot type can't forge it.
+	c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: slot.ColorCode})
 	flc, err := dmr.ParseFLC(infoBytes)
 	if err != nil {
 		c.log.Debug("dmr/tier2: FLC parse failed", "err", err)

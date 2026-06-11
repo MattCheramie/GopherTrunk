@@ -10,7 +10,8 @@
 //	bits 2-7  : CSBKO (Control Signaling Block Opcode, 6 bits)
 //	bits 8-15 : FID (Feature set ID; 0x00 = standard ETSI)
 //	bits 16-79: opcode-specific payload (64 bits, 8 octets)
-//	bits 80-95: CRC-16 (CCITT) of bits 0-79; transmitted bitwise-NOT.
+//	bits 80-95: CRC-16 (CCITT) of bits 0-79, XORed with the CSBK CRC
+//	            mask 0x5A5A (ETSI TS 102 361-1 §B.3.11, Table B.21).
 package tier3
 
 import (
@@ -28,7 +29,7 @@ const (
 	// Standard FID (0x00) opcodes — ETSI TS 102 361-4 §7. Only the most
 	// common opcodes are listed; vendor extensions live behind FID != 0.
 	OpUnknown   CSBKOpcode = 0x00
-	OpAloha     CSBKOpcode = 0x04 // ALOHA
+	OpAloha     CSBKOpcode = 0x19 // C_ALOHA — periodic TSCC beacon (ETSI TS 102 361-4 §7.2.1)
 	OpRAND      CSBKOpcode = 0x06 // Random access service request
 	OpAckResp   CSBKOpcode = 0x16 // ACK response
 	OpAhoy      CSBKOpcode = 0x18 // AHOY
@@ -88,6 +89,15 @@ type CSBK struct {
 // callers can log diagnostics.
 var CRCError = errors.New("dmr/tier3: CSBK CRC mismatch")
 
+// csbkCRCMask is the XOR mask applied to the 16-bit CRC-CCITT (poly
+// 0x1021, init 0x0000) of a CSBK's leading 80 bits before transmission
+// — ETSI TS 102 361-1 §B.3.11 / Table B.21. Verified against real
+// off-air ETSI Tier III control-channel CSBKs (Aloha + Preamble bursts
+// that decode cleanly through BPTC); the earlier "init 0xFFFF, store
+// the bitwise complement" convention rejected every real CSBK while
+// only passing the synthesized round-trip fixtures.
+const csbkCRCMask uint16 = 0x5A5A
+
 // ParseCSBK consumes 96 information bits (12 bytes, MSB-first) and returns
 // a parsed CSBK. The 16-bit trailer is the bitwise complement of the
 // CRC-CCITT of the leading 10 bytes; CRCError is returned on mismatch.
@@ -102,8 +112,8 @@ func ParseCSBK(info []byte) (CSBK, error) {
 	c.FID = info[1]
 	copy(c.Payload[:], info[2:10])
 
-	storedCRC := binary.BigEndian.Uint16(info[10:12]) ^ 0xFFFF
-	want := framing.CRCCCITT(info[:10])
+	storedCRC := binary.BigEndian.Uint16(info[10:12])
+	want := framing.CRCCCITTWithInit(info[:10], 0x0000) ^ csbkCRCMask
 	if storedCRC != want {
 		return c, CRCError
 	}
@@ -123,7 +133,7 @@ func AssembleCSBK(c CSBK) []byte {
 	out[0] |= byte(c.Opcode) & 0x3F
 	out[1] = c.FID
 	copy(out[2:10], c.Payload[:])
-	crc := framing.CRCCCITT(out[:10]) ^ 0xFFFF
+	crc := framing.CRCCCITTWithInit(out[:10], 0x0000) ^ csbkCRCMask
 	binary.BigEndian.PutUint16(out[10:12], crc)
 	return out
 }
