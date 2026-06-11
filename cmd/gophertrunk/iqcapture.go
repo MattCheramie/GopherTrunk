@@ -166,6 +166,22 @@ func finishIQCapture(log *slog.Logger, spec iqCaptureSpec, f io.Closer, samples 
 		return runErr
 	}
 	log.Info("iq-capture: finished", args...)
+	if drops > 0 {
+		// drops is the count of IQ chunks the capture subscriber dropped
+		// because its buffer was full — i.e. the writer fell behind the
+		// stream, NOT an SDR overflow. Each dropped chunk is a time gap
+		// of missing samples in the .cfile, which breaks symbol timing
+		// for any downstream decode (the DMR/P25 sync + clock loops
+		// assume a continuous stream). Surface it loudly with the
+		// remedy so a non-zero drop count is actionable rather than a
+		// silent corrupt capture. The per-device SDR-overflow counter is
+		// separate (Prometheus sdr_iq_underruns_total) — if that is also
+		// climbing the bottleneck is upstream of the writer.
+		log.Warn("iq-capture: dropped IQ chunks — the capture has time gaps that corrupt downstream decode",
+			"drops", drops, "path", spec.Path,
+			"cause", "capture writer fell behind the IQ stream (subscriber buffer full), not an SDR overflow",
+			"remedy", "write to faster storage, lower sdr.sample_rate, or reduce concurrent IQ sinks; check Prometheus sdr_iq_underruns_total to rule out an SDR overrun")
+	}
 	if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		return closeErr
 	}

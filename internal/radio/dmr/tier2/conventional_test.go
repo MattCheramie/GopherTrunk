@@ -260,25 +260,19 @@ func TestConventionalIgnoresNonHeaderBursts(t *testing.T) {
 	flc := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 0x42}
 	cc.IngestBurst(burstWithFLC(flc), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 
-	// CSBK burst triggers cc.locked (any valid slot-type decode does)
-	// but should NOT trigger a grant — CSBK belongs to Tier III.
+	// A CSBK burst belongs to Tier III: Tier II must ignore it entirely
+	// — no grant, and (since the lock is gated on a FEC-validated Voice
+	// LC Header) no cc.locked either. Locking on a non-header slot-type
+	// alone is the false "instalock" this guards against.
 	timeout := time.After(50 * time.Millisecond)
-	var sawLock bool
 DrainCSBK:
 	for {
 		select {
 		case ev := <-sub.C:
-			if ev.Kind == events.KindCCLocked {
-				sawLock = true
-				continue
-			}
 			t.Errorf("unexpected event for CSBK burst: %s", ev.Kind)
 		case <-timeout:
 			break DrainCSBK
 		}
-	}
-	if !sawLock {
-		t.Errorf("expected cc.locked from valid CSBK burst, got none")
 	}
 }
 
