@@ -456,7 +456,7 @@ export function ScannerSection() {
                     { value: "nfm", label: "nfm" },
                   ]}
                 />
-                <NumberField label="Squelch (dBFS)" value={ch.SquelchDbFS} onChange={(x) => setCh({ ...ch, SquelchDbFS: x })} />
+                <NumberField label="Squelch (dBFS)" step={0.1} value={ch.SquelchDbFS} onChange={(x) => setCh({ ...ch, SquelchDbFS: x })} />
                 <NumberField label="Hangtime (ms)" value={ch.HangtimeMs} onChange={(x) => setCh({ ...ch, HangtimeMs: x })} />
                 <NumberField label="Priority" value={ch.Priority} onChange={(x) => setCh({ ...ch, Priority: x })} />
               </div>

@@ -38,8 +38,8 @@ export function ToneOutSection() {
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField label="Name" value={p.Name} onChange={(v) => setP({ ...p, Name: v })} />
               <TextField label="Alpha tag" value={p.AlphaTag} onChange={(v) => setP({ ...p, AlphaTag: v })} />
-              <NumberField label="Tolerance (Hz)" value={p.ToleranceHz} onChange={(v) => setP({ ...p, ToleranceHz: v })} />
-              <NumberField label="Magnitude threshold" value={p.MagnitudeThreshold} onChange={(v) => setP({ ...p, MagnitudeThreshold: v })} />
+              <NumberField label="Tolerance (Hz)" step={0.1} value={p.ToleranceHz} onChange={(v) => setP({ ...p, ToleranceHz: v })} />
+              <NumberField label="Magnitude threshold" step={0.1} value={p.MagnitudeThreshold} onChange={(v) => setP({ ...p, MagnitudeThreshold: v })} />
               <TextField label="Max gap" value={p.MaxGap} onChange={(v) => setP({ ...p, MaxGap: v })} placeholder="250ms" />
               <TextField label="Cooldown" value={p.Cooldown} onChange={(v) => setP({ ...p, Cooldown: v })} placeholder="5s" />
               {systemNames.length > 0 ? (
@@ -63,7 +63,7 @@ export function ToneOutSection() {
               emptyHint="Add one tone (single-tone) or two (A then B)."
               renderItem={(t, setT) => (
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <NumberField label="Frequency (Hz, audio)" value={t.FrequencyHz} onChange={(v) => setT({ ...t, FrequencyHz: v })} />
+                  <NumberField label="Frequency (Hz, audio)" step={0.1} value={t.FrequencyHz} onChange={(v) => setT({ ...t, FrequencyHz: v })} />
                   <TextField label="Min duration" value={t.MinDuration} onChange={(v) => setT({ ...t, MinDuration: v })} placeholder="250ms" />
                   <TextField label="Max duration" value={t.MaxDuration} onChange={(v) => setT({ ...t, MaxDuration: v })} placeholder="(0 = no max)" />
                 </div>
