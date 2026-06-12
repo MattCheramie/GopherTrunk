@@ -225,8 +225,8 @@ func TestAudioPublisher_SlowSubscriberDropsNotBlocks(t *testing.T) {
 	defer pub.Unsubscribe(sub)
 
 	// Fill the bounded channel by writing more than its capacity
-	// without draining. Channel cap is 64; write 128 frames.
-	for range 128 {
+	// without draining, so drop-on-full kicks in.
+	for range audioSubChanCap * 2 {
 		pub.WritePCM("VOICE-1", []int16{1})
 	}
 	if pub.Stats().DroppedTotal == 0 {

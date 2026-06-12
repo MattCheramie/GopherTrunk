@@ -45,6 +45,16 @@ type AudioPublisher struct {
 	closeOnce sync.Once
 }
 
+// audioSubChanCap bounds each subscriber's frame channel. The HTTP/gRPC
+// stream handler drains it to the wire; when a network write stalls
+// (slow client, proxy buffer flush) the publisher's WritePCM drops on
+// full rather than blocking the composer. 256 frames (a few seconds of
+// slack at typical chunk sizes) rides out transient stalls without
+// permanently losing audio, while drop-on-full still protects the
+// daemon from a genuinely dead consumer pinning memory. The frames are
+// pointers to small structs, so the memory cost is trivial.
+const audioSubChanCap = 256
+
 // AudioSubFilter is what callers pass to Subscribe to scope the
 // frames they receive. Empty fields match everything.
 type AudioSubFilter struct {
@@ -237,12 +247,12 @@ func (p *AudioPublisher) markChannelFull(sub *audioSubscriber) {
 // Subscribe registers a new subscriber and returns its frame
 // channel. Caller MUST call Unsubscribe(ret) before letting the
 // channel go out of scope — leaked subscribers keep the publisher
-// fanning frames into them forever. Channel capacity defaults to
-// 64 frames (≈ 1 second of audio at typical chunk sizes).
+// fanning frames into them forever. Channel capacity is audioSubChanCap
+// frames (a few seconds of audio at typical chunk sizes).
 func (p *AudioPublisher) Subscribe(filter AudioSubFilter) *audioSubscriber {
 	sub := &audioSubscriber{
 		filter: filter,
-		ch:     make(chan *apiv1.AudioFrame, 64),
+		ch:     make(chan *apiv1.AudioFrame, audioSubChanCap),
 	}
 	p.mu.Lock()
 	p.subs[sub] = struct{}{}
