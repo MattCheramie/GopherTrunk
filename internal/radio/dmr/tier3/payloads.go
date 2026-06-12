@@ -198,15 +198,20 @@ func ParseDataGrant(p [8]byte, private bool) DataGrant {
 	}
 }
 
-// Inbound / reverse-channel and acknowledgement CSBKs.
+// Inbound (uplink) and acknowledgement CSBKs.
 //
 // C_RAND (CSBKO 0x1F) is the random-access service request a mobile sends
-// to the TSCC on the reverse (uplink) channel — the inbound counterpart of
-// the outbound C_AHOY poll (CSBKO 0x1C). C_ACKVIT / C_ACKD / C_ACKU
-// (0x1E / 0x20 / 0x21) and the negative-ack (0x26) are the acknowledged-
-// response family. None of these key up voice and GopherTrunk does not act
-// on them; they are parsed for control-plane visibility (debug logging)
-// the way a reference decoder surfaces them.
+// to the TSCC on the uplink — the inbound counterpart of the outbound
+// C_AHOY poll (CSBKO 0x1C). C_ACKVIT / C_ACKD / C_ACKU (0x1E / 0x20 / 0x21)
+// and the negative-ack (0x26) are the acknowledged-response family. None of
+// these key up voice and GopherTrunk does not act on them; they are parsed
+// for control-plane visibility (debug logging) the way a reference decoder
+// surfaces them.
+//
+// These are full CSBKs carried in their own bursts. They are NOT the DMR
+// Reverse Channel (RC) — the in-call signalling that rides a burst's
+// embedded-signalling field or a short MS-sourced RC burst. RC is a separate
+// mechanism with its own FEC and is decoded in dmr/rc.go.
 //
 // Addressing follows the grant-family convention validated against the
 // dsd-neo decoder: a 24-bit target at octets 2-4 and a 24-bit source at

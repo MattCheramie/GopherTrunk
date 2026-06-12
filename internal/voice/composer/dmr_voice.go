@@ -147,6 +147,13 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 				}
 				superframes.Add(1)
 				bt.onVoice(0)
+				if sf.HasRC {
+					// In-call Reverse Channel signalling — control-plane
+					// visibility only (see dmr/rc.go); it does not affect the
+					// audio path.
+					c.log.Debug("composer: DMR reverse channel",
+						"serial", serial, "rc_info", sf.RC.Info, "phase", sf.Phase)
+				}
 				if rs == nil {
 					continue
 				}

@@ -33,6 +33,13 @@ type VoiceSuperframe struct {
 	// the timeslot (the BS-sourced burst-A sync alone cannot).
 	HasLC bool
 	LC    dmr.FLC
+	// HasRC reports that a Reverse Channel word was decoded from a single-
+	// fragment (LCSS == LCSSSingle) embedded-signalling field carried by one
+	// of bursts B–E; RC then holds the 11-bit RC information. This is in-call
+	// signalling independent of HasLC/LC — see dmr/rc.go, including the
+	// capture-pending FEC posture.
+	HasRC bool
+	RC    dmr.ReverseChannel
 }
 
 // voiceSyncs are the sync words that frame burst A of a voice
@@ -188,8 +195,19 @@ func (d *Decoder) sliceSuperframe(start int, syncName string) VoiceSuperframe {
 			frame++
 		}
 		if b >= 1 && b <= 4 {
-			_, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
+			emb, frag := dmr.SplitEmbeddedField(dibitsToBits(burst.Sync()))
 			frags[b-1] = frag
+			// A single-fragment (LCSS==Single) embedded field is not part of
+			// the four-fragment Full LC: it carries either a Reverse Channel
+			// word or the null idle. Decode the first RC seen in the
+			// superframe; the LC reassembly below is gated by its own
+			// BPTC+CRC, so leaving the fragment in frags is harmless.
+			if emb.LCSS == dmr.LCSSSingle && !sf.HasRC {
+				if rc, ok := dmr.DecodeReverseChannel(frag); ok {
+					sf.HasRC = true
+					sf.RC = rc
+				}
+			}
 		}
 	}
 	if lc, ok := dmr.ReassembleEmbeddedLC(frags); ok {
