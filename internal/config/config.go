@@ -541,6 +541,17 @@ type AudioConfig struct {
 	Volume float32 `yaml:"volume"`
 	// Muted is the initial mute state. Default false.
 	Muted bool `yaml:"muted"`
+	// LiveLoudness applies a real-time envelope-follower AGC to the
+	// decoded digital-voice PCM fed to the live network stream
+	// (WebUI / gRPC), so live loudness tracks the loudness-normalized
+	// recordings instead of arriving raw and quieter/inconsistent.
+	// Default false. Note: this only touches the live stream — the
+	// on-disk WAV keeps its own per-call EBU R128 normalization
+	// (recordings.normalize) and is never double-processed. It is a
+	// real-time approximation, not bit-exact R128 (which needs the
+	// whole call), and only affects digital decoded audio; analog FM
+	// loudness is shaped by the composer's own optional audio AGC.
+	LiveLoudness bool `yaml:"live_loudness"`
 }
 
 // ScannerConfig controls the police-scanner subsystems: the CC hunter,

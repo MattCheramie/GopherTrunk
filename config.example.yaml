@@ -824,6 +824,12 @@ audio:
   buffer_ms: 80        # playback queue depth; higher = more jitter-tolerant
   volume: 0.8          # 0..1 software gain
   muted: false
+  live_loudness: false # real-time AGC on the live network stream (WebUI /
+                       # gRPC) so its loudness tracks the normalized
+                       # recordings instead of arriving raw/quieter. Only
+                       # touches digital decoded audio on the live path; the
+                       # on-disk WAV keeps its own recordings.normalize and is
+                       # never double-processed. Default off.
 
 # tone_out fires events.KindToneAlert when the configured paging tones
 # are detected on a Voice device's PCM stream. An empty `profiles`

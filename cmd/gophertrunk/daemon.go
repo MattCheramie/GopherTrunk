@@ -347,6 +347,7 @@ type Daemon struct {
 	player       *player.Player
 	toneout      *toneout.Detector
 	audioPub     *api.AudioPublisher
+	liveLoudness *liveLoudnessSink
 	db           *storage.DB
 	callLog      *storage.CallLog
 	locationLog  *storage.LocationLog
@@ -1143,7 +1144,19 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.toneout != nil {
 			liveSinks = append(liveSinks, d.toneout)
 		}
-		liveSinks = append(liveSinks, d.audioPub)
+		// Optionally level the decoded digital PCM before it reaches the
+		// network stream so live loudness tracks the loudness-normalized
+		// recordings (audio.live_loudness, default off). Decoded vocoder
+		// audio is always 8 kHz. The tone-out detector is left on the raw
+		// PCM — its Goertzel matched filters key off absolute tone levels.
+		var liveStreamSink composer.PCMSink = d.audioPub
+		if cfg.Audio.LiveLoudness {
+			lls := newLiveLoudnessSink(d.audioPub, 8000, d.bus, log)
+			d.liveLoudness = lls
+			liveStreamSink = lls
+			log.Info("audio: live-loudness AGC enabled for digital stream")
+		}
+		liveSinks = append(liveSinks, liveStreamSink)
 		d.recorder.SetDecodedPCMSink(fanoutSink(liveSinks))
 
 		var sink composer.PCMSink = d.recorder
@@ -2263,6 +2276,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.audioPub.Run(ctx)
 		})
 	}
+	if d.liveLoudness != nil {
+		d.spawn(runCtx, "live-loudness", false, func(ctx context.Context) error {
+			return d.liveLoudness.Run(ctx)
+		})
+	}
 	if d.metrics != nil {
 		d.spawn(runCtx, "metrics", false, func(ctx context.Context) error {
 			return d.metrics.Run(ctx)
@@ -2849,6 +2867,9 @@ func (d *Daemon) Close() {
 		}
 		if d.audioPub != nil {
 			_ = d.audioPub.Close()
+		}
+		if d.liveLoudness != nil {
+			_ = d.liveLoudness.Close()
 		}
 		if d.player != nil {
 			_ = d.player.Close()

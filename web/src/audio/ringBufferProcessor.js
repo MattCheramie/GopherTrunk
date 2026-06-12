@@ -22,7 +22,7 @@ class RingBufferProcessor extends AudioWorkletProcessor {
     this.capacity = Math.max(1, opts.capacityFrames || Math.ceil(sampleRate * 2));
     // Jitter cushion: stay silent until this many frames are buffered, then
     // drain. Re-primed after every underrun so playback resumes cleanly.
-    this.prime = Math.min(this.capacity, Math.max(1, opts.primeFrames || Math.ceil(sampleRate * 0.15)));
+    this.prime = Math.min(this.capacity, Math.max(1, opts.primeFrames || Math.ceil(sampleRate * 0.25)));
     this.ring = new Float32Array(this.capacity);
     this.read = 0;
     this.write = 0;

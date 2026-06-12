@@ -17,7 +17,7 @@
 // internal/api/handlers_audio_stream.go. The byte-framing logic below
 // must match that layout.
 
-import { LinearResampler } from "./resampler";
+import { SincResampler } from "./sincResampler";
 
 // ---------------------------------------------------------------------------
 // Pure, testable framing helpers (no DOM / AudioContext).
@@ -136,9 +136,12 @@ export interface StreamPlayer {
   setMuted(muted: boolean): void;
 }
 
-// Lead time before the first scheduled buffer — a small jitter cushion so
-// brief network hiccups don't cause audible gaps.
-const LEAD_SECONDS = 0.15;
+// Lead time before the first scheduled buffer — a jitter cushion so brief
+// network hiccups and bursty chunk delivery don't cause audible gaps. 0.25 s
+// roughly doubles the tolerance (and the ring's re-prime depth after an
+// underrun) vs. the original 0.15 s while staying well under MAX_LEAD_SECONDS,
+// so steady-state latency stays low.
+const LEAD_SECONDS = 0.25;
 // Upper bound on scheduled-ahead audio; past this we realign so a burst
 // of buffered frames doesn't pin latency high for the rest of the call.
 const MAX_LEAD_SECONDS = 0.6;
@@ -194,12 +197,14 @@ interface PcmSink {
 }
 
 // WorkletSink feeds the ring-buffer AudioWorklet (issue #629). It resamples the
-// stream to the context rate with one continuous LinearResampler (so chunk
-// boundaries don't glitch) and hands the samples to the audio thread via a
-// transferred buffer. The worklet emits silence on underrun, so network jitter
-// no longer skips/realigns the playback cursor the way the legacy scheduler did.
+// stream to the context rate with one continuous SincResampler (so chunk
+// boundaries don't glitch and the 8k->48k fallback path is band-limited like a
+// recorded .wav, not the harsh linear interpolation of the old resampler) and
+// hands the samples to the audio thread via a transferred buffer. The worklet
+// emits silence on underrun, so network jitter no longer skips/realigns the
+// playback cursor the way the legacy scheduler did.
 class WorkletSink implements PcmSink {
-  private resampler: LinearResampler | null = null;
+  private resampler: SincResampler | null = null;
 
   constructor(
     private readonly node: AudioWorkletNode,
@@ -207,7 +212,7 @@ class WorkletSink implements PcmSink {
   ) {}
 
   configure(streamRate: number): void {
-    this.resampler = new LinearResampler(streamRate, this.contextRate);
+    this.resampler = new SincResampler(streamRate, this.contextRate);
     this.node.port.postMessage({ type: "reset" });
   }
 
