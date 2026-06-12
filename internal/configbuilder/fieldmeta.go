@@ -265,12 +265,13 @@ var fieldMetas = map[string]FieldMeta{
 	"ConvToneConfig.DCSCode":           {Label: "DCS code", Help: "3-digit octal DCS code. Required when mode is dcs."},
 
 	// ---- Audio -------------------------------------------------------------
-	"AudioConfig.Enabled":    {Help: "Enable live speaker playback of decoded voice. Off by default (headless-safe). Recordings are unaffected."},
-	"AudioConfig.Device":     {Help: "Backend output device. Empty/default = system sink; 'null' forces the no-op backend."},
-	"AudioConfig.SampleRate": {Label: "Sample rate", Help: "Playback rate (4000–48000 Hz). Default 8000; match recordings.sample_rate."},
-	"AudioConfig.BufferMs":   {Help: "Playback queue depth in ms. Default 80."},
-	"AudioConfig.Volume":     {Help: "Initial software gain, 0–1. Default 0.8."},
-	"AudioConfig.Muted":      {Help: "Start muted."},
+	"AudioConfig.Enabled":      {Help: "Enable live speaker playback of decoded voice. Off by default (headless-safe). Recordings are unaffected."},
+	"AudioConfig.Device":       {Help: "Backend output device. Empty/default = system sink; 'null' forces the no-op backend."},
+	"AudioConfig.SampleRate":   {Label: "Sample rate", Help: "Playback rate (4000–48000 Hz). Default 8000; match recordings.sample_rate."},
+	"AudioConfig.BufferMs":     {Help: "Playback queue depth in ms. Default 80."},
+	"AudioConfig.Volume":       {Help: "Initial software gain, 0–1. Default 0.8."},
+	"AudioConfig.Muted":        {Help: "Start muted."},
+	"AudioConfig.LiveLoudness": {Label: "Live loudness", Help: "Real-time AGC on the live network stream (WebUI/gRPC) so its loudness tracks the normalized recordings. Digital live audio only; the on-disk WAV keeps its own normalization. Off by default."},
 
 	// ---- Broadcast ---------------------------------------------------------
 	"BroadcastConfig.MinDurationMs":   {Help: "Drop calls shorter than this from every feed. 0 streams any length."},

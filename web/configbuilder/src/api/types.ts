@@ -180,6 +180,7 @@ export interface AudioConfig {
   BufferMs: number;
   Volume: number;
   Muted: boolean;
+  LiveLoudness: boolean;
 }
 
 export interface WebConfig {
