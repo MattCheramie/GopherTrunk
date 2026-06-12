@@ -49,10 +49,19 @@ func burstLCSS(b int) dmr.LCSS {
 	}
 }
 
+// interleaveTail is trailing filler appended to a synthetic interleaved
+// stream so both slots' burst-A anchors have a full largest-cadence
+// superframe span buffered behind them (the auto-detecting decoder waits
+// for that before slicing). A live carrier is continuous, so on air this
+// trailing data is always present; the fixtures must mimic it.
+const interleaveTail = 2 * (dmr.BurstDibits + cachDibits) // 288
+
 // buildInterleavedStreamWithLC is buildInterleavedStream extended so each
 // slot's bursts B–E carry that slot's own embedded Link Control, so a
-// decoder can recover and label each timeslot's talkgroup.
-func buildInterleavedStreamWithLC(t *testing.T, aLC, bLC dmr.FLC) (stream []uint8, aFrames, bFrames [][]byte) {
+// decoder can recover and label each timeslot's talkgroup. cach dibits of
+// filler are inserted before each woven burst, modelling the outbound CACH
+// (cach=0 reproduces a CACH-free 264-dibit-cadence stream).
+func buildInterleavedStreamWithLC(t *testing.T, aLC, bLC dmr.FLC, cach int) (stream []uint8, aFrames, bFrames [][]byte) {
 	t.Helper()
 	const bSeedOffset = 10000
 	aFrags := lcFragments(t, aLC)
@@ -61,6 +70,7 @@ func buildInterleavedStreamWithLC(t *testing.T, aLC, bLC dmr.FLC) (stream []uint
 		aFrames = append(aFrames, mkFrame(f))
 		bFrames = append(bFrames, mkFrame(f+bSeedOffset))
 	}
+	cachFiller := make([]uint8, cach)
 	for b := 0; b < BurstsPerSuperframe; b++ {
 		aSync, bSync := dmr.BSData.Dibits, dmr.BSData.Dibits
 		switch {
@@ -71,9 +81,12 @@ func buildInterleavedStreamWithLC(t *testing.T, aLC, bLC dmr.FLC) (stream []uint
 			bSync = embeddedSync(dmr.EMB{ColorCode: 1, LCSS: burstLCSS(b)}, bFrags[b-1])
 		}
 		base := b * FramesPerBurst
+		stream = append(stream, cachFiller...)
 		stream = append(stream, makeVoiceBurst(aFrames[base:base+FramesPerBurst], aSync)...)
+		stream = append(stream, cachFiller...)
 		stream = append(stream, makeVoiceBurst(bFrames[base:base+FramesPerBurst], bSync)...)
 	}
+	stream = append(stream, make([]uint8, interleaveTail)...)
 	return stream, aFrames, bFrames
 }
 
@@ -131,6 +144,7 @@ func buildInterleavedStream(t *testing.T, n, lead int) (stream []uint8, aFrames,
 			stream = append(stream, makeVoiceBurst(bFrames[base:base+FramesPerBurst], sync)...)
 		}
 	}
+	stream = append(stream, make([]uint8, interleaveTail)...)
 	return stream, aFrames, bFrames
 }
 
@@ -366,7 +380,7 @@ func TestInterleavedDecoderChunkedInput(t *testing.T) {
 func TestInterleavedDecoderLabelsSlotsByEmbeddedLC(t *testing.T) {
 	aLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 1001, SrcAddr: 55}
 	bLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 2002, SrcAddr: 66}
-	stream, aFrames, bFrames := buildInterleavedStreamWithLC(t, aLC, bLC)
+	stream, aFrames, bFrames := buildInterleavedStreamWithLC(t, aLC, bLC, 0)
 
 	d := NewInterleavedDecoder()
 	got := d.Process(stream, 0)
@@ -388,6 +402,61 @@ func TestInterleavedDecoderLabelsSlotsByEmbeddedLC(t *testing.T) {
 	}
 	checkFrames(t, a, aFrames, 0)
 	checkFrames(t, b, bFrames, 0)
+}
+
+// TestInterleavedDecoderAutoDetectsCACHCadence is the #644 guard: on a real
+// outbound DMR carrier a 12-dibit CACH precedes each burst, so a call's
+// same-slot bursts are 288 dibits apart, not 264. Fed such a stream, the
+// interleaved decoder must auto-detect the 288 cadence (the one whose bursts
+// B–E reassemble a CRC-valid embedded LC), lock it, and still separate the
+// two slots cleanly. Slicing at the wrong 264 cadence is exactly what
+// produced the garbled, encrypted-sounding audio reported in #644.
+func TestInterleavedDecoderAutoDetectsCACHCadence(t *testing.T) {
+	aLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 1001, SrcAddr: 55}
+	bLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 2002, SrcAddr: 66}
+	stream, aFrames, bFrames := buildInterleavedStreamWithLC(t, aLC, bLC, cachDibits)
+
+	d := NewInterleavedDecoder()
+	got := d.Process(stream, 0)
+	if len(got) != 2 {
+		t.Fatalf("got %d superframes, want 2 (one per timeslot)", len(got))
+	}
+	if d.lockedStep != 2*(dmr.BurstDibits+cachDibits) {
+		t.Errorf("lockedStep = %d, want %d (288, the CACH cadence)", d.lockedStep, 2*(dmr.BurstDibits+cachDibits))
+	}
+	a, b := got[0], got[1]
+	if !a.HasLC || a.LC.DstAddr != 1001 || a.LC.SrcAddr != 55 {
+		t.Errorf("slot A LC: hasLC=%v dst=%d src=%d, want dst=1001 src=55", a.HasLC, a.LC.DstAddr, a.LC.SrcAddr)
+	}
+	if !b.HasLC || b.LC.DstAddr != 2002 || b.LC.SrcAddr != 66 {
+		t.Errorf("slot B LC: hasLC=%v dst=%d src=%d, want dst=2002 src=66", b.HasLC, b.LC.DstAddr, b.LC.SrcAddr)
+	}
+	if a.Phase == b.Phase {
+		t.Errorf("slots share Phase %d; want distinct", a.Phase)
+	}
+	// Audio cleanly separated per slot despite the inter-burst CACH.
+	checkFrames(t, a, aFrames, 0)
+	checkFrames(t, b, bFrames, 0)
+}
+
+// TestInterleavedDecoderAutoDetectsNoCACHCadence is the symmetric case: a
+// CACH-free carrier (e.g. a hotspot / replayed stream) has its same-slot
+// bursts 264 dibits apart, and the decoder must lock that cadence instead.
+func TestInterleavedDecoderAutoDetectsNoCACHCadence(t *testing.T) {
+	aLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 1001, SrcAddr: 55}
+	bLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 2002, SrcAddr: 66}
+	stream, aFrames, bFrames := buildInterleavedStreamWithLC(t, aLC, bLC, 0)
+
+	d := NewInterleavedDecoder()
+	got := d.Process(stream, 0)
+	if len(got) != 2 {
+		t.Fatalf("got %d superframes, want 2", len(got))
+	}
+	if d.lockedStep != 2*dmr.BurstDibits {
+		t.Errorf("lockedStep = %d, want %d (264, the CACH-free cadence)", d.lockedStep, 2*dmr.BurstDibits)
+	}
+	checkFrames(t, got[0], aFrames, 0)
+	checkFrames(t, got[1], bFrames, 0)
 }
 
 // TestDecoderSuperframeNoLCWhenAbsent confirms a superframe whose B–E

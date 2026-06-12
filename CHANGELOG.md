@@ -25,6 +25,19 @@ for tagged releases.
 
 ### Fixed
 
+- **Garbled audio on recorded DMR Tier III voice (#644).** A DMR carrier is
+  2-slot TDMA, so the demodulated dibit stream interleaves both timeslots'
+  bursts. The per-call voice chain decoded it with the single-slot decoder,
+  which locks burst A correctly but then grabs the *other* timeslot's bursts
+  for B–F — splicing two unrelated calls' AMBE frames into each superframe, so
+  the vocoder rendered structured noise that "sounds encrypted" on a clear
+  channel. DMR Tier III now defaults to the 2-slot interleaved decoder, which
+  pulls each call's own timeslot out and routes it to its talkgroup by the
+  embedded Link Control. The decoder auto-detects the on-air same-slot cadence
+  — 264 dibits (no inter-burst CACH) vs 288 (a CACH precedes each burst on
+  outbound air) — by locking onto the cadence whose bursts B–E reassemble a
+  CRC-valid embedded LC. `dmr_interleaved_voice` is now a tri-state override
+  (unset = protocol default — on for Tier III; set true/false to force).
 - **DMR Tier III voice-grant LCN read from the wrong bits (#639).** The
   TalkGroup/Private voice-grant CSBK parser used the wrong field layout: it
   read the "LCN" from the last payload octet — which is actually the low byte
