@@ -69,6 +69,14 @@ type ControlChannel struct {
 	// Motorola vendor system-info CSBK has been seen.
 	restChannel uint8
 
+	// mbc accumulates Multi Block Control (MBC) messages mid-assembly,
+	// keyed by color code: a header burst (DTMBCHeader) opens an entry and
+	// continuation bursts (DTMBCContinuation) append to it until the block
+	// flagged LB=1 closes and dispatches it. Single-threaded with the rest
+	// of the decoder state (the Process goroutine), so no lock is needed.
+	// See mbc.go.
+	mbc map[uint8]*mbcAssembly
+
 	// proc is the cross-call dibit / sync state the Process adapter
 	// uses (see process.go). Lazily constructed on the first
 	// Process call so tests that drive IngestBurst directly don't
@@ -122,20 +130,36 @@ func NewControlChannel(bus *events.Bus, log *slog.Logger, freqHz uint32) *Contro
 // slot type must already be parsed by the caller; the 20-bit
 // Hamming(20,8) over the slot type lives in dmr/slottype.go.
 func (c *ControlChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
-	if slot.DataType != dmr.DTCSBK {
-		return
+	switch slot.DataType {
+	case dmr.DTCSBK:
+		info, ok := c.decodeInfoBlock(b)
+		if !ok {
+			return
+		}
+		csbk, err := ParseCSBK(info)
+		if err != nil {
+			c.log.Debug("dmr/tier3: CSBK CRC failed")
+			return
+		}
+		c.handleCSBK(slot.ColorCode, csbk)
+	case dmr.DTMBCHeader, dmr.DTMBCContinuation:
+		// Multi Block Control: a CSBK-opcode message spread across a header
+		// burst + continuation bursts. Assembled in mbc.go.
+		c.handleMBC(slot.ColorCode, slot.DataType, b)
 	}
+}
+
+// decodeInfoBlock runs BPTC(196,96) over a burst's payload and packs the
+// 96 corrected information bits into the 12-byte block the CSBK / MBC
+// parsers consume. Reports false when the block is uncorrectable. Shared
+// by the CSBK and MBC paths.
+func (c *ControlChannel) decodeInfoBlock(b *dmr.Burst) ([]byte, bool) {
 	bits, errs := framing.DecodeBPTC196_96(b.PayloadBits())
 	if errs < 0 {
 		c.log.Debug("dmr/tier3: BPTC uncorrectable")
-		return
+		return nil, false
 	}
-	csbk, err := ParseCSBK(InfoBitsToBytes(bits))
-	if err != nil {
-		c.log.Debug("dmr/tier3: CSBK CRC failed")
-		return
-	}
-	c.handleCSBK(slot.ColorCode, csbk)
+	return InfoBitsToBytes(bits), true
 }
 
 func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
@@ -162,6 +186,26 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 		c.publishTVGrant(cc, ParseTVGrant(csbk.Payload))
 	case OpPVGrant:
 		c.publishPVGrant(cc, ParsePVGrant(csbk.Payload))
+	case OpBTVGrant:
+		// Broadcast TalkGroup Voice — a one-to-many voice call; follow it
+		// like an ordinary TalkGroup Voice grant.
+		c.publishTVGrant(cc, ParseTVGrant(csbk.Payload))
+	case OpPDGrant:
+		c.observeDataGrant(cc, ParseDataGrant(csbk.Payload, true))
+	case OpTDGrant:
+		c.observeDataGrant(cc, ParseDataGrant(csbk.Payload, false))
+	case OpRAND:
+		r := ParseRandomAccess(csbk.Payload)
+		c.log.Debug("dmr/tier3: c-rand (inbound service request)",
+			"service", r.Service, "target", r.TargetID, "src", r.SourceID, "cc", cc)
+	case OpAhoy:
+		a := ParseAhoy(csbk.Payload)
+		c.log.Debug("dmr/tier3: c-ahoy (poll)",
+			"service", a.Service, "target", a.TargetID, "src", a.SourceID, "cc", cc)
+	case OpAckVit, OpAckD, OpAckU, OpNack:
+		a := ParseAck(csbk.Opcode, csbk.Payload)
+		c.log.Debug("dmr/tier3: ack",
+			"opcode", a.Opcode, "service", a.Service, "target", a.TargetID, "src", a.SourceID, "cc", cc)
 	}
 }
 
@@ -251,6 +295,35 @@ func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
 	c.log.Debug("dmr/tier3: pv-grant",
 		"system", c.systemName, "cc", cc, "dst", g.DestinationID, "src", g.SourceID,
 		"lcn", g.LCN, "ts", g.Timeslot, "freq_hz", freq)
+}
+
+// observeDataGrant records a data-channel grant (PD_GRANT / TD_GRANT). A
+// data grant retunes no Voice device — packet data is not vocoded — so
+// only KindDMRGrantObserved is published (feeding the LCN autoconfig
+// learner the same LCN→carrier mapping a voice grant does) plus a debug
+// log. No trunking.Grant is published, so the engine never follows the
+// data call.
+func (c *ControlChannel) observeDataGrant(cc uint8, g DataGrant) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindDMRGrantObserved,
+		Payload: events.DMRGrantObserved{
+			System:    c.systemName,
+			ColorCode: cc,
+			LCN:       g.LCN,
+			Timeslot:  g.Timeslot,
+			GroupID:   g.TargetID,
+			SourceID:  g.SourceID,
+			CCFreqHz:  c.freqHz,
+			At:        c.now(),
+		},
+	})
+	kind := "td-grant"
+	if g.Private {
+		kind = "pd-grant"
+	}
+	c.log.Debug("dmr/tier3: "+kind+" (data, not followed)",
+		"system", c.systemName, "cc", cc, "target", g.TargetID, "src", g.SourceID,
+		"lcn", g.LCN, "ts", g.Timeslot)
 }
 
 // SetResolver atomically swaps the LCN→frequency resolver. The DMR
