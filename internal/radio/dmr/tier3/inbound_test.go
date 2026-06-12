@@ -49,9 +49,10 @@ func TestParseRandomAccessRoundTrip(t *testing.T) {
 	}
 }
 
-// TestControlChannelInboundCSBKNoSideEffects confirms inbound / reverse-
-// channel CSBKs (C_RAND, C_AHOY, C_ACKD) are parsed for visibility only —
-// they never leak a voice grant or a control-channel lock.
+// TestControlChannelInboundCSBKNoSideEffects confirms inbound (uplink) CSBKs
+// (C_RAND, C_AHOY, C_ACKD) are parsed for visibility only — they never leak a
+// voice grant or a control-channel lock. (These are CSBKs, not the DMR Reverse
+// Channel; RC decode is covered in dmr/rc_test.go.)
 func TestControlChannelInboundCSBKNoSideEffects(t *testing.T) {
 	for _, op := range []CSBKOpcode{OpRAND, OpAhoy, OpAckD, OpNack} {
 		bus := events.NewBus(8)

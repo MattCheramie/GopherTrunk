@@ -196,7 +196,7 @@ func (c *ControlChannel) handleCSBK(cc uint8, csbk CSBK) {
 		c.observeDataGrant(cc, ParseDataGrant(csbk.Payload, false))
 	case OpRAND:
 		r := ParseRandomAccess(csbk.Payload)
-		c.log.Debug("dmr/tier3: c-rand (inbound service request)",
+		c.log.Debug("dmr/tier3: c-rand (inbound uplink service request)",
 			"service", r.Service, "target", r.TargetID, "src", r.SourceID, "cc", cc)
 	case OpAhoy:
 		a := ParseAhoy(csbk.Payload)
