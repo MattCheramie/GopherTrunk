@@ -117,6 +117,20 @@ The inner FEC layers still pending real-air validation:
   `-tags integration` and `GOPHERTRUNK_DMR_2SLOT_CFILE`) is where a
   contributor drops a real capture to confirm those remaining constants.
 
+- **AMBE+2 synthesis parity with IMBE (#644 follow-up).** Once the
+  timeslot fix made DMR speech intelligible it sounded metallic ("tin
+  can") — the buzz from fully phase-coherent voiced synthesis. The
+  AMBE+2 decoder (DMR plus P25 Phase 2 / NXDN / dPMR / TETRA) now runs
+  the same three post-synthesis stages the IMBE decoder already had:
+  §6.3 voiced-phase regeneration (`mbe.SynthVoicedDispersed`, the
+  de-buzz, scaled by the unvoiced-harmonic fraction), a DC-removal
+  high-pass (`mbe.DCBlock`) ahead of the AGC, and error-rate adaptive
+  smoothing (`mbe.Smoother`). The DMR voice chain forwards the per-frame
+  Golay corrected-bit count (`errAwareRawSink` →
+  `voice.ErrorAware.SetFrameErrors`) to drive the smoother. Clean
+  fully-voiced frames are bit-identical to before; only the metallic
+  timbre changes.
+
 ### Digital-voice level calibration
 
 Pure-Go IMBE / AMBE+2 emit real audio end-to-end. The comparison

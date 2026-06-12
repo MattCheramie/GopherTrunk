@@ -34,6 +34,11 @@ const (
 	DMRVocoderName = "ambe2-dmr"
 )
 
+// phaseRngSeedOffset offsets the §6.3 voiced-phase-dispersion source from
+// the unvoiced-noise source so the two deterministic streams don't march
+// in lockstep. Any fixed non-zero value works; this one matches imbe.
+const phaseRngSeedOffset = 0x5DEECE66D
+
 // Decoder is the pure-Go AMBE+2 2400 decoder. Mirrors the imbe
 // Decoder shape: one mbe.SynthState (cross-frame log2(Ml)
 // prediction + voiced phase + amp memory + §6.4 OA tail), one
@@ -55,6 +60,23 @@ type Decoder struct {
 	state mbe.SynthState
 	rng   *rand.Rand
 	agc   *mbe.AGC
+
+	// phaseRng is a SEPARATE seeded source for the §6.3 voiced-phase
+	// dispersion draws (the de-buzz that keeps from-scratch MBE synthesis
+	// from sounding metallic/robotic). Keeping it independent of rng means
+	// the unvoiced-noise stream is unaffected. Both are deterministic for a
+	// given constructor seed. Mirrors imbe.Decoder.
+	phaseRng *rand.Rand
+
+	// dc is the first-order DC-removal high-pass run over the synthesized
+	// PCM before the AGC; it is per-stream and reset only on re-sync.
+	dc mbe.DCBlock
+
+	// smoother holds the error-rate adaptive-smoothing memory. frameErrs is
+	// the FEC corrected-bit count for the NEXT frame, supplied via
+	// SetFrameErrors and consumed once at the top of Decode.
+	smoother  mbe.Smoother
+	frameErrs int
 
 	// AMBE+2-specific cross-frame state. The absolute gamma each
 	// frame is DeltaGamma + 0.5*prevGamma; this caches the
@@ -111,10 +133,13 @@ func NewWithSeed(seed int64) *Decoder {
 // parameters they care about. Mirrors imbe.NewWithConfig.
 func NewWithConfig(seed int64, cfg mbe.AGCConfig) *Decoder {
 	return &Decoder{
-		rng:    rand.New(rand.NewSource(seed)),
-		agc:    mbe.NewAGC(cfg),
-		unpack: UnpackParams,
-		name:   VocoderName,
+		rng: rand.New(rand.NewSource(seed)),
+		// Offset the phase source so it does not march in lockstep with the
+		// noise source while staying deterministic for a given seed.
+		phaseRng: rand.New(rand.NewSource(seed + phaseRngSeedOffset)),
+		agc:      mbe.NewAGC(cfg),
+		unpack:   UnpackParams,
+		name:     VocoderName,
 	}
 }
 
@@ -175,6 +200,14 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	out := make([]int16, mbe.SamplesPerFrame)
 	pcm := make([]float64, mbe.SamplesPerFrame)
 
+	// Consume the corrected-bit count set by SetFrameErrors (0 if the caller
+	// doesn't supply one) and advance the adaptive-smoothing error-rate
+	// estimate. muteByER is true when the channel is so degraded the frame
+	// should be silenced.
+	correctedBits := d.frameErrs
+	d.frameErrs = 0
+	muteByER := d.smoother.UpdateErrorRate(correctedBits)
+
 	p, err := d.unpack(info)
 
 	switch {
@@ -188,16 +221,17 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 			repeatedM[l] *= atten
 		}
 		d.synthFrame(d.lastGoodParams, &d.lastGoodLog2M, &repeatedM, pcm)
-		d.agc.Apply(pcm, out, true)
+		d.applyOutput(pcm, out, true)
 		return out, nil
 
 	case err != nil:
 		// Bad frame with no cache or budget exhausted: emit silence
 		// + clear state.
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
-		d.agc.Apply(pcm, out, true)
+		d.applyOutput(pcm, out, true)
 		return out, nil
 
 	case p.Tone && !p.Silent && p.B1 >= 5 && p.B1 <= 122:
@@ -208,9 +242,10 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// AGC tracks (no freeze) so b2 volume changes are audible.
 		d.synthSingleTone(p.B1, p.B2, pcm)
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
-		d.agc.Apply(pcm, out, false)
+		d.applyOutput(pcm, out, false)
 		return out, nil
 
 	case p.Tone && !p.Silent && p.B1 >= 128 && p.B1 <= 143:
@@ -229,9 +264,10 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		freqA, freqB := ambeDualToneTable[p.B1-128][0], ambeDualToneTable[p.B1-128][1]
 		d.synthDualTone(freqA, freqB, p.B2, pcm)
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
-		d.agc.Apply(pcm, out, false)
+		d.applyOutput(pcm, out, false)
 		return out, nil
 
 	case p.Tone && !p.Silent && p.B1 >= KnoxIndexLow && p.B1 <= KnoxIndexHigh:
@@ -244,9 +280,10 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		if freqA, freqB, ok := KnoxTone(p.B1); ok {
 			d.synthDualTone(freqA, freqB, p.B2, pcm)
 			d.state.Reset()
+			d.dc.Reset()
 			d.clearLastGood()
 			d.prevGamma = 0
-			d.agc.Apply(pcm, out, false)
+			d.applyOutput(pcm, out, false)
 			return out, nil
 		}
 		fallthrough
@@ -261,11 +298,12 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// vendor-specific init() and add their per-vendor pairs.
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.Params, nil, nil, pcm)
 		d.state.Reset()
+		d.dc.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.tonePhase = 0
 		d.toneDualPhase = 0
-		d.agc.Apply(pcm, out, true)
+		d.applyOutput(pcm, out, true)
 		return out, nil
 	}
 
@@ -302,6 +340,18 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 
 	mbe.EnhanceAmplitudes(folded, &M)
 
+	// Adaptive smoothing: on a degraded channel, cap error-induced amplitude
+	// spikes and reclaim obviously-voiced harmonics (modifies M and folded.Vl
+	// in place); a clean channel is left untouched. A frame whose error rate
+	// exceeds the mute threshold is silenced by zeroing the amplitudes, which
+	// the voiced generator's amplitude tilt fades out cleanly.
+	d.smoother.Smooth(&folded, &M, correctedBits)
+	if muteByER {
+		for l := 1; l <= folded.L; l++ {
+			M[l] = 0
+		}
+	}
+
 	d.synthFrame(folded, &log2M, &M, pcm)
 
 	// Cache for the frame-repeat path on a future bad frame.
@@ -310,7 +360,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	d.lastGoodM = M
 	d.prevGamma = gamma
 
-	d.agc.Apply(pcm, out, false)
+	d.applyOutput(pcm, out, false)
 	return out, nil
 }
 
@@ -431,7 +481,35 @@ var ambeDualToneTable = [36][2]float64{
 // two share identical synthesis behaviour — only the M values
 // differ between the two.
 func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe.MaxL + 1]float64, pcm []float64) {
-	mbe.SynthVoiced(&d.state, p, M, pcm)
+	// §6.3 voiced-phase regeneration. Match the mbelib reference
+	// PHIl[l] = PSIl[l] + (numUv * rand_phase()) / L for the upper
+	// harmonics: draw a per-harmonic uniform phase offset in [−π, π) from
+	// the decoder's separate phase source, scaled by the unvoiced-harmonic
+	// fraction numUv/L. A mostly-voiced frame (small numUv) therefore gets
+	// near-zero dispersion and stays coherent; a noise-dominated frame gets
+	// up to full [−π, π). SynthVoicedDispersed applies the offset to the
+	// synthesis phase only (l > L/4, voiced), and UpdateVoicedState advances
+	// the phase memory coherently — so the offset never accumulates into a
+	// random walk. The draw runs for every harmonic each frame so the phase
+	// stream advances at a fixed rate regardless of L (and, being a separate
+	// source, never perturbs the unvoiced-noise stream below). Without this
+	// de-buzz, fully-coherent voiced synthesis sounds metallic ("tin can").
+	numVoiced := 0
+	for l := 1; l <= p.L; l++ {
+		if p.Vl[l] == 1 {
+			numVoiced++
+		}
+	}
+	var dispScale float64
+	if p.L > 0 {
+		dispScale = float64(p.L-numVoiced) / float64(p.L)
+	}
+	var phaseDisp [mbe.MaxL + 1]float64
+	for l := 1; l <= mbe.MaxL; l++ {
+		phaseDisp[l] = (d.phaseRng.Float64()*2 - 1) * math.Pi * dispScale
+	}
+
+	mbe.SynthVoicedDispersed(&d.state, p, M, pcm, &phaseDisp)
 	noise := make([]float64, mbe.UnvoicedFFTSize)
 	for i := range noise {
 		noise[i] = d.rng.NormFloat64()
@@ -440,6 +518,23 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 	d.state.UpdateLog2Ml(p, log2M)
 	d.state.UpdateVoicedState(p, M)
 }
+
+// applyOutput runs the DC-removal high-pass over the synthesized PCM and
+// then the AGC, converting to int16. The DC blocker is per-stream (carried
+// across frames, reset only on re-sync); the AGC envelope freezes when
+// freezeEnvelope is set so deliberate attenuation stays audible. Mirrors
+// imbe.Decoder.applyOutput.
+func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
+	d.dc.Process(pcm)
+	d.agc.Apply(pcm, out, freezeEnvelope)
+}
+
+// SetFrameErrors supplies the channel FEC corrected-bit count for the NEXT
+// Decode call, driving the adaptive-smoothing error-rate estimate. The DMR
+// composer hands this in per frame via the recorder's error-aware sink; a
+// caller that doesn't supply one leaves it at 0 (smoothing then stays inert).
+// Implements voice.ErrorAware.
+func (d *Decoder) SetFrameErrors(correctedBits int) { d.frameErrs = correctedBits }
 
 // clearLastGood resets the frame-repeat cache + bad-frame counter.
 func (d *Decoder) clearLastGood() {
@@ -510,6 +605,8 @@ func foldGammaIntoTl(p Params, gamma float64) mbe.Params {
 func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc.Reset()
+	d.dc.Reset()
+	d.smoother.Reset()
 	d.clearLastGood()
 	d.prevGamma = 0
 	d.tonePhase = 0

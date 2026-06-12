@@ -112,6 +112,10 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	lpf := filter.NewFIR(filter.LowpassKaiser(81, cutoff, 8.6))
 
 	rs, _ := c.sink.(rawFrameSink)
+	// ers, when the sink supports it, carries the per-frame FEC corrected-bit
+	// count into the AMBE+2 decoder's adaptive smoothing (the recorder
+	// implements it). Falls back to the plain rawFrameSink path otherwise.
+	ers, _ := c.sink.(errAwareRawSink)
 	voiceDec := dmrvoice.NewDecoder()
 	var router *slotRouter
 	if interleaved {
@@ -161,9 +165,16 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 							"serial", serial, "err", err)
 						continue
 					}
-					if err := rs.WriteRawFrame(serial, packBits(info)); err != nil {
+					packed := packBits(info)
+					var werr error
+					if ers != nil {
+						werr = ers.WriteRawFrameWithErrors(serial, packed, errBits)
+					} else {
+						werr = rs.WriteRawFrame(serial, packed)
+					}
+					if werr != nil {
 						c.log.Warn("composer: DMR raw-frame write failed",
-							"serial", serial, "err", err)
+							"serial", serial, "err", werr)
 					}
 				}
 			}
