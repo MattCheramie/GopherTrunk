@@ -230,16 +230,16 @@ func TestPoolFirstByRole(t *testing.T) {
 	}
 }
 
-// TestPoolWarnsOnHintWithoutGain guards the issue #356 follow-up
-// observation: a device that's listed in config but without a `gain:`
-// key was opened with whatever the driver default chose, with no
-// startup log to tell the operator. On clones whose default is too
-// low for the user's LNA + antenna chain the SDR reads as completely
-// deaf and the operator has no path from the symptom ("voice grants
-// time out with no audio") to the root cause ("no gain configured").
-// The warn must fire on every role, since a deaf control / wideband
-// device is just as bad as a deaf voice device.
-func TestPoolWarnsOnHintWithoutGain(t *testing.T) {
+// TestPoolLogsOnHintWithoutGain guards the no-gain path: a hint that
+// reaches the pool without a gain set (e.g. baseband replay / direct
+// callers — the daemon now resolves an empty `gain:` to auto upstream)
+// must still surface a startup line so the operator knows no explicit
+// gain was applied. It is INFO, not WARN: the RTL-SDR driver establishes
+// AGC at open (runBringup), so "no explicit gain hint" is no longer the
+// deafness hazard it was in issue #356 — it just falls back to AGC. The
+// line must include the serial and point at setting a specific gain for
+// weak-signal sites, on every role.
+func TestPoolLogsOnHintWithoutGain(t *testing.T) {
 	drv := &fakeDriver{name: "fake-nogain", infos: []Info{
 		{Driver: "fake-nogain", Index: 0, Serial: "NOGAIN-1"},
 	}}
@@ -253,7 +253,7 @@ func TestPoolWarnsOnHintWithoutGain(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	p := NewPool(log)
 	// Hint with serial only — gain is unset.
 	if err := p.Open(0, []Hint{{Serial: "NOGAIN-1", Role: RoleVoice}}); err != nil {
@@ -262,14 +262,14 @@ func TestPoolWarnsOnHintWithoutGain(t *testing.T) {
 	defer p.Close()
 
 	out := buf.String()
-	if !strings.Contains(out, "no gain configured") {
-		t.Errorf("expected no-gain warn for NOGAIN-1; log was: %q", out)
+	if !strings.Contains(out, "no explicit gain hint") {
+		t.Errorf("expected no-gain info line for NOGAIN-1; log was: %q", out)
 	}
 	if !strings.Contains(out, "NOGAIN-1") {
-		t.Errorf("warn should include the device serial; log was: %q", out)
+		t.Errorf("line should include the device serial; log was: %q", out)
 	}
-	if !strings.Contains(out, "gain: auto") {
-		t.Errorf("warn should suggest `gain: auto`; log was: %q", out)
+	if !strings.Contains(out, "AGC default") {
+		t.Errorf("line should mention the AGC default; log was: %q", out)
 	}
 }
 
@@ -299,8 +299,8 @@ func TestPoolSilentOnHintWithGain(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if out := buf.String(); strings.Contains(out, "no gain configured") {
-		t.Errorf("hints with gain set should not warn; log was: %q", out)
+	if out := buf.String(); strings.Contains(out, "no explicit gain hint") {
+		t.Errorf("hints with gain set should not log the no-gain line; log was: %q", out)
 	}
 }
 

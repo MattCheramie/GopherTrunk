@@ -377,6 +377,19 @@ func runBringup(demod *rtl2832u.Demod) (tuners.Tuner, error) {
 	if err := tuner.SetBandwidth(actual); err != nil {
 		return nil, fmt.Errorf("rtlsdr: default tuner bandwidth: %w%s", err, tunerBringupHint(err))
 	}
+	// Establish AGC as the default gain state, mirroring librtlsdr/osmocom
+	// which run r82xx_set_gain at open. tuner.Init() loads the osmocom init
+	// array but leaves the gain stages half-configured: for the R82xx the
+	// LNA + mixer AGC bits are on, yet the VGA is left at the init default
+	// (reg 0x0C = 0xF5) instead of its AGC operating point (0x0B, +16.3 dB).
+	// SetGainMode(false) pins it; without this the front end runs ~17 dB low
+	// and decode fails on every protocol when no `gain:` is configured (the
+	// VGA pin otherwise only ran via a config-driven SetGain). See issue #264
+	// and tuners.R82xx.SetGainMode. A later config gain (manual or auto) still
+	// overrides this, since pool.applyHintSettings runs after Open.
+	if err := tuner.SetGainMode(false); err != nil {
+		return nil, fmt.Errorf("rtlsdr: default AGC gain mode: %w%s", err, tunerBringupHint(err))
+	}
 	return tuner, nil
 }
 

@@ -414,16 +414,15 @@ func (p *Pool) applyHintSettings(dev Device, info Info, h Hint) {
 				"gain_db", float64(h.Gain)/10.0)
 		}
 	} else {
-		// Surface the "no `gain:` in config" path explicitly. Without
-		// this warn, a device whose driver default happens to be too
-		// low for the user's antenna + LNA chain reads as completely
-		// deaf — the field symptom in issue #356 (v0.2.4 follow-up,
-		// reporter @v2maldo). The driver-default gain varies between
-		// chips and even firmware revisions; surfacing it once at open
-		// gives the operator a chance to set `gain: auto` (AGC) or a
-		// specific tenth-dB value before chasing harder hypotheses
-		// like a broken voice chain.
-		p.log.Warn("sdr: no gain configured for device; using driver default — set `gain: auto` for AGC or a specific tenth-dB value (e.g. \"496\" = 49.6 dB) if reception is weak",
+		// No explicit gain hint reached the pool. The daemon now resolves an
+		// empty `gain:` to auto (-1) so this branch is normally bypassed; it
+		// still fires for callers that build hints directly without a gain
+		// (e.g. baseband replay / tests). The RTL-SDR driver establishes AGC
+		// at open (runBringup), so this is informational, not a deafness
+		// hazard — historically (issue #356) the raw driver default could
+		// read deaf, which is why a specific tenth-dB value is still worth
+		// surfacing for weak-signal sites.
+		p.log.Info("sdr: no explicit gain hint; relying on the driver's AGC default — set a specific tenth-dB `gain:` (e.g. \"496\" = 49.6 dB) if reception is weak",
 			"serial", info.Serial, "role", h.Role.String())
 	}
 	if h.BiasTee {
