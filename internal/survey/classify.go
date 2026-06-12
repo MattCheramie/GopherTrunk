@@ -188,8 +188,9 @@ func extractFeatures(iq []complex64, rateHz float64, cfg ClassifyConfig) ClassFe
 		return f
 	}
 
-	// 1. Occupied bandwidth + SNR from the windowed IQ power spectrum.
-	f.OccupiedBwHz, f.SNRDb = OccupiedBandwidth(iq, rateHz, cfg)
+	// 1. Occupied bandwidth + SNR from the windowed IQ power spectrum. The
+	//    blind (isolated-carrier) path is already band-limited, so no cap.
+	f.OccupiedBwHz, f.SNRDb = OccupiedBandwidth(iq, rateHz, 0, cfg)
 
 	// 2. Envelope coefficient of variation (AM vs constant-envelope).
 	f.EnvelopeCV = envelopeCV(iq)
@@ -264,7 +265,14 @@ func decide(f ClassFeatures, cfg ClassifyConfig) (SignalClass, float64) {
 // centre bin. Returns (0, 0) when no carrier stands out. The survey router
 // calls this on the full-rate (un-decimated) capture so a wideband signal's
 // bandwidth isn't truncated by the narrow channel decimation.
-func OccupiedBandwidth(iq []complex64, rateHz float64, cfg ClassifyConfig) (uint32, float64) {
+//
+// maxBwHz caps the measured width: the outward walk from DC stops at ±maxBwHz/2
+// even if the gap tolerance would otherwise bridge into an adjacent carrier.
+// This keeps a dense band (e.g. DMR carriers on a 12.5 kHz grid, whose edges sit
+// inside the small gap tolerance) from chaining its neighbours into one giant
+// span. maxBwHz == 0 leaves the walk unbounded (a genuinely isolated wideband
+// signal, where nothing adjacent can bridge in).
+func OccupiedBandwidth(iq []complex64, rateHz float64, maxBwHz uint32, cfg ClassifyConfig) (uint32, float64) {
 	cfg = cfg.withDefaults()
 	n := pow2Floor(len(iq))
 	if n > 8192 {
@@ -291,15 +299,30 @@ func OccupiedBandwidth(iq []complex64, rateHz float64, cfg ClassifyConfig) (uint
 	if maxGap < 3 {
 		maxGap = 3
 	}
+	// Cap the outward walk at ±maxBwHz/2 bins so a dense band's adjacent
+	// carriers can't bridge across the gap tolerance into one span.
+	loLimit, hiLimit := 0, n-1
+	if maxBwHz > 0 {
+		half := int(math.Round((float64(maxBwHz) / 2) / binHz))
+		if half < 1 {
+			half = 1
+		}
+		if dc-half > loLimit {
+			loLimit = dc - half
+		}
+		if dc+half < hiLimit {
+			hiLimit = dc + half
+		}
+	}
 	lo, hi := dc, dc
-	for i, gap := dc-1, 0; i >= 0; i-- {
+	for i, gap := dc-1, 0; i >= loLimit; i-- {
 		if pwr[i] >= thresh {
 			lo, gap = i, 0
 		} else if gap++; gap > maxGap {
 			break
 		}
 	}
-	for i, gap := dc+1, 0; i < n; i++ {
+	for i, gap := dc+1, 0; i <= hiLimit; i++ {
 		if pwr[i] >= thresh {
 			hi, gap = i, 0
 		} else if gap++; gap > maxGap {

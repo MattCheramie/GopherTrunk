@@ -97,7 +97,7 @@ func RunLiveSurvey(ctx context.Context, opts LiveHuntOptions) (*SignalSurvey, []
 			return finishSurvey(sv), reports, err
 		}
 
-		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, opts, log)
+		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, nearestNeighborHz(candidates, i), opts, log)
 		if rep != nil {
 			reports = append(reports, *rep)
 		}
@@ -138,7 +138,9 @@ func RunOfflineSurvey(captures []CaptureInput, opts LiveHuntOptions) (*SignalSur
 			continue
 		}
 		cand := Candidate{FreqHz: ci.FrequencyHz}
-		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, opts, log)
+		// Each offline capture is a lone baseband grab: no neighbour to bound
+		// against, so the occupied-bandwidth walk stays unbounded.
+		ds, rep := classifyAndRoute(sv.System, iq, rate, cand, 0, opts, log)
 		if rep != nil {
 			reports = append(reports, *rep)
 		}
@@ -153,14 +155,18 @@ func RunOfflineSurvey(captures []CaptureInput, opts LiveHuntOptions) (*SignalSur
 // classifyAndRoute is the shared per-candidate body of the live and offline
 // surveys: measure occupied bandwidth on the full-rate capture, channelise to a
 // narrow baseband stream, classify, and route to the matching decoder.
-func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32, cand Candidate, opts LiveHuntOptions, log *slog.Logger) (DetectedSignal, *CaptureReport) {
+func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32, cand Candidate, neighborHz uint32, opts LiveHuntOptions, log *slog.Logger) (DetectedSignal, *CaptureReport) {
 	ds := DetectedSignal{FreqHz: cand.FreqHz, SNRDb: cand.SNRDb}
 
 	// Occupied bandwidth from the full-rate capture (a wideband signal isn't
-	// truncated by the channel decimation); modulation features + conventional
-	// decoders run on the narrow channel.
-	wideBw, wideSnr := survey.OccupiedBandwidth(fullIQ, float64(fullRate), opts.ClassifyConfig)
-	chIQ, chRate := channelize(fullIQ, fullRate, surveyChannelRateHz)
+	// truncated by the channel decimation), but bounded by the nearest-neighbour
+	// spacing so a dense band (DMR on a 12.5 kHz grid) doesn't bridge its
+	// neighbours into one giant span. Modulation features + conventional decoders
+	// run on the carrier isolated to its own channel by the same bound, so an
+	// adjacent carrier 12.5 kHz away can't leak into the discriminator and defeat
+	// the digital/baud detection (which is what mislabels DMR as am/wfm).
+	wideBw, wideSnr := survey.OccupiedBandwidth(fullIQ, float64(fullRate), neighborHz, opts.ClassifyConfig)
+	chIQ, chRate := channelize(fullIQ, fullRate, classifyChannelRate(neighborHz))
 	cls := survey.ClassifyWith(chIQ, float64(chRate), wideBw, wideSnr, opts.ClassifyConfig)
 	ds.Class = cls.Class
 	ds.Confidence = cls.Confidence
@@ -375,4 +381,48 @@ func channelize(iq []complex64, rateHz, targetHz uint32) ([]complex64, uint32) {
 	}
 	out := dsp.NewResampler(1, m, 16, 7.0).Process(nil, iq)
 	return out, rateHz / uint32(m)
+}
+
+// nearestNeighborHz returns the smallest absolute frequency distance from
+// candidates[i] to any other candidate, or 0 when there is no other candidate
+// (a lone carrier — nothing to isolate against).
+func nearestNeighborHz(candidates []Candidate, i int) uint32 {
+	if i < 0 || i >= len(candidates) {
+		return 0
+	}
+	fi := candidates[i].FreqHz
+	var best uint32
+	for j, c := range candidates {
+		if j == i || c.FreqHz == fi {
+			continue
+		}
+		d := c.FreqHz - fi
+		if c.FreqHz < fi {
+			d = fi - c.FreqHz
+		}
+		if best == 0 || d < best {
+			best = d
+		}
+	}
+	return best
+}
+
+// classifyChannelRate picks the channel rate to isolate a carrier for
+// classification. The default surveyChannelRateHz (48 kHz, ±24 kHz passband) is
+// wide enough that on a dense grid (DMR at 12.5 kHz spacing) several neighbours
+// leak in and beat together — the discriminator then carries no clean baud line
+// and the carrier is mis-read as analog am/wfm (issue #648). When a neighbour
+// sits inside that passband we halve the channel to 24 kHz (±12 kHz): the gentle
+// decimation pushes the neighbour out to / past the passband edge, leaving the
+// centre carrier dominant, while staying wide enough to keep the carrier's own
+// energy intact (unlike a sharp brick-wall filter, which clips the constant-
+// envelope carrier and spikes the discriminator). A lone carrier, or one whose
+// nearest neighbour is already outside the wide passband, keeps the full channel
+// so a genuinely wideband signal isn't truncated.
+func classifyChannelRate(neighborHz uint32) uint32 {
+	const narrow = surveyChannelRateHz / 2 // 24 kHz
+	if neighborHz == 0 || neighborHz >= narrow {
+		return surveyChannelRateHz
+	}
+	return narrow
 }
