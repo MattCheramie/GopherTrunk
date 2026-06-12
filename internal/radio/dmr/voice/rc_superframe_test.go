@@ -48,7 +48,7 @@ func TestDecoderSurfacesReverseChannel(t *testing.T) {
 func TestDecoderNoReverseChannelFromLC(t *testing.T) {
 	aLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 1001, SrcAddr: 55}
 	bLC := dmr.FLC{FLCO: dmr.FLCOGroupVoiceUser, DstAddr: 2002, SrcAddr: 66}
-	stream, _, _ := buildInterleavedStreamWithLC(t, aLC, bLC)
+	stream, _, _ := buildInterleavedStreamWithLC(t, aLC, bLC, 0)
 	for _, sf := range NewInterleavedDecoder().Process(stream, 0) {
 		if sf.HasRC {
 			t.Errorf("HasRC = true on an LC-only superframe (phase %d); want false", sf.Phase)
