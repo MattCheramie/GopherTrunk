@@ -124,6 +124,19 @@ no control SDR is configured (#641).
 
 ### Fixed
 
+- **Metallic "tin can" DMR voice — AMBE+2 brought to IMBE synthesis parity
+  (#644 follow-up).** With the timeslot fix above the speech became
+  intelligible but sounded metallic/buzzy ("like someone speaking into a tin
+  can"). The AMBE+2 decoder (DMR, and also P25 Phase 2 / NXDN / dPMR / TETRA)
+  was synthesizing voiced harmonics fully phase-coherently, which radiates a
+  buzzy impulse train — the classic from-scratch-MBE artifact. It now adopts
+  the three post-synthesis stages the IMBE decoder already had: §6.3
+  voiced-phase regeneration (per-harmonic phase dispersion scaled by the
+  unvoiced fraction — the de-buzz), a DC-removal high-pass ahead of the AGC,
+  and error-rate adaptive smoothing. The DMR voice chain now also forwards the
+  per-frame Golay corrected-bit count to drive that smoothing. Clean,
+  fully-voiced audio is bit-identical to before (dispersion and smoothing are
+  inert on a clean, voiced frame), so only the metallic timbre changes.
 - **Garbled audio on recorded DMR Tier III voice (#644).** A DMR carrier is
   2-slot TDMA, so the demodulated dibit stream interleaves both timeslots'
   bursts. The per-call voice chain decoded it with the single-slot decoder,
