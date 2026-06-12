@@ -603,6 +603,19 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 // NewDaemonWithPath is the constructor used by main when a config
 // file backs the daemon: the path is installed as a config.Writer
 // so PATCH /api/v1/settings can re-write the file in place.
+// resolveDMRInterleavedVoice turns the tri-state config.SystemConfig.
+// DMRInterleavedVoice override into the concrete bool the trunking layer
+// carries. nil (unset) takes the per-protocol default — interleaved ON for
+// DMR Tier III (ProtocolDMR), where the 2-slot TDMA carrier otherwise
+// decodes as garbled audio (issue #644); single-slot for everything else.
+// An explicit value forces it on or off.
+func resolveDMRInterleavedVoice(proto trunking.Protocol, override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return proto == trunking.ProtocolDMR
+}
+
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
@@ -686,7 +699,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			ControlChannels:         sys.ControlChannels,
 			P25BandPlan:             p25BandPlan,
 			DMRBandPlan:             dmrBandPlan,
-			DMRInterleavedVoice:     sys.DMRInterleavedVoice,
+			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
 			TETRAColourCode:         sys.TETRAColourCode,
 			TETRAChannel:            sys.TETRAChannel,
 			TETRAChannelCoding:      sys.TETRAChannelCoding,
