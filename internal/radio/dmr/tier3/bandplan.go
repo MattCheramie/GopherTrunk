@@ -7,13 +7,14 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// Resolver maps a 7-bit DMR Tier III LCN to its downlink frequency
-// in Hz. Two implementations ship: LinearBandPlan for sites that lay
-// channels out on a regular base+spacing grid, and TableBandPlan for
-// the irregular cases (where the operator hand-codes the LCN → Hz
-// mapping from a license / coordination database).
+// Resolver maps a 12-bit DMR Tier III LCN (Logical Physical Channel
+// Number) to its downlink frequency in Hz. Two implementations ship:
+// LinearBandPlan for sites that lay channels out on a regular
+// base+spacing grid, and TableBandPlan for the irregular cases (where
+// the operator hand-codes the LCN → Hz mapping from a license /
+// coordination database).
 type Resolver interface {
-	Frequency(lcn uint8) (uint32, error)
+	Frequency(lcn uint16) (uint32, error)
 }
 
 // ErrUnknownLCN is returned by a Resolver when the supplied LCN is
@@ -31,7 +32,7 @@ type LinearBandPlan struct {
 	Offset    int8 // typically 1 to match LCN-1-indexed sites
 }
 
-func (b LinearBandPlan) Frequency(lcn uint8) (uint32, error) {
+func (b LinearBandPlan) Frequency(lcn uint16) (uint32, error) {
 	if b.SpacingHz == 0 {
 		return 0, fmt.Errorf("dmr/tier3: linear band plan needs non-zero SpacingHz")
 	}
@@ -48,9 +49,9 @@ func (b LinearBandPlan) Frequency(lcn uint8) (uint32, error) {
 
 // TableBandPlan is a hand-coded LCN → Hz lookup. The map is consulted
 // directly; missing keys return ErrUnknownLCN.
-type TableBandPlan map[uint8]uint32
+type TableBandPlan map[uint16]uint32
 
-func (t TableBandPlan) Frequency(lcn uint8) (uint32, error) {
+func (t TableBandPlan) Frequency(lcn uint16) (uint32, error) {
 	hz, ok := t[lcn]
 	if !ok {
 		return 0, fmt.Errorf("%w: lcn=%d", ErrUnknownLCN, lcn)

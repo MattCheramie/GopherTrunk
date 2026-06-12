@@ -2,53 +2,59 @@ package tier3
 
 import "encoding/binary"
 
-// TVGrant (CSBKO 0x30) is the TalkGroup Voice Channel Grant per ETSI
-// TS 102 361-4 §7.1.2.1. Payload layout (8 octets):
+// TVGrant (CSBKO 0x31) is the TalkGroup Voice Channel Grant per ETSI
+// TS 102 361-4 §7.2. The channel-grant CSBKs share a common content
+// layout that leads with the Logical Physical Channel Number, NOT with
+// service options. Within the 8-octet payload (bits 16-79 of the CSBK,
+// indexed here as payload bits 0-63):
 //
-//	octet 0   : Service Options
-//	octet 1-3 : Destination address (talkgroup, 24-bit)
-//	octet 4-6 : Source address (subscriber, 24-bit)
-//	octet 7   : bit 7 = Timeslot (0 = TS1, 1 = TS2)
-//	            bits 6-0 = LCN (Logical Channel Number, 7-bit)
+//	payload bits 0-11  : LPCN (Logical Physical Channel Number, 12-bit)
+//	payload bit  12    : Timeslot (0 = TS1, 1 = TS2) — the 13th bit of
+//	                     the combined LPCN+TS "logical slot number"
+//	payload bits 13-15 : status/flags (unused here)
+//	octets 2-4         : Target/Group address (24-bit)
+//	octets 5-7         : Source/subscriber address (24-bit)
+//
+// Cross-checked against the dsd-neo reference decoder (dmr_csbk_parse.c):
+// LPCN at bit 16, target at bit 32, source at bit 56 of the full CSBK.
+// The earlier layout read "LCN" from octet 7 — which is actually the low
+// byte of the 24-bit source address — so the decoded LCN changed with
+// every transmitting radio (issue #639).
 //
 // The LCN feeds a per-system band-plan resolver to recover the
 // downlink frequency the engine retunes a Voice device to.
 type TVGrant struct {
-	ServiceOptions uint8
-	GroupAddress   uint32 // 24-bit
-	SourceID       uint32 // 24-bit
-	LCN            uint8  // 7-bit logical channel number
-	Timeslot       uint8  // 0 = TS1, 1 = TS2
+	GroupAddress uint32 // 24-bit
+	SourceID     uint32 // 24-bit
+	LCN          uint16 // 12-bit logical physical channel number
+	Timeslot     uint8  // 0 = TS1, 1 = TS2
 }
 
 func ParseTVGrant(p [8]byte) TVGrant {
 	return TVGrant{
-		ServiceOptions: p[0],
-		GroupAddress:   uint32(p[1])<<16 | uint32(p[2])<<8 | uint32(p[3]),
-		SourceID:       uint32(p[4])<<16 | uint32(p[5])<<8 | uint32(p[6]),
-		LCN:            p[7] & 0x7F,
-		Timeslot:       (p[7] >> 7) & 0x01,
+		LCN:          uint16(p[0])<<4 | uint16(p[1])>>4,
+		Timeslot:     (p[1] >> 3) & 0x01,
+		GroupAddress: uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]),
+		SourceID:     uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
 	}
 }
 
-// PVGrant (CSBKO 0x31) is the Private Voice Channel Grant. Layout
+// PVGrant (CSBKO 0x30) is the Private Voice Channel Grant. Layout
 // matches TVGrant but the destination address is a subscriber rather
-// than a talkgroup. The same LCN + Timeslot encoding applies.
+// than a talkgroup. The same LPCN + Timeslot encoding applies.
 type PVGrant struct {
-	ServiceOptions uint8
-	DestinationID  uint32 // 24-bit
-	SourceID       uint32 // 24-bit
-	LCN            uint8
-	Timeslot       uint8
+	DestinationID uint32 // 24-bit
+	SourceID      uint32 // 24-bit
+	LCN           uint16
+	Timeslot      uint8
 }
 
 func ParsePVGrant(p [8]byte) PVGrant {
 	return PVGrant{
-		ServiceOptions: p[0],
-		DestinationID:  uint32(p[1])<<16 | uint32(p[2])<<8 | uint32(p[3]),
-		SourceID:       uint32(p[4])<<16 | uint32(p[5])<<8 | uint32(p[6]),
-		LCN:            p[7] & 0x7F,
-		Timeslot:       (p[7] >> 7) & 0x01,
+		LCN:           uint16(p[0])<<4 | uint16(p[1])>>4,
+		Timeslot:      (p[1] >> 3) & 0x01,
+		DestinationID: uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]),
+		SourceID:      uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
 	}
 }
 

@@ -1147,8 +1147,8 @@ type SystemConfig struct {
 	// Ignored for non-P25-Phase-1 protocols.
 	P25BandPlan []P25BandPlanEntryConfig `yaml:"p25_band_plan"`
 
-	// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried
-	// in each DMR Tier III voice-grant CSBK to a downlink frequency.
+	// DMRBandPlan maps the 12-bit Logical (Physical) Channel Number (LCN)
+	// carried in each DMR Tier III voice-grant CSBK to a downlink frequency.
 	// REQUIRED for T3 voice — T3 grants reference a channel by LCN, not
 	// an absolute frequency, so without this plan every grant is
 	// dropped with decode.error stage=no-bandplan. Provide exactly one
@@ -1203,7 +1203,7 @@ type DMRLinearBandPlanConfig struct {
 // DMRBandPlanTableEntryConfig is one explicit LCN→downlink-frequency
 // mapping for sites whose channels don't fall on a regular grid.
 type DMRBandPlanTableEntryConfig struct {
-	LCN    uint8  `yaml:"lcn"`
+	LCN    uint16 `yaml:"lcn"`
 	FreqHz uint32 `yaml:"freq_hz"`
 }
 
@@ -1758,7 +1758,7 @@ func validateSystem(i int, s SystemConfig) error {
 			}
 		}
 		if hasTable {
-			seenLCN := make(map[uint8]int, len(bp.Table))
+			seenLCN := make(map[uint16]int, len(bp.Table))
 			for k, e := range bp.Table {
 				if e.FreqHz == 0 {
 					return fmt.Errorf("trunking.systems[%d].dmr_band_plan.table[%d]: freq_hz required (nonzero)", i, k)

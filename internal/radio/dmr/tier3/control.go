@@ -191,7 +191,7 @@ func (c *ControlChannel) handleBroadcast(cc uint8, b BroadcastAnnouncement) {
 // DMR call's slot becomes part of the engine's (frequency, timeslot)
 // call identity — both slots of a 12.5 kHz carrier carry independent
 // calls.
-func (c *ControlChannel) publishGrant(cc, lcn, slot uint8, group, source uint32, serviceOptions uint8) (uint32, bool) {
+func (c *ControlChannel) publishGrant(cc uint8, lcn uint16, slot uint8, group, source uint32) (uint32, bool) {
 	// Observe the granted LCN before resolution so the autoconfig learner
 	// sees it even when no band plan is configured yet (the very case it
 	// exists to fix). Additive: success/no-bandplan behaviour is unchanged.
@@ -221,19 +221,20 @@ func (c *ControlChannel) publishGrant(cc, lcn, slot uint8, group, source uint32,
 			SourceID:            source,
 			FrequencyHz:         freq,
 			ChannelID:           cc,
-			ChannelNum:          uint16(lcn),
+			ChannelNum:          lcn,
 			Timeslot:            slot + 1,
 			DMRInterleavedVoice: c.interleavedVoice,
-			Encrypted:           serviceOptions&0x40 != 0,
-			Emergency:           serviceOptions&0x80 != 0,
-			At:                  c.now(),
+			// Encrypted/Emergency are not carried in the ETSI channel-grant
+			// CSBK content (which leads with the LPCN, not service options);
+			// DMR privacy is signaled in the voice LC, not the grant.
+			At: c.now(),
 		},
 	})
 	return freq, true
 }
 
 func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.GroupAddress, g.SourceID)
 	if !ok {
 		return
 	}
@@ -243,7 +244,7 @@ func (c *ControlChannel) publishTVGrant(cc uint8, g TVGrant) {
 }
 
 func (c *ControlChannel) publishPVGrant(cc uint8, g PVGrant) {
-	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID, g.ServiceOptions)
+	freq, ok := c.publishGrant(cc, g.LCN, g.Timeslot, g.DestinationID, g.SourceID)
 	if !ok {
 		return
 	}
@@ -271,7 +272,7 @@ func (c *ControlChannel) HasResolver() bool {
 	return c.resolver != nil
 }
 
-func (c *ControlChannel) resolveLCN(lcn uint8) (uint32, bool) {
+func (c *ControlChannel) resolveLCN(lcn uint16) (uint32, bool) {
 	c.resolverMu.RLock()
 	resolver := c.resolver
 	c.resolverMu.RUnlock()

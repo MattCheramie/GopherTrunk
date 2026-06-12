@@ -25,6 +25,23 @@ for tagged releases.
 
 ### Fixed
 
+- **DMR Tier III voice-grant LCN read from the wrong bits (#639).** The
+  TalkGroup/Private voice-grant CSBK parser used the wrong field layout: it
+  read the "LCN" from the last payload octet — which is actually the low byte
+  of the 24-bit source (subscriber) address — so the decoded Logical Channel
+  Number changed with every transmitting radio, even on a system with only a
+  couple of fixed channels. The grant content actually leads with a 12-bit
+  Logical Physical Channel Number (LPCN), followed by the target then source
+  addresses (per ETSI TS 102 361-4, cross-checked against the dsd-neo decoder).
+  The parser now extracts the LPCN from the leading payload bits and the
+  addresses from their correct octets, and the LCN is widened from 7 to 12 bits
+  end-to-end (parser, band-plan resolver, autoconfig learner, config, events).
+  This unbreaks both operator-supplied `dmr_band_plan` tables and the LCN
+  autoconfiguration learner, which previously never converged because it saw a
+  fresh LCN on every call. (Encrypted/Emergency are no longer reported from a
+  DMR grant — those are signaled in the voice Link Control, not the channel
+  grant CSBK.)
+
 - **DMR now decodes real over-the-air control channels.** The DMR receiver
   previously decoded only the zero-offset, level-matched synthesized fixtures;
   on a real SDR capture every BPTC(196,96) payload came back uncorrectable, so

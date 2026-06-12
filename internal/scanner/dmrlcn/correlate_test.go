@@ -7,7 +7,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 )
 
-func grantAt(lcn uint8, at time.Time) events.DMRGrantObserved {
+func grantAt(lcn uint16, at time.Time) events.DMRGrantObserved {
 	return events.DMRGrantObserved{System: "S", LCN: lcn, GroupID: uint32(lcn) * 10, At: at}
 }
 

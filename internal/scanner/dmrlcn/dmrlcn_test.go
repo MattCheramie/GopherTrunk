@@ -29,7 +29,7 @@ func (s stubConfirmer) Confirm(_ context.Context, freqHz uint32) (bool, float64)
 
 // feed drives one grant+onset coincidence through the learner's core
 // (correlator → confirm → fit), as Run would but synchronously.
-func (l *Learner) feed(t *testing.T, lcn uint8, freqHz uint32, at time.Time) {
+func (l *Learner) feed(t *testing.T, lcn uint16, freqHz uint32, at time.Time) {
 	t.Helper()
 	l.corr.addGrant(events.DMRGrantObserved{System: l.system, LCN: lcn, At: at})
 	cand, ok := l.corr.matchOnset(CarrierOnset{FreqHz: freqHz, At: at.Add(300 * time.Millisecond)})
@@ -64,7 +64,7 @@ func TestLearnerLocksAndAppliesPlan(t *testing.T) {
 
 	// Grid: base 851_000_000, spacing 12.5 kHz, offset 1.
 	base := time.Unix(1_700_000_000, 0)
-	for i, lcn := range []uint8{1, 2, 3, 4, 5} {
+	for i, lcn := range []uint16{1, 2, 3, 4, 5} {
 		freq := uint32(851_000_000 + int(lcn-1)*12_500)
 		l.feed(t, lcn, freq, base.Add(time.Duration(i)*time.Second))
 	}
@@ -112,7 +112,7 @@ func TestLearnerStaysOpenBelowMinLCNs(t *testing.T) {
 		Confirmer:    stubConfirmer{weight: 1},
 	})
 	base := time.Unix(1_700_000_000, 0)
-	for i, lcn := range []uint8{1, 2, 3} { // 3 < default MinLCNs (4)
+	for i, lcn := range []uint16{1, 2, 3} { // 3 < default MinLCNs (4)
 		l.feed(t, lcn, uint32(851_000_000+int(lcn-1)*12_500), base.Add(time.Duration(i)*time.Second))
 	}
 	if l.Locked() {

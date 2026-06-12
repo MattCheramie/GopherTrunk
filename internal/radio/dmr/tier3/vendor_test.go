@@ -28,13 +28,14 @@ func TestVendorFromFID(t *testing.T) {
 	}
 }
 
-// tvGrantPayload builds the 8-octet TVGrant CSBK payload.
-func tvGrantPayload(group, source uint32, lcn uint8) [8]byte {
+// tvGrantPayload builds the 8-octet TVGrant CSBK payload: LPCN in the
+// leading 12 bits (TS bit clear → TS1), target then source addresses.
+func tvGrantPayload(group, source uint32, lcn uint16) [8]byte {
 	return [8]byte{
-		0x00,
+		byte(lcn >> 4),
+		byte((lcn & 0x0F) << 4),
 		byte(group >> 16), byte(group >> 8), byte(group),
 		byte(source >> 16), byte(source >> 8), byte(source),
-		lcn & 0x7F,
 	}
 }
 
@@ -78,8 +79,8 @@ func TestMotorolaVendorGrantEmitted(t *testing.T) {
 			if g.Protocol != "dmr-tier3" {
 				t.Errorf("grant protocol = %q", g.Protocol)
 			}
-			// tvGrantPayload masks byte 7 to lcn&0x7F, so the slot bit is
-			// clear → CSBK TS1 → 1-based Timeslot 1.
+			// tvGrantPayload leaves the TS bit clear → CSBK TS1 → 1-based
+			// Timeslot 1.
 			if g.Timeslot != 1 {
 				t.Errorf("grant Timeslot = %d, want 1 (TS1)", g.Timeslot)
 			}
