@@ -168,3 +168,97 @@ func ParseSystemInfoBroadcast(p [8]byte) SystemInfoBroadcast {
 		NetMask:  p[4],
 	}
 }
+
+// DataGrant is the parsed content of a data-channel grant CSBK —
+// PD_GRANT (CSBKO 0x33, private data) or TD_GRANT (CSBKO 0x34, talkgroup
+// data). The on-air content matches the voice channel-grant layout
+// (LPCN + Timeslot + 24-bit target + 24-bit source); only the granted
+// service (data vs voice) differs, so the parser is shared with TVGrant's
+// bit layout and a Private discriminator. Unlike a voice grant a data
+// grant does NOT cause the engine to retune a Voice device — packet data
+// is not vocoded — so the control channel records the LCN observation for
+// the band-plan learner but does not follow the call (see observeDataGrant).
+type DataGrant struct {
+	TargetID uint32 // 24-bit: talkgroup (TD) or subscriber (PD)
+	SourceID uint32 // 24-bit subscriber
+	LCN      uint16 // 12-bit logical physical channel number
+	Timeslot uint8  // 0 = TS1, 1 = TS2
+	Private  bool   // true = PD_GRANT (private), false = TD_GRANT (talkgroup)
+}
+
+// ParseDataGrant decodes a PD_GRANT / TD_GRANT payload. The bit layout is
+// identical to ParseTVGrant; private selects PD (true) vs TD (false).
+func ParseDataGrant(p [8]byte, private bool) DataGrant {
+	return DataGrant{
+		LCN:      uint16(p[0])<<4 | uint16(p[1])>>4,
+		Timeslot: (p[1] >> 3) & 0x01,
+		TargetID: uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]),
+		SourceID: uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+		Private:  private,
+	}
+}
+
+// Inbound / reverse-channel and acknowledgement CSBKs.
+//
+// C_RAND (CSBKO 0x1F) is the random-access service request a mobile sends
+// to the TSCC on the reverse (uplink) channel — the inbound counterpart of
+// the outbound C_AHOY poll (CSBKO 0x1C). C_ACKVIT / C_ACKD / C_ACKU
+// (0x1E / 0x20 / 0x21) and the negative-ack (0x26) are the acknowledged-
+// response family. None of these key up voice and GopherTrunk does not act
+// on them; they are parsed for control-plane visibility (debug logging)
+// the way a reference decoder surfaces them.
+//
+// Addressing follows the grant-family convention validated against the
+// dsd-neo decoder: a 24-bit target at octets 2-4 and a 24-bit source at
+// octets 5-7, with a leading Service octet (payload[0]) carrying the
+// opcode-specific service kind. Pinned against the only real off-air
+// vectors available — the C_AHOY and C_ACKD bursts in
+// csbk_realvectors_test.go (C_AHOY: target 0x0002D0, source 0xFFFECA;
+// C_ACKD: target 0x000345, source 0xFFFEC6). The finer per-opcode service
+// sub-fields are left unparsed pending dedicated reverse-channel captures;
+// no field here is invented beyond what those two vectors confirm.
+
+// csbkTarget / csbkSource read the grant-family 24-bit target (octets 2-4)
+// and source (octets 5-7) addresses shared by the addressed CSBKs.
+func csbkTarget(p [8]byte) uint32 { return uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]) }
+func csbkSource(p [8]byte) uint32 { return uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]) }
+
+// RandomAccess is a parsed C_RAND (CSBKO 0x1F) inbound service request.
+type RandomAccess struct {
+	Service  uint8  // payload[0]: opcode-specific service kind
+	TargetID uint32 // 24-bit
+	SourceID uint32 // 24-bit requesting subscriber
+}
+
+// ParseRandomAccess decodes a C_RAND payload.
+func ParseRandomAccess(p [8]byte) RandomAccess {
+	return RandomAccess{Service: p[0], TargetID: csbkTarget(p), SourceID: csbkSource(p)}
+}
+
+// Ahoy is a parsed C_AHOY (CSBKO 0x1C) outbound poll / service request.
+type Ahoy struct {
+	Service  uint8
+	TargetID uint32
+	SourceID uint32
+}
+
+// ParseAhoy decodes a C_AHOY payload.
+func ParseAhoy(p [8]byte) Ahoy {
+	return Ahoy{Service: p[0], TargetID: csbkTarget(p), SourceID: csbkSource(p)}
+}
+
+// Ack is a parsed acknowledged-response CSBK (C_ACKVIT / C_ACKD / C_ACKU)
+// or a negative acknowledgement (CSBKO 0x26). Opcode retains which variant
+// it was so a single handler can log it.
+type Ack struct {
+	Opcode   CSBKOpcode
+	Service  uint8
+	TargetID uint32
+	SourceID uint32
+}
+
+// ParseAck decodes an acknowledged-response / NACK payload, tagging it with
+// the originating opcode.
+func ParseAck(op CSBKOpcode, p [8]byte) Ack {
+	return Ack{Opcode: op, Service: p[0], TargetID: csbkTarget(p), SourceID: csbkSource(p)}
+}

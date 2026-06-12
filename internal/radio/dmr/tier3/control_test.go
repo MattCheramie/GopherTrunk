@@ -11,8 +11,11 @@ import (
 )
 
 // burstWithCSBK packs a CSBK into a DMR burst's payload halves.
-func burstWithCSBK(c CSBK) *dmr.Burst {
-	info := AssembleCSBK(c)
+func burstWithCSBK(c CSBK) *dmr.Burst { return burstWithInfoBlock(AssembleCSBK(c)) }
+
+// burstWithInfoBlock BPTC(196,96)-encodes a 12-byte information block into a
+// DMR burst's two payload halves. Shared by the CSBK and MBC tests.
+func burstWithInfoBlock(info []byte) *dmr.Burst {
 	bits := make([]byte, 96)
 	for i := 0; i < 96; i++ {
 		bits[i] = (info[i>>3] >> uint(7-(i&7))) & 1

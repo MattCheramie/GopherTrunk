@@ -66,10 +66,14 @@ func (c *ControlChannel) handleVendorCSBK(vendor Vendor, cc uint8, csbk CSBK) {
 	switch vendor {
 	case VendorMotorola:
 		switch csbk.Opcode {
-		case OpTVGrant:
+		case OpTVGrant, OpBTVGrant:
 			c.publishVendorTVGrant(vendor, cc, ParseTVGrant(csbk.Payload))
 		case OpPVGrant:
 			c.publishVendorPVGrant(vendor, cc, ParsePVGrant(csbk.Payload))
+		case OpPDGrant:
+			c.observeDataGrant(cc, ParseDataGrant(csbk.Payload, true))
+		case OpTDGrant:
+			c.observeDataGrant(cc, ParseDataGrant(csbk.Payload, false))
 		case OpBcast, OpAloha:
 			// Capacity Plus advertises its current rest channel in
 			// the system-info / broadcast CSBK; the LCN field doubles
