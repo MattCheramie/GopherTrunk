@@ -7,6 +7,31 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-06-12
+
+This release is mostly about **DMR**. The receiver now decodes real
+over-the-air control channels end-to-end (a symbol-AGC normalises the
+matched-filter level so live BPTC/RS FEC actually passes), and Tier III
+gained the pieces needed to follow a trunked system you didn't hand-configure:
+**LCN band-plan autoconfiguration** learns the channel layout from the
+wideband stream and hot-swaps it into the running control channel (#638), the
+**CSBK opcode table** was rebuilt to the ETSI values so the control log stops
+mislabelling broadcasts and grants (#640), and **data grants, MBC assembly,
+inbound/ack CSBKs, and the embedded Reverse Channel** are now parsed (#643,
+#646). On the voice side, Tier III recordings default to the 2-slot
+interleaved decoder so two timeslots no longer splice into "encrypted"-sounding
+noise (#644), and the voice-grant LCN is read from the correct bits so the
+band-plan learner converges (#639). Audio playback gets **per-call loudness
+normalization** (pure-Go EBU R128 / BS.1770, no ffmpeg) so calls from
+different talkgroups play back at a consistent level (#627), plus an onset-clip
+fix that caps per-frame AGC gain at the limiter knee (#635). The Plots hub adds
+the **Mixer** plot — completing parity with OP25's six Plots tabs — and the
+Spectrum panel gains a live **spectrum-analyzer trace** above the waterfall
+(#634). Finally, a wideband **symbol-clock drift** fix lands the #402 effective
+sample-rate correction on the Tier-II/III and virtual-voice DDCs so marginal
+wideband captures decode (#633), and a live **Hunt** no longer dead-ends when
+no control SDR is configured (#641).
+
 ### Added
 
 - **Mixer plot — the last of OP25's Plots tabs.** A new **Mixer** plot
@@ -22,6 +47,80 @@ for tagged releases.
   wideband Spectrum FFT helper, and needs no new receiver tap — the tuned
   view is reconstructed from the loop's own `carrier_offset_hz`, so it
   works for both C4FM and CQPSK. See [docs/mixer.md](docs/mixer.md).
+- **Spectrum-analyzer trace above the waterfall** (#634). The Spectrum panel
+  now draws a live power-vs-frequency curve (the "spectrum analyzer" line, like
+  SDR#'s top panel) above the existing waterfall. It reuses the same
+  `SpectrumFrame` WebSocket stream, the same `[-100, 0]` dBFS range, and the
+  same FFT-shifted bin→x mapping, so a peak in the analyzer lines up vertically
+  with its streak in the waterfall below. It has its own 20 dB grid and a fill
+  under the curve; hover and click-to-tune now work on either view.
+- **Per-call loudness normalization (EBU R128 / BS.1770), pure Go** (#627). An
+  optional integrated-loudness stage normalises finished recordings to a target
+  LUFS — the same thing rdio-scanner gets from ffmpeg's `loudnorm`, but with no
+  CGO and no ffmpeg, so the single-static-binary guarantee holds. A new
+  `internal/dsp/loudness` package implements K-weighting biquads (designed by
+  bilinear transform for any rate, so it works at 8 kHz voice), gated
+  integrated-LUFS measurement, and 4× oversampled true-peak. It mirrors
+  ffmpeg's two-pass linear `loudnorm`: measure the whole call, apply a single
+  gain toward the target (clamped to ±`max_boost_db`), then back off so the true
+  peak stays under the dBTP ceiling — pure gain, no compression, so within-call
+  dynamics are preserved. Opt-in via `recordings.normalize.{enabled,target_lufs,
+  true_peak_dbtp,max_boost_db}`, with an `apply_to` switch
+  (`recording` / `distributed` / `both`) choosing whether the on-disk WAV, the
+  outbound broadcast/stream MP3, or both get normalised. `gophertrunk decode
+  -normalize` runs the same pass on a captured `.raw` for offline A/B. Off by
+  default; see [docs/opt-in-features.md](docs/opt-in-features.md).
+- **DMR Tier III trunk autoconfiguration (LCN band-plan learning)** (#638). A
+  Tier III control channel transmits only a Logical Channel Number in voice
+  grants, never an absolute frequency, so following voice previously required a
+  hand-configured `dmr_band_plan` — without it every grant was dropped with
+  `decode.error stage=no-bandplan`. GopherTrunk can now learn that band plan
+  from its wideband acquisition: it observes the granted LCNs, detects which RF
+  carriers key up in response across the dongle's IQ band, decode-confirms each
+  is a live DMR burst, and fits the base frequency + channel spacing (snapped to
+  the 6.25/12.5/25 kHz grids) for the whole LCN enumeration. The learned plan is
+  hot-swapped into the running control channel — previously-dropped grants start
+  following voice immediately — and written back to the config file
+  (comment-preserving) so it survives a restart. Auto-enables for any planless
+  wideband DMR Tier III system; a configured plan stays authoritative and
+  disables learning.
+
+### Changed
+
+- **DMR Tier III CSBK opcode table rebuilt to the ETSI values** (#640). The
+  Tier III CSBKO constants were wrong in several places, so the control-channel
+  log mislabelled traffic and looked sparse next to dsd-neo: `0x28` was shown as
+  "Preamble" but is really `C_BCAST` (broadcast announcements — every
+  "opcode=Preamble" line was actually a broadcast), the voice-grant opcodes were
+  swapped, and `SystemInfo`/`AdjStatus` were invented standalone opcodes that
+  never matched real traffic. The table is rebuilt to ETSI TS 102 361-4 (names
+  mirror dsd-neo: `C_ALOHA`, `C_AHOY`, `C_ACKD`, `C_BCAST`, the PV/TV/BTV/PD/TD
+  grants, `C_MOVE`, real `Preamble` at `0x3D`); `C_BCAST` announcements
+  (`Gen_Site_Params`, `Adjacent_Site`) now fold into the topology model, and
+  every standard CSBK is logged at debug so the dominant Aloha beacon is visible
+  instead of being silently consumed after lock. Pinned with real off-air
+  vectors.
+- **DMR Tier III data grants, MBC assembly, and inbound CSBKs** (#643, issue
+  #626). Several CSBK opcodes and the multi-block-control data types were
+  recognised but never acted on. Data-channel grants are now handled:
+  `BTV_GRANT` (a broadcast *voice* call) is followed like a TV grant, while
+  `PD_GRANT`/`TD_GRANT` (*data* grants) feed the LCN learner but are
+  deliberately not published as voice grants, so the engine never retunes a
+  voice device onto a packet channel. MBC header + continuation bursts are now
+  buffered by a per-colour-code assembler that closes on the `LB=1` terminator
+  and dispatches channel-grant opcodes (per-block BPTC FEC gates each block).
+  Inbound/ack CSBKs — `C_RAND`, `C_AHOY`, and the `C_ACKVIT`/`C_ACKD`/`C_ACKU`/
+  `NACK` family — are now parsed and surfaced at debug, with address offsets
+  pinned to real off-air vectors. (USB packet-data payloads remain out of scope
+  — this is a trunking scanner, not a data decoder.)
+- **DMR embedded Reverse Channel decode** (#646). The earlier
+  `C_RAND`/`C_AHOY`/`ACK` additions are uplink/ack CSBKs and were over-broadly
+  labelled "reverse-channel"; that terminology is corrected to "inbound
+  (uplink)". The actual Reverse Channel — which is not a CSBK but rides a burst's
+  embedded-signalling field — is now decoded from the single-fragment
+  (`LCSS=Single`) embedded field a downlink receiver actually observes, surfaced
+  on the voice superframe and debug-logged. (The (32,11) FEC parity is preserved
+  but not yet applied — capture-pending, like the EMB QR(16,7) and MBC CRC.)
 
 ### Fixed
 
@@ -79,6 +178,37 @@ for tagged releases.
   `cc=15`) that then produced nothing. The lock is now gated on a FEC-validated
   Voice LC Header (BPTC + RS both pass), mirroring Tier III's lock-after-CRC
   discipline.
+- **Symbol-clock drift on wideband DMR/voice down-converters (#402)** (#633).
+  The control-channel decoder already built its DDC from the SDR's *actual*
+  delivered sample rate (the RTL2832U quantizes a requested rate to its
+  resampler divisor, so a non-exact-divisor rate like 2.048 MS/s streams
+  slightly off), but the wideband Tier-II/III engine and the wideband virtual
+  voice taps still built their per-channel DDCs from the raw configured
+  `sample_rate`. On a non-exact rate the tap output wasn't truly 48 kHz, so the
+  DMR receiver's Mueller-Müller clock carried a standing error and the payload
+  failed BPTC/RS FEC even though sync still correlated — the field symptom of
+  "signals look weak / won't decode" on a wideband RTL-SDR that decodes fine in
+  SDR#/SDRTrunk. The effective-rate correction now applies to both wideband
+  paths; exact-divisor configs (2.4 / 0.96 MS/s) are unchanged.
+- **Onset clipping from runaway AGC gain on quiet call starts** (#635). The
+  IMBE/AMBE AGC computed `gain = TargetPeak/envelope`, bounded only by a large
+  `MaxGain`. When a call opened with a near-silent frame the envelope seeded low
+  and the next louder frame — or a frozen bad-frame replay reusing the held gain
+  — was multiplied by a huge gain, slamming every sample into the soft limiter
+  (field captures showed ~65 % of samples clipped on short onsets). `AGC.Apply`
+  now adds a one-sided, content-aware ceiling that never amplifies a frame's own
+  peak past the limiter knee, so ordinary frames and the attack/release dynamics
+  are unchanged — it can only reduce clipping, and it applies to frozen replays
+  too.
+- **Live Hunt failed when no control SDR was assigned** (#641). A live hunt
+  always bailed with "no SDR with an IQ broker available for a live hunt"
+  whenever no trunked system was configured — the auto-select path only
+  considered a spare voice SDR or the control SDR, but the control serial is
+  only set when a trunked system exists. The natural discovery workflow (point
+  one SDR at the air to find an unknown system, nothing configured) left that
+  serial empty and dead-ended even with a usable SDR sitting idle, as did
+  wideband-only rigs and dongles with a blank USB serial. A last-resort fallback
+  now picks any pooled SDR that has a broker.
 - **`iq-capture` now warns on dropped chunks.** A non-zero `drops` count means
   the capture writer fell behind the IQ stream (subscriber buffer full) — not an
   SDR overflow — leaving time gaps that corrupt downstream decode. The finish
