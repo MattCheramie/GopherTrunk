@@ -612,7 +612,7 @@ trunking:
       # rid_alias_file: "../config/rids-p25.csv"
 
     # DMR Tier III trunked system. A T3 voice-grant CSBK references its
-    # traffic channel by a 7-bit Logical Channel Number (LCN), never an
+    # traffic channel by a 12-bit Logical Channel Number (LCN), never an
     # absolute frequency, so the decoder needs a `dmr_band_plan` to map
     # LCN → downlink Hz. Provide exactly one of `linear` or `table`.
     #

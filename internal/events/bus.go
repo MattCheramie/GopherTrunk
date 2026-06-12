@@ -254,7 +254,7 @@ type DecodeError struct {
 type DMRGrantObserved struct {
 	System    string
 	ColorCode uint8
-	LCN       uint8
+	LCN       uint16
 	Timeslot  uint8
 	GroupID   uint32
 	SourceID  uint32
@@ -282,7 +282,7 @@ type DMRBandPlanLearned struct {
 // DMRBandPlanLCN is one explicit LCN→downlink-frequency entry in a
 // learned irregular (table) band plan.
 type DMRBandPlanLCN struct {
-	LCN    uint8
+	LCN    uint16
 	FreqHz uint32
 }
 

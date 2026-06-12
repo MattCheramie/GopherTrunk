@@ -7,13 +7,13 @@ import (
 )
 
 // resolve evaluates a linear plan at an LCN the way tier3.LinearBandPlan does.
-func resolve(lp *trunking.DMRLinearBandPlan, lcn uint8) uint32 {
+func resolve(lp *trunking.DMRLinearBandPlan, lcn uint16) uint32 {
 	return uint32(int64(lp.BaseHz) + (int64(lcn)-int64(lp.Offset))*int64(lp.SpacingHz))
 }
 
 // linearPairs builds confirmed pairs on a regular grid:
 // freq = base + (lcn-offset)*spacing, weight 1.
-func linearPairs(base uint32, spacing uint32, offset int8, lcns ...uint8) []Pair {
+func linearPairs(base uint32, spacing uint32, offset int8, lcns ...uint16) []Pair {
 	out := make([]Pair, 0, len(lcns))
 	for _, l := range lcns {
 		f := int64(base) + (int64(l)-int64(offset))*int64(spacing)
@@ -34,7 +34,7 @@ func TestFitLinearCleanGrids(t *testing.T) {
 		{"6.25kHz offset0", 460_000_000, 6_250, 0},
 		{"12.5kHz offset0", 451_000_000, 12_500, 0},
 	}
-	lcns := []uint8{1, 2, 3, 5, 8, 12}
+	lcns := []uint16{1, 2, 3, 5, 8, 12}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pairs := linearPairs(tc.base, tc.spacing, tc.offset, lcns...)
@@ -73,7 +73,7 @@ func TestFitLinearTolerATesSubBinJitter(t *testing.T) {
 	base, spacing := uint32(851_037_500), uint32(12_500)
 	jitter := []int32{+200, -150, +300, -250, +100, -300}
 	pairs := make([]Pair, 0, len(jitter))
-	for i, l := range []uint8{1, 2, 3, 4, 6, 9} {
+	for i, l := range []uint16{1, 2, 3, 4, 6, 9} {
 		f := int64(base) + (int64(l)-1)*int64(spacing) + int64(jitter[i])
 		pairs = append(pairs, Pair{LCN: l, FreqHz: uint32(f), Weight: 1})
 	}

@@ -175,7 +175,7 @@ var fieldMetas = map[string]FieldMeta{
 	"DMRLinearBandPlanConfig.BaseHz":     {Label: "Base frequency", Hz: true, Help: "Downlink frequency of the first LCN."},
 	"DMRLinearBandPlanConfig.SpacingHz":  {Label: "Spacing", Hz: true, Help: "Frequency step between consecutive LCNs."},
 	"DMRLinearBandPlanConfig.Offset":     {Help: "LCN the grid starts numbering from. Set 1 for sites that number LCNs from 1."},
-	"DMRBandPlanTableEntryConfig.LCN":    {Label: "LCN", Help: "7-bit Logical Channel Number from the grant CSBK."},
+	"DMRBandPlanTableEntryConfig.LCN":    {Label: "LCN", Help: "12-bit Logical (Physical) Channel Number from the grant CSBK."},
 	"DMRBandPlanTableEntryConfig.FreqHz": {Label: "Frequency", Hz: true, Help: "Downlink frequency this LCN maps to."},
 
 	"EncryptionKeyConfig.KeyID":     {Label: "Key ID", Help: "Key identifier the radios carry in the privacy header, so a system that rotates keys still resolves."},

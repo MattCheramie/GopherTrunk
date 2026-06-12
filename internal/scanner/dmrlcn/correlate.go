@@ -20,7 +20,7 @@ const (
 // produced from a grant/onset coincidence. It still needs decode
 // confirmation before it is trusted as a fit Pair.
 type Candidate struct {
-	LCN    uint8
+	LCN    uint16
 	FreqHz uint32
 	Grant  events.DMRGrantObserved
 }
@@ -69,7 +69,7 @@ func (c *correlator) addGrant(obs events.DMRGrantObserved) {
 // so they don't re-match a later onset.
 func (c *correlator) matchOnset(o CarrierOnset) (Candidate, bool) {
 	var (
-		lcn      uint8
+		lcn      uint16
 		grant    events.DMRGrantObserved
 		idxs     []int
 		haveLCN  bool

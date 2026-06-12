@@ -108,12 +108,12 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 		Resolver:    LinearBandPlan{BaseHz: 866_000_000, SpacingHz: 25_000, Offset: 1},
 		Now:         func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 	})
-	// Service options 0xC0 = encrypted+emergency, dst 0x123456, src 0xABCDEF,
-	// byte 7 = 0x88 → TS2, LCN 8.
+	// LPCN 8 (p[0]=0, p[1]=8<<4|1<<3=0x88 → TS2), group 0x123456 at
+	// octets 2-4, source 0xABCDEF at octets 5-7.
 	csbk := CSBK{
 		LB:      true,
 		Opcode:  OpTVGrant,
-		Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88},
+		Payload: [8]byte{0x00, 0x88, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF},
 	}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
 
@@ -141,10 +141,12 @@ func TestControlChannelPublishesTVGrant(t *testing.T) {
 			if g.FrequencyHz != 866_175_000 {
 				t.Errorf("freq = %d, want 866_175_000", g.FrequencyHz)
 			}
-			if !g.Encrypted || !g.Emergency {
-				t.Errorf("flags = enc=%v emer=%v, want both", g.Encrypted, g.Emergency)
+			// The ETSI channel-grant CSBK carries no service-options octet,
+			// so Encrypted/Emergency are not derived from a grant.
+			if g.Encrypted || g.Emergency {
+				t.Errorf("flags = enc=%v emer=%v, want both false", g.Encrypted, g.Emergency)
 			}
-			// byte 7 bit 7 set → CSBK TS2 (0-based 1) → 1-based Timeslot 2.
+			// payload bit 12 set → CSBK TS2 (0-based 1) → 1-based Timeslot 2.
 			if g.Timeslot != 2 {
 				t.Errorf("Timeslot = %d, want 2 (TS2)", g.Timeslot)
 			}
@@ -170,7 +172,7 @@ func TestControlChannelGrantCarriesInterleavedFlag(t *testing.T) {
 		Resolver:         TableBandPlan{8: 866_175_000},
 		InterleavedVoice: true,
 	})
-	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88}}
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x88, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF}}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 3, DataType: dmr.DTCSBK})
 
 	deadline := time.After(time.Second)
@@ -202,10 +204,12 @@ func TestControlChannelPublishesPVGrant(t *testing.T) {
 		FrequencyHz: 851_000_000,
 		Resolver:    TableBandPlan{4: 462_550_000},
 	})
+	// LPCN 4 (p[1]=4<<4=0x40, TS1), dst 0x001234 at octets 2-4, src
+	// 0x00ABCD at octets 5-7.
 	csbk := CSBK{
 		LB:      true,
 		Opcode:  OpPVGrant,
-		Payload: [8]byte{0x00, 0x00, 0x12, 0x34, 0x00, 0xAB, 0xCD, 0x04},
+		Payload: [8]byte{0x00, 0x40, 0x00, 0x12, 0x34, 0x00, 0xAB, 0xCD},
 	}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 
@@ -223,7 +227,7 @@ func TestControlChannelPublishesPVGrant(t *testing.T) {
 			if g.FrequencyHz != 462_550_000 {
 				t.Errorf("freq = %d, want 462_550_000", g.FrequencyHz)
 			}
-			// byte 7 bit 7 clear → CSBK TS1 (0-based 0) → 1-based Timeslot 1.
+			// payload bit 12 clear → CSBK TS1 (0-based 0) → 1-based Timeslot 1.
 			if g.Timeslot != 1 {
 				t.Errorf("Timeslot = %d, want 1 (TS1)", g.Timeslot)
 			}
@@ -284,7 +288,7 @@ func TestControlChannelGrantOutsideBandPlanEmitsDecodeError(t *testing.T) {
 	csbk := CSBK{
 		LB:      true,
 		Opcode:  OpTVGrant,
-		Payload: [8]byte{0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x01, 0x07}, // LCN 7
+		Payload: [8]byte{0x00, 0x70, 0x00, 0x00, 0x42, 0x00, 0x00, 0x01}, // LPCN 7
 	}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 
@@ -369,8 +373,8 @@ func TestControlChannelEmitsGrantObservedWithResolver(t *testing.T) {
 		Resolver:    LinearBandPlan{BaseHz: 866_000_000, SpacingHz: 25_000, Offset: 1},
 		Now:         func() time.Time { return time.Unix(1_700_000_001, 0).UTC() },
 	})
-	// dst 0x123456, src 0xABCDEF, byte 7 = 0x88 → TS2, LCN 8.
-	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88}}
+	// LPCN 8 (p[1]=0x88 → TS2), group 0x123456, src 0xABCDEF.
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x88, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF}}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 5, DataType: dmr.DTCSBK})
 
 	obs, sawObs, sawGrant, _ := collectGrantObserved(t, sub)
@@ -403,7 +407,8 @@ func TestControlChannelEmitsGrantObservedWithoutResolver(t *testing.T) {
 	// nil Resolver: the LCN must still escape via KindDMRGrantObserved, and
 	// the existing no-bandplan decode error must still fire.
 	cc := New(Options{Bus: bus, SystemName: "ObsSys", FrequencyHz: 851_012_500})
-	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00, 0x0B}}
+	// LPCN 11 (p[1]=0x0B<<4=0xB0).
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0xB0, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00}}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 2, DataType: dmr.DTCSBK})
 
 	obs, sawObs, sawGrant, sawDecodeErr := collectGrantObserved(t, sub)
@@ -432,7 +437,7 @@ func TestControlChannelSetResolverHotSwap(t *testing.T) {
 	if cc.HasResolver() {
 		t.Fatal("HasResolver true before SetResolver")
 	}
-	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00, 0x08}}
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x80, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00}}
 	cc.IngestBurst(burstWithCSBK(csbk), dmr.SlotType{ColorCode: 1, DataType: dmr.DTCSBK})
 	if _, _, sawGrant, sawDecodeErr := collectGrantObserved(t, sub); sawGrant || !sawDecodeErr {
 		t.Fatalf("pre-swap: grant=%v decodeErr=%v, want grant=false decodeErr=true", sawGrant, sawDecodeErr)
@@ -462,7 +467,7 @@ func TestControlChannelSetResolverConcurrent(t *testing.T) {
 	}()
 
 	cc := New(Options{Bus: bus, SystemName: "RaceSys", FrequencyHz: 851_012_500})
-	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00, 0x08}}
+	csbk := CSBK{LB: true, Opcode: OpTVGrant, Payload: [8]byte{0x00, 0x80, 0x00, 0x10, 0x00, 0x00, 0x20, 0x00}}
 	burst := burstWithCSBK(csbk)
 
 	done := make(chan struct{})

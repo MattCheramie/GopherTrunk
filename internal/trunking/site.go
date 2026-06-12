@@ -117,8 +117,9 @@ type P25BandPlanEntry struct {
 	BandwidthHz uint32 // informational; not consulted by BandPlan.Frequency
 }
 
-// DMRBandPlan maps the 7-bit Logical Channel Number (LCN) carried in a
-// DMR Tier III voice-grant CSBK to its downlink frequency. T3 grants
+// DMRBandPlan maps the 12-bit Logical (Physical) Channel Number (LCN)
+// carried in a DMR Tier III voice-grant CSBK to its downlink
+// frequency. T3 grants
 // reference a channel by LCN, never an absolute frequency, so the
 // decoder cannot follow a voice call without this plan — see
 // internal/radio/dmr/tier3 (Resolver / tier3.ResolverFromPlan). The
@@ -144,7 +145,7 @@ type DMRLinearBandPlan struct {
 // DMRBandPlanTableEntry is one explicit LCN→downlink-frequency mapping
 // for sites whose channels don't fall on a regular grid.
 type DMRBandPlanTableEntry struct {
-	LCN    uint8
+	LCN    uint16
 	FreqHz uint32
 }
 

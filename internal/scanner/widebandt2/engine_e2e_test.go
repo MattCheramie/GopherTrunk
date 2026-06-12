@@ -320,14 +320,15 @@ WaitLoop:
 
 // buildT3TVGrantDibits builds a dibit stream of repeated OpTVGrant CSBK
 // bursts (DTCSBK) for the synthesized-IQ end-to-end tests. The CSBK
-// payload mirrors tier3/control_test.go's TVGrant vector: service
-// options 0xC0, dst 0x123456, src 0xABCDEF, timeslot/LCN byte 0x88
-// (TS2, LCN 8). Burst framing matches buildT2VoiceLCHeaderDibits.
+// payload mirrors tier3/control_test.go's TVGrant vector: LPCN 8 in the
+// leading 12 bits (p[1]=0x88 → TS2), group 0x123456 at octets 2-4,
+// source 0xABCDEF at octets 5-7. Burst framing matches
+// buildT2VoiceLCHeaderDibits.
 func buildT3TVGrantDibits(repeats int, colorCode uint8) []uint8 {
 	info := tier3.AssembleCSBK(tier3.CSBK{
 		LB:      true,
 		Opcode:  tier3.OpTVGrant,
-		Payload: [8]byte{0xC0, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF, 0x88},
+		Payload: [8]byte{0x00, 0x88, 0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF},
 	})
 	bits := make([]byte, 96)
 	for i := 0; i < 96; i++ {

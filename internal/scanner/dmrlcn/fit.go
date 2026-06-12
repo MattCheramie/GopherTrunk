@@ -25,7 +25,7 @@ import (
 // weighted higher than a bare energy-onset coincidence — and biases the
 // fitter's weighted-median estimates and confidence.
 type Pair struct {
-	LCN    uint8
+	LCN    uint16
 	FreqHz uint32
 	Weight float64
 }
@@ -98,7 +98,7 @@ func (r FitResult) BandPlan() *trunking.DMRBandPlan {
 // point is one deduplicated LCN observation: the single best frequency
 // chosen for an LCN plus the total weight backing it.
 type point struct {
-	lcn    uint8
+	lcn    uint16
 	freqHz uint32
 	weight float64
 }
@@ -157,7 +157,7 @@ func normalizeOptions(o FitOptions) FitOptions {
 // carried forward. Result is sorted by LCN.
 func aggregate(pairs []Pair) []point {
 	type freqWeight map[uint32]float64
-	byLCN := make(map[uint8]freqWeight)
+	byLCN := make(map[uint16]freqWeight)
 	for _, p := range pairs {
 		w := p.Weight
 		if w <= 0 {

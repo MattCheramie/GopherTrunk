@@ -329,7 +329,7 @@ The engine picks the right state machine per channel (Tier III's
 for `protocol: dmr-tier2`).
 
 A DMR Tier III voice-grant CSBK identifies its traffic channel by a
-7-bit Logical Channel Number (LCN), not an absolute frequency, so the
+12-bit Logical Channel Number (LCN), not an absolute frequency, so the
 T3 system **must** carry a `dmr_band_plan` to resolve LCN → downlink
 Hz. Provide exactly one of:
 
