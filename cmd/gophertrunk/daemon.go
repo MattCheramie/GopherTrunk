@@ -767,16 +767,20 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				ForceBlogV4:     dev.BlogV4,
 				ForceBlogV4Lite: dev.BlogV4Lite,
 			}
-			if dev.Gain != "" {
-				gain, ok := parseGain(dev.Gain)
-				if !ok {
-					log.Warn("daemon: ignoring unparseable gain",
-						"serial", dev.Serial, "gain", dev.Gain)
-				} else {
-					warnGainUnits(log, dev.Serial, dev.Gain, gain)
-					warnLowGain(log, dev.Serial, h.Role, dev.Gain, gain)
-					h = h.WithGain(gain)
-				}
+			// Always resolve a gain hint so the pool applies it explicitly:
+			// an empty/omitted `gain:` parses to -1 (auto/AGC), matching the
+			// documented default. Without this the device was left at the
+			// driver's raw post-init gain state — on the R82xx a ~17 dB-low
+			// VGA that deafens every protocol (issue #264). warnGainUnits /
+			// warnLowGain are no-ops for auto, so calling them is safe here.
+			gain, ok := parseGain(dev.Gain)
+			if !ok {
+				log.Warn("daemon: ignoring unparseable gain",
+					"serial", dev.Serial, "gain", dev.Gain)
+			} else {
+				warnGainUnits(log, dev.Serial, dev.Gain, gain)
+				warnLowGain(log, dev.Serial, h.Role, dev.Gain, gain)
+				h = h.WithGain(gain)
 			}
 			hints = append(hints, h)
 		}
@@ -825,16 +829,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 						PPM:     r.PPM,
 						BiasTee: r.BiasTee,
 					}
-					if r.Gain != "" {
-						gain, ok := parseGain(r.Gain)
-						if !ok {
-							log.Warn("daemon: ignoring unparseable rtl_tcp gain",
-								"serial", r.Serial, "gain", r.Gain)
-						} else {
-							warnGainUnits(log, r.Serial, r.Gain, gain)
-							warnLowGain(log, r.Serial, h.Role, r.Gain, gain)
-							h = h.WithGain(gain)
-						}
+					// Resolve a gain hint unconditionally: empty/omitted
+					// `gain:` parses to -1 (auto/AGC), the documented default,
+					// so the remote applies AGC explicitly rather than its
+					// raw post-open gain state (parity with local devices).
+					gain, ok := parseGain(r.Gain)
+					if !ok {
+						log.Warn("daemon: ignoring unparseable rtl_tcp gain",
+							"serial", r.Serial, "gain", r.Gain)
+					} else {
+						warnGainUnits(log, r.Serial, r.Gain, gain)
+						warnLowGain(log, r.Serial, h.Role, r.Gain, gain)
+						h = h.WithGain(gain)
 					}
 					hints = append(hints, h)
 				}
