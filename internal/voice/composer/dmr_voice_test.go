@@ -187,7 +187,12 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 func matchesAnySuperframe(got [][]byte, infos [][]byte) bool {
 	const sf = dmrvoice.FramesPerSuperframe
 	for in := 0; in+sf <= len(infos); in += sf {
-		for g := 0; g+sf <= len(got); g += sf {
+		// Slide got one frame at a time, not a whole superframe: the live
+		// chain can emit a short leading superframe during sync / cadence
+		// warmup, which offsets every later frame by a non-superframe amount.
+		// Stepping by sf would then straddle every boundary and never match,
+		// even though a full clean superframe is present further in.
+		for g := 0; g+sf <= len(got); g++ {
 			ok := true
 			for k := 0; k < sf; k++ {
 				if !bytes.Equal(got[g+k], packBits(infos[in+k])) {
