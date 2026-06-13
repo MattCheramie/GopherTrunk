@@ -170,7 +170,11 @@ func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32
 	cls := survey.ClassifyWith(chIQ, float64(chRate), wideBw, wideSnr, opts.ClassifyConfig)
 	ds.Class = cls.Class
 	ds.Confidence = cls.Confidence
-	ds.OccupiedBwHz = cls.OccupiedBwHz
+	// Report the bandwidth normalised to the nearest real channel width (so a
+	// 12.5 kHz channel reads as 12.5 kHz, not the off-centre-skewed "11.6 kHz");
+	// the raw measurement stays on ds.Features for diagnostics, and the
+	// classifier's own decision already ran on the raw value above.
+	ds.OccupiedBwHz = survey.SnapChannelBandwidth(cls.OccupiedBwHz)
 	ds.BaudHz = cls.Features.BaudHz
 	ds.Features = cls.Features
 
