@@ -192,8 +192,8 @@ func DiffAgainstRR(sys *DiscoveredSystem, sid int, name string, rrFreqs, rrTGs [
 // surfaced by an optional read-only RR API lookup. It is rendered into the RR
 // submission package so an operator doesn't submit a duplicate.
 type DuplicateHint struct {
-	SID        int     // RadioReference system id
-	Name       string  // existing system name
-	Reason     string  // why it matched (WACN+SYSID, overlapping CC, name/county)
-	Confidence float64 // 0..1
+	SID        int     `json:"sid"`        // RadioReference system id
+	Name       string  `json:"name"`       // existing system name
+	Reason     string  `json:"reason"`     // why it matched (WACN+SYSID, overlapping CC, name/county)
+	Confidence float64 `json:"confidence"` // 0..1
 }

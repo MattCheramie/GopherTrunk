@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // handleHuntStatus returns the live system-discovery snapshot. Always 200 —
@@ -160,6 +161,42 @@ func (s *Server) handleHuntCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dry_run": req.DryRun, "changes": changes})
+}
+
+// handleHuntRadioReference cross-references a run's discovered system against
+// RadioReference. Query params: county_id (a RadioReference ctid) and check_sid
+// (a system id, repeatable) select the existing systems to compare against.
+func (s *Server) handleHuntRadioReference(w http.ResponseWriter, r *http.Request) {
+	if s.hunt == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "hunt not wired")
+		return
+	}
+	id, ok := huntRunID(r)
+	if !ok {
+		s.writeError(w, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	countyID, _ := strconv.Atoi(r.URL.Query().Get("county_id"))
+	var checkSIDs []int
+	for _, raw := range r.URL.Query()["check_sid"] {
+		if sid, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && sid != 0 {
+			checkSIDs = append(checkSIDs, sid)
+		}
+	}
+	if countyID == 0 && len(checkSIDs) == 0 {
+		s.writeError(w, http.StatusBadRequest, "provide county_id or check_sid to compare against")
+		return
+	}
+	rep, err := s.hunt.RadioReference(id, countyID, checkSIDs)
+	if err != nil {
+		status := http.StatusBadGateway
+		if isHuntNoSuchRun(err) {
+			status = http.StatusNotFound
+		}
+		s.writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 // huntRunID parses the optional {id} path value; empty ⇒ 0 (current). ok=false

@@ -26,6 +26,18 @@ type HuntStatus struct {
 	Error   string                 `json:"error,omitempty"`
 	System  *hunt.DiscoveredSystem `json:"system,omitempty"`
 	Reports []hunt.CaptureReport   `json:"reports,omitempty"`
+	// GainRecommendations / GainNote carry the result of an -auto-gain run.
+	GainRecommendations []hunt.GainRecommendation `json:"gain_recommendations,omitempty"`
+	GainNote            string                    `json:"gain_note,omitempty"`
+}
+
+// HuntRRReport is the GET /api/v1/hunt/radioreference response: the
+// RadioReference cross-reference of a run's discovered system — ranked
+// duplicate-system hints and a frequency/talkgroup diff vs the strongest match.
+type HuntRRReport struct {
+	Hints    []hunt.DuplicateHint `json:"hints,omitempty"`
+	Diff     *hunt.RRDiff         `json:"diff,omitempty"`
+	Compared int                  `json:"compared"` // existing RR systems compared against
 }
 
 // HuntStartRequest is the POST /api/v1/hunt/start body. Frequencies are in MHz
@@ -36,8 +48,12 @@ type HuntStartRequest struct {
 	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
 	Candidates      []float64 `json:"candidates,omitempty"` // MHz
 	NoSweep         bool      `json:"no_sweep,omitempty"`
-	Survey          bool      `json:"survey,omitempty"`        // classify+decode every carrier, not just trunking CCs
-	ClassifyOnly    bool      `json:"classify_only,omitempty"` // survey: classify, skip decoding
+	Survey          bool      `json:"survey,omitempty"`         // classify+decode every carrier, not just trunking CCs
+	ClassifyOnly    bool      `json:"classify_only,omitempty"`  // survey: classify, skip decoding
+	PersistSurvey   bool      `json:"persist_survey,omitempty"` // survey: stream carriers to NDJSON (crash-safe, resumable)
+	Resume          bool      `json:"resume,omitempty"`         // survey: skip frequencies already in the NDJSON file
+	AutoGain        bool      `json:"auto_gain,omitempty"`      // post-run: sweep gains on locked CCs, recommend the best
+	AutoGainSet     string    `json:"auto_gain_set,omitempty"`  // optional comma-separated gain ladder in dB (e.g. "0,8.7,16.6")
 	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
 	Protocol        string    `json:"protocol,omitempty"`
 	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`

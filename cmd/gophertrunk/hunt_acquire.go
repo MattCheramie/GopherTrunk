@@ -81,6 +81,12 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 		}
 		broker := d.iqBrokers[serial]
 		src, sub := newBrokerIQSource(broker)
+		// Gain control is only safe when the hunt holds the SDR exclusively (a
+		// dedicated spare). On the borrowed control SDR, changing gain would
+		// disrupt the daemon's other consumers, so auto-gain stays unavailable.
+		if !borrow {
+			src.setGain = broker.SetGain
+		}
 
 		if borrow && d.cchuntSup != nil {
 			d.cchuntSup.PauseAll()

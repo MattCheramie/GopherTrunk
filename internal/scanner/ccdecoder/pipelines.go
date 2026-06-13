@@ -707,10 +707,14 @@ func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 		ColorCode: t.ColorCode,
 	}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: n.LCN,
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }
@@ -914,10 +918,14 @@ func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
 	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: uint16(n.LCN),
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }
@@ -973,10 +981,14 @@ func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
 	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: n.LCN,
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }

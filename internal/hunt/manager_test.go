@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -96,6 +97,83 @@ func TestManager_SurveyModeReportsSignals(t *testing.T) {
 	}
 	if !sawCandidate {
 		t.Error("expected a KindHuntLiveCandidate event on the bus")
+	}
+}
+
+// TestManager_SurveyPersistAndResume runs a survey with PersistSurvey into a
+// SurveyDir, confirms an NDJSON file is written, then runs again with Resume and
+// confirms the already-surveyed candidate is skipped.
+func TestManager_SurveyPersistAndResume(t *testing.T) {
+	dir := t.TempDir()
+	src, dwell := p25Source(t)
+	mgr, err := NewManager(ManagerOptions{
+		Acquire:   func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src, func() {}, nil },
+		Bus:       events.NewBus(256),
+		SurveyDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	opts := LiveHuntOptions{
+		Survey: true, PersistSurvey: true,
+		Candidates: []uint32{851_000_000}, DwellSeconds: dwell, MinConfidence: 0.3,
+	}
+	if _, err := mgr.Start(opts); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+
+	files, _ := filepath.Glob(filepath.Join(dir, "hunt-survey-*.ndjson"))
+	if len(files) != 1 {
+		t.Fatalf("ndjson files = %v, want exactly 1", files)
+	}
+	done, err := LoadSurveyedFreqs(files[0])
+	if err != nil {
+		t.Fatalf("LoadSurveyedFreqs: %v", err)
+	}
+	if _, ok := done[851_000_000]; !ok {
+		t.Fatalf("surveyed freqs = %v, want 851000000 recorded", done)
+	}
+
+	// Resume: the same band/candidate set keys the same file; the lone candidate
+	// is already surveyed, so the run skips it and reports no signals.
+	src2, _ := p25Source(t)
+	mgr.acquire = func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src2, func() {}, nil }
+	opts.Resume = true
+	if _, err := mgr.Start(opts); err != nil {
+		t.Fatalf("Start resume: %v", err)
+	}
+	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	if n := len(mgr.Status().Signals); n != 0 {
+		t.Errorf("resumed run surveyed %d signal(s), want 0 (candidate already done)", n)
+	}
+}
+
+// TestManager_AutoGainUnavailableNote: with AutoGain on a source that can't set
+// gain (the file source / a borrowed shared SDR), the run completes and records
+// a user-facing note rather than failing.
+func TestManager_AutoGainUnavailableNote(t *testing.T) {
+	src, dwell := p25Source(t)
+	mgr, err := NewManager(ManagerOptions{
+		Acquire: func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src, func() {}, nil },
+		Bus:     events.NewBus(256),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if _, err := mgr.Start(LiveHuntOptions{
+		Survey: true, AutoGain: true,
+		Candidates: []uint32{851_000_000}, DwellSeconds: dwell, MinConfidence: 0.3,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	st := mgr.Status()
+	if st.State != StateRunDone {
+		t.Fatalf("state = %q, want done", st.State)
+	}
+	if st.GainNote == "" {
+		t.Error("expected a gain note when gain control is unavailable")
 	}
 }
 

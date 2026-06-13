@@ -2022,14 +2022,19 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// is possible; the REST/TUI/web cockpit drives it.
 		if d.pool != nil && len(d.iqBrokers) > 0 {
 			if mgr, err := hunt.NewManager(hunt.ManagerOptions{
-				Acquire: d.buildHuntAcquirer(),
-				Bus:     d.bus,
-				Log:     log,
+				Acquire:   d.buildHuntAcquirer(),
+				Bus:       d.bus,
+				Log:       log,
+				SurveyDir: huntSurveyDir(cfg.Storage.Path),
 			}); err != nil {
 				log.Warn("daemon: hunt manager not started", "err", err)
 			} else {
 				d.huntMgr = mgr
-				opts.Hunt = huntCockpit{mgr: mgr, cfgPath: d.cfgPath}
+				opts.Hunt = huntCockpit{mgr: mgr, cfgPath: d.cfgPath, rrAuth: radioreference.ResolveAuth(radioreference.Auth{
+					AppKey:   firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_KEY"), cfg.RadioReference.APIKey),
+					Username: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_USER"), cfg.RadioReference.Username),
+					Password: firstNonEmptyStr(os.Getenv("GOPHERTRUNK_RR_PASS"), cfg.RadioReference.Password),
+				})}
 			}
 		}
 		if d.player != nil || d.recorder != nil {
