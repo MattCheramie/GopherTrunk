@@ -7,6 +7,43 @@ import (
 	"strings"
 )
 
+// writeRRDiff renders the cross-reference against an existing RadioReference
+// system: control/voice frequencies that are offset or new, and talkgroups
+// observed on-air but not yet in RR. A nil/empty diff renders nothing.
+func writeRRDiff(p *errWriter, diff *RRDiff) {
+	if diff.Empty() {
+		return
+	}
+	p.printf("## Differences vs RadioReference (SID %d", diff.SID)
+	if diff.Name != "" {
+		p.printf(" — %s", diff.Name)
+	}
+	p.printf(")\n\n")
+
+	if len(diff.FreqOffsets) > 0 {
+		p.printf("### Frequency offsets (within %g kHz — verify tuning/PPM)\n\n", float64(rrFreqToleranceHz)/1e3)
+		p.printf("| Discovered | RadioReference | Δ (kHz) |\n|---|---|---|\n")
+		for _, o := range diff.FreqOffsets {
+			p.printf("| %s | %s | %+.3f |\n", formatMHz(o.DiscoveredHz), formatMHz(o.RRHz), float64(o.DeltaHz)/1e3)
+		}
+		p.printf("\n")
+	}
+	if len(diff.FreqsNotInRR) > 0 {
+		p.printf("### Frequencies not in RadioReference\n\n")
+		for _, hz := range diff.FreqsNotInRR {
+			p.printf("- %s\n", formatMHz(hz))
+		}
+		p.printf("\n")
+	}
+	if len(diff.TalkgroupsNotInRR) > 0 {
+		p.printf("### Talkgroups on-air but not in RadioReference\n\n")
+		for _, dec := range diff.TalkgroupsNotInRR {
+			p.printf("- %d (0x%X)\n", dec, dec)
+		}
+		p.printf("\n")
+	}
+}
+
 // rrSubmitURL is the RadioReference "submit a new system" entry point.
 // RadioReference has no public write API — new systems go through this web
 // form, reviewed by Global administrators — so the submission package links
@@ -17,12 +54,14 @@ const rrSubmitURL = "https://www.radioreference.com/db/submit/"
 // (Markdown) the operator can paste into the RR Submit form. When hints are
 // supplied (from the optional read-only RR API duplicate check) they are
 // surfaced at the top so the operator doesn't submit a duplicate.
-func writeRR(w io.Writer, sys *DiscoveredSystem, hints []DuplicateHint) error {
+func writeRR(w io.Writer, sys *DiscoveredSystem, hints []DuplicateHint, diff *RRDiff) error {
 	p := &errWriter{w: w}
 
 	p.printf("# RadioReference submission: %s\n\n", sys.DisplayName())
 	p.printf("_Discovered by GopherTrunk. Review every field before submitting; " +
 		"a blind discovery cannot name talkgroups or confirm site geography._\n\n")
+
+	writeRRDiff(p, diff)
 
 	// Duplicate warnings first.
 	if len(hints) > 0 {

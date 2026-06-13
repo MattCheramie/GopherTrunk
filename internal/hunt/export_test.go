@@ -144,6 +144,59 @@ func TestWriteRR_WithAndWithoutHints(t *testing.T) {
 	}
 }
 
+func TestDiffAgainstRR(t *testing.T) {
+	sys := &DiscoveredSystem{
+		Sites: []DiscoveredSite{{
+			RFSS: 1, SiteID: 1,
+			ControlChannels: []DiscoveredChannel{
+				{FrequencyHz: 851012500, IsControl: true}, // exact match to RR
+				{FrequencyHz: 851025000, IsControl: true}, // +500 Hz vs RR 851024500
+				{FrequencyHz: 860000000, IsControl: true}, // nothing near in RR
+			},
+		}},
+		Talkgroups: []DiscoveredTalkgroup{{Dec: 100}, {Dec: 200}},
+	}
+	rrFreqs := []uint32{851012500, 851024500, 770000000}
+	rrTGs := []uint32{100}
+
+	d := DiffAgainstRR(sys, 42, "RR Sys", rrFreqs, rrTGs)
+
+	if len(d.FreqOffsets) != 1 || d.FreqOffsets[0].DiscoveredHz != 851025000 ||
+		d.FreqOffsets[0].RRHz != 851024500 || d.FreqOffsets[0].DeltaHz != 500 {
+		t.Errorf("FreqOffsets = %+v, want one +500 Hz pairing", d.FreqOffsets)
+	}
+	if len(d.FreqsNotInRR) != 1 || d.FreqsNotInRR[0] != 860000000 {
+		t.Errorf("FreqsNotInRR = %v, want [860000000]", d.FreqsNotInRR)
+	}
+	if len(d.TalkgroupsNotInRR) != 1 || d.TalkgroupsNotInRR[0] != 200 {
+		t.Errorf("TalkgroupsNotInRR = %v, want [200]", d.TalkgroupsNotInRR)
+	}
+	if d.Empty() {
+		t.Error("diff should not be empty")
+	}
+
+	// Render path: the diff section appears in the RR package.
+	var buf bytes.Buffer
+	if err := WriteWithRRDiff(&buf, sampleSystem(), FormatRR, nil, &d); err != nil {
+		t.Fatalf("WriteWithRRDiff: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Differences vs RadioReference", "Frequency offsets", "Frequencies not in RadioReference", "200 (0xC8)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("RR diff section missing %q:\n%s", want, out)
+		}
+	}
+
+	// An all-matching system yields an empty diff (nothing to render).
+	empty := DiffAgainstRR(&DiscoveredSystem{
+		Sites:      []DiscoveredSite{{ControlChannels: []DiscoveredChannel{{FrequencyHz: 851012500, IsControl: true}}}},
+		Talkgroups: []DiscoveredTalkgroup{{Dec: 100}},
+	}, 42, "RR Sys", []uint32{851012500}, []uint32{100})
+	if !empty.Empty() {
+		t.Errorf("fully-matching system should diff empty, got %+v", empty)
+	}
+}
+
 func TestFormatMHz(t *testing.T) {
 	cases := map[uint32]string{
 		851012500: "851.0125",

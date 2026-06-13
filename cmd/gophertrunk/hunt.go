@@ -346,8 +346,9 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 	// Optional read-only RadioReference duplicate check. Non-fatal: the export
 	// still happens, just without hints.
 	var hints []hunt.DuplicateHint
+	var rrDiff *hunt.RRDiff
 	if !p.noRR {
-		hints = gatherRRHints(sys, p.rr)
+		hints, rrDiff = gatherRRHints(sys, p.rr)
 	}
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -363,7 +364,7 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		if cerr != nil {
 			rep.Fatal(1, fmt.Errorf("create %s: %w", fname, cerr))
 		}
-		werr := hunt.Write(f, sys, hf, hints)
+		werr := hunt.WriteWithRRDiff(f, sys, hf, hints, rrDiff)
 		cerr = f.Close()
 		if werr != nil {
 			rep.Fatal(1, fmt.Errorf("write %s: %w", fname, werr))
@@ -434,7 +435,7 @@ type rrOptions struct {
 // password fall back to GOPHERTRUNK_RR_USER / GOPHERTRUNK_RR_PASS. With no key
 // the check is skipped (a note is printed) and the export proceeds without
 // hints. All RR errors are non-fatal.
-func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) []hunt.DuplicateHint {
+func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) ([]hunt.DuplicateHint, *hunt.RRDiff) {
 	key := opts.key
 	if key == "" {
 		key = os.Getenv("GOPHERTRUNK_RR_KEY")
@@ -446,11 +447,11 @@ func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) []hunt.DuplicateH
 	}))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hunt: RadioReference duplicate check skipped (no API key configured — set -rr-key or GOPHERTRUNK_RR_KEY)")
-		return nil
+		return nil, nil
 	}
 	if opts.countyID == 0 && len(opts.checkSIDs) == 0 {
 		fmt.Fprintln(os.Stderr, "hunt: RadioReference key present but no -rr-county-id or -rr-check-sid given; nothing to compare against")
-		return nil
+		return nil, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -503,14 +504,65 @@ func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) []hunt.DuplicateH
 	rrHints := radioreference.MatchAgainst(cand, existing)
 	if len(rrHints) == 0 {
 		fmt.Fprintf(os.Stderr, "hunt: RadioReference check found no existing match among %d system(s)\n", len(existing))
-		return nil
+		return nil, nil
 	}
 	out := make([]hunt.DuplicateHint, 0, len(rrHints))
 	for _, h := range rrHints {
 		fmt.Fprintf(os.Stderr, "hunt: possible duplicate — RR SID %d (%s): %s\n", h.SID, h.Name, h.Reason)
 		out = append(out, hunt.DuplicateHint{SID: h.SID, Name: h.Name, Reason: h.Reason, Confidence: h.Confidence})
 	}
-	return out
+
+	// Cross-reference: for the strongest confident match, pull the full RR system
+	// and diff our discovered freqs/talkgroups against it (offsets + new items).
+	diff := buildRRDiff(ctx, client, sys, rrHints)
+	return out, diff
+}
+
+// rrDiffMinConfidence is the match confidence above which a diff is worth
+// fetching the full RR system for (the WACN+SYSID / control-overlap tiers).
+const rrDiffMinConfidence = 0.80
+
+// buildRRDiff fetches the strongest confident hint's full RR system and diffs
+// the discovered system against it. Returns nil on any error or when no hint is
+// confident enough (the diff is best-effort, never fatal).
+func buildRRDiff(ctx context.Context, client *radioreference.Client, sys *hunt.DiscoveredSystem, hints []radioreference.Hint) *hunt.RRDiff {
+	var top radioreference.Hint
+	for _, h := range hints {
+		if h.SID != 0 && h.Confidence >= rrDiffMinConfidence && h.Confidence > top.Confidence {
+			top = h
+		}
+	}
+	if top.SID == 0 {
+		return nil
+	}
+	fs, err := client.GetFullSystem(ctx, top.SID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference getFullSystem(%d): %v\n", top.SID, err)
+		return nil
+	}
+	var rrFreqs []uint32
+	for _, st := range fs.Sites {
+		rrFreqs = append(rrFreqs, st.Frequencies...)
+	}
+	rrTGs := make([]uint32, 0, len(fs.Talkgroups))
+	for _, tg := range fs.Talkgroups {
+		rrTGs = append(rrTGs, tg.Dec)
+	}
+	d := hunt.DiffAgainstRR(sys, top.SID, nonEmptyName(fs.Name, top.Name), rrFreqs, rrTGs)
+	if d.Empty() {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "hunt: RadioReference diff vs SID %d — %d offset(s), %d new freq(s), %d new talkgroup(s)\n",
+		top.SID, len(d.FreqOffsets), len(d.FreqsNotInRR), len(d.TalkgroupsNotInRR))
+	return &d
+}
+
+// nonEmptyName returns a if non-empty, else b.
+func nonEmptyName(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // slugName lowercases a display name into a filesystem-safe stem.
