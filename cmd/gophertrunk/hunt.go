@@ -12,6 +12,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/huntrr"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
@@ -462,112 +463,28 @@ func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) ([]hunt.Duplicate
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Collect candidate existing systems: explicit SIDs first, then every
-	// system registered in the given county (enriched with its identity).
-	var existing []radioreference.System
-	seen := map[int]bool{}
-	addDetails := func(sid int) {
-		if sid == 0 || seen[sid] {
-			return
-		}
-		seen[sid] = true
-		d, derr := client.GetTrsDetails(ctx, sid)
-		if derr != nil {
-			fmt.Fprintf(os.Stderr, "hunt: RadioReference getTrsDetails(%d): %v\n", sid, derr)
-			return
-		}
-		existing = append(existing, d)
-	}
+	checkSIDs := make([]int, 0, len(opts.checkSIDs))
 	for _, s := range opts.checkSIDs {
 		if sid, perr := strconv.Atoi(strings.TrimSpace(s)); perr == nil {
-			addDetails(sid)
-		}
-	}
-	if opts.countyID != 0 {
-		briefs, cerr := client.GetCountyInfo(ctx, opts.countyID)
-		if cerr != nil {
-			fmt.Fprintf(os.Stderr, "hunt: RadioReference getCountyInfo(%d): %v\n", opts.countyID, cerr)
-		}
-		for _, b := range briefs {
-			addDetails(b.SID)
+			checkSIDs = append(checkSIDs, sid)
 		}
 	}
 
-	cand := radioreference.Candidate{
-		WACN:     sys.WACN,
-		SystemID: sys.SystemID,
-		Name:     sys.DisplayName(),
+	res := huntrr.Gather(ctx, client, sys, opts.countyID, checkSIDs, func(err error) {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference %v\n", err)
+	})
+	if len(res.Hints) == 0 {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference check found no existing match among %d system(s)\n", res.Compared)
+		return nil, res.Diff
 	}
-	for _, st := range sys.Sites {
-		for _, ch := range st.ControlChannels {
-			if ch.IsControl {
-				cand.ControlChannels = append(cand.ControlChannels, ch.FrequencyHz)
-			}
-		}
-	}
-
-	rrHints := radioreference.MatchAgainst(cand, existing)
-	if len(rrHints) == 0 {
-		fmt.Fprintf(os.Stderr, "hunt: RadioReference check found no existing match among %d system(s)\n", len(existing))
-		return nil, nil
-	}
-	out := make([]hunt.DuplicateHint, 0, len(rrHints))
-	for _, h := range rrHints {
+	for _, h := range res.Hints {
 		fmt.Fprintf(os.Stderr, "hunt: possible duplicate — RR SID %d (%s): %s\n", h.SID, h.Name, h.Reason)
-		out = append(out, hunt.DuplicateHint{SID: h.SID, Name: h.Name, Reason: h.Reason, Confidence: h.Confidence})
 	}
-
-	// Cross-reference: for the strongest confident match, pull the full RR system
-	// and diff our discovered freqs/talkgroups against it (offsets + new items).
-	diff := buildRRDiff(ctx, client, sys, rrHints)
-	return out, diff
-}
-
-// rrDiffMinConfidence is the match confidence above which a diff is worth
-// fetching the full RR system for (the WACN+SYSID / control-overlap tiers).
-const rrDiffMinConfidence = 0.80
-
-// buildRRDiff fetches the strongest confident hint's full RR system and diffs
-// the discovered system against it. Returns nil on any error or when no hint is
-// confident enough (the diff is best-effort, never fatal).
-func buildRRDiff(ctx context.Context, client *radioreference.Client, sys *hunt.DiscoveredSystem, hints []radioreference.Hint) *hunt.RRDiff {
-	var top radioreference.Hint
-	for _, h := range hints {
-		if h.SID != 0 && h.Confidence >= rrDiffMinConfidence && h.Confidence > top.Confidence {
-			top = h
-		}
+	if d := res.Diff; d != nil {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference diff — %d offset(s), %d new freq(s), %d new talkgroup(s)\n",
+			len(d.FreqOffsets), len(d.FreqsNotInRR), len(d.TalkgroupsNotInRR))
 	}
-	if top.SID == 0 {
-		return nil
-	}
-	fs, err := client.GetFullSystem(ctx, top.SID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "hunt: RadioReference getFullSystem(%d): %v\n", top.SID, err)
-		return nil
-	}
-	var rrFreqs []uint32
-	for _, st := range fs.Sites {
-		rrFreqs = append(rrFreqs, st.Frequencies...)
-	}
-	rrTGs := make([]uint32, 0, len(fs.Talkgroups))
-	for _, tg := range fs.Talkgroups {
-		rrTGs = append(rrTGs, tg.Dec)
-	}
-	d := hunt.DiffAgainstRR(sys, top.SID, nonEmptyName(fs.Name, top.Name), rrFreqs, rrTGs)
-	if d.Empty() {
-		return nil
-	}
-	fmt.Fprintf(os.Stderr, "hunt: RadioReference diff vs SID %d — %d offset(s), %d new freq(s), %d new talkgroup(s)\n",
-		top.SID, len(d.FreqOffsets), len(d.FreqsNotInRR), len(d.TalkgroupsNotInRR))
-	return &d
-}
-
-// nonEmptyName returns a if non-empty, else b.
-func nonEmptyName(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
+	return res.Hints, res.Diff
 }
 
 // slugName lowercases a display name into a filesystem-safe stem.
