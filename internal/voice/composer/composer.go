@@ -449,7 +449,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHz, ch.done)
 	case isP25P1Voice:
-		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.PatchedGroups, ch.done)
+		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHz, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.PatchedGroups, ch.done)
 	default:
 		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, ch.done)
 	}
