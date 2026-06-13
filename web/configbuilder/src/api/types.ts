@@ -136,6 +136,7 @@ export interface RecordingsConfig {
 
 export interface MetricsConfig {
   Enabled: boolean;
+  DetailedFEC: boolean;
 }
 
 export interface RetentionConfig {

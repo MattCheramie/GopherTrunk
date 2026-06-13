@@ -259,6 +259,8 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 	bsch := block(L-sbBSCHDibits, sbBSCHDibits)
 	bschSoft := softBlock(L-sbBSCHDibits, sbBSCHDibits)
 	var sync SyncPDU
+	var bschInfo []byte
+	var bschRot uint8
 	found := false
 	for rot := uint8(0); rot < 4 && !found; rot++ {
 		var recovered []byte
@@ -270,7 +272,7 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		}
 		if ok {
 			if s, ok := ParseSyncPDU(recovered); ok {
-				sync, found = s, true
+				sync, bschInfo, bschRot, found = s, recovered, rot, true
 			}
 		}
 	}
@@ -278,6 +280,14 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		return
 	}
 	c.LearnColourCode(sync.ExtendedColourCode())
+	// Report the BSCH FEC correction depth: re-encode the recovered
+	// type-1 bits and count how many channel bits the §8.3.1 chain
+	// flipped to reach the CRC-clean codeword (decoder-independent, so
+	// the count is identical on the hard and soft paths).
+	if c.fecObserver != nil {
+		received := TetraDibitsToBits(rotateDibits(bsch, bschRot))
+		c.fecObserver("bsch", hammingBits(received, EncodeBSCH(bschInfo)))
+	}
 
 	// Build a single lock state: cell identity (MCC/MNC) from the BSCH
 	// SYNC, location area from the BNCH SYSINFO. Firing one maybeLock
@@ -309,10 +319,32 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 					ls.MCC, ls.MNC = sb.MCC, sb.MNC
 				}
 			}
+			if c.fecObserver != nil {
+				received := TetraDibitsToBits(rotateDibits(bnch, rot))
+				c.fecObserver("schhd", hammingBits(received, EncodeSCHHD(recovered, colour)))
+			}
 			break
 		}
 	}
 	c.maybeLock(ls)
+}
+
+// hammingBits counts the positions where two 0/1 bit slices differ, over
+// the overlapping prefix. Used to score the §8.3.1 FEC correction depth:
+// the number of received channel bits the decoder had to flip to land on
+// the recovered (re-encoded) codeword.
+func hammingBits(a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	d := 0
+	for i := 0; i < n; i++ {
+		if a[i]&1 != b[i]&1 {
+			d++
+		}
+	}
+	return d
 }
 
 // RecoverColourCode scans a dibit stream for a synchronisation burst and

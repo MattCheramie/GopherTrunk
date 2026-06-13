@@ -165,6 +165,7 @@ Series exposed:
 | `gophertrunk_sdr_iq_power_dbfs{system}`                         | gauge   | Mean IQ power on the control SDR (window ≈ 1 s). Idle ≈ -45 dBFS; healthy signal ≈ -25 dBFS; > -3 clips    |
 | `gophertrunk_sdr_usb_reconnects_total{driver,serial}`           | counter | Times the USB driver had to re-open a device                                                               |
 | `gophertrunk_decode_errors_total{protocol,stage}`               | counter | Decode failures by protocol + stage (e.g. `p25`/`tsbk-crc`)                                                |
+| `gophertrunk_tetra_viterbi_corrections{system,channel}`         | histogram | **Opt-in** (`metrics.detailed_fec: true`). Channel bits the TETRA §8.3.1 FEC chain corrected per recovered burst (`channel` ∈ `bsch`,`schhd`); healthy margin p95 ≤ 8, p99 ≤ 12 |
 | `gophertrunk_build_info{version}`                               | gauge   | Always `1`; carries the build version as a label                                                           |
 
 The bus-driven counters and gauges (`events_total`, `calls_started_total`,

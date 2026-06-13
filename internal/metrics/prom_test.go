@@ -20,7 +20,7 @@ import (
 func TestEventsCounterIncrements(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, err := New(bus, nil, "v0.0.0-test")
+	m, err := New(bus, nil, "v0.0.0-test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestEventsCounterIncrements(t *testing.T) {
 func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -113,7 +113,7 @@ func TestCallsActiveTracksStartAndEnd(t *testing.T) {
 func TestDMRSlotCallsCounter(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -156,7 +156,7 @@ func TestDMRSlotCallsCounter(t *testing.T) {
 func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -182,7 +182,7 @@ func TestDecodeErrorEventIncrementsCounter(t *testing.T) {
 }
 
 func TestRecordHooks(t *testing.T) {
-	m, _ := New(nil, nil, "test")
+	m, _ := New(nil, nil, "test", false)
 	defer m.Close()
 
 	m.RecordIQUnderrun("rtlsdr", "AAA")
@@ -206,7 +206,7 @@ func TestRecordHooks(t *testing.T) {
 }
 
 func TestRecordDecodeOverrun(t *testing.T) {
-	m, _ := New(nil, nil, "test")
+	m, _ := New(nil, nil, "test", false)
 	defer m.Close()
 
 	m.RecordDecodeOverrun()
@@ -217,7 +217,7 @@ func TestRecordDecodeOverrun(t *testing.T) {
 }
 
 func TestRecordIQPowerDbFS(t *testing.T) {
-	m, _ := New(nil, nil, "test")
+	m, _ := New(nil, nil, "test", false)
 	defer m.Close()
 
 	m.RecordIQPowerDbFS("MMR", -27.5)
@@ -247,7 +247,7 @@ func TestRecordIQPowerDbFS(t *testing.T) {
 }
 
 func TestRecordIQDCRatioDb(t *testing.T) {
-	m, _ := New(nil, nil, "test")
+	m, _ := New(nil, nil, "test", false)
 	defer m.Close()
 
 	m.RecordIQDCRatioDb("MMR", -22.0)
@@ -272,7 +272,7 @@ func TestRecordIQDCRatioDb(t *testing.T) {
 }
 
 func TestRecordIQClipRatio(t *testing.T) {
-	m, _ := New(nil, nil, "test")
+	m, _ := New(nil, nil, "test", false)
 	defer m.Close()
 
 	m.RecordIQClipRatio("MMR", 0.0)
@@ -297,7 +297,7 @@ func TestRecordIQClipRatio(t *testing.T) {
 }
 
 func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
-	m, _ := New(nil, nil, "v1.2.3")
+	m, _ := New(nil, nil, "v1.2.3", false)
 	defer m.Close()
 	m.RecordDecodeError("p25", "tsbk-crc")
 
@@ -323,7 +323,7 @@ func TestHandlerScrapeContainsExpectedSeries(t *testing.T) {
 func TestCloseIsIdempotent(t *testing.T) {
 	bus := events.NewBus(2)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	go m.Run(context.Background())
 	if err := m.Close(); err != nil {
 		t.Fatal(err)
@@ -336,7 +336,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 func TestSDRAttachedGaugeFromBusEvents(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, err := New(bus, nil, "v0.0.0-test")
+	m, err := New(bus, nil, "v0.0.0-test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestSDRAttachedGaugeFromBusEvents(t *testing.T) {
 func TestCallsTotalCarriesGrantDimensions(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -443,7 +443,7 @@ func (f fakeLockState) SystemName() string        { return f.sys }
 func TestControlChannelFrequencyAndTransitions(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
-	m, _ := New(bus, nil, "test")
+	m, _ := New(bus, nil, "test", false)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -505,7 +505,7 @@ func TestSDRSnapshotCollectorEmitsPerDevice(t *testing.T) {
 		{Driver: "rtlsdr", Serial: "B", Role: "voice", Attached: true, GainAuto: true, PPM: 0, BiasTee: false},
 		{Driver: "rtlsdr", Serial: "C", Role: "voice", Attached: false, GainTenthDB: 100},
 	}}
-	m, err := New(nil, pool, "test")
+	m, err := New(nil, pool, "test", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,4 +565,55 @@ func TestSDRSnapshotCollectorEmitsPerDevice(t *testing.T) {
 	if !foundNaN {
 		t.Errorf("expected NaN gain_db for serial B (AGC), did not find it")
 	}
+}
+
+// TestTetraViterbiCorrectionsHistogramGated confirms the opt-in TETRA FEC
+// correction-depth histogram is registered and observable only when
+// detailedFEC is enabled, and is an inert no-op otherwise.
+func TestTetraViterbiCorrectionsHistogramGated(t *testing.T) {
+	const want = "gophertrunk_tetra_viterbi_corrections"
+
+	// Off (default): the metric must be absent and Record* a no-op.
+	off, _ := New(nil, nil, "test", false)
+	defer off.Close()
+	off.RecordTetraViterbiCorrections("Sys", "bsch", 3) // must not panic
+	if body := scrapeMetrics(t, off); strings.Contains(body, want) {
+		t.Errorf("detailed_fec off: /metrics unexpectedly carries %s:\n%s", want, body)
+	}
+
+	// On: the histogram registers and observations land in its buckets.
+	on, err := New(nil, nil, "test", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer on.Close()
+	on.RecordTetraViterbiCorrections("Sys", "bsch", 0)
+	on.RecordTetraViterbiCorrections("Sys", "bsch", 2)
+	on.RecordTetraViterbiCorrections("Sys", "schhd", 9)
+	body := scrapeMetrics(t, on)
+	if !strings.Contains(body, want+"_bucket") {
+		t.Errorf("detailed_fec on: /metrics missing %s histogram:\n%s", want, body)
+	}
+	if !strings.Contains(body, `channel="bsch"`) || !strings.Contains(body, `channel="schhd"`) {
+		t.Errorf("detailed_fec on: /metrics missing per-channel series:\n%s", body)
+	}
+	if !strings.Contains(body, want+`_count{channel="bsch",system="Sys"} 2`) {
+		t.Errorf("detailed_fec on: bsch count != 2:\n%s", body)
+	}
+}
+
+func scrapeMetrics(t *testing.T, m *Metrics) string {
+	t.Helper()
+	srv := httptest.NewServer(m.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
