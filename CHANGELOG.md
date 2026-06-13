@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.1] — 2026-06-13
+
+This release is mostly **DMR voice quality, wideband / USRP capture, and the
+live signal survey**, with the latest Tier III work finally surfaced in the web
+console. On the voice side, the AMBE+2 decoder (DMR, P25 Phase 2, NXDN, dPMR,
+TETRA) adopts the same post-synthesis voiced-phase dispersion / DC-block /
+adaptive-smoothing chain IMBE already had, killing the metallic "tin can" buzz
+(#644), and the Tier III 2-slot router degrades gracefully so a real call no
+longer records an empty file when its embedded Link Control never decodes
+(#644). USRP / SoapySDR sources now track the rate the device *actually*
+delivers and expose a `master_clock_rate` knob (#550), and the polyphase
+channelizer decodes cleanly at USRP-friendly rates like 6.25 / 5.0 MS/s where a
+crude resampler fallback used to leave the control channel deaf (#550). The live
+survey stops mislabeling tightly-packed DMR / TETRA carriers as analog AM /
+wide-FM by isolating each candidate before classification and adding an opt-in
+`-survey-deep` arbiter (#648). Live streaming closes the remaining quality gap
+to recorded audio — band-limited resampling, deeper buffering, and an optional
+real-time loudness AGC (#653) — the Plots panels rest on the control channel
+instead of the DC-spike-buried SDR centre (#557), an out-of-the-box RTL-SDR now
+defaults to tuner AGC so no-gain configs aren't ~17 dB deaf (#264), and the
+config builder accepts decimal frequency / tone entry. Finally, the DMR Tier III
+autoconfig learner and the live-hunt details are now visible in the web console
+(#638).
+
 ### Added
 
 - **Hunt features surfaced in the web console.** Recent hunt-family work that
@@ -21,6 +45,21 @@ for tagged releases.
   "learned live" indicator. The *Hunt* tab now lists each candidate's capture
   report (control frequency, protocol, lock / skip reason) and the discovered
   sites with their control channels. (#638)
+- **USRP/SoapySDR actual sample-rate tracking.** The `soapy_remote` driver now
+  implements the `ActualSampleRate()` extension (via the `getSampleRate` RPC), so
+  when a USRP coerces a requested rate to the nearest integer decimation of its
+  master clock, GopherTrunk builds every per-channel down-converter and symbol
+  clock from the *delivered* rate instead of the requested one — the same #402
+  correction RTL-SDR already had. A new `sdr.soapy_remote[].master_clock_rate`
+  option sets the USRP master clock in Hz so a target `sample_rate` lands on an
+  exact divisor (e.g. `61_440_000` for a B210 to stream `6_144_000` cleanly).
+  (#550)
+- **Live-stream loudness AGC** (#653). An optional real-time envelope-follower AGC
+  (`audio.live_loudness`, default off) on the digital decoded-PCM live tap, so the
+  live stream tracks the loudness-normalized recordings instead of playing raw PCM.
+  It wraps only the digital stream path — the on-disk WAV keeps its own EBU R128
+  normalization and is never double-processed, and analog FM live audio (already
+  shaped by the composer's AGC) is untouched.
 
 ### Changed
 
@@ -35,6 +74,36 @@ for tagged releases.
   ends; the Hold label shows *following call* or *on control channel*
   accordingly. SDRs with no control channel in their passband keep the previous
   centre default. (#557)
+- **RTL-SDR defaults to tuner AGC when no `gain:` is configured** (#264). An
+  out-of-the-box pure-Go RTL-SDR front end was left in an undefined gain state:
+  bring-up ran the tuner init array (which leaves the R82xx VGA at +0 dB) but
+  never called `SetGainMode`/`SetGain`, and the daemon only applied a gain when
+  `gain:` was non-empty — so the VGA pin that AGC mode writes (+16.3 dB) never
+  landed and the dongle ran ~17 dB low, failing to decode on every protocol while
+  the same device worked in SDR# / PDW / TTT. Bring-up now establishes AGC (and
+  the VGA pin) at open for every device, the daemon resolves an empty/omitted
+  `gain:` to auto (-1) for both local and `rtl_tcp` devices, and the no-gain pool
+  log is now an informational note rather than a deafness warning. A configured
+  gain still overrides AGC.
+- **Live survey: `-survey-deep` arbiter and a corrected AM / FM split** (#648).
+  In a DMR / TETRA-dense band the blind classifier labeled almost every carrier
+  `am` (including a 61 dB-SNR one) because the AM gate fired on envelope variance
+  alone and never consulted the discriminator's `IFStd`. The gate now also
+  requires low `IFStd` (little angle modulation), so a constant-envelope DMR
+  carrier or an FM repeater with CTCSS falls to the FM split (`nbfm`) instead of a
+  contradictory `am`; the cyclostationary baud search band was widened to ~20 kHz
+  so TETRA's 18 kbaud line is searchable. A new opt-in `-survey-deep` flag also
+  hands narrowband (≤25 kHz) analog-classed carriers to the authoritative siglab
+  identify (lock-only), so a trunked control channel the blind classifier missed
+  can still be found; the default survey stays fast.
+- **Config builder accepts decimal frequency / tone entry.** A controlled
+  `<input type="number">` reported an intermediate value like `131.` as empty,
+  which reset the field to `0` and wiped the keystroke, so fractional frequencies
+  and tones could not be typed. Fields with a fractional step now route to a
+  buffered text input (modeled on `HzField`) that preserves mid-edit text and
+  emits the parsed number; integer fields keep the native spinner. The float-backed
+  audio tone Frequency, Tolerance, Magnitude threshold, and Squelch (dBFS) fields
+  opt into the decimal path.
 
 ### Fixed
 
@@ -49,18 +118,50 @@ for tagged releases.
   each receiver from the rate the bank *actually* emits (`Bank.OutputRateHz`)
   rather than a hardcoded 48 kHz. The DDC path was already exact and is unchanged.
   (#550)
-
-### Added
-
-- **USRP/SoapySDR actual sample-rate tracking.** The `soapy_remote` driver now
-  implements the `ActualSampleRate()` extension (via the `getSampleRate` RPC), so
-  when a USRP coerces a requested rate to the nearest integer decimation of its
-  master clock, GopherTrunk builds every per-channel down-converter and symbol
-  clock from the *delivered* rate instead of the requested one — the same #402
-  correction RTL-SDR already had. A new `sdr.soapy_remote[].master_clock_rate`
-  option sets the USRP master clock in Hz so a target `sample_rate` lands on an
-  exact divisor (e.g. `61_440_000` for a B210 to stream `6_144_000` cleanly).
-  (#550)
+- **Metallic "tin can" DMR voice: AMBE+2 synthesis parity with IMBE** (#644).
+  Once the timeslot fix made Tier III speech intelligible it sounded
+  metallic/buzzy — the AMBE+2 decoder (DMR, and also P25 Phase 2 / NXDN / dPMR /
+  TETRA) synthesized voiced harmonics fully phase-coherently, radiating the
+  classic buzzy MBE impulse train that IMBE had already fixed but AMBE+2 never
+  adopted. AMBE+2 now runs the same three post-synthesis stages as IMBE:
+  TIA-102.BABA §6.3 voiced-phase regeneration (per-harmonic dispersion scaled by
+  the unvoiced fraction, so fully-voiced frames stay bit-identical), DC-block
+  high-pass ahead of the AGC, and error-rate adaptive smoothing. The DMR voice
+  chain now forwards its per-frame Golay corrected-bit count through the
+  error-aware sink so smoothing engages on real bursts.
+- **Empty DMR Tier III recordings: graceful slotRouter phase fallback** (#644).
+  A real Tier III call could record a 0-byte `.raw` and a header-only 44-byte WAV:
+  the 2-slot interleaved decoder's slotRouter dropped every voice superframe until
+  a CRC-valid embedded Link Control named the call's talkgroup and bound its
+  phase, but real outbound embedded signalling is still capture-pending, so on a
+  carrier whose embedded LC never decodes the router bound nothing and the whole
+  call was dropped. The router now degrades gracefully — a matching LC still binds
+  (and can re-bind/correct) the slot, a foreign-talkgroup LC positively marks the
+  other phase, and otherwise, after a short grace window with no LC, it falls back
+  to the active slot's phase so audio records. Adds `lc_superframes` telemetry and
+  a one-shot log when a call records via the fallback.
+- **Live-vs-recorded audio quality gap closed** (#653). Live and recorded audio
+  start from identical decoded 8 kHz / 16-bit / mono PCM, so the gap was entirely
+  in the live transport + browser playback chain. Three fixes: a Blackman-windowed
+  polyphase `SincResampler` (with continuous cross-chunk state) replaces linear
+  interpolation in the WorkletSink, so a browser that rejects the 8 kHz
+  AudioContext and falls back to 44.1/48 kHz no longer leaks aliasing images above
+  the 4 kHz input Nyquist (first alias image now >40 dB down); the ring-buffer
+  prime cushion grows 0.15 s → 0.25 s and the per-subscriber publisher channel
+  64 → 256 frames so transient HTTP-write stalls no longer drop audio; and the
+  optional live loudness AGC (below) tracks the normalized recordings.
+- **Live survey: isolate dense carriers so DMR isn't mislabeled AM / wide-FM**
+  (#648). On a tight carrier grid (DMR at 12.5 kHz) the survey mis-read nearly
+  every signal as `am`/`wfm` with absurd occupied bandwidths (1000–2200 kHz) and
+  then ran the analog-FM analyser on them, emitting bogus "active / CTCSS"
+  results. Two coupled causes, both from never isolating a candidate from its
+  neighbours: the occupied-bandwidth walk on the full-rate capture bridged
+  adjacent carriers into one giant span, and modulation features extracted on the
+  ±24 kHz channel let neighbours leak into the FM discriminator and destroy the
+  baud line. The occupied-bandwidth estimate now takes a per-candidate neighbour
+  spacing cap, and when a neighbour sits inside the wide channel the classifier
+  isolates the carrier by decimating to ±12 kHz with the gentle resampler — so a
+  digital carrier is correctly handed to the siglab identify → DMR.
 
 ## [v0.4.0] — 2026-06-12
 
