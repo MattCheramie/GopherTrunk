@@ -170,6 +170,7 @@ export function Hunt() {
                 <th>Site</th>
                 <th>RFSS</th>
                 <th>Control channels</th>
+                <th>Neighbors</th>
               </tr>
             </thead>
             <tbody>
@@ -181,6 +182,18 @@ export function Hunt() {
                     {site.control_channels && site.control_channels.length > 0
                       ? site.control_channels
                           .map((c) => `${(c.frequency_hz / 1e6).toFixed(4)}${c.is_control ? "*" : ""}`)
+                          .join(", ")
+                      : "—"}
+                  </td>
+                  <td>
+                    {site.neighbors && site.neighbors.length > 0
+                      ? site.neighbors
+                          .map((n) => {
+                            const id = `${n.rfss ?? 0}/${n.site ?? 0}`;
+                            return n.frequency_hz
+                              ? `${id} @ ${(n.frequency_hz / 1e6).toFixed(4)}`
+                              : id;
+                          })
                           .join(", ")
                       : "—"}
                   </td>

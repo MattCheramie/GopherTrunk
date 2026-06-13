@@ -179,6 +179,19 @@ export interface DiscoveredSite {
   site_name?: string;
   county?: string;
   control_channels?: { frequency_hz: number; is_control?: boolean; confidence?: number }[];
+  secondary?: number[];
+  neighbors?: NeighborRef[];
+}
+
+// NeighborRef mirrors hunt.NeighborRef — an adjacent site advertised by the
+// control channel. frequency_hz is set once the band plan / LCN resolver maps
+// the channel to a downlink frequency.
+export interface NeighborRef {
+  rfss?: number;
+  site?: number;
+  channel_id?: number;
+  channel_number?: number;
+  frequency_hz?: number;
 }
 
 // DMRGrantObservedDTO mirrors api.DMRGrantObservedDTO — a raw DMR Tier III
