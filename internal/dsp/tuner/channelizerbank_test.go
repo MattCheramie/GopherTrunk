@@ -66,6 +66,71 @@ func TestChannelizerBankWidebandRateLandsAtDC(t *testing.T) {
 	}
 }
 
+// TestChannelizerBankWidebandRateMatrix is the core regression for issue #550.
+// At 6.25 and 5.0 MS/s the bin rate (inRate/16) is a power of five with too few
+// factors of two, so the fine-tune resampler's exact ratio to 48 kHz needs
+// L>64 and trips rationalRatio's cap. The old fallback (L=1, M=round) silently
+// emitted ~48828 Hz (1.7% fast) at 6.25 MS/s while OutputRateHz still claimed
+// 48000 — the symbol-clock error that broke P25 decode. This asserts (a) the
+// rate the bank ACTUALLY emits is within 0.1% of the 48 kHz target, and (b)
+// OutputRateHz reports that real rate (not the nominal target), for the full
+// 5/6.25/10/20 MS/s span.
+func TestChannelizerBankWidebandRateMatrix(t *testing.T) {
+	const (
+		outRate = 48_000.0
+		M       = 16
+	)
+	for _, inRate := range []float64{5_000_000, 6_250_000, 10_000_000, 20_000_000} {
+		t.Run(rateName(inRate), func(t *testing.T) {
+			binRate := inRate / M
+			b := NewChannelizerBank(inRate, outRate, 0.05, M, 16, 9.0)
+			var outCount int
+			if err := b.AddTap(binRate, func(out []complex64) { outCount += len(out) }); err != nil {
+				t.Fatalf("AddTap: %v", err)
+			}
+			// Feed a large, fixed number of input samples so the emitted-sample
+			// count converges (startup transient << total) and ±1-sample
+			// quantization is well under the 0.1% tolerance.
+			const chunk = 4096
+			const chunks = 256
+			gen := newToneGen(inRate, 0.5, binRate)
+			for i := 0; i < chunks; i++ {
+				b.Process(gen.Next(chunk))
+			}
+			inCount := chunk * chunks
+
+			// (a) The rate the resampler actually produces.
+			emittedRate := inRate * float64(outCount) / float64(inCount)
+			if err := relErr(emittedRate, outRate); err > 1e-3 {
+				t.Errorf("emitted rate %.2f Hz is %.3f%% off the 48 kHz target (want <0.1%%)",
+					emittedRate, err*100)
+			}
+			// (b) OutputRateHz must report that real rate, not the nominal target.
+			if err := relErr(b.OutputRateHz(), emittedRate); err > 5e-3 {
+				t.Errorf("OutputRateHz=%.2f disagrees with the measured emitted rate %.2f (%.3f%%)",
+					b.OutputRateHz(), emittedRate, err*100)
+			}
+		})
+	}
+}
+
+func rateName(hz float64) string {
+	switch hz {
+	case 5_000_000:
+		return "5.0MS"
+	case 6_250_000:
+		return "6.25MS"
+	case 10_000_000:
+		return "10MS"
+	case 20_000_000:
+		return "20MS"
+	default:
+		return "rate"
+	}
+}
+
+func relErr(got, want float64) float64 { return math.Abs(got-want) / want }
+
 func TestChannelizerBankResidualOffsetIsCorrected(t *testing.T) {
 	const (
 		inRate  = 2_400_000.0

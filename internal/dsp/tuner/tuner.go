@@ -48,7 +48,11 @@ type Bank interface {
 	// InputRateHz returns the wide-band sample rate the bank consumes.
 	InputRateHz() float64
 
-	// OutputRateHz returns the narrow-band per-tap sample rate.
+	// OutputRateHz returns the narrow-band per-tap sample rate the bank
+	// actually emits. It equals the construction target when the rational
+	// resampler hits it exactly, but may differ by a fraction of a percent
+	// when the exact ratio exceeds the resampler caps (issue #550). Symbol
+	// clocks must be built from this value, not the nominal target.
 	OutputRateHz() float64
 
 	// Reset clears all internal filter / NCO state. Called when the

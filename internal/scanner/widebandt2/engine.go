@@ -270,7 +270,7 @@ func New(opts Options) (*Engine, error) {
 				ch.FrequencyHz, ch.SystemName)
 		}
 		offset := float64(ch.FrequencyHz) - float64(opts.CenterFreqHz)
-		ec, err := buildChannel(sys, ch, opts.Bus, log, opts.Now)
+		ec, err := buildChannel(sys, ch, bank.OutputRateHz(), opts.Bus, log, opts.Now)
 		if err != nil {
 			return nil, err
 		}
@@ -301,7 +301,7 @@ func New(opts Options) (*Engine, error) {
 // to the per-channel state machine — the caller just pumps IQ into
 // receiver.Process and the bus picks up cc.locked / grant events as
 // the protocol's framer locks on.
-func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *slog.Logger, now func() time.Time) (*engineChannel, error) {
+func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus *events.Bus, log *slog.Logger, now func() time.Time) (*engineChannel, error) {
 	freqHz := ch.FrequencyHz
 	switch sys.Protocol {
 	case trunking.ProtocolDMR:
@@ -322,7 +322,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			InterleavedVoice: sys.DMRInterleavedVoice,
 		})
 		rx := dmrrx.New(dmrrx.Options{
-			SampleRateHz: narrowbandRateHz,
+			SampleRateHz: outRateHz,
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
@@ -338,7 +338,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			Now:         now,
 		})
 		rx := dmrrx.New(dmrrx.Options{
-			SampleRateHz: narrowbandRateHz,
+			SampleRateHz: outRateHz,
 			DibitSink:    dmr.DibitSink(func(d []uint8, b int) { cc.Process(d, b) }),
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier2,
@@ -383,7 +383,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 			Rotations:   rotations,
 		})
 		rx := p25phase1rx.New(p25phase1rx.Options{
-			SampleRateHz: narrowbandRateHz,
+			SampleRateHz: outRateHz,
 			DeviationHz:  p25Phase1DeviationHz,
 			DemodMode:    demodMode,
 			DibitSink: p25phase1.DibitSink(func(d []uint8, b int) {
@@ -410,7 +410,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, bus *events.Bus, log *s
 		}
 		sfDec := p25phase2.NewSuperframeDecoder()
 		rx := p25phase2rx.New(p25phase2rx.Options{
-			SampleRateHz: narrowbandRateHz,
+			SampleRateHz: outRateHz,
 			DibitSink: p25phase2.DibitSink(func(d []uint8, b int) {
 				for _, sf := range sfDec.Process(d, b) {
 					cc.IngestSuperframe(sf)
