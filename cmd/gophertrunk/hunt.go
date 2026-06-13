@@ -51,6 +51,8 @@ func runHunt(args []string) {
 	surveyDeep := fs.Bool("survey-deep", false, "survey: hand narrowband carriers the classifier called analog (am/nbfm) to the trunking identify too, so a trunked DMR/TETRA/MPT control channel the blind classifier missed is still found (slower, more accurate)")
 	surveyNDJSON := fs.String("survey-ndjson", "", "survey: append each classified carrier to this newline-delimited JSON file as it is found (crash-safe, the cumulative record across -resume runs)")
 	resume := fs.Bool("resume", false, "survey: skip carriers already present in -survey-ndjson (resume an interrupted survey)")
+	autoGain := fs.Bool("auto-gain", false, "live: after the run, sweep gains on each locked control channel and recommend the one minimizing decode errors (does not apply it)")
+	autoGainSet := fs.String("auto-gain-set", "", "live: comma-separated gains in dB for -auto-gain (default: a conservative spread; use a device-appropriate set for RTL/Airspy)")
 	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
 	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
 	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
@@ -185,6 +187,9 @@ FLAGS:`)
 			surveyDeep:       *surveyDeep,
 			surveyNDJSON:     *surveyNDJSON,
 			resume:           *resume,
+			autoGain:         *autoGain,
+			autoGainSet:      *autoGainSet,
+			outDir:           *out,
 			surveyAudioDir:   *surveyAudio,
 			maxDwellSeconds:  *maxDwellSeconds,
 			identifyMinConf:  *identifyMinConf,

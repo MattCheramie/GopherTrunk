@@ -119,6 +119,9 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 	if res.Lock != nil {
 		rep.ControlHz = res.Lock.FrequencyHz
 	}
+	if res.Signal != nil {
+		rep.ErrorRate = res.Signal.DecodeErrorRate
+	}
 	rep.Talkgroups = len(sys.Talkgroups) - before
 	return rep
 }

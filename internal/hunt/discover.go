@@ -50,6 +50,10 @@ type CaptureReport struct {
 	Locked     bool    `json:"locked"`
 	ControlHz  uint32  `json:"control_hz,omitempty"`
 	Talkgroups int     `json:"talkgroups"`
+	// ErrorRate is the decode-error events per 1000 symbols from the decode
+	// (siglab Signal.DecodeErrorRate), a protocol-neutral demod-quality proxy.
+	// Zero when no signal analysis was produced. Used by the auto-gain sweep.
+	ErrorRate  float64 `json:"error_rate,omitempty"`
 	Skipped    bool    `json:"skipped"`
 	SkipReason string  `json:"skip_reason,omitempty"`
 	Error      string  `json:"error,omitempty"`
