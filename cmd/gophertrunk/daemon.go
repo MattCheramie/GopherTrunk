@@ -488,6 +488,11 @@ type Daemon struct {
 	// claim concurrently from their spawn goroutines.
 	iqPrimaryMu sync.Mutex
 	iqPrimary   map[string]bool
+	// iqPrimaryOwner records which subsystem currently owns a serial's
+	// primary StreamIQ pump (e.g. ccdecoder, widebandt2, aprs). When a
+	// second consumer falls back to Subscribe this value is logged to
+	// explain "stream already active" conflicts on single-SDR setups.
+	iqPrimaryOwner map[string]string
 	metrics     *metrics.Metrics
 	httpAPI     *api.Server
 	grpcAPI     *api.GRPCServer
@@ -629,6 +634,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		bus:       events.NewBus(64),
 		ready:     make(chan struct{}),
 		iqPrimary: make(map[string]bool),
+		iqPrimaryOwner: make(map[string]string),
 	}
 	if cfgPath != "" {
 		w, err := config.NewWriter(cfgPath)
@@ -1340,7 +1346,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				// The CC decoder owns StreamIQ on this dongle's broker,
 				// so single-channel decoders that share it must Subscribe
 				// rather than open a conflicting second stream (#547).
+				d.iqPrimaryMu.Lock()
 				d.iqPrimary[controlEntry.Info.Serial] = true
+				d.iqPrimaryOwner[controlEntry.Info.Serial] = "ccdecoder"
+				d.iqPrimaryMu.Unlock()
 				// Reacquire re-requests the configured rate (and re-quantizes
 				// on the fresh handle); the decoder, by contrast, is built from
 				// the delivered effectiveRate above.
@@ -1410,10 +1419,37 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if d.player != nil {
 				convRec = convFanoutRecorder{d.recorder, playerSink{p: d.player, engine: d.engine}}
 			}
+			convIQ := conventional.IQSource(convEntry.Device)
+			convIQ = diagnosticIQSource{
+				Log:    log,
+				Serial: convEntry.Info.Serial,
+				Owner:  "conventional",
+				Inner:  convIQ,
+				LookupPrimaryOwner: func(serial string) (bool, string) {
+					d.iqPrimaryMu.Lock()
+					defer d.iqPrimaryMu.Unlock()
+					hasPrimary := d.iqPrimary[serial]
+					primaryOwner := d.iqPrimaryOwner[serial]
+					return hasPrimary, primaryOwner
+				},
+			}
+			d.iqPrimaryMu.Lock()
+			hasPrimary := d.iqPrimary[convEntry.Info.Serial]
+			primaryOwner := d.iqPrimaryOwner[convEntry.Info.Serial]
+			d.iqPrimaryMu.Unlock()
+			if hasPrimary {
+				if primaryOwner == "" {
+					primaryOwner = "unknown"
+				}
+				log.Warn("daemon: conventional scanner may contend for StreamIQ; serial already has primary IQ owner",
+					"serial", convEntry.Info.Serial,
+					"primary_owner", primaryOwner,
+					"hint", "disable the competing decoder or route conventional scanner through the IQ broker")
+			}
 			cs, err := conventional.New(conventional.Options{
 				Log:          log,
 				Tuner:        convEntry.Device,
-				IQ:           convEntry.Device,
+				IQ:           convIQ,
 				Engine:       d.engine,
 				Recorder:     convRec,
 				DeviceSerial: convEntry.Info.Serial,
@@ -1486,7 +1522,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// This engine owns StreamIQ on the dongle's broker; mark the
 			// serial so a single-channel decoder pinned to the same dongle
 			// Subscribes instead of opening a second stream (#547).
+			d.iqPrimaryMu.Lock()
 			d.iqPrimary[entry.Info.Serial] = true
+			d.iqPrimaryOwner[entry.Info.Serial] = "widebandt2"
+			d.iqPrimaryMu.Unlock()
 
 			// DMR Tier III trunk autoconfiguration: for any control channel
 			// whose system has no dmr_band_plan, attach a learner that
@@ -2343,7 +2382,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "pocsag")
 			if err != nil {
 				d.log.Warn("pocsag: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2376,7 +2415,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "flex")
 			if err != nil {
 				d.log.Warn("flex: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2511,7 +2550,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "m17")
 			if err != nil {
 				d.log.Warn("m17: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2548,7 +2587,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "aprs")
 			if err != nil {
 				d.log.Warn("aprs: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2586,7 +2625,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "ais")
 			if err != nil {
 				d.log.Warn("ais: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2618,7 +2657,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "lora")
 			if err != nil {
 				d.log.Warn("lora: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2655,7 +2694,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "dsc")
 			if err != nil {
 				d.log.Warn("dsc: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2692,7 +2731,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "mdc1200")
 			if err != nil {
 				d.log.Warn("mdc1200: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -2739,7 +2778,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
 				return nil
 			}
-			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial)
+			iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, spec.serial, "adsb/ppm")
 			if err != nil {
 				d.log.Warn("adsb/ppm: open IQ failed",
 					"serial", spec.serial, "freq_hz", spec.freq, "err", err)
@@ -3616,28 +3655,92 @@ func (d *Daemon) wrapIQBrokers(cfg config.Config, log *slog.Logger) {
 // the broker) becomes the primary and gets StreamIQ; later callers on the same
 // serial Subscribe. The returned cleanup must be deferred. StreamIQ
 // self-terminates on ctx cancel, so the primary's cleanup is a no-op.
-func (d *Daemon) openSingleChannelIQ(ctx context.Context, br *iqtap.Broker, serial string) (<-chan []complex64, func(), error) {
+func (d *Daemon) openSingleChannelIQ(ctx context.Context, br *iqtap.Broker, serial string, owner string) (<-chan []complex64, func(), error) {
 	d.iqPrimaryMu.Lock()
 	primary := !d.iqPrimary[serial]
+	existingOwner := d.iqPrimaryOwner[serial]
 	if primary {
 		d.iqPrimary[serial] = true
+		d.iqPrimaryOwner[serial] = owner
 	}
 	d.iqPrimaryMu.Unlock()
 
 	if primary {
+		d.log.Debug("iqtap: claimed primary StreamIQ owner",
+			"serial", serial,
+			"owner", owner)
 		ch, err := br.StreamIQ(ctx)
 		if err != nil {
 			// Release the claim so a retry (or another decoder) can drive
 			// the pump instead of wedging the serial on a dead primary.
 			d.iqPrimaryMu.Lock()
 			delete(d.iqPrimary, serial)
+			delete(d.iqPrimaryOwner, serial)
 			d.iqPrimaryMu.Unlock()
 			return nil, func() {}, err
 		}
 		return ch, func() {}, nil
 	}
+	if existingOwner == "" {
+		existingOwner = "unknown"
+	}
+	d.log.Debug("iqtap: primary StreamIQ already owned; using subscription",
+		"serial", serial,
+		"owner", owner,
+		"primary_owner", existingOwner)
 	sub := br.Subscribe()
 	return sub.C, sub.Close, nil
+}
+
+// diagnosticIQSource wraps direct StreamIQ callers (for example the
+// conventional scanner) so logs include the caller role and any known
+// broker-side primary owner for the same serial.
+type diagnosticIQSource struct {
+	Log                *slog.Logger
+	Serial             string
+	Owner              string
+	Inner              conventional.IQSource
+	LookupPrimaryOwner func(serial string) (hasPrimary bool, primaryOwner string)
+}
+
+func (s diagnosticIQSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	if s.LookupPrimaryOwner != nil {
+		hasPrimary, primaryOwner := s.LookupPrimaryOwner(s.Serial)
+		if hasPrimary {
+			if primaryOwner == "" {
+				primaryOwner = "unknown"
+			}
+			s.Log.Warn("iqtap: direct StreamIQ open requested while primary owner already registered",
+				"serial", s.Serial,
+				"owner", s.Owner,
+				"primary_owner", primaryOwner)
+		}
+	}
+	s.Log.Debug("iqtap: direct StreamIQ open attempt",
+		"serial", s.Serial,
+		"owner", s.Owner)
+	ch, err := s.Inner.StreamIQ(ctx)
+	if err != nil {
+		hasPrimary := false
+		primaryOwner := ""
+		if s.LookupPrimaryOwner != nil {
+			hasPrimary, primaryOwner = s.LookupPrimaryOwner(s.Serial)
+		}
+		if primaryOwner == "" {
+			primaryOwner = "unknown"
+		}
+		s.Log.Warn("iqtap: direct StreamIQ open failed",
+			"serial", s.Serial,
+			"owner", s.Owner,
+			"has_primary_owner", hasPrimary,
+			"primary_owner", primaryOwner,
+			"err", err)
+		return nil, err
+	}
+	s.Log.Debug("iqtap: direct StreamIQ open succeeded",
+		"serial", s.Serial,
+		"owner", s.Owner)
+	return ch, nil
 }
 
 // convFanoutRecorder lets the conventional scanner drive both the
