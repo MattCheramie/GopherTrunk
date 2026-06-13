@@ -20,6 +20,8 @@ type fakeHuntCockpit struct {
 	exportErr  error
 	commitChg  []string
 	commitErr  error
+	rrReport   HuntRRReport
+	rrErr      error
 
 	lastStart  HuntStartRequest
 	lastFormat string
@@ -45,6 +47,11 @@ func (f *fakeHuntCockpit) ExportSurvey(id int, format string) ([]byte, string, e
 func (f *fakeHuntCockpit) Commit(id int, force, dryRun bool) ([]string, error) {
 	f.lastID = id
 	return f.commitChg, f.commitErr
+}
+
+func (f *fakeHuntCockpit) RadioReference(id, countyID int, checkSIDs []int) (HuntRRReport, error) {
+	f.lastID = id
+	return f.rrReport, f.rrErr
 }
 
 func TestHuntStatus_NoCockpitReturnsIdle(t *testing.T) {

@@ -28,6 +28,15 @@ type HuntStatus struct {
 	Reports []hunt.CaptureReport   `json:"reports,omitempty"`
 }
 
+// HuntRRReport is the GET /api/v1/hunt/radioreference response: the
+// RadioReference cross-reference of a run's discovered system — ranked
+// duplicate-system hints and a frequency/talkgroup diff vs the strongest match.
+type HuntRRReport struct {
+	Hints    []hunt.DuplicateHint `json:"hints,omitempty"`
+	Diff     *hunt.RRDiff         `json:"diff,omitempty"`
+	Compared int                  `json:"compared"` // existing RR systems compared against
+}
+
 // HuntStartRequest is the POST /api/v1/hunt/start body. Frequencies are in MHz
 // for operator convenience. With Bands set the hunt sweeps; with Candidates +
 // NoSweep it probes the listed control channels directly.

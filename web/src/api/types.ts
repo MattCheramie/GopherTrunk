@@ -183,6 +183,29 @@ export interface DiscoveredSite {
   neighbors?: NeighborRef[];
 }
 
+// HuntRRReport mirrors api.HuntRRReport — the RadioReference cross-reference of
+// a discovered system: duplicate-system hints + a frequency/talkgroup diff.
+export interface HuntRRReport {
+  hints?: DuplicateHint[];
+  diff?: RRDiff;
+  compared: number;
+}
+
+export interface DuplicateHint {
+  sid: number;
+  name: string;
+  reason: string;
+  confidence: number;
+}
+
+export interface RRDiff {
+  sid: number;
+  name: string;
+  freq_offsets?: { discovered_hz: number; rr_hz: number; delta_hz: number }[];
+  freqs_not_in_rr?: number[];
+  talkgroups_not_in_rr?: number[];
+}
+
 // NeighborRef mirrors hunt.NeighborRef — an adjacent site advertised by the
 // control channel. frequency_hz is set once the band plan / LCN resolver maps
 // the channel to a downlink frequency.

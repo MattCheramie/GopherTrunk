@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
-import type { CaptureReport, DetectedSignal, HuntStatus } from "../api/types";
+import type {
+  CaptureReport,
+  DetectedSignal,
+  HuntRRReport,
+  HuntStatus,
+} from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -73,6 +78,10 @@ export function Hunt() {
   const [survey, setSurvey] = useState(false);
   const [classifyOnly, setClassifyOnly] = useState(false);
   const [sortBy, setSortBy] = useState<"freq" | "class" | "snr">("freq");
+  const [rrCounty, setRRCounty] = useState("");
+  const [rrSID, setRRSID] = useState("");
+  const [rrReport, setRRReport] = useState<HuntRRReport | null>(null);
+  const [rrBusy, setRRBusy] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -124,6 +133,28 @@ export function Hunt() {
       await writes.huntStop(cfg);
     } catch (e: unknown) {
       setError(e instanceof Error ? `stop hunt failed: ${e.message}` : "stop hunt failed");
+    }
+  }
+
+  async function checkRR() {
+    setRRBusy(true);
+    try {
+      const countyID = parseInt(rrCounty.trim(), 10);
+      const checkSIDs = rrSID
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      const rep = await api.huntRadioReference(cfg, {
+        countyID: Number.isFinite(countyID) && countyID > 0 ? countyID : undefined,
+        checkSIDs,
+      });
+      setRRReport(rep);
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error ? `RadioReference check failed: ${e.message}` : "RadioReference check failed",
+      );
+    } finally {
+      setRRBusy(false);
     }
   }
 
@@ -335,6 +366,76 @@ export function Hunt() {
           <span>Survey:</span>
           <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>signals JSON</a>
           <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>signals CSV</a>
+        </section>
+      ) : null}
+
+      {status?.system_name ? (
+        <section className="hunt-rr">
+          <h3>RadioReference</h3>
+          <div className="hunt-rr-controls">
+            <label>
+              County id (ctid)
+              <input value={rrCounty} onChange={(e) => setRRCounty(e.target.value)} placeholder="e.g. 1234" />
+            </label>
+            <label>
+              or System id(s)
+              <input value={rrSID} onChange={(e) => setRRSID(e.target.value)} placeholder="comma-separated SIDs" />
+            </label>
+            <button onClick={checkRR} disabled={rrBusy || (!rrCounty.trim() && !rrSID.trim())}>
+              {rrBusy ? "Checking…" : "Cross-reference"}
+            </button>
+          </div>
+          {rrReport ? (
+            <div className="hunt-rr-result">
+              {rrReport.hints && rrReport.hints.length > 0 ? (
+                <>
+                  <h4>Possible existing systems</h4>
+                  <ul>
+                    {rrReport.hints.map((h, i) => (
+                      <li key={i}>
+                        SID {h.sid} — {h.name} ({(h.confidence * 100).toFixed(0)}%): {h.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p>No existing match among {rrReport.compared} system(s).</p>
+              )}
+              {rrReport.diff ? (
+                <>
+                  <h4>
+                    Differences vs RadioReference (SID {rrReport.diff.sid}, {rrReport.diff.name})
+                  </h4>
+                  {rrReport.diff.freq_offsets && rrReport.diff.freq_offsets.length > 0 ? (
+                    <div>
+                      <strong>Frequency offsets:</strong>
+                      <ul>
+                        {rrReport.diff.freq_offsets.map((o, i) => (
+                          <li key={i}>
+                            {(o.discovered_hz / 1e6).toFixed(4)} vs {(o.rr_hz / 1e6).toFixed(4)} MHz (
+                            {o.delta_hz > 0 ? "+" : ""}
+                            {(o.delta_hz / 1e3).toFixed(2)} kHz)
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {rrReport.diff.freqs_not_in_rr && rrReport.diff.freqs_not_in_rr.length > 0 ? (
+                    <div>
+                      <strong>Frequencies not in RadioReference:</strong>{" "}
+                      {rrReport.diff.freqs_not_in_rr.map((f) => (f / 1e6).toFixed(4)).join(", ")} MHz
+                    </div>
+                  ) : null}
+                  {rrReport.diff.talkgroups_not_in_rr && rrReport.diff.talkgroups_not_in_rr.length > 0 ? (
+                    <div>
+                      <strong>Talkgroups not in RadioReference:</strong>{" "}
+                      {rrReport.diff.talkgroups_not_in_rr.join(", ")}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 

@@ -11,6 +11,7 @@ import type {
   ConfigListResponse,
   DeviceDTO,
   Health,
+  HuntRRReport,
   HuntStatus,
   Mutations,
   RIDDTO,
@@ -198,6 +199,15 @@ export const api = {
   scanner: (c: ClientConfig) =>
     request<ScannerStatusDTO>(c, "GET", "/api/v1/scanner"),
   hunt: (c: ClientConfig) => request<HuntStatus>(c, "GET", "/api/v1/hunt"),
+  huntRadioReference: (
+    c: ClientConfig,
+    params: { countyID?: number; checkSIDs?: number[] },
+  ) => {
+    const q = new URLSearchParams();
+    if (params.countyID) q.set("county_id", String(params.countyID));
+    for (const sid of params.checkSIDs ?? []) q.append("check_sid", String(sid));
+    return request<HuntRRReport>(c, "GET", `/api/v1/hunt/radioreference?${q.toString()}`);
+  },
   audio: (c: ClientConfig) =>
     request<AudioStatusDTO>(c, "GET", "/api/v1/audio"),
   metricsText: (c: ClientConfig) =>

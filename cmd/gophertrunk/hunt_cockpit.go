@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/huntrr"
+	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -17,6 +21,28 @@ import (
 type huntCockpit struct {
 	mgr     *hunt.Manager
 	cfgPath string
+	rrAuth  radioreference.Auth // RadioReference credentials for the cross-reference endpoint
+}
+
+// RadioReference cross-references a run's discovered system against
+// RadioReference (duplicate hints + frequency/talkgroup diff), using the
+// daemon's configured credentials and the caller-supplied comparison targets.
+func (c huntCockpit) RadioReference(id, countyID int, checkSIDs []int) (api.HuntRRReport, error) {
+	sys, ok, err := c.runSystem(id)
+	if err != nil {
+		return api.HuntRRReport{}, err
+	}
+	if !ok {
+		return api.HuntRRReport{}, fmt.Errorf("hunt: no discovered system to cross-reference yet")
+	}
+	client, err := radioreference.NewClient(c.rrAuth)
+	if err != nil {
+		return api.HuntRRReport{}, fmt.Errorf("hunt: RadioReference credentials not configured (set radioreference.* or GOPHERTRUNK_RR_KEY/USER/PASS): %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	res := huntrr.Gather(ctx, client, sys, countyID, checkSIDs, nil)
+	return api.HuntRRReport{Hints: res.Hints, Diff: res.Diff, Compared: res.Compared}, nil
 }
 
 // Status builds the REST snapshot from the manager's run state + latest map.
