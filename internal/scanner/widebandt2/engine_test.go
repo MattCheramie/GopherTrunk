@@ -340,6 +340,37 @@ func TestEngineP25Phase1Channel(t *testing.T) {
 	}
 }
 
+// TestEnginePolyphase625MSBuildsCorrectRate reproduces the issue #550 config
+// (USRP X310 at 6.25 MS/s, strategy=polyphase, P25 CC 625 kHz below the wideband
+// center) and asserts the engine's bank reports a per-tap rate within 0.1% of
+// 48 kHz. Before the fix the polyphase fine-tune emitted 48828 Hz (1.7% fast)
+// while receivers were hardcoded to 48000 — the symbol-clock error that left the
+// control channel deaf. The receivers are now built from bank.OutputRateHz(), so
+// a correct rate here means the receiver is clocked correctly.
+func TestEnginePolyphase625MSBuildsCorrectRate(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	dev := newMockDevice(nil)
+	const ccHz = 450_125_000
+	e, err := New(Options{
+		Device: dev, Bus: bus, SampleRateHz: 6_250_000, CenterFreqHz: 450_750_000,
+		TunerStrategy: "polyphase",
+		Channels:      []ChannelConfig{{FrequencyHz: ccHz, SystemName: "p25-sys"}},
+		Systems:       []trunking.System{p25Phase1System("p25-sys", ccHz)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Strategy() != "polyphase" {
+		t.Fatalf("strategy = %q, want polyphase", e.Strategy())
+	}
+	rate := e.bank.OutputRateHz()
+	if relErr := (rate - 48_000.0) / 48_000.0; relErr > 1e-3 || relErr < -1e-3 {
+		t.Errorf("polyphase 6.25 MS/s per-tap rate = %.2f Hz, %.3f%% off 48 kHz (receivers are built from this)",
+			rate, relErr*100)
+	}
+}
+
 func TestEngineP25Phase2Channel(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

@@ -20,9 +20,10 @@ import (
 // taps falling in the same channelizer bin would alias, so AddTap
 // rejects a second tap in an already-claimed bin.
 type ChannelizerBank struct {
-	inRateHz  float64
-	outRateHz float64
-	guardFrac float64
+	inRateHz    float64
+	outRateHz   float64
+	actualOutHz float64
+	guardFrac   float64
 
 	channels  int
 	binRateHz float64
@@ -53,14 +54,17 @@ func NewChannelizerBank(inRateHz, outRateHz, guardFrac float64, channels, tapsPe
 	if channels < 2 {
 		panic("tuner: ChannelizerBank requires channels >= 2")
 	}
+	binRateHz := inRateHz / float64(channels)
+	l, m := rationalRatio(outRateHz, binRateHz)
 	return &ChannelizerBank{
-		inRateHz:  inRateHz,
-		outRateHz: outRateHz,
-		guardFrac: guardFrac,
-		channels:  channels,
-		binRateHz: inRateHz / float64(channels),
-		ch:        channelizer.New(channels, tapsPerBranch, kaiserBeta),
-		binClaims: make(map[int]bool),
+		inRateHz:    inRateHz,
+		outRateHz:   outRateHz,
+		actualOutHz: binRateHz * float64(l) / float64(m),
+		guardFrac:   guardFrac,
+		channels:    channels,
+		binRateHz:   binRateHz,
+		ch:          channelizer.New(channels, tapsPerBranch, kaiserBeta),
+		binClaims:   make(map[int]bool),
 	}
 }
 
@@ -145,8 +149,12 @@ func (b *ChannelizerBank) Process(src []complex64) {
 // InputRateHz returns the wide-band sample rate.
 func (b *ChannelizerBank) InputRateHz() float64 { return b.inRateHz }
 
-// OutputRateHz returns the per-tap narrow-band sample rate.
-func (b *ChannelizerBank) OutputRateHz() float64 { return b.outRateHz }
+// OutputRateHz returns the per-tap narrow-band sample rate the bank actually
+// emits. The fine-tune resampler decimates the bin rate (InputRateHz/channels)
+// to the construction target, but when that exact ratio exceeds the resampler
+// caps the achieved rate differs by a fraction of a percent (issue #550);
+// consumers should build their symbol clocks from this value.
+func (b *ChannelizerBank) OutputRateHz() float64 { return b.actualOutHz }
 
 // Reset clears the channelizer and every tap's fine-tune state. The
 // channelizer.Polyphase has no Reset method of its own; we drive a

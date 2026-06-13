@@ -262,6 +262,37 @@ func TestDDCBankWidebandRatesLandAtDC(t *testing.T) {
 	}
 }
 
+// TestRationalRatioFallbackBestApproximation guards the issue #550 fix: when the
+// exact reduction exceeds the resampler caps (L>64 or M>8192), rationalRatio must
+// return the closest ratio under the caps, not the crude L=1/M=round integer
+// decimator that drifted the rate by up to ~2%. These are the polyphase
+// channelizer bin rates (fullRate/16) where the bin loses its factor of two.
+func TestRationalRatioFallbackBestApproximation(t *testing.T) {
+	const out = 48_000.0
+	// binRate, and the old crude fallback's M that this must beat.
+	cases := []struct {
+		binRate  float64
+		crudeOld int // M the previous fallback produced (L was 1)
+	}{
+		{390625, 8},  // 6.25 MS/s ÷16 — old: 1/8 → 48828 Hz (+1.7%)
+		{312500, 7},  // 5.0 MS/s ÷16  — old: 1/7 → 44643 Hz (−7%)
+	}
+	for _, c := range cases {
+		l, m := rationalRatio(out, c.binRate)
+		if l < 1 || l > 64 || m < 1 || m > 8192 {
+			t.Errorf("rationalRatio(%v, %v) = %d/%d violates caps (L≤64, M≤8192)", out, c.binRate, l, m)
+		}
+		emitted := c.binRate * float64(l) / float64(m)
+		if relErr := math.Abs(emitted-out) / out; relErr > 1e-3 {
+			t.Errorf("rationalRatio(%v, %v) = %d/%d → %.2f Hz, %.3f%% off 48 kHz (want <0.1%%)",
+				out, c.binRate, l, m, emitted, relErr*100)
+		}
+		if l == 1 && m == c.crudeOld {
+			t.Errorf("rationalRatio(%v, %v) still returns the crude 1/%d fallback", out, c.binRate, c.crudeOld)
+		}
+	}
+}
+
 func TestRationalRatioReduces(t *testing.T) {
 	cases := []struct {
 		in, out      float64

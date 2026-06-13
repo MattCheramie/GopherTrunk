@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wideband polyphase decode at 6.25 / 5.0 MS/s (USRP-friendly rates).** With
+  `tuner_strategy: polyphase`, the channelizer's per-tap fine-tune resampler could
+  silently emit the wrong sample rate at input rates whose bin rate is short on
+  factors of two (e.g. 6.25 MS/s ÷16 = 390625 Hz): the exact 48 kHz ratio needed
+  L=384, tripped `rationalRatio`'s L≤64 cap, and fell back to a crude integer
+  decimator that produced 48828 Hz — a 1.7 % symbol-clock error that left the
+  control channel deaf (P25 NID BCH uncorrectable). The fallback now picks the
+  closest ratio under the caps (≤0.06 % error), and the wideband engine builds
+  each receiver from the rate the bank *actually* emits (`Bank.OutputRateHz`)
+  rather than a hardcoded 48 kHz. The DDC path was already exact and is unchanged.
+  (#550)
+
 ### Added
 
 - **USRP/SoapySDR actual sample-rate tracking.** The `soapy_remote` driver now

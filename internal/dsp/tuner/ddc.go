@@ -50,11 +50,12 @@ func (n *nco) renorm() {
 // DDCBank is a Bank built from one independent NCO mixer + rational
 // polyphase resampler per tap. CPU cost is O(N_taps · N_samples).
 type DDCBank struct {
-	inRateHz  float64
-	outRateHz float64
-	guardFrac float64
-	taps      []*ddcTap
-	mixBuf    []complex64
+	inRateHz    float64
+	outRateHz   float64
+	actualOutHz float64
+	guardFrac   float64
+	taps        []*ddcTap
+	mixBuf      []complex64
 }
 
 type ddcTap struct {
@@ -71,10 +72,12 @@ type ddcTap struct {
 // alias roll-off; AddTap rejects offsets outside the usable band. A typical
 // value is 0.05 (5%).
 func NewDDCBank(inRateHz, outRateHz, guardFrac float64) *DDCBank {
+	l, m := rationalRatio(outRateHz, inRateHz)
 	return &DDCBank{
-		inRateHz:  inRateHz,
-		outRateHz: outRateHz,
-		guardFrac: guardFrac,
+		inRateHz:    inRateHz,
+		outRateHz:   outRateHz,
+		actualOutHz: inRateHz * float64(l) / float64(m),
+		guardFrac:   guardFrac,
 	}
 }
 
@@ -141,8 +144,12 @@ func mixInto(dst, src []complex64, n *nco) {
 // InputRateHz returns the wide-band sample rate.
 func (b *DDCBank) InputRateHz() float64 { return b.inRateHz }
 
-// OutputRateHz returns the per-tap narrow-band sample rate.
-func (b *DDCBank) OutputRateHz() float64 { return b.outRateHz }
+// OutputRateHz returns the per-tap narrow-band sample rate the bank actually
+// emits. This equals the construction target when the rational resampler can
+// hit it exactly, but may differ by a fraction of a percent when the exact
+// ratio exceeds the resampler caps (issue #550); consumers should build their
+// symbol clocks from this value, not the nominal target.
+func (b *DDCBank) OutputRateHz() float64 { return b.actualOutHz }
 
 // Reset clears every tap's NCO and resampler state.
 func (b *DDCBank) Reset() {
@@ -161,9 +168,16 @@ const (
 	ddcKaiserBeta       = 7.0
 )
 
-// rationalRatio reduces out/in to lowest L/M terms. Pathologically large
-// ratios (e.g. odd SDR rates) fall back to a pure integer decimator so
-// the resampler doesn't allocate thousands of branches.
+// rationalRatio reduces out/in to lowest L/M terms. When the exact reduction
+// exceeds the resampler caps (L>64 branches or M>8192), it falls back to the
+// closest representable ratio under those caps instead of a crude integer
+// decimator. The old fallback (L=1, M=round(in/out)) silently changed the
+// achieved rate by up to a few percent — e.g. for a polyphase channelizer bin
+// rate of 390625 Hz (6.25 MS/s ÷16, a power of five with no factor of two) the
+// exact 48000/390625 reduces to L=384/M=3125, trips L>64, and the old fallback
+// produced 390625/8 = 48828 Hz: a 1.7% symbol-clock error that broke decode
+// (issue #550). The bounded search instead returns L=7/M=57 (0.06% error), well
+// within what the symbol-timing loops tolerate.
 func rationalRatio(out, in float64) (l, m int) {
 	outI := int(math.Round(out))
 	inI := int(math.Round(in))
@@ -173,13 +187,29 @@ func rationalRatio(out, in float64) (l, m int) {
 	g := gcdInt(outI, inI)
 	l, m = outI/g, inI/g
 	if l > 64 || m > 8192 {
-		l = 1
-		m = int(math.Round(float64(inI) / float64(outI)))
-		if m < 1 {
-			m = 1
-		}
+		return bestRatioUnderCaps(float64(outI) / float64(inI))
 	}
 	return l, m
+}
+
+// bestRatioUnderCaps returns the L/M (L in 1..64, M in 1..8192) whose ratio is
+// closest to r. O(64) and called only on the cap-exceeded fallback path, so it
+// has no per-sample cost.
+func bestRatioUnderCaps(r float64) (l, m int) {
+	bestL, bestM := 1, 1
+	bestErr := math.Inf(1)
+	for li := 1; li <= 64; li++ {
+		mi := int(math.Round(float64(li) / r))
+		if mi < 1 {
+			mi = 1
+		} else if mi > 8192 {
+			mi = 8192
+		}
+		if e := math.Abs(float64(li)/float64(mi) - r); e < bestErr {
+			bestErr, bestL, bestM = e, li, mi
+		}
+	}
+	return bestL, bestM
 }
 
 func gcdInt(a, b int) int {
