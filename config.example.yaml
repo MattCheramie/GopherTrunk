@@ -371,6 +371,11 @@ sdr:
   #     role: control               # control | voice | auto
   #     format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
   #     stream_protocol: "tcp"      # tcp (default/only for now)
+  #     stream_mtu: 0               # stream endpoint MTU in bytes, sent as the
+  #                                 #  remote:mtu stream arg (NOT a make() arg,
+  #                                 #  so it can't go in args). 0 = SoapyRemote
+  #                                 #  default 1500; raise (e.g. 8192) on
+  #                                 #  jumbo-frame / high-throughput links.
   #     ppm: 0                      # best-effort (driver-dependent)
   #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
   #     bias_tee: false             # best-effort (driver-dependent)

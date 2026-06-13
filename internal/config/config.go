@@ -768,6 +768,14 @@ type SoapyRemoteConfig struct {
 	// StreamProtocol selects the stream transport. Only "tcp" (the
 	// default) is currently implemented.
 	StreamProtocol string `yaml:"stream_protocol"`
+	// StreamMTU sets the SoapyRemote stream endpoint MTU in bytes. It is
+	// forwarded to the server's setupStream as the "remote:mtu" stream arg
+	// and used to size the client's flow-control window so both ends agree.
+	// This is a stream argument, distinct from the device make() kwargs in
+	// Args, so it cannot be expressed there. Zero leaves SoapyRemote's
+	// default (1500); raise it (e.g. 8192) on jumbo-frame / high-throughput
+	// links.
+	StreamMTU int `yaml:"stream_mtu"`
 	// PPM is the frequency-correction tuning applied on open (best-effort;
 	// ignored by SoapySDR drivers without frequency-correction support).
 	PPM int `yaml:"ppm"`
@@ -1717,6 +1725,12 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	case "", "tcp":
 	default:
 		return fmt.Errorf("sdr.soapy_remote[%d]: stream_protocol must be tcp", i)
+	}
+	// stream_mtu is in bytes; 0 means SoapyRemote's default (1500). Reject
+	// values that can't be a real endpoint MTU — too small to hold a useful
+	// frame, or above the driver's 4 MiB per-transfer read guard.
+	if s.StreamMTU != 0 && (s.StreamMTU < 64 || s.StreamMTU > 1<<20) {
+		return fmt.Errorf("sdr.soapy_remote[%d]: stream_mtu %d out of range (64..1048576 bytes, 0 = default 1500)", i, s.StreamMTU)
 	}
 	if _, err := s.DeviceArgs(); err != nil {
 		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)

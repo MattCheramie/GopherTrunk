@@ -46,23 +46,24 @@ const (
 	// credit ceiling. The server gates its sender on the value we send, not on
 	// any local buffer, so this only needs to be comfortably large.
 	streamWindowBytes = 8 * 1024 * 1024
-	// maxInFlightSeqs is the credit window advertised to the server (the ACK's
-	// elems field); it gates how far ahead the server may stream (window/mtu).
+	// maxInFlightSeqs is the default credit window advertised to the server
+	// (the ACK's elems field); it gates how far ahead the server may stream
+	// (window/mtu). With a configured stream_mtu the device computes its own
+	// window as streamWindowBytes/mtu; this is the stream_mtu=0 default and the
+	// gratuitous-ACK cadence (window/numBuffs ≈699) follows from it.
 	maxInFlightSeqs = streamWindowBytes / streamMTU // ≈5592
-	// triggerAckWindow is how many received datagrams elapse between ACKs
-	// (_maxInFlightSeqs/_numBuffs), matching upstream's gratuitous-ACK cadence.
-	triggerAckWindow = maxInFlightSeqs / streamNumBuffs // ≈699
 )
 
 // encodeStreamACK builds the 24-byte flow-control ACK datagram: a bare,
 // payload-less header whose sequence is the last received sequence and whose
-// elems carries the advertised in-flight window. Big-endian, byte-matching
-// SoapyStreamEndpoint::sendACK.
-func encodeStreamACK(seq uint32) []byte {
+// elems carries the advertised in-flight window (window = streamWindowBytes/MTU,
+// passed in so a configured stream_mtu stays consistent on both ends).
+// Big-endian, byte-matching SoapyStreamEndpoint::sendACK.
+func encodeStreamACK(seq, window uint32) []byte {
 	b := make([]byte, streamHeaderSize)
 	binary.BigEndian.PutUint32(b[0:4], streamHeaderSize)
 	binary.BigEndian.PutUint32(b[4:8], seq)
-	binary.BigEndian.PutUint32(b[8:12], maxInFlightSeqs)
+	binary.BigEndian.PutUint32(b[8:12], window)
 	binary.BigEndian.PutUint32(b[12:16], 0)
 	binary.BigEndian.PutUint64(b[16:24], 0)
 	return b

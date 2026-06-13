@@ -317,6 +317,11 @@ func TestValidate(t *testing.T) {
 		// soapy_remote args: SoapySDR make() kwargs as "k=v,k=v" (issue #542).
 		{"soapy args ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec=A:0,antenna=RX1"}}}}, false},
 		{"soapy args malformed", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", Args: "rx_subdev_spec"}}}}, true},
+		// soapy_remote stream_mtu: 0 = default; a real MTU is fine; out-of-range fails.
+		{"soapy stream_mtu zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
+		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},
+		{"soapy stream_mtu too small", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 10}}}}, true},
+		{"soapy stream_mtu too large", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 1 << 21}}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
