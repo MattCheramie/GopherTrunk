@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 )
@@ -111,6 +112,48 @@ func TestSampleRateHzReports48k(t *testing.T) {
 	})
 	if got := v.SampleRateHz(); got != NarrowbandRateHz {
 		t.Errorf("SampleRateHz = %d, want %d", got, NarrowbandRateHz)
+	}
+	// At an exact-divisor input rate the fractional accessor agrees exactly.
+	if got := v.SampleRateExactHz(); got != float64(NarrowbandRateHz) {
+		t.Errorf("SampleRateExactHz = %v, want %v", got, float64(NarrowbandRateHz))
+	}
+}
+
+// TestSampleRateExactHzMatchesDDCBank verifies the virtual tuner reports the
+// DDC's *actual* per-tap output rate (fractional part preserved), not the
+// rounded nominal 48 kHz, so the composer can clock the voice symbol-recovery
+// loop at the true rate. 390625 Hz (a 6.25 MS/s ÷16 polyphase bin rate) is the
+// issue #550 case: 48000/390625 reduces to L=384/M=3125, trips the resampler's
+// L≤64 cap, and the bank lands a fraction of a percent off 48 kHz — the exact
+// regime where clocking the receiver at a rounded 48000 would slip symbols and
+// produce voice spikes/glitches.
+func TestSampleRateExactHzMatchesDDCBank(t *testing.T) {
+	const fractionalRate = 390_625
+	broker := iqtap.New(newFakeDevice(), 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	v, err := New(Options{
+		Serial: "tap-0", Broker: broker,
+		WidebandCenterHz: 851_500_000, SDRSampleRateHz: fractionalRate,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Must equal exactly what a bank built with the StreamIQ args reports —
+	// the rate the live stream is actually clocked at.
+	want := tuner.NewDDCBank(float64(fractionalRate), float64(NarrowbandRateHz), GuardFrac).OutputRateHz()
+	if got := v.SampleRateExactHz(); got != want {
+		t.Errorf("SampleRateExactHz = %v, want %v (DDCBank.OutputRateHz)", got, want)
+	}
+	// And it must be the fractional rate, not the nominal target: a symbol
+	// clock built from 48000 here would drift off the true symbol phase.
+	if want == float64(NarrowbandRateHz) {
+		t.Fatalf("test input rate %d did not produce a fractional output rate; pick one that trips the resampler caps", fractionalRate)
+	}
+	if got := v.SampleRateExactHz(); got == float64(NarrowbandRateHz) {
+		t.Errorf("SampleRateExactHz = %v, want a fractional rate ≠ %d", got, NarrowbandRateHz)
+	}
+	// The rounded integer accessor still rounds to the nearest Hz.
+	if got, want := v.SampleRateHz(), uint32(math.Round(want)); got != want {
+		t.Errorf("SampleRateHz = %d, want %d (rounded actual rate)", got, want)
 	}
 }
 
