@@ -877,6 +877,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					DeviceArgs:     args,
 					Format:         s.Format,
 					StreamProtocol: s.StreamProtocol,
+					StreamMTU:      s.StreamMTU,
 					ConnectTimeout: time.Duration(s.ConnectTimeoutMs) * time.Millisecond,
 				})
 				if s.Serial != "" {

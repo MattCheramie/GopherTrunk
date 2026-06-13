@@ -39,6 +39,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -84,6 +85,10 @@ type Spec struct {
 	Format string
 	// StreamProtocol selects the stream transport: "tcp" (default/only).
 	StreamProtocol string
+	// StreamMTU sets the stream endpoint MTU in bytes, sent to the server as
+	// the "remote:mtu" setupStream arg and used to size the client's
+	// flow-control window. Zero (or <=0) uses SoapyRemote's default (1500).
+	StreamMTU int
 	// ConnectTimeout overrides DefaultConnectTimeout when non-zero.
 	ConnectTimeout time.Duration
 }
@@ -153,17 +158,29 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	}
 	addr := withDefaultPort(spec.Addr)
 
+	// Resolve the effective stream MTU and derive the flow-control window the
+	// client advertises to the server. Defaulting to streamMTU keeps the
+	// wire frame and advertised window byte-identical when no MTU is set.
+	mtu := spec.StreamMTU
+	if mtu <= 0 {
+		mtu = streamMTU
+	}
+	windowSeqs := uint32(streamWindowBytes / mtu)
+
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("soapyremote: dial %s: %w", addr, err)
 	}
 	dev := &device{
-		addr:    addr,
-		format:  format,
-		proto:   proto,
-		timeout: timeout,
-		conn:    conn,
-		log:     d.log,
+		addr:       addr,
+		format:     format,
+		proto:      proto,
+		timeout:    timeout,
+		conn:       conn,
+		log:        d.log,
+		mtu:        mtu,
+		windowSeqs: windowSeqs,
+		ackTrigger: windowSeqs / streamNumBuffs,
 		info: sdr.Info{
 			Driver:    DriverName,
 			Index:     idx,
@@ -200,6 +217,14 @@ type device struct {
 	timeout time.Duration
 	log     *slog.Logger
 	info    sdr.Info
+
+	// mtu is the effective stream endpoint MTU (defaults to streamMTU when
+	// unset). windowSeqs is the in-flight credit advertised to the server in
+	// each flow-control ACK (streamWindowBytes/mtu); ackTrigger is how many
+	// received datagrams elapse between gratuitous ACKs (windowSeqs/numBuffs).
+	mtu        int
+	windowSeqs uint32
+	ackTrigger uint32
 
 	mu         sync.Mutex
 	conn       net.Conn // RPC control socket
@@ -434,7 +459,13 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	p.char(dirRX)
 	p.str(d.format.soapyName())
 	p.sizeList([]int{0})
-	p.kwargs(map[string]string{"remote:prot": "tcp"})
+	// Stream args. remote:mtu is only sent when a non-default MTU is
+	// configured, keeping the default setup frame byte-identical to before.
+	streamArgs := map[string]string{"remote:prot": "tcp"}
+	if d.mtu != streamMTU {
+		streamArgs["remote:mtu"] = strconv.Itoa(d.mtu)
+	}
+	p.kwargs(streamArgs)
 	p.str("0")
 	p.str("0")
 	if err := p.writeTo(d.conn, streamSetupTimeout); err != nil {
@@ -506,7 +537,7 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 // SoapyRemote requires these or the server never streams (see encodeStreamACK).
 func (d *device) sendStreamACK(conn net.Conn, seq uint32) error {
 	_ = conn.SetWriteDeadline(time.Now().Add(d.timeout))
-	_, err := conn.Write(encodeStreamACK(seq))
+	_, err := conn.Write(encodeStreamACK(seq, d.windowSeqs))
 	return err
 }
 
@@ -577,10 +608,10 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 			}
 		}
 		// Flow control: advance the acked sequence and send a gratuitous ACK
-		// every triggerAckWindow datagrams so the server keeps streaming. Done
+		// every d.ackTrigger datagrams so the server keeps streaming. Done
 		// for every datagram (including status codes), matching acquireRecv.
 		lastRecv = h.sequence + 1
-		if lastRecv-lastAck >= triggerAckWindow {
+		if lastRecv-lastAck >= d.ackTrigger {
 			if err := d.sendStreamACK(dataConn, lastRecv); err != nil {
 				d.log.Debug("soapyremote: stream ack", "addr", d.addr, "err", err)
 				return

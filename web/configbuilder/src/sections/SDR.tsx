@@ -121,7 +121,7 @@ export function SDRSection() {
           label="soapy_remote endpoints"
           items={cfg.SoapyRemote}
           onChange={(x) => set({ ...cfg, SoapyRemote: x })}
-          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0 })}
+          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", StreamMTU: 0, PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0 })}
           itemTitle={(s) => s.Addr || "soapy_remote"}
           emptyHint="SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, …)."
           renderItem={(s, set) => (
@@ -151,6 +151,7 @@ export function SDRSection() {
                   { value: "tcp", label: "tcp" },
                 ]}
               />
+              <NumberField label="Stream MTU (bytes)" value={s.StreamMTU} onChange={(v) => set({ ...s, StreamMTU: v })} placeholder="0 = default 1500" />
               <TextField label="Gain" value={s.Gain} onChange={(v) => set({ ...s, Gain: v })} placeholder="auto or tenths-dB" />
               <NumberField label="PPM" value={s.PPM} onChange={(v) => set({ ...s, PPM: v })} />
               <NumberField label="Connect timeout (ms)" value={s.ConnectTimeoutMs} onChange={(v) => set({ ...s, ConnectTimeoutMs: v })} />
