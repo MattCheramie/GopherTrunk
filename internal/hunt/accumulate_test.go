@@ -168,6 +168,51 @@ func TestResolveNeighborFreqs(t *testing.T) {
 	}
 }
 
+// TestNeighbor_DecoderResolvedFreqSurfaces covers the protocol-generic path:
+// a decoder that resolves its neighbour frequency itself (DMR/EDACS/Motorola set
+// TopoNeighborRef.FrequencyHz; there is no advertised band plan) must have that
+// frequency carried through to the discovered system.
+func TestNeighbor_DecoderResolvedFreqSurfaces(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	r := fakeResult(440_000_000, map[string]any{"ColorCode": uint16(1)}, 100)
+	r.Topology = &siglab.TopologySnapshot{
+		RFSS: 0, Site: 2,
+		Neighbors: []siglab.NeighborRef{
+			{Site: 5, ChannelNumber: 7, FrequencyHz: 441_250_000}, // decoder-resolved
+		},
+	}
+	Accumulate(sys, Observation{Protocol: "dmr", Confidence: 0.9, Result: r})
+	sys.sortAll()
+	if got := sys.Sites[0].Neighbors[0].FrequencyHz; got != 441_250_000 {
+		t.Errorf("decoder-resolved neighbor freq = %d, want 441250000", got)
+	}
+}
+
+// TestNeighbor_FreqBackfilledAcrossObservations: the first sighting of a
+// neighbour had no resolver (freq 0); a later sighting resolved it. The merge
+// keeps the identity but backfills the frequency.
+func TestNeighbor_FreqBackfilledAcrossObservations(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	mk := func(freq uint32) *siglab.Result {
+		r := fakeResult(440_000_000, map[string]any{"ColorCode": uint16(1)}, 100)
+		r.Topology = &siglab.TopologySnapshot{
+			Site:      2,
+			Neighbors: []siglab.NeighborRef{{Site: 5, ChannelNumber: 7, FrequencyHz: freq}},
+		}
+		return r
+	}
+	Accumulate(sys, Observation{Protocol: "dmr", Confidence: 0.9, Result: mk(0)})
+	Accumulate(sys, Observation{Protocol: "dmr", Confidence: 0.9, Result: mk(441_250_000)})
+	sys.sortAll()
+	nb := sys.Sites[0].Neighbors
+	if len(nb) != 1 {
+		t.Fatalf("neighbors = %+v, want 1 (deduped)", nb)
+	}
+	if nb[0].FrequencyHz != 441_250_000 {
+		t.Errorf("neighbor freq not backfilled: got %d", nb[0].FrequencyHz)
+	}
+}
+
 func TestResolveNeighborFreqs_NoBandPlan(t *testing.T) {
 	sys := &DiscoveredSystem{
 		Sites: []DiscoveredSite{{

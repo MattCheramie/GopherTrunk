@@ -110,6 +110,7 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 				Site:          n.Site,
 				ChannelID:     n.ChannelID,
 				ChannelNumber: n.ChannelNumber,
+				FrequencyHz:   n.FrequencyHz,
 			})
 		}
 		if len(t.Secondary) > 0 {
