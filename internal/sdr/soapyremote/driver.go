@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -263,6 +264,38 @@ func (d *device) SetSampleRate(hz uint32) error {
 		p.i32(0)
 		p.f64(float64(hz))
 	})
+}
+
+// ActualSampleRate reports the rate the remote device is actually delivering,
+// which may differ from the value passed to SetSampleRate. A USRP (and other
+// SoapySDR radios) can only run at integer decimations of its master clock, so
+// UHD coerces a non-divisor request to the nearest achievable rate — e.g. a
+// B210 left at its default master clock can't hit 6.144 MS/s exactly. The
+// daemon's effectiveStreamRate() probes this optional extension and builds every
+// per-channel DDC / symbol clock from the delivered rate, so the symbol clock
+// stays aligned on coerced rates instead of drifting (issue #402, #550). It
+// queries getSampleRate over the RPC control socket and rounds to whole Hz; a
+// zero/error return makes effectiveStreamRate fall back to the requested rate.
+func (d *device) ActualSampleRate() (uint32, error) {
+	u, err := d.rpc(func(p *packer) {
+		p.call(callGetSampleRate)
+		p.char(dirRX)
+		p.i32(0)
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := u.checkException(); err != nil {
+		return 0, err
+	}
+	rate, err := u.f64()
+	if err != nil {
+		return 0, err
+	}
+	if rate <= 0 {
+		return 0, nil
+	}
+	return uint32(math.Round(rate)), nil
 }
 
 func (d *device) SetGain(tenthDB int) error {

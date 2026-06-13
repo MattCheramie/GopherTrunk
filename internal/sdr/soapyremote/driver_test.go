@@ -36,6 +36,14 @@ type fakeSoapyServer struct {
 	// failGainMode makes SET_GAIN_MODE reply with a remote exception, mimicking
 	// a UHD front-end with no AGC ("set_rx_agc() is not supported"). Issue #542.
 	failGainMode bool
+
+	// lastSetRateHz is the most recent rate the client programmed via
+	// SET_SAMPLE_RATE. getSampleRateHz, when non-zero, overrides what
+	// GET_SAMPLE_RATE reports — modelling a USRP that coerces a non-divisor
+	// request to a different achievable rate (issue #550). When zero,
+	// GET_SAMPLE_RATE echoes lastSetRateHz (an exact-divisor device).
+	lastSetRateHz   float64
+	getSampleRateHz float64
 }
 
 type recordedCall struct {
@@ -127,6 +135,19 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			_, _ = u.char()
 			_, _ = u.i32()
 			rec.freqHz, _ = u.f64()
+			s.mu.Lock()
+			s.lastSetRateHz = rec.freqHz
+			s.mu.Unlock()
+		case callGetSampleRate:
+			_, _ = u.char()
+			_, _ = u.i32()
+			s.mu.Lock()
+			rate := s.getSampleRateHz
+			if rate == 0 {
+				rate = s.lastSetRateHz
+			}
+			s.mu.Unlock()
+			reply = func(p *packer) { p.f64(rate) }
 		case callSetGain:
 			_, _ = u.char()
 			_, _ = u.i32()
@@ -365,6 +386,65 @@ func TestSetGainManualSurvivesAGCException(t *testing.T) {
 	}
 	if !sawGainManual {
 		t.Error("SET_GAIN with 75.0 dB not applied after SET_GAIN_MODE exception")
+	}
+}
+
+// TestActualSampleRateReportsCoercedRate covers issue #550: a USRP can only
+// deliver integer decimations of its master clock, so UHD coerces a non-divisor
+// request to the nearest achievable rate. ActualSampleRate must read back that
+// delivered rate (via GET_SAMPLE_RATE) so the daemon's effectiveStreamRate()
+// builds the symbol clock from the truth, not the requested value.
+func TestActualSampleRateReportsCoercedRate(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.getSampleRateHz = 6_250_000 // device coerces the request to ÷32 of 200 MHz
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	if err := dev.SetSampleRate(6_144_000); err != nil { // a B210-style request
+		t.Fatalf("SetSampleRate: %v", err)
+	}
+
+	ar, ok := dev.(interface{ ActualSampleRate() (uint32, error) })
+	if !ok {
+		t.Fatal("soapyremote device does not implement ActualSampleRate")
+	}
+	got, err := ar.ActualSampleRate()
+	if err != nil {
+		t.Fatalf("ActualSampleRate: %v", err)
+	}
+	if got != 6_250_000 {
+		t.Errorf("ActualSampleRate = %d, want 6_250_000 (the coerced rate)", got)
+	}
+}
+
+// TestActualSampleRateEchoesExactRate confirms the no-coercion path: when the
+// requested rate is an exact divisor the server reports it back unchanged, so
+// effectiveStreamRate stays quiet (requested == actual).
+func TestActualSampleRateEchoesExactRate(t *testing.T) {
+	srv := newFakeSoapyServer(t) // getSampleRateHz==0 → echo the last set rate
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	if err := dev.SetSampleRate(6_250_000); err != nil { // X310 ÷32, exact
+		t.Fatalf("SetSampleRate: %v", err)
+	}
+
+	got, err := dev.(interface{ ActualSampleRate() (uint32, error) }).ActualSampleRate()
+	if err != nil {
+		t.Fatalf("ActualSampleRate: %v", err)
+	}
+	if got != 6_250_000 {
+		t.Errorf("ActualSampleRate = %d, want 6_250_000", got)
 	}
 }
 

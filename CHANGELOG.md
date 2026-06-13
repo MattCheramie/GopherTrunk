@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **USRP/SoapySDR actual sample-rate tracking.** The `soapy_remote` driver now
+  implements the `ActualSampleRate()` extension (via the `getSampleRate` RPC), so
+  when a USRP coerces a requested rate to the nearest integer decimation of its
+  master clock, GopherTrunk builds every per-channel down-converter and symbol
+  clock from the *delivered* rate instead of the requested one — the same #402
+  correction RTL-SDR already had. A new `sdr.soapy_remote[].master_clock_rate`
+  option sets the USRP master clock in Hz so a target `sample_rate` lands on an
+  exact divisor (e.g. `61_440_000` for a B210 to stream `6_144_000` cleanly).
+  (#550)
+
 ## [v0.4.0] — 2026-06-12
 
 This release is mostly about **DMR**. The receiver now decodes real
