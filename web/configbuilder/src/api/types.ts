@@ -91,6 +91,7 @@ export interface SoapyRemoteConfig {
   Format: string;
   StreamProtocol: string;
   StreamMTU: number;
+  StreamWindow: number;
   PPM: number;
   Gain: string;
   BiasTee: boolean;

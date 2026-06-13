@@ -125,6 +125,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Format":           {Help: "Wire sample format: CS16 (16-bit, default) or CF32 (32-bit float).", Options: opts("", "(default)", "CS16", "CS16", "CF32", "CF32")},
 	"SoapyRemoteConfig.StreamProtocol":   {Help: "Stream transport. Only tcp is implemented.", Options: opts("", "(default)", "tcp", "tcp")},
 	"SoapyRemoteConfig.StreamMTU":        {Label: "Stream MTU", Help: "Stream endpoint MTU in bytes (sent as the remote:mtu stream arg). 0 = SoapyRemote default 1500. Raise for jumbo-frame / high-throughput links. This is a stream arg, so it cannot go in Args."},
+	"SoapyRemoteConfig.StreamWindow":     {Label: "Stream window", Help: "Stream flow-control window in bytes (sent as the remote:window stream arg). 0 = client default 8 MiB. Raise on high-latency / high-bandwidth links to keep the pipe full. Must be >= stream MTU. This is a stream arg, so it cannot go in Args."},
 	"SoapyRemoteConfig.PPM":              {Label: "PPM", Help: "Frequency-correction applied on open (best-effort)."},
 	"SoapyRemoteConfig.Gain":             {Help: "Tuner gain: 'auto'/empty for AGC, else tenths of a dB."},
 	"SoapyRemoteConfig.BiasTee":          {Label: "Bias-tee", Help: "Toggle the remote device's bias-tee (best-effort)."},

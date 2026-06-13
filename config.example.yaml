@@ -376,6 +376,11 @@ sdr:
   #                                 #  so it can't go in args). 0 = SoapyRemote
   #                                 #  default 1500; raise (e.g. 8192) on
   #                                 #  jumbo-frame / high-throughput links.
+  #     stream_window: 0            # stream flow-control window in bytes, sent
+  #                                 #  as the remote:window stream arg (also not
+  #                                 #  a make() arg). 0 = client default 8 MiB;
+  #                                 #  raise on high-latency / high-bandwidth
+  #                                 #  links. Must be >= stream_mtu.
   #     ppm: 0                      # best-effort (driver-dependent)
   #     gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
   #     bias_tee: false             # best-effort (driver-dependent)
