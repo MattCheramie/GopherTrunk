@@ -48,6 +48,7 @@ func runHunt(args []string) {
 	serial := fs.String("serial", "", "SDR serial to sweep for a live hunt (omit -in). Empty + no -in ⇒ error")
 	surveyMode := fs.Bool("survey", false, "signal-survey mode: classify every detected carrier (analog/digital/paging/trunking) and decode the conventional ones, not just trunking control channels (live only)")
 	classifyOnly := fs.Bool("classify-only", false, "survey: classify carriers only, skip all decoding (fast inventory)")
+	surveyDeep := fs.Bool("survey-deep", false, "survey: hand narrowband carriers the classifier called analog (am/nbfm) to the trunking identify too, so a trunked DMR/TETRA/MPT control channel the blind classifier missed is still found (slower, more accurate)")
 	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
 	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
 	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
@@ -179,6 +180,7 @@ FLAGS:`)
 			serial:           *serial,
 			survey:           *surveyMode,
 			classifyOnly:     *classifyOnly,
+			surveyDeep:       *surveyDeep,
 			surveyAudioDir:   *surveyAudio,
 			maxDwellSeconds:  *maxDwellSeconds,
 			identifyMinConf:  *identifyMinConf,
@@ -234,6 +236,7 @@ FLAGS:`)
 				Name: *name, State: *state, County: *county, Location: *location,
 				Protocol: proto, MinConfidence: *minConfidence,
 				ClassifyOnly:          *classifyOnly,
+				SurveyDeep:            *surveyDeep,
 				SurveyAudioDir:        *surveyAudio,
 				IdentifyMinConfidence: *identifyMinConf,
 				ClassifyConfig: survey.ClassifyConfig{

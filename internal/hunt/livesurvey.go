@@ -247,44 +247,99 @@ func routeSignal(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs) *Cap
 		if in.opts.IdentifyMinConfidence > 0 && ds.Confidence < in.opts.IdentifyMinConfidence {
 			return nil
 		}
-		buf := siglab.EncodeCapture(in.fullIQ, siglab.FormatF32)
-		rep := decodeAndAccumulate(sys, bytes.NewReader(buf), source, decodeParams{
-			Protocol:      in.opts.Protocol,
-			Format:        siglab.FormatF32,
-			SampleRateHz:  in.fullRate,
-			FrequencyHz:   in.cand.FreqHz,
-			AutoTune:      in.opts.AutoTune,
-			MinConfidence: in.opts.MinConfidence,
-			Log:           in.log,
-		})
-		switch {
-		case rep.Locked:
-			ds.Class = survey.ClassTrunkControl
-			ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence, Locked: true, ControlHz: rep.ControlHz}
-		case !rep.Skipped && rep.Error == "":
-			ds.Class = survey.ClassTrunkVoice
-			ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence}
+		return identifyTrunking(sys, ds, in, source, true)
+	}
+
+	// Deep survey: a narrowband carrier the blind classifier called analog can
+	// still be a trunked DMR/TETRA/MPT control channel whose fragile baud line
+	// was lost (issue #648). Hand it to the authoritative siglab identify first.
+	// If it locks (or decodes) the class is upgraded to trunking and we're done;
+	// otherwise it really is analog, so we still run the tone scan — but return
+	// the identify report so the attempt is recorded — at the cost of one
+	// identify per borderline carrier.
+	if in.opts.SurveyDeep && isAnalogClass(ds.Class) && ds.OccupiedBwHz <= surveyDeepMaxBwHz {
+		// Lock-only: relabel as trunking solely on a genuine control-channel lock,
+		// never on a non-locked best-guess identify — a real analog carrier must
+		// not be promoted to trunk-voice by siglab's weak runner-up protocol.
+		rep := identifyTrunking(sys, ds, in, source, false)
+		if ds.Class == survey.ClassTrunkControl {
+			return rep
 		}
-		// Skipped/errored ⇒ keep the classifier's family label (generic FSK/etc.).
-		return &rep
+		analyzeAnalog(ds, in)
+		return rep
 	}
 
 	// Analog FM / AM: carrier activity + sub-audible squelch identification,
 	// plus an optional WAV clip when -survey-audio is set.
-	switch ds.Class {
-	case survey.ClassNBFM, survey.ClassWideFM, survey.ClassAM:
-		ds.Analog = survey.AnalyzeAnalogFM(in.chIQ, in.chRate)
-		if in.opts.SurveyAudioDir != "" && ds.Analog.Active {
-			path := filepath.Join(in.opts.SurveyAudioDir,
-				fmt.Sprintf("%.4fMHz.wav", float64(in.cand.FreqHz)/1e6))
-			if err := survey.WriteAnalogClip(path, in.chIQ, in.chRate); err != nil {
-				ds.Error = fmt.Sprintf("audio clip: %v", err)
-			} else {
-				ds.Analog.AudioClipPath = path
-			}
+	analyzeAnalog(ds, in)
+	return nil
+}
+
+// analyzeAnalog runs the analog-FM activity + sub-audible squelch scan on the
+// channelised carrier (and writes a WAV clip when -survey-audio is set), for the
+// analog families. A no-op for any other class.
+func analyzeAnalog(ds *DetectedSignal, in routeInputs) {
+	if !isAnalogClass(ds.Class) {
+		return
+	}
+	ds.Analog = survey.AnalyzeAnalogFM(in.chIQ, in.chRate)
+	if in.opts.SurveyAudioDir != "" && ds.Analog.Active {
+		path := filepath.Join(in.opts.SurveyAudioDir,
+			fmt.Sprintf("%.4fMHz.wav", float64(in.cand.FreqHz)/1e6))
+		if err := survey.WriteAnalogClip(path, in.chIQ, in.chRate); err != nil {
+			ds.Error = fmt.Sprintf("audio clip: %v", err)
+		} else {
+			ds.Analog.AudioClipPath = path
 		}
 	}
-	return nil
+}
+
+// surveyDeepMaxBwHz bounds the deep-survey identify to narrowband carriers — a
+// trunked control channel is narrowband, and it keeps the (expensive) identify
+// off wideband broadcast FM. Matches the NBFM/WideFM split.
+const surveyDeepMaxBwHz = 25_000
+
+// isAnalogClass reports whether the blind classifier put the carrier in an
+// analog family (the classes deep survey reconsiders via siglab).
+func isAnalogClass(c survey.SignalClass) bool {
+	switch c {
+	case survey.ClassNBFM, survey.ClassWideFM, survey.ClassAM:
+		return true
+	default:
+		return false
+	}
+}
+
+// identifyTrunking runs the authoritative siglab identify→decode on the full-rate
+// capture and, when it locks (or decodes without skipping), upgrades ds.Class to
+// trunk-control / trunk-voice and attaches the trunking ref. A skipped/errored
+// identify leaves ds.Class as the classifier's family label. Returns the decode
+// report for the shared export tail.
+// voiceUpgrade ⇒ a non-locked but conclusive identify upgrades the carrier to
+// trunk-voice (used for carriers the blind classifier already called digital);
+// when false, only a genuine control-channel lock relabels the carrier, so a
+// blind-analog carrier is never promoted by a weak runner-up identify.
+func identifyTrunking(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs, source string, voiceUpgrade bool) *CaptureReport {
+	buf := siglab.EncodeCapture(in.fullIQ, siglab.FormatF32)
+	rep := decodeAndAccumulate(sys, bytes.NewReader(buf), source, decodeParams{
+		Protocol:      in.opts.Protocol,
+		Format:        siglab.FormatF32,
+		SampleRateHz:  in.fullRate,
+		FrequencyHz:   in.cand.FreqHz,
+		AutoTune:      in.opts.AutoTune,
+		MinConfidence: in.opts.MinConfidence,
+		Log:           in.log,
+	})
+	switch {
+	case rep.Locked:
+		ds.Class = survey.ClassTrunkControl
+		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence, Locked: true, ControlHz: rep.ControlHz}
+	case voiceUpgrade && !rep.Skipped && rep.Error == "":
+		ds.Class = survey.ClassTrunkVoice
+		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence}
+	}
+	// Skipped/errored (or non-locked under lock-only) ⇒ keep the classifier label.
+	return &rep
 }
 
 // surveyCandidates resolves the carriers to examine: an explicit candidate list

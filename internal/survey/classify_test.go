@@ -188,6 +188,59 @@ func TestClassifyDegradesGracefully(t *testing.T) {
 	}
 }
 
+// TestClassifyAMRequiresLowIFStd guards the #648 follow-up: a constant-envelope
+// angle-modulated carrier whose envelope CV is lifted past the AM gate by noise
+// (or channel clipping) must not be mislabelled AM — its FM-discriminator swing
+// (IFStd) marks it as angle modulation, so it reads as FM. Real AM (message in
+// the envelope, static carrier, IFStd≈0) still reads AM.
+func TestClassifyAMRequiresLowIFStd(t *testing.T) {
+	const nSamples = 24_000
+	// Noisy NBFM voice: constant envelope, but AWGN lifts EnvelopeCV above the
+	// AM gate (EnvelopeCV > AMEnvelopeCV). Pre-fix this fell straight to AM.
+	fm := demod.ApplyImpairments(
+		fmModulate(lowpassNoise(nSamples, 4), testRateHz, 3000),
+		testRateHz,
+		demod.Impairments{SNRdB: 10, Seed: 2},
+	)
+	got := Classify(fm, testRateHz)
+	if got.Features.EnvelopeCV <= DefaultClassifyConfig().AMEnvelopeCV {
+		t.Fatalf("fixture invalid: EnvelopeCV %.3f should exceed the AM gate", got.Features.EnvelopeCV)
+	}
+	if got.Features.IFStd <= DefaultClassifyConfig().AMMaxIFStd {
+		t.Fatalf("fixture invalid: IFStd %.3f should exceed AMMaxIFStd", got.Features.IFStd)
+	}
+	if got.Class == ClassAM {
+		t.Errorf("noisy FM mis-fired as AM despite IFStd=%.3f; features: %+v", got.Features.IFStd, got.Features)
+	}
+
+	// A real AM carrier (envelope-modulated, static carrier) still reads AM.
+	if g := Classify(amModulate(lowpassNoise(nSamples, 5), 0.95), testRateHz); g.Class != ClassAM {
+		t.Errorf("clean AM voice = %q, want am; features: %+v", g.Class, g.Features)
+	}
+}
+
+// TestBaudLineFindsTetraRate verifies the widened search band reaches TETRA's
+// 18 kbaud line, which the old rate/3 (16 kHz at 48 kHz) cap excluded. The
+// rectified discriminator is modelled as a DC pedestal plus an 18 kHz line.
+func TestBaudLineFindsTetraRate(t *testing.T) {
+	const n = 16384
+	const baud = 18_000.0
+	r := rand.New(rand.NewSource(1))
+	d := make([]float32, n)
+	for i := range d {
+		// |d-0| = d (kept positive by the pedestal), so the rectified spectrum
+		// carries the 18 kHz component the baud-line search must find.
+		d[i] = float32(1 + 0.5*math.Cos(2*math.Pi*baud*float64(i)/testRateHz) + 0.02*r.NormFloat64())
+	}
+	gotBaud, prom := baudLine(d, 0, testRateHz)
+	if math.Abs(gotBaud-baud)/baud > 0.03 {
+		t.Errorf("baudLine = %.0f Hz, want ≈%.0f (band must reach 18 kHz)", gotBaud, baud)
+	}
+	if prom < DefaultClassifyConfig().DigitalProminence {
+		t.Errorf("prominence = %.1f, want ≥ %.0f", prom, DefaultClassifyConfig().DigitalProminence)
+	}
+}
+
 func TestClassifyShortInputIsUnknown(t *testing.T) {
 	got := Classify(make([]complex64, 100), testRateHz)
 	if got.Class != ClassUnknown {
