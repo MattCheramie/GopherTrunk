@@ -315,6 +315,37 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 	c.maybeLock(ls)
 }
 
+// RecoverColourCode scans a dibit stream for a synchronisation burst and
+// returns the cell's extended (30-bit) colour code recovered from its BSCH.
+// The BSCH is scrambled with colour code 0 (§8.2.5.2), so this works with no
+// prior knowledge of the cell — it is how a cold receiver (and the blind
+// identify scorer) learns the scrambling code needed to descramble the SCH/HD
+// SYSINFO bursts that follow. Returns false when no SB burst with a CRC-valid
+// BSCH is present. Stateless: it correlates the synchronisation training
+// sequence itself rather than relying on the live Process state machine.
+func RecoverColourCode(stream []uint8) (uint32, bool) {
+	sts := SyncTrainingDibits()
+	det := NewSyncDetector(sts, 3)
+	hits, _ := det.Process(nil, stream, 0)
+	for _, trailing := range hits {
+		L := trailing - (len(sts) - 1) // leading dibit index of the STS
+		if L-sbBSCHDibits < 0 || L > len(stream) {
+			continue // BSCH look-back runs off the front of the buffer
+		}
+		bsch := stream[L-sbBSCHDibits : L]
+		for rot := uint8(0); rot < 4; rot++ {
+			recovered, ok := DecodeBSCH(TetraDibitsToBits(rotateDibits(bsch, rot)))
+			if !ok {
+				continue
+			}
+			if s, ok := ParseSyncPDU(recovered); ok {
+				return s.ExtendedColourCode(), true
+			}
+		}
+	}
+	return 0, false
+}
+
 // dispatchSlice turns the collected post-sync dibit slice into a
 // PDU and forwards it to Ingest. Under ChannelCodingOff the
 // slice is interpreted as raw type-1 bits; under ChannelCodingOn

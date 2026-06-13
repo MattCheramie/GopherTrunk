@@ -8,6 +8,43 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
 
+// TestRecoverColourCode builds a synchronisation burst (BSCH + STS) carrying a
+// known cell colour code and confirms RecoverColourCode pulls the extended
+// colour code back out with no prior configuration — the path blind identify
+// relies on to descramble SCH/HD (issue #648).
+func TestRecoverColourCode(t *testing.T) {
+	const (
+		cc6        = 0x2D
+		mcc uint16 = 0x0CE
+		mnc uint16 = 0x1234
+	)
+	want := ExtendedColourCode(mcc, mnc, cc6)
+
+	syncInfo := make([]byte, 60)
+	putBits(syncInfo, 4, 6, cc6)
+	putBits(syncInfo, 31, 10, uint32(mcc))
+	putBits(syncInfo, 41, 14, uint32(mnc))
+	bschDibits := TetraBitsToDibits(EncodeBSCH(syncInfo))
+
+	var stream []uint8
+	stream = append(stream, bschDibits...)           // [0,60) BSCH
+	stream = append(stream, SyncTrainingDibits()...) // [60,79) STS
+	stream = append(stream, make([]uint8, 40)...)    // trailing pad
+
+	got, ok := RecoverColourCode(stream)
+	if !ok {
+		t.Fatal("RecoverColourCode found no BSCH in a clean SB burst")
+	}
+	if got != want {
+		t.Errorf("recovered colour code = %#x, want %#x", got, want)
+	}
+
+	// A stream with no synchronisation burst yields nothing.
+	if _, ok := RecoverColourCode(make([]uint8, 200)); ok {
+		t.Error("RecoverColourCode reported a colour code on an empty stream")
+	}
+}
+
 // TestProcessLocksOnSystemBroadcastAfterSync builds a dibit stream
 // of 50 padding dibits + 38 normal training-sequence dibits + 48
 // dibits whose raw bits decode to an MLE-SYSINFO PDU with known
