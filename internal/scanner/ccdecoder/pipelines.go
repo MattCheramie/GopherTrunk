@@ -503,7 +503,12 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		cc.SetExpectedChannel(ch)
 		cc.SetColourCode(opts.System.TETRAColourCode)
 		if opts.System.TETRAColourCode == 0 && ch != tetra.ChannelBSCH {
-			opts.Log.Warn("ccdecoder: tetra_channel_coding=on with zero tetra_colour_code on non-BSCH channel; descrambler will not lock",
+			// Not fatal: the decoder auto-acquires the colour code from a BSCH
+			// synchronisation burst (scrambled with colour 0) and then descrambles
+			// the SCH/HD stream (issue #553). Setting tetra_colour_code only avoids
+			// the cold-start wait for the first SB burst. Debug, not Warn — this is
+			// the normal state during blind identify (#648).
+			opts.Log.Debug("ccdecoder: tetra zero colour code; will auto-acquire from the BSCH synchronisation burst",
 				"system", opts.SystemName, "channel", opts.System.TETRAChannel)
 		}
 	}
