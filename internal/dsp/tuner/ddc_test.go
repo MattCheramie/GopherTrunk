@@ -274,8 +274,8 @@ func TestRationalRatioFallbackBestApproximation(t *testing.T) {
 		binRate  float64
 		crudeOld int // M the previous fallback produced (L was 1)
 	}{
-		{390625, 8},  // 6.25 MS/s ÷16 — old: 1/8 → 48828 Hz (+1.7%)
-		{312500, 7},  // 5.0 MS/s ÷16  — old: 1/7 → 44643 Hz (−7%)
+		{390625, 8}, // 6.25 MS/s ÷16 — old: 1/8 → 48828 Hz (+1.7%)
+		{312500, 7}, // 5.0 MS/s ÷16  — old: 1/7 → 44643 Hz (−7%)
 	}
 	for _, c := range cases {
 		l, m := rationalRatio(out, c.binRate)
