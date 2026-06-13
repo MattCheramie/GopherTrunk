@@ -14,6 +14,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
 // surveyRunKey derives a stable filename key from a run's band set / candidate
@@ -82,6 +83,8 @@ type Manager struct {
 	survey     *SignalSurvey
 	reports    []CaptureReport
 	err        string
+	gainRecs   []GainRecommendation
+	gainNote   string
 	startedAt  time.Time
 	finishedAt time.Time
 	cancel     context.CancelFunc
@@ -135,6 +138,12 @@ type RunStatus struct {
 	Signals []DetectedSignal `json:"signals,omitempty"`
 	Error   string           `json:"error,omitempty"`
 
+	// GainRecommendations is the per-control-channel result of an -auto-gain run
+	// (nil when auto-gain wasn't requested or no CC locked). GainNote explains
+	// why auto-gain produced nothing (e.g. the SDR is shared).
+	GainRecommendations []GainRecommendation `json:"gain_recommendations,omitempty"`
+	GainNote            string               `json:"gain_note,omitempty"`
+
 	StartedAt  time.Time `json:"started_at,omitempty"`
 	FinishedAt time.Time `json:"finished_at,omitempty"`
 }
@@ -159,6 +168,8 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 	m.survey = nil
 	m.reports = nil
 	m.err = ""
+	m.gainRecs = nil
+	m.gainNote = ""
 	m.startedAt = time.Now()
 	m.finishedAt = time.Time{}
 	m.sink = nil
@@ -237,13 +248,93 @@ func (m *Manager) run(ctx context.Context, id int, opts LiveHuntOptions) {
 	defer release()
 	opts.Source = src
 
+	var (
+		sys     *DiscoveredSystem
+		sv      *SignalSurvey
+		reports []CaptureReport
+		runErr  error
+	)
 	if opts.Survey {
-		sv, reports, serr := RunLiveSurvey(ctx, opts)
-		m.finish(id, surveySystem(sv), sv, reports, serr)
+		sv, reports, runErr = RunLiveSurvey(ctx, opts)
+		sys = surveySystem(sv)
+	} else {
+		sys, reports, runErr = RunLiveHunt(ctx, opts)
+	}
+
+	// Optional post-run gain sweep on the locked control channels (advisory).
+	if opts.AutoGain && runErr == nil && ctx.Err() == nil {
+		m.runAutoGain(ctx, src, opts, lockedControlChannels(sys, sv))
+	}
+
+	m.finish(id, sys, sv, reports, runErr)
+}
+
+// runAutoGain sweeps front-end gains on the locked control channels and stores
+// the recommendations (or a note explaining why none were produced). It needs a
+// gain-controllable, exclusively-held SDR; a shared SDR's source reports gain
+// control unavailable, which becomes a user-facing note rather than an error.
+func (m *Manager) runAutoGain(ctx context.Context, src IQSource, opts LiveHuntOptions, ccs []uint32) {
+	note := func(s string) {
+		m.mu.Lock()
+		m.gainNote = s
+		m.mu.Unlock()
+	}
+	if len(ccs) == 0 {
+		note("auto-gain: no locked control channel to sweep")
 		return
 	}
-	sys, reports, err := RunLiveHunt(ctx, opts)
-	m.finish(id, sys, nil, reports, err)
+	gc, ok := src.(GainSettable)
+	if !ok {
+		note("auto-gain: gain control unavailable on this SDR")
+		return
+	}
+	recs, err := AutoGainSweep(ctx, src, gc, ccs, AutoGainOptions{
+		Gains:        opts.AutoGainSet,
+		Protocol:     opts.Protocol,
+		SampleRateHz: float64(src.SampleRateHz()),
+		Log:          m.log,
+	})
+	if err != nil {
+		note(fmt.Sprintf("auto-gain unavailable: %v", err))
+		return
+	}
+	m.mu.Lock()
+	m.gainRecs = recs
+	m.mu.Unlock()
+}
+
+// lockedControlChannels collects the control-channel frequencies a run locked,
+// from the discovered system's sites and (for a survey) the trunk-control
+// signals — protocol-neutral, the input to the auto-gain sweep.
+func lockedControlChannels(sys *DiscoveredSystem, sv *SignalSurvey) []uint32 {
+	seen := map[uint32]struct{}{}
+	var out []uint32
+	add := func(hz uint32) {
+		if hz == 0 {
+			return
+		}
+		if _, ok := seen[hz]; !ok {
+			seen[hz] = struct{}{}
+			out = append(out, hz)
+		}
+	}
+	if sys != nil {
+		for _, st := range sys.Sites {
+			for _, ch := range st.ControlChannels {
+				if ch.IsControl {
+					add(ch.FrequencyHz)
+				}
+			}
+		}
+	}
+	if sv != nil {
+		for _, s := range sv.Signals {
+			if s.Class == survey.ClassTrunkControl {
+				add(s.FreqHz)
+			}
+		}
+	}
+	return out
 }
 
 // surveySystem safely extracts the discovered system from a (possibly nil)
@@ -335,6 +426,8 @@ func (m *Manager) statusLocked() RunStatus {
 	if m.survey != nil {
 		st.Signals = m.survey.Signals
 	}
+	st.GainRecommendations = m.gainRecs
+	st.GainNote = m.gainNote
 	return st
 }
 

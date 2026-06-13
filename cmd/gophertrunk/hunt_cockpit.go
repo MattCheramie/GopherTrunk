@@ -61,6 +61,9 @@ func (c huntCockpit) Status() api.HuntStatus {
 		SystemName: st.SystemName,
 		Signals:    st.Signals,
 		Error:      st.Error,
+
+		GainRecommendations: st.GainRecommendations,
+		GainNote:            st.GainNote,
 	}
 	if sys, reports, ok := c.mgr.Current(); ok {
 		out.System = sys
@@ -85,6 +88,10 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 	if req.NoSweep {
 		bands = nil
 	}
+	gainSet, err := parseGainSetDB(req.AutoGainSet)
+	if err != nil {
+		return 0, err
+	}
 
 	var proto trunking.Protocol
 	if req.Protocol != "" {
@@ -102,6 +109,8 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		ClassifyOnly:    req.ClassifyOnly,
 		PersistSurvey:   req.PersistSurvey,
 		Resume:          req.Resume,
+		AutoGain:        req.AutoGain,
+		AutoGainSet:     gainSet,
 		MaxDwellSeconds: req.MaxDwellSeconds,
 		Serial:          req.Serial,
 		FFTSize:         req.FFTSize,

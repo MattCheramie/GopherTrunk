@@ -68,6 +68,14 @@ type LiveHuntOptions struct {
 	// Resume, with PersistSurvey, preloads the frequencies already in the run's
 	// NDJSON file into SkipFreqs so an interrupted survey continues.
 	Resume bool
+	// AutoGain requests a post-run gain sweep: after the hunt/survey, each locked
+	// control channel is decoded across a set of front-end gains and the gain
+	// minimising the decode error rate is recommended (advisory; nothing is
+	// applied). Requires a gain-controllable, exclusively-held SDR — a no-op with
+	// a clear note when the SDR is shared (the daemon's borrowed control SDR).
+	AutoGain bool
+	// AutoGainSet is the gain ladder to sweep (tenths of dB); empty uses a default.
+	AutoGainSet []int
 	// SurveyDeep hands narrowband carriers the blind classifier called analog
 	// (am/nbfm/wfm ≤ NBFM bandwidth) to the authoritative siglab identify before
 	// the analog tone scan, so a trunked DMR/TETRA/MPT control channel the blind

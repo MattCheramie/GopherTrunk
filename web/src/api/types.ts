@@ -146,6 +146,17 @@ export interface HuntStatus {
   // Per-capture decode results from the live run, so the Hunt panel can
   // show what each surveyed candidate decoded to (or why it was skipped).
   reports?: CaptureReport[];
+  gain_recommendations?: GainRecommendation[];
+  gain_note?: string;
+}
+
+// GainRecommendation mirrors hunt.GainRecommendation — the best front-end gain
+// found for one control channel by an auto-gain sweep.
+export interface GainRecommendation {
+  freq_hz: number;
+  best_gain_tenth_db: number;
+  best_error_rate: number;
+  locked: boolean;
 }
 
 // CaptureReport mirrors hunt.CaptureReport — one candidate's decode outcome
@@ -267,6 +278,8 @@ export interface HuntStartRequest {
   classify_only?: boolean;
   persist_survey?: boolean;
   resume?: boolean;
+  auto_gain?: boolean;
+  auto_gain_set?: string;
   max_dwell_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;

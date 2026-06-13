@@ -26,6 +26,9 @@ type HuntStatus struct {
 	Error   string                 `json:"error,omitempty"`
 	System  *hunt.DiscoveredSystem `json:"system,omitempty"`
 	Reports []hunt.CaptureReport   `json:"reports,omitempty"`
+	// GainRecommendations / GainNote carry the result of an -auto-gain run.
+	GainRecommendations []hunt.GainRecommendation `json:"gain_recommendations,omitempty"`
+	GainNote            string                    `json:"gain_note,omitempty"`
 }
 
 // HuntRRReport is the GET /api/v1/hunt/radioreference response: the
@@ -49,6 +52,8 @@ type HuntStartRequest struct {
 	ClassifyOnly    bool      `json:"classify_only,omitempty"`  // survey: classify, skip decoding
 	PersistSurvey   bool      `json:"persist_survey,omitempty"` // survey: stream carriers to NDJSON (crash-safe, resumable)
 	Resume          bool      `json:"resume,omitempty"`         // survey: skip frequencies already in the NDJSON file
+	AutoGain        bool      `json:"auto_gain,omitempty"`      // post-run: sweep gains on locked CCs, recommend the best
+	AutoGainSet     string    `json:"auto_gain_set,omitempty"`  // optional comma-separated gain ladder in dB (e.g. "0,8.7,16.6")
 	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
 	Protocol        string    `json:"protocol,omitempty"`
 	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`

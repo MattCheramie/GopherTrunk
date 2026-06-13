@@ -149,6 +149,34 @@ func TestManager_SurveyPersistAndResume(t *testing.T) {
 	}
 }
 
+// TestManager_AutoGainUnavailableNote: with AutoGain on a source that can't set
+// gain (the file source / a borrowed shared SDR), the run completes and records
+// a user-facing note rather than failing.
+func TestManager_AutoGainUnavailableNote(t *testing.T) {
+	src, dwell := p25Source(t)
+	mgr, err := NewManager(ManagerOptions{
+		Acquire: func(context.Context, LiveHuntOptions) (IQSource, func(), error) { return src, func() {}, nil },
+		Bus:     events.NewBus(256),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if _, err := mgr.Start(LiveHuntOptions{
+		Survey: true, AutoGain: true,
+		Candidates: []uint32{851_000_000}, DwellSeconds: dwell, MinConfidence: 0.3,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 15*time.Second, func() bool { return !mgr.Status().Running })
+	st := mgr.Status()
+	if st.State != StateRunDone {
+		t.Fatalf("state = %q, want done", st.State)
+	}
+	if st.GainNote == "" {
+		t.Error("expected a gain note when gain control is unavailable")
+	}
+}
+
 func TestManager_StartRunsAndMapsSystem(t *testing.T) {
 	bus := events.NewBus(256)
 	sub := bus.Subscribe()

@@ -79,6 +79,7 @@ export function Hunt() {
   const [classifyOnly, setClassifyOnly] = useState(false);
   const [persistSurvey, setPersistSurvey] = useState(false);
   const [resume, setResume] = useState(false);
+  const [autoGain, setAutoGain] = useState(false);
   const [sortBy, setSortBy] = useState<"freq" | "class" | "snr">("freq");
   const [rrCounty, setRRCounty] = useState("");
   const [rrSID, setRRSID] = useState("");
@@ -121,6 +122,7 @@ export function Hunt() {
         classify_only: (survey && classifyOnly) || undefined,
         persist_survey: (survey && persistSurvey) || undefined,
         resume: (survey && persistSurvey && resume) || undefined,
+        auto_gain: autoGain || undefined,
         name: name || undefined,
         state: stateCode || undefined,
         county: county || undefined,
@@ -362,6 +364,10 @@ export function Hunt() {
             Resume — skip frequencies already surveyed in that file
           </label>
         ) : null}
+        <label className="hunt-survey-toggle">
+          <input type="checkbox" checked={autoGain} onChange={(e) => setAutoGain(e.target.checked)} />
+          Auto-gain — after the run, recommend the best front-end gain (needs a dedicated SDR)
+        </label>
         <div className="hunt-buttons">
           <button onClick={start} disabled={!canMutate || running}>
             Start hunt
@@ -458,6 +464,33 @@ export function Hunt() {
           ) : null}
         </section>
       ) : null}
+
+      {status?.gain_recommendations && status.gain_recommendations.length > 0 ? (
+        <section className="hunt-gain">
+          <h3>Auto-gain recommendations</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Control channel</th>
+                <th>Best gain (dB)</th>
+                <th>Error rate</th>
+                <th>Locked</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.gain_recommendations.map((g, i) => (
+                <tr key={i}>
+                  <td>{(g.freq_hz / 1e6).toFixed(4)} MHz</td>
+                  <td>{(g.best_gain_tenth_db / 10).toFixed(1)}</td>
+                  <td>{g.best_error_rate.toFixed(3)}</td>
+                  <td>{g.locked ? "yes" : "no"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+      {status?.gain_note ? <p className="hint">Auto-gain: {status.gain_note}</p> : null}
 
       {!canMutate ? (
         <p className="hint">Mutations are read-only on this connection (no auth token).</p>
