@@ -227,6 +227,58 @@ describe("CCActivity panel", () => {
     expect(row!.textContent).toMatch(/\[SG 999\]/);
   });
 
+  it("renders observed DMR grants with LCN, timeslot and source (#638)", () => {
+    setEvents([
+      {
+        kind: "dmr.grant.observed",
+        timestamp: "2026-05-26T12:00:00Z",
+        payload: {
+          system: "County T3",
+          color_code: 1,
+          lcn: 12,
+          timeslot: 1, // raw 1 = TS2
+          group_id: 1001,
+          source_id: 2002,
+          cc_freq_hz: 851_000_000,
+        },
+      },
+    ]);
+    renderPanel();
+    const row = screen.getByText("County T3").closest("tr");
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toMatch(/DMR grant/);
+    expect(row!.textContent).toMatch(/LCN 12/);
+    expect(row!.textContent).toMatch(/TS2/);
+    expect(row!.textContent).toMatch(/TG 1001/);
+    expect(row!.textContent).toMatch(/2002/);
+    expect(row!.textContent).toMatch(/CC 851\.0000 MHz/);
+  });
+
+  it("renders a learned DMR band plan with spacing and confidence (#638)", () => {
+    setEvents([
+      {
+        kind: "dmr.bandplan.learned",
+        timestamp: "2026-05-26T12:00:00Z",
+        payload: {
+          system: "County T3",
+          base_hz: 851_012_500,
+          spacing_hz: 12_500,
+          offset: 1,
+          num_pairs: 6,
+          confidence: 0.97,
+        },
+      },
+    ]);
+    renderPanel();
+    const row = screen.getByText("County T3").closest("tr");
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toMatch(/Band plan learned/);
+    expect(row!.textContent).toMatch(/851\.0125 MHz/);
+    expect(row!.textContent).toMatch(/12\.50 kHz spacing/);
+    expect(row!.textContent).toMatch(/6 pairs/);
+    expect(row!.textContent).toMatch(/conf 97%/);
+  });
+
   it("renders talker alias events", () => {
     setEvents([
       {

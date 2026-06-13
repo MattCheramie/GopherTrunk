@@ -138,6 +138,60 @@ describe("Symbol scope panel", () => {
     });
   });
 
+  it("rests on the control channel by default when no call is active (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      { ...oneDevice[0], control_channel_hz: 851_025_000 },
+    ]);
+    vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });
+
+    render(<SymbolScope />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // CC is 25 kHz above the 851.000 MHz centre.
+      expect(last?.offset).toBe(25_000);
+    });
+  });
+
+  it("prefers an active call over the control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      { ...oneDevice[0], control_channel_hz: 851_025_000 },
+    ]);
+    vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });
+
+    useShared.setState({
+      activeCalls: [
+        {
+          grant: {
+            system: "sys",
+            protocol: "p25",
+            group_id: 1,
+            frequency_hz: 851_050_000,
+          },
+          device_serial: "rtl-1",
+          started_at: "2026-06-07T00:00:00Z",
+        },
+      ] as never,
+    });
+
+    render(<SymbolScope />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // Follows the call (50 kHz), not the CC (25 kHz).
+      expect(last?.offset).toBe(50_000);
+    });
+  });
+
+  it("stays at centre when the device reports no control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(oneDevice);
+    vi.mocked(openSymbolStream).mockReturnValue({ close: vi.fn() });
+
+    render(<SymbolScope />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.offset).toBe(0);
+  });
+
   it("shows the tuned frequency before any symbol frame arrives", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(oneDevice);
     // Open the stream but never deliver a frame — a quiet channel.

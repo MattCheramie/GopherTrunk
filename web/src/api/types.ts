@@ -27,6 +27,15 @@ export interface SystemDTO {
   system_id?: number;
   rfss?: number;
   site?: number;
+  // Active DMR Tier III LCN→frequency band plan (configured or learned),
+  // surfaced so the Systems panel can show how voice grants resolve. (#638)
+  dmr_band_plan?: DMRBandPlanDTO;
+}
+
+// DMRBandPlanDTO mirrors api.DMRBandPlanDTO — exactly one of linear/table.
+export interface DMRBandPlanDTO {
+  linear?: { base_hz: number; spacing_hz: number; offset?: number };
+  table?: { lcn: number; freq_hz: number }[];
 }
 
 export interface TalkgroupDTO {
@@ -133,7 +142,69 @@ export interface HuntStatus {
   system_name?: string;
   signals?: DetectedSignal[];
   error?: string;
-  system?: unknown;
+  system?: DiscoveredSystem;
+  // Per-capture decode results from the live run, so the Hunt panel can
+  // show what each surveyed candidate decoded to (or why it was skipped).
+  reports?: CaptureReport[];
+}
+
+// CaptureReport mirrors hunt.CaptureReport — one candidate's decode outcome
+// during a live hunt run.
+export interface CaptureReport {
+  path?: string;
+  protocol?: string;
+  confidence?: number;
+  locked?: boolean;
+  control_hz?: number;
+  talkgroups?: number;
+  skipped?: boolean;
+  skip_reason?: string;
+  error?: string;
+}
+
+// DiscoveredSystem mirrors hunt.DiscoveredSystem — the map a completed hunt
+// produced. Only the fields the Hunt panel renders are typed.
+export interface DiscoveredSystem {
+  name?: string;
+  protocol?: string;
+  state?: string;
+  county?: string;
+  confidence?: number;
+  sites?: DiscoveredSite[];
+}
+
+export interface DiscoveredSite {
+  rfss?: number;
+  site_id?: number;
+  site_name?: string;
+  county?: string;
+  control_channels?: { frequency_hz: number; is_control?: boolean; confidence?: number }[];
+}
+
+// DMRGrantObservedDTO mirrors api.DMRGrantObservedDTO — a raw DMR Tier III
+// voice grant the control channel decoded (pre LCN resolution). (#638)
+export interface DMRGrantObservedDTO {
+  system: string;
+  color_code: number;
+  lcn: number;
+  timeslot: number;
+  group_id: number;
+  source_id: number;
+  cc_freq_hz: number;
+  at: string;
+}
+
+// DMRBandPlanLearnedDTO mirrors api.DMRBandPlanLearnedDTO — the autoconfig
+// learner's fitted band plan for a system. (#638)
+export interface DMRBandPlanLearnedDTO {
+  system: string;
+  base_hz?: number;
+  spacing_hz?: number;
+  offset?: number;
+  table?: { lcn: number; freq_hz: number }[];
+  num_pairs: number;
+  confidence: number;
+  residual_hz?: number;
 }
 
 // DetectedSignal mirrors hunt.DetectedSignal — one classified carrier in a

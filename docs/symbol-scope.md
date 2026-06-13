@@ -43,8 +43,12 @@ same controls work around it:
   frequency — the two stay in sync. The tuned frequency is shown as soon
   as an SDR is selected, before any symbols decode.
 - **Hold** — when off, the Offset automatically follows the newest
-  active call on the selected SDR (the "last locked channel"); turn
-  Hold on (or edit the Offset / press **Centre**) to pin it.
+  active call on the selected SDR (the "last locked channel"), and rests
+  on the system's **control channel** (resolved from config) when no call
+  is up — so the scope defaults onto a decodable channel off the centre
+  DC spike and returns there when a call ends (#557). Turn Hold on (or
+  edit the Offset / press **Centre**) to pin it. Devices with no control
+  channel in their passband keep the old centre default.
 
 ## How it works
 

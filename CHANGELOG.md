@@ -7,6 +7,35 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Hunt features surfaced in the web console.** Recent hunt-family work that
+  previously only reached the logs / raw event stream is now visible in the web
+  UI. The *CC Activity* tab renders the DMR Tier III autoconfig learner's live
+  `dmr.grant.observed` (LCN, timeslot, talkgroup, source) and
+  `dmr.bandplan.learned` (base frequency, channel spacing, confidence) events —
+  given clean typed DTOs instead of raw passthrough — plus the control-channel
+  hunt lifecycle (`cchunt.progress` / `cchunt.failed`). The *Systems* tab shows
+  the active DMR LCN→frequency band plan per system (`GET /api/v1/systems` →
+  `dmr_band_plan`), whether operator-configured or learned over the air, with a
+  "learned live" indicator. The *Hunt* tab now lists each candidate's capture
+  report (control frequency, protocol, lock / skip reason) and the discovered
+  sites with their control channels. (#638)
+
+### Changed
+
+- **Plots view defaults to the control channel, not the SDR centre.** The
+  Constellation, Symbol scope, Eye diagram, Mixer, Tuning and Histogram panels
+  now rest their view on the system's control-channel frequency (resolved from
+  config and reported per-SDR as `control_channel_hz` on
+  `GET /api/v1/spectrum/devices`) whenever Hold is off and no call is active —
+  so a freshly opened panel lands on a decodable channel clear of the centre DC
+  spike instead of the useless SDR centre. An active call still takes
+  precedence, and the view glides back to the control channel when the call
+  ends; the Hold label shows *following call* or *on control channel*
+  accordingly. SDRs with no control channel in their passband keep the previous
+  centre default. (#557)
+
 ### Fixed
 
 - **Wideband polyphase decode at 6.25 / 5.0 MS/s (USRP-friendly rates).** With

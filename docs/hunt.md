@@ -157,7 +157,17 @@ to force it off even when a key is configured.
   Progress streams over the event bus (`hunt.progress` / `hunt.candidate` /
   `hunt.done`) via `GET /api/v1/events`. The **web console** has a *Hunt* tab
   (start a run, watch progress, download/commit the result) and the **TUI** has
-  a *Hunt* panel that monitors the run and can stop it.
+  a *Hunt* panel that monitors the run and can stop it. The web *Hunt* tab also
+  lists each candidate's **capture report** (control frequency, protocol, lock /
+  skip reason) and the discovered **sites** with their control channels once a
+  run completes.
+- **DMR Tier III band-plan learning, in the web console.** When the LCN
+  autoconfig learner fits a band plan, the web *CC Activity* tab shows the live
+  `DMR grant` observations and the `Band plan learned` result (base frequency,
+  channel spacing, confidence), and the *Systems* tab shows the active
+  LCN→frequency plan per system (`GET /api/v1/systems` → `dmr_band_plan`),
+  whether operator-configured or learned over the air. The control-channel hunt
+  lifecycle (`cchunt.progress` / `cchunt.failed`) is surfaced there too.
 - **Topology depth.** What the hunt recovers per protocol:
 
   | Protocol | Identity | Neighbor sites | Band plan |

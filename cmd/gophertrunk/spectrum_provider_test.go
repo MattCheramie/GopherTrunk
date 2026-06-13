@@ -316,3 +316,88 @@ func TestP25ModulationFor(t *testing.T) {
 		})
 	}
 }
+
+// TestControlChannelFor covers the per-device control-channel resolution
+// the web Plots panels rest their view on (#557): the in-band CC closest to
+// centre, with no single-system fallback so out-of-band devices keep the
+// old centre default.
+func TestControlChannelFor(t *testing.T) {
+	c4fm := trunking.System{
+		Name:               "C4FM-sys",
+		Protocol:           trunking.ProtocolP25,
+		ControlChannels:    []uint32{851_000_000},
+		P25Phase1DemodMode: "c4fm",
+	}
+	multiCC := trunking.System{
+		Name:            "Multi-CC-sys",
+		Protocol:        trunking.ProtocolP25,
+		ControlChannels: []uint32{851_000_000, 851_500_000},
+	}
+	dmr := trunking.System{
+		Name:            "DMR-sys",
+		Protocol:        trunking.ProtocolDMR,
+		ControlChannels: []uint32{451_000_000},
+	}
+
+	const sr = 2_048_000 // ±1.024 MHz passband
+
+	tests := []struct {
+		name       string
+		systems    []trunking.System
+		centerHz   uint32
+		sampleRate uint32
+		want       uint32
+	}{
+		{
+			name:       "control SDR parked on its control channel",
+			systems:    []trunking.System{c4fm},
+			centerHz:   851_000_000,
+			sampleRate: sr,
+			want:       851_000_000,
+		},
+		{
+			name:       "two in-band CCs returns the one closest to centre",
+			systems:    []trunking.System{multiCC},
+			centerHz:   851_100_000, // 100 kHz from first CC, 400 kHz from second
+			sampleRate: sr,
+			want:       851_000_000,
+		},
+		{
+			name:       "voice SDR offset but in band matches the CC",
+			systems:    []trunking.System{c4fm},
+			centerHz:   851_500_000, // 500 kHz off the CC, still < Nyquist
+			sampleRate: sr,
+			want:       851_000_000,
+		},
+		{
+			name:       "single system with CC out of band has no fallback",
+			systems:    []trunking.System{c4fm},
+			centerHz:   900_000_000,
+			sampleRate: sr,
+			want:       0,
+		},
+		{
+			name:       "multiple systems, none in band, is absent",
+			systems:    []trunking.System{c4fm, multiCC},
+			centerHz:   700_000_000,
+			sampleRate: sr,
+			want:       0,
+		},
+		{
+			name:       "no P25 systems configured is absent",
+			systems:    []trunking.System{dmr},
+			centerHz:   451_000_000,
+			sampleRate: sr,
+			want:       0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := controlChannelFor(tc.systems, tc.centerHz, tc.sampleRate)
+			if got != tc.want {
+				t.Fatalf("controlChannelFor() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

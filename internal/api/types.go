@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -94,6 +95,50 @@ type SystemDTO struct {
 	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`
 	MPT1327CWSCTolerance   string  `json:"mpt1327_cwsc_tolerance,omitempty"`
 	MotorolaBCHMode        string  `json:"motorola_bch_mode,omitempty"`
+	// DMRBandPlan surfaces the active DMR Tier III LCN→frequency plan
+	// (operator-configured, or learned by the autoconfig learner and
+	// written back to config) so the web Systems panel can show how voice
+	// grants resolve. Nil when the system has no DMR band plan. (#638)
+	DMRBandPlan *DMRBandPlanDTO `json:"dmr_band_plan,omitempty"`
+}
+
+// DMRBandPlanDTO mirrors trunking.DMRBandPlan: exactly one of Linear or
+// Table is populated.
+type DMRBandPlanDTO struct {
+	Linear *DMRLinearBandPlanDTO `json:"linear,omitempty"`
+	Table  []DMRBandPlanLCNDTO   `json:"table,omitempty"`
+}
+
+// DMRLinearBandPlanDTO mirrors trunking.DMRLinearBandPlan — a regular
+// base+spacing grid (freq = base + (lcn-offset)*spacing).
+type DMRLinearBandPlanDTO struct {
+	BaseHz    uint32 `json:"base_hz"`
+	SpacingHz uint32 `json:"spacing_hz"`
+	Offset    int8   `json:"offset,omitempty"`
+}
+
+// DMRBandPlanLCNDTO is one explicit LCN→downlink-frequency entry.
+type DMRBandPlanLCNDTO struct {
+	LCN    uint16 `json:"lcn"`
+	FreqHz uint32 `json:"freq_hz"`
+}
+
+func dmrBandPlanToDTO(p *trunking.DMRBandPlan) *DMRBandPlanDTO {
+	if p == nil {
+		return nil
+	}
+	out := &DMRBandPlanDTO{}
+	if p.Linear != nil {
+		out.Linear = &DMRLinearBandPlanDTO{
+			BaseHz:    p.Linear.BaseHz,
+			SpacingHz: p.Linear.SpacingHz,
+			Offset:    p.Linear.Offset,
+		}
+	}
+	for _, e := range p.Table {
+		out.Table = append(out.Table, DMRBandPlanLCNDTO{LCN: e.LCN, FreqHz: e.FreqHz})
+	}
+	return out
 }
 
 func systemToDTO(s trunking.System) SystemDTO {
@@ -120,6 +165,7 @@ func systemToDTO(s trunking.System) SystemDTO {
 		MPT1327BCHMode:         s.MPT1327BCHMode,
 		MPT1327CWSCTolerance:   s.MPT1327CWSCTolerance,
 		MotorolaBCHMode:        s.MotorolaBCHMode,
+		DMRBandPlan:            dmrBandPlanToDTO(s.DMRBandPlan),
 	}
 }
 
@@ -357,6 +403,66 @@ func patchToDTO(p trunking.Patch) PatchDTO {
 		Add:        p.Add,
 		At:         p.At,
 	}
+}
+
+// DMRGrantObservedDTO mirrors events.DMRGrantObserved — a DMR Tier III
+// voice-grant CSBK seen by the control channel before the LCN is resolved
+// to a frequency. Surfaced so operators can watch the autoconfig learner's
+// raw input in the CC Activity log. Timeslot uses the raw CSBK encoding
+// (0 = TS1, 1 = TS2). (#638)
+type DMRGrantObservedDTO struct {
+	System    string    `json:"system"`
+	ColorCode uint8     `json:"color_code"`
+	LCN       uint16    `json:"lcn"`
+	Timeslot  uint8     `json:"timeslot"`
+	GroupID   uint32    `json:"group_id"`
+	SourceID  uint32    `json:"source_id"`
+	CCFreqHz  uint32    `json:"cc_freq_hz"`
+	At        time.Time `json:"at"`
+}
+
+func dmrGrantObservedToDTO(g events.DMRGrantObserved) DMRGrantObservedDTO {
+	return DMRGrantObservedDTO{
+		System:    g.System,
+		ColorCode: g.ColorCode,
+		LCN:       g.LCN,
+		Timeslot:  g.Timeslot,
+		GroupID:   g.GroupID,
+		SourceID:  g.SourceID,
+		CCFreqHz:  g.CCFreqHz,
+		At:        g.At,
+	}
+}
+
+// DMRBandPlanLearnedDTO mirrors events.DMRBandPlanLearned — the result of
+// the DMR Tier III LCN autoconfig learner fitting a band plan from observed
+// (LCN, frequency) pairs. A linear plan sets BaseHz/SpacingHz/Offset with an
+// empty Table; an irregular plan populates Table. (#638)
+type DMRBandPlanLearnedDTO struct {
+	System     string              `json:"system"`
+	BaseHz     uint32              `json:"base_hz,omitempty"`
+	SpacingHz  uint32              `json:"spacing_hz,omitempty"`
+	Offset     int8                `json:"offset,omitempty"`
+	Table      []DMRBandPlanLCNDTO `json:"table,omitempty"`
+	NumPairs   int                 `json:"num_pairs"`
+	Confidence float64             `json:"confidence"`
+	ResidualHz uint32              `json:"residual_hz,omitempty"`
+}
+
+func dmrBandPlanLearnedToDTO(p events.DMRBandPlanLearned) DMRBandPlanLearnedDTO {
+	dto := DMRBandPlanLearnedDTO{
+		System:     p.System,
+		BaseHz:     p.BaseHz,
+		SpacingHz:  p.SpacingHz,
+		Offset:     p.Offset,
+		NumPairs:   p.NumPairs,
+		Confidence: p.Confidence,
+		ResidualHz: p.ResidualHz,
+	}
+	for _, e := range p.Table {
+		dto.Table = append(dto.Table, DMRBandPlanLCNDTO{LCN: e.LCN, FreqHz: e.FreqHz})
+	}
+	return dto
 }
 
 // ActiveCallDTO mirrors trunking.ActiveCall for JSON.

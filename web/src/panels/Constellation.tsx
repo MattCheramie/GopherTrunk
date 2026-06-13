@@ -267,13 +267,23 @@ export function Constellation() {
     return (newest.grant.frequency_hz - device.center_hz) / 1000;
   }, [activeCalls, device, selected]);
 
-  // Follow the locked channel unless the operator pinned the view.
+  // Offset (kHz) that lands the view on this SDR's control channel — the
+  // rest position when Hold is off and no call is active (#557). Absent
+  // (null) for devices with no in-band CC, leaving the old centre default.
+  const controlOffsetKHz = useMemo(() => {
+    if (!device?.control_channel_hz) return null;
+    return (device.control_channel_hz - device.center_hz) / 1000;
+  }, [device]);
+
+  // Follow the locked channel unless the operator pinned the view: an
+  // active call wins, otherwise rest on the control channel (#557).
+  const restOffsetKHz = followOffsetKHz ?? controlOffsetKHz;
   useEffect(() => {
-    if (hold || followOffsetKHz == null) return;
+    if (hold || restOffsetKHz == null) return;
     setOffsetKHz((cur) =>
-      Math.abs(cur - followOffsetKHz) < 0.05 ? cur : followOffsetKHz,
+      Math.abs(cur - restOffsetKHz) < 0.05 ? cur : restOffsetKHz,
     );
-  }, [hold, followOffsetKHz]);
+  }, [hold, restOffsetKHz]);
 
   // Clamp the offset to the device's Nyquist so the slider/input can't
   // request a mix that just aliases back into the band.
@@ -487,7 +497,13 @@ export function Constellation() {
           }}
           hold={hold}
           onHoldChange={setHold}
-          followingActive={followOffsetKHz != null}
+          following={
+            followOffsetKHz != null
+              ? "call"
+              : controlOffsetKHz != null
+                ? "control"
+                : null
+          }
           onCentre={() => {
             setHold(true);
             setOffsetKHz(0);
