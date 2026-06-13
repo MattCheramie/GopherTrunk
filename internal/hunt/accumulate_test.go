@@ -139,6 +139,48 @@ func TestAccumulate_FoldsTopology(t *testing.T) {
 	}
 }
 
+func TestResolveNeighborFreqs(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	r := fakeResult(851012500, map[string]any{"NAC": uint16(0x293)}, 1000)
+	r.Topology = &siglab.TopologySnapshot{
+		RFSS: 1, Site: 2,
+		Neighbors: []siglab.NeighborRef{
+			{RFSS: 1, Site: 3, ChannelID: 1, ChannelNumber: 10}, // resolvable
+			{RFSS: 1, Site: 4}, // no coords ⇒ unresolved
+		},
+		BandPlan: []siglab.BandPlanSlot{
+			{ChannelID: 1, BaseHz: 851_000_000, SpacingHz: 12_500},
+		},
+	}
+	Accumulate(sys, Observation{Protocol: "p25", Confidence: 0.9, Result: r})
+	sys.sortAll() // resolution runs at finish
+
+	nb := sys.Sites[0].Neighbors
+	// Sorted by (RFSS, Site): Site 3 first, then Site 4.
+	if len(nb) != 2 {
+		t.Fatalf("neighbors = %+v, want 2", nb)
+	}
+	if got := nb[0].FrequencyHz; got != 851_125_000 { // 851M + 10*12.5k
+		t.Errorf("neighbor site 3 freq = %d, want 851125000", got)
+	}
+	if nb[1].FrequencyHz != 0 {
+		t.Errorf("neighbor site 4 (no coords) should stay unresolved, got %d", nb[1].FrequencyHz)
+	}
+}
+
+func TestResolveNeighborFreqs_NoBandPlan(t *testing.T) {
+	sys := &DiscoveredSystem{
+		Sites: []DiscoveredSite{{
+			RFSS: 1, SiteID: 2,
+			Neighbors: []NeighborRef{{RFSS: 1, Site: 3, ChannelID: 1, ChannelNumber: 10}},
+		}},
+	}
+	sys.sortAll()
+	if sys.Sites[0].Neighbors[0].FrequencyHz != 0 {
+		t.Errorf("no band plan ⇒ neighbor must stay unresolved")
+	}
+}
+
 func TestAccumulate_TopologyDedupesAcrossObservations(t *testing.T) {
 	sys := &DiscoveredSystem{}
 	mk := func() Observation {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -18,11 +19,22 @@ type streamIQSource struct {
 	ch      <-chan []complex64
 	tune    func(uint32) error
 	rate    func() uint32
+	setGain func(int) error // nil on the shared-SDR broker path (gain control unavailable)
 	pending []complex64
 	settle  time.Duration
 }
 
 func (s *streamIQSource) SampleRateHz() uint32 { return s.rate() }
+
+// SetGain implements hunt.GainSettable for the auto-gain sweep. It is only wired
+// on the standalone device path; the broker path returns an error because
+// changing gain would disrupt the daemon's other consumers of the shared SDR.
+func (s *streamIQSource) SetGain(tenthDB int) error {
+	if s.setGain == nil {
+		return fmt.Errorf("gain control unavailable on this IQ source")
+	}
+	return s.setGain(tenthDB)
+}
 
 func (s *streamIQSource) Tune(centerHz uint32) error {
 	if err := s.tune(centerHz); err != nil {
@@ -69,10 +81,11 @@ func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32) (*strea
 		return nil, err
 	}
 	return &streamIQSource{
-		ch:     ch,
-		tune:   dev.SetCenterFreq,
-		rate:   func() uint32 { return rate },
-		settle: 50 * time.Millisecond,
+		ch:      ch,
+		tune:    dev.SetCenterFreq,
+		rate:    func() uint32 { return rate },
+		setGain: dev.SetGain,
+		settle:  50 * time.Millisecond,
 	}, nil
 }
 

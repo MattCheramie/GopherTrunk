@@ -350,7 +350,7 @@ func surveyCandidates(ctx context.Context, opts LiveHuntOptions, log *slog.Logge
 		for _, f := range opts.Candidates {
 			out = append(out, Candidate{FreqHz: f})
 		}
-		return out, nil
+		return skipSurveyed(out, opts.SkipFreqs), nil
 	}
 	sw, err := NewSweeper(SweepOptions{
 		Source:     opts.Source,
@@ -365,10 +365,30 @@ func surveyCandidates(ctx context.Context, opts LiveHuntOptions, log *slog.Logge
 		return nil, err
 	}
 	progress(LiveHuntProgress{Phase: PhaseSweeping, Detail: "scanning bands"})
-	return sw.Sweep(ctx, func(centerHz uint32, peaks []Peak) {
+	cands, err := sw.Sweep(ctx, func(centerHz uint32, peaks []Peak) {
 		progress(LiveHuntProgress{Phase: PhaseSweeping, CenterHz: centerHz,
 			Detail: fmt.Sprintf("%d peak(s)", len(peaks))})
 	})
+	if err != nil {
+		return nil, err
+	}
+	return skipSurveyed(cands, opts.SkipFreqs), nil
+}
+
+// skipSurveyed drops candidates whose frequency is already in skip (a resumed
+// survey), preserving order. A nil/empty skip set is a no-op.
+func skipSurveyed(cands []Candidate, skip map[uint32]struct{}) []Candidate {
+	if len(skip) == 0 {
+		return cands
+	}
+	out := cands[:0]
+	for _, c := range cands {
+		if _, done := skip[c.FreqHz]; done {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // finishSurvey stamps the finish time, sorts the inventory, and clears an empty

@@ -56,6 +56,10 @@ type LiveHuntOptions struct {
 	// all decoding (trunking identify, paging, analog tone scan) for a fast
 	// inventory.
 	ClassifyOnly bool
+	// SkipFreqs, when non-empty, drops candidate carriers whose center
+	// frequency is already present (a resumed survey reads these from the
+	// existing NDJSON output so it doesn't re-survey carriers it already has).
+	SkipFreqs map[uint32]struct{}
 	// SurveyDeep hands narrowband carriers the blind classifier called analog
 	// (am/nbfm/wfm ≤ NBFM bandwidth) to the authoritative siglab identify before
 	// the analog tone scan, so a trunked DMR/TETRA/MPT control channel the blind
