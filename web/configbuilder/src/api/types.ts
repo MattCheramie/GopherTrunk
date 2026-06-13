@@ -85,6 +85,7 @@ export interface SoapyRemoteConfig {
   Addr: string;
   Driver: string;
   Args: string;
+  MasterClockHz: number;
   Serial: string;
   Role: string;
   Format: string;

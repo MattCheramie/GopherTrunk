@@ -121,7 +121,7 @@ export function SDRSection() {
           label="soapy_remote endpoints"
           items={cfg.SoapyRemote}
           onChange={(x) => set({ ...cfg, SoapyRemote: x })}
-          makeNew={() => ({ Addr: "", Driver: "", Args: "", Serial: "", Role: "", Format: "", StreamProtocol: "", PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0 })}
+          makeNew={() => ({ Addr: "", Driver: "", Args: "", MasterClockHz: 0, Serial: "", Role: "", Format: "", StreamProtocol: "", PPM: 0, Gain: "auto", BiasTee: false, ConnectTimeoutMs: 0 })}
           itemTitle={(s) => s.Addr || "soapy_remote"}
           emptyHint="SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, …)."
           renderItem={(s, set) => (
@@ -129,6 +129,7 @@ export function SDRSection() {
               <TextField label="Address" value={s.Addr} onChange={(v) => set({ ...s, Addr: v })} placeholder="192.168.1.60:55132" />
               <TextField label="Driver" value={s.Driver} onChange={(v) => set({ ...s, Driver: v })} placeholder="uhd / lime / bladerf / hackrf / airspy / rtlsdr" />
               <TextField label="Args" value={s.Args} onChange={(v) => set({ ...s, Args: v })} placeholder="key=value,key2=value2" />
+              <NumberField label="Master clock (Hz)" value={s.MasterClockHz} onChange={(v) => set({ ...s, MasterClockHz: v })} placeholder="0 = device default; B210: 61440000" />
               <TextField label="Serial" value={s.Serial} onChange={(v) => set({ ...s, Serial: v })} />
               <SelectField label="Role" value={s.Role} onChange={(v) => set({ ...s, Role: v })} options={REMOTE_ROLES} />
               <SelectField
