@@ -124,6 +124,19 @@ no control SDR is configured (#641).
 
 ### Fixed
 
+- **Empty DMR Tier III recordings when the embedded LC doesn't decode
+  (#644 follow-up).** The 2-slot interleaved decoder's slot router dropped
+  *every* voice superframe until a CRC-valid embedded Link Control named the
+  call's talkgroup. Real outbound embedded signalling is still capture-pending
+  (the EMB FEC / 5-bit CRC constants are unvalidated against live air), so on a
+  carrier whose LC never decodes the router bound nothing and the call recorded
+  empty files — a 0-byte `.raw` sidecar and a header-only WAV. The router now
+  degrades gracefully: a matching embedded LC still binds (and corrects) the
+  slot, but after a short grace window with no LC it falls back to the active
+  slot's phase so audio records. Foreign-talkgroup LCs still positively exclude
+  their slot, so a call genuinely absent from the carrier still records nothing.
+  The DMR decode-quality log now reports `lc_superframes` and logs once when a
+  call records via the phase fallback, so LC-vs-fallback routing is visible.
 - **Metallic "tin can" DMR voice — AMBE+2 brought to IMBE synthesis parity
   (#644 follow-up).** With the timeslot fix above the speech became
   intelligible but sounded metallic/buzzy ("like someone speaking into a tin
