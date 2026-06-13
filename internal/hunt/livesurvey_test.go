@@ -147,6 +147,58 @@ func TestClassifyLoneWidebandNotTruncated(t *testing.T) {
 	}
 }
 
+// TestSurveyDeepRoutesAnalogToSiglab is the #648 follow-up guard: an opt-in deep
+// survey hands a narrowband carrier the blind classifier called analog to the
+// authoritative siglab identify (so a trunked CC the classifier missed is still
+// found), while the default survey leaves analog carriers untouched. A genuine
+// analog carrier that siglab can't lock still gets its analog tone scan.
+func TestSurveyDeepRoutesAnalogToSiglab(t *testing.T) {
+	const rate = 48_000
+	full := fmNoise(96_000, rate, 3000, 21) // a narrowband carrier siglab won't lock
+	ch, chRate := channelize(full, rate, surveyChannelRateHz)
+	mkInputs := func(opts LiveHuntOptions) routeInputs {
+		return routeInputs{
+			fullIQ: full, fullRate: rate, chIQ: ch, chRate: chRate,
+			cand: Candidate{FreqHz: 451_000_000}, opts: opts, log: slog.New(slog.DiscardHandler),
+		}
+	}
+	// A carrier the blind classifier put in an analog family, narrowband.
+	mkDS := func() *DetectedSignal {
+		return &DetectedSignal{FreqHz: 451_000_000, Class: survey.ClassNBFM, OccupiedBwHz: 12_000}
+	}
+
+	// Default survey: an analog carrier is NOT handed to siglab (no report), but
+	// still gets the analog tone scan.
+	base := mkDS()
+	if rep := routeSignal(&DiscoveredSystem{}, base, mkInputs(LiveHuntOptions{})); rep != nil {
+		t.Errorf("default survey must not hand an analog carrier to siglab; got report %+v", rep)
+	}
+	if base.Analog == nil {
+		t.Errorf("default survey should still run the analog tone scan")
+	}
+
+	// Deep survey: the same carrier IS handed to siglab identify (a report comes
+	// back). Noise won't lock, so it stays analog (lock-only, never promoted to
+	// trunk-voice on a weak guess) and still gets the tone scan.
+	deep := mkDS()
+	deepRep := routeSignal(&DiscoveredSystem{}, deep, mkInputs(LiveHuntOptions{SurveyDeep: true}))
+	if deepRep == nil {
+		t.Errorf("deep survey must hand an analog narrowband carrier to siglab identify")
+	}
+	if deep.Class != survey.ClassNBFM {
+		t.Errorf("non-locking deep identify must keep the analog label, got %q", deep.Class)
+	}
+	if deep.Analog == nil {
+		t.Errorf("deep survey carrier that didn't lock should still get the analog tone scan")
+	}
+
+	// And a wideband analog carrier is left out of the deep identify entirely.
+	wide := &DetectedSignal{FreqHz: 99_500_000, Class: survey.ClassWideFM, OccupiedBwHz: 180_000}
+	if rep := routeSignal(&DiscoveredSystem{}, wide, mkInputs(LiveHuntOptions{SurveyDeep: true})); rep != nil {
+		t.Errorf("deep survey must not identify a wideband carrier; got report %+v", rep)
+	}
+}
+
 // TestRunLiveSurvey_MixedTraffic probes two carriers — a synthesized P25 control
 // channel and an analog FM voice channel — and asserts the survey classifies and
 // routes each correctly: the P25 carrier folds into the discovered system, the

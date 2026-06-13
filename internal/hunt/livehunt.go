@@ -56,6 +56,12 @@ type LiveHuntOptions struct {
 	// all decoding (trunking identify, paging, analog tone scan) for a fast
 	// inventory.
 	ClassifyOnly bool
+	// SurveyDeep hands narrowband carriers the blind classifier called analog
+	// (am/nbfm/wfm ≤ NBFM bandwidth) to the authoritative siglab identify before
+	// the analog tone scan, so a trunked DMR/TETRA/MPT control channel the blind
+	// classifier missed is still discovered. Slower (an extra identify per
+	// borderline carrier); the accurate-survey opt-in for digital-dense bands.
+	SurveyDeep bool
 	// Serial requests a specific SDR for the run. Empty ⇒ the daemon
 	// auto-selects (spare SDR, else borrow the control SDR). Consumed by the
 	// daemon Acquirer; RunLiveHunt itself ignores it (the IQSource is already

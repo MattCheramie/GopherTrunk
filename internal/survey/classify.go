@@ -101,6 +101,11 @@ type ClassifyConfig struct {
 	// AMEnvelopeCV is the envelope coefficient-of-variation above which a
 	// carrier reads as AM (non-constant envelope).
 	AMEnvelopeCV float64
+	// AMMaxIFStd is the FM-discriminator std (rad/sample) below which a
+	// high-envelope-CV carrier reads as AM. Above it the carrier carries real
+	// angle modulation (FM / digital FM) and is not AM even when noise or
+	// channel clipping has lifted its envelope CV past AMEnvelopeCV.
+	AMMaxIFStd float64
 	// DigitalProminence is the minimum rectified-discriminator baud-line
 	// prominence for a carrier to read as digital.
 	DigitalProminence float64
@@ -119,6 +124,7 @@ func DefaultClassifyConfig() ClassifyConfig {
 		SNRGateDb:         3,
 		OccupiedThreshDb:  6,
 		AMEnvelopeCV:      0.20,
+		AMMaxIFStd:        0.25,
 		DigitalProminence: 15,
 		NBFMMaxBwHz:       25_000,
 		PSKKurtosis:       2,
@@ -138,6 +144,9 @@ func (c ClassifyConfig) withDefaults() ClassifyConfig {
 	}
 	if c.AMEnvelopeCV == 0 {
 		c.AMEnvelopeCV = d.AMEnvelopeCV
+	}
+	if c.AMMaxIFStd == 0 {
+		c.AMMaxIFStd = d.AMMaxIFStd
 	}
 	if c.DigitalProminence == 0 {
 		c.DigitalProminence = d.DigitalProminence
@@ -245,9 +254,15 @@ func decide(f ClassFeatures, cfg ClassifyConfig) (SignalClass, float64) {
 		return ClassFSK, conf
 	}
 
-	// AM: a non-constant envelope with no symbol structure. Constant-envelope
-	// angle modulations sit near CV≈0; voice AM runs well above the gate.
-	if f.EnvelopeCV > cfg.AMEnvelopeCV {
+	// AM: a non-constant envelope with no symbol structure AND little angle
+	// modulation. Real AM carries its message in the envelope (high CV) with a
+	// near-static carrier frequency (IFStd≈0); a constant-envelope FM / digital-FM
+	// carrier (DMR, or an FM repeater with CTCSS) can have its envelope CV lifted
+	// past the gate by noise or channel clipping, but its discriminator still
+	// swings with the deviation. Requiring low IFStd keeps those out of AM — they
+	// fall to the FM split below — so a DMR carrier whose fragile baud line was
+	// lost isn't mislabelled am (issue #648).
+	if f.EnvelopeCV > cfg.AMEnvelopeCV && f.IFStd < cfg.AMMaxIFStd {
 		conf := clamp01((f.EnvelopeCV - cfg.AMEnvelopeCV) / 0.3)
 		return ClassAM, 0.5 + 0.5*conf
 	}
@@ -393,14 +408,16 @@ func baudLine(d []float32, mean float64, rateHz float64) (float64, float64) {
 	out := fft.New(n).Forward(nil, in)
 
 	binHz := rateHz / float64(n)
-	// Plausible baud band: 300 Hz .. rate/3 (above any audio roll-off, below
-	// where a real baud line could fold).
+	// Plausible baud band: 300 Hz .. rate/2.4 (above any audio roll-off, below
+	// the fold region near Nyquist). The upper edge reaches ~20 kHz at a 48 kHz
+	// channel so TETRA's 18 kbaud symbol line is searchable, not just the
+	// sub-16 kHz rates a rate/3 cap allowed.
 	loBin := int(300 / binHz)
 	if loBin < 1 {
 		loBin = 1
 	}
 	hiBin := n / 2
-	if maxBin := int((rateHz / 3) / binHz); maxBin < hiBin {
+	if maxBin := int((rateHz / 2.4) / binHz); maxBin < hiBin {
 		hiBin = maxBin
 	}
 	if hiBin <= loBin {

@@ -20,6 +20,7 @@ type huntLiveParams struct {
 	serial           string
 	survey           bool // classify+decode every carrier, not just trunking CCs
 	classifyOnly     bool
+	surveyDeep       bool // hand analog-classed narrowband carriers to siglab identify
 	surveyAudioDir   string
 	maxDwellSeconds  float64
 	identifyMinConf  float64
@@ -119,6 +120,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		County:                p.county,
 		Location:              p.location,
 		ClassifyOnly:          p.classifyOnly,
+		SurveyDeep:            p.surveyDeep,
 		SurveyAudioDir:        p.surveyAudioDir,
 		IdentifyMinConfidence: p.identifyMinConf,
 		ClassifyConfig: survey.ClassifyConfig{
