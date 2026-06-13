@@ -89,10 +89,16 @@ around the same problem:
   12.5 kHz land precisely), and the **MHz** field lets you type the
   channel's absolute frequency — the two stay in sync.
 - **Hold** — when off, the Offset automatically follows the newest
-  active call on the selected SDR (the "last locked channel"). Turn
-  Hold on to pin the view on a specific offset and stop it from
-  jumping as calls come and go. Editing the Offset or pressing
-  **Centre** pins it too.
+  active call on the selected SDR (the "last locked channel"), and
+  rests on the system's **control channel** when no call is up —
+  resolved from config, so the panel defaults onto a decodable channel
+  off the centre DC spike instead of the useless SDR centre, and glides
+  back to the control channel when a call ends (#557). The label next to
+  the checkbox shows *following call* or *on control channel*
+  accordingly. Turn Hold on to pin the view on a specific offset and
+  stop it from jumping as calls come and go. Editing the Offset or
+  pressing **Centre** pins it too. (Devices with no control channel in
+  their passband keep the old centre default.)
 - **DC block** / **Auto scale** — DC-block subtracts the rolling mean
   to remove any residual offset; auto-scale eases a gain so the cloud
   fills the unit circle (targeting the ~95th-percentile radius, so a

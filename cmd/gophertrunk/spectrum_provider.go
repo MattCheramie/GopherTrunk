@@ -65,13 +65,14 @@ func (p *spectrumProvider) Devices() []api.SpectrumDevice {
 		centerHz := br.CenterHz()
 		sampleRateHz := br.SampleRateHz()
 		out = append(out, api.SpectrumDevice{
-			Serial:        e.Info.Serial,
-			Driver:        e.Info.Driver,
-			Product:       e.Info.Product,
-			Role:          e.Role.String(),
-			CenterHz:      centerHz,
-			SampleRateHz:  sampleRateHz,
-			P25Modulation: p25ModulationFor(p.systems, centerHz, sampleRateHz),
+			Serial:           e.Info.Serial,
+			Driver:           e.Info.Driver,
+			Product:          e.Info.Product,
+			Role:             e.Role.String(),
+			CenterHz:         centerHz,
+			SampleRateHz:     sampleRateHz,
+			P25Modulation:    p25ModulationFor(p.systems, centerHz, sampleRateHz),
+			ControlChannelHz: controlChannelFor(p.systems, centerHz, sampleRateHz),
 		})
 	}
 	return out
@@ -112,6 +113,42 @@ func p25ModulationFor(systems []trunking.System, centerHz, sampleRateHz uint32) 
 		return demodModeName(only.P25Phase1DemodMode)
 	}
 	return ""
+}
+
+// controlChannelFor reports the configured P25 control channel that the
+// device at (centerHz, sampleRateHz) can see — the in-band CC closest to
+// centre when several fall inside the passband (|cc - centre| <=
+// sample_rate/2) — or 0 when none does. The web Plots panels rest their
+// view on it (#557): a control SDR parked on its CC yields that CC at
+// offset ~0, and a voice SDR that still spans the CC rests there too.
+//
+// Unlike p25ModulationFor there is deliberately no single-system fallback:
+// an out-of-band CC would mix beyond Nyquist (the panel clamps it to the
+// band edge), resting the view on a frequency the SDR cannot see. Absent
+// (0) instead keeps the old centre default for devices that can't see a CC.
+// Closest-to-centre (rather than first-match) is used because a wideband
+// voice SDR can span several CCs of one system; the nearest one is the
+// deterministic, operator-intuitive choice.
+func controlChannelFor(systems []trunking.System, centerHz, sampleRateHz uint32) uint32 {
+	var best uint32
+	var bestDelta int64 = -1
+	half := int64(sampleRateHz) / 2
+	for i := range systems {
+		if systems[i].Protocol != trunking.ProtocolP25 {
+			continue
+		}
+		for _, cc := range systems[i].ControlChannels {
+			delta := int64(cc) - int64(centerHz)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= half && (bestDelta < 0 || delta < bestDelta) {
+				best = cc
+				bestDelta = delta
+			}
+		}
+	}
+	return best
 }
 
 // demodModeName canonicalises a configured demod-mode string to the

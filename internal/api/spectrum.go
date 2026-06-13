@@ -27,6 +27,12 @@ type SpectrumDevice struct {
 	// instead of asking the operator to pick it. Empty when no P25
 	// Phase 1 system matches (e.g. a DMR-only device).
 	P25Modulation string `json:"p25_modulation,omitempty"`
+	// ControlChannelHz is the configured control-channel frequency that
+	// falls inside this SDR's passband (the one closest to centre when
+	// several are in band), or 0 when none matches. The web Plots panels
+	// rest their view on it so they default off the centre DC spike onto a
+	// decodable channel instead of the useless SDR centre. (#557)
+	ControlChannelHz uint32 `json:"control_channel_hz,omitempty"`
 }
 
 // SpectrumFrame is the wire shape of one frame on the WS stream.

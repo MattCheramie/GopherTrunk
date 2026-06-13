@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **Plots view defaults to the control channel, not the SDR centre.** The
+  Constellation, Symbol scope, Eye diagram, Mixer, Tuning and Histogram panels
+  now rest their view on the system's control-channel frequency (resolved from
+  config and reported per-SDR as `control_channel_hz` on
+  `GET /api/v1/spectrum/devices`) whenever Hold is off and no call is active —
+  so a freshly opened panel lands on a decodable channel clear of the centre DC
+  spike instead of the useless SDR centre. An active call still takes
+  precedence, and the view glides back to the control channel when the call
+  ends; the Hold label shows *following call* or *on control channel*
+  accordingly. SDRs with no control channel in their passband keep the previous
+  centre default. (#557)
+
 ### Fixed
 
 - **Wideband polyphase decode at 6.25 / 5.0 MS/s (USRP-friendly rates).** With

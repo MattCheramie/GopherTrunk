@@ -17,6 +17,10 @@ export interface SpectrumDevice {
   // applies. The symbol/constellation panels' "Auto" mode reads this to
   // pick the receiver without operator input.
   p25_modulation?: string;
+  // Configured control-channel frequency in this SDR's passband (Hz), or
+  // absent when none matches. The Plots panels rest their view here so
+  // they default off the centre DC spike onto a decodable channel. (#557)
+  control_channel_hz?: number;
 }
 
 // defaultSymbolDevice picks the SDR the symbol-domain panels (Eye

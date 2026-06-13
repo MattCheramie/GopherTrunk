@@ -38,8 +38,10 @@ interface TuningControlsProps {
   onOffsetChange: (khz: number) => void;
   hold: boolean;
   onHoldChange: (hold: boolean) => void;
-  // True when, with Hold off, the view is tracking an active call.
-  followingActive: boolean;
+  // What the view is tracking with Hold off: "call" (newest active call on
+  // this SDR) or "control" (resting on the control channel), or null when
+  // neither applies. Drives the label next to the Hold checkbox.
+  following?: "call" | "control" | null;
   // Recentre on the SDR centre (offset 0). Caller pins the view.
   onCentre: () => void;
 }
@@ -58,7 +60,7 @@ export function TuningControls({
   onOffsetChange,
   hold,
   onHoldChange,
-  followingActive,
+  following,
   onCentre,
 }: TuningControlsProps) {
   const freqMHz = centerHz != null ? (centerHz + offsetKHz * 1000) / 1e6 : null;
@@ -179,7 +181,7 @@ export function TuningControls({
 
       <label
         className="flex items-center gap-1.5"
-        title="When off, the view follows the newest active call on this SDR"
+        title="When off, the view follows the newest active call on this SDR, or rests on the control channel when no call is up"
       >
         <input
           type="checkbox"
@@ -189,8 +191,11 @@ export function TuningControls({
         />
         <span>
           Hold
-          {!hold && followingActive && (
+          {!hold && following === "call" && (
             <span className="text-accent"> · following call</span>
+          )}
+          {!hold && following === "control" && (
+            <span className="text-accent"> · on control channel</span>
           )}
         </span>
       </label>

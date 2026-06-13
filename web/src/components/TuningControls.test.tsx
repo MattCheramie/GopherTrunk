@@ -14,7 +14,7 @@ function setup(overrides: Partial<Parameters<typeof TuningControls>[0]> = {}) {
       onOffsetChange={onOffsetChange}
       hold={true}
       onHoldChange={onHoldChange}
-      followingActive={false}
+      following={null}
       onCentre={onCentre}
       {...overrides}
     />,
@@ -103,5 +103,23 @@ describe("TuningControls", () => {
     expect(onOffsetChange).toHaveBeenLastCalledWith(12.5);
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(onOffsetChange).toHaveBeenLastCalledWith(-12.5);
+  });
+
+  it("labels the Hold checkbox when following an active call", () => {
+    setup({ hold: false, following: "call" });
+    expect(screen.getByText("· following call")).toBeInTheDocument();
+    expect(screen.queryByText("· on control channel")).toBeNull();
+  });
+
+  it("labels the Hold checkbox when resting on the control channel", () => {
+    setup({ hold: false, following: "control" });
+    expect(screen.getByText("· on control channel")).toBeInTheDocument();
+    expect(screen.queryByText("· following call")).toBeNull();
+  });
+
+  it("hides the follow label when the view is held", () => {
+    setup({ hold: true, following: "control" });
+    expect(screen.queryByText("· on control channel")).toBeNull();
+    expect(screen.queryByText("· following call")).toBeNull();
   });
 });

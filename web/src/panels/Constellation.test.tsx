@@ -223,6 +223,73 @@ describe("Constellation panel", () => {
     });
   });
 
+  it("rests on the control channel by default when no call is active (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+        p25_modulation: "cqpsk",
+        control_channel_hz: 851_025_000,
+      },
+    ] as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // CC is 25 kHz above the 851.000 MHz centre.
+      expect(last?.offset).toBe(25_000);
+    });
+  });
+
+  it("prefers an active call over the control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "rtl-1",
+        driver: "rtlsdr",
+        role: "control",
+        center_hz: 851_000_000,
+        sample_rate_hz: 2_048_000,
+        p25_modulation: "cqpsk",
+        control_channel_hz: 851_025_000,
+      },
+    ] as never);
+
+    useShared.setState({
+      activeCalls: [
+        {
+          grant: {
+            system: "sys",
+            protocol: "p25",
+            group_id: 1,
+            frequency_hz: 851_050_000,
+          },
+          device_serial: "rtl-1",
+          started_at: "2026-06-07T00:00:00Z",
+        },
+      ] as never,
+    });
+
+    render(<Constellation />);
+    await waitFor(() => {
+      const last = vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1];
+      // Follows the call (50 kHz), not the CC (25 kHz).
+      expect(last?.offset).toBe(50_000);
+    });
+  });
+
+  it("stays at centre when the device reports no control channel (#557)", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
+
+    render(<Constellation />);
+    await waitFor(() => {
+      expect(openSymbolStream).toHaveBeenCalled();
+    });
+    expect(vi.mocked(openSymbolStream).mock.calls.at(-1)?.[1]?.offset).toBe(0);
+  });
+
   it("exposes a zoom control and an absolute-frequency (MHz) input", async () => {
     vi.mocked(fetchSpectrumDevices).mockResolvedValue(ONE_DEVICE as never);
 
