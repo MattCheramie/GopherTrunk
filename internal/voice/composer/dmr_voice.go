@@ -55,34 +55,76 @@ type errAwareRawSink interface {
 //
 // slotRouter decides which superframes of a 2-slot interleaved DMR
 // carrier belong to this call. A carrier runs two calls (one per
-// timeslot) whose burst-A voice sync is identical, so the only reliable
+// timeslot) whose burst-A voice sync is identical, so the preferred
 // discriminator is the embedded Link Control: once a superframe's LC
 // names this call's talkgroup, its Phase is bound and subsequent
 // superframes are routed by Phase even when their LC is absent or fails
 // CRC. Superframes whose LC names a different talkgroup are dropped.
+//
+// Real outbound DMR embedded signalling is still capture-pending (the
+// EMB FEC / 5-bit CRC constants are unvalidated against live air, see
+// docs/status.md / issue #644), so on a carrier whose embedded LC never
+// decodes the router would otherwise bind nothing and drop the whole
+// call — recording empty files. To degrade gracefully it falls back to
+// the active slot's Phase after a short grace window with no LC bind, so
+// audio still records; a later valid LC re-binds and corrects the routing.
 type slotRouter struct {
-	groupID uint32
-	bound   int // -1 until a matching LC binds this call's phase
+	groupID          uint32
+	bound            int   // -1 until a phase is bound (by LC or by fallback)
+	unboundSeen      int   // LC-less superframes seen while still unbound
+	foreignPhaseMask uint8 // bit p set when phase p was positively another talkgroup
+	byFallback       bool  // bound was set by the phase fallback, not an embedded LC
 }
+
+// unboundPhaseFallbackGrace is how many consecutive LC-less voice superframes
+// the router tolerates before binding the active slot's phase. Two lets a
+// clean embedded LC on superframe 1 or 2 bind the correct phase first while
+// losing at most one leading superframe to the fallback.
+const unboundPhaseFallbackGrace = 2
 
 func newSlotRouter(groupID uint32) *slotRouter {
 	return &slotRouter{groupID: groupID, bound: -1}
 }
 
-// accept reports whether sf belongs to this call's timeslot.
+// accept reports whether sf belongs to this call's timeslot. An embedded LC
+// naming this call's talkgroup is authoritative and binds (or re-binds) the
+// phase. Absent a usable LC, once a phase is bound we route by it; while still
+// unbound we wait a couple of superframes for an LC and otherwise fall back to
+// the active slot's phase so the call still records rather than dropping it.
 func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	if sf.HasLC {
 		if gv, ok := sf.LC.AsGroupVoiceUser(); ok {
 			if gv.GroupAddress == r.groupID {
 				r.bound = int(sf.Phase)
+				r.byFallback = false
 				return true
 			}
-			return false // LC names a different talkgroup — the other slot
+			// LC names a different talkgroup — this phase is positively the
+			// other slot, so never fall back onto it later.
+			r.foreignPhaseMask |= 1 << (sf.Phase & 1)
+			return false
 		}
 	}
-	// No usable group LC this superframe: accept only once our phase is
-	// known, and only for that phase.
-	return r.bound >= 0 && int(sf.Phase) == r.bound
+	if r.bound >= 0 {
+		// Phase already known (by LC or fallback): route by it.
+		return int(sf.Phase) == r.bound
+	}
+	// Unbound and no usable group LC. Never fall back onto a phase we've
+	// positively identified as another talkgroup (if the embedded LC decodes
+	// well enough to read the other TG on a slot, that slot isn't ours).
+	if r.foreignPhaseMask&(1<<(sf.Phase&1)) != 0 {
+		return false
+	}
+	// Otherwise give a valid LC a couple of superframes to bind the correct
+	// phase; if none decodes, fall back to this slot's phase so audio records
+	// instead of the whole call being dropped.
+	r.unboundSeen++
+	if r.unboundSeen >= unboundPhaseFallbackGrace {
+		r.bound = int(sf.Phase)
+		r.byFallback = true
+		return true
+	}
+	return false
 }
 
 func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, groupID uint32, interleaved bool, done chan<- struct{}) {
@@ -135,6 +177,11 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	var (
 		uncorrectableFrames atomic.Uint64
 		corrErrBits         atomic.Uint64
+		// lcSuperframes counts superframes that carried a CRC-valid embedded
+		// LC, so the decode-quality log shows whether slot routing is driven
+		// by embedded signalling or by the phase fallback (issue #644).
+		lcSuperframes  atomic.Uint64
+		loggedFallback bool
 	)
 	rx := dmrrx.New(dmrrx.Options{
 		SampleRateHz: symbolHz,
@@ -144,10 +191,21 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 		ClockGain:   0.025,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			for _, sf := range voiceDec.Process(dibits, baseIdx) {
+				if sf.HasLC {
+					lcSuperframes.Add(1)
+				}
 				if router != nil && !router.accept(sf) {
 					// A superframe from the other timeslot (or an
 					// as-yet-unbound phase) — not this call's audio.
 					continue
+				}
+				// One-shot: surface when the call records via the active-slot
+				// phase fallback rather than an embedded-LC bind, so empty-vs-
+				// fallback recordings are diagnosable from the logs (#644).
+				if router != nil && router.byFallback && !loggedFallback {
+					loggedFallback = true
+					c.log.Info("composer: DMR slot router bound by phase fallback — embedded LC did not decode; embedded signalling is capture-pending (see #644)",
+						"serial", serial, "phase", router.bound)
 				}
 				superframes.Add(1)
 				bt.onVoice(0)
@@ -197,7 +255,8 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 		c.log.Info("composer: dmr decode quality",
 			"serial", serial,
 			"superframes", n, "uncorrectable_frames", uncorrectableFrames.Load(),
-			"corrected_bit_errs", corrErrBits.Load())
+			"corrected_bit_errs", corrErrBits.Load(),
+			"lc_superframes", lcSuperframes.Load())
 	}
 
 	for {

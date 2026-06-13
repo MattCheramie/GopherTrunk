@@ -116,6 +116,13 @@ The inner FEC layers still pending real-air validation:
   `internal/voice/composer/dmr_2slot_realair_test.go` (run with
   `-tags integration` and `GOPHERTRUNK_DMR_2SLOT_CFILE`) is where a
   contributor drops a real capture to confirm those remaining constants.
+  Because that embedded LC is capture-pending, the `slotRouter` no longer
+  hard-drops a call when the LC never decodes: a matching LC still binds (and
+  corrects) the slot, but after a short grace window with no LC it falls back
+  to the active slot's phase so audio still records instead of producing empty
+  files (#644). The decode-quality log reports `lc_superframes` and notes once
+  when a call records via the phase fallback, so a capture that exercises the
+  fallback is easy to spot.
 
 - **AMBE+2 synthesis parity with IMBE (#644 follow-up).** Once the
   timeslot fix made DMR speech intelligible it sounded metallic ("tin
