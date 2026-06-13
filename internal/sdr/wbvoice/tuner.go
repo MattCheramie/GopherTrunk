@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
@@ -67,6 +68,19 @@ type VirtualTuner struct {
 	broker     *iqtap.Broker
 	widebandHz uint32
 	inRateHz   uint32
+
+	// actualOutHz is the per-tap rate the DDC *actually* emits for this
+	// input rate, which is not always exactly NarrowbandRateHz: the
+	// rational resampler can only hit the nearest representable L/M ratio,
+	// so e.g. an input rate whose 48000/in ratio trips the resampler's
+	// L≤64 / M≤8192 caps lands a fraction of a percent off 48 kHz (issue
+	// #550). Computed once in New from inRateHz alone — the DDC's output
+	// rate is independent of the tap offset — and reported via
+	// SampleRateExactHz so the composer clocks the voice symbol-recovery
+	// loop at the true rate instead of the nominal target. A nominal-rate
+	// symbol clock drifts off the true symbol phase and periodically slips,
+	// which surfaces as voice spikes/glitches.
+	actualOutHz float64
 
 	tunerMu  sync.Mutex
 	targetHz uint32 // 0 ⇒ no SetCenterFreq yet
@@ -116,12 +130,23 @@ func New(opts Options) (*VirtualTuner, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	// Pre-compute the rate the DDC will actually emit for this input rate.
+	// A no-tap DDCBank only reduces the L/M ratio and stores it; the
+	// expensive Kaiser FIR prototype is built per-tap in AddTap, which we
+	// don't call here — so this is cheap and allocation-light, and it
+	// matches the args StreamIQ uses to build the live bank, so the rate
+	// reported here is exactly the rate the stream is clocked at.
+	actualOutHz := tuner.NewDDCBank(
+		float64(opts.SDRSampleRateHz), float64(NarrowbandRateHz), GuardFrac,
+	).OutputRateHz()
+
 	return &VirtualTuner{
-		serial:     opts.Serial,
-		log:        log.With("wbvoice", opts.Serial),
-		broker:     opts.Broker,
-		widebandHz: opts.WidebandCenterHz,
-		inRateHz:   opts.SDRSampleRateHz,
+		serial:      opts.Serial,
+		log:         log.With("wbvoice", opts.Serial),
+		broker:      opts.Broker,
+		widebandHz:  opts.WidebandCenterHz,
+		inRateHz:    opts.SDRSampleRateHz,
+		actualOutHz: actualOutHz,
 	}, nil
 }
 
@@ -129,12 +154,24 @@ func New(opts Options) (*VirtualTuner, error) {
 // daemon registered with the voice pool + composer.FindBySerial.
 func (v *VirtualTuner) Serial() string { return v.serial }
 
-// SampleRateHz reports the per-tap rate this source emits. The
-// composer reads it once per call to size its decimator; for a
-// virtual tuner the rate is already the chain's intermediate
-// rate (48 kHz), so the composer's decimation collapses to a
-// pass-through.
-func (v *VirtualTuner) SampleRateHz() uint32 { return NarrowbandRateHz }
+// SampleRateHz reports the per-tap rate this source emits, rounded to an
+// integer. The composer reads it once per call to size its decimator; for
+// a virtual tuner the rate is ~48 kHz (the chain's intermediate rate), so
+// the composer's decimation collapses to a pass-through. The rate is
+// usually exactly NarrowbandRateHz but can land a fraction of a percent
+// off when the resampler can't hit the target exactly (see actualOutHz);
+// callers that clock a symbol-recovery loop should use SampleRateExactHz
+// instead so they don't drift on the fractional part.
+func (v *VirtualTuner) SampleRateHz() uint32 { return uint32(math.Round(v.actualOutHz)) }
+
+// SampleRateExactHz reports the per-tap rate this source actually emits,
+// with the fractional part preserved. This is the rate the DDC's rational
+// resampler truly produces (DDCBank.OutputRateHz), which is not always
+// exactly NarrowbandRateHz. Voice chains clock their symbol-recovery loop
+// from this so the loop tracks the true symbol phase instead of drifting
+// off a rounded nominal — the parity fix the control-channel path already
+// has (issue #550; widebandt2 builds its receivers from OutputRateHz).
+func (v *VirtualTuner) SampleRateExactHz() float64 { return v.actualOutHz }
 
 // CanTune reports whether hz lies inside the wideband dongle's usable
 // IQ window. The trunking pool consults this before calling

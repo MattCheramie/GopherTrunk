@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,11 @@ import (
 type fakeSource struct {
 	mu  sync.Mutex
 	chs []chan []complex64
+	// baseHz / exactHz let a test drive a per-source rate. Both default to
+	// 0 so existing tests keep the daemon-wide fallback; exactHz>0 exercises
+	// the fractional-rate path the digital voice chains clock from.
+	baseHz  uint32
+	exactHz float64
 }
 
 func newFakeSource() *fakeSource { return &fakeSource{} }
@@ -35,7 +41,13 @@ func (f *fakeSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	return ch, nil
 }
 
-func (f *fakeSource) SampleRateHz() uint32 { return 0 }
+func (f *fakeSource) SampleRateHz() uint32 { return f.baseHz }
+
+// SampleRateExactHz implements the optional exactRateSource capability so a
+// test can drive a fractional delivered rate into the voice chains. Returns 0
+// (no override) unless exactHz was set, preserving the daemon-wide fallback
+// for the existing tests.
+func (f *fakeSource) SampleRateExactHz() float64 { return f.exactHz }
 
 func (f *fakeSource) SendIQ(samples []complex64) {
 	f.mu.Lock()
@@ -517,5 +529,99 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 	if err := c.Close(); err != nil {
 		t.Errorf("second Close: %v", err)
+	}
+}
+
+// attrCaptureHandler is a minimal slog.Handler that records the float64 value
+// of a named attribute the first time a record with a given message is logged.
+// Used to observe the rate the voice chains clock their receiver at, which is
+// otherwise internal to the chain goroutine.
+type attrCaptureHandler struct {
+	mu      sync.Mutex
+	wantMsg string
+	wantKey string
+	got     float64
+	seen    bool
+}
+
+func (h *attrCaptureHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *attrCaptureHandler) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h *attrCaptureHandler) WithGroup(string) slog.Handler            { return h }
+func (h *attrCaptureHandler) Handle(_ context.Context, r slog.Record) error {
+	if r.Message != h.wantMsg {
+		return nil
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == h.wantKey {
+			h.mu.Lock()
+			h.got = a.Value.Float64()
+			h.seen = true
+			h.mu.Unlock()
+			return false
+		}
+		return true
+	})
+	return nil
+}
+func (h *attrCaptureHandler) value() (float64, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.got, h.seen
+}
+
+// narrowbandHzForTest mirrors the wbvoice virtual-tuner nominal rate so the
+// test's source advertises a realistic integer base rate alongside its exact
+// fractional rate.
+const narrowbandHzForTest = 48_000
+
+// TestP25P1ChainClocksAtExactSourceRate verifies the P25 Phase 1 voice chain
+// clocks its receiver from the source's exact fractional rate, not the rounded
+// integer one — the parity-with-control-channel fix (issue #550) that keeps a
+// symbol clock from drifting and slipping (audible spikes/glitches). The chain
+// logs the rate it builds the receiver at as "symbol_rate_hz"; we assert it
+// equals the fractional rate the source advertised.
+func TestP25P1ChainClocksAtExactSourceRate(t *testing.T) {
+	const fractionalHz = 47983.5 // not an integer, and < 96 kHz so decim clamps to 1
+	capture := &attrCaptureHandler{
+		wantMsg: "composer: p25p1 voice chain started",
+		wantKey: "symbol_rate_hz",
+	}
+	src := newFakeSource()
+	src.baseHz = narrowbandHzForTest
+	src.exactHz = fractionalHz
+
+	bus := events.NewBus(8)
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		Log:           slog.New(capture),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	defer func() { cancel(); c.Close(); bus.Close() }()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "Alpha", Protocol: "p25",
+				GroupID: 100, FrequencyHz: 851_000_000,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, time.Second, func() bool { _, ok := capture.value(); return ok })
+	if got, _ := capture.value(); got != fractionalHz {
+		t.Errorf("receiver clocked at %v Hz, want the exact source rate %v Hz", got, fractionalHz)
 	}
 }
