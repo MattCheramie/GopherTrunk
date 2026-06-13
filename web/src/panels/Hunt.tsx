@@ -77,6 +77,8 @@ export function Hunt() {
   const [protocol, setProtocol] = useState("");
   const [survey, setSurvey] = useState(false);
   const [classifyOnly, setClassifyOnly] = useState(false);
+  const [persistSurvey, setPersistSurvey] = useState(false);
+  const [resume, setResume] = useState(false);
   const [sortBy, setSortBy] = useState<"freq" | "class" | "snr">("freq");
   const [rrCounty, setRRCounty] = useState("");
   const [rrSID, setRRSID] = useState("");
@@ -117,6 +119,8 @@ export function Hunt() {
         no_sweep: candList.length > 0 && bandList.length === 0,
         survey: survey || undefined,
         classify_only: (survey && classifyOnly) || undefined,
+        persist_survey: (survey && persistSurvey) || undefined,
+        resume: (survey && persistSurvey && resume) || undefined,
         name: name || undefined,
         state: stateCode || undefined,
         county: county || undefined,
@@ -340,6 +344,22 @@ export function Hunt() {
               onChange={(e) => setClassifyOnly(e.target.checked)}
             />
             Classify only — skip decoding (fast inventory)
+          </label>
+        ) : null}
+        {survey ? (
+          <label className="hunt-survey-toggle">
+            <input
+              type="checkbox"
+              checked={persistSurvey}
+              onChange={(e) => setPersistSurvey(e.target.checked)}
+            />
+            Persist survey — stream carriers to a crash-safe NDJSON file
+          </label>
+        ) : null}
+        {survey && persistSurvey ? (
+          <label className="hunt-survey-toggle">
+            <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
+            Resume — skip frequencies already surveyed in that file
           </label>
         ) : null}
         <div className="hunt-buttons">

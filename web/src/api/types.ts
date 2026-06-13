@@ -265,6 +265,8 @@ export interface HuntStartRequest {
   no_sweep?: boolean;
   survey?: boolean;
   classify_only?: boolean;
+  persist_survey?: boolean;
+  resume?: boolean;
   max_dwell_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;

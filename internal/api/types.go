@@ -45,8 +45,10 @@ type HuntStartRequest struct {
 	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
 	Candidates      []float64 `json:"candidates,omitempty"` // MHz
 	NoSweep         bool      `json:"no_sweep,omitempty"`
-	Survey          bool      `json:"survey,omitempty"`        // classify+decode every carrier, not just trunking CCs
-	ClassifyOnly    bool      `json:"classify_only,omitempty"` // survey: classify, skip decoding
+	Survey          bool      `json:"survey,omitempty"`         // classify+decode every carrier, not just trunking CCs
+	ClassifyOnly    bool      `json:"classify_only,omitempty"`  // survey: classify, skip decoding
+	PersistSurvey   bool      `json:"persist_survey,omitempty"` // survey: stream carriers to NDJSON (crash-safe, resumable)
+	Resume          bool      `json:"resume,omitempty"`         // survey: skip frequencies already in the NDJSON file
 	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
 	Protocol        string    `json:"protocol,omitempty"`
 	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`

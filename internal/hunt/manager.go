@@ -4,14 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 )
+
+// surveyRunKey derives a stable filename key from a run's band set / candidate
+// list / forced protocol so a resumed survey reuses the same NDJSON file.
+func surveyRunKey(opts LiveHuntOptions) string {
+	h := fnv.New64a()
+	for _, b := range opts.Bands {
+		fmt.Fprintf(h, "b%d:%d;", b.LowHz, b.HighHz)
+	}
+	for _, c := range opts.Candidates {
+		fmt.Fprintf(h, "c%d;", c)
+	}
+	fmt.Fprintf(h, "p%d;", opts.Protocol)
+	return strconv.FormatUint(h.Sum64(), 16)
+}
 
 // RunState is the lifecycle of a live hunt run, surfaced to the cockpit/REST.
 type RunState string
@@ -39,6 +56,10 @@ type ManagerOptions struct {
 	Acquire Acquirer
 	Bus     *events.Bus
 	Log     *slog.Logger
+	// SurveyDir, when set, is the directory the manager streams a survey run's
+	// classified carriers into as crash-safe NDJSON (one file per band set), so a
+	// web survey can resume after an interruption. Empty disables persistence.
+	SurveyDir string
 }
 
 // Manager owns the daemon's single live-hunt run: it acquires an SDR, runs the
@@ -46,11 +67,13 @@ type ManagerOptions struct {
 // and holds the latest discovered system for export/commit. Safe for
 // concurrent use by the REST/TUI cockpit.
 type Manager struct {
-	acquire Acquirer
-	bus     *events.Bus
-	log     *slog.Logger
+	acquire   Acquirer
+	bus       *events.Bus
+	log       *slog.Logger
+	surveyDir string
 
 	mu         sync.Mutex
+	sink       *NDJSONSink // active survey persistence sink (nil when off)
 	runID      int
 	state      RunState
 	runSurvey  bool // the active/last run is a survey (drives RunStatus.Mode)
@@ -94,7 +117,7 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Manager{acquire: opts.Acquire, bus: opts.Bus, log: log, state: StateRunIdle}, nil
+	return &Manager{acquire: opts.Acquire, bus: opts.Bus, log: log, surveyDir: opts.SurveyDir, state: StateRunIdle}, nil
 }
 
 // RunStatus is the read snapshot the cockpit/REST renders.
@@ -138,7 +161,37 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 	m.err = ""
 	m.startedAt = time.Now()
 	m.finishedAt = time.Time{}
+	m.sink = nil
 	m.mu.Unlock()
+
+	// Survey persistence + resume: stream classified carriers to a per-band-set
+	// NDJSON file, and (when resuming) skip frequencies already recorded there.
+	var sink *NDJSONSink
+	if opts.PersistSurvey && opts.Survey && m.surveyDir != "" {
+		path := filepath.Join(m.surveyDir, "hunt-survey-"+surveyRunKey(opts)+".ndjson")
+		if opts.Resume {
+			if done, err := LoadSurveyedFreqs(path); err != nil {
+				m.log.Warn("hunt: survey resume load failed", "path", path, "err", err)
+			} else if len(done) > 0 {
+				if opts.SkipFreqs == nil {
+					opts.SkipFreqs = done
+				} else {
+					for f := range done {
+						opts.SkipFreqs[f] = struct{}{}
+					}
+				}
+				m.log.Info("hunt: resuming survey", "path", path, "skip", len(done))
+			}
+		}
+		if s, err := OpenNDJSONSink(path); err != nil {
+			m.log.Warn("hunt: survey persistence disabled", "path", path, "err", err)
+		} else {
+			sink = s
+			m.mu.Lock()
+			m.sink = s
+			m.mu.Unlock()
+		}
+	}
 
 	// Wire progress events onto the bus + the live snapshot.
 	opts.Log = m.log
@@ -154,6 +207,11 @@ func (m *Manager) Start(opts LiveHuntOptions) (int, error) {
 	// exactly like a dedicated paging receiver's.
 	opts.OnSignal = func(ds DetectedSignal) {
 		m.publish(events.KindHuntLiveCandidate, ds)
+		if sink != nil {
+			if err := sink.Write(ds); err != nil {
+				m.log.Warn("hunt: survey NDJSON write failed", "err", err)
+			}
+		}
 		for _, pg := range ds.Pages {
 			m.publish(events.KindPagerMessage, storage.PagerMessage{
 				ReceivedAt: time.Now(),
@@ -207,6 +265,10 @@ func (m *Manager) finish(id int, sys *DiscoveredSystem, sv *SignalSurvey, report
 	}
 	m.finishedAt = time.Now()
 	m.cancel = nil
+	if m.sink != nil {
+		_ = m.sink.Close()
+		m.sink = nil
+	}
 	switch {
 	case err != nil && errors.Is(err, context.Canceled):
 		m.state = StateRunStopped

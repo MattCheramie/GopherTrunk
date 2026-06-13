@@ -2022,9 +2022,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// is possible; the REST/TUI/web cockpit drives it.
 		if d.pool != nil && len(d.iqBrokers) > 0 {
 			if mgr, err := hunt.NewManager(hunt.ManagerOptions{
-				Acquire: d.buildHuntAcquirer(),
-				Bus:     d.bus,
-				Log:     log,
+				Acquire:   d.buildHuntAcquirer(),
+				Bus:       d.bus,
+				Log:       log,
+				SurveyDir: huntSurveyDir(cfg.Storage.Path),
 			}); err != nil {
 				log.Warn("daemon: hunt manager not started", "err", err)
 			} else {

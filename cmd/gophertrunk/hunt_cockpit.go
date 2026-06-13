@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,8 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		Protocol:        proto,
 		Survey:          req.Survey,
 		ClassifyOnly:    req.ClassifyOnly,
+		PersistSurvey:   req.PersistSurvey,
+		Resume:          req.Resume,
 		MaxDwellSeconds: req.MaxDwellSeconds,
 		Serial:          req.Serial,
 		FFTSize:         req.FFTSize,
@@ -120,6 +123,16 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 }
 
 func (c huntCockpit) Stop() bool { return c.mgr.Stop() }
+
+// huntSurveyDir derives the directory for daemon survey NDJSON persistence from
+// the configured storage path (survey files sit alongside the DB). An empty
+// storage path disables persistence (returns "").
+func huntSurveyDir(storagePath string) string {
+	if storagePath == "" {
+		return ""
+	}
+	return filepath.Dir(storagePath)
+}
 
 // ExportSurvey serializes a run's classified signal inventory in the requested
 // format (json|csv).
