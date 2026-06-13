@@ -585,6 +585,7 @@ sdr:
     - addr: "192.168.1.60:55132"  # bare host gets :55132 appended
       driver: "uhd"               # SoapySDR device key (blank = first device)
       args: ""                    # extra make() kwargs "k=v,k=v" (see below)
+      master_clock_rate: 0        # USRP master clock in Hz; 0 = device default
       serial: "usrp-roof"         # generator fills this from addr when blank
       role: control               # control | voice | auto
       format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
@@ -615,6 +616,18 @@ broker / fan-out path.
 - `ppm` (frequency correction) and `bias_tee` map to SoapySDR's
   `setFrequencyCorrection` / `writeSetting` and silently no-op on
   drivers that don't implement them.
+- **USRP sample rates and the master clock.** A USRP only delivers rates that
+  are integer decimations of its master clock, so UHD silently *coerces* a
+  request that isn't an exact divisor to the nearest achievable rate. GopherTrunk
+  reads the delivered rate back over the RPC (`getSampleRate`) and builds every
+  per-channel down-converter / symbol clock from it — not from the requested
+  value — so a coerced rate stays decode-correct instead of drifting the symbol
+  clock (issues #402, #550). For a clean exact-divisor stream, pick a
+  `sample_rate` that divides the master clock, and set `master_clock_rate` when
+  the default clock doesn't divide your target: an X310's 200 MHz default already
+  divides `6_250_000` (÷32), while a B210 needs `master_clock_rate: 61_440_000`
+  to stream `6_144_000` (÷10) exactly. `master_clock_rate` is a convenience for
+  putting `master_clock_rate=…` in `args`; an explicit value in `args` wins.
 - `gain` is applied as a manual overall gain. AGC is disabled first on a
   best-effort basis, so a numeric gain still applies on front-ends that have
   no AGC at all (e.g. a USRP TwinRX, which rejects `set_rx_agc()`); use

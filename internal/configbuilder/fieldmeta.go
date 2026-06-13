@@ -119,6 +119,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Addr":             {Label: "Address", Help: "SoapySDRServer host:port, e.g. 192.168.1.60:55132 (bare host gets :55132). Required."},
 	"SoapyRemoteConfig.Driver":           {Help: "SoapySDR device key on the server (uhd, lime, bladerf, hackrf, airspy, rtlsdr). Empty picks the server's first device."},
 	"SoapyRemoteConfig.Args":             {Help: "Extra SoapySDR kwargs as key=value,key2=value2 (server-side device selection)."},
+	"SoapyRemoteConfig.MasterClockHz":    {Label: "Master clock", Hz: true, Help: "USRP master/reference clock in Hz. A USRP only streams integer decimations of it, so set it to make sample_rate an exact divisor (e.g. 61.44 MHz on a B210 → 6.144 MS/s). 0 = device default. Shorthand for master_clock_rate in args."},
 	"SoapyRemoteConfig.Serial":           {Help: "Virtual device serial reported by the pool. Empty derives one from the address."},
 	"SoapyRemoteConfig.Role":             {Help: "Pool role hint: control / voice / auto.", Options: roleOpts()},
 	"SoapyRemoteConfig.Format":           {Help: "Wire sample format: CS16 (16-bit, default) or CF32 (32-bit float).", Options: opts("", "(default)", "CS16", "CS16", "CF32", "CF32")},

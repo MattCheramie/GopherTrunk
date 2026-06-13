@@ -384,6 +384,18 @@ func TestSoapyRemoteDeviceArgs(t *testing.T) {
 		},
 		{"malformed missing equals", SoapyRemoteConfig{Args: "rx_subdev_spec"}, nil, true},
 		{"malformed empty key", SoapyRemoteConfig{Args: "=value"}, nil, true},
+		{
+			"master clock injected as Hz string",
+			SoapyRemoteConfig{Driver: "uhd", MasterClockHz: 61_440_000},
+			map[string]string{"driver": "uhd", "master_clock_rate": "61440000"},
+			false,
+		},
+		{
+			"explicit master_clock_rate in args wins",
+			SoapyRemoteConfig{MasterClockHz: 61_440_000, Args: "master_clock_rate=30720000"},
+			map[string]string{"master_clock_rate": "30720000"},
+			false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

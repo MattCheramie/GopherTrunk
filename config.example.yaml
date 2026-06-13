@@ -358,6 +358,15 @@ sdr:
   #     args: ""                    # extra make() kwargs, "k=v,k=v" (merged
   #                                 #  with driver); e.g. for a USRP TwinRX:
   #                                 #  "rx_subdev_spec=A:0,antenna=RX1"
+  #     master_clock_rate: 0        # USRP master/reference clock in Hz. A USRP
+  #                                 #  only streams integer decimations of this
+  #                                 #  clock, so set it to make your sample_rate
+  #                                 #  an exact divisor and avoid UHD coercing
+  #                                 #  to a nearby rate. B210: 61_440_000 makes
+  #                                 #  sample_rate 6_144_000 exact (÷10). X310's
+  #                                 #  default 200 MHz already divides 6_250_000
+  #                                 #  (÷32) cleanly, so leave it 0. Shorthand
+  #                                 #  for master_clock_rate=… in args.
   #     serial: "usrp-roof"         # generator fills this from addr if blank
   #     role: control               # control | voice | auto
   #     format: "CS16"              # CS16 (16-bit, default) or CF32 (float)

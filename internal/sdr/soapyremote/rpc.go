@@ -76,6 +76,7 @@ const (
 	callSetGain                int32 = 703
 	callSetFrequency           int32 = 800
 	callSetSampleRate          int32 = 900
+	callGetSampleRate          int32 = 901
 	callWriteSetting           int32 = 1400
 )
 

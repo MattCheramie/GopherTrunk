@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -744,6 +745,17 @@ type SoapyRemoteConfig struct {
 	// This is server-side device selection/configuration and is distinct
 	// from the top-level Serial, which is the local virtual pool name.
 	Args string `yaml:"args"`
+	// MasterClockHz sets the radio's master/reference clock in Hz via the
+	// SoapySDR make() arg master_clock_rate. A USRP can only deliver rates
+	// that are integer decimations of this clock, so setting it lets the
+	// device hit an exact-divisor sample_rate instead of having UHD coerce
+	// the request to the nearest achievable rate — e.g. a B210 needs
+	// master_clock_rate 61_440_000 to stream 6_144_000 (÷10) cleanly, while
+	// an X310's default 200 MHz clock already divides evenly into 6_250_000
+	// (÷32). Zero leaves the device default. This is a convenience shorthand
+	// for putting "master_clock_rate=..." in Args; an explicit value in Args
+	// wins.
+	MasterClockHz uint32 `yaml:"master_clock_rate"`
 	// Serial is the virtual device serial reported on the pool's
 	// /api/v1/devices snapshot. Empty generates one from Addr.
 	Serial string `yaml:"serial"`
@@ -805,6 +817,11 @@ func (s SoapyRemoteConfig) DeviceArgs() (map[string]string, error) {
 	if s.Driver != "" {
 		if _, ok := args["driver"]; !ok {
 			args["driver"] = s.Driver
+		}
+	}
+	if s.MasterClockHz != 0 {
+		if _, ok := args["master_clock_rate"]; !ok {
+			args["master_clock_rate"] = strconv.FormatUint(uint64(s.MasterClockHz), 10)
 		}
 	}
 	if len(args) == 0 {
@@ -1703,6 +1720,11 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	}
 	if _, err := s.DeviceArgs(); err != nil {
 		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)
+	}
+	// master_clock_rate is in Hz; a non-zero value below 1 MHz is almost
+	// certainly a units slip (e.g. "61" meaning 61 MHz) — catch it early.
+	if s.MasterClockHz != 0 && s.MasterClockHz < 1_000_000 {
+		return fmt.Errorf("sdr.soapy_remote[%d]: master_clock_rate %d looks too low; it is in Hz (e.g. 61440000 for a B210)", i, s.MasterClockHz)
 	}
 	return nil
 }
