@@ -98,6 +98,10 @@ type NeighborRef struct {
 	Site          uint8  `json:"site"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	// FrequencyHz is the neighbour's control-channel frequency, resolved from
+	// (ChannelID, ChannelNumber) against the system band plan at finish. Zero
+	// when the band plan doesn't cover the channel (e.g. no IDEN_UP seen yet).
+	FrequencyHz uint32 `json:"frequency_hz,omitempty"`
 }
 
 // BandPlanEntry is one P25 IDEN_UP-equivalent band-plan mapping.
@@ -224,4 +228,48 @@ func (s *DiscoveredSystem) sortAll() {
 	}
 	sort.Slice(s.Talkgroups, func(i, j int) bool { return s.Talkgroups[i].Dec < s.Talkgroups[j].Dec })
 	sort.Slice(s.BandPlan, func(i, j int) bool { return s.BandPlan[i].ChannelID < s.BandPlan[j].ChannelID })
+	// Resolve neighbour control-channel frequencies now that the band plan is
+	// fully accumulated (it may be incomplete on any single observation).
+	s.resolveNeighborFreqs()
+}
+
+// bandPlanFreq resolves a (channelID, channelNumber) pair to a downlink
+// frequency using the accumulated band plan, mirroring P25's IDEN_UP math
+// (BaseHz + channelNumber*SpacingHz). It deliberately does not apply TxOffsetHz
+// — that is the uplink offset; a control-channel reference is the downlink.
+// Returns false when no band-plan entry covers channelID or the result is out
+// of range.
+func (s *DiscoveredSystem) bandPlanFreq(channelID uint8, channelNumber uint16) (uint32, bool) {
+	for _, e := range s.BandPlan {
+		if e.ChannelID != channelID {
+			continue
+		}
+		hz := e.BaseHz + uint64(channelNumber)*uint64(e.SpacingHz)
+		if hz == 0 || hz > 0xFFFFFFFF {
+			return 0, false
+		}
+		return uint32(hz), true
+	}
+	return 0, false
+}
+
+// resolveNeighborFreqs fills in NeighborRef.FrequencyHz for every neighbour
+// whose (ChannelID, ChannelNumber) the band plan can resolve. It is idempotent
+// (a neighbour already carrying a frequency is left untouched), so it is safe to
+// call from sortAll on every finish/export.
+func (s *DiscoveredSystem) resolveNeighborFreqs() {
+	if len(s.BandPlan) == 0 {
+		return
+	}
+	for i := range s.Sites {
+		for j := range s.Sites[i].Neighbors {
+			n := &s.Sites[i].Neighbors[j]
+			if n.FrequencyHz != 0 || (n.ChannelID == 0 && n.ChannelNumber == 0) {
+				continue
+			}
+			if hz, ok := s.bandPlanFreq(n.ChannelID, n.ChannelNumber); ok {
+				n.FrequencyHz = hz
+			}
+		}
+	}
 }

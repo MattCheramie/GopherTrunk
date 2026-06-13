@@ -101,7 +101,11 @@ func writeRR(w io.Writer, sys *DiscoveredSystem, hints []DuplicateHint) error {
 			p.printf("\nAdjacent sites: ")
 			refs := make([]string, 0, len(st.Neighbors))
 			for _, n := range st.Neighbors {
-				refs = append(refs, fmt.Sprintf("RFSS %d/Site %d", n.RFSS, n.Site))
+				ref := fmt.Sprintf("RFSS %d/Site %d", n.RFSS, n.Site)
+				if n.FrequencyHz != 0 {
+					ref += " @ " + formatMHz(n.FrequencyHz)
+				}
+				refs = append(refs, ref)
 			}
 			p.printf("%s\n", strings.Join(refs, ", "))
 		}

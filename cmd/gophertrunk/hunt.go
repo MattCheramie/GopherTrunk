@@ -49,6 +49,8 @@ func runHunt(args []string) {
 	surveyMode := fs.Bool("survey", false, "signal-survey mode: classify every detected carrier (analog/digital/paging/trunking) and decode the conventional ones, not just trunking control channels (live only)")
 	classifyOnly := fs.Bool("classify-only", false, "survey: classify carriers only, skip all decoding (fast inventory)")
 	surveyDeep := fs.Bool("survey-deep", false, "survey: hand narrowband carriers the classifier called analog (am/nbfm) to the trunking identify too, so a trunked DMR/TETRA/MPT control channel the blind classifier missed is still found (slower, more accurate)")
+	surveyNDJSON := fs.String("survey-ndjson", "", "survey: append each classified carrier to this newline-delimited JSON file as it is found (crash-safe, the cumulative record across -resume runs)")
+	resume := fs.Bool("resume", false, "survey: skip carriers already present in -survey-ndjson (resume an interrupted survey)")
 	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
 	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
 	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
@@ -181,6 +183,8 @@ FLAGS:`)
 			survey:           *surveyMode,
 			classifyOnly:     *classifyOnly,
 			surveyDeep:       *surveyDeep,
+			surveyNDJSON:     *surveyNDJSON,
+			resume:           *resume,
 			surveyAudioDir:   *surveyAudio,
 			maxDwellSeconds:  *maxDwellSeconds,
 			identifyMinConf:  *identifyMinConf,

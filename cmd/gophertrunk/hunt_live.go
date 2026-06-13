@@ -20,7 +20,9 @@ type huntLiveParams struct {
 	serial           string
 	survey           bool // classify+decode every carrier, not just trunking CCs
 	classifyOnly     bool
-	surveyDeep       bool // hand analog-classed narrowband carriers to siglab identify
+	surveyDeep       bool   // hand analog-classed narrowband carriers to siglab identify
+	surveyNDJSON     string // append each classified carrier here (crash-safe, resumable)
+	resume           bool   // skip carriers already recorded in surveyNDJSON
 	surveyAudioDir   string
 	maxDwellSeconds  float64
 	identifyMinConf  float64
@@ -95,6 +97,32 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 	if p.survey {
 		mode = "survey"
 	}
+
+	// Survey NDJSON stream + resume: append each classified carrier to disk
+	// (fsync per record) and, on -resume, skip carriers already recorded.
+	var onSignal func(hunt.DetectedSignal)
+	var skipFreqs map[uint32]struct{}
+	if p.surveyNDJSON != "" {
+		if p.resume {
+			skipFreqs, err = hunt.LoadSurveyedFreqs(p.surveyNDJSON)
+			if err != nil {
+				rep.Fatal(1, fmt.Errorf("resume %s: %w", p.surveyNDJSON, err))
+			}
+			if len(skipFreqs) > 0 {
+				fmt.Fprintf(os.Stderr, "%s: resuming — skipping %d already-surveyed carrier(s)\n", mode, len(skipFreqs))
+			}
+		}
+		sink, serr := hunt.OpenNDJSONSink(p.surveyNDJSON)
+		if serr != nil {
+			rep.Fatal(1, fmt.Errorf("open survey ndjson: %w", serr))
+		}
+		defer sink.Close()
+		onSignal = func(ds hunt.DetectedSignal) {
+			if werr := sink.Write(ds); werr != nil {
+				fmt.Fprintf(os.Stderr, "%s: ndjson write: %v\n", mode, werr)
+			}
+		}
+	}
 	if len(bands) > 0 {
 		fmt.Fprintf(os.Stderr, "%s: live sweep on %s[%s] @ %g MS/s across %d band(s)…\n",
 			mode, info.Driver, info.Serial, p.sampleRateHz/1e6, len(bands))
@@ -122,6 +150,8 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		ClassifyOnly:          p.classifyOnly,
 		SurveyDeep:            p.surveyDeep,
 		SurveyAudioDir:        p.surveyAudioDir,
+		SkipFreqs:             skipFreqs,
+		OnSignal:              onSignal,
 		IdentifyMinConfidence: p.identifyMinConf,
 		ClassifyConfig: survey.ClassifyConfig{
 			SNRGateDb:         p.classSNRGate,
