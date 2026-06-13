@@ -89,6 +89,11 @@ type Spec struct {
 	// the "remote:mtu" setupStream arg and used to size the client's
 	// flow-control window. Zero (or <=0) uses SoapyRemote's default (1500).
 	StreamMTU int
+	// StreamWindow sets the stream flow-control window in bytes, sent to the
+	// server as the "remote:window" setupStream arg and used as the client's
+	// in-flight credit ceiling (advertised as window/StreamMTU sequences).
+	// Zero (or <=0) uses the client default (streamWindowBytes, 8 MiB).
+	StreamWindow int
 	// ConnectTimeout overrides DefaultConnectTimeout when non-zero.
 	ConnectTimeout time.Duration
 }
@@ -165,7 +170,11 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	if mtu <= 0 {
 		mtu = streamMTU
 	}
-	windowSeqs := uint32(streamWindowBytes / mtu)
+	window := spec.StreamWindow
+	if window <= 0 {
+		window = streamWindowBytes
+	}
+	windowSeqs := uint32(window / mtu)
 
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
@@ -179,6 +188,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		conn:       conn,
 		log:        d.log,
 		mtu:        mtu,
+		window:     window,
 		windowSeqs: windowSeqs,
 		ackTrigger: windowSeqs / streamNumBuffs,
 		info: sdr.Info{
@@ -219,10 +229,12 @@ type device struct {
 	info    sdr.Info
 
 	// mtu is the effective stream endpoint MTU (defaults to streamMTU when
-	// unset). windowSeqs is the in-flight credit advertised to the server in
-	// each flow-control ACK (streamWindowBytes/mtu); ackTrigger is how many
+	// unset). window is the effective flow-control window in bytes (defaults
+	// to streamWindowBytes). windowSeqs is the in-flight credit advertised to
+	// the server in each flow-control ACK (window/mtu); ackTrigger is how many
 	// received datagrams elapse between gratuitous ACKs (windowSeqs/numBuffs).
 	mtu        int
+	window     int
 	windowSeqs uint32
 	ackTrigger uint32
 
@@ -459,11 +471,15 @@ func (d *device) setupStreamTCP() (streamID int32, dataConn, statusConn net.Conn
 	p.char(dirRX)
 	p.str(d.format.soapyName())
 	p.sizeList([]int{0})
-	// Stream args. remote:mtu is only sent when a non-default MTU is
-	// configured, keeping the default setup frame byte-identical to before.
+	// Stream args. remote:mtu / remote:window are only sent when configured to
+	// a non-default value, keeping the default setup frame byte-identical to
+	// before.
 	streamArgs := map[string]string{"remote:prot": "tcp"}
 	if d.mtu != streamMTU {
 		streamArgs["remote:mtu"] = strconv.Itoa(d.mtu)
+	}
+	if d.window != streamWindowBytes {
+		streamArgs["remote:window"] = strconv.Itoa(d.window)
 	}
 	p.kwargs(streamArgs)
 	p.str("0")

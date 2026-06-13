@@ -776,6 +776,15 @@ type SoapyRemoteConfig struct {
 	// default (1500); raise it (e.g. 8192) on jumbo-frame / high-throughput
 	// links.
 	StreamMTU int `yaml:"stream_mtu"`
+	// StreamWindow sets the SoapyRemote stream flow-control window in bytes.
+	// It is forwarded to the server's setupStream as the "remote:window"
+	// stream arg (sizing its socket buffers) and used as the client's
+	// in-flight credit ceiling, advertised as window/stream_mtu sequences, so
+	// both ends agree. Like StreamMTU this is a stream argument and cannot be
+	// expressed in Args. Zero uses the client default (8 MiB); raise it on
+	// high-latency / high-bandwidth links where a larger in-flight window
+	// keeps the pipe full.
+	StreamWindow int `yaml:"stream_window"`
 	// PPM is the frequency-correction tuning applied on open (best-effort;
 	// ignored by SoapySDR drivers without frequency-correction support).
 	PPM int `yaml:"ppm"`
@@ -1731,6 +1740,22 @@ func validateSoapyFields(i int, s SoapyRemoteConfig) error {
 	// frame, or above the driver's 4 MiB per-transfer read guard.
 	if s.StreamMTU != 0 && (s.StreamMTU < 64 || s.StreamMTU > 1<<20) {
 		return fmt.Errorf("sdr.soapy_remote[%d]: stream_mtu %d out of range (64..1048576 bytes, 0 = default 1500)", i, s.StreamMTU)
+	}
+	// stream_window is in bytes; 0 means the client default (8 MiB). Bound it
+	// to a sane socket-buffer range, and require it to hold at least one MTU so
+	// the advertised credit (window/mtu) is never zero (which would starve the
+	// server's sender).
+	if s.StreamWindow != 0 {
+		if s.StreamWindow < 1<<16 || s.StreamWindow > 256<<20 {
+			return fmt.Errorf("sdr.soapy_remote[%d]: stream_window %d out of range (65536..268435456 bytes, 0 = default 8 MiB)", i, s.StreamWindow)
+		}
+		mtu := s.StreamMTU
+		if mtu == 0 {
+			mtu = 1500
+		}
+		if s.StreamWindow < mtu {
+			return fmt.Errorf("sdr.soapy_remote[%d]: stream_window %d must be >= stream_mtu %d", i, s.StreamWindow, mtu)
+		}
 	}
 	if _, err := s.DeviceArgs(); err != nil {
 		return fmt.Errorf("sdr.soapy_remote[%d]: args: %w", i, err)

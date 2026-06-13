@@ -631,6 +631,47 @@ func TestStreamMTU(t *testing.T) {
 	}
 }
 
+// TestStreamWindow verifies a configured stream_window both reaches the server
+// as the remote:window setup arg and resizes the client's advertised
+// flow-control credit (window/mtu) instead of the default streamWindowBytes.
+func TestStreamWindow(t *testing.T) {
+	const window = 2 * 1024 * 1024 // 2097152
+	srv := newFakeSoapyServer(t)
+	srv.streamSamples = []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", StreamWindow: window}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	if kw := srv.recordedSetupKwargs(); kw["remote:window"] != "2097152" {
+		t.Errorf("setup kwargs remote:window = %q, want \"2097152\" (kwargs=%v)", kw["remote:window"], kw)
+	}
+
+	acks := srv.recordedACKs()
+	if len(acks) == 0 {
+		t.Fatal("server did not receive any flow-control ACK from client")
+	}
+	// Default MTU (1500) with the configured window: credit = window/mtu.
+	wantWindow := int32(window / streamMTU)
+	if acks[0].elems != wantWindow {
+		t.Errorf("initial ACK elems = %d, want %d (window/mtu)", acks[0].elems, wantWindow)
+	}
+}
+
 func TestOpenRejectsUDP(t *testing.T) {
 	srv := newFakeSoapyServer(t)
 	drv := New([]Spec{{Addr: srv.Addr(), StreamProtocol: "udp"}}, testLogger())

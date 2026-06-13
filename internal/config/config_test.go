@@ -322,6 +322,13 @@ func TestValidate(t *testing.T) {
 		{"soapy stream_mtu valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 8192}}}}, false},
 		{"soapy stream_mtu too small", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 10}}}}, true},
 		{"soapy stream_mtu too large", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 1 << 21}}}}, true},
+		// soapy_remote stream_window: 0 = default; a real window is fine;
+		// out-of-range or below the MTU fails.
+		{"soapy stream_window zero ok", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1"}}}}, false},
+		{"soapy stream_window valid", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamWindow: 16 << 20}}}}, false},
+		{"soapy stream_window too small", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamWindow: 1024}}}}, true},
+		{"soapy stream_window too large", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamWindow: 512 << 20}}}}, true},
+		{"soapy stream_window below mtu", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 1 << 20, StreamWindow: 1 << 16}}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
