@@ -99,6 +99,10 @@ func eventToDTO(ev events.Event) EventDTO {
 		dto.Payload = unitRegistrationToDTO(p)
 	case trunking.Patch:
 		dto.Payload = patchToDTO(p)
+	case events.DMRGrantObserved:
+		dto.Payload = dmrGrantObservedToDTO(p)
+	case events.DMRBandPlanLearned:
+		dto.Payload = dmrBandPlanLearnedToDTO(p)
 	default:
 		// Includes sdr.SDRStatus (already JSON-tagged) and any
 		// future payload types the api package hasn't grown an

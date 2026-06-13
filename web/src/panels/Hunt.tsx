@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
-import type { DetectedSignal, HuntStatus } from "../api/types";
+import type { CaptureReport, DetectedSignal, HuntStatus } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -21,6 +21,17 @@ function sortSignals(signals: DetectedSignal[], by: "freq" | "class" | "snr"): D
     }
   });
   return out;
+}
+
+// captureResult summarises one hunt capture's decode outcome: locked /
+// skipped (with reason) / errored / decoded-but-unlocked.
+function captureResult(rep: CaptureReport): string {
+  if (rep.skipped) return `skipped${rep.skip_reason ? ` — ${rep.skip_reason}` : ""}`;
+  if (rep.error) return `error — ${rep.error}`;
+  if (rep.locked) {
+    return `locked${rep.confidence ? ` · conf ${(rep.confidence * 100).toFixed(0)}%` : ""}`;
+  }
+  return "no lock";
 }
 
 // signalDetail renders the per-class decode summary for one surveyed carrier.
@@ -149,6 +160,62 @@ export function Hunt() {
           <div>No system discovered yet.</div>
         )}
       </section>
+
+      {status?.system?.sites && status.system.sites.length > 0 ? (
+        <section className="hunt-sites">
+          <h3>Sites ({status.system.sites.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>RFSS</th>
+                <th>Control channels</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.system.sites.map((site, i) => (
+                <tr key={`${site.rfss}-${site.site_id}-${i}`}>
+                  <td>{site.site_name || site.site_id || "—"}</td>
+                  <td>{site.rfss ?? "—"}</td>
+                  <td>
+                    {site.control_channels && site.control_channels.length > 0
+                      ? site.control_channels
+                          .map((c) => `${(c.frequency_hz / 1e6).toFixed(4)}${c.is_control ? "*" : ""}`)
+                          .join(", ")
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      {status?.reports && status.reports.length > 0 ? (
+        <section className="hunt-reports">
+          <h3>Captures ({status.reports.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Control freq</th>
+                <th>Protocol</th>
+                <th>Result</th>
+                <th>TGs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.reports.map((rep, i) => (
+                <tr key={`${rep.control_hz}-${i}`}>
+                  <td>{rep.control_hz ? `${(rep.control_hz / 1e6).toFixed(4)} MHz` : "—"}</td>
+                  <td>{rep.protocol || "—"}</td>
+                  <td>{captureResult(rep)}</td>
+                  <td>{rep.talkgroups ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       {status?.signals && status.signals.length > 0 ? (
         <section className="hunt-signals">

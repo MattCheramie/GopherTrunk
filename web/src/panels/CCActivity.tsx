@@ -25,6 +25,10 @@ const CC_KINDS: Record<string, string> = {
   "talker.alias": "Talker alias",
   "cc.locked": "CC locked",
   "cc.lost": "CC lost",
+  "cchunt.progress": "CC hunt",
+  "cchunt.failed": "CC hunt failed",
+  "dmr.grant.observed": "DMR grant",
+  "dmr.bandplan.learned": "Band plan learned",
 };
 
 interface Row {
@@ -265,6 +269,62 @@ function renderRow(
       const freq = num(payload.frequency_hz);
       const details =
         freq ? `@ ${(freq / 1e6).toFixed(4)} MHz` : "";
+      return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
+    }
+    case "cchunt.progress": {
+      const system = str(payload.system);
+      const freq = num(payload.attempted_freq_hz);
+      const idx = num(payload.attempt_index);
+      const total = num(payload.total_candidates);
+      const pos = total ? ` (${idx + 1}/${total})` : "";
+      const details = freq ? `trying ${(freq / 1e6).toFixed(4)} MHz${pos}` : `trying…${pos}`;
+      return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
+    }
+    case "cchunt.failed": {
+      const system = str(payload.system);
+      const backoff = num(payload.backoff_ms);
+      const details =
+        "candidates exhausted" + (backoff ? ` · retry in ${(backoff / 1000).toFixed(0)}s` : "");
+      return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
+    }
+    case "dmr.grant.observed": {
+      const system = str(payload.system);
+      const lcn = num(payload.lcn);
+      const ts = num(payload.timeslot); // raw 0 = TS1, 1 = TS2
+      const groupID = num(payload.group_id);
+      const sourceID = num(payload.source_id);
+      const cc = num(payload.cc_freq_hz);
+      const details = (
+        <>
+          {`LCN ${lcn} · TS${ts + 1} · TG ${groupID}`}
+          {sourceID ? (
+            <>
+              {" ← "}
+              {ridLink(sourceID)}
+            </>
+          ) : null}
+          {cc ? <span className="text-muted">{` · CC ${(cc / 1e6).toFixed(4)} MHz`}</span> : null}
+        </>
+      );
+      return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
+    }
+    case "dmr.bandplan.learned": {
+      const system = str(payload.system);
+      const baseHz = num(payload.base_hz);
+      const spacingHz = num(payload.spacing_hz);
+      const table = (payload.table ?? []) as unknown[];
+      const numPairs = num(payload.num_pairs);
+      const conf = num(payload.confidence);
+      const shape =
+        table.length > 0
+          ? `${table.length} LCNs`
+          : baseHz
+            ? `${(baseHz / 1e6).toFixed(4)} MHz · ${(spacingHz / 1e3).toFixed(2)} kHz spacing`
+            : "learned";
+      const details =
+        shape +
+        (numPairs ? ` · ${numPairs} pairs` : "") +
+        (conf ? ` · conf ${(conf * 100).toFixed(0)}%` : "");
       return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
     }
     default:

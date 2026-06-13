@@ -2,10 +2,47 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
-import type { SystemDTO, SystemHuntStatusDTO } from "../api/types";
+import type {
+  DMRBandPlanDTO,
+  DMRBandPlanLearnedDTO,
+  EventDTO,
+  SystemDTO,
+  SystemHuntStatusDTO,
+} from "../api/types";
 import { selectClientConfig, useShared } from "../store/shared";
 
 const POLL_INTERVAL_MS = 10_000;
+
+// formatBandPlan renders a compact one-line summary of a DMR Tier III band
+// plan (the LCN→frequency map voice grants resolve through). (#638)
+function formatBandPlan(bp: DMRBandPlanDTO | undefined): string | null {
+  if (!bp) return null;
+  if (bp.linear && bp.linear.base_hz) {
+    const base = (bp.linear.base_hz / 1e6).toFixed(4);
+    const spacing = (bp.linear.spacing_hz / 1e3).toFixed(2);
+    return `${base} MHz · ${spacing} kHz`;
+  }
+  if (bp.table && bp.table.length > 0) {
+    return `${bp.table.length} LCNs (table)`;
+  }
+  return null;
+}
+
+// latestLearned returns the newest dmr.bandplan.learned event payload for a
+// system, so the detail modal can show that the plan was learned live by the
+// autoconfig learner (vs. operator-configured). (#638)
+function latestLearned(
+  events: EventDTO[],
+  systemName: string,
+): DMRBandPlanLearnedDTO | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    if (ev.kind !== "dmr.bandplan.learned") continue;
+    const p = ev.payload as DMRBandPlanLearnedDTO | undefined;
+    if (p && p.system === systemName) return p;
+  }
+  return null;
+}
 
 // Network identity (WACN/System ID/RFSS/Site) is populated from
 // decoded P25 TSBKs 0x3A/0x3B, not config. Translate the live hunt
@@ -28,6 +65,7 @@ export function Systems() {
   const setSystems = useShared((s) => s.setSystems);
   const scanner = useShared((s) => s.scanner);
   const setScanner = useShared((s) => s.setScanner);
+  const events = useShared((s) => s.events);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
   const [filter, setFilter] = useState("");
 
@@ -90,6 +128,18 @@ export function Systems() {
         sort: (a, b) =>
           (a.control_channels?.length ?? 0) -
           (b.control_channels?.length ?? 0),
+      },
+      {
+        key: "bandplan",
+        header: "Band plan",
+        render: (r) => {
+          const bp = formatBandPlan(r.dmr_band_plan);
+          return bp ? (
+            <span className="font-mono text-xs text-muted">{bp}</span>
+          ) : (
+            <span className="text-muted">—</span>
+          );
+        },
       },
       {
         key: "site",
@@ -186,6 +236,39 @@ export function Systems() {
                     emptyHint={hint}
                   />
                 </div>
+              </div>
+            );
+          })()}
+          {(() => {
+            const bp = selected.dmr_band_plan;
+            if (!bp) return null;
+            const learned = latestLearned(events, selected.name);
+            const lines: string[] = [];
+            if (bp.linear && bp.linear.base_hz) {
+              lines.push(`base ${(bp.linear.base_hz / 1e6).toFixed(4)} MHz`);
+              lines.push(`spacing ${(bp.linear.spacing_hz / 1e3).toFixed(3)} kHz`);
+              if (bp.linear.offset) lines.push(`offset ${bp.linear.offset}`);
+            } else if (bp.table) {
+              for (const e of bp.table) {
+                lines.push(`LCN ${e.lcn} → ${(e.freq_hz / 1e6).toFixed(4)} MHz`);
+              }
+            }
+            return (
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                  DMR band plan
+                  {learned ? (
+                    <span className="ml-2 text-accent normal-case tracking-normal">
+                      · learned live (conf {(learned.confidence * 100).toFixed(0)}%,{" "}
+                      {learned.num_pairs} pairs)
+                    </span>
+                  ) : null}
+                </p>
+                <DetailField
+                  label={bp.linear ? "Linear plan" : "LCN → frequency"}
+                  mono
+                  value={lines.length ? lines.join("\n") : null}
+                />
               </div>
             );
           })()}

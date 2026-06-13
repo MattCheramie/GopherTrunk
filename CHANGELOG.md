@@ -7,6 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Hunt features surfaced in the web console.** Recent hunt-family work that
+  previously only reached the logs / raw event stream is now visible in the web
+  UI. The *CC Activity* tab renders the DMR Tier III autoconfig learner's live
+  `dmr.grant.observed` (LCN, timeslot, talkgroup, source) and
+  `dmr.bandplan.learned` (base frequency, channel spacing, confidence) events —
+  given clean typed DTOs instead of raw passthrough — plus the control-channel
+  hunt lifecycle (`cchunt.progress` / `cchunt.failed`). The *Systems* tab shows
+  the active DMR LCN→frequency band plan per system (`GET /api/v1/systems` →
+  `dmr_band_plan`), whether operator-configured or learned over the air, with a
+  "learned live" indicator. The *Hunt* tab now lists each candidate's capture
+  report (control frequency, protocol, lock / skip reason) and the discovered
+  sites with their control channels. (#638)
+
 ### Changed
 
 - **Plots view defaults to the control channel, not the SDR centre.** The
