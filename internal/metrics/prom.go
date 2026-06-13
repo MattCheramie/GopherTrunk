@@ -57,6 +57,13 @@ type Metrics struct {
 	versionInfo    *prometheus.GaugeVec
 	sdrSnap        *sdrSnapshotCollector
 
+	// tetraViterbiCorrections is the opt-in (metrics.detailed_fec)
+	// TETRA §8.3.1 FEC correction-depth histogram. Nil unless detailed
+	// FEC metrics are enabled, so RecordTetraViterbiCorrections no-ops
+	// by default. See its New() registration block for the bucket
+	// rationale.
+	tetraViterbiCorrections *prometheus.HistogramVec
+
 	bus       *events.Bus
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -67,7 +74,12 @@ type Metrics struct {
 // supplied events bus. Pass nil for the bus to use the metrics package
 // purely for the manual Record* methods. Pass nil for pool to skip the
 // SDR snapshot collector.
-func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
+//
+// detailedFEC opts into the per-protocol FEC correction-depth histograms
+// (today: gophertrunk_tetra_viterbi_corrections). They are off by default
+// so a stock deployment doesn't carry a histogram family whose buckets
+// only make sense to an operator profiling on-air recovery margins.
+func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*Metrics, error) {
 	reg := prometheus.NewRegistry()
 	m := &Metrics{
 		reg:     reg,
@@ -223,6 +235,25 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		Help:      "Always 1; carries the build version as a label.",
 	}, []string{"version"})
 
+	// Opt-in TETRA FEC correction-depth histogram (issue #648 follow-up,
+	// docs/opt-in-features.md §5). Reports the number of channel bits the
+	// §8.3.1 decode chain corrected per recovered BSCH / SCH-HD burst —
+	// the on-air Viterbi recovery margin the synthesized fixtures can't
+	// model. Buckets straddle the README's acceptance band (p95 ≤ 8,
+	// p99 ≤ 12 bit errors): a clean burst sits in the 0–1 buckets, a
+	// burst riding co-channel interference climbs into the teens. Only
+	// registered when detailedFEC so a stock deployment isn't handed a
+	// metric it has no capture to interpret.
+	if detailedFEC {
+		m.tetraViterbiCorrections = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "tetra",
+			Name:      "viterbi_corrections",
+			Help:      "Channel bits the TETRA §8.3.1 FEC chain corrected per recovered signalling burst (decoder-independent: re-encoded-vs-received Hamming weight), by system and logical channel (bsch/schhd). Opt-in via metrics.detailed_fec. Healthy margin: p95 ≤ 8, p99 ≤ 12.",
+			Buckets:   []float64{0, 1, 2, 3, 4, 6, 8, 10, 12, 16, 24, 32},
+		}, []string{"system", "channel"})
+	}
+
 	collectors := []prometheus.Collector{
 		m.eventsTotal,
 		m.callsTotal,
@@ -241,6 +272,9 @@ func New(bus *events.Bus, pool Snapshotter, version string) (*Metrics, error) {
 		m.decodeErrors,
 		m.sdrAttached,
 		m.versionInfo,
+	}
+	if m.tetraViterbiCorrections != nil {
+		collectors = append(collectors, m.tetraViterbiCorrections)
 	}
 	if pool != nil {
 		m.sdrSnap = newSDRSnapshotCollector(pool)
@@ -440,6 +474,21 @@ func (m *Metrics) RecordUSBReconnect(driver, serial string) {
 // RecordDecodeError increments the per-protocol/stage decode-error counter.
 func (m *Metrics) RecordDecodeError(protocol, stage string) {
 	m.decodeErrors.WithLabelValues(protocol, stage).Inc()
+}
+
+// RecordTetraViterbiCorrections observes one TETRA §8.3.1 FEC
+// correction-depth sample (channel bits the decode chain corrected on a
+// recovered burst) for the given system + logical channel. No-op unless
+// metrics.detailed_fec enabled the histogram (the common case), so the
+// connector can wire it unconditionally without a gate of its own.
+func (m *Metrics) RecordTetraViterbiCorrections(system, channel string, corrections int) {
+	if m.tetraViterbiCorrections == nil {
+		return
+	}
+	if system == "" {
+		system = "unknown"
+	}
+	m.tetraViterbiCorrections.WithLabelValues(system, channel).Observe(float64(corrections))
 }
 
 // SetSDRAttached toggles the attached-gauge for a device.

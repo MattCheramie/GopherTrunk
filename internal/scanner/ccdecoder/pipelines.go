@@ -76,6 +76,13 @@ type PipelineOptions struct {
 	// analyzer for *every* protocol, without re-duplicating receiver
 	// construction outside this factory. nil ⇒ zero overhead.
 	SymbolTap func(symbols []uint8, isBits bool, baseIdx int)
+
+	// FECObserver, when non-nil, receives a per-burst FEC correction
+	// depth (channel bits the decode chain corrected) bound to this
+	// system. The decoder supplies it only when metrics.detailed_fec is
+	// enabled; today only newTETRAPipeline consumes it. nil ⇒ zero
+	// overhead.
+	FECObserver func(channel string, corrections int)
 }
 
 // tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when
@@ -487,6 +494,9 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		Log:         opts.Log,
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
+		// Opt-in FEC correction-depth histogram (metrics.detailed_fec);
+		// nil unless the daemon wired the observer.
+		FECObserver: opts.FECObserver,
 	})
 	codingMode, ok := tetra.ParseChannelCoding(opts.System.TETRAChannelCoding)
 	if !ok {

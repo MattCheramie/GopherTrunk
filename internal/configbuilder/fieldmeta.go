@@ -223,7 +223,8 @@ var fieldMetas = map[string]FieldMeta{
 	"NormalizeConfig.MaxBoostDB":     {Label: "Max gain (dB)", Help: "Cap on applied gain in either direction so quiet calls don't amplify hiss. Default 12 when enabled."},
 
 	// ---- Metrics -----------------------------------------------------------
-	"MetricsConfig.Enabled": {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},
+	"MetricsConfig.Enabled":     {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},
+	"MetricsConfig.DetailedFEC": {Help: "Opt into per-protocol FEC correction-depth histograms (gophertrunk_tetra_viterbi_corrections). Off by default — the buckets only make sense when profiling on-air recovery margins."},
 
 	// ---- Retention ---------------------------------------------------------
 	"RetentionConfig.CallLogDays": {Help: "Delete call-log rows older than this many days. 0 disables the call-log sweep."},

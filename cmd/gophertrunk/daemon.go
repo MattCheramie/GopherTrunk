@@ -952,7 +952,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.pool != nil {
 			pool = d.pool
 		}
-		m, err := metrics.New(d.bus, pool, version)
+		m, err := metrics.New(d.bus, pool, version, cfg.Metrics.DetailedFEC)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: metrics: %w", err)
 		}
@@ -1313,6 +1313,14 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				if d.metrics != nil {
 					iqObs = d.metrics
 				}
+				// Opt-in FEC correction-depth histogram: only wire the
+				// observer when metrics.detailed_fec is set, so the decode
+				// pipeline does no per-burst correction-depth work in the
+				// default deployment. Same typed-nil guard as iqObs.
+				var fecObs ccdecoder.FECObserver
+				if d.metrics != nil && cfg.Metrics.DetailedFEC {
+					fecObs = d.metrics
+				}
 				// Route the control SDR's IQ through the iqtap broker
 				// so secondary observers (live spectrum, future paging /
 				// AIS / ADS-B decoders) can Subscribe without disturbing
@@ -1334,6 +1342,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Systems:      d.systems,
 					SampleRateHz: float64(effectiveRate),
 					Metrics:      iqObs,
+					FEC:          fecObs,
 					IQCorrect:    iqCorrect,
 					Conjugate:    iqInvert,
 					LOOffsetHz:   loOffsetHz,

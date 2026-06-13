@@ -1428,6 +1428,12 @@ func (n NormalizeConfig) AppliesToDistributed() bool {
 // API HTTP address is configured.
 type MetricsConfig struct {
 	Enabled bool `yaml:"enabled"`
+	// DetailedFEC opts into the per-protocol FEC correction-depth
+	// histograms (today: gophertrunk_tetra_viterbi_corrections). Off by
+	// default — the buckets only make sense to an operator profiling
+	// on-air recovery margins against a known capture. See
+	// docs/opt-in-features.md §5.
+	DetailedFEC bool `yaml:"detailed_fec"`
 }
 
 // RetentionConfig configures the background sweeper that ages out call
