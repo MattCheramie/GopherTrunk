@@ -7,6 +7,32 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **P25 Phase 1 control-channel talker-alias decode is now observable in the
+  daemon log (#376).** A new field-tested system (CBD) locks and populates RIDs
+  but shows blank talker aliases, with heavy TSBK CRC loss on the control
+  channel. The CC alias path was fully wired but logged only at `Debug`, so a
+  field tester running at the normal level saw nothing from it and couldn't tell
+  whether aliases were arriving, completing, or riding an opcode we don't decode.
+  Three diagnostics now surface at `Info`, mirroring the per-`(opcode,MFID)`
+  census the Phase 2 voice composer already emits:
+  - `p25: cc talker alias` once a radio's display name fully reassembles
+    (promoted from `Debug`).
+  - `p25: cc talker alias fragment` on the first vendor-TSBK alias fragment seen
+    per source — so "fragments arrive but never complete" (CRC loss truncating
+    the set before the 10 s reassembly window) is distinguishable from "no
+    fragments at all".
+  - `p25: unhandled tsbk` once per distinct `(MFID,opcode)` we don't dispatch
+    (both vendor and standard namespaces) — a census that names any
+    alias-bearing transport a given site uses that we don't yet decode. The bulk
+    per-frame detail stays at `Debug`.
+- **P25 Phase 1 voice-channel talker-alias events now carry the system name
+  (#376).** The Phase 1 voice composer published `KindTalkerAlias` without the
+  `System` field (unlike the Phase 2 composer and both CC paths), leaving the
+  `/rids` System column and the `TALKER-ALIAS` message-log line systemless. The
+  alias itself was unaffected.
+
 ## [v0.4.1] — 2026-06-13
 
 This release is mostly **DMR voice quality, wideband / USRP capture, and the

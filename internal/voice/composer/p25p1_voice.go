@@ -56,7 +56,7 @@ func (c *Composer) resolveP25Phase1DemodMode(serial, mode string) p25p1rx.DemodM
 // The recorder maps protocol "p25" to the pure-Go IMBE vocoder
 // (voice.DefaultVocoderForProtocol), so WriteRawFrame here decodes each
 // 11-byte frame to PCM and into the call's WAV.
-func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, demodMode string, grantTG uint32, patched []uint32, done chan<- struct{}) {
+func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz uint32, demodMode string, grantTG uint32, patched []uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-p25p1:"+serial, nil)
 
@@ -248,10 +248,11 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial string, iq
 				case phase1.IsTalkerAliasLCO(lcf):
 					if alias, ok := aliasBuf.AddFragment(lcf, content); ok && lastSourceID != 0 {
 						c.log.Info("composer: p25p1 motorola talker alias",
-							"serial", serial, "src", lastSourceID, "alias", alias)
+							"system", system, "serial", serial, "src", lastSourceID, "alias", alias)
 						c.bus.Publish(events.Event{
 							Kind: events.KindTalkerAlias,
 							Payload: trunking.TalkerAlias{
+								System:   system,
 								Protocol: "p25-phase1",
 								SourceID: lastSourceID,
 								Alias:    alias,
