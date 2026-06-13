@@ -556,6 +556,30 @@ func boxSmooth3(v []float64) []float64 {
 	return out
 }
 
+// standardChannelWidths are the occupied bandwidths of real narrowband
+// land-mobile channels. A measured width close to one of these is the channel;
+// off-grid values like 11.6 kHz are measurement artifacts (an off-centre carrier
+// skews the outward DC walk), not bandwidths any system actually uses.
+var standardChannelWidths = []uint32{6_250, 12_500, 25_000}
+
+// SnapChannelBandwidth normalises a measured occupied bandwidth for reporting:
+// when bwHz lands within ±20% of a standard narrowband channel width it returns
+// that width (so a carrier reads as the 12.5 kHz channel it is, not "11.6 kHz");
+// otherwise it returns bwHz unchanged so a genuinely wideband signal (broadcast
+// FM, a wideband data carrier) is reported as-measured. This only adjusts the
+// displayed width — the raw measurement stays on ClassFeatures.OccupiedBwHz.
+func SnapChannelBandwidth(bwHz uint32) uint32 {
+	const tol = 0.20
+	for _, w := range standardChannelWidths {
+		lo := float64(w) * (1 - tol)
+		hi := float64(w) * (1 + tol)
+		if float64(bwHz) >= lo && float64(bwHz) <= hi {
+			return w
+		}
+	}
+	return bwHz
+}
+
 // IsPagingBaud reports whether baud is close to a POCSAG/FLEX signalling rate.
 // The router uses it to decide whether a digital FSK carrier is worth a paging
 // decode attempt before the (more expensive) trunking identify.

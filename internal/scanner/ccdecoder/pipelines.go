@@ -1072,6 +1072,12 @@ func (p *ltrPipeline) Close() error           { return nil }
 // 64-bit on-air codeword's BCH(63,38) FEC + de-interleaving are
 // follow-ups; without them the adapter works on noise-free test
 // fixtures but typically fails on captured MPT 1327 traffic.
+// mpt1327ProdMinConfirm is the production confirmation threshold for an MPT 1327
+// lock: how many recognised Address codewords must arrive before the control
+// channel publishes cc.locked. 2 removes single-codeword false locks at
+// negligible latency on a continuously-broadcasting real control channel.
+const mpt1327ProdMinConfirm = 2
+
 func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := mpt1327.New(mpt1327.Options{
 		Bus:         opts.Bus,
@@ -1091,6 +1097,11 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.MPT1327CWSCTolerance)
 	}
 	cc.SetCWSCTolerance(cwscTol)
+	// Require a couple of recognised codewords before an MPT 1327 lock: a real
+	// control channel streams them continuously, so this is near-instant on a
+	// genuine CC but stops a single cross-protocol false parse (e.g. an
+	// off-channel P25/DMR carrier handed to the identifier) from locking MPT.
+	cc.SetMinConfirm(mpt1327ProdMinConfirm)
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {
