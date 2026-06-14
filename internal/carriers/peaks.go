@@ -68,7 +68,7 @@ func DetectPeaks(frame spectrum.Frame, opts PeakOptions) []Peak {
 		}
 	}
 
-	floor := percentile(frame.Bins, noiseFloorPercentile)
+	floor := spectrum.Percentile(frame.Bins, noiseFloorPercentile)
 	binHz := float64(frame.SampleRate) / float64(n)
 	dcBin := n / 2 // FFT-shifted: DC sits in the middle (see spectrum.frame)
 
@@ -115,25 +115,6 @@ func DetectPeaks(frame spectrum.Frame, opts PeakOptions) []Peak {
 func binToHz(frame spectrum.Frame, bin int, binHz float64) uint32 {
 	base := float64(frame.CenterHz) - float64(frame.SampleRate)/2
 	return uint32(math.Round(base + float64(bin)*binHz))
-}
-
-// percentile returns the p-quantile (0..1) of bins using a copy+sort. Used for
-// the robust noise-floor estimate.
-func percentile(bins []float32, p float64) float32 {
-	if len(bins) == 0 {
-		return 0
-	}
-	cp := make([]float32, len(bins))
-	copy(cp, bins)
-	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
-	idx := int(p * float64(len(cp)-1))
-	if idx < 0 {
-		idx = 0
-	}
-	if idx >= len(cp) {
-		idx = len(cp) - 1
-	}
-	return cp[idx]
 }
 
 func absDiff(a, b uint32) uint32 {

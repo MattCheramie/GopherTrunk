@@ -64,7 +64,7 @@ func TestSurveyWidebandFindsAndSnapsTones(t *testing.T) {
 	tone(300_000+400, 1.0)  // ~400 Hz off a 12.5 kHz grid point
 	tone(-250_000+400, 0.7) //
 
-	cands := detectCarriers(iq, WidebandConfig{SampleRateHz: rate, CenterHz: center}, 4096, 0.05)
+	_, cands := detectCarriers(iq, WidebandConfig{SampleRateHz: rate, CenterHz: center}, 4096, 0.05)
 	if len(cands) < 2 {
 		t.Fatalf("detected %d carriers, want >= 2", len(cands))
 	}

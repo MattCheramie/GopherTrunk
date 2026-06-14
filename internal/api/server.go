@@ -1063,6 +1063,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/iq", s.handleSiglabJobIQ)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
 		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
+		mux.HandleFunc("POST /api/v1/siglab/wideband", s.gate(s.handleSiglabWideband))
 		mux.HandleFunc("POST /api/v1/siglab/synthesize", s.gate(s.handleSiglabSynthesize))
 		// Live raw-IQ capture off a tuner: list devices (read), record a
 		// fixed-length capture (gated mutation — it spends an SDR + CPU),

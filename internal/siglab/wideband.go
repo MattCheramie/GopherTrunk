@@ -5,13 +5,10 @@ import (
 	"io"
 	"log/slog"
 	"math"
-	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/carriers"
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/fft"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/spectrum"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/window"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -51,7 +48,11 @@ type WidebandConfig struct {
 	MaxCarriers        int                 // defensive cap on taps; 0 ⇒ no cap
 	Conjugate          bool                //
 	IQCorrect          bool                //
-	Log                *slog.Logger        //
+	// CollectSpectrum retains the Welch-averaged power spectrum on the result
+	// (WidebandResult.Spectrum) so callers can plot the band with the detected
+	// carriers overlaid. Off by default to keep the offline hunt path lean.
+	CollectSpectrum bool         //
+	Log             *slog.Logger //
 }
 
 // CarrierRole labels a surveyed carrier within a trunked system.
@@ -103,6 +104,17 @@ type SystemRollup struct {
 	Verdict      string `json:"verdict" yaml:"verdict"`
 }
 
+// SurveySpectrum is the Welch-averaged power spectrum of the whole band, in
+// the same FFT-shifted dBFS layout as spectrum.Frame: Bins[0] is the lowest
+// frequency (CenterHz - SampleRateHz/2) and successive bins step by
+// SampleRateHz/len(Bins). Populated only when WidebandConfig.CollectSpectrum is
+// set; it lets a UI plot the band with the detected carriers marked.
+type SurveySpectrum struct {
+	CenterHz     uint32    `json:"center_hz" yaml:"center_hz"`
+	SampleRateHz uint32    `json:"sample_rate_hz" yaml:"sample_rate_hz"`
+	Bins         []float32 `json:"bins" yaml:"bins"`
+}
+
 // WidebandResult is the full survey outcome.
 type WidebandResult struct {
 	Source        string  `json:"source" yaml:"source"`
@@ -110,6 +122,9 @@ type WidebandResult struct {
 	CenterHz      uint32  `json:"center_hz" yaml:"center_hz"`
 	ChannelRateHz float64 `json:"channel_rate_hz" yaml:"channel_rate_hz"`
 	Strategy      string  `json:"strategy" yaml:"strategy"`
+	// Spectrum is the averaged band power spectrum for display; nil unless
+	// WidebandConfig.CollectSpectrum was set.
+	Spectrum *SurveySpectrum `json:"spectrum,omitempty" yaml:"spectrum,omitempty"`
 	// DetectedCount is the number of spectral carrier peaks before the
 	// per-carrier identify filter dropped the ones that didn't decode to a
 	// real protocol (leakage / noise peaks).
@@ -185,7 +200,14 @@ func SurveyWidebandIQ(iq []complex64, source string, cfg WidebandConfig) (*Wideb
 	}
 
 	// 1-3. Spectrum → peaks → grid-snap.
-	cands := detectCarriers(iq, cfg, fftSize, guard)
+	frame, cands := detectCarriers(iq, cfg, fftSize, guard)
+	if cfg.CollectSpectrum {
+		out.Spectrum = &SurveySpectrum{
+			CenterHz:     frame.CenterHz,
+			SampleRateHz: frame.SampleRate,
+			Bins:         frame.Bins,
+		}
+	}
 	out.DetectedCount = len(cands)
 	if len(cands) == 0 {
 		return out, nil
@@ -287,32 +309,34 @@ func keepCarrier(c CarrierResult) bool {
 // carrier collapses to one bump, (b) finds the bumps with the shared peak
 // detector, (c) refines each centre to the power-weighted centroid of its hump,
 // and only then snaps to the channel raster.
-func detectCarriers(iq []complex64, cfg WidebandConfig, fftSize int, guard float64) []detectedCarrier {
-	frame := averageSpectrum(iq, cfg.CenterHz, cfg.SampleRateHz, fftSize)
+// detectCarriers returns the Welch-averaged band spectrum (for optional
+// display) alongside the snapped carrier candidates found in it.
+func detectCarriers(iq []complex64, cfg WidebandConfig, fftSize int, guard float64) (spectrum.Frame, []detectedCarrier) {
+	frame := spectrum.AverageDB(iq, cfg.CenterHz, cfg.SampleRateHz, fftSize)
 	binHzF := cfg.SampleRateHz / float64(fftSize)
 
 	// Smooth over ~half the tightest channel so a wide carrier reads as a
 	// single bump instead of many noisy local maxima.
 	smoothBins := int(math.Round(6_250.0 / 2.0 / binHzF))
 	smoothed := frame
-	smoothed.Bins = movingAverage(frame.Bins, smoothBins)
+	smoothed.Bins = spectrum.Smooth(frame.Bins, smoothBins)
 
 	peaks := carriers.DetectPeaks(smoothed, carriers.PeakOptions{
 		ThresholdDb:  cfg.PeakThresholdDb,
 		MinSpacingHz: cfg.MinSpacingHz,
 	})
 	if len(peaks) == 0 {
-		return nil
+		return frame, nil
 	}
 
-	floor := percentile25(smoothed.Bins)
+	floor := spectrum.Percentile(smoothed.Bins, 0.25)
 	base := float64(cfg.CenterHz) - cfg.SampleRateHz/2
 	halfWidthBins := int(math.Round(12_500.0 / binHzF)) // ±one channel
 	freqs := make([]uint32, len(peaks))
 	centers := make([]uint32, len(peaks))
 	for i, p := range peaks {
 		bin := int(math.Round((float64(p.FreqHz) - base) / binHzF))
-		centerHz := centroidHz(smoothed.Bins, bin, halfWidthBins, floor, base, binHzF)
+		centerHz := spectrum.WeightedCentroidHz(smoothed.Bins, bin, halfWidthBins, floor, base, binHzF)
 		centers[i] = uint32(math.Round(centerHz))
 		freqs[i] = centers[i]
 	}
@@ -348,108 +372,7 @@ func detectCarriers(iq []complex64, cfg WidebandConfig, fftSize int, guard float
 			break
 		}
 	}
-	return cands
-}
-
-// movingAverage smooths bins with a centered box filter of half-width w (total
-// window 2w+1). w<=0 returns a copy.
-func movingAverage(bins []float32, w int) []float32 {
-	out := make([]float32, len(bins))
-	if w <= 0 {
-		copy(out, bins)
-		return out
-	}
-	for i := range bins {
-		lo, hi := i-w, i+w
-		if lo < 0 {
-			lo = 0
-		}
-		if hi >= len(bins) {
-			hi = len(bins) - 1
-		}
-		var s float32
-		for j := lo; j <= hi; j++ {
-			s += bins[j]
-		}
-		out[i] = s / float32(hi-lo+1)
-	}
-	return out
-}
-
-// centroidHz returns the power-weighted mean frequency of the carrier hump
-// around peakBin: the contiguous run of above-floor bins within ±halfWidth,
-// weighted by linear power. This finds the true centre of a wide C4FM carrier
-// whose strongest single bin is noisy.
-func centroidHz(binsDb []float32, peakBin, halfWidth int, floor float32, base, binHz float64) float64 {
-	lo, hi := peakBin-halfWidth, peakBin+halfWidth
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(binsDb) {
-		hi = len(binsDb) - 1
-	}
-	var wsum, psum float64
-	for j := lo; j <= hi; j++ {
-		if binsDb[j] <= floor {
-			continue
-		}
-		p := math.Pow(10, float64(binsDb[j])/10) // dB → linear power
-		freq := base + float64(j)*binHz
-		wsum += p * freq
-		psum += p
-	}
-	if psum == 0 {
-		return base + float64(peakBin)*binHz
-	}
-	return wsum / psum
-}
-
-// percentile25 is the 25th-percentile (robust noise floor) of a dB-bin slice.
-func percentile25(bins []float32) float32 {
-	if len(bins) == 0 {
-		return 0
-	}
-	cp := make([]float32, len(bins))
-	copy(cp, bins)
-	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
-	idx := int(0.25 * float64(len(cp)-1))
-	return cp[idx]
-}
-
-// averageSpectrum builds a Welch-averaged dBFS frame over the whole buffer.
-func averageSpectrum(iq []complex64, centerHz uint32, sampleRateHz float64, n int) spectrum.Frame {
-	plan := fft.New(n)
-	win := window.Hann(n)
-	var winSum float64
-	for _, w := range win {
-		winSum += w * w
-	}
-	acc := make([]float64, n)
-	bufIn := make([]complex128, n)
-	bufOut := make([]complex128, n)
-	dst := make([]float32, n)
-	frames := 0
-	for off := 0; off+n <= len(iq); off += n {
-		spectrum.PowerDB(plan, win, winSum, iq[off:off+n], bufIn, bufOut, dst)
-		for i, v := range dst {
-			acc[i] += float64(v)
-		}
-		frames++
-	}
-	bins := make([]float32, n)
-	if frames == 0 {
-		// Fewer than one FFT window: single padded pass so a short carrier
-		// still produces a frame.
-		pad := make([]complex64, n)
-		copy(pad, iq)
-		spectrum.PowerDB(plan, win, winSum, pad, bufIn, bufOut, dst)
-		copy(bins, dst)
-	} else {
-		for i := range bins {
-			bins[i] = float32(acc[i] / float64(frames))
-		}
-	}
-	return spectrum.Frame{CenterHz: centerHz, SampleRate: uint32(math.Round(sampleRateHz)), Bins: bins}
+	return frame, cands
 }
 
 // newBank builds the per-carrier channelizer, mirroring widebandt2.pickStrategy
