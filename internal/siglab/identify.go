@@ -46,11 +46,11 @@ type CandidateScore struct {
 
 // IdentifyResult ranks the candidates and names the most likely protocol.
 type IdentifyResult struct {
-	Source       string           `json:"source"`
-	SampleRateHz float64          `json:"sample_rate_hz"`
-	Winner       string           `json:"winner"`
-	Confidence   float64          `json:"confidence"`
-	Inconclusive bool             `json:"inconclusive"`
+	Source       string  `json:"source"`
+	SampleRateHz float64 `json:"sample_rate_hz"`
+	Winner       string  `json:"winner"`
+	Confidence   float64 `json:"confidence"`
+	Inconclusive bool    `json:"inconclusive"`
 	// TuneHz is the carrier offset the winning candidate locked at — the one
 	// the decode should reuse (under -auto-tune this may be an off-centre,
 	// non-dominant carrier, not the band's loudest). 0 when no shift was used.
