@@ -42,6 +42,7 @@ func runHunt(args []string) {
 	autoTune := fs.Bool("auto-tune", false, "estimate the dominant carrier offset and tune it to 0 Hz before demod")
 	conjugate := fs.Bool("conjugate", false, "conjugate IQ (negate Q) before channelization (spectrum-inverted front-end)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation")
+	wideband := fs.Bool("wideband", false, "offline: treat each -in capture as a wide-band multi-carrier grab — survey it (spectrum → per-carrier DDC → identify), then group the carriers into one trunked system. -freq is the capture CENTER frequency.")
 	minConfidence := fs.Float64("min-confidence", 0.40, "skip auto-identified captures below this confidence (0..1)")
 
 	// Live-mode flags (no -in): sweep an SDR across operator-given band(s) or
@@ -133,6 +134,10 @@ EXAMPLES:
   # C4FM CC the blind classifier reads as FM to the trunking identify)
   gophertrunk hunt -survey -survey-deep -detect-carriers -in wideband.cfile \
                   -freq 450500000 -format f32 -sample-rate 2000000
+
+  # WIDEBAND (offline): split a wide-band capture into per-carrier streams and
+  # group them into one trunked system (-freq is the capture CENTER frequency)
+  gophertrunk hunt -wideband -in dmr-441MHz.cfile -freq 441000000 -format f32 -sample-rate 2000000
 
 FLAGS:`)
 		fs.PrintDefaults()
@@ -246,7 +251,22 @@ FLAGS:`)
 			captures = append(captures, ci)
 		}
 
-		if *surveyMode {
+		if *wideband {
+			// Offline wide-band survey: split each capture into per-carrier
+			// streams and group the DMR carriers into one trunked system.
+			fmt.Fprintf(os.Stderr, "wideband: surveying %d capture(s)…\n", len(captures))
+			var derr error
+			sys, reports, derr = hunt.DiscoverWideband(captures, hunt.DiscoverConfig{
+				Name:          *name,
+				State:         *state,
+				County:        *county,
+				Location:      *location,
+				MinConfidence: *minConfidence,
+			})
+			if derr != nil {
+				rep.Fatal(1, derr)
+			}
+		} else if *surveyMode {
 			// Offline survey: classify + route every capture, not just trunking.
 			fmt.Fprintf(os.Stderr, "survey: classifying %d capture(s)…\n", len(captures))
 			sv, sreports, serr := hunt.RunOfflineSurvey(captures, hunt.LiveHuntOptions{
@@ -328,6 +348,9 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		default:
 			fmt.Fprintf(os.Stderr, "hunt:   %s — %s, locked=%v, +%d talkgroups\n",
 				r.Path, r.Protocol, r.Locked, r.Talkgroups)
+			if r.Verdict != "" {
+				fmt.Fprintf(os.Stderr, "hunt:     ↳ %s\n", r.Verdict)
+			}
 		}
 	}
 	// Resolve the output directory up front so the survey inventory and any

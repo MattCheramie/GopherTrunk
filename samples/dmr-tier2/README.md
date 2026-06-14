@@ -1,16 +1,29 @@
 # DMR Tier II (conventional) captures
 
-> ⚠️ **Real-air decode is unconfirmed and currently failing (issue #527
-> follow-up).** A field report shows a constant stream of `decode.error`
-> at the `voiceheader-bptc` and `voiceheader-rs` stages on a live signal,
-> even though the synthesized fixture passes. Sync + slot-type decode on
-> air, and the BPTC(196,96) / Hamming / RS(12,9) layers are verified equal
-> to the de-facto MMDVM reference (`TestRS129MatchesIndependentReference-
-> Encoder`, `TestBPTCCanonicalLayoutGolden`) — so the open question is the
-> receiver's real-air dibit recovery and end-to-end bit ordering, which
-> only a labelled capture can settle. **A capture here is now blocking, not
-> optional.** `handleVoiceHeader` Debug-logs the failing burst's dibits +
-> payload hex so the exact bits can be replayed through a reference decoder.
+> ✅ **Real-air Full-LC decode is now CONFIRMED (issue #527 follow-up
+> closed).** A set of live 441 MHz / 2 MS/s captures (a DMR Tier III
+> trunked system) was channelised and replayed through the production
+> receiver. The receiver's real-air dibit recovery and end-to-end bit
+> ordering through the BPTC(196,96) → RS(12,9) → Full LC stack — the exact
+> path the Voice LC Header uses, and the open question the field report
+> raised — decode **cleanly on air**: Terminator-with-LC bursts recover a
+> stable, RS(12,9)-validated FLC (TG 24 / source 4209000) and the control
+> channel's CSBKs pass BPTC + CRC ~97–98% of the time, with the Tier III
+> ControlChannel locking on the Aloha beacon. The committed regression
+> guards are `TestReplayDMRVoiceLCFECDecodesRealAir` and
+> `TestReplayDMRTier3ControlDecodesRealAir`
+> ([`cmd/gophertrunk/dmr_realcapture_test.go`](../../cmd/gophertrunk/dmr_realcapture_test.go),
+> fixtures under `cmd/gophertrunk/testdata/dmr-*.cfile`). The original
+> field failure was the unit-energy matched filter overdriving the slicer;
+> the symbol-AGC calibration in `internal/radio/dmr/receiver` (issue #275)
+> fixed it, and these captures pin that on real over-the-air bits.
+>
+> A capture is therefore **no longer blocking** — but a pure *conventional*
+> Tier II key-up/un-key recording (a Voice LC Header rather than the
+> trunked Terminator-with-LC that shares its FEC) is still welcome for
+> direct coverage of the conventional call-setup path. `handleVoiceHeader`
+> Debug-logs any failing burst's dibits + payload hex so the exact bits can
+> still be replayed through a reference decoder.
 
 `TestDaemonCCDecodesDMRTier2` (the **synthesized** fixture) is no longer
 skipped — that path was fixed by lowering the Tier II pipeline's

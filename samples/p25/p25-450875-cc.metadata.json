@@ -1,0 +1,16 @@
+{
+  "source": "OTA RTL-SDR @ 450.500 MHz center, 2 MSPS; control channel at -625 kHz (449.875 MHz), channelised to 48 kHz",
+  "tool_cross_check": "",
+  "sample_rate_hz": 48000,
+  "center_freq_hz": 449875000,
+  "expected": {
+    "demod_mode": "c4fm",
+    "nac": "0x2C1",
+    "min_nid_trusted": 24,
+    "min_tsbk": 28,
+    "max_evm_pct": 18.0,
+    "min_snr_db": 11.0,
+    "min_sync_margin": 2
+  },
+  "notes": "Live UHF P25 Phase 1 C4FM control channel, NAC 0x2C1. Clean decode. Measured 2026-06-14: EVM 12.7%, SNR 14.5 dB, sync-margin min=3/median=5 (hits=31), NID trusted=31/failed=0, TSBK decoded=36/CRC-failed=0. Bounds are floors below the measured values; tighten as the demod improves."
+}
