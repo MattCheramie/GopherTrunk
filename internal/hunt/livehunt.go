@@ -92,6 +92,12 @@ type LiveHuntOptions struct {
 	SweepDwell time.Duration
 	GuardFrac  float64
 	PeakOpts   PeakOptions
+	// DetectCarriers expands a wideband OFFLINE capture into every carrier it
+	// contains (FFT peak-detect) instead of treating the whole file as one
+	// channel — so an off-centre / non-dominant control channel is found and
+	// the rest of the band is inventoried. Live sweeps already do this via the
+	// SDR; this is the offline equivalent. Ignored for live runs.
+	DetectCarriers bool
 
 	// DwellSeconds is how much IQ to capture per candidate for identify+decode.
 	// 0 ⇒ 3 s.

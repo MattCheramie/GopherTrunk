@@ -50,7 +50,9 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 
 	proto := p.Protocol
 	conf := 1.0 // operator-forced protocol ⇒ full confidence
-	if proto == trunking.ProtocolUnknown {
+	forced := proto != trunking.ProtocolUnknown
+	tuneHz := 0.0 // carrier offset the decode tunes to (resolved below)
+	if !forced {
 		idr, err := siglab.IdentifyReader(r, source, siglab.IdentifyConfig{
 			SampleRateHz: p.SampleRateHz,
 			Format:       p.Format,
@@ -79,6 +81,11 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 			return rep
 		}
 		proto = wp
+		// Decode at the carrier identify locked, NOT a fresh dominant-carrier
+		// estimate: under auto-tune the control channel may be off-centre and
+		// not the band's loudest, so re-estimating here would re-find the wrong
+		// carrier and the decode would fail even though identify succeeded.
+		tuneHz = idr.TuneHz
 	}
 	rep.Protocol = proto.String()
 	rep.Confidence = conf
@@ -87,12 +94,13 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 		rep.Error = fmt.Sprintf("rewind: %v", err)
 		return rep
 	}
-	res, err := siglab.RunReader(r, source, siglab.Config{
+	cfg := siglab.Config{
 		Protocol:     proto,
 		FrequencyHz:  p.FrequencyHz,
 		SampleRateHz: p.SampleRateHz,
 		Format:       p.Format,
-		AutoTune:     p.AutoTune,
+		AutoTune:     false,
+		TuneHz:       tuneHz,
 		Conjugate:    p.Conjugate,
 		IQCorrect:    p.IQCorrect,
 		// CollectIQDiag engages P25 Phase 1's deep path, which is what snapshots
@@ -101,7 +109,16 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 		// and the map would be NAC-only.
 		CollectIQDiag: true,
 		Log:           log,
-	})
+	}
+	var res *siglab.Result
+	var err error
+	if forced && p.AutoTune {
+		// Forced protocol + auto-tune: identify didn't run, so resolve the
+		// carrier here by trying the ranked candidates and keeping the best lock.
+		res, err = siglab.RunReaderAutoTuneMulti(r, source, cfg, 0)
+	} else {
+		res, err = siglab.RunReader(r, source, cfg)
+	}
 	if err != nil {
 		rep.Error = fmt.Sprintf("decode: %v", err)
 		return rep
