@@ -95,28 +95,43 @@ real-air confirmation**. A single labeled capture closes each one.
 - **Pass bar:** the followed talkgroup's embedded LC is recovered and its
   (and only its) audio is routed to the sidecar.
 
-### DMR Tier II Voice LC Header (conventional repeater)
-- **What to capture:** A live conventional DMR repeater carrying voice —
+### DMR Full-LC FEC on air (issue #527 follow-up) — ✅ CONFIRMED
+- **Status:** **Closed by live capture.** A set of 441 MHz / 2 MS/s GNU
+  Radio f32 captures of a DMR Tier III trunked system was channelised and
+  replayed through the production receiver. The receiver's real-air dibit
+  recovery and end-to-end bit ordering through BPTC(196,96) → RS(12,9) →
+  Full LC parse — the exact stack the Voice LC Header uses and the only
+  thing the field report left unproven — decode **cleanly on air**.
+- **What settled it:** the Voice LC Header and the **Terminator-with-LC**
+  carry the *same* Full LC PDU through the *same* BPTC + RS(12,9) FEC (only
+  the RS seed differs, 0x96 vs 0x99, both pinned by
+  `TestRS129MatchesIndependentReferenceEncoder`). On-air Terminator-with-LC
+  bursts recover a stable RS-validated FLC (TG 24 / source 4209000), and
+  the control channel's CSBKs pass BPTC + CRC ~97–98%, with the Tier III
+  ControlChannel locking on the Aloha beacon.
+- **Regression guards:** `TestReplayDMRVoiceLCFECDecodesRealAir` +
+  `TestReplayDMRTier3ControlDecodesRealAir` in
+  `cmd/gophertrunk/dmr_realcapture_test.go` (fixtures
+  `cmd/gophertrunk/testdata/dmr-{voice-term,t3-cc}.cfile`).
+- **Root cause of the original field failure:** the unit-energy RRC matched
+  filter overdrove the fixed 4-level slicer, collapsing inner symbols onto
+  the outer rails so every BPTC payload came back uncorrectable while the
+  more forgiving sync + slot-type FEC still passed — exactly the reported
+  symptom. The symbol-AGC calibration in `internal/radio/dmr/receiver`
+  (issue #275) fixed it; these captures confirm the fix on real bits.
+
+### DMR Tier II Voice LC Header (conventional repeater) — 🟡 optional
+- **What to capture:** A live *conventional* DMR repeater carrying voice —
   key-up to un-key, so the capture spans a **Voice LC Header** and the
   **Terminator-with-LC** that bracket a transmission.
 - **Format:** complex int16 `.bin` or GNU Radio float32 `.cfile` under
   `samples/dmr-tier2/`. **Not** demodulated audio.
 - **Sample rate:** ≥ 48 kHz. C4FM @ 4800 sym/s, ~1944 Hz deviation, 12.5 kHz.
 - **Duration / size:** ≥ 5 s (~1 MB int16) — one call is enough.
-- **Why this is blocking (field report, issue #527 follow-up):** off-air
-  decode emits a constant stream of `decode.error` at the
-  `voiceheader-bptc` and `voiceheader-rs` stages even though the synthetic
-  fixture passes end to end. Sync + slot-type Hamming(20,8) succeed on air
-  (the pipeline reaches the Voice LC Header handler), and the BPTC(196,96),
-  Hamming(13,9)/(15,11) and RS(12,9) layers are verified equal to the
-  de-facto MMDVM reference (see `TestRS129MatchesIndependentReferenceEncoder`
-  and `TestBPTCCanonicalLayoutGolden`). What is **not** proven on air is the
-  receiver's dibit recovery on a real BPTC-heavy payload and the
-  end-to-end bit ordering — every existing test round-trips our own
-  encoder, so a real-air-only mismatch passes CI and fails on the air. A
-  single labelled capture closes that gap. `handleVoiceHeader` now Debug-logs
-  the failing burst's dibits + payload hex so the exact bits can be replayed
-  through DSD-FME / MMDVMHost.
+- **No longer blocking:** the underlying real-air BPTC/RS Full-LC concern is
+  resolved above. A conventional capture now only adds *direct* coverage of
+  the Tier II call-setup path (Voice LC Header → grant → Terminator) rather
+  than the trunked Terminator-with-LC that shares its FEC.
 - **Cross-check:** MMDVMHost log / DSD-FME / radio display.
 - **Pass bar:** the captured Voice LC Header decodes to the expected
   talkgroup + source ID + color code, with no decode.error stream on a
