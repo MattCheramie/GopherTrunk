@@ -7,6 +7,86 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.2] — 2026-06-14
+
+This release is mostly **hunt / survey maturation**, with TETRA blind identify
+and MPT 1327 lock hardening alongside. The live discovery flow grows up: a real
+**RadioReference cross-reference** now pairs discovered control / voice
+frequencies against an existing RR system to flag PPM / tuning offsets and
+not-in-RR frequencies, and lists talkgroups heard on air but absent from RR —
+available both from the CLI and the web *Hunt* panel (#660, #661). Surveys gain
+**crash-safe NDJSON persistence and resume** in the daemon (mirroring the CLI
+flags), an optional **post-run auto-gain BER sweep** that recommends the
+front-end gain minimising decode errors on each locked control channel, and
+**neighbour-frequency resolution for DMR Tier III / EDACS / Motorola** rather
+than P25 only (#660, #661). The sweep now **snaps candidates to the channel
+raster** (6.25 / 12.5 / 25 kHz) and normalises the reported occupied bandwidth,
+so a real carrier a few hundred Hz off a bin centre is tuned dead-on and reads
+its true channel width instead of a skewed "11.6 kHz" (#669, #648). TETRA
+control channels now clear the blind-identify gate by **recovering the cell
+colour code from the BSCH** so their SCH/HD FEC actually scores (#662, #648),
+with an opt-in **Viterbi correction-depth histogram** behind
+`metrics.detailed_fec` (#667). MPT 1327 stops false-locking on stray
+cross-protocol parses — a lock now needs a minimum number of confirmation
+codewords sharing a **consistent system prefix** (#669, #670, #648). On the
+voice side, digital chains are now clocked from the **DDC's actual resampled
+rate** instead of the nominal 48 kHz, killing the periodic symbol-clock slips
+and audible clicks on wideband P25 / DMR voice (#668, #550). SoapyRemote
+endpoints gain per-endpoint **`stream_mtu` and `stream_window`** knobs (#664,
+#665), and P25 Phase 1 control-channel talker-alias decode is now observable in
+the daemon log (#376).
+
+### Added
+
+- **Hunt: RadioReference cross-reference (offsets + new talkgroups).** The RR
+  step is upgraded from duplicate-detection to a real cross-reference: when a
+  discovered system matches an existing RR system with high confidence,
+  GopherTrunk fetches its full detail and diffs it — control / secondary
+  frequencies are paired greedily by nearest RR frequency (within 5 kHz is
+  flagged as a tuning / PPM offset, farther or unmatched is "not in RR"), and
+  talkgroups observed on air but absent from RR are listed. The diff is rendered
+  in the submission package and, via a new
+  `GET /api/v1/hunt[/{id}]/radioreference` endpoint, in a *RadioReference*
+  section of the web *Hunt* panel (county / SID inputs + a cross-reference
+  button). (#660, #661)
+- **Hunt: optional post-run auto-gain BER sweep.** A new `-auto-gain` flag (and
+  an *Auto-gain* toggle + recommendations table in the *Hunt* panel) sweeps a
+  set of front-end gains on each locked control channel after a run, decodes a
+  short dwell at each, and recommends the gain that minimises the decode error
+  rate (preferring one that locks, then lower gain to reduce front-end strain).
+  Recommendations are reported and written to `gain-recommendation.json`;
+  nothing is applied automatically. The web path is guarded by SDR exclusivity —
+  gain control is wired only when the hunt holds a dedicated SDR, not the shared
+  control SDR. (#660, #661)
+- **Hunt: daemon survey persistence (NDJSON) + resume.** A survey run streams its
+  classified carriers to a crash-safe NDJSON file when `persist_survey` is set,
+  and on `resume` preloads the already-recorded frequencies so an interrupted
+  web survey continues where it left off — matching toggles in the *Hunt* panel.
+  Mirrors the CLI's `-survey-ndjson` / `-resume`, which remain for standalone
+  runs. (#661)
+- **Hunt: neighbour-frequency resolution for DMR Tier III / EDACS / Motorola.**
+  Neighbour resolution was P25-only; DMR Tier III, EDACS and Motorola advertise
+  adjacent sites by LCN and each already has a band-plan resolver, but their
+  topology snapshots never applied it. They now resolve a neighbour's frequency
+  via the configured band plan (an unresolved neighbour stays informational, no
+  decode error), and a missing frequency is backfilled once a later observation
+  resolves it. (#660)
+- **SoapyRemote `stream_mtu` and `stream_window` config.** Both are SoapyRemote
+  stream arguments (`remote:mtu` / `remote:window`) read client-side and
+  forwarded to the server's `setupStream`, so neither could be set via the
+  existing `soapy_remote.args` device kwargs. New per-endpoint knobs send them in
+  `SETUP_STREAM` and size the client's in-flight flow-control credit from the
+  same value so both ends agree — wired through the config (with range and
+  `stream_window >= stream_mtu` validation), the daemon, the config builder, the
+  web form, and the example config. (#664, #665)
+- **TETRA Viterbi correction-depth histogram** (opt-in via
+  `metrics.detailed_fec`). The control channel scores each recovered BSCH /
+  SCH-HD burst's FEC correction depth decoder-independently (Hamming weight
+  between received and re-encoded bits), surfaced through an optional observer
+  hook the daemon wires to metrics only when the gate is set — so the default
+  deployment does no per-burst work and carries no extra metric family. (#667,
+  #648)
+
 ### Changed
 
 - **P25 Phase 1 control-channel talker-alias decode is now observable in the
@@ -32,6 +112,52 @@ for tagged releases.
   `System` field (unlike the Phase 2 composer and both CC paths), leaving the
   `/rids` System column and the `TALKER-ALIAS` message-log line systemless. The
   alias itself was unaffected.
+- **Hunt: snap swept candidates to the channel grid and normalise occupied
+  bandwidth** (#648). The sweep reports carriers at FFT-bin centres (~586 Hz
+  bins at 2.4 MS/s), so a real carrier such as a P25 trunk at 440.125 MHz was
+  reported a few hundred Hz off and 4800-baud decoders failed to lock off-centre.
+  The candidate list now auto-detects the channel step (6.25 / 12.5 / 25 kHz)
+  from the discovered frequencies and snaps each candidate to the raster within
+  one FFT bin (without moving genuinely off-grid carriers; jittered detections of
+  one channel merge, strongest SNR winning), and the reported occupied bandwidth
+  is normalised to the nearest standard channel width so a 12.5 kHz channel reads
+  as 12.5 kHz rather than a skewed "11.6 kHz". (#669)
+
+### Fixed
+
+- **P25 / DMR wideband voice glitches from an off-nominal DDC rate** (#550). Voice
+  grants tapped off a wideband SDR run through a per-call DDC that rationally
+  resamples toward 48 kHz, but at certain input rates the reduced L/M ratio trips
+  the resampler's caps and lands a fraction of a percent off (e.g. ~48828 Hz from
+  a 6.25 MS/s-derived bin). The control-channel path already clocked its symbol
+  loops from `DDCBank.OutputRateHz`, but the voice path hardcoded the nominal
+  48 kHz, so the symbol clock drifted off the true phase, periodically slipped,
+  and the vocoder concealed each slip with an audible click. The virtual tuner now
+  surfaces the DDC's actual fractional rate through the composer to every digital
+  voice chain (P25 Phase 1 / Phase 2 / DMR), as a `float64` so the fractional part
+  reaches the receiver's symbol clock intact. Physical SDRs (exact integer rate)
+  are unchanged. (#668)
+- **MPT 1327 false locks** (#648). The lock gate counted recognised Address
+  codewords but ignored their identity, so a burst of inconsistent cross-protocol
+  false parses — a different system prefix each time — could still reach the
+  confirmation threshold and declare a false control-channel lock (and, being
+  permissive lock-on-first 1200-baud FFSK, win the identify over P25 / DMR that
+  failed off-centre). A lock now requires a minimum number of confirmation
+  codewords (the production decoder sets two) that share a **consistent 7-bit
+  prefix**: a matching prefix corroborates the run in progress, a new or changed
+  prefix restarts the count. A genuine control channel repeats its prefix on every
+  Aloha / AhoyChan and still confirms within a couple of codewords, while random
+  parses never accumulate. (#669, #670)
+- **TETRA control channels skipped during blind identify** (#648). A recognised
+  TETRA control channel never cleared the 0.40 identify confidence gate ("best:
+  tetra @ 0.16") because its 30 % FEC score depends on descrambling SCH/HD with
+  the cell colour code, which is 0 under blind identify — wrong for any real cell,
+  so every SCH/HD CRC failed and TETRA forfeited the whole FEC weight. The BSCH is
+  always scrambled with colour code 0 and carries the cell's colour code, so blind
+  identify now recovers it from the BSCH and descrambles SCH/HD with the recovered
+  code, letting a real TETRA control channel earn its FEC score and clear the
+  gate. The stale "descrambler will not lock" colour-code warning (the decoder
+  auto-acquires it from the BSCH) is demoted to `Debug`. (#662)
 
 ## [v0.4.1] — 2026-06-13
 
