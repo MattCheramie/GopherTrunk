@@ -23,7 +23,7 @@ func runAnalyze(args []string) {
 	protocolFlag := fs.String("protocol", "p25p1", "protocol to decode (p25p1|p25-phase2|dmr|dmr-tier2|nxdn|dpmr|edacs|motorola|ltr|mpt1327|tetra|ysf|dstar)")
 	freq := fs.Uint64("freq", 0, "informational: the capture's nominal centre frequency in Hz")
 	tuneHz := fs.Float64("tune-hz", 0, "frequency-shift the capture so a channel at +tune-hz lands at 0 Hz before demod")
-	autoTune := fs.Bool("auto-tune", false, "estimate the dominant carrier offset from the start of the file and tune it to 0 Hz")
+	autoTune := fs.Bool("auto-tune", false, "find the signal by trying the ranked carrier candidates and keeping the best lock — handles an off-centre / non-dominant carrier in a wideband capture")
 	conjugate := fs.Bool("conjugate", false, "conjugate IQ (negate Q) before channelization (spectrum-inverted front-end, issue #264)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation")
 	out := fs.String("out", "", "write structured output to this file (default: stdout)")
@@ -82,7 +82,15 @@ FLAGS:`)
 		CollectIQDiag: true,
 	}
 
-	res, err := siglab.Run(*in, cfg)
+	// -auto-tune tries the ranked carrier candidates and keeps the best lock,
+	// so an off-centre / non-dominant control channel in a wideband capture is
+	// still found.
+	var res *siglab.Result
+	if *autoTune {
+		res, err = siglab.RunAutoTuneMulti(*in, cfg, 0)
+	} else {
+		res, err = siglab.Run(*in, cfg)
+	}
 	if err != nil {
 		rep.Fatal(1, err)
 	}

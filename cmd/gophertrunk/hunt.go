@@ -69,6 +69,7 @@ func runHunt(args []string) {
 	peakThresholdDb := fs.Float64("peak-threshold-db", 10, "minimum dB above the noise floor for a carrier to count (live sweep)")
 	minSpacingHz := fs.Uint("min-spacing", 6250, "minimum Hz between detected carriers (live sweep)")
 	fftSize := fs.Int("fft-size", 4096, "FFT size per sweep step (power of two)")
+	detectCarriers := fs.Bool("detect-carriers", false, "offline (-in): expand a wideband capture into every carrier it contains (FFT peak-detect) before decode — finds an off-centre / non-dominant control channel and inventories the band, instead of treating the whole file as one channel")
 	dwellSeconds := fs.Float64("dwell-seconds", 3, "IQ seconds captured per candidate for identify+decode (live mode)")
 	gain := fs.Int("gain", -1, "SDR gain in tenths of dB for live mode (-1 = automatic)")
 	ppm := fs.Int("ppm", 0, "SDR frequency correction in PPM for live mode")
@@ -127,6 +128,12 @@ EXAMPLES:
 
   # SURVEY (offline): classify + decode a recorded wideband capture, no SDR
   gophertrunk hunt -survey -in wideband.cfile -format f32 -sample-rate 2400000
+
+  # SURVEY (offline): split a wideband capture into every carrier and map them
+  # (-detect-carriers finds off-centre control channels; -survey-deep hands a
+  # C4FM CC the blind classifier reads as FM to the trunking identify)
+  gophertrunk hunt -survey -survey-deep -detect-carriers -in wideband.cfile \
+                  -freq 450500000 -format f32 -sample-rate 2000000
 
   # WIDEBAND (offline): split a wide-band capture into per-carrier streams and
   # group them into one trunked system (-freq is the capture CENTER frequency)
@@ -269,6 +276,9 @@ FLAGS:`)
 				SurveyDeep:            *surveyDeep,
 				SurveyAudioDir:        *surveyAudio,
 				IdentifyMinConfidence: *identifyMinConf,
+				DetectCarriers:        *detectCarriers,
+				FFTSize:               *fftSize,
+				PeakOpts:              hunt.PeakOptions{ThresholdDb: float32(*peakThresholdDb), MinSpacingHz: uint32(*minSpacingHz)},
 				ClassifyConfig: survey.ClassifyConfig{
 					SNRGateDb: *classSNRGate, DigitalProminence: *classDigitalProm, AMEnvelopeCV: *classAMCV,
 				},

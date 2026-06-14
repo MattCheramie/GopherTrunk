@@ -64,6 +64,29 @@ gophertrunk hunt -in cc.cfile -freq 851012500 -sample-rate 2400000 \
 > Without it, a baseband capture locks at 0 Hz and the channel can't be
 > exported.
 
+### Off-centre control channels
+
+`-auto-tune` no longer assumes the control channel is the loudest carrier in
+the capture. It detects the ranked carrier candidates and tries each until one
+identifies/locks, so a control channel that sits off-centre **and** below a
+louder neighbour (e.g. a P25 CC at −625 kHz inside a 2 MSPS grab whose strongest
+carrier is a voice channel) is still found — no manual `-tune-hz` needed. The
+same multi-candidate auto-tune backs `gophertrunk replay`/`analyze -auto-tune`.
+
+To inventory **every** carrier in one wideband recording (not just the control
+channel), add `-detect-carriers` to an offline `-survey`: it FFT-peak-detects all
+carriers, shifts each to baseband, and classifies/decodes them — the offline
+equivalent of the live spectrum sweep. Pair it with `-survey-deep` so a digital
+control channel the blind classifier reads as narrowband FM is still handed to
+the trunking identify:
+
+```sh
+# Find the trunked system + map the whole band from one wideband capture
+gophertrunk hunt -survey -survey-deep -detect-carriers \
+  -in wideband.cfile -freq 450500000 -format f32 -sample-rate 2000000 \
+  -out ./hunt-survey
+```
+
 ## Live mode (spectrum sweep)
 
 Instead of supplying captures, point `hunt` at an SDR and let it find the

@@ -46,13 +46,23 @@ type CandidateScore struct {
 
 // IdentifyResult ranks the candidates and names the most likely protocol.
 type IdentifyResult struct {
-	Source       string           `json:"source"`
-	SampleRateHz float64          `json:"sample_rate_hz"`
-	Winner       string           `json:"winner"`
-	Confidence   float64          `json:"confidence"`
-	Inconclusive bool             `json:"inconclusive"`
-	Candidates   []CandidateScore `json:"candidates"`
+	Source       string  `json:"source"`
+	SampleRateHz float64 `json:"sample_rate_hz"`
+	Winner       string  `json:"winner"`
+	Confidence   float64 `json:"confidence"`
+	Inconclusive bool    `json:"inconclusive"`
+	// TuneHz is the carrier offset the winning candidate locked at — the one
+	// the decode should reuse (under -auto-tune this may be an off-centre,
+	// non-dominant carrier, not the band's loudest). 0 when no shift was used.
+	TuneHz     float64          `json:"tune_hz"`
+	Candidates []CandidateScore `json:"candidates"`
 }
+
+// maxIdentifyCarrierCandidates caps how many carrier offsets the auto-tune
+// identify loop tries before giving up. Each carrier costs one prefix run per
+// protocol, so this bounds the worst case; the loop also early-exits as soon as
+// a carrier clears the confidence floor.
+const maxIdentifyCarrierCandidates = 6
 
 // identifyConfidenceFloor is the minimum confidence below which an
 // identification is reported as inconclusive — a winner with weak,
@@ -105,7 +115,80 @@ func IdentifyReader(r io.ReadSeeker, source string, cfg IdentifyConfig) (*Identi
 		candidates = ccdecoder.RegisteredProtocols()
 	}
 
+	// Resolve the carrier offsets to try. Without auto-tune the capture is
+	// taken as already centred (one pass at 0 Hz — identical to the historical
+	// single-pass behaviour). With auto-tune, detect the candidate carriers
+	// once up front and try each: the loudest carrier may not be the control
+	// channel, so the loop keeps going until one carrier identifies (clears the
+	// confidence floor) or the candidates are exhausted.
+	offsets := []float64{0}
+	if cfg.AutoTune {
+		decode, bytesPerSample := cfg.Format.Decoder()
+		cands, err := estimateCaptureCarrierCandidates(r, decode, bytesPerSample, cfg.SampleRateHz, maxIdentifyCarrierCandidates)
+		if err != nil {
+			return nil, fmt.Errorf("siglab: identify auto-tune: %w", err)
+		}
+		if len(cands) > 0 {
+			offsets = offsets[:0]
+			for _, c := range cands {
+				offsets = append(offsets, c.OffsetHz)
+			}
+		}
+	}
+
 	out := &IdentifyResult{Source: filepath.Base(source), SampleRateHz: cfg.SampleRateHz}
+	var bestScores []CandidateScore
+	bestConf := -1.0
+	bestOffset := 0.0
+	bestLocked := false
+	for _, off := range offsets {
+		scores, err := scanProtocolsAtOffset(r, source, cfg, candidates, off)
+		if err != nil {
+			return nil, err
+		}
+		if len(scores) == 0 {
+			continue
+		}
+		sort.SliceStable(scores, func(i, j int) bool { return scores[i].Score > scores[j].Score })
+		conf := confidenceOf(scores)
+		locked := scores[0].Locked
+		// Prefer a carrier whose winner actually LOCKS over one that merely
+		// looks plausible by cadence. The loudest carrier in a trunked system
+		// is often a traffic channel (same modulation + sync as the control
+		// channel, so it clears the confidence floor) but carries no control
+		// data — only the control channel locks. Among equal lock states the
+		// higher confidence wins.
+		better := bestScores == nil
+		if locked != bestLocked {
+			better = locked
+		} else if conf > bestConf {
+			better = true
+		}
+		if better {
+			bestLocked, bestConf, bestScores, bestOffset = locked, conf, scores, off
+		}
+		// A locked winner above the floor is definitive — no weaker candidate
+		// can beat a real control-channel lock, so stop searching.
+		if locked && conf >= identifyConfidenceFloor {
+			break
+		}
+	}
+	if len(bestScores) == 0 {
+		return nil, fmt.Errorf("siglab: identify produced no candidate scores")
+	}
+	out.Candidates = bestScores
+	out.TuneHz = bestOffset
+	out.Winner = bestScores[0].Protocol
+	out.Confidence = bestConf
+	out.Inconclusive = bestConf < identifyConfidenceFloor
+	return out, nil
+}
+
+// scanProtocolsAtOffset runs every candidate protocol over the capture with the
+// carrier tuned to a fixed offset (auto-tune resolved once by the caller, not
+// re-estimated per protocol), and returns the scored candidates.
+func scanProtocolsAtOffset(r io.ReadSeeker, source string, cfg IdentifyConfig, candidates []trunking.Protocol, tuneHz float64) ([]CandidateScore, error) {
+	scores := make([]CandidateScore, 0, len(candidates))
 	for _, p := range candidates {
 		if _, err := r.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("siglab: identify rewind: %w", err)
@@ -115,7 +198,8 @@ func IdentifyReader(r io.ReadSeeker, source string, cfg IdentifyConfig) (*Identi
 			SystemName:    "identify",
 			SampleRateHz:  cfg.SampleRateHz,
 			Format:        cfg.Format,
-			AutoTune:      cfg.AutoTune,
+			TuneHz:        tuneHz,
+			AutoTune:      false,
 			Conjugate:     cfg.Conjugate,
 			IQCorrect:     cfg.IQCorrect,
 			MaxSamples:    cfg.MaxSamples,
@@ -125,18 +209,9 @@ func IdentifyReader(r io.ReadSeeker, source string, cfg IdentifyConfig) (*Identi
 		if err != nil {
 			continue // a candidate that errors out is simply dropped
 		}
-		out.Candidates = append(out.Candidates, scoreCandidate(p, res))
+		scores = append(scores, scoreCandidate(p, res))
 	}
-	if len(out.Candidates) == 0 {
-		return nil, fmt.Errorf("siglab: identify produced no candidate scores")
-	}
-	sort.SliceStable(out.Candidates, func(i, j int) bool {
-		return out.Candidates[i].Score > out.Candidates[j].Score
-	})
-	out.Winner = out.Candidates[0].Protocol
-	out.Confidence = confidenceOf(out.Candidates)
-	out.Inconclusive = out.Confidence < identifyConfidenceFloor
-	return out, nil
+	return scores, nil
 }
 
 // WinnerResult returns the run Result for the winning candidate (the prefix
