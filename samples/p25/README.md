@@ -10,6 +10,14 @@ the **field truth** — it runs the real signal through the receiver and reports
 the pre-FEC error rate, EVM, estimated SNR, and FSW sync-margin so a weak-decode
 report becomes a number you can act on.
 
+**Status:** validated against a live UHF C4FM site (449.875 MHz, NAC 0x2C1) —
+see `p25-450875-cc.metadata.json`. The harness graded it at EVM ≈ 12.7%,
+SNR ≈ 14.5 dB, sync-margin min=3/median=5, NID trusted=31/failed=0, TSBK
+decoded=36/CRC-failed=0. The `.cfile` itself is git-ignored (capture binaries
+are never committed); the committed metadata sidecar carries the result, and
+the capture is reproducible from the raw 2 MSPS recording via
+`TestGenerateP25Fixture` (`cmd/gophertrunk/p25_make_fixture_test.go`).
+
 Two captures are most valuable, and you can drop either or both:
 
 - a **C4FM** site (the FM-discriminator path — the one the harness shows is the
