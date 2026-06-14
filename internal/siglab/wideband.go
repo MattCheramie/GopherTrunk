@@ -65,18 +65,18 @@ const (
 
 // CarrierResult is one detected carrier surveyed end-to-end.
 type CarrierResult struct {
-	OffsetHz     float64     `json:"offset_hz" yaml:"offset_hz"`
-	FreqHz       uint32      `json:"freq_hz" yaml:"freq_hz"`
-	SNRDb        float32     `json:"snr_db" yaml:"snr_db"`
-	Protocol     string      `json:"protocol" yaml:"protocol"`
-	Confidence   float64     `json:"confidence" yaml:"confidence"`
-	Inconclusive bool        `json:"inconclusive" yaml:"inconclusive"`
-	Locked       bool        `json:"locked" yaml:"locked"`
-	Role         CarrierRole `json:"role" yaml:"role"`
-	ColorCode    uint8       `json:"color_code,omitempty" yaml:"color_code,omitempty"`
-	SystemID     uint32      `json:"system_id,omitempty" yaml:"system_id,omitempty"`
+	OffsetHz     float64       `json:"offset_hz" yaml:"offset_hz"`
+	FreqHz       uint32        `json:"freq_hz" yaml:"freq_hz"`
+	SNRDb        float32       `json:"snr_db" yaml:"snr_db"`
+	Protocol     string        `json:"protocol" yaml:"protocol"`
+	Confidence   float64       `json:"confidence" yaml:"confidence"`
+	Inconclusive bool          `json:"inconclusive" yaml:"inconclusive"`
+	Locked       bool          `json:"locked" yaml:"locked"`
+	Role         CarrierRole   `json:"role" yaml:"role"`
+	ColorCode    uint8         `json:"color_code,omitempty" yaml:"color_code,omitempty"`
+	SystemID     uint32        `json:"system_id,omitempty" yaml:"system_id,omitempty"`
 	Grants       []GrantRecord `json:"grants,omitempty" yaml:"grants,omitempty"`
-	Score        float64     `json:"score" yaml:"score"`
+	Score        float64       `json:"score" yaml:"score"`
 
 	identify *IdentifyResult // retained for the hunt bridge
 	result   *Result         // full Run of the winning protocol
@@ -105,11 +105,11 @@ type SystemRollup struct {
 
 // WidebandResult is the full survey outcome.
 type WidebandResult struct {
-	Source        string          `json:"source" yaml:"source"`
-	SampleRateHz  float64         `json:"sample_rate_hz" yaml:"sample_rate_hz"`
-	CenterHz      uint32          `json:"center_hz" yaml:"center_hz"`
-	ChannelRateHz float64         `json:"channel_rate_hz" yaml:"channel_rate_hz"`
-	Strategy      string          `json:"strategy" yaml:"strategy"`
+	Source        string  `json:"source" yaml:"source"`
+	SampleRateHz  float64 `json:"sample_rate_hz" yaml:"sample_rate_hz"`
+	CenterHz      uint32  `json:"center_hz" yaml:"center_hz"`
+	ChannelRateHz float64 `json:"channel_rate_hz" yaml:"channel_rate_hz"`
+	Strategy      string  `json:"strategy" yaml:"strategy"`
 	// DetectedCount is the number of spectral carrier peaks before the
 	// per-carrier identify filter dropped the ones that didn't decode to a
 	// real protocol (leakage / noise peaks).

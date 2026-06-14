@@ -72,7 +72,7 @@ func TestSurveyWidebandFindsAndSnapsTones(t *testing.T) {
 	// the 12.5 kHz raster (offset divisible by 12.5 kHz from the 441 MHz centre).
 	for _, c := range cands[:2] {
 		rel := int64(c.freqHz) - center
-		if mod := ((rel%12_500)+12_500)%12_500; mod > 100 && mod < 12_400 {
+		if mod := ((rel % 12_500) + 12_500) % 12_500; mod > 100 && mod < 12_400 {
 			t.Errorf("carrier %d Hz (offset %d) not snapped to 12.5 kHz grid (residual %d)", c.freqHz, rel, mod)
 		}
 	}
@@ -128,7 +128,7 @@ func TestSurveyWidebandRecognizesDMRTier3(t *testing.T) {
 	cc := loadFixtureIQ(t, "dmr-t3-cc.cfile")
 	voice := loadFixtureIQ(t, "dmr-voice-term.cfile")
 
-	ctrl := upshift(cc, 4, 1, +48_000, wideRate)  // control at +48 kHz
+	ctrl := upshift(cc, 4, 1, +48_000, wideRate)   // control at +48 kHz
 	vox := upshift(voice, 4, 1, -48_000, wideRate) // voice at -48 kHz
 	n := len(ctrl)
 	if len(vox) < n {
