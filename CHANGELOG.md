@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- **P25 Phase 1 unhandled-TSBK diagnostic now dumps the raw payload (#376).**
+  The first round of CBD/Mt Anakie field diagnostics confirmed the alias is
+  *not* arriving as our control-channel working-model fragment (vendor opcode
+  `0x15`, plain ASCII): zero `cc talker alias`/`fragment` lines fired on either
+  system, even the cleanly-decoding one. The census instead named candidate
+  opcodes (Motorola `0x90` opcode `0x16`; standard `0x15`/`0x16`/`0x30`) but we
+  couldn't tell which carries the alias from the opcode number alone. The
+  `p25: unhandled tsbk` census line now also prints the **numeric** opcode
+  (`Opcode.String()` mislabels vendor opcodes with standard names), and a new
+  `p25: unhandled tsbk payload` line logs the raw 8-byte payload hex, capped at
+  8 samples per distinct `(MFID, opcode)` so a multi-block alias sequence can be
+  captured and reversed against known RIDs / alias strings without flooding a
+  busy control channel. The prior diagnostic round shipped only on an unmerged
+  branch, so a field replay built against `main` saw no payload lines; this
+  lands it on `main`.
+
 ## [v0.4.3] — 2026-06-15
 
 This release is **Signal Lab wide-band tooling**, paired with a TETRA
