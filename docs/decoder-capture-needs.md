@@ -224,7 +224,18 @@ false-positive coverage but **not blocking**.
 - **MDC1200** — over-the-air FEC redundancy isn't exploited yet, but
   that's a decode-improvement follow-up, not a capture gap.
 - **P25 Phase 1 / Phase 2** — full TIA-102 chains ship and decode to
-  audio; Phase 2 inner FEC (trellis / RS / PN44) is closed.
+  audio; Phase 2 inner FEC (trellis / RS / PN44) is closed. The Phase 1
+  C4FM control-channel demod is now confirmed on real air: a live UHF
+  capture (449.875 MHz, NAC 0x2C1) was channelised to 48 kHz and run
+  through the `samples/p25/` demod-quality harness
+  (`TestReplayP25RealCaptureMetrics`), which grades it at EVM ≈ 12.7%,
+  SNR ≈ 14.5 dB, NID 31/0, TSBK 36/0. The capture binary is **not**
+  committed (per `samples/.gitignore`); the committed record is the
+  `samples/p25/p25-450875-cc.metadata.json` sidecar, and the capture is
+  reproducible locally via `TestGenerateP25Fixture`. (The Tier 2 IMBE
+  *voice*-level calibration above is a separate gap — it needs raw IMBE
+  frames + a DSD-FME reference WAV, which a control-channel IQ capture
+  does not provide.)
 - **EDACS, LTR, Motorola Type II, dPMR control** — control chains ship;
   FEC is on by default with no outstanding capture.
 
