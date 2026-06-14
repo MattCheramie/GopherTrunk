@@ -57,6 +57,9 @@ type CaptureReport struct {
 	Skipped    bool    `json:"skipped"`
 	SkipReason string  `json:"skip_reason,omitempty"`
 	Error      string  `json:"error,omitempty"`
+	// Verdict is the wideband survey's system-level summary line (set only by
+	// DiscoverWideband). Empty for single-carrier captures.
+	Verdict string `json:"verdict,omitempty"`
 }
 
 // Discover folds every capture into a single DiscoveredSystem. Captures whose
