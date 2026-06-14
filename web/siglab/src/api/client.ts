@@ -14,6 +14,8 @@ import type {
   ProtocolsDTO,
   RunConfig,
   SynthRequest,
+  WidebandRequest,
+  WidebandResult,
 } from "./types";
 
 export interface ClientConfig {
@@ -126,6 +128,11 @@ export const api = {
       capture_id: captureID,
       ...opts,
     }),
+
+  // wideband surveys a staged multi-carrier capture: averaged band spectrum +
+  // per-carrier identification + trunked-system rollups.
+  wideband: (c: ClientConfig, body: WidebandRequest) =>
+    req<WidebandResult>(c, "POST", "/api/v1/siglab/wideband", body),
 
   // synthesize stages an idealized/impaired capture and returns its DTO.
   synthesize: (c: ClientConfig, body: SynthRequest) =>

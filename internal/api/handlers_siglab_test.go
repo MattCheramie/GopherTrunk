@@ -3,6 +3,9 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"math"
+	"math/cmplx"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -165,5 +168,89 @@ func TestSiglabRunMissingCapture(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestSiglabWideband uploads a synthetic two-carrier wideband capture and
+// surveys it, asserting the endpoint returns the averaged band spectrum (for
+// plotting) and detects both planted carriers.
+func TestSiglabWideband(t *testing.T) {
+	ts := newSiglabTestServer(t)
+
+	// Two complex tones over a noise floor in a 2 MS/s band, ~400 Hz off the
+	// 12.5 kHz raster (mirrors the siglab wideband detector test).
+	const rate = 2_000_000.0
+	const center = 441_000_000
+	n := 1 << 16
+	iq := make([]complex64, n)
+	seed := uint64(1)
+	rnd := func() float64 { // tiny LCG → ~uniform in [-0.5,0.5)
+		seed = seed*6364136223846793005 + 1442695040888963407
+		return float64(seed>>11)/float64(1<<53) - 0.5
+	}
+	for i := range iq {
+		iq[i] = complex(float32(rnd()*0.04), float32(rnd()*0.04))
+	}
+	addTone := func(freqHz, amp float64) {
+		step := cmplx.Exp(complex(0, 2*math.Pi*freqHz/rate))
+		ph := complex(1, 0)
+		for i := range iq {
+			iq[i] += complex64(complex(amp, 0) * ph)
+			ph *= step
+		}
+	}
+	addTone(300_000+400, 1.0)
+	addTone(-250_000+400, 0.7)
+
+	// Upload the capture as raw f32 via the multipart endpoint.
+	raw := siglab.EncodeCapture(iq, siglab.FormatF32)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "wide.cf32")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fw.Write(raw); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+	_ = mw.WriteField("format", "f32")
+	_ = mw.WriteField("sample_rate_hz", "2000000")
+	_ = mw.Close()
+
+	upResp, err := http.Post(ts.URL+"/api/v1/siglab/captures", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	defer upResp.Body.Close()
+	if upResp.StatusCode != http.StatusOK {
+		t.Fatalf("upload status = %d, want 200", upResp.StatusCode)
+	}
+	var cap siglabCaptureDTO
+	if err := json.NewDecoder(upResp.Body).Decode(&cap); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+
+	// Survey the staged capture.
+	body := `{"capture_id":"` + cap.ID + `","center_hz":441000000}`
+	wbResp, err := http.Post(ts.URL+"/api/v1/siglab/wideband", "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("wideband: %v", err)
+	}
+	defer wbResp.Body.Close()
+	if wbResp.StatusCode != http.StatusOK {
+		t.Fatalf("wideband status = %d, want 200", wbResp.StatusCode)
+	}
+	var got siglab.WidebandResult
+	if err := json.NewDecoder(wbResp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode wideband: %v", err)
+	}
+	if got.Spectrum == nil || len(got.Spectrum.Bins) == 0 {
+		t.Fatal("expected a spectrum with bins for plotting")
+	}
+	if got.Spectrum.CenterHz != center {
+		t.Errorf("spectrum center = %d, want %d", got.Spectrum.CenterHz, center)
+	}
+	if got.DetectedCount < 2 {
+		t.Errorf("detected_count = %d, want >= 2", got.DetectedCount)
 	}
 }
