@@ -421,7 +421,9 @@ func (s *Server) handleSiglabIdentify(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	// Strip any non-finite metric (SNR/EVM/confidence on a marginal carrier) so
+	// the response can't fail mid-encode after the 200 header (issue #648).
+	writeJSON(w, http.StatusOK, scrubNonFinite(out))
 }
 
 // handleSiglabWideband surveys a staged wideband capture: it builds the
@@ -492,7 +494,7 @@ func (s *Server) handleSiglabWideband(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, scrubNonFinite(out))
 }
 
 // siglabSynthRequest is the body of POST /api/v1/siglab/synthesize. It mirrors
