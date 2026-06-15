@@ -62,6 +62,21 @@ real-air confirmation**. A single labeled capture closes each one.
 - **Cross-check:** telive 1.5 / osmo-tetra.
 - **Pass bar:** CC lock < 5 s, ≥ 90% frame recovery, Viterbi correction
   depth p95 ≤ 8 / p99 ≤ 12 bit-errors per 116-bit block.
+- **Verification progress (live 468.5 MHz / 1 Msps captures):** two
+  blockers found and one fixed. (1) The captured front-end was
+  **spectrum-inverted** — set `iq_invert: true` (or replay with
+  `-conjugate`); with that the normal-burst demod is clean (NTS1 at
+  Hamming distance 0). (2) A real-air decoder bug: the BSCH colour-code
+  recovery only correlated the rotation-0 orientation of the
+  synchronisation training sequence, but π/4-DQPSK's residual-CFO term
+  rotates the whole dibit stream — now fixed to try all four rotations
+  (`internal/radio/tetra/process.go`, guarded by
+  `TestRecoverColourCodeUnderRotation` +
+  `TestProcessLearnsColourCodeFromSBBurstUnderRotation`). Still open:
+  the supplied clips are only ≈3.3 s each (too few frame-18 SB slots)
+  and their SB region does not demodulate cleanly, so no `cc.locked`
+  fires yet. Closing this needs a **≥30 s** cleartext capture spanning
+  several clean synchronisation bursts. See `samples/tetra/README.md`.
 
 ### YSF (Yaesu System Fusion, DN mode)
 - **What to capture:** A YSF carrier (Pi-Star/reflector or a keyed HT).
