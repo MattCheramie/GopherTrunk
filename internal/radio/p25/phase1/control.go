@@ -124,15 +124,17 @@ type ControlChannel struct {
 	// is broken" from "demod is fine but one frame in N is corrupt".
 	stats CCStats
 
-	// diagSeen rate-limits one-shot diagnostic Info lines to the first
-	// occurrence of a given key, so a field tester sees the census of
-	// what a site emits without the per-frame flood that keeps the
-	// per-opcode detail at Debug. Keys: unhandled (MFID,opcode) pairs
-	// and first-seen talker-alias source units. Written only from the
-	// dispatchTSBK path, which runs on the single Process goroutine
-	// (the sole writer of decode state), so no lock is needed — unlike
-	// stats, this is never read off-goroutine. Issue #376 (CBD).
-	diagSeen map[uint32]struct{}
+	// diagSeen counts, per diagnostic key, how many times the key has
+	// been observed, so one-shot census lines fire on the first sight
+	// and payload samples are capped — letting a field tester see what
+	// a site emits (including the raw bytes of opcodes we don't decode)
+	// without the per-frame flood that keeps the per-opcode detail at
+	// Debug. Keys: unhandled (MFID,opcode) pairs and first-seen
+	// talker-alias source units (namespaced by the high byte). Written
+	// only from the dispatchTSBK path, which runs on the single Process
+	// goroutine (the sole writer of decode state), so no lock is needed
+	// — unlike stats, this is never read off-goroutine. Issue #376 (CBD).
+	diagSeen map[uint32]int
 }
 
 // CCStats is the snapshot Stats() returns. All counters are
@@ -305,7 +307,7 @@ func New(opts Options) *ControlChannel {
 		bandPlan:            bp,
 		now:                 now,
 		aliasAsm:            NewTalkerAliasAssembler(now),
-		diagSeen:            make(map[uint32]struct{}),
+		diagSeen:            make(map[uint32]int),
 		rotations:           resolveRotations(opts.Rotations),
 		nidSearchSpan:       span,
 		p25Phase1DemodMode:  opts.P25Phase1DemodMode,
@@ -1037,13 +1039,10 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	case OpUnitRegistrationResponse:
 		c.publishUnitRegistration(ParseUnitRegistrationResponse(t.Payload), nac)
 	default:
-		// One Info census line per distinct (MFID,opcode) — a standard
-		// opcode we don't dispatch could be (or carry) the alias
-		// transport a given site uses; the bulk per-frame detail stays
-		// at Debug. Issue #376 (CBD).
-		if c.diagFirst(diagUnhandledTSBK | uint32(t.MFID)<<8 | uint32(t.Opcode)) {
-			c.log.Info("p25: unhandled tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
-		}
+		// Census + raw-payload sample — a standard opcode we don't
+		// dispatch could be (or carry) the alias transport a given site
+		// uses; the bulk per-frame detail stays at Debug. Issue #376 (CBD).
+		c.logUnhandledTSBK(t, nac)
 		c.log.Debug("tsbk decoded",
 			"opcode", t.Opcode, "lb", t.LB, "metric", metric, "nac", nac)
 	}
@@ -1084,12 +1083,10 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		}
 		return
 	}
-	// Unrecognised vendor opcode: log one Info census line per distinct
-	// (MFID,opcode) so a field test names any alias-bearing transport we
-	// don't yet decode, while the per-frame detail stays at Debug.
-	if c.diagFirst(diagUnhandledTSBK | uint32(t.MFID)<<8 | uint32(t.Opcode)) {
-		c.log.Info("p25: unhandled tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
-	}
+	// Unrecognised vendor opcode: census + raw-payload sample so a field
+	// test can name and reverse any alias-bearing transport we don't yet
+	// decode, while the per-frame detail stays at Debug.
+	c.logUnhandledTSBK(t, nac)
 	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
 }
 
@@ -1101,15 +1098,40 @@ const (
 	diagAliasSrc      uint32 = 2 << 24
 )
 
+// maxUnhandledSamples caps how many raw payloads are logged per distinct
+// (MFID,opcode) so a busy CC stays bounded; 8 is enough to catch a full
+// multi-block alias sequence on a candidate opcode. Issue #376 (CBD).
+const maxUnhandledSamples = 8
+
 // diagFirst reports whether key is being seen for the first time,
 // recording it so subsequent calls return false. Single-writer
 // (Process goroutine) — see diagSeen.
 func (c *ControlChannel) diagFirst(key uint32) bool {
-	if _, seen := c.diagSeen[key]; seen {
-		return false
+	n := c.diagSeen[key]
+	c.diagSeen[key] = n + 1
+	return n == 0
+}
+
+// logUnhandledTSBK emits the field diagnostics for a TSBK we don't
+// dispatch: one Info census line per distinct (MFID,opcode) — with the
+// numeric opcode, since Opcode.String() mislabels vendor opcodes with
+// standard names — plus up to maxUnhandledSamples raw-payload lines so a
+// field tester can capture the bytes of a candidate alias transport and
+// cross-check them against known RIDs / alias strings. Issue #376 (CBD).
+func (c *ControlChannel) logUnhandledTSBK(t TSBK, nac uint16) {
+	key := diagUnhandledTSBK | uint32(t.MFID)<<8 | uint32(t.Opcode)
+	n := c.diagSeen[key]
+	c.diagSeen[key] = n + 1
+	if n == 0 {
+		c.log.Info("p25: unhandled tsbk",
+			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+			"name", t.Opcode, "nac", nac)
 	}
-	c.diagSeen[key] = struct{}{}
-	return true
+	if n < maxUnhandledSamples {
+		c.log.Info("p25: unhandled tsbk payload",
+			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]), "nac", nac)
+	}
 }
 
 // publishPatch publishes an events.KindPatch for a vendor patch /

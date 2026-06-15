@@ -204,7 +204,8 @@ func TestDiagFirst(t *testing.T) {
 // TestControlChannelCensusesUnhandledTSBK confirms an undecoded vendor
 // opcode produces exactly one Info census line per distinct (MFID,opcode)
 // — the signal a CBD-class field test needs to name an alias transport we
-// don't yet decode (issue #376) — and that a handled opcode does not.
+// don't yet decode (issue #376) — plus a capped run of raw-payload sample
+// lines carrying the bytes, so the transport can be reverse-engineered.
 func TestControlChannelCensusesUnhandledTSBK(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -212,13 +213,33 @@ func TestControlChannelCensusesUnhandledTSBK(t *testing.T) {
 	defer bus.Close()
 	cc := New(Options{Bus: bus, Log: log, SystemName: "S"})
 
-	// An unknown Motorola opcode (not patch/delete/alias) twice.
-	unknown := TSBK{Opcode: 0x3F, MFID: MFIDMotorola, Payload: [8]byte{}}
-	cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, unknown), 0)
-	cc.Process(buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, unknown), 1<<20)
+	// An unknown Motorola opcode (not patch/delete/alias) seen more times
+	// than the payload-sample cap, with a recognisable payload.
+	unknown := TSBK{Opcode: 0x3F, MFID: MFIDMotorola,
+		Payload: [8]byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04}}
+	const fires = maxUnhandledSamples + 3
+	for i := 0; i < fires; i++ {
+		lead := 0
+		if i == 0 {
+			lead = 10 // establish lock on the first frame
+		}
+		cc.Process(buildLockedStreamWithTSBK(lead, 0x293, DUIDTrunkingSignaling, unknown), i<<20)
+	}
 
-	if n := strings.Count(buf.String(), "p25: unhandled tsbk"); n != 1 {
+	out := buf.String()
+	// The summary message is a prefix of the payload message, so match the
+	// closing quote slog adds around the (space-containing) msg value.
+	if n := strings.Count(out, `msg="p25: unhandled tsbk"`); n != 1 {
 		t.Errorf("unhandled-tsbk census lines = %d, want 1 (one per distinct opcode)", n)
+	}
+	if n := strings.Count(out, `msg="p25: unhandled tsbk payload"`); n != maxUnhandledSamples {
+		t.Errorf("unhandled-tsbk payload lines = %d, want %d (capped)", n, maxUnhandledSamples)
+	}
+	if !strings.Contains(out, "deadbeef01020304") {
+		t.Error("payload sample line missing the raw payload hex")
+	}
+	if !strings.Contains(out, "opcode=0x3F") {
+		t.Error("diagnostic missing numeric opcode (Opcode.String mislabels vendor opcodes)")
 	}
 }
 
