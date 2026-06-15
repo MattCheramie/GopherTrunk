@@ -2,6 +2,12 @@ package metrics
 
 import "math"
 
+// maxSNREstimateDB is the finite ceiling reported for a noise-free input whose
+// residual is ~0 (SNR → +Inf). Returning a large finite number instead of an
+// infinity keeps the estimate JSON-marshalable and self-consistent; it mirrors
+// siglab's demodSNRCapDB so a value that flows through capSNR is unchanged.
+const maxSNREstimateDB = 99.0
+
 // SNRFromEVM converts an error-vector-magnitude percentage to an SNR in dB
 // under the standard assumption that the residual error vector is the noise:
 //
@@ -9,10 +15,10 @@ import "math"
 //
 // It is the quick cross-check on the residual-variance estimators below — they
 // should agree to within a fraction of a dB on a clean AWGN stream. Returns
-// +Inf for a zero EVM (a noise-free constellation).
+// maxSNREstimateDB (a finite ceiling) for a zero EVM (a noise-free constellation).
 func SNRFromEVM(evmPct float64) float64 {
 	if evmPct <= 0 {
-		return math.Inf(1)
+		return maxSNREstimateDB
 	}
 	return -20 * math.Log10(evmPct/100)
 }
@@ -27,7 +33,7 @@ func SNRFromEVM(evmPct float64) float64 {
 // outer is the outer-rail reference (see EstimateOuterRailC4FM when unknown).
 // This is modulation-aware (it knows the 4-level structure), so unlike a
 // blind moment estimator it stays unbiased on the non-constant-modulus C4FM
-// eye. Returns +Inf when the residual is zero and 0 for an empty input.
+// eye. Returns maxSNREstimateDB when the residual is zero and 0 for an empty input.
 func SNRResidualC4FM(soft []float32, outer float64) float64 {
 	if len(soft) == 0 || outer <= 0 {
 		return 0
@@ -50,7 +56,7 @@ func SNRResidualC4FM(soft []float32, outer float64) float64 {
 		noiseSq += best
 	}
 	if noiseSq <= 0 {
-		return math.Inf(1)
+		return maxSNREstimateDB
 	}
 	return 10 * math.Log10(sigSq/noiseSq)
 }
@@ -59,14 +65,14 @@ func SNRResidualC4FM(soft []float32, outer float64) float64 {
 // in dB from the residual about the nearest ideal QPSK point. Signal power is
 // the reference radius squared (the RMS modulus); noise power is the mean
 // square distance to the assigned ideal point, in the same normalized units.
-// Returns +Inf for a zero residual and 0 for an empty input.
+// Returns maxSNREstimateDB for a zero residual and 0 for an empty input.
 func SNRResidualConstellation(points []complex64) float64 {
 	evm := EVMConstellation(points)
 	if evm <= 0 {
 		if len(points) == 0 {
 			return 0
 		}
-		return math.Inf(1)
+		return maxSNREstimateDB
 	}
 	return SNRFromEVM(evm)
 }
@@ -81,8 +87,8 @@ func SNRResidualConstellation(points []complex64) float64 {
 // It needs no decisions, so it cross-checks the decision-directed residual
 // estimator: the two should agree on a QPSK stream. It is *not* valid on the
 // non-constant-modulus C4FM soft axis (the kurtosis assumption breaks), so
-// there is deliberately no C4FM M2M4 variant. Returns 0 for an empty input or
-// when the moments fall outside the estimator's valid region.
+// there is deliberately no C4FM M2M4 variant. Returns 0 for an empty input and
+// maxSNREstimateDB when the moments fall in the noise-free region (disc/noise ≤ 0).
 func SNRM2M4Constellation(points []complex64) float64 {
 	n := len(points)
 	if n == 0 {
@@ -98,12 +104,12 @@ func SNRM2M4Constellation(points []complex64) float64 {
 	m4 /= float64(n)
 	disc := 2*m2*m2 - m4
 	if disc <= 0 {
-		return math.Inf(1) // essentially noise-free (M4 → M2²·... region)
+		return maxSNREstimateDB // essentially noise-free (M4 → M2²·... region)
 	}
 	s := math.Sqrt(disc)
 	noise := m2 - s
 	if noise <= 0 {
-		return math.Inf(1)
+		return maxSNREstimateDB
 	}
 	return 10 * math.Log10(s/noise)
 }

@@ -95,6 +95,35 @@ func TestSNRResidualC4FM(t *testing.T) {
 	approx(t, got, want, 0.6, "C4FM residual SNR")
 }
 
+// TestSNRNoiseFreeIsFinite pins that a noise-free input never yields +Inf/NaN —
+// the estimate stays JSON-marshalable and threshold comparisons keep working
+// (issue #648 follow-up). The zero-EVM guard returns the finite ceiling exactly;
+// the residual estimators on float32-quantised clean inputs return a large but
+// finite value (the tiny quantisation residual keeps them off the exact-zero
+// branch), which is equally fine — the point is "finite, never infinity".
+func TestSNRNoiseFreeIsFinite(t *testing.T) {
+	cleanSoft := makeC4FMSoft(4000, 1.0, 0, 11)
+	cleanPts := makeQPSK(4000, 1.0, 0, 12)
+	cases := []struct {
+		name string
+		got  float64
+	}{
+		{"SNRFromEVM", SNRFromEVM(0)},
+		{"SNRResidualC4FM", SNRResidualC4FM(cleanSoft, 1.0)},
+		{"SNRResidualConstellation", SNRResidualConstellation(cleanPts)},
+		{"SNRM2M4Constellation", SNRM2M4Constellation(cleanPts)},
+	}
+	for _, c := range cases {
+		if math.IsInf(c.got, 0) || math.IsNaN(c.got) {
+			t.Errorf("%s returned non-finite %v, want a finite estimate", c.name, c.got)
+		}
+	}
+	// The directly-constructible zero-EVM guard returns the finite ceiling.
+	if got := SNRFromEVM(0); got != maxSNREstimateDB {
+		t.Errorf("SNRFromEVM(0) = %v, want maxSNREstimateDB (%v)", got, maxSNREstimateDB)
+	}
+}
+
 func TestSNRM2M4AgreesWithResidual(t *testing.T) {
 	// On a QPSK stream the moment estimator and the decision-directed
 	// residual estimator should land close.
