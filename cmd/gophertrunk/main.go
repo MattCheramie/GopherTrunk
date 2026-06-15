@@ -62,6 +62,8 @@ func main() {
 		runAnalyze(os.Args[2:])
 	case "identify":
 		runIdentify(os.Args[2:])
+	case "spectrum":
+		runSpectrum(os.Args[2:])
 	case "hunt":
 		runHunt(os.Args[2:])
 	case "gen":
@@ -120,6 +122,7 @@ USAGE:
   gophertrunk replay [flags]          decode a raw IQ capture file offline (any protocol)
   gophertrunk analyze [flags]         decode + analyze a capture with structured export (json/yaml/csv)
   gophertrunk identify [flags]        auto-detect the protocol in a capture, then analyze it
+  gophertrunk spectrum [flags]        print a capture's power spectrum + detected carriers + RMS (no decode)
   gophertrunk hunt [flags]            discover & map an unknown trunked system, export it + an RR submission package
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar

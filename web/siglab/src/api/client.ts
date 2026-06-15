@@ -12,7 +12,9 @@ import type {
   IdentifyResult,
   JobDTO,
   ProtocolsDTO,
+  PSDResult,
   RunConfig,
+  SpectrogramResult,
   SynthRequest,
   WidebandRequest,
   WidebandResult,
@@ -118,6 +120,18 @@ export const api = {
 
   jobIQ: (c: ClientConfig, id: string) =>
     req<IQTaps>(c, "GET", `/api/v1/siglab/jobs/${id}/iq`),
+
+  // jobPSD / jobSpectrogram fetch the server-computed spectrum of a job's IQ,
+  // so the UI plots them without an in-browser FFT (no TensorFlow.js).
+  jobPSD: (c: ClientConfig, id: string, fft = 1024) =>
+    req<PSDResult>(c, "GET", `/api/v1/siglab/jobs/${id}/psd?fft=${fft}`),
+
+  jobSpectrogram: (c: ClientConfig, id: string, fft = 256, hop = 128) =>
+    req<SpectrogramResult>(
+      c,
+      "GET",
+      `/api/v1/siglab/jobs/${id}/spectrogram?fft=${fft}&hop=${hop}`,
+    ),
 
   identify: (
     c: ClientConfig,

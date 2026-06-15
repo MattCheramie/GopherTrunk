@@ -1061,6 +1061,8 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}", s.handleSiglabJobResult)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/events", s.handleSiglabJobStream)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/iq", s.handleSiglabJobIQ)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/psd", s.handleSiglabJobPSD)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/spectrogram", s.handleSiglabJobSpectrogram)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
 		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
 		mux.HandleFunc("POST /api/v1/siglab/wideband", s.gate(s.handleSiglabWideband))
