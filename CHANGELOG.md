@@ -7,6 +7,117 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.3] — 2026-06-15
+
+This release is **Signal Lab wide-band tooling**, paired with a TETRA
+real-air fix and two decode-validation milestones. Offline auto-tune used to
+chase only the single loudest carrier, so a control channel that was both
+**off-centre and not dominant** in a wide capture was missed; siglab and Hunt
+now rank every carrier in the band and prefer the one that actually *locks*,
+fixing the live P25 captures that previously mis-latched (#678). Building on
+that, a new **wide-band multi-carrier survey** takes one IQ grab, finds every
+carrier, decodes each, and recognises a DMR Tier III trunked system in a
+single shot — exposed as a siglab library call, an offline `hunt -wideband`
+path, a `POST /api/v1/siglab/wideband` endpoint, and a matplotlib-style
+*Wideband* panel in the web console (#677, #679). A new **`gophertrunk
+spectrum`** subcommand prints the band RMS power, Welch-averaged spectrum, and
+detected carriers as text / JSON / CSV — the Python-free analog of
+`numpy.fft` + `matplotlib` (#680). Signal Lab's Results-view PSD and
+spectrogram now compute **server-side in Go**, letting the heavy
+**TensorFlow.js** browser dependency be dropped entirely (#680). On the decode
+side, TETRA control channels now **recover the BSCH colour code under any
+π/4-DQPSK rotation** so real-air downlinks (which sit at a non-zero rotation)
+actually learn their colour code (#681, #648), with a new differential-phase
+*rotation tracker* viz to make the rotation visible (#682). Finally, live
+captures **confirm DMR BPTC/RS Full-LC and P25 Phase 1 C4FM control-channel
+decode on air**, closing two long-standing real-air validation gaps (#675,
+#676, #527).
+
+### Added
+
+- **`gophertrunk spectrum` subcommand.** A Python-free, no-server analog of
+  `numpy.fft` + `matplotlib`: given a recorded capture it prints the band RMS
+  power, the Welch-averaged spectrum, and the detected carriers as text, JSON,
+  or CSV — absolute frequencies with `-freq`, otherwise offsets from DC. On the
+  delivered P25 captures it lists the 449.875 MHz control channel at SNR
+  ≈47 dB. (#680)
+- **Signal Lab wide-band multi-carrier survey.** `siglab.SurveyWideband` /
+  `SurveyWidebandIQ` take a wide-band IQ buffer, find every carrier (Welch
+  spectrum → peak detection → power-weighted centring of wide C4FM humps →
+  grid-snap), down-convert and identify each, then cluster the results into
+  control-vs-voice system rollups — recognising a DMR Tier III trunked system
+  in one shot rather than auto-tuning to a single dominant carrier. Reused by a
+  new offline `hunt -wideband -in <capture>` path that folds every DMR carrier
+  into one discovered system. (#677)
+- **Wide-band survey over REST + web.** `POST /api/v1/siglab/wideband` surveys
+  a staged capture and returns the averaged band spectrum, per-carrier results,
+  and system rollups (spectrum collection gated so the offline path stays
+  lean). A new *Wideband* panel in `web/siglab` renders the averaged spectrum
+  with each detected carrier marked by control/voice role alongside the
+  trunked-system rollup table. (#679)
+- **Hunt / siglab auto-identify of off-centre, non-dominant control channels.**
+  Offline auto-tune now detects and ranks multiple carrier candidates
+  (`dsp.EstimateCarrierCandidatesHz`) and, under `-auto-tune`, tries each —
+  preferring a carrier whose decoder actually *locks* over a louder one that
+  merely looks plausible — so a control channel under a louder neighbour is
+  found automatically (13/13 live P25 segments now lock, was 11/13). Hunt gains
+  a `-detect-carriers` flag that FFT-averages a recorded buffer and sweeps every
+  detected carrier through the classify/decode body, inventorying a whole band
+  from one capture with no SDR. (#678)
+- **π/4-DQPSK rotation tracker viz.** Signal Lab's Results view gains a
+  `RotationTracker` plot of per-symbol differential phase against the ideal
+  ±π/4 / ±3π/4 rails (populated on the CQPSK path), making constellation
+  rotation directly visible. Backed by new native-Go DSP helper packages
+  (`internal/dsp/stats`, `internal/dsp/phase`) consolidated from previously
+  inlined numpy/scipy-style operations. (#682)
+
+### Changed
+
+- **Signal Lab computes the Results-view PSD and spectrogram server-side; drops
+  TensorFlow.js.** New `GET /api/v1/siglab/jobs/{id}/psd` and `/spectrogram`
+  endpoints compute the spectra in Go from the job's captured IQ
+  (`spectrum.AverageDB` / `Spectrogram`); the PSD, Spectrogram, and Compare
+  overlay views now fetch the server-computed spectrum by job id instead of
+  computing it in-browser. The `@tensorflow/tfjs` dependency — used only for
+  that in-browser compute — is removed from `web/siglab`, shrinking the bundle.
+  Plotly, Chart.js, and D3 are unaffected. (#680)
+- **Wide-band survey DSP primitives promoted into shared, tested functions.**
+  The Welch-averaged spectrum (`spectrum.AverageDB`), boxcar smoothing, robust
+  percentile noise floor, power-weighted carrier centroid, RMS / dB helpers,
+  and an STFT spectrogram now live in `internal/dsp/spectrum` and
+  `internal/carriers` instead of being inlined and duplicated across siglab and
+  hunt. Behaviour-preserving refactor guarded by the existing survey tests.
+  (#679, #680, #682)
+
+### Fixed
+
+- **TETRA BSCH colour-code recovery was rotation-blind** (#648). π/4-DQPSK
+  carries data in the differential phase, so a residual carrier offset
+  cyclically rotates the whole demodulated stream by an unknown 0–3; the
+  synchronisation-training-sequence correlator that gates BSCH colour-code
+  recovery matched only the rotation-0 orientation, so real-air downlinks
+  (which sat at rotation 1) never learned a colour code and the reference
+  carrier never locked — while the synthesised fixtures, all at rotation 0,
+  hid the bug. `RecoverColourCode` and the live STS detector now correlate the
+  sync training sequence under all four rotations. (#681)
+
+### Validated
+
+- **DMR BPTC/RS Full-LC decode confirmed on real air** (#527 follow-up). Live
+  441 MHz / 2 MS/s DMR Tier III captures replayed through the production
+  receiver decode the `BPTC(196,96) → RS(12,9) → Full LC` chain cleanly
+  (Terminator-with-LC recovers a stable RS-validated FLC; control-channel CSBKs
+  pass BPTC + CRC and the Tier III control channel locks), refuting the
+  "real-air BPTC/RS is broken" hypothesis. Captured as no-build-tag regression
+  tests with committed channelised fixtures. (#675)
+- **P25 Phase 1 C4FM control-channel demod validated on a live UHF capture**
+  (#676). Thirteen live 450.500 MHz / 2 MSPS captures of a real UHF P25 system
+  all decode to NAC `0x2C1`, with C4FM consistently out-decoding CQPSK; the
+  cleanest segment reads EVM 12.7 %, SNR ≈14.5 dB, NID trusted 31 / failed 0,
+  TSBK 36 with zero CRC/trellis failures. Recorded as a demod-quality gate
+  (`samples/p25/p25-450875-cc.metadata.json`) with floors below the measured
+  values. (#676)
+
 ## [v0.4.2] — 2026-06-14
 
 This release is mostly **hunt / survey maturation**, with TETRA blind identify
