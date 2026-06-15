@@ -228,6 +228,10 @@ func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32
 		chIQ: chIQ, chRate: chRate,
 		cand: cand, opts: opts, log: log,
 	})
+	// Guarantee the signal is JSON-encodable before it is stored, published on
+	// the event bus, or written to NDJSON — a non-finite measurement must not be
+	// able to break the live survey's wire stream (issue #648).
+	ds.sanitize()
 	return ds, rep
 }
 

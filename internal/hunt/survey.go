@@ -1,6 +1,7 @@
 package hunt
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -52,6 +53,42 @@ type TrunkingRef struct {
 	Confidence float64 `json:"confidence"`
 	Locked     bool    `json:"locked"`
 	ControlHz  uint32  `json:"control_hz,omitempty"`
+}
+
+// finiteOr0 returns f unless it is NaN or ±Inf, in which case it returns 0.
+// JSON has no encoding for non-finite floats, so a stray Inf/NaN from a
+// divide-by-zero or log-of-zero on a dead/marginal carrier would otherwise
+// break the whole event stream the moment it was marshaled (issue #648).
+func finiteOr0(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
+}
+
+// sanitize clamps every non-finite float (NaN / ±Inf) on the signal — including
+// the nested Features, Trunking, and Analog measurements — to 0 so the signal is
+// always JSON-encodable. A marginal or dead carrier can produce an infinite SNR
+// (noise-free residual), an infinite confidence (siglab scoring), or a -Inf
+// analog power (log of zero); any one of those would fail json.Marshal and, on
+// the WebSocket event stream, tear the live survey's connection down (issue #648).
+func (ds *DetectedSignal) sanitize() {
+	ds.SNRDb = float32(finiteOr0(float64(ds.SNRDb)))
+	ds.Confidence = finiteOr0(ds.Confidence)
+	ds.BaudHz = finiteOr0(ds.BaudHz)
+	ds.Features.SNRDb = finiteOr0(ds.Features.SNRDb)
+	ds.Features.EnvelopeCV = finiteOr0(ds.Features.EnvelopeCV)
+	ds.Features.IFStd = finiteOr0(ds.Features.IFStd)
+	ds.Features.IFKurtosis = finiteOr0(ds.Features.IFKurtosis)
+	ds.Features.BaudHz = finiteOr0(ds.Features.BaudHz)
+	ds.Features.BaudProminence = finiteOr0(ds.Features.BaudProminence)
+	if ds.Trunking != nil {
+		ds.Trunking.Confidence = finiteOr0(ds.Trunking.Confidence)
+	}
+	if ds.Analog != nil {
+		ds.Analog.PowerDbFS = finiteOr0(ds.Analog.PowerDbFS)
+		ds.Analog.CTCSSHz = finiteOr0(ds.Analog.CTCSSHz)
+	}
 }
 
 // sortSignals orders the inventory by frequency so the output is deterministic
