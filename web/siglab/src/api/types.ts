@@ -19,6 +19,24 @@ export interface IQTaps {
   symbol_cardinality?: number;
 }
 
+// PSDResult is the server-computed Welch power spectrum from
+// GET /jobs/{id}/psd: FFT-shifted dBFS bins (bin 0 = -sample_rate_hz/2).
+export interface PSDResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  bins: number[];
+}
+
+// SpectrogramResult is the server-computed STFT from GET /jobs/{id}/spectrogram:
+// z[frame][bin] dBFS, each row FFT-shifted (bin 0 = -sample_rate_hz/2).
+export interface SpectrogramResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  hop: number;
+  frames: number;
+  z: number[][];
+}
+
 export interface LockInfo {
   frequency_hz: number;
   fields: Record<string, unknown>;

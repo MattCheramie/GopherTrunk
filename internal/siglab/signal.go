@@ -3,6 +3,7 @@ package siglab
 import (
 	"math"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 )
@@ -33,6 +34,11 @@ type SignalQuality struct {
 	IQPhaseImbalanceDeg float64 `json:"iq_phase_imbalance_deg" yaml:"iq_phase_imbalance_deg"`
 	IQImageRejectionDB  float64 `json:"iq_image_rejection_db" yaml:"iq_image_rejection_db"`
 	IQObserved          bool    `json:"iq_observed" yaml:"iq_observed"`
+
+	// RMSPowerDBFS is the raw-capture RMS power in dBFS (20·log10 of the RMS
+	// amplitude; 0 dBFS = a full-scale signal). It is the capture-level power
+	// figure the `spectrum` CLI reports; populated only when raw IQ was observed.
+	RMSPowerDBFS float64 `json:"rms_power_dbfs" yaml:"rms_power_dbfs"`
 
 	// DecodeErrorRate is decode-error events per recovered 1000 symbols — a
 	// protocol-neutral proxy for FEC stress.
@@ -87,6 +93,10 @@ type analyzer struct {
 	symbols     int64
 	iqStats     rtlsdr.IQImbalanceStats
 	iqObserved  bool
+	// rmsSqSum / rmsN accumulate Σ|x|² and the sample count over the raw IQ so
+	// result() can report the capture's RMS power without buffering it.
+	rmsSqSum float64
+	rmsN     int64
 
 	// bufferSymbols retains the full recovered-symbol stream for the
 	// protocol-specific deep dive (P25 P1's FSW/NID landscape). Off by
@@ -145,6 +155,11 @@ func (a *analyzer) observeSymbols(symbols []uint8, isBits bool) {
 func (a *analyzer) observeIQ(raw []complex64) {
 	a.iqStats.Observe(raw)
 	a.iqObserved = true
+	for _, v := range raw {
+		re, im := float64(real(v)), float64(imag(v))
+		a.rmsSqSum += re*re + im*im
+	}
+	a.rmsN += int64(len(raw))
 }
 
 // result builds the SignalQuality from the accumulated observations.
@@ -166,6 +181,9 @@ func (a *analyzer) result(decodeErrors int64) *SignalQuality {
 		sq.IQGainImbalanceDB = a.iqStats.GainImbalanceDB()
 		sq.IQPhaseImbalanceDeg = a.iqStats.PhaseImbalanceDeg()
 		sq.IQImageRejectionDB = a.iqStats.ImageRejectionDB()
+	}
+	if a.rmsN > 0 {
+		sq.RMSPowerDBFS = dsp.Mag2dB(math.Sqrt(a.rmsSqSum / float64(a.rmsN)))
 	}
 	sq.Demod = a.demodMetrics()
 	return sq

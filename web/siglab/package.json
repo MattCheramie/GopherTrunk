@@ -16,7 +16,6 @@
     "@observablehq/plot": "^0.6.16",
     "@stdlib/stats-base-mean": "^0.2.2",
     "@stdlib/stats-base-variance": "^0.2.2",
-    "@tensorflow/tfjs": "^4.22.0",
     "chart.js": "^4.4.5",
     "d3": "^7.9.0",
     "plotly.js-dist-min": "^2.35.2",

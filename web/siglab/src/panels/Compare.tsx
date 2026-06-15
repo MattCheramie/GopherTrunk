@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Line } from "react-chartjs-2";
 import { useStore } from "../store/shared";
 import { ensureChart } from "../viz/chartSetup";
-import { welchPSD } from "../dsp/transforms";
+import { api } from "../api/client";
 import type { Analysis } from "../store/shared";
 
 ensureChart();
@@ -52,6 +52,7 @@ interface Item {
 }
 
 function SpectraOverlay({ items }: { items: Item[] }) {
+  const config = useStore((s) => s.config);
   const [series, setSeries] = useState<
     { name: string; freqHz: number[]; psdDb: number[]; color: string }[]
   >([]);
@@ -64,13 +65,15 @@ function SpectraOverlay({ items }: { items: Item[] }) {
       const out: { name: string; freqHz: number[]; psdDb: number[]; color: string }[] = [];
       let i = 0;
       for (const it of items) {
-        const iq = it.analysis?.iqTaps;
-        if (iq && iq.decimated_iq.length > 16) {
-          const psd = await welchPSD(iq.decimated_iq, iq.decimated_rate_hz, 1024, 0.5);
+        // The server computes the PSD from the job's captured IQ (no in-browser FFT).
+        if (it.analysis?.jobId && it.analysis?.iqTaps) {
+          const psd = await api.jobPSD(config, it.analysis.jobId, 1024);
+          const base = -psd.sample_rate_hz / 2;
+          const stepHz = psd.bins.length > 0 ? psd.sample_rate_hz / psd.bins.length : 0;
           out.push({
             name: it.capture?.name ?? "?",
-            freqHz: psd.freqHz,
-            psdDb: psd.psdDb,
+            freqHz: psd.bins.map((_, b) => base + b * stepHz),
+            psdDb: psd.bins,
             color: COLORS[i % COLORS.length],
           });
         }
@@ -84,7 +87,7 @@ function SpectraOverlay({ items }: { items: Item[] }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.map((i) => i.capture?.id + (i.analysis?.iqTaps ? "1" : "0")).join(",")]);
+  }, [items.map((i) => i.capture?.id + (i.analysis?.jobId ?? "")).join(",")]);
 
   const labels = series[0]?.freqHz.map((f) => (f / 1000).toFixed(1)) ?? [];
 

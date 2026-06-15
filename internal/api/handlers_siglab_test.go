@@ -158,6 +158,99 @@ func TestSiglabSynthesizeRunExport(t *testing.T) {
 	}
 }
 
+// TestSiglabJobPSDAndSpectrogram runs a synthetic P25 capture with IQ capture,
+// then asserts the server computes the PSD and spectrogram of the job's IQ — so
+// the web UI can plot them without an in-browser FFT (no TensorFlow.js).
+func TestSiglabJobPSDAndSpectrogram(t *testing.T) {
+	ts := newSiglabTestServer(t)
+
+	resp, err := http.Post(ts.URL+"/api/v1/siglab/synthesize", "application/json", bytes.NewBufferString(`{"protocol":"p25","format":"f32"}`))
+	if err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	var synth struct {
+		Capture siglabCaptureDTO `json:"capture"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&synth)
+	resp.Body.Close()
+
+	runResp, err := http.Post(ts.URL+"/api/v1/siglab/run", "application/json",
+		bytes.NewBufferString(`{"capture_id":"`+synth.Capture.ID+`","config":{"protocol":"p25","collect_iq_diag":true,"capture_iq":true}}`))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var run struct {
+		JobID string `json:"job_id"`
+	}
+	_ = json.NewDecoder(runResp.Body).Decode(&run)
+	runResp.Body.Close()
+
+	var job siglabJobDTO
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		r, err := http.Get(ts.URL + "/api/v1/siglab/jobs/" + run.JobID)
+		if err != nil {
+			t.Fatalf("poll: %v", err)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&job)
+		r.Body.Close()
+		if job.State == "done" || job.State == "error" {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if job.State != "done" {
+		t.Fatalf("job state = %q, want done", job.State)
+	}
+
+	// PSD: an averaged spectrum of fft_size bins.
+	psdResp, err := http.Get(ts.URL + "/api/v1/siglab/jobs/" + run.JobID + "/psd?fft=512")
+	if err != nil {
+		t.Fatalf("psd: %v", err)
+	}
+	defer psdResp.Body.Close()
+	if psdResp.StatusCode != http.StatusOK {
+		t.Fatalf("psd status = %d, want 200", psdResp.StatusCode)
+	}
+	var psd struct {
+		SampleRateHz float64   `json:"sample_rate_hz"`
+		FFTSize      int       `json:"fft_size"`
+		Bins         []float32 `json:"bins"`
+	}
+	if err := json.NewDecoder(psdResp.Body).Decode(&psd); err != nil {
+		t.Fatalf("decode psd: %v", err)
+	}
+	if psd.FFTSize != 512 || len(psd.Bins) != 512 {
+		t.Errorf("psd fft=%d bins=%d, want 512/512", psd.FFTSize, len(psd.Bins))
+	}
+	if psd.SampleRateHz <= 0 {
+		t.Errorf("psd sample_rate_hz = %v, want > 0", psd.SampleRateHz)
+	}
+
+	// Spectrogram: a non-empty time-frequency plane.
+	sgResp, err := http.Get(ts.URL + "/api/v1/siglab/jobs/" + run.JobID + "/spectrogram?fft=256&hop=128")
+	if err != nil {
+		t.Fatalf("spectrogram: %v", err)
+	}
+	defer sgResp.Body.Close()
+	var sg struct {
+		FFTSize int         `json:"fft_size"`
+		Frames  int         `json:"frames"`
+		Z       [][]float32 `json:"z"`
+	}
+	if err := json.NewDecoder(sgResp.Body).Decode(&sg); err != nil {
+		t.Fatalf("decode spectrogram: %v", err)
+	}
+	if sg.Frames == 0 || len(sg.Z) == 0 || len(sg.Z[0]) != 256 {
+		t.Errorf("spectrogram frames=%d rows=%d width=%d, want frames>0, width 256", sg.Frames, len(sg.Z), func() int {
+			if len(sg.Z) > 0 {
+				return len(sg.Z[0])
+			}
+			return 0
+		}())
+	}
+}
+
 func TestSiglabRunMissingCapture(t *testing.T) {
 	ts := newSiglabTestServer(t)
 	body := `{"capture_id":"nope","config":{"protocol":"p25","sample_rate_hz":48000}}`
