@@ -1,6 +1,6 @@
 package siglab
 
-import "sort"
+import "github.com/MattCheramie/GopherTrunk/internal/dsp/stats"
 
 // SyncVariant is one named candidate sync pattern (e.g. one of DMR's 9 ETSI
 // sync words, or a protocol's single FSW), as a slice of symbols (dibits in
@@ -123,7 +123,8 @@ func computeSyncLandscape(stream []uint8, variants []SyncVariant, cardinality, t
 }
 
 // modalSpacing returns the most-frequent delta between consecutive positions
-// (0 when fewer than two positions).
+// (0 when fewer than two positions). The mode itself is computed by
+// stats.ModeInt, which breaks ties toward the smaller spacing.
 func modalSpacing(positions []int) int {
 	if len(positions) < 2 {
 		return 0
@@ -132,23 +133,7 @@ func modalSpacing(positions []int) int {
 	for i := 1; i < len(positions); i++ {
 		deltas = append(deltas, positions[i]-positions[i-1])
 	}
-	sort.Ints(deltas)
-	bestVal, bestCount := deltas[0], 1
-	curVal, curCount := deltas[0], 1
-	for i := 1; i < len(deltas); i++ {
-		if deltas[i] == curVal {
-			curCount++
-		} else {
-			if curCount > bestCount {
-				bestVal, bestCount = curVal, curCount
-			}
-			curVal, curCount = deltas[i], 1
-		}
-	}
-	if curCount > bestCount {
-		bestVal = curVal
-	}
-	return bestVal
+	return stats.ModeInt(deltas)
 }
 
 // dibitVariants / bitVariants wrap fixed patterns as single-variant slices.
