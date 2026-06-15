@@ -7,6 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **P25 Phase 1 decodes Motorola patch-group channel grant / update (#376).**
+  Field captures from a Motorola system (MMR, sites CBD/Mt Anakie) emit
+  manufacturer-specific (MFID `0x90`) TSBKs at opcodes `0x02` and `0x03` that
+  GopherTrunk logged as unhandled — the raw-payload diagnostic confirmed they
+  are patch-group (super-group) **voice channel grant** and **grant-update**
+  messages, not talker aliases. They now decode through the same band-plan /
+  Phase 2 TDMA routing as the standard grant/update opcodes. The `0x02` form
+  carries the source RID and the service-options encryption bit, so the
+  patch-group calls that previously arrived `src=0` / `enc=false` now surface
+  their radio ID and encryption, and GopherTrunk follows the super-group voice
+  calls it was dropping. (The unidentified `0x90` opcode `0x16` is left in the
+  unhandled-TSBK census pending ground truth.)
+
 ### Changed
 
 - **P25 Phase 1 unhandled-TSBK diagnostic now dumps the raw payload (#376).**

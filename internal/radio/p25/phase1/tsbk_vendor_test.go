@@ -243,6 +243,106 @@ func TestControlChannelCensusesUnhandledTSBK(t *testing.T) {
 	}
 }
 
+// TestAsMotorolaPatchGroupChannelGrant pins the decode against the real
+// MMR/CBD field capture (issue #376): Motorola opcode 0x02 payload
+// 401001006904e2cc is a patch-group voice channel grant — encrypted
+// (service-options 0x40), channel (ID 1, number 1), super-group 105,
+// source RID 320204 (0x04e2cc). A standard-MFID TSBK with the same
+// opcode must not match (it would be a different message).
+func TestAsMotorolaPatchGroupChannelGrant(t *testing.T) {
+	payload := [8]byte{0x40, 0x10, 0x01, 0x00, 0x69, 0x04, 0xE2, 0xCC}
+	tsbk := TSBK{Opcode: OpMotorolaPatchGroupChannelGrant, MFID: MFIDMotorola, Payload: payload}
+	got, ok := tsbk.AsMotorolaPatchGroupChannelGrant()
+	if !ok {
+		t.Fatal("AsMotorolaPatchGroupChannelGrant returned !ok")
+	}
+	if got.ServiceOptions != 0x40 || got.ChannelID != 1 || got.ChannelNumber != 1 ||
+		got.GroupAddress != 105 || got.SourceID != 0x04E2CC {
+		t.Errorf("grant = %+v, want svc=0x40 chan=1.1 group=105 source=0x04e2cc", got)
+	}
+	tsbk.MFID = MFIDStandard
+	if _, ok := tsbk.AsMotorolaPatchGroupChannelGrant(); ok {
+		t.Error("AsMotorolaPatchGroupChannelGrant matched a standard-MFID TSBK")
+	}
+}
+
+// TestAsMotorolaPatchGroupChannelGrantUpdate pins the decode against the
+// real MMR/CBD capture (issue #376): Motorola opcode 0x03 payload
+// 5090019131942710 carries two (channel, super-group) activity pairs —
+// (ID 5, number 0x090, group 401) and (ID 3, number 0x194, group 10000).
+func TestAsMotorolaPatchGroupChannelGrantUpdate(t *testing.T) {
+	payload := [8]byte{0x50, 0x90, 0x01, 0x91, 0x31, 0x94, 0x27, 0x10}
+	tsbk := TSBK{Opcode: OpMotorolaPatchGroupChannelGrantUpdate, MFID: MFIDMotorola, Payload: payload}
+	got, ok := tsbk.AsMotorolaPatchGroupChannelGrantUpdate()
+	if !ok {
+		t.Fatal("AsMotorolaPatchGroupChannelGrantUpdate returned !ok")
+	}
+	if got.ChannelAID != 5 || got.ChannelANumber != 0x090 || got.GroupAddressA != 401 ||
+		got.ChannelBID != 3 || got.ChannelBNumber != 0x194 || got.GroupAddressB != 10000 {
+		t.Errorf("update = %+v, want A=(5.0x090,401) B=(3.0x194,10000)", got)
+	}
+	tsbk.MFID = MFIDStandard
+	if _, ok := tsbk.AsMotorolaPatchGroupChannelGrantUpdate(); ok {
+		t.Error("AsMotorolaPatchGroupChannelGrantUpdate matched a standard-MFID TSBK")
+	}
+}
+
+// TestControlChannelDispatchesMotorolaPatchGroupGrant confirms a Motorola
+// patch-group channel grant (opcode 0x02) resolves through the band plan
+// and publishes a KindGrant carrying its source RID + encryption — the
+// MMR/CBD calls that previously arrived src=0/enc=false (issue #376) — and
+// that it is no longer logged as an unhandled TSBK.
+func TestControlChannelDispatchesMotorolaPatchGroupGrant(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	identTSBK := TSBK{Opcode: OpIdentifierUpdate,
+		Payload: AssembleIdentifierUpdate(IdentifierUpdate{
+			ChannelID: 1, SpacingHz: 12_500, BaseHz: 851_000_000,
+		})}
+	// Real CBD opcode-0x02 payload: enc grant, channel (1, 1), group 105,
+	// source 0x04e2cc.
+	grantTSBK := TSBK{LB: true, Opcode: OpMotorolaPatchGroupChannelGrant, MFID: MFIDMotorola,
+		Payload: [8]byte{0x40, 0x10, 0x01, 0x00, 0x69, 0x04, 0xE2, 0xCC}}
+
+	stream1 := buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, identTSBK)
+	stream2 := buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, grantTSBK)
+
+	cc := New(Options{Bus: bus, Log: log, SystemName: "S", FrequencyHz: 851_000_000})
+	cc.Process(stream1, 0)
+	cc.Process(stream2, len(stream1))
+
+	var got *trunking.Grant
+	deadline := time.After(time.Second)
+	for got == nil {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				g := ev.Payload.(trunking.Grant)
+				got = &g
+			}
+		case <-deadline:
+			t.Fatal("no grant event published for Motorola patch-group channel grant")
+		}
+	}
+	if got.GroupID != 105 || got.SourceID != 0x04E2CC {
+		t.Errorf("group/source = %d/%#x, want 105/0x04e2cc", got.GroupID, got.SourceID)
+	}
+	if got.FrequencyHz != 851_012_500 {
+		t.Errorf("freq = %d, want 851_012_500", got.FrequencyHz)
+	}
+	if !got.Encrypted || got.Emergency {
+		t.Errorf("flags = enc=%v emer=%v, want enc only", got.Encrypted, got.Emergency)
+	}
+	if strings.Contains(buf.String(), "p25: unhandled tsbk") {
+		t.Error("Motorola patch-group channel grant was logged as unhandled")
+	}
+}
+
 func TestControlChannelPublishesTalkerAlias(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
