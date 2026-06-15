@@ -1,5 +1,7 @@
 package siglab
 
+import "github.com/MattCheramie/GopherTrunk/internal/dsp/phase"
+
 // IQPoint is one complex sample on the wire. Float32 keeps the captured
 // stream compact; web consumers render it directly without conversion. The
 // JSON tags match internal/api's IQPoint (the live Constellation panel) so
@@ -46,6 +48,14 @@ type IQTaps struct {
 	// SymbolCardinality is 4 for the dibit (4-level) protocols, 2 for the
 	// bit (2-level) protocols.
 	SymbolCardinality int `json:"symbol_cardinality,omitempty" yaml:"symbol_cardinality,omitempty"`
+
+	// DiffPhase is the per-symbol differential phase (radians, in (-π, π]) of
+	// the complex constellation — angle(z[i]·conj(z[i-1])) — decimated to the
+	// same cap as the IQ. It is the rotation signal that backs the offline
+	// rotation-tracker viz: a π/4-DQPSK control channel clusters these around
+	// ±π/4 and ±3π/4. Populated only on the CQPSK / π4-DQPSK path (the deep
+	// constellation buffer); empty for C4FM and the 2-level paths.
+	DiffPhase []float32 `json:"diff_phase,omitempty" yaml:"diff_phase,omitempty"`
 }
 
 // decimateSymbolSeries stride-decimates an aligned dibit + soft stream
@@ -69,6 +79,30 @@ func decimateSymbolSeries(dibits []uint8, soft []float32, maxPoints int) (outD [
 		}
 	}
 	return outD, outS
+}
+
+// diffPhaseSeries computes the per-symbol differential phase of a complex
+// constellation buffer — the π/4-DQPSK rotation signal — and decimates it to
+// at most maxPoints points. It returns nil when there are too few points to
+// form a rotation (need at least two constellation samples) or maxPoints ≤ 0.
+func diffPhaseSeries(constBuf []complex64, maxPoints int) []float32 {
+	if len(constBuf) < 2 || maxPoints <= 0 {
+		return nil
+	}
+	z := make([]complex128, len(constBuf))
+	for i, c := range constBuf {
+		z[i] = complex(float64(real(c)), float64(imag(c)))
+	}
+	d := phase.Diff(z) // len == len(z)-1, wrapped to (-π, π]
+	stride := 1
+	if len(d) > maxPoints {
+		stride = (len(d) + maxPoints - 1) / maxPoints
+	}
+	out := make([]float32, 0, (len(d)+stride-1)/stride)
+	for i := 0; i < len(d); i += stride {
+		out = append(out, float32(d[i]))
+	}
+	return out
 }
 
 // iqTapBuffer accumulates the decimated channelized IQ and soft samples for

@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/cmplx"
 	"sort"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/stats"
 )
 
 // CarrierCandidate is one detected narrowband carrier: its offset from DC
@@ -95,31 +97,26 @@ func EstimateCarrierCandidatesHz(iq []complex64, sampleRateHz, searchHz, minSpac
 		powers[i] = avgPowerNorm(x, freqs[i], coarseWin, 256)
 	}
 
-	// Collect local maxima (endpoints included, so a carrier at the band edge
-	// — and always the global max — is a candidate).
-	type pk struct{ f, p float64 }
-	var peaks []pk
-	for i := 0; i < coarseN; i++ {
-		left := i == 0 || powers[i] > powers[i-1]
-		right := i == coarseN-1 || powers[i] >= powers[i+1]
-		if left && right {
-			peaks = append(peaks, pk{freqs[i], powers[i]})
-		}
-	}
-	if len(peaks) == 0 {
+	// Collect local maxima above a relative-power floor, strongest first
+	// (endpoints included, so a carrier at the band edge — and always the
+	// global max — is a candidate). The floor drops noise bins ≥
+	// carrierCandidateFloorDb below the strongest carrier.
+	floorRatio := math.Pow(10, -carrierCandidateFloorDb/10)
+	peakIdx := stats.FindPeaks(powers, stats.PeakOpts{
+		RelHeight:   floorRatio,
+		IncludeEnds: true,
+	})
+	if len(peakIdx) == 0 {
 		return nil
 	}
-	sort.Slice(peaks, func(a, b int) bool { return peaks[a].p > peaks[b].p })
 
-	// Min-spacing suppression + relative-power floor.
+	// Min-spacing suppression in frequency units: a weaker peak within
+	// minSpacingN of an already-kept stronger one is a sidelobe, not a carrier.
+	type pk struct{ f, p float64 }
 	minSpacingN := minSpacingHz / sampleRateHz
-	floorRatio := math.Pow(10, -carrierCandidateFloorDb/10)
-	pMax := peaks[0].p
 	var kept []pk
-	for _, c := range peaks {
-		if c.p < pMax*floorRatio {
-			continue
-		}
+	for _, idx := range peakIdx {
+		c := pk{freqs[idx], powers[idx]}
 		tooClose := false
 		for _, k := range kept {
 			if math.Abs(c.f-k.f) < minSpacingN {

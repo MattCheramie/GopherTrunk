@@ -17,6 +17,9 @@ export interface IQTaps {
   symbol_dibits?: number[];
   symbol_soft?: number[];
   symbol_cardinality?: number;
+  // Per-symbol differential phase (radians) of the complex constellation —
+  // the π/4-DQPSK rotation signal. Present only on the CQPSK path.
+  diff_phase?: number[];
 }
 
 // PSDResult is the server-computed Welch power spectrum from
