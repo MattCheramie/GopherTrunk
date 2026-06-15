@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -81,8 +82,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			dto := eventToDTO(ev)
+			// Marshal first (like the SSE handler) so a payload that can't be
+			// encoded — e.g. a stray non-finite float — is logged and skipped
+			// rather than tearing the whole connection down or, worse, flushing
+			// a half-written frame via conn.WriteJSON (issue #648).
+			payload, err := json.Marshal(dto)
+			if err != nil {
+				s.log.Warn("api: WS encode failed", "kind", ev.Kind, "err", err)
+				continue
+			}
 			_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			if err := conn.WriteJSON(dto); err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				s.log.Debug("api: WS write failed", "err", err)
 				return
 			}
