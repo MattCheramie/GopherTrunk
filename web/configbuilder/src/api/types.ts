@@ -90,6 +90,8 @@ export interface SoapyRemoteConfig {
   Role: string;
   Format: string;
   StreamProtocol: string;
+  StreamMTU: number;
+  StreamWindow: number;
   PPM: number;
   Gain: string;
   BiasTee: boolean;
@@ -134,6 +136,7 @@ export interface RecordingsConfig {
 
 export interface MetricsConfig {
   Enabled: boolean;
+  DetailedFEC: boolean;
 }
 
 export interface RetentionConfig {

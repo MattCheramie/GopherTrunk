@@ -124,6 +124,8 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Role":             {Help: "Pool role hint: control / voice / auto.", Options: roleOpts()},
 	"SoapyRemoteConfig.Format":           {Help: "Wire sample format: CS16 (16-bit, default) or CF32 (32-bit float).", Options: opts("", "(default)", "CS16", "CS16", "CF32", "CF32")},
 	"SoapyRemoteConfig.StreamProtocol":   {Help: "Stream transport. Only tcp is implemented.", Options: opts("", "(default)", "tcp", "tcp")},
+	"SoapyRemoteConfig.StreamMTU":        {Label: "Stream MTU", Help: "Stream endpoint MTU in bytes (sent as the remote:mtu stream arg). 0 = SoapyRemote default 1500. Raise for jumbo-frame / high-throughput links. This is a stream arg, so it cannot go in Args."},
+	"SoapyRemoteConfig.StreamWindow":     {Label: "Stream window", Help: "Stream flow-control window in bytes (sent as the remote:window stream arg). 0 = client default 8 MiB. Raise on high-latency / high-bandwidth links to keep the pipe full. Must be >= stream MTU. This is a stream arg, so it cannot go in Args."},
 	"SoapyRemoteConfig.PPM":              {Label: "PPM", Help: "Frequency-correction applied on open (best-effort)."},
 	"SoapyRemoteConfig.Gain":             {Help: "Tuner gain: 'auto'/empty for AGC, else tenths of a dB."},
 	"SoapyRemoteConfig.BiasTee":          {Label: "Bias-tee", Help: "Toggle the remote device's bias-tee (best-effort)."},
@@ -221,7 +223,8 @@ var fieldMetas = map[string]FieldMeta{
 	"NormalizeConfig.MaxBoostDB":     {Label: "Max gain (dB)", Help: "Cap on applied gain in either direction so quiet calls don't amplify hiss. Default 12 when enabled."},
 
 	// ---- Metrics -----------------------------------------------------------
-	"MetricsConfig.Enabled": {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},
+	"MetricsConfig.Enabled":     {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},
+	"MetricsConfig.DetailedFEC": {Help: "Opt into per-protocol FEC correction-depth histograms (gophertrunk_tetra_viterbi_corrections). Off by default — the buckets only make sense when profiling on-air recovery margins."},
 
 	// ---- Retention ---------------------------------------------------------
 	"RetentionConfig.CallLogDays": {Help: "Delete call-log rows older than this many days. 0 disables the call-log sweep."},

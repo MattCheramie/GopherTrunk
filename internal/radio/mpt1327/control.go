@@ -56,6 +56,57 @@ type ControlChannel struct {
 	strictValidation bool
 	bchMode          BCHMode
 	cwscTolerance    int
+
+	// confirmed counts the recognised Address codewords seen so far on a single
+	// system; minConfirm is how many must arrive before a lock is trusted, and
+	// confirmPrefix is the Prefix that run shares. minConfirm <= 0 means lock on
+	// the first (the legacy / in-package-fixture default); the ccdecoder connector
+	// raises it for production. The run must agree on one Prefix — the 7-bit system
+	// field every Aloha/AhoyChan carries — so a single chance codeword, or two
+	// inconsistent cross-protocol false parses of off-channel P25/DMR carriers
+	// (a different prefix each time), can't declare an MPT 1327 lock.
+	confirmed     int
+	confirmPrefix uint8
+	minConfirm    int
+}
+
+// SetMinConfirm sets how many recognised Address codewords must be ingested
+// before the control channel publishes a lock. n <= 1 restores the legacy
+// lock-on-first-codeword behaviour. The production default (set by the ccdecoder
+// connector) is 2: a real control channel streams codewords continuously, so the
+// extra confirmation costs negligible latency while removing single-codeword
+// false locks.
+func (c *ControlChannel) SetMinConfirm(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.minConfirm = n
+}
+
+// MinConfirm returns the configured confirmation threshold.
+func (c *ControlChannel) MinConfirm() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.minConfirm
+}
+
+// noteConfirmation records one recognised Address codeword carrying the given
+// Prefix and reports whether enough consistent ones have now arrived to trust a
+// lock. A codeword whose Prefix matches the run in progress corroborates it; a
+// new or changed Prefix restarts the count at one (this codeword), so an
+// inconsistent burst of cross-protocol false parses never accumulates to a lock.
+func (c *ControlChannel) noteConfirmation(prefix uint8) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	need := c.minConfirm
+	if need < 1 {
+		need = 1
+	}
+	if c.confirmed > 0 && prefix == c.confirmPrefix {
+		c.confirmed++
+	} else {
+		c.confirmed, c.confirmPrefix = 1, prefix
+	}
+	return c.confirmed >= need
 }
 
 // SetStrictValidation toggles the strict frame-validity filter on
@@ -254,14 +305,23 @@ func (c *ControlChannel) Ingest(w Codeword) {
 		// follow at the trunking layer.
 		return
 	}
+	// A recognised Address codeword is lock evidence; require minConfirm of them,
+	// all sharing one Prefix, before trusting an Aloha / AhoyChan as a genuine
+	// control channel.
+	confirmed := false
+	if codewordKindIsRecognised(w) {
+		confirmed = c.noteConfirmation(w.Prefix)
+	}
 	switch w.Kind() {
 	case KindAloha:
-		c.maybeLock(LockState{
-			FrequencyHz: c.freqHz,
-			Prefix:      w.Prefix,
-		})
+		if confirmed {
+			c.maybeLock(LockState{
+				FrequencyHz: c.freqHz,
+				Prefix:      w.Prefix,
+			})
+		}
 	case KindAhoyChan:
-		if a, ok := w.AsAhoyChannel(); ok {
+		if a, ok := w.AsAhoyChannel(); ok && confirmed {
 			c.maybeLock(LockState{
 				FrequencyHz: c.freqHz,
 				SystemID:    a.System,

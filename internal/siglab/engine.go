@@ -22,6 +22,19 @@ func Run(path string, cfg Config) (*Result, error) {
 	return RunStream(path, cfg, nil)
 }
 
+// RunAutoTuneMulti opens the capture at path and decodes cfg.Protocol against
+// each detected carrier candidate, returning the strongest lock (see
+// RunReaderAutoTuneMulti). It is the file-path entry the replay/analyze
+// subcommands use for multi-candidate -auto-tune.
+func RunAutoTuneMulti(path string, cfg Config, maxCandidates int) (*Result, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	return RunReaderAutoTuneMulti(f, path, cfg, maxCandidates)
+}
+
 // RunStream is Run with a live per-event sink: onEvent (when non-nil) is
 // called for every captured EventRecord as it is observed, in stream order.
 // It backs the JSONL exporter and the TUI's live event feed. The full
@@ -74,6 +87,92 @@ func RunReaderStream(r io.Reader, source string, cfg Config, onEvent func(EventR
 	}
 
 	return runReader(r, source, decode, bytesPerSample, tuneHz, cfg, onEvent)
+}
+
+// RunReaderAutoTuneMulti decodes cfg.Protocol against each detected carrier
+// candidate (each tuned to a fixed offset, resolved here rather than
+// re-estimated) and returns the Result with the strongest lock. It is the
+// multi-candidate counterpart to a single -auto-tune run: when the control
+// channel is off-centre AND not the loudest carrier in a wideband capture, the
+// single dominant-carrier estimate misses it; this tries the ranked candidates
+// strongest-first and stops at the first that locks (or returns the most
+// promising failure). r must be an io.ReadSeeker; cfg.AutoTune is implied and
+// cfg.TuneHz is ignored. maxCandidates ≤ 0 uses the package default.
+func RunReaderAutoTuneMulti(r io.ReadSeeker, source string, cfg Config, maxCandidates int) (*Result, error) {
+	if cfg.SampleRateHz <= 0 {
+		return nil, fmt.Errorf("siglab: sample rate must be > 0")
+	}
+	if !ccdecoder.HasFactory(cfg.Protocol) {
+		return nil, fmt.Errorf("siglab: no pipeline registered for protocol %s", cfg.Protocol)
+	}
+	decode, bytesPerSample := cfg.Format.Decoder()
+	cands, err := estimateCaptureCarrierCandidates(r, decode, bytesPerSample, cfg.SampleRateHz, maxCandidates)
+	if err != nil {
+		return nil, fmt.Errorf("auto-tune failed: %w", err)
+	}
+	offsets := make([]float64, 0, len(cands))
+	for _, c := range cands {
+		offsets = append(offsets, c.OffsetHz)
+	}
+	if len(offsets) == 0 {
+		offsets = []float64{0}
+	}
+
+	runCfg := cfg
+	runCfg.AutoTune = false
+	var best *Result
+	for _, off := range offsets {
+		if _, err := r.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("siglab: auto-tune rewind: %w", err)
+		}
+		runCfg.TuneHz = off
+		res, err := runReader(r, source, decode, bytesPerSample, off, runCfg, nil)
+		if err != nil {
+			continue
+		}
+		if best == nil || betterLock(res, best) {
+			best = res
+		}
+		if best.Locked {
+			break // strongest-first; the first carrier that locks is the answer
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("siglab: auto-tune produced no decodable candidate")
+	}
+	return best, nil
+}
+
+// betterLock reports whether a is a stronger decode than b, for choosing the
+// best carrier among auto-tune candidates: a real lock beats no lock; ties
+// break on control-channel yield (P25 NID-trusted + TSBK), then grants, then
+// symbols processed, then faster lock.
+func betterLock(a, b *Result) bool {
+	if a.Locked != b.Locked {
+		return a.Locked
+	}
+	if ya, yb := ccYield(a), ccYield(b); ya != yb {
+		return ya > yb
+	}
+	if len(a.Grants) != len(b.Grants) {
+		return len(a.Grants) > len(b.Grants)
+	}
+	if a.Symbols != b.Symbols {
+		return a.Symbols > b.Symbols
+	}
+	if a.Locked && b.Locked {
+		return a.LockLatencySec < b.LockLatencySec
+	}
+	return false
+}
+
+// ccYield is a coarse control-channel decode-yield metric (P25 NID-trusted +
+// decoded TSBK count); 0 for protocols without a P25 Phase 1 detail.
+func ccYield(r *Result) int64 {
+	if d, ok := r.Detail.(*P25P1Detail); ok && d.CCStats != nil {
+		return d.CCStats.NIDTrusted + d.CCStats.TSBKDecoded
+	}
+	return 0
 }
 
 // runReader is the format-agnostic core: it mirrors the daemon's DDC →
@@ -298,6 +397,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			res.IQTaps.SymbolDibits = d
 			res.IQTaps.SymbolSoft = s
 			res.IQTaps.SymbolCardinality = an.cardinality
+		}
+		// Per-symbol differential phase (the π/4-DQPSK rotation signal) for the
+		// rotation-tracker viz. Populated only on the CQPSK path, which is the
+		// only one that buffers complex constellation points.
+		if an != nil && len(an.constBuf) > 1 {
+			res.IQTaps.DiffPhase = diffPhaseSeries(an.constBuf, cfg.captureIQMaxPoints())
 		}
 	}
 	return res, nil

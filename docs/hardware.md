@@ -590,6 +590,7 @@ sdr:
       role: control               # control | voice | auto
       format: "CS16"              # CS16 (16-bit, default) or CF32 (float)
       stream_protocol: "tcp"      # tcp (default/only for now)
+      stream_mtu: 0               # stream endpoint MTU in bytes; 0 = default 1500
       ppm: 0                      # best-effort (driver-dependent)
       gain: "auto"                # "auto" or tenths-of-dB ("300" = 30.0 dB)
       bias_tee: false             # best-effort (driver-dependent)
@@ -607,6 +608,13 @@ broker / fan-out path.
   (`stream_protocol: tcp`), which opens two sockets to the server (a stream
   socket and a status socket, matching `SoapySDRServer`'s setup). UDP
   streaming with the windowed flow-control is a planned follow-up.
+- `stream_mtu` sets the SoapyRemote stream endpoint MTU in bytes. It is sent
+  to the server as the `remote:mtu` *stream* argument (the equivalent of
+  `SoapySDR`'s `remote:mtu` knob) and used to size the client's flow-control
+  window so both ends agree. Because it's a stream argument, not a `make()`
+  kwarg, it cannot be expressed via `args`. Leave it `0` for SoapyRemote's
+  default of 1500; raise it (e.g. `8192`) on jumbo-frame or high-throughput
+  links.
 - `args` passes extra SoapySDR device kwargs to the remote `make()` as a
   `"key=value,key2=value2"` string, merged with `driver` (an explicit
   `driver=` in `args` wins). Use it for server-side device selection and

@@ -5,12 +5,14 @@ import { Captures } from "./panels/Captures";
 import { Results } from "./panels/Results";
 import { Synthesize } from "./panels/Synthesize";
 import { Identify } from "./panels/Identify";
+import { Wideband } from "./panels/Wideband";
 import { Compare } from "./panels/Compare";
 
 const tabs = [
   { to: "/captures", label: "Captures" },
   { to: "/synthesize", label: "Synthesize" },
   { to: "/identify", label: "Identify" },
+  { to: "/wideband", label: "Wideband" },
   { to: "/compare", label: "Compare" },
 ];
 
@@ -54,6 +56,7 @@ export function App() {
           <Route path="/results/:captureId" element={<Results />} />
           <Route path="/synthesize" element={<Synthesize />} />
           <Route path="/identify" element={<Identify />} />
+          <Route path="/wideband" element={<Wideband />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="*" element={<Navigate to="/captures" replace />} />
         </Routes>

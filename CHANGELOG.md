@@ -7,6 +7,269 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.3] — 2026-06-15
+
+This release is **Signal Lab wide-band tooling**, paired with a TETRA
+real-air fix and two decode-validation milestones. Offline auto-tune used to
+chase only the single loudest carrier, so a control channel that was both
+**off-centre and not dominant** in a wide capture was missed; siglab and Hunt
+now rank every carrier in the band and prefer the one that actually *locks*,
+fixing the live P25 captures that previously mis-latched (#678). Building on
+that, a new **wide-band multi-carrier survey** takes one IQ grab, finds every
+carrier, decodes each, and recognises a DMR Tier III trunked system in a
+single shot — exposed as a siglab library call, an offline `hunt -wideband`
+path, a `POST /api/v1/siglab/wideband` endpoint, and a matplotlib-style
+*Wideband* panel in the web console (#677, #679). A new **`gophertrunk
+spectrum`** subcommand prints the band RMS power, Welch-averaged spectrum, and
+detected carriers as text / JSON / CSV — the Python-free analog of
+`numpy.fft` + `matplotlib` (#680). Signal Lab's Results-view PSD and
+spectrogram now compute **server-side in Go**, letting the heavy
+**TensorFlow.js** browser dependency be dropped entirely (#680). On the decode
+side, TETRA control channels now **recover the BSCH colour code under any
+π/4-DQPSK rotation** so real-air downlinks (which sit at a non-zero rotation)
+actually learn their colour code (#681, #648), with a new differential-phase
+*rotation tracker* viz to make the rotation visible (#682). Finally, live
+captures **confirm DMR BPTC/RS Full-LC and P25 Phase 1 C4FM control-channel
+decode on air**, closing two long-standing real-air validation gaps (#675,
+#676, #527).
+
+### Added
+
+- **`gophertrunk spectrum` subcommand.** A Python-free, no-server analog of
+  `numpy.fft` + `matplotlib`: given a recorded capture it prints the band RMS
+  power, the Welch-averaged spectrum, and the detected carriers as text, JSON,
+  or CSV — absolute frequencies with `-freq`, otherwise offsets from DC. On the
+  delivered P25 captures it lists the 449.875 MHz control channel at SNR
+  ≈47 dB. (#680)
+- **Signal Lab wide-band multi-carrier survey.** `siglab.SurveyWideband` /
+  `SurveyWidebandIQ` take a wide-band IQ buffer, find every carrier (Welch
+  spectrum → peak detection → power-weighted centring of wide C4FM humps →
+  grid-snap), down-convert and identify each, then cluster the results into
+  control-vs-voice system rollups — recognising a DMR Tier III trunked system
+  in one shot rather than auto-tuning to a single dominant carrier. Reused by a
+  new offline `hunt -wideband -in <capture>` path that folds every DMR carrier
+  into one discovered system. (#677)
+- **Wide-band survey over REST + web.** `POST /api/v1/siglab/wideband` surveys
+  a staged capture and returns the averaged band spectrum, per-carrier results,
+  and system rollups (spectrum collection gated so the offline path stays
+  lean). A new *Wideband* panel in `web/siglab` renders the averaged spectrum
+  with each detected carrier marked by control/voice role alongside the
+  trunked-system rollup table. (#679)
+- **Hunt / siglab auto-identify of off-centre, non-dominant control channels.**
+  Offline auto-tune now detects and ranks multiple carrier candidates
+  (`dsp.EstimateCarrierCandidatesHz`) and, under `-auto-tune`, tries each —
+  preferring a carrier whose decoder actually *locks* over a louder one that
+  merely looks plausible — so a control channel under a louder neighbour is
+  found automatically (13/13 live P25 segments now lock, was 11/13). Hunt gains
+  a `-detect-carriers` flag that FFT-averages a recorded buffer and sweeps every
+  detected carrier through the classify/decode body, inventorying a whole band
+  from one capture with no SDR. (#678)
+- **π/4-DQPSK rotation tracker viz.** Signal Lab's Results view gains a
+  `RotationTracker` plot of per-symbol differential phase against the ideal
+  ±π/4 / ±3π/4 rails (populated on the CQPSK path), making constellation
+  rotation directly visible. Backed by new native-Go DSP helper packages
+  (`internal/dsp/stats`, `internal/dsp/phase`) consolidated from previously
+  inlined numpy/scipy-style operations. (#682)
+
+### Changed
+
+- **Signal Lab computes the Results-view PSD and spectrogram server-side; drops
+  TensorFlow.js.** New `GET /api/v1/siglab/jobs/{id}/psd` and `/spectrogram`
+  endpoints compute the spectra in Go from the job's captured IQ
+  (`spectrum.AverageDB` / `Spectrogram`); the PSD, Spectrogram, and Compare
+  overlay views now fetch the server-computed spectrum by job id instead of
+  computing it in-browser. The `@tensorflow/tfjs` dependency — used only for
+  that in-browser compute — is removed from `web/siglab`, shrinking the bundle.
+  Plotly, Chart.js, and D3 are unaffected. (#680)
+- **Wide-band survey DSP primitives promoted into shared, tested functions.**
+  The Welch-averaged spectrum (`spectrum.AverageDB`), boxcar smoothing, robust
+  percentile noise floor, power-weighted carrier centroid, RMS / dB helpers,
+  and an STFT spectrogram now live in `internal/dsp/spectrum` and
+  `internal/carriers` instead of being inlined and duplicated across siglab and
+  hunt. Behaviour-preserving refactor guarded by the existing survey tests.
+  (#679, #680, #682)
+
+### Fixed
+
+- **TETRA BSCH colour-code recovery was rotation-blind** (#648). π/4-DQPSK
+  carries data in the differential phase, so a residual carrier offset
+  cyclically rotates the whole demodulated stream by an unknown 0–3; the
+  synchronisation-training-sequence correlator that gates BSCH colour-code
+  recovery matched only the rotation-0 orientation, so real-air downlinks
+  (which sat at rotation 1) never learned a colour code and the reference
+  carrier never locked — while the synthesised fixtures, all at rotation 0,
+  hid the bug. `RecoverColourCode` and the live STS detector now correlate the
+  sync training sequence under all four rotations. (#681)
+
+### Validated
+
+- **DMR BPTC/RS Full-LC decode confirmed on real air** (#527 follow-up). Live
+  441 MHz / 2 MS/s DMR Tier III captures replayed through the production
+  receiver decode the `BPTC(196,96) → RS(12,9) → Full LC` chain cleanly
+  (Terminator-with-LC recovers a stable RS-validated FLC; control-channel CSBKs
+  pass BPTC + CRC and the Tier III control channel locks), refuting the
+  "real-air BPTC/RS is broken" hypothesis. Captured as no-build-tag regression
+  tests with committed channelised fixtures. (#675)
+- **P25 Phase 1 C4FM control-channel demod validated on a live UHF capture**
+  (#676). Thirteen live 450.500 MHz / 2 MSPS captures of a real UHF P25 system
+  all decode to NAC `0x2C1`, with C4FM consistently out-decoding CQPSK; the
+  cleanest segment reads EVM 12.7 %, SNR ≈14.5 dB, NID trusted 31 / failed 0,
+  TSBK 36 with zero CRC/trellis failures. Recorded as a demod-quality gate
+  (`samples/p25/p25-450875-cc.metadata.json`) with floors below the measured
+  values. (#676)
+
+## [v0.4.2] — 2026-06-14
+
+This release is mostly **hunt / survey maturation**, with TETRA blind identify
+and MPT 1327 lock hardening alongside. The live discovery flow grows up: a real
+**RadioReference cross-reference** now pairs discovered control / voice
+frequencies against an existing RR system to flag PPM / tuning offsets and
+not-in-RR frequencies, and lists talkgroups heard on air but absent from RR —
+available both from the CLI and the web *Hunt* panel (#660, #661). Surveys gain
+**crash-safe NDJSON persistence and resume** in the daemon (mirroring the CLI
+flags), an optional **post-run auto-gain BER sweep** that recommends the
+front-end gain minimising decode errors on each locked control channel, and
+**neighbour-frequency resolution for DMR Tier III / EDACS / Motorola** rather
+than P25 only (#660, #661). The sweep now **snaps candidates to the channel
+raster** (6.25 / 12.5 / 25 kHz) and normalises the reported occupied bandwidth,
+so a real carrier a few hundred Hz off a bin centre is tuned dead-on and reads
+its true channel width instead of a skewed "11.6 kHz" (#669, #648). TETRA
+control channels now clear the blind-identify gate by **recovering the cell
+colour code from the BSCH** so their SCH/HD FEC actually scores (#662, #648),
+with an opt-in **Viterbi correction-depth histogram** behind
+`metrics.detailed_fec` (#667). MPT 1327 stops false-locking on stray
+cross-protocol parses — a lock now needs a minimum number of confirmation
+codewords sharing a **consistent system prefix** (#669, #670, #648). On the
+voice side, digital chains are now clocked from the **DDC's actual resampled
+rate** instead of the nominal 48 kHz, killing the periodic symbol-clock slips
+and audible clicks on wideband P25 / DMR voice (#668, #550). SoapyRemote
+endpoints gain per-endpoint **`stream_mtu` and `stream_window`** knobs (#664,
+#665), and P25 Phase 1 control-channel talker-alias decode is now observable in
+the daemon log (#376).
+
+### Added
+
+- **Hunt: RadioReference cross-reference (offsets + new talkgroups).** The RR
+  step is upgraded from duplicate-detection to a real cross-reference: when a
+  discovered system matches an existing RR system with high confidence,
+  GopherTrunk fetches its full detail and diffs it — control / secondary
+  frequencies are paired greedily by nearest RR frequency (within 5 kHz is
+  flagged as a tuning / PPM offset, farther or unmatched is "not in RR"), and
+  talkgroups observed on air but absent from RR are listed. The diff is rendered
+  in the submission package and, via a new
+  `GET /api/v1/hunt[/{id}]/radioreference` endpoint, in a *RadioReference*
+  section of the web *Hunt* panel (county / SID inputs + a cross-reference
+  button). (#660, #661)
+- **Hunt: optional post-run auto-gain BER sweep.** A new `-auto-gain` flag (and
+  an *Auto-gain* toggle + recommendations table in the *Hunt* panel) sweeps a
+  set of front-end gains on each locked control channel after a run, decodes a
+  short dwell at each, and recommends the gain that minimises the decode error
+  rate (preferring one that locks, then lower gain to reduce front-end strain).
+  Recommendations are reported and written to `gain-recommendation.json`;
+  nothing is applied automatically. The web path is guarded by SDR exclusivity —
+  gain control is wired only when the hunt holds a dedicated SDR, not the shared
+  control SDR. (#660, #661)
+- **Hunt: daemon survey persistence (NDJSON) + resume.** A survey run streams its
+  classified carriers to a crash-safe NDJSON file when `persist_survey` is set,
+  and on `resume` preloads the already-recorded frequencies so an interrupted
+  web survey continues where it left off — matching toggles in the *Hunt* panel.
+  Mirrors the CLI's `-survey-ndjson` / `-resume`, which remain for standalone
+  runs. (#661)
+- **Hunt: neighbour-frequency resolution for DMR Tier III / EDACS / Motorola.**
+  Neighbour resolution was P25-only; DMR Tier III, EDACS and Motorola advertise
+  adjacent sites by LCN and each already has a band-plan resolver, but their
+  topology snapshots never applied it. They now resolve a neighbour's frequency
+  via the configured band plan (an unresolved neighbour stays informational, no
+  decode error), and a missing frequency is backfilled once a later observation
+  resolves it. (#660)
+- **SoapyRemote `stream_mtu` and `stream_window` config.** Both are SoapyRemote
+  stream arguments (`remote:mtu` / `remote:window`) read client-side and
+  forwarded to the server's `setupStream`, so neither could be set via the
+  existing `soapy_remote.args` device kwargs. New per-endpoint knobs send them in
+  `SETUP_STREAM` and size the client's in-flight flow-control credit from the
+  same value so both ends agree — wired through the config (with range and
+  `stream_window >= stream_mtu` validation), the daemon, the config builder, the
+  web form, and the example config. (#664, #665)
+- **TETRA Viterbi correction-depth histogram** (opt-in via
+  `metrics.detailed_fec`). The control channel scores each recovered BSCH /
+  SCH-HD burst's FEC correction depth decoder-independently (Hamming weight
+  between received and re-encoded bits), surfaced through an optional observer
+  hook the daemon wires to metrics only when the gate is set — so the default
+  deployment does no per-burst work and carries no extra metric family. (#667,
+  #648)
+
+### Changed
+
+- **P25 Phase 1 control-channel talker-alias decode is now observable in the
+  daemon log (#376).** A new field-tested system (CBD) locks and populates RIDs
+  but shows blank talker aliases, with heavy TSBK CRC loss on the control
+  channel. The CC alias path was fully wired but logged only at `Debug`, so a
+  field tester running at the normal level saw nothing from it and couldn't tell
+  whether aliases were arriving, completing, or riding an opcode we don't decode.
+  Three diagnostics now surface at `Info`, mirroring the per-`(opcode,MFID)`
+  census the Phase 2 voice composer already emits:
+  - `p25: cc talker alias` once a radio's display name fully reassembles
+    (promoted from `Debug`).
+  - `p25: cc talker alias fragment` on the first vendor-TSBK alias fragment seen
+    per source — so "fragments arrive but never complete" (CRC loss truncating
+    the set before the 10 s reassembly window) is distinguishable from "no
+    fragments at all".
+  - `p25: unhandled tsbk` once per distinct `(MFID,opcode)` we don't dispatch
+    (both vendor and standard namespaces) — a census that names any
+    alias-bearing transport a given site uses that we don't yet decode. The bulk
+    per-frame detail stays at `Debug`.
+- **P25 Phase 1 voice-channel talker-alias events now carry the system name
+  (#376).** The Phase 1 voice composer published `KindTalkerAlias` without the
+  `System` field (unlike the Phase 2 composer and both CC paths), leaving the
+  `/rids` System column and the `TALKER-ALIAS` message-log line systemless. The
+  alias itself was unaffected.
+- **Hunt: snap swept candidates to the channel grid and normalise occupied
+  bandwidth** (#648). The sweep reports carriers at FFT-bin centres (~586 Hz
+  bins at 2.4 MS/s), so a real carrier such as a P25 trunk at 440.125 MHz was
+  reported a few hundred Hz off and 4800-baud decoders failed to lock off-centre.
+  The candidate list now auto-detects the channel step (6.25 / 12.5 / 25 kHz)
+  from the discovered frequencies and snaps each candidate to the raster within
+  one FFT bin (without moving genuinely off-grid carriers; jittered detections of
+  one channel merge, strongest SNR winning), and the reported occupied bandwidth
+  is normalised to the nearest standard channel width so a 12.5 kHz channel reads
+  as 12.5 kHz rather than a skewed "11.6 kHz". (#669)
+
+### Fixed
+
+- **P25 / DMR wideband voice glitches from an off-nominal DDC rate** (#550). Voice
+  grants tapped off a wideband SDR run through a per-call DDC that rationally
+  resamples toward 48 kHz, but at certain input rates the reduced L/M ratio trips
+  the resampler's caps and lands a fraction of a percent off (e.g. ~48828 Hz from
+  a 6.25 MS/s-derived bin). The control-channel path already clocked its symbol
+  loops from `DDCBank.OutputRateHz`, but the voice path hardcoded the nominal
+  48 kHz, so the symbol clock drifted off the true phase, periodically slipped,
+  and the vocoder concealed each slip with an audible click. The virtual tuner now
+  surfaces the DDC's actual fractional rate through the composer to every digital
+  voice chain (P25 Phase 1 / Phase 2 / DMR), as a `float64` so the fractional part
+  reaches the receiver's symbol clock intact. Physical SDRs (exact integer rate)
+  are unchanged. (#668)
+- **MPT 1327 false locks** (#648). The lock gate counted recognised Address
+  codewords but ignored their identity, so a burst of inconsistent cross-protocol
+  false parses — a different system prefix each time — could still reach the
+  confirmation threshold and declare a false control-channel lock (and, being
+  permissive lock-on-first 1200-baud FFSK, win the identify over P25 / DMR that
+  failed off-centre). A lock now requires a minimum number of confirmation
+  codewords (the production decoder sets two) that share a **consistent 7-bit
+  prefix**: a matching prefix corroborates the run in progress, a new or changed
+  prefix restarts the count. A genuine control channel repeats its prefix on every
+  Aloha / AhoyChan and still confirms within a couple of codewords, while random
+  parses never accumulate. (#669, #670)
+- **TETRA control channels skipped during blind identify** (#648). A recognised
+  TETRA control channel never cleared the 0.40 identify confidence gate ("best:
+  tetra @ 0.16") because its 30 % FEC score depends on descrambling SCH/HD with
+  the cell colour code, which is 0 under blind identify — wrong for any real cell,
+  so every SCH/HD CRC failed and TETRA forfeited the whole FEC weight. The BSCH is
+  always scrambled with colour code 0 and carries the cell's colour code, so blind
+  identify now recovers it from the BSCH and descrambles SCH/HD with the recovered
+  code, letting a real TETRA control channel earn its FEC score and clear the
+  gate. The stale "descrambler will not lock" colour-code warning (the decoder
+  auto-acquires it from the BSCH) is demoted to `Debug`. (#662)
+
 ## [v0.4.1] — 2026-06-13
 
 This release is mostly **DMR voice quality, wideband / USRP capture, and the

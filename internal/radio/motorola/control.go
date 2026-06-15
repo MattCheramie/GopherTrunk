@@ -145,6 +145,22 @@ func (c *ControlChannel) Ingest(o OSW) {
 // sites) accumulated from the control channel, for the hunt/discovery layer.
 func (c *ControlChannel) Topology() TopologyConfig { return c.topo.snapshot() }
 
+// NeighborFrequency resolves an adjacent-site LCN to its downlink frequency via
+// the configured band-plan resolver, quietly (no log/event on a miss — an
+// unresolved neighbour is informational). Returns false when no resolver is set
+// or the LCN is outside the plan. The hunt topology snapshot uses this to
+// surface neighbour control-channel frequencies.
+func (c *ControlChannel) NeighborFrequency(lcn uint16) (uint32, bool) {
+	if c.resolver == nil {
+		return 0, false
+	}
+	hz, err := c.resolver.Frequency(lcn)
+	if err != nil {
+		return 0, false
+	}
+	return hz, true
+}
+
 func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant) {
 	if c.bus == nil {
 		return

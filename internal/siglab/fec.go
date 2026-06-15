@@ -248,6 +248,16 @@ func tetraFEC(stream []uint8, land *SyncLandscape, sys trunking.System) []FECSta
 	const schDibits = 108 // 216 type-5 bits
 	syncLen := land.SyncLen
 	cc := sys.TETRAColourCode
+	// Blind identify has no configured colour code, but SCH/HD is scrambled
+	// with the cell's colour code — descrambling with 0 fails on every real
+	// cell, forfeiting TETRA's whole FEC score (issue #648). The BSCH (colour 0)
+	// carries the code, so recover it from a synchronisation burst in the same
+	// stream and descramble SCH/HD with it.
+	if cc == 0 {
+		if recovered, ok := tetra.RecoverColourCode(stream); ok {
+			cc = recovered
+		}
+	}
 	for _, pos := range land.positions {
 		start := pos + syncLen
 		if start+schDibits > len(stream) {

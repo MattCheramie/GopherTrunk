@@ -123,6 +123,16 @@ type ControlChannel struct {
 	// breakdown — the steady-state shape that distinguishes "demod
 	// is broken" from "demod is fine but one frame in N is corrupt".
 	stats CCStats
+
+	// diagSeen rate-limits one-shot diagnostic Info lines to the first
+	// occurrence of a given key, so a field tester sees the census of
+	// what a site emits without the per-frame flood that keeps the
+	// per-opcode detail at Debug. Keys: unhandled (MFID,opcode) pairs
+	// and first-seen talker-alias source units. Written only from the
+	// dispatchTSBK path, which runs on the single Process goroutine
+	// (the sole writer of decode state), so no lock is needed — unlike
+	// stats, this is never read off-goroutine. Issue #376 (CBD).
+	diagSeen map[uint32]struct{}
 }
 
 // CCStats is the snapshot Stats() returns. All counters are
@@ -295,6 +305,7 @@ func New(opts Options) *ControlChannel {
 		bandPlan:            bp,
 		now:                 now,
 		aliasAsm:            NewTalkerAliasAssembler(now),
+		diagSeen:            make(map[uint32]struct{}),
 		rotations:           resolveRotations(opts.Rotations),
 		nidSearchSpan:       span,
 		p25Phase1DemodMode:  opts.P25Phase1DemodMode,
@@ -1026,6 +1037,13 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	case OpUnitRegistrationResponse:
 		c.publishUnitRegistration(ParseUnitRegistrationResponse(t.Payload), nac)
 	default:
+		// One Info census line per distinct (MFID,opcode) — a standard
+		// opcode we don't dispatch could be (or carry) the alias
+		// transport a given site uses; the bulk per-frame detail stays
+		// at Debug. Issue #376 (CBD).
+		if c.diagFirst(diagUnhandledTSBK | uint32(t.MFID)<<8 | uint32(t.Opcode)) {
+			c.log.Info("p25: unhandled tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+		}
 		c.log.Debug("tsbk decoded",
 			"opcode", t.Opcode, "lb", t.LB, "metric", metric, "nac", nac)
 	}
@@ -1052,12 +1070,46 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		return
 	}
 	if f, ok := t.AsTalkerAliasFragment(); ok {
+		// Surface the first fragment seen per source at Info so a field
+		// tester can tell aliases are arriving on the CC even when the
+		// multi-fragment set never completes (e.g. CRC loss dropping a
+		// block before the 10s reassembly window closes — issue #376 CBD).
+		if c.diagFirst(diagAliasSrc | (f.SourceID & 0xFFFFFF)) {
+			c.log.Info("p25: cc talker alias fragment",
+				"system", c.systemName, "src", f.SourceID,
+				"block", f.BlockIndex, "of", f.BlockCount)
+		}
 		if alias, src, done := c.aliasAsm.Add(f); done {
 			c.publishTalkerAlias(src, alias)
 		}
 		return
 	}
+	// Unrecognised vendor opcode: log one Info census line per distinct
+	// (MFID,opcode) so a field test names any alias-bearing transport we
+	// don't yet decode, while the per-frame detail stays at Debug.
+	if c.diagFirst(diagUnhandledTSBK | uint32(t.MFID)<<8 | uint32(t.Opcode)) {
+		c.log.Info("p25: unhandled tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+	}
 	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
+}
+
+// diagnostic key namespaces for diagSeen — the high byte separates
+// categories so an unhandled-opcode key and an alias-source key never
+// collide. See ControlChannel.diagSeen.
+const (
+	diagUnhandledTSBK uint32 = 1 << 24
+	diagAliasSrc      uint32 = 2 << 24
+)
+
+// diagFirst reports whether key is being seen for the first time,
+// recording it so subsequent calls return false. Single-writer
+// (Process goroutine) — see diagSeen.
+func (c *ControlChannel) diagFirst(key uint32) bool {
+	if _, seen := c.diagSeen[key]; seen {
+		return false
+	}
+	c.diagSeen[key] = struct{}{}
+	return true
 }
 
 // publishPatch publishes an events.KindPatch for a vendor patch /
@@ -1094,7 +1146,7 @@ func (c *ControlChannel) publishTalkerAlias(sourceID uint32, alias string) {
 			At:       c.now(),
 		},
 	})
-	c.log.Debug("p25: talker alias",
+	c.log.Info("p25: cc talker alias",
 		"system", c.systemName, "src", sourceID, "alias", alias)
 }
 

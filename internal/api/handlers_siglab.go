@@ -424,6 +424,77 @@ func (s *Server) handleSiglabIdentify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleSiglabWideband surveys a staged wideband capture: it builds the
+// Welch-averaged band spectrum, detects every carrier, identifies each, and
+// clusters them into trunked-system verdicts. The response carries the spectrum
+// (for plotting), the per-carrier results, and the system rollups. Runs
+// synchronously — a wideband grab is bounded and the survey is in-memory.
+func (s *Server) handleSiglabWideband(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CaptureID    string  `json:"capture_id"`
+		SampleRateHz float64 `json:"sample_rate_hz"`
+		CenterHz     uint32  `json:"center_hz"`
+		Format       string  `json:"format"`
+		FFTSize      int     `json:"fft_size"`
+		ChannelRate  float64 `json:"channel_rate_hz"`
+		ThresholdDb  float32 `json:"peak_threshold_db"`
+		Strategy     string  `json:"tuner_strategy"`
+		Conjugate    bool    `json:"conjugate"`
+		IQCorrect    bool    `json:"iq_correct"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+		return
+	}
+	cap, ok := s.siglab.getCapture(req.CaptureID)
+	if !ok {
+		s.writeError(w, http.StatusNotFound, "siglab: capture not found")
+		return
+	}
+	formatStr := req.Format
+	if formatStr == "" {
+		formatStr = cap.Format.String()
+	}
+	format, err := siglab.ParseSampleFormat(formatStr)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+		return
+	}
+	rate := req.SampleRateHz
+	if rate <= 0 {
+		rate = cap.SampleRateHz
+	}
+	if rate <= 0 {
+		s.writeError(w, http.StatusBadRequest, "siglab: sample_rate_hz is required")
+		return
+	}
+
+	f, err := os.Open(cap.Path)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "siglab: open capture: "+err.Error())
+		return
+	}
+	defer f.Close()
+
+	out, err := siglab.SurveyWideband(f, cap.Name, siglab.WidebandConfig{
+		SampleRateHz:    rate,
+		CenterHz:        req.CenterHz,
+		Format:          format,
+		FFTSize:         req.FFTSize,
+		ChannelRateHz:   req.ChannelRate,
+		PeakThresholdDb: req.ThresholdDb,
+		TunerStrategy:   req.Strategy,
+		Conjugate:       req.Conjugate,
+		IQCorrect:       req.IQCorrect,
+		CollectSpectrum: true,
+	})
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // siglabSynthRequest is the body of POST /api/v1/siglab/synthesize. It mirrors
 // the `gen` CLI surface.
 type siglabSynthRequest struct {

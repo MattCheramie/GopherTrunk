@@ -137,6 +137,16 @@ func RunOfflineSurvey(captures []CaptureInput, opts LiveHuntOptions) (*SignalSur
 			})
 			continue
 		}
+		// Wideband + -detect-carriers: expand the capture into every carrier it
+		// contains and route each, instead of treating the whole file as one
+		// channel. This finds an off-centre / non-dominant control channel and
+		// inventories the rest of the band, mirroring a live SDR sweep.
+		if opts.DetectCarriers && rate > 2*surveyChannelRateHz {
+			if surveySweptCapture(sv, ci, iq, rate, opts, log, &reports) {
+				continue
+			}
+		}
+
 		cand := Candidate{FreqHz: ci.FrequencyHz}
 		// Each offline capture is a lone baseband grab: no neighbour to bound
 		// against, so the occupied-bandwidth walk stays unbounded.
@@ -150,6 +160,41 @@ func RunOfflineSurvey(captures []CaptureInput, opts LiveHuntOptions) (*SignalSur
 		}
 	}
 	return finishSurvey(sv), reports, nil
+}
+
+// surveySweptCapture detects every carrier in a wideband offline capture,
+// frequency-shifts each to baseband, and routes it through the shared
+// classify+decode body. It returns false (so the caller falls back to the
+// single-candidate path) when no carriers are detected. Each detected carrier
+// is tuned to DC here, so the per-candidate decode runs with auto-tune off.
+func surveySweptCapture(sv *SignalSurvey, ci CaptureInput, iq []complex64, rate uint32, opts LiveHuntOptions, log *slog.Logger, reports *[]CaptureReport) bool {
+	carriers := detectOfflineCarriers(iq, rate, opts.FFTSize, opts.PeakOpts)
+	if len(carriers) == 0 {
+		return false
+	}
+	routeOpts := opts
+	routeOpts.AutoTune = false // each carrier is already shifted to DC below
+	for i, c := range carriers {
+		absHz := int64(ci.FrequencyHz) + c.OffsetHz
+		if absHz < 0 {
+			absHz = 0
+		}
+		cand := Candidate{FreqHz: uint32(absHz), SNRDb: c.SNRDb}
+		shifted := iq
+		if c.OffsetHz != 0 {
+			// NCO.Mix shifts +offset → DC, bringing the carrier to baseband.
+			shifted = dsp.NewNCO(float64(c.OffsetHz), float64(rate)).Mix(nil, iq)
+		}
+		ds, rep := classifyAndRoute(sv.System, shifted, rate, cand, offlineNeighborHz(carriers, i), routeOpts, log)
+		if rep != nil {
+			*reports = append(*reports, *rep)
+		}
+		sv.Signals = append(sv.Signals, ds)
+		if opts.OnSignal != nil {
+			opts.OnSignal(ds)
+		}
+	}
+	return true
 }
 
 // classifyAndRoute is the shared per-candidate body of the live and offline
@@ -170,7 +215,11 @@ func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32
 	cls := survey.ClassifyWith(chIQ, float64(chRate), wideBw, wideSnr, opts.ClassifyConfig)
 	ds.Class = cls.Class
 	ds.Confidence = cls.Confidence
-	ds.OccupiedBwHz = cls.OccupiedBwHz
+	// Report the bandwidth normalised to the nearest real channel width (so a
+	// 12.5 kHz channel reads as 12.5 kHz, not the off-centre-skewed "11.6 kHz");
+	// the raw measurement stays on ds.Features for diagnostics, and the
+	// classifier's own decision already ran on the raw value above.
+	ds.OccupiedBwHz = survey.SnapChannelBandwidth(cls.OccupiedBwHz)
 	ds.BaudHz = cls.Features.BaudHz
 	ds.Features = cls.Features
 

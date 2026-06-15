@@ -187,8 +187,14 @@ func (s *DiscoveredSystem) addTalkgroup(dec uint32, encrypted bool, at time.Time
 // the neighbor's (RFSS, Site).
 func (s *DiscoveredSystem) addNeighbor(rfss, siteID uint8, n NeighborRef) {
 	site := s.site(rfss, siteID)
-	for _, e := range site.Neighbors {
-		if e.RFSS == n.RFSS && e.Site == n.Site {
+	for i := range site.Neighbors {
+		if site.Neighbors[i].RFSS == n.RFSS && site.Neighbors[i].Site == n.Site {
+			// First identity wins, but backfill a frequency once a later
+			// observation resolves one (the decoder may not have had a band-plan
+			// resolver on the first sighting).
+			if site.Neighbors[i].FrequencyHz == 0 && n.FrequencyHz != 0 {
+				site.Neighbors[i].FrequencyHz = n.FrequencyHz
+			}
 			return
 		}
 	}

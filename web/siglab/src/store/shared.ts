@@ -11,6 +11,8 @@ import type {
   Result,
   RunConfig,
   SynthRequest,
+  WidebandRequest,
+  WidebandResult,
 } from "../api/types";
 
 // Analysis is the per-capture run state: the job id, live-streamed events,
@@ -51,6 +53,7 @@ interface Store {
   run: (captureId: string, config: RunConfig) => Promise<void>;
   fetchIQ: (captureId: string) => Promise<IQTaps | undefined>;
   identify: (captureId: string, sampleRateHz?: number) => Promise<IdentifyResult>;
+  wideband: (captureId: string, opts: Partial<WidebandRequest>) => Promise<WidebandResult>;
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -172,6 +175,16 @@ export const useStore = create<Store>((set, get) => ({
     return api.identify(get().config, captureId, {
       sample_rate_hz: sampleRateHz ?? cap?.sample_rate_hz,
       format: cap?.format,
+    });
+  },
+
+  wideband: async (captureId, opts) => {
+    const cap = get().captures.find((c) => c.id === captureId);
+    return api.wideband(get().config, {
+      capture_id: captureId,
+      sample_rate_hz: cap?.sample_rate_hz,
+      format: cap?.format,
+      ...opts,
     });
   },
 }));

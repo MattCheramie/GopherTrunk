@@ -130,6 +130,12 @@ type HuntCockpit interface {
 	// Commit merges a run's discovered system into config.yaml (id 0 = latest),
 	// returning a human-readable list of changes.
 	Commit(id int, force, dryRun bool) (changes []string, err error)
+	// RadioReference cross-references a run's discovered system against
+	// RadioReference (id 0 = latest): duplicate-system hints plus a
+	// frequency/talkgroup diff. countyID and checkSIDs select the existing
+	// systems to compare against. Returns an error when RR credentials are not
+	// configured or no system has been discovered yet.
+	RadioReference(id, countyID int, checkSIDs []int) (HuntRRReport, error)
 }
 
 // ScannerCockpit is the API surface for the police-scanner subsystem:
@@ -977,6 +983,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/hunt/survey", s.handleHuntSurveyExport)
 	mux.HandleFunc("GET /api/v1/hunt/{id}/survey", s.handleHuntSurveyExport)
 	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
+	mux.HandleFunc("GET /api/v1/hunt/radioreference", s.handleHuntRadioReference)
+	mux.HandleFunc("GET /api/v1/hunt/{id}/radioreference", s.handleHuntRadioReference)
 	mux.HandleFunc("POST /api/v1/hunt/{id}/commit", s.gate(s.handleHuntCommit))
 
 	mux.HandleFunc("GET /api/v1/scanner", s.handleScannerStatus)
@@ -1053,8 +1061,11 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}", s.handleSiglabJobResult)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/events", s.handleSiglabJobStream)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/iq", s.handleSiglabJobIQ)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/psd", s.handleSiglabJobPSD)
+		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/spectrogram", s.handleSiglabJobSpectrogram)
 		mux.HandleFunc("GET /api/v1/siglab/jobs/{id}/export", s.handleSiglabExport)
 		mux.HandleFunc("POST /api/v1/siglab/identify", s.gate(s.handleSiglabIdentify))
+		mux.HandleFunc("POST /api/v1/siglab/wideband", s.gate(s.handleSiglabWideband))
 		mux.HandleFunc("POST /api/v1/siglab/synthesize", s.gate(s.handleSiglabSynthesize))
 		// Live raw-IQ capture off a tuner: list devices (read), record a
 		// fixed-length capture (gated mutation — it spends an SDR + CPU),

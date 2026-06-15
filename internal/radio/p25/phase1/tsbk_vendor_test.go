@@ -1,6 +1,9 @@
 package phase1
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,6 +176,49 @@ func TestControlChannelPublishesMotorolaPatch(t *testing.T) {
 	}
 	if patches[1].Add || patches[1].SuperGroup != 0x1234 {
 		t.Errorf("delete patch = %+v, want Add false / super 0x1234", patches[1])
+	}
+}
+
+// TestDiagFirst pins the one-shot gating the CBD (issue #376) field
+// diagnostics rely on: a key is reported once and then suppressed, and
+// distinct keys are independent.
+func TestDiagFirst(t *testing.T) {
+	cc := New(Options{Bus: events.NewBus(1), SystemName: "S"})
+	defer cc.bus.Close()
+	if !cc.diagFirst(diagUnhandledTSBK | 0x42) {
+		t.Fatal("first sight of a key must report true")
+	}
+	if cc.diagFirst(diagUnhandledTSBK | 0x42) {
+		t.Error("second sight of the same key must report false")
+	}
+	if !cc.diagFirst(diagUnhandledTSBK | 0x43) {
+		t.Error("a distinct key must report true")
+	}
+	// Namespace prefixes must keep an alias-source key from colliding
+	// with an unhandled-opcode key of the same low bits.
+	if !cc.diagFirst(diagAliasSrc | 0x42) {
+		t.Error("alias-source key collided with unhandled-opcode key")
+	}
+}
+
+// TestControlChannelCensusesUnhandledTSBK confirms an undecoded vendor
+// opcode produces exactly one Info census line per distinct (MFID,opcode)
+// — the signal a CBD-class field test needs to name an alias transport we
+// don't yet decode (issue #376) — and that a handled opcode does not.
+func TestControlChannelCensusesUnhandledTSBK(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	bus := events.NewBus(16)
+	defer bus.Close()
+	cc := New(Options{Bus: bus, Log: log, SystemName: "S"})
+
+	// An unknown Motorola opcode (not patch/delete/alias) twice.
+	unknown := TSBK{Opcode: 0x3F, MFID: MFIDMotorola, Payload: [8]byte{}}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, unknown), 0)
+	cc.Process(buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, unknown), 1<<20)
+
+	if n := strings.Count(buf.String(), "p25: unhandled tsbk"); n != 1 {
+		t.Errorf("unhandled-tsbk census lines = %d, want 1 (one per distinct opcode)", n)
 	}
 }
 

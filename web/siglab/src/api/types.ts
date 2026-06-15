@@ -17,6 +17,27 @@ export interface IQTaps {
   symbol_dibits?: number[];
   symbol_soft?: number[];
   symbol_cardinality?: number;
+  // Per-symbol differential phase (radians) of the complex constellation —
+  // the π/4-DQPSK rotation signal. Present only on the CQPSK path.
+  diff_phase?: number[];
+}
+
+// PSDResult is the server-computed Welch power spectrum from
+// GET /jobs/{id}/psd: FFT-shifted dBFS bins (bin 0 = -sample_rate_hz/2).
+export interface PSDResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  bins: number[];
+}
+
+// SpectrogramResult is the server-computed STFT from GET /jobs/{id}/spectrogram:
+// z[frame][bin] dBFS, each row FFT-shifted (bin 0 = -sample_rate_hz/2).
+export interface SpectrogramResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  hop: number;
+  frames: number;
+  z: number[][];
 }
 
 export interface LockInfo {
@@ -276,6 +297,73 @@ export interface RunConfig {
   enable_dda?: boolean;
   enable_adaptive_slicer?: boolean;
   collect_receiver_state?: boolean;
+}
+
+// WidebandRequest is the body of POST /api/v1/siglab/wideband. center_hz is the
+// absolute tuner center of the wideband grab; the survey maps detected carriers
+// to absolute frequencies from it.
+export interface WidebandRequest {
+  capture_id: string;
+  center_hz?: number;
+  sample_rate_hz?: number;
+  format?: string;
+  fft_size?: number;
+  channel_rate_hz?: number;
+  peak_threshold_db?: number;
+  tuner_strategy?: string;
+  conjugate?: boolean;
+  iq_correct?: boolean;
+}
+
+// SurveySpectrum is the Welch-averaged band power spectrum (dBFS), FFT-shifted
+// so bins[0] is center_hz - sample_rate_hz/2. Mirrors siglab.SurveySpectrum.
+export interface SurveySpectrum {
+  center_hz: number;
+  sample_rate_hz: number;
+  bins: number[];
+}
+
+// WidebandCarrier is one surveyed carrier. role is "control" | "voice" | "".
+export interface WidebandCarrier {
+  offset_hz: number;
+  freq_hz: number;
+  snr_db: number;
+  protocol: string;
+  confidence: number;
+  inconclusive: boolean;
+  locked: boolean;
+  role: string;
+  color_code?: number;
+  system_id?: number;
+  grants?: GrantRecord[];
+  score: number;
+}
+
+// WidebandSystem clusters carriers into one trunked-system verdict.
+export interface WidebandSystem {
+  protocol: string;
+  tier3: boolean;
+  system_id?: number;
+  color_code?: number;
+  control_count: number;
+  voice_count: number;
+  lo_hz: number;
+  hi_hz: number;
+  carrier_idx: number[];
+  verdict: string;
+}
+
+// WidebandResult mirrors siglab.WidebandResult.
+export interface WidebandResult {
+  source: string;
+  sample_rate_hz: number;
+  center_hz: number;
+  channel_rate_hz: number;
+  strategy: string;
+  spectrum?: SurveySpectrum;
+  detected_count: number;
+  carriers: WidebandCarrier[];
+  systems: WidebandSystem[];
 }
 
 export interface SynthRequest {

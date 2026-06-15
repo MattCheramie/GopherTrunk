@@ -369,6 +369,26 @@ func (c *ControlChannel) resolveLCN(lcn uint16) (uint32, bool) {
 	return freq, true
 }
 
+// NeighborFrequency resolves an adjacent-site LCN to its downlink frequency
+// using the configured band-plan resolver, quietly: unlike resolveLCN, an
+// unresolved neighbour is informational (not a dropped grant) so no decode.error
+// event is published. Returns false when no resolver is set or the LCN is
+// outside the plan. The hunt topology snapshot uses this to surface neighbour
+// control-channel frequencies.
+func (c *ControlChannel) NeighborFrequency(lcn uint16) (uint32, bool) {
+	c.resolverMu.RLock()
+	resolver := c.resolver
+	c.resolverMu.RUnlock()
+	if resolver == nil {
+		return 0, false
+	}
+	freq, err := resolver.Frequency(lcn)
+	if err != nil {
+		return 0, false
+	}
+	return freq, true
+}
+
 func (c *ControlChannel) maybeLock(s LockState) {
 	if !c.locked || c.last != s {
 		c.locked = true

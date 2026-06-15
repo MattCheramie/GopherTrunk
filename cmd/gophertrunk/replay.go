@@ -43,7 +43,7 @@ func runReplay(args []string) {
 	enableAdaptiveSlicer := fs.Bool("adaptive-slicer", false, "enable the adaptive C4FM slicer on the P25 C4FM path (off by default; see issue #402)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation (off by default; see issue #402)")
 	tuneHzFlag := fs.Float64("tune-hz", 0, "frequency-shift the capture so a channel at +tune-hz lands at 0 Hz before demod (0 = no shift)")
-	autoTune := fs.Bool("auto-tune", false, "estimate the dominant carrier offset from the start of the file and tune it to 0 Hz (overrides -tune-hz)")
+	autoTune := fs.Bool("auto-tune", false, "find the control channel by trying the ranked carrier candidates and keeping the best lock — handles an off-centre / non-dominant control channel in a wideband capture (overrides -tune-hz)")
 	outFormat := fs.String("out-format", "text", "output format: text | json | jsonl | yaml | csv | csv-events")
 	out := fs.String("out", "", "write structured output to this file (default: stdout for non-text)")
 	fs.Usage = func() {
@@ -125,7 +125,16 @@ FLAGS:`)
 		Log:                  logger,
 	}
 
-	res, err := siglab.Run(*in, cfg)
+	// Under -auto-tune, try the ranked carrier candidates and keep the best
+	// lock — so a control channel that is off-centre and not the loudest carrier
+	// in a wideband capture is still found (a single dominant-carrier estimate
+	// would miss it). -tune-hz (without -auto-tune) still forces one offset.
+	var res *siglab.Result
+	if *autoTune {
+		res, err = siglab.RunAutoTuneMulti(*in, cfg, 0)
+	} else {
+		res, err = siglab.Run(*in, cfg)
+	}
 	if err != nil {
 		rep.Fatal(1, err)
 	}

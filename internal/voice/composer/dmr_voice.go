@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -127,7 +128,7 @@ func (r *slotRouter) accept(sf dmrvoice.VoiceSuperframe) bool {
 	return false
 }
 
-func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz uint32, groupID uint32, interleaved bool, done chan<- struct{}) {
+func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-chan []complex64, iqHz float64, groupID uint32, interleaved bool, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-dmr:"+serial, nil)
 
@@ -137,17 +138,17 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
 
-	decim := int(iqHz) / dmrVoiceIntermediateHz
+	decim := int(math.Round(iqHz)) / dmrVoiceIntermediateHz
 	if decim < 1 {
 		decim = 1
 	}
-	symbolHz := float64(iqHz) / float64(decim)
+	symbolHz := iqHz / float64(decim)
 
 	// Front-end LPF: doubles as the anti-aliasing filter for the
 	// decimation, so it is only needed when the IQ is actually
 	// decimated (the live multi-MS/s path; decim == 1 only in tests
 	// that feed IQ already at the intermediate rate).
-	cutoff := float64(c.bw) / float64(iqHz)
+	cutoff := float64(c.bw) / iqHz
 	if cutoff > 0.45 {
 		cutoff = 0.45
 	}

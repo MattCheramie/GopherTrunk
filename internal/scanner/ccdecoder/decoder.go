@@ -89,6 +89,15 @@ type IQPowerObserver interface {
 	RecordDecodeOverrun()
 }
 
+// FECObserver is the minimal metrics surface for the opt-in per-protocol
+// FEC correction-depth histograms (today: TETRA). internal/metrics.Metrics
+// satisfies it; the daemon wires it only when metrics.detailed_fec is set,
+// so nil is the normal case and disables the histogram path end-to-end at
+// zero cost (the pipeline never computes a correction depth).
+type FECObserver interface {
+	RecordTetraViterbiCorrections(system, channel string, corrections int)
+}
+
 // ErrIQStreamClosed is returned by Run whenever the SDR's IQ stream is
 // unexpectedly unavailable while the context is still live — either the
 // channel closed mid-stream (the USB reaper died of an unrecoverable
@@ -182,6 +191,10 @@ type Options struct {
 	// low-power debug log in place — operators without Prometheus
 	// still get a hint when the dongle goes silent.
 	Metrics IQPowerObserver
+	// FEC is the optional FEC correction-depth observer. Nil (the
+	// default) disables the per-protocol FEC histograms; the daemon
+	// supplies it only when metrics.detailed_fec is enabled.
+	FEC FECObserver
 	// IQCorrect enables blind I/Q-imbalance correction on the raw IQ
 	// before decimation (issue #402). Off by default; opt-in per device
 	// via config. Validate with `replay -iq-correct -diag` on a capture
@@ -267,6 +280,7 @@ type Decoder struct {
 	// cross-goroutine IQHealth snapshot it derives is the separate,
 	// healthMu-guarded block below.
 	metrics      IQPowerObserver
+	fec          FECObserver
 	pwSumSq      float64
 	pwSumI       float64 // running sum of I samples → DC-bin mean (issue #402)
 	pwSumQ       float64 // running sum of Q samples → DC-bin mean (issue #402)
@@ -357,6 +371,7 @@ func New(opts Options) (*Decoder, error) {
 		systems:      make(map[string]trunking.System, len(opts.Systems)),
 		sub:          opts.Bus.Subscribe(),
 		metrics:      opts.Metrics,
+		fec:          opts.FEC,
 	}
 	empty := ""
 	d.activeSystem.Store(&empty)
@@ -541,14 +556,25 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 	rate := d.pipelineRateHz
 	d.mu.Unlock()
 
-	p2, err := factory(PipelineOptions{
+	popts := PipelineOptions{
 		Bus:          d.bus,
 		Log:          d.log,
 		SystemName:   sys.Name,
 		FrequencyHz:  p.AttemptedFreqHz,
 		SampleRateHz: rate,
 		System:       sys,
-	})
+	}
+	if d.fec != nil {
+		// Bind the system name so the pipeline reports a per-burst FEC
+		// correction depth without re-plumbing it. Nil observer ⇒ the
+		// pipeline never computes one.
+		sysName := sys.Name
+		fec := d.fec
+		popts.FECObserver = func(channel string, corrections int) {
+			fec.RecordTetraViterbiCorrections(sysName, channel, corrections)
+		}
+	}
+	p2, err := factory(popts)
 	if err != nil {
 		d.log.Warn("ccdecoder: pipeline factory failed",
 			"system", p.System, "protocol", sys.Protocol, "err", err)

@@ -12,11 +12,14 @@ type processState struct {
 	pduDibits    []uint8
 	matchScratch []int
 
-	// SB-burst (synchronisation burst) path: a separate detector for
-	// the synchronisation training sequence plus a rolling dibit buffer
-	// with look-back (to the BSCH before the STS) and look-ahead (to the
-	// BNCH after it). See processSB.
-	stsDet     *SyncDetector
+	// SB-burst (synchronisation burst) path: a detector for the
+	// synchronisation training sequence under each of the four π/4-DQPSK
+	// constellation rotations (a residual CFO rotates the whole dibit
+	// stream by an unknown 0..3, so a single fixed-orientation correlator
+	// misses the SB on real air), plus a rolling dibit buffer with
+	// look-back (to the BSCH before the STS) and look-ahead (to the BNCH
+	// after it). See processSB.
+	stsDets    [4]*SyncDetector
 	stsScratch []int
 	buf        []uint8     // rolling dibit window
 	softBuf    []complex64 // per-dibit soft differential, parallel to buf (nil ⇒ hard-only)
@@ -89,11 +92,15 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	c.mu.Unlock()
 
 	if c.proc == nil {
-		c.proc = &processState{
+		sts := SyncTrainingDibits()
+		ps := &processState{
 			det:       NewSyncDetector(NormalSyncDibits(), 3),
-			stsDet:    NewSyncDetector(SyncTrainingDibits(), 3),
 			pduDibits: make([]uint8, 0, channelDibitCount(ChannelSCHF)),
 		}
+		for r := range ps.stsDets {
+			ps.stsDets[r] = NewSyncDetector(rotateDibits(sts, uint8(r)), 3)
+		}
+		c.proc = ps
 	}
 	p := c.proc
 
@@ -192,10 +199,27 @@ func (c *ControlChannel) processSB(p *processState, dibits []uint8, diffs []comp
 		p.softBuf = p.softBuf[:0]
 	}
 
-	var hits []int
-	hits, _ = p.stsDet.Process(p.stsScratch[:0], dibits, baseIdx)
-	for _, trailing := range hits {
-		p.pendingSTS = append(p.pendingSTS, trailing-(stsDibits-1)) // leading index L
+	// Correlate the STS under each constellation rotation; a hit from any
+	// orientation enqueues the burst (decodeSB re-tries all four rotations
+	// when decoding the BSCH/BNCH, so the firing detector's rotation need
+	// not be carried through). De-duplicate trailing indices so a sequence
+	// that matches under two rotations is only decoded once.
+	for r := range p.stsDets {
+		var hits []int
+		hits, _ = p.stsDets[r].Process(p.stsScratch[:0], dibits, baseIdx)
+		for _, trailing := range hits {
+			L := trailing - (stsDibits - 1) // leading index L
+			dup := false
+			for _, q := range p.pendingSTS {
+				if q == L {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				p.pendingSTS = append(p.pendingSTS, L)
+			}
+		}
 	}
 
 	bufEnd := p.bufBase + len(p.buf)
@@ -259,6 +283,8 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 	bsch := block(L-sbBSCHDibits, sbBSCHDibits)
 	bschSoft := softBlock(L-sbBSCHDibits, sbBSCHDibits)
 	var sync SyncPDU
+	var bschInfo []byte
+	var bschRot uint8
 	found := false
 	for rot := uint8(0); rot < 4 && !found; rot++ {
 		var recovered []byte
@@ -270,7 +296,7 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		}
 		if ok {
 			if s, ok := ParseSyncPDU(recovered); ok {
-				sync, found = s, true
+				sync, bschInfo, bschRot, found = s, recovered, rot, true
 			}
 		}
 	}
@@ -278,6 +304,14 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 		return
 	}
 	c.LearnColourCode(sync.ExtendedColourCode())
+	// Report the BSCH FEC correction depth: re-encode the recovered
+	// type-1 bits and count how many channel bits the §8.3.1 chain
+	// flipped to reach the CRC-clean codeword (decoder-independent, so
+	// the count is identical on the hard and soft paths).
+	if c.fecObserver != nil {
+		received := TetraDibitsToBits(rotateDibits(bsch, bschRot))
+		c.fecObserver("bsch", hammingBits(received, EncodeBSCH(bschInfo)))
+	}
 
 	// Build a single lock state: cell identity (MCC/MNC) from the BSCH
 	// SYNC, location area from the BNCH SYSINFO. Firing one maybeLock
@@ -309,10 +343,77 @@ func (c *ControlChannel) decodeSB(p *processState, L int) {
 					ls.MCC, ls.MNC = sb.MCC, sb.MNC
 				}
 			}
+			if c.fecObserver != nil {
+				received := TetraDibitsToBits(rotateDibits(bnch, rot))
+				c.fecObserver("schhd", hammingBits(received, EncodeSCHHD(recovered, colour)))
+			}
 			break
 		}
 	}
 	c.maybeLock(ls)
+}
+
+// hammingBits counts the positions where two 0/1 bit slices differ, over
+// the overlapping prefix. Used to score the §8.3.1 FEC correction depth:
+// the number of received channel bits the decoder had to flip to land on
+// the recovered (re-encoded) codeword.
+func hammingBits(a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	d := 0
+	for i := 0; i < n; i++ {
+		if a[i]&1 != b[i]&1 {
+			d++
+		}
+	}
+	return d
+}
+
+// RecoverColourCode scans a dibit stream for a synchronisation burst and
+// returns the cell's extended (30-bit) colour code recovered from its BSCH.
+// The BSCH is scrambled with colour code 0 (§8.2.5.2), so this works with no
+// prior knowledge of the cell — it is how a cold receiver (and the blind
+// identify scorer) learns the scrambling code needed to descramble the SCH/HD
+// SYSINFO bursts that follow. Returns false when no SB burst with a CRC-valid
+// BSCH is present. Stateless: it correlates the synchronisation training
+// sequence itself rather than relying on the live Process state machine.
+func RecoverColourCode(stream []uint8) (uint32, bool) {
+	sts := SyncTrainingDibits()
+	// π/4-DQPSK carries data in the differential phase, so a residual carrier
+	// frequency offset adds a constant 90°/dibit term to the whole stream —
+	// the demodulated dibits arrive cyclically rotated by an unknown 0..3. On
+	// real air this rotation is essentially never zero, so the synchronisation
+	// training sequence only matches once the stream is de-rotated to the
+	// reference orientation. The synthesised fixtures demod at rotation 0,
+	// which is why a rotation-blind correlator passed in tests yet recovered
+	// no colour code on air. Try all four rotations of the stream.
+	for srot := uint8(0); srot < 4; srot++ {
+		rs := stream
+		if srot != 0 {
+			rs = rotateDibits(stream, srot)
+		}
+		det := NewSyncDetector(sts, 3)
+		hits, _ := det.Process(nil, rs, 0)
+		for _, trailing := range hits {
+			L := trailing - (len(sts) - 1) // leading dibit index of the STS
+			if L-sbBSCHDibits < 0 || L > len(rs) {
+				continue // BSCH look-back runs off the front of the buffer
+			}
+			bsch := rs[L-sbBSCHDibits : L]
+			for rot := uint8(0); rot < 4; rot++ {
+				recovered, ok := DecodeBSCH(TetraDibitsToBits(rotateDibits(bsch, rot)))
+				if !ok {
+					continue
+				}
+				if s, ok := ParseSyncPDU(recovered); ok {
+					return s.ExtendedColourCode(), true
+				}
+			}
+		}
+	}
+	return 0, false
 }
 
 // dispatchSlice turns the collected post-sync dibit slice into a

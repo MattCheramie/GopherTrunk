@@ -1,24 +1,31 @@
 import { useEffect, useState } from "react";
 import { Line } from "react-chartjs-2";
-import type { IQPoint } from "../api/types";
+import { useStore } from "../store/shared";
+import { api } from "../api/client";
+import type { PSDResult } from "../api/types";
 import { ensureChart } from "./chartSetup";
-import { welchPSD, type PSDResult } from "../dsp/transforms";
 
 ensureChart();
 
-// PSD renders a Welch power-spectral-density estimate of the decimated IQ.
-// The FFT is computed with TensorFlow.js (lazy-loaded by ./dsp/transforms).
-export function PSD({ points, rateHz }: { points: IQPoint[]; rateHz: number }) {
+// PSD renders the Welch power-spectral-density of a job's captured IQ. The FFT
+// is computed server-side (GET /jobs/{id}/psd via internal/dsp/spectrum), so the
+// browser needs no FFT library.
+export function PSD({ jobId }: { jobId: string }) {
+  const config = useStore((s) => s.config);
   const [psd, setPsd] = useState<PSDResult | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    if (points.length < 16) return;
+    if (!jobId) return;
     setBusy(true);
-    welchPSD(points, rateHz, 1024, 0.5)
+    api
+      .jobPSD(config, jobId, 1024)
       .then((r) => {
         if (!cancelled) setPsd(r);
+      })
+      .catch(() => {
+        if (!cancelled) setPsd(null);
       })
       .finally(() => {
         if (!cancelled) setBusy(false);
@@ -26,20 +33,25 @@ export function PSD({ points, rateHz }: { points: IQPoint[]; rateHz: number }) {
     return () => {
       cancelled = true;
     };
-  }, [points, rateHz]);
+  }, [jobId, config]);
+
+  // FFT-shifted bins: bin 0 is -rate/2, stepping by rate/len.
+  const n = psd?.bins.length ?? 0;
+  const base = psd ? -psd.sample_rate_hz / 2 : 0;
+  const step = psd && n > 0 ? psd.sample_rate_hz / n : 0;
 
   return (
     <div className="card">
       <h3 className="mb-2 text-sm font-semibold">Power spectral density</h3>
       {busy && <p className="text-xs text-muted">computing FFT…</p>}
-      {psd && psd.freqHz.length > 0 ? (
+      {psd && n > 0 ? (
         <Line
           data={{
-            labels: psd.freqHz.map((f) => (f / 1000).toFixed(1)),
+            labels: psd.bins.map((_, i) => ((base + i * step) / 1000).toFixed(1)),
             datasets: [
               {
-                label: "PSD (dB)",
-                data: psd.psdDb,
+                label: "PSD (dBFS)",
+                data: psd.bins,
                 borderColor: "#38bdf8",
                 pointRadius: 0,
                 borderWidth: 1,
@@ -51,7 +63,7 @@ export function PSD({ points, rateHz }: { points: IQPoint[]; rateHz: number }) {
             plugins: { legend: { display: false } },
             scales: {
               x: { title: { display: true, text: "kHz" }, ticks: { maxTicksLimit: 12 } },
-              y: { title: { display: true, text: "dB" } },
+              y: { title: { display: true, text: "dBFS" } },
             },
           }}
         />

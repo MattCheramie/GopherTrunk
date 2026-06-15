@@ -74,6 +74,20 @@ type IQSource interface {
 	SampleRateHz() uint32
 }
 
+// exactRateSource is an optional capability an IQSource may implement to
+// report its delivered rate with the fractional part preserved. A
+// wideband-derived virtual voice tuner's DDC resampler does not always
+// land exactly on 48 kHz; the integer SampleRateHz rounds that away, but a
+// symbol-recovery loop clocked at the rounded rate drifts off the true
+// symbol phase and periodically slips, surfacing as voice spikes/glitches.
+// Sources that know their exact rate implement this so the digital voice
+// chains clock their receivers at the true rate. Physical SDRs (exact
+// integer rates) need not implement it — the composer falls back to
+// SampleRateHz. Mirrors the control-channel fix in widebandt2 (issue #550).
+type exactRateSource interface {
+	SampleRateExactHz() float64
+}
+
 // Devices resolves a Voice-role IQ source by its serial. The daemon
 // supplies a wrapper around sdr.Pool; tests use a map.
 type Devices interface {
@@ -423,6 +437,18 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	if rateHz == 0 {
 		rateHz = c.iqHz
 	}
+	// Prefer the source's exact (fractional) rate when it exposes one, so
+	// the digital voice chains clock their symbol-recovery loop at the true
+	// rate rather than a rounded nominal — a nominal-rate clock drifts and
+	// slips, which the listener hears as spikes/glitches (issue #550 parity
+	// for the voice path). Physical SDRs don't implement this and fall back
+	// to the exact integer rate above.
+	rateHzF := float64(rateHz)
+	if exact, ok := src.(exactRateSource); ok {
+		if r := exact.SampleRateExactHz(); r > 0 {
+			rateHzF = r
+		}
+	}
 	ch := &chain{cancel: cancel, done: make(chan struct{})}
 	c.mu.Lock()
 	c.chains[cs.DeviceSerial] = ch
@@ -438,7 +464,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 				"device", cs.DeviceSerial, "system", cs.Grant.System,
 				"group", cs.Grant.GroupID)
 		}
-		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
+		go c.runDMRVoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHzF, cs.Grant.GroupID, cs.Grant.DMRInterleavedVoice, ch.done)
 	case isP25P2Voice:
 		macCfg := p25p2.MACDecodeConfig{
 			Trellis:    p25p2.TrellisMode(cs.Grant.P25Phase2Decode.Trellis),
@@ -447,11 +473,13 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Scrambler:  p25p2.ScramblerMode(cs.Grant.P25Phase2Decode.Scrambler),
 			Seed:       cs.Grant.P25Phase2Decode.Seed,
 		}
-		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHz, ch.done)
+		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case isP25P1Voice:
-		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.PatchedGroups, ch.done)
+		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.PatchedGroups, ch.done)
 	default:
-		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, rateHz, ch.done)
+		// Analog FM has no symbol clock to drift, so the rounded integer
+		// rate is fine; keep its uint32 signature unchanged.
+		go c.runFMChain(chainCtx, cs.DeviceSerial, iqCh, uint32(math.Round(rateHzF)), ch.done)
 	}
 }
 

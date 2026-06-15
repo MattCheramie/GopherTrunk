@@ -150,3 +150,76 @@ func TestProcessLearnsColourCodeFromSBBurst(t *testing.T) {
 		t.Errorf("lock LocationArea = %#x, want %#x (BNCH SYSINFO not decoded with the learned colour)", ls.LocationArea, la)
 	}
 }
+
+// TestProcessLearnsColourCodeFromSBBurstUnderRotation is the live-path
+// counterpart to TestRecoverColourCodeUnderRotation: it drives the full
+// ControlChannel.Process state machine with a synchronisation burst whose
+// dibit stream is globally rotated (the residual-CFO orientation real air
+// always carries), and asserts the SB detector still fires, the colour code
+// is learned from the BSCH, and the BNCH SYSINFO descrambles to a lock.
+// Before the per-rotation STS detectors landed, a non-zero rotation slipped
+// straight past the single fixed-orientation correlator and never locked.
+func TestProcessLearnsColourCodeFromSBBurstUnderRotation(t *testing.T) {
+	const (
+		cc6        = 0x2D
+		mcc uint16 = 0x0CE
+		mnc uint16 = 0x1234
+		la  uint16 = 0x2B7
+	)
+	ext := ExtendedColourCode(mcc, mnc, cc6)
+
+	syncInfo := make([]byte, 60)
+	putBits(syncInfo, 4, 6, cc6)
+	putBits(syncInfo, 31, 10, uint32(mcc))
+	putBits(syncInfo, 41, 14, uint32(mnc))
+	bschDibits := TetraBitsToDibits(EncodeBSCH(syncInfo))
+
+	payload := make([]byte, 11)
+	payload[3] = byte((la >> 6) & 0xFF)
+	payload[4] = byte((la & 0x3F) << 2)
+	pdu := PDU{Disc: DiscMLE, Type: uint8(MLESystemInfo), Payload: payload}
+	bnchDibits := TetraBitsToDibits(EncodeSCHHD(pduToType1Bits(pdu, 124), ext))
+
+	var burst []uint8
+	burst = append(burst, bschDibits...)
+	burst = append(burst, SyncTrainingDibits()...)
+	burst = append(burst, make([]uint8, 15)...)
+	burst = append(burst, bnchDibits...)
+
+	base := make([]uint8, 30)
+	for r := 0; r < 4; r++ {
+		base = append(base, burst...)
+		base = append(base, make([]uint8, 40)...)
+	}
+
+	for rot := uint8(1); rot < 4; rot++ {
+		stream := rotateDibits(base, rot)
+
+		bus := events.NewBus(16)
+		sub := bus.Subscribe()
+		cc := New(Options{Bus: bus, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), SystemName: "Sys", FrequencyHz: 412_000_000})
+		cc.SetChannelCoding(ChannelCodingOn)
+		cc.Process(stream, 0)
+
+		if got := cc.ColourCode(); got != ext {
+			t.Errorf("rot=%d: learned colour code = %#x, want %#x", rot, got, ext)
+		}
+		var locked bool
+		for {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind == events.KindCCLocked {
+					locked = true
+				}
+				continue
+			default:
+			}
+			break
+		}
+		if !locked {
+			t.Errorf("rot=%d: no cc.locked from the rotated SB burst", rot)
+		}
+		sub.Close()
+		bus.Close()
+	}
+}

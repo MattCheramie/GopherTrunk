@@ -146,6 +146,17 @@ export interface HuntStatus {
   // Per-capture decode results from the live run, so the Hunt panel can
   // show what each surveyed candidate decoded to (or why it was skipped).
   reports?: CaptureReport[];
+  gain_recommendations?: GainRecommendation[];
+  gain_note?: string;
+}
+
+// GainRecommendation mirrors hunt.GainRecommendation — the best front-end gain
+// found for one control channel by an auto-gain sweep.
+export interface GainRecommendation {
+  freq_hz: number;
+  best_gain_tenth_db: number;
+  best_error_rate: number;
+  locked: boolean;
 }
 
 // CaptureReport mirrors hunt.CaptureReport — one candidate's decode outcome
@@ -179,6 +190,42 @@ export interface DiscoveredSite {
   site_name?: string;
   county?: string;
   control_channels?: { frequency_hz: number; is_control?: boolean; confidence?: number }[];
+  secondary?: number[];
+  neighbors?: NeighborRef[];
+}
+
+// HuntRRReport mirrors api.HuntRRReport — the RadioReference cross-reference of
+// a discovered system: duplicate-system hints + a frequency/talkgroup diff.
+export interface HuntRRReport {
+  hints?: DuplicateHint[];
+  diff?: RRDiff;
+  compared: number;
+}
+
+export interface DuplicateHint {
+  sid: number;
+  name: string;
+  reason: string;
+  confidence: number;
+}
+
+export interface RRDiff {
+  sid: number;
+  name: string;
+  freq_offsets?: { discovered_hz: number; rr_hz: number; delta_hz: number }[];
+  freqs_not_in_rr?: number[];
+  talkgroups_not_in_rr?: number[];
+}
+
+// NeighborRef mirrors hunt.NeighborRef — an adjacent site advertised by the
+// control channel. frequency_hz is set once the band plan / LCN resolver maps
+// the channel to a downlink frequency.
+export interface NeighborRef {
+  rfss?: number;
+  site?: number;
+  channel_id?: number;
+  channel_number?: number;
+  frequency_hz?: number;
 }
 
 // DMRGrantObservedDTO mirrors api.DMRGrantObservedDTO — a raw DMR Tier III
@@ -229,6 +276,10 @@ export interface HuntStartRequest {
   no_sweep?: boolean;
   survey?: boolean;
   classify_only?: boolean;
+  persist_survey?: boolean;
+  resume?: boolean;
+  auto_gain?: boolean;
+  auto_gain_set?: string;
   max_dwell_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;

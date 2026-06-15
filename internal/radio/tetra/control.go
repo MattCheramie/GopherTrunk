@@ -44,6 +44,15 @@ type ControlChannel struct {
 	resolver   Resolver
 	now        func() time.Time
 
+	// fecObserver, when non-nil, receives the Viterbi/FEC correction
+	// depth (the number of channel bits the §8.3.1 decode chain
+	// corrected) each time a signalling burst is recovered CRC-clean.
+	// It is the hook the metrics layer wires the
+	// gophertrunk_tetra_viterbi_corrections histogram onto; nil ⇒ no
+	// computation and zero overhead (the production default unless
+	// metrics.detailed_fec is enabled).
+	fecObserver func(channel string, corrections int)
+
 	// proc is the cross-call dibit / sync state the Process
 	// adapter uses (see process.go). Lazily constructed on the
 	// first Process call.
@@ -323,6 +332,13 @@ type Options struct {
 	FrequencyHz uint32
 	Resolver    Resolver
 	Now         func() time.Time
+
+	// FECObserver, when non-nil, is invoked with the per-burst FEC
+	// correction depth (channel bits the §8.3.1 chain corrected) every
+	// time a BSCH or BNCH/SCH-HD burst recovers CRC-clean. Wired by the
+	// connector to the metrics layer only when metrics.detailed_fec is
+	// enabled. nil ⇒ zero overhead.
+	FECObserver func(channel string, corrections int)
 }
 
 // New constructs a ControlChannel.
@@ -336,12 +352,13 @@ func New(opts Options) *ControlChannel {
 		now = time.Now
 	}
 	return &ControlChannel{
-		bus:        opts.Bus,
-		log:        log,
-		systemName: opts.SystemName,
-		freqHz:     opts.FrequencyHz,
-		resolver:   opts.Resolver,
-		now:        now,
+		bus:         opts.Bus,
+		log:         log,
+		systemName:  opts.SystemName,
+		freqHz:      opts.FrequencyHz,
+		resolver:    opts.Resolver,
+		now:         now,
+		fecObserver: opts.FECObserver,
 	}
 }
 

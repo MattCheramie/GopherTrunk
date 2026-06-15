@@ -114,6 +114,7 @@ func renderSignal(w io.Writer, s *siglab.SignalQuality) {
 		fmt.Fprintf(w, "siglab:   symbol %d: %d (%.1f%%)\n", i, n, pct)
 	}
 	if s.IQObserved {
+		fmt.Fprintf(w, "siglab: raw IQ power: %.1f dBFS (RMS)\n", s.RMSPowerDBFS)
 		fmt.Fprintf(w, "siglab: raw IQ imbalance: gain=%+.3f dB  phase=%+.3f°  image_rejection=%.1f dB\n",
 			s.IQGainImbalanceDB, s.IQPhaseImbalanceDeg, s.IQImageRejectionDB)
 	}

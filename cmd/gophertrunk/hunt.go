@@ -12,6 +12,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/huntrr"
 	"github.com/MattCheramie/GopherTrunk/internal/radioreference"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
@@ -41,6 +42,7 @@ func runHunt(args []string) {
 	autoTune := fs.Bool("auto-tune", false, "estimate the dominant carrier offset and tune it to 0 Hz before demod")
 	conjugate := fs.Bool("conjugate", false, "conjugate IQ (negate Q) before channelization (spectrum-inverted front-end)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation")
+	wideband := fs.Bool("wideband", false, "offline: treat each -in capture as a wide-band multi-carrier grab — survey it (spectrum → per-carrier DDC → identify), then group the carriers into one trunked system. -freq is the capture CENTER frequency.")
 	minConfidence := fs.Float64("min-confidence", 0.40, "skip auto-identified captures below this confidence (0..1)")
 
 	// Live-mode flags (no -in): sweep an SDR across operator-given band(s) or
@@ -67,6 +69,7 @@ func runHunt(args []string) {
 	peakThresholdDb := fs.Float64("peak-threshold-db", 10, "minimum dB above the noise floor for a carrier to count (live sweep)")
 	minSpacingHz := fs.Uint("min-spacing", 6250, "minimum Hz between detected carriers (live sweep)")
 	fftSize := fs.Int("fft-size", 4096, "FFT size per sweep step (power of two)")
+	detectCarriers := fs.Bool("detect-carriers", false, "offline (-in): expand a wideband capture into every carrier it contains (FFT peak-detect) before decode — finds an off-centre / non-dominant control channel and inventories the band, instead of treating the whole file as one channel")
 	dwellSeconds := fs.Float64("dwell-seconds", 3, "IQ seconds captured per candidate for identify+decode (live mode)")
 	gain := fs.Int("gain", -1, "SDR gain in tenths of dB for live mode (-1 = automatic)")
 	ppm := fs.Int("ppm", 0, "SDR frequency correction in PPM for live mode")
@@ -125,6 +128,16 @@ EXAMPLES:
 
   # SURVEY (offline): classify + decode a recorded wideband capture, no SDR
   gophertrunk hunt -survey -in wideband.cfile -format f32 -sample-rate 2400000
+
+  # SURVEY (offline): split a wideband capture into every carrier and map them
+  # (-detect-carriers finds off-centre control channels; -survey-deep hands a
+  # C4FM CC the blind classifier reads as FM to the trunking identify)
+  gophertrunk hunt -survey -survey-deep -detect-carriers -in wideband.cfile \
+                  -freq 450500000 -format f32 -sample-rate 2000000
+
+  # WIDEBAND (offline): split a wide-band capture into per-carrier streams and
+  # group them into one trunked system (-freq is the capture CENTER frequency)
+  gophertrunk hunt -wideband -in dmr-441MHz.cfile -freq 441000000 -format f32 -sample-rate 2000000
 
 FLAGS:`)
 		fs.PrintDefaults()
@@ -238,7 +251,22 @@ FLAGS:`)
 			captures = append(captures, ci)
 		}
 
-		if *surveyMode {
+		if *wideband {
+			// Offline wide-band survey: split each capture into per-carrier
+			// streams and group the DMR carriers into one trunked system.
+			fmt.Fprintf(os.Stderr, "wideband: surveying %d capture(s)…\n", len(captures))
+			var derr error
+			sys, reports, derr = hunt.DiscoverWideband(captures, hunt.DiscoverConfig{
+				Name:          *name,
+				State:         *state,
+				County:        *county,
+				Location:      *location,
+				MinConfidence: *minConfidence,
+			})
+			if derr != nil {
+				rep.Fatal(1, derr)
+			}
+		} else if *surveyMode {
 			// Offline survey: classify + route every capture, not just trunking.
 			fmt.Fprintf(os.Stderr, "survey: classifying %d capture(s)…\n", len(captures))
 			sv, sreports, serr := hunt.RunOfflineSurvey(captures, hunt.LiveHuntOptions{
@@ -248,6 +276,9 @@ FLAGS:`)
 				SurveyDeep:            *surveyDeep,
 				SurveyAudioDir:        *surveyAudio,
 				IdentifyMinConfidence: *identifyMinConf,
+				DetectCarriers:        *detectCarriers,
+				FFTSize:               *fftSize,
+				PeakOpts:              hunt.PeakOptions{ThresholdDb: float32(*peakThresholdDb), MinSpacingHz: uint32(*minSpacingHz)},
 				ClassifyConfig: survey.ClassifyConfig{
 					SNRGateDb: *classSNRGate, DigitalProminence: *classDigitalProm, AMEnvelopeCV: *classAMCV,
 				},
@@ -317,6 +348,9 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 		default:
 			fmt.Fprintf(os.Stderr, "hunt:   %s — %s, locked=%v, +%d talkgroups\n",
 				r.Path, r.Protocol, r.Locked, r.Talkgroups)
+			if r.Verdict != "" {
+				fmt.Fprintf(os.Stderr, "hunt:     ↳ %s\n", r.Verdict)
+			}
 		}
 	}
 	// Resolve the output directory up front so the survey inventory and any
@@ -462,112 +496,28 @@ func gatherRRHints(sys *hunt.DiscoveredSystem, opts rrOptions) ([]hunt.Duplicate
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Collect candidate existing systems: explicit SIDs first, then every
-	// system registered in the given county (enriched with its identity).
-	var existing []radioreference.System
-	seen := map[int]bool{}
-	addDetails := func(sid int) {
-		if sid == 0 || seen[sid] {
-			return
-		}
-		seen[sid] = true
-		d, derr := client.GetTrsDetails(ctx, sid)
-		if derr != nil {
-			fmt.Fprintf(os.Stderr, "hunt: RadioReference getTrsDetails(%d): %v\n", sid, derr)
-			return
-		}
-		existing = append(existing, d)
-	}
+	checkSIDs := make([]int, 0, len(opts.checkSIDs))
 	for _, s := range opts.checkSIDs {
 		if sid, perr := strconv.Atoi(strings.TrimSpace(s)); perr == nil {
-			addDetails(sid)
-		}
-	}
-	if opts.countyID != 0 {
-		briefs, cerr := client.GetCountyInfo(ctx, opts.countyID)
-		if cerr != nil {
-			fmt.Fprintf(os.Stderr, "hunt: RadioReference getCountyInfo(%d): %v\n", opts.countyID, cerr)
-		}
-		for _, b := range briefs {
-			addDetails(b.SID)
+			checkSIDs = append(checkSIDs, sid)
 		}
 	}
 
-	cand := radioreference.Candidate{
-		WACN:     sys.WACN,
-		SystemID: sys.SystemID,
-		Name:     sys.DisplayName(),
+	res := huntrr.Gather(ctx, client, sys, opts.countyID, checkSIDs, func(err error) {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference %v\n", err)
+	})
+	if len(res.Hints) == 0 {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference check found no existing match among %d system(s)\n", res.Compared)
+		return nil, res.Diff
 	}
-	for _, st := range sys.Sites {
-		for _, ch := range st.ControlChannels {
-			if ch.IsControl {
-				cand.ControlChannels = append(cand.ControlChannels, ch.FrequencyHz)
-			}
-		}
-	}
-
-	rrHints := radioreference.MatchAgainst(cand, existing)
-	if len(rrHints) == 0 {
-		fmt.Fprintf(os.Stderr, "hunt: RadioReference check found no existing match among %d system(s)\n", len(existing))
-		return nil, nil
-	}
-	out := make([]hunt.DuplicateHint, 0, len(rrHints))
-	for _, h := range rrHints {
+	for _, h := range res.Hints {
 		fmt.Fprintf(os.Stderr, "hunt: possible duplicate — RR SID %d (%s): %s\n", h.SID, h.Name, h.Reason)
-		out = append(out, hunt.DuplicateHint{SID: h.SID, Name: h.Name, Reason: h.Reason, Confidence: h.Confidence})
 	}
-
-	// Cross-reference: for the strongest confident match, pull the full RR system
-	// and diff our discovered freqs/talkgroups against it (offsets + new items).
-	diff := buildRRDiff(ctx, client, sys, rrHints)
-	return out, diff
-}
-
-// rrDiffMinConfidence is the match confidence above which a diff is worth
-// fetching the full RR system for (the WACN+SYSID / control-overlap tiers).
-const rrDiffMinConfidence = 0.80
-
-// buildRRDiff fetches the strongest confident hint's full RR system and diffs
-// the discovered system against it. Returns nil on any error or when no hint is
-// confident enough (the diff is best-effort, never fatal).
-func buildRRDiff(ctx context.Context, client *radioreference.Client, sys *hunt.DiscoveredSystem, hints []radioreference.Hint) *hunt.RRDiff {
-	var top radioreference.Hint
-	for _, h := range hints {
-		if h.SID != 0 && h.Confidence >= rrDiffMinConfidence && h.Confidence > top.Confidence {
-			top = h
-		}
+	if d := res.Diff; d != nil {
+		fmt.Fprintf(os.Stderr, "hunt: RadioReference diff — %d offset(s), %d new freq(s), %d new talkgroup(s)\n",
+			len(d.FreqOffsets), len(d.FreqsNotInRR), len(d.TalkgroupsNotInRR))
 	}
-	if top.SID == 0 {
-		return nil
-	}
-	fs, err := client.GetFullSystem(ctx, top.SID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "hunt: RadioReference getFullSystem(%d): %v\n", top.SID, err)
-		return nil
-	}
-	var rrFreqs []uint32
-	for _, st := range fs.Sites {
-		rrFreqs = append(rrFreqs, st.Frequencies...)
-	}
-	rrTGs := make([]uint32, 0, len(fs.Talkgroups))
-	for _, tg := range fs.Talkgroups {
-		rrTGs = append(rrTGs, tg.Dec)
-	}
-	d := hunt.DiffAgainstRR(sys, top.SID, nonEmptyName(fs.Name, top.Name), rrFreqs, rrTGs)
-	if d.Empty() {
-		return nil
-	}
-	fmt.Fprintf(os.Stderr, "hunt: RadioReference diff vs SID %d — %d offset(s), %d new freq(s), %d new talkgroup(s)\n",
-		top.SID, len(d.FreqOffsets), len(d.FreqsNotInRR), len(d.TalkgroupsNotInRR))
-	return &d
-}
-
-// nonEmptyName returns a if non-empty, else b.
-func nonEmptyName(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
+	return res.Hints, res.Diff
 }
 
 // slugName lowercases a display name into a filesystem-safe stem.

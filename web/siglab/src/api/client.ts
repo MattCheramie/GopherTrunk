@@ -12,8 +12,12 @@ import type {
   IdentifyResult,
   JobDTO,
   ProtocolsDTO,
+  PSDResult,
   RunConfig,
+  SpectrogramResult,
   SynthRequest,
+  WidebandRequest,
+  WidebandResult,
 } from "./types";
 
 export interface ClientConfig {
@@ -117,6 +121,18 @@ export const api = {
   jobIQ: (c: ClientConfig, id: string) =>
     req<IQTaps>(c, "GET", `/api/v1/siglab/jobs/${id}/iq`),
 
+  // jobPSD / jobSpectrogram fetch the server-computed spectrum of a job's IQ,
+  // so the UI plots them without an in-browser FFT (no TensorFlow.js).
+  jobPSD: (c: ClientConfig, id: string, fft = 1024) =>
+    req<PSDResult>(c, "GET", `/api/v1/siglab/jobs/${id}/psd?fft=${fft}`),
+
+  jobSpectrogram: (c: ClientConfig, id: string, fft = 256, hop = 128) =>
+    req<SpectrogramResult>(
+      c,
+      "GET",
+      `/api/v1/siglab/jobs/${id}/spectrogram?fft=${fft}&hop=${hop}`,
+    ),
+
   identify: (
     c: ClientConfig,
     captureID: string,
@@ -126,6 +142,11 @@ export const api = {
       capture_id: captureID,
       ...opts,
     }),
+
+  // wideband surveys a staged multi-carrier capture: averaged band spectrum +
+  // per-carrier identification + trunked-system rollups.
+  wideband: (c: ClientConfig, body: WidebandRequest) =>
+    req<WidebandResult>(c, "POST", "/api/v1/siglab/wideband", body),
 
   // synthesize stages an idealized/impaired capture and returns its DTO.
   synthesize: (c: ClientConfig, body: SynthRequest) =>

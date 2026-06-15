@@ -29,6 +29,9 @@ type fakeSoapyServer struct {
 	// the stream socket (issue #542 follow-up). The first is the gratuitous
 	// initial ACK the server's waitSend() blocks on before streaming.
 	acks []streamHeader
+	// setupKwargs records the stream args the client sent in SETUP_STREAM
+	// (e.g. "remote:prot", "remote:mtu"), captured on the last setup call.
+	setupKwargs map[string]string
 
 	// samples streamed per datagram once activated.
 	streamSamples []complex64
@@ -87,6 +90,61 @@ func (s *fakeSoapyServer) recordedACKs() []streamHeader {
 	out := make([]streamHeader, len(s.acks))
 	copy(out, s.acks)
 	return out
+}
+
+func (s *fakeSoapyServer) recordedSetupKwargs() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]string, len(s.setupKwargs))
+	for k, v := range s.setupKwargs {
+		out[k] = v
+	}
+	return out
+}
+
+// readSetupStreamKwargs parses a SETUP_STREAM request body (positioned just
+// past the call id) and returns its stream args. The layout mirrors the
+// client's setupStreamTCP packer: char(dir), str(format), sizeList(channels),
+// kwargs(streamArgs), str, str.
+func readSetupStreamKwargs(u *unpacker) (map[string]string, error) {
+	if _, err := u.char(); err != nil { // direction
+		return nil, err
+	}
+	if _, err := u.str(); err != nil { // format
+		return nil, err
+	}
+	if err := u.expect(tSizeList); err != nil { // channel list
+		return nil, err
+	}
+	n, err := u.i32()
+	if err != nil {
+		return nil, err
+	}
+	for i := int32(0); i < n; i++ {
+		if _, err := u.i32(); err != nil {
+			return nil, err
+		}
+	}
+	if err := u.expect(tKwargs); err != nil { // stream args
+		return nil, err
+	}
+	kn, err := u.i32()
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, kn)
+	for i := int32(0); i < kn; i++ {
+		k, err := u.str()
+		if err != nil {
+			return nil, err
+		}
+		v, err := u.str()
+		if err != nil {
+			return nil, err
+		}
+		m[k] = v
+	}
+	return m, nil
 }
 
 func (s *fakeSoapyServer) sawCall(id int32) bool {
@@ -169,6 +227,11 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			}
 		case callSetupStream:
 			twoPhaseSetup = true
+			if kw, err := readSetupStreamKwargs(u); err == nil {
+				s.mu.Lock()
+				s.setupKwargs = kw
+				s.mu.Unlock()
+			}
 		case callActivateStream:
 			_, _ = u.i32() // streamId (int)
 			doActivate = true
@@ -504,6 +567,12 @@ func TestStreamIQ(t *testing.T) {
 		t.Errorf("initial ACK elems = %d, want %d (advertised window)", acks[0].elems, maxInFlightSeqs)
 	}
 
+	// With no stream_mtu configured the setup frame stays byte-identical to
+	// before: only remote:prot is sent, never remote:mtu.
+	if kw := srv.recordedSetupKwargs(); kw["remote:prot"] != "tcp" || kw["remote:mtu"] != "" {
+		t.Errorf("default setup kwargs = %v, want only remote:prot=tcp", kw)
+	}
+
 	// Cancelling the context must close the channel.
 	cancel()
 	drain := time.After(2 * time.Second)
@@ -516,6 +585,90 @@ func TestStreamIQ(t *testing.T) {
 		case <-drain:
 			t.Fatal("stream channel not closed after ctx cancel")
 		}
+	}
+}
+
+// TestStreamMTU verifies a configured stream_mtu both reaches the server as the
+// remote:mtu setup arg and resizes the client's advertised flow-control window
+// (streamWindowBytes/mtu), keeping both ends consistent.
+func TestStreamMTU(t *testing.T) {
+	const mtu = 3000
+	srv := newFakeSoapyServer(t)
+	srv.streamSamples = []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", StreamMTU: mtu}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	select {
+	case _, ok := <-ch:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	if kw := srv.recordedSetupKwargs(); kw["remote:mtu"] != "3000" {
+		t.Errorf("setup kwargs remote:mtu = %q, want \"3000\" (kwargs=%v)", kw["remote:mtu"], kw)
+	}
+
+	acks := srv.recordedACKs()
+	if len(acks) == 0 {
+		t.Fatal("server did not receive any flow-control ACK from client")
+	}
+	wantWindow := int32(streamWindowBytes / mtu)
+	if acks[0].elems != wantWindow {
+		t.Errorf("initial ACK elems = %d, want %d (streamWindowBytes/mtu)", acks[0].elems, wantWindow)
+	}
+}
+
+// TestStreamWindow verifies a configured stream_window both reaches the server
+// as the remote:window setup arg and resizes the client's advertised
+// flow-control credit (window/mtu) instead of the default streamWindowBytes.
+func TestStreamWindow(t *testing.T) {
+	const window = 2 * 1024 * 1024 // 2097152
+	srv := newFakeSoapyServer(t)
+	srv.streamSamples = []complex64{complex(0.5, -0.5), complex(0.25, 0.25)}
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16", StreamWindow: window}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
+	}
+
+	if kw := srv.recordedSetupKwargs(); kw["remote:window"] != "2097152" {
+		t.Errorf("setup kwargs remote:window = %q, want \"2097152\" (kwargs=%v)", kw["remote:window"], kw)
+	}
+
+	acks := srv.recordedACKs()
+	if len(acks) == 0 {
+		t.Fatal("server did not receive any flow-control ACK from client")
+	}
+	// Default MTU (1500) with the configured window: credit = window/mtu.
+	wantWindow := int32(window / streamMTU)
+	if acks[0].elems != wantWindow {
+		t.Errorf("initial ACK elems = %d, want %d (window/mtu)", acks[0].elems, wantWindow)
 	}
 }
 

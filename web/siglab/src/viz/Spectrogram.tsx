@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import type { IQPoint } from "../api/types";
-import { spectrogram } from "../dsp/transforms";
+import { useStore } from "../store/shared";
+import { api } from "../api/client";
 
-// Spectrogram renders a short-time-FFT waterfall as a Plotly heatmap. Both
-// Plotly and TensorFlow.js are dynamically imported so their large chunks
-// only load when this panel mounts.
-export function Spectrogram({ points, rateHz }: { points: IQPoint[]; rateHz: number }) {
+// Spectrogram renders a short-time-FFT waterfall as a Plotly heatmap. The STFT
+// is computed server-side (GET /jobs/{id}/spectrogram via internal/dsp/spectrum)
+// so the browser needs no FFT library; only Plotly is lazy-loaded for rendering.
+export function Spectrogram({ jobId }: { jobId: string }) {
+  const config = useStore((s) => s.config);
   const ref = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    if (points.length < 64 || !ref.current) return;
+    if (!jobId || !ref.current) return;
     setBusy(true);
     (async () => {
-      const sg = await spectrogram(points, rateHz, 256, 128);
+      const sg = await api.jobSpectrogram(config, jobId, 256, 128);
       if (cancelled || !ref.current || sg.frames === 0) return;
       const Plotly = (await import("plotly.js-dist-min")).default;
-      const n = sg.fftSize;
-      const freqs = Array.from({ length: n }, (_, i) => ((i - n / 2) * rateHz) / n / 1000);
+      const n = sg.fft_size;
+      const freqs = Array.from({ length: n }, (_, i) => ((i - n / 2) * sg.sample_rate_hz) / n / 1000);
       // Transpose so frequency is the y-axis and time the x-axis.
       const z: number[][] = [];
       for (let f = 0; f < n; f++) z.push(sg.z.map((row) => row[f]));
@@ -36,13 +37,15 @@ export function Spectrogram({ points, rateHz }: { points: IQPoint[]; rateHz: num
         },
         { displayModeBar: false, responsive: true } as Record<string, unknown>,
       );
-    })().finally(() => {
-      if (!cancelled) setBusy(false);
-    });
+    })()
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [points, rateHz]);
+  }, [jobId, config]);
 
   return (
     <div className="card">

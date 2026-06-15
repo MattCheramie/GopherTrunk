@@ -8,6 +8,7 @@ import { PSD } from "../viz/PSD";
 import { Spectrogram } from "../viz/Spectrogram";
 import { EyeDiagram } from "../viz/EyeDiagram";
 import { SymbolScope } from "../viz/SymbolScope";
+import { RotationTracker } from "../viz/RotationTracker";
 import { SyncLandscape } from "../viz/SyncLandscape";
 import { ReceiverStates } from "../viz/ReceiverStates";
 import { GrantsTable, EventTimeline } from "../viz/Tables";
@@ -72,7 +73,7 @@ export function Results() {
       )}
 
       {r && <Summary r={r} />}
-      {r && <VizGrid r={r} iq={analysis.iqTaps} />}
+      {r && <VizGrid r={r} iq={analysis.iqTaps} jobId={analysis.jobId} />}
     </div>
   );
 }
@@ -118,19 +119,16 @@ function Summary({ r }: { r: Result }) {
   );
 }
 
-function VizGrid({ r, iq }: { r: Result; iq?: Result["iq_taps"] }) {
+function VizGrid({ r, iq, jobId }: { r: Result; iq?: Result["iq_taps"]; jobId?: string }) {
   const detail = (r.detail ?? {}) as Detail;
   const soft = iq?.soft_samples ?? [];
+  const hasIQ = !!(iq && iq.decimated_iq.length > 0);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {r.signal && <SymbolHistogram signal={r.signal} />}
-      {iq && iq.decimated_iq.length > 0 && <Constellation points={iq.decimated_iq} />}
-      {iq && iq.decimated_iq.length > 0 && (
-        <PSD points={iq.decimated_iq} rateHz={iq.decimated_rate_hz} />
-      )}
-      {iq && iq.decimated_iq.length > 0 && (
-        <Spectrogram points={iq.decimated_iq} rateHz={iq.decimated_rate_hz} />
-      )}
+      {hasIQ && <Constellation points={iq!.decimated_iq} />}
+      {hasIQ && jobId && <PSD jobId={jobId} />}
+      {hasIQ && jobId && <Spectrogram jobId={jobId} />}
       {(soft.length > 1 || detail.soft_eye) && (
         <EyeDiagram soft={soft} eye={detail.soft_eye} />
       )}
@@ -140,6 +138,9 @@ function VizGrid({ r, iq }: { r: Result; iq?: Result["iq_taps"] }) {
           dibits={iq.symbol_dibits ?? []}
           cardinality={iq.symbol_cardinality}
         />
+      )}
+      {iq && (iq.diff_phase?.length ?? 0) > 0 && (
+        <RotationTracker phase={iq.diff_phase ?? []} />
       )}
       {detail.sync && <SyncLandscape sync={detail.sync} />}
       {detail.receiver_states && detail.receiver_states.length > 0 && (

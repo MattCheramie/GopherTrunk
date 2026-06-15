@@ -76,6 +76,13 @@ type PipelineOptions struct {
 	// analyzer for *every* protocol, without re-duplicating receiver
 	// construction outside this factory. nil ⇒ zero overhead.
 	SymbolTap func(symbols []uint8, isBits bool, baseIdx int)
+
+	// FECObserver, when non-nil, receives a per-burst FEC correction
+	// depth (channel bits the decode chain corrected) bound to this
+	// system. The decoder supplies it only when metrics.detailed_fec is
+	// enabled; today only newTETRAPipeline consumes it. nil ⇒ zero
+	// overhead.
+	FECObserver func(channel string, corrections int)
 }
 
 // tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when
@@ -487,6 +494,9 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		Log:         opts.Log,
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
+		// Opt-in FEC correction-depth histogram (metrics.detailed_fec);
+		// nil unless the daemon wired the observer.
+		FECObserver: opts.FECObserver,
 	})
 	codingMode, ok := tetra.ParseChannelCoding(opts.System.TETRAChannelCoding)
 	if !ok {
@@ -503,7 +513,12 @@ func newTETRAPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		cc.SetExpectedChannel(ch)
 		cc.SetColourCode(opts.System.TETRAColourCode)
 		if opts.System.TETRAColourCode == 0 && ch != tetra.ChannelBSCH {
-			opts.Log.Warn("ccdecoder: tetra_channel_coding=on with zero tetra_colour_code on non-BSCH channel; descrambler will not lock",
+			// Not fatal: the decoder auto-acquires the colour code from a BSCH
+			// synchronisation burst (scrambled with colour 0) and then descrambles
+			// the SCH/HD stream (issue #553). Setting tetra_colour_code only avoids
+			// the cold-start wait for the first SB burst. Debug, not Warn — this is
+			// the normal state during blind identify (#648).
+			opts.Log.Debug("ccdecoder: tetra zero colour code; will auto-acquire from the BSCH synchronisation burst",
 				"system", opts.SystemName, "channel", opts.System.TETRAChannel)
 		}
 	}
@@ -707,10 +722,14 @@ func (p *dmrPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 		ColorCode: t.ColorCode,
 	}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: n.LCN,
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }
@@ -914,10 +933,14 @@ func (p *edacsPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
 	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: uint16(n.LCN),
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }
@@ -973,10 +996,14 @@ func (p *motorolaPipeline) TopologySnapshot() *trunking.TopologySnapshot {
 	t := p.cc.Topology()
 	snap := &trunking.TopologySnapshot{SystemID: uint32(t.SystemID)}
 	for _, n := range t.Neighbors {
-		snap.Neighbors = append(snap.Neighbors, trunking.TopoNeighborRef{
+		ref := trunking.TopoNeighborRef{
 			Site:          uint8(n.SiteID),
 			ChannelNumber: n.LCN,
-		})
+		}
+		if hz, ok := p.cc.NeighborFrequency(n.LCN); ok {
+			ref.FrequencyHz = hz
+		}
+		snap.Neighbors = append(snap.Neighbors, ref)
 	}
 	return snap
 }
@@ -1045,6 +1072,12 @@ func (p *ltrPipeline) Close() error           { return nil }
 // 64-bit on-air codeword's BCH(63,38) FEC + de-interleaving are
 // follow-ups; without them the adapter works on noise-free test
 // fixtures but typically fails on captured MPT 1327 traffic.
+// mpt1327ProdMinConfirm is the production confirmation threshold for an MPT 1327
+// lock: how many recognised Address codewords must arrive before the control
+// channel publishes cc.locked. 2 removes single-codeword false locks at
+// negligible latency on a continuously-broadcasting real control channel.
+const mpt1327ProdMinConfirm = 2
+
 func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := mpt1327.New(mpt1327.Options{
 		Bus:         opts.Bus,
@@ -1064,6 +1097,11 @@ func newMPT1327Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.MPT1327CWSCTolerance)
 	}
 	cc.SetCWSCTolerance(cwscTol)
+	// Require a couple of recognised codewords before an MPT 1327 lock: a real
+	// control channel streams them continuously, so this is near-instant on a
+	// genuine CC but stops a single cross-protocol false parse (e.g. an
+	// off-channel P25/DMR carrier handed to the identifier) from locking MPT.
+	cc.SetMinConfirm(mpt1327ProdMinConfirm)
 	rx := mpt1327rx.New(mpt1327rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		BitSink: func(bits []byte, baseIdx int) {

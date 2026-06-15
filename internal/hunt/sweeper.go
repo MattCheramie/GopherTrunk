@@ -185,8 +185,37 @@ func (s *Sweeper) Sweep(ctx context.Context, onStep OnStep) ([]Candidate, error)
 	for _, c := range best {
 		out = append(out, c)
 	}
+	out = snapCandidatesToGrid(out, rate, s.fftSize)
 	sort.Slice(out, func(i, j int) bool { return out[i].SNRDb > out[j].SNRDb })
 	return out, nil
+}
+
+// snapCandidatesToGrid corrects the FFT-bin quantization offset in the swept
+// candidates: it infers the channel raster the carriers sit on (auto-detected
+// from their frequencies) and snaps each candidate to the nearest grid point
+// within one FFT bin, so a carrier the bins reported a few hundred Hz off (e.g.
+// 440.1247 MHz for a P25 trunk really on 440.125000) tunes to the true centre
+// and actually locks. Snapping is bounded to one bin, so a carrier that
+// genuinely sits off the raster is kept untouched. Candidates that collapse to
+// the same snapped frequency merge, strongest SNR winning.
+func snapCandidatesToGrid(cands []Candidate, rate uint32, fftSize int) []Candidate {
+	if len(cands) == 0 || fftSize <= 0 {
+		return cands
+	}
+	step, phase := inferGrid(cands)
+	binHz := uint32(math.Round(float64(rate) / float64(fftSize)))
+	merged := make(map[uint32]Candidate, len(cands))
+	for _, c := range cands {
+		c.FreqHz = snapHz(c.FreqHz, step, phase, binHz)
+		if cur, ok := merged[c.FreqHz]; !ok || c.SNRDb > cur.SNRDb {
+			merged[c.FreqHz] = c
+		}
+	}
+	out := make([]Candidate, 0, len(merged))
+	for _, c := range merged {
+		out = append(out, c)
+	}
+	return out
 }
 
 // captureFrame captures framesPerStep FFT frames at the current center and
