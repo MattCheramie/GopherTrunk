@@ -1068,6 +1068,30 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris", true)
 		return
 	}
+	if g, ok := t.AsMotorolaPatchGroupChannelGrant(); ok {
+		// Patch-group voice channel grant — mirrors the standard
+		// OpGroupVoiceChannelGrant path. The 0x02 form carries the
+		// source RID + service-options encryption bit, so this backfills
+		// the src=0/enc=false patch-group calls MMR/CBD was dropping
+		// (issue #376); super-group attribution is handled downstream.
+		c.publishGroupGrant(g, nac)
+		return
+	}
+	if u, ok := t.AsMotorolaPatchGroupChannelGrantUpdate(); ok {
+		// Two (channel, super-group) activity pairs — mirrors the
+		// standard OpGroupVoiceChannelUpdate path. Issue #376.
+		c.publishVoiceGrant(voiceGrant{
+			groupID: uint32(u.GroupAddressA), channelID: u.ChannelAID,
+			channelNumber: u.ChannelANumber,
+		}, nac)
+		if u.GroupAddressB != 0 {
+			c.publishVoiceGrant(voiceGrant{
+				groupID: uint32(u.GroupAddressB), channelID: u.ChannelBID,
+				channelNumber: u.ChannelBNumber,
+			}, nac)
+		}
+		return
+	}
 	if f, ok := t.AsTalkerAliasFragment(); ok {
 		// Surface the first fragment seen per source at Info so a field
 		// tester can tell aliases are arriving on the CC even when the

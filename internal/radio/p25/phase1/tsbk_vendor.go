@@ -28,6 +28,14 @@ const (
 	// ("patch") add and cancel commands under MFID 0x90.
 	OpMotorolaPatchGroupAdd    Opcode = 0x00
 	OpMotorolaPatchGroupDelete Opcode = 0x01
+	// OpMotorolaPatchGroupChannelGrant / Update are the Motorola
+	// patch-group (super-group) voice channel grant and grant-update
+	// commands under MFID 0x90. Their payload layout matches the
+	// standard group voice channel grant / update respectively, but the
+	// group address is a Motorola super-group (patch) address — the same
+	// one OpMotorolaPatchGroupAdd aggregates member talkgroups under.
+	OpMotorolaPatchGroupChannelGrant       Opcode = 0x02
+	OpMotorolaPatchGroupChannelGrantUpdate Opcode = 0x03
 	// OpHarrisRegroup is the Harris dynamic-regroup command under
 	// MFID 0xA4.
 	OpHarrisRegroup Opcode = 0x00
@@ -142,6 +150,34 @@ func AssembleHarrisRegroup(r HarrisRegroup) [8]byte {
 	binary.BigEndian.PutUint16(p[0:2], r.RegroupGroup)
 	p[2], p[3], p[4] = byte(r.TargetID>>16), byte(r.TargetID>>8), byte(r.TargetID)
 	return p
+}
+
+// AsMotorolaPatchGroupChannelGrant returns the patch-group voice channel
+// grant if the TSBK is a Motorola patch-group channel grant (MFID 0x90,
+// opcode 0x02), otherwise (zero, false). The on-wire payload layout is
+// identical to the standard group voice channel grant — service options,
+// channel, group, 24-bit source — so it reuses ParseGroupVoiceChannelGrant;
+// the group address is a Motorola super-group (patch) address. Confirmed
+// against MMR/CBD field captures (issue #376): e.g. payload
+// 401001006904e2cc → enc grant on group 105, source 320204.
+func (t TSBK) AsMotorolaPatchGroupChannelGrant() (GroupVoiceChannelGrant, bool) {
+	if t.MFID != MFIDMotorola || t.Opcode != OpMotorolaPatchGroupChannelGrant {
+		return GroupVoiceChannelGrant{}, false
+	}
+	return ParseGroupVoiceChannelGrant(t.Payload), true
+}
+
+// AsMotorolaPatchGroupChannelGrantUpdate returns the patch-group voice
+// channel grant-update if the TSBK is a Motorola patch-group channel
+// grant-update (MFID 0x90, opcode 0x03), otherwise (zero, false). The
+// payload carries two (channel, super-group) activity pairs in the same
+// layout as the standard group voice channel update, so it reuses
+// ParseGroupVoiceChannelUpdate. Issue #376 (MMR/CBD).
+func (t TSBK) AsMotorolaPatchGroupChannelGrantUpdate() (GroupVoiceChannelUpdate, bool) {
+	if t.MFID != MFIDMotorola || t.Opcode != OpMotorolaPatchGroupChannelGrantUpdate {
+		return GroupVoiceChannelUpdate{}, false
+	}
+	return ParseGroupVoiceChannelUpdate(t.Payload), true
 }
 
 // AsTalkerAliasFragment returns one talker-alias fragment if the TSBK
