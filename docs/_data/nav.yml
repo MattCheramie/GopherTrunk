@@ -11,6 +11,24 @@ groups:
         url: /guide-intermediate.html
       - title: Advanced
         url: /guide-advanced.html
+  - label: Learn RF & SDR
+    items:
+      - title: Learning path overview
+        url: /learn/
+      - title: 1 · RF fundamentals
+        url: /learn/#rf-fundamentals
+      - title: 2 · Signals & modulation
+        url: /learn/#signals-modulation
+      - title: 3 · Software-defined radio
+        url: /learn/#sdr
+      - title: 4 · DSP essentials
+        url: /learn/#dsp
+      - title: 5 · Digital voice & trunking
+        url: /learn/#digital-voice-trunking
+      - title: 6 · Using GopherTrunk
+        url: /learn/#gophertrunk
+      - title: Glossary
+        url: /learn/glossary/
   - label: About
     items:
       - title: The Story of GopherTrunk

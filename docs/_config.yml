@@ -42,6 +42,16 @@ defaults:
       type: pages
     values:
       layout: page
+  # Learning-path pages under /learn/ get the lesson layout and nav group
+  # automatically, so individual lessons only declare slug/title/description.
+  # The hub (learn/index.md) overrides layout back to `page`.
+  - scope:
+      path: "learn"
+      type: pages
+    values:
+      layout: lesson
+      nav_group: Learn RF & SDR
+      permalink: /learn/:basename/
   # Per-category post URLs scoped to posts only — a global `permalink`
   # in _config.yml would also rewrite every existing /foo.html page to
   # /foo/ and break the data-driven nav.

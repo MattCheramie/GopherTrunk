@@ -1,0 +1,249 @@
+# GopherTrunk RF & SDR Learning Path — single source of truth.
+#
+# This file drives three things at once, so they never drift apart:
+#   1. The hub landing page grid           (docs/learn/index.md)
+#   2. The in-lesson sidebar / module list (docs/_layouts/lesson.html)
+#   3. Prev / next path navigation         (docs/_includes/learn-path-nav.html)
+#
+# Adding a lesson:
+#   1. Append an entry under the right module's `lessons:` list below.
+#   2. Create docs/learn/<slug>.md with front matter `slug: <slug>` and a
+#      title/description. The `learn` defaults scope in _config.yml gives it
+#      the lesson layout and nav_group automatically.
+#   3. Keep `slug` stable once published — it is the page URL (/learn/<slug>/).
+#
+# Fields per lesson:
+#   slug         URL slug -> /learn/<slug>/   (append-only; renaming breaks links)
+#   title        Lesson title (also the card heading)
+#   summary      One-line description for cards, sidebar, and llms.txt
+#   minutes      Estimated reading time (integer; shown on cards)
+#   level        beginner | intermediate | advanced  (badge + filtering)
+#   status       full | stub   (stub = outline published, body still being written)
+#
+# `intro` on the path itself and `blurb` on each module feed the hub page.
+
+intro: >
+  A guided path from complete newcomer to confident GopherTrunk operator. Start
+  with what a radio wave actually is, learn how software-defined radios turn the
+  airwaves into numbers, then follow the signal all the way to decoded digital
+  voice — and put it to work in GopherTrunk.
+
+modules:
+  - id: rf-fundamentals
+    label: "Module 1 — RF Fundamentals"
+    blurb: "The physics every operator leans on: waves, frequency, power, antennas, and how signals travel."
+    lessons:
+      - slug: radio-waves
+        title: What is a radio wave?
+        summary: Frequency, wavelength, amplitude, and the electromagnetic spectrum — the one idea everything else builds on.
+        minutes: 9
+        level: beginner
+        status: full
+      - slug: frequency-and-spectrum
+        title: Frequency, bands & the spectrum
+        summary: Hz to GHz, the HF/VHF/UHF bands, and how spectrum is carved up into band plans.
+        minutes: 8
+        level: beginner
+        status: stub
+      - slug: decibels
+        title: Decibels & signal power
+        summary: dB, dBm, and dBFS demystified — gain, path loss, the noise floor, and why radio lives in logarithms.
+        minutes: 10
+        level: beginner
+        status: full
+      - slug: antennas
+        title: Antennas 101
+        summary: Resonance, polarization, gain, SWR, and the connectors that join your antenna to your SDR.
+        minutes: 9
+        level: beginner
+        status: stub
+      - slug: propagation
+        title: How signals travel
+        summary: Line of sight, multipath, fading, and why where you put the antenna matters more than the radio.
+        minutes: 8
+        level: beginner
+        status: stub
+
+  - id: signals-modulation
+    label: "Module 2 — Signals & Modulation"
+    blurb: How information rides on a carrier — from analog AM/FM to the digital constellations GopherTrunk decodes.
+    lessons:
+      - slug: signal-anatomy
+        title: Anatomy of a signal
+        summary: Carrier, bandwidth, and the difference between a spectrum view and a waterfall.
+        minutes: 7
+        level: beginner
+        status: stub
+      - slug: analog-modulation
+        title: Analog modulation — AM, FM, SSB
+        summary: The three classic ways to put a voice on a carrier, and where you still hear them today.
+        minutes: 8
+        level: beginner
+        status: stub
+      - slug: digital-modulation
+        title: Digital modulation & constellations
+        summary: FSK, PSK, QAM, and C4FM — how bits become symbols, and how to read a constellation and eye diagram.
+        minutes: 12
+        level: intermediate
+        status: full
+      - slug: symbols-and-baud
+        title: Symbols, baud & bitrate
+        summary: Why a 4800-baud C4FM signal carries 9600 bits per second, and what that means for capture.
+        minutes: 7
+        level: intermediate
+        status: stub
+
+  - id: sdr
+    label: "Module 3 — Software-Defined Radio"
+    blurb: What an SDR actually is, how it samples the air into IQ data, and how to set it up without overloading it.
+    lessons:
+      - slug: what-is-sdr
+        title: What is software-defined radio?
+        summary: The core idea — move the radio into software — and why one cheap dongle can decode dozens of systems.
+        minutes: 9
+        level: beginner
+        status: full
+      - slug: sdr-receiver
+        title: How an SDR receiver works
+        summary: Antenna to tuner to ADC — the signal chain that turns radio waves into a stream of samples.
+        minutes: 9
+        level: intermediate
+        status: stub
+      - slug: iq-data
+        title: IQ data & complex signals
+        summary: Why SDRs output pairs of numbers, what "I" and "Q" mean, and how they capture both amplitude and phase.
+        minutes: 9
+        level: intermediate
+        status: stub
+      - slug: sample-rate-nyquist
+        title: Sample rate, bandwidth & Nyquist
+        summary: How much spectrum you can see at once, the Nyquist limit, and the bandwidth/CPU trade-off.
+        minutes: 8
+        level: intermediate
+        status: stub
+      - slug: gain-and-agc
+        title: Gain, AGC & avoiding overload
+        summary: Set gain too low and you lose weak signals; too high and you drown in distortion. Finding the sweet spot.
+        minutes: 8
+        level: intermediate
+        status: stub
+      - slug: sdr-hardware
+        title: SDR hardware — RTL-SDR, HackRF, Airspy
+        summary: Picking a dongle for the job and how each one maps to GopherTrunk's supported hardware.
+        minutes: 9
+        level: beginner
+        status: stub
+
+  - id: dsp
+    label: "Module 4 — DSP Essentials"
+    blurb: The digital signal processing that lives between IQ samples and decoded bits — explained without the heavy math.
+    lessons:
+      - slug: fft-and-waterfall
+        title: The FFT & reading a waterfall
+        summary: How the Fourier transform turns samples into a spectrum, and how to read GopherTrunk's waterfall.
+        minutes: 9
+        level: intermediate
+        status: stub
+      - slug: filtering-decimation
+        title: Filtering & decimation
+        summary: Zooming in on one channel, throwing away the rest, and keeping the CPU happy.
+        minutes: 8
+        level: intermediate
+        status: stub
+      - slug: demodulation-pipeline
+        title: The demodulation pipeline
+        summary: "The stages every signal passes through: tune, filter, demodulate, recover symbols, decode."
+        minutes: 9
+        level: advanced
+        status: stub
+      - slug: clock-recovery
+        title: Clock recovery & symbol timing
+        summary: How a receiver finds the beat of a digital signal so it samples each symbol at the right instant.
+        minutes: 8
+        level: advanced
+        status: stub
+
+  - id: digital-voice-trunking
+    label: "Module 5 — Digital Voice & Trunked Radio"
+    blurb: From vocoded voice to control channels — the systems GopherTrunk was built to follow.
+    lessons:
+      - slug: digital-voice
+        title: Analog vs. digital voice
+        summary: Why public-safety radio went digital, and what a vocoder gives up to fit a voice in a few kbps.
+        minutes: 8
+        level: intermediate
+        status: stub
+      - slug: vocoders
+        title: Vocoders — IMBE & AMBE+2
+        summary: The speech codecs behind P25 and DMR, and how GopherTrunk turns their frames back into audio.
+        minutes: 8
+        level: advanced
+        status: stub
+      - slug: what-is-trunking
+        title: What is trunked radio?
+        summary: Control channels, voice channels, and affiliation — how a fleet shares a handful of frequencies.
+        minutes: 11
+        level: intermediate
+        status: full
+      - slug: protocol-landscape
+        title: The digital protocol landscape
+        summary: P25, DMR, NXDN, TETRA, Motorola, EDACS, and friends — who uses what, and how to tell them apart.
+        minutes: 10
+        level: intermediate
+        status: stub
+      - slug: encryption
+        title: Encryption & what you can decode
+        summary: Why some talkgroups are silent, what GopherTrunk can and can't do, and how to spot encryption.
+        minutes: 7
+        level: intermediate
+        status: stub
+      - slug: other-signals
+        title: Other signals you'll meet
+        summary: Paging, AIS, ADS-B, and APRS — the non-trunked signals GopherTrunk can also decode.
+        minutes: 8
+        level: beginner
+        status: stub
+
+  - id: gophertrunk
+    label: "Module 6 — Putting It Together with GopherTrunk"
+    blurb: "Everything you've learned, applied: from a bare antenna to decoded calls, and how to fix it when it won't lock."
+    lessons:
+      - slug: antenna-to-audio
+        title: From antenna to audio
+        summary: The complete GopherTrunk signal path, tracing one call from RF in the air to a WAV on disk.
+        minutes: 11
+        level: intermediate
+        status: full
+      - slug: finding-systems
+        title: Finding & identifying systems
+        summary: Using Hunt and online databases to discover what's on the air near you and add it to GopherTrunk.
+        minutes: 9
+        level: intermediate
+        status: stub
+      - slug: tuning-with-scopes
+        title: Tuning for a clean lock
+        summary: Reading the constellation, eye diagram, and symbol scope to dial in a marginal signal.
+        minutes: 9
+        level: advanced
+        status: stub
+      - slug: calibration-troubleshooting
+        title: Calibration & troubleshooting
+        summary: PPM and voice calibration, plus a checklist for the usual reasons a control channel won't decode.
+        minutes: 9
+        level: advanced
+        status: stub
+      - slug: legal-ethical
+        title: Legal & ethical monitoring
+        summary: Knowing what's legal to receive where you live, and the etiquette of the scanner hobby.
+        minutes: 6
+        level: beginner
+        status: stub
+
+# Standalone reference, not part of the sequential path (no prev/next slot).
+glossary:
+  slug: glossary
+  title: Glossary of RF & SDR terms
+  summary: Plain-language definitions for every term in the learning path, cross-linked to the lessons.
+  minutes: 12
+  level: beginner
+  status: full

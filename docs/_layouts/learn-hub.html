@@ -1,0 +1,127 @@
+---
+layout: default
+---
+{%- comment -%}
+  Landing page for the RF & SDR learning path. Renders the module/lesson
+  grid from _data/learn.yml and a localStorage-backed progress bar
+  (progressively enhanced by assets/js/learn.js). Emits Course + ItemList
+  structured data for SEO / AI search.
+{%- endcomment -%}
+{%- assign learn = site.data.learn -%}
+{%- assign total = 0 -%}
+{%- for mod in learn.modules -%}{%- assign total = total | plus: mod.lessons.size -%}{%- endfor -%}
+
+<main id="content" class="page" role="main">
+  <div class="container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><span aria-current="page">Learn RF &amp; SDR</span></li>
+      </ol>
+    </nav>
+
+    <header class="learn-hero">
+      <h1 class="learn-hero__title">{{ page.title }}</h1>
+      <p class="learn-hero__lede">{{ learn.intro }}</p>
+      <div class="learn-hero__cta">
+        <a class="btn btn--primary" href="{{ '/learn/radio-waves/' | relative_url }}">Start lesson 1 &rarr;</a>
+        <a class="btn btn--ghost" href="{{ '/learn/glossary/' | relative_url }}">Jump to glossary</a>
+      </div>
+
+      <div class="progress" data-progress data-total="{{ total }}" hidden>
+        <div class="progress__track"><div class="progress__bar" data-progress-bar></div></div>
+        <p class="progress__label"><span data-progress-count>0</span> of {{ total }} lessons complete · <button type="button" class="progress__reset" data-progress-reset>reset</button></p>
+      </div>
+    </header>
+
+    <article class="prose prose--wide learn-intro">
+      {{ content }}
+    </article>
+
+    <div class="learn-modules">
+      {%- for mod in learn.modules -%}
+        <section class="learn-module" id="{{ mod.id }}">
+          <div class="learn-module__head">
+            <h2 class="learn-module__title">{{ mod.label }}</h2>
+            <p class="learn-module__blurb">{{ mod.blurb }}</p>
+          </div>
+          <ol class="learn-grid">
+            {%- for lesson in mod.lessons -%}
+              {%- assign lesson_url = '/learn/' | append: lesson.slug | append: '/' -%}
+              <li class="learn-card{% if lesson.status == 'stub' %} learn-card--stub{% endif %}" data-lesson="{{ lesson.slug }}">
+                <a class="learn-card__link" href="{{ lesson_url | relative_url }}">
+                  <span class="learn-card__check" data-lesson-check aria-hidden="true"></span>
+                  <span class="learn-card__body">
+                    <span class="learn-card__title">{{ lesson.title }}</span>
+                    <span class="learn-card__summary">{{ lesson.summary }}</span>
+                    <span class="learn-card__meta">
+                      <span class="lesson__badge lesson__badge--{{ lesson.level }}">{{ lesson.level }}</span>
+                      <span class="learn-card__time">{{ lesson.minutes }} min</span>
+                      {%- if lesson.status == 'stub' -%}<span class="learn-card__tag">outline</span>{%- endif -%}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            {%- endfor -%}
+          </ol>
+        </section>
+      {%- endfor -%}
+
+      <section class="learn-module" id="glossary-card">
+        <ol class="learn-grid">
+          <li class="learn-card learn-card--glossary" data-lesson="{{ learn.glossary.slug }}">
+            <a class="learn-card__link" href="{{ '/learn/glossary/' | relative_url }}">
+              <span class="learn-card__check" data-lesson-check aria-hidden="true"></span>
+              <span class="learn-card__body">
+                <span class="learn-card__title">{{ learn.glossary.title }}</span>
+                <span class="learn-card__summary">{{ learn.glossary.summary }}</span>
+              </span>
+            </a>
+          </li>
+        </ol>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Course",
+  "name": {{ page.title | jsonify }},
+  "description": {{ learn.intro | strip_newlines | jsonify }},
+  "url": {{ '/learn/' | absolute_url | jsonify }},
+  "provider": {
+    "@type": "Organization",
+    "name": {{ site.title | jsonify }},
+    "url": {{ site.url | jsonify }}
+  },
+  "hasCourseInstance": {
+    "@type": "CourseInstance",
+    "courseMode": "online",
+    "courseWorkload": "PT6H"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "GopherTrunk RF & SDR lessons",
+  "itemListElement": [
+    {%- assign n = 0 -%}
+    {%- for mod in learn.modules -%}
+      {%- for lesson in mod.lessons -%}
+        {%- assign n = n | plus: 1 -%}
+        {
+          "@type": "ListItem",
+          "position": {{ n }},
+          "name": {{ lesson.title | jsonify }},
+          "url": {{ '/learn/' | append: lesson.slug | append: '/' | absolute_url | jsonify }}
+        }{%- unless n == total -%},{%- endunless -%}
+      {%- endfor -%}
+    {%- endfor -%}
+  ]
+}
+</script>
+<script defer src="{{ '/assets/js/learn.js' | relative_url }}"></script>

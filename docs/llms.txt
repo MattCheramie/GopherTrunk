@@ -1,0 +1,35 @@
+---
+permalink: /llms.txt
+layout: null
+sitemap: false
+---
+# GopherTrunk
+
+> GopherTrunk is a pure-Go software-defined-radio (SDR) scanner engine that follows
+> and decodes digital trunked-radio voice calls (P25, DMR, TETRA, NXDN, Motorola,
+> EDACS, LTR, MPT 1327, dPMR, D-STAR, YSF) from RTL-SDR, HackRF, and Airspy hardware.
+> The site also hosts a free, structured learning path that teaches radio and SDR
+> fundamentals from beginner to expert.
+
+## Learn RF & SDR (learning path)
+
+A guided curriculum taking a complete newcomer to a confident GopherTrunk operator.
+Start: {{ '/learn/' | absolute_url }}
+{% for mod in site.data.learn.modules %}
+### {{ mod.label }}
+{{ mod.blurb }}
+{% for lesson in mod.lessons %}- [{{ lesson.title }}]({{ '/learn/' | append: lesson.slug | append: '/' | absolute_url }}): {{ lesson.summary }}
+{% endfor %}{% endfor %}
+### Reference
+- [{{ site.data.learn.glossary.title }}]({{ '/learn/glossary/' | absolute_url }}): {{ site.data.learn.glossary.summary }}
+
+## Getting started with GopherTrunk
+- [What is GopherTrunk?]({{ '/getting-started.html' | absolute_url }}): conceptual overview of the scanner and its interfaces.
+- [Get started]({{ '/getting-started-setup.html' | absolute_url }}): from a dongle to your first decoded call.
+- [Hardware]({{ '/hardware.html' | absolute_url }}): supported SDR dongles.
+- [Downloads]({{ '/downloads.html' | absolute_url }}): builds for Linux, macOS, and Windows.
+
+## Reference
+- [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
+- [Vocoders]({{ '/vocoders.html' | absolute_url }}): IMBE and AMBE+2 voice decoding.
+- [Status]({{ '/status.html' | absolute_url }}): protocol and decoder coverage.

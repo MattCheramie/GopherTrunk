@@ -1,0 +1,38 @@
+{%- comment -%}
+  Prev / next navigation for the learning path. Expects:
+    all_lessons — flat ordered array of lesson objects (slug, title)
+    idx         — index of the current lesson, or -1 if not in the path
+  Wired up by _layouts/lesson.html.
+{%- endcomment -%}
+{%- if include.idx >= 0 -%}
+  {%- assign prev_i = include.idx | minus: 1 -%}
+  {%- assign next_i = include.idx | plus: 1 -%}
+  <nav class="path-nav" aria-label="Learning path">
+    {%- if include.idx > 0 -%}
+      {%- assign prev = include.all_lessons[prev_i] -%}
+      <a class="path-nav__link path-nav__link--prev" href="{{ '/learn/' | append: prev.slug | append: '/' | relative_url }}">
+        <span class="path-nav__dir">&larr; Previous</span>
+        <span class="path-nav__title">{{ prev.title }}</span>
+      </a>
+    {%- else -%}
+      <a class="path-nav__link path-nav__link--prev" href="{{ '/learn/' | relative_url }}">
+        <span class="path-nav__dir">&larr; Path overview</span>
+        <span class="path-nav__title">Start of the path</span>
+      </a>
+    {%- endif -%}
+
+    {%- assign last = include.total | minus: 1 -%}
+    {%- if include.idx < last -%}
+      {%- assign next = include.all_lessons[next_i] -%}
+      <a class="path-nav__link path-nav__link--next" href="{{ '/learn/' | append: next.slug | append: '/' | relative_url }}">
+        <span class="path-nav__dir">Next &rarr;</span>
+        <span class="path-nav__title">{{ next.title }}</span>
+      </a>
+    {%- else -%}
+      <a class="path-nav__link path-nav__link--next" href="{{ '/learn/glossary/' | relative_url }}">
+        <span class="path-nav__dir">You finished! &rarr;</span>
+        <span class="path-nav__title">Browse the glossary</span>
+      </a>
+    {%- endif -%}
+  </nav>
+{%- endif -%}
