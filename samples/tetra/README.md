@@ -97,6 +97,45 @@ follow-up. Such a capture ships with a `.metadata.json` sidecar (schema
 above) and the realair test above starts asserting against it
 automatically.
 
+### What a second live capture set taught us (468.5 MHz, 1 Msps)
+
+A second batch of live downlink captures (seven `*.cfile` clips,
+≈3.3 s each, 1 Msps, centre 468.475 MHz; carrier ≈119 kHz off centre)
+was replayed through the production pipeline. They are **not** committed
+(per `samples/.gitignore`), but they surfaced two concrete findings:
+
+1. **The front-end was spectrum-inverted (issue #264).** Raw, the
+   π/4-DQPSK differential decode is garbled (dibit histogram ≈
+   34/29/18/19 %). With the spectrum de-inverted (`gophertrunk replay
+   -conjugate …`, or `iq_invert: true` on the device) the dibits snap
+   to a uniform 25/25/25/25 % and the **normal** training sequence
+   (NTS1) correlates at Hamming distance **0** over hundreds of bursts —
+   i.e. the normal-burst demod is provably clean once the spectrum is
+   corrected.
+
+2. **A real-air decoder bug: the colour-code recovery was
+   rotation-blind.** π/4-DQPSK carries data in the differential phase,
+   so a residual carrier offset rotates the whole demodulated dibit
+   stream by an unknown 0..3 (these captures sat at rotation 1). The
+   synchronisation-training-sequence (STS) correlator that gates BSCH
+   recovery matched only the rotation-0 orientation, so on air it never
+   fired — which is almost certainly why the reference carrier above
+   recovered no colour code either. `RecoverColourCode` and the live
+   `processSB` STS detection are now tried under all four rotations
+   (regression: `TestRecoverColourCodeUnderRotation`,
+   `TestProcessLearnsColourCodeFromSBBurstUnderRotation`).
+
+Even with both addressed these particular clips still do **not** lock:
+the synchronisation burst itself never demodulates cleanly (best STS
+match ≈5/19 mismatches vs. 0/19 for the normal bursts, and the
+near-misses do not sit on the ~18 360-symbol multiframe grid). Each clip
+is only ≈3.3 s — a synchronisation burst recurs only once per ≈1.02 s
+multiframe — so they span too few SB opportunities, and the SB region
+appears further disrupted (likely the frequency-correction field pulling
+the carrier/timing loop). A **≥30 s** cleartext capture that includes
+several clean frame-18 SB slots is still what closes the lock + Viterbi
+histogram criteria.
+
 ## Recommended sources
 
 - **telive / osmo-tetra** — produces both IQ recordings and a

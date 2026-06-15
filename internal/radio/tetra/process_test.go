@@ -45,6 +45,47 @@ func TestRecoverColourCode(t *testing.T) {
 	}
 }
 
+// TestRecoverColourCodeUnderRotation reproduces the real-air failure mode that
+// the rotation-0 synthetic fixtures masked: π/4-DQPSK carries data in the
+// differential phase, so a residual carrier offset adds a constant 90°/dibit
+// term that cyclically rotates the entire demodulated stream by an unknown
+// 0..3. Live captures essentially never sit at rotation 0 (the supplied 468.5
+// MHz TETRA captures landed at rotation 1), so a rotation-blind STS correlator
+// never fires and no colour code is recovered — exactly what was observed on
+// air. RecoverColourCode must de-rotate and recover under every orientation.
+func TestRecoverColourCodeUnderRotation(t *testing.T) {
+	const (
+		cc6        = 0x2D
+		mcc uint16 = 0x0CE
+		mnc uint16 = 0x1234
+	)
+	want := ExtendedColourCode(mcc, mnc, cc6)
+
+	syncInfo := make([]byte, 60)
+	putBits(syncInfo, 4, 6, cc6)
+	putBits(syncInfo, 31, 10, uint32(mcc))
+	putBits(syncInfo, 41, 14, uint32(mnc))
+	bschDibits := TetraBitsToDibits(EncodeBSCH(syncInfo))
+
+	var base []uint8
+	base = append(base, make([]uint8, 23)...)    // leading filler
+	base = append(base, bschDibits...)           // BSCH
+	base = append(base, SyncTrainingDibits()...) // STS
+	base = append(base, make([]uint8, 40)...)    // trailing pad
+
+	for rot := uint8(0); rot < 4; rot++ {
+		stream := rotateDibits(base, rot)
+		got, ok := RecoverColourCode(stream)
+		if !ok {
+			t.Errorf("rot=%d: RecoverColourCode found no BSCH in a rotated SB burst", rot)
+			continue
+		}
+		if got != want {
+			t.Errorf("rot=%d: recovered colour code = %#x, want %#x", rot, got, want)
+		}
+	}
+}
+
 // TestProcessLocksOnSystemBroadcastAfterSync builds a dibit stream
 // of 50 padding dibits + 38 normal training-sequence dibits + 48
 // dibits whose raw bits decode to an MLE-SYSINFO PDU with known
