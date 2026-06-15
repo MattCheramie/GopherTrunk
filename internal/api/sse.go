@@ -109,5 +109,11 @@ func eventToDTO(ev events.Event) EventDTO {
 		// explicit DTO for yet.
 		dto.Payload = p
 	}
+	// Categorically strip non-finite floats (±Inf/NaN) from whatever payload we
+	// settled on — known DTO copies and the raw passthrough alike — so a stray
+	// metric from a marginal carrier can never fail json.Marshal and tear down
+	// the live WS/SSE stream (issue #648). Operates on a copy; the bus payload,
+	// NDJSON sink and canonical store keep their original values.
+	dto.Payload = scrubNonFinite(dto.Payload)
 	return dto
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"math"
 	"testing"
 
@@ -28,13 +27,11 @@ func TestEventToDTOHuntCandidateFinite(t *testing.T) {
 	}
 }
 
-// TestEventToDTONonFiniteIsUnsupported documents the failure mode behind issue
-// #648: a payload carrying a non-finite float (here +Inf, as the field report's
-// "json: unsupported value: +Inf" showed) is rejected by encoding/json. The WS
-// handler must therefore skip such a frame rather than tear the connection down,
-// and the survey now sanitizes its signals so this can't reach the wire in
-// practice. This test pins both halves of that contract.
-func TestEventToDTONonFiniteIsUnsupported(t *testing.T) {
+// TestEventToDTONonFiniteIsZeroed pins the issue #648 fix: eventToDTO strips a
+// non-finite float (here +Inf, the value the field report's "json: unsupported
+// value: +Inf" hit) from the payload, so json.Marshal now succeeds and the field
+// crosses the wire as 0 instead of tearing the live stream down.
+func TestEventToDTONonFiniteIsZeroed(t *testing.T) {
 	dto := eventToDTO(events.Event{
 		Kind: events.KindHuntLiveCandidate,
 		Payload: hunt.DetectedSignal{
@@ -42,12 +39,21 @@ func TestEventToDTONonFiniteIsUnsupported(t *testing.T) {
 			Features: survey.ClassFeatures{SNRDb: math.Inf(1)},
 		},
 	})
-	_, err := json.Marshal(dto)
-	if err == nil {
-		t.Fatal("expected json.Marshal to reject a non-finite payload")
+	b, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal sanitized payload: %v", err)
 	}
-	var ue *json.UnsupportedValueError
-	if !errors.As(err, &ue) {
-		t.Fatalf("error = %v, want *json.UnsupportedValueError", err)
+	var got struct {
+		Payload struct {
+			Features struct {
+				SNRDb float64 `json:"snr_db"`
+			} `json:"features"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Payload.Features.SNRDb != 0 {
+		t.Errorf("features.snr_db = %v, want 0 (sanitized)", got.Payload.Features.SNRDb)
 	}
 }
