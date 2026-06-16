@@ -24,6 +24,19 @@ external:
 tracks instantaneous frequency; for [PSK](/reference/phase-shift-keying/) it tracks
 [phase](/reference/phase/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A modulated waveform entering a demodulator block and the recovered message waveform leaving it." xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 55 q5 -16 10 0 q5 -22 10 0 q5 -16 10 0 q5 -8 10 0 q5 -16 10 0 q5 -22 10 0 q5 -16 10 0 q5 -8 10 0 q5 -16 10 0 q5 -22 10 0" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <rect x="200" y="38" width="74" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.4"/><text x="237" y="59" font-size="9" fill="currentColor" text-anchor="middle">demod</text>
+  <line x1="120" y1="55" x2="199" y2="55" stroke="currentColor" stroke-width="1.1"/>
+  <path d="M290 55 Q 330 30 370 55 T 440 55" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <line x1="274" y1="55" x2="289" y2="55" stroke="currentColor" stroke-width="1.1" marker-end="url(#dmar)"/>
+  <text x="365" y="92" font-size="9" fill="currentColor">recovered message</text>
+  <defs><marker id="dmar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Demodulation recovers the original modulating signal from the carrier — the step before decoding bits.</figcaption>
+</figure>
+
 ## How it works
 
 The demodulator outputs a continuous, noisy stream that *contains* the

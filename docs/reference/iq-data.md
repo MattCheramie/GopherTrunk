@@ -23,6 +23,19 @@ external:
 [amplitude](/reference/amplitude/) and [phase](/reference/phase/) of the signal at that
 instant.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 260 220" role="img" aria-label="The IQ plane with I horizontal and Q vertical; an arrow to a point shows amplitude as length and phase as angle." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="110" x2="240" y2="110" stroke="currentColor" stroke-opacity="0.4"/>
+  <line x1="130" y1="20" x2="130" y2="200" stroke="currentColor" stroke-opacity="0.4"/>
+  <text x="232" y="124" font-size="11" fill="currentColor">I</text><text x="116" y="30" font-size="11" fill="currentColor">Q</text>
+  <line x1="130" y1="110" x2="195" y2="55" stroke="currentColor" stroke-width="2"/><circle cx="195" cy="55" r="4" fill="currentColor"/>
+  <path d="M165 110 A 36 36 0 0 0 150 84" fill="none" stroke="currentColor" stroke-opacity="0.6"/>
+  <text x="150" y="104" font-size="10" fill="currentColor">phase</text>
+  <text x="150" y="70" font-size="10" fill="currentColor" transform="rotate(-40 165 80)">amplitude</text>
+</svg>
+<figcaption>Each IQ sample is a point on the complex plane: distance from the origin is amplitude, angle is phase.</figcaption>
+</figure>
+
 ## How it works
 
 Treating each sample as a point (I, Q), its distance from the origin is amplitude and its

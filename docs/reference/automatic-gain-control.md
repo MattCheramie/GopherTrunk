@@ -23,6 +23,16 @@ level — high enough above the [noise floor](/reference/noise-floor/) but below
 [ADC](/reference/analog-to-digital-converter/)'s clipping ceiling (0
 [dBFS](/reference/dbfs/)).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="An input whose amplitude varies wildly, and an output of roughly constant amplitude after AGC." xmlns="http://www.w3.org/2000/svg">
+  <text x="20" y="22" font-size="9" fill="currentColor">input (varying level)</text>
+  <path d="M20 45 q6 -6 12 0 t12 0 q6 -22 12 0 t12 0 q6 -22 12 0 t12 0 q6 -4 12 0 t12 0 q6 -4 12 0 t12 0 q6 -16 12 0 t12 0 q6 -16 12 0 t12 0" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <text x="20" y="95" font-size="9" fill="currentColor">output (levelled)</text>
+  <path d="M20 118 q6 -13 12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0" fill="none" stroke="currentColor" stroke-width="1.3"/>
+</svg>
+<figcaption>AGC continuously adjusts gain so the output level stays roughly constant despite a fading input.</figcaption>
+</figure>
+
 ## How it works
 
 AGC can live in the tuner hardware or in software. For decoding a fixed system it can

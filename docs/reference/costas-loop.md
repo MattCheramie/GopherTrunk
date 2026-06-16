@@ -23,6 +23,22 @@ A **Costas loop** is a phase-locked feedback structure that recovers the
 [demodulation](/reference/demodulation/) of [PSK](/reference/phase-shift-keying/) and
 related signals.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A feedback loop: input to a phase detector, to a loop filter, to a controlled oscillator that feeds back to the phase detector." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="60" y="40" width="70" height="32" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="95" y="54">phase</text><text x="95" y="65">detector</text>
+    <rect x="180" y="40" width="70" height="32" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="215" y="54">loop</text><text x="215" y="65">filter</text>
+    <rect x="300" y="40" width="80" height="32" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="340" y="54">controlled</text><text x="340" y="65">oscillator</text>
+    <line x1="20" y1="56" x2="59" y2="56" stroke="currentColor" stroke-width="1.1"/><text x="38" y="48">in</text>
+    <line x1="130" y1="56" x2="179" y2="56" stroke="currentColor" stroke-width="1.1" marker-end="url(#clar)"/>
+    <line x1="250" y1="56" x2="299" y2="56" stroke="currentColor" stroke-width="1.1" marker-end="url(#clar)"/>
+    <path d="M340 72 V 105 H 95 V 73" fill="none" stroke="currentColor" stroke-width="1.1" marker-end="url(#clar)"/>
+  </g>
+  <defs><marker id="clar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>A Costas loop recovers a PSK carrier by feeding a phase-error estimate back to a controlled oscillator.</figcaption>
+</figure>
+
 ## How it works
 
 It compares in-phase and quadrature error to drive an oscillator that locks to the

@@ -22,6 +22,18 @@ A **digital filter** passes some frequencies and attenuates others by performing
 arithmetic on a stream of samples — no physical components. The main families are FIR
 (finite impulse response) and IIR (infinite impulse response).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="A frequency-response curve that passes a band of frequencies and attenuates those outside it." xmlns="http://www.w3.org/2000/svg">
+  <line x1="40" y1="110" x2="440" y2="110" stroke="currentColor" stroke-opacity="0.4"/>
+  <line x1="40" y1="20" x2="40" y2="110" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M40 95 L150 95 C 180 95, 180 35, 210 35 L 270 35 C 300 35, 300 95, 330 95 L 440 95" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.8"/>
+  <text x="240" y="28" text-anchor="middle" font-size="10" fill="currentColor">passband</text>
+  <text x="90" y="86" font-size="9" fill="currentColor">rejected</text><text x="390" y="86" font-size="9" fill="currentColor">rejected</text>
+  <text x="240" y="130" text-anchor="middle" font-size="9" fill="currentColor">frequency →</text>
+</svg>
+<figcaption>A digital filter passes a chosen band of frequencies and attenuates the rest — isolating one channel.</figcaption>
+</figure>
+
 ## How it works
 
 A low-pass filter keeps frequencies below a cutoff; a band-pass keeps a chosen range. In

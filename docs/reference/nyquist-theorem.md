@@ -23,6 +23,16 @@ you must sample at least **twice its [bandwidth](/reference/bandwidth/)**. For I
 sampling, the practical takeaway is that usable bandwidth ≈
 [sample rate](/reference/sample-rate/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A fast wave sampled too slowly, with the sample dots tracing a slower false wave." xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 60 q12 -30 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-opacity="0.5"/>
+  <g fill="currentColor"><circle cx="20" cy="60" r="3"/><circle cx="92" cy="48" r="3"/><circle cx="164" cy="72" r="3"/><circle cx="236" cy="48" r="3"/><circle cx="308" cy="72" r="3"/><circle cx="380" cy="48" r="3"/><circle cx="430" cy="66" r="3"/></g>
+  <path d="M20 60 C 92 48, 92 48, 164 72 S 308 72, 380 48" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="5 3"/>
+  <text x="20" y="112" font-size="9" fill="currentColor">too few samples → a false (aliased) low-frequency wave</text>
+</svg>
+<figcaption>Nyquist: sample at least twice the bandwidth, or fast signals fold back as false low-frequency aliases.</figcaption>
+</figure>
+
 ## How it works
 
 Sample too slowly for the bandwidth and information does not merely vanish — it corrupts
