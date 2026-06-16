@@ -182,6 +182,34 @@ request-by-request diffing.
    is fine on feature branches; the maintainer squashes on merge
    to keep `main` history clean).
 
+## Publishing a blog series
+
+Blog posts live in `docs/_posts/` and are dated by filename
+(`YYYY-MM-DD-slug.md`). To release a multi-part series gradually
+instead of all at once, commit the whole series in one PR but date
+the posts on **consecutive future weekdays**. Jekyll's `future:
+false` (set in [`docs/_config.yml`](docs/_config.yml)) keeps a
+future-dated post out of the built site — absent from the page list,
+`feed.xml`, and `sitemap.xml` — until a build runs on or after its
+date. A weekday `schedule:` cron in
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) rebuilds
+the site every weekday morning, so each post goes live on its date,
+one per weekday. Nothing else to do — no draft branches, no daily
+commits.
+
+Assign the weekday dates with the helper rather than counting by
+hand (it skips Sat/Sun for you):
+
+```sh
+# preview, then re-run with --apply once it looks right
+scripts/schedule-series.py 2026-07-06 docs/_posts/*my-series*.md
+```
+
+Pass the files in reading order (the default shell glob sorts
+lexically, which matches zero-padded part numbers like `-01-`,
+`-02-`). Reorder or re-time a series any time by editing the
+filename dates and pushing.
+
 ## Cutting a release
 
 Releases are produced by [`.github/workflows/release.yml`](.github/workflows/release.yml),
