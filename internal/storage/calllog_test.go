@@ -268,6 +268,194 @@ func TestHistoryFilters(t *testing.T) {
 	}
 }
 
+// waitHistory polls db.History until pred returns true or the deadline
+// passes, returning the last-read rows. Mirrors the inline poll loops the
+// other tests use, factored out for the backfill cases below.
+func waitHistory(t *testing.T, db *DB, f HistoryFilter, pred func([]CallRow) bool) []CallRow {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	var rows []CallRow
+	for time.Now().Before(deadline) {
+		rows, _ = db.History(context.Background(), f)
+		if pred(rows) {
+			return rows
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return rows
+}
+
+func runningCallLog(t *testing.T) (*DB, *events.Bus) {
+	t.Helper()
+	db := openTestDB(t)
+	bus := events.NewBus(8)
+	t.Cleanup(bus.Close)
+	cl, err := NewCallLog(db, bus, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cl.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go cl.Run(ctx)
+	return db, bus
+}
+
+// TestCallLogBackfillsSourceOnEnd models a P25 Phase 2 compressed grant:
+// the call starts with SourceID=0 (the RID is absent on the control
+// channel) and the real RID only surfaces mid-call, arriving on the bound
+// grant by CallEnd. recordEnd must persist it so the RID lands in history
+// (issue #696).
+func TestCallLogBackfillsSourceOnEnd(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	startGrant := trunking.Grant{
+		System: "P25P2", Protocol: "p25-phase2",
+		GroupID: 4321, SourceID: 0, FrequencyHz: 851_000_000,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: startGrant, DeviceSerial: "VOICE-1", StartedAt: startedAt,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+	if len(rows) != 1 || rows[0].SourceID != 0 {
+		t.Fatalf("start row = %+v, want one row with SourceID=0", rows)
+	}
+
+	endGrant := startGrant
+	endGrant.SourceID = 778899 // backfilled mid-call on the traffic channel
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        endGrant,
+		DeviceSerial: "VOICE-1",
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+
+	rows = waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].SourceID == 778899
+	})
+	if len(rows) != 1 || rows[0].SourceID != 778899 {
+		t.Fatalf("end row = %+v, want SourceID backfilled to 778899", rows)
+	}
+	// The RID is now queryable by the source filter the /rids history uses.
+	rids, _ := db.History(context.Background(), HistoryFilter{SourceID: 778899})
+	if len(rids) != 1 {
+		t.Errorf("source filter rows = %d, want 1", len(rids))
+	}
+}
+
+// TestCallLogBackfillsEncryptionOnEnd models encryption that only resolves
+// mid-call (P25 Phase 1 LDU2 / Phase 2 EncryptionSync): the start grant
+// carries no ALGID/KID, and recordEnd must persist the values that landed
+// on the bound grant.
+func TestCallLogBackfillsEncryptionOnEnd(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	startGrant := trunking.Grant{
+		System: "P25P1", Protocol: "p25", GroupID: 100, SourceID: 42,
+		FrequencyHz: 851_000_000, Encrypted: false,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: startGrant, DeviceSerial: "VOICE-2", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+
+	endGrant := startGrant
+	endGrant.Encrypted = true
+	endGrant.AlgorithmID = 0x84 // AES-256
+	endGrant.KeyID = 7
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        endGrant,
+		DeviceSerial: "VOICE-2",
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool {
+		return len(r) == 1 && r[0].Encrypted
+	})
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	r := rows[0]
+	if !r.Encrypted || r.AlgorithmID != 0x84 || r.KeyID != 7 {
+		t.Errorf("row = {enc:%v alg:%#x key:%d}, want {true 0x84 7}",
+			r.Encrypted, r.AlgorithmID, r.KeyID)
+	}
+}
+
+// TestCallLogEndDoesNotDowngrade confirms the never-downgrade guards: a
+// known start-time RID survives a zero-source end grant, and a call that
+// started encrypted stays encrypted even if the end grant reports clear.
+func TestCallLogEndDoesNotDowngrade(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	startGrant := trunking.Grant{
+		System: "Alpha", Protocol: "p25", GroupID: 1, SourceID: 5150,
+		FrequencyHz: 851_000_000, Encrypted: true, AlgorithmID: 0x84, KeyID: 3,
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: startGrant, DeviceSerial: "VOICE-3", StartedAt: startedAt,
+	}})
+	waitHistory(t, db, HistoryFilter{Limit: 1}, func(r []CallRow) bool { return len(r) == 1 })
+
+	// End grant arrives blank (a later compressed-form update) — must not
+	// clobber the known identity.
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 1, FrequencyHz: 851_000_000},
+		DeviceSerial: "VOICE-3",
+		StartedAt:    startedAt,
+		EndedAt:      startedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{OnlyEnded: true}, func(r []CallRow) bool { return len(r) == 1 })
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	r := rows[0]
+	if r.SourceID != 5150 {
+		t.Errorf("SourceID = %d, want 5150 preserved", r.SourceID)
+	}
+	if !r.Encrypted || r.AlgorithmID != 0x84 || r.KeyID != 3 {
+		t.Errorf("identity downgraded: {enc:%v alg:%#x key:%d}, want {true 0x84 3}",
+			r.Encrypted, r.AlgorithmID, r.KeyID)
+	}
+}
+
+// TestCallLogRecordsEncryptedCallRID is the issue #696 decoupling
+// regression: the call log writes the RID + encryption flag for an
+// encrypted call regardless of any recording policy. The call log never
+// consults the recorder or recordings.skip_encrypted — that option only
+// gates WAV/raw file writing — so an encrypted call's identity always
+// reaches history.
+func TestCallLogRecordsEncryptedCallRID(t *testing.T) {
+	db, bus := runningCallLog(t)
+
+	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{
+			System: "Secure", Protocol: "p25", GroupID: 911, SourceID: 13579,
+			FrequencyHz: 851_000_000, Encrypted: true, AlgorithmID: 0x84, KeyID: 1,
+		},
+		DeviceSerial: "VOICE-4",
+		StartedAt:    startedAt,
+	}})
+
+	rows := waitHistory(t, db, HistoryFilter{SourceID: 13579}, func(r []CallRow) bool { return len(r) == 1 })
+	if len(rows) != 1 {
+		t.Fatalf("encrypted-call rows by RID = %d, want 1 (history identity must be recording-independent)", len(rows))
+	}
+	if !rows[0].Encrypted {
+		t.Errorf("encrypted flag not recorded for RID %d", rows[0].SourceID)
+	}
+}
+
 func TestOpenRejectsEmpty(t *testing.T) {
 	if _, err := Open(""); err == nil {
 		t.Error("expected error for empty path")
