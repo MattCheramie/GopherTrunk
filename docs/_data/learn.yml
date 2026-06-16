@@ -44,7 +44,7 @@ modules:
         summary: Hz to GHz, the HF/VHF/UHF bands, and how spectrum is carved up into band plans.
         minutes: 8
         level: beginner
-        status: stub
+        status: full
       - slug: decibels
         title: Decibels & signal power
         summary: dB, dBm, and dBFS demystified — gain, path loss, the noise floor, and why radio lives in logarithms.
@@ -56,13 +56,13 @@ modules:
         summary: Resonance, polarization, gain, SWR, and the connectors that join your antenna to your SDR.
         minutes: 9
         level: beginner
-        status: stub
+        status: full
       - slug: propagation
         title: How signals travel
         summary: Line of sight, multipath, fading, and why where you put the antenna matters more than the radio.
         minutes: 8
         level: beginner
-        status: stub
+        status: full
 
   - id: signals-modulation
     label: "Module 2 — Signals & Modulation"
@@ -73,13 +73,13 @@ modules:
         summary: Carrier, bandwidth, and the difference between a spectrum view and a waterfall.
         minutes: 7
         level: beginner
-        status: stub
+        status: full
       - slug: analog-modulation
         title: Analog modulation — AM, FM, SSB
         summary: The three classic ways to put a voice on a carrier, and where you still hear them today.
         minutes: 8
         level: beginner
-        status: stub
+        status: full
       - slug: digital-modulation
         title: Digital modulation & constellations
         summary: FSK, PSK, QAM, and C4FM — how bits become symbols, and how to read a constellation and eye diagram.
@@ -91,7 +91,7 @@ modules:
         summary: Why a 4800-baud C4FM signal carries 9600 bits per second, and what that means for capture.
         minutes: 7
         level: intermediate
-        status: stub
+        status: full
 
   - id: sdr
     label: "Module 3 — Software-Defined Radio"
@@ -108,31 +108,31 @@ modules:
         summary: Antenna to tuner to ADC — the signal chain that turns radio waves into a stream of samples.
         minutes: 9
         level: intermediate
-        status: stub
+        status: full
       - slug: iq-data
         title: IQ data & complex signals
         summary: Why SDRs output pairs of numbers, what "I" and "Q" mean, and how they capture both amplitude and phase.
         minutes: 9
         level: intermediate
-        status: stub
+        status: full
       - slug: sample-rate-nyquist
         title: Sample rate, bandwidth & Nyquist
         summary: How much spectrum you can see at once, the Nyquist limit, and the bandwidth/CPU trade-off.
         minutes: 8
         level: intermediate
-        status: stub
+        status: full
       - slug: gain-and-agc
         title: Gain, AGC & avoiding overload
         summary: Set gain too low and you lose weak signals; too high and you drown in distortion. Finding the sweet spot.
         minutes: 8
         level: intermediate
-        status: stub
+        status: full
       - slug: sdr-hardware
         title: SDR hardware — RTL-SDR, HackRF, Airspy
         summary: Picking a dongle for the job and how each one maps to GopherTrunk's supported hardware.
         minutes: 9
         level: beginner
-        status: stub
+        status: full
 
   - id: dsp
     label: "Module 4 — DSP Essentials"
@@ -143,25 +143,25 @@ modules:
         summary: How the Fourier transform turns samples into a spectrum, and how to read GopherTrunk's waterfall.
         minutes: 9
         level: intermediate
-        status: stub
+        status: full
       - slug: filtering-decimation
         title: Filtering & decimation
         summary: Zooming in on one channel, throwing away the rest, and keeping the CPU happy.
         minutes: 8
         level: intermediate
-        status: stub
+        status: full
       - slug: demodulation-pipeline
         title: The demodulation pipeline
         summary: "The stages every signal passes through: tune, filter, demodulate, recover symbols, decode."
         minutes: 9
         level: advanced
-        status: stub
+        status: full
       - slug: clock-recovery
         title: Clock recovery & symbol timing
         summary: How a receiver finds the beat of a digital signal so it samples each symbol at the right instant.
         minutes: 8
         level: advanced
-        status: stub
+        status: full
 
   - id: digital-voice-trunking
     label: "Module 5 — Digital Voice & Trunked Radio"
@@ -172,13 +172,13 @@ modules:
         summary: Why public-safety radio went digital, and what a vocoder gives up to fit a voice in a few kbps.
         minutes: 8
         level: intermediate
-        status: stub
+        status: full
       - slug: vocoders
         title: Vocoders — IMBE & AMBE+2
         summary: The speech codecs behind P25 and DMR, and how GopherTrunk turns their frames back into audio.
         minutes: 8
         level: advanced
-        status: stub
+        status: full
       - slug: what-is-trunking
         title: What is trunked radio?
         summary: Control channels, voice channels, and affiliation — how a fleet shares a handful of frequencies.
@@ -190,19 +190,19 @@ modules:
         summary: P25, DMR, NXDN, TETRA, Motorola, EDACS, and friends — who uses what, and how to tell them apart.
         minutes: 10
         level: intermediate
-        status: stub
+        status: full
       - slug: encryption
         title: Encryption & what you can decode
         summary: Why some talkgroups are silent, what GopherTrunk can and can't do, and how to spot encryption.
         minutes: 7
         level: intermediate
-        status: stub
+        status: full
       - slug: other-signals
         title: Other signals you'll meet
         summary: Paging, AIS, ADS-B, and APRS — the non-trunked signals GopherTrunk can also decode.
         minutes: 8
         level: beginner
-        status: stub
+        status: full
 
   - id: gophertrunk
     label: "Module 6 — Putting It Together with GopherTrunk"
@@ -219,25 +219,25 @@ modules:
         summary: Using Hunt and online databases to discover what's on the air near you and add it to GopherTrunk.
         minutes: 9
         level: intermediate
-        status: stub
+        status: full
       - slug: tuning-with-scopes
         title: Tuning for a clean lock
         summary: Reading the constellation, eye diagram, and symbol scope to dial in a marginal signal.
         minutes: 9
         level: advanced
-        status: stub
+        status: full
       - slug: calibration-troubleshooting
         title: Calibration & troubleshooting
         summary: PPM and voice calibration, plus a checklist for the usual reasons a control channel won't decode.
         minutes: 9
         level: advanced
-        status: stub
+        status: full
       - slug: legal-ethical
         title: Legal & ethical monitoring
         summary: Knowing what's legal to receive where you live, and the etiquette of the scanner hobby.
         minutes: 6
         level: beginner
-        status: stub
+        status: full
 
 # Standalone reference, not part of the sequential path (no prev/next slot).
 glossary:
