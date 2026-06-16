@@ -24,6 +24,26 @@ ordered by frequency (or, equivalently, wavelength). It spans from low-frequency
 ultraviolet, X-rays, and gamma rays — all the same phenomenon vibrating at different
 rates.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 480 110" role="img" aria-label="The electromagnetic spectrum from radio waves through microwaves, infrared, visible light, ultraviolet, X-rays and gamma rays, with the radio portion highlighted." xmlns="http://www.w3.org/2000/svg">
+  <rect x="20" y="30" width="60" height="26" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.2"/>
+  <g stroke="currentColor" stroke-width="1.2" fill="none">
+    <rect x="80" y="30" width="60" height="26"/><rect x="140" y="30" width="60" height="26"/>
+    <rect x="200" y="30" width="60" height="26"/><rect x="260" y="30" width="60" height="26"/>
+    <rect x="320" y="30" width="60" height="26"/><rect x="380" y="30" width="80" height="26"/>
+  </g>
+  <g font-size="8.5" fill="currentColor" text-anchor="middle">
+    <text x="50" y="47">Radio</text><text x="110" y="47">Micro</text><text x="170" y="47">IR</text>
+    <text x="230" y="47">Visible</text><text x="290" y="47">UV</text><text x="350" y="47">X-ray</text><text x="420" y="47">Gamma</text>
+  </g>
+  <text x="20" y="78" font-size="9" fill="currentColor">lower frequency · longer wavelength</text>
+  <text x="460" y="78" font-size="9" fill="currentColor" text-anchor="end">higher frequency</text>
+  <line x1="20" y1="66" x2="460" y2="66" stroke="currentColor" stroke-opacity="0.4" marker-end="url(#emar)"/>
+  <defs><marker id="emar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Radio occupies the low-frequency, long-wavelength end of the same electromagnetic spectrum as light and X-rays.</figcaption>
+</figure>
+
 ## Overview
 
 Every part of the spectrum is electromagnetic energy travelling at the speed of light;

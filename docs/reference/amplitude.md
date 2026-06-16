@@ -21,6 +21,17 @@ external:
 receiver reports as a power level in [dBm](/reference/dbm/) or
 [dBFS](/reference/dbfs/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="A larger-amplitude sine wave and a smaller-amplitude sine wave sharing a centre line." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="70" x2="440" y2="70" stroke="currentColor" stroke-opacity="0.3"/>
+  <path d="M20 70 q35 -48 70 0 t70 0 t70 0 t70 0 t70 0 t50 0" fill="none" stroke="currentColor" stroke-width="2"/>
+  <path d="M20 70 q35 -16 70 0 t70 0 t70 0 t70 0 t70 0 t50 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-opacity="0.6"/>
+  <line x1="90" y1="70" x2="90" y2="22" stroke="currentColor" stroke-dasharray="4 3"/>
+  <text x="98" y="40" font-size="11" fill="currentColor">larger amplitude = stronger signal</text>
+</svg>
+<figcaption>Amplitude is the height of the wave; greater amplitude delivers more power to the receiver.</figcaption>
+</figure>
+
 ## How it works
 
 A larger amplitude carries more power. As a signal spreads from a transmitter and

@@ -23,6 +23,17 @@ external:
 travelling from transmitter to receiver. It is dominated by the spreading of energy
 over distance, plus losses from terrain, buildings, and foliage.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 150" role="img" aria-label="A curve of received power falling steeply with distance, illustrating path loss in decibels." xmlns="http://www.w3.org/2000/svg">
+  <line x1="50" y1="20" x2="50" y2="120" stroke="currentColor" stroke-opacity="0.4"/>
+  <line x1="50" y1="120" x2="440" y2="120" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M55 28 C 120 70, 200 100, 435 115" fill="none" stroke="currentColor" stroke-width="2"/>
+  <text x="20" y="70" font-size="10" fill="currentColor" transform="rotate(-90 20 70)">power (dB)</text>
+  <text x="240" y="140" text-anchor="middle" font-size="10" fill="currentColor">distance →</text>
+</svg>
+<figcaption>Path loss grows with distance (and frequency); it can exceed 100 dB over a few kilometres.</figcaption>
+</figure>
+
 ## How it works
 
 In free space, power falls with the square of distance, and loss rises with

@@ -24,6 +24,18 @@ on the [IQ](/reference/iq-data/) plane: the horizontal axis is I and the vertica
 is Q, so each point's angle is its [phase](/reference/phase/) and its distance from the
 origin is its [amplitude](/reference/amplitude/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 200" role="img" aria-label="Two four-point constellations: tight clusters labelled clean on the left, smeared clusters labelled noisy on the right." xmlns="http://www.w3.org/2000/svg">
+  <g><line x1="20" y1="100" x2="180" y2="100" stroke="currentColor" stroke-opacity="0.3"/><line x1="100" y1="25" x2="100" y2="175" stroke="currentColor" stroke-opacity="0.3"/>
+    <g fill="currentColor"><circle cx="60" cy="60" r="2.5"/><circle cx="58" cy="62" r="2.5"/><circle cx="62" cy="59" r="2.5"/><circle cx="140" cy="60" r="2.5"/><circle cx="138" cy="62" r="2.5"/><circle cx="60" cy="140" r="2.5"/><circle cx="62" cy="138" r="2.5"/><circle cx="140" cy="140" r="2.5"/><circle cx="138" cy="141" r="2.5"/></g>
+    <text x="100" y="192" text-anchor="middle" font-size="10" fill="currentColor">clean</text></g>
+  <g><line x1="280" y1="100" x2="440" y2="100" stroke="currentColor" stroke-opacity="0.3"/><line x1="360" y1="25" x2="360" y2="175" stroke="currentColor" stroke-opacity="0.3"/>
+    <g fill="currentColor" fill-opacity="0.7"><circle cx="320" cy="62" r="2.5"/><circle cx="312" cy="70" r="2.5"/><circle cx="330" cy="54" r="2.5"/><circle cx="318" cy="78" r="2.5"/><circle cx="400" cy="60" r="2.5"/><circle cx="408" cy="72" r="2.5"/><circle cx="392" cy="52" r="2.5"/><circle cx="322" cy="140" r="2.5"/><circle cx="330" cy="132" r="2.5"/><circle cx="400" cy="140" r="2.5"/><circle cx="392" cy="148" r="2.5"/></g>
+    <text x="360" y="192" text-anchor="middle" font-size="10" fill="currentColor">noisy</text></g>
+</svg>
+<figcaption>A constellation plots symbols on the IQ plane; tight clusters decode reliably, smeared clusters bring errors.</figcaption>
+</figure>
+
 ## How it works
 
 A clean signal places symbols in tight, well-separated clusters at their ideal points.

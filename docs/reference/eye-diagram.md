@@ -23,6 +23,19 @@ An **eye diagram** overlays many short segments of a demodulated signal, each on
 symbol period long, so they stack into characteristic "eye" shapes between the symbol
 levels.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 440 150" role="img" aria-label="An eye diagram with an open eye shape and a dashed vertical line marking the ideal sampling instant at its widest point." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" fill="none" stroke-width="1.2" stroke-opacity="0.85">
+    <path d="M40 30 C120 30 120 120 200 120 C280 120 280 30 360 30"/>
+    <path d="M40 120 C120 120 120 30 200 30 C280 30 280 120 360 120"/>
+    <path d="M40 30 C120 30 120 120 200 120"/><path d="M200 30 C280 30 280 120 360 120"/>
+  </g>
+  <line x1="200" y1="20" x2="200" y2="130" stroke="currentColor" stroke-dasharray="4 3"/>
+  <text x="200" y="146" text-anchor="middle" font-size="10" fill="currentColor">sample here (eye widest)</text>
+</svg>
+<figcaption>An eye diagram overlays symbol periods; a wide-open eye means good timing and noise margin.</figcaption>
+</figure>
+
 ## How it works
 
 The **wider and taller the eye opening**, the more margin the decoder has to sample

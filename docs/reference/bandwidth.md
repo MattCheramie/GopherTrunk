@@ -21,6 +21,21 @@ external:
 signal occupies or that a receiver captures. A narrowband voice channel may be ~12.5
 kHz wide; an FM broadcast station ~200 kHz; Wi-Fi tens of megahertz.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="A spectrum bump occupying a span of frequency, with the width of the occupied span labelled bandwidth." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="100" x2="440" y2="100" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M150 100 C 190 100, 195 35, 230 35 C 265 35, 270 100, 310 100" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.6"/>
+  <line x1="150" y1="55" x2="310" y2="55" stroke="currentColor" marker-start="url(#bws)" marker-end="url(#bwe)"/>
+  <text x="230" y="48" text-anchor="middle" font-size="11" fill="currentColor">bandwidth</text>
+  <text x="230" y="118" text-anchor="middle" font-size="10" fill="currentColor">frequency →</text>
+  <defs>
+    <marker id="bws" markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto"><path d="M6 0 L0 3 L6 6 z" fill="currentColor"/></marker>
+    <marker id="bwe" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker>
+  </defs>
+</svg>
+<figcaption>Bandwidth is the span of frequency a signal occupies — wider signals carry more data but use more spectrum.</figcaption>
+</figure>
+
 ## How it works
 
 Wider bandwidth can carry more information but uses more spectrum and demands a higher

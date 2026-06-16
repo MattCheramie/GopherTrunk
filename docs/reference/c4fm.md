@@ -24,6 +24,16 @@ external:
 The carrier sits at one of four frequency deviations per [symbol](/reference/symbol-rate/),
 carrying 2 bits each.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 150" role="img" aria-label="Four horizontal deviation levels labelled with dibits, and a stepped trace moving between them over time." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-opacity="0.35"><line x1="60" y1="30" x2="430" y2="30"/><line x1="60" y1="60" x2="430" y2="60"/><line x1="60" y1="90" x2="430" y2="90"/><line x1="60" y1="120" x2="430" y2="120"/></g>
+  <g font-size="9" fill="currentColor" text-anchor="end"><text x="55" y="33">+3 (01)</text><text x="55" y="63">+1 (00)</text><text x="55" y="93">-1 (10)</text><text x="55" y="123">-3 (11)</text></g>
+  <polyline points="70,60 110,30 150,90 190,90 230,120 270,30 310,60 350,120 390,90 430,30" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <text x="240" y="142" text-anchor="middle" font-size="9" fill="currentColor">time → (one dibit per symbol, 4800 baud)</text>
+</svg>
+<figcaption>C4FM is four-level FSK: each symbol sits at one of four frequency deviations, carrying two bits.</figcaption>
+</figure>
+
 ## How it works
 
 C4FM runs at 4800 baud (9600 bps) and is paired with [CQPSK](/reference/cqpsk/): the two

@@ -23,6 +23,17 @@ external:
 integer multiples of the bit rate, so each bit contains a whole number of cycles. This
 makes detection clean and bit timing easy.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A fast two-tone FSK waveform with phase-continuous transitions between mark and space tones." xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 60 q10 -26 20 0 t20 0 t20 0 t20 0
+            M120 60 q15 -26 30 0 t30 0 t30 0
+            M240 60 q10 -26 20 0 t20 0 t20 0 t20 0 t20 0
+            M360 60 q15 -26 30 0 t30 0 t20 0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="20" y="100" font-size="9" fill="currentColor">phase-continuous mark/space tones (e.g. 1200/1800 Hz)</text>
+</svg>
+<figcaption>FFSK (fast FSK) is phase-continuous tone signalling used by MDC-1200 and DSC.</figcaption>
+</figure>
+
 ## How it works
 
 The phase-continuous, integer-cycle tones suit short data bursts over analog FM. FFSK

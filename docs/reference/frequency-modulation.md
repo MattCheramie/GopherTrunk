@@ -23,6 +23,14 @@ external:
 [amplitude](/reference/amplitude/) stays constant. The amount of swing is the
 *deviation*.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A carrier whose cycle spacing tightens and loosens with the message, at constant amplitude." xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 60 q4 -28 8 0 q4 -28 8 0 q6 -28 12 0 q7 -28 14 0 q8 -28 16 0 q7 -28 14 0 q6 -28 12 0 q4 -28 8 0 q4 -28 8 0 q4 -28 8 0 q6 -28 12 0 q7 -28 14 0 q8 -28 16 0 q7 -28 14 0 q6 -28 12 0 q4 -28 8 0 q4 -28 8 0 q4 -28 8 0 q6 -28 12 0 q7 -28 14 0 q8 -28 16 0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="20" y="105" font-size="10" fill="currentColor">constant amplitude — information is in the spacing (frequency)</text>
+</svg>
+<figcaption>FM varies the carrier's frequency while amplitude stays constant, which is why it shrugs off amplitude noise.</figcaption>
+</figure>
+
 ## How it works
 
 Because the information lives in frequency, not amplitude, an FM receiver can ignore

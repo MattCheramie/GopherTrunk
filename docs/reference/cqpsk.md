@@ -23,6 +23,17 @@ external:
 [C4FM](/reference/c4fm/) used on [P25](/reference/project-25/). It produces the **same
 symbol stream** as C4FM so a single demodulator can receive either.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 300 210" role="img" aria-label="A QPSK constellation with four points and arcs showing the linear phase transitions between them." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="105" x2="270" y2="105" stroke="currentColor" stroke-opacity="0.4"/>
+  <line x1="150" y1="20" x2="150" y2="190" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M205 55 A 78 78 0 0 1 205 155" fill="none" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+  <g fill="currentColor"><circle cx="205" cy="55" r="5"/><circle cx="95" cy="55" r="5"/><circle cx="95" cy="155" r="5"/><circle cx="205" cy="155" r="5"/></g>
+  <text x="150" y="205" text-anchor="middle" font-size="9" fill="currentColor">linear phase transitions (compatible with C4FM detection)</text>
+</svg>
+<figcaption>CQPSK conveys the same symbols as C4FM on a linear (phase) path, so one receiver design handles both.</figcaption>
+</figure>
+
 ## How it works
 
 CQPSK uses a linear amplifier and shapes the signal so its phase trajectory matches

@@ -23,6 +23,17 @@ modulate a radio (usually FM). The classic case is the Bell 202 standard — 120
 2200 Hz tones — carrying 1200 bps [APRS](/reference/aprs/) packet over
 [AX.25](/reference/ax25/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="An audio waveform alternating between a low-pitch tone for one bit value and a high-pitch tone for the other." xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 60 q15 -26 30 0 t30 0 t30 0
+            M110 60 q8 -26 16 0 t16 0 t16 0 t16 0 t16 0 t10 0
+            M230 60 q15 -26 30 0 t30 0 t30 0
+            M320 60 q8 -26 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t8 0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <g font-size="9" fill="currentColor"><text x="55" y="100">space tone</text><text x="150" y="100">mark tone</text></g>
+</svg>
+<figcaption>AFSK sends data as two audio tones over an FM channel — the scheme behind APRS (Bell 202).</figcaption>
+</figure>
+
 ## How it works
 
 Because the keying is at audio frequencies, AFSK can pass through an ordinary FM voice

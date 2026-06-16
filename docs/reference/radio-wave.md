@@ -24,6 +24,18 @@ Radio waves travel at the speed of light and carry information wirelessly when t
 [amplitude](/reference/amplitude/), frequency, or [phase](/reference/phase/) is varied
 — a process called [modulation](/reference/modulation/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 150" role="img" aria-label="A sine wave with one wavelength marked between crests and amplitude marked as height from the centre line." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="80" x2="440" y2="80" stroke="currentColor" stroke-opacity="0.3"/>
+  <path d="M20 80 C 60 10, 120 10, 160 80 S 260 150, 300 80 S 400 10, 440 80" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="160" y1="35" x2="300" y2="35" stroke="currentColor" stroke-dasharray="4 3"/>
+  <text x="230" y="28" text-anchor="middle" font-size="12" fill="currentColor">wavelength (λ)</text>
+  <line x1="90" y1="80" x2="90" y2="25" stroke="currentColor" stroke-dasharray="4 3"/>
+  <text x="98" y="52" font-size="12" fill="currentColor">amplitude</text>
+</svg>
+<figcaption>A radio wave is described by its wavelength, amplitude, and frequency (cycles per second).</figcaption>
+</figure>
+
 ## How it works
 
 A transmitter drives alternating current into an [antenna](/reference/antenna/),

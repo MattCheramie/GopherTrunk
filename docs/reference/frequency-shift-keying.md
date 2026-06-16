@@ -22,6 +22,18 @@ external:
 that switches a [carrier](/reference/carrier-wave/) between a fixed set of frequencies,
 one per [symbol](/reference/symbol-rate/). Two frequencies gives 2FSK; four gives 4FSK.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A bit stream above, and below it a carrier that switches between a low frequency for zeros and a high frequency for ones." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="11" fill="currentColor" font-family="monospace"><text x="40" y="24">1</text><text x="140" y="24">0</text><text x="240" y="24">1</text><text x="340" y="24">0</text></g>
+  <path d="M30 80 q6 -26 12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0
+            M130 80 q12 -26 24 0 t24 0 t24 0 t24 0
+            M230 80 q6 -26 12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0 t12 0
+            M330 80 q12 -26 24 0 t24 0 t24 0 t24 0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="30" y="115" font-size="9" fill="currentColor">each bit picks a frequency (here 2FSK; 4FSK uses four)</text>
+</svg>
+<figcaption>FSK switches the carrier between set frequencies; four-level 4FSK underlies P25 C4FM and DMR.</figcaption>
+</figure>
+
 ## How it works
 
 Each frequency offset (deviation) represents a symbol. **4FSK** carries 2 bits per

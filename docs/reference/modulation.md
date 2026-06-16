@@ -22,6 +22,18 @@ external:
 [frequency](/reference/frequency/), or [phase](/reference/phase/) — in step with a
 message so that information can travel over radio.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 170" role="img" aria-label="A message wave, then an AM version whose height follows the message, then an FM version whose spacing follows the message." xmlns="http://www.w3.org/2000/svg">
+  <text x="6" y="22" font-size="10" fill="currentColor">message</text>
+  <path d="M70 20 Q120 0 170 20 T270 20 T370 20 T440 20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="6" y="78" font-size="10" fill="currentColor">AM</text>
+  <path d="M70 75 q5 -22 10 0 q5 -28 10 0 q5 -22 10 0 q5 -12 10 0 q5 -8 10 0 q5 -12 10 0 q5 -22 10 0 q5 -28 10 0 q5 -22 10 0 q5 -12 10 0 q5 -8 10 0 q5 -12 10 0 q5 -22 10 0 q5 -28 10 0 q5 -22 10 0 q5 -12 10 0 q5 -8 10 0" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <text x="6" y="140" font-size="10" fill="currentColor">FM</text>
+  <path d="M70 137 q4 -16 8 0 q4 -16 8 0 q6 -16 12 0 q7 -16 14 0 q8 -16 16 0 q7 -16 14 0 q6 -16 12 0 q4 -16 8 0 q4 -16 8 0 q4 -16 8 0 q6 -16 12 0 q7 -16 14 0 q8 -16 16 0 q7 -16 14 0 q6 -16 12 0 q4 -16 8 0 q4 -16 8 0" fill="none" stroke="currentColor" stroke-width="1.3"/>
+</svg>
+<figcaption>Modulation encodes a message by varying the carrier — its amplitude (AM), frequency (FM), or phase.</figcaption>
+</figure>
+
 ## How it works
 
 Analog modulation varies a property continuously: [AM](/reference/amplitude-modulation/),

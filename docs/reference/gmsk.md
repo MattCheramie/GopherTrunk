@@ -23,6 +23,15 @@ external:
 Gaussian filter before modulation, smoothing phase transitions for a **compact
 spectrum** and constant envelope.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A smooth continuous phase trajectory with no abrupt jumps, illustrating Gaussian-filtered MSK." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="60" x2="440" y2="60" stroke="currentColor" stroke-opacity="0.3"/>
+  <path d="M20 60 C 60 30, 90 30, 120 60 S 180 90, 220 75 C 260 62, 270 35, 310 35 S 380 80, 440 55" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <text x="20" y="100" font-size="10" fill="currentColor">phase is continuous and smoothly filtered — compact spectrum</text>
+</svg>
+<figcaption>GMSK is continuous-phase FSK with Gaussian pulse shaping, giving a narrow spectrum; AIS uses it.</figcaption>
+</figure>
+
 ## How it works
 
 The constant envelope suits efficient non-linear amplifiers, while the Gaussian shaping

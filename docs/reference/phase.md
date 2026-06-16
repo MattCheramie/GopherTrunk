@@ -20,6 +20,17 @@ external:
 (0–360°) or radians. Two waves of the same [frequency](/reference/frequency/) can
 differ in phase, meaning one is shifted in time relative to the other.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="Two identical sine waves offset horizontally, with the gap between them labelled phase difference." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="70" x2="440" y2="70" stroke="currentColor" stroke-opacity="0.3"/>
+  <path d="M20 70 q35 -40 70 0 t70 0 t70 0 t70 0 t70 0 t50 0" fill="none" stroke="currentColor" stroke-width="2"/>
+  <path d="M55 70 q35 -40 70 0 t70 0 t70 0 t70 0 t70 0 t15 0" fill="none" stroke="currentColor" stroke-width="2" stroke-opacity="0.55" stroke-dasharray="5 3"/>
+  <line x1="20" y1="100" x2="55" y2="100" stroke="currentColor"/>
+  <text x="60" y="104" font-size="11" fill="currentColor">phase difference</text>
+</svg>
+<figcaption>Phase is where a wave sits in its cycle; shifting phase is the basis of PSK digital modulation.</figcaption>
+</figure>
+
 ## How it works
 
 On the [IQ](/reference/iq-data/) plane, a sample's **angle** is its phase and its
