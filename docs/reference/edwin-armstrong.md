@@ -21,6 +21,15 @@ external:
 **Edwin Armstrong** (1890–1954) was an American electrical engineer who invented several
 cornerstones of radio, most notably wide-band **[frequency modulation](/reference/frequency-modulation/)**.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="An FM waveform whose cycle spacing varies with the message at constant amplitude, contrasted with noisy AM." xmlns="http://www.w3.org/2000/svg">
+  <text x="20" y="22" font-size="9" fill="currentColor">FM (Armstrong)</text>
+  <path d="M20 50 q4 -20 8 0 q4 -20 8 0 q6 -20 12 0 q8 -20 16 0 q8 -20 16 0 q6 -20 12 0 q4 -20 8 0 q4 -20 8 0 q4 -20 8 0 q6 -20 12 0 q8 -20 16 0 q8 -20 16 0 q6 -20 12 0 q4 -20 8 0" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  <text x="20" y="92" font-size="9" fill="currentColor">resists amplitude noise → clear audio</text>
+</svg>
+<figcaption>Armstrong invented FM (and the superheterodyne and regenerative receivers), giving radio static-free audio.</figcaption>
+</figure>
+
 ## Life and work
 
 Armstrong devised the regenerative receiver, the

@@ -23,6 +23,16 @@ external:
 **demonstrated electromagnetic waves**, experimentally confirming
 [James Clerk Maxwell](/reference/james-clerk-maxwell/)'s theory.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A spark gap on the left radiating waves to a loop receiver on the right, illustrating Hertz's proof of radio waves." xmlns="http://www.w3.org/2000/svg">
+  <line x1="50" y1="40" x2="50" y2="62" stroke="currentColor" stroke-width="2"/><line x1="50" y1="72" x2="50" y2="94" stroke="currentColor" stroke-width="2"/>
+  <text x="50" y="110" text-anchor="middle" font-size="8" fill="currentColor">spark gap</text>
+  <g fill="none" stroke="currentColor" stroke-opacity="0.5"><path d="M70 67 A 30 30 0 0 1 100 67"/><path d="M70 67 A 60 60 0 0 1 130 67"/><path d="M70 67 A 90 90 0 0 1 160 67"/></g>
+  <circle cx="400" cy="67" r="22" fill="none" stroke="currentColor" stroke-width="2"/><text x="400" y="110" text-anchor="middle" font-size="8" fill="currentColor">loop receiver</text>
+</svg>
+<figcaption>Hertz experimentally proved electromagnetic waves exist; the unit of frequency, the hertz, is named for him.</figcaption>
+</figure>
+
 ## Life and work
 
 In the late 1880s Hertz built spark-gap transmitters and resonant receivers, showing

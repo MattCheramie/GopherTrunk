@@ -23,6 +23,16 @@ external:
 [Hertz](/reference/heinrich-hertz/)'s laboratory waves into **practical long-distance
 radiotelegraphy**.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A signal arcing across a curved ocean from a transmitter in Europe to a receiver in North America." xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 120 Q230 70 450 120" fill="none" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.4"/>
+  <line x1="80" y1="108" x2="80" y2="60" stroke="currentColor" stroke-width="2"/><text x="80" y="124" text-anchor="middle" font-size="8" fill="currentColor">Europe</text>
+  <line x1="380" y1="108" x2="380" y2="60" stroke="currentColor" stroke-width="2"/><text x="380" y="124" text-anchor="middle" font-size="8" fill="currentColor">N. America</text>
+  <path d="M80 60 Q230 10 380 60" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 3"/>
+</svg>
+<figcaption>Marconi pioneered practical wireless telegraphy, achieving the first transatlantic radio transmission in 1901.</figcaption>
+</figure>
+
 ## Life and work
 
 Building on others' discoveries, Marconi engineered and commercialised wireless

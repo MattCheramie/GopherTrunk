@@ -22,6 +22,15 @@ external:
 practical **error-correcting codes** — the [Hamming codes](/reference/hamming-code/) —
 launching the field of coding theory.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 110" role="img" aria-label="Data bits with interspersed parity bits that detect and correct a single error." xmlns="http://www.w3.org/2000/svg">
+  <g font-family="monospace" font-size="11" fill="currentColor" text-anchor="middle"><text x="60" y="50">P</text><text x="100" y="50">P</text><text x="140" y="50">D</text><text x="180" y="50">P</text><text x="220" y="50">D</text><text x="260" y="50">D</text><text x="300" y="50">D</text></g>
+  <path d="M60 60 q40 16 80 0" fill="none" stroke="currentColor" stroke-opacity="0.6"/><path d="M100 64 q60 20 120 0" fill="none" stroke="currentColor" stroke-opacity="0.6"/>
+  <text x="230" y="96" text-anchor="middle" font-size="9" fill="currentColor">parity bits locate and fix a single-bit error</text>
+</svg>
+<figcaption>Hamming created the first practical error-correcting codes, the ancestors of the FEC used in digital radio.</figcaption>
+</figure>
+
 ## Life and work
 
 Frustrated by computers halting on detected errors, Hamming devised codes that could
