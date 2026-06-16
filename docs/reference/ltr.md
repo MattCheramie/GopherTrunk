@@ -26,6 +26,15 @@ external:
 LTR is **distributed**: trunking data rides **subaudibly on each voice channel**, so
 every channel carries its own low-speed signalling.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 380 130" role="img" aria-label="Several LTR channels, each carrying analog voice plus its own embedded subaudible signalling — no dedicated control channel." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.1" fill="none"><rect x="40" y="35" width="300" height="22"/><rect x="40" y="63" width="300" height="22"/><rect x="40" y="91" width="300" height="22"/></g>
+  <g font-size="8" fill="currentColor"><text x="50" y="50">voice + subaudible data</text><text x="50" y="78">voice + subaudible data</text><text x="50" y="106">voice + subaudible data</text></g>
+  <text x="190" y="128" text-anchor="middle" font-size="8" fill="currentColor">distributed — no dedicated control channel</text>
+</svg>
+<figcaption>LTR is distributed trunking: each channel carries its own subaudible signalling, with no separate control channel.</figcaption>
+</figure>
+
 ## Overview
 
 Because there is no separate control channel, radios monitor the embedded data

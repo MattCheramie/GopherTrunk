@@ -27,6 +27,16 @@ external:
 using **two-slot [TDMA](/reference/tdma/)** to carry two simultaneous voice
 conversations in a single 12.5 kHz channel — effectively 6.25 kHz per call.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 380 140" role="img" aria-label="Two TDMA slots in a 12.5 kHz channel for P25 Phase 2." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="105" x2="360" y2="105" stroke="currentColor" stroke-opacity="0.4" marker-end="url(#ta_p2)"/>
+  <text x="195" y="128" text-anchor="middle" font-size="9" fill="currentColor">time → · one 12.5 kHz channel, 2 slots</text>
+  <g stroke="currentColor" stroke-width="1.1"><rect x="40" y="40" width="52" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="92" y="40" width="52" height="50" fill="none"/><rect x="144" y="40" width="52" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="196" y="40" width="52" height="50" fill="none"/><rect x="248" y="40" width="52" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="300" y="40" width="52" height="50" fill="none"/></g><g font-size="9" fill="currentColor" text-anchor="middle"><text x="66" y="69">1</text><text x="118" y="69">2</text><text x="170" y="69">1</text><text x="222" y="69">2</text><text x="274" y="69">1</text><text x="326" y="69">2</text></g>
+  <defs><marker id="ta_p2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>P25 Phase 2 uses two-slot TDMA, fitting two calls in one 12.5 kHz channel.</figcaption>
+</figure>
+
 ## Overview
 
 Phase 2 was introduced to meet spectrum-efficiency goals. Where

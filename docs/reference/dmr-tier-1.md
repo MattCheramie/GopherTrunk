@@ -27,6 +27,15 @@ external:
 defined by [ETSI](/reference/etsi/) for low-power, short-range consumer and light
 commercial use without an individual user licence.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 360 110" role="img" aria-label="A single licence-free DMR Tier I channel at low power." xmlns="http://www.w3.org/2000/svg">
+  <rect x="60" y="40" width="240" height="34" rx="5" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.2"/>
+  <text x="180" y="61" text-anchor="middle" font-size="9" fill="currentColor">fixed low-power channel</text>
+  <text x="180" y="96" text-anchor="middle" font-size="9" fill="currentColor">licence-free, no trunking</text>
+</svg>
+<figcaption>DMR Tier I uses fixed, low-power licence-free channels with no system planning or trunking.</figcaption>
+</figure>
+
 ## Overview
 
 Tier I targets the same role as licence-free analog radios, but digital. It uses

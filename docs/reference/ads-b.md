@@ -29,6 +29,16 @@ position, altitude, and velocity** on **1090 MHz** (and 978 MHz UAT in the U.S.)
 is the aeronautical counterpart to [AIS](/reference/ais/) and one of the most popular
 SDR applications.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="An aircraft broadcasting position and identity bursts on 1090 MHz to a ground receiver." xmlns="http://www.w3.org/2000/svg">
+  <path d="M60 40 l40 10 l-10 -18 m10 18 l18 -14 m-58 4 l-14 -10" stroke="currentColor" stroke-width="1.4" fill="none"/>
+  <g fill="none" stroke="currentColor" stroke-opacity="0.5"><path d="M75 60 A 30 30 0 0 1 75 110"/><path d="M90 55 A 50 50 0 0 1 90 115"/></g>
+  <path d="M380 100 v-20 m-8 0 l8 -10 l8 10" stroke="currentColor" stroke-width="1.6" fill="none"/><text x="380" y="115" text-anchor="middle" font-size="8" fill="currentColor">receiver</text>
+  <text x="220" y="40" text-anchor="middle" font-size="9" fill="currentColor">1090 MHz position/ID squitters</text>
+</svg>
+<figcaption>ADS-B aircraft continuously broadcast position, altitude, and identity on 1090 MHz.</figcaption>
+</figure>
+
 ## Overview
 
 ADS-B rides on Mode S Extended Squitter messages, modulated with **pulse-position

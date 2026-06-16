@@ -26,6 +26,20 @@ system, using [C4FM](/reference/c4fm/) modulation and an [AMBE](/reference/ambe/
 [vocoder](/reference/vocoder/). It is notable for automatically mixing digital and
 analog users on the same repeater.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 440 110" role="img" aria-label="System Fusion digital voice linked over WIRES-X rooms." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="30" y="44" width="70" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="65" y="63">radio</text>
+    <rect x="150" y="44" width="80" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="190" y="63">repeater</text>
+    <rect x="290" y="44" width="120" height="30" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="350" y="58">internet</text><text x="350" y="69" font-size="8">WIRES-X rooms</text>
+    <g stroke="currentColor" stroke-width="1.1"><line x1="100" y1="59" x2="149" y2="59" marker-end="url(#am_system-fusion-ysf)"/><line x1="230" y1="59" x2="289" y2="59" marker-end="url(#am_system-fusion-ysf)"/></g>
+    <text x="65" y="30" font-size="8">C4FM</text>
+  </g>
+  <defs><marker id="am_system-fusion-ysf" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>System Fusion (YSF) uses C4FM and can bridge analog and digital users, linked via WIRES-X.</figcaption>
+</figure>
+
 ## Overview
 
 Fusion repeaters can operate in modes that bridge analog FM and C4FM digital,

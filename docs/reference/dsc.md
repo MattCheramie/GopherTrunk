@@ -28,6 +28,15 @@ stations and broadcasting distress alerts**. Part of the Global Maritime Distres
 Safety System (GMDSS), it sends short [FSK](/reference/frequency-shift-keying/) data
 bursts on **VHF channel 70** (156.525 MHz) and on HF.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="A short Digital Selective Calling burst carrying a call type and the sender's maritime identity." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.1"><rect x="40" y="40" width="70" height="28" fill="currentColor" fill-opacity="0.12"/><rect x="110" y="40" width="120" height="28" fill="currentColor" fill-opacity="0.22"/><rect x="230" y="40" width="120" height="28" fill="none"/><rect x="350" y="40" width="70" height="28" fill="none"/></g>
+  <g font-size="8" fill="currentColor" text-anchor="middle"><text x="75" y="58">dotting</text><text x="170" y="58">format / MMSI</text><text x="290" y="58">distress / call</text><text x="385" y="58">ECC</text></g>
+  <text x="230" y="88" text-anchor="middle" font-size="8" fill="currentColor">FFSK · VHF Ch 70 (and HF)</text>
+</svg>
+<figcaption>DSC sends short FFSK bursts on VHF channel 70 for distress and routine calling, carrying the sender's MMSI.</figcaption>
+</figure>
+
 ## Overview
 
 A DSC message carries the sender's and (for selective calls) recipient's MMSI, a

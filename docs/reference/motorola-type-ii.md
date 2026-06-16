@@ -29,6 +29,17 @@ with **analog FM** voice channels. It was the dominant trunking technology for
 public-safety and business fleets before the migration to digital
 [P25](/reference/project-25/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 380 140" role="img" aria-label="Motorola Type II digital control channel assigning analog voice channels." xmlns="http://www.w3.org/2000/svg">
+  <rect x="40" y="20" width="300" height="26" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="190" y="37" text-anchor="middle" font-size="9" fill="currentColor">digital control channel (3600 bps)</text>
+  <g stroke="currentColor" stroke-width="1.1" fill="none"><rect x="40" y="80" width="90" height="34"/><rect x="150" y="80" width="90" height="34"/><rect x="260" y="80" width="80" height="34" fill="currentColor" fill-opacity="0.18"/></g>
+  <text x="190" y="130" text-anchor="middle" font-size="8.5" fill="currentColor">analog FM voice channels (assigned on demand)</text>
+  <line x1="190" y1="46" x2="300" y2="78" stroke="currentColor" stroke-dasharray="3 3" marker-end="url(#lg_motorola-type-ii)"/>
+  <defs><marker id="lg_motorola-type-ii" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Motorola Type II pairs a digital control channel with analog FM voice channels.</figcaption>
+</figure>
+
 ## Overview
 
 The control channel (a 3600 bps data stream) issues [channel grants](/reference/channel-grant/),

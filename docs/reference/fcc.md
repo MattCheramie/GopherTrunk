@@ -23,6 +23,18 @@ The **Federal Communications Commission** (**FCC**) is the United States regulat
 interstate radio, television, wire, satellite, and cable. It allocates US spectrum,
 licenses users, and sets technical rules.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="The FCC dividing the US radio spectrum into allocated service blocks." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="62" x2="430" y2="62" stroke="currentColor" stroke-opacity="0.4"/>
+  <g stroke="currentColor" stroke-width="1.1">
+    <rect x="40" y="44" width="70" height="18" fill="currentColor" fill-opacity="0.12"/><rect x="110" y="44" width="60" height="18" fill="currentColor" fill-opacity="0.22"/><rect x="170" y="44" width="80" height="18" fill="currentColor" fill-opacity="0.12"/><rect x="250" y="44" width="60" height="18" fill="currentColor" fill-opacity="0.22"/><rect x="310" y="44" width="110" height="18" fill="currentColor" fill-opacity="0.12"/>
+  </g>
+  <text x="230" y="30" text-anchor="middle" font-size="9" fill="currentColor">US spectrum allocations &amp; licensing</text>
+  <text x="230" y="86" text-anchor="middle" font-size="8.5" fill="currentColor">allocates the spectrum into services</text>
+</svg>
+<figcaption>The FCC allocates and licenses radio spectrum in the United States.</figcaption>
+</figure>
+
 ## Overview
 
 FCC band plans determine where US public-safety, business, and amateur services operate,

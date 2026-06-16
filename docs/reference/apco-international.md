@@ -23,6 +23,19 @@ professional association for public-safety communications. With the
 [TIA](/reference/tia/) it drove the creation of [Project 25](/reference/project-25/),
 sometimes called **APCO-25**.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="APCO defines public-safety requirements that shaped P25." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="20" y="42" width="100" height="32" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="70" y="61">APCO</text>
+    <rect x="170" y="42" width="110" height="32" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="225" y="61">requirements</text>
+    <rect x="330" y="42" width="110" height="32" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="385" y="61">P25 (public safety)</text>
+    <g stroke="currentColor" stroke-width="1.1"><line x1="120" y1="58" x2="169" y2="58" marker-end="url(#rel_apco-international)"/><line x1="280" y1="58" x2="329" y2="58" marker-end="url(#rel_apco-international)"/></g>
+  </g>
+  <defs><marker id="rel_apco-international" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>APCO International represents public-safety communications and drove the P25 requirements.</figcaption>
+</figure>
+
 ## Overview
 
 APCO represents dispatchers, radio managers, and agencies, and championed an open digital

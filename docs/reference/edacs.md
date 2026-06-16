@@ -27,6 +27,17 @@ M-A-COM). It uses a **dedicated [control channel](/reference/control-channel/)**
 continuously coordinates the system, with analog FM voice or the digital **ProVoice**
 ([AMBE](/reference/ambe/)) option.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 380 140" role="img" aria-label="EDACS dedicated control channel assigning analog or ProVoice channels." xmlns="http://www.w3.org/2000/svg">
+  <rect x="40" y="20" width="300" height="26" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="190" y="37" text-anchor="middle" font-size="9" fill="currentColor">dedicated control channel</text>
+  <g stroke="currentColor" stroke-width="1.1" fill="none"><rect x="40" y="80" width="90" height="34"/><rect x="150" y="80" width="90" height="34"/><rect x="260" y="80" width="80" height="34" fill="currentColor" fill-opacity="0.18"/></g>
+  <text x="190" y="130" text-anchor="middle" font-size="8.5" fill="currentColor">analog FM voice channels (assigned on demand)</text>
+  <line x1="190" y1="46" x2="300" y2="78" stroke="currentColor" stroke-dasharray="3 3" marker-end="url(#lg_edacs)"/>
+  <defs><marker id="lg_edacs" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>EDACS uses a dedicated control channel to assign analog FM (or digital ProVoice) channels.</figcaption>
+</figure>
+
 ## Overview
 
 EDACS is known for fast call setup via its always-on control channel and tightly

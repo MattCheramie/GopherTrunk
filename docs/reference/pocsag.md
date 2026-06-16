@@ -27,6 +27,17 @@ protocol used worldwide to deliver numeric and alphanumeric messages to pagers. 
 a simple asynchronous **2-level [FSK](/reference/frequency-shift-keying/)** scheme,
 still in active use by hospitals, fire/EMS, and industry.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="A POCSAG transmission: preamble, sync codeword, then batches of address and message codewords." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.1">
+    <rect x="20" y="40" width="70" height="28" fill="none"/><rect x="90" y="40" width="50" height="28" fill="currentColor" fill-opacity="0.12"/><rect x="140" y="40" width="80" height="28" fill="currentColor" fill-opacity="0.22"/><rect x="220" y="40" width="80" height="28" fill="none"/><rect x="300" y="40" width="80" height="28" fill="currentColor" fill-opacity="0.22"/><rect x="380" y="40" width="60" height="28" fill="none"/>
+  </g>
+  <g font-size="8" fill="currentColor" text-anchor="middle"><text x="55" y="58">preamble</text><text x="115" y="58">sync</text><text x="180" y="58">addr</text><text x="260" y="58">msg</text><text x="340" y="58">addr</text><text x="410" y="58">msg</text></g>
+  <text x="230" y="88" text-anchor="middle" font-size="8" fill="currentColor">2-FSK, one-way · 512/1200/2400 bps</text>
+</svg>
+<figcaption>POCSAG sends a preamble and sync, then batches of address and message codewords to pagers.</figcaption>
+</figure>
+
 ## Overview
 
 A POCSAG transmission begins with a preamble and sync codeword, then batches of

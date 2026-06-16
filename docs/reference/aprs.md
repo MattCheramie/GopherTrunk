@@ -28,6 +28,15 @@ real-time tactical information — **position, weather, telemetry, and messaging
 is carried as [AX.25](/reference/ax25/) packet frames using
 [AFSK](/reference/afsk/), most commonly on 144.390 MHz in North America.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="An APRS packet carrying a callsign and position payload over AX.25 on 144.39 MHz." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.1"><rect x="30" y="40" width="90" height="28" fill="currentColor" fill-opacity="0.12"/><rect x="120" y="40" width="220" height="28" fill="currentColor" fill-opacity="0.22"/><rect x="340" y="40" width="90" height="28" fill="none"/></g>
+  <g font-size="8.5" fill="currentColor" text-anchor="middle"><text x="75" y="58">callsign</text><text x="230" y="58">position / weather / message</text><text x="385" y="58">FCS</text></g>
+  <text x="230" y="88" text-anchor="middle" font-size="8" fill="currentColor">AFSK over AX.25 · 144.39 MHz (NA)</text>
+</svg>
+<figcaption>APRS carries position and telemetry in AX.25 packets, usually via 1200-baud AFSK on 144.39 MHz.</figcaption>
+</figure>
+
 ## Overview
 
 Stations beacon their position (often from GPS), and digipeaters relay packets so

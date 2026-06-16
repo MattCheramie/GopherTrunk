@@ -27,6 +27,19 @@ standard using **6.25 kHz** [FDMA](/reference/fdma/) channels with
 [4FSK](/reference/frequency-shift-keying/) modulation. It is technically close to
 [NXDN](/reference/nxdn/) and serves the same low-cost, spectrum-efficient niche.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 360 150" role="img" aria-label="Narrow 6.25 kHz FDMA channels for dPMR." xmlns="http://www.w3.org/2000/svg">
+  <line x1="40" y1="135" x2="40" y2="20" stroke="currentColor" stroke-opacity="0.4" marker-end="url(#fa_dpmr)"/>
+  <text x="22" y="80" font-size="9" fill="currentColor" transform="rotate(-90 22 80)">frequency</text>
+  <g fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1">
+    <rect x="50" y="28" width="260" height="22"/><rect x="50" y="60" width="260" height="22"/><rect x="50" y="92" width="260" height="22"/>
+  </g>
+  <g font-size="8.5" fill="currentColor"><text x="180" y="43" text-anchor="middle">one call per channel (6.25 kHz)</text><text x="180" y="75" text-anchor="middle">one call per channel</text><text x="180" y="107" text-anchor="middle">one call per channel</text></g>
+  <defs><marker id="fa_dpmr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>dPMR uses 6.25 kHz FDMA channels, like its close relative NXDN.</figcaption>
+</figure>
+
 ## Overview
 
 dPMR comes in licence-free (Mode 1) and licensed conventional/trunked variants. Its

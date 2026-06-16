@@ -28,6 +28,19 @@ external:
 using **[FDMA](/reference/fdma/)** — one conversation per 12.5 kHz channel — with
 [C4FM](/reference/c4fm/) modulation and the [IMBE](/reference/imbe/) vocoder.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 360 150" role="img" aria-label="Stacked 12.5 kHz FDMA channels each carrying one P25 Phase 1 call." xmlns="http://www.w3.org/2000/svg">
+  <line x1="40" y1="135" x2="40" y2="20" stroke="currentColor" stroke-opacity="0.4" marker-end="url(#fa_p25-phase-1)"/>
+  <text x="22" y="80" font-size="9" fill="currentColor" transform="rotate(-90 22 80)">frequency</text>
+  <g fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1">
+    <rect x="50" y="28" width="260" height="22"/><rect x="50" y="60" width="260" height="22"/><rect x="50" y="92" width="260" height="22"/>
+  </g>
+  <g font-size="8.5" fill="currentColor"><text x="180" y="43" text-anchor="middle">one call per channel (12.5 kHz)</text><text x="180" y="75" text-anchor="middle">one call per channel</text><text x="180" y="107" text-anchor="middle">one call per channel</text></g>
+  <defs><marker id="fa_p25-phase-1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>P25 Phase 1 is FDMA: each call occupies its own 12.5 kHz channel.</figcaption>
+</figure>
+
 ## Overview
 
 In Phase 1 each call occupies its own frequency. A trunked Phase 1 system uses a

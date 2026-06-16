@@ -29,6 +29,16 @@ VHF marine frequencies. It uses [GMSK](/reference/gmsk/) modulation in a
 self-organising [TDMA](/reference/tdma/) scheme so many vessels share two channels
 without a central controller.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 110" role="img" aria-label="Ships transmitting short position bursts in assigned time slots on a shared marine VHF channel." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="80" x2="430" y2="80" stroke="currentColor" stroke-opacity="0.4"/>
+  <g fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1"><rect x="50" y="50" width="22" height="30"/><rect x="120" y="50" width="22" height="30"/><rect x="210" y="50" width="22" height="30"/><rect x="300" y="50" width="22" height="30"/><rect x="370" y="50" width="22" height="30"/></g>
+  <text x="230" y="100" text-anchor="middle" font-size="8.5" fill="currentColor">~162 MHz · GMSK · self-organising time slots (SOTDMA)</text>
+  <text x="230" y="28" text-anchor="middle" font-size="9" fill="currentColor">each ship broadcasts position bursts</text>
+</svg>
+<figcaption>AIS ships broadcast short position bursts in self-organising time slots on shared marine VHF channels.</figcaption>
+</figure>
+
 ## Overview
 
 Each station transmits position reports keyed to its MMSI identifier on 161.975 MHz

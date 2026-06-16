@@ -32,6 +32,18 @@ North America. It defines how radios, repeaters, and trunked systems carry digit
 voice and data, with the explicit goal of interoperability between equipment from
 different manufacturers.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="P25 Phase 1 shown as FDMA channels and Phase 2 as two-slot TDMA." xmlns="http://www.w3.org/2000/svg">
+  <text x="115" y="22" text-anchor="middle" font-size="10" fill="currentColor">Phase 1 — FDMA</text>
+  <g fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.1"><rect x="40" y="34" width="150" height="20"/><rect x="40" y="60" width="150" height="20"/><rect x="40" y="86" width="150" height="20"/></g>
+  <text x="345" y="22" text-anchor="middle" font-size="10" fill="currentColor">Phase 2 — TDMA</text>
+  <g stroke="currentColor" stroke-width="1.1"><rect x="270" y="50" width="150" height="40" fill="none"/><line x1="345" y1="50" x2="345" y2="90"/></g>
+  <g font-size="9" fill="currentColor" text-anchor="middle"><text x="307" y="74">slot 1</text><text x="382" y="74">slot 2</text></g>
+  <text x="230" y="128" text-anchor="middle" font-size="9" fill="currentColor">Phase 2 doubles capacity in the same 12.5 kHz</text>
+</svg>
+<figcaption>P25 spans Phase 1 (FDMA, one call per channel) and Phase 2 (TDMA, two calls per channel).</figcaption>
+</figure>
+
 ## Overview
 
 P25 was created so that police, fire, and emergency-medical agencies could replace
