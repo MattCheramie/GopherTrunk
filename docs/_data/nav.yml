@@ -69,6 +69,8 @@ groups:
         url: /blog/category/releases/
       - title: Deep dives
         url: /blog/category/deep-dives/
+      - title: "Series: SDR Internals"
+        url: /blog/series/sdr-internals/
       - title: Tutorials
         url: /blog/category/tutorials/
   - label: Install
