@@ -1234,6 +1234,130 @@ a.category-chip:hover {
   .site-search__input { width: 100%; }
 }
 
+/* ====================================================================
+   Reference (encyclopedia) — visually distinct from the learning hub
+   ==================================================================== */
+
+.ref-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 0.4rem;
+}
+.ref-eyebrow__type { color: var(--fg-muted); font-weight: 600; }
+
+/* ---------- Hub ---------- */
+.ref-hero {
+  padding: 2.25rem 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.75rem;
+}
+.ref-hero__title {
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+.ref-hero__lede { max-width: 46rem; color: var(--fg-muted); font-size: 1.08rem; margin: 0 0 0.75rem; }
+.ref-hero__meta { font-size: 0.92rem; color: var(--fg-muted); margin: 0; }
+.ref-intro { margin: 0 auto 2rem; }
+
+.ref-categories { margin-bottom: 2.5rem; }
+.ref-category { margin: 0 0 2rem; }
+.ref-category__head { margin-bottom: 0.75rem; }
+.ref-category__title { font-size: 1.3rem; font-weight: 600; margin: 0 0 0.2rem; }
+.ref-category__blurb { margin: 0; color: var(--fg-muted); }
+.ref-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+}
+.ref-card a {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  text-decoration: none;
+}
+.ref-card a:hover { border-color: var(--accent); background: var(--bg-elev); text-decoration: none; }
+.ref-card__title { font-weight: 500; }
+
+/* Category/type tag — squared (vs. the learning hub's pill badges) */
+.ref-tag {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+}
+.ref-tag--protocol { color: var(--accent); border-color: var(--accent); }
+.ref-tag--person { font-style: italic; }
+
+/* ---------- A–Z index ---------- */
+.ref-az { border-top: 1px solid var(--border); padding-top: 1.5rem; }
+.ref-az__list {
+  list-style: none; margin: 0.5rem 0 0; padding: 0;
+  columns: 4 11rem;
+  column-gap: 1.5rem;
+  font-size: 0.92rem;
+}
+.ref-az__list li { break-inside: avoid; margin: 0.15rem 0; }
+
+/* ---------- Article: two-column with infobox ---------- */
+.ref-layout { display: block; }
+.ref-article { max-width: var(--maxw-prose); }
+.ref-aka { color: var(--fg-muted); font-size: 0.92rem; font-style: italic; margin-top: 0; }
+.ref-aka span { font-style: normal; }
+
+.ref-infobox {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  padding: 0.9rem 1rem;
+  margin: 0 0 1.5rem;
+  font-size: 0.9rem;
+}
+.ref-infobox__title { font-weight: 700; margin: 0 0 0.6rem; font-size: 1rem; }
+.ref-infobox dl { margin: 0; }
+.ref-infobox__row { display: grid; grid-template-columns: 8rem 1fr; gap: 0.5rem; padding: 0.3rem 0; border-top: 1px solid var(--border); }
+.ref-infobox__row:first-of-type { border-top: none; }
+.ref-infobox dt { color: var(--fg-muted); font-weight: 600; }
+.ref-infobox dd { margin: 0; }
+.ref-infobox--protocol { border-color: var(--accent); }
+.ref-infobox--protocol .ref-infobox__title { color: var(--accent); }
+
+@media (min-width: 60rem) {
+  .ref-layout {
+    display: grid;
+    grid-template-columns: 1fr 17rem;
+    gap: 2rem;
+    align-items: start;
+  }
+  .ref-infobox { margin-top: 0.5rem; position: sticky; top: 72px; }
+}
+
+/* ---------- See also / related / references ---------- */
+.ref-seealso, .ref-related, .ref-refs { margin-top: 2rem; }
+.ref-seealso h2, .ref-related h2, .ref-refs h2 { font-size: 1.15rem; }
+.ref-seealso ul, .ref-related ul, .ref-refs ul { margin: 0.5rem 0 0; }
+
+/* ---------- Auto-links (site-wide) ---------- */
+.ref-autolink {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--link);
+}
+.ref-autolink:hover { color: var(--link); border-bottom-style: solid; text-decoration: none; }
+
 /* ---------- In-content CTAs (try / support) ---------- */
 .page-cta {
   margin: 2.25rem 0;

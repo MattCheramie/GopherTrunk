@@ -29,6 +29,32 @@ groups:
         url: /learn/#gophertrunk
       - title: Glossary
         url: /learn/glossary/
+  - label: Reference
+    items:
+      - title: Encyclopedia overview
+        url: /reference/
+      - title: RF & signal fundamentals
+        url: /reference/#rf-fundamentals
+      - title: Modulation
+        url: /reference/#modulation
+      - title: SDR & DSP
+        url: /reference/#sdr-dsp
+      - title: Algorithms
+        url: /reference/#algorithms
+      - title: Trunked radio
+        url: /reference/#trunked-radio
+      - title: Protocols & standards
+        url: /reference/#protocols
+      - title: Voice coding
+        url: /reference/#voice-coding
+      - title: Hardware
+        url: /reference/#hardware
+      - title: People
+        url: /reference/#people
+      - title: Organizations
+        url: /reference/#organizations
+      - title: A–Z index
+        url: /reference/#a-z
   - label: About
     items:
       - title: The Story of GopherTrunk
@@ -95,7 +121,7 @@ groups:
         url: /rigctld.html
       - title: Hardening
         url: /hardening.html
-  - label: Reference
+  - label: Technical docs
     items:
       - title: Architecture
         url: /architecture.html

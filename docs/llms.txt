@@ -23,13 +23,22 @@ Start: {{ '/learn/' | absolute_url }}
 ### Reference
 - [{{ site.data.learn.glossary.title }}]({{ '/learn/glossary/' | absolute_url }}): {{ site.data.learn.glossary.summary }}
 
+## Reference (encyclopedia)
+
+Long-form, encyclopedia-style articles defining radio and SDR terms, technologies,
+algorithms, people, hardware, and organizations. Browse: {{ '/reference/' | absolute_url }}
+{% for cat in site.data.reference.categories %}
+### {{ cat.label }}
+{% for e in cat.entries %}- [{{ e.title }}]({{ '/reference/' | append: e.slug | append: '/' | absolute_url }}){% endfor %}
+{% endfor %}
+
 ## Getting started with GopherTrunk
 - [What is GopherTrunk?]({{ '/getting-started.html' | absolute_url }}): conceptual overview of the scanner and its interfaces.
 - [Get started]({{ '/getting-started-setup.html' | absolute_url }}): from a dongle to your first decoded call.
 - [Hardware]({{ '/hardware.html' | absolute_url }}): supported SDR dongles.
 - [Downloads]({{ '/downloads.html' | absolute_url }}): builds for Linux, macOS, and Windows.
 
-## Reference
+## Technical docs
 - [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
 - [Vocoders]({{ '/vocoders.html' | absolute_url }}): IMBE and AMBE+2 voice decoding.
 - [Status]({{ '/status.html' | absolute_url }}): protocol and decoder coverage.

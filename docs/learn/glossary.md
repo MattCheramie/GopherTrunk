@@ -15,6 +15,10 @@ linked to the lesson where it's explained in full. Skim it as a refresher, or us
 your browser's find (Ctrl/Cmd-F) to jump to a word. Terms are grouped by theme and
 ordered roughly from fundamentals to systems.
 
+> **Want the long version?** Many of these terms have a full, encyclopedia-style
+> article in the [GopherTrunk Reference](/reference/) — and the first mention of a
+> covered term on any page links straight to it.
+
 ## Radio wave fundamentals
 
 **Amplitude** — The strength or "height" of a radio wave; more amplitude means a

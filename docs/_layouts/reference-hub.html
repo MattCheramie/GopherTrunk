@@ -1,0 +1,84 @@
+---
+layout: default
+---
+{%- comment -%}
+  Landing page for the GopherTrunk Reference encyclopedia. Renders a category
+  index and a generated A–Z index from _data/reference.yml, plus DefinedTermSet
+  + ItemList structured data.
+{%- endcomment -%}
+{%- assign ref = site.data.reference -%}
+{%- assign all_entries = "" | split: "" -%}
+{%- for cat in ref.categories -%}
+  {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+{%- endfor -%}
+{%- assign sorted = all_entries | sort_natural: "title" -%}
+{%- assign total = all_entries | size -%}
+
+<main id="content" class="page" role="main">
+  <div class="container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><span aria-current="page">Reference</span></li>
+      </ol>
+    </nav>
+
+    <header class="ref-hero">
+      <p class="ref-eyebrow">Encyclopedia</p>
+      <h1 class="ref-hero__title">{{ page.title }}</h1>
+      <p class="ref-hero__lede">{{ ref.intro }}</p>
+      <p class="ref-hero__meta">{{ total }} entries · <a href="#a-z">A–Z index</a> · <a href="{{ '/learn/' | relative_url }}">Learning path</a> · <a href="{{ '/learn/glossary/' | relative_url }}">Glossary</a></p>
+    </header>
+
+    <article class="prose prose--wide ref-intro">{{ content }}</article>
+
+    <div class="ref-categories">
+      {%- for cat in ref.categories -%}
+        <section class="ref-category" id="{{ cat.id }}">
+          <div class="ref-category__head">
+            <h2 class="ref-category__title">{{ cat.label }}</h2>
+            <p class="ref-category__blurb">{{ cat.blurb }}</p>
+          </div>
+          <ul class="ref-grid">
+            {%- for e in cat.entries -%}
+              <li class="ref-card">
+                <a href="{{ '/reference/' | append: e.slug | append: '/' | relative_url }}">
+                  <span class="ref-card__title">{{ e.title }}</span>
+                  <span class="ref-tag ref-tag--{{ e.type }}">{{ e.type }}</span>
+                </a>
+              </li>
+            {%- endfor -%}
+          </ul>
+        </section>
+      {%- endfor -%}
+    </div>
+
+    <section class="ref-az" id="a-z">
+      <h2>A–Z index</h2>
+      <ul class="ref-az__list">
+        {%- for e in sorted -%}
+          <li><a href="{{ '/reference/' | append: e.slug | append: '/' | relative_url }}">{{ e.title }}</a></li>
+        {%- endfor -%}
+      </ul>
+    </section>
+  </div>
+</main>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTermSet",
+  "name": "GopherTrunk Reference",
+  "description": {{ ref.intro | strip_newlines | jsonify }},
+  "url": {{ '/reference/' | absolute_url | jsonify }},
+  "hasDefinedTerm": [
+    {%- for e in sorted -%}
+    {
+      "@type": "DefinedTerm",
+      "name": {{ e.title | jsonify }},
+      "url": {{ '/reference/' | append: e.slug | append: '/' | absolute_url | jsonify }}
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ]
+}
+</script>
