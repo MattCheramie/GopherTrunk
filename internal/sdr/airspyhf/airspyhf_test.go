@@ -254,6 +254,47 @@ func TestStreamIQFlipsReceiverAndStops(t *testing.T) {
 	}
 }
 
+// TestStreamIQReopenAfterCancelWaitsForTeardown is the regression for #686.
+// A fast retune cancels the stream ctx and immediately re-opens. The
+// previous stream's teardown clears `streaming` in a detached goroutine,
+// so StreamIQ must wait that teardown out rather than fail with
+// "airspyhf: stream already active". We cancel and re-open without draining
+// the first channel; the second call must block until cleanup completes
+// and then succeed.
+func TestStreamIQReopenAfterCancelWaitsForTeardown(t *testing.T) {
+	dev, mt := withDevice(t)
+	mt.Script = []usb.CtrlExchange{
+		{BRequest: reqReceiverMode, WValue: receiverModeOn},
+		{BRequest: reqReceiverMode, WValue: receiverModeOff},
+		{BRequest: reqReceiverMode, WValue: receiverModeOn},
+		{BRequest: reqReceiverMode, WValue: receiverModeOff},
+	}
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	if _, err := dev.StreamIQ(ctx1); err != nil {
+		t.Fatalf("first StreamIQ: %v", err)
+	}
+	cancel1()
+
+	// The bounded ctx makes a buggy wait loop fail loudly instead of hanging.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+	ch, err := dev.StreamIQ(ctx2)
+	if err != nil {
+		t.Fatalf("reopen after cancel: %v", err)
+	}
+	cancel2()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := <-ch; !ok {
+			break
+		}
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+}
+
 func TestCleanVersionStringStripsPadding(t *testing.T) {
 	got := cleanVersionString([]byte("R3.0.7\x00garbage"))
 	if got != "R3.0.7" {

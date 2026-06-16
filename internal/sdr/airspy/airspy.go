@@ -257,8 +257,13 @@ type Device struct {
 	mu        sync.Mutex
 	closed    bool
 	streaming bool
-	rates     []uint32     // supported sample rates, Hz, descending order
-	cnv       *iqConverter // real-to-IQ converter, fresh per stream
+	// streamDone is closed when the current stream's teardown goroutine
+	// finishes (after `streaming` is cleared). A new StreamIQ waits on it
+	// so a fast retune can't race the previous stream's async cleanup
+	// (#686). Non-nil whenever streaming is true.
+	streamDone chan struct{}
+	rates      []uint32     // supported sample rates, Hz, descending order
+	cnv        *iqConverter // real-to-IQ converter, fresh per stream
 }
 
 // Info implements sdr.Device.
@@ -452,15 +457,31 @@ func (d *Device) SetBiasTee(enable bool) error {
 // delivering one complex64 chunk per URB.
 func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.mu.Lock()
-	if d.closed {
+	for {
+		if d.closed {
+			d.mu.Unlock()
+			return nil, usb.ErrClosed
+		}
+		if !d.streaming {
+			break
+		}
+		// A previous stream is still tearing down (its ctx was cancelled
+		// by a retune). Wait it out instead of failing fast with
+		// "stream already active" (#686). The hardware is single-stream
+		// and the prior teardown completes promptly; the wait is bounded
+		// by this call's ctx so shutdown can't hang here.
+		done := d.streamDone
 		d.mu.Unlock()
-		return nil, usb.ErrClosed
-	}
-	if d.streaming {
-		d.mu.Unlock()
-		return nil, errors.New("airspy: stream already active")
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		d.mu.Lock()
 	}
 	d.streaming = true
+	done := make(chan struct{})
+	d.streamDone = done
 	d.mu.Unlock()
 
 	// Fresh real-to-IQ converter per stream so filter memory never carries
@@ -472,6 +493,7 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		d.mu.Lock()
 		d.streaming = false
 		d.mu.Unlock()
+		close(done)
 		return nil, fmt.Errorf("airspy: receiver on: %w", err)
 	}
 
@@ -499,11 +521,13 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		d.mu.Lock()
 		d.streaming = false
 		d.mu.Unlock()
+		close(done)
 		return nil, fmt.Errorf("airspy: start bulk-in: %w", err)
 	}
 
 	go func() {
 		defer close(out)
+		defer close(done)
 		select {
 		case <-ctx.Done():
 		case <-streamDead:
