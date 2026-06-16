@@ -1,0 +1,117 @@
+---
+layout: default
+---
+{%- comment -%}
+  Lesson layout for the RF & SDR learning path.
+
+  Flattens site.data.learn.modules into one ordered list so it can compute
+  the lesson's position, its module, and prev/next links from a single
+  source (_data/learn.yml). The page identifies itself with `slug:` in
+  front matter. The glossary (page.lesson_standalone) skips path nav.
+{%- endcomment -%}
+
+{%- assign all_lessons = "" | split: "" -%}
+{%- assign module_labels = "" | split: "" -%}
+{%- for mod in site.data.learn.modules -%}
+  {%- for lesson in mod.lessons -%}
+    {%- assign all_lessons = all_lessons | push: lesson -%}
+    {%- assign module_labels = module_labels | push: mod.label -%}
+  {%- endfor -%}
+{%- endfor -%}
+{%- assign total = all_lessons | size -%}
+
+{%- assign idx = -1 -%}
+{%- for lesson in all_lessons -%}
+  {%- if lesson.slug == page.slug -%}{%- assign idx = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+
+{%- assign words = content | number_of_words -%}
+{%- assign read_minutes = words | divided_by: 200 | plus: 1 -%}
+
+<main id="content" class="page" role="main">
+  <div class="container page__container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><a href="{{ '/learn/' | relative_url }}">Learn RF &amp; SDR</a></li>
+        {%- if idx >= 0 -%}
+          <li><span class="breadcrumb__group">{{ module_labels[idx] }}</span></li>
+        {%- endif -%}
+        <li><span aria-current="page">{{ page.title }}</span></li>
+      </ol>
+    </nav>
+
+    <article class="prose lesson">
+      <header class="lesson__head">
+        <p class="lesson__meta">
+          {%- if idx >= 0 -%}
+            <span class="lesson__step">Lesson {{ idx | plus: 1 }} of {{ total }}</span>
+            <span class="lesson__sep" aria-hidden="true">·</span>
+          {%- endif -%}
+          {%- if page.level -%}
+            <span class="lesson__badge lesson__badge--{{ page.level }}">{{ page.level }}</span>
+            <span class="lesson__sep" aria-hidden="true">·</span>
+          {%- endif -%}
+          <span class="lesson__time">{{ read_minutes }} min read</span>
+        </p>
+
+        {%- if page.status == "stub" -%}
+          <p class="lesson__draft" role="note">
+            <strong>Draft outline.</strong> This lesson is part of the published learning
+            path but its full write-up is still in progress. The headings below map out what
+            it will cover. Want to help? <a href="https://github.com/MattCheramie/GopherTrunk/blob/main/{{ page.path }}" rel="noopener">Edit it on GitHub</a>.
+          </p>
+        {%- endif -%}
+
+        {%- if page.prereq and page.prereq.size > 0 -%}
+          <p class="lesson__prereq"><span class="lesson__prereq-label">Before this:</span>
+            {%- for slug in page.prereq -%}
+              {%- assign p = all_lessons | where: "slug", slug | first -%}
+              {%- if p -%}<a class="lesson__chip" href="{{ '/learn/' | append: slug | append: '/' | relative_url }}">{{ p.title }}</a>{%- endif -%}
+            {%- endfor -%}
+          </p>
+        {%- endif -%}
+      </header>
+
+      {{ content }}
+
+      {%- if page.faq and page.faq.size > 0 -%}
+        <section class="lesson__faq" aria-label="Frequently asked questions">
+          <h2 id="faq">Frequently asked questions</h2>
+          {%- for qa in page.faq -%}
+            <details class="lesson__faq-item">
+              <summary>{{ qa.q }}</summary>
+              <div class="lesson__faq-answer">{{ qa.a | markdownify }}</div>
+            </details>
+          {%- endfor -%}
+        </section>
+      {%- endif -%}
+
+      {%- if page.gophertrunk_links and page.gophertrunk_links.size > 0 -%}
+        <aside class="lesson__apply" aria-label="Use this in GopherTrunk">
+          <h2 class="lesson__apply-title">Use this in GopherTrunk</h2>
+          <ul>
+            {%- for link in page.gophertrunk_links -%}
+              <li><a href="{{ link.url | relative_url }}">{{ link.title }}</a> — {{ link.note }}</li>
+            {%- endfor -%}
+          </ul>
+        </aside>
+      {%- endif -%}
+    </article>
+
+    {%- unless page.lesson_standalone -%}
+      {%- include learn-path-nav.html all_lessons=all_lessons idx=idx total=total -%}
+    {%- endunless -%}
+
+    {%- if page.path -%}
+      <footer class="page__edit">
+        <a href="https://github.com/MattCheramie/GopherTrunk/blob/main/{{ page.path }}" rel="noopener">
+          Edit this page on GitHub &rarr;
+        </a>
+      </footer>
+    {%- endif -%}
+  </div>
+</main>
+
+{%- include learn-schema.html idx=idx total=total -%}
+<script defer src="{{ '/assets/js/learn.js' | relative_url }}"></script>
