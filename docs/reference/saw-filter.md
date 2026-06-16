@@ -3,7 +3,7 @@ slug: saw-filter
 title: SAW filter
 entry_type: hardware
 category: hardware
-description: A SAW (surface acoustic wave) filter is a compact, sharp band-pass filter often placed in an SDR front end — for example to pass only the 1090 MHz ADS-B band and reject strong out-of-band signals.
+description: A SAW (surface acoustic wave) filter is a compact, sharp band-pass filter used in SDR front ends to pass one band (e.g. 1090 MHz ADS-B) and reject out-of-band signals.
 keywords: SAW filter, surface acoustic wave, band-pass, front-end filter, 1090 MHz, ADS-B, preselector
 aka: [SAW filter, "surface acoustic wave filter"]
 autolink: true

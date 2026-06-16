@@ -3,7 +3,7 @@ slug: automatic-frequency-control
 title: Automatic frequency control (AFC)
 entry_type: term
 category: sdr-dsp
-description: Automatic frequency control (AFC) continuously measures and corrects a small carrier-frequency offset so a demodulator stays centred on the signal despite oscillator drift.
+description: Automatic frequency control (AFC) continuously measures and cancels a carrier-frequency offset, keeping a demodulator centred on the signal as oscillators drift.
 keywords: AFC, automatic frequency control, carrier offset, frequency tracking, PPM, drift
 aka: [AFC, "automatic frequency control"]
 autolink: true

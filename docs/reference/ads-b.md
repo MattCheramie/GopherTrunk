@@ -3,7 +3,7 @@ slug: ads-b
 title: ADS-B
 entry_type: protocol
 category: protocols
-description: ADS-B (Automatic Dependent Surveillance–Broadcast) is an aviation system in which aircraft broadcast identity, position, altitude, and velocity on 1090 MHz using pulse-position modulation.
+description: ADS-B (Automatic Dependent Surveillance–Broadcast) is an aviation system in which aircraft broadcast identity, position, altitude, and velocity on 1090 MHz.
 keywords: ADS-B, Mode S, 1090 MHz, aircraft tracking, pulse position modulation, CPR, Extended Squitter, DO-260
 aka: [ADS-B, ADSB]
 autolink: true

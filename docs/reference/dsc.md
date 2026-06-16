@@ -3,7 +3,7 @@ slug: dsc
 title: Digital Selective Calling (DSC)
 entry_type: protocol
 category: protocols
-description: DSC (Digital Selective Calling) is a maritime calling and distress-alerting protocol, sending FSK data bursts on VHF channel 70 and HF to address specific stations or signal emergencies.
+description: DSC (Digital Selective Calling) is a maritime calling and distress protocol sending FSK bursts on VHF channel 70 and HF to address stations or signal emergencies.
 keywords: DSC, Digital Selective Calling, GMDSS, VHF channel 70, distress alert, MMSI, FFSK, maritime
 aka: [DSC]
 autolink: true

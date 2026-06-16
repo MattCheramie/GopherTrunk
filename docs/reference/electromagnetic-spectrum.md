@@ -3,7 +3,7 @@ slug: electromagnetic-spectrum
 title: Electromagnetic spectrum
 entry_type: term
 category: rf-fundamentals
-description: The electromagnetic spectrum is the full range of electromagnetic radiation by frequency, from radio waves through microwaves, infrared, visible light, and on to X-rays and gamma rays.
+description: The electromagnetic spectrum is the full range of radiation by frequency — from radio waves through microwaves and visible light to X-rays and gamma rays.
 keywords: electromagnetic spectrum, EM spectrum, radio waves, frequency range, light, microwaves
 aka: [electromagnetic spectrum, EM spectrum]
 autolink: true

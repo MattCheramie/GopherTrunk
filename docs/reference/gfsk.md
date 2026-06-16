@@ -3,7 +3,7 @@ slug: gfsk
 title: GFSK
 entry_type: technology
 category: modulation
-description: GFSK (Gaussian frequency-shift keying) is FSK whose symbol transitions are smoothed by a Gaussian filter, narrowing the spectrum. It is used by AIS, Bluetooth, and many low-power radios.
+description: GFSK (Gaussian frequency-shift keying) is FSK whose transitions are smoothed by a Gaussian filter to narrow the spectrum — used by AIS, Bluetooth, and IoT radios.
 keywords: GFSK, Gaussian frequency-shift keying, AIS modulation, pulse shaping, narrowband FSK
 aka: [GFSK, Gaussian FSK]
 autolink: true

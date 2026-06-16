@@ -3,7 +3,7 @@ slug: iir-filter
 title: IIR filter
 entry_type: algorithm
 category: sdr-dsp
-description: An infinite impulse response (IIR) filter feeds back past outputs, achieving a sharp response with few coefficients — efficient but without the exact linear phase of a FIR filter.
+description: An infinite impulse response (IIR) filter feeds back past outputs for a sharp response from few coefficients — efficient, but without a FIR filter's linear phase.
 keywords: IIR filter, infinite impulse response, recursive filter, feedback, biquad, digital filter
 aka: [IIR, "infinite impulse response filter"]
 autolink: true

@@ -3,7 +3,7 @@ slug: d-star
 title: D-STAR
 entry_type: protocol
 category: protocols
-description: D-STAR (Digital Smart Technologies for Amateur Radio) is an amateur digital-voice and data standard developed by the JARL and popularised by Icom, using GMSK and an AMBE-family vocoder.
+description: D-STAR is an amateur digital-voice and data standard developed by the JARL and popularised by Icom, using GMSK modulation and an AMBE-family vocoder.
 keywords: D-STAR, amateur digital voice, JARL, Icom, GMSK, AMBE, DV, reflectors
 aka: [D-STAR, DSTAR]
 autolink: true

@@ -3,7 +3,7 @@ slug: software-defined-radio
 title: Software-defined radio (SDR)
 entry_type: technology
 category: sdr-dsp
-description: Software-defined radio (SDR) is radio technology in which traditionally hardware functions — tuning, filtering, demodulation — are implemented in software operating on digitised IQ samples.
+description: Software-defined radio (SDR) implements traditionally hardware radio functions — tuning, filtering, demodulation — in software running on digitised IQ samples.
 keywords: software defined radio, SDR, IQ, digital radio, RTL-SDR, flexibility
 aka: [software-defined radio, SDR]
 autolink: true

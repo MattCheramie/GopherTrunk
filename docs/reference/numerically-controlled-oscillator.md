@@ -3,7 +3,7 @@ slug: numerically-controlled-oscillator
 title: Numerically controlled oscillator (NCO)
 entry_type: term
 category: sdr-dsp
-description: A numerically controlled oscillator (NCO) generates a digital sine/cosine of programmable frequency using a phase accumulator — the tunable mixer at the heart of an SDR's digital down-converter.
+description: A numerically controlled oscillator (NCO) generates a digital sine of programmable frequency from a phase accumulator — the tunable mixer inside an SDR's down-converter.
 keywords: NCO, numerically controlled oscillator, phase accumulator, DDS, digital mixing, frequency synthesis
 aka: [NCO, "numerically controlled oscillator", DDS]
 autolink: true

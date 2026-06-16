@@ -3,7 +3,7 @@ slug: nrzi
 title: NRZI
 entry_type: term
 category: modulation
-description: NRZI (non-return-to-zero inverted) is a line code where a bit is represented by the presence or absence of a transition rather than by a fixed level — used in AX.25/APRS and AIS.
+description: NRZI (non-return-to-zero inverted) is a line code that represents a bit by the presence or absence of a transition rather than a fixed level — used by AX.25 and AIS.
 keywords: NRZI, non-return-to-zero inverted, line code, AX.25, APRS, AIS, bit stuffing
 aka: [NRZI, "non-return-to-zero inverted"]
 autolink: true

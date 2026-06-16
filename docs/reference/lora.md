@@ -3,7 +3,7 @@ slug: lora
 title: LoRa
 entry_type: protocol
 category: protocols
-description: LoRa is a low-power, long-range modulation that encodes data as chirps — frequency sweeps across the channel — giving excellent sensitivity for IoT telemetry in ISM bands.
+description: LoRa is a low-power, long-range modulation that encodes data as chirps (frequency sweeps), giving excellent sensitivity for IoT telemetry in ISM bands.
 keywords: LoRa, chirp spread spectrum, CSS, LoRaWAN, IoT, long range, ISM band, dechirp
 aka: [LoRa, "chirp spread spectrum"]
 autolink: true

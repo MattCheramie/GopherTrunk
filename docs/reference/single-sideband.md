@@ -3,7 +3,7 @@ slug: single-sideband
 title: Single sideband (SSB)
 entry_type: technology
 category: modulation
-description: Single sideband (SSB) is an efficient form of amplitude modulation that suppresses the carrier and one sideband, using half the bandwidth and concentrating power for long-distance HF voice.
+description: Single sideband (SSB) is an efficient AM variant that suppresses the carrier and one sideband, halving bandwidth and concentrating power for long-distance HF voice.
 keywords: single sideband, SSB, USB, LSB, suppressed carrier, HF voice, amateur
 aka: [single sideband, SSB]
 autolink: true

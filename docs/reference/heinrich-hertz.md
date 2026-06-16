@@ -3,7 +3,7 @@ slug: heinrich-hertz
 title: Heinrich Hertz
 entry_type: person
 category: people
-description: Heinrich Hertz (1857–1894) was a German physicist who first conclusively demonstrated the existence of electromagnetic waves, confirming Maxwell's theory; the unit of frequency is named after him.
+description: Heinrich Hertz (1857–1894) was a German physicist who first demonstrated electromagnetic waves, confirming Maxwell's theory; the hertz is named after him.
 keywords: Heinrich Hertz, electromagnetic waves, hertz unit, radio history, Maxwell
 aka: [Heinrich Hertz]
 autolink: true
