@@ -119,7 +119,8 @@ antenna to audio without leaving the language.
 
 Each post is an overview — enough to understand the component, the Go that
 implements it, and the principle behind it. Where a topic deserves more, it will
-get its own dedicated deep-dive series later.
+get its own dedicated deep-dive series later. You can always find every part on
+the [SDR Internals series index]({{ '/blog/series/sdr-internals/' | relative_url }}).
 
 ## FAQ
 
