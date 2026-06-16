@@ -22,3 +22,10 @@
 # occasionally drop secrets here while iterating on streaming creds).
 .env
 .env.*
+# Jekyll build output and caches for the docs site (docs/). The site is
+# built and deployed by .github/workflows/pages.yml; the generated
+# _site/ is an artifact and must never be committed.
+docs/_site/
+.jekyll-cache/
+.jekyll-metadata
+.sass-cache/
