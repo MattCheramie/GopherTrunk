@@ -15,6 +15,16 @@ on:
       - "docs/**"
       - "README.md"
       - ".github/workflows/pages.yml"
+  schedule:
+    # Weekday rebuild so future-dated posts publish one per weekday. A series
+    # can be committed all at once with `future: false` (docs/_config.yml) and
+    # consecutive weekday dates; each run reveals the posts that have come due.
+    # 13:00 UTC = 08:00 America/Chicago (CDT) — safely past local midnight, so a
+    # post dated "today" is already in the past at build time. GitHub cron is
+    # UTC and best-effort (may be delayed under load, which is fine for a daily
+    # drip). Note: GitHub disables scheduled workflows after 60 days with no
+    # repo commits — not a concern for an active repo.
+    - cron: "0 13 * * 1-5"
   workflow_dispatch:
 
 permissions:

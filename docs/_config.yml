@@ -3,6 +3,16 @@ description: Pure-Go digital-trunking RTL-SDR scanner engine. P25, DMR, TETRA, N
 url: https://gophertrunk.org
 lang: en
 markdown: kramdown
+
+# Blog scheduling. A post whose date is in the future is excluded from the
+# build until a build runs on or after that date. Paired with the weekday
+# `schedule:` cron in .github/workflows/pages.yml, this drips a series that is
+# committed all at once out one post per weekday. `future: false` is Jekyll's
+# default — stated explicitly so the mechanism is self-documenting and immune to
+# any builder default change. `timezone` makes a date-only post (midnight) flip
+# at local midnight instead of UTC, so "dated 2026-07-01 → live July 1" holds.
+future: false
+timezone: America/Chicago
 logo: /assets/gophertrunk-logo.png
 
 # jekyll-seo-tag picks these up automatically. `image` becomes the
