@@ -33,6 +33,12 @@
       </ul>
 
       <ul class="site-nav__external">
+        <li class="site-search">
+          <form class="site-search__form" role="search" action="{{ '/search/' | relative_url }}" method="get">
+            <span class="site-search__icon" aria-hidden="true">{% include icons/search.svg %}</span>
+            <input class="site-search__input" type="search" name="q" placeholder="Search…" aria-label="Search docs and lessons" autocomplete="off">
+          </form>
+        </li>
         {%- for link in site.data.nav.external -%}
           <li>
             <a href="{{ link.url }}" rel="noopener" aria-label="{{ link.title }}" title="{{ link.title }}">

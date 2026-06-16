@@ -1,0 +1,31 @@
+---
+permalink: /search.json
+layout: null
+sitemap: false
+---
+{%- comment -%}
+  Client-side search index. Built once at Jekyll build time and fetched by
+  assets/js/search.js. Covers every HTML page (top-level docs + /learn/
+  lessons) and blog posts. site.html_pages excludes raw files like this one
+  and llms.txt automatically. Skip the search page itself and any page that
+  sets `search: false`. The leading-comma flag keeps the JSON valid even
+  when items are skipped.
+{%- endcomment -%}
+{%- assign items = site.html_pages | concat: site.posts -%}
+[
+{%- assign first = true -%}
+{%- for item in items -%}
+  {%- if item.title and item.url != "/search/" and item.search != false -%}
+    {%- unless first %},{% endunless -%}
+    {%- assign first = false -%}
+    {
+      "title": {{ item.title | jsonify }},
+      "url": {{ item.url | relative_url | jsonify }},
+      "desc": {{ item.description | default: item.summary | default: "" | jsonify }},
+      "kw": {{ item.keywords | default: "" | jsonify }},
+      "group": {{ item.nav_group | default: item.category | default: "" | jsonify }},
+      "body": {{ item.content | strip_html | normalize_whitespace | truncatewords: 100 | jsonify }}
+    }
+  {%- endif -%}
+{%- endfor -%}
+]
