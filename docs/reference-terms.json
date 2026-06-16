@@ -1,0 +1,24 @@
+---
+permalink: /reference-terms.json
+layout: null
+sitemap: false
+---
+{%- comment -%}
+  Term -> reference-URL map for the site-wide autolinker (assets/js/autolink.js).
+  Includes only reference pages that set `autolink: true` in front matter, so
+  common words (frequency, gain, phase, …) are excluded. `aka` adds synonyms and
+  abbreviations to match.
+{%- endcomment -%}
+[
+{%- assign first = true -%}
+{%- for p in site.pages -%}
+  {%- if p.entry_type and p.autolink == true and p.title and p.url -%}
+    {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
+    {
+      "term": {{ p.title | jsonify }},
+      "aka": {% if p.aka %}{{ p.aka | jsonify }}{% else %}[]{% endif %},
+      "url": {{ p.url | relative_url | jsonify }}
+    }
+  {%- endif -%}
+{%- endfor -%}
+]

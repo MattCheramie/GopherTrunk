@@ -1,0 +1,107 @@
+---
+layout: default
+---
+{%- comment -%}
+  Encyclopedia article layout for the GopherTrunk Reference. Deliberately
+  distinct from the learning hub: a definition-first article with a right-hand
+  infobox, category breadcrumb, "See also", "Related lessons", and an external
+  "References" list — no prev/next, reading time, TL;DR, or quizzes.
+
+  Front matter consumed: slug, title, entry_type, category, description, aka,
+  infobox (ordered list of {label,value}), see_also (slugs), related_lessons
+  ({title,url}), external ({title,url}).
+{%- endcomment -%}
+
+{%- assign all_entries = "" | split: "" -%}
+{%- assign cat_label = "" -%}
+{%- for cat in site.data.reference.categories -%}
+  {%- if cat.id == page.category -%}{%- assign cat_label = cat.label -%}{%- endif -%}
+  {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+{%- endfor -%}
+{%- assign is_protocol = false -%}
+{%- if page.entry_type == "protocol" -%}{%- assign is_protocol = true -%}{%- endif -%}
+
+<main id="content" class="page" role="main">
+  <div class="container page__container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><a href="{{ '/reference/' | relative_url }}">Reference</a></li>
+        {%- if cat_label != "" -%}
+          <li><a href="{{ '/reference/#' | append: page.category | relative_url }}">{{ cat_label }}</a></li>
+        {%- endif -%}
+        <li><span aria-current="page">{{ page.title }}</span></li>
+      </ol>
+    </nav>
+
+    <p class="ref-eyebrow">Reference{% if page.entry_type %} · <span class="ref-eyebrow__type">{{ page.entry_type }}</span>{% endif %}</p>
+
+    <div class="ref-layout">
+      <article class="prose ref-article">
+        {%- if page.aka and page.aka.size > 0 -%}
+          <p class="ref-aka">Also known as: {% for a in page.aka %}<span>{{ a }}</span>{% unless forloop.last %}, {% endunless %}{% endfor %}</p>
+        {%- endif -%}
+
+        {{ content }}
+
+        {%- if page.see_also and page.see_also.size > 0 -%}
+          <section class="ref-seealso" aria-label="See also">
+            <h2>See also</h2>
+            <ul>
+              {%- for slug in page.see_also -%}
+                {%- assign target = all_entries | where: "slug", slug | first -%}
+                {%- if target -%}<li><a href="{{ '/reference/' | append: slug | append: '/' | relative_url }}">{{ target.title }}</a></li>{%- endif -%}
+              {%- endfor -%}
+            </ul>
+          </section>
+        {%- endif -%}
+
+        {%- if page.related_lessons and page.related_lessons.size > 0 -%}
+          <section class="ref-related" aria-label="Related lessons">
+            <h2>Learn it step by step</h2>
+            <ul>
+              {%- for l in page.related_lessons -%}
+                <li><a href="{{ l.url | relative_url }}">{{ l.title }}</a></li>
+              {%- endfor -%}
+            </ul>
+          </section>
+        {%- endif -%}
+
+        {%- if page.external and page.external.size > 0 -%}
+          <section class="ref-refs" aria-label="References and external links">
+            <h2>References &amp; external links</h2>
+            <ul>
+              {%- for x in page.external -%}
+                <li><a href="{{ x.url }}" rel="noopener nofollow">{{ x.title }}</a></li>
+              {%- endfor -%}
+            </ul>
+          </section>
+        {%- endif -%}
+      </article>
+
+      {%- if page.infobox and page.infobox.size > 0 -%}
+        <aside class="ref-infobox{% if is_protocol %} ref-infobox--protocol{% endif %}" aria-label="Quick facts">
+          <p class="ref-infobox__title">{{ page.title }}</p>
+          <dl>
+            {%- for row in page.infobox -%}
+              <div class="ref-infobox__row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            {%- endfor -%}
+          </dl>
+        </aside>
+      {%- endif -%}
+    </div>
+
+    {%- if page.path -%}
+      <footer class="page__edit">
+        <a href="https://github.com/MattCheramie/GopherTrunk/blob/main/{{ page.path }}" rel="noopener">
+          Edit this page on GitHub &rarr;
+        </a>
+      </footer>
+    {%- endif -%}
+  </div>
+</main>
+
+{%- include reference-schema.html cat_label=cat_label -%}
