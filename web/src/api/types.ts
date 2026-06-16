@@ -181,7 +181,36 @@ export interface DiscoveredSystem {
   state?: string;
   county?: string;
   confidence?: number;
+  // P25 / generic identity decoded live from the control channel. Zero/absent
+  // ⇒ not yet observed.
+  wacn?: number;
+  system_id?: number;
+  nac?: number;
   sites?: DiscoveredSite[];
+  // Talkgroups and the IDEN_UP band plan accumulate as the control channel is
+  // decoded — the human-readable map an operator uses to program a radio.
+  talkgroups?: DiscoveredTalkgroup[];
+  band_plan?: BandPlanEntry[];
+}
+
+// DiscoveredTalkgroup mirrors hunt.DiscoveredTalkgroup — one talkgroup observed
+// on the control channel, with its activity counter.
+export interface DiscoveredTalkgroup {
+  dec: number;
+  hex: string;
+  encrypted?: boolean;
+  count: number;
+}
+
+// BandPlanEntry mirrors hunt.BandPlanEntry — one P25 IDEN_UP band-plan slot:
+// the base/spacing math that turns a (channel id, channel number) into a
+// downlink frequency. These are the "voice-channel bands" of the system.
+export interface BandPlanEntry {
+  channel_id: number;
+  base_hz: number;
+  spacing_hz: number;
+  bandwidth_hz?: number;
+  tx_offset_hz?: number;
 }
 
 export interface DiscoveredSite {
