@@ -17,6 +17,14 @@ import "time"
 // form; if a voice chain ever observes one, this assembler ignores
 // it.
 //
+// Carriage note (#376): SDRTrunk ground truth on Victorian MMR shows
+// these 0x15/0x17 LCs ride primarily in the TERMINATOR link control
+// (TDULC, DUID 0xF), not LDU1. p25p1_voice.go currently feeds this
+// buffer only from LDU1 and returns early on the terminator, so the
+// TDULC-borne aliases are missed until a TDULC LC extractor is added
+// — fixture-backed follow-up. This buffer's reassembly is carriage-
+// independent, so the future TDULC path can reuse it unchanged.
+//
 // The 9-octet LC content layouts (HEADER + DATA BLOCK), the message
 // framing (WACN + System + RadioID + encoded alias + CRC), and the
 // per-byte obfuscation cipher are documented publicly in the
@@ -53,7 +61,11 @@ import "time"
 //	bits 20..31  : System ID
 //	bits 32..55  : Radio (subscriber) ID
 //	bits 56..end-16 : encoded alias bytes
-//	last 16 bits : CRC-16/GSM (currently informational; not verified)
+//	last 16 bits : CRC-16/GSM (currently informational; not verified).
+//	               Validating it would reject the junk alias a
+//	               partial/garbled block sequence can otherwise surface
+//	               (#376) — a fixture-backed hardening, pending a real
+//	               frame to confirm the CRC parameters.
 //
 // Encoded alias bytes are byte-aligned starting at bit 56. Each
 // encoded byte passes through the cipher (see decodeAliasBytes) to
