@@ -20,6 +20,17 @@ import (
 // in the data. All wire detail is confined here; the assembler logic
 // (per-source buffering, completion, staleness eviction) is
 // encoding-independent and tolerant of reordered or missing fragments.
+//
+// CORRECTION PENDING (#376): the working model above does not match the
+// real Motorola Phase 2 alias observed on-air (SDRTrunk, Victorian MMR).
+// The real form rides on FACCH-S during hangtime with a HEADER opcode
+// 0x91 + DATA opcodes 0x95 (see mac_vendor.go), the fragments are run
+// through the Motorola alias cipher (port phase1/motorola_alias_cipher.go)
+// not read as plain ASCII, there is a CRC-16 tail to validate, and the
+// source RID is carried inline in the header rather than supplied
+// separately. The encoding-independent assembler below should survive
+// the correction; AsTalkerAliasFragment + cleanAlias are what change.
+// Implement against the fixtures before trusting the output.
 
 // TalkerAliasFragment is one numbered piece of a radio's talker alias.
 type TalkerAliasFragment struct {

@@ -39,6 +39,12 @@ function captureResult(rep: CaptureReport): string {
   return "no lock";
 }
 
+// hexUpper renders a decoded identity field (WACN / System ID / NAC) as the
+// uppercase hex operators copy when programming a radio, or "—" when absent.
+function hexUpper(n: number | undefined): string {
+  return n ? n.toString(16).toUpperCase() : "—";
+}
+
 // signalDetail renders the per-class decode summary for one surveyed carrier.
 function signalDetail(sig: DetectedSignal): string {
   if (sig.trunking) {
@@ -85,6 +91,8 @@ export function Hunt() {
   const [rrSID, setRRSID] = useState("");
   const [rrReport, setRRReport] = useState<HuntRRReport | null>(null);
   const [rrBusy, setRRBusy] = useState(false);
+  const [ccFreq, setCCFreq] = useState(""); // single P25 control-channel freq, MHz
+  const [ccDwell, setCCDwell] = useState(15); // listen seconds (bounded — see parseCC)
 
   useEffect(() => {
     let cancel = false;
@@ -142,6 +150,30 @@ export function Hunt() {
     }
   }
 
+  // parseCC tunes the hunt engine straight at one P25 control-channel
+  // frequency (no sweep) and decodes it for ccDwell seconds, accumulating the
+  // band plan / talkgroups / identity into status.system. Dwell is bounded
+  // because the live IQ source runs at the full SDR rate (~2.4 MHz), so each
+  // second of capture is ~19 MB — re-run to discover more rather than dwelling
+  // for minutes.
+  async function parseCC() {
+    const mhz = parseFloat(ccFreq.trim());
+    if (Number.isNaN(mhz)) {
+      setError("enter a P25 control-channel frequency in MHz (e.g. 851.0125)");
+      return;
+    }
+    try {
+      await writes.huntStart(cfg, {
+        candidates: [mhz],
+        no_sweep: true,
+        protocol: "p25",
+        dwell_seconds: ccDwell,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? `parse CC failed: ${e.message}` : "parse CC failed");
+    }
+  }
+
   async function checkRR() {
     setRRBusy(true);
     try {
@@ -171,6 +203,38 @@ export function Hunt() {
     <div className="panel hunt-panel">
       <h2>Hunt — discover an unknown system</h2>
 
+      <section className="hunt-controls hunt-ccparse">
+        <h3>Parse a P25 control channel</h3>
+        <p className="hint">
+          Point straight at a known P25 control-channel frequency and decode it.
+          The band plan, talkgroups and system identity below fill in as the CC
+          is read — longer listening (or re-running) discovers more talkgroups
+          and neighbor sites.
+        </p>
+        <label>
+          P25 CC frequency (MHz)
+          <input
+            value={ccFreq}
+            onChange={(e) => setCCFreq(e.target.value)}
+            placeholder="851.0125"
+          />
+        </label>
+        <label>
+          Listen for
+          <select value={ccDwell} onChange={(e) => setCCDwell(Number(e.target.value))}>
+            <option value={5}>5 seconds</option>
+            <option value={10}>10 seconds</option>
+            <option value={15}>15 seconds</option>
+            <option value={20}>20 seconds</option>
+          </select>
+        </label>
+        <div className="hunt-buttons">
+          <button onClick={parseCC} disabled={!canMutate || running}>
+            Parse control channel
+          </button>
+        </div>
+      </section>
+
       <section className="hunt-status">
         <div>
           State: <strong>{status?.state ?? "idle"}</strong>
@@ -197,6 +261,89 @@ export function Hunt() {
           <div>No system discovered yet.</div>
         )}
       </section>
+
+      {status?.system &&
+      (status.system.wacn || status.system.system_id || status.system.nac) ? (
+        <section className="hunt-identity">
+          <h3>System identity</h3>
+          <table>
+            <tbody>
+              <tr>
+                <th>Protocol</th>
+                <td>{status.system.protocol || "—"}</td>
+                <th>WACN</th>
+                <td>{hexUpper(status.system.wacn)}</td>
+              </tr>
+              <tr>
+                <th>System ID</th>
+                <td>{hexUpper(status.system.system_id)}</td>
+                <th>NAC</th>
+                <td>{hexUpper(status.system.nac)}</td>
+              </tr>
+              {status.system.confidence ? (
+                <tr>
+                  <th>Confidence</th>
+                  <td colSpan={3}>{(status.system.confidence * 100).toFixed(0)}%</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      {status?.system?.band_plan && status.system.band_plan.length > 0 ? (
+        <section className="hunt-bandplan">
+          <h3>Band plan ({status.system.band_plan.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Channel ID</th>
+                <th>Base (MHz)</th>
+                <th>Spacing (kHz)</th>
+                <th>BW (kHz)</th>
+                <th>TX offset (MHz)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.system.band_plan.map((b) => (
+                <tr key={b.channel_id}>
+                  <td>{b.channel_id}</td>
+                  <td>{(b.base_hz / 1e6).toFixed(5)}</td>
+                  <td>{(b.spacing_hz / 1e3).toFixed(3)}</td>
+                  <td>{b.bandwidth_hz ? (b.bandwidth_hz / 1e3).toFixed(1) : "—"}</td>
+                  <td>{b.tx_offset_hz ? (b.tx_offset_hz / 1e6).toFixed(4) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      {status?.system?.talkgroups && status.system.talkgroups.length > 0 ? (
+        <section className="hunt-talkgroups">
+          <h3>Talkgroups ({status.system.talkgroups.length})</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Dec</th>
+                <th>Hex</th>
+                <th>Encrypted</th>
+                <th>Activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.system.talkgroups.map((tg) => (
+                <tr key={tg.dec}>
+                  <td>{tg.dec}</td>
+                  <td>{tg.hex}</td>
+                  <td>{tg.encrypted ? "🔒" : "—"}</td>
+                  <td>{tg.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       {status?.system?.sites && status.system.sites.length > 0 ? (
         <section className="hunt-sites">

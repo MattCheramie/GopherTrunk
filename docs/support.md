@@ -3,6 +3,7 @@ layout: page
 title: Support
 description: Help keep GopherTrunk going
 nav_group: Support
+hide_ctas: true
 ---
 
 # Support GopherTrunk

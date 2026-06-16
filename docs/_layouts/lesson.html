@@ -73,7 +73,10 @@ layout: default
         {%- endif -%}
       </header>
 
-      {{ content }}
+      <div class="lesson__body" data-cta-host>
+        {{ content }}
+        {%- include page-ctas.html -%}
+      </div>
 
       {%- if page.faq and page.faq.size > 0 -%}
         <section class="lesson__faq" aria-label="Frequently asked questions">

@@ -37,6 +37,16 @@ const (
 	// OpVendorTalkerAlias carries one fragment of a radio's display
 	// name (talker alias). Both Motorola (MFID 0x90) and Harris
 	// (MFID 0xA4) emit it; AsTalkerAliasFragment decodes either.
+	//
+	// CORRECTION PENDING (#376): this 0x82 value and the plain-ASCII
+	// payload in talker_alias.go are a speculative working model. On-air
+	// SDRTrunk decode of Victorian MMR shows the real Motorola Phase 2
+	// alias rides on FACCH-S during hangtime as a HEADER opcode 0x91 +
+	// DATA opcodes 0x95 (MFID 0x90), cipher-obfuscated (the same
+	// Motorola alias cipher as phase1/motorola_alias_cipher.go) with a
+	// CRC-16 tail, and carries the source RID inline in the header.
+	// Correct the opcode + framing here against the fixtures before
+	// trusting any Phase 2 alias decode.
 	OpVendorTalkerAlias Opcode = 0x82
 	// OpMotorolaPatchDelete is the Motorola group-regroup delete
 	// command (MOT_GRG_DEL_CMD, MFID 0x90): it cancels a patch
