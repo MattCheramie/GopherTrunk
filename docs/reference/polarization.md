@@ -22,6 +22,19 @@ external:
 electric field, determined by how the transmitting [antenna](/reference/antenna/) is
 mounted — vertical, horizontal, or circular.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 140" role="img" aria-label="A vertically oriented wave on the left and a horizontally oriented wave on the right, showing polarization." xmlns="http://www.w3.org/2000/svg">
+  <line x1="110" y1="20" x2="110" y2="120" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M110 20 q -28 25 0 50 t0 50" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <text x="110" y="135" text-anchor="middle" font-size="9" fill="currentColor">vertical</text>
+  <line x1="300" y1="70" x2="420" y2="70" stroke="currentColor" stroke-opacity="0.4"/>
+  <path d="M300 70 q 25 -28 50 0 t50 0" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <text x="360" y="125" text-anchor="middle" font-size="9" fill="currentColor">horizontal</text>
+  <text x="230" y="70" text-anchor="middle" font-size="9" fill="currentColor">match the</text><text x="230" y="84" text-anchor="middle" font-size="9" fill="currentColor">transmitter</text>
+</svg>
+<figcaption>Polarization is the orientation of the wave's electric field; match it to the transmitter to avoid loss.</figcaption>
+</figure>
+
 ## How it works
 
 A receive antenna should match the transmitter's polarization; a full mismatch can

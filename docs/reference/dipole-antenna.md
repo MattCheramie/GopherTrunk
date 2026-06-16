@@ -23,6 +23,18 @@ conductors fed at the centre, classically a **half [wavelength](/reference/wavel
 long. It is the reference against which other antennas' [gain](/reference/antenna-gain/)
 is often compared.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 320 150" role="img" aria-label="A centre-fed dipole with two quarter-wave rods and a doughnut-shaped radiation pattern around it." xmlns="http://www.w3.org/2000/svg">
+  <line x1="160" y1="20" x2="160" y2="68" stroke="currentColor" stroke-width="3"/>
+  <line x1="160" y1="82" x2="160" y2="130" stroke="currentColor" stroke-width="3"/>
+  <circle cx="160" cy="75" r="3" fill="currentColor"/>
+  <text x="172" y="48" font-size="10" fill="currentColor">λ/4</text><text x="172" y="112" font-size="10" fill="currentColor">λ/4</text>
+  <ellipse cx="160" cy="75" rx="110" ry="28" fill="none" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="4 3"/>
+  <text x="250" y="75" font-size="9" fill="currentColor">pattern</text>
+</svg>
+<figcaption>A half-wave dipole is two quarter-wave rods fed in the middle, most sensitive broadside to its length.</figcaption>
+</figure>
+
 ## How it works
 
 A half-wave dipole radiates most strongly broadside (perpendicular to its axis) and

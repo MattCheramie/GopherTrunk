@@ -22,6 +22,17 @@ A **bias tee** is a small network that injects **DC power onto the coax** feedin
 antenna-mounted device — typically a [low-noise amplifier](/reference/low-noise-amplifier/)
 — while passing the RF signal through to the receiver unaffected.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 110" role="img" aria-label="A bias tee injecting DC power onto the coax while passing RF through to the receiver." xmlns="http://www.w3.org/2000/svg">
+  <line x1="40" y1="55" x2="200" y2="55" stroke="currentColor" stroke-width="1.4"/><text x="60" y="46" font-size="8" fill="currentColor">RF + DC</text>
+  <line x1="200" y1="55" x2="420" y2="55" stroke="currentColor" stroke-width="1.4"/><text x="360" y="46" font-size="8" fill="currentColor">RF to RX</text>
+  <line x1="200" y1="55" x2="200" y2="95" stroke="currentColor" stroke-width="1.4"/><text x="200" y="108" font-size="8" fill="currentColor" text-anchor="middle">DC supply</text>
+  <circle cx="200" cy="55" r="3" fill="currentColor"/>
+  <text x="230" y="30" font-size="9" fill="currentColor">powers a remote LNA over the coax</text>
+</svg>
+<figcaption>A bias tee feeds DC up the coax to power a mast-mounted LNA while passing the RF through.</figcaption>
+</figure>
+
 ## How it works
 
 It combines a DC path and an RF path so a single cable carries both. Many SDRs (including

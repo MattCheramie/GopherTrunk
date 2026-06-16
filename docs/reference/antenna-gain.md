@@ -23,6 +23,18 @@ energy in a preferred direction compared with a reference. It is given in
 [decibels](/reference/decibel/): **dBi** relative to an isotropic radiator, or **dBd**
 relative to a [dipole](/reference/dipole-antenna/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 150" role="img" aria-label="An omnidirectional circular pattern on the left and a focused directional lobe on the right." xmlns="http://www.w3.org/2000/svg">
+  <circle cx="110" cy="75" r="45" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.4"/>
+  <circle cx="110" cy="75" r="2.5" fill="currentColor"/>
+  <text x="110" y="140" text-anchor="middle" font-size="9" fill="currentColor">omnidirectional</text>
+  <path d="M330 75 C 330 35, 430 45, 440 75 C 430 105, 330 115, 330 75 Z" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.4"/>
+  <circle cx="330" cy="75" r="2.5" fill="currentColor"/>
+  <text x="360" y="140" text-anchor="middle" font-size="9" fill="currentColor">directional (gain)</text>
+</svg>
+<figcaption>Antenna gain doesn't create energy — it focuses the pattern, trading all-round coverage for reach.</figcaption>
+</figure>
+
 ## How it works
 
 Gain does not create energy; it focuses it. A high-gain antenna trades coverage for

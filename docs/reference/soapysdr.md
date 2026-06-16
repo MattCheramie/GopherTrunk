@@ -22,6 +22,20 @@ external:
 API** across many [software-defined radios](/reference/software-defined-radio/), so
 applications can support diverse devices without per-vendor code.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="Applications calling a common SoapySDR layer that drives several different SDR devices through plugin modules." xmlns="http://www.w3.org/2000/svg">
+  <rect x="150" y="14" width="160" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="230" y="31" text-anchor="middle" font-size="9" fill="currentColor">applications</text>
+  <rect x="120" y="52" width="220" height="26" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="230" y="69" text-anchor="middle" font-size="9" fill="currentColor">SoapySDR (common API)</text>
+  <g font-size="8" fill="currentColor" text-anchor="middle">
+    <rect x="60" y="92" width="80" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="100" y="109">RTL-SDR</text>
+    <rect x="190" y="92" width="80" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="230" y="109">HackRF</text>
+    <rect x="320" y="92" width="80" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="360" y="109">Airspy</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.1"><line x1="230" y1="40" x2="230" y2="52"/><line x1="100" y1="78" x2="100" y2="92"/><line x1="230" y1="78" x2="230" y2="92"/><line x1="360" y1="78" x2="360" y2="92"/></g>
+</svg>
+<figcaption>SoapySDR is a vendor-neutral abstraction layer: one API that drives many different SDR devices.</figcaption>
+</figure>
+
 ## Overview
 
 Its **SoapyRemote** companion streams [IQ](/reference/iq-data/) over a network, letting a

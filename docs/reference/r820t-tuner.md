@@ -24,6 +24,18 @@ common tuner chips paired with the [RTL2832U](/reference/rtl2832u/) in
 [RTL-SDR](/reference/rtl-sdr/) dongles. They provide the RF front-end and
 mixer/[local oscillator](/reference/local-oscillator/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="The tuner's role: RF in, mixed with a local oscillator, low-IF out to the ADC." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <text x="35" y="55">RF in</text>
+    <rect x="80" y="36" width="120" height="34" rx="5" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.3"/><text x="140" y="50">R820T/R820T2</text><text x="140" y="62" font-size="7.5">LNA · mixer · LO</text>
+    <rect x="240" y="38" width="80" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="280" y="57">to ADC</text>
+    <g stroke="currentColor" stroke-width="1.1"><line x1="60" y1="53" x2="79" y2="53"/><line x1="200" y1="53" x2="239" y2="53"/></g>
+  </g>
+</svg>
+<figcaption>The R820T/R820T2 is the most common RTL-SDR tuner chip — it amplifies and mixes RF down for the ADC.</figcaption>
+</figure>
+
 ## Overview
 
 The tuner amplifies and shifts the selected band down to a low frequency the RTL2832U

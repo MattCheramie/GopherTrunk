@@ -22,6 +22,17 @@ The **radio horizon** is the farthest point a line-of-sight signal reaches befor
 Earth's curvature gets in the way. It lies slightly beyond the visual horizon because
 the atmosphere refracts radio waves a little.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 150" role="img" aria-label="A curved earth with a tall antenna whose line of sight reaches further around the curve than a short antenna." xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 140 Q230 80 450 140" fill="none" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.4"/>
+  <line x1="120" y1="118" x2="120" y2="40" stroke="currentColor" stroke-width="2"/><text x="120" y="34" text-anchor="middle" font-size="8" fill="currentColor">tall</text>
+  <line x1="120" y1="40" x2="370" y2="106" stroke="currentColor" stroke-width="1.3" stroke-dasharray="5 3"/>
+  <circle cx="370" cy="106" r="3" fill="currentColor"/><text x="385" y="104" font-size="8" fill="currentColor">horizon</text>
+  <text x="230" y="135" text-anchor="middle" font-size="9" fill="currentColor">height extends the radio horizon</text>
+</svg>
+<figcaption>The radio horizon is the farthest line-of-sight point before the Earth's curve blocks it; raising the antenna extends it.</figcaption>
+</figure>
+
 ## How it works
 
 Raising either antenna pushes the radio horizon outward, which is why repeaters sit on
