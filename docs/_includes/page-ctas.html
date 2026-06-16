@@ -1,0 +1,37 @@
+{%- comment -%}
+  In-content call-to-action sections rendered on non-home page bodies.
+
+  Rendered as the last children of the content host ([data-cta-host]); on
+  capable browsers assets/js/site.js relocates them to ~1/3 ("try") and
+  ~2/3 ("support") down the content. With JS off they remain here, at the
+  end of the content — still functional.
+
+  Suppressed per-page with `hide_ctas: true` in front matter (set on the
+  download/install/support pages where these would be redundant).
+
+  Every link carries data-cta-event so site.js can fire a gtag 'cta_click'
+  event — lets us measure whether these CTAs convert.
+{%- endcomment -%}
+{%- unless page.hide_ctas -%}
+{%- include latest-version.html -%}
+<aside class="page-cta page-cta--try" data-cta="try" aria-label="Try GopherTrunk">
+  <h2 class="page-cta__title">Have you tried GopherTrunk?</h2>
+  <p class="page-cta__lede">A pure-Go digital-trunking scanner engine for RTL-SDR — P25, DMR, TETRA, NXDN and more, in a single static binary. Grab the latest build and start scanning.</p>
+  <div class="page-cta__actions">
+    <a class="btn btn--primary" href="{{ '/downloads.html' | relative_url }}" data-cta-event="cta_try_download">Download GopherTrunk {{ ver }} &rarr;</a>
+  </div>
+</aside>
+
+<aside class="page-cta page-cta--support" data-cta="support" aria-label="Support GopherTrunk">
+  <h2 class="page-cta__title">Enjoying GopherTrunk?</h2>
+  <p class="page-cta__lede">GopherTrunk is free and open source, built in spare time. If it's useful to you, a small contribution helps keep the features and docs coming.</p>
+  <div class="page-cta__actions">
+    <a class="btn btn--primary" href="https://www.buymeacoffee.com/Mrcheramie" rel="noopener" data-cta-event="cta_support_bmc">Buy me a coffee</a>
+    <a class="btn btn--ghost" href="https://github.com/sponsors/MattCheramie" rel="noopener" data-cta-event="cta_support_sponsors">
+      {% include icons/heart.svg %}
+      <span>GitHub Sponsors</span>
+    </a>
+  </div>
+</aside>
+<script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="Mrcheramie" data-description="Support me on Buy me a coffee!" data-message="Help support more content like this!" data-color="#5F7FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
+{%- endunless -%}

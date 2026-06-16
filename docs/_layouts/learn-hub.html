@@ -12,7 +12,7 @@ layout: default
 {%- for mod in learn.modules -%}{%- assign total = total | plus: mod.lessons.size -%}{%- endfor -%}
 
 <main id="content" class="page" role="main">
-  <div class="container">
+  <div class="container" data-cta-host>
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
@@ -81,6 +81,8 @@ layout: default
         </ol>
       </section>
     </div>
+
+    {%- include page-ctas.html -%}
   </div>
 </main>
 

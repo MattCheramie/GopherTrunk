@@ -1233,3 +1233,60 @@ a.category-chip:hover {
   .site-search__form { width: 100%; }
   .site-search__input { width: 100%; }
 }
+
+/* ---------- In-content CTAs (try / support) ---------- */
+.page-cta {
+  margin: 2.25rem 0;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.page-cta--support { border-left-color: #5f7fff; }
+.page-cta__title {
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+  border: none;
+  padding: 0;
+}
+.page-cta__lede {
+  margin: 0 0 1rem;
+  color: var(--fg-muted);
+  font-size: 0.97rem;
+}
+.page-cta__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* ---------- "Join the conversation" band (above the footer) ---------- */
+.join-cta {
+  border-top: 1px solid var(--border);
+  background:
+    radial-gradient(ellipse at top, var(--accent-soft), transparent 70%),
+    var(--bg);
+}
+.join-cta__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding-top: 2.5rem;
+  padding-bottom: 2.5rem;
+}
+.join-cta__copy { flex: 1 1 18rem; }
+.join-cta__title { margin: 0 0 0.35rem; font-size: 1.4rem; }
+.join-cta__lede { margin: 0; color: var(--fg-muted); }
+.join-cta__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .join-cta__actions { width: 100%; }
+  .join-cta__actions .btn { flex: 1 1 auto; justify-content: center; }
+}

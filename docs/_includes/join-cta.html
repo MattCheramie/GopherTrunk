@@ -1,0 +1,27 @@
+{%- comment -%}
+  "Join the conversation" call-to-action band, rendered by the default
+  layout at the bottom of the content, above the site footer. Shown on every
+  non-home page (the homepage hero already carries these community links) and
+  suppressed by `hide_ctas: true`. Links carry data-cta-event for gtag
+  measurement (handled in assets/js/site.js).
+{%- endcomment -%}
+{%- unless page.hide_ctas or page.url == "/" -%}
+<section class="join-cta" aria-label="Join the community">
+  <div class="container join-cta__inner">
+    <div class="join-cta__copy">
+      <h2 class="join-cta__title">Join the conversation</h2>
+      <p class="join-cta__lede">Questions, signal IDs, feature ideas? Swap notes with other GopherTrunk users on Discord and Reddit.</p>
+    </div>
+    <div class="join-cta__actions">
+      <a class="btn btn--discord" href="https://discord.gg/x49Hr62uH" rel="noopener" data-cta-event="cta_join_discord">
+        {% include icons/discord.svg %}
+        <span>Join the Discord</span>
+      </a>
+      <a class="btn btn--reddit" href="https://www.reddit.com/r/GopherTrunk" rel="noopener" data-cta-event="cta_join_reddit">
+        {% include icons/reddit.svg %}
+        <span>r/GopherTrunk</span>
+      </a>
+    </div>
+  </div>
+</section>
+{%- endunless -%}
