@@ -7,8 +7,63 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.4] — 2026-06-16
+
+This release is the **RF & SDR learning hub** — a structured, vendor-neutral
+learning path at [`/learn/`](https://gophertrunk.org/learn/) that walks a reader
+from complete SDR newbie to confident GopherTrunk operator across six modules
+(30 lessons plus a glossary). Every lesson carries a TL;DR, answer-first
+question-style sections, reference tables, a hand-authored theme-aware inline SVG
+where a diagram helps, a self-check quiz, an FAQ, prerequisite chips, and "use
+this in GopherTrunk" links — paired with a dependency-free **site-wide search**
+over every page, lesson, and post (#693). On the operator side, the Hunt web
+panel gains a **"Parse a P25 control channel"** section that decodes a single CC
+frequency and renders the discovered system in radio-programming format — WACN /
+System ID / NAC, the voice-channel band plan, and talkgroups (dec/hex, encrypted
+flag, activity count) (#694). P25 Phase 1 now **decodes Motorola patch-group
+(super-group) voice channel grant / grant-update** TSBKs that previously logged
+as unhandled, so those super-group calls surface their radio ID and encryption
+and route through the normal band-plan / Phase 2 TDMA path (#376). And a live
+TETRA-zone survey that **tore down the WebSocket stream on a non-finite float**
+(a `+Inf` SNR / confidence reaching the JSON encoder, which cannot represent it)
+is fixed end-to-end: clamped at the hunt classify chokepoint, scrubbed at the
+JSON wire boundary for every event kind, and bounded to a finite SNR ceiling at
+the P25 estimator source (#648).
+
 ### Added
 
+- **RF & SDR learning hub at [`/learn/`](https://gophertrunk.org/learn/)
+  (#693).** A data-driven curriculum (`_data/learn.yml`) powers a hub landing
+  page, a glossary, and 30 lessons across six modules — RF fundamentals (bands,
+  antennas, propagation), signal anatomy & modulation, the SDR receiver chain
+  (IQ data, sample rate & Nyquist, gain & AGC, hardware), DSP (FFT/waterfall,
+  filtering & decimation, demodulation, clock recovery), digital voice (analog
+  vs digital, vocoders, the protocol landscape, encryption, other signals), and
+  operating (finding systems, tuning with scopes, calibration & troubleshooting,
+  legal & ethical). Each lesson has a TL;DR key-takeaways block, answer-first
+  sections, reference tables, a hand-authored theme-aware inline SVG diagram, a
+  knowledge-check quiz, an FAQ (mirrored as `FAQPage` schema), prerequisite
+  chips, and "use this in GopherTrunk" links; progressive-enhancement JS adds a
+  `localStorage` progress tracker, frequency↔wavelength and dB/dBm calculators,
+  and the quizzes (pages stay fully usable with JS off). Per-lesson JSON-LD
+  (`TechArticle` / `BreadcrumbList` / `FAQPage`) and a `Course` / `ItemList` on
+  the hub make it SEO- and AI-search-friendly.
+- **Site-wide client-side search (#693).** A dependency-free `/search/` over the
+  whole docs site (top-level pages, the 30 learn lessons, and blog posts),
+  suitable for static GitHub Pages with no external service or API keys: a
+  Jekyll-built `search.json` index, a compact nav search box (full-width in the
+  mobile overlay), live as-you-type ranked results with match highlighting, and
+  `?q=` deep-links. Progressive — the form submits `?q=` to `/search/` with JS
+  off.
+- **P25 control-channel parser in the Hunt web panel (#694).** A "Parse a P25
+  control channel" section in the Hunt tab: enter a single CC frequency (MHz),
+  pick a bounded listen duration (5–20 s), and the existing hunt decode path
+  decodes it. The discovered system — already served on `GET /api/v1/hunt` — now
+  renders in a human-readable radio-programming format: system identity
+  (protocol, WACN, System ID, NAC in uppercase hex), the per-channel band plan
+  (base / spacing / bandwidth / TX offset) needed to program Motorola P25
+  radios, and talkgroups (dec/hex, encrypted flag, activity count). No backend
+  changes.
 - **P25 Phase 1 decodes Motorola patch-group channel grant / update (#376).**
   Field captures from a Motorola system (MMR, sites CBD/Mt Anakie) emit
   manufacturer-specific (MFID `0x90`) TSBKs at opcodes `0x02` and `0x03` that
@@ -39,6 +94,28 @@ for tagged releases.
   busy control channel. The prior diagnostic round shipped only on an unmerged
   branch, so a field replay built against `main` saw no payload lines; this
   lands it on `main`.
+
+### Fixed
+
+- **Live survey / WebSocket stream survives non-finite floats (#648).** A live
+  TETRA-zone survey could not finish: a marginal carrier produced a non-finite
+  float (a `+Inf` SNR / siglab confidence, or `-Inf` analog power from a
+  divide-by-zero / log-of-zero), `json.Marshal` rejected it
+  (`unsupported value: +Inf`), and the WebSocket handler tore the connection
+  down on the write error so the scan never completed. Fixed at three layers:
+  `internal/hunt` clamps every non-finite float on `DetectedSignal` (top-level
+  plus nested Features / Trunking / Analog measurements) to `0` at the
+  `classifyAndRoute` chokepoint every real signal flows through (reaching the
+  stored survey, the event bus, and the NDJSON sink); a centralized,
+  reflection-based `scrubNonFinite` returns a JSON-safe copy at the two
+  serialization chokepoints (`eventToDTO`, covering both WS and SSE for every
+  event kind, and the siglab identify + wideband REST responses), copying as it
+  descends so the canonical store and NDJSON sink keep their original values;
+  and the WS handler now marshals-first and skips-on-error (mirroring SSE)
+  instead of killing the client's stream on one bad frame. Backstopping the
+  source, the four P25 SNR estimators now return a finite `99.0 dB` ceiling
+  instead of `+Inf` for a noise-free input, with a digital-vs-analog SNR
+  ground-truth harness added as the regression guard.
 
 ## [v0.4.3] — 2026-06-15
 
