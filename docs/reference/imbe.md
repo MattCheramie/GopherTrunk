@@ -23,6 +23,16 @@ external:
 [P25 Phase 1](/reference/p25-phase-1/), part of the
 [MBE](/reference/multi-band-excitation/) codec family from [DVSI](/reference/dvsi/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A speech spectrum split into frequency bands, each marked voiced or unvoiced, as in multi-band excitation." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="90" x2="430" y2="90" stroke="currentColor" stroke-opacity="0.4"/>
+  <g stroke="currentColor" stroke-width="1.2"><line x1="90" y1="90" x2="90" y2="35"/><line x1="150" y1="90" x2="150" y2="50"/><line x1="210" y1="90" x2="210" y2="42"/><line x1="270" y1="90" x2="270" y2="60"/><line x1="330" y1="90" x2="330" y2="48"/></g>
+  <g font-size="8" fill="currentColor" text-anchor="middle"><text x="90" y="105">V</text><text x="150" y="105">V</text><text x="210" y="105">U</text><text x="270" y="105">V</text><text x="330" y="105">U</text></g>
+  <text x="230" y="24" text-anchor="middle" font-size="9" fill="currentColor">each band marked voiced (V) or unvoiced (U)</text>
+</svg>
+<figcaption>IMBE (used by P25 Phase 1) is a multi-band excitation codec that labels each spectral band voiced or unvoiced.</figcaption>
+</figure>
+
 ## How it works
 
 IMBE runs at about **7.2 kbps** over the air, of which roughly 4.4 kbps is voice and the

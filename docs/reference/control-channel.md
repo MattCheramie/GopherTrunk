@@ -23,6 +23,21 @@ The **control channel** is the **data-only** frequency that coordinates a
 signalling — never voice — managing registrations, call requests, and
 [channel grants](/reference/channel-grant/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A steady always-on control channel stripe issuing messages that point radios to voice channels." xmlns="http://www.w3.org/2000/svg">
+  <rect x="30" y="30" width="400" height="28" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/>
+  <text x="230" y="48" text-anchor="middle" font-size="10" fill="currentColor">control channel — continuous data, never voice</text>
+  <g font-size="8.5" fill="currentColor" text-anchor="middle">
+    <text x="100" y="86">grant</text><text x="100" y="98" font-size="7.5">→ ch 3</text>
+    <text x="230" y="86">affiliation</text><text x="230" y="98" font-size="7.5">radio 4567</text>
+    <text x="360" y="86">grant</text><text x="360" y="98" font-size="7.5">→ ch 7</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1"><line x1="100" y1="58" x2="100" y2="74"/><line x1="230" y1="58" x2="230" y2="74"/><line x1="360" y1="58" x2="360" y2="74"/></g>
+  <text x="230" y="120" text-anchor="middle" font-size="9" fill="currentColor">decode this first — it's the map to every call</text>
+</svg>
+<figcaption>The control channel carries the system's running commentary — affiliations, requests, and channel grants.</figcaption>
+</figure>
+
 ## How it works
 
 When a call starts, the control channel broadcasts a grant naming the

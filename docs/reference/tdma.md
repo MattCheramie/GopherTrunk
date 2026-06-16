@@ -22,6 +22,22 @@ external:
 into rapid, repeating **timeslots**, so two or more calls share the channel by taking
 turns.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 360 150" role="img" aria-label="A single frequency channel divided along time into repeating slots, alternating between two calls." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="110" x2="340" y2="110" stroke="currentColor" stroke-opacity="0.4" marker-end="url(#tdar)"/>
+  <text x="185" y="135" text-anchor="middle" font-size="9" fill="currentColor">time →</text>
+  <g stroke="currentColor" stroke-width="1.1">
+    <rect x="40" y="40" width="50" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="90" y="40" width="50" height="50" fill="none"/>
+    <rect x="140" y="40" width="50" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="190" y="40" width="50" height="50" fill="none"/>
+    <rect x="240" y="40" width="50" height="50" fill="currentColor" fill-opacity="0.22"/><rect x="290" y="40" width="50" height="50" fill="none"/>
+  </g>
+  <g font-size="9" fill="currentColor" text-anchor="middle"><text x="65" y="69">1</text><text x="115" y="69">2</text><text x="165" y="69">1</text><text x="215" y="69">2</text><text x="265" y="69">1</text><text x="315" y="69">2</text></g>
+  <text x="185" y="28" text-anchor="middle" font-size="9" fill="currentColor">one frequency, two calls share the slots</text>
+  <defs><marker id="tdar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>TDMA splits one frequency into time slots so several calls share it — used by P25 Phase 2 and DMR.</figcaption>
+</figure>
+
 ## How it works
 
 [P25 Phase 2](/reference/p25-phase-2/) and [DMR](/reference/dmr/) use two slots,

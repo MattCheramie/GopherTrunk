@@ -23,6 +23,17 @@ external:
 [control channel](/reference/control-channel/) when it powers on or changes
 [talkgroup](/reference/talkgroup/), so the system can route calls efficiently.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 120" role="img" aria-label="A radio sending a registration request to the system, which records it as affiliated." xmlns="http://www.w3.org/2000/svg">
+  <rect x="30" y="45" width="90" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="75" y="66" text-anchor="middle" font-size="9" fill="currentColor">radio 4567</text>
+  <rect x="340" y="45" width="90" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="385" y="66" text-anchor="middle" font-size="9" fill="currentColor">system</text>
+  <line x1="122" y1="56" x2="338" y2="56" stroke="currentColor" stroke-width="1.1" marker-end="url(#afar)"/><text x="230" y="50" text-anchor="middle" font-size="8.5" fill="currentColor">"register on TG 101"</text>
+  <line x1="338" y1="70" x2="122" y2="70" stroke="currentColor" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#afar)"/><text x="230" y="84" text-anchor="middle" font-size="8.5" fill="currentColor">acknowledged · affiliated</text>
+  <defs><marker id="afar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Affiliation is a radio registering with the system over the control channel so calls can be routed to it.</figcaption>
+</figure>
+
 ## How it works
 
 Affiliation messages name the [radio ID](/reference/radio-id/) and talkgroup, giving the

@@ -22,6 +22,16 @@ A **voice channel** (or traffic channel) is a frequency that a
 [trunked radio](/reference/trunked-radio/) system **temporarily assigns** to carry one
 call. When the call ends, the channel returns to the pool for reuse.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A pool of voice channels over time, each lighting up briefly for a call then going idle." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor"><text x="20" y="35">ch 1</text><text x="20" y="65">ch 2</text><text x="20" y="95">ch 3</text></g>
+  <g stroke="currentColor" stroke-opacity="0.3"><line x1="55" y1="30" x2="440" y2="30"/><line x1="55" y1="60" x2="440" y2="60"/><line x1="55" y1="90" x2="440" y2="90"/></g>
+  <g fill="currentColor" fill-opacity="0.3"><rect x="70" y="22" width="80" height="16"/><rect x="250" y="22" width="60" height="16"/><rect x="120" y="52" width="100" height="16"/><rect x="180" y="82" width="70" height="16"/><rect x="330" y="82" width="90" height="16"/></g>
+  <text x="240" y="120" text-anchor="middle" font-size="9" fill="currentColor">time → (each call borrows a channel, then frees it)</text>
+</svg>
+<figcaption>Voice channels are assigned for the duration of a call, then returned to the shared pool.</figcaption>
+</figure>
+
 ## How it works
 
 The [control channel](/reference/control-channel/) issues a

@@ -26,6 +26,20 @@ per second by **modelling how speech is produced** — pitch, voicing, and spect
 — rather than recording the waveform. It is what makes
 [digital voice](/learn/digital-voice/) radio possible.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 120" role="img" aria-label="Speech analysed into a source-and-filter model, sent as a tiny parameter frame, then re-synthesised back into speech." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <text x="40" y="63">speech</text>
+    <rect x="78" y="44" width="86" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="121" y="58">analyse</text><text x="121" y="70" font-size="8">pitch · spectrum</text>
+    <rect x="200" y="48" width="90" height="26" rx="4" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="245" y="65">~2–4 kbps frame</text>
+    <rect x="326" y="44" width="90" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="371" y="58">synthesise</text><text x="371" y="70" font-size="8">re-create voice</text>
+    <text x="470" y="63">audio</text>
+    <g stroke="currentColor" stroke-width="1.1"><line x1="64" y1="61" x2="77" y2="61"/><line x1="164" y1="61" x2="199" y2="61"/><line x1="290" y1="61" x2="325" y2="61"/><line x1="416" y1="61" x2="448" y2="61"/></g>
+  </g>
+</svg>
+<figcaption>A vocoder models how speech is produced and sends only parameters, so a voice fits in a few kbps.</figcaption>
+</figure>
+
 ## How it works
 
 Many times a second the vocoder extracts compact parameters of a short speech segment
