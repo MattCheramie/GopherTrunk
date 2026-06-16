@@ -281,9 +281,9 @@ type Device struct {
 	t    usb.Transport
 	info sdr.Info
 
-	mu         sync.Mutex
-	closed     bool
-	streaming  bool
+	mu        sync.Mutex
+	closed    bool
+	streaming bool
 	// streamDone is closed when the current stream's teardown goroutine
 	// finishes (after `streaming` is cleared). A new StreamIQ waits on it
 	// so a fast retune can't race the previous stream's async cleanup
