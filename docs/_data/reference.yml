@@ -78,6 +78,11 @@ categories:
       - { slug: symbol-rate, title: Symbol rate (baud), type: term }
       - { slug: constellation-diagram, title: Constellation diagram, type: term }
       - { slug: eye-diagram, title: Eye diagram, type: term }
+      - { slug: pi-4-dqpsk, title: π/4-DQPSK, type: technology }
+      - { slug: gfsk, title: GFSK, type: technology }
+      - { slug: nrzi, title: NRZI, type: term }
+      - { slug: dibit, title: Dibit, type: term }
+      - { slug: pulse-shaping, title: Pulse shaping, type: term }
 
   - id: sdr-dsp
     label: SDR & DSP
@@ -103,6 +108,15 @@ categories:
       - { slug: costas-loop, title: Costas loop, type: algorithm }
       - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
       - { slug: ppm-frequency-correction, title: PPM frequency correction, type: term }
+      - { slug: numerically-controlled-oscillator, title: Numerically controlled oscillator (NCO), type: term }
+      - { slug: fir-filter, title: FIR filter, type: algorithm }
+      - { slug: iir-filter, title: IIR filter, type: algorithm }
+      - { slug: intermediate-frequency, title: Intermediate frequency (IF), type: term }
+      - { slug: baseband, title: Baseband, type: term }
+      - { slug: channelizer, title: Channelizer, type: algorithm }
+      - { slug: resampler, title: Resampler, type: algorithm }
+      - { slug: automatic-frequency-control, title: Automatic frequency control (AFC), type: term }
+      - { slug: dc-offset, title: DC offset (DC spike), type: term }
 
   - id: algorithms
     label: Transforms & algorithms
@@ -126,6 +140,8 @@ categories:
       - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
       - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
       - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
+      - { slug: bptc, title: BPTC, type: algorithm }
+      - { slug: dtmf, title: DTMF, type: term }
 
   - id: trunked-radio
     label: Trunked radio
@@ -141,6 +157,9 @@ categories:
       - { slug: tdma, title: TDMA, type: term }
       - { slug: channel-grant, title: Channel grant, type: term }
       - { slug: radio-id, title: Radio ID, type: term }
+      - { slug: tsbk, title: TSBK, type: term }
+      - { slug: csbk, title: CSBK, type: term }
+      - { slug: rest-channel, title: Rest channel, type: term }
 
   - id: protocols
     label: Protocols & standards
@@ -171,6 +190,10 @@ categories:
       - { slug: ax25, title: AX.25, type: protocol }
       - { slug: dsc, title: Digital Selective Calling (DSC), type: protocol }
       - { slug: mdc1200, title: MDC-1200, type: protocol }
+      - { slug: mode-s, title: Mode S, type: protocol }
+      - { slug: provoice, title: ProVoice, type: protocol }
+      - { slug: capacity-plus, title: Capacity Plus, type: protocol }
+      - { slug: lora, title: LoRa, type: protocol }
 
   - id: voice-coding
     label: Voice coding
@@ -197,6 +220,9 @@ categories:
       - { slug: bias-tee, title: Bias tee, type: hardware }
       - { slug: soapysdr, title: SoapySDR, type: technology }
       - { slug: rtl-tcp, title: rtl_tcp, type: technology }
+      - { slug: zadig, title: Zadig, type: hardware }
+      - { slug: saw-filter, title: SAW filter, type: hardware }
+      - { slug: coaxial-cable, title: Coaxial cable, type: hardware }
 
   - id: people
     label: People
@@ -212,6 +238,8 @@ categories:
       - { slug: andrew-viterbi, title: Andrew Viterbi, type: person }
       - { slug: richard-hamming, title: Richard Hamming, type: person }
       - { slug: reginald-fessenden, title: Reginald Fessenden, type: person }
+      - { slug: john-costas, title: John P. Costas, type: person }
+      - { slug: fred-gardner, title: Floyd M. Gardner, type: person }
 
   - id: organizations
     label: Organizations & standards bodies
@@ -225,3 +253,7 @@ categories:
       - { slug: icao, title: ICAO, type: organization }
       - { slug: dvsi, title: Digital Voice Systems (DVSI), type: organization }
       - { slug: m17-project, title: M17 Project, type: organization }
+      - { slug: radioreference, title: RadioReference, type: organization }
+      - { slug: ofcom, title: Ofcom, type: organization }
+      - { slug: rtca, title: RTCA, type: organization }
+      - { slug: eurocae, title: EUROCAE, type: organization }
