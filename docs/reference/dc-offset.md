@@ -3,7 +3,7 @@ slug: dc-offset
 title: DC offset (DC spike)
 entry_type: term
 category: sdr-dsp
-description: A DC offset is a constant component in an SDR's IQ stream that appears as a spike at the centre (0 Hz) of the spectrum — an artefact of zero-IF receivers, not a real signal.
+description: A DC offset is a constant component in an SDR's IQ stream that shows as a spike at the spectrum centre (0 Hz) — a zero-IF receiver artefact, not a real signal.
 keywords: DC offset, DC spike, center spike, zero-IF, IQ imbalance, LO leakage
 aka: [DC offset, DC spike, "center spike"]
 autolink: true

@@ -3,7 +3,7 @@ slug: fir-filter
 title: FIR filter
 entry_type: algorithm
 category: sdr-dsp
-description: A finite impulse response (FIR) filter computes each output as a weighted sum of recent input samples. It is the workhorse digital filter in SDR — stable and exactly linear-phase.
+description: A finite impulse response (FIR) filter sums weighted recent input samples — the workhorse SDR digital filter, always stable with exactly linear phase.
 keywords: FIR filter, finite impulse response, tapped delay line, linear phase, digital filter, convolution
 aka: [FIR, "finite impulse response filter"]
 autolink: true

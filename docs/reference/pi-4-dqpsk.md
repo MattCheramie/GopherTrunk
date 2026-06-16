@@ -3,7 +3,7 @@ slug: pi-4-dqpsk
 title: π/4-DQPSK
 entry_type: technology
 category: modulation
-description: π/4-DQPSK (π/4-shifted differential quadrature phase-shift keying) is a phase modulation that rotates the constellation by 45° each symbol, used by TETRA and other digital systems.
+description: π/4-DQPSK is a differential phase-shift keying that rotates the constellation 45° per symbol — the modulation used by TETRA and other digital radio systems.
 keywords: pi/4-DQPSK, differential QPSK, TETRA modulation, phase-shift keying, 8-point constellation
 aka: ["pi/4-DQPSK", "π/4 DQPSK", differential QPSK]
 autolink: true

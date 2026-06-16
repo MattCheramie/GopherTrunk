@@ -3,7 +3,7 @@ slug: fcc
 title: Federal Communications Commission (FCC)
 entry_type: organization
 category: organizations
-description: The FCC is the United States regulator of interstate communications, allocating spectrum, licensing users, and setting technical rules including the narrowbanding mandates that drove digital radio.
+description: The FCC is the United States communications regulator — allocating spectrum, licensing users, and setting the technical rules that shaped digital radio.
 keywords: FCC, Federal Communications Commission, spectrum, licensing, narrowbanding, US regulator
 aka: [FCC, Federal Communications Commission]
 autolink: true

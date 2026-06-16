@@ -15,7 +15,7 @@ layout: default
 {%- assign total = all_entries | size -%}
 
 <main id="content" class="page" role="main">
-  <div class="container">
+  <div class="container" data-cta-host>
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
@@ -61,6 +61,7 @@ layout: default
         {%- endfor -%}
       </ul>
     </section>
+    {%- include page-ctas.html -%}
   </div>
 </main>
 

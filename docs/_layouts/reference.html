@@ -37,7 +37,7 @@ layout: default
     <p class="ref-eyebrow">Reference{% if page.entry_type %} · <span class="ref-eyebrow__type">{{ page.entry_type }}</span>{% endif %}</p>
 
     <div class="ref-layout">
-      <article class="prose ref-article">
+      <article class="prose ref-article" data-cta-host>
         {%- if page.aka and page.aka.size > 0 -%}
           <p class="ref-aka">Also known as: {% for a in page.aka %}<span>{{ a }}</span>{% unless forloop.last %}, {% endunless %}{% endfor %}</p>
         {%- endif -%}
@@ -77,6 +77,7 @@ layout: default
             </ul>
           </section>
         {%- endif -%}
+        {%- include page-ctas.html -%}
       </article>
 
       {%- if page.infobox and page.infobox.size > 0 -%}

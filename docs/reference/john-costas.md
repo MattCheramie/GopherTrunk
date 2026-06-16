@@ -3,7 +3,7 @@ slug: john-costas
 title: John P. Costas
 entry_type: person
 category: people
-description: John P. Costas was an American engineer who invented the Costas loop, a carrier-recovery technique essential to demodulating suppressed-carrier and phase-shift-keyed signals.
+description: John P. Costas was an American engineer who invented the Costas loop, a carrier-recovery technique key to demodulating PSK and suppressed-carrier signals.
 keywords: John Costas, Costas loop, carrier recovery, PSK, SSB, engineer
 aka: ["John Costas", "John P. Costas"]
 autolink: true

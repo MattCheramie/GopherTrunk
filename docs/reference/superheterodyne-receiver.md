@@ -3,7 +3,7 @@ slug: superheterodyne-receiver
 title: Superheterodyne receiver
 entry_type: term
 category: sdr-dsp
-description: A superheterodyne receiver uses a mixer and local oscillator to shift a desired band down to a fixed intermediate frequency for easier filtering and detection; SDR front-ends apply the same principle.
+description: A superheterodyne receiver mixes a desired band down to a fixed intermediate frequency for easier filtering and detection — the basis of most SDR front-ends.
 keywords: superheterodyne, superhet, mixer, local oscillator, intermediate frequency, IF, downconversion
 aka: [superheterodyne receiver, superhet]
 autolink: true

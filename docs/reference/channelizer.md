@@ -3,7 +3,7 @@ slug: channelizer
 title: Channelizer
 entry_type: algorithm
 category: sdr-dsp
-description: A channelizer splits one wideband IQ capture into many narrow channels in parallel — how GopherTrunk follows a control channel and several voice channels from a single SDR.
+description: A channelizer splits one wideband IQ capture into many narrow channels at once — how one SDR can follow a control channel and several voice channels in parallel.
 keywords: channelizer, channelization, polyphase, wideband, multi-channel, DDC, parallel decode
 aka: [channelizer, channelization]
 autolink: true

@@ -3,7 +3,7 @@ slug: rest-channel
 title: Rest channel
 entry_type: term
 category: trunked-radio
-description: In some trunked systems the control channel rotates among the pool — the channel currently carrying control signalling is the "rest channel", and it changes as calls are assigned.
+description: In trunked systems with a rotating control channel, the rest channel is the one currently carrying control signalling — it moves as calls are assigned.
 keywords: rest channel, distributed control channel, DMR Capacity Plus, rotating control channel, trunking
 aka: ["rest channel"]
 autolink: true

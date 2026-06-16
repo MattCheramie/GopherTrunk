@@ -3,7 +3,7 @@ slug: vocoder
 title: Vocoder
 entry_type: technology
 category: voice-coding
-description: A vocoder is a speech codec that compresses voice to a few kilobits per second by modelling how speech is produced rather than recording the waveform; it underpins all digital voice radio.
+description: A vocoder is a speech codec that compresses voice to a few kbps by modelling how speech is produced rather than recording it — the basis of all digital voice radio.
 keywords: vocoder, voice codec, speech coding, IMBE, AMBE, source filter model, digital voice
 aka: [vocoder]
 autolink: true

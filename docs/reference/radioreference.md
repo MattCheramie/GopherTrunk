@@ -3,7 +3,7 @@ slug: radioreference
 title: RadioReference
 entry_type: organization
 category: organizations
-description: RadioReference is the largest community database of radio systems, frequencies, talkgroups, and trunked-system parameters — the usual first stop for finding what to monitor.
+description: RadioReference is the largest community database of radio systems, frequencies, and talkgroups — the usual first stop for finding what to monitor.
 keywords: RadioReference, frequency database, trunked systems, talkgroups, scanner database, RR
 aka: [RadioReference, RR]
 autolink: true

@@ -3,7 +3,7 @@ slug: joseph-fourier
 title: Joseph Fourier
 entry_type: person
 category: people
-description: Joseph Fourier (1768–1830) was a French mathematician whose analysis showed that signals can be decomposed into sinusoids — the basis of the Fourier transform and all spectrum analysis.
+description: Joseph Fourier (1768–1830) was a French mathematician who showed signals decompose into sinusoids — the basis of the Fourier transform and spectrum analysis.
 keywords: Joseph Fourier, Fourier series, Fourier transform, frequency analysis, mathematics
 aka: [Joseph Fourier, Fourier]
 autolink: true
