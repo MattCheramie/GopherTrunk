@@ -72,6 +72,26 @@ GopherTrunk demodulates and decodes the signal perfectly; it simply hands you sc
 payload because that's all that was transmitted. **It does not attempt to defeat
 encryption**, which is both impractical and, in many places, specifically prohibited.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 150" role="img" aria-label="A call's data split into two parts. The control-channel metadata — talkgroup and radio ID — is readable. The voice payload is shown locked and scrambled, marked not decodable." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="10" fill="currentColor">
+    <rect x="30" y="40" width="200" height="70" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/>
+    <text x="130" y="34" text-anchor="middle" font-size="9">control channel — readable</text>
+    <text x="46" y="64">✓ Talkgroup 101</text>
+    <text x="46" y="84">✓ Radio ID 4471</text>
+    <text x="46" y="104">✓ Voice channel 3</text>
+    <rect x="290" y="40" width="200" height="70" rx="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 3"/>
+    <text x="390" y="34" text-anchor="middle" font-size="9">voice payload — encrypted</text>
+    <text x="306" y="74" font-family="monospace" font-size="11" fill="currentColor" opacity="0.7">9f3a c1d8 7b22 e0…</text>
+    <text x="306" y="98" font-size="9">✗ not decodable (no key)</text>
+    <text x="390" y="128" text-anchor="middle" font-size="9">🔒 scrambled</text>
+    <line x1="230" y1="75" x2="289" y2="75" stroke="currentColor" stroke-width="1.2" marker-end="url(#en)"/>
+  </g>
+  <defs><marker id="en" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Encryption scrambles the <em>voice</em>, not the <em>traffic</em>. You still see the talkgroup, radio ID, and channel from the control channel — only the audio payload is locked.</figcaption>
+</figure>
+
 ## How to recognise encryption in GopherTrunk
 
 Signs you're dealing with encryption rather than a weak or unsupported signal:

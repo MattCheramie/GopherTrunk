@@ -78,6 +78,21 @@ voice: **P25 Phase 1 (C4FM)** and **DMR** both use 4FSK, where the carrier sits 
 one of four small frequency offsets (deviations) for each symbol. FSK is popular
 because it tolerates the cheap, efficient amplifiers used in handhelds.
 
+Concretely, C4FM's four symbols are four exact frequency **deviations** from the
+channel centre — and each maps to a fixed 2-bit pair (a *dibit*):
+
+| Deviation | Symbol level | Bits (dibit) |
+|-----------|--------------|--------------|
+| +1800 Hz | +3 | 01 |
+| +600 Hz | +1 | 00 |
+| −600 Hz | −1 | 10 |
+| −1800 Hz | −3 | 11 |
+
+When you watch the [symbol scope](/symbol-scope.html), those four levels are
+literally these deviations; on the [constellation](/learn/iq-data/) they're four
+points. A clean signal lands every symbol on one of the four — anything in between
+is the receiver guessing.
+
 ### PSK — phase-shift keying
 
 The carrier's **phase** (its timing offset) jumps between fixed angles while

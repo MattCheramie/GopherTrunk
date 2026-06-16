@@ -74,6 +74,14 @@ coder): instead of transmitting the speech *waveform*, it transmits a compact
 something that sounds like the talker. This squeezes a voice into a few kbps, which is
 the whole reason digital voice fits. The next lesson is devoted to how vocoders do this.
 
+The scale of the squeeze is dramatic. Uncompressed phone-quality audio is about
+**64 kbps**; an MP3 music stream, 128+ kbps. A P25 voice channel carries the actual
+speech in roughly **4.4 kbps** — and that has to share the channel with error
+correction and signalling. That's better than a **10:1** reduction versus a plain phone
+call, achievable *only* because the vocoder models speech rather than storing sound.
+Squeeze that hard and some fidelity is unavoidably lost — the source of digital voice's
+characteristic timbre.
+
 ## Quality, range, and the cliff effect
 
 Two perceptual differences fall out of going digital:

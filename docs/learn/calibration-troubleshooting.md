@@ -60,6 +60,33 @@ roughly constant per dongle, though it **drifts with temperature** — let the d
 up for a few minutes before calibrating. A correct PPM is exactly what cures the
 *rotating constellation* from the [tuning lesson](/learn/tuning-with-scopes/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 150" role="img" aria-label="Two channel grids. Before correction, the received signal sits a few kHz off the channel centre between two channels. After PPM correction, it lands exactly on the channel." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <!-- before -->
+    <text x="120" y="20" font-weight="600">before — 14 kHz off</text>
+    <line x1="30" y1="90" x2="220" y2="90" stroke="currentColor" stroke-opacity="0.4"/>
+    <g stroke="currentColor" stroke-opacity="0.4"><line x1="70" y1="84" x2="70" y2="96"/><line x1="125" y1="84" x2="125" y2="96"/><line x1="180" y1="84" x2="180" y2="96"/></g>
+    <text x="125" y="110" font-size="8">channel centre</text>
+    <path d="M95 90 L101 50 L107 90 Z" fill="currentColor" fill-opacity="0.4" stroke="currentColor"/>
+    <text x="101" y="44" font-size="8">signal</text>
+    <line x1="101" y1="68" x2="124" y2="68" stroke="currentColor" stroke-dasharray="3 2"/>
+    <text x="112" y="62" font-size="7">✗ between channels</text>
+    <!-- after -->
+    <text x="400" y="20" font-weight="600">after PPM correction</text>
+    <line x1="300" y1="90" x2="490" y2="90" stroke="currentColor" stroke-opacity="0.4"/>
+    <g stroke="currentColor" stroke-opacity="0.4"><line x1="340" y1="84" x2="340" y2="96"/><line x1="395" y1="84" x2="395" y2="96"/><line x1="450" y1="84" x2="450" y2="96"/></g>
+    <text x="395" y="110" font-size="8">channel centre</text>
+    <path d="M389 90 L395 50 L401 90 Z" fill="currentColor" fill-opacity="0.4" stroke="currentColor"/>
+    <text x="395" y="44" font-size="8">signal</text>
+    <text x="395" y="130" font-size="7">✓ on channel — locks</text>
+    <line x1="225" y1="70" x2="298" y2="70" stroke="currentColor" stroke-width="1.2" marker-end="url(#pp)"/>
+  </g>
+  <defs><marker id="pp" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>An uncorrected dongle lands the signal off the channel centre (here ~14 kHz at UHF) — between channels, so it won't lock. The right PPM value shifts it back onto the channel.</figcaption>
+</figure>
+
 ## Voice calibration for clean audio
 
 Once a system locks, [voice calibration](/voice-calibration.html) dials in the **decoded

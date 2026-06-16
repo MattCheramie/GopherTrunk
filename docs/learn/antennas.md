@@ -58,6 +58,13 @@ Recall *λ ≈ 300 ÷ MHz* from [lesson 1](/learn/radio-waves/): plug in the fre
 take a quarter or half. A whip cut for the band you care about will dramatically
 out-perform a random "telescopic" antenna left at the wrong length.
 
+**Worked example — sizing a whip for an 800 MHz P25 system.** Wavelength is
+*300 ÷ 800 = 0.375 m* (37.5 cm). A quarter-wave whip is a quarter of that:
+*0.375 ÷ 4 ≈ 0.094 m*, or about **9.4 cm**. (In practice you trim slightly shorter —
+roughly 95% — to account for the antenna's electrical vs. physical length, so ~9 cm.)
+That tiny stub is why 800 MHz scanner antennas are so short, and why a long telescopic
+whip left fully extended is *wrong* for this band — it's resonant somewhere far lower.
+
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 150" role="img" aria-label="A vertical dipole antenna: two rods, each a quarter wavelength, fed in the middle, radiating a doughnut-shaped pattern around it." xmlns="http://www.w3.org/2000/svg">
   <line x1="180" y1="20" x2="180" y2="68" stroke="currentColor" stroke-width="3"/>

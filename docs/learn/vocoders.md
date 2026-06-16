@@ -66,6 +66,28 @@ them into a matching synthesiser — *recreating* a voice that sounds like the t
 rather than replaying a recording. The codecs in P25 and DMR belong to the **MBE
 (Multi-Band Excitation)** family, which is a refined version of this idea.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 540 150" role="img" aria-label="The source-plus-filter speech model. A pitch source and a noise source feed a vocal-tract filter to produce speech. The vocoder measures pitch, voicing, and spectral shape and sends them as a tiny frame, which the receiver synthesises back into audio." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <rect x="14" y="24" width="86" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="57" y="41">pitch (buzz)</text>
+    <rect x="14" y="74" width="86" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="57" y="91">noise (hiss)</text>
+    <rect x="140" y="48" width="96" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="188" y="62">vocal-tract</text><text x="188" y="73" font-size="8">filter (spectral shape)</text>
+    <line x1="100" y1="37" x2="139" y2="58" stroke="currentColor" stroke-width="1.1"/>
+    <line x1="100" y1="87" x2="139" y2="68" stroke="currentColor" stroke-width="1.1"/>
+    <text x="188" y="98" font-size="8">= speech</text>
+    <rect x="276" y="48" width="74" height="30" rx="5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.2"/><text x="313" y="60">tiny frame</text><text x="313" y="71" font-size="8">few kbps</text>
+    <line x1="236" y1="63" x2="275" y2="63" stroke="currentColor" stroke-width="1.2" marker-end="url(#vc)"/>
+    <text x="256" y="42" font-size="8">measure</text>
+    <rect x="392" y="48" width="96" height="30" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/><text x="440" y="62">synthesise</text><text x="440" y="73" font-size="8">(receiver)</text>
+    <line x1="350" y1="63" x2="391" y2="63" stroke="currentColor" stroke-width="1.2" marker-end="url(#vc)"/>
+    <text x="505" y="66" text-anchor="start">audio</text>
+    <line x1="488" y1="63" x2="500" y2="63" stroke="currentColor" stroke-width="1.2" marker-end="url(#vc)"/>
+  </g>
+  <defs><marker id="vc" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Source + filter: a vocoder measures the pitch/voicing source and the vocal-tract filter, sends just those parameters as a tiny frame, and the receiver re-builds the voice from them.</figcaption>
+</figure>
+
 ## IMBE and the P25 connection
 
 **IMBE — Improved Multi-Band Excitation** — is the vocoder of **P25 Phase 1**. It runs

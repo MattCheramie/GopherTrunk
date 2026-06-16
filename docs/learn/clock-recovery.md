@@ -66,6 +66,13 @@ the rhythm purely from where the signal's transitions fall.
 Worse, the two clocks drift slightly relative to each other, so the timing isn't a
 one-time guess — it has to be **continuously tracked**.
 
+How much drift? A cheap dongle's clock might be off by **20 ppm** — 20 parts per
+million. At 4800 [baud](/learn/symbols-and-baud/) that's only about 0.1 symbol of slip
+per second, which sounds negligible. But a digital frame is thousands of symbols long,
+so left uncorrected the sampling point would wander right out of the symbol within a
+fraction of a second and the decode would collapse. That's why clock recovery is a
+*loop* that nudges constantly, not a one-time measurement.
+
 ## How a receiver locks to the symbol rate
 
 A **timing-recovery loop** solves it. In essence the receiver:

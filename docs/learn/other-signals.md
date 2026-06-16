@@ -89,6 +89,25 @@ Smaller signalling systems are everywhere:
 These add identity and control data to otherwise analog systems, and GopherTrunk can
 surface them.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 540 130" role="img" aria-label="A frequency line from about 144 MHz to 1090 MHz with markers for APRS at 144.39, marine AIS near 162, paging in the VHF/UHF range, and ADS-B at 1090 MHz." xmlns="http://www.w3.org/2000/svg">
+  <line x1="30" y1="80" x2="510" y2="80" stroke="currentColor" stroke-opacity="0.4"/>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <g stroke="currentColor" stroke-width="1.2">
+      <line x1="70" y1="74" x2="70" y2="86"/><line x1="150" y1="74" x2="150" y2="86"/>
+      <line x1="250" y1="74" x2="250" y2="86"/><line x1="480" y1="74" x2="480" y2="86"/>
+    </g>
+    <text x="70" y="66">APRS</text><text x="70" y="100" font-size="8">144.39</text>
+    <text x="150" y="66">AIS</text><text x="150" y="100" font-size="8">~162</text>
+    <text x="250" y="66">paging</text><text x="250" y="100" font-size="8">VHF/UHF</text>
+    <text x="480" y="66">ADS-B</text><text x="480" y="100" font-size="8">1090</text>
+    <text x="30" y="118" font-size="8" text-anchor="start">144 MHz</text>
+    <text x="510" y="118" font-size="8" text-anchor="end">1090 MHz →</text>
+  </g>
+</svg>
+<figcaption>A rough map of where these signals live. Each is in range of a basic RTL-SDR — only the antenna and software change.</figcaption>
+</figure>
+
 ## Why this matters for your learning
 
 Every one of these uses the **exact concepts** from this path — a

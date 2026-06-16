@@ -68,6 +68,13 @@ That's why FM sounds clean and is everywhere: **FM broadcast** (wide deviation,
 the digital voice systems GopherTrunk decodes. FM also has a *capture effect*: the
 strongest signal on a channel takes over, suppressing weaker ones.
 
+How wide is an FM signal? A handy estimate (Carson's rule) is *bandwidth ≈ 2 ×
+(deviation + top audio frequency)*. Narrowband two-way FM with ~2.5 kHz deviation and
+3 kHz audio works out to *2 × (2.5 + 3) = 11 kHz* — which is why it fits a 12.5 kHz
+[channel](/learn/frequency-and-spectrum/). Wide-deviation FM broadcast (~75 kHz
+deviation, 15 kHz audio) needs *2 × (75 + 15) = 180 kHz* — hence the ~200 kHz channels.
+More deviation buys better noise immunity at the cost of bandwidth.
+
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 440 170" role="img" aria-label="Three rows. A message wave on top. AM below it shown as a wave whose height follows the message. FM shown as a wave whose spacing tightens and loosens with the message." xmlns="http://www.w3.org/2000/svg">
   <text x="6" y="22" font-size="10" fill="currentColor">message</text>

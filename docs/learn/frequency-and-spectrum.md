@@ -75,6 +75,26 @@ Notice the wavelength column — it's just *λ ≈ 300 ÷ MHz* from the last les
 shrinks as you climb, which is why a UHF antenna is a handspan while an HF antenna
 can be metres long.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 540 120" role="img" aria-label="A horizontal map of the radio spectrum from VLF on the left to SHF on the right, with the VHF and UHF bands highlighted as the main scanning range." xmlns="http://www.w3.org/2000/svg">
+  <line x1="20" y1="60" x2="520" y2="60" stroke="currentColor" stroke-opacity="0.4"/>
+  <g font-size="10" fill="currentColor" text-anchor="middle">
+    <g stroke="currentColor" stroke-width="1">
+      <line x1="20" y1="55" x2="20" y2="65"/><line x1="92" y1="55" x2="92" y2="65"/>
+      <line x1="164" y1="55" x2="164" y2="65"/><line x1="236" y1="55" x2="236" y2="65"/>
+      <line x1="308" y1="55" x2="308" y2="65"/><line x1="452" y1="55" x2="452" y2="65"/><line x1="520" y1="55" x2="520" y2="65"/>
+    </g>
+    <rect x="308" y="48" width="144" height="24" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="1.2"/>
+    <text x="56" y="46">VLF</text><text x="128" y="46">LF</text><text x="200" y="46">MF</text><text x="272" y="46">HF</text>
+    <text x="344" y="44" font-weight="600">VHF</text><text x="416" y="44" font-weight="600">UHF</text><text x="486" y="46">SHF</text>
+    <text x="56" y="84" font-size="8">3 kHz</text><text x="272" y="84" font-size="8">3 MHz</text>
+    <text x="380" y="98" font-size="9" font-weight="600">← most scanning lives here →</text>
+    <text x="500" y="84" font-size="8">30 GHz</text>
+  </g>
+</svg>
+<figcaption>The radio spectrum at a glance. Frequency rises left to right; each band is a ten-fold step. VHF and UHF (highlighted) carry the bulk of scanner and trunked-radio traffic.</figcaption>
+</figure>
+
 ## Why does the band change how a signal behaves?
 
 The band sets the *propagation* — how far and by what path a signal travels (the
@@ -113,6 +133,25 @@ A rough tour of where common things live (exact allocations vary by country):
 You don't memorise this — you look up specific systems in a database. But knowing the
 *shape* of the band plan means that when you see a signal on the
 [waterfall](/learn/fft-and-waterfall/), you already have a guess about what it is.
+
+### Channel spacing: the grid within a band
+
+Zoom into an allocation and it's divided again into evenly spaced **channels**. The
+spacing is the step between adjacent channel centres, and it tells you how wide each
+signal is allowed to be:
+
+| Channel spacing | Era / use | Example |
+|-----------------|-----------|---------|
+| 25 kHz | Older "wideband" land-mobile | Legacy analog FM |
+| 12.5 kHz | Modern "narrowband" | P25 Phase 1, DMR, NXDN (wider) |
+| 6.25 kHz | Very narrow | NXDN, dPMR |
+
+So a P25 control channel listed as 851.0125 MHz sits on a **12.5 kHz grid** — the
+adjacent channels are at 851.000 and 851.025. This matters in practice: it sets the
+[filter width](/learn/filtering-decimation/) GopherTrunk needs and explains why
+mistuning by even a few kilohertz lands you between channels. Regulators have steadily
+pushed users from 25 → 12.5 kHz (and narrower) to fit more systems in the same band —
+a big reason analog gave way to [digital](/learn/digital-voice/).
 
 ## How does this map to my SDR?
 

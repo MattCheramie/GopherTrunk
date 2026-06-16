@@ -75,6 +75,24 @@ So the same signal can be described two ways without contradiction: its **symbol
 (baud) and its **bitrate** (bps). They diverge whenever there's more than one bit per
 symbol.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 150" role="img" aria-label="A four-level signal over time. Each step sits at one of four levels and is labelled with the two bits it represents: 00, 01, 10, 11." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-opacity="0.25">
+    <line x1="40" y1="30" x2="500" y2="30"/><line x1="40" y1="60" x2="500" y2="60"/>
+    <line x1="40" y1="90" x2="500" y2="90"/><line x1="40" y1="120" x2="500" y2="120"/>
+  </g>
+  <g font-size="9" fill="currentColor" text-anchor="end">
+    <text x="36" y="33">+3 (11)</text><text x="36" y="63">+1 (10)</text><text x="36" y="93">−1 (01)</text><text x="36" y="123">−3 (00)</text>
+  </g>
+  <polyline points="50,90 110,90 110,30 170,30 170,120 230,120 230,60 290,60 290,30 350,30 350,90 410,90 410,120 470,120" fill="none" stroke="currentColor" stroke-width="2"/>
+  <g font-size="9" fill="currentColor" text-anchor="middle">
+    <text x="80" y="105">01</text><text x="140" y="22">11</text><text x="200" y="135">00</text><text x="260" y="52">10</text><text x="320" y="22">11</text><text x="380" y="105">01</text><text x="440" y="135">00</text>
+  </g>
+  <text x="270" y="148" text-anchor="middle" font-size="9" fill="currentColor">one symbol per step · each carries 2 bits →</text>
+</svg>
+<figcaption>A 4-level (4FSK/C4FM) signal. Each step is one <strong>symbol</strong> at one of four levels, and each carries <strong>2 bits</strong> — so the bitrate is twice the symbol rate.</figcaption>
+</figure>
+
 ## Worked example: P25 and DMR
 
 P25 Phase 1 uses **C4FM**, a four-level [FSK](/learn/digital-modulation/):
@@ -87,6 +105,21 @@ That's why you'll see both "4800 symbols/s" and "9600 bps" quoted for P25 — th
 the symbol rate and the bitrate of the very same signal. DMR likewise uses 4-level FSK
 at 4800 baud, organised into two time slots. When someone says a system is "9600,"
 they usually mean its bitrate; "4800" is its baud.
+
+### Two ways to send more data
+
+Say you want to double a system's data rate. The bitrate formula shows there are
+exactly two levers — and each has a cost:
+
+| Lever | What changes | The cost |
+|-------|--------------|----------|
+| **Raise the symbol rate** (e.g. 4800 → 9600 baud) | More symbols per second | Wider [bandwidth](/learn/sample-rate-nyquist/) — the signal occupies more spectrum |
+| **More bits per symbol** (e.g. 4 → 16 states) | Each symbol carries more | Higher [SNR](/learn/decibels/) needed — the states crowd closer, so noise causes errors sooner |
+
+This is the fundamental trade-off behind every digital mode. Narrowband public-safety
+systems can't just widen their channel (the [12.5 kHz grid](/learn/frequency-and-spectrum/)
+forbids it), so to gain capacity they lean on cleverer schemes and time slots rather
+than raw bandwidth — which is exactly why [P25 Phase 2 and DMR use TDMA](/learn/protocol-landscape/).
 
 ## Why symbol rate matters for capture
 

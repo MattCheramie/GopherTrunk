@@ -183,6 +183,28 @@ dB over a few kilometres) and **antenna gain** (a directional antenna concentrat
 energy, adding several dB in its favoured direction). Master this and you can
 predict, roughly, whether a system will be receivable before you ever tune to it.
 
+### Worked example: "will I hear it?"
+
+Put it all together. A repeater transmits **+47 dBm** (about 50 W). You're far
+enough away that **path loss** is **−120 dB**. Your antenna adds **+3 dB**, but coax
+and connectors cost **−4 dB**. Just add them up:
+
+```
+  +47 dBm   transmitter power
+  -120 dB   path loss
+   +3 dB    antenna gain
+   -4 dB    feedline + connector loss
+  ----------
+  -74 dBm   signal at the SDR
+```
+
+Now compare against the **noise floor**. If yours is around **−100 dBm**, your
+**SNR ≈ −74 − (−100) = 26 dB** — comfortably above what any digital voice mode
+needs, so it'll decode cleanly. Drop to a worse antenna (−74 → say −90 dBm signal)
+and SNR falls to 10 dB — still workable, but closer to the edge. This back-of-the-
+envelope sum, done entirely in decibels, is exactly how you reason about whether a
+system is worth chasing and what a better antenna or location would buy you.
+
 <div class="knowledge-check" data-quiz data-correct-msg="Exactly — +20 dB is two 10x steps, so 100x the power." markdown="0">
   <p class="knowledge-check__q">Quick check: how much more power is −60 dBm than −80 dBm?</p>
   <ul class="quiz__options">

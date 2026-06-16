@@ -107,6 +107,13 @@ GopherTrunk takes a wide IQ stream and **channelises** it — digitally
 [filtering and decimating](/learn/filtering-decimation/) out each narrow channel it
 needs. So the question isn't "how wide can I go" but "how wide do I *need*."
 
+**Worked example.** Suppose a system's control channel is at 851.0 MHz and its voice
+channels span up to 853.4 MHz — a 2.4 MHz spread. Centre an RTL-SDR at 852.2 MHz and
+run it at **2.4 MSa/s**: the whole system fits in one capture, with no retuning.
+Each 12.5 kHz channel is then filtered out and decimated down to perhaps **24 kSa/s**
+— a **100×** reduction — before demodulation. That's the magic: you sample the *band*
+fast, but each *channel* slowly, so a modest CPU can follow many at once.
+
 ## Choosing a sample rate for trunk-tracking
 
 A trunked system's [control channel](/learn/what-is-trunking/) and its voice channels

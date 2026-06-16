@@ -64,6 +64,43 @@ A healthy decode has a recognisable signature across the scopes:
 If you see that, you're done — leave it alone. When you don't, the *way* it's wrong is
 the clue.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 180" role="img" aria-label="Healthy versus degraded scopes. On the left, a constellation with four tight clusters and a wide-open eye diagram. On the right, smeared constellation clusters and a closing eye diagram." xmlns="http://www.w3.org/2000/svg">
+  <text x="130" y="16" text-anchor="middle" font-size="11" fill="currentColor" font-weight="600">healthy lock</text>
+  <text x="390" y="16" text-anchor="middle" font-size="11" fill="currentColor" font-weight="600">degraded</text>
+  <!-- healthy constellation -->
+  <g fill="currentColor">
+    <circle cx="60" cy="60" r="2.5"/><circle cx="58" cy="62" r="2.5"/><circle cx="62" cy="59" r="2.5"/>
+    <circle cx="110" cy="60" r="2.5"/><circle cx="108" cy="62" r="2.5"/><circle cx="112" cy="58" r="2.5"/>
+    <circle cx="60" cy="100" r="2.5"/><circle cx="62" cy="98" r="2.5"/><circle cx="59" cy="101" r="2.5"/>
+    <circle cx="110" cy="100" r="2.5"/><circle cx="108" cy="99" r="2.5"/><circle cx="112" cy="101" r="2.5"/>
+  </g>
+  <text x="85" y="124" text-anchor="middle" font-size="8" fill="currentColor">tight clusters</text>
+  <!-- healthy eye -->
+  <g stroke="currentColor" fill="none" stroke-width="1.1" stroke-opacity="0.85">
+    <path d="M160 45 C185 45 185 100 210 100 C235 100 235 45 260 45"/>
+    <path d="M160 100 C185 100 185 45 210 45 C235 45 235 100 260 100"/>
+  </g>
+  <text x="210" y="124" text-anchor="middle" font-size="8" fill="currentColor">open eye</text>
+  <!-- degraded constellation -->
+  <g fill="currentColor" fill-opacity="0.7">
+    <circle cx="318" cy="58" r="2.5"/><circle cx="310" cy="66" r="2.5"/><circle cx="326" cy="52" r="2.5"/><circle cx="320" cy="72" r="2.5"/>
+    <circle cx="372" cy="60" r="2.5"/><circle cx="380" cy="70" r="2.5"/><circle cx="366" cy="54" r="2.5"/><circle cx="384" cy="64" r="2.5"/>
+    <circle cx="320" cy="100" r="2.5"/><circle cx="312" cy="106" r="2.5"/><circle cx="328" cy="96" r="2.5"/>
+    <circle cx="374" cy="100" r="2.5"/><circle cx="382" cy="106" r="2.5"/><circle cx="366" cy="96" r="2.5"/>
+  </g>
+  <text x="345" y="124" text-anchor="middle" font-size="8" fill="currentColor">smeared</text>
+  <!-- degraded eye -->
+  <g stroke="currentColor" fill="none" stroke-width="1.1" stroke-opacity="0.85">
+    <path d="M420 55 C445 60 445 90 470 90 C495 90 495 60 520 55"/>
+    <path d="M420 90 C445 85 445 60 470 60 C495 60 495 85 520 90"/>
+  </g>
+  <text x="470" y="124" text-anchor="middle" font-size="8" fill="currentColor">closing eye</text>
+  <line x1="290" y1="30" x2="290" y2="135" stroke="currentColor" stroke-opacity="0.25"/>
+</svg>
+<figcaption>The same signal, healthy vs. degraded. Tight clusters and an open eye decode cleanly; smeared clusters and a closing eye are about to drop symbols.</figcaption>
+</figure>
+
 ## Reading the constellation for SNR and tuning
 
 The [constellation](/constellation.html) is your first stop. Two failure modes have

@@ -69,6 +69,13 @@ you need to capture the whole thing (a theme that returns in
 Wider isn't "better" — it's a trade. More bandwidth carries more data but uses more
 spectrum and demands more of your receiver and CPU.
 
+This is why bandwidth is the *first* number to know about a signal: it sets how much
+receiver bandwidth you must capture. To decode a 12.5 kHz P25 channel you only need to
+[filter](/learn/filtering-decimation/) out ~12.5 kHz around it — but to capture a whole
+FM broadcast station you need ~200 kHz, sixteen times as much. Capture too little and
+you clip the signal's edges and lose data; the bandwidth tells you exactly how wide to
+open the window.
+
 ## The spectrum view vs. the waterfall
 
 SDRs give you two windows onto the same data:

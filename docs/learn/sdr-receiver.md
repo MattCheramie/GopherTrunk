@@ -86,6 +86,12 @@ The beautiful part: **tuning the radio is just changing the LO frequency.** Want
 different part of the spectrum? Move the LO so that part lands in the ADC's window.
 There are no mechanical dials — just a number.
 
+**Worked example.** To receive an 851.0 MHz control channel, the tuner sets its LO so
+that 851.0 MHz mixes down to baseband (0 Hz at the centre of the capture). To jump to
+770.0 MHz instead, it simply moves the LO down by 81 MHz — the same hardware, a
+different number. Whatever sits within ±half the [sample rate](/learn/sample-rate-nyquist/)
+of the LO appears in your captured band, ready for software to [channelise](/learn/filtering-decimation/).
+
 ## The analog-to-digital converter (ADC)
 
 The **ADC** measures the down-shifted signal millions of times a second, turning the

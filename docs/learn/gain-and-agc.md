@@ -100,6 +100,14 @@ peaks somewhere comfortably below 0 — leaving **headroom** for bursts and the 
 local transmitters. GopherTrunk's [tuning meters](/tuning.html) show level and SNR live,
 so you can watch this directly rather than guess.
 
+**Worked example.** Say your strongest local signal currently peaks at **−18 dBFS**.
+That's 18 dB of headroom — plenty, and you could raise gain to pull up weaker signals.
+Add 12 dB of gain and it now peaks at **−6 dBFS**: still safe, but close. Add another
+10 dB and it hits **+4 dBFS** — impossible, so it **clips**, and the band fills with
+[spurious signals](/learn/sample-rate-nyquist/). The sweet spot here was the **−6 dBFS**
+setting: weak signals lifted as far as possible while the strong one keeps a few dB of
+margin below the ceiling.
+
 ## Manual gain vs. AGC
 
 **AGC (automatic gain control)** adjusts gain on its own to chase the current signal.

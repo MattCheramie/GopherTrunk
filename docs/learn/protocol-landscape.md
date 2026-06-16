@@ -50,6 +50,32 @@ each call its own frequency. **TDMA** (time-division) splits one frequency into 
 **time slots**, so two or more calls share it by taking turns. TDMA doubles capacity in
 the same spectrum, which is why newer standards adopt it. Keep this in mind as we go.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 180" role="img" aria-label="Two grids of frequency versus time. FDMA on the left gives each call its own horizontal frequency lane. TDMA on the right fits two calls on one frequency by alternating time slots." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="10" fill="currentColor">
+    <!-- FDMA -->
+    <text x="110" y="18" text-anchor="middle" font-weight="600">FDMA</text>
+    <line x1="40" y1="150" x2="200" y2="150" stroke="currentColor" stroke-opacity="0.4"/>
+    <line x1="40" y1="30" x2="40" y2="150" stroke="currentColor" stroke-opacity="0.4"/>
+    <text x="120" y="170" text-anchor="middle" font-size="9">time →</text>
+    <text x="30" y="90" font-size="9" transform="rotate(-90 30 90)">freq →</text>
+    <rect x="44" y="50" width="152" height="26" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="0.8"/><text x="120" y="67" text-anchor="middle" font-size="9">call A — channel 1</text>
+    <rect x="44" y="86" width="152" height="26" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.8"/><text x="120" y="103" text-anchor="middle" font-size="9">call B — channel 2</text>
+    <!-- TDMA -->
+    <text x="400" y="18" text-anchor="middle" font-weight="600">TDMA</text>
+    <line x1="330" y1="150" x2="490" y2="150" stroke="currentColor" stroke-opacity="0.4"/>
+    <line x1="330" y1="30" x2="330" y2="150" stroke="currentColor" stroke-opacity="0.4"/>
+    <text x="410" y="170" text-anchor="middle" font-size="9">time →</text>
+    <rect x="334" y="68" width="38" height="44" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="0.8"/><text x="353" y="94" text-anchor="middle" font-size="9">A</text>
+    <rect x="372" y="68" width="38" height="44" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.8"/><text x="391" y="94" text-anchor="middle" font-size="9">B</text>
+    <rect x="410" y="68" width="38" height="44" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="0.8"/><text x="429" y="94" text-anchor="middle" font-size="9">A</text>
+    <rect x="448" y="68" width="38" height="44" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.8"/><text x="467" y="94" text-anchor="middle" font-size="9">B</text>
+    <text x="410" y="128" text-anchor="middle" font-size="8">one frequency, alternating slots</text>
+  </g>
+</svg>
+<figcaption>FDMA gives each call its own frequency lane; TDMA fits two calls (A and B) on one frequency by taking turns in time slots — twice the capacity in the same channel.</figcaption>
+</figure>
+
 ## P25 (Phase 1 and Phase 2)
 
 **P25** is the open standard for **North-American public safety**:

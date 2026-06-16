@@ -46,6 +46,24 @@ Module 6 puts the whole path to work. The very first practical task is finding s
 to listen to — specifically, a system's [control channel](/learn/what-is-trunking/), the
 key that unlocks everything else.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 540 96" role="img" aria-label="A four-step workflow: look up a database or run Hunt, find the control channel, identify the system, then add or import it into GopherTrunk." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="9.5" fill="currentColor" text-anchor="middle">
+    <rect x="12" y="34" width="108" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="66" y="49">database / Hunt</text><text x="66" y="61" font-size="8">where to look</text>
+    <rect x="148" y="34" width="108" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="202" y="49">control channel</text><text x="202" y="61" font-size="8">the steady stripe</text>
+    <rect x="284" y="34" width="108" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="338" y="49">identify</text><text x="338" y="61" font-size="8">protocol &amp; params</text>
+    <rect x="420" y="34" width="108" height="34" rx="6" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.3"/><text x="474" y="49">add / import</text><text x="474" y="61" font-size="8">into GopherTrunk</text>
+    <g stroke="currentColor" stroke-width="1.2">
+      <line x1="120" y1="51" x2="147" y2="51" marker-end="url(#fs)"/>
+      <line x1="256" y1="51" x2="283" y2="51" marker-end="url(#fs)"/>
+      <line x1="392" y1="51" x2="419" y2="51" marker-end="url(#fs)"/>
+    </g>
+  </g>
+  <defs><marker id="fs" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>The find-and-add workflow: locate a candidate (database or Hunt), confirm the control channel, identify the system, and bring it into GopherTrunk.</figcaption>
+</figure>
+
 ## Online databases — start here
 
 The easiest way to find systems is to look them up. **RadioReference** (and similar

@@ -103,6 +103,23 @@ The next call from the same talkgroup might land on channel 7, then channel 2. T
 *frequency is never fixed* — which is exactly why you can't scan a trunked system the
 old-fashioned way.
 
+### Watching the pool churn
+
+To see why this defeats an old scanner, follow ten seconds on a busy system —
+this is exactly the stream GopherTrunk reads on the control channel:
+
+| Time | Control-channel message | What a follower does |
+|------|-------------------------|----------------------|
+| 0.0 s | TG 101 (Dispatch) → channel 3 | Tune a receiver to ch 3, record |
+| 1.2 s | TG 250 (Fire) → channel 7 | Tune a *second* receiver to ch 7 |
+| 3.8 s | TG 101 ends; ch 3 released | Free ch 3 back to the pool |
+| 4.1 s | TG 101 (Dispatch) → channel 2 | The *same* talkgroup, a *new* channel |
+| 5.5 s | TG 412 (Transit) → channel 3 | Reuse ch 3, now a different group |
+
+An old scanner parked on "channel 3" would hear Dispatch, then silence, then Transit
+— a meaningless jumble. A trunk-tracker following the *control channel* knows who's on
+each channel at every instant, which is the whole point of decoding it first.
+
 ## What is a talkgroup?
 
 Because the physical frequency keeps changing, trunked systems give users a stable

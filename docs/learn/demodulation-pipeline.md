@@ -126,6 +126,19 @@ plus each active [voice channel](/learn/antenna-to-audio/) — and runs them con
 One radio, many simultaneous decodes. The [Architecture](/architecture.html) page shows
 how this is wired in practice.
 
+Notice how the **data rate collapses** as you move down the pipeline — which is why the
+expensive early stages are shared and the cheap late stages are many:
+
+| Stage | Roughly how much data |
+|-------|-----------------------|
+| Raw IQ in | ~2.4 M complex samples/s (the whole band) |
+| After filter + decimate | ~24 k samples/s (one channel) |
+| After symbol recovery | 4800 symbols/s |
+| After decode | 9600 bits/s, then a handful of [vocoder](/learn/vocoders/) frames |
+
+A million-to-one reduction from antenna to message — each stage throwing away what the
+next doesn't need.
+
 <div class="knowledge-check" data-quiz data-correct-msg="Right — demodulation recovers the waveform; decoding interprets the resulting bits." markdown="0">
   <p class="knowledge-check__q">Quick check: which stage applies forward error correction and extracts the message?</p>
   <ul class="quiz__options">

@@ -95,6 +95,28 @@ not the obvious trunk-tracking pick.
 | Airspy HF+ | HF–low VHF | ~0.66 MHz | No | HF / low-band reception |
 | HackRF One | ~1 MHz–6 GHz | up to ~20 MHz | Yes | Wideband experimentation |
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 540 170" role="img" aria-label="Frequency coverage bars for four SDRs against a log frequency axis from 1 MHz to 6 GHz. A shaded band marks the VHF/UHF/700-800 MHz trunked-radio range." xmlns="http://www.w3.org/2000/svg">
+  <rect x="206" y="20" width="150" height="120" fill="currentColor" fill-opacity="0.08"/>
+  <text x="281" y="16" text-anchor="middle" font-size="9" fill="currentColor">trunked-radio range</text>
+  <g font-size="9" fill="currentColor">
+    <text x="10" y="44">RTL-SDR</text>
+    <rect x="120" y="36" width="250" height="12" rx="3" fill="currentColor" fill-opacity="0.4"/>
+    <text x="10" y="74">Airspy R2</text>
+    <rect x="120" y="66" width="255" height="12" rx="3" fill="currentColor" fill-opacity="0.4"/>
+    <text x="10" y="104">Airspy HF+</text>
+    <rect x="60" y="96" width="80" height="12" rx="3" fill="currentColor" fill-opacity="0.4"/>
+    <text x="10" y="134">HackRF</text>
+    <rect x="95" y="126" width="420" height="12" rx="3" fill="currentColor" fill-opacity="0.4"/>
+  </g>
+  <line x1="40" y1="150" x2="520" y2="150" stroke="currentColor" stroke-opacity="0.4"/>
+  <g font-size="8" fill="currentColor" text-anchor="middle">
+    <text x="60" y="162">1 MHz</text><text x="206" y="162">30 MHz</text><text x="356" y="162">1 GHz</text><text x="515" y="162">6 GHz</text>
+  </g>
+</svg>
+<figcaption>Coverage at a glance (frequency axis is roughly logarithmic). Most radios comfortably cover the trunked-radio range; the HF+ trades reach for low-band excellence, and HackRF spans the most.</figcaption>
+</figure>
+
 ## Remote backends
 
 The radio doesn't have to sit next to the computer running GopherTrunk. **rtl_tcp** and

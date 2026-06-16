@@ -67,6 +67,13 @@ Why bother? Because every later stage —
 [demodulation](/learn/demodulation-pipeline/), [clock recovery](/learn/clock-recovery/),
 decoding — does work *per sample*. Fewer samples = far less CPU.
 
+**Worked example.** Capture at **2.4 MSa/s** but you only need a single 12.5 kHz
+channel. Filter to that channel, then decimate by a factor of **100** to **24 kSa/s** —
+still well above [Nyquist](/learn/sample-rate-nyquist/) for a 12.5 kHz signal, but a
+hundredth of the data. Run that for ten channels at once and you're still processing
+far less than the single raw stream. The decimation factor is yours to choose: just
+keep the result comfortably wider than the channel you kept.
+
 ## Why filter before decimating?
 
 Order is everything. Decimation **reduces the representable bandwidth** (it's the

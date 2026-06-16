@@ -67,6 +67,23 @@ questions**.
 | **Divulging** | Sharing the contents with others, recording, or republishing |
 | **Acting** | Using what you heard — especially for gain or to interfere |
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 520 96" role="img" aria-label="Three escalating steps: receiving, then divulging, then acting — each more likely to be restricted than the last." xmlns="http://www.w3.org/2000/svg">
+  <g font-size="10" fill="currentColor" text-anchor="middle">
+    <rect x="20" y="46" width="150" height="34" rx="6" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="1.2"/><text x="95" y="61">Receiving</text><text x="95" y="73" font-size="8">often permitted</text>
+    <rect x="185" y="38" width="150" height="34" rx="6" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="260" y="53">Divulging</text><text x="260" y="65" font-size="8">often restricted</text>
+    <rect x="350" y="30" width="150" height="34" rx="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.2"/><text x="425" y="45">Acting</text><text x="425" y="57" font-size="8">most restricted</text>
+    <g stroke="currentColor" stroke-width="1.2">
+      <line x1="170" y1="60" x2="184" y2="56" marker-end="url(#le)"/>
+      <line x1="335" y1="52" x2="349" y2="48" marker-end="url(#le)"/>
+    </g>
+    <text x="260" y="14" font-size="9">more likely to be restricted →</text>
+  </g>
+  <defs><marker id="le" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
+</svg>
+<figcaption>Three separate questions, each typically more regulated than the last. "Allowed to listen" doesn't imply "allowed to share or act."</figcaption>
+</figure>
+
 In several places, receiving may be tolerated while **divulging or acting** on the
 content is restricted or illegal. So "I'm allowed to listen" does not automatically mean
 "I'm allowed to share or use it." Check each separately.

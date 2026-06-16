@@ -55,6 +55,13 @@ horizon out. A transmitter on a tall tower or hilltop reaches far; a receiver up
 with a clear view hears far. This is why repeaters live on towers and why getting your
 antenna up and outside helps so much.
 
+**A rough number.** The radio horizon in kilometres is about *4.1 × √(height in
+metres)*. An antenna at **2 m** reaches ~5.8 km to the horizon; lift it to **10 m**
+and it reaches ~13 km; a repeater at **100 m** reaches ~41 km. Two stations each see
+to their own horizon, so their ranges *add* — which is why a hilltop repeater can
+link two handhelds that could never hear each other directly. Every metre of height
+you add literally extends how far you can receive.
+
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 420 150" role="img" aria-label="A curved Earth with a tall transmitter tower and a receiver. A straight line of sight reaches over the curve to the horizon; an obstacle blocks a low path." xmlns="http://www.w3.org/2000/svg">
   <path d="M10 140 Q210 90 410 140" fill="none" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/>

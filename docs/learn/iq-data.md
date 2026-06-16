@@ -91,6 +91,19 @@ the rotation speed *is* the frequency. [Modulation](/learn/digital-modulation/) 
 the point to specific places: amplitude modulation changes its distance, frequency
 modulation changes its rotation rate, phase modulation jumps its angle.
 
+To make it concrete, a few sample values and what they mean:
+
+| I | Q | Amplitude (√(I²+Q²)) | Phase (angle) |
+|---|---|----------------------|----------------|
+| 1.0 | 0.0 | 1.0 | 0° (pointing right) |
+| 0.0 | 1.0 | 1.0 | 90° (straight up) |
+| 0.71 | 0.71 | 1.0 | 45° |
+| 0.5 | 0.0 | 0.5 | 0°, but half as strong |
+
+Notice rows 1–3 have the **same amplitude** but different **phase** — a single
+real number couldn't tell them apart, yet the I/Q pair does. That's the whole reason
+SDRs work in pairs.
+
 ## The constellation connection
 
 If a point's position encodes amplitude and phase, then plotting the **symbols** of a
