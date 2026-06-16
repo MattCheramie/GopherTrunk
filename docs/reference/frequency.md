@@ -1,0 +1,35 @@
+---
+slug: frequency
+title: Frequency
+entry_type: term
+category: rf-fundamentals
+description: Frequency is the number of cycles a wave completes per second, measured in hertz (Hz); for radio it sets the tuning point and, inversely, the wavelength.
+keywords: frequency, hertz, Hz, cycles per second, kHz MHz GHz
+infobox:
+  - { label: Symbol, value: f }
+  - { label: Unit, value: Hertz (Hz) }
+  - { label: Relation, value: "wavelength = c / frequency" }
+see_also: [wavelength, frequency-bands, electromagnetic-spectrum, radio-wave]
+related_lessons:
+  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+external:
+  - { title: "Frequency (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency }
+---
+
+**Frequency** is the number of cycles a periodic wave completes each second, measured
+in **hertz (Hz)**. For a [radio wave](/reference/radio-wave/) it is the quantity you
+tune to, and it is inversely related to [wavelength](/reference/wavelength/).
+
+## How it works
+
+One hertz is one cycle per second. Radio frequencies are large, so they are scaled in
+kilohertz (kHz), megahertz (MHz), and gigahertz (GHz). Because all radio waves travel
+at the speed of light *c*, frequency and wavelength satisfy *wavelength = c /
+frequency*.
+
+## Relevance to SDR
+
+Tuning an SDR sets the centre frequency its [local oscillator](/reference/local-oscillator/)
+mixes down to baseband. The chosen frequency, within a [band](/reference/frequency-bands/),
+determines what signal you receive.
