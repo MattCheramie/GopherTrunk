@@ -22,6 +22,18 @@ external:
 that works on multi-bit **symbols** rather than individual bits, making it especially good
 at correcting **bursts** of errors.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 110" role="img" aria-label="A codeword of data symbols followed by parity symbols, with the parity able to correct a burst of damaged symbols." xmlns="http://www.w3.org/2000/svg">
+  <g stroke="currentColor" stroke-width="1.1">
+    <rect x="30" y="40" width="34" height="30" fill="none"/><rect x="64" y="40" width="34" height="30" fill="none"/><rect x="98" y="40" width="34" height="30" fill="currentColor" fill-opacity="0.4"/><rect x="132" y="40" width="34" height="30" fill="currentColor" fill-opacity="0.4"/><rect x="166" y="40" width="34" height="30" fill="none"/><rect x="200" y="40" width="34" height="30" fill="none"/>
+    <rect x="250" y="40" width="34" height="30" fill="currentColor" fill-opacity="0.15"/><rect x="284" y="40" width="34" height="30" fill="currentColor" fill-opacity="0.15"/><rect x="318" y="40" width="34" height="30" fill="currentColor" fill-opacity="0.15"/>
+  </g>
+  <text x="132" y="90" text-anchor="middle" font-size="9" fill="currentColor">data symbols (shaded = damaged)</text>
+  <text x="301" y="90" text-anchor="middle" font-size="9" fill="currentColor">parity</text>
+</svg>
+<figcaption>Reed–Solomon adds parity symbols that correct bursts of damaged symbols — used across P25 and DMR.</figcaption>
+</figure>
+
 ## How it works
 
 It adds parity symbols so that a number of symbol errors can be located and corrected. It

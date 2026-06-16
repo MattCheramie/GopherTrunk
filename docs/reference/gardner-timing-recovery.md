@@ -23,6 +23,16 @@ external:
 half-symbol instants. A useful property is that it works **independently of carrier
 phase**.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 130" role="img" aria-label="A symbol waveform sampled twice per symbol — at the midpoint and the peak — to estimate timing error." xmlns="http://www.w3.org/2000/svg">
+  <path d="M30 90 C 90 90 90 40 150 40 C 210 40 210 90 270 90 C 330 90 330 40 390 40" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <g fill="currentColor"><circle cx="90" cy="65" r="3"/><circle cx="150" cy="40" r="3"/><circle cx="210" cy="65" r="3"/><circle cx="270" cy="90" r="3"/></g>
+  <g font-size="8" fill="currentColor" text-anchor="middle"><text x="150" y="30">peak</text><text x="90" y="80">mid</text></g>
+  <text x="230" y="118" text-anchor="middle" font-size="9" fill="currentColor">two samples per symbol estimate the timing error</text>
+</svg>
+<figcaption>Gardner timing recovery uses two samples per symbol (midpoint and peak) to track symbol timing.</figcaption>
+</figure>
+
 ## How it works
 
 Its timing-error detector drives a loop that nudges the sampling instant toward the centre

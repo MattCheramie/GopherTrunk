@@ -22,6 +22,15 @@ The **Golay code** is a remarkably efficient block
 [error-correction](/reference/forward-error-correction/) code. The binary Golay(23,12)
 and extended Golay(24,12) correct up to three bit errors in a short codeword.
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 100" role="img" aria-label="A Golay (24,12) codeword: twelve data bits and twelve parity bits of equal size." xmlns="http://www.w3.org/2000/svg">
+  <rect x="60" y="40" width="170" height="30" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.2"/><text x="145" y="59" text-anchor="middle" font-size="9" fill="currentColor">12 data bits</text>
+  <rect x="230" y="40" width="170" height="30" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.2"/><text x="315" y="59" text-anchor="middle" font-size="9" fill="currentColor">12 parity bits</text>
+  <text x="230" y="90" text-anchor="middle" font-size="9" fill="currentColor">Golay(24,12) corrects up to 3 bit errors</text>
+</svg>
+<figcaption>The Golay(24,12) code protects critical fields (e.g. in DMR, P25, and M17) against several bit errors.</figcaption>
+</figure>
+
 ## How it works
 
 Its mathematical structure (a perfect code in the binary case) packs strong correction

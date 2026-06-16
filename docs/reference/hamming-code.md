@@ -22,6 +22,18 @@ external:
 codes that correct **single-bit** errors (and detect two) using a handful of parity-check
 bits. They are named for [Richard Hamming](/reference/richard-hamming/).
 
+<figure class="figure" markdown="0">
+<svg viewBox="0 0 460 110" role="img" aria-label="Data bits interspersed with parity bits, with brackets showing each parity bit covering a set of data bits." xmlns="http://www.w3.org/2000/svg">
+  <g font-family="monospace" font-size="11" fill="currentColor" text-anchor="middle">
+    <text x="60" y="55">P</text><text x="100" y="55">P</text><text x="140" y="55">D</text><text x="180" y="55">P</text><text x="220" y="55">D</text><text x="260" y="55">D</text><text x="300" y="55">D</text>
+  </g>
+  <path d="M60 65 q40 18 80 0" fill="none" stroke="currentColor" stroke-opacity="0.6"/>
+  <path d="M100 70 q60 22 120 0" fill="none" stroke="currentColor" stroke-opacity="0.6"/>
+  <text x="230" y="100" text-anchor="middle" font-size="9" fill="currentColor">each parity bit (P) checks a set of data bits (D)</text>
+</svg>
+<figcaption>A Hamming code interleaves parity bits that locate and correct a single bit error per block.</figcaption>
+</figure>
+
 ## How it works
 
 Parity bits cover overlapping subsets of the data so that the pattern of failed checks (the
