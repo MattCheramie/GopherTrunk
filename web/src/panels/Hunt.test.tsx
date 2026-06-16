@@ -58,6 +58,26 @@ describe("Hunt panel", () => {
     expect(body.bands).toEqual(["851:869"]); // default band, comma-split
   });
 
+  it("parses a control channel with the chosen protocol and dwell", async () => {
+    render(<Hunt />);
+    await waitFor(() => expect(api.hunt).toHaveBeenCalled());
+
+    // The only <select> in the panel is the Parse-CC protocol picker.
+    await userEvent.selectOptions(screen.getByRole("combobox"), "dmr");
+    await userEvent.type(screen.getByPlaceholderText("851.0125"), "853.5125");
+    const dwell = screen.getByLabelText(/listen for/i);
+    await userEvent.clear(dwell);
+    await userEvent.type(dwell, "45");
+    await userEvent.click(screen.getByRole("button", { name: /parse control channel/i }));
+
+    await waitFor(() => expect(writes.huntStart).toHaveBeenCalled());
+    const body = vi.mocked(writes.huntStart).mock.calls[0][1];
+    expect(body.candidates).toEqual([853.5125]);
+    expect(body.no_sweep).toBe(true);
+    expect(body.protocol).toBe("dmr");
+    expect(body.dwell_seconds).toBe(45);
+  });
+
   it("renders per-capture reports and discovered sites from the status", async () => {
     vi.mocked(api.hunt).mockResolvedValue({
       run_id: 1,
