@@ -115,16 +115,38 @@ INSERT OR REPLACE INTO call_log (
 }
 
 func (c *CallLog) recordEnd(ce trunking.CallEnd) error {
+	// Persist the call's final identity alongside the end timestamp. On
+	// P25 Phase 2 compressed grants the SourceID (RID) starts at 0 and is
+	// only backfilled mid-call on the traffic channel; ALGID/KID likewise
+	// surface mid-call (P25 Phase 1 LDU2, Phase 2 EncryptionSync). The
+	// engine backfills these onto the bound grant, so ce.Grant carries the
+	// real values here — without this UPDATE the history row would keep the
+	// grant-time placeholders (source_id=0, algorithm_id=0) and the RID
+	// would never appear in call history (issue #696).
+	//
+	// The guards mirror the voice pool's never-downgrade semantics
+	// (UpdateSource / UpdateEncryption): COALESCE(NULLIF(?, 0), col) keeps a
+	// legitimate start-time value when the end grant is still zero, and the
+	// CASE only ever upgrades encrypted (the spec defines no mid-call
+	// decryption).
 	const q = `
 UPDATE call_log
    SET ended_at = ?,
        duration_ms = ?,
-       end_reason = ?
+       end_reason = ?,
+       source_id    = COALESCE(NULLIF(?, 0), source_id),
+       encrypted    = CASE WHEN ? != 0 THEN 1 ELSE encrypted END,
+       algorithm_id = COALESCE(NULLIF(?, 0), algorithm_id),
+       key_id       = COALESCE(NULLIF(?, 0), key_id)
  WHERE device_serial = ? AND started_at = ?`
 	_, err := c.db.sql.Exec(q,
 		ce.EndedAt.UnixNano(),
 		ce.Duration().Milliseconds(),
 		ce.Reason.String(),
+		ce.Grant.SourceID,
+		boolToInt(ce.Grant.Encrypted),
+		ce.Grant.AlgorithmID,
+		ce.Grant.KeyID,
 		ce.DeviceSerial, ce.StartedAt.UnixNano(),
 	)
 	return err
