@@ -49,15 +49,20 @@ type LinkControl struct {
 const lcContentOctets = 9
 
 // Standard TIA-102.AABF Link Control Opcodes the talker-alias path
-// needs. These three LCOs carry a radio's display name across an
-// active voice channel (LDU1) as a HEADER + two BLOCK fragments —
-// distinct from the Motorola vendor TSBK alias format the control
-// channel already handles (see tsbk_vendor.go's OpVendorTalkerAlias).
+// needs. These LCOs carry a radio's display name across an active
+// voice channel as a HEADER + data BLOCK fragments — distinct from
+// the Motorola vendor TSBK alias format the control channel already
+// handles (see tsbk_vendor.go's OpVendorTalkerAlias).
 //
-// Today GopherTrunk only decodes the vendor TSBK form; standard
-// voice-channel alias dispatch is a documented follow-up (issue
-// #376 audit). The constants live here so consumers can recognise
-// the opcodes when the LC is parsed and surface them in logs.
+// The LDU1 voice-channel form is decoded today: p25p1_voice.go
+// dispatches IsTalkerAliasLCO LCs into MotorolaTalkerAliasBuf. The
+// remaining #376 gap is the TDULC carriage — field reports
+// (SDRTrunk ground truth on Victorian MMR) show Phase 1 systems
+// emit the same 0x15/0x17 alias LCs in the TERMINATOR (TDULC, DUID
+// 0xF) link control, NOT LDU1, so the voice chain misses them: it
+// returns at the terminator before parsing the TDULC LC, and no
+// TDULC LC extractor exists yet. The constants live here so
+// consumers can recognise the opcodes when the LC is parsed.
 const (
 	LCOGroupVoiceChannelUser = 0x00 // the common LCO carrying TG + SRC
 	LCOTalkerAliasHeader     = 0x15 // first frame: char-set + total length
