@@ -1,0 +1,59 @@
+---
+slug: dmr-tier-1
+title: DMR Tier I
+entry_type: protocol
+category: protocols
+description: DMR Tier I is the licence-free tier of the ETSI DMR standard, intended for low-power consumer and light commercial use without an individual licence.
+keywords: DMR Tier I, DMR Tier 1, licence-free, PMR446, dPMR, consumer radio
+aka: [DMR Tier I, DMR Tier 1]
+autolink: true
+infobox:
+  - { label: Type, value: Digital land-mobile radio }
+  - { label: Part of, value: DMR (ETSI) }
+  - { label: Licensing, value: Licence-free / low power }
+  - { label: Access, value: TDMA-capable (often single-slot use) }
+  - { label: Channel spacing, value: 12.5 kHz }
+  - { label: Modulation, value: 4FSK }
+  - { label: Vocoder, value: AMBE+2 }
+  - { label: GopherTrunk support, value: As conventional DMR }
+see_also: [dmr, dmr-tier-2, dmr-tier-3, frequency-shift-keying, etsi]
+related_lessons:
+  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+external:
+  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+---
+
+**DMR Tier I** is the **licence-free** tier of the [DMR](/reference/dmr/) standard,
+defined by [ETSI](/reference/etsi/) for low-power, short-range consumer and light
+commercial use without an individual user licence.
+
+## Overview
+
+Tier I targets the same role as licence-free analog radios, but digital. It uses
+fixed low power and a small set of designated channels, so no system planning or
+trunking is involved. Equipment is simple and inexpensive.
+
+## Technical characteristics
+
+| Property | Value |
+|----------|-------|
+| Licensing | Licence-free, limited power |
+| Access | Conventional (TDMA-capable hardware) |
+| Channel | 12.5 kHz |
+| Modulation | [4FSK](/reference/frequency-shift-keying/) |
+| Vocoder | [AMBE+2](/reference/ambe-plus-2/) |
+
+## History
+
+Tier I was specified alongside the other tiers in ETSI's DMR documents to cover the
+unlicensed consumer segment.
+
+## Deployment
+
+Found in inexpensive consumer handhelds in regions that allocate licence-free DMR
+channels; less common than Tier II in North America.
+
+## Decoding it with GopherTrunk
+
+Tier I traffic is conventional DMR and decodes like any [Tier II](/reference/dmr-tier-2/)
+conventional channel once tuned. See [Status](/status.html).
