@@ -37,8 +37,9 @@ layout: default
         </p>
       </header>
 
-      <div itemprop="articleBody">
+      <div itemprop="articleBody" data-cta-host>
         {{ content }}
+        {%- include page-ctas.html -%}
       </div>
 
       {%- if page.tags and page.tags.size > 0 -%}

@@ -3,6 +3,7 @@ layout: page
 title: Linux install
 description: Five-minute path from a fresh download to a working gophertrunk sdr list on Linux
 nav_group: Install
+hide_ctas: true
 ---
 
 # Installing GopherTrunk on Linux

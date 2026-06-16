@@ -15,8 +15,9 @@ layout: default
       </nav>
     {%- endif -%}
 
-    <article class="prose">
+    <article class="prose" data-cta-host>
       {{ content }}
+      {%- include page-ctas.html -%}
     </article>
 
     {%- if page.path -%}
