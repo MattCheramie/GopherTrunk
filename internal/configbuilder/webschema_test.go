@@ -32,6 +32,14 @@ var webRoundTripAllow = map[string][]string{
 	"LoRaChannelConfig":    {"CenterHz", "Bandwidth", "Oversample", "SubChannels", "LoRaWANKeys"},
 	"LoRaSubChannelConfig": {"OffsetHz", "SpreadingFactor", "SyncWord"},
 	"LoRaWANKeyConfig":     {"DevAddr", "NwkSKey", "AppSKey"},
+
+	// Per-system P25 site name catalogue (issue #698). Optional
+	// presentation metadata surfaced via GET /api/v1/sites; it round-trips
+	// through the SystemConfig index signature and the whole Sites array
+	// (each a SiteConfig) is preserved as unknown JSON. Editable in the TUI
+	// and raw YAML; a bespoke web editor is a follow-up.
+	"SystemConfig": {"Sites"},
+	"SiteConfig":   {"RFSS", "Site", "Name"},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no

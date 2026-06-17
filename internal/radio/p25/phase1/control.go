@@ -1030,6 +1030,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.netModel.ApplyNetworkStatus(ParseNetworkStatusBroadcast(t.Payload))
 	case OpRFSSStatusBroadcast:
 		c.netModel.ApplyRFSSStatus(ParseRFSSStatusBroadcast(t.Payload))
+		c.publishSiteUpdate()
 	case OpSecondaryControlChannel:
 		c.netModel.ApplySecondaryControlChannel(ParseSecondaryControlChannelBroadcast(t.Payload))
 	case OpAdjacentSiteStatusBroadcast:
@@ -1236,10 +1237,13 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 	// the Phase 2 MAC dispatch path PR #409 added was dead code on
 	// MMR-class systems.
 	protocol := "p25"
+	// Snapshot the site topology once: the camped site's RFSS/Site is
+	// stamped onto every grant (issue #698) and the WACN/SystemID feeds
+	// the Phase 2 PN44 seed below.
+	net := c.netModel.Snapshot()
 	var p2dec trunking.P25Phase2Decode
 	if c.bandPlan.IsTDMA(g.channelID) {
 		protocol = "p25-phase2"
-		net := c.netModel.Snapshot()
 		seed := framing.PN44SeedFromIdentity(net.WACN, net.SystemID, nac&0x0FFF)
 		p2dec = trunking.P25Phase2Decode{
 			Trellis:    c.p25Phase2Trellis,
@@ -1259,6 +1263,8 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			FrequencyHz:        freq,
 			ChannelID:          g.channelID,
 			ChannelNum:         g.channelNumber,
+			RFSSID:             net.RFSS,
+			SiteID:             net.Site,
 			Encrypted:          so.Encrypted(),
 			Emergency:          so.Emergency(),
 			DataCall:           g.dataCall,
@@ -1275,6 +1281,32 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 	// ALGID/KID are unavailable at grant time on Phase 1 (the LDU2
 	// Encryption Sync carries them); the engine backfills via
 	// KindCallEncryption once the voice frame lands.
+}
+
+// publishSiteUpdate emits a KindSiteUpdate naming the site this control
+// channel is camped on, joining the decoded RFSS/Site identity to the
+// frequency the decoder is tuned to. The SiteTracker accumulates these
+// into the GET /api/v1/sites table (issue #698). Called from
+// dispatchTSBK after every RFSS Status Broadcast — cheap, and lets
+// control_channel_hz stay accurate as the decoder hops control
+// channels. Skipped until the site has actually been identified.
+func (c *ControlChannel) publishSiteUpdate() {
+	net := c.netModel.Snapshot()
+	if net.RFSS == 0 && net.Site == 0 {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindSiteUpdate,
+		Payload: trunking.SiteUpdate{
+			System:           c.systemName,
+			RFSSID:           net.RFSS,
+			SiteID:           net.Site,
+			ControlChannelHz: c.freqHz,
+			WACN:             net.WACN,
+			SystemID:         net.SystemID,
+			At:               c.now(),
+		},
+	})
 }
 
 // drainPendingGrants re-publishes every voice grant that arrived for

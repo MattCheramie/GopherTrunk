@@ -999,6 +999,16 @@ type TrunkingConfig struct {
 	VoiceCallGrouping string `yaml:"voice_call_grouping"`
 }
 
+// SiteConfig names one P25 site by its RFSS and Site IDs. It is pure
+// presentation metadata: GT discovers a site's identity from the
+// control channel and merges the Name into GET /api/v1/sites so the
+// site reads as a place rather than a pair of integers (issue #698).
+type SiteConfig struct {
+	RFSS uint8  `yaml:"rfss"`
+	Site uint8  `yaml:"site"`
+	Name string `yaml:"name"`
+}
+
 type SystemConfig struct {
 	Name            string   `yaml:"name"`
 	Protocol        string   `yaml:"protocol"`
@@ -1013,6 +1023,15 @@ type SystemConfig struct {
 	// catalogue blank for this system (live observations still
 	// surface via the affiliation tracker).
 	RIDAliasFile string `yaml:"rid_alias_file"`
+
+	// Sites is the optional catalogue of human-readable names for the
+	// P25 sites of this system, keyed by their RFSS and Site IDs
+	// (issue #698). GT discovers a site's RFSS/Site from the control
+	// channel; these names are pure presentation metadata merged into
+	// GET /api/v1/sites so a discovered site reads as e.g.
+	// "Mt Anakie" instead of "rfss 1 / site 1". Ignored for non-P25
+	// protocols. Leave empty to surface discovered sites without names.
+	Sites []SiteConfig `yaml:"sites"`
 
 	// TETRAColourCode is the 30-bit extended colour code the TETRA
 	// scrambler uses to seed its LFSR (ETSI EN 300 392-2 §8.2.5).
@@ -1874,6 +1893,18 @@ func validateSystem(i int, s SystemConfig) error {
 		if len(b) > 32 {
 			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: key is %d bytes, must be 1..32", i, k, len(b))
 		}
+	}
+	type rfssSite struct{ rfss, site uint8 }
+	seenSites := make(map[rfssSite]int, len(s.Sites))
+	for k, st := range s.Sites {
+		if strings.TrimSpace(st.Name) == "" {
+			return fmt.Errorf("trunking.systems[%d].sites[%d]: name required", i, k)
+		}
+		key := rfssSite{st.RFSS, st.Site}
+		if prev, dup := seenSites[key]; dup {
+			return fmt.Errorf("trunking.systems[%d].sites[%d]: duplicate rfss %d / site %d (also at sites[%d])", i, k, st.RFSS, st.Site, prev)
+		}
+		seenSites[key] = k
 	}
 	return nil
 }

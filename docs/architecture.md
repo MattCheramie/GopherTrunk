@@ -111,6 +111,13 @@ constructed only when its config section is present:
   table of unit→talkgroup activity built from `KindGrant`,
   `KindAffiliation` and `KindUnitRegistration` events, served at
   `GET /api/v1/affiliations`.
+- **`trunking.SiteTracker`** — an in-memory table of the P25 sites
+  discovered from the control channel, built from `KindSiteUpdate`
+  events (published on each RFSS Status Broadcast) and served at
+  `GET /api/v1/sites`. Operator-supplied site names from
+  `trunking.systems[].sites` in the config are merged onto the
+  discovered rows, and every `grant` event also carries `rfss_id` /
+  `site_id` so downstream tooling can label calls by site (issue #698).
 - **`log.MessageLog`** — a rotating, human-readable text log of
   every trunking event, enabled via `log.message_log`.
 

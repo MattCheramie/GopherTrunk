@@ -2,8 +2,10 @@ package phase1
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 func TestNetworkModelAccumulates(t *testing.T) {
@@ -66,5 +68,56 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	}
 	if len(cfg.Neighbors) != 1 || cfg.Neighbors[0].Site != 8 {
 		t.Errorf("neighbours = %v, want one site-8 entry", cfg.Neighbors)
+	}
+}
+
+// TestControlChannelPublishesSiteUpdate drives an RFSS Status Broadcast
+// through the control channel and checks a KindSiteUpdate naming the
+// camped site (with the tuned control-channel frequency) is published
+// on the bus (issue #698).
+func TestControlChannelPublishesSiteUpdate(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const ccHz = 420012500
+	cc := New(Options{Bus: bus, SystemName: "MMR", FrequencyHz: ccHz})
+
+	// NSB first so WACN/SystemID are populated, then RFSS to name the site.
+	nsb := TSBK{Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0xAB, 0xCD, 0xE1, 0x23}}
+	rfss := TSBK{Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{9, 0, 4, 7}}
+	base := 0
+	for _, tsbk := range []TSBK{nsb, rfss} {
+		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
+		base += 1 << 20
+	}
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindSiteUpdate {
+				continue
+			}
+			u, ok := ev.Payload.(trunking.SiteUpdate)
+			if !ok {
+				t.Fatalf("KindSiteUpdate payload is %T, want trunking.SiteUpdate", ev.Payload)
+			}
+			if u.System != "MMR" || u.RFSSID != 4 || u.SiteID != 7 {
+				t.Fatalf("site update identity wrong: %+v", u)
+			}
+			if u.ControlChannelHz != ccHz {
+				t.Fatalf("control_channel_hz = %d, want %d", u.ControlChannelHz, ccHz)
+			}
+			// WACN comes from the NSB; the RFSS Status Broadcast then sets
+			// SystemID from its own field (p1/p2 → 4 for this payload).
+			if u.WACN != 0xABCDE || u.SystemID != 4 {
+				t.Fatalf("site update network ids wrong: %+v", u)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no KindSiteUpdate published within deadline")
+		}
 	}
 }

@@ -149,6 +149,15 @@ type DMRBandPlanTableEntry struct {
 	FreqHz uint32
 }
 
+// ConfiguredSite is an operator-supplied name for a P25 site, keyed by
+// its RFSS and Site IDs. It carries no decoding role — GET /api/v1/sites
+// merges the Name onto the matching discovered site (issue #698).
+type ConfiguredSite struct {
+	RFSS uint8
+	Site uint8
+	Name string
+}
+
 // System describes one trunked radio system the engine should track.
 type System struct {
 	Name            string
@@ -158,6 +167,13 @@ type System struct {
 	SystemID        uint16   // 12-bit system identifier (P25 SYSID)
 	RFSS            uint8    // RF SubSystem ID (P25)
 	Site            uint8    // Site ID
+
+	// Sites is the operator's optional catalogue of human-readable site
+	// names, keyed by (RFSS, Site), surfaced through GET /api/v1/sites
+	// so a discovered P25 site can carry a name instead of an opaque
+	// ID (issue #698). The decoder does not consult these — they are
+	// pure presentation metadata merged into the sites listing.
+	Sites []ConfiguredSite
 
 	// TETRAColourCode is the low 30 bits of the extended colour code
 	// the TETRA scrambler uses to seed its LFSR per ETSI EN 300 392-2

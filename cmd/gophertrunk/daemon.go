@@ -341,6 +341,7 @@ type Daemon struct {
 	engine       *trunking.Engine
 	voicePool    *trunking.VoicePool
 	affiliations *trunking.AffiliationTracker
+	siteTracker  *trunking.SiteTracker
 	recorder     *voice.Recorder
 	broadcast    *broadcast.Manager
 	composer     *composer.Composer
@@ -694,10 +695,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			log.Warn("daemon: dmr Tier III system has no dmr_band_plan; voice grants will be dropped (no-bandplan)",
 				"system", sys.Name)
 		}
+		var sites []trunking.ConfiguredSite
+		for _, sc := range sys.Sites {
+			sites = append(sites, trunking.ConfiguredSite{RFSS: sc.RFSS, Site: sc.Site, Name: sc.Name})
+		}
 		s := trunking.System{
 			Name:                    sys.Name,
 			Protocol:                proto,
 			ControlChannels:         sys.ControlChannels,
+			Sites:                   sites,
 			P25BandPlan:             p25BandPlan,
 			DMRBandPlan:             dmrBandPlan,
 			DMRInterleavedVoice:     resolveDMRInterleavedVoice(proto, sys.DMRInterleavedVoice),
@@ -1061,6 +1067,17 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			return nil, fmt.Errorf("daemon: affiliation tracker: %w", err)
 		}
 		d.affiliations = at
+	}
+
+	// Site tracker — always on. Subscribes to the bus and accumulates
+	// the P25 sites discovered from the control channel, surfaced at
+	// GET /api/v1/sites.
+	{
+		st, err := trunking.NewSiteTracker(trunking.SiteTrackerOptions{Bus: d.bus})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: site tracker: %w", err)
+		}
+		d.siteTracker = st
 	}
 
 	// Tone-out detector — optional. Built before the composer so it can
@@ -2009,6 +2026,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if d.affiliations != nil {
 			opts.Affiliations = affiliationProvider{d.affiliations}
 		}
+		if d.siteTracker != nil {
+			opts.Sites = sitesProvider{d.siteTracker}
+		}
 		if d.metrics != nil {
 			opts.MetricsHandler = d.metrics.Handler()
 		}
@@ -2265,6 +2285,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if d.affiliations != nil {
 		d.spawn(runCtx, "affiliations", false, func(ctx context.Context) error {
 			return d.affiliations.Run(ctx)
+		})
+	}
+	if d.siteTracker != nil {
+		d.spawn(runCtx, "sites", false, func(ctx context.Context) error {
+			return d.siteTracker.Run(ctx)
 		})
 	}
 	if d.retention != nil {
@@ -2932,6 +2957,9 @@ func (d *Daemon) Close() {
 		if d.affiliations != nil {
 			_ = d.affiliations.Close()
 		}
+		if d.siteTracker != nil {
+			_ = d.siteTracker.Close()
+		}
 		if d.metrics != nil {
 			_ = d.metrics.Close()
 		}
@@ -3551,6 +3579,12 @@ func (b broadcastStatus) BroadcastStats() any { return b.mgr.Stats() }
 type affiliationProvider struct{ t *trunking.AffiliationTracker }
 
 func (a affiliationProvider) Affiliations() []trunking.UnitActivity { return a.t.Snapshot() }
+
+// sitesProvider adapts the SiteTracker into the api.SitesProvider
+// interface.
+type sitesProvider struct{ t *trunking.SiteTracker }
+
+func (s sitesProvider) Sites() []trunking.SiteInfo { return s.t.Snapshot() }
 
 // wrapBasebandRecorders replaces the Device of every pool entry whose
 // serial appears in baseband.record with a RecordingDevice, teeing its

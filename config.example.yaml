@@ -629,6 +629,20 @@ trunking:
       # to let the affiliation tracker surface RIDs live without any
       # operator-configured aliases.
       # rid_alias_file: "../config/rids-p25.csv"
+      # Optional human-readable names for the P25 sites of this system,
+      # keyed by their RFSS and Site IDs (issue #698). GT discovers a
+      # site's RFSS/Site from the control channel; these names are pure
+      # presentation metadata merged into GET /api/v1/sites so a site
+      # reads as a place rather than a pair of integers. Grants on the
+      # SSE stream also carry rfss_id/site_id so consumers can label
+      # metrics by site. Omit to surface discovered sites without names.
+      # sites:
+      #   - rfss: 1
+      #     site: 1
+      #     name: "Mt Anakie"
+      #   - rfss: 2
+      #     site: 9
+      #     name: "Murradoc Hill"
 
     # DMR Tier III trunked system. A T3 voice-grant CSBK references its
     # traffic channel by a 12-bit Logical Channel Number (LCN), never an

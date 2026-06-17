@@ -273,6 +273,7 @@ type Server struct {
 	history      HistoryQuery
 	locations    LocationQuery
 	affiliations AffiliationProvider
+	sites        SitesProvider
 	metrics      http.Handler
 	log          *slog.Logger
 	version      string
@@ -433,6 +434,13 @@ type AffiliationProvider interface {
 	Affiliations() []trunking.UnitActivity
 }
 
+// SitesProvider is the read side of the site tracker, supplying the
+// P25 sites discovered from the control channel for GET /api/v1/sites
+// (issue #698).
+type SitesProvider interface {
+	Sites() []trunking.SiteInfo
+}
+
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
 // purposes (passed through to whatever HistoryQuery implementation the
 // daemon wires up).
@@ -490,6 +498,9 @@ type ServerOptions struct {
 	// Affiliations is optional. When non-nil the server exposes
 	// GET /api/v1/affiliations (the unit-activity table).
 	Affiliations AffiliationProvider
+	// Sites is optional. When non-nil the server exposes
+	// GET /api/v1/sites (the discovered-P25-site table, issue #698).
+	Sites SitesProvider
 	// MetricsHandler is optional. When non-nil it is mounted at
 	// GET /metrics; the daemon passes internal/metrics.Metrics.Handler()
 	// here. Decoupling via http.Handler keeps the api package free of a
@@ -788,6 +799,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		history:        opts.History,
 		locations:      opts.Locations,
 		affiliations:   opts.Affiliations,
+		sites:          opts.Sites,
 		metrics:        opts.MetricsHandler,
 		log:            log,
 		version:        opts.Version,
@@ -936,6 +948,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/calls/history", s.handleCallHistory)
 	mux.HandleFunc("GET /api/v1/locations", s.handleLocations)
 	mux.HandleFunc("GET /api/v1/affiliations", s.handleAffiliations)
+	mux.HandleFunc("GET /api/v1/sites", s.handleListSites)
 	mux.HandleFunc("GET /api/v1/rids", s.handleListRIDs)
 	mux.HandleFunc("GET /api/v1/rids/{id}", s.handleGetRID)
 	mux.HandleFunc("GET /api/v1/rids/{id}/history", s.handleRIDHistory)

@@ -302,6 +302,12 @@ type GrantDTO struct {
 	FrequencyHz   uint32 `json:"frequency_hz"`
 	ChannelID     uint8  `json:"channel_id,omitempty"`
 	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	// RFSSID / SiteID name the P25 site whose control channel granted
+	// the call, so consumers can label metrics by site instead of the
+	// opaque channel_id (issue #698). Zero (and omitted) on non-P25
+	// grants and until the site's RFSS Status TSBK has been decoded.
+	RFSSID uint8 `json:"rfss_id,omitempty"`
+	SiteID uint8 `json:"site_id,omitempty"`
 	// Timeslot is the 1-based TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
 	// Non-zero only for slotted protocols (DMR Tier III); identifies
 	// which of a carrier's two calls this is.
@@ -324,11 +330,27 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 		GroupID: g.GroupID, SourceID: g.SourceID,
 		FrequencyHz: g.FrequencyHz,
 		ChannelID:   g.ChannelID, ChannelNumber: g.ChannelNum,
+		RFSSID: g.RFSSID, SiteID: g.SiteID,
 		Timeslot:  g.Timeslot,
 		Encrypted: g.Encrypted, Emergency: g.Emergency,
 		DataCall:    g.DataCall,
 		AlgorithmID: g.AlgorithmID, KeyID: g.KeyID,
 	}
+}
+
+// SiteDTO is one row of GET /api/v1/sites: a P25 site GT has either
+// discovered from the control channel, named in the system config, or
+// both (issue #698). Name is empty when the operator has not labelled
+// the site; ControlChannelHz is zero for a configured site GT has not
+// yet heard over the air.
+type SiteDTO struct {
+	System           string `json:"system"`
+	RFSSID           uint8  `json:"rfss_id"`
+	SiteID           uint8  `json:"site_id"`
+	ControlChannelHz uint32 `json:"control_channel_hz,omitempty"`
+	Name             string `json:"name"`
+	WACN             uint32 `json:"wacn,omitempty"`
+	SystemID         uint16 `json:"system_id,omitempty"`
 }
 
 // CallEncryptionDTO mirrors trunking.CallEncryption for SSE / REST
