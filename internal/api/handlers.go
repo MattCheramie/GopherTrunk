@@ -7,6 +7,7 @@ import (
 
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // HealthDTO is the body shape returned by GET /api/v1/health. The
@@ -110,9 +111,15 @@ func (s *Server) handleDiagBanner(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListSystems(w http.ResponseWriter, _ *http.Request) {
+	var live []trunking.SiteInfo
+	if s.sites != nil {
+		live = s.sites.Sites()
+	}
 	out := make([]SystemDTO, 0, len(s.systems))
 	for _, sys := range s.systems {
-		out = append(out, systemToDTO(sys))
+		dto := systemToDTO(sys)
+		overlayLiveIdentity(&dto, live)
+		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"systems": out})
 }
@@ -121,11 +128,46 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	for _, sys := range s.systems {
 		if sys.Name == name {
-			writeJSON(w, http.StatusOK, systemToDTO(sys))
+			dto := systemToDTO(sys)
+			if s.sites != nil {
+				overlayLiveIdentity(&dto, s.sites.Sites())
+			}
+			writeJSON(w, http.StatusOK, dto)
 			return
 		}
 	}
 	s.writeError(w, http.StatusNotFound, "system not found")
+}
+
+// overlayLiveIdentity fills WACN/SystemID/RFSS/Site on dto from the live
+// SiteTracker snapshot (the same data behind GET /api/v1/sites) for the
+// matching system. Network identity (WACN/SYSID/RFSS/Site) is decoded from
+// P25 status-broadcast TSBKs over the air, not configured, so the static
+// config copy in s.systems leaves these zero — this is what populates the
+// web "System Information" panel (issue #673). WACN and SystemID are
+// system-wide; RFSS/Site reflect the most-recently-heard site (the currently
+// camped one). Live non-zero values win; config values survive when nothing
+// has been decoded yet.
+func overlayLiveIdentity(dto *SystemDTO, sites []trunking.SiteInfo) {
+	var rfssAt, wacnAt, sysAt time.Time
+	for _, si := range sites {
+		if si.System != dto.Name {
+			continue
+		}
+		if si.LastSeen.After(rfssAt) {
+			rfssAt = si.LastSeen
+			dto.RFSS = si.RFSSID
+			dto.Site = si.SiteID
+		}
+		if si.WACN != 0 && si.LastSeen.After(wacnAt) {
+			wacnAt = si.LastSeen
+			dto.WACN = si.WACN
+		}
+		if si.SystemID != 0 && si.LastSeen.After(sysAt) {
+			sysAt = si.LastSeen
+			dto.SystemID = si.SystemID
+		}
+	}
 }
 
 func (s *Server) handleListTalkgroups(w http.ResponseWriter, _ *http.Request) {
