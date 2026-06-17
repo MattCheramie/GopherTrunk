@@ -11,6 +11,22 @@ import { selectCanMutate, selectClientConfig, useShared } from "../store/shared"
 
 const POLL_INTERVAL_MS = 2_000;
 
+// CC_PROTOCOLS are the trunked protocols with a dedicated standalone control
+// channel worth pointing the parser at. Values are the CLI identifiers the
+// hunt API forwards to siglab.ParseProtocolCLI (internal/siglab/config.go).
+// P25 Phase 2, DMR Tier II, LTR and D-STAR are excluded — no standalone CC.
+const CC_PROTOCOLS: { value: string; label: string }[] = [
+  { value: "p25", label: "P25 (Phase 1)" },
+  { value: "dmr", label: "DMR (Tier III)" },
+  { value: "nxdn", label: "NXDN" },
+  { value: "dpmr", label: "dPMR" },
+  { value: "edacs", label: "EDACS" },
+  { value: "motorola", label: "Motorola Type II / SmartZone" },
+  { value: "mpt1327", label: "MPT1327" },
+  { value: "tetra", label: "TETRA" },
+  { value: "ysf", label: "System Fusion (YSF)" },
+];
+
 // sortSignals returns a copy of the inventory sorted by the chosen column
 // (frequency ascending, class alphabetical, or SNR descending).
 function sortSignals(signals: DetectedSignal[], by: "freq" | "class" | "snr"): DetectedSignal[] {
@@ -91,8 +107,9 @@ export function Hunt() {
   const [rrSID, setRRSID] = useState("");
   const [rrReport, setRRReport] = useState<HuntRRReport | null>(null);
   const [rrBusy, setRRBusy] = useState(false);
-  const [ccFreq, setCCFreq] = useState(""); // single P25 control-channel freq, MHz
-  const [ccDwell, setCCDwell] = useState(15); // listen seconds (bounded — see parseCC)
+  const [ccFreq, setCCFreq] = useState(""); // single control-channel freq, MHz
+  const [ccProto, setCCProto] = useState("p25"); // trunked protocol to decode
+  const [ccDwell, setCCDwell] = useState(15); // listen seconds (see parseCC)
 
   useEffect(() => {
     let cancel = false;
@@ -150,23 +167,23 @@ export function Hunt() {
     }
   }
 
-  // parseCC tunes the hunt engine straight at one P25 control-channel
+  // parseCC tunes the hunt engine straight at one trunked control-channel
   // frequency (no sweep) and decodes it for ccDwell seconds, accumulating the
-  // band plan / talkgroups / identity into status.system. Dwell is bounded
-  // because the live IQ source runs at the full SDR rate (~2.4 MHz), so each
-  // second of capture is ~19 MB — re-run to discover more rather than dwelling
-  // for minutes.
+  // band plan / talkgroups / identity into status.system. Keep dwell short:
+  // the live IQ source runs at the full SDR rate (~2.4 MHz), so each second of
+  // capture is ~19 MB — re-run to discover more rather than dwelling for
+  // minutes.
   async function parseCC() {
     const mhz = parseFloat(ccFreq.trim());
     if (Number.isNaN(mhz)) {
-      setError("enter a P25 control-channel frequency in MHz (e.g. 851.0125)");
+      setError("enter a control-channel frequency in MHz (e.g. 851.0125)");
       return;
     }
     try {
       await writes.huntStart(cfg, {
         candidates: [mhz],
         no_sweep: true,
-        protocol: "p25",
+        protocol: ccProto,
         dwell_seconds: ccDwell,
       });
     } catch (e: unknown) {
@@ -204,15 +221,26 @@ export function Hunt() {
       <h2>Hunt — discover an unknown system</h2>
 
       <section className="hunt-controls hunt-ccparse">
-        <h3>Parse a P25 control channel</h3>
+        <h3>Parse a control channel</h3>
         <p className="hint">
-          Point straight at a known P25 control-channel frequency and decode it.
-          The band plan, talkgroups and system identity below fill in as the CC
-          is read — longer listening (or re-running) discovers more talkgroups
-          and neighbor sites.
+          Point straight at a known trunked control-channel frequency and decode
+          it. The band plan, talkgroups and system identity below fill in as the
+          CC is read — longer listening (or re-running) discovers more talkgroups
+          and neighbor sites. Each second buffers ~19 MB of IQ, so prefer
+          re-running over very long dwells.
         </p>
         <label>
-          P25 CC frequency (MHz)
+          Protocol
+          <select value={ccProto} onChange={(e) => setCCProto(e.target.value)}>
+            {CC_PROTOCOLS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          CC frequency (MHz)
           <input
             value={ccFreq}
             onChange={(e) => setCCFreq(e.target.value)}
@@ -220,13 +248,14 @@ export function Hunt() {
           />
         </label>
         <label>
-          Listen for
-          <select value={ccDwell} onChange={(e) => setCCDwell(Number(e.target.value))}>
-            <option value={5}>5 seconds</option>
-            <option value={10}>10 seconds</option>
-            <option value={15}>15 seconds</option>
-            <option value={20}>20 seconds</option>
-          </select>
+          Listen for (seconds)
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={ccDwell}
+            onChange={(e) => setCCDwell(Number(e.target.value))}
+          />
         </label>
         <div className="hunt-buttons">
           <button onClick={parseCC} disabled={!canMutate || running}>
