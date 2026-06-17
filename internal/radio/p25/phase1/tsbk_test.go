@@ -2,7 +2,48 @@ package phase1
 
 import (
 	"testing"
+
+	p25phase2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 )
+
+// TestStatusBroadcastLayoutMatchesPhase2 feeds the same argument bytes to
+// the Phase 1 status-broadcast parsers and the independent Phase 2
+// decoders (phase2/mac.go, phase2/mac_standard.go) and asserts they agree
+// on WACN / System ID / RFSS / Site. The two share the TIA-102.AABF
+// layout; this guards against the two implementations drifting apart again
+// (the Phase 1 side previously omitted the leading LRA byte).
+func TestStatusBroadcastLayoutMatchesPhase2(t *testing.T) {
+	// Network Status Broadcast: LRA 0x07, WACN 0xABCDE, SystemID 0x123,
+	// channel 4.010. Phase 2 carries a 12-bit Color Code where Phase 1
+	// carries the service class, so compare only the shared identity fields.
+	nsb := [8]byte{0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x40, 0x10, 0x42}
+	p1n := ParseNetworkStatusBroadcast(nsb)
+	p2n, ok := p25phase2.MACPDU{
+		Opcode:  p25phase2.OpNetworkStatusBroadcastUpdate,
+		Payload: append(nsb[:], 0x00), // Phase 2 NSB-Update is one byte longer
+	}.AsNetworkStatusBroadcast()
+	if !ok {
+		t.Fatal("phase2 AsNetworkStatusBroadcast returned !ok")
+	}
+	if p1n.LRA != p2n.LRA || p1n.WACN != p2n.WACN || p1n.SystemID != p2n.SystemID {
+		t.Errorf("NSB phase1=%+v disagrees with phase2 LRA/WACN/SystemID %d/%05X/%03X",
+			p1n, p2n.LRA, p2n.WACN, p2n.SystemID)
+	}
+
+	// RFSS Status Broadcast: LRA 0x09, SystemID 0x123, RFSS 4, Site 7.
+	rfss := [8]byte{0x09, 0x01, 0x23, 0x04, 0x07, 0x40, 0x10, 0x42}
+	p1r := ParseRFSSStatusBroadcast(rfss)
+	p2r, ok := p25phase2.MACPDU{
+		Opcode:  p25phase2.OpRFSSStatusBroadcastUpdate,
+		Payload: rfss[:],
+	}.AsRFSSStatusBroadcast()
+	if !ok {
+		t.Fatal("phase2 AsRFSSStatusBroadcast returned !ok")
+	}
+	if p1r.LRA != p2r.LRA || p1r.SystemID != p2r.SystemID || p1r.RFSS != p2r.RFSS || p1r.Site != p2r.Site {
+		t.Errorf("RFSS phase1=%+v disagrees with phase2 %+v", p1r, p2r)
+	}
+}
 
 func TestTSBKAssembleParseRoundTrip(t *testing.T) {
 	in := TSBK{
@@ -117,9 +158,15 @@ func TestParseUnitRegistrationResponse(t *testing.T) {
 }
 
 func TestParseNetworkStatusBroadcast(t *testing.T) {
-	// WACN = 0xABCDE (20-bit), SystemID = 0x123 (12-bit).
-	p := [8]byte{0xAB, 0xCD, 0xE1, 0x23, 0x40, 0x10, 0x00, 0x42}
+	// LRA = 0x07, WACN = 0xABCDE (20-bit), SystemID = 0x123 (12-bit),
+	// channel = 4.010, service class = 0x42. Layout per TIA-102.AABF:
+	// byte 0 LRA, bytes 1-3 WACN, bytes 3-4 SystemID, bytes 5-6 channel,
+	// byte 7 service class — matching phase2/mac.go AsNetworkStatusBroadcast.
+	p := [8]byte{0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x40, 0x10, 0x42}
 	n := ParseNetworkStatusBroadcast(p)
+	if n.LRA != 0x07 {
+		t.Errorf("LRA = %02X, want 07", n.LRA)
+	}
 	if n.WACN != 0xABCDE {
 		t.Errorf("WACN = %05X, want ABCDE", n.WACN)
 	}
@@ -128,6 +175,56 @@ func TestParseNetworkStatusBroadcast(t *testing.T) {
 	}
 	if n.ChannelID != 0x4 || n.ChannelNumber != 0x010 {
 		t.Errorf("Channel = %X.%03X", n.ChannelID, n.ChannelNumber)
+	}
+	if n.ServiceClass != 0x42 {
+		t.Errorf("ServiceClass = %02X, want 42", n.ServiceClass)
+	}
+}
+
+// TestParseRFSSStatusBroadcast pins the corrected byte layout (LRA, then
+// 12-bit SystemID, then RFSS at byte 3 and Site at byte 4) against the
+// independent Phase 2 decoder in phase2/mac_standard.go.
+func TestParseRFSSStatusBroadcast(t *testing.T) {
+	// LRA = 0x09, SystemID = 0x123, RFSS = 4, Site = 7, channel = 4.010.
+	p := [8]byte{0x09, 0x01, 0x23, 0x04, 0x07, 0x40, 0x10, 0x42}
+	r := ParseRFSSStatusBroadcast(p)
+	if r.LRA != 0x09 {
+		t.Errorf("LRA = %02X, want 09", r.LRA)
+	}
+	if r.SystemID != 0x123 {
+		t.Errorf("SystemID = %03X, want 123", r.SystemID)
+	}
+	if r.RFSS != 4 || r.Site != 7 {
+		t.Errorf("RFSS/Site = %d/%d, want 4/7", r.RFSS, r.Site)
+	}
+	if r.ChannelID != 0x4 || r.ChannelNumber != 0x010 {
+		t.Errorf("Channel = %X.%03X, want 4.010", r.ChannelID, r.ChannelNumber)
+	}
+}
+
+// TestParseAdjacentSiteStatusBroadcast checks the corrected neighbour
+// layout via an Assemble/Parse round-trip plus the real on-air Mt Anakie
+// frame already pinned for CRC in TestTSBKAcceptsMtAnakieOnAirVector.
+func TestParseAdjacentSiteStatusBroadcast(t *testing.T) {
+	in := AdjacentSiteStatusBroadcast{
+		LRA: 0x0A, SystemID: 0x164, RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300,
+	}
+	out := ParseAdjacentSiteStatusBroadcast(AssembleAdjacentSiteStatusBroadcast(in))
+	if out != in {
+		t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", out, in)
+	}
+
+	// Mt Anakie on-air ADJ_STS_BCST payload (the 8 argument bytes of the
+	// 0x3C frame in TestTSBKAcceptsMtAnakieOnAirVector). LRA 0, SystemID
+	// 0x164, RFSS 4, Site 0x2E, channel 0xF.065.
+	p := [8]byte{0x00, 0x31, 0x64, 0x04, 0x2E, 0xF0, 0x65, 0x70}
+	a := ParseAdjacentSiteStatusBroadcast(p)
+	if a.SystemID != 0x164 || a.RFSS != 4 || a.Site != 0x2E {
+		t.Errorf("on-air ADJ = SystemID %03X RFSS %d Site %02X, want 164/4/2E",
+			a.SystemID, a.RFSS, a.Site)
+	}
+	if a.ChannelID != 0xF || a.ChannelNumber != 0x065 {
+		t.Errorf("on-air ADJ channel = %X.%03X, want F.065", a.ChannelID, a.ChannelNumber)
 	}
 }
 

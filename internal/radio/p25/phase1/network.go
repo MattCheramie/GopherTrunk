@@ -50,6 +50,9 @@ func (m *NetworkModel) ApplyNetworkStatus(n NetworkStatusBroadcast) {
 	defer m.mu.Unlock()
 	m.cfg.WACN = n.WACN
 	m.cfg.SystemID = n.SystemID
+	if n.LRA != 0 {
+		m.cfg.LRA = n.LRA
+	}
 }
 
 // ApplyRFSSStatus folds an RFSS Status Broadcast (0x3A) in.
