@@ -7,6 +7,80 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.5] — 2026-06-17
+
+This release pairs two operator-facing fixes with a large docs-site
+expansion. The Hunt panel's control-channel parser, previously locked to
+P25, now covers **every trunked protocol with a standalone control
+channel** — P25, DMR Tier III, NXDN, dPMR, EDACS, Motorola, MPT 1327,
+TETRA, and YSF — via a protocol selector, and its listen window becomes a
+free-form seconds field instead of a fixed dropdown (#707). On the decode
+side, a fast scanner retune could race the USB stream teardown and fail the
+next capture with `stream already active` / `conv: StreamIQ failed`; the
+re-open now waits on the in-flight teardown across all drivers (#686). And
+call history finally keeps the **mid-call backfilled radio ID and
+encryption** on P25 Phase 2 grants, which start with a placeholder RID and
+only surface identity on the traffic channel (#696). Alongside the code,
+the docs site gains the **GopherTrunk Reference** encyclopedia (≈180
+cross-linked entries with hand-authored SVG diagrams) and a 14-part **SDR
+Internals** deep-dive blog series.
+
+### Added
+
+- **GopherTrunk Reference encyclopedia (#700, #701).** A new data-driven
+  `/reference/` encyclopedia (≈180 entries) spanning RF fundamentals,
+  modulation, voice coding, SDR & DSP, algorithms, antennas & propagation,
+  hardware, trunked radio, protocols, people, and organizations. Entries
+  follow a uniform profile, most carry a hand-authored theme-aware inline
+  SVG structure/concept diagram, and the set is wired into the glossary and
+  `llms.txt` so it is discoverable to both readers and AI search.
+- **"SDR Internals" blog series (#705).** A 14-part deep-dive series — from
+  "what is software-defined radio" through the driver registry, the
+  streaming pool & concurrency, DSP foundations, tuning/channelization,
+  demodulation, symbol timing, equalization/FFT, framing/FEC, and the
+  protocol-decoder state machines — with a series landing page and nav
+  entry.
+- **Download / support / community CTAs across the docs site (#697,
+  #702).** Non-home pages and the reference layouts now carry consistent
+  call-to-action links, with tightened per-page meta descriptions.
+
+### Changed
+
+- **Hunt control-channel parser now covers all trunked protocols (#707).**
+  The "Parse a control channel" Hunt panel was hardcoded to `p25` over an
+  already protocol-agnostic API; it now exposes a protocol selector for
+  every trunked protocol with a dedicated standalone control channel (P25,
+  DMR Tier III, NXDN, dPMR, EDACS, Motorola, MPT 1327, TETRA, YSF) and
+  forwards the choice to the hunt start. The fixed 5/10/15/20 s "Listen
+  for" dropdown becomes a free-form numeric seconds input (min 1, default
+  15) with a hint about the ~19 MB/s IQ cost. No backend change.
+
+### Fixed
+
+- **Scanner retune no longer races the IQ stream teardown (#686).** In
+  scanner mode a fast retune cancels the IQ stream's context and
+  immediately re-opens it, but the USB drivers tear a stream down in a
+  detached goroutine that clears `streaming` only after `StopBulkIn` and
+  the receiver-off control transfer complete — so the next `StreamIQ` often
+  saw `streaming == true` and failed with "stream already active" (logged
+  repeatedly as "conv: StreamIQ failed"). The fail-fast guard is replaced
+  with a context-bounded wait on a per-stream `streamDone` channel, applied
+  identically to rtlsdr, airspy, hackrf, and airspyhf, with a per-driver
+  regression test that cancels and re-opens without draining the first
+  stream.
+- **Call history keeps the mid-call RID + encryption on call end (#696).**
+  `recordEnd` previously wrote only `ended_at` / `duration` / `reason`,
+  discarding the call's final identity. On P25 Phase 2 compressed grants the
+  source RID starts at 0 and is backfilled mid-call on the traffic channel,
+  and `ALGID`/`KID` likewise surface mid-call (Phase 1 LDU2, Phase 2
+  EncryptionSync) — so `call_log` rows kept the grant-time placeholders
+  (`source_id=0`, `algorithm_id=0`) and RIDs never appeared in history on
+  exactly those Phase 2 systems. The end UPDATE now also persists
+  `source_id` / `encrypted` / `algorithm_id` / `key_id` from the end grant
+  with never-downgrade semantics (`COALESCE(NULLIF(?, 0), col)`, and an
+  encryption flag that only upgrades). (`recordings.skip_encrypted` is
+  unrelated — it only gates WAV/raw file writing.)
+
 ## [v0.4.4] — 2026-06-16
 
 This release is the **RF & SDR learning hub** — a structured, vendor-neutral
