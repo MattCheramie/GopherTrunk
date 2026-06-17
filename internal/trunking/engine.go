@@ -40,11 +40,22 @@ type Engine struct {
 	// repeater. Logged once, then DEBUG per grant.
 	noVoiceCoverageOnce sync.Once
 
-	// scanMode is read under modeMu so the API cockpit can flip it at
-	// runtime without a daemon restart. HandleGrant takes a snapshot
-	// under the read lock to avoid blocking the bus loop.
-	modeMu   sync.RWMutex
-	scanMode ScanMode
+	// scanMode, encMode and encMetadataFollow are read under modeMu so
+	// the API cockpit can flip them at runtime without a daemon restart.
+	// HandleGrant takes a snapshot under the read lock to avoid blocking
+	// the bus loop.
+	modeMu            sync.RWMutex
+	scanMode          ScanMode
+	encMode           EncryptedMode
+	encMetadataFollow time.Duration
+
+	// configuredKeys maps a system name to the set of encryption key IDs
+	// the operator supplied for it (trunking.systems[].encryption_keys).
+	// A call whose KeyID is in its system's set is "decryptable" — the
+	// operator intends to capture / decode it — so the encrypted-call
+	// policy exempts it and always follows it. Read-only after NewEngine,
+	// so no lock. nil / empty for systems with no keys. Issue #711.
+	configuredKeys map[string]map[uint16]bool
 
 	mu        sync.Mutex
 	calls     map[string]*ActiveCall // by device serial; mirror of pool.active for fast access
@@ -71,7 +82,34 @@ type EngineOptions struct {
 	// Scan flag. Default ScanModeAll keeps every non-locked-out grant
 	// flowing through; ScanModeList enforces the talkgroup scan list.
 	ScanMode ScanMode
+	// EncryptedMode controls how encrypted calls are handled. Default
+	// EncryptedFollow holds a voice SDR for the full call (legacy
+	// behaviour); EncryptedMetadata follows briefly then releases;
+	// EncryptedIgnore never allocates a voice SDR to an encrypted call.
+	// Issue #711.
+	EncryptedMode EncryptedMode
+	// EncryptedMetadataFollow is how long an encrypted call is followed
+	// under EncryptedMetadata before its voice SDR is released, measured
+	// from when the call is first known to be encrypted. Defaults to
+	// defaultEncryptedMetadataFollow (1.5 s) when <= 0.
+	EncryptedMetadataFollow time.Duration
+	// ConfiguredKeys maps system name -> set of configured encryption key
+	// IDs. Calls whose KeyID matches are exempt from the encrypted-call
+	// policy (always followed). nil disables the exemption. Issue #711.
+	ConfiguredKeys map[string]map[uint16]bool
 }
+
+// defaultEncryptedMetadataFollow is the metadata-mode follow window
+// applied when trunking.encrypted_calls.metadata_follow_ms is unset /
+// zero. Long enough for a P25 Phase 2 talker-alias reassembly + a couple
+// of MAC PDU repeats, short enough to free the tuner quickly. Issue #711.
+const defaultEncryptedMetadataFollow = 1500 * time.Millisecond
+
+// algorithmClear is the encryption Algorithm ID a clear (unencrypted)
+// P25 call advertises; anything else means encrypted. Mirrors
+// p25.AlgorithmClear, kept local to avoid a radio-package import (same
+// pattern as internal/voice/recorder.go). Issue #711.
+const algorithmClear uint8 = 0x80
 
 // NewEngine validates opts and returns a ready-to-Run engine.
 func NewEngine(opts EngineOptions) (*Engine, error) {
@@ -93,6 +131,9 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.EncryptedMetadataFollow <= 0 {
+		opts.EncryptedMetadataFollow = defaultEncryptedMetadataFollow
+	}
 	// Surface the resolved watchdog timeout once at startup so an operator
 	// can confirm from logs that the configured trunking.call_timeout_ms
 	// is the value the engine is actually using — issue #356 follow-up
@@ -101,16 +142,19 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	// applied.
 	opts.Log.Info("engine: configured", "call_timeout", opts.CallTimeout)
 	e := &Engine{
-		bus:        opts.Bus,
-		log:        opts.Log,
-		pool:       opts.VoicePool,
-		talkgroups: opts.Talkgroups,
-		patches:    NewPatchRegistry(),
-		timeout:    opts.CallTimeout,
-		now:        opts.Now,
-		scanMode:   opts.ScanMode,
-		calls:      make(map[string]*ActiveCall),
-		synthetic:  make(map[string]*ActiveCall),
+		bus:               opts.Bus,
+		log:               opts.Log,
+		pool:              opts.VoicePool,
+		talkgroups:        opts.Talkgroups,
+		patches:           NewPatchRegistry(),
+		timeout:           opts.CallTimeout,
+		now:               opts.Now,
+		scanMode:          opts.ScanMode,
+		encMode:           opts.EncryptedMode,
+		encMetadataFollow: opts.EncryptedMetadataFollow,
+		configuredKeys:    opts.ConfiguredKeys,
+		calls:             make(map[string]*ActiveCall),
+		synthetic:         make(map[string]*ActiveCall),
 	}
 	// Subscribe at construction time so callers can publish grants
 	// before Run starts without losing them.
@@ -207,6 +251,22 @@ func (e *Engine) HandleGrant(g Grant) {
 			e.log.Debug("grant not in scan list", "grant", g.String())
 			return
 		}
+	}
+
+	// Encrypted-call policy (mode: ignore): never tie up a voice SDR on a
+	// grant already flagged encrypted. Only dropped here when the grant
+	// itself signals encryption (P25 Phase 2 grants carry it; Phase 1
+	// discovers it mid-call, handled in applyEncryptedPolicy). A system
+	// the operator has keys for is left to the in-call handlers, which
+	// know the KeyID and can exempt a decryptable call — dropping here
+	// would discard a call the operator may want to capture. Emergency
+	// grants follow the existing lockout/scan-list precedent and bypass
+	// the policy. Issue #711.
+	if g.Encrypted && !g.Emergency && e.EncryptedMode() == EncryptedIgnore &&
+		!e.keyConfigured(g.System, g.KeyID) && !e.systemHasKeys(g.System) {
+		e.log.Debug("dropping encrypted grant (encrypted_calls mode: ignore)",
+			"grant", g.String())
+		return
 	}
 
 	// Suppress duplicate grants. The Phase 1 CC repeats voice-grant
@@ -374,6 +434,7 @@ func (e *Engine) handleCallEncryption(c CallEncryption) {
 		"system", enriched.System,
 		"tg", enriched.GroupID,
 		"alg", c.AlgorithmID, "key", c.KeyID)
+	e.applyEncryptedPolicy(c.DeviceSerial, g, c.AlgorithmID != algorithmClear)
 }
 
 // handleCallSourceUpdate backfills SourceID + Encrypted on the bound
@@ -430,6 +491,7 @@ func (e *Engine) handleCallSourceUpdate(c CallSourceUpdate) {
 		"tg", enriched.GroupID,
 		"src", enriched.SourceID,
 		"enc", enriched.Encrypted)
+	e.applyEncryptedPolicy(c.DeviceSerial, g, g.Encrypted)
 }
 
 // handlePatch applies a patch announcement to the registry: an Add
@@ -512,6 +574,42 @@ func (e *Engine) startCall(d *VoiceDevice, g Grant, tg *TalkGroup) {
 		"device", d.Serial,
 		"grant", g.String(),
 		"priority", EffectivePriority(g, tg))
+	// Apply the encrypted-call policy for grants that already signal
+	// encryption (P25 Phase 2). Phase 1 / compressed grants surface
+	// encryption mid-call via handleCallEncryption / handleCallSourceUpdate.
+	e.applyEncryptedPolicy(d.Serial, g, g.Encrypted)
+}
+
+// applyEncryptedPolicy enforces the trunking.encrypted_calls policy on
+// the pool-bound call on serial once it is known to be encrypted.
+// encrypted is computed by the caller from the context it has (grant
+// flag, encryption-sync ALGID, or source-update flag). A decryptable
+// call (operator holds a matching key) is always followed — any pending
+// metadata release is cancelled. Otherwise: ignore ends the call now;
+// metadata arms the watchdog to release it after the follow window;
+// follow does nothing. Synthetic (conventional-FM) calls aren't pool-
+// bound, so this is a no-op for them. Issue #711.
+func (e *Engine) applyEncryptedPolicy(serial string, g Grant, encrypted bool) {
+	if !encrypted {
+		return
+	}
+	if e.keyConfigured(g.System, g.KeyID) {
+		e.pool.DisarmEncryptedRelease(serial)
+		return
+	}
+	switch e.EncryptedMode() {
+	case EncryptedIgnore:
+		e.mu.Lock()
+		ac := e.calls[serial]
+		e.mu.Unlock()
+		if ac != nil {
+			e.log.Info("releasing encrypted call (encrypted_calls mode: ignore)",
+				"device", serial, "grant", g.String())
+			e.endCall(ac, EndReasonEncrypted)
+		}
+	case EncryptedMetadata:
+		e.pool.ArmEncryptedRelease(serial, e.now().Add(e.EncryptedMetadataFollow()))
+	}
 }
 
 func (e *Engine) endCall(ac *ActiveCall, reason EndReason) {
@@ -541,6 +639,15 @@ func (e *Engine) endCall(ac *ActiveCall, reason EndReason) {
 
 func (e *Engine) runWatchdog() {
 	now := e.now()
+	// Encrypted-call policy (mode: metadata): release any call whose
+	// metadata-follow window has elapsed. Done first so a call due for an
+	// encrypted release isn't also reaped as an inactivity timeout in the
+	// same tick. Issue #711.
+	for _, ac := range e.pool.EncryptedReleasesDue(now) {
+		e.log.Debug("watchdog: releasing encrypted call after metadata window",
+			"device", ac.Device.Serial, "grant", ac.Grant.String())
+		e.endCall(ac, EndReasonEncrypted)
+	}
 	cutoff := now.Add(-e.timeout)
 	for _, ac := range e.pool.Active() {
 		if ac.LastHeardAt.Before(cutoff) {
@@ -685,4 +792,63 @@ func (e *Engine) SetScanMode(m ScanMode) ScanMode {
 	prev := e.scanMode
 	e.scanMode = m
 	return prev
+}
+
+// EncryptedMode returns the engine's current encrypted-call handling
+// mode. Safe to call from any goroutine. Issue #711.
+func (e *Engine) EncryptedMode() EncryptedMode {
+	e.modeMu.RLock()
+	defer e.modeMu.RUnlock()
+	return e.encMode
+}
+
+// SetEncryptedMode swaps the encrypted-call handling mode at runtime —
+// the settings applier calls this when the operator changes
+// trunking.encrypted_calls.mode without a daemon restart. Returns the
+// previous mode for audit / UX feedback. The change applies to future
+// grants and future in-call encryption discoveries; calls already armed
+// for a metadata release keep their deadline. Issue #711.
+func (e *Engine) SetEncryptedMode(m EncryptedMode) EncryptedMode {
+	e.modeMu.Lock()
+	defer e.modeMu.Unlock()
+	prev := e.encMode
+	e.encMode = m
+	return prev
+}
+
+// EncryptedMetadataFollow returns the current metadata-mode follow
+// window. Safe to call from any goroutine. Issue #711.
+func (e *Engine) EncryptedMetadataFollow() time.Duration {
+	e.modeMu.RLock()
+	defer e.modeMu.RUnlock()
+	return e.encMetadataFollow
+}
+
+// SetEncryptedMetadataFollow swaps the metadata-mode follow window at
+// runtime. A value <= 0 resets it to the default. Issue #711.
+func (e *Engine) SetEncryptedMetadataFollow(d time.Duration) {
+	if d <= 0 {
+		d = defaultEncryptedMetadataFollow
+	}
+	e.modeMu.Lock()
+	defer e.modeMu.Unlock()
+	e.encMetadataFollow = d
+}
+
+// keyConfigured reports whether the operator supplied an encryption key
+// whose key ID matches keyID for system — i.e. the call is "decryptable"
+// (captured for in-process or out-of-band decode) and must be exempt
+// from the encrypted-call policy. Issue #711.
+func (e *Engine) keyConfigured(system string, keyID uint16) bool {
+	ids := e.configuredKeys[system]
+	return ids != nil && ids[keyID]
+}
+
+// systemHasKeys reports whether the operator supplied any encryption key
+// for system. HandleGrant uses it to avoid dropping an encrypted grant at
+// grant time (mode: ignore) on a system the operator has keys for — the
+// grant may not carry a KeyID yet, so the decision is deferred to the
+// in-call handlers where the KeyID is known. Issue #711.
+func (e *Engine) systemHasKeys(system string) bool {
+	return len(e.configuredKeys[system]) > 0
 }

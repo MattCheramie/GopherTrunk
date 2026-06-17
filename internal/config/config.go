@@ -997,6 +997,35 @@ type TrunkingConfig struct {
 	// goes idle past VoiceHangtimeMs. Empty defaults to "transmission";
 	// any other value is rejected by Validate.
 	VoiceCallGrouping string `yaml:"voice_call_grouping"`
+
+	// EncryptedCalls controls how the engine allocates scarce voice SDRs
+	// to encrypted calls. Issue #711.
+	EncryptedCalls EncryptedCallsConfig `yaml:"encrypted_calls"`
+}
+
+// EncryptedCallsConfig configures handling of calls discovered to be
+// encrypted, so encrypted traffic can't monopolize a limited pool of
+// voice SDRs and starve clear calls. Issue #711.
+type EncryptedCallsConfig struct {
+	// Mode selects the policy:
+	//   "follow" (default / empty) — hold a voice SDR for the full call,
+	//     exactly like a clear call (backwards-compatible behaviour).
+	//   "metadata" — follow the call briefly so traffic-channel metadata
+	//     (P25 Phase 2 talker alias, source RID, encryption sync) is
+	//     captured, then release the voice SDR MetadataFollowMs after the
+	//     call is first known to be encrypted.
+	//   "ignore" — never tie up a voice SDR on an encrypted call.
+	// Any other value is rejected by Validate. A call whose KeyID matches
+	// a configured trunking.systems[].encryption_keys entry is exempt and
+	// always followed regardless of mode.
+	Mode string `yaml:"mode"`
+
+	// MetadataFollowMs is how long (milliseconds) an encrypted call is
+	// followed under mode "metadata" before its voice SDR is released,
+	// measured from when the call is first known to be encrypted. 0 uses
+	// the engine default (1500 ms). Negative values are rejected by
+	// Validate. Ignored in "follow" / "ignore" modes.
+	MetadataFollowMs int `yaml:"metadata_follow_ms"`
 }
 
 // SiteConfig names one P25 site by its RFSS and Site IDs. It is pure
@@ -1805,6 +1834,14 @@ func (c Config) validateTrunking() []error {
 	case "", "transmission", "conversation":
 	default:
 		errs = append(errs, fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping))
+	}
+	switch c.Trunking.EncryptedCalls.Mode {
+	case "", "follow", "metadata", "ignore":
+	default:
+		errs = append(errs, fmt.Errorf("trunking.encrypted_calls.mode: %q must be \"follow\", \"metadata\", or \"ignore\"", c.Trunking.EncryptedCalls.Mode))
+	}
+	if c.Trunking.EncryptedCalls.MetadataFollowMs < 0 {
+		errs = append(errs, fmt.Errorf("trunking.encrypted_calls.metadata_follow_ms: %d ms must be ≥ 0", c.Trunking.EncryptedCalls.MetadataFollowMs))
 	}
 	for i, s := range c.Trunking.Systems {
 		if err := validateSystem(i, s); err != nil {

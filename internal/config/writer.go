@@ -51,6 +51,10 @@ type Patch struct {
 	// future endpoint because they're keyed by serial).
 	SDRSampleRate *uint32
 
+	// Trunking (encrypted-call handling; issue #711).
+	TrunkingEncryptedMode             *string
+	TrunkingEncryptedMetadataFollowMs *int
+
 	// Scanner.
 	ScannerScanMode          *string
 	ScannerManualTuneEnabled *bool
@@ -129,6 +133,12 @@ func (p Patch) Apply(cfg Config) Config {
 	}
 	if p.SDRSampleRate != nil {
 		cfg.SDR.SampleRate = *p.SDRSampleRate
+	}
+	if p.TrunkingEncryptedMode != nil {
+		cfg.Trunking.EncryptedCalls.Mode = *p.TrunkingEncryptedMode
+	}
+	if p.TrunkingEncryptedMetadataFollowMs != nil {
+		cfg.Trunking.EncryptedCalls.MetadataFollowMs = *p.TrunkingEncryptedMetadataFollowMs
 	}
 	if p.ScannerScanMode != nil {
 		cfg.Scanner.ScanMode = *p.ScannerScanMode
@@ -245,6 +255,12 @@ func patchEdits(p Patch) []patchPath {
 	}
 	if p.SDRSampleRate != nil {
 		add([]string{"sdr", "sample_rate"}, scalarInt(int64(*p.SDRSampleRate)))
+	}
+	if p.TrunkingEncryptedMode != nil {
+		add([]string{"trunking", "encrypted_calls", "mode"}, scalarString(*p.TrunkingEncryptedMode))
+	}
+	if p.TrunkingEncryptedMetadataFollowMs != nil {
+		add([]string{"trunking", "encrypted_calls", "metadata_follow_ms"}, scalarInt(int64(*p.TrunkingEncryptedMetadataFollowMs)))
 	}
 	if p.ScannerScanMode != nil {
 		add([]string{"scanner", "scan_mode"}, scalarString(*p.ScannerScanMode))

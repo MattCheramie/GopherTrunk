@@ -40,6 +40,9 @@ type SettingsPatchRequest struct {
 
 	SDRSampleRate *uint32 `json:"sdr_sample_rate,omitempty"`
 
+	TrunkingEncryptedMode             *string `json:"trunking_encrypted_mode,omitempty"`
+	TrunkingEncryptedMetadataFollowMs *int    `json:"trunking_encrypted_metadata_follow_ms,omitempty"`
+
 	ScannerScanMode          *string `json:"scanner_scan_mode,omitempty"`
 	ScannerManualTuneEnabled *bool   `json:"scanner_manual_tune_enabled,omitempty"`
 	ScannerCCHuntEnabled     *bool   `json:"scanner_cc_hunt_enabled,omitempty"`
@@ -56,33 +59,35 @@ type SettingsPatchRequest struct {
 // toPatch converts the wire-level request into a config.Patch.
 func (r SettingsPatchRequest) toPatch() config.Patch {
 	return config.Patch{
-		LogLevel:                 r.LogLevel,
-		LogFormat:                r.LogFormat,
-		APIHTTPAddr:              r.APIHTTPAddr,
-		APIGRPCAddr:              r.APIGRPCAddr,
-		APIAuthMode:              r.APIAuthMode,
-		AudioEnabled:             r.AudioEnabled,
-		AudioDevice:              r.AudioDevice,
-		AudioVolume:              r.AudioVolume,
-		AudioMuted:               r.AudioMuted,
-		AudioBufferMs:            r.AudioBufferMs,
-		RecordingsDir:            r.RecordingsDir,
-		RecordingsSampleRate:     r.RecordingsSampleRate,
-		RecordingsWriteRaw:       r.RecordingsWriteRaw,
-		RecordingsSkipEncrypted:  r.RecordingsSkipEncrypted,
-		RetentionCallLogDays:     r.RetentionCallLogDays,
-		RetentionFilesDays:       r.RetentionFilesDays,
-		RetentionInterval:        r.RetentionInterval,
-		SDRSampleRate:            r.SDRSampleRate,
-		ScannerScanMode:          r.ScannerScanMode,
-		ScannerManualTuneEnabled: r.ScannerManualTuneEnabled,
-		ScannerCCHuntEnabled:     r.ScannerCCHuntEnabled,
-		ScannerCCHuntDwellMs:     r.ScannerCCHuntDwellMs,
-		ScannerCCHuntBackoffMs:   r.ScannerCCHuntBackoffMs,
-		ScannerCCHuntMaxBackoff:  r.ScannerCCHuntMaxBackoff,
-		StoragePath:              r.StoragePath,
-		StorageCCCacheFile:       r.StorageCCCacheFile,
-		MetricsEnabled:           r.MetricsEnabled,
+		LogLevel:                          r.LogLevel,
+		LogFormat:                         r.LogFormat,
+		APIHTTPAddr:                       r.APIHTTPAddr,
+		APIGRPCAddr:                       r.APIGRPCAddr,
+		APIAuthMode:                       r.APIAuthMode,
+		AudioEnabled:                      r.AudioEnabled,
+		AudioDevice:                       r.AudioDevice,
+		AudioVolume:                       r.AudioVolume,
+		AudioMuted:                        r.AudioMuted,
+		AudioBufferMs:                     r.AudioBufferMs,
+		RecordingsDir:                     r.RecordingsDir,
+		RecordingsSampleRate:              r.RecordingsSampleRate,
+		RecordingsWriteRaw:                r.RecordingsWriteRaw,
+		RecordingsSkipEncrypted:           r.RecordingsSkipEncrypted,
+		RetentionCallLogDays:              r.RetentionCallLogDays,
+		RetentionFilesDays:                r.RetentionFilesDays,
+		RetentionInterval:                 r.RetentionInterval,
+		SDRSampleRate:                     r.SDRSampleRate,
+		TrunkingEncryptedMode:             r.TrunkingEncryptedMode,
+		TrunkingEncryptedMetadataFollowMs: r.TrunkingEncryptedMetadataFollowMs,
+		ScannerScanMode:                   r.ScannerScanMode,
+		ScannerManualTuneEnabled:          r.ScannerManualTuneEnabled,
+		ScannerCCHuntEnabled:              r.ScannerCCHuntEnabled,
+		ScannerCCHuntDwellMs:              r.ScannerCCHuntDwellMs,
+		ScannerCCHuntBackoffMs:            r.ScannerCCHuntBackoffMs,
+		ScannerCCHuntMaxBackoff:           r.ScannerCCHuntMaxBackoff,
+		StoragePath:                       r.StoragePath,
+		StorageCCCacheFile:                r.StorageCCCacheFile,
+		MetricsEnabled:                    r.MetricsEnabled,
 	}
 }
 
@@ -109,6 +114,8 @@ type SettingsApplier interface {
 	SetAudioEnabled(enabled bool)
 	SetRecordingEnabled(enabled bool)
 	SetScannerScanMode(mode string) error
+	SetTrunkingEncryptedMode(mode string) error
+	SetTrunkingEncryptedMetadataFollowMs(ms int)
 }
 
 // ConfigWriter wraps the daemon's config.yaml writer. Decoupled via
@@ -216,6 +223,25 @@ func (s *Server) applyHotReload(p config.Patch) (applied, restartRequired []stri
 			}
 		} else {
 			cold("scanner.scan_mode")
+		}
+	}
+	if p.TrunkingEncryptedMode != nil {
+		if app != nil {
+			if err := app.SetTrunkingEncryptedMode(*p.TrunkingEncryptedMode); err == nil {
+				hot("trunking.encrypted_calls.mode")
+			} else {
+				cold("trunking.encrypted_calls.mode")
+			}
+		} else {
+			cold("trunking.encrypted_calls.mode")
+		}
+	}
+	if p.TrunkingEncryptedMetadataFollowMs != nil {
+		if app != nil {
+			app.SetTrunkingEncryptedMetadataFollowMs(*p.TrunkingEncryptedMetadataFollowMs)
+			hot("trunking.encrypted_calls.metadata_follow_ms")
+		} else {
+			cold("trunking.encrypted_calls.metadata_follow_ms")
 		}
 	}
 	if p.LogLevel != nil {

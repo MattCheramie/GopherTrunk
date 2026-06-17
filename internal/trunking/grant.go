@@ -159,6 +159,14 @@ const (
 	EndReasonNoVoiceSDR // every Voice-role SDR was busy
 	EndReasonError
 	EndReasonManual // operator ended the call via API / TUI
+	// EndReasonEncrypted is the encrypted-call-handling teardown: the
+	// trunking.encrypted_calls policy released the voice SDR because the
+	// call was discovered to be encrypted — either immediately
+	// (mode: ignore) or after the metadata-follow window (mode:
+	// metadata). Distinct from the reasons above so operators can see a
+	// tuner was freed by policy, not by a decode problem or a higher-
+	// priority preemption. Issue #711.
+	EndReasonEncrypted
 )
 
 func (r EndReason) String() string {
@@ -177,6 +185,8 @@ func (r EndReason) String() string {
 		return "error"
 	case EndReasonManual:
 		return "manual"
+	case EndReasonEncrypted:
+		return "encrypted"
 	default:
 		return "unknown"
 	}

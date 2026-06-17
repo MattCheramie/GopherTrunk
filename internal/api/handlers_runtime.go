@@ -56,6 +56,11 @@ type RuntimeDTO struct {
 	SDRSampleRate int      `json:"sdr_sample_rate"`
 	SDRBackends   []string `json:"sdr_backends"`
 
+	// Trunking encrypted-call handling (issue #711). Mode is
+	// follow|metadata|ignore; the follow window applies in metadata mode.
+	TrunkingEncryptedMode             string `json:"trunking_encrypted_mode"`
+	TrunkingEncryptedMetadataFollowMs int    `json:"trunking_encrypted_metadata_follow_ms"`
+
 	// Scanner config (the live state is on /api/v1/scanner).
 	ScannerScanMode          string `json:"scanner_scan_mode"`
 	ScannerCCHuntEnabled     bool   `json:"scanner_cc_hunt_enabled"`
