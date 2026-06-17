@@ -129,6 +129,14 @@ const (
 	// source ID + encrypted state at grant time do not need this
 	// event — the values are already on the Grant.
 	KindCallSourceUpdate Kind = "call.source"
+	// KindSiteUpdate fires when the P25 control-channel decoder parses
+	// an RFSS Status Broadcast (TSBK 0x3A), naming the site it is
+	// camped on and the control-channel frequency it was heard on.
+	// Payload is a trunking.SiteUpdate. The SiteTracker subscribes and
+	// accumulates the discovered sites behind GET /api/v1/sites so
+	// downstream tooling can map a grant's RFSS/Site to a human
+	// site name (issue #698).
+	KindSiteUpdate Kind = "site.update"
 	// KindBookmarkCreated / KindBookmarkUpdated / KindBookmarkDeleted
 	// fire whenever the bookmarks store mutates. Payload is a
 	// storage.Bookmark (or {ID} for deletes). Surfaced over SSE / WS

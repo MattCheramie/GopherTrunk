@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **P25 site identity in grant events and a `/api/v1/sites` endpoint**
+  (#698). Every `grant` event now carries `rfss_id` / `site_id`,
+  decoded from the camped site's RFSS Status Broadcast, so downstream
+  tooling (Prometheus exporters, dashboards) can label calls by site
+  instead of an opaque `channel_id`. A new `GET /api/v1/sites`
+  endpoint lists the sites GT has discovered from the control channel
+  — each with the control-channel frequency it was heard on — merged
+  with optional human-readable names configured per system under
+  `trunking.systems[].sites` (`rfss` / `site` / `name`).
+
 ## [v0.4.4] — 2026-06-16
 
 This release is the **RF & SDR learning hub** — a structured, vendor-neutral

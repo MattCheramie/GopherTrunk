@@ -21,6 +21,15 @@ type Grant struct {
 	FrequencyHz uint32 // voice channel frequency
 	ChannelID   uint8  // raw channel ID (P25 band-plan ID, DMR LCN high)
 	ChannelNum  uint16 // raw channel number within the ID
+	// RFSSID and SiteID identify the P25 site whose control channel
+	// granted the call, decoded from the site's RFSS Status Broadcast
+	// (TSBK 0x3A) and accumulated in the control channel's NetworkModel.
+	// They let downstream consumers (Prometheus exporters, dashboards)
+	// label a grant by site instead of resolving the opaque ChannelID
+	// against a manual lookup table (issue #698). Both stay zero on
+	// non-P25 grants and until the first RFSS Status TSBK has landed.
+	RFSSID uint8
+	SiteID uint8
 	// Timeslot identifies the TDMA logical channel a call occupies on
 	// its carrier, 1-based: 0 = not applicable / unknown (P25 Phase 1,
 	// NXDN, analog — frequency alone identifies the call), 1 = TS1,
@@ -269,4 +278,22 @@ type CallSourceUpdate struct {
 	SourceID     uint32
 	Encrypted    bool
 	At           time.Time
+}
+
+// SiteUpdate is the payload of an events.KindSiteUpdate event. The P25
+// control-channel decoder publishes one each time it parses an RFSS
+// Status Broadcast (TSBK 0x3A), naming the site it is currently camped
+// on and the control-channel frequency it heard it on. The SiteTracker
+// accumulates these into the queryable table behind GET /api/v1/sites
+// (issue #698). ControlChannelHz comes from the decoder's tuned
+// frequency — grants carry only the voice ChannelID, not the control
+// channel — so a SiteUpdate is the only place the two are joined.
+type SiteUpdate struct {
+	System           string
+	RFSSID           uint8
+	SiteID           uint8
+	ControlChannelHz uint32
+	WACN             uint32
+	SystemID         uint16
+	At               time.Time
 }
