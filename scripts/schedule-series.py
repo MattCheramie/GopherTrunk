@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Re-date a blog post series onto consecutive weekdays.
+"""Re-date a blog post series onto consecutive days.
 
 GopherTrunk's docs site (docs/) dates posts by filename
 (`YYYY-MM-DD-slug.md`) and hides future-dated posts until a build runs on or
-after their date (`future: false` in docs/_config.yml). A weekday cron in
-.github/workflows/pages.yml then rebuilds the site each weekday, so a series
-committed all at once drips out one post per weekday.
+after their date (`future: false` in docs/_config.yml). A daily cron in
+.github/workflows/pages.yml then rebuilds the site every day, so a series
+committed all at once drips out one post per day, including weekends.
 
-This helper assigns those weekday dates for you. Give it a start date and the
-posts in reading order; it rewrites each filename's `YYYY-MM-DD-` prefix to the
-next weekday (skipping Sat/Sun). It prints a dry-run table by default; pass
---apply to perform the renames with `git mv`.
+This helper assigns those dates for you. Give it a start date and the posts in
+reading order; it rewrites each filename's `YYYY-MM-DD-` prefix to consecutive
+calendar days. It prints a dry-run table by default; pass --apply to perform the
+renames with `git mv`.
 
 Examples:
-    # Preview: schedule a series starting Mon 2026-07-06, in part order
+    # Preview: schedule a series starting 2026-07-06, in part order
     scripts/schedule-series.py 2026-07-06 docs/_posts/*sdr-internals*.md
 
     # Apply the renames (uses `git mv` so history follows)
@@ -36,26 +36,14 @@ import sys
 DATE_PREFIX = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-(.+)$")
 
 
-def next_weekday(day: dt.date) -> dt.date:
-    """Return `day` if it's a weekday, else the following Monday."""
-    while day.weekday() >= 5:  # 5 = Sat, 6 = Sun
-        day += dt.timedelta(days=1)
-    return day
-
-
-def weekday_dates(start: dt.date, count: int) -> list[dt.date]:
-    """`count` consecutive weekdays starting at/after `start`."""
-    dates: list[dt.date] = []
-    day = next_weekday(start)
-    for _ in range(count):
-        dates.append(day)
-        day = next_weekday(day + dt.timedelta(days=1))
-    return dates
+def consecutive_dates(start: dt.date, count: int) -> list[dt.date]:
+    """`count` consecutive calendar days starting at `start`."""
+    return [start + dt.timedelta(days=i) for i in range(count)]
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Re-date a post series onto consecutive weekdays.",
+        description="Re-date a post series onto consecutive calendar days.",
     )
     parser.add_argument("start", help="first publish date, YYYY-MM-DD")
     parser.add_argument("files", nargs="+", help="post files in reading order")
@@ -71,7 +59,7 @@ def main(argv: list[str]) -> int:
     except ValueError:
         parser.error(f"start date {args.start!r} is not valid YYYY-MM-DD")
 
-    dates = weekday_dates(start, len(args.files))
+    dates = consecutive_dates(start, len(args.files))
 
     renames: list[tuple[str, str]] = []
     for path, date in zip(args.files, dates):
