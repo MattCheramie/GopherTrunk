@@ -187,18 +187,16 @@ request-by-request diffing.
 Blog posts live in `docs/_posts/` and are dated by filename
 (`YYYY-MM-DD-slug.md`). To release a multi-part series gradually
 instead of all at once, commit the whole series in one PR but date
-the posts on **consecutive future weekdays**. Jekyll's `future:
+the posts on **consecutive future days**. Jekyll's `future:
 false` (set in [`docs/_config.yml`](docs/_config.yml)) keeps a
 future-dated post out of the built site — absent from the page list,
 `feed.xml`, and `sitemap.xml` — until a build runs on or after its
-date. A weekday `schedule:` cron in
+date. A daily `schedule:` cron in
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) rebuilds
-the site every weekday morning, so each post goes live on its date,
-one per weekday. Nothing else to do — no draft branches, no daily
-commits.
+the site every day, so each post goes live on its date, one per day.
+Nothing else to do — no draft branches, no daily commits.
 
-Assign the weekday dates with the helper rather than counting by
-hand (it skips Sat/Sun for you):
+Assign the dates with the helper rather than counting by hand:
 
 ```sh
 # preview, then re-run with --apply once it looks right
