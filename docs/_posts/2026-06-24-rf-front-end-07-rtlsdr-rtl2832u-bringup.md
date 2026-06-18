@@ -16,6 +16,12 @@ demodulator, and bringing it up means reproducing a register sequence where the
 *order* is load-bearing — get it wrong and the chip comes up half-initialized
 and deaf.*
 
+> **TL;DR** — The RTL2832U is a DVB-T demodulator pressed into service as a raw
+> ADC, brought up in pure Go via USB control transfers. The headline trap: its
+> init is an order-sensitive state machine, so any reordered, missing, or
+> uncommitted write leaves the chip present but deaf. The fix is to reproduce
+> librtlsdr's sequence byte-for-byte and pin it with golden tests.
+
 ## In this post
 
 - **What the RTL2832U is** — a DVB-T demodulator repurposed as a raw ADC, and the
@@ -102,8 +108,8 @@ func (d *Demod) writeDemodRegLocked(page uint8, addr, val uint16, n int) error {
 }
 ```
 
-That dummy read of page `0x0A`, register `0x01` is not optional. Without it the
-chip does not latch the previous write — the value you think you set never lands.
+**That dummy read of page `0x0A`, register `0x01` is not optional. Without it the
+chip does not latch the previous write — the value you think you set never lands.**
 This is the kind of detail you cannot derive from a datasheet; it lives in the C
 library because someone discovered it on real silicon, and we keep it bit for
 bit. Every `Demod` access also runs under a single mutex, because the tuner

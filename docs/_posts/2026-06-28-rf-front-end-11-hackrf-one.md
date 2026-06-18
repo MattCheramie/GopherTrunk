@@ -15,6 +15,8 @@ simplest wire format of the three. The interesting part isn't the samples — it
 identity. The driver guesses the model from a USB PID, then asks the firmware who
 it really is, and that open-time handshake is where a probe-gains bug lived.*
 
+> **TL;DR** — The HackRF One driver decodes the simplest of the three wire formats: signed 8-bit interleaved IQ scaled to `complex64`. Identity is the tricky part — the driver guesses the model from a USB PID, then lets the firmware's board-ID readback override it. A probe-gains bug (`sdr list --probe` showed empty gains) is fixed by stamping the full identity, ladder included, onto the device at open time.
+
 ## In this post
 
 - Decoding the HackRF's **signed 8-bit interleaved IQ** into `complex64` in `[-1, 1]`.
@@ -64,9 +66,9 @@ func decodeInt8IQ(buf []byte) []complex64 {
 }
 ```
 
-The `int8` conversion is load-bearing: the bytes arrive as `uint8` in the slice,
+**The `int8` conversion is load-bearing: the bytes arrive as `uint8` in the slice,
 and reinterpreting them as `int8` is what makes `0x80` read as `-128` rather than
-`+128`. The in-package test pins that down with a `(-128, +64)` sample expected
+`+128`.** The in-package test pins that down with a `(-128, +64)` sample expected
 near `(-1, +0.5)`.
 
 ### The transceiver state machine

@@ -17,6 +17,12 @@ separate tuner chip on the I2C bridge. This post brings up the
 story of the bug that ate the most field debugging time in the whole RTL-SDR
 driver: the RTL-SDR Blog V4 that came up deaf.*
 
+> **TL;DR** — This is the pure-Go R820T/R828D tuner driver, built around a
+> shadow-register cache that makes read-modify-write free. The headline bug: the
+> RTL-SDR Blog V4 came up deaf and mistuned by ~1.8×, fixed with a crystal
+> override plus per-band input switching. A second bug (#248) — a 17-byte I2C
+> burst stalling on NESDR v5 — is fixed by halving the chunk size until it fits.
+
 ## In this post
 
 - **What the R82xx tuner does** — PLL frequency synthesis, the 3.57 MHz IF, and
@@ -50,8 +56,8 @@ mock USB transport. The whole driver lives in
 
 ### The shadow-register cache
 
-The single most important design decision in the R82xx driver is the
-shadow-register cache. The `R82xx` struct keeps a local mirror of the chip's
+**The single most important design decision in the R82xx driver is the
+shadow-register cache.** The `R82xx` struct keeps a local mirror of the chip's
 registers:
 
 ```go

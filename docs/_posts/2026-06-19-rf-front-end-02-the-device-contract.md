@@ -14,6 +14,8 @@ four very different radios. We take the `Device` contract apart method by method
 and look at the trick that lets one radio's quirks ride along without leaking into
 the others: optional, type-asserted extension interfaces.*
 
+> **TL;DR** — The `Device` interface is the single narrow contract every radio hides behind. The trick: RTL-SDR-only quirks (like the Blog V4 deafness fix) would pollute that universal contract if added to it, so they live in optional, type-asserted extension interfaces instead.
+
 ## In this post
 
 - The **`Device` interface** in full — `Info`, the four setters, the AGC and
@@ -119,9 +121,9 @@ them:
   hardware has is modeled as a method everyone implements, where "I can't" is
   spelled `return nil`.
 
-These conventions are the load-bearing idea of a narrow contract: the *differences*
+**These conventions are the load-bearing idea of a narrow contract: the *differences*
 between radios are pushed into agreed-upon values and no-ops, so the *interface*
-stays the same for all of them.
+stays the same for all of them.**
 
 ### The stream: `StreamIQ`
 

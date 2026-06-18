@@ -14,6 +14,8 @@ turned it into a clean stream of IQ samples in pure Go. Now: how we *see* that
 front end when it misbehaves — and the payoff that justified writing every USB
 driver from scratch in the first place.*
 
+> **TL;DR** — The finale makes the front end observable: `sdr list --probe`, the `RTLSDR_DEBUG_USB` control-transfer trace, and the `iq_underruns_total` metric that turned silent IQ loss — drops that looked exactly like an RF problem — into a counter operators can watch. The payoff: one static binary, `CGO_ENABLED=0`, no librtlsdr or libusb, cross-compiled everywhere.
+
 ## In this post
 
 - The **diagnostic surfaces**: `sdr list --probe`, the `RTLSDR_DEBUG_USB`
@@ -45,9 +47,9 @@ sample-loss into a counter that climbs.
 
 ### Probe at the CLI
 
-`gophertrunk sdr list` enumerates the bus cheaply. Add `--probe` and it opens
+**`gophertrunk sdr list` enumerates the bus cheaply. Add `--probe` and it opens
 each device long enough to run the demod and tuner detection, so the listing
-shows the real tuner name and gain ladder instead of a guess:
+shows the real tuner name and gain ladder instead of a guess:**
 
 ```
 gophertrunk sdr list [--probe]   list discovered SDR devices
@@ -147,7 +149,7 @@ says "the USB transport hiccuped." Two counters, one diagnosis.
 This is the bug that drove the entire issue #402 investigation, and it's worth
 sitting with because it shaped the whole observability design.
 
-Before any of these counters existed, a busy site would intermittently fail to
+**Symptom.** Before any of these counters existed, a busy site would intermittently fail to
 decode. The captures the reporter sent us replayed *perfectly* — every TSBK
 decoded green. But live, on the same hardware, the control channel kept dropping.
 The tell, once we had it, was damning: **live fails, replay is green.** Replay
@@ -156,13 +158,13 @@ real time. If anything downstream stalled — a momentarily-busy consumer, a GC
 pause, a contended lock — the driver's delivery channel overran and chunks were
 **silently dropped on the floor.**
 
-Silent is the operative word. Those drops produced no log, no error, no signal of
+**Root cause.** Silent is the operative word. Those drops produced no log, no error, no signal of
 any kind. To the operator it was indistinguishable from a weak signal or a bad
 antenna — so the natural response was to chase RF: raise gain, swap antennas,
 re-aim. None of which touched the actual cause, because the actual cause was the
 host falling behind.
 
-The fix was to make the loss *observable* before trying to make it *rare*. Issue
+**The fix** was to make the loss *observable* before trying to make it *rare*. Issue
 #486 surfaced the previously-silent drops via `NotifyIQDrop` → `iq_underruns_total`;
 issue #507 then decoupled live IQ ingest from decode with a forwarder goroutine
 and a deeper bounded queue so the drops became rare. But the metric came first,

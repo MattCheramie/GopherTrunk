@@ -16,6 +16,12 @@ and the tuner is locked
 Now we have to keep a 2.4 MS/s flood of samples moving without dropping any — and
 this is where Go's garbage collector, of all things, became the enemy.*
 
+> **TL;DR** — This is sustained 2.4 MS/s IQ streaming off the RTL2832U: 32 async
+> USB buffers, a deep consumer channel, and a bit-identical U8-to-complex64
+> lookup table. The headline bug: per-chunk allocations drove GC churn that shed
+> 25–48% of live IQ — fixed with a zero-allocation reuse ring. Two more bugs turn
+> silent IQ loss and a silently dead stream into explicit, observable failures.
+
 ## In this post
 
 - **The streaming geometry** — 32 async USB buffers × 16 KiB, a deep consumer
@@ -46,8 +52,8 @@ state machine in `device.go`.
 
 ### The geometry
 
-The numbers are copied verbatim from the old CGO driver so the pure-Go backend is
-a behavioral drop-in:
+**The numbers are copied verbatim from the old CGO driver so the pure-Go backend is
+a behavioral drop-in:**
 
 ```go
 // internal/sdr/rtlsdr/purego/stream.go

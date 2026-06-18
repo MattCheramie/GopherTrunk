@@ -14,6 +14,8 @@ dongle without `libusb`: one tiny Go interface, three per-OS implementations
 chosen at compile time, and a mock that lets the whole RTL2832U stack run in CI
 with no hardware attached.*
 
+> **TL;DR** — The USB transport layer is one tiny Go `Transport` interface that exposes only the slice of USB the RTL2832U needs, with a per-OS adapter chosen at compile time. The headline problem: the first cut leaked Linux USBDEVFS assumptions into the contract, so it was rewritten around what the driver needs, not what any one OS provides.
+
 ## In this post
 
 - Why GopherTrunk talks to the **kernel's USB interface directly** instead of
@@ -58,7 +60,7 @@ that we write three backends by hand; the payoff is a pure-Go, CGO-free,
 
 ## How GopherTrunk implements it in Go
 
-Everything funnels through two interfaces. The first, `Enumerator`, discovers and
+**Everything funnels through two interfaces.** The first, `Enumerator`, discovers and
 opens devices; the second, `Transport`, is a claimed handle you do I/O on. Here's
 the `Transport` contract, trimmed to its shape:
 

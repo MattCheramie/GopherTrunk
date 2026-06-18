@@ -14,6 +14,8 @@ one. We cover the self-registering registry that inverts that dependency, the
 blank imports that choose the hardware, and the enumeration walk that lists every
 attached dongle without one flaky backend blanking out the rest.*
 
+> **TL;DR** — The driver registry is a process-global map that lets drivers self-register at `init()`, so the binary's import set chooses the hardware and the core never depends on a concrete driver. The headline bug: one flaky backend's enumeration error blanked out every dongle, fixed by aggregating errors per driver instead of bailing on the first failure.
+
 ## In this post
 
 - The **self-registering driver registry** — a `sync.RWMutex`-guarded map and the
@@ -59,8 +61,8 @@ specific devices it actually needs. A `Driver` is a factory you can poll freely;
 
 ### The map and the lock
 
-The whole registry is a guarded map plus a handful of accessors in
-`internal/sdr/registry.go`:
+**The whole registry is a guarded map plus a handful of accessors in
+`internal/sdr/registry.go`:**
 
 ```go
 // internal/sdr/registry.go

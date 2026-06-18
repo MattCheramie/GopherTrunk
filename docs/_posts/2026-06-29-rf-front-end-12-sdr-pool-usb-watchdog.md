@@ -14,6 +14,8 @@ USB transport, the RTL2832U register dance, tuners, sample conversion. Now we
 zoom out to the fleet: how the daemon holds several radios at once, gives each a
 job, and keeps them alive across the USB drops that real hardware throws at you.*
 
+> **TL;DR** — The SDR pool owns every opened dongle behind one interface, assigning each a role (control, voice, wideband) and keeping the fleet alive through USB hotplug via a 30-second watchdog that reacquires devices under new bus addresses. A scanner retune that raced stream teardown (issue #686) is fixed by serializing re-open behind an idempotent stop.
+
 ## In this post
 
 - The **pool** (`internal/sdr/pool.go`) — a fleet of opened devices, each with a
@@ -68,8 +70,8 @@ type PoolEntry struct {
 }
 ```
 
-`OpenWith` is the heart of bring-up. It sweeps every registered driver, opens the
-selected devices, programs the IQ rate, and assigns roles. Role assignment is one
+**`OpenWith` is the heart of bring-up. It sweeps every registered driver, opens the
+selected devices, programs the IQ rate, and assigns roles.** Role assignment is one
 simple rule: the first opened device that isn't otherwise claimed takes
 `RoleControl`; everything after it defaults to `RoleVoice`. A `Hint` can override
 that per serial.
@@ -199,7 +201,7 @@ bias-tee re-applied, index refreshed to 7.
 The watchdog handles the *idle* case — a device nobody is streaming. The in-use
 case is harder, and it bit us in scanner mode.
 
-In scanner mode a fast retune cancels the IQ stream's context and immediately
+**Symptom.** In scanner mode a fast retune cancels the IQ stream's context and immediately
 re-opens it on the new frequency. But USB drivers don't tear a stream down
 synchronously — the bulk-IN reaper goroutine runs `cancelStream` asynchronously,
 draining URBs and closing the consumer channel on its own schedule. So the
@@ -208,7 +210,7 @@ previous stop is still in flight." The second `StreamIQ` found the bulk-IN
 endpoint still claimed and failed with `stream already active` — surfacing to the
 operator as `conv: StreamIQ failed` and a dead capture.
 
-The race was structural, not a missing lock. The teardown path is idempotent via
+**Root cause.** The race was structural, not a missing lock. The teardown path is idempotent via
 a `sync.Once`:
 
 ```go
@@ -222,7 +224,7 @@ func (d *Device) cancelStream() {
 ```
 
 `stopOnce` guarantees teardown runs exactly once — but it didn't guarantee the
-*next* `StreamIQ` waited for it. The fix was to make re-open serialize behind the
+*next* `StreamIQ` waited for it. **The fix** was to make re-open serialize behind the
 in-flight teardown: a new stream resets `stopOnce` only after the previous stop
 has actually completed, so a retune can never out-run the reaper.
 
@@ -244,8 +246,8 @@ it owns the lifecycle of every device, restarts the ones that fail, and presents
 the survivors as a roster the engine can query by role. The watchdog is the
 supervisor's health check, and `Reacquire` is its restart strategy.
 
-The second pattern is **observer**. The pool never calls into the daemon, the
-API, or the TUI. It `Publish`es `KindSDRAttached` / `KindSDRDetached` to an
+The second pattern is **observer**. **The pool never calls into the daemon, the
+API, or the TUI.** It `Publish`es `KindSDRAttached` / `KindSDRDetached` to an
 optional bus and lets whoever cares subscribe:
 
 ```go

@@ -15,6 +15,8 @@ URBs in flight at once, and a single reaper goroutine draining them — plus the
 bit-exact struct layout that decides whether the kernel accepts a URB or silently
 drops it.*
 
+> **TL;DR** — The Linux USB backend hand-rolls USBDEVFS ioctls and runs a ring of async URBs reaped by a single goroutine for sustained IQ throughput, all in pure Go. The headline bug: a struct field-alignment mismatch made the size-encoded ioctl number wrong, so streaming failed silently until the Go struct was made provably byte-identical to the kernel's.
+
 ## In this post
 
 - What **USBDEVFS** is and why GopherTrunk drives `/dev/bus/usb` directly instead
@@ -53,8 +55,8 @@ ioctls on that one fd.
 
 ## How GopherTrunk implements it in Go
 
-The first thing the backend needs is the ioctl request numbers, and Go gives us no
-header to crib them from — `libusb` and the kernel get them from C macros. So we
+**The first thing the backend needs is the ioctl request numbers, and Go gives us no
+header to crib them from — `libusb` and the kernel get them from C macros.** So we
 reproduce the **asm-generic ioctl encoding** by hand. Every ioctl number on Linux
 packs a direction, a "type" letter, a sequence number, and the argument size into
 a single integer:

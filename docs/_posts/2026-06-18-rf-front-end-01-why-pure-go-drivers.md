@@ -14,6 +14,8 @@ behind GopherTrunk — the pure-Go USB drivers that turn a dongle into a stream 
 IQ samples — one component per post, and explains the software-design principle
 behind each piece and how that principle shaped the Go code.*
 
+> **TL;DR** — The RF source layer is the pure-Go USB driver stack that turns RTL-SDR, Airspy, and HackRF dongles into IQ samples. GopherTrunk writes it all in Go to dodge the CGO/libusb "tax," shipping a single static cross-compilable binary with no C dependencies.
+
 ## In this post
 
 - **Why the RF source layer gets its own series** — [SDR Internals]({{ '/blog/series/sdr-internals/' | relative_url }})
@@ -179,7 +181,7 @@ network socket, or a WAV file on disk.
 
 ## How GopherTrunk implements it in Go
 
-The whole series hangs off one interface in `internal/sdr/device.go`. Every
+**The whole series hangs off one interface in `internal/sdr/device.go`.** Every
 backend, regardless of silicon, hides behind it:
 
 ```go

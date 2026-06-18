@@ -14,6 +14,12 @@ loaded by purego with no CGO, Windows through WinUSB with overlapped I/O. Three
 operating systems, three completely different threading and I/O models — all
 folded back onto the one eight-method `Transport` contract from Part 4.*
 
+> **TL;DR** — These are the macOS (IOKit via purego) and Windows (WinUSB,
+> overlapped I/O) USB backends, both satisfying the same eight-method `Transport`
+> port as Linux. The headache: IOKit ties USB I/O state to the issuing OS thread,
+> so early macOS streaming builds crashed — fixed by pinning each reader to its
+> own thread with `runtime.LockOSThread`.
+
 ## In this post
 
 - The **macOS** backend: IOKit + CoreFoundation via **purego** (no CGO), a lazy
@@ -93,9 +99,9 @@ if n > 0 {
 rc := vtableCall(t.devIface, deviceDeviceRequest, uintptr(unsafe.Pointer(&req)))
 ```
 
-The streaming model is the most distinctive part. Where Linux uses one reaper for
-the whole URB ring, macOS spawns **one goroutine per ring slot, each pinned to its
-own OS thread**, doing a *synchronous* `ReadPipe` in a loop. Cancellation is
+**The streaming model is the most distinctive part. Where Linux uses one reaper for
+the whole URB ring, macOS spawns one goroutine per ring slot, each pinned to its
+own OS thread, doing a *synchronous* `ReadPipe` in a loop.** Cancellation is
 `AbortPipe`: every blocked `ReadPipe` returns `kIOReturnAborted`, the goroutines
 see the stop flag, and exit. This sidesteps CFRunLoop callbacks entirely — no
 C-to-Go callback marshalling, no run-loop thread to babysit — at the cost of
@@ -246,8 +252,8 @@ the rest of the program. On macOS it's load-bearing for *correctness*.)
 ## The design principle: adapters that hide platform threading rules
 
 This is the **adapter pattern** doing exactly what it's for: isolating
-platform-specific rules behind a shared contract. The most important thing each
-adapter hides isn't the API surface — it's the **threading and I/O model**. Linux
+platform-specific rules behind a shared contract. **The most important thing each
+adapter hides isn't the API surface — it's the threading and I/O model.** Linux
 hides "async URBs reaped in one goroutine." Windows hides "overlapped I/O drained
 by `WaitForMultipleObjects`." macOS hides "IOKit owns the calling thread, so we
 pin one thread per slot." None of that crosses the port.

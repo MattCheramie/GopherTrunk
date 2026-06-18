@@ -15,6 +15,13 @@ real ADC samples, not IQ, so the host has to synthesize complex baseband from
 scratch — DC removal, an Fs/4 translation, and a half-band Hilbert pair — and
 get the filter state to survive USB packet boundaries.*
 
+> **TL;DR** — The Airspy R2/Mini stream bare real ADC samples, not IQ, so the
+> host synthesizes complex baseband: a leaky DC blocker, a multiplier-free Fs/4
+> mix, and a half-band Hilbert pair. The headline bug (#454): the converter must
+> carry filter state across USB packets, or you get ~78° quadrature imbalance and
+> no image rejection — fixed by threading one stateful converter through the
+> whole stream. The HF+ needs none of it: it delivers native int16 IQ.
+
 ## In this post
 
 - Why the [Airspy]({{ '/reference/airspy/' | relative_url }}) R2/Mini stream
@@ -55,9 +62,9 @@ device contract; here we build the converter that justifies it.
 
 ## How GopherTrunk implements it in Go
 
-The whole conversion lives in `internal/sdr/airspy/iqconverter.go`, driven from
+**The whole conversion lives in `internal/sdr/airspy/iqconverter.go`, driven from
 one method per USB packet. Its job, top to bottom: decode `uint16` reals,
-remove DC, mix by `Fs/4`, run the half-band pair, emit `complex64`.
+remove DC, mix by `Fs/4`, run the half-band pair, emit `complex64`.**
 
 ### Stage 1 — leaky-HPF DC removal
 
@@ -235,10 +242,10 @@ zero value of `iqConverter` is a valid reset state, which is what makes
 ## The design principle: DSP in the driver, from first principles
 
 The Airspy driver is the first place in GopherTrunk where the driver does real
-*signal processing*, not just byte shuffling. The principle: when the hardware
+*signal processing*, not just byte shuffling. **The principle: when the hardware
 hands you something other than the abstraction the rest of the system wants
 (`[]complex64`), the driver pays the cost of bridging the gap — and it does it
-from first principles, not by linking someone else's DSP library.
+from first principles, not by linking someone else's DSP library.**
 
 ### How that principle shaped the Go code
 

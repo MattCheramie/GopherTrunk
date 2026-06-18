@@ -14,6 +14,8 @@ herds them, and at every turn we've cited a test that proves it works. This post
 answers the question those citations dodge: how do you trust a USB driver you
 can't run on real hardware in CI?*
 
+> **TL;DR** — GopherTrunk tests its USB drivers with no hardware attached by replaying captured control-transfer sequences through a scripted mock transport and pinning the pure-Go sample conversion bit-for-bit against librtlsdr with a golden master. An opt-in real-hardware tier, gated behind env flags and `-short` with bias-tee safety resets, confirms against actual silicon when you have it.
+
 ## In this post
 
 - The **`MockTransport`** — a scripted control-transfer replayer that lets the
@@ -86,9 +88,9 @@ if !bytesEqual(want.Data, data) {
 }
 ```
 
-A test populates the script with the captured sequence, runs the driver's
+**A test populates the script with the captured sequence, runs the driver's
 bring-up, and asserts `MockTransport.Remaining() == 0` — every expected transfer
-happened, in order, with the right bytes. The mock even models the messy parts:
+happened, in order, with the right bytes.** The mock even models the messy parts:
 `ResetCalls` counts `USBDEVFS_RESET` invocations so a test can prove the recovery
 path ran, `ClaimErr` injects an `EBUSY` so the claim-failure branch is exercised,
 and `BulkSimulateDeath` fires `onStreamDead` after delivering its packets so the
@@ -170,7 +172,7 @@ milliseconds.
 
 ## The problem we hit: trusting a driver you can't run in CI
 
-Here's the uncomfortable truth the three legs are built to address. CI runs on a
+**Symptom.** Here's the uncomfortable truth the three legs are built to address. CI runs on a
 cloud box with no SDR plugged in. We can prove the control-transfer *sequence*
 matches a capture, and we can prove the conversion math is bit-identical to
 librtlsdr — but a capture is a snapshot of one dongle's firmware on one day. What
@@ -178,8 +180,8 @@ if a chip revision reorders its init? What if a real R820T rejects a transfer th
 mock happily accepts because the mock only checks the bytes, not the silicon's
 state machine?
 
-Replay and golden masters give *necessary* confidence, not *sufficient*. So
-there's a fourth thing: an **opt-in real-hardware tier** that runs only when you
+**Root cause.** Replay and golden masters give *necessary* confidence, not *sufficient*. So
+**the fix** is a fourth thing: an **opt-in real-hardware tier** that runs only when you
 ask it to, against the dongle on your desk. The Airspy suite is the template. Every
 real-hardware test starts with a guard:
 
@@ -230,8 +232,8 @@ support for a chip whose control map you don't yet have captured.
 ## The design principle: captured contracts + golden master + an opt-in tier
 
 The unifying idea is to **test against the contract, not the hardware** — and to
-keep the hardware available as a separate, opt-in confirmation. Each leg answers
-a different question:
+keep the hardware available as a separate, opt-in confirmation. **Each leg answers
+a different question:**
 
 - The **mock replay** asks: does the driver speak the protocol correctly?
 - The **golden-master conversion** asks: is the math byte-for-byte right?
