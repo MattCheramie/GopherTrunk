@@ -122,6 +122,28 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// so the voice channel's own LCO-0 LCs are how we tag a decoded
 	// alias with the right radio.
 	var lastSourceID uint32
+	// publishMotorolaAlias surfaces a completed voice-channel talker
+	// alias on the bus (the affiliation tracker binds it onto the RID).
+	// Shared by the LDU1 link-control path and the TDULC terminator
+	// path — Motorola systems carry these 0x15/0x17 LCs on either
+	// (#376), so both feed the same buffer and publish identically.
+	publishMotorolaAlias := func(alias string) {
+		if lastSourceID == 0 {
+			return
+		}
+		c.log.Info("composer: p25p1 motorola talker alias",
+			"system", system, "serial", serial, "src", lastSourceID, "alias", alias)
+		c.bus.Publish(events.Event{
+			Kind: events.KindTalkerAlias,
+			Payload: trunking.TalkerAlias{
+				System:   system,
+				Protocol: "p25-phase1",
+				SourceID: lastSourceID,
+				Alias:    alias,
+				At:       time.Now(),
+			},
+		})
+	}
 	// frames counts LDUs delivered by the receiver — i.e. real voice
 	// activity. The touch ticker (below) only refreshes the engine's
 	// LastHeardAt when this counter has advanced since the previous
@@ -159,6 +181,29 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			// rolls the recording to a fresh file for the next over; it
 			// is not voice, so don't write or count it.
 			if derr == nil && (duid == phase1.DUIDTerminator || duid == phase1.DUIDTerminatorWithLC) {
+				// A TDULC terminator still carries link control, and on
+				// Motorola systems the talker alias (LCO 0x15 header /
+				// 0x17 data) rides here rather than in LDU1 (#376). Pull
+				// its LC before ending the call so the alias isn't lost
+				// on the terminator.
+				if duid == phase1.DUIDTerminatorWithLC {
+					if lcf, content, _, terr := phase1.ExtractTDULCLinkControl(ldu); terr == nil {
+						switch {
+						case phase1.IsTalkerAliasLCO(lcf):
+							if alias, ok := aliasBuf.AddFragment(lcf, content); ok {
+								publishMotorolaAlias(alias)
+							}
+						case lcf == phase1.LCOGroupVoiceChannelUser:
+							// A terminator LCO-0 can carry the source ID;
+							// keep lastSourceID current so a just-completed
+							// alias tags the right radio.
+							src := uint32(content[6])<<16 | uint32(content[7])<<8 | uint32(content[8])
+							if src != 0 {
+								lastSourceID = src
+							}
+						}
+					}
+				}
 				bt.onTransmissionEnd()
 				return
 			}
@@ -247,19 +292,8 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				lcf := content[0]
 				switch {
 				case phase1.IsTalkerAliasLCO(lcf):
-					if alias, ok := aliasBuf.AddFragment(lcf, content); ok && lastSourceID != 0 {
-						c.log.Info("composer: p25p1 motorola talker alias",
-							"system", system, "serial", serial, "src", lastSourceID, "alias", alias)
-						c.bus.Publish(events.Event{
-							Kind: events.KindTalkerAlias,
-							Payload: trunking.TalkerAlias{
-								System:   system,
-								Protocol: "p25-phase1",
-								SourceID: lastSourceID,
-								Alias:    alias,
-								At:       time.Now(),
-							},
-						})
+					if alias, ok := aliasBuf.AddFragment(lcf, content); ok {
+						publishMotorolaAlias(alias)
 					}
 				default:
 					if lc, _, lerr := phase1.ParseLinkControl(blocks); lerr == nil {
