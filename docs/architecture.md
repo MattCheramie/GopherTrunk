@@ -116,8 +116,12 @@ constructed only when its config section is present:
   events (published on each RFSS Status Broadcast) and served at
   `GET /api/v1/sites`. Operator-supplied site names from
   `trunking.systems[].sites` in the config are merged onto the
-  discovered rows, and every `grant` event also carries `rfss_id` /
-  `site_id` so downstream tooling can label calls by site (issue #698).
+  discovered rows. The `grant`, `unit_registration` and `affiliation`
+  events also carry `rfss_id` / `site_id` / `nac` so downstream tooling
+  can label calls by site — registration and affiliation are handled by
+  the radio's actual serving site, giving a genuine RID→site location
+  fix where grant-site (announced on every site of a wide-area call)
+  cannot (issue #698).
 - **`log.MessageLog`** — a rotating, human-readable text log of
   every trunking event, enabled via `log.message_log`.
 

@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Site identity on registration & affiliation events** (#698). The
+  `unit_registration` and `affiliation` events now carry `rfss_id` / `site_id`
+  (alongside `grant`), plus a `nac` field on all three. Registration and
+  affiliation are handled by the radio's actual serving site, so they give a
+  genuine RID→site location fix that grant-site — announced on every site of a
+  wide-area call — cannot. Phase 2 (TDMA) control channels now also discover
+  their sites into `GET /api/v1/sites`.
 - **Streaming long-dwell control-channel monitor for Hunt** (opt-in). A new
   `monitor_seconds` (web Hunt "Monitor" field / `-monitor-seconds` CLI flag)
   decodes a locked control channel from the live SDR in real time instead of

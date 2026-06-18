@@ -309,6 +309,10 @@ type GrantDTO struct {
 	// grants and until the site's RFSS Status TSBK has been decoded.
 	RFSSID uint8 `json:"rfss_id,omitempty"`
 	SiteID uint8 `json:"site_id,omitempty"`
+	// NAC is the control channel's Network Access Code (Phase 2: the
+	// NSB Color Code). Coarse — not unique per site — so consumers
+	// label by (rfss_id, site_id). Zero/omitted on non-P25 grants.
+	NAC uint16 `json:"nac,omitempty"`
 	// Timeslot is the 1-based TDMA slot (0 = n/a, 1 = TS1, 2 = TS2).
 	// Non-zero only for slotted protocols (DMR Tier III); identifies
 	// which of a carrier's two calls this is.
@@ -332,6 +336,7 @@ func grantToDTO(g trunking.Grant) GrantDTO {
 		FrequencyHz: g.FrequencyHz,
 		ChannelID:   g.ChannelID, ChannelNumber: g.ChannelNum,
 		RFSSID: g.RFSSID, SiteID: g.SiteID,
+		NAC:       g.NAC,
 		Timeslot:  g.Timeslot,
 		Encrypted: g.Encrypted, Emergency: g.Emergency,
 		DataCall:    g.DataCall,
@@ -388,6 +393,13 @@ type AffiliationDTO struct {
 	GroupID           uint32 `json:"group_id"`
 	AnnouncementGroup uint32 `json:"announcement_group,omitempty"`
 	Response          string `json:"response"`
+	// RFSSID / SiteID name the radio's serving site (a genuine
+	// RID→site fix, unlike grant-site) and NAC is the coarse control
+	// channel access code (issue #698). Zero/omitted on non-P25
+	// affiliations and until the site's status broadcast has decoded.
+	RFSSID uint8  `json:"rfss_id,omitempty"`
+	SiteID uint8  `json:"site_id,omitempty"`
+	NAC    uint16 `json:"nac,omitempty"`
 }
 
 func affiliationToDTO(a trunking.Affiliation) AffiliationDTO {
@@ -397,6 +409,9 @@ func affiliationToDTO(a trunking.Affiliation) AffiliationDTO {
 		GroupID:           a.GroupID,
 		AnnouncementGroup: a.AnnouncementGroup,
 		Response:          a.Response.String(),
+		RFSSID:            a.RFSSID,
+		SiteID:            a.SiteID,
+		NAC:               a.NAC,
 	}
 }
 
@@ -408,6 +423,13 @@ type UnitRegistrationDTO struct {
 	WACN     uint32 `json:"wacn"`
 	SystemID uint16 `json:"system_id"`
 	Response string `json:"response"`
+	// RFSSID / SiteID name the radio's serving site (a genuine
+	// RID→site fix) and NAC is the coarse control channel access code
+	// (issue #698). Zero/omitted on non-P25 registrations and until the
+	// site's status broadcast has decoded.
+	RFSSID uint8  `json:"rfss_id,omitempty"`
+	SiteID uint8  `json:"site_id,omitempty"`
+	NAC    uint16 `json:"nac,omitempty"`
 }
 
 func unitRegistrationToDTO(u trunking.UnitRegistration) UnitRegistrationDTO {
@@ -417,6 +439,9 @@ func unitRegistrationToDTO(u trunking.UnitRegistration) UnitRegistrationDTO {
 		WACN:     u.WACN,
 		SystemID: u.SystemID,
 		Response: u.Response.String(),
+		RFSSID:   u.RFSSID,
+		SiteID:   u.SiteID,
+		NAC:      u.NAC,
 	}
 }
 

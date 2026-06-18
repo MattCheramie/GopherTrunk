@@ -1265,6 +1265,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			ChannelNum:         g.channelNumber,
 			RFSSID:             net.RFSS,
 			SiteID:             net.Site,
+			NAC:                nac,
 			Encrypted:          so.Encrypted(),
 			Emergency:          so.Emergency(),
 			DataCall:           g.dataCall,
@@ -1344,6 +1345,7 @@ func (c *ControlChannel) publishGroupGrant(g GroupVoiceChannelGrant, nac uint16)
 // band-plan resolution is needed — affiliations don't carry channel
 // info.
 func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse, nac uint16) {
+	net := c.netModel.Snapshot()
 	c.bus.Publish(events.Event{
 		Kind: events.KindAffiliation,
 		Payload: trunking.Affiliation{
@@ -1353,6 +1355,9 @@ func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse, nac uint
 			GroupID:           uint32(g.GroupAddress),
 			AnnouncementGroup: uint32(g.AnnouncementGroup),
 			Response:          trunking.AffiliationResponse(g.Response),
+			RFSSID:            net.RFSS,
+			SiteID:            net.Site,
+			NAC:               nac,
 			At:                c.now(),
 		},
 	})
@@ -1365,6 +1370,7 @@ func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse, nac uint
 // publishUnitRegistration publishes a trunking.UnitRegistration on the
 // bus when the site issues a Unit Registration Response (opcode 0x2C).
 func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac uint16) {
+	net := c.netModel.Snapshot()
 	c.bus.Publish(events.Event{
 		Kind: events.KindUnitRegistration,
 		Payload: trunking.UnitRegistration{
@@ -1374,6 +1380,9 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac
 			WACN:     u.WACN,
 			SystemID: u.SystemID,
 			Response: trunking.RegistrationResponse(u.Response),
+			RFSSID:   net.RFSS,
+			SiteID:   net.Site,
+			NAC:      nac,
 			At:       c.now(),
 		},
 	})

@@ -561,6 +561,12 @@ func TestControlChannelPublishesAffiliation(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
+	// Feed an RFSS Status Broadcast first (LRA=9, SystemID=0x123,
+	// RFSS=1, Site=1) so the affiliation event stamps the serving site
+	// (issue #698).
+	rfssTSBK := TSBK{LB: true, Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{0x09, 0x01, 0x23, 0x01, 0x01, 0x00, 0x00, 0x00}}
+	rfssStream := buildLockedStreamWithTSBK(10, 0x111, DUIDTrunkingSignaling, rfssTSBK)
+
 	// Response = denied (2), AnnGroup = 0xAABB, Group = 0x1234,
 	// TargetID = 0xABCDEF.
 	payload := [8]byte{0x02, 0xAA, 0xBB, 0x12, 0x34, 0xAB, 0xCD, 0xEF}
@@ -573,6 +579,7 @@ func TestControlChannelPublishesAffiliation(t *testing.T) {
 		FrequencyHz: 851_000_000,
 		Now:         func() time.Time { return time.Unix(1_700_000_001, 0).UTC() },
 	})
+	cc.Process(rfssStream, 0)
 	cc.Process(stream, 0)
 
 	var got *trunking.Affiliation
@@ -603,6 +610,12 @@ func TestControlChannelPublishesAffiliation(t *testing.T) {
 	if got.Response != trunking.AffiliationDenied {
 		t.Errorf("Response = %v, want denied", got.Response)
 	}
+	if got.RFSSID != 1 || got.SiteID != 1 {
+		t.Errorf("site = RFSS %d / Site %d, want 1/1", got.RFSSID, got.SiteID)
+	}
+	if got.NAC != 0x111 {
+		t.Errorf("NAC = %03X, want 111", got.NAC)
+	}
 	if got.At.Unix() != 1_700_000_001 {
 		t.Errorf("At = %v, want injected Now", got.At)
 	}
@@ -613,6 +626,11 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 	defer bus.Close()
 	sub := bus.Subscribe()
 	defer sub.Close()
+
+	// Feed an RFSS Status Broadcast first (RFSS=2, Site=9) so the
+	// registration event stamps the serving site (issue #698).
+	rfssTSBK := TSBK{LB: true, Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{0x09, 0x01, 0x23, 0x02, 0x09, 0x00, 0x00, 0x00}}
+	rfssStream := buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, rfssTSBK)
 
 	// Response = accepted (0), WACN = 0xBEE08, SystemID = 0x534,
 	// SourceID = 0x112233.
@@ -626,6 +644,7 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 		FrequencyHz: 851_000_000,
 		Now:         func() time.Time { return time.Unix(1_700_000_002, 0).UTC() },
 	})
+	cc.Process(rfssStream, 0)
 	cc.Process(stream, 0)
 
 	var got *trunking.UnitRegistration
@@ -655,6 +674,12 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 	}
 	if got.Response != trunking.RegistrationAccepted {
 		t.Errorf("Response = %v, want accepted", got.Response)
+	}
+	if got.RFSSID != 2 || got.SiteID != 9 {
+		t.Errorf("site = RFSS %d / Site %d, want 2/9", got.RFSSID, got.SiteID)
+	}
+	if got.NAC != 0x222 {
+		t.Errorf("NAC = %03X, want 222", got.NAC)
 	}
 	if got.At.Unix() != 1_700_000_002 {
 		t.Errorf("At = %v, want injected Now", got.At)

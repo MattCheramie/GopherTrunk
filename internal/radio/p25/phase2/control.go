@@ -65,6 +65,19 @@ type ControlChannel struct {
 	// they use. Guarded by mu.
 	lastEncSync EncryptionSync
 	hasEncSync  bool
+	// Camped-site identity accumulated from the control channel's
+	// status broadcasts: siteRFSS / siteSite come from the RFSS Status
+	// Broadcast (opcode 0xFA), netWACN / netSysID / nac from the
+	// Network Status Broadcast (the Color Code equals the Phase 1 NAC
+	// per spec). Stamped onto grant / affiliation / registration events
+	// so consumers can label them by serving site (issue #698). The
+	// Phase 2 MAC has no NetworkModel — a simple last-seen cache (like
+	// bandPlan / lastEncSync above) is sufficient. Guarded by mu.
+	siteRFSS uint8
+	siteSite uint8
+	netWACN  uint32
+	netSysID uint16
+	nac      uint16
 }
 
 // TrellisMode selects how the Process adapter interprets the MAC
@@ -453,6 +466,21 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 	}
 	if nsb, ok := p.AsNetworkStatusBroadcast(); ok {
 		c.installSeedFromNSB(nsb)
+		// Capture the network identity so site / grant / affiliation /
+		// registration events can carry WACN + System ID + NAC. The
+		// Color Code equals the Phase 1 NAC per TIA-102.BBAB.
+		c.mu.Lock()
+		c.netWACN = nsb.WACN
+		c.netSysID = nsb.SystemID
+		c.nac = nsb.ColorCode
+		c.mu.Unlock()
+	}
+	if r, ok := p.AsRFSSStatusBroadcast(); ok {
+		c.mu.Lock()
+		c.siteRFSS = r.RFSS
+		c.siteSite = r.Site
+		c.mu.Unlock()
+		c.publishSiteUpdate()
 	}
 	if u, ok := p.AsIdentifierUpdate(); ok {
 		c.mu.Lock()
@@ -561,6 +589,47 @@ type LockState struct {
 func (s LockState) LockedFrequencyHz() uint32 { return s.FrequencyHz }
 func (s LockState) LockedNAC() uint16         { return 0 }
 
+// siteIdentity returns the camped site's RFSS / Site / NAC accumulated
+// from the control channel's status broadcasts, for stamping onto grant
+// / affiliation / registration events (issue #698). RFSS and Site stay
+// zero until an RFSS Status Broadcast has been decoded; NAC stays zero
+// until a Network Status Broadcast lands.
+func (c *ControlChannel) siteIdentity() (rfss, site uint8, nac uint16) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.siteRFSS, c.siteSite, c.nac
+}
+
+// publishSiteUpdate emits a KindSiteUpdate naming the site this Phase 2
+// control channel is camped on, joining the decoded RFSS/Site identity
+// to the tuned frequency. The SiteTracker accumulates these into GET
+// /api/v1/sites (issue #698), so Phase 2 (TDMA) control channels now
+// surface their sites the same way Phase 1 does. Skipped until the site
+// has actually been identified.
+func (c *ControlChannel) publishSiteUpdate() {
+	if c.bus == nil {
+		return
+	}
+	c.mu.Lock()
+	rfss, site, wacn, sysid := c.siteRFSS, c.siteSite, c.netWACN, c.netSysID
+	c.mu.Unlock()
+	if rfss == 0 && site == 0 {
+		return
+	}
+	c.bus.Publish(events.Event{
+		Kind: events.KindSiteUpdate,
+		Payload: trunking.SiteUpdate{
+			System:           c.systemName,
+			RFSSID:           rfss,
+			SiteID:           site,
+			ControlChannelHz: c.freqHz,
+			WACN:             wacn,
+			SystemID:         sysid,
+			At:               c.now(),
+		},
+	})
+}
+
 func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, groupID uint32) {
 	if c.bus == nil {
 		return
@@ -600,6 +669,7 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		Seed:       c.scramblerSeed,
 	}
 	c.mu.Unlock()
+	rfss, site, nac := c.siteIdentity()
 	c.bus.Publish(events.Event{
 		Kind: events.KindGrant,
 		Payload: trunking.Grant{
@@ -610,6 +680,9 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 			FrequencyHz:     freq,
 			ChannelID:       g.ChannelID,
 			ChannelNum:      g.ChannelNumber,
+			RFSSID:          rfss,
+			SiteID:          site,
+			NAC:             nac,
 			Encrypted:       so.Encrypted(),
 			Emergency:       so.Emergency(),
 			AlgorithmID:     algID,
@@ -662,6 +735,7 @@ func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse) {
 	if c.bus == nil {
 		return
 	}
+	rfss, site, nac := c.siteIdentity()
 	c.bus.Publish(events.Event{
 		Kind: events.KindAffiliation,
 		Payload: trunking.Affiliation{
@@ -671,6 +745,9 @@ func (c *ControlChannel) publishAffiliation(g GroupAffiliationResponse) {
 			GroupID:           uint32(g.GroupAddress),
 			AnnouncementGroup: uint32(g.AnnouncementGroup),
 			Response:          trunking.AffiliationResponse(g.Response),
+			RFSSID:            rfss,
+			SiteID:            site,
+			NAC:               nac,
 			At:                c.now(),
 		},
 	})
@@ -682,6 +759,7 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse) {
 	if c.bus == nil {
 		return
 	}
+	rfss, site, nac := c.siteIdentity()
 	c.bus.Publish(events.Event{
 		Kind: events.KindUnitRegistration,
 		Payload: trunking.UnitRegistration{
@@ -691,6 +769,9 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse) {
 			WACN:     u.WACN,
 			SystemID: u.SystemID,
 			Response: trunking.RegistrationResponse(u.Response),
+			RFSSID:   rfss,
+			SiteID:   site,
+			NAC:      nac,
 			At:       c.now(),
 		},
 	})
