@@ -997,15 +997,13 @@ type TrunkingConfig struct {
 	// goes idle past VoiceHangtimeMs. Empty defaults to "transmission";
 	// any other value is rejected by Validate.
 	VoiceCallGrouping string `yaml:"voice_call_grouping"`
-
-	// EncryptedCalls controls how the engine allocates scarce voice SDRs
-	// to encrypted calls. Issue #711.
-	EncryptedCalls EncryptedCallsConfig `yaml:"encrypted_calls"`
 }
 
 // EncryptedCallsConfig configures handling of calls discovered to be
 // encrypted, so encrypted traffic can't monopolize a limited pool of
-// voice SDRs and starve clear calls. Issue #711.
+// voice SDRs and starve clear calls. Set per system under
+// trunking.systems[].encrypted_calls so an operator can run "metadata" on
+// one system and "follow" / "ignore" on another. Issue #711.
 type EncryptedCallsConfig struct {
 	// Mode selects the policy:
 	//   "follow" (default / empty) — hold a voice SDR for the full call,
@@ -1013,7 +1011,8 @@ type EncryptedCallsConfig struct {
 	//   "metadata" — follow the call briefly so traffic-channel metadata
 	//     (P25 Phase 2 talker alias, source RID, encryption sync) is
 	//     captured, then release the voice SDR MetadataFollowMs after the
-	//     call is first known to be encrypted.
+	//     call is first known to be encrypted, or as soon as the talker
+	//     alias completes — whichever comes first.
 	//   "ignore" — never tie up a voice SDR on an encrypted call.
 	// Any other value is rejected by Validate. A call whose KeyID matches
 	// a configured trunking.systems[].encryption_keys entry is exempt and
@@ -1260,6 +1259,14 @@ type SystemConfig struct {
 	// so AES can be added later without a config break. Ignored for
 	// protocols without an encryption decoder. See issue #276.
 	EncryptionKeys []EncryptionKeyConfig `yaml:"encryption_keys"`
+
+	// EncryptedCalls controls how the engine allocates scarce voice SDRs
+	// to encrypted calls on this system, so a few long encrypted calls
+	// can't monopolize a limited voice pool and starve clear traffic.
+	// Per-system so an operator can run "metadata" on one system and
+	// "follow" / "ignore" on another. Empty mode = "follow" (the
+	// pre-issue-711 behaviour). Issue #711.
+	EncryptedCalls EncryptedCallsConfig `yaml:"encrypted_calls"`
 }
 
 // P25BandPlanEntryConfig is one operator-supplied IDEN_UP slot seed
@@ -1835,14 +1842,6 @@ func (c Config) validateTrunking() []error {
 	default:
 		errs = append(errs, fmt.Errorf("trunking.voice_call_grouping: %q must be \"transmission\" or \"conversation\"", c.Trunking.VoiceCallGrouping))
 	}
-	switch c.Trunking.EncryptedCalls.Mode {
-	case "", "follow", "metadata", "ignore":
-	default:
-		errs = append(errs, fmt.Errorf("trunking.encrypted_calls.mode: %q must be \"follow\", \"metadata\", or \"ignore\"", c.Trunking.EncryptedCalls.Mode))
-	}
-	if c.Trunking.EncryptedCalls.MetadataFollowMs < 0 {
-		errs = append(errs, fmt.Errorf("trunking.encrypted_calls.metadata_follow_ms: %d ms must be ≥ 0", c.Trunking.EncryptedCalls.MetadataFollowMs))
-	}
 	for i, s := range c.Trunking.Systems {
 		if err := validateSystem(i, s); err != nil {
 			errs = append(errs, err)
@@ -1942,6 +1941,14 @@ func validateSystem(i int, s SystemConfig) error {
 			return fmt.Errorf("trunking.systems[%d].sites[%d]: duplicate rfss %d / site %d (also at sites[%d])", i, k, st.RFSS, st.Site, prev)
 		}
 		seenSites[key] = k
+	}
+	switch s.EncryptedCalls.Mode {
+	case "", "follow", "metadata", "ignore":
+	default:
+		return fmt.Errorf("trunking.systems[%d].encrypted_calls.mode: %q must be \"follow\", \"metadata\", or \"ignore\"", i, s.EncryptedCalls.Mode)
+	}
+	if s.EncryptedCalls.MetadataFollowMs < 0 {
+		return fmt.Errorf("trunking.systems[%d].encrypted_calls.metadata_follow_ms: %d ms must be ≥ 0", i, s.EncryptedCalls.MetadataFollowMs)
 	}
 	return nil
 }

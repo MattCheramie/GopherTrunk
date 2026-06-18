@@ -106,45 +106,6 @@ func TestWriterRejectsInvalidPatch(t *testing.T) {
 	}
 }
 
-// TestWriterEncryptedCallsRoundTrip covers the encrypted-call policy
-// patch fields (issue #711): both land in the merged config and on disk.
-func TestWriterEncryptedCallsRoundTrip(t *testing.T) {
-	path := writeTempConfig(t)
-	w, err := NewWriter(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mode := "metadata"
-	follow := 800
-	merged, err := w.WritePatch(Patch{
-		TrunkingEncryptedMode:             &mode,
-		TrunkingEncryptedMetadataFollowMs: &follow,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if merged.Trunking.EncryptedCalls.Mode != "metadata" || merged.Trunking.EncryptedCalls.MetadataFollowMs != 800 {
-		t.Errorf("merged encrypted_calls = %+v, want {metadata 800}", merged.Trunking.EncryptedCalls)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(data)
-	if !strings.Contains(body, "mode: metadata") {
-		t.Errorf("expected encrypted_calls.mode on disk, got:\n%s", body)
-	}
-	if !strings.Contains(body, "metadata_follow_ms: 800") {
-		t.Errorf("expected encrypted_calls.metadata_follow_ms on disk, got:\n%s", body)
-	}
-
-	// A bad mode is rejected by the writer's validation pass.
-	bad := "drop"
-	if _, err := w.WritePatch(Patch{TrunkingEncryptedMode: &bad}); err == nil {
-		t.Fatal("expected validation error for invalid encrypted_calls.mode")
-	}
-}
-
 func TestWriterMtimeGuard(t *testing.T) {
 	path := writeTempConfig(t)
 	w, err := NewWriter(path)

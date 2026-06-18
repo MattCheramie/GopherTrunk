@@ -40,14 +40,20 @@ type Engine struct {
 	// repeater. Logged once, then DEBUG per grant.
 	noVoiceCoverageOnce sync.Once
 
-	// scanMode, encMode and encMetadataFollow are read under modeMu so
-	// the API cockpit can flip them at runtime without a daemon restart.
-	// HandleGrant takes a snapshot under the read lock to avoid blocking
-	// the bus loop.
-	modeMu            sync.RWMutex
-	scanMode          ScanMode
-	encMode           EncryptedMode
-	encMetadataFollow time.Duration
+	// scanMode is read under modeMu so the API cockpit can flip it at
+	// runtime without a daemon restart. HandleGrant takes a snapshot under
+	// the read lock to avoid blocking the bus loop.
+	modeMu   sync.RWMutex
+	scanMode ScanMode
+
+	// encModes / encFollows map a system name to its encrypted-call policy
+	// (trunking.systems[].encrypted_calls). Per-system so an operator can
+	// run "metadata" on one system and "follow" / "ignore" on another.
+	// Read-only after NewEngine, so no lock; a system absent from the map
+	// defaults to EncryptedFollow / defaultEncryptedMetadataFollow. Issue
+	// #711.
+	encModes   map[string]EncryptedMode
+	encFollows map[string]time.Duration
 
 	// configuredKeys maps a system name to the set of encryption key IDs
 	// the operator supplied for it (trunking.systems[].encryption_keys).
@@ -82,17 +88,19 @@ type EngineOptions struct {
 	// Scan flag. Default ScanModeAll keeps every non-locked-out grant
 	// flowing through; ScanModeList enforces the talkgroup scan list.
 	ScanMode ScanMode
-	// EncryptedMode controls how encrypted calls are handled. Default
-	// EncryptedFollow holds a voice SDR for the full call (legacy
+	// EncryptedModes maps system name -> how encrypted calls on that
+	// system are handled. EncryptedFollow (the default for a system absent
+	// from the map) holds a voice SDR for the full call (legacy
 	// behaviour); EncryptedMetadata follows briefly then releases;
 	// EncryptedIgnore never allocates a voice SDR to an encrypted call.
-	// Issue #711.
-	EncryptedMode EncryptedMode
-	// EncryptedMetadataFollow is how long an encrypted call is followed
-	// under EncryptedMetadata before its voice SDR is released, measured
-	// from when the call is first known to be encrypted. Defaults to
-	// defaultEncryptedMetadataFollow (1.5 s) when <= 0.
-	EncryptedMetadataFollow time.Duration
+	// Per-system (trunking.systems[].encrypted_calls). Issue #711.
+	EncryptedModes map[string]EncryptedMode
+	// EncryptedFollows maps system name -> how long an encrypted call on
+	// that system is followed under EncryptedMetadata before its voice SDR
+	// is released, measured from when the call is first known to be
+	// encrypted. A system absent from the map (or mapped to <= 0) uses
+	// defaultEncryptedMetadataFollow (1.5 s). Issue #711.
+	EncryptedFollows map[string]time.Duration
 	// ConfiguredKeys maps system name -> set of configured encryption key
 	// IDs. Calls whose KeyID matches are exempt from the encrypted-call
 	// policy (always followed). nil disables the exemption. Issue #711.
@@ -131,9 +139,6 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	if opts.EncryptedMetadataFollow <= 0 {
-		opts.EncryptedMetadataFollow = defaultEncryptedMetadataFollow
-	}
 	// Surface the resolved watchdog timeout once at startup so an operator
 	// can confirm from logs that the configured trunking.call_timeout_ms
 	// is the value the engine is actually using — issue #356 follow-up
@@ -150,8 +155,8 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		timeout:           opts.CallTimeout,
 		now:               opts.Now,
 		scanMode:          opts.ScanMode,
-		encMode:           opts.EncryptedMode,
-		encMetadataFollow: opts.EncryptedMetadataFollow,
+		encModes:          opts.EncryptedModes,
+		encFollows:        opts.EncryptedFollows,
 		configuredKeys:    opts.ConfiguredKeys,
 		calls:             make(map[string]*ActiveCall),
 		synthetic:         make(map[string]*ActiveCall),
@@ -204,6 +209,10 @@ func (e *Engine) Run(ctx context.Context) error {
 			case events.KindCallSourceUpdate:
 				if c, ok := ev.Payload.(CallSourceUpdate); ok {
 					e.handleCallSourceUpdate(c)
+				}
+			case events.KindTalkerAlias:
+				if a, ok := ev.Payload.(TalkerAlias); ok {
+					e.handleTalkerAlias(a)
 				}
 			}
 		case <-tick.C:
@@ -262,7 +271,7 @@ func (e *Engine) HandleGrant(g Grant) {
 	// would discard a call the operator may want to capture. Emergency
 	// grants follow the existing lockout/scan-list precedent and bypass
 	// the policy. Issue #711.
-	if g.Encrypted && !g.Emergency && e.EncryptedMode() == EncryptedIgnore &&
+	if g.Encrypted && !g.Emergency && e.encModeFor(g.System) == EncryptedIgnore &&
 		!e.keyConfigured(g.System, g.KeyID) && !e.systemHasKeys(g.System) {
 		e.log.Debug("dropping encrypted grant (encrypted_calls mode: ignore)",
 			"grant", g.String())
@@ -597,7 +606,7 @@ func (e *Engine) applyEncryptedPolicy(serial string, g Grant, encrypted bool) {
 		e.pool.DisarmEncryptedRelease(serial)
 		return
 	}
-	switch e.EncryptedMode() {
+	switch e.encModeFor(g.System) {
 	case EncryptedIgnore:
 		e.mu.Lock()
 		ac := e.calls[serial]
@@ -608,8 +617,25 @@ func (e *Engine) applyEncryptedPolicy(serial string, g Grant, encrypted bool) {
 			e.endCall(ac, EndReasonEncrypted)
 		}
 	case EncryptedMetadata:
-		e.pool.ArmEncryptedRelease(serial, e.now().Add(e.EncryptedMetadataFollow()))
+		e.pool.ArmEncryptedRelease(serial, e.now().Add(e.encMetadataFollowFor(g.System)))
 	}
+}
+
+// handleTalkerAlias short-circuits the metadata-mode hold: once a system's
+// talker alias has fully reassembled (P25 Phase 2 FACCH-S header + data
+// blocks, decoded during call hangtime), the reason we held the tuner is
+// satisfied, so release it right away rather than waiting out the rest of
+// the metadata_follow_ms window. Only calls already armed for an encrypted
+// release are affected — a follow-mode call, a clear call, or one not yet
+// known encrypted is left running. Issue #711.
+func (e *Engine) handleTalkerAlias(a TalkerAlias) {
+	ac := e.pool.ArmedCallBySource(a.System, a.SourceID)
+	if ac == nil {
+		return
+	}
+	e.log.Info("releasing encrypted call after talker alias completed (encrypted_calls mode: metadata)",
+		"device", ac.Device.Serial, "grant", ac.Grant.String(), "alias", a.Alias)
+	e.endCall(ac, EndReasonEncrypted)
 }
 
 func (e *Engine) endCall(ac *ActiveCall, reason EndReason) {
@@ -794,45 +820,22 @@ func (e *Engine) SetScanMode(m ScanMode) ScanMode {
 	return prev
 }
 
-// EncryptedMode returns the engine's current encrypted-call handling
-// mode. Safe to call from any goroutine. Issue #711.
-func (e *Engine) EncryptedMode() EncryptedMode {
-	e.modeMu.RLock()
-	defer e.modeMu.RUnlock()
-	return e.encMode
+// encModeFor returns the encrypted-call handling mode configured for
+// system (trunking.systems[].encrypted_calls.mode). A system with no
+// override defaults to EncryptedFollow — the pre-issue-711 behaviour.
+// The map is read-only after NewEngine, so no lock. Issue #711.
+func (e *Engine) encModeFor(system string) EncryptedMode {
+	return e.encModes[system] // zero value is EncryptedFollow
 }
 
-// SetEncryptedMode swaps the encrypted-call handling mode at runtime —
-// the settings applier calls this when the operator changes
-// trunking.encrypted_calls.mode without a daemon restart. Returns the
-// previous mode for audit / UX feedback. The change applies to future
-// grants and future in-call encryption discoveries; calls already armed
-// for a metadata release keep their deadline. Issue #711.
-func (e *Engine) SetEncryptedMode(m EncryptedMode) EncryptedMode {
-	e.modeMu.Lock()
-	defer e.modeMu.Unlock()
-	prev := e.encMode
-	e.encMode = m
-	return prev
-}
-
-// EncryptedMetadataFollow returns the current metadata-mode follow
-// window. Safe to call from any goroutine. Issue #711.
-func (e *Engine) EncryptedMetadataFollow() time.Duration {
-	e.modeMu.RLock()
-	defer e.modeMu.RUnlock()
-	return e.encMetadataFollow
-}
-
-// SetEncryptedMetadataFollow swaps the metadata-mode follow window at
-// runtime. A value <= 0 resets it to the default. Issue #711.
-func (e *Engine) SetEncryptedMetadataFollow(d time.Duration) {
-	if d <= 0 {
-		d = defaultEncryptedMetadataFollow
+// encMetadataFollowFor returns the metadata-mode follow window configured
+// for system. A system with no override (or a non-positive value) uses
+// defaultEncryptedMetadataFollow. Read-only after NewEngine. Issue #711.
+func (e *Engine) encMetadataFollowFor(system string) time.Duration {
+	if d, ok := e.encFollows[system]; ok && d > 0 {
+		return d
 	}
-	e.modeMu.Lock()
-	defer e.modeMu.Unlock()
-	e.encMetadataFollow = d
+	return defaultEncryptedMetadataFollow
 }
 
 // keyConfigured reports whether the operator supplied an encryption key

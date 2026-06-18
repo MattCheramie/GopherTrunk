@@ -107,11 +107,6 @@ export function TrunkingSection() {
         help="How voice recordings are split, for every voice protocol."
       />
 
-      <EncryptedCallsField
-        value={cfg.EncryptedCalls}
-        onChange={(x) => set({ ...cfg, EncryptedCalls: x })}
-      />
-
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" onClick={addBlank}>+ Add system</button>
         <button className="btn" onClick={() => setRROpen(true)}>Add from RadioReference</button>
@@ -138,9 +133,9 @@ export function TrunkingSection() {
   );
 }
 
-// EncryptedCallsField edits the trunking.encrypted_calls policy (issue
-// #711): how scarce voice SDRs are allocated to encrypted calls. The
-// metadata-follow window is only relevant in "metadata" mode.
+// EncryptedCallsField edits a system's encrypted_calls policy (issue
+// #711): how scarce voice SDRs are allocated to encrypted calls on this
+// system. The metadata-follow window is only relevant in "metadata" mode.
 function EncryptedCallsField(props: {
   value: EncryptedCallsConfig | undefined;
   onChange: (next: EncryptedCallsConfig) => void;
@@ -167,7 +162,7 @@ function EncryptedCallsField(props: {
           value={enc.MetadataFollowMs}
           onChange={(x) => set({ MetadataFollowMs: x })}
           placeholder="1500"
-          help="How long to follow an encrypted call (capturing talker alias / RID) before releasing the voice SDR. 0 = default (1500 ms)."
+          help="How long to follow an encrypted call (capturing talker alias / RID) before releasing the voice SDR — or until the talker alias completes, whichever comes first. 0 = default (1500 ms)."
         />
       ) : null}
     </div>
@@ -309,6 +304,13 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
               <TextField label="Key (hex)" value={e.Key} onChange={(v) => set({ ...e, Key: v })} />
             </div>
           )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="Encrypted call handling">
+        <EncryptedCallsField
+          value={sys.EncryptedCalls}
+          onChange={(x) => onChange({ ...sys, EncryptedCalls: x })}
         />
       </Fieldset>
 

@@ -136,9 +136,8 @@ var fieldMetas = map[string]FieldMeta{
 	"TrunkingConfig.CallTimeoutMs":     {Help: "Inactivity window before the watchdog ends a call and frees its voice SDR. 0 = 30 s."},
 	"TrunkingConfig.VoiceHangtimeMs":   {Help: "End-of-transmission window for every voice protocol — ends a call this long after the last voice frame. 0 = 3.5 s."},
 	"TrunkingConfig.VoiceCallGrouping": {Help: "How recordings split: transmission (one file per over) or conversation (group same-TG overs). Empty = transmission.", Options: opts("", "(default: transmission)", "transmission", "transmission", "conversation", "conversation")},
-	"TrunkingConfig.EncryptedCalls":    {Help: "How scarce voice SDRs are allocated to encrypted calls, so encrypted traffic can't starve clear calls (issue #711)."},
 
-	"EncryptedCallsConfig.Mode":             {Help: "Encrypted-call handling. follow (default) holds a voice SDR for the whole call; metadata follows briefly to capture talker alias / RID then releases; ignore never ties up a voice SDR. Calls you have a matching encryption key for are always followed.", Options: opts("", "(default: follow)", "follow", "follow", "metadata", "metadata", "ignore", "ignore")},
+	"EncryptedCallsConfig.Mode":             {Help: "Encrypted-call handling. follow (default) holds a voice SDR for the whole call; metadata follows briefly to capture talker alias / RID then releases (as soon as the alias completes, or after the follow window); ignore never ties up a voice SDR. Calls you have a matching encryption key for are always followed.", Options: opts("", "(default: follow)", "follow", "follow", "metadata", "metadata", "ignore", "ignore")},
 	"EncryptedCallsConfig.MetadataFollowMs": {Help: "Metadata mode only: how long (ms) to follow an encrypted call after it is known encrypted before releasing the voice SDR. 0 = engine default (1500 ms)."},
 
 	"SystemConfig.Name":            {Help: "Unique label for this system. Used in the UI and to name its talkgroup sidecar."},
@@ -149,6 +148,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.P25BandPlan":     {Label: "P25 band plan", Help: "Static IDEN_UP slot seeds for P25 Phase 1 sites that route grants through an unannounced channel ID. P25 Phase 1 only."},
 	"SystemConfig.DMRBandPlan":     {Label: "DMR band plan", Help: "LCN→frequency map REQUIRED for DMR Tier III voice grants. Pick linear (grid) or table (explicit list). DMR only."},
 	"SystemConfig.EncryptionKeys":  {Help: "Operator-held decryption keys (today DMR RC4 'Enhanced Privacy'). No key recovery is performed."},
+	"SystemConfig.EncryptedCalls":  {Help: "How scarce voice SDRs are allocated to encrypted calls on this system, so encrypted traffic can't starve clear calls (issue #711)."},
 	// SystemConfig advanced protocol knobs (edited under the Advanced group).
 	"SystemConfig.TETRAColourCode":         {Label: "TETRA colour code", Help: "30-bit extended colour code seeding the TETRA descrambler. Set to the cell's colour code. TETRA only."},
 	"SystemConfig.TETRAChannel":            {Label: "TETRA channel", Help: "Which TETRA logical channel each burst carries (sch/hd, sch/f, sch/hu, bsch, aach). Empty = sch/hd. TETRA only."},

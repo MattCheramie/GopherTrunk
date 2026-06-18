@@ -1013,16 +1013,48 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		return out
 	}
 
+	// Build the per-system encrypted-call policy maps the engine resolves
+	// by grant System name (trunking.systems[].encrypted_calls). A system
+	// with no override is simply absent and defaults to follow / the engine
+	// default window. Issue #711.
+	encryptedModesBySystem := func(systems []config.SystemConfig) map[string]trunking.EncryptedMode {
+		var out map[string]trunking.EncryptedMode
+		for _, s := range systems {
+			m := trunking.ParseEncryptedMode(s.EncryptedCalls.Mode)
+			if m == trunking.EncryptedFollow {
+				continue // default — no entry needed
+			}
+			if out == nil {
+				out = make(map[string]trunking.EncryptedMode)
+			}
+			out[s.Name] = m
+		}
+		return out
+	}
+	encryptedFollowsBySystem := func(systems []config.SystemConfig) map[string]time.Duration {
+		var out map[string]time.Duration
+		for _, s := range systems {
+			if s.EncryptedCalls.MetadataFollowMs <= 0 {
+				continue // use engine default
+			}
+			if out == nil {
+				out = make(map[string]time.Duration)
+			}
+			out[s.Name] = time.Duration(s.EncryptedCalls.MetadataFollowMs) * time.Millisecond
+		}
+		return out
+	}
+
 	engine, err := trunking.NewEngine(trunking.EngineOptions{
-		Bus:                     d.bus,
-		Log:                     log,
-		VoicePool:               d.voicePool,
-		Talkgroups:              d.talkgroups,
-		ScanMode:                trunking.ParseScanMode(cfg.Scanner.ScanMode),
-		CallTimeout:             time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
-		EncryptedMode:           trunking.ParseEncryptedMode(cfg.Trunking.EncryptedCalls.Mode),
-		EncryptedMetadataFollow: time.Duration(cfg.Trunking.EncryptedCalls.MetadataFollowMs) * time.Millisecond,
-		ConfiguredKeys:          configuredKeysBySystem(cfg.Trunking.Systems),
+		Bus:              d.bus,
+		Log:              log,
+		VoicePool:        d.voicePool,
+		Talkgroups:       d.talkgroups,
+		ScanMode:         trunking.ParseScanMode(cfg.Scanner.ScanMode),
+		CallTimeout:      time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		EncryptedModes:   encryptedModesBySystem(cfg.Trunking.Systems),
+		EncryptedFollows: encryptedFollowsBySystem(cfg.Trunking.Systems),
+		ConfiguredKeys:   configuredKeysBySystem(cfg.Trunking.Systems),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: engine: %w", err)
