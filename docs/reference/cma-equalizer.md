@@ -13,7 +13,7 @@ infobox:
   - { label: Blind, value: No training sequence required }
 see_also: [multipath-propagation, demodulation, clock-recovery, constellation-diagram]
 related_lessons:
-  - { title: "Tuning for a clean lock", url: /learn/tuning-with-scopes/ }
+  - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 external:
   - { title: "Constant modulus algorithm (Wikipedia)", url: https://en.wikipedia.org/wiki/Constant_modulus_algorithm }
 ---

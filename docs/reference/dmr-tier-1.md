@@ -18,7 +18,7 @@ infobox:
   - { label: GopherTrunk support, value: As conventional DMR }
 see_also: [dmr, dmr-tier-2, dmr-tier-3, frequency-shift-keying, etsi]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

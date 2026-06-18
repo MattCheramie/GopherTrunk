@@ -13,7 +13,7 @@ infobox:
   - { label: Form, value: Time-reversed copy of the pulse }
 see_also: [root-raised-cosine-filter, digital-filter, signal-to-noise-ratio, demodulation]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Matched filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Matched_filter }
 ---

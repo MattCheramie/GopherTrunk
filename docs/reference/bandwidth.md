@@ -11,8 +11,8 @@ infobox:
   - { label: Determines, value: Data capacity, capture needs }
 see_also: [sample-rate, nyquist-theorem, frequency, signal-to-noise-ratio]
 related_lessons:
-  - { title: "Anatomy of a signal", url: /learn/signal-anatomy/ }
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Bandwidth (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Bandwidth_(signal_processing) }
 ---

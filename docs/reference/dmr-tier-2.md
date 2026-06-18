@@ -18,7 +18,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded (both slots) }
 see_also: [dmr, dmr-tier-1, dmr-tier-3, tdma, ambe-plus-2]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

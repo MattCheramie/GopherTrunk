@@ -13,7 +13,7 @@ infobox:
   - { label: Produces, value: Intermediate frequency / baseband }
 see_also: [local-oscillator, digital-down-converter, analog-to-digital-converter, software-defined-radio]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Superheterodyne receiver (Wikipedia)", url: https://en.wikipedia.org/wiki/Superheterodyne_receiver }
 ---

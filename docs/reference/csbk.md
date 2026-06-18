@@ -9,7 +9,7 @@ aka: [CSBK, "control signalling block", "control signaling block"]
 autolink: true
 see_also: [control-channel, channel-grant, dmr-tier-3, dmr, tsbk]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

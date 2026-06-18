@@ -16,7 +16,7 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [d-star, m17, c4fm, ambe, vocoder]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "System Fusion (Wikipedia)", url: https://en.wikipedia.org/wiki/System_Fusion }
 ---

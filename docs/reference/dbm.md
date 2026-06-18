@@ -13,7 +13,7 @@ infobox:
   - { label: Examples, value: "0 dBm = 1 mW; −80 dBm ≈ solid signal" }
 see_also: [decibel, dbfs, noise-floor, signal-to-noise-ratio]
 related_lessons:
-  - { title: "Decibels & signal power", url: /learn/decibels/ }
+  - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
 external:
   - { title: "dBm (Wikipedia)", url: https://en.wikipedia.org/wiki/DBm }
 ---

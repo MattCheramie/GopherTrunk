@@ -13,7 +13,7 @@ infobox:
   - { label: Underlies, value: IMBE, AMBE, AMBE+2 }
 see_also: [vocoder, imbe, ambe, ambe-plus-2, dvsi]
 related_lessons:
-  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/vocoders/ }
+  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
 external:
   - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
 ---

@@ -13,7 +13,7 @@ infobox:
   - { label: Triggers, value: Radios retune to the call }
 see_also: [control-channel, voice-channel, talkgroup, trunked-radio]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
 ---

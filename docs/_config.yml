@@ -37,6 +37,7 @@ plugins:
   - jekyll-seo-tag
   - jekyll-sitemap
   - jekyll-feed
+  - jekyll-redirect-from
 
 relative_links:
   enabled: true
@@ -52,16 +53,28 @@ defaults:
       type: pages
     values:
       layout: page
-  # Learning-path pages under /learn/ get the lesson layout and nav group
-  # automatically, so individual lessons only declare slug/title/description.
-  # The hub (learn/index.md) overrides layout back to `page`.
+  # Learning-path lessons under each path get the lesson layout, nav group, and
+  # their `learn_path` id automatically, so individual lessons only declare
+  # slug/title/description. Each path's hub (learn/<id>/index.md) overrides
+  # layout to `learn-hub`; the chooser (learn/index.md) overrides to
+  # `learn-index`. `learn_path` is a custom key — never `page.path`, which is a
+  # Jekyll built-in used for the "Edit on GitHub" links.
   - scope:
-      path: "learn"
+      path: "learn/rf-sdr"
       type: pages
     values:
       layout: lesson
-      nav_group: Learn RF & SDR
-      permalink: /learn/:basename/
+      learn_path: rf-sdr
+      nav_group: Learn
+      permalink: /learn/rf-sdr/:basename/
+  - scope:
+      path: "learn/git"
+      type: pages
+    values:
+      layout: lesson
+      learn_path: git
+      nav_group: Learn
+      permalink: /learn/git/:basename/
   # Encyclopedia articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:

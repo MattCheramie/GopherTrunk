@@ -9,7 +9,7 @@ aka: ["rest channel"]
 autolink: true
 see_also: [control-channel, channel-grant, trunked-radio, capacity-plus, dmr]
 related_lessons:
-  - { title: "Finding & identifying systems", url: /learn/finding-systems/ }
+  - { title: "Finding & identifying systems", url: /learn/rf-sdr/finding-systems/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

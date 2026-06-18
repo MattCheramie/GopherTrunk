@@ -13,7 +13,7 @@ infobox:
   - { label: Named for, value: Richard Hamming }
 see_also: [forward-error-correction, golay-code, bch-code, richard-hamming, cyclic-redundancy-check]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Hamming code (Wikipedia)", url: https://en.wikipedia.org/wiki/Hamming_code }
 ---

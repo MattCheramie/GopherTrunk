@@ -13,7 +13,7 @@ infobox:
   - { label: Use, value: Dongle at antenna, decode elsewhere }
 see_also: [rtl-sdr, soapysdr, iq-data, software-defined-radio]
 related_lessons:
-  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/sdr-hardware/ }
+  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 external:
   - { title: "rtl-sdr (osmocom)", url: https://osmocom.org/projects/rtl-sdr/wiki }
 ---

@@ -13,7 +13,7 @@ infobox:
   - { label: Rules, value: "+3 dB ≈ ×2, +10 dB = ×10" }
 see_also: [dbm, dbfs, signal-to-noise-ratio, noise-floor, path-loss, antenna-gain]
 related_lessons:
-  - { title: "Decibels & signal power", url: /learn/decibels/ }
+  - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
 external:
   - { title: "Decibel (Wikipedia)", url: https://en.wikipedia.org/wiki/Decibel }
 ---

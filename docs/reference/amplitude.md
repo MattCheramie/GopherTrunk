@@ -11,7 +11,7 @@ infobox:
   - { label: Reported as, value: Power level (dBm / dBFS) }
 see_also: [phase, decibel, dbm, amplitude-modulation, signal-to-noise-ratio]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Amplitude (Wikipedia)", url: https://en.wikipedia.org/wiki/Amplitude }
 ---

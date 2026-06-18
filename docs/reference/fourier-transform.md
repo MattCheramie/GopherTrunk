@@ -13,7 +13,7 @@ infobox:
   - { label: Named for, value: Joseph Fourier }
 see_also: [fast-fourier-transform, joseph-fourier, bandwidth, software-defined-radio]
 related_lessons:
-  - { title: "The FFT & reading a waterfall", url: /learn/fft-and-waterfall/ }
+  - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
 external:
   - { title: "Fourier transform (Wikipedia)", url: https://en.wikipedia.org/wiki/Fourier_transform }
 ---

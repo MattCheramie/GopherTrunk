@@ -13,7 +13,7 @@ infobox:
   - { label: Rule, value: "captured bandwidth ≈ sample rate (IQ)" }
 see_also: [bandwidth, nyquist-theorem, aliasing, decimation, analog-to-digital-converter]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Sampling (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Sampling_(signal_processing) }
 ---

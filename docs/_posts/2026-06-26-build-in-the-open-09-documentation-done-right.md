@@ -131,7 +131,7 @@ first-class part of the repo, and the layout maps cleanly onto everything above:
   `## [Unreleased]` section; `LICENSE` sets the terms.
 - **The `docs/` folder is large and structured** — around **50 markdown files**.
   It's clearly organized along Diátaxis lines:
-  - **Tutorials / learning:** a **30-lesson learning path** under `docs/learn/`
+  - **Tutorials / learning:** a **30-lesson learning path** under `docs/learn/rf-sdr/`
     (from `what-is-sdr.md` through `clock-recovery.md`, `digital-voice.md`, and a
     `glossary.md`) — the learning-oriented tier.
   - **Reference:** a **~180-entry reference encyclopedia** under

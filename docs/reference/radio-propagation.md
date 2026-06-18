@@ -13,7 +13,7 @@ infobox:
   - { label: HF, value: Ionospheric skip possible }
 see_also: [multipath-propagation, radio-horizon, ionospheric-propagation, path-loss, frequency-bands]
 related_lessons:
-  - { title: "How signals travel", url: /learn/propagation/ }
+  - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
 external:
   - { title: "Radio propagation (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_propagation }
 ---

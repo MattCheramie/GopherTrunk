@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: FM, superheterodyne receiver }
 see_also: [frequency-modulation, superheterodyne-receiver, radio-wave]
 related_lessons:
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Edwin Howard Armstrong (Wikipedia)", url: https://en.wikipedia.org/wiki/Edwin_Howard_Armstrong }
 ---

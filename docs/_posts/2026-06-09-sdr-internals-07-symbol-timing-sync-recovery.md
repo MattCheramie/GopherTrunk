@@ -34,7 +34,7 @@ recovery** slides a known pattern (a sync word) across the symbol stream and
 fires when it correlates strongly — that's your frame boundary.
 
 The learn-path lesson
-[Clock recovery & symbol timing]({{ '/learn/clock-recovery/' | relative_url }})
+[Clock recovery & symbol timing]({{ '/learn/rf-sdr/clock-recovery/' | relative_url }})
 has the intuition; this post is the implementation.
 
 ## How GopherTrunk implements it in Go

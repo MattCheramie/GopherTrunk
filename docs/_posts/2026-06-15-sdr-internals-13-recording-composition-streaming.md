@@ -36,7 +36,7 @@ starts a call, three things have to happen on the output side:
   push it to public call networks.
 
 These are the
-[antenna-to-audio]({{ '/learn/antenna-to-audio/' | relative_url }}) last mile.
+[antenna-to-audio]({{ '/learn/rf-sdr/antenna-to-audio/' | relative_url }}) last mile.
 
 ## How GopherTrunk implements it in Go
 

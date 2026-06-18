@@ -13,7 +13,7 @@ infobox:
   - { label: Role, value: Co-driver of P25 (APCO-25) }
 see_also: [project-25, tia, trunked-radio]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "APCO International (Wikipedia)", url: https://en.wikipedia.org/wiki/Association_of_Public-Safety_Communications_Officials-International }
 ---

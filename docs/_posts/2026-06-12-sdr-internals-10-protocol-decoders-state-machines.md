@@ -41,7 +41,7 @@ is now on frequency Y." Each protocol encodes this completely differently:
 - Amateur modes **D-STAR**, **YSF**, **M17**; paging **POCSAG/FLEX**; maritime
   **AIS/DSC**; aviation **ADS-B**.
 
-The [protocol landscape]({{ '/learn/protocol-landscape/' | relative_url }})
+The [protocol landscape]({{ '/learn/rf-sdr/protocol-landscape/' | relative_url }})
 lesson maps the whole family.
 
 ## How GopherTrunk implements it in Go

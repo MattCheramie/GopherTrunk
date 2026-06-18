@@ -16,7 +16,7 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [trunked-radio, control-channel, motorola-type-ii, ltr, mpt-1327]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Enhanced Digital Access Communications System (Wikipedia)", url: https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System }
 ---

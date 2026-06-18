@@ -9,7 +9,7 @@ aka: [SAW filter, "surface acoustic wave filter"]
 autolink: true
 see_also: [low-noise-amplifier, ads-b, bandwidth, attenuation]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Surface acoustic wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Surface_acoustic_wave }
 ---

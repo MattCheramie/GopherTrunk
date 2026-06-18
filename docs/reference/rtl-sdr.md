@@ -15,7 +15,7 @@ infobox:
   - { label: TX, value: No (receive only) }
 see_also: [rtl2832u, r820t-tuner, hackrf, airspy, upconverter, software-defined-radio]
 related_lessons:
-  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/sdr-hardware/ }
+  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 external:
   - { title: "RTL-SDR (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR }
   - { title: "GopherTrunk hardware guide", url: /hardware.html }

@@ -13,7 +13,7 @@ infobox:
   - { label: Role, value: Global spectrum allocation, standards }
 see_also: [fcc, etsi, icao, frequency-bands]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
 external:
   - { title: "International Telecommunication Union (Wikipedia)", url: https://en.wikipedia.org/wiki/International_Telecommunication_Union }
 ---

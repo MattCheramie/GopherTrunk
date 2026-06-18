@@ -16,7 +16,7 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [pocsag, frequency-shift-keying, bch-code, interleaving]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "FLEX (Wikipedia)", url: https://en.wikipedia.org/wiki/FLEX_(protocol) }
 ---

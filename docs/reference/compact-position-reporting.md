@@ -13,7 +13,7 @@ infobox:
   - { label: Resolves from, value: Even/odd message pair }
 see_also: [ads-b, cyclic-redundancy-check, icao]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Compact Position Reporting", url: https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast }
 ---

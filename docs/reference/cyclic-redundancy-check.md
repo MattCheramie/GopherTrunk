@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: AIS, ADS-B (CRC-24), AX.25, M17 }
 see_also: [forward-error-correction, ads-b, ais, ax25]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Cyclic redundancy check (Wikipedia)", url: https://en.wikipedia.org/wiki/Cyclic_redundancy_check }
 ---

@@ -9,7 +9,7 @@ aka: [dibit]
 autolink: true
 see_also: [symbol-rate, c4fm, frequency-shift-keying, constellation-diagram]
 related_lessons:
-  - { title: "Symbols, baud & bitrate", url: /learn/symbols-and-baud/ }
+  - { title: "Symbols, baud & bitrate", url: /learn/rf-sdr/symbols-and-baud/ }
 external:
   - { title: "Dibit (Wikipedia)", url: https://en.wikipedia.org/wiki/Dibit }
 ---

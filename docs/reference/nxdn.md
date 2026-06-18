@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [dpmr, frequency-shift-keying, ambe-plus-2, trunked-radio, control-channel]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "NXDN (Wikipedia)", url: https://en.wikipedia.org/wiki/NXDN }
 ---

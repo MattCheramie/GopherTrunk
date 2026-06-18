@@ -35,7 +35,7 @@ interface-segregation patterns behind them.*
 - **FFT / spectrum.** The
   [fast Fourier transform]({{ '/reference/fast-fourier-transform/' | relative_url }})
   turns IQ into a power spectrum for the live
-  [waterfall]({{ '/learn/fft-and-waterfall/' | relative_url }}) and for carrier
+  [waterfall]({{ '/learn/rf-sdr/fft-and-waterfall/' | relative_url }}) and for carrier
   detection.
 
 ## How GopherTrunk implements it in Go

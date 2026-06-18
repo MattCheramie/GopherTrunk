@@ -13,7 +13,7 @@ infobox:
   - { label: Decoded by, value: Viterbi over a trellis }
 see_also: [convolutional-code, viterbi-algorithm, forward-error-correction, project-25]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Trellis modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Trellis_modulation }
 ---

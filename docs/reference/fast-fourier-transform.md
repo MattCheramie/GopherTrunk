@@ -13,7 +13,7 @@ infobox:
   - { label: Output, value: Spectrum (bins) }
 see_also: [fourier-transform, bandwidth, sample-rate, iq-data]
 related_lessons:
-  - { title: "The FFT & reading a waterfall", url: /learn/fft-and-waterfall/ }
+  - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
 external:
   - { title: "Fast Fourier transform (Wikipedia)", url: https://en.wikipedia.org/wiki/Fast_Fourier_transform }
 ---

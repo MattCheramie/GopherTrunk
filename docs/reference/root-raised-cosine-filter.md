@@ -13,7 +13,7 @@ infobox:
   - { label: Used, value: TX and RX (matched pair) }
 see_also: [matched-filter, digital-filter, symbol-rate, eye-diagram]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Root-raised-cosine filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Root-raised-cosine_filter }
 ---

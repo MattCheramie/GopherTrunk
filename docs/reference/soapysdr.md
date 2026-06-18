@@ -13,7 +13,7 @@ infobox:
   - { label: Remote, value: SoapyRemote (network IQ) }
 see_also: [rtl-tcp, software-defined-radio, rtl-sdr, airspy]
 related_lessons:
-  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/sdr-hardware/ }
+  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 external:
   - { title: "SoapySDR (project)", url: https://github.com/pothosware/SoapySDR }
 ---

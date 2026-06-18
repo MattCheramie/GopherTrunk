@@ -19,8 +19,8 @@ infobox:
   - { label: GopherTrunk support, value: "Phase 1 and Phase 2 — see Status" }
 see_also: [p25-phase-1, p25-phase-2, c4fm, imbe, ambe-plus-2, trunked-radio, control-channel, tia, apco-international]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
   - { title: "GopherTrunk decoder status", url: /status.html }
@@ -85,6 +85,6 @@ frequencies and [talkgroups](/reference/talkgroup/).
 
 GopherTrunk decodes both P25 Phase 1 and Phase 2: it locks the control channel,
 follows channel grants to voice channels, and runs the matching vocoder to produce
-audio. See the [protocol landscape lesson](/learn/protocol-landscape/) for how P25
+audio. See the [protocol landscape lesson](/learn/rf-sdr/protocol-landscape/) for how P25
 compares with other systems, and the [Status](/status.html) page for current
 coverage.

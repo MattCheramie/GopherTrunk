@@ -9,7 +9,7 @@ aka: [AFC, "automatic frequency control"]
 autolink: true
 see_also: [ppm-frequency-correction, costas-loop, demodulation, constellation-diagram]
 related_lessons:
-  - { title: "Tuning for a clean lock", url: /learn/tuning-with-scopes/ }
+  - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 external:
   - { title: "Automatic frequency control (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_frequency_control }
 ---

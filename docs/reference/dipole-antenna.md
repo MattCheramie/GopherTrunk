@@ -13,7 +13,7 @@ infobox:
   - { label: Pattern, value: Omnidirectional broadside }
 see_also: [antenna, antenna-gain, polarization, wavelength]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Dipole antenna (Wikipedia)", url: https://en.wikipedia.org/wiki/Dipole_antenna }
 ---

@@ -13,8 +13,8 @@ infobox:
   - { label: Open eye, value: Good timing/noise margin }
 see_also: [constellation-diagram, clock-recovery, symbol-rate, c4fm]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
-  - { title: "Tuning for a clean lock", url: /learn/tuning-with-scopes/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
+  - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 external:
   - { title: "Eye pattern (Wikipedia)", url: https://en.wikipedia.org/wiki/Eye_pattern }
 ---

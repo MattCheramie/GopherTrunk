@@ -13,7 +13,7 @@ infobox:
   - { label: Algorithms, value: Gardner, Mueller–Müller }
 see_also: [gardner-timing-recovery, mueller-muller-timing-recovery, symbol-rate, eye-diagram, demodulation]
 related_lessons:
-  - { title: "Clock recovery & symbol timing", url: /learn/clock-recovery/ }
+  - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
 external:
   - { title: "Clock recovery (Wikipedia)", url: https://en.wikipedia.org/wiki/Clock_recovery }
 ---

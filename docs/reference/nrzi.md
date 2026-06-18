@@ -9,7 +9,7 @@ aka: [NRZI, "non-return-to-zero inverted"]
 autolink: true
 see_also: [ax25, aprs, ais, frequency-shift-keying, clock-recovery]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Non-return-to-zero (Wikipedia)", url: https://en.wikipedia.org/wiki/Non-return-to-zero#NRZI }
 ---

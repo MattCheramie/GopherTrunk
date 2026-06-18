@@ -13,7 +13,7 @@ infobox:
   - { label: Standards, value: P25 (with APCO) }
 see_also: [project-25, apco-international, etsi]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Telecommunications Industry Association (Wikipedia)", url: https://en.wikipedia.org/wiki/Telecommunications_Industry_Association }
 ---

@@ -19,8 +19,8 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [dmr-tier-1, dmr-tier-2, dmr-tier-3, ambe-plus-2, tdma, etsi, control-channel]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

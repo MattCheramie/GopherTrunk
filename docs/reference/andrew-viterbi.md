@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Viterbi algorithm; co-founding Qualcomm }
 see_also: [viterbi-algorithm, convolutional-code, forward-error-correction]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Andrew Viterbi (Wikipedia)", url: https://en.wikipedia.org/wiki/Andrew_Viterbi }
 ---

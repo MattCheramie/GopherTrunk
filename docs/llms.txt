@@ -11,17 +11,22 @@ sitemap: false
 > The site also hosts a free, structured learning path that teaches radio and SDR
 > fundamentals from beginner to expert.
 
-## Learn RF & SDR (learning path)
+## Learn (learning paths)
 
-A guided curriculum taking a complete newcomer to a confident GopherTrunk operator.
-Start: {{ '/learn/' | absolute_url }}
-{% for mod in site.data.learn.modules %}
+Free, structured curricula taking a complete newcomer to a confident
+practitioner. Browse: {{ '/learn/' | absolute_url }}
+{% for path in site.data.learn.paths %}{% assign base = '/learn/' | append: path.id | append: '/' %}
+## Learn {{ path.label }} (learning path)
+
+{{ path.intro }}
+Start: {{ base | absolute_url }}
+{% for mod in path.modules %}
 ### {{ mod.label }}
 {{ mod.blurb }}
-{% for lesson in mod.lessons %}- [{{ lesson.title }}]({{ '/learn/' | append: lesson.slug | append: '/' | absolute_url }}): {{ lesson.summary }}
-{% endfor %}{% endfor %}
-### Reference
-- [{{ site.data.learn.glossary.title }}]({{ '/learn/glossary/' | absolute_url }}): {{ site.data.learn.glossary.summary }}
+{% for lesson in mod.lessons %}- [{{ lesson.title }}]({{ base | append: lesson.slug | append: '/' | absolute_url }}): {{ lesson.summary }}
+{% endfor %}{% endfor %}{% if path.glossary %}### Glossary
+- [{{ path.glossary.title }}]({{ base | append: 'glossary/' | absolute_url }}): {{ path.glossary.summary }}
+{% endif %}{% endfor %}
 
 ## Reference (encyclopedia)
 

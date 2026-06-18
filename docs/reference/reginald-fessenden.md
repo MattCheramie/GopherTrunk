@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Early voice (AM) transmission }
 see_also: [amplitude-modulation, guglielmo-marconi, carrier-wave]
 related_lessons:
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Reginald Fessenden (Wikipedia)", url: https://en.wikipedia.org/wiki/Reginald_Fessenden }
 ---

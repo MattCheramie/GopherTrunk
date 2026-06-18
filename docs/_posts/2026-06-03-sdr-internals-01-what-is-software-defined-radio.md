@@ -43,7 +43,7 @@ voice codec — is Go code.
 > New to the fundamentals? See the reference entries on
 > [software-defined radio]({{ '/reference/software-defined-radio/' | relative_url }})
 > and [IQ data]({{ '/reference/iq-data/' | relative_url }}), or the learn-path
-> lesson [What is software-defined radio?]({{ '/learn/what-is-sdr/' | relative_url }}).
+> lesson [What is software-defined radio?]({{ '/learn/rf-sdr/what-is-sdr/' | relative_url }}).
 
 ## The GopherTrunk pipeline
 

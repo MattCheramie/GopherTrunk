@@ -13,7 +13,7 @@ infobox:
   - { label: Powers, value: Antenna-mounted LNA / active antenna }
 see_also: [low-noise-amplifier, antenna, rtl-sdr]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Bias tee (Wikipedia)", url: https://en.wikipedia.org/wiki/Bias_tee }
 ---

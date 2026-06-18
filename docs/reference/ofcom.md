@@ -9,8 +9,8 @@ aka: [Ofcom]
 autolink: true
 see_also: [fcc, itu, frequency-bands]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
-  - { title: "Legal & ethical monitoring", url: /learn/legal-ethical/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
+  - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
 external:
   - { title: "Ofcom (Wikipedia)", url: https://en.wikipedia.org/wiki/Ofcom }
 ---
@@ -37,5 +37,5 @@ global framework set by the [ITU](/reference/itu/).
 ## Overview
 
 Whether and what you may legally receive depends on national rules; in the UK those are
-Ofcom's. See the [legal &amp; ethical monitoring](/learn/legal-ethical/) lesson, and always
+Ofcom's. See the [legal &amp; ethical monitoring](/learn/rf-sdr/legal-ethical/) lesson, and always
 check the regulator for your own jurisdiction.

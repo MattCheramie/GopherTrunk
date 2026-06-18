@@ -1,0 +1,73 @@
+---
+layout: default
+---
+{%- comment -%}
+  The /learn/ chooser. Lists every learning path in _data/learn.yml as a card
+  (label, tagline, lesson count, level spread) linking to that path's hub.
+  Emits an ItemList of the available courses for SEO.
+{%- endcomment -%}
+{%- assign paths = site.data.learn.paths -%}
+
+<main id="content" class="page" role="main">
+  <div class="container" data-cta-host>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="{{ '/' | relative_url }}">Home</a></li>
+        <li><span aria-current="page">Learn</span></li>
+      </ol>
+    </nav>
+
+    <header class="learn-hero">
+      <h1 class="learn-hero__title">{{ page.title }}</h1>
+      <p class="learn-hero__lede">{{ page.lede }}</p>
+    </header>
+
+    <article class="prose prose--wide learn-intro">
+      {{ content }}
+    </article>
+
+    <div class="learn-modules">
+      <section class="learn-module">
+        <ol class="learn-grid">
+          {%- for p in paths -%}
+            {%- assign count = 0 -%}
+            {%- for mod in p.modules -%}{%- assign count = count | plus: mod.lessons.size -%}{%- endfor -%}
+            {%- assign base = '/learn/' | append: p.id | append: '/' -%}
+            <li class="learn-card learn-card--path">
+              <a class="learn-card__link" href="{{ base | relative_url }}">
+                <span class="learn-card__body">
+                  <span class="learn-card__title">{{ p.label }}</span>
+                  <span class="learn-card__summary">{{ p.tagline }}</span>
+                  <span class="learn-card__meta">
+                    <span class="learn-card__time">{{ count }} lessons</span>
+                    <span class="learn-card__tag">{{ p.modules.size }} modules</span>
+                  </span>
+                </span>
+              </a>
+            </li>
+          {%- endfor -%}
+        </ol>
+      </section>
+    </div>
+
+    {%- include page-ctas.html -%}
+  </div>
+</main>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": {{ page.title | jsonify }},
+  "itemListElement": [
+    {%- for p in paths -%}
+    {
+      "@type": "ListItem",
+      "position": {{ forloop.index }},
+      "name": {{ p.title | jsonify }},
+      "url": {{ '/learn/' | append: p.id | append: '/' | absolute_url | jsonify }}
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ]
+}
+</script>

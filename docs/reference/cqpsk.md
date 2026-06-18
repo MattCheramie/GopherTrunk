@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25 (linear/simulcast path) }
 see_also: [phase-shift-keying, c4fm, project-25, constellation-diagram]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
 ---

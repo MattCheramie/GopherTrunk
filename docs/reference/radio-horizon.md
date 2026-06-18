@@ -13,7 +13,7 @@ infobox:
   - { label: Vs visual horizon, value: Slightly farther }
 see_also: [radio-propagation, frequency-bands, antenna]
 related_lessons:
-  - { title: "How signals travel", url: /learn/propagation/ }
+  - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
 external:
   - { title: "Radio horizon (Wikipedia)", url: https://en.wikipedia.org/wiki/Line-of-sight_propagation }
 ---
