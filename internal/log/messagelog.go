@@ -196,6 +196,11 @@ func formatEvent(ev events.Event) string {
 			body = fmt.Sprintf("%-12s system=%s proto=%s src=%d wacn=%d sysid=%d resp=%s",
 				"REGISTRATION", r.System, r.Protocol, r.SourceID, r.WACN, r.SystemID, r.Response)
 		}
+	case events.KindUnitToUnitRequest:
+		if u, ok := ev.Payload.(trunking.UnitToUnitRequest); ok {
+			body = fmt.Sprintf("%-12s system=%s proto=%s src=%d target=%d",
+				"U2U-REQUEST", u.System, u.Protocol, u.SourceID, u.TargetID)
+		}
 	case events.KindPatch:
 		body = fmt.Sprintf("%-12s %+v", "PATCH", ev.Payload)
 	case events.KindTalkerAlias:

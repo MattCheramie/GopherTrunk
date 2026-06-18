@@ -14,8 +14,17 @@ for tagged releases.
   buffering the whole dwell, so a P25 site can be watched for minutes without
   recording gigabytes of IQ. It stops early once identity, neighbors, and the
   band plan stop changing (converge-and-stop), capped at the requested time.
+- **P25 Unit-to-Unit Answer Request decoding** (opcode 0x05). The private-call
+  answer-request handshake is now decoded — in both the standard and Motorola
+  (MFID 0x90) forms — and published as a new `unit.request` bus event carrying
+  the calling/called radio IDs, surfaced on the web CC-activity panel and the
+  message log instead of being logged as an unhandled vendor TSBK.
 
 ### Fixed
+- **Hunt progress frequency precision.** The identifying-phase progress line
+  rounded the tuned frequency to 3 decimals (showing a 6.25 kHz-raster channel
+  like 160.5875 MHz as "160.588"); it now prints 4 decimals, matching the rest
+  of the UI. Display-only — the SDR was always tuned to the exact frequency.
 - **P25 identity / band-plan / neighbor accuracy under noise.** Status-broadcast
   accumulation was last-write-wins, so a single corrupt-but-CRC-passing TSBK
   could set a wrong WACN / System ID or inject a phantom band-plan slot

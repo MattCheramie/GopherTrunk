@@ -21,6 +21,7 @@ const CC_KINDS: Record<string, string> = {
   "call.end": "Call end",
   "affiliation": "Affiliation",
   "registration": "Registration",
+  "unit.request": "Unit→Unit",
   "patch": "Patch",
   "talker.alias": "Talker alias",
   "cc.locked": "CC locked",
@@ -219,6 +220,19 @@ function renderRow(
           {"radio "}
           {radio ? ridLink(radio) : "?"}
           {suffix}
+        </>
+      );
+      return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };
+    }
+    case "unit.request": {
+      const system = str(payload.system);
+      const src = num(payload.source_id ?? payload.source);
+      const target = num(payload.target_id ?? payload.target);
+      const details = (
+        <>
+          {src ? ridLink(src) : "?"}
+          {" → "}
+          {target ? ridLink(target) : "?"}
         </>
       );
       return { ts: ev.timestamp, kind: ev.kind, label, system, details, raw: ev.payload };

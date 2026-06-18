@@ -97,6 +97,8 @@ func eventToDTO(ev events.Event) EventDTO {
 		dto.Payload = affiliationToDTO(p)
 	case trunking.UnitRegistration:
 		dto.Payload = unitRegistrationToDTO(p)
+	case trunking.UnitToUnitRequest:
+		dto.Payload = unitToUnitRequestToDTO(p)
 	case trunking.Patch:
 		dto.Payload = patchToDTO(p)
 	case events.DMRGrantObserved:

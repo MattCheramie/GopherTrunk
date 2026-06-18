@@ -77,8 +77,16 @@ const (
 	// identifies the source unit, the WACN + System ID it's
 	// registering on, and the response code. Useful as a "which
 	// radios are on which site" feed.
-	KindAffiliation      Kind = "affiliation"
-	KindUnitRegistration Kind = "registration"
+	//
+	// KindUnitToUnitRequest fires when the system asks a radio whether it
+	// will answer a private (unit-to-unit) call. P25 control-channel
+	// publishes one per Unit-to-Unit Answer Request TSBK (opcode 0x05); the
+	// payload identifies the calling (source) and called (target) units. No
+	// channel is granted yet — it's the call-setup handshake. Useful as a
+	// "who is calling whom" feed alongside affiliations.
+	KindAffiliation       Kind = "affiliation"
+	KindUnitRegistration  Kind = "registration"
+	KindUnitToUnitRequest Kind = "unit.request"
 	// KindAudioState fires when an operator changes the live-audio
 	// cockpit — volume, mute, or recording-gate. The payload is the
 	// new state (the same shape as GET /api/v1/audio). Subscribers

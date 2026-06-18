@@ -420,6 +420,24 @@ func unitRegistrationToDTO(u trunking.UnitRegistration) UnitRegistrationDTO {
 	}
 }
 
+// UnitToUnitRequestDTO mirrors trunking.UnitToUnitRequest.
+type UnitToUnitRequestDTO struct {
+	System         string `json:"system"`
+	Protocol       string `json:"protocol"`
+	SourceID       uint32 `json:"source_id"`
+	TargetID       uint32 `json:"target_id"`
+	ServiceOptions uint8  `json:"service_options,omitempty"`
+}
+
+func unitToUnitRequestToDTO(u trunking.UnitToUnitRequest) UnitToUnitRequestDTO {
+	return UnitToUnitRequestDTO{
+		System: u.System, Protocol: u.Protocol,
+		SourceID:       u.SourceID,
+		TargetID:       u.TargetID,
+		ServiceOptions: u.ServiceOptions,
+	}
+}
+
 // PatchDTO mirrors trunking.Patch for SSE / REST consumers. Add=true is
 // a patch becoming active; Add=false is a cancel.
 type PatchDTO struct {
