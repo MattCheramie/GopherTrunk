@@ -7,15 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
-### Fixed
-- **P25 discovery now decodes WACN / System ID / RFSS / Site / neighbors
-  correctly.** The Phase 1 Network-, RFSS-, and Adjacent-Site Status
-  Broadcast TSBK parsers were dropping the leading LRA byte, so every
-  field read one byte early — WACN and System ID came out wrong, RFSS/Site
-  read as 0, and advertised neighbors showed garbled IDs with no resolvable
-  frequency. The parsers now follow the TIA-102.AABF layout (matching the
-  repo's independent Phase 2 decoders), which also corrects the `rfss_id` /
-  `site_id` labels on `grant` events and `KindSiteUpdate`.
+## [v0.4.6] — 2026-06-18
+
+This release focuses on **P25 site and identity decoding**. Encrypted calls
+are now configurable — a new `trunking.encrypted_calls.mode` stops a few long
+encrypted calls from exhausting the voice-tuner pool and starving clear
+traffic (#711). Every `grant` event carries the decoded RFSS/site, exposed
+alongside a new `GET /api/v1/sites` endpoint (#698), the web Systems panel's
+WACN / System ID / RFSS / Site fields finally populate from the live site
+tracker instead of sitting on "Awaiting status broadcasts" (#673), and a
+Phase 1 status-broadcast parsing bug that had every WACN / System ID / RFSS /
+Site / neighbor reading one byte early is fixed (#716). Motorola **talker
+aliases** now decode off the Phase 1 TDULC terminator and Phase 2 FACCH-S, not
+just LDU1 (#376), and the Hunt discovery view surfaces the voice/traffic
+frequencies behind each grant. On the docs side: two new deep-dive blog series
+("Build in the Open" and "RF Front End") and a full Git & GitHub learning path.
 
 ### Added
 - **Configurable handling of encrypted calls** (#711). A new
@@ -47,6 +53,42 @@ for tagged releases.
   — each with the control-channel frequency it was heard on — merged
   with optional human-readable names configured per system under
   `trunking.systems[].sites` (`rfss` / `site` / `name`).
+- **P25 Motorola talker aliases on TDULC and FACCH-S** (#376). Real
+  Motorola talker aliases ride two carriers the decoder previously skipped
+  past — the Phase 1 TDULC terminator and the Phase 2 FACCH-S — not just
+  LDU1 link control, so aliases never surfaced on many systems. All three
+  carriers now share one decode primitive (a new `internal/radio/p25/motorola`
+  package handling the cipher + WACN|System|RID|alias|CRC-16 framing), and
+  completed aliases publish the existing `KindTalkerAlias` event, bound onto
+  the RID and surfaced at `/api/v1/rids`.
+- **P25 System Information panel populates from the live site tracker**
+  (#673). The web Systems detail panel showed WACN / System ID / RFSS / Site
+  stuck on "Awaiting status broadcasts" because `GET /api/v1/systems` built
+  its DTOs solely from static config. The endpoints now overlay the always-on
+  site tracker's decoded over-the-air identity (WACN/System ID system-wide,
+  RFSS/Site from the most recently heard site), falling back to config values
+  when nothing has been decoded yet.
+- **"Build in the Open" blog series.** A 14-part tutorial series taking a
+  project from idea to public release with GitHub and Claude Code, using
+  GopherTrunk as the worked example, drip-released one post per weekday.
+- **"RF Front End" blog series.** A 14-part deep dive into GopherTrunk's
+  pure-Go RF source layer (RTL-SDR, Airspy, HackRF): the Device contract, the
+  driver registry, the no-libusb USB transport across Linux/macOS/Windows,
+  per-radio register bring-up, and IQ conversion.
+- **Git & GitHub learning path.** The single "Learn RF & SDR" curriculum
+  becomes a multi-path "Learn" section, adding a complete 29-lesson Git &
+  GitHub path alongside the existing RF & SDR one. Old RF lesson URLs keep
+  working via redirects.
+
+### Fixed
+- **P25 discovery now decodes WACN / System ID / RFSS / Site / neighbors
+  correctly** (#716). The Phase 1 Network-, RFSS-, and Adjacent-Site Status
+  Broadcast TSBK parsers were dropping the leading LRA byte, so every
+  field read one byte early — WACN and System ID came out wrong, RFSS/Site
+  read as 0, and advertised neighbors showed garbled IDs with no resolvable
+  frequency. The parsers now follow the TIA-102.AABF layout (matching the
+  repo's independent Phase 2 decoders), which also corrects the `rfss_id` /
+  `site_id` labels on `grant` events and `KindSiteUpdate`.
 
 ## [v0.4.5] — 2026-06-17
 
