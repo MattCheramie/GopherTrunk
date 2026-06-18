@@ -9,7 +9,7 @@ aka: [FIR, "finite impulse response filter"]
 autolink: true
 see_also: [digital-filter, iir-filter, decimation, matched-filter, root-raised-cosine-filter]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Finite impulse response (Wikipedia)", url: https://en.wikipedia.org/wiki/Finite_impulse_response }
 ---

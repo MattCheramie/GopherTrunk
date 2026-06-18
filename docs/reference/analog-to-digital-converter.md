@@ -13,7 +13,7 @@ infobox:
   - { label: Overflow, value: Clipping at 0 dBFS }
 see_also: [sample-rate, nyquist-theorem, dbfs, automatic-gain-control, software-defined-radio]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Analog-to-digital converter (Wikipedia)", url: https://en.wikipedia.org/wiki/Analog-to-digital_converter }
 ---

@@ -25,7 +25,7 @@ hardware reality, **every part carries a "problem we hit" section**: a real bug
 the Go code that fixed it.
 
 New to radio first? Start with the
-[Learn RF &amp; SDR]({{ '/learn/' | relative_url }}) path, then come back here for
+[Learn RF &amp; SDR]({{ '/learn/rf-sdr/' | relative_url }}) path, then come back here for
 the implementation.
 
 {%- assign parts = site.posts | where: "series", "RF Front End" | sort: "series_part" -%}

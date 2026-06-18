@@ -9,7 +9,7 @@ aka: [channelizer, channelization]
 autolink: true
 see_also: [digital-down-converter, decimation, digital-filter, software-defined-radio, control-channel]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Filter bank (Wikipedia)", url: https://en.wikipedia.org/wiki/Filter_bank }
 ---

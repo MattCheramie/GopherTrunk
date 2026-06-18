@@ -13,7 +13,7 @@ infobox:
   - { label: Paired with, value: FEC codes }
 see_also: [forward-error-correction, reed-solomon-code, bch-code, multipath-propagation]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Interleaving (Wikipedia)", url: https://en.wikipedia.org/wiki/Interleaving_(data) }
 ---

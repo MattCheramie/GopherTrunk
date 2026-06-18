@@ -11,8 +11,8 @@ infobox:
   - { label: Relation, value: "wavelength = c / frequency" }
 see_also: [wavelength, frequency-bands, electromagnetic-spectrum, radio-wave]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
 external:
   - { title: "Frequency (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency }
 ---

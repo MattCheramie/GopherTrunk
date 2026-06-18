@@ -13,7 +13,7 @@ infobox:
   - { label: Speed, value: ~299,792,458 m/s (vacuum) }
 see_also: [electromagnetic-spectrum, frequency, wavelength, carrier-wave, modulation]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Radio wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_wave }
 ---

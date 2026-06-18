@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25, DMR, NXDN, paging }
 see_also: [phase-shift-keying, quadrature-amplitude-modulation, c4fm, gmsk, afsk, ffsk, symbol-rate]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying }
 ---

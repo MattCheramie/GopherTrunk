@@ -9,7 +9,7 @@ aka: [DC offset, DC spike, "center spike"]
 autolink: true
 see_also: [baseband, iq-data, local-oscillator, fft-and-waterfall]
 related_lessons:
-  - { title: "The FFT & reading a waterfall", url: /learn/fft-and-waterfall/ }
+  - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
 external:
   - { title: "DC bias (Wikipedia)", url: https://en.wikipedia.org/wiki/DC_bias }
 ---

@@ -14,7 +14,7 @@ infobox:
   - { label: Examples, value: RTL-SDR, HackRF, Airspy }
 see_also: [iq-data, analog-to-digital-converter, superheterodyne-receiver, rtl-sdr, demodulation]
 related_lessons:
-  - { title: "What is software-defined radio?", url: /learn/what-is-sdr/ }
+  - { title: "What is software-defined radio?", url: /learn/rf-sdr/what-is-sdr/ }
 external:
   - { title: "Software-defined radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio }
 ---

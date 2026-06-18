@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25 Phase 2, satellite, broadcast }
 see_also: [frequency-shift-keying, quadrature-amplitude-modulation, cqpsk, phase, costas-loop, constellation-diagram]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Phase-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase-shift_keying }
 ---

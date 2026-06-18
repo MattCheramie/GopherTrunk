@@ -13,7 +13,7 @@ infobox:
   - { label: Digital form, value: Numerically controlled oscillator }
 see_also: [superheterodyne-receiver, digital-down-converter, frequency, ppm-frequency-correction]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Local oscillator (Wikipedia)", url: https://en.wikipedia.org/wiki/Local_oscillator }
 ---

@@ -14,7 +14,7 @@ infobox:
   - { label: Examples, value: P25, DMR Tier III, TETRA }
 see_also: [conventional-radio, control-channel, voice-channel, talkgroup, channel-grant, fdma, tdma]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
 ---

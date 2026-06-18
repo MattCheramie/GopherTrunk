@@ -7,6 +7,8 @@
   Expects include.idx / include.total from the lesson layout.
 {%- endcomment -%}
 {%- assign page_url = page.url | absolute_url -%}
+{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign path_base = '/learn/' | append: p.id | append: '/' -%}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -18,8 +20,8 @@
   "inLanguage": "en",
   "isPartOf": {
     "@type": "Course",
-    "name": "GopherTrunk RF & SDR Learning Path",
-    "url": {{ '/learn/' | absolute_url | jsonify }}
+    "name": {{ p.title | jsonify }},
+    "url": {{ path_base | absolute_url | jsonify }}
   },
   {%- if page.level -%}
   "educationalLevel": {{ page.level | jsonify }},
@@ -50,8 +52,9 @@
   "@type": "BreadcrumbList",
   "itemListElement": [
     { "@type": "ListItem", "position": 1, "name": "Home", "item": {{ '/' | absolute_url | jsonify }} },
-    { "@type": "ListItem", "position": 2, "name": "Learn RF & SDR", "item": {{ '/learn/' | absolute_url | jsonify }} },
-    { "@type": "ListItem", "position": 3, "name": {{ page.title | jsonify }}, "item": {{ page_url | jsonify }} }
+    { "@type": "ListItem", "position": 2, "name": "Learn", "item": {{ '/learn/' | absolute_url | jsonify }} },
+    { "@type": "ListItem", "position": 3, "name": {{ p.label | jsonify }}, "item": {{ path_base | absolute_url | jsonify }} },
+    { "@type": "ListItem", "position": 4, "name": {{ page.title | jsonify }}, "item": {{ page_url | jsonify }} }
   ]
 }
 </script>

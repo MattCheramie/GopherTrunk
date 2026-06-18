@@ -13,7 +13,7 @@ infobox:
   - { label: Rule of thumb, value: "λ (m) ≈ 300 / f (MHz)" }
 see_also: [frequency, radio-wave, antenna, dipole-antenna]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Wavelength (Wikipedia)", url: https://en.wikipedia.org/wiki/Wavelength }
 ---

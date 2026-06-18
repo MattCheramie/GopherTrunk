@@ -13,7 +13,7 @@ infobox:
   - { label: Used for, value: Long-distance HF voice, amateur }
 see_also: [amplitude-modulation, modulation, frequency-bands, ionospheric-propagation]
 related_lessons:
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Single-sideband modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Single-sideband_modulation }
 ---

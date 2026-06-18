@@ -14,7 +14,7 @@ infobox:
   - { label: Legacy, value: The hertz (Hz) unit }
 see_also: [james-clerk-maxwell, guglielmo-marconi, radio-wave, frequency, electromagnetic-spectrum]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Heinrich Hertz (Wikipedia)", url: https://en.wikipedia.org/wiki/Heinrich_Hertz }
 ---

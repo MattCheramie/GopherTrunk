@@ -16,7 +16,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [flex, frequency-shift-keying, bch-code, demodulation]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "POCSAG (Wikipedia)", url: https://en.wikipedia.org/wiki/POCSAG }
   - { title: "GopherTrunk POCSAG decoder", url: /pocsag.html }

@@ -13,7 +13,7 @@ infobox:
   - { label: Appears as, value: Single spectral spike (unmodulated) }
 see_also: [modulation, radio-wave, frequency, amplitude-modulation]
 related_lessons:
-  - { title: "Anatomy of a signal", url: /learn/signal-anatomy/ }
+  - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
 external:
   - { title: "Carrier wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Carrier_wave }
 ---

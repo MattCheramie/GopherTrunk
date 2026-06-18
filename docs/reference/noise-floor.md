@@ -13,7 +13,7 @@ infobox:
   - { label: Sources, value: Thermal noise, environment, receiver }
 see_also: [signal-to-noise-ratio, dbm, low-noise-amplifier, attenuation]
 related_lessons:
-  - { title: "Decibels & signal power", url: /learn/decibels/ }
+  - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
 external:
   - { title: "Noise floor (Wikipedia)", url: https://en.wikipedia.org/wiki/Noise_floor }
 ---

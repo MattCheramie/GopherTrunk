@@ -13,7 +13,7 @@ infobox:
   - { label: Identifies, value: An individual radio/unit }
 see_also: [talkgroup, affiliation, control-channel, mdc1200]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
 ---

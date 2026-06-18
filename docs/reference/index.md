@@ -7,7 +7,7 @@ permalink: /reference/
 autolink: false
 ---
 
-Looking for a quick definition? The [glossary](/learn/glossary/) has one-line
-entries. Want to *learn* in order? Start the [learning path](/learn/). This
+Looking for a quick definition? The [glossary](/learn/rf-sdr/glossary/) has one-line
+entries. Want to *learn* in order? Start the [learning path](/learn/rf-sdr/). This
 **reference** is the long-form, neutral encyclopedia: each article defines and
 explains one topic in depth and links to everything related.

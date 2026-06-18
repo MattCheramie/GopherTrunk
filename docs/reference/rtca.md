@@ -9,7 +9,7 @@ aka: [RTCA]
 autolink: true
 see_also: [ads-b, mode-s, icao, eurocae]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "RTCA (Wikipedia)", url: https://en.wikipedia.org/wiki/RTCA }
 ---

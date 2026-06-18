@@ -9,7 +9,7 @@ aka: [RadioReference, RR]
 autolink: true
 see_also: [trunked-radio, control-channel, talkgroup, project-25]
 related_lessons:
-  - { title: "Finding & identifying systems", url: /learn/finding-systems/ }
+  - { title: "Finding & identifying systems", url: /learn/rf-sdr/finding-systems/ }
 external:
   - { title: "RadioReference.com", url: https://www.radioreference.com/ }
 ---

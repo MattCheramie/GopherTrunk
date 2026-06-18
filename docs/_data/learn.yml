@@ -1,249 +1,498 @@
-# GopherTrunk RF & SDR Learning Path — single source of truth.
+# GopherTrunk learning paths — single source of truth.
 #
-# This file drives three things at once, so they never drift apart:
-#   1. The hub landing page grid           (docs/learn/index.md)
-#   2. The in-lesson sidebar / module list (docs/_layouts/lesson.html)
-#   3. Prev / next path navigation         (docs/_includes/learn-path-nav.html)
+# This file drives several things at once, so they never drift apart:
+#   1. The /learn/ chooser page          (docs/learn/index.md + learn-index.html)
+#   2. Each path's hub landing grid       (docs/learn/<id>/index.md + learn-hub.html)
+#   3. The in-lesson sidebar / module list and prev/next nav (lesson.html)
+#   4. The llms.txt export                (docs/llms.txt)
 #
-# Adding a lesson:
-#   1. Append an entry under the right module's `lessons:` list below.
-#   2. Create docs/learn/<slug>.md with front matter `slug: <slug>` and a
-#      title/description. The `learn` defaults scope in _config.yml gives it
-#      the lesson layout and nav_group automatically.
-#   3. Keep `slug` stable once published — it is the page URL (/learn/<slug>/).
+# Structure: a top-level `paths:` list. Each path is one self-contained
+# curriculum (RF & SDR, Git & GitHub, …) with its own URL space /learn/<id>/.
 #
-# Fields per lesson:
-#   slug         URL slug -> /learn/<slug>/   (append-only; renaming breaks links)
-#   title        Lesson title (also the card heading)
-#   summary      One-line description for cards, sidebar, and llms.txt
-#   minutes      Estimated reading time (integer; shown on cards)
-#   level        beginner | intermediate | advanced  (badge + filtering)
-#   status       full | stub   (stub = outline published, body still being written)
+# Per path:
+#   id          URL segment -> /learn/<id>/ and /learn/<id>/<slug>/  (append-only)
+#   label       Short display name shown on the chooser and in breadcrumbs
+#   title       Full hub <h1> / page title
+#   tagline     One-line description for the chooser card
+#   start_slug  Slug of lesson 1 (drives the hub "Start lesson 1" CTA)
+#   workload    ISO-8601 duration estimate for Course schema (e.g. PT6H)
+#   intro       Folded blurb shown on the hub hero
+#   modules     Ordered list of modules (see below)
+#   glossary    Optional standalone reference (no prev/next slot); keep slug: glossary
 #
-# `intro` on the path itself and `blurb` on each module feed the hub page.
+# Per module:
+#   id          Anchor id used on the hub (/learn/<path>/#<id>)
+#   label       Module heading (e.g. "Module 1 — Foundations")
+#   blurb       One-line module summary
+#   lessons     Ordered list of lessons
+#
+# Per lesson:
+#   slug        URL slug -> /learn/<path>/<slug>/  (append-only; renaming breaks links)
+#   title       Lesson title (also the card heading)
+#   summary     One-line description for cards, sidebar, and llms.txt
+#   minutes     Estimated reading time (integer; shown on cards)
+#   level       beginner | intermediate | advanced  (badge + filtering)
+#   status      full | stub   (stub = outline published, body still being written)
+#
+# Lesson files live at docs/learn/<path-id>/<slug>.md. The matching `learn`
+# defaults scopes in _config.yml give them the lesson layout, nav_group, and the
+# `learn_path` key automatically, so individual lessons only declare slug/title/
+# description. Each hub overrides layout back to `learn-hub`; the chooser
+# (learn/index.md) overrides to `learn-index`.
 
-intro: >
-  A guided path from complete newcomer to confident GopherTrunk operator. Start
-  with what a radio wave actually is, learn how software-defined radios turn the
-  airwaves into numbers, then follow the signal all the way to decoded digital
-  voice — and put it to work in GopherTrunk.
+paths:
+  - id: rf-sdr
+    label: "RF & SDR"
+    title: "Learn RF & SDR — from newbie to expert"
+    tagline: "Radio and software-defined-radio fundamentals — from your first wave to decoding digital trunked voice."
+    start_slug: radio-waves
+    workload: "PT6H"
+    intro: >
+      A guided path from complete newcomer to confident GopherTrunk operator. Start
+      with what a radio wave actually is, learn how software-defined radios turn the
+      airwaves into numbers, then follow the signal all the way to decoded digital
+      voice — and put it to work in GopherTrunk.
+    modules:
+      - id: rf-fundamentals
+        label: "Module 1 — RF Fundamentals"
+        blurb: "The physics every operator leans on: waves, frequency, power, antennas, and how signals travel."
+        lessons:
+          - slug: radio-waves
+            title: What is a radio wave?
+            summary: Frequency, wavelength, amplitude, and the electromagnetic spectrum — the one idea everything else builds on.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: frequency-and-spectrum
+            title: Frequency, bands & the spectrum
+            summary: Hz to GHz, the HF/VHF/UHF bands, and how spectrum is carved up into band plans.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: decibels
+            title: Decibels & signal power
+            summary: dB, dBm, and dBFS demystified — gain, path loss, the noise floor, and why radio lives in logarithms.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: antennas
+            title: Antennas 101
+            summary: Resonance, polarization, gain, SWR, and the connectors that join your antenna to your SDR.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: propagation
+            title: How signals travel
+            summary: Line of sight, multipath, fading, and why where you put the antenna matters more than the radio.
+            minutes: 8
+            level: beginner
+            status: full
 
-modules:
-  - id: rf-fundamentals
-    label: "Module 1 — RF Fundamentals"
-    blurb: "The physics every operator leans on: waves, frequency, power, antennas, and how signals travel."
-    lessons:
-      - slug: radio-waves
-        title: What is a radio wave?
-        summary: Frequency, wavelength, amplitude, and the electromagnetic spectrum — the one idea everything else builds on.
-        minutes: 9
-        level: beginner
-        status: full
-      - slug: frequency-and-spectrum
-        title: Frequency, bands & the spectrum
-        summary: Hz to GHz, the HF/VHF/UHF bands, and how spectrum is carved up into band plans.
-        minutes: 8
-        level: beginner
-        status: full
-      - slug: decibels
-        title: Decibels & signal power
-        summary: dB, dBm, and dBFS demystified — gain, path loss, the noise floor, and why radio lives in logarithms.
-        minutes: 10
-        level: beginner
-        status: full
-      - slug: antennas
-        title: Antennas 101
-        summary: Resonance, polarization, gain, SWR, and the connectors that join your antenna to your SDR.
-        minutes: 9
-        level: beginner
-        status: full
-      - slug: propagation
-        title: How signals travel
-        summary: Line of sight, multipath, fading, and why where you put the antenna matters more than the radio.
-        minutes: 8
-        level: beginner
-        status: full
+      - id: signals-modulation
+        label: "Module 2 — Signals & Modulation"
+        blurb: How information rides on a carrier — from analog AM/FM to the digital constellations GopherTrunk decodes.
+        lessons:
+          - slug: signal-anatomy
+            title: Anatomy of a signal
+            summary: Carrier, bandwidth, and the difference between a spectrum view and a waterfall.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: analog-modulation
+            title: Analog modulation — AM, FM, SSB
+            summary: The three classic ways to put a voice on a carrier, and where you still hear them today.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: digital-modulation
+            title: Digital modulation & constellations
+            summary: FSK, PSK, QAM, and C4FM — how bits become symbols, and how to read a constellation and eye diagram.
+            minutes: 12
+            level: intermediate
+            status: full
+          - slug: symbols-and-baud
+            title: Symbols, baud & bitrate
+            summary: Why a 4800-baud C4FM signal carries 9600 bits per second, and what that means for capture.
+            minutes: 7
+            level: intermediate
+            status: full
 
-  - id: signals-modulation
-    label: "Module 2 — Signals & Modulation"
-    blurb: How information rides on a carrier — from analog AM/FM to the digital constellations GopherTrunk decodes.
-    lessons:
-      - slug: signal-anatomy
-        title: Anatomy of a signal
-        summary: Carrier, bandwidth, and the difference between a spectrum view and a waterfall.
-        minutes: 7
-        level: beginner
-        status: full
-      - slug: analog-modulation
-        title: Analog modulation — AM, FM, SSB
-        summary: The three classic ways to put a voice on a carrier, and where you still hear them today.
-        minutes: 8
-        level: beginner
-        status: full
-      - slug: digital-modulation
-        title: Digital modulation & constellations
-        summary: FSK, PSK, QAM, and C4FM — how bits become symbols, and how to read a constellation and eye diagram.
-        minutes: 12
-        level: intermediate
-        status: full
-      - slug: symbols-and-baud
-        title: Symbols, baud & bitrate
-        summary: Why a 4800-baud C4FM signal carries 9600 bits per second, and what that means for capture.
-        minutes: 7
-        level: intermediate
-        status: full
+      - id: sdr
+        label: "Module 3 — Software-Defined Radio"
+        blurb: What an SDR actually is, how it samples the air into IQ data, and how to set it up without overloading it.
+        lessons:
+          - slug: what-is-sdr
+            title: What is software-defined radio?
+            summary: The core idea — move the radio into software — and why one cheap dongle can decode dozens of systems.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: sdr-receiver
+            title: How an SDR receiver works
+            summary: Antenna to tuner to ADC — the signal chain that turns radio waves into a stream of samples.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: iq-data
+            title: IQ data & complex signals
+            summary: Why SDRs output pairs of numbers, what "I" and "Q" mean, and how they capture both amplitude and phase.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: sample-rate-nyquist
+            title: Sample rate, bandwidth & Nyquist
+            summary: How much spectrum you can see at once, the Nyquist limit, and the bandwidth/CPU trade-off.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: gain-and-agc
+            title: Gain, AGC & avoiding overload
+            summary: Set gain too low and you lose weak signals; too high and you drown in distortion. Finding the sweet spot.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: sdr-hardware
+            title: SDR hardware — RTL-SDR, HackRF, Airspy
+            summary: Picking a dongle for the job and how each one maps to GopherTrunk's supported hardware.
+            minutes: 9
+            level: beginner
+            status: full
 
-  - id: sdr
-    label: "Module 3 — Software-Defined Radio"
-    blurb: What an SDR actually is, how it samples the air into IQ data, and how to set it up without overloading it.
-    lessons:
-      - slug: what-is-sdr
-        title: What is software-defined radio?
-        summary: The core idea — move the radio into software — and why one cheap dongle can decode dozens of systems.
-        minutes: 9
-        level: beginner
-        status: full
-      - slug: sdr-receiver
-        title: How an SDR receiver works
-        summary: Antenna to tuner to ADC — the signal chain that turns radio waves into a stream of samples.
-        minutes: 9
-        level: intermediate
-        status: full
-      - slug: iq-data
-        title: IQ data & complex signals
-        summary: Why SDRs output pairs of numbers, what "I" and "Q" mean, and how they capture both amplitude and phase.
-        minutes: 9
-        level: intermediate
-        status: full
-      - slug: sample-rate-nyquist
-        title: Sample rate, bandwidth & Nyquist
-        summary: How much spectrum you can see at once, the Nyquist limit, and the bandwidth/CPU trade-off.
-        minutes: 8
-        level: intermediate
-        status: full
-      - slug: gain-and-agc
-        title: Gain, AGC & avoiding overload
-        summary: Set gain too low and you lose weak signals; too high and you drown in distortion. Finding the sweet spot.
-        minutes: 8
-        level: intermediate
-        status: full
-      - slug: sdr-hardware
-        title: SDR hardware — RTL-SDR, HackRF, Airspy
-        summary: Picking a dongle for the job and how each one maps to GopherTrunk's supported hardware.
-        minutes: 9
-        level: beginner
-        status: full
+      - id: dsp
+        label: "Module 4 — DSP Essentials"
+        blurb: The digital signal processing that lives between IQ samples and decoded bits — explained without the heavy math.
+        lessons:
+          - slug: fft-and-waterfall
+            title: The FFT & reading a waterfall
+            summary: How the Fourier transform turns samples into a spectrum, and how to read GopherTrunk's waterfall.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: filtering-decimation
+            title: Filtering & decimation
+            summary: Zooming in on one channel, throwing away the rest, and keeping the CPU happy.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: demodulation-pipeline
+            title: The demodulation pipeline
+            summary: "The stages every signal passes through: tune, filter, demodulate, recover symbols, decode."
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: clock-recovery
+            title: Clock recovery & symbol timing
+            summary: How a receiver finds the beat of a digital signal so it samples each symbol at the right instant.
+            minutes: 8
+            level: advanced
+            status: full
 
-  - id: dsp
-    label: "Module 4 — DSP Essentials"
-    blurb: The digital signal processing that lives between IQ samples and decoded bits — explained without the heavy math.
-    lessons:
-      - slug: fft-and-waterfall
-        title: The FFT & reading a waterfall
-        summary: How the Fourier transform turns samples into a spectrum, and how to read GopherTrunk's waterfall.
-        minutes: 9
-        level: intermediate
-        status: full
-      - slug: filtering-decimation
-        title: Filtering & decimation
-        summary: Zooming in on one channel, throwing away the rest, and keeping the CPU happy.
-        minutes: 8
-        level: intermediate
-        status: full
-      - slug: demodulation-pipeline
-        title: The demodulation pipeline
-        summary: "The stages every signal passes through: tune, filter, demodulate, recover symbols, decode."
-        minutes: 9
-        level: advanced
-        status: full
-      - slug: clock-recovery
-        title: Clock recovery & symbol timing
-        summary: How a receiver finds the beat of a digital signal so it samples each symbol at the right instant.
-        minutes: 8
-        level: advanced
-        status: full
+      - id: digital-voice-trunking
+        label: "Module 5 — Digital Voice & Trunked Radio"
+        blurb: From vocoded voice to control channels — the systems GopherTrunk was built to follow.
+        lessons:
+          - slug: digital-voice
+            title: Analog vs. digital voice
+            summary: Why public-safety radio went digital, and what a vocoder gives up to fit a voice in a few kbps.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: vocoders
+            title: Vocoders — IMBE & AMBE+2
+            summary: The speech codecs behind P25 and DMR, and how GopherTrunk turns their frames back into audio.
+            minutes: 8
+            level: advanced
+            status: full
+          - slug: what-is-trunking
+            title: What is trunked radio?
+            summary: Control channels, voice channels, and affiliation — how a fleet shares a handful of frequencies.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: protocol-landscape
+            title: The digital protocol landscape
+            summary: P25, DMR, NXDN, TETRA, Motorola, EDACS, and friends — who uses what, and how to tell them apart.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: encryption
+            title: Encryption & what you can decode
+            summary: Why some talkgroups are silent, what GopherTrunk can and can't do, and how to spot encryption.
+            minutes: 7
+            level: intermediate
+            status: full
+          - slug: other-signals
+            title: Other signals you'll meet
+            summary: Paging, AIS, ADS-B, and APRS — the non-trunked signals GopherTrunk can also decode.
+            minutes: 8
+            level: beginner
+            status: full
 
-  - id: digital-voice-trunking
-    label: "Module 5 — Digital Voice & Trunked Radio"
-    blurb: From vocoded voice to control channels — the systems GopherTrunk was built to follow.
-    lessons:
-      - slug: digital-voice
-        title: Analog vs. digital voice
-        summary: Why public-safety radio went digital, and what a vocoder gives up to fit a voice in a few kbps.
-        minutes: 8
-        level: intermediate
-        status: full
-      - slug: vocoders
-        title: Vocoders — IMBE & AMBE+2
-        summary: The speech codecs behind P25 and DMR, and how GopherTrunk turns their frames back into audio.
-        minutes: 8
-        level: advanced
-        status: full
-      - slug: what-is-trunking
-        title: What is trunked radio?
-        summary: Control channels, voice channels, and affiliation — how a fleet shares a handful of frequencies.
-        minutes: 11
-        level: intermediate
-        status: full
-      - slug: protocol-landscape
-        title: The digital protocol landscape
-        summary: P25, DMR, NXDN, TETRA, Motorola, EDACS, and friends — who uses what, and how to tell them apart.
-        minutes: 10
-        level: intermediate
-        status: full
-      - slug: encryption
-        title: Encryption & what you can decode
-        summary: Why some talkgroups are silent, what GopherTrunk can and can't do, and how to spot encryption.
-        minutes: 7
-        level: intermediate
-        status: full
-      - slug: other-signals
-        title: Other signals you'll meet
-        summary: Paging, AIS, ADS-B, and APRS — the non-trunked signals GopherTrunk can also decode.
-        minutes: 8
-        level: beginner
-        status: full
+      - id: gophertrunk
+        label: "Module 6 — Putting It Together with GopherTrunk"
+        blurb: "Everything you've learned, applied: from a bare antenna to decoded calls, and how to fix it when it won't lock."
+        lessons:
+          - slug: antenna-to-audio
+            title: From antenna to audio
+            summary: The complete GopherTrunk signal path, tracing one call from RF in the air to a WAV on disk.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: finding-systems
+            title: Finding & identifying systems
+            summary: Using Hunt and online databases to discover what's on the air near you and add it to GopherTrunk.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: tuning-with-scopes
+            title: Tuning for a clean lock
+            summary: Reading the constellation, eye diagram, and symbol scope to dial in a marginal signal.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: calibration-troubleshooting
+            title: Calibration & troubleshooting
+            summary: PPM and voice calibration, plus a checklist for the usual reasons a control channel won't decode.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: legal-ethical
+            title: Legal & ethical monitoring
+            summary: Knowing what's legal to receive where you live, and the etiquette of the scanner hobby.
+            minutes: 6
+            level: beginner
+            status: full
 
-  - id: gophertrunk
-    label: "Module 6 — Putting It Together with GopherTrunk"
-    blurb: "Everything you've learned, applied: from a bare antenna to decoded calls, and how to fix it when it won't lock."
-    lessons:
-      - slug: antenna-to-audio
-        title: From antenna to audio
-        summary: The complete GopherTrunk signal path, tracing one call from RF in the air to a WAV on disk.
-        minutes: 11
-        level: intermediate
-        status: full
-      - slug: finding-systems
-        title: Finding & identifying systems
-        summary: Using Hunt and online databases to discover what's on the air near you and add it to GopherTrunk.
-        minutes: 9
-        level: intermediate
-        status: full
-      - slug: tuning-with-scopes
-        title: Tuning for a clean lock
-        summary: Reading the constellation, eye diagram, and symbol scope to dial in a marginal signal.
-        minutes: 9
-        level: advanced
-        status: full
-      - slug: calibration-troubleshooting
-        title: Calibration & troubleshooting
-        summary: PPM and voice calibration, plus a checklist for the usual reasons a control channel won't decode.
-        minutes: 9
-        level: advanced
-        status: full
-      - slug: legal-ethical
-        title: Legal & ethical monitoring
-        summary: Knowing what's legal to receive where you live, and the etiquette of the scanner hobby.
-        minutes: 6
-        level: beginner
-        status: full
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of RF & SDR terms
+      summary: Plain-language definitions for every term in the learning path, cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
 
-# Standalone reference, not part of the sequential path (no prev/next slot).
-glossary:
-  slug: glossary
-  title: Glossary of RF & SDR terms
-  summary: Plain-language definitions for every term in the learning path, cross-linked to the lessons.
-  minutes: 12
-  level: beginner
-  status: full
+  - id: git
+    label: "Git & GitHub"
+    title: "Learn Git & GitHub — from first commit to advanced workflows"
+    tagline: "Version control from the ground up — branching, collaboration, and the GitHub features teams rely on every day."
+    start_slug: what-is-version-control
+    workload: "PT5H"
+    intro: >
+      A guided path from your very first commit to the advanced Git and GitHub
+      workflows professional teams use. Start with what version control actually
+      is, build a rock-solid mental model of how Git stores your work, then learn
+      branching, collaboration on GitHub, and the power tools — rebase, bisect,
+      Actions — that separate confident users from the rest.
+    modules:
+      - id: git-foundations
+        label: "Module 1 — Version Control Foundations"
+        blurb: "Why version control exists, how Git thinks, and the core loop — edit, stage, commit — you'll use every day."
+        lessons:
+          - slug: what-is-version-control
+            title: Why version control?
+            summary: What a version control system is, the problems it solves, and why Git won — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: installing-git
+            title: Installing & configuring Git
+            summary: Getting Git on Linux, macOS, and Windows, then setting your name, email, editor, and a few sane defaults.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: git-mental-model
+            title: "How Git thinks: snapshots, not diffs"
+            summary: Commits, trees, blobs, and the SHA — the object model that makes Git fast, safe, and a little magic.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: first-repository
+            title: Your first repository
+            summary: init vs. clone, the working tree, and what actually lives inside the .git directory.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: staging-and-commits
+            title: The staging area & commits
+            summary: add, the index, and commit — how to compose a clean, deliberate snapshot instead of dumping everything.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: everyday-git
+        label: "Module 2 — Everyday Git"
+        blurb: The handful of commands you'll run dozens of times a day — reading state, history, and safely undoing mistakes.
+        lessons:
+          - slug: status-and-diffs
+            title: Reading status & diffs
+            summary: status, diff, and diff --staged — knowing exactly what has changed and what's about to be committed.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: viewing-history
+            title: Viewing history with log & show
+            summary: log, show, and blame — navigating the past, formatting output, and finding who changed what and why.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: gitignore
+            title: .gitignore & tracking the right files
+            summary: Keeping secrets, build artifacts, and noise out of your repo — patterns, precedence, and global ignores.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: undoing-changes
+            title: "Undoing changes: restore, reset & revert"
+            summary: The three ways to go back — and how to tell which one you need without losing work or rewriting shared history.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: branching-merging
+        label: "Module 3 — Branching & Merging"
+        blurb: Git's superpower — cheap branches — and how to bring lines of work back together cleanly.
+        lessons:
+          - slug: branches
+            title: Branches explained
+            summary: What a branch really is (a movable pointer), creating and switching them, and HEAD demystified.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: merging
+            title: Merging & fast-forwards
+            summary: Fast-forward vs. three-way merges, merge commits, and when each one happens.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: merge-conflicts
+            title: Resolving merge conflicts
+            summary: Why conflicts happen, how to read the markers, and a calm, repeatable process for resolving them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: rebasing
+            title: Rebasing & a linear history
+            summary: Replaying commits onto a new base for a clean history — and the golden rule of never rebasing shared work.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: stashing
+            title: Stashing work in progress
+            summary: Parking uncommitted changes to switch context fast, then bringing them back without losing anything.
+            minutes: 6
+            level: intermediate
+            status: full
+
+      - id: remotes-github
+        label: "Module 4 — Remotes & GitHub"
+        blurb: Taking Git online — pushing to GitHub, authenticating securely, and the fork-and-pull-request workflow.
+        lessons:
+          - slug: what-is-github
+            title: What is GitHub?
+            summary: GitHub vs. Git, what a remote-hosting platform adds, and the alternatives (GitLab, Bitbucket, Codeberg).
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: remotes
+            title: "Remotes: clone, fetch, pull & push"
+            summary: origin, tracking branches, and the difference between fetch, pull, and push — the sync model in full.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: authentication
+            title: "Authentication: SSH keys & tokens"
+            summary: Why HTTPS passwords are gone — setting up SSH keys or a personal access token so pushes just work.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: forking
+            title: Forking & the fork workflow
+            summary: Forks vs. clones, keeping a fork in sync with upstream, and how open-source contribution actually flows.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: pull-requests
+            title: Pull requests & code review
+            summary: Opening a PR, writing a good description, requesting review, and turning feedback into merged code.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: github-features
+        label: "Module 5 — Collaboration & GitHub Features"
+        blurb: The platform features that turn a code host into a place teams plan, automate, ship, and protect their work.
+        lessons:
+          - slug: issues-and-projects
+            title: Issues, labels & Projects
+            summary: Tracking work with issues, organizing it with labels and milestones, and planning on Projects boards.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: github-actions
+            title: CI/CD with GitHub Actions
+            summary: Workflows, jobs, and steps — automating tests, builds, and deploys that run on every push and PR.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: releases-and-tags
+            title: Tags, releases & semantic versioning
+            summary: Marking versions with tags, publishing Releases with notes and binaries, and what SemVer numbers mean.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: github-pages-and-more
+            title: Pages, Gists, Discussions & wikis
+            summary: The extras worth knowing — free static hosting, shareable snippets, community Q&A, and project wikis.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: branch-protection
+            title: Branch protection, reviews & CODEOWNERS
+            summary: Required reviews, status checks, and CODEOWNERS — the guardrails that keep a shared main branch healthy.
+            minutes: 8
+            level: advanced
+            status: full
+
+      - id: advanced-git
+        label: "Module 6 — Advanced Git & Best Practices"
+        blurb: The power tools and habits that mark a confident operator — history surgery, debugging, and clean workflows.
+        lessons:
+          - slug: interactive-rebase
+            title: Rewriting history with interactive rebase
+            summary: Squash, reword, reorder, and drop commits to craft a tidy history before you share it.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: cherry-pick-bisect-reflog
+            title: "Cherry-pick, bisect & the reflog"
+            summary: Grab a single commit, binary-search for the commit that broke things, and recover work you thought was lost.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: submodules-hooks-worktrees
+            title: Submodules, hooks & worktrees
+            summary: Nesting repos, automating checks with hooks, and checking out multiple branches at once — the lesser-known tools.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: workflow-strategies
+            title: "Branching strategies: trunk, GitHub Flow & Git Flow"
+            summary: How teams organize branches — and how to pick the model that fits your team's size and release cadence.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: best-practices
+            title: Commit hygiene & best practices
+            summary: Atomic commits, good messages, small PRs, and the habits that make a repo a pleasure to work in.
+            minutes: 8
+            level: intermediate
+            status: full
+
+    glossary:
+      slug: glossary
+      title: Glossary of Git & GitHub terms
+      summary: Plain-language definitions for every Git and GitHub term in the learning path, cross-linked to the lessons.
+      minutes: 10
+      level: beginner
+      status: full

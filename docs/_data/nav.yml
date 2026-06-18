@@ -11,24 +11,42 @@ groups:
         url: /guide-intermediate.html
       - title: Advanced
         url: /guide-advanced.html
-  - label: Learn RF & SDR
+  - label: Learn
     items:
-      - title: Learning path overview
+      - title: All learning paths
         url: /learn/
-      - title: 1 · RF fundamentals
-        url: /learn/#rf-fundamentals
-      - title: 2 · Signals & modulation
-        url: /learn/#signals-modulation
-      - title: 3 · Software-defined radio
-        url: /learn/#sdr
-      - title: 4 · DSP essentials
-        url: /learn/#dsp
-      - title: 5 · Digital voice & trunking
-        url: /learn/#digital-voice-trunking
-      - title: 6 · Using GopherTrunk
-        url: /learn/#gophertrunk
-      - title: Glossary
-        url: /learn/glossary/
+      - title: "RF & SDR — overview"
+        url: /learn/rf-sdr/
+      - title: "RF & SDR · RF fundamentals"
+        url: /learn/rf-sdr/#rf-fundamentals
+      - title: "RF & SDR · Signals & modulation"
+        url: /learn/rf-sdr/#signals-modulation
+      - title: "RF & SDR · Software-defined radio"
+        url: /learn/rf-sdr/#sdr
+      - title: "RF & SDR · DSP essentials"
+        url: /learn/rf-sdr/#dsp
+      - title: "RF & SDR · Digital voice & trunking"
+        url: /learn/rf-sdr/#digital-voice-trunking
+      - title: "RF & SDR · Using GopherTrunk"
+        url: /learn/rf-sdr/#gophertrunk
+      - title: "RF & SDR · Glossary"
+        url: /learn/rf-sdr/glossary/
+      - title: "Git & GitHub — overview"
+        url: /learn/git/
+      - title: "Git & GitHub · Foundations"
+        url: /learn/git/#git-foundations
+      - title: "Git & GitHub · Everyday Git"
+        url: /learn/git/#everyday-git
+      - title: "Git & GitHub · Branching & merging"
+        url: /learn/git/#branching-merging
+      - title: "Git & GitHub · Remotes & GitHub"
+        url: /learn/git/#remotes-github
+      - title: "Git & GitHub · Collaboration & features"
+        url: /learn/git/#github-features
+      - title: "Git & GitHub · Advanced & best practices"
+        url: /learn/git/#advanced-git
+      - title: "Git & GitHub · Glossary"
+        url: /learn/git/glossary/
   - label: Reference
     items:
       - title: Encyclopedia overview

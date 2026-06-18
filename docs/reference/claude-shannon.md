@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Information theory }
 see_also: [nyquist-theorem, harry-nyquist, signal-to-noise-ratio, forward-error-correction]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Claude Shannon (Wikipedia)", url: https://en.wikipedia.org/wiki/Claude_Shannon }
 ---

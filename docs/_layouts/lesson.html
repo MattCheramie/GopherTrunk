@@ -2,17 +2,20 @@
 layout: default
 ---
 {%- comment -%}
-  Lesson layout for the RF & SDR learning path.
+  Lesson layout for any learning path.
 
-  Flattens site.data.learn.modules into one ordered list so it can compute
-  the lesson's position, its module, and prev/next links from a single
-  source (_data/learn.yml). The page identifies itself with `slug:` in
-  front matter. The glossary (page.lesson_standalone) skips path nav.
+  The lesson selects its path with `learn_path:` (set per-directory in
+  _config.yml). Flattens that path's modules into one ordered list so it can
+  compute the lesson's position, its module, and prev/next links from a single
+  source (_data/learn.yml). The page identifies itself with `slug:` in front
+  matter. The glossary (page.lesson_standalone) skips path nav.
 {%- endcomment -%}
 
+{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign base = '/learn/' | append: p.id | append: '/' -%}
 {%- assign all_lessons = "" | split: "" -%}
 {%- assign module_labels = "" | split: "" -%}
-{%- for mod in site.data.learn.modules -%}
+{%- for mod in p.modules -%}
   {%- for lesson in mod.lessons -%}
     {%- assign all_lessons = all_lessons | push: lesson -%}
     {%- assign module_labels = module_labels | push: mod.label -%}
@@ -33,7 +36,8 @@ layout: default
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
-        <li><a href="{{ '/learn/' | relative_url }}">Learn RF &amp; SDR</a></li>
+        <li><a href="{{ '/learn/' | relative_url }}">Learn</a></li>
+        <li><a href="{{ base | relative_url }}">{{ p.label }}</a></li>
         {%- if idx >= 0 -%}
           <li><span class="breadcrumb__group">{{ module_labels[idx] }}</span></li>
         {%- endif -%}
@@ -103,7 +107,7 @@ layout: default
     </article>
 
     {%- unless page.lesson_standalone -%}
-      {%- include learn-path-nav.html all_lessons=all_lessons idx=idx total=total -%}
+      {%- include learn-path-nav.html all_lessons=all_lessons idx=idx total=total base=base has_glossary=p.glossary -%}
     {%- endunless -%}
 
     {%- if page.path -%}

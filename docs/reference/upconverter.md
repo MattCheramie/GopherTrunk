@@ -13,7 +13,7 @@ infobox:
   - { label: Enables, value: HF reception on VHF/UHF SDRs }
 see_also: [rtl-sdr, airspy-hf-plus, frequency-bands, local-oscillator]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
 external:
   - { title: "Upconverter (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency_mixer }
 ---

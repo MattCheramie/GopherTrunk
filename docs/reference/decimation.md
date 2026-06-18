@@ -13,7 +13,7 @@ infobox:
   - { label: Order, value: Filter, then decimate }
 see_also: [digital-filter, cic-filter, sample-rate, aliasing, digital-down-converter]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Decimation (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Downsampling_(signal_processing) }
 ---

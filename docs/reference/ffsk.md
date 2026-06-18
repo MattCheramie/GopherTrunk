@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: MDC1200, DSC, MPT 1327 }
 see_also: [afsk, frequency-shift-keying, mdc1200, dsc, mpt-1327]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying }
 ---

@@ -13,8 +13,8 @@ infobox:
   - { label: Role, value: US spectrum allocation and licensing }
 see_also: [itu, tia, apco-international, frequency-bands]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
-  - { title: "Legal & ethical monitoring", url: /learn/legal-ethical/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
+  - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
 external:
   - { title: "Federal Communications Commission (Wikipedia)", url: https://en.wikipedia.org/wiki/Federal_Communications_Commission }
 ---

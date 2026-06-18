@@ -9,7 +9,7 @@ aka: [EUROCAE]
 autolink: true
 see_also: [ads-b, mode-s, rtca, icao]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "EUROCAE (Wikipedia)", url: https://en.wikipedia.org/wiki/EUROCAE }
 ---

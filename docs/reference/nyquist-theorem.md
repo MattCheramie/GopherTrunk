@@ -13,7 +13,7 @@ infobox:
   - { label: Named for, value: Harry Nyquist, Claude Shannon }
 see_also: [sample-rate, aliasing, bandwidth, harry-nyquist, claude-shannon]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Nyquist–Shannon sampling theorem (Wikipedia)", url: https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem }
 ---

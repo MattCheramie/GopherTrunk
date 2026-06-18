@@ -14,7 +14,7 @@ infobox:
   - { label: UHF, value: "300 MHz – 3 GHz" }
 see_also: [electromagnetic-spectrum, frequency, radio-propagation, ionospheric-propagation]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
 external:
   - { title: "Radio spectrum (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_spectrum }
 ---

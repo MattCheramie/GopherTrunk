@@ -13,7 +13,7 @@ infobox:
   - { label: Effect of mismatch, value: Reflected power, lost signal }
 see_also: [antenna, dipole-antenna, attenuation]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Standing wave ratio (Wikipedia)", url: https://en.wikipedia.org/wiki/Standing_wave_ratio }
 ---

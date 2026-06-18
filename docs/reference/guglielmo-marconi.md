@@ -14,7 +14,7 @@ infobox:
   - { label: Honour, value: "Nobel Prize in Physics (1909)" }
 see_also: [heinrich-hertz, reginald-fessenden, radio-wave]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Guglielmo Marconi (Wikipedia)", url: https://en.wikipedia.org/wiki/Guglielmo_Marconi }
 ---

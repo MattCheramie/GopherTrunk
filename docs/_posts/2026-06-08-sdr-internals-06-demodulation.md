@@ -39,7 +39,7 @@ different schemes, so GopherTrunk needs a small zoo of demodulators:
   ([reference]({{ '/reference/pi-4-dqpsk/' | relative_url }}))
 
 The learn-path lesson
-[The demodulation pipeline]({{ '/learn/demodulation-pipeline/' | relative_url }})
+[The demodulation pipeline]({{ '/learn/rf-sdr/demodulation-pipeline/' | relative_url }})
 gives the visual intuition.
 
 ## How GopherTrunk implements it in Go

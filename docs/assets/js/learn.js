@@ -9,35 +9,51 @@
 (function () {
   'use strict';
 
-  var STORE = 'gt-learn-progress';
+  var STORE = 'gt-learn-progress';        // legacy single-path store
+  var LEGACY_PATH = 'rf-sdr';             // where legacy progress belongs
 
-  function load() {
+  function storeKey(path) { return STORE + ':' + path; }
+
+  // One-time migration: the original single-path store held bare RF slugs.
+  // Move it under the rf-sdr key so existing visitors keep their checkmarks.
+  (function migrateLegacy() {
     try {
-      var raw = localStorage.getItem(STORE);
+      var legacy = localStorage.getItem(STORE);
+      if (legacy && !localStorage.getItem(storeKey(LEGACY_PATH))) {
+        localStorage.setItem(storeKey(LEGACY_PATH), legacy);
+      }
+      if (legacy) localStorage.removeItem(STORE);
+    } catch (e) {}
+  })();
+
+  function load(path) {
+    try {
+      var raw = localStorage.getItem(storeKey(path));
       var arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr : [];
     } catch (e) { return []; }
   }
-  function save(list) {
-    try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) {}
+  function save(path, list) {
+    try { localStorage.setItem(storeKey(path), JSON.stringify(list)); } catch (e) {}
   }
-  function has(slug) { return load().indexOf(slug) !== -1; }
-  function setDone(slug, done) {
-    var list = load();
+  function has(path, slug) { return load(path).indexOf(slug) !== -1; }
+  function setDone(path, slug, done) {
+    var list = load(path);
     var i = list.indexOf(slug);
     if (done && i === -1) list.push(slug);
     if (!done && i !== -1) list.splice(i, 1);
-    save(list);
+    save(path, list);
   }
-  function currentSlug() {
-    var m = location.pathname.match(/\/learn\/([^/]+)\/?$/);
-    return m ? m[1] : null;
+  // Parse /learn/<path>/<slug>/ into { path, slug }; null off the learning path.
+  function currentLesson() {
+    var m = location.pathname.match(/\/learn\/([^/]+)\/([^/]+)\/?$/);
+    return m ? { path: m[1], slug: m[2] } : null;
   }
 
   /* ---- Lesson page: mark complete ---- */
   function initLessonComplete() {
-    var slug = currentSlug();
-    if (!slug || slug === 'glossary') return;
+    var cur = currentLesson();
+    if (!cur || cur.slug === 'glossary') return;
     var nav = document.querySelector('.path-nav');
     var article = document.querySelector('.lesson');
     if (!article) return;
@@ -50,13 +66,13 @@
     wrap.appendChild(btn);
 
     function render() {
-      var done = has(slug);
+      var done = has(cur.path, cur.slug);
       btn.setAttribute('aria-pressed', done ? 'true' : 'false');
       btn.classList.toggle('is-done', done);
       btn.textContent = done ? '✓ Completed — click to undo' : 'Mark this lesson complete';
     }
     btn.addEventListener('click', function () {
-      setDone(slug, !has(slug));
+      setDone(cur.path, cur.slug, !has(cur.path, cur.slug));
       render();
     });
     render();
@@ -69,17 +85,22 @@
   function initHubProgress() {
     var box = document.querySelector('[data-progress]');
     if (!box) return;
+    var path = box.getAttribute('data-path');
+    if (!path) return;
     var total = parseInt(box.getAttribute('data-total'), 10) || 0;
     var bar = box.querySelector('[data-progress-bar]');
     var count = box.querySelector('[data-progress-count]');
     var reset = box.querySelector('[data-progress-reset]');
 
     function paint() {
-      var done = load();
+      var done = load(path);
       var cards = document.querySelectorAll('[data-lesson]');
       var n = 0;
       cards.forEach(function (card) {
-        var slug = card.getAttribute('data-lesson');
+        // data-lesson is "<pathId>/<slug>"; only this hub's cards count.
+        var parts = card.getAttribute('data-lesson').split('/');
+        if (parts[0] !== path) return;
+        var slug = parts[1];
         var isDone = done.indexOf(slug) !== -1;
         card.classList.toggle('is-done', isDone);
         if (isDone && slug !== 'glossary') n++;
@@ -89,7 +110,7 @@
       if (count) count.textContent = n;
     }
     box.hidden = false;
-    if (reset) reset.addEventListener('click', function () { save([]); paint(); });
+    if (reset) reset.addEventListener('click', function () { save(path, []); paint(); });
     paint();
   }
 

@@ -13,7 +13,7 @@ infobox:
   - { label: Symptom if wrong, value: Rotating constellation, no lock }
 see_also: [local-oscillator, frequency, costas-loop, constellation-diagram]
 related_lessons:
-  - { title: "Calibration & troubleshooting", url: /learn/calibration-troubleshooting/ }
+  - { title: "Calibration & troubleshooting", url: /learn/rf-sdr/calibration-troubleshooting/ }
 external:
   - { title: "Frequency error (Wikipedia)", url: https://en.wikipedia.org/wiki/Clock_drift }
 ---

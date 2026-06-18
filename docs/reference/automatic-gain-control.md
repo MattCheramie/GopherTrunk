@@ -13,7 +13,7 @@ infobox:
   - { label: Note, value: Manual gain often best for decoding }
 see_also: [dbfs, analog-to-digital-converter, noise-floor, ppm-frequency-correction]
 related_lessons:
-  - { title: "Gain, AGC & avoiding overload", url: /learn/gain-and-agc/ }
+  - { title: "Gain, AGC & avoiding overload", url: /learn/rf-sdr/gain-and-agc/ }
 external:
   - { title: "Automatic gain control (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_gain_control }
 ---

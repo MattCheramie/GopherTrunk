@@ -14,8 +14,8 @@ infobox:
   - { label: Examples, value: IMBE, AMBE+2, Codec 2 }
 see_also: [imbe, ambe, ambe-plus-2, codec2, multi-band-excitation]
 related_lessons:
-  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/vocoders/ }
-  - { title: "Analog vs. digital voice", url: /learn/digital-voice/ }
+  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
+  - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
 external:
   - { title: "Vocoder (Wikipedia)", url: https://en.wikipedia.org/wiki/Vocoder }
   - { title: "GopherTrunk vocoders", url: /vocoders.html }
@@ -24,7 +24,7 @@ external:
 A **vocoder** (voice coder) is a speech codec that compresses voice into a few kilobits
 per second by **modelling how speech is produced** — pitch, voicing, and spectral shape
 — rather than recording the waveform. It is what makes
-[digital voice](/learn/digital-voice/) radio possible.
+[digital voice](/learn/rf-sdr/digital-voice/) radio possible.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 520 120" role="img" aria-label="Speech analysed into a source-and-filter model, sent as a tiny parameter frame, then re-synthesised back into speech." xmlns="http://www.w3.org/2000/svg">

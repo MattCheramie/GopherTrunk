@@ -13,8 +13,8 @@ infobox:
   - { label: Reads, value: Phase (angle), amplitude (radius) }
 see_also: [iq-data, eye-diagram, phase-shift-keying, quadrature-amplitude-modulation, phase]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
-  - { title: "Tuning for a clean lock", url: /learn/tuning-with-scopes/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
+  - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 external:
   - { title: "Constellation diagram (Wikipedia)", url: https://en.wikipedia.org/wiki/Constellation_diagram }
 ---
@@ -45,4 +45,4 @@ so the *shape* of the scatter diagnoses the problem.
 ## Relevance to SDR
 
 GopherTrunk's constellation panel draws this live, making it the first tool for
-[tuning a clean lock](/learn/tuning-with-scopes/).
+[tuning a clean lock](/learn/rf-sdr/tuning-with-scopes/).

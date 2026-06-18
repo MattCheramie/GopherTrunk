@@ -9,7 +9,7 @@ aka: [resampler, resampling]
 autolink: true
 see_also: [sample-rate, decimation, digital-filter, nyquist-theorem]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Sample-rate conversion (Wikipedia)", url: https://en.wikipedia.org/wiki/Sample-rate_conversion }
 ---

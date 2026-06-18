@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25 Phase 2 (2), DMR (2), TETRA (4) }
 see_also: [fdma, trunked-radio, p25-phase-2, dmr, tetra]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Time-division multiple access (Wikipedia)", url: https://en.wikipedia.org/wiki/Time-division_multiple_access }
 ---

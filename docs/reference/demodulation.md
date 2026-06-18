@@ -13,7 +13,7 @@ infobox:
   - { label: Followed by, value: Symbol recovery, decoding }
 see_also: [modulation, clock-recovery, costas-loop, constellation-diagram, software-defined-radio]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Demodulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Demodulation }
 ---

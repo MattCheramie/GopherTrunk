@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Hamming codes, Hamming distance }
 see_also: [hamming-code, forward-error-correction, golay-code]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Richard Hamming (Wikipedia)", url: https://en.wikipedia.org/wiki/Richard_Hamming }
 ---

@@ -13,7 +13,7 @@ infobox:
   - { label: Standards, value: DMR, dPMR, TETRA }
 see_also: [dmr, dpmr, tetra, itu]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "ETSI (Wikipedia)", url: https://en.wikipedia.org/wiki/ETSI }
 ---

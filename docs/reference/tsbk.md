@@ -9,7 +9,7 @@ aka: [TSBK, "trunking signalling block", "trunking signaling block"]
 autolink: true
 see_also: [control-channel, channel-grant, project-25, p25-phase-1, csbk]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
 ---

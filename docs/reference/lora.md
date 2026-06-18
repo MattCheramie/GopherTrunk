@@ -9,7 +9,7 @@ aka: [LoRa, "chirp spread spectrum"]
 autolink: true
 see_also: [frequency-shift-keying, bandwidth, signal-to-noise-ratio]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "LoRa (Wikipedia)", url: https://en.wikipedia.org/wiki/LoRa }
 ---

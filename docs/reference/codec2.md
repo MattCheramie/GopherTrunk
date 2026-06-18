@@ -14,7 +14,7 @@ infobox:
   - { label: Used by, value: M17, FreeDV }
 see_also: [vocoder, m17, ambe-plus-2, m17-project]
 related_lessons:
-  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/vocoders/ }
+  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
 external:
   - { title: "Codec 2 (Wikipedia)", url: https://en.wikipedia.org/wiki/Codec_2 }
 ---

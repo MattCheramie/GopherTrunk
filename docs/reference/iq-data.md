@@ -13,7 +13,7 @@ infobox:
   - { label: Encodes, value: Amplitude (radius) + phase (angle) }
 see_also: [software-defined-radio, phase, amplitude, constellation-diagram, sample-rate]
 related_lessons:
-  - { title: "IQ data & complex signals", url: /learn/iq-data/ }
+  - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
 external:
   - { title: "In-phase and quadrature components (Wikipedia)", url: https://en.wikipedia.org/wiki/In-phase_and_quadrature_components }
 ---

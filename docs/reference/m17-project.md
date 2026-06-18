@@ -13,7 +13,7 @@ infobox:
   - { label: Ethos, value: Royalty-free, patent-free }
 see_also: [m17, codec2, vocoder]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "M17 Project", url: https://m17project.org/ }
 ---

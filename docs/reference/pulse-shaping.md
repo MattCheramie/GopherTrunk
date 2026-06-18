@@ -9,7 +9,7 @@ aka: ["pulse shaping"]
 autolink: true
 see_also: [root-raised-cosine-filter, bandwidth, symbol-rate, matched-filter]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Pulse shaping (Wikipedia)", url: https://en.wikipedia.org/wiki/Pulse_shaping }
 ---

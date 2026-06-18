@@ -9,7 +9,7 @@ aka: [coax, "coaxial cable", feedline]
 autolink: true
 see_also: [attenuation, path-loss, antenna, standing-wave-ratio, low-noise-amplifier]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Coaxial cable (Wikipedia)", url: https://en.wikipedia.org/wiki/Coaxial_cable }
 ---

@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [system-fusion-ysf, m17, gmsk, ambe, vocoder]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "D-STAR (Wikipedia)", url: https://en.wikipedia.org/wiki/D-STAR }
 ---

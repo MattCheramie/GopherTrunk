@@ -17,8 +17,8 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [project-25, p25-phase-1, ambe-plus-2, tdma, control-channel]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
-  - { title: "Analog vs. digital voice", url: /learn/digital-voice/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
+  - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
 external:
   - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
 ---

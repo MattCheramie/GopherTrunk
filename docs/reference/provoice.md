@@ -9,7 +9,7 @@ aka: [ProVoice]
 autolink: true
 see_also: [edacs, ambe, vocoder, trunked-radio]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Enhanced Digital Access Communications System (Wikipedia)", url: https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System }
 ---

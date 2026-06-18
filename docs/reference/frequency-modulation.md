@@ -13,7 +13,7 @@ infobox:
   - { label: Used for, value: FM broadcast, analog two-way voice }
 see_also: [modulation, amplitude-modulation, single-sideband, frequency-shift-keying]
 related_lessons:
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Frequency modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency_modulation }
 ---

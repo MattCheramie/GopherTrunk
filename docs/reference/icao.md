@@ -13,7 +13,7 @@ infobox:
   - { label: Standards, value: ADS-B, Mode S }
 see_also: [ads-b, compact-position-reporting, itu]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "International Civil Aviation Organization (Wikipedia)", url: https://en.wikipedia.org/wiki/International_Civil_Aviation_Organization }
 ---

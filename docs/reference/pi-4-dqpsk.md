@@ -9,7 +9,7 @@ aka: ["pi/4-DQPSK", "π/4 DQPSK", differential QPSK]
 autolink: true
 see_also: [phase-shift-keying, cqpsk, constellation-diagram, tetra]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "π/4-QPSK (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase-shift_keying#%CF%80/4%E2%80%93QPSK }
 ---

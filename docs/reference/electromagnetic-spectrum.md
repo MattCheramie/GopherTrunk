@@ -13,7 +13,7 @@ infobox:
   - { label: Travels at, value: Speed of light }
 see_also: [radio-wave, frequency, wavelength, frequency-bands]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "Electromagnetic spectrum (Wikipedia)", url: https://en.wikipedia.org/wiki/Electromagnetic_spectrum }
 ---

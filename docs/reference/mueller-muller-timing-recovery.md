@@ -13,7 +13,7 @@ infobox:
   - { label: Use, value: AIS, APRS, paging demodulators }
 see_also: [clock-recovery, gardner-timing-recovery, symbol-rate, ais, aprs]
 related_lessons:
-  - { title: "Clock recovery & symbol timing", url: /learn/clock-recovery/ }
+  - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
 external:
   - { title: "Symbol synchronization (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_synchronization }
 ---

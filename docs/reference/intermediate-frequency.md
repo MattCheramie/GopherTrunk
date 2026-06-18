@@ -9,7 +9,7 @@ aka: [IF, "intermediate frequency"]
 autolink: true
 see_also: [superheterodyne-receiver, local-oscillator, baseband, analog-to-digital-converter]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Intermediate frequency (Wikipedia)", url: https://en.wikipedia.org/wiki/Intermediate_frequency }
 ---
