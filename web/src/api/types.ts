@@ -200,6 +200,8 @@ export interface DiscoveredTalkgroup {
   hex: string;
   encrypted?: boolean;
   count: number;
+  // Distinct voice-channel frequencies (Hz) observed carrying this talkgroup.
+  frequencies?: number[];
 }
 
 // BandPlanEntry mirrors hunt.BandPlanEntry — one P25 IDEN_UP band-plan slot:
@@ -221,6 +223,8 @@ export interface DiscoveredSite {
   control_channels?: { frequency_hz: number; is_control?: boolean; confidence?: number }[];
   secondary?: number[];
   neighbors?: NeighborRef[];
+  // Distinct voice/traffic-channel frequencies (Hz) granted on this site.
+  voice_channels?: number[];
 }
 
 // HuntRRReport mirrors api.HuntRRReport — the RadioReference cross-reference of

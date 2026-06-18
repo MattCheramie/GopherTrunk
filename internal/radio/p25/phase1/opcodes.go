@@ -316,16 +316,17 @@ func ParseUnitRegistrationResponse(p [8]byte) UnitRegistrationResponse {
 	}
 }
 
-// NetworkStatusBroadcast (opcode 0x3B explicit / 0x3C is Adjacent in some
-// vendor variants — TIA-102.AABF is unfortunately revised over time;
-// callers should look at MFID + opcode together to disambiguate). This
-// parser handles the standard explicit-form payload:
+// NetworkStatusBroadcast (opcode 0x3B) carries the system's network
+// identity. Payload layout per TIA-102.AABF — identical to the Phase 2
+// Network Status Broadcast (see phase2/mac.go AsNetworkStatusBroadcast):
 //
-//	bytes 0-2:  WACN ID (20 bits in upper 20 of 24)
-//	bytes 2-3:  System ID (12 bits)
-//	bytes 4-5:  channel
-//	bytes 6-7:  system service class
+//	byte 0:     LRA (Location Registration Area)
+//	bytes 1-3:  WACN ID (20 bits in the upper 20 of bytes 1-3)
+//	bytes 3-4:  System ID (low nibble of byte 3 + byte 4)
+//	bytes 5-6:  channel (4-bit ID + 12-bit number)
+//	byte 7:     system service class
 type NetworkStatusBroadcast struct {
+	LRA           uint8
 	WACN          uint32 // 20-bit
 	SystemID      uint16 // 12-bit
 	ChannelID     uint8
@@ -334,26 +335,29 @@ type NetworkStatusBroadcast struct {
 }
 
 func ParseNetworkStatusBroadcast(p [8]byte) NetworkStatusBroadcast {
-	wacn := uint32(p[0])<<12 | uint32(p[1])<<4 | uint32(p[2]>>4)
-	sysid := uint16(p[2]&0x0F)<<8 | uint16(p[3])
-	chanField := binary.BigEndian.Uint16(p[4:6])
+	wacn := uint32(p[1])<<12 | uint32(p[2])<<4 | uint32(p[3])>>4
+	sysid := uint16(p[3]&0x0F)<<8 | uint16(p[4])
+	chanField := binary.BigEndian.Uint16(p[5:7])
 	return NetworkStatusBroadcast{
+		LRA:           p[0],
 		WACN:          wacn,
 		SystemID:      sysid,
 		ChannelID:     uint8(chanField >> 12),
 		ChannelNumber: chanField & 0x0FFF,
-		ServiceClass:  binary.BigEndian.Uint16(p[6:8]),
+		ServiceClass:  uint16(p[7]),
 	}
 }
 
-// RFSSStatusBroadcast (opcode 0x3A in standard form). Payload:
+// RFSSStatusBroadcast (opcode 0x3A) names the site the receiver is
+// camped on. Payload layout per TIA-102.AABF — identical to the Phase 2
+// RFSS Status Broadcast (see phase2/mac_standard.go AsRFSSStatusBroadcast):
 //
 //	byte 0:     LRA (Location Registration Area)
-//	byte 1:     System ID high nibble + RFSS ID
-//	byte 2:     RFSS ID continued / Site ID
-//	byte 3:     Site ID continued
-//	bytes 4-5:  channel
-//	bytes 6-7:  system service class
+//	bytes 1-2:  System ID (12 bits, low nibble of byte 1 + byte 2)
+//	byte 3:     RFSS ID
+//	byte 4:     Site ID
+//	bytes 5-6:  channel (4-bit ID + 12-bit number)
+//	byte 7:     system service class
 type RFSSStatusBroadcast struct {
 	LRA           uint8
 	SystemID      uint16 // 12-bit
@@ -403,16 +407,20 @@ func AssembleSecondaryControlChannelBroadcast(s SecondaryControlChannelBroadcast
 }
 
 // AdjacentSiteStatusBroadcast (opcode 0x3C) announces a neighbouring
-// site a radio may roam to. Working-model payload layout:
+// site a radio may roam to. Payload layout per TIA-102.AABF — it shares
+// the RFSS Status Broadcast field layout, except byte 1's high nibble
+// carries the CFVA (conventional/failsoft/valid/active) flags rather
+// than reserved bits, and it still names the neighbour's System ID:
 //
 //	byte 0    : LRA (Location Registration Area)
-//	byte 1    : RFSS ID
-//	byte 2    : Site ID
-//	bytes 3-4 : the neighbour's control channel
-//	bytes 5-6 : system service class
-//	byte 7    : reserved
+//	bytes 1-2 : System ID (12 bits, low nibble of byte 1 + byte 2)
+//	byte 3    : RFSS ID
+//	byte 4    : Site ID
+//	bytes 5-6 : the neighbour's control channel (4-bit ID + 12-bit number)
+//	byte 7    : system service class
 type AdjacentSiteStatusBroadcast struct {
 	LRA           uint8
+	SystemID      uint16 // 12-bit
 	RFSS, Site    uint8
 	ChannelID     uint8
 	ChannelNumber uint16
@@ -420,11 +428,12 @@ type AdjacentSiteStatusBroadcast struct {
 
 // ParseAdjacentSiteStatusBroadcast decodes payload for opcode 0x3C.
 func ParseAdjacentSiteStatusBroadcast(p [8]byte) AdjacentSiteStatusBroadcast {
-	ch := binary.BigEndian.Uint16(p[3:5])
+	ch := binary.BigEndian.Uint16(p[5:7])
 	return AdjacentSiteStatusBroadcast{
 		LRA:           p[0],
-		RFSS:          p[1],
-		Site:          p[2],
+		SystemID:      uint16(p[1]&0x0F)<<8 | uint16(p[2]),
+		RFSS:          p[3],
+		Site:          p[4],
 		ChannelID:     uint8(ch >> 12),
 		ChannelNumber: ch & 0x0FFF,
 	}
@@ -433,20 +442,24 @@ func ParseAdjacentSiteStatusBroadcast(p [8]byte) AdjacentSiteStatusBroadcast {
 // AssembleAdjacentSiteStatusBroadcast is the inverse; for tests.
 func AssembleAdjacentSiteStatusBroadcast(a AdjacentSiteStatusBroadcast) [8]byte {
 	var p [8]byte
-	p[0], p[1], p[2] = a.LRA, a.RFSS, a.Site
-	binary.BigEndian.PutUint16(p[3:5], uint16(a.ChannelID&0x0F)<<12|a.ChannelNumber&0x0FFF)
+	p[0] = a.LRA
+	p[1] = uint8(a.SystemID>>8) & 0x0F
+	p[2] = uint8(a.SystemID)
+	p[3] = a.RFSS
+	p[4] = a.Site
+	binary.BigEndian.PutUint16(p[5:7], uint16(a.ChannelID&0x0F)<<12|a.ChannelNumber&0x0FFF)
 	return p
 }
 
 func ParseRFSSStatusBroadcast(p [8]byte) RFSSStatusBroadcast {
-	chanField := binary.BigEndian.Uint16(p[4:6])
+	chanField := binary.BigEndian.Uint16(p[5:7])
 	return RFSSStatusBroadcast{
 		LRA:           p[0],
 		SystemID:      uint16(p[1]&0x0F)<<8 | uint16(p[2]),
-		RFSS:          p[2], // some variants split high/low nibble; documented per-implementation
-		Site:          p[3],
+		RFSS:          p[3],
+		Site:          p[4],
 		ChannelID:     uint8(chanField >> 12),
 		ChannelNumber: chanField & 0x0FFF,
-		ServiceClass:  binary.BigEndian.Uint16(p[6:8]),
+		ServiceClass:  uint16(p[7]),
 	}
 }
