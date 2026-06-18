@@ -314,6 +314,7 @@ export interface HuntStartRequest {
   auto_gain?: boolean;
   auto_gain_set?: string;
   max_dwell_seconds?: number;
+  monitor_seconds?: number;
   protocol?: string;
   dwell_seconds?: number;
   name?: string;

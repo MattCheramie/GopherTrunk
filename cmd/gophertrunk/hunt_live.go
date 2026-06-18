@@ -30,6 +30,7 @@ type huntLiveParams struct {
 	outDir           string // explicit -out dir, for the gain-recommendation sidecar
 	surveyAudioDir   string
 	maxDwellSeconds  float64
+	monitorSeconds   float64
 	identifyMinConf  float64
 	classSNRGate     float64
 	classDigitalProm float64
@@ -146,6 +147,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		PeakOpts:              hunt.PeakOptions{ThresholdDb: float32(p.peakThresholdDb), MinSpacingHz: p.minSpacingHz},
 		DwellSeconds:          p.dwellSeconds,
 		MaxDwellSeconds:       p.maxDwellSeconds,
+		MonitorSeconds:        p.monitorSeconds,
 		MinConfidence:         p.minConfidence,
 		AutoTune:              p.autoTune,
 		Name:                  p.name,

@@ -106,8 +106,15 @@ type LiveHuntOptions struct {
 	// capture (in DwellSeconds chunks) until carrier activity is seen or this
 	// ceiling is reached — useful for bursty paging. 0 ⇒ a single fixed dwell.
 	MaxDwellSeconds float64
-	MinConfidence   float64
-	AutoTune        bool
+	// MonitorSeconds, when > 0, switches each candidate from the buffered
+	// fixed-dwell capture to a streaming long-dwell control-channel monitor:
+	// live IQ is decoded in real time (bounded memory, no multi-GB capture) for
+	// up to this many seconds, stopping early once identity + neighbors + band
+	// plan settle. The short DwellSeconds prefix is still captured first to
+	// identify the protocol. Opt-in: 0 ⇒ today's buffered behavior.
+	MonitorSeconds float64
+	MinConfidence  float64
+	AutoTune       bool
 
 	// SurveyAudioDir, when set, makes a survey write a WAV clip per active
 	// analog-FM carrier into this directory.
@@ -202,6 +209,25 @@ func RunLiveHunt(ctx context.Context, opts LiveHuntOptions) (*DiscoveredSystem, 
 			Detail: fmt.Sprintf("%.3f MHz", float64(cand.FreqHz)/1e6),
 		})
 
+		params := decodeParams{
+			Protocol:      opts.Protocol,
+			Format:        siglab.FormatF32,
+			SampleRateHz:  float64(rate),
+			FrequencyHz:   cand.FreqHz,
+			AutoTune:      opts.AutoTune,
+			MinConfidence: opts.MinConfidence,
+			Log:           log,
+		}
+
+		// Streaming long-dwell monitor: decode the live source in real time
+		// instead of buffering the whole dwell (the only way to watch a CC for
+		// minutes without recording gigabytes of IQ).
+		if opts.MonitorSeconds > 0 {
+			rep := monitorCandidate(ctx, sys, opts.Source, cand.FreqHz, nSamples, opts.MonitorSeconds, params)
+			reports = append(reports, rep)
+			continue
+		}
+
 		if err := opts.Source.Tune(cand.FreqHz); err != nil {
 			reports = append(reports, CaptureReport{
 				Path:  fmt.Sprintf("%.4f MHz", float64(cand.FreqHz)/1e6),
@@ -219,15 +245,7 @@ func RunLiveHunt(ctx context.Context, opts LiveHuntOptions) (*DiscoveredSystem, 
 		// shared identify→decode→accumulate body over a seekable reader.
 		buf := siglab.EncodeCapture(iq, siglab.FormatF32)
 		rep := decodeAndAccumulate(sys, bytes.NewReader(buf),
-			fmt.Sprintf("%.4f MHz", float64(cand.FreqHz)/1e6), decodeParams{
-				Protocol:      opts.Protocol,
-				Format:        siglab.FormatF32,
-				SampleRateHz:  float64(rate),
-				FrequencyHz:   cand.FreqHz,
-				AutoTune:      opts.AutoTune,
-				MinConfidence: opts.MinConfidence,
-				Log:           log,
-			})
+			fmt.Sprintf("%.4f MHz", float64(cand.FreqHz)/1e6), params)
 		reports = append(reports, rep)
 	}
 

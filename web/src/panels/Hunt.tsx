@@ -110,6 +110,7 @@ export function Hunt() {
   const [ccFreq, setCCFreq] = useState(""); // single control-channel freq, MHz
   const [ccProto, setCCProto] = useState("p25"); // trunked protocol to decode
   const [ccDwell, setCCDwell] = useState(15); // listen seconds (see parseCC)
+  const [ccMonitorMin, setCCMonitorMin] = useState(0); // streaming long-dwell minutes; 0 = off
 
   useEffect(() => {
     let cancel = false;
@@ -185,6 +186,7 @@ export function Hunt() {
         no_sweep: true,
         protocol: ccProto,
         dwell_seconds: ccDwell,
+        monitor_seconds: ccMonitorMin > 0 ? ccMonitorMin * 60 : undefined,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? `parse CC failed: ${e.message}` : "parse CC failed");
@@ -227,7 +229,8 @@ export function Hunt() {
           it. The band plan, talkgroups and system identity below fill in as the
           CC is read — longer listening (or re-running) discovers more talkgroups
           and neighbor sites. Each second buffers ~19 MB of IQ, so prefer
-          re-running over very long dwells.
+          re-running over very long dwells — or set <em>Monitor</em> below to
+          stream the CC in real time (bounded memory) for minutes at a time.
         </p>
         <label>
           Protocol
@@ -256,6 +259,20 @@ export function Hunt() {
             value={ccDwell}
             onChange={(e) => setCCDwell(Number(e.target.value))}
           />
+        </label>
+        <label>
+          Monitor (minutes, 0 = off)
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={ccMonitorMin}
+            onChange={(e) => setCCMonitorMin(Number(e.target.value))}
+          />
+          <span className="hint">
+            Streams the control channel and stops early once identity, neighbors
+            and band plan settle (capped at this many minutes).
+          </span>
         </label>
         <div className="hunt-buttons">
           <button onClick={parseCC} disabled={!canMutate || running}>

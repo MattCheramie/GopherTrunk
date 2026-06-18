@@ -7,6 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Streaming long-dwell control-channel monitor for Hunt** (opt-in). A new
+  `monitor_seconds` (web Hunt "Monitor" field / `-monitor-seconds` CLI flag)
+  decodes a locked control channel from the live SDR in real time instead of
+  buffering the whole dwell, so a P25 site can be watched for minutes without
+  recording gigabytes of IQ. It stops early once identity, neighbors, and the
+  band plan stop changing (converge-and-stop), capped at the requested time.
+
+### Fixed
+- **P25 identity / band-plan / neighbor accuracy under noise.** Status-broadcast
+  accumulation was last-write-wins, so a single corrupt-but-CRC-passing TSBK
+  could set a wrong WACN / System ID or inject a phantom band-plan slot
+  (e.g. a stray VHF base on a UHF site). Identity is now resolved by majority
+  vote across observations, and band-plan slots and neighbors must be seen at
+  least twice before they surface — while live grant resolution still accepts a
+  first sighting, so voice channels are unaffected.
+
 ## [v0.4.6] — 2026-06-18
 
 This release focuses on **P25 site and identity decoding**. Encrypted calls
