@@ -112,6 +112,7 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		AutoGain:        req.AutoGain,
 		AutoGainSet:     gainSet,
 		MaxDwellSeconds: req.MaxDwellSeconds,
+		MonitorSeconds:  req.MonitorSeconds,
 		Serial:          req.Serial,
 		FFTSize:         req.FFTSize,
 		DwellSeconds:    req.DwellSeconds,

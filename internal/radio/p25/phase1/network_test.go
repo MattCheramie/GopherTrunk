@@ -14,7 +14,10 @@ func TestNetworkModelAccumulates(t *testing.T) {
 	m.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x123, RFSS: 4, Site: 7, LRA: 9})
 	m.ApplySecondaryControlChannel(SecondaryControlChannelBroadcast{
 		ChannelAID: 1, ChannelANumber: 100, ChannelBID: 1, ChannelBNumber: 200})
+	// Neighbours need corroborationMin (2) sightings before Snapshot surfaces
+	// them, so each site is broadcast twice.
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})
+	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 9, ChannelID: 1, ChannelNumber: 301})
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 9, ChannelID: 1, ChannelNumber: 301})
 	// Re-broadcast of site 8 must update in place, not duplicate.
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 305})
@@ -57,8 +60,10 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast,
 		Payload: AssembleAdjacentSiteStatusBroadcast(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})}
 
+	// The adjacent-site broadcast is sent twice so it clears the
+	// corroborationMin (2) gate and Snapshot surfaces the neighbour.
 	base := 0
-	for _, tsbk := range []TSBK{nsb, rfss, adj} {
+	for _, tsbk := range []TSBK{nsb, rfss, adj, adj} {
 		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
 		base += 1 << 20
 	}

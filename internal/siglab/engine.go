@@ -86,7 +86,50 @@ func RunReaderStream(r io.Reader, source string, cfg Config, onEvent func(EventR
 		tuneHz = est
 	}
 
-	return runReader(r, source, decode, bytesPerSample, tuneHz, cfg, onEvent)
+	return runReader(r, source, decode, bytesPerSample, tuneHz, cfg, onEvent, nil)
+}
+
+// monitorHook drives converge-and-stop dwell on a streaming source. Every
+// Interval of stream time the read loop calls OnTick with the current
+// accumulated topology and the elapsed stream seconds; returning true ends the
+// run early (the Result assembled so far is returned as usual).
+type monitorHook struct {
+	Interval time.Duration
+	OnTick   func(topo *TopologySnapshot, streamSec float64) (stop bool)
+}
+
+// tickSec is the interval in seconds; nil-safe so the read loop can call it
+// unconditionally before checking whether monitoring is active.
+func (m *monitorHook) tickSec() float64 {
+	if m == nil || m.Interval <= 0 {
+		return 0
+	}
+	return m.Interval.Seconds()
+}
+
+// RunReaderMonitor decodes a (typically live, effectively unbounded) stream,
+// invoking onTick every tick of stream time with the current accumulated
+// topology so the caller can converge-and-stop a long control-channel dwell.
+// It is the streaming sibling of RunReader: memory stays bounded (chunked
+// reads, nothing is buffered whole), and the run ends when onTick returns
+// true, the reader hits EOF, or a read errors. The carrier must already be
+// tuned via cfg.TuneHz — auto-tune (which needs to seek) is not supported.
+func RunReaderMonitor(r io.Reader, source string, cfg Config, tick time.Duration, onTick func(*TopologySnapshot, float64) bool) (*Result, error) {
+	if cfg.SampleRateHz <= 0 {
+		return nil, fmt.Errorf("siglab: sample rate must be > 0")
+	}
+	if !ccdecoder.HasFactory(cfg.Protocol) {
+		return nil, fmt.Errorf("siglab: no pipeline registered for protocol %s", cfg.Protocol)
+	}
+	if cfg.AutoTune {
+		return nil, fmt.Errorf("siglab: RunReaderMonitor does not support auto-tune (tune via cfg.TuneHz)")
+	}
+	if tick <= 0 {
+		tick = time.Second
+	}
+	decode, bytesPerSample := cfg.Format.Decoder()
+	mon := &monitorHook{Interval: tick, OnTick: onTick}
+	return runReader(r, source, decode, bytesPerSample, cfg.TuneHz, cfg, nil, mon)
 }
 
 // RunReaderAutoTuneMulti decodes cfg.Protocol against each detected carrier
@@ -126,7 +169,7 @@ func RunReaderAutoTuneMulti(r io.ReadSeeker, source string, cfg Config, maxCandi
 			return nil, fmt.Errorf("siglab: auto-tune rewind: %w", err)
 		}
 		runCfg.TuneHz = off
-		res, err := runReader(r, source, decode, bytesPerSample, off, runCfg, nil)
+		res, err := runReader(r, source, decode, bytesPerSample, off, runCfg, nil, nil)
 		if err != nil {
 			continue
 		}
@@ -179,7 +222,7 @@ func ccYield(r *Result) int64 {
 // pipeline chain (so a replay lock implies an on-air lock), drains the bus
 // into a Result, and runs the optional analyzer. Split out so a future
 // in-memory source (synthesized IQ) can share it.
-func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample int, tuneHz float64, cfg Config, onEvent func(EventRecord)) (*Result, error) {
+func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample int, tuneHz float64, cfg Config, onEvent func(EventRecord), mon *monitorHook) (*Result, error) {
 	logger := cfg.logger()
 
 	// Mirror the production ccdecoder DDC: decimate to the per-protocol
@@ -279,6 +322,11 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 	var states []ReceiverState
 	captureState := bundle.stateAt != nil && cfg.CollectReceiverState
 
+	// Converge-and-stop monitoring (streaming long-dwell): fire the tick on
+	// stream time so the caller sees the same cadence however fast replay runs.
+	monitoring := mon != nil && mon.OnTick != nil && bundle.topology != nil
+	nextMonitorAt := mon.tickSec()
+
 	chunk := cfg.chunkSamples()
 	buf := make([]byte, chunk*bytesPerSample)
 	samples := make([]complex64, chunk)
@@ -322,6 +370,17 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 				if t := float64(totalSamples) / cfg.SampleRateHz; t >= nextStateLogAt {
 					states = append(states, bundle.stateAt(t))
 					nextStateLogAt = t + stateLogIntervalSec
+				}
+			}
+
+			// Converge-and-stop: hand the caller the live topology on the tick
+			// cadence; a true return ends the dwell early.
+			if monitoring {
+				if t := float64(totalSamples) / cfg.SampleRateHz; t >= nextMonitorAt {
+					nextMonitorAt = t + mon.tickSec()
+					if mon.OnTick(bundle.topology(), t) {
+						break
+					}
 				}
 			}
 		}

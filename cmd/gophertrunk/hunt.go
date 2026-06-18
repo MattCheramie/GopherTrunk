@@ -57,6 +57,7 @@ func runHunt(args []string) {
 	autoGainSet := fs.String("auto-gain-set", "", "live: comma-separated gains in dB for -auto-gain (default: a conservative spread; use a device-appropriate set for RTL/Airspy)")
 	surveyAudio := fs.String("survey-audio", "", "survey: write a WAV clip per active analog FM carrier into this directory")
 	maxDwellSeconds := fs.Float64("max-dwell-seconds", 0, "survey: extend per-candidate dwell up to this many seconds, listening until carrier activity (0 = fixed -dwell-seconds)")
+	monitorSeconds := fs.Float64("monitor-seconds", 0, "live: stream each locked control channel in real time for up to this many seconds (converge-and-stop), instead of buffering the dwell — lets you monitor a CC for minutes without recording gigabytes (0 = off)")
 	identifyMinConf := fs.Float64("identify-min-confidence", 0, "survey: skip the trunking identify for a digital carrier below this classifier confidence (0 = always identify)")
 	classSNRGate := fs.Float64("class-snr-gate", 0, "survey classifier: min SNR (dB) to classify a carrier (0 = default 3)")
 	classDigitalProm := fs.Float64("class-digital-prominence", 0, "survey classifier: min baud-line prominence for a digital call (0 = default 15)")
@@ -205,6 +206,7 @@ FLAGS:`)
 			outDir:           *out,
 			surveyAudioDir:   *surveyAudio,
 			maxDwellSeconds:  *maxDwellSeconds,
+			monitorSeconds:   *monitorSeconds,
 			identifyMinConf:  *identifyMinConf,
 			classSNRGate:     *classSNRGate,
 			classDigitalProm: *classDigitalProm,

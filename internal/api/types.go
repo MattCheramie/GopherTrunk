@@ -55,6 +55,7 @@ type HuntStartRequest struct {
 	AutoGain        bool      `json:"auto_gain,omitempty"`      // post-run: sweep gains on locked CCs, recommend the best
 	AutoGainSet     string    `json:"auto_gain_set,omitempty"`  // optional comma-separated gain ladder in dB (e.g. "0,8.7,16.6")
 	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
+	MonitorSeconds  float64   `json:"monitor_seconds,omitempty"` // >0: stream a locked CC in real time for up to this long (converge-and-stop), instead of buffering the dwell
 	Protocol        string    `json:"protocol,omitempty"`
 	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`
 	SweepDwellMs    int       `json:"sweep_dwell_ms,omitempty"`
