@@ -363,11 +363,44 @@ func buildDetector(t ToneConfig, sampleHz float64, log *slog.Logger) toneDetecto
 // Run blocks until ctx cancels. Tunes, measures squelch, hands off
 // to the engine on break, and resumes scanning after hangtime.
 // Returns ctx.Err() on shutdown.
+//
+// A single IQ stream is opened at startup and kept alive across all
+// channel hops so the SDR driver never has to teardown and reopen
+// the underlying hardware transfer. SetCenterFreq retunes the
+// hardware; the running stream delivers samples at the new frequency
+// within a few milliseconds.
 func (s *Scanner) Run(ctx context.Context) error {
+	// openStream opens (or reopens after a hardware disconnect) the
+	// persistent IQ stream. It returns nil on ctx cancellation.
+	openStream := func() (<-chan []complex64, error) {
+		s.log.Debug("conv: opening IQ stream")
+		ch, err := s.opts.IQ.StreamIQ(ctx)
+		if err != nil {
+			s.log.Warn("conv: StreamIQ failed", "err", err)
+		}
+		return ch, err
+	}
+
+	stream, err := openStream()
+	if err != nil {
+		s.sleep(ctx, 500*time.Millisecond)
+		return ctx.Err()
+	}
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
+		// Reopen if the stream died (device disconnect / driver error).
+		if stream == nil {
+			stream, err = openStream()
+			if err != nil {
+				s.sleep(ctx, 500*time.Millisecond)
+				continue
+			}
+		}
+
 		if s.IsHeld() {
 			s.sleep(ctx, 100*time.Millisecond)
 			continue
@@ -388,16 +421,6 @@ func (s *Scanner) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Open the IQ stream for this dwell. We close it on advance.
-		streamCtx, cancel := context.WithCancel(ctx)
-		stream, err := s.opts.IQ.StreamIQ(streamCtx)
-		if err != nil {
-			cancel()
-			s.log.Warn("conv: StreamIQ failed", "err", err)
-			s.sleep(ctx, 200*time.Millisecond)
-			continue
-		}
-
 		// Reset the per-channel CTCSS detector (if any) so leftover
 		// state from a previous dwell on this index doesn't bias
 		// the new window. The detector itself is owned by the
@@ -408,57 +431,68 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 		// Wait for either squelch to break, the min-dwell timer to
 		// expire (advance), or ctx cancel.
-		broken := s.scanWindow(ctx, idx, ch, stream)
+		broken, streamDied := s.scanWindow(ctx, idx, ch, stream)
+		if streamDied {
+			stream = nil
+			continue
+		}
 		if !broken {
-			cancel()
 			continue
 		}
 
 		// Squelch is open — hand off to the engine and stay on this
 		// channel feeding PCM through the recorder until hangtime.
-		s.beginDwell(idx, ch, stream, streamCtx, cancel)
+		if s.beginDwell(ctx, idx, ch, stream) {
+			stream = nil // stream died during dwell
+		}
 	}
 }
 
-// scanWindow returns true when squelch opens within MinDwellPerChannel,
-// false when the timer expires (advance to next channel). When the
-// channel has tone gating configured the detector must also be
-// matched — power alone isn't enough to declare "right system".
-func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64) bool {
+// scanWindow returns (broken, streamDied).
+//
+//   - broken=true: squelch opened within MinDwellPerChannel; advance
+//     to beginDwell.
+//   - broken=false, streamDied=false: min-dwell timer expired or ctx
+//     cancelled; advance to next channel normally.
+//   - broken=false, streamDied=true: the IQ stream channel closed
+//     (device disconnect); Run should reopen the stream.
+//
+// When the channel has tone gating configured the detector must also
+// be matched — power alone isn't enough to declare "right system".
+func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64) (broken bool, streamDied bool) {
 	deadline := time.NewTimer(s.opts.MinDwellPerChannel)
 	defer deadline.Stop()
 	det := s.detectorFor(idx)
 	for {
 		select {
 		case <-ctx.Done():
-			return false
+			return false, false
 		case <-deadline.C:
-			return false
+			return false, false
 		case iq, ok := <-stream:
 			if !ok {
-				return false
+				return false, true
 			}
 			powerOK := PowerDbFS(iq) >= ch.SquelchDbFS
 			if !powerOK {
 				continue
 			}
 			if det == nil {
-				return true
+				return true, false
 			}
 			if det.Process(iq) {
-				return true
+				return true, false
 			}
 		}
 	}
 }
 
-// beginDwell takes the open IQ stream, announces a synthetic call
-// via the engine, and stays on the channel feeding PCM to the
-// recorder until hangtime silence is observed. Returns after
-// publishing CallEnd.
-func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, streamCtx context.Context, cancel context.CancelFunc) {
-	defer cancel()
-
+// beginDwell announces a synthetic call via the engine and stays on
+// the channel feeding PCM to the recorder until hangtime silence is
+// observed. Returns streamDied=true if the IQ stream closed
+// unexpectedly (device disconnect); Run should reopen it in that
+// case. Returns false on normal hangtime expiry or ctx cancellation.
+func (s *Scanner) beginDwell(ctx context.Context, idx int, ch Channel, stream <-chan []complex64) (streamDied bool) {
 	now := s.opts.Now()
 	s.mu.Lock()
 	s.state = StateDwell
@@ -499,15 +533,15 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	defer ticker.Stop()
 	for {
 		select {
-		case <-streamCtx.Done():
+		case <-ctx.Done():
 			s.endDwell(idx, trunking.EndReasonError)
-			return
+			return false
 		case <-ticker.C:
 			s.opts.Engine.Touch(s.opts.DeviceSerial)
 		case iq, ok := <-stream:
 			if !ok {
 				s.endDwell(idx, trunking.EndReasonError)
-				return
+				return true
 			}
 			power := PowerDbFS(iq)
 			active := power >= ch.SquelchDbFS
@@ -520,7 +554,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 				belowSince = s.opts.Now()
 			} else if s.opts.Now().Sub(belowSince) >= ch.Hangtime {
 				s.endDwell(idx, trunking.EndReasonNormal)
-				return
+				return false
 			}
 		}
 	}
