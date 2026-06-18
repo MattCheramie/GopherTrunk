@@ -3,6 +3,8 @@ package phase2
 import (
 	"sync"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/motorola"
 )
 
 // P25 Phase 2 talker-alias reassembly.
@@ -168,4 +170,188 @@ func cleanAlias(raw []byte) string {
 		}
 	}
 	return string(out)
+}
+
+// --- Real Motorola Phase 2 talker alias (FACCH-S, #376) ------------
+//
+// The on-air form (SDRTrunk ground truth, Victorian MMR) is a HEADER
+// MAC PDU (opcode 0x91, MFID 0x90) followed by N DATA MAC PDUs (opcode
+// 0x95). Both reassemble — header fragment first, then data blocks in
+// order — into one Motorola message with the same framing as Phase 1:
+// WACN|System|RadioID|cipher-alias|CRC-16. The source RID therefore
+// falls out of the reassembled prefix (the motorola package decodes it).
+//
+// CAVEAT (#376, air-unverified): the per-PDU byte offsets below are
+// inferred from the post-FEC SDRTrunk dumps in the issue; no IQ fixture
+// is committed. They are structurally tested (TG / blocks / sequence
+// parse, and the SUID prefix → RID 200062 round-trips) but the exact
+// fragment bit-packing — hence the final decoded alias string — needs a
+// real frame to confirm. A wrong offset fails safe: DecodeMessage finds
+// no coherent SUID/length and no alias is published.
+//
+// Header payload layout (after ParseMACPDU strips opcode+MFID), inferred
+// from MSG 11 4EF0 02 01 00 06 BEE00164030D7E24 …:
+//
+//	[0]    length
+//	[1:3]  talkgroup
+//	[3]    blocks to follow
+//	[4]    format (1 = Unicode)
+//	[5]    sequence (low nibble)
+//	[6]    reserved
+//	[7:]   first cipher fragment (SUID-bearing), trailing FACCH CRC ignored
+//
+// Data payload layout, inferred from MSG 11 01 04 4F6FF2…63C …:
+//
+//	[0]    length
+//	[1]    block number (1-based)
+//	[2]    sequence (high nibble; low nibble starts the fragment)
+//	[3:]   cipher fragment, trailing FACCH CRC ignored
+const (
+	aliasHeaderFragOffset = 7
+	aliasDataFragOffset   = 3
+)
+
+// MotorolaAliasHeader is a decoded FACCH-S talker-alias header PDU.
+type MotorolaAliasHeader struct {
+	TalkgroupID uint16
+	Sequence    uint8
+	BlockCount  uint8
+	Fragment    []byte // first cipher fragment (carries the SUID prefix)
+}
+
+// AsMotorolaAliasHeader returns the header if the PDU is a Motorola
+// FACCH-S alias header (opcode 0x91, MFID 0x90), otherwise (zero, false).
+func (p MACPDU) AsMotorolaAliasHeader() (MotorolaAliasHeader, bool) {
+	if p.Opcode != OpMotorolaAliasHeader || p.MFID != MFIDMotorola {
+		return MotorolaAliasHeader{}, false
+	}
+	if len(p.Payload) <= aliasHeaderFragOffset {
+		return MotorolaAliasHeader{}, false
+	}
+	return MotorolaAliasHeader{
+		TalkgroupID: uint16(p.Payload[1])<<8 | uint16(p.Payload[2]),
+		BlockCount:  p.Payload[3],
+		Sequence:    p.Payload[5] & 0x0F,
+		Fragment:    append([]byte(nil), p.Payload[aliasHeaderFragOffset:]...),
+	}, true
+}
+
+// MotorolaAliasData is a decoded FACCH-S talker-alias data PDU.
+type MotorolaAliasData struct {
+	BlockNumber uint8
+	Sequence    uint8
+	Fragment    []byte
+}
+
+// AsMotorolaAliasData returns the data block if the PDU is a Motorola
+// FACCH-S alias data block (opcode 0x95, MFID 0x90), otherwise
+// (zero, false).
+func (p MACPDU) AsMotorolaAliasData() (MotorolaAliasData, bool) {
+	if p.Opcode != OpMotorolaAliasData || p.MFID != MFIDMotorola {
+		return MotorolaAliasData{}, false
+	}
+	if len(p.Payload) <= aliasDataFragOffset {
+		return MotorolaAliasData{}, false
+	}
+	return MotorolaAliasData{
+		BlockNumber: p.Payload[1],
+		Sequence:    p.Payload[2] >> 4,
+		Fragment:    append([]byte(nil), p.Payload[aliasDataFragOffset:]...),
+	}, true
+}
+
+// MotorolaAliasAssembler reassembles the real Motorola FACCH-S talker
+// alias for one active call. Construct one per voice chain; it is
+// single-goroutine like phase1.MotorolaTalkerAliasBuf. AddHeader /
+// AddData return (alias, sourceRID, true) once the header and every
+// data block of the same sequence have arrived.
+type MotorolaAliasAssembler struct {
+	now func() time.Time
+
+	haveHeader bool
+	sequence   uint8
+	blockCount uint8
+	header     []byte
+	blocks     map[uint8][]byte
+	updated    time.Time
+}
+
+// NewMotorolaAliasAssembler returns a ready assembler. now is injectable
+// for tests; nil defaults to time.Now.
+func NewMotorolaAliasAssembler(now func() time.Time) *MotorolaAliasAssembler {
+	if now == nil {
+		now = time.Now
+	}
+	return &MotorolaAliasAssembler{now: now, blocks: make(map[uint8][]byte)}
+}
+
+// AddHeader feeds a decoded alias header. A header with a new sequence
+// resets any in-flight data blocks.
+func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint32, bool) {
+	a.evictStale()
+	if h.BlockCount == 0 || h.BlockCount > aliasMaxBlocks {
+		return "", 0, false
+	}
+	if !a.haveHeader || h.Sequence != a.sequence {
+		a.blocks = make(map[uint8][]byte)
+	}
+	a.haveHeader = true
+	a.sequence = h.Sequence
+	a.blockCount = h.BlockCount
+	a.header = append([]byte(nil), h.Fragment...)
+	a.updated = a.now()
+	return a.tryComplete()
+}
+
+// AddData feeds a decoded alias data block. Blocks whose sequence
+// doesn't match the current header are ignored.
+func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, bool) {
+	a.evictStale()
+	if !a.haveHeader || d.Sequence != a.sequence || d.BlockNumber == 0 ||
+		d.BlockNumber > a.blockCount {
+		return "", 0, false
+	}
+	a.blocks[d.BlockNumber] = append([]byte(nil), d.Fragment...)
+	a.updated = a.now()
+	return a.tryComplete()
+}
+
+// tryComplete reassembles and decodes once the header and every data
+// block are present.
+func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool) {
+	if !a.haveHeader || len(a.blocks) < int(a.blockCount) {
+		return "", 0, false
+	}
+	msg := append([]byte(nil), a.header...)
+	for i := uint8(1); i <= a.blockCount; i++ {
+		b, ok := a.blocks[i]
+		if !ok {
+			return "", 0, false
+		}
+		msg = append(msg, b...)
+	}
+	decoded, ok := motorola.DecodeMessage(msg)
+	if !ok {
+		return "", 0, false
+	}
+	a.reset()
+	return decoded.Alias, decoded.RadioID, true
+}
+
+func (a *MotorolaAliasAssembler) evictStale() {
+	if !a.haveHeader {
+		return
+	}
+	if a.now().Sub(a.updated) > aliasStaleAfter {
+		a.reset()
+	}
+}
+
+func (a *MotorolaAliasAssembler) reset() {
+	a.haveHeader = false
+	a.sequence = 0
+	a.blockCount = 0
+	a.header = nil
+	a.blocks = make(map[uint8][]byte)
+	a.updated = time.Time{}
 }

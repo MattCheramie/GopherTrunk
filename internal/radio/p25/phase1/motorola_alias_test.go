@@ -147,11 +147,8 @@ func TestMotorolaCipherZeroInputProducesZeroLength(t *testing.T) {
 	}
 }
 
-func TestMotorolaCipherLUTSize(t *testing.T) {
-	if len(motorolaAliasLUT) != 256 {
-		t.Errorf("motorolaAliasLUT has %d entries, want 256", len(motorolaAliasLUT))
-	}
-}
+// The 256-entry LUT-size invariant moved with the cipher to the shared
+// internal/radio/p25/motorola package (see its TestLUTSize).
 
 func TestAssembleMotorolaBitStreamPackingOrder(t *testing.T) {
 	// Two data blocks with known fragments — verify the bit stream

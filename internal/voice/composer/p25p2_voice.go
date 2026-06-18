@@ -109,6 +109,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	rs, _ := c.sink.(rawFrameSink)
 	sfDec := p25p2.NewSuperframeDecoder()
 	aliasAsm := p25p2.NewTalkerAliasAssembler(nil)
+	// motorolaAliasAsm reassembles the real Motorola FACCH-S talker
+	// alias (header opcode 0x91 + data 0x95) that MMR-style systems emit
+	// during hangtime (#376). Distinct from aliasAsm above, which serves
+	// the speculative 0x82 working model still referenced by the CC path.
+	motorolaAliasAsm := p25p2.NewMotorolaAliasAssembler(nil)
 	// macSeen rate-limits the diagnostic per-PDU log to one line per
 	// opcode (+ MFID for vendor opcodes) per call — enough to confirm
 	// which transports MMR-style systems actually emit, without
@@ -188,6 +193,22 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 					if f, ok := pdu.AsTalkerAliasFragment(); ok {
 						alias, src, complete := aliasAsm.Add(f)
 						if complete {
+							c.publishP25Phase2TalkerAlias(system, src, alias)
+						}
+						continue
+					}
+					// Real Motorola FACCH-S alias: header (0x91) seeds the
+					// per-call reassembler, data blocks (0x95) complete it,
+					// and the source RID falls out of the decoded message
+					// prefix (#376).
+					if h, ok := pdu.AsMotorolaAliasHeader(); ok {
+						if alias, src, complete := motorolaAliasAsm.AddHeader(h); complete {
+							c.publishP25Phase2TalkerAlias(system, src, alias)
+						}
+						continue
+					}
+					if d, ok := pdu.AsMotorolaAliasData(); ok {
+						if alias, src, complete := motorolaAliasAsm.AddData(d); complete {
 							c.publishP25Phase2TalkerAlias(system, src, alias)
 						}
 						continue

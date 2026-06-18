@@ -68,6 +68,101 @@ func TestTalkerAliasAssemblerEvictsStale(t *testing.T) {
 	}
 }
 
+// --- Real Motorola FACCH-S alias (#376) ----------------------------
+
+// macPDU builds a MACPDU as ParseMACPDU would yield it from the given
+// post-FEC info bytes (opcode + MFID stripped for vendor opcodes).
+func macPDU(t *testing.T, info ...byte) MACPDU {
+	t.Helper()
+	p, err := ParseMACPDU(info)
+	if err != nil {
+		t.Fatalf("ParseMACPDU: %v", err)
+	}
+	return p
+}
+
+// The golden bytes are the SDRTrunk MSG dumps from issue #376
+// (Victorian MMR, TG 20208, RADIO:ISSI 781824.356.200062, SEQUENCE 0,
+// 2 blocks). Trailing FACCH CRCs (CC8 / 979 / 9D7) are dropped — the
+// assembler reads only the cipher fragments.
+var (
+	aliasHeaderMSG = []byte{0x91, 0x90, 0x11, 0x4E, 0xF0, 0x02, 0x01, 0x00, 0x06,
+		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, 0x24}
+	aliasData1MSG = []byte{0x95, 0x90, 0x11, 0x01, 0x04,
+		0x4F, 0x6F, 0xF2, 0xFA, 0x9A, 0xC3, 0xEC, 0x34, 0x43, 0x2F, 0xA6, 0x3C}
+	aliasData2MSG = []byte{0x95, 0x90, 0x11, 0x02, 0x0C,
+		0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+)
+
+func TestAsMotorolaAliasHeaderParsesDump(t *testing.T) {
+	h, ok := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
+	if !ok {
+		t.Fatal("AsMotorolaAliasHeader returned !ok")
+	}
+	if h.TalkgroupID != 20208 {
+		t.Errorf("TalkgroupID = %d, want 20208", h.TalkgroupID)
+	}
+	if h.BlockCount != 2 {
+		t.Errorf("BlockCount = %d, want 2", h.BlockCount)
+	}
+	if h.Sequence != 0 {
+		t.Errorf("Sequence = %d, want 0", h.Sequence)
+	}
+	// First fragment must begin with the SUID prefix BE E0 01 64 03 0D 7E.
+	if len(h.Fragment) < 7 || h.Fragment[0] != 0xBE || h.Fragment[6] != 0x7E {
+		t.Errorf("Fragment prefix = % x, want BE E0 01 64 03 0D 7E…", h.Fragment)
+	}
+}
+
+func TestAsMotorolaAliasDataParsesDump(t *testing.T) {
+	d, ok := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
+	if !ok {
+		t.Fatal("AsMotorolaAliasData returned !ok")
+	}
+	if d.BlockNumber != 1 {
+		t.Errorf("BlockNumber = %d, want 1", d.BlockNumber)
+	}
+	if d.Sequence != 0 {
+		t.Errorf("Sequence = %d, want 0", d.Sequence)
+	}
+}
+
+// TestMotorolaAliasAssemblerYieldsRID feeds the golden header + both
+// data blocks and asserts the source RID falls out of the reassembled
+// message prefix (200062 = 0x030D7E), matching SDRTrunk's inline
+// RADIO:ISSI 781824.356.200062. The decoded alias *string* is not
+// asserted — the dump doesn't give the plaintext for this call and the
+// fragment bit-packing is air-unverified (see talker_alias.go caveat).
+func TestMotorolaAliasAssemblerYieldsRID(t *testing.T) {
+	a := NewMotorolaAliasAssembler(nil)
+
+	h, _ := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
+	if _, _, done := a.AddHeader(h); done {
+		t.Fatal("header alone (2 blocks pending) must not complete")
+	}
+	d1, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
+	if _, _, done := a.AddData(d1); done {
+		t.Fatal("1 of 2 blocks must not complete")
+	}
+	d2, _ := macPDU(t, aliasData2MSG...).AsMotorolaAliasData()
+	_, rid, done := a.AddData(d2)
+	if !done {
+		t.Fatal("both blocks present should complete the alias")
+	}
+	if rid != 200062 {
+		t.Errorf("source RID = %d, want 200062", rid)
+	}
+}
+
+func TestMotorolaAliasAssemblerWrongOpcodeRejected(t *testing.T) {
+	// A 0x95 PDU before any header must not complete or panic.
+	d, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
+	a := NewMotorolaAliasAssembler(nil)
+	if _, _, done := a.AddData(d); done {
+		t.Error("data before header must not complete")
+	}
+}
+
 func TestControlChannelPublishesTalkerAlias(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
