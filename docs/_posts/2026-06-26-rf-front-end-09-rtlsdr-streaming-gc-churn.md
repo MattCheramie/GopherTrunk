@@ -1,6 +1,6 @@
 ---
 title: "RF Front End, Part 9: RTL-SDR III — IQ Streaming & the GC-Churn Bug"
-description: Sustained IQ streaming from the RTL2832U in pure Go — 32 async USB buffers, a deep consumer channel, and a bit-identical U8-to-complex64 lookup table. Plus the headline bug: per-chunk allocations whose GC churn shed a quarter of the control channel's live IQ, and the zero-allocation reuse ring that fixed it.
+description: "Sustained IQ streaming from the RTL2832U in pure Go — 32 async USB buffers, a deep consumer channel, and a bit-identical U8-to-complex64 lookup table. Plus the headline bug: per-chunk allocations whose GC churn shed a quarter of the control channel's live IQ, and the zero-allocation reuse ring that fixed it."
 category: deep-dives
 tags: [sdr, go, rtl-sdr, streaming, software-design]
 author: Matt Cheramie

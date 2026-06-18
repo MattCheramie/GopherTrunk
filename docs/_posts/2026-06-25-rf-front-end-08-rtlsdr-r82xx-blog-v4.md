@@ -1,6 +1,6 @@
 ---
 title: "RF Front End, Part 8: RTL-SDR II — The R82xx Tuner & the Blog V4 Deafness"
-description: GopherTrunk's pure-Go R820T/R828D tuner driver — PLL tuning, a shadow-register cache that makes read-modify-write free, and tuner auto-detection. Plus the headline bug: why the RTL-SDR Blog V4 came up deaf and mistuned by 1.8×, and how a manual override plus per-band input switching fixed it.
+description: "GopherTrunk's pure-Go R820T/R828D tuner driver — PLL tuning, a shadow-register cache that makes read-modify-write free, and tuner auto-detection. Plus the headline bug: why the RTL-SDR Blog V4 came up deaf and mistuned by 1.8×, and how a manual override plus per-band input switching fixed it."
 category: deep-dives
 tags: [sdr, go, rtl-sdr, r82xx, software-design]
 author: Matt Cheramie

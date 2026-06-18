@@ -71,6 +71,8 @@ groups:
         url: /blog/category/deep-dives/
       - title: "Series: SDR Internals"
         url: /blog/series/sdr-internals/
+      - title: "Series: RF Front End"
+        url: /blog/series/rf-front-end/
       - title: Tutorials
         url: /blog/category/tutorials/
   - label: Install
