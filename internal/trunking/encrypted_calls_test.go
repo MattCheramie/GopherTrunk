@@ -10,21 +10,31 @@ import (
 // mkEncEngine builds an engine wired for encrypted-call-policy tests: a
 // one-device pool, an injectable clock, a long call timeout (so the
 // inactivity watchdog never interferes with what we're testing), and the
-// supplied mode / follow window / configured keys.
+// supplied mode / follow window / configured keys. The mode + follow are
+// applied per-system to the system names these tests drive grants for
+// (the policy is per-system since issue #711's per-system refactor).
 func mkEncEngine(t *testing.T, mode EncryptedMode, follow time.Duration, keys map[string]map[uint16]bool) (*Engine, *VoicePool, *events.Bus, *fakeClock) {
 	t.Helper()
 	bus := events.NewBus(16)
 	pool, _ := mkPool(1)
 	clock := &fakeClock{t: time.Unix(1000, 0)}
+	modes := map[string]EncryptedMode{}
+	follows := map[string]time.Duration{}
+	for _, sys := range []string{"X", "DMR-EP"} {
+		modes[sys] = mode
+		if follow > 0 {
+			follows[sys] = follow
+		}
+	}
 	e, err := NewEngine(EngineOptions{
-		Bus:                     bus,
-		VoicePool:               pool,
-		Talkgroups:              NewTalkgroupDB(),
-		CallTimeout:             time.Hour,
-		Now:                     clock.Now,
-		EncryptedMode:           mode,
-		EncryptedMetadataFollow: follow,
-		ConfiguredKeys:          keys,
+		Bus:              bus,
+		VoicePool:        pool,
+		Talkgroups:       NewTalkgroupDB(),
+		CallTimeout:      time.Hour,
+		Now:              clock.Now,
+		EncryptedModes:   modes,
+		EncryptedFollows: follows,
+		ConfiguredKeys:   keys,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,5 +216,53 @@ func TestEngineMetadataDisarmsWhenKeyDiscoveredMidCall(t *testing.T) {
 	e.runWatchdog()
 	if got := e.ActiveCalls(); len(got) != 1 {
 		t.Fatalf("discovering a configured key must cancel the release; active = %+v", got)
+	}
+}
+
+// TestEngineMetadataReleasesOnTalkerAlias covers the alias short-circuit
+// (issue #711 follow-up): a metadata-mode call armed for release is torn
+// down immediately when the system's talker alias completes, well before
+// the metadata_follow_ms window would have elapsed.
+func TestEngineMetadataReleasesOnTalkerAlias(t *testing.T) {
+	e, _, bus, clock := mkEncEngine(t, EncryptedMetadata, time.Hour, nil)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	// A Phase 2 grant whose source surfaces mid-call, flagged encrypted —
+	// this arms the metadata release with a long (1h) window.
+	e.HandleGrant(Grant{System: "X", Protocol: "p25-phase2", GroupID: 100, FrequencyHz: 851_000_000})
+	dev := e.ActiveCalls()[0].Device.Serial
+	e.handleCallSourceUpdate(CallSourceUpdate{DeviceSerial: dev, SourceID: 4242, Encrypted: true})
+
+	// The alias completes for this system + source: release immediately,
+	// without advancing the clock anywhere near the follow window.
+	e.handleTalkerAlias(TalkerAlias{System: "X", Protocol: "p25-phase2", SourceID: 4242, Alias: "MEDIC 7"})
+
+	if got := e.ActiveCalls(); len(got) != 0 {
+		t.Fatalf("a completed talker alias should release the armed metadata call; active = %+v", got)
+	}
+	end := drainCallEnd(t, sub, 500*time.Millisecond)
+	if end.Reason != EndReasonEncrypted {
+		t.Errorf("CallEnd.Reason = %v, want EndReasonEncrypted", end.Reason)
+	}
+	_ = clock
+}
+
+// TestEngineFollowIgnoresTalkerAlias guards the short-circuit's scope: a
+// follow-mode call is never armed for release, so a completed alias must
+// not tear it down.
+func TestEngineFollowIgnoresTalkerAlias(t *testing.T) {
+	e, _, bus, _ := mkEncEngine(t, EncryptedFollow, time.Hour, nil)
+	defer bus.Close()
+
+	e.HandleGrant(Grant{System: "X", Protocol: "p25-phase2", GroupID: 100, FrequencyHz: 851_000_000})
+	dev := e.ActiveCalls()[0].Device.Serial
+	e.handleCallSourceUpdate(CallSourceUpdate{DeviceSerial: dev, SourceID: 4242, Encrypted: true})
+
+	e.handleTalkerAlias(TalkerAlias{System: "X", Protocol: "p25-phase2", SourceID: 4242, Alias: "MEDIC 7"})
+
+	if got := e.ActiveCalls(); len(got) != 1 {
+		t.Fatalf("follow mode must keep the call despite a completed alias; active = %+v", got)
 	}
 }

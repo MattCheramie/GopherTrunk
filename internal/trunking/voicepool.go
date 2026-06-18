@@ -354,6 +354,29 @@ func (p *VoicePool) EncryptedReleasesDue(now time.Time) []*ActiveCall {
 	return due
 }
 
+// ArmedCallBySource returns the active call from system originated by
+// sourceID that is currently armed for a metadata-mode encrypted release
+// (EncReleaseAt set), or nil. The engine uses it to short-circuit the
+// metadata-follow window the moment a system's talker alias completes:
+// the metadata we held the tuner for has arrived, so the call can be torn
+// down early. Only armed calls match, so a completed alias never disturbs
+// a follow-mode or clear call. Evaluated under the pool lock so the read
+// stays consistent with concurrent ArmEncryptedRelease / Touch. Issue
+// #711.
+func (p *VoicePool) ArmedCallBySource(system string, sourceID uint32) *ActiveCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, ac := range p.active {
+		if ac.EncReleaseAt.IsZero() {
+			continue
+		}
+		if ac.Grant.System == system && ac.Grant.SourceID == sourceID {
+			return ac
+		}
+	}
+	return nil
+}
+
 // UpdateEncryption backfills ALGID/KID on the active call bound to
 // serial — used by the engine when an in-call Encryption Sync arrives
 // after the original grant (P25 Phase 1 LDU2). Returns a copy of the

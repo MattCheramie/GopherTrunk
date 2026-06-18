@@ -230,6 +230,7 @@ export interface SystemConfig {
   P25BandPlan?: P25BandPlanEntry[] | null;
   DMRBandPlan?: DMRBandPlan | null;
   EncryptionKeys?: EncryptionKey[] | null;
+  EncryptedCalls?: EncryptedCallsConfig;
   // Long-tail protocol decoder knobs (TETRA*, LTR*, P25Phase1/2*, NXDN*,
   // EDACS*, MPT1327*, Motorola*, DStarFEC, DMRInterleavedVoice) round-trip
   // through this index signature and are edited via AdvancedJSON.
@@ -246,7 +247,6 @@ export interface TrunkingConfig {
   CallTimeoutMs: number;
   VoiceHangtimeMs: number;
   VoiceCallGrouping: string;
-  EncryptedCalls: EncryptedCallsConfig;
   Systems: SystemConfig[] | null;
   [k: string]: unknown;
 }

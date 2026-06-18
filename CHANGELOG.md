@@ -22,6 +22,23 @@ for tagged releases.
   recording gigabytes of IQ. It stops early once identity, neighbors, and the
   band plan stop changing (converge-and-stop), capped at the requested time.
 
+### Changed
+- **Encrypted-call handling is now per-system** (#711). The `encrypted_calls`
+  policy (`mode` + `metadata_follow_ms`) moved from the global
+  `trunking.encrypted_calls` key to per-system `trunking.systems[].encrypted_calls`,
+  so an operator can run `metadata` on one system and `follow`/`ignore` on
+  another. **Breaking:** a global `trunking.encrypted_calls` block from v0.4.6
+  no longer takes effect — move it under the relevant `trunking.systems[]`
+  entry. Because it is now per-system config, the setting is applied at startup
+  (restart-required); the runtime API / TUI / settings-PATCH fields for it have
+  been removed.
+- **`metadata` mode releases the voice tuner as soon as the talker alias
+  completes** (#711, building on #376), instead of always holding for the full
+  `metadata_follow_ms`. On P25 Phase 2 the alias arrives during call hangtime as
+  a FACCH-S block sequence; once it fully reassembles the metadata goal is met,
+  so the tuner is freed immediately — `metadata_follow_ms` becomes an upper
+  bound rather than a fixed wall-clock hold.
+
 ### Fixed
 - **P25 identity / band-plan / neighbor accuracy under noise.** Status-broadcast
   accumulation was last-write-wins, so a single corrupt-but-CRC-passing TSBK

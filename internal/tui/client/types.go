@@ -298,9 +298,6 @@ type RuntimeDTO struct {
 	SDRSampleRate int      `json:"sdr_sample_rate"`
 	SDRBackends   []string `json:"sdr_backends"`
 
-	TrunkingEncryptedMode             string `json:"trunking_encrypted_mode"`
-	TrunkingEncryptedMetadataFollowMs int    `json:"trunking_encrypted_metadata_follow_ms"`
-
 	ScannerScanMode          string `json:"scanner_scan_mode"`
 	ScannerCCHuntEnabled     bool   `json:"scanner_cc_hunt_enabled"`
 	ScannerCCHuntDwellMs     int    `json:"scanner_cc_hunt_dwell_ms"`

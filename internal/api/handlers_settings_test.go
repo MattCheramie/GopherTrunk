@@ -37,16 +37,13 @@ func (f *fakeConfigWriter) Path() string { return f.path }
 // fakeSettingsApplier counts hot-reload dispatches per knob so the
 // applied/restart_required classification can be verified.
 type fakeSettingsApplier struct {
-	volCalls    atomic.Int32
-	muteCalls   atomic.Int32
-	scanCalls   atomic.Int32
-	logCalls    atomic.Int32
-	recCalls    atomic.Int32
-	encModeCall atomic.Int32
-	encFollow   atomic.Int32
-	scanErr     error
-	logErr      error
-	encModeErr  error
+	volCalls  atomic.Int32
+	muteCalls atomic.Int32
+	scanCalls atomic.Int32
+	logCalls  atomic.Int32
+	recCalls  atomic.Int32
+	scanErr   error
+	logErr    error
 }
 
 func (a *fakeSettingsApplier) SetLogLevel(level string) error {
@@ -60,13 +57,6 @@ func (a *fakeSettingsApplier) SetRecordingEnabled(e bool) { a.recCalls.Add(1) }
 func (a *fakeSettingsApplier) SetScannerScanMode(m string) error {
 	a.scanCalls.Add(1)
 	return a.scanErr
-}
-func (a *fakeSettingsApplier) SetTrunkingEncryptedMode(m string) error {
-	a.encModeCall.Add(1)
-	return a.encModeErr
-}
-func (a *fakeSettingsApplier) SetTrunkingEncryptedMetadataFollowMs(ms int) {
-	a.encFollow.Add(1)
 }
 
 func TestSettingsPatch_NoWriter(t *testing.T) {
@@ -158,53 +148,6 @@ func TestSettingsPatch_HotAndCold(t *testing.T) {
 	}
 	if got := fw.patches.Load(); got != 1 {
 		t.Errorf("WritePatch calls=%d want 1", got)
-	}
-}
-
-// TestSettingsPatch_TrunkingEncryptedMode verifies the encrypted-call
-// policy is hot-applied through the settings PATCH path (issue #711).
-func TestSettingsPatch_TrunkingEncryptedMode(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	fw := &fakeConfigWriter{path: "/tmp/cfg.yaml"}
-	fa := &fakeSettingsApplier{}
-	base, teardown := mkServer(t, ServerOptions{
-		Bus:             bus,
-		AllowMutations:  true,
-		ConfigWriter:    fw,
-		SettingsApplier: fa,
-	})
-	defer teardown()
-
-	resp := patch(t, base, `{"trunking_encrypted_mode":"metadata","trunking_encrypted_metadata_follow_ms":800}`)
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		buf := new(bytes.Buffer)
-		_, _ = buf.ReadFrom(resp.Body)
-		t.Fatalf("status=%d body=%s", resp.StatusCode, buf.String())
-	}
-	var body SettingsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
-	}
-	if !contains(body.Applied, "trunking.encrypted_calls.mode") {
-		t.Errorf("applied=%v missing trunking.encrypted_calls.mode", body.Applied)
-	}
-	if !contains(body.Applied, "trunking.encrypted_calls.metadata_follow_ms") {
-		t.Errorf("applied=%v missing trunking.encrypted_calls.metadata_follow_ms", body.Applied)
-	}
-	if got := fa.encModeCall.Load(); got != 1 {
-		t.Errorf("SetTrunkingEncryptedMode calls=%d want 1", got)
-	}
-	if got := fa.encFollow.Load(); got != 1 {
-		t.Errorf("SetTrunkingEncryptedMetadataFollowMs calls=%d want 1", got)
-	}
-	p, _ := fw.last.Load().(config.Patch)
-	if p.TrunkingEncryptedMode == nil || *p.TrunkingEncryptedMode != "metadata" {
-		t.Errorf("patch TrunkingEncryptedMode = %v, want metadata", p.TrunkingEncryptedMode)
-	}
-	if p.TrunkingEncryptedMetadataFollowMs == nil || *p.TrunkingEncryptedMetadataFollowMs != 800 {
-		t.Errorf("patch TrunkingEncryptedMetadataFollowMs = %v, want 800", p.TrunkingEncryptedMetadataFollowMs)
 	}
 }
 

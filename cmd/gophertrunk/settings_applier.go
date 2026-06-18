@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -73,32 +72,4 @@ func (a *daemonSettingsApplier) SetScannerScanMode(mode string) error {
 	parsed := trunking.ParseScanMode(mode)
 	a.d.engine.SetScanMode(parsed)
 	return nil
-}
-
-// SetTrunkingEncryptedMode forwards to the engine's SetEncryptedMode so
-// an operator can flip trunking.encrypted_calls.mode at runtime. Rejects
-// values the parser would silently fold into "follow" so a typo surfaces
-// as an error (and is flagged restart-required) instead of quietly
-// re-enabling full following. Issue #711.
-func (a *daemonSettingsApplier) SetTrunkingEncryptedMode(mode string) error {
-	if a.d.engine == nil {
-		return errors.New("engine not running")
-	}
-	switch mode {
-	case "follow", "metadata", "ignore":
-		a.d.engine.SetEncryptedMode(trunking.ParseEncryptedMode(mode))
-		return nil
-	default:
-		return errors.New("encrypted_calls mode must be follow|metadata|ignore")
-	}
-}
-
-// SetTrunkingEncryptedMetadataFollowMs forwards the metadata-follow
-// window to the engine. A non-positive value resets it to the engine
-// default. Issue #711.
-func (a *daemonSettingsApplier) SetTrunkingEncryptedMetadataFollowMs(ms int) {
-	if a.d.engine == nil {
-		return
-	}
-	a.d.engine.SetEncryptedMetadataFollow(time.Duration(ms) * time.Millisecond)
 }
