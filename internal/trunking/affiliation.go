@@ -39,7 +39,20 @@ type Affiliation struct {
 	GroupID           uint32              // talkgroup the unit is joining
 	AnnouncementGroup uint32              // optional announcement-group association (0 if unused)
 	Response          AffiliationResponse // accepted / failed / denied / refused
-	At                time.Time
+	// RFSSID and SiteID identify the P25 site that handled this
+	// affiliation, decoded from the control channel's RFSS Status
+	// Broadcast. Unlike a grant (announced on every site participating
+	// in a wide-area call), an affiliation is handled by the radio's
+	// actual serving site — so these are a genuine RID→site location
+	// fix for mobility tracking (issue #698). NAC is the control
+	// channel's Network Access Code (Phase 2: the NSB Color Code); it
+	// is not unique per site, so consumers must key on (RFSSID, SiteID).
+	// All three stay zero on non-P25 affiliations and until the site's
+	// RFSS Status / Network Status broadcast has been decoded.
+	RFSSID uint8
+	SiteID uint8
+	NAC    uint16
+	At     time.Time
 }
 
 // RegistrationResponse encodes the P25 Unit Registration Response value
@@ -79,7 +92,17 @@ type UnitRegistration struct {
 	WACN     uint32               // 20-bit Wide Area Communications Network ID
 	SystemID uint16               // 12-bit system identifier
 	Response RegistrationResponse // accepted / failed / denied / refused
-	At       time.Time
+	// RFSSID and SiteID identify the P25 site that handled this
+	// registration — the radio's actual serving site, so a genuine
+	// RID→site location fix for mobility tracking (issue #698). NAC is
+	// the control channel's Network Access Code (Phase 2: the NSB Color
+	// Code); not unique per site, so consumers must key on (RFSSID,
+	// SiteID). All three stay zero on non-P25 registrations and until
+	// the site's RFSS Status / Network Status broadcast has decoded.
+	RFSSID uint8
+	SiteID uint8
+	NAC    uint16
+	At     time.Time
 }
 
 // TalkerAlias is published on the events bus when a radio's display

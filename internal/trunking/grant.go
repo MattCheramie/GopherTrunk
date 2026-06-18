@@ -30,6 +30,12 @@ type Grant struct {
 	// non-P25 grants and until the first RFSS Status TSBK has landed.
 	RFSSID uint8
 	SiteID uint8
+	// NAC is the control channel's Network Access Code (Phase 2: the
+	// Network Status Broadcast Color Code, equal to the Phase 1 NAC per
+	// spec). It is a coarse sanity-check field — not unique per site —
+	// so site labelling must key on (RFSSID, SiteID) (issue #698). Zero
+	// on non-P25 grants.
+	NAC uint16
 	// Timeslot identifies the TDMA logical channel a call occupies on
 	// its carrier, 1-based: 0 = not applicable / unknown (P25 Phase 1,
 	// NXDN, analog — frequency alone identifies the call), 1 = TS1,

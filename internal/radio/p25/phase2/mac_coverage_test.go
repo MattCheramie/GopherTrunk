@@ -107,6 +107,80 @@ func TestControlChannelEmitsAffiliationAndRegistration(t *testing.T) {
 	}
 }
 
+// TestControlChannelStampsSiteIdentity confirms that once the Phase 2
+// control channel has decoded a Network Status Broadcast (WACN / System
+// ID / Color Code) and an RFSS Status Broadcast (RFSS / Site), it (a)
+// publishes a KindSiteUpdate so the site surfaces in GET /api/v1/sites,
+// and (b) stamps rfss_id / site_id / nac onto the grant, affiliation,
+// and registration events (issue #698 addendum).
+func TestControlChannelStampsSiteIdentity(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "p2", FrequencyHz: 851_000_000})
+
+	// NSB: LRA=0x07, WACN=0xABCDE, SystemID=0x123, ColorCode(=NAC)=0x293.
+	cc.Ingest(MACPDU{Opcode: OpNetworkStatusBroadcastUpdate,
+		Payload: []byte{0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x29, 0x30, 0x00, 0x00}})
+	// RFSS Status: RFSS=5, Site=9.
+	cc.Ingest(MACPDU{Opcode: OpRFSSStatusBroadcastUpdate,
+		Payload: []byte{0x07, 0x01, 0x23, 0x05, 0x09, 0x00, 0x00}})
+
+	cc.Ingest(grantPDU(0x1234, 0x00ABCD, 0x1, 0x002))
+	cc.Ingest(EncodeGroupAffiliationResponse(GroupAffiliationResponse{
+		Response: 0, GroupAddress: 0x1234, TargetID: 0x00ABCD,
+	}))
+	cc.Ingest(EncodeUnitRegistrationResponse(UnitRegistrationResponse{
+		Response: 0, WACN: 0xABCDE, SystemID: 0x123, SourceID: 0x00BEEF,
+	}))
+
+	var sawSite, sawGrant, sawAff, sawReg bool
+	for {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindSiteUpdate:
+				s := ev.Payload.(trunking.SiteUpdate)
+				if s.RFSSID == 5 && s.SiteID == 9 && s.WACN == 0xABCDE &&
+					s.SystemID == 0x123 && s.ControlChannelHz == 851_000_000 {
+					sawSite = true
+				}
+			case events.KindGrant:
+				g := ev.Payload.(trunking.Grant)
+				if g.RFSSID == 5 && g.SiteID == 9 && g.NAC == 0x293 {
+					sawGrant = true
+				}
+			case events.KindAffiliation:
+				a := ev.Payload.(trunking.Affiliation)
+				if a.RFSSID == 5 && a.SiteID == 9 && a.NAC == 0x293 {
+					sawAff = true
+				}
+			case events.KindUnitRegistration:
+				r := ev.Payload.(trunking.UnitRegistration)
+				if r.RFSSID == 5 && r.SiteID == 9 && r.NAC == 0x293 {
+					sawReg = true
+				}
+			}
+		default:
+			if !sawSite {
+				t.Error("no KindSiteUpdate event carrying the decoded site")
+			}
+			if !sawGrant {
+				t.Error("grant did not carry rfss_id/site_id/nac")
+			}
+			if !sawAff {
+				t.Error("affiliation did not carry rfss_id/site_id/nac")
+			}
+			if !sawReg {
+				t.Error("registration did not carry rfss_id/site_id/nac")
+			}
+			return
+		}
+	}
+}
+
 func TestControlChannelPatchDelete(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
