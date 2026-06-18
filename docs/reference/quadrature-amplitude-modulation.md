@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: Wi-Fi, cable, LTE, broadcast }
 see_also: [phase-shift-keying, frequency-shift-keying, constellation-diagram, signal-to-noise-ratio, iq-data]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Quadrature amplitude modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Quadrature_amplitude_modulation }
 ---

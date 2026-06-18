@@ -13,7 +13,7 @@ infobox:
   - { label: Not, value: Encryption (sequence is public) }
 see_also: [clock-recovery, rc4-cipher, forward-error-correction, demodulation]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Scrambler (Wikipedia)", url: https://en.wikipedia.org/wiki/Scrambler }
 ---

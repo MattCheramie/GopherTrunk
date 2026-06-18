@@ -13,7 +13,7 @@ infobox:
   - { label: Use, value: Isolate a channel, shape pulses }
 see_also: [decimation, cic-filter, root-raised-cosine-filter, matched-filter, digital-down-converter]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Digital filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_filter }
 ---

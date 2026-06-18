@@ -13,7 +13,7 @@ infobox:
   - { label: Announces, value: Grants, affiliations, system info }
 see_also: [trunked-radio, voice-channel, channel-grant, affiliation, talkgroup]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
 ---

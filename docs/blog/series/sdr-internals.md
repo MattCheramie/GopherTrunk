@@ -16,7 +16,7 @@ it, and how that principle shaped the code. Together they form an overview of th
 whole engine; each is also a doorway to a deeper, per-component series.
 
 New to radio first? Start with the
-[Learn RF &amp; SDR]({{ '/learn/' | relative_url }}) path, then come back here for
+[Learn RF &amp; SDR]({{ '/learn/rf-sdr/' | relative_url }}) path, then come back here for
 the implementation.
 
 {%- assign parts = site.posts | where: "series", "SDR Internals" | sort: "series_part" -%}

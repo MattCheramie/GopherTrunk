@@ -358,6 +358,7 @@ export function Hunt() {
                 <th>Hex</th>
                 <th>Encrypted</th>
                 <th>Activity</th>
+                <th>Frequencies</th>
               </tr>
             </thead>
             <tbody>
@@ -367,6 +368,11 @@ export function Hunt() {
                   <td>{tg.hex}</td>
                   <td>{tg.encrypted ? "🔒" : "—"}</td>
                   <td>{tg.count}</td>
+                  <td>
+                    {tg.frequencies && tg.frequencies.length > 0
+                      ? tg.frequencies.map((h) => (h / 1e6).toFixed(4)).join(", ")
+                      : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -384,6 +390,7 @@ export function Hunt() {
                 <th>RFSS</th>
                 <th>Control channels</th>
                 <th>Neighbors</th>
+                <th>Voice channels</th>
               </tr>
             </thead>
             <tbody>
@@ -408,6 +415,11 @@ export function Hunt() {
                               : id;
                           })
                           .join(", ")
+                      : "—"}
+                  </td>
+                  <td>
+                    {site.voice_channels && site.voice_channels.length > 0
+                      ? site.voice_channels.map((h) => (h / 1e6).toFixed(4)).join(", ")
                       : "—"}
                   </td>
                 </tr>

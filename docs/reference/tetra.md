@@ -18,8 +18,8 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [trunked-radio, tdma, phase-shift-keying, control-channel, etsi]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Terrestrial Trunked Radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio }
 ---

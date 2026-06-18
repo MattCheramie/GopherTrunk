@@ -13,7 +13,7 @@ infobox:
   - { label: Use, value: Large-ratio rate change }
 see_also: [decimation, digital-filter, sample-rate, digital-down-converter]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Cascaded integrator–comb filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Cascaded_integrator%E2%80%93comb_filter }
 ---

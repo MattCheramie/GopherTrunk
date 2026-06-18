@@ -9,7 +9,7 @@ aka: [DTMF, touch-tone, "dual-tone multi-frequency"]
 autolink: true
 see_also: [fast-fourier-transform, mdc1200]
 related_lessons:
-  - { title: "Anatomy of a signal", url: /learn/signal-anatomy/ }
+  - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
 external:
   - { title: "DTMF (Wikipedia)", url: https://en.wikipedia.org/wiki/Dual-tone_multi-frequency_signaling }
 ---

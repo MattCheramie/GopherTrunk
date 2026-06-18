@@ -9,7 +9,7 @@ aka: ["John Costas", "John P. Costas"]
 autolink: true
 see_also: [costas-loop, phase-shift-keying, single-sideband, demodulation]
 related_lessons:
-  - { title: "Clock recovery & symbol timing", url: /learn/clock-recovery/ }
+  - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
 external:
   - { title: "John P. Costas (Wikipedia)", url: https://en.wikipedia.org/wiki/John_P._Costas_(engineer) }
 ---

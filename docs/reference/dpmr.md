@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [nxdn, frequency-shift-keying, ambe-plus-2, etsi, fdma]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "dPMR (Wikipedia)", url: https://en.wikipedia.org/wiki/DPMR }
 ---

@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **P25 discovery now decodes WACN / System ID / RFSS / Site / neighbors
+  correctly.** The Phase 1 Network-, RFSS-, and Adjacent-Site Status
+  Broadcast TSBK parsers were dropping the leading LRA byte, so every
+  field read one byte early — WACN and System ID came out wrong, RFSS/Site
+  read as 0, and advertised neighbors showed garbled IDs with no resolvable
+  frequency. The parsers now follow the TIA-102.AABF layout (matching the
+  repo's independent Phase 2 decoders), which also corrects the `rfss_id` /
+  `site_id` labels on `grant` events and `KindSiteUpdate`.
+
 ### Added
 - **Configurable handling of encrypted calls** (#711). A new
   `trunking.encrypted_calls.mode` selects how the engine spends scarce
@@ -23,6 +33,11 @@ for tagged releases.
   SIGHUP reload — no daemon restart required. This stops a few long
   encrypted calls from exhausting the tuner pool and dropping clear
   traffic with `no voice device available for grant`.
+- **Voice-channel frequencies in the Hunt discovery view.** The discovery
+  model now records the band-plan-resolved voice/traffic frequency of every
+  grant, surfaced both per-talkgroup (a Frequencies column) and per-site (a
+  Voice channels column) in the Hunt panel, and in the `system` JSON as
+  `talkgroups[].frequencies` and `sites[].voice_channels`.
 - **P25 site identity in grant events and a `/api/v1/sites` endpoint**
   (#698). Every `grant` event now carries `rfss_id` / `site_id`,
   decoded from the camped site's RFSS Status Broadcast, so downstream

@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25, DMR, storage, broadcast }
 see_also: [forward-error-correction, bch-code, golay-code, interleaving]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Reed–Solomon error correction (Wikipedia)", url: https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction }
 ---

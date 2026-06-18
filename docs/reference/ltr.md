@@ -16,7 +16,7 @@ infobox:
   - { label: GopherTrunk support, value: See Status }
 see_also: [trunked-radio, control-channel, motorola-type-ii, edacs, mpt-1327]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Logic Trunked Radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Logic_Trunked_Radio }
 ---

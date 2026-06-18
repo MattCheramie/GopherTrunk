@@ -9,7 +9,7 @@ aka: [GFSK, Gaussian FSK]
 autolink: true
 see_also: [frequency-shift-keying, gmsk, pulse-shaping, ais]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying#Gaussian_frequency-shift_keying }
 ---

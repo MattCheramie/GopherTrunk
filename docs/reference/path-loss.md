@@ -13,8 +13,8 @@ infobox:
   - { label: Grows with, value: Distance and frequency }
 see_also: [attenuation, radio-propagation, decibel, signal-to-noise-ratio]
 related_lessons:
-  - { title: "How signals travel", url: /learn/propagation/ }
-  - { title: "Decibels & signal power", url: /learn/decibels/ }
+  - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
+  - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
 external:
   - { title: "Path loss (Wikipedia)", url: https://en.wikipedia.org/wiki/Path_loss }
 ---

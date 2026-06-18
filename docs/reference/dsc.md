@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [ais, ffsk, frequency-shift-keying, itu]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Digital selective calling (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_selective_calling }
   - { title: "GopherTrunk DSC decoder", url: /dsc.html }

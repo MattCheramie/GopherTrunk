@@ -13,7 +13,7 @@ infobox:
   - { label: Uses, value: Numerically controlled oscillator }
 see_also: [local-oscillator, decimation, digital-filter, iq-data, demodulation]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Digital down converter (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_down_converter }
 ---

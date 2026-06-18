@@ -13,7 +13,7 @@ infobox:
   - { label: Trade-off, value: More gain = narrower pattern }
 see_also: [antenna, dipole-antenna, decibel, radio-propagation]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Antenna gain (Wikipedia)", url: https://en.wikipedia.org/wiki/Antenna_gain }
 ---

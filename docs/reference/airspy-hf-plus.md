@@ -13,7 +13,7 @@ infobox:
   - { label: Range, value: ~9 kHz – 31 MHz, 60–260 MHz }
 see_also: [airspy, rtl-sdr, upconverter, ionospheric-propagation, frequency-bands]
 related_lessons:
-  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/sdr-hardware/ }
+  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 external:
   - { title: "Airspy (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio }
 ---

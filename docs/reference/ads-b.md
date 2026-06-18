@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [ais, compact-position-reporting, cyclic-redundancy-check, icao]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Automatic Dependent Surveillance–Broadcast (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast }
   - { title: "GopherTrunk ADS-B decoder", url: /adsb.html }

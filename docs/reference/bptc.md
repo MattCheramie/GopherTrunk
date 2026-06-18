@@ -9,7 +9,7 @@ aka: ["BPTC", "BPTC(196,96)", "block product turbo code"]
 autolink: true
 see_also: [forward-error-correction, hamming-code, interleaving, dmr, csbk]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
 ---

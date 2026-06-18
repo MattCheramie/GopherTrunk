@@ -14,7 +14,7 @@ infobox:
   - { label: Predicted, value: Electromagnetic waves }
 see_also: [heinrich-hertz, electromagnetic-spectrum, radio-wave]
 related_lessons:
-  - { title: "What is a radio wave?", url: /learn/radio-waves/ }
+  - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
 external:
   - { title: "James Clerk Maxwell (Wikipedia)", url: https://en.wikipedia.org/wiki/James_Clerk_Maxwell }
 ---

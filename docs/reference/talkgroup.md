@@ -13,7 +13,7 @@ infobox:
   - { label: You follow, value: Talkgroups, not frequencies }
 see_also: [trunked-radio, control-channel, voice-channel, radio-id, affiliation]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Talkgroup (Wikipedia)", url: https://en.wikipedia.org/wiki/Talkgroup }
 ---

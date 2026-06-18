@@ -2,33 +2,37 @@
 layout: default
 ---
 {%- comment -%}
-  Landing page for the RF & SDR learning path. Renders the module/lesson
-  grid from _data/learn.yml and a localStorage-backed progress bar
-  (progressively enhanced by assets/js/learn.js). Emits Course + ItemList
-  structured data for SEO / AI search.
+  Hub landing page for one learning path. The page selects its path with
+  `learn_path:` in front matter. Renders the module/lesson grid from
+  _data/learn.yml and a localStorage-backed progress bar (progressively
+  enhanced by assets/js/learn.js). Emits Course + ItemList structured data.
 {%- endcomment -%}
-{%- assign learn = site.data.learn -%}
+{%- assign p = site.data.learn.paths | where: "id", page.learn_path | first -%}
+{%- assign base = '/learn/' | append: p.id | append: '/' -%}
 {%- assign total = 0 -%}
-{%- for mod in learn.modules -%}{%- assign total = total | plus: mod.lessons.size -%}{%- endfor -%}
+{%- for mod in p.modules -%}{%- assign total = total | plus: mod.lessons.size -%}{%- endfor -%}
 
 <main id="content" class="page" role="main">
   <div class="container" data-cta-host>
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
-        <li><span aria-current="page">Learn RF &amp; SDR</span></li>
+        <li><a href="{{ '/learn/' | relative_url }}">Learn</a></li>
+        <li><span aria-current="page">{{ p.label }}</span></li>
       </ol>
     </nav>
 
     <header class="learn-hero">
       <h1 class="learn-hero__title">{{ page.title }}</h1>
-      <p class="learn-hero__lede">{{ learn.intro }}</p>
+      <p class="learn-hero__lede">{{ p.intro }}</p>
       <div class="learn-hero__cta">
-        <a class="btn btn--primary" href="{{ '/learn/radio-waves/' | relative_url }}">Start lesson 1 &rarr;</a>
-        <a class="btn btn--ghost" href="{{ '/learn/glossary/' | relative_url }}">Jump to glossary</a>
+        <a class="btn btn--primary" href="{{ base | append: p.start_slug | append: '/' | relative_url }}">Start lesson 1 &rarr;</a>
+        {%- if p.glossary -%}
+          <a class="btn btn--ghost" href="{{ base | append: 'glossary/' | relative_url }}">Jump to glossary</a>
+        {%- endif -%}
       </div>
 
-      <div class="progress" data-progress data-total="{{ total }}" hidden>
+      <div class="progress" data-progress data-path="{{ p.id }}" data-total="{{ total }}" hidden>
         <div class="progress__track"><div class="progress__bar" data-progress-bar></div></div>
         <p class="progress__label"><span data-progress-count>0</span> of {{ total }} lessons complete · <button type="button" class="progress__reset" data-progress-reset>reset</button></p>
       </div>
@@ -39,7 +43,7 @@ layout: default
     </article>
 
     <div class="learn-modules">
-      {%- for mod in learn.modules -%}
+      {%- for mod in p.modules -%}
         <section class="learn-module" id="{{ mod.id }}">
           <div class="learn-module__head">
             <h2 class="learn-module__title">{{ mod.label }}</h2>
@@ -47,8 +51,8 @@ layout: default
           </div>
           <ol class="learn-grid">
             {%- for lesson in mod.lessons -%}
-              {%- assign lesson_url = '/learn/' | append: lesson.slug | append: '/' -%}
-              <li class="learn-card{% if lesson.status == 'stub' %} learn-card--stub{% endif %}" data-lesson="{{ lesson.slug }}">
+              {%- assign lesson_url = base | append: lesson.slug | append: '/' -%}
+              <li class="learn-card{% if lesson.status == 'stub' %} learn-card--stub{% endif %}" data-lesson="{{ p.id }}/{{ lesson.slug }}">
                 <a class="learn-card__link" href="{{ lesson_url | relative_url }}">
                   <span class="learn-card__check" data-lesson-check aria-hidden="true"></span>
                   <span class="learn-card__body">
@@ -67,19 +71,21 @@ layout: default
         </section>
       {%- endfor -%}
 
-      <section class="learn-module" id="glossary-card">
-        <ol class="learn-grid">
-          <li class="learn-card learn-card--glossary" data-lesson="{{ learn.glossary.slug }}">
-            <a class="learn-card__link" href="{{ '/learn/glossary/' | relative_url }}">
-              <span class="learn-card__check" data-lesson-check aria-hidden="true"></span>
-              <span class="learn-card__body">
-                <span class="learn-card__title">{{ learn.glossary.title }}</span>
-                <span class="learn-card__summary">{{ learn.glossary.summary }}</span>
-              </span>
-            </a>
-          </li>
-        </ol>
-      </section>
+      {%- if p.glossary -%}
+        <section class="learn-module" id="glossary-card">
+          <ol class="learn-grid">
+            <li class="learn-card learn-card--glossary" data-lesson="{{ p.id }}/{{ p.glossary.slug }}">
+              <a class="learn-card__link" href="{{ base | append: 'glossary/' | relative_url }}">
+                <span class="learn-card__check" data-lesson-check aria-hidden="true"></span>
+                <span class="learn-card__body">
+                  <span class="learn-card__title">{{ p.glossary.title }}</span>
+                  <span class="learn-card__summary">{{ p.glossary.summary }}</span>
+                </span>
+              </a>
+            </li>
+          </ol>
+        </section>
+      {%- endif -%}
     </div>
 
     {%- include page-ctas.html -%}
@@ -91,8 +97,8 @@ layout: default
   "@context": "https://schema.org",
   "@type": "Course",
   "name": {{ page.title | jsonify }},
-  "description": {{ learn.intro | strip_newlines | jsonify }},
-  "url": {{ '/learn/' | absolute_url | jsonify }},
+  "description": {{ p.intro | strip_newlines | jsonify }},
+  "url": {{ base | absolute_url | jsonify }},
   "provider": {
     "@type": "Organization",
     "name": {{ site.title | jsonify }},
@@ -101,7 +107,7 @@ layout: default
   "hasCourseInstance": {
     "@type": "CourseInstance",
     "courseMode": "online",
-    "courseWorkload": "PT6H"
+    "courseWorkload": {{ p.workload | jsonify }}
   }
 }
 </script>
@@ -109,17 +115,17 @@ layout: default
 {
   "@context": "https://schema.org",
   "@type": "ItemList",
-  "name": "GopherTrunk RF & SDR lessons",
+  "name": {{ page.title | append: ' lessons' | jsonify }},
   "itemListElement": [
     {%- assign n = 0 -%}
-    {%- for mod in learn.modules -%}
+    {%- for mod in p.modules -%}
       {%- for lesson in mod.lessons -%}
         {%- assign n = n | plus: 1 -%}
         {
           "@type": "ListItem",
           "position": {{ n }},
           "name": {{ lesson.title | jsonify }},
-          "url": {{ '/learn/' | append: lesson.slug | append: '/' | absolute_url | jsonify }}
+          "url": {{ base | append: lesson.slug | append: '/' | absolute_url | jsonify }}
         }{%- unless n == total -%},{%- endunless -%}
       {%- endfor -%}
     {%- endfor -%}

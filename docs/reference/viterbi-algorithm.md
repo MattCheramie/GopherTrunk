@@ -13,7 +13,7 @@ infobox:
   - { label: Named for, value: Andrew Viterbi }
 see_also: [convolutional-code, trellis-coded-modulation, forward-error-correction, andrew-viterbi, m17]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Viterbi algorithm (Wikipedia)", url: https://en.wikipedia.org/wiki/Viterbi_algorithm }
 ---

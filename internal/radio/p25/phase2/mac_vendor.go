@@ -38,20 +38,28 @@ const (
 	// name (talker alias). Both Motorola (MFID 0x90) and Harris
 	// (MFID 0xA4) emit it; AsTalkerAliasFragment decodes either.
 	//
-	// CORRECTION PENDING (#376): this 0x82 value and the plain-ASCII
-	// payload in talker_alias.go are a speculative working model. On-air
-	// SDRTrunk decode of Victorian MMR shows the real Motorola Phase 2
-	// alias rides on FACCH-S during hangtime as a HEADER opcode 0x91 +
-	// DATA opcodes 0x95 (MFID 0x90), cipher-obfuscated (the same
-	// Motorola alias cipher as phase1/motorola_alias_cipher.go) with a
-	// CRC-16 tail, and carries the source RID inline in the header.
-	// Correct the opcode + framing here against the fixtures before
-	// trusting any Phase 2 alias decode.
+	// OpVendorTalkerAlias is a speculative working model (0x82,
+	// plain-ASCII) retained only because the Phase 2 control-channel
+	// dispatch (control.go) and encode.go still reference it; it never
+	// matches real air. The real Motorola Phase 2 alias is decoded by
+	// the OpMotorolaAlias{Header,Data} path below.
 	OpVendorTalkerAlias Opcode = 0x82
 	// OpMotorolaPatchDelete is the Motorola group-regroup delete
 	// command (MOT_GRG_DEL_CMD, MFID 0x90): it cancels a patch
 	// super-group that an earlier OpVendorGroupRegroup established.
 	OpMotorolaPatchDelete Opcode = 0x83
+
+	// OpMotorolaAliasHeader / OpMotorolaAliasData carry the real
+	// Motorola Phase 2 talker alias (#376). SDRTrunk ground truth on
+	// Victorian MMR shows it rides on FACCH-S during hangtime as a
+	// HEADER opcode 0x91 + DATA opcodes 0x95 (MFID 0x90). The fragments
+	// reassemble to the same Motorola message framing as Phase 1
+	// (WACN|System|RadioID|cipher-alias|CRC-16) — so the inline source
+	// RID falls out of the reassembled prefix and the shared
+	// internal/radio/p25/motorola decode applies. See talker_alias.go's
+	// AsMotorolaAliasHeader / AsMotorolaAliasData + MotorolaAliasAssembler.
+	OpMotorolaAliasHeader Opcode = 0x91
+	OpMotorolaAliasData   Opcode = 0x95
 )
 
 // ManufacturerName returns a human-readable label for an MFID.

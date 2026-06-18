@@ -11,8 +11,8 @@ infobox:
   - { label: Families, value: Analog (AM/FM/SSB), digital (FSK/PSK/QAM) }
 see_also: [carrier-wave, amplitude-modulation, frequency-modulation, phase-shift-keying, frequency-shift-keying, quadrature-amplitude-modulation]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Modulation }
 ---

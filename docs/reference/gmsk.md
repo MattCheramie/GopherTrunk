@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: AIS, GSM, D-STAR }
 see_also: [frequency-shift-keying, ais, d-star, root-raised-cosine-filter]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
 external:
   - { title: "Minimum-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Minimum-shift_keying }
 ---

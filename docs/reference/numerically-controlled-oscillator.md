@@ -9,7 +9,7 @@ aka: [NCO, "numerically controlled oscillator", DDS]
 autolink: true
 see_also: [digital-down-converter, local-oscillator, decimation, iq-data]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Numerically controlled oscillator (Wikipedia)", url: https://en.wikipedia.org/wiki/Numerically-controlled_oscillator }
 ---

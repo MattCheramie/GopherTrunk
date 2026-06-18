@@ -13,7 +13,7 @@ infobox:
   - { label: Decoded by, value: Viterbi algorithm }
 see_also: [viterbi-algorithm, forward-error-correction, trellis-coded-modulation, m17]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Convolutional code (Wikipedia)", url: https://en.wikipedia.org/wiki/Convolutional_code }
 ---

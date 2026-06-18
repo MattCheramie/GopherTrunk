@@ -13,7 +13,7 @@ infobox:
   - { label: Used for, value: Shortwave broadcast, aviation airband }
 see_also: [modulation, frequency-modulation, single-sideband, carrier-wave]
 related_lessons:
-  - { title: "Analog modulation — AM, FM, SSB", url: /learn/analog-modulation/ }
+  - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
 external:
   - { title: "Amplitude modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Amplitude_modulation }
 ---

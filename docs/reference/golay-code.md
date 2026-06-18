@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: DMR, P25, M17 }
 see_also: [forward-error-correction, hamming-code, reed-solomon-code, dmr, m17]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Binary Golay code (Wikipedia)", url: https://en.wikipedia.org/wiki/Binary_Golay_code }
 ---

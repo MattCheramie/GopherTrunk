@@ -13,7 +13,7 @@ infobox:
   - { label: Effects, value: Fading, symbol smearing }
 see_also: [radio-propagation, cma-equalizer, clock-recovery, radio-horizon]
 related_lessons:
-  - { title: "How signals travel", url: /learn/propagation/ }
+  - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
 external:
   - { title: "Multipath propagation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multipath_propagation }
 ---

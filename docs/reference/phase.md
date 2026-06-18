@@ -11,7 +11,7 @@ infobox:
   - { label: Encoded by, value: IQ angle }
 see_also: [amplitude, iq-data, phase-shift-keying, constellation-diagram]
 related_lessons:
-  - { title: "IQ data & complex signals", url: /learn/iq-data/ }
+  - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
 external:
   - { title: "Phase (waves) (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase_(waves) }
 ---

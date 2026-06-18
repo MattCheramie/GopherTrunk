@@ -9,7 +9,7 @@ aka: [Zadig, WinUSB]
 autolink: true
 see_also: [rtl-sdr, rtl2832u, rtl-tcp, soapysdr]
 related_lessons:
-  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/sdr-hardware/ }
+  - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
 external:
   - { title: "Zadig", url: https://zadig.akeo.ie/ }
 ---

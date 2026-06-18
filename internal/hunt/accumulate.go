@@ -124,11 +124,25 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 	}
 
 	// Talkgroups: every grant's destination group is an observed talkgroup.
+	// A grant also names the voice/traffic channel it was granted on — record
+	// its frequency on both the talkgroup and the camped site. The decoder
+	// usually resolves FrequencyHz at grant time (the band plan was already
+	// primed); fall back to the accumulated band plan for grants whose channel
+	// ID only resolved on a later capture.
 	for _, g := range obs.Result.Grants {
 		if g.GroupID == 0 {
 			continue
 		}
-		dst.addTalkgroup(g.GroupID, g.Encrypted, at)
+		freqHz := g.FrequencyHz
+		if freqHz == 0 {
+			if hz, ok := dst.bandPlanFreq(g.ChannelID, g.ChannelNum); ok {
+				freqHz = hz
+			}
+		}
+		dst.addTalkgroup(g.GroupID, g.Encrypted, freqHz, at)
+		if freqHz != 0 {
+			dst.addVoiceChannel(rfss, site, freqHz)
+		}
 	}
 }
 

@@ -13,7 +13,7 @@ infobox:
   - { label: Key specs, value: Resonance, gain, polarization, SWR }
 see_also: [dipole-antenna, antenna-gain, polarization, standing-wave-ratio, wavelength]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Antenna (radio) (Wikipedia)", url: https://en.wikipedia.org/wiki/Antenna_(radio) }
 ---

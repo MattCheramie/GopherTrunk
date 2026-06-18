@@ -13,7 +13,7 @@ infobox:
   - { label: Enables, value: Worldwide HF "skip" }
 see_also: [radio-propagation, frequency-bands, airspy-hf-plus]
 related_lessons:
-  - { title: "Frequency, bands & the spectrum", url: /learn/frequency-and-spectrum/ }
+  - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
 external:
   - { title: "Skywave (Wikipedia)", url: https://en.wikipedia.org/wiki/Skywave }
 ---

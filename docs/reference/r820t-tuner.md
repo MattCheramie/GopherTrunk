@@ -14,7 +14,7 @@ infobox:
   - { label: Range, value: ~24 MHz – 1.7 GHz }
 see_also: [rtl-sdr, rtl2832u, superheterodyne-receiver, local-oscillator]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "RTL-SDR (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR }
 ---

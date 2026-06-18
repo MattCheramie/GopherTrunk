@@ -14,7 +14,7 @@ infobox:
   - { label: Feature, value: Half-rate operation }
 see_also: [vocoder, imbe, ambe, dmr, p25-phase-2, nxdn, dvsi]
 related_lessons:
-  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/vocoders/ }
+  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
 external:
   - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
 ---

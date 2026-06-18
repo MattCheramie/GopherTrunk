@@ -9,7 +9,7 @@ aka: [IIR, "infinite impulse response filter"]
 autolink: true
 see_also: [fir-filter, digital-filter, automatic-gain-control]
 related_lessons:
-  - { title: "Filtering & decimation", url: /learn/filtering-decimation/ }
+  - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
 external:
   - { title: "Infinite impulse response (Wikipedia)", url: https://en.wikipedia.org/wiki/Infinite_impulse_response }
 ---

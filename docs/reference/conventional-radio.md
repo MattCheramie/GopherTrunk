@@ -13,7 +13,7 @@ infobox:
   - { label: Contrast, value: Trunked radio }
 see_also: [trunked-radio, voice-channel, frequency]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Two-way radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Two-way_radio }
 ---

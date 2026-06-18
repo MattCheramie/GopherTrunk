@@ -13,7 +13,7 @@ infobox:
   - { label: Prevented by, value: Anti-alias filter + adequate rate }
 see_also: [nyquist-theorem, sample-rate, decimation, digital-filter]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Aliasing (Wikipedia)", url: https://en.wikipedia.org/wiki/Aliasing }
 ---

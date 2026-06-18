@@ -13,7 +13,7 @@ infobox:
   - { label: Key spec, value: Noise figure }
 see_also: [noise-floor, signal-to-noise-ratio, superheterodyne-receiver, bias-tee, antenna]
 related_lessons:
-  - { title: "How an SDR receiver works", url: /learn/sdr-receiver/ }
+  - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
 external:
   - { title: "Low-noise amplifier (Wikipedia)", url: https://en.wikipedia.org/wiki/Low-noise_amplifier }
 ---

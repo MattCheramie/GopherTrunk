@@ -13,7 +13,7 @@ infobox:
   - { label: Use, value: Clock recovery for digital modems }
 see_also: [clock-recovery, mueller-muller-timing-recovery, symbol-rate, demodulation]
 related_lessons:
-  - { title: "Clock recovery & symbol timing", url: /learn/clock-recovery/ }
+  - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
 external:
   - { title: "Gardner (timing recovery) (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_synchronization }
 ---

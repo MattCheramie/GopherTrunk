@@ -13,7 +13,7 @@ infobox:
   - { label: Relation, value: "bit rate = baud × bits/symbol" }
 see_also: [frequency-shift-keying, phase-shift-keying, quadrature-amplitude-modulation, bandwidth, clock-recovery]
 related_lessons:
-  - { title: "Symbols, baud & bitrate", url: /learn/symbols-and-baud/ }
+  - { title: "Symbols, baud & bitrate", url: /learn/rf-sdr/symbols-and-baud/ }
 external:
   - { title: "Symbol rate (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_rate }
 ---

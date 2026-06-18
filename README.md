@@ -36,7 +36,7 @@ Completed calls stream to Broadcastify Calls, RdioScanner, OpenMHz,
 and live Icecast / ShoutCast mountpoints out of the box. Why does
 this exist? Read **[The Story of GopherTrunk](https://gophertrunk.org/story.html)**.
 
-> **New to radio or SDR?** Start with the **[Learn RF & SDR path](https://gophertrunk.org/learn/)** —
+> **New to radio or SDR?** Start with the **[Learn RF & SDR path](https://gophertrunk.org/learn/rf-sdr/)** —
 > a free, structured course that takes you from "what is a radio wave?" to decoding
 > digital trunked systems with GopherTrunk, one short lesson at a time.
 

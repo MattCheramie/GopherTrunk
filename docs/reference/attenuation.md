@@ -13,7 +13,7 @@ infobox:
   - { label: Causes, value: Distance, cable, obstacles, filters }
 see_also: [path-loss, decibel, radio-propagation, antenna]
 related_lessons:
-  - { title: "How signals travel", url: /learn/propagation/ }
+  - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
 external:
   - { title: "Attenuation (Wikipedia)", url: https://en.wikipedia.org/wiki/Attenuation }
 ---

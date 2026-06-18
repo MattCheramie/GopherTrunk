@@ -46,13 +46,14 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	defer bus.Close()
 	cc := New(Options{Bus: bus, SystemName: "S"})
 
-	// NSB payload: WACN 0xABCDE (p0<<12|p1<<4|p2>>4), SystemID 0x123
-	// ((p2&0x0F)<<8|p3) — see ParseNetworkStatusBroadcast.
+	// NSB payload: LRA p0, WACN 0xABCDE (p1<<12|p2<<4|p3>>4), SystemID
+	// 0x123 ((p3&0x0F)<<8|p4) — see ParseNetworkStatusBroadcast.
 	nsb := TSBK{Opcode: OpNetworkStatusBroadcast,
-		Payload: [8]byte{0xAB, 0xCD, 0xE1, 0x23}}
-	// RFSS payload: LRA p0, RFSS p2, Site p3 — see ParseRFSSStatusBroadcast.
+		Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23}}
+	// RFSS payload: LRA p0, SystemID p1-2, RFSS p3, Site p4 —
+	// see ParseRFSSStatusBroadcast.
 	rfss := TSBK{Opcode: OpRFSSStatusBroadcast,
-		Payload: [8]byte{9, 0, 4, 7}}
+		Payload: [8]byte{9, 0x01, 0x23, 4, 7}}
 	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast,
 		Payload: AssembleAdjacentSiteStatusBroadcast(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})}
 
@@ -85,8 +86,8 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 	cc := New(Options{Bus: bus, SystemName: "MMR", FrequencyHz: ccHz})
 
 	// NSB first so WACN/SystemID are populated, then RFSS to name the site.
-	nsb := TSBK{Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0xAB, 0xCD, 0xE1, 0x23}}
-	rfss := TSBK{Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{9, 0, 4, 7}}
+	nsb := TSBK{Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23}}
+	rfss := TSBK{Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{9, 0x01, 0x23, 4, 7}}
 	base := 0
 	for _, tsbk := range []TSBK{nsb, rfss} {
 		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
@@ -110,9 +111,9 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 			if u.ControlChannelHz != ccHz {
 				t.Fatalf("control_channel_hz = %d, want %d", u.ControlChannelHz, ccHz)
 			}
-			// WACN comes from the NSB; the RFSS Status Broadcast then sets
-			// SystemID from its own field (p1/p2 → 4 for this payload).
-			if u.WACN != 0xABCDE || u.SystemID != 4 {
+			// WACN comes from the NSB; both the NSB and the RFSS Status
+			// Broadcast carry SystemID 0x123 for these payloads.
+			if u.WACN != 0xABCDE || u.SystemID != 0x123 {
 				t.Fatalf("site update network ids wrong: %+v", u)
 			}
 			return

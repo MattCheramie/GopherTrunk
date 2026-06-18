@@ -13,7 +13,7 @@ infobox:
   - { label: Used for, value: PSK/QAM coherent demodulation }
 see_also: [phase-shift-keying, phase, demodulation, cma-equalizer, ppm-frequency-correction]
 related_lessons:
-  - { title: "Tuning for a clean lock", url: /learn/tuning-with-scopes/ }
+  - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
 external:
   - { title: "Costas loop (Wikipedia)", url: https://en.wikipedia.org/wiki/Costas_loop }
 ---

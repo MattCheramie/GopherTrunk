@@ -13,7 +13,7 @@ infobox:
   - { label: Formula, value: "signal (dBm) − noise floor (dBm)" }
 see_also: [noise-floor, decibel, dbm, demodulation]
 related_lessons:
-  - { title: "Decibels & signal power", url: /learn/decibels/ }
+  - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
 external:
   - { title: "Signal-to-noise ratio (Wikipedia)", url: https://en.wikipedia.org/wiki/Signal-to-noise_ratio }
 ---

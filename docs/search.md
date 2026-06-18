@@ -29,7 +29,7 @@ search: false
 
 <noscript>
 Search needs JavaScript. You can still browse the
-[learning path](/learn/), the [glossary](/learn/glossary/), or use your
+[learning path](/learn/rf-sdr/), the [glossary](/learn/rf-sdr/glossary/), or use your
 browser's find on any page.
 </noscript>
 

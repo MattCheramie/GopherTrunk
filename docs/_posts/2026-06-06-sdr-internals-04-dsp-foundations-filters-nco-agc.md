@@ -41,7 +41,7 @@ the band. Four primitives fix that:
   ([reference]({{ '/reference/resampler/' | relative_url }}))
 
 The learn-path lesson
-[Filtering & decimation]({{ '/learn/filtering-decimation/' | relative_url }})
+[Filtering & decimation]({{ '/learn/rf-sdr/filtering-decimation/' | relative_url }})
 covers the theory; this post is about the code.
 
 ## How GopherTrunk implements it in Go

@@ -17,7 +17,7 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [ax25, afsk, mueller-muller-timing-recovery, cyclic-redundancy-check]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Automatic Packet Reporting System (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_Packet_Reporting_System }
   - { title: "GopherTrunk APRS decoder", url: /aprs.html }

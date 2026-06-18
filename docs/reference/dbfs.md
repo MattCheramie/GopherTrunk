@@ -13,7 +13,7 @@ infobox:
   - { label: Risk at 0 dBFS, value: Clipping / distortion }
 see_also: [decibel, dbm, analog-to-digital-converter, automatic-gain-control]
 related_lessons:
-  - { title: "Gain, AGC & avoiding overload", url: /learn/gain-and-agc/ }
+  - { title: "Gain, AGC & avoiding overload", url: /learn/rf-sdr/gain-and-agc/ }
 external:
   - { title: "dBFS (Wikipedia)", url: https://en.wikipedia.org/wiki/DBFS }
 ---

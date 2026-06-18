@@ -9,7 +9,7 @@ aka: ["Floyd Gardner", "Floyd M. Gardner", "Fred Gardner"]
 autolink: true
 see_also: [gardner-timing-recovery, clock-recovery, mueller-muller-timing-recovery]
 related_lessons:
-  - { title: "Clock recovery & symbol timing", url: /learn/clock-recovery/ }
+  - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
 external:
   - { title: "Floyd M. Gardner (Wikipedia)", url: https://en.wikipedia.org/wiki/Floyd_M._Gardner }
 ---

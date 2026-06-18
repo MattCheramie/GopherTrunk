@@ -9,7 +9,7 @@ aka: [baseband, "complex baseband"]
 autolink: true
 see_also: [iq-data, intermediate-frequency, local-oscillator, dc-offset]
 related_lessons:
-  - { title: "IQ data & complex signals", url: /learn/iq-data/ }
+  - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
 external:
   - { title: "Baseband (Wikipedia)", url: https://en.wikipedia.org/wiki/Baseband }
 ---

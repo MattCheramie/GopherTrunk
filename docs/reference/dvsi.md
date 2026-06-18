@@ -13,7 +13,7 @@ infobox:
   - { label: Note, value: Patented/licensed codecs }
 see_also: [vocoder, imbe, ambe, ambe-plus-2, multi-band-excitation]
 related_lessons:
-  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/vocoders/ }
+  - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
 external:
   - { title: "Digital Voice Systems (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
 ---

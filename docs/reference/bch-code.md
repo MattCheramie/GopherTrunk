@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: POCSAG, FLEX, DSC }
 see_also: [forward-error-correction, hamming-code, reed-solomon-code, pocsag, dsc]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "BCH code (Wikipedia)", url: https://en.wikipedia.org/wiki/BCH_code }
 ---

@@ -18,8 +18,8 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [project-25, p25-phase-2, c4fm, imbe, fdma, control-channel]
 related_lessons:
-  - { title: "Digital modulation & constellations", url: /learn/digital-modulation/ }
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
+  - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
 external:
   - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
 ---

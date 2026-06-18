@@ -13,7 +13,7 @@ infobox:
   - { label: Seen in, value: DMR Enhanced Privacy }
 see_also: [scrambling, dmr, forward-error-correction]
 related_lessons:
-  - { title: "Encryption & what you can decode", url: /learn/encryption/ }
+  - { title: "Encryption & what you can decode", url: /learn/rf-sdr/encryption/ }
 external:
   - { title: "RC4 (Wikipedia)", url: https://en.wikipedia.org/wiki/RC4 }
 ---

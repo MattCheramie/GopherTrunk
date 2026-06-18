@@ -13,7 +13,7 @@ infobox:
   - { label: Used by, value: P25 Phase 1, NXDN, dPMR }
 see_also: [tdma, trunked-radio, p25-phase-1, nxdn]
 related_lessons:
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Frequency-division multiple access (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-division_multiple_access }
 ---

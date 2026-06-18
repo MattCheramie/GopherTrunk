@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Fourier series and analysis }
 see_also: [fourier-transform, fast-fourier-transform, frequency]
 related_lessons:
-  - { title: "The FFT & reading a waterfall", url: /learn/fft-and-waterfall/ }
+  - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
 external:
   - { title: "Joseph Fourier (Wikipedia)", url: https://en.wikipedia.org/wiki/Joseph_Fourier }
 ---

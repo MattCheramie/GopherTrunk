@@ -9,7 +9,7 @@ aka: [Mode S, Mode-S]
 autolink: true
 see_also: [ads-b, compact-position-reporting, cyclic-redundancy-check, icao]
 related_lessons:
-  - { title: "Other signals you'll meet", url: /learn/other-signals/ }
+  - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
 external:
   - { title: "Secondary surveillance radar — Mode S (Wikipedia)", url: https://en.wikipedia.org/wiki/Secondary_surveillance_radar#Mode_S }
   - { title: "GopherTrunk ADS-B decoder", url: /adsb.html }

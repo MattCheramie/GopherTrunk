@@ -17,8 +17,8 @@ infobox:
   - { label: GopherTrunk support, value: Decoded }
 see_also: [trunked-radio, control-channel, edacs, ltr, talkgroup, radio-id]
 related_lessons:
-  - { title: "What is trunked radio?", url: /learn/what-is-trunking/ }
-  - { title: "The digital protocol landscape", url: /learn/protocol-landscape/ }
+  - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
+  - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
 external:
   - { title: "Motorola Type II (Wikipedia)", url: https://en.wikipedia.org/wiki/Motorola_Type_II }
 ---

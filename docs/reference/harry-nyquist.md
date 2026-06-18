@@ -13,7 +13,7 @@ infobox:
   - { label: Known for, value: Sampling and signalling theory }
 see_also: [nyquist-theorem, sample-rate, claude-shannon, aliasing]
 related_lessons:
-  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/sample-rate-nyquist/ }
+  - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
 external:
   - { title: "Harry Nyquist (Wikipedia)", url: https://en.wikipedia.org/wiki/Harry_Nyquist }
 ---

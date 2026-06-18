@@ -27,7 +27,7 @@ A [vocoder]({{ '/reference/vocoder/' | relative_url }}) compresses speech to a f
 kilobits per second by modeling how speech is *produced* — pitch, voicing, and a
 spectral envelope — rather than recording the waveform. The radio sends those
 model parameters; the receiver resynthesizes speech from them. Every digital
-voice mode depends on one. ([digital voice]({{ '/learn/digital-voice/' | relative_url }}))
+voice mode depends on one. ([digital voice]({{ '/learn/rf-sdr/digital-voice/' | relative_url }}))
 
 GopherTrunk implements two in pure Go:
 

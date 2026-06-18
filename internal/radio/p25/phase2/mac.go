@@ -85,6 +85,10 @@ func (o Opcode) String() string {
 		return "VendorGroupRegroup"
 	case OpVendorTalkerAlias:
 		return "VendorTalkerAlias"
+	case OpMotorolaAliasHeader:
+		return "MotorolaAliasHeader"
+	case OpMotorolaAliasData:
+		return "MotorolaAliasData"
 	case OpMotorolaPatchDelete:
 		return "MotorolaPatchDelete"
 	case OpEncryptionSync:
@@ -269,6 +273,7 @@ func (o Opcode) IsKnown() bool {
 		OpUnitToUnitVoiceChannelGrantUpdate, OpGroupAffiliationResponse,
 		OpUnitRegistrationResponse,
 		OpIdentifierUpdate, OpVendorGroupRegroup, OpVendorTalkerAlias,
+		OpMotorolaAliasHeader, OpMotorolaAliasData,
 		OpMotorolaPatchDelete, OpEncryptionSync,
 		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate:
 		return true

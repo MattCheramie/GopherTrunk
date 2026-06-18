@@ -13,7 +13,7 @@ infobox:
   - { label: Mismatch loss, value: Up to ~20 dB }
 see_also: [antenna, dipole-antenna, radio-propagation, antenna-gain]
 related_lessons:
-  - { title: "Antennas 101", url: /learn/antennas/ }
+  - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
 external:
   - { title: "Polarization (waves) (Wikipedia)", url: https://en.wikipedia.org/wiki/Polarization_(waves) }
 ---

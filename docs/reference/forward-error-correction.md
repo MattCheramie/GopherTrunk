@@ -13,7 +13,7 @@ infobox:
   - { label: Examples, value: Reed–Solomon, BCH, Golay, convolutional }
 see_also: [reed-solomon-code, bch-code, golay-code, hamming-code, convolutional-code, interleaving]
 related_lessons:
-  - { title: "The demodulation pipeline", url: /learn/demodulation-pipeline/ }
+  - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
 external:
   - { title: "Forward error correction (Wikipedia)", url: https://en.wikipedia.org/wiki/Error_correction_code }
 ---
