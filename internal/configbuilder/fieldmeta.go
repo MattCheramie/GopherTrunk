@@ -136,6 +136,10 @@ var fieldMetas = map[string]FieldMeta{
 	"TrunkingConfig.CallTimeoutMs":     {Help: "Inactivity window before the watchdog ends a call and frees its voice SDR. 0 = 30 s."},
 	"TrunkingConfig.VoiceHangtimeMs":   {Help: "End-of-transmission window for every voice protocol — ends a call this long after the last voice frame. 0 = 3.5 s."},
 	"TrunkingConfig.VoiceCallGrouping": {Help: "How recordings split: transmission (one file per over) or conversation (group same-TG overs). Empty = transmission.", Options: opts("", "(default: transmission)", "transmission", "transmission", "conversation", "conversation")},
+	"TrunkingConfig.EncryptedCalls":    {Help: "How scarce voice SDRs are allocated to encrypted calls, so encrypted traffic can't starve clear calls (issue #711)."},
+
+	"EncryptedCallsConfig.Mode":             {Help: "Encrypted-call handling. follow (default) holds a voice SDR for the whole call; metadata follows briefly to capture talker alias / RID then releases; ignore never ties up a voice SDR. Calls you have a matching encryption key for are always followed.", Options: opts("", "(default: follow)", "follow", "follow", "metadata", "metadata", "ignore", "ignore")},
+	"EncryptedCallsConfig.MetadataFollowMs": {Help: "Metadata mode only: how long (ms) to follow an encrypted call after it is known encrypted before releasing the voice SDR. 0 = engine default (1500 ms)."},
 
 	"SystemConfig.Name":            {Help: "Unique label for this system. Used in the UI and to name its talkgroup sidecar."},
 	"SystemConfig.Protocol":        {Help: "Trunking protocol this system uses.", Options: protocolOpts()},

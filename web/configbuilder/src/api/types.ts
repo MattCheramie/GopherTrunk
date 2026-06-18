@@ -236,10 +236,17 @@ export interface SystemConfig {
   [k: string]: unknown;
 }
 
+export interface EncryptedCallsConfig {
+  Mode: string;
+  MetadataFollowMs: number;
+  [k: string]: unknown;
+}
+
 export interface TrunkingConfig {
   CallTimeoutMs: number;
   VoiceHangtimeMs: number;
   VoiceCallGrouping: string;
+  EncryptedCalls: EncryptedCallsConfig;
   Systems: SystemConfig[] | null;
   [k: string]: unknown;
 }

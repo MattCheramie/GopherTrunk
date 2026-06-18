@@ -45,6 +45,14 @@ type ActiveCall struct {
 	Talkgroup   *TalkGroup
 	StartedAt   time.Time
 	LastHeardAt time.Time
+	// EncReleaseAt is the deadline at which the encrypted-call-handling
+	// policy (trunking.encrypted_calls mode: metadata) releases this
+	// voice SDR. Zero means unarmed — either the call is clear, the mode
+	// is follow/ignore, or the operator holds a decryption key for it.
+	// Armed by ArmEncryptedRelease, cleared by DisarmEncryptedRelease,
+	// and reaped by the engine watchdog via EncryptedReleasesDue. Issue
+	// #711.
+	EncReleaseAt time.Time
 }
 
 // NewVoicePool returns a pool over the supplied devices. The order of
@@ -301,6 +309,49 @@ func (p *VoicePool) Touch(serial string, now time.Time) {
 	if ac, ok := p.active[serial]; ok {
 		ac.LastHeardAt = now
 	}
+}
+
+// ArmEncryptedRelease schedules the metadata-mode teardown of the call
+// bound to serial at time at. It only arms when the call is currently
+// unarmed, so a repeat encryption update keeps the earliest deadline
+// (the metadata window starts when encryption is first known, not on
+// every in-call re-confirmation). No-op when no call is bound. Issue
+// #711.
+func (p *VoicePool) ArmEncryptedRelease(serial string, at time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ac, ok := p.active[serial]; ok && ac.EncReleaseAt.IsZero() {
+		ac.EncReleaseAt = at
+	}
+}
+
+// DisarmEncryptedRelease cancels any pending metadata-mode teardown on
+// the call bound to serial — used when a later in-call update reveals the
+// operator holds a decryption key for the call, so it should be followed
+// after all. No-op when no call is bound. Issue #711.
+func (p *VoicePool) DisarmEncryptedRelease(serial string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ac, ok := p.active[serial]; ok {
+		ac.EncReleaseAt = time.Time{}
+	}
+}
+
+// EncryptedReleasesDue returns every active call whose armed
+// encrypted-release deadline has been reached by now. The engine
+// watchdog ends each with EndReasonEncrypted. Evaluated under the pool
+// lock so the deadline read stays consistent with concurrent
+// ArmEncryptedRelease / Touch from the decode pipeline. Issue #711.
+func (p *VoicePool) EncryptedReleasesDue(now time.Time) []*ActiveCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var due []*ActiveCall
+	for _, ac := range p.active {
+		if !ac.EncReleaseAt.IsZero() && !now.Before(ac.EncReleaseAt) {
+			due = append(due, ac)
+		}
+	}
+	return due
 }
 
 // UpdateEncryption backfills ALGID/KID on the active call bound to

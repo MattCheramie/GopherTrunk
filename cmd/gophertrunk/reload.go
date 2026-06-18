@@ -91,6 +91,17 @@ func (d *Daemon) reloadFrom(path string) (applied, restartRequired []string, err
 			restartRequired = append(restartRequired, "scanner.scan_mode")
 		}
 	}
+	if newCfg.Trunking.EncryptedCalls.Mode != old.Trunking.EncryptedCalls.Mode {
+		if err := app.SetTrunkingEncryptedMode(newCfg.Trunking.EncryptedCalls.Mode); err == nil {
+			applied = append(applied, "trunking.encrypted_calls.mode")
+		} else {
+			restartRequired = append(restartRequired, "trunking.encrypted_calls.mode")
+		}
+	}
+	if newCfg.Trunking.EncryptedCalls.MetadataFollowMs != old.Trunking.EncryptedCalls.MetadataFollowMs {
+		app.SetTrunkingEncryptedMetadataFollowMs(newCfg.Trunking.EncryptedCalls.MetadataFollowMs)
+		applied = append(applied, "trunking.encrypted_calls.metadata_follow_ms")
+	}
 
 	// Cold fields — diff and flag but don't apply.
 	coldDiffs := map[string]bool{

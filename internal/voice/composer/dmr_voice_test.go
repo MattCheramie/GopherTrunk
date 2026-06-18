@@ -151,8 +151,14 @@ func TestComposerDMRVoiceChainExtractsRawFrames(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
 	src.SendIQ(iq)
 
-	waitFor(t, 4*time.Second, func() bool {
-		return len(sink.rawFrames("VOICE-1")) >= dmrvoice.FramesPerSuperframe
+	// Wait for a comfortable margin of superframes, not just one: the live
+	// chain emits a short misaligned leading superframe during sync/cadence
+	// warmup, so a read taken right at the one-superframe mark can hold only
+	// warmup frames and no clean aligned superframe — a flake under heavy
+	// parallel `-race` load. 12 superframes are fed, so requiring a few
+	// guarantees at least one clean run is present.
+	waitFor(t, 8*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= 4*dmrvoice.FramesPerSuperframe
 	})
 
 	got := sink.rawFrames("VOICE-1")
@@ -352,8 +358,12 @@ func TestComposerDMRInterleavedRoutesBySlot(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
 	src.SendIQ(iq)
 
-	waitFor(t, 4*time.Second, func() bool {
-		return len(sink.rawFrames("VOICE-1")) >= dmrvoice.FramesPerSuperframe
+	// Margin of several superframes (not just one) to clear the warmup-
+	// misaligned leading superframe before the alignment check — see the
+	// note in TestComposerDMRVoiceChainExtractsRawFrames. Avoids a flake
+	// under heavy parallel `-race` load.
+	waitFor(t, 8*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= 4*dmrvoice.FramesPerSuperframe
 	})
 
 	got := sink.rawFrames("VOICE-1")

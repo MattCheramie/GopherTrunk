@@ -308,6 +308,9 @@ type SettingsPatch struct {
 
 	SDRSampleRate *uint32 `json:"sdr_sample_rate,omitempty"`
 
+	TrunkingEncryptedMode             *string `json:"trunking_encrypted_mode,omitempty"`
+	TrunkingEncryptedMetadataFollowMs *int    `json:"trunking_encrypted_metadata_follow_ms,omitempty"`
+
 	ScannerScanMode          *string `json:"scanner_scan_mode,omitempty"`
 	ScannerManualTuneEnabled *bool   `json:"scanner_manual_tune_enabled,omitempty"`
 	ScannerCCHuntEnabled     *bool   `json:"scanner_cc_hunt_enabled,omitempty"`

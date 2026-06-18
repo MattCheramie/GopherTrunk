@@ -7,6 +7,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 )
 
@@ -71,6 +72,9 @@ func (r *runtimeSnapshot) Runtime() api.RuntimeDTO {
 
 		SDRSampleRate: int(cfg.SDR.SampleRate),
 		SDRBackends:   sdrBackendNames(),
+
+		TrunkingEncryptedMode:             trunking.ParseEncryptedMode(cfg.Trunking.EncryptedCalls.Mode).String(),
+		TrunkingEncryptedMetadataFollowMs: cfg.Trunking.EncryptedCalls.MetadataFollowMs,
 
 		ScannerScanMode:          cfg.Scanner.ScanMode,
 		ScannerCCHuntEnabled:     cfg.Scanner.CCHunt.Enabled,

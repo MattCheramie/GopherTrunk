@@ -614,6 +614,29 @@ trunking:
   # frequency is never appended to the wrong recording.
   voice_call_grouping: "transmission"
 
+  # encrypted_calls: how scarce voice SDRs are allocated to encrypted
+  # calls, so encrypted traffic can't monopolize a small tuner pool and
+  # starve clear calls (issue #711). Encryption is detected from the grant
+  # (P25 Phase 2) or mid-call on the traffic channel (P25 Phase 1 LDU2,
+  # Phase 2 MAC PDUs).
+  #   mode:
+  #     follow   (default) — hold a voice SDR for the full encrypted call,
+  #                exactly like a clear call.
+  #     metadata — follow the call briefly so traffic-channel metadata
+  #                (talker alias, source RID, encryption sync) is captured,
+  #                then release the voice SDR after metadata_follow_ms.
+  #     ignore   — never tie up a voice SDR on an encrypted call.
+  #   metadata_follow_ms: metadata mode only — how long (ms) to follow an
+  #     encrypted call after it is known encrypted before releasing the
+  #     voice SDR. 0 uses the engine default (1500 ms).
+  # A call whose KeyID matches a configured systems[].encryption_keys entry
+  # is exempt and always followed (you intend to capture / decode it). Note
+  # GopherTrunk does not decrypt P25 in-process; only DMR rc4 (Enhanced
+  # Privacy) keys are accepted, and only for out-of-band capture.
+  encrypted_calls:
+    mode: follow
+    metadata_follow_ms: 1500
+
   systems:
     - name: "Example-P25"
       protocol: p25

@@ -991,13 +991,38 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		})
 	}
 
+	// Build the system -> configured key-ID set the engine uses to exempt
+	// decryptable calls from the encrypted-call policy (issue #711). The
+	// raw key material stays in config; only the presence of a matching
+	// KeyID matters for the policy decision.
+	configuredKeysBySystem := func(systems []config.SystemConfig) map[string]map[uint16]bool {
+		var out map[string]map[uint16]bool
+		for _, s := range systems {
+			if len(s.EncryptionKeys) == 0 {
+				continue
+			}
+			ids := make(map[uint16]bool, len(s.EncryptionKeys))
+			for _, k := range s.EncryptionKeys {
+				ids[k.KeyID] = true
+			}
+			if out == nil {
+				out = make(map[string]map[uint16]bool)
+			}
+			out[s.Name] = ids
+		}
+		return out
+	}
+
 	engine, err := trunking.NewEngine(trunking.EngineOptions{
-		Bus:         d.bus,
-		Log:         log,
-		VoicePool:   d.voicePool,
-		Talkgroups:  d.talkgroups,
-		ScanMode:    trunking.ParseScanMode(cfg.Scanner.ScanMode),
-		CallTimeout: time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		Bus:                     d.bus,
+		Log:                     log,
+		VoicePool:               d.voicePool,
+		Talkgroups:              d.talkgroups,
+		ScanMode:                trunking.ParseScanMode(cfg.Scanner.ScanMode),
+		CallTimeout:             time.Duration(cfg.Trunking.CallTimeoutMs) * time.Millisecond,
+		EncryptedMode:           trunking.ParseEncryptedMode(cfg.Trunking.EncryptedCalls.Mode),
+		EncryptedMetadataFollow: time.Duration(cfg.Trunking.EncryptedCalls.MetadataFollowMs) * time.Millisecond,
+		ConfiguredKeys:          configuredKeysBySystem(cfg.Trunking.Systems),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: engine: %w", err)

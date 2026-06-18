@@ -83,6 +83,10 @@ func editableFieldsForTab(t settingsTab) []editableField {
 				Value: func(r client.RuntimeDTO) string { return boolStr(r.RecordingWriteRaw) }},
 			{Label: "Skip encrypted calls", Field: "recordings.skip_encrypted", Restart: true,
 				Value: func(r client.RuntimeDTO) string { return boolStr(r.RecordingSkipEncrypted) }},
+			{Label: "Encrypted call handling (follow|metadata|ignore)", Field: "trunking.encrypted_calls.mode",
+				Value: func(r client.RuntimeDTO) string { return r.TrunkingEncryptedMode }},
+			{Label: "Encrypted metadata follow (ms)", Field: "trunking.encrypted_calls.metadata_follow_ms",
+				Value: func(r client.RuntimeDTO) string { return fmt.Sprintf("%d", r.TrunkingEncryptedMetadataFollowMs) }},
 		}
 	case tabAPI:
 		return []editableField{

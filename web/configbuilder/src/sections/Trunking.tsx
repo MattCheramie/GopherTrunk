@@ -16,6 +16,7 @@ import { useStore } from "../store/shared";
 import { api, HTTPError } from "../api/client";
 import type {
   DMRBandPlanTableEntry,
+  EncryptedCallsConfig,
   EncryptionKey,
   P25BandPlanEntry,
   ParsedSystemDTO,
@@ -106,6 +107,11 @@ export function TrunkingSection() {
         help="How voice recordings are split, for every voice protocol."
       />
 
+      <EncryptedCallsField
+        value={cfg.EncryptedCalls}
+        onChange={(x) => set({ ...cfg, EncryptedCalls: x })}
+      />
+
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" onClick={addBlank}>+ Add system</button>
         <button className="btn" onClick={() => setRROpen(true)}>Add from RadioReference</button>
@@ -129,6 +135,42 @@ export function TrunkingSection() {
       {rrOpen ? <RRBrowseModal onClose={() => setRROpen(false)} onAdd={addSystem} /> : null}
       {importOpen ? <ImportModal onClose={() => setImportOpen(false)} onAdd={addSystem} /> : null}
     </Section>
+  );
+}
+
+// EncryptedCallsField edits the trunking.encrypted_calls policy (issue
+// #711): how scarce voice SDRs are allocated to encrypted calls. The
+// metadata-follow window is only relevant in "metadata" mode.
+function EncryptedCallsField(props: {
+  value: EncryptedCallsConfig | undefined;
+  onChange: (next: EncryptedCallsConfig) => void;
+}) {
+  const enc: EncryptedCallsConfig = props.value ?? { Mode: "", MetadataFollowMs: 0 };
+  const set = (patch: Partial<EncryptedCallsConfig>) => props.onChange({ ...enc, ...patch });
+  const mode = enc.Mode || "follow";
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <SelectField
+        label="Encrypted call handling"
+        value={mode}
+        onChange={(x) => set({ Mode: x })}
+        options={[
+          { value: "follow", label: "follow — hold a voice SDR for the whole call" },
+          { value: "metadata", label: "metadata — follow briefly, then release" },
+          { value: "ignore", label: "ignore — never tie up a voice SDR" },
+        ]}
+        help="How encrypted calls use scarce voice SDRs. Calls you have a matching encryption key configured for are always followed."
+      />
+      {mode === "metadata" ? (
+        <NumberField
+          label="Metadata follow (ms)"
+          value={enc.MetadataFollowMs}
+          onChange={(x) => set({ MetadataFollowMs: x })}
+          placeholder="1500"
+          help="How long to follow an encrypted call (capturing talker alias / RID) before releasing the voice SDR. 0 = default (1500 ms)."
+        />
+      ) : null}
+    </div>
   );
 }
 

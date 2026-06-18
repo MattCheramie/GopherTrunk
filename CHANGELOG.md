@@ -18,6 +18,21 @@ for tagged releases.
   `site_id` labels on `grant` events and `KindSiteUpdate`.
 
 ### Added
+- **Configurable handling of encrypted calls** (#711). A new
+  `trunking.encrypted_calls.mode` selects how the engine spends scarce
+  voice SDRs on encrypted calls: `follow` (default, unchanged — hold the
+  tuner for the whole call), `metadata` (follow briefly to capture
+  traffic-channel metadata — talker alias, source RID, encryption sync —
+  then release the tuner after `metadata_follow_ms`, default 1500 ms), or
+  `ignore` (never tie up a voice SDR on an encrypted call). Encryption is
+  acted on both at grant time and when discovered mid-call. A call whose
+  KeyID matches a configured `trunking.systems[].encryption_keys` entry is
+  exempt and always followed. The mode is runtime-mutable via
+  `PATCH /api/v1/settings` (`trunking_encrypted_mode` /
+  `trunking_encrypted_metadata_follow_ms`), the TUI Settings panel, and
+  SIGHUP reload — no daemon restart required. This stops a few long
+  encrypted calls from exhausting the tuner pool and dropping clear
+  traffic with `no voice device available for grant`.
 - **Voice-channel frequencies in the Hunt discovery view.** The discovery
   model now records the band-plan-resolved voice/traffic frequency of every
   grant, surfaced both per-talkgroup (a Frequencies column) and per-site (a

@@ -111,6 +111,15 @@ func buildSettingsPatch(field, raw string) (client.SettingsPatch, error) {
 		}
 		v := uint32(n)
 		p.SDRSampleRate = &v
+	case "trunking.encrypted_calls.mode":
+		s := raw
+		p.TrunkingEncryptedMode = &s
+	case "trunking.encrypted_calls.metadata_follow_ms":
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return p, fmt.Errorf("trunking.encrypted_calls.metadata_follow_ms: %w", err)
+		}
+		p.TrunkingEncryptedMetadataFollowMs = &n
 	case "scanner.scan_mode":
 		s := raw
 		p.ScannerScanMode = &s
