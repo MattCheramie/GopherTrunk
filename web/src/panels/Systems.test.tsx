@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 vi.mock("../api/client", () => ({
   api: { systems: vi.fn(), scanner: vi.fn() },
@@ -77,5 +77,33 @@ describe("Systems panel", () => {
     const row = screen.getByText("Metro P25").closest("tr")!;
     // Band plan cell shows the em dash placeholder.
     expect(row.textContent).toContain("—");
+  });
+
+  it("opens the detail modal when the scanner has a null systems list", async () => {
+    // The daemon marshals an empty hunt list as JSON `null` (Go nil
+    // slice), so `scanner.systems` can be null at runtime even though
+    // the type says it's an array. The detail modal must not crash
+    // calling `.find` on it.
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      systems: null as any,
+      conventional: { enabled: false, channels: [] },
+      tg_scan_count: 0,
+      tg_total: 0,
+    });
+    vi.mocked(api.systems).mockResolvedValue([
+      { name: "Main_Site_1", protocol: "p25", control_channels: [765_000_000] },
+    ]);
+
+    render(<Systems />);
+    await waitFor(() => expect(api.scanner).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Main_Site_1"));
+
+    // Modal renders the live-identity section instead of throwing.
+    expect(
+      await screen.findByText(/Network identity \(decoded live\)/i),
+    ).toBeInTheDocument();
   });
 });
