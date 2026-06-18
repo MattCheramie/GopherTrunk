@@ -147,19 +147,19 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	// applied.
 	opts.Log.Info("engine: configured", "call_timeout", opts.CallTimeout)
 	e := &Engine{
-		bus:               opts.Bus,
-		log:               opts.Log,
-		pool:              opts.VoicePool,
-		talkgroups:        opts.Talkgroups,
-		patches:           NewPatchRegistry(),
-		timeout:           opts.CallTimeout,
-		now:               opts.Now,
-		scanMode:          opts.ScanMode,
-		encModes:          opts.EncryptedModes,
-		encFollows:        opts.EncryptedFollows,
-		configuredKeys:    opts.ConfiguredKeys,
-		calls:             make(map[string]*ActiveCall),
-		synthetic:         make(map[string]*ActiveCall),
+		bus:            opts.Bus,
+		log:            opts.Log,
+		pool:           opts.VoicePool,
+		talkgroups:     opts.Talkgroups,
+		patches:        NewPatchRegistry(),
+		timeout:        opts.CallTimeout,
+		now:            opts.Now,
+		scanMode:       opts.ScanMode,
+		encModes:       opts.EncryptedModes,
+		encFollows:     opts.EncryptedFollows,
+		configuredKeys: opts.ConfiguredKeys,
+		calls:          make(map[string]*ActiveCall),
+		synthetic:      make(map[string]*ActiveCall),
 	}
 	// Subscribe at construction time so callers can publish grants
 	// before Run starts without losing them.
