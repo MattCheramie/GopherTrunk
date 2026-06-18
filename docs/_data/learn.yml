@@ -496,3 +496,303 @@ paths:
       minutes: 10
       level: beginner
       status: full
+
+  - id: intro-software-dev
+    label: "Intro to Software Dev"
+    title: "Intro to Software Development — from punch cards to your own solo stack"
+    tagline: "How software is built — the history, the languages, the principles and patterns, and how to choose your tools and ship your own software solo."
+    start_slug: what-is-software
+    workload: "PT8H"
+    intro: >
+      A guided path from "what even is software?" to shipping your own program.
+      Start with the story of how computing got here — the hardware, the
+      languages, and the people — then build a working model of how modern
+      languages differ and what they're good (and bad) at. Learn the principles
+      and patterns that separate code that lasts from code that rots, the
+      systems teams use to ship, how to choose the right language for a job, and
+      finally how to assemble your own solo development stack, workflow, and
+      distribution strategy. Examples lean on real-time and radio software — the
+      kind of streaming, signal-crunching code behind GopherTrunk.
+    modules:
+      - id: history
+        label: "Module 1 — A Brief History of Software"
+        blurb: "Where software came from: the hardware, the first languages, the pioneers, and the cheap compute that put a radio receiver inside a program."
+        lessons:
+          - slug: what-is-software
+            title: What is software?
+            summary: Hardware vs. software, the stored-program idea, and what "code" really is — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: computing-hardware-story
+            title: From looms to microprocessors
+            summary: The hardware story — Babbage and Lovelace, ENIAC, the transistor, and the microchip that put a computer on every desk.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: birth-of-languages
+            title: From machine code to high-level languages
+            summary: Why we stopped writing 1s and 0s — assembly, FORTRAN, COBOL, LISP, and C, and what each one made possible.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: the-pioneers
+            title: The people who built programming
+            summary: Lovelace, Turing, Hopper, Ritchie, Kay, and the engineers whose ideas you still use every day.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: internet-to-edge
+            title: PCs, the internet & the age of cheap compute
+            summary: From mainframes to the cloud and the edge — and how falling compute costs made software-defined radio possible.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: languages
+        label: "Module 2 — Modern Programming Languages"
+        blurb: "The families languages fall into, how they run, and the capabilities, trade-offs, and security properties that set them apart."
+        lessons:
+          - slug: language-families
+            title: Paradigms & language families
+            summary: Imperative, object-oriented, functional, and declarative — the big families and how a language can belong to several.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: compiled-vs-interpreted
+            title: Compiled, interpreted & JIT
+            summary: How source code becomes something a computer runs — and why the answer shapes speed, portability, and tooling.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: type-systems
+            title: Type systems & safety
+            summary: Static vs. dynamic, strong vs. weak — what types catch, what they cost, and why it matters for reliable code.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: memory-management
+            title: Memory — manual, GC & ownership
+            summary: Stacks, heaps, garbage collection, and Rust-style ownership — and why memory model is the deepest language difference.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: concurrency-models
+            title: Concurrency & parallelism
+            summary: Threads, async, goroutines, and actors — doing many things at once, the way streaming radio data demands.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: language-security
+            title: Language-level security
+            summary: Memory safety, undefined behaviour, and the software supply chain — how your language choice changes your attack surface.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: principles
+        label: "Module 3 — Software Development Principles"
+        blurb: "The timeless, language-agnostic ideas that make code readable, changeable, and robust instead of a tangle nobody dares touch."
+        lessons:
+          - slug: clean-code
+            title: Writing readable code
+            summary: Naming, small functions, and comments that earn their place — code is read far more often than it's written.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: dry-kiss-yagni
+            title: DRY, KISS, YAGNI & separation of concerns
+            summary: The four maxims that fight complexity — repeat yourself less, keep it simple, and don't build what you don't need yet.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: solid
+            title: SOLID & object-oriented design
+            summary: The five principles that keep object-oriented code flexible — explained with plain examples, not jargon.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: abstraction-coupling
+            title: Abstraction, coupling & cohesion
+            summary: Good fences make good modules — hiding detail behind interfaces so parts of a program can change independently.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: robustness-and-errors
+            title: Errors, edge cases & defensive programming
+            summary: Handling failure on purpose — because real-world inputs, like a noisy radio channel, never behave.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: patterns
+        label: "Module 4 — Software Design Patterns"
+        blurb: "Named, reusable solutions to problems that come up again and again — including the streaming and plugin shapes signal software lives on."
+        lessons:
+          - slug: what-are-patterns
+            title: What is a design pattern?
+            summary: Where patterns came from, how to read one, and the anti-patterns that signal trouble.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: creational-patterns
+            title: "Creational patterns: factory, builder, singleton"
+            summary: Patterns for making objects — flexibly, step by step, or exactly once.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: structural-patterns
+            title: "Structural patterns: adapter, facade, decorator"
+            summary: Patterns for composing objects — wrapping, simplifying, and extending without rewriting.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: behavioral-patterns
+            title: "Behavioral patterns: observer, strategy, state"
+            summary: Patterns for how objects talk and decide — swapping algorithms and reacting to change.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: concurrency-and-pipelines
+            title: Concurrency & streaming patterns
+            summary: Pipelines, producer/consumer, and pub-sub — the patterns a real-time DSP chain is built from.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: architectural-patterns
+            title: "Architecture patterns: layered, event-driven & plugins"
+            summary: The big-picture shapes — including the plugin architecture that lets a scanner add a new decoder without a rewrite.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: process
+        label: "Module 5 — Development Systems & Strategies"
+        blurb: "How software actually gets built and kept alive: life cycles, version control, testing, automation, and fighting technical debt."
+        lessons:
+          - slug: sdlc-and-methodologies
+            title: The software life cycle — Waterfall to Agile
+            summary: The stages every project moves through, and the methodologies — Waterfall, Agile, Scrum, Kanban — teams use to manage them.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: version-control-collab
+            title: Version control & collaboration
+            summary: Why every project lives in version control, how teams work together without stepping on each other, and where to go deeper.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: testing
+            title: Testing — unit, integration & beyond
+            summary: The kinds of tests, what each is for, and why signal-processing code needs them most of all.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: build-and-ci-cd
+            title: Build systems, CI/CD & automation
+            summary: Turning source into a shippable artifact automatically — and catching problems the moment they're introduced.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: docs-and-maintenance
+            title: Documentation, tech debt & maintenance
+            summary: The unglamorous work that decides whether software survives — writing it down and paying down debt.
+            minutes: 8
+            level: intermediate
+            status: full
+
+      - id: choosing-a-language
+        label: "Module 6 — Choosing the Right Language"
+        blurb: "A full toolkit for the question every project starts with: which language? Driven by requirements, trade-offs, and the domain you're in."
+        lessons:
+          - slug: why-language-choice-matters
+            title: Why language choice matters (and when it doesn't)
+            summary: What the language decision actually buys you, what it locks in, and the cases where it barely matters.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: from-requirements
+            title: Start with requirements
+            summary: Turning needs — performance, safety, ecosystem, team, timeline — into the criteria that pick a language for you.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: performance-vs-productivity
+            title: The performance ↔ productivity trade-off
+            summary: Fast to run vs. fast to write — the central tension, and how to find the right point on the curve for your project.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: language-tour
+            title: A tour of today's major languages
+            summary: C, C++, Rust, Go, Python, JavaScript/TypeScript, Java, and friends — strengths, drawbacks, and sweet spots.
+            minutes: 12
+            level: intermediate
+            status: full
+          - slug: language-for-the-domain
+            title: Matching language to domain
+            summary: Web, systems, data, mobile, embedded, and DSP/RF — the languages each field reaches for, and why.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: decision-framework
+            title: A practical decision framework
+            summary: A repeatable way to choose, worked through real cases — including why a pure-Go engine fits a software-defined-radio scanner.
+            minutes: 10
+            level: advanced
+            status: full
+
+      - id: solo-stack
+        label: "Module 7 — Build Your Solo Developer Stack"
+        blurb: "Putting it all together as a team of one: pick your stack, set up your workflow, and ship and distribute software you build alone."
+        lessons:
+          - slug: solo-developer-mindset
+            title: The solo developer — wearing every hat
+            summary: What changes when you're designer, coder, tester, and release manager at once, and how to use your speed without drowning.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: choosing-your-stack
+            title: Choosing your stack
+            summary: Picking a language, frameworks, and tools you can be productive and happy in for the long haul — solo edition.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dev-environment-workflow
+            title: Your environment & daily workflow
+            summary: Editor, terminal, version control, and the loop you'll run a hundred times a day — set up once, benefit forever.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: scoping-a-project
+            title: From idea to project
+            summary: Scoping a v1 you can actually finish, structuring the repo, and resisting the urge to build everything at once.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: quality-when-solo
+            title: Keeping quality high alone
+            summary: Tests, linters, and CI as the teammate you don't have — guardrails that review your work when no one else can.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: packaging-and-distribution
+            title: Packaging & distributing your software
+            summary: Cross-platform binaries, releases, and versioning — how a solo project like GopherTrunk reaches users on every OS.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: shipping-and-maintaining
+            title: Shipping v1 & maintaining solo
+            summary: Cutting the first release, gathering feedback, and sustaining a project — and yourself — over the long run.
+            minutes: 9
+            level: intermediate
+            status: full
+
+    glossary:
+      slug: glossary
+      title: Glossary of software development terms
+      summary: Plain-language definitions for every term in the learning path, cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
