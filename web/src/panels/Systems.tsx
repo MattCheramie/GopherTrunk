@@ -203,7 +203,7 @@ export function Systems() {
             }
           />
           {(() => {
-            const hunt = scanner?.systems.find((h) => h.name === selected.name);
+            const hunt = scanner?.systems?.find((h) => h.name === selected.name);
             const hint = identityEmptyHint(hunt);
             return (
               <div>
