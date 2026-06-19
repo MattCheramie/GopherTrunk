@@ -8,8 +8,10 @@ layout: default
 {%- endcomment -%}
 {%- assign ref = site.data.reference -%}
 {%- assign all_entries = "" | split: "" -%}
-{%- for cat in ref.categories -%}
-  {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+{%- for d in ref.domains -%}
+  {%- for cat in d.categories -%}
+    {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+  {%- endfor -%}
 {%- endfor -%}
 {%- assign sorted = all_entries | sort_natural: "title" -%}
 {%- assign total = all_entries | size -%}
@@ -32,23 +34,33 @@ layout: default
 
     <article class="prose prose--wide ref-intro">{{ content }}</article>
 
-    <div class="ref-categories">
-      {%- for cat in ref.categories -%}
-        <section class="ref-category" id="{{ cat.id }}">
-          <div class="ref-category__head">
-            <h2 class="ref-category__title">{{ cat.label }}</h2>
-            <p class="ref-category__blurb">{{ cat.blurb }}</p>
-          </div>
-          <ul class="ref-grid">
-            {%- for e in cat.entries -%}
-              <li class="ref-card">
-                <a href="{{ '/reference/' | append: e.slug | append: '/' | relative_url }}">
-                  <span class="ref-card__title">{{ e.title }}</span>
-                  <span class="ref-tag ref-tag--{{ e.type }}">{{ e.type }}</span>
-                </a>
-              </li>
+    <div class="ref-domains">
+      {%- for d in ref.domains -%}
+        <section class="ref-domain" id="domain-{{ d.id }}">
+          <header class="ref-domain__head">
+            <h2 class="ref-domain__title">{{ d.label }}</h2>
+            {%- if d.blurb -%}<p class="ref-domain__blurb">{{ d.blurb }}</p>{%- endif -%}
+          </header>
+          <div class="ref-categories">
+            {%- for cat in d.categories -%}
+              <section class="ref-category" id="{{ cat.id }}">
+                <div class="ref-category__head">
+                  <h3 class="ref-category__title">{{ cat.label }}</h3>
+                  <p class="ref-category__blurb">{{ cat.blurb }}</p>
+                </div>
+                <ul class="ref-grid">
+                  {%- for e in cat.entries -%}
+                    <li class="ref-card">
+                      <a href="{{ '/reference/' | append: e.slug | append: '/' | relative_url }}">
+                        <span class="ref-card__title">{{ e.title }}</span>
+                        <span class="ref-tag ref-tag--{{ e.type }}">{{ e.type }}</span>
+                      </a>
+                    </li>
+                  {%- endfor -%}
+                </ul>
+              </section>
             {%- endfor -%}
-          </ul>
+          </div>
         </section>
       {%- endfor -%}
     </div>

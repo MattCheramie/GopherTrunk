@@ -51,6 +51,8 @@ groups:
     items:
       - title: Encyclopedia overview
         url: /reference/
+      - title: "RF & SDR"
+        url: /reference/#domain-rf-sdr
       - title: RF & signal fundamentals
         url: /reference/#rf-fundamentals
       - title: Modulation
@@ -71,6 +73,20 @@ groups:
         url: /reference/#people
       - title: Organizations
         url: /reference/#organizations
+      - title: "Software Development"
+        url: /reference/#domain-software-dev
+      - title: Programming languages
+        url: /reference/#programming-languages
+      - title: Language internals & execution
+        url: /reference/#language-internals
+      - title: Concurrency & execution models
+        url: /reference/#concurrency-execution
+      - title: Paradigms & design patterns
+        url: /reference/#paradigms-design
+      - title: Principles & code quality
+        url: /reference/#principles-quality
+      - title: Testing, tooling & delivery
+        url: /reference/#testing-delivery
       - title: A–Z index
         url: /reference/#a-z
   - label: About

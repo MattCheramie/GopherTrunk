@@ -1,8 +1,14 @@
 # GopherTrunk Reference — encyclopedia single source of truth.
 #
-# Drives: the reference hub (docs/reference/index.md) category grid + A–Z index,
-# the article breadcrumb category label (docs/_layouts/reference.html), and the
-# "Reference" section of docs/llms.txt.
+# Drives: the reference hub (docs/reference/index.md) domain/category grid +
+# A–Z index, the article breadcrumb domain + category labels
+# (docs/_layouts/reference.html), and the "Reference" section of docs/llms.txt.
+#
+# Structure: domains → categories → entries. A domain is a top-level subject
+# area (RF & SDR, Software Development, …); each domain holds categories, and
+# each category holds entries. Category ids are unique across the whole file —
+# an article's `category:` front matter names a category id, and the domain is
+# derived from whichever domain contains that category.
 #
 # Adding an entry:
 #   1. Append it under the right category's `entries:` list below.
@@ -14,246 +20,350 @@
 #      the site-wide autolinker (docs/reference-terms.json). Omit it for common
 #      words (frequency, gain, phase, …) to avoid noisy false matches.
 #
-# Keep `slug` stable once published — it is the URL (/reference/<slug>/).
+# Adding a domain: append a new entry under `domains:` with id, label, blurb,
+# and its own `categories:` list. The hub, nav, breadcrumbs, and llms.txt pick
+# it up automatically.
+#
+# Keep `slug` and category `id` stable once published — they are URLs and anchors.
 
 intro: >
   The GopherTrunk Reference is a plain-language encyclopedia of the terms,
-  technologies, algorithms, people, hardware, and organizations behind radio and
-  software-defined radio. Each article is a standalone, long-form definition — no
-  lesson order, no exercises, just information — cross-linked to related entries
-  and to the learning path. Browse by category or jump to the A–Z index.
+  technologies, algorithms, people, hardware, organizations, and software behind
+  radio, software-defined radio, and the craft of building software itself. Each
+  article is a standalone, long-form definition — no lesson order, no exercises,
+  just information — cross-linked to related entries and to the learning paths.
+  Browse by domain and category, or jump to the A–Z index.
 
-categories:
-  - id: rf-fundamentals
-    label: RF & signal fundamentals
-    blurb: The physical quantities and units that describe radio waves and signal power.
-    entries:
-      - { slug: electromagnetic-spectrum, title: Electromagnetic spectrum, type: term }
-      - { slug: radio-wave, title: Radio wave, type: term }
-      - { slug: frequency, title: Frequency, type: term }
-      - { slug: wavelength, title: Wavelength, type: term }
-      - { slug: amplitude, title: Amplitude, type: term }
-      - { slug: phase, title: Phase, type: term }
-      - { slug: carrier-wave, title: Carrier wave, type: term }
-      - { slug: modulation, title: Modulation, type: term }
-      - { slug: bandwidth, title: Bandwidth, type: term }
-      - { slug: decibel, title: Decibel (dB), type: term }
-      - { slug: dbm, title: dBm, type: term }
-      - { slug: dbfs, title: dBFS, type: term }
-      - { slug: signal-to-noise-ratio, title: Signal-to-noise ratio (SNR), type: term }
-      - { slug: noise-floor, title: Noise floor, type: term }
-      - { slug: attenuation, title: Attenuation, type: term }
-      - { slug: path-loss, title: Path loss, type: term }
-      - { slug: frequency-bands, title: Frequency bands (HF/VHF/UHF), type: term }
+domains:
+  - id: rf-sdr
+    label: "RF & SDR"
+    blurb: Radio, signals, SDR, DSP, the protocols GopherTrunk decodes, and the people and bodies behind them.
+    categories:
+      - id: rf-fundamentals
+        label: RF & signal fundamentals
+        blurb: The physical quantities and units that describe radio waves and signal power.
+        entries:
+          - { slug: electromagnetic-spectrum, title: Electromagnetic spectrum, type: term }
+          - { slug: radio-wave, title: Radio wave, type: term }
+          - { slug: frequency, title: Frequency, type: term }
+          - { slug: wavelength, title: Wavelength, type: term }
+          - { slug: amplitude, title: Amplitude, type: term }
+          - { slug: phase, title: Phase, type: term }
+          - { slug: carrier-wave, title: Carrier wave, type: term }
+          - { slug: modulation, title: Modulation, type: term }
+          - { slug: bandwidth, title: Bandwidth, type: term }
+          - { slug: decibel, title: Decibel (dB), type: term }
+          - { slug: dbm, title: dBm, type: term }
+          - { slug: dbfs, title: dBFS, type: term }
+          - { slug: signal-to-noise-ratio, title: Signal-to-noise ratio (SNR), type: term }
+          - { slug: noise-floor, title: Noise floor, type: term }
+          - { slug: attenuation, title: Attenuation, type: term }
+          - { slug: path-loss, title: Path loss, type: term }
+          - { slug: frequency-bands, title: Frequency bands (HF/VHF/UHF), type: term }
 
-  - id: antennas-propagation
-    label: Antennas & propagation
-    blurb: How energy radiates from an antenna and travels to your receiver.
-    entries:
-      - { slug: antenna, title: Antenna, type: term }
-      - { slug: dipole-antenna, title: Dipole antenna, type: term }
-      - { slug: antenna-gain, title: Antenna gain, type: term }
-      - { slug: polarization, title: Polarization, type: term }
-      - { slug: standing-wave-ratio, title: Standing wave ratio (SWR), type: term }
-      - { slug: radio-propagation, title: Radio propagation, type: term }
-      - { slug: multipath-propagation, title: Multipath propagation, type: term }
-      - { slug: radio-horizon, title: Radio horizon, type: term }
-      - { slug: ionospheric-propagation, title: Ionospheric propagation, type: term }
+      - id: antennas-propagation
+        label: Antennas & propagation
+        blurb: How energy radiates from an antenna and travels to your receiver.
+        entries:
+          - { slug: antenna, title: Antenna, type: term }
+          - { slug: dipole-antenna, title: Dipole antenna, type: term }
+          - { slug: antenna-gain, title: Antenna gain, type: term }
+          - { slug: polarization, title: Polarization, type: term }
+          - { slug: standing-wave-ratio, title: Standing wave ratio (SWR), type: term }
+          - { slug: radio-propagation, title: Radio propagation, type: term }
+          - { slug: multipath-propagation, title: Multipath propagation, type: term }
+          - { slug: radio-horizon, title: Radio horizon, type: term }
+          - { slug: ionospheric-propagation, title: Ionospheric propagation, type: term }
 
-  - id: modulation
-    label: Modulation
-    blurb: The schemes that put information onto a carrier — analog and digital.
-    entries:
-      - { slug: amplitude-modulation, title: Amplitude modulation (AM), type: technology }
-      - { slug: frequency-modulation, title: Frequency modulation (FM), type: technology }
-      - { slug: single-sideband, title: Single sideband (SSB), type: technology }
-      - { slug: frequency-shift-keying, title: Frequency-shift keying (FSK), type: technology }
-      - { slug: phase-shift-keying, title: Phase-shift keying (PSK), type: technology }
-      - { slug: quadrature-amplitude-modulation, title: Quadrature amplitude modulation (QAM), type: technology }
-      - { slug: c4fm, title: C4FM, type: technology }
-      - { slug: cqpsk, title: CQPSK, type: technology }
-      - { slug: gmsk, title: GMSK, type: technology }
-      - { slug: afsk, title: AFSK, type: technology }
-      - { slug: ffsk, title: FFSK, type: technology }
-      - { slug: symbol-rate, title: Symbol rate (baud), type: term }
-      - { slug: constellation-diagram, title: Constellation diagram, type: term }
-      - { slug: eye-diagram, title: Eye diagram, type: term }
-      - { slug: pi-4-dqpsk, title: π/4-DQPSK, type: technology }
-      - { slug: gfsk, title: GFSK, type: technology }
-      - { slug: nrzi, title: NRZI, type: term }
-      - { slug: dibit, title: Dibit, type: term }
-      - { slug: pulse-shaping, title: Pulse shaping, type: term }
+      - id: modulation
+        label: Modulation
+        blurb: The schemes that put information onto a carrier — analog and digital.
+        entries:
+          - { slug: amplitude-modulation, title: Amplitude modulation (AM), type: technology }
+          - { slug: frequency-modulation, title: Frequency modulation (FM), type: technology }
+          - { slug: single-sideband, title: Single sideband (SSB), type: technology }
+          - { slug: frequency-shift-keying, title: Frequency-shift keying (FSK), type: technology }
+          - { slug: phase-shift-keying, title: Phase-shift keying (PSK), type: technology }
+          - { slug: quadrature-amplitude-modulation, title: Quadrature amplitude modulation (QAM), type: technology }
+          - { slug: c4fm, title: C4FM, type: technology }
+          - { slug: cqpsk, title: CQPSK, type: technology }
+          - { slug: gmsk, title: GMSK, type: technology }
+          - { slug: afsk, title: AFSK, type: technology }
+          - { slug: ffsk, title: FFSK, type: technology }
+          - { slug: symbol-rate, title: Symbol rate (baud), type: term }
+          - { slug: constellation-diagram, title: Constellation diagram, type: term }
+          - { slug: eye-diagram, title: Eye diagram, type: term }
+          - { slug: pi-4-dqpsk, title: π/4-DQPSK, type: technology }
+          - { slug: gfsk, title: GFSK, type: technology }
+          - { slug: nrzi, title: NRZI, type: term }
+          - { slug: dibit, title: Dibit, type: term }
+          - { slug: pulse-shaping, title: Pulse shaping, type: term }
 
-  - id: sdr-dsp
-    label: SDR & DSP
-    blurb: Software-defined radio and the digital signal processing between IQ and bits.
-    entries:
-      - { slug: software-defined-radio, title: Software-defined radio (SDR), type: technology }
-      - { slug: iq-data, title: IQ data, type: term }
-      - { slug: analog-to-digital-converter, title: Analog-to-digital converter (ADC), type: term }
-      - { slug: sample-rate, title: Sample rate, type: term }
-      - { slug: nyquist-theorem, title: Nyquist–Shannon sampling theorem, type: term }
-      - { slug: aliasing, title: Aliasing, type: term }
-      - { slug: superheterodyne-receiver, title: Superheterodyne receiver, type: term }
-      - { slug: local-oscillator, title: Local oscillator, type: term }
-      - { slug: digital-down-converter, title: Digital down-converter (DDC), type: term }
-      - { slug: decimation, title: Decimation, type: term }
-      - { slug: digital-filter, title: Digital filter, type: term }
-      - { slug: cic-filter, title: CIC filter, type: algorithm }
-      - { slug: root-raised-cosine-filter, title: Root-raised-cosine filter, type: algorithm }
-      - { slug: matched-filter, title: Matched filter, type: algorithm }
-      - { slug: automatic-gain-control, title: Automatic gain control (AGC), type: term }
-      - { slug: demodulation, title: Demodulation, type: term }
-      - { slug: clock-recovery, title: Clock recovery, type: term }
-      - { slug: costas-loop, title: Costas loop, type: algorithm }
-      - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
-      - { slug: ppm-frequency-correction, title: PPM frequency correction, type: term }
-      - { slug: numerically-controlled-oscillator, title: Numerically controlled oscillator (NCO), type: term }
-      - { slug: fir-filter, title: FIR filter, type: algorithm }
-      - { slug: iir-filter, title: IIR filter, type: algorithm }
-      - { slug: intermediate-frequency, title: Intermediate frequency (IF), type: term }
-      - { slug: baseband, title: Baseband, type: term }
-      - { slug: channelizer, title: Channelizer, type: algorithm }
-      - { slug: resampler, title: Resampler, type: algorithm }
-      - { slug: automatic-frequency-control, title: Automatic frequency control (AFC), type: term }
-      - { slug: dc-offset, title: DC offset (DC spike), type: term }
+      - id: sdr-dsp
+        label: SDR & DSP
+        blurb: Software-defined radio and the digital signal processing between IQ and bits.
+        entries:
+          - { slug: software-defined-radio, title: Software-defined radio (SDR), type: technology }
+          - { slug: iq-data, title: IQ data, type: term }
+          - { slug: analog-to-digital-converter, title: Analog-to-digital converter (ADC), type: term }
+          - { slug: sample-rate, title: Sample rate, type: term }
+          - { slug: nyquist-theorem, title: Nyquist–Shannon sampling theorem, type: term }
+          - { slug: aliasing, title: Aliasing, type: term }
+          - { slug: superheterodyne-receiver, title: Superheterodyne receiver, type: term }
+          - { slug: local-oscillator, title: Local oscillator, type: term }
+          - { slug: digital-down-converter, title: Digital down-converter (DDC), type: term }
+          - { slug: decimation, title: Decimation, type: term }
+          - { slug: digital-filter, title: Digital filter, type: term }
+          - { slug: cic-filter, title: CIC filter, type: algorithm }
+          - { slug: root-raised-cosine-filter, title: Root-raised-cosine filter, type: algorithm }
+          - { slug: matched-filter, title: Matched filter, type: algorithm }
+          - { slug: automatic-gain-control, title: Automatic gain control (AGC), type: term }
+          - { slug: demodulation, title: Demodulation, type: term }
+          - { slug: clock-recovery, title: Clock recovery, type: term }
+          - { slug: costas-loop, title: Costas loop, type: algorithm }
+          - { slug: cma-equalizer, title: CMA equalizer, type: algorithm }
+          - { slug: ppm-frequency-correction, title: PPM frequency correction, type: term }
+          - { slug: numerically-controlled-oscillator, title: Numerically controlled oscillator (NCO), type: term }
+          - { slug: fir-filter, title: FIR filter, type: algorithm }
+          - { slug: iir-filter, title: IIR filter, type: algorithm }
+          - { slug: intermediate-frequency, title: Intermediate frequency (IF), type: term }
+          - { slug: baseband, title: Baseband, type: term }
+          - { slug: channelizer, title: Channelizer, type: algorithm }
+          - { slug: resampler, title: Resampler, type: algorithm }
+          - { slug: automatic-frequency-control, title: Automatic frequency control (AFC), type: term }
+          - { slug: dc-offset, title: DC offset (DC spike), type: term }
 
-  - id: algorithms
-    label: Transforms & algorithms
-    blurb: The mathematics of spectra, error correction, and timing recovery.
-    entries:
-      - { slug: fourier-transform, title: Fourier transform, type: algorithm }
-      - { slug: fast-fourier-transform, title: Fast Fourier transform (FFT), type: algorithm }
-      - { slug: viterbi-algorithm, title: Viterbi algorithm, type: algorithm }
-      - { slug: convolutional-code, title: Convolutional code, type: algorithm }
-      - { slug: reed-solomon-code, title: Reed–Solomon code, type: algorithm }
-      - { slug: bch-code, title: BCH code, type: algorithm }
-      - { slug: golay-code, title: Golay code, type: algorithm }
-      - { slug: hamming-code, title: Hamming code, type: algorithm }
-      - { slug: cyclic-redundancy-check, title: Cyclic redundancy check (CRC), type: algorithm }
-      - { slug: trellis-coded-modulation, title: Trellis-coded modulation, type: algorithm }
-      - { slug: forward-error-correction, title: Forward error correction (FEC), type: term }
-      - { slug: interleaving, title: Interleaving, type: algorithm }
-      - { slug: scrambling, title: Scrambling (whitening), type: algorithm }
-      - { slug: gardner-timing-recovery, title: Gardner timing recovery, type: algorithm }
-      - { slug: mueller-muller-timing-recovery, title: Mueller–Müller timing recovery, type: algorithm }
-      - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
-      - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
-      - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
-      - { slug: bptc, title: BPTC, type: algorithm }
-      - { slug: dtmf, title: DTMF, type: term }
+      - id: algorithms
+        label: Transforms & algorithms
+        blurb: The mathematics of spectra, error correction, and timing recovery.
+        entries:
+          - { slug: fourier-transform, title: Fourier transform, type: algorithm }
+          - { slug: fast-fourier-transform, title: Fast Fourier transform (FFT), type: algorithm }
+          - { slug: viterbi-algorithm, title: Viterbi algorithm, type: algorithm }
+          - { slug: convolutional-code, title: Convolutional code, type: algorithm }
+          - { slug: reed-solomon-code, title: Reed–Solomon code, type: algorithm }
+          - { slug: bch-code, title: BCH code, type: algorithm }
+          - { slug: golay-code, title: Golay code, type: algorithm }
+          - { slug: hamming-code, title: Hamming code, type: algorithm }
+          - { slug: cyclic-redundancy-check, title: Cyclic redundancy check (CRC), type: algorithm }
+          - { slug: trellis-coded-modulation, title: Trellis-coded modulation, type: algorithm }
+          - { slug: forward-error-correction, title: Forward error correction (FEC), type: term }
+          - { slug: interleaving, title: Interleaving, type: algorithm }
+          - { slug: scrambling, title: Scrambling (whitening), type: algorithm }
+          - { slug: gardner-timing-recovery, title: Gardner timing recovery, type: algorithm }
+          - { slug: mueller-muller-timing-recovery, title: Mueller–Müller timing recovery, type: algorithm }
+          - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
+          - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
+          - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
+          - { slug: bptc, title: BPTC, type: algorithm }
+          - { slug: dtmf, title: DTMF, type: term }
 
-  - id: trunked-radio
-    label: Trunked radio
-    blurb: The concepts that let many users share a pool of channels.
-    entries:
-      - { slug: trunked-radio, title: Trunked radio, type: term }
-      - { slug: conventional-radio, title: Conventional radio, type: term }
-      - { slug: control-channel, title: Control channel, type: term }
-      - { slug: voice-channel, title: Voice channel, type: term }
-      - { slug: talkgroup, title: Talkgroup, type: term }
-      - { slug: affiliation, title: Affiliation, type: term }
-      - { slug: fdma, title: FDMA, type: term }
-      - { slug: tdma, title: TDMA, type: term }
-      - { slug: channel-grant, title: Channel grant, type: term }
-      - { slug: radio-id, title: Radio ID, type: term }
-      - { slug: tsbk, title: TSBK, type: term }
-      - { slug: csbk, title: CSBK, type: term }
-      - { slug: rest-channel, title: Rest channel, type: term }
+      - id: trunked-radio
+        label: Trunked radio
+        blurb: The concepts that let many users share a pool of channels.
+        entries:
+          - { slug: trunked-radio, title: Trunked radio, type: term }
+          - { slug: conventional-radio, title: Conventional radio, type: term }
+          - { slug: control-channel, title: Control channel, type: term }
+          - { slug: voice-channel, title: Voice channel, type: term }
+          - { slug: talkgroup, title: Talkgroup, type: term }
+          - { slug: affiliation, title: Affiliation, type: term }
+          - { slug: fdma, title: FDMA, type: term }
+          - { slug: tdma, title: TDMA, type: term }
+          - { slug: channel-grant, title: Channel grant, type: term }
+          - { slug: radio-id, title: Radio ID, type: term }
+          - { slug: tsbk, title: TSBK, type: term }
+          - { slug: csbk, title: CSBK, type: term }
+          - { slug: rest-channel, title: Rest channel, type: term }
 
-  - id: protocols
-    label: Protocols & standards
-    blurb: The digital and analog systems GopherTrunk decodes, in one uniform format.
-    entries:
-      - { slug: project-25, title: "Project 25 (P25)", type: protocol }
-      - { slug: p25-phase-1, title: P25 Phase 1, type: protocol }
-      - { slug: p25-phase-2, title: P25 Phase 2, type: protocol }
-      - { slug: dmr, title: Digital Mobile Radio (DMR), type: protocol }
-      - { slug: dmr-tier-1, title: DMR Tier I, type: protocol }
-      - { slug: dmr-tier-2, title: DMR Tier II, type: protocol }
-      - { slug: dmr-tier-3, title: DMR Tier III, type: protocol }
-      - { slug: nxdn, title: NXDN, type: protocol }
-      - { slug: dpmr, title: dPMR, type: protocol }
-      - { slug: tetra, title: TETRA, type: protocol }
-      - { slug: motorola-type-ii, title: Motorola Type II, type: protocol }
-      - { slug: edacs, title: EDACS, type: protocol }
-      - { slug: ltr, title: LTR (Logic Trunked Radio), type: protocol }
-      - { slug: mpt-1327, title: MPT 1327, type: protocol }
-      - { slug: d-star, title: D-STAR, type: protocol }
-      - { slug: system-fusion-ysf, title: System Fusion (YSF), type: protocol }
-      - { slug: m17, title: M17, type: protocol }
-      - { slug: pocsag, title: POCSAG, type: protocol }
-      - { slug: flex, title: FLEX, type: protocol }
-      - { slug: ais, title: Automatic Identification System (AIS), type: protocol }
-      - { slug: ads-b, title: ADS-B, type: protocol }
-      - { slug: aprs, title: APRS, type: protocol }
-      - { slug: ax25, title: AX.25, type: protocol }
-      - { slug: dsc, title: Digital Selective Calling (DSC), type: protocol }
-      - { slug: mdc1200, title: MDC-1200, type: protocol }
-      - { slug: mode-s, title: Mode S, type: protocol }
-      - { slug: provoice, title: ProVoice, type: protocol }
-      - { slug: capacity-plus, title: Capacity Plus, type: protocol }
-      - { slug: lora, title: LoRa, type: protocol }
+      - id: protocols
+        label: Protocols & standards
+        blurb: The digital and analog systems GopherTrunk decodes, in one uniform format.
+        entries:
+          - { slug: project-25, title: "Project 25 (P25)", type: protocol }
+          - { slug: p25-phase-1, title: P25 Phase 1, type: protocol }
+          - { slug: p25-phase-2, title: P25 Phase 2, type: protocol }
+          - { slug: dmr, title: Digital Mobile Radio (DMR), type: protocol }
+          - { slug: dmr-tier-1, title: DMR Tier I, type: protocol }
+          - { slug: dmr-tier-2, title: DMR Tier II, type: protocol }
+          - { slug: dmr-tier-3, title: DMR Tier III, type: protocol }
+          - { slug: nxdn, title: NXDN, type: protocol }
+          - { slug: dpmr, title: dPMR, type: protocol }
+          - { slug: tetra, title: TETRA, type: protocol }
+          - { slug: motorola-type-ii, title: Motorola Type II, type: protocol }
+          - { slug: edacs, title: EDACS, type: protocol }
+          - { slug: ltr, title: LTR (Logic Trunked Radio), type: protocol }
+          - { slug: mpt-1327, title: MPT 1327, type: protocol }
+          - { slug: d-star, title: D-STAR, type: protocol }
+          - { slug: system-fusion-ysf, title: System Fusion (YSF), type: protocol }
+          - { slug: m17, title: M17, type: protocol }
+          - { slug: pocsag, title: POCSAG, type: protocol }
+          - { slug: flex, title: FLEX, type: protocol }
+          - { slug: ais, title: Automatic Identification System (AIS), type: protocol }
+          - { slug: ads-b, title: ADS-B, type: protocol }
+          - { slug: aprs, title: APRS, type: protocol }
+          - { slug: ax25, title: AX.25, type: protocol }
+          - { slug: dsc, title: Digital Selective Calling (DSC), type: protocol }
+          - { slug: mdc1200, title: MDC-1200, type: protocol }
+          - { slug: mode-s, title: Mode S, type: protocol }
+          - { slug: provoice, title: ProVoice, type: protocol }
+          - { slug: capacity-plus, title: Capacity Plus, type: protocol }
+          - { slug: lora, title: LoRa, type: protocol }
 
-  - id: voice-coding
-    label: Voice coding
-    blurb: The vocoders that compress speech into a few kilobits per second.
-    entries:
-      - { slug: vocoder, title: Vocoder, type: technology }
-      - { slug: imbe, title: IMBE, type: technology }
-      - { slug: ambe, title: AMBE, type: technology }
-      - { slug: ambe-plus-2, title: AMBE+2, type: technology }
-      - { slug: codec2, title: Codec 2, type: technology }
+      - id: voice-coding
+        label: Voice coding
+        blurb: The vocoders that compress speech into a few kilobits per second.
+        entries:
+          - { slug: vocoder, title: Vocoder, type: technology }
+          - { slug: imbe, title: IMBE, type: technology }
+          - { slug: ambe, title: AMBE, type: technology }
+          - { slug: ambe-plus-2, title: AMBE+2, type: technology }
+          - { slug: codec2, title: Codec 2, type: technology }
 
-  - id: hardware
-    label: Hardware
-    blurb: SDR dongles, tuner chips, and front-end components.
-    entries:
-      - { slug: rtl-sdr, title: RTL-SDR, type: hardware }
-      - { slug: rtl2832u, title: RTL2832U, type: hardware }
-      - { slug: r820t-tuner, title: R820T / R820T2 tuner, type: hardware }
-      - { slug: hackrf, title: HackRF One, type: hardware }
-      - { slug: airspy, title: Airspy, type: hardware }
-      - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
-      - { slug: upconverter, title: Upconverter, type: hardware }
-      - { slug: low-noise-amplifier, title: Low-noise amplifier (LNA), type: hardware }
-      - { slug: bias-tee, title: Bias tee, type: hardware }
-      - { slug: soapysdr, title: SoapySDR, type: technology }
-      - { slug: rtl-tcp, title: rtl_tcp, type: technology }
-      - { slug: zadig, title: Zadig, type: hardware }
-      - { slug: saw-filter, title: SAW filter, type: hardware }
-      - { slug: coaxial-cable, title: Coaxial cable, type: hardware }
+      - id: hardware
+        label: Hardware
+        blurb: SDR dongles, tuner chips, and front-end components.
+        entries:
+          - { slug: rtl-sdr, title: RTL-SDR, type: hardware }
+          - { slug: rtl2832u, title: RTL2832U, type: hardware }
+          - { slug: r820t-tuner, title: R820T / R820T2 tuner, type: hardware }
+          - { slug: hackrf, title: HackRF One, type: hardware }
+          - { slug: airspy, title: Airspy, type: hardware }
+          - { slug: airspy-hf-plus, title: Airspy HF+, type: hardware }
+          - { slug: upconverter, title: Upconverter, type: hardware }
+          - { slug: low-noise-amplifier, title: Low-noise amplifier (LNA), type: hardware }
+          - { slug: bias-tee, title: Bias tee, type: hardware }
+          - { slug: soapysdr, title: SoapySDR, type: technology }
+          - { slug: rtl-tcp, title: rtl_tcp, type: technology }
+          - { slug: zadig, title: Zadig, type: hardware }
+          - { slug: saw-filter, title: SAW filter, type: hardware }
+          - { slug: coaxial-cable, title: Coaxial cable, type: hardware }
 
-  - id: people
-    label: People
-    blurb: Scientists and engineers whose work underpins radio and SDR.
-    entries:
-      - { slug: heinrich-hertz, title: Heinrich Hertz, type: person }
-      - { slug: james-clerk-maxwell, title: James Clerk Maxwell, type: person }
-      - { slug: guglielmo-marconi, title: Guglielmo Marconi, type: person }
-      - { slug: joseph-fourier, title: Joseph Fourier, type: person }
-      - { slug: harry-nyquist, title: Harry Nyquist, type: person }
-      - { slug: claude-shannon, title: Claude Shannon, type: person }
-      - { slug: edwin-armstrong, title: Edwin Armstrong, type: person }
-      - { slug: andrew-viterbi, title: Andrew Viterbi, type: person }
-      - { slug: richard-hamming, title: Richard Hamming, type: person }
-      - { slug: reginald-fessenden, title: Reginald Fessenden, type: person }
-      - { slug: john-costas, title: John P. Costas, type: person }
-      - { slug: fred-gardner, title: Floyd M. Gardner, type: person }
+      - id: people
+        label: People
+        blurb: Scientists and engineers whose work underpins radio and SDR.
+        entries:
+          - { slug: heinrich-hertz, title: Heinrich Hertz, type: person }
+          - { slug: james-clerk-maxwell, title: James Clerk Maxwell, type: person }
+          - { slug: guglielmo-marconi, title: Guglielmo Marconi, type: person }
+          - { slug: joseph-fourier, title: Joseph Fourier, type: person }
+          - { slug: harry-nyquist, title: Harry Nyquist, type: person }
+          - { slug: claude-shannon, title: Claude Shannon, type: person }
+          - { slug: edwin-armstrong, title: Edwin Armstrong, type: person }
+          - { slug: andrew-viterbi, title: Andrew Viterbi, type: person }
+          - { slug: richard-hamming, title: Richard Hamming, type: person }
+          - { slug: reginald-fessenden, title: Reginald Fessenden, type: person }
+          - { slug: john-costas, title: John P. Costas, type: person }
+          - { slug: fred-gardner, title: Floyd M. Gardner, type: person }
 
-  - id: organizations
-    label: Organizations & standards bodies
-    blurb: The bodies that allocate spectrum and write the standards.
-    entries:
-      - { slug: itu, title: International Telecommunication Union (ITU), type: organization }
-      - { slug: fcc, title: Federal Communications Commission (FCC), type: organization }
-      - { slug: etsi, title: ETSI, type: organization }
-      - { slug: tia, title: Telecommunications Industry Association (TIA), type: organization }
-      - { slug: apco-international, title: APCO International, type: organization }
-      - { slug: icao, title: ICAO, type: organization }
-      - { slug: dvsi, title: Digital Voice Systems (DVSI), type: organization }
-      - { slug: m17-project, title: M17 Project, type: organization }
-      - { slug: radioreference, title: RadioReference, type: organization }
-      - { slug: ofcom, title: Ofcom, type: organization }
-      - { slug: rtca, title: RTCA, type: organization }
-      - { slug: eurocae, title: EUROCAE, type: organization }
+      - id: organizations
+        label: Organizations & standards bodies
+        blurb: The bodies that allocate spectrum and write the standards.
+        entries:
+          - { slug: itu, title: International Telecommunication Union (ITU), type: organization }
+          - { slug: fcc, title: Federal Communications Commission (FCC), type: organization }
+          - { slug: etsi, title: ETSI, type: organization }
+          - { slug: tia, title: Telecommunications Industry Association (TIA), type: organization }
+          - { slug: apco-international, title: APCO International, type: organization }
+          - { slug: icao, title: ICAO, type: organization }
+          - { slug: dvsi, title: Digital Voice Systems (DVSI), type: organization }
+          - { slug: m17-project, title: M17 Project, type: organization }
+          - { slug: radioreference, title: RadioReference, type: organization }
+          - { slug: ofcom, title: Ofcom, type: organization }
+          - { slug: rtca, title: RTCA, type: organization }
+          - { slug: eurocae, title: EUROCAE, type: organization }
+
+  - id: software-dev
+    label: "Software Development"
+    blurb: Programming languages and the concepts, paradigms, and practices of building software — the craft behind GopherTrunk itself.
+    categories:
+      - id: programming-languages
+        label: Programming languages
+        blurb: The languages used to build software, from systems languages to scripting and the historical pioneers.
+        entries:
+          - { slug: go-language, title: Go, type: language }
+          - { slug: python-language, title: Python, type: language }
+          - { slug: javascript-language, title: JavaScript, type: language }
+          - { slug: typescript-language, title: TypeScript, type: language }
+          - { slug: c-language, title: C, type: language }
+          - { slug: cpp-language, title: C++, type: language }
+          - { slug: rust-language, title: Rust, type: language }
+          - { slug: java-language, title: Java, type: language }
+          - { slug: csharp-language, title: C#, type: language }
+          - { slug: swift-language, title: Swift, type: language }
+          - { slug: kotlin-language, title: Kotlin, type: language }
+          - { slug: ruby-language, title: Ruby, type: language }
+          - { slug: php-language, title: PHP, type: language }
+          - { slug: r-language, title: R, type: language }
+          - { slug: julia-language, title: Julia, type: language }
+          - { slug: matlab-language, title: MATLAB, type: language }
+          - { slug: fortran-language, title: FORTRAN, type: language }
+          - { slug: cobol-language, title: COBOL, type: language }
+          - { slug: lisp-language, title: LISP, type: language }
+
+      - id: language-internals
+        label: Language internals & execution
+        blurb: How source code becomes a running program — compilation, interpretation, memory, and types.
+        entries:
+          - { slug: compiler, title: Compiler, type: concept }
+          - { slug: interpreter, title: Interpreter, type: concept }
+          - { slug: bytecode, title: Bytecode, type: concept }
+          - { slug: jit-compilation, title: JIT vs AOT compilation, type: concept }
+          - { slug: garbage-collection, title: Garbage collection, type: concept }
+          - { slug: memory-management, title: Memory management, type: concept }
+          - { slug: type-system, title: Type system, type: concept }
+          - { slug: static-vs-dynamic-typing, title: Static vs dynamic typing, type: concept }
+          - { slug: cross-compilation, title: Cross-compilation, type: concept }
+          - { slug: static-binary, title: Static binary, type: concept }
+
+      - id: concurrency-execution
+        label: Concurrency & execution models
+        blurb: How programs do more than one thing at a time.
+        entries:
+          - { slug: concurrency, title: Concurrency vs parallelism, type: concept }
+          - { slug: threads, title: Threads, type: concept }
+          - { slug: async-programming, title: Asynchronous programming, type: concept }
+          - { slug: goroutines, title: Goroutines, type: concept }
+
+      - id: paradigms-design
+        label: Paradigms & design patterns
+        blurb: Styles of organizing code and reusable solutions to recurring problems.
+        entries:
+          - { slug: object-oriented-programming, title: Object-oriented programming, type: concept }
+          - { slug: functional-programming, title: Functional programming, type: concept }
+          - { slug: imperative-programming, title: Imperative programming, type: concept }
+          - { slug: declarative-programming, title: Declarative programming, type: concept }
+          - { slug: design-patterns, title: Design patterns, type: concept }
+          - { slug: creational-patterns, title: Creational patterns, type: concept }
+          - { slug: structural-patterns, title: Structural patterns, type: concept }
+          - { slug: behavioral-patterns, title: Behavioral patterns, type: concept }
+          - { slug: abstraction, title: Abstraction, type: concept }
+          - { slug: coupling-and-cohesion, title: Coupling & cohesion, type: concept }
+
+      - id: principles-quality
+        label: Principles & code quality
+        blurb: The guidelines that separate maintainable software from a mess.
+        entries:
+          - { slug: solid, title: SOLID, type: concept }
+          - { slug: dry-kiss-yagni, title: DRY, KISS & YAGNI, type: concept }
+          - { slug: clean-code, title: Clean code, type: concept }
+          - { slug: refactoring, title: Refactoring, type: concept }
+          - { slug: error-handling, title: Error handling, type: concept }
+          - { slug: api, title: API, type: concept }
+
+      - id: testing-delivery
+        label: Testing, tooling & delivery
+        blurb: Verifying that software works and getting it into users' hands.
+        entries:
+          - { slug: unit-testing, title: Unit testing, type: concept }
+          - { slug: integration-testing, title: Integration testing, type: concept }
+          - { slug: end-to-end-testing, title: End-to-end testing, type: concept }
+          - { slug: test-driven-development, title: Test-driven development (TDD), type: concept }
+          - { slug: mocking, title: Mocking, type: concept }
+          - { slug: code-coverage, title: Code coverage, type: concept }
+          - { slug: ci-cd, title: CI/CD, type: concept }
+          - { slug: build-systems, title: Build systems, type: concept }
+          - { slug: package-manager, title: Package manager & dependency management, type: concept }
+          - { slug: semantic-versioning, title: Semantic versioning, type: concept }
+          - { slug: rest, title: REST, type: concept }
+          - { slug: version-control, title: Version control, type: concept }

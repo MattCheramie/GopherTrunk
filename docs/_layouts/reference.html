@@ -14,9 +14,17 @@ layout: default
 
 {%- assign all_entries = "" | split: "" -%}
 {%- assign cat_label = "" -%}
-{%- for cat in site.data.reference.categories -%}
-  {%- if cat.id == page.category -%}{%- assign cat_label = cat.label -%}{%- endif -%}
-  {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+{%- assign domain_label = "" -%}
+{%- assign domain_id = "" -%}
+{%- for d in site.data.reference.domains -%}
+  {%- for cat in d.categories -%}
+    {%- if cat.id == page.category -%}
+      {%- assign cat_label = cat.label -%}
+      {%- assign domain_label = d.label -%}
+      {%- assign domain_id = d.id -%}
+    {%- endif -%}
+    {%- for e in cat.entries -%}{%- assign all_entries = all_entries | push: e -%}{%- endfor -%}
+  {%- endfor -%}
 {%- endfor -%}
 {%- assign is_protocol = false -%}
 {%- if page.entry_type == "protocol" -%}{%- assign is_protocol = true -%}{%- endif -%}
@@ -27,6 +35,9 @@ layout: default
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
         <li><a href="{{ '/reference/' | relative_url }}">Reference</a></li>
+        {%- if domain_label != "" -%}
+          <li><a href="{{ '/reference/#domain-' | append: domain_id | relative_url }}">{{ domain_label }}</a></li>
+        {%- endif -%}
         {%- if cat_label != "" -%}
           <li><a href="{{ '/reference/#' | append: page.category | relative_url }}">{{ cat_label }}</a></li>
         {%- endif -%}

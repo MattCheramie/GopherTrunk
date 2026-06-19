@@ -30,12 +30,15 @@ Start: {{ base | absolute_url }}
 
 ## Reference (encyclopedia)
 
-Long-form, encyclopedia-style articles defining radio and SDR terms, technologies,
-algorithms, people, hardware, and organizations. Browse: {{ '/reference/' | absolute_url }}
-{% for cat in site.data.reference.categories %}
-### {{ cat.label }}
+Long-form, encyclopedia-style articles defining radio, SDR, and software-development
+terms, technologies, algorithms, languages, concepts, people, hardware, and
+organizations. Browse: {{ '/reference/' | absolute_url }}
+{% for d in site.data.reference.domains %}
+### {{ d.label }}
+{% for cat in d.categories %}
+#### {{ cat.label }}
 {% for e in cat.entries %}- [{{ e.title }}]({{ '/reference/' | append: e.slug | append: '/' | absolute_url }}){% endfor %}
-{% endfor %}
+{% endfor %}{% endfor %}
 
 ## Getting started with GopherTrunk
 - [What is GopherTrunk?]({{ '/getting-started.html' | absolute_url }}): conceptual overview of the scanner and its interfaces.

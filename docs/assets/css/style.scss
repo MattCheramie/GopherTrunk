@@ -1264,6 +1264,17 @@ a.category-chip:hover {
 .ref-hero__meta { font-size: 0.92rem; color: var(--fg-muted); margin: 0; }
 .ref-intro { margin: 0 auto 2rem; }
 
+/* ---------- Domains (top-level grouping above categories) ---------- */
+.ref-domains { margin-bottom: 1rem; }
+.ref-domain { margin: 0 0 3rem; }
+.ref-domain__head {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+}
+.ref-domain__title { font-size: clamp(1.5rem, 3vw, 1.9rem); font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.25rem; }
+.ref-domain__blurb { margin: 0; max-width: 46rem; color: var(--fg-muted); }
+
 .ref-categories { margin-bottom: 2.5rem; }
 .ref-category { margin: 0 0 2rem; }
 .ref-category__head { margin-bottom: 0.75rem; }
@@ -1300,7 +1311,9 @@ a.category-chip:hover {
   background: var(--bg-elev);
 }
 .ref-tag--protocol { color: var(--accent); border-color: var(--accent); }
+.ref-tag--language { color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .ref-tag--person { font-style: italic; }
+.ref-tag--concept { font-style: italic; }
 
 /* ---------- A–Z index ---------- */
 .ref-az { border-top: 1px solid var(--border); padding-top: 1.5rem; }
