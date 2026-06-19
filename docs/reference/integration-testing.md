@@ -16,13 +16,15 @@ infobox:
 see_also: [unit-testing, end-to-end-testing, mocking, code-coverage, test-driven-development, ci-cd, rest]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "Integration testing — Wikipedia", url: https://en.wikipedia.org/wiki/Integration_testing }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Integration_testing
 ---
 
 **Integration testing** checks that several components work correctly *together*,
 exercising the real seams between them — a parser feeding a decoder, or code talking to a
-database.
+database.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Three components connected in sequence, with the joins between them highlighted as what integration tests exercise." xmlns="http://www.w3.org/2000/svg">
@@ -52,7 +54,7 @@ thing under test, though they may still stub out slow or external systems via
 ## Where it sits
 
 Integration tests form the *middle* layer of the test pyramid: fewer than unit tests and
-slower, because they exercise real interactions rather than one isolated function. That
+slower, because they exercise real interactions rather than one isolated function.[^wiki] That
 trade-off is deliberate — they give more end-to-end-like confidence than a unit test
 while remaining faster and more targeted than a full
 [end-to-end test](/reference/end-to-end-testing/). A healthy suite has a wide base of
@@ -66,3 +68,7 @@ push, so a broken seam is caught within minutes. They contribute to
 [code coverage](/reference/code-coverage/) and complement the
 [test-driven development](/reference/test-driven-development/) habit of specifying
 behavior before building it.
+
+## Sources
+
+[^wiki]: [Integration testing](https://en.wikipedia.org/wiki/Integration_testing) — Wikipedia, for the definition and its place between unit and end-to-end tests.

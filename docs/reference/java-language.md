@@ -19,14 +19,16 @@ see_also: [csharp-language, jit-compilation, bytecode, garbage-collection, kotli
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "Java (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Java_(programming_language) }
-  - { title: "The Java platform — Oracle", url: https://www.java.com/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.java.com/
+  - https://en.wikipedia.org/wiki/Java_(programming_language)
 ---
 
 **Java** is a statically typed, garbage-collected, object-oriented language that
 compiles to bytecode and runs on the Java Virtual Machine (JVM), giving it genuine
-"write once, run anywhere" portability across platforms.
+"write once, run anywhere" portability across platforms.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Java source compiles once to portable bytecode, which the JVM JIT-compiles to native code on each platform at runtime." xmlns="http://www.w3.org/2000/svg">
@@ -47,7 +49,7 @@ compiles to bytecode and runs on the Java Virtual Machine (JVM), giving it genui
 ## Overview
 
 Java source compiles to platform-independent [bytecode](/reference/bytecode/), which the
-JVM [JIT-compiles](/reference/jit-compilation/) to native code as the program runs. It is
+JVM [JIT-compiles](/reference/jit-compilation/) to native code as the program runs.[^home] It is
 [statically typed](/reference/type-system/), thoroughly
 [object-oriented](/reference/object-oriented-programming/), and
 [garbage-collected](/reference/garbage-collection/). The combination of a portable
@@ -70,3 +72,8 @@ long-lived business applications. Its closest counterpart is [C#](/reference/csh
 on .NET, which shares almost the same managed, JIT-compiled, garbage-collected design;
 the choice between them is usually about ecosystem and platform rather than language
 merit.
+
+## Sources
+
+[^home]: [The Java platform](https://www.java.com/) — Oracle's official Java site and runtime documentation.
+[^wiki]: [Java (programming language)](https://en.wikipedia.org/wiki/Java_(programming_language)) — Wikipedia, for history and design background.

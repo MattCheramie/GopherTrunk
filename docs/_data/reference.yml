@@ -1,6 +1,6 @@
-# GopherTrunk Reference — encyclopedia single source of truth.
+# GopherTrunk Field Guide — encyclopedia single source of truth.
 #
-# Drives: the reference hub (docs/reference/index.md) domain/category grid +
+# Drives: the Field Guide hub (docs/reference/index.md) domain/category grid +
 # A–Z index, the article breadcrumb domain + category labels
 # (docs/_layouts/reference.html), and the "Reference" section of docs/llms.txt.
 #
@@ -27,7 +27,7 @@
 # Keep `slug` and category `id` stable once published — they are URLs and anchors.
 
 intro: >
-  The GopherTrunk Reference is a plain-language encyclopedia of the terms,
+  The GopherTrunk Field Guide is a plain-language encyclopedia of the terms,
   technologies, algorithms, people, hardware, organizations, and software behind
   radio, software-defined radio, and the craft of building software itself. Each
   article is a standalone, long-form definition — no lesson order, no exercises,

@@ -2,7 +2,7 @@
 layout: default
 ---
 {%- comment -%}
-  Landing page for the GopherTrunk Reference encyclopedia. Renders a category
+  Landing page for the GopherTrunk Field Guide. Renders a category
   index and a generated A–Z index from _data/reference.yml, plus DefinedTermSet
   + ItemList structured data.
 {%- endcomment -%}
@@ -21,12 +21,12 @@ layout: default
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
-        <li><span aria-current="page">Reference</span></li>
+        <li><span aria-current="page">Field Guide</span></li>
       </ol>
     </nav>
 
     <header class="ref-hero">
-      <p class="ref-eyebrow">Encyclopedia</p>
+      <p class="ref-eyebrow">Field Guide</p>
       <h1 class="ref-hero__title">{{ page.title }}</h1>
       <p class="ref-hero__lede">{{ ref.intro }}</p>
       <p class="ref-hero__meta">{{ total }} entries · <a href="#a-z">A–Z index</a> · <a href="{{ '/learn/rf-sdr/' | relative_url }}">Learning path</a> · <a href="{{ '/learn/rf-sdr/glossary/' | relative_url }}">Glossary</a></p>
@@ -81,7 +81,7 @@ layout: default
 {
   "@context": "https://schema.org",
   "@type": "DefinedTermSet",
-  "name": "GopherTrunk Reference",
+  "name": "GopherTrunk Field Guide",
   "description": {{ ref.intro | strip_newlines | jsonify }},
   "url": {{ '/reference/' | absolute_url | jsonify }},
   "hasDefinedTerm": [

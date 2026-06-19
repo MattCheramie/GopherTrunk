@@ -28,7 +28,7 @@ Start: {{ base | absolute_url }}
 - [{{ path.glossary.title }}]({{ base | append: 'glossary/' | absolute_url }}): {{ path.glossary.summary }}
 {% endif %}{% endfor %}
 
-## Reference (encyclopedia)
+## Field Guide (encyclopedia)
 
 Long-form, encyclopedia-style articles defining radio, SDR, and software-development
 terms, technologies, algorithms, languages, concepts, people, hardware, and

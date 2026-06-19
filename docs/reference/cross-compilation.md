@@ -18,13 +18,13 @@ see_also: [compiler, static-binary, go-language, rust-language, c-language]
 related_lessons:
   - { title: "Packaging and distribution", url: /learn/intro-software-dev/packaging-and-distribution/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "Cross compiler — Wikipedia", url: https://en.wikipedia.org/wiki/Cross_compiler }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Cross_compiler
 ---
 
 **Cross-compilation** is building an executable on one platform — the *host* — that is
 meant to run on a *different* platform — the *target* — such as producing a Windows or
-macOS binary from a Linux machine without ever touching those operating systems.
+macOS binary from a Linux machine without ever touching those operating systems.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="One source tree compiled on a Linux host produces binaries targeting Linux, macOS, and Windows." xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +46,7 @@ macOS binary from a Linux machine without ever touching those operating systems.
 A normal [compiler](/reference/compiler/) emits machine code for the machine it runs
 on. A cross-compiling toolchain instead targets a chosen operating system and CPU
 architecture, generating code and linking against the right libraries for that target.
-The output is a binary that will not run on the host but will run on the target. This
+The output is a binary that will not run on the host but will run on the target.[^wiki] This
 is essential whenever the target cannot easily build for itself — embedded devices,
 phones, or simply a release pipeline that produces every platform's download from one
 build machine.
@@ -58,7 +58,7 @@ making multi-platform releases a single automated step. The complications come f
 *platform-specific dependencies*: code that links against C libraries or calls
 operating-system APIs may need matching target headers and libraries, and that setup
 can be fiddly. Languages with little native dependency and a pure toolchain cross-compile
-most smoothly, especially when they also emit a [static binary](/reference/static-binary/).
+most smoothly, especially when they also emit a [static binary](/reference/static-binary/).[^wiki]
 
 ## In practice
 
@@ -68,3 +68,7 @@ why GopherTrunk can ship Linux, macOS, and Windows downloads from one build.
 [Rust](/reference/rust-language/) supports many targets through its toolchain, and
 [C](/reference/c-language/) cross-compiles with dedicated toolchains, though external
 dependencies make it more involved.
+
+## Sources
+
+[^wiki]: [Cross compiler](https://en.wikipedia.org/wiki/Cross_compiler) — Wikipedia, on building executables for a target platform different from the host and why it matters for releases and embedded work.

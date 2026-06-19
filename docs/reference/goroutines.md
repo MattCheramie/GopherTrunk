@@ -18,14 +18,16 @@ see_also: [concurrency, threads, async-programming, go-language, garbage-collect
 related_lessons:
   - { title: "Concurrency and parallelism", url: /learn/intro-software-dev/concurrency-models/ }
   - { title: "Concurrency and pipelines", url: /learn/intro-software-dev/concurrency-and-pipelines/ }
-external:
-  - { title: "Go (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Go_(programming_language)#Concurrency }
+related_reading:
+  - { title: "SDR Internals, Part 3: The SDR pool, streaming & concurrency", url: /blog/deep-dives/sdr-internals-03-sdr-pool-streaming-concurrency/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Go_(programming_language)#Concurrency
 ---
 
 **A goroutine** is a lightweight task managed by the [Go](/reference/go-language/)
 runtime rather than the operating system. They are so cheap that you can run hundreds of
 thousands at once, and they communicate over *channels* instead of sharing memory
-directly.
+directly.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="The Go runtime multiplexes many goroutines onto a few OS threads, and goroutines pass values through a channel." xmlns="http://www.w3.org/2000/svg">
@@ -48,11 +50,11 @@ directly.
 You start a goroutine by prefixing a function call with `go`. Each begins with a tiny
 stack that grows as needed, and the Go runtime's scheduler multiplexes many goroutines
 onto a small pool of OS [threads](/reference/threads/), so they cost almost nothing
-compared with one OS thread per task. Goroutines coordinate through **channels** — typed
+compared with one OS thread per task.[^wiki] Goroutines coordinate through **channels** — typed
 pipes where one goroutine sends a value and another receives it. The channel handles
 synchronization, so there is no explicit lock and no data race on the data that flows
 through it. This is the *Communicating Sequential Processes* (CSP) model, captured by the
-slogan: "Do not communicate by sharing memory; share memory by communicating."
+slogan: "Do not communicate by sharing memory; share memory by communicating."[^wiki]
 
 ## Trade-offs
 
@@ -71,3 +73,7 @@ big reason it is common in networked and streaming systems. In GopherTrunk they 
 cleanly onto the concurrent decode pipelines an SDR scanner runs at once — a capture
 stage feeding a DSP stage feeding a decode stage, each a goroutine, glued together by
 channels.
+
+## Sources
+
+[^wiki]: [Go (programming language) — Concurrency](https://en.wikipedia.org/wiki/Go_(programming_language)#Concurrency) — Wikipedia, on goroutines, channels, and Go's CSP-based "share memory by communicating" model.

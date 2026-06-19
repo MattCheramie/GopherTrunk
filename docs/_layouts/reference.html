@@ -2,14 +2,19 @@
 layout: default
 ---
 {%- comment -%}
-  Encyclopedia article layout for the GopherTrunk Reference. Deliberately
-  distinct from the learning hub: a definition-first article with a right-hand
-  infobox, category breadcrumb, "See also", "Related lessons", and an external
-  "References" list — no prev/next, reading time, TL;DR, or quizzes.
+  Article layout for the GopherTrunk Field Guide. Deliberately distinct from the
+  learning hub: a definition-first article with a right-hand infobox, category
+  breadcrumb, "See also", "Learn it step by step", "From the blog", and a
+  "Related links" list — no prev/next, reading time, TL;DR, or quizzes.
+
+  Sources/citations are authored as kramdown footnotes in the article body
+  (inline [^key] markers + definitions under a final "## Sources" heading); the
+  kramdown .footnotes block renders just below the body.
 
   Front matter consumed: slug, title, entry_type, category, description, aka,
   infobox (ordered list of {label,value}), see_also (slugs), related_lessons
-  ({title,url}), external ({title,url}).
+  ({title,url}), related_reading ({title,url} — blog posts), external
+  ({title,url} — related non-source links).
 {%- endcomment -%}
 
 {%- assign all_entries = "" | split: "" -%}
@@ -34,7 +39,7 @@ layout: default
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
         <li><a href="{{ '/' | relative_url }}">Home</a></li>
-        <li><a href="{{ '/reference/' | relative_url }}">Reference</a></li>
+        <li><a href="{{ '/reference/' | relative_url }}">Field Guide</a></li>
         {%- if domain_label != "" -%}
           <li><a href="{{ '/reference/#domain-' | append: domain_id | relative_url }}">{{ domain_label }}</a></li>
         {%- endif -%}
@@ -45,7 +50,7 @@ layout: default
       </ol>
     </nav>
 
-    <p class="ref-eyebrow">Reference{% if page.entry_type %} · <span class="ref-eyebrow__type">{{ page.entry_type }}</span>{% endif %}</p>
+    <p class="ref-eyebrow">Field Guide{% if page.entry_type %} · <span class="ref-eyebrow__type">{{ page.entry_type }}</span>{% endif %}</p>
 
     <div class="ref-layout">
       <article class="prose ref-article" data-cta-host>
@@ -78,9 +83,20 @@ layout: default
           </section>
         {%- endif -%}
 
+        {%- if page.related_reading and page.related_reading.size > 0 -%}
+          <section class="ref-related" aria-label="Related reading">
+            <h2>From the blog</h2>
+            <ul>
+              {%- for r in page.related_reading -%}
+                <li><a href="{{ r.url | relative_url }}">{{ r.title }}</a></li>
+              {%- endfor -%}
+            </ul>
+          </section>
+        {%- endif -%}
+
         {%- if page.external and page.external.size > 0 -%}
-          <section class="ref-refs" aria-label="References and external links">
-            <h2>References &amp; external links</h2>
+          <section class="ref-refs" aria-label="Related links">
+            <h2>Related links</h2>
             <ul>
               {%- for x in page.external -%}
                 <li><a href="{{ x.url }}" rel="noopener nofollow">{{ x.title }}</a></li>

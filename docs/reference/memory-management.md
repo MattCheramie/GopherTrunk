@@ -18,13 +18,13 @@ see_also: [garbage-collection, type-system, static-binary, c-language, cpp-langu
 related_lessons:
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Memory management — Wikipedia", url: https://en.wikipedia.org/wiki/Memory_management }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Memory_management
 ---
 
 **Memory management** is how a running program obtains memory to hold its data and
 reclaims it once that data is no longer needed — a defining characteristic of a
-language that shapes its safety, speed, and fitness for real-time work.
+language that shapes its safety, speed, and fitness for real-time work.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A program uses a fast auto-freed stack and a flexible heap that must be reclaimed manually, by garbage collection, or by ownership." xmlns="http://www.w3.org/2000/svg">
@@ -47,14 +47,14 @@ is freed automatically and allocation is nearly free — but everything on it mu
 size known at compile time and lives only as long as its function. The **heap** is a
 flexible pool for data whose size or lifetime is not known up front; it must be
 allocated and eventually released, and **all the hard memory problems live on the
-heap** because something must decide when each piece is no longer needed.
+heap** because something must decide when each piece is no longer needed.[^wiki]
 
 ## Three strategies
 
 Languages differ chiefly in how they reclaim heap memory.
 **Manual management** — [C](/reference/c-language/) and [C++](/reference/cpp-language/)
 — gives you `malloc`/`free` and total control, but risks leaks, use-after-free, double
-frees, and buffer overflows. **[Garbage collection](/reference/garbage-collection/)** —
+frees, and buffer overflows.[^wiki] **[Garbage collection](/reference/garbage-collection/)** —
 [Go](/reference/go-language/), [Java](/reference/java-language/),
 [Python](/reference/python-language/) — automatically frees unreachable memory,
 eliminating whole bug classes at the cost of occasional, non-deterministic pauses.
@@ -69,3 +69,7 @@ memory at predictable moments, so a software-defined radio pipeline never stalls
 mid-buffer; garbage collection can pause at an unpredictable
 moment and drop samples. This is why tight DSP gravitates toward C or Rust, while a
 GC'd language like Go is fine for the control and orchestration layers around it.
+
+## Sources
+
+[^wiki]: [Memory management](https://en.wikipedia.org/wiki/Memory_management) — Wikipedia, on stack versus heap, manual allocation, and automatic reclamation strategies.

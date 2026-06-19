@@ -16,13 +16,15 @@ infobox:
 see_also: [unit-testing, integration-testing, end-to-end-testing, test-driven-development, code-coverage, solid, ci-cd]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "Mock object — Wikipedia", url: https://en.wikipedia.org/wiki/Mock_object }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Mock_object
 ---
 
 **Mocking** is the use of *test doubles* — stand-ins for a unit's real dependencies — so
 the unit can be [tested](/reference/unit-testing/) in isolation, deterministically and
-without touching real networks, databases, or hardware.
+without touching real networks, databases, or hardware.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Code under test calls a test double standing in for a real dependency such as a database or radio." xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +47,7 @@ without touching real networks, databases, or hardware.
   replays a file instead of reading a live device.
 - **Stub** — simply returns canned, pre-programmed responses, with no logic of its own.
 - **Mock** — records *how* it was called and lets the test assert that the code
-  interacted with it correctly (it called `send()` once, with these arguments).
+  interacted with it correctly (it called `send()` once, with these arguments).[^wiki]
 
 The right double depends on what you're testing: a stub or fake when you only need the
 dependency to be *present*, a mock when the interaction itself is the behavior under test.
@@ -68,3 +70,7 @@ Doubles have a cost: a test that mocks everything verifies your code against you
 mocking also inflates [code coverage](/reference/code-coverage/) without real assurance.
 Mock at the boundaries of slow or external systems; let higher layers, run in
 [CI/CD](/reference/ci-cd/), exercise the real seams.
+
+## Sources
+
+[^wiki]: [Mock object](https://en.wikipedia.org/wiki/Mock_object) — Wikipedia, for test doubles (mocks, fakes, stubs) and how they isolate a unit.

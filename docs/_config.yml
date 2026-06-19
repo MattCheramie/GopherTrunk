@@ -91,14 +91,14 @@ defaults:
       learn_path: digital-trunking
       nav_group: Learn
       permalink: /learn/digital-trunking/:basename/
-  # Encyclopedia articles under /reference/ get the reference layout and nav
+  # Field Guide articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:
       path: "reference"
       type: pages
     values:
       layout: reference
-      nav_group: Reference
+      nav_group: Field Guide
       permalink: /reference/:basename/
   # Per-category post URLs scoped to posts only — a global `permalink`
   # in _config.yml would also rewrite every existing /foo.html page to

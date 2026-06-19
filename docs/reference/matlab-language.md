@@ -19,13 +19,15 @@ see_also: [julia-language, python-language, r-language, interpreter, fast-fourie
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Matching the language to the domain", url: /learn/intro-software-dev/language-for-the-domain/ }
-external:
-  - { title: "MATLAB — Wikipedia", url: https://en.wikipedia.org/wiki/MATLAB }
-  - { title: "MATLAB (MathWorks)", url: https://www.mathworks.com/products/matlab.html }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.mathworks.com/products/matlab.html
+  - https://en.wikipedia.org/wiki/MATLAB
 ---
 
 **MATLAB** is a commercial, matrix-oriented language and environment from MathWorks
-built for engineering, signal processing, and control systems. It is superb for DSP
+built for engineering, signal processing, and control systems.[^wiki] It is superb for DSP
 prototyping but proprietary and licensed.
 
 <figure class="figure" markdown="0">
@@ -47,7 +49,7 @@ prototyping but proprietary and licensed.
 
 MATLAB ("matrix laboratory") was designed around the matrix as its native data type,
 which makes linear-algebra and signal code read almost like the mathematics it
-implements. It pairs the language with a full interactive environment, deep numerical
+implements.[^home] It pairs the language with a full interactive environment, deep numerical
 libraries, toolboxes for control, communications and DSP, and Simulink for
 model-based design. That makes it a favourite for **DSP prototyping** and the kind of
 [fast Fourier transform](/reference/fast-fourier-transform/) work that underlies
@@ -56,10 +58,15 @@ model-based design. That makes it a favourite for **DSP prototyping** and the ki
 ## Key characteristics
 
 MATLAB is dynamically typed (see [static vs dynamic typing](/reference/static-vs-dynamic-typing/))
-and [interpreted](/reference/interpreter/) with a JIT in its runtime. Its great
+and [interpreted](/reference/interpreter/) with a JIT in its runtime.[^home] Its great
 drawback is that it is **proprietary and licensed**: it costs money, toolboxes are sold
 separately, and code is tied to a vendor's runtime rather than an open ecosystem. It
 is also a specialist rather than a general-purpose language. For overlapping work,
 open alternatives include [Python](/reference/python-language/) with NumPy/SciPy, the
 faster [Julia](/reference/julia-language/), and [R](/reference/r-language/) for
 statistics — each trading MATLAB's polished, licensed tooling for openness.
+
+## Sources
+
+[^home]: [MATLAB (MathWorks)](https://www.mathworks.com/products/matlab.html) — official product site, documentation, and the matrix environment and toolboxes.
+[^wiki]: [MATLAB](https://en.wikipedia.org/wiki/MATLAB) — Wikipedia, for history, origins, and design background.

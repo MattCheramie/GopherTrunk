@@ -17,14 +17,14 @@ infobox:
 see_also: [abstraction, object-oriented-programming, design-patterns, solid, structural-patterns, behavioral-patterns]
 related_lessons:
   - { title: "Abstraction, coupling & cohesion", url: /learn/intro-software-dev/abstraction-coupling/ }
-external:
-  - { title: "Coupling (computer programming) — Wikipedia", url: https://en.wikipedia.org/wiki/Coupling_(computer_programming) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Coupling_(computer_programming)
 ---
 
 **Coupling** measures how much one module depends on another — how entangled they are —
 while **cohesion** measures how focused a single module is — how well its parts belong
 together. The central slogan of modular design is: aim for **loose coupling and high
-cohesion**.
+cohesion**.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Loose coupling shows modules connected by few narrow lines through a clean interface, while tight coupling shows many tangled connections between internals." xmlns="http://www.w3.org/2000/svg">
@@ -49,7 +49,7 @@ the other. Loosely coupled modules interact only through narrow, stable interfac
 can change behind its contract without disturbing its neighbours. A rough spectrum from
 worse to better: **content coupling** (one module reaches into another's state),
 **shared global state** (invisible dependencies through globals), and **data coupling**
-(passing exactly the data needed through a clean interface — the goal). Loose coupling is
+(passing exactly the data needed through a clean interface — the goal).[^wiki] Loose coupling is
 what makes code testable, reusable, and safe to change, and it leans directly on
 [abstraction](/reference/abstraction/) and the dependency-inversion idea in
 [SOLID](/reference/solid/).
@@ -77,4 +77,8 @@ mud" where nothing can move without everything moving. Most
 [design patterns](/reference/design-patterns/) — especially the
 [structural](/reference/structural-patterns/) and
 [behavioral](/reference/behavioral-patterns/) families — exist precisely to push a design
-toward this loose-coupling, high-cohesion ideal.
+toward this loose-coupling, high-cohesion ideal.[^wiki]
+
+## Sources
+
+[^wiki]: [Coupling (computer programming)](https://en.wikipedia.org/wiki/Coupling_(computer_programming)) — Wikipedia, for the definition of coupling, its spectrum, and the paired loose-coupling, high-cohesion goal.

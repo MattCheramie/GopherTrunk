@@ -19,15 +19,17 @@ see_also: [python-language, object-oriented-programming, interpreter, static-vs-
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "Ruby (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Ruby_(programming_language) }
-  - { title: "Ruby programming language", url: https://www.ruby-lang.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.ruby-lang.org/
+  - https://en.wikipedia.org/wiki/Ruby_(programming_language)
 ---
 
 **Ruby** is a dynamic, [object-oriented](/reference/object-oriented-programming/),
 [interpreted](/reference/interpreter/) language created by Yukihiro "Matz" Matsumoto
 with an explicit goal of programmer happiness, and it is best known as the language
-behind the Ruby on Rails web framework.
+behind the Ruby on Rails web framework.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Concise Ruby source runs through an interpreter, which produces a working web application." xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +48,7 @@ behind the Ruby on Rails web framework.
 
 Ruby prizes readability and expressiveness over raw speed. Its syntax reads almost
 like English, nearly everything is an object, and its flexible metaprogramming lets
-libraries build clean, domain-specific interfaces. That power is what made **Ruby on
+libraries build clean, domain-specific interfaces.[^home] That power is what made **Ruby on
 Rails** so influential: the framework's "convention over configuration" approach let
 small teams ship web applications fast, and it shaped a generation of web frameworks
 in other languages. Gems, installed through the RubyGems [package manager](/reference/package-manager/),
@@ -57,8 +59,13 @@ provide a large library ecosystem.
 Ruby is dynamically typed (see [static vs dynamic typing](/reference/static-vs-dynamic-typing/))
 and [garbage-collected](/reference/garbage-collection/), with code run by a
 [bytecode](/reference/bytecode/) virtual machine that has gained a JIT in recent
-releases. The trade-offs are well known: like other dynamic languages such as
+releases.[^home] The trade-offs are well known: like other dynamic languages such as
 [Python](/reference/python-language/), it is comparatively **slow** in CPU-bound work
 and its loose typing lets some bugs reach runtime. Its popularity has cooled from the
 Rails peak, and its centre of gravity stays in web back ends, scripting, and
 automation rather than systems or numeric work.
+
+## Sources
+
+[^home]: [Ruby programming language](https://www.ruby-lang.org/) — official site, documentation, and the dynamic object model and runtime.
+[^wiki]: [Ruby (programming language)](https://en.wikipedia.org/wiki/Ruby_(programming_language)) — Wikipedia, for history, Matz's design goals, and Rails.

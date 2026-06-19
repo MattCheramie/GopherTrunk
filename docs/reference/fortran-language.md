@@ -19,14 +19,16 @@ see_also: [cobol-language, lisp-language, c-language, julia-language, compiler, 
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "The birth of programming languages", url: /learn/intro-software-dev/birth-of-languages/ }
-external:
-  - { title: "Fortran — Wikipedia", url: https://en.wikipedia.org/wiki/Fortran }
-  - { title: "Fortran programming language", url: https://fortran-lang.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://fortran-lang.org/
+  - https://en.wikipedia.org/wiki/Fortran
 ---
 
 **FORTRAN** (FORmula TRANslation), introduced by IBM in 1957, was the first widely
-used high-level language. Built so scientists could write formulas almost as they
-appear on paper, its descendants still dominate high-performance numerical computing.
+used high-level language.[^wiki] Built so scientists could write formulas almost as they
+appear on paper, its descendants still dominate high-performance numerical computing.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A mathematical formula is written as FORTRAN source, compiled to native code, and run as fast numerical computation." xmlns="http://www.w3.org/2000/svg">
@@ -54,7 +56,7 @@ high-level languages were practical, opening the door to every language that fol
 
 FORTRAN is [statically typed](/reference/type-system/), compiled to native code, and
 [imperative](/reference/imperative-programming/) and array-oriented in style, with no
-[garbage collector](/reference/garbage-collection/). Decades of mature, heavily
+[garbage collector](/reference/garbage-collection/).[^wiki] Decades of mature, heavily
 optimised numerical libraries are written in it, and it remains in active use across
 weather modelling, physics, and high-performance computing where raw numeric
 throughput matters. Its drawbacks are those of its age: the language and much existing
@@ -63,3 +65,8 @@ general-purpose language. Newer numeric languages like [Julia](/reference/julia-
 court its users, while [C](/reference/c-language/) became the more general
 systems-and-DSP workhorse. It shares the early-language stage with
 [COBOL](/reference/cobol-language/) and [LISP](/reference/lisp-language/).
+
+## Sources
+
+[^home]: [Fortran programming language](https://fortran-lang.org/) — official community site, documentation, and the modern Fortran ecosystem.
+[^wiki]: [Fortran](https://en.wikipedia.org/wiki/Fortran) — Wikipedia, for history, the 1957 origin, and the compiled, statically typed design.

@@ -18,13 +18,13 @@ see_also: [static-vs-dynamic-typing, compiler, interpreter, memory-management, r
 related_lessons:
   - { title: "Type systems and safety", url: /learn/intro-software-dev/type-systems/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Type system — Wikipedia", url: https://en.wikipedia.org/wiki/Type_system }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Type_system
 ---
 
 **A type system** is the set of rules a language uses to track the type of every value
 — integer, string, list, a `Receiver` object — and decide which operations are allowed,
-catching whole classes of mistakes that would otherwise surface as bugs.
+catching whole classes of mistakes that would otherwise surface as bugs.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A type checker accepts an operation on matching types and rejects one that mixes incompatible types." xmlns="http://www.w3.org/2000/svg">
@@ -53,13 +53,13 @@ operation, then verifies that uses line up. *When* it checks is the
 executes. A separate axis is *how strictly* it enforces types — **strong** systems
 refuse to silently mix a string and a number, **weak** ones coerce. **Type inference**
 lets the compiler deduce types from context, so you get checking without spelling out
-every annotation.
+every annotation.[^wiki]
 
 ## Trade-offs
 
 A richer type system pays for itself by turning run-time surprises into compile errors:
 wrong-type arguments, calling a method that does not exist, forgetting to handle a
-null, and broken refactors all get caught for free. Expressive features — generics,
+null, and broken refactors all get caught for free.[^wiki] Expressive features — generics,
 sum types, and Option/Result types — let you "make illegal states unrepresentable."
 The cost is ceremony, some rigidity, and slower prototyping. A throwaway script barely
 benefits; a large, long-lived, multi-author system benefits enormously.
@@ -71,3 +71,7 @@ checking with inference; [TypeScript](/reference/typescript-language/) adds a ch
 type layer over JavaScript. In domains like radio software, wrapping a frequency and a
 sample rate in distinct types makes unit-confusion bugs impossible to compile rather
 than merely unlikely.
+
+## Sources
+
+[^wiki]: [Type system](https://en.wikipedia.org/wiki/Type_system) — Wikipedia, on type checking, the static/dynamic and strong/weak axes, type inference, and type safety.

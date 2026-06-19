@@ -18,14 +18,16 @@ see_also: [concurrency, threads, goroutines, javascript-language, python-languag
 related_lessons:
   - { title: "Concurrency and parallelism", url: /learn/intro-software-dev/concurrency-models/ }
   - { title: "Concurrency and pipelines", url: /learn/intro-software-dev/concurrency-and-pipelines/ }
-external:
-  - { title: "Asynchronous I/O — Wikipedia", url: https://en.wikipedia.org/wiki/Asynchronous_I/O }
+related_reading:
+  - { title: "SDR Internals, Part 3: The SDR pool, streaming & concurrency", url: /blog/deep-dives/sdr-internals-03-sdr-pool-streaming-concurrency/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Asynchronous_I/O
 ---
 
 **Asynchronous programming** runs many tasks [concurrently](/reference/concurrency/) on
 a single thread using an *event loop*: whenever a task waits on something slow, it
 yields control back to the loop, which runs other ready tasks until the slow thing
-finishes.
+finishes.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="An event loop dispatches a task, which yields on await and lets another ready task run, then resumes when its result arrives." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +50,7 @@ Code marks slow operations with `await`. When a task reaches one, it suspends an
 the single thread back to the event loop, which picks another task that is ready to make
 progress; when the awaited operation completes, the loop resumes the original task where
 it left off. No operating-system [thread](/reference/threads/) is blocked sitting idle,
-so one thread can keep thousands of in-flight operations moving. Because there is only
+so one thread can keep thousands of in-flight operations moving.[^wiki] Because there is only
 one thread of execution, there is no shared-memory data race between the tasks.
 
 ## Trade-offs
@@ -57,7 +59,7 @@ Async excels at **I/O-bound** work — thousands of concurrent network connectio
 disk reads on a single thread — because such workloads spend most of their time waiting,
 not computing. It does little for **CPU-bound** work: a long computation still hogs the
 single thread and blocks every other task, since cooperative scheduling only switches at
-`await` points. Async code can also be harder to reason about, and a blocking call
+`await` points.[^wiki] Async code can also be harder to reason about, and a blocking call
 slipped into an async path stalls everything.
 
 ## In practice
@@ -67,3 +69,7 @@ slipped into an async path stalls everything.
 and Rust all offer `async`/`await`. For CPU-bound parallelism you reach instead for
 [threads](/reference/threads/) or lightweight tasks like
 [goroutines](/reference/goroutines/), which can spread work across cores.
+
+## Sources
+
+[^wiki]: [Asynchronous I/O](https://en.wikipedia.org/wiki/Asynchronous_I/O) — Wikipedia, on non-blocking I/O and event-loop concurrency that keeps one thread handling many in-flight operations.

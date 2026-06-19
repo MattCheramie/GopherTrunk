@@ -17,13 +17,14 @@ infobox:
 see_also: [creational-patterns, structural-patterns, behavioral-patterns, object-oriented-programming, abstraction, coupling-and-cohesion, solid]
 related_lessons:
   - { title: "What is a design pattern?", url: /learn/intro-software-dev/what-are-patterns/ }
-external:
-  - { title: "Software design pattern — Wikipedia", url: https://en.wikipedia.org/wiki/Software_design_pattern }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software_design_pattern
+  - https://en.wikipedia.org/wiki/Design_Patterns
 ---
 
 **Design patterns** are named, reusable descriptions of solutions to problems that recur
 in software design — not finished code you paste in, but templates for arranging classes,
-objects, and responsibilities so a design stays flexible.
+objects, and responsibilities so a design stays flexible.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="The Gang of Four catalogue of 23 patterns splits into three families: creational, structural, and behavioral." xmlns="http://www.w3.org/2000/svg">
@@ -53,7 +54,7 @@ conveys a whole design decision in one word.
 The idea came from architecture (Christopher Alexander), but software's canonical source
 is the 1994 book *Design Patterns* by the **"Gang of Four" (GoF)** — Gamma, Helm, Johnson,
 and Vlissides — which catalogued **23 patterns** for [object-oriented](/reference/object-oriented-programming/)
-design. They split into three families:
+design.[^gof] They split into three families:
 
 - [Creational patterns](/reference/creational-patterns/) — how objects get *made* (Factory, Builder, Singleton).
 - [Structural patterns](/reference/structural-patterns/) — how objects are *arranged* (Adapter, Facade, Decorator).
@@ -65,4 +66,9 @@ Most patterns exist to manage [abstraction](/reference/abstraction/) and keep
 [coupling](/reference/coupling-and-cohesion/) low, and many are concrete ways to honour
 [SOLID](/reference/solid/), especially the open/closed principle. But every pattern adds
 indirection. Forcing one where it is not needed is the "golden hammer" anti-pattern; the
-skill is judging when a real problem calls for one rather than memorising all 23.
+skill is judging when a real problem calls for one rather than memorising all 23.[^wiki]
+
+## Sources
+
+[^wiki]: [Software design pattern](https://en.wikipedia.org/wiki/Software_design_pattern) — Wikipedia, for the definition, the template/vocabulary framing, and the three families.
+[^gof]: [Design Patterns](https://en.wikipedia.org/wiki/Design_Patterns) — Wikipedia, on the 1994 Gang of Four book that catalogued the 23 object-oriented patterns.

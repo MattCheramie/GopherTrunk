@@ -18,14 +18,16 @@ see_also: [concurrency, async-programming, goroutines, memory-management, c-lang
 related_lessons:
   - { title: "Concurrency and parallelism", url: /learn/intro-software-dev/concurrency-models/ }
   - { title: "Concurrency and pipelines", url: /learn/intro-software-dev/concurrency-and-pipelines/ }
-external:
-  - { title: "Thread (computing) — Wikipedia", url: https://en.wikipedia.org/wiki/Thread_(computing) }
+related_reading:
+  - { title: "SDR Internals, Part 3: The SDR pool, streaming & concurrency", url: /blog/deep-dives/sdr-internals-03-sdr-pool-streaming-concurrency/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Thread_(computing)
 ---
 
 **A thread** is an independent flow of execution inside a process. The operating system
 can give one process several threads that share the same memory and run on different
 CPU cores at the same time — the oldest and most direct route to
-[parallelism](/reference/concurrency/).
+[parallelism](/reference/concurrency/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="One process contains shared memory and three threads of execution running within it." xmlns="http://www.w3.org/2000/svg">
@@ -49,7 +51,7 @@ thread time on a core. Because threads in a process share its
 the same variables — fast and powerful, but the source of the danger. When two threads
 touch the same data and at least one writes, with no coordination, you have a **data
 race**, and the result is undefined: a half-updated value, a counter that loses
-increments, a crash that appears once a week.
+increments, a crash that appears once a week.[^wiki]
 
 ## Trade-offs
 
@@ -58,7 +60,7 @@ CPU-bound work. The traditional fix for races is a **lock** (mutex): only one th
 hold the lock and touch the shared data at a time. Locks work but bring their own
 hazards — **deadlock** (two threads each waiting on a lock the other holds), forgotten
 locks, and contention that erodes performance. OS threads are also relatively heavy, so
-running hundreds of thousands of them is impractical.
+running hundreds of thousands of them is impractical.[^wiki]
 
 ## In practice
 
@@ -68,3 +70,7 @@ system preventing many data races at compile time. To avoid heavy threads and ex
 locks, other models build on top of them: [async/await](/reference/async-programming/)
 multiplexes tasks onto a single thread, and [goroutines](/reference/goroutines/)
 multiplex many lightweight tasks onto a few OS threads.
+
+## Sources
+
+[^wiki]: [Thread (computing)](https://en.wikipedia.org/wiki/Thread_(computing)) — Wikipedia, on threads as flows of execution sharing process memory, plus data races, locks, and deadlock.

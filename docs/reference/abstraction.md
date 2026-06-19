@@ -17,12 +17,12 @@ infobox:
 see_also: [coupling-and-cohesion, object-oriented-programming, design-patterns, solid, declarative-programming, type-system]
 related_lessons:
   - { title: "Abstraction, coupling & cohesion", url: /learn/intro-software-dev/abstraction-coupling/ }
-external:
-  - { title: "Abstraction (computer science) — Wikipedia", url: https://en.wikipedia.org/wiki/Abstraction_(computer_science) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Abstraction_(computer_science)
 ---
 
 **Abstraction** means exposing a simple interface that describes *what* something does
-while hiding *how* it does it. When you call `sort()`, you depend on the promise ("returns
+while hiding *how* it does it.[^wiki] When you call `sort()`, you depend on the promise ("returns
 sorted output"), not on whether it uses quicksort or mergesort.
 
 <figure class="figure" markdown="0">
@@ -56,7 +56,7 @@ idea in [SOLID](/reference/solid/).
 Abstraction only holds if the internals stay genuinely hidden. **Information hiding** is
 the discipline of keeping a module's internal state and helpers private, exposing only the
 interface; **encapsulation** is the language mechanism that enforces it — private fields,
-unexported names, access modifiers. Anything you expose, someone will depend on, so the
+unexported names, access modifiers.[^wiki] Anything you expose, someone will depend on, so the
 rule of thumb is to **expose as little as possible**. A small public surface is a small set
 of promises you must keep, closely tied to the language's
 [type system](/reference/type-system/) and visibility rules.
@@ -69,4 +69,8 @@ interface that mysteriously stalls on a network path, or an ORM you can ignore u
 query is slow. Joel Spolsky's "Law of Leaky Abstractions" holds that all non-trivial
 abstractions leak to some degree. You cannot eliminate leaks, but you can manage them:
 document assumptions, surface failures explicitly rather than misbehaving silently, and
-keep the abstraction honest about what it promises.
+keep the abstraction honest about what it promises.[^wiki]
+
+## Sources
+
+[^wiki]: [Abstraction (computer science)](https://en.wikipedia.org/wiki/Abstraction_(computer_science)) — Wikipedia, for the what-vs-how definition and the roles of information hiding and encapsulation.

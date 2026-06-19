@@ -17,13 +17,13 @@ infobox:
 see_also: [functional-programming, imperative-programming, abstraction, coupling-and-cohesion, design-patterns, java-language, csharp-language, ruby-language]
 related_lessons:
   - { title: "Paradigms & language families", url: /learn/intro-software-dev/language-families/ }
-external:
-  - { title: "Object-oriented programming — Wikipedia", url: https://en.wikipedia.org/wiki/Object-oriented_programming }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Object-oriented_programming
 ---
 
 **Object-oriented programming** (**OOP**) is a paradigm that bundles state and the
 behaviour that acts on it into **objects** — units that combine *fields* (data) with
-*methods* (functions that operate on that data).
+*methods* (functions that operate on that data).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="An object encapsulates private data behind public methods, and several objects share one interface so callers can treat them uniformly." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +48,7 @@ OOP rests on a few pillars. **Encapsulation** hides an object's internal data be
 clean interface, the foundation of [abstraction](/reference/abstraction/) and information
 hiding. **Inheritance** derives specialised types from general ones, and
 **polymorphism** lets you treat different types uniformly through a shared interface —
-calling `area()` without knowing whether the object is a circle or a square. These
+calling `area()` without knowing whether the object is a circle or a square.[^wiki] These
 combine to keep [coupling](/reference/coupling-and-cohesion/) low: callers depend on a
 contract, not a concrete class.
 
@@ -64,8 +64,12 @@ expressed in object-oriented terms.
 ## Trade-offs
 
 Critics note that overusing inheritance creates rigid, tangled hierarchies, which is why
-modern OOP leans on **composition** ("has-a") over deep inheritance ("is-a"). Many
+modern OOP leans on **composition** ("has-a") over deep inheritance ("is-a").[^wiki] Many
 languages are multi-paradigm: the same codebase can mix object-oriented structure with
 [functional](/reference/functional-programming/) transformations and
 [imperative](/reference/imperative-programming/) inner loops, choosing the style that
 fits each part of the problem.
+
+## Sources
+
+[^wiki]: [Object-oriented programming](https://en.wikipedia.org/wiki/Object-oriented_programming) — Wikipedia, for the definition, the pillars (encapsulation, inheritance, polymorphism), and the composition-over-inheritance guidance.

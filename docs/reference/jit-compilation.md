@@ -18,13 +18,13 @@ see_also: [compiler, interpreter, bytecode, static-binary, java-language, javasc
 related_lessons:
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Just-in-time compilation — Wikipedia", url: https://en.wikipedia.org/wiki/Just-in-time_compilation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Just-in-time_compilation
 ---
 
 **Just-in-time (JIT) compilation** translates code to native machine code *while the
 program runs*, optimizing the parts it observes executing most; **ahead-of-time (AOT)
-compilation** does all of that translation up front, before the program ever ships.
+compilation** does all of that translation up front, before the program ever ships.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A JIT runs bytecode in a VM, detects a frequently-run hot path, and compiles it to native code on the fly." xmlns="http://www.w3.org/2000/svg">
@@ -50,7 +50,7 @@ approach [C](/reference/c-language/), [Rust](/reference/rust-language/), and
 [interpreting](/reference/interpreter/); as it runs, the JIT spots frequently
 executed ("hot") sections, compiles them to native machine code, and can optimize
 based on what it actually observes — types, branch directions, inlining
-opportunities. The result is often near-native steady-state speed.
+opportunities. The result is often near-native steady-state speed.[^wiki]
 
 ## Trade-offs
 
@@ -59,7 +59,7 @@ self-contained [static binary](/reference/static-binary/). A JIT trades that for
 **slower startup** (the engine must warm up before hot paths are optimized) and
 **higher memory use** (it holds both bytecode and generated native code). A
 long-running server happily pays the warm-up to gain peak throughput; a short-lived
-command-line tool may exit before warm-up pays off, so AOT often suits it better.
+command-line tool may exit before warm-up pays off, so AOT often suits it better.[^wiki]
 
 ## In practice
 
@@ -68,3 +68,7 @@ The [JVM](/reference/java-language/) JIT-compiles bytecode via HotSpot, V8 power
 JIT-compiles its intermediate language. The lines blur: Java is AOT-compiled to
 bytecode *and* JIT-compiled to native code, and tools like GraalVM can AOT-compile
 traditionally JIT'd languages for instant startup.
+
+## Sources
+
+[^wiki]: [Just-in-time compilation](https://en.wikipedia.org/wiki/Just-in-time_compilation) — Wikipedia, on JIT translating hot paths to native code at run time and how it contrasts with ahead-of-time compilation.

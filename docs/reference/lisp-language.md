@@ -19,13 +19,15 @@ see_also: [fortran-language, cobol-language, functional-programming, garbage-col
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "The birth of programming languages", url: /learn/intro-software-dev/birth-of-languages/ }
-external:
-  - { title: "Lisp (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Lisp_(programming_language) }
-  - { title: "Common Lisp", url: https://common-lisp.net/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Lisp_(programming_language)
+  - https://common-lisp.net/
 ---
 
 **LISP** (LISt Processor), created by John McCarthy in 1958, is one of the oldest
-high-level languages. It treats code and data as the same kind of list, pioneered the
+high-level languages.[^wiki] It treats code and data as the same kind of list, pioneered the
 [functional](/reference/functional-programming/) style, and became the language of
 early artificial-intelligence research.
 
@@ -61,9 +63,14 @@ seeded ideas that mainstream languages adopted only decades later.
 
 LISP is dynamically typed (see [static vs dynamic typing](/reference/static-vs-dynamic-typing/)),
 runs [interpreted](/reference/interpreter/) or compiled depending on the dialect, and
-survives in families like Common Lisp, Scheme, and Clojure. Its honest drawbacks are
+survives in families like Common Lisp, Scheme, and Clojure.[^home] Its honest drawbacks are
 real: the parenthesis-heavy syntax is an acquired taste, and its mainstream use is
 niche today. But its influence is enormous — first-class functions, garbage
 collection, and treating code as data have all flowed into modern languages such as
 [Python](/reference/python-language/) and JavaScript, making LISP one of the most
 quietly influential designs in computing.
+
+## Sources
+
+[^wiki]: [Lisp (programming language)](https://en.wikipedia.org/wiki/Lisp_(programming_language)) — Wikipedia, for history, the 1958 origin, and the code-as-data design.
+[^home]: [Common Lisp](https://common-lisp.net/) — the Common Lisp community hub, a major surviving dialect with documentation and implementations.

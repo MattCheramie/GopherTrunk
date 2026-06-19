@@ -12,6 +12,11 @@ lesson_standalone: true
 
 This is a plain-language reference for the key terms used across the Intro to Software Development path. Definitions are short on purpose; each links to the lesson that explains the idea in full. Terms are grouped by theme and roughly ordered from foundational to advanced within each group, following the shape of the path itself.
 
+> **Want the long version?** Many of these terms — every programming language and
+> core concept here — have a full, encyclopedia-style article in the
+> [GopherTrunk Field Guide](/reference/), and the first mention of a covered term on
+> any page links straight to it.
+
 ## History and hardware
 
 **Hardware** — The physical parts of a computer you can touch: chips, memory, drives, screens. Software is the instructions that run on it. See [What is software?](/learn/intro-software-dev/what-is-software/)

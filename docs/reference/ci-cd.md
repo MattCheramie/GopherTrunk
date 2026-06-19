@@ -17,13 +17,15 @@ see_also: [build-systems, version-control, unit-testing, integration-testing, en
 related_lessons:
   - { title: "GitHub Actions & CI/CD", url: /learn/git/github-actions/ }
   - { title: "Build systems & CI/CD", url: /learn/intro-software-dev/build-and-ci-cd/ }
-external:
-  - { title: "CI/CD — Wikipedia", url: https://en.wikipedia.org/wiki/CI/CD }
+related_reading:
+  - { title: "Build in the Open, Part 7: GitHub Actions & which workflows", url: /blog/tutorials/build-in-the-open-07-github-actions-which-workflows/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/CI/CD
 ---
 
 **CI/CD** is the practice of automatically building and testing code on every change
 (continuous integration) and then automating its path to release (continuous
-delivery/deployment) through a versioned pipeline.
+delivery/deployment) through a versioned pipeline.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A pipeline flowing from commit to build to test to deploy, each stage gating the next." xmlns="http://www.w3.org/2000/svg">
@@ -50,7 +52,7 @@ change lands it checks out the code, installs the pinned dependencies via the
 fails, the team learns within minutes — while the change is fresh and small. The name
 comes from *integrating* everyone's work frequently into the shared main line instead of
 letting branches drift and merging in one painful "big bang." CI is the automated
-enforcement of "don't break the build."
+enforcement of "don't break the build."[^wiki]
 
 ## Continuous Delivery and Deployment
 
@@ -75,3 +77,7 @@ environments. On GitHub the common tool is **GitHub Actions**, which can run the
 fan out across a build matrix, run [end-to-end tests](/reference/end-to-end-testing/), and
 publish release binaries through a [package manager](/reference/package-manager/) or
 release page — only when everything is green.
+
+## Sources
+
+[^wiki]: [CI/CD](https://en.wikipedia.org/wiki/CI/CD) — Wikipedia, for continuous integration, delivery, and deployment and the pipeline model.

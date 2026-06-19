@@ -17,7 +17,7 @@ your browser's find (Ctrl/Cmd-F) to jump to a word. Terms are grouped by theme a
 ordered roughly from fundamentals to systems.
 
 > **Want the long version?** Many of these terms have a full, encyclopedia-style
-> article in the [GopherTrunk Reference](/reference/) — and the first mention of a
+> article in the [GopherTrunk Field Guide](/reference/) — and the first mention of a
 > covered term on any page links straight to it.
 
 ## Radio wave fundamentals

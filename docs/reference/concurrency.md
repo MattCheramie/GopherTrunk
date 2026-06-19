@@ -18,14 +18,16 @@ see_also: [threads, async-programming, goroutines, go-language, rust-language, j
 related_lessons:
   - { title: "Concurrency and parallelism", url: /learn/intro-software-dev/concurrency-models/ }
   - { title: "Concurrency and pipelines", url: /learn/intro-software-dev/concurrency-and-pipelines/ }
-external:
-  - { title: "Concurrency (computer science) — Wikipedia", url: https://en.wikipedia.org/wiki/Concurrency_(computer_science) }
+related_reading:
+  - { title: "SDR Internals, Part 3: The SDR pool, streaming & concurrency", url: /blog/deep-dives/sdr-internals-03-sdr-pool-streaming-concurrency/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Concurrency_(computer_science)
 ---
 
 **Concurrency** is structuring a program so that multiple tasks can be in progress and
 advance independently; **parallelism** is actually running multiple computations at the
 same instant. Concurrency is about structure; parallelism is about execution, and the
-two are related but not the same.
+two are related but not the same.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Concurrency interleaves two tasks on one core; parallelism runs them at the same time on two cores." xmlns="http://www.w3.org/2000/svg">
@@ -51,7 +53,7 @@ it while it waits for I/O, switch to task B — so the tasks *deal with* progres
 together. Parallelism *does* several things at once and therefore requires multiple
 cores. You can have concurrency without parallelism (one core juggling tasks), and a
 good concurrency model makes tasks the runtime can *also* run in parallel when cores
-are available. As Rob Pike put it: concurrency is a way to structure things; if it
+are available.[^wiki] As Rob Pike put it: concurrency is a way to structure things; if it
 works, parallelism may be a free bonus.
 
 ## Models and the shared hazard
@@ -60,7 +62,7 @@ Languages offer different concurrency models: OS [threads](/reference/threads/) 
 locks, single-threaded [async/await](/reference/async-programming/) event loops, Go's
 [goroutines](/reference/goroutines/) and channels, and the share-nothing actor model.
 What they are all really fighting is the **data race** — two tasks touching the same
-memory with at least one writing, with no synchronization, producing undefined results.
+memory with at least one writing, with no synchronization, producing undefined results.[^wiki]
 Each model is, at heart, a different strategy for avoiding unsynchronized shared writes.
 
 ## In practice
@@ -71,3 +73,7 @@ The right model follows the workload. **I/O-bound** work — waiting on networks
 systems favor actors. A streaming radio pipeline in [Go](/reference/go-language/) runs
 capture, DSP, and decode stages concurrently and lets the runtime spread them across
 cores in parallel.
+
+## Sources
+
+[^wiki]: [Concurrency (computer science)](https://en.wikipedia.org/wiki/Concurrency_(computer_science)) — Wikipedia, on concurrency as program structure versus parallel execution and the data-race hazard.

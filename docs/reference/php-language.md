@@ -19,13 +19,15 @@ see_also: [javascript-language, interpreter, static-vs-dynamic-typing, garbage-c
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "PHP — Wikipedia", url: https://en.wikipedia.org/wiki/PHP }
-  - { title: "PHP: Hypertext Preprocessor", url: https://www.php.net/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.php.net/
+  - https://en.wikipedia.org/wiki/PHP
 ---
 
 **PHP** is a dynamic, [interpreted](/reference/interpreter/) scripting language built
-for the web back end. It is one of the most widely deployed languages on the
+for the web back end.[^wiki] It is one of the most widely deployed languages on the
 internet, historically criticised for inconsistency, but substantially modernised in
 versions 7 and 8.
 
@@ -47,7 +49,7 @@ versions 7 and 8.
 
 PHP was designed to be embedded directly in web pages, and that origin shaped its
 ecosystem: it ships with nearly every shared web host, which made it the default for
-a huge share of the web. WordPress, much of the world's content-management software,
+a huge share of the web.[^home] WordPress, much of the world's content-management software,
 and major sites are built on it, and modern frameworks like Laravel and Symfony bring
 disciplined structure. It serves dynamic pages and [REST](/reference/rest/) APIs,
 typically run per request by the server.
@@ -57,9 +59,14 @@ typically run per request by the server.
 PHP is dynamically and weakly typed (see [static vs dynamic typing](/reference/static-vs-dynamic-typing/)),
 [garbage-collected](/reference/garbage-collection/), and compiles to
 [bytecode](/reference/bytecode/) that an engine executes — with an optional
-[JIT](/reference/jit-compilation/) added in PHP 8. Its reputation for **inconsistency**
+[JIT](/reference/jit-compilation/) added in PHP 8.[^home] Its reputation for **inconsistency**
 is earned: the standard library has irregular function names and argument orders, and
 older code mixed logic with HTML freely. Versions 7 and 8 changed the picture
 considerably, adding real performance gains, optional type declarations, and cleaner
 language features, though its weak typing and accumulated history still draw criticism.
 Like [JavaScript](/reference/javascript-language/), it is hard to avoid on the web.
+
+## Sources
+
+[^home]: [PHP: Hypertext Preprocessor](https://www.php.net/) — official site, documentation, and the engine, bytecode, and JIT details.
+[^wiki]: [PHP](https://en.wikipedia.org/wiki/PHP) — Wikipedia, for history, design background, and web ubiquity.

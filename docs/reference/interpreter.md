@@ -18,14 +18,14 @@ see_also: [compiler, bytecode, jit-compilation, static-vs-dynamic-typing, python
 related_lessons:
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Interpreter (computing) — Wikipedia", url: https://en.wikipedia.org/wiki/Interpreter_(computing) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Interpreter_(computing)
 ---
 
 **An interpreter** is a program that reads source code and executes it directly,
 statement by statement, every time the program runs — instead of translating the
 whole program to a native binary ahead of time the way a [compiler](/reference/compiler/)
-does.
+does.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="An interpreter reads source statements one at a time and runs each immediately." xmlns="http://www.w3.org/2000/svg">
@@ -49,13 +49,13 @@ encounters it. In practice most modern "interpreted" languages take a half-step
 first: they compile the source to compact [bytecode](/reference/bytecode/) for a
 *virtual machine*, and the VM interprets that bytecode. CPython, for example,
 compiles `.py` files to `.pyc` bytecode and runs it on the Python VM. Either way,
-translation happens during execution rather than once up front.
+translation happens during execution rather than once up front.[^wiki]
 
 ## Trade-offs
 
 Interpretation inverts the compiled story. Execution is **slower**, because the
 interpreter adds overhead to every operation, and the user must have the interpreter
-installed. In exchange you get **fast iteration** — no separate build step, so you
+installed.[^wiki] In exchange you get **fast iteration** — no separate build step, so you
 edit and re-run instantly — and **flexibility**, including the runtime dynamism that
 [dynamic typing](/reference/static-vs-dynamic-typing/) allows and interactive
 read-eval-print loops (REPLs). [JIT compilation](/reference/jit-compilation/) is a
@@ -68,3 +68,7 @@ recover speed.
 [JavaScript](/reference/javascript-language/) are the canonical interpreted languages.
 Their flexibility and quick edit-run cycle make them popular for scripting, data work,
 and rapid prototyping, where developer speed matters more than raw execution speed.
+
+## Sources
+
+[^wiki]: [Interpreter (computing)](https://en.wikipedia.org/wiki/Interpreter_(computing)) — Wikipedia, on how interpreters execute source or bytecode at run time and their trade-offs versus compilation.

@@ -19,13 +19,15 @@ see_also: [compiler, memory-management, cpp-language, rust-language, go-language
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
-external:
-  - { title: "C (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/C_(programming_language) }
-  - { title: "C reference — cppreference", url: https://en.cppreference.com/w/c }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://en.cppreference.com/w/c
+  - https://en.wikipedia.org/wiki/C_(programming_language)
 ---
 
 **C** is a small, fast, statically typed compiled language created at Bell Labs in the
-1970s. It is the bedrock of modern computing: almost every operating system, language
+1970s.[^wiki] It is the bedrock of modern computing: almost every operating system, language
 runtime and embedded device has C at its core.
 
 <figure class="figure" markdown="0">
@@ -46,7 +48,7 @@ runtime and embedded device has C at its core.
 ## Overview
 
 C [compiles](/reference/compiler/) ahead of time directly to native machine code, with a
-tiny runtime and almost no abstraction between the code and the hardware. It is
+tiny runtime and almost no abstraction between the code and the hardware.[^ref] It is
 [statically typed](/reference/type-system/), gives the programmer direct access to memory
 through pointers, and is portable across virtually every platform. That minimalism is the
 point: C is small enough to learn the whole language, and fast and predictable enough to
@@ -70,3 +72,8 @@ C remains the default for operating-system kernels, device drivers, language run
 and tight embedded work where every byte and cycle counts. Its stable, minimal interface
 also makes it the common tongue that other languages bind to when they need to call
 native code.
+
+## Sources
+
+[^ref]: [C reference](https://en.cppreference.com/w/c) — cppreference, the standard-tracking reference for the C language and library.
+[^wiki]: [C (programming language)](https://en.wikipedia.org/wiki/C_(programming_language)) — Wikipedia, for history and design background.

@@ -18,13 +18,13 @@ see_also: [compiler, interpreter, jit-compilation, java-language, python-languag
 related_lessons:
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
   - { title: "Packaging and distribution", url: /learn/intro-software-dev/packaging-and-distribution/ }
-external:
-  - { title: "Bytecode — Wikipedia", url: https://en.wikipedia.org/wiki/Bytecode }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Bytecode
 ---
 
 **Bytecode** is a compact, portable instruction set that sits between human-readable
 source and raw machine code: a [compiler](/reference/compiler/) produces it, and a
-*virtual machine* (VM) executes it rather than the CPU running it directly.
+*virtual machine* (VM) executes it rather than the CPU running it directly.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Source compiles to bytecode, which a virtual machine runs on any platform." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +48,7 @@ a low-level program for an idealized, abstract machine. At run time the VM reads
 bytecode and either [interprets](/reference/interpreter/) it or, with
 [JIT compilation](/reference/jit-compilation/), translates the hot parts to native
 code. Because the bytecode targets the VM and not the hardware, the *same* bytecode
-file runs unchanged on any platform where the VM is available.
+file runs unchanged on any platform where the VM is available.[^wiki]
 
 ## Trade-offs
 
@@ -57,7 +57,7 @@ VM is installed, sidestepping the per-platform builds that native
 [compilation](/reference/compiler/) requires. The cost is the VM layer — interpreting
 bytecode adds overhead, and the user must have the runtime installed rather than a
 self-contained [static binary](/reference/static-binary/). Bytecode is also more
-compact and faster to load than re-parsing source each time.
+compact and faster to load than re-parsing source each time.[^wiki]
 
 ## In practice
 
@@ -66,3 +66,7 @@ compact and faster to load than re-parsing source each time.
 [C#](/reference/csharp-language/) and the rest of .NET compile to an intermediate
 language (IL). This bytecode-plus-VM design is what lets these languages promise
 "write once, run anywhere."
+
+## Sources
+
+[^wiki]: [Bytecode](https://en.wikipedia.org/wiki/Bytecode) — Wikipedia, on bytecode as a portable instruction set produced by a compiler and executed by a virtual machine.
