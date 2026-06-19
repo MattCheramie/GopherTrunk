@@ -14,6 +14,9 @@ export function Events() {
   const [paused, setPaused] = useState(false);
   const [snapshot, setSnapshot] = useState<EventDTO[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // autoFrozen records that the freeze was triggered by expanding a row (so we
+  // resume on collapse), as opposed to a manual Pause the operator wants kept.
+  const [autoFrozen, setAutoFrozen] = useState(false);
 
   // When paused, freeze the table at the snapshot the user paused on;
   // when running, mirror the live store ring.
@@ -67,13 +70,34 @@ export function Events() {
     [],
   );
 
+  function freeze() {
+    setSnapshot(events.slice());
+    setPaused(true);
+  }
+  function resume() {
+    setPaused(false);
+    setSnapshot(null);
+  }
   function togglePause() {
-    if (paused) {
-      setPaused(false);
-      setSnapshot(null);
-    } else {
-      setSnapshot(events.slice());
-      setPaused(true);
+    setAutoFrozen(false); // a manual toggle owns the pause state from here on
+    if (paused) resume();
+    else freeze();
+  }
+
+  // Expanding a row to inspect it auto-freezes the live stream so the row
+  // doesn't scroll away as new events prepend (the whole point of "looking at
+  // an event"); collapsing it resumes — unless the operator had paused manually.
+  function handleRowClick(_r: EventDTO, key: string) {
+    const collapsing = expanded === key;
+    setExpanded(collapsing ? null : key);
+    if (collapsing) {
+      if (autoFrozen) {
+        resume();
+        setAutoFrozen(false);
+      }
+    } else if (!paused) {
+      freeze();
+      setAutoFrozen(true);
     }
   }
 
@@ -117,13 +141,19 @@ export function Events() {
         </button>
       </div>
 
+      <p className="text-xs text-muted">
+        {paused
+          ? autoFrozen
+            ? "Frozen while you inspect — collapse the event (or Resume) to go live."
+            : "Paused — display frozen; the stream keeps running underneath."
+          : "Click an event to inspect its payload — the stream freezes so it stays put."}
+      </p>
+
       <DataTable
         rows={ordered}
         columns={columns}
         rowKey={(r, i) => `${r.timestamp}-${r.kind}-${i}`}
-        onRowClick={(_r, key) =>
-          setExpanded((prev) => (prev === key ? null : key))
-        }
+        onRowClick={handleRowClick}
         renderExpansion={(r) => (
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-fg/80">
             {JSON.stringify(r, null, 2)}
