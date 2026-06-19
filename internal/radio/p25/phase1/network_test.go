@@ -175,6 +175,46 @@ func TestControlChannelIgnoresVendorUnitToUnitRequest(t *testing.T) {
 	}
 }
 
+// TestMotorolaProbeOpcodesAreMapSafe drives the suspected-but-undecoded
+// Motorola opcodes 0x05 and 0x09 (MFID 0x90) through the control channel and
+// checks they inject NOTHING into the system map — no bus event and no
+// neighbour / secondary-CC in the topology snapshot. They are captured for
+// offline analysis only (logVendorProbe) until their layout is confirmed; this
+// guards against anyone wiring a guessed layout into the map.
+func TestMotorolaProbeOpcodesAreMapSafe(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "Moto"})
+
+	for _, op := range []Opcode{0x05, 0x09} {
+		tsbk := TSBK{Opcode: op, MFID: MFIDMotorola,
+			Payload: [8]byte{0x0C, 0x80, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC}}
+		cc.Process(buildLockedStreamWithTSBK(10, 0x2C2, DUIDTrunkingSignaling, tsbk), 0)
+	}
+
+	// No grant/patch/unit-request/etc. should be published from these.
+	deadline := time.After(300 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			switch ev.Kind {
+			case events.KindCCLocked, events.KindSiteUpdate, events.KindDecodeError:
+				// lock/site/decode bookkeeping is fine; only map-data events are forbidden
+			default:
+				t.Fatalf("Motorola probe opcode published a map event: %s", ev.Kind)
+			}
+		case <-deadline:
+			cfg := cc.NetworkSnapshot()
+			if len(cfg.Neighbors) != 0 || len(cfg.Secondary) != 0 {
+				t.Fatalf("probe opcodes leaked into topology: %+v", cfg)
+			}
+			return
+		}
+	}
+}
+
 // TestControlChannelPublishesSiteUpdate drives an RFSS Status Broadcast
 // through the control channel and checks a KindSiteUpdate naming the
 // camped site (with the tuned control-channel frequency) is published

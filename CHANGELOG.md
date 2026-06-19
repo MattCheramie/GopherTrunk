@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Raw-payload capture for the undecoded Motorola opcodes 0x05 / 0x09**
+  (MFID 0x90). These are emitted continuously on real systems and are suspected
+  to carry roaming / secondary-control-channel data, but their layout is
+  unverified — so they are logged at INFO (up to 64 samples each, grep
+  `motorola candidate opcode`) for offline correlation and decode/publish
+  nothing into the system map. See
+  [`docs/specs/p25-motorola-opcodes.md`](docs/specs/p25-motorola-opcodes.md).
+
 ### Changed
 - **P25 TSBK opcodes now log with their TIA-102.AABC-D designations**
   (`UU_ANS_REQ`, `NET_STS_BCST`, `GRP_V_CH_GRANT`, …) instead of the
