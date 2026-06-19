@@ -1120,17 +1120,14 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		}
 		return
 	}
-	// Unit-to-Unit Answer Request (opcode 0x05) is a standard call-setup
-	// message that some Motorola sites emit under the vendor MFID. The
-	// target/source layout is the standard one, so decode it here too rather
-	// than logging it as an unhandled vendor opcode.
-	if t.Opcode == OpUnitToUnitAnswerRequest {
-		c.publishUnitToUnitRequest(ParseUnitToUnitAnswerRequest(t.Payload), nac)
-		return
-	}
 	// Unrecognised vendor opcode: census + raw-payload sample so a field
 	// test can name and reverse any alias-bearing transport we don't yet
-	// decode, while the per-frame detail stays at Debug.
+	// decode, while the per-frame detail stays at Debug. Note: opcode 0x05
+	// here is NOT decoded as the standard UU_ANS_REQ — under a vendor MFID
+	// the opcode is in the manufacturer's namespace, and a field decode of a
+	// Motorola 0x05 with the standard target/source layout produced garbage
+	// IDs (src=0, target=0x3C0000), so it stays unhandled until its real
+	// vendor layout is reversed.
 	c.logUnhandledTSBK(t, nac)
 	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
 }

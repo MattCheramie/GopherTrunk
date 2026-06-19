@@ -8,77 +8,123 @@ import (
 // Opcode is the 6-bit TSBK opcode field per TIA-102.AABF Table 7.
 type Opcode uint8
 
-// TSBK opcodes follow the OP25 mapping (which is the de-facto reference
-// implementation of TIA-102.AABF). Vendor-specific extensions live behind
-// MFID != 0x00.
+// TSBK Outbound Signalling Packet (OSP) opcodes per TIA-102.AABC-D
+// (Project 25 FDMA Common Air Interface), Table 7-1. The Go identifiers stay
+// descriptive/CamelCase (idiomatic, and what the rest of the package uses),
+// while String() and the trailing comment carry the canonical TIA mnemonic —
+// the same convention internal/radio/nxdn uses for its spec message names, so
+// logs read in spec terms. Vendor-specific extensions live behind MFID != 0x00
+// (see tsbk_vendor.go). See docs/specs/p25-tsbk-opcodes.md for the full table.
 const (
-	OpGroupVoiceChannelGrant       Opcode = 0x00
-	OpGroupVoiceChannelUpdate      Opcode = 0x02
-	OpGroupVoiceChannelUpdateExpl  Opcode = 0x03
-	OpUnitToUnitVoiceChannelGrant  Opcode = 0x04
-	OpUnitToUnitAnswerRequest      Opcode = 0x05
-	OpUnitToUnitVoiceChannelUpdate Opcode = 0x06
-	OpTelephoneInterconnectGrant   Opcode = 0x08
-	OpTelephoneAnswerRequest       Opcode = 0x0A
-	OpSNDCPDataChannelGrant        Opcode = 0x14
-	OpStatusUpdate                 Opcode = 0x18
-	OpStatusQuery                  Opcode = 0x1A
-	OpMessageUpdate                Opcode = 0x1C
-	OpRadioUnitMonitor             Opcode = 0x1D
-	OpCallAlert                    Opcode = 0x1F
-	OpAcknowledgeResponse          Opcode = 0x20
-	OpQueuedResponse               Opcode = 0x21
-	OpExtendedFunctionCommand      Opcode = 0x24
-	OpDenyResponse                 Opcode = 0x27
-	OpGroupAffiliationResponse     Opcode = 0x28
-	OpGroupAffiliationQuery        Opcode = 0x2A
-	OpLocationRegistrationResponse Opcode = 0x2B
-	OpUnitRegistrationResponse     Opcode = 0x2C
-	OpUnitRegistrationCommand      Opcode = 0x2D
-	OpDeregistrationAck            Opcode = 0x2F
-	OpIdentifierUpdateTDMA         Opcode = 0x33
-	OpIdentifierUpdateVUHF         Opcode = 0x34
-	OpProtectionParamUpdate        Opcode = 0x35
-	OpSecondaryControlChannel      Opcode = 0x39
-	OpRFSSStatusBroadcast          Opcode = 0x3A
-	OpNetworkStatusBroadcast       Opcode = 0x3B
-	OpAdjacentSiteStatusBroadcast  Opcode = 0x3C
-	OpIdentifierUpdate             Opcode = 0x3D
-	OpProtectionParamBroadcast     Opcode = 0x3F
+	OpGroupVoiceChannelGrant       Opcode = 0x00 // GRP_V_CH_GRANT
+	OpGroupVoiceChannelUpdate      Opcode = 0x02 // GRP_V_CH_GRANT_UPDT
+	OpGroupVoiceChannelUpdateExpl  Opcode = 0x03 // GRP_V_CH_GRANT_UPDT_EXP
+	OpUnitToUnitVoiceChannelGrant  Opcode = 0x04 // UU_V_CH_GRANT
+	OpUnitToUnitAnswerRequest      Opcode = 0x05 // UU_ANS_REQ
+	OpUnitToUnitVoiceChannelUpdate Opcode = 0x06 // UU_V_CH_GRANT_UPDT
+	OpTelephoneInterconnectGrant   Opcode = 0x08 // TELE_INT_CH_GRANT
+	OpTelephoneAnswerRequest       Opcode = 0x0A // TELE_INT_ANS_REQ
+	OpSNDCPDataChannelGrant        Opcode = 0x14 // SNDCP_DAT_CH_GRANT
+	OpStatusUpdate                 Opcode = 0x18 // STS_UPDT
+	OpStatusQuery                  Opcode = 0x1A // STS_Q
+	OpMessageUpdate                Opcode = 0x1C // MSG_UPDT
+	OpRadioUnitMonitor             Opcode = 0x1D // RAD_MON_CMD
+	OpCallAlert                    Opcode = 0x1F // CALL_ALRT
+	OpAcknowledgeResponse          Opcode = 0x20 // ACK_RSP_FNE
+	OpQueuedResponse               Opcode = 0x21 // QUE_RSP
+	OpExtendedFunctionCommand      Opcode = 0x24 // EXT_FNCT_CMD
+	OpDenyResponse                 Opcode = 0x27 // DENY_RSP
+	OpGroupAffiliationResponse     Opcode = 0x28 // GRP_AFF_RSP
+	OpGroupAffiliationQuery        Opcode = 0x2A // GRP_AFF_Q
+	OpLocationRegistrationResponse Opcode = 0x2B // LOC_REG_RSP
+	OpUnitRegistrationResponse     Opcode = 0x2C // U_REG_RSP
+	OpUnitRegistrationCommand      Opcode = 0x2D // U_REG_CMD
+	OpDeregistrationAck            Opcode = 0x2F // U_DE_REG_ACK
+	OpIdentifierUpdateTDMA         Opcode = 0x33 // IDEN_UP_TDMA
+	OpIdentifierUpdateVUHF         Opcode = 0x34 // IDEN_UP_VU
+	OpProtectionParamUpdate        Opcode = 0x35 // PROT_PARM_UPDT
+	OpSecondaryControlChannel      Opcode = 0x39 // SCCB_EXP
+	OpRFSSStatusBroadcast          Opcode = 0x3A // RFSS_STS_BCST
+	OpNetworkStatusBroadcast       Opcode = 0x3B // NET_STS_BCST
+	OpAdjacentSiteStatusBroadcast  Opcode = 0x3C // ADJ_STS_BCST
+	OpIdentifierUpdate             Opcode = 0x3D // IDEN_UP
+	OpProtectionParamBroadcast     Opcode = 0x3F // PROT_PARM_BCST
 )
 
+// String returns the canonical TIA-102.AABC-D OSP mnemonic for the opcode
+// (e.g. "UU_ANS_REQ"), falling back to "OSP(0xNN)" for opcodes the decoder
+// does not name. Unknown vendor opcodes are reported by the caller with their
+// MFID, since the mnemonic is only meaningful in the standard namespace.
 func (o Opcode) String() string {
 	switch o {
 	case OpGroupVoiceChannelGrant:
-		return "GroupVoiceChannelGrant"
+		return "GRP_V_CH_GRANT"
 	case OpGroupVoiceChannelUpdate:
-		return "GroupVoiceChannelUpdate"
+		return "GRP_V_CH_GRANT_UPDT"
 	case OpGroupVoiceChannelUpdateExpl:
-		return "GroupVoiceChannelUpdateExplicit"
+		return "GRP_V_CH_GRANT_UPDT_EXP"
 	case OpUnitToUnitVoiceChannelGrant:
-		return "UnitToUnitVoiceChannelGrant"
+		return "UU_V_CH_GRANT"
 	case OpUnitToUnitAnswerRequest:
-		return "UnitToUnitAnswerRequest"
-	case OpAdjacentSiteStatusBroadcast:
-		return "AdjacentSiteStatusBroadcast"
-	case OpRFSSStatusBroadcast:
-		return "RFSSStatusBroadcast"
-	case OpNetworkStatusBroadcast:
-		return "NetworkStatusBroadcast"
-	case OpSecondaryControlChannel:
-		return "SecondaryControlChannelBroadcast"
-	case OpIdentifierUpdate:
-		return "IdentifierUpdate"
-	case OpIdentifierUpdateVUHF:
-		return "IdentifierUpdateVUHF"
-	case OpIdentifierUpdateTDMA:
-		return "IdentifierUpdateTDMA"
+		return "UU_ANS_REQ"
+	case OpUnitToUnitVoiceChannelUpdate:
+		return "UU_V_CH_GRANT_UPDT"
+	case OpTelephoneInterconnectGrant:
+		return "TELE_INT_CH_GRANT"
+	case OpTelephoneAnswerRequest:
+		return "TELE_INT_ANS_REQ"
+	case OpSNDCPDataChannelGrant:
+		return "SNDCP_DAT_CH_GRANT"
+	case OpStatusUpdate:
+		return "STS_UPDT"
+	case OpStatusQuery:
+		return "STS_Q"
+	case OpMessageUpdate:
+		return "MSG_UPDT"
+	case OpRadioUnitMonitor:
+		return "RAD_MON_CMD"
+	case OpCallAlert:
+		return "CALL_ALRT"
+	case OpAcknowledgeResponse:
+		return "ACK_RSP_FNE"
+	case OpQueuedResponse:
+		return "QUE_RSP"
+	case OpExtendedFunctionCommand:
+		return "EXT_FNCT_CMD"
+	case OpDenyResponse:
+		return "DENY_RSP"
 	case OpGroupAffiliationResponse:
-		return "GroupAffiliationResponse"
+		return "GRP_AFF_RSP"
+	case OpGroupAffiliationQuery:
+		return "GRP_AFF_Q"
+	case OpLocationRegistrationResponse:
+		return "LOC_REG_RSP"
 	case OpUnitRegistrationResponse:
-		return "UnitRegistrationResponse"
+		return "U_REG_RSP"
+	case OpUnitRegistrationCommand:
+		return "U_REG_CMD"
+	case OpDeregistrationAck:
+		return "U_DE_REG_ACK"
+	case OpIdentifierUpdateTDMA:
+		return "IDEN_UP_TDMA"
+	case OpIdentifierUpdateVUHF:
+		return "IDEN_UP_VU"
+	case OpProtectionParamUpdate:
+		return "PROT_PARM_UPDT"
+	case OpSecondaryControlChannel:
+		return "SCCB_EXP"
+	case OpRFSSStatusBroadcast:
+		return "RFSS_STS_BCST"
+	case OpNetworkStatusBroadcast:
+		return "NET_STS_BCST"
+	case OpAdjacentSiteStatusBroadcast:
+		return "ADJ_STS_BCST"
+	case OpIdentifierUpdate:
+		return "IDEN_UP"
+	case OpProtectionParamBroadcast:
+		return "PROT_PARM_BCST"
 	default:
-		return fmt.Sprintf("Opcode(%02X)", uint8(o))
+		return fmt.Sprintf("OSP(0x%02X)", uint8(o))
 	}
 }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useShared } from "../store/shared";
 import type { EventDTO, TalkgroupDTO } from "../api/types";
@@ -85,6 +85,18 @@ export function CCActivity() {
     return list.reverse();
   }, [events, talkgroups, systemFilter, kindFilter]);
 
+  // Pause must actually freeze the table so an operator can read/click a row
+  // without it churning under them: snapshot rows at the moment of pausing and
+  // render that snapshot until resumed. (Previously `paused` re-sliced the live
+  // rows, so it never froze anything.)
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const [frozen, setFrozen] = useState<Row[] | null>(null);
+  useEffect(() => {
+    setFrozen(paused ? rowsRef.current : null);
+  }, [paused]);
+  const displayRows = frozen ?? rows;
+
   return (
     <div className="space-y-3">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -119,7 +131,7 @@ export function CCActivity() {
       </header>
 
       <div className="text-xs text-muted">
-        {rows.length} matching event{rows.length === 1 ? "" : "s"}
+        {displayRows.length} matching event{displayRows.length === 1 ? "" : "s"}
         {paused && " (paused — display frozen, the daemon is still receiving)"}
       </div>
 
@@ -134,7 +146,7 @@ export function CCActivity() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {displayRows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-3 py-4 text-center text-muted">
                   Nothing here yet — control-channel activity will appear
@@ -143,7 +155,7 @@ export function CCActivity() {
                 </td>
               </tr>
             ) : (
-              (paused ? rows.slice(0, rows.length) : rows).slice(0, 500).map((r, i) => (
+              displayRows.slice(0, 500).map((r, i) => (
                 <tr key={i} className="border-t border-border/60">
                   <td className="px-3 py-1 font-mono text-muted">
                     {formatTime(r.ts)}

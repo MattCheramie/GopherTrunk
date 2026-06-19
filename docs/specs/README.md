@@ -51,6 +51,14 @@ but were not located at the time of this commit:
   + Phase 1 air interface. Currently the `internal/radio/p25/`
   implementations cite TIA-102 sections in code comments but
   no PDF is in-tree.
+- **TIA-102.AABC-D** — Project 25 FDMA Common Air Interface,
+  *Trunking Control Channel Messages* (TSBK opcodes / formats).
+  The authoritative source for the P25 Phase 1 TSBK opcode table.
+  TIA standards are sold by TIA and are **not** redistributable,
+  so the PDF is not committed; the opcode designations are
+  transcribed (not copied) into
+  [`p25-tsbk-opcodes.md`](p25-tsbk-opcodes.md) for cross-checking
+  the decoder.
 - **ETSI TS 102 361-2** — DMR Tier III air interface.
 
 Pulls welcome.

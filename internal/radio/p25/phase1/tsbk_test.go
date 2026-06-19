@@ -230,10 +230,11 @@ func TestParseAdjacentSiteStatusBroadcast(t *testing.T) {
 
 func TestOpcodeString(t *testing.T) {
 	cases := map[Opcode]string{
-		OpGroupVoiceChannelGrant: "GroupVoiceChannelGrant",
-		OpRFSSStatusBroadcast:    "RFSSStatusBroadcast",
-		OpNetworkStatusBroadcast: "NetworkStatusBroadcast",
-		Opcode(0x42):             "Opcode(42)",
+		OpGroupVoiceChannelGrant:  "GRP_V_CH_GRANT",
+		OpUnitToUnitAnswerRequest: "UU_ANS_REQ",
+		OpRFSSStatusBroadcast:     "RFSS_STS_BCST",
+		OpNetworkStatusBroadcast:  "NET_STS_BCST",
+		Opcode(0x42):              "OSP(0x42)",
 	}
 	for op, want := range cases {
 		if got := op.String(); got != want {
