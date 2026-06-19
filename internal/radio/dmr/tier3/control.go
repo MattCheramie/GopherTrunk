@@ -60,6 +60,11 @@ type ControlChannel struct {
 	locked           bool
 	last             LockState
 
+	// chanFreqLogged guards the one-shot INFO census of an Announce
+	// Channel-Frequency (C_BCAST anncd_type 5) raw payload — see
+	// handleBroadcast. Single-threaded with the IQ pump.
+	chanFreqLogged bool
+
 	// topo accumulates the system topology (identity + adjacent sites) for the
 	// hunt/discovery layer; read via Topology().
 	topo topologyModel
@@ -222,6 +227,20 @@ func (c *ControlChannel) handleBroadcast(cc uint8, b BroadcastAnnouncement) {
 		c.topo.applySiteParams(gs.RFSSID, gs.SiteID)
 	case AnncAdjacentSite:
 		c.topo.applyAdjacent(ParseAdjacentSite(b.Payload))
+	case AnncChanFreq:
+		// Announce Channel-Frequency (anncd_type 5) is the LCN ↔ frequency
+		// relationship. ETSI TS 102 361-4 leaves the exact octet layout to be
+		// validated against a real off-air burst (the way Gen_Site_Params and
+		// CallTimer_Parms were), and DMR Tier III otherwise carries only a
+		// 12-bit LCN — not absolute Hz — so neighbour/voice frequencies are
+		// resolved through the band-plan Resolver (LinearBandPlan / the dmrlcn
+		// learner). Surface the raw payload once so the layout can be reversed
+		// from this site; do not guess a frequency the engine would retune to.
+		if !c.chanFreqLogged {
+			c.chanFreqLogged = true
+			c.log.Info("dmr/tier3: announce channel-frequency (raw, layout unvalidated)",
+				"system", c.systemName, "cc", cc, "payload", b.Payload)
+		}
 	}
 }
 

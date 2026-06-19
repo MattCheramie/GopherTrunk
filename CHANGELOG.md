@@ -49,13 +49,23 @@ for tagged releases.
   rounded the tuned frequency to 3 decimals (showing a 6.25 kHz-raster channel
   like 160.5875 MHz as "160.588"); it now prints 4 decimals, matching the rest
   of the UI. Display-only — the SDR was always tuned to the exact frequency.
-- **P25 identity / band-plan / neighbor accuracy under noise.** Status-broadcast
-  accumulation was last-write-wins, so a single corrupt-but-CRC-passing TSBK
-  could set a wrong WACN / System ID or inject a phantom band-plan slot
-  (e.g. a stray VHF base on a UHF site). Identity is now resolved by majority
-  vote across observations, and band-plan slots and neighbors must be seen at
-  least twice before they surface — while live grant resolution still accepts a
-  first sighting, so voice channels are unaffected.
+- **P25 identity accuracy under noise.** Status-broadcast accumulation was
+  last-write-wins, so a single corrupt-but-CRC-passing TSBK could set a wrong
+  WACN / System ID. Identity (WACN/SysID/RFSS/Site) is now resolved by majority
+  vote across observations, so a repeated correct value out-votes a one-shot
+  wrong one. Neighbors and band-plan slots surface on the first sighting
+  (de-duplicated) to match OP25's latency.
+- **P25 Motorola identity/neighbors not decoding.** On some Motorola trunks the
+  band-plan and network/site/secondary broadcast opcodes (IDEN, RFSS, Network
+  Status, Adjacent Site) arrive under the vendor MFID (0x90); they were routed
+  to vendor dispatch and dropped, so WACN / System ID / neighbors stayed empty
+  even though the control channel locked. These always-standard opcodes are now
+  decoded regardless of MFID (an INFO line flags when one is seen under a vendor
+  MFID), matching OP25/boatbod.
+- **DMR Tier III Announce Channel-Frequency** (C_BCAST anncd_type 5) is now
+  recognised and its raw payload surfaced once at INFO, so its (site-specific)
+  layout can be validated off-air; neighbor/voice frequencies continue to
+  resolve through the configured band-plan resolver / LCN learner.
 
 ## [v0.4.6] — 2026-06-18
 

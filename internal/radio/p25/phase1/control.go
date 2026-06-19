@@ -959,10 +959,20 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	atomic.AddInt64(&c.stats.TSBKDecoded, 1)
 	// Manufacturer-specific TSBKs are decoded in the vendor's opcode
 	// namespace (Motorola patch/regroup, Harris regroup, talker alias)
-	// — see tsbk_vendor.go.
-	if t.IsVendorMFID() {
+	// — see tsbk_vendor.go. The band-plan and network/site/secondary
+	// broadcast opcodes (IDEN, RFSS/NSB/adjacent/secondary) live in the
+	// standard TIA namespace on every vendor's control channel — Motorola
+	// and Harris never redefine them — so they are decoded via the standard
+	// switch even when the MFID marks the block vendor-specific. Some
+	// Motorola sites emit exactly these under MFID 0x90, which is why their
+	// WACN/SysID/neighbours otherwise never surfaced (matches OP25/boatbod).
+	if t.IsVendorMFID() && !isStandardBroadcastOpcode(t.Opcode) {
 		c.dispatchVendorTSBK(t, nac)
 		return
+	}
+	if t.IsVendorMFID() && c.diagFirst(diagVendorBroadcast|uint32(t.Opcode)) {
+		c.log.Info("p25: standard broadcast opcode under vendor MFID",
+			"system", c.systemName, "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
 	}
 	switch t.Opcode {
 	case OpIdentifierUpdate:
@@ -1129,9 +1139,27 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 // categories so an unhandled-opcode key and an alias-source key never
 // collide. See ControlChannel.diagSeen.
 const (
-	diagUnhandledTSBK uint32 = 1 << 24
-	diagAliasSrc      uint32 = 2 << 24
+	diagUnhandledTSBK   uint32 = 1 << 24
+	diagAliasSrc        uint32 = 2 << 24
+	diagVendorBroadcast uint32 = 3 << 24
 )
+
+// isStandardBroadcastOpcode reports whether op is one of the band-plan or
+// network/site/secondary broadcast opcodes that are always standard TIA
+// messages regardless of MFID — so they are decoded via the standard dispatch
+// even when a vendor MFID marks the block manufacturer-specific. Grant opcodes
+// are deliberately excluded: opcode 0x00 under MFID 0x90 is a Motorola patch,
+// not a group voice grant, so it must stay on the vendor path.
+func isStandardBroadcastOpcode(op Opcode) bool {
+	switch op {
+	case OpIdentifierUpdate, OpIdentifierUpdateVUHF, OpIdentifierUpdateTDMA,
+		OpSecondaryControlChannel, OpRFSSStatusBroadcast,
+		OpNetworkStatusBroadcast, OpAdjacentSiteStatusBroadcast:
+		return true
+	default:
+		return false
+	}
+}
 
 // maxUnhandledSamples caps how many raw payloads are logged per distinct
 // (MFID,opcode) so a busy CC stays bounded; 8 is enough to catch a full
