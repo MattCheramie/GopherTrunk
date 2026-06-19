@@ -59,6 +59,26 @@ func TestVerifyCredentials_Expired(t *testing.T) {
 	}
 }
 
+func TestVerifyCredentials_FeedProvider(t *testing.T) {
+	// Feed Provider / Admin accounts have no expiry date — RR reports the
+	// subscription as the sentinel "Never - Feed Provider" / "Never - Admin".
+	for _, sentinel := range []string{"Never - Feed Provider", "Never - Admin"} {
+		t.Run(sentinel, func(t *testing.T) {
+			c := verifyClient(t, soapEnvelope(`<username>carol</username><subExpireDate>`+sentinel+`</subExpireDate>`))
+			acct, err := c.VerifyCredentials(context.Background())
+			if err != nil {
+				t.Fatalf("VerifyCredentials: %v", err)
+			}
+			if !acct.Premium {
+				t.Errorf("expected Premium=true for %q, got %+v", sentinel, acct)
+			}
+			if acct.Username != "carol" {
+				t.Errorf("Username = %q, want carol", acct.Username)
+			}
+		})
+	}
+}
+
 func TestVerifyCredentials_Fault(t *testing.T) {
 	fault := `<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">` +
 		`<SOAP-ENV:Body><SOAP-ENV:Fault><faultstring>Invalid username or password</faultstring></SOAP-ENV:Fault>` +

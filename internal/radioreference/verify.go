@@ -56,11 +56,17 @@ func (c *Client) VerifyCredentials(ctx context.Context) (Account, error) {
 // subscriptionActive reports whether an RR expiry timestamp is in the future.
 // RR returns dates like "2025-12-31 00:00:00" or "2025-12-31" (and some
 // accounts a UNIX-seconds value); unparseable or empty values are treated as
-// "not premium".
+// "not premium". Feed Provider and Admin accounts keep premium for as long as
+// their feed is active, so RR reports their expiry as the sentinel strings
+// "Never - Feed Provider" / "Never - Admin" rather than a date — those count
+// as active.
 func subscriptionActive(expires string) bool {
 	expires = strings.TrimSpace(expires)
 	if expires == "" {
 		return false
+	}
+	if strings.HasPrefix(strings.ToLower(expires), "never") {
+		return true
 	}
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02", time.RFC3339} {
 		if t, err := time.Parse(layout, expires); err == nil {
