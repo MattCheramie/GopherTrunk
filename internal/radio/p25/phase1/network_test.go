@@ -14,10 +14,7 @@ func TestNetworkModelAccumulates(t *testing.T) {
 	m.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x123, RFSS: 4, Site: 7, LRA: 9})
 	m.ApplySecondaryControlChannel(SecondaryControlChannelBroadcast{
 		ChannelAID: 1, ChannelANumber: 100, ChannelBID: 1, ChannelBNumber: 200})
-	// Neighbours need corroborationMin (2) sightings before Snapshot surfaces
-	// them, so each site is broadcast twice.
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})
-	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 9, ChannelID: 1, ChannelNumber: 301})
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 9, ChannelID: 1, ChannelNumber: 301})
 	// Re-broadcast of site 8 must update in place, not duplicate.
 	m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 305})
@@ -60,10 +57,8 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast,
 		Payload: AssembleAdjacentSiteStatusBroadcast(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})}
 
-	// The adjacent-site broadcast is sent twice so it clears the
-	// corroborationMin (2) gate and Snapshot surfaces the neighbour.
 	base := 0
-	for _, tsbk := range []TSBK{nsb, rfss, adj, adj} {
+	for _, tsbk := range []TSBK{nsb, rfss, adj} {
 		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
 		base += 1 << 20
 	}
@@ -74,6 +69,37 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	}
 	if len(cfg.Neighbors) != 1 || cfg.Neighbors[0].Site != 8 {
 		t.Errorf("neighbours = %v, want one site-8 entry", cfg.Neighbors)
+	}
+}
+
+// TestControlChannelDecodesBroadcastUnderVendorMFID drives the network/site
+// broadcasts with the Motorola vendor MFID (0x90) — the form a real VHF site
+// was seen emitting — and checks the standard broadcast opcodes are still
+// decoded (WACN/SysID/RFSS/Site/neighbour surface) rather than dropped as
+// unhandled vendor TSBKs, while a genuine Motorola vendor opcode (a patch)
+// stays on the vendor path.
+func TestControlChannelDecodesBroadcastUnderVendorMFID(t *testing.T) {
+	cc := New(Options{Bus: events.NewBus(8), SystemName: "MotoVHF"})
+
+	nsb := TSBK{Opcode: OpNetworkStatusBroadcast, MFID: MFIDMotorola,
+		Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23}}
+	rfss := TSBK{Opcode: OpRFSSStatusBroadcast, MFID: MFIDMotorola,
+		Payload: [8]byte{9, 0x01, 0x23, 4, 7}}
+	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast, MFID: MFIDMotorola,
+		Payload: AssembleAdjacentSiteStatusBroadcast(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})}
+
+	base := 0
+	for _, tsbk := range []TSBK{nsb, rfss, adj} {
+		cc.Process(buildLockedStreamWithTSBK(10, 0x2C2, DUIDTrunkingSignaling, tsbk), base)
+		base += 1 << 20
+	}
+
+	cfg := cc.NetworkSnapshot()
+	if cfg.WACN != 0xABCDE || cfg.SystemID != 0x123 || cfg.RFSS != 4 || cfg.Site != 7 {
+		t.Errorf("vendor-MFID broadcasts not decoded: %+v", cfg)
+	}
+	if len(cfg.Neighbors) != 1 || cfg.Neighbors[0].Site != 8 {
+		t.Errorf("neighbour from vendor-MFID adjacent broadcast missing: %v", cfg.Neighbors)
 	}
 }
 

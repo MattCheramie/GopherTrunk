@@ -353,20 +353,17 @@ var ErrUnknownChannelID = errors.New("p25/phase1: no IdentifierUpdate for channe
 // the control channel reads/writes from a single goroutine so that's
 // the natural usage shape.
 type BandPlan struct {
-	slots  [16]IdentifierUpdate
-	known  [16]bool
-	counts [16]int // sightings per channel ID (for Snapshot corroboration)
+	slots [16]IdentifierUpdate
+	known [16]bool
 }
 
-// Apply records (or replaces) the band-plan slot for u.ChannelID and counts
-// the sighting.
+// Apply records (or replaces) the band-plan slot for u.ChannelID.
 func (b *BandPlan) Apply(u IdentifierUpdate) {
 	if int(u.ChannelID) >= len(b.slots) {
 		return
 	}
 	b.slots[u.ChannelID] = u
 	b.known[u.ChannelID] = true
-	b.counts[u.ChannelID]++
 }
 
 // Frequency returns the downlink frequency in Hz for the given
@@ -407,18 +404,14 @@ func (b *BandPlan) IsTDMA(channelID uint8) bool {
 	return b.slots[channelID].AccessTDMA
 }
 
-// Snapshot returns the IdentifierUpdate entries for every channel ID seen at
-// least corroborationMin times, in ascending channel-ID order. Used by the
-// signal-lab / hunt layers to surface the band plan a control channel
-// advertised so a discovered system can be documented and exported. The
-// corroboration gate keeps a one-shot CRC false positive from injecting a
-// phantom slot (e.g. a stray VHF base on a UHF site); live grant resolution
-// (Frequency/Known) is deliberately not gated, so a once-seen slot still
-// resolves an in-progress voice grant.
+// Snapshot returns the IdentifierUpdate entries for every known channel ID,
+// in ascending channel-ID order. Used by the signal-lab / hunt layers to
+// surface the band plan a control channel advertised so a discovered system
+// can be documented and exported.
 func (b *BandPlan) Snapshot() []IdentifierUpdate {
 	var out []IdentifierUpdate
 	for id := 0; id < len(b.slots); id++ {
-		if b.known[id] && b.counts[id] >= corroborationMin {
+		if b.known[id] {
 			out = append(out, b.slots[id])
 		}
 	}

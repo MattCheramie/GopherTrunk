@@ -23,14 +23,9 @@ import (
 // identity or inject a phantom band-plan slot / neighbour. Identity
 // scalars (WACN/SysID/RFSS/Site/LRA) are resolved by majority vote — a
 // lone observation is still surfaced, but a repeated correct value
-// out-votes a one-shot wrong one. Neighbours must be seen at least
-// corroborationMin times before Snapshot surfaces them.
-
-// corroborationMin is how many independent sightings a neighbour (and, in
-// BandPlan.Snapshot, a band-plan slot) needs before it is trusted. Two is
-// enough to reject a one-shot CRC false positive while a real, repeating
-// broadcast clears the bar within a second or two of dwell.
-const corroborationMin = 2
+// out-votes a one-shot wrong one. Neighbours and band-plan slots surface on
+// the first sighting (de-duplicated), to match OP25's latency — the identity
+// majority-vote already absorbs the one-shot-corruption case that matters.
 
 // Channel is a (band-plan ID, channel number) pair.
 type Channel struct {
@@ -79,9 +74,8 @@ type NetworkModel struct {
 	// secondary CC is low-risk and not part of the corroboration scope).
 	secondary []Channel
 
-	// Neighbours — sighting count + latest channel info per (RFSS, Site).
-	neighborVotes map[neighborKey]int
-	neighborData  map[neighborKey]NeighborSite
+	// Neighbours — latest channel info per (RFSS, Site), de-duplicated.
+	neighborData map[neighborKey]NeighborSite
 }
 
 // ensure lazily initialises the vote maps so the zero value is usable.
@@ -92,7 +86,6 @@ func (m *NetworkModel) ensure() {
 		m.rfssVotes = map[uint8]int{}
 		m.siteVotes = map[uint8]int{}
 		m.lraVotes = map[uint8]int{}
-		m.neighborVotes = map[neighborKey]int{}
 		m.neighborData = map[neighborKey]NeighborSite{}
 	}
 }
@@ -144,19 +137,18 @@ func (m *NetworkModel) ApplySecondaryControlChannel(s SecondaryControlChannelBro
 }
 
 // ApplyAdjacentSite folds an Adjacent Site Status Broadcast (0x3C) in,
-// counting sightings per (RFSS, Site) and keeping the latest channel info.
+// de-duplicating by (RFSS, Site) and keeping the latest channel info.
 func (m *NetworkModel) ApplyAdjacentSite(a AdjacentSiteStatusBroadcast) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensure()
 	key := neighborKey{RFSS: a.RFSS, Site: a.Site}
-	m.neighborVotes[key]++
 	m.neighborData[key] = NeighborSite{RFSS: a.RFSS, Site: a.Site, ChannelID: a.ChannelID, ChannelNumber: a.ChannelNumber}
 }
 
-// Snapshot returns a deep copy of the accumulated topology. Identity
-// fields are the most-observed value; neighbours appear only once seen at
-// least corroborationMin times, sorted by (RFSS, Site) for stable output.
+// Snapshot returns a deep copy of the accumulated topology. Identity fields
+// are the most-observed value; neighbours are every de-duplicated adjacent
+// site seen, sorted by (RFSS, Site) for stable output.
 func (m *NetworkModel) Snapshot() NetworkConfig {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -168,10 +160,8 @@ func (m *NetworkModel) Snapshot() NetworkConfig {
 		LRA:       majority(m.lraVotes),
 		Secondary: append([]Channel(nil), m.secondary...),
 	}
-	for key, c := range m.neighborVotes {
-		if c >= corroborationMin {
-			out.Neighbors = append(out.Neighbors, m.neighborData[key])
-		}
+	for _, n := range m.neighborData {
+		out.Neighbors = append(out.Neighbors, n)
 	}
 	sort.Slice(out.Neighbors, func(i, j int) bool {
 		if out.Neighbors[i].RFSS != out.Neighbors[j].RFSS {
