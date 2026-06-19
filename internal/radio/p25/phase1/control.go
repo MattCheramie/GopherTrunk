@@ -1013,6 +1013,8 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			groupID: g.TargetID, sourceID: g.SourceID,
 			channelID: g.ChannelID, channelNumber: g.ChannelNumber,
 		}, nac)
+	case OpUnitToUnitAnswerRequest:
+		c.publishUnitToUnitRequest(ParseUnitToUnitAnswerRequest(t.Payload), nac)
 	case OpTelephoneInterconnectGrant:
 		g := ParseTelephoneInterconnectGrant(t.Payload)
 		c.publishVoiceGrant(voiceGrant{
@@ -1106,6 +1108,14 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		if alias, src, done := c.aliasAsm.Add(f); done {
 			c.publishTalkerAlias(src, alias)
 		}
+		return
+	}
+	// Unit-to-Unit Answer Request (opcode 0x05) is a standard call-setup
+	// message that some Motorola sites emit under the vendor MFID. The
+	// target/source layout is the standard one, so decode it here too rather
+	// than logging it as an unhandled vendor opcode.
+	if t.Opcode == OpUnitToUnitAnswerRequest {
+		c.publishUnitToUnitRequest(ParseUnitToUnitAnswerRequest(t.Payload), nac)
 		return
 	}
 	// Unrecognised vendor opcode: census + raw-payload sample so a field
@@ -1390,6 +1400,27 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac
 		"system", c.systemName, "nac", nac,
 		"src", u.SourceID, "wacn", u.WACN, "sysid", u.SystemID,
 		"rsp", u.Response)
+}
+
+// publishUnitToUnitRequest publishes a trunking.UnitToUnitRequest on the bus
+// when the site issues a Unit-to-Unit Answer Request (opcode 0x05). No
+// band-plan resolution is needed — the answer request carries no channel, only
+// the calling/called radio IDs.
+func (c *ControlChannel) publishUnitToUnitRequest(u UnitToUnitAnswerRequest, nac uint16) {
+	c.bus.Publish(events.Event{
+		Kind: events.KindUnitToUnitRequest,
+		Payload: trunking.UnitToUnitRequest{
+			System:         c.systemName,
+			Protocol:       "p25",
+			SourceID:       u.SourceID,
+			TargetID:       u.TargetID,
+			ServiceOptions: uint8(u.ServiceOptions),
+			At:             c.now(),
+		},
+	})
+	c.log.Debug("p25: unit-to-unit answer request",
+		"system", c.systemName, "nac", nac,
+		"src", u.SourceID, "target", u.TargetID)
 }
 
 // MarkLost publishes a CCLost event for the current frequency and resets

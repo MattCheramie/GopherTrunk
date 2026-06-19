@@ -105,6 +105,20 @@ type UnitRegistration struct {
 	At     time.Time
 }
 
+// UnitToUnitRequest is published on the events bus when the system asks a
+// radio whether it will answer a private (unit-to-unit) call. Emitted by P25
+// control-channel decoders on opcode 0x05 (Unit-to-Unit Answer Request). No
+// channel is granted yet — it's the call-setup handshake — so only the two
+// radio IDs (and the service options) are carried.
+type UnitToUnitRequest struct {
+	System         string // System name, matches trunking.System.Name
+	Protocol       string // "p25"
+	SourceID       uint32 // calling unit
+	TargetID       uint32 // called unit being asked to answer
+	ServiceOptions uint8  // P25 service-options octet (priority / encryption flags)
+	At             time.Time
+}
+
 // TalkerAlias is published on the events bus when a radio's display
 // name (the "talker alias") has been fully reassembled from the
 // multi-fragment vendor MAC PDUs that carry it. Emitted by the P25

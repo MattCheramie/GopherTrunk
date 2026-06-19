@@ -77,6 +77,51 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	}
 }
 
+// TestControlChannelPublishesUnitToUnitRequest drives a Unit-to-Unit Answer
+// Request (opcode 0x05) through the control channel — once with the standard
+// MFID and once with the Motorola vendor MFID (0x90), the form a real site was
+// seen emitting — and checks a KindUnitToUnitRequest naming the calling and
+// called units is published on the bus in both cases.
+func TestControlChannelPublishesUnitToUnitRequest(t *testing.T) {
+	for _, mfid := range []uint8{MFIDStandard, MFIDMotorola} {
+		bus := events.NewBus(16)
+		sub := bus.Subscribe()
+		cc := New(Options{Bus: bus, SystemName: "U2U"})
+
+		utuar := TSBK{
+			Opcode: OpUnitToUnitAnswerRequest,
+			MFID:   mfid,
+			Payload: AssembleUnitToUnitAnswerRequest(UnitToUnitAnswerRequest{
+				ServiceOptions: 0x00, TargetID: 0x1234AB, SourceID: 0x00CDEF}),
+		}
+		cc.Process(buildLockedStreamWithTSBK(10, 0x705, DUIDTrunkingSignaling, utuar), 0)
+
+		deadline := time.After(3 * time.Second)
+		got := false
+		for !got {
+			select {
+			case ev := <-sub.C:
+				if ev.Kind != events.KindUnitToUnitRequest {
+					continue
+				}
+				u, ok := ev.Payload.(trunking.UnitToUnitRequest)
+				if !ok {
+					t.Fatalf("mfid=%#x payload is %T, want trunking.UnitToUnitRequest", mfid, ev.Payload)
+				}
+				if u.SourceID != 0x00CDEF || u.TargetID != 0x1234AB {
+					t.Fatalf("mfid=%#x src/target = %d/%d, want %d/%d",
+						mfid, u.SourceID, u.TargetID, 0x00CDEF, 0x1234AB)
+				}
+				got = true
+			case <-deadline:
+				t.Fatalf("mfid=%#x: no KindUnitToUnitRequest published within deadline", mfid)
+			}
+		}
+		sub.Close()
+		bus.Close()
+	}
+}
+
 // TestControlChannelPublishesSiteUpdate drives an RFSS Status Broadcast
 // through the control channel and checks a KindSiteUpdate naming the
 // camped site (with the tuned control-channel frequency) is published

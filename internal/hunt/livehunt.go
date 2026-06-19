@@ -206,7 +206,7 @@ func RunLiveHunt(ctx context.Context, opts LiveHuntOptions) (*DiscoveredSystem, 
 		progress(LiveHuntProgress{
 			Phase: PhaseIdentifying, CenterHz: cand.FreqHz,
 			CandidateN: i + 1, Candidates: len(candidates),
-			Detail: fmt.Sprintf("%.3f MHz", float64(cand.FreqHz)/1e6),
+			Detail: fmt.Sprintf("%.4f MHz", float64(cand.FreqHz)/1e6),
 		})
 
 		params := decodeParams{

@@ -195,6 +195,39 @@ func AssembleUnitToUnitVoiceChannelGrant(g UnitToUnitVoiceChannelGrant) [8]byte 
 	return p
 }
 
+// UnitToUnitAnswerRequest (opcode 0x05) — the infrastructure asking a unit
+// whether it will answer a private (unit-to-unit) call another unit is
+// setting up. It carries no channel (no traffic is granted yet), only the two
+// radio IDs. Working-model payload layout (TIA-102.AABF):
+//
+//	byte 0   : service options
+//	bytes 1-3: target unit ID (24 bits) — the called unit being asked to answer
+//	bytes 4-6: source unit ID (24 bits) — the calling unit
+//	byte 7   : reserved
+type UnitToUnitAnswerRequest struct {
+	ServiceOptions ServiceOptions
+	TargetID       uint32
+	SourceID       uint32
+}
+
+// ParseUnitToUnitAnswerRequest decodes payload bytes for opcode 0x05.
+func ParseUnitToUnitAnswerRequest(p [8]byte) UnitToUnitAnswerRequest {
+	return UnitToUnitAnswerRequest{
+		ServiceOptions: ServiceOptions(p[0]),
+		TargetID:       uint32(p[1])<<16 | uint32(p[2])<<8 | uint32(p[3]),
+		SourceID:       uint32(p[4])<<16 | uint32(p[5])<<8 | uint32(p[6]),
+	}
+}
+
+// AssembleUnitToUnitAnswerRequest is the inverse; used by tests.
+func AssembleUnitToUnitAnswerRequest(u UnitToUnitAnswerRequest) [8]byte {
+	var p [8]byte
+	p[0] = byte(u.ServiceOptions)
+	p[1], p[2], p[3] = byte(u.TargetID>>16), byte(u.TargetID>>8), byte(u.TargetID)
+	p[4], p[5], p[6] = byte(u.SourceID>>16), byte(u.SourceID>>8), byte(u.SourceID)
+	return p
+}
+
 // TelephoneInterconnectGrant (opcode 0x08) — a grant for a call bridged
 // to the public telephone network. Working-model payload layout:
 //

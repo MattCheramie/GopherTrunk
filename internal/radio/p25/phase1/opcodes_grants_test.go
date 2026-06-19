@@ -34,6 +34,13 @@ func TestParseUnitToUnitVoiceChannelGrant(t *testing.T) {
 	}
 }
 
+func TestParseUnitToUnitAnswerRequest(t *testing.T) {
+	in := UnitToUnitAnswerRequest{ServiceOptions: 0x05, TargetID: 0x1234AB, SourceID: 0x00CDEF}
+	if got := ParseUnitToUnitAnswerRequest(AssembleUnitToUnitAnswerRequest(in)); got != in {
+		t.Errorf("round-trip = %+v, want %+v", got, in)
+	}
+}
+
 func TestParseTelephoneInterconnectGrant(t *testing.T) {
 	in := TelephoneInterconnectGrant{ServiceOptions: 0x80, ChannelID: 1, ChannelNumber: 0x05, CallTimer: 600, TargetID: 0x00ABCD}
 	if got := ParseTelephoneInterconnectGrant(AssembleTelephoneInterconnectGrant(in)); got != in {
