@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Column, DataTable } from "../components/DataTable";
 import type { EventDTO } from "../api/types";
 import { useShared } from "../store/shared";
+import { contentKey, groupEvents, type GroupedEvent } from "../lib/groupEvents";
 
 // Events renders the live ring buffer the WebSocket stream populates
 // into the shared store. No polling — the stream pushes everything;
@@ -17,6 +18,9 @@ export function Events() {
   // autoFrozen records that the freeze was triggered by expanding a row (so we
   // resume on collapse), as opposed to a manual Pause the operator wants kept.
   const [autoFrozen, setAutoFrozen] = useState(false);
+  // Collapse repeated identical events (same kind + payload) into one row with
+  // an ×N count and the latest timestamp, to cut the firehose. On by default.
+  const [grouped, setGrouped] = useState(true);
 
   // When paused, freeze the table at the snapshot the user paused on;
   // when running, mirror the live store ring.
@@ -33,36 +37,54 @@ export function Events() {
     );
   }, [visible, filter]);
 
-  // Newest events first — reverse so the latest is at the top, the
-  // mobile-friendly read order.
-  const ordered = useMemo(() => filtered.slice().reverse(), [filtered]);
+  // Group identical events (when enabled), then newest (most-recently-active)
+  // first — reverse so the latest is at the top, the mobile-friendly read order.
+  const ordered = useMemo<GroupedEvent[]>(() => {
+    const groups = grouped
+      ? groupEvents(filtered)
+      : filtered.map((e) => ({
+          event: e,
+          count: 1,
+          firstTimestamp: e.timestamp,
+          lastTimestamp: e.timestamp,
+        }));
+    return groups.slice().reverse();
+  }, [filtered, grouped]);
 
-  const columns: Column<EventDTO>[] = useMemo(
+  const columns: Column<GroupedEvent>[] = useMemo(
     () => [
       {
         key: "ts",
         header: "Time",
-        render: (r) => (
+        render: (g) => (
           <span className="font-mono text-xs text-muted whitespace-nowrap">
-            {r.timestamp.replace("T", " ").replace(/\..*$/, "")}
+            {g.event.timestamp.replace("T", " ").replace(/\..*$/, "")}
+            {g.count > 1 ? (
+              <span
+                className="ml-1 px-1 rounded bg-surface text-fg/70 text-[10px]"
+                title={`${g.count} identical events (since ${g.firstTimestamp})`}
+              >
+                ×{g.count}
+              </span>
+            ) : null}
           </span>
         ),
-        sort: (a, b) => a.timestamp.localeCompare(b.timestamp),
+        sort: (a, b) => a.event.timestamp.localeCompare(b.event.timestamp),
       },
       {
         key: "kind",
         header: "Kind",
-        render: (r) => (
-          <span className="font-mono text-accent">{r.kind}</span>
+        render: (g) => (
+          <span className="font-mono text-accent">{g.event.kind}</span>
         ),
-        sort: (a, b) => a.kind.localeCompare(b.kind),
+        sort: (a, b) => a.event.kind.localeCompare(b.event.kind),
       },
       {
         key: "preview",
         header: "Payload",
-        render: (r) => (
+        render: (g) => (
           <span className="text-xs font-mono text-muted truncate inline-block max-w-[28ch] sm:max-w-[60ch]">
-            {previewPayload(r.payload)}
+            {previewPayload(g.event.payload)}
           </span>
         ),
       },
@@ -87,7 +109,7 @@ export function Events() {
   // Expanding a row to inspect it auto-freezes the live stream so the row
   // doesn't scroll away as new events prepend (the whole point of "looking at
   // an event"); collapsing it resumes — unless the operator had paused manually.
-  function handleRowClick(_r: EventDTO, key: string) {
+  function handleRowClick(_g: GroupedEvent, key: string) {
     const collapsing = expanded === key;
     setExpanded(collapsing ? null : key);
     if (collapsing) {
@@ -133,6 +155,14 @@ export function Events() {
           aria-label="Filter events"
         />
         <button
+          className={grouped ? "btn-primary" : "btn-ghost"}
+          onClick={() => setGrouped(!grouped)}
+          aria-pressed={grouped}
+          title="Collapse repeated identical events into one row with a count"
+        >
+          {grouped ? "Grouped" : "All"}
+        </button>
+        <button
           className={paused ? "btn-primary" : "btn-ghost"}
           onClick={togglePause}
           aria-pressed={paused}
@@ -152,11 +182,14 @@ export function Events() {
       <DataTable
         rows={ordered}
         columns={columns}
-        rowKey={(r, i) => `${r.timestamp}-${r.kind}-${i}`}
+        rowKey={(g, i) => `${contentKey(g.event)}-${i}`}
         onRowClick={handleRowClick}
-        renderExpansion={(r) => (
+        renderExpansion={(g) => (
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-fg/80">
-            {JSON.stringify(r, null, 2)}
+            {g.count > 1
+              ? `// seen ${g.count}× — first ${g.firstTimestamp}, last ${g.lastTimestamp}\n`
+              : ""}
+            {JSON.stringify(g.event, null, 2)}
           </pre>
         )}
         expandedKey={expanded}

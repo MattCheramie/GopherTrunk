@@ -89,6 +89,20 @@ describe("CCActivity panel", () => {
     expect(row!.textContent).toMatch(/EMERG/);
   });
 
+  it("collapses repeated identical grants into one row with a count (grouped by default)", () => {
+    const grant = (ts: string) => ({
+      kind: "grant",
+      timestamp: ts,
+      payload: { system: "Metro P25", protocol: "p25", group_id: 1234, frequency_hz: 851_012_500 },
+    });
+    setEvents([grant("2026-05-26T12:00:00Z"), grant("2026-05-26T12:00:03Z"), grant("2026-05-26T12:00:07Z")]);
+    renderPanel();
+    const rows = screen.getAllByText("Metro P25").map((el) => el.closest("tr"));
+    // Three identical grants collapse to a single row carrying ×3.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toMatch(/×3/);
+  });
+
   it("renders affiliation events with response code", () => {
     setEvents([
       {
