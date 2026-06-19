@@ -12,6 +12,7 @@ const LS_KEYS = {
   tokenPersistent: "gt.token.persistent",
   theme: "gt.ui.theme",
   density: "gt.ui.density",
+  sidebarCollapsed: "gt.ui.sidebarCollapsed",
   writeMode: "gt.ui.writeMode",
   audioVolume: "gt.audio.volume",
   installPromptDismissed: "gt.pwa.installDismissed",
@@ -120,6 +121,14 @@ export const prefs = {
   },
   setDensity(d: Density) {
     writeLS(LS_KEYS.density, d);
+  },
+
+  /** Desktop sidebar collapsed to an icon rail. Defaults to expanded. */
+  sidebarCollapsed(): boolean {
+    return readLS(LS_KEYS.sidebarCollapsed) === "1";
+  },
+  setSidebarCollapsed(collapsed: boolean) {
+    writeLS(LS_KEYS.sidebarCollapsed, collapsed ? "1" : "0");
   },
 
   writeMode(): boolean {

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { api, HTTPError } from "./api/client";
 import { openEventStream } from "./api/events";
 import { ConnectScreen } from "./components/ConnectScreen";
-import { TabBar, type Tab } from "./components/TabBar";
+import { AppShell } from "./components/shell/AppShell";
 import { AudioPlayer } from "./components/AudioPlayer";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { Active } from "./panels/Active";
@@ -40,36 +40,6 @@ import { Tones } from "./panels/Tones";
 import { useShared } from "./store/shared";
 import { prefs } from "./store/prefs";
 
-const TABS: Tab[] = [
-  { to: "/dashboard", label: "Dashboard", icon: "▤" },
-  { to: "/active", label: "Active", icon: "●" },
-  { to: "/scanner", label: "Scanner", icon: "≋" },
-  { to: "/settings", label: "Settings", icon: "⚙" },
-];
-const EXTRA_TABS: Tab[] = [
-  { to: "/hunt", label: "Hunt", icon: "🔍" },
-  { to: "/systems", label: "Systems", icon: "❖" },
-  { to: "/talkgroups", label: "Talkgroups", icon: "☷" },
-  { to: "/rids", label: "Radio IDs", icon: "⌖" },
-  { to: "/history", label: "History", icon: "↺" },
-  { to: "/events", label: "Events", icon: "≣" },
-  { to: "/cc", label: "CC Activity", icon: "⌁" },
-  { to: "/tones", label: "Tones", icon: "♪" },
-  { to: "/pagers", label: "Pagers", icon: "✉" },
-  { to: "/aprs", label: "APRS", icon: "⛯" },
-  { to: "/ais", label: "AIS", icon: "⚓" },
-  { to: "/dsc", label: "DSC", icon: "📡" },
-  { to: "/adsb", label: "ADS-B", icon: "✈" },
-  { to: "/mdc1200", label: "MDC1200", icon: "📻" },
-  { to: "/lora", label: "LoRa", icon: "🌐" },
-  { to: "/spectrum", label: "Spectrum", icon: "≈" },
-  { to: "/plots", label: "Plots", icon: "✦" },
-  { to: "/bookmarks", label: "Bookmarks", icon: "★" },
-  { to: "/metrics", label: "Metrics", icon: "▰" },
-  { to: "/devices", label: "Devices", icon: "⌗" },
-  { to: "/import", label: "Import", icon: "↗" },
-];
-
 export function App() {
   // Subscribe to the connection identity as primitives, not a derived
   // object. Effects keyed on `baseURL`/`token` re-run only when the
@@ -81,14 +51,12 @@ export function App() {
   const setConnected = useShared((s) => s.setConnected);
   const setMutations = useShared((s) => s.setMutations);
   const setWSStatus = useShared((s) => s.setWSStatus);
-  const hiddenTabs = useShared((s) => s.hiddenTabs);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
   const setConfigPath = useShared((s) => s.setConfigPath);
   const configPath = useShared((s) => s.configPath);
   const appendEvents = useShared((s) => s.appendEvents);
   const lastError = useShared((s) => s.lastError);
   const setError = useShared((s) => s.setError);
-  const navigate = useNavigate();
 
   // No-config nudge: when the daemon runs without a -config file
   // (config_path === ""), offer the Config Builder. Dismissal is
@@ -164,31 +132,14 @@ export function App() {
     setConfigPath,
   ]);
 
-  // A hidden tab is dropped from both the main strip and the desktop
-  // overflow row. The key is the route path minus its leading slash —
-  // the same key the daemon emits in hidden_tabs. Routes stay mounted
-  // (nav-only hiding), so a hidden panel is still reachable by URL.
-  const hidden = useMemo(() => new Set(hiddenTabs), [hiddenTabs]);
-  const tabKey = (t: Tab) => String(t.to).replace(/^\//, "");
-  const visibleTabs = useMemo(
-    () => TABS.filter((t) => !hidden.has(tabKey(t))),
-    [hidden],
-  );
-  const visibleExtraTabs = useMemo(
-    () => EXTRA_TABS.filter((t) => !hidden.has(tabKey(t))),
-    [hidden],
-  );
-
   if (!baseURL || !connected) {
     return <ConnectScreen />;
   }
 
   return (
-    <div className="min-h-full flex flex-col">
-      <TabBar tabs={visibleTabs} />
-
+    <AppShell>
       {configPath === "" && !noConfigDismissed && (
-        <div className="flex items-start gap-2 border-b border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
           <span className="flex-1">
             No config file is loaded — the daemon is running on built-in
             defaults. Open the Config Builder to create or load one.
@@ -211,33 +162,7 @@ export function App() {
         </div>
       )}
 
-      {/* Desktop overflow tabs sit beneath the main strip so the
-          bottom-nav-friendly four-tab limit still leaves room for
-          everything else. */}
-      <div className="hidden sm:flex gap-1 px-3 py-1 border-b border-panel text-xs overflow-x-auto">
-        {visibleExtraTabs.map((t) => (
-          <button
-            key={String(t.to)}
-            onClick={() => navigate(t.to)}
-            className="px-2 py-1 rounded text-muted hover:text-fg hover:bg-panel"
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-        {/* The Config Builder is a separate SPA the daemon serves at
-            /config/. Open it in a new tab so editing config doesn't tear
-            down the live operator session. */}
-        <button
-          onClick={() => window.open("/config/", "_blank", "noopener")}
-          className="px-2 py-1 rounded text-muted hover:text-fg hover:bg-panel"
-          title="Open the Config Builder/Editor in a new tab"
-        >
-          🛠 Config Builder ↗
-        </button>
-      </div>
-
-      <main className="flex-1 p-3 sm:p-4 pb-20 sm:pb-4">
-        <Routes>
+      <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/active" element={<Active />} />
@@ -273,7 +198,6 @@ export function App() {
           <Route path="/import" element={<Import />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </main>
 
       <AudioPlayer />
       <InstallPrompt />
@@ -293,6 +217,6 @@ export function App() {
           </button>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

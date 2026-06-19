@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ReactNode } from "react";
 import { render, waitFor } from "@testing-library/react";
 import { HashRouter } from "react-router-dom";
 
@@ -39,7 +40,11 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return { ...actual, Routes: () => null };
 });
 
-vi.mock("./components/TabBar", () => ({ TabBar: () => null }));
+// Mock the shell to a passthrough so this test stays focused on App's
+// connection effects rather than the nav chrome.
+vi.mock("./components/shell/AppShell", () => ({
+  AppShell: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("./components/AudioPlayer", () => ({ AudioPlayer: () => null }));
 vi.mock("./components/InstallPrompt", () => ({ InstallPrompt: () => null }));
 
