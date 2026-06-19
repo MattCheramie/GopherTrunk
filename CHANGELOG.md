@@ -8,12 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
-- **Raw-payload capture for the undecoded Motorola opcodes 0x05 / 0x09**
-  (MFID 0x90). These are emitted continuously on real systems and are suspected
-  to carry roaming / secondary-control-channel data, but their layout is
-  unverified — so they are logged at INFO (up to 64 samples each, grep
-  `motorola candidate opcode`) for offline correlation and decode/publish
-  nothing into the system map. See
+- **Motorola opcodes 0x05 / 0x09 (MFID 0x90) named and captured.** Cross-checked
+  against SDRtrunk / OP25: 0x05 is `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID`, 0x09 is
+  `MOTOROLA_OSP_SYSTEM_LOADING` — neither carries neighbour / secondary-CC data,
+  and neither reference decoder field-decodes them. So they are named and their
+  raw payload is logged at INFO (up to 64 samples each, grep `motorola opcode`)
+  while decoding/publishing nothing into the system map. See
   [`docs/specs/p25-motorola-opcodes.md`](docs/specs/p25-motorola-opcodes.md).
 
 ### Changed

@@ -1120,16 +1120,16 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		}
 		return
 	}
-	// Motorola (MFID 0x90) opcodes 0x05 and 0x09 are emitted continuously on
-	// real systems and are *suspected* — but NOT confirmed — to carry roaming /
-	// secondary-control-channel information (see docs/specs/p25-motorola-opcodes.md).
-	// Capture a larger raw-payload sample for offline correlation, but
-	// deliberately decode and publish NOTHING into the system map: a guessed
-	// field layout would inject phantom neighbours/frequencies (a Motorola 0x05
-	// decoded with the standard UU_ANS_REQ layout already produced garbage IDs —
-	// src=0, target=0x3C0000). Wiring real fields in waits on a layout confirmed
-	// against a reference decoder or ground-truth captures.
-	if t.MFID == MFIDMotorola && (t.Opcode == 0x05 || t.Opcode == 0x09) {
+	// Motorola (MFID 0x90) Traffic Channel ID (0x05) and System Loading (0x09)
+	// are emitted continuously on real systems. SDRtrunk names them but does not
+	// field-decode them (its MotorolaTrafficChannel / ChannelLoading classes are
+	// hex-only stubs) and OP25 ignores them; neither carries neighbour or
+	// secondary-CC data. So we name and capture the raw payload for the record
+	// but decode/publish NOTHING into the system map — a guessed layout would
+	// inject phantom data (a Motorola 0x05 decoded with the standard UU_ANS_REQ
+	// layout already produced garbage: src=0, target=0x3C0000). See
+	// docs/specs/p25-motorola-opcodes.md.
+	if t.MFID == MFIDMotorola && (t.Opcode == OpMotorolaTrafficChannelID || t.Opcode == OpMotorolaSystemLoading) {
 		c.logVendorProbe(t, nac)
 		return
 	}
@@ -1220,10 +1220,24 @@ func (c *ControlChannel) logVendorProbe(t TSBK, nac uint16) {
 	n := c.diagSeen[key]
 	c.diagSeen[key] = n + 1
 	if n < maxVendorProbeSamples {
-		c.log.Info("p25: motorola candidate opcode (undecoded — collecting for analysis)",
+		c.log.Info("p25: motorola opcode (named, not field-decoded — collecting for analysis)",
 			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+			"name", motorolaProbeLabel(t.Opcode),
 			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]),
 			"nac", nac, "sample", n+1, "max", maxVendorProbeSamples)
+	}
+}
+
+// motorolaProbeLabel maps the probed Motorola opcodes to SDRtrunk's names so
+// the diagnostic log reads in known terms rather than a bare opcode number.
+func motorolaProbeLabel(op Opcode) string {
+	switch op {
+	case OpMotorolaTrafficChannelID:
+		return "MOTOROLA_OSP_TRAFFIC_CHANNEL_ID"
+	case OpMotorolaSystemLoading:
+		return "MOTOROLA_OSP_SYSTEM_LOADING"
+	default:
+		return "MOTOROLA_OSP_UNKNOWN"
 	}
 }
 

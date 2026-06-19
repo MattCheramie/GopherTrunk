@@ -175,12 +175,13 @@ func TestControlChannelIgnoresVendorUnitToUnitRequest(t *testing.T) {
 	}
 }
 
-// TestMotorolaProbeOpcodesAreMapSafe drives the suspected-but-undecoded
-// Motorola opcodes 0x05 and 0x09 (MFID 0x90) through the control channel and
-// checks they inject NOTHING into the system map — no bus event and no
-// neighbour / secondary-CC in the topology snapshot. They are captured for
-// offline analysis only (logVendorProbe) until their layout is confirmed; this
-// guards against anyone wiring a guessed layout into the map.
+// TestMotorolaProbeOpcodesAreMapSafe drives the named-but-not-field-decoded
+// Motorola opcodes Traffic Channel ID (0x05) and System Loading (0x09), MFID
+// 0x90, through the control channel and checks they inject NOTHING into the
+// system map — no bus event and no neighbour / secondary-CC in the topology
+// snapshot. Neither reference decoder (SDRtrunk / OP25) field-decodes them, so
+// they are captured for the record only (logVendorProbe); this guards against
+// anyone wiring a guessed layout into the map.
 func TestMotorolaProbeOpcodesAreMapSafe(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
@@ -188,7 +189,7 @@ func TestMotorolaProbeOpcodesAreMapSafe(t *testing.T) {
 	defer sub.Close()
 	cc := New(Options{Bus: bus, SystemName: "Moto"})
 
-	for _, op := range []Opcode{0x05, 0x09} {
+	for _, op := range []Opcode{OpMotorolaTrafficChannelID, OpMotorolaSystemLoading} {
 		tsbk := TSBK{Opcode: op, MFID: MFIDMotorola,
 			Payload: [8]byte{0x0C, 0x80, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC}}
 		cc.Process(buildLockedStreamWithTSBK(10, 0x2C2, DUIDTrunkingSignaling, tsbk), 0)

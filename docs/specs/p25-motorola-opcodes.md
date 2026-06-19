@@ -1,16 +1,14 @@
-# Motorola proprietary P25 TSBK opcodes (MFID 0x90) — reverse-engineering status
+# Motorola proprietary P25 TSBK opcodes (MFID 0x90)
 
-Tracking doc for Motorola-specific (MFID `0x90`) Phase 1 TSBK opcodes observed
-on real systems but **not yet decoded**. Most P25 systems run Motorola gear, so
-these are worth reversing — but only from a *confirmed* layout. This file
-records the leads so the work isn't lost and isn't re-guessed.
+Status of Motorola-specific (MFID `0x90`) Phase 1 TSBK opcodes seen on real
+systems. Most P25 systems run Motorola gear, so these come up constantly.
 
 > ⚠️ **Nothing here is wired into the system map.** Opcodes `0x05` and `0x09`
-> (MFID 0x90) are captured raw by `logVendorProbe`
-> ([`control.go`](../../internal/radio/p25/phase1/control.go)) for offline
-> analysis and decode/publish **nothing**. A guessed bit layout would inject
-> phantom neighbours / frequencies — the exact bad-data class the corroboration
-> and identity work removed — so real decoding waits on verification.
+> (MFID 0x90) are named and their raw payload is captured by `logVendorProbe`
+> ([`control.go`](../../internal/radio/p25/phase1/control.go)) for the record;
+> no fields are decoded and nothing is published. A guessed bit layout would
+> inject phantom data — the bad-data class the corroboration/identity work
+> removed.
 
 ## Already decoded (MFID 0x90)
 
@@ -19,64 +17,51 @@ group-regroup add (0x00) / delete (0x01), patch-group channel grant (0x02) /
 update (0x03), and talker-alias fragments (0x15). Note also that the **standard**
 band-plan and network/site/secondary broadcasts (`0x33/0x34/0x39/0x3A/0x3B/0x3C/0x3D`)
 are decoded even under a vendor MFID (PR #728) — so on a Motorola site,
-neighbours should come from the standard `ADJ_STS_BCST` (0x3C) first. If they're
-empty, capture the `0x3C` debug lines before assuming the data only lives in a
-proprietary opcode.
+neighbours come from the standard `ADJ_STS_BCST` (0x3C), **not** from a
+proprietary opcode. If neighbours are empty, capture the `0x3C` debug lines.
 
-## Candidate opcodes (observed, undecoded)
+## Opcodes 0x05 and 0x09 — named, not field-decoded
 
-### Opcode 0x09 (MFID 0x90)
-- **Observed payload:** `0c80000000000000` (`lb=true`), repeated continuously.
-- **Hypothesis (community, unverified):** a "scan marker" radios hunt for when
-  picking up a control channel.
-- **Assessment:** the payload is `0x0C80` followed by all zeros — a near-constant
-  beacon with **no embedded site/frequency/neighbour fields**. Even the
-  community parser only pulls two bytes (`0x0C`, `0x80`) and yields no map data.
-  So this opcode, as observed, does **not** carry neighbour or secondary-CC
-  information. Likely a periodic status/keepalive flag, not a topology message.
+A community snippet (Discord, 2026-06) claimed `0x05` is a "roam beacon" and
+`0x09` a "scan marker" carrying neighbour / secondary-CC data, and supplied a Go
+parser. That was **wrong** — cross-checked against the two reference decoders:
 
-### Opcode 0x05 (MFID 0x90)
-- **Observed:** logged on the same Motorola site; raw payload bytes not yet
-  captured in a shared sample.
-- **Hypotheses (unverified):** community snippet proposes a "roam beacon"
-  (sub-type / sys-id fragment / neighbour site / channel IDEN + number /
-  preference class / RSSI threshold); separately it's the *standard* opcode
-  number for `UU_ANS_REQ`.
-- **Assessment:** decoding this 0x05 with the **standard** UU_ANS_REQ layout
-  produced garbage in the field (`src=0`, `target=0x3C0000`) — which is why
-  PR #730 stopped decoding vendor-MFID 0x05. The "roam beacon" layout is a
-  different, equally-unverified guess. No real `0x05` payload bytes have been
-  correlated against known neighbours yet.
+| Opcode | What it actually is (SDRtrunk) | OP25 (boatbod) | Field-decoded anywhere? |
+| --- | --- | --- | --- |
+| `0x05` | `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID` ("Motorola Traffic Channel") | not handled | **No** — SDRtrunk's `MotorolaTrafficChannel` is a hex-only stub |
+| `0x09` | `MOTOROLA_OSP_SYSTEM_LOADING` ("Motorola System Loading") | not handled | **No** — SDRtrunk's `ChannelLoading` is an explicit "unknown / under reverse-engineering" placeholder |
 
-## Why these are not implemented
+Findings:
 
-The community-provided Go parser (Discord, 2026-06) is **not** sourced from a
-spec or a reference decoder and shows hallmarks of AI fabrication: invented
-terminology ("RoamBeacon", "ScanMarker", "MarkerMagic", "injection marker
-0x0C80"), no checkable citation, and a 0x09 parser that extracts no usable data.
-Implementing it would re-introduce phantom map entries. P25 standard opcode
-designations come from TIA-102.AABC-D; **vendor** opcodes are not in any
-standard, so the only trustworthy sources are a reference decoder or
-ground-truth correlation.
+- **Neither is a neighbour or secondary-CC message.** 0x05 concerns a traffic
+  channel; 0x09 is system/site loading telemetry. They are not the fix for
+  missing neighbours (that's the standard `0x3C`).
+- **No authoritative field layout exists.** OP25 ignores both; SDRtrunk
+  categorises them by opcode but does **not** extract fields (both classes are
+  stubs / RE placeholders). There is nothing trustworthy to "implement from".
+- The community `0x09` parser pulled only `0x0C 0x80` from `0c80000000000000`
+  (rest zeros) — i.e. no usable data — and the `0x05` "roam beacon" layout was a
+  fresh guess (decoding 0x05 with the standard UU_ANS_REQ layout already gave
+  garbage: `src=0`, `target=0x3C0000`).
 
-## Verification plan
+So this repo mirrors the reference decoders: **name** the two opcodes
+(`MOTOROLA_OSP_TRAFFIC_CHANNEL_ID` / `MOTOROLA_OSP_SYSTEM_LOADING`) and **capture**
+their raw payload (`logVendorProbe`, up to 64 samples/opcode at INFO — grep
+`motorola opcode`), but field-decode nothing.
 
-To decode either opcode for real, gather **one** of:
+## If they're ever worth field-decoding
 
-1. **A reference decode** — what OP25 (boatbod, `trunking.py`) and/or SDRTrunk
-   (`MotorolaTalkgroupOpcode` / MFID-90 handlers) actually do with MFID 0x90
-   opcodes `0x05` / `0x09`. Mirror that layout (with the working-model
-   disclaimer + symmetric `Assemble`/`Parse` + round-trip test the existing
-   vendor opcodes use). If neither decodes them, they are genuinely
-   undocumented and a guess is unjustified.
-2. **Ground-truth correlation** — ~10–20 real raw payloads (now captured by
-   `logVendorProbe`, up to 64 per opcode at INFO: grep
-   `motorola candidate opcode`) **paired** with the site's true neighbour list /
-   secondary-CC frequencies from a known-good decoder. Correlate the varying
-   payload fields against the known values to reverse the bit layout, then prove
-   it with an `Assemble`/`Parse` round-trip test before wiring it into
-   `NetworkModel`.
+They would need genuine reverse-engineering, since no reference decoder has done
+it: collect a correlation set of raw payloads (already captured by
+`logVendorProbe`) against known site state and reverse the layout, then prove it
+with an `Assemble`/`Parse` round-trip test before wiring anything into
+`NetworkModel`. Given 0x05/0x09 carry no topology data, this is low priority.
 
-Once a layout is confirmed, the dispatch in `dispatchVendorTSBK` swaps
-`logVendorProbe` for a real parser + `ApplyAdjacentSite` /
-`ApplySecondaryControlChannel` call.
+## Sources
+
+- SDRtrunk — `module/decode/p25/phase1/message/tsbk/Opcode.java` (opcode →
+  `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID` = 5, `MOTOROLA_OSP_SYSTEM_LOADING` = 9) and
+  the `.../motorola/osp/` message classes (`MotorolaTrafficChannel`,
+  `ChannelLoading` — both stubs). <https://github.com/DSheirer/sdrtrunk>
+- OP25 (boatbod) — `op25/gr-op25_repeater/apps/trunking.py` (Motorola handling
+  covers only opcodes 0x00–0x03). <https://github.com/boatbod/op25>
