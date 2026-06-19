@@ -7,6 +7,25 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.7] — 2026-06-19
+
+This release sharpens **P25 discovery accuracy** and **identity corroboration**.
+Status-broadcast identity (WACN / System ID / RFSS / Site) is now resolved by
+majority vote instead of last-write-wins, so a single corrupt-but-CRC-passing
+TSBK can no longer poison the system map; the always-standard band-plan /
+network / site opcodes are decoded even when a Motorola trunk sends them under
+the vendor MFID (#728); registration and affiliation events carry `rfss_id` /
+`site_id` / `nac` for a genuine RID→site fix (#698); and a new opt-in
+streaming long-dwell control-channel monitor watches a site for minutes
+without recording gigabytes of IQ (#722). Encrypted-call handling moves to a
+per-system policy and `metadata` mode now releases the voice tuner the moment
+the talker alias completes (#711). New **autotune** tracks each dongle's
+carrier error and digitally corrects it (#729), the web console gains a
+group-duplicate-events toggle, a freeze-while-inspecting stream, and a fixed CC
+Activity pause, and a RadioReference fix recognises feed-provider / admin
+accounts as premium (#723). On the docs side: a new "Intro to Software Dev"
+learning path (#725).
+
 ### Added
 - **Group duplicate events in the Events & CC Activity panels.** A "Group
   duplicates" toggle (on by default) collapses repeated events with identical
@@ -20,29 +39,6 @@ for tagged releases.
   raw payload is logged at INFO (up to 64 samples each, grep `motorola opcode`)
   while decoding/publishing nothing into the system map. See
   [`docs/specs/p25-motorola-opcodes.md`](docs/specs/p25-motorola-opcodes.md).
-
-### Changed
-- **P25 TSBK opcodes now log with their TIA-102.AABC-D designations**
-  (`UU_ANS_REQ`, `NET_STS_BCST`, `GRP_V_CH_GRANT`, …) instead of the
-  OP25-derived names. The Go identifiers stay descriptive; `Opcode.String()`
-  and a new [`docs/specs/p25-tsbk-opcodes.md`](docs/specs/p25-tsbk-opcodes.md)
-  carry the canonical mnemonics (mirrors the NXDN package convention).
-
-### Fixed
-- **UU_ANS_REQ (opcode 0x05) is no longer mis-decoded under a vendor MFID.**
-  A Motorola (MFID 0x90) 0x05 decoded with the standard Target/Source layout
-  produced garbage radio IDs (`src=0`, `target=0x3C0000`); it is now left
-  unhandled (vendor namespace), while the standard-MFID UU_ANS_REQ still
-  publishes a `unit.request` event.
-- **CC Activity "pause" now actually freezes the table.** Previously it
-  re-sliced the live rows, so the list kept churning and an event was
-  impossible to read or click; it now snapshots the rows on pause.
-- **Systems detail no longer mislabels missing network identity as "Scanner
-  offline".** WACN/System ID/RFSS/Site are decoded live from status broadcasts
-  whenever the control channel is received, so an empty cell now reads
-  "Awaiting status broadcasts" (or "Hunting control channel" during a hunt).
-
-### Added
 - **Autotune — per-dongle carrier-error correction** (opt-in, `sdr.autotune`).
   Ported in concept from trunk-recorder's autotune. Each SDR's crystal error
   shifts the received carrier off-centre; with autotune on, the daemon watches
@@ -72,8 +68,21 @@ for tagged releases.
   (MFID 0x90) forms — and published as a new `unit.request` bus event carrying
   the calling/called radio IDs, surfaced on the web CC-activity panel and the
   message log instead of being logged as an unhandled vendor TSBK.
+- **"Intro to Software Dev" learning path** (#725). A third structured path
+  under `/learn/` — 7 modules / 40 lessons plus a glossary — covering software
+  development from a brief history through languages, principles, design
+  patterns, development systems, choosing a language, and building a solo
+  developer stack, with examples carrying a subtle RF/SDR slant. Joins the
+  existing RF & SDR and Git & GitHub paths in the shared data-driven Jekyll
+  system, so the chooser, hub, lesson nav, and `llms.txt` pick it up
+  automatically.
 
 ### Changed
+- **P25 TSBK opcodes now log with their TIA-102.AABC-D designations**
+  (`UU_ANS_REQ`, `NET_STS_BCST`, `GRP_V_CH_GRANT`, …) instead of the
+  OP25-derived names. The Go identifiers stay descriptive; `Opcode.String()`
+  and a new [`docs/specs/p25-tsbk-opcodes.md`](docs/specs/p25-tsbk-opcodes.md)
+  carry the canonical mnemonics (mirrors the NXDN package convention).
 - **Encrypted-call handling is now per-system** (#711). The `encrypted_calls`
   policy (`mode` + `metadata_follow_ms`) moved from the global
   `trunking.encrypted_calls` key to per-system `trunking.systems[].encrypted_calls`,
@@ -91,6 +100,26 @@ for tagged releases.
   bound rather than a fixed wall-clock hold.
 
 ### Fixed
+- **UU_ANS_REQ (opcode 0x05) is no longer mis-decoded under a vendor MFID.**
+  A Motorola (MFID 0x90) 0x05 decoded with the standard Target/Source layout
+  produced garbage radio IDs (`src=0`, `target=0x3C0000`); it is now left
+  unhandled (vendor namespace), while the standard-MFID UU_ANS_REQ still
+  publishes a `unit.request` event.
+- **CC Activity "pause" now actually freezes the table.** Previously it
+  re-sliced the live rows, so the list kept churning and an event was
+  impossible to read or click; it now snapshots the rows on pause.
+- **Events stream freezes while inspecting an event.** Opening an event for
+  inspection no longer lets the live stream churn underneath the selection, so
+  the row you clicked stays put until you dismiss it.
+- **Systems detail no longer mislabels missing network identity as "Scanner
+  offline".** WACN/System ID/RFSS/Site are decoded live from status broadcasts
+  whenever the control channel is received, so an empty cell now reads
+  "Awaiting status broadcasts" (or "Hunting control channel" during a hunt).
+- **Systems detail modal no longer crashes on a null systems list** (#721).
+  Clicking a system crashed with "Cannot read properties of null (reading
+  'find')" whenever the scanner reported no active control-channel hunt
+  statuses (the daemon marshals an empty hunt list as JSON `null`); the optional
+  chain now guards the systems list too (`scanner?.systems?.find`).
 - **Hunt progress frequency precision.** The identifying-phase progress line
   rounded the tuned frequency to 3 decimals (showing a 6.25 kHz-raster channel
   like 160.5875 MHz as "160.588"); it now prints 4 decimals, matching the rest
@@ -112,6 +141,12 @@ for tagged releases.
   recognised and its raw payload surfaced once at INFO, so its (site-specific)
   layout can be validated off-air; neighbor/voice frequencies continue to
   resolve through the configured band-plan resolver / LCN learner.
+- **RadioReference feed-provider / admin accounts now recognised as premium**
+  (#723). `getUserData` returns the sentinel strings `"Never - Feed Provider"` /
+  `"Never - Admin"` as the subscription expiry for accounts that hold premium
+  for as long as their feed is active; the parser only handled dates / UNIX
+  timestamps, so these fell through to "no active premium subscription". A
+  `"Never…"` expiry is now treated as active.
 
 ## [v0.4.6] — 2026-06-18
 
