@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/autotune"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -1550,6 +1551,106 @@ func TestDecoderLocksP25Phase1WithLOOffset(t *testing.T) {
 			t.Fatalf("locked with LOOffsetHz=0 on an off-channel signal — the negative control is invalid (the channel should be unrecoverable without the DDC offset)")
 		}
 	})
+}
+
+// TestDecoderAutotuneMeasuresAndCorrectsOffset proves the autotune feedback
+// loop end-to-end on the live decode path: a P25 control channel synthesized
+// with a known carrier-frequency error δ is recovered by the receiver, and the
+// decoder's autotune tracker folds the receiver's residual AFC estimate into
+// its running average with the SIGN that lets ensureDownconverterLocked cancel
+// the error at the next acquisition (mix offset = loOffsetHz + average). If the
+// receiver reported the offset with the opposite sign, the average would have
+// the wrong sign and this test would catch it.
+func TestDecoderAutotuneMeasuresAndCorrectsOffset(t *testing.T) {
+	const (
+		nac          = 0x293
+		controlFreq  = 851_000_000
+		sdrRateHz    = 2_048_000.0
+		narrowRateHz = 48_000.0
+		deviationHz  = 1800.0
+		frameRepeats = 40
+		carrierErrHz = 600.0 // the dongle's crystal error
+	)
+
+	// Centred control channel, then shifted UP to +carrierErrHz to emulate a
+	// crystal error that leaves the wanted carrier carrierErrHz above DC in the
+	// delivered baseband. NewNCO(-f).Mix multiplies by exp(+j2π·f·n/Fs), i.e.
+	// shifts the centred channel up to +f — the same construction the LO-offset
+	// test uses.
+	dibits := buildP25CCDibits(nac, frameRepeats)
+	narrow := demod.ModulateP25C4FM(dibits, narrowRateHz, deviationHz)
+	centred := dsp.NewResampler(128, 3, 8, 8.0).Process(nil, narrow)
+	offChannel := dsp.NewNCO(-carrierErrHz, sdrRateHz).Mix(nil, centred)
+
+	bus := events.NewBus(256)
+	defer bus.Close()
+	mgr := autotune.NewManager("test-dongle", nil)
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{},
+		Systems: []trunking.System{{
+			Name: "ATSys", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{controlFreq},
+		}},
+		SampleRateHz: sdrRateHz,
+		Autotune:     mgr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer d.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	d.handleProgress(trunking.HuntProgress{System: "ATSys", AttemptedFreqHz: controlFreq})
+	if d.active == nil {
+		t.Fatalf("handleProgress did not install a pipeline")
+	}
+	// With no measurements yet the DDC must be built with zero correction —
+	// byte-identical to the non-autotune path.
+	if d.autotuneApplied != 0 {
+		t.Fatalf("autotuneApplied = %d before any measurement, want 0", d.autotuneApplied)
+	}
+
+	const chunk = 8_192
+	locked := false
+	for off := 0; off < len(offChannel); off += chunk {
+		end := off + chunk
+		if end > len(offChannel) {
+			end = len(offChannel)
+		}
+		d.pump(offChannel[off:end])
+		if !locked {
+			for drained := false; !drained; {
+				select {
+				case ev := <-sub.C:
+					if ev.Kind == events.KindCCLocked {
+						// Simulate the Run loop's lock bookkeeping so
+						// sampleAutotuneLocked starts folding measurements.
+						d.locked.Store(true)
+						locked = true
+					}
+				default:
+					drained = true
+				}
+			}
+		}
+	}
+	if !locked {
+		t.Fatalf("control channel never locked with a %.0f Hz carrier error", carrierErrHz)
+	}
+
+	avg := mgr.AverageError()
+	if avg == 0 {
+		t.Fatalf("autotune recorded no measurement after lock")
+	}
+	// The measured average must approximate the true carrier error and carry
+	// the sign the DDC correction expects: ensureDownconverterLocked mixes by
+	// (loOffsetHz + avg), and the carrier sits at +carrierErrHz, so avg must be
+	// ≈ +carrierErrHz for the next acquisition to pull it to DC.
+	const tol = 200.0 // Hz — CoarseAFC estimate + symbol-rate rounding slack
+	if diff := float64(avg) - carrierErrHz; diff < -tol || diff > tol {
+		t.Fatalf("autotune average = %d Hz, want %.0f ± %.0f Hz (wrong sign means the DDC correction would worsen the error)", avg, carrierErrHz, tol)
+	}
 }
 
 // TestClearActiveClearsIQPowerSeries: when the decoder swaps pipelines

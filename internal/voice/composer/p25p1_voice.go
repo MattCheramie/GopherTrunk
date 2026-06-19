@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
@@ -74,6 +75,25 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	symbolHz := iqHz / float64(decim)
 
 	mode := c.resolveP25Phase1DemodMode(serial, demodMode)
+
+	// Autotune: pre-rotate the voice IQ by this dongle's running-average
+	// carrier-error correction so the receiver's AFC starts near lock, then
+	// fold the residual back into the average at end-of-call. atManager is
+	// nil when sdr.autotune is off (or on the CQPSK path the average stays
+	// 0), in which case atNCO stays nil and the loop below is byte-exact
+	// with the pre-autotune behaviour. The correction is captured once at
+	// call start; the +offset convention matches the control decoder's DDC.
+	atManager := c.autotune.Get(serial)
+	var (
+		atNCO     *dsp.NCO
+		atApplied int
+	)
+	if atManager != nil {
+		atApplied = atManager.AverageError()
+		if atApplied != 0 {
+			atNCO = dsp.NewNCO(float64(atApplied), symbolHz)
+		}
+	}
 
 	// Surface the resolved demod mode + sample rates once per call so an
 	// operator can confirm from logs that voice grants are running the
@@ -338,6 +358,26 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		},
 	})
 
+	// At end-of-call fold this call's residual carrier offset into the
+	// dongle's running average — but only if the receiver actually locked
+	// and decoded voice (frames > 0), so noise on a never-locked call can't
+	// poison the average. The residual (AFCOffsetHz) plus what we already
+	// applied (atApplied) is the dongle's true error; the next call on this
+	// serial picks up the updated correction. centerFreq is 0 here (the
+	// chain isn't handed the grant frequency), so the PPM sanity warning is
+	// the control decoder's job; the average + suggested value still log.
+	if atManager != nil {
+		defer func() {
+			if frames.Load() == 0 {
+				return
+			}
+			observed := int(math.Round(rx.AFCOffsetHz()))
+			atManager.AddErrorMeasurement(observed, atApplied, 0)
+			c.log.Info("composer: p25p1 "+atManager.StatusString(0, 0),
+				"serial", serial, "observed_hz", observed, "applied_hz", atApplied)
+		}()
+	}
+
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
 	// logDecodeQuality emits a rolling decode-quality summary. Gated to
@@ -377,6 +417,11 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			samples := iq
 			if decim > 1 {
 				samples = decimateComplex(lpf.Process(nil, iq), decim)
+			}
+			if atNCO != nil {
+				// Shift the estimated carrier (at +atApplied Hz) down to DC.
+				// In-place is safe (NCO.Mix supports dst aliasing src).
+				samples = atNCO.Mix(samples, samples)
 			}
 			rx.Process(samples)
 		}

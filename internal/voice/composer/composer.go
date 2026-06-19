@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/autotune"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/equalizer"
@@ -171,6 +172,13 @@ type Options struct {
 	// default; the existing AudioLPF + naive decimation produces
 	// equivalent audio when the two rates are integer multiples.
 	AudioResampler AudioResamplerConfig
+	// Autotune, when non-nil, is the shared per-dongle carrier-error
+	// registry (sdr.autotune). The P25 Phase 1 voice chain pre-rotates its
+	// IQ by the voice dongle's running-average correction so the receiver's
+	// AFC starts near lock, and folds the residual offset back into the
+	// average at end-of-call. Nil disables autotune on the voice path at
+	// zero cost. See internal/autotune.
+	Autotune *autotune.Registry
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -232,6 +240,7 @@ type Composer struct {
 	lpfCfg     AudioLPFConfig
 	agcCfg     AudioAGCConfig
 	resampCfg  AudioResamplerConfig
+	autotune   *autotune.Registry
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -321,6 +330,7 @@ func New(opts Options) (*Composer, error) {
 		lpfCfg:     opts.AudioLPF,
 		agcCfg:     opts.AudioAGC,
 		resampCfg:  opts.AudioResampler,
+		autotune:   opts.Autotune,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}

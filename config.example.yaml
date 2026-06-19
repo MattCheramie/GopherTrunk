@@ -187,6 +187,13 @@ sdr:
   # IQ-death recovery (ccdecoder retry loop, voice Bind reacquire) is
   # unaffected by this knob. See docs/hardware.md.
   watchdog_interval_ms: 30000
+  # autotune: track each dongle's carrier-frequency error on locked P25
+  # Phase-1 control + voice channels, keep a running average (per device
+  # serial), and shift the digital down-converter so the demod's AFC starts
+  # near lock. Never touches the hardware ppm — it just logs a suggested
+  # ppm/error value you can paste into the device block. Off by default;
+  # safe to leave on (the correction stays near zero on a good crystal).
+  autotune: false
   devices:
     - serial: "00000001"   # match `gophertrunk sdr list`; first-found wins when blank
       role: control        # control | voice | auto

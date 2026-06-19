@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Autotune — per-dongle carrier-error correction** (opt-in, `sdr.autotune`).
+  Ported in concept from trunk-recorder's autotune. Each SDR's crystal error
+  shifts the received carrier off-centre; with autotune on, the daemon watches
+  the locked P25 Phase 1 receiver's residual carrier offset (control channel
+  and voice calls), keeps a running average of the last 20 measurements per
+  device serial, and shifts the channel's digital down-converter by that
+  average so the demod's AFC starts near lock at the next acquisition. It never
+  rewrites the dongle's hardware ppm — it logs a suggested value (with a
+  >3.5 PPM "verify your ppm" warning) you can bake into the device block by
+  hand. Off by default and zero-cost when disabled; safe to leave on for
+  TCXO-equipped units (the correction stays near zero).
 - **Site identity on registration & affiliation events** (#698). The
   `unit_registration` and `affiliation` events now carry `rfss_id` / `site_id`
   (alongside `grant`), plus a `nac` field on all three. Registration and

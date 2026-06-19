@@ -87,6 +87,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SDRConfig.RTLTCP":             {Label: "rtl_tcp sources", Help: "Remote rtl_tcp endpoints mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
 	"SDRConfig.SoapyRemote":        {Label: "SoapyRemote sources", Help: "Remote SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, RTL) mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
 	"SDRConfig.WatchdogIntervalMs": {Help: "USB-disconnect watchdog poll interval (ms). 0 = default 30 s; negative disables it."},
+	"SDRConfig.Autotune":           {Label: "Autotune", Help: "Track each dongle's carrier-frequency error on locked P25 Phase 1 control + voice and apply a digital correction so the demod's AFC starts near lock. Never rewrites hardware ppm — logs a suggested value. Off by default; safe to leave on."},
 
 	"DeviceConfig.Serial":        {Help: "USB serial that selects this dongle. Run `gophertrunk sdr list` to see attached serials."},
 	"DeviceConfig.Role":          {Help: "Pool role hint. control/voice pin a P25-trunking dongle; wideband fans several channels off one stick; auto lets the pool decide.", Options: opts("", "(auto)", "control", "control", "voice", "voice", "auto", "auto", "wideband", "wideband")},
