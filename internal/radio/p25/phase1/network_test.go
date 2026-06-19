@@ -103,48 +103,75 @@ func TestControlChannelDecodesBroadcastUnderVendorMFID(t *testing.T) {
 	}
 }
 
-// TestControlChannelPublishesUnitToUnitRequest drives a Unit-to-Unit Answer
-// Request (opcode 0x05) through the control channel — once with the standard
-// MFID and once with the Motorola vendor MFID (0x90), the form a real site was
-// seen emitting — and checks a KindUnitToUnitRequest naming the calling and
-// called units is published on the bus in both cases.
+// TestControlChannelPublishesUnitToUnitRequest drives a standard-MFID
+// Unit-to-Unit Answer Request (UU_ANS_REQ, opcode 0x05) through the control
+// channel and checks a KindUnitToUnitRequest naming the calling/called units
+// is published on the bus.
 func TestControlChannelPublishesUnitToUnitRequest(t *testing.T) {
-	for _, mfid := range []uint8{MFIDStandard, MFIDMotorola} {
-		bus := events.NewBus(16)
-		sub := bus.Subscribe()
-		cc := New(Options{Bus: bus, SystemName: "U2U"})
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "U2U"})
 
-		utuar := TSBK{
-			Opcode: OpUnitToUnitAnswerRequest,
-			MFID:   mfid,
-			Payload: AssembleUnitToUnitAnswerRequest(UnitToUnitAnswerRequest{
-				ServiceOptions: 0x00, TargetID: 0x1234AB, SourceID: 0x00CDEF}),
-		}
-		cc.Process(buildLockedStreamWithTSBK(10, 0x705, DUIDTrunkingSignaling, utuar), 0)
+	utuar := TSBK{
+		Opcode: OpUnitToUnitAnswerRequest,
+		MFID:   MFIDStandard,
+		Payload: AssembleUnitToUnitAnswerRequest(UnitToUnitAnswerRequest{
+			ServiceOptions: 0x00, TargetID: 0x1234AB, SourceID: 0x00CDEF}),
+	}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x705, DUIDTrunkingSignaling, utuar), 0)
 
-		deadline := time.After(3 * time.Second)
-		got := false
-		for !got {
-			select {
-			case ev := <-sub.C:
-				if ev.Kind != events.KindUnitToUnitRequest {
-					continue
-				}
-				u, ok := ev.Payload.(trunking.UnitToUnitRequest)
-				if !ok {
-					t.Fatalf("mfid=%#x payload is %T, want trunking.UnitToUnitRequest", mfid, ev.Payload)
-				}
-				if u.SourceID != 0x00CDEF || u.TargetID != 0x1234AB {
-					t.Fatalf("mfid=%#x src/target = %d/%d, want %d/%d",
-						mfid, u.SourceID, u.TargetID, 0x00CDEF, 0x1234AB)
-				}
-				got = true
-			case <-deadline:
-				t.Fatalf("mfid=%#x: no KindUnitToUnitRequest published within deadline", mfid)
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindUnitToUnitRequest {
+				continue
 			}
+			u, ok := ev.Payload.(trunking.UnitToUnitRequest)
+			if !ok {
+				t.Fatalf("payload is %T, want trunking.UnitToUnitRequest", ev.Payload)
+			}
+			if u.SourceID != 0x00CDEF || u.TargetID != 0x1234AB {
+				t.Fatalf("src/target = %d/%d, want %d/%d", u.SourceID, u.TargetID, 0x00CDEF, 0x1234AB)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no KindUnitToUnitRequest published within deadline")
 		}
-		sub.Close()
-		bus.Close()
+	}
+}
+
+// TestControlChannelIgnoresVendorUnitToUnitRequest checks that opcode 0x05 under
+// a Motorola MFID is NOT decoded as the standard UU_ANS_REQ — under a vendor
+// MFID the opcode is in the manufacturer's namespace, and decoding a Motorola
+// 0x05 with the standard layout produced garbage IDs in the field.
+func TestControlChannelIgnoresVendorUnitToUnitRequest(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "U2U"})
+
+	utuar := TSBK{
+		Opcode: OpUnitToUnitAnswerRequest,
+		MFID:   MFIDMotorola,
+		Payload: AssembleUnitToUnitAnswerRequest(UnitToUnitAnswerRequest{
+			ServiceOptions: 0x00, TargetID: 0x1234AB, SourceID: 0x00CDEF}),
+	}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x705, DUIDTrunkingSignaling, utuar), 0)
+
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindUnitToUnitRequest {
+				t.Fatal("vendor-MFID 0x05 must not publish a UU_ANS_REQ event")
+			}
+		case <-deadline:
+			return // no UU_ANS_REQ event — correct
+		}
 	}
 }
 

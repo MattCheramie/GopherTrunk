@@ -44,19 +44,17 @@ function latestLearned(
   return null;
 }
 
-// Network identity (WACN/System ID/RFSS/Site) is populated from
-// decoded P25 TSBKs 0x3A/0x3B, not config. Translate the live hunt
-// state into operator-facing copy so an empty cell explains itself.
+// Network identity (WACN/System ID/RFSS/Site) is decoded live from P25 status
+// broadcasts (RFSS_STS_BCST 0x3A / NET_STS_BCST 0x3B), not config — the daemon
+// overlays it onto the system as those TSBKs arrive. An empty cell therefore
+// means "not decoded yet", not "scanner offline": the engine decodes identity
+// whenever the control channel is being received, independent of the CC-hunt
+// supervisor state (which is what `hunt` reflects, and is absent for a system
+// the always-on trunking engine is decoding). Only call out an active hunt;
+// otherwise say we're waiting on the (infrequent) status broadcasts.
 function identityEmptyHint(hunt: SystemHuntStatusDTO | undefined): string {
-  if (!hunt) return "Scanner offline";
-  switch (hunt.state) {
-    case "locked":
-      return "Awaiting status broadcasts";
-    case "hunting":
-      return "Hunting control channel";
-    default:
-      return hunt.state ? `System not locked (${hunt.state})` : "System not locked";
-  }
+  if (hunt?.state === "hunting") return "Hunting control channel";
+  return "Awaiting status broadcasts";
 }
 
 export function Systems() {

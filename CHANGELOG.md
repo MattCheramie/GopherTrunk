@@ -7,6 +7,27 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **P25 TSBK opcodes now log with their TIA-102.AABC-D designations**
+  (`UU_ANS_REQ`, `NET_STS_BCST`, `GRP_V_CH_GRANT`, …) instead of the
+  OP25-derived names. The Go identifiers stay descriptive; `Opcode.String()`
+  and a new [`docs/specs/p25-tsbk-opcodes.md`](docs/specs/p25-tsbk-opcodes.md)
+  carry the canonical mnemonics (mirrors the NXDN package convention).
+
+### Fixed
+- **UU_ANS_REQ (opcode 0x05) is no longer mis-decoded under a vendor MFID.**
+  A Motorola (MFID 0x90) 0x05 decoded with the standard Target/Source layout
+  produced garbage radio IDs (`src=0`, `target=0x3C0000`); it is now left
+  unhandled (vendor namespace), while the standard-MFID UU_ANS_REQ still
+  publishes a `unit.request` event.
+- **CC Activity "pause" now actually freezes the table.** Previously it
+  re-sliced the live rows, so the list kept churning and an event was
+  impossible to read or click; it now snapshots the rows on pause.
+- **Systems detail no longer mislabels missing network identity as "Scanner
+  offline".** WACN/System ID/RFSS/Site are decoded live from status broadcasts
+  whenever the control channel is received, so an empty cell now reads
+  "Awaiting status broadcasts" (or "Hunting control channel" during a hunt).
+
 ### Added
 - **Site identity on registration & affiliation events** (#698). The
   `unit_registration` and `affiliation` events now carry `rfss_id` / `site_id`
