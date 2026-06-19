@@ -8,6 +8,11 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Group duplicate events in the Events & CC Activity panels.** A "Group
+  duplicates" toggle (on by default) collapses repeated events with identical
+  content — the same grant / registration / affiliation re-sent every few
+  seconds — into one row with an ×N count and the latest timestamp, so the
+  panels stop spamming. Toggle off for the raw per-event stream.
 - **Motorola opcodes 0x05 / 0x09 (MFID 0x90) named and captured.** Cross-checked
   against SDRtrunk / OP25: 0x05 is `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID`, 0x09 is
   `MOTOROLA_OSP_SYSTEM_LOADING` — neither carries neighbour / secondary-CC data,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useShared } from "../store/shared";
+import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO, TalkgroupDTO } from "../api/types";
 
 // CC Activity panel — a focused view of the trunked control-channel
@@ -42,6 +43,8 @@ interface Row {
   // the surrounding text.
   details: React.ReactNode;
   raw: unknown;
+  // count > 1 when "group duplicates" collapsed N identical events into this row.
+  count?: number;
 }
 
 // ridLink renders an inline link to the per-RID detail page, styled
@@ -65,12 +68,20 @@ export function CCActivity() {
   const [paused, setPaused] = useState(false);
   const [systemFilter, setSystemFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<string>("");
+  // Collapse repeated identical events (e.g. the same grant re-sent every few
+  // seconds) into one row with an ×N count and the latest timestamp, to cut the
+  // firehose. On by default; toggle off for a raw per-event view.
+  const [grouped, setGrouped] = useState(true);
 
   const rows = useMemo<Row[]>(() => {
     const tgByID = new Map<number, TalkgroupDTO>();
     for (const tg of talkgroups) tgByID.set(tg.id, tg);
     const list: Row[] = [];
-    for (const ev of events) {
+    const source = grouped
+      ? groupEvents(events)
+      : events.map((e) => ({ event: e, count: 1 }));
+    for (const g of source) {
+      const ev = g.event;
       const label = CC_KINDS[ev.kind];
       if (!label) continue;
       const row = renderRow(ev, label, tgByID);
@@ -79,11 +90,11 @@ export function CCActivity() {
         continue;
       }
       if (kindFilter && ev.kind !== kindFilter) continue;
-      list.push(row);
+      list.push(g.count > 1 ? { ...row, count: g.count } : row);
     }
-    // Newest first.
+    // Newest (most-recently-active) first.
     return list.reverse();
-  }, [events, talkgroups, systemFilter, kindFilter]);
+  }, [events, talkgroups, systemFilter, kindFilter, grouped]);
 
   // Pause must actually freeze the table so an operator can read/click a row
   // without it churning under them: snapshot rows at the moment of pausing and
@@ -119,6 +130,15 @@ export function CCActivity() {
             value={systemFilter}
             onChange={(e) => setSystemFilter(e.target.value)}
           />
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-border text-xs"
+            onClick={() => setGrouped(!grouped)}
+            aria-pressed={grouped}
+            title="Collapse repeated identical events into one row with a count"
+          >
+            {grouped ? "▦ grouped" : "≡ all"}
+          </button>
           <button
             type="button"
             className="px-2 py-1 rounded border border-border text-xs"
@@ -160,7 +180,17 @@ export function CCActivity() {
                   <td className="px-3 py-1 font-mono text-muted">
                     {formatTime(r.ts)}
                   </td>
-                  <td className="px-3 py-1">{r.label}</td>
+                  <td className="px-3 py-1">
+                    {r.label}
+                    {r.count && r.count > 1 ? (
+                      <span
+                        className="ml-1 px-1 rounded bg-surface text-muted text-[10px] font-mono"
+                        title={`${r.count} identical events collapsed`}
+                      >
+                        ×{r.count}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-1 font-mono text-accent">{r.system || "—"}</td>
                   <td className="px-3 py-1">{r.details}</td>
                 </tr>
