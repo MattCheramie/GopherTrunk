@@ -21,9 +21,10 @@ import (
 // Adding a field to a config struct WITHOUT giving it a typed entry in types.ts
 // (a bespoke web editor) must be a deliberate choice recorded here.
 var webRoundTripAllow = map[string][]string{
-	// Rarely-tuned SDR watchdog interval; the web SDR section doesn't render
-	// it (round-trips via the SDRConfig index signature). Editable in the TUI.
-	"SDRConfig": {"WatchdogIntervalMs"},
+	// Rarely-tuned SDR watchdog interval + the autotune enable flag; the web
+	// SDR section doesn't render a bespoke editor for either (they round-trip
+	// via the SDRConfig index signature). Editable in the TUI and raw YAML.
+	"SDRConfig": {"WatchdogIntervalMs", "Autotune"},
 
 	// The LoRa section round-trips through the web Config Builder's generic
 	// index-signature editor; a bespoke typed editor in types.ts is a

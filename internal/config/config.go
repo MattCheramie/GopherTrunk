@@ -666,8 +666,18 @@ type SDRConfig struct {
 	// lowering it — e.g. to 1_024_000 — roughly halves per-chunk decode
 	// work. Running fewer simultaneous dongles on a weak CPU has the same
 	// effect.
-	SampleRate uint32         `yaml:"sample_rate"`
-	Devices    []DeviceConfig `yaml:"devices"`
+	SampleRate uint32 `yaml:"sample_rate"`
+	// Autotune enables per-dongle carrier-error tracking and digital
+	// frequency correction (ported from trunk-recorder's autotune). When
+	// on, the daemon watches each source's locked carrier offset (P25
+	// Phase-1 control + voice), keeps a running average per device serial,
+	// and shifts the channel's digital down-converter so the demodulator's
+	// AFC starts close to lock. It never rewrites the dongle's hardware
+	// ppm — it only logs a suggested ppm/error value you can bake into the
+	// device block by hand. Off by default; harmless to leave on for
+	// TCXO-equipped units (the correction simply stays near zero).
+	Autotune bool           `yaml:"autotune"`
+	Devices  []DeviceConfig `yaml:"devices"`
 	// RTLTCP lists remote rtl_tcp endpoints (host:port + optional
 	// per-endpoint metadata) to mount as virtual tuners. Each entry
 	// becomes a pool device alongside any locally-attached USB

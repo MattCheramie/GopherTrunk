@@ -18,6 +18,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
 	"github.com/MattCheramie/GopherTrunk/internal/api/rigctld"
+	"github.com/MattCheramie/GopherTrunk/internal/autotune"
 	"github.com/MattCheramie/GopherTrunk/internal/broadcast"
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	gtdiag "github.com/MattCheramie/GopherTrunk/internal/diag"
@@ -382,8 +383,13 @@ type Daemon struct {
 	// the control tuner (issue #402); kept so the USB-reacquire path can
 	// re-wrap the fresh tuner handle and preserve the offset. Zero disables.
 	controlLOOffsetHz float64
-	convScan          *conventional.Scanner
-	widebandT2        []*widebandt2.Engine
+	// autotune is the per-dongle carrier-error registry shared by the CC
+	// decoder and the voice composer (sdr.autotune). Nil-safe: when the
+	// knob is off, Get returns nil and both paths keep their pre-autotune
+	// behaviour. See internal/autotune.
+	autotune   *autotune.Registry
+	convScan   *conventional.Scanner
+	widebandT2 []*widebandt2.Engine
 	// dmrLearners holds one DMR LCN autoconfig learner per wideband DMR
 	// Tier III control channel whose system ships without a dmr_band_plan.
 	// Each watches grants + RF onsets to learn the LCN→frequency plan and
@@ -630,6 +636,10 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		bus:       events.NewBus(64),
 		ready:     make(chan struct{}),
 		iqPrimary: make(map[string]bool),
+		autotune:  autotune.NewRegistry(cfg.SDR.Autotune, log),
+	}
+	if cfg.SDR.Autotune {
+		log.Info("autotune: enabled — tracking per-dongle carrier error and applying digital correction (P25 Phase 1 control + voice)")
 	}
 	if cfgPath != "" {
 		w, err := config.NewWriter(cfgPath)
@@ -1222,6 +1232,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
 			Sink:          sink,
 			Engine:        d.engine,
+			Autotune:      d.autotune,
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
 			PCMSampleRate: cfg.Recordings.SampleRate,
@@ -1388,6 +1399,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					IQCorrect:    iqCorrect,
 					Conjugate:    iqInvert,
 					LOOffsetHz:   loOffsetHz,
+					Autotune:     d.autotune.Get(controlEntry.Info.Serial),
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,

@@ -52,6 +52,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/autotune"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -217,6 +218,13 @@ type Options struct {
 	// behaviour — used when the path is disabled or at pass-through rates
 	// where there is no room to offset.
 	LOOffsetHz float64
+	// Autotune, when non-nil, is the per-dongle carrier-error tracker for
+	// the control SDR (sdr.autotune enabled). The decoder samples the
+	// locked C4FM receiver's AFCOffsetHz once per second, folds it into the
+	// running average, and shifts the digital down-converter by that
+	// average at each (re)acquisition so the demod's AFC starts near lock.
+	// Nil disables autotune at zero cost. See internal/autotune.
+	Autotune *autotune.Manager
 }
 
 // Decoder is the long-lived component that converts the control
@@ -231,7 +239,18 @@ type Decoder struct {
 	// channel sits at +loOffsetHz in the delivered baseband and the DDC is
 	// built with this offset to mix it back to 0 Hz. Zero disables it.
 	loOffsetHz float64
-	systems    map[string]trunking.System
+	// autotune, when non-nil, tracks the control dongle's carrier error
+	// (Options.Autotune). autotuneApplied records the Hz correction folded
+	// into the DDC offset at the last (re)build, so the next measurement
+	// reports observed + applied as the source's true error (guarded by
+	// mu). locked mirrors the CC lock state from the bus so the pump only
+	// samples AFC on a real lock; lastATSampleAt throttles sampling to
+	// roughly once per second (owned by the pump goroutine).
+	autotune        *autotune.Manager
+	autotuneApplied int
+	locked          atomic.Bool
+	lastATSampleAt  time.Time
+	systems         map[string]trunking.System
 
 	// ddc decimates the raw SDR IQ stream to pipelineRateHz before
 	// the active pipeline sees a chunk; ddcTarget records the
@@ -240,8 +259,14 @@ type Decoder struct {
 	// ddcTargetForProtocol). pipelineRateHz is what the per-protocol
 	// factories receive as PipelineOptions.SampleRateHz. All three
 	// are owned by handleProgress / pump under mu.
-	ddc            *Downconverter
-	ddcTarget      float64
+	ddc       *Downconverter
+	ddcTarget float64
+	// ddcOffsetHz is the frequency offset the current DDC was built with
+	// (loOffsetHz + the autotune correction). Part of the rebuild key so a
+	// changed autotune average re-tunes the down-converter at the next
+	// acquisition; without autotune it stays equal to loOffsetHz and the
+	// build is byte-exact with before.
+	ddcOffsetHz    float64
 	pipelineRateHz float64
 
 	// sub is the bus subscription the Decoder uses to learn about
@@ -372,6 +397,7 @@ func New(opts Options) (*Decoder, error) {
 		sub:          opts.Bus.Subscribe(),
 		metrics:      opts.Metrics,
 		fec:          opts.FEC,
+		autotune:     opts.Autotune,
 	}
 	empty := ""
 	d.activeSystem.Store(&empty)
@@ -431,7 +457,18 @@ func (d *Decoder) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if ev.Kind != events.KindHuntProgress {
+			switch ev.Kind {
+			case events.KindCCLocked:
+				// Gate autotune sampling on a real lock — the AFC estimate
+				// only means anything once the FSW is correlating. Payload
+				// shape is per-protocol, so we only read the lock edge.
+				d.locked.Store(true)
+				continue
+			case events.KindCCLost:
+				d.locked.Store(false)
+				continue
+			case events.KindHuntProgress:
+			default:
 				continue
 			}
 			p, ok := ev.Payload.(trunking.HuntProgress)
@@ -637,16 +674,34 @@ func (d *Decoder) clearActiveLocked() {
 // retunes within the same rate reuse the existing filter. Caller
 // holds d.mu.
 func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
-	if d.ddc != nil && d.ddcTarget == targetHz {
+	// The DDC mixes the channel sitting at +loOffsetHz in the delivered
+	// baseband down to 0 Hz. A dongle crystal error δ leaves the wanted
+	// carrier at loOffsetHz+δ instead, so the receiver's AFC has to drag it
+	// in from δ away. Autotune estimates δ as a running average and folds it
+	// into the mix offset here, so each fresh acquisition starts with the
+	// carrier already near DC. The correction only changes between
+	// acquisitions (the average is sampled while locked but applied at the
+	// next build), so a stable lock never sees its DDC rebuilt out from
+	// under it.
+	offset := d.loOffsetHz
+	applied := 0
+	if d.autotune != nil {
+		applied = d.autotune.AverageError()
+		offset += float64(applied)
+	}
+	if d.ddc != nil && d.ddcTarget == targetHz && d.ddcOffsetHz == offset {
 		return
 	}
-	d.ddc = NewDownconverterWithOffset(d.sampleRateHz, targetHz, d.loOffsetHz)
+	d.ddc = NewDownconverterWithOffset(d.sampleRateHz, targetHz, offset)
 	d.ddcTarget = targetHz
+	d.ddcOffsetHz = offset
+	d.autotuneApplied = applied
 	d.pipelineRateHz = d.ddc.outRateHz
 	d.log.Info("ccdecoder: digital down-converter configured",
 		"sdr_rate_hz", d.sampleRateHz,
 		"pipeline_rate_hz", d.pipelineRateHz,
-		"lo_offset_hz", d.loOffsetHz)
+		"lo_offset_hz", d.loOffsetHz,
+		"autotune_hz", applied)
 }
 
 // pump down-converts a raw IQ chunk and forwards it to the active
@@ -676,6 +731,41 @@ func (d *Decoder) pump(iq []complex64) {
 	}
 	d.ddcOut = d.ddc.Process(d.ddcOut, iq)
 	d.active.Process(d.ddcOut)
+	d.sampleAutotuneLocked()
+}
+
+// afcReporter is the optional capability a pipeline exposes when its
+// receiver tracks a carrier-frequency offset in Hz (today: P25 Phase 1
+// C4FM). Autotune reads it to fold the residual offset into the running
+// average. Pipelines without an AFC stage simply don't implement it.
+type afcReporter interface {
+	AFCOffsetHz() float64
+}
+
+// sampleAutotuneLocked folds the active receiver's residual carrier offset
+// into the running average about once a second while the CC is locked, then
+// logs the suggested correction. The new average takes effect at the next
+// acquisition (ensureDownconverterLocked), not mid-lock, so a stable lock is
+// never disturbed. Caller holds d.mu.
+func (d *Decoder) sampleAutotuneLocked() {
+	if d.autotune == nil || !d.locked.Load() {
+		return
+	}
+	rep, ok := d.active.(afcReporter)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	if !d.lastATSampleAt.IsZero() && now.Sub(d.lastATSampleAt) < time.Second {
+		return
+	}
+	d.lastATSampleAt = now
+
+	observed := int(math.Round(rep.AFCOffsetHz()))
+	d.autotune.AddErrorMeasurement(observed, d.autotuneApplied, d.activeFreqHz)
+	d.log.Info("ccdecoder: "+d.autotune.StatusString(d.activeFreqHz, 0),
+		"system", d.activeAt, "freq_hz", d.activeFreqHz,
+		"observed_hz", observed, "applied_hz", d.autotuneApplied)
 }
 
 // observeIQPower folds one raw IQ chunk into the per-second power / DC /

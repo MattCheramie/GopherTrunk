@@ -358,6 +358,12 @@ func (p *p25Phase1Pipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *p25Phase1Pipeline) Reset()                 { p.rx.Reset() }
 func (p *p25Phase1Pipeline) Close() error           { return nil }
 
+// AFCOffsetHz reports the receiver's current estimate of the true carrier
+// offset in Hz, so the decoder's autotune tracker can fold it into the
+// per-dongle running average. 0 on the CQPSK path (no AFC stage). Satisfies
+// the unexported afcReporter capability the decoder type-asserts for.
+func (p *p25Phase1Pipeline) AFCOffsetHz() float64 { return p.rx.AFCOffsetHz() }
+
 // newP25Phase2Pipeline wires internal/radio/p25/phase2/receiver into
 // p25phase2.ControlChannel.Process. The receiver's DibitSink forwards
 // H-DQPSK dibits into the state machine (20-dibit outbound sync
