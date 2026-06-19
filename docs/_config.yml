@@ -83,6 +83,14 @@ defaults:
       learn_path: intro-software-dev
       nav_group: Learn
       permalink: /learn/intro-software-dev/:basename/
+  - scope:
+      path: "learn/digital-trunking"
+      type: pages
+    values:
+      layout: lesson
+      learn_path: digital-trunking
+      nav_group: Learn
+      permalink: /learn/digital-trunking/:basename/
   # Encyclopedia articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:
