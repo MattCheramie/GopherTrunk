@@ -42,6 +42,16 @@ const (
 	// OpVendorTalkerAlias carries one fragment of a radio's display
 	// name; emitted under either vendor MFID.
 	OpVendorTalkerAlias Opcode = 0x15
+	// OpMotorolaTrafficChannelID (MOTOROLA_OSP_TRAFFIC_CHANNEL_ID) and
+	// OpMotorolaSystemLoading (MOTOROLA_OSP_SYSTEM_LOADING) are emitted
+	// continuously by Motorola sites. The names are SDRtrunk's; neither it nor
+	// OP25 field-decodes them — SDRtrunk's MotorolaTrafficChannel /
+	// ChannelLoading classes are hex-only stubs, OP25 ignores them — and
+	// neither carries neighbour or secondary-CC data. We name them so the probe
+	// log is meaningful and capture the raw payload, but field-decode nothing
+	// (no trustworthy layout exists). See docs/specs/p25-motorola-opcodes.md.
+	OpMotorolaTrafficChannelID Opcode = 0x05
+	OpMotorolaSystemLoading    Opcode = 0x09
 )
 
 // IsVendorMFID reports whether the TSBK's MFID is a recognised

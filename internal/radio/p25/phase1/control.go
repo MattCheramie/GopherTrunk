@@ -1120,14 +1120,22 @@ func (c *ControlChannel) dispatchVendorTSBK(t TSBK, nac uint16) {
 		}
 		return
 	}
+	// Motorola (MFID 0x90) Traffic Channel ID (0x05) and System Loading (0x09)
+	// are emitted continuously on real systems. SDRtrunk names them but does not
+	// field-decode them (its MotorolaTrafficChannel / ChannelLoading classes are
+	// hex-only stubs) and OP25 ignores them; neither carries neighbour or
+	// secondary-CC data. So we name and capture the raw payload for the record
+	// but decode/publish NOTHING into the system map — a guessed layout would
+	// inject phantom data (a Motorola 0x05 decoded with the standard UU_ANS_REQ
+	// layout already produced garbage: src=0, target=0x3C0000). See
+	// docs/specs/p25-motorola-opcodes.md.
+	if t.MFID == MFIDMotorola && (t.Opcode == OpMotorolaTrafficChannelID || t.Opcode == OpMotorolaSystemLoading) {
+		c.logVendorProbe(t, nac)
+		return
+	}
 	// Unrecognised vendor opcode: census + raw-payload sample so a field
 	// test can name and reverse any alias-bearing transport we don't yet
-	// decode, while the per-frame detail stays at Debug. Note: opcode 0x05
-	// here is NOT decoded as the standard UU_ANS_REQ — under a vendor MFID
-	// the opcode is in the manufacturer's namespace, and a field decode of a
-	// Motorola 0x05 with the standard target/source layout produced garbage
-	// IDs (src=0, target=0x3C0000), so it stays unhandled until its real
-	// vendor layout is reversed.
+	// decode, while the per-frame detail stays at Debug.
 	c.logUnhandledTSBK(t, nac)
 	c.log.Debug("p25: vendor tsbk", "mfid", t.MFID, "opcode", t.Opcode, "nac", nac)
 }
@@ -1139,6 +1147,7 @@ const (
 	diagUnhandledTSBK   uint32 = 1 << 24
 	diagAliasSrc        uint32 = 2 << 24
 	diagVendorBroadcast uint32 = 3 << 24
+	diagVendorProbe     uint32 = 4 << 24
 )
 
 // isStandardBroadcastOpcode reports whether op is one of the band-plan or
@@ -1191,6 +1200,44 @@ func (c *ControlChannel) logUnhandledTSBK(t TSBK, nac uint16) {
 		c.log.Info("p25: unhandled tsbk payload",
 			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
 			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]), "nac", nac)
+	}
+}
+
+// maxVendorProbeSamples bounds how many raw payloads logVendorProbe dumps per
+// distinct (MFID,opcode). Larger than maxUnhandledSamples because these are
+// deliberate reverse-engineering targets — a correlation set of a few dozen
+// frames (paired with the site's known neighbours / secondary CCs from a
+// reference decoder) is what reverses the field layout.
+const maxVendorProbeSamples = 64
+
+// logVendorProbe records a candidate-but-undecoded vendor TSBK for offline
+// analysis: it dumps the full raw payload at Info (up to maxVendorProbeSamples
+// per opcode) and does nothing else — no parse, no event, no map mutation — so
+// an unconfirmed layout cannot leak phantom data into the system map. See
+// docs/specs/p25-motorola-opcodes.md for the reverse-engineering status.
+func (c *ControlChannel) logVendorProbe(t TSBK, nac uint16) {
+	key := diagVendorProbe | uint32(t.MFID)<<8 | uint32(t.Opcode)
+	n := c.diagSeen[key]
+	c.diagSeen[key] = n + 1
+	if n < maxVendorProbeSamples {
+		c.log.Info("p25: motorola opcode (named, not field-decoded — collecting for analysis)",
+			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+			"name", motorolaProbeLabel(t.Opcode),
+			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]),
+			"nac", nac, "sample", n+1, "max", maxVendorProbeSamples)
+	}
+}
+
+// motorolaProbeLabel maps the probed Motorola opcodes to SDRtrunk's names so
+// the diagnostic log reads in known terms rather than a bare opcode number.
+func motorolaProbeLabel(op Opcode) string {
+	switch op {
+	case OpMotorolaTrafficChannelID:
+		return "MOTOROLA_OSP_TRAFFIC_CHANNEL_ID"
+	case OpMotorolaSystemLoading:
+		return "MOTOROLA_OSP_SYSTEM_LOADING"
+	default:
+		return "MOTOROLA_OSP_UNKNOWN"
 	}
 }
 

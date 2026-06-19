@@ -7,6 +7,15 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Motorola opcodes 0x05 / 0x09 (MFID 0x90) named and captured.** Cross-checked
+  against SDRtrunk / OP25: 0x05 is `MOTOROLA_OSP_TRAFFIC_CHANNEL_ID`, 0x09 is
+  `MOTOROLA_OSP_SYSTEM_LOADING` — neither carries neighbour / secondary-CC data,
+  and neither reference decoder field-decodes them. So they are named and their
+  raw payload is logged at INFO (up to 64 samples each, grep `motorola opcode`)
+  while decoding/publishing nothing into the system map. See
+  [`docs/specs/p25-motorola-opcodes.md`](docs/specs/p25-motorola-opcodes.md).
+
 ### Changed
 - **P25 TSBK opcodes now log with their TIA-102.AABC-D designations**
   (`UU_ANS_REQ`, `NET_STS_BCST`, `GRP_V_CH_GRANT`, …) instead of the

@@ -58,7 +58,10 @@ but were not located at the time of this commit:
   so the PDF is not committed; the opcode designations are
   transcribed (not copied) into
   [`p25-tsbk-opcodes.md`](p25-tsbk-opcodes.md) for cross-checking
-  the decoder.
+  the decoder. Motorola-proprietary (MFID 0x90) opcodes — which are
+  not in any standard — are tracked separately, with their
+  reverse-engineering status, in
+  [`p25-motorola-opcodes.md`](p25-motorola-opcodes.md).
 - **ETSI TS 102 361-2** — DMR Tier III air interface.
 
 Pulls welcome.
