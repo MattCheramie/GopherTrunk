@@ -15,13 +15,13 @@ see_also: [constellation-diagram, clock-recovery, symbol-rate, c4fm]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
-external:
-  - { title: "Eye pattern (Wikipedia)", url: https://en.wikipedia.org/wiki/Eye_pattern }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Eye_pattern
 ---
 
 An **eye diagram** overlays many short segments of a demodulated signal, each one
 symbol period long, so they stack into characteristic "eye" shapes between the symbol
-levels.
+levels.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 440 150" role="img" aria-label="An eye diagram with an open eye shape and a dashed vertical line marking the ideal sampling instant at its widest point." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +47,7 @@ each [symbol](/reference/symbol-rate/) correctly. Noise and timing
 
 GopherTrunk's eye-diagram panel shows timing and noise margin at a glance, complementing
 the [constellation](/reference/constellation-diagram/) for diagnosing a marginal signal.
+
+## Sources
+
+[^wiki]: [Eye pattern](https://en.wikipedia.org/wiki/Eye_pattern) — Wikipedia, for the overlaid-symbol-period display and what an open eye indicates.

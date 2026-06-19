@@ -14,13 +14,13 @@ infobox:
 see_also: [m17, codec2, vocoder]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "M17 Project", url: https://m17project.org/ }
+cite_urls:
+  - https://m17project.org/
 ---
 
 The **M17 Project** is an open-source community that develops the royalty-free
 **[M17](/reference/m17/)** amateur digital-voice protocol along with open hardware and
-software implementations.
+software implementations.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="The open-source M17 Project maintains the royalty-free M17 protocol." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ licensing constraints, adopting the open [Codec 2](/reference/codec2/)
 
 The project's openness makes fully free M17 decoders possible, including GopherTrunk's
 link-layer support.
+
+## Sources
+
+[^home]: [M17 Project](https://m17project.org/) — the project's official site, home of the royalty-free M17 protocol and open implementations.

@@ -14,12 +14,12 @@ infobox:
 see_also: [noise-floor, decibel, dbm, demodulation]
 related_lessons:
   - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
-external:
-  - { title: "Signal-to-noise ratio (Wikipedia)", url: https://en.wikipedia.org/wiki/Signal-to-noise_ratio }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Signal-to-noise_ratio
 ---
 
 **Signal-to-noise ratio** (**SNR**) is the gap, in [decibels](/reference/decibel/),
-between a signal's power and the [noise floor](/reference/noise-floor/). It is the
+between a signal's power and the [noise floor](/reference/noise-floor/).[^wiki] It is the
 single best predictor of whether a signal will decode.
 
 <figure class="figure" markdown="0">
@@ -45,3 +45,7 @@ below which [demodulation](/reference/demodulation/) starts dropping symbols.
 
 Improving SNR — better antenna, placement, correct gain — is usually what moves a
 marginal signal from un-decodable to clean.
+
+## Sources
+
+[^wiki]: [Signal-to-noise ratio](https://en.wikipedia.org/wiki/Signal-to-noise_ratio) — Wikipedia, definition and significance of SNR.

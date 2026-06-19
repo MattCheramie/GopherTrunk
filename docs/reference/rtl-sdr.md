@@ -16,14 +16,17 @@ infobox:
 see_also: [rtl2832u, r820t-tuner, hackrf, airspy, upconverter, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
+related_reading:
+  - { title: "RF Front End, Part 7: RTL-SDR / RTL2832U bring-up", url: /blog/deep-dives/rf-front-end-07-rtlsdr-rtl2832u-bringup/ }
 external:
-  - { title: "RTL-SDR (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR }
   - { title: "GopherTrunk hardware guide", url: /hardware.html }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR
 ---
 
 **RTL-SDR** is a family of inexpensive USB [software-defined radio](/reference/software-defined-radio/)
 receivers built around the [RTL2832U](/reference/rtl2832u/) chip — originally a DVB-T TV
-tuner that hobbyists discovered could stream raw [IQ](/reference/iq-data/) samples.
+tuner that hobbyists discovered could stream raw [IQ](/reference/iq-data/) samples.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A frequency coverage bar for RTL-SDR (~24 MHz–1.7 GHz) on an axis from about 0 to 6 gigahertz." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +49,7 @@ range, but more than enough to follow most VHF/UHF trunked systems.
 The RTL-SDR is the ideal entry point and the baseline GopherTrunk targets. For HF, add an
 [upconverter](/reference/upconverter/) or use an [Airspy HF+](/reference/airspy-hf-plus/);
 see the [hardware guide](/hardware.html).
+
+## Sources
+
+[^wiki]: [RTL-SDR](https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR) — Wikipedia, on the DVB-T-dongle origins and capabilities of RTL-SDR.

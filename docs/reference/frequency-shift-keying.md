@@ -14,13 +14,15 @@ infobox:
 see_also: [phase-shift-keying, quadrature-amplitude-modulation, c4fm, gmsk, afsk, ffsk, symbol-rate]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency-shift_keying
 ---
 
 **Frequency-shift keying** (**FSK**) is digital [modulation](/reference/modulation/)
 that switches a [carrier](/reference/carrier-wave/) between a fixed set of frequencies,
-one per [symbol](/reference/symbol-rate/). Two frequencies gives 2FSK; four gives 4FSK.
+one per [symbol](/reference/symbol-rate/).[^wiki] Two frequencies gives 2FSK; four gives 4FSK.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A bit stream above, and below it a carrier that switches between a low frequency for zeros and a high frequency for ones." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +48,7 @@ symbol and is the workhorse of digital land-mobile voice — [C4FM](/reference/c
 An FSK demodulator tracks instantaneous frequency; the resulting symbol levels appear
 on the [symbol scope](/reference/eye-diagram/) and as clusters on a
 [constellation](/reference/constellation-diagram/).
+
+## Sources
+
+[^wiki]: [Frequency-shift keying](https://en.wikipedia.org/wiki/Frequency-shift_keying) — Wikipedia, for the definition and the 2FSK/4FSK variants.

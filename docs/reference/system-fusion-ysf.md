@@ -17,14 +17,16 @@ infobox:
 see_also: [d-star, m17, c4fm, ambe, vocoder]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "System Fusion (Wikipedia)", url: https://en.wikipedia.org/wiki/System_Fusion }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/System_Fusion
 ---
 
 **System Fusion** (**Yaesu System Fusion**, **YSF**) is Yaesu's amateur digital-voice
 system, using [C4FM](/reference/c4fm/) modulation and an [AMBE](/reference/ambe/)-family
 [vocoder](/reference/vocoder/). It is notable for automatically mixing digital and
-analog users on the same repeater.
+analog users on the same repeater.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 440 110" role="img" aria-label="System Fusion digital voice linked over WIRES-X rooms." xmlns="http://www.w3.org/2000/svg">
@@ -58,7 +60,7 @@ smoothing the transition for clubs. The WIRES-X network links Fusion repeaters a
 ## History
 
 Introduced by Yaesu in the mid-2010s as its entry into amateur digital voice,
-competing with [D-STAR](/reference/d-star/) and amateur [DMR](/reference/dmr/).
+competing with [D-STAR](/reference/d-star/) and amateur [DMR](/reference/dmr/).[^wiki]
 
 ## Deployment
 
@@ -68,3 +70,7 @@ Amateur radio, via Fusion repeaters, hotspots, and WIRES-X rooms.
 
 YSF shares C4FM modulation with [P25 Phase 1](/reference/p25-phase-1/); see
 [Status](/status.html) for GopherTrunk's coverage.
+
+## Sources
+
+[^wiki]: [System Fusion](https://en.wikipedia.org/wiki/System_Fusion) — Wikipedia, for Yaesu's amateur C4FM digital-voice system, its analog/digital mixing, and WIRES-X linking.

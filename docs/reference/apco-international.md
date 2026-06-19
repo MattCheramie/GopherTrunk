@@ -14,14 +14,15 @@ infobox:
 see_also: [project-25, tia, trunked-radio]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "APCO International (Wikipedia)", url: https://en.wikipedia.org/wiki/Association_of_Public-Safety_Communications_Officials-International }
+cite_urls:
+  - https://www.apcointl.org/
+  - https://en.wikipedia.org/wiki/Association_of_Public-Safety_Communications_Officials-International
 ---
 
 **APCO International** (the Association of Public-Safety Communications Officials) is the
-professional association for public-safety communications. With the
+professional association for public-safety communications.[^home] With the
 [TIA](/reference/tia/) it drove the creation of [Project 25](/reference/project-25/),
-sometimes called **APCO-25**.
+sometimes called **APCO-25**.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="APCO defines public-safety requirements that shaped P25." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +45,8 @@ standard for interoperability among emergency services.
 ## Relevance to SDR
 
 APCO's role explains the "APCO-25"/"P25" naming and the standard's public-safety focus.
+
+## Sources
+
+[^home]: [APCO International](https://www.apcointl.org/) — the association's official site, representing public-safety communications professionals.
+[^wiki]: [Association of Public-Safety Communications Officials-International](https://en.wikipedia.org/wiki/Association_of_Public-Safety_Communications_Officials-International) — Wikipedia, for APCO's role in the creation of P25.

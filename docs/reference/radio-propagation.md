@@ -14,13 +14,13 @@ infobox:
 see_also: [multipath-propagation, radio-horizon, ionospheric-propagation, path-loss, frequency-bands]
 related_lessons:
   - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
-external:
-  - { title: "Radio propagation (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_propagation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Radio_propagation
 ---
 
 **Radio propagation** describes how [radio waves](/reference/radio-wave/) travel from
 transmitter to receiver, including line-of-sight travel, reflection, diffraction, and
-atmospheric effects.
+atmospheric effects.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 150" role="img" aria-label="A curved earth with a tall transmitter tower and a receiver, a straight line-of-sight path, and an obstacle blocking a lower path." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ distances. Loss along the way is [path loss](/reference/path-loss/).
 
 Understanding propagation explains why antenna height and a clear path often matter
 more than the radio, and why a distant hilltop system can beat a closer obstructed one.
+
+## Sources
+
+[^wiki]: [Radio propagation](https://en.wikipedia.org/wiki/Radio_propagation) — Wikipedia, on line-of-sight, reflection, diffraction, and atmospheric propagation.

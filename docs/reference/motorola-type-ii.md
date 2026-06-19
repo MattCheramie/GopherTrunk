@@ -19,15 +19,17 @@ see_also: [trunked-radio, control-channel, edacs, ltr, talkgroup, radio-id]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Motorola Type II (Wikipedia)", url: https://en.wikipedia.org/wiki/Motorola_Type_II }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Motorola_Type_II
 ---
 
 **Motorola Type II** is a classic **analog trunked-radio** family (SmartNet /
 SmartZone) that pairs a **digital [control channel](/reference/control-channel/)**
 with **analog FM** voice channels. It was the dominant trunking technology for
 public-safety and business fleets before the migration to digital
-[P25](/reference/project-25/).
+[P25](/reference/project-25/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Motorola Type II digital control channel assigning analog voice channels." xmlns="http://www.w3.org/2000/svg">
@@ -59,7 +61,7 @@ itself is analog FM. Each transmitting radio carries a [radio ID](/reference/rad
 ## History
 
 Introduced by Motorola in the 1980s (SmartNet), later extended with multi-site
-SmartZone, and ubiquitous through the 1990s–2000s.
+SmartZone, and ubiquitous through the 1990s–2000s.[^wiki]
 
 ## Deployment
 
@@ -70,3 +72,7 @@ some remain in service.
 
 GopherTrunk decodes the Type II control channel and follows grants to the analog
 voice channels. See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Motorola Type II](https://en.wikipedia.org/wiki/Motorola_Type_II) — Wikipedia, for the SmartNet/SmartZone analog trunking family, its digital control channel, and talkgroup/radio-ID signalling.

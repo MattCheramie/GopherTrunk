@@ -14,14 +14,16 @@ infobox:
 see_also: [dbfs, analog-to-digital-converter, noise-floor, ppm-frequency-correction]
 related_lessons:
   - { title: "Gain, AGC & avoiding overload", url: /learn/rf-sdr/gain-and-agc/ }
-external:
-  - { title: "Automatic gain control (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_gain_control }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_gain_control
 ---
 
 **Automatic gain control** (**AGC**) adjusts amplification to keep a signal at a usable
 level — high enough above the [noise floor](/reference/noise-floor/) but below the
 [ADC](/reference/analog-to-digital-converter/)'s clipping ceiling (0
-[dBFS](/reference/dbfs/)).
+[dBFS](/reference/dbfs/)).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="An input whose amplitude varies wildly, and an output of roughly constant amplitude after AGC." xmlns="http://www.w3.org/2000/svg">
@@ -43,3 +45,7 @@ well-chosen **manual gain** is often preferred.
 
 Setting gain correctly is the single setting beginners most often get wrong; see the
 gain lesson for a practical routine.
+
+## Sources
+
+[^wiki]: [Automatic gain control](https://en.wikipedia.org/wiki/Automatic_gain_control) — Wikipedia, on closed-loop gain adjustment and headroom.

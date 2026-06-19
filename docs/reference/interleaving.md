@@ -14,13 +14,15 @@ infobox:
 see_also: [forward-error-correction, reed-solomon-code, bch-code, multipath-propagation]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Interleaving (Wikipedia)", url: https://en.wikipedia.org/wiki/Interleaving_(data) }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Interleaving_(data)
 ---
 
 **Interleaving** reorders bits or symbols before transmission and restores their order on
 receive, so that a **burst** of errors (from fading or interference) is spread thinly
-across many codewords rather than overwhelming one.
+across many codewords rather than overwhelming one.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Bits written into a matrix by rows and read out by columns, so that a burst of errors is spread across many codewords." xmlns="http://www.w3.org/2000/svg">
@@ -49,3 +51,7 @@ receiver de-interleaves before decoding.
 
 Interleaving makes digital radio robust to [multipath](/reference/multipath-propagation/)
 fading and short interference bursts.
+
+## Sources
+
+[^wiki]: [Interleaving (data)](https://en.wikipedia.org/wiki/Interleaving_(data)) — Wikipedia, for reordering data to spread burst errors across codewords.

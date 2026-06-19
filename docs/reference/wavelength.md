@@ -14,11 +14,11 @@ infobox:
 see_also: [frequency, radio-wave, antenna, dipole-antenna]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Wavelength (Wikipedia)", url: https://en.wikipedia.org/wiki/Wavelength }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Wavelength
 ---
 
-**Wavelength** (λ) is the physical distance a wave covers in one complete cycle. For a
+**Wavelength** (λ) is the physical distance a wave covers in one complete cycle.[^wiki] For a
 [radio wave](/reference/radio-wave/) it is inversely proportional to
 [frequency](/reference/frequency/): higher frequency means shorter wavelength.
 
@@ -48,3 +48,7 @@ Since radio travels at the speed of light, *λ = c / f*. A handy approximation i
 Wavelength sets [antenna](/reference/antenna/) size (a quarter-wave whip is λ/4) and
 influences how signals bend around obstacles, making it central to antenna choice and
 [propagation](/reference/radio-propagation/).
+
+## Sources
+
+[^wiki]: [Wavelength](https://en.wikipedia.org/wiki/Wavelength) — Wikipedia, on the spatial period of a wave and its inverse relation to frequency.

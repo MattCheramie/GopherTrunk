@@ -18,15 +18,18 @@ infobox:
 see_also: [ais, ffsk, frequency-shift-keying, itu]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_selective_calling
 external:
-  - { title: "Digital selective calling (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_selective_calling }
   - { title: "GopherTrunk DSC decoder", url: /dsc.html }
 ---
 
 **DSC** (**Digital Selective Calling**) is a maritime protocol for **calling specific
 stations and broadcasting distress alerts**. Part of the Global Maritime Distress and
 Safety System (GMDSS), it sends short [FSK](/reference/frequency-shift-keying/) data
-bursts on **VHF channel 70** (156.525 MHz) and on HF.
+bursts on **VHF channel 70** (156.525 MHz) and on HF.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="A short Digital Selective Calling burst carrying a call type and the sender's maritime identity." xmlns="http://www.w3.org/2000/svg">
@@ -56,7 +59,7 @@ automatically conveys identity and, if interfaced, GPS position. DSC complements
 ## History
 
 Standardised by the [ITU](/reference/itu/) and mandated within GMDSS from the 1990s to
-modernise distress alerting beyond voice calling.
+modernise distress alerting beyond voice calling.[^wiki]
 
 ## Deployment
 
@@ -66,3 +69,7 @@ SOLAS and recreational vessels, coast stations, and rescue coordination centres.
 
 GopherTrunk demodulates the FSK, applies the symbol-repetition error control, and
 decodes DSC messages. See the [DSC decoder](/dsc.html) page.
+
+## Sources
+
+[^wiki]: [Digital selective calling](https://en.wikipedia.org/wiki/Digital_selective_calling) — Wikipedia, for the maritime DSC protocol within GMDSS, VHF channel 70 signalling, MMSI addressing, and distress alerting.

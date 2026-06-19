@@ -10,14 +10,14 @@ autolink: true
 see_also: [rtl-sdr, rtl2832u, rtl-tcp, soapysdr]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "Zadig", url: https://zadig.akeo.ie/ }
+cite_urls:
+  - https://zadig.akeo.ie/
 ---
 
 **Zadig** is a small Windows utility that installs the generic **WinUSB** driver onto an
 SDR dongle. Out of the box, Windows binds an [RTL-SDR](/reference/rtl-sdr/) to its
 TV-tuner (DVB-T) driver; Zadig replaces that with WinUSB so SDR software can talk to the
-device directly.
+device directly.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A dongle's default TV-tuner driver being replaced by the WinUSB driver via Zadig." xmlns="http://www.w3.org/2000/svg">
@@ -35,3 +35,7 @@ device directly.
 
 GopherTrunk's Windows installer bundles Zadig to automate this step. On Linux and macOS
 the equivalent access is handled by libusb/IOKit without a separate tool.
+
+## Sources
+
+[^home]: [Zadig](https://zadig.akeo.ie/) — the official Zadig site, the USB driver installer that swaps a dongle's driver for WinUSB.

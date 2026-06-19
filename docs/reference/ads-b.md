@@ -18,8 +18,11 @@ infobox:
 see_also: [ais, compact-position-reporting, cyclic-redundancy-check, icao]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast
 external:
-  - { title: "Automatic Dependent Surveillance–Broadcast (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast }
   - { title: "GopherTrunk ADS-B decoder", url: /adsb.html }
 ---
 
@@ -27,7 +30,7 @@ external:
 surveillance system in which aircraft continuously broadcast their **identity,
 position, altitude, and velocity** on **1090 MHz** (and 978 MHz UAT in the U.S.). It
 is the aeronautical counterpart to [AIS](/reference/ais/) and one of the most popular
-SDR applications.
+SDR applications.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="An aircraft broadcasting position and identity bursts on 1090 MHz to a ground receiver." xmlns="http://www.w3.org/2000/svg">
@@ -59,7 +62,7 @@ to a precise position from a pair of even/odd messages.
 ## History
 
 Standardised by [ICAO](/reference/icao/) with MOPS from RTCA (DO-260) and EUROCAE
-(ED-102); mandated for most controlled airspace through the 2010s–2020s.
+(ED-102); mandated for most controlled airspace through the 2010s–2020s.[^wiki]
 
 ## Deployment
 
@@ -71,3 +74,7 @@ flight-tracking networks.
 GopherTrunk detects the 1090 MHz squitters in the magnitude domain, validates the
 [CRC-24](/reference/cyclic-redundancy-check/), and decodes aircraft state. See the
 [ADS-B decoder](/adsb.html) page.
+
+## Sources
+
+[^wiki]: [Automatic Dependent Surveillance–Broadcast](https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast) — Wikipedia, for the 1090 MHz ADS-B system, Mode S Extended Squitter, CPR position coding, and ICAO/RTCA/EUROCAE standardisation.

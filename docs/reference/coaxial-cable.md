@@ -10,13 +10,13 @@ autolink: true
 see_also: [attenuation, path-loss, antenna, standing-wave-ratio, low-noise-amplifier]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Coaxial cable (Wikipedia)", url: https://en.wikipedia.org/wiki/Coaxial_cable }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Coaxial_cable
 ---
 
 **Coaxial cable** ("coax") carries RF between the antenna and receiver. A centre
 conductor runs inside a tubular **shield**, separated by a dielectric, which keeps the
-signal contained and the impedance constant (commonly 50 Ω). Every metre and every
+signal contained and the impedance constant (commonly 50 Ω).[^wiki] Every metre and every
 connector adds [loss](/reference/attenuation/) — and the loss grows with frequency.
 
 <figure class="figure" markdown="0">
@@ -35,3 +35,7 @@ connector adds [loss](/reference/attenuation/) — and the loss grows with frequ
 A long or low-grade cable can quietly undo a good antenna, so operators keep feedline
 short or mount a [low-noise amplifier](/reference/low-noise-amplifier/) at the antenna. A
 poor match also raises [SWR](/reference/standing-wave-ratio/).
+
+## Sources
+
+[^wiki]: [Coaxial cable](https://en.wikipedia.org/wiki/Coaxial_cable) — Wikipedia, on coax construction, characteristic impedance, and frequency-dependent loss.

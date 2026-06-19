@@ -20,15 +20,17 @@ see_also: [trunked-radio, tdma, phase-shift-keying, control-channel, etsi]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Terrestrial Trunked Radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio
 ---
 
 **TETRA** (**Terrestrial Trunked Radio**) is an [ETSI](/reference/etsi/) digital
 [trunked-radio](/reference/trunked-radio/) standard built for public-safety and
 professional users, especially in Europe and much of the world outside North America.
 It uses **four-slot [TDMA](/reference/tdma/)** and π/4-DQPSK
-([phase-shift keying](/reference/phase-shift-keying/)).
+([phase-shift keying](/reference/phase-shift-keying/)).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Four TDMA slots in a 25 kHz TETRA carrier." xmlns="http://www.w3.org/2000/svg">
@@ -58,7 +60,7 @@ timeslots per 25 kHz carrier give high capacity.
 ## History
 
 Standardised by ETSI from the mid-1990s; adopted broadly by European emergency
-services, transport, and military/government users.
+services, transport, and military/government users.[^wiki]
 
 ## Deployment
 
@@ -70,3 +72,7 @@ dominates public safety.
 
 TETRA uses a distinct modulation and vocoder; consult the [Status](/status.html) page
 for GopherTrunk's current TETRA coverage.
+
+## Sources
+
+[^wiki]: [Terrestrial Trunked Radio](https://en.wikipedia.org/wiki/Terrestrial_Trunked_Radio) — Wikipedia, for the ETSI TETRA standard, its four-slot TDMA air interface, π/4-DQPSK modulation, and the ACELP vocoder.

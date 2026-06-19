@@ -14,13 +14,13 @@ infobox:
 see_also: [antenna, dipole-antenna, attenuation]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Standing wave ratio (Wikipedia)", url: https://en.wikipedia.org/wiki/Standing_wave_ratio }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Standing_wave_ratio
 ---
 
 **Standing wave ratio** (**SWR**, often VSWR) measures how well an
 [antenna](/reference/antenna/) is impedance-matched to its feedline and radio at a
-given [frequency](/reference/frequency/). A perfect match is 1:1.
+given [frequency](/reference/frequency/).[^wiki] A perfect match is 1:1.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A forward wave travelling toward an antenna and a smaller reflected wave returning from a mismatch." xmlns="http://www.w3.org/2000/svg">
@@ -42,3 +42,7 @@ for receive-only SDR use it mainly costs a little signal.
 
 A reasonably matched, resonant antenna delivers more signal to the SDR than a
 mismatched one, helping [SNR](/reference/signal-to-noise-ratio/).
+
+## Sources
+
+[^wiki]: [Standing wave ratio](https://en.wikipedia.org/wiki/Standing_wave_ratio) — Wikipedia, on impedance matching, reflected power, and VSWR.

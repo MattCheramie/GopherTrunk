@@ -19,13 +19,15 @@ infobox:
 see_also: [dmr, dmr-tier-1, dmr-tier-3, tdma, ambe-plus-2]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **DMR Tier II** is the **licensed, conventional** tier of the [DMR](/reference/dmr/)
 standard. It is non-trunked — each repeater pair uses fixed frequencies — but carries
-**two voice timeslots** per 12.5 kHz channel via [TDMA](/reference/tdma/).
+**two voice timeslots** per 12.5 kHz channel via [TDMA](/reference/tdma/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Two TDMA slots in a conventional DMR Tier II channel." xmlns="http://www.w3.org/2000/svg">
@@ -56,7 +58,7 @@ allow two simultaneous conversations.
 ## History
 
 Tier II was the first widely commercialised DMR tier, popularised by Motorola's
-MOTOTRBO line from the late 2000s.
+MOTOTRBO line from the late 2000s.[^wiki]
 
 ## Deployment
 
@@ -67,3 +69,7 @@ Tier II repeaters and hotspots over the internet.
 
 GopherTrunk decodes both timeslots of a Tier II channel and renders AMBE+2 audio. For
 trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tiers, including the licensed conventional Tier II and its two-slot TDMA.

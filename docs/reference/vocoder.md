@@ -17,13 +17,16 @@ related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
   - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
 external:
-  - { title: "Vocoder (Wikipedia)", url: https://en.wikipedia.org/wiki/Vocoder }
   - { title: "GopherTrunk vocoders", url: /vocoders.html }
+related_reading:
+  - { title: "SDR Internals, Part 12: Voice coding & vocoders", url: /blog/deep-dives/sdr-internals-12-voice-coding-vocoders/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Vocoder
 ---
 
 A **vocoder** (voice coder) is a speech codec that compresses voice into a few kilobits
 per second by **modelling how speech is produced** — pitch, voicing, and spectral shape
-— rather than recording the waveform. It is what makes
+— rather than recording the waveform.[^wiki] It is what makes
 [digital voice](/learn/rf-sdr/digital-voice/) radio possible.
 
 <figure class="figure" markdown="0">
@@ -51,3 +54,7 @@ is why digital voice can sound slightly robotic, especially on a weak signal.
 Decoding digital voice requires running the **matching** vocoder — [IMBE](/reference/imbe/)
 for [P25 Phase 1](/reference/p25-phase-1/), [AMBE+2](/reference/ambe-plus-2/) for DMR and
 P25 Phase 2, or [Codec 2](/reference/codec2/) for [M17](/reference/m17/).
+
+## Sources
+
+[^wiki]: [Vocoder](https://en.wikipedia.org/wiki/Vocoder) — Wikipedia, on speech coding that models how voice is produced.

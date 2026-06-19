@@ -10,13 +10,15 @@ autolink: true
 see_also: [digital-filter, iir-filter, decimation, matched-filter, root-raised-cosine-filter]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Finite impulse response (Wikipedia)", url: https://en.wikipedia.org/wiki/Finite_impulse_response }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Finite_impulse_response
 ---
 
 A **FIR** (**finite impulse response**) filter produces each output sample as a
 **weighted sum of the most recent input samples** — a tapped delay line multiplied by a
-set of coefficients (taps). It is the most common [digital filter](/reference/digital-filter/)
+set of coefficients (taps).[^wiki] It is the most common [digital filter](/reference/digital-filter/)
 in SDR because it is always stable and can have exactly linear phase.
 
 <figure class="figure" markdown="0">
@@ -38,3 +40,7 @@ in SDR because it is always stable and can have exactly linear phase.
 FIR filters are used for channel selection, [pulse shaping](/reference/pulse-shaping/),
 and as the anti-alias filter before [decimation](/reference/decimation/). Their
 coefficients directly define the [frequency response](/reference/digital-filter/).
+
+## Sources
+
+[^wiki]: [Finite impulse response](https://en.wikipedia.org/wiki/Finite_impulse_response) — Wikipedia, on the non-recursive, always-stable filter and its linear phase.

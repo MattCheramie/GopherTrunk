@@ -14,12 +14,14 @@ infobox:
 see_also: [trunked-radio, voice-channel, channel-grant, affiliation, talkgroup]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 The **control channel** is the **data-only** frequency that coordinates a
-[trunked radio](/reference/trunked-radio/) system. It carries a continuous stream of
+[trunked radio](/reference/trunked-radio/) system.[^wiki] It carries a continuous stream of
 signalling — never voice — managing registrations, call requests, and
 [channel grants](/reference/channel-grant/).
 
@@ -48,3 +50,7 @@ affiliated radios retune to listen. It also conveys the system identity and para
 
 Decoding the control channel is the key to monitoring a trunked system — it is the map
 that tells GopherTrunk where every call goes, so it can follow them all.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on the control channel and trunking signalling.

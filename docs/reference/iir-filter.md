@@ -10,12 +10,14 @@ autolink: true
 see_also: [fir-filter, digital-filter, automatic-gain-control]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Infinite impulse response (Wikipedia)", url: https://en.wikipedia.org/wiki/Infinite_impulse_response }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Infinite_impulse_response
 ---
 
 An **IIR** (**infinite impulse response**) filter computes each output from both recent
-**inputs and past outputs** — it has **feedback**. That recursion achieves a sharp
+**inputs and past outputs** — it has **feedback**.[^wiki] That recursion achieves a sharp
 frequency response with far fewer coefficients than a [FIR filter](/reference/fir-filter/),
 at the cost of nonlinear phase and a need to watch stability.
 
@@ -39,3 +41,7 @@ IIR designs (often built from cascaded *biquad* sections) suit narrowband tasks 
 DC blocking and the loop filters in [AGC](/reference/automatic-gain-control/) and
 [timing recovery](/reference/clock-recovery/), where efficiency matters more than phase
 linearity.
+
+## Sources
+
+[^wiki]: [Infinite impulse response](https://en.wikipedia.org/wiki/Infinite_impulse_response) — Wikipedia, on the recursive, feedback-based filter and its stability trade-offs.

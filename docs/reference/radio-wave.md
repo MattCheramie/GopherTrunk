@@ -14,12 +14,12 @@ infobox:
 see_also: [electromagnetic-spectrum, frequency, wavelength, carrier-wave, modulation]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Radio wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_wave }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Radio_wave
 ---
 
 A **radio wave** is electromagnetic radiation whose [frequency](/reference/frequency/)
-lies in the radio range of the [electromagnetic spectrum](/reference/electromagnetic-spectrum/).
+lies in the radio range of the [electromagnetic spectrum](/reference/electromagnetic-spectrum/).[^wiki]
 Radio waves travel at the speed of light and carry information wirelessly when their
 [amplitude](/reference/amplitude/), frequency, or [phase](/reference/phase/) is varied
 — a process called [modulation](/reference/modulation/).
@@ -46,3 +46,7 @@ the passing field back into a tiny current that a receiver amplifies and decodes
 
 Radio waves are the raw input to any receiver. An SDR digitises a slice of them into
 [IQ data](/reference/iq-data/) for software to process.
+
+## Sources
+
+[^wiki]: [Radio wave](https://en.wikipedia.org/wiki/Radio_wave) — Wikipedia, on radio-frequency electromagnetic radiation and its use for wireless communication.

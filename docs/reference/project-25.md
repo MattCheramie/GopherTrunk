@@ -21,8 +21,11 @@ see_also: [p25-phase-1, p25-phase-2, c4fm, imbe, ambe-plus-2, trunked-radio, con
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
   - { title: "GopherTrunk decoder status", url: /status.html }
 ---
 
@@ -30,7 +33,7 @@ external:
 **digital land-mobile radio** developed for public-safety and government users in
 North America. It defines how radios, repeaters, and trunked systems carry digital
 voice and data, with the explicit goal of interoperability between equipment from
-different manufacturers.
+different manufacturers.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="P25 Phase 1 shown as FDMA channels and Phase 2 as two-slot TDMA." xmlns="http://www.w3.org/2000/svg">
@@ -70,7 +73,7 @@ Both phases can be deployed conventionally or as a trunked system coordinated by
 ## History
 
 P25 standardisation began in the late 1980s under [APCO](/reference/apco-international/),
-with Phase 1 documents published by the [TIA](/reference/tia/) from the mid-1990s.
+with Phase 1 documents published by the [TIA](/reference/tia/) from the mid-1990s.[^wiki]
 Phase 2 followed to address spectrum-efficiency mandates, introducing TDMA so two
 voice conversations could share one 12.5 kHz channel.
 
@@ -88,3 +91,7 @@ follows channel grants to voice channels, and runs the matching vocoder to produ
 audio. See the [protocol landscape lesson](/learn/rf-sdr/protocol-landscape/) for how P25
 compares with other systems, and the [Status](/status.html) page for current
 coverage.
+
+## Sources
+
+[^wiki]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, for P25 history, the Phase 1/Phase 2 air interfaces, and the TIA/APCO standardisation.

@@ -14,12 +14,12 @@ infobox:
 see_also: [radio-propagation, cma-equalizer, clock-recovery, radio-horizon]
 related_lessons:
   - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
-external:
-  - { title: "Multipath propagation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multipath_propagation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multipath_propagation
 ---
 
 **Multipath propagation** occurs when a signal reaches the receiver by several paths at
-once — directly and via reflections off buildings, terrain, and vehicles. The copies
+once — directly and via reflections off buildings, terrain, and vehicles.[^wiki] The copies
 arrive slightly out of step and add or cancel.
 
 <figure class="figure" markdown="0">
@@ -45,3 +45,7 @@ degrading decoding. Moving the antenna a short distance can change multipath mar
 Multipath is a common reason a strong signal still won't decode; an
 [equalizer](/reference/cma-equalizer/) and good [clock recovery](/reference/clock-recovery/)
 help combat it.
+
+## Sources
+
+[^wiki]: [Multipath propagation](https://en.wikipedia.org/wiki/Multipath_propagation) — Wikipedia, on multiple-path arrival, fading, and intersymbol interference.

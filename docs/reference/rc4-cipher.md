@@ -14,12 +14,12 @@ infobox:
 see_also: [scrambling, dmr, forward-error-correction]
 related_lessons:
   - { title: "Encryption & what you can decode", url: /learn/rf-sdr/encryption/ }
-external:
-  - { title: "RC4 (Wikipedia)", url: https://en.wikipedia.org/wiki/RC4 }
+cite_urls:
+  - https://en.wikipedia.org/wiki/RC4
 ---
 
 **RC4** (also **ARC4**) is a stream cipher that generates a pseudo-random keystream from a
-secret key and XORs it with the data. It provides the "Enhanced Privacy" encryption option
+secret key and XORs it with the data.[^wiki] It provides the "Enhanced Privacy" encryption option
 on some [DMR](/reference/dmr/) systems.
 
 <figure class="figure" markdown="0">
@@ -47,3 +47,7 @@ secret — so without the key the voice cannot be recovered.
 RC4 illustrates the line between reversible whitening and true encryption: GopherTrunk can
 descramble whitening but cannot decode encrypted voice without the key. See
 [DMR encryption](/dmr-encryption.html).
+
+## Sources
+
+[^wiki]: [RC4](https://en.wikipedia.org/wiki/RC4) — Wikipedia, for the stream cipher and its key-derived keystream XORed with the data.

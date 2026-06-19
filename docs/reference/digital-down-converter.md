@@ -14,14 +14,16 @@ infobox:
 see_also: [local-oscillator, decimation, digital-filter, iq-data, demodulation]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Digital down converter (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_down_converter }
+related_reading:
+  - { title: "SDR Internals, Part 5: Tuning & channelization", url: /blog/deep-dives/sdr-internals-05-tuning-channelization/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_down_converter
 ---
 
 A **digital down-converter** (**DDC**) shifts a chosen channel within a wideband
 [IQ](/reference/iq-data/) stream to baseband using a numerically controlled oscillator
 (a software [local oscillator](/reference/local-oscillator/)), then
-[filters](/reference/digital-filter/) and [decimates](/reference/decimation/) it.
+[filters](/reference/digital-filter/) and [decimates](/reference/decimation/) it.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 520 110" role="img" aria-label="Wideband IQ into a numerically controlled oscillator mixer, then a low-pass filter, then decimation, producing one narrow channel." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +49,7 @@ from one capture.
 
 The DDC is how GopherTrunk extracts a control channel and multiple voice channels from a
 single wideband capture.
+
+## Sources
+
+[^wiki]: [Digital down converter](https://en.wikipedia.org/wiki/Digital_down_converter) — Wikipedia, for the NCO/filter/decimate channelization architecture.

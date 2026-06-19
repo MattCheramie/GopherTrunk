@@ -14,13 +14,13 @@ infobox:
 see_also: [hamming-code, forward-error-correction, golay-code]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Richard Hamming (Wikipedia)", url: https://en.wikipedia.org/wiki/Richard_Hamming }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Richard_Hamming
 ---
 
 **Richard Hamming** (1915–1998) was an American mathematician who created the first
 practical **error-correcting codes** — the [Hamming codes](/reference/hamming-code/) —
-launching the field of coding theory.
+launching the field of coding theory.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="Data bits with interspersed parity bits that detect and correct a single error." xmlns="http://www.w3.org/2000/svg">
@@ -35,7 +35,7 @@ launching the field of coding theory.
 
 Frustrated by computers halting on detected errors, Hamming devised codes that could
 *correct* single-bit errors automatically, and defined the "Hamming distance" measuring
-how many bits differ between codewords.
+how many bits differ between codewords.[^wiki]
 
 ## Contribution
 
@@ -45,3 +45,7 @@ on which all reliable digital radio depends.
 ## Legacy
 
 Hamming codes and their descendants protect data across radio, storage, and networking.
+
+## Sources
+
+[^wiki]: [Richard Hamming](https://en.wikipedia.org/wiki/Richard_Hamming) — Wikipedia, for biography and his creation of the first practical error-correcting codes.

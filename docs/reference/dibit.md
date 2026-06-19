@@ -10,11 +10,11 @@ autolink: true
 see_also: [symbol-rate, c4fm, frequency-shift-keying, constellation-diagram]
 related_lessons:
   - { title: "Symbols, baud & bitrate", url: /learn/rf-sdr/symbols-and-baud/ }
-external:
-  - { title: "Dibit (Wikipedia)", url: https://en.wikipedia.org/wiki/Dibit }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Dibit
 ---
 
-A **dibit** is a **pair of bits** represented by one transmitted symbol. In the
+A **dibit** is a **pair of bits** represented by one transmitted symbol.[^wiki] In the
 four-level modulations used by [P25](/reference/p25-phase-1/) ([C4FM](/reference/c4fm/))
 and [DMR](/reference/dmr/) ([4FSK](/reference/frequency-shift-keying/)), each of the four
 symbol states maps to one of the four dibits `00`, `01`, `10`, `11`.
@@ -32,3 +32,7 @@ symbol states maps to one of the four dibits `00`, `01`, `10`, `11`.
 Because each symbol carries two bits, a four-level signal's **bit rate is twice its
 [symbol rate](/reference/symbol-rate/)** — which is why P25 Phase 1's 4800-baud C4FM
 runs at 9600 bits per second.
+
+## Sources
+
+[^wiki]: [Dibit](https://en.wikipedia.org/wiki/Dibit) — Wikipedia, for the two-bits-per-symbol definition.

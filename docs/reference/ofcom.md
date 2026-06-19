@@ -11,14 +11,15 @@ see_also: [fcc, itu, frequency-bands]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
   - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
-external:
-  - { title: "Ofcom (Wikipedia)", url: https://en.wikipedia.org/wiki/Ofcom }
+cite_urls:
+  - https://www.ofcom.org.uk/
+  - https://en.wikipedia.org/wiki/Ofcom
 ---
 
 **Ofcom** (the Office of Communications) is the **United Kingdom's communications
-regulator**. It allocates and licenses radio spectrum and sets the rules for its use —
+regulator**.[^wiki] It allocates and licenses radio spectrum and sets the rules for its use —
 the UK counterpart to the United States' [FCC](/reference/fcc/), working within the
-global framework set by the [ITU](/reference/itu/).
+global framework set by the [ITU](/reference/itu/).[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="The ITU framework within which Ofcom regulates UK spectrum and licenses users." xmlns="http://www.w3.org/2000/svg">
@@ -39,3 +40,8 @@ global framework set by the [ITU](/reference/itu/).
 Whether and what you may legally receive depends on national rules; in the UK those are
 Ofcom's. See the [legal &amp; ethical monitoring](/learn/rf-sdr/legal-ethical/) lesson, and always
 check the regulator for your own jurisdiction.
+
+## Sources
+
+[^home]: [Ofcom](https://www.ofcom.org.uk/) — the UK communications regulator's official site, for spectrum allocation and licensing.
+[^wiki]: [Ofcom](https://en.wikipedia.org/wiki/Ofcom) — Wikipedia, for Ofcom's role as the UK communications regulator.

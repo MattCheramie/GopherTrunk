@@ -14,13 +14,13 @@ infobox:
 see_also: [ads-b, cyclic-redundancy-check, icao]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "Compact Position Reporting", url: https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast
 ---
 
 **Compact position reporting** (**CPR**) is the encoding [ADS-B](/reference/ads-b/) uses to
 convey an aircraft's latitude and longitude in few bits, trading a small amount of
-ambiguity for compactness.
+ambiguity for compactness.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="An even frame and an odd frame combined to resolve a globally unambiguous latitude and longitude on a grid." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +44,7 @@ reference position.
 ## Relevance to SDR
 
 An ADS-B decoder must implement CPR to turn raw messages into mappable aircraft positions.
+
+## Sources
+
+[^wiki]: [Automatic Dependent Surveillance–Broadcast](https://en.wikipedia.org/wiki/Automatic_Dependent_Surveillance%E2%80%93Broadcast) — Wikipedia, for ADS-B and its compact position-reporting encoding.

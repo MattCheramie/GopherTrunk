@@ -14,12 +14,14 @@ infobox:
 see_also: [clock-recovery, gardner-timing-recovery, symbol-rate, ais, aprs]
 related_lessons:
   - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
-external:
-  - { title: "Symbol synchronization (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_synchronization }
+related_reading:
+  - { title: "SDR Internals, Part 7: Symbol timing & sync recovery", url: /blog/deep-dives/sdr-internals-07-symbol-timing-sync-recovery/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Symbol_synchronization
 ---
 
 **Mueller–Müller timing recovery** is a decision-directed symbol-timing algorithm that
-needs only **one sample per symbol**, making it computationally efficient.
+needs only **one sample per symbol**, making it computationally efficient.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A symbol waveform sampled once per symbol, with successive samples used to estimate and correct timing." xmlns="http://www.w3.org/2000/svg">
@@ -41,3 +43,7 @@ decisions to start.
 
 GopherTrunk uses Mueller–Müller recovery in decoders such as [AIS](/reference/ais/),
 [APRS](/reference/aprs/), and signalling pipelines.
+
+## Sources
+
+[^wiki]: [Symbol synchronization](https://en.wikipedia.org/wiki/Symbol_synchronization) — Wikipedia, for decision-directed symbol-timing recovery such as the Mueller–Müller method.

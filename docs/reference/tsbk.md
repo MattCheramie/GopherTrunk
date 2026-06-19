@@ -10,12 +10,14 @@ autolink: true
 see_also: [control-channel, channel-grant, project-25, p25-phase-1, csbk]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 ---
 
 A **TSBK** (**trunking signalling block**) is the unit of control-channel signalling in
-[P25](/reference/project-25/). Each TSBK is a short, error-protected message on the
+[P25](/reference/project-25/).[^wiki] Each TSBK is a short, error-protected message on the
 [control channel](/reference/control-channel/) carrying one piece of system business — a
 [channel grant](/reference/channel-grant/), a registration, an affiliation, or a system
 parameter.
@@ -35,3 +37,7 @@ Decoding TSBKs is exactly how a scanner follows a P25 system: read the grant TSB
 retune to the assigned [voice channel](/reference/voice-channel/) in step with the radios.
 P25 Phase 2 uses *MAC PDU* messages for the same role. DMR's equivalent is the
 [CSBK](/reference/csbk/).
+
+## Sources
+
+[^wiki]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, on the P25 standard and its control-channel signalling.

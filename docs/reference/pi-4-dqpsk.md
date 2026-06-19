@@ -10,14 +10,16 @@ autolink: true
 see_also: [phase-shift-keying, cqpsk, constellation-diagram, tetra]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "π/4-QPSK (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase-shift_keying#%CF%80/4%E2%80%93QPSK }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Phase-shift_keying#%CF%80/4%E2%80%93QPSK
 ---
 
 **π/4-DQPSK** (π/4-shifted differential quadrature [phase-shift keying](/reference/phase-shift-keying/))
 is a four-symbol phase modulation in which the constellation is **rotated by 45° (π/4)
 every symbol** and information is carried in the *change* of phase rather than its
-absolute value. It is the air-interface modulation of [TETRA](/reference/tetra/).
+absolute value.[^wiki] It is the air-interface modulation of [TETRA](/reference/tetra/).
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 240 240" role="img" aria-label="An eight-point constellation formed by two QPSK sets offset by 45 degrees, as used by pi/4-DQPSK." xmlns="http://www.w3.org/2000/svg">
@@ -42,3 +44,7 @@ envelope more constant and easier to amplify efficiently.
 Differential encoding means the receiver only needs to measure phase *changes*, so it
 tolerates a constant carrier-phase offset without an absolute phase reference. This
 robustness is why TETRA and several other professional systems adopted it.
+
+## Sources
+
+[^wiki]: [Phase-shift keying — π/4–QPSK](https://en.wikipedia.org/wiki/Phase-shift_keying#%CF%80/4%E2%80%93QPSK) — Wikipedia, for the differential π/4-shifted QPSK definition.

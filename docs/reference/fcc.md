@@ -15,13 +15,14 @@ see_also: [itu, tia, apco-international, frequency-bands]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
   - { title: "Legal & ethical monitoring", url: /learn/rf-sdr/legal-ethical/ }
-external:
-  - { title: "Federal Communications Commission (Wikipedia)", url: https://en.wikipedia.org/wiki/Federal_Communications_Commission }
+cite_urls:
+  - https://www.fcc.gov/
+  - https://en.wikipedia.org/wiki/Federal_Communications_Commission
 ---
 
 The **Federal Communications Commission** (**FCC**) is the United States regulator of
-interstate radio, television, wire, satellite, and cable. It allocates US spectrum,
-licenses users, and sets technical rules.
+interstate radio, television, wire, satellite, and cable.[^wiki] It allocates US spectrum,
+licenses users, and sets technical rules.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="The FCC dividing the US radio spectrum into allocated service blocks." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +46,8 @@ helped push land-mobile radio toward efficient digital systems.
 
 US monitoring laws and band allocations stem from the FCC; what you may legally receive
 varies by jurisdiction (see the legal lesson).
+
+## Sources
+
+[^home]: [Federal Communications Commission](https://www.fcc.gov/) — the FCC's official site, for US spectrum allocation, licensing, and rules.
+[^wiki]: [Federal Communications Commission](https://en.wikipedia.org/wiki/Federal_Communications_Commission) — Wikipedia, for the agency's history and remit.

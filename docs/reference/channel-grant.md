@@ -14,14 +14,16 @@ infobox:
 see_also: [control-channel, voice-channel, talkgroup, trunked-radio]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 A **channel grant** is the [control-channel](/reference/control-channel/) message that
 assigns a [talkgroup](/reference/talkgroup/)'s call to a specific
 [voice channel](/reference/voice-channel/) (and timeslot on
-[TDMA](/reference/tdma/) systems).
+[TDMA](/reference/tdma/) systems).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="The control channel issuing a grant message that causes affiliated radios to retune to a voice channel." xmlns="http://www.w3.org/2000/svg">
@@ -43,3 +45,7 @@ where.
 
 GopherTrunk reads grants in real time to task a receiver to the right channel/slot,
 which is how it follows conversations as they scatter across the channel pool.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on the grant message that assigns calls to voice channels.

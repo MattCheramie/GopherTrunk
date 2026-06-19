@@ -10,12 +10,12 @@ autolink: true
 see_also: [baseband, iq-data, local-oscillator, fft-and-waterfall]
 related_lessons:
   - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
-external:
-  - { title: "DC bias (Wikipedia)", url: https://en.wikipedia.org/wiki/DC_bias }
+cite_urls:
+  - https://en.wikipedia.org/wiki/DC_bias
 ---
 
 A **DC offset** is a constant (zero-frequency) component in the [IQ](/reference/iq-data/)
-stream that shows up as a **spike in the exact centre** of the spectrum and waterfall.
+stream that shows up as a **spike in the exact centre** of the spectrum and waterfall.[^wiki]
 It is an artefact of zero-IF/[baseband](/reference/baseband/) receivers — local-oscillator
 leakage and converter bias — **not** a real signal on the air.
 
@@ -35,3 +35,7 @@ Operators avoid it by tuning slightly off-centre so the channel of interest does
 under the spike, or by enabling a DC-blocking [filter](/reference/iir-filter/). It is a
 common source of "phantom carrier" confusion for newcomers reading a
 [waterfall](/reference/fast-fourier-transform/).
+
+## Sources
+
+[^wiki]: [DC bias](https://en.wikipedia.org/wiki/DC_bias) — Wikipedia, on a constant zero-frequency component in a signal.

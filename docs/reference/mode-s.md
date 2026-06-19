@@ -10,15 +10,18 @@ autolink: true
 see_also: [ads-b, compact-position-reporting, cyclic-redundancy-check, icao]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Secondary_surveillance_radar#Mode_S
 external:
-  - { title: "Secondary surveillance radar — Mode S (Wikipedia)", url: https://en.wikipedia.org/wiki/Secondary_surveillance_radar#Mode_S }
   - { title: "GopherTrunk ADS-B decoder", url: /adsb.html }
 ---
 
 **Mode S** (mode select) is the selective-addressing aviation transponder protocol on
 **1090 MHz** that carries each aircraft's unique **24-bit ICAO address** and forms the
 foundation of [ADS-B](/reference/ads-b/). Messages are 56- or 112-bit frames protected
-by a [CRC-24](/reference/cyclic-redundancy-check/).
+by a [CRC-24](/reference/cyclic-redundancy-check/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A Mode S frame: a short pulse preamble followed by a data block of address and payload ending in a CRC." xmlns="http://www.w3.org/2000/svg">
@@ -36,3 +39,7 @@ by a [CRC-24](/reference/cyclic-redundancy-check/).
 ADS-B is carried in *extended squitter* (DF17/18) Mode S frames whose payload includes
 identity, position, and velocity. GopherTrunk decodes these (via a BEAST upstream or
 native demod) into tracked aircraft — see the [ADS-B](/adsb.html) page.
+
+## Sources
+
+[^wiki]: [Secondary surveillance radar — Mode S](https://en.wikipedia.org/wiki/Secondary_surveillance_radar#Mode_S) — Wikipedia, for the Mode S selective-addressing transponder protocol, its 24-bit ICAO address, frame sizes, and CRC.

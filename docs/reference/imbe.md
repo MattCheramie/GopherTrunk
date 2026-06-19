@@ -15,13 +15,15 @@ infobox:
 see_also: [vocoder, ambe, ambe-plus-2, multi-band-excitation, p25-phase-1, dvsi]
 related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
-external:
-  - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
+related_reading:
+  - { title: "SDR Internals, Part 12: Voice coding & vocoders", url: /blog/deep-dives/sdr-internals-12-voice-coding-vocoders/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multi-Band_Excitation
 ---
 
 **IMBE** (**Improved Multi-Band Excitation**) is the [vocoder](/reference/vocoder/) of
 [P25 Phase 1](/reference/p25-phase-1/), part of the
-[MBE](/reference/multi-band-excitation/) codec family from [DVSI](/reference/dvsi/).
+[MBE](/reference/multi-band-excitation/) codec family from [DVSI](/reference/dvsi/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A speech spectrum split into frequency bands, each marked voiced or unvoiced, as in multi-band excitation." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ audio sample.
 
 GopherTrunk decodes IMBE frames from P25 Phase 1 and synthesises audio. Its successor,
 [AMBE+2](/reference/ambe-plus-2/), is used by newer systems.
+
+## Sources
+
+[^wiki]: [Multi-Band Excitation](https://en.wikipedia.org/wiki/Multi-Band_Excitation) — Wikipedia, on the MBE vocoder family that includes IMBE.

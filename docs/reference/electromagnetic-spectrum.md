@@ -14,15 +14,15 @@ infobox:
 see_also: [radio-wave, frequency, wavelength, frequency-bands]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Electromagnetic spectrum (Wikipedia)", url: https://en.wikipedia.org/wiki/Electromagnetic_spectrum }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Electromagnetic_spectrum
 ---
 
 The **electromagnetic spectrum** is the full range of electromagnetic radiation
 ordered by frequency (or, equivalently, wavelength). It spans from low-frequency
 [radio waves](/reference/radio-wave/) through microwaves, infrared, visible light,
 ultraviolet, X-rays, and gamma rays — all the same phenomenon vibrating at different
-rates.
+rates.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 480 110" role="img" aria-label="The electromagnetic spectrum from radio waves through microwaves, infrared, visible light, ultraviolet, X-rays and gamma rays, with the radio portion highlighted." xmlns="http://www.w3.org/2000/svg">
@@ -56,3 +56,7 @@ GHz**, which is slow enough that electronics can generate and detect it directly
 Software-defined radios operate within the radio portion of the spectrum. Where a
 signal sits in that range — its [band](/reference/frequency-bands/) — determines how it
 propagates, what antenna it needs, and what equipment can receive it.
+
+## Sources
+
+[^wiki]: [Electromagnetic spectrum](https://en.wikipedia.org/wiki/Electromagnetic_spectrum) — Wikipedia, overview of the full range of electromagnetic radiation.

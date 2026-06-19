@@ -14,11 +14,11 @@ infobox:
 see_also: [frequency-shift-keying, phase-shift-keying, quadrature-amplitude-modulation, bandwidth, clock-recovery]
 related_lessons:
   - { title: "Symbols, baud & bitrate", url: /learn/rf-sdr/symbols-and-baud/ }
-external:
-  - { title: "Symbol rate (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_rate }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Symbol_rate
 ---
 
-**Symbol rate** (**baud**) is the number of modulation symbols transmitted per second.
+**Symbol rate** (**baud**) is the number of modulation symbols transmitted per second.[^wiki]
 It differs from bit rate whenever each symbol carries more than one bit.
 
 <figure class="figure" markdown="0">
@@ -43,3 +43,7 @@ need more [bandwidth](/reference/bandwidth/).
 
 The symbol rate sets the rhythm that [clock recovery](/reference/clock-recovery/) must
 lock to, and the minimum capture [bandwidth](/reference/bandwidth/) for a clean decode.
+
+## Sources
+
+[^wiki]: [Symbol rate](https://en.wikipedia.org/wiki/Symbol_rate) — Wikipedia, for the baud definition and the bit-rate relationship.

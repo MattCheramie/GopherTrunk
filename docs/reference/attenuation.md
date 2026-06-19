@@ -14,12 +14,12 @@ infobox:
 see_also: [path-loss, decibel, radio-propagation, antenna]
 related_lessons:
   - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
-external:
-  - { title: "Attenuation (Wikipedia)", url: https://en.wikipedia.org/wiki/Attenuation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Attenuation
 ---
 
 **Attenuation** is the reduction of signal strength as energy passes through a medium,
-cable, connector, or obstacle. It is expressed in [decibels](/reference/decibel/) and
+cable, connector, or obstacle.[^wiki] It is expressed in [decibels](/reference/decibel/) and
 subtracts directly from a power budget.
 
 <figure class="figure" markdown="0">
@@ -42,3 +42,7 @@ of attenuation called [path loss](/reference/path-loss/).
 
 Keeping cable runs short and connectors clean minimises attenuation between
 [antenna](/reference/antenna/) and receiver, preserving [SNR](/reference/signal-to-noise-ratio/).
+
+## Sources
+
+[^wiki]: [Attenuation](https://en.wikipedia.org/wiki/Attenuation) — Wikipedia, for the general definition and causes of signal loss.

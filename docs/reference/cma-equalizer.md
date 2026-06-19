@@ -14,14 +14,16 @@ infobox:
 see_also: [multipath-propagation, demodulation, clock-recovery, constellation-diagram]
 related_lessons:
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
-external:
-  - { title: "Constant modulus algorithm (Wikipedia)", url: https://en.wikipedia.org/wiki/Constant_modulus_algorithm }
+related_reading:
+  - { title: "SDR Internals, Part 8: Equalization, diversity & the FFT", url: /blog/deep-dives/sdr-internals-08-equalization-diversity-fft/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Constant_modulus_algorithm
 ---
 
 A **CMA equalizer** uses the **constant-modulus algorithm** — a blind adaptive
 [filter](/reference/digital-filter/) — to counteract
 [multipath](/reference/multipath-propagation/) distortion without needing a known training
-sequence.
+sequence.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 190" role="img" aria-label="A smeared constellation on the left and a tightened constellation on the right after equalisation." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +49,7 @@ constant-envelope modulations), undoing intersymbol interference and tightening 
 
 A CMA equalizer can rescue decoding in reflective urban environments where multipath
 otherwise smears the symbols.
+
+## Sources
+
+[^wiki]: [Constant modulus algorithm](https://en.wikipedia.org/wiki/Constant_modulus_algorithm) — Wikipedia, on the blind adaptive equalization technique.

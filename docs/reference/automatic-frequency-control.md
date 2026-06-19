@@ -10,13 +10,13 @@ autolink: true
 see_also: [ppm-frequency-correction, costas-loop, demodulation, constellation-diagram]
 related_lessons:
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
-external:
-  - { title: "Automatic frequency control (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_frequency_control }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_frequency_control
 ---
 
 **Automatic frequency control** (**AFC**) continuously measures a residual
 carrier-frequency offset and nudges the receiver to cancel it, keeping the demodulator
-centred on the signal as oscillators drift. Where [PPM correction](/reference/ppm-frequency-correction/)
+centred on the signal as oscillators drift.[^wiki] Where [PPM correction](/reference/ppm-frequency-correction/)
 fixes a static error, AFC **tracks** a changing one.
 
 <figure class="figure" markdown="0">
@@ -35,3 +35,7 @@ AFC often works alongside a [Costas loop](/reference/costas-loop/) (for phase) a
 appears in GopherTrunk's receiver telemetry as a carrier-error reading; a steadily
 **rotating [constellation](/reference/constellation-diagram/)** is the symptom AFC is
 there to remove.
+
+## Sources
+
+[^wiki]: [Automatic frequency control](https://en.wikipedia.org/wiki/Automatic_frequency_control) — Wikipedia, on tracking and cancelling carrier-frequency offset.

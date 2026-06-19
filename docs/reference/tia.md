@@ -14,13 +14,14 @@ infobox:
 see_also: [project-25, apco-international, etsi]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Telecommunications Industry Association (Wikipedia)", url: https://en.wikipedia.org/wiki/Telecommunications_Industry_Association }
+cite_urls:
+  - https://www.tiaonline.org/
+  - https://en.wikipedia.org/wiki/Telecommunications_Industry_Association
 ---
 
 The **Telecommunications Industry Association** (**TIA**) is a US standards organization
 that, together with [APCO](/reference/apco-international/), develops the
-**[Project 25](/reference/project-25/)** suite of public-safety digital radio standards.
+**[Project 25](/reference/project-25/)** suite of public-safety digital radio standards.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="TIA publishes the TIA-102 standards that define P25." xmlns="http://www.w3.org/2000/svg">
@@ -38,9 +39,14 @@ that, together with [APCO](/reference/apco-international/), develops the
 ## Overview
 
 TIA publishes the P25 documents defining its air interfaces, vocoders, and interfaces,
-enabling multi-vendor interoperability for North American public safety.
+enabling multi-vendor interoperability for North American public safety.[^home]
 
 ## Relevance to SDR
 
 The TIA's P25 standards underpin the most common public-safety systems GopherTrunk
 decodes.
+
+## Sources
+
+[^home]: [Telecommunications Industry Association](https://www.tiaonline.org/) — the TIA's official site, publisher of the TIA-102 (P25) standards suite.
+[^wiki]: [Telecommunications Industry Association](https://en.wikipedia.org/wiki/Telecommunications_Industry_Association) — Wikipedia, for the TIA's role and its P25 work with APCO.

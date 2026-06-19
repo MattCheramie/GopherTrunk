@@ -14,13 +14,15 @@ infobox:
 see_also: [vocoder, imbe, ambe-plus-2, multi-band-excitation, d-star, dvsi]
 related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
-external:
-  - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
+related_reading:
+  - { title: "SDR Internals, Part 12: Voice coding & vocoders", url: /blog/deep-dives/sdr-internals-12-voice-coding-vocoders/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multi-Band_Excitation
 ---
 
 **AMBE** (**Advanced Multi-Band Excitation**) is a family of low-bitrate speech
 [vocoders](/reference/vocoder/) from [DVSI](/reference/dvsi/), building on the
-[MBE](/reference/multi-band-excitation/) model. It is used by
+[MBE](/reference/multi-band-excitation/) model.[^wiki] It is used by
 [D-STAR](/reference/d-star/) and EDACS ProVoice, and is the basis for the more efficient
 [AMBE+2](/reference/ambe-plus-2/).
 
@@ -43,3 +45,7 @@ kbps.
 
 GopherTrunk implements AMBE-family decoding in pure Go to render digital voice without
 proprietary hardware.
+
+## Sources
+
+[^wiki]: [Multi-Band Excitation](https://en.wikipedia.org/wiki/Multi-Band_Excitation) — Wikipedia, on the MBE vocoder family that includes AMBE.

@@ -18,8 +18,11 @@ infobox:
 see_also: [ads-b, gmsk, tdma, itu, dsc]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_identification_system
 external:
-  - { title: "Automatic identification system (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_identification_system }
   - { title: "GopherTrunk AIS decoder", url: /ais.html }
 ---
 
@@ -27,7 +30,7 @@ external:
 ships and shore stations broadcast their **identity, position, course, and speed** on
 VHF marine frequencies. It uses [GMSK](/reference/gmsk/) modulation in a
 self-organising [TDMA](/reference/tdma/) scheme so many vessels share two channels
-without a central controller.
+without a central controller.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="Ships transmitting short position bursts in assigned time slots on a shared marine VHF channel." xmlns="http://www.w3.org/2000/svg">
@@ -57,7 +60,7 @@ traffic, the maritime counterpart to [ADS-B](/reference/ads-b/).
 ## History
 
 Standardised by the [ITU](/reference/itu/) and mandated by the IMO for SOLAS vessels
-from the early 2000s to improve collision avoidance and traffic monitoring.
+from the early 2000s to improve collision avoidance and traffic monitoring.[^wiki]
 
 ## Deployment
 
@@ -67,3 +70,7 @@ Commercial shipping, port authorities, vessel-traffic services, and hobbyist tra
 
 GopherTrunk demodulates the GMSK bursts, frames them, and decodes position reports.
 See the [AIS decoder](/ais.html) page.
+
+## Sources
+
+[^wiki]: [Automatic identification system](https://en.wikipedia.org/wiki/Automatic_identification_system) — Wikipedia, for the maritime VHF AIS system, its GMSK/SOTDMA air interface, message content, and ITU/IMO standardisation.

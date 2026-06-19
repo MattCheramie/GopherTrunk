@@ -14,12 +14,14 @@ infobox:
 see_also: [gardner-timing-recovery, mueller-muller-timing-recovery, symbol-rate, eye-diagram, demodulation]
 related_lessons:
   - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
-external:
-  - { title: "Clock recovery (Wikipedia)", url: https://en.wikipedia.org/wiki/Clock_recovery }
+related_reading:
+  - { title: "SDR Internals, Part 7: Symbol timing & sync recovery", url: /blog/deep-dives/sdr-internals-07-symbol-timing-sync-recovery/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Clock_recovery
 ---
 
 **Clock recovery** determines a digital signal's [symbol](/reference/symbol-rate/) timing
-from the signal itself, since the transmitter's clock is not shared. It lets the receiver
+from the signal itself, since the transmitter's clock is not shared.[^wiki] It lets the receiver
 sample each symbol at its **centre**, where the [eye](/reference/eye-diagram/) is widest.
 
 <figure class="figure" markdown="0">
@@ -45,3 +47,7 @@ stay centred, tracking small clock drift. Common algorithms are
 
 Loss of symbol lock — from low SNR or [multipath](/reference/multipath-propagation/) —
 closes the eye and breaks the decode, a key thing the scopes reveal.
+
+## Sources
+
+[^wiki]: [Clock recovery](https://en.wikipedia.org/wiki/Clock_recovery) — Wikipedia, on recovering symbol timing from a received signal.

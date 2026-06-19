@@ -14,12 +14,12 @@ infobox:
 see_also: [dbm, dbfs, signal-to-noise-ratio, noise-floor, path-loss, antenna-gain]
 related_lessons:
   - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
-external:
-  - { title: "Decibel (Wikipedia)", url: https://en.wikipedia.org/wiki/Decibel }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Decibel
 ---
 
 The **decibel** (**dB**) is a logarithmic unit expressing the ratio between two power
-levels: *dB = 10·log₁₀(P₁/P₂)*. Radio relies on it because signal powers span an
+levels: *dB = 10·log₁₀(P₁/P₂)*.[^wiki] Radio relies on it because signal powers span an
 enormous range and because gains and losses then simply **add**.
 
 <figure class="figure" markdown="0">
@@ -50,3 +50,7 @@ Absolute power is given in [dBm](/reference/dbm/); digital headroom in
 [dBFS](/reference/dbfs/). [Antenna gain](/reference/antenna-gain/),
 [path loss](/reference/path-loss/), and [SNR](/reference/signal-to-noise-ratio/) are
 all expressed in decibels.
+
+## Sources
+
+[^wiki]: [Decibel](https://en.wikipedia.org/wiki/Decibel) — Wikipedia, definition of the logarithmic ratio unit and its conventions.

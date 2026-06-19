@@ -10,14 +10,16 @@ autolink: true
 see_also: [frequency-shift-keying, bandwidth, signal-to-noise-ratio]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "LoRa (Wikipedia)", url: https://en.wikipedia.org/wiki/LoRa }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/LoRa
 ---
 
 **LoRa** is a low-power, long-range modulation that encodes data as **chirps** —
 frequency sweeps that ramp across the channel. Chirp spread spectrum gives LoRa
 excellent sensitivity (it decodes well below the [noise floor](/reference/noise-floor/)),
-making it popular for low-rate IoT telemetry in ISM bands.
+making it popular for low-rate IoT telemetry in ISM bands.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A spectrogram showing repeated rising frequency sweeps (chirps), the signature of LoRa." xmlns="http://www.w3.org/2000/svg">
@@ -35,3 +37,7 @@ A receiver "de-chirps" by multiplying with a reference sweep, collapsing each ch
 tone whose frequency encodes the symbol. LoRa is unrelated to the trunked-voice systems
 GopherTrunk targets, but is a common sight on the [waterfall](/reference/fast-fourier-transform/)
 in the 433/868/915 MHz ISM bands.
+
+## Sources
+
+[^wiki]: [LoRa](https://en.wikipedia.org/wiki/LoRa) — Wikipedia, for the chirp-spread-spectrum modulation, its sensitivity, and ISM-band use.

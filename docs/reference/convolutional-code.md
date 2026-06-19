@@ -14,13 +14,15 @@ infobox:
 see_also: [viterbi-algorithm, forward-error-correction, trellis-coded-modulation, m17]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Convolutional code (Wikipedia)", url: https://en.wikipedia.org/wiki/Convolutional_code }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Convolutional_code
 ---
 
 A **convolutional code** is a [forward-error-correction](/reference/forward-error-correction/)
 code in which each output depends on a sliding window of recent input bits, set by the
-*constraint length*.
+*constraint length*.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A shift register of memory cells whose taps are XOR-combined to produce two output bits per input bit." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +47,7 @@ sequence. Puncturing can raise the code rate by omitting some output bits.
 
 Convolutional coding (K=5) protects [M17](/reference/m17/) and appears in other digital
 radio links to recover from bit errors.
+
+## Sources
+
+[^wiki]: [Convolutional code](https://en.wikipedia.org/wiki/Convolutional_code) — Wikipedia, for the sliding-window encoder, constraint length, and puncturing.

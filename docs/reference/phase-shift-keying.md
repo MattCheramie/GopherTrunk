@@ -14,13 +14,15 @@ infobox:
 see_also: [frequency-shift-keying, quadrature-amplitude-modulation, cqpsk, phase, costas-loop, constellation-diagram]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Phase-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase-shift_keying }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Phase-shift_keying
 ---
 
 **Phase-shift keying** (**PSK**) is digital [modulation](/reference/modulation/) that
 switches a [carrier](/reference/carrier-wave/)'s [phase](/reference/phase/) between
-fixed angles while amplitude stays constant. Two phases is BPSK; four is QPSK (2 bits
+fixed angles while amplitude stays constant.[^wiki] Two phases is BPSK; four is QPSK (2 bits
 per symbol).
 
 <figure class="figure" markdown="0">
@@ -45,3 +47,7 @@ efficient.
 
 [P25 Phase 2](/reference/p25-phase-2/) uses a PSK variant, and many satellite and
 broadcast links are PSK; tracking phase accurately is key to decoding them.
+
+## Sources
+
+[^wiki]: [Phase-shift keying](https://en.wikipedia.org/wiki/Phase-shift_keying) — Wikipedia, for the definition and the BPSK/QPSK variants.

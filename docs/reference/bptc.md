@@ -10,13 +10,15 @@ autolink: true
 see_also: [forward-error-correction, hamming-code, interleaving, dmr, csbk]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **BPTC** (**block product turbo code**), specifically **BPTC(196,96)**, is the
 [forward-error-correction](/reference/forward-error-correction/) scheme that protects
-[DMR](/reference/dmr/) data and control bursts. It arranges bits in a grid and applies
+[DMR](/reference/dmr/) data and control bursts.[^wiki] It arranges bits in a grid and applies
 parity across **both rows and columns**, so the two passes can correct errors the other
 misses.
 
@@ -36,3 +38,7 @@ misses.
 The "product" structure plus [interleaving](/reference/interleaving/) makes BPTC robust
 against the burst errors typical of a fading mobile channel — important for the
 [CSBK](/reference/csbk/) control messages that keep a trunked DMR system coordinated.
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the DMR standard whose data and control bursts BPTC(196,96) protects.

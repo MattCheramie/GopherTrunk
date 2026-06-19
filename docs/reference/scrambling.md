@@ -14,13 +14,13 @@ infobox:
 see_also: [clock-recovery, rc4-cipher, forward-error-correction, demodulation]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Scrambler (Wikipedia)", url: https://en.wikipedia.org/wiki/Scrambler }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Scrambler
 ---
 
 **Scrambling** (**whitening**) XORs data with a *public* pseudo-random sequence to break
 up long runs of identical bits, which helps [clock recovery](/reference/clock-recovery/)
-and keeps the spectrum balanced. It is **not** encryption.
+and keeps the spectrum balanced.[^wiki] It is **not** encryption.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A data stream XORed with a pseudo-random sequence to produce a whitened stream with no long runs." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +44,7 @@ guarantees frequent transitions for timing and avoids a DC bias, regardless of t
 
 Recognising that whitening is reversible (unlike [RC4](/reference/rc4-cipher/) encryption)
 explains why a scrambled-but-unencrypted signal still decodes.
+
+## Sources
+
+[^wiki]: [Scrambler](https://en.wikipedia.org/wiki/Scrambler) — Wikipedia, for XOR-with-pseudo-random whitening to balance the spectrum and aid clock recovery.

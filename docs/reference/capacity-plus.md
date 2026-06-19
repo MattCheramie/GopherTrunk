@@ -10,15 +10,17 @@ autolink: true
 see_also: [dmr, dmr-tier-3, rest-channel, trunked-radio, csbk]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **Capacity Plus** is Motorola's proprietary **DMR trunking** mode (part of the MOTOTRBO
 family) that pools several channels and **rotates the control signalling** among them
 (see [rest channel](/reference/rest-channel/)), giving conventional [DMR](/reference/dmr/)
 trunked capacity without a separate dedicated control channel. (Capacity Max is the
-larger multi-site successor.)
+larger multi-site successor.)[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A pool of DMR channels with control rotating among them, several carrying two TDMA voice slots." xmlns="http://www.w3.org/2000/svg">
@@ -38,3 +40,7 @@ larger multi-site successor.)
 Following Capacity Plus means tracking the rotating control as it hops, then decoding the
 granted [timeslot](/reference/tdma/) — GopherTrunk's DMR support is vendor-aware of these
 Motorola grant formats.
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for DMR and Motorola's proprietary Capacity Plus trunking built on the DMR air interface.

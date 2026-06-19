@@ -10,13 +10,13 @@ autolink: true
 see_also: [gardner-timing-recovery, clock-recovery, mueller-muller-timing-recovery]
 related_lessons:
   - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
-external:
-  - { title: "Floyd M. Gardner (Wikipedia)", url: https://en.wikipedia.org/wiki/Floyd_M._Gardner }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Floyd_M._Gardner
 ---
 
 **Floyd M. Gardner** was an engineer and author whose work on phase-locked loops — and
 the **[Gardner timing-error detector](/reference/gardner-timing-recovery/)** — underpins
-modern digital **symbol-timing recovery**. His book *Phaselock Techniques* is a standard
+modern digital **symbol-timing recovery**.[^wiki] His book *Phaselock Techniques* is a standard
 reference.
 
 <figure class="figure" markdown="0">
@@ -32,3 +32,7 @@ reference.
 
 The Gardner detector is prized because it works without carrier phase lock, making it a
 common choice in SDR demodulators (it features in several GopherTrunk decoders).
+
+## Sources
+
+[^wiki]: [Floyd M. Gardner](https://en.wikipedia.org/wiki/Floyd_M._Gardner) — Wikipedia, for biography and his work on phase-locked loops and timing recovery.

@@ -14,13 +14,15 @@ infobox:
 see_also: [digital-filter, cic-filter, sample-rate, aliasing, digital-down-converter]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Decimation (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Downsampling_(signal_processing) }
+related_reading:
+  - { title: "SDR Internals, Part 5: Tuning & channelization", url: /blog/deep-dives/sdr-internals-05-tuning-channelization/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Downsampling_(signal_processing)
 ---
 
 **Decimation** reduces a signal's [sample rate](/reference/sample-rate/) by keeping only
 every Nth sample, after a low-pass [filter](/reference/digital-filter/) removes the
-frequencies that would otherwise [alias](/reference/aliasing/).
+frequencies that would otherwise [alias](/reference/aliasing/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A dense row of samples reduced to a sparse row by keeping every fourth sample after filtering." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ the pipeline must process.
 
 Decimation is what makes running [many channels](/reference/digital-down-converter/) from
 one capture computationally feasible.
+
+## Sources
+
+[^wiki]: [Decimation (signal processing)](https://en.wikipedia.org/wiki/Downsampling_(signal_processing)) — Wikipedia, on filter-then-downsample and anti-alias requirements.

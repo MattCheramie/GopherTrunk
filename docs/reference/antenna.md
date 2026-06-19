@@ -14,13 +14,13 @@ infobox:
 see_also: [dipole-antenna, antenna-gain, polarization, standing-wave-ratio, wavelength]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Antenna (radio) (Wikipedia)", url: https://en.wikipedia.org/wiki/Antenna_(radio) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Antenna_(radio)
 ---
 
 An **antenna** is a conductor that converts electrical signals into
 [radio waves](/reference/radio-wave/) and, on receive, converts passing radio waves
-back into a tiny current. It sets the ceiling on everything downstream — no receiver
+back into a tiny current.[^wiki] It sets the ceiling on everything downstream — no receiver
 can recover a signal the antenna never captured.
 
 <figure class="figure" markdown="0">
@@ -45,3 +45,7 @@ are resonance/[bandwidth](/reference/bandwidth/), [gain](/reference/antenna-gain
 
 Choosing an antenna cut for the target [band](/reference/frequency-bands/) and placing
 it high with a clear path usually improves reception more than any change at the radio.
+
+## Sources
+
+[^wiki]: [Antenna (radio)](https://en.wikipedia.org/wiki/Antenna_(radio)) — Wikipedia, for the definition and key properties of antennas.

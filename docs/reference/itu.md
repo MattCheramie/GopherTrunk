@@ -14,13 +14,14 @@ infobox:
 see_also: [fcc, etsi, icao, frequency-bands]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
-external:
-  - { title: "International Telecommunication Union (Wikipedia)", url: https://en.wikipedia.org/wiki/International_Telecommunication_Union }
+cite_urls:
+  - https://www.itu.int/
+  - https://en.wikipedia.org/wiki/International_Telecommunication_Union
 ---
 
 The **International Telecommunication Union** (**ITU**) is the United Nations specialised
-agency for information and communication technologies. It coordinates the **global radio
-[spectrum](/reference/frequency-bands/)** and publishes the Radio Regulations.
+agency for information and communication technologies.[^wiki] It coordinates the **global radio
+[spectrum](/reference/frequency-bands/)** and publishes the Radio Regulations.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="The ITU dividing the radio spectrum into allocated service blocks worldwide." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +46,8 @@ the [FCC](/reference/fcc/) implement. ITU recommendations also define systems su
 
 The ITU's allocations are why specific signals live in specific bands worldwide, shaping
 where you tune.
+
+## Sources
+
+[^home]: [International Telecommunication Union](https://www.itu.int/) — the ITU's official site, for the Radio Regulations and global spectrum coordination.
+[^wiki]: [International Telecommunication Union](https://en.wikipedia.org/wiki/International_Telecommunication_Union) — Wikipedia, for the agency's history and role.

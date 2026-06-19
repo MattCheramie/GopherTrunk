@@ -10,14 +10,14 @@ autolink: true
 see_also: [ads-b, mode-s, icao, eurocae]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "RTCA (Wikipedia)", url: https://en.wikipedia.org/wiki/RTCA }
+cite_urls:
+  - https://en.wikipedia.org/wiki/RTCA
 ---
 
 **RTCA** is a United States standards organization for **aviation electronics**. Its
 **DO-260** series of Minimum Operational Performance Standards (MOPS) defines the
 [ADS-B](/reference/ads-b/) requirements that aircraft transponders must meet, alongside
-the international standards from [ICAO](/reference/icao/).
+the international standards from [ICAO](/reference/icao/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="RTCA publishing the DO-260 standard that defines ADS-B transponder behaviour." xmlns="http://www.w3.org/2000/svg">
@@ -37,3 +37,7 @@ the international standards from [ICAO](/reference/icao/).
 
 RTCA's DO-260B is the ADS-B specification most often cited in decoder documentation; its
 European counterpart is [EUROCAE](/reference/eurocae/)'s ED-102A.
+
+## Sources
+
+[^wiki]: [RTCA](https://en.wikipedia.org/wiki/RTCA) — Wikipedia, on RTCA and its DO-260 MOPS defining ADS-B performance requirements.

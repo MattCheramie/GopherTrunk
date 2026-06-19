@@ -14,13 +14,15 @@ infobox:
 see_also: [forward-error-correction, golay-code, bch-code, richard-hamming, cyclic-redundancy-check]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Hamming code (Wikipedia)", url: https://en.wikipedia.org/wiki/Hamming_code }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Hamming_code
 ---
 
 **Hamming codes** are simple block [error-correction](/reference/forward-error-correction/)
 codes that correct **single-bit** errors (and detect two) using a handful of parity-check
-bits. They are named for [Richard Hamming](/reference/richard-hamming/).
+bits.[^wiki] They are named for [Richard Hamming](/reference/richard-hamming/).
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="Data bits interspersed with parity bits, with brackets showing each parity bit covering a set of data bits." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ digital radio link control.
 
 Hamming coding protects small control fields in several digital protocols, contributing to
 robust decoding.
+
+## Sources
+
+[^wiki]: [Hamming code](https://en.wikipedia.org/wiki/Hamming_code) — Wikipedia, for the parity-check construction, syndrome decoding, and Richard Hamming's origin.

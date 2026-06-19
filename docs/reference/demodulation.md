@@ -14,13 +14,15 @@ infobox:
 see_also: [modulation, clock-recovery, costas-loop, constellation-diagram, software-defined-radio]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Demodulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Demodulation }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Demodulation
 ---
 
 **Demodulation** recovers the original modulating information from a
 [carrier](/reference/carrier-wave/) — the inverse of
-[modulation](/reference/modulation/). For FM/[FSK](/reference/frequency-shift-keying/) it
+[modulation](/reference/modulation/).[^wiki] For FM/[FSK](/reference/frequency-shift-keying/) it
 tracks instantaneous frequency; for [PSK](/reference/phase-shift-keying/) it tracks
 [phase](/reference/phase/).
 
@@ -48,3 +50,7 @@ waveform; decoding handles the data.
 
 Choosing the matching demodulator for a signal's modulation is the core of recovering it;
 the [constellation](/reference/constellation-diagram/) visualises this stage.
+
+## Sources
+
+[^wiki]: [Demodulation](https://en.wikipedia.org/wiki/Demodulation) — Wikipedia, on recovering the modulating signal as the inverse of modulation.

@@ -10,13 +10,13 @@ autolink: true
 see_also: [ax25, aprs, ais, frequency-shift-keying, clock-recovery]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Non-return-to-zero (Wikipedia)", url: https://en.wikipedia.org/wiki/Non-return-to-zero#NRZI }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Non-return-to-zero#NRZI
 ---
 
 **NRZI** (**non-return-to-zero inverted**) is a line code in which each bit is conveyed
 by **whether the signal level changes**, not by the level itself: conventionally a `0`
-causes a transition and a `1` causes none (or vice-versa). It is used by
+causes a transition and a `1` causes none (or vice-versa).[^wiki] It is used by
 [AX.25](/reference/ax25/)/[APRS](/reference/aprs/) and [AIS](/reference/ais/).
 
 <figure class="figure" markdown="0">
@@ -34,3 +34,7 @@ Because NRZI ties bits to transitions, combining it with **bit stuffing** (as
 [HDLC](/reference/ax25/) does) guarantees regular edges, which keeps the receiver's
 [clock recovery](/reference/clock-recovery/) locked even through long runs of identical
 data bits.
+
+## Sources
+
+[^wiki]: [Non-return-to-zero — NRZI](https://en.wikipedia.org/wiki/Non-return-to-zero#NRZI) — Wikipedia, for the transition-based line-code definition.

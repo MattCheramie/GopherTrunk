@@ -14,13 +14,15 @@ infobox:
 see_also: [forward-error-correction, hamming-code, reed-solomon-code, pocsag, dsc]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "BCH code (Wikipedia)", url: https://en.wikipedia.org/wiki/BCH_code }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/BCH_code
 ---
 
 **BCH codes** (Bose–Chaudhuri–Hocquenghem) are a class of cyclic block
 [error-correction](/reference/forward-error-correction/) codes that can be constructed to
-correct a chosen number of bit errors.
+correct a chosen number of bit errors.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="A BCH codeword shown as a block of message bits followed by parity-check bits." xmlns="http://www.w3.org/2000/svg">
@@ -41,3 +43,7 @@ to locate and fix errors. [POCSAG](/reference/pocsag/) uses BCH(31,21), and
 
 BCH decoding lets GopherTrunk recover paging and signalling messages even when a few bits
 are corrupted.
+
+## Sources
+
+[^wiki]: [BCH code](https://en.wikipedia.org/wiki/BCH_code) — Wikipedia, for the cyclic code family and its designed error-correction capability.

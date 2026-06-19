@@ -14,14 +14,14 @@ infobox:
 see_also: [amplitude-modulation, modulation, frequency-bands, ionospheric-propagation]
 related_lessons:
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Single-sideband modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Single-sideband_modulation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Single-sideband_modulation
 ---
 
 **Single sideband** (**SSB**) is a refined form of
 [amplitude modulation](/reference/amplitude-modulation/) that removes the
 [carrier](/reference/carrier-wave/) and one of the two redundant sidebands,
-transmitting only **one sideband** — upper (USB) or lower (LSB).
+transmitting only **one sideband** — upper (USB) or lower (LSB).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A double-sideband AM spectrum with carrier and two sidebands on the left, an arrow, and an SSB spectrum with only one sideband on the right." xmlns="http://www.w3.org/2000/svg">
@@ -54,3 +54,7 @@ voices sound distorted.
 
 SSB is the backbone of long-distance HF voice; receiving it needs an HF-capable SDR and
 accurate tuning to reinsert the missing carrier.
+
+## Sources
+
+[^wiki]: [Single-sideband modulation](https://en.wikipedia.org/wiki/Single-sideband_modulation) — Wikipedia, for the suppressed-carrier definition and bandwidth/power efficiency.

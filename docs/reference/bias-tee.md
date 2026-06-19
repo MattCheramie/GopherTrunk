@@ -14,13 +14,13 @@ infobox:
 see_also: [low-noise-amplifier, antenna, rtl-sdr]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Bias tee (Wikipedia)", url: https://en.wikipedia.org/wiki/Bias_tee }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Bias_tee
 ---
 
 A **bias tee** is a small network that injects **DC power onto the coax** feeding an
 antenna-mounted device — typically a [low-noise amplifier](/reference/low-noise-amplifier/)
-— while passing the RF signal through to the receiver unaffected.
+— while passing the RF signal through to the receiver unaffected.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A bias tee injecting DC power onto the coax while passing RF through to the receiver." xmlns="http://www.w3.org/2000/svg">
@@ -42,3 +42,7 @@ some [RTL-SDR](/reference/rtl-sdr/) models) have a built-in switchable bias tee.
 
 A bias tee lets you power a mast-mounted LNA without a separate cable, keeping the
 amplifier close to the [antenna](/reference/antenna/) where it does the most good.
+
+## Sources
+
+[^wiki]: [Bias tee](https://en.wikipedia.org/wiki/Bias_tee) — Wikipedia, on the RF/DC combining network that powers antenna-mounted devices over the coax.

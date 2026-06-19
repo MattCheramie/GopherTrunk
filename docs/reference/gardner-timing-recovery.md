@@ -14,13 +14,15 @@ infobox:
 see_also: [clock-recovery, mueller-muller-timing-recovery, symbol-rate, demodulation]
 related_lessons:
   - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
-external:
-  - { title: "Gardner (timing recovery) (Wikipedia)", url: https://en.wikipedia.org/wiki/Symbol_synchronization }
+related_reading:
+  - { title: "SDR Internals, Part 7: Symbol timing & sync recovery", url: /blog/deep-dives/sdr-internals-07-symbol-timing-sync-recovery/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Symbol_synchronization
 ---
 
 **Gardner timing recovery** is a feedback algorithm that estimates
 [symbol-timing](/reference/clock-recovery/) error using samples at the symbol and
-half-symbol instants. A useful property is that it works **independently of carrier
+half-symbol instants.[^wiki] A useful property is that it works **independently of carrier
 phase**.
 
 <figure class="figure" markdown="0">
@@ -43,3 +45,7 @@ widest, tracking small clock drift.
 
 Gardner recovery is a common choice in SDR demodulators for locking symbol timing on PSK
 and QAM signals.
+
+## Sources
+
+[^wiki]: [Symbol synchronization](https://en.wikipedia.org/wiki/Symbol_synchronization) — Wikipedia, for symbol-timing recovery including the Gardner timing-error detector.

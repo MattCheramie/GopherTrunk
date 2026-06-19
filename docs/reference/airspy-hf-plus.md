@@ -14,13 +14,15 @@ infobox:
 see_also: [airspy, rtl-sdr, upconverter, ionospheric-propagation, frequency-bands]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "Airspy (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio }
+related_reading:
+  - { title: "RF Front End, Part 10: Airspy — real to complex", url: /blog/deep-dives/rf-front-end-10-airspy-real-to-complex/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software-defined_radio
 ---
 
 **Airspy HF+** is a [software-defined radio](/reference/software-defined-radio/)
 optimised for the **HF and low-VHF** [bands](/reference/frequency-bands/), with
-excellent dynamic range for receiving shortwave and weak low-band signals.
+excellent dynamic range for receiving shortwave and weak low-band signals.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A frequency coverage bar for Airspy HF+ (HF + low VHF) on an axis from about 0 to 6 gigahertz." xmlns="http://www.w3.org/2000/svg">
@@ -42,3 +44,7 @@ reception.
 ## Relevance to SDR
 
 Choose the HF+ when HF or low-band is your target; GopherTrunk supports it as a receiver.
+
+## Sources
+
+[^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, for background on the Airspy HF+ and HF-optimised SDR receivers.

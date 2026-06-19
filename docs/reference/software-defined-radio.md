@@ -15,13 +15,15 @@ infobox:
 see_also: [iq-data, analog-to-digital-converter, superheterodyne-receiver, rtl-sdr, demodulation]
 related_lessons:
   - { title: "What is software-defined radio?", url: /learn/rf-sdr/what-is-sdr/ }
-external:
-  - { title: "Software-defined radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio }
+related_reading:
+  - { title: "SDR Internals, Part 1: What is software-defined radio?", url: /blog/deep-dives/sdr-internals-01-what-is-software-defined-radio/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software-defined_radio
 ---
 
 **Software-defined radio** (**SDR**) moves the functions that were once fixed hardware —
 tuning, filtering, [demodulation](/reference/demodulation/) — into **software** operating
-on digitised [IQ samples](/reference/iq-data/). The hardware does only enough to convert a
+on digitised [IQ samples](/reference/iq-data/).[^wiki] The hardware does only enough to convert a
 slice of spectrum into numbers.
 
 <figure class="figure" markdown="0">
@@ -48,3 +50,7 @@ decode many protocols.
 
 GopherTrunk is the software half of an SDR, specialised for digital trunked radio. The
 hardware (e.g. [RTL-SDR](/reference/rtl-sdr/)) is almost interchangeable.
+
+## Sources
+
+[^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, on the architecture that moves radio functions into software.

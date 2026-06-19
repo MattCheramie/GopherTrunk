@@ -14,14 +14,14 @@ infobox:
 see_also: [local-oscillator, digital-down-converter, analog-to-digital-converter, software-defined-radio]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Superheterodyne receiver (Wikipedia)", url: https://en.wikipedia.org/wiki/Superheterodyne_receiver }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Superheterodyne_receiver
 ---
 
 A **superheterodyne receiver** uses a mixer driven by a
 [local oscillator](/reference/local-oscillator/) to shift a chosen band **down** to a
 fixed intermediate frequency (IF) — or to baseband — where it is easier to filter and
-detect.
+detect.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 540 110" role="img" aria-label="Receiver chain: antenna, RF amplifier, mixer fed by a local oscillator, IF filter, then detector." xmlns="http://www.w3.org/2000/svg">
@@ -49,3 +49,7 @@ fixed IF. SDR quadrature front-ends apply the same idea, mixing to baseband as
 
 Understanding the mixer/LO explains why "tuning" an SDR is simply setting a number, and
 how a [digital down-converter](/reference/digital-down-converter/) does it in software.
+
+## Sources
+
+[^wiki]: [Superheterodyne receiver](https://en.wikipedia.org/wiki/Superheterodyne_receiver) — Wikipedia, on mixing a band down to a fixed intermediate frequency.

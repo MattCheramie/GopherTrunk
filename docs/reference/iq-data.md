@@ -14,14 +14,16 @@ infobox:
 see_also: [software-defined-radio, phase, amplitude, constellation-diagram, sample-rate]
 related_lessons:
   - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
-external:
-  - { title: "In-phase and quadrature components (Wikipedia)", url: https://en.wikipedia.org/wiki/In-phase_and_quadrature_components }
+related_reading:
+  - { title: "SDR Internals, Part 1: What is software-defined radio?", url: /blog/deep-dives/sdr-internals-01-what-is-software-defined-radio/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/In-phase_and_quadrature_components
 ---
 
 **IQ data** is the stream of paired numbers an SDR produces — **I** (in-phase) and **Q**
 (quadrature, 90° apart). Together each pair captures both the
 [amplitude](/reference/amplitude/) and [phase](/reference/phase/) of the signal at that
-instant.
+instant.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 260 220" role="img" aria-label="The IQ plane with I horizontal and Q vertical; an arrow to a point shows amplitude as length and phase as angle." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +48,7 @@ IQ also lets a receiver distinguish frequencies above and below the tuned centre
 
 Everything GopherTrunk does begins with the IQ stream from the radio: tuning, filtering,
 demodulation, and the scopes all operate on it.
+
+## Sources
+
+[^wiki]: [In-phase and quadrature components](https://en.wikipedia.org/wiki/In-phase_and_quadrature_components) — Wikipedia, on representing a signal as paired I and Q components.

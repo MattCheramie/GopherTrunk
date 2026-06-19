@@ -17,15 +17,18 @@ infobox:
 see_also: [flex, frequency-shift-keying, bch-code, demodulation]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/POCSAG
 external:
-  - { title: "POCSAG (Wikipedia)", url: https://en.wikipedia.org/wiki/POCSAG }
   - { title: "GopherTrunk POCSAG decoder", url: /pocsag.html }
 ---
 
 **POCSAG** (the **CCIR Radiopaging Code No. 1**) is the classic one-way **paging**
 protocol used worldwide to deliver numeric and alphanumeric messages to pagers. It is
 a simple asynchronous **2-level [FSK](/reference/frequency-shift-keying/)** scheme,
-still in active use by hospitals, fire/EMS, and industry.
+still in active use by hospitals, fire/EMS, and industry.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="A POCSAG transmission: preamble, sync codeword, then batches of address and message codewords." xmlns="http://www.w3.org/2000/svg">
@@ -56,7 +59,7 @@ are protected by a [BCH(31,21)](/reference/bch-code/) code plus a parity bit.
 ## History
 
 Developed by the British Post Office and standardised by the CCIR in the early 1980s;
-it became the dominant global paging code.
+it became the dominant global paging code.[^wiki]
 
 ## Deployment
 
@@ -67,3 +70,7 @@ uses POCSAG.
 
 GopherTrunk demodulates the FSK, recovers codewords, and decodes numeric/alphanumeric
 messages. See the [POCSAG decoder](/pocsag.html) page.
+
+## Sources
+
+[^wiki]: [POCSAG](https://en.wikipedia.org/wiki/POCSAG) — Wikipedia, for the CCIR Radiopaging Code No. 1, its FSK bit rates, BCH coding, and codeword/batch structure.

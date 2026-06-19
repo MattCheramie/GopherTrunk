@@ -15,14 +15,14 @@ see_also: [iq-data, eye-diagram, phase-shift-keying, quadrature-amplitude-modula
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
-external:
-  - { title: "Constellation diagram (Wikipedia)", url: https://en.wikipedia.org/wiki/Constellation_diagram }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Constellation_diagram
 ---
 
 A **constellation diagram** plots a digital signal's [symbols](/reference/symbol-rate/)
 on the [IQ](/reference/iq-data/) plane: the horizontal axis is I and the vertical axis
 is Q, so each point's angle is its [phase](/reference/phase/) and its distance from the
-origin is its [amplitude](/reference/amplitude/).
+origin is its [amplitude](/reference/amplitude/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 200" role="img" aria-label="Two four-point constellations: tight clusters labelled clean on the left, smeared clusters labelled noisy on the right." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ so the *shape* of the scatter diagnoses the problem.
 
 GopherTrunk's constellation panel draws this live, making it the first tool for
 [tuning a clean lock](/learn/rf-sdr/tuning-with-scopes/).
+
+## Sources
+
+[^wiki]: [Constellation diagram](https://en.wikipedia.org/wiki/Constellation_diagram) — Wikipedia, for the IQ-plane representation and how it reflects signal quality.

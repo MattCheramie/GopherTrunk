@@ -14,12 +14,14 @@ infobox:
 see_also: [fast-fourier-transform, joseph-fourier, bandwidth, software-defined-radio]
 related_lessons:
   - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
-external:
-  - { title: "Fourier transform (Wikipedia)", url: https://en.wikipedia.org/wiki/Fourier_transform }
+related_reading:
+  - { title: "SDR Internals, Part 8: Equalization, diversity & the FFT", url: /blog/deep-dives/sdr-internals-08-equalization-diversity-fft/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Fourier_transform
 ---
 
 The **Fourier transform** decomposes a signal into the frequencies that compose it,
-converting between the time and frequency domains. It is the mathematical foundation of
+converting between the time and frequency domains.[^wiki] It is the mathematical foundation of
 spectrum analysis, named for [Joseph Fourier](/reference/joseph-fourier/).
 
 <figure class="figure" markdown="0">
@@ -45,3 +47,7 @@ exists at each frequency. Its discrete, efficient form is the
 
 Turning [IQ](/reference/iq-data/) samples into a spectrum — and thus a waterfall — is a
 Fourier transform, the reason you can *see* signals on an SDR.
+
+## Sources
+
+[^wiki]: [Fourier transform](https://en.wikipedia.org/wiki/Fourier_transform) — Wikipedia, for the mathematical definition and time/frequency-domain background.

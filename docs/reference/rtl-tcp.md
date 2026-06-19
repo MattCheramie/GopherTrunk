@@ -14,13 +14,13 @@ infobox:
 see_also: [rtl-sdr, soapysdr, iq-data, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "rtl-sdr (osmocom)", url: https://osmocom.org/projects/rtl-sdr/wiki }
+cite_urls:
+  - https://osmocom.org/projects/rtl-sdr/wiki
 ---
 
 **rtl_tcp** is a small server that streams raw [IQ](/reference/iq-data/) samples from an
 [RTL-SDR](/reference/rtl-sdr/) over a **TCP** connection, letting the dongle be used from
-another machine on the network.
+another machine on the network.[^osmo]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A dongle on a remote computer streaming IQ over the network to GopherTrunk on another machine." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ A common setup runs rtl_tcp on a Raspberry Pi right at the [antenna](/reference/
 
 GopherTrunk can attach to an rtl_tcp (or [SoapyRemote](/reference/soapysdr/)) source,
 treating a remote dongle like a local one.
+
+## Sources
+
+[^osmo]: [rtl-sdr (osmocom)](https://osmocom.org/projects/rtl-sdr/wiki) — the Osmocom rtl-sdr project wiki, home of rtl_tcp and the RTL-SDR driver tools.

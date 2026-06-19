@@ -10,13 +10,15 @@ autolink: true
 see_also: [frequency-shift-keying, gmsk, pulse-shaping, ais]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying#Gaussian_frequency-shift_keying }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency-shift_keying#Gaussian_frequency-shift_keying
 ---
 
 **GFSK** (**Gaussian frequency-shift keying**) is [frequency-shift keying](/reference/frequency-shift-keying/)
 in which the data is passed through a **Gaussian filter** before it shifts the carrier,
-rounding off the otherwise abrupt frequency steps. This smoothing narrows the
+rounding off the otherwise abrupt frequency steps.[^wiki] This smoothing narrows the
 transmitted spectrum, so GFSK fits more signals into less bandwidth.
 
 <figure class="figure" markdown="0">
@@ -39,3 +41,7 @@ modulation index). It is widely used where spectral efficiency matters at low co
 
 For SDR decoding, GFSK is handled like other FSK with a matched filter tuned to the
 Gaussian pulse shape, followed by [symbol-timing recovery](/reference/clock-recovery/).
+
+## Sources
+
+[^wiki]: [Frequency-shift keying — Gaussian frequency-shift keying](https://en.wikipedia.org/wiki/Frequency-shift_keying#Gaussian_frequency-shift_keying) — Wikipedia, for the Gaussian-filtered FSK definition.

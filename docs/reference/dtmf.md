@@ -10,13 +10,13 @@ autolink: true
 see_also: [fast-fourier-transform, mdc1200]
 related_lessons:
   - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
-external:
-  - { title: "DTMF (Wikipedia)", url: https://en.wikipedia.org/wiki/Dual-tone_multi-frequency_signaling }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Dual-tone_multi-frequency_signaling
 ---
 
 **DTMF** (**dual-tone multi-frequency**, "touch-tone") encodes each key as the **sum of
 two tones** — one from a low-frequency group (rows) and one from a high-frequency group
-(columns). Detecting which two tones are present identifies the digit. It appears as
+(columns).[^wiki] Detecting which two tones are present identifies the digit. It appears as
 in-band signalling on some radio systems.
 
 <figure class="figure" markdown="0">
@@ -40,3 +40,7 @@ in-band signalling on some radio systems.
 DTMF tones are detected with narrow band-pass filters or the **Goertzel algorithm** (an
 efficient single-frequency [DFT](/reference/fast-fourier-transform/)). GopherTrunk
 synthesises DTMF among other call-progress tones in its audio path.
+
+## Sources
+
+[^wiki]: [Dual-tone multi-frequency signaling](https://en.wikipedia.org/wiki/Dual-tone_multi-frequency_signaling) — Wikipedia, for the row/column tone-pair encoding of each keypad digit.

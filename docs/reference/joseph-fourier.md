@@ -14,13 +14,13 @@ infobox:
 see_also: [fourier-transform, fast-fourier-transform, frequency]
 related_lessons:
   - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
-external:
-  - { title: "Joseph Fourier (Wikipedia)", url: https://en.wikipedia.org/wiki/Joseph_Fourier }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Joseph_Fourier
 ---
 
 **Joseph Fourier** (1768–1830) was a French mathematician and physicist who showed that
 functions can be represented as sums of sinusoids — the insight behind the
-[Fourier transform](/reference/fourier-transform/).
+[Fourier transform](/reference/fourier-transform/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A complex waveform shown as the sum of several simple sine waves." xmlns="http://www.w3.org/2000/svg">
@@ -36,7 +36,7 @@ functions can be represented as sums of sinusoids — the insight behind the
 ## Life and work
 
 Studying heat conduction, Fourier introduced what became Fourier series and analysis,
-decomposing complex signals into simple frequency components.
+decomposing complex signals into simple frequency components.[^wiki]
 
 ## Contribution
 
@@ -46,3 +46,7 @@ an [FFT](/reference/fast-fourier-transform/) performs.
 ## Legacy
 
 Every spectrum display and waterfall in an SDR is, at heart, Fourier's idea made digital.
+
+## Sources
+
+[^wiki]: [Joseph Fourier](https://en.wikipedia.org/wiki/Joseph_Fourier) — Wikipedia, for biography and his work on Fourier series and analysis.

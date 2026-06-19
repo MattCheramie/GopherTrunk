@@ -10,13 +10,15 @@ autolink: true
 see_also: [control-channel, channel-grant, trunked-radio, capacity-plus, dmr]
 related_lessons:
   - { title: "Finding & identifying systems", url: /learn/rf-sdr/finding-systems/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 A **rest channel** is the channel currently carrying control signalling in trunked
 systems that **rotate the control function around the pool** rather than dedicate one
-frequency to it. When a call is assigned to the current rest channel, control moves to
+frequency to it.[^wiki] When a call is assigned to the current rest channel, control moves to
 another idle channel — the new rest channel.
 
 <figure class="figure" markdown="0">
@@ -39,3 +41,7 @@ another idle channel — the new rest channel.
 Rotating control (used by Motorola [Capacity Plus](/reference/capacity-plus/) and some
 DMR systems) complicates monitoring: a scanner must follow the rest channel as it hops,
 rather than camping on one fixed [control channel](/reference/control-channel/).
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, on DMR trunking modes that rotate the control (rest) channel.

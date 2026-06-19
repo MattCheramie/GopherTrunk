@@ -10,13 +10,15 @@ autolink: true
 see_also: [digital-down-converter, local-oscillator, decimation, iq-data]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Numerically controlled oscillator (Wikipedia)", url: https://en.wikipedia.org/wiki/Numerically-controlled_oscillator }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Numerically-controlled_oscillator
 ---
 
 A **numerically controlled oscillator** (**NCO**) generates a digital sine and cosine
 of any programmable frequency from a **phase accumulator** — a counter that adds a fixed
-step each sample and looks up the corresponding sine value. It is the software
+step each sample and looks up the corresponding sine value.[^wiki] It is the software
 equivalent of a [local oscillator](/reference/local-oscillator/) and the tunable mixer
 inside a [digital down-converter](/reference/digital-down-converter/).
 
@@ -39,3 +41,7 @@ inside a [digital down-converter](/reference/digital-down-converter/).
 Changing the accumulator's step instantly retunes the NCO, which is how an SDR
 **digitally tunes** to a channel: multiply the [IQ](/reference/iq-data/) stream by the
 NCO's output to shift that channel to [baseband](/reference/baseband/) before filtering.
+
+## Sources
+
+[^wiki]: [Numerically-controlled oscillator](https://en.wikipedia.org/wiki/Numerically-controlled_oscillator) — Wikipedia, on phase-accumulator-based digital frequency synthesis.

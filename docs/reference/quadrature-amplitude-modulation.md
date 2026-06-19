@@ -14,14 +14,16 @@ infobox:
 see_also: [phase-shift-keying, frequency-shift-keying, constellation-diagram, signal-to-noise-ratio, iq-data]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Quadrature amplitude modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Quadrature_amplitude_modulation }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Quadrature_amplitude_modulation
 ---
 
 **Quadrature amplitude modulation** (**QAM**) varies **both** the
 [phase](/reference/phase/) and [amplitude](/reference/amplitude/) of a carrier, packing
 many states into the [IQ](/reference/iq-data/) plane — 16-QAM (4 bits/symbol), 64-QAM,
-and higher.
+and higher.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 240 240" role="img" aria-label="A 16-QAM constellation: a four-by-four grid of points on the IQ plane." xmlns="http://www.w3.org/2000/svg">
@@ -48,3 +50,7 @@ the states sit closer together, so QAM needs a higher
 
 QAM appears in Wi-Fi, cable, and LTE rather than scanner voice traffic, but the same
 [constellation](/reference/constellation-diagram/) idea applies to reading its quality.
+
+## Sources
+
+[^wiki]: [Quadrature amplitude modulation](https://en.wikipedia.org/wiki/Quadrature_amplitude_modulation) — Wikipedia, for the definition and the higher-order QAM/SNR trade-off.
