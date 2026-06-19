@@ -796,3 +796,245 @@ paths:
       minutes: 12
       level: beginner
       status: full
+
+  - id: digital-trunking
+    label: "Digital & Trunked Radio"
+    title: "Learn Digital & Trunked Radio — from analog roots to decoding every system"
+    tagline: "How land-mobile radio went digital and learned to share channels — the history, the end-to-end signal chain, and every trunking system GopherTrunk follows."
+    start_slug: why-radio-went-digital
+    workload: "PT7H"
+    intro: >
+      Public-safety and commercial radio quietly went through two revolutions:
+      trunking, which lets a whole fleet share a handful of frequencies, and the
+      jump from analog to digital voice. This path tells that story from the
+      start, then walks the digital signal end to end — vocoder, modulation,
+      framing, control channel — before taking each trunking system in turn:
+      P25, DMR, TETRA, NXDN, Motorola, EDACS, LTR, MPT-1327 and friends. You
+      finish able to recognise a system on the waterfall and follow it in
+      GopherTrunk. New to radio? Skim the RF & SDR path first; this one assumes
+      only the basics.
+    modules:
+      - id: history
+        label: "Module 1 — A Brief History of Trunked & Digital Radio"
+        blurb: "How we got here: from one-frequency-per-fleet, to shared trunked channels, to the digital standards that run public safety today."
+        lessons:
+          - slug: why-radio-went-digital
+            title: Why radio went digital
+            summary: The analog two-way era, the problems it ran into — congestion, privacy, capacity — and the pressures that pushed radio toward digital.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: birth-of-trunking
+            title: "The birth of trunking: sharing channels"
+            summary: How automatic channel-sharing replaced fixed frequencies, and why one control channel changed everything about scanning.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: analog-trunking-era
+            title: "The analog trunking era: SmartNet, EDACS, LTR & MPT-1327"
+            summary: The first big trunked systems were analog voice with digital control — the architectures that still shape digital trunking today.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-digital-leap
+            title: "The digital leap: P25, TETRA & DMR are born"
+            summary: How three regions answered the same question differently, giving us the digital trunking standards in use across the world.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: standards-and-bodies
+            title: "Standards & who sets them: APCO, ETSI, TIA & the DMRA"
+            summary: Why open standards matter for interoperability, who writes them, and how to read a spec number when you meet one.
+            minutes: 7
+            level: beginner
+            status: full
+
+      - id: digital-radio
+        label: "Module 2 — Digital Radio End-to-End"
+        blurb: "The complete digital chain: turning a voice into bits, putting bits on a carrier, protecting them from errors, and packing many calls onto one channel."
+        lessons:
+          - slug: analog-vs-digital-voice
+            title: Analog vs. digital voice
+            summary: What actually changes when voice goes digital — the trade of graceful static for a clean signal that drops off a cliff.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: voice-to-bits-vocoders
+            title: "From voice to bits: vocoders"
+            summary: How IMBE and AMBE+2 squeeze speech into a few kbps, why every digital system needs one, and what that means for decoding.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: digital-modulation-for-trunking
+            title: "Digital modulation for trunking: C4FM, π/4-DQPSK & CQPSK"
+            summary: The handful of modulations digital trunking actually uses, how to spot each on a constellation, and why P25 picked two of them.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: framing-fec-interleaving
+            title: "Framing, error correction & interleaving"
+            summary: Why raw bits are never sent bare — how frames, FEC, and interleaving let a decoder rebuild a message through fading and noise.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: tdma-vs-fdma
+            title: "TDMA vs. FDMA: fitting more calls on a channel"
+            summary: Time slots vs. separate frequencies — the capacity trick behind P25 Phase 2 and DMR, and how it changes what you decode.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: the-control-channel
+            title: "The control channel: the system's heartbeat"
+            summary: A frequency that carries only data — what it broadcasts, why it never stops, and why decoding it is the whole game.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: how-trunking-works
+        label: "Module 3 — How Trunking Works"
+        blurb: "The mechanics every trunked system shares: talkgroups, affiliation, the request-grant-release dance, multi-site coverage, and encryption."
+        lessons:
+          - slug: conventional-vs-trunked
+            title: Conventional vs. trunked radio
+            summary: Fixed frequencies vs. channels assigned on demand — the core difference, and why a trunked system can't be scanned the old way.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: talkgroups-ids-affiliation
+            title: "Talkgroups, radio IDs & affiliation"
+            summary: The virtual channels you actually follow, the unit IDs behind them, and how radios register with the system over the air.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: anatomy-of-a-call
+            title: "Anatomy of a trunked call: request, grant, release"
+            summary: One call from keyup to hang-time, step by step — the exact sequence a control-channel decoder watches unfold.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: control-channel-signaling
+            title: "Control-channel signaling: what the data says"
+            summary: Inside the message stream — grants, updates, registrations, and system parameters — and how a tracker turns it into a live map.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: trunking-flavors
+            title: "Trunking flavors: dedicated vs. distributed, message vs. transmission"
+            summary: The design choices that distinguish systems — where the control data lives and how long a channel stays assigned.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: sites-simulcast-roaming
+            title: "Sites, simulcast & roaming: multi-site systems"
+            summary: How a system covers a whole region with many sites, what simulcast is, and why both matter when you pick a control channel.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: encryption-and-authentication
+            title: Encryption & authentication
+            summary: Why some talkgroups go silent, how encryption is signaled, what GopherTrunk can and can't do, and how radios prove who they are.
+            minutes: 8
+            level: intermediate
+            status: full
+
+      - id: p25-dmr
+        label: "Module 4 — P25 & DMR: The Dominant Systems"
+        blurb: "The two digital trunking standards you'll meet most — examined in depth, from frame structure to the way GopherTrunk follows them."
+        lessons:
+          - slug: p25-phase-1
+            title: P25 Phase 1
+            summary: The North American public-safety standard — C4FM, 9600 bps, IMBE voice, and the control-channel messages that drive it.
+            minutes: 12
+            level: intermediate
+            status: full
+          - slug: p25-phase-2
+            title: "P25 Phase 2: TDMA"
+            summary: Doubling capacity with two-slot TDMA and the AMBE+2 vocoder — how Phase 2 differs from Phase 1 on the air and in the decoder.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: dmr-tier-2-3
+            title: "DMR: Tier II & Tier III"
+            summary: The ETSI two-slot TDMA standard — conventional repeaters vs. full Tier III trunking, and what GopherTrunk reads from each.
+            minutes: 11
+            level: intermediate
+            status: full
+
+      - id: other-systems
+        label: "Module 5 — Other Digital Systems You'll Meet"
+        blurb: "The rest of the landscape GopherTrunk decodes — from European TETRA to legacy LTR, and the amateur digital voice modes in between."
+        lessons:
+          - slug: tetra
+            title: TETRA
+            summary: Europe's public-safety standard — four-slot TDMA, π/4-DQPSK, and why it sounds and looks unlike anything in North America.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: nxdn
+            title: NXDN
+            summary: The narrow 4FSK system from Icom and Kenwood — NXDN48/96, its control channel, and where you'll run into it.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: motorola-smartnet
+            title: "Motorola SmartNet / SmartZone & Type II"
+            summary: The analog-trunking giant — Type II fleet/subfleet IDs, SmartZone multi-site, and why so much of it is still on the air.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: edacs-ltr-mpt1327
+            title: "EDACS, LTR & MPT-1327"
+            summary: Three legacy trunking families — sub-audible LTR, GE/Ericsson EDACS, and the British MPT-1327 standard — and how to recognise them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dpmr-dstar-ysf
+            title: "dPMR, D-STAR & System Fusion"
+            summary: The lighter digital modes — dPMR's NXDN cousin, plus the amateur-radio voice standards D-STAR and Yaesu System Fusion.
+            minutes: 7
+            level: beginner
+            status: full
+
+      - id: gophertrunk
+        label: "Module 6 — Decoding Digital Trunking with GopherTrunk"
+        blurb: "Everything applied: spot a system on the waterfall, find its control channel, follow every call, and fix it when the lock won't hold."
+        lessons:
+          - slug: identifying-the-system
+            title: Identifying what you're hearing
+            summary: Reading bandwidth, symbol rate, and the waterfall to tell P25 from DMR from NXDN — before you ever decode a bit.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: finding-the-control-channel
+            title: Finding the control channel
+            summary: Using Hunt, online databases, and the data burst's telltale signature to lock the one frequency that maps the whole system.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: following-a-system-end-to-end
+            title: Following a system end to end
+            summary: The full GopherTrunk path for a trunked call — control channel in, talkgroup grant, voice channel tuned, audio out.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: multisite-and-simulcast-in-practice
+            title: Multi-site & simulcast in practice
+            summary: Choosing the right site, surviving simulcast distortion, and what to do when the system spans more than you can hear.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: troubleshooting-a-decode
+            title: Troubleshooting a digital decode
+            summary: A checklist for the usual culprits — gain, PPM, the wrong control channel, encryption, simulcast — when a system won't decode.
+            minutes: 9
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of digital & trunked radio terms
+      summary: Plain-language definitions for every term in the learning path, cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
