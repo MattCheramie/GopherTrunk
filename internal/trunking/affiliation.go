@@ -129,5 +129,10 @@ type TalkerAlias struct {
 	Protocol string // "p25-phase2"
 	SourceID uint32 // radio unit the alias names
 	Alias    string // the reassembled display name
-	At       time.Time
+	// Unreliable is true when the decode passed CRC but the reassembled
+	// alias held non-ASCII-printable characters — a hallmark of
+	// bit-error corruption (#711). Consumers should surface it as
+	// suspect rather than as a confirmed name.
+	Unreliable bool
+	At         time.Time
 }

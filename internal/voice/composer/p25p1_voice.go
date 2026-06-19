@@ -147,20 +147,22 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// Shared by the LDU1 link-control path and the TDULC terminator
 	// path — Motorola systems carry these 0x15/0x17 LCs on either
 	// (#376), so both feed the same buffer and publish identically.
-	publishMotorolaAlias := func(alias string) {
-		if lastSourceID == 0 {
+	publishMotorolaAlias := func(alias string, reliable bool) {
+		if lastSourceID == 0 || alias == "" {
 			return
 		}
 		c.log.Info("composer: p25p1 motorola talker alias",
-			"system", system, "serial", serial, "src", lastSourceID, "alias", alias)
+			"system", system, "serial", serial, "src", lastSourceID, "alias", alias,
+			"unreliable", !reliable)
 		c.bus.Publish(events.Event{
 			Kind: events.KindTalkerAlias,
 			Payload: trunking.TalkerAlias{
-				System:   system,
-				Protocol: "p25-phase1",
-				SourceID: lastSourceID,
-				Alias:    alias,
-				At:       time.Now(),
+				System:     system,
+				Protocol:   "p25-phase1",
+				SourceID:   lastSourceID,
+				Alias:      alias,
+				Unreliable: !reliable,
+				At:         time.Now(),
 			},
 		})
 	}
@@ -210,8 +212,8 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					if lcf, content, _, terr := phase1.ExtractTDULCLinkControl(ldu); terr == nil {
 						switch {
 						case phase1.IsTalkerAliasLCO(lcf):
-							if alias, ok := aliasBuf.AddFragment(lcf, content); ok {
-								publishMotorolaAlias(alias)
+							if alias, ok, reliable := aliasBuf.AddFragment(lcf, content); ok {
+								publishMotorolaAlias(alias, reliable)
 							}
 						case lcf == phase1.LCOGroupVoiceChannelUser:
 							// A terminator LCO-0 can carry the source ID;
@@ -312,8 +314,8 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				lcf := content[0]
 				switch {
 				case phase1.IsTalkerAliasLCO(lcf):
-					if alias, ok := aliasBuf.AddFragment(lcf, content); ok {
-						publishMotorolaAlias(alias)
+					if alias, ok, reliable := aliasBuf.AddFragment(lcf, content); ok {
+						publishMotorolaAlias(alias, reliable)
 					}
 				default:
 					if lc, _, lerr := phase1.ParseLinkControl(blocks); lerr == nil {

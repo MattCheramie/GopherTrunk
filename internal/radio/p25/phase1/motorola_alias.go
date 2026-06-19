@@ -135,12 +135,15 @@ func NewMotorolaTalkerAliasBuf(now func() time.Time) *MotorolaTalkerAliasBuf {
 // LCOTalkerAliasBlock2 (0x17, what Motorola uses as a data block).
 // Other LCOs are ignored.
 //
-// Returns (alias, true) when the header + every data block has
-// arrived with consistent sequence numbers; ("", false) otherwise.
-// Repeated emission of the same alias inside one sequence is
+// Returns (alias, true, reliable) when the header + every data block
+// has arrived with consistent sequence numbers; ("", false, false)
+// otherwise. reliable is false when the decoded alias contains
+// non-ASCII-printable characters (bit-error corruption surviving the
+// CRC, #711) — the alias is still returned so it can be surfaced as
+// suspect. Repeated emission of the same alias inside one sequence is
 // suppressed — a new header (different sequence number) resets the
 // dedupe fingerprint.
-func (b *MotorolaTalkerAliasBuf) AddFragment(lcf uint8, content [lcContentOctets]byte) (string, bool) {
+func (b *MotorolaTalkerAliasBuf) AddFragment(lcf uint8, content [lcContentOctets]byte) (string, bool, bool) {
 	now := b.now()
 	if !b.lastUpdate.IsZero() && now.Sub(b.lastUpdate) > motorolaAliasStaleAfter {
 		b.resetExceptEmitted()
@@ -150,7 +153,7 @@ func (b *MotorolaTalkerAliasBuf) AddFragment(lcf uint8, content [lcContentOctets
 		count := content[4]
 		seq := content[7] >> 4
 		if count == 0 || count > motorolaMaxBlocks {
-			return "", false
+			return "", false, false
 		}
 		// A header with a different sequence number is a new alias
 		// transmission — drop any in-flight data blocks from the
@@ -169,7 +172,7 @@ func (b *MotorolaTalkerAliasBuf) AddFragment(lcf uint8, content [lcContentOctets
 		seq := content[3] >> 4
 		if blockNum == 0 || !b.haveHeader || seq != b.sequence ||
 			blockNum > b.blockCount {
-			return "", false
+			return "", false, false
 		}
 		// Fragment = low nibble of octet 3 (4 bits) + octets 4..8
 		// (40 bits) = 44 bits total. Pack into 6 bytes left-aligned
@@ -179,30 +182,30 @@ func (b *MotorolaTalkerAliasBuf) AddFragment(lcf uint8, content [lcContentOctets
 		copy(frag[1:6], content[4:9]) // 40 bits of payload
 		b.blocks[blockNum-1] = frag
 	default:
-		return "", false
+		return "", false, false
 	}
 	b.lastUpdate = now
 
 	if !b.haveHeader {
-		return "", false
+		return "", false, false
 	}
 	for _, blk := range b.blocks {
 		if blk == nil {
-			return "", false
+			return "", false, false
 		}
 	}
 
 	bits := assembleMotorolaBitStream(b.blocks)
-	alias := decodeMotorolaAlias(bits)
+	alias, reliable := decodeMotorolaAlias(bits)
 	if alias == "" {
-		return "", false
+		return "", false, false
 	}
 	h := aliasFingerprint(alias)
 	if h == b.emittedHash {
-		return "", false
+		return "", false, false
 	}
 	b.emittedHash = h
-	return alias, true
+	return alias, true, reliable
 }
 
 // Reset clears the buffer including the de-duplication fingerprint
@@ -268,18 +271,19 @@ func aliasFingerprint(s string) uint64 {
 }
 
 // decodeMotorolaAlias extracts the encoded alias bytes from the
-// reassembled bit stream, runs them through the proprietary
-// per-byte cipher, then filters the decoded UTF-16 BE characters
-// to printable ASCII via cleanAlias. Empty result on too-short
-// input or all-non-printable decoded bytes.
-func decodeMotorolaAlias(bits []byte) string {
+// reassembled bit stream, runs them through the proprietary per-byte
+// cipher, then renders the decoded UTF-16 BE characters to printable
+// ASCII via decodeAlias. It returns (alias, reliable); reliable is
+// false when the decode holds non-ASCII-printable characters (#711).
+// Empty alias on too-short input or all-non-printable decoded bytes.
+func decodeMotorolaAlias(bits []byte) (string, bool) {
 	totalBits := len(bits) * 8
 	// Encoded alias starts at bit motorolaSUIDBits (after WACN +
 	// System + Radio ID) and runs until motorolaCRCBits before the
 	// end. Must be byte-aligned and at least 2 bytes (one decoded
 	// character).
 	if totalBits < motorolaSUIDBits+motorolaCRCBits+16 {
-		return ""
+		return "", false
 	}
 	aliasBits := totalBits - motorolaSUIDBits - motorolaCRCBits
 	if aliasBits%8 != 0 {
@@ -291,9 +295,9 @@ func decodeMotorolaAlias(bits []byte) string {
 	encStart := motorolaSUIDBits / 8 // SUID is exactly 7 bytes
 	encByteLen := aliasBits / 8
 	if encStart+encByteLen > len(bits) {
-		return ""
+		return "", false
 	}
 	encoded := bits[encStart : encStart+encByteLen]
 	decoded := decodeAliasBytes(encoded)
-	return cleanAlias(decoded)
+	return decodeAlias(decoded)
 }

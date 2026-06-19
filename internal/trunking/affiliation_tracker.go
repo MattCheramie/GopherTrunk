@@ -39,6 +39,10 @@ type UnitActivity struct {
 	// from any operator-assigned alias in the RIDDB.
 	TalkerAlias   string    `json:"talker_alias,omitempty"`
 	TalkerAliasAt time.Time `json:"talker_alias_at,omitempty"`
+	// TalkerAliasUnreliable is true when the stored alias decode passed
+	// CRC but held non-ASCII-printable characters (bit-error
+	// corruption, #711); a consumer should render it as suspect.
+	TalkerAliasUnreliable bool `json:"talker_alias_unreliable,omitempty"`
 }
 
 // AffiliationTracker maintains a live, protocol-agnostic table of which
@@ -138,7 +142,7 @@ func (t *AffiliationTracker) handle(ev events.Event) {
 		}
 	case events.KindTalkerAlias:
 		if a, ok := ev.Payload.(TalkerAlias); ok && a.SourceID != 0 && a.Alias != "" {
-			t.observeAlias(a.SourceID, a.System, a.Protocol, a.Alias)
+			t.observeAlias(a.SourceID, a.System, a.Protocol, a.Alias, a.Unreliable)
 		}
 	case events.KindCallSourceUpdate:
 		// In-call source RID backfill (P25 Phase 2 traffic-channel
@@ -187,7 +191,7 @@ func (t *AffiliationTracker) observe(radioID, talkgroup uint32, system, protocol
 // observeAlias records an over-the-air talker alias for the given
 // unit. Refreshes LastSeen so a passive alias broadcast keeps the
 // unit alive in the table even without a fresh grant.
-func (t *AffiliationTracker) observeAlias(radioID uint32, system, protocol, alias string) {
+func (t *AffiliationTracker) observeAlias(radioID uint32, system, protocol, alias string, unreliable bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	u := t.units[radioID]
@@ -202,6 +206,7 @@ func (t *AffiliationTracker) observeAlias(radioID uint32, system, protocol, alia
 		u.Protocol = protocol
 	}
 	u.TalkerAlias = alias
+	u.TalkerAliasUnreliable = unreliable
 	u.TalkerAliasAt = t.now()
 	u.LastSeen = t.now()
 }

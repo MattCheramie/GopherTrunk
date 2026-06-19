@@ -73,6 +73,7 @@ export interface RIDDTO {
   last_talkgroup?: number;
   talker_alias?: string;
   talker_alias_at?: string;
+  talker_alias_unreliable?: boolean;
   call_count?: number;
   first_seen?: string;
   last_seen?: string;

@@ -11,3 +11,11 @@ import "github.com/MattCheramie/GopherTrunk/internal/radio/p25/motorola"
 func decodeAliasBytes(encoded []byte) []byte {
 	return motorola.DecodeAliasBytes(encoded)
 }
+
+// decodeAlias renders the decoded UTF-16 BE bytes as a printable-ASCII
+// string and reports whether the decode is reliable (all printable
+// ASCII). A thin package-local alias over motorola.DecodeAlias, kept
+// alongside decodeAliasBytes so phase1 call sites stay package-local.
+func decodeAlias(raw []byte) (string, bool) {
+	return motorola.DecodeAlias(raw)
+}

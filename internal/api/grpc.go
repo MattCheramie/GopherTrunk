@@ -390,6 +390,7 @@ func mergeRIDLivePB(p *apiv1.RID, u trunking.UnitActivity) *apiv1.RID {
 	p.Protocol = u.Protocol
 	p.LastTalkgroup = u.Talkgroup
 	p.TalkerAlias = u.TalkerAlias
+	p.TalkerAliasUnreliable = u.TalkerAliasUnreliable
 	if !u.TalkerAliasAt.IsZero() {
 		p.TalkerAliasAt = u.TalkerAliasAt.UTC().Format(time.RFC3339)
 	}

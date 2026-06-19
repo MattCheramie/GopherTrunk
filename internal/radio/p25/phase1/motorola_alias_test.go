@@ -46,18 +46,18 @@ func makeDataBlockContent(blockNum, seq uint8, fragment [6]byte) [lcContentOctet
 func TestMotorolaTalkerAliasBufRejectsBadHeaderCount(t *testing.T) {
 	b := NewMotorolaTalkerAliasBuf(nil)
 	// block_count = 0 is meaningless.
-	if _, ok := b.AddFragment(LCOTalkerAliasHeader, makeHeaderContent(20202, 0, 5)); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasHeader, makeHeaderContent(20202, 0, 5)); ok {
 		t.Error("zero block_count should not emit")
 	}
 	// block_count over the safety cap is rejected.
-	if _, ok := b.AddFragment(LCOTalkerAliasHeader, makeHeaderContent(20202, 100, 5)); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasHeader, makeHeaderContent(20202, 100, 5)); ok {
 		t.Error("over-cap block_count should not emit")
 	}
 }
 
 func TestMotorolaTalkerAliasBufRejectsDataBlockWithoutHeader(t *testing.T) {
 	b := NewMotorolaTalkerAliasBuf(nil)
-	if _, ok := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(1, 5, [6]byte{})); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(1, 5, [6]byte{})); ok {
 		t.Error("data block without prior header should not emit")
 	}
 }
@@ -74,7 +74,7 @@ func TestMotorolaTalkerAliasBufRejectsMismatchedSequence(t *testing.T) {
 	// because block_number > block_count check would let it through —
 	// instead, the wrong sequences fail the seq check and don't
 	// populate b.blocks. So the buffer is still incomplete.
-	if _, ok := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(3, 5, [6]byte{})); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(3, 5, [6]byte{})); ok {
 		t.Error("emission with non-matching-sequence data blocks should not fire")
 	}
 }
@@ -90,7 +90,7 @@ func TestMotorolaTalkerAliasBufNewHeaderResetsBlocks(t *testing.T) {
 	// must be cleared, otherwise the second sequence's emission
 	// gate would fire prematurely.
 	b.AddFragment(LCOTalkerAliasHeader, makeHeaderContent(20202, 2, 7))
-	if _, ok := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(1, 7, [6]byte{})); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(1, 7, [6]byte{})); ok {
 		t.Error("emission fired before both new-sequence data blocks arrived")
 	}
 }
@@ -103,7 +103,7 @@ func TestMotorolaTalkerAliasBufStaleEviction(t *testing.T) {
 	// Far past the staleness window — the partial reassembly is
 	// dropped on the next call.
 	clk = clk.Add(motorolaAliasStaleAfter + time.Second)
-	if _, ok := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(2, 5, [6]byte{})); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasBlock2, makeDataBlockContent(2, 5, [6]byte{})); ok {
 		t.Error("emission fired after stale eviction")
 	}
 }
@@ -112,11 +112,11 @@ func TestMotorolaTalkerAliasBufIgnoresUnrelatedLCO(t *testing.T) {
 	b := NewMotorolaTalkerAliasBuf(nil)
 	// LCO 0x16 is the TIA-102 BLOCK1; the Motorola form does not
 	// use it, so the assembler must drop it on the floor.
-	if _, ok := b.AddFragment(LCOTalkerAliasBlock1, [lcContentOctets]byte{}); ok {
+	if _, ok, _ := b.AddFragment(LCOTalkerAliasBlock1, [lcContentOctets]byte{}); ok {
 		t.Error("LCO 0x16 must not emit (Motorola form skips BLOCK1)")
 	}
 	// Non-talker-alias LCO is also a no-op.
-	if _, ok := b.AddFragment(LCOGroupVoiceChannelUser, [lcContentOctets]byte{}); ok {
+	if _, ok, _ := b.AddFragment(LCOGroupVoiceChannelUser, [lcContentOctets]byte{}); ok {
 		t.Error("non-talker-alias LCO must not emit")
 	}
 }
@@ -180,7 +180,7 @@ func TestDecodeMotorolaAliasTooShortReturnsEmpty(t *testing.T) {
 	// Less than SUID (56 bits) + CRC (16 bits) + one encoded char
 	// (8 bits) = 80 bits = 10 bytes.
 	short := make([]byte, 9)
-	if got := decodeMotorolaAlias(short); got != "" {
+	if got, _ := decodeMotorolaAlias(short); got != "" {
 		t.Errorf("decodeMotorolaAlias(short) = %q, want empty", got)
 	}
 }

@@ -137,15 +137,15 @@ func TestMotorolaAliasAssemblerYieldsRID(t *testing.T) {
 	a := NewMotorolaAliasAssembler(nil)
 
 	h, _ := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
-	if _, _, done := a.AddHeader(h); done {
+	if _, _, _, done := a.AddHeader(h); done {
 		t.Fatal("header alone (2 blocks pending) must not complete")
 	}
 	d1, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
-	if _, _, done := a.AddData(d1); done {
+	if _, _, _, done := a.AddData(d1); done {
 		t.Fatal("1 of 2 blocks must not complete")
 	}
 	d2, _ := macPDU(t, aliasData2MSG...).AsMotorolaAliasData()
-	_, rid, done := a.AddData(d2)
+	_, rid, _, done := a.AddData(d2)
 	if !done {
 		t.Fatal("both blocks present should complete the alias")
 	}
@@ -158,7 +158,7 @@ func TestMotorolaAliasAssemblerWrongOpcodeRejected(t *testing.T) {
 	// A 0x95 PDU before any header must not complete or panic.
 	d, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
 	a := NewMotorolaAliasAssembler(nil)
-	if _, _, done := a.AddData(d); done {
+	if _, _, _, done := a.AddData(d); done {
 		t.Error("data before header must not complete")
 	}
 }
