@@ -4,6 +4,7 @@ import { BottomNav } from "./BottomNav";
 import { MobileDrawer } from "./MobileDrawer";
 import { TopBar } from "./TopBar";
 import { CommandPalette } from "../CommandPalette";
+import { ToastViewport } from "../ui/ToastViewport";
 import { useIsDesktop } from "../../hooks/useMediaQuery";
 import { prefs } from "../../store/prefs";
 
@@ -71,6 +72,7 @@ export function AppShell({ children }: Props) {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
       />
+      <ToastViewport />
     </div>
   );
 }

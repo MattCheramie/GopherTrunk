@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
 import type { TalkgroupDTO } from "../api/types";
+import { useDataPoll } from "../hooks/useDataPoll";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -19,11 +21,19 @@ export function Talkgroups() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const talkgroups = useShared((s) => s.talkgroups);
   const setTalkgroups = useShared((s) => s.setTalkgroups);
   const [selected, setSelected] = useState<TalkgroupDTO | null>(null);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const { stale, lastUpdated } = useDataPoll({
+    fetcher: () => api.talkgroups(cfg),
+    onData: setTalkgroups,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
 
   async function patch(id: number, body: { priority?: number; lockout?: boolean; scan?: boolean }) {
     setBusy(true);
@@ -35,6 +45,7 @@ export function Talkgroups() {
         talkgroups.map((t) => (t.id === id ? { ...t, ...updated } : t)),
       );
       setSelected((s) => (s && s.id === id ? { ...s, ...updated } : s));
+      notify("success", `Updated talkgroup ${id}`);
     } catch (e: unknown) {
       setError(
         e instanceof Error ? e.message : "talkgroup update failed",
@@ -43,24 +54,6 @@ export function Talkgroups() {
       setBusy(false);
     }
   }
-
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const data = await api.talkgroups(cfg);
-        if (!cancel) setTalkgroups(data);
-      } catch {
-        // Keep the previous snapshot.
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg, setTalkgroups]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return talkgroups;
@@ -131,9 +124,12 @@ export function Talkgroups() {
     <div className="space-y-3">
       <header className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Talkgroups</h2>
-        <span className="text-xs text-muted">
-          {filtered.length} of {talkgroups.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+          <span className="text-xs text-muted">
+            {filtered.length} of {talkgroups.length}
+          </span>
+        </div>
       </header>
 
       <input
@@ -187,8 +183,13 @@ export function Talkgroups() {
           </div>
           {canMutate ? (
             <div className="pt-3 border-t border-panel space-y-3">
-              <p className="text-xs uppercase tracking-wider text-muted">
+              <p className="text-xs uppercase tracking-wider text-muted flex items-center gap-2">
                 Mutations
+                {busy && (
+                  <span className="text-accent normal-case tracking-normal">
+                    saving…
+                  </span>
+                )}
               </p>
               <label className="flex items-center gap-3 text-sm">
                 <input

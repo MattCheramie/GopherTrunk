@@ -4,8 +4,10 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
 import type { ActiveCallDTO } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
+import { useDataPoll } from "../hooks/useDataPoll";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -21,45 +23,34 @@ export function Active() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const activeCalls = useShared((s) => s.activeCalls);
   const setActiveCalls = useShared((s) => s.setActiveCalls);
   const [selected, setSelected] = useState<ActiveCallDTO | null>(null);
   const [confirmEnd, setConfirmEnd] = useState<ActiveCallDTO | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  const { stale, lastUpdated, refresh } = useDataPoll({
+    fetcher: () => api.activeCalls(cfg),
+    onData: setActiveCalls,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
+
   async function endCall(call: ActiveCallDTO) {
     try {
       await writes.endCall(cfg, call.device_serial);
       // Optimistically refresh the active list so the UI doesn't show
       // the ended call for the next poll cycle.
-      const fresh = await api.activeCalls(cfg);
-      setActiveCalls(fresh);
+      refresh();
       setSelected(null);
+      notify("success", `Ended call on ${call.device_serial}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "end-call request failed");
       throw e;
     }
     setConfirmEnd(null);
   }
-
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const data = await api.activeCalls(cfg);
-        if (!cancel) setActiveCalls(data);
-      } catch {
-        // Toast strip surfaces request errors elsewhere; keep the
-        // previous snapshot rather than blanking the table.
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg, setActiveCalls]);
 
   // Tick once a second so the elapsed-time column updates even when
   // no API response has come back yet.
@@ -151,7 +142,12 @@ export function Active() {
     <div className="space-y-3">
       <header className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Active calls</h2>
-        <span className="text-xs text-muted">{activeCalls.length} in flight</span>
+        <div className="flex items-center gap-2">
+          <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+          <span className="text-xs text-muted">
+            {activeCalls.length} in flight
+          </span>
+        </div>
       </header>
 
       <DataTable

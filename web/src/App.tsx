@@ -55,7 +55,6 @@ export function App() {
   const setConfigPath = useShared((s) => s.setConfigPath);
   const configPath = useShared((s) => s.configPath);
   const appendEvents = useShared((s) => s.appendEvents);
-  const lastError = useShared((s) => s.lastError);
   const setError = useShared((s) => s.setError);
 
   // No-config nudge: when the daemon runs without a -config file
@@ -201,22 +200,6 @@ export function App() {
 
       <AudioPlayer />
       <InstallPrompt />
-
-      {lastError && (
-        <div
-          role="alert"
-          className="fixed bottom-20 sm:bottom-3 left-3 right-3 sm:left-auto sm:max-w-sm z-40 panel bg-err/15 border-err/40 text-err p-3 text-sm flex items-start gap-2"
-        >
-          <span className="flex-1">{lastError}</span>
-          <button
-            className="text-xs underline"
-            onClick={() => setError(null)}
-            aria-label="Dismiss error"
-          >
-            dismiss
-          </button>
-        </div>
-      )}
     </AppShell>
   );
 }

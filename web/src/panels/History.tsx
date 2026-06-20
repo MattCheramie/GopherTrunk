@@ -19,6 +19,7 @@ export function History() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setGlobalError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
 
   const [rows, setRows] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -344,6 +345,7 @@ export function History() {
               // Refresh the current view so the user sees the result.
               const fresh = await api.history(cfg, filter);
               setRows(fresh);
+              notify("success", "Retention sweep complete");
             } catch (e: unknown) {
               setGlobalError(
                 e instanceof Error ? e.message : "retention sweep failed",
