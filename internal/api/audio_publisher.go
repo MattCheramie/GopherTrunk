@@ -191,6 +191,23 @@ func (p *AudioPublisher) Stats() AudioPublisherStats {
 // The frame is built lazily on the first matching subscriber so the
 // no-subscriber and no-match paths stay allocation-free.
 func (p *AudioPublisher) WritePCM(deviceSerial string, samples []int16) error {
+	return p.writePCM(deviceSerial, 0, samples)
+}
+
+// WritePCMForCall is WritePCM plus the CallID the PCM was decoded for. It
+// satisfies voice.DecodedPCMCallSink so the recorder's decoded-audio tap can
+// fence a stale frame from the call that previously held a reused voice-tap
+// serial: when the live grant for the serial has already flipped to a newer
+// call (its CallStart updated p.grants), PCM still draining from the older call
+// would otherwise be fanned out labelled with — and leaked to subscribers
+// filtered on — the new call's talkgroup. Dropping the mismatched frame closes
+// that cross-call audio-bleed window. A zero CallID on either side matches
+// (un-stamped / synthetic / analog calls), preserving WritePCM's behaviour.
+func (p *AudioPublisher) WritePCMForCall(deviceSerial string, callID uint64, samples []int16) error {
+	return p.writePCM(deviceSerial, callID, samples)
+}
+
+func (p *AudioPublisher) writePCM(deviceSerial string, callID uint64, samples []int16) error {
 	if p == nil || len(samples) == 0 {
 		return nil
 	}
@@ -200,6 +217,12 @@ func (p *AudioPublisher) WritePCM(deviceSerial string, samples []int16) error {
 		return nil
 	}
 	grant, haveGrant := p.grants[deviceSerial]
+	// Cross-call fence: this PCM belongs to callID, but the serial's live
+	// grant has moved on to a different call. Drop rather than mislabel the
+	// old call's tail as the new call's audio.
+	if haveGrant && callID != 0 && grant.CallID != 0 && callID != grant.CallID {
+		return nil
+	}
 
 	var frame *apiv1.AudioFrame // built on first match
 	for sub := range p.subs {

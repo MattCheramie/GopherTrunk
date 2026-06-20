@@ -14,12 +14,28 @@ import (
 // instead of a 503.
 func (s *Server) handleScannerStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.scanner == nil {
-		writeJSON(w, http.StatusOK, ScannerStatus{
+		writeJSON(w, http.StatusOK, normalizeScannerStatus(ScannerStatus{
 			ScanMode: "all",
-		})
+		}))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.scanner.Status())
+	writeJSON(w, http.StatusOK, normalizeScannerStatus(s.scanner.Status()))
+}
+
+// normalizeScannerStatus guarantees the slice fields marshal as JSON arrays
+// rather than null. A nil Go slice encodes to `null`, which the web Scanner
+// tab then dereferences (`systems.length` / `channels.length`) and crashes the
+// whole panel behind the error boundary ("Cannot read properties of null").
+// Emitting `[]` keeps the wire contract array-typed regardless of whether any
+// systems / conventional channels are configured.
+func normalizeScannerStatus(st ScannerStatus) ScannerStatus {
+	if st.Systems == nil {
+		st.Systems = []SystemHuntStatusDTO{}
+	}
+	if st.Conventional.Channels == nil {
+		st.Conventional.Channels = []ConvChannelStatusDTO{}
+	}
+	return st
 }
 
 // scannerSetModeRequest is the PATCH /api/v1/scanner body shape.

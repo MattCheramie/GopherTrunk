@@ -97,6 +97,18 @@ type DecodedPCMSink interface {
 	WritePCM(deviceSerial string, samples []int16) error
 }
 
+// DecodedPCMCallSink is the call-aware extension of DecodedPCMSink: it carries
+// the CallID the decoded PCM belongs to so the live fan-out can fence a stale
+// frame from a previous call on a reused voice-tap serial — the same
+// cross-call audio-bleed guard sessionForWrite applies to the WAV. Wideband
+// voice taps reuse a fixed pool of serials, so without this the live stream
+// labels (and leaks) an old call's draining audio with the next call's
+// talkgroup. A sink implementing this is preferred over plain WritePCM in
+// WriteRawFrame's fan-out; sinks that don't implement it still get WritePCM.
+type DecodedPCMCallSink interface {
+	WritePCMForCall(deviceSerial string, callID uint64, samples []int16) error
+}
+
 // SetDecodedPCMSink wires the live-audio tap that receives PCM decoded
 // from digital vocoder frames. Call once during daemon construction
 // before Run/any calls start; it is not safe to change concurrently
@@ -429,9 +441,17 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 		// calls WritePCM for them — so without this the live audio
 		// path is silent while recordings play fine (issue #598). Runs
 		// outside r.mu (sessionForWrite released it), so the tap is
-		// free to take its own locks.
+		// free to take its own locks. Hand the session's CallID to a
+		// call-aware sink so the live stream is fenced by the same identity
+		// the WAV used — closing the cross-call bleed window when a tap
+		// serial is reused (the samples already passed sessionForWrite's
+		// CallID check, so s.callID is authoritative for this audio).
 		if r.decodedTap != nil {
-			_ = r.decodedTap.WritePCM(deviceSerial, samples)
+			if cs, ok := r.decodedTap.(DecodedPCMCallSink); ok {
+				_ = cs.WritePCMForCall(deviceSerial, s.callID, samples)
+			} else {
+				_ = r.decodedTap.WritePCM(deviceSerial, samples)
+			}
 		}
 	}
 	return nil

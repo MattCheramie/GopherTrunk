@@ -117,14 +117,14 @@ export function Scanner() {
       />
 
       <Hunt
-        systems={scanner.systems}
+        systems={scanner.systems ?? []}
         canMutate={canMutate}
         onMutate={wrap}
         onConfirm={(c) => setConfirm(c)}
       />
 
       <Conventional
-        conv={scanner.conventional}
+        conv={scanner.conventional ?? { enabled: false, channels: [] }}
         canMutate={canMutate}
         onMutate={wrap}
         onConfirm={(c) => setConfirm(c)}
@@ -314,7 +314,7 @@ function Conventional({
         </div>
       }
     >
-      {conv.channels.length === 0 ? (
+      {(conv.channels ?? []).length === 0 ? (
         <p className="text-muted text-sm">No channels in the conv scanner list.</p>
       ) : (
         <div className="overflow-x-auto">
@@ -330,7 +330,7 @@ function Conventional({
               </tr>
             </thead>
             <tbody className="divide-y divide-panel">
-              {conv.channels.map((ch) => (
+              {(conv.channels ?? []).map((ch) => (
                 <tr
                   key={ch.index}
                   className={ch.active ? "bg-accent/10" : undefined}

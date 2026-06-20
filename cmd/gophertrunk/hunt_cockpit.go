@@ -17,6 +17,13 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
+// defaultHuntMonitorSeconds is the streaming long-dwell cap applied to a
+// trunked-system hunt when the caller doesn't specify one. Converge-and-stop
+// (internal/hunt/monitor.go) normally ends the dwell well before this once the
+// site's identity, neighbors and band plan have settled; the cap only bounds a
+// site whose status broadcasts never fully arrive.
+const defaultHuntMonitorSeconds = 120
+
 // huntCockpit adapts the daemon's hunt.Manager to the api.HuntCockpit surface
 // (GET /api/v1/hunt + start/stop/export/commit). It mirrors scannerCockpit.
 type huntCockpit struct {
@@ -128,6 +135,17 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 	}
 	if req.SweepDwellMs > 0 {
 		opts.SweepDwell = msToDuration(req.SweepDwellMs, 0)
+	}
+	// A trunked-system hunt needs the streaming long-dwell monitor to see the
+	// site's slow-cycling status broadcasts (Network Status / RFSS Status /
+	// adjacent sites) — they rarely land inside the short buffered identify
+	// dwell, so a default hunt would surface NAC + talkgroups but leave
+	// WACN/SystemID/RFSS/Site and neighbors "awaiting status broadcasts". Opt
+	// into the monitor by default; converge-and-stop ends it early (typically
+	// well under the cap) once identity + topology settle. Survey runs and
+	// explicit caller overrides are left untouched.
+	if !req.Survey && opts.MonitorSeconds <= 0 {
+		opts.MonitorSeconds = defaultHuntMonitorSeconds
 	}
 	return c.mgr.Start(opts)
 }

@@ -1022,6 +1022,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.publishVoiceGrant(voiceGrant{
 			groupID: g.TargetID, sourceID: g.SourceID,
 			channelID: g.ChannelID, channelNumber: g.ChannelNumber,
+			individual: true,
 		}, nac)
 	case OpUnitToUnitAnswerRequest:
 		c.publishUnitToUnitRequest(ParseUnitToUnitAnswerRequest(t.Payload), nac)
@@ -1030,13 +1031,14 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.publishVoiceGrant(voiceGrant{
 			groupID: g.TargetID, channelID: g.ChannelID,
 			channelNumber: g.ChannelNumber, serviceOptions: g.ServiceOptions,
+			individual: true,
 		}, nac)
 	case OpSNDCPDataChannelGrant:
 		g := ParseSNDCPDataChannelGrant(t.Payload)
 		c.publishVoiceGrant(voiceGrant{
 			groupID: g.TargetID, channelID: g.ChannelID,
 			channelNumber: g.ChannelNumber, serviceOptions: g.ServiceOptions,
-			dataCall: true,
+			dataCall: true, individual: true,
 		}, nac)
 	case OpNetworkStatusBroadcast:
 		c.netModel.ApplyNetworkStatus(ParseNetworkStatusBroadcast(t.Payload))
@@ -1292,6 +1294,10 @@ type voiceGrant struct {
 	channelNumber  uint16
 	serviceOptions uint8
 	dataCall       bool
+	// individual marks a unit-to-unit / telephone / SNDCP-data grant whose
+	// groupID is a 24-bit destination unit, not a 16-bit talkgroup. Carried
+	// onto trunking.Grant.Individual so discovery never lists it as a TG.
+	individual bool
 }
 
 // publishVoiceGrant resolves a grant's channel through the band plan
@@ -1354,6 +1360,7 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 			Encrypted:          so.Encrypted(),
 			Emergency:          so.Emergency(),
 			DataCall:           g.dataCall,
+			Individual:         g.individual,
 			P25Phase1DemodMode: c.p25Phase1DemodMode,
 			P25Phase2Decode:    p2dec,
 			At:                 c.now(),

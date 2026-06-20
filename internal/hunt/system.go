@@ -94,10 +94,6 @@ type DiscoveredTalkgroup struct {
 	Encrypted bool      `json:"encrypted,omitempty"`
 	Count     int       `json:"count"`
 	FirstSeen time.Time `json:"first_seen"`
-	// Frequencies are the distinct voice-channel frequencies (Hz) observed
-	// carrying this talkgroup, resolved from each grant against the band
-	// plan. Empty until a grant for this talkgroup resolves a frequency.
-	Frequencies []uint32 `json:"frequencies,omitempty"`
 }
 
 // NeighborRef is an adjacent site advertised by the control channel.
@@ -171,33 +167,28 @@ func (s *DiscoveredSystem) addControlChannel(rfss, siteID uint8, hz uint32, conf
 	})
 }
 
-// addTalkgroup records (or bumps the activity count of) a talkgroup. A
-// non-zero freqHz is merged into the talkgroup's observed voice-channel
-// frequencies, de-duplicated.
-func (s *DiscoveredSystem) addTalkgroup(dec uint32, encrypted bool, freqHz uint32, at time.Time) {
+// addTalkgroup records (or bumps the activity count of) a talkgroup. The
+// voice-channel frequency a grant landed on is NOT attributed to the
+// talkgroup: on a trunked system the traffic channel is assigned dynamically
+// per call, so a talkgroup has no fixed frequency. The distinct voice
+// frequencies the site uses are recorded on the site (addVoiceChannel).
+func (s *DiscoveredSystem) addTalkgroup(dec uint32, encrypted bool, at time.Time) {
 	for i := range s.Talkgroups {
 		if s.Talkgroups[i].Dec == dec {
 			s.Talkgroups[i].Count++
 			if encrypted {
 				s.Talkgroups[i].Encrypted = true
 			}
-			if freqHz != 0 {
-				s.Talkgroups[i].Frequencies = appendUniqueFreq(s.Talkgroups[i].Frequencies, freqHz)
-			}
 			return
 		}
 	}
-	tg := DiscoveredTalkgroup{
+	s.Talkgroups = append(s.Talkgroups, DiscoveredTalkgroup{
 		Dec:       dec,
 		Hex:       fmt.Sprintf("%x", dec),
 		Encrypted: encrypted,
 		Count:     1,
 		FirstSeen: at,
-	}
-	if freqHz != 0 {
-		tg.Frequencies = []uint32{freqHz}
-	}
-	s.Talkgroups = append(s.Talkgroups, tg)
+	})
 }
 
 // addVoiceChannel records a voice/traffic-channel frequency observed on
@@ -262,10 +253,6 @@ func (s *DiscoveredSystem) sortAll() {
 		sort.Slice(vc, func(a, b int) bool { return vc[a] < vc[b] })
 	}
 	sort.Slice(s.Talkgroups, func(i, j int) bool { return s.Talkgroups[i].Dec < s.Talkgroups[j].Dec })
-	for i := range s.Talkgroups {
-		fr := s.Talkgroups[i].Frequencies
-		sort.Slice(fr, func(a, b int) bool { return fr[a] < fr[b] })
-	}
 	sort.Slice(s.BandPlan, func(i, j int) bool { return s.BandPlan[i].ChannelID < s.BandPlan[j].ChannelID })
 	// Resolve neighbour control-channel frequencies now that the band plan is
 	// fully accumulated (it may be incomplete on any single observation).

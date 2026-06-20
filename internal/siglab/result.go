@@ -87,6 +87,10 @@ type GrantRecord struct {
 	FrequencyHz uint32  `json:"frequency_hz" yaml:"frequency_hz"`
 	Encrypted   bool    `json:"encrypted" yaml:"encrypted"`
 	Emergency   bool    `json:"emergency" yaml:"emergency"`
+	// Individual mirrors trunking.Grant.Individual: the GroupID is a
+	// unit-to-unit / telephone / data destination, not a talkgroup. Hunt
+	// skips these when accumulating the talkgroup list.
+	Individual bool `json:"individual,omitempty" yaml:"individual,omitempty"`
 }
 
 // EventRecord is one bus event captured generically — Kind plus the
@@ -161,6 +165,7 @@ func (c *collector) observe(ev events.Event) {
 				FrequencyHz: g.FrequencyHz,
 				Encrypted:   g.Encrypted,
 				Emergency:   g.Emergency,
+				Individual:  g.Individual,
 			})
 		}
 	case events.KindDecodeError:

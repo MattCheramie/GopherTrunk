@@ -618,6 +618,83 @@ func (f *fakeDecodedTap) snapshot() (calls, total int, last string) {
 	return f.calls, f.total, f.last
 }
 
+// fakeCallAwareTap implements DecodedPCMCallSink, recording the CallID the
+// recorder hands to each forwarded chunk so a test can confirm the live fan-out
+// is fenced by the session's call identity (voice-tap audio-bleed guard).
+type fakeCallAwareTap struct {
+	mu      sync.Mutex
+	callIDs []uint64
+}
+
+func (f *fakeCallAwareTap) WritePCM(string, []int16) error { return nil }
+func (f *fakeCallAwareTap) WritePCMForCall(_ string, callID uint64, _ []int16) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callIDs = append(f.callIDs, callID)
+	return nil
+}
+func (f *fakeCallAwareTap) snapshot() []uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]uint64(nil), f.callIDs...)
+}
+
+// TestRecorderForwardsDecodedPCMToCallAwareTap: when the live tap implements
+// DecodedPCMCallSink, the recorder must forward the decoding session's CallID
+// so the tap can fence a stale frame from a previous call on a reused voice-tap
+// serial (the audio-bleed guard). Each forwarded chunk carries the call's CallID.
+func TestRecorderForwardsDecodedPCMToCallAwareTap(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		VocoderForProtocol: map[string]string{"test-null": "null"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	tap := &fakeCallAwareTap{}
+	r.SetDecodedPCMSink(tap)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-null", GroupID: 1, CallID: 77},
+		DeviceSerial: "tap-0",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("tap-0") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// A matching call-aware frame forwards the session's CallID.
+	if err := r.WriteRawFrameForCall("tap-0", 77, make([]byte, 11), 0); err != nil {
+		t.Fatalf("WriteRawFrameForCall: %v", err)
+	}
+	// A frame from a different (stale) call is fenced by sessionForWrite before
+	// decode, so it must never reach the tap.
+	if err := r.WriteRawFrameForCall("tap-0", 999, make([]byte, 11), 0); err != nil {
+		t.Fatalf("WriteRawFrameForCall stale: %v", err)
+	}
+
+	got := tap.snapshot()
+	if len(got) != 1 || got[0] != 77 {
+		t.Errorf("forwarded callIDs = %v, want exactly [77] (stale 999 fenced)", got)
+	}
+}
+
 // TestRecorderForwardsDecodedPCMToTap: PCM the recorder decodes from
 // digital vocoder frames in WriteRawFrame must be forwarded to the
 // live-audio tap (web stream / player / tone-out). Without this the
