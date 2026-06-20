@@ -28,7 +28,7 @@ export function YamlPreview() {
     <div className="flex h-full flex-col">
       <div className="label mb-2">config.yaml preview</div>
       {err ? <p className="text-xs text-err">{err}</p> : null}
-      <pre className="flex-1 overflow-auto rounded-md border border-white/10 bg-bg p-3 text-xs font-mono whitespace-pre">
+      <pre className="flex-1 overflow-auto rounded-md border border-line bg-bg p-3 text-xs font-mono whitespace-pre">
         {yaml}
       </pre>
     </div>

@@ -62,7 +62,7 @@ export function BrowseConfigs(props: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
       <div className="card w-full max-w-2xl space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">Browse config files</h3>
@@ -97,8 +97,8 @@ export function BrowseConfigs(props: { onClose: () => void }) {
                     disabled={busy}
                     onClick={() => openFile(file.path)}
                     title={file.path}
-                    className={`flex w-full items-center justify-between gap-3 rounded border px-3 py-2 text-left text-sm hover:bg-white/5 ${
-                      file.path === current ? "border-accent/50 bg-accent/10" : "border-white/10"
+                    className={`flex w-full items-center justify-between gap-3 rounded border px-3 py-2 text-left text-sm hover:bg-panel ${
+                      file.path === current ? "border-accent/50 bg-accent/10" : "border-line"
                     }`}
                   >
                     <span className="min-w-0">

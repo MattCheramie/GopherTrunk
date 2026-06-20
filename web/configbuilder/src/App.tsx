@@ -84,7 +84,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
           <img src="./favicon.svg" alt="" className="h-6 w-6" />
           <h1 className="text-base font-semibold">GopherTrunk Config Builder</h1>
@@ -114,13 +114,13 @@ export function App() {
         </div>
       </header>
 
-      <div className="border-b border-white/10 px-4 py-2">
+      <div className="border-b border-line px-4 py-2">
         <FileBar />
       </div>
 
       <div className="flex min-h-0 flex-1">
         {/* Section nav */}
-        <nav className="w-44 shrink-0 overflow-y-auto border-r border-white/10 p-2">
+        <nav className="w-44 shrink-0 overflow-y-auto border-r border-line p-2">
           {SECTIONS.map((s) => {
             const n = errorCounts[s.key] ?? 0;
             return (
@@ -128,7 +128,7 @@ export function App() {
                 key={s.key}
                 onClick={() => setActive(s.key)}
                 className={`mb-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm ${
-                  active === s.key ? "bg-accent/20 text-fg" : "text-muted hover:bg-white/5"
+                  active === s.key ? "bg-accent/20 text-fg" : "text-muted hover:bg-panel"
                 }`}
               >
                 <span className="flex items-center gap-1.5">
@@ -137,7 +137,7 @@ export function App() {
                       ●
                     </span>
                   ) : (
-                    <span className="text-white/20" title="Empty (defaults)">
+                    <span className="text-muted" title="Empty (defaults)">
                       ○
                     </span>
                   )}
@@ -155,7 +155,7 @@ export function App() {
             {config ? current.render() : <p className="help">Loading defaults…</p>}
           </main>
           {showPreview ? (
-            <aside className="max-h-72 w-full shrink-0 overflow-hidden border-t border-white/10 p-4 lg:max-h-none lg:w-96 lg:border-l lg:border-t-0">
+            <aside className="max-h-72 w-full shrink-0 overflow-hidden border-t border-line p-4 lg:max-h-none lg:w-96 lg:border-l lg:border-t-0">
               <YamlPreview />
             </aside>
           ) : null}

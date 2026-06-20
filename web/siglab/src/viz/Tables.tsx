@@ -21,7 +21,7 @@ export function GrantsTable({ grants }: { grants: GrantRecord[] }) {
           </thead>
           <tbody>
             {grants.map((g, i) => (
-              <tr key={i} className="border-t border-white/5">
+              <tr key={i} className="border-t border-line">
                 <td className="py-1 pr-3">{g.offset_sec.toFixed(2)}</td>
                 <td className="pr-3">{g.group_id}</td>
                 <td className="pr-3">{g.source_id}</td>
@@ -46,14 +46,14 @@ export function EventTimeline({ events }: { events: EventRecord[] }) {
       <h3 className="mb-2 text-sm font-semibold">Events ({events.length})</h3>
       <div className="mb-2 flex flex-wrap gap-1">
         {[...counts.entries()].map(([k, n]) => (
-          <span key={k} className="rounded bg-white/5 px-2 py-0.5 text-xs">
+          <span key={k} className="rounded bg-panel px-2 py-0.5 text-xs">
             {k} <span className="text-muted">×{n}</span>
           </span>
         ))}
       </div>
       <div className="max-h-64 overflow-y-auto font-mono text-xs">
         {events.slice(-300).map((e) => (
-          <div key={e.seq} className="border-t border-white/5 py-0.5">
+          <div key={e.seq} className="border-t border-line py-0.5">
             <span className="text-muted">{e.offset_sec.toFixed(2)}s</span>{" "}
             <span className="text-accent">{e.kind}</span>{" "}
             <span className="text-muted">{briefFields(e.fields)}</span>

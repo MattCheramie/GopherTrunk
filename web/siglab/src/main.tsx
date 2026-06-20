@@ -5,7 +5,20 @@ import { registerSW } from "virtual:pwa-register";
 import { App } from "./App";
 import "./styles.css";
 
-document.documentElement.classList.add("dark");
+// Honor the theme/density the operator picked in the main console
+// (shared via localStorage), applied pre-render so there's no flash.
+(() => {
+  try {
+    const theme = localStorage.getItem("gt.ui.theme");
+    document.documentElement.dataset.theme =
+      theme === "monochrome" ? "mono" : theme === "light" ? "light" : "dark";
+    const density = localStorage.getItem("gt.ui.density");
+    document.documentElement.dataset.density =
+      density === "compact" ? "compact" : "comfortable";
+  } catch {
+    document.documentElement.dataset.theme = "dark";
+  }
+})();
 registerSW({ immediate: true });
 
 const root = document.getElementById("root");

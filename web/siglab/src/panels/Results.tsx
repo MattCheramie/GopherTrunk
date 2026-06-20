@@ -86,7 +86,7 @@ function StateBadge({ state }: { state: string }) {
         ? "bg-err/20 text-err"
         : state === "running"
           ? "bg-warn/20 text-warn"
-          : "bg-white/10 text-muted";
+          : "bg-panel text-muted";
   return <span className={`rounded px-2 py-0.5 text-xs ${cls}`}>{state}</span>;
 }
 

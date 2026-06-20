@@ -118,7 +118,7 @@ export function TrunkingSection() {
       ) : null}
 
       {systems.map((sys, i) => (
-        <div key={i} className="rounded-md border border-white/10 p-3 space-y-3">
+        <div key={i} className="rounded-md border border-line p-3 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">{sys.Name || `System ${i + 1}`}</span>
             <button className="btn-danger" onClick={() => removeSystem(i)}>Remove</button>
@@ -450,7 +450,7 @@ function TalkgroupModal(props: {
 
 function Modal(props: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
       <div className="card w-full max-w-2xl space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">{props.title}</h3>
@@ -568,7 +568,7 @@ function RRBrowseModal(props: {
         premium subscription is required.
       </p>
 
-      <div className="rounded-md border border-white/10 p-3">
+      <div className="rounded-md border border-line p-3">
         <button
           className="flex w-full items-center justify-between text-left text-sm font-medium"
           onClick={() => setCredsOpen((o) => !o)}
@@ -677,7 +677,7 @@ function RRBrowseModal(props: {
         ) : (
           <div className="max-h-80 space-y-1 overflow-y-auto">
             {hits.map((h) => (
-              <div key={h.sid} className="flex items-center justify-between rounded border border-white/10 px-3 py-2">
+              <div key={h.sid} className="flex items-center justify-between rounded border border-line px-3 py-2">
                 <div className="text-sm">
                   <div className="font-medium">{h.name}</div>
                   <div className="help">{h.type} · sid {h.sid}</div>
@@ -756,7 +756,7 @@ function ImportModal(props: {
         ) : (
           <div className="max-h-80 space-y-1 overflow-y-auto">
             {parsed.map((p, i) => (
-              <div key={i} className="flex items-center justify-between rounded border border-white/10 px-3 py-2">
+              <div key={i} className="flex items-center justify-between rounded border border-line px-3 py-2">
                 <div className="text-sm">
                   <div className="font-medium">{p.name || "(unnamed)"}</div>
                   <div className="help">

@@ -30,7 +30,7 @@ export function Captures() {
                 <li
                   key={c.id}
                   className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                    c.id === selectedId ? "bg-accent/15" : "hover:bg-white/5"
+                    c.id === selectedId ? "bg-accent/15" : "hover:bg-panel"
                   }`}
                 >
                   <button className="flex-1 text-left" onClick={() => select(c.id)}>
