@@ -1,125 +1,147 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   fetchPagerMessages,
   functionLabel,
   type PagerMessage,
 } from "../api/pagers";
+import { Column, DataTable } from "../components/DataTable";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
 
 // Pagers panel — list of recent POCSAG and FLEX pages decoded by the
-// daemon. Each row carries its protocol (POCSAG / FLEX), RIC, function
-// code (A/B/C/D), numeric / alphanumeric encoding, decoded body, and the
-// BCH bit-error count (a non-zero value indicates the page was marginal).
+// daemon. Each row carries its protocol, RIC, function code, encoding,
+// decoded body, and the BCH bit-error count (non-zero = marginal).
 //
-// Live updates piggyback on the events bus once SSE delivery is wired;
-// for v1 the panel polls /api/v1/pager/messages every 5 s.
+// Polls /api/v1/pager/messages every 5 s.
 
 const POLL_INTERVAL_MS = 5_000;
 
 export function Pagers() {
   const cfg = useShared(selectClientConfig);
   const [messages, setMessages] = useState<PagerMessage[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const list = await fetchPagerMessages(cfg, 200);
-        if (cancel) return;
-        setMessages(list);
-        setError(null);
-      } catch (e) {
-        if (cancel) return;
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg]);
+  const { loading, error, stale, lastUpdated } = useDataPoll({
+    fetcher: () => fetchPagerMessages(cfg, 200),
+    onData: setMessages,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
+
+  const columns: Column<PagerMessage>[] = useMemo(
+    () => [
+      {
+        key: "received",
+        header: "Received",
+        render: (m) => (
+          <span className="font-mono text-muted">{formatTime(m.received_at)}</span>
+        ),
+        sort: (a, b) => a.received_at.localeCompare(b.received_at),
+      },
+      {
+        key: "type",
+        header: "Type",
+        render: (m) => <ProtocolBadge protocol={m.protocol} />,
+        sort: (a, b) => (a.protocol ?? "").localeCompare(b.protocol ?? ""),
+      },
+      {
+        key: "ric",
+        header: "RIC",
+        className: "text-right font-mono text-accent",
+        headerClassName: "text-right",
+        render: (m) => m.ric,
+        sort: (a, b) => a.ric - b.ric,
+      },
+      {
+        key: "fn",
+        header: "Fn",
+        render: (m) => functionLabel(m.func),
+      },
+      {
+        key: "enc",
+        header: "Enc",
+        render: (m) => (
+          <span className="uppercase text-muted">{m.encoding || "?"}</span>
+        ),
+      },
+      {
+        key: "body",
+        header: "Body",
+        render: (m) => m.body || <span className="text-muted">(empty)</span>,
+      },
+      {
+        key: "ber",
+        header: "BER",
+        className: "text-right font-mono",
+        headerClassName: "text-right",
+        render: (m) =>
+          m.corrected > 0 ? (
+            <span className="text-warn">{m.corrected}</span>
+          ) : (
+            <span className="text-muted">0</span>
+          ),
+        sort: (a, b) => a.corrected - b.corrected,
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Pagers</h2>
-        <span className="text-xs text-muted">
-          {messages.length} message{messages.length === 1 ? "" : "s"}
-        </span>
-      </header>
+      <PageHeader
+        title="Pagers"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {messages.length} message{messages.length === 1 ? "" : "s"}
+            </span>
+          </>
+        }
+      />
 
-      {error && (
-        <div className="rounded border border-red-700/40 bg-red-900/20 text-red-200 text-xs px-3 py-2">
+      {error && !stale && (
+        <div
+          role="alert"
+          className="rounded-md border border-err/40 bg-err/15 px-3 py-2 text-sm text-err"
+        >
           {error}
         </div>
       )}
 
-      <div className="rounded border border-border overflow-hidden">
-        <table className="w-full text-xs">
-          <thead className="bg-surface text-muted">
-            <tr>
-              <th className="text-left px-3 py-1 font-normal w-32">Received</th>
-              <th className="text-left px-3 py-1 font-normal w-20">Type</th>
-              <th className="text-right px-3 py-1 font-normal w-24">RIC</th>
-              <th className="text-left px-3 py-1 font-normal w-12">Fn</th>
-              <th className="text-left px-3 py-1 font-normal w-16">Enc</th>
-              <th className="text-left px-3 py-1 font-normal">Body</th>
-              <th className="text-right px-3 py-1 font-normal w-16">BER</th>
-            </tr>
-          </thead>
-          <tbody>
-            {messages.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-muted">
-                  No pager messages yet. POCSAG pages decoded by the
-                  daemon will appear here as they arrive — typical
-                  workflow is to point one SDR at the local paging
-                  frequency (e.g. 152.0075 MHz commercial paging,
-                  the local fire department dispatch tone-out
-                  freq, or 439.9875 MHz DAPNET).
-                </td>
-              </tr>
-            ) : (
-              messages.map((m) => (
-                <tr key={m.id} className="border-t border-border/60">
-                  <td className="px-3 py-1 font-mono text-muted">
-                    {formatTime(m.received_at)}
-                  </td>
-                  <td className="px-3 py-1">
-                    <ProtocolBadge protocol={m.protocol} />
-                  </td>
-                  <td className="px-3 py-1 text-right font-mono text-accent">
-                    {m.ric}
-                  </td>
-                  <td className="px-3 py-1">{functionLabel(m.func)}</td>
-                  <td className="px-3 py-1 uppercase text-muted">
-                    {m.encoding || "?"}
-                  </td>
-                  <td className="px-3 py-1">{m.body || <span className="text-muted">(empty)</span>}</td>
-                  <td className="px-3 py-1 text-right font-mono">
-                    {m.corrected > 0 ? (
-                      <span className="text-yellow-300">{m.corrected}</span>
-                    ) : (
-                      <span className="text-muted">0</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={messages}
+        columns={columns}
+        rowKey={(m) => String(m.id)}
+        defaultSortKey="received"
+        defaultSortDirection="desc"
+        tableId="pagers"
+        pageSize={50}
+        loading={loading}
+        searchable
+        searchAccessor={(m) =>
+          [m.protocol, m.ric, m.body, functionLabel(m.func)]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search by RIC, protocol, body…"
+        emptyMessage={
+          <>
+            No pager messages yet. POCSAG pages decoded by the daemon will appear
+            here as they arrive — typical workflow is to point one SDR at the
+            local paging frequency (e.g. 152.0075 MHz commercial paging, the
+            local fire department dispatch tone-out freq, or 439.9875 MHz
+            DAPNET).
+          </>
+        }
+      />
     </div>
   );
 }
 
 // ProtocolBadge renders the page's signalling protocol as a small colored
-// pill so POCSAG and FLEX rows are distinguishable at a glance. Falls back
-// to "POCSAG" when the backend left the field empty (older rows persisted
-// before the protocol column was populated default to POCSAG server-side).
+// pill so POCSAG and FLEX rows are distinguishable at a glance.
 function ProtocolBadge({ protocol }: { protocol: string }) {
   const proto = (protocol || "pocsag").toLowerCase();
   const label = proto.toUpperCase();
@@ -128,7 +150,9 @@ function ProtocolBadge({ protocol }: { protocol: string }) {
       ? "bg-purple-900/40 text-purple-200 border-purple-700/40"
       : "bg-sky-900/40 text-sky-200 border-sky-700/40";
   return (
-    <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+    <span
+      className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
       {label}
     </span>
   );

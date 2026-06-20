@@ -23,7 +23,7 @@ interface Props<T> {
   defaultSortKey?: string;
   defaultSortDirection?: "asc" | "desc";
   onRowClick?: (row: T, key: string) => void;
-  emptyMessage?: string;
+  emptyMessage?: React.ReactNode;
   // Optional second-row "expanded" content rendered beneath the row
   // (used by Events to show payload JSON inline).
   renderExpansion?: (row: T) => React.ReactNode;
