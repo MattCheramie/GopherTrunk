@@ -91,6 +91,35 @@ func TestPoolBindRetunesDevice(t *testing.T) {
 	}
 }
 
+func TestPoolBindAssignsUniqueCallIDRetunePreserves(t *testing.T) {
+	p, _ := mkPool(2)
+	a := p.Devices()[0]
+	b := p.Devices()[1]
+	ac1, err := p.Bind(a, Grant{FrequencyHz: 1}, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ac2, err := p.Bind(b, Grant{FrequencyHz: 2}, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ac1.Grant.CallID == 0 || ac2.Grant.CallID == 0 {
+		t.Fatalf("Bind must assign a non-zero CallID: %d, %d", ac1.Grant.CallID, ac2.Grant.CallID)
+	}
+	if ac1.Grant.CallID == ac2.Grant.CallID {
+		t.Errorf("two binds shared CallID %d; must be unique", ac1.Grant.CallID)
+	}
+	// A handoff (Retune) continues the same call: the new grant carries no
+	// CallID, but the call's identity must be preserved.
+	want := ac1.Grant.CallID
+	if err := p.Retune(a.Serial, Grant{FrequencyHz: 3}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ac1.Grant.CallID != want {
+		t.Errorf("Retune changed CallID to %d, want preserved %d", ac1.Grant.CallID, want)
+	}
+}
+
 func TestPoolReleaseReturnsActiveCall(t *testing.T) {
 	p, _ := mkPool(1)
 	d := p.FindFree()

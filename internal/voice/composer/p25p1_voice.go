@@ -58,7 +58,7 @@ func (c *Composer) resolveP25Phase1DemodMode(serial, mode string) p25p1rx.DemodM
 // The recorder maps protocol "p25" to the pure-Go IMBE vocoder
 // (voice.DefaultVocoderForProtocol), so WriteRawFrame here decodes each
 // 11-byte frame to PCM and into the call's WAV.
-func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, demodMode string, grantTG uint32, patched []uint32, done chan<- struct{}) {
+func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz float64, demodMode string, grantTG uint32, callID uint64, patched []uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-p25p1:"+serial, nil)
 
@@ -121,6 +121,10 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// ers, when the sink supports it, carries the per-frame FEC corrected-bit
 	// count to the IMBE decoder's adaptive smoothing (P25 Phase 1 only).
 	ers, _ := c.sink.(errAwareRawSink)
+	// cas, when the sink supports it, additionally carries this call's
+	// CallID so the recorder fences stale frames from a previous call on a
+	// reused tap serial (voice-tap mix-up). Preferred over ers when present.
+	cas, _ := c.sink.(callAwareRawSink)
 	// lastES is the last Encryption Sync this chain published on the
 	// bus. The voice frame stream carries one ES per LDU2 (every ~180
 	// ms), but ALGID/KID rarely change inside a single call — gate the
@@ -278,12 +282,17 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					}
 					// Hand the per-frame corrected-bit count to the IMBE
 					// decoder (via the recorder) so its adaptive smoothing can
-					// track the channel error rate; fall back to the plain
-					// write for sinks that don't support it.
+					// track the channel error rate; the call-aware path also
+					// fences stale frames on a reused serial. Fall back through
+					// errAwareRawSink then the plain write for sinks that don't
+					// support the richer shapes.
 					var werr error
-					if ers != nil {
+					switch {
+					case cas != nil:
+						werr = cas.WriteRawFrameForCall(serial, callID, f, frameErrs[i])
+					case ers != nil:
 						werr = ers.WriteRawFrameWithErrors(serial, f, frameErrs[i])
-					} else {
+					default:
 						werr = rs.WriteRawFrame(serial, f)
 					}
 					if werr != nil {

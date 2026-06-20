@@ -234,11 +234,39 @@ func TestOpcodeString(t *testing.T) {
 		OpUnitToUnitAnswerRequest: "UU_ANS_REQ",
 		OpRFSSStatusBroadcast:     "RFSS_STS_BCST",
 		OpNetworkStatusBroadcast:  "NET_STS_BCST",
+		// Newly-named standard OSPs that previously fell through to
+		// OSP(0xNN). 0x16 / 0x29 are the two the field log showed as
+		// "unhandled tsbk payload".
+		OpSNDCPDataChannelAnnExplicit: "SNDCP_DAT_CH_ANN_EXP",
+		OpSecondaryControlChannelExpl: "SCCB_EXP",
+		OpTelephoneInterconnectUpdate: "TELE_INT_CH_GRANT_UPDT",
+		OpAuthenticationCommand:       "AUTH_CMD",
+		OpSyncBroadcast:               "SYNC_BCST",
+		OpSystemServiceBroadcast:      "SYS_SRV_BCST",
+		// 0x39 was mislabelled SCCB_EXP; it is the non-explicit SCCB
+		// (the explicit variant is 0x29 above).
+		OpSecondaryControlChannel: "SCCB",
 		Opcode(0x42):              "OSP(0x42)",
 	}
 	for op, want := range cases {
 		if got := op.String(); got != want {
 			t.Errorf("Opcode(%02X).String() = %s, want %s", uint8(op), got, want)
 		}
+	}
+}
+
+func TestSecondaryControlChannelBroadcastExplicitRoundTrip(t *testing.T) {
+	in := SecondaryControlChannelBroadcastExplicit{
+		RFSS:            4,
+		Site:            0x2E,
+		TxChannelID:     0xF,
+		TxChannelNumber: 0x065,
+		RxChannelID:     0xE,
+		RxChannelNumber: 0x123,
+		ServiceClass:    0x70,
+	}
+	got := ParseSecondaryControlChannelBroadcastExplicit(AssembleSecondaryControlChannelBroadcastExplicit(in))
+	if got != in {
+		t.Errorf("explicit SCCB round-trip = %+v, want %+v", got, in)
 	}
 }

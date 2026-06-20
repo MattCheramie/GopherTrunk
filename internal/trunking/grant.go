@@ -93,6 +93,17 @@ type Grant struct {
 	// channel when publishing the grant; zero on non-Phase-2 grants.
 	P25Phase2Decode P25Phase2Decode
 	At              time.Time
+	// CallID is a process-monotonic identifier the voice pool assigns when
+	// it binds a device to this grant (VoicePool.Bind); a real handoff
+	// (VoicePool.Retune) preserves it so a followed call keeps one identity.
+	// It lets the downstream voice chain tag each decoded frame with the
+	// call it belongs to and the recorder reject a frame whose CallID
+	// doesn't match the open session — closing the cross-call audio-bleed
+	// window when a voice-tap serial is immediately reused for the next
+	// call. Zero on grants that never went through the voice pool (synthetic
+	// / conventional follows); a zero-vs-zero match is a no-op, preserving
+	// prior behaviour.
+	CallID uint64
 }
 
 // P25Phase2Decode is the protocol-neutral mirror of

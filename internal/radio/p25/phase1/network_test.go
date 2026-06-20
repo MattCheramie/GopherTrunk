@@ -39,6 +39,23 @@ func TestNetworkModelAccumulates(t *testing.T) {
 	}
 }
 
+func TestNetworkModelSecondaryControlChannelExplicit(t *testing.T) {
+	var m NetworkModel
+	// The explicit SCCB (0x29) records only its transmit (downlink)
+	// channel — the one a receiver tunes to.
+	m.ApplySecondaryControlChannelExplicit(SecondaryControlChannelBroadcastExplicit{
+		TxChannelID: 1, TxChannelNumber: 100,
+		RxChannelID: 1, RxChannelNumber: 200,
+	})
+	cfg := m.Snapshot()
+	if len(cfg.Secondary) != 1 {
+		t.Fatalf("Secondary = %v, want 1 (downlink only)", cfg.Secondary)
+	}
+	if cfg.Secondary[0] != (Channel{1, 100}) {
+		t.Errorf("Secondary[0] = %+v, want {1 100}", cfg.Secondary[0])
+	}
+}
+
 // TestControlChannelAccumulatesTopology drives status-broadcast TSBKs
 // through the control channel and checks NetworkSnapshot reflects them.
 func TestControlChannelAccumulatesTopology(t *testing.T) {
@@ -56,9 +73,14 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 		Payload: [8]byte{9, 0x01, 0x23, 4, 7}}
 	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast,
 		Payload: AssembleAdjacentSiteStatusBroadcast(AdjacentSiteStatusBroadcast{RFSS: 4, Site: 8, ChannelID: 1, ChannelNumber: 300})}
+	// Explicit Secondary Control Channel Broadcast (0x29): its transmit
+	// (downlink) channel must surface in the topology's secondary list.
+	sccbExp := TSBK{Opcode: OpSecondaryControlChannelExpl,
+		Payload: AssembleSecondaryControlChannelBroadcastExplicit(SecondaryControlChannelBroadcastExplicit{
+			RFSS: 4, Site: 7, TxChannelID: 1, TxChannelNumber: 0x123, RxChannelID: 1, RxChannelNumber: 0x456})}
 
 	base := 0
-	for _, tsbk := range []TSBK{nsb, rfss, adj} {
+	for _, tsbk := range []TSBK{nsb, rfss, adj, sccbExp} {
 		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
 		base += 1 << 20
 	}
@@ -69,6 +91,9 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	}
 	if len(cfg.Neighbors) != 1 || cfg.Neighbors[0].Site != 8 {
 		t.Errorf("neighbours = %v, want one site-8 entry", cfg.Neighbors)
+	}
+	if len(cfg.Secondary) != 1 || cfg.Secondary[0] != (Channel{1, 0x123}) {
+		t.Errorf("secondary = %v, want one downlink {1 0x123} from SCCB_EXP", cfg.Secondary)
 	}
 }
 

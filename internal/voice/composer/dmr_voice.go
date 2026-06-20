@@ -35,6 +35,16 @@ type errAwareRawSink interface {
 	WriteRawFrameWithErrors(deviceSerial string, frame []byte, correctedBits int) error
 }
 
+// callAwareRawSink is the richest sink: it carries the per-frame FEC
+// corrected-bit count AND the call identity (Grant.CallID) the frame was
+// decoded for, so the recorder can reject a stale frame from the call that
+// previously held this tap serial (the voice-tap mix-up fence). The recorder
+// implements it; a chain that finds the sink supports it routes frames here
+// in preference to errAwareRawSink, falling back when it doesn't.
+type callAwareRawSink interface {
+	WriteRawFrameForCall(deviceSerial string, callID uint64, frame []byte, correctedBits int) error
+}
+
 // runDMRVoiceChain consumes IQ for one DMR voice call. It decimates
 // the wideband IQ to a DMR-symbol-friendly rate, recovers the dibit
 // stream with the shared DMR receiver, assembles A–F voice

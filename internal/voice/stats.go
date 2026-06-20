@@ -38,6 +38,19 @@ type VoiceStats struct {
 	MinAGCGain  float64 // min applied gain (loudest input frames)
 	MaxAGCGain  float64 // max applied gain (quietest input frames)
 
+	// Fundamental-frequency parameter (b_0) range over all frames. b_0 is
+	// the raw codebook index the IMBE header carries; the idle-carrier
+	// corner is b_0 ≤ 7. When a call decodes to all-idle (Voiced+Unvoiced
+	// == 0), these disambiguate a genuine low-modulation dead-key (b_0
+	// varying within [0,7]) from empty/zero frames reaching the vocoder —
+	// a mistuned tap or extraction bug (b_0 pinned at 0). MaxB0 == 0 with
+	// frames > 0 means every frame's b_0 was 0.
+	MinB0 int // smallest b_0 seen across all frames (−1 when no frames)
+	MaxB0 int // largest b_0 seen across all frames (−1 when no frames)
+	// FirstFrameHex is the first raw 11-byte vocoder frame as hex, captured
+	// for diagnostics so an all-idle capture can be inspected off-line.
+	FirstFrameHex string
+
 	// Output amplitude health.
 	MaxPreClipPeak float64 // largest pre-clip sample magnitude (int16 units)
 	OutputRMS      float64 // RMS of the int16 output across the call
