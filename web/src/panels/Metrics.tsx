@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import { api } from "../api/client";
+import { PageHeader } from "../components/ui/PageHeader";
 import { selectClientConfig, useShared } from "../store/shared";
 
 ChartJS.register(
@@ -173,13 +174,15 @@ export function Metrics() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Metrics</h2>
-        <span className="text-xs text-muted">
-          polled every {POLL_INTERVAL_MS / 1000}s · {historyRef.current.length}/
-          {HISTORY_POINTS} samples
-        </span>
-      </header>
+      <PageHeader
+        title="Metrics"
+        actions={
+          <span className="text-xs text-muted">
+            polled every {POLL_INTERVAL_MS / 1000}s ·{" "}
+            {historyRef.current.length}/{HISTORY_POINTS} samples
+          </span>
+        }
+      />
 
       {error && (
         <p className="text-sm text-err" role="alert">

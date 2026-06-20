@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { PageHeader } from "../components/ui/PageHeader";
 import type { EventDTO, ToneAlertDTO } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
 
@@ -18,6 +19,7 @@ export function Tones() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const events = useShared((s) => s.events);
 
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
@@ -90,6 +92,7 @@ export function Tones() {
   async function resetDevice(serial: string) {
     try {
       await writes.toneReset(cfg, serial);
+      notify("success", `Reset tone detector on ${serial}`);
     } catch (e: unknown) {
       setError(
         e instanceof Error ? e.message : "tone-reset request failed",
@@ -107,10 +110,12 @@ export function Tones() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Tone alerts</h2>
-        <span className="text-xs text-muted">{toneRows.length} captured</span>
-      </header>
+      <PageHeader
+        title="Tone alerts"
+        actions={
+          <span className="text-xs text-muted">{toneRows.length} captured</span>
+        }
+      />
 
       {canMutate && deviceSerials.length > 0 && (
         <div className="panel p-3 flex flex-wrap items-center gap-2">
@@ -135,6 +140,14 @@ export function Tones() {
         rowKey={(r, i) => `${r.alert.matched_at}-${r.alert.device_serial}-${i}`}
         defaultSortKey="time"
         defaultSortDirection="desc"
+        tableId="tones"
+        searchable
+        searchAccessor={(r) =>
+          [r.alert.profile, r.alert.alpha_tag, r.alert.device_serial, r.alert.system]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search by profile, tag, device…"
         onRowClick={(r) => setSelected(r)}
         emptyMessage="No tone alerts yet. They arrive live over the WebSocket as tone-out detectors fire."
       />

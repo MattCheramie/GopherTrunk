@@ -1,5 +1,7 @@
-import { useEffect } from "react";
 import { api } from "../api/client";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Badge } from "../components/ui/Badge";
+import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
 
 // Dashboard: top-line counts + a peek at the last few events. The
@@ -19,53 +21,53 @@ export function Dashboard() {
   const events = useShared((s) => s.events);
   const wsStatus = useShared((s) => s.wsStatus);
 
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const [h, calls, devs, aud] = await Promise.allSettled([
-          api.health(cfg),
-          api.activeCalls(cfg),
-          api.devices(cfg),
-          api.audio(cfg),
-        ]);
-        if (cancel) return;
-        if (h.status === "fulfilled") setHealth(h.value);
-        if (calls.status === "fulfilled") setActiveCalls(calls.value);
-        if (devs.status === "fulfilled") setDevices(devs.value);
-        if (aud.status === "fulfilled") setAudio(aud.value);
-      } catch {
-        // Silent: errors land on the toast strip from elsewhere.
-      }
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 3_000);
-    return () => {
-      cancel = true;
-      window.clearInterval(timer);
-    };
-  }, [cfg, setHealth, setActiveCalls, setDevices, setAudio]);
+  useDataPoll({
+    fetcher: async () => {
+      const [h, calls, devs, aud] = await Promise.allSettled([
+        api.health(cfg),
+        api.activeCalls(cfg),
+        api.devices(cfg),
+        api.audio(cfg),
+      ]);
+      return {
+        health: h.status === "fulfilled" ? h.value : null,
+        calls: calls.status === "fulfilled" ? calls.value : null,
+        devices: devs.status === "fulfilled" ? devs.value : null,
+        audio: aud.status === "fulfilled" ? aud.value : null,
+      };
+    },
+    onData: (d) => {
+      if (d.health) setHealth(d.health);
+      if (d.calls) setActiveCalls(d.calls);
+      if (d.devices) setDevices(d.devices);
+      if (d.audio) setAudio(d.audio);
+    },
+    intervalMs: 3_000,
+    resetKey: cfg.baseURL,
+  });
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Dashboard</h2>
-        <span
-          className={
-            wsStatus === "open"
-              ? "pill-ok"
+      <PageHeader
+        title="Dashboard"
+        actions={
+          <Badge
+            tone={
+              wsStatus === "open"
+                ? "ok"
+                : wsStatus === "connecting"
+                  ? "warn"
+                  : "err"
+            }
+          >
+            {wsStatus === "open"
+              ? "Live"
               : wsStatus === "connecting"
-                ? "pill-warn"
-                : "pill-err"
-          }
-        >
-          {wsStatus === "open"
-            ? "Live"
-            : wsStatus === "connecting"
-              ? "Connecting"
-              : "Offline"}
-        </span>
-      </header>
+                ? "Connecting"
+                : "Offline"}
+          </Badge>
+        }
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Active calls" value={activeCalls.length} />
