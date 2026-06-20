@@ -5,6 +5,7 @@ import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { PageHeader } from "../components/ui/PageHeader";
 import type { ActiveCallDTO } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
 import { useDataPoll } from "../hooks/useDataPoll";
@@ -140,15 +141,17 @@ export function Active() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Active calls</h2>
-        <div className="flex items-center gap-2">
-          <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
-          <span className="text-xs text-muted">
-            {activeCalls.length} in flight
-          </span>
-        </div>
-      </header>
+      <PageHeader
+        title="Active calls"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {activeCalls.length} in flight
+            </span>
+          </>
+        }
+      />
 
       <DataTable
         rows={activeCalls}

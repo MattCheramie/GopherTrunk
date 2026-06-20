@@ -51,8 +51,14 @@ const SS_KEYS = {
   noConfigDismissed: "gt.ui.noConfigDismissed",
 } as const;
 
-export type Theme = "dark" | "monochrome";
+export type Theme = "dark" | "monochrome" | "light";
 export type Density = "comfortable" | "compact";
+
+// Maps a stored Theme to the `data-theme` attribute value the CSS uses
+// ("monochrome" → "mono"). Centralized so main.tsx and Settings agree.
+export function themeAttr(theme: Theme): string {
+  return theme === "monochrome" ? "mono" : theme;
+}
 
 function readLS(key: string): string | null {
   try {
@@ -129,6 +135,17 @@ export const prefs = {
   },
   setSidebarCollapsed(collapsed: boolean) {
     writeLS(LS_KEYS.sidebarCollapsed, collapsed ? "1" : "0");
+  },
+
+  /** Per-id collapsible-section state, so operators' open/closed layout
+   *  sticks across visits. `defaultCollapsed` is returned when unset. */
+  sectionCollapsed(id: string, defaultCollapsed = false): boolean {
+    const raw = readLS(`gt.ui.section.${id}`);
+    if (raw === null) return defaultCollapsed;
+    return raw === "1";
+  },
+  setSectionCollapsed(id: string, collapsed: boolean) {
+    writeLS(`gt.ui.section.${id}`, collapsed ? "1" : "0");
   },
 
   writeMode(): boolean {

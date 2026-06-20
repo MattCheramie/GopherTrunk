@@ -4,6 +4,8 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Badge } from "../components/ui/Badge";
 import type { TalkgroupDTO } from "../api/types";
 import { useDataPoll } from "../hooks/useDataPoll";
 import {
@@ -108,10 +110,10 @@ export function Talkgroups() {
         header: "Flags",
         render: (r) => (
           <div className="flex flex-wrap gap-1">
-            {r.scan && <span className="pill-ok">scan</span>}
-            {r.lockout && <span className="pill-err">lock</span>}
+            {r.scan && <Badge tone="ok">scan</Badge>}
+            {r.lockout && <Badge tone="err">lock</Badge>}
             {r.priority != null && r.priority > 0 && (
-              <span className="pill-warn">pri</span>
+              <Badge tone="warn">pri</Badge>
             )}
           </div>
         ),
@@ -122,15 +124,17 @@ export function Talkgroups() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Talkgroups</h2>
-        <div className="flex items-center gap-2">
-          <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
-          <span className="text-xs text-muted">
-            {filtered.length} of {talkgroups.length}
-          </span>
-        </div>
-      </header>
+      <PageHeader
+        title="Talkgroups"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {filtered.length} of {talkgroups.length}
+            </span>
+          </>
+        }
+      />
 
       <input
         type="search"

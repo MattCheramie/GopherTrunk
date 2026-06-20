@@ -7,7 +7,7 @@ import type {
   RuntimeDTO,
   SettingsPatch,
 } from "../api/types";
-import { prefs, type Theme } from "../store/prefs";
+import { prefs, themeAttr, type Density, type Theme } from "../store/prefs";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -20,6 +20,7 @@ import {
 // magically bypass server auth.
 export function Settings() {
   const [theme, setTheme] = useState<Theme>(prefs.theme());
+  const [density, setDensity] = useState<Density>(prefs.density());
   const writeMode = useShared((s) => s.writeMode);
   const setWriteMode = useShared((s) => s.setWriteMode);
   const canMutate = useShared(selectCanMutate);
@@ -32,7 +33,13 @@ export function Settings() {
   const onTheme = (t: Theme) => {
     setTheme(t);
     prefs.setTheme(t);
-    document.documentElement.dataset.theme = t === "monochrome" ? "mono" : "dark";
+    document.documentElement.dataset.theme = themeAttr(t);
+  };
+
+  const onDensity = (d: Density) => {
+    setDensity(d);
+    prefs.setDensity(d);
+    document.documentElement.dataset.density = d;
   };
 
   return (
@@ -59,22 +66,39 @@ export function Settings() {
         </button>
       </section>
 
-      <section className="panel p-4 space-y-3">
-        <h3 className="panel-title">Theme</h3>
-        <div className="flex gap-2">
-          {(["dark", "monochrome"] as const).map((t) => (
-            <button
-              key={t}
-              className={
-                theme === t
-                  ? "btn-primary"
-                  : "btn-ghost"
-              }
-              onClick={() => onTheme(t)}
-            >
-              {t}
-            </button>
-          ))}
+      <section className="panel p-4 space-y-4">
+        <div className="space-y-2">
+          <h3 className="panel-title">Theme</h3>
+          <div className="flex flex-wrap gap-2">
+            {(["dark", "monochrome", "light"] as const).map((t) => (
+              <button
+                key={t}
+                className={theme === t ? "btn-primary" : "btn-ghost"}
+                aria-pressed={theme === t}
+                onClick={() => onTheme(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h3 className="panel-title">Density</h3>
+          <div className="flex flex-wrap gap-2">
+            {(["comfortable", "compact"] as const).map((d) => (
+              <button
+                key={d}
+                className={density === d ? "btn-primary" : "btn-ghost"}
+                aria-pressed={density === d}
+                onClick={() => onDensity(d)}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted">
+            Compact tightens table rows for monitoring many calls at once.
+          </p>
         </div>
       </section>
 
