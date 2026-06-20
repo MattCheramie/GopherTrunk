@@ -286,7 +286,12 @@ export function Tuning() {
       <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>
 
       {/* Carrier-error trend (the FLL view). */}
-      <div className="rounded border border-border bg-black p-2" style={{ height: 220 }}>
+      <div
+        className="rounded border border-border bg-black p-2"
+        style={{ height: 220 }}
+        role="img"
+        aria-label="Carrier-error (frequency-lock-loop) trend over time; the loop-state meters below give the current values as text."
+      >
         <Line data={chartData} options={chartOptions} />
       </div>
 

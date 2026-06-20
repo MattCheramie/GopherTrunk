@@ -21,6 +21,7 @@ export function RadioIDs() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const rids = useShared((s) => s.rids);
   const setRIDs = useShared((s) => s.setRIDs);
 
@@ -82,6 +83,7 @@ export function RadioIDs() {
       const updated = await writes.updateRID(cfg, id, body);
       setRIDs(rids.map((r) => (r.id === id ? { ...r, ...updated } : r)));
       setSelected((s) => (s && s.id === id ? { ...s, ...updated } : s));
+      notify("success", `Updated radio ID ${id}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "rid update failed");
     } finally {

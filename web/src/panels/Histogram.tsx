@@ -338,7 +338,12 @@ export function Histogram() {
 
       <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>
 
-      <div className="rounded border border-border bg-black p-2" style={{ height: 240 }}>
+      <div
+        className="rounded border border-border bg-black p-2"
+        style={{ height: 240 }}
+        role="img"
+        aria-label="Symbol-level histogram; the balance and level meters below give the current values as text."
+      >
         <Bar data={chartData} options={chartOptions} />
       </div>
 

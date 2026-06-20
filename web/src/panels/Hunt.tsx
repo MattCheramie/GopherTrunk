@@ -110,6 +110,7 @@ export function Hunt() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
 
   const [status, setStatus] = useState<HuntStatus | null>(null);
   const [bands, setBands] = useState("851:869");
@@ -177,6 +178,7 @@ export function Hunt() {
         serial: serial || undefined,
         protocol: protocol || undefined,
       });
+      notify("success", "Hunt started");
     } catch (e: unknown) {
       setError(e instanceof Error ? `start hunt failed: ${e.message}` : "start hunt failed");
     }
@@ -185,6 +187,7 @@ export function Hunt() {
   async function stop() {
     try {
       await writes.huntStop(cfg);
+      notify("success", "Hunt stopped");
     } catch (e: unknown) {
       setError(e instanceof Error ? `stop hunt failed: ${e.message}` : "stop hunt failed");
     }
@@ -210,6 +213,7 @@ export function Hunt() {
         dwell_seconds: ccDwell,
         monitor_seconds: ccMonitorMin > 0 ? ccMonitorMin * 60 : undefined,
       });
+      notify("success", `Parsing ${ccProto.toUpperCase()} control channel`);
     } catch (e: unknown) {
       setError(e instanceof Error ? `parse CC failed: ${e.message}` : "parse CC failed");
     }

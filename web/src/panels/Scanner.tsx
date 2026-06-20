@@ -21,6 +21,7 @@ export function Scanner() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const scanner = useShared((s) => s.scanner);
   const setScanner = useShared((s) => s.setScanner);
 
@@ -62,6 +63,7 @@ export function Scanner() {
     try {
       await fn();
       await reload();
+      notify("success", `${label.replace(/_/g, " ")} ok`);
     } catch (e: unknown) {
       setError(
         e instanceof Error ? `${label} failed: ${e.message}` : `${label} failed`,
