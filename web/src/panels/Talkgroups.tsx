@@ -27,7 +27,6 @@ export function Talkgroups() {
   const talkgroups = useShared((s) => s.talkgroups);
   const setTalkgroups = useShared((s) => s.setTalkgroups);
   const [selected, setSelected] = useState<TalkgroupDTO | null>(null);
-  const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
 
   const { stale, lastUpdated } = useDataPoll({
@@ -56,21 +55,6 @@ export function Talkgroups() {
       setBusy(false);
     }
   }
-
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return talkgroups;
-    const needle = filter.toLowerCase();
-    return talkgroups.filter((t) => {
-      const idStr = String(t.id);
-      return (
-        idStr.includes(needle) ||
-        (t.alpha_tag ?? "").toLowerCase().includes(needle) ||
-        (t.description ?? "").toLowerCase().includes(needle) ||
-        (t.tag ?? "").toLowerCase().includes(needle) ||
-        (t.group ?? "").toLowerCase().includes(needle)
-      );
-    });
-  }, [talkgroups, filter]);
 
   const columns: Column<TalkgroupDTO>[] = useMemo(
     () => [
@@ -130,31 +114,54 @@ export function Talkgroups() {
           <>
             <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
             <span className="text-xs text-muted">
-              {filtered.length} of {talkgroups.length}
+              {talkgroups.length} total
             </span>
           </>
         }
       />
 
-      <input
-        type="search"
-        className="input w-full sm:max-w-xs"
-        placeholder="Filter by id, alpha tag, group, tag…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        aria-label="Filter talkgroups"
-      />
-
       <DataTable
-        rows={filtered}
+        rows={talkgroups}
         columns={columns}
         rowKey={(r) => String(r.id)}
         defaultSortKey="id"
+        tableId="talkgroups"
+        searchable
+        searchAccessor={(r) =>
+          [r.id, r.alpha_tag, r.description, r.tag, r.group]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search by id, alpha tag, group, tag…"
+        rowActions={
+          canMutate
+            ? (r) => (
+                <span className="inline-flex gap-1">
+                  <button
+                    className={r.scan ? "pill-ok" : "pill"}
+                    disabled={busy}
+                    title="Toggle scan"
+                    onClick={() => patch(r.id, { scan: !r.scan })}
+                  >
+                    scan
+                  </button>
+                  <button
+                    className={r.lockout ? "pill-err" : "pill"}
+                    disabled={busy}
+                    title="Toggle lockout"
+                    onClick={() => patch(r.id, { lockout: !r.lockout })}
+                  >
+                    lock
+                  </button>
+                </span>
+              )
+            : undefined
+        }
         onRowClick={(r) => setSelected(r)}
         emptyMessage={
           talkgroups.length === 0
             ? "No talkgroups configured."
-            : "No talkgroups match the filter."
+            : "No talkgroups match the search."
         }
       />
 

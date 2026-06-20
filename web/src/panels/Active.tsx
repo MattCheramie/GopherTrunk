@@ -159,6 +159,13 @@ export function Active() {
         rowKey={(r) => `${r.device_serial}-${r.started_at}`}
         defaultSortKey="elapsed"
         defaultSortDirection="desc"
+        searchable
+        searchAccessor={(r) =>
+          [r.grant.group_id, r.talkgroup?.alpha_tag, r.grant.system, r.device_serial]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search active calls…"
         onRowClick={(r) => setSelected(r)}
         emptyMessage="No calls right now. Active grants show up here as soon as the daemon allocates a voice device."
       />

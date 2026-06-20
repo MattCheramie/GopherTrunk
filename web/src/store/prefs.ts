@@ -148,6 +148,22 @@ export const prefs = {
     writeLS(`gt.ui.section.${id}`, collapsed ? "1" : "0");
   },
 
+  /** Per-table hidden-column keys, so column-visibility choices stick.
+   *  Stored as a JSON array under a per-tableId key. */
+  tableHiddenColumns(tableId: string): string[] {
+    const raw = readLS(`gt.table.${tableId}.hidden`);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((k) => typeof k === "string") : [];
+    } catch {
+      return [];
+    }
+  },
+  setTableHiddenColumns(tableId: string, keys: string[]) {
+    writeLS(`gt.table.${tableId}.hidden`, JSON.stringify(keys));
+  },
+
   writeMode(): boolean {
     return readLS(LS_KEYS.writeMode) === "1";
   },
