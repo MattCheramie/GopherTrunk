@@ -7,6 +7,106 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.8] — 2026-06-20
+
+This release is dominated by a **six-phase operator-console overhaul** that
+rebuilds the web UI's navigation, feedback, primitives, tables, dense panels,
+and accessibility from the ground up. The flat tab bar is replaced by a
+registry-driven app shell — a collapsible desktop sidebar, a mobile bottom nav
++ drawer, and a ⌘K/Ctrl-K command palette — that reaches all 31 routes,
+including six DSP panels that were previously unreachable except by URL. On top
+of that: a toast notification system with a shared polling hook that kills
+re-render flicker and shows reconnect state, a reusable primitive layer with a
+new light theme and a comfortable/compact density axis, a DataTable with
+built-in search / pagination / inline actions / column visibility, regrouped
+Hunt / Scanner / Settings panels, and a pass over focus traps, a skip link,
+reduced-motion, and chart labelling (mirrored into the Signal Lab and Config
+Builder SPAs). On the decode side, **P25 TSBK coverage** gains named standard
+OSPs and a field-decoded Secondary Control Channel Broadcast — Explicit (0x29),
+empty/all-muted recordings are suppressed to stop tiny-file spam, and a
+per-call ID closes a cross-call audio-bleed window. The docs grow a new
+**Digital & Trunked Radio** learning path and a **Software Development** domain
+in the Reference encyclopedia.
+
+### Added
+- **Web console navigation overhaul — app shell + grouped nav + command
+  palette** (#736). A single nav registry feeds four surfaces — a collapsible
+  desktop sidebar, a mobile bottom nav (4 primaries + More), a full mobile
+  drawer, and a ⌘K/Ctrl-K command palette — organizing all 31 routes into six
+  groups (Live Ops, Discovery, Signals & DSP, Decoders & Logs, Database,
+  System). This rescues 21 panels that were stranded behind a hidden mobile
+  overflow row and six DSP panels (constellation, symbols, eye, mixer, tuning,
+  histogram) that were in no tab list at all. The daemon's `hidden_tabs` filter
+  and the Config Builder external link are preserved.
+- **Notification + feedback system** (#739). A toast queue with kind-based
+  auto-dismiss replaces the single manually-dismissed error strip; every
+  existing `setError(...)` now surfaces a visible toast. A shared `useDataPoll`
+  hook centralizes the poll/cancel pattern, only re-renders when a snapshot
+  actually changed (killing poll-induced flicker), and shows a
+  "reconnecting · Ns ago" chip when the daemon goes quiet. Mutations gain
+  visible "saving…" / success states.
+- **Reusable UI primitive layer + light theme + density axis** (#739). A
+  `components/ui/` set (Card, Badge, Input, Select, Checkbox, Field, PageHeader,
+  EmptyState, Skeleton, Section, Button, Spinner, ToastViewport) lets panels
+  stop hand-rolling controls. Design tokens gain a `[data-theme="light"]` theme
+  (Settings now offers a dark/mono/light toggle) and a `[data-density]` axis
+  (comfortable/compact), both applied pre-render and persisted.
+- **DataTable overhaul** (#739). The shared table gains opt-in, backward-
+  compatible built-in search, pagination, loading skeletons, an inline
+  row-actions cell, a toolbar slot, and a persisted column-visibility menu.
+  Talkgroups, Radio IDs, Systems, Active, and History adopt these; Talkgroups
+  also gets inline scan/lockout quick-toggles.
+- **"Digital & Trunked Radio" learning path** (#737). A new structured path
+  under `/learn/` — 6 modules, 31 lessons + glossary — covering digital radio
+  and trunking end to end: a brief history, the digital signal chain (vocoders,
+  modulation, framing, control channels), each trunking system GopherTrunk
+  decodes (P25 Phase 1/2 and DMR in depth; TETRA, NXDN, Motorola, EDACS, LTR,
+  MPT-1327, dPMR, D-STAR, YSF more briefly), and hands-on decoding. Registered
+  in `_data/learn.yml`, so the chooser, hub, lesson nav, and `llms.txt` pick it
+  up automatically.
+- **"Software Development" domain in the Reference encyclopedia** (#738). The
+  encyclopedia is restructured from a flat category list into a two-level
+  Domain → Category → Entry model (the 11 existing RF categories move under an
+  "RF & SDR" domain unchanged), and a full Software Development domain is built
+  out: 61 new entries across 6 categories — 19 programming languages plus 42
+  concepts spanning language internals, concurrency, paradigms & design
+  patterns, principles & quality, and testing/tooling/delivery — each
+  cross-linked and wired into the learning paths.
+- **P25 Secondary Control Channel Broadcast — Explicit (0x29) decode** (#740).
+  The explicit SCCB is now field-decoded and its downlink channel folded into
+  the network topology (dispatched regardless of MFID like the other standard
+  broadcasts), and the standard OSPs that were logging as `OSP(0xNN)`/unhandled
+  — including 0x16 `SNDCP_DAT_CH_ANN_EXP` and 0x29 `SCCB_EXP` — are now named.
+
+### Changed
+- **Dense panels regrouped onto the primitives** (#739). Hunt is rebuilt on the
+  UI primitives (clearing long-standing styling debt where it referenced
+  undefined CSS classes), split into a "Parse a control channel" quick-start, a
+  collapsed "Blind sweep" advanced section, and result Cards. Scanner's three
+  sub-panels move to Cards with state pills; Settings becomes a collapsible
+  Section with a plain-language tooltip on each config field.
+- **Accessibility & cross-SPA polish** (#739). DetailModal and ConfirmModal now
+  trap focus and restore it to the trigger on close; a visually-hidden "Skip to
+  content" link jumps past the nav chrome; a `prefers-reduced-motion` rule
+  neutralizes transitions (mirrored into the Config Builder and Signal Lab
+  SPAs); and the Metrics trend chart gains `role="img"` + an aria-label.
+
+### Fixed
+- **P25 opcode 0x39 was mislabelled** (#740). 0x39 is the non-explicit SCCB;
+  the explicit variant is 0x29 (per TIA / SDRTrunk / OP25). The two are now
+  named correctly.
+- **Empty/all-muted recordings no longer spam tiny files** (#740). A vocoder
+  call that decodes no real speech (voiced + unvoiced == 0 — all idle-muted)
+  now has its WAV/raw removed and publishes no `CallComplete`, instead of
+  leaving a silent file that, in per-transmission mode, was the dominant source
+  of tiny files. A per-call b₀ range + escalated WARN line lets a genuine
+  dead-key be told apart from empty frames reaching the vocoder.
+- **Cross-call audio bleed when a voice-tap serial is reused** (#740). Each
+  bound call now gets a process-unique `Grant.CallID` (preserved across Retune
+  handoffs) threaded to the recorder, which drops frames whose CallID doesn't
+  match the open session — closing the window where a reused tap could bleed one
+  call's audio into another.
+
 ## [v0.4.7] — 2026-06-19
 
 This release sharpens **P25 discovery accuracy** and **identity corroboration**.
