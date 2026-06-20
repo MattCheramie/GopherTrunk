@@ -117,7 +117,7 @@ func (d *RIDDB) Len() int {
 // Alias / Alpha Tag, Description, Tag, Group, Owner, Priority,
 // Lockout, Watch, Icon.
 func (d *RIDDB) LoadCSV(r io.Reader) (int, error) {
-	cr := csv.NewReader(r)
+	cr := csv.NewReader(decodeReader(r))
 	cr.TrimLeadingSpace = true
 	cr.FieldsPerRecord = -1
 	header, err := cr.Read()
@@ -224,21 +224,21 @@ func (d *RIDDB) LoadJSON(r io.Reader) (int, error) {
 		Icon        string `json:"icon,omitempty"`
 	}
 	var arr []ridRaw
-	if err := json.NewDecoder(r).Decode(&arr); err != nil {
+	if err := json.NewDecoder(decodeReader(r)).Decode(&arr); err != nil {
 		return 0, fmt.Errorf("trunking: decode rid json: %w", err)
 	}
 	for _, raw := range arr {
 		rid := &RID{
 			ID:          raw.ID,
-			Alias:       raw.Alias,
-			Description: raw.Description,
-			Tag:         raw.Tag,
-			Group:       raw.Group,
-			Owner:       raw.Owner,
+			Alias:       sanitizeText(raw.Alias),
+			Description: sanitizeText(raw.Description),
+			Tag:         sanitizeText(raw.Tag),
+			Group:       sanitizeText(raw.Group),
+			Owner:       sanitizeText(raw.Owner),
 			Priority:    raw.Priority,
 			Lockout:     raw.Lockout,
 			Watch:       true,
-			Icon:        raw.Icon,
+			Icon:        sanitizeText(raw.Icon),
 		}
 		if raw.Watch != nil {
 			rid.Watch = *raw.Watch

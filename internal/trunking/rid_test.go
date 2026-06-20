@@ -3,6 +3,9 @@ package trunking
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 func TestRIDDBLookup(t *testing.T) {
@@ -194,5 +197,46 @@ func TestLoadRIDJSONInvalid(t *testing.T) {
 	d := NewRIDDB()
 	if _, err := d.LoadJSON(strings.NewReader("{not json")); err == nil {
 		t.Error("expected error for malformed JSON")
+	}
+}
+
+// TestLoadRIDCSVUTF16 proves a SDRTrunk-style UTF-16LE-with-BOM export is
+// transcoded to clean UTF-8 instead of read as interleaved-NUL mojibake.
+func TestLoadRIDCSVUTF16(t *testing.T) {
+	const csv = "Decimal,Alias\n900007,DISPATCH\n"
+	enc := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder()
+	b, _, err := transform.Bytes(enc, []byte(csv))
+	if err != nil {
+		t.Fatalf("encode utf16: %v", err)
+	}
+	d := NewRIDDB()
+	if _, err := d.LoadCSV(strings.NewReader(string(b))); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	r := d.Lookup(900007)
+	if r == nil || r.Alias != "DISPATCH" {
+		t.Errorf("utf16 import = %+v, want Alias=DISPATCH", r)
+	}
+}
+
+// TestLoadRIDStripsMojibake proves non-ASCII junk in alias fields is dropped
+// rather than surfaced verbatim in the UI (issue #711).
+func TestLoadRIDStripsMojibake(t *testing.T) {
+	csv := "Decimal,Alias\n900007,DIS中PATCH\n"
+	d := NewRIDDB()
+	if _, err := d.LoadCSV(strings.NewReader(csv)); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	if r := d.Lookup(900007); r == nil || r.Alias != "DISPATCH" {
+		t.Errorf("csv mojibake = %+v, want Alias=DISPATCH", r)
+	}
+
+	js := `[{"id":900008,"alias":"UN中IT","owner":"Sgt"}]`
+	d2 := NewRIDDB()
+	if _, err := d2.LoadJSON(strings.NewReader(js)); err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	if r := d2.Lookup(900008); r == nil || r.Alias != "UNIT" || r.Owner != "Sgt" {
+		t.Errorf("json mojibake = %+v, want Alias=UNIT Owner=Sgt", r)
 	}
 }
