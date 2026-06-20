@@ -3564,6 +3564,34 @@ func (f fanoutSink) WriteRawFrameWithErrors(serial string, frame []byte, correct
 	return nil
 }
 
+// WriteRawFrameForCall fans a raw frame plus its FEC corrected-bit count
+// AND the call's CallID out to the contained sinks. The recorder uses the
+// CallID to fence a stale frame from the call that previously held the tap
+// serial (voice-tap mix-up). fanoutSink MUST implement this: the P25 Phase 1
+// voice chain selects it via `c.sink.(callAwareRawSink)`; without it the
+// chain falls back to WriteRawFrameWithErrors and the fence is inert in the
+// daemon. Sinks that only speak the older shapes still get the frame, just
+// without the CallID guard.
+func (f fanoutSink) WriteRawFrameForCall(serial string, callID uint64, frame []byte, correctedBits int) error {
+	for _, s := range f {
+		switch rs := s.(type) {
+		case interface {
+			WriteRawFrameForCall(string, uint64, []byte, int) error
+		}:
+			_ = rs.WriteRawFrameForCall(serial, callID, frame, correctedBits)
+		case interface {
+			WriteRawFrameWithErrors(string, []byte, int) error
+		}:
+			_ = rs.WriteRawFrameWithErrors(serial, frame, correctedBits)
+		case interface {
+			WriteRawFrame(string, []byte) error
+		}:
+			_ = rs.WriteRawFrame(serial, frame)
+		}
+	}
+	return nil
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {

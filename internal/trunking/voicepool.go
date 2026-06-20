@@ -3,6 +3,7 @@ package trunking
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +28,12 @@ type VoicePool struct {
 	// Bind retries SetCenterFreq once. Wired in by the daemon via
 	// SetReacquire; nil = no retry, current behaviour. See issue #345.
 	reacquire ReacquireFunc
+	// callSeq is a process-monotonic counter that assigns each bound call a
+	// unique Grant.CallID, used by the voice chain + recorder to fence
+	// cross-call audio bleed when a tap serial is reused. Starts at 0; the
+	// first Bind hands out CallID 1, so a real CallID is always non-zero and
+	// distinguishable from an un-bound (synthetic) grant's zero.
+	callSeq atomic.Uint64
 }
 
 // ReacquireFunc asks the SDR pool to re-open the device with the
@@ -219,6 +226,10 @@ func (p *VoicePool) Bind(d *VoiceDevice, g Grant, tg *TalkGroup, now time.Time) 
 			return nil, err2
 		}
 	}
+	// Stamp a fresh, process-unique CallID so the voice chain can tag this
+	// call's decoded frames and the recorder can reject a stale frame from
+	// the call that previously held this serial.
+	g.CallID = p.callSeq.Add(1)
 	ac := &ActiveCall{
 		Device:      d,
 		Grant:       g,
@@ -270,6 +281,10 @@ func (p *VoicePool) Retune(serial string, g Grant, now time.Time) error {
 		}
 	}
 	p.mu.Lock()
+	// A handoff continues the same call, so preserve its CallID across the
+	// grant replacement (the new grant from the control channel carries no
+	// CallID of its own).
+	g.CallID = ac.Grant.CallID
 	ac.Grant = g
 	ac.LastHeardAt = now
 	p.mu.Unlock()

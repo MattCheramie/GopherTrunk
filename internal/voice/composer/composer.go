@@ -485,7 +485,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		}
 		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, iqCh, rateHzF, ch.done)
 	case isP25P1Voice:
-		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.PatchedGroups, ch.done)
+		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, cs.Grant.GroupID, cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	default:
 		// Analog FM has no symbol clock to drift, so the rounded integer
 		// rate is fine; keep its uint32 signature unchanged.

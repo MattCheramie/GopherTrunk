@@ -108,6 +108,21 @@ var ErrInvalidFundamental = errors.New("imbe: invalid fundamental-frequency para
 // first value that escapes it. See Header.IdleTone.
 const IdleToneMaxB0 = 7
 
+// b0FromInfo reads the fundamental-frequency parameter b_0 from its
+// scattered positions {0..5, 85, 86} in the 88-bit info buffer (6
+// contiguous high bits + 2 trailing bits, packed MSB-first). The caller
+// must pass a buffer of at least InfoBits bytes (one bit per byte).
+func b0FromInfo(info []byte) uint {
+	return uint(info[0])<<7 |
+		uint(info[1])<<6 |
+		uint(info[2])<<5 |
+		uint(info[3])<<4 |
+		uint(info[4])<<3 |
+		uint(info[5])<<2 |
+		uint(info[85])<<1 |
+		uint(info[86])
+}
+
 // UnpackHeader reads b_0 from its scattered positions in the 88-bit
 // info buffer and derives ω₀ + L + K per TIA-102.BABA §5.3.
 // Returns ErrInvalidFundamental for unusable b_0 values; returns
@@ -118,16 +133,7 @@ func UnpackHeader(info []byte) (Header, error) {
 	if len(info) != InfoBits {
 		return Header{}, fmt.Errorf("%w, got %d", ErrInfoLength, len(info))
 	}
-	// b_0 spans positions {0..5, 85, 86} — 6 contiguous high bits +
-	// 2 trailing bits. Pack MSB-first.
-	b0 := uint(info[0])<<7 |
-		uint(info[1])<<6 |
-		uint(info[2])<<5 |
-		uint(info[3])<<4 |
-		uint(info[4])<<3 |
-		uint(info[5])<<2 |
-		uint(info[85])<<1 |
-		uint(info[86])
+	b0 := b0FromInfo(info)
 	if b0 > 207 {
 		if b0 >= 216 && b0 <= 219 {
 			return Header{Silent: true}, nil

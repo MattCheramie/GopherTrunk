@@ -136,6 +136,15 @@ func (m *NetworkModel) ApplySecondaryControlChannel(s SecondaryControlChannelBro
 	}
 }
 
+// ApplySecondaryControlChannelExplicit folds an explicit Secondary Control
+// Channel Broadcast (0x29) in. Only the transmit (downlink) channel is the
+// one a receiver tunes to, so only it is recorded in the secondary list.
+func (m *NetworkModel) ApplySecondaryControlChannelExplicit(s SecondaryControlChannelBroadcastExplicit) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.secondary = upsertChannel(m.secondary, Channel{s.TxChannelID, s.TxChannelNumber})
+}
+
 // ApplyAdjacentSite folds an Adjacent Site Status Broadcast (0x3C) in,
 // de-duplicating by (RFSS, Site) and keeping the latest channel info.
 func (m *NetworkModel) ApplyAdjacentSite(a AdjacentSiteStatusBroadcast) {

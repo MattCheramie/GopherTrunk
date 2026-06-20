@@ -322,7 +322,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 // session is open for that device the samples are dropped (the demod
 // pipeline can race ahead of the CallStart event).
 func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
-	s := r.sessionForWrite(deviceSerial)
+	s := r.sessionForWrite(deviceSerial, 0)
 	if s == nil {
 		return nil
 	}
@@ -333,11 +333,21 @@ func (r *Recorder) WritePCM(deviceSerial string, samples []int16) error {
 // the next per-transmission segment file when the session is dormant
 // (parked after a KindCallSegment roll). Returns nil when no session is
 // open for the device.
-func (r *Recorder) sessionForWrite(serial string) *recordingSession {
+//
+// callID fences a stale frame from the call that previously held this
+// serial: when it is non-zero and the open session's CallID is non-zero
+// and they differ, the frame is rejected (returns nil) WITHOUT reopening
+// a dormant session, so a mismatched frame can't even spawn an empty
+// file. A zero on either side matches (un-stamped / synthetic calls),
+// preserving prior behaviour for callers that pass 0.
+func (r *Recorder) sessionForWrite(serial string, callID uint64) *recordingSession {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.sessions[serial]
 	if !ok {
+		return nil
+	}
+	if callID != 0 && s.callID != 0 && callID != s.callID {
 		return nil
 	}
 	if s.wav == nil {
@@ -366,7 +376,17 @@ func (r *Recorder) sessionForWrite(serial string) *recordingSession {
 // Frames for a session without either output (no sidecar, no
 // vocoder) are dropped silently.
 func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
-	return r.writeRawFrame(deviceSerial, frame, 0, false)
+	return r.writeRawFrame(deviceSerial, 0, frame, 0, false)
+}
+
+// WriteRawFrameForCall is WriteRawFrameWithErrors plus the call identity
+// (Grant.CallID) the frame was decoded for. A frame whose callID doesn't
+// match the open session is dropped, fencing the cross-call audio-bleed
+// window when a voice-tap serial is reused for the next call before the
+// previous chain has fully drained. Digital voice chains that know their
+// call's CallID call this in preference to WriteRawFrameWithErrors.
+func (r *Recorder) WriteRawFrameForCall(deviceSerial string, callID uint64, frame []byte, correctedBits int) error {
+	return r.writeRawFrame(deviceSerial, callID, frame, correctedBits, true)
 }
 
 // WriteRawFrameWithErrors is WriteRawFrame plus the channel FEC
@@ -375,11 +395,11 @@ func (r *Recorder) WriteRawFrame(deviceSerial string, frame []byte) error {
 // before Decode so adaptive smoothing can estimate the channel error rate.
 // Callers without an error count use WriteRawFrame.
 func (r *Recorder) WriteRawFrameWithErrors(deviceSerial string, frame []byte, correctedBits int) error {
-	return r.writeRawFrame(deviceSerial, frame, correctedBits, true)
+	return r.writeRawFrame(deviceSerial, 0, frame, correctedBits, true)
 }
 
-func (r *Recorder) writeRawFrame(deviceSerial string, frame []byte, correctedBits int, haveErrs bool) error {
-	s := r.sessionForWrite(deviceSerial)
+func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byte, correctedBits int, haveErrs bool) error {
+	s := r.sessionForWrite(deviceSerial, callID)
 	if s == nil {
 		return nil
 	}
@@ -519,7 +539,7 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 	nameCS := cs
 	nameCS.StartedAt = startedAt
 	base := r.basenameFor(nameCS)
-	s := &recordingSession{startedAt: startedAt, cs: cs}
+	s := &recordingSession{startedAt: startedAt, cs: cs, callID: cs.Grant.CallID}
 	// Instantiate a vocoder for the protocol if one is mapped. This must
 	// happen before the WAV is opened so the header rate can track the
 	// vocoder's native output rate (below). Construction failure (unknown
@@ -593,7 +613,7 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 	// Park a dormant session: keeps the call's identity so the next write
 	// opens the next segment file, without creating an empty trailing
 	// file if no further audio arrives before the call ends.
-	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs}
+	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs, callID: s.callID}
 	r.mu.Unlock()
 	if cc != nil {
 		r.normalizeIfEnabled(cc.AudioPath)
@@ -620,9 +640,21 @@ func (r *Recorder) normalizeIfEnabled(wavPath string) {
 // nil returned. Caller holds r.mu and publishes after releasing it.
 func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt time.Time, reason trunking.EndReason) *trunking.CallComplete {
 	dataBytes := s.wav.DataBytes()
+	vs, haveStats := r.voiceStatsFor(s)
 	r.logVoiceStats(serial, s)
 	if err := s.close(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
+	}
+	// A vocoder-decoded call that produced no real speech (every frame was
+	// idle/silent/bad — voiced+unvoiced == 0) is a dead-key/idle carrier:
+	// the WAV holds only muted silence, so it's worthless and, in
+	// per-transmission mode, the dominant source of tiny-file spam. Remove
+	// both outputs and publish no CallComplete. Scoped to StatProvider
+	// vocoders (the pure-Go IMBE decoder) — analog and ProVoice/DMR can't be
+	// classified here and keep the dataBytes behaviour below.
+	if haveStats && vs.Voiced+vs.Unvoiced == 0 {
+		r.removeSessionFiles(s)
+		return nil
 	}
 	// No PCM decoded into the WAV — nothing to stream. The files are left
 	// in place: a digital call (ProVoice / DMR / pre-vocoder) keeps its
@@ -644,6 +676,21 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	}
 }
 
+// removeSessionFiles deletes a session's WAV and .raw sidecar from disk.
+// Used to discard a recording that captured no useful audio (a dead-key /
+// idle-only call) so it doesn't spam the recordings tree. The session must
+// already be closed. Mirrors the removal in handleEncryptionUpdate.
+func (r *Recorder) removeSessionFiles(s *recordingSession) {
+	for _, p := range []string{s.wavPath, s.rawPath} {
+		if p == "" {
+			continue
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			r.log.Warn("recorder: removing empty recording", "path", p, "err", err)
+		}
+	}
+}
+
 // voiceClipWarnPct is the output-clipping rate above which the per-call
 // voice summary escalates to WARN: a non-trivial fraction of samples
 // hitting the limiter means the vocoder gain is too hot (the signature of
@@ -658,12 +705,8 @@ const voiceClipWarnPct = 0.5
 // output is clipping. A vocoder that doesn't implement StatProvider, or a
 // call with no frames, produces nothing.
 func (r *Recorder) logVoiceStats(serial string, s *recordingSession) {
-	sp, ok := s.vocoder.(StatProvider)
+	vs, ok := r.voiceStatsFor(s)
 	if !ok {
-		return
-	}
-	vs, have := sp.VoiceStats()
-	if !have || vs.Frames == 0 {
 		return
 	}
 	args := []any{
@@ -682,11 +725,40 @@ func (r *Recorder) logVoiceStats(serial string, s *recordingSession) {
 		"crest", round2(vs.CrestFactor),
 		"clip_pct", round2(vs.ClipPct()),
 	}
+	// No decodable speech: every frame was idle/silent/bad (the call
+	// produced no voiced OR unvoiced audio). Escalate to WARN with the b_0
+	// range + first raw frame so an operator can tell a genuine dead-key
+	// (b_0 varying within the idle corner [0,7]) from empty/zero frames
+	// reaching the vocoder — a mistuned tap or extraction bug (b_0 pinned
+	// at 0). The recording itself is suppressed by finalizeLocked.
+	if vs.Voiced+vs.Unvoiced == 0 {
+		r.log.Warn("recorder: no decodable speech — likely dead-key/idle carrier or mistuned tap",
+			append(args,
+				"min_b0", vs.MinB0, "max_b0", vs.MaxB0,
+				"first_frame_hex", vs.FirstFrameHex)...)
+		return
+	}
 	if vs.ClipPct() > voiceClipWarnPct {
 		r.log.Warn("recorder: voice audio quality — output clipping (vocoder gain too hot)", args...)
 		return
 	}
 	r.log.Debug("recorder: voice audio quality", args...)
+}
+
+// voiceStatsFor returns the session vocoder's per-call VoiceStats when the
+// vocoder implements StatProvider and has decoded at least one frame. It is
+// the shared accessor for the per-call quality log and the empty-recording
+// suppression in finalizeLocked.
+func (r *Recorder) voiceStatsFor(s *recordingSession) (VoiceStats, bool) {
+	sp, ok := s.vocoder.(StatProvider)
+	if !ok {
+		return VoiceStats{}, false
+	}
+	vs, have := sp.VoiceStats()
+	if !have || vs.Frames == 0 {
+		return VoiceStats{}, false
+	}
+	return vs, true
 }
 
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
@@ -790,6 +862,12 @@ type recordingSession struct {
 	vocoderName string
 	sampleRate  uint32
 	startedAt   time.Time
+	// callID is the Grant.CallID of the call this session records. Frames
+	// arriving via WriteRawFrameForCall with a different non-zero callID are
+	// dropped (see sessionForWrite) so a reused tap serial can't bleed the
+	// previous call's audio into this one. Preserved across per-transmission
+	// segment rolls (the dormant session carries the same cs).
+	callID uint64
 	// cs is the originating CallStart, retained so a per-transmission
 	// segment roll (KindCallSegment) can open the next file with the same
 	// grant/talkgroup under a new timestamp. A session with wav == nil is

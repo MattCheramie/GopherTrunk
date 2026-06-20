@@ -572,8 +572,11 @@ func (e *Engine) startCall(d *VoiceDevice, g Grant, tg *TalkGroup) {
 	e.mu.Unlock()
 	e.bus.Publish(events.Event{
 		Kind: events.KindCallStart,
+		// Publish ac.Grant, not the caller's g: Bind stamped it with a
+		// fresh CallID the voice chain + recorder use to fence cross-call
+		// audio bleed on a reused tap serial.
 		Payload: CallStart{
-			Grant:        g,
+			Grant:        ac.Grant,
 			Talkgroup:    tg,
 			DeviceSerial: d.Serial,
 			StartedAt:    ac.StartedAt,

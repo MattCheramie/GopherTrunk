@@ -1,6 +1,7 @@
 package imbe
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
@@ -195,6 +196,14 @@ type callStats struct {
 	bad       int
 	repeated  int
 
+	// b_0 range + first-frame capture for the all-idle diagnostic. b0Seen
+	// guards the first-write of min/max; firstFrameHex holds the first
+	// frame's raw bytes as hex.
+	b0Seen        bool
+	b0Min         int
+	b0Max         int
+	firstFrameHex string
+
 	goodFrames    int
 	f0Sum         float64
 	f0Min         float64
@@ -283,6 +292,23 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 	out := make([]int16, mbe.SamplesPerFrame)
 	pcm := make([]float64, mbe.SamplesPerFrame)
 	d.stats.frames++
+
+	// Track the raw b_0 range + capture the first frame for the all-idle
+	// diagnostic (see callStats / VoiceStats). Done for every frame,
+	// before the disposition switch, so even bad/idle frames are counted.
+	b0 := int(b0FromInfo(info))
+	if !d.stats.b0Seen {
+		d.stats.b0Seen = true
+		d.stats.b0Min, d.stats.b0Max = b0, b0
+		d.stats.firstFrameHex = hex.EncodeToString(frame)
+	} else {
+		if b0 < d.stats.b0Min {
+			d.stats.b0Min = b0
+		}
+		if b0 > d.stats.b0Max {
+			d.stats.b0Max = b0
+		}
+	}
 
 	// Consume the corrected-bit count set by SetFrameErrors (0 if the caller
 	// doesn't supply one) and advance the adaptive-smoothing error-rate
@@ -619,9 +645,16 @@ func (d *Decoder) VoiceStats() (voice.VoiceStats, bool) {
 		IdleMuted:      s.idleMuted,
 		Bad:            s.bad,
 		Repeated:       s.repeated,
+		MinB0:          -1,
+		MaxB0:          -1,
+		FirstFrameHex:  s.firstFrameHex,
 		MaxPreClipPeak: s.maxPreClipPeak,
 		ClipSamples:    s.clipSamples,
 		TotalSamples:   s.sampleCount,
+	}
+	if s.b0Seen {
+		vs.MinB0 = s.b0Min
+		vs.MaxB0 = s.b0Max
 	}
 	if s.goodFrames > 0 {
 		g := float64(s.goodFrames)

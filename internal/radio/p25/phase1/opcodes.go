@@ -23,27 +23,37 @@ const (
 	OpUnitToUnitAnswerRequest      Opcode = 0x05 // UU_ANS_REQ
 	OpUnitToUnitVoiceChannelUpdate Opcode = 0x06 // UU_V_CH_GRANT_UPDT
 	OpTelephoneInterconnectGrant   Opcode = 0x08 // TELE_INT_CH_GRANT
+	OpTelephoneInterconnectUpdate  Opcode = 0x09 // TELE_INT_CH_GRANT_UPDT
 	OpTelephoneAnswerRequest       Opcode = 0x0A // TELE_INT_ANS_REQ
 	OpSNDCPDataChannelGrant        Opcode = 0x14 // SNDCP_DAT_CH_GRANT
+	OpSNDCPDataPageRequest         Opcode = 0x15 // SNDCP_DAT_PAGE_REQ
+	OpSNDCPDataChannelAnnExplicit  Opcode = 0x16 // SNDCP_DAT_CH_ANN_EXP
 	OpStatusUpdate                 Opcode = 0x18 // STS_UPDT
 	OpStatusQuery                  Opcode = 0x1A // STS_Q
 	OpMessageUpdate                Opcode = 0x1C // MSG_UPDT
 	OpRadioUnitMonitor             Opcode = 0x1D // RAD_MON_CMD
+	OpRadioUnitMonitorEnhanced     Opcode = 0x1E // RAD_MON_ENH_CMD
 	OpCallAlert                    Opcode = 0x1F // CALL_ALRT
 	OpAcknowledgeResponse          Opcode = 0x20 // ACK_RSP_FNE
 	OpQueuedResponse               Opcode = 0x21 // QUE_RSP
 	OpExtendedFunctionCommand      Opcode = 0x24 // EXT_FNCT_CMD
 	OpDenyResponse                 Opcode = 0x27 // DENY_RSP
 	OpGroupAffiliationResponse     Opcode = 0x28 // GRP_AFF_RSP
+	OpSecondaryControlChannelExpl  Opcode = 0x29 // SCCB_EXP
 	OpGroupAffiliationQuery        Opcode = 0x2A // GRP_AFF_Q
 	OpLocationRegistrationResponse Opcode = 0x2B // LOC_REG_RSP
 	OpUnitRegistrationResponse     Opcode = 0x2C // U_REG_RSP
 	OpUnitRegistrationCommand      Opcode = 0x2D // U_REG_CMD
+	OpAuthenticationCommand        Opcode = 0x2E // AUTH_CMD
 	OpDeregistrationAck            Opcode = 0x2F // U_DE_REG_ACK
+	OpSyncBroadcast                Opcode = 0x30 // SYNC_BCST
 	OpIdentifierUpdateTDMA         Opcode = 0x33 // IDEN_UP_TDMA
 	OpIdentifierUpdateVUHF         Opcode = 0x34 // IDEN_UP_VU
 	OpProtectionParamUpdate        Opcode = 0x35 // PROT_PARM_UPDT
-	OpSecondaryControlChannel      Opcode = 0x39 // SCCB_EXP
+	OpRoamingAddressCommand        Opcode = 0x36 // ROAM_ADDR_CMD
+	OpRoamingAddressUpdate         Opcode = 0x37 // ROAM_ADDR_UPDT
+	OpSystemServiceBroadcast       Opcode = 0x38 // SYS_SRV_BCST
+	OpSecondaryControlChannel      Opcode = 0x39 // SCCB
 	OpRFSSStatusBroadcast          Opcode = 0x3A // RFSS_STS_BCST
 	OpNetworkStatusBroadcast       Opcode = 0x3B // NET_STS_BCST
 	OpAdjacentSiteStatusBroadcast  Opcode = 0x3C // ADJ_STS_BCST
@@ -71,10 +81,16 @@ func (o Opcode) String() string {
 		return "UU_V_CH_GRANT_UPDT"
 	case OpTelephoneInterconnectGrant:
 		return "TELE_INT_CH_GRANT"
+	case OpTelephoneInterconnectUpdate:
+		return "TELE_INT_CH_GRANT_UPDT"
 	case OpTelephoneAnswerRequest:
 		return "TELE_INT_ANS_REQ"
 	case OpSNDCPDataChannelGrant:
 		return "SNDCP_DAT_CH_GRANT"
+	case OpSNDCPDataPageRequest:
+		return "SNDCP_DAT_PAGE_REQ"
+	case OpSNDCPDataChannelAnnExplicit:
+		return "SNDCP_DAT_CH_ANN_EXP"
 	case OpStatusUpdate:
 		return "STS_UPDT"
 	case OpStatusQuery:
@@ -83,6 +99,8 @@ func (o Opcode) String() string {
 		return "MSG_UPDT"
 	case OpRadioUnitMonitor:
 		return "RAD_MON_CMD"
+	case OpRadioUnitMonitorEnhanced:
+		return "RAD_MON_ENH_CMD"
 	case OpCallAlert:
 		return "CALL_ALRT"
 	case OpAcknowledgeResponse:
@@ -95,6 +113,8 @@ func (o Opcode) String() string {
 		return "DENY_RSP"
 	case OpGroupAffiliationResponse:
 		return "GRP_AFF_RSP"
+	case OpSecondaryControlChannelExpl:
+		return "SCCB_EXP"
 	case OpGroupAffiliationQuery:
 		return "GRP_AFF_Q"
 	case OpLocationRegistrationResponse:
@@ -103,16 +123,26 @@ func (o Opcode) String() string {
 		return "U_REG_RSP"
 	case OpUnitRegistrationCommand:
 		return "U_REG_CMD"
+	case OpAuthenticationCommand:
+		return "AUTH_CMD"
 	case OpDeregistrationAck:
 		return "U_DE_REG_ACK"
+	case OpSyncBroadcast:
+		return "SYNC_BCST"
 	case OpIdentifierUpdateTDMA:
 		return "IDEN_UP_TDMA"
 	case OpIdentifierUpdateVUHF:
 		return "IDEN_UP_VU"
 	case OpProtectionParamUpdate:
 		return "PROT_PARM_UPDT"
+	case OpRoamingAddressCommand:
+		return "ROAM_ADDR_CMD"
+	case OpRoamingAddressUpdate:
+		return "ROAM_ADDR_UPDT"
+	case OpSystemServiceBroadcast:
+		return "SYS_SRV_BCST"
 	case OpSecondaryControlChannel:
-		return "SCCB_EXP"
+		return "SCCB"
 	case OpRFSSStatusBroadcast:
 		return "RFSS_STS_BCST"
 	case OpNetworkStatusBroadcast:
@@ -482,6 +512,55 @@ func AssembleSecondaryControlChannelBroadcast(s SecondaryControlChannelBroadcast
 	p[0], p[1] = s.RFSS, s.Site
 	binary.BigEndian.PutUint16(p[2:4], uint16(s.ChannelAID&0x0F)<<12|s.ChannelANumber&0x0FFF)
 	binary.BigEndian.PutUint16(p[4:6], uint16(s.ChannelBID&0x0F)<<12|s.ChannelBNumber&0x0FFF)
+	return p
+}
+
+// SecondaryControlChannelBroadcastExplicit (opcode 0x29) announces an
+// alternate control channel for the site with explicit, separate transmit
+// (downlink) and receive (uplink) channels — unlike the non-explicit SCCB
+// (0x39) which carries two same-direction channels. Payload layout per
+// TIA-102.AABC / SDRTrunk's SecondaryControlChannelBroadcastExplicit:
+//
+//	byte 0    : RFSS ID
+//	byte 1    : Site ID
+//	bytes 2-3 : transmit (downlink) channel (4-bit ID + 12-bit number)
+//	byte 4    : reserved
+//	bytes 5-6 : receive (uplink) channel (4-bit ID + 12-bit number)
+//	byte 7    : system service class
+//
+// The transmit channel is the downlink a receiver tunes to, so that is the
+// one folded into the topology's secondary-control-channel list.
+type SecondaryControlChannelBroadcastExplicit struct {
+	RFSS, Site      uint8
+	TxChannelID     uint8
+	TxChannelNumber uint16
+	RxChannelID     uint8
+	RxChannelNumber uint16
+	ServiceClass    uint8
+}
+
+// ParseSecondaryControlChannelBroadcastExplicit decodes payload for opcode 0x29.
+func ParseSecondaryControlChannelBroadcastExplicit(p [8]byte) SecondaryControlChannelBroadcastExplicit {
+	tx := binary.BigEndian.Uint16(p[2:4])
+	rx := binary.BigEndian.Uint16(p[5:7])
+	return SecondaryControlChannelBroadcastExplicit{
+		RFSS:            p[0],
+		Site:            p[1],
+		TxChannelID:     uint8(tx >> 12),
+		TxChannelNumber: tx & 0x0FFF,
+		RxChannelID:     uint8(rx >> 12),
+		RxChannelNumber: rx & 0x0FFF,
+		ServiceClass:    p[7],
+	}
+}
+
+// AssembleSecondaryControlChannelBroadcastExplicit is the inverse; for tests.
+func AssembleSecondaryControlChannelBroadcastExplicit(s SecondaryControlChannelBroadcastExplicit) [8]byte {
+	var p [8]byte
+	p[0], p[1] = s.RFSS, s.Site
+	binary.BigEndian.PutUint16(p[2:4], uint16(s.TxChannelID&0x0F)<<12|s.TxChannelNumber&0x0FFF)
+	binary.BigEndian.PutUint16(p[5:7], uint16(s.RxChannelID&0x0F)<<12|s.RxChannelNumber&0x0FFF)
+	p[7] = s.ServiceClass
 	return p
 }
 

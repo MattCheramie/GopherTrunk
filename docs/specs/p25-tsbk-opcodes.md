@@ -30,27 +30,37 @@ walk-throughs (e.g. UU_V_REQ → UU_ANS_REQ → UU_ANS_RSP call setup).
 | 0x05 | `UU_ANS_REQ` | Unit-to-Unit Answer Request | ✅ (standard MFID only) |
 | 0x06 | `UU_V_CH_GRANT_UPDT` | Unit-to-Unit Voice Channel Grant Update | — |
 | 0x08 | `TELE_INT_CH_GRANT` | Telephone Interconnect Voice Channel Grant | ✅ grant |
+| 0x09 | `TELE_INT_CH_GRANT_UPDT` | Telephone Interconnect Voice Channel Grant Update | — |
 | 0x0A | `TELE_INT_ANS_REQ` | Telephone Interconnect Answer Request | — |
 | 0x14 | `SNDCP_DAT_CH_GRANT` | SNDCP Data Channel Grant | ✅ grant |
+| 0x15 | `SNDCP_DAT_PAGE_REQ` | SNDCP Data Channel Page Request | — |
+| 0x16 | `SNDCP_DAT_CH_ANN_EXP` | SNDCP Data Channel Announcement — Explicit | — |
 | 0x18 | `STS_UPDT` | Status Update | — |
 | 0x1A | `STS_Q` | Status Query | — |
 | 0x1C | `MSG_UPDT` | Message Update | — |
 | 0x1D | `RAD_MON_CMD` | Radio Unit Monitor Command | — |
+| 0x1E | `RAD_MON_ENH_CMD` | Radio Unit Monitor Enhanced Command | — |
 | 0x1F | `CALL_ALRT` | Call Alert | — |
 | 0x20 | `ACK_RSP_FNE` | Acknowledge Response — FNE | — |
 | 0x21 | `QUE_RSP` | Queued Response | — |
 | 0x24 | `EXT_FNCT_CMD` | Extended Function Command | — |
 | 0x27 | `DENY_RSP` | Deny Response | — |
 | 0x28 | `GRP_AFF_RSP` | Group Affiliation Response | ✅ affiliation |
+| 0x29 | `SCCB_EXP` | Secondary Control Channel Broadcast — Explicit | ✅ topology |
 | 0x2A | `GRP_AFF_Q` | Group Affiliation Query | — |
 | 0x2B | `LOC_REG_RSP` | Location Registration Response | — |
 | 0x2C | `U_REG_RSP` | Unit Registration Response | ✅ registration |
 | 0x2D | `U_REG_CMD` | Unit Registration Command | — |
+| 0x2E | `AUTH_CMD` | Authentication Command | — |
 | 0x2F | `U_DE_REG_ACK` | Unit De-Registration Acknowledge | — |
+| 0x30 | `SYNC_BCST` | TDMA Synchronisation Broadcast | — |
 | 0x33 | `IDEN_UP_TDMA` | Identifier Update for TDMA | ✅ band plan |
 | 0x34 | `IDEN_UP_VU` | Identifier Update — VHF/UHF | ✅ band plan |
 | 0x35 | `PROT_PARM_UPDT` | Protection Parameter Update | — |
-| 0x39 | `SCCB_EXP` | Secondary Control Channel Broadcast — Explicit | ✅ topology |
+| 0x36 | `ROAM_ADDR_CMD` | Roaming Address Command | — |
+| 0x37 | `ROAM_ADDR_UPDT` | Roaming Address Update | — |
+| 0x38 | `SYS_SRV_BCST` | System Service Broadcast | — |
+| 0x39 | `SCCB` | Secondary Control Channel Broadcast | ✅ topology |
 | 0x3A | `RFSS_STS_BCST` | RFSS Status Broadcast | ✅ topology |
 | 0x3B | `NET_STS_BCST` | Network Status Broadcast (WACN + System ID) | ✅ topology |
 | 0x3C | `ADJ_STS_BCST` | Adjacent Site Status Broadcast (neighbours) | ✅ topology |
@@ -60,9 +70,15 @@ walk-throughs (e.g. UU_V_REQ → UU_ANS_REQ → UU_ANS_RSP call setup).
 "Dispatched" marks opcodes the control channel acts on (`dispatchTSBK` in
 [`control.go`](../../internal/radio/p25/phase1/control.go)); the rest are
 decoded enough to log at debug and otherwise ignored. The
-standard-broadcast/band-plan opcodes (`0x33/0x34/0x39/0x3A/0x3B/0x3C/0x3D`) are
-dispatched **regardless of MFID**, because they live in the standard TIA
+standard-broadcast/band-plan opcodes (`0x29/0x33/0x34/0x39/0x3A/0x3B/0x3C/0x3D`)
+are dispatched **regardless of MFID**, because they live in the standard TIA
 namespace on every vendor's control channel.
+
+Note `0x29` is the *explicit* Secondary Control Channel Broadcast (separate
+transmit/receive channels); `0x39` is the non-explicit variant. Earlier
+revisions of this decoder mislabelled `0x39` as `SCCB_EXP` — the explicit
+message is `0x29`, decoded by `ParseSecondaryControlChannelBroadcastExplicit`
+and folded into the topology via `NetworkModel.ApplySecondaryControlChannelExplicit`.
 
 ## UU_ANS_REQ (0x05) note
 

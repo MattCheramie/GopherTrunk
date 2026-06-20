@@ -1045,6 +1045,8 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.publishSiteUpdate()
 	case OpSecondaryControlChannel:
 		c.netModel.ApplySecondaryControlChannel(ParseSecondaryControlChannelBroadcast(t.Payload))
+	case OpSecondaryControlChannelExpl:
+		c.netModel.ApplySecondaryControlChannelExplicit(ParseSecondaryControlChannelBroadcastExplicit(t.Payload))
 	case OpAdjacentSiteStatusBroadcast:
 		c.netModel.ApplyAdjacentSite(ParseAdjacentSiteStatusBroadcast(t.Payload))
 	case OpGroupAffiliationResponse:
@@ -1159,7 +1161,8 @@ const (
 func isStandardBroadcastOpcode(op Opcode) bool {
 	switch op {
 	case OpIdentifierUpdate, OpIdentifierUpdateVUHF, OpIdentifierUpdateTDMA,
-		OpSecondaryControlChannel, OpRFSSStatusBroadcast,
+		OpSecondaryControlChannel, OpSecondaryControlChannelExpl,
+		OpRFSSStatusBroadcast,
 		OpNetworkStatusBroadcast, OpAdjacentSiteStatusBroadcast:
 		return true
 	default:
