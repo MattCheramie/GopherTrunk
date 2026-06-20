@@ -3,6 +3,8 @@ package trunking
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/unicode"
 )
 
 func TestTalkgroupDBLookup(t *testing.T) {
@@ -198,5 +200,32 @@ func TestLoadJSONDefaultsScanWhenAbsent(t *testing.T) {
 	}
 	if !d.Lookup(3).Scan {
 		t.Errorf("TG 3 Scan = false, want true (explicit true)")
+	}
+}
+
+// TestLoadCSVUTF16AndMojibake proves a UTF-16-with-BOM talkgroup export is
+// transcoded and that non-ASCII junk in text fields is stripped (issue #711
+// import hardening, talkgroup parity with the RID loader).
+func TestLoadCSVUTF16AndMojibake(t *testing.T) {
+	const csv = "Decimal,Alpha Tag\n1001,FIRE中DISP\n"
+	b := encodeUTF16(t, csv, unicode.LittleEndian)
+	d := NewTalkgroupDB()
+	if _, err := d.LoadCSV(strings.NewReader(string(b))); err != nil {
+		t.Fatalf("LoadCSV: %v", err)
+	}
+	if tg := d.Lookup(1001); tg == nil || tg.AlphaTag != "FIREDISP" {
+		t.Errorf("utf16+mojibake = %+v, want AlphaTag=FIREDISP", tg)
+	}
+}
+
+func TestLoadJSONStripsMojibake(t *testing.T) {
+	js := `[{"id":2002,"alpha_tag":"OP中S","description":"junkhere"}]`
+	d := NewTalkgroupDB()
+	if _, err := d.LoadJSON(strings.NewReader(js)); err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	tg := d.Lookup(2002)
+	if tg == nil || tg.AlphaTag != "OPS" || tg.Description != "junkhere" {
+		t.Errorf("json mojibake = %+v, want AlphaTag=OPS Description=junkhere", tg)
 	}
 }

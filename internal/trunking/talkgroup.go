@@ -133,7 +133,7 @@ func (d *TalkgroupDB) Len() int {
 // inferred when Priority is set to a sentinel "L" value, matching common
 // community CSVs.
 func (d *TalkgroupDB) LoadCSV(r io.Reader) (int, error) {
-	cr := csv.NewReader(r)
+	cr := csv.NewReader(decodeReader(r))
 	cr.TrimLeadingSpace = true
 	cr.FieldsPerRecord = -1
 	header, err := cr.Read()
@@ -276,24 +276,24 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 		Icon        string `json:"icon"`
 	}
 	var arr []talkGroupRaw
-	if err := json.NewDecoder(r).Decode(&arr); err != nil {
+	if err := json.NewDecoder(decodeReader(r)).Decode(&arr); err != nil {
 		return 0, fmt.Errorf("trunking: decode json: %w", err)
 	}
 	for _, raw := range arr {
 		tg := &TalkGroup{
 			ID:          raw.ID,
-			AlphaTag:    raw.AlphaTag,
-			Description: raw.Description,
-			Tag:         raw.Tag,
-			Group:       raw.Group,
-			Mode:        raw.Mode,
+			AlphaTag:    sanitizeText(raw.AlphaTag),
+			Description: sanitizeText(raw.Description),
+			Tag:         sanitizeText(raw.Tag),
+			Group:       sanitizeText(raw.Group),
+			Mode:        sanitizeText(raw.Mode),
 			Priority:    raw.Priority,
 			Lockout:     raw.Lockout,
 			Scan:        true,
 			Stream:      true,
 			Record:      true,
 			Mute:        raw.Mute,
-			Icon:        raw.Icon,
+			Icon:        sanitizeText(raw.Icon),
 		}
 		if raw.Scan != nil {
 			tg.Scan = *raw.Scan
@@ -309,10 +309,16 @@ func (d *TalkgroupDB) LoadJSON(r io.Reader) (int, error) {
 	return len(arr), nil
 }
 
+// field returns the first present column among names, trimmed and reduced to
+// printable ASCII. Both the RID and talkgroup CSV loaders read every text
+// column through here, so sanitizing at this chokepoint strips imported
+// mojibake from all of them. The numeric ID column is read directly (not via
+// field), and the boolean/priority columns only ever hold ASCII digits or
+// y/n tokens, so sanitizing is a no-op for them.
 func field(row []string, idx map[string]int, names ...string) string {
 	for _, n := range names {
 		if i, ok := idx[n]; ok && i < len(row) {
-			return strings.TrimSpace(row[i])
+			return sanitizeText(strings.TrimSpace(row[i]))
 		}
 	}
 	return ""
