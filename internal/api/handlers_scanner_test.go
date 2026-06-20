@@ -171,6 +171,39 @@ func TestScannerStatus_AlwaysOK(t *testing.T) {
 	}
 }
 
+// TestScannerStatus_EmptySlicesMarshalAsArrays pins the fix for the web
+// Scanner-tab crash: a nil Go slice encodes to JSON `null`, which the frontend
+// dereferences (systems.length / channels.length) and crashes the whole panel.
+// The handler must emit `[]` so the wire contract stays array-typed even with
+// no systems / conventional channels configured.
+func TestScannerStatus_EmptySlicesMarshalAsArrays(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	// Status with nil Systems and nil Conventional.Channels (the default).
+	cock := &fakeCockpit{status: ScannerStatus{ScanMode: "all"}}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock})
+	defer teardown()
+	resp, err := http.Get(base + "/api/v1/scanner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(raw["systems"]); got != "[]" {
+		t.Errorf("systems = %s, want []", got)
+	}
+	var conv map[string]json.RawMessage
+	if err := json.Unmarshal(raw["conventional"], &conv); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(conv["channels"]); got != "[]" {
+		t.Errorf("conventional.channels = %s, want []", got)
+	}
+}
+
 func TestScannerStatus_NoCockpitReturnsEmpty(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

@@ -566,7 +566,6 @@ export function Hunt() {
                 <th className={TH}>Hex</th>
                 <th className={TH}>Encrypted</th>
                 <th className={TH}>Activity</th>
-                <th className={TH}>Frequencies</th>
               </tr>
             </thead>
             <tbody>
@@ -576,11 +575,6 @@ export function Hunt() {
                   <td className={TD}>{tg.hex}</td>
                   <td className={TD}>{tg.encrypted ? "🔒" : "—"}</td>
                   <td className={TD}>{tg.count}</td>
-                  <td className={TD}>
-                    {tg.frequencies && tg.frequencies.length > 0
-                      ? tg.frequencies.map((h) => (h / 1e6).toFixed(4)).join(", ")
-                      : "—"}
-                  </td>
                 </tr>
               ))}
             </tbody>

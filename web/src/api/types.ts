@@ -200,8 +200,6 @@ export interface DiscoveredTalkgroup {
   hex: string;
   encrypted?: boolean;
   count: number;
-  // Distinct voice-channel frequencies (Hz) observed carrying this talkgroup.
-  frequencies?: number[];
 }
 
 // BandPlanEntry mirrors hunt.BandPlanEntry — one P25 IDEN_UP band-plan slot:

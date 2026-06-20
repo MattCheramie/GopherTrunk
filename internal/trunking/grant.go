@@ -64,6 +64,16 @@ type Grant struct {
 	AlgorithmID uint8
 	KeyID       uint16
 	DataCall    bool // false = voice call (default)
+	// Individual marks a grant whose GroupID is NOT a talkgroup but an
+	// individual destination — a unit-to-unit target radio (WUID), a
+	// telephone-interconnect target, or an SNDCP data unit. P25 group
+	// talkgroups are 16-bit; these targets are 24-bit subscriber addresses,
+	// so recording them as "talkgroups" produces phantom >16-bit entries
+	// (e.g. a unit-to-unit call surfacing as bogus TG 140957). Discovery /
+	// hunt skips individual grants when building the talkgroup list. False
+	// (the default) for group calls and Motorola patch grants, which ARE
+	// talkgroups.
+	Individual bool
 	// ProVoice marks the grant as an EDACS ProVoice (digital) call. The
 	// vocoder is patent + trade-secret encumbered so we cannot ship a
 	// built-in decoder; the recorder treats this flag as a directive to

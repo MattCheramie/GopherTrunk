@@ -250,6 +250,60 @@ func TestAudioPublisher_CallEndClearsGrant(t *testing.T) {
 	})
 }
 
+// waitForCallID blocks until the publisher's grant for serial has the given
+// CallID — used to sequence a tap-serial reuse so the test drives WritePCMForCall
+// only after the serial's bound call has actually flipped.
+func waitForCallID(t *testing.T, pub *AudioPublisher, serial string, callID uint64) {
+	t.Helper()
+	waitFor(t, 200*time.Millisecond, func() bool {
+		pub.mu.RLock()
+		defer pub.mu.RUnlock()
+		return pub.grants[serial].CallID == callID
+	})
+}
+
+// TestAudioPublisher_WritePCMForCallFencesStaleCall reproduces the voice-tap
+// audio bleed: a wideband tap serial is reused for a new call, so the
+// publisher's grant for that serial flips to the new call (TG 200, CallID 2)
+// while the old call's PCM (CallID 1) is still draining. The stale frame must be
+// dropped — not fanned to a TG-200 subscriber labelled as the new call.
+func TestAudioPublisher_WritePCMForCallFencesStaleCall(t *testing.T) {
+	pub, bus := mkPublisher(t)
+	publishCallStart(t, pub, bus, "tap-0", trunking.Grant{GroupID: 100, CallID: 1})
+
+	sub := pub.Subscribe(AudioSubFilter{TalkgroupIDs: []uint32{200}})
+	defer pub.Unsubscribe(sub)
+
+	// The new call binds the same tap serial.
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{GroupID: 200, CallID: 2}, DeviceSerial: "tap-0",
+	}})
+	waitForCallID(t, pub, "tap-0", 2)
+
+	// Old call's tail (CallID 1) must NOT reach the TG-200 subscriber.
+	if err := pub.WritePCMForCall("tap-0", 1, []int16{1, 2, 3}); err != nil {
+		t.Fatalf("WritePCMForCall stale: %v", err)
+	}
+	select {
+	case f := <-sub.ch:
+		t.Fatalf("TG-200 subscriber received stale CallID-1 audio (group_id=%d) — bleed not fenced", f.GetGrant().GroupId)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// The current call's audio (CallID 2) flows to the matching subscriber.
+	if err := pub.WritePCMForCall("tap-0", 2, []int16{4, 5, 6}); err != nil {
+		t.Fatalf("WritePCMForCall current: %v", err)
+	}
+	select {
+	case f := <-sub.ch:
+		if f.GetGrant().GroupId != 200 {
+			t.Errorf("group_id = %d, want 200", f.GetGrant().GroupId)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("TG-200 subscriber received no current-call frame")
+	}
+}
+
 func TestAudioPublisher_UnsubscribeIsIdempotent(t *testing.T) {
 	pub, _ := mkPublisher(t)
 	sub := pub.Subscribe(AudioSubFilter{})

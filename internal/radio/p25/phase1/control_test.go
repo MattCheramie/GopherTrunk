@@ -45,6 +45,66 @@ func buildLockedStreamWithTSBK(offset int, nac uint16, duid DUID, tsbk TSBK) []u
 	return out
 }
 
+// TestControlChannelGrantIndividualFlag verifies that a group voice grant is
+// published as a talkgroup call (Individual=false) while a unit-to-unit grant
+// — whose "group" field is actually a 24-bit target radio ID — is flagged
+// Individual=true so downstream discovery never lists it as a talkgroup (the
+// bogus TG 140957 field report).
+func TestControlChannelGrantIndividualFlag(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	identTSBK := TSBK{LB: false, Opcode: OpIdentifierUpdate}
+	identTSBK.Payload = AssembleIdentifierUpdate(IdentifierUpdate{
+		ChannelID: 1,
+		SpacingHz: 12_500,
+		BaseHz:    450_000_000,
+	})
+	// Group grant payload: svc opts, channel (ID 1 / num 0x010), group 204, src.
+	groupPayload := [8]byte{
+		0x00,                  // service options
+		(1 << 4) | 0x00, 0x10, // channel = ID 1, number 0x010
+		0x00, 0xCC, // group address = 204
+		0x00, 0x04, 0xD2, // source id
+	}
+	groupTSBK := TSBK{LB: false, Opcode: OpGroupVoiceChannelGrant, Payload: groupPayload}
+	// Target 140957 is a 24-bit radio ID, not a talkgroup.
+	uuTSBK := TSBK{LB: true, Opcode: OpUnitToUnitVoiceChannelGrant}
+	uuTSBK.Payload = AssembleUnitToUnitVoiceChannelGrant(UnitToUnitVoiceChannelGrant{
+		ChannelID: 1, ChannelNumber: 0x011, TargetID: 140957, SourceID: 5678,
+	})
+
+	cc := New(Options{Bus: bus, SystemName: "Main_Site_1", FrequencyHz: 450_125_000})
+	s1 := buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, identTSBK)
+	s2 := buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, groupTSBK)
+	s3 := buildLockedStreamWithTSBK(0, 0x293, DUIDTrunkingSignaling, uuTSBK)
+	cc.Process(s1, 0)
+	cc.Process(s2, len(s1))
+	cc.Process(s3, len(s1)+len(s2))
+
+	byGroup := map[uint32]trunking.Grant{}
+	deadline := time.After(2 * time.Second)
+	for len(byGroup) < 2 {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindGrant {
+				g := ev.Payload.(trunking.Grant)
+				byGroup[g.GroupID] = g
+			}
+		case <-deadline:
+			t.Fatalf("only saw grants %v, want 204 + 140957", byGroup)
+		}
+	}
+	if g, ok := byGroup[204]; !ok || g.Individual {
+		t.Errorf("group grant 204: ok=%v Individual=%v, want present and false", ok, g.Individual)
+	}
+	if g, ok := byGroup[140957]; !ok || !g.Individual {
+		t.Errorf("unit-to-unit grant 140957: ok=%v Individual=%v, want present and true", ok, g.Individual)
+	}
+}
+
 func TestControlChannelEmitsLockOnTSDU(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

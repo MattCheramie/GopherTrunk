@@ -3515,6 +3515,27 @@ func (f fanoutSink) WritePCM(serial string, samples []int16) error {
 	return nil
 }
 
+// WritePCMForCall fans decoded PCM plus the call's CallID out to the contained
+// sinks. Call-aware sinks (the audio publisher) use the CallID to fence a stale
+// frame from the call that previously held a reused voice-tap serial — the
+// live-stream complement of the recorder's WAV fence (voice-tap mix-up). Sinks
+// that don't implement it (tone-out) still get the plain PCM. The recorder
+// selects this path via the voice.DecodedPCMCallSink assertion on its decoded
+// tap; without it the live fan-out would drop back to serial-only WritePCM and
+// the bleed guard would be inert in the daemon.
+func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int16) error {
+	for _, s := range f {
+		if cs, ok := s.(interface {
+			WritePCMForCall(string, uint64, []int16) error
+		}); ok {
+			_ = cs.WritePCMForCall(serial, callID, samples)
+		} else {
+			_ = s.WritePCM(serial, samples)
+		}
+	}
+	return nil
+}
+
 // WriteRawFrame fans raw IMBE / AMBE frames out to every contained
 // sink that implements the rawFrameSink shape — currently just the
 // recorder. Sinks that don't (tone-out, live player, audio publisher)

@@ -133,13 +133,19 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 		if g.GroupID == 0 {
 			continue
 		}
-		freqHz := g.FrequencyHz
-		if freqHz == 0 {
-			if hz, ok := dst.bandPlanFreq(g.ChannelID, g.ChannelNum); ok {
-				freqHz = hz
+		// Individual grants (unit-to-unit / telephone / data) carry a 24-bit
+		// destination unit in GroupID, not a talkgroup — listing them produces
+		// phantom >16-bit "talkgroups" (the bogus 140957 in the field report).
+		// They still occupy a voice channel, so the frequency is recorded on
+		// the site below, just not attributed to a talkgroup.
+		if g.Individual {
+			if freqHz := grantFreq(dst, g); freqHz != 0 {
+				dst.addVoiceChannel(rfss, site, freqHz)
 			}
+			continue
 		}
-		dst.addTalkgroup(g.GroupID, g.Encrypted, freqHz, at)
+		freqHz := grantFreq(dst, g)
+		dst.addTalkgroup(g.GroupID, g.Encrypted, at)
 		if freqHz != 0 {
 			dst.addVoiceChannel(rfss, site, freqHz)
 		}
@@ -160,6 +166,9 @@ func foldTopology(dst *DiscoveredSystem, t *siglab.TopologySnapshot) {
 	if dst.SystemID == 0 && t.SystemID != 0 {
 		dst.SystemID = uint16(t.SystemID)
 	}
+	// setIdentity records the first non-zero observation of an optional
+	// identity field — a zero means "absent" for these (DMR ColorCode, NXDN
+	// RAN, …) so it never overwrites a real value.
 	setIdentity := func(key string, v uint64) {
 		if v == 0 {
 			return
@@ -168,8 +177,21 @@ func foldTopology(dst *DiscoveredSystem, t *siglab.TopologySnapshot) {
 			dst.Identity[key] = v
 		}
 	}
-	setIdentity("RFSS", uint64(t.RFSS))
-	setIdentity("Site", uint64(t.Site))
+	// RFSS and Site are special: zero is a LEGITIMATE value (single-RFSS /
+	// site-0 systems are common), so once the topology has actually
+	// identified the camped site, record them even when zero — otherwise a
+	// real RFSS=0 / Site=0 reads as "unknown" and the site is mis-placed.
+	// Gate on the snapshot carrying real site identity so a band-plan-only
+	// snapshot (no status broadcast yet) doesn't write a premature (0,0).
+	hasSiteIdentity := t.WACN != 0 || t.SystemID != 0 || t.RFSS != 0 || t.Site != 0 || t.LRA != 0
+	if hasSiteIdentity {
+		if _, present := dst.Identity["RFSS"]; !present {
+			dst.Identity["RFSS"] = uint64(t.RFSS)
+		}
+		if _, present := dst.Identity["Site"]; !present {
+			dst.Identity["Site"] = uint64(t.Site)
+		}
+	}
 	setIdentity("LRA", uint64(t.LRA))
 	setIdentity("ColorCode", uint64(t.ColorCode))
 	setIdentity("RAN", uint64(t.RAN))
@@ -186,6 +208,20 @@ func foldTopology(dst *DiscoveredSystem, t *siglab.TopologySnapshot) {
 			TxOffsetHz:  e.TxOffsetHz,
 		})
 	}
+}
+
+// grantFreq resolves the voice-channel frequency a grant landed on: the
+// frequency the decoder already resolved at grant time, else the accumulated
+// band plan applied to the grant's (ChannelID, ChannelNum). Returns 0 when
+// neither resolves (band plan not yet seen).
+func grantFreq(dst *DiscoveredSystem, g siglab.GrantRecord) uint32 {
+	if g.FrequencyHz != 0 {
+		return g.FrequencyHz
+	}
+	if hz, ok := dst.bandPlanFreq(g.ChannelID, g.ChannelNum); ok {
+		return hz
+	}
+	return 0
 }
 
 // appendUniqueFreq appends hz to s unless already present.

@@ -70,6 +70,57 @@ func TestAccumulate_IdentityAndTalkgroups(t *testing.T) {
 	}
 }
 
+// TestAccumulate_SkipsIndividualGrants: a unit-to-unit / telephone grant
+// carries a 24-bit destination unit in GroupID (the field-reported bogus
+// 140957), not a talkgroup. It must NOT become a talkgroup — only the group
+// grant (TG 100) does — while still being recorded as a site voice channel.
+func TestAccumulate_SkipsIndividualGrants(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	r := fakeResult(851012500, map[string]any{"RFSS": uint8(1), "Site": uint8(2)})
+	r.Grants = []siglab.GrantRecord{
+		{GroupID: 100, FrequencyHz: 851_500_000},                      // group call → talkgroup
+		{GroupID: 140957, FrequencyHz: 851_975_000, Individual: true}, // unit-to-unit target → not a TG
+	}
+	Accumulate(sys, Observation{Protocol: "p25", Confidence: 0.9, Result: r})
+
+	if len(sys.Talkgroups) != 1 || sys.Talkgroups[0].Dec != 100 {
+		t.Fatalf("talkgroups = %+v, want exactly [100] (no bogus 140957)", sys.Talkgroups)
+	}
+	// The individual call's frequency is still a real site voice channel.
+	vc := sys.Sites[0].VoiceChannels
+	if len(vc) != 2 {
+		t.Errorf("site voice channels = %+v, want both grant freqs recorded", vc)
+	}
+}
+
+// TestAccumulate_RecordsZeroRFSSSite: a single-RFSS system (RFSS=0, Site=0)
+// that has decoded identity (WACN/SystemID) must place its site at (0,0) and
+// record RFSS/Site=0 in the Identity map rather than dropping them as "unknown".
+func TestAccumulate_RecordsZeroRFSSSite(t *testing.T) {
+	sys := &DiscoveredSystem{}
+	r := fakeResult(450125000, nil, 204)
+	r.Topology = &siglab.TopologySnapshot{
+		WACN:     0xBEE99,
+		SystemID: 0x49A,
+		RFSS:     0,
+		Site:     0,
+	}
+	Accumulate(sys, Observation{Protocol: "p25", Confidence: 0.9, Result: r})
+
+	if sys.RFSS() != 0 || sys.SiteNum() != 0 {
+		t.Errorf("RFSS/Site = %d/%d, want 0/0", sys.RFSS(), sys.SiteNum())
+	}
+	if _, ok := sys.Identity["RFSS"]; !ok {
+		t.Error("RFSS should be recorded (present) even when zero, once identity is known")
+	}
+	if _, ok := sys.Identity["Site"]; !ok {
+		t.Error("Site should be recorded (present) even when zero, once identity is known")
+	}
+	if len(sys.Sites) != 1 || sys.Sites[0].RFSS != 0 || sys.Sites[0].SiteID != 0 {
+		t.Errorf("sites = %+v, want one site at (0,0)", sys.Sites)
+	}
+}
+
 func TestAccumulate_Idempotent_DedupesSites(t *testing.T) {
 	sys := &DiscoveredSystem{}
 	obs := Observation{
