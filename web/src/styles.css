@@ -89,6 +89,20 @@ body {
   overscroll-behavior: none;
 }
 
+/* Respect the OS "reduce motion" setting: drop transitions/animations
+   (drawer slides, toast fades, spinner, section chevrons) to a hair so
+   motion-sensitive operators aren't jolted. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Touch targets: every interactive element should be at least 44px tall on
    coarse pointers (per Apple HIG / Material). */
 @media (pointer: coarse) {

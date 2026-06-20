@@ -189,7 +189,11 @@ export function Metrics() {
 
       <section className="panel p-4">
         <h3 className="panel-title mb-3">Trend (last ~5 min)</h3>
-        <div className="h-64">
+        <div
+          className="h-64"
+          role="img"
+          aria-label="Line chart of daemon counters over the last five minutes. The curated counters below give the current values as text."
+        >
           <Line data={chartData} options={chartOptions} />
         </div>
       </section>

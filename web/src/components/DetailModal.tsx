@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface Props {
   title: string;
@@ -11,7 +12,7 @@ interface Props {
 // on phones. Mirrors internal/tui/detail.go in spirit: read-only deep
 // view for a single row.
 export function DetailModal({ title, subtitle, onClose, children }: Props) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -20,10 +21,6 @@ export function DetailModal({ title, subtitle, onClose, children }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
 
   return (
     <div
