@@ -8,6 +8,9 @@ import type {
   SettingsPatch,
 } from "../api/types";
 import { prefs, themeAttr, type Density, type Theme } from "../store/prefs";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card } from "../components/ui/Card";
+import { Section } from "../components/ui/Section";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -44,12 +47,10 @@ export function Settings() {
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <header>
-        <h2 className="text-xl font-semibold">Settings</h2>
-        <p className="text-sm text-muted">
-          Stored locally in your browser; nothing is sent to the daemon.
-        </p>
-      </header>
+      <PageHeader
+        title="Settings"
+        subtitle="Stored locally in your browser; nothing is sent to the daemon."
+      />
 
       <section className="panel p-4 space-y-3">
         <h3 className="panel-title">Server</h3>
@@ -174,6 +175,8 @@ interface FieldSpec {
   label: string;
   type: "string" | "number" | "bool";
   restart?: boolean;
+  /** Plain-language tooltip for the Go-struct-derived field name. */
+  help?: string;
   read: (r: RuntimeDTO) => string;
 }
 
@@ -183,6 +186,7 @@ function liveConfigFields(): FieldSpec[] {
       field: "log.level",
       label: "Log level",
       type: "string",
+      help: "Verbosity of the daemon log: debug, info, warn, or error.",
       read: (r) => r.log_level ?? "info",
     },
     {
@@ -190,24 +194,28 @@ function liveConfigFields(): FieldSpec[] {
       label: "Log format",
       type: "string",
       restart: true,
+      help: "Log output encoding: text (human) or json (machine-parseable).",
       read: (r) => r.log_format ?? "text",
     },
     {
       field: "audio.volume",
       label: "Audio volume (0..1)",
       type: "number",
+      help: "Master output gain for the live audio stream, 0 (silent) to 1 (full).",
       read: (r) => String(r.audio?.volume ?? 0.8),
     },
     {
       field: "audio.muted",
       label: "Audio muted",
       type: "bool",
+      help: "Silence the live audio stream without changing the volume level.",
       read: (r) => String(r.audio?.muted ?? false),
     },
     {
       field: "scanner.scan_mode",
       label: "Scanner scan mode (all|list)",
       type: "string",
+      help: "all = every known talkgroup; list = only talkgroups marked Scan.",
       read: (r) =>
         (r["scanner_scan_mode"] as string | undefined) ?? "all",
     },
@@ -216,6 +224,7 @@ function liveConfigFields(): FieldSpec[] {
       label: "Recordings directory",
       type: "string",
       restart: true,
+      help: "Filesystem path where call WAV recordings are written.",
       read: (r) => (r["recording_dir"] as string | undefined) ?? "",
     },
     {
@@ -223,6 +232,7 @@ function liveConfigFields(): FieldSpec[] {
       label: "Recordings sample rate (Hz)",
       type: "number",
       restart: true,
+      help: "Sample rate of saved WAV files (typically 8000 for voice).",
       read: (r) => String(r["recording_sample_rate"] ?? 8000),
     },
     {
@@ -230,6 +240,7 @@ function liveConfigFields(): FieldSpec[] {
       label: "SDR sample rate (Hz)",
       type: "number",
       restart: true,
+      help: "Front-end capture bandwidth in samples/sec (e.g. 2400000 = 2.4 MHz).",
       read: (r) => String(r["sdr_sample_rate"] ?? 2_400_000),
     },
     {
@@ -237,6 +248,7 @@ function liveConfigFields(): FieldSpec[] {
       label: "Metrics enabled",
       type: "bool",
       restart: true,
+      help: "Expose the Prometheus /metrics endpoint for monitoring.",
       read: (r) => String(r.metrics_enabled ?? false),
     },
   ];
@@ -272,25 +284,23 @@ function LiveConfigSection() {
 
   if (!runtime) {
     return (
-      <section className="panel p-4 space-y-3">
-        <h3 className="panel-title">Live config</h3>
+      <Card title="Live config">
         <p className="text-sm text-muted">Loading runtime…</p>
-      </section>
+      </Card>
     );
   }
 
   const cfgPath = (runtime["config_path"] as string | undefined) ?? "";
   if (!cfgPath) {
     return (
-      <section className="panel p-4 space-y-3">
-        <h3 className="panel-title">Live config</h3>
+      <Card title="Live config">
         <div className="text-sm panel bg-warn/15 border-warn/40 text-warn p-3">
           The daemon is running without a <code>-config</code> file, so
           <code> PATCH /api/v1/settings</code> returns 503. Restart with
           <code> -config /path/to/config.yaml</code> to enable inline
           edits.
         </div>
-      </section>
+      </Card>
     );
   }
 
@@ -318,8 +328,7 @@ function LiveConfigSection() {
   }
 
   return (
-    <section className="panel p-4 space-y-3">
-      <h3 className="panel-title">Live config</h3>
+    <Section id="settings-liveconfig" title="Live config">
       <p className="text-xs text-muted">
         Backed by <code>{cfgPath}</code>. Edits land in config.yaml with
         comments preserved; hot-reloadable knobs apply immediately,
@@ -343,7 +352,18 @@ function LiveConfigSection() {
           {fields.map((f) => (
             <tr key={f.field} className="border-t border-panel">
               <td className="py-2 pr-3 text-muted whitespace-nowrap">
-                {f.label}
+                <span className="inline-flex items-center gap-1">
+                  {f.label}
+                  {f.help && (
+                    <span
+                      className="text-muted/70 cursor-help"
+                      title={f.help}
+                      aria-label={f.help}
+                    >
+                      ⓘ
+                    </span>
+                  )}
+                </span>
                 {f.restart && (
                   <span className="ml-2 text-xs text-warn">
                     [restart]
@@ -402,7 +422,7 @@ function LiveConfigSection() {
           ))}
         </tbody>
       </table>
-    </section>
+    </Section>
   );
 }
 

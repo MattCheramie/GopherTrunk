@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import type {
@@ -8,6 +8,15 @@ import type {
   HuntStatus,
 } from "../api/types";
 import { selectCanMutate, selectClientConfig, useShared } from "../store/shared";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card } from "../components/ui/Card";
+import { Section } from "../components/ui/Section";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Field } from "../components/ui/Field";
+import { Input } from "../components/ui/Input";
+import { Select } from "../components/ui/Select";
+import { Checkbox } from "../components/ui/Checkbox";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -26,6 +35,19 @@ const CC_PROTOCOLS: { value: string; label: string }[] = [
   { value: "tetra", label: "TETRA" },
   { value: "ysf", label: "System Fusion (YSF)" },
 ];
+
+// Shared table cell classes for the read-only result tables below.
+const TH = "px-3 py-2 text-left font-medium";
+const TD = "px-3 py-2";
+const THEAD = "bg-panel/80 text-xs uppercase tracking-wider text-muted";
+
+function HuntTable({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  );
+}
 
 // sortSignals returns a copy of the inventory sorted by the chosen column
 // (frequency ascending, class alphabetical, or SNR descending).
@@ -219,173 +241,342 @@ export function Hunt() {
   const exportBase = `${cfg.baseURL}/api/v1/hunt/export`;
 
   return (
-    <div className="panel hunt-panel">
-      <h2>Hunt — discover an unknown system</h2>
+    <div className="space-y-4 max-w-5xl">
+      <PageHeader
+        title="Hunt"
+        subtitle="Discover an unknown system"
+        actions={
+          running ? (
+            <Badge tone="ok">running ●</Badge>
+          ) : (
+            <Badge>{status?.state ?? "idle"}</Badge>
+          )
+        }
+      />
 
-      <section className="hunt-controls hunt-ccparse">
-        <h3>Parse a control channel</h3>
-        <p className="hint">
-          Point straight at a known trunked control-channel frequency and decode
-          it. The band plan, talkgroups and system identity below fill in as the
-          CC is read — longer listening (or re-running) discovers more talkgroups
-          and neighbor sites. Each second buffers ~19 MB of IQ, so prefer
-          re-running over very long dwells — or set <em>Monitor</em> below to
-          stream the CC in real time (bounded memory) for minutes at a time.
+      {!canMutate && (
+        <div className="rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm text-warn">
+          Mutations are read-only on this connection (no auth token) — start a
+          daemon with write access to run a hunt.
+        </div>
+      )}
+
+      {/* Quick start: the most common task, expanded by default. */}
+      <Section
+        id="hunt-ccparse"
+        title="Parse a control channel"
+        description="Already know a control-channel frequency? Decode it directly — no sweep."
+      >
+        <p className="text-xs text-muted">
+          The band plan, talkgroups and identity below fill in as the CC is read.
+          Each second buffers ~19 MB of IQ, so prefer re-running over long dwells —
+          or set <em>Monitor</em> to stream the CC in real time (bounded memory).
         </p>
-        <label>
-          Protocol
-          <select value={ccProto} onChange={(e) => setCCProto(e.target.value)}>
-            {CC_PROTOCOLS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          CC frequency (MHz)
-          <input
-            value={ccFreq}
-            onChange={(e) => setCCFreq(e.target.value)}
-            placeholder="851.0125"
-          />
-        </label>
-        <label>
-          Listen for (seconds)
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={ccDwell}
-            onChange={(e) => setCCDwell(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Monitor (minutes, 0 = off)
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={ccMonitorMin}
-            onChange={(e) => setCCMonitorMin(Number(e.target.value))}
-          />
-          <span className="hint">
-            Streams the control channel and stops early once identity, neighbors
-            and band plan settle (capped at this many minutes).
-          </span>
-        </label>
-        <div className="hunt-buttons">
-          <button onClick={parseCC} disabled={!canMutate || running}>
-            Parse control channel
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Protocol">
+            {(p) => (
+              <Select
+                {...p}
+                className="w-full"
+                value={ccProto}
+                onChange={(e) => setCCProto(e.target.value)}
+              >
+                {CC_PROTOCOLS.map((proto) => (
+                  <option key={proto.value} value={proto.value}>
+                    {proto.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="CC frequency (MHz)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={ccFreq}
+                onChange={(e) => setCCFreq(e.target.value)}
+                placeholder="851.0125"
+                inputMode="decimal"
+              />
+            )}
+          </Field>
+          <Field label="Listen for (seconds)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                type="number"
+                min={1}
+                step={1}
+                value={ccDwell}
+                onChange={(e) => setCCDwell(Number(e.target.value))}
+              />
+            )}
+          </Field>
+          <Field
+            label="Monitor (minutes, 0 = off)"
+            hint="Streams the CC and stops once identity, neighbors and band plan settle."
+          >
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                type="number"
+                min={0}
+                step={1}
+                value={ccMonitorMin}
+                onChange={(e) => setCCMonitorMin(Number(e.target.value))}
+              />
+            )}
+          </Field>
         </div>
-      </section>
+        <Button onClick={parseCC} disabled={!canMutate || running}>
+          Parse control channel
+        </Button>
+      </Section>
 
-      <section className="hunt-status">
-        <div>
-          State: <strong>{status?.state ?? "idle"}</strong>
-          {running ? " ●" : ""}
+      {/* Blind sweep: advanced; collapsed by default to keep the panel calm. */}
+      <Section
+        id="hunt-sweep"
+        title="Blind sweep"
+        description="Don't know the frequencies? Sweep a band or a candidate list."
+        defaultCollapsed
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Bands (MHz, low:high, comma-separated)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={bands}
+                onChange={(e) => setBands(e.target.value)}
+                placeholder="851:869"
+              />
+            )}
+          </Field>
+          <Field label="Candidates (MHz, comma-separated — skips the sweep)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={candidates}
+                onChange={(e) => setCandidates(e.target.value)}
+                placeholder="851.0125, 853.5125"
+              />
+            )}
+          </Field>
+          <Field label="Name">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="New County P25"
+              />
+            )}
+          </Field>
+          <Field label="State">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={stateCode}
+                onChange={(e) => setStateCode(e.target.value)}
+                placeholder="AZ"
+              />
+            )}
+          </Field>
+          <Field label="County">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={county}
+                onChange={(e) => setCounty(e.target.value)}
+                placeholder="Maricopa"
+              />
+            )}
+          </Field>
+          <Field label="SDR serial (optional — auto-selects a spare)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={serial}
+                onChange={(e) => setSerial(e.target.value)}
+                placeholder="00000001"
+              />
+            )}
+          </Field>
+          <Field label="Protocol (optional — default auto-identifies)">
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                value={protocol}
+                onChange={(e) => setProtocol(e.target.value)}
+                placeholder="p25"
+              />
+            )}
+          </Field>
         </div>
-        {status?.phase ? (
+
+        <div className="pt-2 space-y-2 border-t border-line">
+          <p className="text-xs uppercase tracking-wider text-muted">
+            Survey &amp; advanced options
+          </p>
+          <Checkbox
+            label="Survey mode — classify & decode every signal (analog, paging, trunking)"
+            checked={survey}
+            onChange={(e) => setSurvey(e.target.checked)}
+          />
+          {survey && (
+            <Checkbox
+              label="Classify only — skip decoding (fast inventory)"
+              checked={classifyOnly}
+              onChange={(e) => setClassifyOnly(e.target.checked)}
+            />
+          )}
+          {survey && (
+            <Checkbox
+              label="Persist survey — stream carriers to a crash-safe NDJSON file"
+              checked={persistSurvey}
+              onChange={(e) => setPersistSurvey(e.target.checked)}
+            />
+          )}
+          {survey && persistSurvey && (
+            <Checkbox
+              label="Resume — skip frequencies already surveyed in that file"
+              checked={resume}
+              onChange={(e) => setResume(e.target.checked)}
+            />
+          )}
+          <Checkbox
+            label="Auto-gain — recommend the best front-end gain after the run (needs a dedicated SDR)"
+            checked={autoGain}
+            onChange={(e) => setAutoGain(e.target.checked)}
+          />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <Button onClick={start} disabled={!canMutate || running}>
+            Start hunt
+          </Button>
+          <Button variant="ghost" onClick={stop} disabled={!canMutate || !running}>
+            Stop
+          </Button>
+        </div>
+      </Section>
+
+      {/* Live status. */}
+      <Card title="Status">
+        <div className="space-y-1 text-sm">
           <div>
-            Phase: {status.phase}
-            {status.detail ? ` — ${status.detail}` : ""}
+            State: <strong>{status?.state ?? "idle"}</strong>
+            {running ? " ●" : ""}
           </div>
-        ) : null}
-        {status?.error ? <div className="error">Error: {status.error}</div> : null}
-        {status?.mode ? (
-          <div>
-            Mode: <strong>{status.mode}</strong>
-          </div>
-        ) : null}
-        {status?.system_name ? (
-          <div>
-            Discovered: <strong>{status.system_name}</strong> — {status.sites} site(s),{" "}
-            {status.talkgroups} talkgroup(s)
-          </div>
-        ) : status?.mode === "survey" ? null : (
-          <div>No system discovered yet.</div>
-        )}
-      </section>
+          {status?.phase && (
+            <div className="text-muted">
+              Phase: {status.phase}
+              {status.detail ? ` — ${status.detail}` : ""}
+            </div>
+          )}
+          {status?.error && <div className="text-err">Error: {status.error}</div>}
+          {status?.mode && (
+            <div>
+              Mode: <strong>{status.mode}</strong>
+            </div>
+          )}
+          {status?.system_name ? (
+            <div>
+              Discovered: <strong>{status.system_name}</strong> — {status.sites}{" "}
+              site(s), {status.talkgroups} talkgroup(s)
+            </div>
+          ) : status?.mode === "survey" ? null : (
+            <div className="text-muted">No system discovered yet.</div>
+          )}
+        </div>
+      </Card>
 
       {status?.system &&
       (status.system.wacn || status.system.system_id || status.system.nac) ? (
-        <section className="hunt-identity">
-          <h3>System identity</h3>
-          <table>
+        <Card title="System identity">
+          <HuntTable>
             <tbody>
               <tr>
-                <th>Protocol</th>
-                <td>{status.system.protocol || "—"}</td>
-                <th>WACN</th>
-                <td>{hexUpper(status.system.wacn)}</td>
+                <th className={TH}>Protocol</th>
+                <td className={TD}>{status.system.protocol || "—"}</td>
+                <th className={TH}>WACN</th>
+                <td className={TD}>{hexUpper(status.system.wacn)}</td>
               </tr>
               <tr>
-                <th>System ID</th>
-                <td>{hexUpper(status.system.system_id)}</td>
-                <th>NAC</th>
-                <td>{hexUpper(status.system.nac)}</td>
+                <th className={TH}>System ID</th>
+                <td className={TD}>{hexUpper(status.system.system_id)}</td>
+                <th className={TH}>NAC</th>
+                <td className={TD}>{hexUpper(status.system.nac)}</td>
               </tr>
               {status.system.confidence ? (
                 <tr>
-                  <th>Confidence</th>
-                  <td colSpan={3}>{(status.system.confidence * 100).toFixed(0)}%</td>
+                  <th className={TH}>Confidence</th>
+                  <td className={TD} colSpan={3}>
+                    {(status.system.confidence * 100).toFixed(0)}%
+                  </td>
                 </tr>
               ) : null}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
       {status?.system?.band_plan && status.system.band_plan.length > 0 ? (
-        <section className="hunt-bandplan">
-          <h3>Band plan ({status.system.band_plan.length})</h3>
-          <table>
-            <thead>
+        <Card title={`Band plan (${status.system.band_plan.length})`}>
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th>Channel ID</th>
-                <th>Base (MHz)</th>
-                <th>Spacing (kHz)</th>
-                <th>BW (kHz)</th>
-                <th>TX offset (MHz)</th>
+                <th className={TH}>Channel ID</th>
+                <th className={TH}>Base (MHz)</th>
+                <th className={TH}>Spacing (kHz)</th>
+                <th className={TH}>BW (kHz)</th>
+                <th className={TH}>TX offset (MHz)</th>
               </tr>
             </thead>
             <tbody>
               {status.system.band_plan.map((b) => (
-                <tr key={b.channel_id}>
-                  <td>{b.channel_id}</td>
-                  <td>{(b.base_hz / 1e6).toFixed(5)}</td>
-                  <td>{(b.spacing_hz / 1e3).toFixed(3)}</td>
-                  <td>{b.bandwidth_hz ? (b.bandwidth_hz / 1e3).toFixed(1) : "—"}</td>
-                  <td>{b.tx_offset_hz ? (b.tx_offset_hz / 1e6).toFixed(4) : "—"}</td>
+                <tr key={b.channel_id} className="border-t border-panel">
+                  <td className={TD}>{b.channel_id}</td>
+                  <td className={TD}>{(b.base_hz / 1e6).toFixed(5)}</td>
+                  <td className={TD}>{(b.spacing_hz / 1e3).toFixed(3)}</td>
+                  <td className={TD}>{b.bandwidth_hz ? (b.bandwidth_hz / 1e3).toFixed(1) : "—"}</td>
+                  <td className={TD}>{b.tx_offset_hz ? (b.tx_offset_hz / 1e6).toFixed(4) : "—"}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
       {status?.system?.talkgroups && status.system.talkgroups.length > 0 ? (
-        <section className="hunt-talkgroups">
-          <h3>Talkgroups ({status.system.talkgroups.length})</h3>
-          <table>
-            <thead>
+        <Card title={`Talkgroups (${status.system.talkgroups.length})`}>
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th>Dec</th>
-                <th>Hex</th>
-                <th>Encrypted</th>
-                <th>Activity</th>
-                <th>Frequencies</th>
+                <th className={TH}>Dec</th>
+                <th className={TH}>Hex</th>
+                <th className={TH}>Encrypted</th>
+                <th className={TH}>Activity</th>
+                <th className={TH}>Frequencies</th>
               </tr>
             </thead>
             <tbody>
               {status.system.talkgroups.map((tg) => (
-                <tr key={tg.dec}>
-                  <td>{tg.dec}</td>
-                  <td>{tg.hex}</td>
-                  <td>{tg.encrypted ? "🔒" : "—"}</td>
-                  <td>{tg.count}</td>
-                  <td>
+                <tr key={tg.dec} className="border-t border-panel">
+                  <td className={TD}>{tg.dec}</td>
+                  <td className={TD}>{tg.hex}</td>
+                  <td className={TD}>{tg.encrypted ? "🔒" : "—"}</td>
+                  <td className={TD}>{tg.count}</td>
+                  <td className={TD}>
                     {tg.frequencies && tg.frequencies.length > 0
                       ? tg.frequencies.map((h) => (h / 1e6).toFixed(4)).join(", ")
                       : "—"}
@@ -393,36 +584,35 @@ export function Hunt() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
       {status?.system?.sites && status.system.sites.length > 0 ? (
-        <section className="hunt-sites">
-          <h3>Sites ({status.system.sites.length})</h3>
-          <table>
-            <thead>
+        <Card title={`Sites (${status.system.sites.length})`}>
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th>Site</th>
-                <th>RFSS</th>
-                <th>Control channels</th>
-                <th>Neighbors</th>
-                <th>Voice channels</th>
+                <th className={TH}>Site</th>
+                <th className={TH}>RFSS</th>
+                <th className={TH}>Control channels</th>
+                <th className={TH}>Neighbors</th>
+                <th className={TH}>Voice channels</th>
               </tr>
             </thead>
             <tbody>
               {status.system.sites.map((site, i) => (
-                <tr key={`${site.rfss}-${site.site_id}-${i}`}>
-                  <td>{site.site_name || site.site_id || "—"}</td>
-                  <td>{site.rfss ?? "—"}</td>
-                  <td>
+                <tr key={`${site.rfss}-${site.site_id}-${i}`} className="border-t border-panel">
+                  <td className={TD}>{site.site_name || site.site_id || "—"}</td>
+                  <td className={TD}>{site.rfss ?? "—"}</td>
+                  <td className={TD}>
                     {site.control_channels && site.control_channels.length > 0
                       ? site.control_channels
                           .map((c) => `${(c.frequency_hz / 1e6).toFixed(4)}${c.is_control ? "*" : ""}`)
                           .join(", ")
                       : "—"}
                   </td>
-                  <td>
+                  <td className={TD}>
                     {site.neighbors && site.neighbors.length > 0
                       ? site.neighbors
                           .map((n) => {
@@ -434,7 +624,7 @@ export function Hunt() {
                           .join(", ")
                       : "—"}
                   </td>
-                  <td>
+                  <td className={TD}>
                     {site.voice_channels && site.voice_channels.length > 0
                       ? site.voice_channels.map((h) => (h / 1e6).toFixed(4)).join(", ")
                       : "—"}
@@ -442,186 +632,142 @@ export function Hunt() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
       {status?.reports && status.reports.length > 0 ? (
-        <section className="hunt-reports">
-          <h3>Captures ({status.reports.length})</h3>
-          <table>
-            <thead>
+        <Card title={`Captures (${status.reports.length})`}>
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th>Control freq</th>
-                <th>Protocol</th>
-                <th>Result</th>
-                <th>TGs</th>
+                <th className={TH}>Control freq</th>
+                <th className={TH}>Protocol</th>
+                <th className={TH}>Result</th>
+                <th className={TH}>TGs</th>
               </tr>
             </thead>
             <tbody>
               {status.reports.map((rep, i) => (
-                <tr key={`${rep.control_hz}-${i}`}>
-                  <td>{rep.control_hz ? `${(rep.control_hz / 1e6).toFixed(4)} MHz` : "—"}</td>
-                  <td>{rep.protocol || "—"}</td>
-                  <td>{captureResult(rep)}</td>
-                  <td>{rep.talkgroups ?? "—"}</td>
+                <tr key={`${rep.control_hz}-${i}`} className="border-t border-panel">
+                  <td className={TD}>{rep.control_hz ? `${(rep.control_hz / 1e6).toFixed(4)} MHz` : "—"}</td>
+                  <td className={TD}>{rep.protocol || "—"}</td>
+                  <td className={TD}>{captureResult(rep)}</td>
+                  <td className={TD}>{rep.talkgroups ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
       {status?.signals && status.signals.length > 0 ? (
-        <section className="hunt-signals">
-          <h3>Signals ({status.signals.length})</h3>
-          <table>
-            <thead>
+        <Card title={`Signals (${status.signals.length})`}>
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th onClick={() => setSortBy("freq")} style={{ cursor: "pointer" }}>
+                <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("freq")}>
                   Frequency{sortBy === "freq" ? " ▾" : ""}
                 </th>
-                <th onClick={() => setSortBy("class")} style={{ cursor: "pointer" }}>
+                <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("class")}>
                   Class{sortBy === "class" ? " ▾" : ""}
                 </th>
-                <th>BW (kHz)</th>
-                <th onClick={() => setSortBy("snr")} style={{ cursor: "pointer" }}>
+                <th className={TH}>BW (kHz)</th>
+                <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("snr")}>
                   SNR (dB){sortBy === "snr" ? " ▾" : ""}
                 </th>
-                <th>Decode</th>
+                <th className={TH}>Decode</th>
               </tr>
             </thead>
             <tbody>
               {sortSignals(status.signals, sortBy).map((sig) => (
-                <tr key={sig.freq_hz}>
-                  <td>{(sig.freq_hz / 1e6).toFixed(4)} MHz</td>
-                  <td>{sig.class}</td>
-                  <td>{(sig.occupied_bw_hz / 1e3).toFixed(1)}</td>
-                  <td>{sig.snr_db.toFixed(1)}</td>
-                  <td>{signalDetail(sig)}</td>
+                <tr key={sig.freq_hz} className="border-t border-panel">
+                  <td className={TD}>{(sig.freq_hz / 1e6).toFixed(4)} MHz</td>
+                  <td className={TD}>{sig.class}</td>
+                  <td className={TD}>{(sig.occupied_bw_hz / 1e3).toFixed(1)}</td>
+                  <td className={TD}>{sig.snr_db.toFixed(1)}</td>
+                  <td className={TD}>{signalDetail(sig)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </HuntTable>
+        </Card>
       ) : null}
 
-      <section className="hunt-controls">
-        <label>
-          Bands (MHz, low:high, comma-separated)
-          <input value={bands} onChange={(e) => setBands(e.target.value)} placeholder="851:869" />
-        </label>
-        <label>
-          Candidates (MHz, comma-separated — skips the sweep)
-          <input
-            value={candidates}
-            onChange={(e) => setCandidates(e.target.value)}
-            placeholder="851.0125, 853.5125"
-          />
-        </label>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New County P25" />
-        </label>
-        <label>
-          State
-          <input value={stateCode} onChange={(e) => setStateCode(e.target.value)} placeholder="AZ" />
-        </label>
-        <label>
-          County
-          <input value={county} onChange={(e) => setCounty(e.target.value)} placeholder="Maricopa" />
-        </label>
-        <label>
-          SDR serial (optional — auto-selects a spare, else borrows control)
-          <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="00000001" />
-        </label>
-        <label>
-          Protocol (optional — default auto-identifies)
-          <input value={protocol} onChange={(e) => setProtocol(e.target.value)} placeholder="p25" />
-        </label>
-        <label className="hunt-survey-toggle">
-          <input type="checkbox" checked={survey} onChange={(e) => setSurvey(e.target.checked)} />
-          Survey mode — classify &amp; decode every signal (analog, paging, trunking)
-        </label>
-        {survey ? (
-          <label className="hunt-survey-toggle">
-            <input
-              type="checkbox"
-              checked={classifyOnly}
-              onChange={(e) => setClassifyOnly(e.target.checked)}
-            />
-            Classify only — skip decoding (fast inventory)
-          </label>
-        ) : null}
-        {survey ? (
-          <label className="hunt-survey-toggle">
-            <input
-              type="checkbox"
-              checked={persistSurvey}
-              onChange={(e) => setPersistSurvey(e.target.checked)}
-            />
-            Persist survey — stream carriers to a crash-safe NDJSON file
-          </label>
-        ) : null}
-        {survey && persistSurvey ? (
-          <label className="hunt-survey-toggle">
-            <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
-            Resume — skip frequencies already surveyed in that file
-          </label>
-        ) : null}
-        <label className="hunt-survey-toggle">
-          <input type="checkbox" checked={autoGain} onChange={(e) => setAutoGain(e.target.checked)} />
-          Auto-gain — after the run, recommend the best front-end gain (needs a dedicated SDR)
-        </label>
-        <div className="hunt-buttons">
-          <button onClick={start} disabled={!canMutate || running}>
-            Start hunt
-          </button>
-          <button onClick={stop} disabled={!canMutate || !running}>
-            Stop
-          </button>
-        </div>
-      </section>
-
-      {status?.system_name ? (
-        <section className="hunt-export">
-          <span>Export:</span>
-          <a href={`${exportBase}?format=bundle`}>GopherTrunk bundle</a>
-          <a href={`${exportBase}?format=trunk-recorder`}>trunk-recorder</a>
-          <a href={`${exportBase}?format=rr`}>RadioReference package</a>
-        </section>
-      ) : null}
-
-      {status?.signals && status.signals.length > 0 ? (
-        <section className="hunt-export">
-          <span>Survey:</span>
-          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>signals JSON</a>
-          <a href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>signals CSV</a>
-        </section>
-      ) : null}
-
-      {status?.system_name ? (
-        <section className="hunt-rr">
-          <h3>RadioReference</h3>
-          <div className="hunt-rr-controls">
-            <label>
-              County id (ctid)
-              <input value={rrCounty} onChange={(e) => setRRCounty(e.target.value)} placeholder="e.g. 1234" />
-            </label>
-            <label>
-              or System id(s)
-              <input value={rrSID} onChange={(e) => setRRSID(e.target.value)} placeholder="comma-separated SIDs" />
-            </label>
-            <button onClick={checkRR} disabled={rrBusy || (!rrCounty.trim() && !rrSID.trim())}>
-              {rrBusy ? "Checking…" : "Cross-reference"}
-            </button>
+      {(status?.system_name || (status?.signals && status.signals.length > 0)) && (
+        <Card title="Export">
+          <div className="flex flex-wrap gap-2">
+            {status?.system_name && (
+              <>
+                <a className="btn-ghost text-xs" href={`${exportBase}?format=bundle`}>
+                  GopherTrunk bundle
+                </a>
+                <a className="btn-ghost text-xs" href={`${exportBase}?format=trunk-recorder`}>
+                  trunk-recorder
+                </a>
+                <a className="btn-ghost text-xs" href={`${exportBase}?format=rr`}>
+                  RadioReference package
+                </a>
+              </>
+            )}
+            {status?.signals && status.signals.length > 0 && (
+              <>
+                <a className="btn-ghost text-xs" href={`${cfg.baseURL}/api/v1/hunt/survey?format=json`}>
+                  survey JSON
+                </a>
+                <a className="btn-ghost text-xs" href={`${cfg.baseURL}/api/v1/hunt/survey?format=csv`}>
+                  survey CSV
+                </a>
+              </>
+            )}
           </div>
-          {rrReport ? (
-            <div className="hunt-rr-result">
+        </Card>
+      )}
+
+      {status?.system_name ? (
+        <Section
+          id="hunt-rr"
+          title="Cross-reference RadioReference"
+          description="Compare the discovered system against RadioReference by county or system id."
+          defaultCollapsed
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="County id (ctid)">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="w-full"
+                  value={rrCounty}
+                  onChange={(e) => setRRCounty(e.target.value)}
+                  placeholder="e.g. 1234"
+                />
+              )}
+            </Field>
+            <Field label="or System id(s)">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="w-full"
+                  value={rrSID}
+                  onChange={(e) => setRRSID(e.target.value)}
+                  placeholder="comma-separated SIDs"
+                />
+              )}
+            </Field>
+          </div>
+          <Button
+            loading={rrBusy}
+            onClick={checkRR}
+            disabled={rrBusy || (!rrCounty.trim() && !rrSID.trim())}
+          >
+            Cross-reference
+          </Button>
+          {rrReport && (
+            <div className="text-sm space-y-2">
               {rrReport.hints && rrReport.hints.length > 0 ? (
                 <>
-                  <h4>Possible existing systems</h4>
-                  <ul>
+                  <h4 className="font-medium">Possible existing systems</h4>
+                  <ul className="list-disc pl-5 space-y-1">
                     {rrReport.hints.map((h, i) => (
                       <li key={i}>
                         SID {h.sid} — {h.name} ({(h.confidence * 100).toFixed(0)}%): {h.reason}
@@ -630,17 +776,17 @@ export function Hunt() {
                   </ul>
                 </>
               ) : (
-                <p>No existing match among {rrReport.compared} system(s).</p>
+                <p className="text-muted">No existing match among {rrReport.compared} system(s).</p>
               )}
-              {rrReport.diff ? (
+              {rrReport.diff && (
                 <>
-                  <h4>
+                  <h4 className="font-medium">
                     Differences vs RadioReference (SID {rrReport.diff.sid}, {rrReport.diff.name})
                   </h4>
-                  {rrReport.diff.freq_offsets && rrReport.diff.freq_offsets.length > 0 ? (
+                  {rrReport.diff.freq_offsets && rrReport.diff.freq_offsets.length > 0 && (
                     <div>
                       <strong>Frequency offsets:</strong>
-                      <ul>
+                      <ul className="list-disc pl-5">
                         {rrReport.diff.freq_offsets.map((o, i) => (
                           <li key={i}>
                             {(o.discovered_hz / 1e6).toFixed(4)} vs {(o.rr_hz / 1e6).toFixed(4)} MHz (
@@ -650,55 +796,52 @@ export function Hunt() {
                         ))}
                       </ul>
                     </div>
-                  ) : null}
-                  {rrReport.diff.freqs_not_in_rr && rrReport.diff.freqs_not_in_rr.length > 0 ? (
+                  )}
+                  {rrReport.diff.freqs_not_in_rr && rrReport.diff.freqs_not_in_rr.length > 0 && (
                     <div>
                       <strong>Frequencies not in RadioReference:</strong>{" "}
                       {rrReport.diff.freqs_not_in_rr.map((f) => (f / 1e6).toFixed(4)).join(", ")} MHz
                     </div>
-                  ) : null}
-                  {rrReport.diff.talkgroups_not_in_rr && rrReport.diff.talkgroups_not_in_rr.length > 0 ? (
+                  )}
+                  {rrReport.diff.talkgroups_not_in_rr && rrReport.diff.talkgroups_not_in_rr.length > 0 && (
                     <div>
                       <strong>Talkgroups not in RadioReference:</strong>{" "}
                       {rrReport.diff.talkgroups_not_in_rr.join(", ")}
                     </div>
-                  ) : null}
+                  )}
                 </>
-              ) : null}
+              )}
             </div>
-          ) : null}
-        </section>
+          )}
+        </Section>
       ) : null}
 
       {status?.gain_recommendations && status.gain_recommendations.length > 0 ? (
-        <section className="hunt-gain">
-          <h3>Auto-gain recommendations</h3>
-          <table>
-            <thead>
+        <Card title="Auto-gain recommendations">
+          <HuntTable>
+            <thead className={THEAD}>
               <tr>
-                <th>Control channel</th>
-                <th>Best gain (dB)</th>
-                <th>Error rate</th>
-                <th>Locked</th>
+                <th className={TH}>Control channel</th>
+                <th className={TH}>Best gain (dB)</th>
+                <th className={TH}>Error rate</th>
+                <th className={TH}>Locked</th>
               </tr>
             </thead>
             <tbody>
               {status.gain_recommendations.map((g, i) => (
-                <tr key={i}>
-                  <td>{(g.freq_hz / 1e6).toFixed(4)} MHz</td>
-                  <td>{(g.best_gain_tenth_db / 10).toFixed(1)}</td>
-                  <td>{g.best_error_rate.toFixed(3)}</td>
-                  <td>{g.locked ? "yes" : "no"}</td>
+                <tr key={i} className="border-t border-panel">
+                  <td className={TD}>{(g.freq_hz / 1e6).toFixed(4)} MHz</td>
+                  <td className={TD}>{(g.best_gain_tenth_db / 10).toFixed(1)}</td>
+                  <td className={TD}>{g.best_error_rate.toFixed(3)}</td>
+                  <td className={TD}>{g.locked ? "yes" : "no"}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
-      ) : null}
-      {status?.gain_note ? <p className="hint">Auto-gain: {status.gain_note}</p> : null}
-
-      {!canMutate ? (
-        <p className="hint">Mutations are read-only on this connection (no auth token).</p>
+          </HuntTable>
+          {status.gain_note && (
+            <p className="text-xs text-muted mt-2">Auto-gain: {status.gain_note}</p>
+          )}
+        </Card>
       ) : null}
     </div>
   );
