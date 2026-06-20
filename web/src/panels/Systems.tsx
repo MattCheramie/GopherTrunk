@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { PageHeader } from "../components/ui/PageHeader";
 import type {
   DMRBandPlanDTO,
   DMRBandPlanLearnedDTO,
@@ -65,7 +66,6 @@ export function Systems() {
   const setScanner = useShared((s) => s.setScanner);
   const events = useShared((s) => s.events);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
-  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancel = false;
@@ -88,16 +88,6 @@ export function Systems() {
       window.clearInterval(t);
     };
   }, [cfg, setSystems, setScanner]);
-
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return systems;
-    const needle = filter.toLowerCase();
-    return systems.filter(
-      (s) =>
-        s.name.toLowerCase().includes(needle) ||
-        s.protocol.toLowerCase().includes(needle),
-    );
-  }, [systems, filter]);
 
   const columns: Column<SystemDTO>[] = useMemo(
     () => [
@@ -156,32 +146,26 @@ export function Systems() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Systems</h2>
-        <span className="text-xs text-muted">
-          {filtered.length} of {systems.length}
-        </span>
-      </header>
-
-      <input
-        type="search"
-        className="input w-full sm:max-w-xs"
-        placeholder="Filter by name or protocol…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        aria-label="Filter systems"
+      <PageHeader
+        title="Systems"
+        actions={
+          <span className="text-xs text-muted">{systems.length} total</span>
+        }
       />
 
       <DataTable
-        rows={filtered}
+        rows={systems}
         columns={columns}
         rowKey={(r) => r.name}
         defaultSortKey="name"
+        searchable
+        searchAccessor={(s) => `${s.name} ${s.protocol}`}
+        searchPlaceholder="Search by name or protocol…"
         onRowClick={(r) => setSelected(r)}
         emptyMessage={
           systems.length === 0
             ? "No trunked systems configured."
-            : "No systems match the filter."
+            : "No systems match the search."
         }
       />
 

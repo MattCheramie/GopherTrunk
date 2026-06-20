@@ -19,6 +19,7 @@ export function History() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setGlobalError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
 
   const [rows, setRows] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,12 +239,17 @@ export function History() {
         rowKey={(r) => String(r.id)}
         defaultSortKey="started"
         defaultSortDirection="desc"
-        onRowClick={(r) => setSelected(r)}
-        emptyMessage={
-          loading
-            ? "loading…"
-            : "No calls in the daemon's call log for this filter."
+        loading={loading}
+        pageSize={50}
+        searchable
+        searchAccessor={(r) =>
+          [r.group_id, r.talkgroup_alpha, r.system, r.source_id]
+            .filter(Boolean)
+            .join(" ")
         }
+        searchPlaceholder="Search loaded calls…"
+        onRowClick={(r) => setSelected(r)}
+        emptyMessage="No calls in the daemon's call log for this filter."
       />
 
       {selected && (
@@ -344,6 +350,7 @@ export function History() {
               // Refresh the current view so the user sees the result.
               const fresh = await api.history(cfg, filter);
               setRows(fresh);
+              notify("success", "Retention sweep complete");
             } catch (e: unknown) {
               setGlobalError(
                 e instanceof Error ? e.message : "retention sweep failed",

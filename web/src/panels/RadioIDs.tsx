@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { PageHeader } from "../components/ui/PageHeader";
 import type { CallRow, RIDDTO } from "../api/types";
 import {
   selectCanMutate,
@@ -24,7 +25,6 @@ export function RadioIDs() {
   const setRIDs = useShared((s) => s.setRIDs);
 
   const [selected, setSelected] = useState<RIDDTO | null>(null);
-  const [filter, setFilter] = useState("");
   const [history, setHistory] = useState<CallRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -88,23 +88,6 @@ export function RadioIDs() {
       setBusy(false);
     }
   }
-
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return rids;
-    const needle = filter.toLowerCase();
-    return rids.filter((r) => {
-      const idStr = String(r.id);
-      return (
-        idStr.includes(needle) ||
-        (r.alias ?? "").toLowerCase().includes(needle) ||
-        (r.talker_alias ?? "").toLowerCase().includes(needle) ||
-        (r.description ?? "").toLowerCase().includes(needle) ||
-        (r.tag ?? "").toLowerCase().includes(needle) ||
-        (r.group ?? "").toLowerCase().includes(needle) ||
-        (r.owner ?? "").toLowerCase().includes(needle)
-      );
-    });
-  }, [rids, filter]);
 
   const columns: Column<RIDDTO>[] = useMemo(
     () => [
@@ -176,32 +159,31 @@ export function RadioIDs() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Radio IDs</h2>
-        <span className="text-xs text-muted">
-          {filtered.length} of {rids.length}
-        </span>
-      </header>
-
-      <input
-        type="search"
-        className="input w-full sm:max-w-xs"
-        placeholder="Filter by id, alias, talker alias, group, owner…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        aria-label="Filter radio IDs"
+      <PageHeader
+        title="Radio IDs"
+        actions={
+          <span className="text-xs text-muted">{rids.length} total</span>
+        }
       />
 
       <DataTable
-        rows={filtered}
+        rows={rids}
         columns={columns}
         rowKey={(r) => String(r.id)}
         defaultSortKey="id"
+        tableId="rids"
+        searchable
+        searchAccessor={(r) =>
+          [r.id, r.alias, r.talker_alias, r.description, r.tag, r.group, r.owner]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search by id, alias, talker alias, group, owner…"
         onRowClick={(r) => setSelected(r)}
         emptyMessage={
           rids.length === 0
             ? "No radio IDs observed yet — load an rid_alias_file or wait for the affiliation tracker to surface live IDs."
-            : "No radio IDs match the filter."
+            : "No radio IDs match the search."
         }
       />
 

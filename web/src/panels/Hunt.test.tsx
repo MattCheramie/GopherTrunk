@@ -47,6 +47,8 @@ describe("Hunt panel", () => {
     // Wait for the initial status poll to settle.
     await waitFor(() => expect(api.hunt).toHaveBeenCalled());
 
+    // Blind sweep is collapsed by default — open it first.
+    await userEvent.click(screen.getByRole("button", { name: /blind sweep/i }));
     await userEvent.type(screen.getByPlaceholderText("00000001"), "dongle-7");
     await userEvent.type(screen.getByPlaceholderText("p25"), "p25");
     await userEvent.click(screen.getByRole("button", { name: /start hunt/i }));

@@ -18,6 +18,13 @@ export default {
         ok: "rgb(var(--gt-ok) / <alpha-value>)",
         warn: "rgb(var(--gt-warn) / <alpha-value>)",
         err: "rgb(var(--gt-err) / <alpha-value>)",
+        // Surface elevation + hairline tokens (Phase 3 token refresh).
+        // In dark/mono these map onto the existing palette so nothing
+        // shifts; the light theme and new UI primitives rely on them.
+        surface: "rgb(var(--gt-surface-1) / <alpha-value>)",
+        surface2: "rgb(var(--gt-surface-2) / <alpha-value>)",
+        surface3: "rgb(var(--gt-surface-3) / <alpha-value>)",
+        line: "rgb(var(--gt-border) / <alpha-value>)",
       },
       fontFamily: {
         mono: [

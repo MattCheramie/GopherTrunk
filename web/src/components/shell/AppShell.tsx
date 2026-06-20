@@ -4,6 +4,7 @@ import { BottomNav } from "./BottomNav";
 import { MobileDrawer } from "./MobileDrawer";
 import { TopBar } from "./TopBar";
 import { CommandPalette } from "../CommandPalette";
+import { ToastViewport } from "../ui/ToastViewport";
 import { useIsDesktop } from "../../hooks/useMediaQuery";
 import { prefs } from "../../store/prefs";
 
@@ -55,6 +56,14 @@ export function AppShell({ children }: Props) {
 
   return (
     <div className="min-h-full flex">
+      {/* Keyboard users can jump straight past the nav chrome. Visually
+          hidden until focused. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[90] focus:panel focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Skip to content
+      </a>
       <Sidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -62,7 +71,9 @@ export function AppShell({ children }: Props) {
           onOpenMore={() => setDrawerOpen(true)}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <main className="flex-1 p-3 sm:p-4 pb-24 sm:pb-4">{children}</main>
+        <main id="main" className="flex-1 p-3 sm:p-4 pb-24 sm:pb-4">
+          {children}
+        </main>
       </div>
 
       <BottomNav onOpenMore={() => setDrawerOpen(true)} />
@@ -71,6 +82,7 @@ export function AppShell({ children }: Props) {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
       />
+      <ToastViewport />
     </div>
   );
 }

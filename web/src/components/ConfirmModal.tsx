@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface Props {
   title: string;
@@ -23,7 +24,7 @@ export function ConfirmModal({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -32,10 +33,6 @@ export function ConfirmModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onCancel]);
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
 
   async function commit() {
     setBusy(true);

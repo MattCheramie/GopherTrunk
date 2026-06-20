@@ -111,7 +111,7 @@ describe("RadioIDs panel", () => {
       expect(screen.getByText("CHIEF")).toBeInTheDocument();
     });
 
-    const search = screen.getByPlaceholderText(/Filter by id, alias/);
+    const search = screen.getByPlaceholderText(/Search by id, alias/);
     await userEvent.type(search, "eng");
     // Only the live row whose talker_alias matches survives.
     expect(screen.queryByText("CHIEF")).not.toBeInTheDocument();

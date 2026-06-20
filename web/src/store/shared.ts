@@ -22,6 +22,25 @@ import { prefs } from "./prefs";
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "closed";
 
+export type ToastKind = "success" | "error" | "info" | "warning";
+
+export interface Toast {
+  id: string;
+  kind: ToastKind;
+  message: string;
+}
+
+// Default time-to-live per kind. Errors and warnings linger longer so
+// the operator has time to read them; success/info are transient.
+const TOAST_TTL_MS: Record<ToastKind, number> = {
+  success: 4_000,
+  info: 4_000,
+  warning: 7_000,
+  error: 8_000,
+};
+
+let toastSeq = 0;
+
 interface SharedState {
   serverURL: string | null;
   token: string | null;
@@ -52,8 +71,12 @@ interface SharedState {
    *  snapshot has been fetched. Sourced from /api/v1/runtime. */
   configPath: string | null;
 
-  /** Last error surfaced from any request, for the toast strip. */
+  /** Last error surfaced from any request. Retained for compatibility;
+   *  `setError` now also enqueues an error toast. */
   lastError: string | null;
+
+  /** Transient notifications shown by the ToastViewport. */
+  toasts: Toast[];
 
   setCredentials(url: string | null, token: string | null, persist: boolean): void;
   setConnected(open: boolean): void;
@@ -72,6 +95,10 @@ interface SharedState {
   setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
   setError(msg: string | null): void;
+  /** Enqueue a toast. Returns the toast id (so callers can dismiss it
+   *  early if needed). Auto-dismisses after a kind-dependent TTL. */
+  notify(kind: ToastKind, message: string, ttlMs?: number): string;
+  dismissToast(id: string): void;
   reset(): void;
 }
 
@@ -98,6 +125,7 @@ export const useShared = create<SharedState>((set, get) => ({
   configPath: null,
 
   lastError: null,
+  toasts: [],
 
   setCredentials(url, token, persist) {
     prefs.setServerURL(url);
@@ -184,7 +212,23 @@ export const useShared = create<SharedState>((set, get) => ({
     set(patched ? { events: next, activeCalls } : { events: next });
   },
   setError(msg) {
+    // Retain lastError for any readers, and surface non-null errors as
+    // a toast so every existing setError(...) call site now gives the
+    // operator visible feedback.
     set({ lastError: msg });
+    if (msg) get().notify("error", msg);
+  },
+  notify(kind, message, ttlMs) {
+    const id = `t${++toastSeq}`;
+    set({ toasts: [...get().toasts, { id, kind, message }] });
+    const ttl = ttlMs ?? TOAST_TTL_MS[kind];
+    if (ttl > 0 && typeof window !== "undefined") {
+      window.setTimeout(() => get().dismissToast(id), ttl);
+    }
+    return id;
+  },
+  dismissToast(id) {
+    set({ toasts: get().toasts.filter((t) => t.id !== id) });
   },
   reset() {
     set({
@@ -203,6 +247,7 @@ export const useShared = create<SharedState>((set, get) => ({
       hiddenTabs: [],
       configPath: null,
       lastError: null,
+      toasts: [],
     });
   },
 }));

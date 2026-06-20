@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Badge } from "../components/ui/Badge";
 import type { TalkgroupDTO } from "../api/types";
+import { useDataPoll } from "../hooks/useDataPoll";
 import {
   selectCanMutate,
   selectClientConfig,
@@ -19,11 +23,18 @@ export function Talkgroups() {
   const cfg = useShared(selectClientConfig);
   const canMutate = useShared(selectCanMutate);
   const setError = useShared((s) => s.setError);
+  const notify = useShared((s) => s.notify);
   const talkgroups = useShared((s) => s.talkgroups);
   const setTalkgroups = useShared((s) => s.setTalkgroups);
   const [selected, setSelected] = useState<TalkgroupDTO | null>(null);
-  const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const { stale, lastUpdated } = useDataPoll({
+    fetcher: () => api.talkgroups(cfg),
+    onData: setTalkgroups,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
 
   async function patch(id: number, body: { priority?: number; lockout?: boolean; scan?: boolean }) {
     setBusy(true);
@@ -35,6 +46,7 @@ export function Talkgroups() {
         talkgroups.map((t) => (t.id === id ? { ...t, ...updated } : t)),
       );
       setSelected((s) => (s && s.id === id ? { ...s, ...updated } : s));
+      notify("success", `Updated talkgroup ${id}`);
     } catch (e: unknown) {
       setError(
         e instanceof Error ? e.message : "talkgroup update failed",
@@ -43,39 +55,6 @@ export function Talkgroups() {
       setBusy(false);
     }
   }
-
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const data = await api.talkgroups(cfg);
-        if (!cancel) setTalkgroups(data);
-      } catch {
-        // Keep the previous snapshot.
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg, setTalkgroups]);
-
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return talkgroups;
-    const needle = filter.toLowerCase();
-    return talkgroups.filter((t) => {
-      const idStr = String(t.id);
-      return (
-        idStr.includes(needle) ||
-        (t.alpha_tag ?? "").toLowerCase().includes(needle) ||
-        (t.description ?? "").toLowerCase().includes(needle) ||
-        (t.tag ?? "").toLowerCase().includes(needle) ||
-        (t.group ?? "").toLowerCase().includes(needle)
-      );
-    });
-  }, [talkgroups, filter]);
 
   const columns: Column<TalkgroupDTO>[] = useMemo(
     () => [
@@ -115,10 +94,10 @@ export function Talkgroups() {
         header: "Flags",
         render: (r) => (
           <div className="flex flex-wrap gap-1">
-            {r.scan && <span className="pill-ok">scan</span>}
-            {r.lockout && <span className="pill-err">lock</span>}
+            {r.scan && <Badge tone="ok">scan</Badge>}
+            {r.lockout && <Badge tone="err">lock</Badge>}
             {r.priority != null && r.priority > 0 && (
-              <span className="pill-warn">pri</span>
+              <Badge tone="warn">pri</Badge>
             )}
           </div>
         ),
@@ -129,32 +108,60 @@ export function Talkgroups() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Talkgroups</h2>
-        <span className="text-xs text-muted">
-          {filtered.length} of {talkgroups.length}
-        </span>
-      </header>
-
-      <input
-        type="search"
-        className="input w-full sm:max-w-xs"
-        placeholder="Filter by id, alpha tag, group, tag…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        aria-label="Filter talkgroups"
+      <PageHeader
+        title="Talkgroups"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {talkgroups.length} total
+            </span>
+          </>
+        }
       />
 
       <DataTable
-        rows={filtered}
+        rows={talkgroups}
         columns={columns}
         rowKey={(r) => String(r.id)}
         defaultSortKey="id"
+        tableId="talkgroups"
+        searchable
+        searchAccessor={(r) =>
+          [r.id, r.alpha_tag, r.description, r.tag, r.group]
+            .filter(Boolean)
+            .join(" ")
+        }
+        searchPlaceholder="Search by id, alpha tag, group, tag…"
+        rowActions={
+          canMutate
+            ? (r) => (
+                <span className="inline-flex gap-1">
+                  <button
+                    className={r.scan ? "pill-ok" : "pill"}
+                    disabled={busy}
+                    title="Toggle scan"
+                    onClick={() => patch(r.id, { scan: !r.scan })}
+                  >
+                    scan
+                  </button>
+                  <button
+                    className={r.lockout ? "pill-err" : "pill"}
+                    disabled={busy}
+                    title="Toggle lockout"
+                    onClick={() => patch(r.id, { lockout: !r.lockout })}
+                  >
+                    lock
+                  </button>
+                </span>
+              )
+            : undefined
+        }
         onRowClick={(r) => setSelected(r)}
         emptyMessage={
           talkgroups.length === 0
             ? "No talkgroups configured."
-            : "No talkgroups match the filter."
+            : "No talkgroups match the search."
         }
       />
 
@@ -187,8 +194,13 @@ export function Talkgroups() {
           </div>
           {canMutate ? (
             <div className="pt-3 border-t border-panel space-y-3">
-              <p className="text-xs uppercase tracking-wider text-muted">
+              <p className="text-xs uppercase tracking-wider text-muted flex items-center gap-2">
                 Mutations
+                {busy && (
+                  <span className="text-accent normal-case tracking-normal">
+                    saving…
+                  </span>
+                )}
               </p>
               <label className="flex items-center gap-3 text-sm">
                 <input

@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { writes } from "../api/write";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Badge } from "../components/ui/Badge";
 import type {
   ConvChannelStatusDTO,
   SystemHuntStatusDTO,
@@ -77,40 +81,40 @@ export function Scanner() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-xl font-semibold">Scanner cockpit</h2>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted uppercase tracking-wider">scan_mode</span>
-          <span className="font-mono">{scanner.scan_mode}</span>
-          {canMutate && (
-            <button
-              className="btn-ghost text-xs"
-              onClick={() =>
-                setConfirm({
-                  title: `Switch scan mode to "${scanner.scan_mode === "all" ? "list" : "all"}"?`,
-                  message:
-                    scanner.scan_mode === "all"
-                      ? "list mode only listens for talkgroups marked Scan=true."
-                      : "all mode listens for every talkgroup the daemon knows about.",
-                  onConfirm: () =>
-                    wrap("set_scan_mode", () =>
-                      writes.setScanMode(
-                        cfg,
-                        scanner.scan_mode === "all" ? "list" : "all",
+      <PageHeader
+        title="Scanner cockpit"
+        subtitle={`${scanner.tg_scan_count} of ${scanner.tg_total} talkgroups eligible`}
+        actions={
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted uppercase tracking-wider">scan_mode</span>
+            <span className="font-mono">{scanner.scan_mode}</span>
+            {canMutate && (
+              <Button
+                variant="ghost"
+                className="text-xs"
+                onClick={() =>
+                  setConfirm({
+                    title: `Switch scan mode to "${scanner.scan_mode === "all" ? "list" : "all"}"?`,
+                    message:
+                      scanner.scan_mode === "all"
+                        ? "list mode only listens for talkgroups marked Scan=true."
+                        : "all mode listens for every talkgroup the daemon knows about.",
+                    onConfirm: () =>
+                      wrap("set_scan_mode", () =>
+                        writes.setScanMode(
+                          cfg,
+                          scanner.scan_mode === "all" ? "list" : "all",
+                        ),
                       ),
-                    ),
-                })
-              }
-            >
-              flip
-            </button>
-          )}
-        </div>
-      </header>
-
-      <p className="text-xs text-muted">
-        {scanner.tg_scan_count} of {scanner.tg_total} talkgroups eligible
-      </p>
+                  })
+                }
+              >
+                flip
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       <Hunt
         systems={scanner.systems}
@@ -168,8 +172,7 @@ function Hunt({
   const cfg = useShared(selectClientConfig);
 
   return (
-    <section className="panel p-4">
-      <h3 className="panel-title mb-3">Trunked-system hunter</h3>
+    <Card title="Trunked-system hunter">
       {systems.length === 0 ? (
         <p className="text-muted text-sm">No trunked systems configured.</p>
       ) : (
@@ -255,7 +258,7 @@ function Hunt({
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -273,17 +276,16 @@ function Conventional({
   const cfg = useShared(selectClientConfig);
   if (!conv.enabled) {
     return (
-      <section className="panel p-4">
-        <h3 className="panel-title mb-2">Conventional FM scanner</h3>
+      <Card title="Conventional FM scanner">
         <p className="text-muted text-sm">disabled (no scanner channels configured).</p>
-      </section>
+      </Card>
     );
   }
 
   return (
-    <section className="panel p-4 space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h3 className="panel-title">Conventional FM scanner</h3>
+    <Card
+      title="Conventional FM scanner"
+      actions={
         <div className="flex items-center gap-2 text-xs">
           <span className="font-mono">{conv.state ?? "—"}</span>
           {conv.device_serial && (
@@ -310,8 +312,8 @@ function Conventional({
             </>
           )}
         </div>
-      </header>
-
+      }
+    >
       {conv.channels.length === 0 ? (
         <p className="text-muted text-sm">No channels in the conv scanner list.</p>
       ) : (
@@ -399,7 +401,7 @@ function Conventional({
           </table>
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -442,8 +444,7 @@ function ManualTune({
   }
 
   return (
-    <section className="panel p-4">
-      <h3 className="panel-title mb-3">Manual VFO tune</h3>
+    <Card title="Manual VFO tune">
       <form
         onSubmit={submit}
         className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end"
@@ -512,20 +513,20 @@ function ManualTune({
         Accepts MHz / kHz / Hz with the unit (e.g. "154.250 MHz") or a
         bare integer in Hz.
       </p>
-    </section>
+    </Card>
   );
 }
 
 function StatePill({ state }: { state: string }) {
-  const map: Record<string, string> = {
-    locked: "pill-ok",
-    hunting: "pill-warn",
-    held: "pill",
-    failed: "pill-err",
-    idle: "pill",
-  };
-  const cls = map[state] ?? "pill";
-  return <span className={cls}>{state}</span>;
+  const tone =
+    state === "locked"
+      ? "ok"
+      : state === "hunting"
+        ? "warn"
+        : state === "failed"
+          ? "err"
+          : "neutral";
+  return <Badge tone={tone}>{state}</Badge>;
 }
 
 function timeOnly(ts: string): string {
