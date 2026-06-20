@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
   defaultSymbolDevice,
@@ -162,8 +163,9 @@ export function Mixer() {
 
   return (
     <div className="space-y-3">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Mixer</h2>
+      <PageHeader
+        title="Mixer"
+        actions={
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted">SDR:</span>
           <select
@@ -181,7 +183,8 @@ export function Mixer() {
           </select>
           <ConnPill state={conn} />
         </div>
-      </header>
+        }
+      />
 
       {error && (
         <div className="rounded border border-red-700/40 bg-red-900/20 text-red-200 text-xs px-3 py-2">

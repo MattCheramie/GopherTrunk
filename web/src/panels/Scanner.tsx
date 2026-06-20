@@ -75,7 +75,7 @@ export function Scanner() {
   if (!scanner) {
     return (
       <div className="space-y-3">
-        <h2 className="text-xl font-semibold">Scanner</h2>
+        <PageHeader title="Scanner cockpit" />
         <p className="text-muted text-sm">Loading scanner status…</p>
       </div>
     );

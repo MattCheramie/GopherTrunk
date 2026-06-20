@@ -4,6 +4,7 @@ import { writes } from "../api/write";
 import { Column, DataTable } from "../components/DataTable";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { PageHeader } from "../components/ui/PageHeader";
 import type { CallRow } from "../api/types";
 import { formatP25Algorithm, formatP25KeyID } from "../api/p25Algorithm";
 import {
@@ -158,24 +159,26 @@ export function History() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-xl font-semibold">Call history</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted">
-            {loading
-              ? "loading…"
-              : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
-          </span>
-          {canMutate && (
-            <button
-              className="btn-ghost text-xs"
-              onClick={() => setConfirmSweep(true)}
-            >
-              Sweep retention
-            </button>
-          )}
-        </div>
-      </header>
+      <PageHeader
+        title="Call history"
+        actions={
+          <>
+            <span className="text-xs text-muted">
+              {loading
+                ? "loading…"
+                : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
+            </span>
+            {canMutate && (
+              <button
+                className="btn-ghost text-xs"
+                onClick={() => setConfirmSweep(true)}
+              >
+                Sweep retention
+              </button>
+            )}
+          </>
+        }
+      />
 
       <form
         onSubmit={applyFilter}

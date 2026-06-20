@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useShared } from "../store/shared";
 import { groupEvents } from "../lib/groupEvents";
 import type { EventDTO, TalkgroupDTO } from "../api/types";
+import { PageHeader } from "../components/ui/PageHeader";
 
 // CC Activity panel — a focused view of the trunked control-channel
 // "chatter" already flowing on the events bus. Filters the rolling
@@ -110,8 +111,9 @@ export function CCActivity() {
 
   return (
     <div className="space-y-3">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">CC Activity</h2>
+      <PageHeader
+        title="CC Activity"
+        actions={
         <div className="flex items-center gap-2 text-xs">
           <select
             className="bg-surface border border-border rounded px-2 py-1"
@@ -148,7 +150,8 @@ export function CCActivity() {
             {paused ? "▶ resume" : "❚❚ pause"}
           </button>
         </div>
-      </header>
+        }
+      />
 
       <div className="text-xs text-muted">
         {displayRows.length} matching event{displayRows.length === 1 ? "" : "s"}
