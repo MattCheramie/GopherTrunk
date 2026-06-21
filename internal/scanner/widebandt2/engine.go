@@ -200,6 +200,13 @@ type Engine struct {
 	// lastDiagAt is the wall-clock time the per-channel diagnostics were
 	// last flushed. Owned by the Run pump goroutine.
 	lastDiagAt time.Time
+	// widebandPwr accumulates the raw wideband input power (before
+	// channelization) across one diagnostics window, drained alongside the
+	// per-channel powers. It distinguishes a dead front end (wideband input
+	// also low ⇒ antenna/gain/cable) from a misplaced channel (wideband input
+	// healthy but this channel low ⇒ carrier outside the captured passband or
+	// the wrong frequency) when a low-power WARN fires. Owned by the Run pump.
+	widebandPwr iqpower.Accumulator
 }
 
 // channelProcessor is the per-channel dibit consumer. DMR Tier II's
@@ -595,6 +602,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
+			e.widebandPwr.Add(chunk)
 			e.bank.Process(chunk)
 			e.maybeLogDiagnostics(e.now())
 		}
@@ -626,6 +634,14 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 	}
 	e.lastDiagAt = now
 
+	// Drain the wideband input power once per window. When a per-channel WARN
+	// fires, a healthy wideband input localises the fault for the operator: the
+	// front end is fine, so the dead channel is outside the captured passband
+	// (CenterFreqHz ± SampleRateHz/2) or tuned to the wrong frequency — not an
+	// antenna/gain/cable problem.
+	wbDbFS, wbSamples := e.widebandPwr.MeanDbFSAndReset()
+	wbHealthy := wbSamples > 0 && wbDbFS >= iqpower.LowPowerThresholdDbFS
+
 	debug := e.log.Enabled(context.Background(), slog.LevelDebug)
 	for _, ec := range e.channels {
 		if ec.pwr.Samples() == 0 {
@@ -637,8 +653,13 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 		}
 		if dbfs < iqpower.LowPowerThresholdDbFS {
 			if now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
-				e.log.Warn("widebandt2: channel iq power very low — check antenna, gain, USB cable",
-					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
+				hint := "check antenna, gain, USB cable"
+				if wbHealthy {
+					hint = "wideband input is healthy — this carrier is likely outside the captured passband or tuned to the wrong frequency"
+				}
+				e.log.Warn("widebandt2: channel iq power very low — "+hint,
+					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
+					"dbfs", dbfs, "wideband_input_dbfs", wbDbFS)
 				ec.pwLowLogAt = now
 			}
 		} else if debug {

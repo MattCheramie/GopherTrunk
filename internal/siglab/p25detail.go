@@ -43,6 +43,12 @@ type CCStatsBreakdown struct {
 	TSBKDecoded       int64 `json:"tsbk_decoded" yaml:"tsbk_decoded"`
 	TSBKTrellisFailed int64 `json:"tsbk_trellis_failed" yaml:"tsbk_trellis_failed"`
 	TSBKCRCFailed     int64 `json:"tsbk_crc_failed" yaml:"tsbk_crc_failed"`
+	// NetStatusSeen, RFSSStatusSeen, and AdjacentSeen count the identity
+	// broadcasts decoded (0x3B / 0x3A / 0x3C). NetStatusSeen == 0 on a locked
+	// CC explains a blank WACN/System ID: the periodic NSB never landed.
+	NetStatusSeen  int64 `json:"net_status_seen" yaml:"net_status_seen"`
+	RFSSStatusSeen int64 `json:"rfss_status_seen" yaml:"rfss_status_seen"`
+	AdjacentSeen   int64 `json:"adjacent_seen" yaml:"adjacent_seen"`
 }
 
 // ReceiverState is one snapshot of the P25 receiver's internal loops at a

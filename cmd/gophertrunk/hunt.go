@@ -353,6 +353,9 @@ func finishHunt(rep *diag.Reporter, sys *hunt.DiscoveredSystem, reports []hunt.C
 			if r.Verdict != "" {
 				fmt.Fprintf(os.Stderr, "hunt:     ↳ %s\n", r.Verdict)
 			}
+			if r.IdentityNote != "" {
+				fmt.Fprintf(os.Stderr, "hunt:     ⚠ %s\n", r.IdentityNote)
+			}
 		}
 	}
 	// Resolve the output directory up front so the survey inventory and any

@@ -72,7 +72,8 @@ function captureResult(rep: CaptureReport): string {
   if (rep.skipped) return `skipped${rep.skip_reason ? ` — ${rep.skip_reason}` : ""}`;
   if (rep.error) return `error — ${rep.error}`;
   if (rep.locked) {
-    return `locked${rep.confidence ? ` · conf ${(rep.confidence * 100).toFixed(0)}%` : ""}`;
+    const base = `locked${rep.confidence ? ` · conf ${(rep.confidence * 100).toFixed(0)}%` : ""}`;
+    return rep.identity_note ? `${base} · ⚠ ${rep.identity_note}` : base;
   }
   return "no lock";
 }

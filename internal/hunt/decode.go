@@ -139,6 +139,40 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 	if res.Signal != nil {
 		rep.ErrorRate = res.Signal.DecodeErrorRate
 	}
+	rep.IdentityNote = identityNote(res)
+	if rep.IdentityNote != "" {
+		log.Warn("hunt: "+rep.IdentityNote, "path", source)
+	}
 	rep.Talkgroups = len(sys.Talkgroups) - before
 	return rep
+}
+
+// identityNote explains, for a locked P25 control channel whose WACN/System ID
+// are still blank, *why* — by reporting which identity broadcasts decoded. The
+// Network Status Broadcast (NSB, opcode 0x3B) is the only P25 Phase 1 message
+// carrying WACN, and the RFSS Status Broadcast (0x3A) is the only other source
+// of System ID; if neither lands in the captured window the identity is simply
+// absent, not withheld. It returns "" when identity resolved, the capture
+// didn't lock, or it isn't P25 — there is nothing to explain.
+func identityNote(res *siglab.Result) string {
+	if res == nil || !res.Locked || res.Topology == nil {
+		return ""
+	}
+	if res.Topology.WACN != 0 || res.Topology.SystemID != 0 {
+		return "" // identity resolved
+	}
+	d, ok := res.Detail.(*siglab.P25P1Detail)
+	if !ok || d.CCStats == nil {
+		return "" // not the P25 deep path
+	}
+	cc := d.CCStats
+	if cc.NetStatusSeen > 0 {
+		// NSB decoded but yielded no WACN — a parse problem, not a capture gap.
+		return fmt.Sprintf("identity unresolved despite %d Network Status Broadcast(s): "+
+			"NSB decoded but WACN/System ID parsed as zero", cc.NetStatusSeen)
+	}
+	return fmt.Sprintf("identity unresolved: the Network Status Broadcast (NSB, 0x3B) that carries "+
+		"WACN+System ID never decoded (saw RFSS×%d, adjacent×%d, TSBK×%d) — "+
+		"widen --dwell-seconds or use --monitor-seconds to catch the periodic NSB",
+		cc.RFSSStatusSeen, cc.AdjacentSeen, cc.TSBKDecoded)
 }
