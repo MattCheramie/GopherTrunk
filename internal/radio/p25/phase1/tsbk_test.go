@@ -137,23 +137,27 @@ func TestParseGroupAffiliationResponse(t *testing.T) {
 }
 
 func TestParseUnitRegistrationResponse(t *testing.T) {
-	// Response = 0x0 (accepted). WACN = 0xBEE08 (20-bit) packed as
-	// byte1 = 0xBE, byte2 = 0xE0, top nibble of byte3 = 0x8.
-	// SystemID = 0x534 (12-bit) packed as bottom nibble of byte3 = 0x5,
-	// byte4 = 0x34. Source = 0x112233.
-	p := [8]byte{0x00, 0xBE, 0xE0, 0x85, 0x34, 0x11, 0x22, 0x33}
+	// Layout per TIA-102.AABF / SDRTrunk: U_REG_RSP carries NO WACN.
+	// byte0 bits 5-4 = Response, byte0 bits 3-0 + byte1 = System ID,
+	// bytes 2-4 = Source ID (assigned WUID), bytes 5-7 = Source Address.
+	//
+	// byte0 = 0x15 -> Response = (0x15>>4)&3 = 1 (failed), SystemID high
+	// nibble = 0x5; byte1 = 0x34 -> SystemID = 0x534.
+	// bytes 2-4 = 0xAA BB CC -> SourceID (WUID) = 0xAABBCC.
+	// bytes 5-7 = 0x11 22 33 -> SourceAddress = 0x112233.
+	p := [8]byte{0x15, 0x34, 0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33}
 	u := ParseUnitRegistrationResponse(p)
-	if u.Response != 0x0 {
-		t.Errorf("Response = %X, want 0", u.Response)
-	}
-	if u.WACN != 0xBEE08 {
-		t.Errorf("WACN = %05X, want BEE08", u.WACN)
+	if u.Response != 0x1 {
+		t.Errorf("Response = %X, want 1", u.Response)
 	}
 	if u.SystemID != 0x534 {
 		t.Errorf("SystemID = %03X, want 534", u.SystemID)
 	}
-	if u.SourceID != 0x112233 {
-		t.Errorf("SourceID = %06X, want 112233", u.SourceID)
+	if u.SourceID != 0xAABBCC {
+		t.Errorf("SourceID (WUID) = %06X, want AABBCC", u.SourceID)
+	}
+	if u.SourceAddress != 0x112233 {
+		t.Errorf("SourceAddress = %06X, want 112233", u.SourceAddress)
 	}
 }
 

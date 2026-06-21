@@ -140,6 +140,85 @@ func TestRecorderSuppressesAllIdleRecording(t *testing.T) {
 	}
 }
 
+// TestRecorderNoAudioLeavesNoFiles: a call that starts and ends without a
+// single frame must leave nothing on disk — no 44-byte header-only .wav and
+// no 0-byte .raw — and publish no CallComplete. Capture files are opened
+// lazily on the first write, so a no-audio call never touches the filesystem.
+func TestRecorderNoAudioLeavesNoFiles(t *testing.T) {
+	vc := &vocoderCapture{}
+	DefaultRegistry.Register("stat-stub-noaudio", func() (Vocoder, error) {
+		v := &statStubVocoder{voicedPerFrame: true}
+		vc.set(v)
+		return v, nil
+	})
+
+	bus := events.NewBus(16)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		WriteRaw:           true, // exercise the .raw sidecar path too
+		VocoderForProtocol: map[string]string{"test-noaudio": "stat-stub-noaudio"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-noaudio", GroupID: 7, SourceID: 9},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "VOICE-1", true)
+
+	// No frames written at all, then the call ends.
+	wavPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src9.wav")
+	rawPath := filepath.Join(dir, "S", "7", "20260505T000000Z_src9.raw")
+	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
+		t.Errorf("WAV %s must not exist before any audio is written; stat err = %v", wavPath, err)
+	}
+	if _, err := os.Stat(rawPath); !os.IsNotExist(err) {
+		t.Errorf("raw %s must not exist before any audio is written; stat err = %v", rawPath, err)
+	}
+
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, DeviceSerial: "VOICE-1",
+		StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(time.Second),
+		Reason: trunking.EndReasonNormal,
+	}})
+	waitSession(t, r, "VOICE-1", false)
+
+	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
+		t.Errorf("no-audio WAV %s must not be created; stat err = %v", wavPath, err)
+	}
+	if _, err := os.Stat(rawPath); !os.IsNotExist(err) {
+		t.Errorf("no-audio raw %s must not be created; stat err = %v", rawPath, err)
+	}
+
+	timeout := time.After(200 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindCallComplete {
+				t.Fatal("no-audio call must not publish CallComplete")
+			}
+		case <-timeout:
+			return
+		}
+	}
+}
+
 // TestRecorderCallIDFenceDropsStaleFrames: a frame tagged with a CallID that
 // doesn't match the open session is dropped before it reaches the vocoder —
 // the voice-tap mix-up fence.

@@ -401,27 +401,39 @@ func ParseGroupAffiliationResponse(p [8]byte) GroupAffiliationResponse {
 }
 
 // UnitRegistrationResponse (opcode 0x2C) — published when a radio
-// completes (or is denied) registration on a site. Payload layout
-// follows OP25's reference decoder (`trunk_p25.py`):
+// completes (or is denied) registration on a site. Payload layout per
+// TIA-102.AABF, cross-checked against SDRTrunk's UnitRegistrationResponse
+// (…/tsbk/standard/osp/UnitRegistrationResponse.java).
 //
-//	byte 0:        bits 1-0 = Registration Response Value
-//	bytes 1-3 + top nibble of byte 3: WACN (20 bits)
-//	bottom nibble of byte 3 + byte 4: System ID (12 bits)
-//	bytes 5-7:     Source ID (24 bits) — the radio's WUID
+// The message does NOT carry a WACN — SDRTrunk's own decoder notes "we
+// don't know what the WACN is from this message". The system identity
+// comes from the Network Status Broadcast (0x3B), not from here. The
+// earlier layout that read a 20-bit "WACN" from bytes 1-3 and a System ID
+// from bytes 3-4 was wrong: those bytes are actually the assigned WUID,
+// which differs for every radio — the cause of the "floating" WACN/SysID
+// in the field report.
+//
+// Absolute TSBK bit indices map to the 8 argument bytes p[0..7]
+// (payload bit 0 = TSBK bit 16):
+//
+//	byte 0 bits 5-4          : Registration Response Value (RV)
+//	byte 0 bits 3-0 + byte 1 : System ID (12 bits)
+//	bytes 2-4               : Source ID — the assigned working unit ID (WUID)
+//	bytes 5-7               : Source Address — the registering radio's unit ID
 type UnitRegistrationResponse struct {
-	Response uint8
-	WACN     uint32 // 20-bit
-	SystemID uint16 // 12-bit
-	SourceID uint32 // 24-bit
+	Response      uint8
+	SystemID      uint16 // 12-bit
+	SourceID      uint32 // 24-bit assigned WUID
+	SourceAddress uint32 // 24-bit registering radio
 }
 
 // ParseUnitRegistrationResponse decodes payload bytes for opcode 0x2C.
 func ParseUnitRegistrationResponse(p [8]byte) UnitRegistrationResponse {
 	return UnitRegistrationResponse{
-		Response: p[0] & 0x03,
-		WACN:     uint32(p[1])<<12 | uint32(p[2])<<4 | uint32(p[3])>>4,
-		SystemID: uint16(p[3]&0x0F)<<8 | uint16(p[4]),
-		SourceID: uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+		Response:      (p[0] >> 4) & 0x03,
+		SystemID:      uint16(p[0]&0x0F)<<8 | uint16(p[1]),
+		SourceID:      uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]),
+		SourceAddress: uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
 	}
 }
 

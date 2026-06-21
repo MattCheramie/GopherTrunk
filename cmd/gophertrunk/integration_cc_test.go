@@ -182,7 +182,25 @@ WaitLoop:
 	// system label can be "unknown" when the phase1 LockState's
 	// SystemName isn't populated; that's fine — the metric
 	// family + value pair is what we assert.
-	body := scrape(t, base+"/metrics")
+	// The metrics handler is a separate bus subscriber, so the cc-locked
+	// gauge can lag the cc.locked event this test received on its own
+	// subscription. Poll /metrics until the gauge family appears (set by the
+	// KindCCLocked handler in internal/metrics/prom.go) instead of racing it
+	// with a single scrape — on a loaded -race CI runner the handler hadn't
+	// updated the gauge yet when this test scraped once.
+	var body string
+	mDeadline := time.Now().Add(5 * time.Second)
+	for {
+		body = scrape(t, base+"/metrics")
+		if strings.Contains(body, `gophertrunk_control_channel_locked{system=`) &&
+			strings.Contains(body, `gophertrunk_events_total{kind="cc.locked"} 1`) {
+			break
+		}
+		if time.Now().After(mDeadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if !strings.Contains(body, "gophertrunk_control_channel_locked{") {
 		t.Errorf("/metrics missing gophertrunk_control_channel_locked gauge family:\n%s", body)
 	}

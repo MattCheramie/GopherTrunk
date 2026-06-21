@@ -63,11 +63,22 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 		return
 	}
 
-	// Harvest identity from the lock payload first, then from every event
-	// payload (the network/RFSS-status TSBKs ride in events, not the lock).
 	if dst.Identity == nil {
 		dst.Identity = map[string]any{}
 	}
+	// Fold the decoder's accumulated topology FIRST — it is the
+	// authoritative source of WACN/SYSID/RFSS/Site (NSB-corroborated by
+	// majority vote). harvestIdentity uses "first non-zero wins", so the
+	// topology must seed those fields before per-unit events (registration /
+	// affiliation) get a chance to: a single bogus event must never override
+	// the corroborated system identity (the floating WACN/SysID in the field
+	// report). Topology also carries neighbors + band plan, which never ride
+	// on events. This still runs before site placement so RFSS/Site stay
+	// authoritative there too.
+	foldTopology(dst, obs.Result.Topology)
+
+	// Then harvest identity from the lock payload and every event payload to
+	// fill in anything the topology left at zero.
 	var ccFreq uint32
 	if lk := obs.Result.Lock; lk != nil {
 		ccFreq = lk.FrequencyHz
@@ -76,10 +87,6 @@ func Accumulate(dst *DiscoveredSystem, obs Observation) {
 	for _, ev := range obs.Result.Events {
 		harvestIdentity(dst, ev.Fields)
 	}
-	// Fold the decoder's accumulated topology (the only source of
-	// WACN/SYSID/RFSS/Site + neighbors + band plan — these never ride on
-	// events). This runs before site placement so RFSS/Site are authoritative.
-	foldTopology(dst, obs.Result.Topology)
 
 	// Fall back to the capture's nominal center when the lock didn't carry an
 	// absolute frequency (baseband captures lock at 0 Hz).
