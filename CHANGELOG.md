@@ -7,6 +7,86 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.4.9] — 2026-06-21
+
+A field-driven bug-fix release built around six issues reported on a live P25
+Phase 1 system, plus follow-up audio plumbing and import hardening. The
+headline fix closes a **cross-call audio-bleed window in the live PCM fan-out**:
+the earlier on-disk CallID fence didn't cover the streaming tap, so a reused
+wideband voice-tap serial could relabel a draining call's audio with the next
+call's talkgroup. The web **Scanner tab no longer crashes** on a null
+systems/channels payload, **trunked hunts now converge** on identity and
+topology instead of timing out in a 3 s dwell, and discovery stops inventing
+bogus talkgroups from unit-to-unit / telephone / SNDCP-data grants. On the side:
+RID and talkgroup **alias imports are hardened against mojibake** (UTF-16/BOM
+SDRTrunk exports are transcoded and non-printable runes stripped), `sdr list`
+**prints full HackRF serials** with a bounded `--probe`, and the gRPC API can
+finally **stream raw IMBE/AMBE+2 vocoder frames** to `include_raw` subscribers.
+
+### Added
+- **Raw vocoder frame streaming over gRPC** (#746). The
+  `AudioSubFilter.IncludeRaw` flag was a near no-op — `WriteRawFrame` was never
+  wired into the publisher, so raw IMBE / AMBE+2 frames stayed recorder-only. A
+  new raw tap mirrors the decoded-PCM path and fans the verbatim frame (plus
+  vocoder name and CallID) to the audio publisher before decode, so it fires
+  even for protocols with no in-process decoder (ProVoice, encrypted) where the
+  raw bytes are the only audio. Raw is purely additive — PCM-only clients
+  (including the WebUI) are unaffected, and the cross-call fence applies at both
+  the publisher and recorder layers.
+- **Monitor-minutes field on the blind-sweep hunt form** (#746). Only the
+  parse-control-channel form sent `monitor_seconds`; the blind-sweep payload
+  omitted it, so a sweep could never engage the converge-and-stop monitor
+  (backend default 0 = off). The sweep form now carries a "Monitor (minutes,
+  0 = off)" field, so a sweep that locks a control channel can monitor it until
+  identity, neighbors, and band plan settle.
+
+### Changed
+- **`sdr list` shows full HackRF serials and bounds `--probe`** (#745). The
+  fixed-width SERIAL column front-truncated to 16 chars, which for a HackRF cut
+  off the meaningful tail of its 32-hex part_id+serial and left only the
+  all-zero prefix (reported as `0000000000000000`); TUNER and PRODUCT were
+  clipped too. Columns now size to the widest value present, and each
+  `--probe` open+info+close is wrapped in a bounded helper so a wedged device
+  can't hang the command. Adds a Linux (udev) setup section to the HackRF doc.
+- **RID / talkgroup alias imports hardened against mojibake** (#744, issue
+  #711). A shared sanitization layer is wired into both the RID and talkgroup
+  CSV/JSON loaders: a UTF-16 (LE/BE) or UTF-8 BOM is honoured and transcoded to
+  plain UTF-8 (neutralising Windows/SDRTrunk exports), and text fields are
+  reduced to printable ASCII, dropping control chars, NULs, and non-ASCII
+  mojibake. BOM-less ASCII/UTF-8 passes through untouched. Promotes
+  `golang.org/x/text` to a direct require.
+- **Trunked hunts default to the converge-and-stop monitor** (#743). The web
+  hunt previously ran a 3 s buffered dwell; P25 status broadcasts cycle too
+  slowly to land in 3 s, so only NAC surfaced. A trunked hunt now defaults to
+  the streaming monitor that ends early once identity + topology settle.
+
+### Fixed
+- **Cross-call audio bleed when a voice-tap serial is reused** (#743). The
+  on-disk CallID fence guarded only the WAV; the live PCM fan-out (recorder
+  decodedTap → AudioPublisher) was keyed purely by device serial, so a reused
+  wideband voice-tap serial leaked the previous call's still-draining audio to
+  subscribers filtered on the new call's talkgroup. The session's CallID is now
+  threaded through to `WritePCMForCall`, which drops a frame whose CallID no
+  longer matches the serial's bound call.
+- **Web Scanner tab crash on a null payload** (#743, #746). A nil Go slice
+  marshals to JSON `null`; the Scanner tab dereferenced `systems.length` /
+  `channels.length` and crashed with "Cannot read properties of null". The
+  `/api/v1/scanner` payload now emits `[]` and the frontend null-guards the
+  reads, with frontend tests covering both the null-shaped and populated
+  snapshots.
+- **Hunt identity/neighbors stuck on "awaiting status broadcasts"** (#743).
+  Beyond defaulting to the streaming monitor, topology folding no longer drops
+  a legitimate `RFSS=0` / `Site=0`.
+- **Bogus talkgroup from non-group grants** (#743). Unit-to-unit / telephone /
+  SNDCP-data grants publish a 24-bit target unit as the grant "group", and
+  discovery was recording every grant group as a talkgroup. These grants are
+  now flagged Individual and skipped when building the hunt talkgroup list (the
+  frequency is still recorded on the site).
+- **Spurious talkgroup↔frequency association** (#743). The per-talkgroup
+  frequency list is dropped — on a trunked system the traffic channel is
+  assigned dynamically per call, so a talkgroup has no fixed frequency. The
+  site's distinct voice-channel pool is unchanged.
+
 ## [v0.4.8] — 2026-06-20
 
 This release is dominated by a **six-phase operator-console overhaul** that
