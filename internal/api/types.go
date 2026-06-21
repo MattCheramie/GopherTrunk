@@ -256,10 +256,10 @@ type RIDDTO struct {
 	// TalkerAliasUnreliable flags an over-the-air alias whose decode
 	// passed CRC but held non-ASCII-printable characters (#711); a
 	// client should render it as suspect.
-	TalkerAliasUnreliable bool   `json:"talker_alias_unreliable,omitempty"`
-	CallCount             uint64 `json:"call_count,omitempty"`
-	FirstSeen     time.Time `json:"first_seen,omitempty"`
-	LastSeen      time.Time `json:"last_seen,omitempty"`
+	TalkerAliasUnreliable bool      `json:"talker_alias_unreliable,omitempty"`
+	CallCount             uint64    `json:"call_count,omitempty"`
+	FirstSeen             time.Time `json:"first_seen,omitempty"`
+	LastSeen              time.Time `json:"last_seen,omitempty"`
 }
 
 func ridToDTO(r *trunking.RID) *RIDDTO {
