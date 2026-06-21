@@ -206,7 +206,6 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		return errors.New("no SDR devices discovered")
 	}
 
-	hintBySerial := map[string]Hint{}
 	controlClaimed := false
 	for _, h := range opts.Hints {
 		if h.Serial == "" {
@@ -216,20 +215,41 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 			}
 			continue
 		}
-		hintBySerial[serialKey(h.Serial)] = h
 		if h.Role == RoleControl {
 			controlClaimed = true
 		}
 	}
 
-	openedSerials := map[string]struct{}{}
-	for _, d := range all {
-		key := serialKey(d.info.Serial)
-		hint, hinted := hintBySerial[key]
+	// Resolve which hint configures each discovered device. Exact serial
+	// matches win; an unmatched hint then falls back to an unambiguous
+	// substring match so a partial serial — or one captured from a build
+	// that truncated it — still binds (see matchHintSerials).
+	deviceSerials := make([]string, len(all))
+	for i, d := range all {
+		deviceSerials[i] = d.info.Serial
+	}
+	hintSerials := make([]string, len(opts.Hints))
+	for i, h := range opts.Hints {
+		hintSerials[i] = h.Serial
+	}
+	hintForDevice, partialMatched := matchHintSerials(deviceSerials, hintSerials)
+
+	hintUsed := make([]bool, len(opts.Hints))
+	for di, d := range all {
+		hi := hintForDevice[di]
+		hinted := hi >= 0
+		var hint Hint
+		if hinted {
+			hint = opts.Hints[hi]
+		}
 		if opts.Strict && !hinted {
 			p.log.Info("skipping non-configured SDR; add its serial to sdr.devices to use it",
 				"driver", d.drv.Name(), "serial", d.info.Serial)
 			continue
+		}
+		if hinted && partialMatched[di] {
+			p.log.Info("matched configured SDR by partial serial; use the full serial from `gophertrunk sdr list` to pin it exactly",
+				"driver", d.drv.Name(), "config_serial", hint.Serial, "device_serial", d.info.Serial)
 		}
 		role := RoleAuto
 		if hinted {
@@ -268,7 +288,9 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		}
 		entry := &PoolEntry{Driver: d.drv, Device: dev, Info: d.info, Role: role, Hint: hint}
 		p.entries = append(p.entries, entry)
-		openedSerials[key] = struct{}{}
+		if hinted {
+			hintUsed[hi] = true
+		}
 		// Include the per-device tuning in the open log so an
 		// operator can grep the boot log to confirm the value they
 		// put in config.yaml actually landed on this serial (issue
@@ -285,11 +307,12 @@ func (p *Pool) OpenWith(opts PoolOpenOptions) error {
 		p.logTunerDiag(dev, d.info)
 		p.publish(events.KindSDRAttached, entry.Snapshot(true))
 	}
-	for key, h := range hintBySerial {
-		if _, ok := openedSerials[key]; !ok {
-			p.log.Warn("configured SDR not present on the bus; check the cable / dmesg / lsusb",
-				"serial", h.Serial)
+	for hi, h := range opts.Hints {
+		if h.Serial == "" || hintUsed[hi] {
+			continue
 		}
+		p.log.Warn("configured SDR not present on the bus; check the cable / dmesg / lsusb",
+			"serial", h.Serial)
 	}
 	if len(p.entries) == 0 {
 		return errors.New("no SDR devices opened")
@@ -368,6 +391,86 @@ func serialKey(s string) string {
 	default:
 		return s
 	}
+}
+
+// minPartialSerialLen is the shortest configured serial allowed to bind a
+// device via the substring fallback in matchHintSerials. Short serials
+// (the RTL-SDR "00000001" style, or test fixtures like "S1"/"V4") must
+// match exactly; only a reasonably distinctive fragment may match a
+// longer device serial, which keeps the fallback from grabbing the wrong
+// dongle. HackRF serials are 32 hex digits, so a tail or the 16-digit
+// prefix older builds displayed comfortably clears this bar.
+const minPartialSerialLen = 6
+
+// matchHintSerials decides which hint configures each discovered device.
+// It returns hintForDevice (one entry per device — the index into
+// hintSerials of the matching hint, or -1) and partialMatched (whether
+// that binding came from the substring fallback rather than an exact
+// match, for logging).
+//
+// Exact normalized-serial matches are resolved first so existing configs
+// behave identically. Each hint still unmatched then binds to a device
+// only when its serial is a substring of exactly one still-unmatched
+// device serial — an unambiguous partial match. This lets an operator put
+// just the distinctive tail of a long serial in config, and recovers
+// configs that captured a serial from a build which truncated it (the
+// HackRF "0000000000000000" report fixed alongside this). Empty hint
+// serials never match.
+func matchHintSerials(deviceSerials, hintSerials []string) (hintForDevice []int, partialMatched []bool) {
+	hintForDevice = make([]int, len(deviceSerials))
+	partialMatched = make([]bool, len(deviceSerials))
+	for i := range hintForDevice {
+		hintForDevice[i] = -1
+	}
+	dk := make([]string, len(deviceSerials))
+	for i, s := range deviceSerials {
+		dk[i] = serialKey(s)
+	}
+	hk := make([]string, len(hintSerials))
+	for i, s := range hintSerials {
+		hk[i] = serialKey(s)
+	}
+	hintUsed := make([]bool, len(hintSerials))
+
+	// Phase 1: exact matches (preserves legacy behaviour exactly).
+	for i := range dk {
+		for j, h := range hk {
+			if h == "" || hintUsed[j] {
+				continue
+			}
+			if dk[i] == h {
+				hintForDevice[i] = j
+				hintUsed[j] = true
+				break
+			}
+		}
+	}
+
+	// Phase 2: unambiguous substring fallback for still-unmatched hints.
+	for j, h := range hk {
+		if h == "" || hintUsed[j] || len(h) < minPartialSerialLen {
+			continue
+		}
+		matches := 0
+		first := -1
+		for i := range dk {
+			if hintForDevice[i] != -1 {
+				continue
+			}
+			if strings.Contains(dk[i], h) {
+				matches++
+				if first == -1 {
+					first = i
+				}
+			}
+		}
+		if matches == 1 {
+			hintForDevice[first] = j
+			partialMatched[first] = true
+			hintUsed[j] = true
+		}
+	}
+	return hintForDevice, partialMatched
 }
 
 // applyHintSettings runs the per-device tuners after Open. Caller
