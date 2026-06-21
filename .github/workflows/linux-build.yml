@@ -1,0 +1,110 @@
+name: Linux build (manual)
+
+# Builds Linux tarballs (amd64 + arm64) on demand and uploads them as
+# downloadable CI artifacts. This is the Linux analogue of the Windows
+# "installer (PR)" job, but MANUAL ONLY: it never runs on a push or a
+# pull request — only when someone clicks "Run workflow" in the Actions
+# tab (workflow_dispatch).
+#
+# Why it exists: it lets a maintainer hand someone a Linux build of an
+# arbitrary branch, tag, or commit — for example an unmerged bug-fix a
+# user wants to test — without cutting a public release. Pick the ref in
+# the "Run workflow" dialog; the build checks it out, compiles it, and
+# uploads the tarballs to the run's Artifacts section (30-day retention).
+#
+# Pure-Go (CGO_ENABLED=0), so amd64 and arm64 both cross-compile on a
+# single ubuntu-latest runner — no toolchain juggling. The build steps
+# mirror the `linux` job in release.yml so a manual build is bit-for-bit
+# the same recipe as a released tarball, just without the Release publish.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or commit SHA to build"
+        required: true
+        default: "main"
+      version:
+        description: "Version label stamped into the binary (e.g. v0.4.8-dmrdiag)"
+        required: false
+        default: "manual-build"
+
+concurrency:
+  group: linux-build-${{ github.event.inputs.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Build Linux tarballs (${{ github.event.inputs.ref }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web console (gophertrunk-web)
+        run: |
+          set -eu
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build config builder (/config)
+        run: |
+          set -eu
+          cd web/configbuilder
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build siglab console (/siglab)
+        run: |
+          set -eu
+          cd web/siglab
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build Linux tarballs
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+        run: |
+          set -eu
+          VERSION="${{ github.event.inputs.version }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-X github.com/MattCheramie/GopherTrunk/internal/version.Version=${VERSION} -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=${COMMIT} -X github.com/MattCheramie/GopherTrunk/internal/version.BuildTime=${BUILD_TIME}"
+          for ARCH in amd64 arm64; do
+            NAME="gophertrunk-${VERSION}-linux-${ARCH}"
+            mkdir -p "dist/${NAME}"
+            GOARCH="${ARCH}" go build \
+              -trimpath \
+              -ldflags "${LDFLAGS}" \
+              -o "dist/${NAME}/gophertrunk" \
+              ./cmd/gophertrunk
+            cp README.md LICENSE config.example.yaml "dist/${NAME}/"
+            mkdir -p "dist/${NAME}/gophertrunk-web/siglab" "dist/${NAME}/gophertrunk-web/configbuilder"
+            cp -r web/dist/. "dist/${NAME}/gophertrunk-web/"
+            cp -r web/siglab/dist/. "dist/${NAME}/gophertrunk-web/siglab/"
+            cp -r web/configbuilder/dist/. "dist/${NAME}/gophertrunk-web/configbuilder/"
+            (cd dist && tar -czf "${NAME}.tar.gz" "${NAME}")
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gophertrunk-linux-${{ github.event.inputs.version }}
+          path: dist/*.tar.gz
+          retention-days: 30
+          if-no-files-found: error
