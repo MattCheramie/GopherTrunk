@@ -19,14 +19,16 @@ see_also: [interpreter, bytecode, garbage-collection, static-vs-dynamic-typing, 
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Python (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Python_(programming_language) }
-  - { title: "The Python programming language", url: https://www.python.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.python.org/
+  - https://en.wikipedia.org/wiki/Python_(programming_language)
 ---
 
 **Python** is a dynamically typed, interpreted, general-purpose programming language
 designed for readability, with a deliberately clean syntax and one of the largest
-library ecosystems of any language.
+library ecosystems of any language.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Python source is compiled to bytecode and executed by the interpreter, with heavy work delegated to fast native libraries." xmlns="http://www.w3.org/2000/svg">
@@ -47,7 +49,7 @@ library ecosystems of any language.
 
 Python source is compiled to [bytecode](/reference/bytecode/) and run by an
 [interpreter](/reference/interpreter/) — most commonly CPython, the reference
-implementation. It uses [dynamic typing](/reference/static-vs-dynamic-typing/) with
+implementation.[^home] It uses [dynamic typing](/reference/static-vs-dynamic-typing/) with
 optional type hints, and is [garbage-collected](/reference/garbage-collection/) through
 reference counting plus a cycle detector. The result is a language that is quick to
 write and forgiving to learn, which is why it is a common first language and the glue
@@ -71,3 +73,8 @@ mainstay of scripting, automation, glue code and web backends. Its speed limits 
 matter for scripts or for workloads that push the real computation into native code; in
 the niche where raw numeric throughput is decisive, alternatives like
 [Julia](/reference/julia-language/) or a compiled language are reached for instead.
+
+## Sources
+
+[^home]: [The Python programming language](https://www.python.org/) — official site, documentation, and the CPython reference implementation.
+[^wiki]: [Python (programming language)](https://en.wikipedia.org/wiki/Python_(programming_language)) — Wikipedia, for history and design background.

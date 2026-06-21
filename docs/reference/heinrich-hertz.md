@@ -15,13 +15,13 @@ infobox:
 see_also: [james-clerk-maxwell, guglielmo-marconi, radio-wave, frequency, electromagnetic-spectrum]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Heinrich Hertz (Wikipedia)", url: https://en.wikipedia.org/wiki/Heinrich_Hertz }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Heinrich_Hertz
 ---
 
 **Heinrich Hertz** (1857–1894) was a German physicist who first conclusively
 **demonstrated electromagnetic waves**, experimentally confirming
-[James Clerk Maxwell](/reference/james-clerk-maxwell/)'s theory.
+[James Clerk Maxwell](/reference/james-clerk-maxwell/)'s theory.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A spark gap on the left radiating waves to a loop receiver on the right, illustrating Hertz's proof of radio waves." xmlns="http://www.w3.org/2000/svg">
@@ -42,9 +42,13 @@ light — proving they were electromagnetic.
 ## Contribution
 
 His experiments turned Maxwell's mathematics into observed fact, opening the door to
-radio communication.
+radio communication.[^wiki]
 
 ## Legacy
 
 The SI unit of [frequency](/reference/frequency/), the **hertz (Hz)**, is named in his
 honour — fitting, given he proved the [radio wave](/reference/radio-wave/) exists.
+
+## Sources
+
+[^wiki]: [Heinrich Hertz](https://en.wikipedia.org/wiki/Heinrich_Hertz) — Wikipedia, for biography and his proof of electromagnetic waves.

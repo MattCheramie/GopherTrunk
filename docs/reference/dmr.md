@@ -21,15 +21,17 @@ see_also: [dmr-tier-1, dmr-tier-2, dmr-tier-3, ambe-plus-2, tdma, etsi, control-
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **Digital Mobile Radio** (**DMR**) is an open digital two-way-radio standard from
 [ETSI](/reference/etsi/), widely used in business, commercial, and amateur radio. It
 places **two timeslots** ([TDMA](/reference/tdma/)) in a 12.5 kHz channel using
 [4FSK](/reference/frequency-shift-keying/) modulation and the
-[AMBE+2](/reference/ambe-plus-2/) vocoder.
+[AMBE+2](/reference/ambe-plus-2/) vocoder.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Two TDMA slots in a 12.5 kHz DMR channel." xmlns="http://www.w3.org/2000/svg">
@@ -65,7 +67,7 @@ share one frequency.
 
 ## History
 
-ETSI published the DMR standard in 2005, with commercial radios following soon after.
+ETSI published the DMR standard in 2005, with commercial radios following soon after.[^wiki]
 Amateur DMR grew rapidly in the 2010s via networked repeaters and hotspots.
 
 ## Deployment
@@ -78,3 +80,7 @@ deployments use Tier III; most conventional business and ham systems are Tier II
 GopherTrunk decodes both DMR timeslots, follows Tier III trunking, and renders AMBE+2
 audio. Optional known-key [DMR encryption](/dmr-encryption.html) handling is
 documented separately. See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR standard, its two-slot TDMA air interface, the tier structure, and the AMBE+2 vocoder.

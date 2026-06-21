@@ -14,13 +14,13 @@ infobox:
 see_also: [antenna, antenna-gain, polarization, wavelength]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Dipole antenna (Wikipedia)", url: https://en.wikipedia.org/wiki/Dipole_antenna }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Dipole_antenna
 ---
 
 A **dipole antenna** is a simple resonant [antenna](/reference/antenna/) made of two
 conductors fed at the centre, classically a **half [wavelength](/reference/wavelength/)**
-long. It is the reference against which other antennas' [gain](/reference/antenna-gain/)
+long.[^wiki] It is the reference against which other antennas' [gain](/reference/antenna-gain/)
 is often compared.
 
 <figure class="figure" markdown="0">
@@ -45,3 +45,7 @@ dipole. Its [polarization](/reference/polarization/) follows its orientation.
 
 A dipole (or its grounded cousin, the quarter-wave whip) cut for the target band is a
 cheap, effective receive antenna for scanning.
+
+## Sources
+
+[^wiki]: [Dipole antenna](https://en.wikipedia.org/wiki/Dipole_antenna) — Wikipedia, for the construction and radiation pattern of the half-wave dipole.

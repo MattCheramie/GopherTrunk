@@ -17,13 +17,14 @@ infobox:
 see_also: [design-patterns, creational-patterns, structural-patterns, object-oriented-programming, coupling-and-cohesion, solid, abstraction]
 related_lessons:
   - { title: "Behavioral patterns: observer, strategy, state", url: /learn/intro-software-dev/behavioral-patterns/ }
-external:
-  - { title: "Behavioral pattern — Wikipedia", url: https://en.wikipedia.org/wiki/Behavioral_pattern }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Behavioral_pattern
+  - https://en.wikipedia.org/wiki/Design_Patterns
 ---
 
 **Behavioral patterns** are the [Gang of Four](/reference/design-patterns/) family that
 handles the question once objects exist and are connected: *how do they talk to each other
-and divide up the work?* They are about communication and responsibility at runtime.
+and divide up the work?* They are about communication and responsibility at runtime.[^wiki][^gof]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A subject publishes an event to several observers at once, while a context delegates work to a swappable strategy or state object." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +49,7 @@ When a call is decoded, the UI, the logger, and the recorder all need to know; w
 user picks a mode, the right algorithm must run; when a follower moves from idle to active,
 its whole behaviour changes. Handling each with ad-hoc code scatters logic and tightens
 [coupling](/reference/coupling-and-cohesion/). Behavioral patterns give these interactions
-a clean, named shape that keeps the parties from depending too directly on each other.
+a clean, named shape that keeps the parties from depending too directly on each other.[^wiki]
 
 ## The main members
 
@@ -74,3 +75,8 @@ classes rather than editing existing code — the open/closed principle from
 [creational](/reference/creational-patterns/) and
 [structural](/reference/structural-patterns/) families catalogued under
 [design patterns](/reference/design-patterns/).
+
+## Sources
+
+[^wiki]: [Behavioral pattern](https://en.wikipedia.org/wiki/Behavioral_pattern) — Wikipedia, for the definition, the focus on communication and control flow, and members such as Observer, Strategy, and State.
+[^gof]: [Design Patterns](https://en.wikipedia.org/wiki/Design_Patterns) — Wikipedia, on the 1994 Gang of Four book that catalogued these patterns alongside the creational and structural families.

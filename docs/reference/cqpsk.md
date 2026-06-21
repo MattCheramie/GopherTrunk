@@ -14,14 +14,16 @@ infobox:
 see_also: [phase-shift-keying, c4fm, project-25, constellation-diagram]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 ---
 
 **CQPSK** (compatible QPSK, also linear simulcast modulation, LSM) is the linear
 [phase-modulation](/reference/phase-shift-keying/) counterpart to
 [C4FM](/reference/c4fm/) used on [P25](/reference/project-25/). It produces the **same
-symbol stream** as C4FM so a single demodulator can receive either.
+symbol stream** as C4FM so a single demodulator can receive either.[^p25]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 300 210" role="img" aria-label="A QPSK constellation with four points and arcs showing the linear phase transitions between them." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ better when overlapping transmitters are received together.
 
 A P25 receiver can demodulate both C4FM and CQPSK; on the
 [constellation](/reference/constellation-diagram/) the recovered symbols look alike.
+
+## Sources
+
+[^p25]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, for the CQPSK/LSM linear path and its compatibility with C4FM on P25.

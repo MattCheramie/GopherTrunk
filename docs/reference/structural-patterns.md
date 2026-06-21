@@ -17,13 +17,14 @@ infobox:
 see_also: [design-patterns, creational-patterns, behavioral-patterns, object-oriented-programming, coupling-and-cohesion, abstraction, solid]
 related_lessons:
   - { title: "Structural patterns: adapter, facade, decorator", url: /learn/intro-software-dev/structural-patterns/ }
-external:
-  - { title: "Structural pattern — Wikipedia", url: https://en.wikipedia.org/wiki/Structural_pattern }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Structural_pattern
+  - https://en.wikipedia.org/wiki/Design_Patterns
 ---
 
 **Structural patterns** are the [Gang of Four](/reference/design-patterns/) family that
 answers *how do objects fit together into larger structures?* — mostly by taking objects
-that already exist and arranging them so the whole stays flexible.
+that already exist and arranging them so the whole stays flexible.[^wiki][^gof]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Three structural shapes: an adapter wrapping one object to change its interface, a facade fronting many parts, and a decorator stacking wrappers." xmlns="http://www.w3.org/2000/svg">
@@ -43,7 +44,7 @@ third-party driver, your own code, a UI toolkit. Getting them to cooperate witho
 them tightly together is the recurring problem these patterns address. They share a family
 resemblance: most involve one object **wrapping** another, and all lean on programming to
 an [interface](/reference/abstraction/) so dependencies point at the contract rather than
-concrete classes, keeping [coupling](/reference/coupling-and-cohesion/) low.
+concrete classes, keeping [coupling](/reference/coupling-and-cohesion/) low.[^wiki]
 
 ## The main members
 
@@ -67,3 +68,8 @@ team distinguish them when discussing a design. The sibling families are
 [creational patterns](/reference/creational-patterns/) (making objects) and
 [behavioral patterns](/reference/behavioral-patterns/) (coordinating them), and all three
 support the open/closed principle from [SOLID](/reference/solid/).
+
+## Sources
+
+[^wiki]: [Structural pattern](https://en.wikipedia.org/wiki/Structural_pattern) — Wikipedia, for the definition, the wrapping mechanism, and members such as Adapter, Facade, and Decorator.
+[^gof]: [Design Patterns](https://en.wikipedia.org/wiki/Design_Patterns) — Wikipedia, on the 1994 Gang of Four book that grouped patterns into creational, structural, and behavioral families.

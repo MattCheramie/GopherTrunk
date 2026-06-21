@@ -17,13 +17,13 @@ infobox:
 see_also: [declarative-programming, functional-programming, object-oriented-programming, memory-management, c-language, go-language, fortran-language]
 related_lessons:
   - { title: "Paradigms & language families", url: /learn/intro-software-dev/language-families/ }
-external:
-  - { title: "Imperative programming — Wikipedia", url: https://en.wikipedia.org/wiki/Imperative_programming }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Imperative_programming
 ---
 
 **Imperative programming** is the oldest and most direct paradigm: you tell the computer
 *how* to do something as an ordered sequence of statements that change state — assign a
-value, loop, increment a counter, branch on a condition.
+value, loop, increment a counter, branch on a condition.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A counter variable is initialised then mutated step by step through ordered statements until a loop completes." xmlns="http://www.w3.org/2000/svg">
@@ -52,7 +52,7 @@ many subtle bugs come from state changing when or where you did not expect.
 
 **Procedural** programming is imperative code organised into reusable *procedures*
 (functions). Instead of one long script, you factor work into named routines that call
-each other. [C](/reference/c-language/) is the classic procedural language, and
+each other.[^wiki] [C](/reference/c-language/) is the classic procedural language, and
 [Fortran](/reference/fortran-language/) and [COBOL](/reference/cobol-language/) are early
 examples. Procedural style pairs naturally with manual
 [memory management](/reference/memory-management/) and tight performance loops.
@@ -66,4 +66,8 @@ contrasts with [declarative programming](/reference/declarative-programming/), w
 describes *what* you want rather than *how*, and with
 [functional programming](/reference/functional-programming/), which avoids mutable state
 altogether. Most languages are multi-paradigm, so an imperative inner loop often sits
-inside [object-oriented](/reference/object-oriented-programming/) or functional code.
+inside [object-oriented](/reference/object-oriented-programming/) or functional code.[^wiki]
+
+## Sources
+
+[^wiki]: [Imperative programming](https://en.wikipedia.org/wiki/Imperative_programming) — Wikipedia, for the definition, the role of mutable state and ordered execution, and the procedural sub-style.

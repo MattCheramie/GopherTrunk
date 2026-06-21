@@ -14,14 +14,16 @@ infobox:
 see_also: [control-channel, radio-id, talkgroup, trunked-radio]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 **Affiliation** is the process by which a radio **registers** with a
 [trunked radio](/reference/trunked-radio/) system over the
 [control channel](/reference/control-channel/) when it powers on or changes
-[talkgroup](/reference/talkgroup/), so the system can route calls efficiently.
+[talkgroup](/reference/talkgroup/), so the system can route calls efficiently.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A radio sending a registration request to the system, which records it as affiliated." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ active.
 
 Affiliation data lets GopherTrunk populate its Radio IDs and activity views even before
 a call begins, showing who is on the system.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on radio registration/affiliation over the control channel.

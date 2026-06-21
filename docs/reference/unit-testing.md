@@ -16,12 +16,14 @@ infobox:
 see_also: [integration-testing, end-to-end-testing, test-driven-development, mocking, code-coverage, ci-cd, refactoring]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "Unit testing — Wikipedia", url: https://en.wikipedia.org/wiki/Unit_testing }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Unit_testing
 ---
 
 **Unit testing** checks a single small piece of code — one function or class — in
-isolation, forming the fast, numerous base of the test pyramid.
+isolation, forming the fast, numerous base of the test pyramid.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="The test pyramid with a wide unit-testing base, a narrower integration layer, and a small end-to-end tip." xmlns="http://www.w3.org/2000/svg">
@@ -38,7 +40,7 @@ isolation, forming the fast, numerous base of the test pyramid.
 
 A unit test exercises the smallest meaningful piece of behavior on its own, asserting
 that for a given input the unit produces the expected output. Because each test targets
-one unit, a failure points straight at the broken code. Unit tests are *fast* — a good
+one unit, a failure points straight at the broken code.[^wiki] Unit tests are *fast* — a good
 suite runs thousands in seconds — and that speed is what lets a developer run them
 constantly and lets [CI/CD](/reference/ci-cd/) run them on every push. They are also the
 safety net that makes [refactoring](/reference/refactoring/) safe: restructure freely,
@@ -62,3 +64,7 @@ Unit tests sit at the base of the pyramid beneath fewer
 [test-driven development](/reference/test-driven-development/) writes first, and the kind
 [code coverage](/reference/code-coverage/) most directly measures — though coverage shows
 only which lines *ran*, not whether the assertions checked anything meaningful.
+
+## Sources
+
+[^wiki]: [Unit testing](https://en.wikipedia.org/wiki/Unit_testing) — Wikipedia, for the definition, isolation, and the test-pyramid context.

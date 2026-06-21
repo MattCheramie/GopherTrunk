@@ -13,14 +13,14 @@ see_also: [carrier-wave, amplitude-modulation, frequency-modulation, phase-shift
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Modulation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Modulation
 ---
 
 **Modulation** is the process of varying a property of a
 [carrier wave](/reference/carrier-wave/) — its [amplitude](/reference/amplitude/),
 [frequency](/reference/frequency/), or [phase](/reference/phase/) — in step with a
-message so that information can travel over radio.
+message so that information can travel over radio.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 170" role="img" aria-label="A message wave, then an AM version whose height follows the message, then an FM version whose spacing follows the message." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +47,7 @@ modulation switches the carrier between discrete states (symbols):
 Choosing the matching demodulator for a signal's modulation is the heart of decoding.
 The same three carrier properties reappear as the axes of the
 [IQ](/reference/iq-data/) plane.
+
+## Sources
+
+[^wiki]: [Modulation](https://en.wikipedia.org/wiki/Modulation) — Wikipedia, overview of analog and digital modulation methods.

@@ -18,13 +18,13 @@ see_also: [compiler, cross-compilation, jit-compilation, go-language, rust-langu
 related_lessons:
   - { title: "Packaging and distribution", url: /learn/intro-software-dev/packaging-and-distribution/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "Static library — Wikipedia", url: https://en.wikipedia.org/wiki/Static_library }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Static_library
 ---
 
 **A static binary** is an executable that bundles all the code it needs at build time,
 so it runs on its own — no shared libraries to find, no interpreter or runtime to
-install on the target machine.
+install on the target machine.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A static binary contains its libraries inside it and runs alone, unlike a dynamic binary that depends on external shared libraries." xmlns="http://www.w3.org/2000/svg">
@@ -52,14 +52,14 @@ the system at run time, so the binary depends on the right versions being instal
 With **static linking** the linker copies the needed library code directly into the
 executable, producing one self-contained file. The result needs nothing external — not
 even a language runtime, unlike [bytecode](/reference/bytecode/) that requires a virtual
-machine.
+machine.[^wiki]
 
 ## Trade-offs
 
 The payoff is **deployment simplicity**: copy one file to a matching machine and run
 it, with no installer, no dependency hunt, and no "works on my machine" version skew.
 The costs are a **larger file** (every dependency is included) and that updating a
-bundled library means rebuilding the binary rather than patching a shared one. Paired
+bundled library means rebuilding the binary rather than patching a shared one.[^wiki] Paired
 with [cross-compilation](/reference/cross-compilation/), a static binary makes
 shipping for many platforms a single, clean step.
 
@@ -70,3 +70,7 @@ reason it suits CLIs, network services, and tools like GopherTrunk that ship to 
 who just want to run them. [Rust](/reference/rust-language/) and
 [C](/reference/c-language/) can link statically as well, trading file size for the same
 dependency-free convenience.
+
+## Sources
+
+[^wiki]: [Static library](https://en.wikipedia.org/wiki/Static_library) — Wikipedia, on static linking that copies library code into the executable versus dynamic linking against shared libraries.

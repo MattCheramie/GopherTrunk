@@ -17,15 +17,17 @@ infobox:
 see_also: [trunked-radio, control-channel, motorola-type-ii, ltr, mpt-1327]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Enhanced Digital Access Communications System (Wikipedia)", url: https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System
 ---
 
 **EDACS** (**Enhanced Digital Access Communications System**) is a
 [trunked-radio](/reference/trunked-radio/) system developed by GE/Ericsson (later
 M-A-COM). It uses a **dedicated [control channel](/reference/control-channel/)** that
 continuously coordinates the system, with analog FM voice or the digital **ProVoice**
-([AMBE](/reference/ambe/)) option.
+([AMBE](/reference/ambe/)) option.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="EDACS dedicated control channel assigning analog or ProVoice channels." xmlns="http://www.w3.org/2000/svg">
@@ -55,7 +57,7 @@ competitor to [Motorola Type II](/reference/motorola-type-ii/).
 ## History
 
 Deployed from the 1980s by GE/Ericsson and M-A-COM for public-safety and utility
-fleets; gradually displaced by [P25](/reference/project-25/).
+fleets; gradually displaced by [P25](/reference/project-25/).[^wiki]
 
 ## Deployment
 
@@ -65,3 +67,7 @@ Legacy public-safety, utility, and transportation systems, some still operating.
 
 See the [Status](/status.html) page for GopherTrunk's EDACS coverage (control-channel
 following and supported voice modes).
+
+## Sources
+
+[^wiki]: [Enhanced Digital Access Communications System](https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System) — Wikipedia, for the GE/Ericsson/M-A-COM EDACS trunking system, its dedicated control channel, and ProVoice digital option.

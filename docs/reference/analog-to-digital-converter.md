@@ -14,12 +14,12 @@ infobox:
 see_also: [sample-rate, nyquist-theorem, dbfs, automatic-gain-control, software-defined-radio]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Analog-to-digital converter (Wikipedia)", url: https://en.wikipedia.org/wiki/Analog-to-digital_converter }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Analog-to-digital_converter
 ---
 
 An **analog-to-digital converter** (**ADC**) measures a continuous signal many times per
-second, turning it into a stream of numbers. In an SDR it produces the
+second, turning it into a stream of numbers.[^wiki] In an SDR it produces the
 [IQ](/reference/iq-data/) samples software works on.
 
 <figure class="figure" markdown="0">
@@ -44,3 +44,7 @@ exceed it and the signal **clips** at 0 [dBFS](/reference/dbfs/).
 
 Setting [gain](/reference/automatic-gain-control/) so strong signals stay below the ADC's
 ceiling, without burying weak ones in noise, is central to clean reception.
+
+## Sources
+
+[^wiki]: [Analog-to-digital converter](https://en.wikipedia.org/wiki/Analog-to-digital_converter) — Wikipedia, on sampling a continuous signal into discrete digital values.

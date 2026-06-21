@@ -16,8 +16,8 @@ infobox:
 see_also: [solid, clean-code, refactoring, abstraction, coupling-and-cohesion, design-patterns]
 related_lessons:
   - { title: "DRY, KISS, YAGNI & separation of concerns", url: /learn/intro-software-dev/dry-kiss-yagni/ }
-external:
-  - { title: "Don't repeat yourself — Wikipedia", url: https://en.wikipedia.org/wiki/Don%27t_repeat_yourself }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Don%27t_repeat_yourself
 ---
 
 **DRY, KISS and YAGNI** are three of software's most-quoted design heuristics — short
@@ -38,11 +38,11 @@ speculative complexity.
 ## The three heuristics
 
 - **DRY — Don't Repeat Yourself.** Every piece of *knowledge* should have a single,
-  authoritative home. If a rule or constant appears in five places, a change means
+  authoritative home.[^wiki] If a rule or constant appears in five places, a change means
   editing all five — and missing one is a bug. The crucial nuance: DRY is about
   knowledge, not characters. Two snippets that look alike but encode different facts
   are not a violation, and merging them creates the "wrong abstraction," which Sandi
-  Metz noted is far costlier than duplication.
+  Metz noted is far costlier than duplication.[^wiki]
 - **KISS — Keep It Simple.** The simplest design that solves the *actual* problem is
   almost always best. Complexity is a cost you pay forever in comprehension and bugs.
   Match the complexity of the solution to the complexity of the problem, and not a
@@ -61,3 +61,7 @@ antidote to over-engineering and the foundation beneath [SOLID](/reference/solid
 Like all heuristics they are guidelines, not laws — the skill is knowing when *not* to
 apply them, such as resisting a premature [abstraction](/reference/abstraction/) on the
 first duplication.
+
+## Sources
+
+[^wiki]: [Don't repeat yourself](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself) — Wikipedia, for the DRY principle and the related KISS and YAGNI heuristics.

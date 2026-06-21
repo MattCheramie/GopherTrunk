@@ -14,12 +14,12 @@ infobox:
 see_also: [sample-rate, aliasing, bandwidth, harry-nyquist, claude-shannon]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Nyquist–Shannon sampling theorem (Wikipedia)", url: https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem
 ---
 
 The **Nyquist–Shannon sampling theorem** states that to represent a signal without loss
-you must sample at least **twice its [bandwidth](/reference/bandwidth/)**. For IQ
+you must sample at least **twice its [bandwidth](/reference/bandwidth/)**.[^wiki] For IQ
 sampling, the practical takeaway is that usable bandwidth ≈
 [sample rate](/reference/sample-rate/).
 
@@ -44,3 +44,7 @@ frequencies.
 It is named for [Harry Nyquist](/reference/harry-nyquist/) and
 [Claude Shannon](/reference/claude-shannon/), and it sets the floor on the sample rate
 needed to capture a given channel.
+
+## Sources
+
+[^wiki]: [Nyquist–Shannon sampling theorem](https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem) — Wikipedia, on the minimum sampling rate for lossless representation.

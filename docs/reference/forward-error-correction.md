@@ -14,13 +14,15 @@ infobox:
 see_also: [reed-solomon-code, bch-code, golay-code, hamming-code, convolutional-code, interleaving]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Forward error correction (Wikipedia)", url: https://en.wikipedia.org/wiki/Error_correction_code }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Error_correction_code
 ---
 
 **Forward error correction** (**FEC**) adds structured redundancy to transmitted data so
 the receiver can **correct** errors on its own, without asking for retransmission —
-essential for broadcast and one-way radio links.
+essential for broadcast and one-way radio links.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Data plus added redundancy is transmitted; a bit is flipped in transit, and the receiver corrects it without retransmission." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +48,7 @@ a bounded number of errors, often aided by [interleaving](/reference/interleavin
 
 FEC is why a digital signal stays perfect until it abruptly fails (the "cliff effect"):
 the decoder fixes errors until it can't, after which audio drops out.
+
+## Sources
+
+[^wiki]: [Error correction code](https://en.wikipedia.org/wiki/Error_correction_code) — Wikipedia, for adding redundancy so the receiver corrects errors without retransmission.

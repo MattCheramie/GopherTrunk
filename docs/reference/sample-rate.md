@@ -14,11 +14,11 @@ infobox:
 see_also: [bandwidth, nyquist-theorem, aliasing, decimation, analog-to-digital-converter]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Sampling (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Sampling_(signal_processing) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Sampling_(signal_processing)
 ---
 
-**Sample rate** is how many [IQ](/reference/iq-data/) samples per second an SDR produces.
+**Sample rate** is how many [IQ](/reference/iq-data/) samples per second an SDR produces.[^wiki]
 With complex sampling, the **captured [bandwidth](/reference/bandwidth/) is approximately
 equal to the sample rate** — an RTL-SDR at 2.4 MSa/s sees about 2.4 MHz at once.
 
@@ -42,3 +42,7 @@ capture down to one channel.
 
 For trunk-tracking, choose a rate that just covers the channels you follow — not the
 widest possible span.
+
+## Sources
+
+[^wiki]: [Sampling (signal processing)](https://en.wikipedia.org/wiki/Sampling_(signal_processing)) — Wikipedia, on samples per second and the captured bandwidth they represent.

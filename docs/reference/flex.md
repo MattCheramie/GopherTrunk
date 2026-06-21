@@ -17,15 +17,17 @@ infobox:
 see_also: [pocsag, frequency-shift-keying, bch-code, interleaving]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "FLEX (Wikipedia)", url: https://en.wikipedia.org/wiki/FLEX_(protocol) }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/FLEX_(protocol)
 ---
 
 **FLEX** is a high-speed one-way **paging** protocol developed by **Motorola** to
 succeed [POCSAG](/reference/pocsag/). It uses 2- or 4-level
 [FSK](/reference/frequency-shift-keying/) at up to 6400 bps, with robust
 synchronisation and [interleaving](/reference/interleaving/) that make it resilient on
-wide-area simulcast networks.
+wide-area simulcast networks.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="A FLEX frame with sync and time-multiplexed blocks, at higher rates than POCSAG." xmlns="http://www.w3.org/2000/svg">
@@ -56,7 +58,7 @@ simulcast paging systems covering whole regions.
 ## History
 
 Introduced by Motorola in the 1990s as paging demand outgrew POCSAG's capacity; widely
-deployed by commercial paging carriers.
+deployed by commercial paging carriers.[^wiki]
 
 ## Deployment
 
@@ -66,3 +68,7 @@ Commercial wide-area paging, healthcare, and emergency notification networks.
 
 FLEX shares the FSK paging family with POCSAG; see [Status](/status.html) for current
 coverage and the [POCSAG decoder](/pocsag.html) page for the paging pipeline.
+
+## Sources
+
+[^wiki]: [FLEX](https://en.wikipedia.org/wiki/FLEX_(protocol)) — Wikipedia, for Motorola's high-speed paging protocol, its multi-level FSK rates, and time-synchronised framing.

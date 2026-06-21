@@ -16,13 +16,15 @@ infobox:
 see_also: [unit-testing, integration-testing, end-to-end-testing, mocking, code-coverage, refactoring, ci-cd]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "Test-driven development — Wikipedia", url: https://en.wikipedia.org/wiki/Test-driven_development }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Test-driven_development
 ---
 
 **Test-driven development (TDD)** flips the usual order of work: you write a failing test
 *first*, then write just enough code to make it pass, then refactor — the rhythm known as
-"red, green, refactor."
+"red, green, refactor."[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="The TDD cycle: write a failing red test, write code to make it green, then refactor, and repeat." xmlns="http://www.w3.org/2000/svg">
@@ -40,7 +42,7 @@ external:
 
 ## The cycle
 
-TDD proceeds in tight loops, popularized by Kent Beck:
+TDD proceeds in tight loops, popularized by Kent Beck:[^wiki]
 
 - **Red** — write a small test for behavior that doesn't exist yet, and watch it fail.
   A test that passes *before* you write the code is testing nothing, so the failure is
@@ -70,3 +72,7 @@ rhythm applies to [integration](/reference/integration-testing/) and
 discipline rather than a mandate — even teams that don't follow it strictly benefit from
 specifying behavior up front. Note that the [code coverage](/reference/code-coverage/) it
 produces is a by-product, not the goal: well-asserted tests matter more than the number.
+
+## Sources
+
+[^wiki]: [Test-driven development](https://en.wikipedia.org/wiki/Test-driven_development) — Wikipedia, for the red-green-refactor cycle and Kent Beck's role in popularizing it.

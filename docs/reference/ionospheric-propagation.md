@@ -14,14 +14,14 @@ infobox:
 see_also: [radio-propagation, frequency-bands, airspy-hf-plus]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
-external:
-  - { title: "Skywave (Wikipedia)", url: https://en.wikipedia.org/wiki/Skywave }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Skywave
 ---
 
 **Ionospheric propagation** (skywave) is the refraction of
 [HF](/reference/frequency-bands/) [radio waves](/reference/radio-wave/) by ionised
 layers of the upper atmosphere, allowing signals to "skip" over the horizon for
-hundreds or thousands of kilometres.
+hundreds or thousands of kilometres.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 150" role="img" aria-label="An HF signal leaving a transmitter, refracting off the ionosphere layer, and returning to a distant receiver." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ ionosphere rather than reflecting, so they stay line-of-sight.
 Receiving HF skip needs an HF-capable radio such as the
 [Airspy HF+](/reference/airspy-hf-plus/) or an [upconverter](/reference/upconverter/),
 since a basic [RTL-SDR](/reference/rtl-sdr/) does not tune HF directly.
+
+## Sources
+
+[^wiki]: [Skywave](https://en.wikipedia.org/wiki/Skywave) — Wikipedia, on ionospheric refraction of HF radio waves and long-distance skip propagation.

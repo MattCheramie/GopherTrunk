@@ -10,13 +10,13 @@ autolink: true
 see_also: [superheterodyne-receiver, local-oscillator, baseband, analog-to-digital-converter]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Intermediate frequency (Wikipedia)", url: https://en.wikipedia.org/wiki/Intermediate_frequency }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Intermediate_frequency
 ---
 
 The **intermediate frequency** (**IF**) is the fixed, lower frequency that a
 [superheterodyne receiver](/reference/superheterodyne-receiver/) shifts the wanted
-signal down to before filtering and digitising. Mixing the variable input frequency to a
+signal down to before filtering and digitising.[^wiki] Mixing the variable input frequency to a
 **constant IF** lets the receiver use one well-designed filter regardless of the tuned
 channel.
 
@@ -37,3 +37,7 @@ channel.
 Many SDRs use a **low-IF** or **zero-IF** ([baseband](/reference/baseband/)) architecture,
 where the IF is at or near 0 Hz — convenient for the [ADC](/reference/analog-to-digital-converter/)
 but introducing a [DC offset](/reference/dc-offset/) artefact to manage.
+
+## Sources
+
+[^wiki]: [Intermediate frequency](https://en.wikipedia.org/wiki/Intermediate_frequency) — Wikipedia, on superheterodyne downconversion to a fixed IF.

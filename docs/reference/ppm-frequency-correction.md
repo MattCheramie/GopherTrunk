@@ -14,13 +14,13 @@ infobox:
 see_also: [local-oscillator, frequency, costas-loop, constellation-diagram]
 related_lessons:
   - { title: "Calibration & troubleshooting", url: /learn/rf-sdr/calibration-troubleshooting/ }
-external:
-  - { title: "Frequency error (Wikipedia)", url: https://en.wikipedia.org/wiki/Clock_drift }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Clock_drift
 ---
 
 **PPM frequency correction** compensates for the small error in an SDR's reference
 oscillator, measured in **parts per million**, so signals land on their **true
-frequency**. At UHF a 30 PPM error is several kilohertz — more than a channel's width.
+frequency**.[^wiki] At UHF a 30 PPM error is several kilohertz — more than a channel's width.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 150" role="img" aria-label="A signal sitting off the channel centre due to oscillator error, and the same signal centred after PPM correction." xmlns="http://www.w3.org/2000/svg">
@@ -49,3 +49,7 @@ so warm-up matters.
 A wrong PPM produces the classic *rotating
 [constellation](/reference/constellation-diagram/)* that won't lock — fixed by
 calibration, not a better antenna.
+
+## Sources
+
+[^wiki]: [Clock drift](https://en.wikipedia.org/wiki/Clock_drift) — Wikipedia, on oscillator frequency error and drift measured in parts per million.

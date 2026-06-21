@@ -16,13 +16,15 @@ infobox:
 see_also: [compiler, package-manager, ci-cd, semantic-versioning, static-binary, cross-compilation, version-control]
 related_lessons:
   - { title: "Build systems, CI/CD & automation", url: /learn/intro-software-dev/build-and-ci-cd/ }
-external:
-  - { title: "Build automation — Wikipedia", url: https://en.wikipedia.org/wiki/Build_automation }
+related_reading:
+  - { title: "Build in the Open, Part 7: GitHub Actions & which workflows", url: /blog/tutorials/build-in-the-open-07-github-actions-which-workflows/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Build_automation
 ---
 
 **A build system** is the tooling that transforms source code plus its dependencies into
 a runnable artifact — compiling, linking, and packaging — ideally as a deterministic
-function of its inputs.
+function of its inputs.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Source files and dependencies feed into a build step that produces a single runnable artifact." xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +46,7 @@ A build transforms source into something runnable. The exact steps vary by langu
 the idea is universal: a [compiler](/reference/compiler/) translates source into machine
 code or bytecode, and a *linker* stitches the pieces into an executable. **Make** and its
 descendants are the classic orchestrators — a `Makefile` declares targets and their
-dependencies, and `make` rebuilds only what changed. That principle (describe outputs in
+dependencies, and `make` rebuilds only what changed.[^wiki] That principle (describe outputs in
 terms of inputs, rebuild only the stale parts) underlies nearly every build tool since.
 Modern ecosystems wrap this per language: `go build`, `cargo build`, `npm`/`yarn`, Maven,
 and Gradle each know their language's conventions so you rarely hand-write build steps.
@@ -68,3 +70,7 @@ The build sits at the heart of a [CI/CD](/reference/ci-cd/) pipeline: on every p
 [tests](/reference/unit-testing/) follow, and a successful run yields a versioned artifact
 ready to release under [semantic versioning](/reference/semantic-versioning/). A
 deterministic build is what makes that whole chain trustworthy.
+
+## Sources
+
+[^wiki]: [Build automation](https://en.wikipedia.org/wiki/Build_automation) — Wikipedia, for build tooling, Make, and reproducible builds.

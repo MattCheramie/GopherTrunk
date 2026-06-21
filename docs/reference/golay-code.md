@@ -14,12 +14,14 @@ infobox:
 see_also: [forward-error-correction, hamming-code, reed-solomon-code, dmr, m17]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Binary Golay code (Wikipedia)", url: https://en.wikipedia.org/wiki/Binary_Golay_code }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Binary_Golay_code
 ---
 
 The **Golay code** is a remarkably efficient block
-[error-correction](/reference/forward-error-correction/) code. The binary Golay(23,12)
+[error-correction](/reference/forward-error-correction/) code.[^wiki] The binary Golay(23,12)
 and extended Golay(24,12) correct up to three bit errors in a short codeword.
 
 <figure class="figure" markdown="0">
@@ -40,3 +42,7 @@ into few bits, making it ideal for small but critical control fields.
 
 Golay coding protects link-control and signalling fields in [DMR](/reference/dmr/),
 [P25](/reference/project-25/), and [M17](/reference/m17/).
+
+## Sources
+
+[^wiki]: [Binary Golay code](https://en.wikipedia.org/wiki/Binary_Golay_code) — Wikipedia, for the perfect (23,12) and extended (24,12) three-error-correcting codes.

@@ -19,14 +19,16 @@ see_also: [c-language, cpp-language, go-language, memory-management, compiler, c
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
-external:
-  - { title: "Rust (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Rust_(programming_language) }
-  - { title: "The Rust programming language", url: https://www.rust-lang.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.rust-lang.org/
+  - https://en.wikipedia.org/wiki/Rust_(programming_language)
 ---
 
 **Rust** is a statically typed, compiled systems language designed to be fast *and*
 safe: its borrow checker enforces memory safety at compile time, eliminating whole
-classes of bugs without a garbage collector or runtime cost.
+classes of bugs without a garbage collector or runtime cost.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="The Rust compiler's borrow checker verifies ownership and borrowing rules at compile time; code that passes is memory-safe with no garbage collector." xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +47,7 @@ classes of bugs without a garbage collector or runtime cost.
 ## Overview
 
 Rust [compiles](/reference/compiler/) ahead of time to native machine code, with
-performance that rivals [C](/reference/c-language/) and [C++](/reference/cpp-language/).
+performance that rivals [C](/reference/c-language/) and [C++](/reference/cpp-language/).[^home]
 Its defining idea is **ownership**: each value has a single owner, and a compile-time
 borrow checker enforces strict rules about how references may be shared and mutated.
 Code that violates those rules simply does not compile, which rules out use-after-free,
@@ -68,3 +70,8 @@ targets, and safety-critical components — places that want C-level control wit
 memory hazards. It is not so much replacing [C](/reference/c-language/) and
 [C++](/reference/cpp-language/) as competing with them for new work, with the three
 expected to coexist for a long time.
+
+## Sources
+
+[^home]: [The Rust programming language](https://www.rust-lang.org/) — official site, documentation, and the ownership/borrow-checker model.
+[^wiki]: [Rust (programming language)](https://en.wikipedia.org/wiki/Rust_(programming_language)) — Wikipedia, for history and design background.

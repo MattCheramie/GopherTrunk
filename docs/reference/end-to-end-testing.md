@@ -16,12 +16,14 @@ infobox:
 see_also: [unit-testing, integration-testing, mocking, code-coverage, test-driven-development, ci-cd, rest]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "System testing — Wikipedia", url: https://en.wikipedia.org/wiki/System_testing }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/System_testing
 ---
 
 **End-to-end (E2E) testing** drives the whole system the way a user would, from input
-all the way to final output — the highest-confidence test, but slow and kept few.
+all the way to final output — the highest-confidence test, but slow and kept few.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A test exercises the full path from user input through the running system to the final output." xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +48,7 @@ flow: it submits real input, lets the request travel through every layer — fro
 backend, [API](/reference/api/), database, external services — and asserts on the final
 result. Because nothing is stubbed, a passing E2E test is strong evidence the product
 *actually works* the way a user will experience it, including the integration points that
-unit and integration tests can miss.
+unit and integration tests can miss.[^wiki]
 
 ## The trade-off
 
@@ -68,3 +70,7 @@ before release rather than on every commit, and even an E2E suite may use
 contribute to [code coverage](/reference/code-coverage/) but are no substitute for sharp,
 well-asserted checks lower down, and they can be written test-first in the
 [TDD](/reference/test-driven-development/) spirit.
+
+## Sources
+
+[^wiki]: [System testing](https://en.wikipedia.org/wiki/System_testing) — Wikipedia, on testing a complete, integrated system end to end as a user would.

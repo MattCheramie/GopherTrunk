@@ -14,12 +14,12 @@ infobox:
 see_also: [modulation, radio-wave, frequency, amplitude-modulation]
 related_lessons:
   - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
-external:
-  - { title: "Carrier wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Carrier_wave }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Carrier_wave
 ---
 
 A **carrier wave** is a steady [radio-frequency](/reference/radio-wave/) signal at a
-single [frequency](/reference/frequency/) that conveys no information on its own. It
+single [frequency](/reference/frequency/) that conveys no information on its own.[^wiki] It
 becomes useful only when [modulation](/reference/modulation/) varies one of its
 properties in step with a message.
 
@@ -44,3 +44,7 @@ essentially the signal's [bandwidth](/reference/bandwidth/).
 Receivers tune to a carrier's frequency and then demodulate the variations around it.
 A residual carrier at zero frequency after downconversion is the familiar "DC spike"
 seen on SDR spectra.
+
+## Sources
+
+[^wiki]: [Carrier wave](https://en.wikipedia.org/wiki/Carrier_wave) — Wikipedia, on the steady reference signal modulated to convey information.

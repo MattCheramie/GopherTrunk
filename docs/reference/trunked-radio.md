@@ -15,13 +15,15 @@ infobox:
 see_also: [conventional-radio, control-channel, voice-channel, talkgroup, channel-grant, fdma, tdma]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 **Trunked radio** is a system architecture in which many user groups share a small pool
 of frequencies, with a computer assigning a free channel to each call for its duration
-and reclaiming it afterward. A [control channel](/reference/control-channel/)
+and reclaiming it afterward.[^wiki] A [control channel](/reference/control-channel/)
 coordinates the whole system.
 
 <figure class="figure" markdown="0">
@@ -54,3 +56,7 @@ few channels can serve many groups.
 To monitor a trunked system you decode the control channel first, then follow grants —
 exactly what GopherTrunk does for [P25](/reference/project-25/),
 [DMR Tier III](/reference/dmr-tier-3/), and others.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on trunking architecture and control-channel coordination.

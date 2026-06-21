@@ -17,14 +17,16 @@ infobox:
 see_also: [trunked-radio, control-channel, motorola-type-ii, edacs, mpt-1327]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Logic Trunked Radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Logic_Trunked_Radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Logic_Trunked_Radio
 ---
 
 **LTR** (**Logic Trunked Radio**) is a simple, low-cost trunking protocol from
 **E.F. Johnson**. Unlike systems with a dedicated [control channel](/reference/control-channel/),
 LTR is **distributed**: trunking data rides **subaudibly on each voice channel**, so
-every channel carries its own low-speed signalling.
+every channel carries its own low-speed signalling.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 130" role="img" aria-label="Several LTR channels, each carrying analog voice plus its own embedded subaudible signalling — no dedicated control channel." xmlns="http://www.w3.org/2000/svg">
@@ -52,7 +54,7 @@ cheap to deploy but trickier to monitor than control-channel systems.
 ## History
 
 Introduced by E.F. Johnson and widely used for business/SMR trunking; variants
-include LTR-Net and PassPort.
+include LTR-Net and PassPort.[^wiki]
 
 ## Deployment
 
@@ -62,3 +64,7 @@ in North America.
 ## Decoding it with GopherTrunk
 
 See [Status](/status.html) for GopherTrunk's handling of LTR's subaudible signalling.
+
+## Sources
+
+[^wiki]: [Logic Trunked Radio](https://en.wikipedia.org/wiki/Logic_Trunked_Radio) — Wikipedia, for the E.F. Johnson LTR distributed trunking scheme and its subaudible per-channel signalling.

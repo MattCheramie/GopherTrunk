@@ -14,12 +14,12 @@ infobox:
 see_also: [radio-propagation, frequency-bands, antenna]
 related_lessons:
   - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
-external:
-  - { title: "Radio horizon (Wikipedia)", url: https://en.wikipedia.org/wiki/Line-of-sight_propagation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Line-of-sight_propagation
 ---
 
 The **radio horizon** is the farthest point a line-of-sight signal reaches before the
-Earth's curvature gets in the way. It lies slightly beyond the visual horizon because
+Earth's curvature gets in the way.[^wiki] It lies slightly beyond the visual horizon because
 the atmosphere refracts radio waves a little.
 
 <figure class="figure" markdown="0">
@@ -43,3 +43,7 @@ towers and hilltops and why getting a receive antenna up high extends range at
 
 For line-of-sight bands, antenna height is often the most effective way to reach more
 distant systems.
+
+## Sources
+
+[^wiki]: [Line-of-sight propagation](https://en.wikipedia.org/wiki/Line-of-sight_propagation) — Wikipedia, on the radio horizon, Earth curvature, and atmospheric refraction.

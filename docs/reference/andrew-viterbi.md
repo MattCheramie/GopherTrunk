@@ -14,13 +14,13 @@ infobox:
 see_also: [viterbi-algorithm, convolutional-code, forward-error-correction]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Andrew Viterbi (Wikipedia)", url: https://en.wikipedia.org/wiki/Andrew_Viterbi }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Andrew_Viterbi
 ---
 
 **Andrew Viterbi** (born 1935) is an American electrical engineer who devised the
 **[Viterbi algorithm](/reference/viterbi-algorithm/)** for maximum-likelihood decoding of
-[convolutional codes](/reference/convolutional-code/), and co-founded Qualcomm.
+[convolutional codes](/reference/convolutional-code/), and co-founded Qualcomm.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A trellis with one highlighted most-likely path, the Viterbi algorithm." xmlns="http://www.w3.org/2000/svg">
@@ -35,7 +35,7 @@ external:
 ## Life and work
 
 Viterbi introduced his algorithm in 1967 as a practical way to decode convolutional
-codes; it became foundational to digital communications and storage.
+codes; it became foundational to digital communications and storage.[^wiki]
 
 ## Contribution
 
@@ -46,3 +46,7 @@ practical, improving reception at low SNR.
 
 Viterbi decoding appears throughout modern radio, from amateur [M17](/reference/m17/) to
 cellular systems.
+
+## Sources
+
+[^wiki]: [Andrew Viterbi](https://en.wikipedia.org/wiki/Andrew_Viterbi) — Wikipedia, for biography and his algorithm for decoding convolutional codes.

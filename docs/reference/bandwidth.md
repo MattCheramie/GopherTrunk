@@ -13,12 +13,12 @@ see_also: [sample-rate, nyquist-theorem, frequency, signal-to-noise-ratio]
 related_lessons:
   - { title: "Anatomy of a signal", url: /learn/rf-sdr/signal-anatomy/ }
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Bandwidth (signal processing) (Wikipedia)", url: https://en.wikipedia.org/wiki/Bandwidth_(signal_processing) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Bandwidth_(signal_processing)
 ---
 
 **Bandwidth** is the width, in hertz, of the [frequency](/reference/frequency/) range a
-signal occupies or that a receiver captures. A narrowband voice channel may be ~12.5
+signal occupies or that a receiver captures.[^wiki] A narrowband voice channel may be ~12.5
 kHz wide; an FM broadcast station ~200 kHz; Wi-Fi tens of megahertz.
 
 <figure class="figure" markdown="0">
@@ -48,3 +48,7 @@ Wider bandwidth can carry more information but uses more spectrum and demands a 
 An SDR's capture bandwidth (≈ its sample rate) sets how much spectrum you see at once.
 [Filtering and decimation](/reference/decimation/) narrow a wide capture down to a
 single channel's bandwidth.
+
+## Sources
+
+[^wiki]: [Bandwidth (signal processing)](https://en.wikipedia.org/wiki/Bandwidth_(signal_processing)) — Wikipedia, definition and measures of signal bandwidth.

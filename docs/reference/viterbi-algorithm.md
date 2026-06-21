@@ -14,12 +14,14 @@ infobox:
 see_also: [convolutional-code, trellis-coded-modulation, forward-error-correction, andrew-viterbi, m17]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Viterbi algorithm (Wikipedia)", url: https://en.wikipedia.org/wiki/Viterbi_algorithm }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Viterbi_algorithm
 ---
 
 The **Viterbi algorithm** efficiently finds the most likely sequence of states through a
-trellis, given noisy observations. It is the standard way to decode
+trellis, given noisy observations.[^wiki] It is the standard way to decode
 [convolutional codes](/reference/convolutional-code/), named for
 [Andrew Viterbi](/reference/andrew-viterbi/).
 
@@ -43,3 +45,7 @@ transmitted bits even with errors.
 
 Viterbi decoding is used in error-corrected digital systems such as
 [M17](/reference/m17/) and various trunked-radio components to drive down the error rate.
+
+## Sources
+
+[^wiki]: [Viterbi algorithm](https://en.wikipedia.org/wiki/Viterbi_algorithm) — Wikipedia, for the maximum-likelihood trellis decoder and its origin.

@@ -14,15 +14,17 @@ infobox:
 see_also: [frequency-shift-keying, cqpsk, project-25, p25-phase-1, system-fusion-ysf, symbol-rate]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 ---
 
 **C4FM** (compatible four-level FM) is the four-level
 [FSK](/reference/frequency-shift-keying/) modulation used by
 [P25 Phase 1](/reference/p25-phase-1/) and [System Fusion](/reference/system-fusion-ysf/).
 The carrier sits at one of four frequency deviations per [symbol](/reference/symbol-rate/),
-carrying 2 bits each.
+carrying 2 bits each.[^p25]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 150" role="img" aria-label="Four horizontal deviation levels labelled with dibits, and a stepped trace moving between them over time." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +47,7 @@ eyes on an [eye diagram](/reference/eye-diagram/).
 
 Recognising healthy C4FM symbols is central to decoding P25 Phase 1 and Fusion; the
 scopes reveal SNR, tuning, and timing problems at a glance.
+
+## Sources
+
+[^p25]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, for the C4FM modulation, symbol rate, and its use in P25 Phase 1.

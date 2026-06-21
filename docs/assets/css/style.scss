@@ -1363,6 +1363,25 @@ a.category-chip:hover {
 .ref-seealso h2, .ref-related h2, .ref-refs h2 { font-size: 1.15rem; }
 .ref-seealso ul, .ref-related ul, .ref-refs ul { margin: 0.5rem 0 0; }
 
+/* ---------- Citations / Sources (kramdown footnotes) ---------- */
+/* Inline footnote markers in the article body */
+.ref-article sup[role="doc-noteref"],
+.ref-article .footnote { font-size: 0.78em; font-weight: 600; }
+.ref-article sup[role="doc-noteref"] a,
+.ref-article a.footnote { color: var(--accent); text-decoration: none; padding: 0 0.05em; }
+/* The "Sources" list kramdown renders at the end of the body */
+.ref-article .footnotes {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+}
+.ref-article .footnotes ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.ref-article .footnotes li { margin-bottom: 0.4rem; }
+.ref-article .footnotes li p { margin: 0; }
+.ref-article .footnotes a { word-break: break-word; }
+
 /* ---------- Auto-links (site-wide) ---------- */
 .ref-autolink {
   color: inherit;

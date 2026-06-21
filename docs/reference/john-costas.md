@@ -10,12 +10,12 @@ autolink: true
 see_also: [costas-loop, phase-shift-keying, single-sideband, demodulation]
 related_lessons:
   - { title: "Clock recovery & symbol timing", url: /learn/rf-sdr/clock-recovery/ }
-external:
-  - { title: "John P. Costas (Wikipedia)", url: https://en.wikipedia.org/wiki/John_P._Costas_(engineer) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/John_P._Costas_(engineer)
 ---
 
 **John P. Costas** was an American engineer best known for the **[Costas loop](/reference/costas-loop/)**,
-a phase-locked carrier-recovery circuit he devised in the 1950s. It made coherent
+a phase-locked carrier-recovery circuit he devised in the 1950s.[^wiki] It made coherent
 reception of suppressed-carrier signals (such as [SSB](/reference/single-sideband/) and
 later [PSK](/reference/phase-shift-keying/)) practical.
 
@@ -36,3 +36,7 @@ later [PSK](/reference/phase-shift-keying/)) practical.
 
 The Costas loop remains a standard building block in digital receivers, including the
 carrier recovery used when demodulating phase-modulated digital-voice systems.
+
+## Sources
+
+[^wiki]: [John P. Costas (engineer)](https://en.wikipedia.org/wiki/John_P._Costas_(engineer)) — Wikipedia, for biography and his invention of the Costas loop.

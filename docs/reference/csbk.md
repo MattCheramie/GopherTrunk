@@ -10,14 +10,16 @@ autolink: true
 see_also: [control-channel, channel-grant, dmr-tier-3, dmr, tsbk]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 A **CSBK** (**control signalling block**) is the single-block control message of
 [DMR](/reference/dmr/). On a [Tier III](/reference/dmr-tier-3/) control channel, CSBKs
 carry call requests, [channel grants](/reference/channel-grant/), and system data — the
-DMR counterpart of P25's [TSBK](/reference/tsbk/).
+DMR counterpart of P25's [TSBK](/reference/tsbk/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A DMR control channel carrying CSBK blocks, one of which grants a traffic channel and slot." xmlns="http://www.w3.org/2000/svg">
@@ -32,3 +34,7 @@ DMR counterpart of P25's [TSBK](/reference/tsbk/).
 
 CSBKs are protected by [BPTC](/reference/bptc/) coding. Following them is how a decoder
 tracks trunked DMR, just as TSBKs are followed on P25.
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, on DMR control signalling and Tier III trunking.

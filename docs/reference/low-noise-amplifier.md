@@ -14,13 +14,13 @@ infobox:
 see_also: [noise-floor, signal-to-noise-ratio, superheterodyne-receiver, bias-tee, antenna]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Low-noise amplifier (Wikipedia)", url: https://en.wikipedia.org/wiki/Low-noise_amplifier }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Low-noise_amplifier
 ---
 
 A **low-noise amplifier** (**LNA**) boosts a weak [antenna](/reference/antenna/) signal
 **early** in the [receive chain](/reference/superheterodyne-receiver/), adding as little
-noise as possible. Because later stages add their own noise, amplifying first preserves
+noise as possible.[^wiki] Because later stages add their own noise, amplifying first preserves
 [SNR](/reference/signal-to-noise-ratio/).
 
 <figure class="figure" markdown="0">
@@ -46,3 +46,7 @@ coax by a [bias tee](/reference/bias-tee/).
 
 An antenna-mounted LNA can meaningfully improve reception of weak signals, especially
 with lossy cable runs — but watch for overload from strong nearby transmitters.
+
+## Sources
+
+[^wiki]: [Low-noise amplifier](https://en.wikipedia.org/wiki/Low-noise_amplifier) — Wikipedia, on LNAs, noise figure, and their role in setting receiver sensitivity.

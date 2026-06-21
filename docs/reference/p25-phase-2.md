@@ -19,13 +19,15 @@ see_also: [project-25, p25-phase-1, ambe-plus-2, tdma, control-channel]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
   - { title: "Analog vs. digital voice", url: /learn/rf-sdr/digital-voice/ }
-external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 ---
 
 **P25 Phase 2** is the second-generation air interface of [Project 25](/reference/project-25/),
 using **two-slot [TDMA](/reference/tdma/)** to carry two simultaneous voice
-conversations in a single 12.5 kHz channel — effectively 6.25 kHz per call.
+conversations in a single 12.5 kHz channel — effectively 6.25 kHz per call.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 140" role="img" aria-label="Two TDMA slots in a 12.5 kHz channel for P25 Phase 2." xmlns="http://www.w3.org/2000/svg">
@@ -63,7 +65,7 @@ slots.
 
 Phase 2 was standardised by the [TIA](/reference/tia/) to follow narrowbanding and
 spectrum-efficiency mandates, and has been deployed on large metropolitan and
-statewide systems since the early 2010s.
+statewide systems since the early 2010s.[^wiki]
 
 ## Deployment
 
@@ -74,3 +76,7 @@ at a premium, frequently mixed with Phase 1 on the same network.
 
 GopherTrunk follows the control channel, tunes to the assigned Phase 2 traffic
 channel and slot, and decodes the AMBE+2 voice. See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, for the P25 Phase 2 two-slot TDMA air interface, H-DQPSK/H-CPM modulation, the AMBE+2 vocoder, and TIA standardisation.

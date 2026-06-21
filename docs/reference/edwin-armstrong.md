@@ -14,12 +14,12 @@ infobox:
 see_also: [frequency-modulation, superheterodyne-receiver, radio-wave]
 related_lessons:
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Edwin Howard Armstrong (Wikipedia)", url: https://en.wikipedia.org/wiki/Edwin_Howard_Armstrong }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Edwin_Howard_Armstrong
 ---
 
 **Edwin Armstrong** (1890–1954) was an American electrical engineer who invented several
-cornerstones of radio, most notably wide-band **[frequency modulation](/reference/frequency-modulation/)**.
+cornerstones of radio, most notably wide-band **[frequency modulation](/reference/frequency-modulation/)**.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="An FM waveform whose cycle spacing varies with the message at constant amplitude, contrasted with noisy AM." xmlns="http://www.w3.org/2000/svg">
@@ -34,7 +34,7 @@ cornerstones of radio, most notably wide-band **[frequency modulation](/referenc
 
 Armstrong devised the regenerative receiver, the
 [superheterodyne receiver](/reference/superheterodyne-receiver/) architecture still used
-today, and FM broadcasting, which dramatically improved audio quality and noise immunity.
+today, and FM broadcasting, which dramatically improved audio quality and noise immunity.[^wiki]
 
 ## Contribution
 
@@ -45,3 +45,7 @@ an SDR — and FM remains central to analog and digital voice.
 
 Armstrong's inventions shaped 20th-century radio; the superheterodyne is arguably the most
 important receiver architecture ever devised.
+
+## Sources
+
+[^wiki]: [Edwin Howard Armstrong](https://en.wikipedia.org/wiki/Edwin_Howard_Armstrong) — Wikipedia, for biography and his invention of FM and the superheterodyne receiver.

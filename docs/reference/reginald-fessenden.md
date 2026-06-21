@@ -14,13 +14,13 @@ infobox:
 see_also: [amplitude-modulation, guglielmo-marconi, carrier-wave]
 related_lessons:
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Reginald Fessenden (Wikipedia)", url: https://en.wikipedia.org/wiki/Reginald_Fessenden }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Reginald_Fessenden
 ---
 
 **Reginald Fessenden** (1866–1932) was a Canadian-American inventor credited with some of
 the first **audio radio transmissions**, moving radio beyond Morse code to voice using
-[amplitude modulation](/reference/amplitude-modulation/).
+[amplitude modulation](/reference/amplitude-modulation/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A carrier whose amplitude envelope follows a voice waveform, illustrating the first AM voice transmission." xmlns="http://www.w3.org/2000/svg">
@@ -34,7 +34,7 @@ the first **audio radio transmissions**, moving radio beyond Morse code to voice
 ## Life and work
 
 Where early wireless sent spark-gap pulses, Fessenden championed continuous-wave radio and
-the heterodyne principle, transmitting speech and music in the early 1900s.
+the heterodyne principle, transmitting speech and music in the early 1900s.[^wiki]
 
 ## Contribution
 
@@ -45,3 +45,7 @@ design.
 
 Fessenden is remembered as a pioneer of voice radio, complementing
 [Marconi](/reference/guglielmo-marconi/)'s telegraphy.
+
+## Sources
+
+[^wiki]: [Reginald Fessenden](https://en.wikipedia.org/wiki/Reginald_Fessenden) — Wikipedia, for biography and his pioneering of AM voice radio.

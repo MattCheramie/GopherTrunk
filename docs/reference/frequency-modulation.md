@@ -14,13 +14,13 @@ infobox:
 see_also: [modulation, amplitude-modulation, single-sideband, frequency-shift-keying]
 related_lessons:
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Frequency modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency_modulation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency_modulation
 ---
 
 **Frequency modulation** (**FM**) encodes information by varying a
 [carrier](/reference/carrier-wave/)'s [frequency](/reference/frequency/) while its
-[amplitude](/reference/amplitude/) stays constant. The amount of swing is the
+[amplitude](/reference/amplitude/) stays constant.[^wiki] The amount of swing is the
 *deviation*.
 
 <figure class="figure" markdown="0">
@@ -42,3 +42,7 @@ signal dominates a channel.
 FM broadcast (wide deviation) and narrowband FM two-way voice are everywhere; the
 latter is the analog cousin of the digital [FSK](/reference/frequency-shift-keying/)
 voice modes GopherTrunk decodes.
+
+## Sources
+
+[^wiki]: [Frequency modulation](https://en.wikipedia.org/wiki/Frequency_modulation) — Wikipedia, for the definition, deviation, and the capture effect.

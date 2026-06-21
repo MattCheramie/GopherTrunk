@@ -13,12 +13,12 @@ see_also: [wavelength, frequency-bands, electromagnetic-spectrum, radio-wave]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
-external:
-  - { title: "Frequency (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency
 ---
 
 **Frequency** is the number of cycles a periodic wave completes each second, measured
-in **hertz (Hz)**. For a [radio wave](/reference/radio-wave/) it is the quantity you
+in **hertz (Hz)**.[^wiki] For a [radio wave](/reference/radio-wave/) it is the quantity you
 tune to, and it is inversely related to [wavelength](/reference/wavelength/).
 
 <figure class="figure" markdown="0">
@@ -43,3 +43,7 @@ frequency*.
 Tuning an SDR sets the centre frequency its [local oscillator](/reference/local-oscillator/)
 mixes down to baseband. The chosen frequency, within a [band](/reference/frequency-bands/),
 determines what signal you receive.
+
+## Sources
+
+[^wiki]: [Frequency](https://en.wikipedia.org/wiki/Frequency) — Wikipedia, definition, the hertz unit, and the relationship to period and wavelength.

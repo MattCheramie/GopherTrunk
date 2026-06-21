@@ -14,13 +14,15 @@ infobox:
 see_also: [control-channel, trunked-radio, channel-grant, talkgroup]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 A **voice channel** (or traffic channel) is a frequency that a
 [trunked radio](/reference/trunked-radio/) system **temporarily assigns** to carry one
-call. When the call ends, the channel returns to the pool for reuse.
+call.[^wiki] When the call ends, the channel returns to the pool for reuse.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A pool of voice channels over time, each lighting up briefly for a call then going idle." xmlns="http://www.w3.org/2000/svg">
@@ -43,3 +45,7 @@ may land on a different voice channel entirely.
 
 GopherTrunk tunes a receiver to the granted voice channel to capture the audio, then
 returns to await the next assignment — following many calls from one capture.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on per-call voice (traffic) channel assignment.

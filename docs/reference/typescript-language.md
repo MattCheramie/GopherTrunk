@@ -19,14 +19,16 @@ see_also: [javascript-language, type-system, static-vs-dynamic-typing, compiler,
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Type systems", url: /learn/intro-software-dev/type-systems/ }
-external:
-  - { title: "TypeScript — Wikipedia", url: https://en.wikipedia.org/wiki/TypeScript }
-  - { title: "The TypeScript programming language", url: https://www.typescriptlang.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.typescriptlang.org/
+  - https://en.wikipedia.org/wiki/TypeScript
 ---
 
 **TypeScript** is a statically typed superset of [JavaScript](/reference/javascript-language/):
 it adds an optional [type system](/reference/type-system/) on top of JavaScript and
-compiles down to plain JavaScript that runs anywhere JavaScript does.
+compiles down to plain JavaScript that runs anywhere JavaScript does.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="TypeScript source is type-checked and compiled to plain JavaScript, which runs in the browser or Node.js." xmlns="http://www.w3.org/2000/svg">
@@ -49,7 +51,7 @@ TypeScript exists to fix JavaScript's biggest weakness — its loose
 [dynamic typing](/reference/static-vs-dynamic-typing/). You annotate code with types,
 the `tsc` [compiler](/reference/compiler/) checks them at build time, and then the types
 are *erased*: the emitted output is ordinary JavaScript with no runtime type system of
-its own. Memory and execution are still handled by the JavaScript runtime, so TypeScript
+its own.[^home] Memory and execution are still handled by the JavaScript runtime, so TypeScript
 adds safety without changing how the program runs.
 
 ## Strengths and trade-offs
@@ -69,3 +71,8 @@ TypeScript has become the default for serious front-end frameworks and Node.js b
 and for any JavaScript codebase large enough that loose typing becomes a liability.
 Because it compiles to plain [JavaScript](/reference/javascript-language/), it runs
 everywhere JavaScript runs and interoperates freely with existing JS libraries.
+
+## Sources
+
+[^home]: [The TypeScript programming language](https://www.typescriptlang.org/) — official site, documentation, and the `tsc` compiler and type system.
+[^wiki]: [TypeScript](https://en.wikipedia.org/wiki/TypeScript) — Wikipedia, for history and design background.

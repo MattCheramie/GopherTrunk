@@ -16,13 +16,13 @@ infobox:
 see_also: [api, error-handling, semantic-versioning, end-to-end-testing, integration-testing, version-control]
 related_lessons:
   - { title: "Errors, edge cases & defensive programming", url: /learn/intro-software-dev/robustness-and-errors/ }
-external:
-  - { title: "REST — Wikipedia", url: https://en.wikipedia.org/wiki/REST }
+cite_urls:
+  - https://en.wikipedia.org/wiki/REST
 ---
 
 **REST** (Representational State Transfer) is an architectural style for web
 [APIs](/reference/api/) in which clients act on named *resources*, identified by URLs,
-using standard HTTP verbs over a stateless protocol.
+using standard HTTP verbs over a stateless protocol.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A client sends HTTP verbs GET, POST, PUT, DELETE to a server's resource URLs." xmlns="http://www.w3.org/2000/svg">
@@ -40,7 +40,7 @@ using standard HTTP verbs over a stateless protocol.
 
 ## The core ideas
 
-REST, described by Roy Fielding, organizes an API around a handful of constraints:
+REST, described by Roy Fielding, organizes an API around a handful of constraints:[^wiki]
 
 - **Resources and URLs.** Everything is a resource — a message, a user, a device — each
   identified by a URL like `/messages/42`. The URL names the *thing*, not the action.
@@ -73,3 +73,7 @@ like `/v2/messages`. Because REST endpoints are where many systems meet, they ar
 target for [integration tests](/reference/integration-testing/) and
 [end-to-end tests](/reference/end-to-end-testing/) that exercise real requests against the
 running service.
+
+## Sources
+
+[^wiki]: [REST](https://en.wikipedia.org/wiki/REST) — Wikipedia, for the architectural style, its constraints, and Roy Fielding's role in defining it.

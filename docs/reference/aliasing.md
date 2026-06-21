@@ -14,13 +14,13 @@ infobox:
 see_also: [nyquist-theorem, sample-rate, decimation, digital-filter]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Aliasing (Wikipedia)", url: https://en.wikipedia.org/wiki/Aliasing }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Aliasing
 ---
 
 **Aliasing** is when energy outside the bandwidth a [sample rate](/reference/sample-rate/)
 can represent gets **folded** back into the captured spectrum, appearing at a wrong
-frequency — a phantom that looks like a real signal.
+frequency — a phantom that looks like a real signal.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A captured band between Nyquist edges with a real signal inside and an out-of-band signal folding back to a false position." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ inside the usable window. It also constrains the order of
 ## Relevance to SDR
 
 Recognising an alias prevents chasing signals that are not really where they appear.
+
+## Sources
+
+[^wiki]: [Aliasing](https://en.wikipedia.org/wiki/Aliasing) — Wikipedia, on out-of-band energy folding to false frequencies when undersampled.

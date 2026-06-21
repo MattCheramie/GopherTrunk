@@ -10,13 +10,13 @@ autolink: true
 see_also: [root-raised-cosine-filter, bandwidth, symbol-rate, matched-filter]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Pulse shaping (Wikipedia)", url: https://en.wikipedia.org/wiki/Pulse_shaping }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Pulse_shaping
 ---
 
 **Pulse shaping** is filtering each transmitted symbol's pulse so the signal occupies
 **less bandwidth** and successive symbols don't smear into one another
-(inter-symbol interference). Sharp rectangular pulses spray energy into adjacent
+(inter-symbol interference).[^wiki] Sharp rectangular pulses spray energy into adjacent
 channels; a shaped pulse keeps it contained.
 
 <figure class="figure" markdown="0">
@@ -38,3 +38,7 @@ channels; a shaped pulse keeps it contained.
 The most common choice is the [root-raised-cosine filter](/reference/root-raised-cosine-filter/),
 split between transmitter and receiver so that together they form a Nyquist filter with
 zero inter-symbol interference at the sampling instants.
+
+## Sources
+
+[^wiki]: [Pulse shaping](https://en.wikipedia.org/wiki/Pulse_shaping) — Wikipedia, for the bandwidth-limiting and inter-symbol-interference rationale.

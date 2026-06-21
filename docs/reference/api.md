@@ -16,13 +16,13 @@ infobox:
 see_also: [rest, abstraction, error-handling, semantic-versioning, package-manager, coupling-and-cohesion, solid]
 related_lessons:
   - { title: "Errors, edge cases & defensive programming", url: /learn/intro-software-dev/robustness-and-errors/ }
-external:
-  - { title: "API — Wikipedia", url: https://en.wikipedia.org/wiki/API }
+cite_urls:
+  - https://en.wikipedia.org/wiki/API
 ---
 
 **An API** (application programming interface) is a defined contract through which one
 piece of software exposes its capabilities to another, hiding its implementation behind
-a stable set of operations.
+a stable set of operations.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A client calls an API, which is a contract in front of a provider's hidden implementation." xmlns="http://www.w3.org/2000/svg">
@@ -49,7 +49,7 @@ a stable surface. APIs come in several flavors:
   exposes to programs that import it.
 - **Operating-system APIs** — the system calls a program uses to talk to the kernel.
 - **Web APIs** — operations a service exposes over the network, commonly in the
-  [REST](/reference/rest/) style over HTTP, or via GraphQL or gRPC.
+  [REST](/reference/rest/) style over HTTP, or via GraphQL or gRPC.[^wiki]
 
 A good API is small and role-focused (the [interface segregation](/reference/solid/)
 idea), consistent, and clear about how it reports failures — its
@@ -65,3 +65,7 @@ why backward compatibility and [semantic versioning](/reference/semantic-version
 matter so much — a major version bump signals a breaking change to the contract. The
 same discipline governs the public surface of a reusable library distributed through a
 [package manager](/reference/package-manager/).
+
+## Sources
+
+[^wiki]: [API](https://en.wikipedia.org/wiki/API) — Wikipedia, for the contract definition and the kinds of API (library, OS, web).

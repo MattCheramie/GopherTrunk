@@ -14,12 +14,14 @@ infobox:
 see_also: [trunked-radio, voice-channel, frequency]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Two-way radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Two-way_radio }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Two-way_radio
 ---
 
 **Conventional radio** assigns each user group its own **fixed frequency**, in contrast
-to [trunked radio](/reference/trunked-radio/). A conversation always happens on the same
+to [trunked radio](/reference/trunked-radio/).[^wiki] A conversation always happens on the same
 channel, so there is no [control channel](/reference/control-channel/) to coordinate
 assignments.
 
@@ -52,3 +54,7 @@ group is quiet.
 
 Conventional channels are scanned directly by tuning to the known frequency — no
 grant-following required. [DMR Tier II](/reference/dmr-tier-2/) is a digital example.
+
+## Sources
+
+[^wiki]: [Two-way radio](https://en.wikipedia.org/wiki/Two-way_radio) — Wikipedia, on fixed-frequency conventional two-way radio operation.

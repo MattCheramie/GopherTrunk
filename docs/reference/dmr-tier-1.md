@@ -19,13 +19,15 @@ infobox:
 see_also: [dmr, dmr-tier-2, dmr-tier-3, frequency-shift-keying, etsi]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **DMR Tier I** is the **licence-free** tier of the [DMR](/reference/dmr/) standard,
 defined by [ETSI](/reference/etsi/) for low-power, short-range consumer and light
-commercial use without an individual user licence.
+commercial use without an individual user licence.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 110" role="img" aria-label="A single licence-free DMR Tier I channel at low power." xmlns="http://www.w3.org/2000/svg">
@@ -55,7 +57,7 @@ trunking is involved. Equipment is simple and inexpensive.
 ## History
 
 Tier I was specified alongside the other tiers in ETSI's DMR documents to cover the
-unlicensed consumer segment.
+unlicensed consumer segment.[^wiki]
 
 ## Deployment
 
@@ -66,3 +68,7 @@ channels; less common than Tier II in North America.
 
 Tier I traffic is conventional DMR and decodes like any [Tier II](/reference/dmr-tier-2/)
 conventional channel once tuned. See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tier structure, including the licence-free Tier I.

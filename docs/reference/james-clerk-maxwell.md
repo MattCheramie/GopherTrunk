@@ -15,13 +15,13 @@ infobox:
 see_also: [heinrich-hertz, electromagnetic-spectrum, radio-wave]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "James Clerk Maxwell (Wikipedia)", url: https://en.wikipedia.org/wiki/James_Clerk_Maxwell }
+cite_urls:
+  - https://en.wikipedia.org/wiki/James_Clerk_Maxwell
 ---
 
 **James Clerk Maxwell** (1831–1879) was a Scottish physicist whose equations unified
 electricity, magnetism, and light, **predicting electromagnetic waves** that travel at
-the speed of light.
+the speed of light.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Oscillating electric and magnetic fields at right angles forming a travelling electromagnetic wave." xmlns="http://www.w3.org/2000/svg">
@@ -41,9 +41,13 @@ changing electric and magnetic fields sustain one another and propagate as waves
 ## Contribution
 
 His theory predicted the [electromagnetic spectrum](/reference/electromagnetic-spectrum/)
-decades before radio existed; [Heinrich Hertz](/reference/heinrich-hertz/) later proved it.
+decades before radio existed; [Heinrich Hertz](/reference/heinrich-hertz/) later proved it.[^wiki]
 
 ## Legacy
 
 Maxwell's equations remain the foundation of all radio engineering, including
 [software-defined radio](/reference/software-defined-radio/).
+
+## Sources
+
+[^wiki]: [James Clerk Maxwell](https://en.wikipedia.org/wiki/James_Clerk_Maxwell) — Wikipedia, for biography and his equations predicting electromagnetic waves.

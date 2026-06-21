@@ -14,13 +14,13 @@ infobox:
 see_also: [decibel, dbfs, noise-floor, signal-to-noise-ratio]
 related_lessons:
   - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
-external:
-  - { title: "dBm (Wikipedia)", url: https://en.wikipedia.org/wiki/DBm }
+cite_urls:
+  - https://en.wikipedia.org/wiki/DBm
 ---
 
 **dBm** is power expressed in [decibels](/reference/decibel/) relative to **one
 milliwatt**, making it an *absolute* measure of signal strength rather than a mere
-ratio. 0 dBm equals 1 mW; +30 dBm is 1 watt.
+ratio.[^wiki] 0 dBm equals 1 mW; +30 dBm is 1 watt.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A dBm scale showing reference points from +30 dBm (1 watt) down to -120 dBm, with received signals in the negative range." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ dBm values — and the one closer to zero is stronger (−70 dBm beats −90 dBm
 Receiver meters report signal and [noise-floor](/reference/noise-floor/) levels in dBm;
 their difference is the [SNR](/reference/signal-to-noise-ratio/) that determines whether
 a signal decodes.
+
+## Sources
+
+[^wiki]: [dBm](https://en.wikipedia.org/wiki/DBm) — Wikipedia, power referenced to one milliwatt.

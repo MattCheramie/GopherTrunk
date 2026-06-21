@@ -14,14 +14,14 @@ infobox:
 see_also: [decibel, dbm, analog-to-digital-converter, automatic-gain-control]
 related_lessons:
   - { title: "Gain, AGC & avoiding overload", url: /learn/rf-sdr/gain-and-agc/ }
-external:
-  - { title: "dBFS (Wikipedia)", url: https://en.wikipedia.org/wiki/DBFS }
+cite_urls:
+  - https://en.wikipedia.org/wiki/DBFS
 ---
 
 **dBFS** (decibels relative to **full scale**) measures level inside the digital domain
 of an SDR. Here **0 dBFS is the ceiling** — the largest value the
 [ADC](/reference/analog-to-digital-converter/) can represent — and real samples sit
-below it as negative numbers.
+below it as negative numbers.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 300 150" role="img" aria-label="A vertical scale with 0 dBFS at the top as the ADC ceiling, a signal sitting below it with headroom, and the noise near the bottom." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ distortion across the spectrum. Leaving headroom below 0 dBFS keeps the signal c
 [Gain](/reference/automatic-gain-control/) should be set so the strongest signal peaks
 comfortably under 0 dBFS. dBm describes the world outside the radio;
 [dBFS](/reference/dbfs/) describes the world inside it.
+
+## Sources
+
+[^wiki]: [dBFS](https://en.wikipedia.org/wiki/DBFS) — Wikipedia, decibels relative to digital full scale.

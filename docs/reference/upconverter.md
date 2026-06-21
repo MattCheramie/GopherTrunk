@@ -14,13 +14,13 @@ infobox:
 see_also: [rtl-sdr, airspy-hf-plus, frequency-bands, local-oscillator]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
-external:
-  - { title: "Upconverter (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency_mixer }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency_mixer
 ---
 
 An **upconverter** is an external device that **shifts HF signals up** into the tuning
 range of a VHF/UHF SDR such as an [RTL-SDR](/reference/rtl-sdr/), letting radios that
-cannot tune [HF](/reference/frequency-bands/) directly receive shortwave.
+cannot tune [HF](/reference/frequency-bands/) directly receive shortwave.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A low HF input shifted upward by a fixed offset into the RTL-SDR's tunable range." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +44,7 @@ tune. Software subtracts the offset to show true frequencies.
 
 An upconverter is the budget route to HF on an RTL-SDR; a dedicated
 [Airspy HF+](/reference/airspy-hf-plus/) is the higher-performance alternative.
+
+## Sources
+
+[^wiki]: [Frequency mixer](https://en.wikipedia.org/wiki/Frequency_mixer) — Wikipedia, on the mixing principle an upconverter uses to shift HF up into a VHF/UHF tuning range.

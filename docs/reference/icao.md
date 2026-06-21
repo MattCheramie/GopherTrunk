@@ -14,13 +14,14 @@ infobox:
 see_also: [ads-b, compact-position-reporting, itu]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "International Civil Aviation Organization (Wikipedia)", url: https://en.wikipedia.org/wiki/International_Civil_Aviation_Organization }
+cite_urls:
+  - https://www.icao.int/
+  - https://en.wikipedia.org/wiki/International_Civil_Aviation_Organization
 ---
 
 **ICAO** (the **International Civil Aviation Organization**) is the United Nations agency
 that standardises international civil aviation, including the
-**[ADS-B](/reference/ads-b/)** surveillance system and Mode S transponders.
+**[ADS-B](/reference/ads-b/)** surveillance system and Mode S transponders.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="ICAO sets aviation standards including ADS-B." xmlns="http://www.w3.org/2000/svg">
@@ -38,8 +39,13 @@ that standardises international civil aviation, including the
 ## Overview
 
 ICAO sets the framework that regional bodies (RTCA in the US, EUROCAE in Europe) detail
-into the MOPS aircraft must meet, driving the worldwide rollout of ADS-B.
+into the MOPS aircraft must meet, driving the worldwide rollout of ADS-B.[^home]
 
 ## Relevance to SDR
 
 ICAO standards define the 1090 MHz signals an SDR receives when tracking aircraft.
+
+## Sources
+
+[^home]: [International Civil Aviation Organization](https://www.icao.int/) — ICAO's official site, for international civil-aviation standards including ADS-B.
+[^wiki]: [International Civil Aviation Organization](https://en.wikipedia.org/wiki/International_Civil_Aviation_Organization) — Wikipedia, for ICAO's role and standards.

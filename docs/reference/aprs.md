@@ -18,15 +18,18 @@ infobox:
 see_also: [ax25, afsk, mueller-muller-timing-recovery, cyclic-redundancy-check]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Automatic_Packet_Reporting_System
 external:
-  - { title: "Automatic Packet Reporting System (Wikipedia)", url: https://en.wikipedia.org/wiki/Automatic_Packet_Reporting_System }
   - { title: "GopherTrunk APRS decoder", url: /aprs.html }
 ---
 
 **APRS** (**Automatic Packet Reporting System**) is an amateur-radio data network for
 real-time tactical information — **position, weather, telemetry, and messaging**. It
 is carried as [AX.25](/reference/ax25/) packet frames using
-[AFSK](/reference/afsk/), most commonly on 144.390 MHz in North America.
+[AFSK](/reference/afsk/), most commonly on 144.390 MHz in North America.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="An APRS packet carrying a callsign and position payload over AX.25 on 144.39 MHz." xmlns="http://www.w3.org/2000/svg">
@@ -56,7 +59,7 @@ and mobile trackers.
 ## History
 
 Created by Bob Bruninga (WB4APR) in the 1980s–90s; it remains one of amateur radio's
-most active data modes.
+most active data modes.[^wiki]
 
 ## Deployment
 
@@ -66,3 +69,7 @@ Amateur radio worldwide via beacons, digipeaters, igates, and the APRS-IS networ
 
 GopherTrunk demodulates the AFSK, recovers AX.25 frames, and decodes APRS payloads.
 See the [APRS / AX.25 decoder](/aprs.html) page.
+
+## Sources
+
+[^wiki]: [Automatic Packet Reporting System](https://en.wikipedia.org/wiki/Automatic_Packet_Reporting_System) — Wikipedia, for the APRS data network, its AX.25/AFSK link layer, payload types, and origins.

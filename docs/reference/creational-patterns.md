@@ -17,13 +17,14 @@ infobox:
 see_also: [design-patterns, structural-patterns, behavioral-patterns, object-oriented-programming, coupling-and-cohesion, solid, abstraction]
 related_lessons:
   - { title: "Creational patterns: factory, builder, singleton", url: /learn/intro-software-dev/creational-patterns/ }
-external:
-  - { title: "Creational pattern — Wikipedia", url: https://en.wikipedia.org/wiki/Creational_pattern }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Creational_pattern
+  - https://en.wikipedia.org/wiki/Design_Patterns
 ---
 
 **Creational patterns** are the [Gang of Four](/reference/design-patterns/) family that
 put a layer between "I need an object" and "here is exactly how it gets built," so the
-rest of the code does not hard-code which concrete class to instantiate.
+rest of the code does not hard-code which concrete class to instantiate.[^wiki][^gof]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A caller asks a factory for an object and receives one through a common interface, without naming any concrete class." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +49,7 @@ of which type to use and the *details* of how to construct it. That binding hurt
 type should depend on runtime input, construction is complicated, or you want exactly one
 shared instance. Creational patterns isolate that logic so callers depend on an
 [interface](/reference/abstraction/), reducing [coupling](/reference/coupling-and-cohesion/)
-and honouring the open/closed principle from [SOLID](/reference/solid/).
+and honouring the open/closed principle from [SOLID](/reference/solid/).[^wiki]
 
 ## The main members
 
@@ -70,3 +71,8 @@ object is built varies — they compose well, since a factory can use a builder 
 dependencies and poor testability, so prefer passing a shared instance in explicitly. The
 sibling families are [structural patterns](/reference/structural-patterns/) (arranging
 objects) and [behavioral patterns](/reference/behavioral-patterns/) (coordinating them).
+
+## Sources
+
+[^wiki]: [Creational pattern](https://en.wikipedia.org/wiki/Creational_pattern) — Wikipedia, for the definition and the family members (Factory Method, Abstract Factory, Builder, Prototype, Singleton).
+[^gof]: [Design Patterns](https://en.wikipedia.org/wiki/Design_Patterns) — Wikipedia, on the 1994 Gang of Four book that established the creational/structural/behavioral grouping.

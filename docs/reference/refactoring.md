@@ -16,12 +16,12 @@ infobox:
 see_also: [clean-code, dry-kiss-yagni, solid, unit-testing, test-driven-development, abstraction, coupling-and-cohesion]
 related_lessons:
   - { title: "Writing readable code", url: /learn/intro-software-dev/clean-code/ }
-external:
-  - { title: "Code refactoring — Wikipedia", url: https://en.wikipedia.org/wiki/Code_refactoring }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Code_refactoring
 ---
 
 **Refactoring** is the disciplined practice of restructuring existing code to improve
-its design, readability, and maintainability *without* changing its external behavior.
+its design, readability, and maintainability *without* changing its external behavior.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Tangled code is restructured into clean code while the observable behavior, the output, stays the same." xmlns="http://www.w3.org/2000/svg">
@@ -43,7 +43,7 @@ The defining constraint is behavior preservation: a refactor reorganizes the *ho
 while keeping the *what* identical. Typical moves — popularized by Martin Fowler's
 catalog — include renaming for clarity, extracting a function or class, inlining a
 needless indirection, removing duplication, and breaking up a class that has taken on
-too many responsibilities. Each is a small, safe step rather than a sweeping rewrite.
+too many responsibilities. Each is a small, safe step rather than a sweeping rewrite.[^wiki]
 Refactoring is triggered by *code smells*: duplication, long functions, large classes,
 tangled dependencies, and other signals that the code resists change. Left
 unaddressed, those smells accumulate as **technical debt** that slows every future
@@ -69,3 +69,7 @@ refactor toward [clean code](/reference/clean-code/), toward
 [abstraction](/reference/abstraction/) only once it has proven itself. Done
 continuously in small steps, it keeps a codebase healthy; deferred indefinitely, it
 becomes a costly rewrite.
+
+## Sources
+
+[^wiki]: [Code refactoring](https://en.wikipedia.org/wiki/Code_refactoring) — Wikipedia, for the behavior-preserving definition and Martin Fowler's catalog of refactorings.

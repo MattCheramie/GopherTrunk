@@ -21,14 +21,17 @@ related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
   - { title: "Concurrency models", url: /learn/intro-software-dev/concurrency-models/ }
-external:
-  - { title: "Go (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Go_(programming_language) }
-  - { title: "The Go programming language", url: https://go.dev/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://go.dev/ref/spec
+  - https://go.dev/
+  - https://en.wikipedia.org/wiki/Go_(programming_language)
 ---
 
 **Go** (often called **Golang** after its website) is a statically typed, compiled
 programming language created at Google for building simple, reliable, and efficient
-systems software. GopherTrunk itself is written in Go.
+systems software.[^wiki] GopherTrunk itself is written in Go.
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Source files compile ahead of time into one static binary that runs many concurrent goroutines communicating over a channel." xmlns="http://www.w3.org/2000/svg">
@@ -50,7 +53,7 @@ systems software. GopherTrunk itself is written in Go.
 ## Overview
 
 Go pairs the performance of a [compiled](/reference/compiler/) language with the
-simplicity of a deliberately small syntax. Programs build [ahead of time](/reference/jit-compilation/)
+simplicity of a deliberately small syntax.[^spec] Programs build [ahead of time](/reference/jit-compilation/)
 into a single [static binary](/reference/static-binary/) with no runtime dependency,
 which you can drop onto any matching machine and run. That same toolchain makes
 [cross-compilation](/reference/cross-compilation/) — building a Windows or macOS
@@ -60,7 +63,7 @@ binary from a Linux host — a one-line affair.
 
 Go's headline feature is first-class [concurrency](/reference/concurrency/): cheap
 [goroutines](/reference/goroutines/) and channels make concurrent stream processing
-natural. It is [garbage-collected](/reference/garbage-collection/), so there is no
+natural.[^home] It is [garbage-collected](/reference/garbage-collection/), so there is no
 manual memory management, and it has a [static type system](/reference/type-system/)
 with inference that keeps code terse. The trade-offs are real — the garbage collector
 introduces brief pauses, raw numeric throughput trails [C](/reference/c-language/) and
@@ -73,3 +76,9 @@ A self-contained static binary ships effortlessly to Linux, macOS, and Windows w
 installer or shared libraries, and goroutines map cleanly onto the many concurrent
 decode pipelines an SDR scanner runs at once — making Go a strong fit for
 infrastructure, network services, CLIs, and stream engines like this one.
+
+## Sources
+
+[^spec]: [The Go Programming Language Specification](https://go.dev/ref/spec) — the authoritative definition of the language and its type system.
+[^home]: [The Go programming language](https://go.dev/) — official site, documentation, and the goroutine/channel concurrency model.
+[^wiki]: [Go (programming language)](https://en.wikipedia.org/wiki/Go_(programming_language)) — Wikipedia, for history and design background.

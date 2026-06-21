@@ -15,13 +15,13 @@ infobox:
 see_also: [heinrich-hertz, reginald-fessenden, radio-wave]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Guglielmo Marconi (Wikipedia)", url: https://en.wikipedia.org/wiki/Guglielmo_Marconi }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Guglielmo_Marconi
 ---
 
 **Guglielmo Marconi** (1874–1937) was an Italian inventor and entrepreneur who turned
 [Hertz](/reference/heinrich-hertz/)'s laboratory waves into **practical long-distance
-radiotelegraphy**.
+radiotelegraphy**.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A signal arcing across a curved ocean from a transmitter in Europe to a receiver in North America." xmlns="http://www.w3.org/2000/svg">
@@ -47,4 +47,8 @@ industry.
 ## Legacy
 
 Marconi shared the 1909 Nobel Prize in Physics and is widely regarded as a father of
-radio communication.
+radio communication.[^wiki]
+
+## Sources
+
+[^wiki]: [Guglielmo Marconi](https://en.wikipedia.org/wiki/Guglielmo_Marconi) — Wikipedia, for biography and his pioneering of practical wireless telegraphy.

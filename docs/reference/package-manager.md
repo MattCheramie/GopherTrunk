@@ -16,13 +16,13 @@ infobox:
 see_also: [build-systems, semantic-versioning, ci-cd, api, version-control, static-binary]
 related_lessons:
   - { title: "Build systems, CI/CD & automation", url: /learn/intro-software-dev/build-and-ci-cd/ }
-external:
-  - { title: "Package manager — Wikipedia", url: https://en.wikipedia.org/wiki/Package_manager }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Package_manager
 ---
 
 **A package manager** automates declaring, resolving, fetching, and pinning the external
 libraries a project depends on, using lockfiles to make dependency resolution
-reproducible.
+reproducible.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A project manifest lists dependencies; the package manager resolves and fetches them, and a lockfile pins exact versions." xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +44,7 @@ reproducible.
 Almost no project is self-contained — you stand on libraries written by others. A package
 manager (Go modules, Cargo, npm, pip, and so on) records what your project needs in a
 manifest and fetches it, including the *transitive* dependencies your direct dependencies
-pull in. The libraries you depend on expose their capabilities through an
+pull in.[^wiki] The libraries you depend on expose their capabilities through an
 [API](/reference/api/), and the package manager's job is to get a compatible set of them
 onto your machine and, with the [build system](/reference/build-systems/), into your
 program.
@@ -67,3 +67,7 @@ the version number tells the resolver (and you) whether an upgrade is a safe pat
 backward-compatible feature, or a breaking major change. Package managers also distribute
 *your* library outward — publishing a versioned package others can depend on — which is
 why a stable, well-versioned API matters as much for what you ship as for what you consume.
+
+## Sources
+
+[^wiki]: [Package manager](https://en.wikipedia.org/wiki/Package_manager) — Wikipedia, for dependency declaration, resolution, fetching, and lockfile-based reproducibility.

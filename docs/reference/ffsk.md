@@ -14,13 +14,13 @@ infobox:
 see_also: [afsk, frequency-shift-keying, mdc1200, dsc, mpt-1327]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency-shift_keying
 ---
 
 **FFSK** (fast frequency-shift keying) is a coherent form of audio
 [FSK](/reference/frequency-shift-keying/) in which the mark and space tones are exact
-integer multiples of the bit rate, so each bit contains a whole number of cycles. This
+integer multiples of the bit rate, so each bit contains a whole number of cycles.[^wiki] This
 makes detection clean and bit timing easy.
 
 <figure class="figure" markdown="0">
@@ -44,3 +44,7 @@ and [MPT 1327](/reference/mpt-1327/) control signalling, typically at 1200 bps.
 
 GopherTrunk detects FFSK bursts on analog channels to decode signalling such as PTT
 IDs and trunking control data.
+
+## Sources
+
+[^wiki]: [Frequency-shift keying](https://en.wikipedia.org/wiki/Frequency-shift_keying) — Wikipedia, for coherent/fast FSK and continuous-phase tone signalling.

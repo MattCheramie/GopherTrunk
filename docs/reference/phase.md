@@ -12,12 +12,12 @@ infobox:
 see_also: [amplitude, iq-data, phase-shift-keying, constellation-diagram]
 related_lessons:
   - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
-external:
-  - { title: "Phase (waves) (Wikipedia)", url: https://en.wikipedia.org/wiki/Phase_(waves) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Phase_(waves)
 ---
 
 **Phase** is the position of a point within the cycle of a wave, expressed in degrees
-(0–360°) or radians. Two waves of the same [frequency](/reference/frequency/) can
+(0–360°) or radians.[^wiki] Two waves of the same [frequency](/reference/frequency/) can
 differ in phase, meaning one is shifted in time relative to the other.
 
 <figure class="figure" markdown="0">
@@ -43,3 +43,7 @@ jumping the phase between fixed values encodes data — the basis of
 Tracking phase is essential to demodulating PSK and QAM signals; a
 [Costas loop](/reference/costas-loop/) recovers the carrier phase so symbols land
 correctly on the [constellation](/reference/constellation-diagram/).
+
+## Sources
+
+[^wiki]: [Phase (waves)](https://en.wikipedia.org/wiki/Phase_(waves)) — Wikipedia, on the position within a wave's cycle and phase difference.

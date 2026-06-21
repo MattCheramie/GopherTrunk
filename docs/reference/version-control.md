@@ -16,13 +16,15 @@ infobox:
 see_also: [ci-cd, build-systems, package-manager, semantic-versioning, refactoring]
 related_lessons:
   - { title: "What is version control?", url: /learn/git/what-is-version-control/ }
-external:
-  - { title: "Version control — Wikipedia", url: https://en.wikipedia.org/wiki/Version_control }
+related_reading:
+  - { title: "Build in the Open, Part 4: Git & GitHub fundamentals", url: /blog/tutorials/build-in-the-open-04-git-github-fundamentals-web-interface/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Version_control
 ---
 
 **Version control** is a system that records snapshots of a project's files over time, so
 you can recall any earlier state, see who changed what and why, and collaborate without
-overwriting each other's work.
+overwriting each other's work.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A timeline of commits, each a snapshot, with a branch splitting off and merging back." xmlns="http://www.w3.org/2000/svg">
@@ -59,7 +61,7 @@ and a network dependency for most operations. **Distributed** systems (Git, Merc
 give every contributor a *full clone* of the repository, history and all, so you can
 commit, browse, and branch offline, and no single server's loss erases the work. Git,
 built in 2005 for the Linux kernel, won on speed, cheap branching, integrity by content
-hashing, and a thriving ecosystem of hosts like GitHub.
+hashing, and a thriving ecosystem of hosts like GitHub.[^wiki]
 
 ## Why it underpins everything
 
@@ -71,3 +73,7 @@ it holds the tags that mark each release under
 [semantic versioning](/reference/semantic-versioning/). Its safety net is also what makes
 bold [refactoring](/reference/refactoring/) practical: any change can be reviewed,
 reverted, or compared against history.
+
+## Sources
+
+[^wiki]: [Version control](https://en.wikipedia.org/wiki/Version_control) — Wikipedia, for the centralized-vs-distributed designs and Git's history.

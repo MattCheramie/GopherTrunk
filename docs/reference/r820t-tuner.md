@@ -15,14 +15,16 @@ infobox:
 see_also: [rtl-sdr, rtl2832u, superheterodyne-receiver, local-oscillator]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "RTL-SDR (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR }
+related_reading:
+  - { title: "RF Front End, Part 7: RTL-SDR / RTL2832U bring-up", url: /blog/deep-dives/rf-front-end-07-rtlsdr-rtl2832u-bringup/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR
 ---
 
 The **R820T** and improved **R820T2** (and related R828D) from Rafael Micro are the most
 common tuner chips paired with the [RTL2832U](/reference/rtl2832u/) in
 [RTL-SDR](/reference/rtl-sdr/) dongles. They provide the RF front-end and
-mixer/[local oscillator](/reference/local-oscillator/).
+mixer/[local oscillator](/reference/local-oscillator/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="The tuner's role: RF in, mixed with a local oscillator, low-IF out to the ADC." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +48,7 @@ overload behaviour.
 
 The tuner sets the dongle's frequency range and much of its noise performance, important
 when chasing weak signals.
+
+## Sources
+
+[^wiki]: [RTL-SDR](https://en.wikipedia.org/wiki/Software-defined_radio#RTL-SDR) — Wikipedia, on the R820T/R820T2 tuners commonly paired with the RTL2832U.

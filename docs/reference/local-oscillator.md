@@ -14,12 +14,12 @@ infobox:
 see_also: [superheterodyne-receiver, digital-down-converter, frequency, ppm-frequency-correction]
 related_lessons:
   - { title: "How an SDR receiver works", url: /learn/rf-sdr/sdr-receiver/ }
-external:
-  - { title: "Local oscillator (Wikipedia)", url: https://en.wikipedia.org/wiki/Local_oscillator }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Local_oscillator
 ---
 
 A **local oscillator** (**LO**) is a tunable reference signal mixed with the incoming
-signal to shift a chosen band down toward baseband. **Tuning a receiver is just changing
+signal to shift a chosen band down toward baseband.[^wiki] **Tuning a receiver is just changing
 the LO frequency.**
 
 <figure class="figure" markdown="0">
@@ -47,3 +47,7 @@ oscillator performs the same shift digitally inside a
 
 The LO sets which part of the spectrum lands in the ADC's window, so its accuracy and
 stability directly affect tuning.
+
+## Sources
+
+[^wiki]: [Local oscillator](https://en.wikipedia.org/wiki/Local_oscillator) — Wikipedia, on the tunable reference tone a mixer uses to shift a band down.

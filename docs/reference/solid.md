@@ -16,13 +16,13 @@ infobox:
 see_also: [dry-kiss-yagni, clean-code, refactoring, abstraction, coupling-and-cohesion, object-oriented-programming, design-patterns]
 related_lessons:
   - { title: "SOLID & object-oriented design", url: /learn/intro-software-dev/solid/ }
-external:
-  - { title: "SOLID — Wikipedia", url: https://en.wikipedia.org/wiki/SOLID }
+cite_urls:
+  - https://en.wikipedia.org/wiki/SOLID
 ---
 
 **SOLID** is a set of five [object-oriented](/reference/object-oriented-programming/)
 design principles, popularized by Robert C. Martin, that all aim at one outcome: code
-that is easy to change without breaking.
+that is easy to change without breaking.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="The five SOLID letters: single responsibility, open/closed, Liskov substitution, interface segregation, dependency inversion." xmlns="http://www.w3.org/2000/svg">
@@ -53,7 +53,7 @@ that is easy to change without breaking.
   methods they don't use. Many small, role-focused interfaces beat one fat one.
 - **D — Dependency Inversion Principle.** High-level logic should depend on
   [abstractions](/reference/abstraction/), not concrete details, with implementations
-  supplied from outside (dependency injection).
+  supplied from outside (dependency injection).[^wiki]
 
 ## Why it matters
 
@@ -65,3 +65,7 @@ heavily with [DRY, KISS and YAGNI](/reference/dry-kiss-yagni/) and underpins man
 not a law. Applied dogmatically it causes as much over-engineering as it prevents;
 reach for these principles to diagnose code that resists change or testing, not to
 satisfy a checklist. They are a frequent target of [refactoring](/reference/refactoring/).
+
+## Sources
+
+[^wiki]: [SOLID](https://en.wikipedia.org/wiki/SOLID) — Wikipedia, for the five principles, their history, and Robert C. Martin's role in popularizing them.

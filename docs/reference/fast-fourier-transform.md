@@ -14,13 +14,15 @@ infobox:
 see_also: [fourier-transform, bandwidth, sample-rate, iq-data]
 related_lessons:
   - { title: "The FFT & reading a waterfall", url: /learn/rf-sdr/fft-and-waterfall/ }
-external:
-  - { title: "Fast Fourier transform (Wikipedia)", url: https://en.wikipedia.org/wiki/Fast_Fourier_transform }
+related_reading:
+  - { title: "SDR Internals, Part 8: Equalization, diversity & the FFT", url: /blog/deep-dives/sdr-internals-08-equalization-diversity-fft/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Fast_Fourier_transform
 ---
 
 The **fast Fourier transform** (**FFT**) is an efficient algorithm for computing the
 discrete [Fourier transform](/reference/fourier-transform/), reducing the work enough to
-run many times a second in real time.
+run many times a second in real time.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A block of time samples feeding an FFT block that outputs a row of frequency bins." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +48,7 @@ finer resolution but slower updates and more CPU.
 
 The FFT drives the spectrum and waterfall displays used to find signals and spot a steady
 [control channel](/reference/control-channel/).
+
+## Sources
+
+[^wiki]: [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform) — Wikipedia, for the algorithm and its efficiency over the direct DFT.

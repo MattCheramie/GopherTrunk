@@ -19,13 +19,15 @@ see_also: [fortran-language, lisp-language, c-language, compiler, imperative-pro
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "The birth of programming languages", url: /learn/intro-software-dev/birth-of-languages/ }
-external:
-  - { title: "COBOL — Wikipedia", url: https://en.wikipedia.org/wiki/COBOL }
-  - { title: "GnuCOBOL", url: https://gnucobol.sourceforge.io/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/COBOL
+  - https://gnucobol.sourceforge.io/
 ---
 
 **COBOL** (COmmon Business-Oriented Language), introduced in 1959, is a deliberately
-English-like high-level language built for business data processing. Shaped by the
+English-like high-level language built for business data processing.[^wiki] Shaped by the
 work of Grace Hopper and a committee, it still runs huge amounts of banking and
 government software today.
 
@@ -57,10 +59,15 @@ era of high-level programming.
 
 COBOL is [statically typed](/reference/type-system/),
 [imperative](/reference/imperative-programming/), and compiled to native code without a
-[garbage collector](/reference/garbage-collection/). Astonishingly, vast amounts of
+[garbage collector](/reference/garbage-collection/).[^impl] Astonishingly, vast amounts of
 banking, insurance, and government software still run on it, processing daily
 transactions on mainframes. That is also its core problem: the code is decades old,
 the pool of programmers who know it is shrinking, and its verbosity and age make it a
 poor fit for new work, which has largely moved to languages like
 [Java](/reference/java-language/) and [C](/reference/c-language/). Its endurance is a
 reminder that working software rarely gets rewritten just because it is old.
+
+## Sources
+
+[^wiki]: [COBOL](https://en.wikipedia.org/wiki/COBOL) — Wikipedia, for history, the 1959 origin, Grace Hopper's influence, and ongoing use.
+[^impl]: [GnuCOBOL](https://gnucobol.sourceforge.io/) — a free COBOL compiler, illustrating the compiled, statically typed implementation.

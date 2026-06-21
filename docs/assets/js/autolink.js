@@ -94,7 +94,7 @@
         a.className = 'ref-autolink';
         a.href = url;
         a.textContent = token;
-        a.title = 'Reference: ' + token;
+        a.title = 'Field Guide: ' + token;
         frag.appendChild(a);
         last = match.index + token.length;
       }

@@ -15,14 +15,16 @@ infobox:
 see_also: [rtl-sdr, airspy-hf-plus, hackrf, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "Airspy (Wikipedia)", url: https://en.wikipedia.org/wiki/Software-defined_radio }
+related_reading:
+  - { title: "RF Front End, Part 10: Airspy — real to complex", url: /blog/deep-dives/rf-front-end-10-airspy-real-to-complex/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Software-defined_radio
 ---
 
 **Airspy** is a line of high-performance VHF/UHF
 [software-defined radio](/reference/software-defined-radio/) receivers (the R2 and the
 smaller Mini) offering better sensitivity, dynamic range, and wider
-[bandwidth](/reference/bandwidth/) than an [RTL-SDR](/reference/rtl-sdr/).
+[bandwidth](/reference/bandwidth/) than an [RTL-SDR](/reference/rtl-sdr/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A frequency coverage bar for Airspy R2/Mini (~24 MHz–1.8 GHz) on an axis from about 0 to 6 gigahertz." xmlns="http://www.w3.org/2000/svg">
@@ -44,3 +46,7 @@ band or in tough RF environments. For the lower bands, the
 
 GopherTrunk supports Airspy receivers for demanding reception where an RTL-SDR's
 bandwidth or sensitivity falls short.
+
+## Sources
+
+[^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, for background on Airspy-class high-performance VHF/UHF SDR receivers.

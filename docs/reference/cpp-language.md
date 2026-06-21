@@ -19,13 +19,15 @@ see_also: [c-language, rust-language, object-oriented-programming, memory-manage
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
-external:
-  - { title: "C++ — Wikipedia", url: https://en.wikipedia.org/wiki/C%2B%2B }
-  - { title: "C++ reference — cppreference", url: https://en.cppreference.com/w/cpp }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://en.cppreference.com/w/cpp
+  - https://en.wikipedia.org/wiki/C%2B%2B
 ---
 
 **C++** is a statically typed, compiled language that extends [C](/reference/c-language/)
-with objects, templates, generics, RAII and a large standard library. It can match C's
+with objects, templates, generics, RAII and a large standard library.[^wiki] It can match C's
 performance while offering far higher-level abstractions.
 
 <figure class="figure" markdown="0">
@@ -47,7 +49,7 @@ performance while offering far higher-level abstractions.
 
 C++ [compiles](/reference/compiler/) ahead of time to native code like
 [C](/reference/c-language/), but adds [object-oriented](/reference/object-oriented-programming/)
-features, compile-time generics through templates, and the Standard Template Library.
+features, compile-time generics through templates, and the Standard Template Library.[^ref]
 Its signature idiom is RAII — tying resource lifetimes to object scope — which gives a
 disciplined approach to [memory management](/reference/memory-management/) and, with
 smart pointers, much of the safety of automatic management without a garbage collector.
@@ -67,3 +69,8 @@ alternative that keeps the speed without the same footguns.
 C++ is the workhorse of performance-critical software with rich logic: game engines,
 web browsers, trading systems, scientific and signal-processing code, and other domains
 where both raw speed and high-level structure are required at once.
+
+## Sources
+
+[^ref]: [C++ reference](https://en.cppreference.com/w/cpp) — cppreference, the standard-tracking reference for the C++ language and library.
+[^wiki]: [C++](https://en.wikipedia.org/wiki/C%2B%2B) — Wikipedia, for history and design background.

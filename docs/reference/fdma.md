@@ -14,12 +14,14 @@ infobox:
 see_also: [tdma, trunked-radio, p25-phase-1, nxdn]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Frequency-division multiple access (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-division_multiple_access }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency-division_multiple_access
 ---
 
 **FDMA** (**frequency-division multiple access**) is a channel-access method in which
-each call occupies its own [frequency](/reference/frequency/) channel.
+each call occupies its own [frequency](/reference/frequency/) channel.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 300 200" role="img" aria-label="A frequency axis split into separate stacked channels, each carrying one continuous call." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +47,7 @@ adding channels. [P25 Phase 1](/reference/p25-phase-1/), [NXDN](/reference/nxdn/
 On an FDMA system each [voice channel](/reference/voice-channel/) is a separate
 frequency the receiver tunes to; contrast with [TDMA](/reference/tdma/), which shares one
 frequency across time slots.
+
+## Sources
+
+[^wiki]: [Frequency-division multiple access](https://en.wikipedia.org/wiki/Frequency-division_multiple_access) — Wikipedia, on the one-call-per-frequency access method.

@@ -14,13 +14,13 @@ infobox:
 see_also: [nyquist-theorem, sample-rate, claude-shannon, aliasing]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Harry Nyquist (Wikipedia)", url: https://en.wikipedia.org/wiki/Harry_Nyquist }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Harry_Nyquist
 ---
 
 **Harry Nyquist** (1889–1976) was a Swedish-American engineer at Bell Labs whose work on
 the maximum signalling rate of a channel underlies the
-[sampling theorem](/reference/nyquist-theorem/) at the heart of digital radio.
+[sampling theorem](/reference/nyquist-theorem/) at the heart of digital radio.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A sine wave sampled at just over two points per cycle, illustrating the Nyquist sampling rate." xmlns="http://www.w3.org/2000/svg">
@@ -37,7 +37,7 @@ the maximum signalling rate of a channel underlies the
 Nyquist studied how fast pulses could be sent over a channel without interference,
 establishing the relationship between [bandwidth](/reference/bandwidth/) and
 [sample rate](/reference/sample-rate/) later formalised with
-[Claude Shannon](/reference/claude-shannon/).
+[Claude Shannon](/reference/claude-shannon/).[^wiki]
 
 ## Contribution
 
@@ -47,3 +47,7 @@ The Nyquist rate — sampling at twice the bandwidth — tells engineers how fas
 ## Legacy
 
 His name marks the boundary every SDR respects to avoid [aliasing](/reference/aliasing/).
+
+## Sources
+
+[^wiki]: [Harry Nyquist](https://en.wikipedia.org/wiki/Harry_Nyquist) — Wikipedia, for biography and his work on sampling and signalling theory.

@@ -20,14 +20,16 @@ see_also: [dmr, dmr-tier-2, trunked-radio, control-channel, talkgroup, channel-g
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Digital mobile radio (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_mobile_radio }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_mobile_radio
 ---
 
 **DMR Tier III** is the **trunked** tier of the [DMR](/reference/dmr/) standard. It
 adds a [control channel](/reference/control-channel/) and trunking signalling so many
 [talkgroups](/reference/talkgroup/) can share a pool of two-slot
-[TDMA](/reference/tdma/) channels, assigned on demand.
+[TDMA](/reference/tdma/) channels, assigned on demand.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 380 150" role="img" aria-label="A DMR Tier III control channel assigning two-slot TDMA traffic channels from a pool." xmlns="http://www.w3.org/2000/svg">
@@ -62,7 +64,7 @@ outside the strict Tier III standard.)
 
 Tier III trunking was standardised by [ETSI](/reference/etsi/) to give DMR a
 multi-site, high-capacity option competing with P25 and TETRA in the commercial
-market.
+market.[^wiki]
 
 ## Deployment
 
@@ -73,3 +75,7 @@ at lower cost than [TETRA](/reference/tetra/) or [P25](/reference/project-25/).
 
 GopherTrunk locks the Tier III control channel, follows CSBK channel grants to the
 assigned channel/slot, and decodes the voice. See [Status](/status.html).
+
+## Sources
+
+[^wiki]: [Digital mobile radio](https://en.wikipedia.org/wiki/Digital_mobile_radio) — Wikipedia, for the ETSI DMR tiers, including the trunked Tier III with its control channel and CSBK signalling.

@@ -10,12 +10,12 @@ autolink: true
 see_also: [low-noise-amplifier, ads-b, bandwidth, attenuation]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Surface acoustic wave (Wikipedia)", url: https://en.wikipedia.org/wiki/Surface_acoustic_wave }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Surface_acoustic_wave
 ---
 
 A **SAW** (**surface acoustic wave**) filter is a compact, sharp **band-pass** filter
-built on a piezoelectric substrate. In an SDR front end it acts as a preselector —
+built on a piezoelectric substrate.[^wiki] In an SDR front end it acts as a preselector —
 passing only the wanted band and strongly rejecting out-of-band signals that would
 otherwise overload the receiver.
 
@@ -35,3 +35,7 @@ otherwise overload the receiver.
 ADS-B receive chains commonly add a 1090 MHz SAW filter (often with a
 [low-noise amplifier](/reference/low-noise-amplifier/)) so nearby cellular and broadcast
 transmitters don't desensitise the [front end](/reference/superheterodyne-receiver/).
+
+## Sources
+
+[^wiki]: [Surface acoustic wave](https://en.wikipedia.org/wiki/Surface_acoustic_wave) — Wikipedia, on the surface-acoustic-wave devices used to build compact sharp band-pass filters.

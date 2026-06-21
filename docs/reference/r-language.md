@@ -19,13 +19,15 @@ see_also: [python-language, julia-language, matlab-language, interpreter, static
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Matching the language to the domain", url: /learn/intro-software-dev/language-for-the-domain/ }
-external:
-  - { title: "R (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/R_(programming_language) }
-  - { title: "The R Project for Statistical Computing", url: https://www.r-project.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.r-project.org/
+  - https://en.wikipedia.org/wiki/R_(programming_language)
 ---
 
 **R** is a dynamic, [interpreted](/reference/interpreter/) language specialised for
-statistics, data analysis, and plotting. It is beloved by statisticians and
+statistics, data analysis, and plotting.[^wiki] It is beloved by statisticians and
 researchers, and is excellent for analysis and visualisation but less suited to
 general-purpose programming.
 
@@ -47,7 +49,7 @@ general-purpose programming.
 ## Overview
 
 R grew out of the academic statistics community and remains organised around that
-work. Its data frames, vectorised operations, and enormous library of statistical
+work.[^home] Its data frames, vectorised operations, and enormous library of statistical
 methods make it a natural fit for exploratory analysis, modelling, and producing
 charts. Packages distributed through CRAN cover an extraordinary range of statistical
 and domain-specific techniques, and tools like ggplot2 are renowned for the quality
@@ -57,10 +59,15 @@ of their graphics.
 
 R is dynamically typed (see [static vs dynamic typing](/reference/static-vs-dynamic-typing/)),
 [interpreted](/reference/interpreter/), and [garbage-collected](/reference/garbage-collection/),
-with a [functional](/reference/functional-programming/) and array-oriented bent. Its
+with a [functional](/reference/functional-programming/) and array-oriented bent.[^home] Its
 strengths are also its limits: it is purpose-built for statistics, so it is less
 comfortable as a general-purpose language, and pure-R loops are **slow**, pushing heavy
 work into vectorised or native code. For numerical and data work it competes with
 [Python](/reference/python-language/) (which has a larger general ecosystem) and the
 faster [Julia](/reference/julia-language/); for engineering signal work many reach for
 [MATLAB](/reference/matlab-language/) instead.
+
+## Sources
+
+[^home]: [The R Project for Statistical Computing](https://www.r-project.org/) — official site, documentation, and the CRAN ecosystem.
+[^wiki]: [R (programming language)](https://en.wikipedia.org/wiki/R_(programming_language)) — Wikipedia, for history, origins, and statistical focus.

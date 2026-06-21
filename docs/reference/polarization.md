@@ -14,13 +14,13 @@ infobox:
 see_also: [antenna, dipole-antenna, radio-propagation, antenna-gain]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Polarization (waves) (Wikipedia)", url: https://en.wikipedia.org/wiki/Polarization_(waves) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Polarization_(waves)
 ---
 
 **Polarization** is the orientation of a [radio wave](/reference/radio-wave/)'s
 electric field, determined by how the transmitting [antenna](/reference/antenna/) is
-mounted — vertical, horizontal, or circular.
+mounted — vertical, horizontal, or circular.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A vertically oriented wave on the left and a horizontally oriented wave on the right, showing polarization." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ polarized, while FM broadcast is often horizontal or circular.
 
 A vertical antenna is the safe default for scanning land-mobile and trunked systems,
 matching their vertical polarization.
+
+## Sources
+
+[^wiki]: [Polarization (waves)](https://en.wikipedia.org/wiki/Polarization_(waves)) — Wikipedia, on the orientation of a wave's electric field and polarization types.

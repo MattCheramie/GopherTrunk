@@ -15,12 +15,14 @@ infobox:
 see_also: [vocoder, imbe, ambe, dmr, p25-phase-2, nxdn, dvsi]
 related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
-external:
-  - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
+related_reading:
+  - { title: "SDR Internals, Part 12: Voice coding & vocoders", url: /blog/deep-dives/sdr-internals-12-voice-coding-vocoders/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multi-Band_Excitation
 ---
 
 **AMBE+2** is the efficient successor to [IMBE](/reference/imbe/) and
-[AMBE](/reference/ambe/) from [DVSI](/reference/dvsi/). It powers
+[AMBE](/reference/ambe/) from [DVSI](/reference/dvsi/).[^wiki] It powers
 [P25 Phase 2](/reference/p25-phase-2/), [DMR](/reference/dmr/), and
 [NXDN](/reference/nxdn/), and supports **half-rate** operation.
 
@@ -46,3 +48,7 @@ given bitrate it generally sounds cleaner than IMBE.
 
 GopherTrunk runs AMBE+2 decoding to produce audio from the most common modern digital
 voice systems.
+
+## Sources
+
+[^wiki]: [Multi-Band Excitation](https://en.wikipedia.org/wiki/Multi-Band_Excitation) — Wikipedia, on the MBE vocoder family that includes AMBE+2.

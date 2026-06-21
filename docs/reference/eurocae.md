@@ -10,14 +10,14 @@ autolink: true
 see_also: [ads-b, mode-s, rtca, icao]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "EUROCAE (Wikipedia)", url: https://en.wikipedia.org/wiki/EUROCAE }
+cite_urls:
+  - https://en.wikipedia.org/wiki/EUROCAE
 ---
 
 **EUROCAE** (the European Organisation for Civil Aviation Equipment) is the European
 standards body for **aviation electronics**. Its **ED-102** series mirrors
 [RTCA](/reference/rtca/)'s DO-260 [ADS-B](/reference/ads-b/) requirements for use in
-Europe, under the umbrella of [ICAO](/reference/icao/).
+Europe, under the umbrella of [ICAO](/reference/icao/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="EUROCAE publishing the ED-102 standard, the European counterpart to RTCA's DO-260 for ADS-B." xmlns="http://www.w3.org/2000/svg">
@@ -37,3 +37,7 @@ Europe, under the umbrella of [ICAO](/reference/icao/).
 
 ED-102A and DO-260B are effectively harmonised, so an ADS-B decoder built to one works
 with the other; documentation often cites both.
+
+## Sources
+
+[^wiki]: [EUROCAE](https://en.wikipedia.org/wiki/EUROCAE) — Wikipedia, on EUROCAE and its ED-102 ADS-B standards, the European counterpart to RTCA's DO-260.

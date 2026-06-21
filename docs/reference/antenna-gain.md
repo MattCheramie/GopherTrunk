@@ -14,14 +14,14 @@ infobox:
 see_also: [antenna, dipole-antenna, decibel, radio-propagation]
 related_lessons:
   - { title: "Antennas 101", url: /learn/rf-sdr/antennas/ }
-external:
-  - { title: "Antenna gain (Wikipedia)", url: https://en.wikipedia.org/wiki/Antenna_gain }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Antenna_gain
 ---
 
 **Antenna gain** measures how strongly an [antenna](/reference/antenna/) concentrates
 energy in a preferred direction compared with a reference. It is given in
 [decibels](/reference/decibel/): **dBi** relative to an isotropic radiator, or **dBd**
-relative to a [dipole](/reference/dipole-antenna/).
+relative to a [dipole](/reference/dipole-antenna/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 150" role="img" aria-label="An omnidirectional circular pattern on the left and a focused directional lobe on the right." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +45,7 @@ gain toward where it points at the expense of the sides.
 
 For general scanning, an omnidirectional antenna is usually best; a directional,
 high-gain antenna helps pull in one specific distant system.
+
+## Sources
+
+[^wiki]: [Antenna gain](https://en.wikipedia.org/wiki/Antenna_gain) — Wikipedia, for the definition of gain and the dBi/dBd reference units.

@@ -14,12 +14,14 @@ infobox:
 see_also: [trunked-radio, control-channel, voice-channel, radio-id, affiliation]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Talkgroup (Wikipedia)", url: https://en.wikipedia.org/wiki/Talkgroup }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Talkgroup
 ---
 
 A **talkgroup** is a virtual channel in a [trunked radio](/reference/trunked-radio/)
-system — a numbered label identifying a group of users such as "Police Dispatch."
+system — a numbered label identifying a group of users such as "Police Dispatch."[^wiki]
 Members hear each other no matter which physical [voice channel](/reference/voice-channel/)
 the system assigns to a given call.
 
@@ -46,3 +48,7 @@ frequency-hopping underneath.
 
 In GopherTrunk you follow talkgroups, not frequencies; each is shown with the
 transmitting [radio ID](/reference/radio-id/).
+
+## Sources
+
+[^wiki]: [Talkgroup](https://en.wikipedia.org/wiki/Talkgroup) — Wikipedia, on the talkgroup as a virtual channel in trunked systems.

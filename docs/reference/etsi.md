@@ -14,14 +14,15 @@ infobox:
 see_also: [dmr, dpmr, tetra, itu]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "ETSI (Wikipedia)", url: https://en.wikipedia.org/wiki/ETSI }
+cite_urls:
+  - https://www.etsi.org/
+  - https://en.wikipedia.org/wiki/ETSI
 ---
 
 **ETSI** (the **European Telecommunications Standards Institute**) is an independent,
-not-for-profit standards organization whose work is used worldwide. In land-mobile radio
+not-for-profit standards organization whose work is used worldwide.[^home] In land-mobile radio
 it authored [DMR](/reference/dmr/), [dPMR](/reference/dpmr/), and
-[TETRA](/reference/tetra/).
+[TETRA](/reference/tetra/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="ETSI publishes standards that radio systems implement." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +46,8 @@ part of why DMR became so widespread and inexpensive.
 
 Several digital systems GopherTrunk decodes are ETSI standards, and their published
 specifications inform how decoders are built.
+
+## Sources
+
+[^home]: [ETSI](https://www.etsi.org/) — the institute's official site, where its telecommunications standards are published.
+[^wiki]: [ETSI](https://en.wikipedia.org/wiki/ETSI) — Wikipedia, for ETSI's role and its DMR, dPMR, and TETRA standards.

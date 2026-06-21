@@ -14,12 +14,12 @@ infobox:
 see_also: [frequency-shift-keying, aprs, ax25, ffsk]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "Frequency-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Frequency-shift_keying }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Frequency-shift_keying
 ---
 
 **AFSK** (audio frequency-shift keying) represents bits as **audio tones** that then
-modulate a radio (usually FM). The classic case is the Bell 202 standard — 1200 Hz and
+modulate a radio (usually FM).[^wiki] The classic case is the Bell 202 standard — 1200 Hz and
 2200 Hz tones — carrying 1200 bps [APRS](/reference/aprs/) packet over
 [AX.25](/reference/ax25/).
 
@@ -44,3 +44,7 @@ bit.
 
 GopherTrunk decodes AFSK as part of its APRS pipeline, detecting the mark/space tones
 after FM demodulation.
+
+## Sources
+
+[^wiki]: [Frequency-shift keying](https://en.wikipedia.org/wiki/Frequency-shift_keying) — Wikipedia, for audio FSK and the Bell 202 mark/space tone scheme.

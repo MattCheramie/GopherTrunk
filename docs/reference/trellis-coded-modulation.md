@@ -14,13 +14,15 @@ infobox:
 see_also: [convolutional-code, viterbi-algorithm, forward-error-correction, project-25]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Trellis modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Trellis_modulation }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trellis_modulation
 ---
 
 **Trellis-coded modulation** (**TCM**) integrates
 [convolutional coding](/reference/convolutional-code/) with the modulation symbol mapping,
-so coding gain is achieved without extra bandwidth.
+so coding gain is achieved without extra bandwidth.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A small trellis whose transitions map onto points of a constellation, combining coding and modulation." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +49,7 @@ data.
 
 TCM improves decoding robustness on the protocols that use it, recovering data at lower
 SNR than uncoded modulation.
+
+## Sources
+
+[^wiki]: [Trellis modulation](https://en.wikipedia.org/wiki/Trellis_modulation) — Wikipedia, for combining convolutional coding with the constellation mapping for coding gain.

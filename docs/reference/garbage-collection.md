@@ -18,13 +18,13 @@ see_also: [memory-management, static-binary, compiler, go-language, java-languag
 related_lessons:
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Garbage collection (computer science) — Wikipedia", url: https://en.wikipedia.org/wiki/Garbage_collection_(computer_science) }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Garbage_collection_(computer_science)
 ---
 
 **Garbage collection** (**GC**) is a form of automatic [memory management](/reference/memory-management/)
 in which the language runtime reclaims memory the program can no longer reach, so the
-programmer never has to free it by hand.
+programmer never has to free it by hand.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Root references reach some heap objects, which the collector keeps; objects with no path from the roots are unreachable and reclaimed." xmlns="http://www.w3.org/2000/svg">
@@ -49,13 +49,13 @@ following references from a set of *roots* (stack variables, globals, registers)
 Anything with no path from the roots is garbage and its memory is reclaimed. Common
 strategies include **mark-and-sweep** (mark reachable objects, sweep the rest),
 **generational** collection (collect short-lived objects more often), and
-**reference counting** (track how many references point at each object).
+**reference counting** (track how many references point at each object).[^wiki]
 
 ## Trade-offs
 
 GC eliminates entire classes of bugs that plague manual memory code — use-after-free,
 double-free, and many memory leaks — and removes a great deal of boilerplate. The price
-is runtime overhead and occasional pauses (historically "stop-the-world" collections),
+is runtime overhead and occasional pauses (historically "stop-the-world" collections),[^wiki]
 which is why latency-sensitive and systems languages such as [C](/reference/c-language/)
 and [C++](/reference/cpp-language/) leave memory to the programmer, and why
 [Rust](/reference/rust-language/) achieves safety at compile time without a collector
@@ -67,3 +67,7 @@ Most mainstream languages are garbage-collected, including [Go](/reference/go-la
 [Java](/reference/java-language/), [Python](/reference/python-language/), and C#. Their
 collectors have grown sophisticated enough that GC pauses are a non-issue for the vast
 majority of applications.
+
+## Sources
+
+[^wiki]: [Garbage collection (computer science)](https://en.wikipedia.org/wiki/Garbage_collection_(computer_science)) — Wikipedia, on reachability-based reclamation, collection strategies, and the overhead/pause trade-offs.

@@ -14,12 +14,12 @@ infobox:
 see_also: [signal-to-noise-ratio, dbm, low-noise-amplifier, attenuation]
 related_lessons:
   - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
-external:
-  - { title: "Noise floor (Wikipedia)", url: https://en.wikipedia.org/wiki/Noise_floor }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Noise_floor
 ---
 
 The **noise floor** is the constant background level of random energy present in any
-receiver — thermal noise in the electronics plus environmental RF. It is measured in
+receiver — thermal noise in the electronics plus environmental RF.[^wiki] It is measured in
 [dBm](/reference/dbm/) and sets the bar a signal must clear.
 
 <figure class="figure" markdown="0">
@@ -42,3 +42,7 @@ signal is only useful when it pokes above it; the margin is the
 
 A [low-noise amplifier](/reference/low-noise-amplifier/) and a quiet install lower the
 effective floor, while nearby electronics (USB, chargers, LED lighting) raise it.
+
+## Sources
+
+[^wiki]: [Noise floor](https://en.wikipedia.org/wiki/Noise_floor) — Wikipedia, the background noise level in a measurement system.

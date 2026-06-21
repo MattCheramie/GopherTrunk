@@ -14,12 +14,12 @@ infobox:
 see_also: [nyquist-theorem, harry-nyquist, signal-to-noise-ratio, forward-error-correction]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Claude Shannon (Wikipedia)", url: https://en.wikipedia.org/wiki/Claude_Shannon }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Claude_Shannon
 ---
 
 **Claude Shannon** (1916–2001) was an American mathematician and engineer who founded
-**information theory**, defining how much information a noisy channel can carry.
+**information theory**, defining how much information a noisy channel can carry.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="An information source passing through a noisy channel to a destination, with the channel-capacity formula." xmlns="http://www.w3.org/2000/svg">
@@ -39,7 +39,7 @@ external:
 
 His 1948 paper "A Mathematical Theory of Communication" introduced channel capacity,
 entropy, and the limits that bound any communication system — including the role of
-[SNR](/reference/signal-to-noise-ratio/).
+[SNR](/reference/signal-to-noise-ratio/).[^wiki]
 
 ## Contribution
 
@@ -51,3 +51,7 @@ work with [Nyquist](/reference/harry-nyquist/)'s underlies the
 ## Legacy
 
 Information theory governs the design of every modern digital radio.
+
+## Sources
+
+[^wiki]: [Claude Shannon](https://en.wikipedia.org/wiki/Claude_Shannon) — Wikipedia, for biography and his founding of information theory.

@@ -14,14 +14,14 @@ infobox:
 see_also: [vocoder, imbe, ambe, ambe-plus-2, multi-band-excitation]
 related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
-external:
-  - { title: "Digital Voice Systems (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multi-Band_Excitation
 ---
 
 **Digital Voice Systems, Inc.** (**DVSI**) is the company that develops and licenses the
 [IMBE](/reference/imbe/) and [AMBE](/reference/ambe/) / [AMBE+2](/reference/ambe-plus-2/)
 [vocoder](/reference/vocoder/) families based on
-[multi-band excitation](/reference/multi-band-excitation/).
+[multi-band excitation](/reference/multi-band-excitation/).[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="DVSI develops and licenses the AMBE and IMBE vocoders used by digital systems." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ is why open alternatives like [Codec 2](/reference/codec2/) exist.
 
 GopherTrunk implements the relevant vocoders in pure Go to decode digital voice, while
 respecting the patent/licensing landscape DVSI created.
+
+## Sources
+
+[^wiki]: [Multi-Band Excitation](https://en.wikipedia.org/wiki/Multi-Band_Excitation) — Wikipedia, on DVSI's IMBE/AMBE multi-band-excitation vocoders and their licensing.

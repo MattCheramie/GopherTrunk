@@ -10,12 +10,12 @@ autolink: true
 see_also: [iq-data, intermediate-frequency, local-oscillator, dc-offset]
 related_lessons:
   - { title: "IQ data & complex signals", url: /learn/rf-sdr/iq-data/ }
-external:
-  - { title: "Baseband (Wikipedia)", url: https://en.wikipedia.org/wiki/Baseband }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Baseband
 ---
 
 **Baseband** is a signal centred at (or near) **zero frequency**, after the carrier has
-been mixed away. An SDR delivers **complex baseband** [IQ samples](/reference/iq-data/) —
+been mixed away.[^wiki] An SDR delivers **complex baseband** [IQ samples](/reference/iq-data/) —
 the channel shifted down to 0 Hz — which is the natural form for software to filter and
 demodulate.
 
@@ -37,3 +37,7 @@ demodulate.
 Working at complex baseband lets software represent both positive and negative
 frequencies around the centre (thanks to [IQ](/reference/iq-data/)), so the whole
 captured band is available for [filtering](/reference/digital-filter/) and demodulation.
+
+## Sources
+
+[^wiki]: [Baseband](https://en.wikipedia.org/wiki/Baseband) — Wikipedia, on signals centred near zero frequency.

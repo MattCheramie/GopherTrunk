@@ -19,14 +19,16 @@ see_also: [java-language, type-system, bytecode, jit-compilation, garbage-collec
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Type systems", url: /learn/intro-software-dev/type-systems/ }
-external:
-  - { title: "Kotlin (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Kotlin_(programming_language) }
-  - { title: "Kotlin programming language", url: https://kotlinlang.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://kotlinlang.org/
+  - https://en.wikipedia.org/wiki/Kotlin_(programming_language)
 ---
 
 **Kotlin** is a statically typed, concise programming language from JetBrains that
 runs on the Java Virtual Machine, interoperates fully with [Java](/reference/java-language/),
-and is Google's preferred language for Android development.
+and is Google's preferred language for Android development.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Kotlin and Java source both compile to JVM bytecode, which the Java Virtual Machine runs, showing their interoperability." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +50,7 @@ and is Google's preferred language for Android development.
 Kotlin compiles to the same JVM [bytecode](/reference/bytecode/) as Java and is
 executed by the same [JIT-compiling](/reference/jit-compilation/) runtime, so it
 inherits Java's mature ecosystem, libraries, and tooling while shedding much of the
-language's verbosity. A Kotlin file can call Java code and vice versa, which let
+language's verbosity.[^home] A Kotlin file can call Java code and vice versa, which let
 teams adopt it incrementally rather than rewriting. Beyond the JVM, Kotlin can also
 target JavaScript and native binaries, enabling shared "multiplatform" code.
 
@@ -57,9 +59,14 @@ target JavaScript and native binaries, enabling shared "multiplatform" code.
 Kotlin's [type system](/reference/type-system/) is static with strong inference, and
 its standout feature is **null safety**: the type system distinguishes nullable from
 non-nullable references, catching a whole class of null-pointer errors at compile
-time. It blends [object-oriented](/reference/object-oriented-programming/) and
+time.[^home] It blends [object-oriented](/reference/object-oriented-programming/) and
 [functional](/reference/functional-programming/) styles, and its coroutines provide
 lightweight asynchronous concurrency. The honest drawbacks: it still depends on the
 JVM's [garbage collector](/reference/garbage-collection/) and startup overhead, the
 non-JVM targets are less mature, and compile times can lag Java's. Its centre of
 gravity remains Android and JVM back-end work rather than general-purpose ubiquity.
+
+## Sources
+
+[^home]: [Kotlin programming language](https://kotlinlang.org/) — official site, documentation, and the null-safety and multiplatform feature set.
+[^wiki]: [Kotlin (programming language)](https://en.wikipedia.org/wiki/Kotlin_(programming_language)) — Wikipedia, for history, origins, and Android adoption.

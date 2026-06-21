@@ -16,13 +16,13 @@ infobox:
 see_also: [refactoring, dry-kiss-yagni, solid, abstraction, coupling-and-cohesion, unit-testing]
 related_lessons:
   - { title: "Writing readable code", url: /learn/intro-software-dev/clean-code/ }
-external:
-  - { title: "Robert C. Martin — Wikipedia", url: https://en.wikipedia.org/wiki/Robert_C._Martin }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Robert_C._Martin
 ---
 
 **Clean code** is the discipline of writing programs optimized for the reader rather
 than the writer, because code is read far more often than it is written — by reviewers,
-future maintainers, and you, months later.
+future maintainers, and you, months later.[^martin]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Code written once is read many times by reviewer, debugger, and future self." xmlns="http://www.w3.org/2000/svg">
@@ -61,7 +61,11 @@ are optimizing.
 
 Clever, compact code shifts cost from the writer, who understood it in the moment, to
 every future reader who must reverse-engineer it. As Brian Kernighan warned, debugging
-is harder than writing, so code written as cleverly as possible is code you can't debug.
+is harder than writing, so code written as cleverly as possible is code you can't debug.[^martin]
 The genuinely hard skill is making complex logic *look* simple. Clean code is closely
 tied to [DRY, KISS and YAGNI](/reference/dry-kiss-yagni/) and [SOLID](/reference/solid/),
 and improving it after the fact is the work of [refactoring](/reference/refactoring/).
+
+## Sources
+
+[^martin]: [Robert C. Martin](https://en.wikipedia.org/wiki/Robert_C._Martin) — Wikipedia, on the author whose *Clean Code* popularized this readability discipline.

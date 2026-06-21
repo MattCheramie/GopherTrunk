@@ -15,12 +15,12 @@ see_also: [attenuation, radio-propagation, decibel, signal-to-noise-ratio]
 related_lessons:
   - { title: "How signals travel", url: /learn/rf-sdr/propagation/ }
   - { title: "Decibels & signal power", url: /learn/rf-sdr/decibels/ }
-external:
-  - { title: "Path loss (Wikipedia)", url: https://en.wikipedia.org/wiki/Path_loss }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Path_loss
 ---
 
 **Path loss** is the [attenuation](/reference/attenuation/) a signal experiences
-travelling from transmitter to receiver. It is dominated by the spreading of energy
+travelling from transmitter to receiver.[^wiki] It is dominated by the spreading of energy
 over distance, plus losses from terrain, buildings, and foliage.
 
 <figure class="figure" markdown="0">
@@ -46,3 +46,7 @@ total 100+ dB over a few kilometres, which is why link budgets are done in
 Path loss explains why a distant or obstructed system arrives near the
 [noise floor](/reference/noise-floor/), and why antenna height and a clear path
 ([propagation](/reference/radio-propagation/)) matter so much.
+
+## Sources
+
+[^wiki]: [Path loss](https://en.wikipedia.org/wiki/Path_loss) — Wikipedia, for the definition and distance/frequency dependence of propagation loss.

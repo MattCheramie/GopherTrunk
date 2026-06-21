@@ -14,13 +14,15 @@ infobox:
 see_also: [decimation, digital-filter, sample-rate, digital-down-converter]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Cascaded integrator–comb filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Cascaded_integrator%E2%80%93comb_filter }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Cascaded_integrator%E2%80%93comb_filter
 ---
 
 A **CIC filter** (cascaded integrator–comb) is a [digital filter](/reference/digital-filter/)
 built from only integrators and combs — **no multipliers** — making it very efficient for
-large-ratio [decimation](/reference/decimation/) or interpolation.
+large-ratio [decimation](/reference/decimation/) or interpolation.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A cascaded integrator-comb block diagram: integrators, a rate change, then comb stages." xmlns="http://www.w3.org/2000/svg">
@@ -47,3 +49,7 @@ a short compensation FIR filter.
 
 CIC filters are common in the front of an SDR channeliser, where huge decimation ratios
 must be done with minimal computation.
+
+## Sources
+
+[^wiki]: [Cascaded integrator–comb filter](https://en.wikipedia.org/wiki/Cascaded_integrator%E2%80%93comb_filter) — Wikipedia, on Hogenauer's multiplier-free decimation/interpolation structure.

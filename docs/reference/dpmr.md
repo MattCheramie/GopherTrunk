@@ -18,14 +18,16 @@ infobox:
 see_also: [nxdn, frequency-shift-keying, ambe-plus-2, etsi, fdma]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "dPMR (Wikipedia)", url: https://en.wikipedia.org/wiki/DPMR }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/DPMR
 ---
 
 **dPMR** (**digital private mobile radio**) is an [ETSI](/reference/etsi/) narrowband
 standard using **6.25 kHz** [FDMA](/reference/fdma/) channels with
 [4FSK](/reference/frequency-shift-keying/) modulation. It is technically close to
-[NXDN](/reference/nxdn/) and serves the same low-cost, spectrum-efficient niche.
+[NXDN](/reference/nxdn/) and serves the same low-cost, spectrum-efficient niche.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 150" role="img" aria-label="Narrow 6.25 kHz FDMA channels for dPMR." xmlns="http://www.w3.org/2000/svg">
@@ -57,7 +59,7 @@ dPMR comes in licence-free (Mode 1) and licensed conventional/trunked variants. 
 ## History
 
 Standardised by ETSI in parallel with the narrowbanding push of the late 2000s as an
-open alternative for low-tier business radio.
+open alternative for low-tier business radio.[^wiki]
 
 ## Deployment
 
@@ -68,3 +70,7 @@ Used in European and international business radio; less common in North America 
 
 dPMR decodes similarly to NXDN given its shared narrowband 4FSK design. See
 [Status](/status.html).
+
+## Sources
+
+[^wiki]: [dPMR](https://en.wikipedia.org/wiki/DPMR) — Wikipedia, for the ETSI 6.25 kHz FDMA 4FSK standard and its relationship to NXDN.

@@ -19,14 +19,16 @@ see_also: [typescript-language, jit-compilation, garbage-collection, static-vs-d
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Type systems", url: /learn/intro-software-dev/type-systems/ }
-external:
-  - { title: "JavaScript — Wikipedia", url: https://en.wikipedia.org/wiki/JavaScript }
-  - { title: "MDN: JavaScript", url: https://developer.mozilla.org/en-US/docs/Web/JavaScript }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://developer.mozilla.org/en-US/docs/Web/JavaScript
+  - https://en.wikipedia.org/wiki/JavaScript
 ---
 
 **JavaScript** (JS) is a dynamically typed, garbage-collected programming language and
 the only language that runs natively in every web browser; with Node.js it also runs on
-servers, letting one language cover the whole stack.
+servers, letting one language cover the whole stack.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="JavaScript runs in both the browser and on the server via Node.js, drawing on the npm ecosystem." xmlns="http://www.w3.org/2000/svg">
@@ -47,7 +49,7 @@ servers, letting one language cover the whole stack.
 
 Modern JavaScript engines such as V8 [JIT-compile](/reference/jit-compilation/) the
 language to native code at runtime, so it is far faster than its scripting origins
-suggest. It is [dynamically typed](/reference/static-vs-dynamic-typing/) and
+suggest.[^mdn] It is [dynamically typed](/reference/static-vs-dynamic-typing/) and
 [garbage-collected](/reference/garbage-collection/), with an event-driven,
 [asynchronous](/reference/async-programming/) model at its core that suits I/O-bound web
 work. The standard is formally called ECMAScript, and the npm registry is among the
@@ -69,3 +71,8 @@ JavaScript powers virtually all interactive web front-ends, a large share of ser
 backends through Node.js, and much of modern build tooling. For larger codebases teams
 increasingly write [TypeScript](/reference/typescript-language/) and ship the compiled
 JavaScript, but the runtime everywhere remains JavaScript itself.
+
+## Sources
+
+[^mdn]: [JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript) — MDN Web Docs, the reference documentation for the language and its runtime behaviour.
+[^wiki]: [JavaScript](https://en.wikipedia.org/wiki/JavaScript) — Wikipedia, for history and design background.

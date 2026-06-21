@@ -14,13 +14,15 @@ infobox:
 see_also: [vocoder, imbe, ambe, ambe-plus-2, dvsi]
 related_lessons:
   - { title: "Vocoders — IMBE & AMBE+2", url: /learn/rf-sdr/vocoders/ }
-external:
-  - { title: "Multi-Band Excitation (Wikipedia)", url: https://en.wikipedia.org/wiki/Multi-Band_Excitation }
+related_reading:
+  - { title: "SDR Internals, Part 12: Voice coding & vocoders", url: /blog/deep-dives/sdr-internals-12-voice-coding-vocoders/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Multi-Band_Excitation
 ---
 
 **Multi-band excitation** (**MBE**) is a speech-modelling method that represents a voice
 by its pitch and a decision, per frequency band, of whether that band is *voiced*
-(pitched) or *unvoiced* (noisy), plus the spectral envelope.
+(pitched) or *unvoiced* (noisy), plus the spectral envelope.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A speech spectrum divided into frequency bands, each independently declared voiced or unvoiced." xmlns="http://www.w3.org/2000/svg">
@@ -43,3 +45,7 @@ at a few kbps. MBE underlies the [IMBE](/reference/imbe/) and [AMBE](/reference/
 
 Understanding MBE explains why decoded digital voice can sound robotic and why bit errors
 produce characteristic warbles.
+
+## Sources
+
+[^wiki]: [Multi-Band Excitation](https://en.wikipedia.org/wiki/Multi-Band_Excitation) — Wikipedia, for the speech model with per-band voiced/unvoiced decisions underlying IMBE/AMBE.

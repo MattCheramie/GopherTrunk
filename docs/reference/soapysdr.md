@@ -14,13 +14,13 @@ infobox:
 see_also: [rtl-tcp, software-defined-radio, rtl-sdr, airspy]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "SoapySDR (project)", url: https://github.com/pothosware/SoapySDR }
+cite_urls:
+  - https://github.com/pothosware/SoapySDR
 ---
 
 **SoapySDR** is a vendor-neutral hardware-abstraction library that exposes a **common
 API** across many [software-defined radios](/reference/software-defined-radio/), so
-applications can support diverse devices without per-vendor code.
+applications can support diverse devices without per-vendor code.[^proj]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Applications calling a common SoapySDR layer that drives several different SDR devices through plugin modules." xmlns="http://www.w3.org/2000/svg">
@@ -46,3 +46,7 @@ the antenna.
 
 SoapySDR-style remoting (alongside [rtl_tcp](/reference/rtl-tcp/)) lets GopherTrunk use
 radios that live on a separate host.
+
+## Sources
+
+[^proj]: [SoapySDR](https://github.com/pothosware/SoapySDR) — the project repository, documenting the vendor-neutral SDR abstraction API and SoapyRemote.

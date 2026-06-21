@@ -10,12 +10,14 @@ autolink: true
 see_also: [sample-rate, decimation, digital-filter, nyquist-theorem]
 related_lessons:
   - { title: "Sample rate, bandwidth & Nyquist", url: /learn/rf-sdr/sample-rate-nyquist/ }
-external:
-  - { title: "Sample-rate conversion (Wikipedia)", url: https://en.wikipedia.org/wiki/Sample-rate_conversion }
+related_reading:
+  - { title: "SDR Internals, Part 5: Tuning & channelization", url: /blog/deep-dives/sdr-internals-05-tuning-channelization/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Sample-rate_conversion
 ---
 
 A **resampler** converts a sample stream from one [sample rate](/reference/sample-rate/)
-to another. SDRs rarely produce exactly the rate a decoder wants (a P25 channel needs a
+to another.[^wiki] SDRs rarely produce exactly the rate a decoder wants (a P25 channel needs a
 multiple of 4800 baud, say), so a resampler bridges the two — by a whole-number ratio or
 a fractional one.
 
@@ -36,3 +38,7 @@ a fractional one.
 Resampling combines interpolation, filtering, and [decimation](/reference/decimation/);
 done carelessly it causes [aliasing](/reference/aliasing/), so a resampler always
 includes an anti-alias [filter](/reference/digital-filter/).
+
+## Sources
+
+[^wiki]: [Sample-rate conversion](https://en.wikipedia.org/wiki/Sample-rate_conversion) — Wikipedia, on converting a stream between sample rates.

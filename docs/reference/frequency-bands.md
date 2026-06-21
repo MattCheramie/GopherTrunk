@@ -15,13 +15,13 @@ infobox:
 see_also: [electromagnetic-spectrum, frequency, radio-propagation, ionospheric-propagation]
 related_lessons:
   - { title: "Frequency, bands & the spectrum", url: /learn/rf-sdr/frequency-and-spectrum/ }
-external:
-  - { title: "Radio spectrum (Wikipedia)", url: https://en.wikipedia.org/wiki/Radio_spectrum }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Radio_spectrum
 ---
 
 **Frequency bands** are the conventional decade-wide divisions of the radio
 [spectrum](/reference/electromagnetic-spectrum/): VLF, LF, MF, **HF** (3–30 MHz),
-**VHF** (30–300 MHz), **UHF** (300 MHz–3 GHz), and SHF (3–30 GHz). Each behaves
+**VHF** (30–300 MHz), **UHF** (300 MHz–3 GHz), and SHF (3–30 GHz).[^wiki] Each behaves
 differently and is allocated to different uses.
 
 <figure class="figure" markdown="0">
@@ -56,3 +56,7 @@ assigning slices to broadcast, aviation, marine, public safety, and amateur use.
 
 Most trunked-radio scanning happens in VHF, UHF, and the 700/800 MHz bands. Matching
 an SDR's tuning range to the target band is the first hardware decision.
+
+## Sources
+
+[^wiki]: [Radio spectrum](https://en.wikipedia.org/wiki/Radio_spectrum) — Wikipedia, for the conventional band divisions and their frequency ranges.

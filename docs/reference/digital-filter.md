@@ -14,12 +14,14 @@ infobox:
 see_also: [decimation, cic-filter, root-raised-cosine-filter, matched-filter, digital-down-converter]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Digital filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Digital_filter }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Digital_filter
 ---
 
 A **digital filter** passes some frequencies and attenuates others by performing
-arithmetic on a stream of samples — no physical components. The main families are FIR
+arithmetic on a stream of samples — no physical components.[^wiki] The main families are FIR
 (finite impulse response) and IIR (infinite impulse response).
 
 <figure class="figure" markdown="0">
@@ -46,3 +48,7 @@ Filtering is fundamental to channelising the [IQ](/reference/iq-data/) stream an
 shaping; specialised forms include the [CIC](/reference/cic-filter/),
 [root-raised-cosine](/reference/root-raised-cosine-filter/), and
 [matched](/reference/matched-filter/) filters.
+
+## Sources
+
+[^wiki]: [Digital filter](https://en.wikipedia.org/wiki/Digital_filter) — Wikipedia, on FIR/IIR families and frequency response.

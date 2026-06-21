@@ -10,14 +10,16 @@ autolink: true
 see_also: [edacs, ambe, vocoder, trunked-radio]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Enhanced Digital Access Communications System (Wikipedia)", url: https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System
 ---
 
 **ProVoice** is the **digital-voice option for [EDACS](/reference/edacs/)** trunked
 systems (GE/Ericsson, later M/A-COM). It replaces EDACS's analog FM voice with a digital
 [AMBE](/reference/ambe/)-family [vocoder](/reference/vocoder/) while keeping the EDACS
-control-channel signalling.
+control-channel signalling.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="An EDACS control channel assigning a voice channel that carries digital ProVoice AMBE frames instead of analog FM." xmlns="http://www.w3.org/2000/svg">
@@ -34,3 +36,7 @@ control-channel signalling.
 Because ProVoice uses a proprietary vocoder, decoding it has historically required
 licensed components; the EDACS trunking layer itself is followed the same way regardless
 of whether the voice is analog or ProVoice.
+
+## Sources
+
+[^wiki]: [Enhanced Digital Access Communications System](https://en.wikipedia.org/wiki/Enhanced_Digital_Access_Communications_System) — Wikipedia, for EDACS and its ProVoice digital-voice option using an AMBE-family vocoder.

@@ -19,13 +19,15 @@ see_also: [java-language, jit-compilation, bytecode, garbage-collection, typescr
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
-external:
-  - { title: "C Sharp (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/C_Sharp_(programming_language) }
-  - { title: "The C# programming language — Microsoft", url: https://learn.microsoft.com/en-us/dotnet/csharp/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://learn.microsoft.com/en-us/dotnet/csharp/
+  - https://en.wikipedia.org/wiki/C_Sharp_(programming_language)
 ---
 
 **C#** (pronounced "C sharp") is Microsoft's statically typed, garbage-collected,
-object-oriented language for the .NET platform. It is closely comparable to
+object-oriented language for the .NET platform.[^wiki] It is closely comparable to
 [Java](/reference/java-language/) — a managed, JIT-compiled language with a large
 ecosystem — with arguably more modern language features.
 
@@ -48,7 +50,7 @@ ecosystem — with arguably more modern language features.
 
 C# compiles to intermediate-language [bytecode](/reference/bytecode/) that the .NET
 Common Language Runtime (CLR) [JIT-compiles](/reference/jit-compilation/) to native code
-at runtime. It is [statically typed](/reference/type-system/),
+at runtime.[^docs] It is [statically typed](/reference/type-system/),
 [garbage-collected](/reference/garbage-collection/), and broadly
 [object-oriented](/reference/object-oriented-programming/) with strong functional
 features. Its lead designer, Anders Hejlsberg, also went on to create
@@ -69,3 +71,8 @@ C# is the backbone of Windows enterprise software and a major language for web b
 and cloud services on .NET. Through the **Unity** engine it also underpins a large share
 of the game industry. As with Java, the practical choice between the two often comes down
 to ecosystem and platform rather than the languages themselves.
+
+## Sources
+
+[^docs]: [The C# programming language](https://learn.microsoft.com/en-us/dotnet/csharp/) — Microsoft's official C# and .NET documentation.
+[^wiki]: [C Sharp (programming language)](https://en.wikipedia.org/wiki/C_Sharp_(programming_language)) — Wikipedia, for history and design background.

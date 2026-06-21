@@ -17,12 +17,12 @@ infobox:
 see_also: [imperative-programming, functional-programming, object-oriented-programming, rest, abstraction]
 related_lessons:
   - { title: "Paradigms & language families", url: /learn/intro-software-dev/language-families/ }
-external:
-  - { title: "Declarative programming — Wikipedia", url: https://en.wikipedia.org/wiki/Declarative_programming }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Declarative_programming
 ---
 
 **Declarative programming** flips the question from *how* to *what*: you describe the
-result you want and let the system figure out the steps needed to produce it.
+result you want and let the system figure out the steps needed to produce it.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="A declarative request describing a desired result is handed to an engine, which plans and executes the hidden steps to produce the result." xmlns="http://www.w3.org/2000/svg">
@@ -40,7 +40,7 @@ result you want and let the system figure out the steps needed to produce it.
 ## Families of declarative code
 
 Declarative is a broad umbrella. [Functional programming](/reference/functional-programming/)
-is one family — you describe transformations, not state changes. Beyond it:
+is one family — you describe transformations, not state changes.[^wiki] Beyond it:
 
 - **Query languages** — SQL declares *what* rows you want; the database plans *how* to
   fetch them, never telling the engine which index to scan.
@@ -64,4 +64,8 @@ The clean contrast is with [imperative programming](/reference/imperative-progra
 which spells out an ordered sequence of state changes. Reach for declarative style when
 *what* you want is clearer than *how* to get it — querying data, describing
 infrastructure, or expressing rules — and reach for imperative when you need precise
-control over each step.
+control over each step.[^wiki]
+
+## Sources
+
+[^wiki]: [Declarative programming](https://en.wikipedia.org/wiki/Declarative_programming) — Wikipedia, for the what-not-how definition and the functional, logic, query, and configuration families.

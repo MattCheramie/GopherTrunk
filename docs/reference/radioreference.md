@@ -10,14 +10,14 @@ autolink: true
 see_also: [trunked-radio, control-channel, talkgroup, project-25]
 related_lessons:
   - { title: "Finding & identifying systems", url: /learn/rf-sdr/finding-systems/ }
-external:
-  - { title: "RadioReference.com", url: https://www.radioreference.com/ }
+cite_urls:
+  - https://www.radioreference.com/
 ---
 
 **RadioReference** is the largest community-maintained **database of radio systems** —
 frequencies, [trunked-system](/reference/trunked-radio/) types,
 [control channels](/reference/control-channel/), and [talkgroups](/reference/talkgroup/),
-catalogued by location. It is the usual first stop when deciding what to monitor.
+catalogued by location. It is the usual first stop when deciding what to monitor.[^home]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 100" role="img" aria-label="RadioReference cataloguing systems that an operator looks up to configure a scanner." xmlns="http://www.w3.org/2000/svg">
@@ -39,3 +39,7 @@ For most populated areas, the local systems are already documented on RadioRefer
 you can look up a system's control-channel frequency and talkgroup list rather than
 discovering them from scratch. GopherTrunk can [import](/import.html) these details
 directly.
+
+## Sources
+
+[^home]: [RadioReference.com](https://www.radioreference.com/) — the official RadioReference site, the community database of radio systems, frequencies, and talkgroups.

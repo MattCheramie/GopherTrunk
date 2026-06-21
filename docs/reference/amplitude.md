@@ -12,11 +12,11 @@ infobox:
 see_also: [phase, decibel, dbm, amplitude-modulation, signal-to-noise-ratio]
 related_lessons:
   - { title: "What is a radio wave?", url: /learn/rf-sdr/radio-waves/ }
-external:
-  - { title: "Amplitude (Wikipedia)", url: https://en.wikipedia.org/wiki/Amplitude }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Amplitude
 ---
 
-**Amplitude** is the magnitude — the "height" — of a wave. For a
+**Amplitude** is the magnitude — the "height" — of a wave.[^wiki] For a
 [radio wave](/reference/radio-wave/) it corresponds to signal strength, which a
 receiver reports as a power level in [dBm](/reference/dbm/) or
 [dBFS](/reference/dbfs/).
@@ -44,3 +44,7 @@ Varying amplitude is the basis of [amplitude modulation](/reference/amplitude-mo
 and part of what an [IQ](/reference/iq-data/) sample encodes (its distance from the
 origin). A signal's amplitude relative to the [noise floor](/reference/noise-floor/)
 sets its [SNR](/reference/signal-to-noise-ratio/).
+
+## Sources
+
+[^wiki]: [Amplitude](https://en.wikipedia.org/wiki/Amplitude) — Wikipedia, on the magnitude of a wave's oscillation.

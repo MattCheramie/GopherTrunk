@@ -18,14 +18,14 @@ see_also: [type-system, compiler, interpreter, typescript-language, python-langu
 related_lessons:
   - { title: "Type systems and safety", url: /learn/intro-software-dev/type-systems/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Type system — Wikipedia", url: https://en.wikipedia.org/wiki/Type_system#Static_and_dynamic_type_checking_in_practice }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Type_system#Static_and_dynamic_type_checking_in_practice
 ---
 
 **Static versus dynamic typing** is about *when* a language checks the types of its
 values: a **statically typed** language checks at compile time, before the program
 runs, while a **dynamically typed** language checks at run time, as each operation
-executes.
+executes.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="Static typing checks types during the build step before running; dynamic typing checks each operation while the program runs." xmlns="http://www.w3.org/2000/svg">
@@ -53,7 +53,7 @@ where a number is expected is a build error. Under **dynamic typing**, a variabl
 hold a string now and a number later; the [interpreter](/reference/interpreter/) only
 complains when an actual operation is invalid. This is a separate question from *how
 strictly* a language enforces types (strong versus weak), so the two axes combine:
-Rust is static and strong, Python dynamic and strong, JavaScript dynamic and weak.
+Rust is static and strong, Python dynamic and strong, JavaScript dynamic and weak.[^wiki]
 
 ## Trade-offs
 
@@ -62,7 +62,7 @@ methods, broken refactors — and makes APIs self-documenting, which is why larg
 long-lived codebases drift toward it. The cost is ceremony and some rigidity, though
 [type inference](/reference/type-system/) removes most of the annotation burden.
 Dynamic typing offers **flexibility and less ceremony** — quick scripts, duck typing,
-runtime metaprogramming — at the risk of type errors that hide until that line runs.
+runtime metaprogramming — at the risk of type errors that hide until that line runs.[^wiki]
 
 ## In practice
 
@@ -73,3 +73,7 @@ runtime metaprogramming — at the risk of type errors that hide until that line
 two: [TypeScript](/reference/typescript-language/) and Python type hints add optional,
 checkable types to dynamic languages, keeping flexibility where you want it and adding
 guarantees where the code is critical.
+
+## Sources
+
+[^wiki]: [Type system — static and dynamic type checking](https://en.wikipedia.org/wiki/Type_system#Static_and_dynamic_type_checking_in_practice) — Wikipedia, on when type checking happens and how the static/dynamic axis combines with strong/weak typing.

@@ -16,13 +16,15 @@ infobox:
 see_also: [unit-testing, integration-testing, end-to-end-testing, test-driven-development, mocking, ci-cd, refactoring]
 related_lessons:
   - { title: "Testing — unit, integration & beyond", url: /learn/intro-software-dev/testing/ }
-external:
-  - { title: "Code coverage — Wikipedia", url: https://en.wikipedia.org/wiki/Code_coverage }
+related_reading:
+  - { title: "Build in the Open, Part 8: Testing — how to build and write tests", url: /blog/tutorials/build-in-the-open-08-testing-how-to-write-tests/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Code_coverage
 ---
 
 **Code coverage** measures the percentage of a codebase exercised by its test suite —
 which lines, branches, or functions ran — a useful signal for finding untested code, but
-not a guarantee of correctness.
+not a guarantee of correctness.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A bar of code lines, most shaded as covered by tests and a few left uncovered, summing to a coverage percentage." xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +46,7 @@ not a guarantee of correctness.
 Coverage tools instrument the code and record which parts executed while the
 [tests](/reference/unit-testing/) ran, reported as a percentage. Common granularities are
 **line coverage** (which lines ran), **branch coverage** (which sides of each
-conditional ran), and **function coverage**. The metric is genuinely useful for *finding
+conditional ran), and **function coverage**.[^wiki] The metric is genuinely useful for *finding
 untested code*: a module sitting at 0% is a red flag, and watching coverage shows where to
 aim the next tests. Coverage is typically computed in a [CI/CD](/reference/ci-cd/)
 pipeline so the number is tracked on every change.
@@ -67,3 +69,7 @@ Coverage spans every layer of the test pyramid — [unit](/reference/unit-testin
 disciplines like [test-driven development](/reference/test-driven-development/), not their
 purpose, and it gives [refactoring](/reference/refactoring/) confidence by showing which
 code a change's safety net actually protects.
+
+## Sources
+
+[^wiki]: [Code coverage](https://en.wikipedia.org/wiki/Code_coverage) — Wikipedia, for the metric, its granularities (line, branch, function), and its limits.

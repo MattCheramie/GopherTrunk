@@ -47,9 +47,9 @@ groups:
         url: /learn/git/#advanced-git
       - title: "Git & GitHub · Glossary"
         url: /learn/git/glossary/
-  - label: Reference
+  - label: Field Guide
     items:
-      - title: Encyclopedia overview
+      - title: Field Guide overview
         url: /reference/
       - title: "RF & SDR"
         url: /reference/#domain-rf-sdr

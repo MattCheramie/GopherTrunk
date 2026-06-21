@@ -14,13 +14,15 @@ infobox:
 see_also: [fdma, trunked-radio, p25-phase-2, dmr, tetra]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "Time-division multiple access (Wikipedia)", url: https://en.wikipedia.org/wiki/Time-division_multiple_access }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Time-division_multiple_access
 ---
 
 **TDMA** (**time-division multiple access**) splits one [frequency](/reference/frequency/)
 into rapid, repeating **timeslots**, so two or more calls share the channel by taking
-turns.
+turns.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 150" role="img" aria-label="A single frequency channel divided along time into repeating slots, alternating between two calls." xmlns="http://www.w3.org/2000/svg">
@@ -48,3 +50,7 @@ follow the correct slot as well as the frequency.
 
 On a TDMA system a single granted [voice channel](/reference/voice-channel/) can carry
 two simultaneous calls, so GopherTrunk decodes the relevant slot of the assigned channel.
+
+## Sources
+
+[^wiki]: [Time-division multiple access](https://en.wikipedia.org/wiki/Time-division_multiple_access) — Wikipedia, on sharing one frequency via repeating timeslots.

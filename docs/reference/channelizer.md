@@ -10,12 +10,14 @@ autolink: true
 see_also: [digital-down-converter, decimation, digital-filter, software-defined-radio, control-channel]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Filter bank (Wikipedia)", url: https://en.wikipedia.org/wiki/Filter_bank }
+related_reading:
+  - { title: "SDR Internals, Part 5: Tuning & channelization", url: /blog/deep-dives/sdr-internals-05-tuning-channelization/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Filter_bank
 ---
 
 A **channelizer** splits a single wideband [IQ](/reference/iq-data/) capture into **many
-narrow channels at once**. Each output is one channel, shifted to
+narrow channels at once**.[^wiki] Each output is one channel, shifted to
 [baseband](/reference/baseband/), [filtered](/reference/digital-filter/), and
 [decimated](/reference/decimation/) — so one SDR can feed many decoders in parallel.
 
@@ -41,3 +43,7 @@ Efficient channelizers use a *polyphase filter bank* to extract evenly-spaced ch
 at once. In a trunking context this is what lets GopherTrunk watch the
 [control channel](/reference/control-channel/) while simultaneously following the
 [voice channels](/reference/voice-channel/) it assigns.
+
+## Sources
+
+[^wiki]: [Filter bank](https://en.wikipedia.org/wiki/Filter_bank) — Wikipedia, on polyphase filter banks used to split a band into channels.

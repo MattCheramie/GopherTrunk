@@ -14,14 +14,16 @@ infobox:
 see_also: [phase-shift-keying, phase, demodulation, cma-equalizer, ppm-frequency-correction]
 related_lessons:
   - { title: "Tuning for a clean lock", url: /learn/rf-sdr/tuning-with-scopes/ }
-external:
-  - { title: "Costas loop (Wikipedia)", url: https://en.wikipedia.org/wiki/Costas_loop }
+related_reading:
+  - { title: "SDR Internals, Part 7: Symbol timing & sync recovery", url: /blog/deep-dives/sdr-internals-07-symbol-timing-sync-recovery/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Costas_loop
 ---
 
 A **Costas loop** is a phase-locked feedback structure that recovers the
 [phase](/reference/phase/) and frequency of a suppressed carrier, enabling **coherent**
 [demodulation](/reference/demodulation/) of [PSK](/reference/phase-shift-keying/) and
-related signals.
+related signals.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="A feedback loop: input to a phase detector, to a loop filter, to a controlled oscillator that feeds back to the phase detector." xmlns="http://www.w3.org/2000/svg">
@@ -50,3 +52,7 @@ Costas.
 
 Carrier recovery via a Costas loop is essential to decoding phase-modulated systems and
 to stabilising a constellation that would otherwise spin.
+
+## Sources
+
+[^wiki]: [Costas loop](https://en.wikipedia.org/wiki/Costas_loop) — Wikipedia, on the carrier-recovery feedback loop for coherent PSK demodulation.

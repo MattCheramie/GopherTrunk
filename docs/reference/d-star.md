@@ -18,15 +18,17 @@ infobox:
 see_also: [system-fusion-ysf, m17, gmsk, ambe, vocoder]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "D-STAR (Wikipedia)", url: https://en.wikipedia.org/wiki/D-STAR }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/D-STAR
 ---
 
 **D-STAR** (**Digital Smart Technologies for Amateur Radio**) is an amateur-radio
 digital voice and data standard developed by the Japan Amateur Radio League (JARL)
 and widely implemented by **Icom**. It uses [GMSK](/reference/gmsk/) modulation and an
 [AMBE](/reference/ambe/)-family [vocoder](/reference/vocoder/) for its digital-voice
-(DV) mode.
+(DV) mode.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 440 110" role="img" aria-label="D-STAR digital voice from radio to repeater to internet gateways." xmlns="http://www.w3.org/2000/svg">
@@ -60,7 +62,7 @@ fits in a narrow 6.25 kHz channel.
 ## History
 
 Specified by the JARL around 2001 and brought to market by Icom; one of the earliest
-mainstream amateur digital-voice systems.
+mainstream amateur digital-voice systems.[^wiki]
 
 ## Deployment
 
@@ -69,3 +71,7 @@ Amateur radio worldwide, via DV repeaters, hotspots, and networked reflectors.
 ## Decoding it with GopherTrunk
 
 See [Status](/status.html) for GopherTrunk's D-STAR link-layer and voice coverage.
+
+## Sources
+
+[^wiki]: [D-STAR](https://en.wikipedia.org/wiki/D-STAR) — Wikipedia, for the JARL-developed amateur digital-voice standard, its GMSK modulation, AMBE vocoder, and reflector networking.

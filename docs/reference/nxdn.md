@@ -18,14 +18,16 @@ infobox:
 see_also: [dpmr, frequency-shift-keying, ambe-plus-2, trunked-radio, control-channel]
 related_lessons:
   - { title: "The digital protocol landscape", url: /learn/rf-sdr/protocol-landscape/ }
-external:
-  - { title: "NXDN (Wikipedia)", url: https://en.wikipedia.org/wiki/NXDN }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/NXDN
 ---
 
 **NXDN** is a **narrowband** digital land-mobile radio standard jointly developed by
 **Kenwood** (NEXEDGE) and **Icom** (IDAS). It uses [4FSK](/reference/frequency-shift-keying/)
 in very narrow 6.25 kHz channels (or 12.5 kHz) and the
-[AMBE+2](/reference/ambe-plus-2/) vocoder.
+[AMBE+2](/reference/ambe-plus-2/) vocoder.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 150" role="img" aria-label="Narrow 6.25 kHz FDMA channels for NXDN." xmlns="http://www.w3.org/2000/svg">
@@ -59,7 +61,7 @@ channels. It supports both conventional operation and trunking with a
 ## History
 
 Introduced in the late 2000s as Kenwood and Icom's common air interface for
-narrowband digital business radio.
+narrowband digital business radio.[^wiki]
 
 ## Deployment
 
@@ -70,3 +72,7 @@ Common in business, transport, and utility fleets, especially where regulators r
 
 GopherTrunk decodes NXDN voice and follows trunked NXDN control channels. See
 [Status](/status.html).
+
+## Sources
+
+[^wiki]: [NXDN](https://en.wikipedia.org/wiki/NXDN) — Wikipedia, for the Kenwood/Icom narrowband 4FSK air interface, channel widths, and the AMBE+2 vocoder.

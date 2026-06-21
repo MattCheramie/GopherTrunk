@@ -14,14 +14,16 @@ infobox:
 see_also: [frequency-shift-keying, ais, d-star, root-raised-cosine-filter]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
-external:
-  - { title: "Minimum-shift keying (Wikipedia)", url: https://en.wikipedia.org/wiki/Minimum-shift_keying }
+related_reading:
+  - { title: "SDR Internals, Part 6: Demodulation", url: /blog/deep-dives/sdr-internals-06-demodulation/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Minimum-shift_keying
 ---
 
 **GMSK** (Gaussian minimum-shift keying) is a continuous-phase
 [FSK](/reference/frequency-shift-keying/) variant in which the data is passed through a
 Gaussian filter before modulation, smoothing phase transitions for a **compact
-spectrum** and constant envelope.
+spectrum** and constant envelope.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="A smooth continuous phase trajectory with no abrupt jumps, illustrating Gaussian-filtered MSK." xmlns="http://www.w3.org/2000/svg">
@@ -42,3 +44,7 @@ limits bandwidth. These traits made GMSK the choice for GSM cellular and for
 
 A GMSK demodulator recovers the underlying frequency/phase transitions; GopherTrunk
 uses one in its AIS pipeline.
+
+## Sources
+
+[^wiki]: [Minimum-shift keying](https://en.wikipedia.org/wiki/Minimum-shift_keying) — Wikipedia, for MSK/GMSK, Gaussian shaping, and the constant-envelope property.

@@ -14,13 +14,13 @@ infobox:
 see_also: [modulation, frequency-modulation, single-sideband, carrier-wave]
 related_lessons:
   - { title: "Analog modulation — AM, FM, SSB", url: /learn/rf-sdr/analog-modulation/ }
-external:
-  - { title: "Amplitude modulation (Wikipedia)", url: https://en.wikipedia.org/wiki/Amplitude_modulation }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Amplitude_modulation
 ---
 
 **Amplitude modulation** (**AM**) encodes information by varying the
 [amplitude](/reference/amplitude/) of a [carrier wave](/reference/carrier-wave/) while
-its [frequency](/reference/frequency/) stays fixed. It is the oldest and simplest
+its [frequency](/reference/frequency/) stays fixed.[^wiki] It is the oldest and simplest
 [modulation](/reference/modulation/) scheme.
 
 <figure class="figure" markdown="0">
@@ -43,3 +43,7 @@ relatively noise-prone.
 AM survives where simplicity or a useful property matters — shortwave broadcast, and
 aviation VHF airband (where overlapping transmissions beat together so a controller
 notices). An SDR demodulates AM by tracking the envelope.
+
+## Sources
+
+[^wiki]: [Amplitude modulation](https://en.wikipedia.org/wiki/Amplitude_modulation) — Wikipedia, for the definition, sidebands, and uses of AM.

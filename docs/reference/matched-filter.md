@@ -14,12 +14,14 @@ infobox:
 see_also: [root-raised-cosine-filter, digital-filter, signal-to-noise-ratio, demodulation]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Matched filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Matched_filter }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Matched_filter
 ---
 
 A **matched filter** is the linear filter that maximises
-[SNR](/reference/signal-to-noise-ratio/) against a *known* signal shape. Its impulse
+[SNR](/reference/signal-to-noise-ratio/) against a *known* signal shape.[^wiki] Its impulse
 response is a time-reversed copy of the pulse it is matched to.
 
 <figure class="figure" markdown="0">
@@ -47,3 +49,7 @@ filter.
 Matched filtering is a standard receive step that improves
 [demodulation](/reference/demodulation/) of weak digital signals such as
 [AIS](/reference/ais/) and [APRS](/reference/aprs/).
+
+## Sources
+
+[^wiki]: [Matched filter](https://en.wikipedia.org/wiki/Matched_filter) — Wikipedia, on the SNR-optimal time-reversed correlation filter.

@@ -14,13 +14,15 @@ infobox:
 see_also: [forward-error-correction, bch-code, golay-code, interleaving]
 related_lessons:
   - { title: "The demodulation pipeline", url: /learn/rf-sdr/demodulation-pipeline/ }
-external:
-  - { title: "Reed–Solomon error correction (Wikipedia)", url: https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction
 ---
 
 **Reed–Solomon** is a block [error-correction](/reference/forward-error-correction/) code
 that works on multi-bit **symbols** rather than individual bits, making it especially good
-at correcting **bursts** of errors.
+at correcting **bursts** of errors.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A codeword of data symbols followed by parity symbols, with the parity able to correct a burst of damaged symbols." xmlns="http://www.w3.org/2000/svg">
@@ -45,3 +47,7 @@ across codewords.
 Reed–Solomon protects parts of [P25](/reference/project-25/) and
 [DMR](/reference/dmr/) (and is ubiquitous in storage and broadcast), helping the decoder
 recover data on marginal signals.
+
+## Sources
+
+[^wiki]: [Reed–Solomon error correction](https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction) — Wikipedia, for the symbol-oriented block code and burst-error correction.

@@ -16,14 +16,16 @@ infobox:
 see_also: [rtl-sdr, airspy, software-defined-radio]
 related_lessons:
   - { title: "SDR hardware — RTL-SDR, HackRF, Airspy", url: /learn/rf-sdr/sdr-hardware/ }
-external:
-  - { title: "HackRF (Wikipedia)", url: https://en.wikipedia.org/wiki/HackRF_One }
+related_reading:
+  - { title: "RF Front End, Part 11: HackRF One", url: /blog/deep-dives/rf-front-end-11-hackrf-one/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/HackRF_One
 ---
 
 **HackRF One** is an open-source, wideband, half-duplex
 [software-defined radio](/reference/software-defined-radio/) transceiver from Great Scott
 Gadgets, covering **1 MHz to 6 GHz** with up to ~20 MHz bandwidth and the ability to
-**transmit**.
+**transmit**.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 110" role="img" aria-label="A frequency coverage bar for HackRF One (~1 MHz–6 GHz) on an axis from about 0 to 6 gigahertz." xmlns="http://www.w3.org/2000/svg">
@@ -125,3 +127,7 @@ full serial so each entry pins exactly one device.
 > string — the leading 16 digits are a constant prefix (commonly all zeros) and
 > the trailing digits are the unique part. `gophertrunk sdr list` prints the
 > whole string, matching `hackrf_info`'s "Serial number".
+
+## Sources
+
+[^wiki]: [HackRF One](https://en.wikipedia.org/wiki/HackRF_One) — Wikipedia, on the HackRF One wideband half-duplex transceiver and its specifications.

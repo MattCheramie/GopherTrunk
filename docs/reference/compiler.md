@@ -18,13 +18,13 @@ see_also: [interpreter, bytecode, jit-compilation, static-binary, cross-compilat
 related_lessons:
   - { title: "Compiled vs interpreted languages", url: /learn/intro-software-dev/compiled-vs-interpreted/ }
   - { title: "Performance vs productivity", url: /learn/intro-software-dev/performance-vs-productivity/ }
-external:
-  - { title: "Compiler — Wikipedia", url: https://en.wikipedia.org/wiki/Compiler }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Compiler
 ---
 
 **A compiler** is a program that translates source code written for humans into a
 form a machine can run — typically native machine code — doing the work *ahead of
-time*, before the program is ever executed.
+time*, before the program is ever executed.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 120" role="img" aria-label="Source code passes through a compiler once, producing machine code the CPU runs directly each time." xmlns="http://www.w3.org/2000/svg">
@@ -50,7 +50,7 @@ language. Classic *ahead-of-time* (AOT) compilers such as those for
 machine code packaged as an executable. Other compilers target
 [bytecode](/reference/bytecode/) for a virtual machine instead. Along the way the
 compiler optimizes — inlining calls, vectorizing loops, eliminating dead code — so
-the output often runs far faster than a naive translation would.
+the output often runs far faster than a naive translation would.[^wiki]
 
 ## Trade-offs
 
@@ -58,7 +58,7 @@ Because the translation happens once, the CPU runs native instructions with no
 per-operation overhead, and performance is predictable from run to run. The price is
 a **build step** between editing and running, and output that is usually tied to one
 platform — a binary built for x86-64 Linux will not run on an ARM Mac without
-recompiling (see [cross-compilation](/reference/cross-compilation/)). This contrasts
+recompiling (see [cross-compilation](/reference/cross-compilation/)).[^wiki] This contrasts
 with an [interpreter](/reference/interpreter/), which skips the build step but pays
 overhead on every run, and with [JIT compilation](/reference/jit-compilation/), which
 moves the translation to run time.
@@ -69,3 +69,7 @@ Compiled languages dominate systems software, where speed and a self-contained
 [static binary](/reference/static-binary/) matter. GopherTrunk is compiled by the Go
 toolchain into a single native executable, which is why it ships without requiring any
 runtime on the target machine.
+
+## Sources
+
+[^wiki]: [Compiler](https://en.wikipedia.org/wiki/Compiler) — Wikipedia, on how compilers translate source ahead of time, optimize, and target machine code or bytecode.

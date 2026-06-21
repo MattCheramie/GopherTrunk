@@ -20,13 +20,15 @@ see_also: [project-25, p25-phase-2, c4fm, imbe, fdma, control-channel]
 related_lessons:
   - { title: "Digital modulation & constellations", url: /learn/rf-sdr/digital-modulation/ }
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Project 25 (Wikipedia)", url: https://en.wikipedia.org/wiki/Project_25 }
+related_reading:
+  - { title: "SDR Internals, Part 10: Protocol decoders & state machines", url: /blog/deep-dives/sdr-internals-10-protocol-decoders-state-machines/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Project_25
 ---
 
 **P25 Phase 1** is the first-generation air interface of [Project 25](/reference/project-25/),
 using **[FDMA](/reference/fdma/)** — one conversation per 12.5 kHz channel — with
-[C4FM](/reference/c4fm/) modulation and the [IMBE](/reference/imbe/) vocoder.
+[C4FM](/reference/c4fm/) modulation and the [IMBE](/reference/imbe/) vocoder.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 360 150" role="img" aria-label="Stacked 12.5 kHz FDMA channels each carrying one P25 Phase 1 call." xmlns="http://www.w3.org/2000/svg">
@@ -66,7 +68,7 @@ demodulator can handle both transmit paths.
 
 Phase 1 documents were published by the [TIA](/reference/tia/) starting in the
 mid-1990s and saw broad public-safety adoption through the 2000s as agencies migrated
-from analog and proprietary systems.
+from analog and proprietary systems.[^wiki]
 
 ## Deployment
 
@@ -79,3 +81,7 @@ GopherTrunk demodulates the C4FM symbols, recovers the IMBE frames, and synthesi
 audio. The [constellation](/reference/constellation-diagram/) and
 [eye diagram](/reference/eye-diagram/) views help confirm a clean lock. See
 [Status](/status.html) for details.
+
+## Sources
+
+[^wiki]: [Project 25](https://en.wikipedia.org/wiki/Project_25) — Wikipedia, for the P25 Phase 1 FDMA air interface, C4FM/CQPSK modulation, the IMBE vocoder, and TIA standardisation.

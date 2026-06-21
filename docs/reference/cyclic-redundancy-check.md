@@ -14,12 +14,14 @@ infobox:
 see_also: [forward-error-correction, ads-b, ais, ax25]
 related_lessons:
   - { title: "Other signals you'll meet", url: /learn/rf-sdr/other-signals/ }
-external:
-  - { title: "Cyclic redundancy check (Wikipedia)", url: https://en.wikipedia.org/wiki/Cyclic_redundancy_check }
+related_reading:
+  - { title: "SDR Internals, Part 9: Framing & forward error correction", url: /blog/deep-dives/sdr-internals-09-framing-fec/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Cyclic_redundancy_check
 ---
 
 A **cyclic redundancy check** (**CRC**) is an error-*detection* code that appends a
-checksum computed by polynomial division over the data. A mismatch on receive flags a
+checksum computed by polynomial division over the data.[^wiki] A mismatch on receive flags a
 corrupted frame.
 
 <figure class="figure" markdown="0">
@@ -44,3 +46,7 @@ but does not correct errors. Frames failing the CRC are discarded.
 ## Relevance to SDR
 
 CRC validation ensures GopherTrunk only reports data frames that arrived intact.
+
+## Sources
+
+[^wiki]: [Cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) — Wikipedia, for the polynomial-division checksum used to detect corrupted frames.

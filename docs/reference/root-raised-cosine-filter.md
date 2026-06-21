@@ -14,12 +14,14 @@ infobox:
 see_also: [matched-filter, digital-filter, symbol-rate, eye-diagram]
 related_lessons:
   - { title: "Filtering & decimation", url: /learn/rf-sdr/filtering-decimation/ }
-external:
-  - { title: "Root-raised-cosine filter (Wikipedia)", url: https://en.wikipedia.org/wiki/Root-raised-cosine_filter }
+related_reading:
+  - { title: "SDR Internals, Part 4: DSP foundations — filters, NCO & AGC", url: /blog/deep-dives/sdr-internals-04-dsp-foundations-filters-nco-agc/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Root-raised-cosine_filter
 ---
 
 A **root-raised-cosine** (**RRC**) filter is a pulse-shaping
-[filter](/reference/digital-filter/) applied at both transmitter and receiver. Split
+[filter](/reference/digital-filter/) applied at both transmitter and receiver.[^wiki] Split
 across the link, the two halves combine into a raised-cosine response that limits
 bandwidth while minimising **intersymbol interference**.
 
@@ -44,3 +46,7 @@ maximising SNR at the sampling instant — visible as a clean
 
 Applying the correct RRC is part of demodulating digital signals that use it, sharpening
 [symbol](/reference/symbol-rate/) decisions.
+
+## Sources
+
+[^wiki]: [Root-raised-cosine filter](https://en.wikipedia.org/wiki/Root-raised-cosine_filter) — Wikipedia, on split RRC pulse shaping and the matched-filter pair.

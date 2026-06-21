@@ -14,12 +14,14 @@ infobox:
 see_also: [talkgroup, affiliation, control-channel, mdc1200]
 related_lessons:
   - { title: "What is trunked radio?", url: /learn/rf-sdr/what-is-trunking/ }
-external:
-  - { title: "Trunked radio system (Wikipedia)", url: https://en.wikipedia.org/wiki/Trunked_radio_system }
+related_reading:
+  - { title: "SDR Internals, Part 11: The trunking engine & event bus", url: /blog/deep-dives/sdr-internals-11-trunking-engine-event-bus/ }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Trunked_radio_system
 ---
 
 A **radio ID** (unit ID) is the unique identifier of an individual radio on a system,
-distinct from the [talkgroup](/reference/talkgroup/) it is using. It appears in
+distinct from the [talkgroup](/reference/talkgroup/) it is using.[^wiki] It appears in
 [control-channel](/reference/control-channel/) signalling and in analog in-band schemes
 like [MDC1200](/reference/mdc1200/).
 
@@ -44,3 +46,7 @@ ID, so a monitor can see *which unit* is talking, not just which group.
 
 GopherTrunk's Radio IDs view merges live radio IDs with any alias catalogue, letting you
 track individual units across a system.
+
+## Sources
+
+[^wiki]: [Trunked radio system](https://en.wikipedia.org/wiki/Trunked_radio_system) — Wikipedia, on subscriber/unit identifiers in trunking signalling.

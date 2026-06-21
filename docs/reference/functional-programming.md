@@ -17,13 +17,13 @@ infobox:
 see_also: [imperative-programming, declarative-programming, object-oriented-programming, abstraction, concurrency, lisp-language, python-language]
 related_lessons:
   - { title: "Paradigms & language families", url: /learn/intro-software-dev/language-families/ }
-external:
-  - { title: "Functional programming — Wikipedia", url: https://en.wikipedia.org/wiki/Functional_programming }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Functional_programming
 ---
 
 **Functional programming** (**FP**) treats computation as the evaluation of functions,
 ideally **pure** ones — functions that always return the same output for the same input
-and have no side effects.
+and have no side effects.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 140" role="img" aria-label="Input data flows through a chain of pure functions — map, filter, reduce — each producing a new value without mutating shared state." xmlns="http://www.w3.org/2000/svg">
@@ -48,7 +48,7 @@ and have no side effects.
 Pure functions are easy to test, reason about, and run in parallel, because they cannot
 interfere with each other. FP favours **immutable data**, **higher-order functions**
 (functions that take or return other functions), and composing small transformations
-into pipelines — `map`, `filter`, and `reduce` are its everyday vocabulary. Because pure
+into pipelines — `map`, `filter`, and `reduce` are its everyday vocabulary.[^wiki] Because pure
 code has no hidden state to corrupt, it sidesteps an entire class of bugs and meshes well
 with [concurrency](/reference/concurrency/).
 
@@ -69,4 +69,8 @@ functional, while Clojure, Elixir, and Scala lean functional. Most mainstream la
 [JavaScript](/reference/javascript-language/), and others — now offer functional tools
 alongside [object-oriented](/reference/object-oriented-programming/) features, so the
 paradigm is usually a style you choose per piece of code rather than a whole language you
-adopt.
+adopt.[^wiki]
+
+## Sources
+
+[^wiki]: [Functional programming](https://en.wikipedia.org/wiki/Functional_programming) — Wikipedia, for the definition, pure functions and immutability, and the map/filter/reduce vocabulary.

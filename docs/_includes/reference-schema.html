@@ -1,13 +1,14 @@
 {%- comment -%}
   Structured data for reference entries. Person for people; otherwise DefinedTerm
-  inside the "GopherTrunk Reference" DefinedTermSet. Always a BreadcrumbList.
-  `external` links become sameAs for authority. Kept out of head.html so the
-  homepage SoftwareApplication entity stays clean.
+  inside the "GopherTrunk Field Guide" DefinedTermSet. Always a BreadcrumbList.
+  Authoritative source URLs (from the `cite_urls` front-matter list, mirroring
+  the article's footnote sources) become sameAs for entity authority. Kept out of
+  head.html so the homepage SoftwareApplication entity stays clean.
 {%- endcomment -%}
 {%- assign page_url = page.url | absolute_url -%}
 {%- capture sameas -%}
-  {%- if page.external and page.external.size > 0 -%}
-    "sameAs": [{% for x in page.external %}{{ x.url | jsonify }}{% unless forloop.last %},{% endunless %}{% endfor %}],
+  {%- if page.cite_urls and page.cite_urls.size > 0 -%}
+    "sameAs": [{% for u in page.cite_urls %}{{ u | jsonify }}{% unless forloop.last %},{% endunless %}{% endfor %}],
   {%- endif -%}
 {%- endcapture -%}
 {%- if page.entry_type == "person" -%}
@@ -33,7 +34,7 @@
   {{ sameas }}
   "inDefinedTermSet": {
     "@type": "DefinedTermSet",
-    "name": "GopherTrunk Reference",
+    "name": "GopherTrunk Field Guide",
     "url": {{ '/reference/' | absolute_url | jsonify }}
   }
 }
@@ -45,7 +46,7 @@
   "@type": "BreadcrumbList",
   "itemListElement": [
     { "@type": "ListItem", "position": 1, "name": "Home", "item": {{ '/' | absolute_url | jsonify }} },
-    { "@type": "ListItem", "position": 2, "name": "Reference", "item": {{ '/reference/' | absolute_url | jsonify }} },
+    { "@type": "ListItem", "position": 2, "name": "Field Guide", "item": {{ '/reference/' | absolute_url | jsonify }} },
     { "@type": "ListItem", "position": 3, "name": {{ page.title | jsonify }}, "item": {{ page_url | jsonify }} }
   ]
 }

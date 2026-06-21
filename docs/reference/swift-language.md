@@ -19,13 +19,15 @@ see_also: [kotlin-language, rust-language, memory-management, compiler, type-sys
 related_lessons:
   - { title: "A tour of today's major languages", url: /learn/intro-software-dev/language-tour/ }
   - { title: "Memory management across languages", url: /learn/intro-software-dev/memory-management/ }
-external:
-  - { title: "Swift (programming language) — Wikipedia", url: https://en.wikipedia.org/wiki/Swift_(programming_language) }
-  - { title: "The Swift programming language — Apple", url: https://www.swift.org/ }
+related_reading:
+  - { title: "Build in the Open, Part 2: Choosing your language, platforms & stack", url: /blog/tutorials/build-in-the-open-02-choosing-language-platforms-stack/ }
+cite_urls:
+  - https://www.swift.org/
+  - https://en.wikipedia.org/wiki/Swift_(programming_language)
 ---
 
 **Swift** is Apple's modern, statically typed, compiled language for building iOS and
-macOS applications. It is clean and fast and prioritises safety, but its centre of
+macOS applications.[^wiki] It is clean and fast and prioritises safety, but its centre of
 gravity remains Apple's platforms.
 
 <figure class="figure" markdown="0">
@@ -46,7 +48,7 @@ gravity remains Apple's platforms.
 ## Overview
 
 Swift [compiles](/reference/compiler/) ahead of time to native machine code through LLVM,
-giving it performance well beyond Apple's earlier Objective-C in many cases. It is
+giving it performance well beyond Apple's earlier Objective-C in many cases.[^home] It is
 [statically typed](/reference/type-system/) with type inference, supports
 [object-oriented](/reference/object-oriented-programming/) and functional styles, and
 manages [memory](/reference/memory-management/) automatically through Automatic Reference
@@ -68,3 +70,8 @@ mobile language tied instead to the JVM and Android.
 Swift is the primary language for iOS, iPadOS, macOS, watchOS and tvOS application
 development, and for most new software written for Apple's ecosystem. Outside that world
 it sees comparatively little use.
+
+## Sources
+
+[^home]: [The Swift programming language](https://www.swift.org/) — official site, documentation, and the language and toolchain.
+[^wiki]: [Swift (programming language)](https://en.wikipedia.org/wiki/Swift_(programming_language)) — Wikipedia, for history and design background.

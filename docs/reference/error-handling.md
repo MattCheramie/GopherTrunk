@@ -16,13 +16,13 @@ infobox:
 see_also: [api, clean-code, solid, unit-testing, rest, type-system]
 related_lessons:
   - { title: "Errors, edge cases & defensive programming", url: /learn/intro-software-dev/robustness-and-errors/ }
-external:
-  - { title: "Exception handling — Wikipedia", url: https://en.wikipedia.org/wiki/Exception_handling }
+cite_urls:
+  - https://en.wikipedia.org/wiki/Exception_handling
 ---
 
 **Error handling** is the part of a program's design that deals with failures, treating
 errors as a normal, first-class part of the system rather than an exceptional
-afterthought bolted on at the end.
+afterthought bolted on at the end.[^wiki]
 
 <figure class="figure" markdown="0">
 <svg viewBox="0 0 460 130" role="img" aria-label="An operation branches into a success path and an error path; the error path either fails fast or fails soft." xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +45,7 @@ Languages represent and propagate errors differently, and each style has trade-o
 
 - **Exceptions** (Java, Python, C#) are thrown and unwind the stack until caught.
   Convenient, but easy to ignore — an uncaught exception crashes the program, and a
-  signature doesn't reveal what it might throw.
+  signature doesn't reveal what it might throw.[^wiki]
 - **Explicit error returns** (Go) return an error value alongside the result; the
   caller must decide what to do. Verbose, but the error path is impossible to overlook.
 - **Result / Option types** (Rust, many functional languages) make errors part of the
@@ -67,3 +67,7 @@ functionality on expected, recoverable trouble). Make retry-able operations
 ideas shape how an [API](/reference/api/) or a [REST](/reference/rest/) service reports
 problems to its callers, and they are only trustworthy when proven under bad inputs —
 which is the job of [tests](/reference/unit-testing/).
+
+## Sources
+
+[^wiki]: [Exception handling](https://en.wikipedia.org/wiki/Exception_handling) — Wikipedia, on error and exception handling styles and the trade-offs between them.
