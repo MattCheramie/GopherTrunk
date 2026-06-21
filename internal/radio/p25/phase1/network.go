@@ -43,11 +43,12 @@ type NeighborSite struct {
 
 // NetworkConfig is a snapshot of the accumulated system topology.
 type NetworkConfig struct {
-	WACN      uint32 // 20-bit Wide-Area Communication Network ID
-	SystemID  uint16 // 12-bit System ID
-	RFSS      uint8  // RF Sub-System ID of the camped site
-	Site      uint8  // Site ID of the camped site
-	LRA       uint8  // Location Registration Area
+	WACN      uint32  // 20-bit Wide-Area Communication Network ID
+	SystemID  uint16  // 12-bit System ID
+	RFSS      uint8   // RF Sub-System ID of the camped site
+	Site      uint8   // Site ID of the camped site
+	LRA       uint8   // Location Registration Area
+	PrimaryCC Channel // primary control channel of the camped site (zero when unseen)
 	Secondary []Channel
 	Neighbors []NeighborSite
 }
@@ -70,6 +71,12 @@ type NetworkModel struct {
 	siteVotes  map[uint8]int
 	lraVotes   map[uint8]int
 
+	// Primary control channel vote tally — the (id, number) the camped
+	// site advertises in its Network/RFSS status broadcasts. Voted (not
+	// last-write-wins) for the same corroboration reason as the identity
+	// scalars: a corrupt-but-CRC-passing 0x3A/0x3B must not poison it.
+	primaryVotes map[Channel]int
+
 	// Secondary control channels — de-duplicated on first sight (a
 	// secondary CC is low-risk and not part of the corroboration scope).
 	secondary []Channel
@@ -86,6 +93,7 @@ func (m *NetworkModel) ensure() {
 		m.rfssVotes = map[uint8]int{}
 		m.siteVotes = map[uint8]int{}
 		m.lraVotes = map[uint8]int{}
+		m.primaryVotes = map[Channel]int{}
 		m.neighborData = map[neighborKey]NeighborSite{}
 	}
 }
@@ -106,6 +114,7 @@ func (m *NetworkModel) ApplyNetworkStatus(n NetworkStatusBroadcast) {
 	if n.LRA != 0 {
 		m.lraVotes[n.LRA]++
 	}
+	m.votePrimary(n.ChannelID, n.ChannelNumber)
 }
 
 // ApplyRFSSStatus folds an RFSS Status Broadcast (0x3A) in.
@@ -123,6 +132,20 @@ func (m *NetworkModel) ApplyRFSSStatus(r RFSSStatusBroadcast) {
 	if r.LRA != 0 {
 		m.lraVotes[r.LRA]++
 	}
+	m.votePrimary(r.ChannelID, r.ChannelNumber)
+}
+
+// votePrimary records a primary-control-channel observation. A zero
+// (id, number) carries no information (channel 0-0 is the "no channel"
+// sentinel used across these broadcasts), so it never gets a vote and
+// cannot out-rank a real channel seen the same number of times. Caller
+// holds m.mu.
+func (m *NetworkModel) votePrimary(id uint8, number uint16) {
+	if id == 0 && number == 0 {
+		return
+	}
+	m.ensure()
+	m.primaryVotes[Channel{ChannelID: id, ChannelNumber: number}]++
 }
 
 // ApplySecondaryControlChannel folds a Secondary Control Channel
@@ -167,6 +190,7 @@ func (m *NetworkModel) Snapshot() NetworkConfig {
 		RFSS:      majority(m.rfssVotes),
 		Site:      majority(m.siteVotes),
 		LRA:       majority(m.lraVotes),
+		PrimaryCC: majorityChannel(m.primaryVotes),
 		Secondary: append([]Channel(nil), m.secondary...),
 	}
 	for _, n := range m.neighborData {
@@ -190,6 +214,22 @@ func majority[K ~uint8 | ~uint16 | ~uint32](votes map[K]int) K {
 	for k, c := range votes {
 		if c > bestCount || (c == bestCount && k > best) {
 			best, bestCount = k, c
+		}
+	}
+	return best
+}
+
+// majorityChannel returns the most-observed Channel in a vote tally, or the
+// zero Channel when the tally is empty. Channel is a struct so it can't use the
+// scalar-constrained majority generic; ties are broken deterministically by the
+// larger (ChannelID, ChannelNumber) so map iteration order doesn't matter.
+func majorityChannel(votes map[Channel]int) Channel {
+	var best Channel
+	bestCount := 0
+	for ch, c := range votes {
+		if c > bestCount || (c == bestCount && (ch.ChannelID > best.ChannelID ||
+			(ch.ChannelID == best.ChannelID && ch.ChannelNumber > best.ChannelNumber))) {
+			best, bestCount = ch, c
 		}
 	}
 	return best

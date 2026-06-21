@@ -81,7 +81,7 @@ func runHunt(args []string) {
 	location := fs.String("location", "", "free-form location (e.g. \"Phoenix, AZ\")")
 
 	out := fs.String("out", "", "output directory (default: ./hunt-<timestamp>)")
-	formats := fs.String("formats", "bundle,trunk-recorder,rr", "comma-separated export formats: bundle,trunk-recorder,rr")
+	formats := fs.String("formats", "bundle,trunk-recorder,rr", "comma-separated export formats: bundle,trunk-recorder,rr,summary")
 
 	noRR := fs.Bool("no-rr", false, "skip the RadioReference duplicate check even if a key is configured")
 	rrKey := fs.String("rr-key", "", "RadioReference API key (else GOPHERTRUNK_RR_KEY env). Enables the read-only duplicate check.")
@@ -100,7 +100,7 @@ func runHunt(args []string) {
 
 USAGE:
   gophertrunk hunt -in <capture> [-in <capture> …] [-format u8|f32] [-sample-rate Hz]
-                  [-protocol <p>] [-out <dir>] [-formats bundle,trunk-recorder,rr]
+                  [-protocol <p>] [-out <dir>] [-formats bundle,trunk-recorder,rr,summary]
                   [-name N] [-state XX] [-county C] [-commit -config config.yaml]
 
 EXAMPLES:

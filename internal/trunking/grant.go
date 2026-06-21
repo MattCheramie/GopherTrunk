@@ -332,5 +332,11 @@ type SiteUpdate struct {
 	ControlChannelHz uint32
 	WACN             uint32
 	SystemID         uint16
-	At               time.Time
+	// Topology, when non-nil, is the full network-configuration snapshot of the
+	// camped site (identity + primary/secondary control channels + neighbours +
+	// band plan) as of this update. It is built on the decoder's Process
+	// goroutine and handed off here, so the SiteTracker can render the live
+	// network-configuration report without touching the decoder's internals.
+	Topology *TopologySnapshot
+	At       time.Time
 }

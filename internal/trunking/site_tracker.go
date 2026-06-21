@@ -46,6 +46,12 @@ type SiteTracker struct {
 
 	mu    sync.Mutex
 	sites map[siteKey]*SiteInfo
+	// topo holds the latest full topology snapshot per system name, so the
+	// live network-configuration report (GET /api/v1/systems/{name}/report)
+	// can be rendered without reaching into the decoder. It reflects the most
+	// recently camped site of each system (identity + that site's control
+	// channels, neighbours, and the system band plan).
+	topo map[string]*TopologySnapshot
 }
 
 // siteKey identifies a site within the tracker table.
@@ -76,6 +82,7 @@ func NewSiteTracker(opts SiteTrackerOptions) (*SiteTracker, error) {
 		now:     opts.Now,
 		runDone: make(chan struct{}),
 		sites:   make(map[siteKey]*SiteInfo),
+		topo:    make(map[string]*TopologySnapshot),
 	}
 	t.sub = opts.Bus.Subscribe()
 	return t, nil
@@ -125,7 +132,23 @@ func (t *SiteTracker) observe(u SiteUpdate) {
 	if u.SystemID != 0 {
 		s.SystemID = u.SystemID
 	}
+	if u.Topology != nil && !u.Topology.Empty() {
+		t.topo[u.System] = u.Topology
+	}
 	s.LastSeen = t.now()
+}
+
+// Report renders the human-readable network-configuration report for the named
+// system from its most recent topology snapshot. The bool is false when no
+// topology has been observed for the system yet.
+func (t *SiteTracker) Report(system string) (string, bool) {
+	t.mu.Lock()
+	snap := t.topo[system]
+	t.mu.Unlock()
+	if snap == nil {
+		return "", false
+	}
+	return FormatNetworkReport(ReportFromTopology(snap)), true
 }
 
 // Snapshot returns every tracked site, ordered by system then RFSS/Site

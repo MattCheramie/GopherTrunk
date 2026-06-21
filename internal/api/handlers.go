@@ -139,6 +139,34 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 	s.writeError(w, http.StatusNotFound, "system not found")
 }
 
+// handleGetSystemReport serves GET /api/v1/systems/{name}/report: the live
+// human-readable P25 network-configuration report (WACN/SysID/NAC, the camped
+// site's control channels and neighbours, and the band plan) rendered from the
+// SiteTracker's latest topology snapshot. A configured-but-quiet system returns
+// an empty report with available=false; an entirely unknown system 404s.
+func (s *Server) handleGetSystemReport(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var report string
+	available := false
+	if reporter, ok := s.sites.(NetworkReporter); ok {
+		report, available = reporter.Report(name)
+	}
+	if !available {
+		known := false
+		for _, sys := range s.systems {
+			if sys.Name == name {
+				known = true
+				break
+			}
+		}
+		if !known {
+			s.writeError(w, http.StatusNotFound, "system not found")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"system": name, "report": report, "available": available})
+}
+
 // overlayLiveIdentity fills WACN/SystemID/RFSS/Site on dto from the live
 // SiteTracker snapshot (the same data behind GET /api/v1/sites) for the
 // matching system. Network identity (WACN/SYSID/RFSS/Site) is decoded from

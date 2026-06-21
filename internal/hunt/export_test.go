@@ -40,6 +40,7 @@ func TestParseFormat(t *testing.T) {
 		"bundle": FormatBundle, "csv": FormatBundle, "": FormatBundle,
 		"trunk-recorder": FormatTrunkRecorder, "tr": FormatTrunkRecorder,
 		"rr": FormatRR, "radioreference": FormatRR,
+		"summary": FormatSummary, "txt": FormatSummary, "report": FormatSummary,
 	}
 	for in, want := range cases {
 		got, err := ParseFormat(in)
@@ -53,6 +54,37 @@ func TestParseFormat(t *testing.T) {
 	}
 	if _, err := ParseFormat("nope"); err == nil {
 		t.Error("ParseFormat(nope) expected error")
+	}
+}
+
+func TestFormatSummaryMetadata(t *testing.T) {
+	if FormatSummary.String() != "summary" {
+		t.Errorf("String() = %q, want summary", FormatSummary.String())
+	}
+	if FormatSummary.FileExtension() != "txt" {
+		t.Errorf("FileExtension() = %q, want txt", FormatSummary.FileExtension())
+	}
+}
+
+func TestWriteSummary_StructureAndContent(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Write(&buf, sampleSystem(), FormatSummary, nil); err != nil {
+		t.Fatalf("Write(summary): %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"P25 Network Configuration — Example P25 System",
+		"WACN:BEE99[",
+		"NAC:4D2[",
+		"RFSS:1[1] SITE:1[1]",
+		// First control channel is the primary; the second is rendered as a
+		// secondary CC (frequency only — hunt keeps no band-plan coordinates).
+		"PRI CONTROL CHANNEL DOWNLINK:851.012500 MHz",
+		"SEC CONTROL CHANNEL DOWNLINK:851.262500 MHz",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary missing %q\n--- full ---\n%s", want, out)
+		}
 	}
 }
 

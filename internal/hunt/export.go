@@ -19,6 +19,9 @@ const (
 	FormatTrunkRecorder
 	// FormatRR is a human-readable RadioReference.com submission package.
 	FormatRR
+	// FormatSummary is the human-readable P25 network-configuration / activity
+	// summary report (GopherTrunk's equivalent of SDRtrunk's network monitor).
+	FormatSummary
 )
 
 // String renders the format as the value operators type on the CLI.
@@ -28,6 +31,8 @@ func (f Format) String() string {
 		return "trunk-recorder"
 	case FormatRR:
 		return "rr"
+	case FormatSummary:
+		return "summary"
 	default:
 		return "bundle"
 	}
@@ -40,6 +45,8 @@ func (f Format) FileExtension() string {
 		return "json"
 	case FormatRR:
 		return "md"
+	case FormatSummary:
+		return "txt"
 	default:
 		return "csv"
 	}
@@ -54,8 +61,10 @@ func ParseFormat(s string) (Format, error) {
 		return FormatTrunkRecorder, nil
 	case "rr", "radioreference", "submission":
 		return FormatRR, nil
+	case "summary", "txt", "report":
+		return FormatSummary, nil
 	default:
-		return FormatBundle, fmt.Errorf("hunt: unknown export format %q (want bundle|trunk-recorder|rr)", s)
+		return FormatBundle, fmt.Errorf("hunt: unknown export format %q (want bundle|trunk-recorder|rr|summary)", s)
 	}
 }
 
@@ -77,6 +86,8 @@ func WriteWithRRDiff(w io.Writer, sys *DiscoveredSystem, f Format, hints []Dupli
 		return writeTrunkRecorder(w, sys)
 	case FormatRR:
 		return writeRR(w, sys, hints, diff)
+	case FormatSummary:
+		return writeSummary(w, sys)
 	default:
 		return fmt.Errorf("hunt: unsupported format %d", f)
 	}

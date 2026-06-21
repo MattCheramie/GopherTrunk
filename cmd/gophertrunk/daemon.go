@@ -3800,6 +3800,11 @@ type sitesProvider struct{ t *trunking.SiteTracker }
 
 func (s sitesProvider) Sites() []trunking.SiteInfo { return s.t.Snapshot() }
 
+// Report forwards the SiteTracker's live network-configuration report so the
+// API's optional api.NetworkReporter capability resolves through the adapter
+// (GET /api/v1/systems/{name}/report).
+func (s sitesProvider) Report(system string) (string, bool) { return s.t.Report(system) }
+
 // wrapBasebandRecorders replaces the Device of every pool entry whose
 // serial appears in baseband.record with a RecordingDevice, teeing its
 // live IQ to a WAV recording. Runs once at construction, before any

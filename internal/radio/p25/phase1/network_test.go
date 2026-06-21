@@ -1,12 +1,54 @@
 package phase1
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// TestControlChannelTopologySnapshot drives identity / band-plan / secondary /
+// neighbour state into a control channel and checks TopologySnapshot maps it,
+// resolving each channel's downlink frequency through the band plan. This is
+// the single builder both the siglab engine and the live ccdecoder pipeline use.
+func TestControlChannelTopologySnapshot(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cc := New(Options{Bus: bus, Log: slog.Default(), SystemName: "Main", FrequencyHz: 851_100_000})
+	cc.lastNAC = 0x2C1
+	cc.bandPlan.Apply(IdentifierUpdate{ChannelID: 1, BaseHz: 851_000_000, SpacingHz: 12_500, BandwidthHz: 12_500, TxOffsetHz: -45_000_000})
+	cc.netModel.ApplyNetworkStatus(NetworkStatusBroadcast{WACN: 0xBEE99, SystemID: 0x49A, ChannelID: 1, ChannelNumber: 8})
+	cc.netModel.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x49A, RFSS: 1, Site: 2, LRA: 0x0C, ChannelID: 1, ChannelNumber: 8})
+	cc.netModel.ApplySecondaryControlChannel(SecondaryControlChannelBroadcast{ChannelAID: 1, ChannelANumber: 100})
+	cc.netModel.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{RFSS: 1, Site: 3, ChannelID: 1, ChannelNumber: 200})
+
+	snap := cc.TopologySnapshot()
+	if snap == nil {
+		t.Fatal("TopologySnapshot returned nil for a populated control channel")
+	}
+	if snap.Protocol != "p25" || snap.SystemName != "Main" || snap.NAC != 0x2C1 {
+		t.Errorf("metadata = proto %q name %q nac %X", snap.Protocol, snap.SystemName, snap.NAC)
+	}
+	if snap.WACN != 0xBEE99 || snap.SystemID != 0x49A || snap.RFSS != 1 || snap.Site != 2 || snap.LRA != 0x0C {
+		t.Errorf("identity = %+v", snap)
+	}
+	// Primary CC 1-8 resolves to 851_000_000 + 8*12_500 = 851_100_000.
+	if snap.PrimaryCC == nil || snap.PrimaryCC.FrequencyHz != 851_100_000 {
+		t.Errorf("PrimaryCC = %+v, want freq 851100000", snap.PrimaryCC)
+	}
+	// Secondary 1-100 → 852_250_000; neighbour 1-200 → 853_500_000.
+	if len(snap.Secondary) != 1 || snap.Secondary[0].FrequencyHz != 852_250_000 {
+		t.Errorf("Secondary = %+v", snap.Secondary)
+	}
+	if len(snap.Neighbors) != 1 || snap.Neighbors[0].FrequencyHz != 853_500_000 {
+		t.Errorf("Neighbors = %+v", snap.Neighbors)
+	}
+	if len(snap.BandPlan) != 1 || snap.BandPlan[0].BaseHz != 851_000_000 {
+		t.Errorf("BandPlan = %+v", snap.BandPlan)
+	}
+}
 
 func TestNetworkModelAccumulates(t *testing.T) {
 	var m NetworkModel
@@ -36,6 +78,33 @@ func TestNetworkModelAccumulates(t *testing.T) {
 		if n.Site == 8 && n.ChannelNumber != 305 {
 			t.Errorf("site 8 neighbour not updated: %+v", n)
 		}
+	}
+}
+
+func TestNetworkModelPrimaryControlChannel(t *testing.T) {
+	var m NetworkModel
+	// The camped site advertises its primary CC (2-1620) in repeated RFSS/
+	// Network status broadcasts; a single corrupt-but-CRC-passing frame names a
+	// different channel and must not win the majority vote.
+	for i := 0; i < 3; i++ {
+		m.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x2C2, RFSS: 1, Site: 1, ChannelID: 2, ChannelNumber: 1620})
+		m.ApplyNetworkStatus(NetworkStatusBroadcast{WACN: 0xBEE00, SystemID: 0x2C2, ChannelID: 2, ChannelNumber: 1620})
+	}
+	m.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x2C2, RFSS: 1, Site: 1, ChannelID: 7, ChannelNumber: 9})
+
+	cfg := m.Snapshot()
+	if cfg.PrimaryCC != (Channel{ChannelID: 2, ChannelNumber: 1620}) {
+		t.Errorf("PrimaryCC = %+v, want {2 1620}", cfg.PrimaryCC)
+	}
+}
+
+func TestNetworkModelPrimaryControlChannelZeroIgnored(t *testing.T) {
+	var m NetworkModel
+	// A 0-0 channel is the "no channel" sentinel and must never be voted, so an
+	// unseen primary CC stays the zero Channel.
+	m.ApplyRFSSStatus(RFSSStatusBroadcast{SystemID: 0x2C2, RFSS: 1, Site: 1, ChannelID: 0, ChannelNumber: 0})
+	if cc := m.Snapshot().PrimaryCC; cc != (Channel{}) {
+		t.Errorf("PrimaryCC = %+v, want zero", cc)
 	}
 }
 

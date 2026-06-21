@@ -2,6 +2,7 @@ package trunking
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,46 @@ func TestSiteTrackerObservesSiteUpdates(t *testing.T) {
 	}
 	if s.ControlChannelHz != 420012500 || s.WACN != 0xBEE00 || s.SystemID != 0x123 {
 		t.Fatalf("site network fields wrong: %+v", s)
+	}
+}
+
+func TestSiteTrackerReportFromTopology(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	tr, err := NewSiteTracker(SiteTrackerOptions{Bus: bus})
+	if err != nil {
+		t.Fatalf("NewSiteTracker: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go tr.Run(ctx)
+	t.Cleanup(func() { cancel(); tr.Close() })
+
+	// No topology observed yet ⇒ no report.
+	if _, ok := tr.Report("MMR"); ok {
+		t.Fatal("Report should be unavailable before any topology")
+	}
+
+	bus.Publish(events.Event{
+		Kind: events.KindSiteUpdate,
+		Payload: SiteUpdate{
+			System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 450125000,
+			WACN: 0xBEE00, SystemID: 0x2C2,
+			Topology: &TopologySnapshot{
+				SystemName: "MMR", Protocol: "p25", WACN: 0xBEE00, SystemID: 0x2C2, NAC: 0x2C1,
+				RFSS: 1, Site: 1,
+				PrimaryCC: &TopoChannelRef{ChannelID: 2, ChannelNumber: 1620, FrequencyHz: 450125000},
+			},
+		},
+	})
+
+	var report string
+	waitFor(t, func() bool {
+		r, ok := tr.Report("MMR")
+		report = r
+		return ok
+	})
+	if !strings.Contains(report, "WACN:BEE00[781824]") || !strings.Contains(report, "PRI CONTROL CHANNEL:2-1620") {
+		t.Errorf("report missing expected tokens:\n%s", report)
 	}
 }
 

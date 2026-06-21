@@ -44,6 +44,10 @@ type ControlChannel struct {
 	now        func() time.Time
 	locked     bool
 	lastNAC    uint16
+	// lastSiteLog dedupes the concise site-configuration log line so an
+	// established site logs once and re-logs only when its identity / primary
+	// control channel materially changes (see logSiteIdentity).
+	lastSiteLog siteLogKey
 	// lastNoHitsAt throttles the "no FSW hits" debug log so the chunk-rate
 	// emission doesn't flood at debug level. See Process for the rationale.
 	lastNoHitsAt time.Time
@@ -187,6 +191,76 @@ func (c *ControlChannel) NetworkSnapshot() NetworkConfig {
 // lets the signal-lab / hunt layers fully document a discovered P25 system.
 func (c *ControlChannel) BandPlanSnapshot() []IdentifierUpdate {
 	return c.bandPlan.Snapshot()
+}
+
+// LastNAC returns the NAC of the most recent corrected NID. Zero before the
+// control channel locks. Used to stamp the network-configuration report.
+func (c *ControlChannel) LastNAC() uint16 { return c.lastNAC }
+
+// SystemName returns the operator-assigned system name, if any.
+func (c *ControlChannel) SystemName() string { return c.systemName }
+
+// TopologySnapshot builds the protocol-neutral topology snapshot for this
+// control channel: identity, primary/secondary control channels, neighbours,
+// and band plan, with every channel's downlink frequency resolved through the
+// accumulated band plan. It is the single source the siglab engine and the live
+// ccdecoder pipeline both surface (the latter via trunking.TopologyProvider),
+// and the input to the human-readable network-configuration report. Returns nil
+// when nothing usable has been observed yet.
+func (c *ControlChannel) TopologySnapshot() *trunking.TopologySnapshot {
+	net := c.netModel.Snapshot()
+	t := &trunking.TopologySnapshot{
+		SystemName: c.systemName,
+		Protocol:   "p25",
+		WACN:       net.WACN,
+		SystemID:   uint32(net.SystemID),
+		NAC:        c.lastNAC,
+		RFSS:       net.RFSS,
+		Site:       net.Site,
+		LRA:        net.LRA,
+	}
+	if net.PrimaryCC.ChannelID != 0 || net.PrimaryCC.ChannelNumber != 0 {
+		t.PrimaryCC = c.channelRef(net.PrimaryCC)
+	}
+	for _, s := range net.Secondary {
+		t.Secondary = append(t.Secondary, *c.channelRef(s))
+	}
+	for _, n := range net.Neighbors {
+		ref := trunking.TopoNeighborRef{
+			RFSS:          n.RFSS,
+			Site:          n.Site,
+			ChannelID:     n.ChannelID,
+			ChannelNumber: n.ChannelNumber,
+		}
+		if hz, err := c.bandPlan.Frequency(n.ChannelID, n.ChannelNumber); err == nil {
+			ref.FrequencyHz = hz
+		}
+		t.Neighbors = append(t.Neighbors, ref)
+	}
+	for _, u := range c.bandPlan.Snapshot() {
+		t.BandPlan = append(t.BandPlan, trunking.TopoBandPlanSlot{
+			ChannelID:   u.ChannelID,
+			BaseHz:      u.BaseHz,
+			SpacingHz:   u.SpacingHz,
+			BandwidthHz: u.BandwidthHz,
+			TxOffsetHz:  u.TxOffsetHz,
+			AccessTDMA:  u.AccessTDMA,
+		})
+	}
+	if t.Empty() {
+		return nil
+	}
+	return t
+}
+
+// channelRef resolves a (band-plan ID, channel number) pair into a
+// TopoChannelRef, attaching the downlink frequency when the band plan is known.
+func (c *ControlChannel) channelRef(ch Channel) *trunking.TopoChannelRef {
+	ref := &trunking.TopoChannelRef{ChannelID: ch.ChannelID, ChannelNumber: ch.ChannelNumber}
+	if hz, err := c.bandPlan.Frequency(ch.ChannelID, ch.ChannelNumber); err == nil {
+		ref.FrequencyHz = hz
+	}
+	return ref
 }
 
 // Stats returns a snapshot of the per-frame outcome counters. Safe
@@ -1414,9 +1488,46 @@ func (c *ControlChannel) publishSiteUpdate() {
 			ControlChannelHz: c.freqHz,
 			WACN:             net.WACN,
 			SystemID:         net.SystemID,
+			Topology:         c.TopologySnapshot(),
 			At:               c.now(),
 		},
 	})
+	c.logSiteIdentity(net)
+}
+
+// siteLogKey is the dedupe key for the concise site-configuration log line.
+type siteLogKey struct {
+	wacn  uint32
+	sysid uint16
+	nac   uint16
+	rfss  uint8
+	site  uint8
+	cc    Channel
+}
+
+// logSiteIdentity emits a concise, human-readable site-configuration line the
+// first time the camped site's identity is known and again whenever it
+// materially changes — the live-daemon equivalent of the network-configuration
+// report (cf. trunk-recorder's "Decoding System ID … WACN … NAC …" startup
+// lines). It runs on the Process goroutine that owns netModel/bandPlan, so it
+// reads them without a data race; the full multi-line report is rendered off
+// the same TopologySnapshot by the CLI / hunt / API surfaces. Identity values
+// are logged in hex to match how P25 systems are referenced in the field.
+func (c *ControlChannel) logSiteIdentity(net NetworkConfig) {
+	key := siteLogKey{net.WACN, net.SystemID, c.lastNAC, net.RFSS, net.Site, net.PrimaryCC}
+	if key == c.lastSiteLog {
+		return
+	}
+	c.lastSiteLog = key
+	c.log.Info("p25 site configuration",
+		"system", c.systemName,
+		"wacn", fmt.Sprintf("%X", net.WACN),
+		"sysid", fmt.Sprintf("%X", net.SystemID),
+		"nac", fmt.Sprintf("%X", c.lastNAC),
+		"rfss", net.RFSS,
+		"site", net.Site,
+		"cc_hz", c.freqHz,
+	)
 }
 
 // drainPendingGrants re-publishes every voice grant that arrived for

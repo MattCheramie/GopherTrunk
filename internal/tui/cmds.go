@@ -283,7 +283,13 @@ func cmdResetTone(cli *client.Client, deviceSerial string) tea.Cmd {
 func cmdFetchSystemDetail(cli *client.Client, name string) tea.Cmd {
 	return func() tea.Msg {
 		s, err := cli.System(context.Background(), name)
-		return systemDetailResultMsg{s: s, err: err}
+		if err != nil {
+			return systemDetailResultMsg{s: s, err: err}
+		}
+		// The report is best-effort: a missing/empty one must not block the
+		// detail modal, so its error is intentionally dropped.
+		report, _ := cli.SystemReport(context.Background(), name)
+		return systemDetailResultMsg{s: s, report: report}
 	}
 }
 

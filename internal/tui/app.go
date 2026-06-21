@@ -393,7 +393,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.toast(fmt.Sprintf("system: %v", msg.err))
 		} else {
-			m.openDetail("System: "+msg.s.Name, formatSystemDetail(msg.s))
+			body := formatSystemDetail(msg.s)
+			if msg.report != "" {
+				body += "\n\n" + msg.report
+			}
+			m.openDetail("System: "+msg.s.Name, body)
 		}
 
 	case talkgroupDetailResultMsg:
