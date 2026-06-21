@@ -61,6 +61,7 @@ func (c *ConventionalChannel) Process(dibits []uint8, baseIdx int) int {
 	p.buf = append(p.buf, dibits...)
 
 	matches, _ := p.det.Process(nil, dibits, baseIdx)
+	c.cnt.syncHits.Add(uint64(len(matches)))
 	p.pending = append(p.pending, matches...)
 
 	bufEnd := p.bufStart + len(p.buf)

@@ -51,6 +51,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/iqpower"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
@@ -128,10 +129,27 @@ type ChannelConfig struct {
 	SystemName  string
 }
 
+// IQPowerObserver is the minimal metrics surface the engine uses to
+// publish its per-channel window-averaged dBFS gauge. internal/metrics.Metrics
+// satisfies it; nil disables the gauge while leaving the throttled
+// low-power WARN and the DEBUG decode-activity summary in place. Declared
+// locally (rather than imported from ccdecoder) so this scanner package
+// doesn't depend on another.
+type IQPowerObserver interface {
+	RecordIQPowerDbFS(system string, dbfs float64)
+	ClearIQPowerDbFS(system string)
+}
+
 // Options bundles the inputs Engine needs at construction time.
 type Options struct {
 	Log *slog.Logger
 	Bus *events.Bus
+
+	// Metrics, if non-nil, receives each channel's window-averaged dBFS
+	// gauge (labelled by "system @ <freqMHz>" so per-channel readings
+	// don't collide). Nil-safe: the throttled low-power WARN and the
+	// DEBUG decode-activity summary still fire without it.
+	Metrics IQPowerObserver
 
 	// Device is the wideband SDR. It is set to CenterFreqHz, then
 	// streamed continuously until Run's context cancels.
@@ -174,6 +192,14 @@ type Engine struct {
 	bank        tuner.Bank
 	channels    []*engineChannel
 	strategyTag string
+
+	// metrics is the optional per-channel dBFS gauge sink (nil-safe).
+	metrics IQPowerObserver
+	// now is the clock the diagnostics window uses; injectable for tests.
+	now func() time.Time
+	// lastDiagAt is the wall-clock time the per-channel diagnostics were
+	// last flushed. Owned by the Run pump goroutine.
+	lastDiagAt time.Time
 }
 
 // channelProcessor is the per-channel dibit consumer. DMR Tier II's
@@ -207,6 +233,19 @@ type engineChannel struct {
 	// channels (nil otherwise). Exposed via DMRTier3ControlChannel so the
 	// DMR LCN autoconfig learner can hot-swap a learned band-plan resolver.
 	dmrTier3 *tier3.ControlChannel
+
+	// pwr accumulates this channel's narrowband IQ power across one
+	// diagnostics window. Folded in the tap sink, drained by
+	// maybeLogDiagnostics — both on the single pump goroutine.
+	pwr iqpower.Accumulator
+	// tier2Cnt is the typed Tier II channel whose decode-activity counters
+	// feed the diagnostics summary (nil for non-dmr-tier2 channels).
+	tier2Cnt *tier2.ConventionalChannel
+	// lastCnt is the previous window's counter snapshot, so the summary
+	// can report per-window deltas instead of lifetime totals.
+	lastCnt tier2.Counters
+	// pwLowLogAt throttles the "iq power very low" WARN for this channel.
+	pwLowLogAt time.Time
 }
 
 // New constructs an Engine. The device is not opened or streamed
@@ -253,6 +292,10 @@ func New(opts Options) (*Engine, error) {
 		return nil, fmt.Errorf("widebandt2: unknown tuner strategy %q", strategy)
 	}
 
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
 	engine := &Engine{
 		log:         log,
 		bus:         opts.Bus,
@@ -261,6 +304,8 @@ func New(opts Options) (*Engine, error) {
 		sampleRate:  opts.SampleRateHz,
 		bank:        bank,
 		strategyTag: tag,
+		metrics:     opts.Metrics,
+		now:         now,
 	}
 
 	for _, ch := range opts.Channels {
@@ -279,6 +324,7 @@ func New(opts Options) (*Engine, error) {
 				if len(out) == 0 {
 					return
 				}
+				ec.pwr.Add(out)
 				ec.receiver.Process(out)
 			}
 		}(ec)
@@ -343,7 +389,7 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier2,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx, tier2Cnt: cc}, nil
 
 	case trunking.ProtocolP25:
 		if err := requireControlChannel(sys, freqHz, "p25 / Phase 1"); err != nil {
@@ -550,8 +596,79 @@ func (e *Engine) Run(ctx context.Context) error {
 				return nil
 			}
 			e.bank.Process(chunk)
+			e.maybeLogDiagnostics(e.now())
 		}
 	}
+}
+
+// lowPowerWarnInterval throttles the per-channel "iq power very low"
+// WARN so a genuinely dead stream logs once every few seconds instead
+// of every window. Matches the ccdecoder cadence (decoder.go).
+const lowPowerWarnInterval = 5 * time.Second
+
+// maybeLogDiagnostics flushes per-channel signal-power and decode-activity
+// diagnostics once per iqpower.Window. It runs inline on the Run pump
+// goroutine — the same goroutine that fed the tap sinks this window — so
+// it reads the accumulators and Tier II counters without a lock and in
+// chunk order. Cost is a wall-clock compare per chunk until the window
+// elapses; the DEBUG activity summary is gated by slog.Enabled so it
+// allocates nothing when DEBUG is off. The low-power WARN fires regardless
+// of log level — that operator feedback is the whole point (a single
+// wideband DMR channel that silently decodes nothing, issue: field report
+// VE5XAM).
+func (e *Engine) maybeLogDiagnostics(now time.Time) {
+	if e.lastDiagAt.IsZero() {
+		e.lastDiagAt = now
+		return
+	}
+	if now.Sub(e.lastDiagAt) < iqpower.Window {
+		return
+	}
+	e.lastDiagAt = now
+
+	debug := e.log.Enabled(context.Background(), slog.LevelDebug)
+	for _, ec := range e.channels {
+		if ec.pwr.Samples() == 0 {
+			continue
+		}
+		dbfs, _ := ec.pwr.MeanDbFSAndReset()
+		if e.metrics != nil {
+			e.metrics.RecordIQPowerDbFS(ec.powerLabel(), dbfs)
+		}
+		if dbfs < iqpower.LowPowerThresholdDbFS {
+			if now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
+				e.log.Warn("widebandt2: channel iq power very low — check antenna, gain, USB cable",
+					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
+				ec.pwLowLogAt = now
+			}
+		} else if debug {
+			e.log.Debug("widebandt2: channel iq power",
+				"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
+		}
+
+		// Per-window decode-activity deltas (Tier II only for now). Lets an
+		// operator tell no-signal / signal-but-no-sync / sync-but-FEC-fail /
+		// decoding apart at a glance. Gated on DEBUG; lifetime locks total
+		// carried alongside the deltas.
+		if debug && ec.tier2Cnt != nil {
+			c := ec.tier2Cnt.Counters()
+			e.log.Debug("widebandt2: channel decode activity",
+				"freq_hz", ec.freqHz, "system", ec.sysName,
+				"sync_hits", c.SyncHits-ec.lastCnt.SyncHits,
+				"bursts", c.Bursts-ec.lastCnt.Bursts,
+				"fec_pass", c.FECPass-ec.lastCnt.FECPass,
+				"fec_fail", c.FECFail-ec.lastCnt.FECFail,
+				"locks_total", c.Locks)
+			ec.lastCnt = c
+		}
+	}
+}
+
+// powerLabel is the metrics label for this channel's dBFS gauge:
+// "<system> @ <freqMHz>" so multiple channels sharing one system name
+// don't collide on the system-keyed gauge.
+func (ec *engineChannel) powerLabel() string {
+	return fmt.Sprintf("%s @ %.4f MHz", ec.sysName, float64(ec.freqHz)/1e6)
 }
 
 // pickStrategy resolves the user-facing strategy choice into the
