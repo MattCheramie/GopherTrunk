@@ -134,7 +134,7 @@ export function WidebandSurvey({ result }: { result: WidebandResult }) {
             </thead>
             <tbody>
               {result.systems.map((sys, i) => (
-                <tr key={i} className="border-t border-white/5">
+                <tr key={i} className="border-t border-line">
                   <td className="py-1 pr-3">
                     {sys.tier3 && <span className="text-accent">★ </span>}
                     {sys.verdict}
@@ -170,7 +170,7 @@ export function WidebandSurvey({ result }: { result: WidebandResult }) {
             </thead>
             <tbody>
               {result.carriers.map((c: WidebandCarrier, i) => (
-                <tr key={i} className="border-t border-white/5">
+                <tr key={i} className="border-t border-line">
                   <td className="py-1 pr-3">{(c.freq_hz / 1e6).toFixed(4)}</td>
                   <td className="pr-3" style={{ color: roleColor(c.role) }}>
                     {c.role || "unknown"}

@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { useDataPoll } from "../hooks/useDataPoll";
 import type { DeviceDTO } from "../api/types";
 import { selectClientConfig, useShared } from "../store/shared";
 
@@ -16,23 +19,12 @@ export function Devices() {
   const setDevices = useShared((s) => s.setDevices);
   const [selected, setSelected] = useState<DeviceDTO | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const data = await api.devices(cfg);
-        if (!cancel) setDevices(data);
-      } catch {
-        // Keep the previous snapshot.
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg, setDevices]);
+  const { stale, lastUpdated } = useDataPoll({
+    fetcher: () => api.devices(cfg),
+    onData: setDevices,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
 
   const attachedCount = useMemo(
     () => devices.filter((d) => d.attached).length,
@@ -87,18 +79,29 @@ export function Devices() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Devices</h2>
-        <span className="text-xs text-muted">
-          {attachedCount} of {devices.length} attached
-        </span>
-      </header>
+      <PageHeader
+        title="Devices"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {attachedCount} of {devices.length} attached
+            </span>
+          </>
+        }
+      />
 
       <DataTable
         rows={devices}
         columns={columns}
         rowKey={(r) => r.serial}
         defaultSortKey="serial"
+        tableId="devices"
+        searchable
+        searchAccessor={(r) =>
+          [r.serial, r.driver, r.tuner, r.role].filter(Boolean).join(" ")
+        }
+        searchPlaceholder="Search by serial, driver, role…"
         onRowClick={(r) => setSelected(r)}
         emptyMessage="No SDRs known to the daemon. Check udev rules / WinUSB driver / hardware connection."
       />

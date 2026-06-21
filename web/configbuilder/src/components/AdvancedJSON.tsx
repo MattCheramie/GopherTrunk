@@ -61,7 +61,7 @@ export function AdvancedJSON<T extends object>(props: {
   };
 
   return (
-    <details className="rounded-md border border-white/10">
+    <details className="rounded-md border border-line">
       <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
         {props.label ?? "Advanced (JSON)"}
       </summary>

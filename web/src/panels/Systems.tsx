@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Column, DataTable } from "../components/DataTable";
 import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { useDataPoll } from "../hooks/useDataPoll";
 import type {
   DMRBandPlanDTO,
   DMRBandPlanLearnedDTO,
@@ -67,27 +69,30 @@ export function Systems() {
   const events = useShared((s) => s.events);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      // Poll the scanner snapshot alongside systems so the detail
-      // modal can translate empty WACN/SystemID/RFSS/Site into a
-      // hunt-state hint even when the Scanner panel isn't mounted.
+  // Poll the scanner snapshot alongside systems so the detail modal can
+  // translate empty WACN/SystemID/RFSS/Site into a hunt-state hint even
+  // when the Scanner panel isn't mounted.
+  const { stale, lastUpdated } = useDataPoll({
+    fetcher: async () => {
       const [sysRes, scanRes] = await Promise.allSettled([
         api.systems(cfg),
         api.scanner(cfg),
       ]);
-      if (cancel) return;
-      if (sysRes.status === "fulfilled") setSystems(sysRes.value);
-      if (scanRes.status === "fulfilled") setScanner(scanRes.value);
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg, setSystems, setScanner]);
+      if (sysRes.status === "rejected" && scanRes.status === "rejected") {
+        throw sysRes.reason;
+      }
+      return {
+        systems: sysRes.status === "fulfilled" ? sysRes.value : null,
+        scanner: scanRes.status === "fulfilled" ? scanRes.value : null,
+      };
+    },
+    onData: (d) => {
+      if (d.systems) setSystems(d.systems);
+      if (d.scanner) setScanner(d.scanner);
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
 
   const columns: Column<SystemDTO>[] = useMemo(
     () => [
@@ -149,7 +154,10 @@ export function Systems() {
       <PageHeader
         title="Systems"
         actions={
-          <span className="text-xs text-muted">{systems.length} total</span>
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">{systems.length} total</span>
+          </>
         }
       />
 

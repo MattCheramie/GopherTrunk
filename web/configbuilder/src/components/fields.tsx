@@ -221,7 +221,7 @@ export function Fieldset(props: {
   children: ReactNode;
 }) {
   return (
-    <details open={props.defaultOpen} className="rounded-md border border-white/10">
+    <details open={props.defaultOpen} className="rounded-md border border-line">
       <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
         {props.legend}
       </summary>

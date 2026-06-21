@@ -60,14 +60,14 @@ export function FileBar() {
           Open ▾
         </button>
         {openMenu ? (
-          <div className="absolute z-30 mt-1 max-h-80 w-80 overflow-y-auto rounded-md border border-white/15 bg-panel p-1 shadow-lg">
+          <div className="absolute z-30 mt-1 max-h-80 w-80 overflow-y-auto rounded-md border border-line bg-panel p-1 shadow-lg">
             {files.length === 0 ? (
               <div className="help p-2">No config files found in the discovery directories.</div>
             ) : (
               files.map((f) => (
                 <div
                   key={f.path}
-                  className="group flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-white/5"
+                  className="group flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-panel"
                 >
                   <button
                     className="min-w-0 flex-1 text-left"
@@ -244,7 +244,7 @@ function SaveDialog(props: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4">
       <div className="card w-full max-w-lg space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">Save config</h3>

@@ -9,6 +9,7 @@ import {
 } from "chart.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar } from "react-chartjs-2";
+import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
   defaultSymbolDevice,
@@ -268,8 +269,9 @@ export function Histogram() {
 
   return (
     <div className="space-y-3">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Symbol histogram</h2>
+      <PageHeader
+        title="Symbol histogram"
+        actions={
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted">SDR:</span>
           <select
@@ -287,7 +289,8 @@ export function Histogram() {
           </select>
           <ConnPill state={conn} />
         </div>
-      </header>
+        }
+      />
 
       {error && (
         <div className="rounded border border-red-700/40 bg-red-900/20 text-red-200 text-xs px-3 py-2">
@@ -338,7 +341,12 @@ export function Histogram() {
 
       <div className="font-mono text-xs text-muted">{tuningLabel || "—"}</div>
 
-      <div className="rounded border border-border bg-black p-2" style={{ height: 240 }}>
+      <div
+        className="rounded border border-border bg-black p-2"
+        style={{ height: 240 }}
+        role="img"
+        aria-label="Symbol-level histogram; the balance and level meters below give the current values as text."
+      >
         <Bar data={chartData} options={chartOptions} />
       </div>
 

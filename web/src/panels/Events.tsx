@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { Column, DataTable } from "../components/DataTable";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Badge } from "../components/ui/Badge";
 import type { EventDTO } from "../api/types";
 import { useShared } from "../store/shared";
 import { contentKey, groupEvents, type GroupedEvent } from "../lib/groupEvents";
@@ -11,7 +13,6 @@ export function Events() {
   const events = useShared((s) => s.events);
   const wsStatus = useShared((s) => s.wsStatus);
   const eventCap = useShared((s) => s.eventCap);
-  const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
   const [snapshot, setSnapshot] = useState<EventDTO[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -26,30 +27,20 @@ export function Events() {
   // when running, mirror the live store ring.
   const visible = paused ? (snapshot ?? events) : events;
 
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return visible;
-    const needle = filter.toLowerCase();
-    return visible.filter(
-      (e) =>
-        e.kind.toLowerCase().includes(needle) ||
-        e.timestamp.toLowerCase().includes(needle) ||
-        JSON.stringify(e.payload ?? "").toLowerCase().includes(needle),
-    );
-  }, [visible, filter]);
-
   // Group identical events (when enabled), then newest (most-recently-active)
   // first — reverse so the latest is at the top, the mobile-friendly read order.
+  // Search is applied by the DataTable on top of the grouped rows.
   const ordered = useMemo<GroupedEvent[]>(() => {
     const groups = grouped
-      ? groupEvents(filtered)
-      : filtered.map((e) => ({
+      ? groupEvents(visible)
+      : visible.map((e) => ({
           event: e,
           count: 1,
           firstTimestamp: e.timestamp,
           lastTimestamp: e.timestamp,
         }));
     return groups.slice().reverse();
-  }, [filtered, grouped]);
+  }, [visible, grouped]);
 
   const columns: Column<GroupedEvent>[] = useMemo(
     () => [
@@ -125,51 +116,27 @@ export function Events() {
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Events</h2>
-        <div className="flex items-center gap-2 text-xs">
-          <span
-            className={
-              wsStatus === "open"
-                ? "pill-ok"
-                : wsStatus === "connecting"
-                  ? "pill-warn"
-                  : "pill-err"
-            }
-          >
-            {wsStatus}
-          </span>
-          <span className="text-muted">
-            {events.length}/{eventCap}
-          </span>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="search"
-          className="input flex-1 sm:max-w-md"
-          placeholder="Filter by kind, timestamp, or payload…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label="Filter events"
-        />
-        <button
-          className={grouped ? "btn-primary" : "btn-ghost"}
-          onClick={() => setGrouped(!grouped)}
-          aria-pressed={grouped}
-          title="Collapse repeated identical events into one row with a count"
-        >
-          {grouped ? "Grouped" : "All"}
-        </button>
-        <button
-          className={paused ? "btn-primary" : "btn-ghost"}
-          onClick={togglePause}
-          aria-pressed={paused}
-        >
-          {paused ? "Resume" : "Pause"}
-        </button>
-      </div>
+      <PageHeader
+        title="Events"
+        actions={
+          <>
+            <Badge
+              tone={
+                wsStatus === "open"
+                  ? "ok"
+                  : wsStatus === "connecting"
+                    ? "warn"
+                    : "err"
+              }
+            >
+              {wsStatus}
+            </Badge>
+            <span className="text-xs text-muted">
+              {events.length}/{eventCap}
+            </span>
+          </>
+        }
+      />
 
       <p className="text-xs text-muted">
         {paused
@@ -183,6 +150,30 @@ export function Events() {
         rows={ordered}
         columns={columns}
         rowKey={(g, i) => `${contentKey(g.event)}-${i}`}
+        searchable
+        searchAccessor={(g) =>
+          `${g.event.kind} ${g.event.timestamp} ${JSON.stringify(g.event.payload ?? "")}`
+        }
+        searchPlaceholder="Search by kind, timestamp, or payload…"
+        toolbar={
+          <>
+            <button
+              className={grouped ? "btn-primary" : "btn-ghost"}
+              onClick={() => setGrouped(!grouped)}
+              aria-pressed={grouped}
+              title="Collapse repeated identical events into one row with a count"
+            >
+              {grouped ? "Grouped" : "All"}
+            </button>
+            <button
+              className={paused ? "btn-primary" : "btn-ghost"}
+              onClick={togglePause}
+              aria-pressed={paused}
+            >
+              {paused ? "Resume" : "Pause"}
+            </button>
+          </>
+        }
         onRowClick={handleRowClick}
         renderExpansion={(g) => (
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-fg/80">

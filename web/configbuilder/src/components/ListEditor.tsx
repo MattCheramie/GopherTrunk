@@ -57,7 +57,7 @@ export function ListEditor<T>(props: {
         <p className="help">{props.emptyHint}</p>
       ) : null}
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-white/10 p-3 space-y-3">
+        <div key={i} className="rounded-md border border-line p-3 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">
               {props.itemTitle ? props.itemTitle(item, i) : `Item ${i + 1}`}

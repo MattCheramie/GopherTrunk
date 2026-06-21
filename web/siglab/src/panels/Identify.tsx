@@ -87,7 +87,7 @@ export function Identify() {
             </thead>
             <tbody>
               {result.candidates.map((c) => (
-                <tr key={c.protocol} className="border-t border-white/5">
+                <tr key={c.protocol} className="border-t border-line">
                   <td className="py-1 pr-3">{c.protocol}</td>
                   <td className="pr-3">{c.locked ? "✓" : ""}</td>
                   <td className="pr-3">{c.sync_hits}</td>

@@ -1,131 +1,136 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { fetchMDC1200Messages, type MDC1200Message } from "../api/mdc1200";
+import { Column, DataTable } from "../components/DataTable";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Badge } from "../components/ui/Badge";
+import { StaleIndicator } from "../components/ui/StaleIndicator";
+import { useDataPoll } from "../hooks/useDataPoll";
 import { selectClientConfig, useShared } from "../store/shared";
 
 // MDC1200 panel — list of recent decoded Motorola FFSK signaling
 // bursts off conventional analog voice channels. Each row shows the
 // transmitting radio's unit ID, the decoded operation (PTT ID,
 // emergency, status, radio check, ...) and whether the CRC validated.
-// Emergency bursts are tinted red; CRC-failed bursts are dimmed.
 //
-// Polls /api/v1/mdc1200/messages every 5 s. Live SSE delivery via the
-// KindMDC1200Message bus event is a follow-up.
+// Polls /api/v1/mdc1200/messages every 5 s.
 
 const POLL_INTERVAL_MS = 5_000;
 
 export function MDC1200() {
   const cfg = useShared(selectClientConfig);
   const [messages, setMessages] = useState<MDC1200Message[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    const refresh = async () => {
-      try {
-        const list = await fetchMDC1200Messages(cfg, 200);
-        if (cancel) return;
-        setMessages(list);
-        setError(null);
-      } catch (e) {
-        if (cancel) return;
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    };
-    refresh();
-    const t = window.setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      cancel = true;
-      window.clearInterval(t);
-    };
-  }, [cfg]);
+  const { loading, error, stale, lastUpdated } = useDataPoll({
+    fetcher: () => fetchMDC1200Messages(cfg, 200),
+    onData: setMessages,
+    intervalMs: POLL_INTERVAL_MS,
+    resetKey: cfg.baseURL,
+  });
+
+  const columns: Column<MDC1200Message>[] = useMemo(
+    () => [
+      {
+        key: "received",
+        header: "Received",
+        render: (m) => (
+          <span className="font-mono text-muted">{formatTime(m.received_at)}</span>
+        ),
+        sort: (a, b) => a.received_at.localeCompare(b.received_at),
+      },
+      {
+        key: "unit",
+        header: "Unit ID",
+        render: (m) => (
+          <span className="font-mono text-accent">{unitHex(m.unit_id)}</span>
+        ),
+        sort: (a, b) => a.unit_id - b.unit_id,
+      },
+      {
+        key: "operation",
+        header: "Operation",
+        render: (m) => (
+          <span className="inline-flex items-center gap-1">
+            {m.operation || <span className="text-muted">unknown</span>}
+            {m.operation === "Emergency" && <Badge tone="err">!</Badge>}
+          </span>
+        ),
+        sort: (a, b) => (a.operation ?? "").localeCompare(b.operation ?? ""),
+      },
+      {
+        key: "oparg",
+        header: "Op / Arg",
+        render: (m) => (
+          <span className="font-mono text-muted">
+            {hex2(m.op)} / {hex2(m.arg)}
+          </span>
+        ),
+      },
+      {
+        key: "body",
+        header: "Body",
+        render: (m) => m.body || <span className="text-muted">—</span>,
+      },
+      {
+        key: "crc",
+        header: "CRC",
+        className: "text-right",
+        headerClassName: "text-right",
+        render: (m) =>
+          m.crc_ok ? <Badge tone="ok">ok</Badge> : <Badge tone="err">fail</Badge>,
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-3">
-      <header className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">MDC1200</h2>
-        <span className="text-xs text-muted">
-          {messages.length} burst{messages.length === 1 ? "" : "s"}
-        </span>
-      </header>
+      <PageHeader
+        title="MDC1200"
+        actions={
+          <>
+            <StaleIndicator stale={stale} lastUpdated={lastUpdated} />
+            <span className="text-xs text-muted">
+              {messages.length} burst{messages.length === 1 ? "" : "s"}
+            </span>
+          </>
+        }
+      />
 
-      {error && (
-        <div className="rounded border border-red-700/40 bg-red-900/20 text-red-200 text-xs px-3 py-2">
+      {error && !stale && (
+        <div
+          role="alert"
+          className="rounded-md border border-err/40 bg-err/15 px-3 py-2 text-sm text-err"
+        >
           {error}
         </div>
       )}
 
-      <div className="rounded border border-border overflow-hidden">
-        <table className="w-full text-xs">
-          <thead className="bg-surface text-muted">
-            <tr>
-              <th className="text-left px-3 py-1 font-normal w-24">Received</th>
-              <th className="text-left px-3 py-1 font-normal w-24">Unit ID</th>
-              <th className="text-left px-3 py-1 font-normal">Operation</th>
-              <th className="text-left px-3 py-1 font-normal w-28">Op / Arg</th>
-              <th className="text-left px-3 py-1 font-normal">Body</th>
-              <th className="text-right px-3 py-1 font-normal w-16">CRC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {messages.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-muted">
-                  No MDC1200 bursts yet. Add an{" "}
-                  <code className="text-accent">mdc1200.channels</code> entry to
-                  your config (a conventional analog VHF / UHF voice channel
-                  carrying Motorola signaling) and decoded unit IDs, PTT ANI,
-                  emergency / status / radio-check bursts will land here as
-                  they arrive.
-                </td>
-              </tr>
-            ) : (
-              messages.map((m) => (
-                <tr
-                  key={m.id}
-                  className={
-                    "border-t border-border/60 " +
-                    rowClass(m) +
-                    (m.crc_ok ? "" : " opacity-60")
-                  }
-                >
-                  <td className="px-3 py-1 font-mono text-muted">
-                    {formatTime(m.received_at)}
-                  </td>
-                  <td className="px-3 py-1 font-mono text-accent">
-                    {unitHex(m.unit_id)}
-                  </td>
-                  <td className="px-3 py-1">
-                    {m.operation || <span className="text-muted">unknown</span>}
-                  </td>
-                  <td className="px-3 py-1 font-mono text-muted">
-                    {hex2(m.op)} / {hex2(m.arg)}
-                  </td>
-                  <td className="px-3 py-1">
-                    {m.body || <span className="text-muted">—</span>}
-                  </td>
-                  <td className="px-3 py-1 text-right font-mono">
-                    {m.crc_ok ? (
-                      <span className="text-emerald-400">ok</span>
-                    ) : (
-                      <span className="text-red-300">fail</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={messages}
+        columns={columns}
+        rowKey={(m) => String(m.id)}
+        defaultSortKey="received"
+        defaultSortDirection="desc"
+        tableId="mdc1200"
+        pageSize={50}
+        loading={loading}
+        searchable
+        searchAccessor={(m) =>
+          [unitHex(m.unit_id), m.operation, m.body].filter(Boolean).join(" ")
+        }
+        searchPlaceholder="Search by unit ID, operation…"
+        emptyMessage={
+          <>
+            No MDC1200 bursts yet. Add an{" "}
+            <code className="text-accent">mdc1200.channels</code> entry to your
+            config (a conventional analog VHF / UHF voice channel carrying
+            Motorola signaling) and decoded unit IDs, PTT ANI, emergency / status
+            / radio-check bursts will land here as they arrive.
+          </>
+        }
+      />
     </div>
   );
-}
-
-// rowClass tints emergency bursts red so they stand out.
-function rowClass(m: MDC1200Message): string {
-  if (m.operation === "Emergency") {
-    return "bg-red-900/25";
-  }
-  return "";
 }
 
 function unitHex(id: number): string {

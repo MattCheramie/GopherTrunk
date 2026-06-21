@@ -123,4 +123,17 @@ describe("Bookmarks panel", () => {
       expect(screen.getByText(/name required/)).toBeInTheDocument();
     });
   });
+
+  it("validates the name field and focuses it on submit", async () => {
+    vi.mocked(bookmarks.list).mockResolvedValue([]);
+    render(<Bookmarks />);
+    await waitFor(() => screen.getByText(/No bookmarks yet/));
+
+    // Submit with an empty name → field error + focus, no create call.
+    await userEvent.click(screen.getByRole("button", { name: /Add bookmark/ }));
+
+    expect(await screen.findByText("Name is required.")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Marine Ch 16/)).toHaveFocus();
+    expect(bookmarks.create).not.toHaveBeenCalled();
+  });
 });

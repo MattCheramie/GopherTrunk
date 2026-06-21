@@ -27,7 +27,7 @@ export function App() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-white/10 bg-panel px-4 py-3">
+      <header className="flex items-center gap-4 border-b border-line bg-panel px-4 py-3">
         <div className="flex items-center gap-2 font-semibold">
           <span className="text-accent">◷</span> Signal Lab
         </div>

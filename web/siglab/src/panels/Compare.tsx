@@ -185,7 +185,7 @@ function MetricsTable({ items }: { items: Item[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.label} className="border-t border-white/5">
+            <tr key={row.label} className="border-t border-line">
               <td className="py-1 pr-4 text-muted">{row.label}</td>
               {items.map((it) => (
                 <td key={it.capture?.id} className="px-3">

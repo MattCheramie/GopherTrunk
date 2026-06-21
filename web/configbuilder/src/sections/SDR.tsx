@@ -82,7 +82,7 @@ export function SDRSection() {
           <p className="help">No devices yet. Add at least a control + voice dongle for trunking.</p>
         ) : null}
         {devices.map((d, i) => (
-          <div key={i} className="rounded-md border border-white/10 p-3 space-y-3">
+          <div key={i} className="rounded-md border border-line p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{d.Serial || `Device ${i + 1}`}</span>
               <button className="btn-danger" onClick={() => removeDevice(i)}>
