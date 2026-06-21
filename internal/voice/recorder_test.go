@@ -695,6 +695,98 @@ func TestRecorderForwardsDecodedPCMToCallAwareTap(t *testing.T) {
 	}
 }
 
+// fakeRawTap implements RawFrameCallSink, recording the verbatim bytes, vocoder
+// name, and CallID the recorder forwards for each raw frame so a test can
+// confirm the raw fan-out carries the codec label and is fenced by the
+// session's call identity.
+type fakeRawTap struct {
+	mu       sync.Mutex
+	callIDs  []uint64
+	vocoders []string
+	frames   [][]byte
+}
+
+func (f *fakeRawTap) WriteRawFrame(_, vocoder string, frame []byte) error {
+	return f.WriteRawFrameForCall("", 0, vocoder, frame)
+}
+func (f *fakeRawTap) WriteRawFrameForCall(_ string, callID uint64, vocoder string, frame []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callIDs = append(f.callIDs, callID)
+	f.vocoders = append(f.vocoders, vocoder)
+	f.frames = append(f.frames, append([]byte(nil), frame...))
+	return nil
+}
+func (f *fakeRawTap) snapshot() (callIDs []uint64, vocoders []string, frames [][]byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]uint64(nil), f.callIDs...), append([]string(nil), f.vocoders...), f.frames
+}
+
+// TestRecorderForwardsRawFramesToTap: the recorder must forward verbatim raw
+// vocoder frames to the raw tap (the gRPC publisher's include_raw subscribers),
+// carrying the session's vocoder name and CallID, and a stale-call frame must be
+// fenced by sessionForWrite before reaching the tap — the raw complement of the
+// decoded-PCM bleed guard.
+func TestRecorderForwardsRawFramesToTap(t *testing.T) {
+	bus := events.NewBus(8)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		VocoderForProtocol: map[string]string{"test-null": "null"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	tap := &fakeRawTap{}
+	r.SetRawFrameSink(tap)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-null", GroupID: 1, CallID: 77},
+		DeviceSerial: "tap-0",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("tap-0") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// A matching frame forwards the verbatim bytes, the session vocoder name,
+	// and the session CallID.
+	want := []byte{0xAA, 0xBB, 0xCC, 0, 0, 0, 0, 0, 0, 0, 0} // NullVocoder.FrameSize = 11
+	if err := r.WriteRawFrameForCall("tap-0", 77, want, 0); err != nil {
+		t.Fatalf("WriteRawFrameForCall: %v", err)
+	}
+	// A stale-call frame is fenced before the tap.
+	if err := r.WriteRawFrameForCall("tap-0", 999, make([]byte, 11), 0); err != nil {
+		t.Fatalf("WriteRawFrameForCall stale: %v", err)
+	}
+
+	callIDs, vocoders, frames := tap.snapshot()
+	if len(callIDs) != 1 || callIDs[0] != 77 {
+		t.Fatalf("forwarded callIDs = %v, want exactly [77] (stale 999 fenced)", callIDs)
+	}
+	if vocoders[0] != "null" {
+		t.Errorf("vocoder = %q, want null", vocoders[0])
+	}
+	if string(frames[0]) != string(want) {
+		t.Errorf("frame bytes = %v, want %v", frames[0], want)
+	}
+}
+
 // TestRecorderForwardsDecodedPCMToTap: PCM the recorder decodes from
 // digital vocoder frames in WriteRawFrame must be forwarded to the
 // live-audio tap (web stream / player / tone-out). Without this the

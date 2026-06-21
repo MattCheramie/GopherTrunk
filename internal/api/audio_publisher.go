@@ -60,11 +60,12 @@ const audioSubChanCap = 256
 type AudioSubFilter struct {
 	DeviceSerials []string
 	TalkgroupIDs  []uint32
-	// IncludeRaw mirrors the proto flag. Until WriteRawFrame is
-	// wired into the publisher (digital-voice raw frames are a
-	// follow-up), this just selects whether to surface PCM frames
-	// at all — false is the safe default that's never going to
-	// break a caller that didn't ask for audio.
+	// IncludeRaw mirrors the proto flag and is purely additive: false
+	// (the default, and what the WebUI sends) means PCM only; true means
+	// PCM *and* the verbatim un-decoded vocoder frames (IMBE / AMBE+2)
+	// the recorder's raw tap forwards via WriteRawFrame. Existing PCM-only
+	// callers are unaffected — raw frames are fanned solely to subscribers
+	// that opted in here.
 	IncludeRaw bool
 }
 
@@ -250,6 +251,76 @@ func (p *AudioPublisher) writePCM(deviceSerial string, callID uint64, samples []
 	return nil
 }
 
+// WriteRawFrame fans a verbatim, un-decoded vocoder frame (IMBE / AMBE+2) to
+// subscribers that asked for raw bytes (filter.IncludeRaw). It satisfies
+// voice.RawFrameSink so the recorder's raw tap can stream the same bytes it
+// writes to the .raw sidecar. vocoder is the codec name that produced the
+// session (may be empty for protocols with no in-process decoder, e.g.
+// ProVoice); it labels the wire frame but is not required.
+func (p *AudioPublisher) WriteRawFrame(deviceSerial, vocoder string, frame []byte) error {
+	return p.writeRaw(deviceSerial, 0, vocoder, frame)
+}
+
+// WriteRawFrameForCall is WriteRawFrame plus the CallID the frame was decoded
+// for. It satisfies voice.RawFrameCallSink so a raw frame still draining from
+// the call that previously held a reused voice-tap serial is fenced the same
+// way WritePCMForCall fences decoded PCM — dropped rather than fanned out
+// labelled with (and leaked to subscribers filtered on) the newer call's
+// talkgroup. A zero CallID on either side matches, preserving WriteRawFrame's
+// behaviour.
+func (p *AudioPublisher) WriteRawFrameForCall(deviceSerial string, callID uint64, vocoder string, frame []byte) error {
+	return p.writeRaw(deviceSerial, callID, vocoder, frame)
+}
+
+// writeRaw mirrors writePCM — same cross-call fence and grant-labelling /
+// skip-talkgroup-without-grant logic — but emits an AudioFrame_Raw and fans
+// only to subscribers that set IncludeRaw. Raw is purely additive: PCM-only
+// subscribers (the common case, incl. the WebUI) never see these frames.
+func (p *AudioPublisher) writeRaw(deviceSerial string, callID uint64, vocoder string, frame []byte) error {
+	if p == nil || len(frame) == 0 {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.subs) == 0 {
+		return nil
+	}
+	grant, haveGrant := p.grants[deviceSerial]
+	// Cross-call fence: this raw frame belongs to callID, but the serial's
+	// live grant has moved on. Drop rather than mislabel the old call's tail.
+	if haveGrant && callID != 0 && grant.CallID != 0 && callID != grant.CallID {
+		return nil
+	}
+
+	var built *apiv1.AudioFrame // built on first matching raw subscriber
+	for sub := range p.subs {
+		// Raw is opt-in; PCM-only subscribers are skipped entirely.
+		if !sub.filter.IncludeRaw {
+			continue
+		}
+		// A talkgroup filter needs a known GroupID to evaluate; without a
+		// grant we can't prove a match, so skip rather than risk a leak.
+		if len(sub.filter.TalkgroupIDs) > 0 && !haveGrant {
+			continue
+		}
+		if !sub.filter.matches(deviceSerial, grant.GroupID) {
+			continue
+		}
+		if built == nil {
+			built = buildRawFrame(grant, deviceSerial, vocoder, frame)
+		}
+		select {
+		case sub.ch <- built:
+			p.markFanned(sub)
+		default:
+			sub.dropped.Add(uint64(len(frame)))
+			p.dropped.Add(uint64(len(frame)))
+			p.markChannelFull(sub)
+		}
+	}
+	return nil
+}
+
 // markFanned logs once, the first time a subscriber actually receives a
 // PCM frame — a cheap "live audio is flowing" signal for operators.
 func (p *AudioPublisher) markFanned(sub *audioSubscriber) {
@@ -357,6 +428,22 @@ func buildPCMFrame(grant trunking.Grant, serial string, samples []int16) *apiv1.
 			Pcm: &apiv1.PCMSamples{
 				SampleRate: 8000, // recorder writes at 8 kHz today; future: pull from composer
 				Samples:    body,
+			},
+		},
+	}
+}
+
+// buildRawFrame builds the wire-side AudioFrame for a verbatim vocoder frame.
+// We copy the byte slice so the caller (the recorder's hot path) can reuse its
+// buffer without mutating an in-flight frame, mirroring buildPCMFrame.
+func buildRawFrame(grant trunking.Grant, serial, vocoder string, frame []byte) *apiv1.AudioFrame {
+	return &apiv1.AudioFrame{
+		Grant:        grantToPB(grant),
+		DeviceSerial: serial,
+		Body: &apiv1.AudioFrame_Raw{
+			Raw: &apiv1.RawVocoderFrame{
+				Vocoder: vocoder,
+				Frame:   append([]byte(nil), frame...),
 			},
 		},
 	}

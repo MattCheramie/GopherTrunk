@@ -707,6 +707,15 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 				pcm = decimateAndConvert(audio, decim2)
 			}
 			if c.sink != nil && len(pcm) > 0 {
+				// Plain WritePCM (no CallID fence) is correct here: an
+				// analog FM chain keys on a stable per-channel physical
+				// device serial, never the reused wb:<serial>:tap-N pool
+				// the wideband engine drives (and which it restricts to
+				// digital protocols). With one chain per serial, torn down
+				// on CallEnd before the next CallStart, there is no
+				// cross-call serial reuse — so the WritePCMForCall fence the
+				// digital tap path needs would be guarding a condition that
+				// can't occur on this path.
 				_ = c.sink.WritePCM(serial, pcm)
 				lastSample = pcm[len(pcm)-1]
 				pcmWrites.Add(1)
