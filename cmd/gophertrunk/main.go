@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
@@ -417,30 +418,88 @@ func listSDRs(args []string) {
 				fmt.Fprintf(os.Stderr, "probe %s[%d]: %v\n", infos[i].Driver, infos[i].Index, err)
 				continue
 			}
-			dev, err := d.Open(infos[i].Index)
+			probed, err := probeDevice(d, infos[i].Index, probeTimeout)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "probe %s[%d]: %v\n", infos[i].Driver, infos[i].Index, err)
 				continue
 			}
-			probed := dev.Info()
 			infos[i].TunerName = probed.TunerName
 			infos[i].Gains = probed.Gains
-			_ = dev.Close()
 		}
 	}
 
-	fmt.Printf("%-8s  %-3s  %-16s  %-8s  %-8s  gains(0.1 dB)\n", "DRIVER", "IDX", "SERIAL", "TUNER", "PRODUCT")
-	for _, i := range infos {
-		fmt.Printf("%-8s  %-3d  %-16s  %-8s  %-8s  %v\n",
-			i.Driver, i.Index, truncate(i.Serial, 16), truncate(i.TunerName, 8), truncate(i.Product, 8), i.Gains)
+	fmt.Print(formatSDRTable(infos))
+}
+
+// probeTimeout bounds how long a single device's open+info+close may take
+// during `sdr list --probe`. Each USB control transfer inside Open already
+// carries its own 1 s timeout, but the open as a whole is otherwise
+// unbounded: a wedged device or transport (firmware that NAKs, a clone in a
+// bad state, a stalled control ioctl) would hang the command with no output.
+// This deadline guarantees `--probe` always returns.
+const probeTimeout = 5 * time.Second
+
+// probeDevice opens drv[idx], reads its Info, and closes it, all bounded by
+// timeout. The open/info/close runs on a goroutine so a device that wedges
+// can't block the caller: on timeout we return an error and let the
+// goroutine finish (and close the handle) on its own — harmless for a
+// short-lived CLI. Driver.Open takes no context, so the bound has to live
+// here at the call site rather than inside the driver.
+func probeDevice(drv sdr.Driver, idx int, timeout time.Duration) (sdr.Info, error) {
+	type result struct {
+		info sdr.Info
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		dev, err := drv.Open(idx)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		info := dev.Info()
+		_ = dev.Close()
+		done <- result{info: info}
+	}()
+	select {
+	case r := <-done:
+		return r.info, r.err
+	case <-time.After(timeout):
+		return sdr.Info{}, fmt.Errorf("timed out after %s", timeout)
 	}
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+// formatSDRTable renders the `sdr list` table with per-column widths sized
+// to the widest value actually present (header label or any row), so values
+// like a HackRF's 32-hex serial or the full "MAX2839+MAX5864" tuner string
+// print in full instead of being silently truncated. The trailing gains
+// column is free-form.
+func formatSDRTable(infos []sdr.Info) string {
+	const (
+		hDriver  = "DRIVER"
+		hIndex   = "IDX"
+		hSerial  = "SERIAL"
+		hTuner   = "TUNER"
+		hProduct = "PRODUCT"
+	)
+	wDriver, wIndex, wSerial, wTuner, wProduct :=
+		len(hDriver), len(hIndex), len(hSerial), len(hTuner), len(hProduct)
+	for _, i := range infos {
+		wDriver = max(wDriver, len(i.Driver))
+		wIndex = max(wIndex, len(strconv.Itoa(i.Index)))
+		wSerial = max(wSerial, len(i.Serial))
+		wTuner = max(wTuner, len(i.TunerName))
+		wProduct = max(wProduct, len(i.Product))
 	}
-	return s[:n]
+	var b strings.Builder
+	rowFmt := fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%v\n",
+		wDriver, wIndex, wSerial, wTuner, wProduct)
+	fmt.Fprintf(&b, "%-*s  %-*s  %-*s  %-*s  %-*s  gains(0.1 dB)\n",
+		wDriver, hDriver, wIndex, hIndex, wSerial, hSerial, wTuner, hTuner, wProduct, hProduct)
+	for _, i := range infos {
+		fmt.Fprintf(&b, rowFmt, i.Driver, strconv.Itoa(i.Index), i.Serial, i.TunerName, i.Product, i.Gains)
+	}
+	return b.String()
 }
 
 // pickConfigInteractive is the DiscoverOptions.Pick callback for

@@ -45,3 +45,36 @@ irrelevant to receive-only scanning.
 
 For decoding trunked voice, HackRF is overkill; an [RTL-SDR](/reference/rtl-sdr/) or
 Airspy is usually the better fit, but GopherTrunk can use it as a receiver.
+
+## Setup (Linux)
+
+GopherTrunk talks to the HackRF directly over USB — no `libhackrf` or
+`hackrf-tools` install required. The one host-side step is a udev rule so
+non-root processes can open the device node. Without it, `gophertrunk sdr list`
+still shows the device (it only reads `sysfs`), but opening it — `sdr list
+--probe`, `sdr doctor`, and normal capture — fails with `permission denied` on
+`/dev/bus/usb/…`.
+
+```sh
+sudo tee /etc/udev/rules.d/20-hackrf.rules <<'EOF'
+# HackRF One / Jawbreaker / Rad1o (Great Scott Gadgets, VID 0x1d50)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="6089", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="604b", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="cc15", MODE="0666"
+EOF
+sudo udevadm control --reload
+sudo udevadm trigger
+```
+
+Unplug and re-plug the HackRF once so the rule applies to a freshly-enumerated
+device. Swap `MODE="0666"` for `MODE="0660", GROUP="plugdev"` if you'd rather
+scope access. Then confirm:
+
+```sh
+gophertrunk sdr list --probe
+```
+
+> **Serial number.** A HackRF reports a full 32-hex-digit `part_id + serial_no`
+> string — the leading 16 digits are a constant prefix (commonly all zeros) and
+> the trailing digits are the unique part. `gophertrunk sdr list` prints the
+> whole string, matching `hackrf_info`'s "Serial number".
