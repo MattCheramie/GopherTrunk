@@ -1,0 +1,72 @@
+# Monitor a single DMR simplex / hotspot frequency with one RTL-SDR.
+#
+# Example target (VE5XAM): DMR simplex on 446.500 MHz, Color Code 1,
+# Time Slot 1, Talkgroup 99.
+#
+# Important: Color Code, Time Slot, and Talkgroup are NOT things you
+# configure here — GopherTrunk reads them straight off the air and
+# reports them per call. You only tell the daemon WHERE to listen
+# (the frequency) and WHAT it is (DMR Tier II conventional). The
+# talkgroups CSV just maps the decoded TG numbers (e.g. 99) to names.
+#
+# How a single DMR carrier is decoded: DMR Tier II is conventional
+# (no trunked control channel), so the carrier is fed to GopherTrunk's
+# wideband engine, which channelizes the dongle's IQ stream and runs a
+# DMR Tier II state machine on it. With one channel that's a single
+# down-converter tap — no extra hardware.
+#
+# PATHS below (storage, recordings, talkgroup CSV) resolve RELATIVE TO
+# THIS FILE's folder. Adjust if you move the file.
+
+log:
+  level: info       # bump to "debug" if nothing decodes and you want detail
+  format: text
+
+api:
+  http_addr: "127.0.0.1:8080"   # web UI / REST / SSE
+  grpc_addr: "127.0.0.1:50051"
+  auth:
+    mode: auto                  # loopback is trusted; no token needed locally
+
+metrics:
+  enabled: true
+
+storage:
+  path: "data/calls.db"
+  cc_cache_file: "data/cc-cache.json"
+
+recordings:
+  dir: "recordings"
+  sample_rate: 8000
+
+sdr:
+  # 2.4 MS/s is the RTL-SDR sweet spot. The whole DMR carrier fits in
+  # a tiny slice of this; the rest is just headroom for the channelizer.
+  sample_rate: 2_400_000
+  devices:
+    - serial: "REPLACE_WITH_SERIAL"   # run `gophertrunk sdr list` and paste yours
+      role: wideband
+      # Center the dongle ~300 kHz ABOVE the carrier so 446.500 MHz does
+      # NOT sit on the RTL-SDR's center-DC spike (which would corrupt the
+      # demod). 446.500 ends up at -300 kHz inside the IQ window — well
+      # within the usable ±1.08 MHz band at 2.4 MS/s.
+      center_freq_hz: 446_800_000
+      tuner_strategy: auto       # auto -> ddc for a single channel
+      gain: "auto"               # gains are in TENTHS of a dB if you pin one
+                                 #   (e.g. "320" = 32.0 dB). "auto" is the safe start.
+      ppm: 0                     # set your dongle's measured PPM error if you know it
+      channels:
+        - frequency_hz: 446_500_000
+          system: "dmr-simplex"
+
+trunking:
+  systems:
+    - name: "dmr-simplex"
+      protocol: dmr-tier2
+      # Tier II is conventional — there is no real control channel, but
+      # the config validator requires a non-empty list, so list the
+      # simplex carrier itself. The wideband engine ignores it for
+      # state-machine selection.
+      control_channels:
+        - 446_500_000
+      talkgroup_file: "talkgroups-dmr.csv"

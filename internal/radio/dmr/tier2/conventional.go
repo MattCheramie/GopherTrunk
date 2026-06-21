@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -33,6 +34,27 @@ import (
 type LockState struct {
 	FrequencyHz uint32
 	ColorCode   uint8 // from the first valid slot-type decode
+}
+
+// Counters is a lock-free snapshot of one channel's decode activity,
+// read periodically by an operator-facing supervisor (the wideband
+// engine's diagnostics) to tell which stage is failing. All counts are
+// monotonic since channel construction. Purely observational — the
+// counters never gate decoding.
+//
+// Reading the four-way story:
+//   - SyncHits == 0                  → no DMR sync detected (no signal,
+//     mistune, wrong offset, or spectrum-inversion the polarity pass
+//     can't recover).
+//   - SyncHits > 0, FECPass == 0 and FECFail > 0 → sync seen but every
+//     Voice LC Header fails FEC (weak/dirty signal, clipping).
+//   - FECPass > 0                    → genuine DMR headers decoded.
+type Counters struct {
+	SyncHits uint64 // FSW matches reported by the burst-sync detector
+	Bursts   uint64 // slot-type-parsed bursts handed to IngestBurst
+	FECPass  uint64 // Voice LC Header with BPTC + RS both valid
+	FECFail  uint64 // Voice LC Header BPTC uncorrectable or RS mismatch
+	Locks    uint64 // cc.locked declarations (lifetime)
 }
 
 // LockedFrequencyHz / LockedNAC make LockState satisfy
@@ -80,6 +102,29 @@ type ConventionalChannel struct {
 	inCall  bool
 	lastTG  uint32
 	lastSrc uint32
+
+	// cnt holds the lock-free decode-activity counters exposed via
+	// Counters(). Incremented on the existing hot paths with atomic
+	// adds so any goroutine can snapshot them without taking c.mu.
+	cnt struct {
+		syncHits atomic.Uint64
+		bursts   atomic.Uint64
+		fecPass  atomic.Uint64
+		fecFail  atomic.Uint64
+		locks    atomic.Uint64
+	}
+}
+
+// Counters returns a snapshot of this channel's decode-activity
+// counters. Safe to call concurrently with the decode path.
+func (c *ConventionalChannel) Counters() Counters {
+	return Counters{
+		SyncHits: c.cnt.syncHits.Load(),
+		Bursts:   c.cnt.bursts.Load(),
+		FECPass:  c.cnt.fecPass.Load(),
+		FECFail:  c.cnt.fecFail.Load(),
+		Locks:    c.cnt.locks.Load(),
+	}
 }
 
 // Options configure a ConventionalChannel.
@@ -135,6 +180,7 @@ func New(opts Options) *ConventionalChannel {
 // don't carry a fresh FLC and CSBK bursts belong to Tier III, so they
 // fall through untouched.
 func (c *ConventionalChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
+	c.cnt.bursts.Add(1)
 	switch slot.DataType {
 	case dmr.DTVoiceLCHeader:
 		c.handleVoiceHeader(b, slot)
@@ -163,6 +209,7 @@ func (c *ConventionalChannel) maybeLock(s LockState) {
 	}
 	c.locked = true
 	c.last = s
+	c.cnt.locks.Add(1)
 	c.bus.Publish(events.Event{Kind: events.KindCCLocked, Payload: s})
 	c.log.Info("dmr/tier2 cc locked",
 		"freq", s.FrequencyHz, "cc", s.ColorCode, "system", c.systemName)
@@ -191,6 +238,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		// recovery or a bit-ordering detail a real capture would expose —
 		// see docs/decoder-capture-needs.md. Debug level keeps it
 		// opt-in.
+		c.cnt.fecFail.Add(1)
 		c.log.Debug("dmr/tier2: voice header BPTC uncorrectable",
 			"cc", slot.ColorCode,
 			"burst_dibits", dibitDigits(b.Dibits[:]),
@@ -215,6 +263,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 		// roots alpha^1..3, seed 0x96) by TestRS129MatchesIndependent-
 		// ReferenceEncoder, so a real mismatch here implicates the BPTC
 		// info-bit recovery feeding it rather than the RS field itself.
+		c.cnt.fecFail.Add(1)
 		c.log.Debug("dmr/tier2: voice header RS(12,9) parity mismatch",
 			"cc", slot.ColorCode,
 			"info_hex", hex.EncodeToString(infoBytes))
@@ -227,6 +276,7 @@ func (c *ConventionalChannel) handleVoiceHeader(b *dmr.Burst, slot dmr.SlotType)
 	// BPTC + RS both passed: this is a genuine DMR transmission on the
 	// tuned frequency. Declare the lock here (not on the slot type alone)
 	// so a false sync / miscorrected slot type can't forge it.
+	c.cnt.fecPass.Add(1)
 	c.maybeLock(LockState{FrequencyHz: c.freqHz, ColorCode: slot.ColorCode})
 	flc, err := dmr.ParseFLC(infoBytes)
 	if err != nil {
