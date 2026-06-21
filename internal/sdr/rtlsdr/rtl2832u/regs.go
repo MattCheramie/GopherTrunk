@@ -61,6 +61,14 @@ const DefaultXtalHz uint32 = 28_800_000
 // reads/writes. Matches osmocom librtlsdr's CTRL_TIMEOUT.
 const CtrlTimeoutMs = 300
 
+// DemodStallRetryMillis is the settle delay before replaying a register
+// write that the chip's I²C bridge stalled (Linux EPIPE / Windows
+// ErrPipeStalled). EP0 stays healthy across the stall (issue #248), so a
+// single replay of the identical wire bytes clears it — no USB reset, which
+// would tear down an active IQ stream (issue #753). Matches the tuner
+// burst path's r82xxBurstRetryDelayMillis.
+const DemodStallRetryMillis = 8
+
 // twoPow22 = 2^22; the RTL2832U's IF-frequency and sample-rate
 // dividers use 28.4 fixed-point math seeded against this constant.
 const twoPow22 = 1 << 22

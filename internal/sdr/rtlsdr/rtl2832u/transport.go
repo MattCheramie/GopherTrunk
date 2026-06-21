@@ -1,8 +1,11 @@
 package rtl2832u
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
@@ -136,7 +139,7 @@ func (d *Demod) writeDemodRegLocked(page uint8, addr, val uint16, n int) error {
 	wValue := (addr << 8) | 0x20
 	wIndex := uint16(0x10) | uint16(page)
 	data := encodeWriteVal(val, n)
-	if err := d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs); err != nil {
+	if err := d.controlOutWithStallRetry(wValue, wIndex, data); err != nil {
 		return fmt.Errorf("rtl2832u: write demod page=%d addr=0x%02x val=0x%04x: %w", page, addr, val, err)
 	}
 	// Commit. Required by the RTL2832U register interface — without it
@@ -144,6 +147,44 @@ func (d *Demod) writeDemodRegLocked(page uint8, addr, val uint16, n int) error {
 	// (the underlying write already happened), so we swallow them.
 	_, _ = d.readDemodRegLocked(0x0A, 0x01, 1)
 	return nil
+}
+
+// controlOutWithStallRetry issues a demod-register vendor-OUT and, on a
+// recoverable I²C-bridge stall (Linux EPIPE / Windows ErrPipeStalled),
+// settles briefly and replays the identical wire bytes exactly once. These
+// dongles — notably RTL-SDR Blog V4 — intermittently NAK a control-OUT while
+// leaving EP0 healthy, so a single replay clears it without a USB reset (the
+// tuner burst path relies on the same property, see writeBurstChunk and
+// issue #248).
+//
+// This is the runtime-retune fix for issue #753: SetCenterFreq → R82xx.SetFreq
+// → SetI2CRepeater(true) issues exactly this demod write, and it had no
+// recovery, so one stall on the repeater toggle aborted every tune. A USB
+// reset is the wrong hammer at runtime — it would tear down the live IQ stream
+// — whereas a single replay is stream-safe. Demod register writes are
+// idempotent, so the replay is safe.
+//
+// Scoped to demod writes on purpose: open-time block-register stalls
+// (warmup / InitBaseband) are owned by the openDevice reset envelope
+// (isBringupResetable, #393/#395), and writeBlockRegLocked deliberately stays
+// on the bare ControlOut so that contract is unchanged. Other errors
+// (timeout, ErrDeviceGone, ErrClosed) return immediately here too.
+func (d *Demod) controlOutWithStallRetry(wValue, wIndex uint16, data []byte) error {
+	err := d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs)
+	if err != nil && isRecoverableStall(err) {
+		time.Sleep(DemodStallRetryMillis * time.Millisecond)
+		err = d.t.ControlOut(0, wValue, wIndex, data, CtrlTimeoutMs)
+	}
+	return err
+}
+
+// isRecoverableStall reports whether err is the recoverable I²C-bridge stall
+// the register-write retry replays. Linux's USBDEVFS surfaces it as a raw
+// syscall.EPIPE; Windows/WinUSB maps the equivalent ERROR_GEN_FAILURE to
+// usb.ErrPipeStalled. Mirrors tuners.isI2CBurstStall so the demod and tuner
+// layers classify the same wire condition identically.
+func isRecoverableStall(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrPipeStalled)
 }
 
 // encodeWriteVal mirrors the C library's data layout: 1-byte writes

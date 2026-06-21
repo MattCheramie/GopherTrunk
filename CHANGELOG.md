@@ -7,6 +7,19 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **RTL-SDR Blog V4 "broken pipe" aborting every tune** (#753). On some Blog V4
+  dongles the R828D's I²C-repeater enable — a demod-register write the retune
+  path issues at the top of every `SetCenterFreq` — intermittently NAKs with a
+  USB stall (`SetI2CRepeater(true): … broken pipe`), so control-channel hunts
+  logged `cc-hunt: tune failed` even though streaming/the waterfall worked. The
+  demod-register write now mirrors the tuner burst path (#248): on a recoverable
+  stall (Linux EPIPE / Windows `ErrPipeStalled`) it settles briefly and replays
+  the identical wire bytes once. EP0 stays healthy across the stall, so the
+  replay clears it without a USB reset — the reset would needlessly tear down
+  the live IQ stream. Open-time block-register stalls are unchanged; they remain
+  owned by the bring-up reset envelope.
+
 ## [v0.4.9] — 2026-06-21
 
 A field-driven bug-fix release built around six issues reported on a live P25
