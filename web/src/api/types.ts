@@ -172,6 +172,9 @@ export interface CaptureReport {
   skipped?: boolean;
   skip_reason?: string;
   error?: string;
+  // identity_note explains a locked P25 capture whose WACN/System ID are still
+  // blank (e.g. the Network Status Broadcast never decoded in the dwell).
+  identity_note?: string;
 }
 
 // DiscoveredSystem mirrors hunt.DiscoveredSystem — the map a completed hunt

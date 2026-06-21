@@ -156,6 +156,14 @@ type ControlChannel struct {
 // surface as events.KindDecodeError on the bus, but the bus event
 // is sampled by tests / Prometheus and may miss frames a synchronous
 // snapshot needs.
+// NetStatusSeen, RFSSStatusSeen, and AdjacentSeen count how many of the
+// system-identity broadcasts decoded: the Network Status Broadcast (0x3B,
+// the sole carrier of WACN + System ID), the RFSS Status Broadcast (0x3A,
+// System ID), and the Adjacent Site Status Broadcast (0x3C, neighbours).
+// They let the hunt / signal-lab layers explain *why* WACN/System ID are
+// blank — a locked control channel with TSBKDecoded > 0 but NetStatusSeen
+// == 0 means the periodic NSB simply never landed in the captured window
+// (too-short dwell or marginal signal), not that the system withholds it.
 type CCStats struct {
 	NIDTrusted        int64
 	NIDMarginal       int64
@@ -163,6 +171,9 @@ type CCStats struct {
 	TSBKDecoded       int64
 	TSBKTrellisFailed int64
 	TSBKCRCFailed     int64
+	NetStatusSeen     int64
+	RFSSStatusSeen    int64
+	AdjacentSeen      int64
 }
 
 // NetworkSnapshot returns the system topology accumulated from the
@@ -189,6 +200,9 @@ func (c *ControlChannel) Stats() CCStats {
 		TSBKDecoded:       atomic.LoadInt64(&c.stats.TSBKDecoded),
 		TSBKTrellisFailed: atomic.LoadInt64(&c.stats.TSBKTrellisFailed),
 		TSBKCRCFailed:     atomic.LoadInt64(&c.stats.TSBKCRCFailed),
+		NetStatusSeen:     atomic.LoadInt64(&c.stats.NetStatusSeen),
+		RFSSStatusSeen:    atomic.LoadInt64(&c.stats.RFSSStatusSeen),
+		AdjacentSeen:      atomic.LoadInt64(&c.stats.AdjacentSeen),
 	}
 }
 
@@ -1041,8 +1055,10 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 			dataCall: true, individual: true,
 		}, nac)
 	case OpNetworkStatusBroadcast:
+		atomic.AddInt64(&c.stats.NetStatusSeen, 1)
 		c.netModel.ApplyNetworkStatus(ParseNetworkStatusBroadcast(t.Payload))
 	case OpRFSSStatusBroadcast:
+		atomic.AddInt64(&c.stats.RFSSStatusSeen, 1)
 		c.netModel.ApplyRFSSStatus(ParseRFSSStatusBroadcast(t.Payload))
 		c.publishSiteUpdate()
 	case OpSecondaryControlChannel:
@@ -1050,6 +1066,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	case OpSecondaryControlChannelExpl:
 		c.netModel.ApplySecondaryControlChannelExplicit(ParseSecondaryControlChannelBroadcastExplicit(t.Payload))
 	case OpAdjacentSiteStatusBroadcast:
+		atomic.AddInt64(&c.stats.AdjacentSeen, 1)
 		c.netModel.ApplyAdjacentSite(ParseAdjacentSiteStatusBroadcast(t.Payload))
 	case OpGroupAffiliationResponse:
 		c.publishAffiliation(ParseGroupAffiliationResponse(t.Payload), nac)

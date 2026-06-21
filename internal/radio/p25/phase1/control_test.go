@@ -757,6 +757,37 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 	}
 }
 
+func TestControlChannelCountsIdentityBroadcasts(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+
+	cc := New(Options{
+		Bus:         bus,
+		SystemName:  "TestSys",
+		FrequencyHz: 851_000_000,
+	})
+
+	nsb := TSBK{LB: true, Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23, 0x00, 0x00, 0x00}}
+	rfss := TSBK{LB: true, Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{0x09, 0x01, 0x23, 0x02, 0x09, 0x00, 0x00, 0x00}}
+	adj := TSBK{LB: true, Opcode: OpAdjacentSiteStatusBroadcast, Payload: [8]byte{0x00, 0x02, 0x0A, 0x01, 0x23, 0x00, 0x64, 0x00}}
+
+	// Two NSBs, one RFSS, three adjacent-site broadcasts.
+	for _, tb := range []TSBK{nsb, nsb, rfss, adj, adj, adj} {
+		cc.Process(buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, tb), 0)
+	}
+
+	s := cc.Stats()
+	if s.NetStatusSeen != 2 {
+		t.Errorf("NetStatusSeen = %d, want 2", s.NetStatusSeen)
+	}
+	if s.RFSSStatusSeen != 1 {
+		t.Errorf("RFSSStatusSeen = %d, want 1", s.RFSSStatusSeen)
+	}
+	if s.AdjacentSeen != 3 {
+		t.Errorf("AdjacentSeen = %d, want 3", s.AdjacentSeen)
+	}
+}
+
 func TestControlChannelGrantBeforeIdentifierUpdateEmitsDecodeError(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

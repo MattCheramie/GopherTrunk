@@ -84,6 +84,9 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 				TSBKDecoded:       s.TSBKDecoded,
 				TSBKTrellisFailed: s.TSBKTrellisFailed,
 				TSBKCRCFailed:     s.TSBKCRCFailed,
+				NetStatusSeen:     s.NetStatusSeen,
+				RFSSStatusSeen:    s.RFSSStatusSeen,
+				AdjacentSeen:      s.AdjacentSeen,
 			}
 		},
 		topology: func() *TopologySnapshot { return p25Topology(cc.NetworkSnapshot(), cc.BandPlanSnapshot()) },

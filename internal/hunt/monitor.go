@@ -181,6 +181,10 @@ func monitorCandidate(ctx context.Context, sys *DiscoveredSystem, src IQSource, 
 	if res.Signal != nil {
 		rep.ErrorRate = res.Signal.DecodeErrorRate
 	}
+	rep.IdentityNote = identityNote(res)
+	if rep.IdentityNote != "" {
+		log.Warn("hunt: "+rep.IdentityNote, "path", source)
+	}
 	rep.Talkgroups = len(sys.Talkgroups) - before
 	return rep
 }

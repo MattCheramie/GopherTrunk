@@ -60,6 +60,11 @@ type CaptureReport struct {
 	// Verdict is the wideband survey's system-level summary line (set only by
 	// DiscoverWideband). Empty for single-carrier captures.
 	Verdict string `json:"verdict,omitempty"`
+	// IdentityNote explains a locked P25 capture whose WACN/System ID are still
+	// blank — naming which identity broadcasts decoded so the operator knows
+	// whether to widen the dwell or improve the signal. Empty when identity
+	// resolved (or the capture isn't a locked P25 control channel).
+	IdentityNote string `json:"identity_note,omitempty"`
 }
 
 // Discover folds every capture into a single DiscoveredSystem. Captures whose
