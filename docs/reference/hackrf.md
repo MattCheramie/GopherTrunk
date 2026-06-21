@@ -74,6 +74,53 @@ scope access. Then confirm:
 gophertrunk sdr list --probe
 ```
 
+## Setup (Windows)
+
+GopherTrunk drives the HackRF through the in-box **WinUSB** driver — no
+`libhackrf`/`hackrf-tools` and no [SoapySDR](/reference/soapysdr/) install
+required. A HackRF One advertises a Microsoft OS (WCID) descriptor, so Windows
+10/11 usually binds WinUSB automatically and it just works: plug it in and run
+
+```powershell
+gophertrunk sdr list --probe
+gophertrunk sdr doctor
+```
+
+`sdr doctor` prints a row per known SDR (RTL-SDR **and** HackRF) showing which
+function driver is bound and whether it's the expected WinUSB. If the HackRF row
+shows `STATUS BAD` — or `sdr list --probe` reports `WinUsb_Initialize failed` —
+a different driver is bound. Fix it with [Zadig](/reference/zadig/):
+
+1. Run Zadig, then **Options → List All Devices**.
+2. Select the **HackRF One** entry (Interface 0).
+3. Choose **WinUSB** as the target driver and click **Replace Driver**.
+
+If `--probe` fails with an access-denied error, another program (SDR#, GQRX,
+SDRangel, the HackRF tools) already holds the device — close it and retry.
+
+## Using the HackRF with the daemon
+
+`gophertrunk sdr list` only enumerates devices; the daemon (and the web UI
+**Devices** panel) opens the SDRs named in your `config.yaml`. If the panel says
+*"No SDRs known to the daemon"*, add the HackRF under `sdr.devices`:
+
+```yaml
+sdr:
+  sample_rate: 8_000_000
+  devices:
+    - serial: "0000000000000000457863c8284a625f"   # from `gophertrunk sdr list`
+      role: control          # or voice / wideband
+      gain: auto             # or tenths-of-dB, e.g. "320" for 32.0 dB
+      bias_tee: false
+```
+
+Copy the serial straight from `gophertrunk sdr list`. The match is
+case-insensitive and tolerant of a partial serial — a distinctive tail like
+`457863c8284a625f`, or a value captured from an older build that displayed only
+the `0000000000000000` prefix, still binds as long as it's unambiguous (the
+daemon logs when it matches by a partial serial). With multiple HackRFs, use the
+full serial so each entry pins exactly one device.
+
 > **Serial number.** A HackRF reports a full 32-hex-digit `part_id + serial_no`
 > string — the leading 16 digits are a constant prefix (commonly all zeros) and
 > the trailing digits are the unique part. `gophertrunk sdr list` prints the

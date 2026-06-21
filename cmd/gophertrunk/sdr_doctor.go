@@ -8,13 +8,38 @@ import (
 	"runtime"
 	"text/tabwriter"
 
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/hackrf"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/purego"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
 )
 
-// runSDRDoctor implements `gophertrunk sdr doctor`. It iterates the
-// librtlsdr VID/PID whitelist, asks the platform inspector which
-// kernel/Windows function driver is bound to each matching dongle,
+// doctorDevice is one VID/PID the doctor inspects for driver binding.
+type doctorDevice struct {
+	VID  uint16
+	PID  uint16
+	Name string
+}
+
+// knownDoctorDevices is the union of every pure-Go USB SDR's VID/PID
+// table the doctor knows how to diagnose: RTL-SDR plus HackRF. Windows
+// binds a function driver per VID/PID at plug time, so the doctor has to
+// check each identity to tell the operator whether WinUSB is bound. A
+// HackRF that appears in `sdr list` but fails to open shows up here with
+// the wrong-driver hint instead of being invisible to the doctor.
+func knownDoctorDevices() []doctorDevice {
+	var out []doctorDevice
+	for _, d := range purego.KnownVIDPIDs() {
+		out = append(out, doctorDevice{VID: d.VID, PID: d.PID, Name: d.Name})
+	}
+	for _, d := range hackrf.KnownVIDPIDs() {
+		out = append(out, doctorDevice{VID: d.VID, PID: d.PID, Name: d.Name})
+	}
+	return out
+}
+
+// runSDRDoctor implements `gophertrunk sdr doctor`. It iterates the known
+// USB SDR VID/PID list (RTL-SDR + HackRF), asks the platform inspector
+// which kernel/Windows function driver is bound to each matching dongle,
 // and prints a row per device with an actionable next step. Read-only:
 // never opens or claims a USB device, so safe to run as a regular
 // user alongside a live daemon.
@@ -29,7 +54,7 @@ func runSDRDoctor(args []string) {
 	var rows []usb.DriverBinding
 	var failures []error
 	seen := make(map[string]bool)
-	for _, pair := range purego.KnownVIDPIDs() {
+	for _, pair := range knownDoctorDevices() {
 		bindings, err := inspector.Inspect(pair.VID, pair.PID)
 		if err != nil {
 			if errors.Is(err, usb.ErrUnsupportedPlatform) {
@@ -54,7 +79,7 @@ func runSDRDoctor(args []string) {
 	}
 
 	if len(rows) == 0 {
-		fmt.Println("No RTL-SDR dongles found.")
+		fmt.Println("No USB SDR dongles found (checked RTL-SDR and HackRF).")
 		fmt.Println("If a dongle is plugged in but missing here:")
 		switch runtime.GOOS {
 		case "windows":
@@ -62,7 +87,7 @@ func runSDRDoctor(args []string) {
 			fmt.Println("  - Re-plug into a different USB port (preferably USB 2.0 for first-time bring-up).")
 			fmt.Println("  - Run Zadig from the Start Menu and verify the dongle is listed with Options → List All Devices.")
 		case "linux":
-			fmt.Println("  - Run `lsusb` and confirm the dongle's VID:PID appears (RTL-SDR is typically 0bda:2832 or 0bda:2838).")
+			fmt.Println("  - Run `lsusb` and confirm the dongle's VID:PID appears (RTL-SDR is typically 0bda:2832 or 0bda:2838; HackRF is 1d50:6089).")
 			fmt.Println("  - Confirm /sys/bus/usb/devices exists and your user has read permission.")
 		}
 		return

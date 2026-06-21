@@ -161,6 +161,29 @@ func productForPID(pid uint16, fallback string) string {
 	return "HackRF"
 }
 
+// VIDPID is one USB identity the HackRF driver matches, exposed so
+// `gophertrunk sdr doctor` can include HackRF in its driver-binding
+// diagnostics. Mirrors the shape of purego.VIDPID so the doctor command
+// can aggregate every pure-Go USB SDR into one report.
+type VIDPID struct {
+	VID  uint16
+	PID  uint16
+	Name string
+}
+
+// KnownVIDPIDs returns the HackRF USB VID/PID variants this driver
+// matches, in the same order Enumerate scans them. Used by `sdr doctor`
+// to report which Windows function driver (WinUSB vs other) is bound to
+// a connected HackRF — the in-box default is usually WinUSB via the
+// device's WCID descriptor, but a wrong binding shows up here.
+func KnownVIDPIDs() []VIDPID {
+	return []VIDPID{
+		{vidHackRF, pidHackRFOne, pidProductNames[pidHackRFOne]},
+		{vidHackRF, pidHackRFJawbrk, pidProductNames[pidHackRFJawbrk]},
+		{vidHackRF, pidHackRFRad1o, pidProductNames[pidHackRFRad1o]},
+	}
+}
+
 // Open claims the device at idx and returns an sdr.Device. The caller
 // is responsible for calling Close.
 func (d *Driver) Open(idx int) (sdr.Device, error) {
