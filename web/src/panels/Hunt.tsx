@@ -176,6 +176,7 @@ export function Hunt() {
         county: county || undefined,
         serial: serial || undefined,
         protocol: protocol || undefined,
+        monitor_seconds: ccMonitorMin > 0 ? ccMonitorMin * 60 : undefined,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? `start hunt failed: ${e.message}` : "start hunt failed");
@@ -418,6 +419,22 @@ export function Hunt() {
                 value={protocol}
                 onChange={(e) => setProtocol(e.target.value)}
                 placeholder="p25"
+              />
+            )}
+          </Field>
+          <Field
+            label="Monitor (minutes, 0 = off)"
+            hint="After the sweep locks a control channel, streams it and stops once identity, neighbors and band plan settle."
+          >
+            {(p) => (
+              <Input
+                {...p}
+                className="w-full"
+                type="number"
+                min={0}
+                step={1}
+                value={ccMonitorMin}
+                onChange={(e) => setCCMonitorMin(Number(e.target.value))}
               />
             )}
           </Field>
