@@ -86,16 +86,49 @@ func DecodeAliasBytes(encoded []byte) []byte {
 	return decoded
 }
 
-// CleanAlias trims to printable ASCII, dropping control characters and
-// the 0x00 high bytes of UTF-16 BE ASCII characters.
-func CleanAlias(raw []byte) string {
-	out := make([]byte, 0, len(raw))
-	for _, b := range raw {
-		if b >= 0x20 && b < 0x7F {
-			out = append(out, b)
+// DecodeAlias renders the decoded cipher output — a UTF-16 BE character
+// sequence — as a printable-ASCII string and reports whether the decode
+// looks reliable.
+//
+// reliable is false when the stream holds any character outside
+// printable ASCII: a non-zero UTF-16 high byte, a control/DEL low byte,
+// a non-NUL after the trailing NUL padding has started, or an odd
+// trailing byte that can't form a UTF-16 unit. Those are the hallmark
+// of bit-error corruption that survived the CRC (#711), so a caller
+// should surface the result as suspect rather than as a confirmed name.
+//
+// The returned string is still the best-effort printable-ASCII rendering
+// (corrupt characters dropped) so an operator has something to display
+// alongside the unreliable flag. ASCII characters arrive as a 0x00 high
+// byte plus the character; those high bytes and any trailing NUL padding
+// are expected and do not make the decode unreliable.
+func DecodeAlias(raw []byte) (alias string, reliable bool) {
+	reliable = true
+	out := make([]byte, 0, len(raw)/2)
+	for i := 0; i+1 < len(raw); i += 2 {
+		hi, lo := raw[i], raw[i+1]
+		if hi == 0 && lo == 0 {
+			// NUL: expected only as trailing padding. Anything other
+			// than NUL after it means the stream is corrupt.
+			for j := i + 2; j+1 < len(raw); j += 2 {
+				if raw[j] != 0 || raw[j+1] != 0 {
+					reliable = false
+					break
+				}
+			}
+			break
+		}
+		if hi == 0 && lo >= 0x20 && lo < 0x7F {
+			out = append(out, lo)
+		} else {
+			reliable = false
 		}
 	}
-	return string(out)
+	// An odd trailing byte can't form a UTF-16 unit — treat as corruption.
+	if len(raw)%2 == 1 {
+		reliable = false
+	}
+	return string(out), reliable
 }
 
 // Message framing field sizes.
@@ -113,6 +146,11 @@ type Message struct {
 	SystemID uint16
 	RadioID  uint32
 	Alias    string
+	// AliasReliable reports whether the decoded alias is all printable
+	// ASCII. When false the decode contains non-ASCII-printable
+	// characters — a hallmark of bit-error corruption that survived the
+	// CRC — and callers should surface the alias as suspect (#711).
+	AliasReliable bool
 	// CRCOK reports whether the trailing CRC-16/GSM matched. It is
 	// advisory: the CRC parameters are inferred from open-source
 	// decoders and not yet confirmed against a committed real-frame
@@ -144,7 +182,7 @@ func DecodeMessage(msg []byte) (Message, bool) {
 
 	wacn, sysID, rid := decodeSUID(msg)
 	encoded := msg[encStart : encStart+encByteLen]
-	alias := CleanAlias(DecodeAliasBytes(encoded))
+	alias, aliasReliable := DecodeAlias(DecodeAliasBytes(encoded))
 
 	// CRC-16/GSM over everything before the trailing 16-bit CRC field.
 	crcBytes := CRCBits / 8
@@ -153,11 +191,12 @@ func DecodeMessage(msg []byte) (Message, bool) {
 	crcOK := crc16GSM(body) == want
 
 	return Message{
-		WACN:     wacn,
-		SystemID: sysID,
-		RadioID:  rid,
-		Alias:    alias,
-		CRCOK:    crcOK,
+		WACN:          wacn,
+		SystemID:      sysID,
+		RadioID:       rid,
+		Alias:         alias,
+		AliasReliable: aliasReliable,
+		CRCOK:         crcOK,
 	}, true
 }
 

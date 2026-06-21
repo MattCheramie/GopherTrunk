@@ -263,8 +263,10 @@ func (p MACPDU) AsMotorolaAliasData() (MotorolaAliasData, bool) {
 // MotorolaAliasAssembler reassembles the real Motorola FACCH-S talker
 // alias for one active call. Construct one per voice chain; it is
 // single-goroutine like phase1.MotorolaTalkerAliasBuf. AddHeader /
-// AddData return (alias, sourceRID, true) once the header and every
-// data block of the same sequence have arrived.
+// AddData return (alias, sourceRID, reliable, true) once the header and
+// every data block of the same sequence have arrived. reliable is false
+// when the decoded alias holds non-ASCII-printable characters (bit-error
+// corruption surviving the CRC, #711).
 type MotorolaAliasAssembler struct {
 	now func() time.Time
 
@@ -287,10 +289,10 @@ func NewMotorolaAliasAssembler(now func() time.Time) *MotorolaAliasAssembler {
 
 // AddHeader feeds a decoded alias header. A header with a new sequence
 // resets any in-flight data blocks.
-func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint32, bool) {
+func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint32, bool, bool) {
 	a.evictStale()
 	if h.BlockCount == 0 || h.BlockCount > aliasMaxBlocks {
-		return "", 0, false
+		return "", 0, false, false
 	}
 	if !a.haveHeader || h.Sequence != a.sequence {
 		a.blocks = make(map[uint8][]byte)
@@ -305,11 +307,11 @@ func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint3
 
 // AddData feeds a decoded alias data block. Blocks whose sequence
 // doesn't match the current header are ignored.
-func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, bool) {
+func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, bool, bool) {
 	a.evictStale()
 	if !a.haveHeader || d.Sequence != a.sequence || d.BlockNumber == 0 ||
 		d.BlockNumber > a.blockCount {
-		return "", 0, false
+		return "", 0, false, false
 	}
 	a.blocks[d.BlockNumber] = append([]byte(nil), d.Fragment...)
 	a.updated = a.now()
@@ -318,24 +320,26 @@ func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, b
 
 // tryComplete reassembles and decodes once the header and every data
 // block are present.
-func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool) {
+func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool, bool) {
 	if !a.haveHeader || len(a.blocks) < int(a.blockCount) {
-		return "", 0, false
+		return "", 0, false, false
 	}
 	msg := append([]byte(nil), a.header...)
 	for i := uint8(1); i <= a.blockCount; i++ {
 		b, ok := a.blocks[i]
 		if !ok {
-			return "", 0, false
+			return "", 0, false, false
 		}
 		msg = append(msg, b...)
 	}
 	decoded, ok := motorola.DecodeMessage(msg)
 	if !ok {
-		return "", 0, false
+		return "", 0, false, false
 	}
 	a.reset()
-	return decoded.Alias, decoded.RadioID, true
+	// An empty alias (all-non-printable decode) still completes so the
+	// source RID is reported; the publish path drops the empty alias.
+	return decoded.Alias, decoded.RadioID, decoded.AliasReliable, true
 }
 
 func (a *MotorolaAliasAssembler) evictStale() {

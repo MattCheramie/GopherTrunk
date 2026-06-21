@@ -83,7 +83,7 @@ func TestTDULCFeedsMotorolaAliasBuf(t *testing.T) {
 	// HEADER 0x15: MFID 0x90, TG 0x7777=30583, blocks 7, format 1,
 	// reserved 0, seq nibble 9 + checksum.
 	header := [lcContentOctets]byte{0x15, 0x90, 0x77, 0x77, 0x07, 0x01, 0x00, 0x99, 0x02}
-	if _, ok := buf.AddFragment(LCOTalkerAliasHeader, header); ok {
+	if _, ok, _ := buf.AddFragment(LCOTalkerAliasHeader, header); ok {
 		t.Fatal("header alone should not complete an alias")
 	}
 	if buf.blockCount != 7 {
@@ -99,7 +99,7 @@ func TestTDULCFeedsMotorolaAliasBuf(t *testing.T) {
 	// DATA BLOCK 1 of seq 9: 17 90 01 9B EE 00 16 43 10. Octet 2 =
 	// block number 1; octet 3 high nibble = seq 9.
 	data := [lcContentOctets]byte{0x17, 0x90, 0x01, 0x9B, 0xEE, 0x00, 0x16, 0x43, 0x10}
-	if _, ok := buf.AddFragment(LCOTalkerAliasBlock2, data); ok {
+	if _, ok, _ := buf.AddFragment(LCOTalkerAliasBlock2, data); ok {
 		t.Fatal("only 1 of 7 blocks present; alias must not complete")
 	}
 	if buf.blocks[0] == nil {

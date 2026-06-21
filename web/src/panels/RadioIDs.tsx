@@ -112,11 +112,19 @@ export function RadioIDs() {
       {
         key: "talker_alias",
         header: "Talker alias",
-        render: (r) => (
-          <span className="text-xs">
-            {r.talker_alias ?? <span className="text-muted">—</span>}
-          </span>
-        ),
+        render: (r) =>
+          r.talker_alias == null ? (
+            <span className="text-muted">—</span>
+          ) : r.talker_alias_unreliable ? (
+            <span
+              className="text-xs italic text-warn"
+              title="Decode unreliable — passed CRC but contains non-printable characters (possible bit errors)"
+            >
+              {r.talker_alias} ⚠
+            </span>
+          ) : (
+            <span className="text-xs">{r.talker_alias}</span>
+          ),
         sort: (a, b) =>
           (a.talker_alias ?? "").localeCompare(b.talker_alias ?? ""),
         className: "hidden md:table-cell",
@@ -213,7 +221,13 @@ export function RadioIDs() {
           <div className="grid grid-cols-2 gap-3">
             <DetailField
               label="Talker alias"
-              value={selected.talker_alias ?? "—"}
+              value={
+                selected.talker_alias == null
+                  ? "—"
+                  : selected.talker_alias_unreliable
+                    ? `${selected.talker_alias} ⚠ (decode unreliable)`
+                    : selected.talker_alias
+              }
             />
             <DetailField
               label="Last system"

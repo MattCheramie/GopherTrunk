@@ -193,7 +193,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 					if f, ok := pdu.AsTalkerAliasFragment(); ok {
 						alias, src, complete := aliasAsm.Add(f)
 						if complete {
-							c.publishP25Phase2TalkerAlias(system, src, alias)
+							// Generic working-model fragment path (plain ASCII,
+							// not the validated Motorola cipher) — treat as
+							// reliable; the corruption check applies to the
+							// Motorola FACCH-S decode below (#711).
+							c.publishP25Phase2TalkerAlias(system, src, alias, true)
 						}
 						continue
 					}
@@ -202,14 +206,14 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 					// and the source RID falls out of the decoded message
 					// prefix (#376).
 					if h, ok := pdu.AsMotorolaAliasHeader(); ok {
-						if alias, src, complete := motorolaAliasAsm.AddHeader(h); complete {
-							c.publishP25Phase2TalkerAlias(system, src, alias)
+						if alias, src, reliable, complete := motorolaAliasAsm.AddHeader(h); complete {
+							c.publishP25Phase2TalkerAlias(system, src, alias, reliable)
 						}
 						continue
 					}
 					if d, ok := pdu.AsMotorolaAliasData(); ok {
-						if alias, src, complete := motorolaAliasAsm.AddData(d); complete {
-							c.publishP25Phase2TalkerAlias(system, src, alias)
+						if alias, src, reliable, complete := motorolaAliasAsm.AddData(d); complete {
+							c.publishP25Phase2TalkerAlias(system, src, alias, reliable)
 						}
 						continue
 					}
@@ -264,22 +268,23 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 // for the voice-channel MAC dispatch path: a completed alias the
 // composer reassembled off the traffic channel surfaces on the bus
 // with the same payload shape as one decoded on the CC.
-func (c *Composer) publishP25Phase2TalkerAlias(system string, sourceID uint32, alias string) {
-	if c.bus == nil {
+func (c *Composer) publishP25Phase2TalkerAlias(system string, sourceID uint32, alias string, reliable bool) {
+	if c.bus == nil || alias == "" {
 		return
 	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindTalkerAlias,
 		Payload: trunking.TalkerAlias{
-			System:   system,
-			Protocol: "p25-phase2",
-			SourceID: sourceID,
-			Alias:    alias,
-			At:       time.Now().UTC(),
+			System:     system,
+			Protocol:   "p25-phase2",
+			SourceID:   sourceID,
+			Alias:      alias,
+			Unreliable: !reliable,
+			At:         time.Now().UTC(),
 		},
 	})
 	c.log.Info("composer: p25p2 talker alias",
-		"system", system, "src", sourceID, "alias", alias)
+		"system", system, "src", sourceID, "alias", alias, "unreliable", !reliable)
 }
 
 // publishP25Phase2CallSource publishes a KindCallSourceUpdate event so

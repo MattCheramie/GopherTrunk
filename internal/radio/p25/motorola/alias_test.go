@@ -28,11 +28,66 @@ func TestDecodeAliasBytesEmpty(t *testing.T) {
 	}
 }
 
-func TestCleanAliasFiltersControl(t *testing.T) {
-	// UTF-16 BE "Hi" = 00 48 00 69 ; control bytes and NULs dropped.
-	got := CleanAlias([]byte{0x00, 0x48, 0x00, 0x69, 0x01, 0x7F})
-	if got != "Hi" {
-		t.Errorf("CleanAlias = %q, want %q", got, "Hi")
+func TestDecodeAlias(t *testing.T) {
+	tests := []struct {
+		name         string
+		raw          []byte
+		wantAlias    string
+		wantReliable bool
+	}{
+		{
+			// UTF-16 BE "Hi" = 00 48 00 69 — clean printable ASCII.
+			name:         "clean ascii",
+			raw:          []byte{0x00, 0x48, 0x00, 0x69},
+			wantAlias:    "Hi",
+			wantReliable: true,
+		},
+		{
+			// Trailing NUL padding is expected and stays reliable.
+			name:         "trailing nul padding",
+			raw:          []byte{0x00, 0x48, 0x00, 0x69, 0x00, 0x00},
+			wantAlias:    "Hi",
+			wantReliable: true,
+		},
+		{
+			// U+017F (ſ) is non-ASCII — best-effort "Hi" but unreliable.
+			name:         "non-ascii latin codepoint",
+			raw:          []byte{0x00, 0x48, 0x00, 0x69, 0x01, 0x7F},
+			wantAlias:    "Hi",
+			wantReliable: false,
+		},
+		{
+			// U+4E2D (中) — the CJK mojibake the reporter saw (#711).
+			name:         "cjk codepoint",
+			raw:          []byte{0x4E, 0x2D},
+			wantAlias:    "",
+			wantReliable: false,
+		},
+		{
+			// A control low byte (0x01) is corruption.
+			name:         "control low byte",
+			raw:          []byte{0x00, 0x48, 0x00, 0x01},
+			wantAlias:    "H",
+			wantReliable: false,
+		},
+		{
+			// An odd trailing byte can't form a UTF-16 unit.
+			name:         "odd length",
+			raw:          []byte{0x00, 0x48, 0x00},
+			wantAlias:    "H",
+			wantReliable: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			alias, reliable := DecodeAlias(tt.raw)
+			if alias != tt.wantAlias {
+				t.Errorf("alias = %q, want %q", alias, tt.wantAlias)
+			}
+			if reliable != tt.wantReliable {
+				t.Errorf("reliable = %v, want %v", reliable, tt.wantReliable)
+			}
+		})
 	}
 }
 
@@ -62,6 +117,27 @@ func TestDecodeMessageSUID(t *testing.T) {
 	}
 	if msg.RadioID != 200062 {
 		t.Errorf("RadioID = %d, want 200062", msg.RadioID)
+	}
+}
+
+// TestDecodeMessagePopulatesAliasReliable guards that DecodeMessage
+// actually computes and assigns AliasReliable from the decoded alias,
+// rather than leaving it at its zero value.
+func TestDecodeMessagePopulatesAliasReliable(t *testing.T) {
+	suid := []byte{0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E}
+	encoded := []byte{0x12, 0x34, 0x56, 0x78} // arbitrary cipher bytes
+	full := append(append([]byte{}, suid...), encoded...)
+	full = append(full, 0x00, 0x00) // CRC placeholder
+	msg, ok := DecodeMessage(full)
+	if !ok {
+		t.Fatal("DecodeMessage returned ok=false")
+	}
+	wantAlias, wantReliable := DecodeAlias(DecodeAliasBytes(encoded))
+	if msg.Alias != wantAlias {
+		t.Errorf("Alias = %q, want %q", msg.Alias, wantAlias)
+	}
+	if msg.AliasReliable != wantReliable {
+		t.Errorf("AliasReliable = %v, want %v", msg.AliasReliable, wantReliable)
 	}
 }
 

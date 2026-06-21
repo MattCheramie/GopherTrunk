@@ -33,6 +33,10 @@ message RID {
   uint64 call_count      = 17;
   string first_seen      = 18; // RFC3339
   string last_seen       = 19; // RFC3339
+  // talker_alias_unreliable flags an over-the-air alias whose decode
+  // passed CRC but held non-ASCII-printable characters (#711); a client
+  // should render it as suspect.
+  bool   talker_alias_unreliable = 20;
 }
 
 message ListRIDsRequest {}

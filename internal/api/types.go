@@ -253,9 +253,13 @@ type RIDDTO struct {
 	LastTalkgroup uint32    `json:"last_talkgroup,omitempty"`
 	TalkerAlias   string    `json:"talker_alias,omitempty"`
 	TalkerAliasAt time.Time `json:"talker_alias_at,omitempty"`
-	CallCount     uint64    `json:"call_count,omitempty"`
-	FirstSeen     time.Time `json:"first_seen,omitempty"`
-	LastSeen      time.Time `json:"last_seen,omitempty"`
+	// TalkerAliasUnreliable flags an over-the-air alias whose decode
+	// passed CRC but held non-ASCII-printable characters (#711); a
+	// client should render it as suspect.
+	TalkerAliasUnreliable bool      `json:"talker_alias_unreliable,omitempty"`
+	CallCount             uint64    `json:"call_count,omitempty"`
+	FirstSeen             time.Time `json:"first_seen,omitempty"`
+	LastSeen              time.Time `json:"last_seen,omitempty"`
 }
 
 func ridToDTO(r *trunking.RID) *RIDDTO {
@@ -288,6 +292,7 @@ func mergeRIDLive(dto *RIDDTO, u trunking.UnitActivity) *RIDDTO {
 	dto.LastTalkgroup = u.Talkgroup
 	dto.TalkerAlias = u.TalkerAlias
 	dto.TalkerAliasAt = u.TalkerAliasAt
+	dto.TalkerAliasUnreliable = u.TalkerAliasUnreliable
 	dto.CallCount = u.CallCount
 	dto.FirstSeen = u.FirstSeen
 	dto.LastSeen = u.LastSeen

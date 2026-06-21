@@ -51,8 +51,12 @@ type RID struct {
 	CallCount     uint64 `protobuf:"varint,17,opt,name=call_count,json=callCount,proto3" json:"call_count,omitempty"`
 	FirstSeen     string `protobuf:"bytes,18,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"` // RFC3339
 	LastSeen      string `protobuf:"bytes,19,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`    // RFC3339
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// talker_alias_unreliable flags an over-the-air alias whose decode
+	// passed CRC but held non-ASCII-printable characters (#711); a client
+	// should render it as suspect.
+	TalkerAliasUnreliable bool `protobuf:"varint,20,opt,name=talker_alias_unreliable,json=talkerAliasUnreliable,proto3" json:"talker_alias_unreliable,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *RID) Reset() {
@@ -216,6 +220,13 @@ func (x *RID) GetLastSeen() string {
 		return x.LastSeen
 	}
 	return ""
+}
+
+func (x *RID) GetTalkerAliasUnreliable() bool {
+	if x != nil {
+		return x.TalkerAliasUnreliable
+	}
+	return false
 }
 
 type ListRIDsRequest struct {
@@ -650,7 +661,7 @@ var File_rid_proto protoreflect.FileDescriptor
 
 const file_rid_proto_rawDesc = "" +
 	"\n" +
-	"\trid.proto\x12\x0egophertrunk.v1\"\x8c\x04\n" +
+	"\trid.proto\x12\x0egophertrunk.v1\"\xc4\x04\n" +
 	"\x03RID\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\rR\x02id\x12\x14\n" +
 	"\x05alias\x18\x02 \x01(\tR\x05alias\x12 \n" +
@@ -675,7 +686,8 @@ const file_rid_proto_rawDesc = "" +
 	"call_count\x18\x11 \x01(\x04R\tcallCount\x12\x1d\n" +
 	"\n" +
 	"first_seen\x18\x12 \x01(\tR\tfirstSeen\x12\x1b\n" +
-	"\tlast_seen\x18\x13 \x01(\tR\blastSeen\"\x11\n" +
+	"\tlast_seen\x18\x13 \x01(\tR\blastSeen\x126\n" +
+	"\x17talker_alias_unreliable\x18\x14 \x01(\bR\x15talkerAliasUnreliable\"\x11\n" +
 	"\x0fListRIDsRequest\";\n" +
 	"\x10ListRIDsResponse\x12'\n" +
 	"\x04rids\x18\x01 \x03(\v2\x13.gophertrunk.v1.RIDR\x04rids\"\x1f\n" +
