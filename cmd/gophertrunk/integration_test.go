@@ -143,6 +143,20 @@ func TestDaemonEndToEnd(t *testing.T) {
 		t.Errorf("talkgroup_alpha = %v, want FIRE-DISP", got)
 	}
 
+	// Feed a bit of PCM into the recorder so it actually writes a WAV.
+	// Capture files are opened lazily on the first audio sample (a call with
+	// no audio leaves nothing on disk), so an end-to-end recording needs
+	// real samples — the recorder created the session from the CallStart
+	// above; wait for it, then write a short tone.
+	waitRecorderSession(t, d, "VOICE-1")
+	pcm := make([]int16, 8000) // 1 s @ 8 kHz
+	for i := range pcm {
+		pcm[i] = int16((i % 200) * 80) // non-silent ramp; any audio opens the WAV
+	}
+	if err := d.recorder.WritePCM("VOICE-1", pcm); err != nil {
+		t.Fatalf("WritePCM: %v", err)
+	}
+
 	// Recordings directory should now contain a WAV under
 	// Alpha/FIRE-DISP/...
 	waitForRecording(t, cfg.Recordings.Dir, "FIRE-DISP", 2*time.Second)
@@ -184,6 +198,21 @@ func TestDaemonEndToEnd(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Errorf("metrics never surfaced %s", want)
+}
+
+// waitRecorderSession blocks until the daemon's recorder has opened a session
+// for serial (the CallStart is delivered asynchronously over the bus, so the
+// session may not exist the instant the publish returns).
+func waitRecorderSession(t *testing.T, d *Daemon, serial string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if d.recorder != nil && d.recorder.HasSession(serial) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("recorder never opened a session for %q", serial)
 }
 
 func waitForRecording(t *testing.T, root, alpha string, timeout time.Duration) {
