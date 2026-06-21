@@ -400,12 +400,24 @@ func (r *Recorder) sessionForWrite(serial string, callID uint64) *recordingSessi
 		return nil
 	}
 	if s.wav == nil {
-		ns := r.buildSession(s.cs, time.Now().UTC())
-		if ns == nil {
+		// A dormant post-segment park carries only cs+callID with no paths
+		// yet, so prepare a fresh session for it under a new timestamp. A
+		// session prepared by handleStart already has its paths/vocoder and
+		// just needs its files opened on this first write.
+		if s.wavPath == "" {
+			ns := r.buildSession(s.cs, time.Now().UTC())
+			if ns == nil {
+				return nil
+			}
+			r.sessions[serial] = ns
+			s = ns
+		}
+		if err := r.openSessionFiles(s); err != nil {
+			// The WAV couldn't be created — drop the session so we don't
+			// retry on every frame. Nothing partial lands on disk.
+			delete(r.sessions, serial)
 			return nil
 		}
-		r.sessions[serial] = ns
-		s = ns
 	}
 	return s
 }
@@ -598,11 +610,14 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 		"device", deviceSerial, "wav", s.wavPath)
 }
 
-// buildSession opens the WAV (+ optional .raw sidecar + vocoder) for a
-// call, naming the files from cs but timestamped at startedAt (which
-// differs from cs.StartedAt for a per-transmission segment roll).
-// Returns nil on a fatal open error (already logged). The caller holds
-// r.mu and registers the returned session.
+// buildSession prepares a recording session for a call: it makes the output
+// directory, instantiates the vocoder, picks the WAV sample rate, and
+// resolves the .wav / .raw paths (named from cs but timestamped at startedAt,
+// which differs from cs.StartedAt for a per-transmission segment roll). It
+// deliberately does NOT open the files — that happens lazily on the first
+// write (openSessionFiles) so a call with no audio leaves nothing on disk.
+// Returns nil on a fatal error (already logged). The caller holds r.mu and
+// registers the returned session.
 func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *recordingSession {
 	dir := r.directoryFor(cs)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -645,31 +660,50 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 				"recordings_sample_rate", r.sampleRate)
 		}
 	}
-	wavPath := filepath.Join(dir, base+".wav")
-	wav, err := NewWavFile(wavPath, s.sampleRate)
-	if err != nil {
-		r.log.Error("recorder: open wav", "path", wavPath, "err", err)
-		if s.vocoder != nil {
-			_ = s.vocoder.Close()
-		}
-		return nil
-	}
-	s.wav = wav
-	s.wavPath = wavPath
+	s.wavPath = filepath.Join(dir, base+".wav")
 	// ProVoice and DMR voice grants always get a sidecar — neither has
 	// an in-process vocoder, so the .raw file is the only capture of
 	// the call.
 	if r.writeRaw || cs.Grant.ProVoice || dmrVoiceProtocol(cs.Grant.Protocol) {
-		rawPath := filepath.Join(dir, base+".raw")
-		raw, err := os.Create(rawPath)
+		s.rawPath = filepath.Join(dir, base+".raw")
+		s.rawWanted = true
+	}
+	// The on-disk files are NOT opened here — they are created lazily on the
+	// first write (openSessionFiles). A grant that never yields audio (a
+	// dead-key, an immediately-aborted encrypted call, or a tap that never
+	// emits a frame) therefore leaves nothing on disk, instead of a 44-byte
+	// header-only .wav and a 0-byte .raw.
+	return s
+}
+
+// openSessionFiles opens a prepared session's WAV (and .raw sidecar, when
+// wanted) if they aren't open yet. Called from the write path on the first
+// sample/frame so empty calls never touch disk. Idempotent: a no-op once the
+// WAV is open. On WAV-open failure the vocoder is closed and an error is
+// returned so the caller drops the frame.
+func (r *Recorder) openSessionFiles(s *recordingSession) error {
+	if s.wav != nil {
+		return nil
+	}
+	wav, err := NewWavFile(s.wavPath, s.sampleRate)
+	if err != nil {
+		r.log.Error("recorder: open wav", "path", s.wavPath, "err", err)
+		if s.vocoder != nil {
+			_ = s.vocoder.Close()
+			s.vocoder = nil
+		}
+		return err
+	}
+	s.wav = wav
+	if s.rawWanted && s.raw == nil {
+		raw, err := os.Create(s.rawPath)
 		if err != nil {
-			r.log.Error("recorder: open raw", "path", rawPath, "err", err)
+			r.log.Error("recorder: open raw", "path", s.rawPath, "err", err)
 		} else {
 			s.raw = raw
-			s.rawPath = rawPath
 		}
 	}
-	return s
+	return nil
 }
 
 // handleSegment finalizes the current recording at a per-transmission
@@ -934,7 +968,13 @@ type recordingSession struct {
 	vocoder     Vocoder
 	vocoderName string
 	sampleRate  uint32
-	startedAt   time.Time
+	// rawWanted records whether this call should get a .raw sidecar once
+	// its files are opened. The decision is made when the session is
+	// prepared (buildSession) but the file itself is created lazily on the
+	// first frame (openSessionFiles), so a call with no audio never leaves a
+	// 0-byte .raw behind.
+	rawWanted bool
+	startedAt time.Time
 	// callID is the Grant.CallID of the call this session records. Frames
 	// arriving via WriteRawFrameForCall with a different non-zero callID are
 	// dropped (see sessionForWrite) so a reused tap serial can't bleed the

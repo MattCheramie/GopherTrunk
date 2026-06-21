@@ -1468,9 +1468,13 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac
 		Payload: trunking.UnitRegistration{
 			System:   c.systemName,
 			Protocol: "p25",
-			SourceID: u.SourceID,
-			WACN:     u.WACN,
-			SystemID: u.SystemID,
+			SourceID: u.SourceAddress, // the registering radio's unit ID
+			// U_REG_RSP carries no WACN, and its System ID has proven
+			// unreliable to recover per-message; take both from the
+			// NSB-corroborated network model so they match the System
+			// Identity panel instead of floating per registration.
+			WACN:     net.WACN,
+			SystemID: net.SystemID,
 			Response: trunking.RegistrationResponse(u.Response),
 			RFSSID:   net.RFSS,
 			SiteID:   net.Site,
@@ -1480,7 +1484,8 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse, nac
 	})
 	c.log.Debug("p25: registration",
 		"system", c.systemName, "nac", nac,
-		"src", u.SourceID, "wacn", u.WACN, "sysid", u.SystemID,
+		"src", u.SourceAddress, "wuid", u.SourceID,
+		"wacn", net.WACN, "sysid", net.SystemID,
 		"rsp", u.Response)
 }
 

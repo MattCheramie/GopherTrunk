@@ -687,16 +687,13 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	// Feed an RFSS Status Broadcast first (RFSS=2, Site=9) so the
-	// registration event stamps the serving site (issue #698).
+	// U_REG_RSP carries no WACN and an unreliable per-message System ID, so
+	// the registration event takes WACN/SystemID from the NSB-corroborated
+	// network model. Feed a Network Status Broadcast (WACN 0xABCDE, SystemID
+	// 0x123) and an RFSS Status Broadcast (RFSS=2, Site=9) first so the model
+	// is populated and the event stamps the serving site (issue #698).
+	nsbTSBK := TSBK{LB: true, Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23, 0x00, 0x00, 0x00}}
 	rfssTSBK := TSBK{LB: true, Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{0x09, 0x01, 0x23, 0x02, 0x09, 0x00, 0x00, 0x00}}
-	rfssStream := buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, rfssTSBK)
-
-	// Response = accepted (0), WACN = 0xBEE08, SystemID = 0x534,
-	// SourceID = 0x112233.
-	payload := [8]byte{0x00, 0xBE, 0xE0, 0x85, 0x34, 0x11, 0x22, 0x33}
-	tsbk := TSBK{LB: true, Opcode: OpUnitRegistrationResponse, Payload: payload}
-	stream := buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, tsbk)
 
 	cc := New(Options{
 		Bus:         bus,
@@ -704,45 +701,59 @@ func TestControlChannelPublishesUnitRegistration(t *testing.T) {
 		FrequencyHz: 851_000_000,
 		Now:         func() time.Time { return time.Unix(1_700_000_002, 0).UTC() },
 	})
-	cc.Process(rfssStream, 0)
-	cc.Process(stream, 0)
+	cc.Process(buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, nsbTSBK), 0)
+	cc.Process(buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, rfssTSBK), 0)
 
-	var got *trunking.UnitRegistration
-	deadline := time.After(time.Second)
-	for got == nil {
+	// Two registrations from different radios — the per-message Source ID
+	// (WUID) and Source Address bytes differ, but the reported WACN/SystemID
+	// must stay pinned to the network identity (no floating). byte0=0x00 ->
+	// Response accepted; bytes 2-4 = WUID; bytes 5-7 = Source Address.
+	reg1 := TSBK{LB: true, Opcode: OpUnitRegistrationResponse, Payload: [8]byte{0x00, 0x00, 0xAA, 0x11, 0x22, 0x11, 0x22, 0x33}}
+	reg2 := TSBK{LB: true, Opcode: OpUnitRegistrationResponse, Payload: [8]byte{0x00, 0x00, 0xBB, 0xCC, 0xDD, 0x44, 0x55, 0x66}}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, reg1), 0)
+	cc.Process(buildLockedStreamWithTSBK(10, 0x222, DUIDTrunkingSignaling, reg2), 0)
+
+	var regs []trunking.UnitRegistration
+	deadline := time.After(2 * time.Second)
+	for len(regs) < 2 {
 		select {
 		case ev := <-sub.C:
 			if ev.Kind == events.KindUnitRegistration {
-				u := ev.Payload.(trunking.UnitRegistration)
-				got = &u
+				regs = append(regs, ev.Payload.(trunking.UnitRegistration))
 			}
 		case <-deadline:
-			t.Fatal("no registration event published")
+			t.Fatalf("got %d registration events, want 2", len(regs))
 		}
 	}
-	if got.System != "TestSys" || got.Protocol != "p25" {
-		t.Errorf("identity = %s/%s", got.System, got.Protocol)
-	}
-	if got.SourceID != 0x112233 {
-		t.Errorf("SourceID = %06X, want 112233", got.SourceID)
-	}
-	if got.WACN != 0xBEE08 {
-		t.Errorf("WACN = %05X, want BEE08", got.WACN)
-	}
-	if got.SystemID != 0x534 {
-		t.Errorf("SystemID = %03X, want 534", got.SystemID)
-	}
-	if got.Response != trunking.RegistrationAccepted {
-		t.Errorf("Response = %v, want accepted", got.Response)
-	}
-	if got.RFSSID != 2 || got.SiteID != 9 {
-		t.Errorf("site = RFSS %d / Site %d, want 2/9", got.RFSSID, got.SiteID)
-	}
-	if got.NAC != 0x222 {
-		t.Errorf("NAC = %03X, want 222", got.NAC)
-	}
-	if got.At.Unix() != 1_700_000_002 {
-		t.Errorf("At = %v, want injected Now", got.At)
+
+	wantSrc := []uint32{0x112233, 0x445566}
+	for i, got := range regs {
+		if got.System != "TestSys" || got.Protocol != "p25" {
+			t.Errorf("reg %d identity = %s/%s", i, got.System, got.Protocol)
+		}
+		if got.SourceID != wantSrc[i] {
+			t.Errorf("reg %d SourceID = %06X, want %06X", i, got.SourceID, wantSrc[i])
+		}
+		// The whole point: identity is pinned to the NSB, not the per-radio
+		// payload bytes, so it is identical for both registrations.
+		if got.WACN != 0xABCDE {
+			t.Errorf("reg %d WACN = %05X, want ABCDE (from NSB)", i, got.WACN)
+		}
+		if got.SystemID != 0x123 {
+			t.Errorf("reg %d SystemID = %03X, want 123 (from NSB)", i, got.SystemID)
+		}
+		if got.Response != trunking.RegistrationAccepted {
+			t.Errorf("reg %d Response = %v, want accepted", i, got.Response)
+		}
+		if got.RFSSID != 2 || got.SiteID != 9 {
+			t.Errorf("reg %d site = RFSS %d / Site %d, want 2/9", i, got.RFSSID, got.SiteID)
+		}
+		if got.NAC != 0x222 {
+			t.Errorf("reg %d NAC = %03X, want 222", i, got.NAC)
+		}
+		if got.At.Unix() != 1_700_000_002 {
+			t.Errorf("reg %d At = %v, want injected Now", i, got.At)
+		}
 	}
 }
 
