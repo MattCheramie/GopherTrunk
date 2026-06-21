@@ -288,6 +288,35 @@ sdr:
     # Honours `p25_phase1_demod_mode` (c4fm vs cqpsk / LSM) on the
     # system entry just like a dedicated CC dongle.
     #
+    # MULTIPLE SITES IN PARALLEL (issue #749): a P25 system with
+    # several sites — each broadcasting its own control channel —
+    # decodes all of them SIMULTANEOUSLY when you list each site's
+    # control channel as a separate `channels:` entry on a wideband
+    # dongle (on the same dongle if they fit one IQ window, or split
+    # across dongles otherwise). Each channel gets its own tap +
+    # Phase 1 state machine, so every site locks and grants
+    # independently — no taking turns. Any control-channel frequency
+    # hosted this way is automatically excluded from the sequential,
+    # single-tuner cc-hunt below, so a wideband site is never starved
+    # by the round-robin hunter. Example: all four sites of "MMR"
+    # decoded at once from one Airspy —
+    # - serial: "AIRSPY SN:637862DC2E8449D7"
+    #   role: wideband
+    #   center_freq_hz: 420_900_000
+    #   voice_taps: 4
+    #   channels:
+    #     - frequency_hz: 420_012_500   # Melbourne / CBD
+    #       system: "MMR"
+    #     - frequency_hz: 420_037_500   # 120 Collins Street
+    #       system: "MMR"
+    #     - frequency_hz: 420_087_500   # Mt Anakie
+    #       system: "MMR"
+    #     - frequency_hz: 421_837_500   # Mt Blackwood
+    #       system: "MMR"
+    # (List every one of these frequencies in the system's
+    # control_channels too — see the systems section below — and add a
+    # `sites:` mapping there to give each RFSS/Site a human name.)
+    #
     # `voice_taps: N` (0 disables; no hard upper bound) lets the
     # same SDR host N concurrent voice grants without a separate
     # `role: voice` dongle: each grant whose frequency falls inside
@@ -624,6 +653,22 @@ trunking:
   systems:
     - name: "Example-P25"
       protocol: p25
+      # control_channels lists every candidate control channel for the
+      # system. How they are used depends on the SDR topology:
+      #   * Single-tuner deployment (a `role: control` dongle): the
+      #     cc-hunt supervisor treats them as ALTERNATES — it hunts them
+      #     in turn and locks the first that works, staying sticky to the
+      #     last lock (persisted in cc-cache.json). Only one is decoded at
+      #     a time, which is correct when the entries are standby CCs for
+      #     ONE site.
+      #   * Multi-site / wideband deployment: if a system spans several
+      #     SITES (each with its own control channel) and you want them
+      #     decoded SIMULTANEOUSLY, list each site's control channel here
+      #     AND as a `channels:` entry on a `role: wideband` dongle (see
+      #     the SDR section). The wideband path decodes them all in
+      #     parallel and those frequencies are dropped from the sequential
+      #     cc-hunt, so no site is starved (issue #749). Pair this with the
+      #     `sites:` mapping below to label each RFSS/Site.
       control_channels:
         - 851_000_000
         - 852_000_000

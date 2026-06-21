@@ -1312,7 +1312,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// registered factory would leave its system in `state=hunting`
 	// (the connector skips the retune) rather than emitting
 	// `cchunt.failed`.
-	if d.pool != nil && len(d.systems) > 0 {
+	//
+	// Systems whose control channels live on a `role: wideband` device are
+	// decoded in parallel by widebandt2; cchuntSystems strips those
+	// frequencies so the single-tuner hunt doesn't redundantly (and serially)
+	// fight the parallel path (issue #749). When every system is fully
+	// wideband-hosted the filtered list is empty and the supervisor — along
+	// with its ccdecoder connector — is not built at all.
+	cchSystems := cchuntSystems(d.systems, cfg.SDR.Devices)
+	if d.pool != nil && len(cchSystems) > 0 {
 		cchEnabled := cfg.Scanner.CCHunt.Enabled || cfg.Scanner.CCHunt == (config.CCHuntConfig{})
 		if cchEnabled {
 			controlEntry := d.pool.FirstByRole(sdr.RoleControl)
@@ -1373,7 +1381,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Log:            log,
 					Tuner:          cchTuner,
 					Cache:          d.ccCache,
-					Systems:        d.systems,
+					Systems:        cchSystems,
 					Dwell:          msToDuration(cfg.Scanner.CCHunt.DwellMs, 3*time.Second),
 					InitialBackoff: msToDuration(cfg.Scanner.CCHunt.BackoffMs, 5*time.Second),
 					MaxBackoff:     msToDuration(cfg.Scanner.CCHunt.MaxBackoffMs, 60*time.Second),
@@ -3369,6 +3377,74 @@ func isControlChannel(sys trunking.System, freqHz uint32) bool {
 		}
 	}
 	return false
+}
+
+// cchuntSystems returns the systems the sequential cchunt supervisor should
+// hunt, with any control-channel frequency that is already hosted on a
+// `role: wideband` device's `channels:` list removed (issue #749).
+//
+// A wideband dongle decodes every one of its configured channels in parallel
+// (internal/scanner/widebandt2), so a P25 system whose sites each have their
+// own wideband-hosted control channel is already covered simultaneously. The
+// single-tuner cchunt hunt, by contrast, treats a system's control_channels as
+// one-CC-per-system ALTERNATES — it locks the first that works and parks,
+// sticky to the last lock via cc-cache.json. Letting it also hunt those
+// frequencies makes a multi-site wideband config behave like single-site
+// hunting (sites "take turns", one never wins). Filtering them out hands those
+// sites exclusively to the parallel widebandt2 path.
+//
+// Control channels NOT hosted on a wideband device (true alternates, or systems
+// with no wideband coverage) are left for cchunt to hunt as before. A system
+// whose control channels are ALL wideband-hosted is dropped entirely — passing
+// it with an empty ControlChannels slice would fail trunking.System.Validate in
+// the per-round Hunter and mark the system failed forever.
+func cchuntSystems(systems []trunking.System, devices []config.DeviceConfig) []trunking.System {
+	// Wideband-hosted (system, frequency) pairs. Pairing by system name (not
+	// frequency alone) avoids filtering a coincidentally-equal frequency that
+	// belongs to a different, non-wideband system. Unions across every
+	// wideband device so split-across-dongles topologies are handled.
+	wb := make(map[string]map[uint32]bool)
+	for _, dev := range devices {
+		if dev.Role != "wideband" {
+			continue
+		}
+		for _, ch := range dev.Channels {
+			if wb[ch.System] == nil {
+				wb[ch.System] = make(map[uint32]bool)
+			}
+			wb[ch.System][ch.FrequencyHz] = true
+		}
+	}
+	if len(wb) == 0 {
+		return systems
+	}
+	out := make([]trunking.System, 0, len(systems))
+	for _, sys := range systems {
+		hosted := wb[sys.Name]
+		if len(hosted) == 0 {
+			out = append(out, sys)
+			continue
+		}
+		// Allocate a fresh slice: d.systems[i].ControlChannels aliases the
+		// config's backing array (daemon.go assigns sys.ControlChannels
+		// directly), and that slice is read by the trunking engine, spectrum
+		// provider, and /api/v1/sites. Mutating it in place would corrupt them.
+		filtered := make([]uint32, 0, len(sys.ControlChannels))
+		for _, cc := range sys.ControlChannels {
+			if !hosted[cc] {
+				filtered = append(filtered, cc)
+			}
+		}
+		if len(filtered) == 0 {
+			// Every control channel is wideband-hosted — widebandt2 owns this
+			// system. Drop it from the cchunt set entirely.
+			continue
+		}
+		cp := sys
+		cp.ControlChannels = filtered
+		out = append(out, cp)
+	}
+	return out
 }
 
 // buildVirtualVoiceTuners spins up one wbvoice.VirtualTuner per voice tap
