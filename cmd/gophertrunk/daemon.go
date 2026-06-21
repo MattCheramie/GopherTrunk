@@ -1244,6 +1244,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 		liveSinks = append(liveSinks, liveStreamSink)
 		d.recorder.SetDecodedPCMSink(fanoutSink(liveSinks))
+		// Raw vocoder frames fan straight to the publisher (the only raw
+		// consumer): include_raw subscribers get the un-decoded IMBE / AMBE
+		// bytes. This path bypasses live-loudness — that AGC only makes sense
+		// on decoded PCM, not on un-decoded codec frames.
+		d.recorder.SetRawFrameSink(d.audioPub)
 
 		var sink composer.PCMSink = d.recorder
 		if len(sinks) > 1 {
@@ -3523,6 +3528,12 @@ func (f fanoutSink) WritePCM(serial string, samples []int16) error {
 // selects this path via the voice.DecodedPCMCallSink assertion on its decoded
 // tap; without it the live fan-out would drop back to serial-only WritePCM and
 // the bleed guard would be inert in the daemon.
+//
+// Only the digital tap path needs this: it reuses a fixed pool of voice-tap
+// serials across calls. The analog/conventional FM chains feed plain WritePCM
+// (composer.runFMChain) on a stable per-channel serial that is never reused
+// across calls, so the tone-out/analog path is correct-by-construction without
+// a CallID and intentionally stays on WritePCM.
 func (f fanoutSink) WritePCMForCall(serial string, callID uint64, samples []int16) error {
 	for _, s := range f {
 		if cs, ok := s.(interface {

@@ -304,6 +304,97 @@ func TestAudioPublisher_WritePCMForCallFencesStaleCall(t *testing.T) {
 	}
 }
 
+// Raw vocoder frames reach a subscriber that opted in via IncludeRaw, carrying
+// the un-decoded bytes, the codec name, and the call's grant.
+func TestAudioPublisher_RawFansToIncludeRawSubs(t *testing.T) {
+	pub, bus := mkPublisher(t)
+	publishCallStart(t, pub, bus, "VOICE-1", trunking.Grant{GroupID: 42, System: "Sys"})
+
+	sub := pub.Subscribe(AudioSubFilter{IncludeRaw: true})
+	defer pub.Unsubscribe(sub)
+
+	if err := pub.WriteRawFrame("VOICE-1", "imbe", []byte{0xDE, 0xAD, 0xBE}); err != nil {
+		t.Fatalf("WriteRawFrame: %v", err)
+	}
+	select {
+	case frame := <-sub.ch:
+		raw := frame.GetRaw()
+		if raw == nil {
+			t.Fatal("frame missing raw body (got PCM or empty)")
+		}
+		if raw.Vocoder != "imbe" {
+			t.Errorf("vocoder = %q, want imbe", raw.Vocoder)
+		}
+		if string(raw.Frame) != string([]byte{0xDE, 0xAD, 0xBE}) {
+			t.Errorf("frame bytes = %v, want DEADBE", raw.Frame)
+		}
+		if frame.GetGrant().GroupId != 42 {
+			t.Errorf("grant.group_id = %d, want 42", frame.GetGrant().GroupId)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("include_raw subscriber received no raw frame")
+	}
+}
+
+// Raw frames must NOT reach a PCM-only subscriber (IncludeRaw false). Raw is
+// purely additive — the common case (incl. the WebUI) opts out.
+func TestAudioPublisher_RawNotFannedToPCMOnlySubs(t *testing.T) {
+	pub, bus := mkPublisher(t)
+	publishCallStart(t, pub, bus, "VOICE-1", trunking.Grant{GroupID: 42})
+
+	sub := pub.Subscribe(AudioSubFilter{}) // IncludeRaw defaults false
+	defer pub.Unsubscribe(sub)
+
+	if err := pub.WriteRawFrame("VOICE-1", "imbe", []byte{1, 2, 3}); err != nil {
+		t.Fatalf("WriteRawFrame: %v", err)
+	}
+	select {
+	case f := <-sub.ch:
+		t.Fatalf("PCM-only subscriber received a raw frame (raw=%v) — IncludeRaw not honoured", f.GetRaw())
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// The raw path is fenced by CallID exactly like WritePCMForCall: a frame from
+// the call that previously held a reused tap serial is dropped once the serial's
+// grant has flipped to a newer call.
+func TestAudioPublisher_WriteRawFrameForCallFencesStaleCall(t *testing.T) {
+	pub, bus := mkPublisher(t)
+	publishCallStart(t, pub, bus, "tap-0", trunking.Grant{GroupID: 100, CallID: 1})
+
+	sub := pub.Subscribe(AudioSubFilter{IncludeRaw: true, TalkgroupIDs: []uint32{200}})
+	defer pub.Unsubscribe(sub)
+
+	// The new call binds the same tap serial.
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: trunking.CallStart{
+		Grant: trunking.Grant{GroupID: 200, CallID: 2}, DeviceSerial: "tap-0",
+	}})
+	waitForCallID(t, pub, "tap-0", 2)
+
+	// Old call's raw tail (CallID 1) must NOT reach the TG-200 subscriber.
+	if err := pub.WriteRawFrameForCall("tap-0", 1, "imbe", []byte{1, 2, 3}); err != nil {
+		t.Fatalf("WriteRawFrameForCall stale: %v", err)
+	}
+	select {
+	case f := <-sub.ch:
+		t.Fatalf("TG-200 subscriber received stale CallID-1 raw audio (group_id=%d) — bleed not fenced", f.GetGrant().GroupId)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// The current call's raw frame (CallID 2) flows through.
+	if err := pub.WriteRawFrameForCall("tap-0", 2, "imbe", []byte{4, 5, 6}); err != nil {
+		t.Fatalf("WriteRawFrameForCall current: %v", err)
+	}
+	select {
+	case f := <-sub.ch:
+		if f.GetRaw() == nil || f.GetGrant().GroupId != 200 {
+			t.Errorf("got raw=%v group_id=%d, want raw frame for TG 200", f.GetRaw(), f.GetGrant().GroupId)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("TG-200 subscriber received no current-call raw frame")
+	}
+}
+
 func TestAudioPublisher_UnsubscribeIsIdempotent(t *testing.T) {
 	pub, _ := mkPublisher(t)
 	sub := pub.Subscribe(AudioSubFilter{})

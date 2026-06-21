@@ -77,6 +77,14 @@ type Recorder struct {
 	// tests).
 	decodedTap DecodedPCMSink
 
+	// rawTap, when set, receives the verbatim raw vocoder frames the
+	// recorder also writes to its .raw sidecar, so the gRPC audio
+	// publisher's include_raw subscribers can stream un-decoded IMBE /
+	// AMBE bytes. Wired once at daemon construction via SetRawFrameSink
+	// before Run starts, so the hot path reads it without locking. nil =
+	// no raw fan-out (analog-only callers, tests).
+	rawTap RawFrameSink
+
 	// recordDisabled gates new sessions at runtime. Toggled from
 	// the API by operators who want to stop laying down WAVs
 	// without restarting the daemon. In-flight sessions are NOT
@@ -109,12 +117,41 @@ type DecodedPCMCallSink interface {
 	WritePCMForCall(deviceSerial string, callID uint64, samples []int16) error
 }
 
+// RawFrameSink receives the verbatim, un-decoded vocoder frames (IMBE /
+// AMBE+2) the recorder also lays down as its .raw sidecar, so a live consumer
+// — the gRPC audio publisher's include_raw subscribers — can stream the raw
+// bytes without the recorder remaining the only place they exist. It carries
+// the vocoder name that produced the session so the wire frame can label its
+// codec, and unlike the decoded tap it fires even for protocols with no
+// in-process decoder (ProVoice, encrypted): the raw bytes exist even when
+// decoded PCM does not.
+type RawFrameSink interface {
+	WriteRawFrame(deviceSerial, vocoder string, frame []byte) error
+}
+
+// RawFrameCallSink is the call-aware extension of RawFrameSink: it carries the
+// CallID the raw frame belongs to so the live fan-out applies the same
+// cross-call fence the decoded tap does when a voice-tap serial is reused. A
+// sink implementing it is preferred over plain WriteRawFrame in the raw-tap
+// fan-out; sinks that don't still get WriteRawFrame.
+type RawFrameCallSink interface {
+	WriteRawFrameForCall(deviceSerial string, callID uint64, vocoder string, frame []byte) error
+}
+
 // SetDecodedPCMSink wires the live-audio tap that receives PCM decoded
 // from digital vocoder frames. Call once during daemon construction
 // before Run/any calls start; it is not safe to change concurrently
 // with WriteRawFrame.
 func (r *Recorder) SetDecodedPCMSink(s DecodedPCMSink) {
 	r.decodedTap = s
+}
+
+// SetRawFrameSink wires the live raw-frame tap that receives the verbatim
+// un-decoded vocoder frames (the gRPC audio publisher). Call once during
+// daemon construction before Run/any calls start; it is not safe to change
+// concurrently with WriteRawFrame.
+func (r *Recorder) SetRawFrameSink(s RawFrameSink) {
+	r.rawTap = s
 }
 
 // RecorderOptions configure a new Recorder.
@@ -418,6 +455,22 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 	if s.raw != nil {
 		if _, err := s.raw.Write(frame); err != nil {
 			return err
+		}
+	}
+	// Fan the verbatim raw frame to the live raw tap (the gRPC audio
+	// publisher's include_raw subscribers) before any decode. Fires for
+	// every protocol with an open session — including ProVoice / encrypted
+	// calls that have no in-process decoder — since the raw bytes exist even
+	// when decoded PCM doesn't. Hands the session's CallID to a call-aware
+	// sink so the live raw stream is fenced by the same identity the WAV and
+	// decoded tap use, closing the cross-call bleed window on a reused tap
+	// serial (the frame already passed sessionForWrite's CallID check, so
+	// s.callID is authoritative for this audio).
+	if r.rawTap != nil {
+		if cs, ok := r.rawTap.(RawFrameCallSink); ok {
+			_ = cs.WriteRawFrameForCall(deviceSerial, s.callID, s.vocoderName, frame)
+		} else {
+			_ = r.rawTap.WriteRawFrame(deviceSerial, s.vocoderName, frame)
 		}
 	}
 	if s.vocoder != nil {
