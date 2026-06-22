@@ -640,6 +640,12 @@ type LogConfig struct {
 	// (grants, lock/loss, affiliations, patches, …), the analogue
 	// of SDRtrunk's per-channel decoded message log.
 	MessageLog MessageLogConfig `yaml:"message_log"`
+	// PowerLog configures the optional per-channel IQ-power log. It
+	// records each wideband channel's signal level, gated on decode
+	// activity (so only channels actually carrying traffic appear) and,
+	// by default, only when that level is below the low-power threshold —
+	// the "decoding but weak signal" diagnostic.
+	PowerLog PowerLogConfig `yaml:"power_log"`
 }
 
 // MessageLogConfig configures the decoded-message log. Empty Path (or
@@ -648,6 +654,17 @@ type MessageLogConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	Path      string `yaml:"path"`
 	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
+}
+
+// PowerLogConfig configures the decode-activity-gated IQ-power log. Empty
+// Path (or Enabled false) disables it.
+type PowerLogConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
+	// AllWindows logs every decode-active window. When false (default)
+	// only low-power windows are written.
+	AllWindows bool `yaml:"all_windows"`
 }
 
 type SDRConfig struct {
@@ -1611,6 +1628,7 @@ func (c *Config) resolvePaths(base string) {
 	c.Storage.CCCacheFile = resolve(c.Storage.CCCacheFile)
 	c.Recordings.Dir = resolve(c.Recordings.Dir)
 	c.Log.MessageLog.Path = resolve(c.Log.MessageLog.Path)
+	c.Log.PowerLog.Path = resolve(c.Log.PowerLog.Path)
 	c.API.Auth.TokenFile = resolve(c.API.Auth.TokenFile)
 	for i := range c.Baseband.Record {
 		c.Baseband.Record[i].Dir = resolve(c.Baseband.Record[i].Dir)

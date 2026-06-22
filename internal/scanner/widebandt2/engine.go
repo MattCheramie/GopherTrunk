@@ -253,6 +253,14 @@ type engineChannel struct {
 	lastCnt tier2.Counters
 	// pwLowLogAt throttles the "iq power very low" WARN for this channel.
 	pwLowLogAt time.Time
+
+	// decoded returns this channel's lifetime decoded-frame count from the
+	// underlying protocol state machine — Tier II FECPass, Tier III CSBKs,
+	// Phase 1 TSBKs, Phase 2 MAC PDUs. maybeLogDiagnostics diffs it against
+	// lastDecoded each window to gate the power-log event on real decode
+	// activity (delta > 0). Set per protocol in buildChannel.
+	decoded     func() uint64
+	lastDecoded uint64
 }
 
 // New constructs an Engine. The device is not opened or streamed
@@ -380,7 +388,8 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier3,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rx, dmrTier3: cc}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier3", processor: cc, receiver: rx, dmrTier3: cc,
+			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
 	case trunking.ProtocolDMRTier2:
 		cc := tier2.New(tier2.Options{
@@ -396,7 +405,8 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			DeviationHz:  dmrDeviationHz,
 			ClockGain:    dmrClockGainTier2,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx, tier2Cnt: cc}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "dmr-tier2", processor: cc, receiver: rx, tier2Cnt: cc,
+			decoded: func() uint64 { return cc.Counters().FECPass }}, nil
 
 	case trunking.ProtocolP25:
 		if err := requireControlChannel(sys, freqHz, "p25 / Phase 1"); err != nil {
@@ -443,7 +453,8 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 				cc.Process(d, b)
 			}),
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rx}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rx,
+			decoded: func() uint64 { return uint64(cc.Stats().TSBKDecoded) }}, nil
 
 	case trunking.ProtocolP25Phase2:
 		if err := requireControlChannel(sys, freqHz, "p25-phase2 / Phase 2"); err != nil {
@@ -472,7 +483,8 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			ClockMode:   clockMode,
 			GardnerGain: p25Phase2GardnerGain,
 		})
-		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rx}, nil
+		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase2", processor: cc, receiver: rx,
+			decoded: func() uint64 { return cc.DecodedFrames() }}, nil
 
 	default:
 		return nil, fmt.Errorf(
@@ -651,6 +663,34 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 		if e.metrics != nil {
 			e.metrics.RecordIQPowerDbFS(ec.powerLabel(), dbfs)
 		}
+
+		// Decode-activity-gated power event. When the channel decoded at
+		// least one frame this window, publish a per-window signal-level
+		// snapshot for the optional power log. Gating on the decode delta
+		// keeps idle / off-band channels out of the log entirely; the
+		// LowPower flag lets the subscriber default to "decoding but weak"
+		// windows only. Publish is non-blocking (bus drops to slow subs),
+		// so this never stalls the pump goroutine.
+		if ec.decoded != nil {
+			total := ec.decoded()
+			if delta := total - ec.lastDecoded; delta > 0 {
+				ec.lastDecoded = total
+				e.bus.Publish(events.Event{
+					Kind:      events.KindChannelPower,
+					Timestamp: now,
+					Payload: events.ChannelPower{
+						System:    ec.sysName,
+						Protocol:  ec.protoTag,
+						FreqHz:    ec.freqHz,
+						PowerDbFS: dbfs,
+						Decoded:   delta,
+						LowPower:  dbfs < iqpower.LowPowerThresholdDbFS,
+						At:        now,
+					},
+				})
+			}
+		}
+
 		if dbfs < iqpower.LowPowerThresholdDbFS {
 			if now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
 				hint := "check antenna, gain, USB cable"

@@ -70,6 +70,11 @@ var fieldMetas = map[string]FieldMeta{
 	"MessageLogConfig.Enabled":   {Help: "Turn the decoded-message log on. Needs a Path to write to."},
 	"MessageLogConfig.Path":      {Help: "File the decoded-message log is written to. Empty disables it."},
 	"MessageLogConfig.MaxSizeMB": {Help: "Rotate the message log at this size in MB. Default 16."},
+	"LogConfig.PowerLog":         {Help: "Optional per-channel IQ-power log, gated on decode activity. By default records only low-power (weak-signal) windows on channels that are actually decoding."},
+	"PowerLogConfig.Enabled":     {Help: "Turn the power log on. Needs a Path to write to."},
+	"PowerLogConfig.Path":        {Help: "File the power log is written to. Empty disables it."},
+	"PowerLogConfig.MaxSizeMB":   {Help: "Rotate the power log at this size in MB. Default 16."},
+	"PowerLogConfig.AllWindows":  {Help: "Log every decode-active window instead of only low-power windows. Off by default."},
 
 	// ---- Diagnostics -------------------------------------------------------
 	"DiagnosticsConfig.VerboseErrors":    {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},

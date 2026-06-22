@@ -3,6 +3,7 @@ package tier3
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -87,7 +88,21 @@ type ControlChannel struct {
 	// Process call so tests that drive IngestBurst directly don't
 	// pay the construction cost.
 	proc *processState
+
+	// csbkDecoded counts control blocks that cleared BPTC(196,96) + CRC
+	// (every CSBK reaching handleCSBK and every fully assembled MBC),
+	// i.e. successful decode events. It is the Tier III decode-activity
+	// signal the wideband engine's diagnostics gate reads via
+	// DecodedFrames; bumped from the IQ-pump goroutine but exported as an
+	// atomic so other goroutines can sample it without a lock.
+	csbkDecoded atomic.Uint64
 }
+
+// DecodedFrames reports the cumulative count of control blocks that
+// cleared FEC + CRC on this channel (CSBKs and assembled MBC messages).
+// It is the protocol-agnostic decode-activity counter the wideband
+// engine polls to gate per-channel power logging.
+func (c *ControlChannel) DecodedFrames() uint64 { return c.csbkDecoded.Load() }
 
 // Options configure a ControlChannel.
 type Options struct {
@@ -146,6 +161,7 @@ func (c *ControlChannel) IngestBurst(b *dmr.Burst, slot dmr.SlotType) {
 			c.log.Debug("dmr/tier3: CSBK CRC failed")
 			return
 		}
+		c.csbkDecoded.Add(1)
 		c.handleCSBK(slot.ColorCode, csbk)
 	case dmr.DTMBCHeader, dmr.DTMBCContinuation:
 		// Multi Block Control: a CSBK-opcode message spread across a header

@@ -10,10 +10,18 @@ export interface MessageLogConfig {
   MaxSizeMB: number;
 }
 
+export interface PowerLogConfig {
+  Enabled: boolean;
+  Path: string;
+  MaxSizeMB: number;
+  AllWindows: boolean;
+}
+
 export interface LogConfig {
   Level: string;
   Format: string;
   MessageLog: MessageLogConfig;
+  PowerLog: PowerLogConfig;
 }
 
 export interface DiagnosticsConfig {
