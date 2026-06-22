@@ -7,6 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.0] — 2026-06-22
+
+A feature release headlined by a **standalone P25 Phase 2 talker-alias
+signalling follower**: on Phase 2 systems the alias rides the traffic
+channel's FACCH-S MAC signalling during hangtime, so on a busy multi-site
+system — where most grants never get a voice tap and encrypted calls tear
+down before hangtime — it was almost never decoded. A new signalling-only
+follower allocates lightweight DDC taps on a `role: wideband` dongle and
+harvests the alias off the traffic channel independent of the voice pool, the
+way SDRTrunk does with two SDRs. Alongside it, a new **decode-activity-gated
+power log** gives the wideband engine an opt-in, per-channel IQ-power
+diagnostic that only records windows where a protocol is actually decoding —
+the "decoding but the signal is marginal" view — instead of spamming every
+idle or off-band channel.
+
 ### Added
 - **P25 Phase 2 talker-alias signalling follower** (`signalling_taps`, #376).
   On Phase 2 systems the talker alias rides the traffic channel's FACCH-S MAC
