@@ -73,6 +73,7 @@ export interface DeviceConfig {
   Channels?: DeviceChannelConfig[] | null;
   TunerStrategy?: string;
   VoiceTaps?: number;
+  SignallingTaps?: number;
   // Other device flags (BlogV4, IQCorrect, IQInvert, DCAvoid,
   // DCAvoidOffsetHz, …) round-trip via the index signature and are
   // reachable through AdvancedJSON.
