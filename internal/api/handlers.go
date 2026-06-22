@@ -119,6 +119,7 @@ func (s *Server) handleListSystems(w http.ResponseWriter, _ *http.Request) {
 	for _, sys := range s.systems {
 		dto := systemToDTO(sys)
 		overlayLiveIdentity(&dto, live)
+		dto.fillIdentityHex()
 		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"systems": out})
@@ -132,6 +133,7 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 			if s.sites != nil {
 				overlayLiveIdentity(&dto, s.sites.Sites())
 			}
+			dto.fillIdentityHex()
 			writeJSON(w, http.StatusOK, dto)
 			return
 		}

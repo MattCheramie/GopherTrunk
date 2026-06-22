@@ -36,6 +36,21 @@ const (
 	// SuggestedErrorRounding rounds the suggested config value to the
 	// nearest N Hz. Matches trunk-recorder's SUGGESTED_ERROR_ROUNDING.
 	SuggestedErrorRounding = 10
+	// WarmupSamples is how many measurements must accumulate before the
+	// running average is trusted enough to apply. Until then Ready() is
+	// false and callers apply no correction, so a single noisy first
+	// measurement can't yank tuning by hundreds of Hz before the average
+	// has had a chance to settle.
+	WarmupSamples = 3
+	// MaxAbsErrorHz bounds a single measurement's plausible magnitude when
+	// the channel centre is unknown (the voice path passes centre 0). A
+	// real crystal error is a few PPM — single-digit Hz on a disciplined
+	// USRP, low hundreds on a loose RTL crystal at VHF/UHF. A per-call AFC
+	// residual far beyond that is a measurement glitch (an unconverged loop,
+	// a data-dependent bias snapshot at end-of-call), not drift, and folding
+	// it in produces the runaway kHz corrections this guard prevents. ~1.5 kHz
+	// is ≈3.3 PPM at 450 MHz — comfortably above any correction worth making.
+	MaxAbsErrorHz = 1500
 )
 
 // Manager accumulates carrier-error measurements for one SDR source and serves
@@ -48,6 +63,7 @@ type Manager struct {
 	mu      sync.Mutex
 	history []int // most-recent-first; capped at MaxHistory
 	avg     int   // cached running average, in Hz
+	samples int   // count of accepted measurements (for warm-up gating)
 }
 
 // NewManager returns a Manager labelled with the dongle serial for logging. A
@@ -70,12 +86,26 @@ func (m *Manager) AddErrorMeasurement(observedHz, currentOffsetHz int, centerFre
 	defer m.mu.Unlock()
 
 	total := observedHz + currentOffsetHz
+
+	// Reject implausible measurements before they can poison the average.
+	// A real crystal error is bounded by a few PPM of the channel centre;
+	// anything beyond that is a measurement glitch, not drift. Drop it (and
+	// say so at Debug) rather than averaging in a value that would drag the
+	// applied correction into the kHz.
+	if bound := m.rejectBoundHz(centerFreqHz); abs(total) > bound {
+		m.log.Debug("autotune: measurement rejected (implausible, treated as glitch)",
+			"serial", m.serial, "observed_hz", observedHz, "applied_hz", currentOffsetHz,
+			"total_hz", total, "bound_hz", bound)
+		return
+	}
+
 	// Prepend, then trim the oldest past MaxHistory (deque push_front /
 	// pop_back).
 	m.history = append([]int{total}, m.history...)
 	if len(m.history) > MaxHistory {
 		m.history = m.history[:MaxHistory]
 	}
+	m.samples++
 
 	sum := 0
 	for _, e := range m.history {
@@ -85,7 +115,8 @@ func (m *Manager) AddErrorMeasurement(observedHz, currentOffsetHz int, centerFre
 
 	m.log.Debug("autotune: measurement", "serial", m.serial,
 		"observed_hz", observedHz, "applied_hz", currentOffsetHz,
-		"total_hz", total, "avg_hz", m.avg, "samples", len(m.history))
+		"total_hz", total, "avg_hz", m.avg, "samples", len(m.history),
+		"warm", m.samples >= WarmupSamples)
 
 	if centerFreqHz != 0 {
 		ppm := float64(m.avg) / (float64(centerFreqHz) / 1e6)
@@ -99,10 +130,55 @@ func (m *Manager) AddErrorMeasurement(observedHz, currentOffsetHz int, centerFre
 
 // AverageError returns the cached running-average correction in Hz. Callers
 // apply it digitally as targetHz - AverageError(). Port of get_average_error.
+// This is the raw average regardless of warm-up; callers that drive tuning
+// should gate on Ready() so an unsettled early average is not applied.
 func (m *Manager) AverageError() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.avg
+}
+
+// Ready reports whether enough measurements have accumulated (>= WarmupSamples)
+// for the running average to be trusted as an applied tuning correction.
+// Before that, callers should apply no correction.
+func (m *Manager) Ready() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.samples >= WarmupSamples
+}
+
+// Correction returns the average correction to apply, or 0 until warm-up
+// completes. It is the value tuning call sites should use.
+func (m *Manager) Correction() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.samples < WarmupSamples {
+		return 0
+	}
+	return m.avg
+}
+
+// rejectBoundHz is the largest plausible single-measurement magnitude. With a
+// known channel centre it is the PPM-threshold equivalent (a measurement worse
+// than a misconfigured-dongle warning is not a fine correction to chase); with
+// an unknown centre (the voice path) it falls back to the absolute cap.
+func (m *Manager) rejectBoundHz(centerFreqHz uint32) int {
+	if centerFreqHz == 0 {
+		return MaxAbsErrorHz
+	}
+	bound := int(math.Round(PPMThreshold * float64(centerFreqHz) / 1e6))
+	if bound < MaxAbsErrorHz {
+		bound = MaxAbsErrorHz
+	}
+	return bound
+}
+
+// abs returns the absolute value of an int.
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // StatusString renders the live correction and a suggested config value, given

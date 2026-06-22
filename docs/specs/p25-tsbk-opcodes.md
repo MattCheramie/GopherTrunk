@@ -48,7 +48,7 @@ walk-throughs (e.g. UU_V_REQ → UU_ANS_REQ → UU_ANS_RSP call setup).
 | 0x28 | `GRP_AFF_RSP` | Group Affiliation Response | ✅ affiliation |
 | 0x29 | `SCCB_EXP` | Secondary Control Channel Broadcast — Explicit | ✅ topology |
 | 0x2A | `GRP_AFF_Q` | Group Affiliation Query | — |
-| 0x2B | `LOC_REG_RSP` | Location Registration Response | — |
+| 0x2B | `LOC_REG_RSP` | Location Registration Response | ✅ topology (RFSS/Site) |
 | 0x2C | `U_REG_RSP` | Unit Registration Response | ✅ registration |
 | 0x2D | `U_REG_CMD` | Unit Registration Command | — |
 | 0x2E | `AUTH_CMD` | Authentication Command | — |

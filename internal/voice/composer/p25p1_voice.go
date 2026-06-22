@@ -89,7 +89,10 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		atApplied int
 	)
 	if atManager != nil {
-		atApplied = atManager.AverageError()
+		// Correction() is 0 until the running average has warmed up, so the
+		// first few calls on a fresh dongle apply nothing rather than chasing
+		// a single noisy measurement.
+		atApplied = atManager.Correction()
 		if atApplied != 0 {
 			atNCO = dsp.NewNCO(float64(atApplied), symbolHz)
 		}
@@ -370,16 +373,26 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	})
 
 	// At end-of-call fold this call's residual carrier offset into the
-	// dongle's running average — but only if the receiver actually locked
-	// and decoded voice (frames > 0), so noise on a never-locked call can't
-	// poison the average. The residual (AFCOffsetHz) plus what we already
+	// dongle's running average — but only from a call that decoded *cleanly*.
+	// The AFC residual is only a meaningful carrier-error estimate when the
+	// loop actually locked and tracked; a short or error-ridden call yields a
+	// data-dependent snapshot that, folded in, drags the correction toward the
+	// kHz. So require a minimum run of LDUs and a low uncorrectable rate before
+	// trusting the measurement. The residual (AFCOffsetHz) plus what we already
 	// applied (atApplied) is the dongle's true error; the next call on this
 	// serial picks up the updated correction. centerFreq is 0 here (the
 	// chain isn't handed the grant frequency), so the PPM sanity warning is
 	// the control decoder's job; the average + suggested value still log.
 	if atManager != nil {
 		defer func() {
-			if frames.Load() == 0 {
+			n := frames.Load()
+			bad := uncorrectableLDUs.Load()
+			// minAutotuneLDUs ~= 1 s of voice (9 frames/LDU, 180 ms/LDU);
+			// drop a call with too few LDUs or >10% uncorrectable.
+			const minAutotuneLDUs = 5
+			if n < minAutotuneLDUs || bad*10 > n {
+				c.log.Debug("composer: p25p1 autotune measurement skipped (call too short or noisy)",
+					"serial", serial, "ldus", n, "uncorrectable_ldus", bad)
 				return
 			}
 			observed := int(math.Round(rx.AFCOffsetHz()))

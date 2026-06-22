@@ -463,6 +463,28 @@ func TestWebConfigHiddenTabs(t *testing.T) {
 	}
 }
 
+func TestWebConfigIDBase(t *testing.T) {
+	// Default (unset) and any unrecognised value fall back to hex.
+	for _, in := range []string{"", "hex", "HEX", "bogus"} {
+		if got := (WebConfig{IDBase: in}).IDBaseOrDefault(); got != "hex" {
+			t.Errorf("IDBaseOrDefault(%q) = %q, want hex", in, got)
+		}
+	}
+	if got := (WebConfig{IDBase: "dec"}).IDBaseOrDefault(); got != "dec" {
+		t.Errorf("IDBaseOrDefault(dec) = %q, want dec", got)
+	}
+
+	// validateWeb accepts hex/dec/empty and rejects anything else.
+	for _, ok := range []string{"", "hex", "dec"} {
+		if errs := (Config{Web: WebConfig{IDBase: ok}}).validateWeb(); len(errs) != 0 {
+			t.Errorf("validateWeb id_base=%q errored: %v", ok, errs)
+		}
+	}
+	if errs := (Config{Web: WebConfig{IDBase: "octal"}}).validateWeb(); len(errs) == 0 {
+		t.Error("validateWeb id_base=octal: want error, got none")
+	}
+}
+
 func writeFile(path, data string) error {
 	return writeFileImpl(path, []byte(data))
 }

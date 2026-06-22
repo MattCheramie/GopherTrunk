@@ -427,6 +427,9 @@ export interface RuntimeDTO {
   // HiddenTabs lists the navigation tab keys switched off via
   // web.tabs in config. The App filters them out of the nav strip.
   hidden_tabs?: string[];
+  // IDBase selects how identity numbers (WACN, System ID, NAC, RFSS,
+  // Site) are rendered: "hex" (default) or "dec". From web.id_base config.
+  id_base?: "hex" | "dec";
   // RuntimeDTO is large and changes shape as the daemon grows. Read
   // unknown fields lazily.
   [key: string]: unknown;

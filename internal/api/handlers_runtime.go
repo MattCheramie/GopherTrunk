@@ -89,6 +89,12 @@ type RuntimeDTO struct {
 	// off via web.tabs in config. Both the web SPA and the TUI filter
 	// these out of their nav. Empty/omitted means every tab is shown.
 	HiddenTabs []string `json:"hidden_tabs,omitempty"`
+
+	// IDBase selects how identity numbers (WACN, System ID, NAC, RFSS,
+	// Site) are rendered in the UIs: "hex" (default) or "dec". Sourced
+	// from web.id_base config; the raw decimal values are always present
+	// in the API/event payloads regardless.
+	IDBase string `json:"id_base,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —

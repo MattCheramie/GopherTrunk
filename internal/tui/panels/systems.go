@@ -67,7 +67,7 @@ func (p *SystemsPanel) refresh(sys []client.SystemDTO) {
 			ids = append(ids, fmt.Sprintf("SYS %X", s.SystemID))
 		}
 		if s.RFSS != 0 || s.Site != 0 {
-			ids = append(ids, fmt.Sprintf("RFSS %d/Site %d", s.RFSS, s.Site))
+			ids = append(ids, fmt.Sprintf("RFSS %X/Site %X", s.RFSS, s.Site))
 		}
 		rows = append(rows, table.Row{s.Name, s.Protocol, ccs, strings.Join(ids, " ")})
 	}

@@ -66,6 +66,11 @@ interface SharedState {
    *  nav bar filters these out. Sourced from /api/v1/runtime. */
   hiddenTabs: string[];
 
+  /** Base for rendering identity numbers (WACN, System ID, NAC, RFSS,
+   *  Site): "hex" (default, P25 field convention) or "dec". Sourced from
+   *  web.id_base config via /api/v1/runtime. */
+  idBase: "hex" | "dec";
+
   /** Absolute path of the config.yaml backing the daemon, or "" when it
    *  runs on built-in defaults (no -config). null until the runtime
    *  snapshot has been fetched. Sourced from /api/v1/runtime. */
@@ -92,6 +97,7 @@ interface SharedState {
   setDevices(d: DeviceDTO[]): void;
   setScanner(s: ScannerStatusDTO | null): void;
   setHiddenTabs(tabs: string[]): void;
+  setIDBase(base: "hex" | "dec"): void;
   setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
   setError(msg: string | null): void;
@@ -122,6 +128,7 @@ export const useShared = create<SharedState>((set, get) => ({
   events: [],
   eventCap: 500,
   hiddenTabs: [],
+  idBase: "hex",
   configPath: null,
 
   lastError: null,
@@ -171,6 +178,9 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setHiddenTabs(tabs) {
     set({ hiddenTabs: tabs });
+  },
+  setIDBase(base) {
+    set({ idBase: base });
   },
   setConfigPath(path) {
     set({ configPath: path });
@@ -245,6 +255,7 @@ export const useShared = create<SharedState>((set, get) => ({
       events: [],
       mutations: null,
       hiddenTabs: [],
+      idBase: "hex",
       configPath: null,
       lastError: null,
       toasts: [],

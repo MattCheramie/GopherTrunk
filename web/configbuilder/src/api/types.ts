@@ -211,6 +211,8 @@ export interface AudioConfig {
 
 export interface WebConfig {
   Tabs: Record<string, boolean> | null;
+  // "hex" (default) or "dec": base for rendering identity numbers in the web UI.
+  IDBase?: string;
 }
 
 export interface P25BandPlanEntry {

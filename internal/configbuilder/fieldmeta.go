@@ -227,7 +227,8 @@ var fieldMetas = map[string]FieldMeta{
 	"APIAuthConfig.TokenFile":       {Help: "Path to a file holding the bearer token (re-read per request, so rotation needs no restart)."},
 	"APIAuthConfig.TrustedNetworks": {Help: "CIDRs whose source addresses bypass the token under auto mode. Loopback is always trusted."},
 
-	"WebConfig.Tabs": {Help: "Show/hide navigation tabs in the operator console. Hidden tabs stay reachable by URL."},
+	"WebConfig.Tabs":   {Help: "Show/hide navigation tabs in the operator console. Hidden tabs stay reachable by URL."},
+	"WebConfig.IDBase": {Help: "Render identity numbers (WACN, System ID, NAC, RFSS, Site) in the web UI as hex (default) or dec. The JSON API always carries decimal plus *_hex values."},
 
 	// ---- Storage -----------------------------------------------------------
 	"StorageConfig.Path":        {Help: "SQLite call-log database file. Empty disables call history (the daemon still runs)."},

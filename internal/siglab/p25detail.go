@@ -49,6 +49,11 @@ type CCStatsBreakdown struct {
 	NetStatusSeen  int64 `json:"net_status_seen" yaml:"net_status_seen"`
 	RFSSStatusSeen int64 `json:"rfss_status_seen" yaml:"rfss_status_seen"`
 	AdjacentSeen   int64 `json:"adjacent_seen" yaml:"adjacent_seen"`
+	// LocRegSeen counts accepted Location Registration Responses (0x2B), the
+	// high-rate RFSS/Site source. RFSS/Site resolved via LocRegSeen while
+	// NetStatusSeen == 0 is the normal shape of a site that names itself in
+	// registrations but withholds the WACN-bearing NSB.
+	LocRegSeen int64 `json:"loc_reg_seen" yaml:"loc_reg_seen"`
 }
 
 // ReceiverState is one snapshot of the P25 receiver's internal loops at a

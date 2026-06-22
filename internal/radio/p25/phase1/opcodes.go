@@ -437,6 +437,55 @@ func ParseUnitRegistrationResponse(p [8]byte) UnitRegistrationResponse {
 	}
 }
 
+// LocationRegistrationResponse (opcode 0x2B) confirms (or denies) a radio's
+// registration on the camped site and, unlike the Unit Registration Response,
+// names the RFSS / Site the unit registered on — which is the very site the
+// receiver is camped on. Payload layout per TIA-102.AABF, cross-checked
+// against SDRTrunk's LocationRegistrationResponse
+// (…/tsbk/standard/osp/LocationRegistrationResponse.java):
+//
+//	byte 0 bits 1-0 : Registration Response Value (RV)
+//	bytes 1-2       : Group Address (16 bits)
+//	byte 3          : RFSS ID
+//	byte 4          : Site ID
+//	bytes 5-7       : Target Address — the registering radio's unit ID
+//
+// The message carries no WACN and no System ID, so it backfills only RFSS/Site
+// — but it is emitted far more often than the RFSS Status Broadcast (0x3A),
+// making it the practical source of the camped site's RFSS/Site on systems that
+// rarely (or never) send 0x3A.
+type LocationRegistrationResponse struct {
+	Response      uint8
+	GroupAddress  uint16
+	RFSS          uint8
+	Site          uint8
+	TargetAddress uint32 // 24-bit registering radio
+}
+
+// ParseLocationRegistrationResponse decodes payload bytes for opcode 0x2B.
+func ParseLocationRegistrationResponse(p [8]byte) LocationRegistrationResponse {
+	return LocationRegistrationResponse{
+		Response:      p[0] & 0x03,
+		GroupAddress:  binary.BigEndian.Uint16(p[1:3]),
+		RFSS:          p[3],
+		Site:          p[4],
+		TargetAddress: uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7]),
+	}
+}
+
+// AssembleLocationRegistrationResponse is the inverse; for tests.
+func AssembleLocationRegistrationResponse(r LocationRegistrationResponse) [8]byte {
+	var p [8]byte
+	p[0] = r.Response & 0x03
+	binary.BigEndian.PutUint16(p[1:3], r.GroupAddress)
+	p[3] = r.RFSS
+	p[4] = r.Site
+	p[5] = byte(r.TargetAddress >> 16)
+	p[6] = byte(r.TargetAddress >> 8)
+	p[7] = byte(r.TargetAddress)
+	return p
+}
+
 // NetworkStatusBroadcast (opcode 0x3B) carries the system's network
 // identity. Payload layout per TIA-102.AABF — identical to the Phase 2
 // Network Status Broadcast (see phase2/mac.go AsNetworkStatusBroadcast):

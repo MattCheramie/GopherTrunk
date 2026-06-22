@@ -87,6 +87,7 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 				NetStatusSeen:     s.NetStatusSeen,
 				RFSSStatusSeen:    s.RFSSStatusSeen,
 				AdjacentSeen:      s.AdjacentSeen,
+				LocRegSeen:        s.LocRegSeen,
 			}
 		},
 		topology: func() *TopologySnapshot { return cc.TopologySnapshot() },

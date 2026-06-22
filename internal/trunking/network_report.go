@@ -169,6 +169,17 @@ func channelLine(prefix string, c ReportChannel) string {
 // hexDec renders a value as "HEX[decimal]" — e.g. WACN BEE00 as "BEE00[781824]".
 func hexDec(v uint64) string { return fmt.Sprintf("%X[%d]", v, v) }
 
+// IDHex renders a P25 identity number (WACN, System ID, NAC, RFSS, Site) as an
+// uppercase hex string with no "0x" prefix — the convention these are quoted in
+// the field, e.g. System ID 706 as "2C2". Returns "" for zero so it drops out
+// of omitempty JSON fields (an unknown/absent identity carries no hex).
+func IDHex(v uint64) string {
+	if v == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%X", v)
+}
+
 // mhz formats a frequency in Hz as MHz with 6 decimals (1 Hz resolution).
 func mhz(hz uint64) string { return fmt.Sprintf("%.6f MHz", float64(hz)/1e6) }
 

@@ -686,7 +686,9 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 	offset := d.loOffsetHz
 	applied := 0
 	if d.autotune != nil {
-		applied = d.autotune.AverageError()
+		// Correction() stays 0 through warm-up, so a cold dongle doesn't get
+		// its DDC shifted by an unsettled first measurement.
+		applied = d.autotune.Correction()
 		offset += float64(applied)
 	}
 	if d.ddc != nil && d.ddcTarget == targetHz && d.ddcOffsetHz == offset {
