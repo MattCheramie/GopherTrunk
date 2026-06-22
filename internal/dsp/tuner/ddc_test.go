@@ -310,3 +310,125 @@ func TestRationalRatioReduces(t *testing.T) {
 		}
 	}
 }
+
+// TestDDCBankHighRateMultiTapReporterOffsets is the issue #764 regression: a
+// wideband Airspy run at 10 MS/s with four closely-spaced control-channel taps
+// must extract every carrier cleanly. Before the shared-decimation fix the
+// per-tap single-stage 208:1 resampler starved the live pump goroutine and the
+// off-center taps went deaf; here we assert the DSP recovers all four tones.
+func TestDDCBankHighRateMultiTapReporterOffsets(t *testing.T) {
+	const (
+		inRate  = 10_000_000.0
+		outRate = 48_000.0
+	)
+	// The reporter's four MMR taps, offsets from the 420.9 MHz capture center.
+	offsets := []float64{-887_500, -862_500, -812_500, +937_500}
+	b := NewDDCBank(inRate, outRate, 0.05)
+	collected := make(map[float64]*[]complex64, len(offsets))
+	for _, off := range offsets {
+		off := off
+		buf := &[]complex64{}
+		collected[off] = buf
+		if err := b.AddTap(off, func(out []complex64) {
+			*buf = append(*buf, out...)
+		}); err != nil {
+			t.Fatalf("AddTap(%.0f): %v", off, err)
+		}
+	}
+
+	gen := newToneGen(inRate, 0.2, offsets...)
+	for i := 0; i < 24; i++ {
+		b.Process(gen.Next(8192))
+	}
+
+	for off, bufPtr := range collected {
+		buf := *bufPtr
+		if len(buf) < 512 {
+			t.Fatalf("tap %.0f: too few samples (%d)", off, len(buf))
+		}
+		settled := buf[len(buf)/2:]
+		if frac := powerNearDC(settled, outRate, 500); frac < 0.80 {
+			t.Errorf("tap %.0f Hz: only %.1f%% of power within ±500 Hz of DC", off, frac*100)
+		}
+	}
+}
+
+// TestDDCBankDecimationFactorSelection locks the shared cascade's reduced-rate
+// choice and confirms the emitted per-tap rate stays exactly 48 kHz for the
+// wideband rates the engine accepts (issue #764).
+func TestDDCBankDecimationFactorSelection(t *testing.T) {
+	const outRate = 48_000.0
+	cases := []struct {
+		inRate    float64
+		wantRed   float64
+		wantDecim bool // true ⇒ a shared decimator is built
+	}{
+		{2_400_000, 2_400_000, false},
+		{2_500_000, 2_500_000, false},
+		{4_000_000, 4_000_000, false},
+		{5_000_000, 2_500_000, true},
+		{8_000_000, 4_000_000, true},
+		{10_000_000, 2_500_000, true},
+		{16_000_000, 4_000_000, true},
+		{20_000_000, 2_500_000, true},
+	}
+	for _, c := range cases {
+		red, predec := buildSharedDecimator(c.inRate)
+		if red != c.wantRed || (predec != nil) != c.wantDecim {
+			t.Errorf("buildSharedDecimator(%.0f) = red %.0f / predec!=nil %v, want red %.0f / %v",
+				c.inRate, red, predec != nil, c.wantRed, c.wantDecim)
+		}
+		b := NewDDCBank(c.inRate, outRate, 0.05)
+		if got := b.OutputRateHz(); got != outRate {
+			t.Errorf("rate %.0f Hz: OutputRateHz %.4f != %.0f", c.inRate, got, outRate)
+		}
+	}
+}
+
+// TestDDCBankRejectsBeyondReducedNyquist confirms the in-band check tracks the
+// post-decimation band: at 10 MS/s the usable half-band collapses from the raw
+// ±4.75 MHz to ±2.5e6·0.45 = ±1.125 MHz, so an offset that fit the raw band
+// but not the reduced one is rejected rather than silently aliased (#764).
+func TestDDCBankRejectsBeyondReducedNyquist(t *testing.T) {
+	b := NewDDCBank(10_000_000, 48_000, 0.05)
+	if err := b.AddTap(2_000_000, func([]complex64) {}); !errors.Is(err, ErrOffsetOutOfBand) {
+		t.Errorf("offset beyond reduced Nyquist: want ErrOffsetOutOfBand, got %v", err)
+	}
+	if err := b.AddTap(1_000_000, func([]complex64) {}); err != nil {
+		t.Errorf("offset inside reduced band should succeed, got %v", err)
+	}
+}
+
+// TestDDCBankLowRateBuildsNoDecimator guards the byte-for-byte unchanged path:
+// at the legacy 2.4 MS/s rate the shared cascade must be empty so the per-tap
+// behaviour is identical to the pre-#764 code.
+func TestDDCBankLowRateBuildsNoDecimator(t *testing.T) {
+	b := NewDDCBank(2_400_000, 48_000, 0.05)
+	if b.predec != nil {
+		t.Error("2.4 MS/s should build no shared decimator")
+	}
+	if b.redRateHz != 2_400_000 {
+		t.Errorf("2.4 MS/s reduced rate = %.0f, want 2400000 (unchanged)", b.redRateHz)
+	}
+}
+
+// BenchmarkDDCBankProcess10MHz4Taps quantifies the per-Process cost at the
+// reporter's 10 MS/s / 4-tap config: the shared cascade replaces four
+// full-rate 208:1 resamplers with one halfband cascade plus four reduced-rate
+// resamplers, which is what keeps the live pump goroutine real-time (#764).
+func BenchmarkDDCBankProcess10MHz4Taps(b *testing.B) {
+	const inRate = 10_000_000.0
+	offsets := []float64{-887_500, -862_500, -812_500, +937_500}
+	bank := NewDDCBank(inRate, 48_000, 0.05)
+	for _, off := range offsets {
+		if err := bank.AddTap(off, func([]complex64) {}); err != nil {
+			b.Fatalf("AddTap(%.0f): %v", off, err)
+		}
+	}
+	gen := newToneGen(inRate, 0.2, offsets...)
+	chunk := gen.Next(8192)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bank.Process(chunk)
+	}
+}
