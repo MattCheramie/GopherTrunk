@@ -469,6 +469,32 @@ sdr:
   #     bias_tee: false             # best-effort (driver-dependent)
   #     connect_timeout_ms: 3000
 
+  # ka9q-radio channels. radiod (https://github.com/ka9q/ka9q-radio)
+  # runs fast-convolution downconverters on a front end (RX888, Airspy,
+  # RTL-SDR, …) and multicasts each channel as RTP/IP. A channel in raw
+  # "linear" IQ mode (output_channels = 2) streams interleaved complex
+  # samples GopherTrunk can demodulate directly, so one well-sited radiod
+  # can feed many decoders across a LAN. Each entry mounts one channel,
+  # addressed by its RTP SSRC. The driver polls radiod's status multicast
+  # group (port 5006) to discover the channel's IQ multicast group,
+  # sample rate and encoding, and resolves `.local` instance names via
+  # mDNS. Pre-configure the channel in radiod@.conf; this consumes (and
+  # retunes) an existing channel. Plaintext multicast — trusted LANs only.
+  #
+  # ka9q_radio:
+  #   - addr: "hf.local"            # status+command group: mDNS name or
+  #                                 #  literal "239.x.x.x:5006" (default :5006)
+  #     ssrc: 162550                # channel's RTP SSRC (required, non-zero)
+  #     serial: "ka9q-wx"           # generator fills this from addr+ssrc if blank
+  #     role: control               # control | voice | auto
+  #     # The fields below are optional overrides that skip the status poll.
+  #     # Leave them blank to auto-discover everything from radiod.
+  #     data: ""                    # pin IQ group "239.x.x.x:5004" (default :5004)
+  #     sample_rate: 0              # pin channel IQ rate in Hz
+  #     encoding: ""                # pin wire encoding: s16be|s16le|f32le|f32be
+  #     channels: 0                 # pin output channels (2 for raw IQ)
+  #     connect_timeout_ms: 3000
+
 # Paging decoders. The pocsag / flex lists each dedicate one SDR to a
 # single paging frequency: the SDR is tuned directly to FrequencyHz
 # (full sample-rate IQ, no DDC). The wideband list groups several

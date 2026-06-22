@@ -712,6 +712,16 @@ type SDRConfig struct {
 	// pool device. Plaintext like rtl_tcp — use on trusted networks
 	// only or through an SSH/wireguard tunnel.
 	SoapyRemote []SoapyRemoteConfig `yaml:"soapy_remote"`
+	// Ka9qRadio lists channels from remote ka9q-radio `radiod` instances to
+	// mount as virtual tuners. radiod runs fast-convolution downconverters on
+	// a front end and multicasts each channel as RTP over IP; a channel in raw
+	// "linear" IQ mode (output_channels=2) streams interleaved complex samples
+	// GopherTrunk can demodulate directly. Each entry becomes one pool device
+	// addressed by the channel's RTP SSRC. The driver discovers the channel's
+	// IQ multicast group / sample rate / encoding by polling radiod's status
+	// group, and resolves `.local` instance names via mDNS. Plaintext
+	// multicast like rtl_tcp / soapy_remote — use on trusted LANs (issue #765).
+	Ka9qRadio []Ka9qRadioConfig `yaml:"ka9q_radio"`
 	// WatchdogIntervalMs governs the periodic USB-disconnect
 	// watchdog that the SDR pool runs while the daemon is up. It
 	// polls the registered drivers, surfaces serials that vanish
@@ -872,6 +882,41 @@ func (s SoapyRemoteConfig) DeviceArgs() (map[string]string, error) {
 		return nil, nil
 	}
 	return args, nil
+}
+
+// Ka9qRadioConfig describes one ka9q-radio `radiod` channel to expose as a
+// virtual tuner. Addr (the status multicast group) and SSRC are required;
+// Serial / Role follow the same semantics as the local SDR devices block. The
+// optional Data / SampleRate / Encoding / Channels fields pin the channel
+// parameters and skip the status-group poll that otherwise discovers them.
+type Ka9qRadioConfig struct {
+	// Addr is the status+command multicast group: an mDNS name like
+	// "hf.local" / "hf.local:5006", or a literal "239.1.2.3:5006". A missing
+	// port defaults to 5006. Required.
+	Addr string `yaml:"addr"`
+	// SSRC selects the channel within the radiod instance (the channel's RTP
+	// SSRC, e.g. 162550 for 162.550 MHz). Required, non-zero.
+	SSRC uint32 `yaml:"ssrc"`
+	// Serial is the virtual device serial reported on the pool's
+	// /api/v1/devices snapshot. Empty generates one from Addr+SSRC.
+	Serial string `yaml:"serial"`
+	// Role hints the pool's role assignment: control|voice|auto.
+	Role string `yaml:"role"`
+	// Data optionally pins the IQ multicast group ("239.4.5.6:5004"),
+	// skipping discovery of the data socket from the status poll. A missing
+	// port defaults to 5004.
+	Data string `yaml:"data"`
+	// SampleRate optionally pins the channel's IQ rate (Hz), skipping
+	// OUTPUT_SAMPRATE discovery.
+	SampleRate uint32 `yaml:"sample_rate"`
+	// Encoding optionally pins the wire sample encoding: s16be|s16le|f32le|
+	// f32be (raw IQ encodings), skipping OUTPUT_ENCODING discovery.
+	Encoding string `yaml:"encoding"`
+	// Channels optionally pins the output channel count (2 for raw IQ).
+	Channels int `yaml:"channels"`
+	// ConnectTimeoutMs caps mDNS resolution and the status poll in
+	// milliseconds. Zero picks the driver default (3000).
+	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
 }
 
 type DeviceConfig struct {
@@ -1806,7 +1851,48 @@ func (c Config) validateSDR() []error {
 		}
 		seenSerials[s.Serial] = i
 	}
+	// Validate ka9q-radio channels. Addr + SSRC are required; role, encoding
+	// and serial collisions follow the same rules as the blocks above.
+	for i, k := range c.SDR.Ka9qRadio {
+		if err := validateKa9qFields(i, k); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if k.Serial == "" {
+			continue
+		}
+		if prev, dup := seenSerials[k.Serial]; dup {
+			errs = append(errs, fmt.Errorf(
+				"sdr.ka9q_radio[%d]: serial %q collides with sdr.devices[%d]",
+				i, k.Serial, prev))
+			continue
+		}
+		seenSerials[k.Serial] = i
+	}
 	return errs
+}
+
+func validateKa9qFields(i int, k Ka9qRadioConfig) error {
+	if k.Addr == "" {
+		return fmt.Errorf("sdr.ka9q_radio[%d]: addr is required (mDNS name or host:port)", i)
+	}
+	if k.SSRC == 0 {
+		return fmt.Errorf("sdr.ka9q_radio[%d]: ssrc is required (non-zero)", i)
+	}
+	switch k.Role {
+	case "", "control", "voice", "auto":
+	default:
+		return fmt.Errorf("sdr.ka9q_radio[%d]: role must be control|voice|auto", i)
+	}
+	switch k.Encoding {
+	case "", "s16be", "s16le", "f32le", "f32be":
+	default:
+		return fmt.Errorf("sdr.ka9q_radio[%d]: encoding must be s16be|s16le|f32le|f32be", i)
+	}
+	if k.Channels != 0 && k.Channels != 1 && k.Channels != 2 {
+		return fmt.Errorf("sdr.ka9q_radio[%d]: channels must be 1 or 2", i)
+	}
+	return nil
 }
 
 func validateRTLTCPFields(i int, r RTLTCPConfig) error {

@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **ka9q-radio network SDR source** (`sdr.ka9q_radio`, #765). Consume a channel
+  from a remote ka9q-radio `radiod` instance over IP multicast, in pure Go.
+  radiod runs fast-convolution downconverters on a front end and multicasts each
+  channel as RTP; a channel in raw "linear" IQ mode (output_channels = 2) is
+  mounted as a virtual tuner, so one well-sited radiod can feed many GopherTrunk
+  decoders across a LAN. The driver discovers the channel's IQ multicast group,
+  sample rate and encoding by polling radiod's status group, resolves `.local`
+  instance names via mDNS, retunes via RADIO_FREQUENCY commands, and decodes
+  s16/f32 (either byte order) IQ payloads. Configure under `sdr.ka9q_radio`
+  with the status group `addr` and channel `ssrc`; see `config.example.yaml`.
+
 ## [v0.5.0] — 2026-06-22
 
 A feature release headlined by a **standalone P25 Phase 2 talker-alias
