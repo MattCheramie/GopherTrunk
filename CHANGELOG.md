@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **P25 Phase 2 talker-alias signalling follower** (`signalling_taps`, #376).
+  On Phase 2 systems the talker alias rides the traffic channel's FACCH-S MAC
+  signalling during hangtime, not the control channel — so decoding it used to
+  require a voice tuner following the call. On busy multi-site systems most
+  grants never get a voice tap (and encrypted calls are torn down before
+  hangtime), so the alias was almost never decoded. A new signalling-only
+  follower (`internal/sigfollow`) allocates lightweight DDC taps on a `role:
+  wideband` dongle's IQ stream and harvests the alias off the traffic channel
+  independent of the voice pool — the way SDRTrunk does with two SDRs. Enable
+  it per wideband device with `signalling_taps: N` (0 disables; 2-4 suits a
+  busy Phase 2 system). The FACCH-S MAC dispatch is now shared between the
+  voice composer and the follower so the two paths never diverge. Decoded
+  aliases bind onto the RID automatically via the affiliation tracker, with no
+  extra wiring.
 - **Decode-activity-gated power log** (`log.power_log`). A new opt-in,
   rotating per-channel IQ-power log for the wideband engine. Each line is
   gated on decode activity across all four wideband protocols (DMR Tier II /

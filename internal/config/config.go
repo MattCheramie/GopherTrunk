@@ -946,6 +946,22 @@ type DeviceConfig struct {
 	// 16 so a typo doesn't silently peg a core.
 	VoiceTaps int `yaml:"voice_taps"`
 
+	// SignallingTaps is the number of per-grant DDC tuners the daemon
+	// allocates from this wideband dongle's IQ stream for
+	// signalling-only follows that harvest P25 Phase 2 talker aliases
+	// off the traffic channel's FACCH-S signalling, independent of the
+	// voice pool (issue #376). Unlike VoiceTaps these never record
+	// audio — they decode the MAC signalling and publish the alias —
+	// so the alias surfaces even when no voice tuner is free or the
+	// call is encrypted and torn down before hangtime.
+	//
+	// Defaults to 0 (no signalling follows). Set to 2-4 on a busy
+	// multi-site Phase 2 system where most grants never get a voice
+	// tuner. Each tap runs an independent DDC, so CPU scales roughly
+	// linearly per tap; the daemon warns above 16. Out-of-window grants
+	// are skipped silently.
+	SignallingTaps int `yaml:"signalling_taps"`
+
 	// IQCorrect enables blind I/Q-imbalance correction on this device's
 	// raw IQ before decimation (issue #402). Off by default. An
 	// uncorrected RTL-SDR I/Q imbalance distorts the demodulated symbol
@@ -2131,6 +2147,10 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 	if d.VoiceTaps < 0 {
 		return fmt.Errorf("sdr.devices[%d]: voice_taps %d out of range; 0 disables, a positive value allocates that many virtual voice DDC taps on the dongle",
 			idx, d.VoiceTaps)
+	}
+	if d.SignallingTaps < 0 {
+		return fmt.Errorf("sdr.devices[%d]: signalling_taps %d out of range; 0 disables, a positive value allocates that many P25 Phase 2 alias-harvesting DDC taps on the dongle",
+			idx, d.SignallingTaps)
 	}
 	if d.CenterFreqHz == 0 {
 		return fmt.Errorf("sdr.devices[%d]: role: wideband requires center_freq_hz", idx)

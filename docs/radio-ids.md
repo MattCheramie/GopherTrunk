@@ -122,7 +122,7 @@ shows up in two places:
 - As a `talker.alias` event on the bus / CC Activity feed at
   decode time.
 
-Two paths feed it:
+Three paths feed it:
 
 - **Motorola vendor TSBK** — control-channel `OpVendorTalkerAlias`
   0x15, reassembled by `phase1.TalkerAliasAssembler` (Phase 1)
@@ -138,9 +138,21 @@ Two paths feed it:
   HEADER+BLOCK1+BLOCK2 layout; real Motorola systems don't emit
   that form, so the standard-form decoder was replaced with this
   vendor variant in a follow-up to PR #389.)
-
-Phase 2 voice-MAC alias dispatch is a follow-up; the vendor MAC
-form on the Phase 2 control channel is already wired.
+- **P25 Phase 2 FACCH-S signalling follower** — on Phase 2 systems
+  the talker alias rides the traffic channel's FACCH-S MAC
+  signalling during hangtime (Motorola header opcode 0x91 + data
+  0x95), not the control channel. Decoding it used to require a
+  voice tuner to follow the call, so on busy multi-site systems —
+  where most grants never get a voice tap, and encrypted calls are
+  torn down before hangtime — the alias was almost never decoded
+  (issue #376). The signalling follower (`internal/sigfollow`)
+  fixes this: it allocates lightweight signalling-only DDC taps on
+  the wideband IQ stream and harvests the alias off the traffic
+  channel independent of the voice pool, the way SDRTrunk does.
+  Enable it with `signalling_taps: N` on a `role: wideband` device
+  (see `config.example.yaml`); the decode runs the same shared MAC
+  dispatch the voice chain uses, so the voice and follower paths
+  never diverge.
 
 ## See also
 
