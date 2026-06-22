@@ -91,6 +91,14 @@ defaults:
       learn_path: digital-trunking
       nav_group: Learn
       permalink: /learn/digital-trunking/:basename/
+  - scope:
+      path: "learn/intro-hardware"
+      type: pages
+    values:
+      layout: lesson
+      learn_path: intro-hardware
+      nav_group: Learn
+      permalink: /learn/intro-hardware/:basename/
   # Field Guide articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:

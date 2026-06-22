@@ -1038,3 +1038,234 @@ paths:
       minutes: 12
       level: beginner
       status: full
+
+  - id: intro-hardware
+    label: "Intro to Hardware"
+    title: "Intro to Hardware — from the cloud to the microcontroller"
+    tagline: "The hardware a developer actually chooses between — servers, PCs, phones, single-board computers, and microcontrollers — what each is for, what runs on it, and how to pick."
+    start_slug: what-is-hardware
+    workload: "PT6H"
+    intro: >
+      Every project runs on something. This path is a guided tour of the hardware
+      a developer chooses between — from a few dollars of shared web hosting up
+      through VPSes, dedicated and home servers, the desktops and laptops you
+      build on, the phones and tablets you ship to, and down to single-board
+      computers and the tiny microcontrollers like the Arduino and ESP32. For
+      each one you'll learn what it's for, the programming languages it runs, and
+      its real strengths and drawbacks. The final module turns all of that into a
+      practical way to decide which platform — often several working together —
+      is right for your project. Examples lean on GopherTrunk, the kind of
+      software-defined-radio software that can live on anything from a laptop to a
+      Raspberry Pi by the antenna.
+    modules:
+      - id: foundations
+        label: "Module 1 — Hardware Foundations"
+        blurb: "The ideas every later module leans on: what hardware is, the parts inside every computer, the spectrum from cloud to microcontroller, and the trade-offs that drive every choice."
+        lessons:
+          - slug: what-is-hardware
+            title: What is computer hardware?
+            summary: Hardware vs. software, what counts as a computer, and why the same job can run on a server or a chip the size of a stamp — the one idea everything else builds on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: building-blocks
+            title: CPU, memory, storage & I/O
+            summary: The four building blocks inside every computer, from a data center to a microcontroller, and how their size and speed define what a device can do.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: hardware-spectrum
+            title: The hardware spectrum — cloud to microcontroller
+            summary: A single map of every platform in this path, ordered by power, cost, and how much of it you control, so the rest of the path has a frame to hang on.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: languages-and-hardware
+            title: Programming languages & where they run
+            summary: Why a web host runs PHP and Python while a microcontroller runs C — how hardware shapes which languages are practical, and what "runs on" really means.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: cost-power-performance
+            title: Cost, power & performance trade-offs
+            summary: The handful of trade-offs — money, electricity, performance, control, and effort — that recur in every hardware decision you'll make.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: servers
+        label: "Module 2 — Servers & Hosting"
+        blurb: "Where software runs for other people: the ladder from cheap shared web hosting, through VPSes and dedicated servers, to a server humming in your own home."
+        lessons:
+          - slug: web-hosting
+            title: Web & shared hosting
+            summary: The cheapest way to put something online — what shared hosting gives you, what it hides, the languages it runs, and where it stops being enough.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: vps
+            title: Virtual private servers (VPS)
+            summary: Your own slice of a server with root access — how virtualization carves one machine into many, what you can run, and the responsibility that comes with it.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dedicated-servers
+            title: Dedicated servers
+            summary: A whole physical machine that's yours alone — when raw, uncontended performance is worth the price, and what changes when nothing is shared.
+            minutes: 8
+            level: intermediate
+            status: full
+          - slug: home-servers
+            title: Home servers & self-hosting
+            summary: Running your own server on your own internet — the freedom, the costs nobody mentions, and why a Raspberry Pi or old PC can be a perfect first server.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: personal-computers
+        label: "Module 3 — Personal Computers"
+        blurb: "The machines you build software on: the trade between a fixed, powerful desktop and a portable laptop, and how to choose the one you'll work on every day."
+        lessons:
+          - slug: desktop-computers
+            title: Desktop computers
+            summary: The most power per dollar, endlessly upgradable, and going nowhere — what desktops are for, what they run, and where they shine for a developer.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: laptops
+            title: Laptops
+            summary: A whole computer you can carry — the portability-for-power trade, battery and thermal limits, and why most developers work on one anyway.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: choosing-a-dev-machine
+            title: Choosing your development machine
+            summary: Desktop, laptop, or both — matching your machine to how and where you work, and the specs that actually matter for writing software.
+            minutes: 8
+            level: intermediate
+            status: full
+
+      - id: mobile
+        label: "Module 4 — Mobile Devices"
+        blurb: "The computers in everyone's pocket and bag: what smartphones and tablets are good at, what they're not, and what it takes to build software for them."
+        lessons:
+          - slug: smartphones
+            title: Smartphones
+            summary: The most widespread computer on earth — its sensors and constraints, the platforms and languages behind apps, and why it's a target, not a dev machine.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: tablets
+            title: Tablets
+            summary: The big-screen cousin of the phone — where the extra size pays off, where tablets sit between phone and laptop, and what runs on them.
+            minutes: 7
+            level: beginner
+            status: full
+          - slug: developing-for-mobile
+            title: Developing for mobile devices
+            summary: Native, cross-platform, or web — the ways to build a mobile app, the languages and toolchains each uses, and the trade-offs between them.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: single-board-computers
+        label: "Module 5 — Single-Board Computers"
+        blurb: "A complete computer on one small board: what an SBC like the Raspberry Pi is, what it's brilliant at, how you program it, and where its limits begin."
+        lessons:
+          - slug: what-is-an-sbc
+            title: What is a single-board computer?
+            summary: A real, Linux-running computer the size of a credit card — how an SBC differs from both a PC and a microcontroller, and why GPIO pins change everything.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: raspberry-pi-and-family
+            title: The Raspberry Pi & its alternatives
+            summary: The board that defined the category, plus the rivals worth knowing — Pi Zero to Pi 5, Jetson, Rock, and BeagleBone — and how to tell them apart.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: programming-an-sbc
+            title: Programming & running software on an SBC
+            summary: It's just Linux — Python, C, Go, and the same tools you use on a PC, plus talking to the physical world through the GPIO header.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: sbc-use-cases-and-limits
+            title: SBC use cases, strengths & drawbacks
+            summary: Home labs, media servers, robots, and edge sensors — where SBCs win, and the heat, power, storage, and reliability limits that decide when to reach for something else.
+            minutes: 8
+            level: intermediate
+            status: full
+
+      - id: microcontrollers
+        label: "Module 6 — Microcontrollers"
+        blurb: "The tiny chips that run the physical world: what a microcontroller is, the Arduino that made them approachable, the wireless ESP32, and how you program them."
+        lessons:
+          - slug: what-is-a-microcontroller
+            title: What is a microcontroller?
+            summary: A whole computer on one cheap, low-power chip with no operating system — how it differs from an SBC, and why it boots in milliseconds and runs for years.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: arduino
+            title: Arduino & the maker ecosystem
+            summary: The board and language that made microcontrollers approachable — what Arduino is, the sketch model, and the enormous ecosystem that grew around it.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: esp32
+            title: ESP32 & wireless microcontrollers
+            summary: A microcontroller with Wi-Fi and Bluetooth built in for a couple of dollars — why it powers most DIY smart-home gadgets and the Internet of Things.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: mcu-programming-and-tradeoffs
+            title: "Programming microcontrollers: languages, use cases & limits"
+            summary: C/C++, MicroPython, and Rust on bare metal — the use cases microcontrollers own, and the tight memory, power, and tooling limits you design around.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: choosing-hardware
+        label: "Module 7 — Choosing the Right Hardware"
+        blurb: "Everything applied: turn a project's needs into the platform — or, more often, the combination of platforms — that fits it best, with a repeatable framework and worked examples."
+        lessons:
+          - slug: start-with-requirements
+            title: Start with your requirements
+            summary: Before you pick a board or a host, pin down what the project actually needs — performance, connectivity, power, budget, and where it has to live.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: matching-hardware-to-project
+            title: Matching hardware to the project type
+            summary: Websites, apps, data crunching, automation, sensors, and robots — the platforms each kind of project tends to reach for, and why.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: combining-tiers
+            title: "Combining tiers: device, server & cloud"
+            summary: Real systems rarely live on one platform — how a microcontroller, an SBC, and a server team up, and where to draw the line between them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: decision-framework
+            title: A practical decision framework
+            summary: A repeatable checklist for turning requirements into a hardware choice, including the questions that quickly rule platforms in or out.
+            minutes: 10
+            level: advanced
+            status: full
+          - slug: worked-examples
+            title: "Worked examples: picking hardware for real projects"
+            summary: The framework applied end to end to several projects — a blog, a smart-home sensor, a home media server, and a GopherTrunk scanner — to make it concrete.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of hardware terms
+      summary: Plain-language definitions for every hardware term in the learning path, cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
