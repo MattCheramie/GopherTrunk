@@ -108,11 +108,25 @@ const guardFrac = 0.05
 // above it, ChannelizerBank's shared wide-band filter pays off.
 const strategyAutoThreshold = 6
 
-// channelizerBins is the bin count NewChannelizerBank uses when
-// strategy=="polyphase" or auto picks it. Power of two, large
-// enough that 12.5 kHz DMR repeater spacing maps to distinct bins
-// inside a 2.4 MS/s IQ band: 2_400_000 / 16 = 150 kHz per bin.
-const channelizerBins = 16
+// channelizerBinWidthHz is the target per-bin width the polyphase
+// channelizer aims for. 16 bins across a 2.4 MS/s IQ band gives 150 kHz
+// per bin — wide enough that 12.5 kHz DMR repeater spacing maps to
+// distinct bins, narrow enough that the shared anti-alias filter is sharp.
+// channelizerBinsFor keeps this width roughly constant as the sample rate
+// rises, so a 10 MS/s band gets ~64 bins instead of 16 (625 kHz) bins that
+// collapse adjacent carriers together (issue #764).
+const channelizerBinWidthHz = 150_000.0
+
+// channelizerBinsFor returns the channelizer bin count for an IQ sample
+// rate: the power of two that lands closest to channelizerBinWidthHz per
+// bin, floored at 16 so low rates behave exactly as before.
+func channelizerBinsFor(sampleRateHz uint32) int {
+	bins := 16
+	for float64(sampleRateHz)/float64(bins*2) >= channelizerBinWidthHz {
+		bins *= 2
+	}
+	return bins
+}
 
 // channelizerTapsPerBranch and channelizerKaiserBeta match the
 // channelizer package's own test defaults — wideband-clean
@@ -343,7 +357,7 @@ func New(opts Options) (*Engine, error) {
 		bank = tuner.NewDDCBank(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac)
 	case "polyphase":
 		bank = tuner.NewChannelizerBank(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac,
-			channelizerBins, channelizerTapsPerBranch, channelizerKaiserBeta)
+			channelizerBinsFor(opts.SampleRateHz), channelizerTapsPerBranch, channelizerKaiserBeta)
 	default:
 		return nil, fmt.Errorf("widebandt2: unknown tuner strategy %q", strategy)
 	}

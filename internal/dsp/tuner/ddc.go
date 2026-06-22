@@ -49,13 +49,31 @@ func (n *nco) renorm() {
 
 // DDCBank is a Bank built from one independent NCO mixer + rational
 // polyphase resampler per tap. CPU cost is O(N_taps · N_samples).
+//
+// At high input rates a shared integer decimation stage runs once over the
+// wideband stream (amortised across every tap) to bring it down to redRateHz
+// before the per-tap NCO + resampler. This bounds the per-tap cost to the rate
+// the single-stage resampler was tuned for (~2.5 MS/s) instead of letting a
+// 208:1 single-stage decimation run per tap at the full input rate, which
+// starved the live wideband pump goroutine and dropped samples at the hardware
+// layer when the rate was raised above 2.5 MS/s (issue #764). Below
+// ddcDecimateFloorHz·2 there is no shared stage and the path is byte-for-byte
+// identical to the pre-#764 behaviour.
 type DDCBank struct {
 	inRateHz    float64
+	redRateHz   float64 // rate after the shared decimation stage (== inRateHz when predec is nil)
 	outRateHz   float64
 	actualOutHz float64
 	guardFrac   float64
 	taps        []*ddcTap
-	mixBuf      []complex64
+
+	// predec is the shared decimate-by-D resampler applied to every chunk
+	// before the per-tap mixers. A decimating dsp.Resampler (L=1, M=D) only
+	// computes the kept output samples, so the shared cost is far below the
+	// per-tap resamplers it offloads. Nil when inRateHz is at/below the floor.
+	predec *dsp.Resampler
+	decBuf []complex64 // reduced-rate scratch reused across Process calls
+	mixBuf []complex64
 }
 
 type ddcTap struct {
@@ -72,13 +90,47 @@ type ddcTap struct {
 // alias roll-off; AddTap rejects offsets outside the usable band. A typical
 // value is 0.05 (5%).
 func NewDDCBank(inRateHz, outRateHz, guardFrac float64) *DDCBank {
-	l, m := rationalRatio(outRateHz, inRateHz)
+	redRateHz, decim := buildSharedDecimator(inRateHz)
+	l, m := rationalRatio(outRateHz, redRateHz)
 	return &DDCBank{
 		inRateHz:    inRateHz,
+		redRateHz:   redRateHz,
 		outRateHz:   outRateHz,
-		actualOutHz: inRateHz * float64(l) / float64(m),
+		actualOutHz: redRateHz * float64(l) / float64(m),
 		guardFrac:   guardFrac,
+		predec:      decim,
 	}
+}
+
+// ddcDecimateFloorHz is the lowest reduced rate the shared decimator targets.
+// Halving stops while the next halving would still leave the rate at/above
+// this floor, so the reduced rate lands in [floor, 2·floor). 2.5 MS/s keeps
+// the usable band ≥ ±1.1 MHz (after the 5% guard) and the per-tap resampler
+// ratio in the same regime the single-stage path was tuned for.
+const ddcDecimateFloorHz = 2_500_000.0
+
+// buildSharedDecimator picks the power-of-two decimation D that brings inRateHz
+// down to the [floor, 2·floor) window and returns the reduced rate plus a
+// shared decimate-by-D resampler (nil when inRateHz is already below 2·floor,
+// leaving the legacy single-stage path untouched). The decimating resampler
+// computes only the kept outputs, so the shared cost is bounded by the reduced
+// rate, not the full input rate. tapsPerBranch mirrors the per-tap
+// anti-aliasing convention (ddcStopbandTaps taps per unit of decimation).
+func buildSharedDecimator(inRateHz float64) (redRateHz float64, predec *dsp.Resampler) {
+	red := inRateHz
+	d := 1
+	for red/2 >= ddcDecimateFloorHz {
+		red /= 2
+		d *= 2
+	}
+	if d == 1 {
+		return inRateHz, nil
+	}
+	tapsPerBranch := ddcStopbandTaps * d
+	if tapsPerBranch < ddcMinTapsPerBranch {
+		tapsPerBranch = ddcMinTapsPerBranch
+	}
+	return red, dsp.NewResampler(1, d, tapsPerBranch, ddcKaiserBeta)
 }
 
 // AddTap registers a new tap at the given offset.
@@ -86,14 +138,14 @@ func (b *DDCBank) AddTap(offsetHz float64, sink SinkFunc) error {
 	if !b.offsetInBand(offsetHz) {
 		return ErrOffsetOutOfBand
 	}
-	l, m := rationalRatio(b.outRateHz, b.inRateHz)
+	l, m := rationalRatio(b.outRateHz, b.redRateHz)
 	tapsPerBranch := (ddcStopbandTaps*m + l - 1) / l
 	if tapsPerBranch < ddcMinTapsPerBranch {
 		tapsPerBranch = ddcMinTapsPerBranch
 	}
 	tap := &ddcTap{
 		offsetHz:  offsetHz,
-		nco:       newNCO(offsetHz, b.inRateHz),
+		nco:       newNCO(offsetHz, b.redRateHz),
 		resampler: dsp.NewResampler(l, m, tapsPerBranch, ddcKaiserBeta),
 		sink:      sink,
 	}
@@ -101,8 +153,13 @@ func (b *DDCBank) AddTap(offsetHz float64, sink SinkFunc) error {
 	return nil
 }
 
+// offsetInBand tests the offset against the usable band AFTER the shared
+// decimation cascade. A tap beyond the reduced Nyquist would alias once the
+// cascade narrows the band, so it is rejected here rather than silently
+// folded. The 2.5 MS/s reduced-rate floor keeps this band ≥ ±1.1 MHz, wider
+// than anything the analog front end actually delivers at these offsets.
 func (b *DDCBank) offsetInBand(offsetHz float64) bool {
-	half := b.inRateHz * (0.5 - b.guardFrac)
+	half := b.redRateHz * (0.5 - b.guardFrac)
 	return offsetHz >= -half && offsetHz <= half
 }
 
@@ -115,13 +172,21 @@ func (b *DDCBank) Process(src []complex64) {
 		}
 		return
 	}
-	if cap(b.mixBuf) < len(src) {
-		b.mixBuf = make([]complex64, len(src))
+	// Run the shared decimator once; every tap mixes the reduced-rate stream.
+	// When there is no shared stage (low input rate) this is src itself, so
+	// the per-tap path is unchanged from the pre-#764 behaviour.
+	wide := src
+	if b.predec != nil {
+		b.decBuf = b.predec.Process(b.decBuf, src)
+		wide = b.decBuf
+	}
+	if cap(b.mixBuf) < len(wide) {
+		b.mixBuf = make([]complex64, len(wide))
 	} else {
-		b.mixBuf = b.mixBuf[:len(src)]
+		b.mixBuf = b.mixBuf[:len(wide)]
 	}
 	for _, t := range b.taps {
-		mixInto(b.mixBuf, src, t.nco)
+		mixInto(b.mixBuf, wide, t.nco)
 		t.outBuf = t.resampler.Process(t.outBuf, b.mixBuf)
 		t.sink(t.outBuf)
 	}
@@ -151,8 +216,11 @@ func (b *DDCBank) InputRateHz() float64 { return b.inRateHz }
 // symbol clocks from this value, not the nominal target.
 func (b *DDCBank) OutputRateHz() float64 { return b.actualOutHz }
 
-// Reset clears every tap's NCO and resampler state.
+// Reset clears the shared decimator plus every tap's NCO and resampler state.
 func (b *DDCBank) Reset() {
+	if b.predec != nil {
+		b.predec.Reset()
+	}
 	for _, t := range b.taps {
 		t.nco.reset()
 		t.resampler.Reset()

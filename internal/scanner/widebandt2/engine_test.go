@@ -217,6 +217,91 @@ func TestEngineStrategyAuto(t *testing.T) {
 	})
 }
 
+// TestChannelizerBinsFor locks the sample-rate-scaled bin count: 16 bins at
+// the legacy 2.4 MS/s rate (≈150 kHz/bin, unchanged), growing with the rate so
+// the per-bin width stays near channelizerBinWidthHz instead of ballooning to
+// 625 kHz at 10 MS/s and collapsing adjacent carriers (issue #764).
+func TestChannelizerBinsFor(t *testing.T) {
+	cases := []struct {
+		rate uint32
+		want int
+	}{
+		{2_400_000, 16},
+		{2_500_000, 16},
+		{5_000_000, 32},
+		{10_000_000, 64},
+		{20_000_000, 128},
+	}
+	for _, c := range cases {
+		if got := channelizerBinsFor(c.rate); got != c.want {
+			t.Errorf("channelizerBinsFor(%d) = %d, want %d (bin width %.0f kHz)",
+				c.rate, got, c.want, float64(c.rate)/float64(got)/1e3)
+		}
+	}
+}
+
+// TestEngineHighRateChannelizerDistinctBins is the channelizer half of issue
+// #764: a 10 MS/s polyphase survey with carriers 200 kHz apart must place each
+// in a distinct bin. With the old fixed 16 bins the bin width is 625 kHz and
+// the carriers collide (AddTap → ErrBinAlreadyClaimed, engine construction
+// fails); with the scaled bin count they land in separate bins.
+func TestEngineHighRateChannelizerDistinctBins(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	dev := newMockDevice(nil)
+	channels := []ChannelConfig{}
+	for i := -3; i <= 3; i++ {
+		channels = append(channels, ChannelConfig{
+			FrequencyHz: uint32(int64(453_500_000) + int64(i)*200_000),
+			SystemName:  "x",
+		})
+	}
+	e, err := New(Options{
+		Device: dev, Bus: bus, SampleRateHz: 10_000_000, CenterFreqHz: 453_500_000,
+		TunerStrategy: "polyphase",
+		Channels:      channels,
+		Systems:       []trunking.System{t2System("x")},
+	})
+	if err != nil {
+		t.Fatalf("10 MS/s polyphase with 200 kHz spacing should build distinct bins, got: %v", err)
+	}
+	if e.Strategy() != "polyphase" {
+		t.Errorf("strategy = %q, want polyphase", e.Strategy())
+	}
+}
+
+// TestEngineHighRateReporterTapsInBand is the DDC half of issue #764: the
+// reporter's four closely-spaced P25 control taps at a 10 MS/s capture must all
+// be accepted by the auto-selected DDC bank (they sit inside the post-decimation
+// usable band), rather than being rejected or routed to a channelizer that
+// cannot separate sub-bin spacing.
+func TestEngineHighRateReporterTapsInBand(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	dev := newMockDevice(nil)
+	const center = 420_900_000
+	offsets := []int64{-887_500, -862_500, -812_500, +937_500}
+	channels := make([]ChannelConfig, 0, len(offsets))
+	systems := make([]trunking.System, 0, len(offsets))
+	for i, off := range offsets {
+		freq := uint32(int64(center) + off)
+		name := "mmr" + string(rune('a'+i))
+		channels = append(channels, ChannelConfig{FrequencyHz: freq, SystemName: name})
+		systems = append(systems, p25Phase1System(name, freq))
+	}
+	e, err := New(Options{
+		Device: dev, Bus: bus, SampleRateHz: 10_000_000, CenterFreqHz: center,
+		Channels: channels,
+		Systems:  systems,
+	})
+	if err != nil {
+		t.Fatalf("reporter's 4 taps at 10 MS/s should construct, got: %v", err)
+	}
+	if e.Strategy() != "auto(ddc)" {
+		t.Errorf("strategy = %q, want auto(ddc) (closely-spaced taps need per-tap DDC)", e.Strategy())
+	}
+}
+
 func TestEngineStrategyExplicit(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

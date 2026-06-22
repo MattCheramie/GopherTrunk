@@ -25,10 +25,25 @@ const (
 
 	// pickStrategy mirror (widebandt2): DDC ≤ 6 taps, polyphase above.
 	wbStrategyAutoThreshold = 6
-	wbChannelizerBins       = 16
 	wbChannelizerTaps       = 16
 	wbChannelizerKaiserBeta = 9.0
+
+	// wbChannelizerBinWidthHz mirrors widebandt2.channelizerBinWidthHz: the
+	// target per-bin width the channelizer bin count is scaled to so a wide
+	// (e.g. 10 MS/s) survey gets enough bins to keep adjacent carriers in
+	// distinct bins instead of the fixed-16 collapse (issue #764).
+	wbChannelizerBinWidthHz = 150_000.0
 )
+
+// wbChannelizerBinsFor mirrors widebandt2.channelizerBinsFor: the power of
+// two closest to wbChannelizerBinWidthHz per bin, floored at 16.
+func wbChannelizerBinsFor(inRateHz float64) int {
+	bins := 16
+	for inRateHz/float64(bins*2) >= wbChannelizerBinWidthHz {
+		bins *= 2
+	}
+	return bins
+}
 
 // WidebandConfig configures a wideband multi-carrier survey: the whole-capture
 // sample rate + format, the channel rate each carrier is decimated to, and the
@@ -389,7 +404,7 @@ func newBank(strategy string, nTaps int, inRateHz, outRateHz, guardFrac float64)
 	}
 	if usePoly {
 		return tuner.NewChannelizerBank(inRateHz, outRateHz, guardFrac,
-			wbChannelizerBins, wbChannelizerTaps, wbChannelizerKaiserBeta), "polyphase"
+			wbChannelizerBinsFor(inRateHz), wbChannelizerTaps, wbChannelizerKaiserBeta), "polyphase"
 	}
 	return tuner.NewDDCBank(inRateHz, outRateHz, guardFrac), "ddc"
 }

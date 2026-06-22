@@ -188,3 +188,24 @@ func TestSurveyWidebandRecognizesDMRTier3(t *testing.T) {
 	}
 	t.Logf("verdict: %s", sys.Verdict)
 }
+
+// TestWBChannelizerBinsFor locks the survey path's bin scaling in step with
+// the live engine's channelizerBinsFor (issue #764): 16 bins at 2.4 MS/s,
+// growing with the rate so wide surveys keep adjacent carriers in distinct
+// bins instead of the fixed-16 collapse.
+func TestWBChannelizerBinsFor(t *testing.T) {
+	cases := []struct {
+		rate float64
+		want int
+	}{
+		{2_400_000, 16},
+		{5_000_000, 32},
+		{10_000_000, 64},
+		{20_000_000, 128},
+	}
+	for _, c := range cases {
+		if got := wbChannelizerBinsFor(c.rate); got != c.want {
+			t.Errorf("wbChannelizerBinsFor(%.0f) = %d, want %d", c.rate, got, c.want)
+		}
+	}
+}
