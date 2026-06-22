@@ -28,6 +28,9 @@ log:
   message_log:
     enabled: true
     path: "../logs/messages.log"
+  power_log:
+    enabled: true
+    path: "../logs/power.log"
 baseband:
   record:
     - serial: "00000001"
@@ -52,6 +55,7 @@ trunking:
 		{"storage.path", cfg.Storage.Path, want("../data/calls.db")},
 		{"recordings.dir", cfg.Recordings.Dir, want("../recordings")},
 		{"message_log.path", cfg.Log.MessageLog.Path, want("../logs/messages.log")},
+		{"power_log.path", cfg.Log.PowerLog.Path, want("../logs/power.log")},
 		{"baseband.record[0].dir", cfg.Baseband.Record[0].Dir, want("../iq")},
 		{"talkgroup_file", cfg.Trunking.Systems[0].TalkgroupFile, want("../config/talkgroups.csv")},
 	}

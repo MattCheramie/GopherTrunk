@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Decode-activity-gated power log** (`log.power_log`). A new opt-in,
+  rotating per-channel IQ-power log for the wideband engine. Each line is
+  gated on decode activity across all four wideband protocols (DMR Tier II /
+  Tier III, P25 Phase 1 / Phase 2), so idle and off-band channels never
+  appear. By default it records only low-power (weak-signal) windows on
+  channels that are actively decoding — the "decoding but the signal is
+  marginal" diagnostic — with `log.power_log.all_windows: true` opting into a
+  full power time-series of every decode-active window. To support the gate,
+  DMR Tier III and P25 Phase 2 control channels now expose a `DecodedFrames()`
+  counter alongside the existing Tier II / Phase 1 counters.
+
 ## [v0.4.9] — 2026-06-21
 
 A field-driven bug-fix release built around six issues reported on a live P25

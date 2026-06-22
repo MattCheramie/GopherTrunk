@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -78,7 +79,19 @@ type ControlChannel struct {
 	netWACN  uint32
 	netSysID uint16
 	nac      uint16
+
+	// macDecoded counts MAC PDUs that reached Ingest, i.e. those that
+	// cleared trellis + RS + CRC in DecodeSuperframeMACPDUs. It is the
+	// Phase 2 decode-activity signal the wideband engine's diagnostics
+	// gate reads via DecodedFrames; bumped from the IQ-pump goroutine but
+	// exported as an atomic so other goroutines can sample it lock-free.
+	macDecoded atomic.Uint64
 }
+
+// DecodedFrames reports the cumulative count of MAC PDUs that cleared
+// FEC + CRC on this channel. It is the protocol-agnostic decode-activity
+// counter the wideband engine polls to gate per-channel power logging.
+func (c *ControlChannel) DecodedFrames() uint64 { return c.macDecoded.Load() }
 
 // TrellisMode selects how the Process adapter interprets the MAC
 // PDU dibit window inside the Phase 2 traffic channel.
@@ -458,6 +471,7 @@ func New(opts Options) *ControlChannel {
 // initial seed from per-system config for descrambling to work
 // against the very first PDUs.
 func (c *ControlChannel) Ingest(p MACPDU) {
+	c.macDecoded.Add(1)
 	c.mu.Lock()
 	strict := c.strictValidation
 	c.mu.Unlock()

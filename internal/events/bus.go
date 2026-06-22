@@ -224,6 +224,16 @@ const (
 	// exactly the case it is trying to fix. Payload is DMRGrantObserved.
 	KindDMRGrantObserved Kind = "dmr.grant.observed"
 
+	// KindChannelPower fires once per diagnostics window (iqpower.Window,
+	// ~1 s) for each wideband channel that decoded at least one frame that
+	// window — the wideband engine (internal/scanner/widebandt2) gates it
+	// on per-protocol decode activity so idle / off-band channels stay
+	// silent. Payload is ChannelPower, carrying the window's mean IQ power
+	// and a LowPower flag. The optional power log (internal/log.PowerLog)
+	// subscribes to persist a per-channel signal-level record; by default
+	// it writes only LowPower windows (the "decoding but weak" diagnostic).
+	KindChannelPower Kind = "channel.power"
+
 	// KindDMRBandPlanLearned fires once the DMR LCN autoconfig learner has
 	// fit a band plan for a system from observed (LCN, frequency) pairs.
 	// The learner has already hot-swapped the resolver into the running
@@ -300,6 +310,22 @@ type DMRBandPlanLearned struct {
 type DMRBandPlanLCN struct {
 	LCN    uint16
 	FreqHz uint32
+}
+
+// ChannelPower is the payload published with KindChannelPower. It is a
+// per-window snapshot of one wideband channel's signal level, emitted
+// only for windows in which the channel decoded at least one frame.
+// Defined here (primitive fields only) so both the publisher
+// (internal/scanner/widebandt2) and the subscriber (internal/log) can
+// share it without an import cycle through the trunking package.
+type ChannelPower struct {
+	System    string
+	Protocol  string // "dmr-tier2", "dmr-tier3", "p25-phase1", "p25-phase2"
+	FreqHz    uint32
+	PowerDbFS float64
+	Decoded   uint64 // frames decoded this window (per-window delta)
+	LowPower  bool   // PowerDbFS < iqpower.LowPowerThresholdDbFS
+	At        time.Time
 }
 
 type Event struct {

@@ -363,6 +363,7 @@ type Daemon struct {
 	aircraftLog  *storage.AircraftLog
 	mdc1200Log   *storage.MDC1200Log
 	messageLog   *gtlog.MessageLog
+	powerLog     *gtlog.PowerLog
 	retention    *storage.Retention
 	ccCache      *trunking.Cache
 	cchuntSup    *cchunt.Supervisor
@@ -1123,6 +1124,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			return nil, fmt.Errorf("daemon: message log: %w", err)
 		}
 		d.messageLog = ml
+	}
+
+	// Power log — optional. Subscribes to the bus and writes a
+	// decode-activity-gated, per-channel IQ-power log (low-power windows
+	// only by default; every active window when all_windows is set).
+	if cfg.Log.PowerLog.Enabled && cfg.Log.PowerLog.Path != "" {
+		pl, err := gtlog.NewPowerLog(gtlog.PowerLogOptions{
+			Bus:        d.bus,
+			Path:       cfg.Log.PowerLog.Path,
+			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
+			AllWindows: cfg.Log.PowerLog.AllWindows,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: power log: %w", err)
+		}
+		d.powerLog = pl
 	}
 
 	// Affiliation tracker — always on. Subscribes to the bus and
@@ -2375,6 +2392,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.messageLog.Run(ctx)
 		})
 	}
+	if d.powerLog != nil {
+		d.spawn(runCtx, "powerlog", false, func(ctx context.Context) error {
+			return d.powerLog.Run(ctx)
+		})
+	}
 	if d.affiliations != nil {
 		d.spawn(runCtx, "affiliations", false, func(ctx context.Context) error {
 			return d.affiliations.Run(ctx)
@@ -3046,6 +3068,9 @@ func (d *Daemon) Close() {
 		}
 		if d.messageLog != nil {
 			_ = d.messageLog.Close()
+		}
+		if d.powerLog != nil {
+			_ = d.powerLog.Close()
 		}
 		if d.affiliations != nil {
 			_ = d.affiliations.Close()

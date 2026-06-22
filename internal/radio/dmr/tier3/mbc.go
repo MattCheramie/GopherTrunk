@@ -125,6 +125,7 @@ func (c *ControlChannel) handleMBC(cc uint8, dt dmr.DataType, b *dmr.Burst) {
 // layout (octets 2-9 of the header block). All other opcodes are surfaced
 // assembled-only, pending an off-air capture to validate their layout.
 func (c *ControlChannel) dispatchMBC(cc uint8, a *mbcAssembly) {
+	c.csbkDecoded.Add(1)
 	payload := make([]byte, 0, len(a.blocks)*12)
 	for _, blk := range a.blocks {
 		payload = append(payload, blk[:]...)
