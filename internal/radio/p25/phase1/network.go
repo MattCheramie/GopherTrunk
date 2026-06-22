@@ -170,10 +170,21 @@ func (m *NetworkModel) ApplySecondaryControlChannelExplicit(s SecondaryControlCh
 
 // ApplyAdjacentSite folds an Adjacent Site Status Broadcast (0x3C) in,
 // de-duplicating by (RFSS, Site) and keeping the latest channel info.
+//
+// The neighbour's System ID is also voted into the identity tally: every site
+// of a P25 system shares one System ID, so an adjacent site names our own.
+// This is the only System ID source on systems that emit 0x3C but never the
+// Network/RFSS status broadcasts (0x3B/0x3A) — without it WACN/SysID/RFSS/Site
+// all stay blank even on a healthy, locked control channel (matches OP25/
+// SDRtrunk, which corroborate System ID from adjacent broadcasts). RFSS/Site
+// are deliberately NOT voted: they describe the neighbour, not the camped site.
 func (m *NetworkModel) ApplyAdjacentSite(a AdjacentSiteStatusBroadcast) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensure()
+	if a.SystemID != 0 {
+		m.sysidVotes[a.SystemID]++
+	}
 	key := neighborKey{RFSS: a.RFSS, Site: a.Site}
 	m.neighborData[key] = NeighborSite{RFSS: a.RFSS, Site: a.Site, ChannelID: a.ChannelID, ChannelNumber: a.ChannelNumber}
 }

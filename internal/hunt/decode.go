@@ -158,14 +158,25 @@ func identityNote(res *siglab.Result) string {
 	if res == nil || !res.Locked || res.Topology == nil {
 		return ""
 	}
-	if res.Topology.WACN != 0 || res.Topology.SystemID != 0 {
-		return "" // identity resolved
+	if res.Topology.WACN != 0 && res.Topology.SystemID != 0 {
+		return "" // identity fully resolved
 	}
 	d, ok := res.Detail.(*siglab.P25P1Detail)
 	if !ok || d.CCStats == nil {
 		return "" // not the P25 deep path
 	}
 	cc := d.CCStats
+	if res.Topology.SystemID != 0 && res.Topology.WACN == 0 {
+		// System ID recovered (voted from adjacent-site broadcasts), but WACN
+		// is still blank: NET_STS_BCST (0x3B) is the only P25 message that
+		// carries it, and this system never transmitted it. Widening the dwell
+		// won't help if the system simply doesn't emit the NSB.
+		return fmt.Sprintf("System ID resolved from adjacent-site broadcasts, but WACN is "+
+			"unavailable: the Network Status Broadcast (NSB, 0x3B) that carries it was never "+
+			"decoded (saw NSB×%d, RFSS×%d, adjacent×%d, TSBK×%d) — if the system never emits "+
+			"the NSB, the WACN cannot be recovered",
+			cc.NetStatusSeen, cc.RFSSStatusSeen, cc.AdjacentSeen, cc.TSBKDecoded)
+	}
 	if cc.NetStatusSeen > 0 {
 		// NSB decoded but yielded no WACN — a parse problem, not a capture gap.
 		return fmt.Sprintf("identity unresolved despite %d Network Status Broadcast(s): "+

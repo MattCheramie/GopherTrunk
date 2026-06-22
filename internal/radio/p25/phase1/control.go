@@ -1142,6 +1142,9 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	case OpAdjacentSiteStatusBroadcast:
 		atomic.AddInt64(&c.stats.AdjacentSeen, 1)
 		c.netModel.ApplyAdjacentSite(ParseAdjacentSiteStatusBroadcast(t.Payload))
+		// On systems that never emit 0x3B/0x3A, the adjacent broadcast is
+		// the only System ID source — publish so it reaches the SiteTracker/API.
+		c.publishSiteUpdate()
 	case OpGroupAffiliationResponse:
 		c.publishAffiliation(ParseGroupAffiliationResponse(t.Payload), nac)
 	case OpUnitRegistrationResponse:
@@ -1476,7 +1479,11 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 // channels. Skipped until the site has actually been identified.
 func (c *ControlChannel) publishSiteUpdate() {
 	net := c.netModel.Snapshot()
-	if net.RFSS == 0 && net.Site == 0 {
+	// Publish once any identity scalar is known. A system that never emits
+	// 0x3A/0x3B can still surface its System ID (voted from adjacent-site
+	// broadcasts) with RFSS/Site left zero — overlayLiveIdentity lifts
+	// SystemID independently of RFSS/Site.
+	if net.RFSS == 0 && net.Site == 0 && net.SystemID == 0 && net.WACN == 0 {
 		return
 	}
 	c.bus.Publish(events.Event{
