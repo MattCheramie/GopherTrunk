@@ -22,12 +22,23 @@ package trunking
 // give single-site identity; the rest give minimal identity. Band-plan-from-air
 // is P25-only today.
 type TopologySnapshot struct {
+	// Display metadata (populated where the decoder knows it). These name the
+	// run for the human-readable network-configuration report and are not part
+	// of the topology's Empty() contract.
+	SystemName string `json:"system_name,omitempty" yaml:"system_name,omitempty"`
+	Protocol   string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+
 	// P25 identity.
 	WACN     uint32 `json:"wacn,omitempty" yaml:"wacn,omitempty"`
 	SystemID uint32 `json:"system_id,omitempty" yaml:"system_id,omitempty"`
+	NAC      uint16 `json:"nac,omitempty" yaml:"nac,omitempty"` // Network Access Code (P25)
 	RFSS     uint8  `json:"rfss,omitempty" yaml:"rfss,omitempty"`
 	Site     uint8  `json:"site,omitempty" yaml:"site,omitempty"`
 	LRA      uint8  `json:"lra,omitempty" yaml:"lra,omitempty"`
+
+	// PrimaryCC is the camped site's primary control channel (P25), with its
+	// resolved downlink frequency when the band plan was known.
+	PrimaryCC *TopoChannelRef `json:"primary_cc,omitempty" yaml:"primary_cc,omitempty"`
 
 	// Per-protocol identity (populated where applicable).
 	ColorCode    uint8  `json:"color_code,omitempty" yaml:"color_code,omitempty"`       // DMR

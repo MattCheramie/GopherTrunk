@@ -89,42 +89,8 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 				AdjacentSeen:      s.AdjacentSeen,
 			}
 		},
-		topology: func() *TopologySnapshot { return p25Topology(cc.NetworkSnapshot(), cc.BandPlanSnapshot()) },
+		topology: func() *TopologySnapshot { return cc.TopologySnapshot() },
 	}, nil
-}
-
-// p25Topology converts the P25 Phase 1 network + band-plan snapshots into the
-// protocol-neutral TopologySnapshot the engine attaches to Result.
-func p25Topology(net p25phase1.NetworkConfig, plan []p25phase1.IdentifierUpdate) *TopologySnapshot {
-	t := &TopologySnapshot{
-		WACN:     net.WACN,
-		SystemID: uint32(net.SystemID),
-		RFSS:     net.RFSS,
-		Site:     net.Site,
-		LRA:      net.LRA,
-	}
-	for _, s := range net.Secondary {
-		t.Secondary = append(t.Secondary, ChannelRef{ChannelID: s.ChannelID, ChannelNumber: s.ChannelNumber})
-	}
-	for _, n := range net.Neighbors {
-		t.Neighbors = append(t.Neighbors, NeighborRef{
-			RFSS:          n.RFSS,
-			Site:          n.Site,
-			ChannelID:     n.ChannelID,
-			ChannelNumber: n.ChannelNumber,
-		})
-	}
-	for _, u := range plan {
-		t.BandPlan = append(t.BandPlan, BandPlanSlot{
-			ChannelID:   u.ChannelID,
-			BaseHz:      u.BaseHz,
-			SpacingHz:   u.SpacingHz,
-			BandwidthHz: u.BandwidthHz,
-			TxOffsetHz:  u.TxOffsetHz,
-			AccessTDMA:  u.AccessTDMA,
-		})
-	}
-	return t
 }
 
 // snapshotP25Receiver reads the P25 receiver's internal-loop state at stream

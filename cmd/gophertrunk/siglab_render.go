@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 // renderResultText writes a human-readable summary of a siglab.Result to w —
@@ -64,6 +65,10 @@ func renderResultText(w io.Writer, r *siglab.Result) {
 		renderP25Detail(w, d)
 	case *siglab.ProtocolDetail:
 		renderProtocolDetail(w, d)
+	}
+	if r.Topology != nil && !r.Topology.Empty() {
+		fmt.Fprintln(w, "----")
+		trunking.RenderNetworkReport(w, trunking.ReportFromTopology(r.Topology))
 	}
 	if r.Verdict != nil {
 		renderVerdict(w, r.Verdict)

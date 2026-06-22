@@ -364,6 +364,14 @@ func (p *p25Phase1Pipeline) Close() error           { return nil }
 // the unexported afcReporter capability the decoder type-asserts for.
 func (p *p25Phase1Pipeline) AFCOffsetHz() float64 { return p.rx.AFCOffsetHz() }
 
+// TopologySnapshot surfaces the P25 Phase 1 system topology (identity, primary/
+// secondary control channels, neighbours, band plan) the control channel
+// accumulated from its status broadcasts. Satisfies trunking.TopologyProvider so
+// the decoder can log the network-configuration report at lock.
+func (p *p25Phase1Pipeline) TopologySnapshot() *trunking.TopologySnapshot {
+	return p.cc.TopologySnapshot()
+}
+
 // newP25Phase2Pipeline wires internal/radio/p25/phase2/receiver into
 // p25phase2.ControlChannel.Process. The receiver's DibitSink forwards
 // H-DQPSK dibits into the state machine (20-dibit outbound sync

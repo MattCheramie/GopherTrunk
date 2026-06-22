@@ -217,6 +217,20 @@ func (c *Client) System(ctx context.Context, name string) (SystemDTO, error) {
 	return s, nil
 }
 
+// SystemReport calls GET /api/v1/systems/{name}/report and returns the live
+// human-readable P25 network-configuration report. Empty when the daemon has
+// not yet observed the system's topology. Used by the TUI's drill-in modal.
+func (c *Client) SystemReport(ctx context.Context, name string) (string, error) {
+	var r struct {
+		Report    string `json:"report"`
+		Available bool   `json:"available"`
+	}
+	if err := c.getJSON(ctx, "/api/v1/systems/"+url.PathEscape(name)+"/report", &r); err != nil {
+		return "", err
+	}
+	return r.Report, nil
+}
+
 // Talkgroup calls GET /api/v1/talkgroups/{id} and returns the detail
 // record for one talkgroup. Used by the TUI's drill-in modal.
 func (c *Client) Talkgroup(ctx context.Context, id uint32) (TalkgroupDTO, error) {

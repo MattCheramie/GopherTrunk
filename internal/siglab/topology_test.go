@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
@@ -42,46 +41,6 @@ func TestGenericPipelineTopologyAttached(t *testing.T) {
 	}
 	if res.Topology.SystemID != 0x49A || res.Topology.ColorCode != 5 {
 		t.Errorf("topology = %+v, want SystemID 49A ColorCode 5", res.Topology)
-	}
-}
-
-func TestP25TopologyMapping(t *testing.T) {
-	net := p25phase1.NetworkConfig{
-		WACN:     0xBEE99,
-		SystemID: 0x49A,
-		RFSS:     1,
-		Site:     2,
-		LRA:      0x0C,
-		Secondary: []p25phase1.Channel{
-			{ChannelID: 1, ChannelNumber: 100},
-		},
-		Neighbors: []p25phase1.NeighborSite{
-			{RFSS: 1, Site: 3, ChannelID: 1, ChannelNumber: 200},
-			{RFSS: 1, Site: 4, ChannelID: 1, ChannelNumber: 300},
-		},
-	}
-	plan := []p25phase1.IdentifierUpdate{
-		{ChannelID: 1, BaseHz: 851_000_000, SpacingHz: 12_500, BandwidthHz: 12_500, TxOffsetHz: -45_000_000},
-	}
-
-	got := p25Topology(net, plan)
-	if got.WACN != 0xBEE99 || got.SystemID != 0x49A {
-		t.Errorf("identity = WACN %X SYSID %X, want BEE99/49A", got.WACN, got.SystemID)
-	}
-	if got.RFSS != 1 || got.Site != 2 || got.LRA != 0x0C {
-		t.Errorf("RFSS/Site/LRA = %d/%d/%d, want 1/2/12", got.RFSS, got.Site, got.LRA)
-	}
-	if len(got.Secondary) != 1 || got.Secondary[0].ChannelNumber != 100 {
-		t.Errorf("secondary = %+v, want one channel 100", got.Secondary)
-	}
-	if len(got.Neighbors) != 2 || got.Neighbors[0].Site != 3 || got.Neighbors[1].Site != 4 {
-		t.Errorf("neighbors = %+v, want sites 3,4", got.Neighbors)
-	}
-	if len(got.BandPlan) != 1 || got.BandPlan[0].BaseHz != 851_000_000 || got.BandPlan[0].SpacingHz != 12_500 {
-		t.Errorf("band plan = %+v, want base 851M spacing 12.5k", got.BandPlan)
-	}
-	if got.Empty() {
-		t.Error("snapshot reported Empty despite populated fields")
 	}
 }
 

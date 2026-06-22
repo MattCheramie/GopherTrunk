@@ -96,8 +96,9 @@ type pollMutationStatusMsg struct {
 // of a Systems/Talkgroups drill-in fetch. The root model opens a
 // read-only modal on success or surfaces the error as a toast.
 type systemDetailResultMsg struct {
-	s   client.SystemDTO
-	err error
+	s      client.SystemDTO
+	report string // live network-configuration report ("" when unavailable)
+	err    error
 }
 type talkgroupDetailResultMsg struct {
 	tg  client.TalkgroupDTO

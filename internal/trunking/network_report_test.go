@@ -1,0 +1,113 @@
+package trunking
+
+import (
+	"strings"
+	"testing"
+)
+
+// fullReport mirrors the user's reference site: WACN BEE00 / SYSTEM 2C2 /
+// NAC 2C1, RFSS 1 / Site 1, a primary + secondary CC, one neighbour, one band.
+func fullReport() NetworkReport {
+	return NetworkReport{
+		Name:     "Main Site",
+		Protocol: "p25",
+		WACN:     0xBEE00,
+		SystemID: 0x2C2,
+		NAC:      0x2C1,
+		Sites: []ReportSite{{
+			RFSS:      1,
+			Site:      1,
+			PrimaryCC: ReportChannel{ChannelID: 2, ChannelNumber: 1620, DownlinkHz: 450125000, UplinkHz: 460687500},
+			SecondaryCC: []ReportChannel{
+				{ChannelID: 2, ChannelNumber: 1692, DownlinkHz: 450575000, UplinkHz: 460575000},
+			},
+			Neighbors: []ReportNeighbor{
+				{RFSS: 1, Site: 7, Channel: ReportChannel{ChannelID: 2, ChannelNumber: 1754, DownlinkHz: 450962500, UplinkHz: 461437500}},
+			},
+		}},
+		Bands: []ReportBand{
+			{ChannelID: 2, BaseHz: 440000000, SpacingHz: 6250, BandwidthHz: 12500, TxOffsetHz: -6400000},
+		},
+	}
+}
+
+func TestRenderNetworkReportTokens(t *testing.T) {
+	out := FormatNetworkReport(fullReport())
+	for _, want := range []string{
+		"P25 Network Configuration — Main Site",
+		"WACN:BEE00[781824]",
+		"SYSTEM:2C2[706]",
+		"NAC:2C1[705]",
+		"Current Site",
+		"RFSS:1[1] SITE:1[1]",
+		"PRI CONTROL CHANNEL:2-1620 DOWNLINK:450.125000 MHz UPLINK:460.687500 MHz",
+		"SEC CONTROL CHANNEL:2-1692 DOWNLINK:450.575000 MHz",
+		"NEIGHBOR RFSS:1[1] SITE:7[7] CHANNEL:2-1754 DOWNLINK:450.962500 MHz UPLINK:461.437500 MHz",
+		"Frequency Bands",
+		"BAND:2 FDMA BASE:440.000000 MHz BANDWIDTH:12.5 kHz SPACING:6.25 kHz OFFSET:-6.400000 MHz",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing %q\n--- full report ---\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderNetworkReportSuppressesEmptySections(t *testing.T) {
+	// Only identity known — no site channels, no neighbours, no bands.
+	out := FormatNetworkReport(NetworkReport{
+		Protocol: "p25", WACN: 0xBEE00, SystemID: 0x2C2, NAC: 0x2C1,
+		Sites: []ReportSite{{RFSS: 1, Site: 1}},
+	})
+	if strings.Contains(out, "Frequency Bands") {
+		t.Errorf("empty band plan should be suppressed:\n%s", out)
+	}
+	if strings.Contains(out, "CONTROL CHANNEL") || strings.Contains(out, "NEIGHBOR") {
+		t.Errorf("empty channels/neighbours should be suppressed:\n%s", out)
+	}
+	if !strings.Contains(out, "(unnamed)") {
+		t.Errorf("blank name should render as (unnamed):\n%s", out)
+	}
+}
+
+func TestRenderNetworkReportHuntFrequencyOnlyChannel(t *testing.T) {
+	// A hunt-discovered control channel carries only a resolved frequency (no
+	// band-plan coordinates), so the id-number token must be omitted.
+	out := FormatNetworkReport(NetworkReport{
+		Protocol: "p25",
+		Sites:    []ReportSite{{RFSS: 1, Site: 1, PrimaryCC: ReportChannel{DownlinkHz: 450125000}}},
+	})
+	if !strings.Contains(out, "PRI CONTROL CHANNEL DOWNLINK:450.125000 MHz") {
+		t.Errorf("frequency-only primary CC should omit the id-number token:\n%s", out)
+	}
+}
+
+func TestReportFromTopologyMapsFieldsAndUplink(t *testing.T) {
+	snap := &TopologySnapshot{
+		SystemName: "Main Site",
+		Protocol:   "p25",
+		WACN:       0xBEE00,
+		SystemID:   0x2C2,
+		NAC:        0x2C1,
+		RFSS:       1,
+		Site:       1,
+		LRA:        0,
+		PrimaryCC:  &TopoChannelRef{ChannelID: 2, ChannelNumber: 1620, FrequencyHz: 450125000},
+		Neighbors:  []TopoNeighborRef{{RFSS: 1, Site: 7, ChannelID: 2, ChannelNumber: 1754, FrequencyHz: 450962500}},
+		BandPlan:   []TopoBandPlanSlot{{ChannelID: 2, BaseHz: 440000000, SpacingHz: 6250, TxOffsetHz: -6400000}},
+	}
+	r := ReportFromTopology(snap)
+	if len(r.Sites) != 1 {
+		t.Fatalf("Sites = %d, want 1", len(r.Sites))
+	}
+	site := r.Sites[0]
+	// Uplink = downlink + band TxOffset (450125000 - 6400000 = 443725000).
+	if site.PrimaryCC.UplinkHz != 443725000 {
+		t.Errorf("primary uplink = %d, want 443725000", site.PrimaryCC.UplinkHz)
+	}
+	if r.NAC != 0x2C1 || r.WACN != 0xBEE00 || r.Name != "Main Site" {
+		t.Errorf("identity not mapped: %+v", r)
+	}
+	if len(site.Neighbors) != 1 || site.Neighbors[0].Channel.UplinkHz != 444562500 {
+		t.Errorf("neighbour uplink not derived: %+v", site.Neighbors)
+	}
+}

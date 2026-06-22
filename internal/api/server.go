@@ -441,6 +441,15 @@ type SitesProvider interface {
 	Sites() []trunking.SiteInfo
 }
 
+// NetworkReporter is the optional capability a SitesProvider may implement to
+// render the live, human-readable network-configuration report for a system
+// (the SiteTracker does). GET /api/v1/systems/{name}/report uses it when the
+// wired provider supports it; the report reflects the most recently camped site
+// of the system. The bool is false when no topology has been observed yet.
+type NetworkReporter interface {
+	Report(system string) (string, bool)
+}
+
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
 // purposes (passed through to whatever HistoryQuery implementation the
 // daemon wires up).
@@ -942,6 +951,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/diag/banner", s.handleDiagBanner)
 	mux.HandleFunc("GET /api/v1/systems", s.handleListSystems)
 	mux.HandleFunc("GET /api/v1/systems/{name}", s.handleGetSystem)
+	mux.HandleFunc("GET /api/v1/systems/{name}/report", s.handleGetSystemReport)
 	mux.HandleFunc("GET /api/v1/talkgroups", s.handleListTalkgroups)
 	mux.HandleFunc("GET /api/v1/talkgroups/{id}", s.handleGetTalkgroup)
 	mux.HandleFunc("GET /api/v1/calls/active", s.handleActiveCalls)
