@@ -364,10 +364,22 @@ sdr:
     # P25 Phase 1/2 and DMR Tier III alike — but a DMR Tier III
     # system needs a `dmr_band_plan` (see the systems section) so
     # the decoder can turn each grant's LCN into a frequency.
+    #
+    # `signalling_taps: N` (0 disables) is the P25 Phase 2 talker-alias
+    # harvester: it allocates N signalling-only DDC taps that decode the
+    # FACCH-S MAC signalling on granted traffic channels and publish the
+    # talker alias, independent of the voice pool. On a busy multi-site
+    # Phase 2 system most grants never get a voice tap (and encrypted
+    # calls are torn down before hangtime), so the alias decode wired
+    # into the voice chain almost never runs — these taps harvest it off
+    # the signalling stream instead, the way SDRTrunk does (#376). Set
+    # 2-4 on such a system; CPU scales ~linearly per tap (warns above 16),
+    # and out-of-window grants are skipped.
     # - serial: "00000005"
     #   role: wideband
     #   center_freq_hz: 851_500_000
     #   voice_taps: 4
+    #   signalling_taps: 4   # P25 Phase 2 talker-alias harvest (#376)
     #   channels:
     #     - frequency_hz: 851_037_500
     #       system: "regional-p25"

@@ -52,6 +52,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
+	"github.com/MattCheramie/GopherTrunk/internal/sigfollow"
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
@@ -404,6 +405,12 @@ type Daemon struct {
 	// voice pool via collectVoiceDevices and into the composer via
 	// poolDevices.virtualMap. See internal/sdr/wbvoice.
 	virtualVoiceTuners []*wbvoice.VirtualTuner
+	// p25p2Follower harvests P25 Phase 2 talker aliases off the traffic
+	// channel's FACCH-S signalling using standalone signalling DDC taps,
+	// independent of the voice pool — so aliases surface even when no
+	// voice tuner is free or the call is encrypted (issue #376). Nil when
+	// no wideband dongle configures signalling_taps. See internal/sigfollow.
+	p25p2Follower *sigfollow.Manager
 	// pocsagReceivers holds one POCSAG receiver per configured
 	// paging.pocsag entry. Each subscribes to the iqtap broker
 	// for its assigned SDR and publishes pages onto the events
@@ -956,6 +963,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// Building these after the voice pool was the cause of issue #422
 	// (every grant dropped with "no voice SDR").
 	if err := d.buildVirtualVoiceTuners(cfg, log); err != nil {
+		return nil, err
+	}
+	if err := d.buildP25P2SignallingFollower(cfg, log); err != nil {
 		return nil, err
 	}
 
@@ -2402,6 +2412,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.affiliations.Run(ctx)
 		})
 	}
+	if d.p25p2Follower != nil {
+		d.spawn(runCtx, "p25p2-sigfollow", false, func(ctx context.Context) error {
+			return d.p25p2Follower.Run(ctx)
+		})
+	}
 	if d.siteTracker != nil {
 		d.spawn(runCtx, "sites", false, func(ctx context.Context) error {
 			return d.siteTracker.Run(ctx)
@@ -3548,6 +3563,74 @@ func (d *Daemon) buildVirtualVoiceTuners(cfg config.Config, log *slog.Logger) er
 				"tap_serial", vt.Serial())
 		}
 	}
+	return nil
+}
+
+// buildP25P2SignallingFollower spins up one standalone wbvoice.VirtualTuner
+// per `signalling_taps` slot on every `role: wideband` dongle and assembles
+// the sigfollow.Manager that drives them. These taps are NOT registered in
+// the voice pool: they decode the traffic channel's FACCH-S MAC signalling
+// to harvest P25 Phase 2 talker aliases independent of voice-following, so
+// an alias surfaces even when no voice tuner is free or the call is
+// encrypted and torn down before hangtime (issue #376).
+//
+// Leaves d.p25p2Follower nil when no dongle configures signalling_taps.
+func (d *Daemon) buildP25P2SignallingFollower(cfg config.Config, log *slog.Logger) error {
+	if d.pool == nil {
+		return nil
+	}
+	var tuners []*wbvoice.VirtualTuner
+	for _, devCfg := range cfg.SDR.Devices {
+		if devCfg.Role != "wideband" {
+			continue
+		}
+		taps := devCfg.SignallingTaps
+		if taps <= 0 {
+			continue
+		}
+		entry := d.pool.FindBySerial(devCfg.Serial)
+		if entry == nil {
+			continue
+		}
+		br := d.iqBrokers[entry.Info.Serial]
+		if br == nil {
+			log.Warn("daemon: wideband: signalling_taps requested but no iqtap broker; signalling follower disabled",
+				"serial", devCfg.Serial, "signalling_taps", taps)
+			continue
+		}
+		if taps > 16 {
+			log.Warn("daemon: wideband: high signalling_taps count; CPU scales ~linearly per tap (each is an independent DDC)",
+				"serial", devCfg.Serial, "signalling_taps", taps)
+		}
+		effectiveRate := effectiveStreamRate(log, entry.Device, entry.Info.Serial, cfg.SDR.SampleRate)
+		for i := 0; i < taps; i++ {
+			vt, err := wbvoice.New(wbvoice.Options{
+				Serial:           fmt.Sprintf("sig:%s:tap-%d", entry.Info.Serial, i),
+				Broker:           br,
+				WidebandCenterHz: devCfg.CenterFreqHz,
+				SDRSampleRateHz:  effectiveRate,
+				Log:              log,
+			})
+			if err != nil {
+				return fmt.Errorf("daemon: sigfollow %q tap %d: %w", devCfg.Serial, i, err)
+			}
+			tuners = append(tuners, vt)
+			log.Info("daemon: wideband: P25 Phase 2 signalling tap registered",
+				"wideband_serial", entry.Info.Serial, "tap_serial", vt.Serial())
+		}
+	}
+	if len(tuners) == 0 {
+		return nil
+	}
+	mgr, err := sigfollow.New(sigfollow.Options{
+		Bus:    d.bus,
+		Log:    log,
+		Tuners: tuners,
+	})
+	if err != nil {
+		return fmt.Errorf("daemon: sigfollow manager: %w", err)
+	}
+	d.p25p2Follower = mgr
 	return nil
 }
 

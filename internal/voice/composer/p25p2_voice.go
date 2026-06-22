@@ -11,6 +11,7 @@ import (
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	p25p2rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2/receiver"
+	"github.com/MattCheramie/GopherTrunk/internal/sigfollow"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -108,17 +109,23 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 
 	rs, _ := c.sink.(rawFrameSink)
 	sfDec := p25p2.NewSuperframeDecoder()
-	aliasAsm := p25p2.NewTalkerAliasAssembler(nil)
-	// motorolaAliasAsm reassembles the real Motorola FACCH-S talker
-	// alias (header opcode 0x91 + data 0x95) that MMR-style systems emit
-	// during hangtime (#376). Distinct from aliasAsm above, which serves
-	// the speculative 0x82 working model still referenced by the CC path.
-	motorolaAliasAsm := p25p2.NewMotorolaAliasAssembler(nil)
-	// macSeen rate-limits the diagnostic per-PDU log to one line per
-	// opcode (+ MFID for vendor opcodes) per call — enough to confirm
-	// which transports MMR-style systems actually emit, without
-	// drowning the log when an opcode repeats many times per call.
-	macSeen := make(map[uint16]struct{})
+	// dispatcher decodes the MAC PDUs interleaved with voice on the
+	// traffic channel (talker alias, in-call source, encryption sync).
+	// It is the same shared dispatch the signalling follower runs off the
+	// traffic-channel signalling stream (internal/sigfollow), so the
+	// voice and follower paths never diverge on what they decode (#376).
+	// The voice chain wires the call-bound source / encryption PDUs to
+	// its engine-backfill publishers; the alias the dispatcher publishes
+	// itself (identical in both paths).
+	dispatcher := sigfollow.NewMACDispatcher(sigfollow.MACDispatcherOptions{
+		Bus:              c.bus,
+		Log:              c.log,
+		LogPrefix:        "composer",
+		System:           system,
+		Serial:           serial,
+		OnCallSource:     func(u p25p2.GroupVoiceChannelUser) { c.publishP25Phase2CallSource(serial, u) },
+		OnCallEncryption: func(es p25p2.EncryptionSync) { c.publishP25Phase2CallEncryption(serial, es) },
+	})
 	// voiceSubframes counts P25 Phase 2 voice-bearing subframes the
 	// receiver delivered — i.e. real voice activity. The touch ticker
 	// (below) only refreshes the engine's LastHeardAt when this counter
@@ -167,57 +174,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 						}
 					}
 				}
-				for _, pdu := range p25p2.DecodeSuperframeMACPDUs(sf, macCfg) {
-					// Prong C diagnostic: log the first PDU seen per
-					// (opcode, MFID) on this call. If a real on-air
-					// system emits an opcode we don't dispatch
-					// (vendor talker-alias variants, an unexpected
-					// User PDU encoding, …) the log line tells the
-					// next field tester exactly what we saw.
-					key := uint16(pdu.Opcode)<<8 | uint16(pdu.MFID)
-					if _, seen := macSeen[key]; !seen {
-						macSeen[key] = struct{}{}
-						c.log.Info("composer: p25p2 mac pdu",
-							"system", system, "serial", serial,
-							"opcode", pdu.Opcode, "mfid", pdu.MFID,
-							"payload_len", len(pdu.Payload))
-					}
-					if u, ok := pdu.AsGroupVoiceChannelUser(); ok {
-						c.publishP25Phase2CallSource(serial, u)
-						continue
-					}
-					if es, ok := pdu.AsEncryptionSync(); ok {
-						c.publishP25Phase2CallEncryption(serial, es)
-						continue
-					}
-					if f, ok := pdu.AsTalkerAliasFragment(); ok {
-						alias, src, complete := aliasAsm.Add(f)
-						if complete {
-							// Generic working-model fragment path (plain ASCII,
-							// not the validated Motorola cipher) — treat as
-							// reliable; the corruption check applies to the
-							// Motorola FACCH-S decode below (#711).
-							c.publishP25Phase2TalkerAlias(system, src, alias, true)
-						}
-						continue
-					}
-					// Real Motorola FACCH-S alias: header (0x91) seeds the
-					// per-call reassembler, data blocks (0x95) complete it,
-					// and the source RID falls out of the decoded message
-					// prefix (#376).
-					if h, ok := pdu.AsMotorolaAliasHeader(); ok {
-						if alias, src, reliable, complete := motorolaAliasAsm.AddHeader(h); complete {
-							c.publishP25Phase2TalkerAlias(system, src, alias, reliable)
-						}
-						continue
-					}
-					if d, ok := pdu.AsMotorolaAliasData(); ok {
-						if alias, src, reliable, complete := motorolaAliasAsm.AddData(d); complete {
-							c.publishP25Phase2TalkerAlias(system, src, alias, reliable)
-						}
-						continue
-					}
-				}
+				// The talker alias, in-call source, and encryption-sync
+				// MAC PDUs that interleave with voice are decoded by the
+				// shared dispatcher (same path the signalling follower
+				// runs off the traffic channel, #376).
+				dispatcher.Dispatch(sf, macCfg)
 			}
 		},
 	})
@@ -262,29 +223,6 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			rx.Process(samples)
 		}
 	}
-}
-
-// publishP25Phase2TalkerAlias mirrors phase2.ControlChannel.publishTalkerAlias
-// for the voice-channel MAC dispatch path: a completed alias the
-// composer reassembled off the traffic channel surfaces on the bus
-// with the same payload shape as one decoded on the CC.
-func (c *Composer) publishP25Phase2TalkerAlias(system string, sourceID uint32, alias string, reliable bool) {
-	if c.bus == nil || alias == "" {
-		return
-	}
-	c.bus.Publish(events.Event{
-		Kind: events.KindTalkerAlias,
-		Payload: trunking.TalkerAlias{
-			System:     system,
-			Protocol:   "p25-phase2",
-			SourceID:   sourceID,
-			Alias:      alias,
-			Unreliable: !reliable,
-			At:         time.Now().UTC(),
-		},
-	})
-	c.log.Info("composer: p25p2 talker alias",
-		"system", system, "src", sourceID, "alias", alias, "unreliable", !reliable)
 }
 
 // publishP25Phase2CallSource publishes a KindCallSourceUpdate event so
