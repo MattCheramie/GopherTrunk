@@ -49,6 +49,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/soapyremote"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/wbvoice"
@@ -929,6 +930,41 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(sspecs) > 0 {
 				sdr.Register(soapyremote.New(sspecs, log))
 				log.Info("soapy_remote endpoints mounted", "count", len(sspecs))
+			}
+		}
+		// Mount ka9q-radio channels as virtual tuners. Same lazy pattern as
+		// rtl_tcp / soapy_remote: the driver resolves the status group (mDNS)
+		// and polls for the channel inside Pool.Open, so a down/misconfigured
+		// radiod surfaces as a warning rather than blocking startup. radiod
+		// owns the front-end gain/ppm, so only role is carried in the Hint.
+		if len(cfg.SDR.Ka9qRadio) > 0 {
+			kspecs := make([]ka9qradio.Spec, 0, len(cfg.SDR.Ka9qRadio))
+			for _, k := range cfg.SDR.Ka9qRadio {
+				if k.Addr == "" || k.SSRC == 0 {
+					log.Warn("daemon: ka9q_radio entry missing addr/ssrc; skipping")
+					continue
+				}
+				kspecs = append(kspecs, ka9qradio.Spec{
+					Addr:           k.Addr,
+					SSRC:           k.SSRC,
+					Serial:         k.Serial,
+					Role:           k.Role,
+					DataAddr:       k.Data,
+					SampleRate:     k.SampleRate,
+					Encoding:       k.Encoding,
+					Channels:       k.Channels,
+					ConnectTimeout: time.Duration(k.ConnectTimeoutMs) * time.Millisecond,
+				})
+				if k.Serial != "" {
+					hints = append(hints, sdr.Hint{
+						Serial: k.Serial,
+						Role:   sdr.ParseRole(k.Role),
+					})
+				}
+			}
+			if len(kspecs) > 0 {
+				sdr.Register(ka9qradio.New(kspecs, log))
+				log.Info("ka9q_radio channels mounted", "count", len(kspecs))
 			}
 		}
 		if err := d.pool.OpenWith(sdr.PoolOpenOptions{

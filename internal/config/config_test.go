@@ -336,6 +336,15 @@ func TestValidate(t *testing.T) {
 		{"soapy stream_window too small", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamWindow: 1024}}}}, true},
 		{"soapy stream_window too large", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamWindow: 512 << 20}}}}, true},
 		{"soapy stream_window below mtu", Config{SDR: SDRConfig{SoapyRemote: []SoapyRemoteConfig{{Addr: "h:1", StreamMTU: 1 << 20, StreamWindow: 1 << 16}}}}, true},
+		// ka9q_radio: addr + ssrc required; role/encoding/channels constrained.
+		{"ka9q ok", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 162550}}}}, false},
+		{"ka9q ok full", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "239.1.2.3:5006", SSRC: 1, Role: "control", Encoding: "f32le", Channels: 2}}}}, false},
+		{"ka9q missing addr", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{SSRC: 1}}}}, true},
+		{"ka9q missing ssrc", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local"}}}}, true},
+		{"ka9q bad role", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Role: "nope"}}}}, true},
+		{"ka9q bad encoding", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Encoding: "opus"}}}}, true},
+		{"ka9q bad channels", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Channels: 3}}}}, true},
+		{"ka9q serial collides", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "x"}}, Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Serial: "x"}}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

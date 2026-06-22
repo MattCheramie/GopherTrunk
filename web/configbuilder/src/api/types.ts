@@ -107,11 +107,24 @@ export interface SoapyRemoteConfig {
   ConnectTimeoutMs: number;
 }
 
+export interface Ka9qRadioConfig {
+  Addr: string;
+  SSRC: number;
+  Serial: string;
+  Role: string;
+  Data: string;
+  SampleRate: number;
+  Encoding: string;
+  Channels: number;
+  ConnectTimeoutMs: number;
+}
+
 export interface SDRConfig {
   SampleRate: number;
   Devices: DeviceConfig[];
   RTLTCP?: RTLTCPConfig[] | null;
   SoapyRemote?: SoapyRemoteConfig[] | null;
+  Ka9qRadio?: Ka9qRadioConfig[] | null;
   [k: string]: unknown;
 }
 

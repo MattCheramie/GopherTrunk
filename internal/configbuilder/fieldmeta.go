@@ -91,6 +91,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SDRConfig.Devices":            {Help: "Locally-attached USB SDR dongles, selected by serial."},
 	"SDRConfig.RTLTCP":             {Label: "rtl_tcp sources", Help: "Remote rtl_tcp endpoints mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
 	"SDRConfig.SoapyRemote":        {Label: "SoapyRemote sources", Help: "Remote SoapySDRServer endpoints (USRP, Lime, bladeRF, HackRF, Airspy, RTL) mounted as virtual tuners. Plaintext — trusted networks / tunnels only."},
+	"SDRConfig.Ka9qRadio":          {Label: "ka9q-radio sources", Help: "Channels from remote ka9q-radio radiod instances mounted as virtual tuners over IP multicast. Plaintext — trusted LANs only."},
 	"SDRConfig.WatchdogIntervalMs": {Help: "USB-disconnect watchdog poll interval (ms). 0 = default 30 s; negative disables it."},
 	"SDRConfig.Autotune":           {Label: "Autotune", Help: "Track each dongle's carrier-frequency error on locked P25 Phase 1 control + voice and apply a digital correction so the demod's AFC starts near lock. Never rewrites hardware ppm — logs a suggested value. Off by default; safe to leave on."},
 
@@ -137,6 +138,16 @@ var fieldMetas = map[string]FieldMeta{
 	"SoapyRemoteConfig.Gain":             {Help: "Tuner gain: 'auto'/empty for AGC, else tenths of a dB."},
 	"SoapyRemoteConfig.BiasTee":          {Label: "Bias-tee", Help: "Toggle the remote device's bias-tee (best-effort)."},
 	"SoapyRemoteConfig.ConnectTimeoutMs": {Help: "TCP dial timeout in ms. 0 = driver default (3000)."},
+
+	"Ka9qRadioConfig.Addr":             {Label: "Address", Help: "ka9q-radio status+command multicast group: an mDNS name like hf.local (or hf.local:5006), or a literal 239.x.x.x:5006. Missing port defaults to 5006. Required."},
+	"Ka9qRadioConfig.SSRC":             {Label: "SSRC", Help: "Channel's RTP SSRC within the radiod instance (e.g. 162550). Required, non-zero."},
+	"Ka9qRadioConfig.Serial":           {Help: "Virtual device serial reported by the pool. Empty derives one from the address + SSRC."},
+	"Ka9qRadioConfig.Role":             {Help: "Pool role hint: control / voice / auto.", Options: roleOpts()},
+	"Ka9qRadioConfig.Data":             {Label: "Data group", Help: "Optional: pin the IQ multicast group (239.x.x.x:5004), skipping status-poll discovery. Missing port defaults to 5004."},
+	"Ka9qRadioConfig.SampleRate":       {Label: "Sample rate", Hz: true, Help: "Optional: pin the channel IQ rate in Hz, skipping OUTPUT_SAMPRATE discovery."},
+	"Ka9qRadioConfig.Encoding":         {Help: "Optional: pin the wire sample encoding, skipping OUTPUT_ENCODING discovery.", Options: opts("", "(auto-discover)", "s16be", "s16be", "s16le", "s16le", "f32le", "f32le", "f32be", "f32be")},
+	"Ka9qRadioConfig.Channels":         {Help: "Optional: pin the output channel count (2 for raw IQ)."},
+	"Ka9qRadioConfig.ConnectTimeoutMs": {Help: "mDNS resolution / status-poll timeout in ms. 0 = driver default (3000)."},
 
 	// ---- Trunking ----------------------------------------------------------
 	"TrunkingConfig.Systems":           {Help: "Trunked radio networks to follow. Add by hand, by RadioReference browse, or by PDF/CSV import."},
