@@ -34,7 +34,7 @@ func runPowerDiag(t *testing.T, chanIQ []complex64, decoded uint64) (events.Chan
 	}
 
 	base := time.Unix(1_700_000_000, 0)
-	e.maybeLogDiagnostics(base)                                  // seeds lastDiagAt
+	e.maybeLogDiagnostics(base)                                   // seeds lastDiagAt
 	e.maybeLogDiagnostics(base.Add(iqpower.Window + time.Second)) // flushes
 
 	for {

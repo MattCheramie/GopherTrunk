@@ -320,7 +320,7 @@ type DMRBandPlanLCN struct {
 // share it without an import cycle through the trunking package.
 type ChannelPower struct {
 	System    string
-	Protocol  string  // "dmr-tier2", "dmr-tier3", "p25-phase1", "p25-phase2"
+	Protocol  string // "dmr-tier2", "dmr-tier3", "p25-phase1", "p25-phase2"
 	FreqHz    uint32
 	PowerDbFS float64
 	Decoded   uint64 // frames decoded this window (per-window delta)
