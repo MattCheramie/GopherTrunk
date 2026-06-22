@@ -81,6 +81,32 @@ func TestNetworkModelAccumulates(t *testing.T) {
 	}
 }
 
+func TestNetworkModelAdjacentSystemID(t *testing.T) {
+	// A system that emits adjacent-site broadcasts (0x3C) but never the
+	// Network/RFSS status broadcasts (0x3B/0x3A) must still surface its System
+	// ID — every site of a P25 system shares one. RFSS/Site name the neighbour,
+	// not the camped site, so they (and WACN) stay zero. Regression for the
+	// "no WACN/System ID" field report on systems that suppress 0x3B/0x3A.
+	var m NetworkModel
+	for i := 0; i < 3; i++ {
+		m.ApplyAdjacentSite(AdjacentSiteStatusBroadcast{
+			SystemID: 0x2C1, RFSS: 1, Site: 8, ChannelID: 1, ChannelNumber: 300})
+	}
+	cfg := m.Snapshot()
+	if cfg.SystemID != 0x2C1 {
+		t.Errorf("SystemID = %#x, want 0x2C1 (voted from adjacent broadcast)", cfg.SystemID)
+	}
+	if cfg.WACN != 0 {
+		t.Errorf("WACN = %#x, want 0 (adjacent carries no WACN)", cfg.WACN)
+	}
+	if cfg.RFSS != 0 || cfg.Site != 0 {
+		t.Errorf("RFSS/Site = %d/%d, want 0/0 (adjacent names the neighbour, not the camped site)", cfg.RFSS, cfg.Site)
+	}
+	if len(cfg.Neighbors) != 1 {
+		t.Errorf("Neighbors = %v, want 1", cfg.Neighbors)
+	}
+}
+
 func TestNetworkModelPrimaryControlChannel(t *testing.T) {
 	var m NetworkModel
 	// The camped site advertises its primary CC (2-1620) in repeated RFSS/
@@ -353,6 +379,51 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 			// Broadcast carry SystemID 0x123 for these payloads.
 			if u.WACN != 0xABCDE || u.SystemID != 0x123 {
 				t.Fatalf("site update network ids wrong: %+v", u)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no KindSiteUpdate published within deadline")
+		}
+	}
+}
+
+func TestControlChannelPublishesSiteUpdateFromAdjacentOnly(t *testing.T) {
+	// A system that never emits 0x3B/0x3A but does emit adjacent-site
+	// broadcasts (0x3C) must still publish a SiteUpdate carrying the System ID
+	// it shares with the named neighbour. WACN and the camped RFSS/Site stay
+	// zero — they have no source here. Mirrors the hunt_ver50 field report.
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const ccHz = 450125000
+	cc := New(Options{Bus: bus, SystemName: "Main_Site_1", FrequencyHz: ccHz})
+
+	// Adjacent Site Status Broadcast: byte0 LRA, bytes1-2 System ID (0x2C1),
+	// byte3 RFSS, byte4 Site, bytes5-6 the neighbour's channel.
+	adj := TSBK{Opcode: OpAdjacentSiteStatusBroadcast, Payload: [8]byte{0x00, 0x02, 0xC1, 0x03, 0x09, 0x10, 0x2C}}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x2C1, DUIDTrunkingSignaling, adj), 0)
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindSiteUpdate {
+				continue
+			}
+			u, ok := ev.Payload.(trunking.SiteUpdate)
+			if !ok {
+				t.Fatalf("KindSiteUpdate payload is %T, want trunking.SiteUpdate", ev.Payload)
+			}
+			if u.SystemID != 0x2C1 {
+				t.Fatalf("site update SystemID = %#x, want 0x2C1", u.SystemID)
+			}
+			if u.WACN != 0 {
+				t.Fatalf("site update WACN = %#x, want 0 (no NSB)", u.WACN)
+			}
+			if u.RFSSID != 0 || u.SiteID != 0 {
+				t.Fatalf("site update RFSS/Site = %d/%d, want 0/0 (camped site unknown)", u.RFSSID, u.SiteID)
 			}
 			return
 		case <-deadline:

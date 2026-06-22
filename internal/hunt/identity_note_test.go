@@ -53,6 +53,20 @@ func TestIdentityNote(t *testing.T) {
 			wantHas: "Network Status Broadcast",
 		},
 		{
+			name: "System ID resolved from adjacent, WACN still missing",
+			res: &siglab.Result{
+				Locked:   true,
+				Topology: &siglab.TopologySnapshot{SystemID: 0x2C1}, // WACN zero
+				Detail: &siglab.P25P1Detail{CCStats: &siglab.CCStatsBreakdown{
+					TSBKDecoded:    2134,
+					RFSSStatusSeen: 0,
+					AdjacentSeen:   147,
+					NetStatusSeen:  0,
+				}},
+			},
+			wantHas: "WACN is unavailable",
+		},
+		{
 			name: "NSB decoded but no WACN parsed",
 			res: &siglab.Result{
 				Locked:   true,
