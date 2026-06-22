@@ -51,11 +51,19 @@ type Metrics struct {
 	iqPowerDbFS    *prometheus.GaugeVec // by system; mean IQ power on the control SDR
 	iqDCRatioDb    *prometheus.GaugeVec // by system; DC-bin power relative to total IQ power, in dB (issue #402)
 	iqClipRatio    *prometheus.GaugeVec // by system; fraction of IQ samples pinned to the ADC rail (issue #402)
-	usbReconnects  *prometheus.CounterVec
-	decodeErrors   *prometheus.CounterVec
-	sdrAttached    *prometheus.GaugeVec
-	versionInfo    *prometheus.GaugeVec
-	sdrSnap        *sdrSnapshotCollector
+	// Whole-capture wideband diagnostics (issue #749). A role: wideband dongle
+	// channelizes several control channels out of one IQ capture; every tap
+	// shares the same antenna + gain. Per-tap level rides the existing
+	// iq_power_dbfs gauge (labelled "<system> @ <freq>"); these two cover the
+	// whole capture so front-end overload — which buries every tap at once —
+	// is visible where a per-tap gauge can't show it.
+	wbInputPowerDbFS *prometheus.GaugeVec // by serial; mean pre-DDC IQ power of the whole wideband capture
+	wbInputClipRatio *prometheus.GaugeVec // by serial; fraction of wideband IQ samples pinned to the ADC rail
+	usbReconnects    *prometheus.CounterVec
+	decodeErrors     *prometheus.CounterVec
+	sdrAttached      *prometheus.GaugeVec
+	versionInfo      *prometheus.GaugeVec
+	sdrSnap          *sdrSnapshotCollector
 
 	// tetraViterbiCorrections is the opt-in (metrics.detailed_fec)
 	// TETRA §8.3.1 FEC correction-depth histogram. Nil unless detailed
@@ -204,6 +212,24 @@ func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*
 		Help:      "Fraction of control-SDR IQ samples pinned to the ADC rail (window ~= 1 s). 0 = no clipping; a sustained value above ~0.002 means front-end overload — reduce gain or add attenuation, do not raise gain (issue #402).",
 	}, []string{"system"})
 
+	// Pre-DDC power of the whole wideband capture (issue #749). The reference
+	// each per-tap iq_power_dbfs reading is compared against, and — with
+	// wideband_input_clip_ratio — the signal that a strong site is overloading
+	// the shared front end and burying the weaker taps.
+	m.wbInputPowerDbFS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "sdr",
+		Name:      "wideband_input_iq_power_dbfs",
+		Help:      "Mean pre-DDC IQ power of the whole wideband capture in dBFS (window ~= 1 s), per dongle serial (issue #749).",
+	}, []string{"serial"})
+
+	m.wbInputClipRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "sdr",
+		Name:      "wideband_input_clip_ratio",
+		Help:      "Fraction of wideband IQ samples pinned to the ADC rail (window ~= 1 s), per dongle serial. A sustained value above ~0.002 means a strong site is overloading the shared front end and burying weaker taps — reduce gain or add attenuation, do not raise gain (issue #749).",
+	}, []string{"serial"})
+
 	m.usbReconnects = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "sdr",
@@ -268,6 +294,8 @@ func New(bus *events.Bus, pool Snapshotter, version string, detailedFEC bool) (*
 		m.iqPowerDbFS,
 		m.iqDCRatioDb,
 		m.iqClipRatio,
+		m.wbInputPowerDbFS,
+		m.wbInputClipRatio,
 		m.usbReconnects,
 		m.decodeErrors,
 		m.sdrAttached,
@@ -464,6 +492,34 @@ func (m *Metrics) ClearIQClipRatio(system string) {
 		return
 	}
 	m.iqClipRatio.DeleteLabelValues(system)
+}
+
+// RecordWidebandInputPowerDbFS sets the whole-capture power gauge for a
+// wideband dongle (issue #749).
+func (m *Metrics) RecordWidebandInputPowerDbFS(serial string, dbfs float64) {
+	if serial == "" {
+		serial = "unknown"
+	}
+	m.wbInputPowerDbFS.WithLabelValues(serial).Set(dbfs)
+}
+
+// RecordWidebandInputClipRatio sets the whole-capture clip-ratio gauge for a
+// wideband dongle (issue #749).
+func (m *Metrics) RecordWidebandInputClipRatio(serial string, ratio float64) {
+	if serial == "" {
+		serial = "unknown"
+	}
+	m.wbInputClipRatio.WithLabelValues(serial).Set(ratio)
+}
+
+// ClearWidebandInput drops both whole-capture gauge series for a dongle.
+// Called when the wideband engine tears down.
+func (m *Metrics) ClearWidebandInput(serial string) {
+	if serial == "" {
+		serial = "unknown"
+	}
+	m.wbInputPowerDbFS.DeleteLabelValues(serial)
+	m.wbInputClipRatio.DeleteLabelValues(serial)
 }
 
 // RecordUSBReconnect increments the reconnect counter for the supplied SDR.

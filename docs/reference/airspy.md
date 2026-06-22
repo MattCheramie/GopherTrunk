@@ -47,6 +47,32 @@ band or in tough RF environments. For the lower bands, the
 GopherTrunk supports Airspy receivers for demanding reception where an RTL-SDR's
 bandwidth or sensitivity falls short.
 
+## Wideband multi-site monitoring
+
+An Airspy pinned to `role: wideband` can channelize several control channels —
+including multiple **sites** of one P25 system — out of a single IQ capture, all
+decoded in parallel. List each site's control channel as its own `channels:`
+entry (see `config.example.yaml`).
+
+Every tap shares one antenna, one centre frequency and one gain, and the
+channelizer is **gain-flat across taps**. So if one site decodes cleanly while
+the others sit at the noise floor, the cause is RF, not the DDC:
+
+- **Front-end overload.** A strong (often hilltop) site can drive the shared ADC
+  into clipping, raising the noise floor and burying weaker sites. Gain is in
+  **tenths of a dB** — `gain: 600` means 60 dB, very high for a wideband capture.
+  If `gophertrunk_sdr_wideband_input_clip_ratio` is non-zero (a throttled WARN
+  also fires), **lower the gain or add attenuation** — do not raise it.
+- **A genuinely weak/distant site** may not survive a capture optimised for a
+  stronger one. Give it a dedicated dongle if it matters.
+
+Diagnostics: each tap's level is on `gophertrunk_sdr_iq_power_dbfs` labelled
+`<system> @ <freq> MHz`; the whole capture is on
+`gophertrunk_sdr_wideband_input_iq_power_dbfs{serial}` and
+`gophertrunk_sdr_wideband_input_clip_ratio{serial}`. Compare a tap against the
+whole-capture power to tell a weak site apart from a decode problem, and watch
+the clip ratio for overload.
+
 ## Sources
 
 [^wiki]: [Software-defined radio](https://en.wikipedia.org/wiki/Software-defined_radio) — Wikipedia, for background on Airspy-class high-performance VHF/UHF SDR receivers.

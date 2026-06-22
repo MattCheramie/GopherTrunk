@@ -130,14 +130,20 @@ type ChannelConfig struct {
 }
 
 // IQPowerObserver is the minimal metrics surface the engine uses to
-// publish its per-channel window-averaged dBFS gauge. internal/metrics.Metrics
-// satisfies it; nil disables the gauge while leaving the throttled
-// low-power WARN and the DEBUG decode-activity summary in place. Declared
-// locally (rather than imported from ccdecoder) so this scanner package
-// doesn't depend on another.
+// publish its per-channel window-averaged dBFS gauge plus the whole-capture
+// power / clip diagnostics (issue #749). internal/metrics.Metrics satisfies
+// it; nil disables the gauges while leaving the throttled WARNs and the DEBUG
+// decode-activity summary in place. Declared locally (rather than imported
+// from ccdecoder) so this scanner package doesn't depend on another.
 type IQPowerObserver interface {
 	RecordIQPowerDbFS(system string, dbfs float64)
 	ClearIQPowerDbFS(system string)
+	// Whole-capture diagnostics, labelled by dongle serial. The per-tap
+	// gauge above can't surface front-end overload (a strong site clipping
+	// the shared ADC raises the floor for every tap) — these can.
+	RecordWidebandInputPowerDbFS(serial string, dbfs float64)
+	RecordWidebandInputClipRatio(serial string, ratio float64)
+	ClearWidebandInput(serial string)
 }
 
 // Options bundles the inputs Engine needs at construction time.
@@ -147,9 +153,14 @@ type Options struct {
 
 	// Metrics, if non-nil, receives each channel's window-averaged dBFS
 	// gauge (labelled by "system @ <freqMHz>" so per-channel readings
-	// don't collide). Nil-safe: the throttled low-power WARN and the
-	// DEBUG decode-activity summary still fire without it.
+	// don't collide) plus the whole-capture power / clip-ratio gauges
+	// (labelled by Serial). Nil-safe: the throttled WARNs and the DEBUG
+	// decode-activity summary still fire without it.
 	Metrics IQPowerObserver
+
+	// Serial labels this dongle's whole-capture power/clip gauges
+	// (issue #749). Empty is tolerated (labelled "unknown").
+	Serial string
 
 	// Device is the wideband SDR. It is set to CenterFreqHz, then
 	// streamed continuously until Run's context cancels.
@@ -195,6 +206,8 @@ type Engine struct {
 
 	// metrics is the optional per-channel dBFS gauge sink (nil-safe).
 	metrics IQPowerObserver
+	// serial labels the whole-capture power/clip gauges (issue #749).
+	serial string
 	// now is the clock the diagnostics window uses; injectable for tests.
 	now func() time.Time
 	// lastDiagAt is the wall-clock time the per-channel diagnostics were
@@ -207,6 +220,34 @@ type Engine struct {
 	// healthy but this channel low ⇒ carrier outside the captured passband or
 	// the wrong frequency) when a low-power WARN fires. Owned by the Run pump.
 	widebandPwr iqpower.Accumulator
+	// wbClipped / wbClipSamples count rail-pinned wideband input samples over
+	// the same window (issue #749). A strong site clipping the shared ADC is
+	// the front-end-overload failure mode the per-tap power gauge can't see —
+	// it raises the noise floor for every tap. Owned by the Run pump.
+	wbClipped     int
+	wbClipSamples int
+	// wbClipLogAt throttles the overload WARN. Owned by the Run pump.
+	wbClipLogAt time.Time
+}
+
+// iqClipThreshold is the normalized magnitude at or above which an I or Q
+// component counts as ADC rail-clipping; mirrors ccdecoder's value.
+const iqClipThreshold = 0.98
+
+// inputClipWarnRatio is the per-window clipped fraction above which the engine
+// warns that the shared front end is overloaded (issue #749). Mirrors
+// ccdecoder's iqClipWarnRatio.
+const inputClipWarnRatio = 0.002
+
+// foldInputClip counts rail-pinned samples in one wideband chunk.
+func (e *Engine) foldInputClip(chunk []complex64) {
+	for _, c := range chunk {
+		r, i := real(c), imag(c)
+		if r >= iqClipThreshold || r <= -iqClipThreshold || i >= iqClipThreshold || i <= -iqClipThreshold {
+			e.wbClipped++
+		}
+	}
+	e.wbClipSamples += len(chunk)
 }
 
 // channelProcessor is the per-channel dibit consumer. DMR Tier II's
@@ -312,6 +353,7 @@ func New(opts Options) (*Engine, error) {
 		bank:        bank,
 		strategyTag: tag,
 		metrics:     opts.Metrics,
+		serial:      opts.Serial,
 		now:         now,
 	}
 
@@ -594,6 +636,11 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("widebandt2: StreamIQ: %w", err)
 	}
+	// Drop this dongle's whole-capture series on teardown so stale values
+	// don't linger in Prometheus after the engine stops (issue #749).
+	if e.metrics != nil {
+		defer e.metrics.ClearWidebandInput(e.serial)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -603,6 +650,7 @@ func (e *Engine) Run(ctx context.Context) error {
 				return nil
 			}
 			e.widebandPwr.Add(chunk)
+			e.foldInputClip(chunk)
 			e.bank.Process(chunk)
 			e.maybeLogDiagnostics(e.now())
 		}
@@ -642,6 +690,28 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 	wbDbFS, wbSamples := e.widebandPwr.MeanDbFSAndReset()
 	wbHealthy := wbSamples > 0 && wbDbFS >= iqpower.LowPowerThresholdDbFS
 
+	// Whole-capture clip ratio over the same window (issue #749). A non-zero
+	// value means a strong site is pinning the shared ADC rail — front-end
+	// overload, which raises the noise floor and buries the weaker taps. This
+	// is the "only one site decodes" failure mode the per-tap power gauge
+	// can't surface on its own.
+	var wbClip float64
+	if e.wbClipSamples > 0 {
+		wbClip = float64(e.wbClipped) / float64(e.wbClipSamples)
+	}
+	wbOverloaded := wbClip > inputClipWarnRatio
+	e.wbClipped, e.wbClipSamples = 0, 0
+	if e.metrics != nil && wbSamples > 0 {
+		e.metrics.RecordWidebandInputPowerDbFS(e.serial, wbDbFS)
+		e.metrics.RecordWidebandInputClipRatio(e.serial, wbClip)
+	}
+	if wbOverloaded && now.Sub(e.wbClipLogAt) >= lowPowerWarnInterval {
+		// The fix is less RF, not more: reduce gain or add attenuation.
+		e.log.Warn("widebandt2: wideband front end overloaded — IQ pinned to the ADC rail; a strong site is clipping the shared ADC and burying weaker taps. Reduce gain or add attenuation (do NOT raise gain). issue #749",
+			"serial", e.serial, "clip_ratio", wbClip, "wideband_input_dbfs", wbDbFS)
+		e.wbClipLogAt = now
+	}
+
 	debug := e.log.Enabled(context.Background(), slog.LevelDebug)
 	for _, ec := range e.channels {
 		if ec.pwr.Samples() == 0 {
@@ -654,7 +724,13 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 		if dbfs < iqpower.LowPowerThresholdDbFS {
 			if now.Sub(ec.pwLowLogAt) >= lowPowerWarnInterval {
 				hint := "check antenna, gain, USB cable"
-				if wbHealthy {
+				switch {
+				case wbOverloaded:
+					// All taps share this front end, so don't blame the cable:
+					// a stronger site is clipping the shared ADC and burying
+					// this one (issue #749). Reduce gain, don't raise it.
+					hint = "wideband front end is overloaded (clipping) — a stronger co-channel is burying this site; reduce gain or add attenuation, do NOT raise gain"
+				case wbHealthy:
 					hint = "wideband input is healthy — this carrier is likely outside the captured passband or tuned to the wrong frequency"
 				}
 				e.log.Warn("widebandt2: channel iq power very low — "+hint,

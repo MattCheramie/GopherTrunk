@@ -67,13 +67,18 @@ func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-// recordingPower captures RecordIQPowerDbFS calls for the metrics test.
+// recordingPower captures RecordIQPowerDbFS calls for the metrics test, plus
+// the whole-capture power / clip gauges (issue #749).
 type recordingPower struct {
 	mu    sync.Mutex
 	calls []struct {
 		label string
 		dbfs  float64
 	}
+	inputDbFS    float64
+	inputClip    float64
+	gotInput     bool
+	inputCleared bool
 }
 
 func (r *recordingPower) RecordIQPowerDbFS(label string, dbfs float64) {
@@ -85,6 +90,21 @@ func (r *recordingPower) RecordIQPowerDbFS(label string, dbfs float64) {
 	r.mu.Unlock()
 }
 func (r *recordingPower) ClearIQPowerDbFS(string) {}
+func (r *recordingPower) RecordWidebandInputPowerDbFS(_ string, dbfs float64) {
+	r.mu.Lock()
+	r.inputDbFS, r.gotInput = dbfs, true
+	r.mu.Unlock()
+}
+func (r *recordingPower) RecordWidebandInputClipRatio(_ string, ratio float64) {
+	r.mu.Lock()
+	r.inputClip = ratio
+	r.mu.Unlock()
+}
+func (r *recordingPower) ClearWidebandInput(_ string) {
+	r.mu.Lock()
+	r.inputCleared = true
+	r.mu.Unlock()
+}
 
 // TestEngineDiagnosticsLowPowerWarns feeds a silent IQ stream and proves
 // the engine emits the throttled "iq power very low" WARN — the operator
@@ -278,5 +298,86 @@ func TestEngineDiagnosticsMetricsGauge(t *testing.T) {
 	// above the dead-stream floor.
 	if got.dbfs < -55 || got.dbfs > 0 {
 		t.Errorf("gauge dbfs = %v, want a finite value in (-55, 0)", got.dbfs)
+	}
+}
+
+// TestEngineDiagnosticsOverloadWarns feeds a rail-pinned IQ stream and proves
+// the engine flags shared-front-end overload (issue #749): the whole-capture
+// clip-ratio gauge fires, a throttled overload WARN is logged with reduce-gain
+// guidance (never "USB cable"), and the input gauges are cleared on teardown.
+func TestEngineDiagnosticsOverloadWarns(t *testing.T) {
+	const (
+		rateHz       = 48_000
+		centerHz     = 446_500_000
+		channelHz    = centerHz
+		chunkSamples = 4800
+		numChunks    = 8
+	)
+
+	// Every sample pinned to the rail (|component| = 0.99 >= iqClipThreshold).
+	clipped := make([][]complex64, numChunks)
+	for i := range clipped {
+		c := make([]complex64, chunkSamples)
+		for j := range c {
+			c[j] = complex(0.99, 0.99)
+		}
+		clipped[i] = c
+	}
+	dev := newMockDevice(clipped)
+
+	bus := events.NewBus(64)
+	defer bus.Close()
+
+	handler, recs, mu := newRecordingHandler()
+	obs := &recordingPower{}
+	clk := &steppingClock{t: time.Unix(0, 0), step: 600 * time.Millisecond}
+
+	e, err := New(Options{
+		Log:          slog.New(handler),
+		Device:       dev,
+		Bus:          bus,
+		SampleRateHz: rateHz,
+		CenterFreqHz: centerHz,
+		Now:          clk.now,
+		Metrics:      obs,
+		Serial:       "AIRSPY-1",
+		Channels:     []ChannelConfig{{FrequencyHz: channelHz, SystemName: "dmr-simplex"}},
+		Systems:      []trunking.System{t2System("dmr-simplex")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	mu.Lock()
+	var sawOverload bool
+	for _, r := range *recs {
+		if r.level == slog.LevelWarn && strings.Contains(r.msg, "overloaded") {
+			sawOverload = true
+			if strings.Contains(r.msg, "USB cable") {
+				t.Error("overload WARN must not blame the USB cable on a shared front end")
+			}
+		}
+	}
+	mu.Unlock()
+	if !sawOverload {
+		t.Error("expected a wideband front-end overload WARN, got none")
+	}
+
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	if !obs.gotInput {
+		t.Error("whole-capture input power gauge was never recorded")
+	}
+	if obs.inputClip <= inputClipWarnRatio {
+		t.Errorf("input clip ratio = %v, want > %v (every sample clipped)", obs.inputClip, inputClipWarnRatio)
+	}
+	if !obs.inputCleared {
+		t.Error("input gauges not cleared on engine teardown")
 	}
 }

@@ -1579,10 +1579,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			// raw entry.Device: the iqtap broker doesn't forward the optional
 			// ActualSampleRate() extension. Mirrors the CC decoder above.
 			effectiveRate := effectiveStreamRate(log, entry.Device, entry.Info.Serial, cfg.SDR.SampleRate)
-			// Per-channel IQ-power gauge. Same typed-nil guard as the CC
-			// decoder above: a nil *metrics.Metrics wrapped in the interface
-			// still tests non-nil inside the engine, so hand it over only
-			// when the concrete pointer is alive.
+			// Per-channel + whole-capture IQ-power diagnostics (issue #749).
+			// Same typed-nil guard as the CC decoder above: a nil
+			// *metrics.Metrics wrapped in the interface still tests non-nil
+			// inside the engine, so hand it over only when the concrete
+			// pointer is alive.
 			var wbIQObs widebandt2.IQPowerObserver
 			if d.metrics != nil {
 				wbIQObs = d.metrics
@@ -1596,6 +1597,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				TunerStrategy: devCfg.TunerStrategy,
 				Channels:      channels,
 				Systems:       d.systems,
+				Serial:        entry.Info.Serial,
 				Metrics:       wbIQObs,
 			})
 			if err != nil {

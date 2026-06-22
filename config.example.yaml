@@ -247,6 +247,31 @@ sdr:
     # channel only; voice grants still route to the daemon's physical
     # voice pool (a role: voice SDR alongside the wideband dongle).
     #
+    # MULTI-SITE P25: to monitor several SITES of one P25 system at once,
+    # list each site's control channel as its own channels: entry (all
+    # pointing at the same system). Every tap decodes in parallel out of
+    # the one capture — they are NOT hunted one-at-a-time. Per-site names
+    # come from the system's sites: mapping (RFSS/Site → name) further down.
+    #
+    # SHARED FRONT END (issue #749): every tap on a dongle shares one
+    # antenna, one centre frequency and one gain. The channelizer is
+    # gain-flat across taps, so if one site decodes and its siblings sit at
+    # the noise floor, that is real RF — a weak/distant site at this centre
+    # and gain, or (just as common) a STRONG site overloading the shared
+    # ADC and raising the noise floor for everything else. Symptoms and fix:
+    #   - Watch each tap's level on gophertrunk_sdr_iq_power_dbfs (labelled
+    #     "<system> @ <freq> MHz") and the whole capture on
+    #     gophertrunk_sdr_wideband_input_iq_power_dbfs /
+    #     gophertrunk_sdr_wideband_input_clip_ratio. A tap far below the input
+    #     power, or a non-zero input clip ratio, is logged as a throttled WARN too.
+    #   - If the input clip ratio is non-zero, LOWER the gain or add
+    #     attenuation (do NOT raise gain) — a hot site is desensitising the
+    #     receiver. Set gain in TENTHS of a dB ("gain: 600" = 60 dB, which
+    #     is very high for a wideband capture; try a lower value first).
+    #   - A genuinely weak distant site may simply not survive a shared
+    #     capture optimised for a stronger one — give it a dedicated dongle
+    #     (role: control or its own role: wideband) if it matters.
+    #
     # Constraints (validated at load time):
     #   - serial must match a discovered dongle
     #   - every channel frequency_hz must be within
