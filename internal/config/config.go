@@ -662,11 +662,24 @@ type LogConfig struct {
 	// by default, only when that level is below the low-power threshold —
 	// the "decoding but weak signal" diagnostic.
 	PowerLog PowerLogConfig `yaml:"power_log"`
+	// EventLog configures the optional full event log — every bus event
+	// written as one JSON line (JSONL/NDJSON), in the same envelope the
+	// SSE/WS streams emit. Unlike MessageLog it captures all event kinds,
+	// so a session can be recorded and replayed/inspected offline.
+	EventLog EventLogConfig `yaml:"event_log"`
 }
 
 // MessageLogConfig configures the decoded-message log. Empty Path (or
 // Enabled false) disables it.
 type MessageLogConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
+}
+
+// EventLogConfig configures the full JSONL event log. Empty Path (or
+// Enabled false) disables it.
+type EventLogConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	Path      string `yaml:"path"`
 	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
@@ -1706,6 +1719,7 @@ func (c *Config) resolvePaths(base string) {
 	c.Recordings.Dir = resolve(c.Recordings.Dir)
 	c.Log.MessageLog.Path = resolve(c.Log.MessageLog.Path)
 	c.Log.PowerLog.Path = resolve(c.Log.PowerLog.Path)
+	c.Log.EventLog.Path = resolve(c.Log.EventLog.Path)
 	c.API.Auth.TokenFile = resolve(c.API.Auth.TokenFile)
 	for i := range c.Baseband.Record {
 		c.Baseband.Record[i].Dir = resolve(c.Baseband.Record[i].Dir)

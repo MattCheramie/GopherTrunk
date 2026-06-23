@@ -78,6 +78,12 @@ func sanitizeForHeader(s string) string {
 	return string(out)
 }
 
+// EventToDTO converts an internal events.Event to the JSON wire envelope used
+// by the SSE/WS streams. It is exported so other sinks (e.g. the event JSONL
+// file log) can serialise events in exactly the same shape clients already
+// consume, rather than inventing a divergent format.
+func EventToDTO(ev events.Event) EventDTO { return eventToDTO(ev) }
+
 // eventToDTO converts an internal events.Event to the wire envelope. The
 // payload is mapped to a JSON-friendly DTO when the kind is recognised;
 // otherwise the raw payload is passed through (useful for debugging

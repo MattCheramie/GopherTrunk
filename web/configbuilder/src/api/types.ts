@@ -17,11 +17,18 @@ export interface PowerLogConfig {
   AllWindows: boolean;
 }
 
+export interface EventLogConfig {
+  Enabled: boolean;
+  Path: string;
+  MaxSizeMB: number;
+}
+
 export interface LogConfig {
   Level: string;
   Format: string;
   MessageLog: MessageLogConfig;
   PowerLog: PowerLogConfig;
+  EventLog: EventLogConfig;
 }
 
 export interface DiagnosticsConfig {

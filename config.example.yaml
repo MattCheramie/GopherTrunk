@@ -38,6 +38,15 @@ log:
   #   path: "../logs/power.log"
   #   max_size_mb: 16          # rotates to power.log.1 past this
   #   all_windows: false       # true ⇒ log every active window, not just low-power
+  # Event log: every bus event written as one JSON line (JSONL/NDJSON), in the
+  # same envelope the web UI / SSE / WS streams consume. Unlike message_log it
+  # captures ALL event kinds, so it records a whole session for offline
+  # inspection (hand it to support when a decode looks wrong but there's no
+  # raw IQ to replay).
+  # event_log:
+  #   enabled: true
+  #   path: "../logs/events.jsonl"
+  #   max_size_mb: 16          # rotates to events.jsonl.1 past this
 
 # diagnostics — error-reporting verbosity. Every error is prefixed with
 # a diagnostics banner (version, OS, system specs, detected dongles).

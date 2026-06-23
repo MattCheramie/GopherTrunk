@@ -84,6 +84,26 @@ export function LogSection() {
           placeholder="16"
         />
       </Fieldset>
+      <Fieldset legend="Event log (JSONL)">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.EventLog?.Enabled}
+          onChange={(x) => set({ ...cfg, EventLog: { ...cfg.EventLog, Enabled: x } })}
+          help="Record every bus event as one JSON line (JSONL/NDJSON), in the same envelope the web UI consumes — a full session for offline inspection."
+        />
+        <TextField
+          label="Path"
+          value={cfg.EventLog?.Path ?? ""}
+          onChange={(x) => set({ ...cfg, EventLog: { ...cfg.EventLog, Path: x } })}
+          placeholder="/var/log/gophertrunk/events.jsonl"
+        />
+        <NumberField
+          label="Max size (MB)"
+          value={cfg.EventLog?.MaxSizeMB ?? 0}
+          onChange={(x) => set({ ...cfg, EventLog: { ...cfg.EventLog, MaxSizeMB: x } })}
+          placeholder="16"
+        />
+      </Fieldset>
     </Section>
   );
 }
