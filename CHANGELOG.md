@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.1] — 2026-06-23
+
+A maintenance release headlined by a new **ka9q-radio network SDR source** —
+mount a channel from a remote `radiod` instance over IP multicast as a virtual
+tuner, so one well-sited front end can feed many GopherTrunk decoders across a
+LAN — and a fix that restores **wideband decode at sample rates above
+2.5 MS/s** (#764), where a `role: wideband` dongle run at 10 MS/s went deaf
+across every tap. The rest is P25 control-channel work: System ID recovered
+from adjacent-site broadcasts, RFSS/Site from the Location Registration
+Response, hex ID rendering, a corrected Phase 2 Motorola talker-alias
+reassembly, and new raw-broadcast / event-log field diagnostics.
+
 ### Added
 - **ka9q-radio network SDR source** (`sdr.ka9q_radio`, #765). Consume a channel
   from a remote ka9q-radio `radiod` instance over IP multicast, in pure Go.
@@ -18,6 +30,53 @@ for tagged releases.
   instance names via mDNS, retunes via RADIO_FREQUENCY commands, and decodes
   s16/f32 (either byte order) IQ payloads. Configure under `sdr.ka9q_radio`
   with the status group `addr` and channel `ssrc`; see `config.example.yaml`.
+- **P25 raw status-broadcast dump + live event log** (#779). Two additive field
+  diagnostics, no decode-behaviour change. A per-opcode sampled raw-payload +
+  decoded-field dump for the handled adjacent (0x3C), network (0x3B) and RFSS
+  (0x3A) status broadcasts captures the bytes behind a reported neighbour /
+  identity mismatch when there is no IQ to replay. An optional live event
+  JSONL/NDJSON sink (`log.event_log`) records every bus event as one JSON line
+  in the same envelope the SSE/WS streams emit, with size-capped rotation;
+  surfaced in the web Config Builder.
+
+### Changed
+- **P25 identity recovered from more control-channel opcodes** (#766, #774).
+  Systems that never transmit Network/RFSS Status Broadcasts (0x3B/0x3A) used
+  to leave the web "Network identity" panel stuck on "Awaiting status
+  broadcasts". The System ID is now voted in from Adjacent Site Status
+  Broadcasts (0x3C), and RFSS/Site from the Location Registration Response
+  (LOC_REG_RSP, 0x2B) — the practical identity source on such systems. WACN
+  publishes the instant the Network Status Broadcast lands, and a new
+  per-opcode seen-counter lets the hunt/siglab layers distinguish a genuinely
+  unavailable WACN (NSB never transmitted) from a decode gap.
+- **P25 IDs render in hex** (#774). Site-update events and the systems/sites
+  REST DTOs gain `*_hex` fields (decimal values unchanged); the web "Network
+  identity" card and the TUI render WACN/System ID/RFSS/Site in the configured
+  base (`web.id_base`, hex default).
+
+### Fixed
+- **Wideband DDC/channelizer decode at sample rates above 2.5 MS/s** (#764). A
+  `role: wideband` dongle run above 2.5 MS/s went deaf across every tap. The
+  DDC path now runs a single shared decimate-by-D stage over the wideband
+  stream to bring it into [2.5, 5) MS/s before the per-tap mixers, pinning
+  per-tap cost to the proven ~2.5 MS/s regime so the pump goroutine keeps real
+  time (below 5 MS/s the 2.4 MS/s path is unchanged). The channelizer bin count
+  now scales with the sample rate to hold ~150 kHz bins (64 bins at 10 MS/s)
+  instead of colliding adjacent carriers into one bin.
+- **P25 Phase 2 Motorola talker-alias reassembly** (#773). The Motorola FACCH-S
+  alias data fragments begin on the low nibble of their sequence octet and must
+  be concatenated as a nibble stream; the previous code dropped that leading
+  nibble and concatenated whole bytes, shifting the cipher region by 4 bits so
+  the alias decoded to garbage and failed safe to empty. Reassembly is now
+  nibble-aligned (the end-to-end decoded string remains air-unverified).
+- **P25 autotune no longer over-corrects** (#774). Implausible single AFC
+  measurements are rejected, a warm-up of several samples is required before any
+  correction is applied, and only cleanly-decoded voice calls feed the estimate,
+  so convergence stays in the low-Hz range instead of drifting into the kHz.
+- **Web CC Activity table freezes synchronously on pause** (#772). The pause
+  snapshot is now captured during render the first time pause is seen rather
+  than in a post-paint effect, closing the window where an SSE batch could leak
+  live rows through after the click. The web vitest suite is also wired into CI.
 
 ## [v0.5.0] — 2026-06-22
 
