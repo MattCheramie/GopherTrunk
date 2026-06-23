@@ -44,6 +44,57 @@ func TestHistoryCappedAtMax(t *testing.T) {
 	}
 }
 
+func TestRejectsImplausibleMeasurement(t *testing.T) {
+	m := NewManager("test", nil)
+	// A glitch far beyond plausible crystal drift must not enter the history
+	// or move the average (centre 0 -> absolute MaxAbsErrorHz bound).
+	m.AddErrorMeasurement(MaxAbsErrorHz+500, 0, 0)
+	if got := m.AverageError(); got != 0 {
+		t.Fatalf("avg after rejected glitch: got %d want 0", got)
+	}
+	if len(m.history) != 0 {
+		t.Fatalf("rejected measurement entered history: %v", m.history)
+	}
+	// The runaway feedback case from the field report: a +2300 Hz total on
+	// the voice path (centre unknown) is rejected, so the average can't be
+	// dragged into the kHz.
+	m.AddErrorMeasurement(2300, 0, 0)
+	if got := m.AverageError(); got != 0 {
+		t.Fatalf("avg after rejected 2300 Hz: got %d want 0", got)
+	}
+	// A sane measurement is still accepted.
+	m.AddErrorMeasurement(40, 0, 0)
+	if got := m.AverageError(); got != 40 {
+		t.Fatalf("avg after sane measurement: got %d want 40", got)
+	}
+}
+
+func TestWarmupGatesCorrection(t *testing.T) {
+	m := NewManager("test", nil)
+	// Below WarmupSamples, Correction() applies nothing even though the raw
+	// average is non-zero, so a noisy first measurement can't yank tuning.
+	for i := 0; i < WarmupSamples-1; i++ {
+		m.AddErrorMeasurement(100, 0, 0)
+		if m.Ready() {
+			t.Fatalf("Ready() true after %d samples, want warm-up >= %d", i+1, WarmupSamples)
+		}
+		if got := m.Correction(); got != 0 {
+			t.Fatalf("Correction() = %d before warm-up, want 0", got)
+		}
+		if got := m.AverageError(); got == 0 {
+			t.Fatalf("AverageError() should report the raw average during warm-up")
+		}
+	}
+	// The WarmupSamples-th measurement crosses the threshold.
+	m.AddErrorMeasurement(100, 0, 0)
+	if !m.Ready() {
+		t.Fatalf("Ready() false after %d samples", WarmupSamples)
+	}
+	if got := m.Correction(); got != 100 {
+		t.Fatalf("Correction() after warm-up: got %d want 100", got)
+	}
+}
+
 func TestReset(t *testing.T) {
 	m := NewManager("test", nil)
 	m.AddErrorMeasurement(500, 0, 0)

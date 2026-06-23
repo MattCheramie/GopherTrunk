@@ -332,6 +332,13 @@ type SiteUpdate struct {
 	ControlChannelHz uint32
 	WACN             uint32
 	SystemID         uint16
+	// Hex renderings of the identity numbers (P25 field convention),
+	// alongside the decimal fields above so JSON consumers get both. Empty
+	// when the corresponding value is unknown (zero).
+	WACNHex     string `json:"WACNHex,omitempty"`
+	SystemIDHex string `json:"SystemIDHex,omitempty"`
+	RFSSIDHex   string `json:"RFSSIDHex,omitempty"`
+	SiteIDHex   string `json:"SiteIDHex,omitempty"`
 	// Topology, when non-nil, is the full network-configuration snapshot of the
 	// camped site (identity + primary/secondary control channels + neighbours +
 	// band plan) as of this update. It is built on the decoder's Process

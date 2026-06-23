@@ -1187,4 +1187,11 @@ broadcast:
 #     dsc: false
 #     adsb: false
 #     mdc1200: false
+#
+#   # How identity numbers (WACN, System ID, NAC, RFSS, Site) are rendered in
+#   # the web UI: "hex" (default — the P25 field convention, shown with the
+#   # decimal in parentheses) or "dec" for plain decimal. The JSON API and
+#   # event payloads always carry the raw decimal values plus *_hex strings
+#   # regardless of this setting; it only changes the bundled web SPA's display.
+#   id_base: hex
 

@@ -173,9 +173,9 @@ func identityNote(res *siglab.Result) string {
 		// won't help if the system simply doesn't emit the NSB.
 		return fmt.Sprintf("System ID resolved from adjacent-site broadcasts, but WACN is "+
 			"unavailable: the Network Status Broadcast (NSB, 0x3B) that carries it was never "+
-			"decoded (saw NSB×%d, RFSS×%d, adjacent×%d, TSBK×%d) — if the system never emits "+
-			"the NSB, the WACN cannot be recovered",
-			cc.NetStatusSeen, cc.RFSSStatusSeen, cc.AdjacentSeen, cc.TSBKDecoded)
+			"decoded (saw NSB×%d, RFSS×%d, adjacent×%d, loc-reg×%d, TSBK×%d) — if the system never "+
+			"emits the NSB, the WACN cannot be recovered",
+			cc.NetStatusSeen, cc.RFSSStatusSeen, cc.AdjacentSeen, cc.LocRegSeen, cc.TSBKDecoded)
 	}
 	if cc.NetStatusSeen > 0 {
 		// NSB decoded but yielded no WACN — a parse problem, not a capture gap.

@@ -135,6 +135,25 @@ func (m *NetworkModel) ApplyRFSSStatus(r RFSSStatusBroadcast) {
 	m.votePrimary(r.ChannelID, r.ChannelNumber)
 }
 
+// ApplyLocationRegistration folds a Location Registration Response (0x2B) in.
+// The response names the RFSS/Site the radio registered on — the camped site —
+// so its RFSS/Site are voted into the identity tally exactly like the RFSS
+// Status Broadcast. It carries neither WACN nor System ID, so neither is
+// touched here. Only an accepted response (RV 0) is trusted: a refused/denied
+// registration may name a different/last-known site.
+func (m *NetworkModel) ApplyLocationRegistration(r LocationRegistrationResponse) {
+	if r.Response != 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensure()
+	// RFSS and Site of zero are valid (RFSS 0 is a real, common value), so
+	// they are always counted — matching ApplyRFSSStatus.
+	m.rfssVotes[r.RFSS]++
+	m.siteVotes[r.Site]++
+}
+
 // votePrimary records a primary-control-channel observation. A zero
 // (id, number) carries no information (channel 0-0 is the "no channel"
 // sentinel used across these broadcasts), so it never gets a vote and

@@ -55,6 +55,7 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 
 	out := make([]SiteDTO, 0, len(byKey))
 	for _, dto := range byKey {
+		dto.fillIdentityHex()
 		out = append(out, *dto)
 	}
 	sort.Slice(out, func(i, j int) bool {

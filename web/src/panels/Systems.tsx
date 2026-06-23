@@ -5,6 +5,7 @@ import { DetailField, DetailModal } from "../components/DetailModal";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
+import { formatIdNumber } from "../lib/idFormat";
 import type {
   DMRBandPlanDTO,
   DMRBandPlanLearnedDTO,
@@ -67,6 +68,7 @@ export function Systems() {
   const scanner = useShared((s) => s.scanner);
   const setScanner = useShared((s) => s.setScanner);
   const events = useShared((s) => s.events);
+  const idBase = useShared((s) => s.idBase);
   const [selected, setSelected] = useState<SystemDTO | null>(null);
 
   // Poll the scanner snapshot alongside systems so the detail modal can
@@ -204,25 +206,25 @@ export function Systems() {
                   <DetailField
                     label="WACN"
                     mono
-                    value={selected.wacn ?? null}
+                    value={formatIdNumber(selected.wacn ?? null, idBase)}
                     emptyHint={hint}
                   />
                   <DetailField
                     label="System ID"
                     mono
-                    value={selected.system_id ?? null}
+                    value={formatIdNumber(selected.system_id ?? null, idBase)}
                     emptyHint={hint}
                   />
                   <DetailField
                     label="RFSS"
                     mono
-                    value={selected.rfss ?? null}
+                    value={formatIdNumber(selected.rfss ?? null, idBase)}
                     emptyHint={hint}
                   />
                   <DetailField
                     label="Site"
                     mono
-                    value={selected.site ?? null}
+                    value={formatIdNumber(selected.site ?? null, idBase)}
                     emptyHint={hint}
                   />
                 </div>

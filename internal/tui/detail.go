@@ -31,7 +31,8 @@ func formatSystemDetail(s client.SystemDTO) string {
 		lines = append(lines, fmt.Sprintf("SystemID: %X", s.SystemID))
 	}
 	if s.RFSS != 0 || s.Site != 0 {
-		lines = append(lines, fmt.Sprintf("RFSS/Site: %d / %d", s.RFSS, s.Site))
+		// Hex to match WACN/SystemID above (P25 field convention).
+		lines = append(lines, fmt.Sprintf("RFSS/Site: %X / %X", s.RFSS, s.Site))
 	}
 	return strings.Join(lines, "\n")
 }

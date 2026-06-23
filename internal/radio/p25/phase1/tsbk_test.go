@@ -161,6 +161,47 @@ func TestParseUnitRegistrationResponse(t *testing.T) {
 	}
 }
 
+// TestParseLocationRegistrationResponse pins the byte layout against four
+// real on-air LOC_REG_RSP (0x2B) payloads captured from a live Motorola P25
+// site (Main_Site_1). All four name the same camped site — RFSS 1, Site 1 —
+// with plausible group addresses and 24-bit registering-unit IDs, which is
+// how the layout (response, group, RFSS@p3, Site@p4, target) was confirmed.
+func TestParseLocationRegistrationResponse(t *testing.T) {
+	// Assemble/Parse round-trip first.
+	in := LocationRegistrationResponse{
+		Response: 0, GroupAddress: 0x0579, RFSS: 1, Site: 1, TargetAddress: 0x024501,
+	}
+	if out := ParseLocationRegistrationResponse(AssembleLocationRegistrationResponse(in)); out != in {
+		t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", out, in)
+	}
+
+	vectors := []struct {
+		payload [8]byte
+		group   uint16
+		target  uint32
+	}{
+		{[8]byte{0x00, 0x05, 0x79, 0x01, 0x01, 0x02, 0x45, 0x01}, 0x0579, 0x024501},
+		{[8]byte{0x00, 0x05, 0x15, 0x01, 0x01, 0x02, 0x13, 0x4A}, 0x0515, 0x02134A},
+		{[8]byte{0x00, 0x02, 0xC1, 0x01, 0x01, 0x01, 0x1C, 0x1D}, 0x02C1, 0x011C1D},
+		{[8]byte{0x00, 0x02, 0xC1, 0x01, 0x01, 0x01, 0x1C, 0x1A}, 0x02C1, 0x011C1A},
+	}
+	for _, v := range vectors {
+		r := ParseLocationRegistrationResponse(v.payload)
+		if r.Response != 0 {
+			t.Errorf("payload %X: Response = %X, want 0 (accept)", v.payload, r.Response)
+		}
+		if r.RFSS != 1 || r.Site != 1 {
+			t.Errorf("payload %X: RFSS/Site = %d/%d, want 1/1", v.payload, r.RFSS, r.Site)
+		}
+		if r.GroupAddress != v.group {
+			t.Errorf("payload %X: GroupAddress = %04X, want %04X", v.payload, r.GroupAddress, v.group)
+		}
+		if r.TargetAddress != v.target {
+			t.Errorf("payload %X: TargetAddress = %06X, want %06X", v.payload, r.TargetAddress, v.target)
+		}
+	}
+}
+
 func TestParseNetworkStatusBroadcast(t *testing.T) {
 	// LRA = 0x07, WACN = 0xABCDE (20-bit), SystemID = 0x123 (12-bit),
 	// channel = 4.010, service class = 0x42. Layout per TIA-102.AABF:

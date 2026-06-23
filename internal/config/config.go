@@ -99,6 +99,22 @@ type DiagnosticsConfig struct {
 // reachable directly.
 type WebConfig struct {
 	Tabs map[string]bool `yaml:"tabs"`
+	// IDBase selects how P25/identity numbers (WACN, System ID, NAC, RFSS,
+	// Site) are shown in the bundled web SPA: "hex" (the P25 field
+	// convention, default) or "dec". The raw decimal values are always
+	// present in the JSON API and event payloads (with *_hex strings
+	// alongside); this only changes the web display. Empty/unset means "hex".
+	IDBase string `yaml:"id_base"`
+}
+
+// IDBaseOrDefault returns the configured identity number base ("hex" or
+// "dec"), defaulting to "hex" when unset or unrecognised. Feeds
+// /api/v1/runtime so both UIs render identity numbers from one source.
+func (w WebConfig) IDBaseOrDefault() string {
+	if w.IDBase == "dec" {
+		return "dec"
+	}
+	return "hex"
 }
 
 // KnownUITabs is the canonical set of navigation tab keys both UIs
@@ -2204,6 +2220,11 @@ func (c Config) validateWeb() []error {
 			sort.Strings(valid)
 			return []error{fmt.Errorf("web.tabs: unknown tab %q (valid: %s)", key, strings.Join(valid, ", "))}
 		}
+	}
+	switch c.Web.IDBase {
+	case "", "hex", "dec":
+	default:
+		return []error{fmt.Errorf("web.id_base: must be hex or dec, got %q", c.Web.IDBase)}
 	}
 	return nil
 }

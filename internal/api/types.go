@@ -88,6 +88,12 @@ type SystemDTO struct {
 	SystemID        uint16   `json:"system_id,omitempty"`
 	RFSS            uint8    `json:"rfss,omitempty"`
 	Site            uint8    `json:"site,omitempty"`
+	// Hex renderings of the identity numbers (P25 field convention),
+	// alongside the decimal fields above. Empty when the value is unknown.
+	WACNHex     string `json:"wacn_hex,omitempty"`
+	SystemIDHex string `json:"system_id_hex,omitempty"`
+	RFSSHex     string `json:"rfss_hex,omitempty"`
+	SiteHex     string `json:"site_hex,omitempty"`
 
 	// Per-protocol FEC opt-out surface. Empty strings indicate the
 	// new spec-correct default is active (channel coding / FEC on
@@ -362,6 +368,28 @@ type SiteDTO struct {
 	Name             string `json:"name"`
 	WACN             uint32 `json:"wacn,omitempty"`
 	SystemID         uint16 `json:"system_id,omitempty"`
+	// Hex renderings of the identity numbers, alongside the decimal fields.
+	WACNHex     string `json:"wacn_hex,omitempty"`
+	SystemIDHex string `json:"system_id_hex,omitempty"`
+	RFSSIDHex   string `json:"rfss_id_hex,omitempty"`
+	SiteIDHex   string `json:"site_id_hex,omitempty"`
+}
+
+// fillIdentityHex derives the *_hex fields from the decimal identity fields.
+// Call after any overlay that mutates the numeric fields so the two agree.
+func (d *SystemDTO) fillIdentityHex() {
+	d.WACNHex = trunking.IDHex(uint64(d.WACN))
+	d.SystemIDHex = trunking.IDHex(uint64(d.SystemID))
+	d.RFSSHex = trunking.IDHex(uint64(d.RFSS))
+	d.SiteHex = trunking.IDHex(uint64(d.Site))
+}
+
+// fillIdentityHex derives the *_hex fields from the decimal identity fields.
+func (d *SiteDTO) fillIdentityHex() {
+	d.WACNHex = trunking.IDHex(uint64(d.WACN))
+	d.SystemIDHex = trunking.IDHex(uint64(d.SystemID))
+	d.RFSSIDHex = trunking.IDHex(uint64(d.RFSSID))
+	d.SiteIDHex = trunking.IDHex(uint64(d.SiteID))
 }
 
 // CallEncryptionDTO mirrors trunking.CallEncryption for SSE / REST

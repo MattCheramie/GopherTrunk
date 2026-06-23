@@ -178,6 +178,11 @@ type CCStats struct {
 	NetStatusSeen     int64
 	RFSSStatusSeen    int64
 	AdjacentSeen      int64
+	// LocRegSeen counts accepted Location Registration Responses (0x2B):
+	// the high-rate RFSS/Site source. A non-zero LocRegSeen with RFSS/Site
+	// resolved but NetStatusSeen == 0 is the normal shape of a system that
+	// names its site via registrations but withholds the WACN-bearing NSB.
+	LocRegSeen int64
 }
 
 // NetworkSnapshot returns the system topology accumulated from the
@@ -277,6 +282,7 @@ func (c *ControlChannel) Stats() CCStats {
 		NetStatusSeen:     atomic.LoadInt64(&c.stats.NetStatusSeen),
 		RFSSStatusSeen:    atomic.LoadInt64(&c.stats.RFSSStatusSeen),
 		AdjacentSeen:      atomic.LoadInt64(&c.stats.AdjacentSeen),
+		LocRegSeen:        atomic.LoadInt64(&c.stats.LocRegSeen),
 	}
 }
 
@@ -1131,6 +1137,10 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 	case OpNetworkStatusBroadcast:
 		atomic.AddInt64(&c.stats.NetStatusSeen, 1)
 		c.netModel.ApplyNetworkStatus(ParseNetworkStatusBroadcast(t.Payload))
+		// 0x3B is the sole carrier of WACN — publish immediately so it
+		// reaches the SiteTracker/API the instant it lands, rather than
+		// waiting for a later RFSS/adjacent broadcast to flush the model.
+		c.publishSiteUpdate()
 	case OpRFSSStatusBroadcast:
 		atomic.AddInt64(&c.stats.RFSSStatusSeen, 1)
 		c.netModel.ApplyRFSSStatus(ParseRFSSStatusBroadcast(t.Payload))
@@ -1149,6 +1159,13 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.publishAffiliation(ParseGroupAffiliationResponse(t.Payload), nac)
 	case OpUnitRegistrationResponse:
 		c.publishUnitRegistration(ParseUnitRegistrationResponse(t.Payload), nac)
+	case OpLocationRegistrationResponse:
+		// The location registration response names the camped site's
+		// RFSS/Site and is emitted far more often than the RFSS Status
+		// Broadcast (0x3A) — frequently the only practical RFSS/Site source.
+		atomic.AddInt64(&c.stats.LocRegSeen, 1)
+		c.netModel.ApplyLocationRegistration(ParseLocationRegistrationResponse(t.Payload))
+		c.publishSiteUpdate()
 	default:
 		// Census + raw-payload sample — a standard opcode we don't
 		// dispatch could be (or carry) the alias transport a given site
@@ -1495,6 +1512,10 @@ func (c *ControlChannel) publishSiteUpdate() {
 			ControlChannelHz: c.freqHz,
 			WACN:             net.WACN,
 			SystemID:         net.SystemID,
+			WACNHex:          trunking.IDHex(uint64(net.WACN)),
+			SystemIDHex:      trunking.IDHex(uint64(net.SystemID)),
+			RFSSIDHex:        trunking.IDHex(uint64(net.RFSS)),
+			SiteIDHex:        trunking.IDHex(uint64(net.Site)),
 			Topology:         c.TopologySnapshot(),
 			At:               c.now(),
 		},

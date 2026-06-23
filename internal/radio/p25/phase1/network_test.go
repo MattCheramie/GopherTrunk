@@ -192,6 +192,52 @@ func TestControlChannelAccumulatesTopology(t *testing.T) {
 	}
 }
 
+// TestControlChannelRFSSFromLocationRegistration checks that an accepted
+// Location Registration Response (0x2B) backfills the camped site's RFSS/Site
+// on a system that emits no RFSS Status Broadcast (0x3A) — the real-world
+// shape captured from Main_Site_1. Uses an on-air payload (RFSS 1, Site 1) and
+// asserts a SiteUpdate is published with those values.
+func TestControlChannelRFSSFromLocationRegistration(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	cc := New(Options{Bus: bus, SystemName: "S"})
+
+	// Real on-air LOC_REG_RSP payload: response accept, group 0x0579,
+	// RFSS 1, Site 1, registering unit 0x024501.
+	locReg := TSBK{Opcode: OpLocationRegistrationResponse,
+		Payload: [8]byte{0x00, 0x05, 0x79, 0x01, 0x01, 0x02, 0x45, 0x01}}
+	cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, locReg), 0)
+
+	if cfg := cc.NetworkSnapshot(); cfg.RFSS != 1 || cfg.Site != 1 {
+		t.Errorf("snapshot RFSS/Site = %d/%d, want 1/1", cfg.RFSS, cfg.Site)
+	}
+
+	var gotSite bool
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindSiteUpdate {
+				continue
+			}
+			su, ok := ev.Payload.(trunking.SiteUpdate)
+			if !ok {
+				t.Fatalf("site update payload type = %T", ev.Payload)
+			}
+			if su.RFSSID != 1 || su.SiteID != 1 {
+				t.Errorf("SiteUpdate RFSS/Site = %d/%d, want 1/1", su.RFSSID, su.SiteID)
+			}
+			gotSite = true
+		case <-time.After(time.Second):
+			if !gotSite {
+				t.Fatal("no site.update published from LOC_REG_RSP")
+			}
+			return
+		}
+	}
+}
+
 // TestControlChannelDecodesBroadcastUnderVendorMFID drives the network/site
 // broadcasts with the Motorola vendor MFID (0x90) — the form a real VHF site
 // was seen emitting — and checks the standard broadcast opcodes are still
@@ -369,6 +415,13 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 			if !ok {
 				t.Fatalf("KindSiteUpdate payload is %T, want trunking.SiteUpdate", ev.Payload)
 			}
+			// The NSB (0x3B) now publishes an interim update as soon as it
+			// lands (carrying WACN/SystemID but not yet RFSS/Site); the named
+			// site arrives on the following RFSS Status Broadcast. Skip the
+			// interim publish and assert on the complete one.
+			if u.RFSSID == 0 && u.SiteID == 0 {
+				continue
+			}
 			if u.System != "MMR" || u.RFSSID != 4 || u.SiteID != 7 {
 				t.Fatalf("site update identity wrong: %+v", u)
 			}
@@ -379,6 +432,11 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 			// Broadcast carry SystemID 0x123 for these payloads.
 			if u.WACN != 0xABCDE || u.SystemID != 0x123 {
 				t.Fatalf("site update network ids wrong: %+v", u)
+			}
+			// Hex renderings accompany the decimal identity fields.
+			if u.WACNHex != "ABCDE" || u.SystemIDHex != "123" ||
+				u.RFSSIDHex != "4" || u.SiteIDHex != "7" {
+				t.Fatalf("site update hex fields wrong: %+v", u)
 			}
 			return
 		case <-deadline:

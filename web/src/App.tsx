@@ -52,6 +52,7 @@ export function App() {
   const setMutations = useShared((s) => s.setMutations);
   const setWSStatus = useShared((s) => s.setWSStatus);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
+  const setIDBase = useShared((s) => s.setIDBase);
   const setConfigPath = useShared((s) => s.setConfigPath);
   const configPath = useShared((s) => s.configPath);
   const appendEvents = useShared((s) => s.appendEvents);
@@ -109,6 +110,7 @@ export function App() {
       .runtime(cfg)
       .then((rt) => {
         setHiddenTabs(rt.hidden_tabs ?? []);
+        setIDBase(rt.id_base === "dec" ? "dec" : "hex");
         setConfigPath(rt.config_path ?? "");
       })
       .catch(() => setHiddenTabs([]));
