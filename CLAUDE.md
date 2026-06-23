@@ -53,3 +53,15 @@ confirmation before any close-as-completed.
   offline replay points at the *captured data* (front-end overload / intermod /
   gain staging), not the steady-state DSP — get the raw `.cfile` to reproduce.
   See `internal/scanner/ccdecoder/ddc_highrate_test.go`.
+- #764 is now verified against the reporter's own captures and confirms the rule
+  above. Mt Anakie (−812.5 kHz) replays at demod SNR ≈19.7 dB / EVM 7.4% from the
+  2.5 MS/s capture (locks) but ≈9.5 dB / EVM 22.5% from the 10 MS/s capture (no
+  lock). Decimating the 10 MS/s file 4:1 with an *independent* resampler and
+  replaying it through the proven 2.5 MS/s path reproduces the SAME ≈9.5 dB — so
+  the ~10 dB deficit is baked into the captured samples, not GT's DDC. Neither
+  capture clips (both peak ≈−48 dBFS, so it is not overload/IMD), and the wideband
+  FFT carrier SNR is actually *higher* at 10 MS/s — carrier-clean but
+  modulation-degraded is the signature of front-end phase noise / reciprocal mixing
+  at the Airspy's native 10 MS/s clock. `TestDownconverterSNRInvariantAcrossRate`
+  in the file above pins this: a noisy channel reaches the receiver at the same
+  in-channel SNR whether decoded natively at 10 MS/s or decimated to 2.5 MS/s.

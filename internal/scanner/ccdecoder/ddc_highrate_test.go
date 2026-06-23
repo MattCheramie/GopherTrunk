@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 )
 
 // Regression harness for issue #771. The reporter sees a P25 control channel
@@ -149,6 +151,77 @@ func TestDownconverterRejectsWidebandNeighbours(t *testing.T) {
 			"Inadequate anti-alias rejection at high M would raise the level/noise the AGC sees.",
 			cleanLvl, stressLvl, ratio)
 	}
+}
+
+// TestDownconverterSNRInvariantAcrossRate codifies the verified #764 conclusion.
+// The reporter's 10 MS/s capture of Mt Anakie fails to lock (demod SNR ≈9.5 dB)
+// while the 2.5 MS/s capture of the same site locks (≈19.7 dB). The decisive
+// control: decimating the 10 MS/s file 4:1 with an *independent* resampler and
+// replaying it through the proven 2.5 MS/s path reproduces the SAME ≈9.5 dB — so
+// the deficit is in the captured samples (front-end phase noise at the native
+// 10 MS/s clock), not in GopherTrunk's DDC. This test reproduces that control in
+// the unit suite: a noisy channel decoded natively at 10 MS/s and the same array
+// independently decimated to 2.5 MS/s must arrive at the receiver with the same
+// in-channel SNR. The down-converter is linear, so DDC(signal+noise) splits as
+// DDC(signal)+DDC(noise) and post-DDC SNR is measured exactly from the two parts.
+func TestDownconverterSNRInvariantAcrossRate(t *testing.T) {
+	const (
+		offsetHz = -812_500.0 // Mt Anakie
+		sigAmp   = 0.3        // below full-scale; no clipping
+		noiseAmp = 0.5        // wideband complex AWGN
+	)
+	symbols := c4fmSymbols(9600, 0x764) // ~2 s of symbols for a stable estimate
+
+	clean10 := c4fmChannel(symbols, offsetHz, 10_000_000, sigAmp)
+	noise10 := whiteNoise(len(clean10), noiseAmp, 0x5151)
+
+	// Native 10 MS/s path.
+	sigHi := cmplxRMS(NewDownconverterWithOffset(10_000_000, DDCTargetRateHz, offsetHz).Process(nil, clean10))
+	noiHi := cmplxRMS(NewDownconverterWithOffset(10_000_000, DDCTargetRateHz, offsetHz).Process(nil, noise10))
+
+	// Independent 4:1 decimation to 2.5 MS/s, then the proven 2.5 MS/s path.
+	// Mirrors the offline control that exonerated the decode path on issue #764.
+	clean25 := dsp.NewResampler(1, 4, 64, 8.6).Process(nil, clean10)
+	noise25 := dsp.NewResampler(1, 4, 64, 8.6).Process(nil, noise10)
+	sigLo := cmplxRMS(NewDownconverterWithOffset(2_500_000, DDCTargetRateHz, offsetHz).Process(nil, clean25))
+	noiLo := cmplxRMS(NewDownconverterWithOffset(2_500_000, DDCTargetRateHz, offsetHz).Process(nil, noise25))
+
+	if noiHi == 0 || noiLo == 0 || sigHi == 0 || sigLo == 0 {
+		t.Fatalf("degenerate level (sigHi=%v noiHi=%v sigLo=%v noiLo=%v)", sigHi, noiHi, sigLo, noiLo)
+	}
+	snrHi := sigHi / noiHi
+	snrLo := sigLo / noiLo
+	ratio := snrHi / snrLo
+	if ratio < 0.8 || ratio > 1.25 {
+		t.Errorf("in-channel SNR not rate-invariant: native-10MS/s SNR=%.3f decimated-to-2.5MS/s SNR=%.3f (ratio %.2f, want ~1.0). "+
+			"The DDC must neither create nor hide an SNR deficit — a low-SNR capture decodes the same at either rate (issue #764).",
+			snrHi, snrLo, ratio)
+	}
+}
+
+// whiteNoise returns n complex64 samples of zero-mean Gaussian noise with the
+// given per-component standard deviation. A fixed seed keeps the two-rate
+// comparison deterministic.
+func whiteNoise(n int, amp float64, seed int64) []complex64 {
+	r := rand.New(rand.NewSource(seed))
+	out := make([]complex64, n)
+	for i := range out {
+		out[i] = complex(float32(amp*r.NormFloat64()), float32(amp*r.NormFloat64()))
+	}
+	return out
+}
+
+// cmplxRMS returns the root-mean-square magnitude of a complex stream.
+func cmplxRMS(x []complex64) float64 {
+	if len(x) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, c := range x {
+		re, im := float64(real(c)), float64(imag(c))
+		sum += re*re + im*im
+	}
+	return math.Sqrt(sum / float64(len(x)))
 }
 
 // addTone superimposes a complex exponential at freqHz onto buf in place.
