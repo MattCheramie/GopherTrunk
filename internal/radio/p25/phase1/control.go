@@ -1136,6 +1136,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		}, nac)
 	case OpNetworkStatusBroadcast:
 		atomic.AddInt64(&c.stats.NetStatusSeen, 1)
+		c.logStatusBroadcast(t, nac)
 		c.netModel.ApplyNetworkStatus(ParseNetworkStatusBroadcast(t.Payload))
 		// 0x3B is the sole carrier of WACN — publish immediately so it
 		// reaches the SiteTracker/API the instant it lands, rather than
@@ -1143,6 +1144,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.publishSiteUpdate()
 	case OpRFSSStatusBroadcast:
 		atomic.AddInt64(&c.stats.RFSSStatusSeen, 1)
+		c.logStatusBroadcast(t, nac)
 		c.netModel.ApplyRFSSStatus(ParseRFSSStatusBroadcast(t.Payload))
 		c.publishSiteUpdate()
 	case OpSecondaryControlChannel:
@@ -1151,6 +1153,7 @@ func (c *ControlChannel) dispatchTSBK(t TSBK, nac uint16, metric int) {
 		c.netModel.ApplySecondaryControlChannelExplicit(ParseSecondaryControlChannelBroadcastExplicit(t.Payload))
 	case OpAdjacentSiteStatusBroadcast:
 		atomic.AddInt64(&c.stats.AdjacentSeen, 1)
+		c.logStatusBroadcast(t, nac)
 		c.netModel.ApplyAdjacentSite(ParseAdjacentSiteStatusBroadcast(t.Payload))
 		// On systems that never emit 0x3B/0x3A, the adjacent broadcast is
 		// the only System ID source — publish so it reaches the SiteTracker/API.
@@ -1263,6 +1266,7 @@ const (
 	diagAliasSrc        uint32 = 2 << 24
 	diagVendorBroadcast uint32 = 3 << 24
 	diagVendorProbe     uint32 = 4 << 24
+	diagStatusBroadcast uint32 = 5 << 24
 )
 
 // isStandardBroadcastOpcode reports whether op is one of the band-plan or
@@ -1317,6 +1321,56 @@ func (c *ControlChannel) logUnhandledTSBK(t TSBK, nac uint16) {
 			"mfid", t.MFID, "opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
 			"lb", t.LB, "payload", fmt.Sprintf("%x", t.Payload[:]), "nac", nac)
 	}
+}
+
+// maxStatusBroadcastSamples caps how many raw payloads are dumped per distinct
+// status-broadcast opcode. These broadcasts (adjacent 0x3C, network 0x3B, RFSS
+// 0x3A) ARE decoded and field-decoded — but the parsed result alone can't prove
+// the on-air byte layout when a field tester reports a neighbour/identity
+// mismatch. Pinned a little higher than maxUnhandledSamples so a correlation set
+// of the first several frames (cross-checked against a reference decoder's
+// known neighbours) is enough to confirm or refute a layout theory offline.
+const maxStatusBroadcastSamples = 16
+
+// logStatusBroadcast dumps the raw payload and the fields we decoded from a
+// HANDLED status broadcast, sampled per distinct opcode. Unlike logUnhandledTSBK
+// this changes nothing about parsing or the network model — it is pure
+// instrumentation so the bytes that produced a given neighbour/identity are
+// captured in the log (and the JSONL event sink) for offline verification. The
+// CFVA nibble (byte 1 high nibble: Conventional/Failsoft/Valid/Active) is logged
+// for the adjacent broadcast because the "Valid" bit gates whether the channel
+// field is meaningful.
+func (c *ControlChannel) logStatusBroadcast(t TSBK, nac uint16) {
+	key := diagStatusBroadcast | uint32(t.Opcode)
+	n := c.diagSeen[key]
+	c.diagSeen[key] = n + 1
+	if n >= maxStatusBroadcastSamples {
+		return
+	}
+	p := t.Payload
+	// Raw payload is always logged — it is the ground truth a field tester
+	// cross-checks against a reference decoder. The decoded attrs differ by
+	// opcode: the Network Status Broadcast packs WACN across bytes 1-3 and has
+	// no RFSS/Site, whereas the adjacent (0x3C) and RFSS (0x3A) broadcasts share
+	// the LRA/SysID/RFSS/Site/channel layout.
+	attrs := []any{
+		"opcode", fmt.Sprintf("0x%02X", uint8(t.Opcode)),
+		"name", t.Opcode, "lb", t.LB,
+		"payload", fmt.Sprintf("%x", p[:]),
+		"lra", p[0],
+		"chan", fmt.Sprintf("%X.%03X", p[5]>>4, uint16(p[5]&0x0F)<<8|uint16(p[6])),
+	}
+	if t.Opcode == OpNetworkStatusBroadcast {
+		attrs = append(attrs,
+			"wacn", fmt.Sprintf("%05X", uint32(p[1])<<12|uint32(p[2])<<4|uint32(p[3])>>4),
+			"sysid", fmt.Sprintf("%03X", uint16(p[3]&0x0F)<<8|uint16(p[4])))
+	} else {
+		attrs = append(attrs,
+			"cfva", p[1]>>4, "rfss", p[3], "site", p[4],
+			"sysid", fmt.Sprintf("%03X", uint16(p[1]&0x0F)<<8|uint16(p[2])))
+	}
+	attrs = append(attrs, "nac", nac, "sample", n+1, "max", maxStatusBroadcastSamples)
+	c.log.Info("p25: status broadcast payload", attrs...)
 }
 
 // maxVendorProbeSamples bounds how many raw payloads logVendorProbe dumps per

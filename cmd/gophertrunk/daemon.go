@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -366,6 +367,7 @@ type Daemon struct {
 	mdc1200Log   *storage.MDC1200Log
 	messageLog   *gtlog.MessageLog
 	powerLog     *gtlog.PowerLog
+	eventLog     *gtlog.EventLog
 	retention    *storage.Retention
 	ccCache      *trunking.Cache
 	cchuntSup    *cchunt.Supervisor
@@ -1186,6 +1188,26 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			return nil, fmt.Errorf("daemon: power log: %w", err)
 		}
 		d.powerLog = pl
+	}
+
+	// Event log — optional. Subscribes to the bus and writes every event as
+	// one JSON line (JSONL/NDJSON), using the same wire envelope as the SSE/WS
+	// streams so a recorded session matches what the web UI consumes. Captures
+	// ALL event kinds, so it's the artifact to hand to support when a decode
+	// looks wrong but there's no raw IQ to replay.
+	if cfg.Log.EventLog.Enabled && cfg.Log.EventLog.Path != "" {
+		el, err := gtlog.NewEventLog(gtlog.EventLogOptions{
+			Bus:       d.bus,
+			Path:      cfg.Log.EventLog.Path,
+			MaxSizeMB: cfg.Log.EventLog.MaxSizeMB,
+			Encode: func(ev events.Event) ([]byte, error) {
+				return json.Marshal(api.EventToDTO(ev))
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("daemon: event log: %w", err)
+		}
+		d.eventLog = el
 	}
 
 	// Affiliation tracker — always on. Subscribes to the bus and
@@ -2443,6 +2465,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return d.powerLog.Run(ctx)
 		})
 	}
+	if d.eventLog != nil {
+		d.spawn(runCtx, "eventlog", false, func(ctx context.Context) error {
+			return d.eventLog.Run(ctx)
+		})
+	}
 	if d.affiliations != nil {
 		d.spawn(runCtx, "affiliations", false, func(ctx context.Context) error {
 			return d.affiliations.Run(ctx)
@@ -3122,6 +3149,9 @@ func (d *Daemon) Close() {
 		}
 		if d.powerLog != nil {
 			_ = d.powerLog.Close()
+		}
+		if d.eventLog != nil {
+			_ = d.eventLog.Close()
 		}
 		if d.affiliations != nil {
 			_ = d.affiliations.Close()

@@ -75,6 +75,10 @@ var fieldMetas = map[string]FieldMeta{
 	"PowerLogConfig.Path":        {Help: "File the power log is written to. Empty disables it."},
 	"PowerLogConfig.MaxSizeMB":   {Help: "Rotate the power log at this size in MB. Default 16."},
 	"PowerLogConfig.AllWindows":  {Help: "Log every decode-active window instead of only low-power windows. Off by default."},
+	"LogConfig.EventLog":         {Help: "Optional full event log: every bus event written as one JSON line (JSONL/NDJSON), in the same envelope the web UI consumes. Records a whole session for offline inspection."},
+	"EventLogConfig.Enabled":     {Help: "Turn the JSONL event log on. Needs a Path to write to."},
+	"EventLogConfig.Path":        {Help: "File the JSONL event log is written to. Empty disables it."},
+	"EventLogConfig.MaxSizeMB":   {Help: "Rotate the event log at this size in MB. Default 16."},
 
 	// ---- Diagnostics -------------------------------------------------------
 	"DiagnosticsConfig.VerboseErrors":    {Help: "Print full error chains + stack traces and expand API error envelopes (exposes host/dongle info). Enable only on trusted networks."},
