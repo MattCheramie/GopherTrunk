@@ -110,6 +110,7 @@ func writeCSVSummary(w io.Writer, r *Result) error {
 		"source", "protocol", "sample_rate_hz", "pipeline_rate_hz", "duration_sec",
 		"total_samples", "symbols", "effective_baud", "expected_baud", "baud_deviation_pct",
 		"locked", "lock_latency_sec", "lock_frequency_hz", "grants", "decode_errors", "verdict_pass",
+		"no_lock_reason",
 	}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -129,6 +130,7 @@ func writeCSVSummary(w io.Writer, r *Result) error {
 		ftoa(r.EffectiveBaud), ftoa(r.ExpectedBaud), ftoa(r.BaudDeviationPct),
 		strconv.FormatBool(r.Locked), ftoa(r.LockLatencySec), lockFreq,
 		strconv.Itoa(len(r.Grants)), strconv.Itoa(sumCounts(r.DecodeErrors)), verdict,
+		r.NoLockReason,
 	}
 	if err := cw.Write(row); err != nil {
 		return err

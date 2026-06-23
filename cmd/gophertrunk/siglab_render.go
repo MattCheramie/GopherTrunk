@@ -39,6 +39,9 @@ func renderResultText(w io.Writer, r *siglab.Result) {
 		fmt.Fprintln(w)
 	} else {
 		fmt.Fprintln(w, "siglab: did NOT lock the control channel")
+		if r.NoLockReason != "" {
+			fmt.Fprintf(w, "siglab:   reason: %s\n", r.NoLockReason)
+		}
 	}
 
 	if len(r.Grants) > 0 {

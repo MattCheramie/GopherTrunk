@@ -56,6 +56,14 @@ type Result struct {
 	// Verdict (nil unless Config.Acceptance supplied).
 	Verdict *Verdict `json:"verdict,omitempty" yaml:"verdict,omitempty"`
 
+	// NoLockReason is a human-readable classification of why the control
+	// channel did not lock, populated only when !Locked. It turns a bare "did
+	// not lock" into a named cause — SNR-limited capture / frame sync not
+	// aligned / not the control channel / no signal — from the demod and
+	// frame-decode metrics already gathered, so a capture-quality failure is
+	// not misread as a tuning or AGC bug (issues #764 / #771).
+	NoLockReason string `json:"no_lock_reason,omitempty" yaml:"no_lock_reason,omitempty"`
+
 	// IQTaps is the optional decimated signal capture (channelized IQ +
 	// pre-slicer soft samples) populated when Config.CaptureIQ is set. It
 	// backs the web visualization views (constellation, spectrogram, PSD,

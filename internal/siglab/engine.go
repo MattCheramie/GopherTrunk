@@ -464,6 +464,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 			res.IQTaps.DiffPhase = diffPhaseSeries(an.constBuf, cfg.captureIQMaxPoints())
 		}
 	}
+
+	// Name *why* the control channel did not lock (SNR-limited / misaligned /
+	// not-control / no-signal), from the demod + frame-decode metrics now
+	// attached — so a capture-quality failure is not misread as a tuning or AGC
+	// bug (issues #764 / #771). No-op when locked.
+	res.NoLockReason = classifyNoLockReason(res)
 	return res, nil
 }
 

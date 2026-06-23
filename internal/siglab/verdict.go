@@ -135,6 +135,73 @@ func evaluateAcceptance(r *Result, a *Acceptance) *Verdict {
 	return v
 }
 
+// lockPlausibleEVMPct / lockPlausibleSNRdB are the lock-plausibility
+// heuristics classifyNoLockReason uses to separate an SNR-limited capture from
+// a misalignment. They gate the human-readable *diagnosis* only — never the
+// real lock decision, which stays gated on NID BCH/parity + TSBK CRC in the
+// receiver. The bounds bracket the observed P25 C4FM behaviour on the #771
+// captures (a 7.4 % EVM / 19.7 dB capture locks; a 22.5 % EVM / 9.5 dB capture
+// does not).
+const (
+	lockPlausibleEVMPct = 15.0
+	lockPlausibleSNRdB  = 12.0
+)
+
+// classifyNoLockReason returns a human-readable explanation of why the control
+// channel failed to lock, or "" when it locked. It reuses metrics already on
+// the Result — the P25 frame-decode tally (CCStats), the FSW landscape, and the
+// demod EVM/SNR soft-eye estimate when -diag captured it — and degrades
+// gracefully when the richer diagnostics are absent. The point is to name a
+// capture-quality failure as such, rather than leave it to be misread as a
+// tuning or AGC fault (issues #764 / #771).
+func classifyNoLockReason(r *Result) string {
+	if r.Locked {
+		return ""
+	}
+	if r.Symbols == 0 {
+		return "no symbols were recovered — the input may be empty or not interleaved IQ; check -sample-rate and -format"
+	}
+
+	// P25 deep-path frame outcomes + FSW landscape, when present.
+	var cc *CCStatsBreakdown
+	fswHits := 0
+	if d, ok := r.Detail.(*P25P1Detail); ok && d != nil {
+		cc = d.CCStats
+		fswHits = d.WinningHits
+	}
+
+	// Demod soft-eye quality — only when -diag captured the soft samples.
+	var evm, snr float64
+	haveDemod := r.Signal != nil && r.Signal.Demod != nil
+	if haveDemod {
+		evm = r.Signal.Demod.EVMPct
+		snr = r.Signal.Demod.SNREstimateDB
+	}
+
+	nidValidated := cc != nil && cc.NIDTrusted+cc.NIDMarginal > 0
+	framesSynced := fswHits > 0 || (cc != nil && cc.NIDTrusted+cc.NIDMarginal+cc.NIDFailed > 0)
+
+	switch {
+	case nidValidated:
+		// Valid NIDs decoded but no lock → the frames are not the trunking
+		// control channel (wrong DUID — a voice / traffic carrier).
+		return "valid P25 frames decoded but no trunking-control (TSDU) frame seen — this looks like a voice/traffic channel, not the control channel"
+	case framesSynced:
+		// FSW aligned but the NID never BCH/parity-validates → degraded frames.
+		msg := "frame sync aligned but the NID never validates (BCH/parity) — the channel is too degraded to decode"
+		if haveDemod {
+			msg += fmt.Sprintf(" (EVM %.1f%% / demod SNR %.1f dB)", evm, snr)
+		}
+		return msg
+	case haveDemod && (evm > lockPlausibleEVMPct || snr < lockPlausibleSNRdB):
+		return fmt.Sprintf("a C4FM signal is present at the tune offset but EVM %.1f%% / demod SNR %.1f dB is below the lock threshold — SNR-limited capture, not a tuning or AGC issue", evm, snr)
+	case haveDemod:
+		return fmt.Sprintf("signal present and the eye looks lockable (EVM %.1f%% / demod SNR %.1f dB) but the frame sync never aligned — check -tune-hz / -conjugate, or try -auto-tune", evm, snr)
+	default:
+		return "no frame sync was found — re-run with -diag for an EVM/SNR diagnosis, or try -auto-tune if the control channel may be off-centre"
+	}
+}
+
 // lookupLockField finds a lock field by name, tolerating the snake_case the
 // metadata schema uses vs the Go field names the flattener emits (e.g.
 // "system_id" ↔ "SystemID", "frequency_hz" ↔ the dedicated FrequencyHz).
