@@ -181,16 +181,19 @@ func cleanAlias(raw []byte) string {
 // WACN|System|RadioID|cipher-alias|CRC-16. The source RID therefore
 // falls out of the reassembled prefix (the motorola package decodes it).
 //
-// CAVEAT (#376, air-unverified): the per-PDU byte offsets below are
-// inferred from the post-FEC SDRTrunk dumps in the issue; no IQ fixture
-// is committed. They are structurally tested (TG / blocks / sequence
-// parse, and the SUID prefix → RID 200062 round-trips) but the exact
-// fragment bit-packing — hence the final decoded alias string — needs a
-// real frame to confirm. A wrong offset fails safe: DecodeMessage finds
-// no coherent SUID/length and no alias is published.
+// The per-PDU offsets and the nibble alignment below are anchored to the
+// SDRTrunk-decoded FRAGMENT fields posted in #376 (the same bytes SDRTrunk
+// concatenates into the message it decodes), so reassembly is no longer a
+// guess — assembleMotorolaAliasMessage reproduces SDRTrunk's stream exactly
+// (see TestMotorolaAliasReassemblesSDRTrunkFragmentStream). What remains
+// air-unverified (#376/#773) is the cipher LUT and hence the final decoded
+// alias *string*: no plaintext fixture for a known RID is committed. A
+// wrong cipher still fails safe — DecodeMessage finds no coherent
+// SUID/length, or DecodeAlias flags the result unreliable, and no alias is
+// published.
 //
-// Header payload layout (after ParseMACPDU strips opcode+MFID), inferred
-// from MSG 11 4EF0 02 01 00 06 BEE00164030D7E24 …:
+// Header payload layout (after ParseMACPDU strips opcode+MFID), from
+// SDRTrunk MSG 9190114EF002010006BEE00164030D7E24… / FRAGMENT BEE00164030D7E24:
 //
 //	[0]    length
 //	[1:3]  talkgroup
@@ -198,14 +201,18 @@ func cleanAlias(raw []byte) string {
 //	[4]    format (1 = Unicode)
 //	[5]    sequence (low nibble)
 //	[6]    reserved
-//	[7:]   first cipher fragment (SUID-bearing), trailing FACCH CRC ignored
+//	[7:]   first cipher fragment (SUID-bearing, byte-aligned), trailing FACCH CRC ignored
 //
-// Data payload layout, inferred from MSG 11 01 04 4F6FF2…63C …:
+// Data payload layout, from SDRTrunk MSG 95901101044F6FF2…63C /
+// FRAGMENT 44F6FF2FA9AC3EC34432FA63C:
 //
 //	[0]    length
 //	[1]    block number (1-based)
-//	[2]    sequence (high nibble; low nibble starts the fragment)
-//	[3:]   cipher fragment, trailing FACCH CRC ignored
+//	[2]    sequence (high nibble) + first cipher nibble (low nibble)
+//	[3:]   cipher fragment continues, trailing FACCH CRC ignored
+//
+// The data fragment is therefore NIBBLE-aligned: its low nibble of [2]
+// leads, and fragments concatenate as a nibble stream, not whole bytes.
 const (
 	aliasHeaderFragOffset = 7
 	aliasDataFragOffset   = 3
@@ -236,10 +243,15 @@ func (p MACPDU) AsMotorolaAliasHeader() (MotorolaAliasHeader, bool) {
 	}, true
 }
 
-// MotorolaAliasData is a decoded FACCH-S talker-alias data PDU.
+// MotorolaAliasData is a decoded FACCH-S talker-alias data PDU. The
+// cipher fragment is nibble-aligned: LeadNibble is the low nibble of
+// payload[2] (the first cipher nibble) and Fragment is the byte-aligned
+// remainder. Reassembly must concatenate LeadNibble + Fragment as a
+// nibble stream, not whole bytes (see assembleMotorolaAliasMessage).
 type MotorolaAliasData struct {
 	BlockNumber uint8
 	Sequence    uint8
+	LeadNibble  uint8 // low nibble of payload[2]; first cipher nibble of the block
 	Fragment    []byte
 }
 
@@ -256,6 +268,7 @@ func (p MACPDU) AsMotorolaAliasData() (MotorolaAliasData, bool) {
 	return MotorolaAliasData{
 		BlockNumber: p.Payload[1],
 		Sequence:    p.Payload[2] >> 4,
+		LeadNibble:  p.Payload[2] & 0x0F,
 		Fragment:    append([]byte(nil), p.Payload[aliasDataFragOffset:]...),
 	}, true
 }
@@ -275,6 +288,7 @@ type MotorolaAliasAssembler struct {
 	blockCount uint8
 	header     []byte
 	blocks     map[uint8][]byte
+	leads      map[uint8]uint8 // per-block leading cipher nibble
 	updated    time.Time
 }
 
@@ -284,7 +298,11 @@ func NewMotorolaAliasAssembler(now func() time.Time) *MotorolaAliasAssembler {
 	if now == nil {
 		now = time.Now
 	}
-	return &MotorolaAliasAssembler{now: now, blocks: make(map[uint8][]byte)}
+	return &MotorolaAliasAssembler{
+		now:    now,
+		blocks: make(map[uint8][]byte),
+		leads:  make(map[uint8]uint8),
+	}
 }
 
 // AddHeader feeds a decoded alias header. A header with a new sequence
@@ -296,6 +314,7 @@ func (a *MotorolaAliasAssembler) AddHeader(h MotorolaAliasHeader) (string, uint3
 	}
 	if !a.haveHeader || h.Sequence != a.sequence {
 		a.blocks = make(map[uint8][]byte)
+		a.leads = make(map[uint8]uint8)
 	}
 	a.haveHeader = true
 	a.sequence = h.Sequence
@@ -314,6 +333,7 @@ func (a *MotorolaAliasAssembler) AddData(d MotorolaAliasData) (string, uint32, b
 		return "", 0, false, false
 	}
 	a.blocks[d.BlockNumber] = append([]byte(nil), d.Fragment...)
+	a.leads[d.BlockNumber] = d.LeadNibble
 	a.updated = a.now()
 	return a.tryComplete()
 }
@@ -324,15 +344,17 @@ func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool, bool) {
 	if !a.haveHeader || len(a.blocks) < int(a.blockCount) {
 		return "", 0, false, false
 	}
-	msg := append([]byte(nil), a.header...)
+	blocks := make([][]byte, 0, a.blockCount)
+	leads := make([]uint8, 0, a.blockCount)
 	for i := uint8(1); i <= a.blockCount; i++ {
 		b, ok := a.blocks[i]
 		if !ok {
 			return "", 0, false, false
 		}
-		msg = append(msg, b...)
+		blocks = append(blocks, b)
+		leads = append(leads, a.leads[i])
 	}
-	decoded, ok := motorola.DecodeMessage(msg)
+	decoded, ok := motorola.DecodeMessage(assembleMotorolaAliasMessage(a.header, blocks, leads))
 	if !ok {
 		return "", 0, false, false
 	}
@@ -340,6 +362,49 @@ func (a *MotorolaAliasAssembler) tryComplete() (string, uint32, bool, bool) {
 	// An empty alias (all-non-printable decode) still completes so the
 	// source RID is reported; the publish path drops the empty alias.
 	return decoded.Alias, decoded.RadioID, decoded.AliasReliable, true
+}
+
+// assembleMotorolaAliasMessage rebuilds the packed Motorola alias message
+// from the byte-aligned header fragment and the nibble-aligned data
+// fragments. Each data block contributes a leading cipher nibble (the low
+// nibble of its sequence octet) followed by its byte-aligned fragment, so
+// the fragments must be concatenated as a nibble stream and only then
+// packed back to bytes — matching SDRTrunk's reassembled FRAGMENT stream
+// (#376/#773). A whole-byte concatenation drops each block's leading
+// nibble and shifts the entire cipher region by 4 bits, which is what made
+// the decode fail safe to an empty alias.
+func assembleMotorolaAliasMessage(header []byte, blocks [][]byte, leads []uint8) []byte {
+	nibs := bytesToNibbles(header)
+	for i, b := range blocks {
+		nibs = append(nibs, leads[i]&0x0F)
+		nibs = append(nibs, bytesToNibbles(b)...)
+	}
+	return packNibbles(nibs)
+}
+
+// bytesToNibbles expands each byte into its high then low nibble.
+func bytesToNibbles(b []byte) []uint8 {
+	nibs := make([]uint8, 0, len(b)*2)
+	for _, v := range b {
+		nibs = append(nibs, v>>4, v&0x0F)
+	}
+	return nibs
+}
+
+// packNibbles packs a nibble stream MSB-first into bytes. A trailing odd
+// nibble (the message should be byte-aligned once every block is present)
+// is left-justified into a final byte so no cipher data is silently lost.
+func packNibbles(nibs []uint8) []byte {
+	out := make([]byte, 0, (len(nibs)+1)/2)
+	for i := 0; i < len(nibs); i += 2 {
+		hi := nibs[i] & 0x0F
+		var lo uint8
+		if i+1 < len(nibs) {
+			lo = nibs[i+1] & 0x0F
+		}
+		out = append(out, hi<<4|lo)
+	}
+	return out
 }
 
 func (a *MotorolaAliasAssembler) evictStale() {
@@ -357,5 +422,6 @@ func (a *MotorolaAliasAssembler) reset() {
 	a.blockCount = 0
 	a.header = nil
 	a.blocks = make(map[uint8][]byte)
+	a.leads = make(map[uint8]uint8)
 	a.updated = time.Time{}
 }

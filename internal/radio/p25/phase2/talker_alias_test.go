@@ -154,6 +154,56 @@ func TestMotorolaAliasAssemblerYieldsRID(t *testing.T) {
 	}
 }
 
+// TestMotorolaAliasReassemblesSDRTrunkFragmentStream pins the reassembly
+// to SDRTrunk ground truth (#376/#773). SDRTrunk concatenates the decoded
+// FRAGMENT fields — header BEE00164030D7E24, data1 44F6FF2FA9AC3EC34432FA63C,
+// data2 C81C3C5D96A96000000000000 — into the message it decodes. Each data
+// fragment leads with the low nibble of its sequence octet, so the stream
+// is nibble-aligned, not byte-aligned. The previous whole-byte concat
+// dropped each block's leading nibble and shifted the cipher region by 4
+// bits, so the decode failed safe to an empty alias (the #773 symptom)
+// while the RID still parsed from the byte-aligned header.
+func TestMotorolaAliasReassemblesSDRTrunkFragmentStream(t *testing.T) {
+	h, ok := macPDU(t, aliasHeaderMSG...).AsMotorolaAliasHeader()
+	if !ok {
+		t.Fatal("AsMotorolaAliasHeader returned !ok")
+	}
+	d1, ok := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
+	if !ok {
+		t.Fatal("AsMotorolaAliasData(1) returned !ok")
+	}
+	d2, ok := macPDU(t, aliasData2MSG...).AsMotorolaAliasData()
+	if !ok {
+		t.Fatal("AsMotorolaAliasData(2) returned !ok")
+	}
+
+	got := assembleMotorolaAliasMessage(
+		h.Fragment,
+		[][]byte{d1.Fragment, d2.Fragment},
+		[]uint8{d1.LeadNibble, d2.LeadNibble},
+	)
+
+	// nibble-concat(BEE00164030D7E24, 44F6FF2FA9AC3EC34432FA63C,
+	// C81C3C5D96A96000000000000) packed MSB-first.
+	want := []byte{
+		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
+		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // cipher
+		0x00, 0x00, 0x00, 0x00, // cipher tail
+		0x00, 0x00, // CRC-16
+	}
+	if len(got) != len(want) {
+		t.Fatalf("reassembled length = %d, want %d\n got % X\nwant % X",
+			len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("reassembled stream mismatch at byte %d: got %02X, want %02X\n got % X\nwant % X",
+				i, got[i], want[i], got, want)
+		}
+	}
+}
+
 func TestMotorolaAliasAssemblerWrongOpcodeRejected(t *testing.T) {
 	// A 0x95 PDU before any header must not complete or panic.
 	d, _ := macPDU(t, aliasData1MSG...).AsMotorolaAliasData()
