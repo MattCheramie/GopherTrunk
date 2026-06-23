@@ -1269,3 +1269,227 @@ paths:
       minutes: 12
       level: beginner
       status: full
+
+  - id: ai-software-dev
+    label: "AI in Software Dev"
+    title: "Intro to Using AI in Software Development — from how models work to shipping with them"
+    tagline: "How AI coding tools actually work, the providers and models, the ways to use them, and how to choose your stack and start today."
+    start_slug: what-is-ai-for-coding
+    workload: "PT5H"
+    intro: >
+      AI has gone from novelty to a daily tool for writing software, and this
+      path is a guided, hype-free tour of how to use it well. Start under the
+      hood — how large language models are trained, how they actually decide what
+      to write next, and how the context window that feeds them really works —
+      then map the landscape: which providers and models are used for coding,
+      their strengths and trade-offs, the interfaces you reach them through, and
+      how usage limits and cost work. From there you'll compare the ways people
+      code with AI — the provider's app, an IDE integration, an agentic CLI, or a
+      blend — and the whole spectrum from line-by-line completion to full "vibe
+      coding". You'll learn to steer a model with prompts, skills, and AI config
+      files, and to weigh one model against a combination of several. The path
+      ends by helping you choose your own model, provider, and method and put AI
+      to work in a real project. No coding background required, though the
+      Intro to Software Development path pairs well; examples lean on real
+      software, including the kind of signal-crunching code behind GopherTrunk.
+    modules:
+      - id: how-models-work
+        label: "Module 1 — How AI Models Actually Work"
+        blurb: "Under the hood before the hype: what an AI model is, how it's trained, how it decides what to write, how context works, and which kinds of models write code."
+        lessons:
+          - slug: what-is-ai-for-coding
+            title: What is AI, for a developer?
+            summary: LLMs, "narrow" vs "general", and why today's coding AI is next-token prediction rather than understanding — the one idea everything else builds on.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: how-models-are-trained
+            title: How AI models are trained
+            summary: Pretraining on oceans of text, fine-tuning, and RLHF — and why training explains knowledge cutoffs, bias, and the confident wrong answer.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: how-models-decide
+            title: "How a model decides: tokens & prediction"
+            summary: Tokenization, next-token prediction, temperature and sampling, and why the same prompt can give different code — and sometimes invents an API that doesn't exist.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: context-windows
+            title: The context window, in detail
+            summary: What "context" really is, why it's measured in tokens, the window's hard limits, attention and "lost in the middle", and why context is both your biggest lever and a cost driver.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: types-of-models
+            title: The types of AI models
+            summary: LLMs, reasoning models, embeddings, multimodal, image and speech models — which ones write and plan code, and which power the embedded-AI features a later path will build on.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: providers-and-cost
+        label: "Module 2 — Providers, Models & What They Cost"
+        blurb: "The market you're choosing from: the major providers and models for coding, their strengths and weaknesses, the interfaces you reach them through, and how limits and cost work."
+        lessons:
+          - slug: the-provider-landscape
+            title: The provider & model landscape
+            summary: The major AI providers, proprietary vs open-weight models, and a durable way to think about a field that ships a new leading model every few months.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: coding-models-compared
+            title: Coding models compared
+            summary: The strengths and weaknesses that actually distinguish coding models — capability, context size, speed, autonomy, and cost — framed to outlive this month's leaderboard.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: interfaces-and-access
+            title: "Interfaces: app, API, CLI & IDE"
+            summary: The handful of ways a model reaches you — web chat, raw API, command-line tools, and editor plugins — and what each interface is and isn't for.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: usage-limits-and-tiers
+            title: Usage limits & tiers
+            summary: How rate limits and caps actually work — messages, tokens per minute, usage tiers — the difference between subscription and API metering, and how to design around them.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: understanding-cost
+            title: Understanding the cost
+            summary: Token pricing for input and output, subscriptions vs pay-as-you-go, prompt caching, the real cost drivers, and how to estimate what a workflow will spend.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: ways-to-use
+        label: "Module 3 — Ways to Use AI in Your Workflow"
+        blurb: "Where the AI actually lives while you work: the provider's app, your IDE, an agent in the terminal, or a deliberate blend — with the honest pluses and drawbacks of each."
+        lessons:
+          - slug: the-provider-app
+            title: Using the provider's app
+            summary: The chat window in your browser — the simplest on-ramp, what it's great at, and the copy-paste friction that eventually pushes people elsewhere.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: ide-integration
+            title: AI inside your editor
+            summary: Autocomplete plugins and AI-native editors that see your code as you type — the productivity jump, and the new failure modes that come with it.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: agentic-cli-tools
+            title: Agentic & command-line tools
+            summary: Tools that read your repo, run commands, and edit files on their own — what an agent can do, and the guardrails you need before you let it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: app-vs-ide-vs-both
+            title: App, IDE, agent — or all three?
+            summary: There's no single right answer — how to match the integration method to the task, and why most people end up using more than one.
+            minutes: 8
+            level: intermediate
+            status: full
+
+      - id: coding-modes
+        label: "Module 4 — Modes of AI-Assisted Coding"
+        blurb: "The full spectrum, from a model finishing your line to a model building a feature unattended — what each mode is good for, and where it bites."
+        lessons:
+          - slug: code-completion
+            title: Code & "sentence" completion
+            summary: The inline grey-text suggestions that finish your line or block — how they work, where they shine, and why they rarely lead you far astray.
+            minutes: 8
+            level: beginner
+            status: full
+          - slug: chat-assisted-coding
+            title: Chat-assisted coding
+            summary: Conversation as the interface — generate, explain, refactor, and debug with a human in the loop reviewing every step.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: agentic-and-vibe-coding
+            title: Agentic coding & "vibe coding"
+            summary: Handing the model the wheel — autonomous plan-and-act loops and full "vibe coding", the productivity ceiling they raise, and the risks of trusting output you never read.
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: the-spectrum
+            title: Choosing where on the spectrum to work
+            summary: Completion, chat, agent, vibe — a single spectrum of how much you delegate, how to pick per task, and why every mode still ends in verification.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: directing-behavior
+        label: "Module 5 — Directing How the Model Writes Code"
+        blurb: "Going from random results to reliable ones: prompting well, steering behavior with skills and config files, feeding the right context, and deciding between one model and many."
+        lessons:
+          - slug: prompting-for-code
+            title: Prompting for code
+            summary: What separates a vague request from one that gets the code you wanted — context, constraints, examples, and iterating instead of restarting.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: skills-and-config-files
+            title: "Skills & AI config files"
+            summary: Standing instructions that steer a model every time — skills, rules, and config files like CLAUDE.md and AGENTS.md — so you stop repeating yourself and get consistent code.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: providing-context
+            title: Feeding the model the right context
+            summary: The model only knows what it can see — open files, repo retrieval and RAG, and tool/MCP connections — and how managing context decides the quality of the answer.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: one-model-vs-many
+            title: One model, or a combination?
+            summary: Standardizing on a single model versus routing each task to the best tool — the case for each, and how multi-model setups actually work in practice.
+            minutes: 9
+            level: intermediate
+            status: full
+
+      - id: putting-it-together
+        label: "Module 6 — Putting AI to Work in Your Projects"
+        blurb: "Everything applied: choose your model and provider, pick your method, keep the output trustworthy and safe, and start using AI in a real project today."
+        lessons:
+          - slug: choosing-model-and-provider
+            title: Choosing your model & provider
+            summary: A repeatable framework for picking a model and provider — or a deliberate combination — driven by your work, budget, and constraints rather than the hype cycle.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: choosing-your-method
+            title: Choosing your method
+            summary: App, IDE, agent, or a blend — matching how you reach the model to how you actually work, and assembling a setup you'll stick with.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: verification-and-trust
+            title: Verifying AI-written code
+            summary: AI writes plausible code, not always correct code — reviewing it, leaning on tests, catching hallucinations, and the discipline that keeps speed from costing you quality.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: security-privacy-ethics
+            title: Security, privacy & ethics
+            summary: Where your code and prompts go, the licensing and IP questions, leaking secrets, the security of AI-written code, and using these tools responsibly.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: getting-started-today
+            title: Getting started today
+            summary: Turning the whole path into action — concrete first steps for a real project, a worked example, and a look ahead to building AI into the software you ship.
+            minutes: 10
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of AI-for-development terms
+      summary: Plain-language definitions for every term in the learning path — token, context window, RLHF, embedding, RAG, MCP, agent, vibe coding, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
