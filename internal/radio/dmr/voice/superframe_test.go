@@ -148,6 +148,62 @@ func buildInterleavedStream(t *testing.T, n, lead int) (stream []uint8, aFrames,
 	return stream, aFrames, bFrames
 }
 
+// mkCodewordFrame builds a deterministic, distinct 72-bit on-air AMBE frame
+// that is a VALID Golay codeword (EncodeAMBEFrame of a seeded 49-bit payload).
+// Unlike mkFrame's arbitrary bit pattern, such a frame decodes with zero
+// corrected bits at the right cadence, so a wrong-cadence slice — which mixes
+// in the other slot / CACH — scores measurably higher. This is what exercises
+// the AMBE-FEC cadence detection (see ambeErrorScore / resolveAndSlice).
+func mkCodewordFrame(t *testing.T, seed int) []byte {
+	t.Helper()
+	info := make([]byte, 49)
+	info[0] = 1 // keep payloads non-trivial so a misaligned read clearly differs
+	for i := 1; i < 49; i++ {
+		info[i] = byte((seed*7 + i*3) & 1)
+	}
+	f, err := EncodeAMBEFrame(info)
+	if err != nil {
+		t.Fatalf("EncodeAMBEFrame: %v", err)
+	}
+	return f
+}
+
+// buildInterleavedStreamNoLC weaves a 2-slot TDMA stream with NO embedded Link
+// Control (bursts B–E carry BS-Data filler, like buildInterleavedStream), cach
+// filler dibits before each woven burst (cach=12 models the 288-dibit outbound
+// cadence; cach=0 the 264 CACH-free one), and — when codewords is true — frames
+// that are valid AMBE codewords so cadence can be found by FEC quality alone.
+func buildInterleavedStreamNoLC(t *testing.T, n, lead, cach int, codewords bool) (stream []uint8, aFrames, bFrames [][]byte) {
+	t.Helper()
+	const bSeedOffset = 10000
+	mk := mkFrame
+	if codewords {
+		mk = func(seed int) []byte { return mkCodewordFrame(t, seed) }
+	}
+	stream = make([]uint8, lead)
+	total := n * FramesPerSuperframe
+	for f := 0; f < total; f++ {
+		aFrames = append(aFrames, mk(f))
+		bFrames = append(bFrames, mk(f+bSeedOffset))
+	}
+	cachFiller := make([]uint8, cach)
+	for s := 0; s < n; s++ {
+		for b := 0; b < BurstsPerSuperframe; b++ {
+			sync := dmr.BSData.Dibits
+			if b == 0 {
+				sync = dmr.BSVoice.Dibits
+			}
+			base := s*FramesPerSuperframe + b*FramesPerBurst
+			stream = append(stream, cachFiller...)
+			stream = append(stream, makeVoiceBurst(aFrames[base:base+FramesPerBurst], sync)...)
+			stream = append(stream, cachFiller...)
+			stream = append(stream, makeVoiceBurst(bFrames[base:base+FramesPerBurst], sync)...)
+		}
+	}
+	stream = append(stream, make([]uint8, interleaveTail)...)
+	return stream, aFrames, bFrames
+}
+
 func checkFrames(t *testing.T, sf VoiceSuperframe, frames [][]byte, firstFrame int) {
 	t.Helper()
 	for i := 0; i < FramesPerSuperframe; i++ {
@@ -457,6 +513,66 @@ func TestInterleavedDecoderAutoDetectsNoCACHCadence(t *testing.T) {
 	}
 	checkFrames(t, got[0], aFrames, 0)
 	checkFrames(t, got[1], bFrames, 0)
+}
+
+// TestInterleavedDecoderDetectsCACHCadenceWithoutLC is the reopened-#644 guard.
+// On a real outbound DMR carrier a 12-dibit CACH precedes each burst, so a
+// call's same-slot bursts are 288 dibits apart, not 264 — and the embedded
+// Link Control (whose FEC/CRC constants are still unvalidated against live air)
+// frequently never decodes. The old detector keyed cadence ONLY on a CRC-valid
+// LC, so it fell back to 264 and sliced every burst B–F 24 dibits off, garbling
+// the audio ("sounds encrypted"). The decoder must instead detect the 288
+// cadence from AMBE FEC quality and separate the slots cleanly.
+func TestInterleavedDecoderDetectsCACHCadenceWithoutLC(t *testing.T) {
+	stream, aFrames, bFrames := buildInterleavedStreamNoLC(t, 1, 0, cachDibits, true)
+
+	d := NewInterleavedDecoder()
+	got := d.Process(stream, 0)
+	if len(got) != 2 {
+		t.Fatalf("got %d superframes, want 2 (one per timeslot)", len(got))
+	}
+	if d.lockedStep != 2*(dmr.BurstDibits+cachDibits) {
+		t.Errorf("lockedStep = %d, want %d (288 CACH cadence detected via FEC)", d.lockedStep, 2*(dmr.BurstDibits+cachDibits))
+	}
+	for _, sf := range got {
+		if sf.HasLC {
+			t.Fatalf("unexpected HasLC on a no-LC stream — test would lock via LC, not FEC")
+		}
+	}
+	checkFrames(t, got[0], aFrames, 0)
+	checkFrames(t, got[1], bFrames, 0)
+}
+
+// TestInterleavedDecoderDetectsNoCACHCadenceWithoutLC is the symmetric case: a
+// CACH-free 264-cadence carrier with no decodable LC must lock 264 via FEC.
+func TestInterleavedDecoderDetectsNoCACHCadenceWithoutLC(t *testing.T) {
+	stream, aFrames, bFrames := buildInterleavedStreamNoLC(t, 1, 0, 0, true)
+
+	d := NewInterleavedDecoder()
+	got := d.Process(stream, 0)
+	if len(got) != 2 {
+		t.Fatalf("got %d superframes, want 2", len(got))
+	}
+	if d.lockedStep != 2*dmr.BurstDibits {
+		t.Errorf("lockedStep = %d, want %d (264 cadence detected via FEC)", d.lockedStep, 2*dmr.BurstDibits)
+	}
+	checkFrames(t, got[0], aFrames, 0)
+	checkFrames(t, got[1], bFrames, 0)
+}
+
+// TestInterleavedDecoderDoesNotLockOnGarbledFrames pins the locking margin: on
+// data that is not valid AMBE codewords at EITHER cadence (no clear FEC winner,
+// both scores above the ceiling) the decoder must NOT lock a cadence — it stays
+// open so a later clean / LC-bearing superframe can detect — rather than guess
+// and risk garbling a carrier the FEC can't actually discriminate.
+func TestInterleavedDecoderDoesNotLockOnGarbledFrames(t *testing.T) {
+	stream, _, _ := buildInterleavedStreamNoLC(t, 1, 0, cachDibits, false) // mkFrame, non-codewords
+
+	d := NewInterleavedDecoder()
+	d.Process(stream, 0)
+	if d.lockedStep != 0 {
+		t.Errorf("lockedStep = %d, want 0 (no clear FEC winner must not lock)", d.lockedStep)
+	}
 }
 
 // TestDecoderSuperframeNoLCWhenAbsent confirms a superframe whose B–E
