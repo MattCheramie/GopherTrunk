@@ -1,0 +1,45 @@
+name: Docs site check
+
+# Builds the docs/ Jekyll site on every PR that touches it and verifies the
+# site map stays complete — every rendered page is in sitemap.xml and linked
+# from the human-readable /sitemap/ page. This runs on pull_request (the Pages
+# deploy in pages.yml only runs on push to main), so an orphaned or
+# un-listed new page is caught before it merges.
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - ".github/workflows/docs-check.yml"
+      - ".github/scripts/check_site_pages.py"
+
+permissions:
+  contents: read
+
+jobs:
+  sitemap-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirror pages.yml so the built site matches production (the homepage is
+      # synthesized from README.md, so / exists and lands in sitemap.xml).
+      - name: Synthesize landing page from README.md
+        run: |
+          {
+            printf -- '---\nlayout: home\n---\n\n'
+            sed -E \
+              -e 's|docs/assets/|/assets/|g' \
+              -e 's|\]\(docs/([a-z0-9_-]+)\.md(#[^)]*)?\)|](/\1.html\2)|g' \
+              README.md \
+              | sed '0,/^---$/d'
+          } > docs/index.md
+
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Verify every page is in the site map
+        run: python3 .github/scripts/check_site_pages.py _site

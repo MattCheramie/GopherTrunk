@@ -16,7 +16,7 @@ linked to the lesson where it's explained in full. Skim it as a refresher, or us
 your browser's find (Ctrl/Cmd-F) to jump to a word. Terms are grouped by theme and
 ordered roughly from fundamentals to systems.
 
-> **Want the long version?** Many of these terms have a full, encyclopedia-style
+> **Want the long version?** Many of these terms have a full, in-depth
 > article in the [GopherTrunk Field Guide](/reference/) — and the first mention of a
 > covered term on any page links straight to it.
 

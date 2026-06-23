@@ -357,8 +357,10 @@ button { font: inherit; cursor: pointer; }
     background: transparent;
     display: none;
   }
-  .nav-group:hover .nav-group__items,
-  .nav-group:focus-within .nav-group__items,
+  // On touch/mobile the submenu is driven solely by the JS-toggled
+  // .is-open class. Hover/focus-within are deliberately excluded here:
+  // a tapped <button> keeps :focus, so a focus-within rule would re-show
+  // the menu right after the JS removed .is-open, defeating tap-to-close.
   .nav-group.is-open .nav-group__items { display: block; }
   .site-nav__external {
     margin-top: 0.5rem;
@@ -1235,7 +1237,7 @@ a.category-chip:hover {
 }
 
 /* ====================================================================
-   Reference (encyclopedia) — visually distinct from the learning hub
+   Reference (Field Guide) — visually distinct from the learning hub
    ==================================================================== */
 
 .ref-eyebrow {
@@ -1416,6 +1418,28 @@ a.category-chip:hover {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+/* Demoted state: applied by site.js to the CTA a visitor has already acted
+   on, so the un-clicked CTA (promoted above it) reads as the primary ask. */
+.page-cta--demoted {
+  margin: 1.5rem 0;
+  padding: 0.9rem 1.1rem;
+  box-shadow: none;
+  border-left-width: 3px;
+  opacity: 0.85;
+}
+.page-cta--demoted .page-cta__title { font-size: 1.05rem; }
+.page-cta--demoted .page-cta__lede { font-size: 0.9rem; margin-bottom: 0.75rem; }
+
+@media (max-width: 600px) {
+  .page-cta {
+    margin: 1.75rem 0;
+    padding: 1rem 1.1rem;
+  }
+  .page-cta__title { font-size: 1.1rem; }
+  .page-cta__actions { width: 100%; }
+  .page-cta__actions .btn { flex: 1 1 auto; justify-content: center; }
 }
 
 /* ---------- "Join the conversation" band (above the footer) ---------- */

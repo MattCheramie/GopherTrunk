@@ -15,38 +15,16 @@ groups:
     items:
       - title: All learning paths
         url: /learn/
-      - title: "RF & SDR — overview"
+      - title: "RF & SDR"
         url: /learn/rf-sdr/
-      - title: "RF & SDR · RF fundamentals"
-        url: /learn/rf-sdr/#rf-fundamentals
-      - title: "RF & SDR · Signals & modulation"
-        url: /learn/rf-sdr/#signals-modulation
-      - title: "RF & SDR · Software-defined radio"
-        url: /learn/rf-sdr/#sdr
-      - title: "RF & SDR · DSP essentials"
-        url: /learn/rf-sdr/#dsp
-      - title: "RF & SDR · Digital voice & trunking"
-        url: /learn/rf-sdr/#digital-voice-trunking
-      - title: "RF & SDR · Using GopherTrunk"
-        url: /learn/rf-sdr/#gophertrunk
-      - title: "RF & SDR · Glossary"
-        url: /learn/rf-sdr/glossary/
-      - title: "Git & GitHub — overview"
+      - title: "Git & GitHub"
         url: /learn/git/
-      - title: "Git & GitHub · Foundations"
-        url: /learn/git/#git-foundations
-      - title: "Git & GitHub · Everyday Git"
-        url: /learn/git/#everyday-git
-      - title: "Git & GitHub · Branching & merging"
-        url: /learn/git/#branching-merging
-      - title: "Git & GitHub · Remotes & GitHub"
-        url: /learn/git/#remotes-github
-      - title: "Git & GitHub · Collaboration & features"
-        url: /learn/git/#github-features
-      - title: "Git & GitHub · Advanced & best practices"
-        url: /learn/git/#advanced-git
-      - title: "Git & GitHub · Glossary"
-        url: /learn/git/glossary/
+      - title: "Intro to Software Dev"
+        url: /learn/intro-software-dev/
+      - title: "Digital Trunking"
+        url: /learn/digital-trunking/
+      - title: "Intro to Hardware"
+        url: /learn/intro-hardware/
   - label: Field Guide
     items:
       - title: Field Guide overview
@@ -87,8 +65,6 @@ groups:
         url: /reference/#principles-quality
       - title: Testing, tooling & delivery
         url: /reference/#testing-delivery
-      - title: A–Z index
-        url: /reference/#a-z
   - label: About
     items:
       - title: The Story of GopherTrunk
