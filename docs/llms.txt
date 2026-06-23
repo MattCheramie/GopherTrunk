@@ -28,9 +28,9 @@ Start: {{ base | absolute_url }}
 - [{{ path.glossary.title }}]({{ base | append: 'glossary/' | absolute_url }}): {{ path.glossary.summary }}
 {% endif %}{% endfor %}
 
-## Field Guide (encyclopedia)
+## Field Guide
 
-Long-form, encyclopedia-style articles defining radio, SDR, and software-development
+Long-form reference articles defining radio, SDR, and software-development
 terms, technologies, algorithms, languages, concepts, people, hardware, and
 organizations. Browse: {{ '/reference/' | absolute_url }}
 {% for d in site.data.reference.domains %}
@@ -50,3 +50,7 @@ organizations. Browse: {{ '/reference/' | absolute_url }}
 - [Architecture]({{ '/architecture.html' | absolute_url }}): how the engine is built.
 - [Vocoders]({{ '/vocoders.html' | absolute_url }}): IMBE and AMBE+2 voice decoding.
 - [Status]({{ '/status.html' | absolute_url }}): protocol and decoder coverage.
+
+## More
+- [Full site map]({{ '/sitemap/' | absolute_url }}): a browsable index of every page on the site.
+- [Blog]({{ '/blog/' | absolute_url }}): release notes, deep dives, and build-in-the-open posts.

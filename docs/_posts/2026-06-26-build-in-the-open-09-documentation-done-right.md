@@ -134,7 +134,7 @@ first-class part of the repo, and the layout maps cleanly onto everything above:
   - **Tutorials / learning:** a **30-lesson learning path** under `docs/learn/rf-sdr/`
     (from `what-is-sdr.md` through `clock-recovery.md`, `digital-voice.md`, and a
     `glossary.md`) — the learning-oriented tier.
-  - **Reference:** a **~180-entry reference encyclopedia** under
+  - **Reference:** a **~180-entry Field Guide** under
     `docs/reference/` — the information-oriented tier you look things up in.
   - **How-to guides:** install guides per platform (`install-linux.md`,
     `install-macos.md`, `install-windows.md`), getting-started pages, and

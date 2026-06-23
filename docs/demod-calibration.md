@@ -1,3 +1,10 @@
+---
+layout: page
+title: P25 Phase 1 demodulator calibration
+description: Operator's guide to the P25 Phase 1 demodulator measurement harness — EVM, SNR estimate, pre-FEC error rate, and FSW sync-margin that show whether a weak decode is the demodulator or a marginal signal.
+nav_group: Technical docs
+---
+
 # P25 Phase 1 demodulator calibration & measurement
 
 This is the operator's guide to the P25 Phase 1 **demodulator measurement

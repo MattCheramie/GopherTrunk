@@ -1,3 +1,10 @@
+---
+layout: page
+title: Decoders that need live RF captures
+description: Which GopherTrunk decoders are blocked on a real over-the-air capture before they can be called fully validated — and exactly what to record for each (format, sample rate, modulation, duration, and pass bar).
+nav_group: Technical docs
+---
+
 # GopherTrunk — Decoders that still need live RF captures
 
 A walk through every decoder in the tree, flagging which ones are

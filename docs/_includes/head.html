@@ -52,6 +52,45 @@ chip). Only rendered on the homepage to avoid duplicate-entity signals.
   }
 }
 </script>
+{%- comment -%}
+Organization + WebSite entities, homepage only. The WebSite carries a
+SearchAction so Google can render a sitelinks search box; the Organization
+(with sameAs social links) gives search and AI crawlers a stable brand entity.
+Both use @id keyed to the canonical (trailing-slash) site URL so they
+consolidate with jekyll-seo-tag's WebSite node rather than duplicate it.
+{%- endcomment -%}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ site.url }}/#organization",
+      "name": {{ site.title | jsonify }},
+      "url": "{{ site.url }}/",
+      "logo": {{ site.url | append: site.image | jsonify }},
+      "sameAs": [
+        "https://github.com/MattCheramie/GopherTrunk",
+        "https://www.reddit.com/r/GopherTrunk",
+        "https://discord.gg/x49Hr62uH"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "{{ site.url }}/#website",
+      "url": "{{ site.url }}/",
+      "name": {{ site.title | jsonify }},
+      "description": {{ site.description | jsonify }},
+      "publisher": { "@id": "{{ site.url }}/#organization" },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "{{ site.url }}/search/?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+  ]
+}
+</script>
 {%- endif -%}
 
 <script>

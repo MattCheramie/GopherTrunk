@@ -76,6 +76,11 @@ jobs:
           source: ./docs
           destination: ./_site
 
+      # Block the deploy if a page fell out of the site map (missing from
+      # sitemap.xml or not linked from /sitemap/). Same check runs on PRs.
+      - name: Verify every page is in the site map
+        run: python3 .github/scripts/check_site_pages.py _site
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./_site
