@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useShared } from "../store/shared";
 import { groupEvents } from "../lib/groupEvents";
@@ -97,17 +97,21 @@ export function CCActivity() {
     return list.reverse();
   }, [events, talkgroups, systemFilter, kindFilter, grouped]);
 
-  // Pause must actually freeze the table so an operator can read/click a row
-  // without it churning under them: snapshot rows at the moment of pausing and
-  // render that snapshot until resumed. (Previously `paused` re-sliced the live
-  // rows, so it never froze anything.)
-  const rowsRef = useRef(rows);
-  rowsRef.current = rows;
-  const [frozen, setFrozen] = useState<Row[] | null>(null);
-  useEffect(() => {
-    setFrozen(paused ? rowsRef.current : null);
-  }, [paused]);
-  const displayRows = frozen ?? rows;
+  // Pause freezes the table so an operator can read/click a row without it
+  // churning. Snapshot synchronously during render the first time we see
+  // `paused`, so there is no effect-timing window where a live SSE batch can
+  // leak through after the click (#772). An earlier fix snapshotted in a
+  // post-paint useEffect, which left a render cycle where the live rows were
+  // still committed — and because the store is a useSyncExternalStore, an event
+  // batch arriving in that window re-rendered before the freeze engaged.
+  // Cleared on resume.
+  const frozenRef = useRef<Row[] | null>(null);
+  if (paused) {
+    if (frozenRef.current === null) frozenRef.current = rows;
+  } else {
+    frozenRef.current = null;
+  }
+  const displayRows = paused ? (frozenRef.current ?? rows) : rows;
 
   return (
     <div className="space-y-3">
