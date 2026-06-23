@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -291,6 +291,49 @@ describe("CCActivity panel", () => {
     expect(row!.textContent).toMatch(/12\.50 kHz spacing/);
     expect(row!.textContent).toMatch(/6 pairs/);
     expect(row!.textContent).toMatch(/conf 97%/);
+  });
+
+  // Guard test for #772 (re: #672): once paused, the displayed table must
+  // not grow as new CC events land in the store. Note: testing-library's
+  // act() flushes effects, so this passes against both the old effect-based
+  // freeze and the synchronous-ref freeze — it is a regression guard, not a
+  // fail-first reproduction (the real bug lives in the unbatched
+  // useSyncExternalStore render path that jsdom can't reproduce). Live-browser
+  // verification is the actual proof of the fix.
+  it("freezes the table on pause: new events do not add rows (#772)", async () => {
+    setEvents([
+      {
+        kind: "grant",
+        timestamp: "2026-05-26T12:00:00Z",
+        payload: { system: "Sys-A", group_id: 1 },
+      },
+    ]);
+    renderPanel();
+    expect(screen.getByText("1 matching event")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /pause/i }));
+    expect(screen.getByText(/paused/)).toBeInTheDocument();
+
+    // A new CC event arrives while paused, via the real append path.
+    act(() => {
+      useShared.getState().appendEvents([
+        {
+          kind: "grant",
+          timestamp: "2026-05-26T12:00:05Z",
+          payload: { system: "Sys-B", group_id: 2 },
+        },
+      ]);
+    });
+
+    // Frozen: still one row; Sys-B must not appear. While paused the counter
+    // carries a " (paused …)" suffix, so match the count substring.
+    expect(screen.getByText(/^1 matching event/)).toBeInTheDocument();
+    expect(screen.queryByText("Sys-B")).not.toBeInTheDocument();
+
+    // Resume re-syncs to the live store (now two rows).
+    await userEvent.click(screen.getByRole("button", { name: /resume/i }));
+    expect(screen.getByText("2 matching events")).toBeInTheDocument();
+    expect(screen.getByText("Sys-B")).toBeInTheDocument();
   });
 
   it("renders talker alias events", () => {

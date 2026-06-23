@@ -125,6 +125,25 @@ jobs:
           go-version: "1.25.11"
       - run: make test-integration
 
+  # web-test runs the SPA's vitest suite (web/src/**/*.test.tsx) so a
+  # broken web panel can't land unverified — the gap that let #672's CC
+  # Activity pause "fix" ship while the symptom was still live (#772). Not
+  # yet a required check; promote it in the `Protect main` ruleset to gate
+  # merges on it.
+  web-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+        working-directory: web
+      - name: Test
+        run: npm test
+        working-directory: web
+
   # govulncheck enumerates known CVEs that affect the direct +
   # transitive dependency graph. Failing this job blocks merge — a
   # known-vulnerable dep means the operator has to either upgrade
