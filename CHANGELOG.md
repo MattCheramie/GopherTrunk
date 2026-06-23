@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
+  one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
+  trunking capture, explaining that the down-converter normalises to 48 kHz and
+  that the top native clock on wideband front-ends (e.g. Airspy R2 at 10 MS/s)
+  can degrade in-channel SNR via phase noise / reciprocal mixing — the verified
+  root cause of the #771 no-lock report. A new "Choosing a sample rate" section
+  in `docs/hardware.md` documents the finding and recommends ~2.4–2.5 MS/s for
+  control-channel roles.
+
 ## [v0.5.1] — 2026-06-23
 
 A maintenance release headlined by a new **ka9q-radio network SDR source** —

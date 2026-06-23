@@ -128,6 +128,10 @@ FLAGS:`)
 	fmt.Printf("capture: %s[%s] @ %d Hz, %g MS/s → %s for %gs…\n",
 		info.Driver, info.Serial, *freq, float64(*sampleRate)/1e6, *out, *seconds)
 
+	if hint := captureSampleRateHint(uint32(*sampleRate), *protocol); hint != "" {
+		fmt.Fprintln(os.Stderr, hint)
+	}
+
 	written, capErr := captureToFile(ctx, *out, sampleFormat, stream, uint32(*sampleRate), *seconds)
 	if capErr != nil && !errors.Is(capErr, context.Canceled) {
 		rep.Fatal(1, fmt.Errorf("capture: %w (wrote %d samples to %s)", capErr, written, *out))
@@ -266,6 +270,56 @@ func captureToFile(ctx context.Context, path string, format siglab.SampleFormat,
 }
 
 // serialsOf renders the serials of the discovered devices for a friendly hint.
+// captureSampleRateHint returns a one-line front-end guidance note when the
+// requested rate is far higher than a single narrowband trunking channel needs,
+// or "" when no hint applies. Very high native rates on a wideband front-end
+// (e.g. Airspy R2 at 10 MS/s) can raise the in-channel noise floor via clock
+// phase noise / reciprocal mixing and degrade decode even without clipping
+// (issue #771). The decoder down-converts one channel to 48 kHz regardless of
+// capture rate, so a few MS/s is already generous for the narrowband
+// (P25/DMR/NXDN/dPMR/YSF/D-STAR) family.
+//
+// The hint fires when the rate is high AND the capture is for a narrowband
+// protocol (or none was declared — the common case, and the one in the #771
+// repro). An explicit non-narrowband protocol is a deliberate wide grab, so it
+// is left alone.
+func captureSampleRateHint(sampleRateHz uint32, protocol string) string {
+	// 4 MS/s sits above the 2.4 MS/s flag default and the recommended
+	// ~2.5 MS/s while staying below the common 6/10 MSPS Airspy slots that
+	// trip #771 — generous headroom for a single ~12.5 kHz channel.
+	const highRateThresholdHz = 4_000_000
+
+	if sampleRateHz <= highRateThresholdHz {
+		return ""
+	}
+	if p := strings.ToLower(strings.TrimSpace(protocol)); p != "" && !isNarrowbandTrunkingProtocol(p) {
+		return ""
+	}
+	return fmt.Sprintf(
+		"capture: note — %.1f MS/s is a high native rate for a single narrowband channel "+
+			"(the downconverter normalises to 48 kHz, so the extra bandwidth buys nothing). "+
+			"On wideband front-ends (e.g. Airspy R2) the top native clock can degrade in-channel "+
+			"SNR via phase noise / reciprocal mixing (issue #771); prefer ~2.4-2.5 MS/s for "+
+			"control-channel captures. See docs/hardware.md \"Choosing a sample rate\".",
+		float64(sampleRateHz)/1e6)
+}
+
+// isNarrowbandTrunkingProtocol reports whether p (case-insensitive, already
+// trimmed/lowered by the caller) names a trunking protocol whose channels are
+// narrow enough that a few hundred kHz of capture bandwidth is ample. Used to
+// gate captureSampleRateHint so deliberate wideband IQ grabs aren't nagged.
+func isNarrowbandTrunkingProtocol(p string) bool {
+	switch p {
+	case "p25", "p25p1", "p25-phase1", "p25p2", "p25-phase2",
+		"dmr", "dmr-tier1", "dmr-tier2", "dmr-tier3",
+		"nxdn", "nxdn48", "nxdn96", "dpmr", "dstar", "d-star", "ysf",
+		"tetra", "mpt1327", "mpt-1327", "ltr", "edacs":
+		return true
+	default:
+		return false
+	}
+}
+
 func serialsOf(infos []sdr.Info) string {
 	out := make([]string, 0, len(infos))
 	for _, in := range infos {
