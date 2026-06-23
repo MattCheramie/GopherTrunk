@@ -65,6 +65,20 @@ groups:
         url: /reference/#principles-quality
       - title: Testing, tooling & delivery
         url: /reference/#testing-delivery
+      - title: "Hardware (computers & devices)"
+        url: /reference/#domain-hardware-devices
+      - title: Hardware foundations
+        url: /reference/#hw-foundations
+      - title: Servers & hosting
+        url: /reference/#hw-servers
+      - title: Personal computers
+        url: /reference/#hw-personal-computers
+      - title: Mobile devices
+        url: /reference/#hw-mobile
+      - title: Single-board computers
+        url: /reference/#hw-sbc
+      - title: Microcontrollers
+        url: /reference/#hw-microcontrollers
   - label: About
     items:
       - title: The Story of GopherTrunk

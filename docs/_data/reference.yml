@@ -367,3 +367,67 @@ domains:
           - { slug: semantic-versioning, title: Semantic versioning, type: concept }
           - { slug: rest, title: REST, type: concept }
           - { slug: version-control, title: Version control, type: concept }
+
+  - id: hardware-devices
+    label: "Hardware (computers & devices)"
+    blurb: The computing hardware a developer chooses between — from cloud servers down to the microcontroller — what each is for, what runs on it, and its trade-offs.
+    categories:
+      - id: hw-foundations
+        label: Hardware foundations
+        blurb: The parts inside every computer and the ideas that span the whole spectrum from cloud to chip.
+        entries:
+          - { slug: computer-hardware, title: Computer hardware, type: concept }
+          - { slug: central-processing-unit, title: Central processing unit (CPU), type: hardware }
+          - { slug: random-access-memory, title: Random-access memory (RAM), type: hardware }
+          - { slug: data-storage, title: Storage (SSD, HDD, flash), type: hardware }
+          - { slug: input-output, title: Input/output (I/O), type: concept }
+          - { slug: operating-system, title: Operating system, type: concept }
+          - { slug: hardware-spectrum, title: The hardware spectrum, type: concept }
+
+      - id: hw-servers
+        label: Servers & hosting
+        blurb: Where software runs for other people — shared hosting, VPSes, dedicated and home servers, and the cloud behind them.
+        entries:
+          - { slug: server, title: Server, type: hardware }
+          - { slug: web-hosting, title: Web & shared hosting, type: concept }
+          - { slug: virtual-private-server, title: Virtual private server (VPS), type: concept }
+          - { slug: dedicated-server, title: Dedicated server, type: hardware }
+          - { slug: home-server, title: Home server & self-hosting, type: concept }
+          - { slug: cloud-computing, title: Cloud computing, type: concept }
+          - { slug: virtualization, title: Virtualization, type: concept }
+
+      - id: hw-personal-computers
+        label: Personal computers
+        blurb: The machines you build software on — the desktop-vs-laptop trade and what each is for.
+        entries:
+          - { slug: personal-computer, title: Personal computer, type: hardware }
+          - { slug: desktop-computer, title: Desktop computer, type: hardware }
+          - { slug: laptop, title: Laptop, type: hardware }
+
+      - id: hw-mobile
+        label: Mobile devices
+        blurb: The computers in everyone's pocket and bag, and what it takes to build software for them.
+        entries:
+          - { slug: smartphone, title: Smartphone, type: hardware }
+          - { slug: tablet, title: Tablet, type: hardware }
+          - { slug: mobile-app-development, title: Mobile app development, type: concept }
+
+      - id: hw-sbc
+        label: Single-board computers
+        blurb: A complete Linux computer on one small board — the Raspberry Pi and its rivals, and the GPIO header that touches the physical world.
+        entries:
+          - { slug: single-board-computer, title: Single-board computer (SBC), type: hardware }
+          - { slug: raspberry-pi, title: Raspberry Pi, type: hardware }
+          - { slug: nvidia-jetson, title: NVIDIA Jetson, type: hardware }
+          - { slug: beaglebone, title: BeagleBone, type: hardware }
+          - { slug: gpio, title: GPIO, type: hardware }
+
+      - id: hw-microcontrollers
+        label: Microcontrollers
+        blurb: The tiny, cheap, low-power chips that run the physical world — no OS, the Arduino, and the wireless ESP32.
+        entries:
+          - { slug: microcontroller, title: Microcontroller (MCU), type: hardware }
+          - { slug: arduino, title: Arduino, type: hardware }
+          - { slug: esp32, title: ESP32, type: hardware }
+          - { slug: firmware, title: Firmware, type: concept }
+          - { slug: internet-of-things, title: Internet of Things (IoT), type: concept }
