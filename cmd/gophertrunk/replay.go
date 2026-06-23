@@ -41,6 +41,7 @@ func runReplay(args []string) {
 	diag := fs.Bool("diag", false, "collect the demod-quality diagnostic report (symbol histogram + P25 FSW landscape + soft-sample eye) and print it at EOF")
 	enableDDA := fs.Bool("dda", false, "enable the experimental decision-directed AFC on the P25 C4FM path (off by default; see issue #402)")
 	enableAdaptiveSlicer := fs.Bool("adaptive-slicer", false, "enable the adaptive C4FM slicer on the P25 C4FM path (off by default; see issue #402)")
+	enableSoftSync := fs.Bool("soft-sync", false, "widen the P25 FSW correlator and admit looser sync words whose TSBK CRC corroborates the NID — extends lock reach on marginal-SNR captures without risking a false lock (off by default; see issue #771)")
 	iqCorrect := fs.Bool("iq-correct", false, "apply blind I/Q-imbalance correction to the raw IQ before decimation (off by default; see issue #402)")
 	tuneHzFlag := fs.Float64("tune-hz", 0, "frequency-shift the capture so a channel at +tune-hz lands at 0 Hz before demod (0 = no shift)")
 	autoTune := fs.Bool("auto-tune", false, "find the control channel by trying the ranked carrier candidates and keeping the best lock — handles an off-centre / non-dominant control channel in a wideband capture (overrides -tune-hz)")
@@ -118,6 +119,7 @@ FLAGS:`)
 		NIDSearchSpan:        *nidSearchSpan,
 		EnableDDA:            *enableDDA,
 		EnableAdaptiveSlicer: *enableAdaptiveSlicer,
+		EnableSoftSync:       *enableSoftSync,
 		// P25 replay always wants the per-frame CCStats + receiver-state series
 		// (the historical EOF summary + per-second state log); -diag adds the
 		// dibit/soft-eye landscape on top.

@@ -38,6 +38,7 @@ type ControlChannel struct {
 	bus        *events.Bus
 	log        *slog.Logger
 	det        *SyncDetector
+	fswTol     int // FSW correlator tolerance det was built with (≥ fswStrictTolerance)
 	systemName string
 	freqHz     uint32
 	bandPlan   *BandPlan
@@ -300,6 +301,11 @@ type pendingHit struct {
 	end int
 	rot uint8
 
+	// corroborate ⇒ this hit was found only by the wider fallback FSW
+	// tolerance (distance > fswStrictTolerance), so its NID is accepted only
+	// when the frame's TSBK CRC corroborates it (never on the trusted tier).
+	corroborate bool
+
 	cont       bool   // true ⇒ resume trailing TSBK blocks (NID already decoded)
 	blocksDone int    // TSBK blocks already dispatched for this data unit
 	nextStart  int    // absolute index of the next TSBK block to decode
@@ -307,6 +313,21 @@ type pendingHit struct {
 	strip      bool   // status-symbol stripping the alignment search chose
 	nac        uint16 // NAC the NID decoded to (for dispatch)
 }
+
+// FSWFallbackToleranceDefault is the wider frame-sync-word tolerance the
+// opt-in soft-sync fallback uses, versus the strict default of 4 of 24 dibits.
+// An FSW hit looser than the strict gate is admitted ONLY through the
+// TSBK-CRC-corroborated marginal NID tier, so the looser sync cannot
+// manufacture a false lock — it only extends reach into marginal-SNR captures
+// whose sync word carries 5–8 symbol errors but whose NID + TSBK still decode.
+// Exposed so the siglab/replay flag plumbing names one value.
+const FSWFallbackToleranceDefault = 8
+
+// fswStrictTolerance is the production FSW correlator tolerance. A hit at or
+// below this distance uses the normal trusted/marginal NID gate unchanged; a
+// hit above it (only reachable when a wider fallback tolerance is configured)
+// is forced to corroborate via the TSBK CRC.
+const fswStrictTolerance = 4
 
 // Options configure a ControlChannel.
 type Options struct {
@@ -347,6 +368,15 @@ type Options struct {
 	// existing replay / unit tests pass.
 	P25Phase1DemodMode string
 
+	// FSWFallbackTolerance opts the FSW correlator into a wider fallback
+	// tolerance (see FSWFallbackToleranceDefault). Zero (the default, and what
+	// the daemon pipelines pass) keeps the strict 4-of-24 behaviour byte-for-
+	// byte. When set above fswStrictTolerance, FSW hits in the (strict, this]
+	// band are decoded only if the frame's TSBK CRC corroborates the NID, so a
+	// looser sync extends reach into marginal captures without ever
+	// manufacturing a false lock. Surfaced by `replay -soft-sync` (issue #771).
+	FSWFallbackTolerance int
+
 	// P25Phase2Trellis / P25Phase2RS / P25Phase2Interleave /
 	// P25Phase2Scrambler hold the per-system FEC mode the voice
 	// composer's Phase 2 chain needs to decode MAC PDUs that
@@ -384,7 +414,11 @@ func New(opts Options) *ControlChannel {
 	if now == nil {
 		now = time.Now
 	}
-	det := NewSyncDetector(4)
+	fswTol := fswStrictTolerance
+	if opts.FSWFallbackTolerance > fswTol {
+		fswTol = opts.FSWFallbackTolerance
+	}
+	det := NewSyncDetector(fswTol)
 	if len(opts.Rotations) > 0 {
 		det.SetRotations(opts.Rotations)
 	}
@@ -400,6 +434,7 @@ func New(opts Options) *ControlChannel {
 		freqHz:              opts.FrequencyHz,
 		bandPlan:            bp,
 		now:                 now,
+		fswTol:              fswTol,
 		aliasAsm:            NewTalkerAliasAssembler(now),
 		diagSeen:            make(map[uint32]int),
 		rotations:           resolveRotations(opts.Rotations),
@@ -537,7 +572,7 @@ const NIDMarginalMaxErrs = 11
 // frame — so without cross-call buffering every FSW hit was discarded
 // and the control channel never locked (issue #275).
 func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
-	hits, rots, next := c.det.ProcessWithRotation(nil, nil, dibits, baseIdx)
+	hits, rots, margins, next := c.det.ProcessWithMargin(nil, nil, nil, dibits, baseIdx)
 	if len(hits) == 0 && len(dibits) > 0 && !c.locked {
 		now := c.now()
 		if now.Sub(c.lastNoHitsAt) >= noHitsThrottle {
@@ -566,7 +601,13 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 	}
 	c.buf = append(c.buf, dibits...)
 	for i, h := range hits {
-		c.pending = append(c.pending, pendingHit{end: h, rot: rots[i]})
+		// margin = fswTol+1 − bestMismatch, so bestMismatch = fswTol+1 − margin.
+		// A hit beyond the strict budget was reachable only via the wider
+		// fallback tolerance; require TSBK-CRC corroboration before it can lock.
+		bestMis := c.fswTol + 1 - margins[i]
+		c.pending = append(c.pending, pendingHit{
+			end: h, rot: rots[i], corroborate: bestMis > fswStrictTolerance,
+		})
 	}
 
 	// Parse every pending FSW hit whose first block has now been buffered,
@@ -591,7 +632,7 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 			kept = append(kept, ph) // not enough buffered yet
 			continue
 		}
-		if cont, more := c.parseFrame(c.buf, nidStart, ph.rot); more {
+		if cont, more := c.parseFrame(c.buf, nidStart, ph.rot, ph.corroborate); more {
 			kept = append(kept, cont)
 		}
 	}
@@ -621,8 +662,8 @@ func (c *ControlChannel) Process(dibits []uint8, baseIdx int) int {
 // parseFrame returns a continuation pendingHit (and more=true) when the
 // data unit's trailing TSBK blocks have not all buffered yet, so the
 // caller can resume them on a later Process call without re-searching.
-func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8) (cont pendingHit, more bool) {
-	best, found, diag := c.searchNID(buf, nidStart, fswRot)
+func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, requireCorroboration bool) (cont pendingHit, more bool) {
+	best, found, diag := c.searchNID(buf, nidStart, fswRot, requireCorroboration)
 	if !found {
 		atomic.AddInt64(&c.stats.NIDFailed, 1)
 		c.log.Debug("nid parse failed", "system", c.systemName,
@@ -772,7 +813,12 @@ type nidGuess struct {
 // codeword — so a reporter can see where errors cluster (one end =
 // timing slip, near dibit 31 = status-phase fault, uniform = SNR
 // limited) without re-running the decode.
-func (c *ControlChannel) searchNID(buf []uint8, nidStart int, fswRot uint8) (nidGuess, bool, string) {
+// requireCorroboration forces every parity-valid NID candidate — even a clean
+// errs ≤ NIDAcceptErrs one — through the marginal tier, where the frame's TSBK
+// CRC must corroborate the alignment before it is accepted. It is set for FSW
+// hits found only by the wider fallback tolerance, so a looser sync extends
+// reach without ever bypassing the CRC-gated false-lock guard (issue #771).
+func (c *ControlChannel) searchNID(buf []uint8, nidStart int, fswRot uint8, requireCorroboration bool) (nidGuess, bool, string) {
 	var best nidGuess
 	found := false
 	closestMiss := -1 // lowest BCH errs of a parity-rejected near-miss
@@ -802,11 +848,12 @@ func (c *ControlChannel) searchNID(buf []uint8, nidStart int, fswRot uint8) (nid
 				}
 				cand := nidGuess{delta: delta, strip: strip, rot: rot,
 					nid: nid, errs: errs, tsbkStart: tsbkStart, errPattern: pattern}
-				if errs > NIDAcceptErrs {
-					// Parity-valid but too far from the received word for
-					// BCH+parity to tell a noisy real NID from a bad
-					// alignment's miscorrection. Defer to the marginal
-					// tier, where the TSBK CRC decides.
+				if errs > NIDAcceptErrs || requireCorroboration {
+					// Parity-valid but either too far from the received word for
+					// BCH+parity to tell a noisy real NID from a bad alignment's
+					// miscorrection, or admitted only by the wider fallback FSW
+					// tolerance. Defer to the marginal tier, where the TSBK CRC
+					// decides.
 					marginal = append(marginal, cand)
 					continue
 				}

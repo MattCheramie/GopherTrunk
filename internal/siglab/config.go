@@ -65,6 +65,12 @@ type Config struct {
 	// EnableAdaptiveSlicer opts the C4FM path into the adaptive slicer
 	// (issue #402; off in production).
 	EnableAdaptiveSlicer bool
+	// EnableSoftSync opts the P25 control channel into the wider FSW-fallback
+	// tolerance: sync words carrying 5–8 symbol errors are decoded if the
+	// frame's TSBK CRC corroborates the NID, extending lock reach into
+	// marginal-SNR captures. Gated by the existing NID/CRC validation, so it
+	// cannot manufacture a false lock (issue #771; off in production).
+	EnableSoftSync bool
 	// CollectReceiverState captures a per-(stream-)second snapshot of the P25
 	// receiver's AFC/AGC/clock/slicer state into the Result (the per-second
 	// state log replay emitted to stderr, now structured + exportable).
@@ -148,7 +154,7 @@ func (c Config) wantP25Deep() bool {
 	}
 	return c.CollectIQDiag || c.CollectReceiverState ||
 		c.NIDSearchSpan > 0 || c.EnableDDA || c.EnableAdaptiveSlicer ||
-		c.DemodMode != ""
+		c.EnableSoftSync || c.DemodMode != ""
 }
 
 // ParseProtocolCLI maps a command-line protocol name to a trunking.Protocol.

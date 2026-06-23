@@ -42,13 +42,18 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 		nidSpan = p25phase1.NIDSearchSpan
 	}
 
+	fswFallbackTol := 0
+	if cfg.EnableSoftSync {
+		fswFallbackTol = p25phase1.FSWFallbackToleranceDefault
+	}
 	cc := p25phase1.New(p25phase1.Options{
-		Bus:           bus,
-		Log:           logger,
-		SystemName:    cfg.SystemName,
-		FrequencyHz:   cfg.FrequencyHz,
-		Rotations:     rotations,
-		NIDSearchSpan: nidSpan,
+		Bus:                  bus,
+		Log:                  logger,
+		SystemName:           cfg.SystemName,
+		FrequencyHz:          cfg.FrequencyHz,
+		Rotations:            rotations,
+		NIDSearchSpan:        nidSpan,
+		FSWFallbackTolerance: fswFallbackTol,
 	})
 	rx := p25phase1rx.New(p25phase1rx.Options{
 		SampleRateHz:              receiverRate,
