@@ -1,6 +1,10 @@
 package voice
 
-import "github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+import (
+	"math"
+
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+)
 
 // VoiceSuperframe is one decoded DMR voice superframe: the 18 on-air
 // AMBE+2 frames carried by bursts A–F. Each frame is 72 bits, one bit
@@ -203,24 +207,74 @@ func (d *Decoder) Process(dibits []uint8, baseIdx int) []VoiceSuperframe {
 	return out
 }
 
+// ambeCadenceLockCeiling and ambeCadenceLockMargin gate locking a cadence by
+// AMBE FEC quality (see resolveAndSlice). A superframe sliced at the correct
+// same-slot stride decodes its 18 AMBE frames with very few Golay-corrected
+// bits; the wrong stride pulls bits from the other timeslot / the inter-burst
+// CACH and scores far higher (18 frames × up to 6 corrected bits = 108 max).
+//   - ceiling caps the winner's total corrected bits: ~24 ≈ 1.3 bits/frame, a
+//     generous weak-signal allowance still well under the ~4–5/frame a random
+//     (wrong-cadence) slice averages.
+//   - margin requires the runner-up to exceed 2×winner by this floor, so two
+//     similarly-bad (both-garbled) candidates never lock the wrong one.
+const (
+	ambeCadenceLockCeiling = 24
+	ambeCadenceLockMargin  = 6
+)
+
+// ambeErrorScore sums the Golay(23,12) corrected-bit count across a
+// superframe's 18 AMBE frames. It is the cadence-quality metric that lets the
+// interleaved decoder detect the same-slot stride WITHOUT the embedded Link
+// Control, whose FEC/CRC constants are still unvalidated against live air — the
+// coupling that left a 288-cadence (CACH) carrier sounding garbled when its LC
+// never decoded (issue #644).
+func ambeErrorScore(sf VoiceSuperframe) int {
+	score := 0
+	for i := range sf.Frames {
+		// DecodeAMBEFrame only errors on a wrong-length frame; here every
+		// frame is a full 72 bits, so err is always nil and we score the
+		// corrected-bit count.
+		if _, errs, err := DecodeAMBEFrame(sf.Frames[i]); err == nil {
+			score += errs
+		}
+	}
+	return score
+}
+
 // resolveAndSlice produces the superframe anchored at start. A decoder with
 // a locked cadence slices at it directly; an undetected interleaved decoder
-// tries each candidate cadence and locks onto the first whose bursts B–E
-// yield a CRC-valid embedded Link Control. If none validate (e.g. a
-// superframe carrying no clean LC) it falls back to the smallest candidate
-// without locking, so a later LC-bearing superframe can still detect the
-// true cadence. The caller has guaranteed maxSpan dibits past start are
+// tries each candidate cadence. A bursts-B–E CRC-valid embedded Link Control
+// is authoritative and locks immediately. Absent any LC, it scores each
+// candidate by AMBE FEC quality (ambeErrorScore) and locks the clearly-best
+// one — so a real carrier whose embedded LC never decodes still finds its
+// cadence (issue #644). With no clear winner it falls back to the smallest
+// candidate without locking, so a later LC-bearing or cleaner superframe can
+// still detect. The caller has guaranteed maxSpan dibits past start are
 // buffered, so every candidate is sliceable.
 func (d *Decoder) resolveAndSlice(start int, syncName string) VoiceSuperframe {
 	if d.lockedStep != 0 {
 		return d.sliceAt(start, d.lockedStep, syncName)
 	}
-	for _, step := range d.cadenceCandidates {
+	bestIdx, bestScore, secondScore := -1, math.MaxInt, math.MaxInt
+	var bestSF VoiceSuperframe
+	for i, step := range d.cadenceCandidates {
 		sf := d.sliceAt(start, step, syncName)
 		if sf.HasLC {
 			d.lockedStep = step
 			return sf
 		}
+		switch s := ambeErrorScore(sf); {
+		case s < bestScore:
+			secondScore = bestScore
+			bestScore, bestIdx, bestSF = s, i, sf
+		case s < secondScore:
+			secondScore = s
+		}
+	}
+	if bestIdx >= 0 && bestScore <= ambeCadenceLockCeiling &&
+		bestScore*2+ambeCadenceLockMargin <= secondScore {
+		d.lockedStep = d.cadenceCandidates[bestIdx]
+		return bestSF
 	}
 	return d.sliceAt(start, d.cadenceCandidates[0], syncName)
 }
