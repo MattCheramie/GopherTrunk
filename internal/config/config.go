@@ -465,12 +465,13 @@ type BroadcastConfig struct {
 	// Workers is the number of concurrent upload goroutines. 0 uses
 	// the broadcast package default.
 	Workers int `yaml:"workers"`
-	// Broadcastify, RdioScanner, OpenMHz and Icecast each list zero
-	// or more feeds. A feed with enabled=false is parsed but skipped.
+	// Broadcastify, RdioScanner, OpenMHz, Icecast and Webhook each list
+	// zero or more feeds. A feed with enabled=false is parsed but skipped.
 	Broadcastify []BroadcastifyFeedConfig `yaml:"broadcastify"`
 	RdioScanner  []RdioScannerFeedConfig  `yaml:"rdioscanner"`
 	OpenMHz      []OpenMHzFeedConfig      `yaml:"openmhz"`
 	Icecast      []IcecastFeedConfig      `yaml:"icecast"`
+	Webhook      []WebhookFeedConfig      `yaml:"webhook"`
 }
 
 // BroadcastifyFeedConfig is one Broadcastify Calls upload feed.
@@ -499,6 +500,21 @@ type OpenMHzFeedConfig struct {
 	APIKey    string   `yaml:"api_key"`
 	ShortName string   `yaml:"short_name"`
 	Systems   []string `yaml:"systems"`
+}
+
+// WebhookFeedConfig is one generic JSON-webhook call sink: each
+// completed call is POSTed as one JSON object to URL (issue #404 / #268).
+type WebhookFeedConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Name    string `yaml:"name"`
+	URL     string `yaml:"url"`
+	// AuthHeader is sent verbatim as the Authorization header (e.g.
+	// "Bearer <token>"). Empty omits the header.
+	AuthHeader string `yaml:"auth_header"`
+	// IncludeAudio embeds the base64 MP3 in the payload. Off by default
+	// keeps the webhook a lightweight metadata feed.
+	IncludeAudio bool     `yaml:"include_audio"`
+	Systems      []string `yaml:"systems"`
 }
 
 // IcecastFeedConfig is one live Icecast/ShoutCast feed.
@@ -2373,6 +2389,14 @@ func (b BroadcastConfig) validate() error {
 		}
 		if f.Password == "" {
 			return fmt.Errorf("broadcast.icecast[%d]: password required", i)
+		}
+	}
+	for i, f := range b.Webhook {
+		if !f.Enabled {
+			continue
+		}
+		if f.URL == "" {
+			return fmt.Errorf("broadcast.webhook[%d]: url required", i)
 		}
 	}
 	return nil

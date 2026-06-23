@@ -41,7 +41,18 @@ type Call struct {
 	TalkgroupLabel string
 	Source         uint32
 	FrequencyHz    uint32
-	Encrypted      bool
+	// ChannelID / RFSS / Site / NAC / Timeslot carry the P25 site
+	// identity decoded off the control channel (issue #698). They let a
+	// metadata sink (the webhook) label a call by site for downstream
+	// dashboards instead of resolving an opaque channel ID by hand. All
+	// stay zero on non-P25 calls and until the site's status TSBKs land;
+	// audio-upload backends ignore them.
+	ChannelID uint8
+	RFSS      uint8
+	Site      uint8
+	NAC       uint16
+	Timeslot  uint8
+	Encrypted bool
 	// AlgorithmID / KeyID surface the P25 encryption parameters when
 	// the in-call signalling has revealed them. Zero on clear calls
 	// and on encrypted calls whose Encryption Sync never arrived
@@ -130,6 +141,11 @@ func callFromEvent(cc trunking.CallComplete) *Call {
 		Talkgroup:     cc.Grant.GroupID,
 		Source:        cc.Grant.SourceID,
 		FrequencyHz:   cc.Grant.FrequencyHz,
+		ChannelID:     cc.Grant.ChannelID,
+		RFSS:          cc.Grant.RFSSID,
+		Site:          cc.Grant.SiteID,
+		NAC:           cc.Grant.NAC,
+		Timeslot:      cc.Grant.Timeslot,
 		Encrypted:     cc.Grant.Encrypted,
 		AlgorithmID:   cc.Grant.AlgorithmID,
 		KeyID:         cc.Grant.KeyID,

@@ -26,7 +26,7 @@ describe("section editors patch the draft with capitalized Go keys", () => {
 
   it("Broadcast add Broadcastify feed writes config.Broadcast.Broadcastify", () => {
     seed({
-      Broadcast: { MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null },
+      Broadcast: { MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null, Webhook: null },
     });
     render(<BroadcastSection />);
     // The first "+ Add" button belongs to the Broadcastify list.

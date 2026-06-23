@@ -326,6 +326,14 @@ export interface IcecastFeed {
   StreamName: string;
   Systems: string[] | null;
 }
+export interface WebhookFeed {
+  Enabled: boolean;
+  Name: string;
+  URL: string;
+  AuthHeader: string;
+  IncludeAudio: boolean;
+  Systems: string[] | null;
+}
 export interface BroadcastConfig {
   MinDurationMs: number;
   Workers: number;
@@ -333,6 +341,7 @@ export interface BroadcastConfig {
   RdioScanner: RdioScannerFeed[] | null;
   OpenMHz: OpenMHzFeed[] | null;
   Icecast: IcecastFeed[] | null;
+  Webhook: WebhookFeed[] | null;
 }
 
 export interface BasebandRecordConfig {
