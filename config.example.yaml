@@ -1162,6 +1162,20 @@ broadcast:
   #     password: "YOUR_ICECAST_SOURCE_PASSWORD"
   #     stream_name: "GopherTrunk Live"
 
+  # Generic JSON webhook: POST one JSON object per completed call to your
+  # own endpoint (analytics DB, Grafana pipeline, Discord/Slack relay,
+  # custom uploader). The payload carries the call metadata — system,
+  # talkgroup, source RID, frequency, P25 site identity (rfss_id/site_id/
+  # nac/channel_id), encryption + emergency flags, patched groups, and
+  # start/stop timestamps. Set include_audio to also embed the base64 MP3.
+  # webhook:
+  #   - enabled: true
+  #     name: "analytics"
+  #     url: "https://example.org/gophertrunk/calls"
+  #     auth_header: "Bearer YOUR_TOKEN"   # sent verbatim as Authorization; omit to disable
+  #     include_audio: false               # true embeds the base64 MP3 in each POST
+  #     systems: ["Metro P25"]             # empty = every system
+
 # Wideband baseband (IQ) recording and offline replay. `record` taps a
 # live tuner and writes its raw IQ to a two-channel 16-bit WAV (the
 # same layout SDRtrunk uses). `replay` mounts recorded WAVs as virtual

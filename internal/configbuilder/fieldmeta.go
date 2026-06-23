@@ -316,6 +316,7 @@ var fieldMetas = map[string]FieldMeta{
 	"BroadcastConfig.RdioScanner":     {Help: "RdioScanner call-upload feeds."},
 	"BroadcastConfig.OpenMHz":         {Label: "OpenMHz", Help: "OpenMHz upload feeds."},
 	"BroadcastConfig.Icecast":         {Help: "Live Icecast/ShoutCast mountpoint feeds."},
+	"BroadcastConfig.Webhook":         {Help: "Generic JSON-webhook call sinks: POST one JSON object per completed call."},
 	"BroadcastifyFeedConfig.Enabled":  {Help: "Enable this feed. false keeps it configured but skipped."},
 	"BroadcastifyFeedConfig.Name":     {Help: "Feed label for logs/metrics."},
 	"BroadcastifyFeedConfig.APIKey":   {Label: "API key", Help: "Broadcastify Calls API key."},
@@ -341,6 +342,12 @@ var fieldMetas = map[string]FieldMeta{
 	"IcecastFeedConfig.Password":      {Help: "Source password for the mountpoint."},
 	"IcecastFeedConfig.StreamName":    {Help: "Public stream name listeners see."},
 	"IcecastFeedConfig.Systems":       {Help: "GopherTrunk system names to stream. Empty = every system."},
+	"WebhookFeedConfig.Enabled":       {Help: "Enable this feed. false keeps it configured but skipped."},
+	"WebhookFeedConfig.Name":          {Help: "Feed label for logs/metrics."},
+	"WebhookFeedConfig.URL":           {Label: "URL", Help: "Endpoint each completed call is POSTed to as JSON."},
+	"WebhookFeedConfig.AuthHeader":    {Label: "Auth header", Help: "Sent verbatim as the Authorization header (e.g. 'Bearer <token>'). Empty omits it."},
+	"WebhookFeedConfig.IncludeAudio":  {Help: "Embed the base64 MP3 in the payload. Off keeps the webhook a lightweight metadata feed."},
+	"WebhookFeedConfig.Systems":       {Help: "GopherTrunk system names to stream. Empty = every system."},
 
 	// ---- Baseband ----------------------------------------------------------
 	"BasebandConfig.Record":       {Help: "Tap live tuners and write their wideband IQ to WAV."},

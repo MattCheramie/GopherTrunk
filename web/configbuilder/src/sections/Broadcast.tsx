@@ -9,6 +9,7 @@ import type {
   IcecastFeed,
   OpenMHzFeed,
   RdioScannerFeed,
+  WebhookFeed,
 } from "../api/types";
 
 const SYSTEMS_HELP = "Comma-separated system names to include; leave empty for every system.";
@@ -17,7 +18,7 @@ export function BroadcastSection() {
   const [cfg, set] = useSection("Broadcast");
   const c =
     (cfg as BroadcastConfig) ??
-    ({ MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null } as BroadcastConfig);
+    ({ MinDurationMs: 0, Workers: 0, Broadcastify: null, RdioScanner: null, OpenMHz: null, Icecast: null, Webhook: null } as BroadcastConfig);
   return (
     <Section
       sectionKey="broadcast"
@@ -124,6 +125,29 @@ export function BroadcastSection() {
                 <TextField label="Username" value={f.Username} onChange={(v) => setF({ ...f, Username: v })} />
                 <TextField label="Password" value={f.Password} onChange={(v) => setF({ ...f, Password: v })} />
                 <TextField label="Stream name" value={f.StreamName} onChange={(v) => setF({ ...f, StreamName: v })} />
+                <TextField label="Systems" value={formatCommaList(f.Systems)} onChange={(v) => setF({ ...f, Systems: parseCommaList(v) })} help={SYSTEMS_HELP} />
+              </div>
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="Webhook (JSON POST)">
+        <ListEditor<WebhookFeed>
+          label="Feeds"
+          items={c.Webhook}
+          onChange={(x) => set({ ...c, Webhook: x })}
+          makeNew={() => ({ Enabled: true, Name: "", URL: "", AuthHeader: "", IncludeAudio: false, Systems: null })}
+          itemTitle={(f) => f.Name || "feed"}
+          emptyHint="No webhook feeds."
+          renderItem={(f, setF) => (
+            <div className="space-y-3">
+              <BoolField label="Enabled" value={f.Enabled} onChange={(v) => setF({ ...f, Enabled: v })} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField label="Name" value={f.Name} onChange={(v) => setF({ ...f, Name: v })} />
+                <TextField label="URL" value={f.URL} onChange={(v) => setF({ ...f, URL: v })} placeholder="https://example/hook" />
+                <TextField label="Auth header" value={f.AuthHeader} onChange={(v) => setF({ ...f, AuthHeader: v })} placeholder="Bearer …" help="Sent verbatim as the Authorization header. Empty omits it." />
+                <BoolField label="Include audio" value={f.IncludeAudio} onChange={(v) => setF({ ...f, IncludeAudio: v })} />
                 <TextField label="Systems" value={formatCommaList(f.Systems)} onChange={(v) => setF({ ...f, Systems: parseCommaList(v) })} help={SYSTEMS_HELP} />
               </div>
             </div>

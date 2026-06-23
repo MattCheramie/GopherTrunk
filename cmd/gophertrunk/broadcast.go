@@ -66,6 +66,22 @@ func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeC
 		}
 		backends = append(backends, b)
 	}
+	for _, f := range cfg.Webhook {
+		if !f.Enabled {
+			continue
+		}
+		b, err := broadcast.NewWebhook(broadcast.WebhookConfig{
+			Name:         f.Name,
+			URL:          f.URL,
+			AuthHeader:   f.AuthHeader,
+			IncludeAudio: f.IncludeAudio,
+			Systems:      f.Systems,
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
+		backends = append(backends, b)
+	}
 	for _, f := range cfg.Icecast {
 		if !f.Enabled {
 			continue
