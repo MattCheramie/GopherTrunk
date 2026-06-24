@@ -1493,3 +1493,320 @@ paths:
       minutes: 12
       level: beginner
       status: full
+
+  - id: software-licensing
+    label: "Software Licensing"
+    title: "Software Licensing & Agreements — from open source to selling your own"
+    tagline: "Every software license from open source to proprietary, using open source in what you sell, how to read any agreement, and choosing the right license and user agreements for your own software."
+    start_slug: what-is-a-software-license
+    workload: "PT7H"
+    intro: >
+      Licensing is where software meets the law, and it decides what you and your
+      users are actually allowed to do with code. This path is a plain-language,
+      end-to-end tour — start with what a license is and how copyright makes
+      software ownable, then work through every open-source license in detail
+      (MIT, BSD, Apache, the GPL family, the weak-copyleft licenses, and public
+      domain) with the real strengths, weaknesses, and trade-offs of each. From
+      there you'll learn to choose and combine open-source licenses, how
+      proprietary and commercial licensing works, how to write a custom license
+      to sell software, and how to use open-source libraries inside a product you
+      sell without breaking the rules. The back half teaches you to read any
+      software agreement and understand it before you sign, covers the other
+      agreements software needs — EULAs, terms of service, privacy policies,
+      DPAs, SLAs, and NDAs — and ends by walking you through choosing the right
+      license and the right set of agreements for your own software. Concepts are
+      taught with US law as the reference point and the major differences in other
+      jurisdictions flagged throughout, so you get the complete picture. This is
+      educational material, not legal advice. No legal background required;
+      examples lean on real software, including GopherTrunk's own Apache-2.0
+      license and dependency notices.
+    modules:
+      - id: foundations
+        label: "Module 1 — Licensing & IP Foundations"
+        blurb: "What a software license actually is, how copyright and other IP make code ownable, license versus contract, the full spectrum of license types, and how the law differs around the world."
+        lessons:
+          - slug: what-is-a-software-license
+            title: What is a software license?
+            summary: A license is permission to use code you don't own — why software defaults to "all rights reserved", what a license grants, and why every project needs one.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: copyright-and-software-ownership
+            title: Copyright & software ownership
+            summary: How copyright attaches to code automatically, what it does and doesn't protect, and who actually owns software written by employees, contractors, and you.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: other-ip-in-software
+            title: Patents, trademarks & trade secrets
+            summary: Copyright isn't the only IP in software — how patents, trademarks, and trade secrets each touch your code, your name, and your competitive edge.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: license-vs-contract
+            title: License vs contract
+            summary: A license grants permission; a contract is a deal with obligations on both sides — why the difference matters, and how click-wrap and browse-wrap agreements bind users.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: the-licensing-spectrum
+            title: The licensing spectrum
+            summary: From locked-down proprietary to source-available to open source to public domain — the full map of how software can be licensed, and where each model fits.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: licensing-across-jurisdictions
+            title: Licensing across jurisdictions
+            summary: US copyright is the reference point, but moral rights, enforceability, warranty disclaimers, and data law differ worldwide — the complete cross-border picture.
+            minutes: 11
+            level: intermediate
+            status: full
+
+      - id: open-source-in-depth
+        label: "Module 2 — Open Source Licenses in Depth"
+        blurb: "What 'open source' really means, the permissive-versus-copyleft divide, and a detailed look at every common license — MIT, BSD, Apache, GPL, AGPL, the weak-copyleft licenses, and public domain — with the real strengths and weaknesses of each."
+        lessons:
+          - slug: what-is-open-source
+            title: What open source really means
+            summary: The OSI Open Source Definition, the FSF's four freedoms, "free vs open", and why source-available is not the same as open source.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: permissive-vs-copyleft
+            title: Permissive vs copyleft
+            summary: The single divide that organizes every open-source license — do nothing back, or share alike — and what "copyleft" really obligates.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: mit-and-bsd-licenses
+            title: "MIT & BSD: minimal permissive"
+            summary: The short, do-almost-anything licenses behind most of the ecosystem — what MIT and the BSD variants say, where they shine, and their few real weaknesses.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: apache-license
+            title: "Apache 2.0: permissive with a patent grant"
+            summary: Permissive freedom plus an explicit patent grant and NOTICE requirement — why Apache 2.0 is the corporate default, and why GopherTrunk uses it.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: gpl-strong-copyleft
+            title: "The GPL: strong copyleft"
+            summary: The license that started copyleft — what triggers GPLv2/v3 obligations, the source-code requirement, and the strengths and costs of "share alike".
+            minutes: 11
+            level: intermediate
+            status: full
+          - slug: agpl-network-copyleft
+            title: "The AGPL: copyleft over the network"
+            summary: How the AGPL closes the SaaS "loophole" by triggering on network use, why it protects user freedom, and why so many companies ban it outright.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: weak-copyleft-licenses
+            title: "Weak copyleft: LGPL, MPL, EPL"
+            summary: The middle ground — file- and library-level copyleft that lets you link from proprietary code while keeping the open parts open; strengths and traps of each.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: public-domain-and-cc0
+            title: Public domain, Unlicense & CC0
+            summary: Giving up all rights — public-domain dedications, the Unlicense, CC0, and 0BSD — plus why "no license at all" is a trap, not a gift.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: choosing-and-combining
+        label: "Module 3 — Choosing & Combining Open Source"
+        blurb: "Putting the licenses to work: how they combine and where they conflict, how to pick one for your own project, contributor agreements, dual licensing, and the long-term risks of depending on open source."
+        lessons:
+          - slug: license-compatibility
+            title: License compatibility
+            summary: When code under different licenses can legally be combined, why GPL compatibility runs one way, and a mental model for the compatibility matrix.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: choosing-an-oss-license
+            title: Choosing an open-source license
+            summary: Turning strengths and weaknesses into a decision — match your goals to a license, and the tools (choosealicense.com and friends) that help.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: contributor-agreements
+            title: "Contributor agreements: CLAs & DCO"
+            summary: How projects take in outside contributions cleanly — CLAs, the DCO, and "inbound=outbound" — and what every contributor should understand before signing.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: dual-licensing-and-relicensing
+            title: Dual licensing & relicensing
+            summary: Offering the same code as both open source and a paid license, what makes it possible (owning the copyright), and the constraints on changing a license later.
+            minutes: 9
+            level: advanced
+            status: full
+          - slug: open-source-risks
+            title: The risks of depending on open source
+            summary: License changes and "rug pulls", abandonment, supply-chain and provenance risk, and the audit and legal exposure that come with every dependency.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: proprietary-and-commercial
+        label: "Module 4 — Proprietary & Commercial Licensing"
+        blurb: "The paid side of the spectrum: how proprietary licensing works, the commercial pricing models, source-available licenses, and how to write and price a custom license to sell your own software — plus where to get real help."
+        lessons:
+          - slug: proprietary-licensing
+            title: Proprietary & closed-source licensing
+            summary: What a proprietary license restricts and why, from "all rights reserved" to reverse-engineering and redistribution clauses — the opposite end of open source.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: commercial-license-models
+            title: Commercial license models
+            summary: Perpetual vs subscription, per-seat, per-core, usage-based, site and enterprise licenses, and OEM — the pricing structures behind software you pay for.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: source-available-licenses
+            title: Source-available & "fair source"
+            summary: BSL, SSPL, the Elastic License and "fair source" — why companies adopt them, what they actually allow, and why they are not open source.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: writing-a-commercial-license
+            title: Writing a license to sell software
+            summary: Building a custom commercial license — the grant, scope, structure, and the decisions you must make first before any clause goes on the page.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: key-commercial-clauses
+            title: Key clauses in a commercial license
+            summary: Warranty, limitation of liability, indemnity, IP ownership, termination, governing law, and audit rights — the clauses that decide who carries the risk.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: where-to-get-licensing-help
+            title: Where to get licensing help
+            summary: When you genuinely need a lawyer, the reputable template and contract sources, the standards bodies, and the generators — where to find more information.
+            minutes: 8
+            level: beginner
+            status: full
+
+      - id: oss-in-products
+        label: "Module 5 — Using Open Source in Software You Sell"
+        blurb: "You can absolutely build a paid product on open source — if you follow the rules. Meeting permissive obligations, handling copyleft and the 'viral' question, and auditing your dependencies so compliance is continuous, not a fire drill."
+        lessons:
+          - slug: using-oss-in-products
+            title: Can you sell software built on open source?
+            summary: Yes — and here are the rules that make it legal. The obligations that come with every dependency, and the myths that scare people away from open source.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: permissive-compliance
+            title: Meeting permissive obligations
+            summary: The attribution, license-text, and NOTICE requirements behind MIT, BSD, and Apache — modeled on GopherTrunk's own THIRD_PARTY_LICENSES.md.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: copyleft-in-products
+            title: "Copyleft in products: the viral question"
+            summary: What actually triggers GPL, AGPL, and LGPL obligations in a product, where the linking and distribution boundaries fall, and the patterns that keep you safe.
+            minutes: 11
+            level: advanced
+            status: full
+          - slug: auditing-dependencies
+            title: Auditing dependencies & SBOMs
+            summary: Knowing every license you ship — dependency scanning, SBOMs, SPDX, the tooling (FOSSA, ScanCode, and friends), and building an ongoing compliance process.
+            minutes: 10
+            level: intermediate
+            status: full
+
+      - id: reading-agreements
+        label: "Module 6 — Reading Agreements & Other User Agreements"
+        blurb: "How to actually read a software agreement and understand it before you sign — the main clauses, the risk clauses, and the red flags — then a tour of the other agreements software needs: EULAs, terms of service, privacy policies, DPAs, SLAs, and NDAs."
+        lessons:
+          - slug: how-to-read-an-agreement
+            title: How to read a software agreement
+            summary: A repeatable method for reading any license or agreement — following defined terms, mapping the structure, and extracting what actually matters to you.
+            minutes: 10
+            level: beginner
+            status: full
+          - slug: main-clauses-decoded
+            title: The main clauses, decoded
+            summary: The clauses in nearly every software agreement — grant, scope, fees, term, confidentiality, IP — and what each one really means in plain language.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: risk-clauses
+            title: "The risk clauses: who pays when it breaks"
+            summary: Warranty disclaimers, limitation of liability, indemnification, and "as-is" — the quiet clauses that decide who is on the hook when software fails.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: before-you-agree
+            title: What to check before you agree
+            summary: A pre-signature checklist and the red flags — auto-renewal, price changes, data use, assignment, audit rights, and termination — to catch before you click "I agree".
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: eula-and-tos
+            title: EULAs & terms of service
+            summary: The agreements your users accept — end-user license agreements and terms of service — what they cover, how they bind users, and the terms that matter most.
+            minutes: 9
+            level: beginner
+            status: full
+          - slug: privacy-and-data-agreements
+            title: Privacy policies & data agreements
+            summary: Privacy policies, data processing agreements, GDPR and CCPA basics, and sub-processors — the data-side agreements most modern software is required to have.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: sla-and-support-agreements
+            title: SLAs & support agreements
+            summary: Service level agreements, uptime guarantees and credits, and support and maintenance terms — read from both the buyer's and the seller's side.
+            minutes: 9
+            level: intermediate
+            status: full
+          - slug: nda-and-other-agreements
+            title: NDAs & the rest of the landscape
+            summary: NDAs, master service agreements, acceptable-use policies, and beta/evaluation agreements — the remaining agreements software businesses run on.
+            minutes: 9
+            level: beginner
+            status: full
+
+      - id: putting-it-together
+        label: "Module 7 — Choosing Your License & Agreements"
+        blurb: "Everything applied: a repeatable framework that turns your goals into a license choice, a step-by-step walkthrough to pick yours, a way to determine which other agreements your software needs, and a full worked example end to end."
+        lessons:
+          - slug: the-decision-framework
+            title: A framework for choosing
+            summary: A repeatable decision framework — goals, business model, dependencies, and risk tolerance map to a license and a set of agreements, not the other way around.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: choose-your-license
+            title: Choosing your license, step by step
+            summary: A guided walkthrough to land on your license — open source, proprietary, source-available, or dual — with the questions that decide each fork.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: which-agreements-do-you-need
+            title: Which agreements does your software need?
+            summary: Determining the full set — EULA or ToS, privacy policy, DPA, SLA — from how your software is delivered, who uses it, and what data it touches.
+            minutes: 10
+            level: intermediate
+            status: full
+          - slug: putting-it-all-together
+            title: Putting it all together
+            summary: An end-to-end worked example — choosing a license and the full agreement set for a GopherTrunk-like product — plus where to go next and how to stay compliant.
+            minutes: 11
+            level: advanced
+            status: full
+
+    # Standalone reference, not part of the sequential path (no prev/next slot).
+    glossary:
+      slug: glossary
+      title: Glossary of software-licensing terms
+      summary: Plain-language definitions for every term in the path — copyright, copyleft, permissive, GPL/AGPL/LGPL, dual licensing, EULA, ToS, SLA, DPA, SBOM, SPDX, indemnity, and more — cross-linked to the lessons.
+      minutes: 12
+      level: beginner
+      status: full
