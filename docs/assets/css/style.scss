@@ -941,6 +941,216 @@ a.category-chip:hover {
 .learn-card--stub { opacity: 0.92; }
 .learn-card--glossary { border-style: dashed; }
 
+/* ---------- Chooser: journey stepper ---------- */
+.learn-journey { margin: 0 0 2.75rem; }
+.learn-journey__title { font-size: 1.4rem; font-weight: 600; margin: 0 0 0.3rem; }
+.learn-journey__lede { margin: 0 0 1.5rem; color: var(--fg-muted); max-width: 48rem; }
+
+.journey {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.journey__step {
+  flex: 1 1 0;
+  min-width: 7rem;
+  position: relative;
+  text-align: center;
+}
+/* connector line from the previous marker centre to this one (steps are equal
+   width, so left:-50% / width:100% spans marker-to-marker). */
+.journey__step:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+.journey__step.is-done::before { background: #1a7f37; }
+:root.dark .journey__step.is-done::before { background: #3fb950; }
+.journey__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.25rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+.journey__link:hover { text-decoration: none; }
+.journey__marker { position: relative; z-index: 1; width: 44px; height: 44px; }
+.journey__ring { width: 44px; height: 44px; display: block; }
+.journey__ring-track { fill: var(--bg); stroke: var(--border); stroke-width: 3; }
+.journey__ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+.journey__step.is-done .journey__ring-fill { stroke: #1a7f37; }
+:root.dark .journey__step.is-done .journey__ring-fill { stroke: #3fb950; }
+.journey__num { fill: var(--fg); font-size: 0.95rem; font-weight: 700; }
+.journey__label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+  max-width: 9rem;
+  line-height: 1.3;
+}
+.journey__link:hover .journey__label { color: var(--fg); }
+.journey__pct { font-size: 0.72rem; font-family: var(--font-mono); color: var(--accent); }
+.journey__step--goal { flex: 1 1 0; min-width: 7rem; }
+.journey__marker--goal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 2px solid var(--accent);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.journey__step--goal .journey__label { display: block; margin-top: 0.4rem; color: var(--fg); }
+
+@media (max-width: 640px) {
+  .journey { flex-direction: column; align-items: stretch; }
+  .journey__step { min-width: 0; text-align: left; padding-left: 0.25rem; }
+  .journey__step:not(:first-child)::before {
+    top: -0.55rem;
+    left: 22px;
+    width: 2px;
+    height: 0.55rem;
+  }
+  .journey__link { flex-direction: row; align-items: center; gap: 0.7rem; padding: 0.45rem 0; }
+  .journey__step--goal { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0.25rem; }
+  .journey__step--goal .journey__label { margin-top: 0; }
+}
+
+/* ---------- Chooser: progress dashboard ---------- */
+.learn-dashboard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  padding: 1.5rem;
+  margin: 0 0 2.75rem;
+}
+.learn-dashboard__title { font-size: 1.4rem; font-weight: 600; margin: 0 0 1.1rem; }
+.learn-dashboard__grid {
+  display: grid;
+  grid-template-columns: auto auto minmax(12rem, 1fr);
+  gap: 1.25rem 2rem;
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .learn-dashboard__grid { grid-template-columns: 1fr; justify-items: center; }
+  .learn-cluster { width: 100%; }
+}
+
+.learn-donut { margin: 0; text-align: center; }
+.learn-donut__svg { width: 120px; height: 120px; }
+.learn-donut__track { fill: none; stroke: var(--border); stroke-width: 10; }
+.learn-donut__fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+}
+.learn-donut__pct { fill: var(--fg); font-size: 1.5rem; font-weight: 700; font-family: var(--font-mono); }
+.learn-donut__caption { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg-muted); }
+
+.learn-stats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.learn-stats li { display: flex; align-items: baseline; gap: 0.5rem; }
+.learn-stats__num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  min-width: 1.4em;
+  text-align: right;
+}
+.learn-stats__lbl { color: var(--fg-muted); font-size: 0.9rem; }
+
+.learn-cluster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.learn-cluster__row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 1fr 2.6rem;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.82rem;
+}
+.learn-cluster__name { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.learn-cluster__track {
+  height: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.learn-cluster__bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.learn-cluster__val { font-family: var(--font-mono); color: var(--fg-muted); text-align: right; }
+
+/* ---------- Chooser: per-path card ring + actions ---------- */
+.learn-card--path { display: flex; flex-direction: column; }
+.learn-card--path .learn-card__link { height: auto; flex: 1 1 auto; }
+.learn-card__ring { flex-shrink: 0; width: 44px; height: 44px; }
+.learn-card__ring svg { width: 44px; height: 44px; display: block; }
+.learn-card__ring-track { fill: var(--bg); stroke: var(--border); stroke-width: 3; }
+.learn-card__ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+.learn-card--path.is-complete .learn-card__ring-fill { stroke: #1a7f37; }
+:root.dark .learn-card--path.is-complete .learn-card__ring-fill { stroke: #3fb950; }
+.learn-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem 0.85rem;
+  border-top: 1px solid var(--border);
+}
+.learn-card__continue { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+.learn-card--path.is-complete .learn-card__continue { color: #1a7f37; border-color: #1a7f37; }
+:root.dark .learn-card--path.is-complete .learn-card__continue { color: #3fb950; border-color: #3fb950; }
+.learn-card__reset {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--link);
+  padding: 0;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__bar,
+  .learn-donut__fill,
+  .journey__ring-fill,
+  .learn-card__ring-fill,
+  .learn-cluster__bar { transition: none; }
+}
+
 /* ---------- Lesson page chrome ---------- */
 .lesson__meta {
   display: flex;
