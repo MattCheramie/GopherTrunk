@@ -38,11 +38,13 @@ import (
 // atomics. The mutable match/segment bookkeeping is touched only by the
 // chain goroutine.
 type boundaryTracker struct {
-	c        *Composer
-	serial   string
-	grantTG  uint32
-	patches  map[uint32]bool
-	hangtime time.Duration
+	c              *Composer
+	serial         string
+	grantTG        uint32
+	patches        map[uint32]bool
+	hangtime       time.Duration
+	startNano      int64         // unixnano the tracker (≈ the call) started
+	noVoiceTimeout time.Duration // teardown window when NO voice ever decodes
 
 	lastVoiceNano atomic.Int64 // unixnano of the last MATCHING voice frame
 	sawVoice      atomic.Bool
@@ -64,6 +66,23 @@ type boundaryTracker struct {
 // one-off RS-aliased mis-decode (a garbage-but-valid LC) ending a call.
 const foreignRunToEnd = 2
 
+// noVoiceStartupFactor sets the no-initial-voice teardown window as a
+// multiple of the hangtime gap tolerance: a call that has NEVER decoded a
+// matching voice frame is ended this-many hangtimes after it started,
+// rather than holding the voice tap for the engine's much longer
+// call-timeout watchdog (the "hanging silent call").
+//
+// A live P25 voice channel delivers LDUs continuously the instant the
+// transmitter keys — even a keyed-but-silent PTT sends silence-coded IMBE
+// frames, which still drive onVoice — so producing nothing at all for two
+// full hangtimes means the carrier was already gone (a stale / late CC
+// grant), or we are mis-tuned / wrong-demod / under-gained on it. Either
+// way the right move is to free the tap promptly, not sit idle for 30 s;
+// if voice does resume the CC re-announces the grant and a fresh call
+// starts. Two hangtimes leaves ample margin for normal sync acquisition
+// (the first LDU on a healthy call lands well inside one hangtime).
+const noVoiceStartupFactor = 2
+
 func (c *Composer) newBoundaryTracker(serial string, grantTG uint32, patched []uint32) *boundaryTracker {
 	var patches map[uint32]bool
 	if len(patched) > 0 {
@@ -73,12 +92,14 @@ func (c *Composer) newBoundaryTracker(serial string, grantTG uint32, patched []u
 		}
 	}
 	return &boundaryTracker{
-		c:         c,
-		serial:    serial,
-		grantTG:   grantTG,
-		patches:   patches,
-		hangtime:  c.hangtime,
-		lastMatch: true, // write optimistically until a talkgroup proves foreign
+		c:              c,
+		serial:         serial,
+		grantTG:        grantTG,
+		patches:        patches,
+		hangtime:       c.hangtime,
+		startNano:      time.Now().UnixNano(),
+		noVoiceTimeout: c.hangtime * noVoiceStartupFactor,
+		lastMatch:      true, // write optimistically until a talkgroup proves foreign
 	}
 }
 
@@ -140,7 +161,10 @@ func (bt *boundaryTracker) onTransmissionEnd() {
 
 // run drives the hangtime timer and throttled Touch heartbeat until ctx
 // is cancelled (which the composer does when the call ends). It ends the
-// call once no matching voice has arrived for hangtime.
+// call once matching voice stops arriving for hangtime — or, when no
+// matching voice EVER arrives, once the no-voice startup window elapses,
+// so a phantom / mis-tuned grant frees its voice tap instead of hanging
+// for the engine's much longer call-timeout watchdog.
 func (bt *boundaryTracker) run(ctx context.Context) {
 	// Poll fast enough that the hangtime end + Touch heartbeat are
 	// responsive, but coarser than a frame interval so we don't spin.
@@ -156,6 +180,17 @@ func (bt *boundaryTracker) run(ctx context.Context) {
 			return
 		case <-t.C:
 			if !bt.sawVoice.Load() {
+				// No matching voice frame has EVER decoded. End the call
+				// once the no-voice startup window elapses instead of
+				// holding the tap for the full engine watchdog — this is
+				// the "hanging silent call" (carrier already dropped, stale
+				// CC grant, or a mis-tuned / wrong-demod channel). Reason
+				// timeout: not a single frame was delivered, matching the
+				// engine's silent-from-start classification.
+				if time.Since(time.Unix(0, bt.startNano)) > bt.noVoiceTimeout {
+					bt.end(trunking.EndReasonTimeout)
+					return
+				}
 				continue
 			}
 			last := bt.lastVoiceNano.Load()

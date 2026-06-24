@@ -102,17 +102,37 @@ func TestBoundaryHangtimeEndsCall(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return eng.endedCount() > 0 })
 }
 
-// TestBoundaryNoVoiceNoEnd: a tracker that never sees voice does not end
-// the call on hangtime (the engine watchdog handles silent-from-start).
-func TestBoundaryNoVoiceNoEnd(t *testing.T) {
-	c, _, eng := mkBoundaryComposer(t, true, 80*time.Millisecond)
+// TestBoundaryNoVoiceWithinStartupNoEnd: a tracker that has not yet seen
+// voice does not end the call before the no-voice startup window elapses —
+// a healthy call gets the full window to acquire sync and deliver its
+// first LDU.
+func TestBoundaryNoVoiceWithinStartupNoEnd(t *testing.T) {
+	// hangtime 1s ⇒ noVoiceTimeout 2s, so 300ms in nothing should end yet.
+	c, _, eng := mkBoundaryComposer(t, true, time.Second)
 	bt := c.newBoundaryTracker("VOICE-1", 0, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go bt.run(ctx)
 	time.Sleep(300 * time.Millisecond)
 	if eng.endedCount() != 0 {
-		t.Error("tracker that never saw voice must not end the call")
+		t.Error("tracker must not end the call inside the no-voice startup window")
+	}
+}
+
+// TestBoundaryNoVoiceEndsCall is the regression for the "hanging silent
+// call": a tracker that NEVER decodes a matching voice frame must end the
+// call once the no-voice startup window elapses (reason=timeout), instead
+// of holding the voice tap for the full engine call-timeout watchdog.
+func TestBoundaryNoVoiceEndsCall(t *testing.T) {
+	// hangtime 50ms ⇒ noVoiceTimeout 100ms; never call onVoice.
+	c, _, eng := mkBoundaryComposer(t, true, 50*time.Millisecond)
+	bt := c.newBoundaryTracker("VOICE-1", 42, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go bt.run(ctx)
+	waitFor(t, time.Second, func() bool { return eng.endedCount() > 0 })
+	if got := eng.endReason("VOICE-1"); got != trunking.EndReasonTimeout {
+		t.Errorf("silent-from-start call end reason = %v, want EndReasonTimeout", got)
 	}
 }
 
