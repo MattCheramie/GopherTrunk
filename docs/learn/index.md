@@ -7,7 +7,17 @@ keywords: GopherTrunk learn, SDR tutorial, learn git, github tutorial, radio fun
 permalink: /learn/
 ---
 
-Pick a path below to get started. Each one is a guided curriculum broken into
-short modules, with progress saved in your browser as you go. Lessons are
-self-contained and cross-linked, so you can read straight through or jump
-to the topics you need.
+**The goal of this hub is to take you from curious beginner to shipping a real
+project of your own** — something like [GopherTrunk]({{ '/' | relative_url }})
+itself: a software-defined-radio trunking scanner built in Go. Getting there
+touches a lot of ground — how radio works, how signals become numbers, how
+software is designed and version-controlled, the hardware it runs on, and how
+modern AI tools fit into the workflow. Each path below covers one of those
+pieces, in plain language, one short lesson at a time.
+
+You don't have to take them in order, and you don't have to finish them all to
+build something. Start where you're weakest, follow the **journey** from first
+principles to a finished application, and watch your **progress** fill in as you
+go. Everything is saved in your browser — pick up any path exactly where you
+left off, or reset one to start over. Lessons are self-contained and
+cross-linked, so you can read straight through or jump to just what you need.
