@@ -367,3 +367,256 @@ domains:
           - { slug: semantic-versioning, title: Semantic versioning, type: concept }
           - { slug: rest, title: REST, type: concept }
           - { slug: version-control, title: Version control, type: concept }
+
+  - id: hardware-devices
+    label: "Hardware (computers & devices)"
+    blurb: The computing hardware a developer chooses between — from cloud servers down to the microcontroller — what each is for, what runs on it, and its trade-offs.
+    categories:
+      - id: hw-foundations
+        label: Hardware foundations
+        blurb: The parts inside every computer and the ideas that span the whole spectrum from cloud to chip.
+        entries:
+          - { slug: computer-hardware, title: Computer hardware, type: concept }
+          - { slug: central-processing-unit, title: Central processing unit (CPU), type: hardware }
+          - { slug: random-access-memory, title: Random-access memory (RAM), type: hardware }
+          - { slug: data-storage, title: Storage (SSD, HDD, flash), type: hardware }
+          - { slug: input-output, title: Input/output (I/O), type: concept }
+          - { slug: operating-system, title: Operating system, type: concept }
+          - { slug: hardware-spectrum, title: The hardware spectrum, type: concept }
+          - { slug: motherboard, title: Motherboard, type: hardware }
+          - { slug: graphics-processing-unit, title: Graphics processing unit (GPU), type: hardware }
+          - { slug: power-supply-unit, title: Power supply unit (PSU), type: hardware }
+          - { slug: cooling-and-thermals, title: Cooling & thermals, type: concept }
+          - { slug: system-bus, title: System bus, type: concept }
+          - { slug: pci-express, title: PCI Express (PCIe), type: hardware }
+          - { slug: usb, title: USB, type: hardware }
+          - { slug: cache-memory, title: Cache memory, type: hardware }
+          - { slug: instruction-set-architecture, title: Instruction set architecture (ISA), type: concept }
+          - { slug: x86, title: x86, type: concept }
+          - { slug: arm-architecture, title: ARM architecture, type: concept }
+          - { slug: risc-v, title: RISC-V, type: concept }
+          - { slug: transistor, title: Transistor, type: hardware }
+          - { slug: integrated-circuit, title: Integrated circuit, type: hardware }
+          - { slug: semiconductor, title: Semiconductor, type: concept }
+          - { slug: logic-gate, title: Logic gate, type: concept }
+          - { slug: von-neumann-architecture, title: Von Neumann architecture, type: concept }
+          - { slug: moores-law, title: Moore's law, type: concept }
+          - { slug: bits-and-bytes, title: Bits & bytes, type: concept }
+          - { slug: clock-speed, title: Clock speed, type: concept }
+          - { slug: bios-uefi, title: BIOS & UEFI, type: concept }
+          - { slug: chipset, title: Chipset, type: hardware }
+
+      - id: hw-servers
+        label: Servers & hosting
+        blurb: Where software runs for other people — shared hosting, VPSes, dedicated and home servers, and the cloud behind them.
+        entries:
+          - { slug: server, title: Server, type: hardware }
+          - { slug: web-hosting, title: Web & shared hosting, type: concept }
+          - { slug: virtual-private-server, title: Virtual private server (VPS), type: concept }
+          - { slug: dedicated-server, title: Dedicated server, type: hardware }
+          - { slug: home-server, title: Home server & self-hosting, type: concept }
+          - { slug: cloud-computing, title: Cloud computing, type: concept }
+          - { slug: virtualization, title: Virtualization, type: concept }
+          - { slug: data-center, title: Data center, type: concept }
+          - { slug: rack-server, title: Rack server, type: hardware }
+          - { slug: blade-server, title: Blade server, type: hardware }
+          - { slug: bare-metal-server, title: Bare-metal server, type: hardware }
+          - { slug: colocation, title: Colocation, type: concept }
+          - { slug: managed-hosting, title: Managed hosting, type: concept }
+          - { slug: platform-as-a-service, title: Platform as a service (PaaS), type: concept }
+          - { slug: infrastructure-as-a-service, title: Infrastructure as a service (IaaS), type: concept }
+          - { slug: software-as-a-service, title: Software as a service (SaaS), type: concept }
+          - { slug: serverless-computing, title: Serverless computing, type: concept }
+          - { slug: container, title: Container, type: concept }
+          - { slug: docker, title: Docker, type: concept }
+          - { slug: kubernetes, title: Kubernetes, type: concept }
+          - { slug: hypervisor, title: Hypervisor, type: concept }
+          - { slug: load-balancer, title: Load balancer, type: concept }
+          - { slug: reverse-proxy, title: Reverse proxy, type: concept }
+          - { slug: content-delivery-network, title: Content delivery network (CDN), type: concept }
+          - { slug: network-attached-storage, title: Network-attached storage (NAS), type: hardware }
+          - { slug: raid, title: RAID, type: concept }
+          - { slug: edge-computing, title: Edge computing, type: concept }
+          - { slug: high-availability, title: High availability, type: concept }
+          - { slug: scalability, title: Scalability, type: concept }
+
+      - id: hw-personal-computers
+        label: Personal computers
+        blurb: The machines you build software on — the desktop-vs-laptop trade and what each is for.
+        entries:
+          - { slug: personal-computer, title: Personal computer, type: hardware }
+          - { slug: desktop-computer, title: Desktop computer, type: hardware }
+          - { slug: laptop, title: Laptop, type: hardware }
+          - { slug: workstation, title: Workstation, type: hardware }
+          - { slug: all-in-one-computer, title: All-in-one computer, type: hardware }
+          - { slug: mini-pc, title: Mini PC, type: hardware }
+          - { slug: gaming-pc, title: Gaming PC, type: hardware }
+          - { slug: chromebook, title: Chromebook, type: hardware }
+          - { slug: thin-client, title: Thin client, type: hardware }
+          - { slug: computer-monitor, title: Computer monitor, type: hardware }
+          - { slug: keyboard, title: Keyboard, type: hardware }
+          - { slug: mouse, title: Mouse, type: hardware }
+          - { slug: peripheral, title: Peripheral, type: concept }
+          - { slug: computer-case, title: Computer case, type: hardware }
+          - { slug: webcam, title: Webcam, type: hardware }
+          - { slug: printer, title: Printer, type: hardware }
+          - { slug: motherboard-form-factor, title: Motherboard form factor, type: concept }
+          - { slug: build-vs-buy, title: Build vs buy a PC, type: concept }
+
+      - id: hw-mobile
+        label: Mobile devices
+        blurb: The computers in everyone's pocket and bag, and what it takes to build software for them.
+        entries:
+          - { slug: smartphone, title: Smartphone, type: hardware }
+          - { slug: tablet, title: Tablet, type: hardware }
+          - { slug: mobile-app-development, title: Mobile app development, type: concept }
+          - { slug: system-on-a-chip, title: System on a chip (SoC), type: hardware }
+          - { slug: mobile-operating-system, title: Mobile operating system, type: concept }
+          - { slug: android, title: Android, type: concept }
+          - { slug: ios, title: iOS, type: concept }
+          - { slug: battery-technology, title: Battery technology, type: concept }
+          - { slug: touchscreen, title: Touchscreen, type: hardware }
+          - { slug: e-reader, title: E-reader, type: hardware }
+          - { slug: smartwatch, title: Smartwatch, type: hardware }
+          - { slug: wearable-computer, title: Wearable computer, type: hardware }
+          - { slug: cellular-modem, title: Cellular modem, type: hardware }
+          - { slug: gps-receiver, title: GPS receiver, type: hardware }
+          - { slug: esim, title: eSIM, type: hardware }
+          - { slug: near-field-communication, title: Near-field communication (NFC), type: concept }
+          - { slug: foldable-phone, title: Foldable phone, type: hardware }
+
+      - id: hw-sbc
+        label: Single-board computers
+        blurb: A complete Linux computer on one small board — the Raspberry Pi and its rivals, and the GPIO header that touches the physical world.
+        entries:
+          - { slug: single-board-computer, title: Single-board computer (SBC), type: hardware }
+          - { slug: raspberry-pi, title: Raspberry Pi, type: hardware }
+          - { slug: nvidia-jetson, title: NVIDIA Jetson, type: hardware }
+          - { slug: beaglebone, title: BeagleBone, type: hardware }
+          - { slug: gpio, title: GPIO, type: hardware }
+          - { slug: compute-module, title: Compute Module, type: hardware }
+          - { slug: orange-pi, title: Orange Pi, type: hardware }
+          - { slug: odroid, title: ODROID, type: hardware }
+          - { slug: rock-pi, title: Rock Pi (Radxa), type: hardware }
+          - { slug: banana-pi, title: Banana Pi, type: hardware }
+          - { slug: google-coral, title: Google Coral, type: hardware }
+          - { slug: libre-computer, title: Libre Computer, type: hardware }
+          - { slug: hat-add-on-board, title: HAT add-on board, type: hardware }
+          - { slug: edge-ai, title: Edge AI, type: concept }
+          - { slug: home-automation, title: Home automation, type: concept }
+          - { slug: sbc-cluster, title: SBC cluster, type: concept }
+
+      - id: hw-microcontrollers
+        label: Microcontrollers
+        blurb: The tiny, cheap, low-power chips that run the physical world — no OS, the Arduino, and the wireless ESP32.
+        entries:
+          - { slug: microcontroller, title: Microcontroller (MCU), type: hardware }
+          - { slug: arduino, title: Arduino, type: hardware }
+          - { slug: esp32, title: ESP32, type: hardware }
+          - { slug: firmware, title: Firmware, type: concept }
+          - { slug: internet-of-things, title: Internet of Things (IoT), type: concept }
+          - { slug: stm32, title: STM32, type: hardware }
+          - { slug: pic-microcontroller, title: PIC microcontroller, type: hardware }
+          - { slug: avr-atmega, title: AVR / ATmega, type: hardware }
+          - { slug: rp2040, title: RP2040, type: hardware }
+          - { slug: raspberry-pi-pico, title: Raspberry Pi Pico, type: hardware }
+          - { slug: teensy, title: Teensy, type: hardware }
+          - { slug: arm-cortex-m, title: ARM Cortex-M, type: concept }
+          - { slug: real-time-operating-system, title: Real-time operating system (RTOS), type: concept }
+          - { slug: bootloader, title: Bootloader, type: concept }
+          - { slug: in-system-programming, title: In-system programming, type: concept }
+          - { slug: pulse-width-modulation, title: Pulse-width modulation (PWM), type: concept }
+          - { slug: digital-to-analog-converter, title: Digital-to-analog converter (DAC), type: hardware }
+          - { slug: i2c, title: "I²C", type: concept }
+          - { slug: spi, title: SPI, type: concept }
+          - { slug: uart, title: UART, type: concept }
+          - { slug: interrupt, title: Interrupt, type: concept }
+          - { slug: embedded-system, title: Embedded system, type: concept }
+          - { slug: bare-metal-programming, title: Bare-metal programming, type: concept }
+          - { slug: watchdog-timer, title: Watchdog timer, type: concept }
+          - { slug: sensor, title: Sensor, type: hardware }
+
+      - id: hw-networking
+        label: Networking & connectivity
+        blurb: How computers reach each other and the internet — the cards, boxes, links, and addresses that move bytes between machines.
+        entries:
+          - { slug: network-interface-card, title: Network interface card (NIC), type: hardware }
+          - { slug: router, title: Router, type: hardware }
+          - { slug: network-switch, title: Network switch, type: hardware }
+          - { slug: ethernet, title: Ethernet, type: concept }
+          - { slug: wi-fi, title: Wi-Fi, type: concept }
+          - { slug: bluetooth, title: Bluetooth, type: concept }
+          - { slug: modem, title: Modem, type: hardware }
+          - { slug: wireless-access-point, title: Wireless access point, type: hardware }
+          - { slug: fiber-optic, title: Fiber-optic, type: concept }
+          - { slug: power-over-ethernet, title: Power over Ethernet (PoE), type: concept }
+          - { slug: thunderbolt, title: Thunderbolt, type: hardware }
+          - { slug: gateway, title: Gateway, type: concept }
+          - { slug: lan-and-wan, title: LAN & WAN, type: concept }
+          - { slug: ip-address, title: IP address, type: concept }
+
+      - id: hw-storage
+        label: Storage & memory
+        blurb: Where bytes live — the drives, chips, and cards that hold data, and the memory hierarchy that ranks them by speed and cost.
+        entries:
+          - { slug: hard-disk-drive, title: Hard disk drive (HDD), type: hardware }
+          - { slug: solid-state-drive, title: Solid-state drive (SSD), type: hardware }
+          - { slug: nvme, title: NVMe, type: concept }
+          - { slug: flash-memory, title: Flash memory, type: hardware }
+          - { slug: sd-card, title: SD card, type: hardware }
+          - { slug: emmc, title: eMMC, type: hardware }
+          - { slug: optical-disc, title: Optical disc, type: hardware }
+          - { slug: magnetic-tape, title: Magnetic tape, type: hardware }
+          - { slug: read-only-memory, title: Read-only memory (ROM), type: hardware }
+          - { slug: volatile-memory, title: Volatile vs non-volatile memory, type: concept }
+          - { slug: memory-hierarchy, title: Memory hierarchy, type: concept }
+          - { slug: file-system, title: File system, type: concept }
+
+      - id: hw-accelerators
+        label: GPUs, FPGAs & accelerators
+        blurb: Chips that do specialized work faster than a general CPU — graphics, AI, signal processing, and reconfigurable logic.
+        entries:
+          - { slug: cuda, title: CUDA, type: concept }
+          - { slug: gpgpu, title: GPGPU, type: concept }
+          - { slug: tensor-processing-unit, title: Tensor processing unit (TPU), type: hardware }
+          - { slug: neural-processing-unit, title: Neural processing unit (NPU), type: hardware }
+          - { slug: field-programmable-gate-array, title: Field-programmable gate array (FPGA), type: hardware }
+          - { slug: application-specific-integrated-circuit, title: Application-specific integrated circuit (ASIC), type: hardware }
+          - { slug: ai-accelerator, title: AI accelerator, type: hardware }
+          - { slug: vector-processor, title: Vector processor, type: concept }
+          - { slug: hardware-acceleration, title: Hardware acceleration, type: concept }
+          - { slug: soc-vs-discrete, title: SoC vs discrete, type: concept }
+
+      - id: hw-people
+        label: People
+        blurb: The engineers and founders who built the computing-hardware world — from the first transistors and CPUs to the boards and chips developers use today.
+        entries:
+          - { slug: alan-turing, title: Alan Turing, type: person }
+          - { slug: john-von-neumann, title: John von Neumann, type: person }
+          - { slug: gordon-moore, title: Gordon Moore, type: person }
+          - { slug: robert-noyce, title: Robert Noyce, type: person }
+          - { slug: jack-kilby, title: Jack Kilby, type: person }
+          - { slug: federico-faggin, title: Federico Faggin, type: person }
+          - { slug: steve-wozniak, title: Steve Wozniak, type: person }
+          - { slug: linus-torvalds, title: Linus Torvalds, type: person }
+          - { slug: eben-upton, title: Eben Upton, type: person }
+          - { slug: massimo-banzi, title: Massimo Banzi, type: person }
+          - { slug: sophie-wilson, title: Sophie Wilson, type: person }
+          - { slug: jensen-huang, title: Jensen Huang, type: person }
+
+      - id: hw-organizations
+        label: Organizations & makers
+        blurb: The companies and bodies that design and make computing hardware — chip makers, board vendors, foundries, and the standards groups behind them.
+        entries:
+          - { slug: intel, title: Intel, type: organization }
+          - { slug: amd, title: AMD, type: organization }
+          - { slug: arm-holdings, title: Arm Holdings, type: organization }
+          - { slug: nvidia, title: NVIDIA, type: organization }
+          - { slug: qualcomm, title: Qualcomm, type: organization }
+          - { slug: raspberry-pi-foundation, title: Raspberry Pi Foundation, type: organization }
+          - { slug: arduino-company, title: Arduino (company), type: organization }
+          - { slug: espressif, title: Espressif Systems, type: organization }
+          - { slug: broadcom, title: Broadcom, type: organization }
+          - { slug: tsmc, title: TSMC, type: organization }
+          - { slug: ieee, title: IEEE, type: organization }
+          - { slug: jedec, title: JEDEC, type: organization }
