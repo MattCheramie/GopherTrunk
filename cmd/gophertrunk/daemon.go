@@ -58,6 +58,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/storage"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
@@ -1122,13 +1123,23 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 
 	// Recorder is optional; needs a target directory.
 	if cfg.Recordings.Dir != "" {
+		// Default protocol→vocoder map, optionally swapping DMR to the
+		// opt-in "warm" decoder (gentle high-shelf, issue #644).
+		var vocoderMap map[string]string
+		if cfg.Recordings.WarmDMRAudio {
+			vocoderMap = voice.DefaultVocoderForProtocol()
+			for _, proto := range []string{"dmr-tier1", "dmr-tier2", "dmr-tier3"} {
+				vocoderMap[proto] = ambe2.DMRWarmVocoderName
+			}
+		}
 		rec, err := voice.NewRecorder(voice.RecorderOptions{
-			Bus:           d.bus,
-			Log:           log,
-			OutDir:        cfg.Recordings.Dir,
-			SampleRate:    cfg.Recordings.SampleRate,
-			WriteRaw:      cfg.Recordings.WriteRaw,
-			SkipEncrypted: cfg.Recordings.SkipEncrypted,
+			Bus:                d.bus,
+			Log:                log,
+			OutDir:             cfg.Recordings.Dir,
+			SampleRate:         cfg.Recordings.SampleRate,
+			WriteRaw:           cfg.Recordings.WriteRaw,
+			SkipEncrypted:      cfg.Recordings.SkipEncrypted,
+			VocoderForProtocol: vocoderMap,
 			Normalize: voice.NormalizeConfig{
 				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
 				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,

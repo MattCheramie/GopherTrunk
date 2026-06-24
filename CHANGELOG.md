@@ -7,6 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Opt-in "warm" DMR voice decoder** (`recordings.warm_dmr_audio`, #644). A
+  gentle output high-shelf (≈2 dB cut above 1.5 kHz) that softens the
+  bright/thin "digital" timbre of software AMBE+2 decode, selectable via the new
+  `ambe2-dmr-warm` vocoder. It is a listener tone preference, not a
+  codec-quality fix — the residual synthetic character of low-bitrate AMBE+2 is
+  intrinsic to software decoders (mbelib, SDRtrunk's JMBE, and GopherTrunk all
+  share it); only a DVSI hardware vocoder removes it. Off by default; DMR only.
+
+### Fixed
+- **Unvoiced-synthesis tremolo in the MBE vocoders** (#644). The §6.4 unvoiced
+  overlap-add used a Hann window that is not power-complementary at the
+  160-sample hop, modulating the synthesized noise floor ~7 dB at the 50 Hz
+  frame rate (a buzzy artifact, most audible on noisy/fricative speech).
+  Replaced it with a power-complementary tapered-cosine window so the noise
+  floor is flat. Shared by the IMBE (P25) and AMBE+2 (DMR/NXDN/dPMR) paths.
+
 ## [v0.5.2] — 2026-06-24
 
 A maintenance release headlined by a **generic JSON webhook call sink** —

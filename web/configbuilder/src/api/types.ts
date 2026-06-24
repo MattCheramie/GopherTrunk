@@ -161,6 +161,7 @@ export interface RecordingsConfig {
   SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;
   Normalize: NormalizeConfig;
+  WarmDMRAudio?: boolean;
 }
 
 export interface MetricsConfig {

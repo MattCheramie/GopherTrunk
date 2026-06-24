@@ -1573,6 +1573,15 @@ type RecordingsConfig struct {
 	// consistent level. Off by default. This is post-processing of the
 	// recorded WAV only; live monitoring/playback is unaffected.
 	Normalize NormalizeConfig `yaml:"normalize"`
+	// WarmDMRAudio selects the opt-in "ambe2-dmr-warm" vocoder for DMR
+	// voice instead of the default "ambe2-dmr". It applies a gentle
+	// output high-shelf that trims ~2 dB above ~1.5 kHz, softening the
+	// bright/thin "digital" timbre of software AMBE+2 decode (issue #644).
+	// It is a listener tone preference, not a codec-quality fix — the
+	// residual synthetic character of low-bitrate AMBE+2 is intrinsic to
+	// software decoding (only a DVSI hardware vocoder removes it). Off by
+	// default; affects DMR only.
+	WarmDMRAudio bool `yaml:"warm_dmr_audio"`
 }
 
 // EqualizerConfig is the YAML shape of the optional CMA equalizer in

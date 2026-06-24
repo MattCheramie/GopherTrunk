@@ -32,6 +32,13 @@ const (
 	// variant DMR voice uses; the default "ambe2" decoder is the
 	// 3600x2400 variant. See unpackParams2450 in params2450.go.
 	DMRVocoderName = "ambe2-dmr"
+
+	// DMRWarmVocoderName is the opt-in DMR decoder identical to
+	// "ambe2-dmr" plus a gentle output high-shelf that softens the
+	// bright "digital" timbre of software AMBE+2 decode (issue #644).
+	// Operators select it via vocoder_for_protocol; the default stays
+	// "ambe2-dmr". See NewDMRWarm.
+	DMRWarmVocoderName = "ambe2-dmr-warm"
 )
 
 // phaseRngSeedOffset offsets the §6.3 voiced-phase-dispersion source from
@@ -71,6 +78,14 @@ type Decoder struct {
 	// dc is the first-order DC-removal high-pass run over the synthesized
 	// PCM before the AGC; it is per-stream and reset only on re-sync.
 	dc mbe.DCBlock
+
+	// tone is an OPTIONAL high-shelf tone control applied after the DC
+	// block and before the AGC. nil (the default for New/NewDMR) is a
+	// pass-through; NewDMRWarm sets it to trade a little of the
+	// software-decode brightness for a warmer balance (issue #644). It is
+	// a tone preference, not a synthesis change — the default decoders
+	// stay byte-identical.
+	tone *mbe.ToneTilt
 
 	// smoother holds the error-rate adaptive-smoothing memory. frameErrs is
 	// the FEC corrected-bit count for the NEXT frame, supplied via
@@ -153,6 +168,30 @@ func NewDMR() *Decoder {
 	return d
 }
 
+// warmShelfCornerHz / warmShelfDb tune the opt-in DMR "warm" decoder's
+// first-order high-shelf. These yield ~2 dB of average attenuation across
+// 1.5–4 kHz and ≈0 dB below ~300 Hz — sized to the measured
+// GopherTrunk-vs-mbelib brightness offset on the issue #644 sample (GT ran
+// ~1.5–2 dB hot across 1.5–4 kHz). Audio sample rate is the MBE 8 kHz PCM
+// rate.
+const (
+	warmShelfCornerHz = 900.0
+	warmShelfDb       = 3.5
+)
+
+// NewDMRWarm returns the DMR AMBE+2 decoder with an opt-in high-shelf
+// tone control that softens the bright/thin "digital" timbre of software
+// AMBE+2 decode (issue #644). It is otherwise identical to NewDMR — same
+// bits, same synthesis — and is selected via vocoder_for_protocol
+// ("ambe2-dmr-warm"); the plain "ambe2-dmr" default is unchanged. This is
+// a listener tone preference, not a codec-quality fix.
+func NewDMRWarm() *Decoder {
+	d := NewDMR()
+	d.name = DMRWarmVocoderName
+	d.tone = mbe.NewToneTilt(float64(mbe.PCMSampleRate), warmShelfCornerHz, warmShelfDb)
+	return d
+}
+
 // Name returns the registry key — VocoderName or DMRVocoderName
 // depending on which constructor built the decoder.
 func (d *Decoder) Name() string { return d.name }
@@ -229,6 +268,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		// + clear state.
 		d.state.Reset()
 		d.dc.Reset()
+		d.tone.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.applyOutput(pcm, out, true)
@@ -243,6 +283,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.synthSingleTone(p.B1, p.B2, pcm)
 		d.state.Reset()
 		d.dc.Reset()
+		d.tone.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.applyOutput(pcm, out, false)
@@ -265,6 +306,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		d.synthDualTone(freqA, freqB, p.B2, pcm)
 		d.state.Reset()
 		d.dc.Reset()
+		d.tone.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.applyOutput(pcm, out, false)
@@ -281,6 +323,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 			d.synthDualTone(freqA, freqB, p.B2, pcm)
 			d.state.Reset()
 			d.dc.Reset()
+			d.tone.Reset()
 			d.clearLastGood()
 			d.prevGamma = 0
 			d.applyOutput(pcm, out, false)
@@ -299,6 +342,7 @@ func (d *Decoder) Decode(frame []byte) ([]int16, error) {
 		mbe.SynthUnvoicedOverlapAdd(&d.state, p.Params, nil, nil, pcm)
 		d.state.Reset()
 		d.dc.Reset()
+		d.tone.Reset()
 		d.clearLastGood()
 		d.prevGamma = 0
 		d.tonePhase = 0
@@ -526,6 +570,9 @@ func (d *Decoder) synthFrame(p mbe.Params, log2M *[mbe.MaxL + 1]float64, M *[mbe
 // imbe.Decoder.applyOutput.
 func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
 	d.dc.Process(pcm)
+	// Optional opt-in tone control (nil = pass-through for the default
+	// decoders, so their output is byte-identical to before).
+	d.tone.Process(pcm)
 	d.agc.Apply(pcm, out, freezeEnvelope)
 }
 
@@ -606,6 +653,7 @@ func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc.Reset()
 	d.dc.Reset()
+	d.tone.Reset()
 	d.smoother.Reset()
 	d.clearLastGood()
 	d.prevGamma = 0
@@ -626,5 +674,8 @@ func init() {
 	})
 	voice.DefaultRegistry.Register(DMRVocoderName, func() (voice.Vocoder, error) {
 		return NewDMR(), nil
+	})
+	voice.DefaultRegistry.Register(DMRWarmVocoderName, func() (voice.Vocoder, error) {
+		return NewDMRWarm(), nil
 	})
 }
