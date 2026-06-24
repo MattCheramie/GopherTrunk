@@ -359,30 +359,138 @@ func TestSynthUnvoicedFromNoiseRealOutput(t *testing.T) {
 	}
 }
 
-// TestSynthesisWindowEndpoints: the periodic Hann window starts and
-// ends at zero (well, n=0 is exactly zero; n=N-1 is near zero) and
-// peaks at n = N/2 = 128. Pins the window definition so a future
-// switch to a different window can't silently regress.
+// TestSynthesisWindowEndpoints: the power-complementary window decays
+// to near-zero at both edges (so it still suppresses frame-boundary
+// clicks) and is unity across the non-overlapping centre [96, 160).
+// Pins the window definition so a future switch can't silently
+// regress.
 func TestSynthesisWindowEndpoints(t *testing.T) {
-	if synthesisWindow[0] != 0 {
-		t.Errorf("synthesisWindow[0] = %v, want 0 (Hann left edge)", synthesisWindow[0])
+	// Edges taper to near-zero (the quarter-wave sine's first/last
+	// half-step), not hard zero, but small enough to kill clicks.
+	if synthesisWindow[0] > 0.02 {
+		t.Errorf("synthesisWindow[0] = %v, want ≈0 (tapered left edge)", synthesisWindow[0])
 	}
-	if !almostEqual(synthesisWindow[UnvoicedFFTSize/2], 1.0) {
-		t.Errorf("synthesisWindow[N/2] = %v, want 1.0 (Hann peak)",
-			synthesisWindow[UnvoicedFFTSize/2])
+	if synthesisWindow[UnvoicedFFTSize-1] > 0.02 {
+		t.Errorf("synthesisWindow[N-1] = %v, want ≈0 (tapered right edge)",
+			synthesisWindow[UnvoicedFFTSize-1])
+	}
+	// The whole flat top, including N/2, is unity.
+	for _, n := range []int{UnvoicedTailSamples, UnvoicedFFTSize / 2, UnvoicedFFTSize - UnvoicedTailSamples - 1} {
+		if !almostEqual(synthesisWindow[n], 1.0) {
+			t.Errorf("synthesisWindow[%d] = %v, want 1.0 (flat top)", n, synthesisWindow[n])
+		}
 	}
 }
 
-// TestSynthesisWindowHannShape: the periodic Hann window is
-// symmetric in the sense that w[k] == w[N-k] for k in [1..N/2-1].
-// Pins the symmetry property the OA recipe assumes.
-func TestSynthesisWindowHannShape(t *testing.T) {
-	for k := 1; k < UnvoicedFFTSize/2; k++ {
-		if !almostEqual(synthesisWindow[k], synthesisWindow[UnvoicedFFTSize-k]) {
+// TestSynthesisWindowSymmetry: the synthesis window is symmetric in
+// the sense that w[k] == w[N-1-k]. The overlap-add COLA derivation
+// (TestSynthesisWindowPowerComplementary) relies on w[160+n] = w[95-n],
+// which this symmetry guarantees.
+func TestSynthesisWindowSymmetry(t *testing.T) {
+	for k := 0; k < UnvoicedFFTSize/2; k++ {
+		if !almostEqual(synthesisWindow[k], synthesisWindow[UnvoicedFFTSize-1-k]) {
 			t.Errorf("symmetry: w[%d]=%v != w[%d]=%v",
-				k, synthesisWindow[k], UnvoicedFFTSize-k,
-				synthesisWindow[UnvoicedFFTSize-k])
+				k, synthesisWindow[k], UnvoicedFFTSize-1-k,
+				synthesisWindow[UnvoicedFFTSize-1-k])
 		}
+	}
+}
+
+// TestSynthesisWindowPowerComplementary pins the COLA property the
+// overlap-add depends on: consecutive frames carry INDEPENDENT noise
+// blocks (each frame draws fresh d.rng.NormFloat64()), so in the
+// 96-sample overlap region their variances add. The audible
+// noise-power envelope across one frame is therefore
+//
+//	P[n] = w[n]² + w[n+HOP]²   (n < N-HOP, overlap region)
+//	P[n] = w[n]²               (n >= N-HOP, no overlap)
+//
+// For a tremolo-free unvoiced floor this must be constant across the
+// whole frame. A plain periodic Hann is NOT power-complementary at
+// the 160-sample hop — it ripples ~7 dB, which leaks through as a
+// 50 Hz frame-rate tremolo on the unvoiced band (one of the synthesis
+// artifacts examined for issue #644). The power-complementary
+// synthesis window keeps this envelope flat.
+func TestSynthesisWindowPowerComplementary(t *testing.T) {
+	const hop = SamplesPerFrame // 160
+	var minP, maxP float64
+	for n := 0; n < hop; n++ {
+		p := synthesisWindow[n] * synthesisWindow[n]
+		if n+hop < UnvoicedFFTSize {
+			p += synthesisWindow[n+hop] * synthesisWindow[n+hop]
+		}
+		if n == 0 || p < minP {
+			minP = p
+		}
+		if n == 0 || p > maxP {
+			maxP = p
+		}
+	}
+	// Allow a hair of float slack; the analytic window is exactly flat.
+	if maxP-minP > 1e-9 {
+		t.Errorf("overlap-add power envelope not flat: min=%.6f max=%.6f (ripple %.3f dB); "+
+			"window is not power-complementary at hop=%d", minP, maxP,
+			10*math.Log10(maxP/minP), hop)
+	}
+}
+
+// TestSynthUnvoicedOverlapAddNoiseFloorIsFlat drives the OA path with
+// a long run of all-unvoiced frames (fresh independent noise each
+// frame, as the real decoder does) and confirms the synthesized
+// noise-power envelope is flat across the frame position. This is the
+// synthesis-level counterpart to TestSynthesisWindowPowerComplementary
+// and the #644 regression guard: with the old periodic-Hann window the
+// per-position power dipped ~7 dB at the overlap boundary, audible as a
+// 50 Hz frame-rate tremolo ("machine voice"). A power-complementary
+// window keeps it flat.
+func TestSynthUnvoicedOverlapAddNoiseFloorIsFlat(t *testing.T) {
+	var s SynthState
+	// Flat spectral envelope so the only structure in the output
+	// envelope comes from the synthesis window's overlap-add, not the
+	// signal model. All harmonics unvoiced (Vl=0 default).
+	p := Params{Header: Header{W0: math.Pi / 40, L: 30}}
+	var M [57]float64
+	for l := 1; l <= p.L; l++ {
+		M[l] = 1.0
+	}
+
+	rng := rand.New(rand.NewSource(99))
+	const frames = 4000
+	power := make([]float64, SamplesPerFrame)
+	dst := make([]float64, SamplesPerFrame)
+	for f := 0; f < frames; f++ {
+		noise := make([]float64, UnvoicedFFTSize)
+		for i := range noise {
+			noise[i] = rng.NormFloat64()
+		}
+		for i := range dst {
+			dst[i] = 0
+		}
+		SynthUnvoicedOverlapAdd(&s, p, &M, noise, dst)
+		// Skip the first frame: its overlap region has no prev tail yet.
+		if f == 0 {
+			continue
+		}
+		for n := 0; n < SamplesPerFrame; n++ {
+			power[n] += dst[n] * dst[n]
+		}
+	}
+	var minP, maxP float64
+	for n := 0; n < SamplesPerFrame; n++ {
+		if n == 0 || power[n] < minP {
+			minP = power[n]
+		}
+		if n == 0 || power[n] > maxP {
+			maxP = power[n]
+		}
+	}
+	// Monte-Carlo over 4000 frames leaves some variance; the window's
+	// systematic ripple was ~7 dB, so a 2 dB ceiling cleanly separates
+	// "flat" from the old Hann while tolerating estimator noise.
+	rippleDb := 10 * math.Log10(maxP/minP)
+	if rippleDb > 2.0 {
+		t.Errorf("unvoiced noise-floor envelope ripple %.2f dB across frame (min=%.1f max=%.1f); "+
+			"overlap-add window is not power-complementary", rippleDb, minP, maxP)
 	}
 }
 
