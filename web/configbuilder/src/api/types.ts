@@ -154,9 +154,29 @@ export interface NormalizeConfig {
   MaxBoostDB: number;
 }
 
+export interface CompressConfig {
+  Enabled: boolean;
+  ThresholdDB: number;
+  Ratio: number;
+  AttackMs: number;
+  ReleaseMs: number;
+  MakeupDB: number;
+}
+
+export interface EnhanceConfig {
+  Enabled: boolean;
+  HPFHz: number;
+  LPFHz: number;
+  ShelfHz: number;
+  ShelfDB: number;
+  AGCTarget: number;
+  Compress: CompressConfig;
+}
+
 export interface RecordingsConfig {
   Dir: string;
   SampleRate: number;
+  Enhance: EnhanceConfig;
   WriteRaw: boolean;
   SkipEncrypted: boolean;
   Equalizer: EqualizerConfig;

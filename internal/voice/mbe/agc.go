@@ -202,6 +202,20 @@ func NewAGC(cfg AGCConfig) *AGC {
 // backfill).
 func (a *AGC) Config() AGCConfig { return a.cfg }
 
+// SetTargetPeak overrides the post-AGC peak target (int16 units),
+// letting a caller make the output louder or quieter than the faithful
+// default after construction — the optional voice enhancement chain uses
+// it to raise the level toward what the louder rival decoders produce. A
+// non-positive value is ignored so a disabled/zero config can't silence
+// the output. The running envelope is preserved (the next frame just
+// scales toward the new target).
+func (a *AGC) SetTargetPeak(peak float64) {
+	if peak <= 0 {
+		return
+	}
+	a.cfg.TargetPeak = peak
+}
+
 // Envelope returns the current smoothed peak envelope. Useful for
 // tests + introspection; production callers don't normally read
 // it.

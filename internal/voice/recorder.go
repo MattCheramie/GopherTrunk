@@ -15,7 +15,20 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
+
+// VoiceEnhanceable is the optional interface a software vocoder
+// implements to accept the opt-in output enhancement chain
+// (recordings.enhance). The recorder type-asserts the vocoder it builds
+// for each call and, when the assertion succeeds, installs the current
+// enhancement config so the chain applies to BOTH the recorded WAV and
+// the live decoded-PCM fan-out (they share this one decode). Vocoders
+// that don't implement it (e.g. a future hardware backend) simply decode
+// faithfully. The imbe and ambe2 decoders implement it.
+type VoiceEnhanceable interface {
+	SetVoiceEnhancer(cfg mbe.EnhancerConfig)
+}
 
 // Recorder writes per-call audio + raw-frame files. It subscribes to
 // events.KindCallStart and events.KindCallEnd from the trunking engine,
@@ -61,6 +74,14 @@ type Recorder struct {
 	skipEncrypted      bool
 	normalize          NormalizeConfig
 	vocoderForProtocol map[string]string
+
+	// enhance is the current voice enhancement config, read when a new
+	// call's vocoder is built (buildSession). Guarded by enhanceMu so the
+	// settings endpoint can swap it at runtime via SetVoiceEnhance — the
+	// change then takes effect on the NEXT call (each call constructs a
+	// fresh vocoder), which is the live-edit granularity for this feature.
+	enhanceMu sync.RWMutex
+	enhance   mbe.EnhancerConfig
 
 	mu        sync.Mutex
 	sessions  map[string]*recordingSession // by device serial
@@ -178,6 +199,14 @@ type RecorderOptions struct {
 	// uploads) reads the normalized audio. Off by default.
 	Normalize NormalizeConfig
 
+	// Enhance configures the optional, opt-in "sound-good" voice
+	// enhancement chain (band-limit + warmth shelf + louder AGC +
+	// optional compression) applied to decoded digital voice. When
+	// Enabled it shapes both the recorded WAV and the live decoded-PCM
+	// fan-out, since both come from the recorder's single per-call
+	// vocoder. Disabled by default (faithful, byte-identical output).
+	Enhance mbe.EnhancerConfig
+
 	// VocoderForProtocol maps a Grant.Protocol value to a vocoder
 	// registry name used to decode raw frames into PCM that's
 	// written to the call's WAV. nil means "use the package
@@ -253,6 +282,9 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if opts.Normalize.Enabled {
 		opts.Normalize = opts.Normalize.withDefaults()
 	}
+	if opts.Enhance.Enabled {
+		opts.Enhance = opts.Enhance.WithDefaults()
+	}
 	r := &Recorder{
 		bus:                opts.Bus,
 		log:                opts.Log,
@@ -261,12 +293,35 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		writeRaw:           opts.WriteRaw,
 		skipEncrypted:      opts.SkipEncrypted,
 		normalize:          opts.Normalize,
+		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
 	}
 	r.sub = opts.Bus.Subscribe()
 	return r, nil
+}
+
+// VoiceEnhance returns the current voice enhancement config (defaults
+// already backfilled when enabled). Read under the lock so a concurrent
+// SetVoiceEnhance never tears the struct.
+func (r *Recorder) VoiceEnhance() mbe.EnhancerConfig {
+	r.enhanceMu.RLock()
+	defer r.enhanceMu.RUnlock()
+	return r.enhance
+}
+
+// SetVoiceEnhance swaps the voice enhancement config at runtime. The
+// change applies to the NEXT call (each call builds a fresh vocoder that
+// reads VoiceEnhance); in-flight calls keep the config they started with.
+// This backs the live "enhance on/off" toggle in PATCH /api/v1/settings.
+func (r *Recorder) SetVoiceEnhance(cfg mbe.EnhancerConfig) {
+	if cfg.Enabled {
+		cfg = cfg.WithDefaults()
+	}
+	r.enhanceMu.Lock()
+	r.enhance = cfg
+	r.enhanceMu.Unlock()
 }
 
 // SetRecordingEnabled toggles the recorder's runtime "create new
@@ -640,6 +695,13 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 				"device", cs.DeviceSerial, "protocol", cs.Grant.Protocol,
 				"vocoder", name, "err", err)
 		} else {
+			// Install the opt-in enhancement chain if this vocoder
+			// supports it and enhancement is currently enabled. Reading
+			// the config here (per call) is what makes runtime toggles via
+			// SetVoiceEnhance take effect on the next call.
+			if enh, ok := v.(VoiceEnhanceable); ok {
+				enh.SetVoiceEnhancer(r.VoiceEnhance())
+			}
 			s.vocoder = v
 			s.vocoderName = name
 		}

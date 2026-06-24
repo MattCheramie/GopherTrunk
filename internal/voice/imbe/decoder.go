@@ -122,6 +122,14 @@ type Decoder struct {
 	// on stream re-sync via Reset.
 	dc mbe.DCBlock
 
+	// enhancer is the OPTIONAL "sound-good" post-processing chain run
+	// between the DC block and the AGC (band-limit + warmth shelf +
+	// optional compression). nil (the default) is a pass-through, so the
+	// faithful decode path stays byte-identical. Set via SetVoiceEnhancer
+	// from the recorder when recordings.enhance is enabled; continuous
+	// across frames, reset only on stream re-sync via Reset.
+	enhancer *mbe.VoiceEnhancer
+
 	// smoother holds the IMBE adaptive-smoothing memory (running channel
 	// error rate + local energy). frameErrs is the FEC corrected-bit count
 	// for the next Decode, supplied via SetFrameErrors (voice.ErrorAware);
@@ -564,7 +572,23 @@ const pcmSampleRateHz = 8000
 // the AGC.
 func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
 	d.dc.Process(pcm)
+	// Optional opt-in enhancement chain (nil = pass-through, so the
+	// faithful decoder's output is byte-identical to before).
+	d.enhancer.Process(pcm)
 	d.agc.Apply(pcm, out, freezeEnvelope)
+}
+
+// SetVoiceEnhancer installs (or clears) the optional output enhancement
+// chain on this decoder and, when enabled, raises the AGC peak target so
+// calls play back louder. A disabled cfg clears the chain and leaves the
+// AGC target untouched, restoring byte-identical faithful output. Call
+// once after construction, before decoding; implements
+// voice.VoiceEnhanceable.
+func (d *Decoder) SetVoiceEnhancer(cfg mbe.EnhancerConfig) {
+	d.enhancer = mbe.NewVoiceEnhancer(float64(mbe.PCMSampleRate), cfg)
+	if cfg.Enabled {
+		d.agc.SetTargetPeak(cfg.WithDefaults().AGCTarget)
+	}
 }
 
 // accumStats folds the just-applied frame's AGC telemetry and output
@@ -723,6 +747,7 @@ func (d *Decoder) Reset() {
 	d.state.Reset()
 	d.agc.Reset()
 	d.dc.Reset()
+	d.enhancer.Reset()
 	d.smoother.Reset()
 	d.frameErrs = 0
 	d.clearLastGood()

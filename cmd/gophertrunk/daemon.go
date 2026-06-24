@@ -60,6 +60,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 	gtweb "github.com/MattCheramie/GopherTrunk/web"
@@ -1146,6 +1147,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				TruePeakDBTP: cfg.Recordings.Normalize.TruePeakDBTP,
 				MaxBoostDB:   cfg.Recordings.Normalize.MaxBoostDB,
 			},
+			Enhance: enhancerConfigFromYAML(cfg.Recordings.Enhance),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: recorder: %w", err)
@@ -2389,6 +2391,30 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 // "Settled" today is conservative — a brief 250 ms timer after every
 // spawn call has fired — but ensures the HTTP listener bound (so the
 // launcher's TUI/web flow can reach it) before the prompt appears.
+// enhancerConfigFromYAML projects the YAML recordings.enhance block into
+// the runtime mbe.EnhancerConfig the recorder/decoders consume. Numeric
+// zero values are left zero here and backfilled from
+// mbe.DefaultEnhancerConfig downstream (WithDefaults), so an operator who
+// only sets `enabled: true` gets the full default chain.
+func enhancerConfigFromYAML(c config.EnhanceConfig) mbe.EnhancerConfig {
+	return mbe.EnhancerConfig{
+		Enabled:   c.Enabled,
+		HPFHz:     c.HPFHz,
+		LPFHz:     c.LPFHz,
+		ShelfHz:   c.ShelfHz,
+		ShelfDB:   c.ShelfDB,
+		AGCTarget: c.AGCTarget,
+		Compress: mbe.CompressConfig{
+			Enabled:     c.Compress.Enabled,
+			ThresholdDB: c.Compress.ThresholdDB,
+			Ratio:       c.Compress.Ratio,
+			AttackMs:    c.Compress.AttackMs,
+			ReleaseMs:   c.Compress.ReleaseMs,
+			MakeupDB:    c.Compress.MakeupDB,
+		},
+	}
+}
+
 func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("gophertrunk starting",
 		"http_addr", d.cfg.API.HTTPAddr,

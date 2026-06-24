@@ -37,23 +37,25 @@ func (f *fakeConfigWriter) Path() string { return f.path }
 // fakeSettingsApplier counts hot-reload dispatches per knob so the
 // applied/restart_required classification can be verified.
 type fakeSettingsApplier struct {
-	volCalls  atomic.Int32
-	muteCalls atomic.Int32
-	scanCalls atomic.Int32
-	logCalls  atomic.Int32
-	recCalls  atomic.Int32
-	scanErr   error
-	logErr    error
+	volCalls     atomic.Int32
+	muteCalls    atomic.Int32
+	scanCalls    atomic.Int32
+	logCalls     atomic.Int32
+	recCalls     atomic.Int32
+	enhanceCalls atomic.Int32
+	scanErr      error
+	logErr       error
 }
 
 func (a *fakeSettingsApplier) SetLogLevel(level string) error {
 	a.logCalls.Add(1)
 	return a.logErr
 }
-func (a *fakeSettingsApplier) SetAudioVolume(v float32)   { a.volCalls.Add(1) }
-func (a *fakeSettingsApplier) SetAudioMuted(m bool)       { a.muteCalls.Add(1) }
-func (a *fakeSettingsApplier) SetAudioEnabled(e bool)     {}
-func (a *fakeSettingsApplier) SetRecordingEnabled(e bool) { a.recCalls.Add(1) }
+func (a *fakeSettingsApplier) SetAudioVolume(v float32)      { a.volCalls.Add(1) }
+func (a *fakeSettingsApplier) SetAudioMuted(m bool)          { a.muteCalls.Add(1) }
+func (a *fakeSettingsApplier) SetAudioEnabled(e bool)        {}
+func (a *fakeSettingsApplier) SetRecordingEnabled(e bool)    { a.recCalls.Add(1) }
+func (a *fakeSettingsApplier) SetVoiceEnhanceEnabled(e bool) { a.enhanceCalls.Add(1) }
 func (a *fakeSettingsApplier) SetScannerScanMode(m string) error {
 	a.scanCalls.Add(1)
 	return a.scanErr

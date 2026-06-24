@@ -63,6 +63,20 @@ func (a *daemonSettingsApplier) SetRecordingEnabled(enabled bool) {
 	cockpit.SetRecordingEnabled(enabled)
 }
 
+// SetVoiceEnhanceEnabled toggles the opt-in voice enhancement chain on
+// the recorder. The chain's parameters come from the daemon's loaded
+// recordings.enhance config; only the on/off state is flipped live. The
+// change takes effect on the next call (each call builds a fresh decoder
+// that reads the current config). A nil recorder is a no-op.
+func (a *daemonSettingsApplier) SetVoiceEnhanceEnabled(enabled bool) {
+	if a.d.recorder == nil {
+		return
+	}
+	cfg := enhancerConfigFromYAML(a.d.cfg.Recordings.Enhance)
+	cfg.Enabled = enabled
+	a.d.recorder.SetVoiceEnhance(cfg)
+}
+
 // SetScannerScanMode forwards to the engine's SetScanMode. Returns
 // an error when the supplied string isn't a recognised mode.
 func (a *daemonSettingsApplier) SetScannerScanMode(mode string) error {

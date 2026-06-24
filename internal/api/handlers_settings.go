@@ -29,10 +29,11 @@ type SettingsPatchRequest struct {
 	AudioMuted    *bool    `json:"audio_muted,omitempty"`
 	AudioBufferMs *int     `json:"audio_buffer_ms,omitempty"`
 
-	RecordingsDir           *string `json:"recordings_dir,omitempty"`
-	RecordingsSampleRate    *uint32 `json:"recordings_sample_rate,omitempty"`
-	RecordingsWriteRaw      *bool   `json:"recordings_write_raw,omitempty"`
-	RecordingsSkipEncrypted *bool   `json:"recordings_skip_encrypted,omitempty"`
+	RecordingsDir            *string `json:"recordings_dir,omitempty"`
+	RecordingsSampleRate     *uint32 `json:"recordings_sample_rate,omitempty"`
+	RecordingsWriteRaw       *bool   `json:"recordings_write_raw,omitempty"`
+	RecordingsSkipEncrypted  *bool   `json:"recordings_skip_encrypted,omitempty"`
+	RecordingsEnhanceEnabled *bool   `json:"recordings_enhance_enabled,omitempty"`
 
 	RetentionCallLogDays *int    `json:"retention_call_log_days,omitempty"`
 	RetentionFilesDays   *int    `json:"retention_files_days,omitempty"`
@@ -70,6 +71,7 @@ func (r SettingsPatchRequest) toPatch() config.Patch {
 		RecordingsSampleRate:     r.RecordingsSampleRate,
 		RecordingsWriteRaw:       r.RecordingsWriteRaw,
 		RecordingsSkipEncrypted:  r.RecordingsSkipEncrypted,
+		RecordingsEnhanceEnabled: r.RecordingsEnhanceEnabled,
 		RetentionCallLogDays:     r.RetentionCallLogDays,
 		RetentionFilesDays:       r.RetentionFilesDays,
 		RetentionInterval:        r.RetentionInterval,
@@ -109,6 +111,10 @@ type SettingsApplier interface {
 	SetAudioEnabled(enabled bool)
 	SetRecordingEnabled(enabled bool)
 	SetScannerScanMode(mode string) error
+	// SetVoiceEnhanceEnabled toggles the opt-in voice enhancement chain
+	// at runtime. The change takes effect on the next call (each call
+	// builds a fresh decoder that reads the current config).
+	SetVoiceEnhanceEnabled(enabled bool)
 }
 
 // ConfigWriter wraps the daemon's config.yaml writer. Decoupled via
@@ -235,6 +241,14 @@ func (s *Server) applyHotReload(p config.Patch) (applied, restartRequired []stri
 			hot("recordings.write_raw")
 		} else {
 			cold("recordings.write_raw")
+		}
+	}
+	if p.RecordingsEnhanceEnabled != nil {
+		if app != nil {
+			app.SetVoiceEnhanceEnabled(*p.RecordingsEnhanceEnabled)
+			hot("recordings.enhance.enabled")
+		} else {
+			cold("recordings.enhance.enabled")
 		}
 	}
 

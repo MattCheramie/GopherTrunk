@@ -8,6 +8,23 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Opt-in voice enhancement chain** (`recordings.enhance`). A "sound-good"
+  post-vocoder chain for decoded digital voice — rumble high-pass (~250 Hz),
+  warmth high-shelf, telephone-band low-pass (~3.4 kHz, like OP25), a louder AGC
+  target (22000 vs the faithful 18000), and an optional soft-knee compressor.
+  It deliberately trades a little faithfulness for the cleaner/louder sound the
+  rival decoders produce: OP25 band-limits its output, Trunk Recorder ships
+  loudness normalization on by default, and DSD/DSDPlus run an aggressive output
+  AGC — uniform loudness + band-limiting, not exotic EQ, is what makes them sound
+  "better" (SDRtrunk, by contrast, plays raw vocoder output and has open
+  requests for exactly this). Because the recorder decodes each call once and
+  fans the PCM out to disk and live monitoring, the chain shapes **both**
+  recordings and live audio from a single point. Off by default — the faithful
+  path stays byte-identical — and surfaced near the top of the Config Builder.
+  Toggling `recordings.enhance.enabled` also live-applies via
+  `PATCH /api/v1/settings` (takes effect on the next call). Subsumes
+  `warm_dmr_audio` (now superseded) by extending the warmth shelf to all
+  protocols.
 - **Opt-in "warm" DMR voice decoder** (`recordings.warm_dmr_audio`, #644). A
   gentle output high-shelf (≈2 dB cut above 1.5 kHz) that softens the
   bright/thin "digital" timbre of software AMBE+2 decode, selectable via the new
