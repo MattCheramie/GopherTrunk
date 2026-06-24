@@ -108,14 +108,26 @@ type fakeEngine struct {
 	touched atomic.Int64
 	mu      sync.Mutex
 	ended   []string
+	reasons map[string]trunking.EndReason
 }
 
 func (e *fakeEngine) Touch(string) { e.touched.Add(1) }
-func (e *fakeEngine) EndCall(serial string, _ trunking.EndReason) bool {
+func (e *fakeEngine) EndCall(serial string, reason trunking.EndReason) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.ended = append(e.ended, serial)
+	if e.reasons == nil {
+		e.reasons = make(map[string]trunking.EndReason)
+	}
+	e.reasons[serial] = reason
 	return true
+}
+
+// endReason returns the reason the most recent EndCall(serial) carried.
+func (e *fakeEngine) endReason(serial string) trunking.EndReason {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.reasons[serial]
 }
 
 func mkComposer(t *testing.T, src *fakeSource) (*Composer, *events.Bus, *recordingSink, *fakeEngine, func()) {
