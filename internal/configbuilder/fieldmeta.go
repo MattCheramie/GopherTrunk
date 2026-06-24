@@ -255,6 +255,22 @@ var fieldMetas = map[string]FieldMeta{
 	"NormalizeConfig.TruePeakDBTP":   {Label: "True peak (dBTP)", Help: "True-peak ceiling in dBTP. Default -1.5 when enabled."},
 	"NormalizeConfig.MaxBoostDB":     {Label: "Max gain (dB)", Help: "Cap on applied gain in either direction so quiet calls don't amplify hiss. Default 12 when enabled."},
 
+	// ---- Recordings ▸ Voice enhancement (sound-good chain) -----------------
+	"RecordingsConfig.Enhance":   {Label: "Voice enhancement", Help: "Opt-in \"sound-good\" chain for decoded digital voice: band-limits to the telephone band, warms the bright software-AMBE+2 timbre, runs the AGC to a louder target, and (optionally) compresses. Shapes BOTH recordings and live monitoring. Trades a little faithfulness for a cleaner/louder sound like OP25 / Trunk Recorder / DSDPlus. Off by default."},
+	"EnhanceConfig.Enabled":      {Help: "Turn the voice enhancement chain on. When off, decoded audio is byte-identical to the faithful path."},
+	"EnhanceConfig.HPFHz":        {Label: "High-pass (Hz)", Help: "Rumble high-pass corner. Default 250 Hz when enabled; set negative to disable just this stage.", Hz: true},
+	"EnhanceConfig.LPFHz":        {Label: "Low-pass (Hz)", Help: "Band-limit low-pass corner (telephone band). Default 3400 Hz when enabled, matching OP25; set negative to disable just this stage.", Hz: true},
+	"EnhanceConfig.ShelfHz":      {Label: "Warmth corner (Hz)", Help: "Frequency above which the warmth high-shelf cuts. Default 1500 Hz when enabled.", Hz: true},
+	"EnhanceConfig.ShelfDB":      {Label: "Warmth cut (dB)", Help: "Decibels of high-shelf cut above the warmth corner, softening the bright/thin timbre. Default 2 dB when enabled; 0 disables the shelf."},
+	"EnhanceConfig.AGCTarget":    {Label: "Loudness target", Help: "AGC output peak target in int16 units (max 32767). Default 22000 (~-3.5 dBFS), louder than the faithful 18000. This is the single biggest \"sounds better\" lever."},
+	"EnhanceConfig.Compress":     {Label: "Compressor", Help: "Optional gentle soft-knee compression for intelligibility. Off by default — the louder AGC target already carries most of the perceived loudness."},
+	"CompressConfig.Enabled":     {Help: "Turn the output compressor on."},
+	"CompressConfig.ThresholdDB": {Label: "Threshold (dBFS)", Help: "Level above which gain reduction begins. Default -18 when enabled."},
+	"CompressConfig.Ratio":       {Help: "Compression ratio above the threshold (e.g. 2 = 2:1). Default 2 when enabled; values ≤ 1 disable compression."},
+	"CompressConfig.AttackMs":    {Label: "Attack (ms)", Help: "Envelope attack time. Default 5 ms when enabled."},
+	"CompressConfig.ReleaseMs":   {Label: "Release (ms)", Help: "Envelope release time. Default 80 ms when enabled."},
+	"CompressConfig.MakeupDB":    {Label: "Make-up gain (dB)", Help: "Fixed post-compression gain. Default 0 (the louder AGC target carries make-up loudness)."},
+
 	// ---- Metrics -----------------------------------------------------------
 	"MetricsConfig.Enabled":     {Help: "Mount a Prometheus /metrics endpoint on the API HTTP server."},
 	"MetricsConfig.DetailedFEC": {Help: "Opt into per-protocol FEC correction-depth histograms (gophertrunk_tetra_viterbi_corrections). Off by default — the buckets only make sense when profiling on-air recovery margins."},

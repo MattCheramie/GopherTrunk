@@ -37,6 +37,7 @@ expose hot-reload surfaces.
 | `recordings.dir`               | restart     | Recorder constructed at startup.                              |
 | `recordings.sample_rate`       | restart     | Recorder constructed at startup.                              |
 | `recordings.write_raw`         | yes         | Routes through the recorder gate.                             |
+| `recordings.enhance.enabled`   | yes         | Recorder swaps the voice-enhancement config; takes effect on the next call. |
 | `retention.call_log_days`      | restart     | Sweeper constructed at startup.                               |
 | `retention.files_days`         | restart     | Sweeper constructed at startup.                               |
 | `retention.interval`           | restart     | Ticker constructed at startup.                                |

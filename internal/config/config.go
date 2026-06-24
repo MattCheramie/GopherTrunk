@@ -1554,7 +1554,16 @@ type StorageConfig struct {
 type RecordingsConfig struct {
 	Dir        string `yaml:"dir"`
 	SampleRate uint32 `yaml:"sample_rate"`
-	WriteRaw   bool   `yaml:"write_raw"`
+	// Enhance is the opt-in "sound-good" voice enhancement chain. When
+	// enabled it band-limits decoded digital voice to the telephone band,
+	// warms the bright software-AMBE+2 timbre, runs the AGC to a louder
+	// target, and (optionally) compresses — shaping BOTH the recorded WAV
+	// and live monitoring. It deliberately trades a little faithfulness
+	// for the cleaner/louder sound the rival decoders (OP25, Trunk
+	// Recorder, DSDPlus) produce. Off by default; the faithful path is
+	// byte-identical when disabled. Listed high so it's easy to find.
+	Enhance  EnhanceConfig `yaml:"enhance"`
+	WriteRaw bool          `yaml:"write_raw"`
 	// SkipEncrypted, when true, suppresses recording of calls flagged
 	// encrypted. A call whose grant already signals encryption is never
 	// opened; a call whose encryption is only discovered mid-stream has
@@ -1618,6 +1627,44 @@ func (n NormalizeConfig) AppliesToRecording() bool {
 // copy should be normalized in the broadcast subsystem.
 func (n NormalizeConfig) AppliesToDistributed() bool {
 	return n.Enabled && (n.ApplyTo == "distributed" || n.ApplyTo == "both")
+}
+
+// EnhanceConfig is the YAML shape of the opt-in voice enhancement chain
+// (recordings.enhance). When Enabled, the recorder installs a
+// post-vocoder chain — rumble high-pass, presence/warmth high-shelf,
+// telephone-band low-pass, a louder AGC target, and an optional
+// compressor — on the decoder it builds for each digital-voice call, so
+// the chain shapes BOTH the recorded WAV and live monitoring. It trades
+// strict faithfulness for the cleaner/louder subjective sound the rival
+// decoders produce. Off by default; zero-value numeric fields backfill
+// from the runtime defaults (see internal/voice/mbe.DefaultEnhancerConfig:
+// HPF 250 Hz, LPF 3400 Hz, shelf 1.5 kHz/-2 dB, AGC target 22000).
+type EnhanceConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// HPFHz / LPFHz bound the output band (Hz). 0 ⇒ default; negative ⇒
+	// that stage disabled.
+	HPFHz float64 `yaml:"hpf_hz"`
+	LPFHz float64 `yaml:"lpf_hz"`
+	// ShelfHz / ShelfDB define the warmth high-shelf: ShelfDB dB of cut
+	// above ShelfHz. ShelfDB ≤ 0 disables the shelf.
+	ShelfHz float64 `yaml:"shelf_hz"`
+	ShelfDB float64 `yaml:"shelf_db"`
+	// AGCTarget overrides the decoder AGC peak target (int16 units, e.g.
+	// 22000) so calls play back louder. 0 ⇒ default.
+	AGCTarget float64 `yaml:"agc_target"`
+	// Compress is the optional soft-knee compressor (default off).
+	Compress CompressConfig `yaml:"compress"`
+}
+
+// CompressConfig is the YAML shape of the optional output compressor in
+// the voice enhancement chain. Off by default.
+type CompressConfig struct {
+	Enabled     bool    `yaml:"enabled"`
+	ThresholdDB float64 `yaml:"threshold_db"` // default -18 when enabled
+	Ratio       float64 `yaml:"ratio"`        // default 2 when enabled
+	AttackMs    float64 `yaml:"attack_ms"`    // default 5 when enabled
+	ReleaseMs   float64 `yaml:"release_ms"`   // default 80 when enabled
+	MakeupDB    float64 `yaml:"makeup_db"`    // default 0
 }
 
 // MetricsConfig toggles the Prometheus collector. The /metrics endpoint

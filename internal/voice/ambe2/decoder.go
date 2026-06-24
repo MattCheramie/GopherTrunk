@@ -87,6 +87,15 @@ type Decoder struct {
 	// stay byte-identical.
 	tone *mbe.ToneTilt
 
+	// enhancer is the OPTIONAL "sound-good" post-processing chain run
+	// after the DC block (and the warm-decoder tone shelf, if any) and
+	// before the AGC: band-limit + warmth shelf + optional compression.
+	// nil (the default) is a pass-through, so the faithful decode path
+	// stays byte-identical. Set via SetVoiceEnhancer from the recorder
+	// when recordings.enhance is enabled; continuous across frames, reset
+	// only on stream re-sync.
+	enhancer *mbe.VoiceEnhancer
+
 	// smoother holds the error-rate adaptive-smoothing memory. frameErrs is
 	// the FEC corrected-bit count for the NEXT frame, supplied via
 	// SetFrameErrors and consumed once at the top of Decode.
@@ -573,7 +582,22 @@ func (d *Decoder) applyOutput(pcm []float64, out []int16, freezeEnvelope bool) {
 	// Optional opt-in tone control (nil = pass-through for the default
 	// decoders, so their output is byte-identical to before).
 	d.tone.Process(pcm)
+	// Optional opt-in enhancement chain (nil = pass-through).
+	d.enhancer.Process(pcm)
 	d.agc.Apply(pcm, out, freezeEnvelope)
+}
+
+// SetVoiceEnhancer installs (or clears) the optional output enhancement
+// chain on this decoder and, when enabled, raises the AGC peak target so
+// calls play back louder. A disabled cfg clears the chain and leaves the
+// AGC target untouched, restoring byte-identical faithful output. Call
+// once after construction, before decoding; implements
+// voice.VoiceEnhanceable.
+func (d *Decoder) SetVoiceEnhancer(cfg mbe.EnhancerConfig) {
+	d.enhancer = mbe.NewVoiceEnhancer(float64(mbe.PCMSampleRate), cfg)
+	if cfg.Enabled {
+		d.agc.SetTargetPeak(cfg.WithDefaults().AGCTarget)
+	}
 }
 
 // SetFrameErrors supplies the channel FEC corrected-bit count for the NEXT
@@ -654,6 +678,7 @@ func (d *Decoder) Reset() {
 	d.agc.Reset()
 	d.dc.Reset()
 	d.tone.Reset()
+	d.enhancer.Reset()
 	d.smoother.Reset()
 	d.clearLastGood()
 	d.prevGamma = 0

@@ -172,9 +172,31 @@ storage:
 recordings:
   dir: "../recordings"
   sample_rate: 8000
+  # Opt-in "sound-good" voice enhancement. When enabled, decoded digital
+  # voice is band-limited to the telephone band, warmed, run to a louder
+  # AGC target, and (optionally) compressed — shaping BOTH recordings and
+  # live monitoring. It trades a little faithfulness for the cleaner/louder
+  # sound OP25 / Trunk Recorder / DSDPlus produce. Off by default (faithful,
+  # byte-identical output). Toggling enabled also live-applies via
+  # PATCH /api/v1/settings (takes effect on the next call). Subsumes the
+  # warm_dmr_audio shelf for all protocols when on.
+  enhance:
+    enabled: false       # master switch for the chain
+    hpf_hz: 250          # rumble high-pass corner (default 250; <0 disables)
+    lpf_hz: 3400         # band-limit low-pass corner (default 3400, like OP25; <0 disables)
+    shelf_hz: 1500       # warmth high-shelf corner (default 1500)
+    shelf_db: 2.0        # high-shelf cut above the corner (default 2; 0 disables shelf)
+    agc_target: 22000    # louder AGC peak target, int16 units (default 22000; faithful is 18000)
+    compress:
+      enabled: false     # optional gentle compression for intelligibility
+      threshold_db: -18  # gain reduction begins above this level (default -18)
+      ratio: 2           # compression ratio (default 2 = 2:1; <=1 disables)
+      attack_ms: 5       # envelope attack (default 5)
+      release_ms: 80     # envelope release (default 80)
+      makeup_db: 0       # fixed post-compression gain (default 0)
   write_raw: true   # also append a .raw sidecar with the vocoder frames
   skip_encrypted: false  # don't write files for calls flagged encrypted
-  warm_dmr_audio: false  # opt-in: warmer DMR vocoder (gentle high-shelf, softens the bright software-AMBE+2 timbre; tone preference, not a quality fix)
+  warm_dmr_audio: false  # opt-in: warmer DMR vocoder (gentle high-shelf, softens the bright software-AMBE+2 timbre; superseded by enhance, DMR only)
   equalizer:
     enabled: false  # CMA blind equalizer in the FM voice chain (simulcast mitigation)
     taps: 8         # default 8 when enabled
