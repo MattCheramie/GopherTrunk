@@ -40,25 +40,47 @@ const UnvoicedFFTSize = 256
 const UnvoicedTailSamples = UnvoicedFFTSize - SamplesPerFrame
 
 // synthesisWindow is the §6.4 unvoiced overlap-add window — a
-// 256-sample periodic Hann window. Multiplying the IFFT output by
-// this window before overlap-add eliminates the click artifacts
-// that would appear at frame boundaries if the IFFT were truncated
-// to 160 samples without windowing.
+// 256-sample power-complementary (tapered-cosine / Tukey) window.
+// Multiplying the IFFT output by this window before overlap-add
+// eliminates the click artifacts that would appear at frame
+// boundaries if the IFFT were truncated to 160 samples without
+// windowing.
 //
-// COLA caveat: the periodic Hann at 160-sample stride does not
-// exactly satisfy the Constant-Overlap-Add condition. Sum of the
-// two contributing windows (curr + prev) at output sample n in
-// [0, 96) ranges roughly between 0.85 and 1.0, introducing a
-// small (≲1.5 dB) amplitude modulation across the frame audible
-// as a slight tremolo on broadband noise. The §6.2 spectral
-// enhancement + spec-derived gain calibration polish PRs
-// (roadmap step 5b/5c) revisit this — Hann is the simplest
-// window that's strictly better than no window.
+// Why not a plain Hann: consecutive frames carry INDEPENDENT noise
+// blocks, so in the UnvoicedTailSamples (= 96) overlap region their
+// variances add. The audible noise-power envelope across a frame is
+//
+//	P[n] = w[n]² + w[n+160]²   for n < 96  (overlap region)
+//	P[n] = w[n]²               for n ≥ 96  (no overlap)
+//
+// A periodic Hann at the 160-sample hop makes P[n] ripple ~7 dB,
+// which leaks through as a 50 Hz frame-rate amplitude modulation — a
+// buzzy tremolo on the unvoiced band (most audible on noisy /
+// fricative-heavy speech), one of the synthesis artifacts examined
+// while chasing the issue #644 "machine voice" report. The fix is a
+// window that is power-complementary at this hop: a flat
+// top over the non-overlapping centre [96, 160) and a quarter-wave
+// sine taper of length 96 on each edge. With a symmetric window
+// w[160+n] = w[95−n], and a sine taper gives w[n]² + w[95−n]² = 1,
+// so P[n] ≡ 1 across the whole frame (verified flat to <1e-9 by
+// TestSynthesisWindowPowerComplementary). The taper still decays to
+// ≈0 at the edges, so it suppresses boundary clicks exactly as the
+// Hann did, while passing more fricative/aspiration energy through
+// the flat top (the Hann under-weighted the unvoiced band).
 var synthesisWindow [UnvoicedFFTSize]float64
 
 func init() {
+	// taper = the overlap length; the centre [taper, N-taper) is unity.
+	const taper = UnvoicedTailSamples // 96
 	for n := 0; n < UnvoicedFFTSize; n++ {
-		synthesisWindow[n] = 0.5 - 0.5*math.Cos(2*math.Pi*float64(n)/float64(UnvoicedFFTSize))
+		switch {
+		case n < taper:
+			synthesisWindow[n] = math.Sin(0.5 * math.Pi * (float64(n) + 0.5) / float64(taper))
+		case n >= UnvoicedFFTSize-taper:
+			synthesisWindow[n] = math.Sin(0.5 * math.Pi * (float64(UnvoicedFFTSize-n) - 0.5) / float64(taper))
+		default:
+			synthesisWindow[n] = 1.0
+		}
 	}
 }
 
