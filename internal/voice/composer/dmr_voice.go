@@ -2,11 +2,9 @@ package composer
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"time"
 
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
@@ -148,21 +146,16 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
 
-	decim := int(math.Round(iqHz)) / dmrVoiceIntermediateHz
-	if decim < 1 {
-		decim = 1
-	}
-	symbolHz := iqHz / float64(decim)
-
-	// Front-end LPF: doubles as the anti-aliasing filter for the
-	// decimation, so it is only needed when the IQ is actually
-	// decimated (the live multi-MS/s path; decim == 1 only in tests
-	// that feed IQ already at the intermediate rate).
-	cutoff := float64(c.bw) / iqHz
-	if cutoff > 0.45 {
-		cutoff = 0.45
-	}
-	lpf := filter.NewFIR(filter.LowpassKaiser(81, cutoff, 8.6))
+	// Front-end decimator: an 81-tap anti-alias FIR that convolves ONLY at
+	// the output positions, replacing the old full-rate FIR + every-Nth-
+	// sample decimation that filtered every input sample and discarded ~98%
+	// of the result. At 2.4 MS/s that wasted ~194M MACs/sec per voice call
+	// and starved the live IQ consumer until the SDR dropped chunks. Same
+	// coefficients and same kept samples as before, so the decode is
+	// byte-for-byte unchanged — only the wasted work is removed. decim==1
+	// (a source already at the intermediate rate) is a pass-through no-op.
+	fe := newDecimatingFIR(iqHz, dmrVoiceIntermediateHz, float64(c.bw), false)
+	symbolHz := fe.OutRateHz()
 
 	rs, _ := c.sink.(rawFrameSink)
 	// ers, when the sink supports it, carries the per-frame FEC corrected-bit
@@ -291,11 +284,7 @@ func (c *Composer) runDMRVoiceChain(ctx context.Context, serial string, iqCh <-c
 				logDecodeQuality(true)
 				return
 			}
-			samples := iq
-			if decim > 1 {
-				samples = decimateComplex(lpf.Process(nil, iq), decim)
-			}
-			rx.Process(samples)
+			rx.Process(fe.Process(nil, iq))
 		}
 	}
 }
