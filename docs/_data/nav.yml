@@ -79,6 +79,16 @@ groups:
         url: /reference/#hw-sbc
       - title: Microcontrollers
         url: /reference/#hw-microcontrollers
+      - title: Networking & connectivity
+        url: /reference/#hw-networking
+      - title: Storage & memory
+        url: /reference/#hw-storage
+      - title: GPUs, FPGAs & accelerators
+        url: /reference/#hw-accelerators
+      - title: People
+        url: /reference/#hw-people
+      - title: Organizations & makers
+        url: /reference/#hw-organizations
   - label: About
     items:
       - title: The Story of GopherTrunk
