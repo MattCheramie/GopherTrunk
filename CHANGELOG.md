@@ -7,6 +7,66 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.2] — 2026-06-24
+
+A maintenance release headlined by a **generic JSON webhook call sink** —
+POST one stable-schema JSON object per completed call to any HTTP endpoint, so
+GopherTrunk feeds custom dashboards and automations alongside the existing
+OpenMHz / Broadcastify Calls / RdioScanner / Icecast backends. The rest is
+voice-path robustness: DMR 2-slot cadence is now picked by AMBE FEC instead of
+the unvalidated embedded Link Control (fixing garbled "sounds-encrypted" audio
+on 288-cadence carriers, #644), calls that never deliver a single voice frame
+end at a bounded 7 s window instead of hanging on the 30 s watchdog (#788), and
+siglab now names *why* a control channel did not lock with an opt-in soft-sync
+fallback for marginal captures (#771).
+
+### Added
+- **Generic JSON webhook call sink** (`broadcast.webhook`, #404, #268). A new
+  outbound call-streaming backend that POSTs one `application/json` object per
+  completed call with a documented, stable schema: system, protocol, talkgroup
+  (+label), source RID, frequency, P25 site identity (channel/RFSS/site/NAC),
+  timeslot, encryption + emergency flags, patched groups, and RFC3339
+  start/stop timestamps. An optional `Authorization` header is sent verbatim and
+  `include_audio` opt-in embeds the base64 MP3 (default off keeps it a
+  lightweight metadata feed). Reuses the existing Manager fan-out (system
+  filter, min-duration gate, bounded exponential-backoff retry); configure under
+  `broadcast.webhook[]` and in the web Config Builder. See `config.example.yaml`.
+
+### Changed
+- **siglab names the no-lock reason + opt-in soft-sync fallback** (#771). The
+  scan verdict now classifies *why* a control channel did not lock —
+  SNR/EVM-limited, frame-sync-not-aligned, not-the-control-channel, or
+  no-signal — from the demod and frame-decode metrics already gathered, rendered
+  after the "did NOT lock" line and serialized into the CSV/JSON/YAML summaries.
+  A `replay -soft-sync` flag (off by default; the daemon is unchanged) widens the
+  P25 FSW correlator so sync words carrying 5–8 symbol errors decode, but admits
+  those looser hits only through the existing TSBK-CRC-corroborated marginal NID
+  tier, so a looser sync extends reach into marginal-SNR captures without
+  manufacturing a false lock.
+
+### Fixed
+- **DMR 2-slot cadence detected by AMBE FEC, not the embedded LC** (#644). The
+  interleaved DMR voice decoder picked its same-slot TDMA cadence solely by which
+  candidate stride reassembled a CRC-valid embedded Link Control — a decode that
+  frequently never validates on a real outbound carrier, so it fell back to the
+  264-dibit cadence. On a 288-cadence carrier that sliced every burst 24 dibits
+  off, splicing the other timeslot's / the CACH's bits into each AMBE frame and
+  rendering audio as structured noise that "sounds encrypted" (the reopened
+  symptom of #644). Cadence is now scored by AMBE Golay(23,12) corrected-bit
+  count when no candidate yields an authoritative LC: a correct slice decodes
+  with ~0 corrected bits, a wrong slice scores far higher, and a ceiling-and-
+  margin gate keeps genuinely garbled data from locking a cadence. The LC
+  remains authoritative when it does decode.
+- **Silent-from-start calls end at a bounded window, not the 30 s watchdog**
+  (#788). A voice grant whose channel never delivered a single matching voice
+  frame (carrier already dropped, a stale CC grant re-announcement, or a
+  mis-tuned / under-gained tap) was held by the boundary tracker for the engine's
+  full call-timeout watchdog — 30 s by default — showing as an "active" call with
+  a climbing ELAPSED and no audio. A tracker that has never seen a matching voice
+  frame now ends the call (reason `timeout`) once it has run for 2× hangtime
+  (7 s by default); if voice resumes, the CC re-announces the grant and a fresh
+  call starts.
+
 ## [v0.5.1] — 2026-06-23
 
 A maintenance release headlined by a new **ka9q-radio network SDR source** —
