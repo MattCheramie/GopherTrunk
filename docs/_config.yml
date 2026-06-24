@@ -107,6 +107,14 @@ defaults:
       learn_path: ai-software-dev
       nav_group: Learn
       permalink: /learn/ai-software-dev/:basename/
+  - scope:
+      path: "learn/software-licensing"
+      type: pages
+    values:
+      layout: lesson
+      learn_path: software-licensing
+      nav_group: Learn
+      permalink: /learn/software-licensing/:basename/
   # Field Guide articles under /reference/ get the reference layout and nav
   # group automatically. The hub (reference/index.md) overrides to reference-hub.
   - scope:
