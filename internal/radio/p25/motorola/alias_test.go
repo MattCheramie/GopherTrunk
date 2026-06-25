@@ -132,12 +132,63 @@ func TestDecodeMessagePopulatesAliasReliable(t *testing.T) {
 	if !ok {
 		t.Fatal("DecodeMessage returned ok=false")
 	}
-	wantAlias, wantReliable := DecodeAlias(DecodeAliasBytes(encoded))
+	wantAlias, clean := DecodeAlias(DecodeAliasBytes(encoded))
+	// AliasReliable is gated on CipherVerified: clean ASCII alone is not
+	// enough while the cipher is unverified (#773).
+	wantReliable := clean && CipherVerified
 	if msg.Alias != wantAlias {
 		t.Errorf("Alias = %q, want %q", msg.Alias, wantAlias)
 	}
 	if msg.AliasReliable != wantReliable {
 		t.Errorf("AliasReliable = %v, want %v", msg.AliasReliable, wantReliable)
+	}
+}
+
+// TestUnverifiedCipherNeverReportedReliable pins the safety gate: while
+// the per-byte cipher is unverified (CipherVerified == false),
+// DecodeMessage must never report an alias as reliable — not even for
+// inputs whose decoded bytes happen to be clean printable ASCII. This is
+// what stops a possibly-wrong substitution table from surfacing a
+// fabricated name as a confirmed alias (#773).
+func TestUnverifiedCipherNeverReportedReliable(t *testing.T) {
+	if CipherVerified {
+		t.Skip("cipher marked verified — reliability gate intentionally lifted")
+	}
+	suid := []byte{0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E}
+	for n := 0; n < 4096; n++ {
+		enc := []byte{byte(n), byte(n >> 4), byte(n >> 8), byte(n >> 2)}
+		msg := append(append(append([]byte{}, suid...), enc...), 0x00, 0x00)
+		m, ok := DecodeMessage(msg)
+		if ok && m.AliasReliable {
+			t.Fatalf("AliasReliable=true for enc=% X while cipher unverified", enc)
+		}
+	}
+}
+
+// TestRealSampleYieldsRIDButNoConfidentAlias feeds the real reassembled
+// Phase-2 FACCH-S stream for RID 200062 (the #376 SDRTrunk FRAGMENT
+// dump, pinned byte-for-byte in
+// phase2.TestMotorolaAliasReassemblesSDRTrunkFragmentStream) through the
+// shared decode. GT must recover the verified RID but make NO confident
+// alias claim while the cipher is unverified — the exact state reported
+// on #773.
+func TestRealSampleYieldsRIDButNoConfidentAlias(t *testing.T) {
+	msg := []byte{
+		0xBE, 0xE0, 0x01, 0x64, 0x03, 0x0D, 0x7E, // SUID (RID 200062)
+		0x24, 0x44, 0xF6, 0xFF, 0x2F, 0xA9, 0xAC, 0x3E, 0xC3, 0x44,
+		0x32, 0xFA, 0x63, 0xCC, 0x81, 0xC3, 0xC5, 0xD9, 0x6A, 0x96, // encoded alias
+		0x00, 0x00, 0x00, 0x00, // cipher tail
+		0x00, 0x00, // CRC-16
+	}
+	m, ok := DecodeMessage(msg)
+	if !ok {
+		t.Fatal("DecodeMessage returned ok=false")
+	}
+	if m.RadioID != 200062 {
+		t.Errorf("RadioID = %d, want 200062 (verified from reassembly)", m.RadioID)
+	}
+	if !CipherVerified && m.AliasReliable {
+		t.Errorf("AliasReliable = true; an unverified cipher must not yield a confident alias (#773)")
 	}
 }
 
