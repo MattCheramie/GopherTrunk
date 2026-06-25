@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -79,6 +80,44 @@ func TestCaptureToFileContextCancel(t *testing.T) {
 	_, err := captureToFile(ctx, path, siglab.FormatF32, feedChunks(5, 300), 1_000_000, 1.0)
 	if err == nil {
 		t.Fatalf("expected ctx.Err() when the context is already cancelled")
+	}
+}
+
+func TestCaptureSampleRateHint(t *testing.T) {
+	cases := []struct {
+		name     string
+		rateHz   uint32
+		protocol string
+		wantHint bool
+	}{
+		{"default rate, p25 — silent", 2_400_000, "p25", false},
+		{"2.5 MS/s, p25 — silent (recommended R2 rate)", 2_500_000, "p25", false},
+		{"exactly at threshold — silent", 4_000_000, "p25", false},
+		{"just above threshold — fires", 4_000_001, "p25", true},
+		{"10 MS/s, p25 — fires (the #771 trap)", 10_000_000, "p25", true},
+		{"6 MS/s, dmr — fires", 6_000_000, "dmr", true},
+		{"10 MS/s, mixed-case protocol — fires", 10_000_000, "P25", true},
+		{"10 MS/s, no protocol — fires (the #771 repro command)", 10_000_000, "", true},
+		{"10 MS/s, explicit non-narrowband — silent", 10_000_000, "wfm", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := captureSampleRateHint(tc.rateHz, tc.protocol)
+			if tc.wantHint && got == "" {
+				t.Fatalf("captureSampleRateHint(%d, %q) = \"\", want a hint", tc.rateHz, tc.protocol)
+			}
+			if !tc.wantHint && got != "" {
+				t.Fatalf("captureSampleRateHint(%d, %q) = %q, want \"\"", tc.rateHz, tc.protocol, got)
+			}
+			if tc.wantHint {
+				if !strings.Contains(got, "#771") {
+					t.Errorf("hint missing issue reference: %q", got)
+				}
+				if !strings.Contains(got, "Choosing a sample rate") {
+					t.Errorf("hint missing doc pointer: %q", got)
+				}
+			}
+		})
 	}
 }
 

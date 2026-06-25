@@ -133,11 +133,13 @@ sdr:
 
 The R2 / Mini driver pins the device to `INT16_IQ` sample mode at
 open-time and reads the firmware's advertised sample-rate table —
-`SetSampleRate` then picks the closest available rate, so a `gain:
-"auto"` + `sample_rate: 10_000_000` config picks the 10 MSPS slot on
-R2 and the 6 MSPS slot on Mini without per-device overrides. The
-HF+ driver does the same; it also reads VERSION_STRING_READ to
-expose the firmware version in `TunerName`.
+`SetSampleRate` then picks the closest available rate, so a
+`sample_rate: 10_000_000` config selects the 10 MSPS slot on R2 and
+a `sample_rate: 6_000_000` config selects the 6 MSPS slot on Mini
+without per-device overrides. **For a single narrowband control
+channel, don't reach for the top native rate** — see "Choosing a
+sample rate" below. The HF+ driver does the same; it also reads
+VERSION_STRING_READ to expose the firmware version in `TunerName`.
 
 ```yaml
 sdr:
@@ -147,6 +149,44 @@ sdr:
       role: control
       gain: "auto"                 # firmware HF AGC handles the HF band well
       bias_tee: false              # set true to power an active HF antenna
+```
+
+### Choosing a sample rate
+
+A wideband front-end like the Airspy R2 advertises native rates up to
+10 MSPS, but a trunking **control channel is only ~12.5 kHz wide** and the
+down-converter normalises it to 48 kHz before decode. Capturing at the top
+native rate buys nothing for a single narrowband channel — and on some
+units it actively *hurts*.
+
+On an R2 captured at its native 10 MSPS, the same control channel — same
+antenna, gain, and centre frequency — carried roughly **16 dB worse
+in-channel SNR** than the identical signal captured at 2.5 MSPS (issue
+#771: EVM 22.5% / demod SNR 9.5 dB versus 7.4% / 19.7 dB). The penalty
+sits *inside* the channel, co-band with the signal, so no downstream
+filtering removes it, and it is independent of gain (the same deficit shows
+at 60 dB and 30 dB). The cause is front-end clock phase noise / reciprocal
+mixing at the higher native clock — not clipping, and not GopherTrunk's
+DSP, which is rate-invariant. The 2.5 MSPS capture locked; the 10 MSPS one
+did not.
+
+> **For a control-channel role, prefer a moderate native rate
+> (~2.4–2.5 MSPS).** The `gophertrunk capture` default is `2_400_000` for
+> this reason, and the tool prints a one-line hint if you ask for a high
+> rate on a narrowband capture. Reach for a high native rate only when you
+> genuinely need the wide IQ window — a wideband survey or several
+> repeaters at once — and even then verify lock, because the same
+> phase-noise penalty can still bite a narrowband channel sitting inside a
+> wide capture. (TETRA's 25 kHz channels still decode fine at a moderate
+> rate; the down-converter normalises them to 144 kHz.)
+
+```yaml
+sdr:
+  sample_rate: 2_400_000           # moderate native rate for narrowband CC decode
+  devices:
+    - serial: "..."                # whatever `gophertrunk sdr list` shows
+      role: control
+      gain: "auto"
 ```
 
 ## Linux
