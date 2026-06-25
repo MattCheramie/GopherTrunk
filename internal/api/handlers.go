@@ -21,8 +21,9 @@ type HealthDTO struct {
 	// Status is always "ok" for a serving daemon — present so old
 	// callers that only check `.status == "ok"` keep working.
 	Status string `json:"status"`
-	// Now is the daemon-side timestamp in UTC. Useful for detecting
-	// clock skew between probe and daemon.
+	// Now is the daemon-side timestamp, rendered in the configured display
+	// timezone (display.timezone; local by default). It carries an explicit
+	// offset, so a probe can still detect clock skew against its own clock.
 	Now time.Time `json:"now"`
 	// Version is the daemon build version, redundant with the
 	// dedicated /api/v1/version endpoint but useful so probes can
@@ -49,7 +50,7 @@ type HealthDTO struct {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	body := HealthDTO{
 		Status:         "ok",
-		Now:            time.Now().UTC(),
+		Now:            time.Now().In(orLocal(s.displayLoc)),
 		Version:        s.version,
 		DBConnected:    s.history != nil,
 		MetricsEnabled: s.metrics != nil,

@@ -30,6 +30,20 @@ type WebhookConfig struct {
 	// Systems restricts the feed to these trunking-system names. Empty
 	// streams every system.
 	Systems []string
+	// Loc is the timezone the StartedAt/EndedAt RFC3339 timestamps render in.
+	// Nil means time.Local. The daemon passes display.timezone so the payload
+	// matches the operator's other timestamps; the format stays RFC3339, so the
+	// offset (e.g. +02:00, or Z for UTC) keeps the instant unambiguous.
+	Loc *time.Location
+}
+
+// rfc3339In formats t as RFC3339 in loc (default time.Local). Centralises the
+// display-timezone rendering shared by the webhook and rdioscanner payloads.
+func rfc3339In(t time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format(time.RFC3339)
 }
 
 type webhookBackend struct {
@@ -38,6 +52,7 @@ type webhookBackend struct {
 	endpoint     string
 	authHeader   string
 	includeAudio bool
+	loc          *time.Location
 	http         *http.Client
 }
 
@@ -62,6 +77,7 @@ func NewWebhook(cfg WebhookConfig, hc *http.Client) (Backend, error) {
 		endpoint:     cfg.URL,
 		authHeader:   cfg.AuthHeader,
 		includeAudio: cfg.IncludeAudio,
+		loc:          cfg.Loc,
 		http:         hc,
 	}, nil
 }
@@ -120,8 +136,8 @@ func (b *webhookBackend) Send(ctx context.Context, c *Call) error {
 		KeyID:         c.KeyID,
 		Emergency:     c.Emergency,
 		PatchedGroups: c.PatchedGroups,
-		StartedAt:     c.StartedAt.UTC().Format(time.RFC3339),
-		EndedAt:       c.EndedAt.UTC().Format(time.RFC3339),
+		StartedAt:     rfc3339In(c.StartedAt, b.loc),
+		EndedAt:       rfc3339In(c.EndedAt, b.loc),
 		DurationMs:    c.Duration().Milliseconds(),
 		AudioFilename: audioFilename(c, "mp3"),
 	}

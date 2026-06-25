@@ -46,12 +46,15 @@ for tagged releases.
   share it); only a DVSI hardware vocoder removes it. Off by default; DMR only.
 
 ### Changed
-- **Human-facing timestamps now render in local time by default**, not UTC. The
-  decoded-message log, power log and TUI panels (events / dashboard / tone
-  alerts) previously forced GMT+0 ("…Z"); they now use the host's local timezone
-  (overridable via `display.timezone`, including back to "UTC"). The JSON/gRPC
-  API, webhooks and rdioscanner uploads are unchanged — they stay UTC RFC3339 for
-  interoperability.
+- **Timestamps now render in local time by default**, not UTC, across every
+  human- and machine-facing surface. The decoded-message log, power log and TUI
+  panels (events / dashboard / tone alerts) previously forced GMT+0 ("…Z"); the
+  JSON/gRPC API (RID activity & history, active calls, location reports, the
+  `/health` daemon time), webhook payloads and rdioscanner uploads did the same.
+  All now render in the host's local timezone, overridable via `display.timezone`
+  (including back to "UTC"). The API/webhook/rdioscanner timestamps stay RFC3339
+  but now carry an explicit numeric offset (e.g. `+02:00`, or `Z` when UTC), so
+  they remain an unambiguous, parseable instant.
 
 ### Fixed
 - **Unvoiced-synthesis tremolo in the MBE vocoders** (#644). The §6.4 unvoiced

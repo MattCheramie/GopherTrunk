@@ -17,7 +17,7 @@ import (
 // normCfg carries the per-call loudness-normalization settings; when it
 // applies to the distributed copy, the Manager normalizes the MP3 in
 // memory (leaving the on-disk WAV untouched).
-func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeConfig, sampleRate int, bus *events.Bus, log *slog.Logger) (*broadcast.Manager, error) {
+func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeConfig, sampleRate int, bus *events.Bus, loc *time.Location, log *slog.Logger) (*broadcast.Manager, error) {
 	var backends []broadcast.Backend
 
 	for _, f := range cfg.Broadcastify {
@@ -45,6 +45,7 @@ func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeC
 			APIKey:   f.APIKey,
 			SystemID: f.SystemID,
 			Systems:  f.Systems,
+			Loc:      loc,
 		}, nil)
 		if err != nil {
 			return nil, err
@@ -76,6 +77,7 @@ func buildBroadcastManager(cfg config.BroadcastConfig, normCfg config.NormalizeC
 			AuthHeader:   f.AuthHeader,
 			IncludeAudio: f.IncludeAudio,
 			Systems:      f.Systems,
+			Loc:          loc,
 		}, nil)
 		if err != nil {
 			return nil, err

@@ -339,6 +339,11 @@ type Daemon struct {
 	log     *slog.Logger
 	writer  *config.Writer // optional; nil when daemon ran without -config
 
+	// displayLoc is the timezone human-facing timestamps render in (the logs,
+	// the TUI, and — per the operator's opt-in — the API/webhook/rdioscanner
+	// payloads). Resolved once from display.timezone; never nil.
+	displayLoc *time.Location
+
 	bus          *events.Bus
 	pool         *sdr.Pool
 	talkgroups   *trunking.TalkgroupDB
@@ -1155,6 +1160,18 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		d.recorder = rec
 	}
 
+	// Displayed-timestamp timezone for human-facing output — the logs, the TUI,
+	// and (per the operator's display.timezone opt-in) the API/webhook/rdioscanner
+	// payloads. Local by default; "UTC" or any IANA name. A bad name degrades to
+	// local with a warning rather than failing startup. Resolved before the
+	// broadcast manager and the API server so every consumer shares one location.
+	dispLoc, locErr := cfg.Display.LocationStrict()
+	if locErr != nil {
+		d.log.Warn("display: unknown timezone, falling back to local",
+			"timezone", cfg.Display.Timezone, "err", locErr)
+	}
+	d.displayLoc = dispLoc
+
 	// Outbound call-streaming manager — optional. Subscribes to the
 	// bus at construction so calls completed before Run starts are
 	// not lost. Built only when at least one feed is enabled.
@@ -1163,7 +1180,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		if bcastRate == 0 {
 			bcastRate = 8000
 		}
-		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, log)
+		mgr, err := buildBroadcastManager(cfg.Broadcast, cfg.Recordings.Normalize, bcastRate, d.bus, dispLoc, log)
 		if err != nil {
 			return nil, fmt.Errorf("daemon: broadcast: %w", err)
 		}
@@ -1171,15 +1188,6 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			d.broadcast = mgr
 			log.Info("outbound call streaming enabled", "backends", mgr.Backends())
 		}
-	}
-
-	// Displayed-timestamp timezone for the human-readable logs (local by
-	// default; "UTC" or any IANA name via display.timezone). A bad name
-	// degrades to local with a warning rather than failing startup.
-	dispLoc, locErr := cfg.Display.LocationStrict()
-	if locErr != nil {
-		d.log.Warn("display: unknown timezone, falling back to local",
-			"timezone", cfg.Display.Timezone, "err", locErr)
 	}
 
 	// Decoded-message log — optional. Subscribes to the bus and writes
@@ -2171,6 +2179,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Version:        version,
 			Diagnostics:    d.newDiagCollector(),
 			VerboseErrors:  cfg.Diagnostics.VerboseErrors,
+			DisplayLoc:     d.displayLoc,
 			AllowMutations: cfg.API.AllowMutations,
 			Auth: api.AuthConfig{
 				Mode:            authMode,
@@ -2223,7 +2232,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			opts.History = api.HistoryFromStorage(d.db)
 		}
 		if d.locationLog != nil {
-			opts.Locations = api.LocationsFromStorage(d.locationLog)
+			opts.Locations = api.LocationsFromStorage(d.locationLog, d.displayLoc)
 		}
 		if d.affiliations != nil {
 			opts.Affiliations = affiliationProvider{d.affiliations}
@@ -2375,6 +2384,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			VerboseErrors: cfg.Diagnostics.VerboseErrors,
 			TLSCert:       cfg.API.TLSCert,
 			TLSKey:        cfg.API.TLSKey,
+			DisplayLoc:    d.displayLoc,
 		}
 		if d.affiliations != nil {
 			grpcOpts.Affiliations = affiliationProvider{d.affiliations}
