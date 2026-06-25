@@ -67,8 +67,16 @@ Tier II repeaters and hotspots over the internet.
 
 ## Decoding it with GopherTrunk
 
-GopherTrunk decodes both timeslots of a Tier II channel and renders AMBE+2 audio. For
-trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.html).
+GopherTrunk decodes both timeslots of a Tier II channel and renders AMBE+2 audio.
+Color Code, time slot, and talkgroup are read off the air per call — you only
+configure each repeater's frequency. A single dongle channelizes a cluster of
+repeaters at once; to cover many repeaters spread across a wide band, add one
+`role: wideband` dongle per ~2 MHz cluster, all pointed at the same system. The
+[`dmr-tier2-multi-repeater`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/dmr-tier2-multi-repeater)
+sample is a worked "a bunch of repeaters, different CCs and slots" config; for a
+single carrier see
+[`dmr-simplex`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/dmr-simplex).
+For trunked DMR, see [Tier III](/reference/dmr-tier-3/). See [Status](/status.html).
 
 ## Sources
 

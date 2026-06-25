@@ -722,10 +722,25 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		for _, sc := range sys.Sites {
 			sites = append(sites, trunking.ConfiguredSite{RFSS: sc.RFSS, Site: sc.Site, Name: sc.Name})
 		}
+		// Conventional DMR (Tier II / Tier I) has no real control channel —
+		// the operator lists each repeater/simplex carrier in the
+		// `role: wideband` device's `channels:` list, which is what the
+		// widebandt2 engine actually decodes. trunking.System.Validate still
+		// requires a non-empty ControlChannels list, so rather than forcing
+		// the operator to repeat every frequency under `control_channels`,
+		// derive it from the wideband channels assigned to this system. Each
+		// carrier is then listed exactly once. Trunked protocols (dmr Tier III,
+		// p25, …) keep requiring an explicit control_channels list. A non-empty
+		// list is always honoured verbatim.
+		ctrlChannels := sys.ControlChannels
+		if len(ctrlChannels) == 0 &&
+			(proto == trunking.ProtocolDMRTier2 || proto == trunking.ProtocolDMRTier1) {
+			ctrlChannels = widebandChannelsForSystem(cfg.SDR.Devices, sys.Name)
+		}
 		s := trunking.System{
 			Name:                    sys.Name,
 			Protocol:                proto,
-			ControlChannels:         sys.ControlChannels,
+			ControlChannels:         ctrlChannels,
 			Sites:                   sites,
 			P25BandPlan:             p25BandPlan,
 			DMRBandPlan:             dmrBandPlan,
@@ -3531,6 +3546,30 @@ func isControlChannel(sys trunking.System, freqHz uint32) bool {
 		}
 	}
 	return false
+}
+
+// widebandChannelsForSystem returns the de-duplicated, config-order union of
+// every `role: wideband` channel frequency assigned to the named system across
+// all devices. It backfills ControlChannels for conventional DMR (Tier II /
+// Tier I) systems that omit `control_channels`, so each repeater carrier is
+// listed exactly once (in sdr.devices[].channels). The returned slice is freshly
+// allocated and never aliases the config's backing arrays.
+func widebandChannelsForSystem(devices []config.DeviceConfig, system string) []uint32 {
+	var out []uint32
+	seen := make(map[uint32]bool)
+	for _, dev := range devices {
+		if dev.Role != "wideband" {
+			continue
+		}
+		for _, ch := range dev.Channels {
+			if ch.System != system || seen[ch.FrequencyHz] {
+				continue
+			}
+			seen[ch.FrequencyHz] = true
+			out = append(out, ch.FrequencyHz)
+		}
+	}
+	return out
 }
 
 // cchuntSystems returns the systems the sequential cchunt supervisor should
