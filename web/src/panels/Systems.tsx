@@ -61,6 +61,27 @@ function identityEmptyHint(hunt: SystemHuntStatusDTO | undefined): string {
   return "Awaiting status broadcasts";
 }
 
+// wacnEmptyHint explains a blank WACN specifically. The WACN is carried only
+// by the P25 Network Status Broadcast (NSB) — System ID / RFSS / Site have
+// other sources (RFSS Status 0x3A, Adjacent Site 0x3C, Location Registration
+// 0x2B). So once the site is otherwise identified, a blank WACN is not "still
+// acquiring": it means the NSB specifically hasn't decoded yet, and some
+// systems emit it rarely or not at all on a given control channel. Saying so
+// is more honest than the generic "Awaiting status broadcasts", which implies
+// it's imminent. Falls back to the generic hint when nothing has decoded yet.
+function wacnEmptyHint(
+  sys: SystemDTO,
+  hunt: SystemHuntStatusDTO | undefined,
+): string {
+  if (hunt?.state === "hunting") return "Hunting control channel";
+  const identified =
+    (sys.system_id ?? 0) !== 0 ||
+    (sys.rfss ?? 0) !== 0 ||
+    (sys.site ?? 0) !== 0;
+  if (identified) return "No Network Status Broadcast yet";
+  return "Awaiting status broadcasts";
+}
+
 export function Systems() {
   const cfg = useShared(selectClientConfig);
   const systems = useShared((s) => s.systems);
@@ -207,7 +228,7 @@ export function Systems() {
                     label="WACN"
                     mono
                     value={formatIdNumber(selected.wacn ?? null, idBase)}
-                    emptyHint={hint}
+                    emptyHint={wacnEmptyHint(selected, hunt)}
                   />
                   <DetailField
                     label="System ID"
