@@ -1,0 +1,9 @@
+Decimal,Alpha Tag,Description,Mode,Tag,Group
+1,Local 1,Local Repeater 1 Wide,D,Talkgroup,Local
+2,Local 2,Local Repeater 2 Wide,D,Talkgroup,Local
+8,Regional,Regional Wide-Area,D,Talkgroup,Regional
+9,Local,Local Site Wide,D,Talkgroup,Local
+13,State,Statewide,D,Talkgroup,Regional
+99,Simplex,Simplex / Local Talkgroup,D,Talkgroup,Local
+310,TAC 310,Tactical 310,D,Talkgroup,Tactical
+3100,Bridge,Inter-repeater Bridge,D,Talkgroup,Regional

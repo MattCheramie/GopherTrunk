@@ -1,0 +1,128 @@
+# Monitor a fleet of conventional DMR Tier II repeaters across a WIDE band.
+#
+# Use this when you have many DMR repeaters (a dozen, forty, …) spread over
+# more RF than a single dongle can see at once — "just a bunch of repeaters,
+# each with its own Color Code and both slots in use."
+#
+# ─── The one thing to understand first ────────────────────────────────────
+#
+# Color Code, Time Slot (TS1/TS2), and Talkgroup are NOT configured here.
+# GopherTrunk reads them straight off the air and reports them per call. You
+# only tell the daemon WHERE to listen (each repeater's output frequency) and
+# WHAT it is (DMR Tier II conventional). The talkgroups CSV just maps the
+# decoded TG numbers to friendly names. So a "40 freqs, different CC, different
+# slots" deployment is just 40 frequencies — there is nothing per-CC or
+# per-slot to type in.
+#
+# ─── Why each repeater must sit inside a dongle's window ───────────────────
+#
+# DMR is decoded by GopherTrunk's wideband channelizer (internal/scanner/
+# widebandt2): one `role: wideband` dongle is tuned to a center frequency and
+# the daemon splits its IQ stream into a separate narrow-band decoder PER
+# repeater. There is no sequential "hop through 40 frequencies" DMR scanner —
+# every repeater you list must fall inside some dongle's IQ window AT THE SAME
+# TIME.
+#
+# At 2.4 MS/s one dongle sees about ±1.08 MHz of usable bandwidth around its
+# center (≈2.16 MHz total, after a 5% guard at each edge). Repeaters that all
+# cluster inside one ~2 MHz window share one dongle. Repeaters spread wider
+# than that need MORE dongles — one per cluster. Point every dongle's channels
+# at the SAME system name (below) and GopherTrunk treats them as one system:
+# the wideband channels are unioned across all dongles.
+#
+#   40 repeaters spread over ~8 MHz  →  ≈4 dongles, ~10 repeaters each.
+#
+# This file shows three dongles, each centered on a ~2 MHz cluster. Copy a
+# `- serial:` block, re-center it, and list that cluster's repeaters to add a
+# fourth, fifth, … dongle until all your carriers are covered.
+#
+# PATHS below (talkgroup CSV, recordings) resolve RELATIVE TO THIS FILE.
+
+log:
+  level: info       # bump to "debug" if nothing decodes and you want detail
+  format: text
+
+api:
+  http_addr: "127.0.0.1:8080"   # web UI / REST / SSE
+  auth:
+    mode: auto                  # loopback is trusted; no token needed locally
+
+storage:
+  path: "data/calls.db"
+  cc_cache_file: "data/cc-cache.json"
+
+recordings:
+  dir: "recordings"
+  sample_rate: 8000
+
+sdr:
+  # 2.4 MS/s is the RTL-SDR sweet spot: ~2.16 MHz usable per dongle.
+  sample_rate: 2_400_000
+  devices:
+    # ── Dongle 1: repeaters clustered around 453.5 MHz ────────────────────
+    - serial: "REPLACE_WITH_SERIAL_1"   # run `gophertrunk sdr list` and paste yours
+      role: wideband
+      center_freq_hz: 453_500_000        # keep every channel below within ±1.08 MHz
+      tuner_strategy: auto               # auto: DDC for ≤6 channels, polyphase above 6
+      gain: "auto"
+      channels:
+        - { frequency_hz: 453_137_500, system: "regional-dmr" }
+        - { frequency_hz: 453_262_500, system: "regional-dmr" }
+        - { frequency_hz: 453_412_500, system: "regional-dmr" }
+        - { frequency_hz: 453_537_500, system: "regional-dmr" }
+        - { frequency_hz: 453_662_500, system: "regional-dmr" }
+        - { frequency_hz: 453_787_500, system: "regional-dmr" }
+        - { frequency_hz: 453_912_500, system: "regional-dmr" }
+        - { frequency_hz: 454_037_500, system: "regional-dmr" }
+
+    # ── Dongle 2: repeaters clustered around 460.5 MHz ────────────────────
+    - serial: "REPLACE_WITH_SERIAL_2"
+      role: wideband
+      center_freq_hz: 460_500_000
+      tuner_strategy: auto
+      gain: "auto"
+      channels:
+        - { frequency_hz: 460_137_500, system: "regional-dmr" }
+        - { frequency_hz: 460_262_500, system: "regional-dmr" }
+        - { frequency_hz: 460_412_500, system: "regional-dmr" }
+        - { frequency_hz: 460_537_500, system: "regional-dmr" }
+        - { frequency_hz: 460_662_500, system: "regional-dmr" }
+        - { frequency_hz: 460_787_500, system: "regional-dmr" }
+        - { frequency_hz: 460_912_500, system: "regional-dmr" }
+        - { frequency_hz: 461_037_500, system: "regional-dmr" }
+
+    # ── Dongle 3: repeaters clustered around 465.5 MHz ────────────────────
+    - serial: "REPLACE_WITH_SERIAL_3"
+      role: wideband
+      center_freq_hz: 465_500_000
+      tuner_strategy: auto
+      gain: "auto"
+      channels:
+        - { frequency_hz: 465_137_500, system: "regional-dmr" }
+        - { frequency_hz: 465_262_500, system: "regional-dmr" }
+        - { frequency_hz: 465_412_500, system: "regional-dmr" }
+        - { frequency_hz: 465_537_500, system: "regional-dmr" }
+        - { frequency_hz: 465_662_500, system: "regional-dmr" }
+        - { frequency_hz: 465_787_500, system: "regional-dmr" }
+        - { frequency_hz: 465_912_500, system: "regional-dmr" }
+        - { frequency_hz: 466_037_500, system: "regional-dmr" }
+
+    # ── Add a Dongle 4, 5, … here for further clusters, same system name ──
+    # - serial: "REPLACE_WITH_SERIAL_4"
+    #   role: wideband
+    #   center_freq_hz: 470_500_000
+    #   channels:
+    #     - { frequency_hz: 470_137_500, system: "regional-dmr" }
+    #     ...
+
+trunking:
+  systems:
+    - name: "regional-dmr"
+      protocol: dmr-tier2
+      # NOTE: no `control_channels:` here. Tier II is conventional — there is
+      # no real control channel. GopherTrunk derives the channel list for this
+      # system from every `role: wideband` channel above that references it
+      # (unioned across all dongles), so each repeater carrier is listed ONCE.
+      # (If you prefer, you may still list them explicitly under
+      # `control_channels:` — an explicit list is always honoured verbatim.)
+      talkgroup_file: "talkgroups-dmr.csv"
