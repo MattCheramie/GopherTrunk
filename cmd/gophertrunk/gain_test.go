@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+)
 
 func TestParseGain(t *testing.T) {
 	cases := []struct {
@@ -103,6 +107,40 @@ func TestGainLooksTooLow(t *testing.T) {
 		if got := gainLooksTooLow(c.raw, c.tenthDB); got != c.want {
 			t.Errorf("gainLooksTooLow(%q, %d) = %v, want %v",
 				c.raw, c.tenthDB, got, c.want)
+		}
+	}
+}
+
+func TestFixedGainOnSharedWideband(t *testing.T) {
+	cases := []struct {
+		name        string
+		role        sdr.Role
+		numChannels int
+		tenthDB     int
+		want        bool
+	}{
+		// The reported case (issue #749): a multi-tap wideband dongle pinned
+		// to a fixed gain — fires regardless of how reasonable the level is,
+		// because the problem is cross-site dynamic range, not absolute level.
+		{"wideband 2 taps, 60 dB", sdr.RoleWideband, 2, 600, true},
+		{"wideband 4 taps, 30 dB", sdr.RoleWideband, 4, 300, true},
+		{"wideband 5 taps, 49.6 dB", sdr.RoleWideband, 5, 496, true},
+		{"wideband 2 taps, gain 0", sdr.RoleWideband, 2, 0, true},
+		// auto (tenthDB == -1) is exactly the recommended remedy: never warn.
+		{"wideband 4 taps, auto", sdr.RoleWideband, 4, -1, false},
+		// A single-tap wideband device has no co-tenants to starve.
+		{"wideband 1 tap, fixed", sdr.RoleWideband, 1, 600, false},
+		{"wideband 0 taps, fixed", sdr.RoleWideband, 0, 600, false},
+		// Non-wideband roles tune their own channel with their own gain, so
+		// the shared-front-end starvation can't apply — never warn.
+		{"control, fixed", sdr.RoleControl, 4, 600, false},
+		{"voice, fixed", sdr.RoleVoice, 4, 600, false},
+		{"auto role, fixed", sdr.RoleAuto, 4, 600, false},
+	}
+	for _, c := range cases {
+		if got := fixedGainOnSharedWideband(c.role, c.numChannels, c.tenthDB); got != c.want {
+			t.Errorf("%s: fixedGainOnSharedWideband(%v, %d, %d) = %v, want %v",
+				c.name, c.role, c.numChannels, c.tenthDB, got, c.want)
 		}
 	}
 }
