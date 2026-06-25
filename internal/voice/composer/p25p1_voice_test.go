@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/filter"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -150,6 +151,132 @@ func TestComposerP25Phase1VoiceChainExtractsRawFrames(t *testing.T) {
 	}
 
 	waitFor(t, time.Second, func() bool { return eng.touched.Load() > 0 })
+}
+
+// TestComposerP25Phase1VoiceChainDecodesWidebandIQ drives the voice
+// chain on the PHYSICAL-SDR path — genuine wideband C4FM IQ that the
+// chain must decimate itself before the receiver runs. This is the
+// configuration in the field report where a voice grant on a single
+// RTL-SDR started dropping live IQ ("consumer can't keep up"): the old
+// front end ran an 81-tap FIR over every input sample and threw away all
+// but every decim-th output. The chain now decimates with the same
+// filter but convolves only at the kept positions. This test guards that
+// the change preserves decode through real wideband IQ — a path the rest
+// of the suite (all 48 kHz / pass-through) never covers.
+func TestComposerP25Phase1VoiceChainDecodesWidebandIQ(t *testing.T) {
+	const (
+		// A wideband rate that forces a genuine decimation (decim = 5)
+		// without the multi-second modulation cost of synthesising the full
+		// 2.4 MS/s stream (sps=500). The field report's 2.4 MS/s (decim=50)
+		// runs the SAME decimating-FIR path; the byte-for-byte equivalence
+		// to the old front end at 2.4 MS/s is pinned separately and cheaply
+		// in TestDecimatingFIRMatchesOldFrontEnd.
+		sampleRate = 240_000.0
+		deviation  = 1800.0
+		ldus       = 12
+	)
+	framesPerLDU := phase1.LDUVoiceSubframeCount
+
+	dibits, want := buildP25P1VoiceStream(t, ldus)
+	// Modulate at the wideband rate so the chain sees real C4FM it must
+	// decimate itself (not pre-channelised 48 kHz like the other tests).
+	iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
+
+	src := newFakeSource()
+	bus := events.NewBus(8)
+	sink := &recordingSink{}
+	eng := &fakeEngine{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"VOICE-1": src}},
+		Sink:          sink,
+		Engine:        eng,
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	defer c.Close()
+	defer bus.Close()
+
+	bus.Publish(events.Event{
+		Kind: events.KindCallStart,
+		Payload: trunking.CallStart{
+			Grant: trunking.Grant{
+				System: "P25P1Site", Protocol: "p25",
+				GroupID: 42, FrequencyHz: 851_000_000,
+			},
+			DeviceSerial: "VOICE-1",
+			StartedAt:    time.Now().UTC(),
+		},
+	})
+
+	waitFor(t, 2*time.Second, func() bool { return len(c.ActiveChains()) == 1 })
+	src.SendIQ(iq)
+
+	waitFor(t, 8*time.Second, func() bool {
+		return len(sink.rawFrames("VOICE-1")) >= 6*framesPerLDU
+	})
+
+	got := sink.rawFrames("VOICE-1")
+	for _, f := range got {
+		if len(f) != imbe.FrameBytes {
+			t.Fatalf("raw frame length = %d, want %d", len(f), imbe.FrameBytes)
+		}
+	}
+	// At least one full LDU of IMBE frames must round-trip through the
+	// polyphase-decimated wideband path, same bar as the 48 kHz test.
+	matches := bestAlignmentMatches(got, want)
+	if matches < framesPerLDU {
+		t.Errorf("wideband path: only %d of %d captured frames round-tripped; want at least one LDU (%d)",
+			matches, len(got), framesPerLDU)
+	}
+}
+
+// BenchmarkP25P1VoiceFrontEnd2p4MS measures the new decimating-FIR front
+// end at the reporter's 2.4 MS/s rate, and BenchmarkP25P1VoiceFrontEndNaive2p4MS
+// the old filter-everything-then-stride front end it replaced, so the
+// per-chunk cost reduction is visible in one `go test -bench` run (mirrors
+// BenchmarkDDCBankProcess10MHz4Taps for issue #764). Both use the same
+// 81-tap filter; the naive baseline runs it over every input sample then
+// keeps 1 of 50, the new path convolves only at the kept positions.
+func BenchmarkP25P1VoiceFrontEnd2p4MS(b *testing.B) {
+	const inRate = 2_400_000.0
+	fe := newDecimatingFIR(inRate, p25p1VoiceIntermediateHz, 12_500, false)
+	chunk := benchTone(8192)
+	var dst []complex64
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dst = fe.Process(dst, chunk)
+	}
+}
+
+func BenchmarkP25P1VoiceFrontEndNaive2p4MS(b *testing.B) {
+	const inRate = 2_400_000.0
+	decim := int(inRate) / p25p1VoiceIntermediateHz
+	cutoff := 12_500.0 / inRate
+	lpf := filter.NewFIR(filter.LowpassKaiser(81, cutoff, 8.6))
+	chunk := benchTone(8192)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = decimateComplex(lpf.Process(nil, chunk), decim)
+	}
+}
+
+// benchTone builds a deterministic complex tone buffer for the front-end
+// benchmarks. Avoids math/rand and Date-dependent state.
+func benchTone(n int) []complex64 {
+	out := make([]complex64, n)
+	for i := range out {
+		p := float64(i) * 0.017
+		out[i] = complex(float32(math.Cos(p)), float32(math.Sin(p)))
+	}
+	return out
 }
 
 // TestComposerP25Phase1VoiceChainHonoursDemodMode confirms a CallStart

@@ -535,21 +535,18 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	bt := c.newBoundaryTracker(serial, 0, nil)
 	go bt.run(ctx)
 
-	// Front-end LPF: cutoff = bw / iqHz (normalized 0..0.5).
-	cutoff := float64(c.bw) / float64(iqHz)
-	if cutoff > 0.45 {
-		cutoff = 0.45
-	}
-	taps := filter.LowpassKaiser(81, cutoff, 8.6)
-	lpf := filter.NewFIR(taps)
-
-	// Naive decimation factors. They aren't exact; resampling-quality
-	// audio lands with the polyphase resampler in a follow-up.
+	// Front-end decimator: an 81-tap anti-alias FIR that convolves ONLY at
+	// the output positions, replacing the old full-rate FIR + every-Nth-
+	// sample decimation that filtered every input sample and discarded most
+	// of the result (~194M MACs/sec at 2.4 MS/s). Same filter and same kept
+	// samples, so the demodulated audio is byte-for-byte unchanged. Unlike
+	// the digital chains, FM band-limits even when not decimating, so
+	// filterAtUnity is true.
 	const intermediateHz = 48_000
-	decim1 := int(iqHz) / intermediateHz
-	if decim1 < 1 {
-		decim1 = 1
-	}
+	fe := newDecimatingFIR(float64(iqHz), intermediateHz, float64(c.bw), true)
+
+	// Second-stage decimation to PCM. Still naive; resampling-quality audio
+	// lands with the opt-in polyphase resampler below.
 	decim2 := intermediateHz / int(c.pcmHz)
 	if decim2 < 1 {
 		decim2 = 1
@@ -570,7 +567,7 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 	// treble for SNR; without the matching low-pass the recording
 	// sounds harsh. Filter runs on the real audio at the intermediate
 	// rate (~48 kHz) before the second naive decimation to PCM.
-	intermediateHzf := float64(iqHz) / float64(decim1)
+	intermediateHzf := fe.OutRateHz()
 	var deemph *filter.DeEmphasis
 	if c.deemphCfg.Enabled {
 		deemph = filter.NewDeEmphasis(c.deemphCfg.TimeConstant, intermediateHzf)
@@ -674,8 +671,7 @@ func (c *Composer) runFMChain(ctx context.Context, serial string, iqCh <-chan []
 				emitTail()
 				return
 			}
-			filtered := lpf.Process(nil, iq)
-			decimated := decimateComplex(filtered, decim1)
+			decimated := fe.Process(nil, iq)
 			if eq != nil {
 				if cap(eqScratch) < len(decimated) {
 					eqScratch = make([]complex64, len(decimated))
