@@ -45,6 +45,10 @@ type GRPCServer struct {
 
 	diagnostics   *gtdiag.Collector
 	verboseErrors bool
+	// displayLoc is the timezone the string-formatted timestamps in responses
+	// (RID activity/history, active calls) render in. Never nil after
+	// construction. Mirrors the daemon's display.timezone.
+	displayLoc *time.Location
 
 	srv *grpc.Server
 }
@@ -78,6 +82,9 @@ type GRPCServerOptions struct {
 	Diagnostics *gtdiag.Collector
 	// VerboseErrors mirrors diagnostics.verbose_errors.
 	VerboseErrors bool
+	// DisplayLoc is the timezone string-formatted response timestamps render in.
+	// Nil means time.Local (the daemon passes display.timezone).
+	DisplayLoc *time.Location
 	// TLSCert and TLSKey, when both non-empty, switch the gRPC
 	// server to TLS using credentials.NewServerTLSFromFile. Same
 	// disk-loaded-once semantics as the HTTP server's TLS support.
@@ -102,6 +109,10 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 	if opts.RIDs == nil {
 		opts.RIDs = trunking.NewRIDDB()
 	}
+	loc := opts.DisplayLoc
+	if loc == nil {
+		loc = time.Local
+	}
 	g := &GRPCServer{
 		addr:          opts.Addr,
 		systems:       append([]trunking.System(nil), opts.Systems...),
@@ -114,6 +125,7 @@ func NewGRPCServer(opts GRPCServerOptions) (*GRPCServer, error) {
 		log:           log,
 		diagnostics:   opts.Diagnostics,
 		verboseErrors: opts.VerboseErrors,
+		displayLoc:    loc,
 	}
 	// Keep-alive guards long-lived RPCs (StreamAudio in particular)
 	// against silently-dead peers — without server-side pings, a
@@ -284,7 +296,7 @@ func (g *GRPCServer) ListActiveCalls(_ context.Context, _ *apiv1.ListActiveCalls
 	active := g.engine.ActiveCalls()
 	out := make([]*apiv1.ActiveCall, 0, len(active))
 	for _, ac := range active {
-		out = append(out, activeCallToPB(ac))
+		out = append(out, activeCallToPB(ac, g.displayLoc))
 	}
 	return &apiv1.ListActiveCallsResponse{Calls: out}, nil
 }
@@ -304,7 +316,7 @@ func (g *GRPCServer) GetRID(_ context.Context, req *apiv1.GetRIDRequest) (*apiv1
 			if u.RadioID != id {
 				continue
 			}
-			rid = mergeRIDLivePB(rid, u)
+			rid = mergeRIDLivePB(rid, u, g.displayLoc)
 			break
 		}
 	}
@@ -338,7 +350,7 @@ func (g *GRPCServer) ListRIDHistory(ctx context.Context, req *apiv1.ListRIDHisto
 	}
 	out := make([]*apiv1.RIDCallRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, callRowToPB(r))
+		out = append(out, callRowToPB(r, g.displayLoc))
 	}
 	return &apiv1.ListRIDHistoryResponse{Calls: out}, nil
 }
@@ -353,7 +365,7 @@ func (g *GRPCServer) mergedRIDs() []*apiv1.RID {
 	}
 	if g.affiliations != nil {
 		for _, u := range g.affiliations.Affiliations() {
-			byID[u.RadioID] = mergeRIDLivePB(byID[u.RadioID], u)
+			byID[u.RadioID] = mergeRIDLivePB(byID[u.RadioID], u, g.displayLoc)
 		}
 	}
 	out := make([]*apiv1.RID, 0, len(byID))
@@ -382,7 +394,16 @@ func ridToPB(r *trunking.RID, configured bool) *apiv1.RID {
 	}
 }
 
-func mergeRIDLivePB(p *apiv1.RID, u trunking.UnitActivity) *apiv1.RID {
+// tsFmt renders t as RFC3339 in loc (default time.Local), the display-timezone
+// format shared by every string-formatted timestamp in the gRPC responses.
+func tsFmt(t time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format(time.RFC3339)
+}
+
+func mergeRIDLivePB(p *apiv1.RID, u trunking.UnitActivity, loc *time.Location) *apiv1.RID {
 	if p == nil {
 		p = &apiv1.RID{Id: u.RadioID, Watch: true}
 	}
@@ -392,19 +413,19 @@ func mergeRIDLivePB(p *apiv1.RID, u trunking.UnitActivity) *apiv1.RID {
 	p.TalkerAlias = u.TalkerAlias
 	p.TalkerAliasUnreliable = u.TalkerAliasUnreliable
 	if !u.TalkerAliasAt.IsZero() {
-		p.TalkerAliasAt = u.TalkerAliasAt.UTC().Format(time.RFC3339)
+		p.TalkerAliasAt = tsFmt(u.TalkerAliasAt, loc)
 	}
 	p.CallCount = u.CallCount
 	if !u.FirstSeen.IsZero() {
-		p.FirstSeen = u.FirstSeen.UTC().Format(time.RFC3339)
+		p.FirstSeen = tsFmt(u.FirstSeen, loc)
 	}
 	if !u.LastSeen.IsZero() {
-		p.LastSeen = u.LastSeen.UTC().Format(time.RFC3339)
+		p.LastSeen = tsFmt(u.LastSeen, loc)
 	}
 	return p
 }
 
-func callRowToPB(r CallRow) *apiv1.RIDCallRow {
+func callRowToPB(r CallRow, loc *time.Location) *apiv1.RIDCallRow {
 	pb := &apiv1.RIDCallRow{
 		Id:             r.ID,
 		System:         r.System,
@@ -421,10 +442,10 @@ func callRowToPB(r CallRow) *apiv1.RIDCallRow {
 		TalkgroupAlpha: r.TalkgroupAlpha,
 	}
 	if !r.StartedAt.IsZero() {
-		pb.StartedAt = r.StartedAt.UTC().Format(time.RFC3339)
+		pb.StartedAt = tsFmt(r.StartedAt, loc)
 	}
 	if !r.EndedAt.IsZero() {
-		pb.EndedAt = r.EndedAt.UTC().Format(time.RFC3339)
+		pb.EndedAt = tsFmt(r.EndedAt, loc)
 	}
 	return pb
 }
@@ -513,12 +534,12 @@ func grantToPB(g trunking.Grant) *apiv1.Grant {
 	}
 }
 
-func activeCallToPB(ac *trunking.ActiveCall) *apiv1.ActiveCall {
+func activeCallToPB(ac *trunking.ActiveCall, loc *time.Location) *apiv1.ActiveCall {
 	return &apiv1.ActiveCall{
 		Grant:        grantToPB(ac.Grant),
 		Talkgroup:    talkgroupToPB(ac.Talkgroup),
 		DeviceSerial: ac.Device.Serial,
-		StartedAt:    ac.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		LastHeardAt:  ac.LastHeardAt.UTC().Format("2006-01-02T15:04:05Z"),
+		StartedAt:    tsFmt(ac.StartedAt, loc),
+		LastHeardAt:  tsFmt(ac.LastHeardAt, loc),
 	}
 }

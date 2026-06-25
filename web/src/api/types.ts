@@ -30,6 +30,22 @@ export interface SystemDTO {
   // Active DMR Tier III LCN→frequency band plan (configured or learned),
   // surfaced so the Systems panel can show how voice grants resolve. (#638)
   dmr_band_plan?: DMRBandPlanDTO;
+  // Live adjacent (neighbour) sites decoded from the control channel (P25
+  // Adjacent Site Status Broadcast). Empty/absent until one is heard.
+  neighbors?: NeighborDTO[];
+}
+
+// NeighborDTO mirrors api.NeighborDTO — one adjacent site with resolved
+// downlink/uplink frequencies (zero when the band plan was not yet known).
+export interface NeighborDTO {
+  rfss: number;
+  site: number;
+  channel_id?: number;
+  channel_number?: number;
+  downlink_hz?: number;
+  uplink_hz?: number;
+  rfss_hex?: string;
+  site_hex?: string;
 }
 
 // DMRBandPlanDTO mirrors api.DMRBandPlanDTO — exactly one of linear/table.

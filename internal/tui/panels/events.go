@@ -88,7 +88,7 @@ func (p *EventsPanel) refresh(s *state.SharedState) {
 	var b strings.Builder
 	for _, ev := range all {
 		line := fmt.Sprintf("%s  %-14s  %s",
-			ev.Time.Format("15:04:05.000"),
+			ev.Time.Local().Format("15:04:05.000"),
 			ev.Kind,
 			summariseEvent(ev),
 		)

@@ -10,6 +10,7 @@ import type {
   DMRBandPlanDTO,
   DMRBandPlanLearnedDTO,
   EventDTO,
+  NeighborDTO,
   SystemDTO,
   SystemHuntStatusDTO,
 } from "../api/types";
@@ -30,6 +31,18 @@ function formatBandPlan(bp: DMRBandPlanDTO | undefined): string | null {
     return `${bp.table.length} LCNs (table)`;
   }
   return null;
+}
+
+// formatNeighbor renders one adjacent site as "RFSS x / Site y → downlink MHz",
+// the way SDRtrunk's "Neighbor Sites" view does. Identity numbers follow the
+// operator's id_base; the downlink is omitted when the band plan hasn't resolved
+// it yet.
+function formatNeighbor(n: NeighborDTO, idBase: "hex" | "dec"): string {
+  const rfss = formatIdNumber(n.rfss, idBase) ?? String(n.rfss);
+  const site = formatIdNumber(n.site, idBase) ?? String(n.site);
+  let s = `RFSS ${rfss} / Site ${site}`;
+  if (n.downlink_hz) s += ` → ${(n.downlink_hz / 1e6).toFixed(6)} MHz`;
+  return s;
 }
 
 // latestLearned returns the newest dmr.bandplan.learned event payload for a
@@ -168,6 +181,17 @@ export function Systems() {
           ),
         sort: (a, b) => (a.site ?? -1) - (b.site ?? -1),
       },
+      {
+        key: "neighbors",
+        header: "Neighbors",
+        render: (r) =>
+          r.neighbors?.length ? (
+            <span className="font-mono text-xs">{r.neighbors.length}</span>
+          ) : (
+            <span className="text-muted">—</span>
+          ),
+        sort: (a, b) => (a.neighbors?.length ?? 0) - (b.neighbors?.length ?? 0),
+      },
     ],
     [],
   );
@@ -285,6 +309,20 @@ export function Systems() {
               </div>
             );
           })()}
+          {selected.neighbors && selected.neighbors.length > 0 ? (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                Neighbor sites ({selected.neighbors.length})
+              </p>
+              <DetailField
+                label="RFSS / Site → downlink"
+                mono
+                value={selected.neighbors
+                  .map((n) => formatNeighbor(n, idBase))
+                  .join("\n")}
+              />
+            </div>
+          ) : null}
         </DetailModal>
       )}
     </div>

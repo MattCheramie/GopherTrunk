@@ -21,8 +21,9 @@ type HealthDTO struct {
 	// Status is always "ok" for a serving daemon — present so old
 	// callers that only check `.status == "ok"` keep working.
 	Status string `json:"status"`
-	// Now is the daemon-side timestamp in UTC. Useful for detecting
-	// clock skew between probe and daemon.
+	// Now is the daemon-side timestamp, rendered in the configured display
+	// timezone (display.timezone; local by default). It carries an explicit
+	// offset, so a probe can still detect clock skew against its own clock.
 	Now time.Time `json:"now"`
 	// Version is the daemon build version, redundant with the
 	// dedicated /api/v1/version endpoint but useful so probes can
@@ -49,7 +50,7 @@ type HealthDTO struct {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	body := HealthDTO{
 		Status:         "ok",
-		Now:            time.Now().UTC(),
+		Now:            time.Now().In(orLocal(s.displayLoc)),
 		Version:        s.version,
 		DBConnected:    s.history != nil,
 		MetricsEnabled: s.metrics != nil,
@@ -119,6 +120,7 @@ func (s *Server) handleListSystems(w http.ResponseWriter, _ *http.Request) {
 	for _, sys := range s.systems {
 		dto := systemToDTO(sys)
 		overlayLiveIdentity(&dto, live)
+		s.overlayNeighbors(&dto)
 		dto.fillIdentityHex()
 		out = append(out, dto)
 	}
@@ -133,6 +135,7 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 			if s.sites != nil {
 				overlayLiveIdentity(&dto, s.sites.Sites())
 			}
+			s.overlayNeighbors(&dto)
 			dto.fillIdentityHex()
 			writeJSON(w, http.StatusOK, dto)
 			return
@@ -197,6 +200,20 @@ func overlayLiveIdentity(dto *SystemDTO, sites []trunking.SiteInfo) {
 			sysAt = si.LastSeen
 			dto.SystemID = si.SystemID
 		}
+	}
+}
+
+// overlayNeighbors fills dto.Neighbors from the live topology snapshot for the
+// system, when the wired SitesProvider exposes one (the SiteTracker does). The
+// adjacent sites are decoded from P25 status broadcasts over the air, so a
+// configured-but-quiet system simply leaves the list empty.
+func (s *Server) overlayNeighbors(dto *SystemDTO) {
+	tp, ok := s.sites.(NetworkTopologyProvider)
+	if !ok {
+		return
+	}
+	if snap, ok := tp.Topology(dto.Name); ok {
+		dto.Neighbors = neighborsFromTopology(snap)
 	}
 }
 

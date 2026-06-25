@@ -9,16 +9,21 @@ import (
 
 // LocationsFromStorage wraps a *storage.LocationLog as an
 // api.LocationQuery so the daemon can pass it to NewServer without the
-// storage package's row types leaking into the api package.
-func LocationsFromStorage(ll *storage.LocationLog) LocationQuery {
+// storage package's row types leaking into the api package. loc is the
+// display timezone the ReportedAt timestamp renders in (nil → time.Local).
+func LocationsFromStorage(ll *storage.LocationLog, loc *time.Location) LocationQuery {
 	if ll == nil {
 		return nil
 	}
-	return &storageLocations{ll: ll}
+	if loc == nil {
+		loc = time.Local
+	}
+	return &storageLocations{ll: ll, loc: loc}
 }
 
 type storageLocations struct {
-	ll *storage.LocationLog
+	ll  *storage.LocationLog
+	loc *time.Location
 }
 
 func (s *storageLocations) RecentLocations(limit int) ([]LocationFix, error) {
@@ -37,7 +42,7 @@ func (s *storageLocations) RecentLocations(limit int) ([]LocationFix, error) {
 			Longitude:  r.Longitude,
 			SpeedKnots: r.SpeedKnots,
 			HeadingDeg: r.HeadingDeg,
-			ReportedAt: r.ReportedAt.UTC().Format(time.RFC3339),
+			ReportedAt: r.ReportedAt.In(s.loc).Format(time.RFC3339),
 		}
 	}
 	return out, nil

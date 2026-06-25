@@ -234,6 +234,8 @@ var fieldMetas = map[string]FieldMeta{
 	"WebConfig.Tabs":   {Help: "Show/hide navigation tabs in the operator console. Hidden tabs stay reachable by URL."},
 	"WebConfig.IDBase": {Help: "Render identity numbers (WACN, System ID, NAC, RFSS, Site) in the web UI as hex (default) or dec. The JSON API always carries decimal plus *_hex values."},
 
+	"DisplayConfig.Timezone": {Label: "Timezone", Help: "Timezone for displayed/logged timestamps: \"Local\" (default, the host's zone), \"UTC\", or an IANA name like \"America/New_York\". Affects the decoded-message log, power log and TUI only; the API/webhooks stay UTC."},
+
 	// ---- Storage -----------------------------------------------------------
 	"StorageConfig.Path":        {Help: "SQLite call-log database file. Empty disables call history (the daemon still runs)."},
 	"StorageConfig.CCCacheFile": {Label: "CC cache file", Help: "JSON cache the control-channel hunter uses to skip dead frequencies. Empty disables it."},

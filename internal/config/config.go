@@ -39,8 +39,55 @@ type Config struct {
 	M17            M17Config            `yaml:"m17"`
 	LoRa           LoRaConfig           `yaml:"lora"`
 	Web            WebConfig            `yaml:"web"`
+	Display        DisplayConfig        `yaml:"display"`
 	Diagnostics    DiagnosticsConfig    `yaml:"diagnostics"`
 	RadioReference RadioReferenceConfig `yaml:"radioreference"`
+}
+
+// DisplayConfig controls how the daemon renders timestamps for humans. By
+// default GopherTrunk historically forced UTC ("…Z") in the decoded-message
+// log, the power log and the TUI, which surprises operators expecting their
+// own wall-clock time. Timezone selects the location those displayed/logged
+// timestamps are rendered in:
+//
+//   - "" or "Local" → the host's local timezone (the default)
+//   - "UTC"         → UTC (the historical behaviour)
+//   - any IANA name → that zone, e.g. "America/New_York", "Europe/Paris"
+//
+// Machine-interchange surfaces (the JSON/gRPC API, webhooks, rdioscanner
+// uploads) are intentionally NOT affected — they stay UTC RFC3339 so external
+// consumers parse an unambiguous instant. This only changes human-facing
+// display, mirroring how SDRtrunk shows local time.
+type DisplayConfig struct {
+	Timezone string `yaml:"timezone"`
+}
+
+// Location resolves Timezone to a *time.Location for formatting displayed
+// timestamps. An empty value or "Local" yields time.Local; "UTC" yields
+// time.UTC; any other value is looked up as an IANA name. An unparseable name
+// falls back to time.Local so a typo degrades to a sensible default rather than
+// crashing the daemon — callers that want to warn can use LocationStrict.
+func (d DisplayConfig) Location() *time.Location {
+	loc, _ := d.LocationStrict()
+	return loc
+}
+
+// LocationStrict is Location plus the lookup error (nil on success). On error it
+// still returns time.Local so the result is always usable; the daemon logs the
+// error once at startup.
+func (d DisplayConfig) LocationStrict() (*time.Location, error) {
+	switch strings.TrimSpace(d.Timezone) {
+	case "", "Local", "local":
+		return time.Local, nil
+	case "UTC", "utc":
+		return time.UTC, nil
+	default:
+		loc, err := time.LoadLocation(strings.TrimSpace(d.Timezone))
+		if err != nil {
+			return time.Local, err
+		}
+		return loc, nil
+	}
 }
 
 // RadioReferenceConfig holds credentials for RadioReference.com's read-only

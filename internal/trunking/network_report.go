@@ -148,6 +148,36 @@ func renderSite(w io.Writer, s ReportSite) {
 	}
 }
 
+// RenderNeighborLines returns one line per adjacent site in a topology snapshot,
+// each like "RFSS:01[1] SITE:07[7] CHANNEL:2-1754 DOWNLINK:450.962500 MHz
+// UPLINK:461.437500 MHz", sorted by (RFSS, Site). It reuses the same band-plan
+// resolution and channel formatting as the full network report. The slice is
+// empty when the snapshot is nil or carries no neighbours. The decoded-message
+// log uses it to surface adjacent sites the way SDRtrunk's "Neighbor Sites"
+// block does, without re-deriving uplink frequencies.
+func RenderNeighborLines(t *TopologySnapshot) []string {
+	if t == nil {
+		return nil
+	}
+	r := ReportFromTopology(t)
+	if len(r.Sites) == 0 {
+		return nil
+	}
+	neighbors := append([]ReportNeighbor(nil), r.Sites[0].Neighbors...)
+	sort.SliceStable(neighbors, func(i, j int) bool {
+		if neighbors[i].RFSS != neighbors[j].RFSS {
+			return neighbors[i].RFSS < neighbors[j].RFSS
+		}
+		return neighbors[i].Site < neighbors[j].Site
+	})
+	lines := make([]string, 0, len(neighbors))
+	for _, n := range neighbors {
+		prefix := fmt.Sprintf("RFSS:%s SITE:%s CHANNEL", hexDec(uint64(n.RFSS)), hexDec(uint64(n.Site)))
+		lines = append(lines, channelLine(prefix, n.Channel))
+	}
+	return lines
+}
+
 // channelLine renders "<prefix>[:<id>-<num>] DOWNLINK:<mhz> UPLINK:<mhz>",
 // omitting the coordinate token when unknown (hunt) and each frequency when
 // unresolved.

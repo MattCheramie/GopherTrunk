@@ -27,6 +27,7 @@ type PowerLog struct {
 	path       string
 	maxBytes   int64
 	allWindows bool
+	loc        *time.Location
 	sub        *events.Subscription
 	runDone    chan struct{}
 	closeOnce  sync.Once
@@ -47,6 +48,9 @@ type PowerLogOptions struct {
 	// (default) only windows whose IQ power is below the low-power
 	// threshold are written.
 	AllWindows bool
+	// Loc is the timezone displayed timestamps are rendered in. Nil means
+	// time.Local (the daemon passes cfg.Display.Location()).
+	Loc *time.Location
 }
 
 // NewPowerLog opens the log file and subscribes to the bus.
@@ -67,12 +71,17 @@ func NewPowerLog(opts PowerLogOptions) (*PowerLog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("log/powerlog: open: %w", err)
 	}
+	loc := opts.Loc
+	if loc == nil {
+		loc = time.Local
+	}
 	info, _ := f.Stat()
 	pl := &PowerLog{
 		bus:        opts.Bus,
 		path:       opts.Path,
 		maxBytes:   int64(opts.MaxSizeMB) * 1024 * 1024,
 		allWindows: opts.AllWindows,
+		loc:        loc,
 		runDone:    make(chan struct{}),
 		f:          f,
 	}
@@ -104,7 +113,7 @@ func (p *PowerLog) Run(ctx context.Context) error {
 			if !p.allWindows && !cp.LowPower {
 				continue
 			}
-			p.write(formatChannelPower(ev.Timestamp, cp))
+			p.write(formatChannelPower(ev.Timestamp, cp, p.loc))
 		}
 	}
 }
@@ -161,11 +170,8 @@ func (p *PowerLog) Close() error {
 
 // formatChannelPower renders one ChannelPower event as a power-log line
 // (newline-terminated).
-func formatChannelPower(ts time.Time, cp events.ChannelPower) string {
-	if ts.IsZero() {
-		ts = time.Now()
-	}
-	stamp := ts.UTC().Format("2006-01-02T15:04:05.000Z")
+func formatChannelPower(ts time.Time, cp events.ChannelPower, loc *time.Location) string {
+	stamp := stampTime(ts, loc)
 	return fmt.Sprintf("%s %-12s system=%s proto=%s freq=%d dbfs=%.1f decoded=%d low=%t\n",
 		stamp, "POWER", cp.System, cp.Protocol, cp.FreqHz, cp.PowerDbFS, cp.Decoded, cp.LowPower)
 }

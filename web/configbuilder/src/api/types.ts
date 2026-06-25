@@ -243,6 +243,14 @@ export interface WebConfig {
   IDBase?: string;
 }
 
+export interface DisplayConfig {
+  // Timezone for displayed/logged timestamps: "Local" (default), "UTC", or an
+  // IANA name like "America/New_York". Affects the decoded-message log, power
+  // log and TUI only; the JSON/gRPC API stays UTC RFC3339.
+  Timezone?: string;
+  [k: string]: unknown;
+}
+
 export interface P25BandPlanEntry {
   ChannelID: number;
   BaseHz: number;
@@ -495,6 +503,7 @@ export interface GTConfig {
   ADSB: ADSBConfig;
   M17: M17Config;
   Web: WebConfig;
+  Display: DisplayConfig;
   Diagnostics: DiagnosticsConfig;
   RadioReference: RadioReferenceConfig;
   [k: string]: unknown;

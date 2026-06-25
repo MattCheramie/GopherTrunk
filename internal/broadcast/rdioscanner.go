@@ -25,6 +25,10 @@ type RdioScannerConfig struct {
 	// Systems restricts the feed to these trunking-system names.
 	// Empty streams every system.
 	Systems []string
+	// Loc is the timezone the dateTime RFC3339 value renders in. Nil means
+	// time.Local. RdioScanner parses dateTime as an instant, so the offset-
+	// bearing RFC3339 (e.g. +02:00, or Z for UTC) is unambiguous.
+	Loc *time.Location
 }
 
 type rdioScannerBackend struct {
@@ -33,6 +37,7 @@ type rdioScannerBackend struct {
 	endpoint string
 	apiKey   string
 	systemID int
+	loc      *time.Location
 	http     *http.Client
 }
 
@@ -60,6 +65,7 @@ func NewRdioScanner(cfg RdioScannerConfig, hc *http.Client) (Backend, error) {
 		endpoint:     strings.TrimRight(cfg.URL, "/") + "/api/call-upload",
 		apiKey:       cfg.APIKey,
 		systemID:     cfg.SystemID,
+		loc:          cfg.Loc,
 		http:         hc,
 	}, nil
 }
@@ -75,7 +81,7 @@ func (b *rdioScannerBackend) Send(ctx context.Context, c *Call) error {
 	fields := []multipartField{
 		{Name: "key", Value: b.apiKey},
 		{Name: "system", Value: strconv.Itoa(b.systemID)},
-		{Name: "dateTime", Value: c.StartedAt.UTC().Format(time.RFC3339)},
+		{Name: "dateTime", Value: rfc3339In(c.StartedAt, b.loc)},
 		{Name: "talkgroup", Value: strconv.FormatUint(uint64(c.Talkgroup), 10)},
 		{Name: "source", Value: strconv.FormatUint(uint64(c.Source), 10)},
 		{Name: "frequency", Value: strconv.FormatUint(uint64(c.FrequencyHz), 10)},

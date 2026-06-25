@@ -83,7 +83,7 @@ func (p *TonesPanel) refresh(s *state.SharedState) {
 			freqs = append(freqs, fmt.Sprintf("%.1f", f))
 		}
 		rows = append(rows, table.Row{
-			ev.Time.Format("15:04:05"),
+			ev.Time.Local().Format("15:04:05"),
 			t.Profile,
 			t.DeviceSerial,
 			strings.Join(freqs, " "),

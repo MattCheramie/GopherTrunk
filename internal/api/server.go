@@ -396,6 +396,9 @@ type Server struct {
 	// verboseErrors mirrors diagnostics.verbose_errors; see
 	// ServerOptions.VerboseErrors.
 	verboseErrors bool
+	// displayLoc is the timezone the daemon-time field in GET /api/v1/health
+	// renders in. Never nil after construction; mirrors display.timezone.
+	displayLoc *time.Location
 
 	mu     sync.Mutex
 	srv    *http.Server
@@ -448,6 +451,25 @@ type SitesProvider interface {
 // of the system. The bool is false when no topology has been observed yet.
 type NetworkReporter interface {
 	Report(system string) (string, bool)
+}
+
+// orLocal returns loc, or time.Local when loc is nil, so timestamp rendering
+// always has a usable *time.Location.
+func orLocal(loc *time.Location) *time.Location {
+	if loc == nil {
+		return time.Local
+	}
+	return loc
+}
+
+// NetworkTopologyProvider is the optional capability a SitesProvider may
+// implement to expose the live topology snapshot (identity + neighbours + band
+// plan) for a system. The SiteTracker implements it; the systems endpoints use
+// it to overlay the decoded adjacent-site ("neighbor") list onto a SystemDTO so
+// the Systems panels can show neighbours without the drill-in report. The bool
+// is false when no topology has been observed for the system yet.
+type NetworkTopologyProvider interface {
+	Topology(system string) (*trunking.TopologySnapshot, bool)
 }
 
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
@@ -661,6 +683,9 @@ type ServerOptions struct {
 	// caller; when false the banner is only attached on ?verbose=1 from
 	// a trusted (authorized) request.
 	VerboseErrors bool
+	// DisplayLoc is the timezone the GET /api/v1/health daemon-time renders in.
+	// Nil means time.Local (the daemon passes display.timezone).
+	DisplayLoc *time.Location
 	// Pager, when non-nil, enables the
 	// GET /api/v1/pager/messages route serving recent decoded
 	// POCSAG (and eventually FLEX) pager messages. Wired by the
@@ -829,6 +854,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		configBuilder:  configBuilderSvc,
 		diagnostics:    opts.Diagnostics,
 		verboseErrors:  opts.VerboseErrors,
+		displayLoc:     orLocal(opts.DisplayLoc),
 		pager:          opts.Pager,
 		aprs:           opts.APRS,
 		ais:            opts.AIS,

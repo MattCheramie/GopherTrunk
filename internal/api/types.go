@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sort"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -124,6 +125,63 @@ type SystemDTO struct {
 	// written back to config) so the web Systems panel can show how voice
 	// grants resolve. Nil when the system has no DMR band plan. (#638)
 	DMRBandPlan *DMRBandPlanDTO `json:"dmr_band_plan,omitempty"`
+
+	// Neighbors are the adjacent (neighbour) sites this system's control
+	// channel advertised over the air (P25 Adjacent Site Status Broadcast,
+	// opcode 0x3C), decoded live and overlaid from the SiteTracker's topology
+	// snapshot. Empty when none have been heard yet. Surfaced so the Systems
+	// panels can show them the way SDRtrunk's "Neighbor Sites" view does,
+	// instead of only the system drill-in report.
+	Neighbors []NeighborDTO `json:"neighbors,omitempty"`
+}
+
+// NeighborDTO is one adjacent site advertised by a system's control channel,
+// with band-plan-resolved downlink/uplink frequencies (zero when the band plan
+// was not yet known). The hex renderings follow the P25 field convention,
+// alongside the decimal fields.
+type NeighborDTO struct {
+	RFSS          uint8  `json:"rfss"`
+	Site          uint8  `json:"site"`
+	ChannelID     uint8  `json:"channel_id,omitempty"`
+	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	DownlinkHz    uint32 `json:"downlink_hz,omitempty"`
+	UplinkHz      uint32 `json:"uplink_hz,omitempty"`
+	RFSSHex       string `json:"rfss_hex,omitempty"`
+	SiteHex       string `json:"site_hex,omitempty"`
+}
+
+// neighborsFromTopology converts a live topology snapshot's neighbours into
+// DTOs, reusing trunking.ReportFromTopology so downlink/uplink resolution
+// matches the network-configuration report and the decoded-message log exactly.
+// Sorted by (RFSS, Site) for stable output. Returns nil when there are none.
+func neighborsFromTopology(snap *trunking.TopologySnapshot) []NeighborDTO {
+	if snap == nil {
+		return nil
+	}
+	r := trunking.ReportFromTopology(snap)
+	if len(r.Sites) == 0 || len(r.Sites[0].Neighbors) == 0 {
+		return nil
+	}
+	out := make([]NeighborDTO, 0, len(r.Sites[0].Neighbors))
+	for _, n := range r.Sites[0].Neighbors {
+		out = append(out, NeighborDTO{
+			RFSS:          n.RFSS,
+			Site:          n.Site,
+			ChannelID:     n.Channel.ChannelID,
+			ChannelNumber: n.Channel.ChannelNumber,
+			DownlinkHz:    n.Channel.DownlinkHz,
+			UplinkHz:      n.Channel.UplinkHz,
+			RFSSHex:       trunking.IDHex(uint64(n.RFSS)),
+			SiteHex:       trunking.IDHex(uint64(n.Site)),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].RFSS != out[j].RFSS {
+			return out[i].RFSS < out[j].RFSS
+		}
+		return out[i].Site < out[j].Site
+	})
+	return out
 }
 
 // DMRBandPlanDTO mirrors trunking.DMRBandPlan: exactly one of Linear or

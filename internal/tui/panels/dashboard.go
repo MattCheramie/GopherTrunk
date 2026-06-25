@@ -93,7 +93,7 @@ func (p *DashboardPanel) healthBody(s *state.SharedState) string {
 		lines = append(lines, dashDim.Render("Version: "+s.Version))
 	}
 	if !s.Health.Now.IsZero() {
-		lines = append(lines, dashDim.Render("Daemon time: "+s.Health.Now.Format(time.RFC3339)))
+		lines = append(lines, dashDim.Render("Daemon time: "+s.Health.Now.Local().Format(time.RFC3339)))
 	}
 	if s.Server != "" {
 		lines = append(lines, dashDim.Render("Server: "+s.Server))
@@ -143,7 +143,7 @@ func (p *DashboardPanel) eventsBody(s *state.SharedState) string {
 	latest := s.EventLog.Latest(8)
 	var b strings.Builder
 	for _, ev := range latest {
-		ts := ev.Time.Format("15:04:05")
+		ts := ev.Time.Local().Format("15:04:05")
 		fmt.Fprintf(&b, "%s  %s\n", ts, ev.Kind)
 	}
 	return b.String()
@@ -156,7 +156,7 @@ func (p *DashboardPanel) tonesBody(s *state.SharedState) string {
 	latest := s.ToneAlerts.Latest(5)
 	var b strings.Builder
 	for _, ev := range latest {
-		ts := ev.Time.Format("15:04:05")
+		ts := ev.Time.Local().Format("15:04:05")
 		var t client.Tone
 		if err := jsonUnmarshal(ev.Raw, &t); err == nil && t.Profile != "" {
 			fmt.Fprintln(&b, dashAlert.Render(ts+"  "+t.Profile)+"  "+dashDim.Render(t.DeviceSerial))

@@ -48,6 +48,14 @@ log:
   #   path: "../logs/events.jsonl"
   #   max_size_mb: 16          # rotates to events.jsonl.1 past this
 
+# display — how the daemon renders timestamps for humans (the decoded-message
+# log, the power log, and the TUI). This does NOT touch the JSON/gRPC API,
+# webhooks or rdioscanner uploads, which stay UTC RFC3339 for interoperability.
+# display:
+#   # "Local" (default) → the host's local timezone; "UTC" → the historical
+#   # GMT+0 behaviour; or any IANA name, e.g. "America/New_York", "Europe/Paris".
+#   timezone: "Local"
+
 # diagnostics — error-reporting verbosity. Every error is prefixed with
 # a diagnostics banner (version, OS, system specs, detected dongles).
 diagnostics:

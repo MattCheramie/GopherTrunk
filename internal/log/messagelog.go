@@ -6,12 +6,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// stampLayout renders a displayed timestamp with milliseconds and an explicit
+// numeric offset, so "Z" appears only when the location really is UTC and any
+// other zone is unambiguous (e.g. "2026-06-25T14:03:05.250+02:00").
+const stampLayout = "2006-01-02T15:04:05.000Z07:00"
+
+// stampTime formats ts in loc using stampLayout, substituting time.Now() for a
+// zero timestamp and time.Local for a nil location.
+func stampTime(ts time.Time, loc *time.Location) string {
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	return ts.In(loc).Format(stampLayout)
+}
 
 // MessageLog writes a human-readable, per-event decoded-message log —
 // the GopherTrunk analogue of SDRtrunk's per-channel decoded message
@@ -24,9 +42,16 @@ type MessageLog struct {
 	bus       *events.Bus
 	path      string
 	maxBytes  int64
+	loc       *time.Location
 	sub       *events.Subscription
 	runDone   chan struct{}
 	closeOnce sync.Once
+
+	// lastNeighbors remembers the last logged neighbour set per system (the
+	// joined neighbour lines) so a SiteUpdate — which the decoder republishes
+	// on every status broadcast — only writes a block when the adjacent-site
+	// list actually changes. Accessed only from the Run goroutine.
+	lastNeighbors map[string]string
 
 	mu   sync.Mutex
 	f    *os.File
@@ -40,6 +65,10 @@ type MessageLogOptions struct {
 	Path string
 	// MaxSizeMB caps the file size before rotation. Default 16.
 	MaxSizeMB int
+	// Loc is the timezone displayed timestamps are rendered in. Nil means
+	// time.Local — the operator's wall-clock time (the daemon passes
+	// cfg.Display.Location()).
+	Loc *time.Location
 }
 
 // NewMessageLog opens the log file and subscribes to the bus.
@@ -60,13 +89,19 @@ func NewMessageLog(opts MessageLogOptions) (*MessageLog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("log/messagelog: open: %w", err)
 	}
+	loc := opts.Loc
+	if loc == nil {
+		loc = time.Local
+	}
 	info, _ := f.Stat()
 	ml := &MessageLog{
-		bus:      opts.Bus,
-		path:     opts.Path,
-		maxBytes: int64(opts.MaxSizeMB) * 1024 * 1024,
-		runDone:  make(chan struct{}),
-		f:        f,
+		bus:           opts.Bus,
+		path:          opts.Path,
+		maxBytes:      int64(opts.MaxSizeMB) * 1024 * 1024,
+		loc:           loc,
+		runDone:       make(chan struct{}),
+		f:             f,
+		lastNeighbors: make(map[string]string),
 	}
 	if info != nil {
 		ml.size = info.Size()
@@ -86,7 +121,7 @@ func (m *MessageLog) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if line := formatEvent(ev); line != "" {
+			if line := m.formatEvent(ev); line != "" {
 				m.write(line)
 			}
 		}
@@ -143,12 +178,9 @@ func (m *MessageLog) Close() error {
 // formatEvent renders one bus event as a decoded-message log line
 // (newline-terminated). Returns "" for events with no useful textual
 // form so they are skipped.
-func formatEvent(ev events.Event) string {
+func (m *MessageLog) formatEvent(ev events.Event) string {
 	ts := ev.Timestamp
-	if ts.IsZero() {
-		ts = time.Now()
-	}
-	stamp := ts.UTC().Format("2006-01-02T15:04:05.000Z")
+	stamp := stampTime(ts, m.loc)
 	var body string
 	switch ev.Kind {
 	case events.KindGrant:
@@ -219,6 +251,11 @@ func formatEvent(ev events.Event) string {
 		}
 	case events.KindToneAlert:
 		body = fmt.Sprintf("%-12s %+v", "TONE-ALERT", ev.Payload)
+	case events.KindSiteUpdate:
+		if su, ok := ev.Payload.(trunking.SiteUpdate); ok {
+			return m.formatNeighborBlock(su, stamp)
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -226,4 +263,28 @@ func formatEvent(ev events.Event) string {
 		return ""
 	}
 	return stamp + " " + body + "\n"
+}
+
+// formatNeighborBlock renders the camped site's adjacent ("neighbor") sites as
+// one log line per neighbour — GopherTrunk's analogue of SDRtrunk's "Neighbor
+// Sites" block. A SiteUpdate is republished on every status broadcast, so the
+// block is deduplicated per system: it is only emitted when the neighbour set
+// changes. Returns "" when there are no neighbours or the set is unchanged.
+func (m *MessageLog) formatNeighborBlock(su trunking.SiteUpdate, stamp string) string {
+	lines := trunking.RenderNeighborLines(su.Topology)
+	if len(lines) == 0 {
+		return ""
+	}
+	joined := strings.Join(lines, "\n")
+	if m.lastNeighbors[su.System] == joined {
+		return ""
+	}
+	m.lastNeighbors[su.System] = joined
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %-12s system=%s count=%d\n", stamp, "NEIGHBORS", su.System, len(lines))
+	for _, ln := range lines {
+		fmt.Fprintf(&b, "%s %-12s system=%s %s\n", stamp, "NEIGHBOR", su.System, ln)
+	}
+	return b.String()
 }
