@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/iqpower"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -539,5 +540,106 @@ func TestEngineRunPropagatesStreamError(t *testing.T) {
 	defer cancel()
 	if err := e.Run(ctx); err == nil {
 		t.Errorf("expected error from StreamIQ propagated, got nil")
+	}
+}
+
+// countingIQObserver counts RecordWidebandInputPowerDbFS calls so a test can
+// tell whether the Run pump processed any chunks (it records once per
+// diagnostics window) or merely drained them while suspended.
+type countingIQObserver struct{ wbPower atomic.Int64 }
+
+func (c *countingIQObserver) RecordIQPowerDbFS(string, float64) {}
+func (c *countingIQObserver) ClearIQPowerDbFS(string)           {}
+func (c *countingIQObserver) RecordWidebandInputPowerDbFS(string, float64) {
+	c.wbPower.Add(1)
+}
+func (c *countingIQObserver) RecordWidebandInputClipRatio(string, float64) {}
+func (c *countingIQObserver) ClearWidebandInput(string)                    {}
+
+// engineWithChunks builds a P25 engine fed `n` silence chunks, with a now()
+// that jumps a full diagnostics window per chunk so every PROCESSED chunk
+// flushes maybeLogDiagnostics (and thus records wideband power).
+func engineWithChunks(t *testing.T, obs IQPowerObserver, serial string, n int) (*Engine, *mockDevice) {
+	t.Helper()
+	bus := events.NewBus(64)
+	t.Cleanup(bus.Close)
+	const chunkLen = 4800
+	chunks := make([][]complex64, n)
+	for i := range chunks {
+		chunks[i] = make([]complex64, chunkLen)
+	}
+	dev := newMockDevice(chunks)
+	var tick atomic.Int64
+	e, err := New(Options{
+		Log:          slog.Default(),
+		Device:       dev,
+		Bus:          bus,
+		Metrics:      obs,
+		Serial:       serial,
+		SampleRateHz: 2_400_000,
+		CenterFreqHz: 453_500_000,
+		Channels:     []ChannelConfig{{FrequencyHz: 453_125_000, SystemName: "wbsys"}},
+		Systems:      []trunking.System{t2System("wbsys")},
+		Now: func() time.Time {
+			// Each call advances two windows so a processed chunk always
+			// crosses the diagnostics-window boundary.
+			n := tick.Add(int64(2 * iqpower.Window))
+			return time.Unix(0, 0).Add(time.Duration(n))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, dev
+}
+
+// TestEngineSuspendDrainsWithoutDecoding: a suspended engine consumes its IQ
+// stream (so the SDR/broker never blocks) but processes nothing — no per-window
+// diagnostics are recorded. Resume restores the dongle's centre frequency.
+func TestEngineSuspendDrainsWithoutDecoding(t *testing.T) {
+	obs := &countingIQObserver{}
+	e, dev := engineWithChunks(t, obs, "WB-SUSP", 6)
+
+	if got := e.Serial(); got != "WB-SUSP" {
+		t.Errorf("Serial() = %q, want WB-SUSP", got)
+	}
+
+	// Suspend before Run consumes any chunk; the pump must drain all 6 and exit
+	// cleanly on stream close without recording a single diagnostics window.
+	e.Suspend()
+	// A borrowing hunt would have retuned the SDR; emulate that so Resume's
+	// retune-back is observable.
+	_ = dev.SetCenterFreq(440_000_000)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := obs.wbPower.Load(); got != 0 {
+		t.Errorf("suspended engine recorded %d diagnostics windows; want 0 (must not decode)", got)
+	}
+
+	// Resume must reprogram the dongle back to the engine's centre frequency.
+	e.Resume()
+	if got := dev.centerFreqHz.Load(); got != 453_500_000 {
+		t.Errorf("after Resume, centre freq = %d, want 453_500_000 (retune-back)", got)
+	}
+}
+
+// TestEngineProcessesWhenNotSuspended is the control: the same fixture, not
+// suspended, DOES record diagnostics windows — proving the suspend guard, not
+// the test setup, is what suppresses processing above.
+func TestEngineProcessesWhenNotSuspended(t *testing.T) {
+	obs := &countingIQObserver{}
+	e, _ := engineWithChunks(t, obs, "WB-RUN", 6)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := obs.wbPower.Load(); got == 0 {
+		t.Error("running engine recorded 0 diagnostics windows; want > 0 (fixture should process)")
 	}
 }

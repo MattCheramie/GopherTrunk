@@ -674,11 +674,12 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 // Returns nil on a fatal error (already logged). The caller holds r.mu and
 // registers the returned session.
 func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *recordingSession {
+	// The talkgroup directory is NOT created here — it is made lazily in
+	// openSessionFiles, just before the first file is opened. A grant that is
+	// followed but never yields audio (a dead-key, an immediately-aborted
+	// encrypted call, or a voice tap left off-frequency while a hunt borrows
+	// the SDR) therefore leaves no empty <system>/<talkgroup> folder behind.
 	dir := r.directoryFor(cs)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		r.log.Error("recorder: mkdir", "dir", dir, "err", err)
-		return nil
-	}
 	nameCS := cs
 	nameCS.StartedAt = startedAt
 	base := r.basenameFor(nameCS)
@@ -746,6 +747,14 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 func (r *Recorder) openSessionFiles(s *recordingSession) error {
 	if s.wav != nil {
 		return nil
+	}
+	// Create the talkgroup directory lazily, on the first write, so a call
+	// that never yields audio leaves no empty folder (see buildSession).
+	if dir := filepath.Dir(s.wavPath); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			r.log.Error("recorder: mkdir", "dir", dir, "err", err)
+			return err
+		}
 	}
 	wav, err := NewWavFile(s.wavPath, s.sampleRate)
 	if err != nil {

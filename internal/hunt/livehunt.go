@@ -87,6 +87,14 @@ type LiveHuntOptions struct {
 	// daemon Acquirer; RunLiveHunt itself ignores it (the IQSource is already
 	// resolved by the time RunLiveHunt runs).
 	Serial string
+	// ConfirmBorrow authorizes a hunt that would borrow an SDR currently
+	// decoding live wideband traffic (a widebandt2 engine). Borrowing retunes
+	// that SDR, so the live control-channel + voice decode is suspended for the
+	// hunt's duration. The daemon Acquirer refuses such a borrow unless this is
+	// set, so the operator is prompted before knocking the live system offline
+	// rather than having it happen silently. Consumed by the daemon Acquirer;
+	// RunLiveHunt itself ignores it.
+	ConfirmBorrow bool
 
 	FFTSize    int
 	SweepDwell time.Duration

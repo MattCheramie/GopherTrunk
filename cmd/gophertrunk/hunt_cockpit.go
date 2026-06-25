@@ -121,6 +121,7 @@ func (c huntCockpit) Start(req api.HuntStartRequest) (int, error) {
 		MaxDwellSeconds: req.MaxDwellSeconds,
 		MonitorSeconds:  req.MonitorSeconds,
 		Serial:          req.Serial,
+		ConfirmBorrow:   req.ConfirmBorrow,
 		FFTSize:         req.FFTSize,
 		DwellSeconds:    req.DwellSeconds,
 		MinConfidence:   req.MinConfidence,

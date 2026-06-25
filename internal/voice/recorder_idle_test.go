@@ -276,3 +276,53 @@ func TestRecorderCallIDFenceDropsStaleFrames(t *testing.T) {
 		t.Errorf("vocoder decoded %d frames; want 1 (stale frame must be fenced)", got)
 	}
 }
+
+// TestRecorderNoAudioLeavesNoDir: a call that starts and ends without a single
+// frame must not even create its talkgroup directory. The empty <system>/<tg>
+// folder is otherwise left behind when a grant is followed but the voice tap
+// never yields audio (e.g. the SDR is off-frequency during a borrowed hunt),
+// littering the recordings tree with empty TG folders.
+func TestRecorderNoAudioLeavesNoDir(t *testing.T) {
+	DefaultRegistry.Register("stat-stub-nodir", func() (Vocoder, error) {
+		return &statStubVocoder{voicedPerFrame: true}, nil
+	})
+
+	bus := events.NewBus(16)
+	dir := t.TempDir()
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             dir,
+		SampleRate:         8000,
+		WriteRaw:           true,
+		VocoderForProtocol: map[string]string{"test-nodir": "stat-stub-nodir"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-nodir", GroupID: 1421, SourceID: 0},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	waitSession(t, r, "VOICE-1", true)
+
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant: cs.Grant, DeviceSerial: "VOICE-1",
+		StartedAt: cs.StartedAt, EndedAt: cs.StartedAt.Add(time.Second),
+		Reason: trunking.EndReasonNormal,
+	}})
+	waitSession(t, r, "VOICE-1", false)
+
+	tgDir := filepath.Join(dir, "S", "1421")
+	if _, err := os.Stat(tgDir); !os.IsNotExist(err) {
+		t.Errorf("no-audio call must not create talkgroup dir %s; stat err = %v", tgDir, err)
+	}
+}
