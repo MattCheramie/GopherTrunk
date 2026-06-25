@@ -51,6 +51,24 @@ type SystemDTO struct {
 	MPT1327BCHMode         string  `json:"mpt1327_bch_mode,omitempty"`
 	MPT1327CWSCTolerance   string  `json:"mpt1327_cwsc_tolerance,omitempty"`
 	MotorolaBCHMode        string  `json:"motorola_bch_mode,omitempty"`
+
+	// Neighbors are the live adjacent (neighbour) sites the control channel
+	// advertised (mirrors api.SystemDTO). The Systems panel shows the count;
+	// the drill-in modal already lists them via the network report.
+	Neighbors []NeighborDTO `json:"neighbors,omitempty"`
+}
+
+// NeighborDTO mirrors api.NeighborDTO — one adjacent site with resolved
+// downlink/uplink frequencies.
+type NeighborDTO struct {
+	RFSS          uint8  `json:"rfss"`
+	Site          uint8  `json:"site"`
+	ChannelID     uint8  `json:"channel_id,omitempty"`
+	ChannelNumber uint16 `json:"channel_number,omitempty"`
+	DownlinkHz    uint32 `json:"downlink_hz,omitempty"`
+	UplinkHz      uint32 `json:"uplink_hz,omitempty"`
+	RFSSHex       string `json:"rfss_hex,omitempty"`
+	SiteHex       string `json:"site_hex,omitempty"`
 }
 
 // TalkgroupDTO mirrors api.TalkgroupDTO.

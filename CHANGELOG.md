@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Neighbor (adjacent) sites in the live views.** GopherTrunk already decoded
+  P25 Adjacent Site Status Broadcasts (opcode 0x3C) but only surfaced them in the
+  system drill-in report and `gophertrunk replay`. They are now visible in the
+  always-on monitoring surfaces: the decoded-message log prints an SDRtrunk-style
+  "Neighbor Sites" block (deduplicated — re-emitted only when the adjacent-site
+  set changes), and the TUI and web Systems panels gain a neighbour count column
+  plus a neighbour list in the system detail. `GET /api/v1/systems` and
+  `/api/v1/systems/{name}` now carry a `neighbors` array (RFSS/Site with
+  band-plan-resolved downlink/uplink frequencies).
+- **Configurable display timezone** (`display.timezone`). "Local" (default),
+  "UTC", or any IANA name (e.g. "America/New_York") for the human-facing
+  timestamps.
 - **Opt-in voice enhancement chain** (`recordings.enhance`). A "sound-good"
   post-vocoder chain for decoded digital voice — rumble high-pass (~250 Hz),
   warmth high-shelf, telephone-band low-pass (~3.4 kHz, like OP25), a louder AGC
@@ -32,6 +44,14 @@ for tagged releases.
   codec-quality fix — the residual synthetic character of low-bitrate AMBE+2 is
   intrinsic to software decoders (mbelib, SDRtrunk's JMBE, and GopherTrunk all
   share it); only a DVSI hardware vocoder removes it. Off by default; DMR only.
+
+### Changed
+- **Human-facing timestamps now render in local time by default**, not UTC. The
+  decoded-message log, power log and TUI panels (events / dashboard / tone
+  alerts) previously forced GMT+0 ("…Z"); they now use the host's local timezone
+  (overridable via `display.timezone`, including back to "UTC"). The JSON/gRPC
+  API, webhooks and rdioscanner uploads are unchanged — they stay UTC RFC3339 for
+  interoperability.
 
 ### Fixed
 - **Unvoiced-synthesis tremolo in the MBE vocoders** (#644). The §6.4 unvoiced

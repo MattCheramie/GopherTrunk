@@ -450,6 +450,16 @@ type NetworkReporter interface {
 	Report(system string) (string, bool)
 }
 
+// NetworkTopologyProvider is the optional capability a SitesProvider may
+// implement to expose the live topology snapshot (identity + neighbours + band
+// plan) for a system. The SiteTracker implements it; the systems endpoints use
+// it to overlay the decoded adjacent-site ("neighbor") list onto a SystemDTO so
+// the Systems panels can show neighbours without the drill-in report. The bool
+// is false when no topology has been observed for the system yet.
+type NetworkTopologyProvider interface {
+	Topology(system string) (*trunking.TopologySnapshot, bool)
+}
+
 // HistoryFilter mirrors storage.HistoryFilter for the api layer's
 // purposes (passed through to whatever HistoryQuery implementation the
 // daemon wires up).

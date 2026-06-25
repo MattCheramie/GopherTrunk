@@ -33,9 +33,9 @@ func (SystemsPanel) Keys() []key.Binding { return nil }
 func (p *SystemsPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd) {
 	applyThemeIfChanged(msg, &p.tbl)
 	h := hashRows(s.Systems, func(sys client.SystemDTO) string {
-		return fmt.Sprintf("%s|%s|%v|%d|%d|%d|%d",
+		return fmt.Sprintf("%s|%s|%v|%d|%d|%d|%d|%d",
 			sys.Name, sys.Protocol, sys.ControlChannels,
-			sys.WACN, sys.SystemID, sys.RFSS, sys.Site)
+			sys.WACN, sys.SystemID, sys.RFSS, sys.Site, len(sys.Neighbors))
 	})
 	if h != p.lastHash {
 		p.refresh(s.Systems)
@@ -69,7 +69,11 @@ func (p *SystemsPanel) refresh(sys []client.SystemDTO) {
 		if s.RFSS != 0 || s.Site != 0 {
 			ids = append(ids, fmt.Sprintf("RFSS %X/Site %X", s.RFSS, s.Site))
 		}
-		rows = append(rows, table.Row{s.Name, s.Protocol, ccs, strings.Join(ids, " ")})
+		nbrs := "—"
+		if len(s.Neighbors) > 0 {
+			nbrs = fmt.Sprintf("%d", len(s.Neighbors))
+		}
+		rows = append(rows, table.Row{s.Name, s.Protocol, ccs, nbrs, strings.Join(ids, " ")})
 	}
 	p.tbl.SetRows(rows)
 }
@@ -112,7 +116,8 @@ func systemsColumns(w int) []table.Column {
 	nameW := w * 30 / 100
 	protoW := 10
 	ccW := w * 25 / 100
-	idsW := w - nameW - protoW - ccW - 4
+	nbrW := 5
+	idsW := w - nameW - protoW - ccW - nbrW - 5
 	if idsW < 10 {
 		idsW = 10
 	}
@@ -120,6 +125,7 @@ func systemsColumns(w int) []table.Column {
 		{Title: "Name", Width: nameW},
 		{Title: "Protocol", Width: protoW},
 		{Title: "Control channels", Width: ccW},
+		{Title: "Nbrs", Width: nbrW},
 		{Title: "IDs", Width: idsW},
 	}
 }

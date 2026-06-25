@@ -151,6 +151,19 @@ func (t *SiteTracker) Report(system string) (string, bool) {
 	return FormatNetworkReport(ReportFromTopology(snap)), true
 }
 
+// Topology returns the most recent topology snapshot for the named system, or
+// (nil, false) when none has been observed yet. observe replaces the stored
+// pointer wholesale rather than mutating it in place (each update carries the
+// decoder's freshly built snapshot), so the returned value is safe to read
+// without further copying. Used by the API to overlay the live neighbour list
+// onto a system's DTO.
+func (t *SiteTracker) Topology(system string) (*TopologySnapshot, bool) {
+	t.mu.Lock()
+	snap := t.topo[system]
+	t.mu.Unlock()
+	return snap, snap != nil
+}
+
 // Snapshot returns every tracked site, ordered by system then RFSS/Site
 // so the listing is stable across calls.
 func (t *SiteTracker) Snapshot() []SiteInfo {

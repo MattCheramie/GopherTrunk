@@ -1173,6 +1173,15 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		}
 	}
 
+	// Displayed-timestamp timezone for the human-readable logs (local by
+	// default; "UTC" or any IANA name via display.timezone). A bad name
+	// degrades to local with a warning rather than failing startup.
+	dispLoc, locErr := cfg.Display.LocationStrict()
+	if locErr != nil {
+		d.log.Warn("display: unknown timezone, falling back to local",
+			"timezone", cfg.Display.Timezone, "err", locErr)
+	}
+
 	// Decoded-message log — optional. Subscribes to the bus and writes
 	// a human-readable text log of every trunking event.
 	if cfg.Log.MessageLog.Enabled && cfg.Log.MessageLog.Path != "" {
@@ -1180,6 +1189,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Bus:       d.bus,
 			Path:      cfg.Log.MessageLog.Path,
 			MaxSizeMB: cfg.Log.MessageLog.MaxSizeMB,
+			Loc:       dispLoc,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: message log: %w", err)
@@ -1196,6 +1206,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			Path:       cfg.Log.PowerLog.Path,
 			MaxSizeMB:  cfg.Log.PowerLog.MaxSizeMB,
 			AllWindows: cfg.Log.PowerLog.AllWindows,
+			Loc:        dispLoc,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("daemon: power log: %w", err)
@@ -4017,6 +4028,13 @@ func (s sitesProvider) Sites() []trunking.SiteInfo { return s.t.Snapshot() }
 // API's optional api.NetworkReporter capability resolves through the adapter
 // (GET /api/v1/systems/{name}/report).
 func (s sitesProvider) Report(system string) (string, bool) { return s.t.Report(system) }
+
+// Topology forwards the SiteTracker's live topology snapshot so the API's
+// optional api.NetworkTopologyProvider capability resolves through the adapter —
+// this is what overlays the decoded neighbour list onto a system's DTO.
+func (s sitesProvider) Topology(system string) (*trunking.TopologySnapshot, bool) {
+	return s.t.Topology(system)
+}
 
 // wrapBasebandRecorders replaces the Device of every pool entry whose
 // serial appears in baseband.record with a RecordingDevice, teeing its
