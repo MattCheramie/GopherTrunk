@@ -17,5 +17,8 @@ func decodeAliasBytes(encoded []byte) []byte {
 // ASCII). A thin package-local alias over motorola.DecodeAlias, kept
 // alongside decodeAliasBytes so phase1 call sites stay package-local.
 func decodeAlias(raw []byte) (string, bool) {
-	return motorola.DecodeAlias(raw)
+	alias, reliable := motorola.DecodeAlias(raw)
+	// The shared per-byte cipher is unverified (#773); never report a
+	// phase 1 alias as reliable until motorola.CipherVerified is set.
+	return alias, reliable && motorola.CipherVerified
 }

@@ -13,15 +13,41 @@
 //	last 16 bits    : CRC-16/GSM over the preceding bits
 //
 // Keeping the cipher, the framing, and the CRC in one package lets each
-// carrier own only its fragment transport and share the decode. The
-// algorithm and 256-byte substitution table are reverse-engineered
-// facts about Motorola's wire protocol (public, identical across every
-// open-source decoder); the Go expression here is original.
+// carrier own only its fragment transport and share the decode.
+//
+// Provenance and verification status (important — see #773): the SUID
+// framing above is verified. The reassembly fix in #778 reproduces
+// SDRTrunk's FRAGMENT byte stream exactly, which is why the WACN /
+// System / Radio ID fall out correctly on real traffic. The per-byte
+// CIPHER below is NOT verified. Its algorithm *structure* is inferred
+// from the public protocol description in #773 (a length-seeded 16-bit
+// accumulator, a per-byte LUT lookup, an odd-multiplier — i.e. a
+// modular inverse mod 256 — step, a multiply, then UTF-16BE), but the
+// 256-byte substitution table and the accumulator constants are
+// unconfirmed: no committed capture maps a real RID to its plaintext
+// alias, and the cipher decodes nothing on live traffic. The single
+// partial capture available (RID 200062, #376) is mathematically
+// underdetermined — dozens of distinct constant-sets reproduce its
+// known bytes while disagreeing on the unknown ones, and one alias
+// character is not recoverable from that sample at all — so it cannot
+// pin the table. SDRTrunk has a working implementation but is GPLv3;
+// GopherTrunk is Apache-2.0, so its table/decode must not be ported
+// here. Until the cipher is validated against ground truth the decode
+// is gated (see CipherVerified) so a possibly-wrong table can never
+// surface a fabricated name as a confirmed alias.
 package motorola
 
 // motorolaAliasLUT is the 256-byte substitution table the per-byte
 // cipher indexes into. Values are stored as signed bytes to match the
 // algorithm's intermediate signed arithmetic.
+//
+// UNVERIFIED. This table is a placeholder of unconfirmed provenance: it
+// is a valid 0..255 permutation but has never been validated against a
+// real RID -> plaintext capture, and it does not decode live traffic
+// (#773). Its output must never be presented as a confirmed alias; the
+// CipherVerified gate enforces this. Replacing it with a verified table
+// requires ground-truth captures (see CipherVerified) or a licensing
+// path for an existing implementation.
 var motorolaAliasLUT = [256]int8{
 	-14, 46, 102, -112, 116, -118, 111, 120, -69, 83,
 	3, 17, 104, -51, 68, 23, 40, 95, 30, -124,
@@ -51,10 +77,31 @@ var motorolaAliasLUT = [256]int8{
 	22, 26, 32, -114, 69, 62,
 }
 
+// CipherVerified reports whether the per-byte alias cipher (the
+// motorolaAliasLUT table plus the accumulator constants in
+// DecodeAliasBytes) has been validated against ground truth — a
+// captured frame whose decoded alias matches a known plaintext for the
+// same RID.
+//
+// It is false. The cipher is currently unverified and almost certainly
+// incorrect: it decodes no live traffic (#773), and the single partial
+// capture available (RID 200062) is underdetermined — many constant-sets
+// fit its known bytes, so it cannot pin the table. While this is false,
+// DecodeMessage never reports an alias as reliable and callers must not
+// surface it as a confirmed name. Flip it to true ONLY together with a
+// committed regression fixture mapping real encoded bytes to the correct
+// plaintext alias (and update motorolaAliasLUT / the constants to the
+// verified values). Do not flip it on inference alone.
+const CipherVerified = false
+
 // DecodeAliasBytes runs the per-byte cipher across the encoded alias
 // bytes and returns the decoded byte stream. The decoded bytes are
 // intended to be read as a UTF-16 BE character sequence; callers that
 // want a printable string should run the result through CleanAlias.
+//
+// The multiplier/increment constants and the LUT are UNVERIFIED (see
+// CipherVerified): this routine is deterministic, but its output is not
+// known to be correct plaintext.
 //
 //	accum = (accum × 293 + 0x72E9) mod 65536
 //	lut   = motorolaAliasLUT[encoded_byte + 128]   (signed)
@@ -146,10 +193,13 @@ type Message struct {
 	SystemID uint16
 	RadioID  uint32
 	Alias    string
-	// AliasReliable reports whether the decoded alias is all printable
-	// ASCII. When false the decode contains non-ASCII-printable
-	// characters — a hallmark of bit-error corruption that survived the
-	// CRC — and callers should surface the alias as suspect (#711).
+	// AliasReliable reports whether the decoded alias can be trusted as a
+	// confirmed name. It is true only when the decode is all printable
+	// ASCII (no bit-error corruption hallmarks, #711) AND the cipher
+	// itself is verified (CipherVerified). While the cipher is unverified
+	// it is always false, so a possibly-wrong table never surfaces a
+	// fabricated name as a confirmed alias (#773). Callers should surface
+	// an unreliable alias as suspect rather than as a confirmed name.
 	AliasReliable bool
 	// CRCOK reports whether the trailing CRC-16/GSM matched. It is
 	// advisory: the CRC parameters are inferred from open-source
@@ -182,7 +232,11 @@ func DecodeMessage(msg []byte) (Message, bool) {
 
 	wacn, sysID, rid := decodeSUID(msg)
 	encoded := msg[encStart : encStart+encByteLen]
-	alias, aliasReliable := DecodeAlias(DecodeAliasBytes(encoded))
+	alias, aliasClean := DecodeAlias(DecodeAliasBytes(encoded))
+	// Gate on CipherVerified: an unverified cipher may decode to
+	// coincidentally-clean ASCII, so clean-ness alone is not enough to
+	// call the alias reliable (#773).
+	aliasReliable := aliasClean && CipherVerified
 
 	// CRC-16/GSM over everything before the trailing 16-bit CRC field.
 	crcBytes := CRCBits / 8

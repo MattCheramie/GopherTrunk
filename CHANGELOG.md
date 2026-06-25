@@ -211,6 +211,17 @@ reassembly, and new raw-broadcast / event-log field diagnostics.
   nibble and concatenated whole bytes, shifting the cipher region by 4 bits so
   the alias decoded to garbage and failed safe to empty. Reassembly is now
   nibble-aligned (the end-to-end decoded string remains air-unverified).
+- **P25 Motorola talker-alias cipher gated as unverified** (#773). A clean-room
+  attempt to derive the per-byte cipher from the one partial capture available
+  (RID 200062) showed it is mathematically underdetermined — dozens of distinct
+  constant-sets reproduce the known bytes while disagreeing on the unknown ones,
+  and one alias character is unrecoverable from that sample — so the substitution
+  table and constants cannot be pinned without ground truth (and SDRTrunk's GPLv3
+  implementation cannot be ported into Apache-2.0 GT). The decode now carries a
+  `CipherVerified` flag (false) and `DecodeMessage` never reports an alias as
+  reliable while it is false, so a possibly-wrong table can never surface a
+  fabricated name as a confirmed alias. Misleading "reverse-engineered fact"
+  comments on the table were corrected to state the true unverified provenance.
 - **P25 autotune no longer over-corrects** (#774). Implausible single AFC
   measurements are rejected, a warm-up of several samples is required before any
   correction is applied, and only cleanly-decoded voice calls feed the estimate,
