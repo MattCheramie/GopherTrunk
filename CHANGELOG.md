@@ -7,6 +7,21 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.3] — 2026-06-25
+
+Headlined by **neighbor (adjacent) sites in the live views** — the P25 Adjacent
+Site Status Broadcasts (opcode 0x3C) GopherTrunk already decoded now surface in
+the always-on monitoring surfaces (decoded-message log, the TUI and web Systems
+panels, and the `/api/v1/systems` responses), not just the drill-in report. It
+also lands a **configurable display timezone** (`display.timezone`) that renders
+every human- and machine-facing timestamp in the host's local time by default
+(overridable to UTC or any IANA zone), and an **opt-in voice enhancement chain**
+(`recordings.enhance`) that trades a little faithfulness for the cleaner, louder
+"sound-good" audio the rival decoders produce — band-limiting + uniform loudness,
+shaping both recordings and live audio from a single point. Rounded out by a
+power-complementary unvoiced-synthesis window that removes a buzzy ~7 dB tremolo
+from the IMBE/AMBE+2 vocoders (#644).
+
 ### Added
 - **Neighbor (adjacent) sites in the live views.** GopherTrunk already decoded
   P25 Adjacent Site Status Broadcasts (opcode 0x3C) but only surfaced them in the
