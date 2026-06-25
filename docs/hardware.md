@@ -96,6 +96,19 @@ sdr:
 > on every device (`sdr: gain set ... gain_db=...`). A decimal form like
 > `"32.0"` is taken as whole dB, so that works too.
 
+> **Multi-site `role: wideband` dongles: prefer `gain: "auto"`.** Every
+> tap on a wideband dongle shares one antenna, one centre and one gain.
+> A single *fixed* gain can't serve sites of differing strength: a value
+> chosen so the strongest site doesn't clip leaves weaker co-tenants
+> under-amplified, sitting dead and flat at the ADC noise floor — and the
+> receiver's own post-discriminator AGC can't recover SNR that was lost
+> at the converter. AGC (`gain: "auto"`) lets the front end run the band
+> hot enough for weak sites to clear the floor; in field testing it took
+> a co-tenant control channel from zero decoded TSBKs to hundreds (issue
+> #749). The daemon warns at startup when a multi-tap wideband dongle is
+> pinned to a fixed gain. A genuinely weak/distant site may still not
+> survive a shared capture even under AGC — give it its own dongle.
+
 ### HackRF tested combinations
 
 | Device | PID | Coverage | Gain chain | Bias-tee | Notes |

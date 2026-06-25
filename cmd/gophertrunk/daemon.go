@@ -182,6 +182,35 @@ func warnLowGain(log *slog.Logger, serial string, role sdr.Role, raw string, ten
 		"hint", "manual P25/C4FM gains typically run 150-496 tenths (15-49.6 dB). gain: is in TENTHS of a dB; a reference 'gain 49' means ~49 dB -> gain: \"490\". Use 'gain: auto' or run 'gophertrunk sdr list' for the supported ladder. NOTE: this assumes the front end is not overloaded — if the iq_clip_ratio metric is non-zero (or iq_power_dbfs sits near 0), the radio is clipping and gain is already too HIGH for this site; reduce it or add attenuation instead of raising it (issue #402).")
 }
 
+// fixedGainOnSharedWideband reports whether a device is a multi-tap wideband
+// front end pinned to a single MANUAL gain. Every tap on a `role: wideband`
+// dongle shares one antenna, one centre and one gain, so a single fixed value
+// cannot serve co-tenant sites of differing strength: a gain chosen so the
+// strongest site doesn't clip leaves weaker sites under-amplified near the
+// ADC's usable floor (dead and flat regardless of the receiver's
+// post-discriminator AGC, which can't recover SNR lost at the converter).
+// `gain: auto` lets the front end run the band hotter so weak sites clear the
+// floor (issue #749). tenthDB >= 0 is a manual gain; auto parses to -1.
+func fixedGainOnSharedWideband(role sdr.Role, numChannels, tenthDB int) bool {
+	return role == sdr.RoleWideband && numChannels > 1 && tenthDB >= 0
+}
+
+// warnFixedGainOnSharedWideband emits a WARN when a multi-tap wideband dongle
+// is pinned to a manual gain (see fixedGainOnSharedWideband). No-op for auto,
+// single-tap, or non-wideband devices, so it is safe to call unconditionally
+// after every successful parseGain.
+func warnFixedGainOnSharedWideband(log *slog.Logger, serial string, role sdr.Role, raw string, tenthDB, numChannels int) {
+	if !fixedGainOnSharedWideband(role, numChannels, tenthDB) {
+		return
+	}
+	log.Warn("daemon: multi-tap wideband dongle pinned to a fixed gain — a single gain can't serve sites of differing strength on one shared front end; weaker co-tenant sites may sit dead at the noise floor while the strongest decodes",
+		"serial", serial,
+		"channels", numChannels,
+		"configured", raw,
+		"applied_db", float64(tenthDB)/10.0,
+		"hint", "prefer 'gain: auto' (AGC) for a wideband device hosting more than one site — it lets the front end run the band hot enough for weak sites to clear the ADC floor. Watch each tap on the gophertrunk_sdr_iq_power_dbfs metric to confirm; a genuinely weak/distant site may still need its own dedicated dongle (issue #749).")
+}
+
 // effectiveStreamRate returns the IQ sample rate a down-converter should be
 // built from. The RTL2832U quantizes a requested rate to its resampler divisor,
 // so a requested rate that isn't an exact divisor of the crystal streams at a
@@ -830,6 +859,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			} else {
 				warnGainUnits(log, dev.Serial, dev.Gain, gain)
 				warnLowGain(log, dev.Serial, h.Role, dev.Gain, gain)
+				warnFixedGainOnSharedWideband(log, dev.Serial, h.Role, dev.Gain, gain, len(dev.Channels))
 				h = h.WithGain(gain)
 			}
 			hints = append(hints, h)

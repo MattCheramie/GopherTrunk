@@ -318,9 +318,19 @@ sdr:
     #     attenuation (do NOT raise gain) — a hot site is desensitising the
     #     receiver. Set gain in TENTHS of a dB ("gain: 600" = 60 dB, which
     #     is very high for a wideband capture; try a lower value first).
+    #   - PREFER `gain: "auto"` (AGC) when one dongle hosts more than one
+    #     site of differing strength. A single FIXED gain can't serve them
+    #     all: a value chosen so the strongest site doesn't clip leaves the
+    #     weaker co-tenants under-amplified, dead and flat at the ADC floor
+    #     (the receiver's own AGC can't recover SNR lost at the converter).
+    #     AGC lets the front end run the band hot enough for weak sites to
+    #     clear the floor — the single biggest lever for a multi-site
+    #     wideband cluster (issue #749). The daemon logs a startup WARN when
+    #     a multi-tap wideband dongle is pinned to a fixed gain.
     #   - A genuinely weak distant site may simply not survive a shared
-    #     capture optimised for a stronger one — give it a dedicated dongle
-    #     (role: control or its own role: wideband) if it matters.
+    #     capture optimised for a stronger one even under AGC — give it a
+    #     dedicated dongle (role: control or its own role: wideband) if it
+    #     matters.
     #
     # Constraints (validated at load time):
     #   - serial must match a discovered dongle

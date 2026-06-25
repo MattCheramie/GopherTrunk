@@ -69,6 +69,12 @@ func TestLowPowerHintOffBand(t *testing.T) {
 	if !strings.Contains(r.msg, "outside the captured passband") {
 		t.Errorf("WARN msg = %q, want the off-band hint", r.msg)
 	}
+	// On a shared front end a healthy capture with a dead tap can also be a
+	// weaker co-tenant under-amplified by a fixed gain; the hint now points
+	// at 'gain: auto' (AGC) as the remedy (issue #749).
+	if !strings.Contains(r.msg, "gain: auto") {
+		t.Errorf("WARN msg = %q, want the gain: auto (AGC) hint", r.msg)
+	}
 	if _, has := r.attrs["wideband_input_dbfs"]; !has {
 		t.Errorf("WARN missing wideband_input_dbfs attr; attrs=%v", r.attrs)
 	}

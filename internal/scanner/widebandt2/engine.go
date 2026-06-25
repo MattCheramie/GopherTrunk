@@ -833,7 +833,13 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					// this one (issue #749). Reduce gain, don't raise it.
 					hint = "wideband front end is overloaded (clipping) — a stronger co-channel is burying this site; reduce gain or add attenuation, do NOT raise gain"
 				case wbHealthy:
-					hint = "wideband input is healthy — this carrier is likely outside the captured passband or tuned to the wrong frequency"
+					// The shared capture is healthy and other taps may be
+					// decoding, yet this one sits at the floor. Most often the
+					// carrier is off-passband / mistuned; but on a multi-tap
+					// device a single fixed gain can also under-amplify a weaker
+					// co-tenant site below the ADC floor — try 'gain: auto' so
+					// the front end runs hot enough for it to clear (issue #749).
+					hint = "wideband input is healthy — this carrier is likely outside the captured passband or tuned to the wrong frequency; if other taps on this dongle decode, try 'gain: auto' (AGC) so a weaker co-tenant site can clear the shared ADC floor"
 				}
 				e.log.Warn("widebandt2: channel iq power very low — "+hint,
 					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
