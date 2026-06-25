@@ -488,6 +488,12 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 		c.netSysID = nsb.SystemID
 		c.nac = nsb.ColorCode
 		c.mu.Unlock()
+		// The NSB is the sole carrier of WACN + System ID on Phase 2 —
+		// publish immediately so they reach the SiteTracker/API the instant
+		// they land, rather than waiting for an RFSS Status Broadcast to
+		// flush them (mirrors the Phase 1 NSB handler). Called outside the
+		// lock: publishSiteUpdate takes c.mu itself.
+		c.publishSiteUpdate()
 	}
 	if r, ok := p.AsRFSSStatusBroadcast(); ok {
 		c.mu.Lock()
@@ -627,7 +633,10 @@ func (c *ControlChannel) publishSiteUpdate() {
 	c.mu.Lock()
 	rfss, site, wacn, sysid := c.siteRFSS, c.siteSite, c.netWACN, c.netSysID
 	c.mu.Unlock()
-	if rfss == 0 && site == 0 {
+	// Publish once any identity scalar is known. WACN/System ID come only
+	// from the NSB and RFSS/Site only from the RFSS Status Broadcast, so an
+	// NSB-only or RFSS-only site must still surface (mirrors Phase 1's gate).
+	if rfss == 0 && site == 0 && wacn == 0 && sysid == 0 {
 		return
 	}
 	c.bus.Publish(events.Event{

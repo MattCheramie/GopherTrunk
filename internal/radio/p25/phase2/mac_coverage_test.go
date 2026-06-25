@@ -181,6 +181,46 @@ func TestControlChannelStampsSiteIdentity(t *testing.T) {
 	}
 }
 
+// TestControlChannelPublishesNSBOnlySiteUpdate confirms that a Network
+// Status Broadcast alone — with no RFSS Status Broadcast — publishes a
+// KindSiteUpdate carrying the decoded WACN / System ID. On Phase 2 the
+// WACN and System ID come ONLY from the NSB, so a system that emits the
+// NSB but seldom/never emits an RFSS Status Broadcast must still surface
+// its identity the instant the NSB lands (mirroring Phase 1). Regression
+// for the propagation defect where the NSB branch stored netWACN/netSysID
+// but never published, and publishSiteUpdate gated on RFSS/Site != 0.
+func TestControlChannelPublishesNSBOnlySiteUpdate(t *testing.T) {
+	bus := events.NewBus(32)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	cc := New(Options{Bus: bus, SystemName: "p2", FrequencyHz: 851_000_000})
+
+	// NSB only — WACN=0xABCDE, SystemID=0x123, ColorCode=0x293. No RFSS_STS.
+	cc.Ingest(MACPDU{Opcode: OpNetworkStatusBroadcastUpdate,
+		Payload: []byte{0x07, 0xAB, 0xCD, 0xE1, 0x23, 0x29, 0x30, 0x00, 0x00}})
+
+	var sawWACN bool
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == events.KindSiteUpdate {
+				s := ev.Payload.(trunking.SiteUpdate)
+				if s.WACN == 0xABCDE && s.SystemID == 0x123 &&
+					s.ControlChannelHz == 851_000_000 {
+					sawWACN = true
+				}
+			}
+		default:
+			if !sawWACN {
+				t.Fatal("NSB-only ingest published no KindSiteUpdate carrying WACN/SystemID")
+			}
+			return
+		}
+	}
+}
+
 func TestControlChannelPatchDelete(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
