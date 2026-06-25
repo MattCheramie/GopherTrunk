@@ -48,6 +48,7 @@ type HuntStartRequest struct {
 	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
 	Candidates      []float64 `json:"candidates,omitempty"` // MHz
 	NoSweep         bool      `json:"no_sweep,omitempty"`
+	ConfirmBorrow   bool      `json:"confirm_borrow,omitempty"` // authorize borrowing an SDR with live wideband decode (suspends it for the run)
 	Survey          bool      `json:"survey,omitempty"`         // classify+decode every carrier, not just trunking CCs
 	ClassifyOnly    bool      `json:"classify_only,omitempty"`  // survey: classify, skip decoding
 	PersistSurvey   bool      `json:"persist_survey,omitempty"` // survey: stream carriers to NDJSON (crash-safe, resumable)

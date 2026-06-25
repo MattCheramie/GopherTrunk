@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/scanner/widebandt2"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
@@ -56,6 +57,15 @@ func chooseHuntSDR(requestedSerial, controlSerial string, voiceSerials, poolSeri
 	return "", false, fmt.Errorf("hunt: no SDR with an IQ broker available for a live hunt")
 }
 
+// huntBorrowBlocked reports whether a hunt borrow must be refused until the
+// operator confirms it: true only when the borrow would suspend live wideband
+// decode (liveEngines > 0 on the borrowed SDR) and confirmed is false. A
+// dedicated/spare SDR (borrow == false) or an SDR with no running engine is
+// never blocked. Pure so the policy is unit-testable without a real daemon.
+func huntBorrowBlocked(borrow bool, liveEngines int, confirmed bool) bool {
+	return borrow && liveEngines > 0 && !confirmed
+}
+
 // buildHuntAcquirer returns the hunt.Acquirer the daemon's hunt Manager uses to
 // obtain an IQ source per run. It auto-selects a spare SDR when available and
 // otherwise borrows the control SDR — pausing the cchunt supervisor for the
@@ -79,8 +89,23 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 		if err != nil {
 			return nil, nil, err
 		}
+		// Borrowing retunes this SDR. Any widebandt2 engine decoding live
+		// traffic on it (the control-channel + voice path for a wideband-CC
+		// system) would otherwise keep decoding the off-frequency IQ: flooding
+		// the log with "channel iq power very low" WARNs and emitting spurious
+		// grants whose voice taps capture no audio (empty TG folders). Suspend
+		// those engines for the borrow — but only with the operator's explicit
+		// confirmation, since it knocks the live system offline for the run.
+		var borrowedEngines []*widebandt2.Engine
+		if borrow {
+			borrowedEngines = d.widebandEnginesForSerial(serial)
+			if huntBorrowBlocked(borrow, len(borrowedEngines), opts.ConfirmBorrow) {
+				return nil, nil, fmt.Errorf("hunt: borrowing SDR %q would suspend live wideband decode (control channel + voice) for the duration of the run; re-run with confirmation to proceed", serial)
+			}
+		}
+
 		broker := d.iqBrokers[serial]
-		src, sub := newBrokerIQSource(broker)
+		src, sub := newBrokerIQSource(broker, d.log)
 		// Gain control is only safe when the hunt holds the SDR exclusively (a
 		// dedicated spare). On the borrowed control SDR, changing gain would
 		// disrupt the daemon's other consumers, so auto-gain stays unavailable.
@@ -88,15 +113,41 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 			src.setGain = broker.SetGain
 		}
 
-		if borrow && d.cchuntSup != nil {
-			d.cchuntSup.PauseAll()
+		if borrow {
+			if d.cchuntSup != nil {
+				d.cchuntSup.PauseAll()
+			}
+			// Pause wideband engines on the borrowed SDR: cchunt manages only
+			// single-channel systems, so a wideband-CC system is decoded by an
+			// Engine that PauseAll() above does not touch.
+			for _, eng := range borrowedEngines {
+				eng.Suspend()
+			}
 		}
 		release := func() {
 			sub.Close()
-			if borrow && d.cchuntSup != nil {
-				d.cchuntSup.ResumeAll()
+			if borrow {
+				for _, eng := range borrowedEngines {
+					eng.Resume()
+				}
+				if d.cchuntSup != nil {
+					d.cchuntSup.ResumeAll()
+				}
 			}
 		}
 		return src, release, nil
 	}
+}
+
+// widebandEnginesForSerial returns the running widebandt2 engines decoding on
+// the given dongle serial. A hunt that borrows that SDR suspends them so they
+// don't decode the retuned, off-frequency IQ.
+func (d *Daemon) widebandEnginesForSerial(serial string) []*widebandt2.Engine {
+	var out []*widebandt2.Engine
+	for _, eng := range d.widebandT2 {
+		if eng != nil && eng.Serial() == serial {
+			out = append(out, eng)
+		}
+	}
+	return out
 }

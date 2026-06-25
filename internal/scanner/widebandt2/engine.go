@@ -49,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/iqpower"
@@ -242,6 +243,48 @@ type Engine struct {
 	wbClipSamples int
 	// wbClipLogAt throttles the overload WARN. Owned by the Run pump.
 	wbClipLogAt time.Time
+
+	// suspended, when set, makes the Run pump drain its IQ stream without
+	// processing it: no channelization, no per-channel decode, no grants, no
+	// diagnostics. It exists so a live hunt that borrows this engine's SDR can
+	// retune it away without the engine decoding the off-frequency IQ — which
+	// otherwise floods the log with "channel iq power very low" WARNs and emits
+	// spurious grants whose voice taps capture no audio (empty TG folders).
+	// Read on the pump goroutine; set via Suspend/Resume from another goroutine.
+	suspended atomic.Bool
+}
+
+// Serial returns the dongle serial this engine decodes on (the value passed as
+// Options.Serial). It lets a coordinator — e.g. the daemon's hunt acquirer —
+// match a running engine to the SDR a hunt is about to borrow.
+func (e *Engine) Serial() string { return e.serial }
+
+// Suspend pauses decoding: the Run pump keeps draining the IQ stream (so the
+// SDR/broker never blocks) but processes nothing until Resume. Idempotent and
+// safe to call from any goroutine. Used while a hunt borrows this engine's SDR.
+func (e *Engine) Suspend() {
+	if e.suspended.Swap(true) {
+		return
+	}
+	e.log.Info("widebandt2: decode suspended (SDR borrowed by hunt)", "serial", e.serial)
+}
+
+// Resume re-enables decoding after a Suspend. Because the borrower retuned the
+// shared SDR, Resume first reprograms it back to this engine's centre frequency
+// so the next chunk is on-channel again; it then clears the suspend flag.
+// Idempotent and safe to call from any goroutine.
+func (e *Engine) Resume() {
+	if !e.suspended.Load() {
+		return
+	}
+	if err := e.device.SetCenterFreq(e.centerHz); err != nil {
+		// Log and clear anyway: leaving the engine suspended on a retune error
+		// would strand it decoding nothing, which is strictly worse.
+		e.log.Warn("widebandt2: resume retune failed; resuming anyway",
+			"serial", e.serial, "center_freq_hz", e.centerHz, "err", err)
+	}
+	e.suspended.Store(false)
+	e.log.Info("widebandt2: decode resumed (SDR returned by hunt)", "serial", e.serial)
 }
 
 // iqClipThreshold is the normalized magnitude at or above which an I or Q
@@ -674,6 +717,11 @@ func (e *Engine) Run(ctx context.Context) error {
 		case chunk, ok := <-stream:
 			if !ok {
 				return nil
+			}
+			if e.suspended.Load() {
+				// SDR borrowed by a hunt and retuned: drop the off-frequency
+				// chunk (keeping the stream drained) without decoding it.
+				continue
 			}
 			e.widebandPwr.Add(chunk)
 			e.foldInputClip(chunk)

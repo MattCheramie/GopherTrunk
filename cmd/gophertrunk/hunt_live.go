@@ -94,7 +94,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	src, err := newDeviceIQSource(ctx, dev, uint32(p.sampleRateHz))
+	src, err := newDeviceIQSource(ctx, dev, uint32(p.sampleRateHz), nil)
 	if err != nil {
 		rep.Fatal(1, fmt.Errorf("start IQ stream: %w", err))
 	}

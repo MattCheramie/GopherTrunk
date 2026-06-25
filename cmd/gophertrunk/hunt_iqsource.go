@@ -37,6 +37,18 @@ type streamIQSource struct {
 	bufCh   chan []complex64 // slack queue: forwarder → Capture
 	pending []complex64      // Capture-side leftover (< n) carried between calls
 	dropped atomic.Uint64    // chunks dropped at bufCh when decode falls behind real time
+	log     *slog.Logger     // nil ⇒ slog.Default(); see logger()
+}
+
+// logger returns the configured structured logger, falling back to the slog
+// default. The forwarder's "falling behind" WARN must route through this rather
+// than slog.Default() directly so it honours the daemon's log level and format
+// instead of being dumped via the bare std-log default handler.
+func (s *streamIQSource) logger() *slog.Logger {
+	if s.log != nil {
+		return s.log
+	}
+	return slog.Default()
 }
 
 func (s *streamIQSource) SampleRateHz() uint32 { return s.rate() }
@@ -77,7 +89,7 @@ func (s *streamIQSource) forward(ctx context.Context) {
 				// never blocks. Rate-limit the warning to once per second.
 				n := s.dropped.Add(1)
 				if now := time.Now(); now.Sub(lastLogAt) >= time.Second {
-					slog.Default().Warn("hunt: decode falling behind real time; dropping buffered IQ (the SDR is still drained, so this is a CPU/throughput limit, not an RF overrun)",
+					s.logger().Warn("hunt: decode falling behind real time; dropping buffered IQ (the SDR is still drained, so this is a CPU/throughput limit, not an RF overrun)",
 						"dropped_total", n)
 					lastLogAt = now
 				}
@@ -128,7 +140,7 @@ func (s *streamIQSource) Capture(ctx context.Context, n int) ([]complex64, error
 // newDeviceIQSource opens a continuous IQ stream on a raw SDR device (standalone
 // CLI live hunt). The caller's ctx governs both the stream and the forwarder
 // goroutine lifetime.
-func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32) (*streamIQSource, error) {
+func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32, log *slog.Logger) (*streamIQSource, error) {
 	ch, err := dev.StreamIQ(ctx)
 	if err != nil {
 		return nil, err
@@ -140,6 +152,7 @@ func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32) (*strea
 		setGain: dev.SetGain,
 		settle:  50 * time.Millisecond,
 		bufCh:   make(chan []complex64, iqSlackDepth),
+		log:     log,
 	}
 	go s.forward(ctx)
 	return s, nil
@@ -150,7 +163,7 @@ func newDeviceIQSource(ctx context.Context, dev sdr.Device, rate uint32) (*strea
 // routes through the broker so its cached center stays consistent with the
 // spectrum/rigctld views. Close the returned subscriber when the run ends — that
 // closes the broker's delivery channel, which stops the forwarder goroutine.
-func newBrokerIQSource(broker *iqtap.Broker) (*streamIQSource, *iqtap.Subscriber) {
+func newBrokerIQSource(broker *iqtap.Broker, log *slog.Logger) (*streamIQSource, *iqtap.Subscriber) {
 	sub := broker.Subscribe()
 	s := &streamIQSource{
 		ch:     sub.C,
@@ -158,6 +171,7 @@ func newBrokerIQSource(broker *iqtap.Broker) (*streamIQSource, *iqtap.Subscriber
 		rate:   broker.SampleRateHz,
 		settle: 50 * time.Millisecond,
 		bufCh:  make(chan []complex64, iqSlackDepth),
+		log:    log,
 	}
 	// Teardown is driven by sub.Close() closing sub.C; the forwarder returns
 	// when the channel closes, so context.Background is sufficient here.

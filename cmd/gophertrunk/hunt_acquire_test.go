@@ -90,3 +90,28 @@ func TestChooseHuntSDR(t *testing.T) {
 		})
 	}
 }
+
+func TestHuntBorrowBlocked(t *testing.T) {
+	cases := []struct {
+		name        string
+		borrow      bool
+		liveEngines int
+		confirmed   bool
+		want        bool
+	}{
+		{"dedicated spare never blocks", false, 1, false, false},
+		{"borrow, no live engine, never blocks", true, 0, false, false},
+		{"borrow with live engine, unconfirmed, blocks", true, 1, false, true},
+		{"borrow with live engine, confirmed, proceeds", true, 1, true, false},
+		{"borrow with multiple engines, unconfirmed, blocks", true, 2, false, true},
+		{"confirm without borrow is irrelevant", false, 2, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := huntBorrowBlocked(c.borrow, c.liveEngines, c.confirmed); got != c.want {
+				t.Errorf("huntBorrowBlocked(%v,%d,%v) = %v, want %v",
+					c.borrow, c.liveEngines, c.confirmed, got, c.want)
+			}
+		})
+	}
+}
