@@ -38,6 +38,19 @@ export function defaultSymbolDevice(
   return list.find((d) => d.role === "control") ?? list[0];
 }
 
+// parentSerial resolves a wideband virtual voice-tap serial back to its
+// parent wideband device. The wbvoice manager registers taps as
+// "wb:<parent>:tap-N" (internal/sdr/wbvoice), and active calls on a wideband
+// SDR run on those tap serials — but the Plots SDR selector lists the parent
+// device. A direct device_serial === selected comparison therefore never
+// matches, so the follow-the-call logic falls back to the control channel
+// forever. Mapping the tap back to its parent fixes that; non-tap serials
+// (direct dongles) pass through unchanged.
+export function parentSerial(deviceSerial: string): string {
+  const m = deviceSerial.match(/^wb:(.+):tap-\d+$/);
+  return m ? m[1] : deviceSerial;
+}
+
 export interface SpectrumFrame {
   ts_ns: number;
   center_hz: number;
