@@ -143,7 +143,8 @@ const channelizerKaiserBeta = 9.0
 // dense, irregular plan (e.g. 70 DMR repeaters on a 12.5 kHz grid that never
 // aligns to the bin centres) inevitably does. The channelizer is still used
 // because it is the only bank that stays real-time at this tap count (a per-tap
-// DDC benches ~5.6x heavier); the warning just makes the trade-off visible.
+// DDC benches ~6x heavier — see BenchmarkDense71* in internal/dsp/tuner); the
+// warning just makes the trade-off visible.
 const channelizerCleanResidualFrac = 0.40
 
 // ChannelConfig binds one repeater frequency to the trunking system
@@ -480,7 +481,7 @@ func New(opts Options) (*Engine, error) {
 	// Dense, irregular plans crowd some taps onto channelizer bin edges, where
 	// the critically-sampled bin rolls off and those channels decode at reduced
 	// SNR. The channelizer is still the right bank (a per-tap DDC at this tap
-	// count is ~5.6x heavier and would not stay real-time), so this is a
+	// count is ~6x heavier and would not stay real-time), so this is a
 	// heads-up, not a switch: a channel that won't lock may simply be sitting on
 	// a bin edge — give it its own dongle, or thin the plan, if it matters.
 	if cb, ok := bank.(*tuner.ChannelizerBank); ok {
@@ -923,8 +924,9 @@ func (ec *engineChannel) powerLabel() string {
 // DDCBank (linear, no bin-alignment constraint); a larger fleet favours the
 // shared polyphase channelizer, whose amortised wide-band filter is the only
 // thing that stays real-time at high tap counts. A dense 71-DMR plan benches
-// ~5.6x cheaper on the channelizer than on a per-tap DDC (one shared FFT vs 71
-// reduced-rate resamplers), so auto keeps high counts on the channelizer even
+// ~6x cheaper on the channelizer than on a per-tap DDC (one shared FFT vs 71
+// reduced-rate resamplers — BenchmarkDense71* in internal/dsp/tuner), so auto
+// keeps high counts on the channelizer even
 // when the plan crowds taps onto bin edges — New warns about the resulting
 // edge roll-off rather than trading real-time headroom for it. Explicit
 // "ddc"/"polyphase" are honoured verbatim.
