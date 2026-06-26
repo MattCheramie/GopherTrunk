@@ -223,6 +223,30 @@ func (e *Engine) Run(ctx context.Context) error {
 
 // HandleGrant is the engine's grant-dispatch entrypoint. It is exported
 // so tests can drive it directly without a running event loop.
+// discoverTalkgroup adds a placeholder record for a talkgroup heard for the
+// first time on the control channel, so the Talkgroups database self-populates
+// from live traffic instead of requiring a hand-maintained CSV. The record
+// inherits the loaders' Stream/Record defaults and is tagged "Discovered" so
+// operator UIs can tell auto-learned entries from catalogued ones. Scan tracks
+// the engine's scan mode: in ScanModeList a discovered TG is catalogued but not
+// auto-scanned, so learning a new TG never silently widens a curated scan list
+// — the operator opts it in from the UI. The record lives in memory only (it is
+// gone on restart, like the rest of the in-memory TalkgroupDB).
+func (e *Engine) discoverTalkgroup(g Grant) *TalkGroup {
+	tg := &TalkGroup{
+		ID:     g.GroupID,
+		Tag:    "Discovered",
+		Mode:   "D",
+		Scan:   e.ScanMode() != ScanModeList,
+		Stream: true,
+		Record: true,
+	}
+	e.talkgroups.Add(tg)
+	e.log.Info("talkgroup discovered on control channel",
+		"tg", g.GroupID, "system", g.System, "scan", tg.Scan)
+	return tg
+}
+
 func (e *Engine) HandleGrant(g Grant) {
 	if g.At.IsZero() {
 		g.At = e.now()
@@ -232,6 +256,14 @@ func (e *Engine) HandleGrant(g Grant) {
 		return
 	}
 	tg := e.talkgroups.Lookup(g.GroupID)
+	if tg == nil && g.GroupID != 0 && !g.Individual {
+		// First time this talkgroup has been heard: catalogue it so
+		// Database → Talkgroups fills in from the air (the trunk-recorder
+		// behaviour the operator asked for). Individual (unit-to-unit /
+		// interconnect) grants are skipped — their 24-bit destination is a
+		// subscriber address, not a talkgroup.
+		tg = e.discoverTalkgroup(g)
+	}
 	if tg != nil && tg.Lockout && !g.Emergency {
 		e.log.Info("grant locked out", "grant", g.String(), "tg", tg.AlphaTag)
 		return
