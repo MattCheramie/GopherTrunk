@@ -105,6 +105,11 @@ const (
 // the config validator uses to reject out-of-band channels.
 const guardFrac = 0.05
 
+// sampleRateAdvisoryFactor is how far above the plan's minimum required rate the
+// capture rate must sit before New advises lowering it. 1.5× leaves comfortable
+// headroom (front-end roll-off, retune slack) before flagging genuine waste.
+const sampleRateAdvisoryFactor = 1.5
+
 // strategyAutoThreshold is the channel-count cutoff for the "auto"
 // tuner strategy: at or below it, DDCBank wins on simplicity;
 // above it, ChannelizerBank's shared wide-band filter pays off.
@@ -415,6 +420,27 @@ func New(opts Options) (*Engine, error) {
 		offsets[i] = float64(ch.FrequencyHz) - float64(opts.CenterFreqHz)
 		if a := math.Abs(offsets[i]); a > maxAbsOffset {
 			maxAbsOffset = a
+		}
+	}
+
+	// Advise when the capture is materially oversampled for the plan. The DSP
+	// and network cost scale with the capture rate, but the only rate the plan
+	// needs is the one whose usable half-band (rate·(0.5−guard)) covers the
+	// widest channel offset: minRate = maxAbsOffset/(0.5−guard). Running well
+	// above that buys nothing and is a leading cause of the host failing to keep
+	// up (overruns → dropped samples → glitchy audio). Reported config: 71 DMR
+	// carriers spanning ±1.95 MHz captured at 10 MS/s, ~2.4× the ~4.3 MS/s the
+	// span needs. maxAbsOffset==0 (a single centred channel) has no meaningful
+	// minimum, so skip it.
+	if maxAbsOffset > 0 {
+		minRateHz := maxAbsOffset / (0.5 - guardFrac)
+		if float64(opts.SampleRateHz) >= minRateHz*sampleRateAdvisoryFactor {
+			log.Warn("widebandt2: capture is oversampled for the channel plan — the carriers span less than half the captured band, so a lower sdr.sample_rate would cut DSP + network load (and overrun pressure) for no loss of coverage",
+				"serial", opts.Serial,
+				"sample_rate_hz", opts.SampleRateHz,
+				"channel_span_hz", uint64(2*maxAbsOffset),
+				"min_sample_rate_hz", uint64(math.Ceil(minRateHz)),
+			)
 		}
 	}
 
