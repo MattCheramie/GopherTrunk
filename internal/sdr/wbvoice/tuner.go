@@ -69,18 +69,24 @@ type VirtualTuner struct {
 	widebandHz uint32
 	inRateHz   uint32
 
-	// actualOutHz is the per-tap rate the DDC *actually* emits for this
-	// input rate, which is not always exactly NarrowbandRateHz: the
+	// actualOutHz is the per-tap rate the DDC *actually* emits for the
+	// current target, which is not always exactly NarrowbandRateHz: the
 	// rational resampler can only hit the nearest representable L/M ratio,
-	// so e.g. an input rate whose 48000/in ratio trips the resampler's
+	// so e.g. a reduced rate whose 48000/red ratio trips the resampler's
 	// L≤64 / M≤8192 caps lands a fraction of a percent off 48 kHz (issue
-	// #550). Computed once in New from inRateHz alone — the DDC's output
-	// rate is independent of the tap offset — and reported via
-	// SampleRateExactHz so the composer clocks the voice symbol-recovery
-	// loop at the true rate instead of the nominal target. A nominal-rate
-	// symbol clock drifts off the true symbol phase and periodically slips,
-	// which surfaces as voice spikes/glitches.
-	actualOutHz float64
+	// #550). It is reported via SampleRateExactHz so the composer clocks the
+	// voice symbol-recovery loop at the true rate instead of the nominal
+	// target; a nominal-rate symbol clock drifts off the true symbol phase
+	// and periodically slips, which surfaces as voice spikes/glitches.
+	//
+	// The exact rate depends on how far the shared decimator halves the
+	// stream, which the span-aware bank sizes from the tap offset (a far
+	// tap keeps the band wider, so it decimates less and lands a different
+	// fractional rate). The offset isn't known until SetCenterFreq, so this
+	// is (re)computed there from the same NewDDCBankForSpan args StreamIQ
+	// builds the live bank with, and guarded by tunerMu. New seeds it with
+	// the no-offset default for the pre-SetCenterFreq window.
+	actualOutHz float64 // guarded by tunerMu
 
 	tunerMu  sync.Mutex
 	targetHz uint32 // 0 ⇒ no SetCenterFreq yet
@@ -130,12 +136,12 @@ func New(opts Options) (*VirtualTuner, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	// Pre-compute the rate the DDC will actually emit for this input rate.
-	// A no-tap DDCBank only reduces the L/M ratio and stores it; the
-	// expensive Kaiser FIR prototype is built per-tap in AddTap, which we
-	// don't call here — so this is cheap and allocation-light, and it
-	// matches the args StreamIQ uses to build the live bank, so the rate
-	// reported here is exactly the rate the stream is clocked at.
+	// Seed the reported rate with the no-offset default for the window
+	// before SetCenterFreq lands. SetCenterFreq recomputes it from the tap
+	// offset (the span-aware bank decimates by an amount that depends on the
+	// offset, see actualOutHz). A no-tap DDCBank only reduces the L/M ratio
+	// and stores it; the expensive Kaiser FIR prototype is built per-tap in
+	// AddTap, which we don't call here — so this is cheap and allocation-light.
 	actualOutHz := tuner.NewDDCBank(
 		float64(opts.SDRSampleRateHz), float64(NarrowbandRateHz), GuardFrac,
 	).OutputRateHz()
@@ -162,7 +168,11 @@ func (v *VirtualTuner) Serial() string { return v.serial }
 // off when the resampler can't hit the target exactly (see actualOutHz);
 // callers that clock a symbol-recovery loop should use SampleRateExactHz
 // instead so they don't drift on the fractional part.
-func (v *VirtualTuner) SampleRateHz() uint32 { return uint32(math.Round(v.actualOutHz)) }
+func (v *VirtualTuner) SampleRateHz() uint32 {
+	v.tunerMu.Lock()
+	defer v.tunerMu.Unlock()
+	return uint32(math.Round(v.actualOutHz))
+}
 
 // SampleRateExactHz reports the per-tap rate this source actually emits,
 // with the fractional part preserved. This is the rate the DDC's rational
@@ -171,7 +181,25 @@ func (v *VirtualTuner) SampleRateHz() uint32 { return uint32(math.Round(v.actual
 // from this so the loop tracks the true symbol phase instead of drifting
 // off a rounded nominal — the parity fix the control-channel path already
 // has (issue #550; widebandt2 builds its receivers from OutputRateHz).
-func (v *VirtualTuner) SampleRateExactHz() float64 { return v.actualOutHz }
+func (v *VirtualTuner) SampleRateExactHz() float64 {
+	v.tunerMu.Lock()
+	defer v.tunerMu.Unlock()
+	return v.actualOutHz
+}
+
+// ddcBankFor builds the span-aware single-tap DDC arguments for a target
+// offset. SetCenterFreq (to report the exact rate) and StreamIQ (to build the
+// live stream) both call this so the reported rate is exactly the rate the
+// stream is clocked at. requiredHalf = |offset| keeps the shared decimator
+// from halving past the point where this tap would fall out of band — the same
+// span-awareness the wideband control-channel path uses (widebandt2 sizes its
+// bank from the widest channel offset). Without it the default ±1.1 MHz floor
+// rejects voice grants on the outer carriers of a wideband plan.
+func (v *VirtualTuner) ddcBankFor(offsetHz float64) *tuner.DDCBank {
+	return tuner.NewDDCBankForSpan(
+		float64(v.inRateHz), float64(NarrowbandRateHz), GuardFrac, math.Abs(offsetHz),
+	)
+}
 
 // CanTune reports whether hz lies inside the wideband dongle's usable
 // IQ window. The trunking pool consults this before calling
@@ -199,8 +227,15 @@ func (v *VirtualTuner) SetCenterFreq(hz uint32) error {
 	if !v.CanTune(hz) {
 		return ErrOutOfBand
 	}
+	offset := float64(hz) - float64(v.widebandHz)
+	// Recompute the exact emitted rate for this offset from the same
+	// span-aware bank StreamIQ will build, so the composer clocks symbol
+	// recovery at the true rate (issue #550). The bank build is cheap
+	// (no per-tap Kaiser prototype until AddTap, which we skip here).
+	outHz := v.ddcBankFor(offset).OutputRateHz()
 	v.tunerMu.Lock()
 	v.targetHz = hz
+	v.actualOutHz = outHz
 	v.tunerMu.Unlock()
 	return nil
 }
@@ -228,7 +263,7 @@ func (v *VirtualTuner) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 
 	out := make(chan []complex64, 16)
 
-	bank := tuner.NewDDCBank(float64(v.inRateHz), float64(NarrowbandRateHz), GuardFrac)
+	bank := v.ddcBankFor(offset)
 	if err := bank.AddTap(offset, func(narrow []complex64) {
 		if len(narrow) == 0 {
 			return

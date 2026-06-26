@@ -157,6 +157,59 @@ func TestSampleRateExactHzMatchesDDCBank(t *testing.T) {
 	}
 }
 
+// TestStreamIQAcceptsWidebandSpanGrant is the regression for the field report
+// (heavy-overrun DMR archive, 26 Jun): a 71-channel wideband DMR plan on a
+// 10 MS/s capture has voice grants out to ±1.9 MHz of centre. CanTune already
+// advertises the full ±4.5 MHz IQ window, so the trunking engine binds those
+// grants — but StreamIQ used to build its per-call DDC with the no-span
+// NewDDCBank, whose shared decimator floors the reduced rate at 2.5 MS/s and so
+// rejects any offset beyond ±1.1 MHz with ErrOffsetOutOfBand. The outer
+// carriers then produced no audio at all ("composer: StreamIQ failed ... offset
+// is outside the usable IQ band"). The span-aware bank (mirroring widebandt2's
+// maxAbsOffset sizing) must accept the grant, and the reported exact rate must
+// match the bank the live stream is actually clocked at.
+func TestStreamIQAcceptsWidebandSpanGrant(t *testing.T) {
+	const sdrRate = 10_000_000.0
+	const widebandHz = 441_700_000
+	const targetHz = 443_600_000 // +1.9 MHz, an outer carrier of the reported plan
+	const offsetHz = targetHz - widebandHz
+
+	fake := newFakeDevice()
+	broker := iqtap.New(fake, 64, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	v, err := New(Options{
+		Serial: "tap-0", Broker: broker,
+		WidebandCenterHz: widebandHz, SDRSampleRateHz: sdrRate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CanTune / SetCenterFreq accept it (advertised ±4.5 MHz window).
+	if !v.CanTune(targetHz) {
+		t.Fatalf("CanTune(%d) = false, want true (offset %.0f Hz inside ±%.0f Hz)",
+			targetHz, float64(offsetHz), sdrRate*(0.5-GuardFrac))
+	}
+	if err := v.SetCenterFreq(targetHz); err != nil {
+		t.Fatalf("SetCenterFreq(%d) = %v, want nil", targetHz, err)
+	}
+
+	// The crux: StreamIQ must build a DDC that keeps this offset in band.
+	// Before the fix it returned a wrapped ErrOffsetOutOfBand here.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := v.StreamIQ(ctx); err != nil {
+		t.Fatalf("StreamIQ at offset %.0f Hz = %v, want nil (outer wideband grant must tune)", float64(offsetHz), err)
+	}
+
+	// The reported exact rate must equal the span-aware bank's output rate —
+	// the rate the live stream is clocked at — so symbol recovery doesn't slip
+	// (issue #550).
+	want := tuner.NewDDCBankForSpan(sdrRate, float64(NarrowbandRateHz), GuardFrac, math.Abs(offsetHz)).OutputRateHz()
+	if got := v.SampleRateExactHz(); got != want {
+		t.Errorf("SampleRateExactHz = %v, want %v (span-aware DDCBank.OutputRateHz)", got, want)
+	}
+}
+
 // TestStreamIQShiftsCarrierToBaseband injects a complex sinusoid at the
 // target offset through a fake broker; the virtual tuner should
 // down-convert it to a near-DC tone after its DDC. Verifies that the
