@@ -336,11 +336,10 @@ func TestEngineStrategyExplicit(t *testing.T) {
 // test that crashed daemon init ("two tap offsets fall in the same channelizer
 // bin"). The reporter's plan packs 71 DMR repeaters across ±1.9 MHz of a
 // 10 MS/s capture on a 12.5 kHz grid that never aligns to the channelizer bins.
-// Two paths must both build now:
-//   - explicit "polyphase" hosts every tap via bin sharing (no AddTap error);
-//   - "auto" sees the dense, edge-crowding plan and routes to the span-aware
-//     DDC, whose shared decimator must widen enough to keep the ±1.9 MHz outer
-//     taps in band (the default ±1.1 MHz floor would reject them).
+// It must now build on the polyphase channelizer via bin sharing — both when
+// requested explicitly and via auto (which keeps high tap counts on the
+// channelizer because a per-tap DDC at 71 taps is far too heavy to stay
+// real-time). Bin sharing means no AddTap error; every tap is hosted.
 func TestEngineHostsDenseDMRPlan(t *testing.T) {
 	const center = 441_700_000
 	freqs := []uint32{
@@ -366,8 +365,8 @@ func TestEngineHostsDenseDMRPlan(t *testing.T) {
 		strategy, want string
 	}{
 		{"polyphase", "polyphase"},  // honoured via bin sharing — no crash
-		{"auto", "auto(ddc:dense)"}, // dense plan → span-aware DDC
-		{"", "auto(ddc:dense)"},     // default is auto
+		{"auto", "auto(polyphase)"}, // high count stays on the channelizer
+		{"", "auto(polyphase)"},     // default is auto
 	}
 	for _, tc := range cases {
 		t.Run("strategy="+tc.strategy, func(t *testing.T) {
