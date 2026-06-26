@@ -40,6 +40,14 @@ type ChannelizerBank struct {
 	bins [][]complex64 // reused channelizer output buffer
 
 	taps []*channelizerTap
+
+	// pool, when non-nil, runs the per-tap fine-tune loop across worker
+	// goroutines. Each tap owns its NCO / resampler / scratch buffers and reads
+	// the shared bins read-only, so taps within one Process call are
+	// independent; the pool barriers before Process returns so the caller's
+	// post-Process reads (and the next chunk) never overlap a running tap. Nil
+	// ⇒ the serial loop, byte-identical to the pre-pool path. See EnableWorkers.
+	pool *tapPool
 }
 
 type channelizerTap struct {
@@ -141,8 +149,48 @@ func (b *ChannelizerBank) binCenterHz(binIdx int) float64 {
 	return float64(binIdx-b.channels) * b.binRateHz
 }
 
+// EnableWorkers parallelizes the per-tap fine-tune loop across up to workers
+// goroutines. It is a no-op (leaving the serial path) when workers <= 1 or the
+// tap count is below parallelTapThreshold, where the barrier overhead would
+// outweigh the work. Call once after all AddTap calls and before the first
+// Process; the tap set is fixed afterwards (the Bank contract forbids dynamic
+// add/remove), so the shard layout is computed once. Call Close to stop the
+// workers when the bank is retired.
+func (b *ChannelizerBank) EnableWorkers(workers int) {
+	if workers <= 1 || len(b.taps) < parallelTapThreshold {
+		return
+	}
+	b.pool = newTapPool(len(b.taps), workers)
+}
+
+// Close stops the worker pool, if any. Safe to call on a bank that never
+// enabled workers, and idempotent.
+func (b *ChannelizerBank) Close() {
+	if b.pool != nil {
+		b.pool.close()
+	}
+}
+
+// processTap runs one tap's fine-tune chain over its channelizer bin: NCO mix to
+// remove the residual offset, rational resample to the output rate, then sink.
+// It touches only this tap's own NCO / resampler / scratch buffers and reads
+// b.bins read-only, so distinct taps may run concurrently (see EnableWorkers).
+func (b *ChannelizerBank) processTap(t *channelizerTap) {
+	bin := b.bins[t.binIdx]
+	if cap(t.mixBuf) < len(bin) {
+		t.mixBuf = make([]complex64, len(bin))
+	} else {
+		t.mixBuf = t.mixBuf[:len(bin)]
+	}
+	mixInto(t.mixBuf, bin, t.nco)
+	t.outBuf = t.resampler.Process(t.outBuf, t.mixBuf)
+	t.sink(t.outBuf)
+}
+
 // Process drives the shared channelizer once and dispatches each tap's
-// bin into its fine-tune chain.
+// bin into its fine-tune chain. With a worker pool enabled the per-tap loop
+// fans out across goroutines and barriers before returning; otherwise it runs
+// serially, byte-identical to the pre-pool path.
 func (b *ChannelizerBank) Process(src []complex64) {
 	if len(src) == 0 {
 		for _, t := range b.taps {
@@ -151,16 +199,12 @@ func (b *ChannelizerBank) Process(src []complex64) {
 		return
 	}
 	b.bins = b.ch.Process(b.bins, src)
+	if b.pool != nil {
+		b.pool.run(func(i int) { b.processTap(b.taps[i]) })
+		return
+	}
 	for _, t := range b.taps {
-		bin := b.bins[t.binIdx]
-		if cap(t.mixBuf) < len(bin) {
-			t.mixBuf = make([]complex64, len(bin))
-		} else {
-			t.mixBuf = t.mixBuf[:len(bin)]
-		}
-		mixInto(t.mixBuf, bin, t.nco)
-		t.outBuf = t.resampler.Process(t.outBuf, t.mixBuf)
-		t.sink(t.outBuf)
+		b.processTap(t)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -167,6 +168,75 @@ func TestEngineNewRejectsOutOfBandChannel(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error for out-of-band channel")
 	}
+}
+
+// warnCapture records WARN-level log messages so tests can assert on the
+// operator-facing advisories New emits.
+type warnCapture struct{ msgs []string }
+
+func (h *warnCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (h *warnCapture) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h *warnCapture) WithGroup(string) slog.Handler            { return h }
+func (h *warnCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Level == slog.LevelWarn {
+		h.msgs = append(h.msgs, r.Message)
+	}
+	return nil
+}
+func (h *warnCapture) sawAdvisory() bool {
+	for _, m := range h.msgs {
+		if strings.Contains(m, "oversampled for the channel plan") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestEngineNewAdvisesOversampledCapture is the Fix-D regression: a plan whose
+// carriers span far less than half the captured band should draw a startup WARN
+// suggesting a lower sdr.sample_rate (the durable cure for the host-can't-keep-up
+// overruns), and a right-sized capture should stay silent. Mirrors the reported
+// config: 71 DMR carriers spanning ±1.95 MHz captured at 10 MS/s.
+func TestEngineNewAdvisesOversampledCapture(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	// Two outer carriers of the reported plan span ≈ ±1.9 MHz of centre, so the
+	// span needs ≈ 4.25 MS/s; everything above ~6.4 MS/s is flagged.
+	const center = 441_700_000
+	channels := []ChannelConfig{
+		{FrequencyHz: 439_787_500, SystemName: "x"}, // −1.9125 MHz
+		{FrequencyHz: 443_600_000, SystemName: "x"}, // +1.9000 MHz
+	}
+
+	t.Run("oversampled warns", func(t *testing.T) {
+		h := &warnCapture{}
+		_, err := New(Options{
+			Log: slog.New(h), Device: newMockDevice(nil), Bus: bus,
+			SampleRateHz: 10_000_000, CenterFreqHz: center, TunerStrategy: "polyphase",
+			Channels: channels, Systems: []trunking.System{t2System("x")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !h.sawAdvisory() {
+			t.Errorf("no oversampled-capture advisory at 10 MS/s for a ±1.9 MHz plan; got WARNs %q", h.msgs)
+		}
+	})
+
+	t.Run("right-sized is silent", func(t *testing.T) {
+		h := &warnCapture{}
+		_, err := New(Options{
+			Log: slog.New(h), Device: newMockDevice(nil), Bus: bus,
+			SampleRateHz: 5_000_000, CenterFreqHz: center, TunerStrategy: "polyphase",
+			Channels: channels, Systems: []trunking.System{t2System("x")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.sawAdvisory() {
+			t.Errorf("advised lowering rate for a right-sized 5 MS/s capture; got WARNs %q", h.msgs)
+		}
+	})
 }
 
 func TestEngineStrategyAuto(t *testing.T) {

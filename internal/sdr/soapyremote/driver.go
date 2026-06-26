@@ -584,9 +584,96 @@ func (d *device) clearStreamConns() {
 	}
 }
 
-func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int32, out chan<- []complex64) {
+// soapyStatusOverflow is SoapySDR's SOAPY_SDR_OVERFLOW code, carried in a stream
+// datagram's elems field when the device dropped samples because the host wasn't
+// draining the stream fast enough. The other negative codes (timeout, stream
+// error, corruption…) are not the operator-actionable "host too slow" signal, so
+// they stay at DEBUG.
+const soapyStatusOverflow = -4
+
+// overrunWarnInterval throttles the operator-facing overrun WARN so a sustained
+// overrun storm logs a periodic summary with counts instead of flooding one line
+// per dropped datagram. Matches the 5 s cadence the wideband diagnostics use.
+const overrunWarnInterval = 5 * time.Second
+
+// overrunThrottle surfaces SDR sample loss to the operator at WARN, rate-limited.
+// It folds two sources into one summary: device-side SOAPY_SDR_OVERFLOW datagrams
+// (the radio dropped samples) and host-side local drops (streamLoop shed a chunk
+// because the DSP consumer fell behind, see sendOrDrop). Both mean the same thing
+// operationally — the host can't keep up with the configured rate — and both used
+// to be invisible (overflow logged only at DEBUG; local back-pressure stalled the
+// reader instead). It is not safe for concurrent use; streamLoop owns one.
+type overrunThrottle struct {
+	log      *slog.Logger
+	addr     string
+	interval time.Duration
+	now      func() time.Time
+
+	lastWarn     time.Time
+	devOverflows uint64 // SOAPY_SDR_OVERFLOW datagrams since the last summary
+	hostDrops    uint64 // chunks dropped locally since the last summary
+}
+
+func newOverrunThrottle(log *slog.Logger, addr string) *overrunThrottle {
+	return &overrunThrottle{log: log, addr: addr, interval: overrunWarnInterval, now: time.Now}
+}
+
+func (t *overrunThrottle) deviceOverflow() { t.devOverflows++; t.maybeWarn(false) }
+func (t *overrunThrottle) hostDrop()       { t.hostDrops++; t.maybeWarn(false) }
+
+// maybeWarn emits the summary WARN when the throttle interval has elapsed (or
+// immediately on the first event), then clears the running counts. force ignores
+// the interval — used on teardown to flush a trailing batch that would otherwise
+// never be reported.
+func (t *overrunThrottle) maybeWarn(force bool) {
+	if t.devOverflows == 0 && t.hostDrops == 0 {
+		return
+	}
+	now := t.now()
+	if !force && !t.lastWarn.IsZero() && now.Sub(t.lastWarn) < t.interval {
+		return
+	}
+	t.log.Warn("soapyremote: SDR overruns — the host can't keep up with the configured sample rate, so samples are being dropped and decoded audio will glitch. Lower sdr.sample_rate or reduce the channel/tap count.",
+		"addr", t.addr,
+		"device_overflows", t.devOverflows,
+		"host_drops", t.hostDrops,
+	)
+	t.lastWarn = now
+	t.devOverflows = 0
+	t.hostDrops = 0
+}
+
+// sendOrDrop hands samples to the DSP consumer without ever blocking the read
+// loop. A blocked send stalls socket reads and flow-control ACKs, which makes the
+// radio overflow and drop samples in a way that shreds every channel's framing at
+// once. When the bounded out-channel is full instead, we drop the oldest queued
+// chunk (keeping latency low and the data freshest) and count it — one clean local
+// glitch rather than a device-side overrun storm. Returns false only on ctx cancel.
+func (d *device) sendOrDrop(ctx context.Context, out chan []complex64, samples []complex64, t *overrunThrottle) bool {
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case out <- samples:
+			return true
+		default:
+		}
+		// Full: shed the oldest buffered chunk to make room. streamLoop is the
+		// sole producer, so one drop frees a slot and the next send succeeds.
+		select {
+		case <-out:
+			t.hostDrop()
+		default:
+		}
+	}
+}
+
+func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int32, out chan []complex64) {
 	defer close(out)
 	defer d.teardownStream(streamID)
+
+	throttle := newOverrunThrottle(d.log, d.addr)
+	defer throttle.maybeWarn(true) // flush any trailing counts on teardown
 
 	hdr := make([]byte, streamHeaderSize)
 	// Flow-control state: lastRecv tracks the next sequence we expect; lastAck
@@ -636,7 +723,14 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 		}
 		if h.elems < 0 {
 			// Negative elems is a SoapySDR status/error code, not samples.
-			d.log.Debug("soapyremote: stream status code", "addr", d.addr, "code", h.elems)
+			// OVERFLOW means the device dropped samples because we read too
+			// slowly — surface it to the operator (rate-limited); other codes
+			// stay at DEBUG.
+			if h.elems == soapyStatusOverflow {
+				throttle.deviceOverflow()
+			} else {
+				d.log.Debug("soapyremote: stream status code", "addr", d.addr, "code", h.elems)
+			}
 			continue
 		}
 		if payloadLen == 0 {
@@ -646,10 +740,8 @@ func (d *device) streamLoop(ctx context.Context, dataConn net.Conn, streamID int
 		if len(samples) == 0 {
 			continue
 		}
-		select {
-		case <-ctx.Done():
+		if !d.sendOrDrop(ctx, out, samples, throttle) {
 			return
-		case out <- samples:
 		}
 	}
 }
