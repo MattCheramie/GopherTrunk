@@ -3,6 +3,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
   defaultSymbolDevice,
+  parentSerial,
   type SpectrumDevice,
 } from "../api/spectrum";
 import {
@@ -102,7 +103,7 @@ export function SymbolScope() {
   const followOffsetKHz = useMemo(() => {
     if (!device) return null;
     const mine = activeCalls.filter(
-      (c) => c.device_serial === selected && !c.ended_at,
+      (c) => parentSerial(c.device_serial) === selected && !c.ended_at,
     );
     if (mine.length === 0) return null;
     const newest = mine.reduce((a, b) => (b.started_at > a.started_at ? b : a));

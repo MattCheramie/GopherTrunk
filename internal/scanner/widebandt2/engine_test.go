@@ -332,6 +332,66 @@ func TestEngineStrategyExplicit(t *testing.T) {
 	}
 }
 
+// TestEngineHostsDenseDMRPlan is the regression for the 70-channel DMR stress
+// test that crashed daemon init ("two tap offsets fall in the same channelizer
+// bin"). The reporter's plan packs 71 DMR repeaters across ±1.9 MHz of a
+// 10 MS/s capture on a 12.5 kHz grid that never aligns to the channelizer bins.
+// It must now build on the polyphase channelizer via bin sharing — both when
+// requested explicitly and via auto (which keeps high tap counts on the
+// channelizer because a per-tap DDC at 71 taps is far too heavy to stay
+// real-time). Bin sharing means no AddTap error; every tap is hosted.
+func TestEngineHostsDenseDMRPlan(t *testing.T) {
+	const center = 441_700_000
+	freqs := []uint32{
+		439787500, 440012500, 440062500, 440087500, 440112500, 440187500, 440262500,
+		440312500, 440362500, 440387500, 440437500, 440462500, 440487500, 440512500,
+		440562500, 440587500, 440712500, 440737500, 440762500, 440787500, 440862500,
+		440912500, 440937500, 441025000, 441312500, 441337500, 441362500, 441387500,
+		441412500, 441437500, 441462500, 441487500, 441512500, 441537500, 441562500,
+		441587500, 441612500, 441637500, 441662500, 441687500, 441787500, 441812500,
+		441821500, 441837500, 441862500, 441887500, 441912500, 442287500, 442337500,
+		442387500, 442412500, 442432500, 442437500, 442512500, 442562500, 442837500,
+		442887500, 442937500, 442962500, 443037500, 443137500, 443162500, 443187500,
+		443237500, 443412500, 443437500, 443462500, 443487500, 443587500, 443600000,
+		443612500,
+	}
+	channels := make([]ChannelConfig, len(freqs))
+	for i, f := range freqs {
+		channels[i] = ChannelConfig{FrequencyHz: f, SystemName: "regional-dmr-hi"}
+	}
+	systems := []trunking.System{t2System("regional-dmr-hi")}
+
+	cases := []struct {
+		strategy, want string
+	}{
+		{"polyphase", "polyphase"},  // honoured via bin sharing — no crash
+		{"auto", "auto(polyphase)"}, // high count stays on the channelizer
+		{"", "auto(polyphase)"},     // default is auto
+	}
+	for _, tc := range cases {
+		t.Run("strategy="+tc.strategy, func(t *testing.T) {
+			bus := events.NewBus(8)
+			defer bus.Close()
+			e, err := New(Options{
+				Device: newMockDevice(nil), Bus: bus,
+				SampleRateHz: 10_000_000, CenterFreqHz: center,
+				TunerStrategy: tc.strategy,
+				Channels:      channels,
+				Systems:       systems,
+			})
+			if err != nil {
+				t.Fatalf("dense 71-DMR plan (%q) should build, got: %v", tc.strategy, err)
+			}
+			if e.Strategy() != tc.want {
+				t.Errorf("strategy = %q, want %q", e.Strategy(), tc.want)
+			}
+			if len(e.channels) != len(freqs) {
+				t.Errorf("hosted %d channels, want %d", len(e.channels), len(freqs))
+			}
+		})
+	}
+}
+
 func TestEngineMixedT2AndT3Channels(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

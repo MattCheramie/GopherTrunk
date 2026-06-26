@@ -90,7 +90,23 @@ type ddcTap struct {
 // alias roll-off; AddTap rejects offsets outside the usable band. A typical
 // value is 0.05 (5%).
 func NewDDCBank(inRateHz, outRateHz, guardFrac float64) *DDCBank {
-	redRateHz, decim := buildSharedDecimator(inRateHz)
+	return NewDDCBankForSpan(inRateHz, outRateHz, guardFrac, 0)
+}
+
+// NewDDCBankForSpan is NewDDCBank with an explicit minimum half-band the bank
+// must keep usable: the shared decimator stops halving before the reduced
+// rate would push the usable band (±redRate·(0.5-guardFrac)) below
+// requiredHalfHz, so taps as far out as ±requiredHalfHz stay in band. Pass 0
+// for the default behaviour (decimate down to ddcDecimateFloorHz, ±1.1 MHz at
+// 2.5 MS/s). Use this when the tap set spans wider than that floor allows —
+// e.g. a 70-channel DMR plan spread across ±1.9 MHz of a 10 MS/s capture,
+// which the default floor would reject with ErrOffsetOutOfBand.
+func NewDDCBankForSpan(inRateHz, outRateHz, guardFrac, requiredHalfHz float64) *DDCBank {
+	minRedRateHz := 0.0
+	if requiredHalfHz > 0 && guardFrac < 0.5 {
+		minRedRateHz = requiredHalfHz / (0.5 - guardFrac)
+	}
+	redRateHz, decim := buildSharedDecimator(inRateHz, minRedRateHz)
 	l, m := rationalRatio(outRateHz, redRateHz)
 	return &DDCBank{
 		inRateHz:    inRateHz,
@@ -116,10 +132,16 @@ const ddcDecimateFloorHz = 2_500_000.0
 // computes only the kept outputs, so the shared cost is bounded by the reduced
 // rate, not the full input rate. tapsPerBranch mirrors the per-tap
 // anti-aliasing convention (ddcStopbandTaps taps per unit of decimation).
-func buildSharedDecimator(inRateHz float64) (redRateHz float64, predec *dsp.Resampler) {
+//
+// minRedRateHz raises the lower bound on the reduced rate: halving stops while
+// the next halving would leave the rate at/above BOTH ddcDecimateFloorHz and
+// minRedRateHz. A caller hosting taps spread wider than the default ±1.1 MHz
+// passes the reduced rate its span demands so those taps stay in band; 0
+// selects the legacy floor-only behaviour.
+func buildSharedDecimator(inRateHz, minRedRateHz float64) (redRateHz float64, predec *dsp.Resampler) {
 	red := inRateHz
 	d := 1
-	for red/2 >= ddcDecimateFloorHz {
+	for red/2 >= ddcDecimateFloorHz && red/2 >= minRedRateHz {
 		red /= 2
 		d *= 2
 	}

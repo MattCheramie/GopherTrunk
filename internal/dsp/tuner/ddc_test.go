@@ -373,7 +373,7 @@ func TestDDCBankDecimationFactorSelection(t *testing.T) {
 		{20_000_000, 2_500_000, true},
 	}
 	for _, c := range cases {
-		red, predec := buildSharedDecimator(c.inRate)
+		red, predec := buildSharedDecimator(c.inRate, 0)
 		if red != c.wantRed || (predec != nil) != c.wantDecim {
 			t.Errorf("buildSharedDecimator(%.0f) = red %.0f / predec!=nil %v, want red %.0f / %v",
 				c.inRate, red, predec != nil, c.wantRed, c.wantDecim)
@@ -396,6 +396,44 @@ func TestDDCBankRejectsBeyondReducedNyquist(t *testing.T) {
 	}
 	if err := b.AddTap(1_000_000, func([]complex64) {}); err != nil {
 		t.Errorf("offset inside reduced band should succeed, got %v", err)
+	}
+}
+
+// TestDDCBankForSpanWidensBand is the DDC half of the 70-DMR stress test: a
+// plan spread to ±1.9 MHz of a 10 MS/s capture is rejected by the default
+// reduced-band floor (±1.125 MHz), but NewDDCBankForSpan sizes the shared
+// decimator to keep that span in band and still extract the tone to baseband.
+func TestDDCBankForSpanWidensBand(t *testing.T) {
+	const (
+		inRate  = 10_000_000.0
+		outRate = 48_000.0
+		far     = 1_900_000.0
+	)
+	// Default floor rejects the far tap.
+	if err := NewDDCBank(inRate, outRate, 0.05).AddTap(far, func([]complex64) {}); !errors.Is(err, ErrOffsetOutOfBand) {
+		t.Fatalf("default floor should reject %.0f Hz, got %v", far, err)
+	}
+
+	// Span-aware bank keeps it in band: decimating only by 2 (→ 5 MS/s) widens
+	// the usable half-band to ±2.25 MHz.
+	b := NewDDCBankForSpan(inRate, outRate, 0.05, far)
+	if b.redRateHz != 5_000_000 {
+		t.Errorf("span-aware reduced rate = %.0f, want 5000000", b.redRateHz)
+	}
+	var got []complex64
+	if err := b.AddTap(far, func(out []complex64) { got = append(got, out...) }); err != nil {
+		t.Fatalf("span-aware AddTap(%.0f): %v", far, err)
+	}
+	gen := newToneGen(inRate, 0.5, far)
+	for i := 0; i < 64 && len(got) < 2200; i++ {
+		b.Process(gen.Next(4096))
+	}
+	if len(got) < 1024 {
+		t.Fatalf("too few output samples: %d", len(got))
+	}
+	settled := got[len(got)/2:]
+	if frac := powerNearDC(settled, outRate, 500); frac < 0.90 {
+		t.Errorf("far tap %.0f Hz: only %.1f%% of power within ±500 Hz of DC", far, frac*100)
 	}
 }
 

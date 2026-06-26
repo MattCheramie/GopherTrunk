@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
+  parentSerial,
   type SpectrumDevice,
 } from "../api/spectrum";
 import {
@@ -259,7 +260,7 @@ export function Constellation() {
   const followOffsetKHz = useMemo(() => {
     if (!device) return null;
     const mine = activeCalls.filter(
-      (c) => c.device_serial === selected && !c.ended_at,
+      (c) => parentSerial(c.device_serial) === selected && !c.ended_at,
     );
     if (mine.length === 0) return null;
     const newest = mine.reduce((a, b) =>

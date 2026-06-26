@@ -91,6 +91,43 @@ func TestEngineStartsCallOnGrant(t *testing.T) {
 	}
 }
 
+// TestEngineDiscoversTalkgroupFromGrant covers the control-channel talkgroup
+// autofill: a group grant for an unknown TG catalogues a placeholder so the
+// Talkgroups database fills in from the air, while an individual (unit-to-unit)
+// grant is skipped so a 24-bit subscriber address never lands as a phantom TG.
+func TestEngineDiscoversTalkgroupFromGrant(t *testing.T) {
+	e, _, bus, _ := mkEngine(t, 1)
+	defer bus.Close()
+
+	if e.talkgroups.Lookup(555) != nil {
+		t.Fatal("precondition: TG 555 should be unknown")
+	}
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 555, FrequencyHz: 851_000_000})
+	tg := e.talkgroups.Lookup(555)
+	if tg == nil {
+		t.Fatalf("group grant should have catalogued TG 555")
+	}
+	if tg.Tag != "Discovered" || !tg.Scan {
+		t.Errorf("discovered TG = %+v, want Tag=Discovered Scan=true (ScanModeAll)", tg)
+	}
+
+	// Individual (unit-to-unit) grant: must NOT be catalogued.
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 140957, FrequencyHz: 852_000_000, Individual: true})
+	if e.talkgroups.Lookup(140957) != nil {
+		t.Errorf("individual grant should not be catalogued as a talkgroup")
+	}
+
+	// A discovered TG isn't auto-scanned in ScanModeList, so cataloguing never
+	// silently widens a curated scan list.
+	e.SetScanMode(ScanModeList)
+	e.HandleGrant(Grant{System: "X", Protocol: "p25", GroupID: 556, FrequencyHz: 853_000_000})
+	if tg := e.talkgroups.Lookup(556); tg == nil {
+		t.Errorf("group grant should catalogue TG 556 even in ScanModeList")
+	} else if tg.Scan {
+		t.Errorf("discovered TG in ScanModeList should have Scan=false, got %+v", tg)
+	}
+}
+
 // TestEngineSkipsOutOfBandVirtualTunerInFavorOfPhysical covers the
 // Phase B fallback: when a wideband virtual voice tuner can't serve
 // a grant (frequency outside its IQ window) and a physical voice
