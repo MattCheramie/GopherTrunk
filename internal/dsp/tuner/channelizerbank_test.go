@@ -201,15 +201,50 @@ func TestChannelizerBankMultipleTapsSeparateTones(t *testing.T) {
 	}
 }
 
-func TestChannelizerBankRejectsCollidingBins(t *testing.T) {
-	const M = 8 // bin width = 300 kHz
-	b := NewChannelizerBank(2_400_000, 48_000, 0.05, M, 16, 9.0)
-	if err := b.AddTap(0, func([]complex64) {}); err != nil {
-		t.Fatalf("first tap: %v", err)
+// TestChannelizerBankSharesBin is the regression for the 70-DMR stress test:
+// two taps whose offsets fall in the SAME channelizer bin must both be hosted
+// (previously AddTap rejected the second with ErrBinAlreadyClaimed, killing the
+// daemon) and each must recover its own tone to baseband. Dense plans — DMR
+// repeaters on a 12.5 kHz grid — routinely put several carriers in one bin.
+func TestChannelizerBankSharesBin(t *testing.T) {
+	const (
+		inRate  = 2_400_000.0
+		outRate = 48_000.0
+		M       = 32 // 75 kHz bins
+	)
+	// Both offsets round to bin 1 (centre 75 kHz): residuals ∓15 kHz, well
+	// inside the bin, so each is cleanly extractable through its own fine-tune.
+	offsets := []float64{60_000, 90_000}
+	b := NewChannelizerBank(inRate, outRate, 0.05, M, 16, 9.0)
+	if b.binForOffset(offsets[0]) != b.binForOffset(offsets[1]) {
+		t.Fatalf("test setup: offsets %v are not in the same bin (%d vs %d)",
+			offsets, b.binForOffset(offsets[0]), b.binForOffset(offsets[1]))
 	}
-	// 50 kHz away from 0 - same bin.
-	if err := b.AddTap(50_000, func([]complex64) {}); !errors.Is(err, ErrBinAlreadyClaimed) {
-		t.Errorf("expected ErrBinAlreadyClaimed, got %v", err)
+	collected := make(map[float64]*[]complex64, len(offsets))
+	for _, off := range offsets {
+		off := off
+		buf := &[]complex64{}
+		collected[off] = buf
+		if err := b.AddTap(off, func(out []complex64) {
+			*buf = append(*buf, out...)
+		}); err != nil {
+			t.Fatalf("AddTap(%.0f) into shared bin: %v", off, err)
+		}
+	}
+
+	gen := newToneGen(inRate, 0.3, offsets...)
+	for i := 0; i < 48; i++ {
+		b.Process(gen.Next(4096))
+	}
+	for off, bufPtr := range collected {
+		buf := *bufPtr
+		if len(buf) < 1024 {
+			t.Fatalf("tap %.0f: too few samples (%d)", off, len(buf))
+		}
+		settled := buf[len(buf)/2:]
+		if frac := powerNearDC(settled, outRate, 500); frac < 0.80 {
+			t.Errorf("shared-bin tap %.0f Hz: only %.1f%% of power within ±500 Hz of DC", off, frac*100)
+		}
 	}
 }
 

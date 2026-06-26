@@ -49,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -134,6 +135,36 @@ func channelizerBinsFor(sampleRateHz uint32) int {
 // passband, ~70 dB peak sidelobe.
 const channelizerTapsPerBranch = 16
 const channelizerKaiserBeta = 9.0
+
+// channelizerCleanResidualFrac is the largest |residual|/binRate the "auto"
+// strategy tolerates before it prefers a per-tap DDC over the polyphase
+// channelizer. A critically-sampled bin is flat to ~0.45·binRate then rolls
+// off to −6 dB at the edge (0.5), so a tap past this fraction loses SNR. Dense,
+// irregular plans (e.g. 70 DMR repeaters on a 12.5 kHz grid that never aligns
+// to the bin centres) push many taps to the edge; auto routes those to the DDC,
+// which has no bin geometry and decodes every offset at full SNR.
+const channelizerCleanResidualFrac = 0.40
+
+// channelizerMaxResidualFrac returns the worst |residual|/binRate the polyphase
+// channelizer would impose on the given offsets at this sample rate, without
+// building the bank — the same nearest-bin arithmetic ChannelizerBank uses.
+func channelizerMaxResidualFrac(offsets []float64, sampleRateHz uint32) float64 {
+	m := channelizerBinsFor(sampleRateHz)
+	binRate := float64(sampleRateHz) / float64(m)
+	worst := 0.0
+	for _, off := range offsets {
+		k := int(math.Round(off / binRate))
+		k = ((k % m) + m) % m
+		center := float64(k) * binRate
+		if k >= m/2 {
+			center = float64(k-m) * binRate
+		}
+		if f := math.Abs(off-center) / binRate; f > worst {
+			worst = f
+		}
+	}
+	return worst
+}
 
 // ChannelConfig binds one repeater frequency to the trunking system
 // it belongs to. The Engine creates one DMR state machine per entry,
@@ -393,11 +424,28 @@ func New(opts Options) (*Engine, error) {
 		log = slog.Default()
 	}
 
-	strategy, tag := pickStrategy(opts.TunerStrategy, len(opts.Channels))
+	// Pre-compute every channel's offset from the dongle centre so the
+	// strategy picker can see the actual plan (how close taps sit to bin
+	// edges, how wide the set spans) and so the DDC fallback can size its
+	// shared decimator to keep the widest tap in band.
+	offsets := make([]float64, len(opts.Channels))
+	var maxAbsOffset float64
+	for i, ch := range opts.Channels {
+		offsets[i] = float64(ch.FrequencyHz) - float64(opts.CenterFreqHz)
+		if a := math.Abs(offsets[i]); a > maxAbsOffset {
+			maxAbsOffset = a
+		}
+	}
+
+	strategy, tag := pickStrategy(opts.TunerStrategy, offsets, opts.SampleRateHz)
 	var bank tuner.Bank
 	switch strategy {
 	case "ddc":
-		bank = tuner.NewDDCBank(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac)
+		// Span-aware: a 70-channel DMR plan spread across ±1.9 MHz of a
+		// 10 MS/s capture exceeds the default ±1.1 MHz reduced-band floor,
+		// which would reject the outer taps. Sizing the shared decimator to
+		// maxAbsOffset keeps every tap in band (issue: 70-DMR stress test).
+		bank = tuner.NewDDCBankForSpan(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac, maxAbsOffset)
 	case "polyphase":
 		bank = tuner.NewChannelizerBank(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac,
 			channelizerBinsFor(opts.SampleRateHz), channelizerTapsPerBranch, channelizerKaiserBeta)
@@ -422,13 +470,13 @@ func New(opts Options) (*Engine, error) {
 		now:         now,
 	}
 
-	for _, ch := range opts.Channels {
+	for i, ch := range opts.Channels {
 		sys, ok := systemsByName[ch.SystemName]
 		if !ok {
 			return nil, fmt.Errorf("widebandt2: channel freq=%d references unknown system %q",
 				ch.FrequencyHz, ch.SystemName)
 		}
-		offset := float64(ch.FrequencyHz) - float64(opts.CenterFreqHz)
+		offset := offsets[i]
 		ec, err := buildChannel(sys, ch, bank.OutputRateHz(), opts.Bus, log, opts.Now)
 		if err != nil {
 			return nil, err
@@ -447,6 +495,17 @@ func New(opts Options) (*Engine, error) {
 				ch.FrequencyHz, offset, err)
 		}
 		engine.channels = append(engine.channels, ec)
+	}
+
+	// An explicit tuner_strategy: polyphase is honoured even when the plan
+	// crowds taps onto bin edges (the user asked for it), but warn so a
+	// degraded decode isn't a mystery — auto would have routed this to the DDC.
+	if cb, ok := bank.(*tuner.ChannelizerBank); ok {
+		if frac := cb.MaxResidualFrac(); frac > channelizerCleanResidualFrac {
+			log.Warn("widebandt2: polyphase channelizer places taps near bin edges — those channels decode at reduced SNR; switch tuner_strategy to ddc or auto for full-SNR per-tap down-conversion",
+				"serial", opts.Serial, "worst_residual_frac", fmt.Sprintf("%.2f", frac),
+				"clean_threshold", channelizerCleanResidualFrac)
+		}
 	}
 	return engine, nil
 }
@@ -876,19 +935,26 @@ func (ec *engineChannel) powerLabel() string {
 	return fmt.Sprintf("%s @ %.4f MHz", ec.sysName, float64(ec.freqHz)/1e6)
 }
 
-// pickStrategy resolves the user-facing strategy choice into the
-// internal bank kind. "" / "auto" auto-selects: small channel counts
-// favour DDCBank (linear, no alignment constraint); larger counts
-// favour the shared polyphase channelizer.
-func pickStrategy(requested string, channelCount int) (kind, tag string) {
+// pickStrategy resolves the user-facing strategy choice into the internal
+// bank kind. "" / "auto" auto-selects from the actual channel plan: a small
+// channel count favours DDCBank (linear, no alignment constraint); a larger
+// count favours the shared polyphase channelizer — but only when the plan
+// keeps its taps clear of the bin edges. A dense, irregular plan (e.g. 70 DMR
+// repeaters whose 12.5 kHz grid never aligns to the channelizer bins) would
+// decode poorly on the channelizer, so auto routes it back to the DDC despite
+// the high count. Explicit "ddc"/"polyphase" are honoured verbatim.
+func pickStrategy(requested string, offsets []float64, sampleRateHz uint32) (kind, tag string) {
 	switch requested {
 	case "ddc":
 		return "ddc", "ddc"
 	case "polyphase":
 		return "polyphase", "polyphase"
 	case "", "auto":
-		if channelCount <= strategyAutoThreshold {
+		if len(offsets) <= strategyAutoThreshold {
 			return "ddc", "auto(ddc)"
+		}
+		if channelizerMaxResidualFrac(offsets, sampleRateHz) > channelizerCleanResidualFrac {
+			return "ddc", "auto(ddc:dense)"
 		}
 		return "polyphase", "auto(polyphase)"
 	default:

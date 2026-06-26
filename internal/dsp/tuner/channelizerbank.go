@@ -16,9 +16,17 @@ import (
 //
 // CPU cost is roughly O(N_samples · log M) for the shared channelizer
 // plus a small per-tap fine-tune; this wins over DDCBank once tap
-// count is large (≥ 7-8 in practice). The only constraint is that two
-// taps falling in the same channelizer bin would alias, so AddTap
-// rejects a second tap in an already-claimed bin.
+// count is large (≥ 7-8 in practice).
+//
+// More than one tap may share a channelizer bin: each tap reads the same
+// bin output and runs its own fine-tune DDC (NCO mixer keyed off its own
+// residual offset + resampler), so the taps are independent downstream and
+// their narrow per-protocol receivers reject the in-band neighbours. The
+// caveat is purely a quality one: a critically-sampled bin rolls off toward
+// its edges, so a tap whose residual sits near ±binRate/2 is attenuated.
+// Callers that need every channel at full SNR should keep residuals well
+// inside the bin (raise the bin count) or use DDCBank, which has no bin
+// geometry at all. See widebandt2's strategy picker.
 type ChannelizerBank struct {
 	inRateHz    float64
 	outRateHz   float64
@@ -31,8 +39,7 @@ type ChannelizerBank struct {
 	ch   *channelizer.Polyphase
 	bins [][]complex64 // reused channelizer output buffer
 
-	taps      []*channelizerTap
-	binClaims map[int]bool
+	taps []*channelizerTap
 }
 
 type channelizerTap struct {
@@ -64,22 +71,19 @@ func NewChannelizerBank(inRateHz, outRateHz, guardFrac float64, channels, tapsPe
 		channels:    channels,
 		binRateHz:   binRateHz,
 		ch:          channelizer.New(channels, tapsPerBranch, kaiserBeta),
-		binClaims:   make(map[int]bool),
 	}
 }
 
-// AddTap registers a new tap. Two taps cannot share a channelizer bin -
-// the second AddTap call into the same bin returns ErrBinAlreadyClaimed.
-// In practice this means tap offsets must be spaced by at least
-// InputRateHz/channels apart.
+// AddTap registers a new tap. Several taps may share a channelizer bin;
+// each gets its own fine-tune DDC keyed off its residual offset from the
+// bin centre, so they decode independently (see the type doc for the
+// edge-roll-off caveat). Returns ErrOffsetOutOfBand if the offset falls
+// outside the usable band.
 func (b *ChannelizerBank) AddTap(offsetHz float64, sink SinkFunc) error {
 	if !b.offsetInBand(offsetHz) {
 		return ErrOffsetOutOfBand
 	}
 	binIdx := b.binForOffset(offsetHz)
-	if b.binClaims[binIdx] {
-		return ErrBinAlreadyClaimed
-	}
 	binCenter := b.binCenterHz(binIdx)
 	residual := offsetHz - binCenter
 
@@ -97,8 +101,22 @@ func (b *ChannelizerBank) AddTap(offsetHz float64, sink SinkFunc) error {
 		sink:       sink,
 	}
 	b.taps = append(b.taps, tap)
-	b.binClaims[binIdx] = true
 	return nil
+}
+
+// MaxResidualFrac returns the largest |residual|/binRate over all taps added
+// so far — a 0..0.5 measure of how close the worst-placed tap sits to its
+// bin edge, where the critically-sampled prototype rolls off. Callers use it
+// to decide whether the polyphase layout is clean enough or whether a
+// per-tap DDC (no bin geometry) would decode the set better.
+func (b *ChannelizerBank) MaxResidualFrac() float64 {
+	worst := 0.0
+	for _, t := range b.taps {
+		if f := math.Abs(t.residualHz) / b.binRateHz; f > worst {
+			worst = f
+		}
+	}
+	return worst
 }
 
 func (b *ChannelizerBank) offsetInBand(offsetHz float64) bool {
@@ -167,14 +185,4 @@ func (b *ChannelizerBank) Reset() {
 		t.nco.reset()
 		t.resampler.Reset()
 	}
-}
-
-// ErrBinAlreadyClaimed is returned by ChannelizerBank.AddTap when two
-// requested offsets fall in the same channelizer bin.
-var ErrBinAlreadyClaimed = errBinAlreadyClaimed{}
-
-type errBinAlreadyClaimed struct{}
-
-func (errBinAlreadyClaimed) Error() string {
-	return "tuner: two tap offsets fall in the same channelizer bin (raise channel count or move offsets apart)"
 }
