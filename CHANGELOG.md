@@ -7,7 +7,33 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.4] — 2026-06-26
+
+Headlined by **dense wideband plans that used to crash now host cleanly** — a
+70-channel DMR config on a single 10 MS/s wideband SDR previously killed daemon
+init ("two tap offsets fall in the same channelizer bin"); the polyphase
+channelizer now lets several 12.5 kHz carriers share a 156 kHz bin and decode
+independently. Rounded out by **auto-discovery of talkgroups from
+control-channel grants** (the roster fills in from live traffic instead of
+needing a hand-maintained CSV), the verified **capture sample-rate guidance**
+for narrowband decode (#771), **`gain: "auto"` guidance for multi-tap wideband
+front ends** (#749), a P25 web-plots fix that follows the voice channel on
+wideband SDRs, and an honest **gate on the unverified Motorola talker-alias
+cipher** so a possibly-wrong table can never surface a fabricated name (#773).
+
 ### Added
+- **Auto-discover talkgroups from control-channel grants.** The Talkgroups
+  database previously only loaded from a hand-maintained CSV, so an operator
+  starting with an empty file saw bare numbers and no roster. GopherTrunk now
+  catalogues each talkgroup the first time it is granted on the control channel
+  (the trunk-recorder behaviour operators asked for), so Database → Talkgroups
+  fills in from live traffic. Discovery runs on a lookup miss and skips
+  individual (unit-to-unit / interconnect) grants, whose 24-bit destination is a
+  subscriber address rather than a talkgroup. Placeholders are tagged
+  "Discovered" and inherit Stream/Record on, but never silently widen a curated
+  scan list — you opt a learned talkgroup into scanning from the UI. In-memory
+  only for now (cleared on restart, like the rest of the talkgroup DB);
+  persistence is a follow-up.
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
   trunking capture, explaining that the down-converter normalises to 48 kHz and
@@ -16,6 +42,49 @@ for tagged releases.
   root cause of the #771 no-lock report. A new "Choosing a sample rate" section
   in `docs/hardware.md` documents the finding and recommends ~2.4–2.5 MS/s for
   control-channel roles.
+
+### Changed
+- **`gain: "auto"` recommended for multi-tap wideband devices** (#749). A single
+  fixed gain on a shared front end can't serve sites of differing strength: a
+  gain set so the strongest site doesn't clip leaves weaker co-tenants pinned at
+  the ADC noise floor, and the post-discriminator AGC can't recover SNR lost at
+  the converter. GopherTrunk now WARNs at startup when a `role: wideband` dongle
+  hosting more than one channel is pinned to a manual gain, the per-tap low-power
+  WARN suggests `gain: "auto"` when the shared capture is healthy but a co-tenant
+  tap sits at the floor, and `config.example.yaml` / `docs/hardware.md` document
+  the AGC recommendation. (Operational guidance, not a fix for the shared-front-
+  end dynamic-range limit — a genuinely weak/distant site may still need its own
+  dongle.)
+- **Unverified Motorola talker-alias cipher is now gated** (#773). On live P25
+  Phase 2 traffic, RIDs resolve but no talker-alias *text* decodes, because the
+  per-byte Motorola cipher (substitution table + accumulator constants) is
+  unverified — and with no ground-truth RID→plaintext pair it is mathematically
+  underdetermined, so it can't be pinned without guessing. Rather than ship fake
+  confidence, the misleading "reverse-engineered fact" provenance comments are
+  corrected to the truth, and a `CipherVerified` flag (currently false) gates
+  reporting: an alias is surfaced as reliable only when the decode is clean ASCII
+  **and** the cipher is verified, so a possibly-wrong table can never present a
+  fabricated name as a confirmed alias.
+
+### Fixed
+- **Dense wideband plans (70-DMR) no longer crash daemon init.** A 70-channel
+  DMR config on a single 10 MS/s wideband SDR used to kill init with "two tap
+  offsets fall in the same channelizer bin", because a DMR repeater plan on a
+  12.5 kHz grid packs several carriers into one 156 kHz channelizer bin and the
+  polyphase bank hard-rejected any second tap per bin. The channelizer now lets
+  taps share a bin — each already runs its own fine-tune NCO + resampler off its
+  residual offset, so they decode independently and their narrow receivers reject
+  in-band neighbours. The auto strategy keeps high tap counts on the channelizer
+  (benchmarked ~5.6× lighter than a per-tap DDC at this scale) and a new
+  span-aware DDC path stays available for explicit small-fleet wide-span layouts.
+- **Web Plots follow the voice channel on wideband SDRs.** With Hold off, the
+  Plots panels (Mixer, Symbol Scope, Tuning, Constellation, Eye Diagram,
+  Histogram) follow the active call by matching its `device_serial` to the
+  selected SDR. On a wideband SDR the call runs on a virtual voice tap
+  (`wb:<parent>:tap-N`) while the selector lists the parent device, so the match
+  never fired and the view stayed pinned to the control channel. The follow
+  filter now resolves a tap serial back to its parent; direct-dongle serials pass
+  through unchanged.
 
 ## [v0.5.3] — 2026-06-25
 
