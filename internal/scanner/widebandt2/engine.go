@@ -516,6 +516,14 @@ func New(opts Options) (*Engine, error) {
 				"serial", opts.Serial, "worst_residual_frac", fmt.Sprintf("%.2f", frac),
 				"clean_threshold", channelizerCleanResidualFrac)
 		}
+		// Fan the per-tap fine-tune loop out across CPU cores. A dense plan's
+		// 71 NCO+resampler+receiver chains are the bulk of the per-chunk cost
+		// and are independent (each tap owns its state, reads the shared bins
+		// read-only), so parallelizing them is what lets the host keep up with
+		// the live pump at high sample rates instead of back-pressuring the SDR
+		// into overruns. No-op below parallelTapThreshold taps. Run's defer
+		// closes the pool on teardown.
+		cb.EnableWorkers(tuner.DefaultTapWorkers())
 	}
 	return engine, nil
 }
@@ -756,10 +764,12 @@ func (e *Engine) DMRTier3ControlChannel(freqHz uint32) *tier3.ControlChannel {
 }
 
 // Run programs the dongle's centre frequency, opens its IQ stream,
-// and pumps chunks through the tuner bank until ctx cancels. The
-// per-tap fan-out and per-channel receivers / state machines run
-// inline on this goroutine — they are not concurrent with each
-// other, so chunk ordering is preserved.
+// and pumps chunks through the tuner bank until ctx cancels. Within a
+// chunk the per-tap fine-tune chains may run concurrently across worker
+// goroutines (see ChannelizerBank.EnableWorkers), but bank.Process
+// barriers before returning, so successive chunks — and the post-Process
+// diagnostics below — never overlap a running tap and each receiver still
+// sees its chunks in order.
 func (e *Engine) Run(ctx context.Context) error {
 	if err := e.device.SetCenterFreq(e.centerHz); err != nil {
 		return fmt.Errorf("widebandt2: SetCenterFreq %d Hz: %w", e.centerHz, err)
@@ -778,6 +788,11 @@ func (e *Engine) Run(ctx context.Context) error {
 	// don't linger in Prometheus after the engine stops (issue #749).
 	if e.metrics != nil {
 		defer e.metrics.ClearWidebandInput(e.serial)
+	}
+	// Stop the bank's tap worker pool (if any) on teardown so its goroutines
+	// don't outlive the engine when an SDR is retuned/recreated.
+	if c, ok := e.bank.(interface{ Close() }); ok {
+		defer c.Close()
 	}
 	for {
 		select {
