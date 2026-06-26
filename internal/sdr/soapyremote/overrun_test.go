@@ -112,9 +112,9 @@ func TestOverrunThrottleFlush(t *testing.T) {
 		interval: 5 * time.Second,
 		now:      func() time.Time { return now },
 	}
-	tr.deviceOverflow()  // logs immediately (count reset)
-	tr.deviceOverflow()  // within interval, accumulates silently
-	tr.hostDrop()        // ditto
+	tr.deviceOverflow() // logs immediately (count reset)
+	tr.deviceOverflow() // within interval, accumulates silently
+	tr.hostDrop()       // ditto
 	if got := len(h.warns()); got != 1 {
 		t.Fatalf("before flush: %d WARNs, want 1", got)
 	}
