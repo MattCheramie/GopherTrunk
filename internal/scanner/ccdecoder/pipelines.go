@@ -283,6 +283,10 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		log.Warn("ccdecoder: unrecognised p25_phase2_scrambler_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
+	// rx is forward-declared so the control channel's CarrierOffsetHz provider
+	// can close over it; the closure is only called later, at site-update
+	// publish time, well after rx is assigned below (issue #815).
+	var rx *p25phase1rx.Receiver
 	cc := p25phase1.New(p25phase1.Options{
 		Bus:                 opts.Bus,
 		Log:                 opts.Log,
@@ -295,8 +299,9 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		P25Phase2RS:         uint8(p2RS),
 		P25Phase2Interleave: uint8(p2Interleave),
 		P25Phase2Scrambler:  uint8(p2Scrambler),
+		CarrierOffsetHz:     func() float64 { return rx.AFCOffsetHz() },
 	})
-	rx := p25phase1rx.New(p25phase1rx.Options{
+	rx = p25phase1rx.New(p25phase1rx.Options{
 		SampleRateHz: opts.SampleRateHz,
 		// P25 Phase 1 nominal peak deviation per TIA-102.BAAA-A
 		// — calibrates the slicer thresholds against the

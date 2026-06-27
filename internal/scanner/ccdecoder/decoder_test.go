@@ -1,8 +1,10 @@
 package ccdecoder
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -1972,5 +1974,149 @@ func TestPumpNoConjugateByDefault(t *testing.T) {
 		if got != in[i] {
 			t.Errorf("sample %d = %v, want unchanged %v", i, got, in[i])
 		}
+	}
+}
+
+// fakeAFCPipeline is a ProtocolPipeline that also satisfies the unexported
+// afcReporter capability, reporting a fixed carrier offset so a test can drive
+// the pump's offset-sanity path without a real receiver (issue #815).
+type fakeAFCPipeline struct{ offsetHz float64 }
+
+func (f *fakeAFCPipeline) Process([]complex64)  {}
+func (f *fakeAFCPipeline) Reset()               {}
+func (f *fakeAFCPipeline) Close() error         { return nil }
+func (f *fakeAFCPipeline) AFCOffsetHz() float64 { return f.offsetHz }
+
+const carrierOffsetWarnMsg = "control carrier offset far from configured frequency"
+
+func newOffsetTestDecoder(t *testing.T, buf *bytes.Buffer) *Decoder {
+	t.Helper()
+	bus := events.NewBus(8)
+	t.Cleanup(bus.Close)
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000,
+		Log: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+	setActiveSystem(d, "Geelong")
+	d.activeFreqHz = 420_075_000
+	return d
+}
+
+// TestDecoderWarnsOnLargeCarrierOffset pins issue #815: while locked, a control
+// carrier sitting far from the configured frequency (an adjacent site bleeding
+// through at 12.5 kHz spacing) must produce a WARN, computed from the TOTAL
+// offset (autotuneApplied + receiver residual) so it fires whether or not
+// autotune is enabled. A small residual, and the not-locked state, must stay
+// silent.
+func TestDecoderWarnsOnLargeCarrierOffset(t *testing.T) {
+	cases := []struct {
+		name     string
+		offset   float64
+		applied  int
+		locked   bool
+		wantWarn bool
+	}{
+		{"adjacent channel 12.5kHz", 12500, 0, true, true},
+		{"small residual", 200, 0, true, false},
+		{"autotune folded adjacent lock", 100, 12400, true, true},
+		{"not locked", 12500, 0, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			d := newOffsetTestDecoder(t, &buf)
+			d.active = &fakeAFCPipeline{offsetHz: tc.offset}
+			d.autotuneApplied = tc.applied
+			d.locked.Store(tc.locked)
+
+			d.checkCarrierOffsetLocked()
+
+			got := strings.Contains(buf.String(), carrierOffsetWarnMsg)
+			if got != tc.wantWarn {
+				t.Fatalf("warn emitted = %v, want %v (log: %q)", got, tc.wantWarn, buf.String())
+			}
+			if tc.wantWarn {
+				if !strings.Contains(buf.String(), "offset_hz=12500") {
+					t.Errorf("WARN missing offset_hz=12500; log: %q", buf.String())
+				}
+				if !strings.Contains(buf.String(), "freq_hz=420075000") {
+					t.Errorf("WARN missing freq_hz=420075000; log: %q", buf.String())
+				}
+			}
+		})
+	}
+}
+
+// TestDecoderCarrierOffsetWarnThrottled pins the throttle + edge re-arm: a
+// sustained over-threshold offset warns once per interval, but dropping back
+// under threshold re-arms so the next excursion warns immediately (issue #815).
+func TestDecoderCarrierOffsetWarnThrottled(t *testing.T) {
+	var buf bytes.Buffer
+	d := newOffsetTestDecoder(t, &buf)
+	pipe := &fakeAFCPipeline{offsetHz: 12500}
+	d.active = pipe
+	d.locked.Store(true)
+
+	countWarns := func() int {
+		return strings.Count(buf.String(), carrierOffsetWarnMsg)
+	}
+
+	d.checkCarrierOffsetLocked()
+	if n := countWarns(); n != 1 {
+		t.Fatalf("after first over-threshold tick: warns = %d, want 1", n)
+	}
+	// A second immediate over-threshold tick is throttled.
+	d.checkCarrierOffsetLocked()
+	if n := countWarns(); n != 1 {
+		t.Fatalf("second immediate tick should be throttled: warns = %d, want 1", n)
+	}
+	// Offset falls back under threshold — re-arms the warn.
+	pipe.offsetHz = 200
+	d.checkCarrierOffsetLocked()
+	if n := countWarns(); n != 1 {
+		t.Fatalf("under-threshold tick should not warn: warns = %d, want 1", n)
+	}
+	// Fresh excursion warns immediately despite being within the interval.
+	pipe.offsetHz = 12500
+	d.checkCarrierOffsetLocked()
+	if n := countWarns(); n != 2 {
+		t.Fatalf("re-armed excursion should warn at once: warns = %d, want 2", n)
+	}
+}
+
+// TestDecoderCarrierOffsetWarnHzConfigurable confirms Options.CarrierOffsetWarnHz
+// overrides the default threshold, and that zero falls back to the default.
+func TestDecoderCarrierOffsetWarnHzConfigurable(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	d, err := New(Options{Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer d.Close()
+	if d.carrierOffsetWarnHz != defaultCarrierOffsetWarnHz {
+		t.Fatalf("zero Options.CarrierOffsetWarnHz = %d, want default %d", d.carrierOffsetWarnHz, defaultCarrierOffsetWarnHz)
+	}
+
+	var buf bytes.Buffer
+	d2, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{}, SampleRateHz: 48000,
+		CarrierOffsetWarnHz: 20000,
+		Log:                 slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer d2.Close()
+	setActiveSystem(d2, "Geelong")
+	d2.active = &fakeAFCPipeline{offsetHz: 12500}
+	d2.locked.Store(true)
+	d2.checkCarrierOffsetLocked()
+	if strings.Contains(buf.String(), carrierOffsetWarnMsg) {
+		t.Errorf("12.5 kHz offset under a 20 kHz threshold should not warn; log: %q", buf.String())
 	}
 }

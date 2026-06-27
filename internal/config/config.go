@@ -785,8 +785,15 @@ type SDRConfig struct {
 	// ppm — it only logs a suggested ppm/error value you can bake into the
 	// device block by hand. Off by default; harmless to leave on for
 	// TCXO-equipped units (the correction simply stays near zero).
-	Autotune bool           `yaml:"autotune"`
-	Devices  []DeviceConfig `yaml:"devices"`
+	Autotune bool `yaml:"autotune"`
+	// CarrierOffsetWarnHz is the magnitude of the locked control-channel carrier
+	// offset (Hz) above which the decoder logs a WARN that GT may be decoding an
+	// adjacent site's stronger carrier rather than the configured frequency
+	// (issue #815). Zero selects the built-in default (4000 Hz); raise it for a
+	// high-drift dongle whose legitimate crystal error would otherwise trip the
+	// warning. Advisory only — it never changes tuning or decode.
+	CarrierOffsetWarnHz uint32         `yaml:"carrier_offset_warn_hz"`
+	Devices             []DeviceConfig `yaml:"devices"`
 	// RTLTCP lists remote rtl_tcp endpoints (host:port + optional
 	// per-endpoint metadata) to mount as virtual tuners. Each entry
 	// becomes a pool device alongside any locally-attached USB

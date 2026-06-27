@@ -145,6 +145,22 @@ const iqClipThreshold = 0.98
 // front-end overload — reduce gain or add attenuation (issue #402).
 const iqClipWarnRatio = 0.002
 
+// defaultCarrierOffsetWarnHz is the default magnitude of the TOTAL control-
+// channel carrier offset (autotune correction + receiver residual) above which,
+// while locked, the pump warns that GT may have locked onto an adjacent site's
+// carrier rather than the configured frequency (issue #815). Overridable via
+// Options.CarrierOffsetWarnHz.
+//
+// 4000 Hz sits in the gap between: a good front-end (Airspy/TCXO) after autotune
+// leaves a sub-kHz residual (never trips); the P25 6.25/12.5 kHz adjacent-channel
+// steps both clear it (an adjacent-site lock always trips); a reasonably-corrected
+// dongle's 1-3 kHz crystal error stays under it.
+const defaultCarrierOffsetWarnHz = 4000
+
+// carrierOffsetWarnInterval throttles a sustained large-offset WARN, matching the
+// iqClipLog / iqDCLog 30 s cadence so a stuck adjacent-channel lock logs steadily.
+const carrierOffsetWarnInterval = 30 * time.Second
+
 // decodeQueueDepth is the size of the internal queue between the
 // lightweight IQ forwarder and the decode goroutine (issue #402). The
 // SDR driver drops the instant its own small delivery channel backs up
@@ -225,6 +241,12 @@ type Options struct {
 	// average at each (re)acquisition so the demod's AFC starts near lock.
 	// Nil disables autotune at zero cost. See internal/autotune.
 	Autotune *autotune.Manager
+	// CarrierOffsetWarnHz is the magnitude of the total locked carrier offset
+	// (autotune correction + receiver residual) above which the pump emits a
+	// throttled WARN that GT may have locked onto an adjacent site's carrier
+	// (issue #815). Zero selects defaultCarrierOffsetWarnHz. Raise it for a
+	// high-drift dongle to avoid benign warnings.
+	CarrierOffsetWarnHz int
 }
 
 // Decoder is the long-lived component that converts the control
@@ -250,7 +272,15 @@ type Decoder struct {
 	autotuneApplied int
 	locked          atomic.Bool
 	lastATSampleAt  time.Time
-	systems         map[string]trunking.System
+	// carrierOffsetWarnHz is the large-offset WARN threshold (Options.
+	// CarrierOffsetWarnHz, defaulted in New). lastOffsetWarnAt throttles the
+	// WARN to one line per carrierOffsetWarnInterval while the offset stays
+	// over threshold; it resets to zero when the offset falls back under
+	// threshold so a fresh excursion re-warns at once (owned by the pump
+	// goroutine). Issue #815.
+	carrierOffsetWarnHz int
+	lastOffsetWarnAt    time.Time
+	systems             map[string]trunking.System
 
 	// ddc decimates the raw SDR IQ stream to pipelineRateHz before
 	// the active pipeline sees a chunk; ddcTarget records the
@@ -405,6 +435,10 @@ func New(opts Options) (*Decoder, error) {
 		d.iqCorrector = rtlsdr.NewIQImbalanceCorrector()
 	}
 	d.conjugate = opts.Conjugate
+	d.carrierOffsetWarnHz = opts.CarrierOffsetWarnHz
+	if d.carrierOffsetWarnHz <= 0 {
+		d.carrierOffsetWarnHz = defaultCarrierOffsetWarnHz
+	}
 	for _, s := range opts.Systems {
 		d.systems[s.Name] = s
 	}
@@ -734,6 +768,7 @@ func (d *Decoder) pump(iq []complex64) {
 	d.ddcOut = d.ddc.Process(d.ddcOut, iq)
 	d.active.Process(d.ddcOut)
 	d.sampleAutotuneLocked()
+	d.checkCarrierOffsetLocked()
 }
 
 // afcReporter is the optional capability a pipeline exposes when its
@@ -768,6 +803,45 @@ func (d *Decoder) sampleAutotuneLocked() {
 	d.log.Info("ccdecoder: "+d.autotune.StatusString(d.activeFreqHz, 0),
 		"system", d.activeAt, "freq_hz", d.activeFreqHz,
 		"observed_hz", observed, "applied_hz", d.autotuneApplied)
+}
+
+// checkCarrierOffsetLocked emits a throttled WARN when, while the CC is locked,
+// the TOTAL carrier offset from the configured control frequency exceeds
+// d.carrierOffsetWarnHz. Total = autotuneApplied + the receiver's residual
+// AFCOffsetHz: with autotune off (the default) applied is 0 and the total is the
+// raw residual; with autotune on, a large genuine offset is folded into applied,
+// so summing the two still catches an adjacent-channel lock autotune would
+// otherwise hide by chasing the wrong carrier (issue #815). Advisory only — it
+// never retunes; it tells the operator the locked carrier sits far from the
+// configured frequency, so the reported site identity may belong to a stronger
+// neighbouring site bleeding through (or the front-end oscillator is mistuned).
+// Caller holds d.mu.
+func (d *Decoder) checkCarrierOffsetLocked() {
+	if !d.locked.Load() {
+		return
+	}
+	rep, ok := d.active.(afcReporter)
+	if !ok {
+		return
+	}
+	total := d.autotuneApplied + int(math.Round(rep.AFCOffsetHz()))
+	if total < 0 {
+		total = -total
+	}
+	if total < d.carrierOffsetWarnHz {
+		d.lastOffsetWarnAt = time.Time{} // re-arm so a fresh excursion warns at once
+		return
+	}
+	now := time.Now()
+	if !d.lastOffsetWarnAt.IsZero() && now.Sub(d.lastOffsetWarnAt) < carrierOffsetWarnInterval {
+		return
+	}
+	d.lastOffsetWarnAt = now
+	d.log.Warn("ccdecoder: control carrier offset far from configured frequency — "+
+		"GT may be locked onto an adjacent site's stronger carrier (wrong site identity) "+
+		"or the receiver oscillator is badly mistuned; verify the reported site against "+
+		"the configured frequency (issue #815)",
+		"offset_hz", total, "freq_hz", d.activeFreqHz, "system", d.activeAt)
 }
 
 // observeIQPower folds one raw IQ chunk into the per-second power / DC /

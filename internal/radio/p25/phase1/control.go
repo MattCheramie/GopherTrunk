@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -43,8 +44,13 @@ type ControlChannel struct {
 	freqHz     uint32
 	bandPlan   *BandPlan
 	now        func() time.Time
-	locked     bool
-	lastNAC    uint16
+	// carrierOffsetHz, when non-nil, reports the demod's current locked carrier
+	// offset in Hz (Options.CarrierOffsetHz); publishSiteUpdate snapshots it onto
+	// the site-update event so a large adjacent-channel offset is visible on
+	// /api/v1/sites (issue #815). Nil leaves the published field zero.
+	carrierOffsetHz func() float64
+	locked          bool
+	lastNAC         uint16
 	// lastSiteLog dedupes the concise site-configuration log line so an
 	// established site logs once and re-logs only when its identity / primary
 	// control channel materially changes (see logSiteIdentity).
@@ -396,6 +402,16 @@ type Options struct {
 	P25Phase2RS         uint8
 	P25Phase2Interleave uint8
 	P25Phase2Scrambler  uint8
+
+	// CarrierOffsetHz, when non-nil, reports the demodulator's current carrier
+	// offset (Hz) of the locked control carrier relative to the tuned centre.
+	// publishSiteUpdate snapshots it onto SiteUpdate.ControlChannelCarrierOffsetHz
+	// so an operator can spot a control lock that sits far off the configured
+	// frequency — an adjacent site bleeding through (issue #815) — from the
+	// /api/v1/sites surface without dropping to `capture`/`spectrum`. The
+	// ccdecoder pipeline wires this to the receiver's AFCOffsetHz; nil (the
+	// default, and what the decode/replay tests pass) leaves the field zero.
+	CarrierOffsetHz func() float64
 }
 
 // New constructs a ControlChannel from Options. SystemName ends up on
@@ -434,6 +450,7 @@ func New(opts Options) *ControlChannel {
 		freqHz:              opts.FrequencyHz,
 		bandPlan:            bp,
 		now:                 now,
+		carrierOffsetHz:     opts.CarrierOffsetHz,
 		fswTol:              fswTol,
 		aliasAsm:            NewTalkerAliasAssembler(now),
 		diagSeen:            make(map[uint32]int),
@@ -1604,21 +1621,26 @@ func (c *ControlChannel) publishSiteUpdate() {
 	if net.RFSS == 0 && net.Site == 0 && net.SystemID == 0 && net.WACN == 0 {
 		return
 	}
+	var carrierOffsetHz int32
+	if c.carrierOffsetHz != nil {
+		carrierOffsetHz = int32(math.Round(c.carrierOffsetHz()))
+	}
 	c.bus.Publish(events.Event{
 		Kind: events.KindSiteUpdate,
 		Payload: trunking.SiteUpdate{
-			System:           c.systemName,
-			RFSSID:           net.RFSS,
-			SiteID:           net.Site,
-			ControlChannelHz: c.freqHz,
-			WACN:             net.WACN,
-			SystemID:         net.SystemID,
-			WACNHex:          trunking.IDHex(uint64(net.WACN)),
-			SystemIDHex:      trunking.IDHex(uint64(net.SystemID)),
-			RFSSIDHex:        trunking.IDHex(uint64(net.RFSS)),
-			SiteIDHex:        trunking.IDHex(uint64(net.Site)),
-			Topology:         c.TopologySnapshot(),
-			At:               c.now(),
+			System:                        c.systemName,
+			RFSSID:                        net.RFSS,
+			SiteID:                        net.Site,
+			ControlChannelHz:              c.freqHz,
+			ControlChannelCarrierOffsetHz: carrierOffsetHz,
+			WACN:                          net.WACN,
+			SystemID:                      net.SystemID,
+			WACNHex:                       trunking.IDHex(uint64(net.WACN)),
+			SystemIDHex:                   trunking.IDHex(uint64(net.SystemID)),
+			RFSSIDHex:                     trunking.IDHex(uint64(net.RFSS)),
+			SiteIDHex:                     trunking.IDHex(uint64(net.Site)),
+			Topology:                      c.TopologySnapshot(),
+			At:                            c.now(),
 		},
 	})
 	c.logSiteIdentity(net)
