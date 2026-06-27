@@ -11,6 +11,11 @@ decoded-log *output* in the ground-truth CSV. No SDRTrunk source (GPLv3) was rea
 or ported; GopherTrunk is Apache-2.0 and its cipher stays gated
 (`CipherVerified = false`) until a real alias decodes end-to-end.
 
+These findings were also posted as a status update on
+[#773](https://github.com/MattCheramie/GopherTrunk/issues/773), which is where any
+confirmation from the SDRTrunk decoder author or follow-up chosen-plaintext
+captures will be tracked.
+
 ## Framing (verified)
 
 The reassembled message is `WACN | System | RadioID | encoded-alias | CRC-16`.
