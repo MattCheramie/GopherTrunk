@@ -22,23 +22,33 @@ type MACDecodeConfig struct {
 	Seed       uint64
 }
 
-// DecodeSuperframeMACPDUs returns every successfully decoded MAC PDU
-// found in sf's MAC-typed sub-frames, in sub-frame order. Voice
-// sub-frames are skipped. Both the control-channel ingest path and the
-// voice-channel composer call this — Phase 2 voice traffic channels
-// interleave MAC sub-frames (signalling, talker alias, encryption
-// sync, …) with voice sub-frames, and the composer needs the same MAC
-// dispatch the CC runs.
+// DecodedMACPDU pairs a decoded MAC PDU with the SlotType of the
+// sub-frame it rode in. Phase 2 carries the encryption sync
+// (ALGID/KID/MI) in the MAC_PTT message (SlotTypeMACPTT) that begins a
+// transmission, not in a distinct MAC opcode, so a caller that needs to
+// tell PTT signalling from ordinary FACCH/SACCH signalling must see the
+// slot type — DecodeSuperframeMACPDUs alone discards it. Issue #813.
+type DecodedMACPDU struct {
+	SlotType SlotType
+	PDU      MACPDU
+}
+
+// DecodeSuperframeMACPDUsWithSlot returns every successfully decoded MAC
+// PDU found in sf's MAC-typed sub-frames, in sub-frame order, each
+// tagged with the SlotType of the sub-frame it came from. Voice
+// sub-frames are skipped. It is the slot-aware form of
+// DecodeSuperframeMACPDUs; callers that route on the PTT slot
+// (encryption sync) use this one.
 //
 // The PN44 descrambler is handed the spec's per-slot offset
 // (slotPN44Offset) because superframe sync pins which of the 12 TDMA
 // slots each sub-frame occupies.
-func DecodeSuperframeMACPDUs(sf Superframe, cfg MACDecodeConfig) []MACPDU {
+func DecodeSuperframeMACPDUsWithSlot(sf Superframe, cfg MACDecodeConfig) []DecodedMACPDU {
 	macLen := macPDUDibits
 	if cfg.Trellis == TrellisOn {
 		macLen = macPDUDibitsTrellis
 	}
-	var out []MACPDU
+	var out []DecodedMACPDU
 	for _, sub := range sf.Subframes {
 		if !sub.SlotType.IsMAC() {
 			continue
@@ -50,8 +60,28 @@ func DecodeSuperframeMACPDUs(sf Superframe, cfg MACDecodeConfig) []MACPDU {
 		offset := slotPN44Offset(sub.Index)
 		if pdu, ok := decodeMACPDUDibits(macDibits, cfg.Trellis, cfg.RS,
 			cfg.Interleave, cfg.Scrambler, cfg.Seed, offset); ok {
-			out = append(out, pdu)
+			out = append(out, DecodedMACPDU{SlotType: sub.SlotType, PDU: pdu})
 		}
+	}
+	return out
+}
+
+// DecodeSuperframeMACPDUs returns every successfully decoded MAC PDU
+// found in sf's MAC-typed sub-frames, in sub-frame order. Voice
+// sub-frames are skipped. Both the control-channel ingest path and the
+// voice-channel composer call this — Phase 2 voice traffic channels
+// interleave MAC sub-frames (signalling, talker alias, encryption
+// sync, …) with voice sub-frames, and the composer needs the same MAC
+// dispatch the CC runs. Callers that need each PDU's originating slot
+// type use DecodeSuperframeMACPDUsWithSlot.
+func DecodeSuperframeMACPDUs(sf Superframe, cfg MACDecodeConfig) []MACPDU {
+	decoded := DecodeSuperframeMACPDUsWithSlot(sf, cfg)
+	if len(decoded) == 0 {
+		return nil
+	}
+	out := make([]MACPDU, len(decoded))
+	for i, d := range decoded {
+		out[i] = d.PDU
 	}
 	return out
 }

@@ -55,6 +55,36 @@ func TestEncryptionSyncRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPushToTalkRoundTrip pins the working-model MAC_PTT layout: an
+// EncryptionSync encoded as a PTT message round-trips through
+// AsPushToTalk. Synthetic — it cannot prove the on-air byte offsets are
+// right (that needs the issue #813 capture), only that the encode /
+// decode pair agree.
+func TestPushToTalkRoundTrip(t *testing.T) {
+	in := EncryptionSync{
+		AlgorithmID:      0x84, // AES-256 in the P25 algorithm registry
+		KeyID:            0xBEEF,
+		MessageIndicator: [9]byte{1, 2, 3, 4, 5, 6, 7, 8, 9},
+	}
+	pdu := EncodePushToTalk(in)
+	got, ok := pdu.AsPushToTalk()
+	if !ok {
+		t.Fatal("AsPushToTalk returned !ok")
+	}
+	if got != in {
+		t.Errorf("round-trip = %+v, want %+v", got, in)
+	}
+
+	// Survives an AssembleMACPDU → ParseMACPDU trip (the wire form).
+	reparsed, err := ParseMACPDU(AssembleMACPDU(pdu))
+	if err != nil {
+		t.Fatalf("ParseMACPDU: %v", err)
+	}
+	if got2, ok := reparsed.AsPushToTalk(); !ok || got2 != in {
+		t.Errorf("wire round-trip = %+v ok=%v, want %+v", got2, ok, in)
+	}
+}
+
 func TestControlChannelFlagsEncryptedGrant(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

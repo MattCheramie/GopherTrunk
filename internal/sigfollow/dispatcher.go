@@ -17,6 +17,7 @@
 package sigfollow
 
 import (
+	"encoding/hex"
 	"log/slog"
 	"time"
 
@@ -49,7 +50,7 @@ type MACDispatcher struct {
 
 	aliasAsm         *p25p2.TalkerAliasAssembler
 	motorolaAliasAsm *p25p2.MotorolaAliasAssembler
-	macSeen          map[uint16]struct{}
+	macSeen          map[uint32]struct{}
 
 	onCallSource     func(p25p2.GroupVoiceChannelUser)
 	onCallEncryption func(p25p2.EncryptionSync)
@@ -97,7 +98,7 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 		serial:           opts.Serial,
 		aliasAsm:         p25p2.NewTalkerAliasAssembler(nil),
 		motorolaAliasAsm: p25p2.NewMotorolaAliasAssembler(nil),
-		macSeen:          make(map[uint16]struct{}),
+		macSeen:          make(map[uint32]struct{}),
 		onCallSource:     opts.OnCallSource,
 		onCallEncryption: opts.OnCallEncryption,
 	}
@@ -109,18 +110,33 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 // activity watchdog off signalling presence (0 means the superframe
 // carried only voice / idle).
 func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConfig) int {
-	pdus := p25p2.DecodeSuperframeMACPDUs(sf, macCfg)
-	for _, pdu := range pdus {
-		// Log the first PDU seen per (opcode, MFID) on this channel. If a
-		// real on-air system emits an opcode we don't dispatch, the line
-		// tells the next field tester exactly what we saw (issue #376).
-		key := uint16(pdu.Opcode)<<8 | uint16(pdu.MFID)
+	decoded := p25p2.DecodeSuperframeMACPDUsWithSlot(sf, macCfg)
+	for _, dec := range decoded {
+		pdu := dec.PDU
+		// Log the first PDU seen per (slot, opcode, MFID) on this channel,
+		// with the payload bytes. If a real on-air system rides the
+		// encryption sync on a slot/opcode we don't dispatch, the hex tells
+		// the next field tester exactly what we saw — the bytes needed to
+		// confirm or correct the MAC_PTT layout (issues #376, #813).
+		key := uint32(dec.SlotType)<<16 | uint32(pdu.Opcode)<<8 | uint32(pdu.MFID)
 		if _, seen := d.macSeen[key]; !seen {
 			d.macSeen[key] = struct{}{}
 			d.log.Info(d.logPrefix+": p25p2 mac pdu",
 				"system", d.system, "serial", d.serial,
-				"opcode", pdu.Opcode, "mfid", pdu.MFID,
-				"payload_len", len(pdu.Payload))
+				"slot", dec.SlotType, "opcode", pdu.Opcode, "mfid", pdu.MFID,
+				"payload_len", len(pdu.Payload),
+				"payload_hex", hex.EncodeToString(pdu.Payload))
+		}
+		// MAC_PTT slot: the key-up message that carries the encryption sync
+		// (ALGID/KID/MI) on real Phase 2 systems. Routed by slot type, not
+		// opcode, because the PTT message has no normal MAC opcode (#813).
+		if dec.SlotType == p25p2.SlotTypeMACPTT {
+			if es, ok := pdu.AsPushToTalk(); ok {
+				if d.onCallEncryption != nil {
+					d.onCallEncryption(es)
+				}
+				continue
+			}
 		}
 		if u, ok := pdu.AsGroupVoiceChannelUser(); ok {
 			if d.onCallSource != nil {
@@ -160,7 +176,7 @@ func (d *MACDispatcher) Dispatch(sf p25p2.Superframe, macCfg p25p2.MACDecodeConf
 			continue
 		}
 	}
-	return len(pdus)
+	return len(decoded)
 }
 
 // publishTalkerAlias mirrors phase2.ControlChannel.publishTalkerAlias: a

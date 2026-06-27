@@ -113,6 +113,47 @@ func TestDecodeSuperframeMACPDUsReturnsAllMACSubframes(t *testing.T) {
 	}
 }
 
+// TestDecodeSuperframeMACPDUsWithSlotTagsPTT confirms the slot-aware
+// decode surfaces each PDU's originating SlotType — specifically that a
+// MAC_PTT sub-frame is tagged SlotTypeMACPTT so the dispatcher can route
+// the encryption sync it carries by slot type (issue #813).
+func TestDecodeSuperframeMACPDUsWithSlotTagsPTT(t *testing.T) {
+	es := EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234,
+		MessageIndicator: [9]byte{9, 8, 7, 6, 5, 4, 3, 2, 1}}
+	ptt := EncodePushToTalk(es)
+	// Pad to the 18-byte MAC PDU width so the round-trip is bit-exact.
+	if b := AssembleMACPDU(ptt); len(b) < 18 {
+		ptt.Payload = append(ptt.Payload, make([]byte, 18-len(b))...)
+	}
+
+	var subs [SubframesPerSuperframe][]uint8
+	for i := range subs {
+		if i == 0 {
+			subs[i] = EncodeMACSubframe(SlotTypeMACPTT, uint8(i), ptt,
+				TrellisOn, InterleaveOff)
+		} else {
+			subs[i] = EncodeVoiceSubframe(SlotTypeVoice4V, uint8(i),
+				voicePayloads(Voice4VFrameCount))
+		}
+	}
+
+	cfg := MACDecodeConfig{Trellis: TrellisOn}
+	got := DecodeSuperframeMACPDUsWithSlot(decodeOneSuperframe(t, subs), cfg)
+	if len(got) != 1 {
+		t.Fatalf("DecodeSuperframeMACPDUsWithSlot returned %d PDUs, want 1", len(got))
+	}
+	if got[0].SlotType != SlotTypeMACPTT {
+		t.Errorf("SlotType = %v, want SlotTypeMACPTT", got[0].SlotType)
+	}
+	es2, ok := got[0].PDU.AsPushToTalk()
+	if !ok {
+		t.Fatal("AsPushToTalk on PTT-slot PDU returned !ok")
+	}
+	if es2.AlgorithmID != 0x84 || es2.KeyID != 0x1234 {
+		t.Errorf("PTT alg/key = %#x/%#x, want 0x84/0x1234", es2.AlgorithmID, es2.KeyID)
+	}
+}
+
 // TestIngestSuperframeAllVoicePublishesNothing confirms an all-voice
 // superframe drives no control-channel events — the composer owns voice.
 func TestIngestSuperframeAllVoicePublishesNothing(t *testing.T) {
