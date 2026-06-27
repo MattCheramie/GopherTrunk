@@ -20,3 +20,6 @@
 - slug: tutorials
   label: Tutorials
   description: Step-by-step user-facing guides.
+- slug: solution-postmortem
+  label: Solution Postmortem
+  description: Post-incident write-ups — what broke, how it was diagnosed, and the fix.
