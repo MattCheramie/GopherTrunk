@@ -7,6 +7,82 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.5] — 2026-06-27
+
+A wideband-reliability release. The big wins are for dense, high-rate captures
+that were dropping samples and garbling audio: the SoapyRemote host buffer is
+now sized for jitter so a P25 control channel stops flooding framing errors, the
+polyphase channelizer's per-tap loop is parallelised across CPU cores so a
+71-channel DMR plan keeps up in real time, and outer wideband voice grants
+(±1.9 MHz of centre) finally tune through a span-aware per-call DDC instead of
+producing no audio. Also fixes **DMR Tier II conventional** voice that decoded as
+"DJ scratch" — the single-slot decoder was slicing alternating TDMA timeslots
+into each superframe; it now defaults to 2-slot interleaved cadence (#644).
+Rounded out by startup guidance to lower an oversampled capture rate, and
+research docs that push the #773 Motorola talker-alias cryptanalysis forward
+(no decoder shipped — the cipher stays gated).
+
+### Added
+- **SDR overrun visibility for network SDRs.** The SoapyRemote source now
+  surfaces device + host-side sample drops at a rate-limited WARN with running
+  counts and an actionable hint (lower `sdr.sample_rate` / reduce channel
+  count), instead of burying them in a per-datagram DEBUG line.
+- **Talker-alias cryptanalysis research** (#773). A chosen-plaintext capture
+  procedure for collecting controlled plaintext/ciphertext pairs from a
+  programmed Motorola P25 radio, plus a clean-room cryptanalysis findings doc
+  from the 3,607-pair ground truth. The cipher remains gated
+  (`CipherVerified=false`) — no decoder ships — but the framing/structure is now
+  documented for the next attempt.
+
+### Changed
+- **Parallel wideband channelizer.** The polyphase channelizer's per-tap
+  fine-tune loop (NCO mix + resampler + narrowband receiver) now runs across up
+  to one worker per CPU core via a persistent pool, so a dense plan (e.g. 71 DMR
+  channels at 10 MS/s) no longer backs up the SDR reader, stalls flow-control
+  ACKs, and overflows the radio. Below a tap-count threshold it stays on the
+  byte-identical serial path; each receiver still sees its chunks in order.
+- **Oversampled-rate startup advice.** The wideband engine now emits a startup
+  WARN when `sample_rate` is ≥1.5× the plan's minimum required rate (the rate
+  whose usable half-band just covers the widest channel offset), naming the span
+  and a suggested floor — capturing well above it only burdens the host with no
+  decode benefit.
+
+### Fixed
+- **Outer wideband voice grants now tune.** On a wideband plan whose voice
+  grants sit out to ±1.9 MHz of centre, the per-call DDC was built with the
+  no-span path (reduced rate floored at 2.5 MS/s, rejecting any offset beyond
+  ±1.1 MHz), so the outer carriers produced no audio at all. `StreamIQ` now sizes
+  the per-call bank span-aware from the grant offset — the gap left by the #764
+  shared-decimator work on the control-channel path.
+- **DMR Tier II conventional voice decoded as "DJ scratch"** (#644). A DMR
+  repeater carrier is 2-slot TDMA, but the single-slot voice decoder sliced
+  straight through it and pulled alternating timeslots into each superframe —
+  garbled, encrypted-sounding audio with the embedded LC never reassembling.
+  Tier II conventional (`proto=dmr-tier2`) now defaults to 2-slot interleaved
+  voice. Being a slot-cadence mismatch it was rate-independent, matching the
+  field report at both 10 MS/s and 6.25 MS/s.
+- **SoapyRemote host buffer dropped IQ under jitter.** The never-block read loop
+  (correct — a blocked reader stalls socket draining and makes the device
+  overflow) was paired with a fixed 8-deep stream channel, only a few
+  milliseconds of buffer at multi-MS/s. Ordinary consumer jitter (GC pauses,
+  scheduling, bursty delivery) filled it and shed ~2% of chunks — silent IQ
+  discontinuities that broke the P25 symbol clock and flooded nid-bch / tsbk-crc
+  errors even though the device never overflowed. The buffer is now sized for
+  jitter, and a full channel sheds the oldest chunk (freshest data, low latency)
+  as one counted local drop rather than stalling the radio.
+
+## [v0.5.4] — 2026-06-26
+
+Focused on **wideband front-end guidance and honesty**. A 70-channel DMR plan on
+a single 10 MS/s capture used to kill daemon init ("two tap offsets fall in the
+same channelizer bin"); the channelizer now lets multiple carriers share a bin
+and hosts dense plans instead of crashing. The release also stops the Motorola
+P25 talker-alias decoder from surfacing fabricated names — the per-byte cipher
+was AI-authored and unverified, so it is now gated behind `CipherVerified`
+(#773) — adds a `capture` sample-rate hint and `gain:auto` guidance for shared
+wideband front ends, and learns talkgroups straight off live control-channel
+grants.
+
 ### Added
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
@@ -16,6 +92,46 @@ for tagged releases.
   root cause of the #771 no-lock report. A new "Choosing a sample rate" section
   in `docs/hardware.md` documents the finding and recommends ~2.4–2.5 MS/s for
   control-channel roles.
+- **Auto-discover talkgroups from control-channel grants.** Each talkgroup is
+  catalogued the first time it is granted on the control channel, so
+  Database → Talkgroups fills in from live traffic instead of staying bare for an
+  operator who starts with an empty CSV. Discovered entries are tagged
+  "Discovered", skip individual (unit-to-unit) grants, and never silently widen a
+  curated scan list — the operator opts them in from the UI. In-memory for now.
+
+### Changed
+- **`gain:auto` guidance for multi-tap wideband devices** (#749). A single fixed
+  gain on a shared front end can't serve sites of differing strength — a gain set
+  so the strongest site doesn't clip leaves weaker co-tenants at the ADC noise
+  floor, and the post-discriminator AGC can't recover SNR lost at the converter.
+  A startup WARN now flags a `role: wideband` dongle with >1 channel pinned to a
+  manual gain (and the per-tap low-power WARN suggests `gain: "auto"`);
+  `config.example.yaml` and `docs/hardware.md` document the AGC recommendation.
+- **Unverified Motorola talker-alias cipher gated** (#773). The shared per-byte
+  cipher (256-byte substitution table + accumulator constants) was AI-authored in
+  #376 with comments falsely claiming it was a reverse-engineered fact identical
+  across open-source decoders. A clean-room derivation showed it is
+  mathematically underdetermined from the available capture. The provenance
+  comments are corrected and `motorola.CipherVerified` (false) now gates alias
+  reporting — an alias is reported reliable only when the decode is clean ASCII
+  **and** the cipher is verified — so a possibly-wrong table can never surface a
+  fabricated name as a confirmed alias.
+
+### Fixed
+- **Dense wideband plans no longer crash daemon init.** A 70-channel DMR plan on
+  a 10 MS/s capture (several 12.5 kHz carriers per 156 kHz bin) died at init
+  because the channelizer hard-rejected a second tap in a claimed bin. Multiple
+  taps may now share a bin — each already runs its own fine-tune NCO + resampler
+  and narrowband receiver, so they decode independently — and the engine hosts
+  the dense plan on the channelizer (the per-tap DDC benchmarked ~5.6× heavier
+  and would blow the real-time budget at that scale).
+- **Plots panels follow the voice channel on wideband SDRs.** The Plots panels
+  (Mixer, Symbol Scope, Tuning, Constellation, Eye Diagram, Histogram) match the
+  active call's `device_serial` to the selected SDR, but a wideband call runs on
+  a virtual voice tap (`wb:<parent>:tap-N`) while the selector lists the parent —
+  so the view stayed pinned to the control channel and "Hold" appeared to do
+  nothing. Tap serials now resolve back to their parent in every panel's follow
+  filter.
 
 ## [v0.5.3] — 2026-06-25
 
