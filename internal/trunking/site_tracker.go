@@ -16,14 +16,19 @@ import (
 // not set here; the API layer merges operator-supplied names from the
 // system config onto matching rows.
 type SiteInfo struct {
-	System           string    `json:"system"`
-	RFSSID           uint8     `json:"rfss_id"`
-	SiteID           uint8     `json:"site_id"`
-	ControlChannelHz uint32    `json:"control_channel_hz,omitempty"`
-	WACN             uint32    `json:"wacn,omitempty"`
-	SystemID         uint16    `json:"system_id,omitempty"`
-	FirstSeen        time.Time `json:"first_seen"`
-	LastSeen         time.Time `json:"last_seen"`
+	System           string `json:"system"`
+	RFSSID           uint8  `json:"rfss_id"`
+	SiteID           uint8  `json:"site_id"`
+	ControlChannelHz uint32 `json:"control_channel_hz,omitempty"`
+	// ControlChannelCarrierOffsetHz is the demod's measured carrier offset (Hz)
+	// of the locked control carrier relative to the tuned centre, as of LastSeen.
+	// A large value flags a control lock sitting well off the configured
+	// frequency — e.g. an adjacent site bleeding through (issue #815).
+	ControlChannelCarrierOffsetHz int32     `json:"control_channel_carrier_offset_hz,omitempty"`
+	WACN                          uint32    `json:"wacn,omitempty"`
+	SystemID                      uint16    `json:"system_id,omitempty"`
+	FirstSeen                     time.Time `json:"first_seen"`
+	LastSeen                      time.Time `json:"last_seen"`
 }
 
 // SiteTracker maintains a live table of the P25 sites GT has decoded
@@ -126,6 +131,10 @@ func (t *SiteTracker) observe(u SiteUpdate) {
 	if u.ControlChannelHz != 0 {
 		s.ControlChannelHz = u.ControlChannelHz
 	}
+	// Always refresh the live carrier offset (zero is a valid reading — on
+	// frequency, or a demod path with no AFC stage), so the surfaced value
+	// tracks the most recent lock (issue #815).
+	s.ControlChannelCarrierOffsetHz = u.ControlChannelCarrierOffsetHz
 	if u.WACN != 0 {
 		s.WACN = u.WACN
 	}

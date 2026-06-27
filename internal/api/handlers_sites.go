@@ -26,12 +26,13 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 		for _, si := range s.sites.Sites() {
 			k := key{si.System, si.RFSSID, si.SiteID}
 			byKey[k] = &SiteDTO{
-				System:           si.System,
-				RFSSID:           si.RFSSID,
-				SiteID:           si.SiteID,
-				ControlChannelHz: si.ControlChannelHz,
-				WACN:             si.WACN,
-				SystemID:         si.SystemID,
+				System:                        si.System,
+				RFSSID:                        si.RFSSID,
+				SiteID:                        si.SiteID,
+				ControlChannelHz:              si.ControlChannelHz,
+				ControlChannelCarrierOffsetHz: si.ControlChannelCarrierOffsetHz,
+				WACN:                          si.WACN,
+				SystemID:                      si.SystemID,
 			}
 		}
 	}

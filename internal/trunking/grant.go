@@ -330,8 +330,16 @@ type SiteUpdate struct {
 	RFSSID           uint8
 	SiteID           uint8
 	ControlChannelHz uint32
-	WACN             uint32
-	SystemID         uint16
+	// ControlChannelCarrierOffsetHz is the demodulator's measured carrier
+	// offset (signed Hz) of the locked control carrier relative to the tuned
+	// centre, as of this update. A large value means the locked carrier sits
+	// well off the configured frequency — e.g. a stronger neighbouring site
+	// bleeding through at 12.5 kHz spacing (issue #815) — so the reported site
+	// identity may not belong to the configured frequency. Zero on demod paths
+	// without an AFC stage (CQPSK) or when the offset is genuinely ~0.
+	ControlChannelCarrierOffsetHz int32 `json:"control_channel_carrier_offset_hz,omitempty"`
+	WACN                          uint32
+	SystemID                      uint16
 	// Hex renderings of the identity numbers (P25 field convention),
 	// alongside the decimal fields above so JSON consumers get both. Empty
 	// when the corresponding value is unknown (zero).

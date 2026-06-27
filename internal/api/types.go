@@ -473,9 +473,14 @@ type SiteDTO struct {
 	RFSSID           uint8  `json:"rfss_id"`
 	SiteID           uint8  `json:"site_id"`
 	ControlChannelHz uint32 `json:"control_channel_hz,omitempty"`
-	Name             string `json:"name"`
-	WACN             uint32 `json:"wacn,omitempty"`
-	SystemID         uint16 `json:"system_id,omitempty"`
+	// ControlChannelCarrierOffsetHz is the demod's measured carrier offset (Hz)
+	// of the locked control carrier relative to the tuned centre. A large value
+	// flags a control lock sitting well off the configured frequency — e.g. an
+	// adjacent site bleeding through at 12.5 kHz spacing (issue #815).
+	ControlChannelCarrierOffsetHz int32  `json:"control_channel_carrier_offset_hz,omitempty"`
+	Name                          string `json:"name"`
+	WACN                          uint32 `json:"wacn,omitempty"`
+	SystemID                      uint16 `json:"system_id,omitempty"`
 	// Hex renderings of the identity numbers, alongside the decimal fields.
 	WACNHex     string `json:"wacn_hex,omitempty"`
 	SystemIDHex string `json:"system_id_hex,omitempty"`

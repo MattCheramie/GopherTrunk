@@ -1611,6 +1611,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 					Conjugate:    iqInvert,
 					LOOffsetHz:   loOffsetHz,
 					Autotune:     d.autotune.Get(controlEntry.Info.Serial),
+					// 0 → ccdecoder's built-in default (issue #815).
+					CarrierOffsetWarnHz: int(cfg.SDR.CarrierOffsetWarnHz),
 				}
 				d.controlSerial = controlEntry.Info.Serial
 				// The CC decoder owns StreamIQ on this dongle's broker,

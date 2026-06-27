@@ -445,6 +445,52 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 	}
 }
 
+// TestControlChannelStampsCarrierOffset drives an RFSS Status Broadcast through
+// a control channel built with a CarrierOffsetHz provider and asserts the
+// published SiteUpdate carries the rounded offset, so a control lock sitting far
+// off the configured frequency (an adjacent site bleeding through) is visible on
+// /api/v1/sites without dropping to the spectrum command (issue #815).
+func TestControlChannelStampsCarrierOffset(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	const ccHz = 420075000
+	cc := New(Options{
+		Bus: bus, SystemName: "MMR", FrequencyHz: ccHz,
+		CarrierOffsetHz: func() float64 { return 12499.6 }, // rounds to 12500
+	})
+
+	nsb := TSBK{Opcode: OpNetworkStatusBroadcast, Payload: [8]byte{0x00, 0xAB, 0xCD, 0xE1, 0x23}}
+	rfss := TSBK{Opcode: OpRFSSStatusBroadcast, Payload: [8]byte{9, 0x01, 0x23, 4, 7}}
+	base := 0
+	for _, tsbk := range []TSBK{nsb, rfss} {
+		cc.Process(buildLockedStreamWithTSBK(10, 0x293, DUIDTrunkingSignaling, tsbk), base)
+		base += 1 << 20
+	}
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindSiteUpdate {
+				continue
+			}
+			u := ev.Payload.(trunking.SiteUpdate)
+			if u.RFSSID == 0 && u.SiteID == 0 {
+				continue // skip the interim NSB-only publish
+			}
+			if u.ControlChannelCarrierOffsetHz != 12500 {
+				t.Fatalf("control_channel_carrier_offset_hz = %d, want 12500", u.ControlChannelCarrierOffsetHz)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no KindSiteUpdate published within deadline")
+		}
+	}
+}
+
 func TestControlChannelPublishesSiteUpdateFromAdjacentOnly(t *testing.T) {
 	// A system that never emits 0x3B/0x3A but does emit adjacent-site
 	// broadcasts (0x3C) must still publish a SiteUpdate carrying the System ID
