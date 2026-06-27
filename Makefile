@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test
+.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test
 
 all: build
 
@@ -48,6 +48,15 @@ test:
 # conformance all exercise in CI without a real DVSI USB-3000.
 test-dvsi:
 	$(GO) test -tags "dvsi $(TAGS)" -race -count=1 ./internal/voice/dvsi/...
+
+# test-cryptolab runs the optional cryptographic-research toolkit's tests,
+# including the -tags cryptolab CLI dispatch wiring in cmd/gophertrunk. The
+# toolkit's engine and subject packages carry no build tag (they always
+# compile and are covered by `make test`); only the gophertrunk binary's
+# cryptolab subcommand is gated, so the default install excludes it. Opt the
+# toolkit into a build with `make build TAGS=cryptolab`.
+test-cryptolab:
+	$(GO) test -tags "cryptolab $(TAGS)" -race -count=1 ./internal/cryptolab/... ./cmd/gophertrunk/
 
 # test-airspy-real runs an opt-in real-hardware probe against an attached
 # Airspy R2/Mini. The test package skips unless GOPHERTRUNK_AIRSPY_REAL=1 is

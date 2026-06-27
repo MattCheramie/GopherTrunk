@@ -96,6 +96,11 @@ func main() {
 		default:
 			runConfigTUI(os.Args[2:])
 		}
+	case "cryptolab":
+		// Optional cryptographic-research toolkit. The real dispatch is
+		// linked only with -tags cryptolab; the default build links a stub
+		// that explains how to opt in (see cryptolab_{enabled,disabled}.go).
+		runCryptolab(os.Args[2:])
 	case "import-pdf":
 		runImport(os.Args[2:])
 	case "daemon", "run":
@@ -128,6 +133,7 @@ USAGE:
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
   gophertrunk test [flags]            decode a capture and grade it against acceptance criteria
+  gophertrunk cryptolab <tool> ...    cryptographic-research toolkit (optional; build with -tags cryptolab)
   gophertrunk siglab [flags]          standalone replay/test/analysis TUI
   gophertrunk siglab serve [flags]    offline signal-analysis web console (browser UI)
   gophertrunk config serve [flags]    standalone web Config Builder/Editor (browser UI)
