@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`cryptolab` — optional RF cryptographic-research toolkit**. A new,
+  opt-in `gophertrunk cryptolab` subcommand collects byte-oriented research
+  tools — statistical triage (entropy / index-of-coincidence / chi-square /
+  XOR key-length), keyspace brute force (single/repeating XOR with English and
+  crib scoring), LFSR/keystream analysis (Berlekamp–Massey, keystream
+  extraction), CRC parameter recovery, and analog voice spectral
+  descrambling — plus a pluggable subject framework for studying byte-oriented
+  obfuscators, with an initial length-seeded-obfuscator recovery suite (gauge
+  sweep, structure/wiring enumeration, a monotone+resumable cell solver, and
+  from-seed simulation). It is **excluded from the default build** and linked
+  in only with `make build TAGS=cryptolab` (the same opt-in pattern as the
+  DVSI vocoder). See `docs/cryptolab.md`.
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
   trunking capture, explaining that the down-converter normalises to 48 kHz and
