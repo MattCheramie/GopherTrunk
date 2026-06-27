@@ -161,6 +161,38 @@ coordinates is therefore handicapped for nonlinear forms — the simulate-from-s
 brute (which works in true coordinates and applies the gauge only at the output
 comparison) is the more reliable test and is what most of the ruling-out used.
 
+## The 16-bit state machine, and why the constraint-solve attack stalls
+
+Pursuing a global constraint/SMT solve for the suspected internal table sharpened the
+target further. Define the per-character state `s[k] = (H_odd[k], M_odd[k])` (both
+recovered per memory-3 context). Then the cipher is a **clean 16-bit Markov state
+machine**:
+
+```
+(H_odd, M_odd, eo)  ->  (H_odd', M_odd')      EXACTLY FUNCTIONAL: 0 conflicts / 423 keys
+```
+
+one input byte `eo` per character, deterministic; and `M_odd` barely affects
+propagation (`(H_odd, eo) -> next` is already 2-conflict). This is the tightest
+characterization of the cipher to date.
+
+The internal-table hypothesis was then solved for directly (Z3 + a custom
+constraint propagator), both on the sparse 423-transition state machine **and** on the
+**dense** even-H recurrence `H[k+1] = F(H[k-1], H[k], eo)` (~10,076 readable keys —
+massively over-determined, no overfit possible). Result: **negative across the whole
+tractable family** — single-table 1/2/3-lookup networks, two-table networks, balanced
+Feistel (incl. a gauge-aware variant solving the table jointly with a free low-byte
+permutation). A precise structural reason emerged from the dense solve: within any
+merged `Hp ⊕ eo` group the same `H` maps to different `H[k+1]`, so **`H[k+1]` is not a
+function of any merged 2-byte index** — which rules out every table-network ending in a
+single lookup of a combined index.
+
+Net: the update is a genuine multi-input nonlinear function whose true dependency is the
+**hidden low byte**; the dense even-H relation only shadows it, and the full-state
+machine that carries the low byte is sparse (423) and gauge-tangled on exactly that
+byte. The blocker is **not** constraint count — it is that the one variable that matters
+is under-observed in any passive corpus.
+
 ## Two paths to finish
 
 1. **Chosen-plaintext captures** from a programmable Motorola radio — see
@@ -168,11 +200,15 @@ comparison) is the more reliable test and is what most of the ruling-out used.
    a short length sweep plus single-character differentials at a couple of
    positions is enough to pin the memory-2/3 transition directly, because the
    state is now observable rather than hidden.
-2. **Continued clean-room cryptanalysis** of the recovered 16-bit state machine
-   (e.g. a constraint/SMT solve for the suspected internal substitution table),
-   derived solely from the dataset. The only known reference implementation is
-   GPLv3 and is intentionally **not** consulted; this project's decode must be an
-   independent, permissively-licensed derivation.
+2. **Harder clean-room cryptanalysis** of the recovered 16-bit state machine. The
+   straightforward constraint/SMT solve for a small internal-table network is
+   **exhausted** (see above), so the remaining clean-room directions are
+   research-grade: latent-bit recovery of the hidden low byte to complete the
+   full-state machine, large-compute program synthesis over a richer operation set,
+   or matching the FSM fingerprint to a catalogued primitive. All derived solely from
+   the dataset — the only known reference implementation is GPLv3 and is intentionally
+   **not** consulted; this project's decode must be an independent, permissively
+   licensed derivation.
 
 ## Reproducing
 
