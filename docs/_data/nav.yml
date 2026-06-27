@@ -39,6 +39,8 @@ groups:
         url: /reference/#sdr-dsp
       - title: Algorithms
         url: /reference/#algorithms
+      - title: Cryptography & cryptanalysis
+        url: /reference/#cryptography
       - title: Trunked radio
         url: /reference/#trunked-radio
       - title: Protocols & standards

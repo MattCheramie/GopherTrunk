@@ -2,7 +2,7 @@
 slug: brute-force-attack
 title: Brute-force attack (exhaustive key search)
 entry_type: term
-category: algorithms
+category: cryptography
 description: A brute-force attack tries every possible key or parameter until one reproduces the observed data — guaranteed to succeed eventually, but only feasible when the search space is small enough.
 keywords: brute-force attack, exhaustive key search, parameter search, key space, parallel search, cryptanalysis
 aka: [brute-force attack, exhaustive key search]

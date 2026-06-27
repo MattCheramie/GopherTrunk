@@ -2,7 +2,7 @@
 slug: known-plaintext-attack
 title: Known-plaintext attack
 entry_type: term
-category: algorithms
+category: cryptography
 description: A known-plaintext attack recovers a cipher's key or algorithm from matched plaintext–ciphertext pairs the attacker happens to possess but did not choose.
 keywords: known-plaintext attack, KPA, cryptanalysis, plaintext ciphertext pairs, crib, ground truth, reverse engineering
 aka: [known-plaintext attack, KPA]

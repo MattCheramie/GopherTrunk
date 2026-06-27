@@ -2,7 +2,7 @@
 slug: algebraic-attack
 title: Algebraic attack
 entry_type: term
-category: algorithms
+category: cryptography
 description: An algebraic attack models a cipher as a system of equations relating known data to unknown key or state, then solves that system — over a finite field or modular ring — to recover the secret.
 keywords: algebraic attack, system of equations, finite field, modular arithmetic, Gaussian elimination, GF(2), linear cryptanalysis, modular inverse
 aka: [algebraic attack, algebraic cryptanalysis]

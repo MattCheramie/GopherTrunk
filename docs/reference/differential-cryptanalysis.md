@@ -2,7 +2,7 @@
 slug: differential-cryptanalysis
 title: Differential cryptanalysis
 entry_type: term
-category: algorithms
+category: cryptography
 description: Differential cryptanalysis studies how a controlled difference between two inputs propagates to a difference between their outputs, using the bias in that propagation to recover a cipher's structure or key.
 keywords: differential cryptanalysis, input difference, output difference, differential, Biham Shamir, minimal pairs, propagation
 aka: [differential cryptanalysis]

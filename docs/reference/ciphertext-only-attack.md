@@ -2,7 +2,7 @@
 slug: ciphertext-only-attack
 title: Ciphertext-only attack
 entry_type: term
-category: algorithms
+category: cryptography
 description: A ciphertext-only attack tries to recover a cipher's key, algorithm, or plaintext using only intercepted ciphertext — the weakest assumption available to an attacker, leaning on redundancy and known structure in the plaintext.
 keywords: ciphertext-only attack, COA, cryptanalysis, attack model, known structure, plaintext redundancy, intercepted ciphertext
 aka: [ciphertext-only attack, COA]

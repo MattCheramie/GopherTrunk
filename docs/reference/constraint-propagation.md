@@ -2,7 +2,7 @@
 slug: constraint-propagation
 title: Constraint propagation
 entry_type: term
-category: algorithms
+category: cryptography
 description: Constraint propagation narrows the possible values of unknown variables by repeatedly applying the constraints that link them — assigning one value forces others — and is the engine inside constraint solvers and a fast hand-built alternative for table-recovery problems.
 keywords: constraint propagation, constraint satisfaction, CSP, forward checking, unit propagation, arc consistency, backtracking, table recovery
 aka: [constraint propagation, forward checking]

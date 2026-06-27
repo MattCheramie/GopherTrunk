@@ -2,7 +2,7 @@
 slug: chosen-plaintext-attack
 title: Chosen-plaintext attack
 entry_type: term
-category: algorithms
+category: cryptography
 description: A chosen-plaintext attack lets the attacker pick the plaintexts and observe the resulting ciphertexts, using controlled inputs to expose a cipher's internal structure one variable at a time.
 keywords: chosen-plaintext attack, CPA, cryptanalysis, controlled inputs, adaptive, differential, structure probing
 aka: [chosen-plaintext attack, CPA]

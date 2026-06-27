@@ -2,7 +2,7 @@
 slug: sat-smt-solving
 title: SAT/SMT solving
 entry_type: term
-category: algorithms
+category: cryptography
 description: SAT and SMT solvers decide whether a set of logical or bit-vector constraints can be satisfied, and return a satisfying assignment; in cryptanalysis they recover unknown keys or tables as the unique solution to the constraints a corpus imposes.
 keywords: SAT solver, SMT solver, Z3, bit-vector, constraint satisfaction, CDCL, cryptanalysis, automated reasoning
 aka: [SAT solving, SMT solving, Z3]
