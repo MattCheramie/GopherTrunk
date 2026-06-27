@@ -404,6 +404,55 @@ func (d *device) nativeStreamFormat() (string, bool) {
 	return name, true
 }
 
+// streamBufferLatency is how much IQ the stream channel is sized to hold. The
+// read loop never blocks on the DSP consumer (see sendOrDrop) — that property is
+// what keeps the socket drained and flow-control ACKs flowing so the device does
+// not overflow. The flip side is that this bounded channel is the *only* cushion
+// for normal consumer jitter (GC pauses, goroutine scheduling, bursty network
+// delivery). When it is too shallow, sub-millisecond jitter overflows it and
+// sendOrDrop sheds a chunk — a silent IQ discontinuity that breaks every channel's
+// symbol framing — even while the device itself keeps up (device_overflows=0). The
+// pre-fix depth was a fixed 8 chunks (~a few ms at a multi-MS/s remote rate), which
+// shed ~2% of chunks on ordinary jitter and shredded P25 decode. ~400 ms is
+// comfortably above realistic jitter while bounding added latency and memory;
+// sendOrDrop still sheds the oldest chunk once this fills, so genuine *sustained*
+// over-capacity is handled and surfaced rather than stalling the reader.
+const streamBufferLatency = 400 * time.Millisecond
+
+const (
+	// minStreamBufferChunks floors the computed depth so even a low-rate or
+	// large-MTU stream keeps a healthy jitter cushion (well above the depth-8
+	// regression).
+	minStreamBufferChunks = 64
+	// maxStreamBufferChunks ceilings the depth so a very high rate can't size a
+	// pathologically large channel; at a few thousand samples per chunk this
+	// caps the channel's backing memory in the low tens of MB.
+	maxStreamBufferChunks = 2048
+	// defaultStreamBufferChunks is used when the delivered rate is unknown (the
+	// ActualSampleRate probe failed). Generous enough to absorb jitter at the
+	// rates these remote wideband streams run.
+	defaultStreamBufferChunks = 512
+)
+
+// streamBufferDepth sizes the stream channel to hold ~streamBufferLatency of IQ at
+// the delivered rate, given how many complex samples arrive per datagram chunk.
+// The result is clamped to [minStreamBufferChunks, maxStreamBufferChunks]; a
+// zero/unknown rate or chunk size falls back to defaultStreamBufferChunks.
+func streamBufferDepth(rateHz uint32, samplesPerChunk int) int {
+	if rateHz == 0 || samplesPerChunk <= 0 {
+		return defaultStreamBufferChunks
+	}
+	chunksPerSec := float64(rateHz) / float64(samplesPerChunk)
+	depth := int(math.Ceil(streamBufferLatency.Seconds() * chunksPerSec))
+	if depth < minStreamBufferChunks {
+		return minStreamBufferChunks
+	}
+	if depth > maxStreamBufferChunks {
+		return maxStreamBufferChunks
+	}
+	return depth
+}
+
 // StreamIQ sets up and activates an RX stream, then emits complex64 chunks from
 // the TCP stream socket. The channel closes when the context cancels or the
 // socket closes.
@@ -438,7 +487,15 @@ func (d *device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	}
 
 	go d.drainStatus(statusConn)
-	out := make(chan []complex64, 8)
+	// Size the stream buffer to ride out consumer jitter without dropping IQ.
+	// The read loop never blocks (sendOrDrop), so this bounded channel is the only
+	// jitter cushion; a fixed depth of 8 (~a few ms at these rates) shed ~2% of
+	// chunks on ordinary scheduling jitter and shredded decode even with
+	// device_overflows=0. Size from the delivered rate (best-effort probe; 0 on
+	// failure → default depth) and the samples-per-datagram the MTU/format imply.
+	rate, _ := d.ActualSampleRate()
+	samplesPerChunk := (d.mtu - streamHeaderSize) / d.format.bytesPerSample()
+	out := make(chan []complex64, streamBufferDepth(rate, samplesPerChunk))
 	go d.streamLoop(ctx, dataConn, streamID, out)
 	return out, nil
 }
