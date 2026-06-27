@@ -7,12 +7,20 @@ guessing the algorithm from random captured callsigns, you choose the plaintext
 state machine one variable at a time.
 
 Why this is high-value now: we've recovered the cipher's substitution table and
-confirmed it's a length-seeded **16-bit nonlinear accumulator** producing one
+confirmed it's a length-seeded **nonlinear byte accumulator** producing one
 affine byte transform per character. The one thing black-box analysis of random
 real callsigns can't pin is the **hidden low byte of the accumulator** that
 drives the nonlinear state update. Controlled inputs — length sweeps and
 single-character/single-bit differences — drive that hidden state deliberately
 and should expose it.
+
+> See `p25-talker-alias-cryptanalysis.md` for the full clean-room findings. Key
+> update: the cipher's state is an **observable memory-2/3 byte chain** (the
+> accumulator high byte is readable from each even ciphertext byte), so the
+> per-character transition is *nearly determined by two prior high bytes*. That
+> sharpens this procedure — a short length sweep plus single-character
+> differentials at a couple of positions is enough to pin the memory-2/3
+> transition directly. Tier 1 plus a partial Tier 2 should suffice.
 
 ---
 
