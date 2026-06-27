@@ -570,6 +570,9 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 				"device", deviceSerial, "vocoder", s.vocoder.Name(), "err", err)
 			return nil
 		}
+		if n := len(samples); n > 0 {
+			s.lastSample = samples[n-1]
+		}
 		if err := s.wav.WriteSamples(samples); err != nil {
 			return err
 		}
@@ -838,6 +841,33 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	dataBytes := s.wav.DataBytes()
 	vs, haveStats := r.voiceStatsFor(s)
 	r.logVoiceStats(serial, s)
+	// Smooth an abrupt end-of-call cut on decoded digital voice. A short
+	// transmission that stops mid-waveform leaves a non-zero final sample
+	// that clicks/scratches on playback — the "trailing" artifact most
+	// audible on short overs, where the tail is a big fraction of the call.
+	// Ramp the last decoded sample down to zero on both the WAV and the live
+	// decoded fan-out, mirroring the analog FM chain's squelch-tail fade.
+	// Digital only (s.vocoder != nil): analog already faded in the composer,
+	// and a silent/dead-key call has lastSample == 0 so fadeTail is a no-op.
+	if s.vocoder != nil && s.wav != nil && dataBytes > 0 {
+		n := int(s.sampleRate) / 100 // ~10 ms
+		if n < 8 {
+			n = 8
+		}
+		if tail := fadeTail(s.lastSample, n); tail != nil {
+			if err := s.wav.WriteSamples(tail); err != nil {
+				r.log.Warn("recorder: writing call-tail fade failed",
+					"device", serial, "err", err)
+			}
+			if r.decodedTap != nil {
+				if cs, ok := r.decodedTap.(DecodedPCMCallSink); ok {
+					_ = cs.WritePCMForCall(serial, s.callID, tail)
+				} else {
+					_ = r.decodedTap.WritePCM(serial, tail)
+				}
+			}
+		}
+	}
 	if err := s.close(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
 	}
@@ -1035,6 +1065,24 @@ func (r *Recorder) basenameFor(cs trunking.CallStart) string {
 	return base
 }
 
+// fadeTail returns an n-sample linear ramp from `from` down toward zero,
+// used to smooth an abrupt end-of-call cut on decoded digital voice (the
+// digital counterpart of the analog composer's squelch-tail fade). The
+// first sample equals `from` so the ramp continues seamlessly from the
+// last decoded sample. Returns nil when there is nothing to ramp (already
+// at silence, or a non-positive length).
+func fadeTail(from int16, n int) []int16 {
+	if from == 0 || n <= 0 {
+		return nil
+	}
+	out := make([]int16, n)
+	start := float64(from)
+	for i := range out {
+		out[i] = int16(start * (1.0 - float64(i)/float64(n)))
+	}
+	return out
+}
+
 // sanitize strips characters that are awkward in file paths across OSes.
 func sanitize(s string) string {
 	s = strings.TrimSpace(s)
@@ -1066,6 +1114,12 @@ type recordingSession struct {
 	vocoder     Vocoder
 	vocoderName string
 	sampleRate  uint32
+	// lastSample is the most recent decoded PCM sample written for this
+	// session. On close a short fade from it down to zero is appended to
+	// smooth an abrupt end-of-call cut (finalizeLocked) — the digital
+	// equivalent of the analog composer's squelch-tail fade. Zero (the
+	// default / trailing silence) means no fade is needed.
+	lastSample int16
 	// rawWanted records whether this call should get a .raw sidecar once
 	// its files are opened. The decision is made when the session is
 	// prepared (buildSession) but the file itself is created lazily on the

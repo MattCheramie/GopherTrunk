@@ -94,15 +94,19 @@ func TestRecorderDecodesP25IntoWav(t *testing.T) {
 		t.Fatalf("read wav: %v", err)
 	}
 
-	// Each IMBE frame decodes to 160 16-bit samples; with N frames
-	// the data chunk is N·160·2 bytes.
-	wantData := uint32(n * 160 * 2)
+	// Each IMBE frame decodes to 160 16-bit samples; with N frames the
+	// voice data is N·160·2 bytes. The recorder appends a short end-of-call
+	// fade (≤10 ms = 80 samples) when the last decoded sample is non-zero,
+	// so the data chunk is the voice bytes plus an optional tail.
+	voiceData := uint32(n * 160 * 2)
+	const maxTailBytes = uint32(80 * 2)
 	dataSize := binary.LittleEndian.Uint32(wavBytes[40:44])
-	if dataSize != wantData {
-		t.Errorf("WAV data chunk size = %d, want %d", dataSize, wantData)
+	if dataSize < voiceData || dataSize > voiceData+maxTailBytes {
+		t.Errorf("WAV data chunk size = %d, want %d..%d",
+			dataSize, voiceData, voiceData+maxTailBytes)
 	}
-	if uint32(len(wavBytes)) != 44+wantData {
-		t.Errorf("wav file size = %d, want %d", len(wavBytes), 44+wantData)
+	if uint32(len(wavBytes)) != 44+dataSize {
+		t.Errorf("wav file size = %d, want %d", len(wavBytes), 44+dataSize)
 	}
 
 	// Confirm at least one sample is non-zero — the IMBE pipeline

@@ -146,15 +146,19 @@ func TestLDUEndToEndIntoRecorder(t *testing.T) {
 		t.Fatalf("read wav: %v", err)
 	}
 	const wavHeaderSize = 44
-	// 9 frames × 160 samples × 2 bytes per sample.
-	wantData := uint32(phase1.LDUVoiceSubframeCount * 160 * 2)
+	// 9 frames × 160 samples × 2 bytes per sample of voice, plus the
+	// recorder's optional end-of-call fade (≤10 ms = 80 samples) appended
+	// when the last decoded sample is non-zero.
+	voiceData := uint32(phase1.LDUVoiceSubframeCount * 160 * 2)
+	const maxTailBytes = uint32(80 * 2)
 	dataSize := binary.LittleEndian.Uint32(wavBytes[40:44])
-	if dataSize != wantData {
-		t.Errorf("WAV data chunk size = %d, want %d", dataSize, wantData)
+	if dataSize < voiceData || dataSize > voiceData+maxTailBytes {
+		t.Errorf("WAV data chunk size = %d, want %d..%d",
+			dataSize, voiceData, voiceData+maxTailBytes)
 	}
-	if uint32(len(wavBytes)) != wavHeaderSize+wantData {
+	if uint32(len(wavBytes)) != wavHeaderSize+dataSize {
 		t.Errorf("wav file size = %d, want %d",
-			len(wavBytes), wavHeaderSize+wantData)
+			len(wavBytes), wavHeaderSize+dataSize)
 	}
 	// Confirm at least one sample is non-zero — synthesis ran end-to-end.
 	var nonZero bool
