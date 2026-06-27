@@ -113,6 +113,12 @@ type Recorder struct {
 	// the head of a call isn't lost when the operator flips the
 	// switch mid-conversation.
 	recordDisabled atomic.Bool
+
+	// displayLoc is the timezone the recording-filename timestamp renders
+	// in, matching the location the rest of the app uses for human-facing
+	// timestamps (display.timezone). Never nil after NewRecorder; defaults
+	// to time.UTC when the caller leaves it unset (the prior behaviour).
+	displayLoc *time.Location
 }
 
 // DecodedPCMSink receives PCM the recorder decodes from digital
@@ -219,6 +225,13 @@ type RecorderOptions struct {
 	// composer's FM chain feeds WritePCM directly, and ProVoice
 	// where no in-binary decoder is available.
 	VocoderForProtocol map[string]string
+
+	// DisplayLoc is the timezone the recording-filename timestamp renders
+	// in (display.timezone, via config.DisplayConfig.Location()). nil falls
+	// back to time.UTC (the prior behaviour). Threaded so WAV filenames
+	// match the local wall-clock the rest of the UI/logs already show,
+	// instead of always UTC.
+	DisplayLoc *time.Location
 }
 
 // DefaultVocoderForProtocol returns the Protocol → vocoder-name
@@ -285,6 +298,10 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if opts.Enhance.Enabled {
 		opts.Enhance = opts.Enhance.WithDefaults()
 	}
+	loc := opts.DisplayLoc
+	if loc == nil {
+		loc = time.UTC
+	}
 	r := &Recorder{
 		bus:                opts.Bus,
 		log:                opts.Log,
@@ -295,6 +312,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
+		displayLoc:         loc,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
 	}
@@ -983,11 +1001,20 @@ func (r *Recorder) directoryFor(cs trunking.CallStart) string {
 }
 
 func (r *Recorder) basenameFor(cs trunking.CallStart) string {
-	t := cs.StartedAt.UTC()
-	if t.IsZero() {
-		t = time.Now().UTC()
+	loc := r.displayLoc
+	if loc == nil {
+		loc = time.UTC
 	}
-	stamp := t.Format("20060102T150405Z")
+	t := cs.StartedAt
+	if t.IsZero() {
+		t = time.Now()
+	}
+	// Render in the configured display timezone so the filename matches the
+	// local wall-clock the rest of the app shows, rather than always UTC.
+	// The Z0700 zone token keeps the stamp self-documenting and
+	// filename-safe (no colon): UTC still formats as a literal "Z", other
+	// zones as a numeric offset like "+1000".
+	stamp := t.In(loc).Format("20060102T150405Z0700")
 	// Tag the RF voice-channel frequency (Hz) into the name. Voice
 	// frequencies are shared across talkgroups on a trunked system, so
 	// having the frequency on each file makes it easy to tell which
