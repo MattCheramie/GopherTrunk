@@ -30,10 +30,31 @@ no build tag, so they always compile and are covered by `make test`; only the
 binary's `cryptolab` subcommand is gated, which is what keeps the default
 operator install lean.
 
-## Usage
+## Web console
+
+`cryptolab` ships a browser console that mirrors the `siglab`/`configbuilder`
+consoles (same stack, design tokens, and layout) and opens in its own window
+like `siglab serve`:
+
+```
+make cryptolab-web-build           # bundle the SPA into web/cryptolab/dist/
+make build TAGS=cryptolab          # link the toolkit + console into gophertrunk
+gophertrunk cryptolab serve -open  # serve at http://127.0.0.1:8096/ and open a browser
+```
+
+The console exposes **every** tool, mode, and setting: it renders a form from
+the backend's `GET /api/v1/cryptolab/tools` schema, so each parameter (file
+upload, text, number, checkbox) gets a control, and new tools appear
+automatically. A run uploads inputs, streams the live log, and shows the
+structured result — summary, fields, ranked findings, notes, and downloadable
+artifacts (survivor logs, checkpoints, descrambled output). It runs entirely
+offline against uploaded files; no SDR or daemon required.
+
+## Usage (CLI)
 
 ```
 gophertrunk cryptolab [global flags] <tool> [<mode>] [tool flags]
+gophertrunk cryptolab serve [-addr host:port] [-open]   # web console
 gophertrunk cryptolab list      # list tools and modes
 ```
 

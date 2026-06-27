@@ -19,7 +19,10 @@ for tagged releases.
   sweep, structure/wiring enumeration, a monotone+resumable cell solver, and
   from-seed simulation). It is **excluded from the default build** and linked
   in only with `make build TAGS=cryptolab` (the same opt-in pattern as the
-  DVSI vocoder). See `docs/cryptolab.md`.
+  DVSI vocoder). A browser console (`gophertrunk cryptolab serve`) mirrors the
+  `siglab`/`configbuilder` consoles — a schema-driven form exposes every tool,
+  mode, and setting, streams the live run log, and renders the structured
+  result with downloadable artifacts. See `docs/cryptolab.md`.
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
   trunking capture, explaining that the down-converter normalises to 48 kHz and
