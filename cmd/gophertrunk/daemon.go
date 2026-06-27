@@ -661,14 +661,18 @@ func NewDaemon(cfg config.Config, version string, log *slog.Logger) (*Daemon, er
 // resolveDMRInterleavedVoice turns the tri-state config.SystemConfig.
 // DMRInterleavedVoice override into the concrete bool the trunking layer
 // carries. nil (unset) takes the per-protocol default — interleaved ON for
-// DMR Tier III (ProtocolDMR), where the 2-slot TDMA carrier otherwise
-// decodes as garbled audio (issue #644); single-slot for everything else.
-// An explicit value forces it on or off.
+// DMR Tier III trunked (ProtocolDMR) AND Tier II conventional
+// (ProtocolDMRTier2), which are both 2-slot TDMA repeater carriers whose
+// outbound stream interleaves the two timeslots' bursts; the single-slot
+// decoder slices straight through them and produces garbled, encrypted-
+// sounding audio (issue #644). Tier I (ProtocolDMRTier1) is direct-mode
+// simplex — genuinely single-slot — so it stays single-slot, as does every
+// non-DMR protocol. An explicit value forces it on or off.
 func resolveDMRInterleavedVoice(proto trunking.Protocol, override *bool) bool {
 	if override != nil {
 		return *override
 	}
-	return proto == trunking.ProtocolDMR
+	return proto == trunking.ProtocolDMR || proto == trunking.ProtocolDMRTier2
 }
 
 func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *slog.Logger) (*Daemon, error) {

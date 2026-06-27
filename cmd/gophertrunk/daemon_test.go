@@ -123,3 +123,37 @@ func TestMinControlDDCTarget(t *testing.T) {
 		t.Errorf("minControlDDCTarget(TETRA) = %v, want 144000", got)
 	}
 }
+
+// TestResolveDMRInterleavedVoice pins the per-protocol default for the 2-slot
+// interleaved voice decoder. DMR Tier II conventional and Tier III trunked are
+// both 2-slot TDMA repeater carriers, so an unset (nil) override must default
+// the interleaved decoder ON for both — the single-slot decoder slices straight
+// through a 2-slot carrier and produces the garbled, "DJ-scratch" audio a field
+// report saw on a Tier II site (issue #644, never extended to Tier II until
+// now). Tier I is direct-mode simplex (genuinely single-slot) and non-DMR
+// protocols have no DMR voice chain, so both default OFF. An explicit override
+// always wins.
+func TestResolveDMRInterleavedVoice(t *testing.T) {
+	ptr := func(b bool) *bool { return &b }
+	cases := []struct {
+		name     string
+		proto    trunking.Protocol
+		override *bool
+		want     bool
+	}{
+		{"tier2 conventional defaults on", trunking.ProtocolDMRTier2, nil, true},
+		{"tier3 trunked defaults on", trunking.ProtocolDMR, nil, true},
+		{"tier1 direct-mode defaults off", trunking.ProtocolDMRTier1, nil, false},
+		{"non-dmr defaults off", trunking.ProtocolP25, nil, false},
+		{"override false beats tier2 default", trunking.ProtocolDMRTier2, ptr(false), false},
+		{"override true beats tier1 default", trunking.ProtocolDMRTier1, ptr(true), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveDMRInterleavedVoice(tc.proto, tc.override); got != tc.want {
+				t.Errorf("resolveDMRInterleavedVoice(%v, %v) = %v, want %v",
+					tc.proto, tc.override, got, tc.want)
+			}
+		})
+	}
+}
