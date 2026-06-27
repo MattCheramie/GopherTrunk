@@ -85,9 +85,9 @@ The inner FEC layers still pending real-air validation:
   fixtures end-to-end; on-air recovery margins (Viterbi
   correction depth vs. real co-channel + adjacent-channel
   interference) need a live capture to characterise.
-- **DMR 2-slot interleaved voice — now the Tier III default
-  (issue #644).** A DMR carrier is 2-slot TDMA, so a real outbound
-  stream interleaves both timeslots' bursts. The single-slot
+- **DMR 2-slot interleaved voice — now the Tier II conventional &
+  Tier III default (issue #644).** A DMR carrier is 2-slot TDMA, so a real
+  outbound stream interleaves both timeslots' bursts. The single-slot
   `voice.NewDecoder` splices the two slots together into garbled,
   encrypted-sounding audio — the #644 report. `voice.NewInterleavedDecoder`
   decodes the carrier correctly: it locks each slot's burst A on its own
@@ -103,11 +103,15 @@ The inner FEC layers still pending real-air validation:
   identical BS-sourced burst-A sync cannot give. The chain is unit-tested
   against synthetic interleaved + embedded-LC vectors at **both** cadences
   (`TestInterleavedDecoderAutoDetects{CACH,NoCACH}Cadence`).
-  As of #644 the interleaved + LC path is the **default for DMR Tier III**:
-  the daemon tags Tier III voice grants so the composer runs
-  `NewInterleavedDecoder` and routes each call to its timeslot by the
-  embedded LC's talkgroup (a `slotRouter`). `dmr_interleaved_voice` is now
-  a tri-state override (unset = protocol default; true/false to force).
+  The interleaved + LC path is the **default for DMR Tier II conventional
+  and Tier III** (#644, extended to Tier II after a field report of garbled
+  "DJ-scratch" audio on a `dmr-tier2` site — the same single-slot/2-slot
+  mismatch): the daemon tags those systems' voice grants so the composer
+  runs `NewInterleavedDecoder` and routes each call to its timeslot by the
+  embedded LC's talkgroup (a `slotRouter`). DMR Tier I is direct-mode
+  simplex (genuinely single-slot) and stays on `NewDecoder`.
+  `dmr_interleaved_voice` is a tri-state override (unset = protocol default;
+  true/false to force).
   One piece still wants a real IQ capture to cross-check: the exact ETSI
   embedded-signalling de-interleave order, the EMB QR(16,7) FEC (read
   systematically for now), and the 5-bit CRC polynomial — currently
