@@ -157,6 +157,14 @@ domains:
           - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
           - { slug: bptc, title: BPTC, type: algorithm }
           - { slug: dtmf, title: DTMF, type: term }
+          - { slug: ciphertext-only-attack, title: Ciphertext-only attack, type: term }
+          - { slug: known-plaintext-attack, title: Known-plaintext attack, type: term }
+          - { slug: chosen-plaintext-attack, title: Chosen-plaintext attack, type: term }
+          - { slug: brute-force-attack, title: Brute-force attack (exhaustive key search), type: term }
+          - { slug: differential-cryptanalysis, title: Differential cryptanalysis, type: term }
+          - { slug: algebraic-attack, title: Algebraic attack, type: term }
+          - { slug: sat-smt-solving, title: SAT/SMT solving, type: term }
+          - { slug: constraint-propagation, title: Constraint propagation, type: term }
 
       - id: trunked-radio
         label: Trunked radio
