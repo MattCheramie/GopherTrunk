@@ -2,7 +2,7 @@
 slug: rc4-cipher
 title: RC4 (ARC4) cipher
 entry_type: algorithm
-category: algorithms
+category: cryptography
 description: RC4 (ARC4) is a stream cipher that XORs data with a key-derived keystream; it provides the "Enhanced Privacy" encryption option in some DMR systems.
 keywords: RC4, ARC4, stream cipher, keystream, DMR Enhanced Privacy, encryption
 aka: [RC4, ARC4]

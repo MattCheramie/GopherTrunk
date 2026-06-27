@@ -154,9 +154,42 @@ domains:
           - { slug: mueller-muller-timing-recovery, title: Mueller–Müller timing recovery, type: algorithm }
           - { slug: multi-band-excitation, title: Multi-band excitation (MBE), type: algorithm }
           - { slug: compact-position-reporting, title: Compact position reporting (CPR), type: algorithm }
-          - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
           - { slug: bptc, title: BPTC, type: algorithm }
           - { slug: dtmf, title: DTMF, type: term }
+
+      - id: cryptography
+        label: Cryptography & cryptanalysis
+        blurb: Ciphers, keys, and the techniques used to analyze and break them — including the obfuscation seen on trunked-radio metadata.
+        entries:
+          - { slug: cryptography, title: Cryptography, type: term }
+          - { slug: cryptanalysis, title: Cryptanalysis, type: term }
+          - { slug: cipher, title: Cipher, type: term }
+          - { slug: encryption, title: Encryption, type: term }
+          - { slug: obfuscation, title: Obfuscation, type: term }
+          - { slug: symmetric-key-cryptography, title: Symmetric-key cryptography, type: term }
+          - { slug: public-key-cryptography, title: Public-key cryptography, type: term }
+          - { slug: cryptographic-key, title: Cryptographic key, type: term }
+          - { slug: keystream, title: Keystream, type: term }
+          - { slug: kerckhoffs-principle, title: Kerckhoffs's principle, type: term }
+          - { slug: stream-cipher, title: Stream cipher, type: algorithm }
+          - { slug: block-cipher, title: Block cipher, type: algorithm }
+          - { slug: feistel-network, title: Feistel network, type: algorithm }
+          - { slug: substitution-permutation-network, title: Substitution-permutation network (SPN), type: algorithm }
+          - { slug: s-box, title: S-box (substitution box), type: algorithm }
+          - { slug: linear-feedback-shift-register, title: Linear-feedback shift register (LFSR), type: algorithm }
+          - { slug: one-time-pad, title: One-time pad (OTP), type: algorithm }
+          - { slug: hash-function, title: Cryptographic hash function, type: algorithm }
+          - { slug: advanced-encryption-standard, title: Advanced Encryption Standard (AES), type: algorithm }
+          - { slug: rc4-cipher, title: RC4 (ARC4) cipher, type: algorithm }
+          - { slug: frequency-analysis, title: Frequency analysis, type: term }
+          - { slug: ciphertext-only-attack, title: Ciphertext-only attack, type: term }
+          - { slug: known-plaintext-attack, title: Known-plaintext attack, type: term }
+          - { slug: chosen-plaintext-attack, title: Chosen-plaintext attack, type: term }
+          - { slug: brute-force-attack, title: Brute-force attack (exhaustive key search), type: term }
+          - { slug: differential-cryptanalysis, title: Differential cryptanalysis, type: term }
+          - { slug: algebraic-attack, title: Algebraic attack, type: term }
+          - { slug: sat-smt-solving, title: SAT/SMT solving, type: term }
+          - { slug: constraint-propagation, title: Constraint propagation, type: term }
 
       - id: trunked-radio
         label: Trunked radio
