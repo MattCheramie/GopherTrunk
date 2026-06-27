@@ -163,15 +163,16 @@ comparison) is the more reliable test and is what most of the ruling-out used.
 
 ## Two paths to finish
 
-1. **Functional spec from the reference author** (`@ilyacodes`,
-   `MotorolaTalkerAliasComplete.java`): the exact accumulator seed, the per-byte
-   state update, and the state→`(M,c)` extraction. Given the memory-3 observation
-   above, even a prose description of the update would close it immediately.
-2. **Chosen-plaintext captures** from a programmable Motorola radio — see
+1. **Chosen-plaintext captures** from a programmable Motorola radio — see
    `p25-talker-alias-chosen-plaintext.md`. The memory-3 finding *sharpens* this:
    a short length sweep plus single-character differentials at a couple of
    positions is enough to pin the memory-2/3 transition directly, because the
    state is now observable rather than hidden.
+2. **Continued clean-room cryptanalysis** of the recovered 16-bit state machine
+   (e.g. a constraint/SMT solve for the suspected internal substitution table),
+   derived solely from the dataset. The only known reference implementation is
+   GPLv3 and is intentionally **not** consulted; this project's decode must be an
+   independent, permissively-licensed derivation.
 
 ## Reproducing
 
