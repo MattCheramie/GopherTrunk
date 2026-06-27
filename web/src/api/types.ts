@@ -33,6 +33,10 @@ export interface SystemDTO {
   // Live adjacent (neighbour) sites decoded from the control channel (P25
   // Adjacent Site Status Broadcast). Empty/absent until one is heard.
   neighbors?: NeighborDTO[];
+  // Decoded P25 IDEN_UP frequency-band table (channel id → base/spacing/offset),
+  // overlaid live from the same topology snapshot as neighbors. Empty/absent
+  // until an IDEN_UP is heard. (#814)
+  frequency_bands?: BandPlanSlotDTO[];
 }
 
 // NeighborDTO mirrors api.NeighborDTO — one adjacent site with resolved
@@ -46,6 +50,17 @@ export interface NeighborDTO {
   uplink_hz?: number;
   rfss_hex?: string;
   site_hex?: string;
+}
+
+// BandPlanSlotDTO mirrors api.BandPlanSlotDTO — one P25 IDEN_UP frequency-band
+// entry (channel id → downlink base, spacing, and signed transmit offset).
+export interface BandPlanSlotDTO {
+  channel_id: number;
+  base_hz: number;
+  spacing_hz: number;
+  bandwidth_hz?: number;
+  tx_offset_hz?: number;
+  access_tdma?: boolean;
 }
 
 // DMRBandPlanDTO mirrors api.DMRBandPlanDTO — exactly one of linear/table.

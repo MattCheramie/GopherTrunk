@@ -133,6 +133,14 @@ type SystemDTO struct {
 	// panels can show them the way SDRtrunk's "Neighbor Sites" view does,
 	// instead of only the system drill-in report.
 	Neighbors []NeighborDTO `json:"neighbors,omitempty"`
+
+	// FrequencyBands is the decoded P25 IDEN_UP frequency-band table (channel
+	// ID → base/spacing/offset), overlaid live from the same topology snapshot
+	// as Neighbors. Surfaced so the Systems panel can show the band plan the way
+	// SDRtrunk's "Details" tab does, and so a neighbour's channel_id/
+	// channel_number can be mapped back to an absolute frequency. Empty until an
+	// IDEN_UP has been heard. (#814)
+	FrequencyBands []BandPlanSlotDTO `json:"frequency_bands,omitempty"`
 }
 
 // NeighborDTO is one adjacent site advertised by a system's control channel,
@@ -181,6 +189,47 @@ func neighborsFromTopology(snap *trunking.TopologySnapshot) []NeighborDTO {
 		}
 		return out[i].Site < out[j].Site
 	})
+	return out
+}
+
+// BandPlanSlotDTO is one P25 IDEN_UP frequency-band entry, mirroring
+// trunking.TopoBandPlanSlot / trunking.ReportBand. It maps a channel ID to a
+// downlink base frequency, channel spacing, and (signed) transmit offset — the
+// table SDRtrunk surfaces in its "Details" tab and the data needed to map a
+// neighbour's channel_id/channel_number back to an absolute frequency.
+type BandPlanSlotDTO struct {
+	ChannelID   uint8  `json:"channel_id"`
+	BaseHz      uint64 `json:"base_hz"`
+	SpacingHz   uint32 `json:"spacing_hz"`
+	BandwidthHz uint32 `json:"bandwidth_hz,omitempty"`
+	TxOffsetHz  int64  `json:"tx_offset_hz,omitempty"`
+	AccessTDMA  bool   `json:"access_tdma,omitempty"`
+}
+
+// bandPlanFromTopology converts a live topology snapshot's band plan into DTOs,
+// reusing trunking.ReportFromTopology so the values match the
+// network-configuration report and the decoded-message log exactly. Sorted by
+// channel ID for stable output. Returns nil when there are none.
+func bandPlanFromTopology(snap *trunking.TopologySnapshot) []BandPlanSlotDTO {
+	if snap == nil {
+		return nil
+	}
+	r := trunking.ReportFromTopology(snap)
+	if len(r.Bands) == 0 {
+		return nil
+	}
+	out := make([]BandPlanSlotDTO, 0, len(r.Bands))
+	for _, b := range r.Bands {
+		out = append(out, BandPlanSlotDTO{
+			ChannelID:   b.ChannelID,
+			BaseHz:      b.BaseHz,
+			SpacingHz:   b.SpacingHz,
+			BandwidthHz: b.BandwidthHz,
+			TxOffsetHz:  b.TxOffsetHz,
+			AccessTDMA:  b.AccessTDMA,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ChannelID < out[j].ChannelID })
 	return out
 }
 

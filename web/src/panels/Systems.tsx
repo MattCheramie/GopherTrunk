@@ -7,6 +7,7 @@ import { StaleIndicator } from "../components/ui/StaleIndicator";
 import { useDataPoll } from "../hooks/useDataPoll";
 import { formatIdNumber } from "../lib/idFormat";
 import type {
+  BandPlanSlotDTO,
   DMRBandPlanDTO,
   DMRBandPlanLearnedDTO,
   EventDTO,
@@ -42,6 +43,19 @@ function formatNeighbor(n: NeighborDTO, idBase: "hex" | "dec"): string {
   const site = formatIdNumber(n.site, idBase) ?? String(n.site);
   let s = `RFSS ${rfss} / Site ${site}`;
   if (n.downlink_hz) s += ` → ${(n.downlink_hz / 1e6).toFixed(6)} MHz`;
+  return s;
+}
+
+// formatBand renders one decoded IDEN_UP slot the way SDRtrunk's "Details" tab
+// shows the band plan: base downlink frequency, channel spacing, and the signed
+// transmit offset, tagging TDMA bands. Offset is omitted when zero/unknown.
+function formatBand(b: BandPlanSlotDTO): string {
+  let s = `BAND ${b.channel_id}`;
+  if (b.access_tdma) s += " TDMA";
+  s += ` · BASE ${(b.base_hz / 1e6).toFixed(6)} MHz`;
+  s += ` · SPACING ${b.spacing_hz} Hz`;
+  if (b.tx_offset_hz)
+    s += ` · OFFSET ${(b.tx_offset_hz / 1e6).toFixed(6)} MHz`;
   return s;
 }
 
@@ -319,6 +333,20 @@ export function Systems() {
                 mono
                 value={selected.neighbors
                   .map((n) => formatNeighbor(n, idBase))
+                  .join("\n")}
+              />
+            </div>
+          ) : null}
+          {selected.frequency_bands && selected.frequency_bands.length > 0 ? (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted mb-2">
+                Frequency bands ({selected.frequency_bands.length})
+              </p>
+              <DetailField
+                label="Band → base / spacing / offset"
+                mono
+                value={selected.frequency_bands
+                  .map((b) => formatBand(b))
                   .join("\n")}
               />
             </div>

@@ -120,7 +120,7 @@ func (s *Server) handleListSystems(w http.ResponseWriter, _ *http.Request) {
 	for _, sys := range s.systems {
 		dto := systemToDTO(sys)
 		overlayLiveIdentity(&dto, live)
-		s.overlayNeighbors(&dto)
+		s.overlayTopology(&dto)
 		dto.fillIdentityHex()
 		out = append(out, dto)
 	}
@@ -135,7 +135,7 @@ func (s *Server) handleGetSystem(w http.ResponseWriter, r *http.Request) {
 			if s.sites != nil {
 				overlayLiveIdentity(&dto, s.sites.Sites())
 			}
-			s.overlayNeighbors(&dto)
+			s.overlayTopology(&dto)
 			dto.fillIdentityHex()
 			writeJSON(w, http.StatusOK, dto)
 			return
@@ -203,17 +203,20 @@ func overlayLiveIdentity(dto *SystemDTO, sites []trunking.SiteInfo) {
 	}
 }
 
-// overlayNeighbors fills dto.Neighbors from the live topology snapshot for the
-// system, when the wired SitesProvider exposes one (the SiteTracker does). The
-// adjacent sites are decoded from P25 status broadcasts over the air, so a
-// configured-but-quiet system simply leaves the list empty.
-func (s *Server) overlayNeighbors(dto *SystemDTO) {
+// overlayTopology fills dto.Neighbors and dto.FrequencyBands from the live
+// topology snapshot for the system, when the wired SitesProvider exposes one
+// (the SiteTracker does). Both the adjacent sites and the P25 IDEN_UP band plan
+// are decoded from control-channel broadcasts over the air, so a
+// configured-but-quiet system simply leaves them empty. One snapshot lookup
+// feeds both.
+func (s *Server) overlayTopology(dto *SystemDTO) {
 	tp, ok := s.sites.(NetworkTopologyProvider)
 	if !ok {
 		return
 	}
 	if snap, ok := tp.Topology(dto.Name); ok {
 		dto.Neighbors = neighborsFromTopology(snap)
+		dto.FrequencyBands = bandPlanFromTopology(snap)
 	}
 }
 
