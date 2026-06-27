@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { audioStreamURL } from "../api/client";
 import { createStreamPlayer, type StreamPlayer } from "../audio/streamPlayer";
 import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
+import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
 import { prefs } from "../store/prefs";
 
 // AudioPlayer is a floating, dismissable mini-player that streams
@@ -24,12 +25,39 @@ import { prefs } from "../store/prefs";
 export function AudioPlayer() {
   const cfg = useShared(selectClientConfig);
   const activeCalls = useShared((s) => s.activeCalls);
+  // AudioPlayer is always mounted but, unlike Active/Dashboard, didn't
+  // refresh activeCalls — so its Media Session metadata and (below) the
+  // call it follows went stale on every other route. Poll here so the
+  // follow logic stays live wherever the operator is.
+  useActiveCallsPoll();
   const [enabled, setEnabled] = useState(false);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(prefs.audioVolume());
   const [recording, setRecording] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const playerRef = useRef<StreamPlayer | null>(null);
+  // Device serial the running stream is filtered to (null = unfiltered).
+  const playerSerialRef = useRef<string | null>(null);
+  // Read inside startPlayer without re-creating it (and thus restarting
+  // the stream) every time the volume slider moves.
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+
+  // The single call live audio follows: the most recently started active
+  // call. Playing one call at a time (standard scanner behaviour) is what
+  // stops concurrent talkgroups from overlapping into one garbled stream —
+  // the daemon's /audio/stream supports a ?device= filter, the WebUI just
+  // never used it. null when nothing is up (stream stays unfiltered so the
+  // first call is still audible before the poll narrows onto it).
+  const primarySerial = useMemo(() => {
+    if (activeCalls.length === 0) return null;
+    const newest = activeCalls.reduce((a, b) =>
+      b.started_at > a.started_at ? b : a,
+    );
+    return newest.device_serial;
+  }, [activeCalls]);
 
   // Reflect the daemon's current audio state into the local toggles.
   const daemonAudio = useShared((s) => s.audio);
@@ -62,39 +90,66 @@ export function AudioPlayer() {
     return () => {
       playerRef.current?.stop();
       playerRef.current = null;
+      playerSerialRef.current = null;
     };
   }, [cfg]);
 
+  // startPlayer (re)opens the stream filtered to one call's device serial.
+  // Stable across volume/mute changes (those read refs) so following a new
+  // call is the only thing that tears down and reopens the stream.
+  const startPlayer = useCallback(
+    (serial: string | null) => {
+      if (!cfg.baseURL) return;
+      setError(null);
+      playerRef.current?.stop();
+      const player = createStreamPlayer({
+        url: audioStreamURL(cfg, serial ? { device: serial } : {}),
+        token: cfg.token,
+        onError: (msg) => {
+          setError(msg);
+          setEnabled(false);
+        },
+        onStateChange: (state) => {
+          setEnabled(state === "playing" || state === "connecting");
+        },
+      });
+      playerRef.current = player;
+      playerSerialRef.current = serial;
+      player.setVolume(volumeRef.current);
+      player.setMuted(mutedRef.current);
+      player.start();
+    },
+    [cfg],
+  );
+
   // enable must stay synchronous: createStreamPlayer().start() resumes
   // the AudioContext inside this gesture so the autoplay policy doesn't
-  // reject playback.
+  // reject playback. Open onto the current primary call straight away.
   const enable = () => {
     if (!cfg.baseURL) return;
-    setError(null);
-    playerRef.current?.stop();
-    const player = createStreamPlayer({
-      url: audioStreamURL(cfg),
-      token: cfg.token,
-      onError: (msg) => {
-        setError(msg);
-        setEnabled(false);
-      },
-      onStateChange: (state) => {
-        setEnabled(state === "playing" || state === "connecting");
-      },
-    });
-    playerRef.current = player;
-    player.setVolume(volume);
-    player.setMuted(muted);
-    player.start();
+    startPlayer(primarySerial);
     setEnabled(true);
   };
 
   const disable = () => {
     playerRef.current?.stop();
     playerRef.current = null;
+    playerSerialRef.current = null;
     setEnabled(false);
   };
+
+  // Follow the primary call: when it changes, re-point the running stream
+  // at the new device so audio switches cleanly instead of overlapping.
+  // Only acts on a real call (non-null) and only when a stream is already
+  // running — the initial open happens in enable() inside the user
+  // gesture, and a call simply ending lets the current filter fall silent
+  // rather than dropping back to the (overlap-prone) unfiltered stream.
+  useEffect(() => {
+    if (!playerRef.current) return;
+    if (!primarySerial) return;
+    if (primarySerial === playerSerialRef.current) return;
+    startPlayer(primarySerial);
+  }, [primarySerial, startPlayer]);
 
   const onVolume = (v: number) => {
     setVolume(v);
