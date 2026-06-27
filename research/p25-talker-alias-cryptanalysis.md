@@ -71,6 +71,44 @@ consistent with bit-errors plus the single unobservable low-bit.
 This reframes the problem: it is a **memory-3 nonlinear byte recurrence over
 observable high bytes**, not a search for a hidden 16-bit register.
 
+## Product-form decode and the two component maps
+
+The verified decode factors (the additive `c` is `−M·Hbyte`, so even positions
+vanish because `LUT[enc] = Hbyte` there):
+
+```
+decoded[i] = M_i · ( LUT[ encoded[i] ] − Hbyte_i )      (mod 256, signed)
+```
+
+where `Hbyte_i` is the accumulator high byte at position `i` and `M_i` the
+multiplier. This lets the per-character keystream be split into **two separate
+observables** recovered from an affine fit of `char` vs `LUT[eo]` per index:
+the multiplier `M_odd` and the odd-position high byte `Hbyte_odd` (the high byte
+*between* two readable even high bytes — recovering it doubles the resolution of
+the accumulator trajectory). Both are **clean 2-byte functions of the two
+preceding even high bytes, with no ciphertext input**:
+
+| Component map | Determinism |
+|---|---|
+| `Hbyte_odd ~ (H[k-1], H[k])` | 5 conflicts / 1,294 keys |
+| `M_odd ~ (H[k-1], H[k])` | 19 conflicts / 1,294 keys |
+| `H[k+1] ~ (Hbyte_odd, enc[2k+1])` (odd step) | 27 / 1,987 |
+
+A closed form for `f1 = Hbyte_odd(H[k-1],H[k])` and `f2 = M_odd(H[k-1],H[k])`
+would give a fully readable decoder
+`char = f2(Hp,H) · (LUT[eo] − f1(Hp,H))`. **Neither fits** any tested closed form
+(affine, quadratic, cross-term, LUT-composition, modular-inverse, GF(2⁸)
+multiply — best ≈ 1,267/1,294, i.e. random), despite both being functional.
+
+This *functional-but-never-closed-form* pattern (it recurs at every level —
+high-byte recurrence, keystream, and now both component maps) is the signature of
+a **second internal substitution table** distinct from the recovered output
+`LUT`, applied inside the update. Testing that hypothesis (e.g. `Hbyte_odd =
+T[H] ⊕ mask(Hp)`) is blocked by coverage: only one pair of `Hp`-groups shares
+≥ 8 common `H` values in the passive corpus — far too sparse. **Chosen-plaintext
+captures would supply exactly the dense, controlled `(Hp,H)` coverage needed to
+recover such an internal table or rule it out.**
+
 ## A table decoder does NOT generalize (so a closed form is required)
 
 Training the empirical map `G(H[k-1], H[k], eo[k]) → char` on 80% of messages and
