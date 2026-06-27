@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Optional Z3 structural search for the Motorola talker-alias state update.
+"""Optional Z3 structural search for a byte-obfuscator's state update.
 
-Clean-room: consumes only the high-byte transitions the Go toolkit exports
+Consumes only the high-byte transitions the Go toolkit exports
 (Hprev,Hcur,eo,Hnext per row) and searches a few small structural families
 for a single internal 256-byte table T2 that reproduces them.
 

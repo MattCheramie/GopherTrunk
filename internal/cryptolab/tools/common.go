@@ -1,9 +1,9 @@
 // Package tools registers the generic (cipher-agnostic) cryptolab tools —
 // statistical triage, keyspace brute force, LFSR/keystream analysis, CRC
-// reverse-engineering, and analog voice descrambling — into the cryptolab
+// parameter recovery, and analog voice descrambling — into the cryptolab
 // registry. Each tool is a thin wrapper that parses its flags and calls the
-// corresponding engine package. The flagship Motorola alias subject lives
-// separately under subjects/motorola.
+// corresponding engine package. Subject-specific tools live separately under
+// subjects/.
 package tools
 
 import (

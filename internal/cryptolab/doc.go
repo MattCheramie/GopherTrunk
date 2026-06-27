@@ -1,17 +1,9 @@
 // Package cryptolab is GopherTrunk's optional cryptographic-research
-// toolkit: a set of byte-oriented analysis and brute-force tools aimed at
-// the kinds of obfuscation and weak/keyless ciphers found in RF trunking
-// traffic (analog voice inversion, LFSR scramblers, CRC/FEC framing, and
-// the Motorola P25 talker-alias obfuscator).
-//
-// # Clean-room
-//
-// Everything here is derived only from observed data and from public
-// structural descriptions. No GPL decoder source (SDRTrunk / Trunk
-// Recorder) was read or ported; the toolkit is Apache-2.0 like the rest of
-// GopherTrunk. Nothing in this package flips motorola.CipherVerified — the
-// alias decode in internal/radio/p25/motorola stays gated until a real
-// alias is confirmed end-to-end.
+// toolkit: a set of byte-oriented analysis and brute-force tools for the
+// kinds of obfuscation and weak/keyless ciphers found in RF traffic. It
+// ships statistical triage, keyspace brute force, LFSR/keystream analysis,
+// CRC parameter recovery, analog voice descrambling, and a pluggable
+// "subject" framework for studying specific byte-oriented obfuscators.
 //
 // # Optional at install
 //
@@ -29,9 +21,9 @@
 //
 // These are research tools. They recover obfuscation and weak/keyless
 // constructions and triage whether a captured payload is even breakable;
-// they make no claim to break strong keyed encryption (P25 DES-OFB / AES,
-// ADP/RC4). For those, the toolkit offers known-plaintext keystream
-// extraction and breakability triage only.
+// they make no claim to break strong keyed encryption (e.g. DES/AES,
+// RC4-based schemes). For those, the toolkit offers known-plaintext
+// keystream extraction and breakability triage only.
 package cryptolab
 
 // SubcommandName is the gophertrunk subcommand under which the toolkit is

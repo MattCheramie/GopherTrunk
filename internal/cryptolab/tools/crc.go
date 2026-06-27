@@ -14,7 +14,7 @@ import (
 type crcTool struct{}
 
 func (crcTool) Name() string            { return "crc" }
-func (crcTool) Synopsis() string        { return "reverse-engineer CRC parameters from sample frames" }
+func (crcTool) Synopsis() string        { return "recover CRC parameters from sample frames" }
 func (crcTool) Modes() []cryptolab.Mode { return []cryptolab.Mode{crcRecover{}, crcCompute{}} }
 
 type crcRecover struct{}

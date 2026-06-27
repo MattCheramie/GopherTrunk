@@ -1,5 +1,5 @@
-// Package crc provides parameterized CRC computation and reverse-engineering
-// of CRC parameters from sample (data, crc) frames — the kind of task that
+// Package crc provides parameterized CRC computation and recovery of CRC
+// parameters from sample (data, crc) frames — the kind of task that
 // comes up identifying the framing/FEC check on an unfamiliar RF protocol.
 // It generalizes the fixed CRC-16/GSM already used by the P25 alias framing.
 package crc

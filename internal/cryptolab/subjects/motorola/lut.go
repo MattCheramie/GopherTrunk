@@ -1,15 +1,15 @@
-// Package motorola is the flagship cryptolab subject: the Motorola P25
-// "talker alias" obfuscation. The framing and the per-character decode
-// equation are established; the unknown is the per-character state update.
-// This package supplies the recovered output substitution table, the decode
-// primitives, the corpus loader, and four incremental recovery modes
-// (gauge sweep, structure enumeration, cell solver, from-seed simulation)
-// wired into the cryptolab tool registry.
+// Package motorola implements a cryptolab subject for a length-seeded,
+// keyless, byte-oriented alias obfuscator: the output substitution table and
+// the per-character decode equation are established, while the per-character
+// state update is not. The package supplies the recovered output
+// substitution table, the decode primitives, the corpus loader, and four
+// incremental recovery modes (gauge sweep, structure enumeration, cell
+// solver, from-seed simulation) wired into the cryptolab tool registry.
 //
-// Clean-room: every constant and procedure here is derived from observed
-// plaintext↔ciphertext data and public structural description only. Nothing
-// here is ported from a GPL decoder, and nothing flips
-// motorola.CipherVerified in internal/radio/p25 — that decode stays gated.
+// Every constant and procedure here is derived from observed
+// plaintext↔ciphertext data and structural analysis only. These research
+// modes are independent of GopherTrunk's live decode path and do not change
+// its verification gating.
 package motorola
 
 // lutSigned is the recovered 256-entry output substitution table in the
@@ -58,7 +58,7 @@ func buildTable() *Table {
 		t.Fwd[i] = u
 		t.Inv[u] = uint8(i)
 		if seen[u] {
-			panic("motorola: recovered LUT is not a bijection")
+			panic("alias: recovered LUT is not a bijection")
 		}
 		seen[u] = true
 	}

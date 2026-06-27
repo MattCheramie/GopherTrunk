@@ -39,7 +39,7 @@ func StripCRC(encWithCRC []byte) (enc []byte, ok bool) {
 func LoadCSV(path string, logger *slog.Logger) ([]Row, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("motorola: open corpus: %w", err)
+		return nil, fmt.Errorf("alias: open corpus: %w", err)
 	}
 	defer f.Close()
 	return parseCSV(f, logger)
@@ -55,7 +55,7 @@ func parseCSV(r io.Reader, logger *slog.Logger) ([]Row, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("motorola: csv line %d: %w", line, err)
+			return nil, fmt.Errorf("alias: csv line %d: %w", line, err)
 		}
 		if len(rec) < 3 {
 			continue
