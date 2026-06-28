@@ -248,6 +248,49 @@ func TestModesRunEndToEnd(t *testing.T) {
 	}
 }
 
+func TestCellsModeResumeRoundTrip(t *testing.T) {
+	t.Parallel()
+	csv := synthCSV(t)
+	dir1 := t.TempDir()
+	env1 := cryptolab.Env{OutDir: dir1, Stdout: &bytes.Buffer{}, Format: cryptolab.FormatText}
+	if _, err := (cellsMode{}).Run(context.Background(), []string{"-csv", csv}, env1); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	ckPath := filepath.Join(dir1, "checkpoint.json")
+	if _, err := os.Stat(ckPath); err != nil {
+		t.Fatalf("checkpoint not written to top-level artifact path: %v", err)
+	}
+
+	// Resume from the written checkpoint via the -resume mode flag (the path
+	// the web console uses). Must not error and must stay monotone.
+	dir2 := t.TempDir()
+	env2 := cryptolab.Env{OutDir: dir2, Stdout: &bytes.Buffer{}, Format: cryptolab.FormatText}
+	res, err := (cellsMode{}).Run(context.Background(), []string{"-csv", csv, "-resume", ckPath}, env2)
+	if err != nil {
+		t.Fatalf("resume run: %v", err)
+	}
+	if res == nil || res.Mode != "cells" {
+		t.Fatalf("bad resume result %+v", res)
+	}
+}
+
+func TestStructureModeExportsTransitions(t *testing.T) {
+	t.Parallel()
+	csv := synthCSV(t)
+	dir := t.TempDir()
+	env := cryptolab.Env{OutDir: dir, Stdout: &bytes.Buffer{}, Format: cryptolab.FormatText}
+	if _, err := (structureMode{}).Run(context.Background(), []string{"-csv", csv}, env); err != nil {
+		t.Fatalf("structure run: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "high-transitions.csv"))
+	if err != nil {
+		t.Fatalf("transitions CSV not written: %v", err)
+	}
+	if !bytes.HasPrefix(b, []byte("Hprev,Hcur,eo,Hnext")) {
+		t.Fatalf("transitions CSV missing header: %q", b[:min(40, len(b))])
+	}
+}
+
 func TestAliasToolRegistered(t *testing.T) {
 	t.Parallel()
 	tool, ok := cryptolab.Lookup("alias")
