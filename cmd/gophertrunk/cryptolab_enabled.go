@@ -6,14 +6,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/webserver"
+	cryptolabweb "github.com/MattCheramie/GopherTrunk/web/cryptolab"
 	// Blank imports register the toolkit's tools and subjects via init().
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/motorola"
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/tools"
@@ -34,6 +38,9 @@ func runCryptolab(args []string) {
 			return
 		case "list":
 			cryptolabList(os.Stdout)
+			return
+		case "serve":
+			runCryptolabServe(args[1:])
 			return
 		}
 	}
@@ -104,11 +111,82 @@ func runCryptolab(args []string) {
 	}
 }
 
+// runCryptolabServe launches the standalone cryptolab web console — the
+// browser counterpart to the CLI. It serves the embedded SPA and the
+// cryptolab REST API entirely offline against uploaded files. Mirrors the
+// `siglab serve` / `config serve` pattern.
+func runCryptolabServe(args []string) {
+	fs := flag.NewFlagSet("cryptolab serve", flag.ExitOnError)
+	addr := fs.String("addr", "127.0.0.1:8096", "listen address")
+	open := fs.Bool("open", false, "open the console in the system browser once it is up")
+	tmpDir := fs.String("tmp-dir", "", "directory for staged uploads (default: a fresh temp dir)")
+	maxUpload := fs.Int64("max-upload", 0, "max upload size in bytes (0 = default 512 MiB)")
+	logLevel := fs.String("log-level", "info", "log level: debug|info|warn|error")
+	logFormat := fs.String("log-format", "text", "log format: text|json")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), `gophertrunk cryptolab serve — standalone cryptolab web console.
+
+USAGE:
+  gophertrunk cryptolab serve [-addr host:port] [-open] [-tmp-dir dir] [-max-upload bytes]
+
+Serves the Crypto Lab SPA at http://<addr>/ and the cryptolab REST API,
+running offline against uploaded files. Build the SPA first with
+`+"`make cryptolab-web-build`"+`.
+
+FLAGS:`)
+		fs.PrintDefaults()
+	}
+	_ = fs.Parse(args)
+	rep := newReporter("cryptolab serve")
+
+	opts := webserver.Options{
+		TempDir:        *tmpDir,
+		MaxUploadBytes: *maxUpload,
+		Logger:         gtlog.New(*logLevel, *logFormat),
+	}
+	if cryptolabweb.HasAssets() {
+		opts.Assets = cryptolabweb.Assets()
+	} else {
+		fmt.Fprintln(os.Stderr, "cryptolab serve: SPA not bundled (run `make cryptolab-web-build` first); serving API only")
+	}
+
+	srv, err := webserver.New(opts)
+	if err != nil {
+		rep.Fatal(1, fmt.Errorf("cryptolab serve: %w", err))
+	}
+	defer srv.Close()
+
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}()
+
+	if *open {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			if err := openBrowser("http://" + *addr + "/"); err != nil {
+				fmt.Fprintf(os.Stderr, "cryptolab serve: open browser: %v\n", err)
+			}
+		}()
+	}
+
+	fmt.Fprintf(os.Stderr, "cryptolab serve: listening on http://%s/\n", *addr)
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		rep.Fatal(1, fmt.Errorf("cryptolab serve: %w", err))
+	}
+}
+
 func cryptolabUsage(w *os.File) {
 	fmt.Fprintf(w, `gophertrunk cryptolab — optional RF cryptographic-research toolkit
 
 USAGE:
   gophertrunk cryptolab [global flags] <tool> [<mode>] [tool flags]
+  gophertrunk cryptolab serve [flags] launch the web console in a browser
   gophertrunk cryptolab list          list tools and modes
   gophertrunk cryptolab help          this help
 

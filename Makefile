@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test
+.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -387,6 +387,29 @@ configbuilder-web-test:
 	@command -v npm >/dev/null || { echo "npm not installed; see web/configbuilder/README.md"; exit 1; }
 	cd web/configbuilder && npm install --no-audit --no-fund
 	cd web/configbuilder && npm test
+
+# cryptolab-web-build produces the shippable bundle in web/cryptolab/dist/.
+# It is the SPA for the optional `gophertrunk cryptolab serve` console; build
+# it (and `make build TAGS=cryptolab`) only when you want the toolkit linked in.
+cryptolab-web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/cryptolab/README.md"; exit 1; }
+	cd web/cryptolab && npm ci --no-audit --no-fund
+	cd web/cryptolab && npm run build
+
+# cryptolab-web-dev runs the Vite dev server (proxies /api to 127.0.0.1:8096,
+# the default `cryptolab serve` address).
+cryptolab-web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/cryptolab/README.md"; exit 1; }
+	cd web/cryptolab && npm install --no-audit --no-fund
+	cd web/cryptolab && npm run dev
+
+cryptolab-web-clean:
+	rm -rf web/cryptolab/dist web/cryptolab/node_modules web/cryptolab/dev-dist
+
+cryptolab-web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/cryptolab/README.md"; exit 1; }
+	cd web/cryptolab && npm install --no-audit --no-fund
+	cd web/cryptolab && npm test
 
 
 # Regenerate Go bindings under internal/api/pb/v1 from proto/*.proto.
