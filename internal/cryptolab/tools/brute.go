@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math/rand"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/brute"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lang"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/stats"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/subst"
 )
 
 type bruteTool struct{}
@@ -14,7 +17,7 @@ type bruteTool struct{}
 func (bruteTool) Name() string     { return "brute" }
 func (bruteTool) Synopsis() string { return "keyspace brute force for classical / XOR ciphers" }
 func (bruteTool) Modes() []cryptolab.Mode {
-	return []cryptolab.Mode{bruteXOR{}, bruteCaesar{}, bruteVigenere{}}
+	return []cryptolab.Mode{bruteXOR{}, bruteCaesar{}, bruteVigenere{}, bruteSubstitution{}}
 }
 
 type bruteXOR struct{}
@@ -156,6 +159,50 @@ func (bruteVigenere) Run(_ context.Context, args []string, env cryptolab.Env) (*
 	env.Logf("vigenere solved", "keylen", kl)
 	addXORFinding(res, cand)
 	res.Summary = fmt.Sprintf("recovered %d-byte Vigenère key", len(cand.Key))
+	return res, nil
+}
+
+type bruteSubstitution struct{}
+
+func (bruteSubstitution) Name() string { return "substitution" }
+func (bruteSubstitution) Synopsis() string {
+	return "solve a monoalphabetic substitution cipher (English n-gram hill-climb)"
+}
+
+func (bruteSubstitution) Run(_ context.Context, args []string, env cryptolab.Env) (*cryptolab.Result, error) {
+	fs := newFlagSet("brute substitution")
+	in := fs.String("in", "", "ciphertext file (English plaintext assumed) — required")
+	restarts := fs.Int("restarts", 0, "hill-climb restarts (0 = default 25)")
+	seed := fs.Int64("seed", 1, "RNG seed for reproducibility")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	ct, err := readInput(*in)
+	if err != nil {
+		return nil, err
+	}
+	r := rand.New(rand.NewSource(*seed))
+	key, pt, score := subst.Solve(ct, lang.EnglishTrigram(), r, subst.Options{Restarts: *restarts})
+	env.Logf("substitution solved", "score", score)
+
+	// Render the recovered key as a ciphertext->plaintext alphabet string.
+	keyStr := make([]byte, 26)
+	for c := 0; c < 26; c++ {
+		keyStr[c] = 'A' + key[c]
+	}
+	preview := pt
+	if len(preview) > 80 {
+		preview = preview[:80]
+	}
+	res := &cryptolab.Result{Tool: "brute", Mode: "substitution",
+		Summary: fmt.Sprintf("recovered substitution key %s", keyStr)}
+	res.AddField("key", string(keyStr))
+	res.AddField("score", score)
+	res.AddFinding("plaintext", score, map[string]any{
+		"key":              string(keyStr),
+		"plaintext_prefix": string(sanitize(preview)),
+	})
+	res.Note("monoalphabetic substitution solving assumes English plaintext and enough ciphertext; very short or rare-letter-heavy messages may leave a few letters unresolved.")
 	return res, nil
 }
 

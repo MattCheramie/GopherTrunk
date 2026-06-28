@@ -50,6 +50,13 @@ structured result — summary, fields, ranked findings, notes, and downloadable
 artifacts (survivor logs, checkpoints, descrambled output). It runs entirely
 offline against uploaded files; no SDR or daemon required.
 
+When the main `gophertrunk` daemon is built with `-tags cryptolab`, the same
+console is also mounted inside it at `/cryptolab/` (its API lives under
+`/api/v1/cryptolab/`, alongside the siglab routes), so you can reach it from
+the running daemon without launching a separate `cryptolab serve`. Mutating
+routes share the daemon's mutation gate. The default daemon build links a
+no-op mount, so the toolkit stays out of the standard binary.
+
 ## Usage (CLI)
 
 ```
@@ -65,11 +72,11 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 
 | Tool | Modes | What it does |
 |------|-------|--------------|
-| `brute` | `xor`, `caesar`, `vigenere` | classical-cipher recovery with English/crib scoring |
+| `brute` | `xor`, `caesar`, `vigenere`, `substitution` | classical-cipher recovery with English/crib scoring |
 | `lfsr` | `bm`, `keystream` | Berlekamp–Massey LFSR recovery; keystream = pt⊕ct |
 | `crc` | `recover`, `compute` | recover / compute CRC parameters from sample frames |
 | `stats` | `scan` | entropy / IC / chi-square / XOR key-length triage |
-| `descramble` | `invert` | full-band analog spectral inversion (self-inverse) |
+| `descramble` | `invert`, `splitband`, `rolling` | analog spectral / split-band / rolling-code voice inversion |
 | `alias` | `gauge`, `structure`, `cells`, `fromseed` | length-seeded byte-obfuscator recovery |
 
 ### Examples
@@ -84,8 +91,17 @@ gophertrunk cryptolab brute xor -in cipher.bin -crib "UNIT "
 # Identify the CRC on a protocol from captured (data,crc) frames.
 gophertrunk cryptolab crc recover -in frames.txt -widths 16,8
 
+# Recover a monoalphabetic substitution cipher (English plaintext assumed).
+gophertrunk cryptolab brute substitution -in cipher.txt -restarts 40
+
 # Descramble a frequency-inverted analog voice clip (run twice to undo).
 gophertrunk cryptolab descramble invert -in scrambled.s16 -out clear.s16
+
+# Undo a split-band inversion (low/high sub-bands inverted about a split point).
+gophertrunk cryptolab descramble splitband -in scrambled.s16 -out clear.s16 -split 0.5
+
+# Undo a rolling/hopping inversion, auto-detecting the per-frame split.
+gophertrunk cryptolab descramble rolling -in scrambled.s16 -out clear.s16 -frame 1024 -schedule auto
 ```
 
 ## Subject framework: byte-obfuscator recovery (`alias`)
@@ -127,20 +143,23 @@ richer multi-round / two-table update forms than the in-binary propagator. The
 `alias structure` mode writes `high-transitions.csv` to the `-out` directory,
 which the Z3 script consumes directly.
 
-## Not yet implemented
+## Substitution and voice-descramble internals
 
-These are deliberately out of the current scope; each is a sizeable addition
-on its own and is noted here so the gap is explicit rather than silent:
+- **Monoalphabetic substitution** (`brute substitution`) auto-solves a general
+  substitution cipher by frequency-seeded hill-climbing with random restarts,
+  scored against an embedded English trigram language model
+  (`internal/cryptolab/engine/lang`, `…/engine/subst`). It assumes English
+  plaintext; `-restarts` trades runtime for recovery on short ciphertexts.
+- **Split-band inversion** (`descramble splitband`) inverts the low and high
+  sub-bands independently about a `-split` point (fraction of Nyquist) using a
+  disjoint-bin FFT so the operation stays self-inverse.
+- **Rolling-code inversion** (`descramble rolling`) applies a per-frame split
+  schedule; `-schedule auto` detects each frame's inversion from its
+  spectral energy balance, while a CSV schedule replays a known hop sequence.
 
-- **Monoalphabetic substitution solver** in `brute` — auto-solving a general
-  substitution cipher needs n-gram hill-climbing / simulated annealing over a
-  26!-key space and an embedded language model, which is a different class of
-  work from the linear-keyspace solvers shipped here.
-- **Split-band and rolling-code voice descrambling** — `descramble` currently
-  does exact full-band spectral inversion (the dominant analog scrambler);
-  split-band inverters need a band-splitting filter bank, and rolling/hopping
-  schemes need sync recovery.
-- **Daemon-mounted console** — the web console runs as the standalone
-  `cryptolab serve`; mounting it inside the main `gophertrunk` daemon at a
-  `/cryptolab/` route (alongside the siglab API) would require wiring the
-  subsystem through `internal/api` behind the build tag.
+## Scope note
+
+The toolkit does not claim to break strong keyed RF crypto (P25 DES-OFB/AES,
+ADP/RC4). For those it offers known-plaintext keystream extraction (`lfsr`),
+weak/short-key brute force (`brute`), and breakability triage (`stats`); each
+report ends with what additional data would close the remaining gap.

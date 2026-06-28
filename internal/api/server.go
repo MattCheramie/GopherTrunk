@@ -382,6 +382,13 @@ type Server struct {
 	// siglabStop signals the siglab TTL sweeper to exit on shutdown.
 	siglabStop chan struct{}
 
+	// cryptolabCloser holds the optional cryptolab web subsystem (the
+	// /cryptolab/ console + /api/v1/cryptolab/* routes). It is only
+	// constructed in builds tagged `cryptolab` (see cryptolab_enabled.go);
+	// the default build leaves it nil. Typed as a minimal closer so the
+	// non-tagged server.go does not import the cryptolab packages.
+	cryptolabCloser interface{ Close() error }
+
 	// configBuilder backs the standalone web Config Builder/Editor:
 	// the /api/v1/config/* routes (browse / load / validate / save /
 	// RadioReference browse) and, when assets are wired, the builder SPA
@@ -959,6 +966,11 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 		s.siglab.close()
 	}
+	// Tear down the optional cryptolab subsystem (removes its temp dir).
+	if s.cryptolabCloser != nil {
+		_ = s.cryptolabCloser.Close()
+		s.cryptolabCloser = nil
+	}
 	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
 	// get up to 30 s to drain rather than the 5 s the old bound gave
 	// them. Cuts user-visible connection drops on a clean restart.
@@ -1164,6 +1176,11 @@ func (s *Server) routes() *http.ServeMux {
 			}
 		}
 	}
+
+	// Optional cryptolab console (/cryptolab/ SPA + /api/v1/cryptolab/*).
+	// A no-op in the default build; the cryptolab-tagged build registers the
+	// routes here (see cryptolab_enabled.go).
+	s.mountCryptolab(mux)
 
 	// Pager log — recent POCSAG (and eventually FLEX) messages.
 	// Read-only; the decoder writes via the events bus → PagerLog.

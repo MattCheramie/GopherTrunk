@@ -47,6 +47,11 @@ var modeParams = map[string][]Param{
 		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},
 		{Name: "crib", Label: "Known-plaintext crib", Kind: "string", Help: "optional substring to boost scoring"},
 	},
+	"brute/substitution": {
+		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true, Help: "English plaintext assumed"},
+		{Name: "restarts", Label: "Hill-climb restarts (0 = default)", Kind: "int", Default: "0"},
+		{Name: "seed", Label: "RNG seed", Kind: "int", Default: "1"},
+	},
 	"lfsr/bm": {
 		{Name: "in", Label: "Keystream file", Kind: "file", Required: true, Help: "packed bytes, MSB-first"},
 	},
@@ -70,6 +75,17 @@ var modeParams = map[string][]Param{
 	"descramble/invert": {
 		{Name: "in", Label: "Scrambled PCM (s16le mono)", Kind: "file", Required: true},
 		{Name: "out", Label: "Output file", Kind: "outfile", Required: true, Default: "descrambled.s16"},
+	},
+	"descramble/splitband": {
+		{Name: "in", Label: "Scrambled PCM (s16le mono)", Kind: "file", Required: true},
+		{Name: "out", Label: "Output file", Kind: "outfile", Required: true, Default: "descrambled.s16"},
+		{Name: "split", Label: "Split point (fraction of Nyquist)", Kind: "string", Default: "0.5"},
+	},
+	"descramble/rolling": {
+		{Name: "in", Label: "Scrambled PCM (s16le mono)", Kind: "file", Required: true},
+		{Name: "out", Label: "Output file", Kind: "outfile", Required: true, Default: "descrambled.s16"},
+		{Name: "frame", Label: "Frame length (samples)", Kind: "int", Default: "1024"},
+		{Name: "schedule", Label: "Split schedule (CSV) or 'auto'", Kind: "string", Default: "auto"},
 	},
 	"alias/gauge":     {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
 	"alias/structure": {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},

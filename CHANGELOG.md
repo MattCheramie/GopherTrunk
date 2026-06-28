@@ -23,6 +23,15 @@ for tagged releases.
   `siglab`/`configbuilder` consoles — a schema-driven form exposes every tool,
   mode, and setting, streams the live run log, and renders the structured
   result with downloadable artifacts. See `docs/cryptolab.md`.
+- **`cryptolab` toolkit expansion**. The `brute` tool gains a **monoalphabetic
+  substitution** solver (frequency-seeded hill-climbing with random restarts,
+  scored by an embedded English trigram model). The `descramble` tool gains
+  **split-band** inversion (independent low/high sub-band inversion about a
+  configurable split) and **rolling-code** inversion (per-frame split schedule,
+  with `auto` detection of each frame's inversion). The web console is now also
+  **mounted inside the main daemon at `/cryptolab/`** when `gophertrunk` is
+  built with `-tags cryptolab`, so it is reachable from the running daemon
+  without a separate `cryptolab serve`; the default daemon build is unaffected.
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
   trunking capture, explaining that the down-converter normalises to 48 kHz and

@@ -54,9 +54,10 @@ test-dvsi:
 # toolkit's engine and subject packages carry no build tag (they always
 # compile and are covered by `make test`); only the gophertrunk binary's
 # cryptolab subcommand is gated, so the default install excludes it. Opt the
-# toolkit into a build with `make build TAGS=cryptolab`.
+# toolkit into a build with `make build TAGS=cryptolab`. internal/api is
+# included so the tagged daemon-mounted console (/cryptolab/) is exercised.
 test-cryptolab:
-	$(GO) test -tags "cryptolab $(TAGS)" -race -count=1 ./internal/cryptolab/... ./cmd/gophertrunk/
+	$(GO) test -tags "cryptolab $(TAGS)" -race -count=1 ./internal/cryptolab/... ./cmd/gophertrunk/ ./internal/api/
 
 # test-airspy-real runs an opt-in real-hardware probe against an attached
 # Airspy R2/Mini. The test package skips unless GOPHERTRUNK_AIRSPY_REAL=1 is
