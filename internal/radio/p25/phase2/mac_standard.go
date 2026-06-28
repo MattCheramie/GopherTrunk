@@ -201,3 +201,39 @@ func (p MACPDU) AsEncryptionSync() (EncryptionSync, bool) {
 	copy(es.MessageIndicator[:], p.Payload[3:12])
 	return es, true
 }
+
+// AsPushToTalk extracts the Encryption Sync (ALGID/KID/MI) that a P25
+// Phase 2 MAC_PTT message carries at key-up. On real systems this — not
+// the standalone OpEncryptionSync PDU AsEncryptionSync parses — is where
+// ALGID/KID/MI actually ride (issue #813): the PTT message is identified
+// by its slot type (SlotTypeMACPTT), not by a MAC opcode, so unlike
+// AsEncryptionSync this does NOT gate on the opcode byte. Callers must
+// only invoke it for a PTT-slot PDU (see DecodeSuperframeMACPDUsWithSlot
+// / the dispatcher), otherwise a long enough non-PTT payload would parse
+// as garbage.
+//
+// Layout note: field offsets follow SDRtrunk's PushToTalk MacStructure —
+// MESSAGE_INDICATOR at message bits 8-79 (72 bits), ALGORITHM_ID at
+// 80-87, KEY_ID at 88-103. Relative to the MACPDU payload, which starts
+// after the 1-octet opcode (message bits 0-7), that is:
+//
+//	bytes 0-8  : 72-bit Message Indicator
+//	byte 9     : Algorithm ID
+//	bytes 10-11: Key ID
+//
+// This is the project's working model pending issue #813 on-air
+// confirmation (the repo has no TIA-102.BBAC PDF). It is confined here
+// so a correction is a one-file change, and the grant's ServiceOptions
+// "protected" bit flags encryption independently, so a wrong layout
+// degrades gracefully to today's behaviour (Encrypted true, alg/key 0).
+func (p MACPDU) AsPushToTalk() (EncryptionSync, bool) {
+	if len(p.Payload) < 12 {
+		return EncryptionSync{}, false
+	}
+	es := EncryptionSync{
+		AlgorithmID: p.Payload[9],
+		KeyID:       binary.BigEndian.Uint16(p.Payload[10:12]),
+	}
+	copy(es.MessageIndicator[:], p.Payload[0:9])
+	return es, true
+}

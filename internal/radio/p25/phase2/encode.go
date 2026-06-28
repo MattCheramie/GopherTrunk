@@ -91,6 +91,21 @@ func EncodeEncryptionSync(es EncryptionSync) MACPDU {
 	return MACPDU{Opcode: OpEncryptionSync, Payload: payload}
 }
 
+// EncodePushToTalk builds the MAC PDU form of a MAC_PTT message carrying
+// an Encryption Sync — the inverse of MACPDU.AsPushToTalk. The opcode
+// octet is left OpUnknown because real Phase 2 PTT is routed by slot
+// type (SlotTypeMACPTT), not by the opcode byte; a non-manufacturer
+// opcode keeps the payload free of an MFID octet so the offsets line up.
+// The source / group address tail the real message carries is omitted
+// (AsPushToTalk only reads the 12-byte MI/ALGID/KID prefix).
+func EncodePushToTalk(es EncryptionSync) MACPDU {
+	payload := make([]byte, 12)
+	copy(payload[0:9], es.MessageIndicator[:])
+	payload[9] = es.AlgorithmID
+	binary.BigEndian.PutUint16(payload[10:12], es.KeyID)
+	return MACPDU{Opcode: OpUnknown, Payload: payload}
+}
+
 // EncodeGroupAffiliationResponse builds the MAC PDU form of a Group
 // Affiliation Response — the inverse of AsGroupAffiliationResponse.
 func EncodeGroupAffiliationResponse(g GroupAffiliationResponse) MACPDU {

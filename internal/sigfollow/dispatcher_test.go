@@ -106,6 +106,58 @@ func TestDispatcherPublishesTalkerAlias(t *testing.T) {
 	}
 }
 
+// TestDispatcherPTTSlotDrivesEncryptionHook builds a superframe whose
+// MAC_PTT sub-frame carries an Encryption Sync and asserts the dispatcher
+// routes its ALGID/KID to the OnCallEncryption hook (the voice composer
+// wires this to its engine-backfill publisher). Routing is by slot type,
+// not opcode, since the PTT message has no normal MAC opcode (#813).
+func TestDispatcherPTTSlotDrivesEncryptionHook(t *testing.T) {
+	es := p25p2.EncryptionSync{
+		AlgorithmID:      0x84,
+		KeyID:            0x1234,
+		MessageIndicator: [9]byte{1, 2, 3, 4, 5, 6, 7, 8, 9},
+	}
+	ptt := p25p2.EncodePushToTalk(es)
+
+	dibits := make([]uint8, 50)
+	var subs [p25p2.SubframesPerSuperframe][]uint8
+	for i := range subs {
+		if i == 0 {
+			subs[i] = p25p2.EncodeMACSubframe(p25p2.SlotTypeMACPTT, uint8(i),
+				ptt, p25p2.TrellisOn, p25p2.InterleaveOff)
+			continue
+		}
+		payloads := make([][]byte, p25p2.Voice4VFrameCount)
+		for j := range payloads {
+			payloads[j] = make([]byte, p25p2.VoiceFrameBytes)
+		}
+		subs[i] = p25p2.EncodeVoiceSubframe(p25p2.SlotTypeVoice4V, uint8(i), payloads)
+	}
+	dibits = append(dibits, p25p2.EncodeSuperframe(subs)...)
+	sfs := p25p2.NewSuperframeDecoder().Process(dibits, 0)
+	if len(sfs) == 0 {
+		t.Fatal("no superframes decoded")
+	}
+
+	var got p25p2.EncryptionSync
+	var called int
+	d := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnCallEncryption: func(e p25p2.EncryptionSync) { got = e; called++ },
+	})
+	macCfg := p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}
+	for _, sf := range sfs {
+		d.Dispatch(sf, macCfg)
+	}
+	if called == 0 {
+		t.Fatal("OnCallEncryption never invoked for PTT-slot encryption sync")
+	}
+	if got.AlgorithmID != 0x84 || got.KeyID != 0x1234 {
+		t.Errorf("OnCallEncryption alg/key = %#x/%#x, want 0x84/0x1234",
+			got.AlgorithmID, got.KeyID)
+	}
+}
+
 // TestDispatcherSourceCallback verifies the in-call GROUP_VOICE_CHANNEL_USER
 // PDU routes to the OnCallSource hook (the voice composer wires this to its
 // engine-backfill publisher; the follower leaves it nil).
