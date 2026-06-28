@@ -157,6 +157,8 @@ groups:
         url: /histogram.html
       - title: Hunt (discover systems)
         url: /hunt.html
+      - title: SigLab (offline workbench)
+        url: /siglab.html
       - title: rigctld integration
         url: /rigctld.html
       - title: Hardening

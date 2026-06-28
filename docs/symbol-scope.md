@@ -67,7 +67,7 @@ same controls work around it:
 
 ## Offline (SigLab)
 
-The offline [SigLab](siglab) analyzer has the same view. Run a capture
+The offline [SigLab](siglab.html) analyzer has the same view. Run a capture
 with **collect IQ diag** + **capture IQ** enabled and the Result carries
 an aligned symbol series (`IQTaps.symbol_dibits` / `symbol_soft`); the
 SigLab Results page renders it as a **Symbol scope** card next to the eye

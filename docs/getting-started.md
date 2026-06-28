@@ -55,7 +55,7 @@ everything else is a view onto the same running daemon.
 | **Web console** | Bundled browser SPA served by the daemon — the same panels in a browser. | `gophertrunk -web` |
 | **Interactive launcher** | What plain `gophertrunk` shows on a TTY: pick **[1] TUI**, **[2] Web**, or **[3] Headless**. | `gophertrunk` |
 | **Config Builder** | Standalone guided editor for `config.yaml` — add systems, talkgroups, and feeds without hand-writing YAML. Comes as both a terminal app and a browser app. | `gophertrunk config` / `config serve` |
-| **SigLab** | Standalone signal workbench for offline captures — replay, analyze, identify, and grade decodes. Also a terminal app and a browser console. | `gophertrunk siglab` / `siglab serve` |
+| **[SigLab](siglab.html)** | Standalone signal workbench for offline captures — replay, analyze, identify, and grade decodes. Also a terminal app and a browser console. | `gophertrunk siglab` / `siglab serve` |
 
 The first four surfaces are *views onto a running daemon*: quitting the TUI or
 closing the browser does **not** stop the daemon — it keeps running in the same
