@@ -47,10 +47,14 @@ const defaultMaxUpload = 512 << 20
 // Server is the cryptolab web console HTTP handler.
 type Server struct {
 	assets    fs.FS
-	tempDir   string
-	ownTemp   bool
+	fixedDir  string // explicit temp dir from Options (empty ⇒ owned/lazy)
 	maxUpload int64
 	log       *slog.Logger
+
+	dirOnce sync.Once
+	tempDir string
+	ownTemp bool
+	dirErr  error
 
 	mu    sync.Mutex
 	files map[string]*upload
@@ -63,18 +67,10 @@ type upload struct {
 	Created        time.Time
 }
 
-// New constructs a Server, creating a temp directory if none was supplied.
+// New constructs a Server. The staging temp directory is created lazily on
+// the first upload/run (not at construction), so merely registering the
+// routes — as the daemon does for every request mux — costs nothing on disk.
 func New(opts Options) (*Server, error) {
-	dir, own := opts.TempDir, false
-	if dir == "" {
-		d, err := os.MkdirTemp("", "gophertrunk-cryptolab-")
-		if err != nil {
-			return nil, fmt.Errorf("cryptolab web: temp dir: %w", err)
-		}
-		dir, own = d, true
-	} else if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("cryptolab web: temp dir %s: %w", dir, err)
-	}
 	max := opts.MaxUploadBytes
 	if max <= 0 {
 		max = defaultMaxUpload
@@ -85,8 +81,7 @@ func New(opts Options) (*Server, error) {
 	}
 	return &Server{
 		assets:    opts.Assets,
-		tempDir:   dir,
-		ownTemp:   own,
+		fixedDir:  opts.TempDir, // empty ⇒ create an owned temp dir lazily
 		maxUpload: max,
 		log:       log,
 		files:     map[string]*upload{},
@@ -94,17 +89,48 @@ func New(opts Options) (*Server, error) {
 	}, nil
 }
 
-// Handler returns the configured HTTP mux.
+// ensureTempDir creates the staging directory on first use and returns it.
+func (s *Server) ensureTempDir() (string, error) {
+	s.dirOnce.Do(func() {
+		if s.fixedDir != "" {
+			s.dirErr = os.MkdirAll(s.fixedDir, 0o755)
+			s.tempDir = s.fixedDir
+			return
+		}
+		d, err := os.MkdirTemp("", "gophertrunk-cryptolab-")
+		if err != nil {
+			s.dirErr = err
+			return
+		}
+		s.tempDir, s.ownTemp = d, true
+	})
+	return s.tempDir, s.dirErr
+}
+
+// Handler returns a standalone HTTP mux: the cryptolab API plus the embedded
+// SPA at /. Used by `cryptolab serve`.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.RegisterAPI(mux, nil)
+	mux.Handle("GET /", s.spaHandler())
+	return mux
+}
+
+// RegisterAPI mounts the /api/v1/cryptolab/* routes onto mux. Mutating routes
+// (file upload, run) are wrapped with gate when non-nil, so the daemon can
+// apply the same auth middleware it uses for its other write routes; the
+// standalone server passes nil. This lets the same service back both the
+// standalone `cryptolab serve` and the daemon-mounted console at /cryptolab/.
+func (s *Server) RegisterAPI(mux *http.ServeMux, gate func(http.HandlerFunc) http.HandlerFunc) {
+	if gate == nil {
+		gate = func(h http.HandlerFunc) http.HandlerFunc { return h }
+	}
 	mux.HandleFunc("GET /api/v1/cryptolab/tools", s.handleTools)
-	mux.HandleFunc("POST /api/v1/cryptolab/files", s.handleUpload)
-	mux.HandleFunc("POST /api/v1/cryptolab/run", s.handleRun)
+	mux.HandleFunc("POST /api/v1/cryptolab/files", gate(s.handleUpload))
+	mux.HandleFunc("POST /api/v1/cryptolab/run", gate(s.handleRun))
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}", s.handleJob)
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}/events", s.handleJobEvents)
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}/artifacts/{name}", s.handleArtifact)
-	mux.Handle("GET /", s.spaHandler())
-	return mux
 }
 
 // Close removes the temp directory if the server created it.
@@ -132,8 +158,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
+	dir, err := s.ensureTempDir()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "upload: temp dir: "+err.Error())
+		return
+	}
 	id := randomID()
-	path := filepath.Join(s.tempDir, id+".bin")
+	path := filepath.Join(dir, id+".bin")
 	dst, err := os.Create(path)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "upload: "+err.Error())
@@ -176,8 +207,13 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dir, err := s.ensureTempDir()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "run: temp dir: "+err.Error())
+		return
+	}
 	id := randomID()
-	jobDir := filepath.Join(s.tempDir, "job-"+id)
+	jobDir := filepath.Join(dir, "job-"+id)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		writeErr(w, http.StatusInternalServerError, "run: "+err.Error())
 		return
