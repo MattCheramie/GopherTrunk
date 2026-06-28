@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.6] — 2026-06-28
+
+Headlined by the **`cryptolab` cryptographic-research toolkit** — a new,
+opt-in subcommand and browser console for byte-oriented cipher research — and
+by broader P25 visibility in the live views: the decoded **IDEN_UP
+frequency-band table** and **every active talkgroup** (not just the calls a
+tuner is following) now surface in the Systems and active-call panels, Phase 2
+encrypted calls populate **ALGID/KID** off the on-air MAC_PTT slot, and the
+control decoder now **warns when it has locked onto an adjacent site
+off-frequency** instead of silently decoding the wrong site.
+
 ### Added
 - **`cryptolab` — optional RF cryptographic-research toolkit**. A new,
   opt-in `gophertrunk cryptolab` subcommand collects byte-oriented research
@@ -32,6 +43,96 @@ for tagged releases.
   **mounted inside the main daemon at `/cryptolab/`** when `gophertrunk` is
   built with `-tags cryptolab`, so it is reachable from the running daemon
   without a separate `cryptolab serve`; the default daemon build is unaffected.
+- **P25 IDEN_UP frequency-band table in the live views.** The full P25
+  IDEN_UP / identifier-update band table GopherTrunk already decoded (and
+  rendered in the network report) now overlays onto `GET /api/v1/systems` and
+  the web Systems detail modal as a "Frequency bands (N)" section beside the
+  neighbour-site list. Operators can read the band plan SDRtrunk-style and map a
+  neighbour's channel id/number back to an absolute frequency without doing it by
+  hand. Values come from the same live topology snapshot as the report, so they
+  match exactly (TDMA flag and transmit offset included).
+- **All active talkgroups surfaced, not just tuner-bound calls.** The active
+  panels previously showed only calls bound to a voice tuner, so a single-voice-
+  tuner setup could only ever display one active talkgroup even when several
+  calls were up. A control-channel activity tracker now records every voice grant
+  the control channel announces; the active-calls API merges tuner-decoded and
+  control-channel-observed calls with a `following` flag, and the TUI and web
+  active panels render observed-only calls distinctly. Audio is still limited by
+  tuner count — the display of who's *up* no longer is.
+- **P25 Phase 2 ALGID/KID from the on-air MAC_PTT slot** (#813). Real Phase 2
+  systems carry the encryption sync (ALGID/KID/MI) in the MAC_PTT message that
+  begins each transmission, keyed by slot type rather than a MAC opcode, so the
+  previous opcode-keyed accessor never matched on air and encrypted calls left
+  `algorithm_id`/`key_id` blank. PTT-slot PDUs are now decoded and routed through
+  the existing call-encryption backfill, and the per-channel MAC census logs the
+  payload hex for field confirmation. Flagged a working model pending on-air
+  validation; degrades gracefully if the layout is wrong.
+- **Cryptography & cryptanalysis field-guide category and a dedicated SigLab
+  user guide** (docs). New cryptanalysis-method reference pages plus a standalone
+  Signal Lab user guide, with a broken link fixed.
+
+### Fixed
+- **Adjacent-site off-frequency control lock now warns** (#815). A strong
+  adjacent-site P25 control carrier ~12.5 kHz away can bleed through the
+  narrowband receiver, lock, and decode the *neighbouring* site's identity while
+  still reporting the tuned frequency — with no indication anything is wrong.
+  While locked, GopherTrunk now emits a throttled WARN when the total carrier
+  offset from the configured frequency exceeds a threshold (default 4 kHz,
+  `sdr.carrier_offset_warn_hz`), naming both plausible causes (adjacent-site lock
+  or a mistuned oscillator). Advisory only — it never retunes — and the live
+  offset is surfaced on `GET /api/v1/sites` so the mismatch is visible without
+  dropping to capture/spectrum.
+
+## [v0.5.5] — 2026-06-27
+
+A reception-and-robustness release for wideband and DMR captures, plus the
+talker-alias cryptanalysis writeup. **Tier II conventional DMR now decodes
+2-slot interleaved voice by default** (#644), the **wideband voice-tap DDC is
+span-aware** so grants out at the band edges actually tune, and **SoapyRemote
+overruns are surfaced and shed** instead of silently shredding every channel.
+
+### Added
+- **2-slot interleaved voice by default for Tier II conventional DMR** (#644).
+  A DMR repeater carrier is 2-slot TDMA, so the single-slot voice decoder
+  sliced alternating timeslots into each superframe — the "DJ scratch", garbled-
+  audio signature from the field report (every quality line showed
+  `lc_superframes=0` with real, FEC-clean AMBE). `proto=dmr-tier2` conventional
+  systems now default to the 2-slot interleaved cadence so the slot router binds
+  and audio reconstructs cleanly.
+
+### Changed
+- **Span-aware voice-tap DDC so outer wideband grants tune.** A wide DMR plan on
+  a 10 MS/s capture has voice grants out past ±1.9 MHz; the virtual tuner
+  advertised the full IQ window and the engine bound those grants, but the per-
+  call DDC was built without span and rejected any offset beyond ±1.1 MHz, so the
+  outer carriers produced no audio. The per-call bank is now sized from the tap
+  offset (the span-aware path #764 added for the control channel), so any grant
+  inside the advertised band actually tunes.
+- **SoapyRemote overruns are surfaced and drained without stalling the radio.**
+  At high sample rates a blocked reader stopped draining the socket and stopped
+  sending flow-control ACKs, so the device overflowed and dropped samples,
+  shredding every channel's framing at once — with only an invisible per-datagram
+  DEBUG line as a signal. Overruns are now reported at a rate-limited WARN with
+  running counts and an actionable hint, and the read loop never blocks (it sheds
+  the oldest queued chunk and counts it), keeping the socket drained and ACKs
+  flowing. The channelizer per-tap loop is also parallelized across CPU cores, and
+  an oversampled capture rate now draws a lower-the-rate advisory at startup.
+
+### Docs
+- **Talker-alias cipher cryptanalysis** (#773): a chosen-plaintext capture
+  procedure and the documented cryptanalysis findings (product-form decode
+  decomposition), linked to the issue thread.
+
+## [v0.5.4] — 2026-06-26
+
+A wideband-robustness and capture-guidance release. Multi-tap wideband front
+ends get **`gain: "auto"` guidance** and can now **host dense plans (70-DMR)
+instead of crashing at init**, `gophertrunk capture` warns on **over-high
+sample rates**, talkgroups **auto-populate from live control-channel grants**,
+and the unverified Motorola talker-alias cipher is **gated with corrected
+provenance** (#773).
+
+### Added
 - **Capture sample-rate guidance** (#771). `gophertrunk capture` now prints a
   one-line hint when a high native rate (>4 MS/s) is chosen for a narrowband
   trunking capture, explaining that the down-converter normalises to 48 kHz and
@@ -40,6 +141,38 @@ for tagged releases.
   root cause of the #771 no-lock report. A new "Choosing a sample rate" section
   in `docs/hardware.md` documents the finding and recommends ~2.4–2.5 MS/s for
   control-channel roles.
+- **Auto-discover talkgroups from control-channel grants.** The Talkgroups
+  database previously loaded only from a hand-maintained CSV, so an operator
+  starting empty saw bare numbers. Each talkgroup is now catalogued the first
+  time it is granted on the control channel (skipping unit-to-unit / interconnect
+  grants), tagged "Discovered" and surfaced in Database → Talkgroups. In-memory
+  only and never silently widens a curated scan list — the operator opts a learned
+  talkgroup in from the UI.
+
+### Changed
+- **`gain: "auto"` guidance for multi-tap wideband devices** (#749). A single
+  fixed gain on a shared front end can't serve sites of differing strength —
+  picking a gain so the strongest site doesn't clip leaves weaker co-tenants at
+  the ADC noise floor. GopherTrunk now WARNs at startup when a `role: wideband`
+  dongle with >1 channel is pinned to a manual gain (and the per-tap low-power
+  WARN suggests `gain: "auto"` too), with the AGC recommendation documented in
+  `config.example.yaml` and `docs/hardware.md`.
+- **Dense wideband plans are hosted on the channelizer instead of crashing at
+  init.** Very dense wideband plans (e.g. 70-DMR) now stay on the channelizer
+  (a per-tap DDC is too heavy at that scale) so they initialise and run, and the
+  web plots follow the voice channel on wideband SDRs.
+
+### Fixed
+- **Gated the unverified Motorola talker-alias cipher; corrected false
+  provenance** (#773). RIDs resolve on live Phase 2 traffic but no talker-alias
+  *text* ever decodes: the per-byte substitution cipher was AI-authored in #376
+  yet its comments claimed it was a reverse-engineered fact "identical across
+  every open-source decoder." A clean-room attempt showed the cipher is
+  mathematically underdetermined from the one partial capture available, and
+  SDRtrunk's GPLv3 table is off-limits to Apache-2.0 GopherTrunk. The misleading
+  provenance is corrected to the truth (structure inferred from the public #773
+  protocol work) and the unverified decode is gated rather than shipping fake
+  confidence.
 
 ## [v0.5.3] — 2026-06-25
 
