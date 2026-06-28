@@ -46,10 +46,10 @@ working with **recorded captures** instead of a live radio:
   auto-detect its protocol, and export the results to JSON / YAML / CSV.
 - `gophertrunk test` grades a decode against expected results.
 
-**SigLab** wraps this workbench in a terminal and a browser console
-(`gophertrunk siglab` / `siglab serve`) so you can replay, inspect, and grade
-decodes without a radio attached — the natural home for diagnosing a tricky
-capture or building a regression fixture. The
+**[SigLab](siglab.html)** wraps this workbench in a terminal and a browser
+console (`gophertrunk siglab` / `siglab serve`) so you can replay, inspect, and
+grade decodes without a radio attached — the natural home for diagnosing a
+tricky capture or building a regression fixture. The
 [Architecture reference](architecture.html) describes the decode pipeline these
 tools drive.
 
