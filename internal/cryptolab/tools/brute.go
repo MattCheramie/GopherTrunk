@@ -11,9 +11,11 @@ import (
 
 type bruteTool struct{}
 
-func (bruteTool) Name() string            { return "brute" }
-func (bruteTool) Synopsis() string        { return "keyspace brute force for classical / XOR ciphers" }
-func (bruteTool) Modes() []cryptolab.Mode { return []cryptolab.Mode{bruteXOR{}} }
+func (bruteTool) Name() string     { return "brute" }
+func (bruteTool) Synopsis() string { return "keyspace brute force for classical / XOR ciphers" }
+func (bruteTool) Modes() []cryptolab.Mode {
+	return []cryptolab.Mode{bruteXOR{}, bruteCaesar{}, bruteVigenere{}}
+}
 
 type bruteXOR struct{}
 
@@ -79,6 +81,82 @@ func firstN(g []stats.KeyLenScore, n int) []stats.KeyLenScore {
 		return g[:n]
 	}
 	return g
+}
+
+// scorerFor returns an English scorer, optionally boosted by a known-plaintext crib.
+func scorerFor(crib string) brute.Scorer {
+	if crib != "" {
+		return brute.Crib{Crib: []byte(crib), Base: brute.English{}}
+	}
+	return brute.English{}
+}
+
+type bruteCaesar struct{}
+
+func (bruteCaesar) Name() string     { return "caesar" }
+func (bruteCaesar) Synopsis() string { return "recover a single additive (Caesar/ROT) shift" }
+
+func (bruteCaesar) Run(_ context.Context, args []string, env cryptolab.Env) (*cryptolab.Result, error) {
+	fs := newFlagSet("brute caesar")
+	in := fs.String("in", "", "ciphertext file — required")
+	crib := fs.String("crib", "", "optional known-plaintext substring to boost scoring")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	ct, err := readInput(*in)
+	if err != nil {
+		return nil, err
+	}
+	cand := brute.SolveCaesar(ct, scorerFor(*crib))
+	res := &cryptolab.Result{Tool: "brute", Mode: "caesar"}
+	shift := byte(0)
+	if len(cand.Key) == 1 {
+		shift = cand.Key[0]
+	}
+	res.AddField("shift", shift)
+	addXORFinding(res, cand)
+	res.Summary = fmt.Sprintf("recovered Caesar shift %d", shift)
+	return res, nil
+}
+
+type bruteVigenere struct{}
+
+func (bruteVigenere) Name() string { return "vigenere" }
+func (bruteVigenere) Synopsis() string {
+	return "recover a repeating additive (Vigenère) key from ciphertext"
+}
+
+func (bruteVigenere) Run(_ context.Context, args []string, env cryptolab.Env) (*cryptolab.Result, error) {
+	fs := newFlagSet("brute vigenere")
+	in := fs.String("in", "", "ciphertext file — required")
+	keyLen := fs.Int("keylen", 0, "key length (0 = auto-detect via Hamming)")
+	crib := fs.String("crib", "", "optional known-plaintext substring to boost scoring")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	ct, err := readInput(*in)
+	if err != nil {
+		return nil, err
+	}
+	scorer := scorerFor(*crib)
+	res := &cryptolab.Result{Tool: "brute", Mode: "vigenere"}
+	kl := *keyLen
+	if kl <= 0 {
+		guesses := stats.GuessXORKeyLength(ct, 40) // periodicity test is cipher-agnostic
+		res.AddField("auto_keylen_candidates", topLens(guesses, 3))
+		if len(guesses) > 0 {
+			kl = guesses[0].Length
+		}
+		if kl <= 0 {
+			kl = 1
+		}
+	}
+	cand := brute.SolveVigenere(ct, kl, scorer)
+	res.AddField("keylen", kl)
+	env.Logf("vigenere solved", "keylen", kl)
+	addXORFinding(res, cand)
+	res.Summary = fmt.Sprintf("recovered %d-byte Vigenère key", len(cand.Key))
+	return res, nil
 }
 
 func addXORFinding(res *cryptolab.Result, c brute.Candidate) {

@@ -38,6 +38,15 @@ var modeParams = map[string][]Param{
 		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},
 		{Name: "crib", Label: "Known-plaintext crib", Kind: "string", Help: "optional substring to boost scoring"},
 	},
+	"brute/caesar": {
+		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true},
+		{Name: "crib", Label: "Known-plaintext crib", Kind: "string", Help: "optional substring to boost scoring"},
+	},
+	"brute/vigenere": {
+		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true},
+		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},
+		{Name: "crib", Label: "Known-plaintext crib", Kind: "string", Help: "optional substring to boost scoring"},
+	},
 	"lfsr/bm": {
 		{Name: "in", Label: "Keystream file", Kind: "file", Required: true, Help: "packed bytes, MSB-first"},
 	},
