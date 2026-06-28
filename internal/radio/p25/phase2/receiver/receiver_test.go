@@ -1,8 +1,12 @@
 package receiver
 
 import (
+	"fmt"
 	"math"
 	"testing"
+
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 )
 
 func TestReceiverConstructsAndProcessesSilence(t *testing.T) {
@@ -68,6 +72,175 @@ func makeP2HDQPSKIQ(dibits []uint8) ([]complex64, int) {
 		}
 	}
 	return iq, sps
+}
+
+// makeP2HDQPSKIQWithOffset is makeP2HDQPSKIQ plus a constant carrier
+// rotation of offsetHz: every emitted sample n is additionally rotated
+// by e^{+j·2π·offsetHz·n/fs}, modelling the residual frequency error a
+// real (non-TCXO) RTL-SDR tuner carries. A differential decoder removes
+// constant carrier *phase* but not this per-symbol *rotation*
+// (2π·offsetHz/SymbolRate), so without carrier recovery the dibits land
+// a quadrant over and the 20-dibit outbound sync never correlates —
+// exactly the issue #813 field symptom (superframes=0). offsetHz=0 is
+// byte-identical to makeP2HDQPSKIQ.
+func makeP2HDQPSKIQWithOffset(dibits []uint8, offsetHz, fs float64) ([]complex64, int) {
+	sps := int(fs/SymbolRate + 0.5)
+	// Use the proper RRC-pulse-shaping modulator (the inverse of the
+	// receiver's RRC matched filter, Nyquist → zero ISI at symbol
+	// centres). A rectangular symbol hold would not round-trip through the
+	// matched filter and would self-corrupt fast-varying data.
+	iq := demod.ModulatePiOver4DQPSK(dibits, sps, PulseSpanSymbols, RolloffAlpha, Rotation)
+	if offsetHz != 0 {
+		w := 2 * math.Pi * offsetHz / fs
+		for n := range iq {
+			ph := w * float64(n)
+			iq[n] *= complex(float32(math.Cos(ph)), float32(math.Sin(ph)))
+		}
+	}
+	return iq, sps
+}
+
+// pseudoRandomDibits returns n deterministic pseudo-random dibits (0..3)
+// from an xorshift generator. Deterministic so the test is reproducible;
+// the varying symbol-to-symbol transitions give the Gardner timing loop
+// something to lock to (an all-idle stream is a transition-free tone).
+func pseudoRandomDibits(n int, seed uint32) []uint8 {
+	out := make([]uint8, n)
+	x := seed | 1
+	for i := range out {
+		x ^= x << 13
+		x ^= x >> 17
+		x ^= x << 5
+		out[i] = uint8(x & 0x3)
+	}
+	return out
+}
+
+// bestTailSER aligns the decoded dibit stream against the transmitted one
+// (the receiver drops the differential decoder's first symbol and the
+// Gardner warmup, so rx lags tx by a small constant) and returns the
+// minimum symbol-error rate over the settled tail (rx index >= skip). A
+// healthy decode settles to ~0; an uncorrected carrier offset throws ~3/4
+// of the symbols a quadrant over.
+func bestTailSER(tx, rx []uint8, skip int) float64 {
+	if len(rx) <= skip+100 {
+		return 1.0
+	}
+	best := 1.0
+	// The combined TX+RX RRC group delay makes the decoded stream lead tx
+	// by ~2*span symbols, so the alignment lag is negative; search a window
+	// wide enough to cover the group delay in either direction.
+	for lag := -64; lag <= 64; lag++ {
+		errs, n := 0, 0
+		for i := skip; i < len(rx); i++ {
+			j := i + lag
+			if j < 0 {
+				continue
+			}
+			if j >= len(tx) {
+				break
+			}
+			if rx[i] != tx[j] {
+				errs++
+			}
+			n++
+		}
+		if n < 100 {
+			continue
+		}
+		if r := float64(errs) / float64(n); r < best {
+			best = r
+		}
+	}
+	return best
+}
+
+// TestReceiverDecodesUnderCarrierOffset is the issue #813 failing-first
+// regression at the dibit level: a real-tuner carrier offset must not stop
+// the H-DQPSK receiver from recovering the symbols. Offsets span inside
+// (±600 Hz) and outside (±1500 Hz) the fine Costas loop's ±SymbolRate/8 =
+// ±750 Hz pull-in, so passing proves the coarse carrier seed — not just
+// the fine loop — is doing its job. Without carrier recovery the settled
+// tail SER is ~0.75; with it, ~0.
+func TestReceiverDecodesUnderCarrierOffset(t *testing.T) {
+	const fs = 48_000.0
+	tx := pseudoRandomDibits(2400, 0xC0FFEE)
+	for _, off := range []float64{600, -600, 1500, -1500} {
+		t.Run(fmt.Sprintf("offset=%gHz", off), func(t *testing.T) {
+			var rx []uint8
+			r := New(Options{
+				SampleRateHz: fs,
+				ClockMode:    ClockGardner,
+				GardnerGain:  0.005, // the value the voice/CC paths use
+				DibitSink:    func(d []uint8, _ int) { rx = append(rx, d...) },
+			})
+			iq, _ := makeP2HDQPSKIQWithOffset(tx, off, fs)
+			// Feed in production-sized chunks so the coarse seed must
+			// accumulate across calls (a single giant chunk would mask the
+			// streaming accumulate-then-fire path).
+			for i := 0; i < len(iq); i += 192 {
+				end := i + 192
+				if end > len(iq) {
+					end = len(iq)
+				}
+				r.Process(iq[i:end])
+			}
+			// skip past the coarse-seed fire (~512 symbols) + loop lock.
+			ser := bestTailSER(tx, rx, 900)
+			if ser > 0.02 {
+				t.Errorf("offset %g Hz: tail symbol-error rate = %.3f, want <= 0.02 (issue #813: no carrier recovery)", off, ser)
+			}
+		})
+	}
+}
+
+// TestReceiverLocksSuperframeUnderOffset is the symptom-level failing-first
+// regression: drive a real outbound-sync-bearing superframe stream through
+// the receiver into a SuperframeDecoder under a carrier offset and assert at
+// least one superframe locks. This reproduces the reporter's superframes=0
+// (67/67) directly. Sub-frame bodies are pseudo-random (not idle) so the
+// Gardner loop has transitions to track; only the sync lock is asserted, not
+// slot classification. The lead-in exceeds the coarse-seed sample budget so
+// the seed has fired before the first sync arrives.
+func TestReceiverLocksSuperframeUnderOffset(t *testing.T) {
+	const fs = 48_000.0
+	// Build 4 superframes of random sub-frame bodies; EncodeSuperframe
+	// injects the 20-dibit outbound sync at sub-frame 0.
+	var subs [phase2.SubframesPerSuperframe][]uint8
+	stream := make([]uint8, 0, 800+4*phase2.DibitsPerSuperframe)
+	stream = append(stream, pseudoRandomDibits(800, 0xBEEF)...) // lead-in (> seed budget)
+	for sfi := 0; sfi < 4; sfi++ {
+		for i := range subs {
+			subs[i] = pseudoRandomDibits(phase2.DibitsPerSubframe, uint32(0x1000+sfi*16+i))
+		}
+		stream = append(stream, phase2.EncodeSuperframe(subs)...)
+	}
+
+	for _, off := range []float64{0, 600, -600, 1500, -1500} {
+		t.Run(fmt.Sprintf("offset=%gHz", off), func(t *testing.T) {
+			locked := 0
+			sfDec := phase2.NewSuperframeDecoder()
+			r := New(Options{
+				SampleRateHz: fs,
+				ClockMode:    ClockGardner,
+				GardnerGain:  0.005, // the value the voice/CC paths use
+				DibitSink: func(d []uint8, baseIdx int) {
+					locked += len(sfDec.Process(d, baseIdx))
+				},
+			})
+			iq, _ := makeP2HDQPSKIQWithOffset(stream, off, fs)
+			for i := 0; i < len(iq); i += 192 {
+				end := i + 192
+				if end > len(iq) {
+					end = len(iq)
+				}
+				r.Process(iq[i:end])
+			}
+			if locked == 0 {
+				t.Errorf("offset %g Hz: superframes locked = 0, want >= 1 (issue #813)", off)
+			}
+		})
+	}
 }
 
 func TestReceiverEmitsDibitsFromHDQPSK(t *testing.T) {

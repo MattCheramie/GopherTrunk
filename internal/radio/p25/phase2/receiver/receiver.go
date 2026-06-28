@@ -29,6 +29,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/sync"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
@@ -50,6 +51,53 @@ const (
 	// before quadrant classification, so a clean +π/8 phase delta
 	// lands squarely in the 0b00 quadrant.
 	Rotation = math.Pi / 8
+)
+
+// Carrier-frequency recovery for the ClockGardner path (issue #813). The
+// differential decoder removes a constant carrier *phase* but not the
+// per-symbol *rotation* (2π·Δf/SymbolRate) a real (non-TCXO) tuner's
+// residual offset Δf imposes; at 6000 baud ~750 Hz already rotates every
+// symbol a full π/4 into the wrong quadrant, so the 20-dibit outbound sync
+// never correlates and superframes never lock. This mirrors the carrier
+// recovery the Phase 1 CQPSK path gained in issue #492 (the C4FM path has
+// CoarseAFC for the same reason): a one-shot coarse seed removes the bulk
+// offset with the NCO, then a fine Costas loop tracks the residual + drift.
+//
+// On a clean, zero-offset stream the seed estimates ~0 Hz, the NCO is an
+// identity mix, the AGC is a unit scalar and Costas drives to zero — so the
+// path is a no-op and the synthesized ClockGardner fixtures are unaffected.
+const (
+	// seedMinSamples is the raw-IQ count accumulated before the one-shot
+	// coarse carrier estimate fires. Production feeds ~160-200 samples per
+	// Process call, so the estimate must accumulate across calls rather than
+	// key off one chunk; 4096 samples (~512 symbols) gives the
+	// autocorrelation estimate a low-variance average.
+	seedMinSamples = 4096
+	// seedMaxLag is the largest sub-symbol autocorrelation lag the coarse
+	// estimator fits a phase-ramp slope through. Lags must stay well below
+	// sps (8) so the pairs are within-symbol; 4 matches the CQPSK path.
+	seedMaxLag = 4
+	// seedMinCoherence is the minimum lag-1 autocorrelation coherence for the
+	// coarse estimate to be trusted; below it the stream is too weak/noisy to
+	// seed from and the NCO is left identity for the Costas loop to acquire.
+	seedMinCoherence = 0.30
+	// seedClampHz bounds the applied coarse seed to ±6 kHz of DC — the
+	// channel passband; a larger residual is a mis-tuned / un-channelised
+	// stream the upstream DDC + PPM correction should have handled.
+	seedClampHz = 6000.0
+	// agc* normalise the matched-filter output ahead of the amplitude-
+	// sensitive Gardner timing-error detector (the issue #275 lesson on the
+	// CQPSK path). Same values as the CQPSK path — gain normalisation is
+	// baud-independent.
+	agcReference = 0.95
+	agcRate      = 1e-3
+	agcMaxGain   = 1e4
+	// costas* tune the fine carrier-tracking loop. The CQPSK path used
+	// 120 Hz at 4800 baud (~2.5% of baud); 6000·0.025 = 150 Hz keeps the
+	// same normalised loop bandwidth. The loop's pull-in is only
+	// ±SymbolRate/8 = ±750 Hz, which is why the coarse seed must precede it.
+	costasLoopBWHz = 150.0
+	costasDamping  = 0.707
 )
 
 // Options configures a Receiver.
@@ -138,7 +186,20 @@ type Receiver struct {
 	clockMode ClockMode
 	gardner   *sync.Gardner
 
+	// Carrier-frequency recovery (ClockGardner only; nil under ClockNaive).
+	// nco removes the coarse seed from the raw IQ; costas tracks the residual
+	// on the symbol stream; agc normalises ahead of Gardner. See the
+	// carrier-recovery const block and issue #813.
+	nco     *dsp.NCO
+	agc     *dsp.AGC
+	costas  *sync.QPSKCostas
+	fs      float64 // IQ sample rate, for the NCO seed and Hz reporting
+	seeded  bool    // coarse carrier seed applied
+	seedHz  float64 // coarse carrier offset the NCO removes (Hz)
+	seedBuf []complex64
+
 	// Scratch buffers reused across calls.
+	rotated []complex64 // NCO-de-rotated IQ, fed to the matched filter
 	matched []complex64
 	dibits  []uint8
 	symbols []complex64
@@ -182,6 +243,13 @@ func New(opts Options) *Receiver {
 			gain = 0.03
 		}
 		r.gardner = sync.NewGardner(float64(r.sps), gain)
+		r.fs = opts.SampleRateHz
+		r.nco = dsp.NewNCO(0, opts.SampleRateHz)
+		r.agc = dsp.NewAGC(agcReference, agcRate, agcMaxGain)
+		// Rotation-aware: H-DQPSK's π/8 constellation locks the detector to
+		// 4·(π/8) = π/2, not the π/4 family's π. The wrong constant would
+		// settle a π/8 per-symbol bias that halves the decision margin.
+		r.costas = sync.NewQPSKCostasForRotation(SymbolRate, costasLoopBWHz, costasDamping, Rotation)
 	}
 	return r
 }
@@ -193,15 +261,56 @@ func (r *Receiver) Process(iq []complex64) {
 	if len(iq) == 0 {
 		return
 	}
-	r.matched = r.dq.MatchedFilter(r.matched, iq)
 	r.dibits = r.dibits[:0]
 	r.symbols = r.symbols[:0]
 
 	if r.clockMode == ClockGardner {
+		// Coarse carrier seed (issue #813): a real tuner's residual offset
+		// spins the differential constellation so the sync never correlates.
+		// Estimate it once from accumulated raw IQ and tune it out with the
+		// NCO before the matched filter; the Costas loop below then tracks the
+		// residual and drift. Production delivers ~160-200 samples per call,
+		// so the estimate accumulates across calls and fires once. Until it
+		// fires the NCO is an identity mix, so a centred/zero-offset stream is
+		// unaffected.
+		if !r.seeded {
+			r.seedBuf = append(r.seedBuf, iq...)
+			if len(r.seedBuf) >= seedMinSamples {
+				hz := estimateCarrierSeedHz(r.seedBuf, r.fs, seedMaxLag)
+				if hz > seedClampHz {
+					hz = seedClampHz
+				} else if hz < -seedClampHz {
+					hz = -seedClampHz
+				}
+				r.seedHz = hz
+				r.nco.SetOffset(hz, r.fs)
+				r.seeded = true
+				r.seedBuf = nil
+				// The pre-seed samples ran through an identity NCO, so the
+				// Costas frequency integrator wound toward the uncorrected
+				// offset; reset it to re-acquire on the now-centred signal.
+				// Gardner is left running — it re-locks within a few symbols
+				// and resetting it would discard symbol timing.
+				r.costas.Reset()
+			}
+		}
+		r.rotated = r.nco.Mix(r.rotated, iq)
+		r.matched = r.dq.MatchedFilter(r.matched, r.rotated)
+		// Normalise amplitude ahead of the gain-sensitive Gardner TED.
+		r.matched = r.agc.Process(r.matched, r.matched)
 		// Gardner manages its own cross-call tail state, so the
 		// receiver hands each matched-filter chunk straight in.
 		r.symbols = r.gardner.Process(r.symbols, r.matched)
+		// Fine carrier tracking: de-rotate each symbol so the residual
+		// per-symbol rotation the coarse seed left behind is removed before
+		// the differential decode. The Costas error detector is four-fold
+		// differential, so the π/8 constellation offset cancels in it; the
+		// downstream Decode applies the static π/8 subtraction.
+		for i, y := range r.symbols {
+			r.symbols[i] = r.costas.Update(y)
+		}
 	} else {
+		r.matched = r.dq.MatchedFilter(r.matched, iq)
 		// Naive decimation: pick every sps-th sample starting at
 		// rxOffset, preserving cross-call state in r.pending.
 		r.pending = append(r.pending, r.matched...)
@@ -245,4 +354,85 @@ func (r *Receiver) Reset() {
 	if r.gardner != nil {
 		r.gardner.Reset()
 	}
+	if r.nco != nil {
+		r.nco.Reset()
+		r.nco.SetOffset(0, r.fs) // identity until the seed re-fires
+	}
+	if r.agc != nil {
+		r.agc.Reset()
+	}
+	if r.costas != nil {
+		r.costas.Reset()
+	}
+	r.seeded = false
+	r.seedHz = 0
+	r.seedBuf = nil
+}
+
+// CarrierOffsetHz reports the carrier-recovery loop's current estimate of
+// the residual carrier-frequency offset in Hz: the coarse NCO seed plus the
+// fine Costas loop's tracked residual. Returns 0 on the ClockNaive path
+// (no carrier recovery). Field diagnostic for issue #813 — a stable small
+// value with sync still not locking points away from carrier offset (e.g.
+// spectral inversion) and toward a different root cause.
+func (r *Receiver) CarrierOffsetHz() float64 {
+	if r.costas == nil {
+		return 0
+	}
+	return r.seedHz + r.costas.OffsetHz()
+}
+
+// estimateCarrierSeedHz estimates the residual carrier offset (Hz) of an
+// oversampled H-DQPSK stream from its sub-symbol-lag autocorrelation. A pure
+// carrier offset Δf rotates the stream by a constant k·Δω at autocorrelation
+// lag k (in samples), so angle(R_k) = k·Δω is linear in k; a least-squares
+// slope through lags 1..maxLag is a lower-variance estimate than a single lag.
+// The lags are sub-symbol (< sps), so most sample pairs fall within one
+// RRC-real-pulse symbol where the only per-sample phase difference is the
+// carrier rotation: the per-symbol π/8 constellation rotation and the
+// zero-mean random data contribute only at the 1-in-sps symbol boundaries and
+// largely average out. This is the estimator the CQPSK path uses (issue #492);
+// a periodogram reads the rotation-shifted spectral centroid of a modulated
+// signal instead and mis-estimates it. Returns 0 on empty / incoherent input,
+// leaving the NCO identity for the Costas loop to acquire the in-range offset.
+func estimateCarrierSeedHz(x []complex64, fs float64, maxLag int) float64 {
+	if len(x) <= maxLag || fs <= 0 || maxLag < 1 {
+		return 0
+	}
+	var energy float64
+	for _, s := range x {
+		energy += float64(real(s))*float64(real(s)) + float64(imag(s))*float64(imag(s))
+	}
+	if energy == 0 {
+		return 0
+	}
+	ang := make([]float64, maxLag+1)
+	var coh float64
+	for k := 1; k <= maxLag; k++ {
+		var accR, accI float64
+		for n := k; n < len(x); n++ {
+			ar, ai := float64(real(x[n])), float64(imag(x[n]))
+			br, bi := float64(real(x[n-k])), float64(imag(x[n-k]))
+			accR += ar*br + ai*bi
+			accI += ai*br - ar*bi
+		}
+		if k == 1 {
+			coh = math.Hypot(accR, accI) / energy
+		}
+		ang[k] = math.Atan2(accI, accR)
+	}
+	if coh < seedMinCoherence {
+		return 0
+	}
+	// Unwrap each lag's angle around k·(lag-1 angle), then least-squares fit a
+	// slope θ (rad/sample) through (k, angle_k) constrained through the origin.
+	a1 := ang[1]
+	var num, den float64
+	for k := 1; k <= maxLag; k++ {
+		ak := float64(k)*a1 + math.Remainder(ang[k]-float64(k)*a1, 2*math.Pi)
+		num += float64(k) * ak
+		den += float64(k * k)
+	}
+	slope := num / den
+	return slope * fs / (2 * math.Pi)
 }
