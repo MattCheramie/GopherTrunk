@@ -517,3 +517,104 @@ func TestComposerP25Phase2VoiceChainWarnsTrellisOff(t *testing.T) {
 		t.Fatalf("expected trellis-off warning, got:\n%s", out)
 	}
 }
+
+// TestComposerP25Phase2CallCensusAlwaysFires is the #813 regression guard:
+// the end-of-call MAC census must log exactly once even when the chain
+// locks zero superframes (the silent-failure case the field test hit,
+// where the success-only "composer: p25p2 mac pdu" line never appears).
+// A closed IQ channel drives that zero-superframe path.
+func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	c, err := New(Options{
+		Bus:           events.NewBus(8),
+		Devices:       &fakeDevices{src: map[string]IQSource{}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  48_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		Log:           logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Clean live-decode config so no entry warnings pollute the buffer; the
+	// closed channel returns the chain before any IQ is processed.
+	iqCh := make(chan []complex64)
+	close(iqCh)
+	done := make(chan struct{})
+	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
+		p25p2.MACDecodeConfig{
+			Trellis:    p25p2.TrellisOn,
+			RS:         p25p2.RSOn,
+			Interleave: p25p2.InterleaveOn,
+			Scrambler:  p25p2.ScramblerOn,
+			Seed:       12345,
+		}, iqCh, 48_000, done)
+	<-done
+
+	out := buf.String()
+	if !strings.Contains(out, "composer: p25p2 call census") {
+		t.Fatalf("expected unconditional call-census line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "superframes=0") {
+		t.Fatalf("census must report superframes=0 for a zero-IQ call, got:\n%s", out)
+	}
+}
+
+// TestComposerP25Phase2CallCensusCountsMAC confirms the census counters
+// and slot histogram are wired correctly: when real MAC signalling rides
+// the superframes, the census reports a non-zero mac_pdus count and a
+// per-slot bucket for the MAC slot type carried (#813).
+func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
+	const (
+		sampleRate = 48_000.0
+		sps        = 8
+		span       = 8
+		alpha      = 0.20
+	)
+	dibits, _, _, _, _ := buildP25P2MetadataStream(6)
+	iq := demod.ModulatePiOver4DQPSK(dibits, sps, span, alpha, math.Pi/8)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	c, err := New(Options{
+		Bus:           events.NewBus(128),
+		Devices:       &fakeDevices{src: map[string]IQSource{}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+		Log:           logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The fixture encodes MAC PDUs unscrambled + RS-uncovered (matching
+	// every Phase 2 fixture), so decode needs the same TrellisOn /
+	// ScramblerOff config. Buffer + close so the synchronous chain drains
+	// the IQ then exits via the closed-channel census path.
+	iqCh := make(chan []complex64, 1)
+	iqCh <- iq
+	close(iqCh)
+	done := make(chan struct{})
+	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
+		p25p2.MACDecodeConfig{Trellis: p25p2.TrellisOn}, iqCh, sampleRate, done)
+	<-done
+
+	out := buf.String()
+	if !strings.Contains(out, "composer: p25p2 call census") {
+		t.Fatalf("expected call-census line, got:\n%s", out)
+	}
+	if strings.Contains(out, "mac_pdus=0") {
+		t.Fatalf("census reported mac_pdus=0 despite MAC signalling in the stream, got:\n%s", out)
+	}
+	if !strings.Contains(out, "slot_"+p25p2.SlotTypeMACSignaling.String()+"=") {
+		t.Fatalf("census missing slot_%s bucket, got:\n%s", p25p2.SlotTypeMACSignaling, out)
+	}
+}

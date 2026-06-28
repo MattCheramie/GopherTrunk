@@ -25,6 +25,12 @@ const p25p2VoiceIntermediateHz = 48_000
 // because H-DQPSK slips differently than C4FM).
 const p25p2VoiceGardnerGain = 0.005
 
+// slotHistLen sizes the per-call SlotType histogram in the chain census.
+// It spans SlotTypeUnknown (0x0) .. SlotTypeMACEndCont (0x9); an
+// out-of-range slot value (a future enum addition) is dropped by the
+// bounds guard at the increment site rather than panicking.
+const slotHistLen = 0xA
+
 // runP25Phase2VoiceChain consumes IQ for one P25 Phase 2 voice call. It
 // decimates the wideband IQ to an H-DQPSK-friendly rate, recovers the
 // dibit stream with the Phase 2 receiver, assembles 360 ms superframes,
@@ -133,13 +139,38 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		uncorrectableSubframes atomic.Uint64
 		corrErrBits            atomic.Uint64
 	)
+	// MAC-pipeline census (issue #813). A field test on real Phase 2
+	// traffic saw the per-PDU "composer: p25p2 mac pdu" line — which fires
+	// only on a *successful* MAC decode — never appear at all, which is
+	// ambiguous: it can't tell superframe-sync failure from ISCH
+	// mis-classification from MAC-FEC failure. These counters feed the
+	// unconditional end-of-call census (logCallCensus) that disambiguates
+	// the three. They are read from the for-select goroutine below, so they
+	// are atomic like the decode-quality counters above.
+	var (
+		superframesSeen  atomic.Uint64
+		macSubframesSeen atomic.Uint64
+		macPDUsDecoded   atomic.Uint64
+		slotHist         [slotHistLen]atomic.Uint64
+	)
 	rx := p25p2rx.New(p25p2rx.Options{
 		SampleRateHz: symbolHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  p25p2VoiceGardnerGain,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			for _, sf := range sfDec.Process(dibits, baseIdx) {
+				superframesSeen.Add(1)
 				for _, sub := range sf.Subframes {
+					// Census every sub-frame's slot type — including
+					// SlotTypeUnknown and MAC types — before the voice gate,
+					// so the end-of-call census can show whether ISCH ever
+					// classified a MAC slot (#813).
+					if int(sub.SlotType) < slotHistLen {
+						slotHist[sub.SlotType].Add(1)
+					}
+					if sub.SlotType.IsMAC() {
+						macSubframesSeen.Add(1)
+					}
 					if !sub.SlotType.IsVoice() {
 						continue
 					}
@@ -171,7 +202,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				// MAC PDUs that interleave with voice are decoded by the
 				// shared dispatcher (same path the signalling follower
 				// runs off the traffic channel, #376).
-				dispatcher.Dispatch(sf, macCfg)
+				macPDUsDecoded.Add(uint64(dispatcher.Dispatch(sf, macCfg)))
 			}
 		},
 	})
@@ -194,11 +225,37 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"voice_subframes", n, "uncorrectable_subframes", uncorrectableSubframes.Load(),
 			"corrected_bit_errs", corrErrBits.Load())
 	}
+	// logCallCensus emits exactly one line at chain end, unconditionally —
+	// even when zero superframes ever locked. It is the field diagnostic
+	// that disambiguates the three #813 failure modes when no "composer:
+	// p25p2 mac pdu" line ever appears:
+	//   - superframes=0                  → superframe sync never locked
+	//   - superframes>0, mac_subframes=0 → ISCH never classified a MAC slot
+	//                                       (inspect the slot_* histogram)
+	//   - mac_subframes>0, mac_pdus=0    → MAC FEC chain failed every slot
+	// The slot_<type> buckets reuse SlotType.String() so the line is
+	// self-describing.
+	logCallCensus := func() {
+		attrs := []any{
+			"serial", serial, "system", system,
+			"superframes", superframesSeen.Load(),
+			"voice_subframes", voiceSubframes.Load(),
+			"mac_subframes", macSubframesSeen.Load(),
+			"mac_pdus", macPDUsDecoded.Load(),
+		}
+		for st := 0; st < slotHistLen; st++ {
+			if cnt := slotHist[st].Load(); cnt > 0 {
+				attrs = append(attrs, "slot_"+p25p2.SlotType(st).String(), cnt)
+			}
+		}
+		c.log.Info("composer: p25p2 call census", attrs...)
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			logDecodeQuality(true)
+			logCallCensus()
 			return
 		case <-touchTicker.C:
 			// Touch + hangtime end-of-call handled by the shared boundary
@@ -207,6 +264,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		case iq, ok := <-iqCh:
 			if !ok {
 				logDecodeQuality(true)
+				logCallCensus()
 				return
 			}
 			rx.Process(fe.Process(nil, iq))
