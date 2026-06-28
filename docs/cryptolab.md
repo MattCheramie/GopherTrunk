@@ -65,7 +65,7 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 
 | Tool | Modes | What it does |
 |------|-------|--------------|
-| `brute` | `xor` | single / repeating-key XOR recovery with English/crib scoring |
+| `brute` | `xor`, `caesar`, `vigenere` | classical-cipher recovery with English/crib scoring |
 | `lfsr` | `bm`, `keystream` | Berlekamp–Massey LFSR recovery; keystream = pt⊕ct |
 | `crc` | `recover`, `compute` | recover / compute CRC parameters from sample frames |
 | `stats` | `scan` | entropy / IC / chi-square / XOR key-length triage |
@@ -123,4 +123,24 @@ additional data would close the remaining gap — the effort is always directed,
 logged, and resumable.
 
 The optional Z3 structural search under `internal/cryptolab/smt/` explores
-richer multi-round / two-table update forms than the in-binary propagator.
+richer multi-round / two-table update forms than the in-binary propagator. The
+`alias structure` mode writes `high-transitions.csv` to the `-out` directory,
+which the Z3 script consumes directly.
+
+## Not yet implemented
+
+These are deliberately out of the current scope; each is a sizeable addition
+on its own and is noted here so the gap is explicit rather than silent:
+
+- **Monoalphabetic substitution solver** in `brute` — auto-solving a general
+  substitution cipher needs n-gram hill-climbing / simulated annealing over a
+  26!-key space and an embedded language model, which is a different class of
+  work from the linear-keyspace solvers shipped here.
+- **Split-band and rolling-code voice descrambling** — `descramble` currently
+  does exact full-band spectral inversion (the dominant analog scrambler);
+  split-band inverters need a band-splitting filter bank, and rolling/hopping
+  schemes need sync recovery.
+- **Daemon-mounted console** — the web console runs as the standalone
+  `cryptolab serve`; mounting it inside the main `gophertrunk` daemon at a
+  `/cryptolab/` route (alongside the siglab API) would require wiring the
+  subsystem through `internal/api` behind the build tag.

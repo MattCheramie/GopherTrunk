@@ -11,8 +11,8 @@ for tagged releases.
 - **`cryptolab` — optional RF cryptographic-research toolkit**. A new,
   opt-in `gophertrunk cryptolab` subcommand collects byte-oriented research
   tools — statistical triage (entropy / index-of-coincidence / chi-square /
-  XOR key-length), keyspace brute force (single/repeating XOR with English and
-  crib scoring), LFSR/keystream analysis (Berlekamp–Massey, keystream
+  XOR key-length), classical-cipher brute force (single/repeating XOR, Caesar,
+  and Vigenère with English and crib scoring), LFSR/keystream analysis (Berlekamp–Massey, keystream
   extraction), CRC parameter recovery, and analog voice spectral
   descrambling — plus a pluggable subject framework for studying byte-oriented
   obfuscators, with an initial length-seeded-obfuscator recovery suite (gauge

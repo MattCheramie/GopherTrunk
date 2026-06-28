@@ -23,7 +23,7 @@ Export the dense high-byte transitions from the Go side, then point the
 solver at them:
 
 ```
-# (planned) export helper writes one "Hprev,Hcur,eo,Hnext" line per transition
+# the structure mode writes high-transitions.csv (one Hprev,Hcur,eo,Hnext per line)
 gophertrunk cryptolab -out ./out alias structure -csv ground_truth.csv
 python solve_structure.py --transitions ./out/high-transitions.csv
 ```

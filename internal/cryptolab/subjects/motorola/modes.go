@@ -1,9 +1,12 @@
 package motorola
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab"
@@ -11,6 +14,25 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/propagate"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/progress"
 )
+
+// exportTransitions writes the dense high-byte recurrence as a
+// Hprev,Hcur,eo,Hnext CSV for the optional Z3 structural search.
+func exportTransitions(dir string, cons []propagate.Constraint) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.Create(filepath.Join(dir, "high-transitions.csv"))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	bw := bufio.NewWriter(f)
+	fmt.Fprintln(bw, "Hprev,Hcur,eo,Hnext")
+	for _, c := range cons {
+		fmt.Fprintf(bw, "%d,%d,%d,%d\n", c.HPrev, c.HCur, c.Eo, c.HNext)
+	}
+	return bw.Flush()
+}
 
 // loadFlags parses the shared -csv flag (and returns the remaining FlagSet
 // so a mode can add its own knobs first). The corpus path is required.
@@ -126,6 +148,14 @@ func (structureMode) Run(ctx context.Context, args []string, env cryptolab.Env) 
 	}
 	env.Logf("high-byte constraints", "count", len(cons))
 
+	// Export the dense transitions for the optional Z3 structural search
+	// (internal/cryptolab/smt/solve_structure.py consumes this CSV).
+	if env.OutDir != "" {
+		if err := exportTransitions(env.OutDir, cons); err != nil {
+			return nil, err
+		}
+	}
+
 	jl, _ := progress.OpenJSONL(env.OutDir, "structure-survivors.jsonl")
 	defer jl.Close()
 
@@ -198,15 +228,25 @@ func ctxKey(c Context) string { return fmt.Sprintf("%d:%d", c.HPrev, c.HCur) }
 func packState(s gauge.State) uint16 { return uint16(s.Hi)<<8 | uint16(s.Mul) }
 
 func (cellsMode) Run(ctx context.Context, args []string, env cryptolab.Env) (*cryptolab.Result, error) {
-	rows, err := parseCorpus("cells", args, env, nil)
+	// -resume is also accepted as a mode flag (the web console passes an
+	// uploaded checkpoint this way); it falls back to the CLI-global
+	// env.ResumePath when not given.
+	var resumeFlag string
+	rows, err := parseCorpus("cells", args, env, func(fs *flag.FlagSet) {
+		fs.StringVar(&resumeFlag, "resume", "", "checkpoint file to resume from")
+	})
 	if err != nil {
 		return nil, err
 	}
 	t := Recovered()
+	resumePath := resumeFlag
+	if resumePath == "" {
+		resumePath = env.ResumePath
+	}
 
 	ck := &cellCheckpoint{Version: 1, Candidates: map[string][]uint16{}}
-	if env.ResumePath != "" {
-		if found, err := progress.LoadCheckpoint(env.ResumePath, ck); err != nil {
+	if resumePath != "" {
+		if found, err := progress.LoadCheckpoint(resumePath, ck); err != nil {
 			return nil, err
 		} else if found {
 			env.Logf("resumed checkpoint", "contexts", len(ck.Candidates))
@@ -240,11 +280,17 @@ func (cellsMode) Run(ctx context.Context, args []string, env cryptolab.Env) (*cr
 	// Decode coverage: a char is decodable when its context is pinned.
 	charsDecodable, charsTotal, msgsFull := decodeCoverage(t, rows, ck)
 
-	if env.OutDir != "" {
-		ckPath := env.ResumePath
-		if ckPath == "" {
-			ckPath = env.OutDir + "/cells/checkpoint.json"
-		}
+	// Persist the (refined) checkpoint. Prefer the artifact dir so the web
+	// console can offer it as a top-level download; otherwise write back to
+	// the resume path so a CLI `-resume` run accumulates in place.
+	ckPath := ""
+	switch {
+	case env.OutDir != "":
+		ckPath = filepath.Join(env.OutDir, "checkpoint.json")
+	case resumePath != "":
+		ckPath = resumePath
+	}
+	if ckPath != "" {
 		if err := progress.SaveCheckpoint(ckPath, ck); err != nil {
 			return nil, err
 		}

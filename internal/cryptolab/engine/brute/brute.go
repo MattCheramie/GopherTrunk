@@ -133,6 +133,21 @@ func (Caesar) Decrypt(key, ct []byte) []byte {
 	return out
 }
 
+// Vigenere subtracts a repeating additive key (mod 256) — the additive
+// counterpart of repeating-key XOR.
+type Vigenere struct{}
+
+func (Vigenere) Decrypt(key, ct []byte) []byte {
+	if len(key) == 0 {
+		return append([]byte(nil), ct...)
+	}
+	out := make([]byte, len(ct))
+	for i := range ct {
+		out[i] = ct[i] - key[i%len(key)]
+	}
+	return out
+}
+
 // ---- Built-in keyspace ----
 
 // ByteKeySpace enumerates all keys of a fixed byte length as a big-endian
@@ -179,6 +194,36 @@ func SolveSingleByteXOR(ct []byte, sc Scorer) Candidate {
 		return Candidate{}
 	}
 	return res[0]
+}
+
+// SolveCaesar finds the single-byte additive (Caesar) shift best explaining ct.
+func SolveCaesar(ct []byte, sc Scorer) Candidate {
+	res := Run(context.Background(), Caesar{}, &ByteKeySpace{Len: 1}, sc, ct, Options{TopN: 1})
+	if len(res) == 0 {
+		return Candidate{}
+	}
+	return res[0]
+}
+
+// SolveVigenere recovers a repeating additive (Vigenère) key of the given
+// length by solving each column independently as a Caesar shift.
+func SolveVigenere(ct []byte, keyLen int, sc Scorer) Candidate {
+	if keyLen <= 0 {
+		return Candidate{}
+	}
+	key := make([]byte, keyLen)
+	for col := 0; col < keyLen; col++ {
+		var column []byte
+		for i := col; i < len(ct); i += keyLen {
+			column = append(column, ct[i])
+		}
+		best := SolveCaesar(column, sc)
+		if len(best.Key) == 1 {
+			key[col] = best.Key[0]
+		}
+	}
+	pt := Vigenere{}.Decrypt(key, ct)
+	return Candidate{Key: key, Plaintext: pt, Score: sc.Score(pt)}
 }
 
 // SolveRepeatingXOR recovers a repeating-key XOR key of the given length by
