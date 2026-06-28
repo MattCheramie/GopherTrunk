@@ -138,6 +138,10 @@ export interface ActiveCallDTO {
   device_serial: string;
   started_at: string;
   ended_at?: string;
+  // true when a voice tuner is decoding this call; false for a call the
+  // control channel announced but no tuner is following (every voice device
+  // busy). An unfollowed call has an empty device_serial.
+  following?: boolean;
 }
 
 export interface DeviceDTO {

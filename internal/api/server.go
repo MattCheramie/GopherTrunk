@@ -24,6 +24,11 @@ import (
 // from the concrete type keeps the API testable with a fake engine.
 type EngineSnapshot interface {
 	ActiveCalls() []*trunking.ActiveCall
+	// ObservedCalls returns voice calls the control channel announced that no
+	// voice tuner is following (every device busy). The active-calls endpoint
+	// merges them with ActiveCalls so the operator sees every talkgroup up on
+	// the system, not just the ones a tuner is decoding.
+	ObservedCalls() []*trunking.ActiveCall
 }
 
 // EngineMutator is the optional write side of the engine. Daemons
