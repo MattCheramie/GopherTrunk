@@ -700,15 +700,26 @@ type ActiveCallDTO struct {
 	DeviceSerial string        `json:"device_serial"`
 	StartedAt    time.Time     `json:"started_at"`
 	LastHeardAt  time.Time     `json:"last_heard_at"`
+	// Following is true when a voice tuner is actively decoding this call.
+	// False for calls the control channel has announced but no tuner is
+	// following (every voice device busy) — surfaced so the operator sees all
+	// talkgroups up on the system, not only the ones being decoded. An
+	// unfollowed call has an empty DeviceSerial.
+	Following bool `json:"following"`
 }
 
-func activeCallToDTO(ac *trunking.ActiveCall) ActiveCallDTO {
+func activeCallToDTO(ac *trunking.ActiveCall, following bool) ActiveCallDTO {
+	serial := ""
+	if ac.Device != nil {
+		serial = ac.Device.Serial
+	}
 	return ActiveCallDTO{
 		Grant:        grantToDTO(ac.Grant),
 		Talkgroup:    talkgroupToDTO(ac.Talkgroup),
-		DeviceSerial: ac.Device.Serial,
+		DeviceSerial: serial,
 		StartedAt:    ac.StartedAt,
 		LastHeardAt:  ac.LastHeardAt,
+		Following:    following,
 	}
 }
 

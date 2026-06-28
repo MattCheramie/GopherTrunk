@@ -108,6 +108,9 @@ type ActiveCallDTO struct {
 	DeviceSerial string        `json:"device_serial"`
 	StartedAt    time.Time     `json:"started_at"`
 	LastHeardAt  time.Time     `json:"last_heard_at"`
+	// Following is true when a voice tuner is decoding this call; false for a
+	// call the control channel announced but no tuner is following.
+	Following bool `json:"following"`
 }
 
 // CallRow mirrors storage.CallRow — the shape returned by GET

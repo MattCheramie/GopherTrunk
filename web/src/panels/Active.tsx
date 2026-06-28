@@ -112,6 +112,14 @@ export function Active() {
             )}
             {r.grant.emergency && <span className="pill-err">emerg</span>}
             {r.grant.data_call && <span className="pill">data</span>}
+            {r.following === false && (
+              <span
+                className="pill"
+                title="Announced on the control channel; no voice tuner is following it (add voice_taps or a voice SDR to decode more calls at once)"
+              >
+                observed
+              </span>
+            )}
           </div>
         ),
       },
@@ -129,7 +137,9 @@ export function Active() {
         key: "device",
         header: "Device",
         render: (r) => (
-          <span className="font-mono text-xs text-muted">{r.device_serial}</span>
+          <span className="font-mono text-xs text-muted">
+            {r.following === false ? "—" : r.device_serial}
+          </span>
         ),
         sort: (a, b) => a.device_serial.localeCompare(b.device_serial),
         className: "hidden lg:table-cell",
@@ -156,7 +166,9 @@ export function Active() {
       <DataTable
         rows={activeCalls}
         columns={columns}
-        rowKey={(r) => `${r.device_serial}-${r.started_at}`}
+        rowKey={(r) =>
+          `${r.device_serial}-${r.grant.system}-${r.grant.group_id}-${r.grant.timeslot ?? 0}-${r.started_at}`
+        }
         defaultSortKey="elapsed"
         defaultSortDirection="desc"
         searchable
@@ -268,7 +280,14 @@ export function Active() {
               <DetailField label="Mode" value={selected.talkgroup.mode} />
             </div>
           )}
-          {canMutate ? (
+          {selected.following === false ? (
+            <p className="text-xs text-muted pt-2">
+              This call is only known from the control channel — no voice tuner
+              is following it. Add <code>voice_taps</code> to a wideband device,
+              or another <code>role: voice</code> SDR, to decode more calls at
+              once.
+            </p>
+          ) : canMutate ? (
             <div className="pt-2">
               <button
                 className="btn-danger w-full"

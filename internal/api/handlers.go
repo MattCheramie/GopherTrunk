@@ -250,9 +250,15 @@ func (s *Server) handleActiveCalls(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	active := s.engine.ActiveCalls()
-	out := make([]ActiveCallDTO, 0, len(active))
+	observed := s.engine.ObservedCalls()
+	out := make([]ActiveCallDTO, 0, len(active)+len(observed))
 	for _, ac := range active {
-		out = append(out, activeCallToDTO(ac))
+		out = append(out, activeCallToDTO(ac, true))
+	}
+	// Control-channel-observed calls a tuner isn't following (every voice
+	// device busy) so the operator sees every talkgroup up on the system.
+	for _, ac := range observed {
+		out = append(out, activeCallToDTO(ac, false))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"calls": out})
 }

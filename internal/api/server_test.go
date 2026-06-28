@@ -19,10 +19,12 @@ import (
 )
 
 type fakeEngine struct {
-	calls []*trunking.ActiveCall
+	calls    []*trunking.ActiveCall
+	observed []*trunking.ActiveCall
 }
 
-func (f *fakeEngine) ActiveCalls() []*trunking.ActiveCall { return f.calls }
+func (f *fakeEngine) ActiveCalls() []*trunking.ActiveCall   { return f.calls }
+func (f *fakeEngine) ObservedCalls() []*trunking.ActiveCall { return f.observed }
 
 // mkServer wires a Server on a random localhost port and returns the
 // base URL plus a teardown function.
@@ -216,6 +218,13 @@ func TestActiveCallsReportsEngineSnapshot(t *testing.T) {
 			Talkgroup: &trunking.TalkGroup{ID: 1234, AlphaTag: "FIRE-DISP"},
 			StartedAt: time.Now().UTC(),
 		}},
+		// A second talkgroup is up on the system but no tuner is following it
+		// (control-channel-observed only, nil Device).
+		observed: []*trunking.ActiveCall{{
+			Grant:     trunking.Grant{System: "Alpha", Protocol: "p25", GroupID: 5678, FrequencyHz: 851_012_500},
+			Talkgroup: &trunking.TalkGroup{ID: 5678, AlphaTag: "PD-DISP"},
+			StartedAt: time.Now().UTC(),
+		}},
 	}
 	base, teardown := mkServer(t, ServerOptions{Bus: bus, Engine: engine})
 	defer teardown()
@@ -226,8 +235,20 @@ func TestActiveCallsReportsEngineSnapshot(t *testing.T) {
 		Calls []ActiveCallDTO `json:"calls"`
 	}
 	json.NewDecoder(resp.Body).Decode(&body)
-	if len(body.Calls) != 1 || body.Calls[0].Talkgroup.AlphaTag != "FIRE-DISP" {
-		t.Errorf("calls = %+v", body.Calls)
+	if len(body.Calls) != 2 {
+		t.Fatalf("calls = %+v, want 2 (one followed, one observed)", body.Calls)
+	}
+	byTG := map[uint32]ActiveCallDTO{}
+	for _, c := range body.Calls {
+		byTG[c.Grant.GroupID] = c
+	}
+	followed, ok := byTG[1234]
+	if !ok || !followed.Following || followed.DeviceSerial != "VOICE-1" || followed.Talkgroup.AlphaTag != "FIRE-DISP" {
+		t.Errorf("followed call = %+v, want following=true on VOICE-1", followed)
+	}
+	observed, ok := byTG[5678]
+	if !ok || observed.Following || observed.DeviceSerial != "" || observed.Talkgroup.AlphaTag != "PD-DISP" {
+		t.Errorf("observed call = %+v, want following=false with empty device", observed)
 	}
 }
 

@@ -45,6 +45,11 @@ func (p *ActivePanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd)
 			if !found {
 				return p, nil
 			}
+			// Control-channel-observed calls aren't bound to a tuner, so there
+			// is nothing to end — ignore the keystroke for those rows.
+			if !ac.Following {
+				return p, nil
+			}
 			req := state.WriteRequest{
 				Confirm: fmt.Sprintf("End call on device %s (TG %d)?", ac.DeviceSerial, ac.Grant.GroupID),
 				Label:   "ended call on " + ac.DeviceSerial,
@@ -60,11 +65,11 @@ func (p *ActivePanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd)
 	// the row repaints when the engine backfills encryption metadata
 	// after an LDU2 lands (P25 Phase 1).
 	h := hashRows(s.ActiveCalls, func(ac client.ActiveCallDTO) string {
-		return fmt.Sprintf("%s|%d|%d|%s|%d|%v|%v|%d|%d",
+		return fmt.Sprintf("%s|%d|%d|%s|%d|%v|%v|%d|%d|%v",
 			ac.DeviceSerial, ac.Grant.GroupID, ac.Grant.SourceID,
 			ac.Grant.System, ac.Grant.FrequencyHz,
 			ac.Grant.Encrypted, ac.Grant.Emergency,
-			ac.Grant.AlgorithmID, ac.Grant.KeyID)
+			ac.Grant.AlgorithmID, ac.Grant.KeyID, ac.Following)
 	})
 	if h != p.lastHash {
 		p.refresh(s.ActiveCalls)
@@ -104,6 +109,12 @@ func (p *ActivePanel) refresh(calls []client.ActiveCallDTO) {
 			}
 			flags += fmt.Sprintf("TS%d", ac.Grant.Timeslot)
 		}
+		// A control-channel-observed call (no tuner following it) has no device;
+		// label it so the operator can tell it apart from a decoded call.
+		device := ac.DeviceSerial
+		if !ac.Following {
+			device = "(observed)"
+		}
 		rows = append(rows, table.Row{
 			since(ac.StartedAt),
 			fmt.Sprintf("%d", ac.Grant.GroupID),
@@ -111,7 +122,7 @@ func (p *ActivePanel) refresh(calls []client.ActiveCallDTO) {
 			fmt.Sprintf("%d", ac.Grant.SourceID),
 			ac.Grant.System,
 			client.FormatFreqMHz(ac.Grant.FrequencyHz),
-			ac.DeviceSerial,
+			device,
 			flags,
 		})
 	}

@@ -3,6 +3,7 @@ package trunking
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -66,6 +67,23 @@ type Engine struct {
 	mu        sync.Mutex
 	calls     map[string]*ActiveCall // by device serial; mirror of pool.active for fast access
 	synthetic map[string]*ActiveCall // by device serial; calls owned by external scanners (conv FM)
+	// observed tracks every voice call the control channel has announced,
+	// keyed by observedKey (system|talkgroup|timeslot), regardless of whether
+	// a voice tuner is following it. It is the source for ObservedCalls, which
+	// lets operator UIs show ALL talkgroups currently up on a system — not just
+	// the few a tuner is decoding — so a single-voice-tuner rig no longer looks
+	// like only one talkgroup is ever active. Entries refresh on the control
+	// channel's repeated grant TSBKs and age out via runWatchdog once the call
+	// drops. Guarded by mu, like calls/synthetic.
+	observed map[string]*ActiveCall
+}
+
+// observedKey identifies a logical call for the observed-call tracker:
+// (System, talkgroup, timeslot) — the same identity HandleGrant's duplicate-
+// grant guard uses, so a DMR Tier III carrier's two per-slot calls stay
+// distinct and a band-plan re-map (same call, new frequency) updates one entry.
+func observedKey(g Grant) string {
+	return fmt.Sprintf("%s|%d|%d", g.System, g.GroupID, g.Timeslot)
 }
 
 // EngineOptions configure a new Engine.
@@ -160,6 +178,7 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 		configuredKeys: opts.ConfiguredKeys,
 		calls:          make(map[string]*ActiveCall),
 		synthetic:      make(map[string]*ActiveCall),
+		observed:       make(map[string]*ActiveCall),
 	}
 	// Subscribe at construction time so callers can publish grants
 	// before Run starts without losing them.
@@ -308,6 +327,16 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.log.Debug("dropping encrypted grant (encrypted_calls mode: ignore)",
 			"grant", g.String())
 		return
+	}
+
+	// Record the call on the system-activity tracker before the tuner-
+	// allocation logic below, so a talkgroup that keys up while every voice
+	// device is busy still surfaces in ObservedCalls (the P25 "only one active
+	// talkgroup" report). Repeated grant TSBKs for a live call refresh the
+	// entry; data grants are not voice calls and are skipped. ObservedCalls
+	// filters out whichever of these a tuner ends up following.
+	if !g.DataCall {
+		e.observeCall(g, tg)
 	}
 
 	// Suppress duplicate grants. The Phase 1 CC repeats voice-grant
@@ -593,6 +622,56 @@ func (e *Engine) ActiveCalls() []*ActiveCall {
 	return out
 }
 
+// observeCall upserts the system-activity tracker entry for grant g. Called
+// for every voice grant HandleGrant accepts, whether or not a tuner follows it.
+func (e *Engine) observeCall(g Grant, tg *TalkGroup) {
+	key := observedKey(g)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ac, ok := e.observed[key]; ok {
+		ac.Grant = g
+		ac.Talkgroup = tg
+		ac.LastHeardAt = g.At
+		return
+	}
+	e.observed[key] = &ActiveCall{
+		Grant:       g,
+		Talkgroup:   tg,
+		StartedAt:   g.At,
+		LastHeardAt: g.At,
+		// Device intentionally nil: this call is known only from the control
+		// channel, not bound to a voice tuner.
+	}
+}
+
+// ObservedCalls returns the voice calls the control channel has announced that
+// are NOT currently being followed by a voice tuner — e.g. talkgroups that
+// keyed up while every voice device was busy. They carry a nil Device. Combined
+// with ActiveCalls at the API layer, they let an operator see every talkgroup
+// up on the system (the P25 "only one active talkgroup" report), while audio
+// stays limited to the number of voice tuners. Entries age out via runWatchdog.
+func (e *Engine) ObservedCalls() []*ActiveCall {
+	// Build the set of (system|tg|timeslot) keys a tuner is actively following
+	// so they aren't double-reported as observed-only.
+	followed := make(map[string]bool)
+	for _, ac := range e.pool.Active() {
+		followed[observedKey(ac.Grant)] = true
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, ac := range e.synthetic {
+		followed[observedKey(ac.Grant)] = true
+	}
+	out := make([]*ActiveCall, 0, len(e.observed))
+	for key, ac := range e.observed {
+		if followed[key] {
+			continue
+		}
+		out = append(out, ac)
+	}
+	return out
+}
+
 func (e *Engine) startCall(d *VoiceDevice, g Grant, tg *TalkGroup) {
 	ac, err := e.pool.Bind(d, g, tg, e.now())
 	if err != nil {
@@ -743,6 +822,16 @@ func (e *Engine) runWatchdog() {
 			e.endCall(ac, reason)
 		}
 	}
+	// Age out system-activity entries the control channel has stopped
+	// repeating: once a call drops, its grant TSBKs stop, so the same grace
+	// window that reaps a followed call clears its observed-only siblings.
+	e.mu.Lock()
+	for key, ac := range e.observed {
+		if ac.LastHeardAt.Before(cutoff) {
+			delete(e.observed, key)
+		}
+	}
+	e.mu.Unlock()
 }
 
 func (e *Engine) shutdown() {
