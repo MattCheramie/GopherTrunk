@@ -71,6 +71,12 @@ type Result struct {
 	// before serializing the summary or running the exporters and serves
 	// it from a dedicated endpoint instead.
 	IQTaps *IQTaps `json:"iq_taps,omitempty" yaml:"iq_taps,omitempty"`
+
+	// PDUs is the optional per-signaling-block (TSBK) dissection populated when
+	// Config.CollectPDUs is set — the data-over-RF inspector feed. Capped at
+	// pduMaxRecords; PDUsTruncated marks an overflow. P25 Phase 1 only for now.
+	PDUs          []PDURecord `json:"pdus,omitempty" yaml:"pdus,omitempty"`
+	PDUsTruncated bool        `json:"pdus_truncated,omitempty" yaml:"pdus_truncated,omitempty"`
 }
 
 // LockInfo is the flattened, protocol-agnostic view of a KindCCLocked

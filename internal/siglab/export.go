@@ -30,6 +30,8 @@ const (
 	FormatCSVSummary
 	// FormatCSVEvents is a CSV with one row per captured event.
 	FormatCSVEvents
+	// FormatCSVPDUs is a CSV with one row per dissected signaling PDU.
+	FormatCSVPDUs
 )
 
 // ParseFormat maps a -format flag value to a Format. csv defaults to the
@@ -48,8 +50,10 @@ func ParseFormat(s string) (Format, error) {
 		return FormatCSVSummary, nil
 	case "csv-events":
 		return FormatCSVEvents, nil
+	case "csv-pdus":
+		return FormatCSVPDUs, nil
 	default:
-		return FormatTextSummary, fmt.Errorf("siglab: unknown format %q (want json|jsonl|yaml|csv|csv-events)", s)
+		return FormatTextSummary, fmt.Errorf("siglab: unknown format %q (want json|jsonl|yaml|csv|csv-events|csv-pdus)", s)
 	}
 }
 
@@ -75,6 +79,8 @@ func WriteResult(w io.Writer, r *Result, f Format) error {
 		return writeCSVSummary(w, r)
 	case FormatCSVEvents:
 		return writeCSVEvents(w, r)
+	case FormatCSVPDUs:
+		return writeCSVPDUs(w, r)
 	case FormatTextSummary:
 		return fmt.Errorf("siglab: text summary is rendered by the caller, not WriteResult")
 	default:
@@ -154,6 +160,38 @@ func writeCSVEvents(w io.Writer, r *Result) error {
 		}
 		row := []string{
 			strconv.Itoa(ev.Seq), ftoa(ev.OffsetSec), ev.Kind, string(fields),
+		}
+		if err := cw.Write(row); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+// writeCSVPDUs writes one row per dissected signaling PDU, mirroring the
+// csv-events shape: the promoted entity IDs in their own columns and the
+// opcode-specific Fields JSON-encoded into a single stable column.
+func writeCSVPDUs(w io.Writer, r *Result) error {
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{
+		"seq", "offset_sec", "protocol", "opcode", "opcode_name", "nac",
+		"source_id", "dest_id", "talkgroup", "crc_ok", "fec_metric",
+		"dibit_start", "raw_hex", "fields_json",
+	}); err != nil {
+		return err
+	}
+	for _, p := range r.PDUs {
+		fields, err := json.Marshal(p.Fields)
+		if err != nil {
+			return err
+		}
+		row := []string{
+			strconv.Itoa(p.Seq), ftoa(p.OffsetSec), p.Protocol,
+			strconv.Itoa(int(p.Opcode)), p.OpcodeName, strconv.Itoa(int(p.NAC)),
+			strconv.Itoa(int(p.SourceID)), strconv.Itoa(int(p.DestID)), strconv.Itoa(int(p.Talkgroup)),
+			strconv.FormatBool(p.CRCOK), strconv.Itoa(p.FECMetric),
+			strconv.Itoa(p.DibitStart), p.RawHex, string(fields),
 		}
 		if err := cw.Write(row); err != nil {
 			return err

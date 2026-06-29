@@ -209,6 +209,26 @@ export interface Detail {
   [k: string]: unknown;
 }
 
+// PDURecord is one dissected data/signaling PDU (mirrors siglab.PDURecord).
+export interface PDURecord {
+  seq: number;
+  offset_sec: number;
+  protocol: string;
+  opcode: number;
+  opcode_name: string;
+  mfid?: number;
+  nac?: number;
+  source_id?: number;
+  dest_id?: number;
+  talkgroup?: number;
+  fields?: Record<string, unknown>;
+  raw_hex: string;
+  crc_ok: boolean;
+  fec_metric: number;
+  dibit_start: number;
+  dibit_len: number;
+}
+
 export interface Result {
   source: string;
   protocol: string;
@@ -232,6 +252,8 @@ export interface Result {
   detail?: Detail;
   verdict?: { pass: boolean; failures?: string[] };
   iq_taps?: IQTaps;
+  pdus?: PDURecord[];
+  pdus_truncated?: boolean;
 }
 
 export interface CandidateScore {
@@ -351,6 +373,7 @@ export interface RunConfig {
   collect_iq_diag?: boolean;
   capture_iq?: boolean;
   capture_iq_max_points?: number;
+  collect_pdus?: boolean;
   demod_mode?: string;
   nid_search_span?: number;
   enable_dda?: boolean;

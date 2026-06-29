@@ -93,6 +93,9 @@ type ControlChannel struct {
 	// site.
 	rotations RotationSet
 
+	// pduSink mirrors Options.PDUSink — the optional data-PDU dissection feed.
+	pduSink func(SignalingBlock)
+
 	// nidSearchSpan is the per-instance grid radius used by searchNID
 	// in place of the package-level NIDSearchSpan constant — a
 	// bisect knob for issue #275 retests where the closest-miss
@@ -353,6 +356,13 @@ type Options struct {
 	// parity-valid pseudo-NID at a wrong rotation (issue #275).
 	Rotations RotationSet
 
+	// PDUSink, when non-nil, receives one SignalingBlock per TSBK the control
+	// channel decodes (including CRC/trellis-failed blocks) — the data-PDU
+	// dissection feed for SigLab's signaling inspector. It runs on the decode
+	// hot path, so it is invoked only when set; production wiring leaves it nil
+	// and pays nothing.
+	PDUSink func(SignalingBlock)
+
 	// NIDSearchSpan overrides the per-instance NID-alignment grid
 	// radius. Zero falls back to the package-level NIDSearchSpan
 	// constant — the default the ccdecoder pipeline uses in
@@ -455,6 +465,7 @@ func New(opts Options) *ControlChannel {
 		aliasAsm:            NewTalkerAliasAssembler(now),
 		diagSeen:            make(map[uint32]int),
 		rotations:           resolveRotations(opts.Rotations),
+		pduSink:             opts.PDUSink,
 		nidSearchSpan:       span,
 		p25Phase1DemodMode:  opts.P25Phase1DemodMode,
 		p25Phase2Trellis:    opts.P25Phase2Trellis,
@@ -750,6 +761,46 @@ func (c *ControlChannel) parseFrame(buf []uint8, nidStart int, fswRot uint8, req
 // pending and call again once more dibits land. Issue #402: this is what
 // lets blocks 2 and 3 decode even when the receiver hands the dibit
 // stream over in batches smaller than a frame.
+// SignalingBlock is one decoded (or attempted) TSBK signaling block, surfaced
+// to an optional PDUSink for SigLab's data-PDU inspector. It is decoder-neutral
+// and carries the raw opcode/payload plus the FEC/CRC outcome and the absolute
+// symbol offset, so the inspector can dissect, filter, and locate each PDU.
+type SignalingBlock struct {
+	Opcode     uint8
+	OpcodeName string
+	MFID       uint8
+	NAC        uint16
+	LastBlock  bool
+	Protected  bool
+	RawPayload []byte // the 8 opcode octets
+	CRCOK      bool
+	FECMetric  int // Viterbi path metric (0 = clean)
+	DibitStart int // absolute dibit index of this block
+	DibitLen   int // 98 for a TSBK block
+}
+
+// emitSignalingBlock hands one TSBK to the PDU sink when one is registered. It
+// is a no-op (and allocation-free) when the sink is nil, so the production
+// decode path is unaffected.
+func (c *ControlChannel) emitSignalingBlock(t TSBK, nac uint16, metric int, crcOK bool, dibitStart int) {
+	if c.pduSink == nil {
+		return
+	}
+	c.pduSink(SignalingBlock{
+		Opcode:     uint8(t.Opcode),
+		OpcodeName: t.Opcode.String(),
+		MFID:       t.MFID,
+		NAC:        nac,
+		LastBlock:  t.LB,
+		Protected:  t.P,
+		RawPayload: append([]byte(nil), t.Payload[:]...),
+		CRCOK:      crcOK,
+		FECMetric:  metric,
+		DibitStart: dibitStart,
+		DibitLen:   98,
+	})
+}
+
 func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 	for ph.blocksDone < maxTSBKBlocks {
 		start := ph.nextStart - c.bufBase
@@ -759,6 +810,7 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 		if start+tsbkBlockSpan > len(c.buf) {
 			return true // next block not buffered yet — resume later
 		}
+		blockStart := ph.nextStart // absolute dibit index of this TSBK block
 		fswStart := ph.fswStart - c.bufBase
 		tsbkChannel, next := gatherFrameDibits(c.buf, start, 98, fswStart, ph.strip)
 		tsbk, metric, err := DecodeTSBKChannel(rotateDibits(tsbkChannel, ph.rot))
@@ -768,6 +820,11 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 			} else {
 				atomic.AddInt64(&c.stats.TSBKTrellisFailed, 1)
 			}
+			// Surface the failed block too — a protocol analyzer shows the bad
+			// frames, not just the clean ones. On CRCError ParseTSBK still
+			// returns the opcode/payload; on a trellis failure they are
+			// best-effort.
+			c.emitSignalingBlock(tsbk, ph.nac, metric, false, blockStart)
 			c.log.Debug("tsbk decode failed", "err", err, "metric", metric,
 				"nac", ph.nac, "block", ph.blocksDone)
 			stage := events.StageTSBKTrellis
@@ -780,6 +837,7 @@ func (c *ControlChannel) resumeTSBKBlocks(ph *pendingHit) bool {
 			})
 			return false // a failed block leaves the next block's alignment unknown
 		}
+		c.emitSignalingBlock(tsbk, ph.nac, metric, true, blockStart)
 		c.dispatchTSBK(tsbk, ph.nac, metric)
 		ph.blocksDone++
 		ph.nextStart = next + c.bufBase
