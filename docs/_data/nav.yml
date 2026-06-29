@@ -111,6 +111,8 @@ groups:
         url: /blog/series/rf-front-end/
       - title: Tutorials
         url: /blog/category/tutorials/
+      - title: Solution Postmortem
+        url: /blog/category/solution-postmortem/
   - label: Install
     items:
       - title: Downloads
