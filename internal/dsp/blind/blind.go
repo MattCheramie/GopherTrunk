@@ -49,13 +49,13 @@ type BlindEstimate struct {
 }
 
 const (
-	maxSamples  = 16384 // cap the work per carrier
-	acMaxLen    = 4096  // O(n²) autocorrelation input cap
-	minBaudHz   = 200.0 // search-band floor
-	constEnvCV  = 0.35  // |x| coefficient-of-variation below this ⇒ constant envelope
+	maxSamples = 16384 // cap the work per carrier
+	acMaxLen   = 4096  // O(n²) autocorrelation input cap
+	minBaudHz  = 200.0 // search-band floor
+	constEnvCV = 0.35  // |x| coefficient-of-variation below this ⇒ constant envelope
 	//            (loose enough to keep a channelized FSK carrier — whose filtered
 	//            transitions ripple the envelope — out of the amplitude/QAM class)
-	agreeRelTol = 0.10  // method agreement threshold
+	agreeRelTol = 0.10 // method agreement threshold
 )
 
 // Estimate analyses a channelized carrier (complex baseband at rateHz) and

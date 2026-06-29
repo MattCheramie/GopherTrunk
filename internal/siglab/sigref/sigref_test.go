@@ -30,9 +30,9 @@ func TestDecodableRowsValid(t *testing.T) {
 
 func TestRankNamesSignatures(t *testing.T) {
 	cases := []struct {
-		name     string
-		obs      Observation
-		wantTop  string
+		name    string
+		obs     Observation
+		wantTop string
 	}{
 		{
 			"tetra signature",
