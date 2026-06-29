@@ -1,0 +1,261 @@
+package rfscope
+
+import (
+	"context"
+	"fmt"
+	"sort"
+
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
+)
+
+func init() { Register(topologyAnalyzer{}) }
+
+// hopperPowerBucketDb groups emitters into power bands when looking for a
+// frequency hopper: candidate hop members must sit within one bucket.
+const hopperPowerBucketDb = 6.0
+
+// topologyAnalyzer builds the protocol-agnostic network topology — the
+// generalization of hunt's trunking map. It clusters bursts into Emitters by RF
+// fingerprint (so a frequency hopper's scattered bursts collapse into one
+// logical source), then links temporally correlated emitters into Conversations
+// (request/response, paired slots, hop sequences, co-active). This is the RF
+// analog of Wireshark's Conversations/Endpoints, one layer down.
+type topologyAnalyzer struct{}
+
+func (topologyAnalyzer) Name() string        { return "topology" }
+func (topologyAnalyzer) Synopsis() string    { return "emitter clustering + conversation graph" }
+func (topologyAnalyzer) DependsOn() []string { return nil }
+
+func (topologyAnalyzer) Analyze(ctx context.Context, sc *Scene, in *Input) error {
+	if len(sc.Bursts) == 0 {
+		return nil
+	}
+	clusterEmitters(sc)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	detectConversations(sc)
+	return nil
+}
+
+// detectConversations links temporally correlated emitters. Implemented in the
+// conversation pass (next commit); the emitter clustering above is independent
+// of it.
+func detectConversations(sc *Scene) {}
+
+// clusterEmitters groups bursts into emitters and sets each burst's EmitterID.
+// Stage A clusters by exact channel + class family (per-channel emitters, the
+// common case). Stage B conservatively merges several single-channel emitters
+// into one frequency-hopping emitter when they share a fingerprint and never
+// transmit at the same time.
+func clusterEmitters(sc *Scene) {
+	// Stage A: (FreqHz, classFamily) → emitter.
+	type key struct {
+		freq   uint32
+		family string
+	}
+	groups := map[key][]int{}
+	var order []key
+	for i, b := range sc.Bursts {
+		k := key{b.FreqHz, classFamily(b.Class)}
+		if _, seen := groups[k]; !seen {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], i)
+	}
+	sort.Slice(order, func(i, j int) bool {
+		if order[i].freq != order[j].freq {
+			return order[i].freq < order[j].freq
+		}
+		return order[i].family < order[j].family
+	})
+
+	var emitters []Emitter
+	for _, k := range order {
+		emitters = append(emitters, buildEmitter(sc, groups[k]))
+	}
+
+	emitters = mergeHoppers(sc, emitters)
+
+	// Assign IDs (stable: by first-seen time, then frequency) and back-reference.
+	sort.Slice(emitters, func(i, j int) bool {
+		if emitters[i].FirstSec != emitters[j].FirstSec {
+			return emitters[i].FirstSec < emitters[j].FirstSec
+		}
+		return emitters[i].Fingerprint.CenterHz < emitters[j].Fingerprint.CenterHz
+	})
+	for i := range emitters {
+		emitters[i].ID = uint64(i + 1)
+		for _, bid := range emitters[i].BurstIDs {
+			sc.Bursts[burstIndexByID(sc, bid)].EmitterID = emitters[i].ID
+		}
+	}
+	sc.Emitters = emitters
+}
+
+// buildEmitter constructs an emitter from a set of burst indices.
+func buildEmitter(sc *Scene, idxs []int) Emitter {
+	var e Emitter
+	e.FirstSec = sc.Bursts[idxs[0]].StartSec
+	e.LastSec = sc.Bursts[idxs[0]].EndSec
+	var powers, lens, flats []float64
+	freqSet := map[uint32]struct{}{}
+	for _, i := range idxs {
+		b := sc.Bursts[i]
+		e.BurstIDs = append(e.BurstIDs, b.ID)
+		e.TotalAirtimeSec += b.DurationSec()
+		if b.StartSec < e.FirstSec {
+			e.FirstSec = b.StartSec
+		}
+		if b.EndSec > e.LastSec {
+			e.LastSec = b.EndSec
+		}
+		powers = append(powers, float64(b.PeakDbFS))
+		lens = append(lens, b.DurationSec())
+		flats = append(flats, b.SpectralFlatness)
+		freqSet[b.FreqHz] = struct{}{}
+	}
+	b0 := sc.Bursts[idxs[0]]
+	e.Fingerprint = Fingerprint{
+		CenterHz:          b0.FreqHz,
+		OccupiedBwHz:      b0.OccupiedBwHz,
+		ClassFamily:       classFamily(b0.Class),
+		MedianPowerDbFS:   float32(median(powers)),
+		MedianBurstLenSec: median(lens),
+		SpectralFlatness:  median(flats),
+	}
+	freqs := make([]uint32, 0, len(freqSet))
+	for f := range freqSet {
+		freqs = append(freqs, f)
+	}
+	sort.Slice(freqs, func(i, j int) bool { return freqs[i] < freqs[j] })
+	if len(freqs) > 1 {
+		e.HopSet = freqs
+	}
+	e.Label = emitterLabel(e)
+	return e
+}
+
+// mergeHoppers collapses several single-frequency emitters into one hopping
+// emitter when they share a class family and power band, span ≥2 frequencies,
+// and never transmit simultaneously (a single radio cannot key two channels at
+// once). It is deliberately conservative to avoid merging distinct co-channel
+// radios.
+func mergeHoppers(sc *Scene, emitters []Emitter) []Emitter {
+	type hkey struct {
+		family string
+		powB   int
+	}
+	buckets := map[hkey][]int{}
+	for i, e := range emitters {
+		if len(e.HopSet) > 1 {
+			continue // already multi-freq
+		}
+		k := hkey{e.Fingerprint.ClassFamily, int(float64(e.Fingerprint.MedianPowerDbFS) / hopperPowerBucketDb)}
+		buckets[k] = append(buckets[k], i)
+	}
+
+	merged := map[int]bool{}
+	var out []Emitter
+	// Build merged hoppers first.
+	keys := make([]hkey, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].family != keys[j].family {
+			return keys[i].family < keys[j].family
+		}
+		return keys[i].powB < keys[j].powB
+	})
+	for _, k := range keys {
+		members := buckets[k]
+		if len(members) < 2 {
+			continue
+		}
+		// Distinct frequencies and pairwise time-disjoint bursts.
+		freqs := map[uint32]struct{}{}
+		for _, mi := range members {
+			freqs[emitters[mi].Fingerprint.CenterHz] = struct{}{}
+		}
+		if len(freqs) < 2 {
+			continue
+		}
+		if !timeDisjoint(sc, emitters, members) {
+			continue
+		}
+		// Merge.
+		var idxs []int
+		for _, mi := range members {
+			merged[mi] = true
+			for _, bid := range emitters[mi].BurstIDs {
+				idxs = append(idxs, burstIndexByID(sc, bid))
+			}
+		}
+		he := buildEmitter(sc, idxs)
+		out = append(out, he)
+	}
+	// Keep unmerged emitters.
+	for i, e := range emitters {
+		if !merged[i] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// timeDisjoint reports whether the bursts of all listed emitters are pairwise
+// non-overlapping in time (a precondition for them being one hopping radio).
+func timeDisjoint(sc *Scene, emitters []Emitter, members []int) bool {
+	type iv struct{ start, end float64 }
+	var ivs []iv
+	for _, mi := range members {
+		for _, bid := range emitters[mi].BurstIDs {
+			b := sc.Bursts[burstIndexByID(sc, bid)]
+			ivs = append(ivs, iv{b.StartSec, b.EndSec})
+		}
+	}
+	sort.Slice(ivs, func(i, j int) bool { return ivs[i].start < ivs[j].start })
+	for i := 1; i < len(ivs); i++ {
+		if ivs[i].start < ivs[i-1].end {
+			return false
+		}
+	}
+	return true
+}
+
+// burstIndexByID maps a burst ID to its slice index (linear; burst counts are
+// modest, and this keeps EmitterID back-references simple).
+func burstIndexByID(sc *Scene, id uint64) int {
+	for i := range sc.Bursts {
+		if sc.Bursts[i].ID == id {
+			return i
+		}
+	}
+	return 0
+}
+
+// classFamily folds the modulation classes into the coarse families emitters are
+// clustered on, so a hopper whose hops are classified inconsistently (c4fm on
+// one, fsk on the next) still collapses to one emitter.
+func classFamily(c survey.SignalClass) string {
+	switch c {
+	case survey.ClassAM:
+		return "am"
+	case survey.ClassNBFM, survey.ClassWideFM:
+		return "analog-fm"
+	case survey.ClassFSK, survey.ClassC4FM, survey.ClassPSK, survey.ClassContinuousData,
+		survey.ClassPaging, survey.ClassTrunkControl, survey.ClassTrunkVoice:
+		return "digital"
+	default:
+		return "unknown"
+	}
+}
+
+// emitterLabel renders a short human label for an emitter.
+func emitterLabel(e Emitter) string {
+	if len(e.HopSet) > 1 {
+		return fmt.Sprintf("%s hopper (%d ch)", e.Fingerprint.ClassFamily, len(e.HopSet))
+	}
+	return fmt.Sprintf("%s@%.4fMHz", e.Fingerprint.ClassFamily, float64(e.Fingerprint.CenterHz)/1e6)
+}
