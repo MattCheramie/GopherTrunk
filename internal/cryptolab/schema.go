@@ -33,6 +33,39 @@ var modeParams = map[string][]Param{
 		{Name: "in", Label: "Payload file", Kind: "file", Required: true, Help: "binary payload to analyze"},
 		{Name: "max-keylen", Label: "Max XOR key length", Kind: "int", Default: "40"},
 	},
+	"stats/period": {
+		{Name: "in", Label: "Payload file", Kind: "file", Required: true, Help: "binary payload to analyze"},
+		{Name: "max-lag", Label: "Max autocorrelation lag (bytes)", Kind: "int", Default: "256"},
+		{Name: "ngram", Label: "N-gram length", Kind: "int", Default: "3"},
+		{Name: "top", Label: "Candidates to report", Kind: "int", Default: "8"},
+	},
+	"randomness/battery": {
+		{Name: "in", Label: "Bitstream file", Kind: "file", Required: true, Help: "packed bytes, MSB-first (e.g. a recovered keystream)"},
+		{Name: "alpha", Label: "Significance level", Kind: "string", Default: "0.01"},
+	},
+	"randomness/quick": {
+		{Name: "in", Label: "Bitstream file", Kind: "file", Required: true, Help: "packed bytes, MSB-first"},
+		{Name: "alpha", Label: "Significance level", Kind: "string", Default: "0.01"},
+	},
+	"classify/auto": {
+		{Name: "in", Label: "Payload file", Kind: "file", Required: true, Help: "unknown payload to triage"},
+		{Name: "max-keylen", Label: "Max XOR key length", Kind: "int", Default: "40"},
+	},
+	"ks/reuse": {
+		{Name: "in", Label: "Frames file", Kind: "file", Required: true, Help: "JSONL {label,iv,ct} or CSV label,iv_hex,ct_hex"},
+	},
+	"ks/mtp": {
+		{Name: "in", Label: "Frames file", Kind: "file", Required: true, Help: "JSONL/CSV frames sharing IVs"},
+		{Name: "crib", Label: "Crib", Kind: "string", Default: " the ", Help: "known substring to drag across reuse groups"},
+		{Name: "known-label", Label: "Known frame label", Kind: "string", Help: "label of a frame whose plaintext is known"},
+		{Name: "known-pt", Label: "Known plaintext file", Kind: "file", Help: "plaintext for the known frame"},
+		{Name: "top", Label: "Hits per group", Kind: "int", Default: "10"},
+	},
+	"ks/extract": {
+		{Name: "pt", Label: "Known-plaintext file", Kind: "file", Required: true},
+		{Name: "ct", Label: "Ciphertext file", Kind: "file", Required: true},
+		{Name: "out", Label: "Output keystream file", Kind: "outfile"},
+	},
 	"brute/xor": {
 		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},

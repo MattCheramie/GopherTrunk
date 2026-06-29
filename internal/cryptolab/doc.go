@@ -1,9 +1,12 @@
 // Package cryptolab is GopherTrunk's optional cryptographic-research
 // toolkit: a set of byte-oriented analysis and brute-force tools for the
 // kinds of obfuscation and weak/keyless ciphers found in RF traffic. It
-// ships statistical triage, keyspace brute force, LFSR/keystream analysis,
-// CRC parameter recovery, analog voice descrambling, and a pluggable
-// "subject" framework for studying specific byte-oriented obfuscators.
+// ships statistical triage (entropy/IC plus autocorrelation period
+// detection), a NIST SP 800-22 randomness battery, an obfuscation-class
+// classifier, keyspace brute force, LFSR/keystream analysis,
+// keystream-reuse / many-time-pad recovery, CRC parameter recovery, analog
+// voice descrambling, and a pluggable "subject" framework for studying
+// specific byte-oriented obfuscators.
 //
 // # Optional at install
 //
@@ -23,7 +26,10 @@
 // constructions and triage whether a captured payload is even breakable;
 // they make no claim to break strong keyed encryption (e.g. DES/AES,
 // RC4-based schemes). For those, the toolkit offers known-plaintext
-// keystream extraction and breakability triage only.
+// keystream extraction and breakability triage only. The keystream-reuse /
+// many-time-pad tool likewise exploits operator misuse (a repeated IV/MI
+// reusing a keystream) and known plaintext — it does not attack the cipher
+// key itself.
 package cryptolab
 
 // SubcommandName is the gophertrunk subcommand under which the toolkit is
