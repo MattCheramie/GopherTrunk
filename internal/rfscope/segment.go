@@ -121,8 +121,20 @@ func Segment(ctx context.Context, src Source, cfg SegmentConfig) (*Scene, *Input
 		ThresholdDb:  cfg.PeakThresholdDb,
 		MinSpacingHz: cfg.MinSpacingHz,
 	})
-	if len(peaks) > cfg.MaxChannels {
-		peaks = peaks[:cfg.MaxChannels]
+	// DetectPeaks drops the DC bin (a front-end artifact for live SDRs), but a
+	// real carrier can sit exactly at the tuned centre — common for a
+	// single-channel capture. Always consider the band centre as a candidate; a
+	// static DC spike produces no burst (the onset floor initializes to it), so
+	// this is safe.
+	dcBin := len(avg.Bins) / 2
+	cands := []carriers.Peak{{FreqHz: center, PowerDbFS: avg.Bins[dcBin], SNRDb: avg.Bins[dcBin] - noiseFloor}}
+	for _, p := range peaks {
+		if absU32(p.FreqHz, center) >= cfg.MinSpacingHz {
+			cands = append(cands, p)
+		}
+	}
+	if len(cands) > cfg.MaxChannels {
+		cands = cands[:cfg.MaxChannels]
 	}
 
 	now := cfg.Now()
@@ -139,9 +151,16 @@ func Segment(ctx context.Context, src Source, cfg SegmentConfig) (*Scene, *Input
 	store := map[uint64]storedIQ{}
 	var nextID uint64
 
-	for _, pk := range peaks {
+	for _, pk := range cands {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
+		}
+		// Only segment confirmed carriers. DetectPeaks results clear the
+		// threshold by construction; this gates the always-added DC candidate so
+		// a dead band centre (or noise rising under an adjacent transmission)
+		// produces no phantom burst.
+		if pk.SNRDb < cfg.PeakThresholdDb {
+			continue
 		}
 		offset := float64(pk.FreqHz) - float64(center)
 		ddc := ccdecoder.NewDownconverterWithOffset(rate, cfg.ChannelTargetRateHz, offset)
@@ -151,7 +170,8 @@ func Segment(ctx context.Context, src Source, cfg SegmentConfig) (*Scene, *Input
 			continue
 		}
 
-		spans := detectBursts(base, outRate, cfg)
+		carrierConfirmed := pk.SNRDb >= cfg.PeakThresholdDb
+		spans := detectBursts(base, outRate, cfg, carrierConfirmed)
 		for _, sp := range spans {
 			slice := base[sp.startSample:sp.endSample]
 			cls := survey.Classify(slice, outRate)
@@ -220,41 +240,77 @@ type burstSpan struct {
 	endSample   int
 }
 
-// detectBursts runs the lifted onset/offset state machine over the power
-// envelope of a channel's decimated baseband and returns the burst spans.
-func detectBursts(base []complex64, outRate float64, cfg SegmentConfig) []burstSpan {
+// detectBursts slices a channel's decimated baseband into onset→offset spans.
+//
+// It applies the hysteresis + debounce logic lifted from the DMR onset detector,
+// but anchors the threshold on a fixed quiet floor (a low percentile of the
+// channel's own power envelope over the whole capture) rather than an EWMA seeded
+// from the first frame — so a transmission that is already keyed up at the start
+// of the capture is still found. When the channel has too little dynamic range to
+// segment (a continuous carrier on for the whole window, or dead air),
+// carrierConfirmed (from the wideband carrier SNR) decides between one full-span
+// burst and none.
+func detectBursts(base []complex64, outRate float64, cfg SegmentConfig, carrierConfirmed bool) []burstSpan {
 	hop := int(math.Round(outRate / cfg.EnvelopeRateHz))
 	if hop < 1 {
 		hop = 1
 	}
 	minSamples := int(math.Round(cfg.MinBurstSec * outRate))
 
-	st := channelState{}
-	var spans []burstSpan
-	curStart := -1
+	// Power envelope, one dB value per frame.
+	var env []float64
 	for i := 0; i+hop <= len(base); i += hop {
-		db := frameDb(base[i : i+hop])
-		onset, offset := st.update(db, cfg)
-		if onset {
-			// Back-date the start by the debounce latency.
-			curStart = i - (cfg.Debounce-1)*hop
-			if curStart < 0 {
-				curStart = 0
-			}
+		env = append(env, frameDb(base[i:i+hop]))
+	}
+	if len(env) == 0 {
+		return nil
+	}
+
+	floor := percentileFloat(env, 0.10)
+	peak := percentileFloat(env, 0.95)
+	// Low dynamic range ⇒ the channel is either continuously on or dead. Defer to
+	// the wideband carrier confirmation.
+	if peak-floor < cfg.OnThreshDb {
+		if carrierConfirmed && len(base) >= minSamples {
+			return []burstSpan{{startSample: 0, endSample: len(base)}}
 		}
-		if offset && curStart >= 0 {
-			end := i
-			if end > len(base) {
-				end = len(base)
+		return nil
+	}
+
+	onLevel := floor + cfg.OnThreshDb
+	offLevel := floor + cfg.OffThreshDb
+	var spans []burstSpan
+	active := false
+	above, below := 0, 0
+	curStart := -1
+	for i, db := range env {
+		switch {
+		case db >= onLevel:
+			above++
+			below = 0
+			if !active && above >= cfg.Debounce {
+				active = true
+				curStart = (i - (cfg.Debounce - 1)) * hop
+				if curStart < 0 {
+					curStart = 0
+				}
 			}
-			if end-curStart >= minSamples {
-				spans = append(spans, burstSpan{startSample: curStart, endSample: end})
+		case db <= offLevel:
+			below++
+			above = 0
+			if active && below >= cfg.Debounce {
+				active = false
+				end := i * hop
+				if end-curStart >= minSamples {
+					spans = append(spans, burstSpan{startSample: curStart, endSample: end})
+				}
+				curStart = -1
 			}
-			curStart = -1
+		default:
+			above, below = 0, 0
 		}
 	}
-	// Close an open burst at end-of-stream.
-	if curStart >= 0 && len(base)-curStart >= minSamples {
+	if active && curStart >= 0 && len(base)-curStart >= minSamples {
 		spans = append(spans, burstSpan{startSample: curStart, endSample: len(base)})
 	}
 	return spans
@@ -276,53 +332,29 @@ func frameDb(frame []complex64) float64 {
 	return 10 * math.Log10(p)
 }
 
-// channelState is the per-channel onset/offset state machine — the algorithm
-// lifted from internal/scanner/dmrlcn/onset.go's updateChannel, generalized off
-// the DMR grid to run on any channel's power envelope.
-type channelState struct {
-	floorDb   float64
-	floorInit bool
-	active    bool
-	above     int
-	below     int
+// percentileFloat returns the p-quantile (0..1) of xs without mutating it.
+func percentileFloat(xs []float64, p float64) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	cp := append([]float64(nil), xs...)
+	sort.Float64s(cp)
+	idx := int(p * float64(len(cp)-1))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(cp) {
+		idx = len(cp) - 1
+	}
+	return cp[idx]
 }
 
-// update advances the machine by one envelope frame, returning whether this
-// frame triggered an onset (idle→active) or offset (active→idle).
-func (s *channelState) update(db float64, cfg SegmentConfig) (onset, offset bool) {
-	if !s.floorInit {
-		s.floorDb = db
-		s.floorInit = true
-		return
+// absU32 is the absolute difference of two unsigned frequencies.
+func absU32(a, b uint32) uint32 {
+	if a > b {
+		return a - b
 	}
-	onLevel := s.floorDb + cfg.OnThreshDb
-	offLevel := s.floorDb + cfg.OffThreshDb
-	switch {
-	case db >= onLevel:
-		s.above++
-		s.below = 0
-		if !s.active && s.above >= cfg.Debounce {
-			s.active = true
-			onset = true
-		}
-	case db <= offLevel:
-		s.below++
-		s.above = 0
-		if s.active && s.below >= cfg.Debounce {
-			s.active = false
-			offset = true
-		}
-	default:
-		s.above = 0
-		s.below = 0
-	}
-	// Track the noise floor only while idle so an active carrier can't drag the
-	// floor up and mask itself.
-	if !s.active {
-		a := cfg.NoiseAlpha
-		s.floorDb = (1-a)*s.floorDb + a*db
-	}
-	return
+	return b - a
 }
 
 // occFFTFor picks a power-of-two FFT size no larger than the slice for occupancy

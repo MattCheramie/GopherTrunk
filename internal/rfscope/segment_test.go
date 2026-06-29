@@ -101,10 +101,3 @@ func TestSegmentShortCaptureErrors(t *testing.T) {
 		t.Fatalf("want error for capture shorter than FFT size")
 	}
 }
-
-func absU32(a, b uint32) uint32 {
-	if a > b {
-		return a - b
-	}
-	return b - a
-}
