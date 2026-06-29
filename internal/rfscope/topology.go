@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/stats"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
@@ -38,10 +39,126 @@ func (topologyAnalyzer) Analyze(ctx context.Context, sc *Scene, in *Input) error
 	return nil
 }
 
-// detectConversations links temporally correlated emitters. Implemented in the
-// conversation pass (next commit); the emitter clustering above is independent
-// of it.
-func detectConversations(sc *Scene) {}
+// Conversation-detection tuning.
+const (
+	maxConvEmitters = 24  // cap pairwise comparison to the top-N talkers
+	coactiveThresh  = 0.5 // lag-0 correlation ⇒ co-active
+	rrThresh        = 0.4 // off-lag correlation peak ⇒ request/response
+)
+
+// detectConversations links temporally correlated emitters into Conversations —
+// the RF analog of a conversation/endpoint graph. A frequency hopper is its own
+// hop-sequence; a pair of emitters whose activity coincides is co-active, and a
+// pair that alternates (a correlation peak at a non-zero lag) is request/response.
+func detectConversations(sc *Scene) {
+	window := sc.WindowSec
+	if window <= 0 || len(sc.Emitters) == 0 {
+		return
+	}
+	nbins := timelineBins
+	binDur := window / float64(nbins)
+
+	byID := map[uint64]int{}
+	for i := range sc.Bursts {
+		byID[sc.Bursts[i].ID] = i
+	}
+
+	// Per-emitter binary activity signal.
+	act := make(map[uint64][]float64, len(sc.Emitters))
+	for _, e := range sc.Emitters {
+		sig := make([]float64, nbins)
+		for _, bid := range e.BurstIDs {
+			b := sc.Bursts[byID[bid]]
+			lo := int(b.StartSec / binDur)
+			hi := int(b.EndSec / binDur)
+			for k := lo; k <= hi && k < nbins; k++ {
+				if k >= 0 {
+					sig[k] = 1
+				}
+			}
+		}
+		act[e.ID] = sig
+	}
+
+	var convs []Conversation
+	var nextID uint64
+
+	// Hop sequences (intra-emitter).
+	for _, e := range sc.Emitters {
+		if len(e.HopSet) > 1 {
+			nextID++
+			convs = append(convs, Conversation{
+				ID: nextID, EmitterIDs: []uint64{e.ID}, Kind: "hop-sequence",
+				Correlation: 1, Exchanges: len(e.BurstIDs),
+			})
+		}
+	}
+
+	// Pairwise among the top talkers.
+	top := sc.Emitters
+	if len(top) > maxConvEmitters {
+		top = top[:maxConvEmitters]
+	}
+	for i := 0; i < len(top); i++ {
+		for j := i + 1; j < len(top); j++ {
+			ai, aj := act[top[i].ID], act[top[j].ID]
+			corr, _ := stats.Correlate(ai, aj)
+			if len(corr) == 0 {
+				continue
+			}
+			lag0 := corr[nbins-1]
+			bestLag, bestVal := offPeak(corr, nbins, nbins/4)
+
+			kind, score := "", 0.0
+			switch {
+			case lag0 >= coactiveThresh:
+				kind, score = "co-active", lag0
+			case bestVal >= rrThresh && bestLag != 0 && lag0 < 0.3:
+				kind, score = "request-response", bestVal
+			}
+			if kind == "" {
+				continue
+			}
+			nextID++
+			convs = append(convs, Conversation{
+				ID: nextID, EmitterIDs: []uint64{top[i].ID, top[j].ID}, Kind: kind,
+				Correlation: score, Exchanges: overlapCount(ai, aj),
+			})
+		}
+	}
+	sc.Conversations = convs
+}
+
+// offPeak returns the lag (≠0, within ±maxLag) of the largest cross-correlation
+// value and that value. corr is the full Correlate output of two length-n
+// signals (length 2n-1, lag 0 at index n-1).
+func offPeak(corr []float64, n, maxLag int) (lag int, val float64) {
+	val = -2
+	for d := -maxLag; d <= maxLag; d++ {
+		if d == 0 {
+			continue
+		}
+		idx := n - 1 + d
+		if idx < 0 || idx >= len(corr) {
+			continue
+		}
+		if corr[idx] > val {
+			val, lag = corr[idx], d
+		}
+	}
+	return lag, val
+}
+
+// overlapCount returns how many bins both signals are active.
+func overlapCount(a, b []float64) int {
+	n := 0
+	for i := range a {
+		if a[i] > 0 && b[i] > 0 {
+			n++
+		}
+	}
+	return n
+}
 
 // clusterEmitters groups bursts into emitters and sets each burst's EmitterID.
 // Stage A clusters by exact channel + class family (per-channel emitters, the
@@ -90,6 +207,13 @@ func clusterEmitters(sc *Scene) {
 			sc.Bursts[burstIndexByID(sc, bid)].EmitterID = emitters[i].ID
 		}
 	}
+	// Present top talkers first (most airtime), keeping the assigned IDs.
+	sort.Slice(emitters, func(i, j int) bool {
+		if emitters[i].TotalAirtimeSec != emitters[j].TotalAirtimeSec {
+			return emitters[i].TotalAirtimeSec > emitters[j].TotalAirtimeSec
+		}
+		return emitters[i].ID < emitters[j].ID
+	})
 	sc.Emitters = emitters
 }
 

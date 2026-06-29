@@ -98,6 +98,70 @@ func TestClusterEmittersNoMergeWhenOverlapping(t *testing.T) {
 	}
 }
 
+func convKind(cs []Conversation, kind string) bool {
+	for _, c := range cs {
+		if c.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func TestConversationsCoActive(t *testing.T) {
+	t.Parallel()
+	// Two distinct emitters active over the same interval ⇒ co-active.
+	sc := &Scene{
+		SpanHz: 2_000_000, WindowSec: 10,
+		Bursts: []Burst{
+			{ID: 1, FreqHz: 450_100_000, StartSec: 0, EndSec: 3, PeakDbFS: -40, Class: survey.ClassFSK, OccupiedBwHz: 12_500},
+			{ID: 2, FreqHz: 450_500_000, StartSec: 0, EndSec: 3, PeakDbFS: -55, Class: survey.ClassPSK, OccupiedBwHz: 12_500},
+		},
+	}
+	clusterEmitters(sc)
+	detectConversations(sc)
+	if len(sc.Emitters) != 2 {
+		t.Fatalf("want 2 emitters, got %d", len(sc.Emitters))
+	}
+	if !convKind(sc.Conversations, "co-active") {
+		t.Fatalf("want a co-active conversation, got %+v", sc.Conversations)
+	}
+}
+
+func TestConversationsRequestResponse(t *testing.T) {
+	t.Parallel()
+	// Two emitters alternating in 1 s slots ⇒ request/response (peak at a lag).
+	sc := &Scene{SpanHz: 2_000_000, WindowSec: 10}
+	var id uint64
+	for t0 := 0.0; t0+2 <= 8; t0 += 2 {
+		id++
+		sc.Bursts = append(sc.Bursts, Burst{ID: id, FreqHz: 450_100_000, StartSec: t0, EndSec: t0 + 1, PeakDbFS: -40, Class: survey.ClassFSK, OccupiedBwHz: 12_500})
+		id++
+		sc.Bursts = append(sc.Bursts, Burst{ID: id, FreqHz: 450_500_000, StartSec: t0 + 1, EndSec: t0 + 2, PeakDbFS: -55, Class: survey.ClassPSK, OccupiedBwHz: 12_500})
+	}
+	clusterEmitters(sc)
+	detectConversations(sc)
+	if !convKind(sc.Conversations, "request-response") {
+		t.Fatalf("want a request-response conversation, got %+v", sc.Conversations)
+	}
+}
+
+func TestConversationsHopSequence(t *testing.T) {
+	t.Parallel()
+	sc := &Scene{
+		SpanHz: 2_000_000, WindowSec: 10,
+		Bursts: []Burst{
+			{ID: 1, FreqHz: 450_100_000, StartSec: 0.0, EndSec: 0.5, PeakDbFS: -40, Class: survey.ClassFSK, OccupiedBwHz: 12_500},
+			{ID: 2, FreqHz: 450_500_000, StartSec: 1.0, EndSec: 1.5, PeakDbFS: -41, Class: survey.ClassFSK, OccupiedBwHz: 12_500},
+			{ID: 3, FreqHz: 450_900_000, StartSec: 2.0, EndSec: 2.5, PeakDbFS: -39, Class: survey.ClassFSK, OccupiedBwHz: 12_500},
+		},
+	}
+	clusterEmitters(sc)
+	detectConversations(sc)
+	if !convKind(sc.Conversations, "hop-sequence") {
+		t.Fatalf("want a hop-sequence conversation, got %+v", sc.Conversations)
+	}
+}
+
 func TestTopologyViaRunner(t *testing.T) {
 	t.Parallel()
 	sc := &Scene{
