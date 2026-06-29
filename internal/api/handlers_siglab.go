@@ -31,6 +31,7 @@ type siglabRunConfig struct {
 	CollectIQDiag      bool    `json:"collect_iq_diag"`
 	CaptureIQ          bool    `json:"capture_iq"`
 	CaptureIQMaxPoints int     `json:"capture_iq_max_points"`
+	CollectPDUs        bool    `json:"collect_pdus"`
 
 	// P25 Phase 1 deep knobs.
 	DemodMode            string `json:"demod_mode"`
@@ -78,6 +79,7 @@ func (rc siglabRunConfig) config(cap *siglabCapture) (siglab.Config, error) {
 		CollectIQDiag:        rc.CollectIQDiag,
 		CaptureIQ:            rc.CaptureIQ,
 		CaptureIQMaxPoints:   rc.CaptureIQMaxPoints,
+		CollectPDUs:          rc.CollectPDUs,
 		DemodMode:            rc.DemodMode,
 		NIDSearchSpan:        rc.NIDSearchSpan,
 		EnableDDA:            rc.EnableDDA,
@@ -355,7 +357,7 @@ func (s *Server) handleSiglabExport(w http.ResponseWriter, r *http.Request) {
 	switch formatStr {
 	case "yaml", "yml":
 		ct, ext = "application/yaml", "yaml"
-	case "csv", "csv-summary", "csv-events":
+	case "csv", "csv-summary", "csv-events", "csv-pdus":
 		ct, ext = "text/csv", "csv"
 	case "jsonl":
 		ct, ext = "application/x-ndjson", "jsonl"

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
+	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
@@ -292,10 +293,19 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}
 	}
 
+	// Optional per-signaling-block (TSBK) dissection for the data-PDU inspector
+	// — P25 deep path only.
+	var pduColl *pduCollector
+	var pduTap func(p25phase1.SignalingBlock)
+	if cfg.CollectPDUs {
+		pduColl = newPDUCollector(expectedSymbolRate(cfg.Protocol))
+		pduTap = pduColl.observeP25
+	}
+
 	// Build the run bundle: either a generic factory pipeline (any protocol)
 	// or the P25 Phase 1 deep path (direct receiver + control channel with
 	// soft/state capture and the experimental bisect knobs).
-	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap)
+	bundle, err := buildBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap, pduTap)
 	if err != nil {
 		sub.Close()
 		bus.Close()
@@ -465,6 +475,18 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}
 	}
 
+	// Surface the receiver's settled carrier-frequency error onto the VSA demod
+	// metrics (deep path only; the generic factory path exposes no AFC loop).
+	if bundle.carrierErrHz != nil && res.Signal != nil && res.Signal.Demod != nil {
+		res.Signal.Demod.CarrierFreqErrorHz = bundle.carrierErrHz()
+	}
+
+	// Attach the per-signaling-block dissection (data-PDU inspector feed).
+	if pduColl != nil {
+		res.PDUs = pduColl.recs
+		res.PDUsTruncated = pduColl.truncated
+	}
+
 	// Name *why* the control channel did not lock (SNR-limited / misaligned /
 	// not-control / no-signal), from the demod + frame-decode metrics now
 	// attached — so a capture-quality failure is not misread as a tuning or AGC
@@ -519,7 +541,7 @@ func assembleResult(source string, cfg Config, totalSamples, symbols int64, rece
 		decodeErrTotal += int64(n)
 	}
 	if an != nil {
-		res.Signal = an.result(decodeErrTotal)
+		res.Signal = an.result(decodeErrTotal, cfg.captureIQMaxPoints())
 	}
 
 	if cfg.Acceptance != nil {
@@ -545,15 +567,18 @@ type runBundle struct {
 	stateAt  func(t float64) ReceiverState
 	ccStats  func() *CCStatsBreakdown
 	topology func() *TopologySnapshot
+	// carrierErrHz reports the receiver's settled residual carrier-frequency
+	// error (Hz) for the VSA metrics. Nil on the generic factory path.
+	carrierErrHz func() float64
 }
 
 // buildBundle constructs the run bundle for cfg: the P25 Phase 1 deep path
 // when requested, otherwise the generic factory pipeline (any protocol). Both
 // publish lock/grant/decode-error events to bus and feed symbolTap; only the
 // deep path feeds softTap and exposes state/ccStats.
-func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64)) (*runBundle, error) {
+func buildBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64), pduTap func(p25phase1.SignalingBlock)) (*runBundle, error) {
 	if cfg.wantP25Deep() {
-		return buildP25DeepBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap)
+		return buildP25DeepBundle(cfg, bus, logger, receiverRate, symbolTap, softTap, constTap, pduTap)
 	}
 	pipe, ok, err := ccdecoder.NewPipeline(cfg.Protocol, ccdecoder.PipelineOptions{
 		Bus:          bus,

@@ -30,6 +30,23 @@ export interface PSDResult {
   bins: number[];
 }
 
+// OccupancyResult is the server-computed spectral-occupancy metric set from
+// GET /jobs/{id}/occupancy, derived from the same Welch spectrum as the PSD.
+export interface OccupancyResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  channel_bw_hz: number;
+  adj_offset_hz: number;
+  adj_bw_hz: number;
+  occupancy: {
+    occupied_bandwidth_hz: number;
+    channel_power_dbfs: number;
+    acpr_upper_db: number;
+    acpr_lower_db: number;
+    spectral_flatness: number;
+  };
+}
+
 // SpectrogramResult is the server-computed STFT from GET /jobs/{id}/spectrogram:
 // z[frame][bin] dBFS, each row FFT-shifted (bin 0 = -sample_rate_hz/2).
 export interface SpectrogramResult {
@@ -84,6 +101,17 @@ export interface DemodMetrics {
   evm_pct: number;
   snr_estimate_db: number;
   symbols_analyzed: number;
+  // VSA decomposition (see siglab.DemodMetrics). The phase/IQ/origin fields
+  // are populated on the CQPSK path only; arrays are omitted when empty.
+  peak_evm_pct: number;
+  mag_err_pct: number;
+  phase_err_deg: number;
+  carrier_freq_error_hz: number;
+  iq_gain_imbalance_db: number;
+  quadrature_error_deg: number;
+  origin_offset_pct: number;
+  evm_trace?: number[];
+  error_vector_spectrum?: number[];
 }
 
 export interface RailStat {
@@ -181,6 +209,26 @@ export interface Detail {
   [k: string]: unknown;
 }
 
+// PDURecord is one dissected data/signaling PDU (mirrors siglab.PDURecord).
+export interface PDURecord {
+  seq: number;
+  offset_sec: number;
+  protocol: string;
+  opcode: number;
+  opcode_name: string;
+  mfid?: number;
+  nac?: number;
+  source_id?: number;
+  dest_id?: number;
+  talkgroup?: number;
+  fields?: Record<string, unknown>;
+  raw_hex: string;
+  crc_ok: boolean;
+  fec_metric: number;
+  dibit_start: number;
+  dibit_len: number;
+}
+
 export interface Result {
   source: string;
   protocol: string;
@@ -204,6 +252,8 @@ export interface Result {
   detail?: Detail;
   verdict?: { pass: boolean; failures?: string[] };
   iq_taps?: IQTaps;
+  pdus?: PDURecord[];
+  pdus_truncated?: boolean;
 }
 
 export interface CandidateScore {
@@ -217,6 +267,34 @@ export interface CandidateScore {
   score: number;
 }
 
+// BlindEstimate is the offline blind symbol-rate / modulation estimate
+// (mirrors blind.BlindEstimate). ReferenceMatch is one scored reference-DB
+// candidate (mirrors sigref.Match).
+export interface BlindEstimate {
+  symbol_rate_hz: number;
+  symbol_rate_conf: number;
+  symbol_rate_cands?: number[];
+  mod_class: string;
+  levels: number;
+  occupied_bw_hz: number;
+  method: string;
+}
+
+export interface ReferenceMatch {
+  entry: {
+    protocol: string;
+    display_name: string;
+    mod_class: string;
+    mod_labels: string[];
+    symbol_rate_hz: number;
+    channel_bw_hz: number;
+    levels: number;
+    decodable: boolean;
+  };
+  score: number;
+  why: string;
+}
+
 export interface IdentifyResult {
   source: string;
   sample_rate_hz: number;
@@ -224,6 +302,9 @@ export interface IdentifyResult {
   confidence: number;
   inconclusive: boolean;
   candidates: CandidateScore[];
+  // Offline-signal-ID fallback, populated only when inconclusive.
+  blind?: BlindEstimate;
+  reference_matches?: ReferenceMatch[];
 }
 
 export interface CaptureDTO {
@@ -292,6 +373,7 @@ export interface RunConfig {
   collect_iq_diag?: boolean;
   capture_iq?: boolean;
   capture_iq_max_points?: number;
+  collect_pdus?: boolean;
   demod_mode?: string;
   nid_search_span?: number;
   enable_dda?: boolean;
@@ -337,6 +419,9 @@ export interface WidebandCarrier {
   system_id?: number;
   grants?: GrantRecord[];
   score: number;
+  // Reference-DB naming for a carrier that did not decode (protocol is blank).
+  blind?: BlindEstimate;
+  reference_matches?: ReferenceMatch[];
 }
 
 // WidebandSystem clusters carriers into one trunked-system verdict.

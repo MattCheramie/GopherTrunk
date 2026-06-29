@@ -338,6 +338,7 @@ function RunForm({ capture }: { capture: CaptureDTO }) {
           v={!!cfg.collect_receiver_state}
           on={(v) => set("collect_receiver_state", v)}
         />
+        <Toggle label="collect PDUs" v={!!cfg.collect_pdus} on={(v) => set("collect_pdus", v)} />
       </div>
       <details className="text-sm">
         <summary className="cursor-pointer text-muted">P25 deep knobs</summary>

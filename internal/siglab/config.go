@@ -99,6 +99,11 @@ type Config struct {
 	// capture, bounding per-candidate cost regardless of capture length.
 	MaxSamples int64
 
+	// CollectPDUs retains a per-signaling-block dissection (Result.PDUs) of the
+	// data PDUs the decoder parses — the data-over-RF inspector feed. Off by
+	// default; P25 Phase 1 (TSBK) only for now. Capped at pduMaxRecords.
+	CollectPDUs bool
+
 	// Acceptance, when non-nil, is evaluated against the Result to produce a
 	// pass/fail Verdict (the `test` harness sets it).
 	Acceptance *Acceptance
@@ -152,7 +157,7 @@ func (c Config) wantP25Deep() bool {
 	if c.Protocol != trunking.ProtocolP25 {
 		return false
 	}
-	return c.CollectIQDiag || c.CollectReceiverState ||
+	return c.CollectIQDiag || c.CollectReceiverState || c.CollectPDUs ||
 		c.NIDSearchSpan > 0 || c.EnableDDA || c.EnableAdaptiveSlicer ||
 		c.EnableSoftSync || c.DemodMode != ""
 }

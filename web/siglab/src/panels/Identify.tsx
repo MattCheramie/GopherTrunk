@@ -97,6 +97,30 @@ export function Identify() {
               ))}
             </tbody>
           </table>
+
+          {result.inconclusive && result.reference_matches && result.reference_matches.length > 0 && (
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="mb-1 text-xs font-semibold text-warn">
+                Nothing decoded — best-guess from the signal-ID reference
+                {result.blind && (
+                  <span className="ml-1 font-normal text-muted">
+                    (blind: {result.blind.symbol_rate_hz.toFixed(0)} sym/s, {result.blind.mod_class})
+                  </span>
+                )}
+              </p>
+              <ul className="text-xs">
+                {result.reference_matches.map((m) => (
+                  <li key={m.entry.display_name} className="flex justify-between gap-2 py-0.5">
+                    <span>
+                      {m.entry.display_name}
+                      <span className="ml-1 text-muted">— {m.why}</span>
+                    </span>
+                    <span className="font-mono">{(m.score * 100).toFixed(0)}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

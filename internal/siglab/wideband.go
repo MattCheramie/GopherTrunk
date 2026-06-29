@@ -7,9 +7,11 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/carriers"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/blind"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/spectrum"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab/sigref"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -33,6 +35,11 @@ const (
 	// (e.g. 10 MS/s) survey gets enough bins to keep adjacent carriers in
 	// distinct bins instead of the fixed-16 collapse (issue #764).
 	wbChannelizerBinWidthHz = 150_000.0
+
+	// wbReferenceKeepFloor is the minimum reference-DB match score at which a
+	// non-decoding carrier is kept and named (rather than dropped as noise). It
+	// mirrors identifyConfidenceFloor — a best-guess threshold, not a lock.
+	wbReferenceKeepFloor = 0.40
 )
 
 // wbChannelizerBinsFor mirrors widebandt2.channelizerBinsFor: the power of
@@ -93,6 +100,12 @@ type CarrierResult struct {
 	SystemID     uint32        `json:"system_id,omitempty" yaml:"system_id,omitempty"`
 	Grants       []GrantRecord `json:"grants,omitempty" yaml:"grants,omitempty"`
 	Score        float64       `json:"score" yaml:"score"`
+
+	// Blind / ReferenceMatches name a carrier that did NOT decode, via the
+	// offline signal-ID reference DB (Protocol is blanked for such carriers and
+	// Role is RoleUnknown). Populated from the per-carrier identify fallback.
+	Blind            *blind.BlindEstimate `json:"blind,omitempty" yaml:"blind,omitempty"`
+	ReferenceMatches []sigref.Match       `json:"reference_matches,omitempty" yaml:"reference_matches,omitempty"`
 
 	identify *IdentifyResult // retained for the hunt bridge
 	result   *Result         // full Run of the winning protocol
@@ -294,14 +307,32 @@ func SurveyWidebandIQ(iq []complex64, source string, cfg WidebandConfig) (*Wideb
 			cr.Score = win.Score
 		}
 		cr.Role = roleForCarrier(cr)
-		if !keepCarrier(cr) {
+		cr.Blind = idr.Blind
+		cr.ReferenceMatches = idr.ReferenceMatches
+		if keepCarrier(cr) {
+			out.Carriers = append(out.Carriers, cr)
 			continue
 		}
-		out.Carriers = append(out.Carriers, cr)
+		// The carrier did not decode, but the reference DB names it with
+		// confidence — surface it as an unidentified-but-named carrier rather
+		// than dropping it (Artemis-style "looks like TETRA…").
+		if keepAsReference(cr) {
+			cr.Protocol = ""
+			cr.Role = RoleUnknown
+			out.Carriers = append(out.Carriers, cr)
+		}
 	}
 
 	out.Systems = clusterSystems(out.Carriers, cfg.CenterHz, cfg.SampleRateHz, chRate)
 	return out, nil
+}
+
+// keepAsReference reports whether a carrier that no decoder could lock should
+// still be kept and named from the offline reference DB — its top match must
+// clear the best-guess floor. Such carriers are surfaced with a blank Protocol
+// and RoleUnknown.
+func keepAsReference(c CarrierResult) bool {
+	return len(c.ReferenceMatches) > 0 && c.ReferenceMatches[0].Score >= wbReferenceKeepFloor
 }
 
 // keepCarrier filters the spectral detections down to genuine carriers: a DMR

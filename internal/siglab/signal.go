@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/fft"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/metrics"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr"
 )
@@ -72,6 +73,39 @@ type DemodMetrics struct {
 	// SymbolsAnalyzed is the soft-sample count the estimate was formed over
 	// (after the warmup skip).
 	SymbolsAnalyzed int64 `json:"symbols_analyzed" yaml:"symbols_analyzed"`
+
+	// The fields below are the vector-signal-analyzer (VSA) decomposition of
+	// the same recovered symbols — the breakdown a lab VSA reports beside the
+	// constellation. PeakEVMPct, MagErrPct and the EVMTrace populate on both
+	// paths; PhaseErrDeg, IQGainImbalanceDB, QuadratureErrorDeg and
+	// OriginOffsetPct require the I/Q plane and are populated on the CQPSK
+	// (constellation) path only — on the 1-D C4FM soft axis they stay zero.
+
+	// PeakEVMPct is the worst single-symbol EVM (≥ EVMPct).
+	PeakEVMPct float64 `json:"peak_evm_pct" yaml:"peak_evm_pct"`
+	// MagErrPct / PhaseErrDeg split the error vector into its amplitude
+	// (RMS magnitude error, %) and angular (RMS phase error, degrees) parts.
+	MagErrPct   float64 `json:"mag_err_pct" yaml:"mag_err_pct"`
+	PhaseErrDeg float64 `json:"phase_err_deg" yaml:"phase_err_deg"`
+	// CarrierFreqErrorHz is the residual carrier-frequency error the receiver's
+	// AFC/CQPSK loop settled at, in Hz (surfaced from the receiver, not
+	// re-estimated). Zero when the deep receiver did not expose it.
+	CarrierFreqErrorHz float64 `json:"carrier_freq_error_hz" yaml:"carrier_freq_error_hz"`
+	// IQGainImbalanceDB / QuadratureErrorDeg are the I/Q gain imbalance and
+	// quadrature-skew measured on the *recovered* constellation — distinct from
+	// SignalQuality's pre-DDC front-end IQ figures.
+	IQGainImbalanceDB  float64 `json:"iq_gain_imbalance_db" yaml:"iq_gain_imbalance_db"`
+	QuadratureErrorDeg float64 `json:"quadrature_error_deg" yaml:"quadrature_error_deg"`
+	// OriginOffsetPct is the residual DC (carrier-leakage) offset as a percent
+	// of the reference radius.
+	OriginOffsetPct float64 `json:"origin_offset_pct" yaml:"origin_offset_pct"`
+	// EVMTrace is the per-symbol EVM% time series, stride-decimated to the IQ
+	// cap. ErrorVectorSpectrum is the FFT-shifted magnitude spectrum (dB) of
+	// the residual error vectors — a spur in it points at a periodic
+	// impairment rather than white noise. Both omitempty so the CSV/summary
+	// path is unaffected.
+	EVMTrace            []float32 `json:"evm_trace,omitempty" yaml:"evm_trace,omitempty"`
+	ErrorVectorSpectrum []float32 `json:"error_vector_spectrum,omitempty" yaml:"error_vector_spectrum,omitempty"`
 }
 
 // demodWarmupSkip drops the leading soft samples so the AGC/clock/AFC
@@ -163,8 +197,9 @@ func (a *analyzer) observeIQ(raw []complex64) {
 }
 
 // result builds the SignalQuality from the accumulated observations.
-// decodeErrors / symbols give the per-ksym error rate.
-func (a *analyzer) result(decodeErrors int64) *SignalQuality {
+// decodeErrors / symbols give the per-ksym error rate; maxTracePoints caps the
+// decimated VSA EVM trace.
+func (a *analyzer) result(decodeErrors int64, maxTracePoints int) *SignalQuality {
 	sq := &SignalQuality{
 		SymbolCardinality:  a.cardinality,
 		SymbolHistogram:    a.hist,
@@ -185,7 +220,7 @@ func (a *analyzer) result(decodeErrors int64) *SignalQuality {
 	if a.rmsN > 0 {
 		sq.RMSPowerDBFS = dsp.Mag2dB(math.Sqrt(a.rmsSqSum / float64(a.rmsN)))
 	}
-	sq.Demod = a.demodMetrics()
+	sq.Demod = a.demodMetrics(maxTracePoints)
 	return sq
 }
 
@@ -194,15 +229,29 @@ func (a *analyzer) result(decodeErrors int64) *SignalQuality {
 // constellation (CQPSK / linear path) when present, otherwise the 4-level soft
 // eye (C4FM). Returns nil when neither buffer holds enough post-warmup samples
 // to form a stable estimate.
-func (a *analyzer) demodMetrics() *DemodMetrics {
+func (a *analyzer) demodMetrics(maxTracePoints int) *DemodMetrics {
 	if len(a.constBuf) > demodWarmupSkip {
 		pts := a.constBuf[demodWarmupSkip:]
-		return &DemodMetrics{
-			Modulation:      "cqpsk",
-			EVMPct:          metrics.EVMConstellation(pts),
-			SNREstimateDB:   capSNR(metrics.SNRM2M4Constellation(pts)),
-			SymbolsAnalyzed: int64(len(pts)),
+		v := metrics.VSAMetricsConstellation(pts)
+		// I/Q gain imbalance + quadrature skew of the recovered constellation,
+		// via the same moment estimator used for the front-end figures.
+		var iqs rtlsdr.IQImbalanceStats
+		iqs.Observe(pts)
+		dm := &DemodMetrics{
+			Modulation:          "cqpsk",
+			EVMPct:              v.RMSEVMPct,
+			SNREstimateDB:       capSNR(metrics.SNRM2M4Constellation(pts)),
+			SymbolsAnalyzed:     int64(len(pts)),
+			PeakEVMPct:          v.PeakEVMPct,
+			MagErrPct:           v.MagErrPct,
+			PhaseErrDeg:         v.PhaseErrDeg,
+			OriginOffsetPct:     v.OriginOffsetPct,
+			IQGainImbalanceDB:   iqs.GainImbalanceDB(),
+			QuadratureErrorDeg:  iqs.PhaseImbalanceDeg(),
+			EVMTrace:            decimateF32(v.PerSymbolEVMPct, maxTracePoints),
+			ErrorVectorSpectrum: errorVectorSpectrum(v.ErrorVectors),
 		}
+		return dm
 	}
 	if len(a.softBuf) > demodWarmupSkip {
 		soft := a.softBuf[demodWarmupSkip:]
@@ -210,14 +259,62 @@ func (a *analyzer) demodMetrics() *DemodMetrics {
 		if outer <= 0 {
 			return nil
 		}
+		v := metrics.VSAMetricsC4FM(soft, outer)
 		return &DemodMetrics{
 			Modulation:      "c4fm",
-			EVMPct:          metrics.EVMC4FM(soft, outer),
+			EVMPct:          v.RMSEVMPct,
 			SNREstimateDB:   capSNR(metrics.SNRResidualC4FM(soft, outer)),
 			SymbolsAnalyzed: int64(len(soft)),
+			PeakEVMPct:      v.PeakEVMPct,
+			MagErrPct:       v.MagErrPct,
+			EVMTrace:        decimateF32(v.PerSymbolEVMPct, maxTracePoints),
 		}
 	}
 	return nil
+}
+
+// decimateF32 stride-decimates xs to at most maxPoints values, preserving the
+// first sample and the overall shape (the same cap discipline as the IQ taps).
+func decimateF32(xs []float32, maxPoints int) []float32 {
+	n := len(xs)
+	if n == 0 || maxPoints <= 0 {
+		return nil
+	}
+	stride := 1
+	if n > maxPoints {
+		stride = (n + maxPoints - 1) / maxPoints
+	}
+	out := make([]float32, 0, n/stride+1)
+	for i := 0; i < n; i += stride {
+		out = append(out, xs[i])
+	}
+	return out
+}
+
+// evSpectrumSize is the fixed FFT length for the error-vector spectrum: small,
+// power-of-two, enough to reveal a periodic impairment line.
+const evSpectrumSize = 256
+
+// errorVectorSpectrum returns the FFT-shifted magnitude spectrum (dB) of the
+// residual error-vector time series — a peak at a non-zero bin marks a periodic
+// impairment (a spur / residual tone), a flat floor marks white noise. Returns
+// nil when there are too few error vectors to transform.
+func errorVectorSpectrum(evs []complex64) []float32 {
+	if len(evs) < evSpectrumSize {
+		return nil
+	}
+	in := make([]complex128, evSpectrumSize)
+	fft.Cmplx64ToCmplx128(in, evs[:evSpectrumSize])
+	out := fft.New(evSpectrumSize).Forward(make([]complex128, evSpectrumSize), in)
+	// FFT-shift so bin 0 is the most-negative frequency, DC at the centre.
+	half := evSpectrumSize / 2
+	mag := make([]float32, evSpectrumSize)
+	for i := 0; i < evSpectrumSize; i++ {
+		c := out[(i+half)%evSpectrumSize]
+		m := math.Hypot(real(c), imag(c)) / float64(evSpectrumSize)
+		mag[i] = float32(dsp.Mag2dB(m))
+	}
+	return mag
 }
 
 // capSNR clamps a possibly-infinite SNR estimate (noise-free input) to a

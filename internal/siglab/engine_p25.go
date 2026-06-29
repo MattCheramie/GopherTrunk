@@ -22,7 +22,7 @@ const p25DeviationHz = 1800.0
 // the production newP25Phase1Pipeline construction so a deep replay lock still
 // implies an on-air lock, while surfacing the diagnostics the factory path
 // cannot.
-func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64)) (*runBundle, error) {
+func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiverRate float64, symbolTap func([]uint8, bool, int), softTap func([]float32), constTap func([]complex64), pduTap func(p25phase1.SignalingBlock)) (*runBundle, error) {
 	demodMode := p25phase1rx.DemodC4FM
 	if cfg.DemodMode != "" {
 		m, ok := p25phase1rx.ParseDemodMode(cfg.DemodMode)
@@ -54,6 +54,7 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 		Rotations:            rotations,
 		NIDSearchSpan:        nidSpan,
 		FSWFallbackTolerance: fswFallbackTol,
+		PDUSink:              pduTap, // nil unless Config.CollectPDUs
 	})
 	rx := p25phase1rx.New(p25phase1rx.Options{
 		SampleRateHz:              receiverRate,
@@ -96,6 +97,12 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 			}
 		},
 		topology: func() *TopologySnapshot { return cc.TopologySnapshot() },
+		carrierErrHz: func() float64 {
+			if isCQPSK {
+				return rx.CQPSKCarrierOffsetHz()
+			}
+			return rx.AFCOffsetHz()
+		},
 	}, nil
 }
 

@@ -9,9 +9,10 @@ import { Spectrogram } from "../viz/Spectrogram";
 import { EyeDiagram } from "../viz/EyeDiagram";
 import { SymbolScope } from "../viz/SymbolScope";
 import { RotationTracker } from "../viz/RotationTracker";
+import { VSAMetrics } from "../viz/VSAMetrics";
 import { SyncLandscape } from "../viz/SyncLandscape";
 import { ReceiverStates } from "../viz/ReceiverStates";
-import { GrantsTable, EventTimeline } from "../viz/Tables";
+import { GrantsTable, EventTimeline, PDUTable } from "../viz/Tables";
 
 export function Results() {
   const { captureId = "" } = useParams();
@@ -126,6 +127,7 @@ function VizGrid({ r, iq, jobId }: { r: Result; iq?: Result["iq_taps"]; jobId?: 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {r.signal && <SymbolHistogram signal={r.signal} />}
+      {r.signal?.demod && <VSAMetrics demod={r.signal.demod} />}
       {hasIQ && <Constellation points={iq!.decimated_iq} />}
       {hasIQ && jobId && <PSD jobId={jobId} />}
       {hasIQ && jobId && <Spectrogram jobId={jobId} />}
@@ -148,6 +150,7 @@ function VizGrid({ r, iq, jobId }: { r: Result; iq?: Result["iq_taps"]; jobId?: 
       )}
       <GrantsTable grants={r.grants} />
       <EventTimeline events={r.events} />
+      {r.pdus && r.pdus.length > 0 && <PDUTable pdus={r.pdus} truncated={r.pdus_truncated} />}
     </div>
   );
 }

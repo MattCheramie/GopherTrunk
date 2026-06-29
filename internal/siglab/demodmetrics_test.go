@@ -54,7 +54,40 @@ func TestDemodMetricsPopulated(t *testing.T) {
 			if noisy.SNREstimateDB >= clean.SNREstimateDB {
 				t.Errorf("noise did not lower SNR estimate: clean=%.2f noisy=%.2f", clean.SNREstimateDB, noisy.SNREstimateDB)
 			}
+
+			// VSA decomposition: peak ≥ rms, the EVM trace is populated, and
+			// the worst-symbol EVM rises with noise.
+			if clean.PeakEVMPct < clean.EVMPct {
+				t.Errorf("peak EVM %.2f < rms EVM %.2f", clean.PeakEVMPct, clean.EVMPct)
+			}
+			if len(clean.EVMTrace) == 0 {
+				t.Error("EVMTrace empty, want per-symbol trace")
+			}
+			if noisy.PeakEVMPct <= clean.PeakEVMPct {
+				t.Errorf("noise did not raise peak EVM: clean=%.2f noisy=%.2f", clean.PeakEVMPct, noisy.PeakEVMPct)
+			}
 		})
+	}
+}
+
+// TestDemodVSACarrierError confirms the receiver's settled carrier-frequency
+// estimate is surfaced onto the VSA metrics: a synthesized capture with a known
+// injected frequency offset reads back ≈that offset on the CQPSK path.
+func TestDemodVSACarrierError(t *testing.T) {
+	const injectedHz = 500.0
+	synth := SynthOptions{Protocol: trunking.ProtocolP25, Format: FormatF32, Modulation: "lsm"}
+	synth.Impairments = demod.Impairments{FreqOffsetHz: injectedHz, Seed: 1}
+	res, _, err := SynthesizeAndAnalyze(synth, Config{CollectIQDiag: true, DemodMode: "cqpsk"}, nil)
+	if err != nil {
+		t.Fatalf("SynthesizeAndAnalyze: %v", err)
+	}
+	if res.Signal == nil || res.Signal.Demod == nil {
+		t.Fatal("no DemodMetrics")
+	}
+	got := res.Signal.Demod.CarrierFreqErrorHz
+	t.Logf("injected %.0f Hz, reported carrier error %.1f Hz", injectedHz, got)
+	if math.Abs(got-injectedHz) > 0.5*injectedHz+150 {
+		t.Errorf("CarrierFreqErrorHz = %.1f Hz, want ≈ %.0f Hz (injected)", got, injectedHz)
 	}
 }
 
