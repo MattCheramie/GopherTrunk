@@ -1195,6 +1195,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			WriteRaw:           cfg.Recordings.WriteRaw,
 			SkipEncrypted:      cfg.Recordings.SkipEncrypted,
 			VocoderForProtocol: vocoderMap,
+			// Same display timezone the logs/TUI/API use, so WAV filenames
+			// carry the local wall-clock rather than UTC. Resolved here
+			// directly (d.displayLoc is assigned a few lines below, after
+			// this block) via the idempotent Location() helper.
+			DisplayLoc: cfg.Display.Location(),
 			Normalize: voice.NormalizeConfig{
 				Enabled:      cfg.Recordings.Normalize.AppliesToRecording(),
 				TargetLUFS:   cfg.Recordings.Normalize.TargetLUFS,

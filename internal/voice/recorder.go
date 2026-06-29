@@ -113,6 +113,12 @@ type Recorder struct {
 	// the head of a call isn't lost when the operator flips the
 	// switch mid-conversation.
 	recordDisabled atomic.Bool
+
+	// displayLoc is the timezone the recording-filename timestamp renders
+	// in, matching the location the rest of the app uses for human-facing
+	// timestamps (display.timezone). Never nil after NewRecorder; defaults
+	// to time.UTC when the caller leaves it unset (the prior behaviour).
+	displayLoc *time.Location
 }
 
 // DecodedPCMSink receives PCM the recorder decodes from digital
@@ -219,6 +225,13 @@ type RecorderOptions struct {
 	// composer's FM chain feeds WritePCM directly, and ProVoice
 	// where no in-binary decoder is available.
 	VocoderForProtocol map[string]string
+
+	// DisplayLoc is the timezone the recording-filename timestamp renders
+	// in (display.timezone, via config.DisplayConfig.Location()). nil falls
+	// back to time.UTC (the prior behaviour). Threaded so WAV filenames
+	// match the local wall-clock the rest of the UI/logs already show,
+	// instead of always UTC.
+	DisplayLoc *time.Location
 }
 
 // DefaultVocoderForProtocol returns the Protocol → vocoder-name
@@ -285,6 +298,10 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if opts.Enhance.Enabled {
 		opts.Enhance = opts.Enhance.WithDefaults()
 	}
+	loc := opts.DisplayLoc
+	if loc == nil {
+		loc = time.UTC
+	}
 	r := &Recorder{
 		bus:                opts.Bus,
 		log:                opts.Log,
@@ -295,6 +312,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		normalize:          opts.Normalize,
 		enhance:            opts.Enhance,
 		vocoderForProtocol: vocoderMap,
+		displayLoc:         loc,
 		sessions:           make(map[string]*recordingSession),
 		runDone:            make(chan struct{}),
 	}
@@ -551,6 +569,9 @@ func (r *Recorder) writeRawFrame(deviceSerial string, callID uint64, frame []byt
 			r.log.Warn("recorder: vocoder decode failed; dropping frame from PCM",
 				"device", deviceSerial, "vocoder", s.vocoder.Name(), "err", err)
 			return nil
+		}
+		if n := len(samples); n > 0 {
+			s.lastSample = samples[n-1]
 		}
 		if err := s.wav.WriteSamples(samples); err != nil {
 			return err
@@ -820,6 +841,33 @@ func (r *Recorder) finalizeLocked(s *recordingSession, serial string, endedAt ti
 	dataBytes := s.wav.DataBytes()
 	vs, haveStats := r.voiceStatsFor(s)
 	r.logVoiceStats(serial, s)
+	// Smooth an abrupt end-of-call cut on decoded digital voice. A short
+	// transmission that stops mid-waveform leaves a non-zero final sample
+	// that clicks/scratches on playback — the "trailing" artifact most
+	// audible on short overs, where the tail is a big fraction of the call.
+	// Ramp the last decoded sample down to zero on both the WAV and the live
+	// decoded fan-out, mirroring the analog FM chain's squelch-tail fade.
+	// Digital only (s.vocoder != nil): analog already faded in the composer,
+	// and a silent/dead-key call has lastSample == 0 so fadeTail is a no-op.
+	if s.vocoder != nil && s.wav != nil && dataBytes > 0 {
+		n := int(s.sampleRate) / 100 // ~10 ms
+		if n < 8 {
+			n = 8
+		}
+		if tail := fadeTail(s.lastSample, n); tail != nil {
+			if err := s.wav.WriteSamples(tail); err != nil {
+				r.log.Warn("recorder: writing call-tail fade failed",
+					"device", serial, "err", err)
+			}
+			if r.decodedTap != nil {
+				if cs, ok := r.decodedTap.(DecodedPCMCallSink); ok {
+					_ = cs.WritePCMForCall(serial, s.callID, tail)
+				} else {
+					_ = r.decodedTap.WritePCM(serial, tail)
+				}
+			}
+		}
+	}
 	if err := s.close(); err != nil {
 		r.log.Error("recorder: close session", "err", err)
 	}
@@ -983,11 +1031,20 @@ func (r *Recorder) directoryFor(cs trunking.CallStart) string {
 }
 
 func (r *Recorder) basenameFor(cs trunking.CallStart) string {
-	t := cs.StartedAt.UTC()
-	if t.IsZero() {
-		t = time.Now().UTC()
+	loc := r.displayLoc
+	if loc == nil {
+		loc = time.UTC
 	}
-	stamp := t.Format("20060102T150405Z")
+	t := cs.StartedAt
+	if t.IsZero() {
+		t = time.Now()
+	}
+	// Render in the configured display timezone so the filename matches the
+	// local wall-clock the rest of the app shows, rather than always UTC.
+	// The Z0700 zone token keeps the stamp self-documenting and
+	// filename-safe (no colon): UTC still formats as a literal "Z", other
+	// zones as a numeric offset like "+1000".
+	stamp := t.In(loc).Format("20060102T150405Z0700")
 	// Tag the RF voice-channel frequency (Hz) into the name. Voice
 	// frequencies are shared across talkgroups on a trunked system, so
 	// having the frequency on each file makes it easy to tell which
@@ -1006,6 +1063,24 @@ func (r *Recorder) basenameFor(cs trunking.CallStart) string {
 		base = fmt.Sprintf("%s_ts%d", base, cs.Grant.Timeslot)
 	}
 	return base
+}
+
+// fadeTail returns an n-sample linear ramp from `from` down toward zero,
+// used to smooth an abrupt end-of-call cut on decoded digital voice (the
+// digital counterpart of the analog composer's squelch-tail fade). The
+// first sample equals `from` so the ramp continues seamlessly from the
+// last decoded sample. Returns nil when there is nothing to ramp (already
+// at silence, or a non-positive length).
+func fadeTail(from int16, n int) []int16 {
+	if from == 0 || n <= 0 {
+		return nil
+	}
+	out := make([]int16, n)
+	start := float64(from)
+	for i := range out {
+		out[i] = int16(start * (1.0 - float64(i)/float64(n)))
+	}
+	return out
 }
 
 // sanitize strips characters that are awkward in file paths across OSes.
@@ -1039,6 +1114,12 @@ type recordingSession struct {
 	vocoder     Vocoder
 	vocoderName string
 	sampleRate  uint32
+	// lastSample is the most recent decoded PCM sample written for this
+	// session. On close a short fade from it down to zero is appended to
+	// smooth an abrupt end-of-call cut (finalizeLocked) — the digital
+	// equivalent of the analog composer's squelch-tail fade. Zero (the
+	// default / trailing silence) means no fade is needed.
+	lastSample int16
 	// rawWanted records whether this call should get a .raw sidecar once
 	// its files are opened. The decision is made when the session is
 	// prepared (buildSession) but the file itself is created lazily on the

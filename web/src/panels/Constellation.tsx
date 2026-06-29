@@ -17,6 +17,7 @@ import {
 } from "../api/symbols";
 import { selectClientConfig, useShared } from "../store/shared";
 import { prefs } from "../store/prefs";
+import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
 import { TuningControls } from "../components/TuningControls";
 
 // Constellation panel — a 2D scatter of the signal in the complex
@@ -121,6 +122,10 @@ interface RenderOpts {
 export function Constellation() {
   const cfg = useShared(selectClientConfig);
   const activeCalls = useShared((s) => s.activeCalls);
+  // Keep the follow logic live: this panel reads activeCalls but, unlike
+  // Active/Dashboard, didn't refresh it — so the view froze on a stale
+  // call ("following call" forever, single freq) when opened directly.
+  useActiveCallsPoll();
   const [devices, setDevices] = useState<SpectrumDevice[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>("closed");
@@ -500,7 +505,13 @@ export function Constellation() {
             setOffsetKHz(khz);
           }}
           hold={hold}
-          onHoldChange={setHold}
+          onHoldChange={(next) => {
+            // Re-checking Hold parks the view on the control channel (a
+            // stable, known reference) rather than freezing on a call
+            // frequency that may already be stale.
+            if (next && controlOffsetKHz != null) setOffsetKHz(controlOffsetKHz);
+            setHold(next);
+          }}
           following={
             followOffsetKHz != null
               ? "call"

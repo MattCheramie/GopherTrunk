@@ -95,6 +95,49 @@ func TestRecorderWritesPerCallWav(t *testing.T) {
 	}
 }
 
+// TestRecorderBasenameTimezone confirms the recording filename timestamp
+// renders in the configured display timezone (not always UTC), matching
+// the rest of the app. The Z0700 zone token keeps UTC as a literal "Z"
+// (the prior behaviour, so existing names are unchanged) while a
+// non-UTC zone gets a filename-safe numeric offset.
+func TestRecorderBasenameTimezone(t *testing.T) {
+	bus := events.NewBus(1)
+	defer bus.Close()
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", GroupID: 1, SourceID: 7},
+		DeviceSerial: "VOICE-1",
+		StartedAt:    time.Date(2026, 5, 5, 12, 30, 45, 0, time.UTC),
+	}
+
+	// A configured +05:00 zone shifts the wall-clock and tags the offset.
+	r, err := NewRecorder(RecorderOptions{
+		Bus:        bus,
+		OutDir:     t.TempDir(),
+		SampleRate: 8000,
+		DisplayLoc: time.FixedZone("UTC+5", 5*3600),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := r.basenameFor(cs), "20260505T173045+0500_src7"; got != want {
+		t.Fatalf("basenameFor with +5h zone = %q, want %q", got, want)
+	}
+
+	// No DisplayLoc keeps the prior UTC + literal "Z" form.
+	rDef, err := NewRecorder(RecorderOptions{
+		Bus:        bus,
+		OutDir:     t.TempDir(),
+		SampleRate: 8000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rDef.basenameFor(cs), "20260505T123045Z_src7"; got != want {
+		t.Fatalf("default basenameFor = %q, want %q", got, want)
+	}
+}
+
 // TestRecorderTimeslotInWavName confirms a DMR Tier III carrier's two
 // concurrent calls (same system + talkgroup, one per TDMA slot, served
 // by two voice devices) land in the same directory as distinct WAVs
