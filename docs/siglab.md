@@ -46,6 +46,19 @@ standard and Config Builder consoles (see the
   PSD, spectrogram/waterfall, [eye diagram](eye-diagram.html),
   [symbol scope](symbol-scope.html), sync-landscape heatmap, receiver-state
   series, grants, and an event timeline.
+- **Measure** lab-grade modulation quality (VSA): carrier-frequency error,
+  RMS/peak EVM split into magnitude and phase error, IQ gain imbalance and
+  quadrature skew, origin offset, an EVM-vs-symbol trace, and an error-vector
+  spectrum — plus spectral occupancy off the PSD (99% occupied bandwidth,
+  channel power, adjacent-channel power ratio, spectral flatness).
+- **Name the unknown**: when a capture or a surveyed carrier does not decode,
+  a blind symbol-rate / modulation estimate is ranked against an offline
+  signal-ID reference database, so an undecodable carrier is still named a
+  best guess rather than dropped.
+- **Dissect the data**: with `collect_pdus`, every P25 TSBK signaling block
+  (decoded and CRC-failed alike) is surfaced as a field-level dissection —
+  opcode, source/destination/talkgroup, FEC/CRC status, and raw payload —
+  filterable in the console and exportable as `csv-pdus`.
 - **Compare** several analyzed captures — overlay their power spectra and diff
   their metrics — against each other or against a synthesized ideal.
 - **Export** the structured result (JSON / JSONL / YAML / CSV) from the engine's
