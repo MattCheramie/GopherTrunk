@@ -38,6 +38,7 @@ import (
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/cryptocap"
 )
 
 // EqualizerConfig opts an adaptive blind equalizer (CMA) into the
@@ -179,6 +180,12 @@ type Options struct {
 	// average at end-of-call. Nil disables autotune on the voice path at
 	// zero cost. See internal/autotune.
 	Autotune *autotune.Registry
+	// CryptoSink, when non-nil, opts into the cryptolab crypto-frame bridge:
+	// the P25 Phase 1 voice chain hands it each encrypted superframe's
+	// Message Indicator + encrypted voice frames for offline keystream-reuse
+	// analysis. Nil (default) disables the capture at zero cost — no frame
+	// extraction runs for it. See internal/voice/cryptocap.
+	CryptoSink cryptocap.Sink
 }
 
 // DeEmphasisConfig holds runtime knobs for the post-FM-demod
@@ -241,6 +248,7 @@ type Composer struct {
 	agcCfg     AudioAGCConfig
 	resampCfg  AudioResamplerConfig
 	autotune   *autotune.Registry
+	cryptoSink cryptocap.Sink
 
 	sub       *events.Subscription
 	runDone   chan struct{}
@@ -331,6 +339,7 @@ func New(opts Options) (*Composer, error) {
 		agcCfg:     opts.AudioAGC,
 		resampCfg:  opts.AudioResampler,
 		autotune:   opts.Autotune,
+		cryptoSink: opts.CryptoSink,
 		chains:     make(map[string]*chain),
 		runDone:    make(chan struct{}),
 	}

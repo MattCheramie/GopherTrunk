@@ -66,6 +66,15 @@ var modeParams = map[string][]Param{
 		{Name: "ct", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "out", Label: "Output keystream file", Kind: "outfile"},
 	},
+	"assess/crypto": {
+		{Name: "in", Label: "Frames file", Kind: "file", Required: true, Help: "JSONL {label,iv,ct,algid,…} or CSV captured encrypted frames"},
+		{Name: "protocol", Label: "Protocol", Kind: "select", Default: "p25", Options: []string{"p25", "tetra", "dmr"}, Help: "algorithm-id namespace for the known-weakness advisory"},
+		{Name: "known-label", Label: "Known frame label", Kind: "string", Help: "label of a frame whose plaintext is known (enables verified decryption)"},
+		{Name: "known-pt", Label: "Known plaintext file", Kind: "file", Help: "plaintext for the known frame"},
+		{Name: "keys", Label: "Candidate keys file", Kind: "file", Help: "one hex key per line for the weak-key method"},
+		{Name: "brute-bits", Label: "Brute-force bits", Kind: "int", Default: "0", Help: "reduced-keyspace brute: search the low N key bits against the oracle (0 = off)"},
+		{Name: "base-key", Label: "Base key (hex)", Kind: "string", Help: "fixed high key bits for the brute (default all-zero)"},
+	},
 	"brute/xor": {
 		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},

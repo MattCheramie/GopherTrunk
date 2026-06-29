@@ -25,11 +25,15 @@ import (
 
 // Frame is one captured encrypted unit: an IV (e.g. a P25 Message Indicator)
 // and the ciphertext under that IV. Label identifies the source (call id,
-// timestamp) for reporting.
+// timestamp) for reporting. AlgID/KeyID are the optional algorithm and key
+// identifiers from the capture (0 when unknown), used by the assessment
+// harness to select the right cipher for a decryption attempt.
 type Frame struct {
 	Label string
 	IV    []byte
 	CT    []byte
+	AlgID uint8
+	KeyID uint16
 }
 
 // ReuseGroup is a set of frames that share an identical IV and therefore an

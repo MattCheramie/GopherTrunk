@@ -60,6 +60,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/cryptocap"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/player"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
@@ -406,6 +407,7 @@ type Daemon struct {
 	eventLog     *gtlog.EventLog
 	retention    *storage.Retention
 	ccCache      *trunking.Cache
+	cryptoCap    *cryptocap.FileWriter
 	cchuntSup    *cchunt.Supervisor
 	huntMgr      *hunt.Manager
 	ccDecoder    *ccdecoder.Decoder
@@ -1435,12 +1437,28 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		} else {
 			log.Info("composer: sink direct configured")
 		}
+		// Optional cryptolab crypto-frame capture: when configured, the
+		// composer hands each encrypted P25 Phase 1 superframe's MI +
+		// encrypted voice frames to this sink (JSONL consumed by
+		// `gophertrunk cryptolab ks`). Nil when unset, so the voice path
+		// runs unchanged.
+		var cryptoSink cryptocap.Sink
+		if path := cfg.Recordings.CryptoCapturePath; path != "" {
+			cw, err := cryptocap.NewFileWriter(path)
+			if err != nil {
+				return nil, fmt.Errorf("daemon: crypto capture: %w", err)
+			}
+			d.cryptoCap = cw
+			cryptoSink = cw
+			log.Info("daemon: cryptolab crypto-frame capture enabled", "path", path)
+		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
 			Devices:       &poolDevices{pool: d.pool, rateHz: cfg.SDR.SampleRate, virtualMap: d.virtualVoiceMap()},
 			Sink:          sink,
 			Engine:        d.engine,
 			Autotune:      d.autotune,
+			CryptoSink:    cryptoSink,
 			Log:           log,
 			IQSampleRate:  cfg.SDR.SampleRate,
 			PCMSampleRate: cfg.Recordings.SampleRate,
@@ -3212,6 +3230,9 @@ func (d *Daemon) Close() {
 		}
 		if d.composer != nil {
 			_ = d.composer.Close()
+		}
+		if d.cryptoCap != nil {
+			_ = d.cryptoCap.Close()
 		}
 		if d.audioPub != nil {
 			_ = d.audioPub.Close()
