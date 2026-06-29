@@ -104,10 +104,38 @@ const dqpskPhases = 8
 // 4-point QPSK stream is a subset of the eight phases, so this stays correct
 // for it too.)
 func EVMConstellation(points []complex64) float64 {
+	return VSAMetricsConstellation(points).RMSEVMPct
+}
+
+// VSAResult is the decomposed vector-signal-analyzer view of a recovered
+// constellation: the breakdown a lab VSA reports beside the scatter plot.
+// Percentages are normalized to the unit reference radius; PhaseErrDeg is the
+// RMS angular error in degrees; the per-symbol arrays carry the full time
+// series (EVM% per symbol) and the residual error vectors (measured − nearest
+// ideal, in normalized units) for an error-vector spectrum.
+type VSAResult struct {
+	RMSEVMPct       float64
+	PeakEVMPct      float64
+	MagErrPct       float64
+	PhaseErrDeg     float64
+	OriginOffsetPct float64
+	PerSymbolEVMPct []float32
+	ErrorVectors    []complex64
+}
+
+// VSAMetricsConstellation computes the decomposed VSA metrics of a π/4-DQPSK
+// constellation, reusing the same RMS normalization and 8th-power carrier-phase
+// removal as EVMConstellation (which now delegates here). Beyond the single RMS
+// EVM it returns the peak EVM, the magnitude-error and phase-error components,
+// the origin (DC) offset, and the per-symbol EVM trace + residual error vectors.
+// Returns a zero VSAResult for an empty input or a degenerate (zero-power)
+// constellation.
+func VSAMetricsConstellation(points []complex64) VSAResult {
 	if len(points) == 0 {
-		return 0
+		return VSAResult{}
 	}
 	var sumSq float64
+	var meanI, meanQ float64
 	// 8th-power phase estimator: Σ exp(j·8·θ) concentrates the eight-phase
 	// modulation onto one tone, so its argument /8 is the common carrier-phase
 	// offset the recovery loop happened to lock at. Removing it makes the EVM
@@ -118,13 +146,16 @@ func EVMConstellation(points []complex64) float64 {
 	for _, p := range points {
 		i, q := float64(real(p)), float64(imag(p))
 		sumSq += i*i + q*q
+		meanI += i
+		meanQ += q
 		ang := dqpskPhases * math.Atan2(q, i)
 		pwrReal += math.Cos(ang)
 		pwrImag += math.Sin(ang)
 	}
-	rms := math.Sqrt(sumSq / float64(len(points)))
+	n := float64(len(points))
+	rms := math.Sqrt(sumSq / n)
 	if rms <= 0 {
-		return 0
+		return VSAResult{}
 	}
 	offset := math.Atan2(pwrImag, pwrReal) / dqpskPhases
 	cosO, sinO := math.Cos(-offset), math.Sin(-offset)
@@ -135,23 +166,81 @@ func EVMConstellation(points []complex64) float64 {
 		ang := float64(k) * 2 * math.Pi / dqpskPhases
 		ideal[k] = [2]float64{math.Cos(ang), math.Sin(ang)}
 	}
-	var errSq float64
-	for _, p := range points {
+
+	out := VSAResult{
+		PerSymbolEVMPct: make([]float32, len(points)),
+		ErrorVectors:    make([]complex64, len(points)),
+	}
+	var errSq, magSq, phaseSq float64
+	for idx, p := range points {
 		// Normalize to unit reference and derotate by the recovered offset.
 		ri := float64(real(p)) / rms
 		rq := float64(imag(p)) / rms
 		i := ri*cosO - rq*sinO
 		q := ri*sinO + rq*cosO
 		best := math.Inf(1)
+		var bid [2]float64
 		for _, id := range ideal {
 			di := i - id[0]
 			dq := q - id[1]
 			d := di*di + dq*dq
 			if d < best {
 				best = d
+				bid = id
 			}
 		}
 		errSq += best
+		out.PerSymbolEVMPct[idx] = float32(100 * math.Sqrt(best))
+		out.ErrorVectors[idx] = complex(float32(i-bid[0]), float32(q-bid[1]))
+		if math.Sqrt(best)*100 > out.PeakEVMPct {
+			out.PeakEVMPct = math.Sqrt(best) * 100
+		}
+		// Magnitude error: |r̂| − |ideal| (ideal is unit). Phase error: angle
+		// between r̂ and its nearest ideal, via the signed cross/dot product.
+		magErr := math.Hypot(i, q) - 1
+		magSq += magErr * magErr
+		phaseErr := math.Atan2(bid[0]*q-bid[1]*i, i*bid[0]+q*bid[1])
+		phaseSq += phaseErr * phaseErr
 	}
-	return 100 * math.Sqrt(errSq/float64(len(points)))
+	out.RMSEVMPct = 100 * math.Sqrt(errSq/n)
+	out.MagErrPct = 100 * math.Sqrt(magSq/n)
+	out.PhaseErrDeg = math.Sqrt(phaseSq/n) * 180 / math.Pi
+	// Origin offset: residual DC (carrier leakage) as a fraction of the
+	// reference radius — the un-derotated complex mean over the RMS radius.
+	out.OriginOffsetPct = 100 * math.Hypot(meanI/n, meanQ/n) / rms
+	return out
+}
+
+// VSAMetricsC4FM is the C4FM-soft-axis analog of VSAMetricsConstellation. The
+// FM discriminator output is one-dimensional, so there is no I/Q plane: only
+// the EVM/magnitude components and the per-symbol trace are meaningful; phase,
+// quadrature, and origin offset are left zero. outer is the outer-rail
+// reference (see EVMC4FM).
+func VSAMetricsC4FM(soft []float32, outer float64) VSAResult {
+	if len(soft) == 0 || outer <= 0 {
+		return VSAResult{}
+	}
+	inner := outer * c4fmInnerRatio
+	rails := [4]float64{-outer, -inner, inner, outer}
+	out := VSAResult{PerSymbolEVMPct: make([]float32, len(soft))}
+	var sumSq float64
+	for idx, s := range soft {
+		x := float64(s)
+		best := math.Inf(1)
+		for _, r := range rails {
+			d := x - r
+			if d*d < best {
+				best = d * d
+			}
+		}
+		sumSq += best
+		ev := 100 * math.Sqrt(best) / outer
+		out.PerSymbolEVMPct[idx] = float32(ev)
+		if ev > out.PeakEVMPct {
+			out.PeakEVMPct = ev
+		}
+	}
+	out.RMSEVMPct = 100 * math.Sqrt(sumSq/float64(len(soft))) / outer
+	out.MagErrPct = out.RMSEVMPct // 1-D: the error is purely along the rail axis
+	return out
 }

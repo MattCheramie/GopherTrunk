@@ -101,6 +101,17 @@ export interface DemodMetrics {
   evm_pct: number;
   snr_estimate_db: number;
   symbols_analyzed: number;
+  // VSA decomposition (see siglab.DemodMetrics). The phase/IQ/origin fields
+  // are populated on the CQPSK path only; arrays are omitted when empty.
+  peak_evm_pct: number;
+  mag_err_pct: number;
+  phase_err_deg: number;
+  carrier_freq_error_hz: number;
+  iq_gain_imbalance_db: number;
+  quadrature_error_deg: number;
+  origin_offset_pct: number;
+  evm_trace?: number[];
+  error_vector_spectrum?: number[];
 }
 
 export interface RailStat {

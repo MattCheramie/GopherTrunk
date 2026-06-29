@@ -465,6 +465,12 @@ func runReader(r io.Reader, source string, decode SampleDecoder, bytesPerSample 
 		}
 	}
 
+	// Surface the receiver's settled carrier-frequency error onto the VSA demod
+	// metrics (deep path only; the generic factory path exposes no AFC loop).
+	if bundle.carrierErrHz != nil && res.Signal != nil && res.Signal.Demod != nil {
+		res.Signal.Demod.CarrierFreqErrorHz = bundle.carrierErrHz()
+	}
+
 	// Name *why* the control channel did not lock (SNR-limited / misaligned /
 	// not-control / no-signal), from the demod + frame-decode metrics now
 	// attached — so a capture-quality failure is not misread as a tuning or AGC
@@ -519,7 +525,7 @@ func assembleResult(source string, cfg Config, totalSamples, symbols int64, rece
 		decodeErrTotal += int64(n)
 	}
 	if an != nil {
-		res.Signal = an.result(decodeErrTotal)
+		res.Signal = an.result(decodeErrTotal, cfg.captureIQMaxPoints())
 	}
 
 	if cfg.Acceptance != nil {
@@ -545,6 +551,9 @@ type runBundle struct {
 	stateAt  func(t float64) ReceiverState
 	ccStats  func() *CCStatsBreakdown
 	topology func() *TopologySnapshot
+	// carrierErrHz reports the receiver's settled residual carrier-frequency
+	// error (Hz) for the VSA metrics. Nil on the generic factory path.
+	carrierErrHz func() float64
 }
 
 // buildBundle constructs the run bundle for cfg: the P25 Phase 1 deep path

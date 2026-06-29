@@ -96,6 +96,12 @@ func buildP25DeepBundle(cfg Config, bus *events.Bus, logger *slog.Logger, receiv
 			}
 		},
 		topology: func() *TopologySnapshot { return cc.TopologySnapshot() },
+		carrierErrHz: func() float64 {
+			if isCQPSK {
+				return rx.CQPSKCarrierOffsetHz()
+			}
+			return rx.AFCOffsetHz()
+		},
 	}, nil
 }
 
