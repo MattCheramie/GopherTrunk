@@ -3,15 +3,19 @@
 `cryptolab` is a byte-oriented cryptographic-research toolkit that ships
 *inside* the `gophertrunk` binary but is **excluded from the default
 install**. It collects the kinds of analysis you reach for when staring at
-unfamiliar RF payloads — statistical triage, keyspace brute force, LFSR /
-keystream analysis, CRC parameter recovery, analog voice descrambling — plus
-a pluggable "subject" framework for studying specific byte-oriented
+unfamiliar RF payloads — statistical triage, autocorrelation period
+detection, a NIST SP 800-22 randomness battery, an obfuscation-class
+classifier, keyspace brute force, LFSR / keystream analysis, keystream-reuse /
+many-time-pad recovery, CRC parameter recovery, analog voice descrambling —
+plus a pluggable "subject" framework for studying specific byte-oriented
 obfuscators.
 
 These are research tools: they recover obfuscation and weak/keyless
 constructions and triage whether a captured payload is even breakable. They
 make no claim to break strong keyed encryption; for that, the toolkit offers
-known-plaintext keystream extraction and breakability triage only.
+known-plaintext keystream extraction and breakability triage only. The
+keystream-reuse tool exploits operator misuse (a repeated IV/MI) and known
+plaintext — never the cipher key itself.
 
 ## Opting in at build time
 
@@ -72,18 +76,37 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 
 | Tool | Modes | What it does |
 |------|-------|--------------|
+| `classify` | `auto` | triage an unknown payload and recommend the next tool |
+| `stats` | `scan`, `period` | entropy / IC / chi-square / XOR key-length triage; autocorrelation period + repeated-n-gram detection |
+| `randomness` | `battery`, `quick` | NIST SP 800-22 randomness tests on a keystream / payload bitstream |
 | `brute` | `xor`, `caesar`, `vigenere`, `substitution` | classical-cipher recovery with English/crib scoring |
 | `lfsr` | `bm`, `keystream` | Berlekamp–Massey LFSR recovery; keystream = pt⊕ct |
+| `ks` | `reuse`, `mtp`, `extract` | keystream-reuse detection, many-time-pad recovery, keystream extraction |
 | `crc` | `recover`, `compute` | recover / compute CRC parameters from sample frames |
-| `stats` | `scan` | entropy / IC / chi-square / XOR key-length triage |
 | `descramble` | `invert`, `splitband`, `rolling` | analog spectral / split-band / rolling-code voice inversion |
 | `alias` | `gauge`, `structure`, `cells`, `fromseed` | length-seeded byte-obfuscator recovery |
 
 ### Examples
 
 ```
+# Triage an unknown payload and get a recommended next command.
+gophertrunk cryptolab classify auto -in unknown.bin
+
 # Statistical triage of an unknown payload.
 gophertrunk cryptolab stats scan -in payload.bin
+
+# Find the period of a repeating-key cipher or periodic scrambler.
+gophertrunk cryptolab stats period -in payload.bin -max-lag 256
+
+# Is a recovered keystream strong (random) or an exploitable generator?
+gophertrunk cryptolab randomness battery -in keystream.bin
+
+# Find frames that reuse an IV/MI (P25 OFB/ADP keystream reuse) ...
+gophertrunk cryptolab ks reuse -in frames.jsonl
+# ... then recover a whole reuse group from one known plaintext.
+gophertrunk cryptolab ks mtp -in frames.jsonl -known-label call-12 -known-pt known.bin
+# ... or crib-drag the group with no known plaintext.
+gophertrunk cryptolab ks mtp -in frames.jsonl -crib " the "
 
 # Recover a repeating-XOR key with a known crib.
 gophertrunk cryptolab brute xor -in cipher.bin -crib "UNIT "
@@ -157,9 +180,57 @@ which the Z3 script consumes directly.
   schedule; `-schedule auto` detects each frame's inversion from its
   spectral energy balance, while a CSV schedule replays a known hop sequence.
 
+## Randomness, classification, and keystream-reuse
+
+These three tools turn the "what am I looking at, and can I break it?" workflow
+into explicit, RF-framed steps:
+
+- **`classify auto`** runs the cheap measurements the other tools depend on
+  (entropy, index of coincidence, repeating-XOR key length, autocorrelation
+  period, and the randomness battery) and emits a ranked verdict —
+  `plaintext`, `substitution-or-shift`, `repeating-xor`, `periodic-scrambler`,
+  `lfsr-or-keyless-scrambler`, or `strong-encrypted` — each with the exact next
+  command to run. It is the front door for an unknown byte payload.
+- **`randomness battery`** runs a NIST SP 800-22 subset (monobit, block
+  frequency, runs, longest run, binary-matrix rank, spectral DFT, approximate
+  entropy, serial, cumulative sums, and **linear complexity**) on a bitstream.
+  The decisive RF question is whether a recovered keystream is statistically
+  random (strong keyed encryption — nothing to exploit) or carries structure (a
+  keyless scrambler or short LFSR). A failing linear-complexity or spectral
+  test is the signature of an LFSR-based scrambler. `randomness quick` runs the
+  fast, low-data subset for short captures. Input is packed bytes, MSB-first
+  (the same convention as `lfsr bm`).
+- **`ks`** exploits **keystream reuse**. Additive stream ciphers (P25 DES-OFB
+  and ADP/RC4, TETRA AIE) produce an identical keystream whenever the same key
+  and IV recur, so two frames sharing an IV satisfy `c1 ⊕ c2 = p1 ⊕ p2` — a
+  running-key system recoverable with crib-dragging or one known plaintext, **no
+  key recovery required**. For P25 the IV is the 72-bit Message Indicator the
+  decoders already extract. `ks reuse` reports IV/MI collisions; `ks mtp`
+  recovers content from a reuse group (from a known plaintext via
+  `-known-label`/`-known-pt`, or by crib-drag via `-crib`); `ks extract`
+  computes a keystream from a known plaintext/ciphertext pair so you can feed it
+  straight to `randomness battery` or `lfsr bm`.
+
+### Frames file format (`ks reuse` / `ks mtp`)
+
+Each non-empty line is either a JSON object or a CSV triple. The JSON form is
+what a future decoder→cryptolab export bridge would emit, one record per
+encrypted frame:
+
+```
+{"label":"call-12","iv":"a1b2c3d4e5f60708090a","ct":"deadbeef…"}
+call-12,a1b2c3d4e5f60708090a,deadbeef…
+```
+
+`label` identifies the source (call id / timestamp), `iv` is the hex IV / P25
+Message Indicator, and `ct` is the hex ciphertext. Frames with an empty IV are
+ignored. Lines beginning with `#` are comments.
+
 ## Scope note
 
 The toolkit does not claim to break strong keyed RF crypto (P25 DES-OFB/AES,
-ADP/RC4). For those it offers known-plaintext keystream extraction (`lfsr`),
-weak/short-key brute force (`brute`), and breakability triage (`stats`); each
-report ends with what additional data would close the remaining gap.
+ADP/RC4). For those it offers known-plaintext keystream extraction (`lfsr`,
+`ks extract`), keystream-reuse / many-time-pad recovery when a transmitter
+repeats an IV/MI (`ks`), weak/short-key brute force (`brute`), and breakability
+triage (`stats`, `randomness`, `classify`); each report ends with what
+additional data would close the remaining gap.

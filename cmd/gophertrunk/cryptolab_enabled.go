@@ -203,6 +203,11 @@ EXAMPLES:
   gophertrunk cryptolab -resume ./out/cells/checkpoint.json alias cells -csv more.csv
   gophertrunk cryptolab brute xor -in cipher.bin -crib "UNIT "
   gophertrunk cryptolab stats scan -in payload.bin
+  gophertrunk cryptolab stats period -in payload.bin
+  gophertrunk cryptolab classify auto -in unknown.bin
+  gophertrunk cryptolab randomness battery -in keystream.bin
+  gophertrunk cryptolab ks reuse -in frames.jsonl
+  gophertrunk cryptolab ks mtp -in frames.jsonl -known-label call-12 -known-pt known.bin
   gophertrunk cryptolab lfsr bm -in keystream.bin
   gophertrunk cryptolab crc recover -in frames.txt -widths 16,8
   gophertrunk cryptolab descramble invert -in scrambled.s16 -out clear.s16
