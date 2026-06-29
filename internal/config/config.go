@@ -1627,11 +1627,12 @@ type RecordingsConfig struct {
 	// CryptoCapturePath, when set, opts into the cryptolab crypto-frame
 	// bridge: for each encrypted P25 Phase 1 superframe the voice composer
 	// appends a JSON line {label, iv (Message Indicator), ct (encrypted
-	// voice frames), …} to this file. The artifact feeds `gophertrunk
-	// cryptolab ks reuse/mtp` for offline keystream-reuse analysis (a reused
-	// MI exposes plaintext⊕plaintext). Empty (default) disables the capture
-	// entirely — no extraction work runs on the voice path. Research/offline
-	// use only; this records encrypted material, it does not decrypt it.
+	// voice frames), algid, keyid, …} to this file. The artifact feeds
+	// `gophertrunk cryptolab assess`, the security-test harness that attempts
+	// decryption by every applicable method (keystream reuse, known plaintext,
+	// default/weak keys, keystream-LFSR) and grades the deployment's
+	// resistance. Empty (default) disables the capture entirely — no
+	// extraction work runs on the voice path. Research/offline use.
 	CryptoCapturePath string `yaml:"crypto_capture_path"`
 	// Equalizer enables the per-call CMA blind equalizer that the FM
 	// composer chain runs between the front-end LPF and the FM demod.

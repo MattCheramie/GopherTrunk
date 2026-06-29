@@ -66,6 +66,12 @@ var modeParams = map[string][]Param{
 		{Name: "ct", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "out", Label: "Output keystream file", Kind: "outfile"},
 	},
+	"assess/crypto": {
+		{Name: "in", Label: "Frames file", Kind: "file", Required: true, Help: "JSONL {label,iv,ct,algid,…} or CSV captured encrypted frames"},
+		{Name: "known-label", Label: "Known frame label", Kind: "string", Help: "label of a frame whose plaintext is known (enables verified decryption)"},
+		{Name: "known-pt", Label: "Known plaintext file", Kind: "file", Help: "plaintext for the known frame"},
+		{Name: "keys", Label: "Candidate keys file", Kind: "file", Help: "one hex key per line for the weak-key method"},
+	},
 	"brute/xor": {
 		{Name: "in", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "keylen", Label: "Key length (0 = auto)", Kind: "int", Default: "0"},

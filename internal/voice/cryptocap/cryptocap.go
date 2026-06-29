@@ -5,11 +5,13 @@
 // captures those as a JSONL artifact that `gophertrunk cryptolab ks
 // reuse/mtp` consumes directly.
 //
-// The point is keystream reuse: P25's additive stream ciphers (DES-OFB,
-// ADP/RC4) regenerate an identical keystream whenever a transmitter repeats
-// an MI, so two superframes sharing an MI satisfy c1⊕c2 = p1⊕p2 — recoverable
-// offline with no key. This package only records the encrypted material and
-// its IV; it performs no decryption.
+// The captured artifact feeds `gophertrunk cryptolab assess`, the security-test
+// harness that attempts to break the encryption offline by every applicable
+// method (keystream reuse, known-plaintext recovery, default/weak keys against
+// the real ADP/DES/AES ciphers, keystream-LFSR prediction) and grades the
+// deployment's resistance. This package itself only records the encrypted
+// frames and their IVs; the decryption attempts run later, offline, in the
+// assess harness.
 //
 // The Sink interface lives here (a small leaf package) so the composer can
 // depend on it without importing the optional, build-tagged cryptolab tree,

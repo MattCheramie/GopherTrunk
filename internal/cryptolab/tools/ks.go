@@ -38,6 +38,8 @@ func frameLine(line string) (keystream.Frame, bool, error) {
 			Label string `json:"label"`
 			IV    string `json:"iv"`
 			CT    string `json:"ct"`
+			AlgID uint8  `json:"algid"`
+			KeyID uint16 `json:"keyid"`
 		}
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return keystream.Frame{}, false, fmt.Errorf("bad JSON frame: %w", err)
@@ -50,7 +52,7 @@ func frameLine(line string) (keystream.Frame, bool, error) {
 		if err != nil {
 			return keystream.Frame{}, false, fmt.Errorf("frame %q: bad ct hex: %w", rec.Label, err)
 		}
-		return keystream.Frame{Label: rec.Label, IV: iv, CT: ct}, true, nil
+		return keystream.Frame{Label: rec.Label, IV: iv, CT: ct, AlgID: rec.AlgID, KeyID: rec.KeyID}, true, nil
 	}
 	parts := strings.Split(line, ",")
 	if len(parts) != 3 {

@@ -246,7 +246,7 @@ var fieldMetas = map[string]FieldMeta{
 	"RecordingsConfig.SampleRate":        {Label: "Sample rate", Help: "Recorder PCM rate (4000–48000 Hz). Match audio.sample_rate to avoid a resample stage."},
 	"RecordingsConfig.WriteRaw":          {Help: "Also write the raw (un-equalized) audio alongside the processed WAV."},
 	"RecordingsConfig.SkipEncrypted":     {Label: "Skip encrypted", Help: "Don't record calls flagged encrypted. Aborts and deletes the file if encryption is only detected mid-call."},
-	"RecordingsConfig.CryptoCapturePath": {Label: "Crypto capture path", Help: "Research/offline: append each encrypted P25 Phase 1 superframe's Message Indicator + encrypted voice frames as JSONL for `gophertrunk cryptolab ks` keystream-reuse analysis. Empty disables. Records encrypted material, does not decrypt it."},
+	"RecordingsConfig.CryptoCapturePath": {Label: "Crypto capture path", Help: "Research/offline: append each encrypted P25 Phase 1 superframe's Message Indicator + encrypted voice frames as JSONL for `gophertrunk cryptolab assess`, the security-test harness that attempts decryption by every applicable method and grades the cipher's resistance. Empty disables."},
 	"RecordingsConfig.Equalizer":         {Help: "Per-call CMA blind equalizer in the FM voice chain — useful on simulcast systems."},
 	"RecordingsConfig.WarmDMRAudio":      {Label: "Warm DMR audio", Help: "Use the opt-in warmer DMR vocoder: a gentle high-shelf trims ~2 dB above 1.5 kHz to soften the bright/thin timbre of software AMBE+2 decode. Tone preference only, not a quality fix; DMR only."},
 	"EqualizerConfig.Enabled":            {Help: "Turn the blind equalizer on."},

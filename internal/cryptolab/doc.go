@@ -22,14 +22,20 @@
 //
 // # Honesty
 //
-// These are research tools. They recover obfuscation and weak/keyless
-// constructions and triage whether a captured payload is even breakable;
-// they make no claim to break strong keyed encryption (e.g. DES/AES,
-// RC4-based schemes). For those, the toolkit offers known-plaintext
-// keystream extraction and breakability triage only. The keystream-reuse /
-// many-time-pad tool likewise exploits operator misuse (a repeated IV/MI
-// reusing a keystream) and known plaintext — it does not attack the cipher
-// key itself.
+// These are research tools for security testing. The toolkit actively
+// attempts to break captured encryption — the assess harness runs every
+// applicable method (keystream reuse, known-plaintext recovery, default/weak
+// keys against the real ADP/DES/AES ciphers, keystream-LFSR prediction) and
+// grades each one's effectiveness, because attempting decryption IS the
+// security test. A complete decryption means the deployment FAILED the test;
+// recovering nothing means it held.
+//
+// Honesty about limits: the toolkit cannot conjure a strong key out of a
+// strong cipher. AES/DES with a non-default key and correctly-rotated IVs has
+// an infeasible keyspace, and the assess harness reports that plainly as
+// RESISTANT rather than pretending otherwise. What it does break is the things
+// that actually fail in the field: reused IVs, default/test keys, keyless
+// obfuscation, and structurally weak keystreams.
 package cryptolab
 
 // SubcommandName is the gophertrunk subcommand under which the toolkit is

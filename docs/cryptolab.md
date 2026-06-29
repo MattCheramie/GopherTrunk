@@ -10,12 +10,14 @@ many-time-pad recovery, CRC parameter recovery, analog voice descrambling —
 plus a pluggable "subject" framework for studying specific byte-oriented
 obfuscators.
 
-These are research tools: they recover obfuscation and weak/keyless
-constructions and triage whether a captured payload is even breakable. They
-make no claim to break strong keyed encryption; for that, the toolkit offers
-known-plaintext keystream extraction and breakability triage only. The
-keystream-reuse tool exploits operator misuse (a repeated IV/MI) and known
-plaintext — never the cipher key itself.
+These are research tools for security testing: the `assess` harness actively
+attempts to break captured encryption by every applicable method and grades how
+far each one got, because attempting decryption *is* the test. A complete
+decryption means the deployment failed; recovering nothing means it held. The
+toolkit cannot brute-force a strong key out of a strong cipher (AES/DES with a
+non-default key and rotated IVs is reported `RESISTANT`) — what it breaks is
+what fails in the field: reused IVs, default/test keys, keyless obfuscation,
+and structurally weak keystreams.
 
 ## Opting in at build time
 
@@ -76,6 +78,7 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 
 | Tool | Modes | What it does |
 |------|-------|--------------|
+| `assess` | `crypto` | security test: attempt decryption by every applicable method and grade each |
 | `classify` | `auto` | triage an unknown payload and recommend the next tool |
 | `stats` | `scan`, `period` | entropy / IC / chi-square / XOR key-length triage; autocorrelation period + repeated-n-gram detection |
 | `randomness` | `battery`, `quick` | NIST SP 800-22 randomness tests on a keystream / payload bitstream |
@@ -100,6 +103,9 @@ gophertrunk cryptolab stats period -in payload.bin -max-lag 256
 
 # Is a recovered keystream strong (random) or an exploitable generator?
 gophertrunk cryptolab randomness battery -in keystream.bin
+
+# Security-test a captured encrypted system: try every attack, grade each.
+gophertrunk cryptolab assess crypto -in frames.jsonl -known-label call-12 -known-pt known.bin
 
 # Find frames that reuse an IV/MI (P25 OFB/ADP keystream reuse) ...
 gophertrunk cryptolab ks reuse -in frames.jsonl
@@ -245,17 +251,54 @@ frames), system, protocol, tg, algid, keyid, at}` — to that file. Point
 Empty (the default) disables the bridge entirely: no extraction work runs on
 the voice path, so the standard operator build is unaffected.
 
-This records encrypted material and its IV; it performs **no decryption**. A
-reused MI exposes `p1 ⊕ p2` for offline analysis — for P25 voice that is
-IMBE-coded speech (recover one frame's plaintext to peel the rest), for
-encrypted P25 data it is recoverable text. A non-reused capture confirms the
-system is using its IV correctly.
+Point `cryptolab assess crypto` at the captured file to run the full security
+test against it (see below). The capture records encrypted material and its IV;
+the decryption attempts run offline in `assess`.
+
+### Security assessment (`assess crypto`)
+
+`assess` is the security test itself: it takes captured encrypted frames and
+**actively attempts to decrypt them by every applicable method**, then reports
+how effective each method was — from 0 % (the encryption held) up to 100 %
+(complete decryption, which means the cipher *failed* the test). Seeing each
+method's effectiveness and what it recovered lets an operator decide which
+attack fits which situation and where a deployment is weak.
+
+```
+cryptolab assess crypto -in frames.jsonl \
+    [-known-label call-12 -known-pt known.bin] [-keys candidate-keys.txt]
+```
+
+Methods run, in escalating capability:
+
+| Method | What it does | Counts toward |
+|--------|--------------|---------------|
+| `cipher-strength` | Is the ciphertext distinguishable from random? Structured output = a weak/keyless construction | exposure (PARTIAL) |
+| `iv-reuse` | Frames sharing an IV leak `p1⊕p2` with no key | exposure (PARTIAL) |
+| `known-plaintext` | Recover the keystream from a known frame, decrypt its whole reuse group | recovery (BROKEN) |
+| `weak-key` | Try default / supplied keys with the **real** ADP/DES/AES cipher; verify against known plaintext | recovery (BROKEN) |
+| `keystream-lfsr` | Is a recovered keystream a short LFSR (predictable)? | recovery (BROKEN) |
+
+The overall **verdict** is `RESISTANT` (nothing recovered — the encryption
+held), `PARTIAL` (information leaked: a reused IV, structured ciphertext, or a
+recovered keystream segment), or `BROKEN` (a method achieved verified complete
+decryption — a fail). Supply `-keys` (one hex key per line) to extend the
+weak-key dictionary; supply `-known-label`/`-known-pt` to turn the weak-key and
+known-plaintext methods into definitive (verified) recoveries.
+
+Honesty about limits: `assess` cannot brute-force a strong key out of a strong
+cipher — AES/DES with a non-default key and rotated IVs has an infeasible
+keyspace, reported plainly as `RESISTANT`. What it breaks is what fails in the
+field: reused IVs, default/test keys, keyless obfuscation, weak keystreams.
 
 ## Scope note
 
-The toolkit does not claim to break strong keyed RF crypto (P25 DES-OFB/AES,
-ADP/RC4). For those it offers known-plaintext keystream extraction (`lfsr`,
-`ks extract`), keystream-reuse / many-time-pad recovery when a transmitter
-repeats an IV/MI (`ks`), weak/short-key brute force (`brute`), and breakability
-triage (`stats`, `randomness`, `classify`); each report ends with what
-additional data would close the remaining gap.
+The toolkit's job is to *test* RF encryption by trying to break it and grading
+the result. `assess crypto` orchestrates the whole battery — cipher-strength,
+IV reuse, known-plaintext recovery, default/weak keys against the real
+ADP/DES/AES ciphers, and keystream-LFSR prediction — and the individual tools
+(`ks`, `lfsr`, `brute`, `stats`, `randomness`, `classify`) drill into each
+method. It succeeds against what fails in the field (reused IVs, default/test
+keys, keyless obfuscation, weak keystreams) and honestly reports `RESISTANT`
+when a strong cipher with a strong key and rotated IVs leaves an infeasible
+keyspace — that result is itself the security finding (the encryption held).
