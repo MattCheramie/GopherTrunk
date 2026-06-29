@@ -214,8 +214,8 @@ into explicit, RF-framed steps:
 ### Frames file format (`ks reuse` / `ks mtp`)
 
 Each non-empty line is either a JSON object or a CSV triple. The JSON form is
-what a future decoder→cryptolab export bridge would emit, one record per
-encrypted frame:
+exactly what the live decoder→cryptolab bridge emits (see below), one record
+per encrypted frame:
 
 ```
 {"label":"call-12","iv":"a1b2c3d4e5f60708090a","ct":"deadbeef…"}
@@ -223,8 +223,33 @@ call-12,a1b2c3d4e5f60708090a,deadbeef…
 ```
 
 `label` identifies the source (call id / timestamp), `iv` is the hex IV / P25
-Message Indicator, and `ct` is the hex ciphertext. Frames with an empty IV are
-ignored. Lines beginning with `#` are comments.
+Message Indicator, and `ct` is the hex ciphertext. Any extra JSON fields
+(`system`, `protocol`, `tg`, `algid`, `keyid`, `at`) are preserved for
+provenance and ignored by the parser. Frames with an empty IV are ignored.
+Lines beginning with `#` are comments.
+
+### Live capture bridge (decoder → cryptolab)
+
+The daemon can feed `ks` straight from live decode. Set
+`recordings.crypto_capture_path` in config.yaml:
+
+```yaml
+recordings:
+  crypto_capture_path: /var/lib/gophertrunk/crypto-frames.jsonl
+```
+
+When set, the P25 Phase 1 voice composer appends one JSON record per encrypted
+LDU2 superframe — `{label, iv (Message Indicator), ct (encrypted voice
+frames), system, protocol, tg, algid, keyid, at}` — to that file. Point
+`cryptolab ks reuse` / `ks mtp` at it to hunt for MI reuse across the capture.
+Empty (the default) disables the bridge entirely: no extraction work runs on
+the voice path, so the standard operator build is unaffected.
+
+This records encrypted material and its IV; it performs **no decryption**. A
+reused MI exposes `p1 ⊕ p2` for offline analysis — for P25 voice that is
+IMBE-coded speech (recover one frame's plaintext to peel the rest), for
+encrypted P25 data it is recoverable text. A non-reused capture confirms the
+system is using its IV correctly.
 
 ## Scope note
 

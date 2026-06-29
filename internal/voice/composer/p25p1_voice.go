@@ -13,6 +13,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
 	p25p1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+	"github.com/MattCheramie/GopherTrunk/internal/voice/cryptocap"
 )
 
 // p25p1VoiceIntermediateHz is the rate the wideband IQ is decimated to
@@ -343,6 +344,15 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 				if lerr == nil && es.Encrypted() {
 					c.log.Debug("composer: p25p1 encryption sync",
 						"serial", serial, "alg", es.AlgorithmID, "key", es.KeyID)
+					// cryptolab crypto-frame bridge: hand this superframe's
+					// MI (the IV) and its encrypted voice frames to the
+					// capture sink for offline keystream-reuse analysis. Off
+					// (nil) by default, so no extraction work runs otherwise.
+					// Captured every encrypted LDU2 — distinct ciphertexts
+					// matter even when ALGID/KID are unchanged.
+					if c.cryptoSink != nil {
+						c.captureCryptoFrame(serial, system, callID, grantTG, es, ldu)
+					}
 					// Publish on the bus so the trunking engine
 					// backfills the active call's Grant. Skip when
 					// neither ALGID nor KID has changed since the
@@ -441,4 +451,40 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			rx.Process(samples)
 		}
 	}
+}
+
+// captureCryptoFrame records one encrypted LDU2 superframe to the crypto-frame
+// sink: the Message Indicator becomes the IV and the concatenated (still
+// encrypted) IMBE voice frames become the ciphertext. The caller has already
+// confirmed c.cryptoSink != nil and that the LDU is encrypted. Best-effort —
+// an extract failure is logged at debug and skipped so capture never disturbs
+// the voice path.
+func (c *Composer) captureCryptoFrame(serial, system string, callID uint64, tg uint32, es phase1.EncryptionSync, ldu []byte) {
+	frames, _, err := phase1.ExtractVoiceFrames(ldu)
+	if err != nil {
+		// A partially-uncorrectable superframe still yields usable encrypted
+		// frames; only a hard extract failure (nil everywhere) is skipped.
+		c.log.Debug("composer: p25p1 crypto-capture extract failed", "serial", serial, "err", err)
+	}
+	var ct []byte
+	for _, f := range frames {
+		ct = append(ct, f...)
+	}
+	if len(ct) == 0 {
+		return
+	}
+	mi := make([]byte, len(es.MessageIndicator))
+	copy(mi, es.MessageIndicator[:])
+	c.cryptoSink.WriteCryptoFrame(cryptocap.Frame{
+		System:   system,
+		Protocol: "p25-phase1",
+		Serial:   serial,
+		CallID:   callID,
+		TG:       tg,
+		AlgID:    es.AlgorithmID,
+		KeyID:    es.KeyID,
+		MI:       mi,
+		CT:       ct,
+		At:       time.Now(),
+	})
 }

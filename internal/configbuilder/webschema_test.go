@@ -41,6 +41,11 @@ var webRoundTripAllow = map[string][]string{
 	// and raw YAML; a bespoke web editor is a follow-up.
 	"SystemConfig": {"Sites"},
 	"SiteConfig":   {"RFSS", "Site", "Name"},
+
+	// Research/offline cryptolab crypto-frame capture path. Round-trips via the
+	// RecordingsConfig index signature; editable in the TUI and raw YAML. A
+	// bespoke web editor for this niche knob is intentionally omitted.
+	"RecordingsConfig": {"CryptoCapturePath"},
 }
 
 // TestConfigSchemaCoveredByWebBuilder fails when a config.Config field has no
