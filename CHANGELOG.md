@@ -12,11 +12,14 @@ for tagged releases.
   active-attack tools, ported from the industry crypto-tool landscape and
   optimized for RF:
   - `assess crypto` — a security-test harness that attempts to decrypt captured
-    encrypted frames by every applicable method (cipher-strength, IV reuse,
-    known-plaintext, default/weak keys against the real ADP/DES/AES ciphers,
-    keystream-LFSR prediction) and grades each, with an overall
-    `RESISTANT` / `PARTIAL` / `BROKEN` verdict. A verified complete decryption
-    means the deployment failed the test.
+    encrypted frames by every applicable method (cipher-strength, a
+    cross-protocol P25/TETRA/DMR known-weakness advisory, IV reuse,
+    known-plaintext, default/weak keys against the real ADP/DES/3DES/AES
+    ciphers, reduced-keyspace brute force, keystream-LFSR prediction) and
+    grades each, with an overall `RESISTANT` / `PARTIAL` / `BROKEN` verdict. A
+    verified complete decryption means the deployment failed the test. The
+    advisory surfaces published breaks even for unbundled ciphers (e.g. the
+    TETRA TEA1 32-bit backdoor, CVE-2022-24402).
   - `randomness battery`/`quick` — NIST SP 800-22 statistical randomness tests
     on a keystream/payload bitstream (strong vs. structured).
   - `classify auto` — triage an unknown payload's obfuscation class and
