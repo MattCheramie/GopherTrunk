@@ -245,6 +245,34 @@ export interface CandidateScore {
   score: number;
 }
 
+// BlindEstimate is the offline blind symbol-rate / modulation estimate
+// (mirrors blind.BlindEstimate). ReferenceMatch is one scored reference-DB
+// candidate (mirrors sigref.Match).
+export interface BlindEstimate {
+  symbol_rate_hz: number;
+  symbol_rate_conf: number;
+  symbol_rate_cands?: number[];
+  mod_class: string;
+  levels: number;
+  occupied_bw_hz: number;
+  method: string;
+}
+
+export interface ReferenceMatch {
+  entry: {
+    protocol: string;
+    display_name: string;
+    mod_class: string;
+    mod_labels: string[];
+    symbol_rate_hz: number;
+    channel_bw_hz: number;
+    levels: number;
+    decodable: boolean;
+  };
+  score: number;
+  why: string;
+}
+
 export interface IdentifyResult {
   source: string;
   sample_rate_hz: number;
@@ -252,6 +280,9 @@ export interface IdentifyResult {
   confidence: number;
   inconclusive: boolean;
   candidates: CandidateScore[];
+  // Offline-signal-ID fallback, populated only when inconclusive.
+  blind?: BlindEstimate;
+  reference_matches?: ReferenceMatch[];
 }
 
 export interface CaptureDTO {
@@ -365,6 +396,9 @@ export interface WidebandCarrier {
   system_id?: number;
   grants?: GrantRecord[];
   score: number;
+  // Reference-DB naming for a carrier that did not decode (protocol is blank).
+  blind?: BlindEstimate;
+  reference_matches?: ReferenceMatch[];
 }
 
 // WidebandSystem clusters carriers into one trunked-system verdict.

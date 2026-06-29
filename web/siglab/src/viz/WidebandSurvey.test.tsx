@@ -94,6 +94,48 @@ describe("WidebandSurvey", () => {
     expect(screen.getByText("voice")).toBeInTheDocument();
   });
 
+  it("names a non-decoding carrier from the reference DB", () => {
+    const r = sampleResult();
+    r.carriers.push({
+      offset_hz: 96_000,
+      freq_hz: 441_096_000,
+      snr_db: 14,
+      protocol: "", // did not decode
+      confidence: 0.2,
+      inconclusive: true,
+      locked: false,
+      role: "",
+      grants: [],
+      score: 0,
+      blind: {
+        symbol_rate_hz: 18000,
+        symbol_rate_conf: 0.9,
+        mod_class: "psk",
+        levels: 4,
+        occupied_bw_hz: 24000,
+        method: "autocorr+spectral",
+      },
+      reference_matches: [
+        {
+          entry: {
+            protocol: "tetra",
+            display_name: "TETRA",
+            mod_class: "psk",
+            mod_labels: ["π/4-DQPSK"],
+            symbol_rate_hz: 18000,
+            channel_bw_hz: 25000,
+            levels: 4,
+            decodable: true,
+          },
+          score: 0.71,
+          why: "25 kHz, π/4-DQPSK, 18000 sym/s",
+        },
+      ],
+    });
+    render(<WidebandSurvey result={r} />);
+    expect(screen.getByText("TETRA (71%)")).toBeInTheDocument();
+  });
+
   it("handles a survey with no carriers", () => {
     const empty: WidebandResult = {
       ...sampleResult(),

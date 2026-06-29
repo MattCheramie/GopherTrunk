@@ -165,7 +165,8 @@ export function WidebandSurvey({ result }: { result: WidebandResult }) {
                 <th className="pr-3">Protocol</th>
                 <th className="pr-3">SNR (dB)</th>
                 <th className="pr-3">Locked</th>
-                <th>Grants</th>
+                <th className="pr-3">Grants</th>
+                <th>Best guess</th>
               </tr>
             </thead>
             <tbody>
@@ -178,7 +179,12 @@ export function WidebandSurvey({ result }: { result: WidebandResult }) {
                   <td className="pr-3">{c.protocol || "—"}</td>
                   <td className="pr-3">{c.snr_db.toFixed(1)}</td>
                   <td className="pr-3">{c.locked ? "✓" : ""}</td>
-                  <td>{c.grants?.length ?? 0}</td>
+                  <td className="pr-3">{c.grants?.length ?? 0}</td>
+                  <td className="text-muted">
+                    {!c.protocol && c.reference_matches && c.reference_matches.length > 0
+                      ? `${c.reference_matches[0].entry.display_name} (${(c.reference_matches[0].score * 100).toFixed(0)}%)`
+                      : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

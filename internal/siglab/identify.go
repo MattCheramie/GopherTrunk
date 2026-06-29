@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/dsp/blind"
 	"github.com/MattCheramie/GopherTrunk/internal/scanner/ccdecoder"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab/sigref"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -56,6 +58,13 @@ type IdentifyResult struct {
 	// non-dominant carrier, not the band's loudest). 0 when no shift was used.
 	TuneHz     float64          `json:"tune_hz"`
 	Candidates []CandidateScore `json:"candidates"`
+
+	// Blind / ReferenceMatches are the offline-signal-ID fallback, populated
+	// only when the decode-based identification is Inconclusive: the blind
+	// symbol-rate/modulation estimate and the reference-database candidates it
+	// ranks (so an undecodable carrier is still named a best guess).
+	Blind            *blind.BlindEstimate `json:"blind,omitempty"`
+	ReferenceMatches []sigref.Match       `json:"reference_matches,omitempty"`
 }
 
 // maxIdentifyCarrierCandidates caps how many carrier offsets the auto-tune
@@ -181,7 +190,42 @@ func IdentifyReader(r io.ReadSeeker, source string, cfg IdentifyConfig) (*Identi
 	out.Winner = bestScores[0].Protocol
 	out.Confidence = bestConf
 	out.Inconclusive = bestConf < identifyConfidenceFloor
+	if out.Inconclusive {
+		// Nothing decoded with confidence — fall back to the offline reference
+		// DB: blindly estimate the carrier's symbol rate / modulation and name
+		// the closest catalog signals. Best-effort; a read error just leaves
+		// the fallback empty.
+		attachReferenceFallback(r, cfg, out)
+	}
 	return out, nil
+}
+
+// attachReferenceFallback runs the blind estimator over a prefix of the capture
+// and ranks it against the signal-ID reference database, attaching the result to
+// out. It is invoked only for an inconclusive identification, so the
+// decode-based happy path is untouched.
+func attachReferenceFallback(r io.ReadSeeker, cfg IdentifyConfig, out *IdentifyResult) {
+	// The scan loop leaves r at EOF; rewind before reading the prefix.
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return
+	}
+	decode, bytesPerSample := cfg.Format.Decoder()
+	iq, err := readCarrierPrefix(r, decode, bytesPerSample)
+	if err != nil || len(iq) == 0 {
+		return
+	}
+	est := blind.Estimate(iq, cfg.SampleRateHz)
+	if est.SymbolRateHz <= 0 {
+		return
+	}
+	out.Blind = &est
+	out.ReferenceMatches = sigref.Rank(sigref.Observation{
+		SymbolRateHz:   est.SymbolRateHz,
+		SymbolRateConf: est.SymbolRateConf,
+		ModClass:       est.ModClass,
+		Levels:         est.Levels,
+		ChannelBWHz:    est.OccupiedBWHz,
+	}, 5)
 }
 
 // scanProtocolsAtOffset runs every candidate protocol over the capture with the
