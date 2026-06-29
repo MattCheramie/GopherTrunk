@@ -67,6 +67,8 @@ func main() {
 		runSpectrum(os.Args[2:])
 	case "hunt":
 		runHunt(os.Args[2:])
+	case "rfscope":
+		runRFScope(os.Args[2:])
 	case "gen":
 		runGen(os.Args[2:])
 	case "capture":
