@@ -28,6 +28,10 @@ for tagged releases.
     (P25 OFB/ADP keystream reuse via a repeated Message Indicator).
   - `stats period` — autocorrelation period detection and repeated-n-gram
     histogram.
+  - `recipe run` — a CyberChef-style operation pipeline: chain byte transforms
+    (XOR, the real ADP/DES/3DES/AES cipher decrypts, bit reversal, spectral
+    inversion, hex/base64) and analyses (entropy, randomness) from a JSON/YAML
+    recipe, piping the bytes between steps.
 - **Live decoder → cryptolab crypto-frame bridge.** Setting
   `recordings.crypto_capture_path` makes the P25 Phase 1 voice composer append
   each encrypted superframe's Message Indicator + encrypted voice frames as

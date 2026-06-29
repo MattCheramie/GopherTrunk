@@ -66,6 +66,12 @@ var modeParams = map[string][]Param{
 		{Name: "ct", Label: "Ciphertext file", Kind: "file", Required: true},
 		{Name: "out", Label: "Output keystream file", Kind: "outfile"},
 	},
+	"recipe/run": {
+		{Name: "in", Label: "Input file", Kind: "file", Required: true},
+		{Name: "recipe", Label: "Recipe file (JSON/YAML)", Kind: "file", Required: true, Help: "ordered steps: a list of {op, params} or {steps: [...]}"},
+		{Name: "out", Label: "Output file", Kind: "outfile", Help: "write the final transformed bytes"},
+		{Name: "list", Label: "List operations", Kind: "bool", Help: "list available ops instead of running"},
+	},
 	"assess/crypto": {
 		{Name: "in", Label: "Frames file", Kind: "file", Required: true, Help: "JSONL {label,iv,ct,algid,…} or CSV captured encrypted frames"},
 		{Name: "protocol", Label: "Protocol", Kind: "select", Default: "p25", Options: []string{"p25", "tetra", "dmr"}, Help: "algorithm-id namespace for the known-weakness advisory"},
