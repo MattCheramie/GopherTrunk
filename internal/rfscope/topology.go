@@ -1,12 +1,23 @@
 package rfscope
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/stats"
+	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/siglab"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
+)
+
+// Trunking-deferral bounds: a burst must be at least this long to be worth a
+// full decode, and at most this many emitters are decoded per scene.
+const (
+	minTrunkDecodeSec = 0.5
+	maxTrunkDecode    = 8
 )
 
 func init() { Register(topologyAnalyzer{}) }
@@ -36,7 +47,92 @@ func (topologyAnalyzer) Analyze(ctx context.Context, sc *Scene, in *Input) error
 		return err
 	}
 	detectConversations(sc)
+	deferToTrunkingTopology(sc, in)
 	return nil
+}
+
+// deferToTrunkingTopology is the authoritative-topology bridge: when an emitter's
+// representative burst decodes as a trunking control channel, GopherTrunk's own
+// hunt accumulator is the authority on its WACN/SysID/RFSS/Site/neighbors/band
+// plan. We decode such bursts with siglab, fold them into hunt.DiscoveredSystems,
+// and attach the result under AnalyzerOutputs["topology"] — so hunt's
+// trunking-specific map becomes one specialization of the generic emitter graph.
+func deferToTrunkingTopology(sc *Scene, in *Input) {
+	if in == nil || in.BurstIQ == nil {
+		return
+	}
+	systems := map[string]*hunt.DiscoveredSystem{}
+	var order []string
+	decoded := 0
+
+	for _, e := range sc.Emitters {
+		if decoded >= maxTrunkDecode {
+			break
+		}
+		if e.Fingerprint.ClassFamily != "digital" || e.Fingerprint.MedianBurstLenSec < minTrunkDecodeSec {
+			continue
+		}
+		bestID := longestBurstID(sc, e)
+		if bestID == 0 {
+			continue
+		}
+		iq, rate, err := in.BurstIQ(sc.Bursts[burstIndexByID(sc, bestID)])
+		if err != nil || len(iq) == 0 || rate <= 0 {
+			continue
+		}
+		ident, err := siglab.IdentifyIQ(iq, "rfscope-burst", siglab.IdentifyConfig{SampleRateHz: rate, Format: siglab.FormatF32, Log: in.Log})
+		if err != nil || ident == nil || ident.Inconclusive || ident.Winner == "" {
+			continue
+		}
+		proto, err := trunking.ParseProtocol(ident.Winner)
+		if err != nil {
+			continue
+		}
+		decoded++
+		res, err := siglab.RunReader(bytes.NewReader(siglab.EncodeCapture(iq, siglab.FormatF32)), "rfscope-burst",
+			siglab.Config{Protocol: proto, SampleRateHz: rate, Format: siglab.FormatF32})
+		if err != nil || res == nil || !res.Locked || res.Topology == nil {
+			continue
+		}
+		key := ident.Winner
+		sys, ok := systems[key]
+		if !ok {
+			sys = &hunt.DiscoveredSystem{}
+			systems[key] = sys
+			order = append(order, key)
+		}
+		hunt.Accumulate(sys, hunt.Observation{
+			Protocol:       ident.Winner,
+			Confidence:     ident.Confidence,
+			Result:         res,
+			FallbackFreqHz: e.Fingerprint.CenterHz,
+		})
+	}
+
+	if len(order) == 0 {
+		return
+	}
+	out := make([]*hunt.DiscoveredSystem, 0, len(order))
+	for _, k := range order {
+		out = append(out, systems[k])
+	}
+	if sc.AnalyzerOutputs == nil {
+		sc.AnalyzerOutputs = map[string]any{}
+	}
+	sc.AnalyzerOutputs["topology"] = out
+}
+
+// longestBurstID returns the ID of the emitter's longest burst.
+func longestBurstID(sc *Scene, e Emitter) uint64 {
+	var best uint64
+	var bestDur float64
+	for _, bid := range e.BurstIDs {
+		b := sc.Bursts[burstIndexByID(sc, bid)]
+		if b.DurationSec() >= bestDur {
+			bestDur, best = b.DurationSec(), bid
+		}
+	}
+	return best
 }
 
 // Conversation-detection tuning.

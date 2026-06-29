@@ -162,6 +162,21 @@ func TestConversationsHopSequence(t *testing.T) {
 	}
 }
 
+func TestTrunkingDeferralNoOpWithoutIQ(t *testing.T) {
+	t.Parallel()
+	sc := &Scene{
+		SpanHz: 1_000_000, WindowSec: 10,
+		Bursts: []Burst{{ID: 1, FreqHz: 450_100_000, StartSec: 0, EndSec: 1, PeakDbFS: -40, Class: survey.ClassNBFM, OccupiedBwHz: 12_500}},
+	}
+	clusterEmitters(sc)
+	// nil Input and nil BurstIQ must both be safe no-ops (no panic, no output).
+	deferToTrunkingTopology(sc, nil)
+	deferToTrunkingTopology(sc, &Input{})
+	if _, ok := sc.AnalyzerOutputs["topology"]; ok {
+		t.Fatalf("analog/no-IQ scene must not attach trunking topology")
+	}
+}
+
 func TestTopologyViaRunner(t *testing.T) {
 	t.Parallel()
 	sc := &Scene{
