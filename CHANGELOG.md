@@ -7,6 +7,67 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.7] — 2026-06-29
+
+Headlined by a **P25 Phase 2 voice-decode fix**: the H-DQPSK receiver now
+recovers the carrier frequency, so the Phase 2 voice follower locks
+superframes on ordinary non-TCXO tuners (e.g. RTL-SDR) instead of only on a
+TCXO-clocked Airspy. Rounded out by live-audio quality fixes — decoded voice
+fades cleanly at call end, the WebUI plays one call at a time instead of
+mixing overlapping talkgroups, and recording filenames render in the
+configured display timezone — plus a spectrum-panel follow-state fix.
+
+### Added
+- **P25 Phase 2 per-call MAC census** (#813). An end-of-call census logs once
+  per voice chain — superframes locked, a per-`SlotType` subframe histogram,
+  MAC subframes seen, and MAC PDUs decoded — so a silent decode pins exactly
+  which pipeline stage (superframe sync / ISCH classification / MAC FEC)
+  produced nothing on real air. Telemetry only; no protocol/FEC/geometry
+  logic changes.
+- **"Solution Postmortem" blog category** on the docs site (#808).
+
+### Changed
+- **Recording filenames render in the display timezone**, not always UTC. The
+  per-call WAV basename now honours `display.timezone` — a configured non-UTC
+  zone gets a filename-safe numeric offset like `+1000`, while UTC still
+  formats as a literal `Z`, so existing filenames are unchanged.
+
+### Fixed
+- **P25 Phase 2 H-DQPSK carrier-frequency recovery** (#813). The Phase 2
+  voice follower never locked a superframe on real traffic (a reporter saw
+  `superframes=0` on 67/67 calls) even though the same RTL-SDR decodes Phase 1
+  fine: the H-DQPSK receiver had no carrier-frequency recovery, so a real
+  tuner's residual offset rotated every symbol out of its quadrant and the
+  outbound sync never correlated. The receiver now does a one-shot coarse
+  carrier seed → NCO de-rotation → AGC → Gardner → Costas fine loop (on the
+  `ClockGardner` path only; clean zero-offset streams stay a no-op), and the
+  Costas lock phase is now rotation-aware for the π/8 H-DQPSK constellation.
+  Fixes both the voice follower and the control-channel path.
+- **Decoded digital voice fades to zero at call end** (P25/DMR). Short
+  transmissions ended on a hard waveform discontinuity — an audible
+  scratch/click — because digital voice, unlike the analog FM chain, had no
+  end-of-call ramp. A call now appends a short (~10 ms) linear fade to both
+  the recorded WAV and the live decoded fan-out; silent/dead-key calls are a
+  no-op.
+- **WebUI live audio plays one call at a time.** The browser player opened the
+  audio stream unfiltered, so every concurrent voice call's PCM arrived
+  interleaved into one body and talkgroups overlapped. The player now follows
+  the primary (most recently started) active call and filters the stream to
+  its device, re-pointing as the primary changes so audio switches cleanly
+  between calls — standard scanner behaviour.
+- **Spectrum panels keep their follow state live** (#810). The
+  Mixer/Tuning/Histogram/Constellation/SymbolScope panels read active calls
+  from the shared store but nothing refreshed it off the Active/Dashboard
+  routes, so opening a panel directly froze it on a stale "following call".
+  Each panel now polls active calls itself, and re-checking Hold parks the
+  view on the control channel instead of a possibly-stale call frequency.
+
+### Internal
+- End-to-end regression test for the adjacent-carrier offset WARN through the
+  real `ccdecoder.Decoder` (#815), guarding the live behaviour the reporter
+  confirmed — a control lock ~12.5 kHz off-frequency tripping the WARN —
+  which the existing stubbed tests and the `replay` path did not exercise.
+
 ## [v0.5.6] — 2026-06-28
 
 Headlined by the **`cryptolab` cryptographic-research toolkit** — a new,
