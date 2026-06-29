@@ -7,6 +7,30 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **cryptolab security-test suite** (`-tags cryptolab`). New analysis and
+  active-attack tools, ported from the industry crypto-tool landscape and
+  optimized for RF:
+  - `assess crypto` — a security-test harness that attempts to decrypt captured
+    encrypted frames by every applicable method (cipher-strength, IV reuse,
+    known-plaintext, default/weak keys against the real ADP/DES/AES ciphers,
+    keystream-LFSR prediction) and grades each, with an overall
+    `RESISTANT` / `PARTIAL` / `BROKEN` verdict. A verified complete decryption
+    means the deployment failed the test.
+  - `randomness battery`/`quick` — NIST SP 800-22 statistical randomness tests
+    on a keystream/payload bitstream (strong vs. structured).
+  - `classify auto` — triage an unknown payload's obfuscation class and
+    recommend the next tool.
+  - `ks reuse`/`mtp`/`extract` — keystream-reuse / many-time-pad recovery
+    (P25 OFB/ADP keystream reuse via a repeated Message Indicator).
+  - `stats period` — autocorrelation period detection and repeated-n-gram
+    histogram.
+- **Live decoder → cryptolab crypto-frame bridge.** Setting
+  `recordings.crypto_capture_path` makes the P25 Phase 1 voice composer append
+  each encrypted superframe's Message Indicator + encrypted voice frames as
+  JSONL for `cryptolab assess`/`ks`. Off by default (no effect on the voice
+  path when unset).
+
 ## [v0.5.7] — 2026-06-29
 
 Headlined by a **P25 Phase 2 voice-decode fix**: the H-DQPSK receiver now
