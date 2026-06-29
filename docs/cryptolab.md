@@ -265,8 +265,9 @@ method's effectiveness and what it recovered lets an operator decide which
 attack fits which situation and where a deployment is weak.
 
 ```
-cryptolab assess crypto -in frames.jsonl \
-    [-known-label call-12 -known-pt known.bin] [-keys candidate-keys.txt]
+cryptolab assess crypto -in frames.jsonl [-protocol p25|tetra|dmr] \
+    [-known-label call-12 -known-pt known.bin] [-keys candidate-keys.txt] \
+    [-brute-bits N] [-base-key HEX]
 ```
 
 Methods run, in escalating capability:
@@ -274,22 +275,42 @@ Methods run, in escalating capability:
 | Method | What it does | Counts toward |
 |--------|--------------|---------------|
 | `cipher-strength` | Is the ciphertext distinguishable from random? Structured output = a weak/keyless construction | exposure (PARTIAL) |
+| `known-weakness` | Look up each algorithm id in the published-weakness knowledge base (P25 / TETRA / DMR) and report design weaknesses — e.g. the TETRA TEA1 32-bit backdoor | advisory (floors at PARTIAL) |
 | `iv-reuse` | Frames sharing an IV leak `p1⊕p2` with no key | exposure (PARTIAL) |
 | `known-plaintext` | Recover the keystream from a known frame, decrypt its whole reuse group | recovery (BROKEN) |
-| `weak-key` | Try default / supplied keys with the **real** ADP/DES/AES cipher; verify against known plaintext | recovery (BROKEN) |
+| `weak-key` | Try default / supplied keys with the **real** ADP / DES / 3DES / AES cipher; verify against known plaintext | recovery (BROKEN) |
+| `key-brute` | Reduced-keyspace brute force (the hashcat-analog, and the shape of the TEA1 backdoor attack): search the low `-brute-bits` of the key against the known-plaintext oracle | recovery (BROKEN) |
 | `keystream-lfsr` | Is a recovered keystream a short LFSR (predictable)? | recovery (BROKEN) |
 
 The overall **verdict** is `RESISTANT` (nothing recovered — the encryption
-held), `PARTIAL` (information leaked: a reused IV, structured ciphertext, or a
-recovered keystream segment), or `BROKEN` (a method achieved verified complete
-decryption — a fail). Supply `-keys` (one hex key per line) to extend the
-weak-key dictionary; supply `-known-label`/`-known-pt` to turn the weak-key and
-known-plaintext methods into definitive (verified) recoveries.
+held), `PARTIAL` (information leaked: a reused IV, structured ciphertext, a
+recovered keystream segment, or an algorithm with a *published* break in use),
+or `BROKEN` (a method achieved verified complete decryption — a fail).
+
+Flags:
+- `-protocol` selects the algorithm-id namespace for the `known-weakness`
+  advisory (`p25`, `tetra`, `dmr`; default `p25`).
+- `-known-label`/`-known-pt` give a verification oracle, turning `weak-key` and
+  `key-brute` into definitive (verified) recoveries and enabling `known-plaintext`.
+- `-keys` (one hex key per line) extends the `weak-key` dictionary.
+- `-brute-bits N` enables `key-brute` over the low N key bits (capped at 32 for
+  feasibility); `-base-key` fixes the remaining high bits.
+
+**Cipher coverage.** The active methods (`weak-key`, `key-brute`) carry the
+real P25 keystream constructions — ADP (RC4), DES-OFB, two-/three-key
+Triple-DES, and AES-128/256-OFB — so a default or small-keyspace key is
+actually recovered, not just flagged. Proprietary ciphers whose keystream
+function isn't bundled (TETRA TEA1–4, Motorola DES-XL, vendor DMR privacy) are
+covered by the `known-weakness` advisory instead: for TEA1 it reports the
+80→32-bit backdoor (CVE-2022-24402) and that a 2³² brute would recover the key
+given a TEA1 implementation — an actionable finding without fabricating an
+unverified cipher.
 
 Honesty about limits: `assess` cannot brute-force a strong key out of a strong
-cipher — AES/DES with a non-default key and rotated IVs has an infeasible
+cipher — AES/3DES with a non-default key and rotated IVs has an infeasible
 keyspace, reported plainly as `RESISTANT`. What it breaks is what fails in the
-field: reused IVs, default/test keys, keyless obfuscation, weak keystreams.
+field: reused IVs, default/test keys, small/backdoored keyspaces, keyless
+obfuscation, and weak keystreams.
 
 ## Scope note
 

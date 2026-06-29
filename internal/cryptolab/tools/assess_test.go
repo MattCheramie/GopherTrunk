@@ -61,3 +61,28 @@ func TestAssessCryptoBrokenOnDefaultKey(t *testing.T) {
 		t.Fatalf("weak-key method not verified: %+v", res.Findings)
 	}
 }
+
+// TestAssessCryptoTEA1Advisory drives the tool with -protocol tetra and a TEA1
+// algid: the known-weakness advisory must fire and the verdict must not be
+// RESISTANT (the backdoor floor), even with no key.
+func TestAssessCryptoTEA1Advisory(t *testing.T) {
+	t.Parallel()
+	lines := "tetra-1,1234,deadbeefcafe\ntetra-2,5678,0011223344556677\n"
+	// CSV omits algid, so use JSONL to carry it.
+	lines = "{\"label\":\"t1\",\"iv\":\"1234\",\"ct\":\"deadbeefcafe0011\",\"algid\":1}\n" +
+		"{\"label\":\"t2\",\"iv\":\"5678\",\"ct\":\"00112233445566ff\",\"algid\":1}\n"
+	in := writeFile(t, "tea1.jsonl", []byte(lines))
+	res := runMode(t, "assess", "crypto", []string{"-in", in, "-protocol", "tetra"})
+	if got := fieldString(t, res, "verdict"); got == "RESISTANT" {
+		t.Fatalf("TEA1 should not read RESISTANT, got %q", got)
+	}
+	var advisory bool
+	for _, f := range res.Findings {
+		if f.Label == "known-weakness" {
+			advisory = true
+		}
+	}
+	if !advisory {
+		t.Fatalf("known-weakness finding missing: %+v", res.Findings)
+	}
+}

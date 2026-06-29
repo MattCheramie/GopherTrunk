@@ -27,7 +27,9 @@ package assess
 import (
 	"encoding/hex"
 	"fmt"
+	"sort"
 
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/cipherinfo"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/keystream"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lfsr"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
@@ -37,9 +39,16 @@ import (
 // Input bundles the material the harness works from.
 type Input struct {
 	Frames     []keystream.Frame
+	Protocol   string   // protocol whose algorithm-id namespace applies (default "p25")
 	KnownLabel string   // label of a frame whose plaintext is known (optional)
 	KnownPT    []byte   // that frame's plaintext (optional)
 	ExtraKeys  [][]byte // additional candidate keys to try in the weak-key method
+	// BruteBits enables the reduced-keyspace brute method: search the low
+	// BruteBits of the key against a known-plaintext oracle. 0 disables it.
+	BruteBits int
+	// BaseKey is the fixed remainder of the key for the brute (the high bits);
+	// nil means all-zero.
+	BaseKey []byte
 }
 
 // MethodResult is one method's outcome.
@@ -90,24 +99,31 @@ func Run(in Input) Report {
 	rep := Report{Frames: len(in.Frames), TotalCipherBytes: total}
 
 	cipherStrength := methodCipherStrength(in.Frames, total)
+	weakness, weaknessFloor := methodKnownWeakness(in)
 	reuse := methodIVReuse(in.Frames, total)
 	known, knownKS := methodKnownPlaintext(in, total)
 	weak, weakKS := methodWeakKey(in, total)
+	brute, bruteKS := methodKeyBrute(in, total)
 
 	// The keystream-LFSR method runs only on a genuine keystream a stronger
-	// method recovered (known-plaintext, or a verified weak key). A reuse XOR
-	// (p1⊕p2) is plaintext, not keystream, so it is deliberately not fed here.
-	ks := knownKS
-	ksSource := "known-plaintext"
+	// method recovered (known-plaintext, a verified weak key, or a brute hit).
+	// A reuse XOR (p1⊕p2) is plaintext, not keystream, so it is deliberately
+	// not fed here.
+	ks, ksSource := knownKS, "known-plaintext"
 	if ks == nil && weakKS != nil {
 		ks, ksSource = weakKS, "weak-key"
 	}
+	if ks == nil && bruteKS != nil {
+		ks, ksSource = bruteKS, "key-brute"
+	}
 	lc := methodKeystreamLFSR(ks, ksSource)
 
-	rep.Methods = []MethodResult{cipherStrength, reuse, known, weak, lc}
+	rep.Methods = []MethodResult{cipherStrength, weakness, reuse, known, weak, brute, lc}
 
 	// Overall = the strongest result; verdict is BROKEN only on a verified,
-	// (near-)complete decryption.
+	// (near-)complete decryption. A published-weakness floor lifts the verdict
+	// off RESISTANT when the deployment uses an algorithm with a known break,
+	// even if our harness did not carry the cipher to exploit it.
 	broken := false
 	for _, m := range rep.Methods {
 		if m.Applicable && m.Effectiveness > rep.OverallEffectiveness {
@@ -120,7 +136,7 @@ func Run(in Input) Report {
 	switch {
 	case broken:
 		rep.Verdict = VerdictBroken
-	case rep.OverallEffectiveness > 0:
+	case rep.OverallEffectiveness > 0 || weaknessFloor:
 		rep.Verdict = VerdictPartial
 	default:
 		rep.Verdict = VerdictResistant
@@ -157,6 +173,166 @@ func methodCipherStrength(frames []keystream.Frame, total int) MethodResult {
 		m.note(fmt.Sprintf("ciphertext fails %d/%d randomness tests — structured output indicates a weak or keyless construction (try lfsr / stats period).", rep.Failed, applicable))
 	}
 	return m
+}
+
+// methodKnownWeakness: consult the published-weakness knowledge base for every
+// algorithm id present and report its design weaknesses. This is the advisory
+// layer — it recovers no bytes, but it tells the operator when a deployment is
+// using an algorithm with a known break (e.g. TETRA TEA1's 32-bit backdoor)
+// that this harness may not carry the cipher to exploit. Returns the method
+// result and whether a broken/brute-forceable algorithm was seen (the verdict
+// floor).
+func methodKnownWeakness(in Input) (MethodResult, bool) {
+	m := MethodResult{Name: "known-weakness"}
+	proto := in.Protocol
+	if proto == "" {
+		proto = "p25"
+	}
+	// Distinct algorithm ids, in stable order.
+	seen := map[uint8]bool{}
+	var algs []uint8
+	for _, f := range in.Frames {
+		if !seen[f.AlgID] {
+			seen[f.AlgID] = true
+			algs = append(algs, f.AlgID)
+		}
+	}
+	sort.Slice(algs, func(i, j int) bool { return algs[i] < algs[j] })
+
+	var weakest cipherinfo.Strength = cipherinfo.StrengthUnknown
+	floor := false
+	details := map[string]any{"protocol": proto}
+	known := 0
+	for _, alg := range algs {
+		info, ok := cipherinfo.Lookup(proto, alg)
+		if !ok {
+			m.note(fmt.Sprintf("algorithm 0x%02X: no entry in the %s knowledge base (unrecognised).", alg, proto))
+			continue
+		}
+		known++
+		m.Applicable = true
+		details[fmt.Sprintf("0x%02X", alg)] = map[string]any{
+			"name": info.Name, "family": info.Family,
+			"key_bits": info.KeyBits, "effective_key_bits": info.EffectiveKeyBits,
+			"strength": string(info.Strength), "brute_forceable": info.BruteForceable,
+			"bundled": info.Bundled, "reference": info.Reference,
+		}
+		switch info.Strength {
+		case cipherinfo.StrengthBroken, cipherinfo.StrengthWeak:
+			floor = true
+		}
+		if info.BruteForceable {
+			floor = true
+		}
+		if rank(info.Strength) < rank(weakest) {
+			weakest = info.Strength
+		}
+		msg := fmt.Sprintf("%s (%s, %d-bit", info.Name, info.Family, info.KeyBits)
+		if info.EffectiveKeyBits != info.KeyBits {
+			msg += fmt.Sprintf(", %d-bit effective", info.EffectiveKeyBits)
+		}
+		msg += fmt.Sprintf("): %s", strengthVerb(info.Strength))
+		if info.Weakness != "" {
+			msg += " — " + info.Weakness
+		}
+		if info.Reference != "" {
+			msg += " [" + info.Reference + "]"
+		}
+		m.note(msg)
+	}
+	if known == 0 {
+		m.note("no recognised algorithm ids on the frames (set -protocol or check the capture's algid field).")
+		return m, false
+	}
+	details["weakest_strength"] = string(weakest)
+	m.Detail = details
+	return m, floor
+}
+
+// methodKeyBrute: reduced-keyspace brute force (the hashcat-analog, and the
+// shape of the TETRA TEA1 backdoor attack). With a known-plaintext oracle it
+// searches the low BruteBits of the key for the bundled cipher, verified by an
+// exact keystream match. For an unbundled but brute-forceable algorithm (e.g.
+// TEA1) it reports what the brute *would* do, so the finding is actionable.
+func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
+	m := MethodResult{Name: "key-brute"}
+	if in.BruteBits <= 0 {
+		m.note("disabled — set -brute-bits N to search the low N bits of the key against a known-plaintext oracle.")
+		return m, nil
+	}
+	if in.KnownLabel == "" || len(in.KnownPT) == 0 {
+		m.note("needs a known-plaintext oracle (-known-label / -known-pt) to verify candidate keys.")
+		return m, nil
+	}
+	var oracle *keystream.Frame
+	for i := range in.Frames {
+		if in.Frames[i].Label == in.KnownLabel {
+			oracle = &in.Frames[i]
+			break
+		}
+	}
+	if oracle == nil {
+		m.note(fmt.Sprintf("known frame %q not found.", in.KnownLabel))
+		return m, nil
+	}
+	proto := in.Protocol
+	if proto == "" {
+		proto = "p25"
+	}
+	if !p25crypto.Supported(oracle.AlgID) {
+		// Unbundled cipher: report the brute that would apply (e.g. TEA1).
+		if info, ok := cipherinfo.Lookup(proto, oracle.AlgID); ok && info.BruteForceable {
+			m.note(fmt.Sprintf("%s has a %d-bit effective keyspace (%s) — a 2^%d brute is feasible, but its keystream function is not bundled here; supply an implementation to run it.",
+				info.Name, info.EffectiveKeyBits, info.Reference, info.EffectiveKeyBits))
+		} else {
+			m.note(fmt.Sprintf("the oracle's algorithm 0x%02X is not bundled, so its keystream cannot be brute-forced here.", oracle.AlgID))
+		}
+		return m, nil
+	}
+	if in.BruteBits > 32 {
+		m.note(fmt.Sprintf("brute-bits %d capped at 32 (2^%d is the feasibility ceiling).", in.BruteBits, 32))
+		in.BruteBits = 32
+	}
+	m.Applicable = true
+	sz := p25crypto.KeySize(oracle.AlgID)
+	base := make([]byte, sz)
+	copy(base, in.BaseKey)
+	want := keystream.XOR(in.KnownPT, oracle.CT)
+	if len(want) == 0 {
+		m.note("oracle plaintext/ciphertext overlap is empty.")
+		return m, nil
+	}
+	prefix := 8
+	if prefix > len(want) {
+		prefix = len(want)
+	}
+	space := uint64(1) << uint(in.BruteBits)
+	for i := uint64(0); i < space; i++ {
+		key := keyWithLowBits(base, i, in.BruteBits)
+		cand, err := p25crypto.Keystream(oracle.AlgID, key, oracle.IV, prefix)
+		if err != nil {
+			m.note(err.Error())
+			return m, nil
+		}
+		if !bytesEqual(cand, want[:prefix]) {
+			continue
+		}
+		full, _ := p25crypto.Keystream(oracle.AlgID, key, oracle.IV, len(want))
+		if !bytesEqual(full, want) {
+			continue
+		}
+		m.Verified = true
+		m.Effectiveness = effForAlg(in.Frames, oracle.AlgID, total)
+		m.RecoveredBytes = bytesForAlg(in.Frames, oracle.AlgID)
+		m.SampleHex = hexPreview(in.KnownPT, 32)
+		m.SampleASCII = asciiPreview(in.KnownPT, 32)
+		m.Detail = map[string]any{"algorithm": p25crypto.AlgName(oracle.AlgID), "key_hex": hex.EncodeToString(key), "searched": i + 1, "brute_bits": in.BruteBits}
+		m.note(fmt.Sprintf("COMPLETE BREAK: brute-forced %s key %s in the low %d bits after %d candidates — the keyspace is too small.", p25crypto.AlgName(oracle.AlgID), hex.EncodeToString(key), in.BruteBits, i+1))
+		return m, full
+	}
+	m.Detail = map[string]any{"algorithm": p25crypto.AlgName(oracle.AlgID), "searched": space, "brute_bits": in.BruteBits}
+	m.note(fmt.Sprintf("searched all 2^%d low-bit keys for %s; none matched. The key lies outside this slice of the keyspace.", in.BruteBits, p25crypto.AlgName(oracle.AlgID)))
+	return m, nil
 }
 
 // methodIVReuse: structural keystream reuse. This is an EXPOSURE method, not a
@@ -344,6 +520,48 @@ func bytesForAlg(frames []keystream.Frame, alg uint8) int {
 		}
 	}
 	return n
+}
+
+// keyWithLowBits returns base with its low `bits` overwritten by val (the
+// trailing bytes, big-endian). base is not mutated.
+func keyWithLowBits(base []byte, val uint64, bits int) []byte {
+	k := append([]byte(nil), base...)
+	nbytes := (bits + 7) / 8
+	for b := 0; b < nbytes && b < len(k); b++ {
+		k[len(k)-1-b] = byte(val >> uint(8*b))
+	}
+	return k
+}
+
+// rank orders strengths weakest-first for picking the worst in a set.
+func rank(s cipherinfo.Strength) int {
+	switch s {
+	case cipherinfo.StrengthBroken:
+		return 0
+	case cipherinfo.StrengthWeak:
+		return 1
+	case cipherinfo.StrengthLegacy:
+		return 2
+	case cipherinfo.StrengthStrong:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func strengthVerb(s cipherinfo.Strength) string {
+	switch s {
+	case cipherinfo.StrengthBroken:
+		return "BROKEN by design / published attack"
+	case cipherinfo.StrengthWeak:
+		return "WEAK — feasibly brute-forced"
+	case cipherinfo.StrengthLegacy:
+		return "LEGACY — aging, exhaustible with effort"
+	case cipherinfo.StrengthStrong:
+		return "no known practical break with a well-managed key"
+	default:
+		return "clear / unknown"
+	}
 }
 
 func keysOfSize(keys [][]byte, size int) [][]byte {

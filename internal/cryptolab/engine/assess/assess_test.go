@@ -98,6 +98,82 @@ func TestAssessResistant(t *testing.T) {
 	}
 }
 
+// TestAssessTEA1KnownWeakness: a TETRA TEA1 capture (algid 0x01) must trigger
+// the known-weakness advisory and lift the verdict off RESISTANT even though
+// the TEA1 cipher is not bundled (nothing is actually decrypted).
+func TestAssessTEA1KnownWeakness(t *testing.T) {
+	t.Parallel()
+	// Random-looking ciphertext, distinct IVs, no key — only the advisory fires.
+	gen := func(seed uint32, n int) []byte {
+		out := make([]byte, n)
+		x := seed
+		for i := range out {
+			x = x*1664525 + 1013904223
+			out[i] = byte(x >> 24)
+		}
+		return out
+	}
+	frames := []keystream.Frame{
+		{Label: "a", IV: []byte{1, 0}, CT: gen(1, 4000), AlgID: 0x01},
+		{Label: "b", IV: []byte{2, 0}, CT: gen(2, 4000), AlgID: 0x01},
+	}
+	rep := Run(Input{Frames: frames, Protocol: "tetra"})
+	kw := find(rep, "known-weakness")
+	if kw == nil || !kw.Applicable {
+		t.Fatalf("known-weakness should fire for TEA1, got %+v", kw)
+	}
+	if rep.Verdict == VerdictResistant {
+		t.Fatalf("TEA1 (broken by design) should not read RESISTANT: %+v", rep)
+	}
+}
+
+// TestAssessKeyBruteRecoversSmallKey: a P25 ADP key whose only non-zero bits
+// are in the low 12 bits must be recovered by the reduced-keyspace brute, and
+// the verdict must be BROKEN.
+func TestAssessKeyBruteRecoversSmallKey(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, p25crypto.KeySize(p25crypto.AlgADP)) // 5 bytes, zero
+	key[4] = 0xBC
+	key[3] = 0x0A // low 12 bits = 0xABC
+	mk := func(label string, mi, pt []byte) (keystream.Frame, []byte) {
+		ks, err := p25crypto.Keystream(p25crypto.AlgADP, key, mi, len(pt))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return keystream.Frame{Label: label, IV: mi, CT: xorb(pt, ks), AlgID: p25crypto.AlgADP}, pt
+	}
+	f1, pt1 := mk("call-1", []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}, []byte("DISPATCH NORTH NOW"))
+	rep := Run(Input{
+		Frames: []keystream.Frame{f1}, Protocol: "p25",
+		KnownLabel: "call-1", KnownPT: pt1, BruteBits: 13,
+	})
+	kb := find(rep, "key-brute")
+	if kb == nil || !kb.Applicable || !kb.Verified {
+		t.Fatalf("key-brute should recover a 12-bit key, got %+v", kb)
+	}
+	if rep.Verdict != VerdictBroken {
+		t.Fatalf("verdict = %s, want BROKEN; methods: %+v", rep.Verdict, rep.Methods)
+	}
+}
+
+// TestAssessTDESRoundsTripThroughWeakKey: a Triple-DES frame under the all-zero
+// default key must be broken by the weak-key dictionary (exercises the new
+// 3DES construction end-to-end through the harness).
+func TestAssessTDESWeakKey(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, p25crypto.KeySize(p25crypto.AlgTDES)) // 24-byte zero key
+	pt := []byte("CONFIDENTIAL TRAFFIC HERE")
+	ks, err := p25crypto.Keystream(p25crypto.AlgTDES, key, []byte{1, 2, 3, 4, 5, 6, 7, 8}, len(pt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := keystream.Frame{Label: "c1", IV: []byte{1, 2, 3, 4, 5, 6, 7, 8}, CT: xorb(pt, ks), AlgID: p25crypto.AlgTDES}
+	rep := Run(Input{Frames: []keystream.Frame{f}, KnownLabel: "c1", KnownPT: pt})
+	if rep.Verdict != VerdictBroken {
+		t.Fatalf("all-zero-key TDES should break, verdict = %s", rep.Verdict)
+	}
+}
+
 // TestAssessKnownPlaintextRecovers: a reuse group with one known frame must be
 // fully decrypted by the known-plaintext method.
 func TestAssessKnownPlaintextRecovers(t *testing.T) {

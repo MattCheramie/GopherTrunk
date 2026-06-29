@@ -34,9 +34,12 @@ func (assessCrypto) Synopsis() string {
 func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cryptolab.Result, error) {
 	fs := newFlagSet("assess crypto")
 	in := fs.String("in", "", "frames file (JSONL {label,iv,ct,algid,…} or CSV) — required")
+	protocol := fs.String("protocol", "p25", "protocol whose algorithm-id namespace applies: p25|tetra|dmr")
 	knownLabel := fs.String("known-label", "", "label of a frame whose plaintext is known (enables verified decryption)")
 	knownPTFile := fs.String("known-pt", "", "file with the known plaintext for -known-label")
 	keysFile := fs.String("keys", "", "optional file of candidate keys (one hex key per line) for the weak-key method")
+	bruteBits := fs.Int("brute-bits", 0, "reduced-keyspace brute: search the low N bits of the key against the known-plaintext oracle (0 = off)")
+	baseKeyHex := fs.String("base-key", "", "fixed high bits of the key for -brute-bits, as hex (default all-zero)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -44,7 +47,14 @@ func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cry
 	if err != nil {
 		return nil, err
 	}
-	input := assess.Input{Frames: frames, KnownLabel: *knownLabel}
+	input := assess.Input{Frames: frames, Protocol: *protocol, KnownLabel: *knownLabel, BruteBits: *bruteBits}
+	if *baseKeyHex != "" {
+		bk, err := hex.DecodeString(*baseKeyHex)
+		if err != nil {
+			return nil, fmt.Errorf("-base-key: bad hex: %w", err)
+		}
+		input.BaseKey = bk
+	}
 	if *knownPTFile != "" {
 		pt, err := readInput(*knownPTFile)
 		if err != nil {

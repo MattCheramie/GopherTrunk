@@ -33,8 +33,10 @@ import (
 // dependency-light.
 const (
 	AlgDESOFB    = 0x81
+	AlgTDES2     = 0x83 // two-key Triple-DES (K1,K2 → K1K2K1)
 	AlgAES256    = 0x84
 	AlgAES128    = 0x85
+	AlgTDES      = 0x86 // three-key Triple-DES
 	AlgAES256OFB = 0x89
 	AlgADP       = 0xAA
 )
@@ -51,6 +53,10 @@ func KeySize(algid uint8) int {
 		return 5
 	case AlgDESOFB:
 		return 8
+	case AlgTDES2:
+		return 16
+	case AlgTDES:
+		return 24
 	case AlgAES128:
 		return 16
 	case AlgAES256, AlgAES256OFB:
@@ -67,6 +73,10 @@ func AlgName(algid uint8) string {
 	switch algid {
 	case AlgDESOFB:
 		return "DES-OFB"
+	case AlgTDES2:
+		return "TDES-2"
+	case AlgTDES:
+		return "TDES"
 	case AlgAES256:
 		return "AES-256"
 	case AlgAES128:
@@ -95,6 +105,15 @@ func Keystream(algid uint8, key, mi []byte, n int) ([]byte, error) {
 		return adpKeystream(key, mi, n)
 	case AlgDESOFB:
 		return ofbKeystream(newDES, key, miIV(mi, des.BlockSize), n)
+	case AlgTDES2:
+		// Two-key 3DES: expand K1‖K2 into the 24-byte K1‖K2‖K1 form.
+		k := make([]byte, 24)
+		copy(k[0:8], key[0:8])
+		copy(k[8:16], key[8:16])
+		copy(k[16:24], key[0:8])
+		return ofbKeystream(newTDES, k, miIV(mi, des.BlockSize), n)
+	case AlgTDES:
+		return ofbKeystream(newTDES, key, miIV(mi, des.BlockSize), n)
 	case AlgAES128, AlgAES256, AlgAES256OFB:
 		return ofbKeystream(newAES, key, miIV(mi, aes.BlockSize), n)
 	}
@@ -113,8 +132,9 @@ func adpKeystream(key, mi []byte, n int) ([]byte, error) {
 	return c.KeyStream(n), nil
 }
 
-func newDES(key []byte) (cipher.Block, error) { return des.NewCipher(key) }
-func newAES(key []byte) (cipher.Block, error) { return aes.NewCipher(key) }
+func newDES(key []byte) (cipher.Block, error)  { return des.NewCipher(key) }
+func newTDES(key []byte) (cipher.Block, error) { return des.NewTripleDESCipher(key) }
+func newAES(key []byte) (cipher.Block, error)  { return aes.NewCipher(key) }
 
 func ofbKeystream(newBlock func([]byte) (cipher.Block, error), key, iv []byte, n int) ([]byte, error) {
 	block, err := newBlock(key)

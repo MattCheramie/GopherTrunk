@@ -25,6 +25,8 @@ func TestKeystreamRoundTrip(t *testing.T) {
 	}{
 		{AlgADP, []byte{0x11, 0x22, 0x33, 0x44, 0x55}},
 		{AlgDESOFB, []byte{1, 2, 3, 4, 5, 6, 7, 8}},
+		{AlgTDES2, bytes.Repeat([]byte{0x3C}, 16)},
+		{AlgTDES, bytes.Repeat([]byte{0x5A}, 24)},
 		{AlgAES128, bytes.Repeat([]byte{0xAB}, 16)},
 		{AlgAES256, bytes.Repeat([]byte{0xCD}, 32)},
 	}
@@ -73,7 +75,7 @@ func TestDifferentMIDifferentKeystream(t *testing.T) {
 
 func TestDefaultKeysSized(t *testing.T) {
 	t.Parallel()
-	for _, alg := range []uint8{AlgADP, AlgDESOFB, AlgAES128, AlgAES256} {
+	for _, alg := range []uint8{AlgADP, AlgDESOFB, AlgTDES2, AlgTDES, AlgAES128, AlgAES256} {
 		keys := DefaultKeys(alg)
 		if len(keys) == 0 {
 			t.Fatalf("%s: no default keys", AlgName(alg))
