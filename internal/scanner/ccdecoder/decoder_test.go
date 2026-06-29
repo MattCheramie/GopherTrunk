@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2049,6 +2050,152 @@ func TestDecoderWarnsOnLargeCarrierOffset(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDecoderWarnsOnLargeCarrierOffsetEndToEnd is the end-to-end counterpart of
+// TestDecoderWarnsOnLargeCarrierOffset (which stubs AFCOffsetHz via
+// fakeAFCPipeline). It reproduces issue #815 through the REAL ccdecoder.Decoder:
+// a synthesized P25 control channel placed 12.5 kHz off the tuned centre — the
+// adjacent-site bleed-through the reporter hit (Geelong 420.0750 vs Mt Anakie
+// 420.0875, 12.5 kHz apart) — is pumped through the production DDC + P25
+// receiver, and the decoder's own CoarseAFC must measure that offset and trip
+// checkCarrierOffsetLocked. A matching on-frequency channel must lock and stay
+// silent.
+//
+// This is the regression the fake-stub tests can't give: it proves the live
+// receiver actually measures ~12.5 kHz and the WARN fires from a real lock, not a
+// hardcoded AFCOffsetHz. The `replay` command can't cover it either — replay runs
+// siglab's deep path and never constructs ccdecoder.Decoder, where the WARN lives.
+func TestDecoderWarnsOnLargeCarrierOffsetEndToEnd(t *testing.T) {
+	const (
+		nac         = 0x293
+		controlFreq = 420_075_000 // Geelong, per issue #815
+		// SDR rate == channel rate, so the DDC is pass-through (ddc.go returns no
+		// resampler/NCO when in <= target) and the offset reaches the receiver's
+		// CoarseAFC directly, unshaped by the wideband decimation rolloff.
+		narrowRateHz = 48_000.0
+		deviationHz  = 1800.0
+		frameRepeats = 60
+	)
+
+	// build synthesizes a P25 CC at offsetHz from centre, pumps it through a real
+	// Decoder, and returns whether it locked plus the captured WARN-level log.
+	build := func(t *testing.T, offsetHz float64) (locked bool, logged string) {
+		t.Helper()
+		dibits := buildP25CCDibits(nac, frameRepeats)
+		signal := demod.ModulateP25C4FM(dibits, narrowRateHz, deviationHz)
+		if offsetHz != 0 {
+			// NewNCO(-f).Mix multiplies by exp(+j2π·f·n/Fs): shifts the centred
+			// channel up to +f. No LO offset is applied, so the DDC leaves it
+			// off-centre and the receiver's CoarseAFC measures the +f residual.
+			signal = dsp.NewNCO(-offsetHz, narrowRateHz).Mix(nil, signal)
+		}
+
+		var buf bytes.Buffer
+		bus := events.NewBus(256)
+		defer bus.Close()
+		d, err := New(Options{
+			Bus: bus, IQ: &fakeIQSource{},
+			Systems: []trunking.System{{
+				Name: "Geelong", Protocol: trunking.ProtocolP25,
+				ControlChannels: []uint32{controlFreq},
+			}},
+			SampleRateHz: narrowRateHz,
+			Log:          slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})),
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		defer d.Close()
+		sub := bus.Subscribe()
+		defer sub.Close()
+
+		d.handleProgress(trunking.HuntProgress{System: "Geelong", AttemptedFreqHz: controlFreq})
+		if d.active == nil {
+			t.Fatalf("handleProgress did not install a pipeline")
+		}
+
+		const chunk = 8_192
+		for off := 0; off < len(signal); off += chunk {
+			end := off + chunk
+			if end > len(signal) {
+				end = len(signal)
+			}
+			d.pump(signal[off:end])
+			if !locked {
+				for drained := false; !drained; {
+					select {
+					case ev := <-sub.C:
+						if ev.Kind == events.KindCCLocked {
+							// Mirror the Run loop's lock bookkeeping (decoder.go:499)
+							// so checkCarrierOffsetLocked is armed; the pump itself
+							// never sets d.locked.
+							d.locked.Store(true)
+							locked = true
+						}
+					default:
+						drained = true
+					}
+				}
+			}
+		}
+		return locked, buf.String()
+	}
+
+	t.Run("adjacent carrier 12.5kHz warns", func(t *testing.T) {
+		locked, logged := build(t, 12_500)
+		if !locked {
+			t.Fatalf("control channel never locked onto the 12.5 kHz-offset carrier")
+		}
+		if !strings.Contains(logged, carrierOffsetWarnMsg) {
+			t.Fatalf("expected %q WARN; log: %q", carrierOffsetWarnMsg, logged)
+		}
+		off, ok := parseLoggedOffsetHz(logged)
+		if !ok {
+			t.Fatalf("WARN missing a parseable offset_hz; log: %q", logged)
+		}
+		// The real CoarseAFC measurement carries a few hundred Hz of slack, so
+		// assert a band around 12.5 kHz rather than the exact value the fake-stub
+		// test pins. It must, however, clear the warn threshold.
+		if off <= defaultCarrierOffsetWarnHz {
+			t.Errorf("logged offset_hz = %d, want > threshold %d", off, defaultCarrierOffsetWarnHz)
+		}
+		if off < 11_000 || off > 14_000 {
+			t.Errorf("logged offset_hz = %d, want ≈ 12500 Hz", off)
+		}
+		if !strings.Contains(logged, "freq_hz=420075000") {
+			t.Errorf("WARN missing freq_hz=420075000; log: %q", logged)
+		}
+	})
+
+	t.Run("on-frequency stays silent", func(t *testing.T) {
+		locked, logged := build(t, 0)
+		if !locked {
+			t.Fatalf("control channel never locked on-frequency")
+		}
+		if strings.Contains(logged, carrierOffsetWarnMsg) {
+			t.Errorf("on-frequency lock must not warn; log: %q", logged)
+		}
+	})
+}
+
+// parseLoggedOffsetHz extracts the integer value of the slog `offset_hz=`
+// attribute from a TextHandler log line, returning false if absent/unparseable.
+func parseLoggedOffsetHz(logged string) (int, bool) {
+	const key = "offset_hz="
+	i := strings.Index(logged, key)
+	if i < 0 {
+		return 0, false
+	}
+	rest := logged[i+len(key):]
+	if j := strings.IndexAny(rest, " \n"); j >= 0 {
+		rest = rest[:j]
+	}
+	v, err := strconv.Atoi(rest)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // TestDecoderCarrierOffsetWarnThrottled pins the throttle + edge re-arm: a
