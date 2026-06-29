@@ -249,6 +249,32 @@ func TestSiglabJobPSDAndSpectrogram(t *testing.T) {
 			return 0
 		}())
 	}
+
+	// Occupancy: lab-grade spectral metrics off the same averaged spectrum.
+	occResp, err := http.Get(ts.URL + "/api/v1/siglab/jobs/" + run.JobID + "/occupancy?fft=512")
+	if err != nil {
+		t.Fatalf("occupancy: %v", err)
+	}
+	defer occResp.Body.Close()
+	if occResp.StatusCode != http.StatusOK {
+		t.Fatalf("occupancy status = %d, want 200", occResp.StatusCode)
+	}
+	var occ struct {
+		Occupancy struct {
+			OccupiedBandwidthHz float64 `json:"occupied_bandwidth_hz"`
+			ChannelPowerDBFS    float64 `json:"channel_power_dbfs"`
+			SpectralFlatness    float64 `json:"spectral_flatness"`
+		} `json:"occupancy"`
+	}
+	if err := json.NewDecoder(occResp.Body).Decode(&occ); err != nil {
+		t.Fatalf("decode occupancy: %v", err)
+	}
+	if occ.Occupancy.OccupiedBandwidthHz <= 0 {
+		t.Errorf("occupancy occupied_bandwidth_hz = %v, want > 0", occ.Occupancy.OccupiedBandwidthHz)
+	}
+	if math.IsNaN(occ.Occupancy.ChannelPowerDBFS) || math.IsInf(occ.Occupancy.ChannelPowerDBFS, 0) {
+		t.Errorf("occupancy channel_power_dbfs = %v, want finite", occ.Occupancy.ChannelPowerDBFS)
+	}
 }
 
 func TestSiglabRunMissingCapture(t *testing.T) {

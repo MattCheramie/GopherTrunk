@@ -28,6 +28,16 @@ func queryPow2(r *http.Request, key string, def int) int {
 	return def
 }
 
+// queryFloat returns a positive float query value, or def when absent/invalid.
+func queryFloat(r *http.Request, key string, def float64) float64 {
+	if s := r.URL.Query().Get(key); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v > 0 {
+			return v
+		}
+	}
+	return def
+}
+
 // handleSiglabJobPSD answers GET /api/v1/siglab/jobs/{id}/psd with the
 // Welch-averaged power spectrum (dBFS, FFT-shifted: bin 0 = -rate/2) of the
 // job's decimated IQ. Computed server-side via spectrum.AverageDB so the web UI
@@ -43,6 +53,34 @@ func (s *Server) handleSiglabJobPSD(w http.ResponseWriter, r *http.Request) {
 		"sample_rate_hz": taps.DecimatedRateHz,
 		"fft_size":       fftSize,
 		"bins":           frame.Bins,
+	})
+}
+
+// handleSiglabJobOccupancy answers GET /api/v1/siglab/jobs/{id}/occupancy with
+// the spectral-occupancy metrics (99% occupied bandwidth, channel power, ACPR
+// upper/lower, spectral flatness) of the job's decimated IQ. It reuses the same
+// Welch-averaged spectrum as the PSD endpoint so the chart and the metric strip
+// share one computation. The channel/adjacent geometry is overridable via the
+// channel_bw_hz, adj_offset_hz and adj_bw_hz query params; defaults assume a
+// 12.5 kHz channel with 12.5 kHz adjacent spacing.
+func (s *Server) handleSiglabJobOccupancy(w http.ResponseWriter, r *http.Request) {
+	taps, ok := s.siglabJobTaps(w, r)
+	if !ok {
+		return
+	}
+	fftSize := queryPow2(r, "fft", 1024)
+	channelBW := queryFloat(r, "channel_bw_hz", 12500)
+	adjOffset := queryFloat(r, "adj_offset_hz", 12500)
+	adjBW := queryFloat(r, "adj_bw_hz", 12500)
+	frame := spectrum.AverageDB(iqPointsToComplex(taps.DecimatedIQ), 0, taps.DecimatedRateHz, fftSize)
+	occ := spectrum.ComputeOccupancy(frame.Bins, taps.DecimatedRateHz, channelBW, adjOffset, adjBW)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sample_rate_hz": taps.DecimatedRateHz,
+		"fft_size":       fftSize,
+		"channel_bw_hz":  channelBW,
+		"adj_offset_hz":  adjOffset,
+		"adj_bw_hz":      adjBW,
+		"occupancy":      occ,
 	})
 }
 

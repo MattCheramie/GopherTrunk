@@ -30,6 +30,23 @@ export interface PSDResult {
   bins: number[];
 }
 
+// OccupancyResult is the server-computed spectral-occupancy metric set from
+// GET /jobs/{id}/occupancy, derived from the same Welch spectrum as the PSD.
+export interface OccupancyResult {
+  sample_rate_hz: number;
+  fft_size: number;
+  channel_bw_hz: number;
+  adj_offset_hz: number;
+  adj_bw_hz: number;
+  occupancy: {
+    occupied_bandwidth_hz: number;
+    channel_power_dbfs: number;
+    acpr_upper_db: number;
+    acpr_lower_db: number;
+    spectral_flatness: number;
+  };
+}
+
 // SpectrogramResult is the server-computed STFT from GET /jobs/{id}/spectrogram:
 // z[frame][bin] dBFS, each row FFT-shifted (bin 0 = -sample_rate_hz/2).
 export interface SpectrogramResult {

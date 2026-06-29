@@ -11,6 +11,7 @@ import type {
   IQTaps,
   IdentifyResult,
   JobDTO,
+  OccupancyResult,
   ProtocolsDTO,
   PSDResult,
   RunConfig,
@@ -132,6 +133,11 @@ export const api = {
       "GET",
       `/api/v1/siglab/jobs/${id}/spectrogram?fft=${fft}&hop=${hop}`,
     ),
+
+  // jobOccupancy fetches the server-computed spectral-occupancy metrics
+  // (occupied bandwidth, channel power, ACPR, flatness) off the same spectrum.
+  jobOccupancy: (c: ClientConfig, id: string, fft = 1024) =>
+    req<OccupancyResult>(c, "GET", `/api/v1/siglab/jobs/${id}/occupancy?fft=${fft}`),
 
   identify: (
     c: ClientConfig,
