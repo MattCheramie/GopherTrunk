@@ -161,6 +161,8 @@ groups:
         url: /hunt.html
       - title: SigLab (offline workbench)
         url: /siglab.html
+      - title: RF Scope (protocol-agnostic scene analysis)
+        url: /rfscope.html
       - title: rigctld integration
         url: /rigctld.html
       - title: Hardening
