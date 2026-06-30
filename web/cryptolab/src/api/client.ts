@@ -1,4 +1,4 @@
-import type { JobDTO, ModeSchema, UploadDTO } from "./types";
+import type { JobDTO, ModeSchema, OpSpec, RecipeResult, UploadDTO } from "./types";
 
 // Same-origin API. The standalone `cryptolab serve` binds loopback with no
 // token; a remote bind can pass one via #token=… (see main.tsx).
@@ -63,4 +63,9 @@ export const api = {
 
   artifactURL: (id: string, name: string) =>
     `/api/v1/cryptolab/jobs/${id}/artifacts/${encodeURIComponent(name)}`,
+
+  recipeOps: () => reqJSON<OpSpec[]>("GET", "/api/v1/cryptolab/recipe/ops"),
+
+  recipe: (body: { input_id: string; steps: { op: string; params: Record<string, unknown> }[] }) =>
+    reqJSON<RecipeResult>("POST", "/api/v1/cryptolab/recipe", body),
 };

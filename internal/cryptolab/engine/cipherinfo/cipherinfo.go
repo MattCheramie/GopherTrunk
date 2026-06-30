@@ -83,13 +83,13 @@ var table = map[string]map[uint8]Info{
 		// DMRA / vendor privacy types as surfaced by common decoders.
 		0x00: {Name: "Basic Privacy", Family: "proprietary", KeyBits: 8, EffectiveKeyBits: 8, Strength: StrengthBroken, BruteForceable: true,
 			Weakness: "DMRA 'Basic Privacy' is a short keyed scrambler with a tiny keyspace — trivially recovered; not real encryption."},
-		0x21: {Name: "RC4 (Enhanced Privacy)", Family: "RC4", KeyBits: 40, EffectiveKeyBits: 40, Strength: StrengthWeak, BruteForceable: true,
-			Weakness: "vendor 'Enhanced Privacy' RC4 with a short key; small keyspace plus RC4 biases. Keystream construction is vendor-specific (not bundled)."},
-		0x22: {Name: "DES-OFB", Family: "DES", KeyBits: 56, EffectiveKeyBits: 56, Strength: StrengthLegacy,
-			Weakness: "single DES, exhaustively searchable; vendor key construction not bundled."},
-		0x23: {Name: "Triple-DES", Family: "3DES", KeyBits: 168, EffectiveKeyBits: 112, Strength: StrengthStrong},
-		0x24: {Name: "AES-128", Family: "AES", KeyBits: 128, EffectiveKeyBits: 128, Strength: StrengthStrong},
-		0x25: {Name: "AES-256", Family: "AES", KeyBits: 256, EffectiveKeyBits: 256, Strength: StrengthStrong},
+		0x21: {Name: "RC4 (Enhanced Privacy)", Family: "RC4", KeyBits: 40, EffectiveKeyBits: 40, Strength: StrengthWeak, BruteForceable: true, Bundled: true,
+			Weakness: "vendor 'Enhanced Privacy' RC4 with a short key; small keyspace plus RC4 biases. The cipher core is bundled; the vendor key/IV derivation is the analyst's to supply."},
+		0x22: {Name: "DES-OFB", Family: "DES", KeyBits: 56, EffectiveKeyBits: 56, Strength: StrengthLegacy, Bundled: true,
+			Weakness: "single DES, exhaustively searchable; supply the reconstructed key/IV."},
+		0x23: {Name: "Triple-DES", Family: "3DES", KeyBits: 168, EffectiveKeyBits: 112, Strength: StrengthStrong, Bundled: true},
+		0x24: {Name: "AES-128", Family: "AES", KeyBits: 128, EffectiveKeyBits: 128, Strength: StrengthStrong, Bundled: true},
+		0x25: {Name: "AES-256", Family: "AES", KeyBits: 256, EffectiveKeyBits: 256, Strength: StrengthStrong, Bundled: true},
 	},
 }
 

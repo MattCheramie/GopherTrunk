@@ -162,10 +162,25 @@ with a `steps:` list. Each step is `{op, …params}`:
 
 Operations (run `recipe run -list` for the live set): transforms `xor`, `not`,
 `reverse-bits`, `hex-decode`, `hex-encode`, `base64-decode`, `slice`,
-`adp-decrypt`, `des-ofb-decrypt`, `tdes-ofb-decrypt`, `aes-ofb-decrypt`,
-`descramble-invert`; analyses `stats`, `randomness`. The cipher ops reuse the
-same `p25crypto` keystream constructions the `assess` harness uses, so a recipe
-can decrypt a known-key capture and immediately measure the result.
+`rc4-decrypt` (raw RC4 with a caller-supplied key — DMR Enhanced Privacy /
+generic), `adp-decrypt`, `des-ofb-decrypt`, `tdes-ofb-decrypt`,
+`aes-ofb-decrypt`, `descramble-invert`; analyses `stats`, `randomness`. The
+cipher ops reuse the same `p25crypto` keystream constructions the `assess`
+harness uses, so a recipe can decrypt a known-key capture and immediately
+measure the result.
+
+### Web recipe builder
+
+The cryptolab web console (`cryptolab serve`, or the daemon mount at
+`/cryptolab/`) has a **Recipe Builder** tab that drives this pipeline
+interactively, the same way the Config Builder edits a config: pick an input
+file, assemble an ordered list of operations from a palette (with move /
+duplicate / remove and per-op parameter fields), run it, and read the per-step
+report plus the final bytes (with a download). It is backed by two endpoints —
+`GET /api/v1/cryptolab/recipe/ops` (the operation catalogue with parameters)
+and `POST /api/v1/cryptolab/recipe` (run a structured recipe over an uploaded
+file) — and is fully integrated into the existing console (shared theme,
+styling, and upload flow).
 
 ## Subject framework: byte-obfuscator recovery (`alias`)
 
@@ -331,11 +346,14 @@ Flags:
   feasibility); `-base-key` fixes the remaining high bits.
 
 **Cipher coverage.** The active methods (`weak-key`, `key-brute`) carry the
-real P25 keystream constructions — ADP (RC4), DES-OFB, two-/three-key
-Triple-DES, and AES-128/256-OFB — so a default or small-keyspace key is
-actually recovered, not just flagged. Proprietary ciphers whose keystream
-function isn't bundled (TETRA TEA1–4, Motorola DES-XL, vendor DMR privacy) are
-covered by the `known-weakness` advisory instead: for TEA1 it reports the
+real keystream constructions for both P25 (`-protocol p25`: ADP/RC4, DES-OFB,
+two-/three-key Triple-DES, AES-128/256-OFB) and DMR (`-protocol dmr`: RC4
+"Enhanced Privacy", DES/3DES/AES-OFB), so a default or small-keyspace key is
+actually recovered, not just flagged. DMR's vendor key/IV *derivation* is
+proprietary, so the cipher cores are keyed with the material the analyst
+supplies (the reconstructed key; the frame IV used directly). Proprietary
+ciphers whose keystream function isn't bundled at all (TETRA TEA1–4, Motorola
+DES-XL) are covered by the `known-weakness` advisory instead: for TEA1 it reports the
 80→32-bit backdoor (CVE-2022-24402) and that a 2³² brute would recover the key
 given a TEA1 implementation — an actionable finding without fabricating an
 unverified cipher.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	rc4lib "github.com/MattCheramie/GopherTrunk/internal/crypto/rc4"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
 )
 
@@ -57,6 +58,51 @@ func TestCipherDecryptOp(t *testing.T) {
 	}
 	if !bytes.Equal(rep.FinalBytes, pt) {
 		t.Fatalf("adp-decrypt failed:\n got %q\nwant %q", rep.FinalBytes, pt)
+	}
+}
+
+func TestRC4DecryptOp(t *testing.T) {
+	t.Parallel()
+	// Standard RC4 with a full caller-supplied key (the DMR Enhanced-Privacy
+	// model: privacy key ‖ IV concatenated by the analyst).
+	pt := []byte("DMR ENHANCED PRIVACY TRAFFIC HERE")
+	fullKey := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0xAA, 0xBB} // key ‖ iv
+	c, err := rc4lib.NewCipher(fullKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct := make([]byte, len(pt))
+	c.XORKeyStream(ct, pt)
+	rep, err := Run(ct, []Step{{Op: "rc4-decrypt", Params: map[string]any{"key": "11223344 55aabb"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rep.FinalBytes) != string(pt) {
+		t.Fatalf("rc4-decrypt failed: %q", rep.FinalBytes)
+	}
+}
+
+func TestSpecsExposeParams(t *testing.T) {
+	t.Parallel()
+	var sawXORKey, sawCipherMI bool
+	for _, s := range Specs() {
+		if s.Name == "xor" {
+			for _, p := range s.Params {
+				if p.Name == "key" && p.Kind == "hex" {
+					sawXORKey = true
+				}
+			}
+		}
+		if s.Name == "adp-decrypt" {
+			for _, p := range s.Params {
+				if p.Name == "mi" {
+					sawCipherMI = true
+				}
+			}
+		}
+	}
+	if !sawXORKey || !sawCipherMI {
+		t.Fatal("Specs() should expose per-op params (xor.key, adp-decrypt.mi)")
 	}
 }
 
