@@ -212,6 +212,18 @@ func writeSummary(w io.Writer, sc *Scene) error {
 		}
 	}
 
+	if len(sc.Conversations) > 0 {
+		fmt.Fprintf(bw, "\nConversations:\n")
+		for _, c := range sc.Conversations {
+			ids := make([]string, len(c.EmitterIDs))
+			for i, id := range c.EmitterIDs {
+				ids[i] = fmt.Sprintf("#%d", id)
+			}
+			fmt.Fprintf(bw, "  %-16s %s  (corr %.2f, %d exchanges)\n",
+				c.Kind, strings.Join(ids, "↔"), c.Correlation, c.Exchanges)
+		}
+	}
+
 	if len(sc.Anomalies) > 0 {
 		fmt.Fprintf(bw, "\nExpert info:\n")
 		for _, a := range sc.Anomalies {
