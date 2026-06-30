@@ -201,6 +201,43 @@ func TestClosestRateIndex(t *testing.T) {
 	}
 }
 
+func TestActualSampleRateReportsSnap(t *testing.T) {
+	// R2 device-rate table {10 MSPS, 2.5 MSPS} → deliverable IQ rates 5 and
+	// 1.25 MHz. ActualSampleRate reports the IQ rate the firmware actually
+	// delivers so the daemon (effectiveStreamRate) can warn on a snap and
+	// realign its down-converter.
+	cases := []struct {
+		name string
+		req  uint32 // requested IQ rate
+		want uint32 // delivered IQ rate
+	}{
+		{"exact 5MHz (device 10M)", 5_000_000, 5_000_000},
+		{"exact 1.25MHz (device 2.5M)", 1_250_000, 1_250_000},
+		{"6MHz snaps to 5MHz (device 12M→10M)", 6_000_000, 5_000_000},
+		{"2.5MHz snaps to 1.25MHz (device 5M→2.5M)", 2_500_000, 1_250_000},
+	}
+	for _, c := range cases {
+		dev := &Device{rates: []uint32{10_000_000, 2_500_000}, lastReqRate: c.req}
+		got, err := dev.ActualSampleRate()
+		if err != nil {
+			t.Fatalf("%s: ActualSampleRate: %v", c.name, err)
+		}
+		if got != c.want {
+			t.Errorf("%s: ActualSampleRate() = %d, want %d", c.name, got, c.want)
+		}
+	}
+
+	// Before any SetSampleRate the device reports 0 so the caller falls back
+	// to its requested value rather than a fabricated rate.
+	if got, _ := (&Device{rates: []uint32{10_000_000}}).ActualSampleRate(); got != 0 {
+		t.Errorf("ActualSampleRate() before SetSampleRate = %d, want 0", got)
+	}
+	// With no advertised table the requested rate passes through unchanged.
+	if got, _ := (&Device{lastReqRate: 6_000_000}).ActualSampleRate(); got != 6_000_000 {
+		t.Errorf("ActualSampleRate() with no table = %d, want 6000000", got)
+	}
+}
+
 func TestSetSampleRateEncodesByValueWhenNoTable(t *testing.T) {
 	// With no device-rate table the param is a by-value encoding of the
 	// device rate (2×IQ) in kHz: IQ 4 MHz → device 8 MHz → 8000.

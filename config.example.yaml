@@ -258,6 +258,17 @@ sdr:
                            # HackRF One 0–560 (~0–56 dB). HackRF has no true AGC,
                            # so "auto" maps to a fixed LNA 16 / VGA 20 dB split.
       bias_tee: false      # enable the 5V bias-tee output for an external LNA
+      # dc_avoid: true     # control role only: tune the LO off-channel and mix
+                           # the channel back to baseband in the down-converter,
+                           # off the front-end DC spur, 1/f noise and the I/Q
+                           # image (the offset tuning SDRTrunk/OP25 use). Helps a
+                           # marginal control site; off by default. Confirm the
+                           # tsbk-crc/nid-bch error rates drop while the channel
+                           # stays locked (issue #402).
+      # dc_avoid_offset_hz: 0  # LO offset in Hz for dc_avoid; 0 auto-selects
+                           # sample_rate/4. Must be < sample_rate/2; ignored when
+                           # dc_avoid is false or the delivered rate is at/below
+                           # the channel rate.
       # blog_v4: true      # force RTL-SDR Blog V4 mode (28.8 MHz xtal + input
                            # routing) if the V4's USB strings don't auto-identify
                            # it and every frequency mistunes by ~1.8× (issue #264).
