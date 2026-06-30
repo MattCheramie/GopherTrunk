@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **RF Scope — protocol-agnostic RF network analysis ("Wireshark for the RF
+  physical layer").** A new `gophertrunk rfscope` surface analyzes any band — a
+  recorded IQ capture or a live SDR — with no prior knowledge of the technology,
+  modulation, framing, or encryption, and produces a structured *scene*: an RF
+  protocol hierarchy, per-channel I/O-graph activity, burst timing/periodicity,
+  an emitter/conversation graph (frequency hoppers collapse into one emitter; it
+  defers to `hunt`'s authoritative map when a control channel is present), an
+  entropy/encryption triage built on the cryptolab randomness battery, and an
+  expert-info anomaly list. It ships as a CLI (`rfscope analyze`/`live`/`list`
+  with summary/JSON/JSONL/YAML/CSV export), a Bubbletea cockpit (`rfscope
+  cockpit`, `rfscope live -tui`), and a standalone web console (`rfscope serve`,
+  built with `make rfscope-web-build`). Unidentified digital payloads can be
+  emitted as a cryptolab `ks` frames file (`-frames-out`) that feeds `cryptolab
+  classify auto` / `ks reuse` directly.
 - **Crypto Lab is discoverable from the other web consoles.** In a
   `-tags cryptolab` daemon build the main GopherTrunk console shows a *Crypto
   Lab* nav entry and the Signal Lab header shows a 🔐 Crypto Lab link; the
