@@ -1,6 +1,9 @@
 package airspy
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sync"
+)
 
 // The Airspy R2 / Mini are real-sampling receivers: the firmware streams the
 // bare ADC output — unpacked little-endian uint16 real samples (12-bit, DC at
@@ -49,7 +52,16 @@ var hbKernel = [hbTaps]float32{
 }
 
 // iqConverter holds the running state of the real-to-IQ conversion.
+//
+// processRaw is serialised by mu: on macOS the USB transport delivers each
+// bulk-IN payload from one of usb.DefaultRingBuffers (32) concurrent reaper
+// goroutines, all calling processRaw on this one shared converter. Without the
+// lock those goroutines race on the mutable filter state below — corrupting it
+// and eventually reading qline[12] out of a length-12 array, panicking with
+// "index out of range [12] with length 12". Linux delivers from a single reaper
+// so it never contends; the lock is uncontended there.
 type iqConverter struct {
+	mu      sync.Mutex      // serialises processRaw across concurrent USB reapers
 	avg     float32         // leaky DC-blocker accumulator
 	phase   int             // Fs/4 mix phase, 0..3, persists across packets
 	iwin    [hbTaps]float32 // in-phase FIR window (newest written at iwinPos)
@@ -67,6 +79,8 @@ func newIQConverter() *iqConverter { return &iqConverter{} }
 // into complex64 baseband. It returns len(buf)/4 complex samples (two real
 // samples collapse to one complex sample).
 func (c *iqConverter) processRaw(buf []byte) []complex64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	nReal := len(buf) / 2
 	out := make([]complex64, 0, nReal/2+1)
 	for i := 0; i < nReal; i++ {
