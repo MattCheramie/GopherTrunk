@@ -193,13 +193,56 @@ machine that carries the low byte is sparse (423) and gauge-tangled on exactly t
 byte. The blocker is **not** constraint count — it is that the one variable that matters
 is under-observed in any passive corpus.
 
+## Differential / dense-corpus results (2026-06, #773)
+
+The reporter supplied a **dense differential dataset** on top of the 3,607-pair
+corpus — sequential, prefix-sharing aliases (AGP 6300–8810, BALWKSTN, IRS 1–30,
+P-series) whose shared plaintext prefixes force shared state trajectories, giving
+the controlled `(H_prev, H)` coverage that random callsigns can't. Combined corpus:
+~4,250 labeled messages. This is the dense-coverage data the "two paths" below
+called for, short of true chosen-plaintext. Running it through the recovery
+toolkit (the committed `alias propagate` mode) establishes:
+
+- **The decode model is exactly right.** Every *fully-covered* message round-trips
+  to its known plaintext under `char = M·(LUT[eo] − Hodd)`; the only mismatches are
+  isolated **single-byte** errors that are the signature of bit errors in the
+  capture, not a model error.
+- **The per-character state machine is functional.** Harvesting the transition
+  `T:(state, eo) → next-state` from the pinned states gives ~1,150 keys with only
+  ~8 conflicting observations (bit-error level) — independently reconfirming the
+  deterministic 16-bit machine from a second, denser corpus.
+- **The length seed is a clean function of message length** (0 conflicts across the
+  observed lengths) — `seed(n)` is pinned directly.
+- **But coverage does not saturate.** Pinned contexts and distinct transition keys
+  grow **~linearly** with corpus size (≈706/1,325/1,810/2,240 pinned and
+  ≈250/605/896/1,179 keys at 25/50/75/100% of the corpus) rather than plateauing.
+  A clean 80/20 split decodes only **~1.6% of held-out messages fully** (~52% of
+  characters). The reachable state space is therefore large: a *passive* corpus,
+  even a dense differential one, cannot reach full coverage by intersection +
+  propagation alone.
+
+**Net (answering the standing question):** GopherTrunk's *live* decode
+(`DecodeAliasBytes`) is an **algebraic LCG placeholder** (`accum·293 + 0x72E9` + a
+single LUT) — it does **not** model a second internal table, and that algebraic
+family is exactly what the analysis above rules out. The real update is a
+**deterministic, functional, but closed-form-free** per-character transition,
+consistent with a **second internal substitution table** distinct from the output
+LUT. The dense differential data **sharpens** the target (confirms the machine,
+pins the seed, validates the decode) but does **not close** it, because the one
+variable that matters — the hidden accumulator low byte folded through that
+internal table — stays under-observed in any passive capture. The cipher stays
+gated (`CipherVerified = false`).
+
 ## Two paths to finish
 
 1. **Chosen-plaintext captures** from a programmable Motorola radio — see
    `p25-talker-alias-chosen-plaintext.md`. The memory-3 finding *sharpens* this:
    a short length sweep plus single-character differentials at a couple of
    positions is enough to pin the memory-2/3 transition directly, because the
-   state is now observable rather than hidden.
+   state is now observable rather than hidden. The dense-corpus result above is
+   the strongest evidence yet that this is the decisive missing input: passive
+   coverage grows linearly and never closes, whereas a controlled sweep hits each
+   `(state, eo)` context deliberately.
 2. **Harder clean-room cryptanalysis** of the recovered 16-bit state machine. The
    straightforward constraint/SMT solve for a small internal-table network is
    **exhausted** (see above), so the remaining clean-room directions are
@@ -212,8 +255,20 @@ is under-observed in any passive corpus.
 
 ## Reproducing
 
-Scratch tooling used for these results (not committed): even-H extraction and
-determinism sweeps, the LUT/keystream recovery, the simulate-from-seed brutes
-(linear / mod-prime / MWC / nonlinear / both-feedback), the train/test table
-decoder, and the NLFSR/S-box search. All read the ground-truth CSV and strip the
-trailing 2 CRC bytes before analysis.
+The recovery toolkit is committed under `internal/cryptolab/subjects/motorola`
+(build tag `cryptolab`). Point any mode at a `rid,talkgroup,encoded_hex,alias`
+corpus — the trailing 2 CRC bytes are stripped on load:
+
+```
+gophertrunk cryptolab alias gauge     -csv corpus.csv   # affine gauge sweep
+gophertrunk cryptolab alias structure -csv corpus.csv   # merged-index wiring enumeration
+gophertrunk cryptolab alias cells     -csv corpus.csv   # per-context state pinning (resumable)
+gophertrunk cryptolab alias fromseed  -csv corpus.csv   # simulate candidate update families
+gophertrunk cryptolab alias propagate -csv corpus.csv   # harvest (state,eo)->state transition + seed; coverage
+```
+
+The `propagate` mode produced the dense-corpus results above. Earlier scratch
+tooling (not committed) covered even-H extraction and determinism sweeps, the
+LUT/keystream recovery, the simulate-from-seed brutes (linear / mod-prime / MWC /
+nonlinear / both-feedback), the train/test table decoder, and the NLFSR/S-box
+search.
