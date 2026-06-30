@@ -173,6 +173,7 @@ type WriteRequest struct {
 	Audio             *AudioReq
 	Settings          *SettingsReq
 	Hunt              *HuntStartReq
+	HuntCapture       *HuntCaptureReq
 }
 
 // HuntStartReq is the payload for WriteKindHuntStart — a live system-discovery
@@ -185,6 +186,13 @@ type HuntStartReq struct {
 	Name       string
 	Serial     string
 	Protocol   string
+}
+
+// HuntCaptureReq is the payload for WriteKindHuntCapture — record one signal
+// from the survey inventory and route it to SigLab/CryptoLab.
+type HuntCaptureReq struct {
+	FreqHz uint32
+	Target string // "siglab" | "cryptolab"
 }
 
 // WriteKind discriminates a WriteRequest's payload.
@@ -210,6 +218,7 @@ const (
 	WriteKindSettings
 	WriteKindHuntStop
 	WriteKindHuntStart
+	WriteKindHuntCapture
 )
 
 // ScannerManualTuneReq adds a temp VFO channel and forces dwell.

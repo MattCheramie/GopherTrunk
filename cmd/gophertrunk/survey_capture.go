@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -161,21 +162,74 @@ func routeToSigLab(path string, rateHz float64) {
 // routeToCryptoLab runs rfscope over the capture to emit a cryptolab `ks` frames
 // file from any unidentified payloads, then prints the cryptolab next step.
 func routeToCryptoLab(rep *diag.Reporter, path string, centerHz uint32, rateHz float64) {
-	src, err := rfscope.OpenFile(path, siglab.FormatF32, centerHz, rateHz)
+	framesOut, n, err := emitCryptolabFramesFromFile(path, centerHz, rateHz)
 	if err != nil {
-		rep.Fatal(1, fmt.Errorf("rfscope open: %w", err))
+		rep.Fatal(1, fmt.Errorf("rfscope frames: %w", err))
 	}
-	defer src.Close()
-	framesOut := path + ".frames.jsonl"
-	cfg := rfscope.SegmentConfig{
+	fmt.Printf("cryptolab: wrote %d frame(s) → %s\n", n, framesOut)
+	fmt.Printf("cryptolab: triage them →  gophertrunk cryptolab classify auto -in %s\n", framesOut)
+	fmt.Println("cryptolab: (needs a -tags cryptolab build; see docs/cryptolab.md)")
+}
+
+// defaultRFScopeSegConfig is the carrier-discovery configuration the capture
+// routes use when running rfscope over a recorded signal — the same defaults as
+// the rfscope CLI.
+func defaultRFScopeSegConfig() rfscope.SegmentConfig {
+	return rfscope.SegmentConfig{
 		FFTSize:             4096,
 		ChannelTargetRateHz: 50_000,
 		PeakThresholdDb:     10,
 		MinSpacingHz:        12_500,
 	}
-	rfscopeRunAndExport(rep, src, cfg, nil, path, "summary", "", framesOut)
-	fmt.Printf("cryptolab: triage the recovered payloads →  gophertrunk cryptolab classify auto -in %s\n", framesOut)
-	fmt.Println("cryptolab: (needs a -tags cryptolab build; see docs/cryptolab.md)")
+}
+
+// emitCryptolabFramesFromFile runs an rfscope pass over a recorded capture and
+// writes the recovered payloads as a cryptolab `ks` frames file next to it.
+// Returns the frames path and the number of frames written. Shared by the CLI
+// route and the daemon cockpit so both behave identically.
+func emitCryptolabFramesFromFile(path string, centerHz uint32, rateHz float64) (string, int, error) {
+	src, err := rfscope.OpenFile(path, siglab.FormatF32, centerHz, rateHz)
+	if err != nil {
+		return "", 0, fmt.Errorf("rfscope open: %w", err)
+	}
+	defer src.Close()
+	ctx := context.Background()
+	scene, in, err := rfscope.Segment(ctx, src, defaultRFScopeSegConfig())
+	if err != nil {
+		return "", 0, err
+	}
+	scene.Source = path
+	if err := rfscope.Run(ctx, scene, in); err != nil {
+		return "", 0, err
+	}
+	framesOut := path + ".frames.jsonl"
+	f, err := os.Create(framesOut)
+	if err != nil {
+		return "", 0, fmt.Errorf("create %s: %w", framesOut, err)
+	}
+	n, werr := rfscope.EmitFrames(scene, f)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return "", n, werr
+	}
+	return framesOut, n, nil
+}
+
+// identifySummary runs a quick SigLab identify over an in-memory f32 capture and
+// returns a short label ("p25 (0.82)" / "inconclusive"), or "" on error.
+func identifySummary(buf []byte, rateHz float64) string {
+	idr, err := siglab.IdentifyReader(bytes.NewReader(buf), "survey-capture", siglab.IdentifyConfig{
+		SampleRateHz: rateHz, Format: siglab.FormatF32, AutoTune: true,
+	})
+	if err != nil || idr == nil {
+		return ""
+	}
+	if idr.Inconclusive || idr.Winner == "" {
+		return "inconclusive"
+	}
+	return fmt.Sprintf("%s (%.2f)", idr.Winner, idr.Confidence)
 }
 
 // loadSurveyJSON reads a SignalSurvey from a `hunt -survey` JSON export.

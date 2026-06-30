@@ -22,10 +22,13 @@ type fakeHuntCockpit struct {
 	commitErr  error
 	rrReport   HuntRRReport
 	rrErr      error
+	captureRes HuntCaptureResult
+	captureErr error
 
-	lastStart  HuntStartRequest
-	lastFormat string
-	lastID     int
+	lastStart   HuntStartRequest
+	lastFormat  string
+	lastID      int
+	lastCapture HuntCaptureRequest
 }
 
 func (f *fakeHuntCockpit) Status() HuntStatus { return f.status }
@@ -47,6 +50,11 @@ func (f *fakeHuntCockpit) ExportSurvey(id int, format string) ([]byte, string, e
 func (f *fakeHuntCockpit) Commit(id int, force, dryRun bool) ([]string, error) {
 	f.lastID = id
 	return f.commitChg, f.commitErr
+}
+
+func (f *fakeHuntCockpit) CaptureSignal(req HuntCaptureRequest) (HuntCaptureResult, error) {
+	f.lastCapture = req
+	return f.captureRes, f.captureErr
 }
 
 func (f *fakeHuntCockpit) RadioReference(id, countyID int, checkSIDs []int) (HuntRRReport, error) {
@@ -123,6 +131,51 @@ func TestHuntStart_GatedAndApplies(t *testing.T) {
 	}
 	if len(cock.lastStart.Bands) != 1 || cock.lastStart.Name != "X" {
 		t.Errorf("request not forwarded: %+v", cock.lastStart)
+	}
+}
+
+func TestHuntCapture_GatedAndForwards(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeHuntCockpit{captureRes: HuntCaptureResult{
+		Path: "/tmp/x.cfile", SampleRateHz: 2_400_000, CenterHz: 751_000_000, Samples: 4800, Identify: "p25 (0.82)",
+	}}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Hunt: cock, AllowMutations: true})
+	defer teardown()
+	resp, err := http.Post(base+"/api/v1/hunt/capture", "application/json",
+		strings.NewReader(`{"freq_hz":751000000,"seconds":5,"target":"siglab"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	var got HuntCaptureResult
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "/tmp/x.cfile" || got.Identify != "p25 (0.82)" {
+		t.Errorf("result not returned: %+v", got)
+	}
+	if cock.lastCapture.FreqHz != 751_000_000 || cock.lastCapture.Target != "siglab" {
+		t.Errorf("request not forwarded: %+v", cock.lastCapture)
+	}
+}
+
+func TestHuntCapture_MissingFreq400(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeHuntCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Hunt: cock, AllowMutations: true})
+	defer teardown()
+	resp, err := http.Post(base+"/api/v1/hunt/capture", "application/json", strings.NewReader(`{"target":"siglab"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("status=%d, want 400", resp.StatusCode)
 	}
 }
 

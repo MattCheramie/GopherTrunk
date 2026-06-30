@@ -333,9 +333,35 @@ export interface DetectedSignal {
   class: string;
   confidence: number;
   baud_hz?: number;
-  trunking?: { protocol: string; locked: boolean; control_hz?: number };
+  // Consolidated inventory naming (full-spectrum survey).
+  name?: string;
+  service?: string;
+  purpose?: string;
+  encrypted?: boolean;
+  enc_type?: string;
+  wideband?: boolean;
+  trunking?: { protocol: string; locked: boolean; control_hz?: number; encrypted?: boolean; enc_type?: string };
   analog?: { active: boolean; ctcss_hz?: number; dcs_code?: string };
   pages?: { protocol: string; capcode: number; text: string }[];
+}
+
+// HuntCaptureRequest / HuntCaptureResult mirror the api types for the
+// list-driven capture (POST /api/v1/hunt/capture).
+export interface HuntCaptureRequest {
+  freq_hz: number;
+  seconds?: number;
+  target?: "siglab" | "cryptolab";
+}
+
+export interface HuntCaptureResult {
+  path: string;
+  metadata_path?: string;
+  sample_rate_hz: number;
+  center_hz: number;
+  samples: number;
+  identify?: string;
+  frames_path?: string;
+  note?: string;
 }
 
 // HuntStartRequest mirrors api.HuntStartRequest (frequencies in MHz).

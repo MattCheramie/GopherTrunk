@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -175,6 +176,68 @@ func (c huntCockpit) ExportSurvey(id int, format string) ([]byte, string, error)
 		return nil, "", err
 	}
 	return buf.Bytes(), "survey." + sf.FileExtension(), nil
+}
+
+// CaptureSignal records raw IQ of one signal from the survey inventory and
+// routes it to SigLab/CryptoLab — the daemon side of the CLI's -survey-capture.
+// It acquires an SDR via the manager (refused while a run is active), writes the
+// capture + a metadata sidecar under the OS temp dir, and returns the paths
+// plus a SigLab identify summary or a CryptoLab frames file.
+func (c huntCockpit) CaptureSignal(req api.HuntCaptureRequest) (api.HuntCaptureResult, error) {
+	target := strings.ToLower(strings.TrimSpace(req.Target))
+	if target == "" {
+		target = "siglab"
+	}
+	if target != "siglab" && target != "cryptolab" {
+		return api.HuntCaptureResult{}, fmt.Errorf("target must be siglab or cryptolab (got %q)", req.Target)
+	}
+	seconds := req.Seconds
+	if seconds <= 0 {
+		seconds = 10
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+30)*time.Second)
+	defer cancel()
+	iq, rate, err := c.mgr.CaptureSignal(ctx, req.FreqHz, seconds)
+	if err != nil {
+		return api.HuntCaptureResult{}, err
+	}
+
+	dir := filepath.Join(os.TempDir(), "gophertrunk-captures")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return api.HuntCaptureResult{}, fmt.Errorf("capture dir: %w", err)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("survey-%.4fMHz.cfile", float64(req.FreqHz)/1e6))
+	buf := siglab.EncodeCapture(iq, siglab.FormatF32)
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		return api.HuntCaptureResult{}, fmt.Errorf("write capture: %w", err)
+	}
+	metaPath := strings.TrimSuffix(path, ext(path)) + ".metadata.json"
+	_ = siglab.WriteMetadata(metaPath, &siglab.Metadata{
+		Source:       fmt.Sprintf("hunt survey-capture @ %.4f MHz", float64(req.FreqHz)/1e6),
+		SampleRateHz: float64(rate),
+		CenterFreqHz: req.FreqHz,
+		Format:       siglab.FormatF32.String(),
+	})
+
+	res := api.HuntCaptureResult{
+		Path: path, MetadataPath: metaPath, SampleRateHz: float64(rate),
+		CenterHz: req.FreqHz, Samples: len(iq),
+	}
+	switch target {
+	case "siglab":
+		res.Identify = identifySummary(buf, float64(rate))
+		res.Note = "open in the Signal Lab console (or `gophertrunk siglab -in <path>`)"
+	case "cryptolab":
+		framesPath, n, ferr := emitCryptolabFramesFromFile(path, req.FreqHz, float64(rate))
+		if ferr != nil {
+			res.Note = fmt.Sprintf("cryptolab frames emit failed: %v", ferr)
+		} else {
+			res.FramesPath = framesPath
+			res.Note = fmt.Sprintf("%d cryptolab frame(s) — `cryptolab classify auto -in %s`", n, framesPath)
+		}
+	}
+	return res, nil
 }
 
 // Export serializes the latest discovered system in the requested format.

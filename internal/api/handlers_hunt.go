@@ -127,6 +127,34 @@ func (s *Server) handleHuntSurveyExport(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(data)
 }
 
+// handleHuntCapture records raw IQ of one signal from the survey inventory and
+// routes it to SigLab/CryptoLab — the daemon side of the CLI's -survey-capture.
+func (s *Server) handleHuntCapture(w http.ResponseWriter, r *http.Request) {
+	if s.hunt == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "hunt not wired (no SDR available)")
+		return
+	}
+	var req HuntCaptureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if req.FreqHz == 0 {
+		s.writeError(w, http.StatusBadRequest, "freq_hz is required")
+		return
+	}
+	res, err := s.hunt.CaptureSignal(req)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if isHuntConflict(err) {
+			status = http.StatusConflict
+		}
+		s.writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // huntCommitRequest is the optional POST /api/v1/hunt/commit body.
 type huntCommitRequest struct {
 	Force  bool `json:"force,omitempty"`

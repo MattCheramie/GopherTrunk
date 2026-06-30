@@ -721,6 +721,14 @@ func (m *Model) dispatchWrite(r state.WriteRequest) tea.Cmd {
 			Serial:     r.Hunt.Serial,
 			Protocol:   r.Hunt.Protocol,
 		}, r.Label)
+	case state.WriteKindHuntCapture:
+		if r.HuntCapture == nil {
+			return nil
+		}
+		return cmdHuntCapture(m.cli, client.HuntCaptureRequest{
+			FreqHz: r.HuntCapture.FreqHz,
+			Target: r.HuntCapture.Target,
+		}, r.Label)
 	case state.WriteKindScannerConvHold:
 		return cmdScannerConvHold(m.cli, r.Label)
 	case state.WriteKindScannerConvResume:

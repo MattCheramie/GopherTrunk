@@ -184,6 +184,11 @@ type HuntSignalDTO struct {
 	SNRDb        float32 `json:"snr_db"`
 	OccupiedBwHz uint32  `json:"occupied_bw_hz"`
 	Class        string  `json:"class"`
+	Name         string  `json:"name,omitempty"`
+	Service      string  `json:"service,omitempty"`
+	Encrypted    bool    `json:"encrypted,omitempty"`
+	EncType      string  `json:"enc_type,omitempty"`
+	Wideband     bool    `json:"wideband,omitempty"`
 }
 
 // ScannerStatusDTO mirrors api.ScannerStatus — the unified scanner

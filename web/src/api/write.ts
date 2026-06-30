@@ -5,6 +5,8 @@ import type {
   AudioStatusDTO,
   ConfigActivateResponse,
   HuntStartRequest,
+  HuntCaptureRequest,
+  HuntCaptureResult,
   ImportPreview,
   ImportResult,
   RIDDTO,
@@ -67,6 +69,11 @@ export const writes = {
   huntStart: (c: ClientConfig, req: HuntStartRequest) =>
     request<{ run_id: number }>(c, "POST", "/api/v1/hunt/start", req),
   huntStop: (c: ClientConfig) => request<void>(c, "POST", "/api/v1/hunt/stop"),
+
+  // List-driven capture: record one signal from the inventory and route it to
+  // SigLab / CryptoLab.
+  huntCapture: (c: ClientConfig, req: HuntCaptureRequest) =>
+    request<HuntCaptureResult>(c, "POST", "/api/v1/hunt/capture", req),
 
   huntHold: (c: ClientConfig, system: string) =>
     request<void>(

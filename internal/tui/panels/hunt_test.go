@@ -45,6 +45,45 @@ func TestHuntPanel_EmptyBandsShowsError(t *testing.T) {
 	}
 }
 
+func TestHuntPanel_CaptureSelectedSignal(t *testing.T) {
+	p := NewHunt()
+	s := &state.SharedState{Hunt: client.HuntStatusDTO{
+		State: "done",
+		Signals: []client.HuntSignalDTO{
+			{FreqHz: 462_562_500, Class: "nbfm", Name: "FRS"},
+			{FreqHz: 751_000_000, Class: "wideband", Name: "LTE/5G NR (10 MHz)"},
+		},
+	}}
+
+	// Move the cursor to the second signal, then capture it to CryptoLab.
+	_, _ = p.Update(tea.KeyMsg{Type: tea.KeyDown}, s)
+	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")}, s)
+	if cmd == nil {
+		t.Fatal("C should emit a capture request")
+	}
+	wa := cmd().(WriteActionMsg)
+	if wa.Request.Kind != state.WriteKindHuntCapture {
+		t.Fatalf("kind = %v, want HuntCapture", wa.Request.Kind)
+	}
+	if wa.Request.HuntCapture == nil || wa.Request.HuntCapture.FreqHz != 751_000_000 {
+		t.Errorf("capture = %+v, want freq 751_000_000 (the selected row)", wa.Request.HuntCapture)
+	}
+	if wa.Request.HuntCapture.Target != "cryptolab" {
+		t.Errorf("target = %q, want cryptolab", wa.Request.HuntCapture.Target)
+	}
+}
+
+func TestHuntPanel_CaptureSuppressedWhileRunning(t *testing.T) {
+	p := NewHunt()
+	s := &state.SharedState{Hunt: client.HuntStatusDTO{
+		Running: true, State: "running",
+		Signals: []client.HuntSignalDTO{{FreqHz: 462_562_500, Class: "nbfm"}},
+	}}
+	if _, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}, s); cmd != nil {
+		t.Error("capture must not fire while a run is active (SDR busy)")
+	}
+}
+
 func TestHuntPanel_StopEmitsWhenRunning(t *testing.T) {
 	p := NewHunt()
 	s := &state.SharedState{Hunt: client.HuntStatusDTO{Running: true, State: "running"}}

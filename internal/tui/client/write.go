@@ -107,6 +107,19 @@ func (c *Client) HuntStop(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/hunt/stop", nil, nil)
 }
 
+// HuntCaptureRequest is the POST /api/v1/hunt/capture body — record one signal
+// from the inventory and route it to SigLab/CryptoLab.
+type HuntCaptureRequest struct {
+	FreqHz  uint32  `json:"freq_hz"`
+	Seconds float64 `json:"seconds,omitempty"`
+	Target  string  `json:"target,omitempty"`
+}
+
+// HuntCapture records a signal from the survey inventory and routes it onward.
+func (c *Client) HuntCapture(ctx context.Context, req HuntCaptureRequest) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/hunt/capture", req, nil)
+}
+
 // ScannerHuntHold / ScannerHuntResume / ScannerHuntRetune call the
 // per-system hunt mutation endpoints. system must match a configured
 // trunked system name.

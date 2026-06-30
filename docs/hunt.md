@@ -223,6 +223,7 @@ to force it off even when a key is configured.
   | `POST /api/v1/hunt/start` | Start a run (`{bands, candidates, no_sweep, protocol, name, …}`) |
   | `POST /api/v1/hunt/stop` | Cancel the active run |
   | `GET /api/v1/hunt/export?format=bundle\|trunk-recorder\|rr` | Download the discovery |
+  | `POST /api/v1/hunt/capture` | Record one inventory signal and route it (`{freq_hz, seconds, target}`) |
   | `POST /api/v1/hunt/commit` | Merge the discovery into `config.yaml` (`{force, dry_run}`) |
 
   Progress streams over the event bus (`hunt.progress` / `hunt.candidate` /
