@@ -64,6 +64,7 @@ func runHunt(args []string) {
 	classAMCV := fs.Float64("class-am-cv", 0, "survey classifier: envelope coefficient-of-variation above which a carrier reads as AM (0 = default 0.15)")
 	var bands repeatedString
 	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
+	wholeDevice := fs.Bool("whole-device", false, "live: sweep the SDR's entire tuning range (derived from the device) instead of an explicit -band — the full-spectrum survey. Pair with -survey -classify-only for a fast first pass")
 	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
 	noSweep := fs.Bool("no-sweep", false, "with -candidates, probe only the listed frequencies (no spectrum sweep)")
 	sweepDwell := fs.Duration("sweep-dwell", 0, "accumulation time per sweep step (e.g. 200ms; 0 ⇒ one frame)")
@@ -212,6 +213,7 @@ FLAGS:`)
 			classDigitalProm: *classDigitalProm,
 			classAMCV:        *classAMCV,
 			bands:            []string(bands),
+			wholeDevice:      *wholeDevice,
 			candidatesMHz:    *candidatesFlag,
 			noSweep:          *noSweep,
 			sampleRateHz:     *sampleRate,

@@ -104,6 +104,25 @@ gophertrunk hunt -serial 00000001 -sample-rate 2400000 \
   -no-sweep -candidates 851.0125,853.5125
 ```
 
+### Whole-device sweep (the full-spectrum survey)
+
+To inventory **everything the dongle can hear** without naming a band, pass
+`-whole-device`: the sweep range is derived from the SDR's own tuning limits
+(e.g. 24 MHz–1.766 GHz for an R820T, 1 MHz–4.294 GHz for a HackRF), so one run
+walks the entire reachable spectrum. It prints the resolved span, the step
+count, and a rough ETA before it starts. Pair it with `-survey -classify-only`
+for a fast first pass that catalogues every carrier:
+
+```sh
+gophertrunk hunt -survey -classify-only -whole-device \
+  -serial 00000001 -sample-rate 2400000 -survey-ndjson hunt.ndjson
+```
+
+`-survey-ndjson` streams each classified carrier to disk as it is found, and
+`-resume` skips carriers already recorded — so a long full-spectrum sweep is
+crash-safe and restartable. A device that can't report a tuning range (a
+network or file source) tells you to pass an explicit `-band` instead.
+
 Live sweep tuning flags: `-band low:high` (MHz, repeatable), `-sweep-dwell`
 (accumulation per step), `-peak-threshold-db` (carrier detection threshold over
 the noise floor), `-min-spacing` (Hz between carriers), `-fft-size`,
