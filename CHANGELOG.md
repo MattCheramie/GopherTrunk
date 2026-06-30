@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **cryptolab web Recipe Builder.** The cryptolab console gains a *Recipe
+  Builder* tab that drives the `recipe` pipeline interactively (config-builder
+  style): pick an input, assemble an ordered operation list from a palette with
+  per-step parameters and move/duplicate/remove, run it server-side, and read
+  the per-step report plus the final bytes (with download). Backed by new
+  `GET /api/v1/cryptolab/recipe/ops` and `POST /api/v1/cryptolab/recipe`
+  endpoints.
+- **cryptolab DMR decryption + generic RC4.** `assess crypto -protocol dmr`
+  now actively attempts DMR privacy with the real cipher cores (RC4 "Enhanced
+  Privacy", DES/3DES/AES-OFB) keyed with operator-supplied material, and the
+  recipe pipeline gains a generic `rc4-decrypt` op. DMR's vendor key/IV
+  derivation is the analyst's to supply; the cipher cores are bundled.
 - **cryptolab security-test suite** (`-tags cryptolab`). New analysis and
   active-attack tools, ported from the industry crypto-tool landscape and
   optimized for RF:

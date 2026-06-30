@@ -3,6 +3,7 @@ package assess
 import (
 	"testing"
 
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/dmrcrypto"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/keystream"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
 )
@@ -171,6 +172,29 @@ func TestAssessTDESWeakKey(t *testing.T) {
 	rep := Run(Input{Frames: []keystream.Frame{f}, KnownLabel: "c1", KnownPT: pt})
 	if rep.Verdict != VerdictBroken {
 		t.Fatalf("all-zero-key TDES should break, verdict = %s", rep.Verdict)
+	}
+}
+
+// TestAssessDMRWeakKey: a DMR RC4 (Enhanced Privacy) frame under the all-zero
+// default key, assessed with -protocol dmr, must break via the weak-key method
+// using the DMR cipher suite.
+func TestAssessDMRWeakKey(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, dmrcrypto.KeySize(dmrcrypto.AlgRC4)) // default all-zero
+	pt := []byte("DMR PRIVACY TRAFFIC OK")
+	iv := []byte{0x10, 0x20, 0x30}
+	ks, err := dmrcrypto.Keystream(dmrcrypto.AlgRC4, key, iv, len(pt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := keystream.Frame{Label: "d1", IV: iv, CT: xorb(pt, ks), AlgID: dmrcrypto.AlgRC4}
+	rep := Run(Input{Frames: []keystream.Frame{f}, Protocol: "dmr", KnownLabel: "d1", KnownPT: pt})
+	if rep.Verdict != VerdictBroken {
+		t.Fatalf("DMR default-key RC4 should break, verdict = %s; methods: %+v", rep.Verdict, rep.Methods)
+	}
+	wk := find(rep, "weak-key")
+	if wk == nil || !wk.Verified {
+		t.Fatalf("weak-key should verify the DMR default key, got %+v", wk)
 	}
 }
 

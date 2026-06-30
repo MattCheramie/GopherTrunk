@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "./store/shared";
 import { ParamField } from "./components/ParamField";
 import { ResultView } from "./components/ResultView";
+import { RecipeBuilder } from "./components/RecipeBuilder";
 
 export function App() {
+  const [page, setPage] = useState<"tools" | "recipe">("tools");
   const loadSchema = useStore((s) => s.loadSchema);
   const schema = useStore((s) => s.schema);
   const loadingSchema = useStore((s) => s.loadingSchema);
@@ -47,9 +49,27 @@ export function App() {
             <span className="text-xs text-accent animate-pulse">working…</span>
           ) : null}
         </div>
+        <nav className="flex items-center gap-1">
+          {(["tools", "recipe"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPage(p)}
+              className={`rounded px-2.5 py-1 text-sm ${
+                page === p ? "bg-accent/20 text-fg" : "text-muted hover:bg-panel"
+              }`}
+            >
+              {p === "tools" ? "Tools" : "Recipe Builder"}
+            </button>
+          ))}
+        </nav>
         <div className="ml-auto text-xs text-muted">offline cryptographic research</div>
       </header>
 
+      {page === "recipe" ? (
+        <main className="min-h-0 flex-1 overflow-y-auto p-4">
+          <RecipeBuilder />
+        </main>
+      ) : (
       <div className="flex min-h-0 flex-1">
         <nav className="w-56 shrink-0 overflow-y-auto border-r border-line p-2">
           {tools.length === 0 ? (
@@ -118,6 +138,7 @@ export function App() {
           )}
         </main>
       </div>
+      )}
     </div>
   );
 }

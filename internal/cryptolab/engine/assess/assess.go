@@ -28,8 +28,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/cipherinfo"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/dmrcrypto"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/keystream"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lfsr"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
@@ -249,6 +251,45 @@ func methodKnownWeakness(in Input) (MethodResult, bool) {
 	return m, floor
 }
 
+// cipherSuite abstracts the per-protocol keystream constructions so the active
+// methods (weak-key, key-brute) work for P25 and DMR alike. p25crypto seeds
+// from the Message Indicator; dmrcrypto seeds from the frame IV.
+type cipherSuite interface {
+	Supported(algid uint8) bool
+	KeySize(algid uint8) int
+	AlgName(algid uint8) string
+	Keystream(algid uint8, key, iv []byte, n int) ([]byte, error)
+	DefaultKeys(algid uint8) [][]byte
+}
+
+type p25Suite struct{}
+
+func (p25Suite) Supported(a uint8) bool { return p25crypto.Supported(a) }
+func (p25Suite) KeySize(a uint8) int    { return p25crypto.KeySize(a) }
+func (p25Suite) AlgName(a uint8) string { return p25crypto.AlgName(a) }
+func (p25Suite) Keystream(a uint8, key, iv []byte, n int) ([]byte, error) {
+	return p25crypto.Keystream(a, key, iv, n)
+}
+func (p25Suite) DefaultKeys(a uint8) [][]byte { return p25crypto.DefaultKeys(a) }
+
+type dmrSuite struct{}
+
+func (dmrSuite) Supported(a uint8) bool { return dmrcrypto.Supported(a) }
+func (dmrSuite) KeySize(a uint8) int    { return dmrcrypto.KeySize(a) }
+func (dmrSuite) AlgName(a uint8) string { return dmrcrypto.AlgName(a) }
+func (dmrSuite) Keystream(a uint8, key, iv []byte, n int) ([]byte, error) {
+	return dmrcrypto.Keystream(a, key, iv, n)
+}
+func (dmrSuite) DefaultKeys(a uint8) [][]byte { return dmrcrypto.DefaultKeys(a) }
+
+// suiteFor selects the cipher suite for a protocol (default P25).
+func suiteFor(protocol string) cipherSuite {
+	if strings.Contains(strings.ToLower(protocol), "dmr") {
+		return dmrSuite{}
+	}
+	return p25Suite{}
+}
+
 // methodKeyBrute: reduced-keyspace brute force (the hashcat-analog, and the
 // shape of the TETRA TEA1 backdoor attack). With a known-plaintext oracle it
 // searches the low BruteBits of the key for the bundled cipher, verified by an
@@ -279,13 +320,14 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 	if proto == "" {
 		proto = "p25"
 	}
-	if !p25crypto.Supported(oracle.AlgID) {
+	suite := suiteFor(proto)
+	if !suite.Supported(oracle.AlgID) {
 		// Unbundled cipher: report the brute that would apply (e.g. TEA1).
 		if info, ok := cipherinfo.Lookup(proto, oracle.AlgID); ok && info.BruteForceable {
 			m.note(fmt.Sprintf("%s has a %d-bit effective keyspace (%s) — a 2^%d brute is feasible, but its keystream function is not bundled here; supply an implementation to run it.",
 				info.Name, info.EffectiveKeyBits, info.Reference, info.EffectiveKeyBits))
 		} else {
-			m.note(fmt.Sprintf("the oracle's algorithm 0x%02X is not bundled, so its keystream cannot be brute-forced here.", oracle.AlgID))
+			m.note(fmt.Sprintf("the oracle's algorithm 0x%02X is not bundled for %s, so its keystream cannot be brute-forced here.", oracle.AlgID, proto))
 		}
 		return m, nil
 	}
@@ -294,7 +336,7 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 		in.BruteBits = 32
 	}
 	m.Applicable = true
-	sz := p25crypto.KeySize(oracle.AlgID)
+	sz := suite.KeySize(oracle.AlgID)
 	base := make([]byte, sz)
 	copy(base, in.BaseKey)
 	want := keystream.XOR(in.KnownPT, oracle.CT)
@@ -309,7 +351,7 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 	space := uint64(1) << uint(in.BruteBits)
 	for i := uint64(0); i < space; i++ {
 		key := keyWithLowBits(base, i, in.BruteBits)
-		cand, err := p25crypto.Keystream(oracle.AlgID, key, oracle.IV, prefix)
+		cand, err := suite.Keystream(oracle.AlgID, key, oracle.IV, prefix)
 		if err != nil {
 			m.note(err.Error())
 			return m, nil
@@ -317,7 +359,7 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 		if !bytesEqual(cand, want[:prefix]) {
 			continue
 		}
-		full, _ := p25crypto.Keystream(oracle.AlgID, key, oracle.IV, len(want))
+		full, _ := suite.Keystream(oracle.AlgID, key, oracle.IV, len(want))
 		if !bytesEqual(full, want) {
 			continue
 		}
@@ -326,12 +368,12 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 		m.RecoveredBytes = bytesForAlg(in.Frames, oracle.AlgID)
 		m.SampleHex = hexPreview(in.KnownPT, 32)
 		m.SampleASCII = asciiPreview(in.KnownPT, 32)
-		m.Detail = map[string]any{"algorithm": p25crypto.AlgName(oracle.AlgID), "key_hex": hex.EncodeToString(key), "searched": i + 1, "brute_bits": in.BruteBits}
-		m.note(fmt.Sprintf("COMPLETE BREAK: brute-forced %s key %s in the low %d bits after %d candidates — the keyspace is too small.", p25crypto.AlgName(oracle.AlgID), hex.EncodeToString(key), in.BruteBits, i+1))
+		m.Detail = map[string]any{"algorithm": suite.AlgName(oracle.AlgID), "key_hex": hex.EncodeToString(key), "searched": i + 1, "brute_bits": in.BruteBits}
+		m.note(fmt.Sprintf("COMPLETE BREAK: brute-forced %s key %s in the low %d bits after %d candidates — the keyspace is too small.", suite.AlgName(oracle.AlgID), hex.EncodeToString(key), in.BruteBits, i+1))
 		return m, full
 	}
-	m.Detail = map[string]any{"algorithm": p25crypto.AlgName(oracle.AlgID), "searched": space, "brute_bits": in.BruteBits}
-	m.note(fmt.Sprintf("searched all 2^%d low-bit keys for %s; none matched. The key lies outside this slice of the keyspace.", in.BruteBits, p25crypto.AlgName(oracle.AlgID)))
+	m.Detail = map[string]any{"algorithm": suite.AlgName(oracle.AlgID), "searched": space, "brute_bits": in.BruteBits}
+	m.note(fmt.Sprintf("searched all 2^%d low-bit keys for %s; none matched. The key lies outside this slice of the keyspace.", in.BruteBits, suite.AlgName(oracle.AlgID)))
 	return m, nil
 }
 
@@ -413,16 +455,17 @@ func methodKnownPlaintext(in Input, total int) (MethodResult, []byte) {
 // reported unverified.
 func methodWeakKey(in Input, total int) (MethodResult, []byte) {
 	m := MethodResult{Name: "weak-key", TotalBytes: total}
+	suite := suiteFor(in.Protocol)
 
 	// Group frames by supported algorithm.
 	algs := map[uint8]bool{}
 	for _, f := range in.Frames {
-		if p25crypto.Supported(f.AlgID) {
+		if suite.Supported(f.AlgID) {
 			algs[f.AlgID] = true
 		}
 	}
 	if len(algs) == 0 {
-		m.note("no frames carry a supported algorithm id (ADP/DES/AES), or ALGID is absent — cannot generate a keystream to test keys.")
+		m.note("no frames carry a supported algorithm id for this protocol, or ALGID is absent — cannot generate a keystream to test keys.")
 		return m, nil
 	}
 	m.Applicable = true
@@ -442,12 +485,12 @@ func methodWeakKey(in Input, total int) (MethodResult, []byte) {
 
 	tried := 0
 	for alg := range algs {
-		keys := append(p25crypto.DefaultKeys(alg), keysOfSize(in.ExtraKeys, p25crypto.KeySize(alg))...)
+		keys := append(suite.DefaultKeys(alg), keysOfSize(in.ExtraKeys, suite.KeySize(alg))...)
 		for _, key := range keys {
 			tried++
 			// Verification path: exact keystream match against the oracle.
 			if oracle != nil && oracle.AlgID == alg {
-				cand, err := p25crypto.Keystream(alg, key, oracle.IV, len(oracleKSWant))
+				cand, err := suite.Keystream(alg, key, oracle.IV, len(oracleKSWant))
 				if err != nil {
 					continue
 				}
@@ -457,8 +500,8 @@ func methodWeakKey(in Input, total int) (MethodResult, []byte) {
 					m.RecoveredBytes = bytesForAlg(in.Frames, alg)
 					m.SampleHex = hexPreview(in.KnownPT, 32)
 					m.SampleASCII = asciiPreview(in.KnownPT, 32)
-					m.Detail = map[string]any{"algorithm": p25crypto.AlgName(alg), "key_hex": hex.EncodeToString(key), "keys_tried": tried}
-					m.note(fmt.Sprintf("COMPLETE BREAK: %s key %s verified against the known plaintext — every frame under this key/algorithm is decryptable.", p25crypto.AlgName(alg), hex.EncodeToString(key)))
+					m.Detail = map[string]any{"algorithm": suite.AlgName(alg), "key_hex": hex.EncodeToString(key), "keys_tried": tried}
+					m.note(fmt.Sprintf("COMPLETE BREAK: %s key %s verified against the known plaintext — every frame under this key/algorithm is decryptable.", suite.AlgName(alg), hex.EncodeToString(key)))
 					return m, cand
 				}
 			}

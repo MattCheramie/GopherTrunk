@@ -131,6 +131,8 @@ func (s *Server) RegisterAPI(mux *http.ServeMux, gate func(http.HandlerFunc) htt
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}", s.handleJob)
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}/events", s.handleJobEvents)
 	mux.HandleFunc("GET /api/v1/cryptolab/jobs/{id}/artifacts/{name}", s.handleArtifact)
+	mux.HandleFunc("GET /api/v1/cryptolab/recipe/ops", s.handleRecipeOps)
+	mux.HandleFunc("POST /api/v1/cryptolab/recipe", gate(s.handleRecipe))
 }
 
 // Close removes the temp directory if the server created it.

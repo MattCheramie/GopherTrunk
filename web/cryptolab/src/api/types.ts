@@ -66,3 +66,38 @@ export interface LogEvent {
   msg: string;
   attrs?: string;
 }
+
+// --- Recipe builder ---
+
+export interface OpParam {
+  name: string;
+  label: string;
+  kind: "hex" | "int";
+  help?: string;
+}
+
+export interface OpSpec {
+  name: string;
+  synopsis: string;
+  transform: boolean;
+  params?: OpParam[];
+}
+
+export interface RecipeStepResult {
+  op: string;
+  transform: boolean;
+  bytes_in: number;
+  bytes_out: number;
+  info?: Record<string, unknown>;
+  note?: string;
+}
+
+export interface RecipeResult {
+  input_bytes: number;
+  steps: RecipeStepResult[];
+  final_hex: string;
+  final_ascii: string;
+  final_bytes: number;
+  output_b64?: string;
+  error?: string;
+}

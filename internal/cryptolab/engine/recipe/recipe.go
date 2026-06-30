@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MattCheramie/GopherTrunk/internal/crypto/rc4"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lfsr"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/randomness"
@@ -54,28 +55,46 @@ type Report struct {
 
 type opFunc func(buf []byte, p params) ([]byte, map[string]any, string, error)
 
+// OpParam describes one parameter of an operation, enough for the web recipe
+// builder to render an input control.
+type OpParam struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	Kind  string `json:"kind"` // hex | int
+	Help  string `json:"help,omitempty"`
+}
+
 type opDef struct {
 	transform bool
 	synopsis  string
+	params    []OpParam
 	fn        opFunc
 }
 
+// param spec presets shared by several ops.
+var (
+	keyParam   = OpParam{Name: "key", Label: "Key (hex)", Kind: "hex"}
+	miParam    = OpParam{Name: "mi", Label: "MI / IV (hex)", Kind: "hex"}
+	cipherKeys = []OpParam{keyParam, miParam}
+)
+
 // ops is the operation registry.
 var ops = map[string]opDef{
-	"xor":               {true, "repeating-key XOR (key=hex)", opXOR},
-	"not":               {true, "bitwise NOT of every byte", opNot},
-	"reverse-bits":      {true, "reverse the bit order within each byte (MSB↔LSB framing)", opReverseBits},
-	"hex-decode":        {true, "decode an ASCII hex string to bytes", opHexDecode},
-	"hex-encode":        {true, "encode bytes as an ASCII hex string", opHexEncode},
-	"base64-decode":     {true, "decode standard base64 to bytes", opBase64Decode},
-	"slice":             {true, "keep bytes [offset, offset+length) (length=0 → to end)", opSlice},
-	"adp-decrypt":       {true, "P25 ADP/RC4 decrypt (key=hex 5B, mi=hex)", cipherOp(p25crypto.AlgADP)},
-	"des-ofb-decrypt":   {true, "P25 DES-OFB decrypt (key=hex 8B, mi=hex)", cipherOp(p25crypto.AlgDESOFB)},
-	"tdes-ofb-decrypt":  {true, "P25 Triple-DES-OFB decrypt (key=hex 24B, mi=hex)", cipherOp(p25crypto.AlgTDES)},
-	"aes-ofb-decrypt":   {true, "P25 AES-OFB decrypt (key=hex 16/32B, mi=hex)", cipherOp(p25crypto.AlgAES256)},
-	"descramble-invert": {true, "full-band spectral inversion of s16le mono PCM (self-inverse)", opDescramble},
-	"stats":             {false, "report entropy / index-of-coincidence / chi-square", opStats},
-	"randomness":        {false, "quick NIST randomness subset (strong vs structured)", opRandomness},
+	"xor":               {transform: true, synopsis: "repeating-key XOR (key=hex)", params: []OpParam{keyParam}, fn: opXOR},
+	"not":               {transform: true, synopsis: "bitwise NOT of every byte", fn: opNot},
+	"reverse-bits":      {transform: true, synopsis: "reverse the bit order within each byte (MSB↔LSB framing)", fn: opReverseBits},
+	"hex-decode":        {transform: true, synopsis: "decode an ASCII hex string to bytes", fn: opHexDecode},
+	"hex-encode":        {transform: true, synopsis: "encode bytes as an ASCII hex string", fn: opHexEncode},
+	"base64-decode":     {transform: true, synopsis: "decode standard base64 to bytes", fn: opBase64Decode},
+	"slice":             {transform: true, synopsis: "keep bytes [offset, offset+length) (length=0 → to end)", params: []OpParam{{Name: "offset", Label: "Offset", Kind: "int"}, {Name: "length", Label: "Length", Kind: "int"}}, fn: opSlice},
+	"rc4-decrypt":       {transform: true, synopsis: "raw RC4 decrypt with a caller-supplied key (DMR Enhanced Privacy / generic)", params: []OpParam{{Name: "key", Label: "Full RC4 key (hex)", Kind: "hex", Help: "the complete RC4 key bytes, e.g. privacy key ‖ IV"}}, fn: opRC4},
+	"adp-decrypt":       {transform: true, synopsis: "P25 ADP/RC4 decrypt (key=hex 5B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgADP)},
+	"des-ofb-decrypt":   {transform: true, synopsis: "P25 DES-OFB decrypt (key=hex 8B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgDESOFB)},
+	"tdes-ofb-decrypt":  {transform: true, synopsis: "P25 Triple-DES-OFB decrypt (key=hex 24B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgTDES)},
+	"aes-ofb-decrypt":   {transform: true, synopsis: "P25 AES-OFB decrypt (key=hex 16/32B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgAES256)},
+	"descramble-invert": {transform: true, synopsis: "full-band spectral inversion of s16le mono PCM (self-inverse)", fn: opDescramble},
+	"stats":             {transform: false, synopsis: "report entropy / index-of-coincidence / chi-square", fn: opStats},
+	"randomness":        {transform: false, synopsis: "quick NIST randomness subset (strong vs structured)", fn: opRandomness},
 }
 
 // Run executes the steps over input, threading the working buffer through the
@@ -106,22 +125,41 @@ func Run(input []byte, steps []Step) (*Report, error) {
 	return rep, nil
 }
 
-// Ops returns the registered operation names and synopses, sorted.
+// OpSpec is the full, web-facing description of one operation.
+type OpSpec struct {
+	Name      string    `json:"name"`
+	Synopsis  string    `json:"synopsis"`
+	Transform bool      `json:"transform"`
+	Params    []OpParam `json:"params,omitempty"`
+}
+
+// Specs returns every operation with its parameters, sorted by name — the
+// source the web recipe builder renders its palette and step forms from.
+func Specs() []OpSpec {
+	out := make([]OpSpec, 0, len(ops))
+	for name, def := range ops {
+		out = append(out, OpSpec{Name: name, Synopsis: def.synopsis, Transform: def.transform, Params: def.params})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Ops returns the registered operation names and synopses, sorted (CLI -list).
 func Ops() []struct {
 	Name, Synopsis string
 	Transform      bool
 } {
-	var out []struct {
+	specs := Specs()
+	out := make([]struct {
 		Name, Synopsis string
 		Transform      bool
-	}
-	for name, def := range ops {
-		out = append(out, struct {
+	}, len(specs))
+	for i, s := range specs {
+		out[i] = struct {
 			Name, Synopsis string
 			Transform      bool
-		}{name, def.synopsis, def.transform})
+		}{s.Name, s.Synopsis, s.Transform}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
@@ -139,6 +177,23 @@ func opXOR(buf []byte, p params) ([]byte, map[string]any, string, error) {
 	for i := range buf {
 		out[i] = buf[i] ^ key[i%len(key)]
 	}
+	return out, map[string]any{"key_len": len(key)}, "", nil
+}
+
+func opRC4(buf []byte, p params) ([]byte, map[string]any, string, error) {
+	key, err := p.hex("key")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if len(key) == 0 {
+		return nil, nil, "", fmt.Errorf("rc4-decrypt: key is required")
+	}
+	c, err := rc4.NewCipher(key)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("rc4-decrypt: %w", err)
+	}
+	out := make([]byte, len(buf))
+	c.XORKeyStream(out, buf)
 	return out, map[string]any{"key_len": len(key)}, "", nil
 }
 
@@ -283,7 +338,15 @@ func (p params) str(key string) string {
 }
 
 func (p params) hex(key string) ([]byte, error) {
-	s := strings.TrimSpace(p.str(key))
+	// Tolerate spaces and a 0x prefix so pasted keys ("11 22 aa" / "0x1122")
+	// just work — the same leniency the config builder's key field offers.
+	s := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ':' {
+			return -1
+		}
+		return r
+	}, p.str(key))
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
 	if s == "" {
 		return nil, nil
 	}
