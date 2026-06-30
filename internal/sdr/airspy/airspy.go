@@ -264,6 +264,10 @@ type Device struct {
 	streamDone chan struct{}
 	rates      []uint32     // supported sample rates, Hz, descending order
 	cnv        *iqConverter // real-to-IQ converter, fresh per stream
+	// lastReqRate is the IQ rate (Hz) from the most recent SetSampleRate,
+	// remembered so ActualSampleRate can report the rate the device will
+	// actually deliver after snapping to the firmware's fixed rate table.
+	lastReqRate uint32
 }
 
 // Info implements sdr.Device.
@@ -298,7 +302,54 @@ func (d *Device) SetSampleRate(hz uint32) error {
 	}
 	param := d.sampleRateCommandParam(hz)
 	_, err := d.t.ControlIn(reqSetSamplerate, 0, param, 1, controlTimeoutMs)
+	if err == nil {
+		d.mu.Lock()
+		d.lastReqRate = hz
+		d.mu.Unlock()
+	}
 	return err
+}
+
+// ActualSampleRate reports the IQ rate the device will actually deliver for the
+// most recent SetSampleRate. The Airspy only streams the discrete rates its
+// firmware advertises, so a requested rate the table can't honour (e.g. 6 MS/s
+// on an R2 that does 2.5/10) is snapped to the nearest one by
+// sampleRateCommandParam — silently changing the delivered rate. Implementing
+// this optional sdr.Device extension lets the daemon (effectiveStreamRate) warn
+// on the mismatch and build its down-converters from the rate that actually
+// arrives, keeping the symbol clock aligned (issue #402). Returns the requested
+// rate unchanged when it maps exactly, so correctly-configured rates stay quiet.
+func (d *Device) ActualSampleRate() (uint32, error) {
+	d.mu.Lock()
+	last := d.lastReqRate
+	d.mu.Unlock()
+	if last == 0 {
+		// SetSampleRate hasn't run yet; let the caller fall back to its
+		// requested value rather than inventing one.
+		return 0, nil
+	}
+	return d.resolvedIQRate(last), nil
+}
+
+// resolvedIQRate returns the IQ rate the firmware delivers for a requested IQ
+// rate, mirroring the index decision in sampleRateCommandParam: the requested
+// rate when 2×iqHz matches an advertised device rate exactly, otherwise half
+// the nearest advertised device rate (the converter decimates by two). With no
+// rate table or a sub-MHz request it returns iqHz unchanged (best effort).
+func (d *Device) resolvedIQRate(iqHz uint32) uint32 {
+	d.mu.Lock()
+	rates := d.rates
+	d.mu.Unlock()
+	if iqHz < minSamplerateHz || len(rates) == 0 {
+		return iqHz
+	}
+	deviceHz := iqHz * 2 // converter decimates by two; see SetSampleRate
+	for _, r := range rates {
+		if deviceHz == r {
+			return iqHz
+		}
+	}
+	return rates[d.closestRateIndex(iqHz)] / 2
 }
 
 // sampleRateCommandParam maps a requested IQ rate to the wIndex the
