@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **cryptolab external-cipher bridge (TEA1 et al.).** `assess crypto` and the
+  `recipe` pipeline can now drive an operator-supplied cipher program as a
+  subprocess (`engine/extcipher`), so unbundled ciphers — most importantly the
+  TETRA TEA1 32-bit backdoor brute — are fully runnable by pointing the harness
+  at a vetted tool, without GopherTrunk shipping a cipher it can't verify or
+  whose only reference is licence-incompatible. `assess` gains `-extern-cmd` /
+  `-extern-algid` (brute the backdoor natively in the plugin, then verify +
+  decrypt + grade); the recipe pipeline gains an `extern-decrypt` op. Both are
+  CLI-only — the web recipe endpoint refuses host-execution ops (HTTP 403).
 - **cryptolab web Recipe Builder.** The cryptolab console gains a *Recipe
   Builder* tab that drives the `recipe` pipeline interactively (config-builder
   style): pick an input, assemble an ordered operation list from a palette with

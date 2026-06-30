@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/crypto/rc4"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/extcipher"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lfsr"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/randomness"
@@ -66,9 +67,13 @@ type OpParam struct {
 
 type opDef struct {
 	transform bool
-	synopsis  string
-	params    []OpParam
-	fn        opFunc
+	// external is true when the op shells out to an operator-supplied program
+	// (engine/extcipher). Such ops are CLI/file-recipe only — the web recipe
+	// endpoint refuses them so a browser request can never run a host program.
+	external bool
+	synopsis string
+	params   []OpParam
+	fn       opFunc
 }
 
 // param spec presets shared by several ops.
@@ -93,9 +98,14 @@ var ops = map[string]opDef{
 	"tdes-ofb-decrypt":  {transform: true, synopsis: "P25 Triple-DES-OFB decrypt (key=hex 24B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgTDES)},
 	"aes-ofb-decrypt":   {transform: true, synopsis: "P25 AES-OFB decrypt (key=hex 16/32B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgAES256)},
 	"descramble-invert": {transform: true, synopsis: "full-band spectral inversion of s16le mono PCM (self-inverse)", fn: opDescramble},
+	"extern-decrypt":    {transform: true, external: true, synopsis: "decrypt via an external cipher program (e.g. a TETRA TEA1 tool) — CLI only", params: []OpParam{{Name: "cmd", Label: "Cipher program", Kind: "string", Help: "external program implementing the extcipher protocol"}, keyParam, miParam}, fn: opExternDecrypt},
 	"stats":             {transform: false, synopsis: "report entropy / index-of-coincidence / chi-square", fn: opStats},
 	"randomness":        {transform: false, synopsis: "quick NIST randomness subset (strong vs structured)", fn: opRandomness},
 }
+
+// External reports whether op shells out to a host program (and so must be
+// refused on the web recipe endpoint). Unknown ops report false.
+func External(op string) bool { return ops[op].external }
 
 // Run executes the steps over input, threading the working buffer through the
 // transforms. A step error aborts the pipeline and is returned with the
@@ -130,6 +140,7 @@ type OpSpec struct {
 	Name      string    `json:"name"`
 	Synopsis  string    `json:"synopsis"`
 	Transform bool      `json:"transform"`
+	External  bool      `json:"external,omitempty"`
 	Params    []OpParam `json:"params,omitempty"`
 }
 
@@ -138,7 +149,7 @@ type OpSpec struct {
 func Specs() []OpSpec {
 	out := make([]OpSpec, 0, len(ops))
 	for name, def := range ops {
-		out = append(out, OpSpec{Name: name, Synopsis: def.synopsis, Transform: def.transform, Params: def.params})
+		out = append(out, OpSpec{Name: name, Synopsis: def.synopsis, Transform: def.transform, External: def.external, Params: def.params})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -178,6 +189,34 @@ func opXOR(buf []byte, p params) ([]byte, map[string]any, string, error) {
 		out[i] = buf[i] ^ key[i%len(key)]
 	}
 	return out, map[string]any{"key_len": len(key)}, "", nil
+}
+
+func opExternDecrypt(buf []byte, p params) ([]byte, map[string]any, string, error) {
+	cmd := strings.TrimSpace(p.str("cmd"))
+	if cmd == "" {
+		return nil, nil, "", fmt.Errorf("extern-decrypt: cmd is required")
+	}
+	key, err := p.hex("key")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	iv, err := p.hex("mi")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	cli, err := extcipher.New(cmd)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	ks, err := cli.Keystream(key, iv, len(buf))
+	if err != nil {
+		return nil, nil, "", err
+	}
+	out := make([]byte, len(buf))
+	for i := range buf {
+		out[i] = buf[i] ^ ks[i]
+	}
+	return out, map[string]any{"cipher": cmd}, "", nil
 }
 
 func opRC4(buf []byte, p params) ([]byte, map[string]any, string, error) {

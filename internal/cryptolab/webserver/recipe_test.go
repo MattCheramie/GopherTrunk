@@ -48,6 +48,25 @@ func TestRecipeOpsEndpoint(t *testing.T) {
 	}
 }
 
+func TestRecipeEndpointRejectsExternalOp(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer(t)
+	id := uploadFile(t, ts.URL, "in.bin", []byte("data"))
+	body, _ := json.Marshal(map[string]any{
+		"input_id": id,
+		"steps":    []map[string]any{{"op": "extern-decrypt", "params": map[string]any{"cmd": "/bin/false", "key": "00"}}},
+	})
+	resp, err := http.Post(ts.URL+"/api/v1/cryptolab/recipe", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("external op should be 403 over the web, got %d: %s", resp.StatusCode, b)
+	}
+}
+
 func TestRecipeEndpointDecrypts(t *testing.T) {
 	t.Parallel()
 	ts := newTestServer(t)

@@ -164,10 +164,11 @@ Operations (run `recipe run -list` for the live set): transforms `xor`, `not`,
 `reverse-bits`, `hex-decode`, `hex-encode`, `base64-decode`, `slice`,
 `rc4-decrypt` (raw RC4 with a caller-supplied key — DMR Enhanced Privacy /
 generic), `adp-decrypt`, `des-ofb-decrypt`, `tdes-ofb-decrypt`,
-`aes-ofb-decrypt`, `descramble-invert`; analyses `stats`, `randomness`. The
-cipher ops reuse the same `p25crypto` keystream constructions the `assess`
-harness uses, so a recipe can decrypt a known-key capture and immediately
-measure the result.
+`aes-ofb-decrypt`, `descramble-invert`, and `extern-decrypt` (decrypt via an
+external cipher program — CLI only); analyses `stats`, `randomness`. The cipher
+ops reuse the same `p25crypto` keystream constructions the `assess` harness
+uses, so a recipe can decrypt a known-key capture and immediately measure the
+result.
 
 ### Web recipe builder
 
@@ -363,6 +364,44 @@ cipher — AES/3DES with a non-default key and rotated IVs has an infeasible
 keyspace, reported plainly as `RESISTANT`. What it breaks is what fails in the
 field: reused IVs, default/test keys, small/backdoored keyspaces, keyless
 obfuscation, and weak keystreams.
+
+### External ciphers (TEA1 and other unbundled ciphers)
+
+The toolkit deliberately does **not** bundle proprietary/reverse-engineered
+ciphers it cannot verify or whose only implementations are licence-incompatible
+(TETRA TEA1–4: the public reference is AGPL, this project is Apache-2.0).
+Instead it can drive an **operator-supplied** cipher program as a subprocess,
+so e.g. the TEA1 32-bit backdoor brute is fully runnable once you point the
+harness at a vetted TEA1 tool — without shipping or vouching for the cipher.
+
+The program implements a small, shell-free line protocol (see
+`internal/cryptolab/engine/extcipher`):
+
+```
+<prog> [fixed args…] keystream <key_hex> <iv_hex> <n>
+    → prints <keystream_hex> (n bytes)
+<prog> [fixed args…] brute <iv_hex> <known_keystream_hex> <bits> <base_key_hex>
+    → prints the recovered <key_hex> (or an empty line)
+```
+
+The `brute` verb keeps the heavy key search native in the cipher; the harness
+orchestrates it, verifies the hit, and decrypts the corpus. Wire it in with:
+
+```
+# Brute the TEA1 backdoor (32-bit effective key) via your TEA1 tool, then
+# decrypt + grade the capture. Needs a known-plaintext oracle.
+cryptolab assess crypto -in frames.jsonl -protocol tetra \
+    -known-label call-3 -known-pt known.bin \
+    -extern-cmd "tea1-tool" -extern-algid 0x01 -brute-bits 32
+
+# Or decrypt with a recovered key inside a recipe (CLI only):
+#   {"op":"extern-decrypt","cmd":"tea1-tool","key":"<hex>","mi":"<iv hex>"}
+```
+
+**Safety**: external ciphers run a host program, so `-extern-cmd` and the
+`extern-decrypt` recipe op are **CLI-only**. The web console hides the op and
+the `POST /api/v1/cryptolab/recipe` endpoint refuses it (HTTP 403), so a browser
+request can never execute a program on the host.
 
 ## Scope note
 

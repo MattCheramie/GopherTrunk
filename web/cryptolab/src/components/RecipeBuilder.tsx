@@ -30,9 +30,10 @@ export function RecipeBuilder() {
   }, [loadOps]);
 
   const grouped = useMemo(() => {
-    const transforms = ops.filter((o) => o.transform);
-    const analyses = ops.filter((o) => !o.transform);
-    return { transforms, analyses };
+    // External ops shell out to a host program; they are CLI-only and the
+    // recipe endpoint refuses them, so the web palette hides them.
+    const web = ops.filter((o) => !o.external);
+    return { transforms: web.filter((o) => o.transform), analyses: web.filter((o) => !o.transform) };
   }, [ops]);
 
   const canRun = !!input && steps.length > 0 && !running && !uploading;

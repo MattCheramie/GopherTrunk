@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab"
@@ -40,6 +41,8 @@ func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cry
 	keysFile := fs.String("keys", "", "optional file of candidate keys (one hex key per line) for the weak-key method")
 	bruteBits := fs.Int("brute-bits", 0, "reduced-keyspace brute: search the low N bits of the key against the known-plaintext oracle (0 = off)")
 	baseKeyHex := fs.String("base-key", "", "fixed high bits of the key for -brute-bits, as hex (default all-zero)")
+	externCmd := fs.String("extern-cmd", "", "external cipher program for an unbundled cipher (e.g. a TETRA TEA1 tool); used with -brute-bits to brute it natively")
+	externAlgHex := fs.String("extern-algid", "", "algid the -extern-cmd cipher handles, as hex (e.g. 0x01 for tetra TEA1)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -47,7 +50,14 @@ func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cry
 	if err != nil {
 		return nil, err
 	}
-	input := assess.Input{Frames: frames, Protocol: *protocol, KnownLabel: *knownLabel, BruteBits: *bruteBits}
+	input := assess.Input{Frames: frames, Protocol: *protocol, KnownLabel: *knownLabel, BruteBits: *bruteBits, ExternCmd: *externCmd}
+	if *externAlgHex != "" {
+		alg, err := parseAlgID(*externAlgHex)
+		if err != nil {
+			return nil, fmt.Errorf("-extern-algid: %w", err)
+		}
+		input.ExternAlgID = alg
+	}
 	if *baseKeyHex != "" {
 		bk, err := hex.DecodeString(*baseKeyHex)
 		if err != nil {
@@ -123,6 +133,21 @@ func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cry
 	}
 	res.Note("effectiveness is the fraction of captured ciphertext each method recovered or exposed; 100% from a verified method is a complete break.")
 	return res, nil
+}
+
+// parseAlgID parses an algorithm id given as hex (0x01), decimal, or bare hex.
+func parseAlgID(s string) (uint8, error) {
+	s = strings.TrimSpace(s)
+	base := 0 // let ParseUint infer 0x / decimal
+	if !strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X") {
+		// A bare token like "AA" is hex by convention for algids.
+		base = 16
+	}
+	v, err := strconv.ParseUint(s, base, 8)
+	if err != nil {
+		return 0, fmt.Errorf("bad algid %q: %w", s, err)
+	}
+	return uint8(v), nil
 }
 
 // loadHexKeys reads a candidate-key file: one hex-encoded key per line, blank

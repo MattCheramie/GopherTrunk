@@ -66,6 +66,12 @@ func (s *Server) handleRecipe(w http.ResponseWriter, r *http.Request) {
 
 	steps := make([]recipe.Step, len(req.Steps))
 	for i, st := range req.Steps {
+		// Refuse ops that shell out to a host program — those are CLI-only, so
+		// a browser request can never run an arbitrary command on the host.
+		if recipe.External(st.Op) {
+			writeErr(w, http.StatusForbidden, "recipe: the "+st.Op+" operation runs a host program and is not available over the web; use the CLI")
+			return
+		}
 		steps[i] = recipe.Step{Op: st.Op, Params: st.Params}
 	}
 
