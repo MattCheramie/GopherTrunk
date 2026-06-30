@@ -7,6 +7,7 @@ import (
 
 	// Register all tools and subjects so Schema() reflects the full set.
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/motorola"
+	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/nxdn"
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/tools"
 )
 
