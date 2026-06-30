@@ -41,7 +41,7 @@ func (assessCrypto) Run(_ context.Context, args []string, _ cryptolab.Env) (*cry
 	keysFile := fs.String("keys", "", "optional file of candidate keys (one hex key per line) for the weak-key method")
 	bruteBits := fs.Int("brute-bits", 0, "reduced-keyspace brute: search the low N bits of the key against the known-plaintext oracle (0 = off)")
 	baseKeyHex := fs.String("base-key", "", "fixed high bits of the key for -brute-bits, as hex (default all-zero)")
-	externCmd := fs.String("extern-cmd", "", "external cipher program for an unbundled cipher (e.g. a TETRA TEA1 tool); used with -brute-bits to brute it natively")
+	externCmd := fs.String("extern-cmd", "", "external cipher program for an unbundled cipher (e.g. a TETRA TEA1 tool); with -brute-bits it brutes natively, with -keys it verifies/decrypts an already-recovered key")
 	externAlgHex := fs.String("extern-algid", "", "algid the -extern-cmd cipher handles, as hex (e.g. 0x01 for tetra TEA1)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err

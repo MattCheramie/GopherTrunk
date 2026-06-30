@@ -131,7 +131,7 @@ export const useRecipe = create<RecipeStore>((set, get) => ({
       for (const p of spec?.params ?? []) {
         const v = st.params[p.name];
         if (v == null || v === "") continue;
-        params[p.name] = p.kind === "int" ? Number(v) : v;
+        params[p.name] = p.kind === "int" || p.kind === "float" ? Number(v) : v;
       }
       return { op: st.op, params };
     });

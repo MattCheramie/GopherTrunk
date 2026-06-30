@@ -210,7 +210,8 @@ function StepCard({ step, index, count }: { step: BuilderStep; index: number; co
               <span className="label">{p.label}</span>
               <input
                 className="input"
-                type={p.kind === "int" ? "number" : "text"}
+                type={p.kind === "int" || p.kind === "float" ? "number" : "text"}
+                step={p.kind === "float" ? "any" : undefined}
                 value={step.params[p.name] ?? ""}
                 placeholder={p.kind === "hex" ? "hex" : ""}
                 onChange={(e) => setStepParam(step.id, p.name, e.target.value)}

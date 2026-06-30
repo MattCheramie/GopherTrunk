@@ -435,6 +435,82 @@ func externBrute(in Input, oracle *keystream.Frame, total int) (MethodResult, []
 	return m, ks
 }
 
+// externWeakKey tries operator-supplied candidate keys (-keys) against an
+// unbundled cipher through the external program, verifying each by an exact
+// keystream match to the known-plaintext oracle. This is the "I already
+// recovered the key" path — an operator who ran their own TEA1 brute (or holds
+// a leaked/test key) hands it to assess, which confirms it, decrypts the
+// frames under it, and grades the result, without re-running a brute. It
+// returns the result, the recovered keystream, and whether it handled the
+// external algorithm (so the bundled-suite path is skipped for it).
+func externWeakKey(in Input, total int) (MethodResult, []byte, bool) {
+	m := MethodResult{Name: "weak-key", TotalBytes: total}
+	if in.ExternCmd == "" {
+		return m, nil, false
+	}
+	// Only take over when frames actually carry the external algorithm.
+	hasAlg := false
+	for _, f := range in.Frames {
+		if f.AlgID == in.ExternAlgID {
+			hasAlg = true
+			break
+		}
+	}
+	if !hasAlg {
+		return m, nil, false
+	}
+	m.Applicable = true
+	if len(in.ExtraKeys) == 0 {
+		m.note("external cipher set but no candidate keys supplied — pass a recovered/test key with -keys to verify and decrypt it, or use -brute-bits to search the keyspace.")
+		return m, nil, true
+	}
+	// Verifying an unbundled cipher's key needs a known-plaintext oracle on an
+	// external-algorithm frame; there is no structural fallback for a cipher we
+	// do not carry.
+	var oracle *keystream.Frame
+	for i := range in.Frames {
+		if in.Frames[i].AlgID == in.ExternAlgID && in.Frames[i].Label == in.KnownLabel {
+			oracle = &in.Frames[i]
+			break
+		}
+	}
+	if oracle == nil || len(in.KnownPT) == 0 {
+		m.note("external candidate keys need a known-plaintext oracle (-known-label/-known-pt) on an external-algorithm frame to verify against — an unbundled cipher's key cannot be confirmed without one.")
+		return m, nil, true
+	}
+	cli, err := extcipher.New(in.ExternCmd)
+	if err != nil {
+		m.note("external cipher: " + err.Error())
+		return m, nil, true
+	}
+	want := keystream.XOR(in.KnownPT, oracle.CT)
+	if len(want) == 0 {
+		m.note("oracle plaintext/ciphertext overlap is empty.")
+		return m, nil, true
+	}
+	for i, key := range in.ExtraKeys {
+		cand, err := cli.Keystream(key, oracle.IV, len(want))
+		if err != nil {
+			m.note("external cipher: " + err.Error())
+			return m, nil, true
+		}
+		if !bytesEqual(cand, want) {
+			continue
+		}
+		m.Verified = true
+		m.Effectiveness = effForAlg(in.Frames, in.ExternAlgID, total)
+		m.RecoveredBytes = bytesForAlg(in.Frames, in.ExternAlgID)
+		m.SampleHex = hexPreview(in.KnownPT, 32)
+		m.SampleASCII = asciiPreview(in.KnownPT, 32)
+		m.Detail = map[string]any{"key_hex": hex.EncodeToString(key), "external": in.ExternCmd, "keys_tried": i + 1}
+		m.note(fmt.Sprintf("COMPLETE BREAK: external cipher key %s verified against the known plaintext — every frame under it is decryptable.", hex.EncodeToString(key)))
+		return m, cand, true
+	}
+	m.Detail = map[string]any{"external": in.ExternCmd, "keys_tried": len(in.ExtraKeys)}
+	m.note(fmt.Sprintf("tried %d candidate key(s) through the external cipher against the known plaintext; none verified.", len(in.ExtraKeys)))
+	return m, nil, true
+}
+
 // methodIVReuse: structural keystream reuse. This is an EXPOSURE method, not a
 // turnkey decryption — a collision leaks plaintext⊕plaintext but still needs a
 // crib or known plaintext to fully recover, so it is reported unverified
@@ -512,6 +588,15 @@ func methodKnownPlaintext(in Input, total int) (MethodResult, []byte) {
 // complete break); otherwise candidate decryptions are scored by structure and
 // reported unverified.
 func methodWeakKey(in Input, total int) (MethodResult, []byte) {
+	// External-cipher known-key path: when an operator has already recovered a
+	// key for an unbundled cipher (e.g. ran their own TEA1 brute) and supplies
+	// it via -keys, verify and decrypt it through the external program — no
+	// reduced-keyspace brute required. This handles the assessment for the
+	// external algorithm, mirroring how key-brute fully delegates to externBrute.
+	if m, ks, handled := externWeakKey(in, total); handled {
+		return m, ks
+	}
+
 	m := MethodResult{Name: "weak-key", TotalBytes: total}
 	suite := suiteFor(in.Protocol)
 

@@ -180,3 +180,93 @@ func TestOpsListed(t *testing.T) {
 		t.Fatal("expected both transform and analysis ops")
 	}
 }
+
+// pcm builds s16le mono PCM bytes from a ramp so the descramble ops have a
+// non-trivial spectrum to invert.
+func pcm(n int) []byte {
+	b := make([]byte, n*2)
+	for i := 0; i < n; i++ {
+		v := int16((i*257 - 12000) % 20000)
+		b[2*i] = byte(uint16(v))
+		b[2*i+1] = byte(uint16(v) >> 8)
+	}
+	return b
+}
+
+// TestDescrambleSplitbandSelfInverse: split-band inversion at a fixed split is
+// its own inverse, so two passes restore the input (within rounding).
+func TestDescrambleSplitbandSelfInverse(t *testing.T) {
+	t.Parallel()
+	in := pcm(256)
+	rep, err := Run(in, []Step{
+		{Op: "descramble-splitband", Params: map[string]any{"split": 0.4}},
+		{Op: "descramble-splitband", Params: map[string]any{"split": 0.4}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.FinalBytes) != len(in) {
+		t.Fatalf("length changed: got %d want %d", len(rep.FinalBytes), len(in))
+	}
+	a, _ := pcmToFloat(in)
+	b, _ := pcmToFloat(rep.FinalBytes)
+	for i := range a {
+		if d := a[i] - b[i]; d > 1e-3 || d < -1e-3 {
+			t.Fatalf("sample %d not restored: %.4f vs %.4f", i, a[i], b[i])
+		}
+	}
+}
+
+// TestDescrambleSplitbandFloatParam confirms the float param is honored whether
+// it arrives as a JSON number (web) or a string (CLI/file recipe).
+func TestDescrambleSplitbandFloatParam(t *testing.T) {
+	t.Parallel()
+	in := pcm(128)
+	for _, sp := range []any{0.3, "0.3"} {
+		rep, err := Run(in, []Step{{Op: "descramble-splitband", Params: map[string]any{"split": sp}}})
+		if err != nil {
+			t.Fatalf("split=%v: %v", sp, err)
+		}
+		if got := rep.Steps[0].Info["split"]; got != 0.3 {
+			t.Fatalf("split=%v: info split = %v, want 0.3", sp, got)
+		}
+	}
+}
+
+// TestDescrambleRollingSchedule runs an explicit per-frame schedule and the
+// auto detector, asserting both produce same-length PCM and surface frame info.
+func TestDescrambleRollingSchedule(t *testing.T) {
+	t.Parallel()
+	in := pcm(4096)
+	sched, err := Run(in, []Step{
+		{Op: "descramble-rolling", Params: map[string]any{"frame": 1024, "schedule": "0.5,0.4"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sched.FinalBytes) != len(in) {
+		t.Fatalf("schedule pass changed length: %d", len(sched.FinalBytes))
+	}
+	if sched.Steps[0].Info["schedule_steps"] != 2 {
+		t.Fatalf("schedule_steps = %v, want 2", sched.Steps[0].Info["schedule_steps"])
+	}
+
+	auto, err := Run(in, []Step{
+		{Op: "descramble-rolling", Params: map[string]any{"frame": 1024, "schedule": "auto"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := auto.Steps[0].Info["frames"]; !ok {
+		t.Fatalf("auto mode should report a frame count, got %v", auto.Steps[0].Info)
+	}
+}
+
+// TestDescrambleOddPCMErrors: the PCM ops reject a buffer that is not a whole
+// number of 16-bit samples instead of corrupting the tail.
+func TestDescrambleOddPCMErrors(t *testing.T) {
+	t.Parallel()
+	if _, err := Run([]byte{0x01, 0x02, 0x03}, []Step{{Op: "descramble-splitband"}}); err == nil {
+		t.Fatal("expected an error for odd-length PCM")
+	}
+}
