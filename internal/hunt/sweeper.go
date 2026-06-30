@@ -33,13 +33,34 @@ type SweepOptions struct {
 	// (where the SDR rolloff lives) when advancing the center. 0 ⇒ 0.1.
 	GuardFrac float64
 	PeakOpts  PeakOptions
-	Log       *slog.Logger
+	// DetectWideband enables the wideband-occupancy pass: alongside the
+	// narrowband peak detector, each step is scanned for contiguous occupancy
+	// spans (OFDM cellular/WiFi blocks), and spans clipped at a step edge are
+	// stitched across adjacent overlapping steps to recover a signal wider than
+	// the tune. Off by default — the whole-device survey turns it on.
+	DetectWideband bool
+	// OccupancyOpts tune the wideband detector (see carriers.OccupancyOptions).
+	// The sweeper supplies the sweep-wide floor itself, so FloorDbFS is ignored.
+	OccupancyOpts OccupancyOptions
+	// WidebandFullStepClipDb is how far a step's own noise floor must sit above
+	// the sweep-wide floor before the whole step counts as occupied (a signal
+	// too wide to leave any quiet region in one tune). 0 ⇒ 6 dB.
+	WidebandFullStepClipDb float32
+	Log                    *slog.Logger
 }
 
-// Candidate is a carrier the sweep found, worth identifying.
+// Candidate is a carrier the sweep found, worth identifying. A narrowband
+// carrier carries FreqHz + SNRDb; a wideband span (IsWideband) additionally
+// carries BwHz, its stitched occupied bandwidth, and FreqHz is the span center.
 type Candidate struct {
 	FreqHz uint32  `json:"freq_hz"`
 	SNRDb  float32 `json:"snr_db"`
+	// IsWideband marks a stitched wideband-occupancy span (cellular/WiFi/wide
+	// data) rather than a narrowband carrier. Such a span is named by allocation
+	// + shape, not decoded.
+	IsWideband bool `json:"is_wideband,omitempty"`
+	// BwHz is the occupied bandwidth of a wideband span (0 for narrow carriers).
+	BwHz uint32 `json:"bw_hz,omitempty"`
 }
 
 // Sweeper walks operator-given bands on an IQSource and returns the candidate
@@ -139,6 +160,10 @@ func (s *Sweeper) Sweep(ctx context.Context, onStep OnStep) ([]Candidate, error)
 	}
 	best := map[uint32]Candidate{}
 
+	// Wideband-occupancy collection (per-step summaries, stitched after the
+	// sweep once the sweep-wide noise floor is known). Empty unless enabled.
+	var wbSteps []wbStep
+
 	for _, band := range s.opts.Bands {
 		if band.HighHz < band.LowHz {
 			return nil, fmt.Errorf("hunt: band %d:%d is inverted", band.LowHz, band.HighHz)
@@ -174,6 +199,9 @@ func (s *Sweeper) Sweep(ctx context.Context, onStep OnStep) ([]Candidate, error)
 					best[key] = Candidate{FreqHz: p.FreqHz, SNRDb: p.SNRDb}
 				}
 			}
+			if s.opts.DetectWideband {
+				wbSteps = append(wbSteps, s.occupancyStep(frame))
+			}
 			// Stop once this step's coverage reached the band's high edge.
 			if center+halfUsable >= band.HighHz {
 				break
@@ -187,7 +215,49 @@ func (s *Sweeper) Sweep(ctx context.Context, onStep OnStep) ([]Candidate, error)
 	}
 	out = snapCandidatesToGrid(out, rate, s.fftSize)
 	sort.Slice(out, func(i, j int) bool { return out[i].SNRDb > out[j].SNRDb })
+
+	// Stitch wideband-occupancy spans across steps and append them. They sort
+	// after the narrowband carriers (which keep their SNR ordering); a consumer
+	// distinguishes them by IsWideband.
+	if s.opts.DetectWideband {
+		out = append(out, stitchWideband(wbSteps, s.opts.WidebandFullStepClipDb, uint32(s.binHz()))...)
+	}
 	return out, nil
+}
+
+// occupancyStep summarizes one swept frame for the wideband stitch pass: its
+// per-frame noise floor, its scanned (non-guard) coverage in absolute Hz, and
+// the occupancy spans found with that per-frame floor. The sweep-wide floor —
+// needed to catch a step that sits entirely inside a signal — is applied later
+// in stitchWideband, so frames need not be retained.
+func (s *Sweeper) occupancyStep(frame spectrum.Frame) wbStep {
+	n := len(frame.Bins)
+	guard := s.opts.OccupancyOpts.GuardBins
+	if guard <= 0 {
+		guard = n / 64
+		if guard < 1 {
+			guard = 1
+		}
+	}
+	binHz := float64(frame.SampleRate) / float64(n)
+	base := float64(frame.CenterHz) - float64(frame.SampleRate)/2
+	// DetectOccupancy with the per-frame floor (FloorDbFS left 0) finds spans at
+	// the edges of a wide signal, where part of the step is still quiet.
+	occOpts := s.opts.OccupancyOpts
+	occOpts.FloorDbFS = 0
+	return wbStep{
+		// 0.25 mirrors carriers' robust low-quartile noise-floor estimate.
+		floorDb: spectrum.Percentile(frame.Bins, 0.25),
+		lowHz:   uint32(base + float64(guard)*binHz),
+		highHz:  uint32(base + float64(n-guard-1)*binHz),
+		spans:   DetectOccupancy(frame, occOpts),
+	}
+}
+
+// binHz is the sweep's FFT bin spacing in Hz, used as the stitch seam
+// tolerance.
+func (s *Sweeper) binHz() float64 {
+	return float64(s.opts.Source.SampleRateHz()) / float64(s.fftSize)
 }
 
 // snapCandidatesToGrid corrects the FFT-bin quantization offset in the swept

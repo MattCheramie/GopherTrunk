@@ -18,6 +18,18 @@ func DetectPeaks(frame spectrum.Frame, opts PeakOptions) []Peak {
 	return carriers.DetectPeaks(frame, opts)
 }
 
+// Occupancy and OccupancyOptions are re-exported from internal/carriers so the
+// sweeper's wideband-occupancy pass keeps the hunt-package surface while the
+// detector lives in the neutral carriers package.
+type Occupancy = carriers.Occupancy
+type OccupancyOptions = carriers.OccupancyOptions
+
+// DetectOccupancy finds wideband occupancy spans in a spectrum frame. Thin
+// wrapper over carriers.DetectOccupancy.
+func DetectOccupancy(frame spectrum.Frame, opts OccupancyOptions) []Occupancy {
+	return carriers.DetectOccupancy(frame, opts)
+}
+
 // absDiff is the |a-b| helper the sweeper + peak tests use. carriers has its
 // own copy for DetectPeaks; this one stays so the hunt-package tests and
 // sweeper logic don't depend on the carriers internal.
