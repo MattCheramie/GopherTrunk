@@ -44,6 +44,7 @@ type huntLiveParams struct {
 	classAMCV        float64
 	bands            []string // "low:high" in MHz
 	wholeDevice      bool     // sweep the SDR's entire tuning range (sdr.FreqRanger)
+	detectWideband   bool     // detect+stitch signals wider than a channel
 	candidatesMHz    string   // comma-separated MHz
 	noSweep          bool
 	sampleRateHz     float64
@@ -181,6 +182,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		County:                p.county,
 		Location:              p.location,
 		ClassifyOnly:          p.classifyOnly,
+		DetectWideband:        p.detectWideband,
 		SurveyDeep:            p.surveyDeep,
 		SurveyAudioDir:        p.surveyAudioDir,
 		SkipFreqs:             skipFreqs,
@@ -356,8 +358,21 @@ func printSurvey(sv *hunt.SignalSurvey) {
 	fmt.Fprintf(os.Stderr, "survey: %d signal(s) — %d trunking, %d analog, %d paging, %d other\n",
 		len(sv.Signals), trunking, analog, paging, other)
 	for _, s := range sv.Signals {
-		line := fmt.Sprintf("  %10.4f MHz  %-13s  bw %5.1f kHz  snr %4.1f dB",
+		line := fmt.Sprintf("  %10.4f MHz  %-13s  bw %6.1f kHz  snr %4.1f dB",
 			float64(s.FreqHz)/1e6, s.Class, float64(s.OccupiedBwHz)/1e3, s.SNRDb)
+		if s.Name != "" {
+			line += "  " + s.Name
+		}
+		if s.Service != "" {
+			line += fmt.Sprintf(" (%s)", s.Service)
+		}
+		if s.Encrypted {
+			if s.EncType != "" {
+				line += "  🔒 " + s.EncType
+			} else {
+				line += "  🔒 encrypted"
+			}
+		}
 		switch {
 		case s.Trunking != nil:
 			line += fmt.Sprintf("  [%s", s.Trunking.Protocol)

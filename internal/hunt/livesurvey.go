@@ -77,6 +77,20 @@ func RunLiveSurvey(ctx context.Context, opts LiveHuntOptions) (*SignalSurvey, []
 		if err := ctx.Err(); err != nil {
 			return finishSurvey(sv), reports, err
 		}
+
+		// Wideband-occupancy spans (cellular/WiFi/OFDM) are named from their
+		// stitched bandwidth + allocation and never decoded — tuning to the centre
+		// would only sample a sliver of the signal — so they bypass the narrowband
+		// capture/classify path entirely.
+		if cand.IsWideband {
+			ds := widebandSignal(cand)
+			sv.Signals = append(sv.Signals, ds)
+			if opts.OnSignal != nil {
+				opts.OnSignal(ds)
+			}
+			continue
+		}
+
 		progress(LiveHuntProgress{
 			Phase: PhaseIdentifying, CenterHz: cand.FreqHz,
 			CandidateN: i + 1, Candidates: len(candidates),
@@ -228,6 +242,9 @@ func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32
 		chIQ: chIQ, chRate: chRate,
 		cand: cand, opts: opts, log: log,
 	})
+	// Fill the consolidated inventory fields (Name / Service / Purpose) from the
+	// decode result + frequency allocation, for every carrier.
+	nameSignal(&ds)
 	// Guarantee the signal is JSON-encodable before it is stored, published on
 	// the event bus, or written to NDJSON — a non-finite measurement must not be
 	// able to break the live survey's wire stream (issue #648).
@@ -386,10 +403,16 @@ func identifyTrunking(sys *DiscoveredSystem, ds *DetectedSignal, in routeInputs,
 	switch {
 	case rep.Locked:
 		ds.Class = survey.ClassTrunkControl
-		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence, Locked: true, ControlHz: rep.ControlHz}
+		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence, Locked: true, ControlHz: rep.ControlHz,
+			Encrypted: rep.Encrypted, EncType: rep.EncType}
 	case voiceUpgrade && !rep.Skipped && rep.Error == "":
 		ds.Class = survey.ClassTrunkVoice
-		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence}
+		ds.Trunking = &TrunkingRef{Protocol: rep.Protocol, Confidence: rep.Confidence,
+			Encrypted: rep.Encrypted, EncType: rep.EncType}
+	}
+	if ds.Trunking != nil {
+		ds.Encrypted = ds.Trunking.Encrypted
+		ds.EncType = ds.Trunking.EncType
 	}
 	// Skipped/errored (or non-locked under lock-only) ⇒ keep the classifier label.
 	return &rep
@@ -406,13 +429,14 @@ func surveyCandidates(ctx context.Context, opts LiveHuntOptions, log *slog.Logge
 		return skipSurveyed(out, opts.SkipFreqs), nil
 	}
 	sw, err := NewSweeper(SweepOptions{
-		Source:     opts.Source,
-		Bands:      opts.Bands,
-		FFTSize:    opts.FFTSize,
-		SweepDwell: opts.SweepDwell,
-		GuardFrac:  opts.GuardFrac,
-		PeakOpts:   opts.PeakOpts,
-		Log:        log,
+		Source:         opts.Source,
+		Bands:          opts.Bands,
+		FFTSize:        opts.FFTSize,
+		SweepDwell:     opts.SweepDwell,
+		GuardFrac:      opts.GuardFrac,
+		PeakOpts:       opts.PeakOpts,
+		DetectWideband: opts.DetectWideband,
+		Log:            log,
 	})
 	if err != nil {
 		return nil, err

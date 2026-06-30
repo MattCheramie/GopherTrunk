@@ -143,8 +143,27 @@ func decodeAndAccumulate(sys *DiscoveredSystem, r io.ReadSeeker, source string, 
 	if rep.IdentityNote != "" {
 		log.Warn("hunt: "+rep.IdentityNote, "path", source)
 	}
+	rep.Encrypted, rep.EncType = encryptionFromGrants(proto.String(), res.Grants)
 	rep.Talkgroups = len(sys.Talkgroups) - before
 	return rep
+}
+
+// encryptionFromGrants reports whether any grant on the control channel was
+// encrypted and names the algorithm. P25 Phase 1 carries the ALGID in the
+// voice LDU2 rather than the CC grant, so a CC-only decode may show encrypted
+// with an unknown algorithm (encType empty) — still a useful "encrypted" flag.
+func encryptionFromGrants(protocol string, grants []siglab.GrantRecord) (encrypted bool, encType string) {
+	for _, g := range grants {
+		if !g.Encrypted {
+			continue
+		}
+		encrypted = true
+		if name := encTypeName(protocol, g.AlgorithmID); name != "" {
+			encType = name // first named algorithm wins
+			break
+		}
+	}
+	return encrypted, encType
 }
 
 // identityNote explains, for a locked P25 control channel whose WACN/System ID

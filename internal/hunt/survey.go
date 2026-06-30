@@ -34,6 +34,28 @@ type DetectedSignal struct {
 	Confidence   float64            `json:"confidence"`
 	BaudHz       float64            `json:"baud_hz,omitempty"`
 
+	// Inventory naming — the consolidated "what is this" the full-spectrum
+	// survey shows for every signal, decodable or not.
+	//   Name    — human label: the decoded protocol, else the best-guess signal
+	//             from the reference catalog (sigref), else the modulation class.
+	//   Service — what the frequency is allocated to (sigref allocation table).
+	//   Purpose — what that service is used for.
+	Name    string `json:"name,omitempty"`
+	Service string `json:"service,omitempty"`
+	Purpose string `json:"purpose,omitempty"`
+
+	// Encrypted / EncType report whether the signal is encrypted and, when known,
+	// the algorithm (AES-256, ADP/RC4, …). Set from the trunking decode's grants;
+	// EncType is empty when the protocol exposes encryption without an ALGID.
+	Encrypted bool   `json:"encrypted,omitempty"`
+	EncType   string `json:"enc_type,omitempty"`
+
+	// Wideband marks a signal far wider than a channel (cellular/WiFi/OFDM)
+	// recovered by the occupancy-stitching pass. Such a signal is named and
+	// captured but never decoded; OccupiedBwHz is its stitched bandwidth (a lower
+	// bound when the signal ran past the swept range).
+	Wideband bool `json:"wideband,omitempty"`
+
 	// Decode summary — set by the router for the carriers it could decode.
 	Trunking *TrunkingRef         `json:"trunking,omitempty"`
 	Analog   *survey.AnalogReport `json:"analog,omitempty"`
@@ -53,6 +75,10 @@ type TrunkingRef struct {
 	Confidence float64 `json:"confidence"`
 	Locked     bool    `json:"locked"`
 	ControlHz  uint32  `json:"control_hz,omitempty"`
+	// Encrypted / EncType mirror the decode's grant encryption onto the
+	// inventory row (also copied to DetectedSignal for the flat view).
+	Encrypted bool   `json:"encrypted,omitempty"`
+	EncType   string `json:"enc_type,omitempty"`
 }
 
 // finiteOr0 returns f unless it is NaN or ±Inf, in which case it returns 0.
