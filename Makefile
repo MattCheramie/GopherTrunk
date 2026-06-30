@@ -16,7 +16,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -34,7 +34,7 @@ build:
 # with the daemon. Use this when you want a single binary that serves
 # the web UI at `/`. Pure-Go contributors who don't need the UI can
 # keep using `make build`.
-dist: web-build siglab-web-build configbuilder-web-build build
+dist: web-build siglab-web-build rfscope-web-build configbuilder-web-build build
 
 test:
 	$(GO) test -tags "$(TAGS)" -race -count=1 $(PKGS)
@@ -361,6 +361,31 @@ siglab-web-test:
 	@command -v npm >/dev/null || { echo "npm not installed; see web/siglab/README.md"; exit 1; }
 	cd web/siglab && npm install --no-audit --no-fund
 	cd web/siglab && npm test
+
+# --- RF Scope standalone SPA (web/rfscope) --------------------------------
+# The RF Scope console. Built into web/rfscope/dist and embedded via
+# web/rfscope/embed.go; served by `gophertrunk rfscope serve`.
+
+# rfscope-web-build produces the shippable bundle in web/rfscope/dist/.
+rfscope-web-build:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/rfscope/README.md"; exit 1; }
+	cd web/rfscope && npm ci --no-audit --no-fund
+	cd web/rfscope && npm run build
+
+# rfscope-web-dev runs the Vite dev server (proxies /api to 127.0.0.1:8098,
+# the default `rfscope serve` address).
+rfscope-web-dev:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/rfscope/README.md"; exit 1; }
+	cd web/rfscope && npm install --no-audit --no-fund
+	cd web/rfscope && npm run dev
+
+rfscope-web-clean:
+	rm -rf web/rfscope/dist web/rfscope/node_modules
+
+rfscope-web-test:
+	@command -v npm >/dev/null || { echo "npm not installed; see web/rfscope/README.md"; exit 1; }
+	cd web/rfscope && npm install --no-audit --no-fund
+	cd web/rfscope && npm run typecheck
 
 # --- Config Builder standalone SPA (web/configbuilder) --------------------
 # The web Config Builder/Editor. Built into web/configbuilder/dist and

@@ -30,6 +30,9 @@ func runRFScope(args []string) {
 		case "cockpit":
 			runRFScopeCockpit(args[1:])
 			return
+		case "serve":
+			runRFScopeServe(args[1:])
+			return
 		case "list":
 			runRFScopeList(args[1:])
 			return
@@ -49,6 +52,7 @@ USAGE:
   gophertrunk rfscope analyze -in <capture> [flags]   analyze a recorded IQ capture
   gophertrunk rfscope live -serial <sdr> -freq Hz [flags]   analyze a live SDR span
   gophertrunk rfscope cockpit [-in <capture> | -serial <sdr> -freq Hz]   live scene TUI
+  gophertrunk rfscope serve [-addr host:port] [-open]   web console (browser)
   gophertrunk rfscope list                            list registered analyzers
 
 Run a subcommand with -h for its flags.`)
