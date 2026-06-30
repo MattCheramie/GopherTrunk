@@ -93,6 +93,19 @@ for tagged releases.
   JSONL for `cryptolab assess`/`ks`. Off by default (no effect on the voice
   path when unset).
 
+### Fixed
+- **Airspy R2/Mini reported half its true IQ rate, so wideband decoded
+  nothing.** The driver treated the firmware's `GET_SAMPLERATES` table as 2×
+  "device" rates and reported half the rate the hardware actually delivers, so
+  `ActualSampleRate()` returned e.g. 5 MS/s for an R2 streaming 10 MS/s. The
+  daemon then built its wideband down-converter at half rate (logging the
+  spurious "SDR streams a different sample rate than requested" warning, issue
+  #402), the symbol clock ran 2× off, and no packets decoded. The table is in
+  IQ output rates (R2 `{10, 2.5}` MSPS, Mini `{6, 3}` MSPS); the driver now
+  matches the requested IQ rate against it directly. The IQ converter is
+  unchanged — the firmware still streams the real ADC at 2× and the host
+  decimates back down.
+
 ## [v0.5.7] — 2026-06-29
 
 Headlined by a **P25 Phase 2 voice-decode fix**: the H-DQPSK receiver now

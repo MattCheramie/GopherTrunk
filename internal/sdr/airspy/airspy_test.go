@@ -178,17 +178,18 @@ func TestSetCenterFreqEncoding(t *testing.T) {
 }
 
 func TestClosestRateIndex(t *testing.T) {
-	// Table holds DEVICE rates; closestRateIndex takes an IQ rate and
-	// matches 2×IQ against the table (the converter decimates by two).
+	// The advertised table holds IQ rates; closestRateIndex matches the
+	// requested IQ rate against them directly (the firmware streams real at
+	// 2× and the host converter decimates by two).
 	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
 	cases := []struct {
 		iqHz uint32
 		want int
 	}{
-		{5_000_000, 0}, // device 10M — exact
-		{4_500_000, 0}, // device 9M — nearer 10M than 2.5M
-		{2_000_000, 1}, // device 4M — nearer 2.5M
-		{1_250_000, 1}, // device 2.5M — exact
+		{10_000_000, 0}, // exact
+		{9_000_000, 0},  // nearer 10M than 2.5M
+		{4_000_000, 1},  // nearer 2.5M
+		{2_500_000, 1},  // exact
 	}
 	for _, c := range cases {
 		if got := dev.closestRateIndex(c.iqHz); got != c.want {
@@ -202,19 +203,18 @@ func TestClosestRateIndex(t *testing.T) {
 }
 
 func TestActualSampleRateReportsSnap(t *testing.T) {
-	// R2 device-rate table {10 MSPS, 2.5 MSPS} → deliverable IQ rates 5 and
-	// 1.25 MHz. ActualSampleRate reports the IQ rate the firmware actually
-	// delivers so the daemon (effectiveStreamRate) can warn on a snap and
-	// realign its down-converter.
+	// R2 IQ-rate table {10 MSPS, 2.5 MSPS}. ActualSampleRate reports the IQ
+	// rate the firmware actually delivers so the daemon (effectiveStreamRate)
+	// can warn on a snap and realign its down-converter.
 	cases := []struct {
 		name string
 		req  uint32 // requested IQ rate
 		want uint32 // delivered IQ rate
 	}{
-		{"exact 5MHz (device 10M)", 5_000_000, 5_000_000},
-		{"exact 1.25MHz (device 2.5M)", 1_250_000, 1_250_000},
-		{"6MHz snaps to 5MHz (device 12M→10M)", 6_000_000, 5_000_000},
-		{"2.5MHz snaps to 1.25MHz (device 5M→2.5M)", 2_500_000, 1_250_000},
+		{"exact 10MHz", 10_000_000, 10_000_000},
+		{"exact 2.5MHz", 2_500_000, 2_500_000},
+		{"6MHz snaps to 2.5MHz", 6_000_000, 2_500_000},
+		{"4MHz snaps to 2.5MHz", 4_000_000, 2_500_000},
 	}
 	for _, c := range cases {
 		dev := &Device{rates: []uint32{10_000_000, 2_500_000}, lastReqRate: c.req}
@@ -238,14 +238,44 @@ func TestActualSampleRateReportsSnap(t *testing.T) {
 	}
 }
 
+// TestActualSampleRateMatchesAdvertisedIQRate pins the Discord-reported bug:
+// a real Airspy R2 advertises {10 MSPS, 2.5 MSPS} IQ rates (airspy.com), so a
+// requested IQ rate of 10 MHz is delivered verbatim — the firmware streams the
+// real ADC at 2× internally and the host converter decimates by two. The driver
+// must therefore report 10 MHz, not half of it. Reporting 5 MHz made the daemon
+// (effectiveStreamRate / issue #402) build the wideband down-converter at half
+// the true rate, so every symbol clock ran 2× off and nothing decoded.
+func TestActualSampleRateMatchesAdvertisedIQRate(t *testing.T) {
+	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
+	mt := usb.NewMockTransport()
+	dev.t = mt
+	// 10 MHz is the first advertised IQ rate → index 0.
+	mt.Script = []usb.CtrlExchange{
+		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 0, Reply: []byte{0}, N: 1},
+	}
+	if err := dev.SetSampleRate(10_000_000); err != nil {
+		t.Fatalf("SetSampleRate(10M): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v", mt.Err)
+	}
+	got, err := dev.ActualSampleRate()
+	if err != nil {
+		t.Fatalf("ActualSampleRate: %v", err)
+	}
+	if got != 10_000_000 {
+		t.Fatalf("ActualSampleRate() = %d, want 10000000 (the rate the R2 truly delivers)", got)
+	}
+}
+
 func TestSetSampleRateEncodesByValueWhenNoTable(t *testing.T) {
-	// With no device-rate table the param is a by-value encoding of the
-	// device rate (2×IQ) in kHz: IQ 4 MHz → device 8 MHz → 8000.
+	// With no rate table the param is a by-value encoding of the IQ rate in
+	// kHz: IQ 4 MHz → 4000.
 	dev := &Device{rates: nil}
 	mt := usb.NewMockTransport()
 	dev.t = mt
 	mt.Script = []usb.CtrlExchange{
-		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 8000, Reply: []byte{0}, N: 1},
+		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 4000, Reply: []byte{0}, N: 1},
 	}
 	if err := dev.SetSampleRate(4_000_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
@@ -256,15 +286,14 @@ func TestSetSampleRateEncodesByValueWhenNoTable(t *testing.T) {
 }
 
 func TestSetSampleRateUsesIndexWhenExactMatch(t *testing.T) {
-	// Device table {10 MSPS, 2.5 MSPS}; requesting IQ 1.25 MHz selects
-	// the 2.5 MSPS device rate (index 1).
+	// IQ-rate table {10 MSPS, 2.5 MSPS}; requesting IQ 2.5 MHz selects index 1.
 	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
 	mt := usb.NewMockTransport()
 	dev.t = mt
 	mt.Script = []usb.CtrlExchange{
 		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 1, Reply: []byte{0}, N: 1},
 	}
-	if err := dev.SetSampleRate(1_250_000); err != nil {
+	if err := dev.SetSampleRate(2_500_000); err != nil {
 		t.Fatalf("SetSampleRate exact: %v", err)
 	}
 	if mt.Err != nil {
@@ -272,18 +301,18 @@ func TestSetSampleRateUsesIndexWhenExactMatch(t *testing.T) {
 	}
 }
 
-// TestSetSampleRateSelectsDeviceRateAtTwiceIQ is the regression gate for
-// the real-sampling 2× rate bug: a requested IQ rate must program the
-// device at twice that rate so the host converter delivers the IQ rate
-// the rest of the pipeline assumes.
-func TestSetSampleRateSelectsDeviceRateAtTwiceIQ(t *testing.T) {
-	// A real Airspy R2/Mini advertises 6 MSPS and 3 MSPS device rates.
+// TestSetSampleRateSelectsAdvertisedIQRate is the regression gate for the
+// rate-model bug: a requested IQ rate the table advertises must select that
+// entry's own index, so the firmware delivers exactly that IQ rate (it streams
+// the real ADC at 2× internally; the host converter decimates back down).
+func TestSetSampleRateSelectsAdvertisedIQRate(t *testing.T) {
+	// An Airspy Mini advertises 6 MSPS and 3 MSPS IQ rates.
 	cases := []struct {
 		iqHz      uint32
 		wantIndex uint16
 	}{
-		{3_000_000, 0}, // → device 6 MSPS (index 0)
-		{1_500_000, 1}, // → device 3 MSPS (index 1)
+		{6_000_000, 0}, // index 0
+		{3_000_000, 1}, // index 1
 	}
 	for _, c := range cases {
 		dev := &Device{rates: []uint32{6_000_000, 3_000_000}}
@@ -296,7 +325,7 @@ func TestSetSampleRateSelectsDeviceRateAtTwiceIQ(t *testing.T) {
 			t.Fatalf("SetSampleRate(%d): %v", c.iqHz, err)
 		}
 		if mt.Err != nil {
-			t.Fatalf("SetSampleRate(%d) transport: %v (wanted device index %d)", c.iqHz, mt.Err, c.wantIndex)
+			t.Fatalf("SetSampleRate(%d) transport: %v (wanted IQ index %d)", c.iqHz, mt.Err, c.wantIndex)
 		}
 	}
 }
