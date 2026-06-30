@@ -135,6 +135,18 @@ var modeParams = map[string][]Param{
 		{Name: "frame", Label: "Frame length (samples)", Kind: "int", Default: "1024"},
 		{Name: "schedule", Label: "Split schedule (CSV) or 'auto'", Kind: "string", Default: "auto"},
 	},
+	"nxdn/descramble": {
+		{Name: "in", Label: "Scrambled payload", Kind: "file", Required: true, Help: "hex per line (packed bits, MSB-first)"},
+		{Name: "key", Label: "Scrambler key (0-32767)", Kind: "int", Required: true},
+		{Name: "frame-type", Label: "CRC check (optional)", Kind: "select", Default: "", Options: []string{"", "sacch", "cac", "ccitt"}, Help: "verify a frame CRC after descrambling"},
+	},
+	"nxdn/brute": {
+		{Name: "in", Label: "Scrambled frames", Kind: "file", Required: true, Help: "one scrambled frame per line, hex (packed bits, MSB-first)"},
+		{Name: "oracle", Label: "Oracle", Kind: "select", Default: "crc", Options: []string{"crc", "known-pt"}, Help: "how to confirm a key guess"},
+		{Name: "frame-type", Label: "Frame type (crc oracle)", Kind: "select", Default: "sacch", Options: []string{"sacch", "cac", "ccitt"}},
+		{Name: "known-pt", Label: "Known plaintext (known-pt oracle)", Kind: "file", Help: "hex of known descrambled bits for one frame"},
+		{Name: "top", Label: "Max candidate keys to report", Kind: "int", Default: "16"},
+	},
 	"alias/gauge":     {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
 	"alias/structure": {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
 	"alias/cells": {

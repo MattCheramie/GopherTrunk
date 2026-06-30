@@ -20,6 +20,7 @@ import (
 	cryptolabweb "github.com/MattCheramie/GopherTrunk/web/cryptolab"
 	// Blank imports register the toolkit's tools and subjects via init().
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/motorola"
+	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/subjects/nxdn"
 	_ "github.com/MattCheramie/GopherTrunk/internal/cryptolab/tools"
 )
 
