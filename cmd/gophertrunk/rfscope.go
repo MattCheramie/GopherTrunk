@@ -242,6 +242,14 @@ func rfscopeRunAndExport(rep *diag.Reporter, src rfscope.Source, cfg rfscope.Seg
 		if groups := rfscope.DetectKeystreamReuse(scene); len(groups) > 0 {
 			fmt.Fprintf(os.Stderr, "rfscope: %d keystream-reuse group(s) detected — try `cryptolab ks reuse -in %s`\n", len(groups), framesOut)
 		}
+		// When cryptolab is linked, run the ks-reuse hand-off in-process and
+		// surface its verdict; the default binary skips this (engine triage above
+		// already ran).
+		if rfscope.CryptolabLinked {
+			if res, err := rfscope.RunCryptolabTool(ctx, "ks", "reuse", []string{"-in", framesOut}); err == nil && res != nil {
+				fmt.Fprintf(os.Stderr, "rfscope: cryptolab ks reuse → %s\n", res.Summary)
+			}
+		}
 	}
 
 	f, err := rfscope.ParseFormat(outFormat)
