@@ -80,6 +80,7 @@ export interface OpSpec {
   name: string;
   synopsis: string;
   transform: boolean;
+  external?: boolean;
   params?: OpParam[];
 }
 

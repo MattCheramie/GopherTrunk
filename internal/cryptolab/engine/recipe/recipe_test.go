@@ -82,6 +82,28 @@ func TestRC4DecryptOp(t *testing.T) {
 	}
 }
 
+func TestExternDecryptMarkedExternal(t *testing.T) {
+	t.Parallel()
+	if !External("extern-decrypt") {
+		t.Fatal("extern-decrypt must be flagged external (so the web endpoint refuses it)")
+	}
+	if External("xor") {
+		t.Fatal("xor is not external")
+	}
+	var found bool
+	for _, s := range Specs() {
+		if s.Name == "extern-decrypt" {
+			found = true
+			if !s.External {
+				t.Fatal("Specs() should mark extern-decrypt External")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("extern-decrypt missing from Specs()")
+	}
+}
+
 func TestSpecsExposeParams(t *testing.T) {
 	t.Parallel()
 	var sawXORKey, sawCipherMI bool

@@ -32,6 +32,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/cipherinfo"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/dmrcrypto"
+	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/extcipher"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/keystream"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/lfsr"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/p25crypto"
@@ -51,6 +52,11 @@ type Input struct {
 	// BaseKey is the fixed remainder of the key for the brute (the high bits);
 	// nil means all-zero.
 	BaseKey []byte
+	// ExternCmd, when set, is an external cipher program (engine/extcipher)
+	// used to brute / decrypt an unbundled cipher (e.g. TETRA TEA1). It applies
+	// to frames whose AlgID == ExternAlgID. CLI-only; never set from the web.
+	ExternCmd   string
+	ExternAlgID uint8
 }
 
 // MethodResult is one method's outcome.
@@ -320,6 +326,12 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 	if proto == "" {
 		proto = "p25"
 	}
+	// External cipher path: an operator-supplied program brutes the unbundled
+	// cipher natively (e.g. TEA1's 32-bit backdoor). This is what makes the
+	// TEA1 brute actually runnable without shipping the cipher.
+	if in.ExternCmd != "" && oracle.AlgID == in.ExternAlgID {
+		return externBrute(in, oracle, total)
+	}
 	suite := suiteFor(proto)
 	if !suite.Supported(oracle.AlgID) {
 		// Unbundled cipher: report the brute that would apply (e.g. TEA1).
@@ -375,6 +387,52 @@ func methodKeyBrute(in Input, total int) (MethodResult, []byte) {
 	m.Detail = map[string]any{"algorithm": suite.AlgName(oracle.AlgID), "searched": space, "brute_bits": in.BruteBits}
 	m.note(fmt.Sprintf("searched all 2^%d low-bit keys for %s; none matched. The key lies outside this slice of the keyspace.", in.BruteBits, suite.AlgName(oracle.AlgID)))
 	return m, nil
+}
+
+// externBrute runs the reduced-keyspace brute through an external cipher
+// program for a cipher the toolkit does not bundle (e.g. TEA1). The plugin does
+// the native key search; we verify the hit and decrypt the matching frames.
+func externBrute(in Input, oracle *keystream.Frame, total int) (MethodResult, []byte) {
+	m := MethodResult{Name: "key-brute"}
+	cli, err := extcipher.New(in.ExternCmd)
+	if err != nil {
+		m.note("external cipher: " + err.Error())
+		return m, nil
+	}
+	m.Applicable = true
+	want := keystream.XOR(in.KnownPT, oracle.CT)
+	if len(want) == 0 {
+		m.note("oracle plaintext/ciphertext overlap is empty.")
+		return m, nil
+	}
+	base := append([]byte(nil), in.BaseKey...)
+	if len(base) == 0 {
+		m.note("external brute needs -base-key set to zeros of the cipher's key length (e.g. 10 bytes for TEA1's 80-bit key) so the search knows the key size.")
+		return m, nil
+	}
+	key, found, err := cli.Brute(oracle.IV, want, base, in.BruteBits)
+	if err != nil {
+		m.note("external brute: " + err.Error())
+		return m, nil
+	}
+	if !found {
+		m.Detail = map[string]any{"external": in.ExternCmd, "brute_bits": in.BruteBits}
+		m.note(fmt.Sprintf("external cipher searched the low %d bits and found no key.", in.BruteBits))
+		return m, nil
+	}
+	ks, err := cli.Keystream(key, oracle.IV, len(want))
+	if err != nil || !bytesEqual(ks, want) {
+		m.note("external cipher returned a key that does not verify against the known plaintext.")
+		return m, nil
+	}
+	m.Verified = true
+	m.Effectiveness = effForAlg(in.Frames, oracle.AlgID, total)
+	m.RecoveredBytes = bytesForAlg(in.Frames, oracle.AlgID)
+	m.SampleHex = hexPreview(in.KnownPT, 32)
+	m.SampleASCII = asciiPreview(in.KnownPT, 32)
+	m.Detail = map[string]any{"key_hex": hex.EncodeToString(key), "external": in.ExternCmd, "brute_bits": in.BruteBits}
+	m.note(fmt.Sprintf("COMPLETE BREAK: the external cipher recovered key %s via a %d-bit brute — every frame under it is decryptable.", hex.EncodeToString(key), in.BruteBits))
+	return m, ks
 }
 
 // methodIVReuse: structural keystream reuse. This is an EXPOSURE method, not a
