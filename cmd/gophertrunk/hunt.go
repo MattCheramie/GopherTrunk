@@ -92,6 +92,14 @@ func runHunt(args []string) {
 	fs.Var(&rrCheckSIDs, "rr-check-sid", "RadioReference system id to compare against (repeatable)")
 
 	commit := fs.Bool("commit", false, "merge the discovered system into config.yaml (like import-pdf)")
+	// List-driven capture: record one signal from a prior survey's JSON and hand
+	// it to SigLab / CryptoLab.
+	surveyCapture := fs.String("survey-capture", "", "record IQ of one signal from a -from survey.json (a frequency in MHz, or #INDEX) and hand it to SigLab/CryptoLab")
+	captureFrom := fs.String("from", "", "survey JSON file (a prior `hunt -survey … -out-format json` export) the -survey-capture row is selected from")
+	captureTo := fs.String("to", "siglab", "with -survey-capture, where to send the capture: siglab | cryptolab")
+	captureSeconds := fs.Float64("capture-seconds", 10, "with -survey-capture, seconds of IQ to record")
+	captureOut := fs.String("capture-out", "", "with -survey-capture, output capture path (default: survey-<MHz>.cfile)")
+
 	configPath := fs.String("config", "config.yaml", "config.yaml path for -commit")
 	csvDir := fs.String("csv-dir", "", "directory for generated talkgroup CSVs on -commit (default: alongside -config)")
 	force := fs.Bool("force", false, "overwrite an existing system with the same name on -commit")
@@ -148,6 +156,23 @@ FLAGS:`)
 	_ = fs.Parse(args)
 	resolveVerbose(*verboseFlag, false)
 	rep := newReporter("hunt")
+
+	// List-driven capture short-circuits the hunt/survey pipeline: it records one
+	// already-discovered signal and routes it to deeper analysis.
+	if *surveyCapture != "" {
+		runSurveyCapture(rep, surveyCaptureParams{
+			selector:     *surveyCapture,
+			from:         *captureFrom,
+			to:           *captureTo,
+			serial:       *serial,
+			seconds:      *captureSeconds,
+			sampleRateHz: *sampleRate,
+			gain:         *gain,
+			ppm:          *ppm,
+			out:          *captureOut,
+		})
+		return
+	}
 
 	live := len(inPaths) == 0
 	if live && *serial == "" {

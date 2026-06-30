@@ -123,6 +123,35 @@ gophertrunk hunt -survey -classify-only -whole-device \
 crash-safe and restartable. A device that can't report a tuning range (a
 network or file source) tells you to pass an explicit `-band` instead.
 
+`-whole-device` auto-enables `-detect-wideband`: alongside the narrowband
+carriers, signals far wider than a channel (cellular LTE/5G, WiFi, other OFDM)
+are detected by stitching occupancy across tunes and surfaced as
+**named-but-not-decoded** inventory rows — GopherTrunk identifies and can
+capture them, it does not demodulate them.
+
+### Record a signal from the list and send it to SigLab / CryptoLab
+
+Export a survey to JSON, then pick any row and record raw IQ of it for deeper
+analysis — no need to hand-copy a frequency into `gophertrunk capture`:
+
+```sh
+# Capture the survey to JSON
+gophertrunk hunt -survey -whole-device -serial 00000001 \
+  -out-format json -out survey.json
+
+# Record signal #3 from the list and hand it to SigLab (offline workbench)
+gophertrunk hunt -survey-capture '#3' -from survey.json -to siglab -capture-seconds 30
+
+# …or select by frequency (MHz) and hand it to CryptoLab (crypto research)
+gophertrunk hunt -survey-capture 460.3375 -from survey.json -to cryptolab
+```
+
+The selected row's frequency and occupied bandwidth drive the capture (a signal
+wider than the tune is recorded as a slice, with a note). A `.cfile` + metadata
+sidecar is written; `-to siglab` runs a quick identify and prints the
+`gophertrunk siglab` command to open it, while `-to cryptolab` runs an `rfscope`
+pass to emit a CryptoLab `ks` frames file and prints the `cryptolab` next step.
+
 Live sweep tuning flags: `-band low:high` (MHz, repeatable), `-sweep-dwell`
 (accumulation per step), `-peak-threshold-db` (carrier detection threshold over
 the noise floor), `-min-spacing` (Hz between carriers), `-fft-size`,
