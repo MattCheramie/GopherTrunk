@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/bits"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/crypto/rc4"
@@ -85,22 +86,24 @@ var (
 
 // ops is the operation registry.
 var ops = map[string]opDef{
-	"xor":               {transform: true, synopsis: "repeating-key XOR (key=hex)", params: []OpParam{keyParam}, fn: opXOR},
-	"not":               {transform: true, synopsis: "bitwise NOT of every byte", fn: opNot},
-	"reverse-bits":      {transform: true, synopsis: "reverse the bit order within each byte (MSB↔LSB framing)", fn: opReverseBits},
-	"hex-decode":        {transform: true, synopsis: "decode an ASCII hex string to bytes", fn: opHexDecode},
-	"hex-encode":        {transform: true, synopsis: "encode bytes as an ASCII hex string", fn: opHexEncode},
-	"base64-decode":     {transform: true, synopsis: "decode standard base64 to bytes", fn: opBase64Decode},
-	"slice":             {transform: true, synopsis: "keep bytes [offset, offset+length) (length=0 → to end)", params: []OpParam{{Name: "offset", Label: "Offset", Kind: "int"}, {Name: "length", Label: "Length", Kind: "int"}}, fn: opSlice},
-	"rc4-decrypt":       {transform: true, synopsis: "raw RC4 decrypt with a caller-supplied key (DMR Enhanced Privacy / generic)", params: []OpParam{{Name: "key", Label: "Full RC4 key (hex)", Kind: "hex", Help: "the complete RC4 key bytes, e.g. privacy key ‖ IV"}}, fn: opRC4},
-	"adp-decrypt":       {transform: true, synopsis: "P25 ADP/RC4 decrypt (key=hex 5B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgADP)},
-	"des-ofb-decrypt":   {transform: true, synopsis: "P25 DES-OFB decrypt (key=hex 8B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgDESOFB)},
-	"tdes-ofb-decrypt":  {transform: true, synopsis: "P25 Triple-DES-OFB decrypt (key=hex 24B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgTDES)},
-	"aes-ofb-decrypt":   {transform: true, synopsis: "P25 AES-OFB decrypt (key=hex 16/32B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgAES256)},
-	"descramble-invert": {transform: true, synopsis: "full-band spectral inversion of s16le mono PCM (self-inverse)", fn: opDescramble},
-	"extern-decrypt":    {transform: true, external: true, synopsis: "decrypt via an external cipher program (e.g. a TETRA TEA1 tool) — CLI only", params: []OpParam{{Name: "cmd", Label: "Cipher program", Kind: "string", Help: "external program implementing the extcipher protocol"}, keyParam, miParam}, fn: opExternDecrypt},
-	"stats":             {transform: false, synopsis: "report entropy / index-of-coincidence / chi-square", fn: opStats},
-	"randomness":        {transform: false, synopsis: "quick NIST randomness subset (strong vs structured)", fn: opRandomness},
+	"xor":                  {transform: true, synopsis: "repeating-key XOR (key=hex)", params: []OpParam{keyParam}, fn: opXOR},
+	"not":                  {transform: true, synopsis: "bitwise NOT of every byte", fn: opNot},
+	"reverse-bits":         {transform: true, synopsis: "reverse the bit order within each byte (MSB↔LSB framing)", fn: opReverseBits},
+	"hex-decode":           {transform: true, synopsis: "decode an ASCII hex string to bytes", fn: opHexDecode},
+	"hex-encode":           {transform: true, synopsis: "encode bytes as an ASCII hex string", fn: opHexEncode},
+	"base64-decode":        {transform: true, synopsis: "decode standard base64 to bytes", fn: opBase64Decode},
+	"slice":                {transform: true, synopsis: "keep bytes [offset, offset+length) (length=0 → to end)", params: []OpParam{{Name: "offset", Label: "Offset", Kind: "int"}, {Name: "length", Label: "Length", Kind: "int"}}, fn: opSlice},
+	"rc4-decrypt":          {transform: true, synopsis: "raw RC4 decrypt with a caller-supplied key (DMR Enhanced Privacy / generic)", params: []OpParam{{Name: "key", Label: "Full RC4 key (hex)", Kind: "hex", Help: "the complete RC4 key bytes, e.g. privacy key ‖ IV"}}, fn: opRC4},
+	"adp-decrypt":          {transform: true, synopsis: "P25 ADP/RC4 decrypt (key=hex 5B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgADP)},
+	"des-ofb-decrypt":      {transform: true, synopsis: "P25 DES-OFB decrypt (key=hex 8B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgDESOFB)},
+	"tdes-ofb-decrypt":     {transform: true, synopsis: "P25 Triple-DES-OFB decrypt (key=hex 24B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgTDES)},
+	"aes-ofb-decrypt":      {transform: true, synopsis: "P25 AES-OFB decrypt (key=hex 16/32B, mi=hex)", params: cipherKeys, fn: cipherOp(p25crypto.AlgAES256)},
+	"descramble-invert":    {transform: true, synopsis: "full-band spectral inversion of s16le mono PCM (self-inverse)", fn: opDescramble},
+	"descramble-splitband": {transform: true, synopsis: "split-band spectral inversion of s16le mono PCM (invert low/high sub-bands about a split)", params: []OpParam{{Name: "split", Label: "Split (fraction of Nyquist)", Kind: "float", Help: "0..1; re-run with the same split to undo"}}, fn: opDescrambleSplit},
+	"descramble-rolling":   {transform: true, synopsis: "rolling spectral inversion of s16le mono PCM (per-frame split schedule, or auto-detect)", params: []OpParam{{Name: "frame", Label: "Frame length (samples)", Kind: "int", Help: "samples per frame (default 1024)"}, {Name: "schedule", Label: "Schedule", Kind: "string", Help: "comma-separated split fractions, or 'auto' to detect inverted frames"}}, fn: opDescrambleRolling},
+	"extern-decrypt":       {transform: true, external: true, synopsis: "decrypt via an external cipher program (e.g. a TETRA TEA1 tool) — CLI only", params: []OpParam{{Name: "cmd", Label: "Cipher program", Kind: "string", Help: "external program implementing the extcipher protocol"}, keyParam, miParam}, fn: opExternDecrypt},
+	"stats":                {transform: false, synopsis: "report entropy / index-of-coincidence / chi-square", fn: opStats},
+	"randomness":           {transform: false, synopsis: "quick NIST randomness subset (strong vs structured)", fn: opRandomness},
 }
 
 // External reports whether op shells out to a host program (and so must be
@@ -332,6 +335,97 @@ func opDescramble(buf []byte, _ params) ([]byte, map[string]any, string, error) 
 	return out, map[string]any{"samples": len(samples)}, "", nil
 }
 
+func opDescrambleSplit(buf []byte, p params) ([]byte, map[string]any, string, error) {
+	samples, err := pcmToFloat(buf)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("descramble-splitband: %w", err)
+	}
+	split := p.floatDefault("split", 0.5)
+	out := floatToPCM(voice.SplitBandInvert(samples, split))
+	return out, map[string]any{"samples": len(samples), "split": split}, "", nil
+}
+
+func opDescrambleRolling(buf []byte, p params) ([]byte, map[string]any, string, error) {
+	samples, err := pcmToFloat(buf)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("descramble-rolling: %w", err)
+	}
+	frame := p.intDefault("frame", 1024)
+	if frame <= 0 {
+		return nil, nil, "", fmt.Errorf("descramble-rolling: frame must be > 0, got %d", frame)
+	}
+	sched := strings.TrimSpace(p.str("schedule"))
+	if sched == "" || strings.EqualFold(sched, "auto") {
+		inv, flags := voice.RollingAuto(samples, frame)
+		inverted := 0
+		for _, f := range flags {
+			if f {
+				inverted++
+			}
+		}
+		return floatToPCM(inv),
+			map[string]any{"samples": len(samples), "frames": len(flags), "frames_inverted": inverted},
+			"auto mode is a heuristic inversion detector (energy balance); a known schedule is exact", nil
+	}
+	splits, err := parseSplitList(sched)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("descramble-rolling: %w", err)
+	}
+	out := floatToPCM(voice.RollingInvert(samples, frame, splits))
+	return out, map[string]any{"samples": len(samples), "schedule_steps": len(splits)}, "", nil
+}
+
+// pcmToFloat decodes s16le mono PCM bytes to float64 samples in [-1,1), the
+// representation the band-inversion engine works in.
+func pcmToFloat(buf []byte) ([]float64, error) {
+	if len(buf)%2 != 0 {
+		return nil, fmt.Errorf("need s16le PCM (even byte count), got %d", len(buf))
+	}
+	s := make([]float64, len(buf)/2)
+	for i := range s {
+		s[i] = float64(int16(uint16(buf[2*i])|uint16(buf[2*i+1])<<8)) / 32768.0
+	}
+	return s, nil
+}
+
+// floatToPCM re-encodes float64 samples to s16le mono PCM bytes, clamping to
+// the int16 range.
+func floatToPCM(s []float64) []byte {
+	out := make([]byte, len(s)*2)
+	for i, v := range s {
+		x := v * 32768.0
+		switch {
+		case x > 32767:
+			x = 32767
+		case x < -32768:
+			x = -32768
+		}
+		u := uint16(int16(x))
+		out[2*i] = byte(u)
+		out[2*i+1] = byte(u >> 8)
+	}
+	return out
+}
+
+func parseSplitList(s string) ([]float64, error) {
+	var out []float64
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(p, 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad split %q: %w", p, err)
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty schedule")
+	}
+	return out, nil
+}
+
 // --- analysis ops (buffer unchanged) ---
 
 func opStats(buf []byte, _ params) ([]byte, map[string]any, string, error) {
@@ -394,6 +488,29 @@ func (p params) hex(key string) ([]byte, error) {
 		return nil, fmt.Errorf("param %q: bad hex %q: %w", key, s, err)
 	}
 	return b, nil
+}
+
+func (p params) floatDefault(key string, def float64) float64 {
+	if p == nil {
+		return def
+	}
+	switch v := p[key].(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case string:
+		if s := strings.TrimSpace(v); s != "" {
+			if f, err := strconv.ParseFloat(s, 64); err == nil {
+				return f
+			}
+		}
+	}
+	return def
 }
 
 func (p params) intDefault(key string, def int) int {

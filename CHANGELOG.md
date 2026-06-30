@@ -22,6 +22,19 @@ for tagged releases.
   built with `make rfscope-web-build`). Unidentified digital payloads can be
   emitted as a cryptolab `ks` frames file (`-frames-out`) that feeds `cryptolab
   classify auto` / `ks reuse` directly.
+- **cryptolab external known-key decrypt (no brute required).** When an operator
+  has already recovered an unbundled cipher's key (e.g. ran their own TEA1
+  brute), `assess crypto` now verifies it through the external cipher and
+  decrypts + grades the capture by passing the key via `-keys` with `-extern-cmd`
+  / `-extern-algid` and a known-plaintext oracle — the weak-key method reports
+  the verified break, so `-brute-bits` is only needed when the key is still
+  unknown.
+- **cryptolab recipe split-band & rolling descramblers.** The `recipe` pipeline
+  gains `descramble-splitband` (`split` fraction of Nyquist) and
+  `descramble-rolling` (`frame` samples, `schedule` of split fractions or
+  `auto`) ops, bringing the inline analog-voice descrambler steps to parity with
+  the standalone `descramble` tool's three modes. The web Recipe Builder renders
+  the new float `split` parameter.
 - **Crypto Lab is discoverable from the other web consoles.** In a
   `-tags cryptolab` daemon build the main GopherTrunk console shows a *Crypto
   Lab* nav entry and the Signal Lab header shows a 🔐 Crypto Lab link; the

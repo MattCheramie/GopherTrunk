@@ -72,7 +72,7 @@ export interface LogEvent {
 export interface OpParam {
   name: string;
   label: string;
-  kind: "hex" | "int";
+  kind: "hex" | "int" | "float" | "string";
   help?: string;
 }
 

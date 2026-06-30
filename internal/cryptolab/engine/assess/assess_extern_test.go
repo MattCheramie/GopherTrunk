@@ -91,3 +91,67 @@ func TestAssessExternalBruteBreaks(t *testing.T) {
 		t.Fatalf("key-brute should be verified via the external cipher, got %+v", kb)
 	}
 }
+
+// TestAssessExternalKnownKeyDecrypts: an operator who already holds the key for
+// an unbundled cipher hands it to assess via -keys (no brute). assess verifies
+// it through the external program, decrypts the frames, and grades BROKEN.
+func TestAssessExternalKnownKeyDecrypts(t *testing.T) {
+	t.Parallel()
+	const alg = 0x01 // pretend TEA1 (tetra)
+	key := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	iv := []byte{0x33, 0x44}
+	pt := []byte("EMERGENCY DISPATCH ALL UNITS NOW")
+	c, _ := rc4.NewCipher(append(append([]byte{}, key...), iv...))
+	ct := xorb(pt, c.KeyStream(len(pt)))
+	f := keystream.Frame{Label: "t1", IV: iv, CT: ct, AlgID: alg}
+
+	rep := Run(Input{
+		Frames:      []keystream.Frame{f},
+		Protocol:    "tetra",
+		KnownLabel:  "t1",
+		KnownPT:     pt,
+		ExtraKeys:   [][]byte{{0, 0, 0, 0}, key}, // a decoy then the real key
+		ExternCmd:   mockSpec(),
+		ExternAlgID: alg,
+		// No BruteBits — this is the known-key path, not a search.
+	})
+	if rep.Verdict != VerdictBroken {
+		t.Fatalf("known external key should break the cipher, verdict = %s; methods: %+v", rep.Verdict, rep.Methods)
+	}
+	wk := find(rep, "weak-key")
+	if wk == nil || !wk.Verified {
+		t.Fatalf("weak-key should be verified via the external cipher, got %+v", wk)
+	}
+	if got := wk.Detail["key_hex"]; got != hex.EncodeToString(key) {
+		t.Errorf("recovered key_hex = %v, want %s", got, hex.EncodeToString(key))
+	}
+}
+
+// TestAssessExternalKnownKeyNeedsOracle: without a known-plaintext oracle the
+// external known-key path cannot verify an unbundled cipher's key, so it
+// reports inapplicable rather than claiming a break.
+func TestAssessExternalKnownKeyNeedsOracle(t *testing.T) {
+	t.Parallel()
+	const alg = 0x01
+	key := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	iv := []byte{0x33, 0x44}
+	pt := []byte("EMERGENCY DISPATCH ALL UNITS NOW")
+	c, _ := rc4.NewCipher(append(append([]byte{}, key...), iv...))
+	ct := xorb(pt, c.KeyStream(len(pt)))
+	f := keystream.Frame{Label: "t1", IV: iv, CT: ct, AlgID: alg}
+
+	rep := Run(Input{
+		Frames:      []keystream.Frame{f},
+		Protocol:    "tetra",
+		ExtraKeys:   [][]byte{key}, // correct key, but no oracle to verify it
+		ExternCmd:   mockSpec(),
+		ExternAlgID: alg,
+	})
+	if rep.Verdict == VerdictBroken {
+		t.Fatalf("a key cannot be confirmed without an oracle; verdict should not be BROKEN, got %s", rep.Verdict)
+	}
+	wk := find(rep, "weak-key")
+	if wk == nil || wk.Verified {
+		t.Fatalf("weak-key must not be verified without an oracle, got %+v", wk)
+	}
+}

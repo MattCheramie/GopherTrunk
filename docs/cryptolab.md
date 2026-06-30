@@ -173,8 +173,12 @@ Operations (run `recipe run -list` for the live set): transforms `xor`, `not`,
 `reverse-bits`, `hex-decode`, `hex-encode`, `base64-decode`, `slice`,
 `rc4-decrypt` (raw RC4 with a caller-supplied key — DMR Enhanced Privacy /
 generic), `adp-decrypt`, `des-ofb-decrypt`, `tdes-ofb-decrypt`,
-`aes-ofb-decrypt`, `descramble-invert`, and `extern-decrypt` (decrypt via an
-external cipher program — CLI only); analyses `stats`, `randomness`. The cipher
+`aes-ofb-decrypt`, the analog-voice descramblers `descramble-invert`,
+`descramble-splitband` (`split` = fraction of Nyquist), and `descramble-rolling`
+(`frame` samples, `schedule` = comma-separated split fractions or `auto`), and
+`extern-decrypt` (decrypt via an external cipher program — CLI only); analyses
+`stats`, `randomness`. The descramble ops mirror the standalone `descramble`
+tool's three modes so an inversion step can be chained inline. The cipher
 ops reuse the same `p25crypto` keystream constructions the `assess` harness
 uses, so a recipe can decrypt a known-key capture and immediately measure the
 result.
@@ -402,6 +406,14 @@ orchestrates it, verifies the hit, and decrypts the corpus. Wire it in with:
 cryptolab assess crypto -in frames.jsonl -protocol tetra \
     -known-label call-3 -known-pt known.bin \
     -extern-cmd "tea1-tool" -extern-algid 0x01 -brute-bits 32
+
+# Already recovered the key elsewhere? Hand it to assess with -keys (one hex
+# key per line) and no -brute-bits: it verifies the key through the external
+# cipher against the oracle, decrypts every frame under it, and grades the
+# result (the weak-key method reports the verified break).
+cryptolab assess crypto -in frames.jsonl -protocol tetra \
+    -known-label call-3 -known-pt known.bin \
+    -extern-cmd "tea1-tool" -extern-algid 0x01 -keys recovered.keys
 
 # Or decrypt with a recovered key inside a recipe (CLI only):
 #   {"op":"extern-decrypt","cmd":"tea1-tool","key":"<hex>","mi":"<iv hex>"}
