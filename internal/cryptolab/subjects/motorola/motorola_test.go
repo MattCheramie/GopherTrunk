@@ -291,13 +291,96 @@ func TestStructureModeExportsTransitions(t *testing.T) {
 	}
 }
 
+// synthDenseCSV writes a larger synthetic corpus: many fixed-length aliases
+// with diverse per-position characters and high bytes fixed per position, so
+// every position-context repeats across enough aliases for the cell solver to
+// pin it — guaranteeing full-message coverage for the propagate mode. The
+// per-character state is a clean function of context (no bit errors), so the
+// recovered transition must be perfectly functional.
+func synthDenseCSV(t *testing.T) string {
+	t.Helper()
+	tab := Recovered()
+	const n = 6
+	g := func(k int) uint8 { return uint8(50 + 5*k) }
+	plant := func(hp, hc uint8) gauge.State {
+		return gauge.State{Hi: hp ^ hc ^ 0x5A, Mul: (hp*3 + hc*5) | 1}
+	}
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -"
+
+	var buf bytes.Buffer
+	buf.WriteString("rid,talkgroup,encoded_hex,alias\n")
+	for i := 0; i < 48; i++ {
+		alias := make([]byte, n)
+		for k := 0; k < n; k++ {
+			alias[k] = charset[(i*7+k*13)%len(charset)]
+		}
+		enc := make([]byte, 2*n+2)
+		for k := 0; k < n; k++ {
+			hc := g(k)
+			hp := uint8(n)
+			if k > 0 {
+				hp = g(k - 1)
+			}
+			st := plant(hp, hc)
+			enc[2*k] = tab.EncodeEven(hc)
+			enc[2*k+1] = tab.EncodeOdd(st.Hi, st.Mul, alias[k])
+		}
+		enc[2*n], enc[2*n+1] = 0xAB, 0xCD // CRC placeholder, stripped on load
+		fmt.Fprintf(&buf, "%d,100,%s,%s\n", 5000+i, hex.EncodeToString(enc), alias)
+	}
+	path := filepath.Join(t.TempDir(), "synth_dense.csv")
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestPropagateModeRecoversCleanMachine(t *testing.T) {
+	t.Parallel()
+	csv := synthDenseCSV(t)
+	env := cryptolab.Env{OutDir: t.TempDir(), Stdout: &bytes.Buffer{}, Format: cryptolab.FormatText}
+	res, err := (propagateMode{}).Run(context.Background(), []string{"-csv", csv}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := func(key string) int {
+		t.Helper()
+		for _, f := range res.Fields {
+			if f.Key == key {
+				return f.Value.(int)
+			}
+		}
+		t.Fatalf("field %q not found", key)
+		return 0
+	}
+	// Synthetic data has no bit errors, so the recovered per-character
+	// transition must be perfectly functional.
+	if c := field("transition_conflicts"); c != 0 {
+		t.Fatalf("transition_conflicts = %d, want 0 on clean synthetic data", c)
+	}
+	// At least one message must reach full context coverage.
+	if field("messages_full") < 1 {
+		t.Fatal("no message fully decoded on the synthetic corpus")
+	}
+	// Correctness invariant: every fully-covered message must round-trip to
+	// its known plaintext — a covered decode is never wrong.
+	if e, f := field("messages_exact"), field("messages_full"); e != f {
+		t.Fatalf("messages_exact=%d != messages_full=%d: a fully-covered message decoded wrong", e, f)
+	}
+	// Propagation only adds coverage; it never loses the cell solver's pins.
+	if field("pinned_final") < field("pinned_initial") {
+		t.Fatalf("pinned_final=%d < pinned_initial=%d (propagation must be monotone)",
+			field("pinned_final"), field("pinned_initial"))
+	}
+}
+
 func TestAliasToolRegistered(t *testing.T) {
 	t.Parallel()
 	tool, ok := cryptolab.Lookup("alias")
 	if !ok {
 		t.Fatal("alias tool not registered")
 	}
-	if len(tool.Modes()) != 4 {
-		t.Fatalf("alias has %d modes, want 4", len(tool.Modes()))
+	if len(tool.Modes()) != 5 {
+		t.Fatalf("alias has %d modes, want 5", len(tool.Modes()))
 	}
 }

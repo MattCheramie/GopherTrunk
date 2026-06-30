@@ -153,7 +153,8 @@ var modeParams = map[string][]Param{
 		{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true},
 		{Name: "resume", Label: "Resume checkpoint (optional)", Kind: "file"},
 	},
-	"alias/fromseed": {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
+	"alias/fromseed":  {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
+	"alias/propagate": {{Name: "csv", Label: "Ground-truth corpus CSV", Kind: "file", Required: true}},
 }
 
 // Schema returns the web-facing description of every registered tool/mode,
