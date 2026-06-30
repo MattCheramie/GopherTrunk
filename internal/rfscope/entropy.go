@@ -38,6 +38,7 @@ type EntropyResult struct {
 	Recommended        string  `json:"recommended"`
 
 	payload []byte // raw recovered bytes, for the bridge; not serialized
+	iv      []byte // recovered IV/MI when a partial protocol exposes one; nil otherwise
 }
 
 // entropyAnalyzer triages every unidentified digital emitter's payload: it
