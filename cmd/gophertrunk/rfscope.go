@@ -27,6 +27,9 @@ func runRFScope(args []string) {
 		case "live":
 			runRFScopeLive(args[1:])
 			return
+		case "cockpit":
+			runRFScopeCockpit(args[1:])
+			return
 		case "list":
 			runRFScopeList(args[1:])
 			return
@@ -45,6 +48,7 @@ func rfscopeUsage(w *os.File) {
 USAGE:
   gophertrunk rfscope analyze -in <capture> [flags]   analyze a recorded IQ capture
   gophertrunk rfscope live -serial <sdr> -freq Hz [flags]   analyze a live SDR span
+  gophertrunk rfscope cockpit [-in <capture> | -serial <sdr> -freq Hz]   live scene TUI
   gophertrunk rfscope list                            list registered analyzers
 
 Run a subcommand with -h for its flags.`)
@@ -154,6 +158,7 @@ func runRFScopeLive(args []string) {
 	freq := fs.Uint64("freq", 0, "centre frequency to tune in Hz (required)")
 	sampleRate := fs.Uint64("sample-rate", 2_400_000, "IQ sample rate in Hz")
 	duration := fs.Float64("duration", 10, "seconds of live IQ to analyze")
+	tui := fs.Bool("tui", false, "open the live scene cockpit (TUI) instead of a one-shot report")
 	af := registerAnalysisFlags(fs)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk rfscope live — segment + analyze a live SDR span.
@@ -175,6 +180,17 @@ FLAGS:`)
 	}
 	if *sampleRate == 0 || *duration <= 0 {
 		rep.Fatalf(2, "-sample-rate and -duration must be > 0")
+	}
+
+	// -tui delegates to the cockpit, which opens its own SDR source.
+	if *tui {
+		cargs := []string{"-serial", *serial, "-freq", fmt.Sprint(*freq),
+			"-sample-rate", fmt.Sprint(*sampleRate), "-duration", fmt.Sprint(*duration)}
+		if *af.analyzers != "" {
+			cargs = append(cargs, "-analyzers", *af.analyzers)
+		}
+		runRFScopeCockpit(cargs)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*duration*2)*time.Second+5*time.Second)
