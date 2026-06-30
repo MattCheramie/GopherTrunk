@@ -45,6 +45,9 @@ func (s *Server) mountCryptolab(mux *http.ServeMux) {
 		mux.HandleFunc("GET /cryptolab", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/cryptolab/", http.StatusMovedPermanently)
 		})
+		// Advertise the console so the other web UIs surface a Crypto Lab link
+		// only when it is actually reachable (see RuntimeDTO.CryptolabConsole).
+		s.cryptolabConsole = true
 	}
 }
 

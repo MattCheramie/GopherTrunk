@@ -24,6 +24,9 @@ export interface NavItem {
   /** Opens `to` in a new browser tab instead of routing (Config
    *  Builder is a separate SPA the daemon serves at /config/). */
   external?: boolean;
+  /** Shown only when the daemon advertises the Crypto Lab console
+   *  (runtime.cryptolab_console — a -tags cryptolab build). */
+  requiresCryptolab?: boolean;
 }
 
 export interface NavGroup {
@@ -106,6 +109,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/devices", label: "Devices", icon: "⌗", keywords: ["sdr", "pool", "rtl", "dongle"] },
       { to: "/metrics", label: "Metrics", icon: "▰", keywords: ["prometheus", "stats", "graphs"] },
       { to: "/config/", label: "Config Builder", icon: "🛠", external: true, keywords: ["yaml", "editor"] },
+      {
+        to: "/cryptolab/",
+        label: "Crypto Lab",
+        icon: "🔐",
+        external: true,
+        requiresCryptolab: true,
+        keywords: ["crypto", "encryption", "cipher", "decrypt", "tea1", "adp", "des", "aes", "randomness", "keystream", "assess", "recipe"],
+      },
     ],
   },
 ];
@@ -124,13 +135,17 @@ export const PRIMARY_ITEMS: NavItem[] = NAV_ITEMS.filter((i) => i.primary);
  */
 export function useVisibleNavGroups(): NavGroup[] {
   const hiddenTabs = useShared((s) => s.hiddenTabs);
+  const cryptolabConsole = useShared((s) => s.cryptolabConsole);
   return useMemo(() => {
     const hidden = new Set(hiddenTabs);
     return NAV_GROUPS.map((g) => ({
       ...g,
-      items: g.items.filter((i) => i.external || !hidden.has(tabKey(i))),
+      items: g.items.filter((i) => {
+        if (i.requiresCryptolab && !cryptolabConsole) return false;
+        return i.external || !hidden.has(tabKey(i));
+      }),
     })).filter((g) => g.items.length > 0);
-  }, [hiddenTabs]);
+  }, [hiddenTabs, cryptolabConsole]);
 }
 
 /** Flat visible items (for the command palette and bottom nav). */

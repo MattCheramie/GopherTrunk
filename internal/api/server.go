@@ -394,6 +394,12 @@ type Server struct {
 	// non-tagged server.go does not import the cryptolab packages.
 	cryptolabCloser interface{ Close() error }
 
+	// cryptolabConsole is set true when the cryptolab SPA is mounted at
+	// /cryptolab/ (a -tags cryptolab build with the SPA bundled). The runtime
+	// endpoint surfaces it so the other consoles only link to the Crypto Lab
+	// when it is actually reachable.
+	cryptolabConsole bool
+
 	// configBuilder backs the standalone web Config Builder/Editor:
 	// the /api/v1/config/* routes (browse / load / validate / save /
 	// RadioReference browse) and, when assets are wired, the builder SPA

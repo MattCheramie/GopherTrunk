@@ -66,6 +66,10 @@ interface SharedState {
    *  nav bar filters these out. Sourced from /api/v1/runtime. */
   hiddenTabs: string[];
 
+  /** True when the daemon serves the Crypto Lab SPA at /cryptolab/
+   *  (a -tags cryptolab build). Gates the Crypto Lab nav link. */
+  cryptolabConsole: boolean;
+
   /** Base for rendering identity numbers (WACN, System ID, NAC, RFSS,
    *  Site): "hex" (default, P25 field convention) or "dec". Sourced from
    *  web.id_base config via /api/v1/runtime. */
@@ -97,6 +101,7 @@ interface SharedState {
   setDevices(d: DeviceDTO[]): void;
   setScanner(s: ScannerStatusDTO | null): void;
   setHiddenTabs(tabs: string[]): void;
+  setCryptolabConsole(v: boolean): void;
   setIDBase(base: "hex" | "dec"): void;
   setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
@@ -128,6 +133,7 @@ export const useShared = create<SharedState>((set, get) => ({
   events: [],
   eventCap: 500,
   hiddenTabs: [],
+  cryptolabConsole: false,
   idBase: "hex",
   configPath: null,
 
@@ -178,6 +184,9 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setHiddenTabs(tabs) {
     set({ hiddenTabs: tabs });
+  },
+  setCryptolabConsole(v) {
+    set({ cryptolabConsole: v });
   },
   setIDBase(base) {
     set({ idBase: base });
@@ -255,6 +264,7 @@ export const useShared = create<SharedState>((set, get) => ({
       events: [],
       mutations: null,
       hiddenTabs: [],
+      cryptolabConsole: false,
       idBase: "hex",
       configPath: null,
       lastError: null,

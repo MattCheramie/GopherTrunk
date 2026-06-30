@@ -52,6 +52,7 @@ export function App() {
   const setMutations = useShared((s) => s.setMutations);
   const setWSStatus = useShared((s) => s.setWSStatus);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
+  const setCryptolabConsole = useShared((s) => s.setCryptolabConsole);
   const setIDBase = useShared((s) => s.setIDBase);
   const setConfigPath = useShared((s) => s.setConfigPath);
   const configPath = useShared((s) => s.configPath);
@@ -110,6 +111,7 @@ export function App() {
       .runtime(cfg)
       .then((rt) => {
         setHiddenTabs(rt.hidden_tabs ?? []);
+        setCryptolabConsole(rt.cryptolab_console === true);
         setIDBase(rt.id_base === "dec" ? "dec" : "hex");
         setConfigPath(rt.config_path ?? "");
       })
@@ -130,6 +132,7 @@ export function App() {
     setMutations,
     setWSStatus,
     setHiddenTabs,
+    setCryptolabConsole,
     setConfigPath,
   ]);
 
