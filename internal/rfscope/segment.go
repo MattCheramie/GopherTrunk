@@ -179,6 +179,13 @@ func Segment(ctx context.Context, src Source, cfg SegmentConfig) (*Scene, *Input
 				spectrum.AverageDB(slice, 0, outRate, occFFTFor(len(slice))).Bins,
 				outRate, float64(cfg.MinSpacingHz), float64(cfg.MinSpacingHz), float64(cfg.MinSpacingHz),
 			)
+			// Prefer survey's occupied bandwidth (an above-noise-floor outward walk)
+			// over ComputeOccupancy's 99%-power span, which under-measures FM-family
+			// carriers whose strong DC carrier component concentrates the power.
+			occBwHz := cls.OccupiedBwHz
+			if occBwHz == 0 {
+				occBwHz = uint32(math.Round(occ.OccupiedBandwidthHz))
+			}
 
 			nextID++
 			id := nextID
@@ -189,7 +196,7 @@ func Segment(ctx context.Context, src Source, cfg SegmentConfig) (*Scene, *Input
 				EndSec:           float64(sp.endSample) / outRate,
 				PeakDbFS:         pk.PowerDbFS,
 				SNRDb:            pk.SNRDb,
-				OccupiedBwHz:     uint32(math.Round(occ.OccupiedBandwidthHz)),
+				OccupiedBwHz:     occBwHz,
 				ChannelPowerDBFS: occ.ChannelPowerDBFS,
 				ACPRUpperDB:      occ.ACPRUpperDB,
 				ACPRLowerDB:      occ.ACPRLowerDB,

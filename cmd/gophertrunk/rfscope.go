@@ -60,6 +60,7 @@ type rfscopeAnalysisFlags struct {
 	analyzers      *string
 	outFormat      *string
 	out            *string
+	framesOut      *string
 }
 
 func registerAnalysisFlags(fs *flag.FlagSet) rfscopeAnalysisFlags {
@@ -71,6 +72,7 @@ func registerAnalysisFlags(fs *flag.FlagSet) rfscopeAnalysisFlags {
 		analyzers:      fs.String("analyzers", "", "comma-separated analyzers to run (default: all registered)"),
 		outFormat:      fs.String("out-format", "summary", "output format: summary | json | jsonl | yaml | csv"),
 		out:            fs.String("out", "", "write output to this file (default: stdout)"),
+		framesOut:      fs.String("frames-out", "", "write recovered payloads as a cryptolab `ks` frames file (JSONL)"),
 	}
 }
 
@@ -142,7 +144,7 @@ FLAGS:`)
 	if *window > 0 {
 		maxSamples = int(*window * *sampleRate)
 	}
-	rfscopeRunAndExport(rep, src, af.segConfig(maxSamples), af.selectedAnalyzers(), *in, *af.outFormat, *af.out)
+	rfscopeRunAndExport(rep, src, af.segConfig(maxSamples), af.selectedAnalyzers(), *in, *af.outFormat, *af.out, *af.framesOut)
 }
 
 func runRFScopeLive(args []string) {
@@ -197,7 +199,7 @@ FLAGS:`)
 
 	maxSamples := int(*duration * float64(*sampleRate))
 	label := fmt.Sprintf("live:%s@%.6fMHz", info.Serial, float64(*freq)/1e6)
-	rfscopeRunAndExport(rep, src, af.segConfig(maxSamples), af.selectedAnalyzers(), label, *af.outFormat, *af.out)
+	rfscopeRunAndExport(rep, src, af.segConfig(maxSamples), af.selectedAnalyzers(), label, *af.outFormat, *af.out, *af.framesOut)
 }
 
 func runRFScopeList(args []string) {
@@ -215,7 +217,7 @@ func runRFScopeList(args []string) {
 
 // rfscopeRunAndExport segments src, runs the selected analyzers, and writes the
 // scene — the shared tail of the analyze and live subcommands.
-func rfscopeRunAndExport(rep *diag.Reporter, src rfscope.Source, cfg rfscope.SegmentConfig, analyzers []string, sourceLabel, outFormat, outPath string) {
+func rfscopeRunAndExport(rep *diag.Reporter, src rfscope.Source, cfg rfscope.SegmentConfig, analyzers []string, sourceLabel, outFormat, outPath, framesOut string) {
 	ctx := context.Background()
 	scene, in, err := rfscope.Segment(ctx, src, cfg)
 	if err != nil {
@@ -224,6 +226,30 @@ func rfscopeRunAndExport(rep *diag.Reporter, src rfscope.Source, cfg rfscope.Seg
 	scene.Source = sourceLabel
 	if err := rfscope.Run(ctx, scene, in, analyzers...); err != nil {
 		rep.Fatal(1, err)
+	}
+
+	if framesOut != "" {
+		ff, err := os.Create(framesOut)
+		if err != nil {
+			rep.Fatal(1, fmt.Errorf("create %s: %w", framesOut, err))
+		}
+		n, werr := rfscope.EmitFrames(scene, ff)
+		ff.Close()
+		if werr != nil {
+			rep.Fatal(1, fmt.Errorf("write frames: %w", werr))
+		}
+		fmt.Fprintf(os.Stderr, "rfscope: wrote %d cryptolab frame(s) → %s\n", n, framesOut)
+		if groups := rfscope.DetectKeystreamReuse(scene); len(groups) > 0 {
+			fmt.Fprintf(os.Stderr, "rfscope: %d keystream-reuse group(s) detected — try `cryptolab ks reuse -in %s`\n", len(groups), framesOut)
+		}
+		// When cryptolab is linked, run the ks-reuse hand-off in-process and
+		// surface its verdict; the default binary skips this (engine triage above
+		// already ran).
+		if rfscope.CryptolabLinked {
+			if res, err := rfscope.RunCryptolabTool(ctx, "ks", "reuse", []string{"-in", framesOut}); err == nil && res != nil {
+				fmt.Fprintf(os.Stderr, "rfscope: cryptolab ks reuse → %s\n", res.Summary)
+			}
+		}
 	}
 
 	f, err := rfscope.ParseFormat(outFormat)
