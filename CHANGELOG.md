@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.8] — 2026-06-30
+
+Headlined by two new analysis surfaces. **RF Scope** (`gophertrunk rfscope`)
+is a protocol-agnostic "Wireshark for the RF physical layer" — point it at any
+band and it produces a structured *scene* (protocol hierarchy, per-channel
+activity, burst timing, an emitter/conversation graph, entropy/encryption
+triage, and an expert-info anomaly list) with no prior knowledge of the
+technology, across a CLI, a Bubbletea cockpit, and a standalone web console.
+The **`cryptolab`** research toolkit grows a full RF crypto security-test suite
+(`assess crypto`, randomness battery, classifier, keystream-reuse, period
+detection), a CyberChef-style `recipe` pipeline with a web Recipe Builder, an
+external-cipher bridge for unbundled ciphers (TEA1), DMR active decryption, and
+an NXDN 15-bit scrambler brute-force — and is now discoverable from the other
+web consoles. **SigLab** gains lab-grade VSA modulation-quality metrics,
+spectral-occupancy metrics, a blind modulation/symbol-rate estimator with an
+offline signal-ID database, and a data-over-RF PDU inspector. Rounded out by a
+macOS-only **Airspy concurrency crash fix**.
+
 ### Added
 - **RF Scope — protocol-agnostic RF network analysis ("Wireshark for the RF
   physical layer").** A new `gophertrunk rfscope` surface analyzes any band — a
@@ -92,6 +110,52 @@ for tagged releases.
   each encrypted superframe's Message Indicator + encrypted voice frames as
   JSONL for `cryptolab assess`/`ks`. Off by default (no effect on the voice
   path when unset).
+- **cryptolab NXDN scrambler descramble + 15-bit key brute-force.** NXDN's
+  optional scrambler privacy mode is keyed by only 15 bits (32768 keys), so it
+  is trivially brute-forceable. The new cryptolab `nxdn` tool descrambles an
+  info field with a known key or sweeps the whole keyspace, confirming each key
+  via a pluggable CRC or known-plaintext oracle (phase 1, offline tool; an
+  AMBE-FEC voice oracle is reserved for the future NXDN voice decoder).
+- **SigLab VSA-class modulation-quality metrics.** SigLab surfaces a lab
+  vector-signal-analyzer breakdown beside the constellation — RMS/peak EVM,
+  magnitude/phase error, origin offset, a per-symbol EVM trace, an FFT
+  error-vector spectrum, IQ gain/quadrature imbalance, and the receiver's
+  settled carrier-frequency error — all derived from the symbols it already
+  recovers, with no new estimation.
+- **SigLab spectral-occupancy metrics** — occupied bandwidth, channel power,
+  ACPR, and spectral flatness per analyzed signal (also carried into the RF
+  Scope scene model as clustering/triage dimensions).
+- **SigLab blind modulation estimator + offline signal-ID reference.** A pure
+  blind symbol-rate and coarse modulation-class (FSK2/FSK4/PSK/QAM) estimator
+  names carriers no decoder can lock, and a curated offline signal-ID reference
+  catalog matches them, so `identify` and the wideband survey no longer drop
+  undecodable carriers silently.
+- **SigLab data-over-RF PDU inspector.** The P25 data PDUs (TSBKs) the decoder
+  already parses are surfaced as a field-level dissection — opcode, MFID, NAC,
+  src/dest/talkgroup, raw payload, and CRC/FEC outcome per block, decoded and
+  CRC/trellis-failed blocks alike — instead of being consumed and discarded.
+
+### Changed
+- **Airspy reports its delivered sample rate via `ActualSampleRate()`** (#402).
+  The Airspy only streams the discrete rates its firmware advertises; a
+  requested rate it couldn't honour was silently snapped to the nearest one
+  while the down-converters were still built for the requested rate. The daemon
+  now warns on the mismatch and rebuilds its down-converters from the rate that
+  actually arrives, keeping the symbol clock aligned. Exact-match rates are
+  unchanged.
+- **Documented `dc_avoid` / `dc_avoid_offset_hz`** (LO-offset DC-spike
+  avoidance, #402) in `config.example.yaml` — the config builder already
+  emitted them, but the example config carried no reference stanza.
+
+### Fixed
+- **Airspy crash when decoding on macOS** (`panic: index out of range [12] with
+  length 12`). The Airspy real-to-IQ converter carries filter state across USB
+  packets, but the macOS USB transport delivers packets from up to 32
+  concurrent reaper goroutines that all raced on the single shared converter's
+  cursors. The conversion now runs serially behind a mutex (uncontended on
+  Linux, which already reaps from one goroutine); adds a failing-first
+  32-goroutine regression test. RTL-SDR/HackRF/AirspyHF were unaffected — their
+  per-packet conversion is stateless.
 
 ## [v0.5.7] — 2026-06-29
 
