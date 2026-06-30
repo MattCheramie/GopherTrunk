@@ -85,6 +85,7 @@ Global flags precede the tool name (`-out`, `-resume`, `-format`,
 | `brute` | `xor`, `caesar`, `vigenere`, `substitution` | classical-cipher recovery with English/crib scoring |
 | `lfsr` | `bm`, `keystream` | Berlekamp–Massey LFSR recovery; keystream = pt⊕ct |
 | `ks` | `reuse`, `mtp`, `extract` | keystream-reuse detection, many-time-pad recovery, keystream extraction |
+| `recipe` | `run` | CyberChef-style pipeline: chain transform + analysis ops, piping bytes between steps |
 | `crc` | `recover`, `compute` | recover / compute CRC parameters from sample frames |
 | `descramble` | `invert`, `splitband`, `rolling` | analog spectral / split-band / rolling-code voice inversion |
 | `alias` | `gauge`, `structure`, `cells`, `fromseed` | length-seeded byte-obfuscator recovery |
@@ -132,6 +133,39 @@ gophertrunk cryptolab descramble splitband -in scrambled.s16 -out clear.s16 -spl
 # Undo a rolling/hopping inversion, auto-detecting the per-frame split.
 gophertrunk cryptolab descramble rolling -in scrambled.s16 -out clear.s16 -frame 1024 -schedule auto
 ```
+
+## Recipe pipeline (`recipe run`)
+
+`recipe` is a CyberChef-style operation pipeline. A recipe is an ordered list of
+steps; each step is either a **transform** (it rewrites the working buffer —
+XOR, a cipher decrypt, a bit reversal, a spectral inversion, hex/base64) or an
+**analysis** (it measures the current buffer — entropy, randomness — without
+changing it). The bytes flow from one step to the next, so the de-obfuscation
+sequence an analyst repeats by hand becomes one reusable artifact.
+
+```
+cryptolab recipe run -in payload.bin -recipe recipe.json [-out final.bin]
+cryptolab recipe run -list      # list the available operations
+```
+
+The recipe file is JSON or YAML — either a top-level list of steps or an object
+with a `steps:` list. Each step is `{op, …params}`:
+
+```json
+[
+  {"op": "hex-decode"},
+  {"op": "adp-decrypt", "key": "abcdef0123", "mi": "090807060504030201"},
+  {"op": "stats"},
+  {"op": "randomness"}
+]
+```
+
+Operations (run `recipe run -list` for the live set): transforms `xor`, `not`,
+`reverse-bits`, `hex-decode`, `hex-encode`, `base64-decode`, `slice`,
+`adp-decrypt`, `des-ofb-decrypt`, `tdes-ofb-decrypt`, `aes-ofb-decrypt`,
+`descramble-invert`; analyses `stats`, `randomness`. The cipher ops reuse the
+same `p25crypto` keystream constructions the `assess` harness uses, so a recipe
+can decrypt a known-key capture and immediately measure the result.
 
 ## Subject framework: byte-obfuscator recovery (`alias`)
 
