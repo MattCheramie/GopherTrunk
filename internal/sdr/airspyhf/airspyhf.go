@@ -223,6 +223,12 @@ type Device struct {
 // Info implements sdr.Device.
 func (d *Device) Info() sdr.Info { return d.info }
 
+// FreqRange reports the Airspy HF+'s documented coverage as a single
+// 9 kHz .. 260 MHz span (sdr.FreqRanger). The HF+ actually serves
+// 9 kHz–31 MHz and 60–260 MHz with a gap between; the conservative outer
+// envelope is reported here and out-of-band tunes still fail at the driver.
+func (d *Device) FreqRange() (minHz, maxHz uint32) { return 9_000, 260_000_000 }
+
 // SetCenterFreq programs the synthesizer to hz Hz. libairspyhf carries
 // the value as a 4-byte little-endian uint32 in the control transfer
 // data stage; wValue and wIndex are unused. The firmware accepts

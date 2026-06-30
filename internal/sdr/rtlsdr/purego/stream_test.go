@@ -107,8 +107,9 @@ type fakeTuner struct {
 	gainErr, modeErr error
 }
 
-func (f *fakeTuner) Type() tuners.Type { return tuners.TypeR820T2 }
-func (f *fakeTuner) IFFreqHz() uint32  { return 3_570_000 }
+func (f *fakeTuner) Type() tuners.Type                  { return tuners.TypeR820T2 }
+func (f *fakeTuner) IFFreqHz() uint32                   { return 3_570_000 }
+func (f *fakeTuner) FreqRange() (minHz, maxHz uint32)   { return 24_000_000, 1_766_000_000 }
 func (f *fakeTuner) Init() error       { return nil }
 func (f *fakeTuner) Standby() error    { f.standbyCalls++; return nil }
 func (f *fakeTuner) Close() error      { return f.Standby() }

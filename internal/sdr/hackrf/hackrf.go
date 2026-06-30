@@ -318,6 +318,12 @@ type Device struct {
 // Info implements sdr.Device.
 func (d *Device) Info() sdr.Info { return d.info }
 
+// FreqRange reports the HackRF One's tuning span (sdr.FreqRanger). The
+// device documents 1 MHz .. 6 GHz, but the sdr API carries frequency as
+// uint32 Hz (ceiling ~4.294 GHz), so the upper bound is clamped to that
+// ceiling — a whole-device sweep covers 1 MHz .. 4.294 GHz.
+func (d *Device) FreqRange() (minHz, maxHz uint32) { return 1_000_000, 4_294_967_295 }
+
 // SetCenterFreq programs the synthesizer to the requested frequency,
 // in Hz. libhackrf splits the value into MHz + Hz-remainder octets.
 func (d *Device) SetCenterFreq(hz uint32) error {

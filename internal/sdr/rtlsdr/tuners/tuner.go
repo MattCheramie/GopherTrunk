@@ -79,6 +79,11 @@ type Tuner interface {
 	// of the requested center frequency. Returns an error if the
 	// PLL can't lock or if hz is out of the chip's supported range.
 	SetFreq(hz uint32) error
+	// FreqRange reports the chip's inclusive PLL tuning range in Hz.
+	// SetFreq rejects (with [ErrUnsupportedFreq]) any request outside
+	// it, and callers that need to sweep "the whole device" derive the
+	// span from here. The bounds are the same literals SetFreq enforces.
+	FreqRange() (minHz, maxHz uint32)
 	// SetBandwidth picks the IF filter that matches the requested
 	// occupied bandwidth (typically the same as the sample rate).
 	// Pass 0 to let the driver pick a sensible default.

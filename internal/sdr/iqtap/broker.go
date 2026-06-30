@@ -160,6 +160,18 @@ func (b *Broker) Info() sdr.Info {
 	return b.inner.Info()
 }
 
+// FreqRange forwards the wrapped device's tuning range when it exposes
+// one (sdr.FreqRanger); otherwise it reports (0,0) so callers fall back to
+// an explicit band.
+func (b *Broker) FreqRange() (minHz, maxHz uint32) {
+	b.innerMu.RLock()
+	defer b.innerMu.RUnlock()
+	if fr, ok := b.inner.(sdr.FreqRanger); ok {
+		return fr.FreqRange()
+	}
+	return 0, 0
+}
+
 func (b *Broker) SetCenterFreq(hz uint32) error {
 	b.innerMu.RLock()
 	defer b.innerMu.RUnlock()

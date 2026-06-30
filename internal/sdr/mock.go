@@ -20,6 +20,14 @@ type MockDriver struct {
 
 const MockDriverName = "mock"
 
+// mockMinFreqHz / mockMaxFreqHz are the R820T family's tuning bounds, used
+// by the mock devices' FreqRange so the whole-device sweep path is testable
+// without real hardware.
+const (
+	mockMinFreqHz uint32 = 24_000_000
+	mockMaxFreqHz uint32 = 1_766_000_000
+)
+
 func (m *MockDriver) Name() string { return MockDriverName }
 
 func (m *MockDriver) Enumerate() ([]Info, error) {
@@ -54,7 +62,12 @@ type MockDevice struct {
 	closed     bool
 }
 
-func (d *MockDevice) Info() Info                 { return d.info }
+func (d *MockDevice) Info() Info { return d.info }
+
+// FreqRange reports the R820T family's 24 MHz .. 1.766 GHz span so the
+// whole-device hunt sweep (sdr.FreqRanger) is exercised in tests.
+func (d *MockDevice) FreqRange() (minHz, maxHz uint32) { return mockMinFreqHz, mockMaxFreqHz }
+
 func (d *MockDevice) SetCenterFreq(uint32) error { return nil }
 func (d *MockDevice) SetGain(int) error          { return nil }
 func (d *MockDevice) SetPPM(int) error           { return nil }
@@ -154,7 +167,11 @@ type mockF32Device struct {
 	sampleRate uint32
 }
 
-func (d *mockF32Device) Info() Info                    { return d.info }
+func (d *mockF32Device) Info() Info { return d.info }
+
+// FreqRange mirrors MockDevice's R820T span (sdr.FreqRanger).
+func (d *mockF32Device) FreqRange() (minHz, maxHz uint32) { return mockMinFreqHz, mockMaxFreqHz }
+
 func (d *mockF32Device) SetCenterFreq(uint32) error    { return nil }
 func (d *mockF32Device) SetGain(int) error             { return nil }
 func (d *mockF32Device) SetPPM(int) error              { return nil }

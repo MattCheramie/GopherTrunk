@@ -188,19 +188,24 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		"addr", spec.Addr,
 		"tuner", info.TunerName,
 		"gain_count", gainCount)
+	minHz, maxHz := tunerFreqRange(tunerType)
 	return &device{
-		addr: spec.Addr,
-		conn: conn,
-		info: info,
-		log:  d.log,
+		addr:  spec.Addr,
+		conn:  conn,
+		info:  info,
+		log:   d.log,
+		minHz: minHz,
+		maxHz: maxHz,
 	}, nil
 }
 
 // device implements sdr.Device on top of an open rtl_tcp connection.
 type device struct {
-	addr string
-	info sdr.Info
-	log  *slog.Logger
+	addr  string
+	info  sdr.Info
+	log   *slog.Logger
+	minHz uint32
+	maxHz uint32
 
 	mu     sync.Mutex
 	conn   net.Conn
@@ -208,6 +213,10 @@ type device struct {
 }
 
 func (d *device) Info() sdr.Info { return d.info }
+
+// FreqRange reports the remote tuner's range in Hz (sdr.FreqRanger),
+// decoded from the rtl_tcp header's tuner-type field at connect time.
+func (d *device) FreqRange() (minHz, maxHz uint32) { return d.minHz, d.maxHz }
 
 func (d *device) SetCenterFreq(hz uint32) error { return d.sendCmd(cmdSetFreq, hz) }
 func (d *device) SetSampleRate(hz uint32) error { return d.sendCmd(cmdSetSampleRate, hz) }
@@ -392,6 +401,25 @@ func tunerName(code uint32) string {
 		return "R828D"
 	default:
 		return fmt.Sprintf("tuner-%d", code)
+	}
+}
+
+// tunerFreqRange decodes the rtl_tcp tuner-type field into the chip's
+// inclusive tuning range in Hz, mirroring the per-chip guards in the
+// local tuners package. An unknown/zero code defaults to the common
+// R820T span (most rtl_tcp servers run an R820T/R828D).
+func tunerFreqRange(code uint32) (minHz, maxHz uint32) {
+	switch code {
+	case 1: // E4000
+		return 50_000_000, 2_200_000_000
+	case 2: // FC0012
+		return 37_000_000, 1_700_000_000
+	case 3: // FC0013
+		return 22_000_000, 1_700_000_000
+	case 4: // FC2580
+		return 50_000_000, 2_600_000_000
+	default: // R820T / R828D / unknown
+		return 24_000_000, 1_766_000_000
 	}
 }
 
