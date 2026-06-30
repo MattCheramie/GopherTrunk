@@ -55,9 +55,16 @@ land it at zero IF as `I + jQ`.
 That `2×` is not incidental. A real signal sampled at `Fs` carries usable
 bandwidth up to `Fs/2`; a complex signal at `Fs/2` carries the same bandwidth
 across `±Fs/4`. So `N` real input samples become `N/2` complex outputs at half
-the rate — which is exactly why, in the driver, a requested IQ rate of 3 MHz
-selects the **6 MSPS** device mode. We covered that rate-doubling foot-gun in
-the [Part 2]({{ '/blog/deep-dives/rf-front-end-02-the-device-contract/' | relative_url }})
+the rate. The rate the firmware *advertises* (via `GET_SAMPLERATES`) is the
+**IQ output** rate it delivers after that decimation — an Airspy R2 lists
+`{10 MSPS, 2.5 MSPS}`, a Mini `{6 MSPS, 3 MSPS}` — so the driver matches a
+requested IQ rate against the table directly; selecting an entry makes the
+firmware stream the real ADC at twice it, which the converter brings back down.
+(An earlier cut of the driver mistook that table for *device* rates and reported
+half the rate the hardware truly delivered, which built the down-converter at
+half rate and decoded nothing — the Airspy-R2-at-10-MS/s no-decode bug.) We
+covered the real-stream-is-`2×` foot-gun in the
+[Part 2]({{ '/blog/deep-dives/rf-front-end-02-the-device-contract/' | relative_url }})
 device contract; here we build the converter that justifies it.
 
 ## How GopherTrunk implements it in Go

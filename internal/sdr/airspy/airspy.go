@@ -286,16 +286,20 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 // SetSampleRate programs the firmware so the host-side IQ stream comes
 // out at the requested IQ rate (hz).
 //
-// The Airspy is a real-sampling receiver: the firmware streams bare ADC
-// samples at the *device* rate, and the host converter (iqconverter.go)
-// translates by Fs/4 and decimates by two, so the delivered complex-IQ
-// rate is HALF the device rate. The firmware's rate table
-// (fetchSampleRates) is therefore in device rates (e.g. 3 MSPS, 6 MSPS).
-// To deliver an IQ rate of hz we must program the device at 2×hz — a
-// requested IQ rate of 3 MHz selects the 6 MSPS device mode, 1.5 MHz
-// selects 3 MSPS. Sending hz directly (the prior behaviour) under-ran
-// the pipeline by 2×, so every downstream decoder mis-tuned and only
-// the DC spike survived.
+// The Airspy is a real-sampling receiver: the host converter (iqconverter.go)
+// translates by Fs/4 and decimates by two. The firmware's rate table
+// (fetchSampleRates, i.e. libairspy GET_SAMPLERATES) is in *IQ output* rates —
+// what the device delivers after that decimation: an Airspy R2 advertises
+// {10 MSPS, 2.5 MSPS}, a Mini {6 MSPS, 3 MSPS}. Selecting a table entry makes
+// the firmware stream the real ADC at 2× that rate, which the converter
+// decimates back down, so the delivered IQ rate equals the table entry. We
+// therefore match the requested IQ rate against the table directly.
+//
+// The prior code treated the table as 2× "device" rates and multiplied hz by
+// two before matching, so ActualSampleRate reported half the rate the hardware
+// truly delivered. The daemon (effectiveStreamRate, issue #402) then built its
+// down-converters at half rate, the symbol clock ran 2× off, and nothing
+// decoded — exactly the Airspy R2-at-10-MS/s no-decode report.
 func (d *Device) SetSampleRate(hz uint32) error {
 	if d.isClosed() {
 		return usb.ErrClosed
@@ -332,10 +336,10 @@ func (d *Device) ActualSampleRate() (uint32, error) {
 }
 
 // resolvedIQRate returns the IQ rate the firmware delivers for a requested IQ
-// rate, mirroring the index decision in sampleRateCommandParam: the requested
-// rate when 2×iqHz matches an advertised device rate exactly, otherwise half
-// the nearest advertised device rate (the converter decimates by two). With no
-// rate table or a sub-MHz request it returns iqHz unchanged (best effort).
+// rate, mirroring the index decision in sampleRateCommandParam: the advertised
+// table holds IQ output rates, so it returns the requested rate when it matches
+// a table entry exactly, otherwise the nearest advertised rate. With no rate
+// table or a sub-MHz request it returns iqHz unchanged (best effort).
 func (d *Device) resolvedIQRate(iqHz uint32) uint32 {
 	d.mu.Lock()
 	rates := d.rates
@@ -343,44 +347,43 @@ func (d *Device) resolvedIQRate(iqHz uint32) uint32 {
 	if iqHz < minSamplerateHz || len(rates) == 0 {
 		return iqHz
 	}
-	deviceHz := iqHz * 2 // converter decimates by two; see SetSampleRate
 	for _, r := range rates {
-		if deviceHz == r {
+		if iqHz == r {
 			return iqHz
 		}
 	}
-	return rates[d.closestRateIndex(iqHz)] / 2
+	return rates[d.closestRateIndex(iqHz)]
 }
 
-// sampleRateCommandParam maps a requested IQ rate to the wIndex the
-// firmware expects: an index into the device-rate table when 2×iqHz
-// matches a known device rate, the nearest table index when it doesn't,
-// or a by-value encoding (deviceHz/1000) when no table was read.
+// sampleRateCommandParam maps a requested IQ rate to the wIndex the firmware
+// expects: the index of the advertised IQ rate that matches exactly, the
+// nearest table index when it doesn't, or a by-value encoding (iqHz/1000) when
+// no table was read.
 func (d *Device) sampleRateCommandParam(iqHz uint32) uint16 {
 	d.mu.Lock()
 	rates := d.rates
 	d.mu.Unlock()
 
 	if iqHz >= minSamplerateHz {
-		deviceHz := iqHz * 2 // converter decimates by two; see SetSampleRate
 		for i, r := range rates {
-			if deviceHz == r {
+			if iqHz == r {
 				return uint16(i)
 			}
 		}
 		if len(rates) > 0 {
-			// Snap to the nearest advertised device rate rather than
-			// emitting a by-value encoding the firmware may reject.
+			// Snap to the nearest advertised IQ rate rather than emitting a
+			// by-value encoding the firmware may reject.
 			return uint16(d.closestRateIndex(iqHz))
 		}
-		return uint16(deviceHz / 1000)
+		return uint16(iqHz / 1000)
 	}
 	return uint16(iqHz)
 }
 
-// closestRateIndex returns the index of the supported DEVICE sample
-// rate nearest 2×iqHz (the device streams at twice the IQ rate; see
-// SetSampleRate). If no table is known, it returns 0.
+// closestRateIndex returns the index of the advertised IQ sample rate nearest
+// iqHz. The Airspy's GET_SAMPLERATES table holds IQ output rates directly (the
+// firmware streams the real ADC at twice that rate and the host converter
+// decimates by two; see SetSampleRate). If no table is known, it returns 0.
 func (d *Device) closestRateIndex(iqHz uint32) int {
 	d.mu.Lock()
 	rates := d.rates
@@ -388,14 +391,13 @@ func (d *Device) closestRateIndex(iqHz uint32) int {
 	if len(rates) == 0 {
 		return 0
 	}
-	deviceHz := iqHz * 2
 	best, bestDiff := 0, ^uint32(0)
 	for i, r := range rates {
 		var diff uint32
-		if deviceHz > r {
-			diff = deviceHz - r
+		if iqHz > r {
+			diff = iqHz - r
 		} else {
-			diff = r - deviceHz
+			diff = r - iqHz
 		}
 		if diff < bestDiff {
 			best, bestDiff = i, diff
