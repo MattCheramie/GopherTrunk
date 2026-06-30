@@ -465,6 +465,9 @@ export interface RuntimeDTO {
   // IDBase selects how identity numbers (WACN, System ID, NAC, RFSS,
   // Site) are rendered: "hex" (default) or "dec". From web.id_base config.
   id_base?: "hex" | "dec";
+  // CryptolabConsole is true when the daemon serves the Crypto Lab SPA at
+  // /cryptolab/ (a -tags cryptolab build). Gates the Crypto Lab nav link.
+  cryptolab_console?: boolean;
   // RuntimeDTO is large and changes shape as the daemon grows. Read
   // unknown fields lazily.
   [key: string]: unknown;

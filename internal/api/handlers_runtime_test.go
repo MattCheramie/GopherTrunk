@@ -71,4 +71,34 @@ func TestHandleRuntime_ServesDTO(t *testing.T) {
 	if out.RetentionInterval != fake.dto.RetentionInterval {
 		t.Errorf("retention interval lost: got %v want %v", out.RetentionInterval, fake.dto.RetentionInterval)
 	}
+	// The runtime provider never sets cryptolab_console; the API server injects
+	// it. Default build / unmounted console → absent (false).
+	if out.CryptolabConsole {
+		t.Errorf("cryptolab_console should default to false")
+	}
+}
+
+// TestHandleRuntime_InjectsCryptolabConsole confirms the API server overlays
+// the Crypto Lab console availability onto the runtime DTO (the field the web
+// consoles gate their Crypto Lab link on).
+func TestHandleRuntime_InjectsCryptolabConsole(t *testing.T) {
+	bus := events.NewBus(8)
+	s, err := NewServer(ServerOptions{Addr: "127.0.0.1:0", Bus: bus, Runtime: fakeRuntime{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.cryptolabConsole = true // as set by the -tags cryptolab mount
+
+	rr := httptest.NewRecorder()
+	s.handleRuntime(rr, httptest.NewRequest(http.MethodGet, "/api/v1/runtime", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d", rr.Code)
+	}
+	var out RuntimeDTO
+	if err := json.NewDecoder(rr.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.CryptolabConsole {
+		t.Error("cryptolab_console should be true once the console is mounted")
+	}
 }

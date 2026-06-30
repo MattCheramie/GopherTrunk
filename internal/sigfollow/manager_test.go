@@ -189,7 +189,10 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 		}
 	}()
 
-	deadline := time.After(20 * time.Second)
+	// Generous deadline: this drives the full synthesized-IQ → P25 Phase 2
+	// decode pipeline, which under `-race` on a heavily-loaded CI runner can
+	// take tens of seconds. 20s flaked there; 60s keeps margin without hanging.
+	deadline := time.After(60 * time.Second)
 	for {
 		select {
 		case ev := <-aliasSub.C:
@@ -219,7 +222,7 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 			}
 			return
 		case <-deadline:
-			t.Fatal("no KindTalkerAlias published within 10s — alias not harvested off the signalling tap")
+			t.Fatal("no KindTalkerAlias published within 60s — alias not harvested off the signalling tap")
 		}
 	}
 }

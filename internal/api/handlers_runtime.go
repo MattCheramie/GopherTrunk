@@ -95,6 +95,12 @@ type RuntimeDTO struct {
 	// from web.id_base config; the raw decimal values are always present
 	// in the API/event payloads regardless.
 	IDBase string `json:"id_base,omitempty"`
+
+	// CryptolabConsole is true when the daemon mounts the Crypto Lab SPA at
+	// /cryptolab/ (a -tags cryptolab build). The web consoles use it to show a
+	// Crypto Lab link only when it is reachable. Injected by the API server, not
+	// the daemon's runtime provider.
+	CryptolabConsole bool `json:"cryptolab_console,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —
@@ -118,6 +124,8 @@ func (s *Server) handleRuntime(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "runtime snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	dto := s.runtime.Runtime()
+	dto.CryptolabConsole = s.cryptolabConsole
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.runtime.Runtime())
+	_ = json.NewEncoder(w).Encode(dto)
 }

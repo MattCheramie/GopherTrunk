@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Crypto Lab is discoverable from the other web consoles.** In a
+  `-tags cryptolab` daemon build the main GopherTrunk console shows a *Crypto
+  Lab* nav entry and the Signal Lab header shows a 🔐 Crypto Lab link; the
+  Crypto Lab console links back to both. All gated on a new
+  `runtime.cryptolab_console` flag (`GET /api/v1/runtime`), so the links appear
+  only when the console is actually mounted — default builds and standalone
+  siglab never show a dead link.
 - **cryptolab external-cipher bridge (TEA1 et al.).** `assess crypto` and the
   `recipe` pipeline can now drive an operator-supplied cipher program as a
   subprocess (`engine/extcipher`), so unbundled ciphers — most importantly the

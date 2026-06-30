@@ -63,6 +63,15 @@ the running daemon without launching a separate `cryptolab serve`. Mutating
 routes share the daemon's mutation gate. The default daemon build links a
 no-op mount, so the toolkit stays out of the standard binary.
 
+In that daemon build the console is **discoverable from the other web UIs**:
+the main GopherTrunk console shows a **Crypto Lab** entry in its System nav
+group, and the Signal Lab (siglab) header shows a **🔐 Crypto Lab** link. Both
+are gated on `runtime.cryptolab_console` (surfaced by `GET /api/v1/runtime`),
+so the link only appears when the Crypto Lab console is actually mounted — a
+default build, or a standalone siglab, never shows a dead link. The Crypto Lab
+header links back to the GopherTrunk console and Signal Lab when it is itself
+daemon-mounted.
+
 ## Usage (CLI)
 
 ```

@@ -44,8 +44,11 @@ describe("AppShell navigation", () => {
     );
 
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
-    // Every non-external registry item is reachable inside the drawer.
+    // Every registry item is reachable inside the drawer, except ones gated on
+    // a daemon capability not advertised in this test (e.g. the Crypto Lab
+    // link, shown only when runtime.cryptolab_console is set).
     for (const item of NAV_ITEMS) {
+      if (item.requiresCryptolab) continue;
       expect(
         within(drawer).getByText(item.label),
         `drawer missing ${item.label}`,
