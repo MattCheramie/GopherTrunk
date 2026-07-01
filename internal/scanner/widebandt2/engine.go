@@ -369,6 +369,14 @@ type engineChannel struct {
 	// pwLowLogAt throttles the "iq power very low" WARN for this channel.
 	pwLowLogAt time.Time
 
+	// strongNoSyncWindows counts consecutive diagnostics windows in which
+	// this channel carried a strong signal yet produced zero sync/FEC — the
+	// signature of an uncorrected tuner frequency offset (issue #836). It
+	// resets the moment any sync is seen or the signal drops.
+	strongNoSyncWindows int
+	// noSyncLogAt throttles the "strong signal but no sync" hint WARN.
+	noSyncLogAt time.Time
+
 	// decoded returns this channel's lifetime decoded-frame count from the
 	// underlying protocol state machine — Tier II FECPass, Tier III CSBKs,
 	// Phase 1 TSBKs, Phase 2 MAC PDUs. maybeLogDiagnostics diffs it against
@@ -820,6 +828,21 @@ func (e *Engine) Run(ctx context.Context) error {
 // of every window. Matches the ccdecoder cadence (decoder.go).
 const lowPowerWarnInterval = 5 * time.Second
 
+// noSyncHintDbFS is the per-channel IQ power (dBFS) at or above which a
+// channel is treated as carrying a real signal for the "strong signal but
+// no sync" diagnostic. Sits ~10 dB above the low-power floor
+// (iqpower.LowPowerThresholdDbFS = -55) so ordinary noise never trips it,
+// while a keyed handheld — the issue #836 capture peaked near -16 dBFS —
+// clears it comfortably.
+const noSyncHintDbFS = -45.0
+
+// strongNoSyncWindowsNeeded is how many consecutive diagnostics windows
+// (~1 s each) a channel must show strong power with zero sync AND zero FEC
+// before the "strong signal but no sync" hint fires. Requiring a sustained
+// run keeps a brief adjacent-carrier splatter or a one-window glitch from
+// tripping it; a real mistuned transmission holds for seconds.
+const strongNoSyncWindowsNeeded = 3
+
 // maybeLogDiagnostics flushes per-channel signal-power and decode-activity
 // diagnostics once per iqpower.Window. It runs inline on the Run pump
 // goroutine — the same goroutine that fed the tap sinks this window — so
@@ -935,20 +958,46 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag, "dbfs", dbfs)
 		}
 
-		// Per-window decode-activity deltas (Tier II only for now). Lets an
-		// operator tell no-signal / signal-but-no-sync / sync-but-FEC-fail /
-		// decoding apart at a glance. Gated on DEBUG; lifetime locks total
-		// carried alongside the deltas.
-		if debug && ec.tier2Cnt != nil {
+		// Per-window decode-activity deltas (Tier II conventional / Tier I).
+		// Lets an operator tell no-signal / signal-but-no-sync /
+		// sync-but-FEC-fail / decoding apart at a glance, and drives the
+		// "strong signal but no sync" tuner-offset hint below. The deltas are
+		// computed whenever the typed counters exist (not just under DEBUG) so
+		// the hint works at the default log level.
+		if ec.tier2Cnt != nil {
 			c := ec.tier2Cnt.Counters()
-			e.log.Debug("widebandt2: channel decode activity",
-				"freq_hz", ec.freqHz, "system", ec.sysName,
-				"sync_hits", c.SyncHits-ec.lastCnt.SyncHits,
-				"bursts", c.Bursts-ec.lastCnt.Bursts,
-				"fec_pass", c.FECPass-ec.lastCnt.FECPass,
-				"fec_fail", c.FECFail-ec.lastCnt.FECFail,
-				"locks_total", c.Locks)
+			syncDelta := c.SyncHits - ec.lastCnt.SyncHits
+			fecPassDelta := c.FECPass - ec.lastCnt.FECPass
+			if debug {
+				e.log.Debug("widebandt2: channel decode activity",
+					"freq_hz", ec.freqHz, "system", ec.sysName,
+					"sync_hits", syncDelta,
+					"bursts", c.Bursts-ec.lastCnt.Bursts,
+					"fec_pass", fecPassDelta,
+					"fec_fail", c.FECFail-ec.lastCnt.FECFail,
+					"locks_total", c.Locks)
+			}
 			ec.lastCnt = c
+
+			// Strong-signal-but-no-sync hint (issue #836). A real transmission
+			// that never produces a single burst-sync match is the classic
+			// signature of an uncorrected tuner frequency error: the narrowband
+			// 4-level demod tolerates only a tiny carrier offset (~±75 Hz),
+			// while SDR++ still yields FM audio because audio is offset-immune.
+			// Fire only after a sustained run so a brief splatter doesn't trip
+			// it, and reset the instant any sync appears or the signal drops.
+			if dbfs >= noSyncHintDbFS && syncDelta == 0 && fecPassDelta == 0 {
+				ec.strongNoSyncWindows++
+				if ec.strongNoSyncWindows >= strongNoSyncWindowsNeeded &&
+					now.Sub(ec.noSyncLogAt) >= lowPowerWarnInterval {
+					e.log.Warn("widebandt2: strong in-channel signal but no sync — the classic symptom of an uncorrected tuner frequency error on a narrowband carrier. Measure and set sdr.ppm for this dongle; even ~100 Hz of offset stops a DMR/P25/NXDN decode while SDR++ still produces FM audio. Also verify the carrier frequency and that this protocol/mode is supported. issue #836",
+						"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
+						"dbfs", dbfs)
+					ec.noSyncLogAt = now
+				}
+			} else {
+				ec.strongNoSyncWindows = 0
+			}
 		}
 	}
 }

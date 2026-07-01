@@ -54,7 +54,18 @@ sdr:
       tuner_strategy: auto       # auto -> ddc for a single channel
       gain: "auto"               # gains are in TENTHS of a dB if you pin one
                                  #   (e.g. "320" = 32.0 dB). "auto" is the safe start.
-      ppm: 0                     # set your dongle's measured PPM error if you know it
+      # ppm: your dongle's measured frequency error. THIS MATTERS FOR
+      # NARROWBAND DECODE. A single DMR/P25/NXDN carrier is only ~12.5 kHz
+      # wide with ~1.9 kHz deviation, and the demod tolerates only a tiny
+      # residual carrier offset (roughly ±100 Hz). A cheap RTL-SDR is
+      # commonly tens of ppm off — at 446 MHz even 1 ppm is ~450 Hz — which
+      # is enough to stop decoding entirely (no sessions, no audio) while
+      # SDR++ still produces the "helicopter" FM audio, because FM audio is
+      # offset-tolerant and a 4-level symbol slicer is not. If the daemon
+      # logs "strong in-channel signal but no sync", this is almost always
+      # the cause. Measure your dongle's error (e.g. kalibrate-rtl, or a
+      # known reference signal) and set it here.
+      ppm: 0
       channels:
         - frequency_hz: 446_500_000
           system: "dmr-simplex"
