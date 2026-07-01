@@ -70,30 +70,32 @@ type HuntRRReport struct {
 // for operator convenience. With Bands set the hunt sweeps; with Candidates +
 // NoSweep it probes the listed control channels directly.
 type HuntStartRequest struct {
-	Serial          string    `json:"serial,omitempty"`
-	Bands           []string  `json:"bands,omitempty"`      // "low:high" MHz
-	Candidates      []float64 `json:"candidates,omitempty"` // MHz
-	NoSweep         bool      `json:"no_sweep,omitempty"`
-	ConfirmBorrow   bool      `json:"confirm_borrow,omitempty"` // authorize borrowing an SDR with live wideband decode (suspends it for the run)
-	Survey          bool      `json:"survey,omitempty"`         // classify+decode every carrier, not just trunking CCs
-	ClassifyOnly    bool      `json:"classify_only,omitempty"`  // survey: classify, skip decoding
-	PersistSurvey   bool      `json:"persist_survey,omitempty"` // survey: stream carriers to NDJSON (crash-safe, resumable)
-	Resume          bool      `json:"resume,omitempty"`         // survey: skip frequencies already in the NDJSON file
-	AutoGain        bool      `json:"auto_gain,omitempty"`      // post-run: sweep gains on locked CCs, recommend the best
-	AutoGainSet     string    `json:"auto_gain_set,omitempty"`  // optional comma-separated gain ladder in dB (e.g. "0,8.7,16.6")
-	MaxDwellSeconds float64   `json:"max_dwell_seconds,omitempty"`
-	MonitorSeconds  float64   `json:"monitor_seconds,omitempty"` // >0: stream a locked CC in real time for up to this long (converge-and-stop), instead of buffering the dwell
-	Protocol        string    `json:"protocol,omitempty"`
-	DwellSeconds    float64   `json:"dwell_seconds,omitempty"`
-	SweepDwellMs    int       `json:"sweep_dwell_ms,omitempty"`
-	PeakThresholdDb float64   `json:"peak_threshold_db,omitempty"`
-	MinSpacingHz    uint32    `json:"min_spacing_hz,omitempty"`
-	FFTSize         int       `json:"fft_size,omitempty"`
-	MinConfidence   float64   `json:"min_confidence,omitempty"`
-	Name            string    `json:"name,omitempty"`
-	State           string    `json:"state,omitempty"`
-	County          string    `json:"county,omitempty"`
-	Location        string    `json:"location,omitempty"`
+	Serial           string    `json:"serial,omitempty"`
+	Bands            []string  `json:"bands,omitempty"`      // "low:high" MHz
+	Candidates       []float64 `json:"candidates,omitempty"` // MHz
+	NoSweep          bool      `json:"no_sweep,omitempty"`
+	ConfirmBorrow    bool      `json:"confirm_borrow,omitempty"`    // authorize borrowing an SDR with live wideband decode (suspends it for the run)
+	Survey           bool      `json:"survey,omitempty"`            // classify+decode every carrier, not just trunking CCs
+	ClassifyOnly     bool      `json:"classify_only,omitempty"`     // survey: classify, skip decoding
+	DetectWideband   bool      `json:"detect_wideband,omitempty"`   // survey: detect+stitch signals wider than a channel (cellular/WiFi/OFDM)
+	DetectEncryption bool      `json:"detect_encryption,omitempty"` // survey: entropy-triage unknown digital carriers for encryption
+	PersistSurvey    bool      `json:"persist_survey,omitempty"`    // survey: stream carriers to NDJSON (crash-safe, resumable)
+	Resume           bool      `json:"resume,omitempty"`            // survey: skip frequencies already in the NDJSON file
+	AutoGain         bool      `json:"auto_gain,omitempty"`         // post-run: sweep gains on locked CCs, recommend the best
+	AutoGainSet      string    `json:"auto_gain_set,omitempty"`     // optional comma-separated gain ladder in dB (e.g. "0,8.7,16.6")
+	MaxDwellSeconds  float64   `json:"max_dwell_seconds,omitempty"`
+	MonitorSeconds   float64   `json:"monitor_seconds,omitempty"` // >0: stream a locked CC in real time for up to this long (converge-and-stop), instead of buffering the dwell
+	Protocol         string    `json:"protocol,omitempty"`
+	DwellSeconds     float64   `json:"dwell_seconds,omitempty"`
+	SweepDwellMs     int       `json:"sweep_dwell_ms,omitempty"`
+	PeakThresholdDb  float64   `json:"peak_threshold_db,omitempty"`
+	MinSpacingHz     uint32    `json:"min_spacing_hz,omitempty"`
+	FFTSize          int       `json:"fft_size,omitempty"`
+	MinConfidence    float64   `json:"min_confidence,omitempty"`
+	Name             string    `json:"name,omitempty"`
+	State            string    `json:"state,omitempty"`
+	County           string    `json:"county,omitempty"`
+	Location         string    `json:"location,omitempty"`
 }
 
 // EventDTO is the JSON envelope for every event streamed to clients.
