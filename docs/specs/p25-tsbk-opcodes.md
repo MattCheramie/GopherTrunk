@@ -2,14 +2,14 @@
 
 Reference table for the P25 Phase 1 (FDMA) Trunking Signalling Block (TSBK)
 **Outbound Signalling Packet (OSP)** opcodes the control-channel decoder in
-[`internal/radio/p25/phase1`](../../internal/radio/p25/phase1/) recognises.
+[`internal/radio/p25/phase1`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/radio/p25/phase1/) recognises.
 
-The Go constant identifiers in [`opcodes.go`](../../internal/radio/p25/phase1/opcodes.go)
+The Go constant identifiers in [`opcodes.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/radio/p25/phase1/opcodes.go)
 stay descriptive/CamelCase (idiomatic Go), while `Opcode.String()` and the
 trailing comment on each constant carry the canonical **TIA designation** — so
 debug logs read in spec terms (`opcode=NET_STS_BCST`, `opcode=UU_ANS_REQ`)
 rather than the OP25-derived names they used to. This mirrors the convention
-already used in [`internal/radio/nxdn`](../../internal/radio/nxdn/) for NXDN
+already used in [`internal/radio/nxdn`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/radio/nxdn/) for NXDN
 message names.
 
 **Source:** TIA-102.AABC-D, *Project 25 — FDMA Common Air Interface — Trunking
@@ -68,7 +68,7 @@ walk-throughs (e.g. UU_V_REQ → UU_ANS_REQ → UU_ANS_RSP call setup).
 | 0x3F | `PROT_PARM_BCST` | Protection Parameter Broadcast | — |
 
 "Dispatched" marks opcodes the control channel acts on (`dispatchTSBK` in
-[`control.go`](../../internal/radio/p25/phase1/control.go)); the rest are
+[`control.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/radio/p25/phase1/control.go)); the rest are
 decoded enough to log at debug and otherwise ignored. The
 standard-broadcast/band-plan opcodes (`0x29/0x33/0x34/0x39/0x3A/0x3B/0x3C/0x3D`)
 are dispatched **regardless of MFID**, because they live in the standard TIA

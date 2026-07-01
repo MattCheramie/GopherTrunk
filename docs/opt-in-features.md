@@ -34,7 +34,7 @@ default applies, why, and (where relevant) how to opt out.
 ## 1. Protocol-layer FEC defaults
 
 **On by default for every protocol.** The ccdecoder connector at
-[`internal/scanner/ccdecoder/pipelines.go`](../internal/scanner/ccdecoder/pipelines.go)
+[`internal/scanner/ccdecoder/pipelines.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/scanner/ccdecoder/pipelines.go)
 always runs the per-protocol `Parse*Mode` function over the
 configured YAML value — empty strings map to the spec-correct
 on-default. Operators with pre-stripped capture files (DSD-FME
@@ -57,7 +57,7 @@ per-system with `<key>: off`.
 | Motorola Type II | `motorola_bch_mode` | `BCHOn` | `off` |
 | D-STAR | `dstar_fec_mode` | `FECOff` (info-bits passthrough) | `on` flips to the JARL DV-mode FEC chain |
 
-The README's [FEC opt-outs section](../README.md#fec-opt-outs)
+The README's [FEC opt-outs section](https://github.com/MattCheramie/GopherTrunk/blob/main/README.md#fec-opt-outs)
 documents the full reference table with on-default behaviour
 descriptions.
 
@@ -86,7 +86,7 @@ frames.
 **Gardner timing recovery on by default.** Both the P25 Phase 2
 and TETRA receivers route the matched-filter output through the
 Gardner symbol-timing-recovery loop in
-[`internal/dsp/sync/gardner.go`](../internal/dsp/sync/gardner.go).
+[`internal/dsp/sync/gardner.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/dsp/sync/gardner.go).
 Operators with sample-aligned synthesized IQ fixtures (some tests,
 some replay tools) can opt back to the naive sps-th-sample
 decimator per system.
@@ -133,8 +133,8 @@ captures.
 
 ## 3. Daemon-level features
 
-Sources are [`config.example.yaml`](../config.example.yaml) plus
-the config struct in [`internal/config/config.go`](../internal/config/config.go).
+Sources are [`config.example.yaml`](https://github.com/MattCheramie/GopherTrunk/blob/main/config.example.yaml) plus
+the config struct in [`internal/config/config.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/config/config.go).
 
 | Feature | YAML key | Default | Why |
 | --- | --- | --- | --- |
@@ -144,7 +144,7 @@ the config struct in [`internal/config/config.go`](../internal/config/config.go)
 | **CMA blind equalizer** | `recordings.equalizer.enabled` | `false` | Simulcast mitigation costs CPU and may distort clean-RF capture. Benefit is site-specific — operators not on a simulcast site pay the CPU without payoff. Stays a global opt-in until a per-call auto-tune heuristic ships. |
 | **Voice enhancement ("sound-good" chain)** | `recordings.enhance.enabled` | `false` | A post-vocoder chain for decoded digital voice — rumble high-pass (~250 Hz), warmth high-shelf, telephone-band low-pass (~3.4 kHz like OP25), a louder AGC target (22000 vs the faithful 18000), and an optional soft-knee compressor. Deliberately trades a little faithfulness for the cleaner/louder sound rival decoders produce (OP25 band-limits; Trunk Recorder normalizes loudness on by default; DSD/DSDPlus run an aggressive AGC). Applied at the single per-call decode point, so it shapes **both** recordings and live monitoring. Off by default (faithful output is byte-identical); surfaced near the top of the Config Builder, and `enhance.enabled` hot-reloads via `PATCH /api/v1/settings`. Supersedes `warm_dmr_audio` by extending the warmth shelf to all protocols. |
 | **Loudness normalization** | `recordings.normalize.enabled` | `false` | EBU R128 / BS.1770 per-call loudness normalization (default target -16 LUFS, true peak -1.5 dBTP), pure Go — no ffmpeg. Each finished call is measured and a single linear gain (true-peak limited) is applied so calls from different talkgroups/sources play back evenly. `apply_to` selects the target: `recording` (default — rewrite the on-disk WAV; the distributed MP3 inherits it), `distributed` (leave the WAV pristine, normalize only the outbound broadcast/stream copy), or `both`. Opt-in because it changes recorded/streamed levels and not every operator wants that; live monitoring is unaffected. |
-| **Tone-out paging-tone detection** | `tone_out.profiles` | empty list | Two-tone sequential (Quick Call II) profiles are per-site / per-agency. No useful zero-config default exists. [`config.example.yaml`](../config.example.yaml) ships an example profile plus three commented-out alternatives (single-tone, system+talkgroup scoped, tightened tolerance) so operators discover the schema without grepping source. |
+| **Tone-out paging-tone detection** | `tone_out.profiles` | empty list | Two-tone sequential (Quick Call II) profiles are per-site / per-agency. No useful zero-config default exists. [`config.example.yaml`](https://github.com/MattCheramie/GopherTrunk/blob/main/config.example.yaml) ships an example profile plus three commented-out alternatives (single-tone, system+talkgroup scoped, tightened tolerance) so operators discover the schema without grepping source. |
 | **Scan mode = list** | `scanner.scan_mode` | `"all"` | "all" is the backwards-compatible behaviour. Tag-based talkgroup curation must be done by the operator before "list" is useful. Per-deployment choice. Emergency grants bypass the gate regardless. |
 | **CTCSS / DCS squelch** | per-channel `tone:` block | omitted (no gating) | Sub-audible CTCSS tone / DCS code is per-channel signalling that varies by site, repeater, and agency. No useful zero-config default. Omitting the block reverts to carrier-only squelch. |
 | **Raw frame sidecar** | `recordings.write_raw` | `true` in `config.example.yaml` | On in the shipped example. Operators who don't want the `.raw` sidecar set `false`. |
@@ -197,7 +197,7 @@ robustness for specific noise conditions or fully-spec-correct
 encoding.
 
 Captures that close each follow-up belong in the
-[`samples/`](../samples/) directory at the repo root — one
+[`samples/`](https://github.com/MattCheramie/GopherTrunk/tree/main/samples/) directory at the repo root — one
 subfolder per protocol. Each subfolder's `README.md` documents the
 capture format and the metadata schema GopherTrunk needs to
 validate the decode end-to-end.

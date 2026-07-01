@@ -143,7 +143,7 @@ explicit `auth.mode` at the next config edit:
 
 GopherTrunk exposes Prometheus metrics on the HTTP API at
 `GET /metrics` when the daemon is started with metrics enabled. The
-collector lives in [`internal/metrics`](../internal/metrics).
+collector lives in [`internal/metrics`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/metrics).
 
 Series exposed:
 
@@ -319,7 +319,7 @@ docker build -t gophertrunk:dev .
 ```
 
 For a single-daemon, single-dongle deployment use the
-[`docker-compose.yml`](../docker-compose.yml) at the repo root. It
+[`docker-compose.yml`](https://github.com/MattCheramie/GopherTrunk/blob/main/docker-compose.yml) at the repo root. It
 bind-mounts `config.yaml`, `recordings/`, and `calls.db` from the
 host so data persists across container restarts.
 

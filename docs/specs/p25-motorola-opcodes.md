@@ -5,14 +5,14 @@ systems. Most P25 systems run Motorola gear, so these come up constantly.
 
 > ⚠️ **Nothing here is wired into the system map.** Opcodes `0x05` and `0x09`
 > (MFID 0x90) are named and their raw payload is captured by `logVendorProbe`
-> ([`control.go`](../../internal/radio/p25/phase1/control.go)) for the record;
+> ([`control.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/radio/p25/phase1/control.go)) for the record;
 > no fields are decoded and nothing is published. A guessed bit layout would
 > inject phantom data — the bad-data class the corroboration/identity work
 > removed.
 
 ## Already decoded (MFID 0x90)
 
-See [`tsbk_vendor.go`](../../internal/radio/p25/phase1/tsbk_vendor.go): patch /
+See [`tsbk_vendor.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/radio/p25/phase1/tsbk_vendor.go): patch /
 group-regroup add (0x00) / delete (0x01), patch-group channel grant (0x02) /
 update (0x03), and talker-alias fragments (0x15). Note also that the **standard**
 band-plan and network/site/secondary broadcasts (`0x33/0x34/0x39/0x3A/0x3B/0x3C/0x3D`)

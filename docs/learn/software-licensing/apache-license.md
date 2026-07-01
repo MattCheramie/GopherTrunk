@@ -61,13 +61,13 @@ Apache 2.0 is explicit that it does **not** grant any trademark rights (Section 
 
 ## GopherTrunk as the concrete example
 
-You don't have to go far for a real Apache-2.0 project: **GopherTrunk is licensed under Apache 2.0**, and the full text lives in [`/LICENSE`](/LICENSE) at the repo root. Everything above applies to it directly:
+You don't have to go far for a real Apache-2.0 project: **GopherTrunk is licensed under Apache 2.0**, and the full text lives in [`/LICENSE`](https://github.com/MattCheramie/GopherTrunk/blob/main/LICENSE) at the repo root. Everything above applies to it directly:
 
 - Anyone may use, modify, and ship GopherTrunk, including in a commercial product, as long as they keep the license and notices.
 - Every contributor to GopherTrunk grants the Apache 2.0 patent license over their contributions, and the retaliation clause applies.
 - A fork must state its changes and can't use the GopherTrunk name to imply endorsement.
 
-GopherTrunk also ships a [`/THIRD_PARTY_LICENSES.md`](/THIRD_PARTY_LICENSES.md) file inventorying the licenses of the code it depends on — a mix of MIT, BSD, and Apache-2.0 modules. That file is a preview of the *attribution* side of using open source: when you build on other people's code, you have to track and reproduce their notices. We'll dig into doing this properly in [Meeting permissive obligations](/learn/software-licensing/permissive-compliance/) and [Auditing dependencies & SBOMs](/learn/software-licensing/auditing-dependencies/).
+GopherTrunk also ships a [`/THIRD_PARTY_LICENSES.md`](https://github.com/MattCheramie/GopherTrunk/blob/main/THIRD_PARTY_LICENSES.md) file inventorying the licenses of the code it depends on — a mix of MIT, BSD, and Apache-2.0 modules. That file is a preview of the *attribution* side of using open source: when you build on other people's code, you have to track and reproduce their notices. We'll dig into doing this properly in [Meeting permissive obligations](/learn/software-licensing/permissive-compliance/) and [Auditing dependencies & SBOMs](/learn/software-licensing/auditing-dependencies/).
 
 ## Apache 2.0 vs MIT
 
