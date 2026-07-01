@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v0.5.9] — 2026-07-01
+
 ### Added
 - **Full-spectrum survey — scan the whole device, name everything, capture any
   signal.** `gophertrunk hunt -survey` gains an end-to-end "what's on the air"
@@ -36,6 +38,26 @@ for tagged releases.
     pass that emits a CryptoLab `ks` frames file. The same action is a per-row
     button in the web **Hunt** tab, an `↑/↓` + `c`/`C` keybinding in the TUI Hunt
     panel, and `POST /api/v1/hunt/capture` on the daemon.
+
+### Fixed
+- **Airspy R2/Mini reported half its true IQ rate, so wideband decoded
+  nothing.** The driver treated the firmware's `GET_SAMPLERATES` table as 2×
+  "device" rates and reported half the rate the hardware actually delivers, so
+  `ActualSampleRate()` returned e.g. 5 MS/s for an R2 streaming 10 MS/s. The
+  daemon then built its wideband down-converter at half rate (logging the
+  spurious "SDR streams a different sample rate than requested" warning, issue
+  #402), the symbol clock ran 2× off, and no packets decoded. The table is in
+  IQ output rates (R2 `{10, 2.5}` MSPS, Mini `{6, 3}` MSPS); the driver now
+  matches the requested IQ rate against it directly. The IQ converter is
+  unchanged — the firmware still streams the real ADC at 2× and the host
+  decimates back down. The same bug also broke the **control channel on an R2
+  at 2.5 MS/s** (`sample_rate: 2500000` → `actual_hz=1250000`, continuous
+  `no FSW hits`); the daemon now builds the control down-converter at the true
+  2.5 MS/s so the symbol clock stays aligned (#851, same root cause as #764).
+
+## [v0.5.8] — 2026-06-30
+
+### Added
 - **RF Scope — protocol-agnostic RF network analysis ("Wireshark for the RF
   physical layer").** A new `gophertrunk rfscope` surface analyzes any band — a
   recorded IQ capture or a live SDR — with no prior knowledge of the technology,
@@ -120,22 +142,6 @@ for tagged releases.
   each encrypted superframe's Message Indicator + encrypted voice frames as
   JSONL for `cryptolab assess`/`ks`. Off by default (no effect on the voice
   path when unset).
-
-### Fixed
-- **Airspy R2/Mini reported half its true IQ rate, so wideband decoded
-  nothing.** The driver treated the firmware's `GET_SAMPLERATES` table as 2×
-  "device" rates and reported half the rate the hardware actually delivers, so
-  `ActualSampleRate()` returned e.g. 5 MS/s for an R2 streaming 10 MS/s. The
-  daemon then built its wideband down-converter at half rate (logging the
-  spurious "SDR streams a different sample rate than requested" warning, issue
-  #402), the symbol clock ran 2× off, and no packets decoded. The table is in
-  IQ output rates (R2 `{10, 2.5}` MSPS, Mini `{6, 3}` MSPS); the driver now
-  matches the requested IQ rate against it directly. The IQ converter is
-  unchanged — the firmware still streams the real ADC at 2× and the host
-  decimates back down. The same bug also broke the **control channel on an R2
-  at 2.5 MS/s** (`sample_rate: 2500000` → `actual_hz=1250000`, continuous
-  `no FSW hits`); the daemon now builds the control down-converter at the true
-  2.5 MS/s so the symbol clock stays aligned (#851, same root cause as #764).
 
 ## [v0.5.7] — 2026-06-29
 
