@@ -372,6 +372,8 @@ export interface HuntStartRequest {
   no_sweep?: boolean;
   survey?: boolean;
   classify_only?: boolean;
+  detect_wideband?: boolean;
+  detect_encryption?: boolean;
   persist_survey?: boolean;
   resume?: boolean;
   auto_gain?: boolean;

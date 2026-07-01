@@ -123,6 +123,8 @@ export function Hunt() {
   const [protocol, setProtocol] = useState("");
   const [survey, setSurvey] = useState(false);
   const [classifyOnly, setClassifyOnly] = useState(false);
+  const [detectWideband, setDetectWideband] = useState(false);
+  const [detectEncryption, setDetectEncryption] = useState(false);
   const [persistSurvey, setPersistSurvey] = useState(false);
   const [resume, setResume] = useState(false);
   const [autoGain, setAutoGain] = useState(false);
@@ -170,6 +172,8 @@ export function Hunt() {
         no_sweep: candList.length > 0 && bandList.length === 0,
         survey: survey || undefined,
         classify_only: (survey && classifyOnly) || undefined,
+        detect_wideband: (survey && detectWideband) || undefined,
+        detect_encryption: (survey && detectEncryption) || undefined,
         persist_survey: (survey && persistSurvey) || undefined,
         resume: (survey && persistSurvey && resume) || undefined,
         auto_gain: autoGain || undefined,
@@ -472,6 +476,20 @@ export function Hunt() {
               label="Classify only — skip decoding (fast inventory)"
               checked={classifyOnly}
               onChange={(e) => setClassifyOnly(e.target.checked)}
+            />
+          )}
+          {survey && (
+            <Checkbox
+              label="Detect wideband — stitch cellular/WiFi/OFDM signals wider than the tune"
+              checked={detectWideband}
+              onChange={(e) => setDetectWideband(e.target.checked)}
+            />
+          )}
+          {survey && (
+            <Checkbox
+              label="Detect encryption — entropy-triage unknown digital carriers"
+              checked={detectEncryption}
+              onChange={(e) => setDetectEncryption(e.target.checked)}
             />
           )}
           {survey && (

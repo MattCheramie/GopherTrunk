@@ -1,14 +1,13 @@
-package rfscope
+package survey
 
 import (
 	"math"
 	"testing"
-
-	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
-// synthFSK builds a 2-FSK baseband for the given bits: bit 1 → +dev, bit 0 → -dev.
-func synthFSK(bits []int, rate, baud, dev float64) []complex64 {
+// synthFSKPayload builds a 2-FSK baseband for the given bits: bit 1 → +dev,
+// bit 0 → -dev. (Named to avoid colliding with other survey test helpers.)
+func synthFSKPayload(bits []int, rate, baud, dev float64) []complex64 {
 	sps := int(rate / baud)
 	iq := make([]complex64, 0, len(bits)*sps)
 	phase := 0.0
@@ -58,8 +57,8 @@ func TestRecoverPayloadAlternatingFSK(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		bits = append(bits, i%2)
 	}
-	iq := synthFSK(bits, 48000, 4800, 1200)
-	got := recoverPayload(iq, 48000, survey.ClassFeatures{BaudHz: 4800, IFModality: 2})
+	iq := synthFSKPayload(bits, 48000, 4800, 1200)
+	got := RecoverPayload(iq, 48000, ClassFeatures{BaudHz: 4800, IFModality: 2})
 	if len(got) == 0 {
 		t.Fatalf("no payload recovered")
 	}
@@ -72,10 +71,10 @@ func TestRecoverPayloadAlternatingFSK(t *testing.T) {
 
 func TestRecoverPayloadGuards(t *testing.T) {
 	t.Parallel()
-	if recoverPayload(nil, 48000, survey.ClassFeatures{BaudHz: 4800}) != nil {
+	if RecoverPayload(nil, 48000, ClassFeatures{BaudHz: 4800}) != nil {
 		t.Fatalf("nil IQ should yield nil")
 	}
-	if recoverPayload(make([]complex64, 100), 48000, survey.ClassFeatures{BaudHz: 0}) != nil {
+	if RecoverPayload(make([]complex64, 100), 48000, ClassFeatures{BaudHz: 0}) != nil {
 		t.Fatalf("zero baud should yield nil")
 	}
 }

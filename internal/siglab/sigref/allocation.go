@@ -53,6 +53,7 @@ var allocations = []Allocation{
 	{512_000_000, 608_000_000, "TV broadcast", "UHF television (DTV)", "US"},
 	{617_000_000, 652_000_000, "Cellular 600 MHz DL", "LTE/5G downlink", "US"},
 	{663_000_000, 698_000_000, "Cellular 600 MHz UL", "LTE/5G uplink", "US"},
+	{698_000_000, 746_000_000, "Cellular 700 MHz", "LTE/5G lower blocks (A/B/C)", "US"},
 	{758_000_000, 775_000_000, "700 MHz public safety", "FirstNet / LTE public safety", "US"},
 	{746_000_000, 757_000_000, "Cellular 700 MHz DL", "LTE/5G downlink", "US"},
 	{776_000_000, 788_000_000, "Cellular 700 MHz UL", "LTE/5G uplink", "US"},

@@ -179,6 +179,26 @@ func TestHuntCapture_MissingFreq400(t *testing.T) {
 	}
 }
 
+func TestHuntStart_ForwardsSurveyDetectFlags(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeHuntCockpit{startID: 7}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Hunt: cock, AllowMutations: true})
+	defer teardown()
+	resp, err := http.Post(base+"/api/v1/hunt/start", "application/json",
+		strings.NewReader(`{"bands":["851:869"],"survey":true,"detect_wideband":true,"detect_encryption":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	if !cock.lastStart.Survey || !cock.lastStart.DetectWideband || !cock.lastStart.DetectEncryption {
+		t.Errorf("survey detect flags not forwarded: %+v", cock.lastStart)
+	}
+}
+
 func TestHuntStart_NoCockpit503(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()

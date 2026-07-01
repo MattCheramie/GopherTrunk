@@ -242,6 +242,17 @@ func classifyAndRoute(sys *DiscoveredSystem, fullIQ []complex64, fullRate uint32
 		chIQ: chIQ, chRate: chRate,
 		cand: cand, opts: opts, log: log,
 	})
+	// Encryption triage for a digital carrier no decoder identified: a
+	// high-entropy recovered payload flags the row encrypted. Decoded protocols
+	// already carry their grant encryption, so skip those. Opt-in.
+	if opts.DetectEncryption && survey.IsDigital(ds.Class) && ds.Trunking == nil && !ds.Encrypted {
+		if payload := survey.RecoverPayload(chIQ, float64(chRate), cls.Features); len(payload) > 0 {
+			if enc, label := survey.EncryptionTriage(payload); enc {
+				ds.Encrypted = true
+				ds.EncType = label
+			}
+		}
+	}
 	// Fill the consolidated inventory fields (Name / Service / Purpose) from the
 	// decode result + frequency allocation, for every carrier.
 	nameSignal(&ds)

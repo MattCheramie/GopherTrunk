@@ -1,13 +1,12 @@
-package rfscope
+package survey
 
 import (
 	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
-	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
-// recoverPayload blind-demodulates a digital burst's baseband IQ into a byte
+// RecoverPayload blind-demodulates a digital burst's baseband IQ into a byte
 // payload for entropy/structure triage. It FM-discriminates the burst, slices
 // the discriminator at the detected symbol rate into 2- or 4-level symbols
 // (integrate-and-dump), maps each symbol to bits, and packs MSB-first.
@@ -16,8 +15,9 @@ import (
 // produce a bitstream whose entropy/structure tells random-keystream from
 // structured-scrambler-from-plaintext, the question the cryptolab engines answer.
 // FM discrimination covers the FSK/C4FM family that dominates non-WiFi digital
-// RF; a PSK carrier still yields a usable (if noisier) stream.
-func recoverPayload(iq []complex64, rateHz float64, feat survey.ClassFeatures) []byte {
+// RF; a PSK carrier still yields a usable (if noisier) stream. Shared by the
+// rfscope entropy analyzer and the hunt survey's encryption triage.
+func RecoverPayload(iq []complex64, rateHz float64, feat ClassFeatures) []byte {
 	if rateHz <= 0 || feat.BaudHz <= 0 || len(iq) == 0 {
 		return nil
 	}

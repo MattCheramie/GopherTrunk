@@ -14,7 +14,8 @@ func TestAllocationLookup(t *testing.T) {
 		{162_500_000, "NOAA weather", true}, // narrowest-wins over VHF public safety
 		{98_500_000, "FM broadcast", true},
 		{751_000_000, "Cellular 700 MHz DL", true},
-		{5_000_000, "", false}, // unallocated in the table
+		{703_000_000, "Cellular 700 MHz", true}, // 700 MHz lower blocks (698–746)
+		{5_000_000, "", false},                  // unallocated in the table
 	}
 	for _, c := range cases {
 		a, ok := Lookup(c.hz)
