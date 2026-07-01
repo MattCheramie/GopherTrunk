@@ -1708,3 +1708,29 @@ func TestControlChannelStatsCountsNIDFailure(t *testing.T) {
 		t.Errorf("garbage stream produced a TSBK decode: %d", got.TSBKDecoded)
 	}
 }
+
+// TestCCStatsTSBKErrorRate pins the frame-error-rate arithmetic that feeds the
+// per-site decode-quality field on GET /api/v1/sites (issue #858).
+func TestCCStatsTSBKErrorRate(t *testing.T) {
+	// 90 good + 6 trellis + 4 CRC failures = 10 failed / 100 attempts = 10%.
+	s := CCStats{TSBKDecoded: 90, TSBKTrellisFailed: 6, TSBKCRCFailed: 4}
+	rate, attempts := s.TSBKErrorRate()
+	if attempts != 100 {
+		t.Errorf("attempts = %d, want 100", attempts)
+	}
+	if rate != 10.0 {
+		t.Errorf("rate = %v, want 10.0", rate)
+	}
+
+	// No attempts yet: undefined rate reported as 0, attempts 0.
+	rate, attempts = CCStats{}.TSBKErrorRate()
+	if rate != 0 || attempts != 0 {
+		t.Errorf("empty stats = (%v, %d), want (0, 0)", rate, attempts)
+	}
+
+	// A perfectly clean channel: 0% over a real sample, not the no-data case.
+	rate, attempts = CCStats{TSBKDecoded: 50}.TSBKErrorRate()
+	if rate != 0 || attempts != 50 {
+		t.Errorf("clean stats = (%v, %d), want (0, 50)", rate, attempts)
+	}
+}

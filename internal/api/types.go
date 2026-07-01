@@ -504,15 +504,51 @@ type SiteDTO struct {
 	// of the locked control carrier relative to the tuned centre. A large value
 	// flags a control lock sitting well off the configured frequency — e.g. an
 	// adjacent site bleeding through at 12.5 kHz spacing (issue #815).
-	ControlChannelCarrierOffsetHz int32  `json:"control_channel_carrier_offset_hz,omitempty"`
-	Name                          string `json:"name"`
-	WACN                          uint32 `json:"wacn,omitempty"`
-	SystemID                      uint16 `json:"system_id,omitempty"`
+	ControlChannelCarrierOffsetHz int32 `json:"control_channel_carrier_offset_hz,omitempty"`
+	// ControlChannelTSBKErrorRate is the cumulative percentage of TSBK blocks on
+	// this site's control channel that failed Viterbi/CRC — a decode-quality
+	// signal independent of carrier lock, since a well-locked carrier at range
+	// can still show a high rate (issue #858). It is a frame-error rate, not a
+	// pre-FEC bit-error rate. A pointer so a genuine 0.0 (perfect decode) is
+	// distinguishable from "no data" (nil): nil until a TSBK has been attempted,
+	// and on non-TSBK Phase 2 (TDMA) paths. ControlChannelTSBKCount is the total
+	// attempts the rate was measured over (a confidence weight).
+	ControlChannelTSBKErrorRate *float64 `json:"control_channel_tsbk_error_rate,omitempty"`
+	ControlChannelTSBKCount     int64    `json:"control_channel_tsbk_count,omitempty"`
+	// ControlChannelDecodeQuality buckets the error rate into clean / marginal /
+	// poor (SDRTrunk-style), for consumers that want a category rather than a
+	// number. Empty when there is no TSBK data yet. See decodeQuality.
+	ControlChannelDecodeQuality string `json:"control_channel_decode_quality,omitempty"`
+	Name                        string `json:"name"`
+	WACN                        uint32 `json:"wacn,omitempty"`
+	SystemID                    uint16 `json:"system_id,omitempty"`
 	// Hex renderings of the identity numbers, alongside the decimal fields.
 	WACNHex     string `json:"wacn_hex,omitempty"`
 	SystemIDHex string `json:"system_id_hex,omitempty"`
 	RFSSIDHex   string `json:"rfss_id_hex,omitempty"`
 	SiteIDHex   string `json:"site_id_hex,omitempty"`
+}
+
+// TSBK frame-error-rate thresholds (percent) that bucket a control channel's
+// decode quality for ControlChannelDecodeQuality. Starting values chosen to be
+// legible as percentages; tune as field data accumulates (issue #858).
+const (
+	tsbkCleanMaxPct    = 1.0 // ≤ this → "clean"
+	tsbkMarginalMaxPct = 5.0 // ≤ this → "marginal"; above → "poor"
+)
+
+// decodeQuality buckets a TSBK frame-error rate (percent) into an SDRTrunk-style
+// quality category. Only meaningful when at least one TSBK has been attempted;
+// callers gate on the attempt count before calling.
+func decodeQuality(ratePct float64) string {
+	switch {
+	case ratePct <= tsbkCleanMaxPct:
+		return "clean"
+	case ratePct <= tsbkMarginalMaxPct:
+		return "marginal"
+	default:
+		return "poor"
+	}
 }
 
 // fillIdentityHex derives the *_hex fields from the decimal identity fields.

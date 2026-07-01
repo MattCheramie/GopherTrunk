@@ -20,7 +20,8 @@ func TestListSitesUnionAndNameMerge(t *testing.T) {
 	// One discovered site (rfss 1 / site 1) that is also named in config,
 	// and one configured-but-unseen site (rfss 2 / site 9).
 	discovered := fakeSites{sites: []trunking.SiteInfo{
-		{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420012500, WACN: 0xBEE00, SystemID: 0x123},
+		{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420012500, WACN: 0xBEE00, SystemID: 0x123,
+			ControlChannelTSBKErrorRate: 8.0, ControlChannelTSBKCount: 250},
 	}}
 	systems := []trunking.System{{
 		Name: "MMR",
@@ -59,6 +60,19 @@ func TestListSitesUnionAndNameMerge(t *testing.T) {
 	if first.ControlChannelHz != 420012500 {
 		t.Errorf("discovered control_channel_hz = %d, want 420012500", first.ControlChannelHz)
 	}
+	// Per-site decode quality surfaces from the TSBK stats (issue #858).
+	if first.ControlChannelTSBKErrorRate == nil {
+		t.Fatalf("discovered site missing control_channel_tsbk_error_rate")
+	}
+	if *first.ControlChannelTSBKErrorRate != 8.0 {
+		t.Errorf("control_channel_tsbk_error_rate = %v, want 8.0", *first.ControlChannelTSBKErrorRate)
+	}
+	if first.ControlChannelTSBKCount != 250 {
+		t.Errorf("control_channel_tsbk_count = %d, want 250", first.ControlChannelTSBKCount)
+	}
+	if first.ControlChannelDecodeQuality != "poor" {
+		t.Errorf("control_channel_decode_quality = %q, want %q", first.ControlChannelDecodeQuality, "poor")
+	}
 
 	second := body.Sites[1]
 	if second.RFSSID != 2 || second.SiteID != 9 || second.Name != "Murradoc Hill" {
@@ -66,6 +80,15 @@ func TestListSitesUnionAndNameMerge(t *testing.T) {
 	}
 	if second.ControlChannelHz != 0 {
 		t.Errorf("unseen site should have no control_channel_hz, got %d", second.ControlChannelHz)
+	}
+	// A site with no TSBK data (count 0) omits the decode-quality fields
+	// rather than reporting a misleading 0% / "clean".
+	if second.ControlChannelTSBKErrorRate != nil {
+		t.Errorf("unseen site should have no tsbk_error_rate, got %v", *second.ControlChannelTSBKErrorRate)
+	}
+	if second.ControlChannelTSBKCount != 0 || second.ControlChannelDecodeQuality != "" {
+		t.Errorf("unseen site should have no tsbk quality, got count=%d quality=%q",
+			second.ControlChannelTSBKCount, second.ControlChannelDecodeQuality)
 	}
 }
 

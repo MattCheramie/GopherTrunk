@@ -338,8 +338,18 @@ type SiteUpdate struct {
 	// identity may not belong to the configured frequency. Zero on demod paths
 	// without an AFC stage (CQPSK) or when the offset is genuinely ~0.
 	ControlChannelCarrierOffsetHz int32 `json:"control_channel_carrier_offset_hz,omitempty"`
-	WACN                          uint32
-	SystemID                      uint16
+	// ControlChannelTSBKErrorRate is the percentage (0..100) of TSBK blocks on
+	// this control channel that failed Viterbi or CRC, cumulative since the
+	// decoder started — a frame-error rate, not a pre-FEC bit-error rate. It
+	// tracks decode quality independently of carrier lock: a well-locked carrier
+	// at range can still show a high rate (issue #858). ControlChannelTSBKCount
+	// is the total attempts the rate was measured over (the denominator, and a
+	// confidence weight); zero means no TSBK has been attempted yet — a fresh
+	// lock, or a non-TSBK path such as Phase 2 TDMA — and the rate is undefined.
+	ControlChannelTSBKErrorRate float64 `json:"control_channel_tsbk_error_rate,omitempty"`
+	ControlChannelTSBKCount     int64   `json:"control_channel_tsbk_count,omitempty"`
+	WACN                        uint32
+	SystemID                    uint16
 	// Hex renderings of the identity numbers (P25 field convention),
 	// alongside the decimal fields above so JSON consumers get both. Empty
 	// when the corresponding value is unknown (zero).

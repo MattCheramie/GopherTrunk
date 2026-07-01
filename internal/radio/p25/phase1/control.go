@@ -195,6 +195,21 @@ type CCStats struct {
 	LocRegSeen int64
 }
 
+// TSBKErrorRate returns the percentage (0..100) of decode-attempted TSBK
+// blocks that failed Viterbi or CRC on this control channel, together with
+// the total number of attempts (the denominator, which doubles as a
+// confidence weight). attempts == 0 means no TSBK has been attempted yet —
+// a fresh lock — in which case the rate is undefined and returned as 0.
+// This is a frame-error rate, not a pre-FEC bit-error rate. Issue #858.
+func (s CCStats) TSBKErrorRate() (ratePct float64, attempts int64) {
+	failed := s.TSBKTrellisFailed + s.TSBKCRCFailed
+	attempts = s.TSBKDecoded + failed
+	if attempts == 0 {
+		return 0, 0
+	}
+	return 100 * float64(failed) / float64(attempts), attempts
+}
+
 // NetworkSnapshot returns the system topology accumulated from the
 // site's Network / RFSS / Secondary-CC / Adjacent-Site status TSBKs.
 func (c *ControlChannel) NetworkSnapshot() NetworkConfig {
@@ -1683,6 +1698,9 @@ func (c *ControlChannel) publishSiteUpdate() {
 	if c.carrierOffsetHz != nil {
 		carrierOffsetHz = int32(math.Round(c.carrierOffsetHz()))
 	}
+	// Snapshot the live TSBK decode-quality counters onto the update so the
+	// site table can surface a per-site frame-error rate (issue #858).
+	tsbkErrorRate, tsbkCount := c.Stats().TSBKErrorRate()
 	c.bus.Publish(events.Event{
 		Kind: events.KindSiteUpdate,
 		Payload: trunking.SiteUpdate{
@@ -1691,6 +1709,8 @@ func (c *ControlChannel) publishSiteUpdate() {
 			SiteID:                        net.Site,
 			ControlChannelHz:              c.freqHz,
 			ControlChannelCarrierOffsetHz: carrierOffsetHz,
+			ControlChannelTSBKErrorRate:   tsbkErrorRate,
+			ControlChannelTSBKCount:       tsbkCount,
 			WACN:                          net.WACN,
 			SystemID:                      net.SystemID,
 			WACNHex:                       trunking.IDHex(uint64(net.WACN)),

@@ -438,6 +438,15 @@ func TestControlChannelPublishesSiteUpdate(t *testing.T) {
 				u.RFSSIDHex != "4" || u.SiteIDHex != "7" {
 				t.Fatalf("site update hex fields wrong: %+v", u)
 			}
+			// The update carries the live TSBK decode-quality stats: both
+			// broadcasts decoded cleanly, so the count is non-zero and the
+			// error rate is 0% (issue #858).
+			if u.ControlChannelTSBKCount == 0 {
+				t.Fatalf("site update carries no TSBK count: %+v", u)
+			}
+			if u.ControlChannelTSBKErrorRate != 0 {
+				t.Fatalf("clean decode reported error rate %v, want 0", u.ControlChannelTSBKErrorRate)
+			}
 			return
 		case <-deadline:
 			t.Fatal("no KindSiteUpdate published within deadline")
