@@ -9,6 +9,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/randomness"
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/stats"
 	"github.com/MattCheramie/GopherTrunk/internal/siglab"
+	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
 
 func init() { Register(entropyAnalyzer{}) }
@@ -87,7 +88,7 @@ func (entropyAnalyzer) Analyze(ctx context.Context, sc *Scene, in *Input) error 
 		if ident, err := siglab.IdentifyIQ(iq, "rfscope-burst", siglab.IdentifyConfig{SampleRateHz: rate, Format: siglab.FormatF32, Log: in.Log}); err == nil && ident != nil && !ident.Inconclusive {
 			continue
 		}
-		payload := recoverPayload(iq, rate, sc.Bursts[bidx].Features)
+		payload := survey.RecoverPayload(iq, rate, sc.Bursts[bidx].Features)
 		if len(payload) < minPayloadBytes {
 			continue
 		}

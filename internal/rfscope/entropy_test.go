@@ -2,12 +2,34 @@ package rfscope
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"testing"
 
 	"github.com/MattCheramie/GopherTrunk/internal/cryptolab/engine/stats"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
 )
+
+// synthFSK builds a 2-FSK baseband for the given bits: bit 1 → +dev, bit 0 →
+// -dev. (RecoverPayload moved to internal/survey; this local helper keeps the
+// entropy analyzer's end-to-end test self-contained.)
+func synthFSK(bits []int, rate, baud, dev float64) []complex64 {
+	sps := int(rate / baud)
+	iq := make([]complex64, 0, len(bits)*sps)
+	phase := 0.0
+	for _, b := range bits {
+		f := -dev
+		if b == 1 {
+			f = dev
+		}
+		step := 2 * math.Pi * f / rate
+		for i := 0; i < sps; i++ {
+			iq = append(iq, complex64(complex(math.Cos(phase), math.Sin(phase))))
+			phase += step
+		}
+	}
+	return iq
+}
 
 func randomBytes(n int, seed int64) []byte {
 	rng := rand.New(rand.NewSource(seed))
