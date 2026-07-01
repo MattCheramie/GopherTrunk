@@ -45,6 +45,7 @@ type huntLiveParams struct {
 	bands            []string // "low:high" in MHz
 	wholeDevice      bool     // sweep the SDR's entire tuning range (sdr.FreqRanger)
 	detectWideband   bool     // detect+stitch signals wider than a channel
+	detectEncryption bool     // entropy-triage unknown digital carriers
 	candidatesMHz    string   // comma-separated MHz
 	noSweep          bool
 	sampleRateHz     float64
@@ -183,6 +184,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		Location:              p.location,
 		ClassifyOnly:          p.classifyOnly,
 		DetectWideband:        p.detectWideband,
+		DetectEncryption:      p.detectEncryption,
 		SurveyDeep:            p.surveyDeep,
 		SurveyAudioDir:        p.surveyAudioDir,
 		SkipFreqs:             skipFreqs,

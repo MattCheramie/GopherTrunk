@@ -111,6 +111,12 @@ type LiveHuntOptions struct {
 	// stitched across tunes, and surfaced as named-but-not-decoded inventory
 	// rows. Off by default; the whole-device survey turns it on.
 	DetectWideband bool
+	// DetectEncryption runs an entropy triage on every digital carrier that no
+	// decoder identified: a high-entropy, near-uniform recovered payload marks
+	// the row encrypted (EncType "high-entropy (likely encrypted)"). Decoded
+	// protocols already surface encryption from their grants; this covers the
+	// unknown digital bursts. Off by default (adds a blind demod per carrier).
+	DetectEncryption bool
 
 	// DwellSeconds is how much IQ to capture per candidate for identify+decode.
 	// 0 ⇒ 3 s.

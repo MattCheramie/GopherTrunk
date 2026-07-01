@@ -129,6 +129,13 @@ are detected by stitching occupancy across tunes and surfaced as
 **named-but-not-decoded** inventory rows — GopherTrunk identifies and can
 capture them, it does not demodulate them.
 
+Add `-detect-encryption` to run an entropy triage on every digital carrier no
+decoder identified: a high-entropy, near-uniform recovered payload flags the row
+as encrypted (`enc_type = "high-entropy (likely encrypted)"`). Decoded trunking
+protocols already surface their encryption (ALGID → AES-256, ADP/RC4, …) from the
+control-channel grants; this covers the *unknown* digital bursts. It's a
+heuristic — CryptoLab is where the verdict is confirmed and the cipher attacked.
+
 ### Record a signal from the list and send it to SigLab / CryptoLab
 
 Export a survey to JSON, then pick any row and record raw IQ of it for deeper

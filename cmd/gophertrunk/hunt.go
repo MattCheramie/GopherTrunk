@@ -66,6 +66,7 @@ func runHunt(args []string) {
 	fs.Var(&bands, "band", "frequency band to sweep as low:high in MHz (repeatable; live mode)")
 	wholeDevice := fs.Bool("whole-device", false, "live: sweep the SDR's entire tuning range (derived from the device) instead of an explicit -band — the full-spectrum survey. Pair with -survey -classify-only for a fast first pass")
 	detectWideband := fs.Bool("detect-wideband", false, "live survey: also detect signals wider than a channel (cellular/WiFi/OFDM) by stitching occupancy across tunes, and surface them as named-but-not-decoded inventory rows (auto-enabled with -whole-device)")
+	detectEncryption := fs.Bool("detect-encryption", false, "survey: run an entropy triage on every digital carrier no decoder identified, flagging a high-entropy (likely encrypted) payload on the inventory row")
 	candidatesFlag := fs.String("candidates", "", "comma-separated control-channel frequencies in MHz to probe directly (skips the sweep)")
 	noSweep := fs.Bool("no-sweep", false, "with -candidates, probe only the listed frequencies (no spectrum sweep)")
 	sweepDwell := fs.Duration("sweep-dwell", 0, "accumulation time per sweep step (e.g. 200ms; 0 ⇒ one frame)")
@@ -241,6 +242,7 @@ FLAGS:`)
 			bands:            []string(bands),
 			wholeDevice:      *wholeDevice,
 			detectWideband:   *detectWideband || *wholeDevice,
+			detectEncryption: *detectEncryption,
 			candidatesMHz:    *candidatesFlag,
 			noSweep:          *noSweep,
 			sampleRateHz:     *sampleRate,
