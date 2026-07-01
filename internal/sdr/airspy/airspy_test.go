@@ -268,6 +268,42 @@ func TestActualSampleRateMatchesAdvertisedIQRate(t *testing.T) {
 	}
 }
 
+// TestActualSampleRate_R2_2p5MSPS_Issue851 reproduces the #851 field report end
+// to end through the real SetSampleRate path: an Airspy R2 (IQ-rate table
+// {10 MSPS, 2.5 MSPS}) configured with sample_rate: 2500000 must select the
+// firmware's 2.5 MSPS entry (index 1) AND report a delivered IQ rate of
+// 2_500_000 — not half of it.
+//
+// This is the 2.5-MS/s control-channel sibling of the 10-MS/s wideband #764
+// case. The regressed code multiplied the requested IQ rate by two before
+// matching the table (2_500_000*2 = 5_000_000 ∉ {10M, 2.5M} → snap → rates[1]/2
+// = 1_250_000), so ActualSampleRate reported 1.25 MS/s. The daemon then built
+// the control DDC at 1.25 MS/s while the hardware still streamed 2.5 MS/s IQ
+// (index 1), so the symbol clock ran 2× off and the P25 control channel lost
+// every FSW. Asserting 2_500_000 here fails against that code and passes now.
+func TestActualSampleRate_R2_2p5MSPS_Issue851(t *testing.T) {
+	dev := &Device{rates: []uint32{10_000_000, 2_500_000}}
+	mt := usb.NewMockTransport()
+	dev.t = mt
+	// 2.5 MHz is the second advertised IQ rate → firmware index 1.
+	mt.Script = []usb.CtrlExchange{
+		{In: true, BRequest: reqSetSamplerate, WValue: 0, WIndex: 1, Reply: []byte{0}, N: 1},
+	}
+	if err := dev.SetSampleRate(2_500_000); err != nil {
+		t.Fatalf("SetSampleRate(2.5M): %v", err)
+	}
+	if mt.Err != nil {
+		t.Fatalf("transport: %v (wanted IQ index 1)", mt.Err)
+	}
+	got, err := dev.ActualSampleRate()
+	if err != nil {
+		t.Fatalf("ActualSampleRate: %v", err)
+	}
+	if got != 2_500_000 {
+		t.Fatalf("ActualSampleRate() = %d, want 2500000 (the rate the R2 truly delivers; 1250000 = the #851 regression)", got)
+	}
+}
+
 func TestSetSampleRateEncodesByValueWhenNoTable(t *testing.T) {
 	// With no rate table the param is a by-value encoding of the IQ rate in
 	// kHz: IQ 4 MHz → 4000.

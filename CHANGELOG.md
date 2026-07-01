@@ -132,7 +132,10 @@ for tagged releases.
   IQ output rates (R2 `{10, 2.5}` MSPS, Mini `{6, 3}` MSPS); the driver now
   matches the requested IQ rate against it directly. The IQ converter is
   unchanged — the firmware still streams the real ADC at 2× and the host
-  decimates back down.
+  decimates back down. The same bug also broke the **control channel on an R2
+  at 2.5 MS/s** (`sample_rate: 2500000` → `actual_hz=1250000`, continuous
+  `no FSW hits`); the daemon now builds the control down-converter at the true
+  2.5 MS/s so the symbol clock stays aligned (#851, same root cause as #764).
 
 ## [v0.5.7] — 2026-06-29
 
