@@ -54,6 +54,37 @@ func TestSiteTrackerObservesSiteUpdates(t *testing.T) {
 	}
 }
 
+// TestSiteTrackerTSBKQualityGuard checks that a per-site TSBK error rate is
+// recorded from an update that carries stats, and that a later zero-stat update
+// (a fresh lock, or a non-TSBK Phase 2 site-update on the same key) does not
+// clobber it (issue #858).
+func TestSiteTrackerTSBKQualityGuard(t *testing.T) {
+	bus := events.NewBus(16)
+	defer bus.Close()
+	tr, err := NewSiteTracker(SiteTrackerOptions{Bus: bus})
+	if err != nil {
+		t.Fatalf("NewSiteTracker: %v", err)
+	}
+	t.Cleanup(func() { tr.Close() })
+
+	// Observe directly to keep the ordering deterministic.
+	tr.observe(SiteUpdate{System: "MMR", RFSSID: 1, SiteID: 1,
+		ControlChannelHz: 420012500, ControlChannelTSBKErrorRate: 8.0, ControlChannelTSBKCount: 250})
+	got := tr.Snapshot()[0]
+	if got.ControlChannelTSBKErrorRate != 8.0 || got.ControlChannelTSBKCount != 250 {
+		t.Fatalf("after stats update: rate=%v count=%d, want 8.0 / 250",
+			got.ControlChannelTSBKErrorRate, got.ControlChannelTSBKCount)
+	}
+
+	// A zero-stat update must leave the recorded rate untouched.
+	tr.observe(SiteUpdate{System: "MMR", RFSSID: 1, SiteID: 1, ControlChannelHz: 420012500})
+	got = tr.Snapshot()[0]
+	if got.ControlChannelTSBKErrorRate != 8.0 || got.ControlChannelTSBKCount != 250 {
+		t.Fatalf("zero-stat update clobbered quality: rate=%v count=%d, want 8.0 / 250",
+			got.ControlChannelTSBKErrorRate, got.ControlChannelTSBKCount)
+	}
+}
+
 func TestSiteTrackerReportFromTopology(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()

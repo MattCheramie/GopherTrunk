@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Per-site P25 decode quality on `GET /api/v1/sites`.** Each `SiteDTO` now
+  carries `control_channel_tsbk_error_rate` (cumulative % of TSBK blocks failing
+  Viterbi/CRC on that site's control channel), `control_channel_tsbk_count` (the
+  attempts behind it, a confidence weight), and `control_channel_decode_quality`
+  (`clean` / `marginal` / `poor`). This exposes decode health independently of
+  carrier lock — a well-locked carrier at range can still error heavily — so
+  consumers can categorise sites as clean vs marginal rather than approximating
+  from carrier offset alone. Fields are omitted until a TSBK is decoded and on
+  non-TSBK Phase 2 paths (issue #858).
+
 ## [v0.5.9] — 2026-07-01
 
 ### Added

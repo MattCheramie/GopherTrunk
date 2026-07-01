@@ -25,7 +25,7 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 	if s.sites != nil {
 		for _, si := range s.sites.Sites() {
 			k := key{si.System, si.RFSSID, si.SiteID}
-			byKey[k] = &SiteDTO{
+			dto := &SiteDTO{
 				System:                        si.System,
 				RFSSID:                        si.RFSSID,
 				SiteID:                        si.SiteID,
@@ -34,6 +34,16 @@ func (s *Server) handleListSites(w http.ResponseWriter, _ *http.Request) {
 				WACN:                          si.WACN,
 				SystemID:                      si.SystemID,
 			}
+			// Surface per-site decode quality only once a TSBK has been
+			// attempted, so a fresh lock (or a non-TSBK path) omits the fields
+			// rather than reporting a misleading 0% (issue #858).
+			if si.ControlChannelTSBKCount > 0 {
+				rate := si.ControlChannelTSBKErrorRate
+				dto.ControlChannelTSBKErrorRate = &rate
+				dto.ControlChannelTSBKCount = si.ControlChannelTSBKCount
+				dto.ControlChannelDecodeQuality = decodeQuality(rate)
+			}
+			byKey[k] = dto
 		}
 	}
 

@@ -24,11 +24,18 @@ type SiteInfo struct {
 	// of the locked control carrier relative to the tuned centre, as of LastSeen.
 	// A large value flags a control lock sitting well off the configured
 	// frequency — e.g. an adjacent site bleeding through (issue #815).
-	ControlChannelCarrierOffsetHz int32     `json:"control_channel_carrier_offset_hz,omitempty"`
-	WACN                          uint32    `json:"wacn,omitempty"`
-	SystemID                      uint16    `json:"system_id,omitempty"`
-	FirstSeen                     time.Time `json:"first_seen"`
-	LastSeen                      time.Time `json:"last_seen"`
+	ControlChannelCarrierOffsetHz int32 `json:"control_channel_carrier_offset_hz,omitempty"`
+	// ControlChannelTSBKErrorRate is the cumulative percentage of TSBK blocks
+	// that failed Viterbi/CRC on this site's control channel, as of LastSeen —
+	// a frame-error rate, not a pre-FEC bit-error rate (issue #858).
+	// ControlChannelTSBKCount is the total attempts it was measured over; zero
+	// means no TSBK data yet (fresh lock, or a non-TSBK Phase 2 path).
+	ControlChannelTSBKErrorRate float64   `json:"control_channel_tsbk_error_rate,omitempty"`
+	ControlChannelTSBKCount     int64     `json:"control_channel_tsbk_count,omitempty"`
+	WACN                        uint32    `json:"wacn,omitempty"`
+	SystemID                    uint16    `json:"system_id,omitempty"`
+	FirstSeen                   time.Time `json:"first_seen"`
+	LastSeen                    time.Time `json:"last_seen"`
 }
 
 // SiteTracker maintains a live table of the P25 sites GT has decoded
@@ -135,6 +142,13 @@ func (t *SiteTracker) observe(u SiteUpdate) {
 	// frequency, or a demod path with no AFC stage), so the surfaced value
 	// tracks the most recent lock (issue #815).
 	s.ControlChannelCarrierOffsetHz = u.ControlChannelCarrierOffsetHz
+	// Refresh decode-quality only when the update actually carries TSBK stats,
+	// so a zero-stat update (a fresh lock, or a non-TSBK Phase 2 site-update on
+	// the same key) never clobbers a real rate (issue #858).
+	if u.ControlChannelTSBKCount > 0 {
+		s.ControlChannelTSBKErrorRate = u.ControlChannelTSBKErrorRate
+		s.ControlChannelTSBKCount = u.ControlChannelTSBKCount
+	}
 	if u.WACN != 0 {
 		s.WACN = u.WACN
 	}
