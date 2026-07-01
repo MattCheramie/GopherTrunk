@@ -162,7 +162,7 @@ This is exactly what SDR# / OP25 / DSD do. The key benefits:
    (no CGO, no system shared library, no install scripts).
 2. Users with DVSI hardware can opt in by building with `-tags dvsi`.
    The Vocoder + AMBE-3003 wire protocol + voice.Vocoder interface
-   conformance ship in [`internal/voice/dvsi/`](../internal/voice/dvsi/);
+   conformance ship in [`internal/voice/dvsi/`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/dvsi/);
    the USB / FTDI transport that talks to the physical chip is a stub
    today (returns `ErrNoDevice`) so the recorder fallback chain
    activates cleanly. Hardware integration with a real DVSI USB-3000
@@ -175,7 +175,7 @@ This is exactly what SDR# / OP25 / DSD do. The key benefits:
 
 ## DVSI backend layout (`-tags dvsi`)
 
-[`internal/voice/dvsi/`](../internal/voice/dvsi/):
+[`internal/voice/dvsi/`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/dvsi/):
 
 - `packet.go` — AMBE-3003 wire format (sync byte + length + type +
   payload). Always compiled — no patent surface in describing a
@@ -198,17 +198,17 @@ the same target on Ubuntu.
 
 The calibration harness ships end-to-end:
 
-- [`internal/voice/calibrate`](../internal/voice/calibrate/) — RMS-
+- [`internal/voice/calibrate`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/calibrate/) — RMS-
   ratio + best-alignment cross-correlation comparison against a
   reference WAV from DSD-FME / OP25.
-- [`internal/voice/imbe/testdata/`](../internal/voice/imbe/testdata/)
+- [`internal/voice/imbe/testdata/`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/imbe/testdata/)
   and
-  [`internal/voice/ambe2/testdata/`](../internal/voice/ambe2/testdata/)
+  [`internal/voice/ambe2/testdata/`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/ambe2/testdata/)
   — fixture drop zones with READMEs documenting the file layout
   the calibrate tests expect.
 - [`docs/voice-calibration.md`](voice-calibration.md) — operator-
   facing capture-and-validate recipe.
-- [`cmd/voice-calibrate`](../cmd/voice-calibrate/) — CLI wrapper
+- [`cmd/voice-calibrate`](https://github.com/MattCheramie/GopherTrunk/tree/main/cmd/voice-calibrate/) — CLI wrapper
   around `calibrate.Compare` so a one-off check doesn't require
   writing a test.
 
@@ -222,7 +222,7 @@ registration, the decoder routes those frames through silence.
 
 Operators with a per-vendor reference can register one
 (freqA, freqB) pair at a time via
-[`ambe2.SetKnoxTone`](../internal/voice/ambe2/knox.go) (typically
+[`ambe2.SetKnoxTone`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/ambe2/knox.go) (typically
 from a per-vendor sub-package `init()`):
 
 ```go
@@ -238,7 +238,7 @@ func init() {
 
 For curated tables (a service-manual extract, an open-source
 receiver's vendor table), use
-[`ambe2.RegisterPreset`](../internal/voice/ambe2/knox.go) instead
+[`ambe2.RegisterPreset`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/ambe2/knox.go) instead
 of repeated `SetKnoxTone` calls. The preset name shows up in
 `ambe2.ListPresets()` for operator diagnostics:
 

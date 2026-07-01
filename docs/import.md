@@ -166,7 +166,7 @@ files exported from that tool import without modification.
 ### Annotated example
 
 A complete example bundle lives at
-[`samples/rr-import/example.csv`](../samples/rr-import/example.csv).
+[`samples/rr-import/example.csv`](https://github.com/MattCheramie/GopherTrunk/blob/main/samples/rr-import/example.csv).
 
 ```csv
 # Section: metadata
@@ -347,7 +347,7 @@ the struct-level and node-level YAML schema validations pass.
 The PDF importer always sets `protocol: p25` for the parsed system,
 since the RadioReference Phase 1 and Phase 2 PDFs share the same
 on-page schema and the daemon's runtime distinguishes the two via the
-[`p25_phase2_*` keys](../config.example.yaml). Operators on
+[`p25_phase2_*` keys](https://github.com/MattCheramie/GopherTrunk/blob/main/config.example.yaml). Operators on
 pure-Phase-2 systems may want to hand-add
 `p25_phase2_clock_mode: gardner` to the imported entry — defaults are
 correct for Phase 1 captures.
@@ -390,9 +390,9 @@ re-importing.
 
 ## See also
 
-- [`config.example.yaml`](../config.example.yaml) — full schema for
+- [`config.example.yaml`](https://github.com/MattCheramie/GopherTrunk/blob/main/config.example.yaml) — full schema for
   `trunking.systems[]`.
-- [`internal/trunking/talkgroup.go`](../internal/trunking/talkgroup.go) —
+- [`internal/trunking/talkgroup.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/trunking/talkgroup.go) —
   source of truth for the CSV format the importer writes.
-- [`samples/rr-import/example.csv`](../samples/rr-import/example.csv) —
+- [`samples/rr-import/example.csv`](https://github.com/MattCheramie/GopherTrunk/blob/main/samples/rr-import/example.csv) —
   worked example of the multi-section CSV bundle.

@@ -10,18 +10,18 @@ nav_group: Reference
 GopherTrunk's pure-Go IMBE (P25 P1) and AMBE+2 (DMR, NXDN, dPMR,
 D-STAR) decoders produce intelligible end-to-end audio. The remaining
 polish work is **absolute-level calibration**: tune the AGC `TargetPeak`
-in [`internal/voice/mbe/agc.go`](../internal/voice/mbe/agc.go) so the
+in [`internal/voice/mbe/agc.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/agc.go) so the
 in-tree decoders' loudness matches the reference output from
 DSD-FME or OP25. This document is the operator-facing recipe.
 
 ## What's already shipping
 
 - The comparison harness at
-  [`internal/voice/calibrate`](../internal/voice/calibrate/) reads a
+  [`internal/voice/calibrate`](https://github.com/MattCheramie/GopherTrunk/tree/main/internal/voice/calibrate/) reads a
   `.raw` vocoder-frame stream and a reference `.wav` and computes
   RMS-ratio (dB) + best-alignment normalised cross-correlation.
 - The RMS + cross-correlation math is exposed separately as
-  [`calibrate.CompareSamples([]int16, []int16) Result`](../internal/voice/calibrate/calibrate.go)
+  [`calibrate.CompareSamples([]int16, []int16) Result`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/calibrate/calibrate.go)
   for callers that already have PCM in memory — and so the
   math is unconditionally test-covered against synthetic
   fixtures (e.g. a +3 dB-louder reference must produce
@@ -31,14 +31,14 @@ DSD-FME or OP25. This document is the operator-facing recipe.
   but a regression in the loudness / similarity math now
   fails CI without that step.
 - The vendor-extension hook
-  [`ambe2.SetKnoxTone(b1, freqA, freqB)`](../internal/voice/ambe2/knox.go)
+  [`ambe2.SetKnoxTone(b1, freqA, freqB)`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/ambe2/knox.go)
   lets operators register per-vendor knox / call-alert dual-tone
   pairs (b1 ∈ [144, 163]) the public AMBE+2 spec doesn't document.
   For curated tables, the bundle API
-  [`ambe2.RegisterPreset(KnoxPreset)`](../internal/voice/ambe2/knox.go)
+  [`ambe2.RegisterPreset(KnoxPreset)`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/ambe2/knox.go)
   registers many entries at once with a name surfacing through
   `ambe2.ListPresets()` for diagnostics.
-- The wrapper CLI [`cmd/voice-calibrate`](../cmd/voice-calibrate/main.go)
+- The wrapper CLI [`cmd/voice-calibrate`](https://github.com/MattCheramie/GopherTrunk/blob/main/cmd/voice-calibrate/main.go)
   exposes `calibrate.Compare` so a one-off check doesn't require a
   test.
 
@@ -112,14 +112,14 @@ LagSamples, sample counts). Acceptance criteria:
 ### 4. Tune if the thresholds miss
 
 A failing RMSRatioDb means the in-tree AGC's `TargetPeak` is off.
-[`internal/voice/mbe/agc.go`](../internal/voice/mbe/agc.go) holds
+[`internal/voice/mbe/agc.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/agc.go) holds
 the knob; lowering `TargetPeak` quietens the in-tree decoder
 relative to the reference and vice versa.
 
 A failing PeakXcorr (with a clean RMSRatio) means the synthesis
 path itself is producing a different waveform. That's deeper than a
 gain knob — check the spectral envelope decoder
-([`internal/voice/mbe/synth.go`](../internal/voice/mbe/synth.go))
+([`internal/voice/mbe/synth.go`](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/mbe/synth.go))
 and the prediction-residual gain path.
 
 ## Reading P25 Phase 1 decode quality
@@ -169,9 +169,9 @@ summed-sinewave dual-tones (identical synthesis path to DTMF).
 Per-vocoder testdata directories:
 
 - `internal/voice/imbe/testdata/` — IMBE fixtures
-  ([README](../internal/voice/imbe/testdata/README.md))
+  ([README](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/imbe/testdata/README.md))
 - `internal/voice/ambe2/testdata/` — AMBE+2 fixtures
-  ([README](../internal/voice/ambe2/testdata/README.md))
+  ([README](https://github.com/MattCheramie/GopherTrunk/blob/main/internal/voice/ambe2/testdata/README.md))
 
 Both READMEs document the file naming the calibrate tests expect.
 Tests `t.Skip` when files are absent; CI stays green.
