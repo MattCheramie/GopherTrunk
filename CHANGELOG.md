@@ -8,6 +8,34 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **Full-spectrum survey — scan the whole device, name everything, capture any
+  signal.** `gophertrunk hunt -survey` gains an end-to-end "what's on the air"
+  workflow for undocumented, protocol-dense areas:
+  - **`-whole-device`** sweeps the SDR's *entire* tuning range (derived from the
+    device itself — 24 MHz–1.766 GHz for an R820T, etc.) instead of a hand-typed
+    `-band`, printing the resolved span, step count, and ETA. A new optional
+    `sdr.FreqRanger` reports each backend's range; every tuner single-sources its
+    PLL bounds so the advertised and enforced ranges can't drift.
+  - **Wideband detect + name + stitch.** `-detect-wideband` (auto-on with
+    `-whole-device`) finds signals far wider than a channel — cellular LTE/5G,
+    WiFi, other OFDM — by detecting occupancy plateaus and *stitching them across
+    tunes* to recover the true occupied bandwidth of a signal wider than the
+    SDR's instantaneous bandwidth. These are surfaced as **named-but-not-decoded**
+    rows: GopherTrunk identifies and can capture them, it does not demodulate them.
+  - **Unified inventory row.** Every detected signal now carries a **name**,
+    **frequency**, **service/purpose** (from a curated frequency-allocation table
+    — FRS/GMRS, amateur, public-safety, ADS-B, ISM, the cellular bands, …), signal
+    **quality**, **encrypted?** and **encryption type**, and a **wideband** flag.
+    Encryption surfaces from the decode (ALGID → AES-256, ADP/RC4, …); a new
+    `-detect-encryption` entropy triage flags *unknown* digital bursts that look
+    encrypted. The survey CSV gains the matching columns.
+  - **List-driven capture → SigLab / CryptoLab.** From a survey's JSON,
+    `gophertrunk hunt -survey-capture <freq|#index> -from survey.json -to
+    siglab|cryptolab` records raw IQ of the chosen signal (frequency + occupied
+    bandwidth drive the capture) and hands it on — SigLab identify, or an rfscope
+    pass that emits a CryptoLab `ks` frames file. The same action is a per-row
+    button in the web **Hunt** tab, an `↑/↓` + `c`/`C` keybinding in the TUI Hunt
+    panel, and `POST /api/v1/hunt/capture` on the daemon.
 - **RF Scope — protocol-agnostic RF network analysis ("Wireshark for the RF
   physical layer").** A new `gophertrunk rfscope` surface analyzes any band — a
   recorded IQ capture or a live SDR — with no prior knowledge of the technology,
