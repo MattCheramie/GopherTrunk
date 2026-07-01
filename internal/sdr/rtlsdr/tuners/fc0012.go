@@ -57,6 +57,16 @@ func NewFC0012(d *rtl2832u.Demod) *FC0012 { return &FC0012{demod: d} }
 
 func (f *FC0012) Type() Type       { return TypeFC0012 }
 func (f *FC0012) IFFreqHz() uint32 { return fc0012IFFreqHz }
+
+// fc0012MinFreqHz / fc0012MaxFreqHz bound the FC0012's 37 MHz .. 1.7 GHz
+// range — the single source for FreqRange and the SetFreq guard.
+const (
+	fc0012MinFreqHz uint32 = 37_000_000
+	fc0012MaxFreqHz uint32 = 1_700_000_000
+)
+
+// FreqRange returns the FC0012's inclusive tuning range in Hz.
+func (f *FC0012) FreqRange() (minHz, maxHz uint32) { return fc0012MinFreqHz, fc0012MaxFreqHz }
 func (f *FC0012) Gains() []int {
 	out := make([]int, len(fc0012Gains))
 	copy(out, fc0012Gains)
@@ -117,8 +127,8 @@ func (f *FC0012) SetFreq(hz uint32) error {
 	if !f.initDone {
 		return errors.New("fc0012: Init not called")
 	}
-	if hz < 37_000_000 || hz > 1_700_000_000 {
-		return &ErrUnsupportedFreq{Hz: hz, MinHz: 37_000_000, MaxHz: 1_700_000_000, TunerStr: "FC0012"}
+	if minHz, maxHz := f.FreqRange(); hz < minHz || hz > maxHz {
+		return &ErrUnsupportedFreq{Hz: hz, MinHz: minHz, MaxHz: maxHz, TunerStr: "FC0012"}
 	}
 	if err := f.demod.SetI2CRepeater(true); err != nil {
 		return err

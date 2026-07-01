@@ -13,9 +13,16 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/diag"
 	"github.com/MattCheramie/GopherTrunk/internal/hunt"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/survey"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
+
+// sweepGuardFrac mirrors the hunt.Sweeper default guard fraction
+// (internal/hunt/sweeper.go). It is duplicated here only to estimate the
+// whole-device step count / ETA before the sweep starts; the sweeper
+// remains the source of truth for the actual stepping.
+const sweepGuardFrac = 0.1
 
 // huntLiveParams are the resolved inputs for a live (on-air) hunt.
 type huntLiveParams struct {
@@ -36,6 +43,8 @@ type huntLiveParams struct {
 	classDigitalProm float64
 	classAMCV        float64
 	bands            []string // "low:high" in MHz
+	wholeDevice      bool     // sweep the SDR's entire tuning range (sdr.FreqRanger)
+	detectWideband   bool     // detect+stitch signals wider than a channel
 	candidatesMHz    string   // comma-separated MHz
 	noSweep          bool
 	sampleRateHz     float64
@@ -64,8 +73,11 @@ type huntLiveParams struct {
 func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, *hunt.SignalSurvey, []hunt.CaptureReport) {
 	candidates := parseFreqListMHz(rep, p.candidatesMHz)
 	bands := parseBandsMHz(rep, p.bands)
-	if len(candidates) == 0 && len(bands) == 0 {
-		rep.Fatalf(2, "live hunt needs -band low:high (to sweep) or -candidates f,f (to probe)")
+	if p.wholeDevice && p.noSweep {
+		rep.Fatalf(2, "-whole-device sweeps the spectrum; it can't be combined with -no-sweep")
+	}
+	if !p.wholeDevice && len(candidates) == 0 && len(bands) == 0 {
+		rep.Fatalf(2, "live hunt needs -band low:high (to sweep), -candidates f,f (to probe), or -whole-device (sweep the whole tuner)")
 	}
 	if p.noSweep && len(candidates) == 0 {
 		rep.Fatalf(2, "-no-sweep requires -candidates")
@@ -79,6 +91,21 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		rep.Fatal(1, err)
 	}
 	defer dev.Close()
+
+	// -whole-device: derive the sweep band from the open device's tuning
+	// range (sdr.FreqRanger). This is the full-spectrum survey — every
+	// frequency the dongle can reach, in one run.
+	if p.wholeDevice {
+		band, err := wholeDeviceBand(dev)
+		if err != nil {
+			rep.Fatalf(2, "-whole-device: %s[%s]: %v (pass explicit -band low:high instead)", info.Driver, info.Serial, err)
+		}
+		bands = append(bands, band)
+		steps := sweepStepCount(band, p.sampleRateHz)
+		fmt.Fprintf(os.Stderr, "%s: whole-device sweep %.4f–%.4f MHz (%d step(s) @ %g MS/s)%s\n",
+			modeLabel(p.survey), float64(band.LowHz)/1e6, float64(band.HighHz)/1e6,
+			steps, p.sampleRateHz/1e6, sweepETANote(steps, p.sweepDwell))
+	}
 	if err := dev.SetSampleRate(uint32(p.sampleRateHz)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
 	}
@@ -155,6 +182,7 @@ func runHuntLive(rep *diag.Reporter, p huntLiveParams) (*hunt.DiscoveredSystem, 
 		County:                p.county,
 		Location:              p.location,
 		ClassifyOnly:          p.classifyOnly,
+		DetectWideband:        p.detectWideband,
 		SurveyDeep:            p.surveyDeep,
 		SurveyAudioDir:        p.surveyAudioDir,
 		SkipFreqs:             skipFreqs,
@@ -330,8 +358,21 @@ func printSurvey(sv *hunt.SignalSurvey) {
 	fmt.Fprintf(os.Stderr, "survey: %d signal(s) — %d trunking, %d analog, %d paging, %d other\n",
 		len(sv.Signals), trunking, analog, paging, other)
 	for _, s := range sv.Signals {
-		line := fmt.Sprintf("  %10.4f MHz  %-13s  bw %5.1f kHz  snr %4.1f dB",
+		line := fmt.Sprintf("  %10.4f MHz  %-13s  bw %6.1f kHz  snr %4.1f dB",
 			float64(s.FreqHz)/1e6, s.Class, float64(s.OccupiedBwHz)/1e3, s.SNRDb)
+		if s.Name != "" {
+			line += "  " + s.Name
+		}
+		if s.Service != "" {
+			line += fmt.Sprintf(" (%s)", s.Service)
+		}
+		if s.Encrypted {
+			if s.EncType != "" {
+				line += "  🔒 " + s.EncType
+			} else {
+				line += "  🔒 encrypted"
+			}
+		}
 		switch {
 		case s.Trunking != nil:
 			line += fmt.Sprintf("  [%s", s.Trunking.Protocol)
@@ -377,6 +418,74 @@ func parseFreqListMHz(rep *diag.Reporter, s string) []uint32 {
 		out = append(out, uint32(mhz*1e6+0.5))
 	}
 	return out
+}
+
+// modeLabel names the run for log lines: "survey" classifies every
+// carrier, "hunt" maps trunked control channels only.
+func modeLabel(survey bool) string {
+	if survey {
+		return "survey"
+	}
+	return "hunt"
+}
+
+// wholeDeviceBand derives the full-spectrum sweep band from a device that
+// reports its tuning range (sdr.FreqRanger). A device that can't report a
+// usable [min,max] (e.g. a network/file source) returns an error so the
+// caller can tell the operator to pass an explicit -band.
+func wholeDeviceBand(dev sdr.Device) (hunt.Band, error) {
+	fr, ok := dev.(sdr.FreqRanger)
+	if !ok {
+		return hunt.Band{}, fmt.Errorf("device does not report a tuning range")
+	}
+	lo, hi := fr.FreqRange()
+	if hi <= lo {
+		return hunt.Band{}, fmt.Errorf("device reports no usable tuning range (%d..%d Hz)", lo, hi)
+	}
+	return hunt.Band{LowHz: lo, HighHz: hi}, nil
+}
+
+// sweepStepCount reports how many tuned steps the sweeper will take to
+// cover band at sampleRateHz, by simulating the same advance loop
+// hunt.Sweeper.Sweep uses (step = rate·(1−2·guardFrac), centered half a
+// usable bandwidth in from the low edge, stopping once a step's coverage
+// reaches the high edge). Arithmetic is uint64 so the whole-device span of
+// a wide tuner cannot overflow the estimate.
+func sweepStepCount(band hunt.Band, sampleRateHz float64) int {
+	if band.HighHz < band.LowHz || sampleRateHz <= 0 {
+		return 0
+	}
+	rate := uint64(sampleRateHz)
+	step := uint64(float64(rate) * (1 - 2*sweepGuardFrac))
+	if step == 0 {
+		step = rate
+	}
+	halfUsable := step / 2
+	hi := uint64(band.HighHz)
+	n := 0
+	for center := uint64(band.LowHz) + halfUsable; ; center += step {
+		n++
+		if center+halfUsable >= hi {
+			break
+		}
+		if n > 10_000_000 { // safety: never spin forever on a degenerate input
+			break
+		}
+	}
+	return n
+}
+
+// sweepETANote returns a rough, clearly-approximate "time to sweep" note
+// for the whole-device banner. The estimate uses the per-step dwell when
+// set, else a nominal tune+capture budget; identify/decode of each detected
+// carrier adds time beyond the sweep itself.
+func sweepETANote(steps int, dwell time.Duration) string {
+	per := dwell
+	if per <= 0 {
+		per = 50 * time.Millisecond
+	}
+	eta := time.Duration(steps) * per
+	return fmt.Sprintf("; ~%s to sweep, plus identify/decode per detected carrier", eta.Round(time.Second))
 }
 
 // parseBandsMHz parses "low:high" MHz band specs into hunt.Band (Hz).

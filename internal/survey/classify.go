@@ -42,6 +42,7 @@ const (
 	ClassPaging         SignalClass = "paging"        // FSK at a paging baud (512/1200/1600/2400)
 	ClassTrunkControl   SignalClass = "trunk-control" // assigned by the router after a CC lock
 	ClassTrunkVoice     SignalClass = "trunk-voice"   // assigned by the router: decoded, no CC lock
+	ClassWideband       SignalClass = "wideband"      // a span wider than a channel (cellular/WiFi/OFDM); named, not decoded
 )
 
 // ClassFeatures are the raw DSP measurements behind a classification. They are

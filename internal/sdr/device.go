@@ -94,6 +94,17 @@ type BlogV4Forcer interface {
 	SetBlogV4(lite bool) error
 }
 
+// FreqRanger is an optional Device extension that reports the dongle's
+// inclusive tuning range in Hz — the lowest and highest center frequency
+// the front-end can reach. Callers type-assert for it (like
+// TunerDiagnoser) so a backend that cannot model a hard range need not
+// implement it. The whole-device hunt sweep derives its band from here:
+// a caller with no explicit -band asks the open device for [min,max] and
+// sweeps that span end-to-end. Bounds are inclusive and minHz <= maxHz.
+type FreqRanger interface {
+	FreqRange() (minHz, maxHz uint32)
+}
+
 // Driver is the factory each backend exposes.
 type Driver interface {
 	Name() string

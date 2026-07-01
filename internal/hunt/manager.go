@@ -431,6 +431,43 @@ func (m *Manager) statusLocked() RunStatus {
 	return st
 }
 
+// CaptureSignal records seconds of raw IQ centred on freqHz by acquiring an SDR
+// the same way a run does (spare-else-borrow), tuning it, and capturing. It is
+// the daemon counterpart of the CLI's list-driven capture: the cockpit/REST
+// hand it a frequency from the survey inventory and it returns the IQ + the
+// source's sample rate for staging into SigLab/CryptoLab. It refuses while a
+// hunt run is active (the SDR is busy) so it can't fight a live sweep.
+func (m *Manager) CaptureSignal(ctx context.Context, freqHz uint32, seconds float64) ([]complex64, uint32, error) {
+	if seconds <= 0 {
+		seconds = 5
+	}
+	m.mu.Lock()
+	active := m.state == StateRunActive
+	m.mu.Unlock()
+	if active {
+		return nil, 0, errors.New("hunt: a run is in progress; stop it before capturing a signal")
+	}
+
+	src, release, err := m.acquire(ctx, LiveHuntOptions{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("hunt: acquire SDR: %w", err)
+	}
+	defer release()
+
+	if err := src.Tune(freqHz); err != nil {
+		return nil, 0, fmt.Errorf("hunt: tune %d Hz: %w", freqHz, err)
+	}
+	rate := src.SampleRateHz()
+	if rate == 0 {
+		return nil, 0, errors.New("hunt: acquired source has zero sample rate")
+	}
+	iq, err := captureN(ctx, src, int(seconds*float64(rate)))
+	if err != nil {
+		return nil, rate, fmt.Errorf("hunt: capture: %w", err)
+	}
+	return iq, rate, nil
+}
+
 // CurrentSurvey returns the latest run's signal inventory, or (nil, false) when
 // the latest run was a plain hunt or none has produced one yet.
 func (m *Manager) CurrentSurvey() (*SignalSurvey, bool) {

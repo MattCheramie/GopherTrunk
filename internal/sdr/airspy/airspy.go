@@ -273,6 +273,10 @@ type Device struct {
 // Info implements sdr.Device.
 func (d *Device) Info() sdr.Info { return d.info }
 
+// FreqRange reports the Airspy R2/Mini's documented 24 MHz .. 1.8 GHz
+// tuning span (sdr.FreqRanger), so a whole-device hunt can sweep it.
+func (d *Device) FreqRange() (minHz, maxHz uint32) { return 24_000_000, 1_800_000_000 }
+
 // SetCenterFreq programs the R820T to hz Hz.
 func (d *Device) SetCenterFreq(hz uint32) error {
 	if d.isClosed() {

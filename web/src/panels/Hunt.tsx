@@ -195,6 +195,19 @@ export function Hunt() {
     }
   }
 
+  // captureSignal records raw IQ of one inventory row and hands it to SigLab or
+  // CryptoLab — the list-driven capture. The daemon must not be mid-run.
+  async function captureSignal(freqHz: number, target: "siglab" | "cryptolab") {
+    try {
+      const res = await writes.huntCapture(cfg, { freq_hz: freqHz, target });
+      const where = res.frames_path ?? res.path;
+      const id = res.identify ? ` — ${res.identify}` : "";
+      notify("success", `Captured ${(freqHz / 1e6).toFixed(4)} MHz → ${target}${id} (${where})`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? `capture failed: ${e.message}` : "capture failed");
+    }
+  }
+
   // parseCC tunes the hunt engine straight at one trunked control-channel
   // frequency (no sweep) and decodes it for ccDwell seconds, accumulating the
   // band plan / talkgroups / identity into status.system. Keep dwell short:
@@ -685,6 +698,8 @@ export function Hunt() {
                 <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("freq")}>
                   Frequency{sortBy === "freq" ? " ▾" : ""}
                 </th>
+                <th className={TH}>Name</th>
+                <th className={TH}>Service</th>
                 <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("class")}>
                   Class{sortBy === "class" ? " ▾" : ""}
                 </th>
@@ -692,17 +707,45 @@ export function Hunt() {
                 <th className={`${TH} cursor-pointer`} onClick={() => setSortBy("snr")}>
                   SNR (dB){sortBy === "snr" ? " ▾" : ""}
                 </th>
+                <th className={TH}>Enc</th>
                 <th className={TH}>Decode</th>
+                <th className={TH}>Capture</th>
               </tr>
             </thead>
             <tbody>
               {sortSignals(status.signals, sortBy).map((sig) => (
                 <tr key={sig.freq_hz} className="border-t border-panel">
                   <td className={TD}>{(sig.freq_hz / 1e6).toFixed(4)} MHz</td>
-                  <td className={TD}>{sig.class}</td>
+                  <td className={TD}>{sig.name ?? ""}</td>
+                  <td className={TD}>{sig.service ?? ""}</td>
+                  <td className={TD}>
+                    {sig.class}
+                    {sig.wideband ? " (wide)" : ""}
+                  </td>
                   <td className={TD}>{(sig.occupied_bw_hz / 1e3).toFixed(1)}</td>
                   <td className={TD}>{sig.snr_db.toFixed(1)}</td>
+                  <td className={TD}>{sig.encrypted ? `🔒 ${sig.enc_type ?? ""}`.trim() : ""}</td>
                   <td className={TD}>{signalDetail(sig)}</td>
+                  <td className={TD}>
+                    {canMutate && (
+                      <span className="flex gap-1">
+                        <button
+                          className="btn-ghost text-xs"
+                          title="Record IQ and open in Signal Lab"
+                          onClick={() => captureSignal(sig.freq_hz, "siglab")}
+                        >
+                          SigLab
+                        </button>
+                        <button
+                          className="btn-ghost text-xs"
+                          title="Record IQ and emit Crypto Lab frames"
+                          onClick={() => captureSignal(sig.freq_hz, "cryptolab")}
+                        >
+                          CryptoLab
+                        </button>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

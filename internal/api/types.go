@@ -32,6 +32,31 @@ type HuntStatus struct {
 	GainNote            string                    `json:"gain_note,omitempty"`
 }
 
+// HuntCaptureRequest records one signal from the survey inventory and routes it
+// to deeper analysis — the daemon counterpart of the CLI's -survey-capture.
+type HuntCaptureRequest struct {
+	FreqHz  uint32  `json:"freq_hz"`           // signal centre frequency to record
+	Seconds float64 `json:"seconds,omitempty"` // capture length (0 ⇒ a default)
+	Target  string  `json:"target,omitempty"`  // "siglab" (default) | "cryptolab"
+}
+
+// HuntCaptureResult is what the daemon recorded and where it routed it.
+type HuntCaptureResult struct {
+	Path         string  `json:"path"`                    // the written .cfile
+	MetadataPath string  `json:"metadata_path,omitempty"` // the sidecar
+	SampleRateHz float64 `json:"sample_rate_hz"`
+	CenterHz     uint32  `json:"center_hz"`
+	Samples      int     `json:"samples"`
+	// Identify is a short SigLab identify summary (target=siglab), e.g.
+	// "p25 (0.82)" or "inconclusive".
+	Identify string `json:"identify,omitempty"`
+	// FramesPath is the cryptolab `ks` frames file (target=cryptolab), empty
+	// otherwise.
+	FramesPath string `json:"frames_path,omitempty"`
+	// Note carries an advisory (e.g. a wideband signal recorded as a slice).
+	Note string `json:"note,omitempty"`
+}
+
 // HuntRRReport is the GET /api/v1/hunt/radioreference response: the
 // RadioReference cross-reference of a run's discovered system — ranked
 // duplicate-system hints and a frequency/talkgroup diff vs the strongest match.

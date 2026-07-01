@@ -38,10 +38,20 @@ func (r *RecordingDevice) Inner() sdr.Device { return r.inner }
 
 func (r *RecordingDevice) Info() sdr.Info                { return r.inner.Info() }
 func (r *RecordingDevice) SetCenterFreq(hz uint32) error { return r.inner.SetCenterFreq(hz) }
-func (r *RecordingDevice) SetGain(tenthDB int) error     { return r.inner.SetGain(tenthDB) }
-func (r *RecordingDevice) SetPPM(ppm int) error          { return r.inner.SetPPM(ppm) }
-func (r *RecordingDevice) SetBiasTee(enable bool) error  { return r.inner.SetBiasTee(enable) }
-func (r *RecordingDevice) Close() error                  { return r.inner.Close() }
+
+// FreqRange forwards the wrapped device's tuning range when it exposes
+// one (sdr.FreqRanger); otherwise it reports (0,0) and callers fall back
+// to an explicit band.
+func (r *RecordingDevice) FreqRange() (minHz, maxHz uint32) {
+	if fr, ok := r.inner.(sdr.FreqRanger); ok {
+		return fr.FreqRange()
+	}
+	return 0, 0
+}
+func (r *RecordingDevice) SetGain(tenthDB int) error    { return r.inner.SetGain(tenthDB) }
+func (r *RecordingDevice) SetPPM(ppm int) error         { return r.inner.SetPPM(ppm) }
+func (r *RecordingDevice) SetBiasTee(enable bool) error { return r.inner.SetBiasTee(enable) }
+func (r *RecordingDevice) Close() error                 { return r.inner.Close() }
 
 // SetSampleRate records the rate (for the WAV header) and forwards it.
 func (r *RecordingDevice) SetSampleRate(hz uint32) error {

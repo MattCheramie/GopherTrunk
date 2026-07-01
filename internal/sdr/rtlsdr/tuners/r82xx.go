@@ -148,6 +148,17 @@ func (r *R82xx) effectiveXtalHz() uint32 {
 // Type returns the detected chip family.
 func (r *R82xx) Type() Type { return r.chipType }
 
+// r82xxMinFreqHz / r82xxMaxFreqHz bound the R820T family's documented
+// 24 MHz .. 1.766 GHz PLL tuning range. They are the single source for
+// both [R82xx.FreqRange] and the SetFreq guard.
+const (
+	r82xxMinFreqHz uint32 = 24_000_000
+	r82xxMaxFreqHz uint32 = 1_766_000_000
+)
+
+// FreqRange returns the R820T family's inclusive tuning range in Hz.
+func (r *R82xx) FreqRange() (minHz, maxHz uint32) { return r82xxMinFreqHz, r82xxMaxFreqHz }
+
 // XtalHz returns the reference-crystal frequency currently in effect
 // (before any ppm correction). It exists for boot-time diagnostics:
 // 16 MHz on an R828D means the RTL-SDR Blog V4 path did NOT arm, so the
@@ -311,8 +322,8 @@ func (r *R82xx) SetFreq(hz uint32) error {
 	if r.blogV4 && hz <= r82xxV4HFCrossHz {
 		target = hz + r82xxXtalHz
 	}
-	if target < 24_000_000 || target > 1_766_000_000 {
-		return &ErrUnsupportedFreq{Hz: hz, MinHz: 24_000_000, MaxHz: 1_766_000_000, TunerStr: r.chipType.String()}
+	if minHz, maxHz := r.FreqRange(); target < minHz || target > maxHz {
+		return &ErrUnsupportedFreq{Hz: hz, MinHz: minHz, MaxHz: maxHz, TunerStr: r.chipType.String()}
 	}
 	if err := r.demod.SetI2CRepeater(true); err != nil {
 		return err

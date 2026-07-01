@@ -104,6 +104,54 @@ gophertrunk hunt -serial 00000001 -sample-rate 2400000 \
   -no-sweep -candidates 851.0125,853.5125
 ```
 
+### Whole-device sweep (the full-spectrum survey)
+
+To inventory **everything the dongle can hear** without naming a band, pass
+`-whole-device`: the sweep range is derived from the SDR's own tuning limits
+(e.g. 24 MHz–1.766 GHz for an R820T, 1 MHz–4.294 GHz for a HackRF), so one run
+walks the entire reachable spectrum. It prints the resolved span, the step
+count, and a rough ETA before it starts. Pair it with `-survey -classify-only`
+for a fast first pass that catalogues every carrier:
+
+```sh
+gophertrunk hunt -survey -classify-only -whole-device \
+  -serial 00000001 -sample-rate 2400000 -survey-ndjson hunt.ndjson
+```
+
+`-survey-ndjson` streams each classified carrier to disk as it is found, and
+`-resume` skips carriers already recorded — so a long full-spectrum sweep is
+crash-safe and restartable. A device that can't report a tuning range (a
+network or file source) tells you to pass an explicit `-band` instead.
+
+`-whole-device` auto-enables `-detect-wideband`: alongside the narrowband
+carriers, signals far wider than a channel (cellular LTE/5G, WiFi, other OFDM)
+are detected by stitching occupancy across tunes and surfaced as
+**named-but-not-decoded** inventory rows — GopherTrunk identifies and can
+capture them, it does not demodulate them.
+
+### Record a signal from the list and send it to SigLab / CryptoLab
+
+Export a survey to JSON, then pick any row and record raw IQ of it for deeper
+analysis — no need to hand-copy a frequency into `gophertrunk capture`:
+
+```sh
+# Capture the survey to JSON
+gophertrunk hunt -survey -whole-device -serial 00000001 \
+  -out-format json -out survey.json
+
+# Record signal #3 from the list and hand it to SigLab (offline workbench)
+gophertrunk hunt -survey-capture '#3' -from survey.json -to siglab -capture-seconds 30
+
+# …or select by frequency (MHz) and hand it to CryptoLab (crypto research)
+gophertrunk hunt -survey-capture 460.3375 -from survey.json -to cryptolab
+```
+
+The selected row's frequency and occupied bandwidth drive the capture (a signal
+wider than the tune is recorded as a slice, with a note). A `.cfile` + metadata
+sidecar is written; `-to siglab` runs a quick identify and prints the
+`gophertrunk siglab` command to open it, while `-to cryptolab` runs an `rfscope`
+pass to emit a CryptoLab `ks` frames file and prints the `cryptolab` next step.
+
 Live sweep tuning flags: `-band low:high` (MHz, repeatable), `-sweep-dwell`
 (accumulation per step), `-peak-threshold-db` (carrier detection threshold over
 the noise floor), `-min-spacing` (Hz between carriers), `-fft-size`,
@@ -175,6 +223,7 @@ to force it off even when a key is configured.
   | `POST /api/v1/hunt/start` | Start a run (`{bands, candidates, no_sweep, protocol, name, …}`) |
   | `POST /api/v1/hunt/stop` | Cancel the active run |
   | `GET /api/v1/hunt/export?format=bundle\|trunk-recorder\|rr` | Download the discovery |
+  | `POST /api/v1/hunt/capture` | Record one inventory signal and route it (`{freq_hz, seconds, target}`) |
   | `POST /api/v1/hunt/commit` | Merge the discovery into `config.yaml` (`{force, dry_run}`) |
 
   Progress streams over the event bus (`hunt.progress` / `hunt.candidate` /

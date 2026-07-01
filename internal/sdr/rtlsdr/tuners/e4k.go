@@ -110,6 +110,16 @@ func NewE4000(d *rtl2832u.Demod) *E4000 { return &E4000{demod: d} }
 
 func (e *E4000) Type() Type       { return TypeE4000 }
 func (e *E4000) IFFreqHz() uint32 { return e4kIFFreqHz }
+
+// e4kMinFreqHz / e4kMaxFreqHz bound the E4000's 50 MHz .. 2.2 GHz tuning
+// range — the single source for FreqRange and the SetFreq guard.
+const (
+	e4kMinFreqHz uint32 = 50_000_000
+	e4kMaxFreqHz uint32 = 2_200_000_000
+)
+
+// FreqRange returns the E4000's inclusive tuning range in Hz.
+func (e *E4000) FreqRange() (minHz, maxHz uint32) { return e4kMinFreqHz, e4kMaxFreqHz }
 func (e *E4000) Gains() []int {
 	out := make([]int, len(e4kLNAGains))
 	copy(out, e4kLNAGains)
@@ -209,8 +219,8 @@ func (e *E4000) SetFreq(hz uint32) error {
 	if !e.initDone {
 		return errors.New("e4k: Init not called")
 	}
-	if hz < 50_000_000 || hz > 2_200_000_000 {
-		return &ErrUnsupportedFreq{Hz: hz, MinHz: 50_000_000, MaxHz: 2_200_000_000, TunerStr: "E4000"}
+	if minHz, maxHz := e.FreqRange(); hz < minHz || hz > maxHz {
+		return &ErrUnsupportedFreq{Hz: hz, MinHz: minHz, MaxHz: maxHz, TunerStr: "E4000"}
 	}
 	if err := e.demod.SetI2CRepeater(true); err != nil {
 		return err

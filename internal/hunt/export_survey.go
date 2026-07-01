@@ -69,8 +69,11 @@ func WriteSurvey(w io.Writer, sv *SignalSurvey, f SurveyFormat) error {
 // so the CSV is useful without the nested JSON.
 func writeSurveyCSV(w io.Writer, sv *SignalSurvey) error {
 	cw := csv.NewWriter(w)
+	// Existing columns are kept in place; the inventory columns (name … wideband)
+	// are appended so older consumers that index by position keep working.
 	if err := cw.Write([]string{
 		"freq_mhz", "class", "confidence", "snr_db", "occupied_bw_khz", "baud_hz", "decode",
+		"name", "service", "purpose", "encrypted", "enc_type", "wideband",
 	}); err != nil {
 		return err
 	}
@@ -83,6 +86,12 @@ func writeSurveyCSV(w io.Writer, sv *SignalSurvey) error {
 			strconv.FormatFloat(float64(s.OccupiedBwHz)/1e3, 'f', 1, 64),
 			strconv.FormatFloat(s.BaudHz, 'f', 0, 64),
 			surveyDecodeSummary(s),
+			s.Name,
+			s.Service,
+			s.Purpose,
+			strconv.FormatBool(s.Encrypted),
+			s.EncType,
+			strconv.FormatBool(s.Wideband),
 		}
 		if err := cw.Write(row); err != nil {
 			return err

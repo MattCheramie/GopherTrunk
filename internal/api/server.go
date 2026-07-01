@@ -132,6 +132,10 @@ type HuntCockpit interface {
 	// format (json|csv). id 0 = the latest run. Returns ErrHuntNoSuchRun for an
 	// unknown id, or an error when the run was a plain hunt (no survey).
 	ExportSurvey(id int, format string) (data []byte, filename string, err error)
+	// CaptureSignal records raw IQ of one signal from the inventory and routes
+	// it to SigLab/CryptoLab — the daemon side of the list-driven capture.
+	// Returns an "in progress" error while a run is active.
+	CaptureSignal(req HuntCaptureRequest) (HuntCaptureResult, error)
 	// Commit merges a run's discovered system into config.yaml (id 0 = latest),
 	// returning a human-readable list of changes.
 	Commit(id int, force, dryRun bool) (changes []string, err error)
@@ -1054,6 +1058,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/hunt/{id}/export", s.handleHuntExport)
 	mux.HandleFunc("GET /api/v1/hunt/survey", s.handleHuntSurveyExport)
 	mux.HandleFunc("GET /api/v1/hunt/{id}/survey", s.handleHuntSurveyExport)
+	mux.HandleFunc("POST /api/v1/hunt/capture", s.gate(s.handleHuntCapture))
 	mux.HandleFunc("POST /api/v1/hunt/commit", s.gate(s.handleHuntCommit))
 	mux.HandleFunc("GET /api/v1/hunt/radioreference", s.handleHuntRadioReference)
 	mux.HandleFunc("GET /api/v1/hunt/{id}/radioreference", s.handleHuntRadioReference)

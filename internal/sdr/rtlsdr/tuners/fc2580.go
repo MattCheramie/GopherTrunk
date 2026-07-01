@@ -90,6 +90,16 @@ func NewFC2580(d *rtl2832u.Demod) *FC2580 { return &FC2580{demod: d, ifFreqHz: f
 
 func (f *FC2580) Type() Type       { return TypeFC2580 }
 func (f *FC2580) IFFreqHz() uint32 { return f.ifFreqHz }
+
+// fc2580MinFreqHz / fc2580MaxFreqHz bound the FC2580's 50 MHz .. 2.6 GHz
+// range — the single source for FreqRange and the SetFreq guard.
+const (
+	fc2580MinFreqHz uint32 = 50_000_000
+	fc2580MaxFreqHz uint32 = 2_600_000_000
+)
+
+// FreqRange returns the FC2580's inclusive tuning range in Hz.
+func (f *FC2580) FreqRange() (minHz, maxHz uint32) { return fc2580MinFreqHz, fc2580MaxFreqHz }
 func (f *FC2580) Gains() []int {
 	out := make([]int, len(fc2580Gains))
 	copy(out, fc2580Gains)
@@ -139,8 +149,8 @@ func (f *FC2580) SetFreq(hz uint32) error {
 	if !f.initDone {
 		return errors.New("fc2580: Init not called")
 	}
-	if hz < 50_000_000 || hz > 2_600_000_000 {
-		return &ErrUnsupportedFreq{Hz: hz, MinHz: 50_000_000, MaxHz: 2_600_000_000, TunerStr: "FC2580"}
+	if minHz, maxHz := f.FreqRange(); hz < minHz || hz > maxHz {
+		return &ErrUnsupportedFreq{Hz: hz, MinHz: minHz, MaxHz: maxHz, TunerStr: "FC2580"}
 	}
 	if err := f.demod.SetI2CRepeater(true); err != nil {
 		return err

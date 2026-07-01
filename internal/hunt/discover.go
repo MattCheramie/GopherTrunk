@@ -53,10 +53,16 @@ type CaptureReport struct {
 	// ErrorRate is the decode-error events per 1000 symbols from the decode
 	// (siglab Signal.DecodeErrorRate), a protocol-neutral demod-quality proxy.
 	// Zero when no signal analysis was produced. Used by the auto-gain sweep.
-	ErrorRate  float64 `json:"error_rate,omitempty"`
-	Skipped    bool    `json:"skipped"`
-	SkipReason string  `json:"skip_reason,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	ErrorRate float64 `json:"error_rate,omitempty"`
+	// Encrypted is true when any grant on the control channel was encrypted;
+	// EncType names the algorithm when known (e.g. AES-256, ADP/RC4), empty when
+	// the protocol surfaces encryption without the ALGID (P25 P1 ALGID is in the
+	// voice LDU2, not the CC grant).
+	Encrypted  bool   `json:"encrypted,omitempty"`
+	EncType    string `json:"enc_type,omitempty"`
+	Skipped    bool   `json:"skipped"`
+	SkipReason string `json:"skip_reason,omitempty"`
+	Error      string `json:"error,omitempty"`
 	// Verdict is the wideband survey's system-level summary line (set only by
 	// DiscoverWideband). Empty for single-carrier captures.
 	Verdict string `json:"verdict,omitempty"`

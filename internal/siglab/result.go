@@ -100,7 +100,12 @@ type GrantRecord struct {
 	Timeslot    uint8   `json:"timeslot" yaml:"timeslot"`
 	FrequencyHz uint32  `json:"frequency_hz" yaml:"frequency_hz"`
 	Encrypted   bool    `json:"encrypted" yaml:"encrypted"`
-	Emergency   bool    `json:"emergency" yaml:"emergency"`
+	// AlgorithmID / KeyID mirror trunking.Grant: the encryption algorithm id and
+	// key selector when Encrypted (0 / 0 otherwise). They let the survey name the
+	// encryption type (e.g. AES-256, ADP/RC4) rather than just "encrypted".
+	AlgorithmID uint8  `json:"algorithm_id,omitempty" yaml:"algorithm_id,omitempty"`
+	KeyID       uint16 `json:"key_id,omitempty" yaml:"key_id,omitempty"`
+	Emergency   bool   `json:"emergency" yaml:"emergency"`
 	// Individual mirrors trunking.Grant.Individual: the GroupID is a
 	// unit-to-unit / telephone / data destination, not a talkgroup. Hunt
 	// skips these when accumulating the talkgroup list.
@@ -178,6 +183,8 @@ func (c *collector) observe(ev events.Event) {
 				Timeslot:    g.Timeslot,
 				FrequencyHz: g.FrequencyHz,
 				Encrypted:   g.Encrypted,
+				AlgorithmID: g.AlgorithmID,
+				KeyID:       g.KeyID,
 				Emergency:   g.Emergency,
 				Individual:  g.Individual,
 			})

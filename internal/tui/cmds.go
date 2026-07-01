@@ -104,6 +104,13 @@ func cmdHuntStop(cli *client.Client, label string) tea.Cmd {
 	}
 }
 
+func cmdHuntCapture(cli *client.Client, req client.HuntCaptureRequest, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := cli.HuntCapture(context.Background(), req)
+		return writeResultMsg{Label: label, Err: err}
+	}
+}
+
 // Scanner-cockpit write Cmds — one per WriteKind.
 
 func cmdScannerSetMode(cli *client.Client, mode, label string) tea.Cmd {

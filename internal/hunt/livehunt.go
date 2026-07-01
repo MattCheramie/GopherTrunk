@@ -106,6 +106,11 @@ type LiveHuntOptions struct {
 	// the rest of the band is inventoried. Live sweeps already do this via the
 	// SDR; this is the offline equivalent. Ignored for live runs.
 	DetectCarriers bool
+	// DetectWideband adds the wideband-occupancy pass to a live survey sweep:
+	// signals far wider than a channel (cellular/WiFi/OFDM) are detected,
+	// stitched across tunes, and surfaced as named-but-not-decoded inventory
+	// rows. Off by default; the whole-device survey turns it on.
+	DetectWideband bool
 
 	// DwellSeconds is how much IQ to capture per candidate for identify+decode.
 	// 0 ⇒ 3 s.

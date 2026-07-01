@@ -72,7 +72,37 @@ var entries = []Entry{
 	{"", "POCSAG-512", blind.ModFSK2, []string{"2FSK paging"}, 512, 12500, 2, nil, false, "pager"},
 	{"", "FLEX", blind.ModFSK4, []string{"4FSK paging"}, 1600, 25000, 4, nil, false, "pager"},
 	{"", "ACARS", blind.ModFSK2, []string{"MSK"}, 2400, 25000, 2, nil, false, "aviation data"},
+
+	// Wideband, non-LMR catalog entries (no decoder, no measurable symbol
+	// rate). These name a wideband occupancy span the full-spectrum survey
+	// finds — cellular/WiFi/OFDM blocks far wider than any channel. They are
+	// ranked by bandwidth + frequency allocation, not symbol rate, and are
+	// always reported decodable=false: GopherTrunk identifies and captures
+	// them, it does not demodulate them.
+	{"", "LTE/5G NR (5 MHz)", blind.ModQAM, []string{"OFDM", "cellular"}, 0, 5_000_000, 0, cellularBands, false, "cellular"},
+	{"", "LTE/5G NR (10 MHz)", blind.ModQAM, []string{"OFDM", "cellular"}, 0, 10_000_000, 0, cellularBands, false, "cellular"},
+	{"", "LTE/5G NR (15 MHz)", blind.ModQAM, []string{"OFDM", "cellular"}, 0, 15_000_000, 0, cellularBands, false, "cellular"},
+	{"", "LTE/5G NR (20 MHz)", blind.ModQAM, []string{"OFDM", "cellular"}, 0, 20_000_000, 0, cellularBands, false, "cellular"},
+	{"", "WiFi 802.11 (20 MHz)", blind.ModQAM, []string{"OFDM", "802.11"}, 0, 20_000_000, 0, wifiBands, false, "WLAN"},
+	{"", "WiFi 802.11 (40 MHz)", blind.ModQAM, []string{"OFDM", "802.11"}, 0, 40_000_000, 0, wifiBands, false, "WLAN"},
+	{"", "WiFi 802.11 (80 MHz)", blind.ModQAM, []string{"OFDM", "802.11"}, 0, 80_000_000, 0, wifiBands, false, "WLAN"},
+	{"", "Bluetooth / BLE", blind.ModFSK2, []string{"GFSK", "FHSS"}, 0, 1_000_000, 2, ismBands24, false, "PAN"},
+	{"", "ADS-B 1090ES", blind.ModFSK2, []string{"PPM"}, 0, 50_000, 2, adsbBands, false, "aviation"},
 }
+
+// Frequency-allocation band sets for the wideband catalog entries. They scope
+// the bandwidth+allocation match in Rank so a 10 MHz OFDM block at 751 MHz
+// reads as cellular, not WiFi. Edges are approximate (US), for naming only.
+var (
+	cellularBands = []Band{
+		{617e6, 698e6}, {698e6, 806e6}, {824e6, 894e6},
+		{1710e6, 1780e6}, {1850e6, 1995e6}, {2110e6, 2200e6},
+		{2496e6, 2690e6}, {3550e6, 3700e6},
+	}
+	wifiBands  = []Band{{2400e6, 2483.5e6}, {5150e6, 5895e6}}
+	ismBands24 = []Band{{2400e6, 2483.5e6}}
+	adsbBands  = []Band{{1089.9e6, 1090.1e6}, {978e6, 978e6}}
+)
 
 // All returns the full catalog (decodable + reference-only).
 func All() []Entry { return entries }
@@ -136,7 +166,24 @@ func Rank(obs Observation, limit int) []Match {
 	return out
 }
 
+// widebandMinMatchBwHz is the smallest observed bandwidth that may match a
+// wideband catalog entry. It sits far above any land-mobile channel (≤25 kHz)
+// so an OFDM/cellular namer can never latch onto a narrowband carrier or a
+// low-information blob, while still admitting a ~1 MHz Bluetooth channel.
+const widebandMinMatchBwHz = 500_000
+
 func score(obs Observation, e Entry) float64 {
+	// Wideband catalog entries (no symbol rate, allocation-scoped) match ONLY a
+	// genuinely wideband observation sitting inside the entry's allocation. The
+	// allocation is a hard gate, not a soft bonus: an LTE namer fires in a
+	// cellular band, a WiFi namer in an ISM band, and neither fires for a
+	// narrowband carrier or an out-of-band signal.
+	if e.SymbolRateHz == 0 && len(e.Bands) > 0 {
+		if obs.ChannelBWHz < widebandMinMatchBwHz || !inAnyBand(obs.CenterFreqHz, e.Bands) {
+			return 0
+		}
+	}
+
 	var acc, totalW float64
 
 	if obs.SymbolRateHz > 0 && e.SymbolRateHz > 0 {
@@ -191,21 +238,26 @@ func score(obs Observation, e Entry) float64 {
 		return 0
 	}
 	s := acc / totalW
-
-	// Small bonus for a centre frequency inside one of the entry's bands.
-	if obs.CenterFreqHz > 0 {
-		f := float64(obs.CenterFreqHz)
-		for _, b := range e.Bands {
-			if f >= b.LoHz && f <= b.HiHz {
-				s += 0.05
-				break
-			}
-		}
-	}
 	if s > 1 {
 		s = 1
 	}
 	return s
+}
+
+// inAnyBand reports whether centerHz (Hz) falls inside any of the given bands.
+// A zero centre (frequency unknown) is never in-band, so a wideband entry that
+// requires an allocation cannot match a frequency-less observation.
+func inAnyBand(centerHz uint32, bands []Band) bool {
+	if centerHz == 0 {
+		return false
+	}
+	f := float64(centerHz)
+	for _, b := range bands {
+		if f >= b.LoHz && f <= b.HiHz {
+			return true
+		}
+	}
+	return false
 }
 
 // modScore is 1 for an exact class match, 0.5 for the same broad family

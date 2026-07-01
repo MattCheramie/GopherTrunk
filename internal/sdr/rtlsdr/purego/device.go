@@ -71,6 +71,11 @@ func (d *Device) DroppedChunks() uint64 { return d.dropped.Load() }
 // chip name, and the tuner's gain ladder.
 func (d *Device) Info() sdr.Info { return d.info }
 
+// FreqRange reports the dongle's inclusive tuning range in Hz by
+// delegating to the detected tuner chip. Satisfies sdr.FreqRanger so a
+// whole-device hunt can derive its sweep band from the open device.
+func (d *Device) FreqRange() (minHz, maxHz uint32) { return d.tuner.FreqRange() }
+
 // SetCenterFreq tunes the LO. Delegates to the tuner; settles
 // briefly afterwards so the PLL has time to lock.
 func (d *Device) SetCenterFreq(hz uint32) error {
