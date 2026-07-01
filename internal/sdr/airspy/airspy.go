@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -268,6 +269,11 @@ type Device struct {
 	// remembered so ActualSampleRate can report the rate the device will
 	// actually deliver after snapping to the firmware's fixed rate table.
 	lastReqRate uint32
+	// dropped counts IQ chunks the reaper discarded because the primary
+	// consumer fell behind (see StreamIQ's onPacket). Mirrors the RTL-SDR
+	// purego driver's Device.dropped so a live overrun is visible rather
+	// than silently wedging the USB reaper.
+	dropped atomic.Uint64
 }
 
 // Info implements sdr.Device.
@@ -559,7 +565,18 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		samples := d.cnv.processRaw(buf)
 		select {
 		case out <- samples:
-		case <-ctx.Done():
+		default:
+			// Consumer fell behind. Drop the chunk rather than block the USB
+			// reaper: each bulkLoop goroutine posts its next ReadPipe only after
+			// onPacket returns, so a blocked send stops posting reads. Stall all
+			// of them (macOS runs DefaultRingBuffers=32 concurrent reapers) and
+			// no reads are outstanding — the device FIFO overflows and the whole
+			// stream silently wedges with no error, no EOF, no log (the Airspy
+			// freeze). Shed the chunk and surface it instead: the daemon's IQ-drop
+			// observer bumps iq_underruns_total and emits a rate-limited "host
+			// can't keep up — lower sdr.sample_rate" WARN.
+			d.dropped.Add(1)
+			sdr.NotifyIQDrop(d.info)
 		}
 	}
 	// streamDead fires (exactly once, via streamDeadOnce) when the USB
