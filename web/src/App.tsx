@@ -53,6 +53,8 @@ export function App() {
   const setWSStatus = useShared((s) => s.setWSStatus);
   const setHiddenTabs = useShared((s) => s.setHiddenTabs);
   const setCryptolabConsole = useShared((s) => s.setCryptolabConsole);
+  const setSiglabConsole = useShared((s) => s.setSiglabConsole);
+  const setRFScopeConsole = useShared((s) => s.setRFScopeConsole);
   const setIDBase = useShared((s) => s.setIDBase);
   const setConfigPath = useShared((s) => s.setConfigPath);
   const configPath = useShared((s) => s.configPath);
@@ -112,6 +114,8 @@ export function App() {
       .then((rt) => {
         setHiddenTabs(rt.hidden_tabs ?? []);
         setCryptolabConsole(rt.cryptolab_console === true);
+        setSiglabConsole(rt.siglab_console === true);
+        setRFScopeConsole(rt.rfscope_console === true);
         setIDBase(rt.id_base === "dec" ? "dec" : "hex");
         setConfigPath(rt.config_path ?? "");
       })
@@ -133,6 +137,8 @@ export function App() {
     setWSStatus,
     setHiddenTabs,
     setCryptolabConsole,
+    setSiglabConsole,
+    setRFScopeConsole,
     setConfigPath,
   ]);
 

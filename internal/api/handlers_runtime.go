@@ -101,6 +101,16 @@ type RuntimeDTO struct {
 	// Crypto Lab link only when it is reachable. Injected by the API server, not
 	// the daemon's runtime provider.
 	CryptolabConsole bool `json:"cryptolab_console,omitempty"`
+
+	// SiglabConsole is true when the daemon mounts the Signal Lab SPA at
+	// /siglab/. The web consoles use it to show a Signal Lab link only when it
+	// is reachable. Injected by the API server, not the runtime provider.
+	SiglabConsole bool `json:"siglab_console,omitempty"`
+
+	// RFScopeConsole is true when the daemon mounts the RF Scope SPA at
+	// /rfscope/. The web consoles use it to show an RF Scope link only when it
+	// is reachable. Injected by the API server, not the runtime provider.
+	RFScopeConsole bool `json:"rfscope_console,omitempty"`
 }
 
 // ToneProfileDTO is the minimal projection of a tone-out profile —
@@ -126,6 +136,8 @@ func (s *Server) handleRuntime(w http.ResponseWriter, _ *http.Request) {
 	}
 	dto := s.runtime.Runtime()
 	dto.CryptolabConsole = s.cryptolabConsole
+	dto.SiglabConsole = s.siglabConsole
+	dto.RFScopeConsole = s.rfscopeConsole
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(dto)
 }

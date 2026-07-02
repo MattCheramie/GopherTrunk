@@ -66,6 +66,8 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/toneout"
 	gtweb "github.com/MattCheramie/GopherTrunk/web"
 	configbuilderweb "github.com/MattCheramie/GopherTrunk/web/configbuilder"
+	rfscopeweb "github.com/MattCheramie/GopherTrunk/web/rfscope"
+	siglabweb "github.com/MattCheramie/GopherTrunk/web/siglab"
 )
 
 // firstNonEmptyStr returns the first non-empty (after trimming) string of
@@ -2392,7 +2394,22 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// Offline signal-analysis API (the siglab web console talks to
 		// these routes). Enabled on the daemon too so an operator can
 		// analyze captures without spinning up a separate `siglab serve`.
-		opts.Siglab = api.SiglabOptions{Enabled: true}
+		// Mount the Signal Lab SPA at /siglab/ when it was bundled so the
+		// console is reachable from the main UI (and so the Crypto Lab's
+		// Signal Lab link resolves).
+		siglabOpts := api.SiglabOptions{Enabled: true}
+		if siglabweb.HasAssets() {
+			siglabOpts.Assets = siglabweb.Assets()
+		}
+		opts.Siglab = siglabOpts
+		// RF Scope — offline protocol-agnostic RF-analysis console. Wire the
+		// /api/v1/rfscope/* routes and, when the SPA was bundled, the console
+		// at /rfscope/ so it is reachable from the main UI in a new tab.
+		rfscopeOpts := api.RFScopeOptions{Enabled: true}
+		if rfscopeweb.HasAssets() {
+			rfscopeOpts.Assets = rfscopeweb.Assets()
+		}
+		opts.RFScope = rfscopeOpts
 		// Web Config Builder/Editor — link the editor SPA at /config/ and
 		// the /api/v1/config/* routes so the operator can edit config from
 		// the main web UI in a new tab. Saves are constrained to the live

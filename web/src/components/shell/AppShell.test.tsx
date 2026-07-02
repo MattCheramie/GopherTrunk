@@ -45,10 +45,12 @@ describe("AppShell navigation", () => {
 
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
     // Every registry item is reachable inside the drawer, except ones gated on
-    // a daemon capability not advertised in this test (e.g. the Crypto Lab
-    // link, shown only when runtime.cryptolab_console is set).
+    // a daemon capability not advertised in this test (e.g. the Crypto Lab /
+    // Signal Lab / RF Scope links, shown only when the matching
+    // runtime.*_console flag is set).
     for (const item of NAV_ITEMS) {
-      if (item.requiresCryptolab) continue;
+      if (item.requiresCryptolab || item.requiresSiglab || item.requiresRFScope)
+        continue;
       expect(
         within(drawer).getByText(item.label),
         `drawer missing ${item.label}`,

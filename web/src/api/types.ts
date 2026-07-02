@@ -496,6 +496,12 @@ export interface RuntimeDTO {
   // CryptolabConsole is true when the daemon serves the Crypto Lab SPA at
   // /cryptolab/ (a -tags cryptolab build). Gates the Crypto Lab nav link.
   cryptolab_console?: boolean;
+  // SiglabConsole is true when the daemon serves the Signal Lab SPA at
+  // /siglab/. Gates the Signal Lab nav link.
+  siglab_console?: boolean;
+  // RFScopeConsole is true when the daemon serves the RF Scope SPA at
+  // /rfscope/. Gates the RF Scope nav link.
+  rfscope_console?: boolean;
   // RuntimeDTO is large and changes shape as the daemon grows. Read
   // unknown fields lazily.
   [key: string]: unknown;

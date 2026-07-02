@@ -7,6 +7,7 @@ import {
   type Channel,
   type Scene,
 } from "./api";
+import { ConsoleNav } from "./ConsoleNav";
 
 export function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -49,11 +50,17 @@ export function App() {
 
   return (
     <div className="mx-auto max-w-5xl p-4">
-      <header className="mb-4 flex items-baseline justify-between">
-        <h1 className="text-lg font-bold text-sky-400">GopherTrunk RF Scope</h1>
-        <span className="text-xs text-slate-400">
-          protocol-agnostic RF network analysis · {analyzerList.length} analyzers
-        </span>
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-accent">⧉</span>
+          <h1 className="text-lg font-bold">GopherTrunk RF Scope</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+          <ConsoleNav self="rfscope" />
+          <span>
+            protocol-agnostic RF network analysis · {analyzerList.length} analyzers
+          </span>
+        </div>
       </header>
 
       <form className="card mb-4 grid grid-cols-1 gap-3 sm:grid-cols-5" onSubmit={onAnalyze}>
@@ -87,7 +94,7 @@ export function App() {
         </div>
       </form>
 
-      {err && <div className="card mb-4 border-red-500 text-red-300">{err}</div>}
+      {err && <div className="card mb-4 border-err text-err">{err}</div>}
 
       {result && <SceneView resp={result} />}
     </div>
@@ -112,12 +119,12 @@ function SceneView({ resp }: { resp: AnalyzeResponse }) {
 function SceneHeader({ sc }: { sc: Scene }) {
   return (
     <div className="card text-sm">
-      <div className="font-semibold text-sky-300">{sc.source || "scene"}</div>
-      <div className="mt-1 text-slate-300">
+      <div className="font-semibold text-accent">{sc.source || "scene"}</div>
+      <div className="mt-1 text-fg">
         center {(sc.center_hz / 1e6).toFixed(4)} MHz · span {(sc.span_hz / 1e6).toFixed(3)} MHz ·
         window {sc.window_sec.toFixed(1)}s · floor {sc.noise_floor_dbfs.toFixed(0)} dBFS
       </div>
-      <div className="mt-1 text-slate-400">
+      <div className="mt-1 text-muted">
         {(sc.bursts?.length ?? 0)} bursts · {(sc.channels?.length ?? 0)} channels ·{" "}
         {(sc.emitters?.length ?? 0)} emitters · {(sc.anomalies?.length ?? 0)} anomalies
       </div>
@@ -128,8 +135,8 @@ function SceneHeader({ sc }: { sc: Scene }) {
 function Panel({ title, empty, children }: { title: string; empty: boolean; children: React.ReactNode }) {
   return (
     <div className="card">
-      <h2 className="mb-2 text-sm font-semibold text-sky-300">{title}</h2>
-      {empty ? <p className="text-xs text-slate-500">(none)</p> : children}
+      <h2 className="mb-2 text-sm font-semibold text-accent">{title}</h2>
+      {empty ? <p className="text-xs text-muted">(none)</p> : children}
     </div>
   );
 }
@@ -140,9 +147,9 @@ function Hierarchy({ sc }: { sc: Scene }) {
     <Panel title="Protocol hierarchy" empty={nodes.length === 0}>
       <ul className="text-sm">
         {nodes.map((n, i) => (
-          <li key={i} style={{ paddingLeft: `${n.depth * 16}px` }} className="text-slate-300">
+          <li key={i} style={{ paddingLeft: `${n.depth * 16}px` }} className="text-fg">
             <span className={n.depth === 0 ? "font-semibold" : ""}>{n.label}</span>{" "}
-            <span className="text-slate-500">
+            <span className="text-muted">
               {n.stats.burst_count} bursts · {n.stats.time_pct.toFixed(0)}% time ·{" "}
               {n.stats.spectrum_pct.toFixed(1)}% spectrum
             </span>
@@ -172,7 +179,7 @@ function Channels({ sc }: { sc: Scene }) {
   return (
     <Panel title="Channels (I/O graph)" empty={chans.length === 0}>
       <table className="w-full text-sm">
-        <thead className="text-left text-xs text-slate-400">
+        <thead className="text-left text-xs text-muted">
           <tr>
             <th className="pr-3">Freq (MHz)</th>
             <th className="pr-3">Class</th>
@@ -183,7 +190,7 @@ function Channels({ sc }: { sc: Scene }) {
         </thead>
         <tbody>
           {chans.map((c, i) => (
-            <tr key={i} className="text-slate-300">
+            <tr key={i} className="text-fg">
               <td className="pr-3 font-mono">{(c.freq_hz / 1e6).toFixed(4)}</td>
               <td className="pr-3">{c.dominant_class}</td>
               <td className="pr-3 spark">{sparkline(c)}</td>
@@ -203,11 +210,11 @@ function Talkers({ sc }: { sc: Scene }) {
     <Panel title="Top talkers" empty={ems.length === 0}>
       <ul className="text-sm">
         {ems.slice(0, 10).map((e) => (
-          <li key={e.id} className="text-slate-300">
-            <span className="text-slate-500">#{e.id}</span> {e.label}{" "}
-            <span className="text-slate-500">{e.total_airtime_sec.toFixed(2)}s</span>
+          <li key={e.id} className="text-fg">
+            <span className="text-muted">#{e.id}</span> {e.label}{" "}
+            <span className="text-muted">{e.total_airtime_sec.toFixed(2)}s</span>
             {e.hop_set && e.hop_set.length > 1 && (
-              <span className="ml-1 text-amber-400">hop×{e.hop_set.length}</span>
+              <span className="ml-1 text-warn">hop×{e.hop_set.length}</span>
             )}
           </li>
         ))}
@@ -222,10 +229,10 @@ function Conversations({ sc }: { sc: Scene }) {
     <Panel title="Conversations" empty={convs.length === 0}>
       <ul className="text-sm">
         {convs.map((c) => (
-          <li key={c.id} className="text-slate-300">
+          <li key={c.id} className="text-fg">
             <span className="font-mono">{c.kind}</span>{" "}
-            <span className="text-slate-500">{c.emitter_ids.map((id) => `#${id}`).join(" ↔ ")}</span>{" "}
-            <span className="text-slate-500">(corr {c.correlation.toFixed(2)})</span>
+            <span className="text-muted">{c.emitter_ids.map((id) => `#${id}`).join(" ↔ ")}</span>{" "}
+            <span className="text-muted">(corr {c.correlation.toFixed(2)})</span>
           </li>
         ))}
       </ul>
@@ -234,9 +241,9 @@ function Conversations({ sc }: { sc: Scene }) {
 }
 
 function severityColor(sev: string): string {
-  if (sev === "alert") return "text-red-400";
-  if (sev === "warn") return "text-amber-400";
-  return "text-slate-300";
+  if (sev === "alert") return "text-err";
+  if (sev === "warn") return "text-warn";
+  return "text-fg";
 }
 
 function Expert({ sc }: { sc: Scene }) {
@@ -267,16 +274,16 @@ function CryptoBridge({ resp }: { resp: AnalyzeResponse }) {
   }
   return (
     <div className="card text-sm">
-      <h2 className="mb-2 text-sm font-semibold text-sky-300">Crypto Lab bridge</h2>
-      <p className="text-slate-300">
+      <h2 className="mb-2 text-sm font-semibold text-accent">Crypto Lab bridge</h2>
+      <p className="text-fg">
         {resp.frame_count} unknown payload{resp.frame_count === 1 ? "" : "s"} recovered as a cryptolab{" "}
-        <code className="text-sky-400">ks</code> frames file.
+        <code className="text-accent">ks</code> frames file.
       </p>
       <div className="mt-2 flex gap-2">
         <button className="btn" onClick={download}>
           Download frames
         </button>
-        <span className="self-center text-xs text-slate-500">
+        <span className="self-center text-xs text-muted">
           then: <code>cryptolab classify auto -in rfscope-frames.jsonl</code> or{" "}
           <code>cryptolab ks reuse -in rfscope-frames.jsonl</code>
         </span>

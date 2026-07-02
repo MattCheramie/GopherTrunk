@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,6 +37,12 @@ type SiglabOptions struct {
 	TempDir string
 	// MaxUploadBytes bounds one capture upload. 0 ⇒ defaultSiglabMaxUploadBytes.
 	MaxUploadBytes int64
+	// Assets, when non-nil and containing an index.html, mounts the Signal
+	// Lab SPA at /siglab/ on the daemon (the standalone `siglab serve` command
+	// serves it at / via ServerOptions.WebAssets instead). Set it to
+	// siglabweb.Assets() so the daemon hosts the console alongside the main
+	// operator UI; nil keeps only the /api/v1/siglab/* routes.
+	Assets fs.FS
 }
 
 // siglabCapture is one staged capture (uploaded or synthesized-to-disk)

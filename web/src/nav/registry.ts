@@ -27,6 +27,12 @@ export interface NavItem {
   /** Shown only when the daemon advertises the Crypto Lab console
    *  (runtime.cryptolab_console — a -tags cryptolab build). */
   requiresCryptolab?: boolean;
+  /** Shown only when the daemon advertises the Signal Lab console
+   *  (runtime.siglab_console — the SPA is mounted at /siglab/). */
+  requiresSiglab?: boolean;
+  /** Shown only when the daemon advertises the RF Scope console
+   *  (runtime.rfscope_console — the SPA is mounted at /rfscope/). */
+  requiresRFScope?: boolean;
 }
 
 export interface NavGroup {
@@ -110,6 +116,22 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/metrics", label: "Metrics", icon: "▰", keywords: ["prometheus", "stats", "graphs"] },
       { to: "/config/", label: "Config Builder", icon: "🛠", external: true, keywords: ["yaml", "editor"] },
       {
+        to: "/siglab/",
+        label: "Signal Lab",
+        icon: "◷",
+        external: true,
+        requiresSiglab: true,
+        keywords: ["siglab", "signal", "analysis", "capture", "iq", "demod", "synthesize", "identify", "offline"],
+      },
+      {
+        to: "/rfscope/",
+        label: "RF Scope",
+        icon: "⧉",
+        external: true,
+        requiresRFScope: true,
+        keywords: ["rfscope", "rf scope", "protocol", "analyzer", "network", "capture", "offline"],
+      },
+      {
         to: "/cryptolab/",
         label: "Crypto Lab",
         icon: "🔐",
@@ -136,16 +158,20 @@ export const PRIMARY_ITEMS: NavItem[] = NAV_ITEMS.filter((i) => i.primary);
 export function useVisibleNavGroups(): NavGroup[] {
   const hiddenTabs = useShared((s) => s.hiddenTabs);
   const cryptolabConsole = useShared((s) => s.cryptolabConsole);
+  const siglabConsole = useShared((s) => s.siglabConsole);
+  const rfscopeConsole = useShared((s) => s.rfscopeConsole);
   return useMemo(() => {
     const hidden = new Set(hiddenTabs);
     return NAV_GROUPS.map((g) => ({
       ...g,
       items: g.items.filter((i) => {
         if (i.requiresCryptolab && !cryptolabConsole) return false;
+        if (i.requiresSiglab && !siglabConsole) return false;
+        if (i.requiresRFScope && !rfscopeConsole) return false;
         return i.external || !hidden.has(tabKey(i));
       }),
     })).filter((g) => g.items.length > 0);
-  }, [hiddenTabs, cryptolabConsole]);
+  }, [hiddenTabs, cryptolabConsole, siglabConsole, rfscopeConsole]);
 }
 
 /** Flat visible items (for the command palette and bottom nav). */

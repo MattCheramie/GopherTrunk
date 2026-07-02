@@ -121,6 +121,35 @@ describe("nav registry", () => {
     expect(result.current.some((i) => i.external)).toBe(true);
   });
 
+  it("gates Signal Lab / RF Scope / Crypto Lab on the runtime console flags", () => {
+    // Default: none of the auxiliary consoles are advertised, so none show.
+    const hidden = renderHook(() => useVisibleNavItems());
+    const hiddenTargets = new Set(hidden.result.current.map((i) => i.to));
+    expect(hiddenTargets.has("/siglab/")).toBe(false);
+    expect(hiddenTargets.has("/rfscope/")).toBe(false);
+    expect(hiddenTargets.has("/cryptolab/")).toBe(false);
+    // Config Builder is unconditional, so it is always present.
+    expect(hiddenTargets.has("/config/")).toBe(true);
+
+    // Advertise all three → they appear.
+    useShared.setState({
+      siglabConsole: true,
+      rfscopeConsole: true,
+      cryptolabConsole: true,
+    });
+    const shown = renderHook(() => useVisibleNavItems());
+    const shownTargets = new Set(shown.result.current.map((i) => i.to));
+    expect(shownTargets.has("/siglab/")).toBe(true);
+    expect(shownTargets.has("/rfscope/")).toBe(true);
+    expect(shownTargets.has("/cryptolab/")).toBe(true);
+
+    useShared.setState({
+      siglabConsole: false,
+      rfscopeConsole: false,
+      cryptolabConsole: false,
+    });
+  });
+
   it("keeps every group definition non-empty by default", () => {
     for (const g of NAV_GROUPS) {
       expect(g.items.length).toBeGreaterThan(0);
