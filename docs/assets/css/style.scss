@@ -1680,3 +1680,70 @@ a.category-chip:hover {
   .join-cta__actions { width: 100%; }
   .join-cta__actions .btn { flex: 1 1 auto; justify-content: center; }
 }
+
+/* ---------- Lab Bench blog series: figures, charts & persona callouts ---------- */
+/* Used by the Signal Lab / RF Scope / Crypto Lab tutorial series. Charts are
+   rendered by assets/js/labcharts.js into <canvas class="lab-chart">. */
+.lab-figure {
+  margin: 1.6rem 0;
+  padding: 0.9rem 0.9rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  text-align: center;
+}
+.lab-figure svg,
+.lab-figure canvas.lab-chart {
+  max-width: 100%;
+  height: auto;
+}
+.lab-figure figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+.lab-figure__scroll { overflow-x: auto; }
+
+/* Recurring-cast callout (Ada the new operator, Reese the RF veteran). */
+.lab-cast {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  margin: 1.4rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.lab-cast__badge {
+  flex: 0 0 auto;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+.lab-cast__body { flex: 1 1 auto; }
+.lab-cast__body p { margin: 0.2rem 0; }
+.lab-cast__who { font-weight: 600; }
+
+/* Verdict chips (Crypto Lab: RESISTANT / PARTIAL / BROKEN, and pass/fail). */
+.lab-verdict {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+}
+.lab-verdict--ok    { color: #fff; background: #2f9e44; }
+.lab-verdict--warn  { color: #1a202c; background: #f0b429; }
+.lab-verdict--bad   { color: #fff; background: #c92a2a; }

@@ -61,3 +61,7 @@ layout: default
   </div>
 </main>
 
+{%- if page.charts -%}
+  <script defer src="{{ '/assets/js/labcharts.js' | relative_url }}"></script>
+{%- endif -%}
+
