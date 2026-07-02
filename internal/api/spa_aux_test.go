@@ -13,7 +13,7 @@ import (
 // auxSPAFS is a minimal SPA tree for the /siglab/ and /rfscope/ mount tests.
 func auxSPAFS(marker string) fstest.MapFS {
 	return fstest.MapFS{
-		"index.html":   &fstest.MapFile{Data: []byte("<html>" + marker + "</html>")},
+		"index.html":    &fstest.MapFile{Data: []byte("<html>" + marker + "</html>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('" + marker + "');")},
 	}
 }
