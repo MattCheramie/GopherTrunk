@@ -70,6 +70,14 @@ interface SharedState {
    *  (a -tags cryptolab build). Gates the Crypto Lab nav link. */
   cryptolabConsole: boolean;
 
+  /** True when the daemon serves the Signal Lab SPA at /siglab/.
+   *  Gates the Signal Lab nav link. */
+  siglabConsole: boolean;
+
+  /** True when the daemon serves the RF Scope SPA at /rfscope/.
+   *  Gates the RF Scope nav link. */
+  rfscopeConsole: boolean;
+
   /** Base for rendering identity numbers (WACN, System ID, NAC, RFSS,
    *  Site): "hex" (default, P25 field convention) or "dec". Sourced from
    *  web.id_base config via /api/v1/runtime. */
@@ -102,6 +110,8 @@ interface SharedState {
   setScanner(s: ScannerStatusDTO | null): void;
   setHiddenTabs(tabs: string[]): void;
   setCryptolabConsole(v: boolean): void;
+  setSiglabConsole(v: boolean): void;
+  setRFScopeConsole(v: boolean): void;
   setIDBase(base: "hex" | "dec"): void;
   setConfigPath(path: string | null): void;
   appendEvents(evs: EventDTO[]): void;
@@ -134,6 +144,8 @@ export const useShared = create<SharedState>((set, get) => ({
   eventCap: 500,
   hiddenTabs: [],
   cryptolabConsole: false,
+  siglabConsole: false,
+  rfscopeConsole: false,
   idBase: "hex",
   configPath: null,
 
@@ -187,6 +199,12 @@ export const useShared = create<SharedState>((set, get) => ({
   },
   setCryptolabConsole(v) {
     set({ cryptolabConsole: v });
+  },
+  setSiglabConsole(v) {
+    set({ siglabConsole: v });
+  },
+  setRFScopeConsole(v) {
+    set({ rfscopeConsole: v });
   },
   setIDBase(base) {
     set({ idBase: base });
@@ -265,6 +283,8 @@ export const useShared = create<SharedState>((set, get) => ({
       mutations: null,
       hiddenTabs: [],
       cryptolabConsole: false,
+      siglabConsole: false,
+      rfscopeConsole: false,
       idBase: "hex",
       configPath: null,
       lastError: null,

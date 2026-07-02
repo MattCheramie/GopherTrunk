@@ -3,20 +3,10 @@ import { useStore } from "./store/shared";
 import { ParamField } from "./components/ParamField";
 import { ResultView } from "./components/ResultView";
 import { RecipeBuilder } from "./components/RecipeBuilder";
+import { ConsoleNav } from "./ConsoleNav";
 
 export function App() {
   const [page, setPage] = useState<"tools" | "recipe">("tools");
-  // When daemon-mounted (at /cryptolab/), link back to the sibling consoles;
-  // a same-origin runtime probe fails closed under standalone `cryptolab serve`.
-  const [daemon, setDaemon] = useState(false);
-  useEffect(() => {
-    fetch("/api/v1/runtime")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((rt) => {
-        if (rt && typeof rt === "object") setDaemon(true);
-      })
-      .catch(() => {});
-  }, []);
   const loadSchema = useStore((s) => s.loadSchema);
   const schema = useStore((s) => s.schema);
   const loadingSchema = useStore((s) => s.loadingSchema);
@@ -74,16 +64,7 @@ export function App() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-3 text-xs text-muted">
-          {daemon ? (
-            <>
-              <a href="/" title="GopherTrunk console" className="rounded-md px-2 py-1 hover:text-fg">
-                ◀ GopherTrunk
-              </a>
-              <a href="/siglab/" title="Signal Lab" className="rounded-md px-2 py-1 hover:text-fg">
-                ◷ Signal Lab
-              </a>
-            </>
-          ) : null}
+          <ConsoleNav self="cryptolab" />
           <span>offline cryptographic research</span>
         </div>
       </header>

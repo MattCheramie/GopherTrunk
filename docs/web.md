@@ -58,6 +58,16 @@ your default browser at the daemon URL. Same flow when you run
 `gophertrunk` with no flags and pick `[2] Web` from the interactive
 launcher menu (see [`launcher.md`]({{ '/launcher.html' | relative_url }})).
 
+The daemon also serves the auxiliary consoles alongside the operator
+console, each on its own path, so they are reachable from the main
+console's nav (**System** group) and cross-linked in each console's
+header: the **Config Builder** at `/config/`, **Signal Lab** at
+`/siglab/`, **RF Scope** at `/rfscope/`, and — in a `-tags cryptolab`
+build — **Crypto Lab** at `/cryptolab/`. Each link only appears once
+the daemon actually mounts that console (advertised via
+`GET /api/v1/runtime`). The standalone `gophertrunk <console> serve`
+commands still serve each console on its own port for offline use.
+
 On a headless host (SSH session, no `$DISPLAY`) the launcher prints
 the URL + a hint instead of trying to launch a browser, so a remote
 operator can open the URL from their laptop.
@@ -86,7 +96,8 @@ gophertrunk-<version>-<os>-<arch>/
 │   ├── favicon.svg
 │   ├── manifest.webmanifest
 │   ├── sw.js                # PWA service worker
-│   ├── siglab/              # Signal Lab (offline RF analysis) console
+│   ├── siglab/              # Signal Lab (offline signal analysis) console
+│   ├── rfscope/             # RF Scope (protocol-agnostic RF analysis) console
 │   └── configbuilder/       # Config Builder / editor console
 ├── config.example.yaml
 └── samples/…

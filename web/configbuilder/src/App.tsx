@@ -3,6 +3,7 @@ import { FileBar } from "./components/FileBar";
 import { YamlPreview } from "./components/YamlPreview";
 import { SECTIONS } from "./sections";
 import { useStore } from "./store/shared";
+import { ConsoleNav } from "./ConsoleNav";
 
 export function App() {
   const init = useStore((s) => s.init);
@@ -91,6 +92,7 @@ export function App() {
           {busy ? <span className="text-xs text-accent animate-pulse">working…</span> : null}
         </div>
         <div className="flex items-center gap-2">
+          <ConsoleNav self="config" />
           {validation ? (
             errList.length > 0 ? (
               <button

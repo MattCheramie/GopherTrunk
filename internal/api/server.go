@@ -390,6 +390,28 @@ type Server struct {
 	siglab *siglabService
 	// siglabStop signals the siglab TTL sweeper to exit on shutdown.
 	siglabStop chan struct{}
+	// siglabAssets is the optional Signal Lab SPA file tree. When non-nil (and
+	// carrying an index.html) the daemon mounts the console at /siglab/. Set
+	// from ServerOptions.Siglab.Assets.
+	siglabAssets fs.FS
+	// siglabConsole is set true when the Signal Lab SPA is mounted at /siglab/.
+	// The runtime endpoint surfaces it so the other consoles only link to
+	// Signal Lab when it is actually reachable.
+	siglabConsole bool
+
+	// rfscopeOpts holds the RF Scope console configuration (enabled flag + SPA
+	// assets). mountRFScope reads it when building the mux. Set from
+	// ServerOptions.RFScope.
+	rfscopeOpts RFScopeOptions
+	// rfscopeCloser holds the optional RF Scope web subsystem (the /rfscope/
+	// console + /api/v1/rfscope/* routes). Constructed by mountRFScope when
+	// ServerOptions.RFScope.Enabled. Typed as a minimal closer so shutdown can
+	// reclaim its temp dir without server.go importing the concrete type.
+	rfscopeCloser interface{ Close() error }
+	// rfscopeConsole is set true when the RF Scope SPA is mounted at /rfscope/.
+	// Surfaced on the runtime endpoint so the other consoles only link to RF
+	// Scope when it is actually reachable.
+	rfscopeConsole bool
 
 	// cryptolabCloser holds the optional cryptolab web subsystem (the
 	// /cryptolab/ console + /api/v1/cryptolab/* routes). It is only
@@ -694,6 +716,12 @@ type ServerOptions struct {
 	// from the main UI in a new tab; the standalone `gophertrunk config
 	// serve` command sets it (with the SPA in WebAssets, served at /).
 	ConfigBuilder ConfigBuilderOptions
+	// RFScope, when Enabled, mounts the RF Scope analysis routes
+	// (/api/v1/rfscope/*) and — when Assets is non-nil — the RF Scope SPA at
+	// /rfscope/. The daemon sets it so operators can reach the offline
+	// RF-analysis console from the main UI; the standalone `gophertrunk rfscope
+	// serve` command keeps its own webserver instead.
+	RFScope RFScopeOptions
 	// Diagnostics is the shared error-diagnostics collector (banner +
 	// system info). The daemon injects one seeded with its SDR pool
 	// snapshot so the error path never re-enumerates USB. Optional; nil
@@ -873,6 +901,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		mixer:          opts.Mixer,
 		siglab:         siglabSvc,
 		siglabStop:     siglabStop,
+		siglabAssets:   opts.Siglab.Assets,
+		rfscopeOpts:    opts.RFScope,
 		configBuilder:  configBuilderSvc,
 		diagnostics:    opts.Diagnostics,
 		verboseErrors:  opts.VerboseErrors,
@@ -985,6 +1015,11 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.cryptolabCloser != nil {
 		_ = s.cryptolabCloser.Close()
 		s.cryptolabCloser = nil
+	}
+	// Tear down the optional RF Scope subsystem (removes its temp dir).
+	if s.rfscopeCloser != nil {
+		_ = s.rfscopeCloser.Close()
+		s.rfscopeCloser = nil
 	}
 	// 30 s shutdown window: SSE / WebSocket / audio-stream subscribers
 	// get up to 30 s to drain rather than the 5 s the old bound gave
@@ -1152,7 +1187,27 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /api/v1/siglab/capture/devices", s.handleSiglabCaptureDevices)
 		mux.HandleFunc("POST /api/v1/siglab/capture", s.gate(s.handleSiglabCapture))
 		mux.HandleFunc("GET /api/v1/siglab/captures/{id}/download", s.handleSiglabCaptureDownload)
+
+		// Secondary SPA at /siglab/ (daemon path). The standalone `siglab
+		// serve` puts the SPA in WebAssets (served at /) instead, so this only
+		// fires on the daemon. The /siglab/ matcher is more specific than the
+		// GET / catch-all, so both trees coexist. Advertised via
+		// RuntimeDTO.SiglabConsole so the other consoles only link here when the
+		// SPA is actually reachable.
+		if s.siglabAssets != nil {
+			if _, err := fs.Stat(s.siglabAssets, "index.html"); err == nil {
+				mux.Handle("GET /siglab/", s.siglabSpaHandler())
+				mux.HandleFunc("GET /siglab", func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, "/siglab/", http.StatusMovedPermanently)
+				})
+				s.siglabConsole = true
+			}
+		}
 	}
+
+	// Optional RF Scope console (/rfscope/ SPA + /api/v1/rfscope/* routes).
+	// Mounted only when ServerOptions.RFScope.Enabled; a no-op otherwise.
+	s.mountRFScope(mux)
 
 	// Config Builder/Editor — browse/load/validate/save config files,
 	// browse RadioReference, and parse PDF/CSV into a draft. Reads are
@@ -1288,6 +1343,32 @@ func (s *Server) configSpaHandler() http.Handler {
 			return
 		}
 		// Unknown sub-path → serve index.html so the builder's client
+		// router can resolve it.
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/"
+		fileSrv.ServeHTTP(w, r2)
+	})
+}
+
+// siglabSpaHandler serves the Signal Lab SPA mounted under /siglab/ on the
+// daemon (the standalone `siglab serve` serves it at / via spaHandler). It
+// strips the /siglab/ prefix before hitting the embedded file tree and falls
+// back to the SPA's index.html for client-side routes, mirroring
+// configSpaHandler but rooted at /siglab/.
+func (s *Server) siglabSpaHandler() http.Handler {
+	assets := s.siglabAssets
+	fileSrv := http.FileServerFS(assets)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rel := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/siglab/"), "/")
+		if rel != "" {
+			if _, err := fs.Stat(assets, rel); err == nil {
+				r2 := r.Clone(r.Context())
+				r2.URL.Path = "/" + rel
+				fileSrv.ServeHTTP(w, r2)
+				return
+			}
+		}
+		// Root or unknown sub-path → serve index.html so the SPA's client
 		// router can resolve it.
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"
