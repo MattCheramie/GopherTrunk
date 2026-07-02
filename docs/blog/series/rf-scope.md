@@ -1,14 +1,14 @@
 ---
 layout: page
 title: "RF Scope: Wireshark for the airwaves"
-description: A 10-part hands-on series on GopherTrunk's rfscope — protocol-agnostic RF network analysis. Point it at any band with no prior knowledge and get a structured Scene: an RF protocol hierarchy, per-channel I/O graph, TDMA timing, an emitter/conversation graph, an encryption triage, and expert-info anomalies.
+description: "A 10-part hands-on series on GopherTrunk's rfscope — protocol-agnostic RF network analysis. Point it at any band with no prior knowledge and get a structured Scene: an RF protocol hierarchy, per-channel I/O graph, TDMA timing, an emitter/conversation graph, an encryption triage, and expert-info anomalies."
 keywords: rfscope, rf scope, wireshark for rf, rf network analysis, protocol-agnostic sdr, rf protocol hierarchy, burst detection, tdma period, frequency hopper detection, encryption triage, gophertrunk
 nav_group: Blog
 permalink: /blog/series/rf-scope/
 ---
 
 **RF Scope** is a 10-part tutorial series on
-[rfscope]({{ '/rfscope/' | relative_url }}) — GopherTrunk's protocol-agnostic
+[rfscope]({{ '/rfscope.html' | relative_url }}) — GopherTrunk's protocol-agnostic
 RF network analyzer, **"Wireshark for the RF physical layer."** Point it at any
 band, a recorded capture or a live SDR, with **no prior knowledge of the
 technology, modulation, framing, or encryption**, and it produces a structured

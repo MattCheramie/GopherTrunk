@@ -8,7 +8,7 @@ permalink: /blog/series/crypto-lab/
 ---
 
 **Crypto Lab** is a 10-part tutorial series on
-[cryptolab]({{ '/cryptolab/' | relative_url }}) — GopherTrunk's byte-oriented
+[cryptolab]({{ '/cryptolab.html' | relative_url }}) — GopherTrunk's byte-oriented
 cryptographic-research toolkit for **security-testing RF encryption**. Its
 governing idea is blunt: *attempting decryption is the test.* Point it at
 captured ciphertext and it attacks by every applicable method, then grades how

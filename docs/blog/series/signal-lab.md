@@ -8,7 +8,7 @@ permalink: /blog/series/signal-lab/
 ---
 
 **Signal Lab** is a 10-part tutorial series on
-[SigLab]({{ '/siglab/' | relative_url }}), GopherTrunk's standalone
+[SigLab]({{ '/siglab.html' | relative_url }}), GopherTrunk's standalone
 signal-analysis workbench — the tool that runs **entirely offline against a
 recorded IQ capture**, no SDR and no daemon required. We start from your very
 first replay and climb, one post at a time, to lab-grade modulation
