@@ -21,6 +21,28 @@ type csvImportOpts struct {
 	SysID string
 }
 
+// utf8BOM is the UTF-8 byte-order mark (U+FEFF). RadioReference CSVs
+// exported through Excel on Windows are prefixed with it; left in place
+// it corrupts the first header cell (the BOM bytes prepend "DEC")
+// so both format sniffing and column detection fail. See issue #849.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// stripUTF8BOM returns b without a leading UTF-8 BOM (a no-op otherwise).
+func stripUTF8BOM(b []byte) []byte {
+	return bytes.TrimPrefix(b, utf8BOM)
+}
+
+// bomStrippedReader wraps r so a leading UTF-8 BOM is consumed before
+// the first byte is delivered to the caller. Used by the reader-based
+// CSV entry points that never see the raw file bytes.
+func bomStrippedReader(r io.Reader) io.Reader {
+	br := bufio.NewReader(r)
+	if b, err := br.Peek(len(utf8BOM)); err == nil && bytes.Equal(b, utf8BOM) {
+		_, _ = br.Discard(len(utf8BOM))
+	}
+	return br
+}
+
 // parseCSVFile loads a CSV from disk and turns it into a parsedSystem.
 // Two formats are supported and detected by content sniffing:
 //
@@ -35,6 +57,10 @@ func parseCSVFile(path string, opts csvImportOpts) (parsedSystem, error) {
 	if err != nil {
 		return parsedSystem{}, fmt.Errorf("import-pdf: open %s: %w", path, err)
 	}
+	// RadioReference CSVs exported through Excel on Windows carry a
+	// UTF-8 BOM; strip it before sniffing/parsing so it can't mangle the
+	// first header cell. See issue #849.
+	data = stripUTF8BOM(data)
 	var sys parsedSystem
 	if looksLikeRRNativeCSV(data) {
 		fillOpts := opts
@@ -75,7 +101,7 @@ type csvSection struct {
 // parseCSVStream is the testable entry point — reads a multi-section
 // CSV from any io.Reader.
 func parseCSVStream(r io.Reader) (parsedSystem, error) {
-	sections, err := splitCSVSections(r)
+	sections, err := splitCSVSections(bomStrippedReader(r))
 	if err != nil {
 		return parsedSystem{}, err
 	}
@@ -566,7 +592,7 @@ func looksLikeRRNativeCSV(data []byte) bool {
 // expected to default to the filename stem before calling.
 func parseRRNativeCSVStream(r io.Reader, opts csvImportOpts) (parsedSystem, error) {
 	sys := parsedSystem{Protocol: "p25", Name: opts.Name, SysID: opts.SysID}
-	scanner := bufio.NewScanner(r)
+	scanner := bufio.NewScanner(bomStrippedReader(r))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var header []string
 	var col map[string]int

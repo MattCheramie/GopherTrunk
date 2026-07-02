@@ -392,3 +392,61 @@ decimal,alpha_tag
 		t.Errorf("Name = %q, want BundleTest", sys.Name)
 	}
 }
+
+// TestParseCSVFile_BOMNativeRR reproduces issue #849: a native
+// RadioReference CSV exported through Excel on Windows carries a UTF-8
+// BOM. Before the fix the BOM mangled the first header cell so the
+// sniffer misclassified the file as a bundle and parsing failed. The
+// leading "\ufeff" encodes as the UTF-8 BOM (EF BB BF).
+func TestParseCSVFile_BOMNativeRR(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/maricopa-49A.csv"
+	body := "\ufeffDEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n" +
+		"1000,3e8,D,OPS,Operations,Law Dispatch,Police\n" +
+		"1001,3e9,D,TAC1,Tactical 1,Law Tac,Police\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sys, err := parseCSVFile(path, csvImportOpts{})
+	if err != nil {
+		t.Fatalf("parseCSVFile: %v", err)
+	}
+	if sys.Name != "maricopa-49A" {
+		t.Errorf("Name = %q, want maricopa-49A (native RR filename stem)", sys.Name)
+	}
+	if len(sys.Talkgroups) != 2 {
+		t.Fatalf("Talkgroups = %d, want 2 (BOM must not break native RR parsing)", len(sys.Talkgroups))
+	}
+}
+
+// TestParseRRNativeCSVStream_BOM covers the reader entry point used by
+// the web-UI upload path: a BOM ahead of the header must not hide the
+// `decimal` column.
+func TestParseRRNativeCSVStream_BOM(t *testing.T) {
+	const in = "\ufeffDEC,HEX,Mode,Alpha Tag,Description,Tag,Group\n" +
+		"1000,3e8,D,OPS,Operations,Law Dispatch,Police\n"
+	sys, err := parseRRNativeCSVStream(strings.NewReader(in), csvImportOpts{Name: "Test", SysID: "49A"})
+	if err != nil {
+		t.Fatalf("parseRRNativeCSVStream: %v", err)
+	}
+	if len(sys.Talkgroups) != 1 {
+		t.Fatalf("Talkgroups = %d, want 1", len(sys.Talkgroups))
+	}
+}
+
+// TestParseCSVStream_BOM ensures a BOM-prefixed multi-section bundle is
+// still recognised (the first `# Section:` marker must not be masked).
+func TestParseCSVStream_BOM(t *testing.T) {
+	const in = "\ufeff# Section: metadata\nkey,value\nname,BundleTest\nprotocol,p25\n" +
+		"\n# Section: talkgroups\ndecimal,alpha_tag\n1000,OPS\n"
+	sys, err := parseCSVStream(strings.NewReader(in))
+	if err != nil {
+		t.Fatalf("parseCSVStream: %v", err)
+	}
+	if sys.Name != "BundleTest" {
+		t.Errorf("Name = %q, want BundleTest", sys.Name)
+	}
+	if len(sys.Talkgroups) != 1 {
+		t.Errorf("Talkgroups = %d, want 1", len(sys.Talkgroups))
+	}
+}
