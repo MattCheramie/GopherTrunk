@@ -237,13 +237,15 @@ licenses:
 # CoreAudio / IOKit / WinUSB) and modernc.org/sqlite for the call
 # log, so no cgo is required. Each output lands under dist/.
 #
-# Depends on `web-build` so every shipped binary embeds the operator
-# console; without that prerequisite the SPA `//go:embed` would
-# snapshot an empty `web/dist/` and the daemon would 404 at `/`.
+# Depends on the SPA builds so every shipped binary embeds all four
+# consoles (operator + Signal Lab + RF Scope + Config Builder); without
+# them the `//go:embed` directives would snapshot empty dist/ trees and
+# the daemon would 404 at `/` and never mount /siglab/, /rfscope/, or
+# /config/. Matches what `make dist` and the release workflow ship.
 GOOSES   ?= linux darwin windows
 GOARCHES ?= amd64 arm64
 
-cross-build: web-build
+cross-build: web-build siglab-web-build rfscope-web-build configbuilder-web-build
 	@mkdir -p dist
 	@for os in $(GOOSES); do \
 	    for arch in $(GOARCHES); do \
@@ -264,9 +266,9 @@ cross-build: web-build
 # to exercise a prerelease build; default VERSION picks up the same
 # git-describe value the release workflow would compute.
 #
-# Depends on `web-build` so the rehearsed binary embeds the operator
-# console — matches what `cross-build` and the release workflow ship.
-release-dry-run: web-build
+# Depends on the SPA builds so the rehearsed binary embeds all four
+# consoles — matches what `cross-build` and the release workflow ship.
+release-dry-run: web-build siglab-web-build rfscope-web-build configbuilder-web-build
 	@echo "→ Rehearsing release build for version $(VERSION)"
 	@echo "→ COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME)"
 	@rm -rf dist/dry-run

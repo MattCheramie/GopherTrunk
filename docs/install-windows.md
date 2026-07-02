@@ -52,7 +52,7 @@ Double-click `setup.exe` and accept the defaults. The installer:
     exports\      CSV / PDF exports
     data\         calls.db + caches
     logs\         decoded-message logs
-    web\          the browser consoles (standard + Signal Lab + Config Builder)
+    web\          the browser consoles (standard + Signal Lab + RF Scope + Config Builder)
   ```
 
   You can point this anywhere you can write to — a USB stick, a
@@ -62,7 +62,7 @@ Double-click `setup.exe` and accept the defaults. The installer:
   daemon and adds a Start Menu shortcut "Install RTL-SDR driver
   (Zadig)" so you don't have to chase a separate download.
 - Adds Start Menu entries for the daemon, the config template,
-  the three **browser-based web consoles** (open them straight
+  the four **browser-based web consoles** (open them straight
   from `web\` — setup + quick-start guide: **[Web console]({{ '/web.html' | relative_url }})**),
   and these instructions.
 - Optionally adds `C:\Program Files\GopherTrunk` to your system

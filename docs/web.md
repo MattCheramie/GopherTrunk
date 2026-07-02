@@ -111,7 +111,7 @@ browser; nothing else is installed.
 > **Windows installer:** Setup copies this same tree into the `web\`
 > subfolder of your chosen data folder (default
 > `%USERPROFILE%\Documents\GopherTrunk\web`), and adds Start Menu
-> shortcuts for all three consoles. The paths below that say
+> shortcuts for all four consoles. The paths below that say
 > `gophertrunk-web/` map to `…\GopherTrunk\web\` on an installed
 > Windows box.
 

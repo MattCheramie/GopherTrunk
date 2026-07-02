@@ -70,11 +70,12 @@ Source: "..\..\dist\staging\config.example.yaml"; \
   DestName: "config.yaml"; \
   Flags: onlyifdoesntexist uninsneveruninstall
 ; The web operator consoles are standalone static folders — index.html
-; plus bundled JS/CSS/manifest. The release staging nests all three
+; plus bundled JS/CSS/manifest. The release staging nests all four
 ; UIs under gophertrunk-web\ (standard console at the top,
-; gophertrunk-web\siglab\ and gophertrunk-web\configbuilder\
-; alongside), so this one recursive copy reproduces the whole tree
-; under <DataRoot>\web (web\index.html, web\siglab\, web\configbuilder\).
+; gophertrunk-web\siglab\, gophertrunk-web\rfscope\ and
+; gophertrunk-web\configbuilder\ alongside), so this one recursive copy
+; reproduces the whole tree under <DataRoot>\web (web\index.html,
+; web\siglab\, web\rfscope\, web\configbuilder\).
 ; {code:WebDir} resolves to <DataRoot>\web.
 Source: "..\..\dist\staging\gophertrunk-web\*"; \
   DestDir: "{code:WebDir}"; \
@@ -120,14 +121,17 @@ Name: "{autodesktop}\GopherTrunk"; Filename: "{cmd}"; \
   WorkingDir: "{app}"; \
   Tasks: desktopicon
 ; Web operator console shortcuts. The web\ folder under the data root
-; holds all three consoles; opening these index.html files launches
+; holds all four consoles; opening these index.html files launches
 ; them in the user's default browser.
 Name: "{group}\Web operator console"; \
   Filename: "{code:WebDir}\index.html"; \
   Comment: "Open the GopherTrunk web operator console in your default browser"
 Name: "{group}\Signal Lab console"; \
   Filename: "{code:WebDir}\siglab\index.html"; \
-  Comment: "Open the GopherTrunk Signal Lab (offline RF analysis) console"
+  Comment: "Open the GopherTrunk Signal Lab (offline signal analysis) console"
+Name: "{group}\RF Scope console"; \
+  Filename: "{code:WebDir}\rfscope\index.html"; \
+  Comment: "Open the GopherTrunk RF Scope (protocol-agnostic RF analysis) console"
 Name: "{group}\Config Builder console"; \
   Filename: "{code:WebDir}\configbuilder\index.html"; \
   Comment: "Open the GopherTrunk Config Builder / editor in your default browser"

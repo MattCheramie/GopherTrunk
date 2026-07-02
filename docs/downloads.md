@@ -122,7 +122,7 @@ Run the installer:
 .\gophertrunk-{{ ver }}-windows-amd64-setup.exe
 ```
 
-During setup the wizard asks for **one data folder** (default `%USERPROFILE%\Documents\GopherTrunk`) to hold everything that isn't the program: config, recordings, IQ captures, exports, the database, logs, and the **browser-based web consoles** (standard, Signal Lab, Config Builder) under its `web\` subfolder. Start Menu shortcuts open each console's `index.html` in your default browser.
+During setup the wizard asks for **one data folder** (default `%USERPROFILE%\Documents\GopherTrunk`) to hold everything that isn't the program: config, recordings, IQ captures, exports, the database, logs, and the **browser-based web consoles** (standard, Signal Lab, RF Scope, Config Builder) under its `web\` subfolder. Start Menu shortcuts open each console's `index.html` in your default browser.
 
 After install, complete the WinUSB driver swap via the bundled Zadig — see **[`install-windows.md`]({{ '/install-windows.html' | relative_url }})** for the full step-by-step (Start Menu → GopherTrunk → "Install RTL-SDR driver (Zadig)", or tick the postinstall option before clicking Finish). The OS won't see your RTL-SDR until that swap is done.
 
