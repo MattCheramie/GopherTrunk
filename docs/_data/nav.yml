@@ -111,6 +111,12 @@ groups:
         url: /blog/series/rf-front-end/
       - title: Tutorials
         url: /blog/category/tutorials/
+      - title: "Series: Signal Lab"
+        url: /blog/series/signal-lab/
+      - title: "Series: RF Scope"
+        url: /blog/series/rf-scope/
+      - title: "Series: Crypto Lab"
+        url: /blog/series/crypto-lab/
       - title: Solution Postmortem
         url: /blog/category/solution-postmortem/
   - label: Install
