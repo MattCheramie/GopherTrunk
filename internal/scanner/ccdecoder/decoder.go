@@ -264,12 +264,16 @@ type Decoder struct {
 	// autotune, when non-nil, tracks the control dongle's carrier error
 	// (Options.Autotune). autotuneApplied records the Hz correction folded
 	// into the DDC offset at the last (re)build, so the next measurement
-	// reports observed + applied as the source's true error (guarded by
-	// mu). locked mirrors the CC lock state from the bus so the pump only
-	// samples AFC on a real lock; lastATSampleAt throttles sampling to
-	// roughly once per second (owned by the pump goroutine).
+	// reports observed + applied as the source's true error, and the
+	// published control_channel_carrier_offset_hz can add it back to the
+	// receiver residual to report the TOTAL offset from the configured
+	// frequency (issue #815). Atomic so the P25 pipeline's CarrierOffsetHz
+	// closure can read it lock-free at site-update publish time. locked
+	// mirrors the CC lock state from the bus so the pump only samples AFC on
+	// a real lock; lastATSampleAt throttles sampling to roughly once per
+	// second (owned by the pump goroutine).
 	autotune        *autotune.Manager
-	autotuneApplied int
+	autotuneApplied atomic.Int64
 	locked          atomic.Bool
 	lastATSampleAt  time.Time
 	// carrierOffsetWarnHz is the large-offset WARN threshold (Options.
@@ -634,6 +638,13 @@ func (d *Decoder) handleProgress(p trunking.HuntProgress) {
 		FrequencyHz:  p.AttemptedFreqHz,
 		SampleRateHz: rate,
 		System:       sys,
+		// Report the autotune correction already folded into the DDC so the
+		// P25 pipeline's published control_channel_carrier_offset_hz is the
+		// TOTAL offset from the configured frequency (applied + receiver
+		// residual), matching the WARN in checkCarrierOffsetLocked. With
+		// autotune off this is always 0, so the published value is unchanged
+		// (issue #815).
+		CarrierBiasHz: func() float64 { return float64(d.autotuneApplied.Load()) },
 	}
 	if d.fec != nil {
 		// Bind the system name so the pipeline reports a per-burst FEC
@@ -731,7 +742,7 @@ func (d *Decoder) ensureDownconverterLocked(targetHz float64) {
 	d.ddc = NewDownconverterWithOffset(d.sampleRateHz, targetHz, offset)
 	d.ddcTarget = targetHz
 	d.ddcOffsetHz = offset
-	d.autotuneApplied = applied
+	d.autotuneApplied.Store(int64(applied))
 	d.pipelineRateHz = d.ddc.outRateHz
 	d.log.Info("ccdecoder: digital down-converter configured",
 		"sdr_rate_hz", d.sampleRateHz,
@@ -799,10 +810,11 @@ func (d *Decoder) sampleAutotuneLocked() {
 	d.lastATSampleAt = now
 
 	observed := int(math.Round(rep.AFCOffsetHz()))
-	d.autotune.AddErrorMeasurement(observed, d.autotuneApplied, d.activeFreqHz)
+	applied := int(d.autotuneApplied.Load())
+	d.autotune.AddErrorMeasurement(observed, applied, d.activeFreqHz)
 	d.log.Info("ccdecoder: "+d.autotune.StatusString(d.activeFreqHz, 0),
 		"system", d.activeAt, "freq_hz", d.activeFreqHz,
-		"observed_hz", observed, "applied_hz", d.autotuneApplied)
+		"observed_hz", observed, "applied_hz", applied)
 }
 
 // checkCarrierOffsetLocked emits a throttled WARN when, while the CC is locked,
@@ -824,7 +836,7 @@ func (d *Decoder) checkCarrierOffsetLocked() {
 	if !ok {
 		return
 	}
-	total := d.autotuneApplied + int(math.Round(rep.AFCOffsetHz()))
+	total := int(d.autotuneApplied.Load()) + int(math.Round(rep.AFCOffsetHz()))
 	if total < 0 {
 		total = -total
 	}

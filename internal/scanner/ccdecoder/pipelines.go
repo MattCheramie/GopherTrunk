@@ -83,6 +83,16 @@ type PipelineOptions struct {
 	// enabled; today only newTETRAPipeline consumes it. nil ⇒ zero
 	// overhead.
 	FECObserver func(channel string, corrections int)
+
+	// CarrierBiasHz, when non-nil, returns the frequency correction (Hz) the
+	// decoder has already folded into the down-converter for the active
+	// acquisition (the autotune-applied shift). newP25Phase1Pipeline adds it
+	// to the receiver's residual AFCOffsetHz so the published
+	// control_channel_carrier_offset_hz reports the TOTAL offset from the
+	// configured frequency — matching the WARN in checkCarrierOffsetLocked —
+	// instead of the residual-only value that drops toward 0 once autotune
+	// re-centres the carrier (issue #815). Nil ⇒ residual only.
+	CarrierBiasHz func() float64
 }
 
 // tapDibits / tapBits forward a recovered-symbol chunk to SymbolTap when
@@ -299,7 +309,18 @@ func newP25Phase1Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		P25Phase2RS:         uint8(p2RS),
 		P25Phase2Interleave: uint8(p2Interleave),
 		P25Phase2Scrambler:  uint8(p2Scrambler),
-		CarrierOffsetHz:     func() float64 { return rx.AFCOffsetHz() },
+		// Report the TOTAL carrier offset from the configured frequency:
+		// the receiver's residual AFC plus any correction the decoder folded
+		// into the DDC (CarrierBiasHz). Residual-only would drop toward 0
+		// once autotune re-centres, hiding an offset the WARN still flags
+		// (issue #815). With autotune off CarrierBiasHz returns 0.
+		CarrierOffsetHz: func() float64 {
+			off := rx.AFCOffsetHz()
+			if opts.CarrierBiasHz != nil {
+				off += opts.CarrierBiasHz()
+			}
+			return off
+		},
 	})
 	rx = p25phase1rx.New(p25phase1rx.Options{
 		SampleRateHz: opts.SampleRateHz,

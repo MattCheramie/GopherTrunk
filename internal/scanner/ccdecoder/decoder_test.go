@@ -1316,16 +1316,37 @@ func TestClearActiveClearsDCRatio(t *testing.T) {
 // encoded TSBK + idle gap) + trailer — mirroring the integration
 // suite's fixture so the C4FM modulator + receiver chain can lock.
 func buildP25CCDibits(nac uint16, repeats int) []uint8 {
+	// A minimal RFSS Status Broadcast with an all-zero identity payload: enough
+	// to exercise the trellis decode path, but publishSiteUpdate skips it (no
+	// RFSS/Site), so callers that only need a lock don't get a SiteUpdate.
+	return buildP25CCDibitsTSBK(nac, repeats, p25phase1.TSBK{
+		LB: true, Opcode: p25phase1.OpRFSSStatusBroadcast,
+	})
+}
+
+// buildP25CCSiteDibits is buildP25CCDibits with an RFSS Status Broadcast that
+// carries a non-zero identity, so a locked decode publishes a KindSiteUpdate
+// (publishSiteUpdate early-returns on all-zero identity). The payload mirrors
+// phase1/network_test.go's TestControlChannelStampsCarrierOffset.
+func buildP25CCSiteDibits(nac uint16, repeats int) []uint8 {
+	return buildP25CCDibitsTSBK(nac, repeats, p25phase1.TSBK{
+		LB: true, Opcode: p25phase1.OpRFSSStatusBroadcast,
+		Payload: [8]byte{9, 0x01, 0x23, 4, 7},
+	})
+}
+
+// buildP25CCDibitsTSBK assembles the shared CC dibit fixture — a warmup pattern
+// + `repeats` × (FSW + NID + trellis-encoded TSBK + idle gap) + trailer — around
+// the supplied TSBK, so the C4FM modulator + receiver chain can lock and decode
+// it.
+func buildP25CCDibitsTSBK(nac uint16, repeats int, tsbk p25phase1.TSBK) []uint8 {
 	frame := make([]uint8, 0, 24+32+98)
 	frame = append(frame, p25phase1.FrameSyncWord[:]...)
 	nidBits := p25phase1.EncodeNIDBits(nac, p25phase1.DUIDTrunkingSignaling)
 	for i := 0; i < 32; i++ {
 		frame = append(frame, (nidBits[2*i]<<1)|nidBits[2*i+1])
 	}
-	tsbk := p25phase1.AssembleTSBK(p25phase1.TSBK{
-		LB: true, Opcode: p25phase1.OpRFSSStatusBroadcast,
-	})
-	frame = append(frame, p25phase1.EncodeTSBKChannel(tsbk)...)
+	frame = append(frame, p25phase1.EncodeTSBKChannel(p25phase1.AssembleTSBK(tsbk))...)
 	// Interleave the P25 status symbols a real transmitter inserts (one
 	// per 36 dibits); the receiver must strip them to decode the NID.
 	frame = p25phase1.InjectControlStatusSymbols(frame)
@@ -1610,8 +1631,8 @@ func TestDecoderAutotuneMeasuresAndCorrectsOffset(t *testing.T) {
 	}
 	// With no measurements yet the DDC must be built with zero correction —
 	// byte-identical to the non-autotune path.
-	if d.autotuneApplied != 0 {
-		t.Fatalf("autotuneApplied = %d before any measurement, want 0", d.autotuneApplied)
+	if got := d.autotuneApplied.Load(); got != 0 {
+		t.Fatalf("autotuneApplied = %d before any measurement, want 0", got)
 	}
 
 	const chunk = 8_192
@@ -2031,7 +2052,7 @@ func TestDecoderWarnsOnLargeCarrierOffset(t *testing.T) {
 			var buf bytes.Buffer
 			d := newOffsetTestDecoder(t, &buf)
 			d.active = &fakeAFCPipeline{offsetHz: tc.offset}
-			d.autotuneApplied = tc.applied
+			d.autotuneApplied.Store(int64(tc.applied))
 			d.locked.Store(tc.locked)
 
 			d.checkCarrierOffsetLocked()
@@ -2265,5 +2286,112 @@ func TestDecoderCarrierOffsetWarnHzConfigurable(t *testing.T) {
 	d2.checkCarrierOffsetLocked()
 	if strings.Contains(buf.String(), carrierOffsetWarnMsg) {
 		t.Errorf("12.5 kHz offset under a 20 kHz threshold should not warn; log: %q", buf.String())
+	}
+}
+
+// TestDecoderPublishesTotalCarrierOffsetWithAutotune is the failing-first
+// regression for the issue #815 follow-up (comment 4830049924): the value
+// published to GET /api/v1/sites as control_channel_carrier_offset_hz must be the
+// TOTAL offset from the configured frequency (the autotune correction already
+// folded into the down-converter + the receiver's residual AFCOffsetHz), matching
+// the checkCarrierOffsetLocked WARN — not the residual alone.
+//
+// Once autotune folds a correction into the DDC and the receiver re-centres, the
+// residual drops toward 0, so a residual-only publish (the bug: pipelines.go
+// wired `func() float64 { return rx.AFCOffsetHz() }`) would hide the applied
+// shift and disagree with the WARN. Here a real ccdecoder.Decoder locks an
+// on-frequency channel (residual ≈ 0) with a non-zero applied bias injected to
+// model that re-centred state; the published SiteUpdate offset must still carry
+// the bias. With the fix reverted this reads ≈ 0 and the test fails.
+func TestDecoderPublishesTotalCarrierOffsetWithAutotune(t *testing.T) {
+	const (
+		nac          = 0x293
+		controlFreq  = 420_075_000 // Geelong, per issue #815
+		narrowRateHz = 48_000.0    // SDR rate == channel rate ⇒ pass-through DDC
+		deviationHz  = 1800.0
+		frameRepeats = 80
+		appliedBias  = 1200 // Hz already folded into the DDC by autotune
+	)
+
+	// On-frequency channel: the DDC leaves it at DC, so the receiver residual
+	// AFCOffsetHz settles near 0. The applied bias is injected directly (below)
+	// to model the post-fold / re-centred state — residual ≈ 0 while
+	// autotuneApplied != 0 — which is exactly what a residual-only publish hides.
+	dibits := buildP25CCSiteDibits(nac, frameRepeats)
+	signal := demod.ModulateP25C4FM(dibits, narrowRateHz, deviationHz)
+
+	bus := events.NewBus(512)
+	defer bus.Close()
+	d, err := New(Options{
+		Bus: bus, IQ: &fakeIQSource{},
+		Systems: []trunking.System{{
+			Name: "Geelong", Protocol: trunking.ProtocolP25,
+			ControlChannels: []uint32{controlFreq},
+		}},
+		SampleRateHz: narrowRateHz,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer d.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	d.handleProgress(trunking.HuntProgress{System: "Geelong", AttemptedFreqHz: controlFreq})
+	if d.active == nil {
+		t.Fatalf("handleProgress did not install a pipeline")
+	}
+	// Model autotune having folded appliedBias into the DDC at this acquisition.
+	// The CarrierBiasHz getter handleProgress wired reads this live, so the
+	// published offset must include it on top of the ~0 residual.
+	d.autotuneApplied.Store(appliedBias)
+
+	const chunk = 8_192
+	var (
+		locked     bool
+		gotSite    bool
+		siteOffset int32
+	)
+	for off := 0; off < len(signal); off += chunk {
+		end := off + chunk
+		if end > len(signal) {
+			end = len(signal)
+		}
+		d.pump(signal[off:end])
+		for drained := false; !drained; {
+			select {
+			case ev := <-sub.C:
+				switch ev.Kind {
+				case events.KindCCLocked:
+					// Mirror the Run loop's lock bookkeeping (decoder.go) so the
+					// pump's offset machinery is armed; the pump never sets it.
+					d.locked.Store(true)
+					locked = true
+				case events.KindSiteUpdate:
+					u, ok := ev.Payload.(trunking.SiteUpdate)
+					if !ok || (u.RFSSID == 0 && u.SiteID == 0) {
+						continue // skip any interim identity-less publish
+					}
+					siteOffset = u.ControlChannelCarrierOffsetHz
+					gotSite = true
+				}
+			default:
+				drained = true
+			}
+		}
+	}
+	if !locked {
+		t.Fatalf("control channel never locked on-frequency")
+	}
+	if !gotSite {
+		t.Fatalf("no KindSiteUpdate with a decoded RFSS/Site identity was published")
+	}
+	// The published offset must include the applied bias. Residual-only (the bug)
+	// would read ≈ 0; the fix reports applied + residual, landing within a
+	// CoarseAFC slack band around appliedBias.
+	const slack = 500
+	if int(siteOffset) < appliedBias-slack || int(siteOffset) > appliedBias+slack {
+		t.Fatalf("control_channel_carrier_offset_hz = %d, want ≈ %d (applied bias + ~0 residual); a residual-only publish would read ≈ 0",
+			siteOffset, appliedBias)
 	}
 }
