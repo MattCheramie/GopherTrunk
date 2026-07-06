@@ -738,6 +738,115 @@ func TestRecorderForwardsDecodedPCMToCallAwareTap(t *testing.T) {
 	}
 }
 
+// countingPCMTap tallies the total number of decoded PCM samples the recorder
+// fans to the live stream — enough to prove audio flows without inspecting it.
+type countingPCMTap struct {
+	mu    sync.Mutex
+	total int
+}
+
+func (c *countingPCMTap) WritePCM(_ string, samples []int16) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.total += len(samples)
+	return nil
+}
+func (c *countingPCMTap) sum() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total
+}
+
+// TestRecorderDecodeOnlyFeedsTapWithoutFiles pins the fix that decouples live
+// audio from recording: a recorder built with an empty OutDir must still decode
+// each call and fan the PCM to the live tap (so browser audio works with no
+// recordings directory), while writing NO files to disk. Before the fix,
+// NewRecorder rejected an empty OutDir outright, so live digital audio silently
+// required recordings.dir.
+func TestRecorderDecodeOnlyFeedsTapWithoutFiles(t *testing.T) {
+	// Any accidental file write lands in this dir (directoryFor joins a relative
+	// path onto the empty OutDir), so we can assert the tree stays empty.
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+
+	bus := events.NewBus(8)
+	r, err := NewRecorder(RecorderOptions{
+		Bus:                bus,
+		OutDir:             "", // decode-only
+		SampleRate:         8000,
+		VocoderForProtocol: map[string]string{"test-null": "null"},
+	})
+	if err != nil {
+		t.Fatalf("NewRecorder(OutDir: \"\") decode-only: %v", err)
+	}
+	defer r.Close()
+	defer bus.Close()
+
+	tap := &countingPCMTap{}
+	r.SetDecodedPCMSink(tap)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	cs := trunking.CallStart{
+		Grant:        trunking.Grant{System: "S", Protocol: "test-null", GroupID: 1, CallID: 42},
+		DeviceSerial: "tap-0",
+		StartedAt:    time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC),
+	}
+	bus.Publish(events.Event{Kind: events.KindCallStart, Payload: cs})
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if r.HasSession("tap-0") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !r.HasSession("tap-0") {
+		t.Fatal("decode-only session never started")
+	}
+
+	const frames = 5
+	for i := 0; i < frames; i++ {
+		if err := r.WriteRawFrameForCall("tap-0", 42, make([]byte, 11), 0); err != nil {
+			t.Fatalf("WriteRawFrameForCall: %v", err)
+		}
+	}
+	bus.Publish(events.Event{Kind: events.KindCallEnd, Payload: trunking.CallEnd{
+		Grant:        cs.Grant,
+		DeviceSerial: "tap-0",
+		StartedAt:    cs.StartedAt,
+		EndedAt:      cs.StartedAt.Add(time.Second),
+		Reason:       trunking.EndReasonNormal,
+	}})
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !r.HasSession("tap-0") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// The null vocoder emits 160 samples per 11-byte frame; every decoded chunk
+	// must reach the live tap even though nothing is written to disk.
+	if got := tap.sum(); got < frames*160 {
+		t.Errorf("decode-only tap received %d samples, want >= %d — live audio would be silent",
+			got, frames*160)
+	}
+
+	// Nothing must have been written to disk.
+	var files []string
+	_ = filepath.Walk(tmp, func(path string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if len(files) != 0 {
+		t.Errorf("decode-only recorder wrote files: %v, want none", files)
+	}
+}
+
 // fakeRawTap implements RawFrameCallSink, recording the verbatim bytes, vocoder
 // name, and CallID the recorder forwards for each raw frame so a test can
 // confirm the raw fan-out carries the codec label and is fenced by the
